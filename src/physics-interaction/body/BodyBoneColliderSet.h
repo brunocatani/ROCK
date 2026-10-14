@@ -6,7 +6,6 @@
 #include "physics-interaction/hand/HandColliderTypes.h"
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/hand/SkeletonBoneNameIndex.h"
-#include "physics-interaction/collision/ColliderTuning.h"
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/native/HavokPhysicsTiming.h"
@@ -96,7 +95,6 @@ namespace rock
 
         bool captureBoneSnapshot(DirectSkeletonBoneSnapshot& outSnapshot);
         bool updatePose(const DirectSkeletonBoneSnapshot& snapshot, float deltaTime, bool publishTargets);
-        std::uint64_t refreshTuning(bool powerArmor);
         RE::hknpShape* buildShapeForFrame(const DescriptorFrameResult& frame) const;
         bool createBodyForDescriptor(
             RE::hknpWorld* world,
@@ -114,10 +112,6 @@ namespace rock
         DirectSkeletonBoneReader _reader;
         SkeletonBoneNameIndex _boneNameIndex;
         SkeletonBoneNameIndex _finalBoneNameIndex;
-        collider_tuning::BodyProfile _tuning;
-        std::uint64_t _tuningConfigRevision = 0;
-        bool _tuningPowerArmor = false;
-        bool _tuningReady = false;
         DirectSkeletonBoneSnapshot _snapshot;
         std::array<BodyInstance, kBodyBoneColliderBodyCount> _bodies{};
         RE::hknpWorld* _cachedWorld = nullptr;
@@ -125,7 +119,6 @@ namespace rock
         const void* _cachedSkeleton = nullptr;
         const void* _cachedBoneTree = nullptr;
         bool _cachedPowerArmor = false;
-        std::uint64_t _cachedTuningSignature = 0;
         const void* _lastCapturedSkeleton = nullptr;
         const void* _lastCapturedBoneTree = nullptr;
         bool _lastCapturedPowerArmor = false;

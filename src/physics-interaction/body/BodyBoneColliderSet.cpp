@@ -81,13 +81,12 @@ namespace rock
             const SnapshotBoneLookup& bonesByName,
             const body_collider::Descriptor& descriptor,
             bool inPowerArmor,
-            const collider_tuning::BodyDescriptor& tuning,
             BodyBoneColliderSet::DescriptorFrameResult& outFrame)
         {
             outFrame = {};
             hand_bone_collider_geometry_math::BoneColliderFrameInput<RE::NiTransform, RE::NiPoint3> input{};
-            input.radius = tuning.radius;
-            input.convexRadius = tuning.convexRadius;
+            input.radius = descriptor.radiusGameUnits;
+            input.convexRadius = descriptor.convexRadiusGameUnits;
 
             if (!findSnapshotBone(bonesByName, descriptor.startBone, input.start) ||
                 !findSnapshotBone(bonesByName, descriptor.endBone, input.end)) {
@@ -102,14 +101,7 @@ namespace rock
 
             outFrame.valid = true;
             outFrame.transform = frame.transform;
-            if (tuning.hasLocalOffset) {
-                const auto offsetWorld =
-                    hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(outFrame.transform, tuning.localOffsetGame);
-                outFrame.transform.translate.x += offsetWorld.x;
-                outFrame.transform.translate.y += offsetWorld.y;
-                outFrame.transform.translate.z += offsetWorld.z;
-            }
-            outFrame.length = frame.length * tuning.lengthScale;
+            outFrame.length = frame.length;
             outFrame.radius = frame.radius;
             outFrame.convexRadius = frame.convexRadius;
             if (!descriptorFrameDimensionsValid(outFrame, descriptor.role, inPowerArmor)) {
@@ -266,20 +258,6 @@ namespace rock
         }
     }
 
-    std::uint64_t BodyBoneColliderSet::refreshTuning(bool powerArmor)
-    {
-        const auto revision = g_rockConfig.configRevision();
-        if (!_tuningReady || _tuningConfigRevision != revision || _tuningPowerArmor != powerArmor) {
-            _tuning = collider_tuning::prepareBody(g_rockConfig, powerArmor);
-            _tuningConfigRevision = revision;
-            _tuningPowerArmor = powerArmor;
-            _tuningReady = true;
-        }
-        // Keep the original effective signature: unrelated config edits must
-        // not rebuild native colliders, and constrained hands still defer.
-        return _tuning.signature;
-    }
-
     BodyBoneColliderSet::BodyBoneColliderSet()
     {
         clearAtomicBodyIds();
@@ -410,7 +388,6 @@ namespace rock
         }
 
         const auto& descriptors = bodyDescriptorsForPowerArmor(snapshot.inPowerArmor);
-        const auto tuningSignature = refreshTuning(snapshot.inPowerArmor);
         const auto bonesByName = _boneNameIndex.bind(snapshot);
         dynamic_hand_twin::ForearmTwinTargets forearmTwinTargets{};
         ForearmTwinMergeSources forearmTwinMergeSources{};
@@ -418,7 +395,7 @@ namespace rock
         for (std::uint32_t descriptorIndex = 0; descriptorIndex < descriptors.size(); ++descriptorIndex) {
             const auto& descriptor = descriptors[descriptorIndex];
             DescriptorFrameResult frame{};
-            if (!makeDescriptorFrame(bonesByName, descriptor, snapshot.inPowerArmor, _tuning.descriptors[descriptorIndex], frame)) {
+            if (!makeDescriptorFrame(bonesByName, descriptor, snapshot.inPowerArmor, frame)) {
                 ROCK_LOG_WARN(Body,
                     "Body collider frame missing index={} role={} {}->{}",
                     descriptorIndex,
@@ -458,7 +435,6 @@ namespace rock
         _cachedSkeleton = _lastCapturedSkeleton;
         _cachedBoneTree = _lastCapturedBoneTree;
         _cachedPowerArmor = _lastCapturedPowerArmor;
-        _cachedTuningSignature = tuningSignature;
         _driveRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
         _created = true;
@@ -501,7 +477,6 @@ namespace rock
         _cachedSkeleton = nullptr;
         _cachedBoneTree = nullptr;
         _cachedPowerArmor = false;
-        _cachedTuningSignature = 0;
         _dynamicForearmTwinTargets = {};
         _canonicalForearmTwinDimensions = {};
         _driveRebuildRequested.store(false, std::memory_order_release);
@@ -528,7 +503,6 @@ namespace rock
         _cachedSkeleton = nullptr;
         _cachedBoneTree = nullptr;
         _cachedPowerArmor = false;
-        _cachedTuningSignature = 0;
         _dynamicForearmTwinTargets = {};
         _canonicalForearmTwinDimensions = {};
         _driveRebuildRequested.store(false, std::memory_order_release);
@@ -554,19 +528,15 @@ namespace rock
             return;
         }
 
-        const auto tuningSignature = refreshTuning(snapshot.inPowerArmor);
         if (_cachedWorld != world ||
             _cachedSkeleton != _lastCapturedSkeleton ||
             _cachedBoneTree != _lastCapturedBoneTree ||
-            _cachedPowerArmor != _lastCapturedPowerArmor ||
-            _cachedTuningSignature != tuningSignature) {
+            _cachedPowerArmor != _lastCapturedPowerArmor) {
             if (++_updateLogCounter > 120) {
                 _updateLogCounter = 0;
                 ROCK_LOG_INFO(Body,
-                    "Body bone collider source/tuning changed; rebuilding generated body set powerArmor={} tuning=0x{:016X}->0x{:016X}",
-                    snapshot.inPowerArmor ? "yes" : "no",
-                    _cachedTuningSignature,
-                    tuningSignature);
+                    "Body bone collider skeleton source changed; rebuilding generated body set powerArmor={}",
+                    snapshot.inPowerArmor ? "yes" : "no");
             }
             create(world, _cachedBhkWorld);
             return;
@@ -607,7 +577,7 @@ namespace rock
 
             const auto& descriptor = descriptors[instance.descriptorIndex];
             DescriptorFrameResult frame{};
-            if (makeDescriptorFrame(bonesByName, descriptor, snapshot.inPowerArmor, _tuning.descriptors[instance.descriptorIndex], frame)) {
+            if (makeDescriptorFrame(bonesByName, descriptor, snapshot.inPowerArmor, frame)) {
                 collectForearmTwinMergeSource(forearmTwinMergeSources, descriptor, frame);
                 if (publishTargets) queueBodyTarget(instance.body, frame.transform, deltaTime, instance.driveState);
             } else {

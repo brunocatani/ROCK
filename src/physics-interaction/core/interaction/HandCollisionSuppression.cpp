@@ -276,15 +276,6 @@ namespace rock
             return;
         }
 
-        if (!g_rockConfig.rockBodyBoneCollidersEnabled) {
-            if (_bodyBoneColliders.hasBodies()) {
-                ROCK_LOG_INFO(Body, "Body bone collider config disabled; destroying generated body set");
-                destroyBodyBoneCollisions(frame.bhkWorld);
-                _contacts.bodyRuntime.reset();
-            }
-            return;
-        }
-
         if (!_bodyBoneColliders.hasBodies()) {
             if (frame.reloadBoundaryActive) {
                 return;

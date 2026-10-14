@@ -432,7 +432,7 @@ namespace rock
             return;
         }
 
-        if (g_rockConfig.rockBodyBoneCollidersEnabled && !createBodyBoneCollisions(hknp, bhk)) {
+        if (!createBodyBoneCollisions(hknp, bhk)) {
             ROCK_LOG_WARN(Init, "Body bone colliders were not available during init; runtime update will retry");
         }
 
@@ -819,11 +819,6 @@ namespace rock
 
     bool PhysicsInteraction::createBodyBoneCollisions(RE::hknpWorld* world, void* bhkWorld)
     {
-        if (!g_rockConfig.rockBodyBoneCollidersEnabled) {
-            _bodyBoneColliders.destroy(bhkWorld);
-            return true;
-        }
-
         if (!runtime_state::isLocalSkeletonReady()) {
             ROCK_LOG_WARN(Body, "Cannot create body bone colliders: skeleton not ready");
             return false;

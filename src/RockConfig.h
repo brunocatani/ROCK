@@ -260,19 +260,6 @@ namespace rock
         std::string rockDebugSkeletonBoneLogFilter = "RArm_Hand,LArm_Hand,RArm_Finger23,LArm_Finger23,Chest,Pelvis";
         std::string rockDebugSkeletonAxisBoneFilter = "";
 
-        bool rockBodyBoneCollidersEnabled = true;
-        float rockBodyBoneColliderStandardRadiusScale = 1.0f;
-        float rockBodyBoneColliderStandardLengthScale = 1.0f;
-        float rockBodyBoneColliderStandardConvexRadiusScale = 1.0f;
-        float rockBodyBoneColliderPowerArmorRadiusScale = 1.0f;
-        float rockBodyBoneColliderPowerArmorLengthScale = 1.0f;
-        float rockBodyBoneColliderPowerArmorConvexRadiusScale = 1.0f;
-        float rockBodyBoneColliderTorsoRadiusScale = 1.0f;
-        float rockBodyBoneColliderArmRadiusScale = 1.0f;
-        float rockBodyBoneColliderTorsoLengthScale = 1.0f;
-        float rockBodyBoneColliderArmLengthScale = 1.0f;
-        std::string rockBodyBoneColliderZoneScaleOverrides = "";
-        std::string rockBodyBoneColliderRadiusScaleOverrides = "";
         bool rockHandCollisionStaticWorldEnabled = true;
         bool rockGlobalSurfaceGrabEnabled = true;
         bool rockSurfaceMeshGrabEnabled = false;

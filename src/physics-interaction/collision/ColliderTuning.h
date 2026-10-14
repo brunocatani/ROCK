@@ -1,7 +1,6 @@
 #pragma once
 
 #include "physics-interaction/hand/HandColliderTypes.h"
-#include "physics-interaction/body/BodyColliderDescriptors.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "RE/NetImmerse/NiPoint.h"
 
@@ -27,23 +26,7 @@ namespace rock::collider_tuning
         std::array<HandRole, hand_collider_semantics::kHandColliderBodyCountPerHand> roles{};
     };
 
-    struct BodyDescriptor
-    {
-        float radius = 0.0f;
-        float convexRadius = 0.0f;
-        float lengthScale = 1.0f;
-        RE::NiPoint3 localOffsetGame{};
-        bool hasLocalOffset = false;
-    };
-
-    struct BodyProfile
-    {
-        std::uint64_t signature = 0;
-        std::array<BodyDescriptor, body_collider::kStandardDescriptors.size()> descriptors{};
-    };
-
     // Pure value preparation. Owners call these only when config revision or
     // armor profile changes; the existing precedence and signatures are kept.
     HandProfile prepareHand(const RockConfigValues& config, bool powerArmor);
-    BodyProfile prepareBody(const RockConfigValues& config, bool powerArmor);
 }
