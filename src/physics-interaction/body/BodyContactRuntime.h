@@ -37,13 +37,8 @@ namespace rock::body_contact_runtime
         body_zone::BodyZoneSide side = body_zone::BodyZoneSide::Center;
         std::uint32_t descriptorIndex = 0;
         contact_pipeline_policy::ContactEndpointKind targetKind = contact_pipeline_policy::ContactEndpointKind::Unknown;
-        body_collider::Role targetRole = body_collider::Role::TorsoSegment;
-        body_zone::BodyZoneKind targetZone = body_zone::BodyZoneKind::Unknown;
-        body_zone::BodyZoneSide targetSide = body_zone::BodyZoneSide::Center;
-        std::uint32_t targetDescriptorIndex = 0;
         RE::NiPoint3 contactPointGame{};
         bool inPowerArmor = false;
-        bool targetInPowerArmor = false;
         bool hasContactPointGame = false;
     };
 

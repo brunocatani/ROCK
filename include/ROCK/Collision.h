@@ -43,14 +43,14 @@ namespace rock::api::collision {
         // 16-23 were the retired leg and foot zones; never reuse them.
     };
 
-    // 5 (External) is retired with external body registration; never reuse.
+    // 5 (External) is retired with external body registration; 1 (Hand) and
+    // 4 (Body) are retired because body colliders never touch hands or each
+    // other. Never reuse them.
     enum class BodyContactTargetKind : std::uint32_t
     {
         Unknown = 0,
-        Hand = 1,
         Weapon = 2,
         HeldObject = 3,
-        Body = 4,
         WorldSurface = 6,
         DynamicProp = 7,
         Actor = 8,
@@ -117,12 +117,7 @@ namespace rock::api::collision {
         std::uint32_t role{ 0 };
         std::uint32_t descriptorIndex{ 0 };
         BodyContactTargetKind targetKind{ BodyContactTargetKind::Unknown };
-        BodyZoneKind targetZone{ BodyZoneKind::Unknown };
-        BodyZoneSide targetSide{ BodyZoneSide::Center };
-        std::uint32_t targetRole{ 0 };
-        std::uint32_t targetDescriptorIndex{ 0 };
         std::uint32_t inPowerArmor{ 0 };
-        std::uint32_t targetInPowerArmor{ 0 };
         std::uint32_t hasContactPointGame{ 0 };
         Point3 contactPointGame{};
     };

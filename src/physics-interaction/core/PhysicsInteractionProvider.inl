@@ -565,12 +565,7 @@
             out.role = static_cast<std::uint32_t>(record.role);
             out.descriptorIndex = record.descriptorIndex;
             out.targetKind = providerBodyContactTargetKind(record.targetKind);
-            out.targetZone = static_cast<api::collision::BodyZoneKind>(record.targetZone);
-            out.targetSide = static_cast<api::collision::BodyZoneSide>(record.targetSide);
-            out.targetRole = static_cast<std::uint32_t>(record.targetRole);
-            out.targetDescriptorIndex = record.targetDescriptorIndex;
             out.inPowerArmor = record.inPowerArmor ? 1u : 0u;
-            out.targetInPowerArmor = record.targetInPowerArmor ? 1u : 0u;
             out.hasContactPointGame = record.hasContactPointGame ? 1u : 0u;
             out.contactPointGame = makeProviderPoint(record.contactPointGame);
         }

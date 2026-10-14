@@ -894,13 +894,6 @@
             record.descriptorIndex = bodyMetadata->descriptorIndex;
             record.targetKind = contactRoute.target.kind;
             record.inPowerArmor = bodyMetadata->inPowerArmor;
-            if (const auto* targetBodyMetadata = bodySourceFor(contactRoute.targetBodyId); targetBodyMetadata && targetBodyMetadata->valid) {
-                record.targetRole = targetBodyMetadata->role;
-                record.targetZone = targetBodyMetadata->zone;
-                record.targetSide = targetBodyMetadata->side;
-                record.targetDescriptorIndex = targetBodyMetadata->descriptorIndex;
-                record.targetInPowerArmor = targetBodyMetadata->inPowerArmor;
-            }
             if (ensureRawContactPoint()) {
                 const float scale = havokToGameScale();
                 record.contactPointGame = RE::NiPoint3{

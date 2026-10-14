@@ -1054,18 +1054,14 @@ namespace rock
         {
             using contact_pipeline_policy::ContactEndpointKind;
             using api::collision::BodyContactTargetKind;
+            // Body colliders never touch hands or each other (layer 47).
             switch (kind) {
-            case ContactEndpointKind::RightHand:
-            case ContactEndpointKind::LeftHand:
-                return api::collision::BodyContactTargetKind::Hand;
             case ContactEndpointKind::Weapon:
             case ContactEndpointKind::SecondaryWeapon:
                 return api::collision::BodyContactTargetKind::Weapon;
             case ContactEndpointKind::RightHeldObject:
             case ContactEndpointKind::LeftHeldObject:
                 return api::collision::BodyContactTargetKind::HeldObject;
-            case ContactEndpointKind::Body:
-                return api::collision::BodyContactTargetKind::Body;
             case ContactEndpointKind::WorldSurface:
                 return api::collision::BodyContactTargetKind::WorldSurface;
             case ContactEndpointKind::DynamicProp:
@@ -1074,7 +1070,7 @@ namespace rock
                 return api::collision::BodyContactTargetKind::Actor;
             case ContactEndpointKind::QueryOnly:
                 return api::collision::BodyContactTargetKind::QueryOnly;
-            case ContactEndpointKind::Unknown:
+            default:
                 break;
             }
             return api::collision::BodyContactTargetKind::Unknown;
