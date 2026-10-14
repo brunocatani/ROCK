@@ -309,26 +309,7 @@ namespace rock
             _generatedBodyStepDrive.callbackGate());
         updateObjectRest(frame);
         commitHeldPlacement(frame);
-        auto selectedCloseCarTarget = [&](const Hand& hand, const HandFrameInput& handInput) {
-            DynamicWorldCarTarget target{};
-            if (handInput.disabled || hand.isHolding() || !hand.hasSelection()) {
-                return target;
-            }
-            const auto& selection = hand.getSelection();
-            if (selection.isFarSelection || !selection.refr || !fo4vr::isExplodableCar(selection.refr->GetObjectReference())) {
-                return target;
-            }
-            target.ref = selection.refr;
-            target.seedBodyId = selection.bodyId.value;
-            return target;
-        };
-        _dynamicWorldCarCollision.update(
-            frame.bhkWorld,
-            frame.hknpWorld,
-            std::array<DynamicWorldCarTarget, 2>{
-                selectedCloseCarTarget(_rightHand, frame.right),
-                selectedCloseCarTarget(_leftHand, frame.left),
-            });
+        publishHeldCarExclusion(frame.hknpWorld);
         updateHeldMassMovementSlowdown(hknp, frame.deltaSeconds);
         synchronizeContactEvidenceOwnership(rightHandWeaponAuthorityActive, leftSupportGripActive, rightPartGripActive);
 
@@ -600,11 +581,6 @@ namespace rock
             }
             storage_service::shutdown(hknpMenu);
             storage_interaction::shutdown(hknpMenu);
-            if (bhkMenu && hknpMenu) {
-                _dynamicWorldCarCollision.restoreAll(bhkMenu, hknpMenu, "menu-blocked");
-            } else {
-                _dynamicWorldCarCollision.abandon();
-            }
             observeLifecycleFrame(bhkMenu, hknpMenu, api::core::LifecycleReason::MenuBlocked);
             interruptInteractionFrame("menu-blocked");
             return;
@@ -612,7 +588,6 @@ namespace rock
 
         auto* bhk = getPlayerBhkWorld();
         if (!bhk) {
-            _dynamicWorldCarCollision.abandon();
             if (_lifecycle.initialized) {
                 ROCK_LOG_WARN(Update, "bhkWorld became null — shutting down");
                 shutdown();
@@ -638,7 +613,6 @@ namespace rock
         auto* hknp = getHknpWorld(bhk);
         if (!hknp) {
             native_interaction_service::clear(nullptr, nullptr);
-            _dynamicWorldCarCollision.abandon();
             _lifecycle.cachedHknpWorld = nullptr;
             observeLifecycleFrame(bhk, nullptr, api::core::LifecycleReason::WorldUnavailable);
             _equipped.gripResumePending = _equipped.continuityGrip.pending;

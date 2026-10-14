@@ -65,9 +65,15 @@ namespace rock::global_surface_grab_policy
         return released || (!held && !commandOwned);
     }
 
+    // The rows shouldUseFallback admits: dynamic-hand surface contacts.
     [[nodiscard]] inline constexpr std::uint64_t allowedLayerMask() noexcept
     {
-        return collision_layer_policy::
-            buildRockDynamicHandProxyExpectedMask();
+        std::uint64_t mask = 0;
+        for (std::uint32_t layer = 0; layer < collision_layer_policy::FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
+            if (collision_layer_policy::isDynamicHandProxySurfaceLayer(layer)) {
+                mask |= std::uint64_t{ 1 } << layer;
+            }
+        }
+        return mask;
     }
 }

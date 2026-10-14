@@ -30,7 +30,6 @@
 #include "physics-interaction/grab/TouchGrabRuntime.h"
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 #include "physics-interaction/hand/DynamicHandCollision.h"
-#include "physics-interaction/object/DynamicWorldCarCollision.h"
 #include "physics-interaction/contact/GeneratedBodyContactRegistry.h"
 #include "physics-interaction/contact/ContactClock.h"
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
@@ -386,7 +385,6 @@ namespace rock
         void finalizeInteractionFrame(const PhysicsFrameContext& frame,
             RE::hknpWorld* hknp,
             const EquippedWeaponFrameResult& equippedWeaponFrame);
-        void prepareDynamicWorldCarCollisionForGrab(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, RE::TESObjectREFR* ref);
         GrabReleaseContext makeGrabReleaseContext(const Hand& hand, bool isLeft) const;
         GrabSharedObjectContext makeGrabSharedObjectContext(const Hand& hand, bool isLeft) const;
 
@@ -536,6 +534,7 @@ namespace rock
         void clearWeaponHandSuppression(RE::hknpWorld* world, bool isLeft);
         void abandonWeaponHandSuppression();
         void publishWeaponHandExclusion(RE::hknpWorld* world);
+        void publishHeldCarExclusion(RE::hknpWorld* world);
         void updateWeaponHandSuppression(RE::hknpWorld* world, float deltaSeconds);
         void refreshWeaponHandSuppression(RE::hknpWorld* world, bool isLeft);
         [[nodiscard]] bool weaponHandSuppressedFor(bool isLeft, WeaponHandReason reason) const
@@ -1053,7 +1052,6 @@ namespace rock
         }
         TwoHandedGrip _twoHandedGrip;
         DynamicHandCollisionRuntime _dynamicHandCollision{ _contacts.clock };
-        DynamicWorldCarCollisionRuntime _dynamicWorldCarCollision;
         feedback_haptics::FeedbackHaptics _feedbackHaptics;
     };
 }

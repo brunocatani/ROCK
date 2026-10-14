@@ -1553,9 +1553,11 @@ namespace rock
                     havok_runtime::snapshotBody(world, bodyId)),
             };
         }
+        // Cars sit on the clutter rows, whose other bodies the controller
+        // filter removes; only form identity keeps the car an obstacle.
         const bool requiresFormIdentity =
             collision_layer_policy::isPlayerCharacterControllerSupportLayer(layer) ||
-            collision_layer_policy::isDynamicWorldCarLayer(layer);
+            collision_layer_policy::isCarRowLayer(layer);
         if (!bhkWorld || !world || !requiresFormIdentity) {
             return {};
         }

@@ -571,7 +571,6 @@ namespace rock
         native_player_collision::publishAuthoredHands(worldValid ? currentHknp : nullptr, {});
         if (worldValid) {
             auto* hknp = getHknpWorld(_lifecycle.cachedBhkWorld);
-            _dynamicWorldCarCollision.restoreAll(_lifecycle.cachedBhkWorld, hknp, "shutdown");
             _touchGrabRuntime.releaseAll(
                 _lifecycle.cachedBhkWorld,
                 hknp,
@@ -603,7 +602,6 @@ namespace rock
             destroyBodyBoneCollisions(_lifecycle.cachedBhkWorld);
             destroyHandCollisions(_lifecycle.cachedBhkWorld);
         } else {
-            _dynamicWorldCarCollision.abandon();
             _touchGrabRuntime.abandonAll(
                 ::rock::api::touch::TouchGrabReleaseReason::
                     WorldLost);
@@ -717,21 +715,14 @@ namespace rock
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY]);
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY, matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY]);
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY, matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY]);
-        ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER, matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER]);
-        ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER, matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER]);
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::FO4_LAYER_CHARCONTROLLER, matrix[collision_layer_policy::FO4_LAYER_CHARCONTROLLER]);
 
         const bool extensionPairsChanged =
             !collision_layer_policy::rockDynamicExtensionPairsMatch(matrix, native_interaction_service::dynamicObstacleLayers());
-        const bool retiredWeaponHandCollision =
-            native_player_collision::installed();
-        const bool retiredWeaponPairsChanged =
-            !collision_layer_policy::layerPairSymmetricMatches(matrix,
-                collision_layer_policy::ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY,
-                collision_layer_policy::FO4_LAYER_WEAPON, retiredWeaponHandCollision) ||
-            !collision_layer_policy::layerPairSymmetricMatches(matrix,
-                collision_layer_policy::ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY,
-                collision_layer_policy::FO4_LAYER_WEAPON, retiredWeaponHandCollision);
+        // Car rows and retired weapons need the simulation pair filter to
+        // narrow them; without it those proxy pairs stay off.
+        const bool pairFilterInstalled = native_player_collision::installed();
+        const bool pairFilterRowsChanged = !collision_layer_policy::pairFilterRowsMatch(matrix, pairFilterInstalled);
         auto mutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
         collision_layer_policy::applyRockGeneratedLayerPolicies(
             matrix,
@@ -739,17 +730,14 @@ namespace rock
             g_rockConfig.rockWeaponCollisionBlocksProjectiles,
             g_rockConfig.rockWeaponCollisionBlocksSpells,
             native_interaction_service::dynamicObstacleLayers(),
-            retiredWeaponHandCollision);
-        if (extensionPairsChanged || retiredWeaponPairsChanged) {
+            pairFilterInstalled);
+        if (extensionPairsChanged || pairFilterRowsChanged) {
             _dynamicHandCollision.refreshCollisionFilters(world);
-        }
-        if (extensionPairsChanged) {
             _dynamicWeaponCollision.refreshCollisionFilter(world);
             _secondaryDynamicWeaponCollision.refreshCollisionFilter(world);
         }
-        if (retiredWeaponPairsChanged) {
-            ROCK_LOG_INFO(Config, "Retired weapon hand collision: requested={} active={} pairFilter={}",
-                true, retiredWeaponHandCollision, native_player_collision::installed());
+        if (pairFilterRowsChanged) {
+            ROCK_LOG_INFO(Config, "Dynamic proxy car and retired weapon collision: active={}", pairFilterInstalled);
         }
         _layers = {
             .registered = true,

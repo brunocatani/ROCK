@@ -12,6 +12,7 @@
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
 #include "physics-interaction/native/ShellCasingGrace.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 #include <REL/Relocation.h>
 #include <RE/Bethesda/TESObjectREFRs.h>
@@ -49,6 +50,13 @@ namespace rock::native_player_collision
             std::size_t count{ 0 };
         };
         WeaponHandSnapshot s_weaponHands; // Same game publisher and callback gate.
+        struct HeldCarSnapshot
+        {
+            RE::hknpWorld* world{ nullptr };
+            std::array<std::uint32_t, kMaximumHeldCarBodies> bodies{};
+            std::size_t count{ 0 };
+        };
+        HeldCarSnapshot s_heldCars; // Same game publisher and callback gate.
         std::atomic<std::uint64_t> s_weaponHandRejectedPairs{ 0 };
         // Independent game-thread publisher and physics-worker read gate.
         // Player-body refresh must never bypass an active blade exception;
@@ -124,6 +132,39 @@ namespace rock::native_player_collision
                 else if (owner == WeaponOwner::Other) performance_profiler::addCounter(
                     performance_profiler::Counter::NativeWeaponOwnerResolvedOther);
                 return owner;
+            }
+        };
+
+        // Callback-local ownership, as in isLooseWeaponBody; no reference or
+        // scene pointer survives the callback.
+        bool isExplodableCarBody(const havok_runtime::BodySnapshot& body) noexcept
+        {
+            if (!body.valid || !body.ownerNode) return false;
+            __try {
+                auto* ref = RE::TESObjectREFR::FindReferenceFor3D(body.ownerNode);
+                return ref && fo4vr::isExplodableCar(ref->GetObjectReference());
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                return false;
+            }
+        }
+
+        // Car identity of car-row bodies, resolved once per filter invocation.
+        struct CarBatch
+        {
+            struct Entry { BodyIdentity body{}; bool car = false; };
+            std::array<Entry, 16> entries{};
+            std::size_t count = 0;
+
+            bool isCar(const havok_runtime::BodySnapshot& body) noexcept
+            {
+                const auto live = identity(body);
+                for (std::size_t i = 0; i < count; ++i) {
+                    if (matchesLiveBody(entries[i].body, live)) return entries[i].car;
+                }
+                const bool car = isExplodableCarBody(body);
+                // Capacity limits memoization, never the decision.
+                if (count < entries.size()) entries[count++] = { live, car };
+                return car;
             }
         };
 
@@ -319,6 +360,45 @@ namespace rock::native_player_collision
             }
         }
 
+        // Rebuilds every body added, removed or changed between two
+        // publications, after publication and outside the read gate, so pairs
+        // that the new rule excludes drop and pairs it admits form again.
+        template <class Entry, class IdOf>
+        void rebuildChangedBodies(RE::hknpWorld* world, RE::hknpWorld* previousWorld,
+            std::span<const Entry> previous, std::span<const Entry> next, IdOf idOf)
+        {
+            if (!world) return;
+            auto find = [&](std::span<const Entry> entries, std::uint32_t id) -> const Entry* {
+                for (const auto& entry : entries) {
+                    if (idOf(entry) == id) return &entry;
+                }
+                return nullptr;
+            };
+            if (previousWorld == world) {
+                for (const auto& entry : previous) {
+                    const auto* now = find(next, idOf(entry));
+                    if (!now || !(*now == entry)) rebuildBodyIfLive(world, idOf(entry));
+                }
+            }
+            for (const auto& entry : next) {
+                if (previousWorld != world || !find(previous, idOf(entry))) rebuildBodyIfLive(world, idOf(entry));
+            }
+        }
+
+        bool isHeldCarBody(std::uint32_t id) noexcept
+        {
+            const auto end = s_heldCars.bodies.begin() + s_heldCars.count;
+            return std::binary_search(s_heldCars.bodies.begin(), end, id);
+        }
+
+        bool suppressCarRowPair(const BodyPair& pair, PairReads& reads, CarBatch& cars, bool heldCars) noexcept
+        {
+            const auto carRow = classifyCarRowPair(reads.layerA(), reads.layerB());
+            if (carRow.kind == CarRowPairKind::None) return false;
+            const bool held = heldCars && isHeldCarBody(carRow.carIsA ? pair.bodyA : pair.bodyB);
+            return suppressCarRowContact(carRow.kind, cars.isCar(carRow.carIsA ? reads.a() : reads.b()), held);
+        }
+
         struct PlayerPairCounts
         {
             std::uint64_t preserved = 0;
@@ -398,14 +478,12 @@ namespace rock::native_player_collision
             auto lease = s_gate.tryEnterCallback();
             const bool authoredHands = lease && world == s_authoredHands.world && s_authoredHands.count != 0;
             const bool weaponHands = lease && world == s_weaponHands.world && s_weaponHands.count != 0;
+            const bool heldCars = lease && world == s_heldCars.world && s_heldCars.count != 0;
             const bool playerBodies = lease && world == s_snapshot.world && s_snapshot.count != 0;
-            if (!shellGrace && !toolContact && !magazineEjection && !retiredWeapon && !storage &&
-                !authoredHands && !weaponHands && !playerBodies) {
-                profilePairs(world, pairs, nativeAdmitted, performance_profiler::ContactStage::SimulationKept,
-                    performance_profiler::ValueMetric::SimulationPairsKept);
-                return nativeAdmitted;
-            }
 
+            // The car-row rule is always armed: it decides every pair of
+            // ROCK's generated rows with a native clutter-row body.
+            CarBatch cars;
             WeaponOwnerBatch weaponOwners;
             PlayerPairCounts playerCounts;
             std::uint64_t toolRejected = 0;
@@ -419,6 +497,7 @@ namespace rock::native_player_collision
                 if (toolContact && suppressToolContactPair(world, pair, reads)) { ++toolRejected; return true; }
                 if (magazineEjection && suppressMagazineEjectionPair(world, pair, reads)) { ++magazineRejected; return true; }
                 if (retiredWeapon && suppressRetiredWeaponHandPair(reads)) return true;
+                if (suppressCarRowPair(pair, reads, cars, heldCars)) return true;
                 if (storage && !storage_interaction::allowsPair(world, pair.bodyA, reads.layerA(), pair.bodyB, reads.layerB())) return true;
                 if (authoredHands && suppressAuthoredHandPair(pair, reads)) { ++authoredRejected; return true; }
                 if (weaponHands && suppressWeaponHandPair(pair, reads)) { ++weaponHandRejected; return true; }
@@ -613,6 +692,7 @@ namespace rock::native_player_collision
         s_snapshot = {};
         s_authoredHands = {};
         s_weaponHands = {};
+        s_heldCars = {};
         s_toolContactGate.pauseAndWait();
         s_toolContactPair = {};
         s_toolContactRejectedPairs.store(0, std::memory_order_relaxed);
@@ -688,28 +768,33 @@ namespace rock::native_player_collision
             s_weaponHands = next;
         }
         s_gate.resumeCallbacks();
-        // Rebuild every body whose exclusion changed, after publication and
-        // outside the read gate, so pairs already formed with the weapon drop
-        // and pairs excluded until now form again.
-        if (world) {
-            auto findIn = [](const WeaponHandSnapshot& snapshot, std::uint32_t id) -> const WeaponHandBody* {
-                for (std::size_t i = 0; i < snapshot.count; ++i) {
-                    if (snapshot.bodies[i].bodyId == id) return &snapshot.bodies[i];
-                }
-                return nullptr;
-            };
-            if (previous.world == world) {
-                for (std::size_t i = 0; i < previous.count; ++i) {
-                    const auto* now = findIn(next, previous.bodies[i].bodyId);
-                    if (!now || *now != previous.bodies[i]) rebuildBodyIfLive(world, previous.bodies[i].bodyId);
-                }
-            }
-            for (std::size_t i = 0; i < next.count; ++i) {
-                if (!(previous.world == world && findIn(previous, next.bodies[i].bodyId))) rebuildBodyIfLive(world, next.bodies[i].bodyId);
-            }
-        }
+        rebuildChangedBodies<WeaponHandBody>(world, previous.world, std::span(previous.bodies).first(previous.count),
+            std::span(next.bodies).first(next.count), [](const WeaponHandBody& body) { return body.bodyId; });
         ROCK_LOG_DEBUG(Hand, "Weapon-owned hand pair exclusion: bodies={} world={:p} previousRejectedPairs={}",
             next.count, static_cast<void*>(next.world), s_weaponHandRejectedPairs.exchange(0, std::memory_order_relaxed));
+    }
+
+    void publishHeldCars(RE::hknpWorld* world, std::span<const std::uint32_t> bodies)
+    {
+        HeldCarSnapshot next{};
+        if (s_installed && world) {
+            next.world = world;
+            const auto count = (std::min)(bodies.size(), next.bodies.size());
+            std::copy_n(bodies.begin(), count, next.bodies.begin());
+            std::sort(next.bodies.begin(), next.bodies.begin() + count);
+            next.count = static_cast<std::size_t>(std::unique(next.bodies.begin(), next.bodies.begin() + count) - next.bodies.begin());
+        }
+        const auto previous = s_heldCars; // Only this game thread writes it.
+        if (previous.world == next.world && previous.count == next.count &&
+            std::equal(next.bodies.begin(), next.bodies.begin() + next.count, previous.bodies.begin())) return;
+        {
+            auto mutation = s_gate.pauseForMutation();
+            s_heldCars = next;
+        }
+        s_gate.resumeCallbacks();
+        rebuildChangedBodies<std::uint32_t>(world, previous.world, std::span(previous.bodies).first(previous.count),
+            std::span(next.bodies).first(next.count), [](std::uint32_t id) { return id; });
+        ROCK_LOG_DEBUG(Hand, "Held car pair rule: bodies={} world={:p}", next.count, static_cast<void*>(next.world));
     }
 
     bool publishToolContactExclusion(RE::hknpWorld* world, std::uint32_t weaponBody, std::uint32_t targetBody)

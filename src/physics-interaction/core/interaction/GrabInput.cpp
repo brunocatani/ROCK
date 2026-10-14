@@ -11,28 +11,6 @@
 
 namespace rock
 {
-    void PhysicsInteraction::prepareDynamicWorldCarCollisionForGrab(
-        RE::bhkWorld* bhkWorld,
-        RE::hknpWorld* hknpWorld,
-        RE::TESObjectREFR* ref)
-    {
-        if (!ref) {
-            return;
-        }
-        auto* baseObject = ref->GetObjectReference();
-        const bool targetIsCar = fo4vr::isExplodableCar(baseObject);
-        if (!targetIsCar) {
-            return;
-        }
-        const auto decision = car_interaction_policy::evaluateGrab(car_interaction_policy::GrabPolicyInput{
-            .targetIsCar = targetIsCar,
-            .playerInPowerArmor = fo4vr::isInPowerArmor(),
-        });
-        if (decision.allowed) {
-            _dynamicWorldCarCollision.restoreReference(bhkWorld, hknpWorld, ref, "grab-commit");
-        }
-    }
-
     GrabReleaseContext PhysicsInteraction::makeGrabReleaseContext(const Hand& hand, bool isLeft) const
     {
         const Hand& peer = isLeft ? _rightHand : _leftHand;
@@ -1388,7 +1366,6 @@ namespace rock
 
             const auto sharedContext = makeGrabSharedObjectContext(hand, isLeft);
             const bool grabbedFromPullCatchCommit = hand.hasPendingPullCatchCommit();
-            prepareDynamicWorldCarCollisionForGrab(frame.bhkWorld, hknp, hand.getSelection().refr);
             const auto grabResult = hand.grabSelectedObject(hknp,
                 transform,
                 g_rockConfig.rockGrabLinearTau,

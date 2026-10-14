@@ -383,7 +383,6 @@ namespace rock
             commit.phase = PendingForceGrabCommitPhase::AcquireAndCommitExactTarget;
 
             const auto sharedContext = makeGrabSharedObjectContext(hand, commit.isLeft);
-            prepareDynamicWorldCarCollisionForGrab(frame.bhkWorld, frame.hknpWorld, targetRef);
             const bool grabbed = hand.grabSelectedObject(frame.hknpWorld,
                 handInput.rawHandWorld,
                 g_rockConfig.rockGrabLinearTau,

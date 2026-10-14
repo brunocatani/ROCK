@@ -171,6 +171,29 @@ namespace rock
         publishWeaponHandExclusion(world);
     }
 
+    /*
+     * A car a hand holds (power armor) is an ordinary held object for the
+     * car-row pair rule: the dynamic proxies pass through it. Its bodies are
+     * published each frame; the filter rebuilds bodies only on change.
+     */
+    void PhysicsInteraction::publishHeldCarExclusion(RE::hknpWorld* world)
+    {
+        std::array<std::uint32_t, native_player_collision::kMaximumHeldCarBodies> bodies{};
+        std::size_t count = 0;
+        for (const Hand* hand : { &_rightHand, &_leftHand }) {
+            auto* ref = hand->isHolding() ? hand->getHeldRef() : nullptr;
+            if (!ref || !fo4vr::isExplodableCar(ref->GetObjectReference())) {
+                continue;
+            }
+            for (const auto bodyId : hand->getHeldBodyIds()) {
+                if (count < bodies.size()) {
+                    bodies[count++] = bodyId;
+                }
+            }
+        }
+        native_player_collision::publishHeldCars(world, std::span(bodies).first(count));
+    }
+
     void PhysicsInteraction::publishWeaponHandExclusion(RE::hknpWorld* world)
     {
         std::array<native_player_collision::WeaponHandBody, native_player_collision::kMaximumWeaponHandBodies> bodies{};
@@ -364,7 +387,6 @@ namespace rock
         _suppression.nativePlayerRefreshSeconds = kNativePlayerRefreshSeconds;
 
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::NativePlayerRefresh);
-        auto cacheMutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
 
         struct NativePlayerBodyScanContext
         {
@@ -374,13 +396,6 @@ namespace rock
             std::array<std::uint32_t, native_player_collision::kMaximumPlayerBodies> bodyIds{};
             std::uint32_t bodyCount = 0;
             bool overflow = false;
-            RE::NiPoint3 playerPositionGameUnits{};
-            bool playerPositionValid = false;
-            RE::TESObjectREFR* rightHeldRef = nullptr;
-            RE::TESObjectREFR* leftHeldRef = nullptr;
-            std::array<DynamicWorldCarTarget, DynamicWorldCarCollisionRuntime::kMaxTrackedTargets> nearbyCars{};
-            std::uint32_t nearbyCarCount = 0;
-            bool nearbyCarOverflow = false;
             std::array<std::uint32_t, 512> visited{};
 
             bool alreadyVisited(std::uint32_t bodyId)
@@ -408,7 +423,6 @@ namespace rock
             void append(std::uint32_t bodyId)
             {
                 if (alreadyVisited(bodyId)) return;
-                appendNearbyCar(bodyId);
                 if (!self || !self->isNativePlayerCollisionBody(bhk, hknp, bodyId) || contains(bodyId)) {
                     return;
                 }
@@ -418,64 +432,7 @@ namespace rock
                 }
                 bodyIds[bodyCount++] = bodyId;
             }
-
-            void appendNearbyCar(std::uint32_t bodyId)
-            {
-                if (!self || !bhk || !hknp || !playerPositionValid ||
-                    !contact_pipeline_policy::isValidBodyId(bodyId)) {
-                    return;
-                }
-
-                std::uint32_t filterInfo = 0;
-                if (!body_collision::tryReadFilterInfo(hknp, RE::hknpBodyId{ bodyId }, filterInfo)) {
-                    return;
-                }
-                const auto layer = filterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
-                if (layer != collision_layer_policy::FO4_LAYER_CLUTTER &&
-                    layer != collision_layer_policy::FO4_LAYER_CLUTTER_LARGE &&
-                    !collision_layer_policy::isDynamicWorldCarLayer(layer)) {
-                    return;
-                }
-
-                RE::NiTransform bodyWorld{};
-                if (!havok_runtime::tryGetBodyWorldTransform(hknp, RE::hknpBodyId{ bodyId }, bodyWorld)) {
-                    return;
-                }
-                const float dx = bodyWorld.translate.x - playerPositionGameUnits.x;
-                const float dy = bodyWorld.translate.y - playerPositionGameUnits.y;
-                const float dz = bodyWorld.translate.z - playerPositionGameUnits.z;
-                const float distanceSquared = dx * dx + dy * dy + dz * dz;
-                constexpr float radiusSquared =
-                    kNearbyCarCollisionRadiusGameUnits * kNearbyCarCollisionRadiusGameUnits;
-                if (!std::isfinite(distanceSquared) || distanceSquared > radiusSquared) {
-                    return;
-                }
-
-                auto* ref = resolveBodyToRef(bhk, hknp, RE::hknpBodyId{ bodyId });
-                if (!ref || ref == rightHeldRef || ref == leftHeldRef || ref->IsDeleted() || ref->IsDisabled() ||
-                    !fo4vr::isExplodableCar(ref->GetObjectReference())) {
-                    return;
-                }
-                for (std::uint32_t index = 0; index < nearbyCarCount && index < nearbyCars.size(); ++index) {
-                    if (nearbyCars[index].ref == ref) {
-                        return;
-                    }
-                }
-                if (nearbyCarCount >= nearbyCars.size()) {
-                    nearbyCarOverflow = true;
-                    return;
-                }
-                nearbyCars[nearbyCarCount++] = DynamicWorldCarTarget{
-                    .ref = ref,
-                    .seedBodyId = bodyId,
-                };
-            }
         } scanContext{ this, bhk, hknp };
-
-        scanContext.playerPositionValid =
-            character_controller_runtime::tryGetPlayerActorPositionGameUnits(scanContext.playerPositionGameUnits);
-        scanContext.rightHeldRef = _rightHand.isHolding() ? _rightHand.getHeldRef() : nullptr;
-        scanContext.leftHeldRef = _leftHand.isHolding() ? _leftHand.getHeldRef() : nullptr;
 
         auto visitBody = [](std::uint32_t bodyId, void* userData) {
             auto* context = static_cast<NativePlayerBodyScanContext*>(userData);
@@ -507,7 +464,7 @@ namespace rock
         };
 
         {
-            // Freeze membership only during discovery; car synchronization below can mutate it.
+            // Freeze membership only during discovery.
             havok_world_lock::ScopedWorldReadLock readLock(hknp);
             if (auto* player = RE::PlayerCharacter::GetSingleton()) {
                 if (player->currentProcess && player->currentProcess->middleHigh && player->currentProcess->middleHigh->poseBound) {
@@ -516,21 +473,6 @@ namespace rock
             }
             scanNode(scanNode, f4vr::getFirstPersonSkeleton(), 64);
             scanNode(scanNode, f4vr::getWorldRootNode(), 64);
-        }
-
-        if (scanContext.playerPositionValid) {
-            _dynamicWorldCarCollision.synchronizeNearbyTargets(
-                bhk,
-                hknp,
-                std::span<const DynamicWorldCarTarget>{ scanContext.nearbyCars.data(), scanContext.nearbyCarCount });
-        }
-
-        if (scanContext.nearbyCarOverflow) {
-            ROCK_LOG_SAMPLE_WARN(Hand,
-                5000,
-                "Nearby car collision target capacity exceeded; keeping first {} cars within {:.0f} game units",
-                scanContext.nearbyCars.size(),
-                kNearbyCarCollisionRadiusGameUnits);
         }
 
         if (scanContext.overflow && !_suppression.nativePlayerOverflowLogged) {

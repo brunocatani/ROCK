@@ -25,7 +25,7 @@ int main() {
     using native_player_collision::suppressAuthoredHandWorldPair;
     assert(suppressAuthoredHandWorldPair(original,original,FO4_LAYER_STATIC));
     assert(suppressAuthoredHandWorldPair(original,original,FO4_LAYER_ANIMSTATIC));
-    for(auto layer:{ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY,ROCK_LAYER_WEAPON,FO4_LAYER_BIPED_NO_CC,ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER,FO4_LAYER_CLUTTER})assert(!suppressAuthoredHandWorldPair(original,original,layer));
+    for(auto layer:{ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY,ROCK_LAYER_WEAPON,FO4_LAYER_BIPED_NO_CC,FO4_LAYER_CLUTTER_LARGE,FO4_LAYER_CLUTTER})assert(!suppressAuthoredHandWorldPair(original,original,layer));
     assert(!suppressAuthoredHandWorldPair(original,reused,FO4_LAYER_STATIC));
     assert(!suppressAuthoredHandWorldPair({},original,FO4_LAYER_STATIC));
 }

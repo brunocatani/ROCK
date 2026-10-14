@@ -132,8 +132,7 @@ int main()
     static_assert(muteShellPair(ROCK_LAYER_BODY, FO4_LAYER_SHELLCASING));
     static_assert(!muteShellPair(FO4_LAYER_SHELLCASING, FO4_LAYER_STATIC));
     static_assert(!muteShellPair(FO4_LAYER_SHELLCASING, FO4_LAYER_CLUTTER));
-    static_assert(!muteShellPair(FO4_LAYER_SHELLCASING, ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER));
-    static_assert(!muteShellPair(FO4_LAYER_SHELLCASING, ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER));
+    static_assert(!muteShellPair(FO4_LAYER_SHELLCASING, FO4_LAYER_CLUTTER_LARGE));
     static_assert(!muteShellPair(ROCK_LAYER_DYNAMIC_WEAPON_PROXY, FO4_LAYER_STATIC));
     static_assert(!muteShellPair(ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, FO4_LAYER_STATIC));
     using namespace rock::dynamic_weapon_collision_policy;
@@ -262,7 +261,7 @@ int main()
             for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
                 ok &= !maskEnablesLayer(matrix[layer], kUnusedLayer);
             }
-            ok &= matrix[ROCK_LAYER_DYNAMIC_WEAPON_PROXY] == buildRockDynamicWeaponProxyExpectedMask(npc);
+            ok &= matrix[ROCK_LAYER_DYNAMIC_WEAPON_PROXY] == buildRockDynamicWeaponProxyExpectedMask(npc, true);
             // Second weapon: weapon-on-weapon and world, never hands, body or itself.
             ok &= matrix[ROCK_LAYER_SECONDARY_WEAPON] == buildRockSecondaryWeaponExpectedMask(false, false);
             ok &= layerPairSymmetricMatches(matrix.data(), ROCK_LAYER_SECONDARY_WEAPON, ROCK_LAYER_WEAPON, true);
@@ -272,15 +271,20 @@ int main()
                      FO4_LAYER_CHARCONTROLLER })
                 ok &= layerPairSymmetricMatches(matrix.data(), ROCK_LAYER_SECONDARY_WEAPON, excluded, false);
             // Second weapon proxy: the two held guns stop against each other.
-            ok &= matrix[ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY] == buildRockSecondaryDynamicWeaponProxyExpectedMask(npc);
+            ok &= matrix[ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY] == buildRockSecondaryDynamicWeaponProxyExpectedMask(npc, true);
             for (const auto included : { ROCK_LAYER_DYNAMIC_WEAPON_PROXY, FO4_LAYER_STATIC,
-                     ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY })
+                     ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY, FO4_LAYER_CLUTTER })
                 ok &= layerPairSymmetricMatches(matrix.data(), ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY, included, true);
             for (const auto excluded : { ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY, ROCK_LAYER_WEAPON, ROCK_LAYER_SECONDARY_WEAPON,
-                     ROCK_LAYER_HAND, ROCK_LAYER_BODY, FO4_LAYER_CLUTTER, FO4_LAYER_CHARCONTROLLER })
+                     ROCK_LAYER_HAND, ROCK_LAYER_BODY, FO4_LAYER_CHARCONTROLLER })
                 ok &= layerPairSymmetricMatches(matrix.data(), ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY, excluded, false);
             ok &= matrix[ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY] == buildRockDynamicHandProxyExpectedMask(false, npc, true);
             ok &= matrix[ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY] == buildRockDynamicHandProxyExpectedMask(true, npc, true);
+            // With the pair filter every proxy reaches the car rows.
+            ok &= pairFilterRowsMatch(matrix.data(), true);
+            // Without it the proxies stay off them, and off the weapon row.
+            applyRockGeneratedLayerPolicies(matrix.data(), true, false, false, npc, false);
+            ok &= pairFilterRowsMatch(matrix.data(), false);
         }
     }
     ok &= !rock::collision_layer_policy::maskEnablesLayer(
@@ -289,12 +293,13 @@ int main()
     ok &= !rock::collision_layer_policy::maskEnablesLayer(
         dynamicWeaponMask,
         rock::collision_layer_policy::FO4_LAYER_CLUTTER_LARGE);
+    constexpr auto dynamicWeaponCarMask = rock::collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask(0, true);
     ok &= rock::collision_layer_policy::maskEnablesLayer(
-        dynamicWeaponMask,
-        rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER);
+        dynamicWeaponCarMask,
+        rock::collision_layer_policy::FO4_LAYER_CLUTTER);
     ok &= rock::collision_layer_policy::maskEnablesLayer(
-        dynamicWeaponMask,
-        rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER);
+        dynamicWeaponCarMask,
+        rock::collision_layer_policy::FO4_LAYER_CLUTTER_LARGE);
 
     constexpr auto rightHandMask =
         rock::collision_layer_policy::buildRockDynamicHandProxyExpectedMask(

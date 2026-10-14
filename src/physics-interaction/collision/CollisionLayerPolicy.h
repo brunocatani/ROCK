@@ -63,26 +63,19 @@ namespace rock::collision_layer_policy
     inline constexpr std::uint32_t ROCK_LAYER_BODY = 47;
     /*
      * Dynamic hand proxy bodies live on their own extended row so they collide
-     * with static world-surface layers and explicitly tagged car bodies, plus
-     * layer 33 when experimental NPC dynamic collisions are enabled.
-     * Native clutter stays excluded: car identity is carried by the dedicated
-     * rows below, never inferred from the shared clutter layers in the solver.
+     * with static world-surface layers and explodable cars, plus layer 33 when
+     * experimental NPC dynamic collisions are enabled. Cars keep their native
+     * clutter rows; the simulation pair filter admits a proxy pair on those
+     * rows only for an explodable car (isCarRowLayer), never other clutter.
      * The proxy is a solver-side visual-stop driver, not ordinary generated
      * gameplay contact evidence. A separate bounded callback channel may use
      * its palm/fingertip pairs for provider-scoped fixed-surface latches.
      */
     inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY = 48;
-    /*
-     * ExplodableCar movable statics temporarily move onto one of these rows
-     * while a close hand selection owns them. Keeping separate rows preserves
-     * the native CLUTTER vs CLUTTER_LARGE collision contracts while exposing
-     * only those tagged bodies to the dynamic-hand solver proxy.
-     */
-    inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER = 49;
-    inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER = 50;
+    // Rows 49 and 50 held tagged cars; retired, nothing creates bodies on them.
     /*
      * The dynamic weapon proxy is deliberately limited to solver obstacles:
-     * static world surfaces, explicitly tagged ExplodableCar bodies, and
+     * static world surfaces, explodable cars, and
      * optionally native layer-33 NPC bodies.
      * Layer-44 generated hulls remain the sole weapon contact/evidence path
      * for hands, actors, projectiles, and ordinary dynamic props.
@@ -126,8 +119,7 @@ namespace rock::collision_layer_policy
     inline constexpr std::uint32_t FO4_LAYER_VANILLA_CONFIGURED_COUNT = 47;
     inline constexpr std::uint32_t FO4_LAYER_MATRIX_ADDRESSABLE_COUNT = 64;
 
-    // Generated player tools/proxies only: the tagged car rows are real world
-    // objects and must remain eligible for native weapon hits and sound.
+    // Generated player tools/proxies only.
     inline constexpr bool isRockGeneratedColliderLayer(std::uint32_t layer)
     {
         return layer == ROCK_LAYER_HAND || layer == ROCK_LAYER_WEAPON ||
@@ -166,40 +158,21 @@ namespace rock::collision_layer_policy
         case FO4_LAYER_DEBRIS_LARGE:
         case FO4_LAYER_SHELLCASING:
         case FO4_LAYER_CLUTTER_LARGE:
-        case ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER:
-        case ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER:
             return true;
         default:
             return false;
         }
     }
 
-    inline constexpr bool isDynamicWorldCarLayer(std::uint32_t layer)
+    /*
+     * ExplodableCar movable statics keep their native clutter rows. Dynamic
+     * hand and weapon proxies collide with these rows only through the
+     * simulation pair filter, which keeps such a pair only for an explodable
+     * car no hand holds, so a proxy contact on these rows is a car.
+     */
+    inline constexpr bool isCarRowLayer(std::uint32_t layer)
     {
-        return layer == ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER ||
-               layer == ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER;
-    }
-
-    inline constexpr std::uint32_t dynamicWorldCarLayerForNativeLayer(std::uint32_t layer)
-    {
-        if (layer == FO4_LAYER_CLUTTER) {
-            return ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER;
-        }
-        if (layer == FO4_LAYER_CLUTTER_LARGE) {
-            return ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER;
-        }
-        return FO4_LAYER_UNIDENTIFIED;
-    }
-
-    inline constexpr std::uint32_t nativeLayerForDynamicWorldCarLayer(std::uint32_t layer)
-    {
-        if (layer == ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER) {
-            return FO4_LAYER_CLUTTER;
-        }
-        if (layer == ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER) {
-            return FO4_LAYER_CLUTTER_LARGE;
-        }
-        return FO4_LAYER_UNIDENTIFIED;
+        return layer == FO4_LAYER_CLUTTER || layer == FO4_LAYER_CLUTTER_LARGE;
     }
 
     inline constexpr bool isActorOrBipedLayer(std::uint32_t layer)
@@ -240,7 +213,7 @@ namespace rock::collision_layer_policy
         // surface-grab and weapon-bracing eligibility separate. The other
         // held weapon's proxy is an obstacle like a wall: a proxy never
         // contacts its own row, so this only ever matches the peer.
-        return isWorldSurfaceLayer(layer) || isDynamicWorldCarLayer(layer) ||
+        return isWorldSurfaceLayer(layer) || isCarRowLayer(layer) ||
                layer == FO4_LAYER_BIPED_NO_CC || layer == ROCK_LAYER_PASSIVE_OBSTACLE ||
                isDynamicWeaponProxyLayer(layer);
     }
@@ -267,7 +240,7 @@ namespace rock::collision_layer_policy
 
     inline constexpr bool isDynamicHandProxySurfaceLayer(std::uint32_t layer)
     {
-        return isWorldSurfaceLayer(layer) || isDynamicWorldCarLayer(layer);
+        return isWorldSurfaceLayer(layer) || isCarRowLayer(layer);
     }
 
     /*
@@ -523,6 +496,27 @@ namespace rock::collision_layer_policy
         return true;
     }
 
+    /*
+     * Matrix pairs that exist only while ROCK's simulation pair filter is
+     * installed, because only it can narrow them: every dynamic proxy against
+     * the car rows (explodable cars only) and the hand proxies against the
+     * shared weapon row (fixed retired weapons only).
+     */
+    inline constexpr bool pairFilterRowsMatch(const std::uint64_t* matrix, bool pairFilterInstalled)
+    {
+        if (!matrix) return false;
+        constexpr std::uint32_t proxies[] = { ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY,
+            ROCK_LAYER_DYNAMIC_WEAPON_PROXY, ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY };
+        constexpr std::uint32_t carRows[] = { FO4_LAYER_CLUTTER, FO4_LAYER_CLUTTER_LARGE };
+        for (const auto proxy : proxies) {
+            for (const auto row : carRows) {
+                if (!layerPairSymmetricMatches(matrix, proxy, row, pairFilterInstalled)) return false;
+            }
+        }
+        return layerPairSymmetricMatches(matrix, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, FO4_LAYER_WEAPON, pairFilterInstalled) &&
+               layerPairSymmetricMatches(matrix, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY, FO4_LAYER_WEAPON, pairFilterInstalled);
+    }
+
     inline void applyRockHandLayerPolicy(std::uint64_t* matrix, bool includeStaticWorld)
     {
         applyLayerExpectedMask(matrix, ROCK_LAYER_HAND, buildRockHandExpectedMask(includeStaticWorld));
@@ -536,16 +530,15 @@ namespace rock::collision_layer_policy
     inline constexpr std::uint64_t buildRockDynamicHandProxyExpectedMask(
         bool isLeft = false,
         std::uint64_t extensionObstacleLayers = 0,
-        bool retiredWeaponHandCollision = false)
+        bool pairFilterInstalled = false)
     {
         std::uint64_t mask = 0;
         for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
-            if (isWorldSurfaceLayer(layer)) {
+            // The car rows only with the pair filter, which keeps cars alone.
+            if (isWorldSurfaceLayer(layer) || (pairFilterInstalled && isCarRowLayer(layer))) {
                 mask = withLayer(mask, layer);
             }
         }
-        mask = withLayer(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER);
-        mask = withLayer(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER);
         mask = withLayer(
             mask,
             isLeft ? ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY :
@@ -555,7 +548,7 @@ namespace rock::collision_layer_policy
         mask = withLayer(mask, ROCK_LAYER_STORED_DISPLAY);
         // The simulation-pair filter admits only fixed world WEAP bodies on
         // this shared native row. Dynamic and actor-owned weapons stay excluded.
-        if (retiredWeaponHandCollision) {
+        if (pairFilterInstalled) {
             mask = withLayer(mask, FO4_LAYER_WEAPON);
         }
         mask |= extensionObstacleLayers & kOptionalObstacleLayers;
@@ -563,11 +556,12 @@ namespace rock::collision_layer_policy
     }
 
     inline constexpr std::uint64_t buildRockDynamicWeaponProxyExpectedMask(
-        std::uint64_t extensionObstacleLayers = 0)
+        std::uint64_t extensionObstacleLayers = 0,
+        bool pairFilterInstalled = false)
     {
         std::uint64_t mask = 0;
         for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
-            if (isWorldSurfaceLayer(layer) || isDynamicWorldCarLayer(layer)) {
+            if (isWorldSurfaceLayer(layer) || (pairFilterInstalled && isCarRowLayer(layer))) {
                 mask = withLayer(mask, layer);
             }
         }
@@ -581,98 +575,41 @@ namespace rock::collision_layer_policy
     // The primary contract with the peer bit swapped: each proxy row names
     // the other, so neither row write depends on the order they are applied.
     inline constexpr std::uint64_t buildRockSecondaryDynamicWeaponProxyExpectedMask(
-        std::uint64_t extensionObstacleLayers = 0)
+        std::uint64_t extensionObstacleLayers = 0,
+        bool pairFilterInstalled = false)
     {
-        return withLayer(withoutLayer(buildRockDynamicWeaponProxyExpectedMask(extensionObstacleLayers),
+        return withLayer(withoutLayer(buildRockDynamicWeaponProxyExpectedMask(extensionObstacleLayers, pairFilterInstalled),
             ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY), ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
-    }
-
-    inline constexpr std::uint64_t buildRockDynamicWorldCarExpectedMask(
-        std::uint64_t nativeSourceMask,
-        std::uint32_t nativeSourceLayer)
-    {
-        if (nativeSourceLayer != FO4_LAYER_CLUTTER && nativeSourceLayer != FO4_LAYER_CLUTTER_LARGE) {
-            return 0;
-        }
-
-        /*
-         * The source clutter rows have already been touched symmetrically by
-         * ROCK's generated hand/weapon/body policies. Preserve only vanilla
-         * row semantics here; inheriting those generated bits would make the
-         * body colliders push cars.
-         */
-        std::uint64_t mask = nativeSourceMask & allVanillaConfiguredLayerBits();
-        mask = withoutLayer(mask, ROCK_LAYER_HAND);
-        mask = withoutLayer(mask, ROCK_LAYER_WEAPON);
-        mask = withoutLayer(mask, ROCK_LAYER_BODY);
-        mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER);
-        mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER);
-        mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY);
-        mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
-        mask = withoutLayer(mask, ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY);
-        mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
-
-        const auto sameCarLayer = dynamicWorldCarLayerForNativeLayer(nativeSourceLayer);
-        const auto peerNativeLayer = nativeSourceLayer == FO4_LAYER_CLUTTER ? FO4_LAYER_CLUTTER_LARGE : FO4_LAYER_CLUTTER;
-        const auto peerCarLayer = dynamicWorldCarLayerForNativeLayer(peerNativeLayer);
-        if (maskEnablesLayer(nativeSourceMask, nativeSourceLayer)) {
-            mask = withLayer(mask, sameCarLayer);
-        }
-        if (maskEnablesLayer(nativeSourceMask, peerNativeLayer)) {
-            mask = withLayer(mask, peerCarLayer);
-        }
-
-        mask = withLayer(mask, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY);
-        mask = withLayer(mask, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
-        mask = withLayer(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
-        mask = withLayer(mask, ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY);
-        mask = withLayer(mask, FO4_LAYER_CHARCONTROLLER);
-        return mask;
     }
 
     inline void applyRockDynamicHandProxyLayerPolicies(
         std::uint64_t* matrix,
         std::uint64_t extensionObstacleLayers = 0,
-        bool retiredWeaponHandCollision = false)
+        bool pairFilterInstalled = false)
     {
         applyLayerExpectedMask(
             matrix,
             ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY,
-            buildRockDynamicHandProxyExpectedMask(false, extensionObstacleLayers, retiredWeaponHandCollision));
+            buildRockDynamicHandProxyExpectedMask(false, extensionObstacleLayers, pairFilterInstalled));
         applyLayerExpectedMask(
             matrix,
             ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY,
-            buildRockDynamicHandProxyExpectedMask(true, extensionObstacleLayers, retiredWeaponHandCollision));
+            buildRockDynamicHandProxyExpectedMask(true, extensionObstacleLayers, pairFilterInstalled));
     }
 
     inline void applyRockDynamicWeaponProxyLayerPolicy(
         std::uint64_t* matrix,
-        std::uint64_t extensionObstacleLayers = 0)
+        std::uint64_t extensionObstacleLayers = 0,
+        bool pairFilterInstalled = false)
     {
         applyLayerExpectedMask(
             matrix,
             ROCK_LAYER_DYNAMIC_WEAPON_PROXY,
-            buildRockDynamicWeaponProxyExpectedMask(extensionObstacleLayers));
+            buildRockDynamicWeaponProxyExpectedMask(extensionObstacleLayers, pairFilterInstalled));
         applyLayerExpectedMask(
             matrix,
             ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY,
-            buildRockSecondaryDynamicWeaponProxyExpectedMask(extensionObstacleLayers));
-    }
-
-    inline void applyRockDynamicWorldCarLayerPolicies(std::uint64_t* matrix)
-    {
-        if (!matrix) {
-            return;
-        }
-
-        const auto nativeClutterMask = matrix[FO4_LAYER_CLUTTER];
-        const auto nativeLargeClutterMask = matrix[FO4_LAYER_CLUTTER_LARGE];
-        applyLayerExpectedMask(matrix,
-            ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER,
-            buildRockDynamicWorldCarExpectedMask(nativeClutterMask, FO4_LAYER_CLUTTER));
-        applyLayerExpectedMask(matrix,
-            ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER,
-            buildRockDynamicWorldCarExpectedMask(nativeLargeClutterMask, FO4_LAYER_CLUTTER_LARGE));
+            buildRockSecondaryDynamicWeaponProxyExpectedMask(extensionObstacleLayers, pairFilterInstalled));
     }
 
     inline void applyRockGeneratedLayerPolicies(
@@ -681,7 +618,7 @@ namespace rock::collision_layer_policy
         bool weaponBlocksProjectiles,
         bool weaponBlocksSpells,
         std::uint64_t extensionObstacleLayers = 0,
-        bool retiredWeaponHandCollision = false)
+        bool pairFilterInstalled = false)
     {
         /*
          * Runtime registration uses one aggregate helper because layer 47 is an
@@ -698,9 +635,8 @@ namespace rock::collision_layer_policy
             ROCK_LAYER_SECONDARY_WEAPON,
             buildRockSecondaryWeaponExpectedMask(weaponBlocksProjectiles, weaponBlocksSpells));
         applyRockBodyLayerPolicy(matrix);
-        applyRockDynamicHandProxyLayerPolicies(matrix, extensionObstacleLayers, retiredWeaponHandCollision);
-        applyRockDynamicWeaponProxyLayerPolicy(matrix, extensionObstacleLayers);
-        applyRockDynamicWorldCarLayerPolicies(matrix);
+        applyRockDynamicHandProxyLayerPolicies(matrix, extensionObstacleLayers, pairFilterInstalled);
+        applyRockDynamicWeaponProxyLayerPolicy(matrix, extensionObstacleLayers, pairFilterInstalled);
         applyLayerExpectedMask(matrix, ROCK_LAYER_STORED_DISPLAY,
             (std::uint64_t{1}<<ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY) | (std::uint64_t{1}<<ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY));
         applyLayerExpectedMask(matrix, ROCK_LAYER_PASSIVE_OBSTACLE, maskEnablesLayer(extensionObstacleLayers, ROCK_LAYER_PASSIVE_OBSTACLE) ?

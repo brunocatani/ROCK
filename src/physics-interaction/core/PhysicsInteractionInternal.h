@@ -136,7 +136,6 @@ namespace rock
             "Crafting Menu",
             "CraftingMenu",
         };
-        inline constexpr float kNearbyCarCollisionRadiusGameUnits = 4096.0f;
 
         inline std::atomic<bool> s_weaponCollisionWorkbenchExitMenuSinkRegistered{ false };
         inline std::atomic<bool> s_weaponCollisionWorkbenchExitMenuSinkMissingUILogged{ false };

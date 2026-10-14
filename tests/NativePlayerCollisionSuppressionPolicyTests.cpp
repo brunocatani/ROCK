@@ -191,7 +191,7 @@ int main()
     for (auto layer : { FO4_LAYER_STATIC, FO4_LAYER_ANIMSTATIC, FO4_LAYER_CLUTTER,
             FO4_LAYER_CLUTTER_LARGE, FO4_LAYER_PROPS, ROCK_LAYER_HAND, ROCK_LAYER_WEAPON,
             ROCK_LAYER_BODY, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY,
-            ROCK_LAYER_DYNAMIC_WEAPON_PROXY, ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER }) {
+            ROCK_LAYER_DYNAMIC_WEAPON_PROXY }) {
         ok &= expect("native player does not duplicate scenery or generated-tool contact",
             suppressPhysicalPair(true, false, FO4_LAYER_BIPED, layer));
         ok &= expect("physical filtering is symmetric",
@@ -229,7 +229,7 @@ int main()
         case 701: return ROCK_LAYER_HAND;
         case 702: return FO4_LAYER_BIPED_NO_CC;
         case 703: return FO4_LAYER_STATIC;
-        case 704: return ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER;
+        case 704: return FO4_LAYER_CLUTTER_LARGE;
         default: return FO4_LAYER_WEAPON;
         }
     };
@@ -373,6 +373,29 @@ int main()
         bladeKept == 3 && bladePairs[0].bodyB == 423 && bladePairs[1].bodyB == 101 && bladePairs[2].bodyA == 751);
     ok &= expect("blade filtering leaves the unadmitted native batch tail untouched",
         bladePairs[5].bodyA == 750 && bladePairs[5].bodyB == 422);
+
+    // Car rows: proxies stop only against unheld cars; keyframed ROCK rows
+    // pass through unheld cars only; every other pair is left to the rows.
+    {
+        const auto proxyPair = classifyCarRowPair(ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY, FO4_LAYER_CLUTTER);
+        ok &= expect("hand proxy against a car row", proxyPair.kind == CarRowPairKind::Proxy && !proxyPair.carIsA);
+        const auto weaponProxyPair = classifyCarRowPair(FO4_LAYER_CLUTTER_LARGE, ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY);
+        ok &= expect("weapon proxy against a car row", weaponProxyPair.kind == CarRowPairKind::Proxy && weaponProxyPair.carIsA);
+        for (const auto rockLayer : { ROCK_LAYER_HAND, ROCK_LAYER_WEAPON, ROCK_LAYER_BODY, ROCK_LAYER_SECONDARY_WEAPON }) {
+            ok &= expect("keyframed ROCK row against a car row", classifyCarRowPair(rockLayer, FO4_LAYER_CLUTTER).kind == CarRowPairKind::Keyframed);
+        }
+        for (const auto other : { FO4_LAYER_BIPED, FO4_LAYER_CHARCONTROLLER, FO4_LAYER_STATIC, FO4_LAYER_CLUTTER, ROCK_LAYER_STORED_DISPLAY }) {
+            ok &= expect("native and other pairs with a car row are not car-row pairs", classifyCarRowPair(other, FO4_LAYER_CLUTTER).kind == CarRowPairKind::None);
+        }
+        ok &= expect("proxy without a car row is not a car-row pair",
+            classifyCarRowPair(ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, FO4_LAYER_STATIC).kind == CarRowPairKind::None);
+        ok &= expect("proxies stop against unheld cars only",
+            !suppressCarRowContact(CarRowPairKind::Proxy, true, false) && suppressCarRowContact(CarRowPairKind::Proxy, false, false) &&
+            suppressCarRowContact(CarRowPairKind::Proxy, true, true));
+        ok &= expect("keyframed rows pass through unheld cars only",
+            suppressCarRowContact(CarRowPairKind::Keyframed, true, false) && !suppressCarRowContact(CarRowPairKind::Keyframed, false, false) &&
+            !suppressCarRowContact(CarRowPairKind::Keyframed, true, true));
+    }
 
     return ok ? 0 : 1;
 }

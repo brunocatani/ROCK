@@ -29,13 +29,4 @@ namespace rock::car_interaction_policy
         }
         return GrabPolicyDecision{ .allowed = true, .reason = "power-armor-car-body" };
     }
-
-    inline constexpr GrabPolicyDecision evaluateSelection(const GrabPolicyInput& input, bool farSelection)
-    {
-        const auto grabDecision = evaluateGrab(input);
-        if (!grabDecision.allowed && input.targetIsCar && !farSelection) {
-            return GrabPolicyDecision{ .allowed = true, .reason = "car-close-dynamic-world-collision" };
-        }
-        return grabDecision;
-    }
 }

@@ -63,7 +63,7 @@ namespace rock::native_player_collision
     inline constexpr bool isDuplicatePhysicalContactLayer(std::uint32_t layer)
     {
         using namespace collision_layer_policy;
-        return isWorldSurfaceLayer(layer) || isDynamicWorldCarLayer(layer) ||
+        return isWorldSurfaceLayer(layer) ||
                layer == FO4_LAYER_CLUTTER || layer == FO4_LAYER_DEBRIS_SMALL ||
                layer == FO4_LAYER_DEBRIS_LARGE || layer == FO4_LAYER_SHELLCASING ||
                layer == FO4_LAYER_CLUTTER_LARGE || layer == FO4_LAYER_PROPS ||
@@ -84,6 +84,53 @@ namespace rock::native_player_collision
                (looseWeaponContact &&
                    ((playerA && layerB == collision_layer_policy::FO4_LAYER_WEAPON) ||
                        (playerB && layerA == collision_layer_policy::FO4_LAYER_WEAPON)));
+    }
+
+    /*
+     * Explodable cars are heavy world obstacles on the native clutter rows.
+     * The dynamic hand and weapon proxies stop against them; ROCK's keyframed
+     * hands, weapon hulls and body colliders have infinite mass and would
+     * shove them, so they pass through. A car a hand holds (power armor) is an
+     * ordinary held object: the proxies pass through it and the keyframed
+     * rows keep their native pairs.
+     */
+    enum class CarRowPairKind : std::uint8_t { None, Proxy, Keyframed };
+
+    struct CarRowPair
+    {
+        CarRowPairKind kind = CarRowPairKind::None;
+        bool carIsA = false;
+    };
+
+    inline constexpr CarRowPairKind carRowPeerKind(std::uint32_t layer)
+    {
+        using namespace collision_layer_policy;
+        if (isDynamicHandInteractionLayer(layer) || isDynamicWeaponProxyLayer(layer)) return CarRowPairKind::Proxy;
+        if (layer == ROCK_LAYER_HAND || layer == ROCK_LAYER_WEAPON || layer == ROCK_LAYER_BODY ||
+            layer == ROCK_LAYER_SECONDARY_WEAPON) return CarRowPairKind::Keyframed;
+        return CarRowPairKind::None;
+    }
+
+    // A pair of a car-row body with one of ROCK's generated rows, and which
+    // side the car-row body is.
+    inline constexpr CarRowPair classifyCarRowPair(std::uint32_t layerA, std::uint32_t layerB)
+    {
+        using namespace collision_layer_policy;
+        if (isCarRowLayer(layerA)) return { carRowPeerKind(layerB), true };
+        if (isCarRowLayer(layerB)) return { carRowPeerKind(layerA), false };
+        return {};
+    }
+
+    inline constexpr bool suppressCarRowContact(CarRowPairKind kind, bool explodableCar, bool held)
+    {
+        switch (kind) {
+        case CarRowPairKind::Proxy:
+            return !explodableCar || held;
+        case CarRowPairKind::Keyframed:
+            return explodableCar && !held;
+        default:
+            return false;
+        }
     }
 
     /*
