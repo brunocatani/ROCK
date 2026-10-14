@@ -286,7 +286,7 @@ namespace rock::storage_interaction
             !frik_visual_authority::tryGetTrackedHandTransform(left?frik_visual_authority::Hand::Left:frik_visual_authority::Hand::Right,
                 frik_visual_authority::TrackedHandKind::Wand,controllerWorld) || !finiteNiTransform(controllerWorld) ||
             !nodes || !nodes->roomnode || !finiteNiTransform(nodes->roomnode->world)) return api::Status::NotReady;
-        const auto palmWorld=computeGrabLegacyPalmPivotAWorldFromHandBasis(tracked,left);
+        const auto palmWorld=computeGrabPalmPointWorldFromHandBasis(tracked,left);
         const auto palm=transform_math::worldPointToLocal(node->world,palmWorld);
         const auto controller=transform_math::worldPointToLocal(node->world,controllerWorld.translate);
         const auto tracking=transform_math::worldPointToLocal(nodes->roomnode->world,controllerWorld.translate)*nodes->roomnode->world.scale;
@@ -299,7 +299,7 @@ namespace rock::storage_interaction
             AuthoredWeaponGripPose pose; std::uint64_t sequence{};
             const auto nativeRole=role==Role::Firing?loose_weapon_authored_grab_policy::Role::Firing:loose_weapon_authored_grab_policy::Role::Support;
             if(!loose_weapon_grip_zone::tryResolveAuthoredGrabPoseForModel(left,weapon,node,nativeRole,pose,sequence)) continue;
-            const auto grip=computeGrabLegacyPalmPivotAWorldFromHandBasis(pose.handWeaponLocal,left);
+            const auto grip=computeGrabPalmPointWorldFromHandBasis(pose.handWeaponLocal,left);
             const auto delta=palm-grip;
             const float distance=std::sqrt(delta.x*delta.x+delta.y*delta.y+delta.z*delta.z)*node->world.scale;
             const float radius=role==Role::Firing?equipped_weapon_handling_runtime::current().firingGripReattachCylinderRadiusGameUnits:g_rockConfig.rockWeaponInteractionProbeRadius;

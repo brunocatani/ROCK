@@ -159,7 +159,7 @@ namespace rock
             AuthoredWeaponGripPose pose{};
             if (!captureDropGripPose(carrierLeft, pose)) return reject("firing-pose-or-physical-frame-unavailable");
             firing.handWeaponLocal = pose.handWeaponLocal;
-            firing.gripWeaponLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(pose.handWeaponLocal, carrierLeft);
+            firing.gripWeaponLocal = computeGrabPalmPointWorldFromHandBasis(pose.handWeaponLocal, carrierLeft);
             firing.fingerLocals = pose.fingerLocals;
             firing.fingerMask = pose.fingerMask;
             firing.hasFingerPose = true;
@@ -1350,7 +1350,7 @@ namespace rock
         }
 
         const RE::NiPoint3 primaryPalmPos =
-            reuseRightFiringCanonicalGrip ? weaponLocalToWorld(_firing.primaryGripLocal, weaponNode) : computeGrabLegacyPalmPivotAWorldFromHandBasis(primaryTransform, primaryHandIsLeft);
+            reuseRightFiringCanonicalGrip ? weaponLocalToWorld(_firing.primaryGripLocal, weaponNode) : computeGrabPalmPointWorldFromHandBasis(primaryTransform, primaryHandIsLeft);
         if (!keepFiringHold) {
             if (!reuseRightFiringCanonicalGrip) {
                 _firing.primaryGripLocal = worldToWeaponLocal(primaryPalmPos, weaponNode);
@@ -1371,7 +1371,7 @@ namespace rock
         if (firingGripProximityAuthorityEnabled) {
             RE::NiTransform supportTransform{};
             if (tryGetSolverHandTransform(supportHandIsLeft, supportTransform)) {
-                const RE::NiPoint3 supportPalmPos = computeGrabLegacyPalmPivotAWorldFromHandBasis(supportTransform, supportHandIsLeft);
+                const RE::NiPoint3 supportPalmPos = computeGrabPalmPointWorldFromHandBasis(supportTransform, supportHandIsLeft);
                 const RE::NiPoint3 supportToGrip = sub(primaryPalmPos, supportPalmPos);
                 const float supportPalmToGripDistance = std::sqrt(dot(supportToGrip, supportToGrip));
                 if (std::isfinite(supportPalmToGripDistance)) {
@@ -2063,7 +2063,7 @@ namespace rock
             return;
         }
 
-        const auto primaryBeforeRecoil = computeGrabLegacyPalmPivotAWorldFromHandBasis(calibratedPrimaryTransform, primaryHandIsLeft);
+        const auto primaryBeforeRecoil = computeGrabPalmPointWorldFromHandBasis(calibratedPrimaryTransform, primaryHandIsLeft);
         RE::NiTransform recoilDelta{};
         const bool recoilConsumed = consumeOwnedWeaponRecoil(recoilDelta);
         if (recoilConsumed) {
@@ -2082,11 +2082,11 @@ namespace rock
         }
 
         const RE::NiPoint3 primaryController =
-            computeGrabLegacyPalmPivotAWorldFromHandBasis(
+            computeGrabPalmPointWorldFromHandBasis(
                 calibratedPrimaryTransform,
                 primaryHandIsLeft);
         const RE::NiPoint3 supportController =
-            computeGrabLegacyPalmPivotAWorldFromHandBasis(
+            computeGrabPalmPointWorldFromHandBasis(
                 calibratedSupportTransform,
                 supportHandIsLeft);
 
@@ -2584,7 +2584,7 @@ namespace rock
             // Use ROCK's controller aim, as the same-frame Weapon root can
             // contain cycling animation. Retain the acquired point and add
             // this frame's recoil once before presenting either hand.
-            transferredWeaponWorld.translate += computeGrabLegacyPalmPivotAWorldFromHandBasis(physicalHand, false) -
+            transferredWeaponWorld.translate += computeGrabPalmPointWorldFromHandBasis(physicalHand, false) -
                 transform_math::localPointToWorld(transferredWeaponWorld, _firing.primaryGripLocal);
             RE::NiTransform recoilDelta{};
             if (consumeOwnedWeaponRecoil(recoilDelta)) {
@@ -2732,7 +2732,7 @@ namespace rock
             _firing.hasRightCanonicalHandWeaponLocal && _firing.rightCanonicalWeaponNode == weaponNode &&
             _firing.rightCanonicalGenerationKey == generation && _firing.rightFingerLocalTransformMask == 0x7FFFu;
         const bool current = candidate.weaponNode == weaponNode && candidate.weaponGenerationKey == generation;
-        const auto supportPalm = computeGrabLegacyPalmPivotAWorldFromHandBasis(candidate.leftHandWeaponLocal, true);
+        const auto supportPalm = computeGrabPalmPointWorldFromHandBasis(candidate.leftHandWeaponLocal, true);
         const auto delta = supportPalm - _firing.rightCanonicalGripWeaponLocal;
         const float separation = weaponNode ? std::sqrt(dot(delta, delta)) * std::abs(weaponNode->world.scale) : 0.0f;
         return policy::arrangement(firingReady, current && candidate.valid,
@@ -3209,7 +3209,7 @@ namespace rock
 
         const auto arrangement = authoredGripArrangement(weaponNode, decision.weaponGenerationKey);
         const bool sharedFiringZone = loose_weapon_authored_grab_policy::sharedFiringZone(arrangement);
-        const RE::NiPoint3 palmPos = computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, isLeft);
+        const RE::NiPoint3 palmPos = computeGrabPalmPointWorldFromHandBasis(handTransform, isLeft);
         firing_grip_reattach_zone_policy::ZoneInput handoffInput{};
         bool supportPalmInsideHandoffZone = false;
         if (ambidextrousHandoffCaptureContext &&
@@ -3239,7 +3239,7 @@ namespace rock
             tryResolveAuthoredFiringHandCanonicalForProbe(isLeft, firingStationHandWeaponLocal, source)) {
             grip.handWeaponLocal = firingStationHandWeaponLocal;
             grip.gripLocal = isLeft ?
-                computeGrabLegacyPalmPivotAWorldFromHandBasis(grip.handWeaponLocal, true) :
+                computeGrabPalmPointWorldFromHandBasis(grip.handWeaponLocal, true) :
                 _firing.rightCanonicalGripWeaponLocal;
             grip.attachmentRoot = weaponNode;
             grip.hasHandWeaponLocal = true;

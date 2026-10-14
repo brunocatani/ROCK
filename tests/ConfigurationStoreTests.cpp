@@ -284,7 +284,7 @@ int main(int argc, char** argv)
         CSimpleIniA missingOptions;
         require(rock::RockConfig::parseValues(missingOptions) == rock::RockConfig::parseValues(allReferences),
             "omitting options does not produce the same runtime values as all documented defaults");
-        require(settingGroup("PhysicsInteraction", "fRightGrabLegacyPalmPivotAHandspaceX") == Group::Developer,
+        require(settingGroup("PhysicsInteraction", "fRightGrabAuthorityProxyOffsetXGameUnits") == Group::Developer,
             "the first option below the authored boundary is not developer-owned");
         require(settingGroup("PhysicsInteraction", "fMouthConsumeCommitHapticIntensity") == Group::Developer,
             "the final option below the authored boundary is not developer-owned");

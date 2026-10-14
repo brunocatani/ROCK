@@ -1445,8 +1445,6 @@ namespace rock
             rockPullPresentationGripAxisTiltDegrees = 15.0f;
         }
 
-        readOptionalVec3("fRightGrabLegacyPalmPivotAHandspaceX", "fRightGrabLegacyPalmPivotAHandspaceY", "fRightGrabLegacyPalmPivotAHandspaceZ", rockRightGrabLegacyPalmPivotAHandspace);
-        readOptionalVec3("fLeftGrabLegacyPalmPivotAHandspaceX", "fLeftGrabLegacyPalmPivotAHandspaceY", "fLeftGrabLegacyPalmPivotAHandspaceZ", rockLeftGrabLegacyPalmPivotAHandspace);
 
         auto readClampedFloat = [&](const char* key, float& value, float fallback, float minValue, float maxValue) {
             value = static_cast<float>(ini.GetDoubleValue(SECTION, key, value));

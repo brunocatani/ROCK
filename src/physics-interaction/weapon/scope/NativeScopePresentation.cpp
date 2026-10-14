@@ -10,7 +10,7 @@ namespace rock
         if (!tryGetRootFlattenedHandBoneTransform(isLeft, outHandWorld)) {
             return false;
         }
-        outPalmWorld = computeGrabLegacyPalmPivotAWorldFromHandBasis(outHandWorld, isLeft);
+        outPalmWorld = computeGrabPalmPointWorldFromHandBasis(outHandWorld, isLeft);
         return true;
     }
 

@@ -715,7 +715,7 @@ namespace rock
         // hands and for either firing/support role.
         (void)handContact.bodyId.exchange(INVALID_CONTACT_BODY_ID, std::memory_order_acquire);
 
-        const RE::NiPoint3 palmPivotWorld = computeGrabLegacyPalmPivotAWorldFromHandBasis(handInput.rawHandWorld, isLeft);
+        const RE::NiPoint3 palmPivotWorld = computeGrabPalmPointWorldFromHandBasis(handInput.rawHandWorld, isLeft);
 
         // Operating probes: thumb and index tips, the pinky probes, and the
         // grab anchor when the wider probe is allowed.

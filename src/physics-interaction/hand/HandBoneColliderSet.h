@@ -143,6 +143,7 @@ namespace rock
         bool makeBoneLookup(const DirectSkeletonBoneSnapshot& snapshot, bool isLeft,
             const RE::NiTransform& rollAuthorityWorld, BoneFrameLookup& outLookup, bool finalPose = false);
         bool makeRoleFrame(const BoneFrameLookup& lookup, bool isLeft, hand_collider_semantics::HandColliderRole role, RoleFrameResult& outFrame) const;
+        void publishPalmPoint(const BoneFrameLookup& lookup, bool isLeft, const RoleFrameResult& anchorFrame) const;
         bool updatePose(const BoneFrameLookup& lookup, bool isLeft, BethesdaPhysicsBody& palmAnchorBody,
             float deltaTime, bool publishTargets);
         std::uint64_t refreshTuning(bool powerArmor);

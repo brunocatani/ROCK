@@ -67,13 +67,13 @@ namespace rock
             return reject("native-right-aim-unavailable");
         }
 
-        if(_holdingHasLeft){outFiringHandWeaponLocal=_holdingLeft;outFiringGripWeaponLocal=computeGrabLegacyPalmPivotAWorldFromHandBasis(_holdingLeft,true);return true;}
+        if(_holdingHasLeft){outFiringHandWeaponLocal=_holdingLeft;outFiringGripWeaponLocal=computeGrabPalmPointWorldFromHandBasis(_holdingLeft,true);return true;}
         if (!buildEquippedLeftFiringSeat(
                 _holdingHasNative ? _holdingNativeRight : _firing.rightCanonicalHandWeaponLocal,
                 outFiringHandWeaponLocal, _holdingMirrorPlaneX)) {
             return reject("mirrored-firing-frame-unavailable");
         }
-        outFiringGripWeaponLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(outFiringHandWeaponLocal, true);
+        outFiringGripWeaponLocal = computeGrabPalmPointWorldFromHandBasis(outFiringHandWeaponLocal, true);
         return true;
     }
 
@@ -356,7 +356,7 @@ namespace rock
 
             RE::NiTransform primaryTransform{};
             if (tryGetSolverHandTransform(primaryHandIsLeft, primaryTransform)) {
-                _firing.primaryGripLocal = worldToWeaponLocal(computeGrabLegacyPalmPivotAWorldFromHandBasis(primaryTransform, primaryHandIsLeft), weaponNode);
+                _firing.primaryGripLocal = worldToWeaponLocal(computeGrabPalmPointWorldFromHandBasis(primaryTransform, primaryHandIsLeft), weaponNode);
                 _firing.primaryGripConfidence = 1.0f;
             } else {
                 _firing.primaryGripLocal = {};
@@ -493,7 +493,7 @@ namespace rock
             return false;
         }
 
-        const RE::NiPoint3 palm = computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, handIsLeft);
+        const RE::NiPoint3 palm = computeGrabPalmPointWorldFromHandBasis(handTransform, handIsLeft);
         const RE::NiPoint3 firingGripWorld = weaponLocalToWorld(_firing.primaryGripLocal, weaponNode);
         const RE::NiPoint3 delta = sub(palm, firingGripWorld);
         const float distance = std::sqrt(dot(delta, delta));
@@ -577,7 +577,7 @@ namespace rock
             return false;
         }
         const RE::NiPoint3 palmWorld =
-            computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, handIsLeft);
+            computeGrabPalmPointWorldFromHandBasis(handTransform, handIsLeft);
         auto handInput = input;
         handInput.palmWorld = { palmWorld.x, palmWorld.y, palmWorld.z };
         outZone = firing_grip_reattach_zone_policy::evaluateZone(handInput);
@@ -780,7 +780,7 @@ namespace rock
             return false;
         }
         if (!usedCanonicalHold) {
-            const RE::NiPoint3 palm = computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, handIsLeft);
+            const RE::NiPoint3 palm = computeGrabPalmPointWorldFromHandBasis(handTransform, handIsLeft);
             const RE::NiPoint3 firingGripWorld = weaponLocalToWorld(_firing.primaryGripLocal, weaponNode);
             const RE::NiTransform adjustedHandTransform =
                 weapon_two_handed_grip_math::alignHandFrameToGripPoint(handTransform, palm, firingGripWorld);
@@ -796,13 +796,13 @@ namespace rock
         _firing.hasPrimaryHandWeaponLocal = true;
         if (usedCanonicalHold) {
             _firing.primaryGripLocal = handIsLeft ?
-                computeGrabLegacyPalmPivotAWorldFromHandBasis(_firing.primaryHandWeaponLocal, true) :
+                computeGrabPalmPointWorldFromHandBasis(_firing.primaryHandWeaponLocal, true) :
                 _firing.rightCanonicalGripWeaponLocal;
         }
         rememberRightFiringHandCanonicalFrame(_firing.rightCanonicalInstanceContentKey);
         _session.firingGripSequence = ++_session.gripCaptureSequence;
         _visuals.primaryHandLerp = {};
-        if(handIsLeft&&_holdingHasLeft)_firing.primaryGripLocal=computeGrabLegacyPalmPivotAWorldFromHandBasis(_holdingLeft,true);
+        if(handIsLeft&&_holdingHasLeft)_firing.primaryGripLocal=computeGrabPalmPointWorldFromHandBasis(_holdingLeft,true);
         clearPrimaryDetachVisualAuthority(handIsLeft);
         if (usesNativeRightCarry()) {
             restoreFrikPrimaryWeaponPose();
@@ -850,7 +850,7 @@ namespace rock
         // mirror needs this authored seat, not _firing.primaryGripLocal (which can be
         // a live squeeze or an older native-offset capture).
         const RE::NiPoint3 authoredGripWeaponLocal =
-            computeGrabLegacyPalmPivotAWorldFromHandBasis(
+            computeGrabPalmPointWorldFromHandBasis(
                 rightHandWeaponLocal,
                 false);
         if (!std::isfinite(authoredGripWeaponLocal.x) ||

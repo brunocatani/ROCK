@@ -857,8 +857,8 @@ namespace rock
              * driven part motion; provider part revocation releases the grip
              * in that case.
              */
-            const RE::NiPoint3 pivotPalm = computeGrabLegacyPalmPivotAWorldFromHandBasis(pivotHandTransform, pivotIsLeft);
-            const RE::NiPoint3 aimPalm = computeGrabLegacyPalmPivotAWorldFromHandBasis(aimHandTransform, !pivotIsLeft);
+            const RE::NiPoint3 pivotPalm = computeGrabPalmPointWorldFromHandBasis(pivotHandTransform, pivotIsLeft);
+            const RE::NiPoint3 aimPalm = computeGrabPalmPointWorldFromHandBasis(aimHandTransform, !pivotIsLeft);
             const RE::NiPoint3 currentAimGripWorld = weaponLocalToWorld(aimGrip.gripLocal, weaponNode);
             const RE::NiPoint3 currentPivotGripWorld = weaponLocalToWorld(pivotGrip.gripLocal, weaponNode);
             const RE::NiPoint3 currentSeparationDelta = sub(currentAimGripWorld, currentPivotGripWorld);

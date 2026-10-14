@@ -403,14 +403,14 @@ namespace rock
                 weaponWorld,
                 authoredHandWeaponLocal);
             out.authoredPalmSeatWeaponLocal =
-                computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                computeGrabPalmPointWorldFromHandBasis(
                     authoredHandWeaponLocal,
                     isLeft);
             out.authoredPalmSeatWorld = transform_math::localPointToWorld(
                 weaponWorld,
                 out.authoredPalmSeatWeaponLocal);
             out.liveTouchProbeWorld =
-                computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                computeGrabPalmPointWorldFromHandBasis(
                     liveHandWorld,
                     isLeft);
             out.liveTouchProbeWeaponLocal = transform_math::worldPointToLocal(

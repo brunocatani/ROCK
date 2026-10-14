@@ -219,12 +219,6 @@ int main()
             RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
         ok &= expectNear("fixed close selection angle is -Y", static_cast<float>(rock::selection_query_policy::kCloseSelectionAimAngleDegrees), 0.0f);
         ok &= expectNear("fixed far selection angle is -Y", static_cast<float>(rock::selection_query_policy::kFarSelectionAimAngleDegrees), 0.0f);
-        ok &= expectVectorNear("default right pivot uses migrated handspace",
-            rock::g_rockConfig.rockRightGrabLegacyPalmPivotAHandspace,
-            RE::NiPoint3{ 6.0f, -2.0f, 0.2f });
-        ok &= expectVectorNear("default left pivot uses migrated handspace",
-            rock::g_rockConfig.rockLeftGrabLegacyPalmPivotAHandspace,
-            RE::NiPoint3{ 6.0f, -2.0f, -0.2f });
     }
 
     {

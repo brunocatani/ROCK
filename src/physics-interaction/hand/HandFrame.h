@@ -1,5 +1,8 @@
 #pragma once
 
+#include <array>
+#include <atomic>
+
 /*
  * Hand frame helpers are grouped here because handspace convention, palm transform, and pointing direction define the same coordinate authority.
  */
@@ -103,18 +106,45 @@ namespace rock
     }
 
     /*
-     * Legacy authored palm pivot retained for API palm-position compatibility,
-     * telemetry/debug tuning, two-handed grip, and non-dynamic helper paths.
-     * Dynamic object grabs use the generated hidden proxy authority frame.
+     * The palm point every grab uses: the generated palm anchor's center plus
+     * the grab authority proxy offset, expressed in the raw hand frame. The
+     * palm anchor takes its rotation from the raw hand frame, so its axes are
+     * the hand's (X fingers, Y palm depth, Z cross-palm) and only the point
+     * needs measuring. HandBoneColliderSet publishes it on the frame thread
+     * whenever it places the palm anchor; it moves only with the skeleton or
+     * hand scale, so a reader on another thread that sees one component a
+     * frame newer is harmless. Before a hand's colliders exist the point is
+     * the hand origin; nothing grabs before then.
      */
-    inline RE::NiPoint3 computeGrabLegacyPalmPivotAHandspacePosition(bool isLeft)
+    namespace palm_point
     {
-        return isLeft ? g_rockConfig.rockLeftGrabLegacyPalmPivotAHandspace : g_rockConfig.rockRightGrabLegacyPalmPivotAHandspace;
+        struct HandLocal
+        {
+            std::atomic<float> x{ 0.0f };
+            std::atomic<float> y{ 0.0f };
+            std::atomic<float> z{ 0.0f };
+        };
+        inline std::array<HandLocal, 2> g_handLocal{};
+
+        inline void publishHandLocal(bool isLeft, const RE::NiPoint3& point)
+        {
+            auto& slot = g_handLocal[isLeft ? 1 : 0];
+            slot.x.store(point.x, std::memory_order_relaxed);
+            slot.y.store(point.y, std::memory_order_relaxed);
+            slot.z.store(point.z, std::memory_order_relaxed);
+        }
+
+        inline RE::NiPoint3 handLocal(bool isLeft)
+        {
+            const auto& slot = g_handLocal[isLeft ? 1 : 0];
+            return RE::NiPoint3{ slot.x.load(std::memory_order_relaxed), slot.y.load(std::memory_order_relaxed),
+                slot.z.load(std::memory_order_relaxed) };
+        }
     }
 
-    inline RE::NiPoint3 computeGrabLegacyPalmPivotAWorldFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
+    inline RE::NiPoint3 computeGrabPalmPointWorldFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
     {
-        return transformHandspacePosition(handTransform, computeGrabLegacyPalmPivotAHandspacePosition(isLeft), isLeft);
+        return handTransform.translate + transformHandspaceLocalToWorld(handTransform, palm_point::handLocal(isLeft) * handTransform.scale);
     }
 
     inline RE::NiPoint3 computePalmNormalFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)

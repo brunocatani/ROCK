@@ -1034,11 +1034,11 @@ namespace rock
         }
 
         const RE::NiPoint3 authoredGripWeaponLocal =
-            computeGrabLegacyPalmPivotAWorldFromHandBasis(
+            computeGrabPalmPointWorldFromHandBasis(
                 authoredPrimaryHandInWeapon,
                 false);
         const RE::NiPoint3 trackedPalmWorld =
-            computeGrabLegacyPalmPivotAWorldFromHandBasis(
+            computeGrabPalmPointWorldFromHandBasis(
                 trackedHandWorld,
                 false);
         solvedWeaponWorld =
@@ -1154,7 +1154,7 @@ namespace rock
                 transform_math::invertTransform(solvedWeaponWorld),
                 trackedHandWorld);
         const RE::NiPoint3 cachedPositionOnlyGripWeaponLocal =
-            computeGrabLegacyPalmPivotAWorldFromHandBasis(
+            computeGrabPalmPointWorldFromHandBasis(
                 rightPositionOnlyHandWeaponLocal,
                 false);
         // Float rounding of the world coordinates the pivot went through

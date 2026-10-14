@@ -709,7 +709,7 @@ namespace rock
             return false;
         }
         const RE::NiPoint3 trackedPalmWorld =
-            computeGrabLegacyPalmPivotAWorldFromHandBasis(
+            computeGrabPalmPointWorldFromHandBasis(
                 trackedRightHandWorld,
                 false);
         const RE::NiTransform authoredWeaponWorld =

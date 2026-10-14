@@ -671,11 +671,11 @@ namespace rock
                             handlingWand,
                             _physicalHandInWandLocal);
                     const RE::NiPoint3 authoredGripWeaponLocal =
-                        computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                        computeGrabPalmPointWorldFromHandBasis(
                             _firingHandWeaponLocal,
                             _isLeftHand);
                     const RE::NiPoint3 physicalPalmWorld =
-                        computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                        computeGrabPalmPointWorldFromHandBasis(
                             physicalHandWorld,
                             _isLeftHand);
                     const RE::NiTransform& positionOnlyCarrierWorld =
@@ -924,7 +924,7 @@ namespace rock
         const auto delta = targetInDriver.translate - _lastPresentedInDriver.translate;
         const auto projectedPrevious = transform_math::composeTransforms(driver->world,_lastPresentedInDriver);
         const auto grip = _capturedGrips.primary.valid() ? _capturedGrips.primary.gripWeaponLocal :
-            computeGrabLegacyPalmPivotAWorldFromHandBasis(_firingHandWeaponLocal,_isLeftHand);
+            computeGrabPalmPointWorldFromHandBasis(_firingHandWeaponLocal,_isLeftHand);
         const auto palmDelta = transform_math::localPointToWorld(targetWorld,grip) -
             transform_math::localPointToWorld(projectedPrevious,grip);
         ROCK_LOG_INFO(Weapon,"EQUIP-POSE weapon-transfer form={:08X} hand={} sample={} stage={} ageMs={:.2f} blend={:.3f}/{:.3f}s fromDriver=({:.4f},{:.4f},{:.4f}) toDriver=({:.4f},{:.4f},{:.4f}) deltaDriver=({:.4f},{:.4f},{:.4f}) rotation={:.3f}deg palmDeltaWorld=({:.4f},{:.4f},{:.4f}) scales={:.5f}/{:.5f} paired={} supportOnly={}",

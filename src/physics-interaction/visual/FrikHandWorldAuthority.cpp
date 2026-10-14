@@ -449,7 +449,7 @@ namespace rock::frik_hand_world_authority
         }
         // Keep Off's isolated hand as the baseline. Controller history contains
         // only the wand, never an animated offset or an inverse native kick.
-        const auto palmWorld = computeGrabLegacyPalmPivotAWorldFromHandBasis(hand, isLeft);
+        const auto palmWorld = computeGrabPalmPointWorldFromHandBasis(hand, isLeft);
         const auto pivot = transform_math::worldPointToLocal(wand.world, palmWorld);
         cached.valid = weapon_input_filter::update(g_service.weaponFilters[index], wand.world,
             frame.playerSpace.world, pivot, frame.frameIndex, frame.deltaSeconds, frame.timing.discontinuity,

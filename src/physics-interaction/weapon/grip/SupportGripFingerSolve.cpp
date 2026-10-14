@@ -261,7 +261,7 @@ namespace rock
                 handTransform,
                 adjustedHandTransform);
             const RE::NiPoint3 solveAnchorWorld = july9 ?
-                computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, isLeft) : frozenGripPoint;
+                computeGrabPalmPointWorldFromHandBasis(handTransform, isLeft) : frozenGripPoint;
             const RE::NiPoint3 frozenGripNormal = july9 ? grip.grabNormalWorld :
                 transform_math::localVectorToWorld(
                     seatedToRawWorld,

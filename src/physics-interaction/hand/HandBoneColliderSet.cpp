@@ -1,4 +1,5 @@
 #include "physics-interaction/hand/HandBoneColliderSet.h"
+#include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 
 #include "physics-interaction/hand/Hand.h"
@@ -363,6 +364,22 @@ namespace rock
         return true;
     }
 
+    void HandBoneColliderSet::publishPalmPoint(const BoneFrameLookup& lookup, bool isLeft, const RoleFrameResult& anchorFrame) const
+    {
+        // The object-grab authority point (palm anchor plus proxy offset),
+        // brought into the raw hand frame by inverting
+        // transformHandspaceLocalToWorld.
+        const RE::NiTransform authority = applyGrabAuthorityProxyLocalOffsetToFrame(anchorFrame.transform, isLeft);
+        const RE::NiTransform& hand = lookup.rollAuthorityWorld;
+        if (!std::isfinite(hand.scale) || hand.scale <= 0.0001f) {
+            return;
+        }
+        const RE::NiPoint3 local = (hand.rotate * (authority.translate - hand.translate)) * (1.0f / hand.scale);
+        if (std::isfinite(local.x) && std::isfinite(local.y) && std::isfinite(local.z)) {
+            palm_point::publishHandLocal(isLeft, local);
+        }
+    }
+
     RE::hknpShape* HandBoneColliderSet::buildShapeForRole(const RoleFrameResult& frame, HandColliderRole role,
         RE::NiPoint3* outPalmHalfExtents) const
     {
@@ -544,6 +561,7 @@ namespace rock
         }
         initializeGeneratedKeyframedBodyDriveState(_palmAnchorDriveState, anchorFrame.transform);
         _latestPalmAnchorTarget = anchorFrame.transform;
+        publishPalmPoint(lookup, isLeft, anchorFrame);
         _hasLatestPalmAnchorTarget = true;
 
         std::size_t createdCount = 0;
@@ -775,6 +793,7 @@ namespace rock
         RoleFrameResult anchorFrame{};
         if (makeRoleFrame(lookup, isLeft, HandColliderRole::PalmAnchor, anchorFrame)) {
             _latestPalmAnchorTarget = anchorFrame.transform;
+            publishPalmPoint(lookup, isLeft, anchorFrame);
             _hasLatestPalmAnchorTarget = true;
             publishTwinSlot(twinTargets.palm, anchorFrame);
             if (publishTargets) queueBodyTarget(palmAnchorBody, anchorFrame.transform, deltaTime, _palmAnchorDriveState);

@@ -1834,7 +1834,7 @@ namespace rock
                     support.weaponInDriver = transform_math::composeTransforms(
                         transform_math::invertTransform(driverWorld), heldRef->Get3D()->world);
                     singleGrip.handWeaponLocal = authored.handWeaponLocal;
-                    singleGrip.gripWeaponLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(authored.handWeaponLocal, equipIsLeft);
+                    singleGrip.gripWeaponLocal = computeGrabPalmPointWorldFromHandBasis(authored.handWeaponLocal, equipIsLeft);
                     singleGrip.fingerLocals = authored.fingerLocals;
                     singleGrip.fingerMask = authored.fingerMask;
                     singleGrip.authoredRole = authored.role;

@@ -801,8 +801,7 @@ namespace rock
             frame.desiredRootWorld.scale =
                 rootNode && std::isfinite(rootNode->world.scale) && rootNode->world.scale > 0.0001f ? rootNode->world.scale : 1.0f;
             if (nearAuthored) {
-                const auto palmInHand = authoredHandspaceToRawHandspaceForHand(
-                    computeGrabLegacyPalmPivotAHandspacePosition(isLeft), isLeft);
+                const auto palmInHand = palm_point::handLocal(isLeft);
                 frame.desiredRootWorld = nearGrip->pose.placementWorld(
                     nearGrip->handWorld, frame.desiredRootWorld.scale, palmInHand);
                 const auto proxyDelta = grabPivotAWorld -
@@ -5682,7 +5681,7 @@ namespace rock
         auto& selectedPivotBBodyLocalGame = outCapture.selectedPivotBBodyLocalGame;
         std::vector<TriangleData> grabFingerPoseMeshTriangles;
         auto& grabFingerPoseLocalMeshTriangles = outCapture.fingerPoseLocalMeshTriangles;
-                palmPos = computeGrabLegacyPalmPivotAWorldFromHandBasis(handWorldTransform, _isLeft);
+                palmPos = computeGrabPalmPointWorldFromHandBasis(handWorldTransform, _isLeft);
                 if (!tryGetGrabAuthorityBodyWorldTransform(world, objectBodyId, grabBodyWorldAtGrab)) {
                     ROCK_LOG_ERROR(Hand,
                         "{} hand GRAB FAILED: native grab BODY frame unreadable bodyId={} formID={:08X}",
@@ -7412,7 +7411,6 @@ namespace rock
                     handName(), objectBodyId.value, nodeDebugName(surface.surfaceHit.sourceNode),
                     nodeDebugName(_grabFrame.heldNode), surface.surfaceHit.valid);
             } else {
-                RE::NiPoint3 legacyPalmPivotAWorld = computeGrabLegacyPalmPivotAWorldFromHandBasis(handWorldTransform, _isLeft);
                 RE::NiPoint3 grabPivotAWorld =
                     _grabFrame.hasTelemetryCapture ? _grabFrame.authority.grabPivotWorldAtGrab : computeGrabPivotAWorld(world, handWorldTransform);
                 const float gameToHkScale = gameToHavokScale();
@@ -7434,23 +7432,20 @@ namespace rock
                     float pivotAToGrab = std::sqrt(
                         (pivotAHk[0] - gripWorldHk[0]) * (pivotAHk[0] - gripWorldHk[0]) + (pivotAHk[1] - gripWorldHk[1]) * (pivotAHk[1] - gripWorldHk[1]) +
                         (pivotAHk[2] - gripWorldHk[2]) * (pivotAHk[2] - gripWorldHk[2]));
-                    float legacyPalmPivotAToHandOrigin = std::sqrt((legacyPalmPivotAWorld.x - handWorldTransform.translate.x) * (legacyPalmPivotAWorld.x - handWorldTransform.translate.x) +
-                        (legacyPalmPivotAWorld.y - handWorldTransform.translate.y) * (legacyPalmPivotAWorld.y - handWorldTransform.translate.y) +
-                        (legacyPalmPivotAWorld.z - handWorldTransform.translate.z) * (legacyPalmPivotAWorld.z - handWorldTransform.translate.z));
                     float pivotAToHandOrigin = std::sqrt((grabPivotAWorld.x - handWorldTransform.translate.x) * (grabPivotAWorld.x - handWorldTransform.translate.x) +
                         (grabPivotAWorld.y - handWorldTransform.translate.y) * (grabPivotAWorld.y - handWorldTransform.translate.y) +
                         (grabPivotAWorld.z - handWorldTransform.translate.z) * (grabPivotAWorld.z - handWorldTransform.translate.z));
                     ROCK_LOG_DEBUG(Hand,
-                        "GRAB DIAG {}: legacyPalmPivotAWorld=({:.1f},{:.1f},{:.1f}) handPos=({:.1f},{:.1f},{:.1f}) "
+                        "GRAB DIAG {}: handPos=({:.1f},{:.1f},{:.1f}) "
                         "pocket=({:.1f},{:.1f},{:.1f}) grip=({:.1f},{:.1f},{:.1f}) meshGrab={} grabPointMode={} fallbackReason={} "
                         "frozenPivotB=({:.2f},{:.2f},{:.2f}) activePoint={} palmSeatPoint={} "
-                        "pivotAToGrab_hk={:.4f} ({:.1f} game units) legacyPalmPivotAToHandOrigin={:.1f} pivotAToHandOrigin={:.1f} game units "
+                        "pivotAToGrab_hk={:.4f} ({:.1f} game units) pivotAToHandOrigin={:.1f} game units "
                         "selectionToGripEvidence={:.1f} fingerPoseAim={} fingerPoseAimReason={}",
-                        handName(), legacyPalmPivotAWorld.x, legacyPalmPivotAWorld.y, legacyPalmPivotAWorld.z, handWorldTransform.translate.x, handWorldTransform.translate.y, handWorldTransform.translate.z, grabPivotAWorld.x,
+                        handName(), handWorldTransform.translate.x, handWorldTransform.translate.y, handWorldTransform.translate.z, grabPivotAWorld.x,
                         grabPivotAWorld.y, grabPivotAWorld.z, grabGripPoint.x, grabGripPoint.y, grabGripPoint.z, meshGrabFound, grabPointMode, grabFallbackReason,
                         _grabFrame.authority.pivotBBodyLocalGame.x, _grabFrame.authority.pivotBBodyLocalGame.y, _grabFrame.authority.pivotBBodyLocalGame.z,
                         _grabFrame.seat.activeGrabPointMode, _grabFrame.seat.palmSeatPointMode, pivotAToGrab,
-                        pivotAToGrab * havokToGameScale(), legacyPalmPivotAToHandOrigin, pivotAToHandOrigin, _grabFrame.pivotAuthority.selectionDistanceGameUnits,
+                        pivotAToGrab * havokToGameScale(), pivotAToHandOrigin, _grabFrame.pivotAuthority.selectionDistanceGameUnits,
                         _grabFrame.fingerPoseAimValid ? "yes" : "no", _grabFrame.fingerPoseAimReason);
                 }
 
@@ -8097,7 +8092,7 @@ namespace rock
             performance_profiler::addCounter(performance_profiler::Counter::GrabAuthoredPositionsOnly);
         }
         const auto seedAuthoredPoint = [&](GrabSurfaceEvidence& surface) {
-            const auto seatLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(preparedAuthoredGrip.pose.handWeaponLocal, _isLeft);
+            const auto seatLocal = computeGrabPalmPointWorldFromHandBasis(preparedAuthoredGrip.pose.handWeaponLocal, _isLeft);
             surface.gripPoint = transform_math::localPointToWorld(rootNode->world, seatLocal);
             surface.pointMode = "authoredWeaponSeat";
             surface.pointAuthoritySource = GrabPivotAuthoritySource::LooseWeaponPrimaryAttach;

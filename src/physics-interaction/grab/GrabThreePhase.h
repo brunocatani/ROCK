@@ -206,22 +206,6 @@ namespace rock::grab_three_phase
         return frame;
     }
 
-    inline GrabPocketFrame buildGrabPocketFrame(const RE::NiTransform& handWorld, bool isLeft, float pocketDepthGameUnits, float pocketRadiusGameUnits)
-    {
-        /*
-         * Legacy helper for non-dynamic-grab callers that still consume the old
-         * authored handspace palm position. Dynamic grab must use
-         * buildGrabPocketFrameWithPalmCenter and pass an already-resolved palm
-         * authority point so the old INI pivot cannot become runtime authority.
-         */
-        return buildGrabPocketFrameWithPalmCenter(
-            handWorld,
-            isLeft,
-            computeGrabLegacyPalmPivotAWorldFromHandBasis(handWorld, isLeft),
-            pocketDepthGameUnits,
-            pocketRadiusGameUnits);
-    }
-
     struct ObjectGripArea
     {
         RE::NiTransform objectBodyWorldAtCapture{};

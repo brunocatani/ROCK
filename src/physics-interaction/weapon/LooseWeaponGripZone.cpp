@@ -163,7 +163,7 @@ namespace rock::loose_weapon_grip_zone
             const CanonicalPrimaryHandFrame& publishedFrame = s_canonicalPrimaryHandFrame;
             if (publishedFrame.valid && isUsableWorldTransform(publishedFrame.handWorld)) {
                 canonicalHandWorld = publishedFrame.handWorld;
-                canonicalPalmWorld = computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                canonicalPalmWorld = computeGrabPalmPointWorldFromHandBasis(
                     canonicalHandWorld,
                     canonicalHandIsLeft);
             } else if (publishedFrame.presentedByRock) {
@@ -191,7 +191,7 @@ namespace rock::loose_weapon_grip_zone
             }
 
             const RE::NiTransform canonicalHandWeaponLocal = authoredLookup.rightHandWeaponLocal;
-            state.gripWeaponLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(canonicalHandWeaponLocal, false);
+            state.gripWeaponLocal = computeGrabPalmPointWorldFromHandBasis(canonicalHandWeaponLocal, false);
             state.reason = authoredLookup.reason;
             RE::NiTransform aimWorld{};
             const bool meleeWeapon = weapon_type_policy::isEquippedMelee(weapon->weaponData.type.get());
@@ -418,7 +418,7 @@ namespace rock::loose_weapon_grip_zone
             state.refID = ref->GetFormID();
             state.captureSequence = authored.supportCaptureSequence;
         }
-        const auto probeWorld = computeGrabLegacyPalmPivotAWorldFromHandBasis(out.handWorld, isLeft);
+        const auto probeWorld = computeGrabPalmPointWorldFromHandBasis(out.handWorld, isLeft);
         const auto probeLocal = transform_math::worldPointToLocal(root->world, probeWorld);
         HandZoneState firing{};
         const bool firingResolved = tryResolveGripWorld(isLeft, ref, firing);
@@ -436,7 +436,7 @@ namespace rock::loose_weapon_grip_zone
             authored.rightFiringFingerPose.complete() && firingZone.inside;
         RE::NiTransform supportLocal{};
         const bool supportResolved = resolveSupportRelation(isLeft, authored, supportLocal);
-        const auto nativeSupportPalm = computeGrabLegacyPalmPivotAWorldFromHandBasis(authored.supportHandWeaponLocal, true);
+        const auto nativeSupportPalm = computeGrabPalmPointWorldFromHandBasis(authored.supportHandWeaponLocal, true);
         out.arrangement = selection::arrangement(authored.found && authored.rightFiringFingerPose.complete(),
             authored.hasSupportRelation && authored.supportFingerPose.complete(), authored.supportPoseAbsent,
             pointDistance(nativeSupportPalm, firing.gripWeaponLocal) * std::abs(root->world.scale),
@@ -445,7 +445,7 @@ namespace rock::loose_weapon_grip_zone
         float supportDistance = 0.0f;
         bool supportEligible = false;
         if (supportResolved) {
-            const auto seatLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(supportLocal, isLeft);
+            const auto seatLocal = computeGrabPalmPointWorldFromHandBasis(supportLocal, isLeft);
             supportDistance = pointDistance(probeLocal, seatLocal) * std::fabs(root->world.scale);
             auto& debug = state.debug;
             debug.seatWorld = transform_math::localPointToWorld(root->world, seatLocal);

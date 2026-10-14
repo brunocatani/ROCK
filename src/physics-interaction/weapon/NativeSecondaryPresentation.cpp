@@ -475,7 +475,7 @@ namespace rock::native_secondary_presentation
                 return;
             }
             RE::NiTransform target{}, hand{};
-            const auto palm = authoredHandspaceToRawHandspaceForHand(computeGrabLegacyPalmPivotAHandspacePosition(left), left);
+            const auto palm = palm_point::handLocal(left);
             if (!native_secondary_pose::solve(wand->world, physicalHand, seat,
                     palm, s_state.modelScale, target, hand)) {
                 waitFor(view, "invalid-placement");
