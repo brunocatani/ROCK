@@ -43,7 +43,7 @@ namespace rock::native_secondary_presentation
             std::uintptr_t root = 0, attachment = 0, instance = 0, data = 0;
             std::uintptr_t hiddenBody = 0, observedBody = 0;
             std::uint32_t form = 0;
-            RE::NiTransform originalLocal{}, targetWorld{};
+            RE::NiTransform originalLocal{}, targetWorld{}, handWorld{};
             RE::NiTransform controllerWorld{};
             // This frame's collision-free model pose: the dynamic proxy's intent.
             RE::NiTransform modelIntentWorld{};
@@ -539,6 +539,7 @@ namespace rock::native_secondary_presentation
                 return;
             }
             s_state.targetWorld = target;
+            s_state.handWorld = hand;
             s_state.controllerWorld = wandWorld;
             s_state.dropGrip = AuthoredWeaponGripPose{
                 .role = loose_weapon_authored_grab_policy::Role::Firing,
@@ -668,6 +669,7 @@ namespace rock::native_secondary_presentation
             .left = s_state.left,
             .pose = s_state.dropGrip,
             .weaponWorld = s_state.targetWorld,
+            .handWorld = s_state.handWorld,
             .model = view.root,
         };
         return nullptr;

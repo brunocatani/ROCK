@@ -29,6 +29,8 @@ namespace rock::native_secondary_presentation
         bool left = true;
         AuthoredWeaponGripPose pose{};
         RE::NiTransform weaponWorld{};
+        // The hand world this placement published.
+        RE::NiTransform handWorld{};
         RE::NiAVObject* model = nullptr;
     };
     // Null when `out` is valid; otherwise the reason it is not.

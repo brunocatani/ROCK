@@ -2,6 +2,7 @@
 #include "physics-interaction/native/BipodFrozenRetirement.h"
 #include "physics-interaction/native/PhysicsScale.h"
 #include "physics-interaction/weapon/BipodRetentionPolicy.h"
+#include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/weapon/NativeHandEquipment.h"
 #include "physics-interaction/weapon/NativeSecondaryPresentation.h"
 #include "physics-interaction/weapon/NativeSecondaryActions.h"
@@ -277,6 +278,27 @@ namespace rock
 
     void PhysicsInteraction::promoteSecondaryWeapon(RE::TESObjectWEAP* weapon, std::uintptr_t instance, bool left)
     {
+        /*
+         * The re-equip into index 0 destroys this weapon's index-1 model and
+         * draws a new one, which first renders in the native carry. Keep the
+         * outgoing model, at its last placement and with the hand it
+         * published, in the equip bridge until the new model is posed.
+         */
+        native_secondary_presentation::DropPose presented{};
+        const char* unpresented = native_secondary_presentation::tryGetDropPose(presented);
+        RE::NiPointer<RE::NiAVObject> outgoingModel(unpresented ? nullptr : presented.model);
+        weapon_grip_transfer::HandGrip outgoingGrip{};
+        if (outgoingModel) {
+            outgoingGrip.handWeaponLocal = transform_math::composeTransforms(
+                weapon_visual_authority_math::invertSceneTransform(outgoingModel->world), presented.handWorld);
+            outgoingGrip.gripWeaponLocal = computeGrabPalmPointWorldFromHandBasis(outgoingGrip.handWeaponLocal, left);
+            outgoingGrip.fingerLocals = presented.pose.fingerLocals;
+            outgoingGrip.fingerMask = presented.pose.fingerMask;
+            outgoingGrip.authoredRole = loose_weapon_authored_grab_policy::Role::Firing;
+            outgoingGrip.hasFingerPose = true;
+        } else {
+            ROCK_LOG_WARN(Weapon, "AKIMBO promotion without outgoing model form={:08X}: {}", weapon->GetFormID(), unpresented);
+        }
         native_secondary_actions::suspend();
         const auto formID = weapon->GetFormID();
         const auto equipped = weapon_equip_transfer::promoteSecondaryToPrimary(formID, instance);
@@ -297,7 +319,10 @@ namespace rock
         };
         coordinator.beginHeldTransition({ .formID = formID, .instanceData = equipped.observedEquippedInstanceData },
             EquippedWeaponTransitionCoordinator::Source::InventoryEquip, {
-                .weaponFormID = formID, .isLeftHand = left, .weapon = weapon,
+                .worldModel = std::move(outgoingModel),
+                .weaponFormID = formID, .isLeftHand = left,
+                .singleGrip = outgoingGrip.valid() ? &outgoingGrip : nullptr,
+                .weapon = weapon,
                 .timeoutSeconds = _equipped.handlingSettings.equipVisualBridgeTimeoutSeconds,
                 .blendSeconds = _equipped.handlingSettings.equipVisualBridgeBlendSeconds,
             });
