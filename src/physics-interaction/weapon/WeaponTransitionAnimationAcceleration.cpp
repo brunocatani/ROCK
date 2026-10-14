@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
+#include "physics-interaction/weapon/NativeSecondaryActions.h"
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
@@ -201,7 +202,11 @@ namespace rock::weapon_transition_animation_acceleration
                             holderVtable +
                             kGetGraphManagerVtableSlotOffset),
                         getManagerAddress) ||
-                    !pointerInModuleImage(getManagerAddress)) {
+                    (!pointerInModuleImage(getManagerAddress) &&
+                        !native_secondary_actions::ownsPlayerGraphManagerSlot(getManagerAddress))) {
+                    // The second weapon's actions replace this slot with a
+                    // forwarder; refusing it kept the draw unaccelerated and
+                    // every equip bridge waiting out its lease.
                     return;
                 }
 

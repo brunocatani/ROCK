@@ -8,6 +8,9 @@ namespace RE { class NiNode; class NiTransform; }
 namespace rock::native_secondary_actions
 {
     bool install() noexcept;
+    // True for ROCK's forwarder in the player's graph-manager holder slot.
+    // Outside a second-weapon action it returns the player's own manager.
+    [[nodiscard]] bool ownsPlayerGraphManagerSlot(std::uintptr_t function) noexcept;
     // All lifecycle and action calls are on the existing interaction frame owner.
     void update(RE::NiNode* attachment, float deltaSeconds) noexcept;
     void present(RE::NiNode* attachment) noexcept;

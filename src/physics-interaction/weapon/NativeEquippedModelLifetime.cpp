@@ -242,6 +242,9 @@ namespace rock::native_equipped_model_lifetime
         // For ROCK's equip into index 1 that hide only blanks the unchanged
         // primary for a frame and delays the second gun, which ROCK presents
         // itself once its model is complete; it is skipped for that equip.
+        // With both weapons worn, the executor changes one of them and the
+        // other stays: hiding blanked the survivor for 200 ms (dropping the
+        // second weapon, runtime 14 Oct 19:19:41). Skipped as well.
         constexpr std::uintptr_t kEquipHideReturn = 0xDCF669;
         constexpr std::uint32_t kEquipHideReason = 2;
         std::atomic<std::uint32_t> s_skippedHides{0};
@@ -250,11 +253,15 @@ namespace rock::native_equipped_model_lifetime
         {
             const auto caller = reinterpret_cast<std::uintptr_t>(_ReturnAddress());
             if (s_installed && hidden && reason == kEquipHideReason && actor && actor == f4vr::getPlayer() &&
-                caller == REL::Offset(kEquipHideReturn).address() &&
-                native_hand_equipment::secondaryEquipInProgress(actor)) {
-                if (s_skippedHides.fetch_add(1, std::memory_order_relaxed) < 8)
-                    ROCK_LOG_INFO(Weapon, "AKIMBO native equip hide skipped for the second-weapon equip; both guns stay visible");
-                return false;
+                caller == REL::Offset(kEquipHideReturn).address()) {
+                const bool secondEquip = native_hand_equipment::secondaryEquipInProgress(actor);
+                const auto views = native_hand_equipment::equippedViews();
+                if (secondEquip || (views[0].weapon && views[1].weapon)) {
+                    if (s_skippedHides.fetch_add(1, std::memory_order_relaxed) < 8)
+                        ROCK_LOG_INFO(Weapon, "AKIMBO native equip hide skipped reason={}; the other weapon stays visible",
+                            secondEquip ? "second-weapon-equip" : "one-of-two-changes");
+                    return false;
+                }
             }
             std::uint8_t before = 0xFF, after = 0xFF;
             const bool trace = s_installed && actor && actor == f4vr::getPlayer() &&

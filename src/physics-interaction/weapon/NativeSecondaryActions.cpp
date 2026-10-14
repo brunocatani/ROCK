@@ -1159,6 +1159,11 @@ namespace rock::native_secondary_actions
         return true;
     }
 
+    bool ownsPlayerGraphManagerSlot(std::uintptr_t function) noexcept
+    {
+        return s_installed && function==reinterpret_cast<std::uintptr_t>(&getManager);
+    }
+
     void update(RE::NiNode* attachment,float dt) noexcept
     {
         if (!s_installed) return;
