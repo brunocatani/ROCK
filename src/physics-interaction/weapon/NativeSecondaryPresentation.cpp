@@ -806,6 +806,21 @@ namespace rock::native_secondary_presentation
         traceGeometry("native-exit-after-repair");
     }
 
+    bool restoreLastPlacement() noexcept
+    {
+        if (!onFrameThread()) return false;
+        DropPose last{};
+        if (tryGetDropPose(last)) return false;
+        auto* attachment = currentAttachment(native_hand_equipment::equippedViews()[1]);
+        if (!attachment) return false;
+        // The same rigid transport and part presentation as writeTarget.
+        const auto previousWorld = attachment->world;
+        if (!weapon_scene_presentation::moveWeaponPresentationRigidly(attachment, s_state.targetWorld)) return false;
+        native_secondary_actions::carryPresentation(previousWorld, s_state.targetWorld);
+        native_secondary_actions::present(attachment);
+        return true;
+    }
+
     const char* tryGetDropPose(DropPose& out) noexcept
     {
         // Grab input runs after beginFrame clears `ready` and before this

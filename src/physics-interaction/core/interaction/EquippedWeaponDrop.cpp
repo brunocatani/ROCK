@@ -285,9 +285,14 @@ namespace rock
          * outgoing model, at its last placement and with the hand it
          * published, in the equip bridge until the new model is posed.
          */
+        // Native update has already returned the attachment to its biped
+        // pose this frame; capture the model where it was rendered.
+        const bool replaced = native_secondary_presentation::restoreLastPlacement();
         native_secondary_presentation::DropPose presented{};
         const char* unpresented = native_secondary_presentation::tryGetDropPose(presented);
         RE::NiPointer<RE::NiAVObject> outgoingModel(unpresented ? nullptr : presented.model);
+        ROCK_LOG_INFO(Weapon, "AKIMBO promotion outgoing model form={:08X} hand={} lastPlacementRestored={} pose={}",
+            weapon->GetFormID(), left ? "left" : "right", replaced, unpresented ? unpresented : "ready");
         weapon_grip_transfer::HandGrip outgoingGrip{};
         if (outgoingModel) {
             outgoingGrip.handWeaponLocal = transform_math::composeTransforms(

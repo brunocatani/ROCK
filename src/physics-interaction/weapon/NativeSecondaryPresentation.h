@@ -43,6 +43,15 @@ namespace rock::native_secondary_presentation
     [[nodiscard]] const char* tryGetDropPose(DropPose& out) noexcept;
 
     /*
+     * Each frame the native update first returns the index-1 attachment to
+     * its own biped pose (in the left hand, a rotated carry); this
+     * presentation re-places it later in the frame. A caller that takes the
+     * model before that (promotion) re-applies the last completed placement
+     * first, so the model is captured as it was rendered. Frame owner only.
+     */
+    [[nodiscard]] bool restoreLastPlacement() noexcept;
+
+    /*
      * A loose weapon equipped into index 1 loses its 3D inside ActivateRef;
      * the equipped model is placed here no earlier than the next frame, and
      * a first-ever weapon waits for its idle harvest. Keeps the loose model
