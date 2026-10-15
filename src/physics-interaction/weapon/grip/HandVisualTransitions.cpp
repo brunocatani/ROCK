@@ -1162,10 +1162,25 @@ namespace rock
         }
 
         const RE::NiTransform partGripHandWorld = resolvePartGripHandWorld(grip, weaponNode);
-        const auto& returningHand = _visuals.returningHands[isLeft ? 0u : 1u].transition;
+        const std::size_t handIndex = isLeft ? 0u : 1u;
+        const auto& returningHand = _visuals.returningHands[handIndex].transition;
+        /*
+         * A hand ROCK already shows on the weapon starts any seat lerp from
+         * where it was shown, never from its controller. A single-anchor
+         * part-carry pivot seats exactly on its own hand, so its lerp never
+         * initializes; a firing-grip reattach turns it into a two-hand
+         * support whose seat is off the controller, and a lerp from the
+         * controller turned the support hand 54-97 degrees in one frame
+         * (runtime 14 Oct 22:07:55, 22:08:06). The record is cleared when a
+         * hand's presentation ends, so a fresh grab still starts at the
+         * controller.
+         */
         const RE::NiTransform* acquisitionStart =
             returningHand.active && isUsableHandAuthorityTransform(returningHand.lastApplied) ?
             &returningHand.lastApplied :
+            _visuals.hasLastPublishedHandWorld[handIndex] &&
+                    isUsableHandAuthorityTransform(_visuals.lastPublishedHandWorld[handIndex]) ?
+            &_visuals.lastPublishedHandWorld[handIndex] :
             liveHandWorld;
         const bool synchronizedDynamicAcquisition =
             dynamicSupportAcquisitionMatches(isLeft, grip);
@@ -1182,7 +1197,7 @@ namespace rock
                 grip.visualLerp);
         {
             // Diagnostic: support-hand twitch on firing-grip reattach.
-            const std::size_t index = isLeft ? 0u : 1u;
+            const std::size_t index = handIndex;
             auto& trace = _partGripVisualTrace[index];
             trace.frameIndex = runtime_state::currentFrame().frameIndex;
             trace.gripSequence = grip.gripSequence;
