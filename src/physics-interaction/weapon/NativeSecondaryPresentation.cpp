@@ -394,39 +394,38 @@ namespace rock::native_secondary_presentation
         };
 
         /*
-         * The second weapon's native index-1 pose (its biped attach, a rotated
-         * draw/carry pose) is never shown. On a frame ROCK does not place it
-         * (a menu, the weapon put away, an unavailable provider or placement)
-         * its model is culled, as the primary is natively in those states, and
-         * it shows again on the frame ROCK places it. A model that left the
-         * equipment belongs to native teardown and is never touched.
+         * ROCK owns the second weapon's visibility. Its native index-1 pose
+         * (the biped attach, a rotated draw/carry pose) is never shown: on a
+         * frame ROCK does not place it (a menu, the weapon put away, an
+         * unavailable provider or placement) its model is culled, as the
+         * primary is natively in those states. On a frame ROCK places it, it
+         * renders whenever no native hide owner is active. A Pip-Boy equip
+         * builds the index-1 model culled; restoring the visibility seen when
+         * it was first hidden kept it invisible (runtime 14 Oct 21:17:44).
+         * A model that left the equipment belongs to native teardown and is
+         * never touched.
          */
-        struct Unplaced
-        {
-            std::uintptr_t root = 0;
-            bool wasVisible = false;
-        };
-        Unplaced s_unplaced{};
+        std::uintptr_t s_unplacedRoot = 0;
 
         void syncUnplacedVisibility() noexcept
         {
             const auto view = native_hand_equipment::equippedViews()[1];
             const auto identity = reinterpret_cast<std::uintptr_t>(view.root);
-            if (s_unplaced.root && s_unplaced.root != identity) s_unplaced = {};
+            if (s_unplacedRoot && s_unplacedRoot != identity) s_unplacedRoot = 0;
             if (!view.weapon || !view.root) return;
             const bool placed = s_state.ready && s_state.frame == runtime_state::currentFrame().frameIndex;
             if (placed) {
-                if (s_unplaced.root == identity) {
-                    equipped_weapon_visual_state::setLocallyVisible(view.root, s_unplaced.wasVisible);
-                    s_unplaced = {};
+                if (!equipped_weapon_visual_state::isLocallyVisible(view.root) &&
+                    native_equipped_model_lifetime::playerWeaponHideOwnerFlags() == 0) {
+                    equipped_weapon_visual_state::setLocallyVisible(view.root, true);
+                    ROCK_LOG_INFO(Weapon, "AKIMBO second weapon shown at placement weapon={:08X} hiddenWhileUnplaced={}",
+                        view.weapon->formID, s_unplacedRoot == identity);
                 }
+                s_unplacedRoot = 0;
                 return;
             }
-            if (s_unplaced.root != identity) {
-                // The incoming bridge's own cull is not a native hide.
-                s_unplaced.root = identity;
-                s_unplaced.wasVisible = equipped_weapon_visual_state::isLocallyVisible(view.root) ||
-                    s_incoming.culledRoot == identity;
+            if (s_unplacedRoot != identity) {
+                s_unplacedRoot = identity;
                 ROCK_LOG_INFO(Weapon, "AKIMBO second weapon hidden while unplaced weapon={:08X} reason={}",
                     view.weapon->formID, s_state.reason.empty() ? std::string_view("released") : s_state.reason);
             }
