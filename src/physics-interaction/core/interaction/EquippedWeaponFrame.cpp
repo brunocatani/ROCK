@@ -1,5 +1,6 @@
 #include "api/AuthoredInteractionService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/native/TriggerEquipReadinessTrace.h"
 #include "physics-interaction/visual/GripZoneIndicators.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
@@ -235,7 +236,12 @@ namespace rock
         // same transition) and every native equip the coordinator observes.
         // Held and inventory equips arm it at their own call sites.
         static bool s_seamMenuBlocking = false;
-        if (s_seamMenuBlocking && !runtime.localMenuBlocking) armTransitionSeamTrace("menu-exit");
+        if (s_seamMenuBlocking && !runtime.localMenuBlocking) {
+            armTransitionSeamTrace("menu-exit");
+            // Fire readiness after a menu exit: the native draw/attack gates
+            // per frame and each trigger edge, for 5 s.
+            trigger_equip_readiness_trace::begin(currentEquippedWeaponFormId(), 0);
+        }
         s_seamMenuBlocking = runtime.localMenuBlocking;
         static std::uint64_t s_seamTransitionSequence = 0;
         const auto transition = _equipped.transition.getPublicSnapshot();
