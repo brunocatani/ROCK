@@ -1363,6 +1363,18 @@ namespace rock
             };
             leftReattachEligible = reattachEligible(w.prepared.leftHandAvailableForAcquisition, _leftHand);
             rightReattachEligible = reattachEligible(w.prepared.rightHandAvailableForAcquisition, _rightHand);
+            // Diagnostic: why a squeezing hand is not free to re-take the
+            // firing grip (left reattach refused after a menu, 14 Oct).
+            for (const bool isLeft : { false, true }) {
+                const auto& hand = isLeft ? _leftHand : _rightHand;
+                if (!input_remap_runtime::isRawButtonPhysicallyHeld(isLeft, input_remap_policy::kGrabButtonId) ||
+                    (isLeft ? leftReattachEligible : rightReattachEligible)) continue;
+                ROCK_LOG_SAMPLE_INFO(Weapon, 250,
+                    "REATTACH ineligible hand={} available={} blockers={:#x} holding={} state={} menu={} secondaryLeft={} secondaryRight={}",
+                    isLeft ? "left" : "right", isLeft ? w.prepared.leftHandAvailableForAcquisition : w.prepared.rightHandAvailableForAcquisition,
+                    forceGrabHandBlockerMask(hand, isLeft, (isLeft ? frame.left : frame.right).disabled, true), hand.isHolding(),
+                    static_cast<unsigned>(hand.getState()), inputBlockingMenuActive, w.prepared.secondaryLeft, w.prepared.secondaryRight);
+            }
         }
 
         // Toggle grab turns each hand's button into a logical held state.

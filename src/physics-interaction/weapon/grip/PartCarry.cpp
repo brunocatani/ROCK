@@ -369,13 +369,29 @@ namespace rock
             weaponNode, currentWeaponGenerationKey,
             _session.equippedWeaponOwnershipKey,
             _handlingSettings.firingGripReattachRadiusGameUnits, reattachInput);
+        // Diagnostic: the first check that stops a squeezing hand from
+        // re-taking the firing grip (left reattach refused after a menu,
+        // 14 Oct 21:48:12).
+        const auto traceReattachRefusal = [&](const FiringGripReattachCandidate& candidate, const char* stage,
+                                              const firing_grip_reattach_zone_policy::ZoneResult* zone) {
+            if (!candidate.gripHeld) return;
+            ROCK_LOG_SAMPLE_INFO(Weapon, 250,
+                "REATTACH refused hand={} stage={} firingHand={} eligible={} available={} partGrip={} ambidextrous={} canBegin={} zoneInput={} inside={} along={:.2f} perp={:.2f}",
+                candidate.isLeft ? "left" : "right", stage, firingHandIsLeft ? "left" : "right", candidate.eligible,
+                candidate.isLeft ? frameInput.leftHandAvailableForAcquisition : frameInput.rightHandAvailableForAcquisition,
+                partGrip(candidate.isLeft).active, _handlingSettings.ambidextrousHandoffEnabled,
+                canBeginPrimaryOnlyGripForHand(candidate.isLeft), reattachInputValid,
+                zone && zone->inside, zone ? zone->alongAxisGameUnits : -1.0f, zone ? zone->perpendicularDistanceGameUnits : -1.0f);
+        };
         for (const FiringGripReattachCandidate& candidate : reattachCandidates) {
             if (candidate.isLeft != firingHandIsLeft &&
                 (!_handlingSettings.ambidextrousHandoffEnabled ||
                     !canBeginPrimaryOnlyGripForHand(candidate.isLeft))) {
+                traceReattachRefusal(candidate, "other-hand-takeover", nullptr);
                 continue;
             }
             if (!candidate.eligible || partGrip(candidate.isLeft).active) {
+                traceReattachRefusal(candidate, candidate.eligible ? "part-grip-active" : "not-eligible", nullptr);
                 continue;
             }
             firing_grip_reattach_zone_policy::ZoneResult reattachZone{};
@@ -383,6 +399,7 @@ namespace rock
                     candidate.isLeft,
                     reattachInput,
                     reattachZone)) {
+                traceReattachRefusal(candidate, reattachInputValid ? "hand-transform" : "zone-input", nullptr);
                 continue;
             }
             _firing.reattachDebugSnapshot.hands[candidate.isLeft ? 0u : 1u]
@@ -407,6 +424,7 @@ namespace rock
                     *candidate.contact,
                     authoredProviderAuthorityActive,
                     authoredAttachOnlyAuthorityActive);
+            if (!reattached) traceReattachRefusal(candidate, reattachZone.inside ? "reattach-refused" : "outside-zone", &reattachZone);
             if (reattached) {
                 ROCK_LOG_INFO(Weapon,
                     "TwoHandedGrip: firing-grip reattach hand={} source={} inside={} side={} along={:.2f} perp={:.2f} reach={:.2f} radius={:.2f}",
