@@ -96,6 +96,60 @@ namespace rock::held_weapon_instant_transition
             }
         }
 
+        /*
+         * 140EF9E80 (player, show) is the weapon show/hide routine the Pip-Boy
+         * and pause menu code calls (140C63C90/140C63FC0). Showing a weapon
+         * that was hidden (+12A4 bit 0 clear) runs an inlined copy of the
+         * equip preparation 140EF8E60: wait flag +12A3:80, presentation
+         * deadline +8A8 = now + 0.5 s (1437CFE88) and attack cooldown +908
+         * (1437D0158). Every menu exit hid the weapon ~500 ms and refused
+         * fire ~1 s (runtime 14 Oct 21:12). The same removal as an equip
+         * preparation applies after a real show; a hide, or a show of an
+         * already shown weapon, is untouched.
+         */
+        using SetPlayerWeaponShown = void (*)(RE::PlayerCharacter*, bool);
+        constexpr std::uintptr_t kWeaponShowEntry = 0xEF9E80;
+        constexpr std::array<std::uint8_t, 16> kWeaponShowPrologue{
+            0x48, 0x89, 0x74, 0x24, 0x18, // mov [rsp+18],rsi
+            0x57,                         // push rdi
+            0x48, 0x83, 0xEC, 0x20,       // sub rsp,20
+            0x0F, 0xB6, 0xF2,             // movzx esi,dl
+            0x48, 0x8B, 0xF9,             // mov rdi,rcx
+        };
+        constexpr std::ptrdiff_t kWeaponShownOffset = 0x12A4;
+        SetPlayerWeaponShown s_originalSetPlayerWeaponShown = nullptr;
+
+        void onSetPlayerWeaponShown(RE::PlayerCharacter* player, bool show)
+        {
+            std::uint8_t shownBefore = 1;
+            float priorCooldown = 0.0f;
+            const bool applies = show && player && player == RE::PlayerCharacter::GetSingleton() &&
+                native_memory::tryReadField(player, kWeaponShownOffset, shownBefore) && (shownBefore & 1u) == 0 &&
+                native_memory::tryReadField(player, kAttackCooldownOffset, priorCooldown) && std::isfinite(priorCooldown);
+            s_originalSetPlayerWeaponShown(player, show);
+            if (applies) removeAddedPresentationGates(player, priorCooldown, "Weapon show after menu");
+        }
+
+        void installMenuWeaponShow()
+        {
+            if (!s_presentationDeadlineVerified ||
+                !bytesMatch(0xEF9EA1, std::array<std::uint8_t, 7>{ 0x80, 0x89, 0xA3, 0x12, 0x00, 0x00, 0x80 }) ||
+                !bytesMatch(0xEF9ED4, std::array<std::uint8_t, 8>{ 0xF3, 0x0F, 0x11, 0x81, 0xA8, 0x08, 0x00, 0x00 }) ||
+                !bytesMatch(0xEF9EE4, std::array<std::uint8_t, 8>{ 0xF3, 0x0F, 0x11, 0x81, 0x08, 0x09, 0x00, 0x00 })) {
+                ROCK_LOG_ERROR(Init, "Weapon show delay removal unavailable: native show routine changed");
+                return;
+            }
+            void* original = nullptr;
+            if (!entry_trampoline_hook::install("Player weapon show after menu", kWeaponShowEntry,
+                    kWeaponShowPrologue.data(), kWeaponShowPrologue.size(),
+                    reinterpret_cast<void*>(&onSetPlayerWeaponShown), original) || !original) {
+                ROCK_LOG_ERROR(Init, "Weapon show delay removal installation failed; native show retained");
+                return;
+            }
+            s_originalSetPlayerWeaponShown = reinterpret_cast<SetPlayerWeaponShown>(original);
+            ROCK_LOG_INFO(Init, "Weapon show delay removal installed: menu exits keep the pre-existing combat cooldown and present at once");
+        }
+
         void installTriggerEquipPreparation()
         {
             if (s_attackDelayRemovalInstalled) return;
@@ -264,6 +318,7 @@ namespace rock::held_weapon_instant_transition
         s_installed.store(ready, std::memory_order_release);
         if (ready) {
             installTriggerEquipPreparation();
+            installMenuWeaponShow();
             native_trigger_equip_graph::install();
         }
         return ready;
@@ -394,7 +449,12 @@ namespace rock::held_weapon_instant_transition
             std::isfinite(priorCooldown);
         prepare(player);
         if (!preserve) return;
+        removeAddedPresentationGates(player, priorCooldown, "Equip preparation");
+        trigger_equip_readiness_trace::stage("after-native-preparation");
+    }
 
+    void removeAddedPresentationGates(RE::PlayerCharacter* player, const float priorCooldown, const char* source) noexcept
+    {
         // This timer is shared with bash and other native combat input gates.
         // Restore its exact pre-call value, not an unconditional zero. The
         // synchronous preparation has no callbacks; its other writes (draw
@@ -405,7 +465,7 @@ namespace rock::held_weapon_instant_transition
             ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equip preparation could not restore pre-existing attack cooldown");
             return;
         }
-        ROCK_LOG_SAMPLE_INFO(Weapon, 1000, "Equip preparation preserved attack cooldown={:.4f}s; added equip delay removed", priorCooldown);
+        ROCK_LOG_SAMPLE_INFO(Weapon, 1000, "{} preserved attack cooldown={:.4f}s; added equip delay removed", source, priorCooldown);
         // The captured half-second rejection is a second, independent native
         // presentation wait. Make only this equip's deadline due now.
         // Leave bits 80/40 untouched: the native player update must still clear
@@ -420,14 +480,13 @@ namespace rock::held_weapon_instant_transition
             const float due = static_cast<float>(ticks) * secondsPerTick;
             auto* deadline = reinterpret_cast<float*>(reinterpret_cast<char*>(player) + 0x8A8);
             if (std::isfinite(due) && native_memory::tryWriteValue(deadline, due)) {
-                ROCK_LOG_SAMPLE_INFO(Weapon, 1000, "Equip presentation deadline due now; native readiness update retained");
+                ROCK_LOG_SAMPLE_INFO(Weapon, 1000, "{} presentation deadline due now; native readiness update retained", source);
             } else {
-                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equip presentation deadline write unavailable; native wait retained");
+                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "{} presentation deadline write unavailable; native wait retained", source);
             }
         } else {
-            ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equip presentation deadline evidence unavailable; native wait retained");
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "{} presentation deadline evidence unavailable; native wait retained", source);
         }
-        trigger_equip_readiness_trace::stage("after-native-preparation");
     }
 
     const char* requestReasonName(const RequestReason reason) noexcept

@@ -87,6 +87,9 @@ namespace rock::held_weapon_instant_transition
     // keeps pre-existing combat cooldowns instead of adding the equip delay
     // and makes the native presentation deadline due now.
     void prepareInstantDraw(RE::PlayerCharacter* player) noexcept;
+    // After a native preparation added them: restores the pre-call attack
+    // cooldown and makes the presentation deadline due now.
+    void removeAddedPresentationGates(RE::PlayerCharacter* player, float priorCooldown, const char* source) noexcept;
 
     // Main-thread-only transaction. The scope surrounds exactly one immediate
     // EquipObject call and suppresses only its verified player draw/sheathe

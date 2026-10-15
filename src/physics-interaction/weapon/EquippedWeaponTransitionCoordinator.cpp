@@ -3,7 +3,6 @@
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/weapon/EquippedWeaponVisualState.h"
-#include "physics-interaction/weapon/NativeEquippedModelLifetime.h"
 #include "physics-interaction/weapon/NativeEquippedWeaponAttach.h"
 #include "physics-interaction/weapon/NativeEquippedWeaponDraw.h"
 #include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
@@ -886,39 +885,6 @@ namespace rock
 
     void EquippedWeaponTransitionCoordinator::finalizeVisualPresentation()
     {
-        /*
-         * After a Pip-Boy or pause exit, a native refresh queued while the
-         * menu was open culls the first-person Weapon node on the frame after
-         * the close, with no native hide owner left (runtime 14 Oct
-         * 21:01:23, every exit), and nothing unculls it until the native
-         * attach repair ~500 ms later. While this transition is bound and
-         * the exact weapon is drawn with no native hide owner, keep the
-         * instance's ancestors rendered just before the frame is drawn. The
-         * instance itself is not touched: FRIK hides it for Pip-Boy finger
-         * operation and ROCK's bridges own its cull.
-         */
-        if (_active && _boundIdentity.valid() &&
-            static_cast<held_weapon_equip_state_policy::NativeWeaponState>(f4vr::getNativeWeaponState(f4vr::getPlayer())) ==
-                held_weapon_equip_state_policy::NativeWeaponState::Drawn &&
-            native_equipped_model_lifetime::playerWeaponHideOwnerFlags() == 0 &&
-            readCurrentIdentity() == _boundIdentity) {
-            const auto visual = equipped_weapon_visual_state::observe(
-                _boundIdentity.formID, _supersededNativeInstanceNode, &_visualCache);
-            if (visual.exactInstance && !visual.ancestorPathVisible) {
-                std::uint32_t restored = 0;
-                for (std::size_t i = 0; i + 1 < visual.pathNodeCount; ++i) {
-                    auto* node = visual.pathNodes[i];
-                    if (node && !equipped_weapon_visual_state::isLocallyVisible(node)) {
-                        equipped_weapon_visual_state::setLocallyVisible(node, true);
-                        ++restored;
-                    }
-                }
-                if (restored && visual.weaponRoot) f4vr::updateDown(visual.weaponRoot, true);
-                ROCK_LOG_INFO(Weapon,
-                    "Equipped weapon transition stale native ancestor cull cleared source={} formID={:08X} nodes={} elapsed={:.3f}s",
-                    sourceName(_source), _boundIdentity.formID, restored, _activeSeconds);
-            }
-        }
         trigger_equip_readiness_trace::renderedHands();
         // Diagnose part movement even after the short visual bridge is gone.
         // Re-resolve from the live current identity, never a retained node.

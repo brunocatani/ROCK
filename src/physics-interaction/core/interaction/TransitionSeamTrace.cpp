@@ -281,7 +281,7 @@ namespace rock
                     weaponNode ? (weaponNode->GetAppCulled() ? "yes" : "no") : "missing",
                     reinterpret_cast<std::uintptr_t>(pending), pending && pending == views[0].root,
                     _equipped.transition.heldTransferPhaseForTrace(),
-                    native_equipped_model_lifetime::playerWeaponHideOwnerFlags());
+                    native_equipped_model_lifetime::playerWeaponHideOwnerFlagsForTrace());
             }
             s_seam.hands = hands;
         } catch (...) {
