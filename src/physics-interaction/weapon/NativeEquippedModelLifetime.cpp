@@ -285,7 +285,7 @@ namespace rock::native_equipped_model_lifetime
         std::array<std::uintptr_t, 2> s_reportedRoots{};
     }
 
-    std::uint8_t playerWeaponCullFlagsForTrace() noexcept
+    std::uint8_t playerWeaponHideOwnerFlags() noexcept
     {
         std::uint8_t flags = 0xFF;
         auto* player = f4vr::getPlayer();
