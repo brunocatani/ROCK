@@ -259,6 +259,16 @@ namespace rock
                     const auto solve = frik_visual_authority::getHandSolveResult(frik_visual_authority::handFromBool(left), wrist);
                     const bool claimed = frik_visual_authority::tryGetPublishedHandWorld(frik_visual_authority::handFromBool(left), published);
                     const auto& p = handInWand[h].translate;
+                    hand_world_claim_registry_policy::Claim claim{};
+                    const bool hasClaim = frik_hand_world_authority::tryGetPublishedHandClaim(left, claim);
+                    const auto& part = _twoHandedGrip.partGripVisualTrace(left);
+                    const bool partCurrent = part.frameIndex == runtime_state::currentFrame().frameIndex;
+                    ROCK_LOG_INFO(Weapon,
+                        "SEAM ik-owner frame={} hand={} claim={} priority={} partGrip={} seq={} branch={} lerpStarted={} lerpAlpha={:.2f} "
+                        "appliedVsSeat={:.2f}gu/{:.2f}deg seatLocalStep={:.2f}gu/{:.2f}deg",
+                        s_seam.frame + 1, left ? "left" : "right", hasClaim ? hand_world_claim_registry_policy::tagView(claim) : std::string_view{},
+                        hasClaim ? claim.priority : 0, partCurrent, part.gripSequence, part.branch, part.lerpStarted, part.lerpAlpha,
+                        part.appliedVsSeatGameUnits, part.appliedVsSeatDegrees, part.seatLocalStepGameUnits, part.seatLocalStepDegrees);
                     ROCK_LOG_INFO(Weapon,
                         "SEAM ik frame={} hand={} inWandStep={:.2f}gu/{:.2f}deg inWand=({:.2f},{:.2f},{:.2f}) solve={} published={} "
                         "firingLeft={} manual={} gripping={} primaryOnly={} partCarry={} firingOccupied={} pending={}/{} handoff={}/{} paired={} supportOnly={}",

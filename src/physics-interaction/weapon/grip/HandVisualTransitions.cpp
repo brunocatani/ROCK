@@ -1169,6 +1169,7 @@ namespace rock
             liveHandWorld;
         const bool synchronizedDynamicAcquisition =
             dynamicSupportAcquisitionMatches(isLeft, grip);
+        const bool lerpWasInitialized = grip.visualLerp.initialized;
         const RE::NiTransform appliedHandWorld =
             grip.transferredLooseGrip ? partGripHandWorld : synchronizedDynamicAcquisition ?
             resolveDynamicSupportAcquisitionHandTarget(
@@ -1179,6 +1180,28 @@ namespace rock
                 acquisitionStart,
                 dt,
                 grip.visualLerp);
+        {
+            // Diagnostic: support-hand twitch on firing-grip reattach.
+            const std::size_t index = isLeft ? 0u : 1u;
+            auto& trace = _partGripVisualTrace[index];
+            trace.frameIndex = runtime_state::currentFrame().frameIndex;
+            trace.gripSequence = grip.gripSequence;
+            trace.branch = grip.transferredLooseGrip ? "transferred" :
+                synchronizedDynamicAcquisition ? "dynamic-acquisition" : "locked-lerp";
+            trace.lerpStarted = !lerpWasInitialized && grip.visualLerp.initialized;
+            trace.lerpAlpha = grip.visualLerp.lastAlpha;
+            trace.appliedVsSeatGameUnits = hand_visual_lerp_math::distanceGameUnits(appliedHandWorld.translate, partGripHandWorld.translate);
+            trace.appliedVsSeatDegrees = hand_visual_lerp_math::rotationDistanceDegrees(appliedHandWorld, partGripHandWorld);
+            const RE::NiTransform seatLocal =
+                transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), partGripHandWorld);
+            const bool sameGrip = _partGripVisualTraceLastSequence[index] == grip.gripSequence;
+            trace.seatLocalStepGameUnits = sameGrip ?
+                hand_visual_lerp_math::distanceGameUnits(seatLocal.translate, _partGripVisualTraceLastLocal[index].translate) : -1.0f;
+            trace.seatLocalStepDegrees = sameGrip ?
+                hand_visual_lerp_math::rotationDistanceDegrees(seatLocal, _partGripVisualTraceLastLocal[index]) : -1.0f;
+            _partGripVisualTraceLastLocal[index] = seatLocal;
+            _partGripVisualTraceLastSequence[index] = grip.gripSequence;
+        }
         const bool applied =
             frik_visual_authority::publishHandWorld(
                 SUPPORT_GRIP_TAG,
