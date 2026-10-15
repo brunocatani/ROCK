@@ -322,6 +322,15 @@ namespace rock
                 input.weaponGenerationKey,
                 authoredLookup.supportCaptureSequence);
         };
+        /*
+         * The library relation describes the weapon, not this frame's
+         * firing-grip decision, so it is published on every update before
+         * any branch. Publishing it only from some branches let an equip-
+         * transition suspension withdraw the candidate: the support
+         * capability expired to Unavailable and the weapon lost its support
+         * grabs and zones (runtime 14 Oct 21:38:29, 0D000FA1).
+         */
+        const bool librarySupportPublished = publishLibraryAuthoredSupportCandidate();
         // Runtime evidence that the clip-sampled relation matches what the
         // native right-primary graph settles to; sampled, debug only.
         const auto traceLiveSupportAgainstLibrary = [&]() {
@@ -764,8 +773,7 @@ namespace rock
                         authoredLookup.captureSequence);
                     _canonicalPublishFailureLogged = true;
                 }
-                bool stableSupportPublished =
-                    publishLibraryAuthoredSupportCandidate();
+                bool stableSupportPublished = librarySupportPublished;
                 if (!stableSupportPublished) {
                     (void)rebindStableAuthoredSupportCandidate(
                         authoredLookup.captureSequence,
@@ -858,7 +866,7 @@ namespace rock
             // stations while the two-hand solver owns the weapon transform.
             if (retainedForHandoff && authoredDecision.reason ==
                     authored_weapon_grip_capture_policy::AuthoredPrimaryDecisionReason::ConflictingWeaponAuthority) {
-                if (!publishLibraryAuthoredSupportCandidate() && authoredLookup.found) {
+                if (!librarySupportPublished && authoredLookup.found) {
                     (void)publishStableAuthoredSupportCandidate(
                         authoredLookup.captureSequence, selectedRightHandInWeapon);
                 }
@@ -1177,7 +1185,7 @@ namespace rock
         // Keep the candidate frame-fresh by republishing the last verified
         // same-weapon snapshot instead of treating that animation gap as the
         // permanent loss of authored support-grip capability.
-        if (publishLibraryAuthoredSupportCandidate()) {
+        if (librarySupportPublished) {
             traceLiveSupportAgainstLibrary();
         } else if (!publishLiveAuthoredSupportCandidate(
                        resolvedCaptureSequence,
