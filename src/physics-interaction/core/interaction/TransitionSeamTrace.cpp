@@ -59,9 +59,23 @@ namespace rock
             const char* event = nullptr;
             std::array<SeamHand, 2> hands{}; // right, left; last rendered frame
             std::array<SeamHand, 2> baseline{};
+            // Rendered hand in its own controller's frame, last frame: a step
+            // here is an IK/claim change, not hand or player motion.
+            std::array<RE::NiTransform, 2> handInWand{};
+            std::array<bool, 2> handInWandValid{};
             std::uint32_t framesLeft = 0, frame = 0;
             float elapsedMs = 0.0f;
         };
+
+        const char* solveName(frik_visual_authority::HandSolveState state)
+        {
+            switch (state) {
+            case frik_visual_authority::HandSolveState::NoClaim: return "tracked";
+            case frik_visual_authority::HandSolveState::Consumed: return "claim";
+            case frik_visual_authority::HandSolveState::Unreachable: return "unreachable";
+            default: return "not-ready";
+            }
+        }
         SeamTrace s_seam{};
         constexpr std::uint32_t kSeamFrames = 40;
 
@@ -213,10 +227,51 @@ namespace rock
     {
         try {
             const auto hands = observeSeamHands(_equipped.transition.bridgeForTrace(), _twoHandedGrip.isFiringHandLeft());
+            std::array<RE::NiTransform, 2> handInWand{};
+            std::array<bool, 2> handInWandValid{};
+            for (std::size_t h = 0; h < hands.size(); ++h) {
+                RE::NiTransform wand{};
+                handInWandValid[h] = hands[h].handValid && frik_visual_authority::tryGetTrackedHandTransform(
+                    frik_visual_authority::handFromBool(h == 1), frik_visual_authority::TrackedHandKind::Wand, wand);
+                if (handInWandValid[h])
+                    handInWand[h] = transform_math::composeTransforms(transform_math::invertTransform(wand), hands[h].handWorld);
+            }
             if (!s_seam.framesLeft) {
                 s_seam.hands = hands;
+                s_seam.handInWand = handInWand;
+                s_seam.handInWandValid = handInWandValid;
                 return;
             }
+            // Off-hand IK twitch on a primary attach: each hand's rendered
+            // pose against its own controller, how FRIK solved it, and the
+            // grip/bridge state that could own it this frame.
+            {
+                const auto& pending = _equipped.transition.pendingGrip();
+                const auto& bridge = _equipped.transition.bridgeForTrace();
+                for (std::size_t h = 0; h < hands.size(); ++h) {
+                    const bool left = h == 1;
+                    float move = -1.0f, turn = -1.0f;
+                    if (handInWandValid[h] && s_seam.handInWandValid[h]) {
+                        move = dynamic_weapon_collision_policy::translationDeltaGameUnits(s_seam.handInWand[h], handInWand[h]);
+                        turn = dynamic_weapon_collision_policy::rotationDeltaDegrees(s_seam.handInWand[h], handInWand[h]);
+                    }
+                    RE::NiTransform wrist{}, published{};
+                    const auto solve = frik_visual_authority::getHandSolveResult(frik_visual_authority::handFromBool(left), wrist);
+                    const bool claimed = frik_visual_authority::tryGetPublishedHandWorld(frik_visual_authority::handFromBool(left), published);
+                    const auto& p = handInWand[h].translate;
+                    ROCK_LOG_INFO(Weapon,
+                        "SEAM ik frame={} hand={} inWandStep={:.2f}gu/{:.2f}deg inWand=({:.2f},{:.2f},{:.2f}) solve={} published={} "
+                        "firingLeft={} manual={} gripping={} primaryOnly={} partCarry={} firingOccupied={} pending={}/{} handoff={}/{} paired={} supportOnly={}",
+                        s_seam.frame + 1, left ? "left" : "right", move, turn, p.x, p.y, p.z, solveName(solve), claimed,
+                        _twoHandedGrip.isFiringHandLeft(), _twoHandedGrip.isManualOwnershipActive(), _twoHandedGrip.isGripping(),
+                        _twoHandedGrip.isPrimaryOnlyActive(), _twoHandedGrip.isPartCarryActive(), _twoHandedGrip.isFiringGripOccupied(),
+                        pending.pending, pending.pending ? (pending.isLeft ? "left" : "right") : "-",
+                        bridge.isHandPoseHandoffActive(), bridge.isHandPoseHandoffActive() ? (_equipped.transition.handPoseHandoffIsLeft() ? "left" : "right") : "-",
+                        bridge.hasPairedHandPoseHandoff(), bridge.hasSupportOnlyHandPoseHandoff());
+                }
+            }
+            s_seam.handInWand = handInWand;
+            s_seam.handInWandValid = handInWandValid;
             --s_seam.framesLeft;
             ++s_seam.frame;
             s_seam.elapsedMs += runtime_state::currentFrame().deltaSeconds * 1000.0f;

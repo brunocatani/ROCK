@@ -1668,6 +1668,19 @@ namespace rock
         const bool leftHandFiringActiveAfterGrip = gripUpdateResult.after.left.firingGripActive;
         input_remap_runtime::setEquippedWeaponLeftHandFiringActive(leftHandFiringActiveAfterGrip);
         ::rock::provider::setEquippedWeaponFiringHandIsLeft(_twoHandedGrip.isFiringHandLeft());
+        // Seam diagnostic: every change of the primary's grip ownership.
+        {
+            const std::uint8_t gripState = static_cast<std::uint8_t>(_twoHandedGrip.isFiringGripOccupied()) |
+                (static_cast<std::uint8_t>(_twoHandedGrip.isManualOwnershipActive()) << 1) |
+                (static_cast<std::uint8_t>(_twoHandedGrip.isFiringHandLeft()) << 2) |
+                (static_cast<std::uint8_t>(_twoHandedGrip.isPartCarryActive()) << 3) |
+                (static_cast<std::uint8_t>(_equipped.transition.pendingGrip().pending) << 4);
+            static std::uint8_t s_seamGripState = 0;
+            if (gripState != s_seamGripState) {
+                s_seamGripState = gripState;
+                armTransitionSeamTrace("primary-grip-change");
+            }
+        }
         // The settled hand of the drawn primary, for readers inside menus
         // (which release the live grip). Native carry is the right hand;
         // ROCK's own ownership names its firing hand or part-carry anchor.
