@@ -78,6 +78,20 @@ namespace rock::native_hand_equipment
     enum class WornHand : std::uint8_t { None, Right, Left };
     [[nodiscard]] WornHand wornRowHand(std::uint32_t form, int slot) noexcept;
 
+    // The hand holding an index-0 item: its firing hand, or with `firing`
+    // false the hand carrying it by a part grip.
+    struct PrimaryHand
+    {
+        std::uint32_t form = 0;
+        std::uintptr_t instance = 0;
+        bool left = false;
+        bool firing = true;
+    };
+    // Frame owner, outside menus: the settled hand holding this index-0
+    // item. Menus release the live grip; this record keeps the hand for
+    // Pip-Boy display and allocation.
+    void recordPrimaryHand(std::uint32_t form, std::uintptr_t instance, bool left, bool firing) noexcept;
+
     // Frame owner: the item now at index 0 fires from `left`'s hand, as a
     // Pip-Boy directed equip would (used when the second weapon is promoted).
     void directPrimaryHand(std::uint32_t form, std::uintptr_t instance, bool left) noexcept;

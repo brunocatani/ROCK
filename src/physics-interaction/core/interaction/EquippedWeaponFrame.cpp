@@ -1668,6 +1668,19 @@ namespace rock
         const bool leftHandFiringActiveAfterGrip = gripUpdateResult.after.left.firingGripActive;
         input_remap_runtime::setEquippedWeaponLeftHandFiringActive(leftHandFiringActiveAfterGrip);
         ::rock::provider::setEquippedWeaponFiringHandIsLeft(_twoHandedGrip.isFiringHandLeft());
+        // The settled hand of the drawn primary, for readers inside menus
+        // (which release the live grip). Native carry is the right hand;
+        // ROCK's own ownership names its firing hand or part-carry anchor.
+        // A pending equip, resume or transfer has not settled yet.
+        if (!w.inputBlockingMenuActive && runtime_state::currentFrame().weaponDrawn && w.observedEquippedWeaponFormID &&
+            !_equipped.transition.pendingGrip().pending && !_equipped.gripResumePending &&
+            !_equipped.transition.heldTransfer().active() && !_twoHandedGrip.isHandsFreeRetained()) {
+            const bool partCarry = _twoHandedGrip.isPartCarryActive();
+            native_hand_equipment::recordPrimaryHand(w.observedEquippedWeaponFormID, w.observedEquippedWeaponInstanceData,
+                partCarry ? _twoHandedGrip.weaponCarrierIsLeft() :
+                    _twoHandedGrip.isManualOwnershipActive() && _twoHandedGrip.isFiringHandLeft(),
+                !partCarry);
+        }
 
         bool rightHandWeaponAuthorityActive = prepared.rightHandWeaponEquipped || prepared.retainedWeaponCollisionActive;
         // A visible part-carry frees the right hand even while weapon bodies exist (see beginEquippedWeaponFrame).

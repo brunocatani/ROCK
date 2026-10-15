@@ -12,6 +12,7 @@
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/input/NativePipboyHandInput.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "RockConfig.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -93,23 +94,21 @@ namespace rock::native_hand_equipment
             ReleaseSRWLockExclusive(&s_secondaryHandLock);
         }
 
+        /*
+         * Hand holding the index-0 weapon, written by the frame owner from
+         * its settled grip outside menus (recordPrimaryHand) and when a
+         * directed hand is applied. Menus release the live firing grip and
+         * its input routing, so Pip-Boy readers must use this record: the
+         * live routing reported every left-held weapon as right (runtime
+         * 14 Oct 21:25:03). Same lock discipline as the secondary record.
+         */
+        SRWLOCK s_primaryHandLock = SRWLOCK_INIT;
+        PrimaryHand s_primaryHand{};
+
         // An item without instance data is identified by its form alone.
         bool sameItem(std::uint32_t form, std::uintptr_t instance, std::uint32_t otherForm, std::uintptr_t otherInstance) noexcept
         {
             return form != 0 && form == otherForm && (!instance || !otherInstance || instance == otherInstance);
-        }
-
-        // The recorded hand for this exact index-1 item, else the hand that
-        // does not fire index 0 (recorded so it stays put afterwards).
-        bool resolveSecondaryHand(std::uint32_t form, std::uintptr_t instance) noexcept
-        {
-            AcquireSRWLockShared(&s_secondaryHandLock);
-            const auto record = s_secondaryHand;
-            ReleaseSRWLockShared(&s_secondaryHandLock);
-            if (sameItem(record.form, record.instance, form, instance)) return record.left;
-            const bool left = !input_remap_runtime::publishedWeaponTriggerRouting().leftFiring;
-            if (form) recordSecondaryHand(form, instance, left);
-            return left;
         }
 
         struct WornWeapon
@@ -117,6 +116,45 @@ namespace rock::native_hand_equipment
             std::uint32_t form = 0;
             std::uintptr_t instance = 0;
         };
+
+        std::array<WornWeapon, 2> wornWeapons(RE::Actor* actor) noexcept;
+
+        // The hand of this exact index-0 item: a directed Pip-Boy hand not
+        // yet applied, else its recorded hand, else the hand the frame owner
+        // will give it (opposite a recorded second weapon, else the default
+        // hand).
+        PrimaryHand resolvePrimaryHand(std::uint32_t form, std::uintptr_t instance) noexcept
+        {
+            const auto directed = lastDirectedPrimaryEquip();
+            if (directed.sequence != s_directedApplied.load(std::memory_order_acquire) &&
+                sameItem(directed.form, directed.instance, form, instance))
+                return { form, instance, directed.left, true };
+            AcquireSRWLockShared(&s_primaryHandLock);
+            const auto record = s_primaryHand;
+            ReleaseSRWLockShared(&s_primaryHandLock);
+            if (sameItem(record.form, record.instance, form, instance)) return record;
+            const auto worn = wornWeapons(f4vr::getPlayer());
+            AcquireSRWLockShared(&s_secondaryHandLock);
+            const auto secondary = s_secondaryHand;
+            ReleaseSRWLockShared(&s_secondaryHandLock);
+            const bool left = sameItem(secondary.form, secondary.instance, worn[1].form, worn[1].instance) ?
+                !secondary.left : g_rockConfig.rockLeftHandedMode;
+            return { form, instance, left, true };
+        }
+
+        // The recorded hand for this exact index-1 item, else the hand that
+        // does not hold index 0 (recorded so it stays put afterwards).
+        bool resolveSecondaryHand(std::uint32_t form, std::uintptr_t instance) noexcept
+        {
+            AcquireSRWLockShared(&s_secondaryHandLock);
+            const auto record = s_secondaryHand;
+            ReleaseSRWLockShared(&s_secondaryHandLock);
+            if (sameItem(record.form, record.instance, form, instance)) return record.left;
+            const auto worn = wornWeapons(f4vr::getPlayer());
+            const bool left = !(worn[0].form && resolvePrimaryHand(worn[0].form, worn[0].instance).left);
+            if (form) recordSecondaryHand(form, instance, left);
+            return left;
+        }
 
         std::array<WornWeapon, 2> wornWeapons(RE::Actor* actor) noexcept
         {
@@ -392,21 +430,17 @@ namespace rock::native_hand_equipment
                 // either hand. The acting hand chooses which weapon it holds.
                 const bool actingLeft = hand == Hand::Left;
                 const auto worn = wornWeapons(actor);
-                const auto routing = input_remap_runtime::publishedWeaponTriggerRouting();
                 const bool secondaryLeft = worn[1].form && resolveSecondaryHand(worn[1].form, worn[1].instance);
-                // A hand chosen earlier in this Pip-Boy session is applied only
-                // once the menu closes; decide with it until then.
-                const auto directed = lastDirectedPrimaryEquip();
-                const bool directedPending = directed.sequence != s_directedApplied.load(std::memory_order_acquire) &&
-                    sameItem(directed.form, directed.instance, worn[0].form, worn[0].instance);
-                const bool primaryLeft = directedPending ? directed.left : routing.leftFiring;
+                // Includes a hand chosen earlier in this Pip-Boy session,
+                // applied only once the menu closes.
+                const auto primary = resolvePrimaryHand(worn[0].form, worn[0].instance);
                 namespace allocation = equip_slot_allocation;
                 const auto handOf = [](bool left) { return left ? allocation::Hand::Left : allocation::Hand::Right; };
                 const auto wears = [&](std::uint32_t index) { return sameItem(worn[index].form, worn[index].instance, formID, instance); };
                 const auto decision = allocation::decide(handOf(actingLeft), { {
                     // A support-held (detached) slot 0 has no firing hand.
                     { .worn = worn[0].form != 0,
-                        .firingHand = directedPending || !routing.detached ? handOf(primaryLeft) : allocation::Hand::None,
+                        .firingHand = primary.firing ? handOf(primary.left) : allocation::Hand::None,
                         .requestedItem = wears(0) },
                     { .worn = worn[1].form != 0, .firingHand = handOf(secondaryLeft), .requestedItem = wears(1) },
                 } });
@@ -623,14 +657,21 @@ namespace rock::native_hand_equipment
         const int index = worn[slot].form == form ? slot : worn[1 - slot].form == form ? 1 - slot : -1;
         if (index < 0) return WornHand::None;
         if (index == 1) return hand(resolveSecondaryHand(worn[1].form, worn[1].instance));
-        // Same hand rule as Pip-Boy allocation: a hand chosen in this menu
-        // session counts before it is applied; a support-held primary shows
-        // the support hand that holds it.
-        const auto routing = input_remap_runtime::publishedWeaponTriggerRouting();
-        const auto directed = lastDirectedPrimaryEquip();
-        if (directed.sequence != s_directedApplied.load(std::memory_order_acquire) &&
-            sameItem(directed.form, directed.instance, worn[0].form, worn[0].instance)) return hand(directed.left);
-        return hand(routing.detached ? !routing.leftFiring : routing.leftFiring);
+        // Same hand rule as Pip-Boy allocation; a support-held primary shows
+        // the hand that holds it.
+        return hand(resolvePrimaryHand(worn[0].form, worn[0].instance).left);
+    }
+
+    void recordPrimaryHand(std::uint32_t form, std::uintptr_t instance, bool left, bool firing) noexcept
+    {
+        if (!form) return;
+        AcquireSRWLockExclusive(&s_primaryHandLock);
+        const bool changed = !sameItem(s_primaryHand.form, s_primaryHand.instance, form, instance) ||
+            s_primaryHand.left != left || s_primaryHand.firing != firing;
+        s_primaryHand = {form, instance, left, firing};
+        ReleaseSRWLockExclusive(&s_primaryHandLock);
+        if (changed) ROCK_LOG_INFO(Weapon, "Primary weapon hand recorded weapon={:08X} instance={:#x} hand={} role={}",
+            form, instance, left ? "left" : "right", firing ? "firing" : "support");
     }
 
     void directPrimaryHand(std::uint32_t form, std::uintptr_t instance, bool left) noexcept
@@ -640,6 +681,8 @@ namespace rock::native_hand_equipment
 
     void noteDirectedPrimaryApplied(std::uint64_t sequence) noexcept
     {
+        const auto directed = lastDirectedPrimaryEquip();
+        if (directed.sequence == sequence) recordPrimaryHand(directed.form, directed.instance, directed.left, true);
         s_directedApplied.store(sequence, std::memory_order_release);
     }
 
