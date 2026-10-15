@@ -394,37 +394,6 @@ namespace rock::equipped_weapon_manual_ownership_policy
                (!collisionGenerationRequired || currentCollisionGenerationKey != 0);
     }
 
-    struct NativeAimRebindInput
-    {
-        bool nativeRightCarry{ false };
-        bool frameValid{ false };
-        std::uint64_t capturedOwnershipKey{ 0 };
-        std::uint64_t currentOwnershipKey{ 0 };
-        // Equipped instance content (mods) at capture and now. A zero captured
-        // key means the aim was sampled before the content was known
-        // (PrimaryOnly at generation 0) and rebinds on ownership alone.
-        std::uint64_t capturedInstanceContentKey{ 0 };
-        std::uint64_t currentInstanceContentKey{ 0 };
-        bool sameRoot{ false };
-    };
-
-    [[nodiscard]] inline constexpr bool canCaptureNativeAim(
-        bool nativeCarry, bool weaponReturnActive, bool scopeAllowsCapture,
-        bool collisionPresentationActive, bool cleanIntentAvailable) noexcept
-    {
-        return nativeCarry && !weaponReturnActive && scopeAllowsCapture &&
-            (!collisionPresentationActive || cleanIntentAvailable);
-    }
-
-    [[nodiscard]] inline constexpr bool canRebindNativeAim(const NativeAimRebindInput& input) noexcept
-    {
-        return input.frameValid && input.currentOwnershipKey != 0 &&
-            input.capturedOwnershipKey == input.currentOwnershipKey &&
-            (input.capturedInstanceContentKey == 0 ||
-                input.capturedInstanceContentKey == input.currentInstanceContentKey) &&
-            (!input.nativeRightCarry || input.sameRoot);
-    }
-
     struct PrimaryReleaseIntentState
     {
         std::uint64_t ownershipKey{ 0 };

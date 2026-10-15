@@ -1203,13 +1203,6 @@ namespace rock
                 "TwoHandedGrip: support grip acquisition rejected before commit because the primary hand frame is unavailable");
             return;
         }
-        if (!primaryHandIsLeft) {
-            (void)captureRightNativeWeaponAimFrame(
-                weaponNode,
-                decision.weaponGenerationKey,
-                currentEquippedWeaponOwnershipKey,
-                weaponCollision.getCurrentEquippedWeaponInstanceContentKey());
-        }
 
         /*
          * Position-only authored mode must also reuse the canonical: the
@@ -1794,12 +1787,11 @@ namespace rock
             }
             _session.weaponNode = currentWeaponNode;
             _session.weaponGenerationKey = 0;
-            return rebindCarryFramesToWeapon(
+            rebindCarryFramesToWeapon(
                 currentWeaponNode,
                 0,
-                currentEquippedWeaponOwnershipKey,
-                weaponCollision.getCurrentEquippedWeaponInstanceContentKey(),
-                false);
+                currentEquippedWeaponOwnershipKey);
+            return true;
         }
 
         const bool generationChanged = _session.weaponGenerationKey != currentWeaponGenerationKey;
@@ -1829,14 +1821,11 @@ namespace rock
                 weaponRootChanged ? "yes" : "no");
         }
 
-        if ((generationChanged || weaponRootChanged) &&
-            !rebindCarryFramesToWeapon(
+        if (generationChanged || weaponRootChanged) {
+            rebindCarryFramesToWeapon(
                 currentWeaponNode,
                 currentWeaponGenerationKey,
-                currentEquippedWeaponOwnershipKey,
-                weaponCollision.getCurrentEquippedWeaponInstanceContentKey(),
-                true)) {
-            return false;
+                currentEquippedWeaponOwnershipKey);
         }
 
         if (generationChanged || weaponRootChanged) {

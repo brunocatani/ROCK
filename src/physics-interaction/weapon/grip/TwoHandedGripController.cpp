@@ -230,17 +230,6 @@ namespace rock
             weaponNode,
             currentWeaponGenerationKey);
 
-        // The publisher resets every update and reconstructs the native pose
-        // before collision/recoil presentation. Seed aim while this exact
-        // frame and weapon still own it, including persistent primary carry.
-        // Sampling rendered roots later can be blocked for the whole hold.
-        if (_recoil.rightBaseValid) {
-            (void)captureRightNativeWeaponAimFrame(weaponNode,
-                currentWeaponGenerationKey, currentEquippedWeaponOwnershipKey,
-                weaponCollision.getCurrentEquippedWeaponInstanceContentKey(),
-                &_recoil.rightWeaponBase);
-        }
-
         refreshNaturalHandInWandFrames();
         refreshAuthoredSupportRightMirror();
 
@@ -744,12 +733,6 @@ namespace rock
             break;
         }
 
-        refreshRightNativeAimFrame(
-            weaponNode,
-            currentWeaponGenerationKey,
-            currentEquippedWeaponOwnershipKey,
-            weaponCollision.getCurrentEquippedWeaponInstanceContentKey());
-
         // Enforce the left-firing weapon-node ownership contract after every
         // state/role transition this frame (idempotent; also the parent
         // watchdog for engine-side re-attach).
@@ -825,7 +808,6 @@ namespace rock
         clearSupportGripPose(false);
         restoreFrikPrimaryWeaponPose();
         clearRightFiringHandCanonicalFrame();
-        _firing.rightNativeWeaponAimFrame = {};
         _firing.leftDampedFollowFrame = {};
         _leftCarry.supportReleaseReturn = {};
         _firing.rightNaturalBoneInWand = {};

@@ -2029,7 +2029,7 @@ namespace rock
                     pendingGripStart.source =
                         equipped_weapon_manual_ownership_policy::PrimaryOnlyStartSource::HeldWeaponEquip;
                     // A solo left carry reacquires its canonical seat. A paired
-                    // transfer retains both visual seats; its native aim frame
+                    // transfer retains both visual seats; its weapon aim
                     // remains separately owned by the equipped carry solver.
                     if (equipIsLeft && !pairedGrips.valid() && !supportEquipRequested) {
                         pendingGripStart.hasFiringHandWeaponLocal = false;

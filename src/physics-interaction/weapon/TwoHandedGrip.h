@@ -1438,19 +1438,13 @@ namespace rock
             const RE::NiTransform& positionOnlyWeaponWorld,
             float advanceSeconds);
 
-        /*
-         * Left-carry owner for weapon identity changes: validates the
-         * mirrored native aim frame for the current equipped owner (fail
-         * closed when missing) and rebinds it - plus the damped follow
-         * frame - to the new node and generation. A right-carry session has
-         * no left frames to rebind and succeeds unconditionally.
-         */
-        bool rebindCarryFramesToWeapon(
+        // Left-carry owner for weapon identity changes: rebinds the damped
+        // follow frame to the new node and generation, or drops it when the
+        // equipped owner changed.
+        void rebindCarryFramesToWeapon(
             RE::NiNode* currentWeaponNode,
             std::uint64_t targetWeaponGenerationKey,
-            std::uint64_t currentEquippedWeaponOwnershipKey,
-            std::uint64_t currentInstanceContentKey,
-            bool logMissingAimFrame);
+            std::uint64_t currentEquippedWeaponOwnershipKey);
 
         weapon_support_authority_policy::FiringGripPromotionResult tryPromoteSupportGripToFiringGrip(
             RE::NiNode* weaponNode, float dt, const char*& outReason);
@@ -1460,26 +1454,15 @@ namespace rock
         /*
          * Canonical right-hand firing seat. It retains authored wrist/position
          * data and is mirrored only for left-hand presentation. Left weapon
-         * aim comes from the separate native weapon-in-wand frame below; the
+         * aim comes from the separate weapon-in-wand orientation below; the
          * canonical wrist must never become weapon rotation authority again.
          */
         void rememberRightFiringHandCanonicalFrame(std::uint64_t weaponInstanceContentKey);
-        void refreshRightNativeAimFrame(
-            RE::NiNode* weaponNode,
-            std::uint64_t currentWeaponGenerationKey,
-            std::uint64_t currentEquippedWeaponOwnershipKey,
-            std::uint64_t weaponInstanceContentKey);
-        bool canCaptureRightNativeWeaponAimFrame(bool cleanIntentAvailable = false) const;
-        bool captureRightNativeWeaponAimFrame(
-            RE::NiNode* weaponNode,
-            std::uint64_t currentWeaponGenerationKey,
-            std::uint64_t currentEquippedWeaponOwnershipKey,
-            std::uint64_t weaponInstanceContentKey,
-            const RE::NiTransform* cleanNativeIntentWorld = nullptr);
-        bool hasRightNativeWeaponAimFrame(
+        bool tryResolveRightWeaponAimInWand(
             const RE::NiNode* weaponNode,
             std::uint64_t weaponGenerationKey,
-            std::uint64_t weaponOwnershipKey) const;
+            std::uint64_t weaponOwnershipKey,
+            RE::NiTransform& outWeaponInRightWand) const;
         bool tryResolveLeftPositionOnlyCarryFrames(
             RE::NiNode* weaponNode,
             RE::NiTransform& outPhysicalHandWorld,
@@ -1934,20 +1917,6 @@ namespace rock
             AuthoredAnimation,
         };
 
-        struct RightNativeWeaponAimFrame
-        {
-            RE::NiTransform weaponInWandOrientation{};
-            // Non-owning identity witness only; compared, never dereferenced.
-            RE::NiNode* weaponNodeIdentity{ nullptr };
-            std::uint64_t weaponGenerationKey{ 0 };
-            std::uint64_t weaponOwnershipKey{ 0 };
-            // Equipped instance content at capture; zero when captured before
-            // the content was known. Lets the frame survive a collision-only
-            // rebuild of the same item but never a mod or equip change.
-            std::uint64_t weaponInstanceContentKey{ 0 };
-            bool valid{ false };
-        };
-
         struct LeftFiringDampedFollowFrame
         {
             RE::NiTransform handInWandOrientation{};
@@ -1984,7 +1953,6 @@ namespace rock
             };
             bool hasRightCanonicalHandWeaponLocal{ false };
 
-            RightNativeWeaponAimFrame rightNativeWeaponAimFrame{};
             LeftFiringDampedFollowFrame leftDampedFollowFrame{};
 
             std::array<RE::NiTransform, 15> rightFingerLocalTransforms{};

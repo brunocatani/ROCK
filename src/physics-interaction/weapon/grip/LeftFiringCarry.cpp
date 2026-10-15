@@ -64,7 +64,7 @@ namespace rock
             _hasSolvedWeaponTransform = false;
             ROCK_LOG_WARN(
                 Weapon,
-                "TwoHandedGrip: clearing left-firing carry because the physical hand, native aim frame, or authored seat is unavailable");
+                "TwoHandedGrip: clearing left-firing carry because the physical hand, weapon aim, or authored seat is unavailable");
             transitionToInactive(false);
             return false;
         }
@@ -218,12 +218,14 @@ namespace rock
         if (outDampedAimCarrierWorld) {
             *outDampedAimCarrierWorld = {};
         }
+        RE::NiTransform rightWeaponAimInWand{};
         if (!weaponNode || weaponNode != _session.weaponNode ||
             !usesLeftFiringCarry() || !_firing.hasPrimaryHandWeaponLocal ||
-            !hasRightNativeWeaponAimFrame(
+            !tryResolveRightWeaponAimInWand(
                 weaponNode,
                 _session.weaponGenerationKey,
-                _session.equippedWeaponOwnershipKey) ||
+                _session.equippedWeaponOwnershipKey,
+                rightWeaponAimInWand) ||
             !isFiniteTransform(_firing.primaryHandWeaponLocal) ||
             !std::isfinite(_firing.primaryGripLocal.x) ||
             !std::isfinite(_firing.primaryGripLocal.y) ||
@@ -304,8 +306,7 @@ namespace rock
         RE::NiTransform leftWeaponInWand =
             left_firing_position_only_math::
                 mirrorRightWeaponInWandOrientation(
-                    _firing.rightNativeWeaponAimFrame.
-                        weaponInWandOrientation);
+                    rightWeaponAimInWand);
         if (_recoil.weaponEvidence.resolved && _recoil.weaponEvidence.sizeClass == WeaponSizeClass::Melee) {
             leftWeaponInWand = transform_math::composeTransforms(
                 weapon_aim_basis::meleePitchInController(g_rockConfig.rockMeleeGripPitchDegrees),
@@ -363,7 +364,7 @@ namespace rock
             const RE::NiPoint3 barrelWorld = transform_math::rotateLocalVectorToWorld(outWeaponWorld.rotate, muzzle);
             const RE::NiPoint3 barrelInLeftWand = transform_math::rotateWorldVectorToLocal(leftWand->world.rotate, barrelWorld);
             const RE::NiPoint3 aimBarrelInRightWand = transform_math::rotateLocalVectorToWorld(
-                _firing.rightNativeWeaponAimFrame.weaponInWandOrientation.rotate, muzzle);
+                rightWeaponAimInWand.rotate, muzzle);
             ROCK_LOG_SAMPLE_INFO(Weapon, 1000,
                 "TwoHandedGrip: left carry frame physicalSource={} damping={:.1f}deg physicalVsFirstPerson={:.1f}deg/{:.2f}gu barrelWorld=({:.2f},{:.2f},{:.2f}) barrelInLeftWand=({:.2f},{:.2f},{:.2f}) aimBarrelInRightWand=({:.2f},{:.2f},{:.2f})",
                 physicalHandSource,
@@ -560,42 +561,11 @@ namespace rock
         }
     }
 
-    bool TwoHandedGrip::rebindCarryFramesToWeapon(
+    void TwoHandedGrip::rebindCarryFramesToWeapon(
         RE::NiNode* currentWeaponNode,
         const std::uint64_t targetWeaponGenerationKey,
-        const std::uint64_t currentEquippedWeaponOwnershipKey,
-        const std::uint64_t currentInstanceContentKey,
-        const bool logMissingAimFrame)
+        const std::uint64_t currentEquippedWeaponOwnershipKey)
     {
-        if (!equipped_weapon_manual_ownership_policy::canRebindNativeAim({
-                .nativeRightCarry = usesNativeRightCarry(),
-                .frameValid = _firing.rightNativeWeaponAimFrame.valid &&
-                    isFiniteTransform(_firing.rightNativeWeaponAimFrame.weaponInWandOrientation),
-                .capturedOwnershipKey = _firing.rightNativeWeaponAimFrame.weaponOwnershipKey,
-                .currentOwnershipKey = currentEquippedWeaponOwnershipKey,
-                .capturedInstanceContentKey = _firing.rightNativeWeaponAimFrame.weaponInstanceContentKey,
-                .currentInstanceContentKey = currentInstanceContentKey,
-                .sameRoot = _firing.rightNativeWeaponAimFrame.weaponNodeIdentity == currentWeaponNode,
-            })) {
-            // Native right carry remains usable before its first aim sample.
-            // Left carry needs the captured orientation and must fail closed.
-            if (usesNativeRightCarry()) return true;
-            if (logMissingAimFrame) {
-                ROCK_LOG_WARN(
-                    Weapon,
-                    "TwoHandedGrip: left carry cannot rebind missing native weapon aim frame generation={:016X} ownership={:016X}",
-                    targetWeaponGenerationKey,
-                    currentEquippedWeaponOwnershipKey);
-            }
-            return false;
-        }
-        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: native aim rebound hand={} generation={:016X}->{:016X} ownership={:016X}",
-            firingHandName(), _firing.rightNativeWeaponAimFrame.weaponGenerationKey,
-            targetWeaponGenerationKey, currentEquippedWeaponOwnershipKey);
-        _firing.rightNativeWeaponAimFrame.weaponNodeIdentity =
-            currentWeaponNode;
-        _firing.rightNativeWeaponAimFrame.weaponGenerationKey =
-            targetWeaponGenerationKey;
         if (_firing.leftDampedFollowFrame.valid) {
             if (_firing.leftDampedFollowFrame.weaponOwnershipKey !=
                 currentEquippedWeaponOwnershipKey) {
@@ -607,6 +577,5 @@ namespace rock
                     targetWeaponGenerationKey;
             }
         }
-        return true;
     }
 }
