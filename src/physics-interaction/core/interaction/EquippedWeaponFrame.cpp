@@ -389,6 +389,26 @@ namespace rock
     {
         EquippedWeaponFramePreparation prepared{};
         sampleEquippedSlotOne();
+        /*
+         * Index 1 never stands alone. When index 0 empties by any path (a
+         * Pip-Boy unequip or cross-hand move, a script), the second weapon
+         * moves to index 0 in its own hand, as on a first-weapon drop.
+         * Alone in index 1 the player is natively unarmed: the weapon state
+         * sheathes and the second weapon stays hidden (runtime 14 Oct
+         * 21:39:03). A held transfer or an equip awaiting its identity owns
+         * index 0 and is left to finish.
+         */
+        if (_equippedSlotOne.equipped && !frame.menuBlocked &&
+            !_equipped.transition.heldTransfer().active() &&
+            !_equipped.transition.getPublicSnapshot().identityPending) {
+            const auto views = native_hand_equipment::equippedViews();
+            if (!views[0].weapon && views[1].weapon) {
+                ROCK_LOG_INFO(Weapon, "AKIMBO index 0 empty; promoting the second weapon form={:08X}", views[1].weapon->formID);
+                promoteSecondaryWeapon(views[1].weapon, reinterpret_cast<std::uintptr_t>(views[1].instance),
+                    native_hand_equipment::secondaryHandIsLeft());
+                sampleEquippedSlotOne();
+            }
+        }
         prepared.secondaryEquipped = _equippedSlotOne.equipped;
         prepared.secondaryLeft = _equippedSlotOne.hand == equipped_weapon_roster::Hand::Left;
         prepared.secondaryRight = _equippedSlotOne.hand == equipped_weapon_roster::Hand::Right;
