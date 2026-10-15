@@ -376,9 +376,13 @@ namespace rock
             } },
         };
         facts.slot1 = _equippedSlotOne;
+        const bool pendingBothHands = pending.pairedGrips.valid() || pending.secondSupportGrip.validCarry();
+        const bool pendingSupport = pending.supportGrip.validCarry();
         facts.pending = {
-            .bothHands = pending.pairedGrips.valid() || pending.secondSupportGrip.validCarry(),
-            .supportHand = pending.supportGrip.validCarry() ? handFor(pending.isLeft) : equipped_weapon_roster::Hand::None,
+            .bothHands = pendingBothHands,
+            .supportHand = pendingSupport ? handFor(pending.isLeft) : equipped_weapon_roster::Hand::None,
+            .firingHand = pending.pending && !pendingBothHands && !pendingSupport ?
+                handFor(pending.isLeft) : equipped_weapon_roster::Hand::None,
         };
         return equipped_weapon_roster::Roster(facts);
     }

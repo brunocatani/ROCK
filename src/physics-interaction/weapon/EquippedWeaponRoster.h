@@ -70,6 +70,8 @@ namespace rock::equipped_weapon_roster
     {
         bool bothHands{ false };
         Hand supportHand{ Hand::None };
+        // The hand a pending firing grip will take.
+        Hand firingHand{ Hand::None };
     };
 
     struct Facts
@@ -99,6 +101,12 @@ namespace rock::equipped_weapon_roster
             }
             if (_facts.pending.supportHand != Hand::None) {
                 return _facts.pending.supportHand == handFor(isLeft);
+            }
+            // Between a trigger equip's release and its firing grip the hand
+            // is otherwise free: it selected and highlighted the weapon being
+            // moved to the inventory (runtime 14 Oct 21:47:52).
+            if (_facts.pending.firingHand == handFor(isLeft)) {
+                return true;
             }
             return slot.partGrips[isLeft ? 1 : 0].active ||
                 (slot.holdsHand && !slot.firingGripDetached && slot.firingHand == handFor(isLeft));
