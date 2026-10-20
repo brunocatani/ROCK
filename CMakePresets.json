@@ -14,10 +14,10 @@
     },
     {
       "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
+        "CMAKE_TOOLCHAIN_FILE": "$penv{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
       },
       "environment": {
-        "VCPKG_ROOT": "C:/vcpkg"
+        "VCPKG_ROOT": "$penv{VCPKG_ROOT}"
       },
       "hidden": true,
       "name": "vcpkg"
@@ -41,10 +41,6 @@
       },
       "hidden": true,
       "name": "vs2022"
-    },
-    {
-      "inherits": ["cmake-dev", "vcpkg", "windows", "vs2022"],
-      "name": "default"
     },
     {
       "binaryDir": "${sourceDir}/build-fast",

@@ -554,7 +554,6 @@ if ($buildTargets.Count -gt 0) {
         '--target'
     )
     $buildArguments += $buildTargets
-    $buildArguments += @('--', '/m:1', '/p:CL_MPCount=2')
     Invoke-CheckedCommand 'cmake' $buildArguments
 }
 
