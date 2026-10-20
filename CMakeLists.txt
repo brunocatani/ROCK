@@ -1077,4 +1077,7 @@ if(BUILD_ROCK_TESTS)
       add_dependencies(ROCKPolicyTestBinaries ${ROCK_TEST_TARGET})
     endif()
   endforeach()
+  # build_tests is the test target name every repo shares.
+  add_custom_target(build_tests)
+  add_dependencies(build_tests ROCKPolicyTestBinaries)
 endif()
