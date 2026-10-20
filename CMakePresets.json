@@ -45,22 +45,12 @@
     {
       "binaryDir": "${sourceDir}/build-fast",
       "cacheVariables": {
-        "BUILD_ROCK_TESTS": false,
-        "POST_BUILD_COPY_PLUGIN": false,
-        "ROCK_PACKAGE_RELEASE": false
-      },
-      "inherits": ["cmake-dev", "vcpkg", "windows", "vs2022"],
-      "name": "fast"
-    },
-    {
-      "binaryDir": "${sourceDir}/build-tests",
-      "cacheVariables": {
         "BUILD_ROCK_TESTS": true,
         "POST_BUILD_COPY_PLUGIN": false,
         "ROCK_PACKAGE_RELEASE": false
       },
       "inherits": ["cmake-dev", "vcpkg", "windows", "vs2022"],
-      "name": "tests"
+      "name": "fast"
     },
     {
       "binaryDir": "${sourceDir}/build-release",

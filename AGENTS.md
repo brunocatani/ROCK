@@ -24,7 +24,7 @@ When a change touches tested behaviour, run the affected-test selector before co
 pwsh -NoProfile -File tools/Invoke-RockTests.ps1
 ```
 
-It selects from staged, unstaged and untracked files (or the latest commit on a clean tree), configures `custom-tests`, builds in `Release` with the compiler cap, runs CTest at `-j 4`, and escalates to broader coverage when mapping is unsafe. Do not narrow its selection or bypass escalation. `-BaseRef <ref>` validates a committed range plus the worktree, `-PlanOnly` shows the selection, and `-All` is used only when requested or when a cross-repository change cannot be inferred from ROCK's diff.
+It selects from staged, unstaged and untracked files (or the latest commit on a clean tree), configures `custom-fast` (tests share `build-fast` but stay out of the plugin's default build), builds the selected tests in `Release`, runs CTest, and escalates to broader coverage when mapping is unsafe. Do not narrow its selection or bypass escalation. `-BaseRef <ref>` validates a committed range plus the worktree, `-PlanOnly` shows the selection, and `-All` is used only when requested or when a cross-repository change cannot be inferred from ROCK's diff.
 
 Policy tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp`; never re-implement engine math in test stubs.
 

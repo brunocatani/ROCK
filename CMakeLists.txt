@@ -255,6 +255,10 @@ else()
 endif()
 
 if(BUILD_ROCK_TESTS)
+  # Tests live in the plugin's own build tree but stay out of its default build: the plugin
+  # build and deployment never wait on them, and they reuse the tree's CommonLib and
+  # framework builds. The block's end builds them only through ROCKPolicyTestBinaries.
+  get_property(ROCK_TARGETS_BEFORE_TESTS DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
   add_executable(ROCKHoldingGripFormatTests tests/HoldingGripFormatTests.cpp)
   target_include_directories(ROCKHoldingGripFormatTests PRIVATE "${SOURCE_DIR}")
   target_link_libraries(ROCKHoldingGripFormatTests PRIVATE nlohmann_json::nlohmann_json)
@@ -1063,4 +1067,14 @@ if(BUILD_ROCK_TESTS)
   else()
     message(WARNING "PowerShell was not found; ROCK source-boundary .ps1 tests will not be registered in this configure.")
   endif()
+
+  get_property(ROCK_TARGETS_AFTER_TESTS DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+  list(REMOVE_ITEM ROCK_TARGETS_AFTER_TESTS ${ROCK_TARGETS_BEFORE_TESTS})
+  foreach(ROCK_TEST_TARGET IN LISTS ROCK_TARGETS_AFTER_TESTS)
+    set_target_properties(${ROCK_TEST_TARGET} PROPERTIES EXCLUDE_FROM_ALL TRUE)
+    get_target_property(ROCK_TEST_TARGET_TYPE ${ROCK_TEST_TARGET} TYPE)
+    if(ROCK_TEST_TARGET_TYPE STREQUAL "EXECUTABLE")
+      add_dependencies(ROCKPolicyTestBinaries ${ROCK_TEST_TARGET})
+    endif()
+  endforeach()
 endif()
