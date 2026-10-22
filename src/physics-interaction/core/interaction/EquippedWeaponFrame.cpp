@@ -129,7 +129,8 @@ namespace rock
 
     void PhysicsInteraction::applyPipboySupportRequest()
     {
-        constexpr float kDeferredAttachSeconds = 3.0f;
+        // Covers a promotion's re-equip and draw after the menu closes.
+        constexpr float kDeferredAttachSeconds = 5.0f;
         const auto request = native_hand_equipment::pendingSupportRequest();
         if (!request.sequence) return;
         const auto& frame = runtime_state::currentFrame();
@@ -149,16 +150,17 @@ namespace rock
                 manual ? grip : _equipped.nativeCarryCapture;
             const bool settling = !menu && (_equipped.gripResumePending || _equipped.transition.pendingGrip().pending);
             if (!carry.pending || !sameItem(carry) || settling) {
-                auto* weapon = currentEquippedWeaponForm();
-                const bool equipped = weapon && weapon->formID == request.form;
+                // The weapon may still be moving: equipped in this menu, or
+                // promoted from the second slot once it closes.
                 if (_equipped.deferredSupportSequence != request.sequence) {
                     _equipped.deferredSupportSequence = request.sequence;
                     _equipped.deferredSupportSeconds = 0.0f;
-                    if (equipped) ROCK_LOG_INFO(Weapon, "Pip-Boy support attach weapon={:08X} deferred until its carry starts", request.form);
+                    ROCK_LOG_INFO(Weapon, "Pip-Boy support attach weapon={:08X} deferred until its carry starts", request.form);
                 }
                 if (!menu) _equipped.deferredSupportSeconds += frame.deltaSeconds;
-                if (equipped && _equipped.deferredSupportSeconds < kDeferredAttachSeconds) return;
-                refused = equipped ? "carry-did-not-start" : "weapon-not-equipped";
+                if (menu || _equipped.deferredSupportSeconds < kDeferredAttachSeconds) return;
+                auto* weapon = currentEquippedWeaponForm();
+                refused = weapon && weapon->formID == request.form ? "carry-did-not-start" : "weapon-not-equipped";
             } else if (carry.supportGrip.validCarry()) {
                 refused = "weapon-support-held";
             } else if (!menu && carry.pairedGrips.valid()) {

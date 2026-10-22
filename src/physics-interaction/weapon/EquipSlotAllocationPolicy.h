@@ -10,11 +10,12 @@
  * rule; the acting hand (or the default hand for equips without one)
  * decides, and the slot follows the weapon:
  * - a press on the item a slot already wears: the same hand toggles it; when
- *   the other hand fires it, a free acting hand toggles itself as its support
- *   grip (never taking the weapon), a busy one is refused; a weapon no hand
- *   fires moves its firing grip to the acting hand, displacing the weapon
- *   that hand fired;
- * - the acting hand fires a weapon: that slot is replaced;
+ *   the other hand fires it, the acting hand toggles itself as its support
+ *   grip (never taking the weapon), first returning the weapon it held to
+ *   inventory; a weapon no hand fires moves its firing grip to the acting
+ *   hand, displacing the weapon that hand fired;
+ * - the acting hand fires a weapon, or holds one no hand fires: that slot is
+ *   replaced;
  * - otherwise the first free slot, else the slot whose weapon no hand
  *   fires (support-held). Nothing else is ever evicted.
  */
@@ -27,6 +28,8 @@ namespace rock::equip_slot_allocation
         bool worn{ false };
         // The hand holding this weapon's firing grip; None when support-held.
         Hand firingHand{ Hand::None };
+        // Support-held: the hand carrying it by a part grip.
+        Hand holdingHand{ Hand::None };
         // The requested item is this slot's item.
         bool requestedItem{ false };
     };
@@ -40,11 +43,9 @@ namespace rock::equip_slot_allocation
         // `displacedSlot` (if any) returns to inventory.
         MoveFiringGrip,
         // The acting hand joins `slot`'s weapon as its support grip, or
-        // leaves it; the hand firing it keeps it.
+        // leaves it; the hand firing it keeps it. `displacedSlot` (if any),
+        // the weapon the acting hand held, returns to inventory first.
         ToggleSupport,
-        // Nothing changes: the other hand fires the item and the acting hand
-        // fires another weapon.
-        Refuse,
     };
 
     struct Decision
@@ -59,14 +60,19 @@ namespace rock::equip_slot_allocation
         const auto fires = [&](int index) {
             return slots[index].worn && acting != Hand::None && slots[index].firingHand == acting;
         };
+        const auto holds = [&](int index) {
+            return slots[index].worn && acting != Hand::None && slots[index].firingHand == Hand::None &&
+                slots[index].holdingHand == acting;
+        };
         const int actingSlot = fires(0) ? 0 : fires(1) ? 1 : -1;
+        const int heldSlot = holds(0) ? 0 : holds(1) ? 1 : -1;
         const auto wears = [&](int index) { return index >= 0 && slots[index].worn && slots[index].requestedItem; };
         const int wornSlot = wears(actingSlot) ? actingSlot : wears(0) ? 0 : wears(1) ? 1 : -1;
         if (wornSlot >= 0 && wornSlot != actingSlot) {
             const auto firing = slots[wornSlot].firingHand;
             if (firing != Hand::None && firing != acting) {
-                return { .action = actingSlot < 0 ? Action::ToggleSupport : Action::Refuse,
-                    .slot = static_cast<std::uint32_t>(wornSlot) };
+                return { .action = Action::ToggleSupport, .slot = static_cast<std::uint32_t>(wornSlot),
+                    .displacedSlot = actingSlot >= 0 ? actingSlot : heldSlot };
             }
             return { .action = Action::MoveFiringGrip, .slot = static_cast<std::uint32_t>(wornSlot), .displacedSlot = actingSlot };
         }
@@ -75,6 +81,9 @@ namespace rock::equip_slot_allocation
         }
         if (actingSlot >= 0) {
             return { .slot = static_cast<std::uint32_t>(actingSlot) };
+        }
+        if (heldSlot >= 0) {
+            return { .slot = static_cast<std::uint32_t>(heldSlot) };
         }
         if (!slots[0].worn) {
             return { .slot = 0 };

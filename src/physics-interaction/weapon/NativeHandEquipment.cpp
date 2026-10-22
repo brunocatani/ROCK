@@ -158,14 +158,21 @@ namespace rock::native_hand_equipment
             return { form, instance, left, true };
         }
 
+        // A support toggle not yet applied to this item: 1 attach, 0 detach, -1 none.
+        int pendingSupport(std::uint32_t form, std::uintptr_t instance) noexcept
+        {
+            const auto sequence = s_supportSequence.load(std::memory_order_acquire);
+            if (!sequence || sequence == s_supportApplied.load(std::memory_order_acquire) ||
+                !sameItem(s_supportForm.load(std::memory_order_relaxed), s_supportInstance.load(std::memory_order_relaxed), form, instance))
+                return -1;
+            return s_supportAttach.load(std::memory_order_relaxed) ? 1 : 0;
+        }
+
         // As above, with a support toggle not yet applied taken as done.
         PrimaryHand resolvePrimaryHand(std::uint32_t form, std::uintptr_t instance) noexcept
         {
             auto hand = resolveRecordedPrimaryHand(form, instance);
-            const auto sequence = s_supportSequence.load(std::memory_order_acquire);
-            if (sequence && sequence != s_supportApplied.load(std::memory_order_acquire) &&
-                sameItem(s_supportForm.load(std::memory_order_relaxed), s_supportInstance.load(std::memory_order_relaxed), form, instance))
-                hand.supported = s_supportAttach.load(std::memory_order_relaxed);
+            if (const int pending = pendingSupport(form, instance); pending >= 0) hand.supported = pending == 1;
             return hand;
         }
 
@@ -465,27 +472,38 @@ namespace rock::native_hand_equipment
                 const auto handOf = [](bool left) { return left ? allocation::Hand::Left : allocation::Hand::Right; };
                 const auto wears = [&](std::uint32_t index) { return sameItem(worn[index].form, worn[index].instance, formID, instance); };
                 const auto decision = allocation::decide(handOf(actingLeft), { {
-                    // A support-held (detached) slot 0 has no firing hand.
+                    // A support-held (detached) slot 0 has no firing hand,
+                    // only the hand carrying it.
                     { .worn = worn[0].form != 0,
                         .firingHand = primary.firing ? handOf(primary.left) : allocation::Hand::None,
+                        .holdingHand = primary.firing ? allocation::Hand::None : handOf(primary.left),
                         .requestedItem = wears(0) },
                     { .worn = worn[1].form != 0, .firingHand = handOf(secondaryLeft), .requestedItem = wears(1) },
                 } });
-                if (decision.action == allocation::Action::Refuse) {
-                    ROCK_LOG_INFO(Weapon, "AKIMBO Pip-Boy press refused hand={} weapon={:08X}: the other hand fires it and this hand fires another weapon",
-                        handName(hand), formID);
-                    return false;
-                }
                 if (decision.action == allocation::Action::ToggleSupport) {
-                    // The second weapon is carried only by its firing grip.
-                    if (decision.slot != 0) {
+                    const int target = static_cast<int>(decision.slot);
+                    const int displacedIndex = decision.displacedSlot;
+                    // Only the first weapon takes a support grip: the second is
+                    // carried by its firing grip alone, unless the weapon this
+                    // hand holds leaves index 0 and the second is promoted.
+                    if (target != 0 && displacedIndex != 0) {
                         ROCK_LOG_INFO(Weapon, "AKIMBO Pip-Boy support refused hand={} weapon={:08X}: second weapon", handName(hand), formID);
                         return false;
                     }
-                    const bool attach = !primary.supported;
-                    publishSupportRequest(worn[0].form, worn[0].instance, attach);
-                    ROCK_LOG_INFO(Weapon, "AKIMBO Pip-Boy support request inputToken={} hand={} weapon={:08X} attach={}",
-                        origin.sequence, handName(hand), formID, attach);
+                    if (displacedIndex >= 0) {
+                        if (!weapon_equip_transfer::unequipEquippedIndex(static_cast<std::uint32_t>(displacedIndex),
+                                worn[displacedIndex].form, worn[displacedIndex].instance)) {
+                            ROCK_LOG_WARN(Weapon, "AKIMBO Pip-Boy support refused hand={} weapon={:08X}: its weapon {:08X} at index {} did not unequip",
+                                handName(hand), formID, worn[displacedIndex].form, displacedIndex);
+                            return false;
+                        }
+                        native_equipped_model_lifetime::noteEquipmentChange();
+                    }
+                    // A promotion re-equips the weapon, so it is then named by form.
+                    const bool attach = displacedIndex >= 0 || !primary.supported;
+                    publishSupportRequest(worn[target].form, target == 0 ? worn[target].instance : 0u, attach);
+                    ROCK_LOG_INFO(Weapon, "AKIMBO Pip-Boy support request inputToken={} hand={} weapon={:08X} index={} displacedIndex={} attach={}",
+                        origin.sequence, handName(hand), formID, target, displacedIndex, attach);
                     return true;
                 }
                 if (decision.action == allocation::Action::MoveFiringGrip) {
@@ -705,8 +723,12 @@ namespace rock::native_hand_equipment
         const auto hand = [](bool left) { return left ? WornHand::Left : WornHand::Right; };
         const int index = worn[slot].form == form ? slot : worn[1 - slot].form == form ? 1 - slot : -1;
         if (index < 0) return WornHand::None;
-        // The second weapon is carried only by its firing grip.
-        if (index == 1) return hand(resolveSecondaryHand(worn[1].form, worn[1].instance));
+        // The second weapon is carried only by its firing grip, unless a
+        // support attach that promotes it is pending.
+        if (index == 1) {
+            outSupported = pendingSupport(worn[1].form, worn[1].instance) == 1;
+            return hand(resolveSecondaryHand(worn[1].form, worn[1].instance));
+        }
         // Same hand rule as Pip-Boy allocation; a support-held primary shows
         // the hand that holds it.
         const auto primary = resolvePrimaryHand(worn[0].form, worn[0].instance);
@@ -737,11 +759,17 @@ namespace rock::native_hand_equipment
 
     void noteSupportRequestApplied(std::uint64_t sequence, bool supported) noexcept
     {
-        AcquireSRWLockExclusive(&s_primaryHandLock);
-        if (sameItem(s_primaryHand.form, s_primaryHand.instance, s_supportForm.load(std::memory_order_relaxed),
-                s_supportInstance.load(std::memory_order_relaxed)))
-            s_primaryHand.supported = supported;
-        ReleaseSRWLockExclusive(&s_primaryHandLock);
+        // The item may have been equipped after the last record (inside the
+        // menu): record its hand with the result, or the display loses it.
+        const auto form = s_supportForm.load(std::memory_order_relaxed);
+        const auto instance = s_supportInstance.load(std::memory_order_relaxed);
+        const auto worn = wornWeapons(f4vr::getPlayer());
+        if (sameItem(worn[0].form, worn[0].instance, form, instance)) {
+            auto hand = resolveRecordedPrimaryHand(worn[0].form, worn[0].instance);
+            AcquireSRWLockExclusive(&s_primaryHandLock);
+            s_primaryHand = {worn[0].form, worn[0].instance, hand.left, hand.firing, hand.firing && supported};
+            ReleaseSRWLockExclusive(&s_primaryHandLock);
+        }
         s_supportApplied.store(sequence, std::memory_order_release);
     }
 
