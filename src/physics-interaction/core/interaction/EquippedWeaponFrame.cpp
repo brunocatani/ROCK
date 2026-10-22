@@ -124,6 +124,9 @@ namespace rock
 
     void PhysicsInteraction::applyPipboySupportRequest()
     {
+        const auto& saved = _equipped.continuityGrip.pending ? _equipped.continuityGrip : _equipped.nativeCarryCapture;
+        native_hand_equipment::publishMenuCarry(saved.pending ? saved.targetWeaponFormID : 0u,
+            saved.pending ? saved.targetWeaponInstanceData : 0u);
         const auto request = native_hand_equipment::pendingSupportRequest();
         if (!request.sequence) return;
         const auto sameItem = [&](const EquippedWeaponTransitionCoordinator::PendingGrip& grip) {
@@ -166,12 +169,24 @@ namespace rock
         const auto& frame = runtime_state::currentFrame();
         const auto& carry = _equipped.continuityGrip.pending ? _equipped.continuityGrip : _equipped.nativeCarryCapture;
         const auto& grip = carry.supportGrip.validCarry() ? carry.supportGrip.grip : carry.firingGrip;
+        if (!frame.localMenuBlocking) {
+            release();
+            return;
+        }
+        // The native drawn state can drop inside menus; the carry identity
+        // decides instead.
         auto* weapon = currentEquippedWeaponForm();
-        auto* node = frame.localMenuBlocking && carry.pending && grip.valid() && weapon &&
-            weapon->formID == carry.targetWeaponFormID ? resolveEquippedWeaponInteractionNode() : nullptr;
+        auto* node = carry.pending && grip.valid() && weapon && weapon->formID == carry.targetWeaponFormID ?
+            resolveEquippedWeaponInteractionNodeDirect() : nullptr;
         const auto hand = frik_visual_authority::handFromBool(carry.isLeft);
         RE::NiTransform handWorld{};
-        if (!node || !frik_visual_authority::tryGetHandWorldTransform(hand, handWorld) || !weapon_input_filter::usable(handWorld)) {
+        const char* stage = !carry.pending ? "no-menu-carry" : !grip.valid() ? "grip-invalid" :
+            !weapon || weapon->formID != carry.targetWeaponFormID ? "other-weapon" : !node ? "weapon-node" :
+            !frik_visual_authority::tryGetHandWorldTransform(hand, handWorld) || !weapon_input_filter::usable(handWorld) ? "hand" : nullptr;
+        ROCK_LOG_SAMPLE_INFO(Weapon, 1000, "MENU_WEAPON_HOLD weapon=first stage={} hand={} visible={}",
+            stage ? stage : "placed", carry.isLeft ? "left" : "right",
+            node ? equipped_weapon_visual_state::isLocallyVisible(node) : false);
+        if (stage) {
             release();
             return;
         }
@@ -183,6 +198,9 @@ namespace rock
             if (frik_visual_authority::setAuthoredFingerPose(kTag, hand, fingers, kPriority))
                 _equipped.menuHoldFingerHand = carry.isLeft ? 1 : 0;
         }
+        // Opening a menu culls the first weapon's node natively (the second is
+        // ROCK's own model); the native show after the menu matches this.
+        if (!equipped_weapon_visual_state::isLocallyVisible(node)) equipped_weapon_visual_state::setLocallyVisible(node, true);
         // The hand follows its controller; the weapon rides it at the grip.
         (void)weapon_scene_presentation::moveWeaponPresentationRigidly(node,
             transform_math::composeTransforms(handWorld, transform_math::invertTransform(grip.handWeaponLocal)));

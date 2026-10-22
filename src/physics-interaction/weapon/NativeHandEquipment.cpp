@@ -73,6 +73,10 @@ namespace rock::native_hand_equipment
         std::atomic<bool> s_supportAttach{false};
         std::atomic<std::uint64_t> s_supportSequence{0};
         std::atomic<std::uint64_t> s_supportApplied{0}; // Frame writer, UI reader.
+        // The index-0 item carried when this menu opened (frame writer, UI
+        // reader): only that carry can take a support attach.
+        std::atomic<std::uint32_t> s_menuCarryForm{0};
+        std::atomic<std::uintptr_t> s_menuCarryInstance{0};
 
         void publishSupportRequest(std::uint32_t form, std::uintptr_t instance, bool attach) noexcept
         {
@@ -483,6 +487,12 @@ namespace rock::native_hand_equipment
                         return false;
                     }
                     const bool attach = !primary.supported;
+                    if (attach && !sameItem(s_menuCarryForm.load(std::memory_order_relaxed),
+                            s_menuCarryInstance.load(std::memory_order_relaxed), worn[0].form, worn[0].instance)) {
+                        ROCK_LOG_INFO(Weapon, "AKIMBO Pip-Boy support refused hand={} weapon={:08X}: not the weapon carried when the menu opened",
+                            handName(hand), formID);
+                        return false;
+                    }
                     publishSupportRequest(worn[0].form, worn[0].instance, attach);
                     ROCK_LOG_INFO(Weapon, "AKIMBO Pip-Boy support request inputToken={} hand={} weapon={:08X} attach={}",
                         origin.sequence, handName(hand), formID, attach);
@@ -522,6 +532,9 @@ namespace rock::native_hand_equipment
                 if (accepted && !toggles) {
                     if (index == 0) publishDirectedPrimary(formID, instance, actingLeft);
                     else recordSecondaryHand(formID, instance, actingLeft);
+                    // A hand that takes a second weapon leaves the first one's support grip.
+                    if (index == 1 && primary.firing && primary.supported && actingLeft != primary.left)
+                        publishSupportRequest(worn[0].form, worn[0].instance, false);
                 }
                 // Native return means request accepted, not model/graph ready.
                 const auto sequence = s_transaction.fetch_add(1, std::memory_order_release) + 1;
@@ -730,6 +743,12 @@ namespace rock::native_hand_equipment
         if (!sequence || sequence == s_supportApplied.load(std::memory_order_acquire)) return {};
         return { s_supportForm.load(std::memory_order_relaxed), s_supportInstance.load(std::memory_order_relaxed),
             s_supportAttach.load(std::memory_order_relaxed), sequence };
+    }
+
+    void publishMenuCarry(std::uint32_t form, std::uintptr_t instance) noexcept
+    {
+        s_menuCarryForm.store(form, std::memory_order_relaxed);
+        s_menuCarryInstance.store(instance, std::memory_order_relaxed);
     }
 
     void noteSupportRequestApplied(std::uint64_t sequence, bool supported) noexcept

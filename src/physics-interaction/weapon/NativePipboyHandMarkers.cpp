@@ -161,35 +161,46 @@ namespace rock::native_pipboy_hand_markers
         // none. Two identical weapons share a formID and still resolve by
         // slot. "L"/"R": the hand holds the weapon's firing grip. "OL"/"OR":
         // the hand carries it by another grip (offhand), so it cannot fire.
-        std::array<std::uint64_t, 8> s_reportedRows{}; // Movie thread only.
-        std::uint32_t s_rowReports = 0;
-        bool firstReport(std::uint32_t form, int slot)
+        // Last label per weapon row, to log each change (a letter that goes
+        // blank included). Movie thread only.
+        struct ReportedRow
         {
-            const auto key = (static_cast<std::uint64_t>(form) << 8) | static_cast<std::uint64_t>(slot + 1);
-            for (std::uint32_t i = 0; i < s_rowReports; ++i) if (s_reportedRows[i] == key) return false;
-            if (s_rowReports >= s_reportedRows.size()) return false;
-            s_reportedRows[s_rowReports++] = key;
-            return true;
+            std::uint32_t form = 0;
+            const char* label = "";
+        };
+        std::array<ReportedRow, 16> s_reportedRows{};
+        void reportRow(std::uint32_t form, int state, int slot, const char* label)
+        {
+            auto row = std::find_if(s_reportedRows.begin(), s_reportedRows.end(), [form](const ReportedRow& r) { return r.form == form; });
+            if (row == s_reportedRows.end()) {
+                if (!*label) return;
+                row = std::find_if(s_reportedRows.begin(), s_reportedRows.end(), [](const ReportedRow& r) { return r.form == 0; });
+                if (row == s_reportedRows.end()) return;
+                row->form = form;
+            }
+            if (std::string_view{ row->label } == label) return;
+            ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters row form={:08X} equipState={} slot={} label={} previous={}",
+                form, state, slot, *label ? label : "none", *row->label ? row->label : "none");
+            row->label = label;
         }
         const char* rowLabel(const Value& data)
         {
             Value equip, form;
-            if (!member(data, "equipState", equip) || !isNumeric(equip)) return "";
-            const auto state = static_cast<int>(numeric(equip));
-            const int slot = state == 2 ? 1 : state == 3 || state == 4 ? 0 : -1;
-            if (slot < 0 || !member(data, "formID", form) || !isNumeric(form)) return "";
-            reach(Stage::EquippedRow);
+            if (!member(data, "formID", form) || !isNumeric(form)) return "";
             const auto formID = static_cast<std::uint32_t>(numeric(form));
-            bool firing = true, supported = false;
-            const auto hand = native_hand_equipment::wornRowHand(formID, slot, firing, supported);
-            const bool left = hand == native_hand_equipment::WornHand::Left;
-            // Firing hand first, then the support hand.
-            const char* label = hand == native_hand_equipment::WornHand::None ? "" :
-                supported ? (left ? "LR" : "RL") : firing ? (left ? "L" : "R") : (left ? "OL" : "OR");
-            if (firstReport(formID, slot)) {
-                ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters row form={:08X} equipState={} slot={} label={}",
-                    formID, state, slot, *label ? label : "none");
+            const int state = member(data, "equipState", equip) && isNumeric(equip) ? static_cast<int>(numeric(equip)) : -1;
+            const int slot = state == 2 ? 1 : state == 3 || state == 4 ? 0 : -1;
+            const char* label = "";
+            if (slot >= 0) {
+                reach(Stage::EquippedRow);
+                bool firing = true, supported = false;
+                const auto hand = native_hand_equipment::wornRowHand(formID, slot, firing, supported);
+                const bool left = hand == native_hand_equipment::WornHand::Left;
+                // Firing hand first, then the support hand.
+                label = hand == native_hand_equipment::WornHand::None ? "" :
+                    supported ? (left ? "LR" : "RL") : firing ? (left ? "L" : "R") : (left ? "OL" : "OR");
             }
+            reportRow(formID, state, slot, label);
             return label;
         }
 
@@ -290,7 +301,7 @@ namespace rock::native_pipboy_hand_markers
                 s_lastMovie = movie;
                 s_deepest = Stage::None;
                 s_reportedStop = nullptr;
-                s_rowReports = 0;
+                s_reportedRows = {};
                 ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters first refresh movie={:#x} source={}",
                     reinterpret_cast<std::uintptr_t>(movie), source);
             }

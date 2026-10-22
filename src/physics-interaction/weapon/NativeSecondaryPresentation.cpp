@@ -578,7 +578,12 @@ namespace rock::native_secondary_presentation
         try {
             const auto& frame = runtime_state::currentFrame();
             const auto view = native_hand_equipment::equippedViews()[1];
-            if (frame.localMenuBlocking && view.weapon && frame.weaponDrawn && matches(view) && holdInMenu(view)) return;
+            if (frame.localMenuBlocking && view.weapon) {
+                const bool held = matches(view) && holdInMenu(view);
+                ROCK_LOG_SAMPLE_INFO(Weapon, 1000, "MENU_WEAPON_HOLD weapon=second stage={} claimed={} matches={}",
+                    held ? "placed" : "unavailable", s_state.claimed, matches(view));
+                if (held) return;
+            }
             if (!view.weapon || !frame.visualAuthorityAvailable || !frame.localSkeletonReady ||
                 frame.localMenuBlocking || frame.compatibilityConfigBlocking || !frame.weaponDrawn) {
                 release();
