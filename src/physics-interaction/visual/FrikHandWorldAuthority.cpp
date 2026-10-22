@@ -411,6 +411,13 @@ namespace rock::frik_hand_world_authority
         return true;
     }
 
+    bool tryGetControllerWandWorld(const bool isLeft, RE::NiTransform& outWorld)
+    {
+        const auto wand = sampleTrackedHand(isLeft, TrackedHandKind::Wand);
+        outWorld = wand.world;
+        return wand.valid;
+    }
+
     void prepareWeaponInputs(std::uint64_t ownership, std::uint64_t generation, bool enabled)
     {
         const auto& frame = runtime_state::currentFrame();

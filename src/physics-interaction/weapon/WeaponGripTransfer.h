@@ -80,10 +80,9 @@ namespace rock::weapon_grip_transfer
         HandGrip grip{};
         // Capture placement separately from the authored visual wrist. The
         // controller may hold the loose weapon at any rotation on trigger-equip.
-        std::optional<RE::NiTransform> weaponInDriver{};
-        // The same placement in the isolated controller hand, for a menu hold:
-        // the right driver is the native weapon offset node, which menus move.
-        std::optional<RE::NiTransform> weaponInRawHand{};
+        // Held in the controller wand: the right input driver is FRIK's damped
+        // weapon offset node, which native animation and menus move.
+        std::optional<RE::NiTransform> weaponInWand{};
         RE::NiPoint3 sourceModelTranslation{};
         std::uint32_t weaponFormID{ 0 };
         bool isLeft{ false };
@@ -100,26 +99,15 @@ namespace rock::weapon_grip_transfer
         // pose. Authored loose support admission continues to require valid().
         [[nodiscard]] bool validCarry() const noexcept
         {
-            return weaponFormID != 0 && grip.valid() && weaponInDriver && validFrame(*weaponInDriver) &&
+            return weaponFormID != 0 && grip.valid() && weaponInWand && validFrame(*weaponInWand) &&
                 std::isfinite(sourceModelTranslation.x) && std::isfinite(sourceModelTranslation.y) && std::isfinite(sourceModelTranslation.z);
         }
 
-        [[nodiscard]] RE::NiTransform registeredWeaponInDriver(const RE::NiPoint3& targetModelTranslation) const
-        {
-            return registered(*weaponInDriver, targetModelTranslation);
-        }
-
-        [[nodiscard]] RE::NiTransform registeredWeaponInRawHand(const RE::NiPoint3& targetModelTranslation) const
-        {
-            return registered(*weaponInRawHand, targetModelTranslation);
-        }
-
-    private:
-        [[nodiscard]] RE::NiTransform registered(const RE::NiTransform& weaponInFrame, const RE::NiPoint3& targetModelTranslation) const
+        [[nodiscard]] RE::NiTransform registeredWeaponInWand(const RE::NiPoint3& targetModelTranslation) const
         {
             auto registration = transform_math::makeIdentityTransform<RE::NiTransform>();
             registration.translate = sourceModelTranslation - targetModelTranslation;
-            return transform_math::composeTransforms(weaponInFrame, registration);
+            return transform_math::composeTransforms(*weaponInWand, registration);
         }
     };
 

@@ -1853,11 +1853,11 @@ namespace rock
                 RE::NiTransform looseHandWorld{};
                 if (supportEquipRequested) {
                     AuthoredWeaponGripPose authored{};
-                    RE::NiTransform driverWorld{};
+                    RE::NiTransform wandWorld{};
                     auto& support = pendingGripStart.supportGrip;
                     support.isLeft = equipIsLeft;
-                    if (!frik_hand_world_authority::tryGetInputDriverWorld(equipIsLeft, driverWorld) ||
-                        !weapon_grip_transfer::validFrame(driverWorld) ||
+                    if (!frik_hand_world_authority::tryGetControllerWandWorld(equipIsLeft, wandWorld) ||
+                        !weapon_grip_transfer::validFrame(wandWorld = transform_math::orthonormalizedTransform(wandWorld)) ||
                         !loose_weapon_grip_zone::tryResolveAuthoredGrabPose(equipIsLeft, heldRef,
                             loose_weapon_authored_grab_policy::Role::Support, authored) ||
                         !vanilla_weapon_grip_frame::resolveModelTranslation(authored.weaponFormId,
@@ -1866,8 +1866,8 @@ namespace rock
                         return false;
                     }
                     support.weaponFormID = authored.weaponFormId;
-                    support.weaponInDriver = transform_math::composeTransforms(
-                        transform_math::invertTransform(driverWorld), heldRef->Get3D()->world);
+                    support.weaponInWand = transform_math::composeTransforms(
+                        transform_math::invertTransform(wandWorld), heldRef->Get3D()->world);
                     singleGrip.handWeaponLocal = authored.handWeaponLocal;
                     singleGrip.gripWeaponLocal = computeGrabPalmPointWorldFromHandBasis(authored.handWeaponLocal, equipIsLeft);
                     singleGrip.fingerLocals = authored.fingerLocals;
