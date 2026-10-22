@@ -8,6 +8,7 @@
 #include "physics-interaction/weapon/WeaponGripSeat.h"
 #include "physics-interaction/weapon/WeaponInstanceClassification.h"
 #include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
+#include "physics-interaction/weapon/EquipVisualBridgePolicy.h"
 #include "physics-interaction/weapon/WeaponInputFilter.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
@@ -304,6 +305,25 @@ namespace rock
             // palm, and the hand seated on the grip of that weapon.
             weaponWorld.translate += computeGrabPalmPointWorldFromHandBasis(handWorld, isLeft) -
                 transform_math::localPointToWorld(weaponWorld, gripLocal);
+            // Two-handed: the live paired solve pivots the weapon on the firing
+            // palm toward the support palm (or the gunstock virtual aim).
+            const auto& pair = carry.pairedGrips;
+            if (paired && pair.support.authoredRole != loose_weapon_authored_grab_policy::Role::Firing &&
+                !loose_weapon_authored_grab_policy::sharedFiringZone(pair.arrangement)) {
+                WeaponTwoHandedSolverResult<RE::NiTransform> solved{};
+                RE::NiTransform supportHandWorld{}, primaryWand{}, supportWand{};
+                if (pair.gunstockAim) {
+                    if (frik_hand_world_authority::tryGetWeaponWandWorld(isLeft, primaryWand) &&
+                        frik_hand_world_authority::tryGetWeaponWandWorld(!isLeft, supportWand))
+                        solved = equip_visual_bridge_policy::solvePairedGunstockBridge(weaponWorld, gripLocal, primaryWand, supportWand);
+                } else if (frik_hand_world_authority::tryGetRawHandWorld(!isLeft, supportHandWorld) &&
+                           weapon_input_filter::usable(supportHandWorld)) {
+                    solved = equip_visual_bridge_policy::solvePairedBridge(weaponWorld, gripLocal, pair.support.gripWeaponLocal,
+                        computeGrabPalmPointWorldFromHandBasis(supportHandWorld, !isLeft));
+                }
+                if (solved.solved) weaponWorld = solved.weaponWorldTransform;
+                else ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "MENU_WEAPON_HOLD paired solve unavailable gunstock={}", pair.gunstockAim);
+            }
             if (_equipped.menuHoldHandClaim >= 0 && _equipped.menuHoldHandClaim != (isLeft ? 1 : 0)) releaseHand();
             if (frik_visual_authority::publishHandWorld(kTag, hand,
                     transform_math::composeTransforms(weaponWorld, firingHandWeaponLocal), kHandPriority))
