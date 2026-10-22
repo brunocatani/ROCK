@@ -885,6 +885,8 @@ namespace rock
             int menuHoldFingerHand{ -1 };
             // Hand whose world transform the menu weapon hold claims; -1 none.
             int menuHoldHandClaim{ -1 };
+            // Support hand the menu weapon hold places on a two-handed carry; -1 none.
+            int menuHoldSupportHand{ -1 };
             // The hand that last fired the item of this ownership key.
             struct FiringHandMemory
             {
