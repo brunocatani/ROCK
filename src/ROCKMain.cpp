@@ -296,6 +296,8 @@ namespace
         {
             performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponEquipTransition);
             s_physicsInteraction->updateEquippedWeaponTransition();
+            // In menus, publish the held hand where FRIK still solves it this frame.
+            s_physicsInteraction->holdEquippedWeaponInMenu();
         }
         /*
          * Reconstruct the Bethesda-authored primary grip before ROCK's

@@ -556,9 +556,9 @@ namespace rock::native_secondary_presentation
         try {
             const auto& frame = runtime_state::currentFrame();
             const auto view = native_hand_equipment::equippedViews()[1];
-            // Menus keep the weapon in hand with the same solve, from the hand
-            // FRIK renders (ROCK's hand service pauses); no recoil, collision
-            // or hand claim, and the native drawn state may drop meanwhile.
+            // Menus keep the weapon and hand exactly as the live solve places
+            // them, without recoil, collision or actions; the native drawn
+            // state may drop meanwhile.
             const bool menu = frame.localMenuBlocking;
             if (!view.weapon || !frame.visualAuthorityAvailable || !frame.localSkeletonReady ||
                 frame.compatibilityConfigBlocking || (!frame.weaponDrawn && !menu)) {
@@ -636,12 +636,10 @@ namespace rock::native_secondary_presentation
             // controller basis, and for the left hand the mirrored basis, the
             // left aim trim and the left firing grip offset.
             RE::NiTransform physicalHand{}, wandWorld{};
-            const bool handAvailable = menu ? frik_visual_authority::tryGetHandWorldTransform(frikHand(left), physicalHand) :
-                frik_hand_world_authority::hasCalibratedRawHandFrame(left) &&
-                    frik_hand_world_authority::tryGetWeaponHandWorld(left, physicalHand);
-            const bool wandAvailable = menu ? frik_hand_world_authority::tryGetMenuWandWorld(left, wandWorld) :
-                frik_hand_world_authority::tryGetWeaponWandWorld(left, wandWorld);
-            if (!usable(seat) || !handAvailable || !usable(physicalHand) || !wandAvailable || !usable(wandWorld)) {
+            if (!usable(seat) ||
+                !frik_hand_world_authority::hasCalibratedRawHandFrame(left) ||
+                !frik_hand_world_authority::tryGetWeaponWandWorld(left, wandWorld) || !usable(wandWorld) ||
+                !frik_hand_world_authority::tryGetWeaponHandWorld(left, physicalHand) || !usable(physicalHand)) {
                 waitFor(view, "tracked-hand");
                 return;
             }
@@ -699,9 +697,7 @@ namespace rock::native_secondary_presentation
                 waitFor(view, "offhand-grip-provider");
                 return;
             }
-            // In menus the hand follows its controller; only the weapon and fingers are posed.
-            if (menu) (void)frik_visual_authority::clearHandWorld(kTag, frikHand(left));
-            else if (!frik_visual_authority::publishHandWorld(kTag, frikHand(left), hand, kPriority)) {
+            if (!frik_visual_authority::publishHandWorld(kTag, frikHand(left), hand, kPriority)) {
                 waitFor(view, "hand-world-provider");
                 return;
             }
