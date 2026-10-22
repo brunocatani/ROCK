@@ -48,15 +48,25 @@ namespace rock
                     (state.firingHand != api::Hand::Right && state.firingHand != api::Hand::Left)) {
                     continue;
                 }
-                // The counter sits at the weapon's firing grip whichever hands
-                // hold the weapon, on the palm side of its firing hand.
-                const bool isLeft = state.firingHand == api::Hand::Left;
-                const auto index = isLeft ? 1u : 0u;
-                const auto holds = [&](std::size_t hand) {
+                // handRoles: [0] right, [1] left.
+                const auto holds = [&](std::size_t hand, bool firingOnly) {
                     const auto& role = publication.handRoles[hand];
-                    return role.role != api::hands::HandRole::None && role.weaponSlot == slot;
+                    return role.weaponSlot == slot &&
+                        (firingOnly ? role.role == api::hands::HandRole::Firing : role.role != api::hands::HandRole::None);
                 };
-                if (!holds(0) && !holds(1)) continue;
+                if (!holds(0, false) && !holds(1, false)) continue;
+                // The counter sits at the weapon's firing grip on the palm side
+                // of the hand that holds it: the firing-grip hand, else the only
+                // hand still on the weapon. A detached firing grip keeps its
+                // firingHand record, so with akimbo both weapons could name the
+                // same hand and one counter would overwrite the other.
+                bool isLeft = state.firingHand == api::Hand::Left;
+                if (holds(1, true) || holds(0, true)) {
+                    isLeft = holds(1, true);
+                } else if (holds(1, false) != holds(0, false)) {
+                    isLeft = holds(1, false);
+                }
+                const auto index = isLeft ? 1u : 0u;
                 // The slot's firing seat in its weapon's frame, final after
                 // AfterWorldFinal. It needs no hand on the weapon.
                 RE::NiTransform seat{}, weaponWorld{};
