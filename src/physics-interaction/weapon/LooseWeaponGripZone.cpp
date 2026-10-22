@@ -655,7 +655,8 @@ namespace rock::loose_weapon_grip_zone
         const bool heldSettled,
         const float dt,
         const float equipRadiusGameUnits,
-        const bool firingGripEligible)
+        const bool firingGripEligible,
+        const bool supportSeatHeld)
     {
         auto& state = s_handStates[handIndex(isLeft)];
         if (!holdingLooseWeapon || !heldRef) {
@@ -690,7 +691,9 @@ namespace rock::loose_weapon_grip_zone
         }
 
         next.palmToGripDistance = pointDistance(next.palmWorld, next.gripWorld);
-        next.insideRadius = firingGripEligible && next.palmToGripDistance <= equipRadiusGameUnits;
+        // A hold at the authored support seat is itself the station: it
+        // settles there for a support equip.
+        next.insideRadius = supportSeatHeld || (firingGripEligible && next.palmToGripDistance <= equipRadiusGameUnits);
         if (next.insideRadius && heldSettled) {
             next.insideSettledSeconds += (std::max)(0.0f, dt);
         } else {

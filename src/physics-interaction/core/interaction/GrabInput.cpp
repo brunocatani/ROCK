@@ -1514,7 +1514,8 @@ namespace rock
             hand.getState() == HandState::HeldBody,
             frame.deltaSeconds,
             _equipped.handlingSettings.gripZoneEquipRadiusGameUnits,
-            !hand.isHoldingAuthoredSupportGrip());
+            !hand.isHoldingAuthoredSupportGrip(),
+            hand.isHoldingAuthoredSupportGrip());
 
         /*
          * Grip-zone hover probe: while either OPEN hand's selection
@@ -1628,7 +1629,9 @@ namespace rock
                 }
 
                 bool equipIsLeft = isLeft;
-                const bool supportEquipRequested = triggeredByInput && !peerHoldingSameObject && hand.isHoldingAuthoredSupportGrip();
+                // A loose weapon held only at its authored support seat equips
+                // as a support carry, by trigger or by Auto Equip's settle.
+                const bool supportEquipRequested = !peerHoldingSameObject && hand.isHoldingAuthoredSupportGrip();
                 // Several weapons may be equipped at once. A gun equipped from
                 // this hand while the primary is in use and index 1 is free
                 // becomes the second weapon in this hand; the primary stays
@@ -1648,6 +1651,13 @@ namespace rock
                         .firingHand = slotZero.firingGripDetached ? equipped_weapon_roster::Hand::None : slotZero.firingHand },
                     { .worn = slotOne.equipped, .firingHand = slotOne.hand },
                 } });
+                if (supportEquipRequested && slotDecision.slot == 1) {
+                    // The second weapon is presented only by its firing grip; a
+                    // support carry here would evict the weapon in the other hand.
+                    ROCK_LOG_SAMPLE_INFO(Hand, 2000, "{} hand support equip as second weapon unavailable: stays loose ref={:08X}",
+                        hand.handName(), heldRefForGameplay ? heldRefForGameplay->GetFormID() : 0u);
+                    return false;
+                }
                 if (!peerHoldingSameObject && !supportEquipRequested && heldGun && slotDecision.slot == 1) {
                     auto* heldRef = hand.getHeldRef();
                     if (!heldRef) return false;

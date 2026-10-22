@@ -113,7 +113,8 @@ namespace rock::loose_weapon_grip_zone
         bool heldSettled,
         float dt,
         float equipRadiusGameUnits,
-        bool firingGripEligible = true);
+        bool firingGripEligible,
+        bool supportSeatHeld);
 
     /*
      * True when the hand's palm has stayed inside the configured grip radius
