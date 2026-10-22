@@ -1,5 +1,6 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "api/ProviderRuntimeServices.h"
+#include "api/ProviderStatePolicy.h"
 #include "physics-interaction/native/NativeAmmoCounterVisibility.h"
 #include "physics-interaction/visual/AmmoCounters.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
@@ -36,8 +37,14 @@ namespace rock
                 static_cast<std::uint32_t>(WeaponFlag::WeaponDrawn);
             for (std::uint32_t slot = 0; slot < api::kMaxWeaponSlots; ++slot) {
                 api::weapon::WeaponState state{};
-                if (provider::runtime::copyPublishedWeaponState(state, slot) != api::Status::Ok ||
-                    (state.flags & required) != required ||
+                if (provider::runtime::copyPublishedWeaponState(state, slot) != api::Status::Ok) continue;
+                // Slot 0's hands are applied at read time, as getWeaponState
+                // does; slot 1 carries its own in the record.
+                if (slot == 0) {
+                    provider_state_policy::WeaponHandling handling{};
+                    if (queryProviderWeaponHandling(handling)) provider_state_policy::applyHandling(state, handling);
+                }
+                if ((state.flags & required) != required ||
                     (state.firingHand != api::Hand::Right && state.firingHand != api::Hand::Left)) {
                     continue;
                 }
