@@ -147,6 +147,10 @@ namespace rock
             out.isLeft = left;
             out.sourceModelTranslation = translation;
             out.weaponInDriver = transform_math::composeTransforms(transform_math::invertTransform(driver), node->world);
+            RE::NiTransform rawHand{};
+            if (frik_hand_world_authority::tryGetRawHandWorld(left, rawHand) &&
+                isInvertibleTransform(rawHand = transform_math::orthonormalizedTransform(rawHand)))
+                out.weaponInRawHand = transform_math::composeTransforms(transform_math::invertTransform(rawHand), node->world);
             return out.validCarry();
         };
         if (isPartCarryActive()) {

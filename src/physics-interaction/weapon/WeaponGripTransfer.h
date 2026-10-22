@@ -81,6 +81,9 @@ namespace rock::weapon_grip_transfer
         // Capture placement separately from the authored visual wrist. The
         // controller may hold the loose weapon at any rotation on trigger-equip.
         std::optional<RE::NiTransform> weaponInDriver{};
+        // The same placement in the isolated controller hand, for a menu hold:
+        // the right driver is the native weapon offset node, which menus move.
+        std::optional<RE::NiTransform> weaponInRawHand{};
         RE::NiPoint3 sourceModelTranslation{};
         std::uint32_t weaponFormID{ 0 };
         bool isLeft{ false };
@@ -103,9 +106,20 @@ namespace rock::weapon_grip_transfer
 
         [[nodiscard]] RE::NiTransform registeredWeaponInDriver(const RE::NiPoint3& targetModelTranslation) const
         {
+            return registered(*weaponInDriver, targetModelTranslation);
+        }
+
+        [[nodiscard]] RE::NiTransform registeredWeaponInRawHand(const RE::NiPoint3& targetModelTranslation) const
+        {
+            return registered(*weaponInRawHand, targetModelTranslation);
+        }
+
+    private:
+        [[nodiscard]] RE::NiTransform registered(const RE::NiTransform& weaponInFrame, const RE::NiPoint3& targetModelTranslation) const
+        {
             auto registration = transform_math::makeIdentityTransform<RE::NiTransform>();
             registration.translate = sourceModelTranslation - targetModelTranslation;
-            return transform_math::composeTransforms(*weaponInDriver, registration);
+            return transform_math::composeTransforms(weaponInFrame, registration);
         }
     };
 
