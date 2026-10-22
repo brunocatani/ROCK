@@ -101,6 +101,10 @@ namespace rock
         int rockWeaponDropMode = 2;
         // 1: toggle both grips; 2: toggle firing only; 3: hold both grips.
         int rockWeaponGrabMode = 1;
+        // Auto Equip: a loose weapon held at its authored firing station
+        // equips once the palm has settled there for the settle time.
+        bool rockAutoEquipWeapons = false;
+        float rockAutoEquipSettleSeconds = 0.15f;
         // Allow dynamic support grabs beyond authored grips. False preserves
         // authored-grip preference and the existing missing-pose fallback.
         bool rockGrabAnywhereOnWeapon = false;

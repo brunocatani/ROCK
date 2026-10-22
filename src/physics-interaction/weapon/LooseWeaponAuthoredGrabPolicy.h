@@ -39,13 +39,17 @@ namespace rock::loose_weapon_authored_grab_policy
         return value == Arrangement::Close || value == Arrangement::OneHanded;
     }
 
+    // nearestRole: the authored station nearest the palm, zones aside.
     [[nodiscard]] constexpr Role acquisitionRole(bool touching, bool transfer,
-        Role transferRole, Arrangement layout, bool peerHolding, Role zoneRole) noexcept
+        Role transferRole, Arrangement layout, bool peerHolding, Role zoneRole, Role nearestRole) noexcept
     {
         if (transfer) return transferRole;
-        // An arriving free weapon takes firing. A second hand on an already
-        // held weapon keeps its selected station even before palm contact.
-        if (!touching && !peerHolding) return Role::Firing;
+        // A free weapon taken without palm contact (far pull or close grab)
+        // seats at its nearest authored station; a touch grab keeps the zone
+        // it lands in, or the mesh grab outside every zone. A second hand on
+        // an already held weapon keeps its selected station even before
+        // palm contact.
+        if (!touching && !peerHolding) return nearestRole;
         if (sharedFiringZone(layout) && zoneRole != Role::None) {
             return peerHolding ? Role::Support : Role::Firing;
         }
@@ -62,10 +66,11 @@ namespace rock::loose_weapon_authored_grab_policy
     // both possible touch outcomes choose the same authored station, or when
     // an arrival/transfer already determines it independently of touch.
     [[nodiscard]] constexpr Role surfaceIndependentAcquisitionRole(bool programmaticArrival,
-        bool transfer, Role transferRole, Arrangement layout, bool peerHolding, Role zoneRole) noexcept
+        bool transfer, Role transferRole, Arrangement layout, bool peerHolding, Role zoneRole, Role nearestRole) noexcept
     {
-        const auto role = acquisitionRole(false, transfer, transferRole, layout, peerHolding, zoneRole);
-        if ((!programmaticArrival && role != acquisitionRole(true, transfer, transferRole, layout, peerHolding, zoneRole)) ||
+        const auto role = acquisitionRole(false, transfer, transferRole, layout, peerHolding, zoneRole, nearestRole);
+        if ((!programmaticArrival &&
+                role != acquisitionRole(true, transfer, transferRole, layout, peerHolding, zoneRole, nearestRole)) ||
             dynamicSupportAcquisition(role, peerHolding, layout, transfer)) return Role::None;
         return role;
     }

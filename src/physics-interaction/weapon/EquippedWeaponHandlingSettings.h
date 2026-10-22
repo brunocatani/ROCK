@@ -19,6 +19,10 @@ namespace rock
         // With false that grip is retained; releases are honored only while
         // the other hand still carries the weapon.
         bool lastGripReleaseDropEnabled{ true };
+        // Auto Equip: a loose weapon held at its authored firing station
+        // equips after the palm settles there.
+        bool autoEquipEnabled{ false };
+        float autoEquipSettleSeconds{ 0.15f };
         immersive_weapon_policy::Config immersiveWeapon{};
         float firingGripReattachCylinderRadiusGameUnits{ 2.0f };
         float firingGripProximitySupportRadiusGameUnits{ 6.0f };
@@ -94,6 +98,10 @@ namespace rock
             rockBaseline.lastGripReleaseDropEnabled;
         settings.equippedWeaponShoulderStashEnabled =
             rockBaseline.equippedWeaponShoulderStashEnabled;
+        // Auto Equip is a ROCK preference; a handling lease can add it with
+        // its own settle time but cannot turn the player's choice off.
+        settings.gripZoneEquipEnabled = rockBaseline.autoEquipEnabled;
+        settings.gripZoneEquipSettleSeconds = rockBaseline.autoEquipSettleSeconds;
         settings.immersiveWeapon = rockBaseline.immersiveWeapon;
         // The reattach cylinder radius is ROCK tuning under both detach
         // authorities; a handling owner may replace only the reach.
@@ -135,12 +143,13 @@ namespace rock
                 api::weapon::HandlingFeature::PrimaryDetach);
         settings.ambidextrousHandoffEnabled = enabled(
             api::weapon::HandlingFeature::AmbidextrousHandoff);
-        settings.gripZoneEquipEnabled = enabled(
+        settings.gripZoneEquipEnabled = rockBaseline.autoEquipEnabled || enabled(
             api::weapon::HandlingFeature::GripZoneEquip);
         settings.gripZoneHoverHapticsEnabled = enabled(
             api::weapon::HandlingFeature::GripZoneHoverHaptics);
         settings.gripZoneEquipRadiusGameUnits = request->gripZoneEquipRadiusGameUnits;
-        settings.gripZoneEquipSettleSeconds = request->gripZoneEquipSettleSeconds;
+        if (enabled(api::weapon::HandlingFeature::GripZoneEquip))
+            settings.gripZoneEquipSettleSeconds = request->gripZoneEquipSettleSeconds;
         settings.firingGripReattachRadiusGameUnits = request->firingGripReattachRadiusGameUnits;
         settings.gripZoneHoverHapticIntensity = request->gripZoneHoverHapticIntensity;
         if (enabled(api::weapon::HandlingFeature::FiringGripProximitySupport)) {

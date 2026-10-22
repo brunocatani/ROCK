@@ -65,6 +65,9 @@ namespace rock::loose_weapon_grip_zone
     struct NearGrab
     {
         loose_weapon_authored_grab_policy::Role role{ loose_weapon_authored_grab_policy::Role::None };
+        // The complete authored station nearest the palm, zones aside;
+        // firing when the weapon has no complete support station.
+        loose_weapon_authored_grab_policy::Role nearestRole{ loose_weapon_authored_grab_policy::Role::Firing };
         loose_weapon_authored_grab_policy::Arrangement arrangement{ loose_weapon_authored_grab_policy::Arrangement::Pending };
         RE::NiTransform handWorld{};
         AuthoredWeaponGripPose pose{};

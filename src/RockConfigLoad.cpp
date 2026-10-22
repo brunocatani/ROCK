@@ -363,6 +363,13 @@ namespace rock
             ROCK_LOG_WARN(Config, "Invalid iWeaponGrabMode={} -- using 1", rockWeaponGrabMode);
             rockWeaponGrabMode = 1;
         }
+        rockAutoEquipWeapons = ini.GetBoolValue(
+            IMMERSIVE_WEAPONS_SECTION,
+            "bAutoEquipWeapons",
+            rockAutoEquipWeapons);
+        rockAutoEquipSettleSeconds = readClampedFloat(
+            ini, IMMERSIVE_WEAPONS_SECTION, "fAutoEquipSettleSeconds",
+            rockAutoEquipSettleSeconds, 0.15f, 0.0f, 2.0f);
         rockGrabAnywhereOnWeapon = ini.GetBoolValue(
             IMMERSIVE_WEAPONS_SECTION,
             "bGrabAnywhereOnWeapon",

@@ -588,6 +588,13 @@ namespace rock::loose_weapon_grip_zone
         }
         out.role = selection::select(firingEligible, firingDistance, supportEligible, supportDistance);
         if (sharedZone && firingEligible) out.role = peerHolding ? selection::Role::Support : selection::Role::Firing;
+        const bool firingPose = firingResolved && firing.hasFiringHandWeaponLocal && authored.found &&
+            authored.rightFiringFingerPose.complete();
+        const bool supportPose = supportResolved && !sharedZone && authored.supportFingerPose.complete();
+        if (const auto nearest = selection::select(firingPose, firingDistance, supportPose, supportDistance);
+            nearest != selection::Role::None) {
+            out.nearestRole = nearest;
+        }
         // Indicator ownership follows the selected station; overlapping roles
         // never produce two markers for the same hand's acquisition.
         if (out.role == selection::Role::Firing || sharedZone) {
