@@ -1,5 +1,6 @@
 #include "physics-interaction/weapon/NativePrimaryWeaponGraph.h"
 #include "physics-interaction/weapon/NativeEquippedBoneOwnership.h"
+#include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/NativeTriggerEquipGraph.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -14,12 +15,12 @@ namespace rock::native_primary_weapon_graph
     namespace
     {
         bool s_installed = false;
-        bool gun(const RE::BGSObjectInstance& item) noexcept
+        bool handWeapon(const RE::BGSObjectInstance& item) noexcept
         {
             if (!item.object || !item.object->IsWeapon()) return false;
             const auto* weapon = static_cast<const RE::TESObjectWEAP*>(item.object);
             const auto* data = item.instanceData ? static_cast<const RE::TESObjectWEAP::InstanceData*>(item.instanceData.get()) : &weapon->weaponData;
-            return data->type == RE::WEAPON_TYPE::kGun;
+            return weapon_type_policy::occupiesHandSlot(data->type.get());
         }
         template<std::size_t N>
         bool matches(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected) noexcept
@@ -38,7 +39,7 @@ namespace rock::native_primary_weapon_graph
         // borrow ROCK's frame view or the cached animation-equipment array.
         RE::BGSObjectInstance left{nullptr, nullptr};
         read(actor, &left, 1);
-        if (!gun(left)) return false;
+        if (!handWeapon(left)) return false;
         RE::BGSObjectInstance right{nullptr, nullptr};
         read(actor, &right, 0);
         if (right.object) {

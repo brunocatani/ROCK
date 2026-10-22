@@ -1221,6 +1221,9 @@ namespace rock::native_secondary_actions
                 s.recoilNode.reset(); s.kick={}; s.kickActive=false; s.recoilFrame=UINT64_MAX;
                 s.retiring=false; s.failed=false; s.reloading=false; s.rootsTraced=false; s.drawing=false; s.drawSeconds=0;
             }
+            // A melee second weapon has no fire, reload or recoil, so no
+            // private firearm graph: its attack is the hand's own swing.
+            if (view.weapon && !view.firearm) return;
             if (!attachment || !view.weapon || !view.root || frame.localMenuBlocking || !frame.weaponDrawn || !frame.visualAuthorityAvailable) { cancel(s,frame.localMenuBlocking?"menu":!frame.weaponDrawn?"holstered":"unpresented"); return; }
             const auto trigger=input_remap_runtime::peekRawButtonState(handLeft,input_remap_policy::kOpenVrSteamVrTriggerButtonId);
             const bool providerSuppressed=input_remap_runtime::isProviderOpenVrGameInputSuppressedForHand(handLeft);

@@ -1223,8 +1223,8 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     }
     s_messaging->RegisterListener(onF4SEMessage);
 
-    logger::info("ROCK: Allocate trampoline (4540 bytes)...");
-    F4SE::AllocTrampoline(4540);
+    logger::info("ROCK: Allocate trampoline (4596 bytes)...");
+    F4SE::AllocTrampoline(4596);
     if (!rock::loose_weapon_state::install()) {
         spdlog::error("Loose weapon state model installation unavailable");
     }

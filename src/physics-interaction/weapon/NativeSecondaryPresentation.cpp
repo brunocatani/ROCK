@@ -14,6 +14,7 @@
 #include "physics-interaction/weapon/NativeWeaponModelGeometry.h"
 #include "physics-interaction/weapon/NativeEquippedModelLifetime.h"
 #include "physics-interaction/weapon/NativeSecondaryActions.h"
+#include "physics-interaction/weapon/NativeSecondaryMelee.h"
 #include "physics-interaction/weapon/EquippedWeaponVisualState.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
@@ -22,6 +23,7 @@
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/grab/SkinnedBoneOwner.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "RockConfig.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include "RE/NetImmerse/NiNode.h"
 #include "RE/Bethesda/TESBoundObjects.h"
@@ -473,6 +475,7 @@ namespace rock::native_secondary_presentation
         void release() noexcept
         {
             native_secondary_actions::suspend();
+            native_secondary_melee::present(nullptr);
             clearClaims();
             const auto view = native_hand_equipment::equippedViews()[1];
             restoreBody(view);
@@ -488,6 +491,8 @@ namespace rock::native_secondary_presentation
         void waitFor(const native_hand_equipment::EquippedView& view, const char* reason)
         {
             native_secondary_actions::suspend();
+            // An unplaced melee weapon must not strike from its native carry.
+            native_secondary_melee::present(nullptr);
             s_state.ready = false;
             s_state.dropGrip = {};
             s_state.traceFrame = false;
@@ -652,8 +657,14 @@ namespace rock::native_secondary_presentation
                 RE::NiPoint3{};
             RE::NiTransform target{}, hand{};
             const auto palm = palm_point::handLocal(left);
-            if (!native_secondary_pose::solve(wandWorld, physicalHand, seat,
-                    palm, s_state.modelScale, weaponInWand, handTargetOffset, target, hand)) {
+            // A firearm aims by the controller basis; a melee weapon follows
+            // the wrist, as the first weapon's melee carry does.
+            const bool solved = view.firearm ?
+                native_secondary_pose::solve(wandWorld, physicalHand, seat,
+                    palm, s_state.modelScale, weaponInWand, handTargetOffset, target, hand) :
+                native_secondary_pose::solveMelee(wandWorld, physicalHand, seat,
+                    palm, s_state.modelScale, g_rockConfig.rockMeleeGripPitchDegrees, target, hand);
+            if (!solved) {
                 waitFor(view, "invalid-placement");
                 return;
             }
@@ -733,6 +744,8 @@ namespace rock::native_secondary_presentation
             tracePlacement("solve-after");
             if (menu) native_secondary_actions::suspend();
             else native_secondary_actions::update(attachment,frame.deltaSeconds);
+            // A placed melee second weapon strikes through native VR melee.
+            native_secondary_melee::present(view.firearm || menu ? nullptr : view.root);
             if (s_state.reason != "ready") {
                 s_state.reason = "ready";
                 ROCK_LOG_INFO(Weapon,

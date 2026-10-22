@@ -5,8 +5,10 @@
 #include "physics-interaction/weapon/NativeEquippedModelLifetime.h"
 #include "physics-interaction/weapon/NativePrimaryWeaponGraph.h"
 #include "physics-interaction/weapon/NativeSecondaryActions.h"
+#include "physics-interaction/weapon/NativeSecondaryMelee.h"
 #include "physics-interaction/weapon/NativeInventoryHandSlots.h"
 #include "physics-interaction/weapon/WeaponEquipTransfer.h"
+#include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
 
 #include "physics-interaction/native/NativeMemory.h"
@@ -379,7 +381,7 @@ namespace rock::native_hand_equipment
                 const auto* data = entry.item.instanceData ?
                     static_cast<const RE::TESObjectWEAP::InstanceData*>(entry.item.instanceData.get()) :
                     &static_cast<const RE::TESObjectWEAP*>(entry.item.object)->weaponData;
-                if (data->type != RE::WEAPON_TYPE::kGun) continue;
+                if (!weapon_type_policy::occupiesHandSlot(data->type.get())) continue;
                 entry.equipSlot = slots.right;
                 try {
                     ROCK_LOG_INFO(Weapon, "AKIMBO restored primary re-seated weapon={:08X} instance={:#x} authoredSlot={:08X} actualSlot={:08X}",
@@ -440,8 +442,9 @@ namespace rock::native_hand_equipment
                 if (!native_memory::tryReadValue(reinterpret_cast<void**>(REL::Offset(0x5936A60).address()),
                         inventoryHandles) || !inventoryHandles) return false;
                 auto* object = s_resolveForm(inventoryHandles, handle);
+                // Guns and melee weapons take a hand; throwables stay native.
                 if (!object || object->formType != RE::ENUM_FORM_ID::kWEAP ||
-                    static_cast<RE::TESObjectWEAP*>(object)->weaponData.type != RE::WEAPON_TYPE::kGun)
+                    !weapon_type_policy::occupiesHandSlot(static_cast<RE::TESObjectWEAP*>(object)->weaponData.type.get()))
                     return s_useItem(manager, actor, handle, stack, requestedSlot, toggle, force);
 
                 Slots slots{};
@@ -633,11 +636,12 @@ namespace rock::native_hand_equipment
             auto* weapon = static_cast<RE::TESObjectWEAP*>(entry.item.object);
             auto* instance = entry.item.instanceData.get();
             const auto* data = instance ? static_cast<const RE::TESObjectWEAP::InstanceData*>(instance) : &weapon->weaponData;
-            if (data->type != RE::WEAPON_TYPE::kGun) continue;
+            if (!weapon_type_policy::occupiesHandSlot(data->type.get())) continue;
             auto& view = views[index];
             // Duplicate native indices are ambiguous, never choose an arbitrary root.
             if (view.weapon) return {};
             view.weapon = weapon;
+            view.firearm = data->type == RE::WEAPON_TYPE::kGun;
             view.instance = instance;
             view.data = reinterpret_cast<std::uintptr_t>(entry.data.get());
             view.slot = entry.equipSlot ? entry.equipSlot->formID : 0;
@@ -787,7 +791,7 @@ namespace rock::native_hand_equipment
 
     bool hasSecondaryGun() noexcept
     {
-        return equippedViews()[1].weapon != nullptr;
+        return equippedViews()[1].firearm;
     }
 
     bool secondaryHandIsLeft() noexcept
@@ -897,7 +901,8 @@ namespace rock::native_hand_equipment
         // A left inventory slot without its complete native first-person gun
         // model is not a usable hand-directed equipment capability.
         if (!native_inventory_hand_slots::install() || !native_secondary_model::install() || !native_equipped_model_lifetime::install() ||
-            !native_primary_weapon_graph::install() || !native_secondary_actions::install()) return false;
+            !native_primary_weapon_graph::install() || !native_secondary_actions::install() ||
+            !native_secondary_melee::install()) return false;
         try {
             native_execution_slot::Stub stub(reinterpret_cast<std::uintptr_t>(&executionSlot), REL::Offset(0xE72E25).address());
             auto* code = trampoline.allocate(stub.getSize());

@@ -3,6 +3,7 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/weapon/NativeSecondaryPresentation.h"
 #include "physics-interaction/weapon/EquipSlotAllocationPolicy.h"
+#include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/NativeHandEquipment.h"
 #include "physics-interaction/grab/GlobalSurfaceGrabPolicy.h"
 #include "physics-interaction/consume/ImmersiveAid.h"
@@ -1635,14 +1636,14 @@ namespace rock
                 // A loose weapon held only at its authored support seat equips
                 // as a support carry, by trigger or by Auto Equip's settle.
                 const bool supportEquipRequested = !peerHoldingSameObject && hand.isHoldingAuthoredSupportGrip();
-                // Several weapons may be equipped at once. A gun equipped from
-                // this hand while the primary is in use and index 1 is free
-                // becomes the second weapon in this hand; the primary stays
-                // equipped, held where it is.
+                // Several weapons may be equipped at once. A gun or melee
+                // weapon equipped from this hand while the primary is in use
+                // and index 1 is free becomes the second weapon in this hand;
+                // the primary stays equipped, held where it is.
                 const auto* heldBase = heldRefForGameplay ? heldRefForGameplay->GetObjectReference() : nullptr;
-                const bool heldGun = heldBase && heldBase->IsWeapon() &&
-                    static_cast<const RE::TESObjectWEAP*>(heldBase)->weaponData.type == RE::WEAPON_TYPE::kGun;
-                if (heldGun) {
+                const bool heldHandWeapon = heldBase && heldBase->IsWeapon() &&
+                    weapon_type_policy::occupiesHandSlot(static_cast<const RE::TESObjectWEAP*>(heldBase)->weaponData.type.get());
+                if (heldHandWeapon) {
                     // The other hand may have equipped slot 1 earlier this frame.
                     sampleEquippedSlotOne();
                 }
@@ -1661,7 +1662,7 @@ namespace rock
                         hand.handName(), heldRefForGameplay ? heldRefForGameplay->GetFormID() : 0u);
                     return false;
                 }
-                if (!peerHoldingSameObject && !supportEquipRequested && heldGun && slotDecision.slot == 1) {
+                if (!peerHoldingSameObject && !supportEquipRequested && heldHandWeapon && slotDecision.slot == 1) {
                     auto* heldRef = hand.getHeldRef();
                     if (!heldRef) return false;
                     if (!held_weapon_equip_state_policy::canBeginEquip(nativeStateBeforeEquip)) return true;

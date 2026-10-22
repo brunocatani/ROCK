@@ -177,7 +177,7 @@ namespace rock
          */
         performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponCollisionTransforms);
         auto* model = native_secondary_presentation::presentedModel();
-        const bool enabled = weaponDrawn && native_hand_equipment::hasSecondaryGun();
+        const bool enabled = weaponDrawn && native_hand_equipment::equippedViews()[1].weapon;
         _secondaryWeaponCollision.update(world, model, frame.deltaSeconds, enabled);
         native_secondary_presentation::setMirrorPlaneX(_secondaryWeaponCollision.holdingMirrorPlaneX());
 

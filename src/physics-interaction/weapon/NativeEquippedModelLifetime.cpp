@@ -1,8 +1,10 @@
 #include "physics-interaction/weapon/NativeEquippedModelLifetime.h"
 #include "physics-interaction/weapon/NativeHandEquipment.h"
+#include "physics-interaction/weapon/NativeSecondaryMelee.h"
 #include "physics-interaction/weapon/NativeWeaponModelGeometry.h"
 #include "physics-interaction/weapon/EquippedWeaponVisualState.h"
 #include "physics-interaction/weapon/NativeModelAncestry.h"
+#include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/core/RockRuntimeState.h"
@@ -164,7 +166,7 @@ namespace rock::native_equipped_model_lifetime
             s_detach(owner, node, retarget);
         }
 
-        bool gunRecord(const void* record, RE::TESObjectWEAP*& weapon, RE::NiAVObject*& model) noexcept
+        bool handWeaponRecord(const void* record, RE::TESObjectWEAP*& weapon, RE::NiAVObject*& model) noexcept
         {
             RE::TESBoundObject* object = nullptr;
             RE::TBO_InstanceData* instance = nullptr;
@@ -173,7 +175,7 @@ namespace rock::native_equipped_model_lifetime
                 !native_memory::tryReadField(record, 0x30, model) || !model) return false;
             weapon = static_cast<RE::TESObjectWEAP*>(object);
             const auto* data = instance ? static_cast<const RE::TESObjectWEAP::InstanceData*>(instance) : &weapon->weaponData;
-            return data->type == RE::WEAPON_TYPE::kGun;
+            return weapon_type_policy::occupiesHandSlot(data->type.get());
         }
 
         void retire(void* biped, void* record, bool deferred) noexcept
@@ -185,14 +187,20 @@ namespace rock::native_equipped_model_lifetime
             RE::NiAVObject* retiringRoot = nullptr;
             const bool playerBiped = s_installed && biped &&
                 (biped == native_hand_equipment::playerBiped(true) || biped == native_hand_equipment::playerBiped(false));
-            if (playerBiped && gunRecord(record, outgoing, retiringRoot)) {
+            if (playerBiped) {
+                // Native melee collision attached to a second melee model
+                // leaves the physics world before the model does.
+                RE::NiAVObject* root = nullptr;
+                if (native_memory::tryReadField(record, 0x30, root) && root) native_secondary_melee::beforeModelRetired(root);
+            }
+            if (playerBiped && handWeaponRecord(record, outgoing, retiringRoot)) {
                 // Current native records, not the changed actor equipment array,
                 // own the surviving models during a retirement/rebuild callback.
                 for (std::uint32_t slot = 0; slot < 44; ++slot) {
                     const auto* candidate = static_cast<const std::byte*>(biped) + 0x10 + slot * 0x58;
                     RE::TESObjectWEAP* weapon = nullptr;
                     RE::NiAVObject* root = nullptr;
-                    if (candidate == record || !gunRecord(candidate, weapon, root) || root == retiringRoot) continue;
+                    if (candidate == record || !handWeaponRecord(candidate, weapon, root) || root == retiringRoot) continue;
                     auto& protectedModel = context.models[context.count++];
                     protectedModel.root.reset(root);
                     protectedModel.boundary.reset(root);

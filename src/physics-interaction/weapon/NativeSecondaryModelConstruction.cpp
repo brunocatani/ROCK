@@ -1,6 +1,7 @@
 #include "physics-interaction/weapon/NativeSecondaryModelConstruction.h"
 #include "physics-interaction/weapon/NativeSecondaryModelBranch.h"
 #include "physics-interaction/weapon/NativeWeaponModelGeometry.h"
+#include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "rock_support/Fo4VrRuntime.h"
@@ -160,7 +161,7 @@ namespace rock::native_secondary_model
                 if (leftSlot != rightSlot && (slot == leftSlot || slot == rightSlot) &&
                     native_memory::tryReadField(current, slot * 0x58 + 0x18, instance)) {
                     const auto* data = instance ? static_cast<const RE::TESObjectWEAP::InstanceData*>(instance) : &weapon->weaponData;
-                    if (data->type == RE::WEAPON_TYPE::kGun &&
+                    if (weapon_type_policy::occupiesHandSlot(data->type.get()) &&
                         native_memory::tryReadField(player, 0xFE0, firstPerson)) {
                         context.actor = actor;
                         context.weapon = weapon;

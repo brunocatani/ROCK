@@ -1,5 +1,6 @@
 #include "physics-interaction/weapon/NativeInventoryHandSlots.h"
 #include "physics-interaction/weapon/NativeInventorySlotStub.h"
+#include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -25,12 +26,12 @@ namespace rock::native_inventory_hand_slots
         using Slot=RE::BGSEquipSlot;
         template<std::uintptr_t Rva> struct Entry { static inline void* original{}; };
         template<class Fn,std::uintptr_t Rva> Fn original() { return reinterpret_cast<Fn>(Entry<Rva>::original); }
-        bool firearm(const Item* item)
+        bool handWeapon(const Item* item)
         {
             if (!item || !item->object || !item->object->IsWeapon()) return false;
             const auto* data=item->instanceData?static_cast<const RE::TESObjectWEAP::InstanceData*>(item->instanceData.get()):
                 &static_cast<const RE::TESObjectWEAP*>(item->object)->weaponData;
-            return data->type==RE::WEAPON_TYPE::kGun;
+            return weapon_type_policy::occupiesHandSlot(data->type.get());
         }
         Slot* hand(std::uint32_t index)
         {
@@ -38,7 +39,7 @@ namespace rock::native_inventory_hand_slots
         }
         int relative(const Item* item,const Slot* slot)
         {
-            if (s_installed && t_player && firearm(item)) {
+            if (s_installed && t_player && handWeapon(item)) {
                 if (slot && slot==hand(0)) return 0;
                 if (slot && slot==hand(1)) return 1;
             }
@@ -46,7 +47,7 @@ namespace rock::native_inventory_hand_slots
         }
         Slot* ordinal(const Item* item,int index)
         {
-            if (s_installed && t_player && firearm(item) && index>=0 && index<2)
+            if (s_installed && t_player && handWeapon(item) && index>=0 && index<2)
                 if (auto* slot=hand(static_cast<std::uint32_t>(index))) return slot;
             return original<Slot*(*)(const Item*,int),0x1462E0>()(item,index);
         }
@@ -104,7 +105,7 @@ namespace rock::native_inventory_hand_slots
         {
             const Scope scope(actor);
             const Slot* selected=slot;
-            if (s_installed && t_player && firearm(item) && heldOnRightLeaf(slot)) {
+            if (s_installed && t_player && handWeapon(item) && heldOnRightLeaf(slot)) {
                 // This is the native construction boundary, including save
                 // reconstruction. Preserve the real item and native ammo/data
                 // constructor; canonicalize only the primary ownership leaf.

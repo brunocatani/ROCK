@@ -22,4 +22,13 @@ namespace rock::weapon_type_policy
         // An equipped grenade or mine does not own the drawn bare-fist pose.
         return type == WeaponType::kHandToHand || isMelee(type);
     }
+
+    template <class WeaponType>
+    [[nodiscard]] constexpr bool occupiesHandSlot(const WeaponType type) noexcept
+    {
+        // A weapon native equipment index 0 or 1 presents in a hand: a gun
+        // or an equipped melee weapon. Grenades and mines are throwable
+        // selection state, never a hand slot.
+        return type == WeaponType::kGun || isEquippedMelee(type);
+    }
 }

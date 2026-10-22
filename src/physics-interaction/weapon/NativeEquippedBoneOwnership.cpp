@@ -1,6 +1,7 @@
 #include "physics-interaction/weapon/NativeEquippedBoneOwnership.h"
 #include "physics-interaction/weapon/NativeHandEquipment.h"
 #include "physics-interaction/weapon/NativeModelAncestry.h"
+#include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -33,7 +34,7 @@ namespace rock::native_equipped_bone_ownership
             if (!out.item.object || !out.item.object->IsWeapon()) return false;
             const auto* data=out.item.instanceData?static_cast<const RE::TESObjectWEAP::InstanceData*>(out.item.instanceData.get()):
                 &static_cast<const RE::TESObjectWEAP*>(out.item.object)->weaponData;
-            if (data->type!=RE::WEAPON_TYPE::kGun) return false;
+            if (!weapon_type_policy::occupiesHandSlot(data->type.get())) return false;
             using Index=std::uint32_t(*)(RE::Actor*,RE::TESBoundObject*,std::uint32_t);
             const auto index=reinterpret_cast<Index>(REL::Offset(0x1CAFC0).address())(player,static_cast<RE::TESObjectWEAP*>(out.item.object),hand);
             if (!biped || index>=44) return false;

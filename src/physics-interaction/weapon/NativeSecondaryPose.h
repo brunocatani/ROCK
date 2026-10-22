@@ -51,4 +51,24 @@ namespace rock::native_secondary_pose
         return holding_grip_math::valid(holding_grip_math::fromNative(weapon)) &&
             holding_grip_math::valid(holding_grip_math::fromNative(hand));
     }
+
+    // A melee weapon, as the first weapon's melee carry: the authored grip
+    // rotated onto the physical wrist plus the melee pitch in the controller,
+    // with the authored palm seated on the physical palm.
+    inline bool solveMelee(const RE::NiTransform& controller, const RE::NiTransform& physicalHand,
+        const RE::NiTransform& seat, const RE::NiPoint3& palm, float modelScale, float pitchDegrees,
+        RE::NiTransform& weapon, RE::NiTransform& hand) noexcept
+    {
+        weapon = {};
+        hand = {};
+        if (!holding_grip_math::valid(holding_grip_math::fromNative(seat)) ||
+            !std::isfinite(palm.x) || !std::isfinite(palm.y) || !std::isfinite(palm.z) ||
+            !weapon_aim_basis::tryResolveMeleeWorld(physicalHand, seat, controller, modelScale, pitchDegrees, weapon)) return false;
+        weapon.translate = {};
+        weapon.translate = transform_math::localPointToWorld(physicalHand, palm) -
+            transform_math::localPointToWorld(weapon, transform_math::localPointToWorld(seat, palm));
+        hand = transform_math::composeTransforms(weapon, seat);
+        return holding_grip_math::valid(holding_grip_math::fromNative(weapon)) &&
+            holding_grip_math::valid(holding_grip_math::fromNative(hand));
+    }
 }

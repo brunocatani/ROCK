@@ -22,9 +22,12 @@ namespace rock::native_hand_equipment
         RE::NiAVObject* bodyRoot = nullptr;
         std::uintptr_t data = 0;
         std::uint32_t slot = 0;
+        // A gun; otherwise an equipped melee weapon (no ammo, fire or recoil).
+        bool firearm = false;
     };
     // Main-frame borrowed views, indexed by native equipment index (0: the
     // player's own graph; 1: ROCK's second graph). An index is not a hand.
+    // Both indices hold any hand weapon, guns and melee alike.
     // No caller may retain these pointers across native calls or frames.
     [[nodiscard]] std::array<EquippedView, 2> equippedViews() noexcept;
     [[nodiscard]] bool hasSecondaryGun() noexcept;

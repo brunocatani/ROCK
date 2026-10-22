@@ -4,6 +4,7 @@
 #include "physics-interaction/grab/GrabHeldObject.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/NativeMeleeSuppressionPolicy.h"
+#include "physics-interaction/weapon/NativeSecondaryMelee.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/object/ObjectDetection.h"
@@ -1127,6 +1128,8 @@ namespace rock
             }
 
             if (g_originalVrMeleeImpactCallback) {
+                // A contact from the index-1 melee model resolves with index 1.
+                const native_secondary_melee::ImpactRoute route(contactEvent, collisionEvent);
                 if (profiling && decodeStage == MeleeContactDecodeStage::Complete) {
                     performance_profiler::observeContactPair(profilePair, input.actorIsPlayer ?
                         performance_profiler::ContactStage::PlayerMeleeForwarded : performance_profiler::ContactStage::OtherMeleeForwarded);
