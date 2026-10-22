@@ -42,7 +42,7 @@ namespace rock
             clearPrimaryDetachVisualAuthority(left);
         }
         clearDynamicSupportAcquisition(reason, true);
-        clearSupportInputBaselines();
+        clearSupportInputBaselines(reason);
         // A cancelled return may own this same primary-pose blocker. Keep it
         // continuously held for the retained weapon instead of restoring native carry.
         clearWeaponVisualReturn(reason, true, false);
@@ -117,10 +117,12 @@ namespace rock
             return false;
         }
 
-        clearSupportInputBaselines();
+        clearSupportInputBaselines("authored-carry-handoff");
         partGrip(nextCarrierIsLeft).supportInputBaseline = baseline;
         _partCarry.pivotIsLeft = nextCarrierIsLeft;
         _partCarry.gripSeparationWorld = 0.0f;
+        _partCarry.lastSolveSource = nullptr;
+        _partCarry.driverInWandValid = false;
         // The new baseline already reproduces the last rendered pose exactly.
         // An earlier transition blend must not offset that calibrated result.
         clearWeaponPoseHandoffBlend("authored-support-carry-handoff", true);
@@ -256,7 +258,7 @@ namespace rock
         // calibration, then install only the freshly captured integrated
         // driver baseline below. A later return to Gripping recaptures its own
         // paired support calibration.
-        clearSupportInputBaselines();
+        clearSupportInputBaselines("primary-detach-part-carry");
         beginHandVisualReturn(isFiringHandLeft(), "primary-detach-part-carry");
         clearPrimaryGripFingerPose(isFiringHandLeft());
         clearPrimaryGripWorldAuthority(isFiringHandLeft());
@@ -273,6 +275,8 @@ namespace rock
         _partCarry.pivotIsLeft = carryHandIsLeft;
         _partCarry.detachAuthority = _handlingSettings.detachAuthority;
         _partCarry.gripSeparationWorld = 0.0f;
+        _partCarry.lastSolveSource = nullptr;
+        _partCarry.driverInWandValid = false;
         // The calibrated baseline already reproduces the last rendered pose;
         // an earlier transition blend must not offset it.
         clearWeaponPoseHandoffBlend("primary-detach-part-carry", true);
@@ -810,6 +814,21 @@ namespace rock
             return false;
         }
 
+        const auto notePartCarrySolveSource = [&](const char* source) {
+            if (_partCarry.lastSolveSource == source && _partCarry.lastSolvePivotIsLeft == pivotIsLeft) return;
+            const auto& baseline = pivotGrip.supportInputBaseline;
+            ROCK_LOG_INFO(Weapon,
+                "PART_CARRY_ZERO solve {}->{} pivot={} declared={} active={} baseline(active={} kind={} hand={}) grip={}/{} generation={:016X}/{:016X} ownership={:016X}/{:016X} state={} statePivot={} aim(active={} attachOnly={} authoredVisual={})",
+                _partCarry.lastSolveSource ? _partCarry.lastSolveSource : "none", source, pivotIsLeft ? "left" : "right",
+                partCarryBaselineDeclared, partCarryBaselineActive, baseline.active, static_cast<int>(baseline.kind),
+                baseline.supportHandIsLeft ? "left" : "right", baseline.gripSequence, pivotGrip.gripSequence,
+                baseline.weaponGenerationKey, pivotGrip.weaponGenerationKey, baseline.equippedWeaponOwnershipKey,
+                _session.equippedWeaponOwnershipKey, twoHandedStateDiagnosticName(_session.state),
+                _partCarry.pivotIsLeft ? "left" : "right", aimGrip.active, aimGrip.attachOnly, authoredVisualSupport);
+            _partCarry.lastSolveSource = source;
+            _partCarry.lastSolvePivotIsLeft = pivotIsLeft;
+        };
+
         RE::NiTransform pivotHandTransform{};
         RE::NiTransform calibratedPartCarryWeaponWorld{};
         if (partCarryBaselineActive) {
@@ -844,6 +863,33 @@ namespace rock
                 transitionToInactive(false);
                 return false;
             }
+            RE::NiTransform pivotWand{};
+            if (frik_hand_world_authority::tryGetTrackedWandWorld(pivotIsLeft, pivotWand) &&
+                isInvertibleTransform(pivotWand = transform_math::orthonormalizedTransform(pivotWand))) {
+                const RE::NiTransform driverInWand = transform_math::composeTransforms(
+                    transform_math::invertTransform(pivotWand), calibratedPivotDriverWorld);
+                if (pivotGrip.supportInputBaseline.firstPublicationPending || !_partCarry.driverInWandValid) {
+                    _partCarry.driverInWandAtCalibration = driverInWand;
+                    _partCarry.lastDriverInWand = driverInWand;
+                    _partCarry.driverInWandValid = true;
+                }
+                const float stepUnits = hand_visual_lerp_math::distanceGameUnits(
+                    _partCarry.lastDriverInWand.translate, driverInWand.translate);
+                const float stepDegrees = hand_visual_lerp_math::rotationDistanceDegrees(_partCarry.lastDriverInWand, driverInWand);
+                const float driftUnits = hand_visual_lerp_math::distanceGameUnits(
+                    _partCarry.driverInWandAtCalibration.translate, driverInWand.translate);
+                const float driftDegrees =
+                    hand_visual_lerp_math::rotationDistanceDegrees(_partCarry.driverInWandAtCalibration, driverInWand);
+                if (stepUnits > 0.5f || stepDegrees > 2.0f) {
+                    ROCK_LOG_SAMPLE_INFO(Weapon, 250,
+                        "PART_CARRY_ZERO driver step pivot={} step={:.2f}gu/{:.2f}deg driftSinceCalibration={:.2f}gu/{:.2f}deg",
+                        pivotIsLeft ? "left" : "right", stepUnits, stepDegrees, driftUnits, driftDegrees);
+                }
+                ROCK_LOG_SAMPLE_INFO(Weapon, 1000,
+                    "PART_CARRY_ZERO driver drift pivot={} driftSinceCalibration={:.2f}gu/{:.2f}deg",
+                    pivotIsLeft ? "left" : "right", driftUnits, driftDegrees);
+                _partCarry.lastDriverInWand = driverInWand;
+            }
         } else if (!tryGetSolverHandTransform(
                        pivotIsLeft,
                        pivotHandTransform)) {
@@ -854,6 +900,7 @@ namespace rock
         }
 
         if (aimGripCarries) {
+            notePartCarrySolveSource("two-anchor");
             RE::NiTransform aimHandTransform{};
             if (!tryGetSolverHandTransform(!pivotIsLeft, aimHandTransform)) {
                 _hasSolvedWeaponTransform = false;
@@ -934,12 +981,15 @@ namespace rock
         } else {
             RE::NiTransform solvedWeaponWorld{};
             if (partCarryBaselineActive) {
+                notePartCarrySolveSource("calibrated");
                 solvedWeaponWorld = calibratedPartCarryWeaponWorld;
             } else if (pivotGrip.hasSourceFrames && pivotGrip.hasAttachmentWeaponLocal && resolveCurrentSupportAttachmentRoot(pivotGrip, weaponNode)) {
+                notePartCarrySolveSource("attachment-source");
                 const RE::NiTransform solvedSourceWorld =
                     transform_math::composeTransforms(pivotHandTransform, transform_math::invertTransform(pivotGrip.handSourceLocal));
                 solvedWeaponWorld = transform_math::composeTransforms(solvedSourceWorld, transform_math::invertTransform(pivotGrip.attachmentWeaponLocal));
             } else {
+                notePartCarrySolveSource("hand-local");
                 solvedWeaponWorld = transform_math::composeTransforms(pivotHandTransform, transform_math::invertTransform(pivotGrip.handWeaponLocal));
             }
             if (!isFiniteTransform(solvedWeaponWorld)) {

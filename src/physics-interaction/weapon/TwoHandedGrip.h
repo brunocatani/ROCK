@@ -1719,7 +1719,9 @@ namespace rock
             RE::NiNode* weaponNode,
             bool supportHandIsLeft,
             const char* reason);
-        void clearSupportInputBaselines();
+        void clearSupportInputBaselines(const char* site);
+        // Every clear goes through here so a dropped part-carry zero is logged with its site.
+        void clearSupportInputBaseline(WeaponPartGrip& grip, const char* site);
         bool tryResolvePhysicalHandFrame(
             bool isLeft,
             RE::NiTransform& outHandWorld,
@@ -2073,6 +2075,16 @@ namespace rock
             };
 
             float gripSeparationWorld{ 0.0f };
+
+            // Diagnostic: the solve path last used, logged when it changes
+            // (a calibrated carry falling to an uncalibrated path is the reset).
+            const char* lastSolveSource{ nullptr };
+            bool lastSolvePivotIsLeft{ false };
+            // Diagnostic: the pivot driver in its controller wand at
+            // calibration and last frame, to see the driver move off the controller.
+            RE::NiTransform driverInWandAtCalibration{};
+            RE::NiTransform lastDriverInWand{};
+            bool driverInWandValid{ false };
         };
 
         /*

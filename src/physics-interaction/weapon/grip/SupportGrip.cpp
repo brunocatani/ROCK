@@ -97,6 +97,8 @@ namespace rock
         _partCarry.pivotIsLeft = captured.isLeft;
         _partCarry.detachAuthority = _handlingSettings.detachAuthority;
         _partCarry.gripSeparationWorld = 0.0f;
+        _partCarry.lastSolveSource = nullptr;
+        _partCarry.driverInWandValid = false;
         _support.rotationBlend = 1.0f;
         _session.state = TwoHandedState::PartCarry;
         if (second) {
@@ -1663,7 +1665,7 @@ namespace rock
             if (preserveTransferredCarry) {
                 grip.supportInputBaseline.weaponGenerationKey = currentWeaponGenerationKey;
             } else {
-                grip.supportInputBaseline = {};
+                clearSupportInputBaseline(grip, "rebind-authored-generation");
             }
             return true;
         }
@@ -1749,7 +1751,7 @@ namespace rock
         // The support input-to-target relation belongs to the old collision
         // generation. The game-thread reconciliation step recaptures it from
         // current transforms only after the new generation is eligible.
-        grip.supportInputBaseline = {};
+        clearSupportInputBaseline(grip, "rebind-generated-generation");
         grip.contactBodyId = bestDescriptor->bodyId;
         grip.attachmentRoot = grip.authoredSupportGrip ?
             _session.weaponNode :
@@ -1897,7 +1899,7 @@ namespace rock
         const bool supportInputBaselineActive = dynamicBaselineActive;
         if (supportGrip.supportInputBaseline.active &&
             !supportInputBaselineActive) {
-            supportGrip.supportInputBaseline = {};
+            clearSupportInputBaseline(supportGrip, "full-authority-not-dynamic");
         }
 
         bool dynamicAcquisition =
@@ -3002,7 +3004,7 @@ namespace rock
                     supportGripTargetWorld,
                     primaryDriverToTargetLocal,
                     supportDriverToTargetLocal)) {
-            supportGrip.supportInputBaseline = {};
+            clearSupportInputBaseline(supportGrip, "dynamic-capture-failed");
             ROCK_LOG_WARN(
                 Weapon,
                 "TwoHandedGrip: dynamic driver baseline capture failed hand={} primaryDriver={} supportDriver={} grip={} generation={:016X} reason={}",
@@ -3040,11 +3042,26 @@ namespace rock
         return true;
     }
 
-    void TwoHandedGrip::clearSupportInputBaselines()
+    void TwoHandedGrip::clearSupportInputBaselines(const char* site)
     {
         for (auto& grip : _support.partGrips) {
-            grip.supportInputBaseline = {};
+            clearSupportInputBaseline(grip, site);
         }
+    }
+
+    void TwoHandedGrip::clearSupportInputBaseline(WeaponPartGrip& grip, const char* site)
+    {
+        const auto& baseline = grip.supportInputBaseline;
+        if (baseline.active && baseline.kind == SupportInputBaselineKind::PartCarry) {
+            // Once per dropped calibration: a cleared baseline is inactive afterwards.
+            ROCK_LOG_INFO(Weapon,
+                "PART_CARRY_ZERO cleared site={} hand={} state={} pivot={} gripActive={} grip={}/{} generation={:016X}/{:016X} ownership={:016X}/{:016X}",
+                site ? site : "unknown", baseline.supportHandIsLeft ? "left" : "right",
+                twoHandedStateDiagnosticName(_session.state), _partCarry.pivotIsLeft ? "left" : "right", grip.active,
+                baseline.gripSequence, grip.gripSequence, baseline.weaponGenerationKey, grip.weaponGenerationKey,
+                baseline.equippedWeaponOwnershipKey, _session.equippedWeaponOwnershipKey);
+        }
+        grip.supportInputBaseline = {};
     }
 
     bool TwoHandedGrip::tryResolvePhysicalHandFrame(
