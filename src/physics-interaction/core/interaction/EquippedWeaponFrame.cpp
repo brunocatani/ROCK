@@ -9,6 +9,7 @@
 #include "physics-interaction/weapon/WeaponInstanceClassification.h"
 #include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
 #include "physics-interaction/weapon/EquipVisualBridgePolicy.h"
+#include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
 #include "physics-interaction/weapon/WeaponInputFilter.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
@@ -288,6 +289,15 @@ namespace rock
         if (!stage && !supportCarry && !(isLeft ? TwoHandedGrip::tryGetLeftWeaponAimWorld(node->world.scale, weaponWorld) :
                 TwoHandedGrip::tryGetRightWeaponAimWorld(node->world.scale, weaponWorld)))
             stage = "controller-aim";
+        // Offhand-only carry, as the live part carry: the weapon keeps the
+        // placement in its controller driver captured when the menu opened.
+        RE::NiTransform driverWorld{};
+        RE::NiPoint3 modelTranslation{};
+        if (!stage && supportCarry && (!frik_hand_world_authority::tryGetInputDriverWorld(isLeft, driverWorld) ||
+                !weapon_input_filter::usable(driverWorld)))
+            stage = "input-driver";
+        if (!stage && supportCarry && !vanilla_weapon_grip_frame::resolveModelTranslation(view.weapon->formID, node, modelTranslation))
+            stage = "model-registration";
         ROCK_LOG_SAMPLE_INFO(Weapon, 1000, "MENU_WEAPON_HOLD weapon=first stage={} source={} hand={} paired={} visible={}",
             stage ? stage : "placed", supportCarry ? "support-carry" : carried ? "menu-carry" : "native-seat",
             isLeft ? "left" : "right", paired, node ? equipped_weapon_visual_state::isLocallyVisible(node) : false);
@@ -297,9 +307,19 @@ namespace rock
         }
         if (_equipped.menuHoldFingerHand >= 0 && _equipped.menuHoldFingerHand != (isLeft ? 1 : 0)) release();
         if (frik_visual_authority::setAuthoredFingerPose(kTag, hand, fingers, kPriority)) _equipped.menuHoldFingerHand = isLeft ? 1 : 0;
+        // A grip captured on this model, moved into its current registration.
+        const auto registered = [&](RE::NiTransform handWeaponLocal, const RE::NiPoint3& sourceModelTranslation) {
+            handWeaponLocal.translate += modelTranslation - sourceModelTranslation;
+            return handWeaponLocal;
+        };
         if (supportCarry) {
-            releaseHand();
-            weaponWorld = transform_math::composeTransforms(handWorld, transform_math::invertTransform(supportHandWeaponLocal));
+            driverWorld = transform_math::orthonormalizedTransform(driverWorld);
+            weaponWorld = transform_math::composeTransforms(driverWorld,
+                carry.supportGrip.registeredWeaponInDriver(modelTranslation));
+            if (_equipped.menuHoldHandClaim >= 0 && _equipped.menuHoldHandClaim != (isLeft ? 1 : 0)) releaseHand();
+            if (frik_visual_authority::publishHandWorld(kTag, hand, transform_math::composeTransforms(weaponWorld,
+                    registered(supportHandWeaponLocal, carry.supportGrip.sourceModelTranslation)), kHandPriority))
+                _equipped.menuHoldHandClaim = isLeft ? 1 : 0;
         } else {
             // As the live carry: aim from the controller, firing grip at the
             // palm, and the hand seated on the grip of that weapon.
@@ -329,18 +349,23 @@ namespace rock
                     transform_math::composeTransforms(weaponWorld, firingHandWeaponLocal), kHandPriority))
                 _equipped.menuHoldHandClaim = isLeft ? 1 : 0;
         }
-        // The other hand stays on its support grip of that weapon.
-        const int supportSide = paired ? (isLeft ? 0 : 1) : -1;
+        // The other hand stays on its grip of that weapon: the support grip of
+        // a two-handed carry, or the second part grip of an offhand carry.
+        const bool secondPart = supportCarry && carry.secondSupportGrip.validCarry();
+        const weapon_grip_transfer::HandGrip* other = paired ? &carry.pairedGrips.support :
+            secondPart ? &carry.secondSupportGrip.grip : nullptr;
+        const int supportSide = other ? (isLeft ? 0 : 1) : -1;
         if (_equipped.menuHoldSupportHand != supportSide) releaseSupport();
-        if (supportSide >= 0) {
-            const auto& support = carry.pairedGrips.support;
+        if (other) {
             const auto supportHand = frik_visual_authority::handFromBool(supportSide == 1);
+            const auto otherHandWeaponLocal = secondPart ?
+                registered(other->handWeaponLocal, carry.secondSupportGrip.sourceModelTranslation) : other->handWeaponLocal;
             frik_visual_authority::FingerLocalTransformOverride supportFingers{};
-            supportFingers.enabledMask = support.fingerMask;
-            std::copy(support.fingerLocals.begin(), support.fingerLocals.end(), supportFingers.localTransforms);
+            supportFingers.enabledMask = other->fingerMask;
+            std::copy(other->fingerLocals.begin(), other->fingerLocals.end(), supportFingers.localTransforms);
             const bool posed = frik_visual_authority::setAuthoredFingerPose(kTag, supportHand, supportFingers, kPriority);
             const bool placed = frik_visual_authority::publishHandWorld(kTag, supportHand,
-                transform_math::composeTransforms(weaponWorld, support.handWeaponLocal), kHandPriority);
+                transform_math::composeTransforms(weaponWorld, otherHandWeaponLocal), kHandPriority);
             if (posed || placed) _equipped.menuHoldSupportHand = supportSide;
         }
         // Opening a menu or equipping culls the first weapon's node natively
