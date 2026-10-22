@@ -160,34 +160,29 @@ namespace rock
             return false;
         }
 
-        /*
-         * The carry follows the tracked controller wand, never the input
-         * driver: the right driver is FRIK's damped native weapon offset node,
-         * which the native weapon animation keeps moving under the controller
-         * (a right carry drifted 5.8gu and turned 1-5 deg per frame while the
-         * left driver, a static node, stayed still).
-         */
-        RE::NiTransform calibratedCarryDriverWorld{};
-        if (!frik_hand_world_authority::tryGetControllerWandWorld(carryHandIsLeft, calibratedCarryDriverWorld) ||
-            !isInvertibleTransform(calibratedCarryDriverWorld)) {
-            outFailureReason = "no-carry-controller-wand";
+        const auto& carryDriver =
+            _scope.currentHandDriverFrames[carryHandIsLeft ? 0u : 1u];
+        if (!carryDriver.valid ||
+            !isInvertibleTransform(carryDriver.world)) {
+            outFailureReason = "no-raw-carry-driver";
             return false;
         }
+        RE::NiTransform calibratedCarryDriverWorld = carryDriver.world;
         calibratedCarryDriverWorld.rotate =
             orthonormalizeStoredRotation(
                 calibratedCarryDriverWorld.rotate);
         if (!isInvertibleTransform(calibratedCarryDriverWorld)) {
-            outFailureReason = "invalid-carry-controller-wand";
+            outFailureReason = "invalid-raw-carry-driver";
             return false;
         }
 
         /*
-         * The wand and authored grip target are intentionally different
+         * The raw driver and authored grip target are intentionally different
          * frames. A gunstock may keep the controller upright while the authored
          * support hand lies sideways under the weapon. Capture both the
-         * wand-to-authored-target and wand-to-weapon relations from ROCK's
-         * final rendered two-hand pose. PartCarry then applies only later
-         * wand deltas without rewriting the authored hand-in-weapon frame.
+         * driver-to-authored-target and driver-to-weapon relations from ROCK's
+         * final rendered two-hand pose. PartCarry then applies only later raw
+         * driver deltas without rewriting the authored hand-in-weapon frame.
          */
         const RE::NiTransform authoredGripTargetWorld =
             weapon_visual_authority_math::weaponLocalFrameToWorld(
@@ -284,7 +279,7 @@ namespace rock
         _session.state = TwoHandedState::PartCarry;
         recordFiringGripDetachedHaptic();
         ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: firing hand detached; part grips own equipped weapon authority source={} driver={}-wand poseSource=last-rendered",
+            "TwoHandedGrip: firing hand detached; part grips own equipped weapon authority source={} driver={}-raw poseSource=last-rendered",
             immersive_weapon_policy::authorityName(_handlingSettings.detachAuthority),
             carryHandIsLeft ? "left" : "right");
         return true;
@@ -818,16 +813,16 @@ namespace rock
         RE::NiTransform pivotHandTransform{};
         RE::NiTransform calibratedPartCarryWeaponWorld{};
         if (partCarryBaselineActive) {
-            // The baseline was captured in the controller wand.
+            const auto& pivotDriver =
+                _scope.currentHandDriverFrames[pivotIsLeft ? 0u : 1u];
             RE::NiTransform calibratedPivotDriverWorld{};
-            const bool pivotWandValid =
-                frik_hand_world_authority::tryGetControllerWandWorld(pivotIsLeft, calibratedPivotDriverWorld);
-            if (pivotWandValid) {
+            if (pivotDriver.valid) {
+                calibratedPivotDriverWorld = pivotDriver.world;
                 calibratedPivotDriverWorld.rotate =
                     orthonormalizeStoredRotation(
                         calibratedPivotDriverWorld.rotate);
             }
-            if (!pivotWandValid ||
+            if (!pivotDriver.valid ||
                 !isInvertibleTransform(calibratedPivotDriverWorld) ||
                 !weapon_support_acquisition_math::
                     tryResolveSupportInputTarget(
@@ -843,9 +838,9 @@ namespace rock
                 _hasSolvedWeaponTransform = false;
                 ROCK_LOG_WARN(
                     Weapon,
-                    "TwoHandedGrip: clearing calibrated part-carry grip because the pivot controller wand or its captured targets are unavailable hand={} wand={}",
+                    "TwoHandedGrip: clearing calibrated part-carry grip because the raw pivot driver or its captured targets are unavailable hand={} driver={}",
                     pivotIsLeft ? "left" : "right",
-                    pivotWandValid ? "valid" : "missing");
+                    pivotDriver.valid ? "valid" : "missing");
                 transitionToInactive(false);
                 return false;
             }

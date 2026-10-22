@@ -83,9 +83,6 @@ namespace rock::frik_hand_world_authority
 
     // This frame's controller driver (FRIK's dampened weapon offset node).
     [[nodiscard]] bool tryGetInputDriverWorld(bool isLeft, RE::NiTransform& outWorld);
-    // The tracked controller wand. Unlike the right input driver, no native
-    // weapon animation, FRIK damping or menu moves it.
-    [[nodiscard]] bool tryGetControllerWandWorld(bool isLeft, RE::NiTransform& outWorld);
 
     // Private equipped-firearm inputs; never replace the published tracked inputs.
     void prepareWeaponInputs(std::uint64_t ownership, std::uint64_t generation, bool enabled);

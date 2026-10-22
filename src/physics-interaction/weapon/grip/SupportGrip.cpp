@@ -59,14 +59,14 @@ namespace rock
         grip.handWeaponLocal.translate += displacement;
         grip.gripWeaponLocal += displacement;
         if (!grip.valid()) return reject("support-target-frame-invalid");
-        RE::NiTransform wandWorld{};
-        if (!frik_hand_world_authority::tryGetControllerWandWorld(captured.isLeft, wandWorld) ||
-            !isInvertibleTransform(wandWorld)) return reject("support-controller-wand-unavailable");
-        wandWorld.rotate = orthonormalizeStoredRotation(wandWorld.rotate);
-        const auto weaponInWand = captured.registeredWeaponInWand(targetTranslation);
-        const auto handInWand = transform_math::composeTransforms(weaponInWand, grip.handWeaponLocal);
-        const auto weaponWorld = transform_math::composeTransforms(wandWorld, weaponInWand);
-        if (!isInvertibleTransform(weaponInWand) || !isInvertibleTransform(handInWand) ||
+        RE::NiTransform driverWorld{};
+        if (!frik_hand_world_authority::tryGetInputDriverWorld(captured.isLeft, driverWorld) ||
+            !isInvertibleTransform(driverWorld)) return reject("support-input-driver-unavailable");
+        driverWorld.rotate = orthonormalizeStoredRotation(driverWorld.rotate);
+        const auto weaponInDriver = captured.registeredWeaponInDriver(targetTranslation);
+        const auto handInDriver = transform_math::composeTransforms(weaponInDriver, grip.handWeaponLocal);
+        const auto weaponWorld = transform_math::composeTransforms(driverWorld, weaponInDriver);
+        if (!isInvertibleTransform(weaponInDriver) || !isInvertibleTransform(handInDriver) ||
             !isInvertibleTransform(weaponWorld)) return reject("support-placement-frame-invalid");
         if (_session.state != TwoHandedState::Inactive) transitionToInactive(false);
         if (!blockFrikPrimaryWeaponPose()) return reject("support-pose-blocker-unavailable");
@@ -83,8 +83,8 @@ namespace rock
         auto& support = partGrip(captured.isLeft);
         support.acquisitionSource = support.authoredSupportGrip ? WeaponInteractionAcquisitionSource::AuthoredSeat : WeaponInteractionAcquisitionSource::PhysicalContact;
         support.supportInputBaseline = {
-            .inputToGripTargetLocal = handInWand,
-            .inputToWeaponLocal = weaponInWand,
+            .inputToGripTargetLocal = handInDriver,
+            .inputToWeaponLocal = weaponInDriver,
             .weaponWorldAtCapture = weaponWorld,
             .weaponGenerationKey = generation,
             .equippedWeaponOwnershipKey = ownership,
@@ -108,7 +108,7 @@ namespace rock
             _partCarry.gripSeparationWorld = std::sqrt(dot(separation, separation)) * std::abs(weaponNode->world.scale);
         }
         clearAllVisualReturns("support-equip-transfer", false, true);
-        ROCK_LOG_INFO(Weapon, "Authored support equipped grip adopted form={:08X} hand={} firingGrip=vacant placement=captured-wand generation={:016X} ownership={:016X}",
+        ROCK_LOG_INFO(Weapon, "Authored support equipped grip adopted form={:08X} hand={} firingGrip=vacant placement=captured-driver generation={:016X} ownership={:016X}",
             captured.weaponFormID, captured.isLeft ? "left" : "right", generation, ownership);
         return true;
     }
@@ -141,13 +141,16 @@ namespace rock
             return out.valid();
         };
         const auto captureSupport = [&](bool left, weapon_grip_transfer::Support& out) {
-            RE::NiTransform wand{};
-            if (!capturePart(left, out.grip) || !frik_hand_world_authority::tryGetControllerWandWorld(left, wand) ||
-                !isInvertibleTransform(wand = transform_math::orthonormalizedTransform(wand))) return false;
+            RE::NiTransform driver{};
+            if (!capturePart(left, out.grip) || !frik_hand_world_authority::tryGetInputDriverWorld(left, driver) || !isInvertibleTransform(driver)) return false;
             out.weaponFormID = form;
             out.isLeft = left;
             out.sourceModelTranslation = translation;
-            out.weaponInWand = transform_math::composeTransforms(transform_math::invertTransform(wand), node->world);
+            out.weaponInDriver = transform_math::composeTransforms(transform_math::invertTransform(driver), node->world);
+            RE::NiTransform rawHand{};
+            if (frik_hand_world_authority::tryGetRawHandWorld(left, rawHand) &&
+                isInvertibleTransform(rawHand = transform_math::orthonormalizedTransform(rawHand)))
+                out.weaponInRawHand = transform_math::composeTransforms(transform_math::invertTransform(rawHand), node->world);
             return out.validCarry();
         };
         if (isPartCarryActive()) {

@@ -343,24 +343,35 @@ namespace rock
         // The isolated controller hand, as the live carry reads it; never the
         // rendered hand, which is this hold's own claim.
         RE::NiTransform handWorld{}, weaponWorld{};
-        if (!stage && !supportCarry &&
-            (!frik_hand_world_authority::tryGetRawHandWorld(isLeft, handWorld) || !weapon_input_filter::usable(handWorld)))
+        if (!stage && (!frik_hand_world_authority::tryGetRawHandWorld(isLeft, handWorld) || !weapon_input_filter::usable(handWorld)))
             stage = "hand";
         if (!stage && !supportCarry && !(isLeft ? TwoHandedGrip::tryGetLeftWeaponAimWorld(node->world.scale, weaponWorld) :
                 TwoHandedGrip::tryGetRightWeaponAimWorld(node->world.scale, weaponWorld)))
             stage = "controller-aim";
-        // Offhand-only carry, as the live part carry: the weapon keeps the
-        // placement in the controller wand captured when the menu opened.
-        RE::NiTransform wandWorld{};
+        // Offhand-only carry: the weapon keeps the placement in the controller
+        // hand captured when the menu opened. Not the live carry's input
+        // driver: the right one is the native weapon offset node, which a menu
+        // moves under the hand.
         RE::NiPoint3 modelTranslation{};
-        if (!stage && supportCarry && (!frik_hand_world_authority::tryGetControllerWandWorld(isLeft, wandWorld) ||
-                !weapon_input_filter::usable(wandWorld)))
-            stage = "controller-wand";
+        if (!stage && supportCarry && !carry.supportGrip.weaponInRawHand) stage = "raw-hand-relation";
         if (!stage && supportCarry && !vanilla_weapon_grip_frame::resolveModelTranslation(view.weapon->formID, node, modelTranslation))
             stage = "model-registration";
-        ROCK_LOG_SAMPLE_INFO(Weapon, 1000, "MENU_WEAPON_HOLD weapon=first stage={} source={} hand={} paired={} visible={}",
+        // Diagnostic: how far the input driver would have put the weapon.
+        float driverDeltaUnits = -1.0f, driverDeltaDegrees = -1.0f;
+        RE::NiTransform driverWorld{};
+        if (!stage && supportCarry && frik_hand_world_authority::tryGetInputDriverWorld(isLeft, driverWorld) &&
+            weapon_input_filter::usable(driverWorld)) {
+            const auto byDriver = transform_math::composeTransforms(transform_math::orthonormalizedTransform(driverWorld),
+                carry.supportGrip.registeredWeaponInDriver(modelTranslation));
+            const auto byHand = transform_math::composeTransforms(transform_math::orthonormalizedTransform(handWorld),
+                carry.supportGrip.registeredWeaponInRawHand(modelTranslation));
+            driverDeltaUnits = dynamic_weapon_collision_policy::translationDeltaGameUnits(byDriver, byHand);
+            driverDeltaDegrees = dynamic_weapon_collision_policy::rotationDeltaDegrees(byDriver, byHand);
+        }
+        ROCK_LOG_SAMPLE_INFO(Weapon, 1000, "MENU_WEAPON_HOLD weapon=first stage={} source={} hand={} paired={} visible={} driverVsHand={:.2f}gu/{:.2f}deg",
             stage ? stage : "placed", supportCarry ? "support-carry" : carried ? "menu-carry" : "native-seat",
-            isLeft ? "left" : "right", paired, node ? equipped_weapon_visual_state::isLocallyVisible(node) : false);
+            isLeft ? "left" : "right", paired, node ? equipped_weapon_visual_state::isLocallyVisible(node) : false,
+            driverDeltaUnits, driverDeltaDegrees);
         if (stage) {
             release();
             return;
@@ -373,8 +384,8 @@ namespace rock
             return handWeaponLocal;
         };
         if (supportCarry) {
-            weaponWorld = transform_math::composeTransforms(transform_math::orthonormalizedTransform(wandWorld),
-                carry.supportGrip.registeredWeaponInWand(modelTranslation));
+            weaponWorld = transform_math::composeTransforms(transform_math::orthonormalizedTransform(handWorld),
+                carry.supportGrip.registeredWeaponInRawHand(modelTranslation));
             if (_equipped.menuHoldHandClaim >= 0 && _equipped.menuHoldHandClaim != (isLeft ? 1 : 0)) releaseHand();
             if (frik_visual_authority::publishHandWorld(kTag, hand, transform_math::composeTransforms(weaponWorld,
                     registered(supportHandWeaponLocal, carry.supportGrip.sourceModelTranslation)), kHandPriority))
