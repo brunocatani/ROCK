@@ -1258,9 +1258,19 @@ namespace rock::native_secondary_actions
                     return;
                 }
                 if (!dispatch(s,RE::DEFAULT_OBJECT::kActionForceEquip)) {
-                    s.failed=true; s.ready=false;
-                    ROCK_LOG_ERROR(Animation,"AKIMBO private graph rejected native force-equip form={:08X}",view.weapon->formID);
-                    return;
+                    // Sneaking selects the sneak equip idle ('weapSneakEquip'),
+                    // which this private graph has no state for (15:33 runtime:
+                    // refused, then every action until a re-equip). It takes
+                    // the standing equip event the same action sends upright.
+                    static const RE::BSFixedString standingEquip{ "WeapEquip" };
+                    const bool standing=s.graph->notify(standingEquip);
+                    ROCK_LOG_INFO(Animation,"AKIMBO private graph force-equip refused form={:08X}; standing equip event accepted={}",
+                        view.weapon->formID,standing);
+                    if (!standing) {
+                        s.failed=true; s.ready=false;
+                        ROCK_LOG_ERROR(Animation,"AKIMBO private graph rejected native force-equip form={:08X}",view.weapon->formID);
+                        return;
+                    }
                 }
                 s.drawing=true;
                 s.drawSeconds=0;
