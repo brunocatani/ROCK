@@ -25,6 +25,9 @@ namespace rock
             weapon_grip_transfer::Pair pairedGrips{};
             weapon_grip_transfer::Support supportGrip{};
             weapon_grip_transfer::Support secondSupportGrip{};
+            // The carry with the other hand on its support grip: what a Pip-Boy
+            // support attach resumes, or the pair a detach set aside.
+            weapon_grip_transfer::Pair supportAttach{};
             bool menuResume{ false };
             std::array<equipped_weapon_toggle_grab_policy::TransferReleaseState, 2> pairedRelease{};
             bool pending{ false };

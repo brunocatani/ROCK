@@ -165,6 +165,8 @@ namespace rock
         [[nodiscard]] EquippedWeaponTransitionCoordinator::PendingGrip equippedWeaponContinuity() const;
         void restoreEquippedWeaponContinuity(const EquippedWeaponTransitionCoordinator::PendingGrip& grip);
         void captureEquippedWeaponContinuity();
+        // In menus: apply a Pip-Boy support attach/detach to the menu carry.
+        void applyPipboySupportRequest();
         // Called before a final hand release, while the exact world reference
         // and native body set still exist. A failed restore retains the grab.
         bool prepareLooseWeaponRelease(RE::TESObjectREFR* reference, RE::hknpWorld* world, bool physicalDrop);
@@ -871,6 +873,9 @@ namespace rock
             // Last consumed native_hand_equipment::lastDirectedPrimaryEquip().
             std::uint64_t directedPrimarySequence{ 0 };
             EquippedWeaponTransitionCoordinator::PendingGrip continuityGrip{};
+            // Native carry resumes natively after a menu; this capture is only
+            // the base a Pip-Boy support attach turns into a two-handed resume.
+            EquippedWeaponTransitionCoordinator::PendingGrip nativeCarryCapture{};
             bool gripResumePending{ false };
             std::array<bool, 2> resumeAwaitingHold{};
             // Dedicated stash detector states for the equipped-weapon carry

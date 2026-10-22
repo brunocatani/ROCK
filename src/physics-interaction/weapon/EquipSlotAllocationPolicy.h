@@ -9,9 +9,11 @@
  * Which equip slot an equip lands in. Every ROCK equip path asks this one
  * rule; the acting hand (or the default hand for equips without one)
  * decides, and the slot follows the weapon:
- * - a press on the item a slot already wears: the same hand toggles it; the
- *   other hand moves that weapon's firing grip to itself, displacing the
- *   weapon it fired;
+ * - a press on the item a slot already wears: the same hand toggles it; when
+ *   the other hand fires it, a free acting hand toggles itself as its support
+ *   grip (never taking the weapon), a busy one is refused; a weapon no hand
+ *   fires moves its firing grip to the acting hand, displacing the weapon
+ *   that hand fired;
  * - the acting hand fires a weapon: that slot is replaced;
  * - otherwise the first free slot, else the slot whose weapon no hand
  *   fires (support-held). Nothing else is ever evicted.
@@ -37,6 +39,12 @@ namespace rock::equip_slot_allocation
         // Move `slot`'s firing grip to the acting hand without a re-equip;
         // `displacedSlot` (if any) returns to inventory.
         MoveFiringGrip,
+        // The acting hand joins `slot`'s weapon as its support grip, or
+        // leaves it; the hand firing it keeps it.
+        ToggleSupport,
+        // Nothing changes: the other hand fires the item and the acting hand
+        // fires another weapon.
+        Refuse,
     };
 
     struct Decision
@@ -55,6 +63,11 @@ namespace rock::equip_slot_allocation
         const auto wears = [&](int index) { return index >= 0 && slots[index].worn && slots[index].requestedItem; };
         const int wornSlot = wears(actingSlot) ? actingSlot : wears(0) ? 0 : wears(1) ? 1 : -1;
         if (wornSlot >= 0 && wornSlot != actingSlot) {
+            const auto firing = slots[wornSlot].firingHand;
+            if (firing != Hand::None && firing != acting) {
+                return { .action = actingSlot < 0 ? Action::ToggleSupport : Action::Refuse,
+                    .slot = static_cast<std::uint32_t>(wornSlot) };
+            }
             return { .action = Action::MoveFiringGrip, .slot = static_cast<std::uint32_t>(wornSlot), .displacedSlot = actingSlot };
         }
         if (wornSlot >= 0) {

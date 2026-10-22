@@ -1003,9 +1003,11 @@ namespace rock
         bool beginTransferredSupportGrip(RE::NiNode* weaponNode, std::uint64_t generation,
             std::uint64_t ownership, const weapon_grip_transfer::Support& grip, const char** failure,
             const weapon_grip_transfer::Support* second = nullptr);
+        // supportAttach: with a firing-only carry, the same carry with the other
+        // hand on its authored support grip (a Pip-Boy support attach).
         bool captureMenuCarry(weapon_grip_transfer::HandGrip& firing, weapon_grip_transfer::Pair& paired,
             weapon_grip_transfer::Support& support, weapon_grip_transfer::Support& second, bool& carrierLeft,
-            const char** failure = nullptr) const;
+            const char** failure = nullptr, weapon_grip_transfer::Pair* supportAttach = nullptr) const;
         void prepareEquippedWeaponDropCommit();
         void completeEquippedWeaponDrop(const EquippedWeaponManualDropRequest& request, bool committed);
 

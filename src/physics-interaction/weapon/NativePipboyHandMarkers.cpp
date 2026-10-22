@@ -180,11 +180,12 @@ namespace rock::native_pipboy_hand_markers
             if (slot < 0 || !member(data, "formID", form) || !isNumeric(form)) return "";
             reach(Stage::EquippedRow);
             const auto formID = static_cast<std::uint32_t>(numeric(form));
-            bool firing = true;
-            const auto hand = native_hand_equipment::wornRowHand(formID, slot, firing);
+            bool firing = true, supported = false;
+            const auto hand = native_hand_equipment::wornRowHand(formID, slot, firing, supported);
             const bool left = hand == native_hand_equipment::WornHand::Left;
+            // Firing hand first, then the support hand.
             const char* label = hand == native_hand_equipment::WornHand::None ? "" :
-                firing ? (left ? "L" : "R") : (left ? "OL" : "OR");
+                supported ? (left ? "LR" : "RL") : firing ? (left ? "L" : "R") : (left ? "OL" : "OR");
             if (firstReport(formID, slot)) {
                 ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters row form={:08X} equipState={} slot={} label={}",
                     formID, state, slot, *label ? label : "none");

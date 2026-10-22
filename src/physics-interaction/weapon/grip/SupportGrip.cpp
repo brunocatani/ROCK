@@ -114,11 +114,13 @@ namespace rock
     }
 
     bool TwoHandedGrip::captureMenuCarry(weapon_grip_transfer::HandGrip& firing, weapon_grip_transfer::Pair& paired,
-        weapon_grip_transfer::Support& support, weapon_grip_transfer::Support& second, bool& carrierLeft, const char** failure) const
+        weapon_grip_transfer::Support& support, weapon_grip_transfer::Support& second, bool& carrierLeft, const char** failure,
+        weapon_grip_transfer::Pair* supportAttach) const
     {
         if (failure) *failure = "none";
         const auto reject = [&](const char* reason) { if (failure) *failure = reason; return false; };
         firing = {}; paired = {}; support = {}; second = {};
+        if (supportAttach) *supportAttach = {};
         if (isHandsFreeRetained()) return reject("hands-free-retained"); // There is no hand carry to restore after a menu.
         auto* node = isManualOwnershipActive() ? _session.weaponNode : _firing.rightCanonicalWeaponNode;
         if (!node) return reject("weapon-node-unavailable");
@@ -175,7 +177,19 @@ namespace rock
             if (!capturePart(!carrierLeft, paired.support)) return reject("paired-support-pose-unavailable");
             return paired.valid() || reject("paired-capture-invalid");
         }
-        return firing.valid() || reject("firing-capture-invalid");
+        if (!firing.valid()) return reject("firing-capture-invalid");
+        weapon_grip_transfer::HandGrip authoredSupport{};
+        if (supportAttach && tryResolveAuthoredSupportGripCandidateForHand(!carrierLeft, node, _support.authoredCandidate.weaponGenerationKey,
+                authoredSupport.handWeaponLocal, authoredSupport.fingerLocals, authoredSupport.fingerMask)) {
+            authoredSupport.gripWeaponLocal = computeGrabPalmPointWorldFromHandBasis(authoredSupport.handWeaponLocal, !carrierLeft);
+            authoredSupport.hasFingerPose = true;
+            authoredSupport.authoredRole = loose_weapon_authored_grab_policy::Role::Support;
+            *supportAttach = weapon_grip_transfer::Pair{ .primary = firing, .support = authoredSupport, .sourceModelTranslation = translation,
+                .weaponFormID = form, .firingHandIsLeft = carrierLeft,
+                .arrangement = loose_weapon_authored_grab_policy::Arrangement::Separated };
+            if (!supportAttach->valid()) *supportAttach = {};
+        }
+        return true;
     }
 
     bool TwoHandedGrip::beginTransferredTwoHandGrip(RE::NiNode* weaponNode, std::uint64_t generation,

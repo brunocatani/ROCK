@@ -41,13 +41,6 @@ int main()
     ownItem.requestedItem = true;
     ok &= expect("the same hand on its own item toggles that slot", equips(decide(Hand::Right, { { ownItem, empty } }), 0));
 
-    const auto move = decide(Hand::Left, { { ownItem, empty } });
-    ok &= expect("the other hand moves the worn item's firing grip",
-        move.action == Action::MoveFiringGrip && move.slot == 0 && move.displacedSlot < 0);
-    const auto swap = decide(Hand::Left, { { ownItem, leftFired } });
-    ok &= expect("a move displaces the weapon the acting hand fired",
-        swap.action == Action::MoveFiringGrip && swap.slot == 0 && swap.displacedSlot == 1);
-
     ok &= expect("an equip without a hand never claims a firing slot",
         equips(decide(Hand::None, { { rightFired, empty } }), 1));
     return ok ? 0 : 1;

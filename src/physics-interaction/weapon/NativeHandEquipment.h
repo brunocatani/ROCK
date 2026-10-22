@@ -77,7 +77,22 @@ namespace rock::native_hand_equipment
     // index wears that form.
     enum class WornHand : std::uint8_t { None, Right, Left };
     // outFiring: that hand holds the weapon's firing grip, not another grip.
-    [[nodiscard]] WornHand wornRowHand(std::uint32_t form, int slot, bool& outFiring) noexcept;
+    // outSupported: the other hand holds its support grip.
+    [[nodiscard]] WornHand wornRowHand(std::uint32_t form, int slot, bool& outFiring, bool& outSupported) noexcept;
+
+    // A Pip-Boy press by the hand that does not fire the index-0 weapon:
+    // attach or detach that hand as its support grip when the menu closes.
+    struct SupportRequest
+    {
+        std::uint32_t form = 0;
+        std::uintptr_t instance = 0;
+        bool attach = false;
+        std::uint64_t sequence = 0; // 0: none pending.
+    };
+    // Frame owner: the request not yet applied, if any.
+    [[nodiscard]] SupportRequest pendingSupportRequest() noexcept;
+    // Frame owner: the request is applied; `supported` is the result.
+    void noteSupportRequestApplied(std::uint64_t sequence, bool supported) noexcept;
 
     // The hand holding an index-0 item: its firing hand, or with `firing`
     // false the hand carrying it by a part grip.
@@ -87,11 +102,13 @@ namespace rock::native_hand_equipment
         std::uintptr_t instance = 0;
         bool left = false;
         bool firing = true;
+        // The other hand holds its support grip.
+        bool supported = false;
     };
     // Frame owner, outside menus: the settled hand holding this index-0
     // item. Menus release the live grip; this record keeps the hand for
     // Pip-Boy display and allocation.
-    void recordPrimaryHand(std::uint32_t form, std::uintptr_t instance, bool left, bool firing) noexcept;
+    void recordPrimaryHand(std::uint32_t form, std::uintptr_t instance, bool left, bool firing, bool supported) noexcept;
 
     // Frame owner: the item now at index 0 fires from `left`'s hand, as a
     // Pip-Boy directed equip would (used when the second weapon is promoted).

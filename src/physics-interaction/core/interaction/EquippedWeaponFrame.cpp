@@ -120,19 +120,54 @@ namespace rock
         }
     }
 
+    void PhysicsInteraction::applyPipboySupportRequest()
+    {
+        const auto request = native_hand_equipment::pendingSupportRequest();
+        if (!request.sequence) return;
+        const auto sameItem = [&](const EquippedWeaponTransitionCoordinator::PendingGrip& grip) {
+            return grip.targetWeaponFormID != 0 && grip.targetWeaponFormID == request.form &&
+                (!grip.targetWeaponInstanceData || !request.instance || grip.targetWeaponInstanceData == request.instance);
+        };
+        auto& grip = _equipped.continuityGrip;
+        const char* refused = nullptr;
+        if (request.attach) {
+            auto carry = grip.pending ? grip : _equipped.nativeCarryCapture;
+            if (!carry.pending || !sameItem(carry)) refused = "no-menu-carry-for-weapon";
+            else if (carry.supportGrip.validCarry()) refused = "weapon-support-held";
+            else if (!carry.pairedGrips.valid() && !carry.supportAttach.valid()) refused = "authored-support-grip-unavailable";
+            else {
+                if (!carry.pairedGrips.valid()) carry.pairedGrips = carry.supportAttach;
+                grip = carry;
+            }
+        } else if (!grip.pending || !sameItem(grip) || !grip.pairedGrips.valid()) {
+            refused = "no-support-to-detach";
+        } else {
+            // The firing-only resume keeps the firing grip captured with it.
+            grip.supportAttach = grip.pairedGrips;
+            grip.pairedGrips = {};
+        }
+        _equipped.gripResumePending = grip.pending;
+        native_hand_equipment::noteSupportRequestApplied(request.sequence, refused ? !request.attach : request.attach);
+        ROCK_LOG_INFO(Weapon, "Pip-Boy support {} weapon={:08X} result={}", request.attach ? "attach" : "detach",
+            request.form, refused ? refused : "applied-on-menu-exit");
+    }
+
     void PhysicsInteraction::captureEquippedWeaponContinuity()
     {
-        if (_equipped.gripResumePending) return;
+        if (_equipped.gripResumePending || runtime_state::currentFrame().localMenuBlocking) return;
         auto snapshot = _equipped.transition.pendingGrip();
         if (snapshot.pending) {
             _equipped.continuityGrip = snapshot;
+            _equipped.nativeCarryCapture = {};
             return;
         }
-        if (!_twoHandedGrip.isManualOwnershipActive() || _twoHandedGrip.isHandsFreeRetained()) {
+        if (_twoHandedGrip.isHandsFreeRetained()) {
             _equipped.continuityGrip = {};
+            _equipped.nativeCarryCapture = {};
             _equipped.resumeAwaitingHold = {};
             return;
         }
+        const bool manualCarry = _twoHandedGrip.isManualOwnershipActive();
         auto* weapon = currentEquippedWeaponForm();
         snapshot.targetWeaponFormID = weapon ? weapon->formID : 0u;
         snapshot.targetWeaponInstanceData = reinterpret_cast<std::uintptr_t>(currentEquippedWeaponInstanceData(weapon));
@@ -144,7 +179,7 @@ namespace rock
         bool carrierLeft = _twoHandedGrip.isFiringHandLeft();
         const char* captureFailure = nullptr;
         snapshot.pending = _twoHandedGrip.captureMenuCarry(firing, snapshot.pairedGrips,
-            snapshot.supportGrip, snapshot.secondSupportGrip, carrierLeft, &captureFailure);
+            snapshot.supportGrip, snapshot.secondSupportGrip, carrierLeft, &captureFailure, &snapshot.supportAttach);
         snapshot.isLeft = carrierLeft;
         snapshot.firingHandWeaponLocal = firing.handWeaponLocal;
         snapshot.firingGripWeaponLocal = firing.gripWeaponLocal;
@@ -154,6 +189,13 @@ namespace rock
         snapshot.source = equipped_weapon_manual_ownership_policy::PrimaryOnlyStartSource::HeldWeaponEquip;
         // Keep no scene pointers or world transforms. This is sampled after
         // grip decisions, while the outgoing nodes and controller frame live.
+        if (!manualCarry) {
+            _equipped.continuityGrip = {};
+            _equipped.resumeAwaitingHold = {};
+            _equipped.nativeCarryCapture = snapshot.pending ? snapshot : EquippedWeaponTransitionCoordinator::PendingGrip{};
+            return;
+        }
+        _equipped.nativeCarryCapture = {};
         _equipped.continuityGrip = snapshot;
         if (!snapshot.pending) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Equipped menu-carry continuity capture unavailable form={:08X} hand={} reason={} instance={:#x}",
@@ -199,6 +241,7 @@ namespace rock
             restoreEquippedWeaponContinuity(_equipped.continuityGrip);
             cancelEquippedWeaponTransfersForMenu();
         }
+        if (runtime.localMenuBlocking) applyPipboySupportRequest();
         const auto& transfer = _equipped.transition.heldTransfer();
         const auto& incomingHand = transfer.request.isLeft ? _leftHand : _rightHand;
         auto* incomingReference = incomingHand.getHeldRef();
@@ -1707,10 +1750,10 @@ namespace rock
             !_equipped.transition.pendingGrip().pending && !_equipped.gripResumePending &&
             !_equipped.transition.heldTransfer().active() && !_twoHandedGrip.isHandsFreeRetained()) {
             const bool partCarry = _twoHandedGrip.isPartCarryActive();
+            const bool firingLeft = _twoHandedGrip.isManualOwnershipActive() && _twoHandedGrip.isFiringHandLeft();
             native_hand_equipment::recordPrimaryHand(w.observedEquippedWeaponFormID, w.observedEquippedWeaponInstanceData,
-                partCarry ? _twoHandedGrip.weaponCarrierIsLeft() :
-                    _twoHandedGrip.isManualOwnershipActive() && _twoHandedGrip.isFiringHandLeft(),
-                !partCarry);
+                partCarry ? _twoHandedGrip.weaponCarrierIsLeft() : firingLeft, !partCarry,
+                !partCarry && _twoHandedGrip.isManualOwnershipActive() && _twoHandedGrip.isHandPartCarryGripping(!firingLeft));
         }
 
         bool rightHandWeaponAuthorityActive = prepared.rightHandWeaponEquipped || prepared.retainedWeaponCollisionActive;

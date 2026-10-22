@@ -66,6 +66,22 @@ namespace rock::native_hand_equipment
         std::atomic<std::uint64_t> s_directedSequence{0};
         std::atomic<std::uint64_t> s_directedApplied{0}; // Frame writer, UI reader.
 
+        // Pip-Boy support toggle: same publication discipline as the directed
+        // primary (UI writer, frame reader).
+        std::atomic<std::uint32_t> s_supportForm{0};
+        std::atomic<std::uintptr_t> s_supportInstance{0};
+        std::atomic<bool> s_supportAttach{false};
+        std::atomic<std::uint64_t> s_supportSequence{0};
+        std::atomic<std::uint64_t> s_supportApplied{0}; // Frame writer, UI reader.
+
+        void publishSupportRequest(std::uint32_t form, std::uintptr_t instance, bool attach) noexcept
+        {
+            s_supportForm.store(form, std::memory_order_relaxed);
+            s_supportInstance.store(instance, std::memory_order_relaxed);
+            s_supportAttach.store(attach, std::memory_order_relaxed);
+            s_supportSequence.fetch_add(1, std::memory_order_release);
+        }
+
         void publishDirectedPrimary(std::uint32_t form, std::uintptr_t instance, bool left) noexcept
         {
             s_directedForm.store(form, std::memory_order_relaxed);
@@ -123,7 +139,7 @@ namespace rock::native_hand_equipment
         // yet applied, else its recorded hand, else the hand the frame owner
         // will give it (opposite a recorded second weapon, else the default
         // hand).
-        PrimaryHand resolvePrimaryHand(std::uint32_t form, std::uintptr_t instance) noexcept
+        PrimaryHand resolveRecordedPrimaryHand(std::uint32_t form, std::uintptr_t instance) noexcept
         {
             const auto directed = lastDirectedPrimaryEquip();
             if (directed.sequence != s_directedApplied.load(std::memory_order_acquire) &&
@@ -140,6 +156,17 @@ namespace rock::native_hand_equipment
             const bool left = sameItem(secondary.form, secondary.instance, worn[1].form, worn[1].instance) ?
                 !secondary.left : g_rockConfig.rockLeftHandedMode;
             return { form, instance, left, true };
+        }
+
+        // As above, with a support toggle not yet applied taken as done.
+        PrimaryHand resolvePrimaryHand(std::uint32_t form, std::uintptr_t instance) noexcept
+        {
+            auto hand = resolveRecordedPrimaryHand(form, instance);
+            const auto sequence = s_supportSequence.load(std::memory_order_acquire);
+            if (sequence && sequence != s_supportApplied.load(std::memory_order_acquire) &&
+                sameItem(s_supportForm.load(std::memory_order_relaxed), s_supportInstance.load(std::memory_order_relaxed), form, instance))
+                hand.supported = s_supportAttach.load(std::memory_order_relaxed);
+            return hand;
         }
 
         // The recorded hand for this exact index-1 item, else the hand that
@@ -444,6 +471,23 @@ namespace rock::native_hand_equipment
                         .requestedItem = wears(0) },
                     { .worn = worn[1].form != 0, .firingHand = handOf(secondaryLeft), .requestedItem = wears(1) },
                 } });
+                if (decision.action == allocation::Action::Refuse) {
+                    ROCK_LOG_INFO(Weapon, "AKIMBO Pip-Boy press refused hand={} weapon={:08X}: the other hand fires it and this hand fires another weapon",
+                        handName(hand), formID);
+                    return false;
+                }
+                if (decision.action == allocation::Action::ToggleSupport) {
+                    // The second weapon is carried only by its firing grip.
+                    if (decision.slot != 0) {
+                        ROCK_LOG_INFO(Weapon, "AKIMBO Pip-Boy support refused hand={} weapon={:08X}: second weapon", handName(hand), formID);
+                        return false;
+                    }
+                    const bool attach = !primary.supported;
+                    publishSupportRequest(worn[0].form, worn[0].instance, attach);
+                    ROCK_LOG_INFO(Weapon, "AKIMBO Pip-Boy support request inputToken={} hand={} weapon={:08X} attach={}",
+                        origin.sequence, handName(hand), formID, attach);
+                    return true;
+                }
                 if (decision.action == allocation::Action::MoveFiringGrip) {
                     const int wornIndex = static_cast<int>(decision.slot);
                     const int actingIndex = decision.displacedSlot;
@@ -649,8 +693,9 @@ namespace rock::native_hand_equipment
         return accepted;
     }
 
-    WornHand wornRowHand(std::uint32_t form, int slot, bool& outFiring) noexcept
+    WornHand wornRowHand(std::uint32_t form, int slot, bool& outFiring, bool& outSupported) noexcept
     {
+        outSupported = false;
         outFiring = true;
         if (!s_installed || !form || (slot != 0 && slot != 1)) return WornHand::None;
         const auto worn = wornWeapons(f4vr::getPlayer());
@@ -663,19 +708,38 @@ namespace rock::native_hand_equipment
         // the hand that holds it.
         const auto primary = resolvePrimaryHand(worn[0].form, worn[0].instance);
         outFiring = primary.firing;
+        outSupported = primary.firing && primary.supported;
         return hand(primary.left);
     }
 
-    void recordPrimaryHand(std::uint32_t form, std::uintptr_t instance, bool left, bool firing) noexcept
+    void recordPrimaryHand(std::uint32_t form, std::uintptr_t instance, bool left, bool firing, bool supported) noexcept
     {
         if (!form) return;
         AcquireSRWLockExclusive(&s_primaryHandLock);
         const bool changed = !sameItem(s_primaryHand.form, s_primaryHand.instance, form, instance) ||
-            s_primaryHand.left != left || s_primaryHand.firing != firing;
-        s_primaryHand = {form, instance, left, firing};
+            s_primaryHand.left != left || s_primaryHand.firing != firing || s_primaryHand.supported != supported;
+        s_primaryHand = {form, instance, left, firing, supported};
         ReleaseSRWLockExclusive(&s_primaryHandLock);
-        if (changed) ROCK_LOG_INFO(Weapon, "Primary weapon hand recorded weapon={:08X} instance={:#x} hand={} role={}",
-            form, instance, left ? "left" : "right", firing ? "firing" : "support");
+        if (changed) ROCK_LOG_INFO(Weapon, "Primary weapon hand recorded weapon={:08X} instance={:#x} hand={} role={} supported={}",
+            form, instance, left ? "left" : "right", firing ? "firing" : "support", supported);
+    }
+
+    SupportRequest pendingSupportRequest() noexcept
+    {
+        const auto sequence = s_supportSequence.load(std::memory_order_acquire);
+        if (!sequence || sequence == s_supportApplied.load(std::memory_order_acquire)) return {};
+        return { s_supportForm.load(std::memory_order_relaxed), s_supportInstance.load(std::memory_order_relaxed),
+            s_supportAttach.load(std::memory_order_relaxed), sequence };
+    }
+
+    void noteSupportRequestApplied(std::uint64_t sequence, bool supported) noexcept
+    {
+        AcquireSRWLockExclusive(&s_primaryHandLock);
+        if (sameItem(s_primaryHand.form, s_primaryHand.instance, s_supportForm.load(std::memory_order_relaxed),
+                s_supportInstance.load(std::memory_order_relaxed)))
+            s_primaryHand.supported = supported;
+        ReleaseSRWLockExclusive(&s_primaryHandLock);
+        s_supportApplied.store(sequence, std::memory_order_release);
     }
 
     void directPrimaryHand(std::uint32_t form, std::uintptr_t instance, bool left) noexcept
@@ -686,7 +750,7 @@ namespace rock::native_hand_equipment
     void noteDirectedPrimaryApplied(std::uint64_t sequence) noexcept
     {
         const auto directed = lastDirectedPrimaryEquip();
-        if (directed.sequence == sequence) recordPrimaryHand(directed.form, directed.instance, directed.left, true);
+        if (directed.sequence == sequence) recordPrimaryHand(directed.form, directed.instance, directed.left, true, false);
         s_directedApplied.store(sequence, std::memory_order_release);
     }
 
