@@ -2309,7 +2309,7 @@ namespace rock
             for (const bool isLeft : { true, false }) {
                 const auto& hand = isLeft ? _leftHand : _rightHand;
                 if (hand.isHolding() || _touchGrabRuntime.isHandActive(isLeft) ||
-                    roster.slotZeroGrips(isLeft).weaponEngaged() ||
+                    roster.slotZeroGrips(isLeft).weaponEngaged() || roster.slotOneHolds(isLeft) ||
                     (slotZero.sessionFiringHand == equipped_weapon_roster::handFor(isLeft) &&
                         !slotZero.firingGripDetached)) {
                     candidateBodyIds[isLeft ? 0u : 1u] = weapon_part_runtime::kInvalidBodyId;
@@ -2970,6 +2970,7 @@ namespace rock
                 resolveEquippedWeaponDetachDecision(
                     _equipped.handlingSettings).
                     firingGripOwnershipEnabled;
+            const auto sheathRoster = equippedWeaponRoster();
             for (const bool isLeft : { false, true }) {
                 const std::size_t handIndex = isLeft ? 1u : 0u;
                 Hand& hand = isLeft ? _leftHand : _rightHand;
@@ -2977,12 +2978,15 @@ namespace rock
                     isLeft ? frame.left : frame.right;
                 auto& detectorState =
                     _equipped.sheathRetrievalStates[handIndex];
+                // The second weapon's hand is not empty: retrieving the
+                // sheathed primary into it would stack two weapons in one hand.
                 const bool handEmpty = !hand.isHolding() &&
                     !_touchGrabRuntime.isHandActive(isLeft) &&
                     !_forceGrab.pendingCommits[handIndex].active &&
                     !hand.hasActivePullCatchIntent() &&
                     !hand.hasPendingExtractedItemHandoff() &&
-                    !equippedWeaponRoster().slotZeroGrips(isLeft).weaponEngaged();
+                    !sheathRoster.slotZeroGrips(isLeft).weaponEngaged() &&
+                    !sheathRoster.slotOneHolds(isLeft);
                 const bool handAllowedByHandlingMode =
                     roleNeutralFiringGripOwnership || !isLeft;
                 const bool handCanOwnFiringGrip =
