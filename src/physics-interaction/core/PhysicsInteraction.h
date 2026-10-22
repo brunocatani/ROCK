@@ -883,6 +883,8 @@ namespace rock
             EquippedWeaponTransitionCoordinator::PendingGrip nativeCarryCapture{};
             // Hand whose finger pose the menu weapon hold claims; -1 none.
             int menuHoldFingerHand{ -1 };
+            // The menu hold blocks FRIK's built-in primary weapon hand pose.
+            bool menuHoldPoseBlocked{ false };
             // A Pip-Boy support attach on a weapon equipped in that menu waits
             // for the weapon's carry after the menu (bounded).
             std::uint64_t deferredSupportSequence{ 0 };

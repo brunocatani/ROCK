@@ -197,14 +197,23 @@ namespace rock
             (void)frik_visual_authority::clearHandPose(kTag, frik_visual_authority::handFromBool(_equipped.menuHoldFingerHand == 1));
             _equipped.menuHoldFingerHand = -1;
         };
+        // A menu resets ROCK's grip session and its FRIK primary-pose block;
+        // FRIK would then turn the hand to its per-weapon grip rotation and
+        // pose it for the previous weapon. The hold keeps that pose blocked.
+        const auto setPoseBlocked = [this](bool blocked) {
+            if (_equipped.menuHoldPoseBlocked == blocked) return;
+            if (frik_visual_authority::blockPrimaryHandWeaponPose(kTag, blocked)) _equipped.menuHoldPoseBlocked = blocked;
+        };
         const auto& frame = runtime_state::currentFrame();
+        const auto view = native_hand_equipment::equippedViews()[0];
         if (!frame.localMenuBlocking) {
             frik_hand_world_authority::captureMenuWandRelation();
             release();
+            setPoseBlocked(false);
             return;
         }
+        setPoseBlocked(view.weapon != nullptr);
         // The native drawn state can drop inside menus; the equipped item decides.
-        const auto view = native_hand_equipment::equippedViews()[0];
         auto* node = view.weapon ? resolveEquippedWeaponInteractionNodeDirect() : nullptr;
         const auto& carry = _equipped.continuityGrip.pending ? _equipped.continuityGrip : _equipped.nativeCarryCapture;
         const bool carried = carry.pending && view.weapon && view.weapon->formID == carry.targetWeaponFormID;
