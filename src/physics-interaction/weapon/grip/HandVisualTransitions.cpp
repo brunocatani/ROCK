@@ -49,7 +49,7 @@ namespace rock
             // Below grip/recoil authority: collision and recoil may replace
             // this base later in the same frame, including with collision off.
             if (!frik_visual_authority::publishHandWorld("ROCK_WeaponFiltering",
-                    handFromBool(false), physicalRightHandWorld, GRIP_HAND_POSE_PRIORITY - 1)) return;
+                    handFromBool(false), physicalRightHandWorld, NATIVE_PHYSICAL_HAND_PRIORITY)) return;
             _visuals.weaponFilteringHandAuthorityLive = true;
             if (!applyWeaponVisualAuthority(weaponNode, requestedWeaponWorld, currentWeaponGenerationKey, false)) {
                 if (frik_visual_authority::clearHandWorld("ROCK_WeaponFiltering", handFromBool(false)))

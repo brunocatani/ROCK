@@ -70,6 +70,11 @@ namespace rock
         inline constexpr const char* ONE_HAND_RECOIL_TAG = "ROCK_OneHandRecoil";
         inline constexpr const char* WEAPON_RECOIL_CONTROLLER_TAG = "ROCK_FiringGripRecoil";
         inline constexpr int GRIP_HAND_POSE_PRIORITY = 100;
+        // The right hand's native-physical base (ROCK_WeaponFiltering). It
+        // stays below the equip bridge and drop visual poses (99): a tie goes
+        // to the newest claim, and on a right trigger equip's first grip frame
+        // the base re-registered and replaced the bridge pose for one frame.
+        inline constexpr int NATIVE_PHYSICAL_HAND_PRIORITY = 98;
         inline constexpr int WEAPON_COLLISION_HAND_PRIORITY = 110;
         inline constexpr int RETURN_HAND_VISUAL_PRIORITY = 85;
         inline constexpr float SUPPORT_NORMAL_TWIST_FACTOR = 0.5f;
