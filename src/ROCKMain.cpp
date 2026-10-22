@@ -748,6 +748,8 @@ namespace
      */
     void onFrikFrameBegin()
     {
+        // FrameBegin precedes FRIK's scope-rig carry (WeaponPositionAdjuster::onFrameStart).
+        scope_rig_parent_repair::reattachOrphanedScopeRig();
         native_secondary_presentation::beginFrame();
         frik_hand_world_authority::noteNativeRecoilControlled(false);
         performance_profiler::refreshSettings(
@@ -811,8 +813,6 @@ namespace
             ~RockFrameEnd()
             {
                 frik_hand_world_authority::endRockFrame();
-                // Last ROCK work before FRIK's weapon positioning carries the scope rig.
-                scope_rig_parent_repair::reattachOrphanedScopeRig();
             }
         };
         const RockFrameEnd rockFrameEnd{};
