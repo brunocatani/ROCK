@@ -2817,7 +2817,13 @@ namespace rock::provider::runtime {
             const auto status = authorizeBinding(slot->interfaces[id-1], slot->revoked, permission, access);
             if (status != Status::Ok) return status;
         }
-        if (requireThread && !onAnimationOwnerThread() && !(id==1 && (permission==0 || permission==4) && s_frameThreadOwner.owner()==0)) return Status::WrongThread;
+        // Until FRIK's first FrameBegin fixes the owner thread, consumers may
+        // register (and unregister) their frame and animation-phase callbacks
+        // from startup; no callback runs before that thread exists.
+        const bool startupCallbackRegistration =
+            (id == static_cast<std::uint32_t>(rock::api::InterfaceId::Core) && (permission == 0 || permission == 4)) ||
+            (id == static_cast<std::uint32_t>(rock::api::InterfaceId::Animation) && permission == 4);
+        if (requireThread && !onAnimationOwnerThread() && !(startupCallbackRegistration && s_frameThreadOwner.owner()==0)) return Status::WrongThread;
         return Status::Ok;
     }
     rock::api::Status bind(std::uint64_t owner, rock::api::InterfaceId family, std::uint32_t major, std::uint32_t permissions) {
