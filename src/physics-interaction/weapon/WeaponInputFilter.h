@@ -6,7 +6,10 @@
 
 namespace rock::weapon_input_filter
 {
-    struct Tuning { float rotationSeconds; float translationSeconds; };
+    // releaseDegreesPerSecond > 0 makes the smoothing speed-adaptive: each
+    // time constant scales by release / (release + controller rotation speed),
+    // full while the hand holds still and fading as it swings.
+    struct Tuning { float rotationSeconds; float translationSeconds; float releaseDegreesPerSecond = 0.0f; };
 
     [[nodiscard]] inline Tuning tuning(int preset)
     {
@@ -31,6 +34,7 @@ namespace rock::weapon_input_filter
         RE::NiPoint3 filteredPivotLocal{};
         RE::NiPoint3 pivotInTarget{};
         RE::NiTransform output{};
+        RE::NiTransform lastLocal{};
         std::uint64_t sequence = 0;
         bool valid = false;
     };
@@ -90,7 +94,12 @@ namespace rock::weapon_input_filter
             state.filteredLocal = local;
             state.filteredPivotLocal = pivot;
         } else if (std::isfinite(dt) && dt > 0.0f) {
-            const auto alpha = [dt](float tau) { return tau > 0.0f ? -std::expm1(-dt / tau) : 1.0f; };
+            float scale = 1.0f;
+            if (config.releaseDegreesPerSecond > 0.0f) {
+                const float speed = hand_world_claim_registry_policy::rotationDeltaDegrees(state.lastLocal, local) / dt;
+                if (std::isfinite(speed)) scale = config.releaseDegreesPerSecond / (config.releaseDegreesPerSecond + speed);
+            }
+            const auto alpha = [dt, scale](float tau) { return tau > 0.0f ? -std::expm1(-dt / (tau * scale)) : 1.0f; };
             state.filteredPivotLocal += (pivot - state.filteredPivotLocal) * alpha(config.translationSeconds);
             state.filteredLocal.rotate = hand_visual_lerp_math::quaternionToMatrix<RE::NiMatrix3>(
                 hand_visual_lerp_math::slerp(hand_visual_lerp_math::matrixToQuaternion(state.filteredLocal.rotate),
@@ -101,6 +110,7 @@ namespace rock::weapon_input_filter
         state.filteredLocal.translate = state.filteredPivotLocal -
             transform_math::localPointToWorld(state.filteredLocal, state.pivotInTarget);
         state.output = transform_math::composeTransforms(room, state.filteredLocal);
+        state.lastLocal = local;
         state.sequence = sequence;
         state.valid = usable(state.output);
         output = state.output;

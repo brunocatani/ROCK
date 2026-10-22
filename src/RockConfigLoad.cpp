@@ -383,6 +383,12 @@ namespace rock
             ROCK_LOG_WARN(Config, "Invalid iWeaponFilteringPreset={} -- using Off", rockWeaponFilteringPreset);
             rockWeaponFilteringPreset = 0;
         }
+        rockScopedFilterRotationSeconds = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fScopedFilterRotationSeconds",
+            rockScopedFilterRotationSeconds, 0.15f, 0.0f, 1.0f);
+        rockScopedFilterTranslationSeconds = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fScopedFilterTranslationSeconds",
+            rockScopedFilterTranslationSeconds, 0.08f, 0.0f, 1.0f);
+        rockScopedFilterReleaseDegreesPerSecond = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fScopedFilterReleaseDegreesPerSecond",
+            rockScopedFilterReleaseDegreesPerSecond, 45.0f, 0.0f, 720.0f);
         rockFiringGripReattachRadiusGameUnits = readClampedFloat(
             ini,
             IMMERSIVE_WEAPONS_SECTION,

@@ -110,6 +110,11 @@ namespace rock
         bool rockGrabAnywhereOnWeapon = false;
         float rockMeleeGripPitchDegrees = 0.0f;
         int rockWeaponFilteringPreset = 0;
+        // Scoped filtering: smoothing time constants while looking through a
+        // scope (0 and 0 = off) and the rotation speed at which they halve.
+        float rockScopedFilterRotationSeconds = 0.15f;
+        float rockScopedFilterTranslationSeconds = 0.08f;
+        float rockScopedFilterReleaseDegreesPerSecond = 45.0f;
         float rockFiringGripReattachRadiusGameUnits = 10.0f;
         float rockFiringGripReattachCylinderRadiusGameUnits = 3.0f;
         float rockGripZoneIndicatorDiameterGameUnits =
