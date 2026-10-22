@@ -210,6 +210,7 @@ namespace rock
             const auto* playerNodes = f4vr::getPlayerNodes();
             auto* scopeParent = playerNodes ? playerNodes->ScopeParentNode : nullptr;
             if (scopeParent == _scope.overlayCalibration.scopeParentIdentity &&
+                scopeParent->parent == _scope.overlayCalibration.scopeParentParentIdentity &&
                 areTransformsNearlyEqual(scopeParent->local, _scope.overlayCalibration.lastAppliedScopeParentLocal)) {
                 scopeParent->local = _scope.overlayCalibration.nativeScopeParentLocal;
                 if (scopeParent->parent) {
@@ -252,6 +253,7 @@ namespace rock
             const bool sameOwner =
                 _scope.overlayCalibration.weaponGenerationKey == currentWeaponGenerationKey &&
                 _scope.overlayCalibration.scopeParentIdentity == scopeParent &&
+                _scope.overlayCalibration.scopeParentParentIdentity == scopeParent->parent &&
                 _scope.overlayCalibration.scopeModelRootIdentity == scopeModelRoot &&
                 areTransformsNearlyEqual(scopeModelRoot->local, _scope.overlayCalibration.scopeModelRootLocal);
             const bool engineStillHasRockLocal =
@@ -270,21 +272,47 @@ namespace rock
             clearNativeScopeOverlayAuthority(!sameOwner && engineStillHasRockLocal);
         }
 
-        RE::NiTransform nativeScopeModelRootWorld{};
-        if (!tryGetComposedNodeWorld(scopeModelRoot, nativeScopeModelRootWorld)) {
-            return false;
-        }
-        RE::NiTransform cameraParentWorld{};
-        if (!tryGetComposedNodeWorld(scopeCamera->parent, cameraParentWorld)) return false;
-        const auto unsteeredCameraWorld = native_scope_overlay_follow_math::resolveUnsteeredCameraWorld(
-            cameraParentWorld, scopeCamera->local);
-        if (!isFiniteTransform(unsteeredCameraWorld) || std::abs(unsteeredCameraWorld.scale) <= 0.0001f) return false;
-        const RE::NiTransform modelRootCalibrationInCameraLocal =
-            native_scope_overlay_follow_math::captureModelRootCalibrationInCameraLocal(
-                unsteeredCameraWorld,
-                nativeScopeModelRootWorld);
-        if (!isFiniteTransform(modelRootCalibrationInCameraLocal) ||
-            std::abs(modelRootCalibrationInCameraLocal.scale) <= 0.0001f) {
+        /*
+         * The calibration is the rig's native camera-to-overlay rotation, so it
+         * is captured only with the rig on the wand chain. With a left-held
+         * weapon FRIK hangs the rig under the weapon, keeping the world it
+         * had at the carry start: a capture there bakes the right hand's pose
+         * at that moment into the overlay (runtime 22 Oct 16:56:18,
+         * excludedAim 171deg). The carry reuses the wand-chain calibration.
+         */
+        const bool rigOnWandChain = scopeCamera->parent == playerNodes->primaryWeaponOffsetNOde &&
+            scopeParent->parent == playerNodes->primaryUIAttachNode;
+        auto& wandChain = _scope.wandChainOverlay;
+        RE::NiTransform modelRootCalibrationInCameraLocal{};
+        float excludedAimDegrees = -1.0f;
+        if (rigOnWandChain) {
+            RE::NiTransform nativeScopeModelRootWorld{};
+            if (!tryGetComposedNodeWorld(scopeModelRoot, nativeScopeModelRootWorld)) {
+                return false;
+            }
+            RE::NiTransform cameraParentWorld{};
+            if (!tryGetComposedNodeWorld(scopeCamera->parent, cameraParentWorld)) return false;
+            const auto unsteeredCameraWorld = native_scope_overlay_follow_math::resolveUnsteeredCameraWorld(
+                cameraParentWorld, scopeCamera->local);
+            if (!isFiniteTransform(unsteeredCameraWorld) || std::abs(unsteeredCameraWorld.scale) <= 0.0001f) return false;
+            modelRootCalibrationInCameraLocal =
+                native_scope_overlay_follow_math::captureModelRootCalibrationInCameraLocal(
+                    unsteeredCameraWorld,
+                    nativeScopeModelRootWorld);
+            if (!isFiniteTransform(modelRootCalibrationInCameraLocal) ||
+                std::abs(modelRootCalibrationInCameraLocal.scale) <= 0.0001f) {
+                return false;
+            }
+            wandChain = { .scopeModelRootLocal = scopeModelRoot->local,
+                .calibrationInCameraLocal = modelRootCalibrationInCameraLocal, .valid = true };
+            excludedAimDegrees = weapon_support_acquisition_math::rotationDistanceRadians(
+                unsteeredCameraWorld.rotate, nativeCameraWorld.rotate) * RADIANS_TO_DEGREES;
+        } else if (wandChain.valid && areTransformsNearlyEqual(scopeModelRoot->local, wandChain.scopeModelRootLocal)) {
+            modelRootCalibrationInCameraLocal = wandChain.calibrationInCameraLocal;
+        } else {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 2000,
+                "TwoHandedGrip: native scope overlay left native generation={:016X}: FRIK carries the scope rig and no wand-chain calibration exists",
+                currentWeaponGenerationKey);
             return false;
         }
 
@@ -292,6 +320,7 @@ namespace rock
             .weaponGenerationKey = currentWeaponGenerationKey,
             .scopeParentIdentity = scopeParent,
             .scopeModelRootIdentity = scopeModelRoot,
+            .scopeParentParentIdentity = scopeParent->parent,
             .scopeModelRootLocal = scopeModelRoot->local,
             .scopeModelRootCalibrationInCameraLocal = modelRootCalibrationInCameraLocal,
             .nativeScopeParentLocal = scopeParent->local,
@@ -300,7 +329,7 @@ namespace rock
             .hasAppliedLocal = false,
         };
         ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: native scope overlay calibrated generation={:016X} modelRootLocal=({:.2f},{:.2f},{:.2f}) cameraCalibrationScale={:.3f} nativeParentLocal=({:.2f},{:.2f},{:.2f}) basis=unsteered-camera excludedAim={:.2f}deg",
+            "TwoHandedGrip: native scope overlay calibrated generation={:016X} modelRootLocal=({:.2f},{:.2f},{:.2f}) cameraCalibrationScale={:.3f} nativeParentLocal=({:.2f},{:.2f},{:.2f}) basis={} excludedAim={:.2f}deg",
             currentWeaponGenerationKey,
             scopeModelRoot->local.translate.x,
             scopeModelRoot->local.translate.y,
@@ -309,8 +338,8 @@ namespace rock
             scopeParent->local.translate.x,
             scopeParent->local.translate.y,
             scopeParent->local.translate.z,
-            weapon_support_acquisition_math::rotationDistanceRadians(
-                unsteeredCameraWorld.rotate, nativeCameraWorld.rotate) * RADIANS_TO_DEGREES);
+            rigOnWandChain ? "unsteered-camera" : "wand-chain-reused",
+            excludedAimDegrees);
         return true;
     }
 

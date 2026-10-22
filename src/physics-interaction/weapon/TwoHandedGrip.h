@@ -406,6 +406,9 @@ namespace rock
          */
         RE::NiNode* scopeParentIdentity{ nullptr };
         RE::NiNode* scopeModelRootIdentity{ nullptr };
+        // FRIK re-parents ScopeParent for a left carry; its native local
+        // belongs to the parent it was captured under.
+        RE::NiNode* scopeParentParentIdentity{ nullptr };
 
         RE::NiTransform scopeModelRootLocal{};
         RE::NiTransform scopeModelRootCalibrationInCameraLocal{};
@@ -2226,6 +2229,15 @@ namespace rock
             NativeScopeRigidFrameState rigidFrame{};
             std::uint64_t rejectedRigidFrameGeneration{ 0 };
             NativeScopeOverlayCalibrationState overlayCalibration{};
+            // The overlay rotation last calibrated with the rig on the wand
+            // chain. While FRIK carries the rig with a left-held weapon there
+            // is no native camera basis to calibrate against.
+            struct
+            {
+                RE::NiTransform scopeModelRootLocal{};
+                RE::NiTransform calibrationInCameraLocal{};
+                bool valid{ false };
+            } wandChainOverlay{};
         };
 
         // Value-only equipped identity, independent of the grab-session state.
