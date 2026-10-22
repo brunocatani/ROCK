@@ -753,6 +753,19 @@ namespace rock::native_secondary_actions
             std::uint32_t value{};
             return view.data && native_memory::tryReadField(reinterpret_cast<void*>(view.data),0x18,value)?value:0;
         }
+        void endAttack(State& s,const char* reason)
+        {
+            // An automatic shot leaves index 1 firing (0x10) with its attack
+            // loop playing; E51910 stops that loop only on the way out of 0x10.
+            // The graph's attackStop normally does this, so a teardown between
+            // trigger release and attackStop (drop, promotion, menu) has to end
+            // the native attack itself, or the loop outlives its weapon.
+            const auto view=native_hand_equipment::equippedViews()[1];
+            std::uint32_t value{};
+            if (!same(s,view) || !view.data || !native_memory::tryReadField(reinterpret_cast<void*>(view.data),0x38,value) || value-0xFu>=3u) return;
+            attackState(s,0);
+            ROCK_LOG_INFO(Weapon,"AKIMBO native attack ended form={:08X} reason={} state={:#x}",s.item.object->formID,reason,value);
+        }
         bool emptyTrigger(State& s)
         {
             Context context{&s,f4vr::getPlayer()}; Scope scope(context);
@@ -799,6 +812,7 @@ namespace rock::native_secondary_actions
                     // owns whether further attacks are admitted.
                     s.reloading=true;
                     (void)s.trigger.cancel();
+                    endAttack(s,"reload-start");
                     continue;
                 }
                 // Every reload leaves the graph's reload state with
@@ -858,9 +872,10 @@ namespace rock::native_secondary_actions
                 }
             }
         }
-        void cancel(State& s)
+        void cancel(State& s,const char* reason)
         {
-            if (s.trigger.cancel() && s.ready && s.graph) { (void)s.graph->notify(RE::BSFixedString("attackRelease")); attackState(s,0); }
+            if (s.trigger.cancel() && s.ready && s.graph) (void)s.graph->notify(RE::BSFixedString("attackRelease"));
+            endAttack(s,reason);
             s.reload=false;
             s.audio.stop();
             if (s.graph) drain(s,false);
@@ -1197,7 +1212,7 @@ namespace rock::native_secondary_actions
             s_handLeft.store(handLeft,std::memory_order_relaxed);
             s_drawn.store(view.weapon && frame.weaponDrawn,std::memory_order_relaxed);
             input_remap_runtime::setSlotOneTrigger(view.weapon != nullptr, view.weapon && frame.weaponDrawn, handLeft);
-            if (s.graph && !same(s,view)) { cancel(s); s.ready=false; s.retiring=true; }
+            if (s.graph && !same(s,view)) { cancel(s,"weapon-changed"); s.ready=false; s.retiring=true; }
             if (s.retiring) {
                 if (!s.graph->canDestroy()) return;
                 releaseModelGraphs(s,false);
@@ -1206,7 +1221,7 @@ namespace rock::native_secondary_actions
                 s.recoilNode.reset(); s.kick={}; s.kickActive=false; s.recoilFrame=UINT64_MAX;
                 s.retiring=false; s.failed=false; s.reloading=false; s.rootsTraced=false; s.drawing=false; s.drawSeconds=0;
             }
-            if (!attachment || !view.weapon || !view.root || frame.localMenuBlocking || !frame.weaponDrawn || !frame.visualAuthorityAvailable) { cancel(s); return; }
+            if (!attachment || !view.weapon || !view.root || frame.localMenuBlocking || !frame.weaponDrawn || !frame.visualAuthorityAvailable) { cancel(s,frame.localMenuBlocking?"menu":!frame.weaponDrawn?"holstered":"unpresented"); return; }
             const auto trigger=input_remap_runtime::peekRawButtonState(handLeft,input_remap_policy::kOpenVrSteamVrTriggerButtonId);
             const bool providerSuppressed=input_remap_runtime::isProviderOpenVrGameInputSuppressedForHand(handLeft);
             const bool menu=input_remap_runtime::isMenuInputActive();
@@ -1219,7 +1234,7 @@ namespace rock::native_secondary_actions
             const bool allowed=trigger.available && !lost && !providerSuppressed && !menu;
             if ((fresh || !allowed) && s.trigger.observe(trigger.held,allowed) && s.ready && s.graph) {
                 (void)s.graph->notify(RE::BSFixedString("attackRelease"));
-                if (!allowed) attackState(s,0);
+                if (!allowed) endAttack(s,"input-unavailable");
             }
             if (!s.graph) {
                 s.item=RE::BGSObjectInstance(view.weapon,view.instance); s.model.reset(view.root); s.data=view.data;
@@ -1289,10 +1304,10 @@ namespace rock::native_secondary_actions
                 ROCK_LOG_INFO(Weapon,"AKIMBO secondary firearm ready form={:08X} instance={:#x} loaded={} graph={:#x} authority=equipped-index-1",
                     view.weapon->formID,reinterpret_cast<std::uintptr_t>(view.instance),loaded(view),reinterpret_cast<std::uintptr_t>(s.graph->manager()));
             }
-            if (!isolateModelGraphs(s)) { cancel(s); return; }
+            if (!isolateModelGraphs(s)) { cancel(s,"graph-isolation"); return; }
             const auto* data=s.item.instanceData?static_cast<const RE::TESObjectWEAP::InstanceData*>(s.item.instanceData.get()):&view.weapon->weaponData;
             const float speed=native<float(*)(RE::Actor*,RE::BGSObjectInstance*,std::uint32_t)>(0x64DE20)(f4vr::getPlayer(),&s.item,1);
-            if (!std::isfinite(speed) || speed<=0) { cancel(s); return; }
+            if (!std::isfinite(speed) || speed<=0) { cancel(s,"invalid-speed"); return; }
             s.graph->setFloat(RE::BSFixedString("weaponSpeedMult"),speed);
             s.graph->setFloat(RE::BSFixedString("ReloadSpeedMult"),data->reloadSpeed);
             const std::uint32_t inputMask=static_cast<std::uint32_t>(trigger.available) | (static_cast<std::uint32_t>(fresh)<<1) |
@@ -1334,7 +1349,7 @@ namespace rock::native_secondary_actions
             }
             s.graph->update(s.drawing ? dt*kDrawAcceleration : dt);
             if (!s.graph->place(attachment->world) || s.graph->eventOverflow()) {
-                cancel(s); s.bindings.restore(); releaseModelGraphs(s,true); s.failed=true; s.ready=false;
+                cancel(s,"graph-stopped"); s.bindings.restore(); releaseModelGraphs(s,true); s.failed=true; s.ready=false;
                 ROCK_LOG_ERROR(Animation,"AKIMBO secondary graph stopped: invalid pose or event overflow form={:08X}",view.weapon->formID);
                 return;
             }
@@ -1347,6 +1362,7 @@ namespace rock::native_secondary_actions
             s.audio.stop();
             s.bindings.restore(); releaseModelGraphs(s,true);
             s.failed=true; s.ready=false; (void)s.trigger.cancel();
+            try { endAttack(s,"exception"); } catch (...) {}
             OutputDebugStringA("ROCK: independent equipped secondary action failed\n");
         }
     }
@@ -1369,7 +1385,7 @@ namespace rock::native_secondary_actions
         if (!s_installed) return;
         auto& s=state();
         if (s.thread==GetCurrentThreadId()) {
-            try { cancel(s); update(nullptr,0.0f); } catch (...) { (void)s.trigger.cancel(); }
+            try { cancel(s,"suspend"); update(nullptr,0.0f); } catch (...) { (void)s.trigger.cancel(); }
         }
     }
     void handOffModelPose() noexcept
@@ -1378,7 +1394,7 @@ namespace rock::native_secondary_actions
         auto& s=state();
         if (s.thread!=GetCurrentThreadId() || !s.graph) return;
         try {
-            cancel(s);
+            cancel(s,"promotion");
             const bool kept=s.bindings.releaseKeepingPose();
             s.ready=false; s.retiring=true;
             ROCK_LOG_INFO(Animation,"AKIMBO private skeleton handed off form={:08X} poseKept={}",
