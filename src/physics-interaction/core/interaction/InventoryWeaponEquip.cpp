@@ -157,7 +157,11 @@ namespace rock {
                 coordinator.cancelHeldRequest(reason);
             } else finish(State::Failed, failure);
         };
-        if (forceGrabHandBlockerMask(hand, left, handFrame.disabled, true) != 0) {
+        // The destination hand's own weapon is replaced below, so it does not
+        // make the hand busy; anything else the hand holds or does does.
+        constexpr auto ownWeapon = static_cast<std::uint32_t>(force_grab_policy::HandBlocker::EquippedWeapon) |
+            static_cast<std::uint32_t>(force_grab_policy::HandBlocker::OffhandWeapon);
+        if ((forceGrabHandBlockerMask(hand, left, handFrame.disabled, true) & ~ownWeapon) != 0) {
             reject(handFrame.disabled ? Failure::HandUnavailable : Failure::HandBusy, "inventory-destination-busy");
             return;
         }
@@ -170,28 +174,46 @@ namespace rock {
             return;
         }
         if (!started) {
-            if (transfer.active() || coordinator.getPublicSnapshot().active) {
-                finish(State::Failed, Failure::EquippedWeaponChanged);
+            // Another weapon transfer into a hand finishes first (it is short and
+            // bounded by its own recovery); the command stays queued. An equip
+            // transition that is only presenting the current weapon (menu exit,
+            // observed equip) is superseded: beginHeldTransition replaces it,
+            // as a native equip during it would.
+            if (transfer.active()) {
+                ROCK_LOG_SAMPLE_INFO(Weapon, 500, "Inventory equip command={} waiting for weapon transfer seq={}",
+                    result.commandId, transfer.sequence);
                 return;
             }
-            // The destination hand is free (checked above). The weapon lands
-            // in the slot the shared equip rule picks; a weapon the other
-            // hand holds stays equipped.
+            // The weapon lands in the slot the shared equip rule picks: the
+            // slot whose weapon the destination hand fires or carries is
+            // replaced, and a weapon the other hand holds stays equipped.
+            // Captured stacks are never equipped, so the rule's same-item
+            // cases (cross-hand move, support toggle) cannot arise here.
             const auto roster = equippedWeaponRoster();
             const auto& slotZero = roster.facts().slot0;
             const auto& slotOne = roster.facts().slot1;
-            const auto decision = equip_slot_allocation::decide(equipped_weapon_roster::handFor(left), { {
+            using RosterHand = equipped_weapon_roster::Hand;
+            const auto acting = equipped_weapon_roster::handFor(left);
+            const auto carrier = !slotZero.firingGripDetached ? RosterHand::None :
+                slotZero.partGrips[0].active ? RosterHand::Right :
+                slotZero.partGrips[1].active ? RosterHand::Left : RosterHand::None;
+            const auto decision = equip_slot_allocation::decide(acting, { {
                 { .worn = slotZero.holdsHand,
-                    .firingHand = slotZero.firingGripDetached ? equipped_weapon_roster::Hand::None : slotZero.firingHand },
+                    .firingHand = slotZero.firingGripDetached ? RosterHand::None : slotZero.firingHand,
+                    .holdingHand = carrier },
                 { .worn = slotOne.equipped, .firingHand = slotOne.hand },
             } });
             if (decision.slot == 1) {
                 // Slot 1 is ROCK's private graph; its presentation takes the
-                // weapon into this hand once the native model exists.
-                if (slotOne.equipped) {
+                // weapon into this hand once the native model exists. Native
+                // conflict resolution returns a replaced slot-1 weapon to the
+                // inventory, as a Pip-Boy equip into that hand does; a slot-1
+                // weapon in the other hand is never evicted.
+                if (slotOne.equipped && slotOne.hand != acting) {
                     finish(State::Failed, Failure::HandBusy);
                     return;
                 }
+                result.outgoingFormId = slotOne.equipped ? slotOne.formId : 0;
                 if (!held_weapon_equip_state_policy::canBeginEquip(f4vr::getNativeWeaponState(player))) return;
                 const auto equipped = weapon_equip_transfer::equipInventoryWeapon(pending.selection, true, left);
                 if (!equipped.success) {

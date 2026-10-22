@@ -571,9 +571,11 @@ namespace rock::api::weapon {
         Status(ROCK_CALL* getHandlingAuthority)(OwnerToken owner, HandlingAuthority* outAuthority) noexcept;
         // Read. Capture immediately before requestInventoryEquip.
         Status(ROCK_CALL* captureInventoryWeapon)(OwnerToken owner, std::uint32_t baseFormId, std::uint32_t stackIndex, InventoryWeapon* outItem) noexcept;
-        // Write. Equips into the requested physical hand; a weapon carried only
-        // by the other hand stays there. A busy destination is refused. One
-        // switch may be outstanding; RequestQueued is admission, not success.
+        // Write. Equips into the requested physical hand, replacing the weapon
+        // that hand fires or carries (it returns to the inventory); a weapon
+        // the other hand holds stays there. A destination busy with anything
+        // else is refused. One switch may be outstanding; RequestQueued is
+        // admission, not success.
         Status(ROCK_CALL* requestInventoryEquip)(OwnerToken owner, const EquipRequest* request, std::uint64_t* outCommandId) noexcept;
         // Read. The latest 64 terminal results are kept; inspect flags even
         // when the switch fails.
