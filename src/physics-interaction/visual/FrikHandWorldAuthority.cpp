@@ -422,7 +422,7 @@ namespace rock::frik_hand_world_authority
             (tuning.rotationSeconds > 0.0f || tuning.translationSeconds > 0.0f || filter.settling());
     }
 
-    void filterWeaponPose(weapon_input_filter::PoseFilter& filter, const void* identity, const bool eligible,
+    void filterWeaponPose(weapon_input_filter::PoseFilter& filter, const char* weaponName, const void* identity, const bool eligible,
         const RE::NiTransform& target, const RE::NiPoint3& pivotLocal, const bool holdOffset, RE::NiTransform& outWorld)
     {
         outWorld = target;
@@ -432,9 +432,21 @@ namespace rock::frik_hand_world_authority
             filter.reset();
             return;
         }
+        const auto tuning = weaponPoseTuning();
         if (!filter.apply(target, frame.playerSpace.world, frame.playerSpace.source, identity, pivotLocal,
-                frame.frameIndex, frame.deltaSeconds, frame.timing.discontinuity, holdOffset, weaponPoseTuning(), outWorld)) {
+                frame.frameIndex, frame.deltaSeconds, frame.timing.discontinuity, holdOffset, tuning, outWorld)) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Weapon pose filtering input unusable; weapon placed unfiltered");
+            return;
+        }
+        // Lag is how far the presented weapon trails the solved pose.
+        if (logger::isInfoEnabled() && logger::internal::shouldEmitSample(weaponName, 1000)) {
+            ROCK_LOG_INFO(Weapon,
+                "WEAPON_POSE_FILTER weapon={} mode={} tuning={:.3f}/{:.3f}s release={:.1f}deg/s lag={:.3f}gu/{:.3f}deg scoped={}",
+                weaponName, holdOffset ? "kick-hold" : filter.settling() ? "settling" :
+                    (tuning.rotationSeconds > 0.0f || tuning.translationSeconds > 0.0f) ? "filtering" : "off",
+                tuning.rotationSeconds, tuning.translationSeconds, tuning.releaseDegreesPerSecond,
+                registry_policy::translationDeltaGameUnits(target, outWorld), registry_policy::rotationDeltaDegrees(target, outWorld),
+                frik_visual_authority::isLookingThroughScope());
         }
     }
 

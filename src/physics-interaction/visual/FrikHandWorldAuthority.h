@@ -101,7 +101,7 @@ namespace rock::frik_hand_world_authority
     // The first weapon's pose is filtered this frame (tuning on, or settling).
     [[nodiscard]] bool weaponPoseFilterEngaged(const weapon_input_filter::PoseFilter& filter);
     // Outputs target unchanged (and resets the filter) when not eligible.
-    void filterWeaponPose(weapon_input_filter::PoseFilter& filter, const void* identity, bool eligible,
+    void filterWeaponPose(weapon_input_filter::PoseFilter& filter, const char* weaponName, const void* identity, bool eligible,
         const RE::NiTransform& target, const RE::NiPoint3& pivotLocal, bool holdOffset, RE::NiTransform& outWorld);
 
     // Private held-object inputs filtered by the preset. Free hands, published

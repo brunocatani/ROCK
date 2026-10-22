@@ -658,7 +658,7 @@ namespace rock::native_secondary_presentation
                 // The same pose filter as the first weapon, before the kick so
                 // recoil stays unsmoothed; the hand rides the filtered weapon.
                 RE::NiTransform filtered{};
-                frik_hand_world_authority::filterWeaponPose(s_state.poseFilter, view.root, true, target,
+                frik_hand_world_authority::filterWeaponPose(s_state.poseFilter, "second", view.root, true, target,
                     transform_math::worldPointToLocal(target, computeGrabPalmPointWorldFromHandBasis(hand, left)), false, filtered);
                 hand = transform_math::composeTransforms(filtered,
                     transform_math::composeTransforms(transform_math::invertTransform(target), hand));

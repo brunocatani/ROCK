@@ -227,6 +227,9 @@ namespace rock
             return false;
         }
         outWorldDelta = _recoil.worldDelta;
+        if (weapon_recoil_authority_math::hasKick(outWorldDelta)) {
+            _recoil.kickConsumedFrame = runtime_state::currentFrame().frameIndex;
+        }
         return true;
     }
 

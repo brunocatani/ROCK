@@ -808,9 +808,9 @@ namespace rock
                 computeGrabPalmPointWorldFromHandBasis(firingHand, weaponCarrierIsLeft()));
         }
         RE::NiTransform filtered{};
-        frik_hand_world_authority::filterWeaponPose(_visuals.weaponPoseFilter, weaponNode,
+        frik_hand_world_authority::filterWeaponPose(_visuals.weaponPoseFilter, "first", weaponNode,
             frik_hand_world_authority::weaponPoseFilterEligible(), solvedWeaponWorld, pivot,
-            _recoil.controlledKickActive, filtered);
+            _recoil.kickConsumedFrame == runtime_state::currentFrame().frameIndex, filtered);
         return filtered;
     }
 

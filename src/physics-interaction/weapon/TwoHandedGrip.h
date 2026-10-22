@@ -2142,6 +2142,9 @@ namespace rock
             bool rightHandClaimActive{ false };
             bool rightNeedsNeutralFrame{ false };
             bool controlledKickActive{ false };
+            // Frame a non-neutral kick was consumed: the weapon pose filter
+            // holds its offset on exactly those frames.
+            std::uint64_t kickConsumedFrame{ 0 };
             bool controllerRegistered{ false };
             // Only actual FRIK hand kicks inhibit raw-hand calibration; owned
             // carry incorporates its sample into the published seat instead.
