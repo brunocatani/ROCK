@@ -68,6 +68,11 @@ namespace rock::ammo_counter_pose
         };
 
         void clear() noexcept { _valid = false; }
+        // The anchored firing palm while the same weapon stays, or null.
+        [[nodiscard]] const Point* find(const Identity& identity) const noexcept
+        {
+            return _valid && identity == _identity ? &_palmInWeapon : nullptr;
+        }
 
         [[nodiscard]] const Point& update(const Identity& identity, const Point& palmInWeapon) noexcept
         {

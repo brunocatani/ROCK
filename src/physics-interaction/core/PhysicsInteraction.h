@@ -1075,7 +1075,7 @@ namespace rock
         std::array<TouchGrabRuntime::PowerArmorCandidate, 2> _powerArmorCandidates{};
         std::array<TouchGrabRuntime::PowerArmorProbeDiagnostics, 2> _powerArmorProbeDiagnostics{};
         std::uint64_t _powerArmorCandidateFrame = 0;
-        // Ammo counters: each firing hand's palm in its weapon's space.
+        // Ammo counters: each weapon slot's firing palm in that weapon's space.
         std::array<ammo_counter_pose::WeaponAnchor, 2> _ammoCounterAnchors{};
         BodyBoneColliderSet _bodyBoneColliders;
         WeaponCollision _weaponCollision;
