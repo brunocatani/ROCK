@@ -3,6 +3,10 @@
 #include "physics-interaction/native/TriggerEquipReadinessTrace.h"
 #include "physics-interaction/visual/GripZoneIndicators.h"
 #include "physics-interaction/weapon/WeaponScenePresentation.h"
+#include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
+#include "physics-interaction/weapon/HoldingGripRecords.h"
+#include "physics-interaction/weapon/WeaponGripSeat.h"
+#include "physics-interaction/weapon/WeaponInstanceClassification.h"
 #include "physics-interaction/weapon/WeaponInputFilter.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
@@ -167,43 +171,78 @@ namespace rock
             _equipped.menuHoldFingerHand = -1;
         };
         const auto& frame = runtime_state::currentFrame();
-        const auto& carry = _equipped.continuityGrip.pending ? _equipped.continuityGrip : _equipped.nativeCarryCapture;
-        const auto& grip = carry.supportGrip.validCarry() ? carry.supportGrip.grip : carry.firingGrip;
         if (!frame.localMenuBlocking) {
             release();
             return;
         }
-        // The native drawn state can drop inside menus; the carry identity
-        // decides instead.
-        auto* weapon = currentEquippedWeaponForm();
-        auto* node = carry.pending && grip.valid() && weapon && weapon->formID == carry.targetWeaponFormID ?
-            resolveEquippedWeaponInteractionNodeDirect() : nullptr;
-        const auto hand = frik_visual_authority::handFromBool(carry.isLeft);
-        RE::NiTransform handWorld{};
-        const char* stage = !carry.pending ? "no-menu-carry" : !grip.valid() ? "grip-invalid" :
-            !weapon || weapon->formID != carry.targetWeaponFormID ? "other-weapon" : !node ? "weapon-node" :
-            !frik_visual_authority::tryGetHandWorldTransform(hand, handWorld) || !weapon_input_filter::usable(handWorld) ? "hand" : nullptr;
-        ROCK_LOG_SAMPLE_INFO(Weapon, 1000, "MENU_WEAPON_HOLD weapon=first stage={} hand={} visible={}",
-            stage ? stage : "placed", carry.isLeft ? "left" : "right",
-            node ? equipped_weapon_visual_state::isLocallyVisible(node) : false);
+        // The native drawn state can drop inside menus; the equipped item decides.
+        const auto view = native_hand_equipment::equippedViews()[0];
+        auto* node = view.weapon ? resolveEquippedWeaponInteractionNodeDirect() : nullptr;
+        const auto& carry = _equipped.continuityGrip.pending ? _equipped.continuityGrip : _equipped.nativeCarryCapture;
+        const bool carried = carry.pending && view.weapon && view.weapon->formID == carry.targetWeaponFormID;
+        const bool supportCarry = carried && carry.supportGrip.validCarry();
+        bool isLeft = carry.isLeft;
+        RE::NiPoint3 gripLocal{};
+        RE::NiTransform supportHandWeaponLocal{};
+        frik_visual_authority::FingerLocalTransformOverride fingers{};
+        const char* stage = !node ? "weapon-node" : nullptr;
+        if (!stage && supportCarry) {
+            supportHandWeaponLocal = carry.supportGrip.grip.handWeaponLocal;
+            fingers.enabledMask = carry.supportGrip.grip.fingerMask;
+            std::copy(carry.supportGrip.grip.fingerLocals.begin(), carry.supportGrip.grip.fingerLocals.end(), fingers.localTransforms);
+        } else if (!stage && carried && carry.firingGrip.valid()) {
+            gripLocal = carry.firingGrip.gripWeaponLocal;
+            fingers.enabledMask = carry.firingGrip.fingerMask;
+            std::copy(carry.firingGrip.fingerLocals.begin(), carry.firingGrip.fingerLocals.end(), fingers.localTransforms);
+        } else if (!stage) {
+            // Equipped inside this menu: its own firing seat in the hand it went to.
+            bool firing = true, supported = false;
+            isLeft = native_hand_equipment::wornRowHand(view.weapon->formID, 0, firing, supported) == native_hand_equipment::WornHand::Left;
+            const bool powerArmor = f4vr::isInPowerArmor();
+            const auto native = weapon_grip_seat::resolveNative({
+                .weapon = view.weapon,
+                .weaponRoot = node,
+                .variant = authored_weapon_grip_library::identifyWeaponVariant(node),
+                .keywordFlags = weapon_instance_classification::computeWeaponKeywordFlags(view.weapon, view.instance),
+                .inPowerArmor = powerArmor,
+            });
+            weapon_grip_seat::FiringSeat seat{};
+            if (!weapon_grip_seat::firingSeat(native, holding_grips::find(view.weapon, node, isLeft, view.data, powerArmor),
+                    isLeft, _weaponCollision.holdingMirrorPlaneX(), seat)) {
+                stage = native.modelRegistered ? "authored-seat" : "model-frame";
+            } else {
+                gripLocal = computeGrabPalmPointWorldFromHandBasis(seat.handWeaponLocal, isLeft);
+                fingers.enabledMask = seat.fingers.enabledMask;
+                std::copy(std::begin(seat.fingers.localTransforms), std::end(seat.fingers.localTransforms), fingers.localTransforms);
+            }
+        }
+        const auto hand = frik_visual_authority::handFromBool(isLeft);
+        RE::NiTransform handWorld{}, weaponWorld{};
+        if (!stage && (!frik_visual_authority::tryGetHandWorldTransform(hand, handWorld) || !weapon_input_filter::usable(handWorld)))
+            stage = "hand";
+        if (!stage && !supportCarry && !(isLeft ? TwoHandedGrip::tryGetLeftWeaponAimWorld(node->world.scale, weaponWorld) :
+                TwoHandedGrip::tryGetRightWeaponAimWorld(node->world.scale, weaponWorld)))
+            stage = "controller-aim";
+        ROCK_LOG_SAMPLE_INFO(Weapon, 1000, "MENU_WEAPON_HOLD weapon=first stage={} source={} hand={} visible={}",
+            stage ? stage : "placed", supportCarry ? "support-carry" : carried ? "menu-carry" : "native-seat",
+            isLeft ? "left" : "right", node ? equipped_weapon_visual_state::isLocallyVisible(node) : false);
         if (stage) {
             release();
             return;
         }
-        if (_equipped.menuHoldFingerHand != (carry.isLeft ? 1 : 0)) {
-            release();
-            frik_visual_authority::FingerLocalTransformOverride fingers{};
-            fingers.enabledMask = grip.fingerMask;
-            std::copy(grip.fingerLocals.begin(), grip.fingerLocals.end(), fingers.localTransforms);
-            if (frik_visual_authority::setAuthoredFingerPose(kTag, hand, fingers, kPriority))
-                _equipped.menuHoldFingerHand = carry.isLeft ? 1 : 0;
+        if (_equipped.menuHoldFingerHand >= 0 && _equipped.menuHoldFingerHand != (isLeft ? 1 : 0)) release();
+        if (frik_visual_authority::setAuthoredFingerPose(kTag, hand, fingers, kPriority)) _equipped.menuHoldFingerHand = isLeft ? 1 : 0;
+        if (supportCarry) {
+            weaponWorld = transform_math::composeTransforms(handWorld, transform_math::invertTransform(supportHandWeaponLocal));
+        } else {
+            // As the live carry: aim from the controller, firing grip at the palm.
+            weaponWorld.translate += computeGrabPalmPointWorldFromHandBasis(handWorld, isLeft) -
+                transform_math::localPointToWorld(weaponWorld, gripLocal);
         }
-        // Opening a menu culls the first weapon's node natively (the second is
-        // ROCK's own model); the native show after the menu matches this.
+        // Opening a menu or equipping culls the first weapon's node natively
+        // (the second is ROCK's own model); the native show after the menu matches.
         if (!equipped_weapon_visual_state::isLocallyVisible(node)) equipped_weapon_visual_state::setLocallyVisible(node, true);
-        // The hand follows its controller; the weapon rides it at the grip.
-        (void)weapon_scene_presentation::moveWeaponPresentationRigidly(node,
-            transform_math::composeTransforms(handWorld, transform_math::invertTransform(grip.handWeaponLocal)));
+        (void)weapon_scene_presentation::moveWeaponPresentationRigidly(node, weaponWorld);
     }
 
     void PhysicsInteraction::captureEquippedWeaponContinuity()

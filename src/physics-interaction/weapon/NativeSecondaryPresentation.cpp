@@ -55,8 +55,6 @@ namespace rock::native_secondary_presentation
             bool left = true, claimedLeft = true;
             // Firing grip of this frame's placement, for a drop.
             AuthoredWeaponGripPose dropGrip{};
-            // In a menu: the weapon rides the rendered hand at dropGrip.
-            bool menuHold = false;
             bool geometryChecked = false, geometryReady = false, bodyWasVisible = false;
             bool traceFrame = false;
             std::uint64_t frame = 0;
@@ -487,26 +485,6 @@ namespace rock::native_secondary_presentation
             s_state = {};
         }
 
-        // Menus: the weapon stays at its grip on the rendered hand with the
-        // grip's fingers. The hand follows its controller (no hand claim).
-        bool holdInMenu(const native_hand_equipment::EquippedView& view) noexcept
-        {
-            const auto& grip = s_state.dropGrip;
-            RE::NiTransform hand{};
-            if (!s_state.claimed || grip.weaponFormId != s_state.form || !usable(grip.handWeaponLocal) ||
-                !currentAttachment(view) || !frik_visual_authority::tryGetHandWorldTransform(frikHand(grip.isLeft), hand) ||
-                !usable(hand)) return false;
-            if (!s_state.menuHold) {
-                native_secondary_actions::suspend();
-                (void)frik_visual_authority::clearHandWorld(kTag, frikHand(s_state.claimedLeft));
-                s_state.menuHold = true;
-            }
-            s_state.targetWorld = transform_math::composeTransforms(hand, transform_math::invertTransform(grip.handWeaponLocal));
-            s_state.frame = runtime_state::currentFrame().frameIndex;
-            s_state.ready = true;
-            return true;
-        }
-
         void waitFor(const native_hand_equipment::EquippedView& view, const char* reason)
         {
             native_secondary_actions::suspend();
@@ -578,14 +556,12 @@ namespace rock::native_secondary_presentation
         try {
             const auto& frame = runtime_state::currentFrame();
             const auto view = native_hand_equipment::equippedViews()[1];
-            if (frame.localMenuBlocking && view.weapon) {
-                const bool held = matches(view) && holdInMenu(view);
-                ROCK_LOG_SAMPLE_INFO(Weapon, 1000, "MENU_WEAPON_HOLD weapon=second stage={} claimed={} matches={}",
-                    held ? "placed" : "unavailable", s_state.claimed, matches(view));
-                if (held) return;
-            }
+            // Menus keep the weapon in hand with the same solve, from the hand
+            // FRIK renders (ROCK's hand service pauses); no recoil, collision
+            // or hand claim, and the native drawn state may drop meanwhile.
+            const bool menu = frame.localMenuBlocking;
             if (!view.weapon || !frame.visualAuthorityAvailable || !frame.localSkeletonReady ||
-                frame.localMenuBlocking || frame.compatibilityConfigBlocking || !frame.weaponDrawn) {
+                frame.compatibilityConfigBlocking || (!frame.weaponDrawn && !menu)) {
                 release();
                 return;
             }
@@ -660,10 +636,11 @@ namespace rock::native_secondary_presentation
             // controller basis, and for the left hand the mirrored basis, the
             // left aim trim and the left firing grip offset.
             RE::NiTransform physicalHand{}, wandWorld{};
-            if (!usable(seat) ||
-                !frik_hand_world_authority::hasCalibratedRawHandFrame(left) ||
-                !frik_hand_world_authority::tryGetWeaponWandWorld(left, wandWorld) || !usable(wandWorld) ||
-                !frik_hand_world_authority::tryGetWeaponHandWorld(left, physicalHand) || !usable(physicalHand)) {
+            const bool handAvailable = menu ? frik_visual_authority::tryGetHandWorldTransform(frikHand(left), physicalHand) :
+                frik_hand_world_authority::hasCalibratedRawHandFrame(left) &&
+                    frik_hand_world_authority::tryGetWeaponHandWorld(left, physicalHand);
+            if (!usable(seat) || !handAvailable || !usable(physicalHand) ||
+                !frik_hand_world_authority::tryGetWeaponWandWorld(left, wandWorld) || !usable(wandWorld)) {
                 waitFor(view, "tracked-hand");
                 return;
             }
@@ -681,7 +658,7 @@ namespace rock::native_secondary_presentation
                 waitFor(view, "invalid-placement");
                 return;
             }
-            native_secondary_actions::applyRecoil(target,hand,wandWorld);
+            if (!menu) native_secondary_actions::applyRecoil(target,hand,wandWorld);
             // The controller-relative grip excludes collision correction.
             const auto intentTarget = target;
             RE::NiTransform modelRelation{};
@@ -691,7 +668,7 @@ namespace rock::native_secondary_presentation
             }
             s_state.modelIntentWorld = transform_math::composeTransforms(target, modelRelation);
             RE::NiTransform modelResolved{};
-            if (s_resolver && s_resolver(s_resolverContext, s_state.modelIntentWorld, modelResolved) && usable(modelResolved)) {
+            if (!menu && s_resolver && s_resolver(s_resolverContext, s_state.modelIntentWorld, modelResolved) && usable(modelResolved)) {
                 /*
                  * Apply the collision residual in model space, where it is a
                  * small rigid transform: target * relation * residual *
@@ -721,7 +698,9 @@ namespace rock::native_secondary_presentation
                 waitFor(view, "offhand-grip-provider");
                 return;
             }
-            if (!frik_visual_authority::publishHandWorld(kTag, frikHand(left), hand, kPriority)) {
+            // In menus the hand follows its controller; only the weapon and fingers are posed.
+            if (menu) (void)frik_visual_authority::clearHandWorld(kTag, frikHand(left));
+            else if (!frik_visual_authority::publishHandWorld(kTag, frikHand(left), hand, kPriority)) {
                 waitFor(view, "hand-world-provider");
                 return;
             }
@@ -741,7 +720,6 @@ namespace rock::native_secondary_presentation
             };
             s_state.frame = frame.frameIndex;
             s_state.ready = true;
-            s_state.menuHold = false;
             s_state.traceFrame = s_state.samples == 0 && s_state.tracedFrames < 4;
             if (s_state.traceFrame) ++s_state.tracedFrames;
             s_state.traceNativePass = 0;
@@ -756,7 +734,8 @@ namespace rock::native_secondary_presentation
                 return;
             }
             tracePlacement("solve-after");
-            native_secondary_actions::update(attachment,frame.deltaSeconds);
+            if (menu) native_secondary_actions::suspend();
+            else native_secondary_actions::update(attachment,frame.deltaSeconds);
             if (s_state.reason != "ready") {
                 s_state.reason = "ready";
                 ROCK_LOG_INFO(Weapon,
