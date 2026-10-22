@@ -729,12 +729,15 @@ namespace rock
          * sheathes and the second weapon stays hidden (runtime 14 Oct
          * 21:39:03). A held transfer or an equip awaiting its identity owns
          * index 0 and is left to finish.
+         * Index 0 is read natively, not from the gun views: a melee primary
+         * beside a second gun occupies it, and a failed promotion every
+         * frame suspended the second gun's actions (runtime 22 Oct 19:52:11).
          */
         if (_equippedSlotOne.equipped && !frame.menuBlocked &&
             !_equipped.transition.heldTransfer().active() &&
             !_equipped.transition.getPublicSnapshot().identityPending) {
             const auto views = native_hand_equipment::equippedViews();
-            if (!views[0].weapon && views[1].weapon) {
+            if (!f4vr::getEquippedWeaponItem(0) && views[1].weapon) {
                 ROCK_LOG_INFO(Weapon, "AKIMBO index 0 empty; promoting the second weapon form={:08X}", views[1].weapon->formID);
                 promoteSecondaryWeapon(views[1].weapon, reinterpret_cast<std::uintptr_t>(views[1].instance),
                     native_hand_equipment::secondaryHandIsLeft());
