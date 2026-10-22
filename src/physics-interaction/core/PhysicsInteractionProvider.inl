@@ -695,6 +695,7 @@
         const bool stateAvailable = queryProviderWeaponHandling(handling);
         std::array<api::weaponparts::GripState, 2> grips{};
         if (stateAvailable) fillProviderWeaponPartGripStates(grips);
+        const auto roster = equippedWeaponRoster();
 
         // The touched object's form, or 0 when the hand is not touching or the
         // body no longer resolves to a reference.
@@ -823,6 +824,9 @@
 
             provider_state_policy::applyWeaponOccupancy(
                 state, handling, grips[isLeft ? 1u : 0u]);
+            if (roster.slotOneHolds(isLeft)) {
+                provider_state_policy::applySecondWeaponOccupancy(state, roster.facts().slot1.formId);
+            }
 
             state.effectiveInputSuppressionFlags =
                 ::rock::provider::currentHandInputSuppressionFlags(

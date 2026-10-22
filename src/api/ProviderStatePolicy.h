@@ -95,6 +95,28 @@ namespace rock::provider_state_policy
         if (grip.attachOnly) state.flags |= static_cast<std::uint32_t>(Flag::AttachOnly);
     }
 
+    // Slot 1's firing hand is occupied like slot 0's: ROCK carries that weapon
+    // in the hand without a physics grip. Without this the hand reads as free
+    // to every occupancy check (storage, consumers' gestures) while it fires.
+    inline void applySecondWeaponOccupancy(provider::HandInteractionPublication& state, const std::uint32_t formId) noexcept
+    {
+        using Flag = api::grab::HandInteractionFlag;
+        constexpr auto weaponFlags = static_cast<std::uint32_t>(Flag::FiringGrip) | static_cast<std::uint32_t>(Flag::PartGrip) |
+            static_cast<std::uint32_t>(Flag::PartCarry);
+        if (!(state.flags & static_cast<std::uint32_t>(Flag::Valid)) || (state.flags & weaponFlags)) return;
+        state.phase = api::grab::HandInteractionPhase::Holding;
+        state.flags &= ~(static_cast<std::uint32_t>(Flag::LooseObject) |
+                         static_cast<std::uint32_t>(Flag::LooseWeapon) |
+                         static_cast<std::uint32_t>(Flag::HeldBodyListTruncated));
+        state.targetKind = api::grab::BodyContactTargetKind::Weapon;
+        state.targetFormId = formId;
+        state.reservedTargetIdentity = 0;
+        state.primaryBodyId = 0x7FFF'FFFF;
+        state.heldBodyCount = 0;
+        std::fill(std::begin(state.heldBodyIds), std::end(state.heldBodyIds), 0u);
+        state.flags |= static_cast<std::uint32_t>(Flag::FiringGrip) | static_cast<std::uint32_t>(Flag::NativeWeaponCarry);
+    }
+
     [[nodiscard]] constexpr std::uint32_t colliderFlags(
         bool lifecycleAllowed, bool filterKnown, bool suppressed) noexcept
     {

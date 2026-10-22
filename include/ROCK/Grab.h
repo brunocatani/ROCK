@@ -211,6 +211,9 @@ namespace rock::api::grab {
     };
 
     // Primary and Offhand describe the hand's role for the primary weapon.
+    // FiringGrip, PartGrip, PartCarry and NativeWeaponCarry describe the
+    // equipped weapon the hand holds, of either slot; targetFormId names it.
+    // The second weapon's hand reports FiringGrip | NativeWeaponCarry.
     enum class HandInteractionFlag : std::uint32_t
     {
         None = 0,
