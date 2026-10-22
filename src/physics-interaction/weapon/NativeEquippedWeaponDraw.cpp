@@ -549,49 +549,6 @@ namespace rock::native_equipped_weapon_draw
         return result;
     }
 
-    Result submitSheatheExactCurrent(const Identity& expected) noexcept
-    {
-        Result result{};
-        s_partialActionWitness = {};
-        const auto current = resolveExactCurrent(expected);
-        result.result = current.result;
-        if (current.result != SubmitResult::Submitted) {
-            return result;
-        }
-
-        result.stateBefore = f4vr::getNativeWeaponState(current.player);
-        result.stateAfter = result.stateBefore;
-        if (!held_weapon_equip_state_policy::isValidNativeWeaponState(result.stateBefore)) {
-            result.result = SubmitResult::InvalidWeaponState;
-            return result;
-        }
-        if (!held_weapon_equip_state_policy::shouldSubmitSheatheFollowup(result.stateBefore)) {
-            if (result.stateBefore == static_cast<std::uint32_t>(
-                    held_weapon_equip_state_policy::NativeWeaponState::
-                        Sheathing)) {
-                requestAnimationAcceleration(
-                    current.player,
-                    expected,
-                    weapon_transition_animation_acceleration_policy::
-                        Direction::Sheathe);
-            }
-            result.result = SubmitResult::AlreadySheathingOrSheathed;
-            return result;
-        }
-
-        requestAnimationAcceleration(
-            current.player,
-            expected,
-            weapon_transition_animation_acceleration_policy::
-                Direction::Sheathe);
-        current.player->DrawWeaponMagicHands(false);
-        result.stateAfter = f4vr::getNativeWeaponState(current.player);
-        result.result = result.stateAfter == result.stateBefore ?
-            SubmitResult::NativeActionRejected :
-            SubmitResult::Submitted;
-        return result;
-    }
-
     const char* submitResultName(const SubmitResult result) noexcept
     {
         switch (result) {
@@ -603,8 +560,6 @@ namespace rock::native_equipped_weapon_draw
             return "weapon-graph-preparation-unavailable";
         case SubmitResult::AlreadyDrawingOrDrawn:
             return "already-drawing-or-drawn";
-        case SubmitResult::AlreadySheathingOrSheathed:
-            return "already-sheathing-or-sheathed";
         case SubmitResult::MissingPlayer:
             return "missing-player";
         case SubmitResult::MissingEquippedWeapon:

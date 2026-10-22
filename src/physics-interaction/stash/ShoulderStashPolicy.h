@@ -93,11 +93,11 @@ namespace rock::shoulder_stash_notification_policy
         return message;
     }
 
-    // Stow keeps a distinct verb from Collected: the weapon remains equipped
-    // and only its native presentation is sheathed.
-    [[nodiscard]] inline std::string formatStowedNotification(std::string_view itemName, std::uint32_t formID)
+    // An equipped weapon stashed at the shoulder returns to the inventory;
+    // Stashed keeps it distinct from a picked-up item's Collected.
+    [[nodiscard]] inline std::string formatStashedNotification(std::string_view itemName, std::uint32_t formID)
     {
-        std::string message = "Stowed ";
+        std::string message = "Stashed ";
         message += itemName.empty() ? fallbackItemName(formID) : std::string(itemName);
         return message;
     }

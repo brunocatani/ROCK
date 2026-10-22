@@ -265,7 +265,6 @@ namespace rock::input_remap_runtime
         std::array<std::atomic<bool>, 2> s_wandPickHookInstalled{};
         std::array<std::atomic<bool>, 2> s_pendingSavedGrabOffsetRequest{};
         std::atomic<bool> s_equippedWeaponFiringGripInputActive{ false };
-        std::atomic<bool> s_equippedWeaponShoulderSheathActive{ false };
         // MenuControls dispatches ButtonEvents serially on the frame/input
         // thread; these gesture states are never read from worker callbacks.
         manual_scope_input_policy::RuntimeState s_manualScopeInputState{};
@@ -1220,7 +1219,6 @@ namespace rock::input_remap_runtime
                 .primaryHandEvent = false,
                 .equippedWeaponFiringGripInputActive = s_equippedWeaponFiringGripInputActive.load(std::memory_order_acquire),
                 .equippedWeaponPrimaryDetached = weaponRouting().detached,
-                .equippedWeaponShoulderSheathActive = s_equippedWeaponShoulderSheathActive.load(std::memory_order_acquire),
                 .realMeleeWeaponEquipped = s_realMeleeWeaponEquipped.load(std::memory_order_acquire),
                 .nativeMeleeSuppressionActive = isNativeMeleeSuppressionActive(),
                 .eventMatched = eventMatched,
@@ -1271,12 +1269,12 @@ namespace rock::input_remap_runtime
             }
             if (!logger::isDebugEnabled()) return;
             ROCK_LOG_DEBUG(Input,
-                "NATIVE-WEAPON-INPUT gate={} suppressed={} provider={} primary={} sourceLeft={} transfer={} awaitRelease={} pressed={} drawn={} heldWeapon={} firingGrip={} detached={} shoulder={} realMelee={} meleeSuppression={} gameplay={} menu={}",
+                "NATIVE-WEAPON-INPUT gate={} suppressed={} provider={} primary={} sourceLeft={} transfer={} awaitRelease={} pressed={} drawn={} heldWeapon={} firingGrip={} detached={} realMelee={} meleeSuppression={} gameplay={} menu={}",
                 gate, suppressed, providerSuppressed, input.primaryHandEvent,
                 input.triggerSourceIsLeft, input.weaponTransferPending, input.triggerAwaitingRelease,
                 button->QJustPressed(), input.weaponDrawn, input.eventHandHeldWeapon,
                 input.equippedWeaponFiringGripInputActive, input.equippedWeaponPrimaryDetached,
-                input.equippedWeaponShoulderSheathActive, input.realMeleeWeaponEquipped,
+                input.realMeleeWeaponEquipped,
                 input.nativeMeleeSuppressionActive, input.gameplayInputAllowed, input.menuInputActive);
         }
 
@@ -2808,11 +2806,6 @@ namespace rock::input_remap_runtime
     void setEquippedWeaponPrimaryDetached(bool detached)
     {
         s_pendingWeaponRouting.detached = detached;
-    }
-
-    void setEquippedWeaponShoulderSheathActive(bool active)
-    {
-        s_equippedWeaponShoulderSheathActive.store(active, std::memory_order_release);
     }
 
     void setEquippedWeaponLeftHandFiringActive(bool active)

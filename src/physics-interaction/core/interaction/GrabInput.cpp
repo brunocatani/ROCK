@@ -683,11 +683,14 @@ namespace rock
                 // The second weapon is carried only by its firing grip, which
                 // follows Weapon Grab Mode like the primary's: a press releases
                 // it in the toggle modes, press-and-release in hold mode.
-                // Releasing that last carrying grip applies Weapon Drop Mode.
+                // Releasing that last carrying grip applies Weapon Drop Mode,
+                // or returns it to the inventory inside the shoulder volume.
                 const auto press = consumeHandGrabInput(false);
                 const bool release = _equipped.handlingSettings.weaponGrabMode ==
                     equipped_weapon_toggle_grab_policy::Mode::HoldBoth ? press.released : press.pressed;
-                if (release && !hand.isHolding()) (void)dropSecondaryWeaponToWorld(frame);
+                if (release && !hand.isHolding() && !trySecondWeaponShoulderStash(frame, isLeft)) {
+                    (void)dropSecondaryWeaponToWorld(frame);
+                }
             }
             if (_touchGrabRuntime.isHandActive(isLeft)) {
                 _touchGrabRuntime.releaseHand(

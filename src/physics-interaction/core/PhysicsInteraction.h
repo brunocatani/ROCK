@@ -431,7 +431,7 @@ namespace rock
         void startEquippedWeaponGrips(EquippedWeaponFrameWork& w);
         void updateEquippedWeaponGrips(EquippedWeaponFrameWork& w);
         void queueEquippedWeaponGripHaptics();
-        void commitEquippedWeaponSheathAndDrop(EquippedWeaponFrameWork& w);
+        void commitEquippedWeaponStashAndDrop(EquippedWeaponFrameWork& w);
         EquippedWeaponFrameResult publishEquippedWeaponGripOwnership(EquippedWeaponFrameWork& w);
         void finishDynamicWeaponCollision(EquippedWeaponFrameWork& w);
         void publishWeaponInteractionContact(bool isLeft, WeaponInteractionContact& contact);
@@ -564,24 +564,20 @@ namespace rock
             };
             shoulder_stash::Decision detectorDecision{};
         };
-        bool submitEquippedWeaponShoulderSheath(
-            std::uint32_t observedWeaponFormID,
-            std::uintptr_t observedWeaponInstanceData,
-            equipped_weapon_drop_policy::SourceHand sourceHand,
-            const shoulder_stash::Decision& stashDecision,
-            RE::NiNode* weaponNode,
-            std::uint64_t currentWeaponGenerationKey,
-            std::uint64_t currentEquippedWeaponOwnershipKey);
-        void clearEquippedWeaponShoulderSheath(
-            const char* reason,
-            bool resetCoordinator = true);
+        // Returns the weapon at native equipment index 0 or 1 to the inventory
+        // from the shoulder. True once that index is empty. Frame owner.
+        bool stashEquippedWeaponAtShoulder(const PhysicsFrameContext& frame, std::uint32_t index, bool left,
+            const shoulder_stash::Decision& stashDecision);
+        // The second weapon's hand: detector per frame, stash on its release.
+        void updateSecondWeaponShoulderStash(const PhysicsFrameContext& frame, bool left, bool handlingEnabled);
+        [[nodiscard]] bool trySecondWeaponShoulderStash(const PhysicsFrameContext& frame, bool left);
+        void queueShoulderStashCandidateHaptic(bool isLeft, const shoulder_stash::Decision& decision,
+            shoulder_stash::RuntimeState& detectorState);
         EquippedWeaponShoulderFrameResult
             advanceEquippedWeaponShoulderCoordinator(
             const PhysicsFrameContext& frame,
             bool handlingEnabled,
             bool menuInputActive,
-            std::uint32_t observedWeaponFormID,
-            std::uintptr_t observedWeaponInstanceData,
             RE::NiNode* weaponNode,
             std::uint64_t currentEquippedWeaponOwnershipKey,
             bool firingHandIsLeft);
@@ -658,20 +654,6 @@ namespace rock
         static constexpr std::size_t kArmedLooseGrenadeFuseCapacity = 8;
         static constexpr std::size_t kEquippedWeaponDropBodySnapshotCapacity = 32;
         static constexpr std::size_t kEquippedWeaponDropHandoffCapacity = 4;
-
-        struct EquippedWeaponShoulderSheathState
-        {
-            bool active{ false };
-            bool stashedByLeftHand{ false };
-            std::uint32_t weaponFormID{ 0 };
-            std::uintptr_t weaponInstanceData{ 0 };
-            std::uint32_t equipIndex{ 0 };
-            std::uint64_t weaponOwnershipKey{ 0 };
-            body_zone::BodyZoneKind zone{ body_zone::BodyZoneKind::Unknown };
-            bool hasLeftFiringGripTransfer{ false };
-            RE::NiTransform leftFiringHandWeaponLocal{};
-            RE::NiPoint3 leftFiringGripWeaponLocal{};
-        };
 
         struct HeldWeaponTriggerEquipIntent
         {
@@ -872,7 +854,7 @@ namespace rock
 
         // State owned by the EquippedWeaponFrame module: handling settings,
         // the transition coordinator, the authored primary grip runtime,
-        // shoulder sheath/stash/retrieval, toggle grab, and the pending
+        // the shoulder stash of both weapons, toggle grab, and the pending
         // loose-to-equipped handoff.
         struct EquippedWeaponFrameState
         {
@@ -914,12 +896,10 @@ namespace rock
             // gesture so dwell/hysteresis never mixes with a loose object
             // held by the same hand.
             std::array<shoulder_stash::RuntimeState, 2> stashStates{};
-            // The equipped instance remains equipped while native
-            // presentation is sheathed. Retrieval owns independent per-hand
-            // dwell so either empty physical hand can claim the same stored
-            // shoulder in ambidextrous mode.
-            EquippedWeaponShoulderSheathState shoulderSheath{};
-            std::array<shoulder_stash::RuntimeState, 2> sheathRetrievalStates{};
+            // The second weapon's hand; it never carries the primary, so its
+            // detector is separate from the primary carry's.
+            std::array<shoulder_stash::RuntimeState, 2> secondWeaponStashStates{};
+            std::array<shoulder_stash::Decision, 2> secondWeaponStashDecisions{};
             equipped_weapon_shoulder::RuntimeState shoulderCoordinator{};
             std::array<bool, 2> shoulderGestureConsumedThisFrame{};
             equipped_weapon_toggle_grab_policy::RuntimeState toggleGrabState{};

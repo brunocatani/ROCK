@@ -108,7 +108,6 @@ namespace rock::input_remap_policy
         bool primaryHandEvent{ false };
         bool equippedWeaponFiringGripInputActive{ false };
         bool equippedWeaponPrimaryDetached{ false };
-        bool equippedWeaponShoulderSheathActive{ false };
         bool realMeleeWeaponEquipped{ false };
         bool nativeMeleeSuppressionActive{ false };
         bool takeEquipHandEngaged{ false };
@@ -226,8 +225,7 @@ namespace rock::input_remap_policy
     {
         return input.realMeleeWeaponEquipped &&
                !input.nativeMeleeSuppressionActive &&
-               input.weaponDrawn &&
-               !input.equippedWeaponShoulderSheathActive;
+               input.weaponDrawn;
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeGripReadyAction(const NativeActionSuppressionInput& input)
@@ -236,7 +234,7 @@ namespace rock::input_remap_policy
             return false;
         }
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
-               (!input.weaponDrawn || input.equippedWeaponFiringGripInputActive || input.equippedWeaponShoulderSheathActive);
+               (!input.weaponDrawn || input.equippedWeaponFiringGripInputActive);
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeTriggerAction(const NativeActionSuppressionInput& input)
@@ -247,7 +245,7 @@ namespace rock::input_remap_policy
             return false;
         }
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
-               (!input.weaponDrawn || input.eventHandHeldWeapon || input.equippedWeaponPrimaryDetached || input.equippedWeaponShoulderSheathActive);
+               (!input.weaponDrawn || input.eventHandHeldWeapon || input.equippedWeaponPrimaryDetached);
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeGripReloadAction(const NativeActionSuppressionInput& input)

@@ -17,7 +17,6 @@ namespace rock::native_equipped_weapon_draw
     {
         Submitted = 0,
         AlreadyDrawingOrDrawn,
-        AlreadySheathingOrSheathed,
         MissingPlayer,
         MissingEquippedWeapon,
         IdentityChanged,
@@ -50,6 +49,5 @@ namespace rock::native_equipped_weapon_draw
     [[nodiscard]] Result submitPreparedExactCurrent(const Identity& expected,
         bool triggerEquip = false) noexcept;
     [[nodiscard]] Result finalizePartialExactCurrent(const Identity& expected) noexcept;
-    [[nodiscard]] Result submitSheatheExactCurrent(const Identity& expected) noexcept;
     [[nodiscard]] const char* submitResultName(SubmitResult result) noexcept;
 }

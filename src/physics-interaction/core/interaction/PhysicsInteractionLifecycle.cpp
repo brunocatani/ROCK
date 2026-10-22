@@ -471,10 +471,9 @@ namespace rock
         _equipped.toggleGrabReleasePressConsumedThisFrame = {};
         _equipped.holsterInputStates = {};
         _equipped.holsterInputConsumedThisFrame = {};
-        _equipped.shoulderSheath = {};
-        input_remap_runtime::setEquippedWeaponShoulderSheathActive(false);
         _equipped.stashStates = {};
-        _equipped.sheathRetrievalStates = {};
+        _equipped.secondWeaponStashStates = {};
+        _equipped.secondWeaponStashDecisions = {};
         equipped_weapon_shoulder::reset(
             _equipped.shoulderCoordinator);
         _equipped.shoulderGestureConsumedThisFrame = {};
@@ -533,10 +532,9 @@ namespace rock
         _equipped.holsterInputConsumedThisFrame = {};
         _equipped.authoredPrimaryFiringGrip.reset("physics-shutdown", _twoHandedGrip);
         if (!_lifecycle.initialized) {
-            _equipped.shoulderSheath = {};
-            input_remap_runtime::setEquippedWeaponShoulderSheathActive(false);
             _equipped.stashStates = {};
-            _equipped.sheathRetrievalStates = {};
+            _equipped.secondWeaponStashStates = {};
+            _equipped.secondWeaponStashDecisions = {};
             equipped_weapon_shoulder::reset(
                 _equipped.shoulderCoordinator);
             _equipped.shoulderGestureConsumedThisFrame = {};
@@ -621,7 +619,6 @@ namespace rock
             collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
         }
 
-        clearEquippedWeaponShoulderSheath("physics-shutdown");
         _suppression.nativeGrenadeLeases.clearTracking();
         _twoHandedGrip.reset();
         _equipped.transition.pendingGrip() = {};
@@ -671,7 +668,8 @@ namespace rock
         _grabInput.heldWeaponTriggerEquipIntents = {};
         _forceGrab.committedThisFrame = {};
         _equipped.stashStates = {};
-        _equipped.sheathRetrievalStates = {};
+        _equipped.secondWeaponStashStates = {};
+        _equipped.secondWeaponStashDecisions = {};
         equipped_weapon_shoulder::reset(
             _equipped.shoulderCoordinator);
         _equipped.shoulderGestureConsumedThisFrame = {};

@@ -76,7 +76,6 @@ namespace rock
             ExpectedIdentityTimeout,
             NativeAnimationHandoff,
             WeaponNoLongerDrawn,
-            IntentionalShoulderSheathe,
             RecoveryExhausted,
             ProviderLost,
             Shutdown,
@@ -111,13 +110,6 @@ namespace rock
             bool compatibilityBlocking{ false };
             bool gripSuspended{ false };
             std::uint32_t nativeWeaponState{ 0 };
-            // Exact identity lease for ROCK's physical shoulder sheath. It
-            // exempts only the instance ROCK deliberately transitioned; it is
-            // never a general permission for equipped weapons to stay hidden.
-            bool intentionalShoulderSheathActive{ false };
-            std::uint32_t shoulderSheathFormID{ 0 };
-            std::uintptr_t shoulderSheathInstanceData{ 0 };
-            std::uint32_t shoulderSheathEquipIndex{ 0 };
             // Native reload/bolt animation owns the weapon presentation while
             // this is set. Equip recovery must neither unhide nor reattach the
             // same graph during that authority window.

@@ -94,7 +94,6 @@ namespace rock::input_remap_runtime
     void setHeldObjectFormId(bool isLeft, std::uint32_t formId, bool looseWeapon = false);
     void setEquippedWeaponFiringGripInputActive(bool active);
     void setEquippedWeaponPrimaryDetached(bool detached);
-    void setEquippedWeaponShoulderSheathActive(bool active);
     // Left-hand fire: while true (LEFT hand occupies the firing grip), the
     // OpenVR hooks present the physical left trigger to the game as the
     // primary wand's trigger and blank both physical trigger identities.

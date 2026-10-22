@@ -916,7 +916,6 @@
         case InternalTerminal::ExpectedIdentityTimeout: outState.terminalResult = Terminal::ExpectedIdentityTimeout; break;
         case InternalTerminal::NativeAnimationHandoff: outState.terminalResult = Terminal::NativeAnimationHandoff; break;
         case InternalTerminal::WeaponNoLongerDrawn: outState.terminalResult = Terminal::WeaponNoLongerDrawn; break;
-        case InternalTerminal::IntentionalShoulderSheathe: outState.terminalResult = Terminal::IntentionalShoulderSheathe; break;
         case InternalTerminal::RecoveryExhausted: outState.terminalResult = Terminal::RecoveryExhausted; break;
         case InternalTerminal::ProviderLost: outState.terminalResult = Terminal::ProviderLost; break;
         case InternalTerminal::Shutdown: outState.terminalResult = Terminal::Shutdown; break;

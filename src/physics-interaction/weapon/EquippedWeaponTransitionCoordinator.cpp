@@ -326,15 +326,6 @@ namespace rock
             }
             input_remap_runtime::setWeaponTransferPending(_heldTransfer.blocksFire());
         }
-        const bool currentMatchesIntentionalShoulderSheath =
-            input.intentionalShoulderSheathActive &&
-            current.valid() &&
-            current.formID == input.shoulderSheathFormID &&
-            current.instanceData == input.shoulderSheathInstanceData &&
-            current.equipIndex == input.shoulderSheathEquipIndex &&
-            held_weapon_equip_state_policy::
-                isShoulderStashedPresentationState(
-                    input.nativeWeaponState);
         if (!_observationInitialized) {
             _observedIdentity = current;
             _observationInitialized = true;
@@ -347,8 +338,7 @@ namespace rock
                     0;
                 _menuEntryCaptured = true;
             }
-            if (current.valid() &&
-                !currentMatchesIntentionalShoulderSheath) {
+            if (current.valid()) {
                 bindCurrentIdentity(
                     current,
                     Source::ObservedEquip,
@@ -378,8 +368,7 @@ namespace rock
                     "expected-identity-observed",
                     {},
                     0);
-            } else if (!_waitingForExpectedIdentity && current.valid() &&
-                !currentMatchesIntentionalShoulderSheath) {
+            } else if (!_waitingForExpectedIdentity && current.valid()) {
                 if (_bridge.isActive() && _boundIdentity.valid() && current != _boundIdentity) {
                     _bridge.release("equipped-weapon-changed");
                 }
@@ -399,26 +388,6 @@ namespace rock
         }
 
         _wasMenuBlocking = input.menuBlocking;
-        if (currentMatchesIntentionalShoulderSheath) {
-            _requestCurrentPending = false;
-            if (menuClosed) {
-                _menuEntryIdentity = {};
-                _menuEntryNativeInstanceNode = 0;
-                _menuEntryCaptured = false;
-            }
-            if (_active) {
-                ROCK_LOG_INFO(Weapon,
-                    "Equipped weapon transition yielded to exact shoulder sheath formID={:08X} instance={:#x} equipIndex={}",
-                    current.formID,
-                    current.instanceData,
-                    current.equipIndex);
-                finish(
-                    TerminalResult::IntentionalShoulderSheathe,
-                    "intentional-shoulder-sheathe",
-                    true);
-            }
-            return;
-        }
         if (menuClosed && !_waitingForExpectedIdentity && current.valid()) {
             bindCurrentIdentity(
                 current,

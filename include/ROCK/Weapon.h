@@ -73,7 +73,7 @@ namespace rock::api::weapon {
         RecoveryExhausted = 7,
         ProviderLost = 8,
         Shutdown = 9,
-        IntentionalShoulderSheathe = 10,
+        // 10 retired (shoulder sheath removed); never reuse.
     };
 
     /*

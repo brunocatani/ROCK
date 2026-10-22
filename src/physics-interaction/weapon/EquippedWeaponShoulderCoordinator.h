@@ -4,6 +4,14 @@
 
 #include <cstdint>
 
+/*
+ * Shoulder stash gesture for the primary equipped weapon. The hand carrying
+ * the weapon taps (toggle grab) or holds and releases (hold grab) inside the
+ * HMD-relative back volume, and the weapon returns to the inventory. The
+ * coordinator only decides the gesture; the frame owner executes the stash.
+ * A stashed weapon leaves the equipment, so its ownership key changes and
+ * the coordinator resets with the still-held buttons blocked until release.
+ */
 namespace rock::equipped_weapon_shoulder
 {
     enum class Hand : std::uint8_t
@@ -30,21 +38,17 @@ namespace rock::equipped_weapon_shoulder
         NativeTransitionBlocked,
         DrawnReady,
         DrawnShoulderArmed,
-        SheathSubmitted,
-        StoredWaitForGestureEnd,
-        StoredReady,
-        RetrieveSubmitted,
-        DrawnWaitForGestureEnd,
+        StashSubmitted,
+        WaitForGestureEnd,
     };
 
     enum class Action : std::uint8_t
     {
         None = 0,
-        SubmitSheath,
-        SubmitRetrieve,
+        SubmitStash,
     };
 
-    enum class SheathInputMode : std::uint8_t
+    enum class StashInputMode : std::uint8_t
     {
         Tap = 0,
         HoldRelease,
@@ -59,10 +63,8 @@ namespace rock::equipped_weapon_shoulder
         InvalidPresentation,
         NativeTransition,
         GestureConsumed,
-        SheathTap,
+        StashTap,
         HoldRelease,
-        RetrievalTap,
-        RetrievalHeld,
     };
 
     struct ButtonState
@@ -82,7 +84,7 @@ namespace rock::equipped_weapon_shoulder
 
     struct HandInput
     {
-        SheathInputMode sheathInputMode{ SheathInputMode::Tap };
+        StashInputMode stashInputMode{ StashInputMode::Tap };
         bool disabled{ false };
         bool eligible{ false };
         bool carriesWeapon{ false };
@@ -94,11 +96,8 @@ namespace rock::equipped_weapon_shoulder
     {
         bool enabled{ false };
         bool inputAllowed{ false };
-        bool storedActive{ false };
-        bool stashedByLeftHand{ false };
         std::uint64_t weaponOwnershipKey{ 0 };
         NativePresentation presentation{ NativePresentation::Invalid };
-        body_zone::BodyZoneKind storedZone{ body_zone::BodyZoneKind::Unknown };
         HandInput right{};
         HandInput left{};
     };
@@ -176,45 +175,31 @@ namespace rock::equipped_weapon_shoulder
             return "drawn-ready";
         case Phase::DrawnShoulderArmed:
             return "drawn-shoulder-armed";
-        case Phase::SheathSubmitted:
-            return "sheath-submitted";
-        case Phase::StoredWaitForGestureEnd:
-            return "stored-wait-gesture-end";
-        case Phase::StoredReady:
-            return "stored-ready";
-        case Phase::RetrieveSubmitted:
-            return "retrieve-submitted";
-        case Phase::DrawnWaitForGestureEnd:
-            return "drawn-wait-gesture-end";
+        case Phase::StashSubmitted:
+            return "stash-submitted";
+        case Phase::WaitForGestureEnd:
+            return "wait-gesture-end";
         }
         return "unknown";
     }
 
     [[nodiscard]] inline constexpr const char* actionName(const Action action) noexcept
     {
-        switch (action) {
-        case Action::SubmitSheath:
-            return "submit-sheath";
-        case Action::SubmitRetrieve:
-            return "submit-retrieve";
-        case Action::None:
-            break;
-        }
-        return "none";
+        return action == Action::SubmitStash ? "submit-stash" : "none";
     }
 
-    [[nodiscard]] inline constexpr SheathInputMode resolveSheathInputMode(
+    [[nodiscard]] inline constexpr StashInputMode resolveStashInputMode(
         const bool immersiveWeaponsEnabled,
         const bool toggleGrabEnabled) noexcept
     {
         return immersiveWeaponsEnabled && !toggleGrabEnabled ?
-            SheathInputMode::HoldRelease : SheathInputMode::Tap;
+            StashInputMode::HoldRelease : StashInputMode::Tap;
     }
 
-    [[nodiscard]] inline constexpr const char* sheathInputModeName(
-        const SheathInputMode mode) noexcept
+    [[nodiscard]] inline constexpr const char* stashInputModeName(
+        const StashInputMode mode) noexcept
     {
-        return mode == SheathInputMode::HoldRelease ?
+        return mode == StashInputMode::HoldRelease ?
             "hold-release" : "tap";
     }
 
@@ -233,14 +218,10 @@ namespace rock::equipped_weapon_shoulder
             return "native-transition";
         case Reason::GestureConsumed:
             return "gesture-consumed";
-        case Reason::SheathTap:
-            return "sheath-tap";
+        case Reason::StashTap:
+            return "stash-tap";
         case Reason::HoldRelease:
             return "hold-release";
-        case Reason::RetrievalTap:
-            return "retrieval-tap";
-        case Reason::RetrievalHeld:
-            return "retrieval-held";
         case Reason::None:
             break;
         }
@@ -341,15 +322,8 @@ namespace rock::equipped_weapon_shoulder
         [[nodiscard]] inline constexpr Phase stablePhaseFor(
             const FrameInput& input) noexcept
         {
-            if (input.storedActive &&
-                input.presentation == NativePresentation::StableSheathed) {
-                return Phase::StoredReady;
-            }
-            if (!input.storedActive &&
-                input.presentation == NativePresentation::StableDrawn) {
-                return Phase::DrawnReady;
-            }
-            return Phase::NativeTransitionBlocked;
+            return input.presentation == NativePresentation::StableDrawn ?
+                Phase::DrawnReady : Phase::NativeTransitionBlocked;
         }
 
         inline constexpr void clearAction(RuntimeState& state) noexcept
@@ -367,85 +341,22 @@ namespace rock::equipped_weapon_shoulder
             state.armedConfidence = 0.0f;
         }
 
-        [[nodiscard]] inline constexpr bool sameStoredShoulder(
-            const FrameInput& input,
-            const HandInput& hand) noexcept
-        {
-            return hand.detector.candidate &&
-                   hand.detector.zone == input.storedZone;
-        }
-
-        [[nodiscard]] inline constexpr Hand selectRetrievalHand(
-            const FrameInput& input,
-            const GestureFrame& rightGesture,
-            const GestureFrame& leftGesture,
-            Reason& outReason) noexcept
-        {
-            const auto eligible = [&](const HandInput& hand,
-                                      const GestureFrame& gesture) {
-                if (hand.disabled || !hand.eligible || !gesture.valid ||
-                    gesture.blocked || !sameStoredShoulder(input, hand)) {
-                    return false;
-                }
-                const bool tap = hand.button.pressed;
-                const bool heldPull =
-                    hand.sheathInputMode == SheathInputMode::HoldRelease &&
-                    hand.button.held &&
-                    hand.detector.confirmed;
-                return tap || heldPull;
-            };
-
-            const bool rightEligible = eligible(input.right, rightGesture);
-            const bool leftEligible = eligible(input.left, leftGesture);
-            if (rightEligible != leftEligible) {
-                const Hand selected = leftEligible ? Hand::Left : Hand::Right;
-                const auto& selectedInput = inputFor(input, selected);
-                outReason = selectedInput.button.pressed ?
-                    Reason::RetrievalTap : Reason::RetrievalHeld;
-                return selected;
-            }
-            if (!rightEligible) {
-                return Hand::None;
-            }
-
-            if (input.right.detector.confidence !=
-                input.left.detector.confidence) {
-                const Hand selected =
-                    input.left.detector.confidence >
-                            input.right.detector.confidence ?
-                        Hand::Left : Hand::Right;
-                const auto& selectedInput = inputFor(input, selected);
-                outReason = selectedInput.button.pressed ?
-                    Reason::RetrievalTap : Reason::RetrievalHeld;
-                return selected;
-            }
-
-            const Hand selected = input.stashedByLeftHand ?
-                Hand::Left : Hand::Right;
-            const auto& selectedInput = inputFor(input, selected);
-            outReason = selectedInput.button.pressed ?
-                Reason::RetrievalTap : Reason::RetrievalHeld;
-            return selected;
-        }
-
         inline constexpr void beginAction(
             RuntimeState& state,
             Decision& decision,
-            const Action action,
             const Reason reason,
             const Hand hand,
             const GestureFrame& gesture,
             const DetectorDecision& detector) noexcept
         {
-            state.activeAction = action;
+            state.activeAction = Action::SubmitStash;
             state.actionHand = hand;
             state.actionGestureSerial = gesture.serial;
-            state.phase = action == Action::SubmitSheath ?
-                Phase::SheathSubmitted : Phase::RetrieveSubmitted;
+            state.phase = Phase::StashSubmitted;
             clearArm(state);
 
-            decision.action = action;
-            decision.gestureAction = action;
+            decision.action = Action::SubmitStash;
+            decision.gestureAction = Action::SubmitStash;
             decision.reason = reason;
             decision.hand = hand;
             decision.zone = detector.zone;
@@ -483,9 +394,9 @@ namespace rock::equipped_weapon_shoulder
             return decision;
         }
 
-        const bool identityChanged =
-            state.weaponOwnershipKey != input.weaponOwnershipKey;
-        if (identityChanged) {
+        // A new weapon (the stashed one left, or another equipped) never
+        // inherits a held button: it must be released first.
+        if (state.weaponOwnershipKey != input.weaponOwnershipKey) {
             reset(state);
             state.weaponOwnershipKey = input.weaponOwnershipKey;
             state.rightGesture.blockedUntilRelease =
@@ -501,91 +412,23 @@ namespace rock::equipped_weapon_shoulder
         const GestureFrame leftGesture = detail::prepareGesture(
             state.leftGesture,
             input.left.button);
-        if (state.activeAction != Action::None) {
-            decision.gestureAction = state.activeAction;
-            decision.suppressEquippedDrop = true;
-            const auto& actionFrame = state.actionHand == Hand::Left ?
-                leftGesture : rightGesture;
-            if (state.actionHand != Hand::None &&
-                actionFrame.valid &&
-                actionFrame.serial != state.actionGestureSerial) {
-                decision.consumeLeftInput =
-                    state.actionHand == Hand::Left;
-                decision.consumeRightInput =
-                    state.actionHand == Hand::Right;
-                decision.hand = state.actionHand;
-                decision.gestureSerial = actionFrame.serial;
-                decision.reason = Reason::GestureConsumed;
-                // A second press during the native transition is part of the
-                // existing transaction, never a new opposite-direction tap.
-                // Extend ownership through that newer cycle's release.
-                state.actionGestureSerial = actionFrame.serial;
-            }
-        }
 
         bool pendingOrConsumed = false;
         if ((state.phase == Phase::DrawnReady ||
                 state.phase == Phase::DrawnShoulderArmed) &&
-            (input.storedActive ||
-                input.presentation != NativePresentation::StableDrawn)) {
+            input.presentation != NativePresentation::StableDrawn) {
             detail::clearArm(state);
-            state.phase = detail::stablePhaseFor(input);
-            pendingOrConsumed = true;
-        } else if (state.phase == Phase::StoredReady &&
-                   (!input.storedActive ||
-                       input.presentation !=
-                           NativePresentation::StableSheathed)) {
-            state.phase = detail::stablePhaseFor(input);
+            state.phase = Phase::NativeTransitionBlocked;
             pendingOrConsumed = true;
         }
 
         switch (state.phase) {
-        case Phase::SheathSubmitted:
+        case Phase::StashSubmitted:
+        case Phase::WaitForGestureEnd:
+            // The stash leaves within the frame it is accepted; until the
+            // identity changes (or a refused stash's gesture ends) the
+            // gesture stays consumed and never becomes a drop or a grab.
             pendingOrConsumed = true;
-            if (input.storedActive &&
-                input.presentation == NativePresentation::StableSheathed) {
-                if (detail::gestureStillActive(
-                        state,
-                        state.actionHand,
-                        state.actionGestureSerial)) {
-                    state.phase = Phase::StoredWaitForGestureEnd;
-                } else {
-                    state.phase = Phase::StoredReady;
-                    detail::clearAction(state);
-                }
-            }
-            break;
-        case Phase::RetrieveSubmitted:
-            pendingOrConsumed = true;
-            if (!input.storedActive &&
-                input.presentation == NativePresentation::StableDrawn) {
-                if (detail::gestureStillActive(
-                        state,
-                        state.actionHand,
-                        state.actionGestureSerial)) {
-                    state.phase = Phase::DrawnWaitForGestureEnd;
-                } else {
-                    state.phase = Phase::DrawnReady;
-                    detail::clearAction(state);
-                }
-            }
-            break;
-        case Phase::StoredWaitForGestureEnd:
-            pendingOrConsumed = true;
-            if (!input.storedActive ||
-                input.presentation !=
-                    NativePresentation::StableSheathed) {
-                state.phase = detail::stablePhaseFor(input);
-                detail::clearAction(state);
-            }
-            break;
-        case Phase::DrawnWaitForGestureEnd:
-            pendingOrConsumed = true;
-            if (input.storedActive ||
-                input.presentation != NativePresentation::StableDrawn) {
-                state.phase = detail::stablePhaseFor(input);
-                detail::clearAction(state);
-            }
             break;
         case Phase::NativeTransitionBlocked:
             pendingOrConsumed = true;
@@ -607,47 +450,18 @@ namespace rock::equipped_weapon_shoulder
             detail::finishGesture(state.rightGesture, rightGesture);
             detail::finishGesture(state.leftGesture, leftGesture);
 
-            if (state.phase == Phase::StoredWaitForGestureEnd &&
+            if (state.phase == Phase::WaitForGestureEnd &&
                 !detail::gestureStillActive(
                     state,
                     state.actionHand,
                     state.actionGestureSerial)) {
-                state.phase = Phase::StoredReady;
-                detail::clearAction(state);
-            } else if (state.phase == Phase::DrawnWaitForGestureEnd &&
-                       !detail::gestureStillActive(
-                           state,
-                           state.actionHand,
-                           state.actionGestureSerial)) {
-                state.phase = Phase::DrawnReady;
+                state.phase = detail::stablePhaseFor(input);
                 detail::clearAction(state);
             }
             return decision;
         }
 
-        if (state.phase == Phase::StoredReady) {
-            Reason retrievalReason = Reason::None;
-            const Hand retrievalHand = detail::selectRetrievalHand(
-                input,
-                rightGesture,
-                leftGesture,
-                retrievalReason);
-            if (retrievalHand != Hand::None) {
-                const auto& handInput = detail::inputFor(
-                    input,
-                    retrievalHand);
-                const auto& gesture = retrievalHand == Hand::Left ?
-                    leftGesture : rightGesture;
-                detail::beginAction(
-                    state,
-                    decision,
-                    Action::SubmitRetrieve,
-                    retrievalReason,
-                    retrievalHand,
-                    gesture,
-                    handInput.detector);
-            }
-        } else if (state.phase == Phase::DrawnReady) {
+        if (state.phase == Phase::DrawnReady) {
             const Hand carryHand = input.left.carriesWeapon ?
                 Hand::Left : input.right.carriesWeapon ?
                 Hand::Right : Hand::None;
@@ -657,19 +471,18 @@ namespace rock::equipped_weapon_shoulder
                     leftGesture : rightGesture;
                 if (!handInput.disabled && handInput.eligible &&
                     gesture.valid && !gesture.blocked) {
-                    if (handInput.sheathInputMode == SheathInputMode::Tap &&
+                    if (handInput.stashInputMode == StashInputMode::Tap &&
                         handInput.button.pressed &&
                         handInput.detector.candidate) {
                         detail::beginAction(
                             state,
                             decision,
-                            Action::SubmitSheath,
-                            Reason::SheathTap,
+                            Reason::StashTap,
                             carryHand,
                             gesture,
                             handInput.detector);
-                    } else if (handInput.sheathInputMode ==
-                                   SheathInputMode::HoldRelease &&
+                    } else if (handInput.stashInputMode ==
+                                   StashInputMode::HoldRelease &&
                                handInput.button.held &&
                                handInput.detector.confirmed) {
                         state.phase = Phase::DrawnShoulderArmed;
@@ -690,7 +503,7 @@ namespace rock::equipped_weapon_shoulder
                 gesture.serial == state.armedGestureSerial;
             if (!sameGesture || handInput.disabled ||
                 !handInput.eligible || !handInput.carriesWeapon ||
-                handInput.sheathInputMode != SheathInputMode::HoldRelease) {
+                handInput.stashInputMode != StashInputMode::HoldRelease) {
                 state.phase = Phase::DrawnReady;
                 detail::clearArm(state);
             } else if (handInput.button.released) {
@@ -703,7 +516,6 @@ namespace rock::equipped_weapon_shoulder
                 detail::beginAction(
                     state,
                     decision,
-                    Action::SubmitSheath,
                     Reason::HoldRelease,
                     armedHand,
                     gesture,
@@ -719,26 +531,14 @@ namespace rock::equipped_weapon_shoulder
         return decision;
     }
 
-    inline constexpr void reportExecutionResult(
+    // A refused stash keeps the weapon; its gesture is consumed until it ends.
+    inline constexpr void reportStashResult(
         RuntimeState& state,
-        const Action action,
         const bool accepted) noexcept
     {
-        const bool matchingSheath =
-            action == Action::SubmitSheath &&
-            state.phase == Phase::SheathSubmitted;
-        const bool matchingRetrieve =
-            action == Action::SubmitRetrieve &&
-            state.phase == Phase::RetrieveSubmitted;
-        if (!matchingSheath && !matchingRetrieve) {
+        if (state.phase != Phase::StashSubmitted || accepted) {
             return;
         }
-        if (accepted) {
-            return;
-        }
-
-        state.phase = matchingSheath ?
-            Phase::DrawnWaitForGestureEnd :
-            Phase::StoredWaitForGestureEnd;
+        state.phase = Phase::WaitForGestureEnd;
     }
 }

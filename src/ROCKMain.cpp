@@ -219,7 +219,6 @@ namespace
         input_remap_runtime::setHandHeldWeapon(true, false);
         input_remap_runtime::setEquippedWeaponFiringGripInputActive(false);
         input_remap_runtime::setEquippedWeaponPrimaryDetached(false);
-        input_remap_runtime::setEquippedWeaponShoulderSheathActive(false);
     }
 
     /*

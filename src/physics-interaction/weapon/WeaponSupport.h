@@ -268,7 +268,6 @@ namespace rock::equipped_weapon_manual_ownership_policy
     {
         GripInput,
         HeldWeaponEquip,
-        ShoulderRetrieval,
         DefaultEquip,
         InventoryEquip,
     };
