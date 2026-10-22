@@ -839,23 +839,37 @@ namespace rock
         // The primary takes the hand chosen in the Pip-Boy (equip or
         // cross-hand move), or the left when the second weapon holds the
         // right hand. A support-held primary keeps its support hand.
+        // The hand that last fired this exact item. A re-draw of the same item
+        // (a promotion's draw recovery) releases its grip; it keeps that hand.
+        auto& memory = _equipped.firingHandMemory;
+        const auto ownershipKey = w.currentEquippedWeaponOwnershipKey;
+        if (_twoHandedGrip.isManualOwnershipActive() && ownershipKey != 0 && !_twoHandedGrip.isFiringGripDetached())
+            memory = { .ownershipKey = ownershipKey, .left = _twoHandedGrip.isFiringHandLeft() };
         if (!queueDefaultLeft && !w.inputBlockingMenuActive && runtime.weaponDrawn && observedEquippedWeaponFormID != 0 &&
             !equipGrip.pending && !_twoHandedGrip.isFiringGripDetached()) {
             const bool firingLeft = _twoHandedGrip.isFiringHandLeft();
             const bool moved = directedPrimaryPending && directedPrimaryMatches;
             if (moved) {
+                memory = {};
                 _equipped.directedPrimarySequence = directedPrimary.sequence;
                 native_hand_equipment::noteDirectedPrimaryApplied(directedPrimary.sequence);
                 ROCK_LOG_INFO(Weapon, "AKIMBO primary hand request formID={:08X} hand={} firing={}",
                     observedEquippedWeaponFormID, primaryDefaultLeft ? "left" : "right", firingLeft ? "left" : "right");
             }
-            if (primaryDefaultLeft && !firingLeft && (prepared.secondaryRight || moved)) {
+            const bool restored = !moved && !handSpecificOwnership && ownershipKey != 0 &&
+                memory.ownershipKey == ownershipKey && memory.left != firingLeft;
+            if (restored) {
+                ROCK_LOG_INFO(Weapon, "AKIMBO primary hand restored after its grip restarted formID={:08X} hand={}",
+                    observedEquippedWeaponFormID, memory.left ? "left" : "right");
+            }
+            const bool targetLeft = restored ? memory.left : primaryDefaultLeft;
+            if (targetLeft && !firingLeft && (prepared.secondaryRight || moved || restored)) {
                 if (_twoHandedGrip.isManualOwnershipActive()) {
                     _twoHandedGrip.reset();
                     clearEquippedWeaponFiringGripInputState();
                 }
                 queueDefaultLeft = true;
-            } else if (!primaryDefaultLeft && firingLeft && moved) {
+            } else if (!targetLeft && firingLeft && (moved || restored)) {
                 // Back to the right hand: release ROCK's left carry and
                 // the native right carry resumes.
                 ROCK_LOG_INFO(Weapon, "AKIMBO primary moved to hand=right formID={:08X}", observedEquippedWeaponFormID);

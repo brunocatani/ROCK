@@ -885,6 +885,12 @@ namespace rock
             int menuHoldFingerHand{ -1 };
             // Hand whose world transform the menu weapon hold claims; -1 none.
             int menuHoldHandClaim{ -1 };
+            // The hand that last fired the item of this ownership key.
+            struct FiringHandMemory
+            {
+                std::uint64_t ownershipKey{ 0 };
+                bool left{ false };
+            } firingHandMemory{};
             // The menu hold blocks FRIK's primary weapon hand pose and node ownership.
             bool menuHoldPoseBlocked{ false };
             // A Pip-Boy support attach on a weapon equipped in that menu waits
