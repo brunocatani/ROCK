@@ -1927,19 +1927,17 @@ namespace rock
 
         const bool shoulderStashSelected = shoulderDecision.action == equipped_weapon_shoulder::Action::SubmitStash;
         if (shoulderStashSelected) {
-            bool stashed = false;
             if (w.shoulderFrame.sourceHand != equipped_weapon_drop_policy::SourceHand::None) {
                 const bool left = equipped_weapon_drop_policy::isLeft(w.shoulderFrame.sourceHand);
                 // The carry ends before the weapon leaves, as a drop's would.
                 equipped_weapon_toggle_grab_policy::reset(_equipped.toggleGrabState);
                 _twoHandedGrip.restoreNativeRightEquippedCarry("shoulder-weapon-stashed");
                 _equipped.transition.pendingGrip() = {};
-                stashed = stashEquippedWeaponAtShoulder(frame, 0, left, w.shoulderFrame.detectorDecision);
+                (void)stashEquippedWeaponAtShoulder(frame, 0, left, w.shoulderFrame.detectorDecision);
                 shoulder_stash::resetRuntime(_equipped.stashStates[left ? 1u : 0u]);
             } else {
                 ROCK_LOG_ERROR(Weapon, "Equipped shoulder coordinator selected a stash without a source hand");
             }
-            equipped_weapon_shoulder::reportStashResult(_equipped.shoulderCoordinator, stashed);
         }
 
         const auto equippedWeaponDropRequest = _twoHandedGrip.consumeEquippedWeaponDropRequest();
@@ -2783,12 +2781,6 @@ namespace rock
         const auto providerGripOccupancy = roster.slotZeroGrips();
         maskProviderWeaponGrabInput(true, providerGripOccupancy.left.weaponEngaged(), leftPhysicalGrip);
         maskProviderWeaponGrabInput(false, providerGripOccupancy.right.weaponEngaged(), rightPhysicalGrip);
-        const std::uint64_t shoulderOwnershipKey =
-            _equipped.shoulderCoordinator.activeAction !=
-                    equipped_weapon_shoulder::Action::None ?
-                _equipped.shoulderCoordinator.weaponOwnershipKey :
-                currentEquippedWeaponOwnershipKey;
-
         const auto stashModeForHand = [&](bool isLeft) {
             return equipped_weapon_shoulder::resolveStashInputMode(
                 _equipped.handlingSettings.immersiveWeapon.firingGripDetachEnabled,
@@ -2798,7 +2790,7 @@ namespace rock
         equipped_weapon_shoulder::FrameInput coordinatorInput{
             .enabled = handlingEnabled,
             .inputAllowed = !menuInputActive,
-            .weaponOwnershipKey = shoulderOwnershipKey,
+            .weaponOwnershipKey = currentEquippedWeaponOwnershipKey,
             .presentation = nativePresentation,
             .right = {
                 .stashInputMode = stashModeForHand(false),

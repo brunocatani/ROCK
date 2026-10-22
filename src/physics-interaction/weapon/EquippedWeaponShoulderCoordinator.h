@@ -9,8 +9,9 @@
  * the weapon taps (toggle grab) or holds and releases (hold grab) inside the
  * HMD-relative back volume, and the weapon returns to the inventory. The
  * coordinator only decides the gesture; the frame owner executes the stash.
- * A stashed weapon leaves the equipment, so its ownership key changes and
- * the coordinator resets with the still-held buttons blocked until release.
+ * A submitted stash only consumes its own gesture until it ends. A stashed
+ * weapon leaves the equipment, so its ownership key changes and the
+ * coordinator resets with the still-held buttons blocked until release.
  */
 namespace rock::equipped_weapon_shoulder
 {
@@ -38,7 +39,6 @@ namespace rock::equipped_weapon_shoulder
         NativeTransitionBlocked,
         DrawnReady,
         DrawnShoulderArmed,
-        StashSubmitted,
         WaitForGestureEnd,
     };
 
@@ -175,8 +175,6 @@ namespace rock::equipped_weapon_shoulder
             return "drawn-ready";
         case Phase::DrawnShoulderArmed:
             return "drawn-shoulder-armed";
-        case Phase::StashSubmitted:
-            return "stash-submitted";
         case Phase::WaitForGestureEnd:
             return "wait-gesture-end";
         }
@@ -352,7 +350,7 @@ namespace rock::equipped_weapon_shoulder
             state.activeAction = Action::SubmitStash;
             state.actionHand = hand;
             state.actionGestureSerial = gesture.serial;
-            state.phase = Phase::StashSubmitted;
+            state.phase = Phase::WaitForGestureEnd;
             clearArm(state);
 
             decision.action = Action::SubmitStash;
@@ -423,11 +421,9 @@ namespace rock::equipped_weapon_shoulder
         }
 
         switch (state.phase) {
-        case Phase::StashSubmitted:
         case Phase::WaitForGestureEnd:
-            // The stash leaves within the frame it is accepted; until the
-            // identity changes (or a refused stash's gesture ends) the
-            // gesture stays consumed and never becomes a drop or a grab.
+            // The stash gesture stays consumed until it ends, so it never
+            // becomes a drop or a grab. The weapon leaving resets earlier.
             pendingOrConsumed = true;
             break;
         case Phase::NativeTransitionBlocked:
@@ -529,16 +525,5 @@ namespace rock::equipped_weapon_shoulder
         detail::finishGesture(state.rightGesture, rightGesture);
         detail::finishGesture(state.leftGesture, leftGesture);
         return decision;
-    }
-
-    // A refused stash keeps the weapon; its gesture is consumed until it ends.
-    inline constexpr void reportStashResult(
-        RuntimeState& state,
-        const bool accepted) noexcept
-    {
-        if (state.phase != Phase::StashSubmitted || accepted) {
-            return;
-        }
-        state.phase = Phase::WaitForGestureEnd;
     }
 }
