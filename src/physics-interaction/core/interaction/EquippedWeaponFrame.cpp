@@ -2,6 +2,8 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/native/TriggerEquipReadinessTrace.h"
 #include "physics-interaction/visual/GripZoneIndicators.h"
+#include "physics-interaction/weapon/WeaponScenePresentation.h"
+#include "physics-interaction/weapon/WeaponInputFilter.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
@@ -152,6 +154,40 @@ namespace rock
             request.form, refused ? refused : "applied-on-menu-exit");
     }
 
+    void PhysicsInteraction::holdEquippedWeaponInMenu()
+    {
+        constexpr const char* kTag = "ROCK.MenuWeaponHold";
+        constexpr int kPriority = 100;
+        const auto release = [this]() {
+            if (_equipped.menuHoldFingerHand < 0) return;
+            (void)frik_visual_authority::clearHandPose(kTag, frik_visual_authority::handFromBool(_equipped.menuHoldFingerHand == 1));
+            _equipped.menuHoldFingerHand = -1;
+        };
+        const auto& frame = runtime_state::currentFrame();
+        const auto& carry = _equipped.continuityGrip.pending ? _equipped.continuityGrip : _equipped.nativeCarryCapture;
+        const auto& grip = carry.supportGrip.validCarry() ? carry.supportGrip.grip : carry.firingGrip;
+        auto* weapon = currentEquippedWeaponForm();
+        auto* node = frame.localMenuBlocking && carry.pending && grip.valid() && weapon &&
+            weapon->formID == carry.targetWeaponFormID ? resolveEquippedWeaponInteractionNode() : nullptr;
+        const auto hand = frik_visual_authority::handFromBool(carry.isLeft);
+        RE::NiTransform handWorld{};
+        if (!node || !frik_visual_authority::tryGetHandWorldTransform(hand, handWorld) || !weapon_input_filter::usable(handWorld)) {
+            release();
+            return;
+        }
+        if (_equipped.menuHoldFingerHand != (carry.isLeft ? 1 : 0)) {
+            release();
+            frik_visual_authority::FingerLocalTransformOverride fingers{};
+            fingers.enabledMask = grip.fingerMask;
+            std::copy(grip.fingerLocals.begin(), grip.fingerLocals.end(), fingers.localTransforms);
+            if (frik_visual_authority::setAuthoredFingerPose(kTag, hand, fingers, kPriority))
+                _equipped.menuHoldFingerHand = carry.isLeft ? 1 : 0;
+        }
+        // The hand follows its controller; the weapon rides it at the grip.
+        (void)weapon_scene_presentation::moveWeaponPresentationRigidly(node,
+            transform_math::composeTransforms(handWorld, transform_math::invertTransform(grip.handWeaponLocal)));
+    }
+
     void PhysicsInteraction::captureEquippedWeaponContinuity()
     {
         if (_equipped.gripResumePending || runtime_state::currentFrame().localMenuBlocking) return;
@@ -185,6 +221,7 @@ namespace rock
         snapshot.firingGripWeaponLocal = firing.gripWeaponLocal;
         snapshot.hasFiringHandWeaponLocal = firing.valid();
         snapshot.hasFiringGripWeaponLocal = firing.valid();
+        snapshot.firingGrip = firing;
         snapshot.toggleAcquisitionCommitted = !snapshot.supportGrip.validCarry();
         snapshot.source = equipped_weapon_manual_ownership_policy::PrimaryOnlyStartSource::HeldWeaponEquip;
         // Keep no scene pointers or world transforms. This is sampled after

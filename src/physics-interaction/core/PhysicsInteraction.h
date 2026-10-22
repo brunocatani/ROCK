@@ -167,6 +167,10 @@ namespace rock
         void captureEquippedWeaponContinuity();
         // In menus: apply a Pip-Boy support attach/detach to the menu carry.
         void applyPipboySupportRequest();
+        // FRIK weapon/final passes: in menus the first weapon stays at its
+        // grip on the rendered hand with that grip's fingers; outside menus
+        // this releases the finger pose.
+        void holdEquippedWeaponInMenu();
         // Called before a final hand release, while the exact world reference
         // and native body set still exist. A failed restore retains the grab.
         bool prepareLooseWeaponRelease(RE::TESObjectREFR* reference, RE::hknpWorld* world, bool physicalDrop);
@@ -876,6 +880,8 @@ namespace rock
             // Native carry resumes natively after a menu; this capture is only
             // the base a Pip-Boy support attach turns into a two-handed resume.
             EquippedWeaponTransitionCoordinator::PendingGrip nativeCarryCapture{};
+            // Hand whose finger pose the menu weapon hold claims; -1 none.
+            int menuHoldFingerHand{ -1 };
             bool gripResumePending{ false };
             std::array<bool, 2> resumeAwaitingHold{};
             // Dedicated stash detector states for the equipped-weapon carry

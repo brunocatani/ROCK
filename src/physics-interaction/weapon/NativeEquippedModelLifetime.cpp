@@ -247,12 +247,23 @@ namespace rock::native_equipped_model_lifetime
         // second weapon, runtime 14 Oct 19:19:41). Skipped as well.
         constexpr std::uintptr_t kEquipHideReturn = 0xDCF669;
         constexpr std::uint32_t kEquipHideReason = 2;
+        // Opening the Pip-Boy hides the drawn weapon with reason 0 from this
+        // return address (runtime 22 Oct 12:55:50/12:56:01/12:56:14). ROCK
+        // keeps weapons in hand inside menus, so that hide is skipped.
+        constexpr std::uintptr_t kPipboyHideReturn = 0xC34826;
+        constexpr std::uint32_t kPipboyHideReason = 0;
         std::atomic<std::uint32_t> s_skippedHides{0};
         thread_local std::uint32_t t_survivorScopes = 0;
 
         bool cull(void* process, RE::Actor* actor, bool hidden, std::uint32_t reason) noexcept
         {
             const auto caller = reinterpret_cast<std::uintptr_t>(_ReturnAddress());
+            if (s_installed && hidden && reason == kPipboyHideReason && actor && actor == f4vr::getPlayer() &&
+                caller == REL::Offset(kPipboyHideReturn).address()) {
+                if (s_skippedHides.fetch_add(1, std::memory_order_relaxed) < 8)
+                    ROCK_LOG_INFO(Weapon, "Pip-Boy weapon hide skipped; weapons stay in hand inside menus");
+                return false;
+            }
             if (s_installed && hidden && reason == kEquipHideReason && actor && actor == f4vr::getPlayer() &&
                 caller == REL::Offset(kEquipHideReturn).address()) {
                 const bool secondEquip = native_hand_equipment::secondaryEquipInProgress(actor);

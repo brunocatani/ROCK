@@ -836,12 +836,14 @@ namespace
             native_secondary_presentation::afterWeaponPosition();
             s_physicsInteraction->synchronizeNativeScopePresentationAfterFrikUpdate();
         }
+        if (s_pluginLoaded && s_frikAvailable && s_physicsInteraction) s_physicsInteraction->holdEquippedWeaponInMenu();
     }
 
     // AfterWorldFinal: every bone world transform is final. Latch what was rendered.
     void onFrikAfterWorldFinal()
     {
         native_secondary_presentation::afterWorldFinal();
+        if (s_pluginLoaded && s_frikAvailable && s_physicsInteraction) s_physicsInteraction->holdEquippedWeaponInMenu();
         performance_profiler::ScopedTimer timer(performance_profiler::Scope::FinalPresentation);
         if (s_skeletonTickedThisFrame && s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
             s_physicsInteraction->captureRenderedHands();

@@ -28,6 +28,8 @@ namespace rock
             // The carry with the other hand on its support grip: what a Pip-Boy
             // support attach resumes, or the pair a detach set aside.
             weapon_grip_transfer::Pair supportAttach{};
+            // The firing hand's grip, for the menu weapon hold.
+            weapon_grip_transfer::HandGrip firingGrip{};
             bool menuResume{ false };
             std::array<equipped_weapon_toggle_grab_policy::TransferReleaseState, 2> pairedRelease{};
             bool pending{ false };
