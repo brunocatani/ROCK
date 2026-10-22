@@ -15,6 +15,7 @@
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/NativeHandEquipment.h"
+#include "physics-interaction/weapon/NativeSecondaryPresentation.h"
 #include "api/ProviderRuntimeServices.h"
 
 // Equipped-weapon frame: transitions, the per-frame equipped weapon update, authored primary grip runtime, handling settings, and shoulder sheath/retrieve.
@@ -111,6 +112,62 @@ namespace rock
         outNativeOverlayIndex = snapshot.nativeScopeOverlayIndex;
         outDirectTransitionRequired = snapshot.manualDirectTransitionRequired;
         return true;
+    }
+
+    bool PhysicsInteraction::tryGetSecondaryScopeTarget(std::uint64_t& outWeaponGenerationKey,
+        std::uint32_t& outNativeOverlayIndex, float& outMagnification, RE::NiPoint3* outAnchorModelLocal) const
+    {
+        outWeaponGenerationKey = 0;
+        outNativeOverlayIndex = 0;
+        outMagnification = 0.0f;
+        if (!g_rockConfig.rockEnableImmersiveScopes ||
+            !_lifecycle.initialized.load(std::memory_order_acquire) || !runtime_state::isLocalSkeletonReady()) {
+            return false;
+        }
+        const auto view = native_hand_equipment::equippedViews()[1];
+        if (!view.weapon) return false;
+        // The index-1 collision generates from the presented model, so its
+        // sight anchor is local to that model.
+        const auto snapshot = _secondaryWeaponCollision.getNativeScopeSightAnchorSnapshot();
+        if (!snapshot.valid || !snapshot.scopeEligible || !snapshot.nativeScopeOverlayValid || snapshot.weaponGenerationKey == 0 ||
+            snapshot.weaponGenerationKey != _secondaryWeaponCollision.getCurrentWeaponGenerationKey() ||
+            !manual_scope_target_policy::matchesNativeIdentity(snapshot.scopeWeaponIdentity, snapshot.scopeInstanceIdentity,
+                reinterpret_cast<std::uintptr_t>(view.weapon), reinterpret_cast<std::uintptr_t>(view.instance))) {
+            return false;
+        }
+        // The same ZOOM the mono renderer reads: instance first, then base.
+        const auto* instance = view.instance ? static_cast<const RE::TESObjectWEAP::InstanceData*>(view.instance) : nullptr;
+        const RE::BGSZoomData* zoom = instance ? instance->zoomData : nullptr;
+        if (!zoom) zoom = view.weapon->weaponData.zoomData;
+        outWeaponGenerationKey = snapshot.weaponGenerationKey;
+        outNativeOverlayIndex = snapshot.nativeScopeOverlayIndex;
+        outMagnification = zoom ? zoom->zoomData.fovMult : 0.0f;
+        if (outAnchorModelLocal) *outAnchorModelLocal = snapshot.anchorWeaponLocal;
+        return true;
+    }
+
+    bool PhysicsInteraction::isScopeEligible(const std::int32_t slot) const
+    {
+        if (slot == 1) {
+            std::uint64_t generation = 0;
+            std::uint32_t overlay = 0;
+            float magnification = 0.0f;
+            return tryGetSecondaryScopeTarget(generation, overlay, magnification);
+        }
+        return slot == 0 && _weaponCollision.getNativeScopeSightAnchorSnapshot().scopeEligible;
+    }
+
+    void PhysicsInteraction::synchronizeSecondaryScopePresentation()
+    {
+        if (!_lifecycle.initialized.load(std::memory_order_acquire) || !runtime_state::isLocalSkeletonReady()) return;
+        RE::NiPoint3 anchor{};
+        std::uint64_t generation = 0;
+        std::uint32_t overlay = 0;
+        float magnification = 0.0f;
+        auto* model = native_secondary_presentation::presentedModel();
+        const bool held = input_remap_runtime::manualScopeSlot() == 1 && model && model->IsNode() &&
+            tryGetSecondaryScopeTarget(generation, overlay, magnification, &anchor);
+        _twoHandedGrip.synchronizeSecondaryScopePresentation(held ? model->IsNode() : nullptr, generation, anchor);
     }
 
     EquippedWeaponTransitionCoordinator::PendingGrip PhysicsInteraction::equippedWeaponContinuity() const
@@ -1729,7 +1786,8 @@ namespace rock
         const EquippedWeaponScopeHandDriverFrame rightHandDriverFrame = captureScopeHandDriverFrame(false);
         bool nativeScopeRequestActive = false;
         const bool nativeScopeRequestStateValid = tryReadNativeScopeRequestState(nativeScopeRequestActive);
-        const bool manualScopeActivationRequested = input_remap_runtime::isManualScopeActivationRequested();
+        // Index 0's grip only: a held second-weapon scope is not this weapon's.
+        const bool manualScopeActivationRequested = input_remap_runtime::manualScopeSlot() == 0;
         const bool pairedGripPending = _equipped.transition.pendingGrip().pairedGrips.valid() ||
             _equipped.transition.pendingGrip().supportGrip.validCarry();
         const auto toGripInput = [](const GrabButtonState& state) {

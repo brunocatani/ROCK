@@ -818,7 +818,7 @@ namespace rock
                 driverValid ? &driverWorld : nullptr);
         }
         const bool scopeAnchorMatchesAuthority =
-            g_rockConfig.rockEnableImmersiveScopes && _scope.anchorValid &&
+            g_rockConfig.rockEnableImmersiveScopes && _scope.anchorValid && !_scope.secondaryOwnsPresentation &&
             _scope.anchorWeaponNode == weaponNode && _scope.anchorGenerationKey == effectiveGenerationKey;
 
         // This solve runs before FRIK aligns its scope camera. Only reuse the

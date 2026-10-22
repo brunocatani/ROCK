@@ -269,6 +269,9 @@ namespace rock::input_remap_runtime
         // MenuControls dispatches ButtonEvents serially on the frame/input
         // thread; these gesture states are never read from worker callbacks.
         manual_scope_input_policy::RuntimeState s_manualScopeInputState{};
+        // The second weapon's hand runs the same hold/tap gesture: hold scopes
+        // it, a tap reloads it. One scope at a time (s_manualScopeSlot).
+        manual_scope_input_policy::RuntimeState s_slotOneScopeInputState{};
         pipboy_pause_gesture_policy::RuntimeState s_pipboyPauseGestureState{};
         // Call-scoped on the dispatching input thread, never published to
         // controller polling threads. Scope exit restores nested dispatches.
@@ -286,7 +289,8 @@ namespace rock::input_remap_runtime
         bool s_frikPipboyBindingReady = false;
         float s_frikPipboyHoldSeconds = 0.0f;
         native_vats_input_suppression_policy::RuntimeState s_nativeVatsInputSuppressionState{};
-        std::atomic<bool> s_manualScopeActivationRequested{ false };
+        // Equipment index whose scope is held: -1 none, 0 or 1.
+        std::atomic<std::int32_t> s_manualScopeSlot{ -1 };
         std::atomic<bool> s_logicalJumpValid{ false };
         std::atomic<bool> s_logicalJumpHeld{ false };
         std::atomic<bool> s_logicalJumpReleaseToRearm{ false };
@@ -332,7 +336,8 @@ namespace rock::input_remap_runtime
         void blockManualScopeInputUntilRelease()
         {
             manual_scope_input_policy::blockUntilRelease(s_manualScopeInputState);
-            s_manualScopeActivationRequested.store(false, std::memory_order_release);
+            manual_scope_input_policy::blockUntilRelease(s_slotOneScopeInputState);
+            s_manualScopeSlot.store(-1, std::memory_order_release);
         }
 
         [[nodiscard]] float readNativeVansHoldThresholdSeconds()
@@ -2912,15 +2917,15 @@ namespace rock::input_remap_runtime
             return;
         }
         const auto routing = weaponRouting();
+        RawButtonState slotOneAccept{};
         if (routing.slotOneEquipped) {
-            auto& slotOneAccept = routing.slotOneLeft ? leftAcceptState : rightAcceptState;
-            if (slotOneAccept.available && slotOneAccept.pressed &&
-                s_gameplayInputAllowed.load(std::memory_order_acquire) &&
-                s_weaponDrawn.load(std::memory_order_acquire) && !isInputBlockingMenuActive())
-                (void)native_secondary_actions::requestReload();
-            // This hand holds slot 1's firing grip. Its X/A press must not
-            // become a slot-0 reload or a physical-reload gesture.
-            slotOneAccept={};
+            // This hand holds slot 1's firing grip. Its X/A gesture belongs to
+            // slot 1 and must not become a slot-0 reload or physical gesture.
+            auto& handAccept = routing.slotOneLeft ? leftAcceptState : rightAcceptState;
+            slotOneAccept = handAccept;
+            handAccept = {};
+        } else {
+            manual_scope_input_policy::reset(s_slotOneScopeInputState);
         }
         if(physical_reload_input::observe(true,leftAcceptState))leftAcceptState={};
         if(physical_reload_input::observe(false,rightAcceptState))rightAcceptState={};
@@ -2948,7 +2953,7 @@ namespace rock::input_remap_runtime
             };
         };
         const auto previousState = s_manualScopeInputState.state;
-        const auto decision = manual_scope_input_policy::update(s_manualScopeInputState,
+        auto decision = manual_scope_input_policy::update(s_manualScopeInputState,
             manual_scope_input_policy::Input{
                 .gameplayInputAllowed = gameplayAllowed,
                 .menuInputActive = menuActive,
@@ -2961,7 +2966,48 @@ namespace rock::input_remap_runtime
                 .deltaSeconds = deltaSeconds,
                 .holdSeconds = g_rockConfig.rockManualScopeHoldSeconds,
             });
-        s_manualScopeActivationRequested.store(decision.scopeRequested, std::memory_order_release);
+        manual_scope_input_policy::Decision slotOne{};
+        if (routing.slotOneEquipped && !g_rockConfig.rockEnableImmersiveScopes) {
+            // Vanilla scopes: slot 1 keeps its reload on press.
+            if (slotOneAccept.available && slotOneAccept.pressed && gameplayAllowed && weaponDrawn && !menuActive)
+                (void)native_secondary_actions::requestReload();
+        } else if (routing.slotOneEquipped) {
+            const auto slotOneButton = toManualButtonState(slotOneAccept);
+            const auto slotOnePrevious = s_slotOneScopeInputState.state;
+            slotOne = manual_scope_input_policy::update(s_slotOneScopeInputState,
+                manual_scope_input_policy::Input{
+                    .gameplayInputAllowed = gameplayAllowed,
+                    .menuInputActive = menuActive,
+                    .weaponDrawn = weaponDrawn,
+                    .firingHandIsLeft = routing.slotOneLeft,
+                    .leftButton = routing.slotOneLeft ? slotOneButton : manual_scope_input_policy::ButtonState{},
+                    .rightButton = routing.slotOneLeft ? manual_scope_input_policy::ButtonState{} : slotOneButton,
+                    .deltaSeconds = deltaSeconds,
+                    .holdSeconds = g_rockConfig.rockManualScopeHoldSeconds,
+                });
+            if (slotOne.dispatchReload) (void)native_secondary_actions::requestReload();
+            if ((slotOne.state != slotOnePrevious && std::string_view(slotOne.reason) != "gameplay-blocked") || slotOne.dispatchReload) {
+                ROCK_LOG_DEBUG(Input, "Manual scope input: slot=1 hand={} state={}->{} scope={} reload={} reason={}",
+                    routing.slotOneLeft ? "left-X" : "right-A", static_cast<std::uint32_t>(slotOnePrevious),
+                    static_cast<std::uint32_t>(slotOne.state), slotOne.scopeRequested ? "held" : "off",
+                    slotOne.dispatchReload ? "dispatch" : "no", slotOne.reason);
+            }
+        }
+        // One scope at a time: the slot already scoped keeps it, and a hold
+        // the other hand reaches meanwhile waits for its own release.
+        const auto owner = s_manualScopeSlot.load(std::memory_order_acquire);
+        const bool slotZeroKeeps = owner == 0 && decision.scopeRequested;
+        const bool slotOneKeeps = owner == 1 && slotOne.scopeRequested;
+        if ((slotZeroKeeps || (!slotOneKeeps && decision.scopeRequested)) && slotOne.scopeRequested) {
+            manual_scope_input_policy::blockUntilRelease(s_slotOneScopeInputState);
+            slotOne.scopeRequested = false;
+            ROCK_LOG_DEBUG(Input, "Manual scope input: slot=1 hold refused; slot 0 holds the scope");
+        } else if (slotOneKeeps && decision.scopeRequested) {
+            manual_scope_input_policy::blockUntilRelease(s_manualScopeInputState);
+            decision.scopeRequested = false;
+            ROCK_LOG_DEBUG(Input, "Manual scope input: slot=0 hold refused; slot 1 holds the scope");
+        }
+        s_manualScopeSlot.store(decision.scopeRequested ? 0 : slotOne.scopeRequested ? 1 : -1, std::memory_order_release);
 
         if (decision.state != previousState || decision.dispatchReload) {
             ROCK_LOG_DEBUG(Input,
@@ -2986,7 +3032,12 @@ namespace rock::input_remap_runtime
 
     bool isManualScopeActivationRequested()
     {
-        return g_rockConfig.rockEnableImmersiveScopes && s_manualScopeActivationRequested.load(std::memory_order_acquire);
+        return manualScopeSlot() >= 0;
+    }
+
+    std::int32_t manualScopeSlot()
+    {
+        return g_rockConfig.rockEnableImmersiveScopes ? s_manualScopeSlot.load(std::memory_order_acquire) : -1;
     }
 
     bool isMenuInputActive()

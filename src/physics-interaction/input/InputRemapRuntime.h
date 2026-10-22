@@ -129,6 +129,8 @@ namespace rock::input_remap_runtime
     // Published manual-scope level state. The native scope decision hook owns
     // the engine transition; input runtime owns only the physical hold gesture.
     bool isManualScopeActivationRequested();
+    // The equipment index whose scope is held: -1 none, 0 or 1.
+    std::int32_t manualScopeSlot();
     bool isMenuInputActive();
     // Frame-thread query using the same ViewCaster classification as Activate.
     bool hasNativeActivationTarget(bool primaryHand);

@@ -165,6 +165,7 @@ namespace rock
             clearImmersiveScopePresentation();
             return;
         }
+        if (_scope.secondaryOwnsPresentation) return;
         if (!weaponNode || currentWeaponGenerationKey == 0 || !_scope.anchorValid || _scope.anchorWeaponNode != weaponNode ||
             _scope.anchorGenerationKey != currentWeaponGenerationKey) {
             clearNativeScopeOverlayAuthority(true);
@@ -201,6 +202,61 @@ namespace rock
             _scope.cameraDebugSnapshot = makeNativeScopeCameraDebugSnapshot(_scope.cameraDebugSnapshot, currentWeaponGenerationKey,
                 NativeScopeCameraWriteSource::PostFrikPresentationSync, capture, result, _scope.anchorSource);
         }
+    }
+
+    void TwoHandedGrip::synchronizeSecondaryScopePresentation(RE::NiNode* model, const std::uint64_t generation,
+        const RE::NiPoint3& anchorModelLocal)
+    {
+        auto& authority = _scope.secondaryCamera;
+        const bool held = g_rockConfig.rockEnableImmersiveScopes && model && generation != 0 &&
+            isFiniteTransform(model->world) && std::abs(model->world.scale) > 0.0001f;
+        _scope.secondaryOwnsPresentation = held;
+        if (!held) {
+            if (!authority.valid) return;
+            // Hand the camera and overlay back to index 0's presentation.
+            const auto* nodes = f4vr::getPlayerNodes();
+            auto* camera = nodes ? nodes->primaryWeaponScopeCamera : nullptr;
+            if (authority.hasAppliedLocal && camera && camera == authority.scopeCameraIdentity &&
+                camera->parent == authority.cameraParentIdentity &&
+                areTransformsNearlyEqual(camera->local, authority.lastAppliedCameraLocal)) {
+                camera->local = authority.nativeCameraLocal;
+                if (camera->parent) f4vr::updateTransforms(camera);
+                else camera->world = camera->local;
+            }
+            if (_scope.overlayCalibration.valid && _scope.overlayCalibration.weaponGenerationKey == authority.weaponGenerationKey)
+                clearNativeScopeOverlayAuthority(true);
+            ROCK_LOG_INFO(Weapon, "TwoHandedGrip: second weapon scope released generation={:016X}", authority.weaponGenerationKey);
+            authority = {};
+            return;
+        }
+        const auto capture = captureNativeScopeCameraFollow(model);
+        if (!capture.valid) return;
+        if (!authority.valid || authority.weaponGenerationKey != generation || authority.weaponNodeIdentity != model ||
+            authority.scopeCameraIdentity != capture.camera) {
+            // No FRIK alignment exists for this model. Its neutral basis maps
+            // camera X to weapon +Y; roll comes from weapon +Z, as captured
+            // for index 0 (tryCaptureRigidAnchorFrameWeaponLocal).
+            RE::NiMatrix3 forward{};
+            forward.entry[0][1] = 1.0f;
+            RE::NiTransform cameraLocal{};
+            if (!native_scope_camera_follow_math::tryBuildWeaponAlignedCameraRotation(forward, cameraLocal.rotate)) return;
+            cameraLocal.scale = capture.cameraWorldBefore.scale / model->world.scale;
+            if (!std::isfinite(cameraLocal.scale) || cameraLocal.scale <= 0.0001f) return;
+            authority = {};
+            authority.weaponGenerationKey = generation;
+            authority.weaponNodeIdentity = model;
+            authority.scopeCameraIdentity = capture.camera;
+            authority.nativeCameraWeaponLocal = cameraLocal;
+            authority.cameraWeaponLocal = cameraLocal;
+            authority.valid = true;
+            ROCK_LOG_INFO(Weapon, "TwoHandedGrip: second weapon scope held generation={:016X} anchor=({:.2f},{:.2f},{:.2f})",
+                generation, anchorModelLocal.x, anchorModelLocal.y, anchorModelLocal.z);
+        }
+        authority.cameraWeaponLocal.translate = anchorModelLocal;
+        const auto target = native_scope_camera_follow_math::resolveRigidAnchorFrameWorld(model->world, authority.cameraWeaponLocal);
+        const auto result = applyNativeScopeCameraWorldTarget(capture, target, authority);
+        if (result.targetValid && result.writeApplied && captureNativeScopeOverlayCalibration(capture.cameraWorldBefore, generation))
+            (void)applyNativeScopeOverlayTarget(result.targetCameraWorld, generation);
     }
 
     void TwoHandedGrip::clearNativeScopeOverlayAuthority(const bool restoreNativeLocal)

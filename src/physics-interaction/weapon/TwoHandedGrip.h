@@ -542,6 +542,9 @@ namespace rock
          * weapon before the later render pass.
          */
         void synchronizeNativeScopePresentationAfterFrikUpdate(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
+        // The scope camera and overlay on equipment index 1's presented model
+        // while its scope is held (model non-null); null hands them back.
+        void synchronizeSecondaryScopePresentation(RE::NiNode* model, std::uint64_t generation, const RE::NiPoint3& anchorModelLocal);
 
         /*
          * Baseline one-hand calibration derived from Bethesda's native
@@ -2238,6 +2241,10 @@ namespace rock
                 RE::NiTransform calibrationInCameraLocal{};
                 bool valid{ false };
             } wandChainOverlay{};
+            // Equipment index 1's held scope owns the camera and overlay;
+            // index 0's presentation stands down meanwhile.
+            NativeScopeRigidFrameState secondaryCamera{};
+            bool secondaryOwnsPresentation{ false };
         };
 
         // Value-only equipped identity, independent of the grab-session state.

@@ -147,6 +147,15 @@ namespace rock
             bool& outDirectTransitionRequired,
             const void* expectedWeapon = nullptr,
             const void* expectedInstance = nullptr) const;
+        // Equipment index 1's scope: its generated sight, overlay and ZOOM.
+        [[nodiscard]] bool tryGetSecondaryScopeTarget(std::uint64_t& outWeaponGenerationKey,
+            std::uint32_t& outNativeOverlayIndex, float& outMagnification, RE::NiPoint3* outAnchorModelLocal = nullptr) const;
+        // Index 0 or 1 offers a scope; native admission and the button decision
+        // follow it so a scope never opens for a weapon without one.
+        [[nodiscard]] bool isScopeEligible(std::int32_t slot) const;
+        // AfterWorldFinal, after the second model's final placement: the scope
+        // camera and overlay follow index 1 while its scope is held.
+        void synchronizeSecondaryScopePresentation();
 
         void update();
 

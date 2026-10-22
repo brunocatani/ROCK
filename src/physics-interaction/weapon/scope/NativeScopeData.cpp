@@ -61,6 +61,9 @@ namespace rock::native_scope_data
         std::atomic<std::uint32_t> s_zoomReadFailureStage{ 0 };
         std::atomic<std::uint64_t> s_projectionSample{ 0 };
         std::atomic<bool> s_housingStateFailure{ false };
+        std::atomic<bool> s_secondaryActive{ false };
+        std::atomic<std::uint32_t> s_secondaryOverlay{ 0 };
+        std::atomic<float> s_secondaryMagnification{ 0.0f };
         static_assert(std::atomic<std::uint64_t>::is_always_lock_free);
 
         bool nativeHasScope(std::uint32_t nativeFlag, const void* weapon, const void* instance,
@@ -137,18 +140,20 @@ namespace rock::native_scope_data
             // This is ScopeMenu's SetOverlay call, not a global Scaleform hook.
             // Use a value owned by this callback so neither the weapon's ZOOM
             // nor native caller's argument storage needs restoration.
+            const bool secondary = s_secondaryActive.load(std::memory_order_acquire);
             const bool replace = count == 1 && args && args[0].IsUInt() &&
-                !policy::isValidNativeOverlayIndex(args[0].GetUInt());
-            Value fallback(policy::kDefaultOverlayIndex);
+                (secondary || !policy::isValidNativeOverlayIndex(args[0].GetUInt()));
+            Value fallback(secondary ? policy::resolveOverlay(s_secondaryOverlay.load(std::memory_order_relaxed)) :
+                policy::kDefaultOverlayIndex);
             const bool applied = s_invokeOverlay(objectInterface, object, result, method,
                 replace ? &fallback : args, count, displayObject);
             const auto authored = count == 1 && args && args[0].IsUInt() ? args[0].GetUInt() : 0xFFFFFFFFu;
-            const auto selected = replace ? policy::kDefaultOverlayIndex : authored;
+            const auto selected = replace ? fallback.GetUInt() : authored;
             s_overlaySample.store(authored | (static_cast<std::uint64_t>(selected & 0xFFFFu) << 32) |
                     (static_cast<std::uint64_t>(replace) << 48) | (static_cast<std::uint64_t>(applied) << 49),
                 std::memory_order_relaxed);
             s_overlayInvocationCount.fetch_add(1, std::memory_order_release);
-            if (replace) {
+            if (replace && !secondary) {
                 s_overlayFallbacks.fetch_add(1, std::memory_order_relaxed);
             }
             if (!applied) {
@@ -170,6 +175,15 @@ namespace rock::native_scope_data
                 s_zoomReadFailureStage.store(1, std::memory_order_relaxed);
                 s_zoomReadFailures.fetch_add(1, std::memory_order_relaxed);
                 return 90.0f;
+            }
+            if (s_secondaryActive.load(std::memory_order_acquire)) {
+                // 0x140332CB0's own projection, with the second weapon's ZOOM.
+                const float magnification = s_secondaryMagnification.load(std::memory_order_relaxed);
+                const float renderedFov = policy::magnifiedFieldOfView(baseFov, magnification);
+                s_projectionSample.store((static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(
+                        policy::resolveMagnification(magnification))) << 32) | std::bit_cast<std::uint32_t>(renderedFov),
+                    std::memory_order_relaxed);
+                return renderedFov;
             }
             RE::BGSZoomData* zoom = nullptr;
             if (instance && !native_memory::tryReadValue(&instance->zoomData, zoom)) {
@@ -339,6 +353,13 @@ namespace rock::native_scope_data
     void setEnabled(bool enabled)
     {
         s_enabled.store(enabled, std::memory_order_release);
+    }
+
+    void setSecondaryTarget(bool active, std::uint32_t overlay, float magnification)
+    {
+        s_secondaryOverlay.store(overlay, std::memory_order_relaxed);
+        s_secondaryMagnification.store(magnification, std::memory_order_relaxed);
+        s_secondaryActive.store(active, std::memory_order_release);
     }
 
     void restoreNativeHousing()

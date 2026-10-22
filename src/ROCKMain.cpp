@@ -442,7 +442,12 @@ namespace
             // The native geometry callback remains installed only as the
             // verified transition boundary. ROCK deliberately discards its
             // cone result and feeds the held firing-hand button level instead.
-            finalGeometryDecision = input_remap_runtime::isManualScopeActivationRequested();
+            // Native admission also holds for a scope on index 1 alone; a
+            // held slot then opens only if it offers one itself.
+            const auto slot = input_remap_runtime::manualScopeSlot();
+            const bool secondaryScope = s_physicsInteraction && s_physicsInteraction->isScopeEligible(1);
+            finalGeometryDecision = slot == 1 ? secondaryScope :
+                slot == 0 && (!secondaryScope || s_physicsInteraction->isScopeEligible(0));
             buttonDecisionApplied = true;
         }
 
@@ -521,14 +526,20 @@ namespace
         std::uint64_t targetWeaponGenerationKey = 0;
         std::uint32_t targetOverlayIndex = 0;
         bool directTransitionRequired = false;
-        const bool targetAvailable = s_pluginLoaded && s_frikAvailable &&
-            s_physicsInteraction &&
+        const auto slot = input_remap_runtime::manualScopeSlot();
+        float secondaryMagnification = 0.0f;
+        const bool ready = s_pluginLoaded && s_frikAvailable && s_physicsInteraction;
+        // Index 1 has no native scope state of its own: ROCK always drives
+        // its transition, and the native overlay/zoom readers take its ZOOM.
+        const bool targetAvailable = ready && (slot == 1 ?
+            s_physicsInteraction->tryGetSecondaryScopeTarget(targetWeaponGenerationKey, targetOverlayIndex, secondaryMagnification) :
             s_physicsInteraction->tryGetManualScopePresentationTarget(
-                targetWeaponGenerationKey, targetOverlayIndex, directTransitionRequired);
-        const bool requested = targetAvailable &&
-            input_remap_runtime::isManualScopeActivationRequested() &&
+                targetWeaponGenerationKey, targetOverlayIndex, directTransitionRequired));
+        if (slot == 1) directTransitionRequired = true;
+        const bool requested = targetAvailable && slot >= 0 &&
             player &&
             configureNativeWorldScopeForManualTarget(targetWeaponGenerationKey, targetOverlayIndex);
+        native_scope_data::setSecondaryTarget(requested && slot == 1, targetOverlayIndex, secondaryMagnification);
 
         if (requested && directTransitionRequired) {
             /*
@@ -572,8 +583,11 @@ namespace
         std::uint64_t generation = 0;
         std::uint32_t overlay = 0;
         bool direct = false;
-        return s_physicsInteraction->tryGetManualScopePresentationTarget(
-                   generation, overlay, direct, weaponIdentity, instanceIdentity) && direct;
+        // Stable like index 0's: a scope on index 1 admits the native scope
+        // path whatever index 0 carries (the button decision picks the slot).
+        return (s_physicsInteraction->tryGetManualScopePresentationTarget(
+                    generation, overlay, direct, weaponIdentity, instanceIdentity) && direct) ||
+            s_physicsInteraction->isScopeEligible(1);
     }
 
     // Name of the loaded module containing an address, for the log; empty when none.
@@ -851,6 +865,8 @@ namespace
         if (s_pluginLoaded && s_frikAvailable && s_physicsInteraction) s_physicsInteraction->holdEquippedWeaponInMenu();
         performance_profiler::ScopedTimer timer(performance_profiler::Scope::FinalPresentation);
         if (s_skeletonTickedThisFrame && s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
+            // The second model is placed only now, after index 0's scope sync.
+            s_physicsInteraction->synchronizeSecondaryScopePresentation();
             s_physicsInteraction->captureRenderedHands();
             s_physicsInteraction->captureProviderPresentedHandPoses();
             s_physicsInteraction->finalizeFramePose();
