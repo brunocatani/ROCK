@@ -76,7 +76,8 @@ namespace rock::native_hand_equipment
     // is used only when the slot wears a different form; None when neither
     // index wears that form.
     enum class WornHand : std::uint8_t { None, Right, Left };
-    [[nodiscard]] WornHand wornRowHand(std::uint32_t form, int slot) noexcept;
+    // outFiring: that hand holds the weapon's firing grip, not another grip.
+    [[nodiscard]] WornHand wornRowHand(std::uint32_t form, int slot, bool& outFiring) noexcept;
 
     // The hand holding an index-0 item: its firing hand, or with `firing`
     // false the hand carrying it by a part grip.

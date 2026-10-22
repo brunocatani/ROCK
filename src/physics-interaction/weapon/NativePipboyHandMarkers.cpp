@@ -159,8 +159,8 @@ namespace rock::native_pipboy_hand_markers
         // equipState picks the equipment index; formID must match the weapon
         // worn there, so other equipped weapon-type items (grenades) get
         // none. Two identical weapons share a formID and still resolve by
-        // slot. The second weapon is the offhand weapon: "OL"/"OR" tell it
-        // from the first weapon's "L"/"R".
+        // slot. "L"/"R": the hand holds the weapon's firing grip. "OL"/"OR":
+        // the hand carries it by another grip (offhand), so it cannot fire.
         std::array<std::uint64_t, 8> s_reportedRows{}; // Movie thread only.
         std::uint32_t s_rowReports = 0;
         bool firstReport(std::uint32_t form, int slot)
@@ -180,10 +180,11 @@ namespace rock::native_pipboy_hand_markers
             if (slot < 0 || !member(data, "formID", form) || !isNumeric(form)) return "";
             reach(Stage::EquippedRow);
             const auto formID = static_cast<std::uint32_t>(numeric(form));
-            const auto hand = native_hand_equipment::wornRowHand(formID, slot);
+            bool firing = true;
+            const auto hand = native_hand_equipment::wornRowHand(formID, slot, firing);
+            const bool left = hand == native_hand_equipment::WornHand::Left;
             const char* label = hand == native_hand_equipment::WornHand::None ? "" :
-                slot == 1 ? (hand == native_hand_equipment::WornHand::Left ? "OL" : "OR") :
-                hand == native_hand_equipment::WornHand::Left ? "L" : "R";
+                firing ? (left ? "L" : "R") : (left ? "OL" : "OR");
             if (firstReport(formID, slot)) {
                 ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters row form={:08X} equipState={} slot={} label={}",
                     formID, state, slot, *label ? label : "none");

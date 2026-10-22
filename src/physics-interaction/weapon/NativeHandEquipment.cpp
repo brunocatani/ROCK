@@ -649,17 +649,21 @@ namespace rock::native_hand_equipment
         return accepted;
     }
 
-    WornHand wornRowHand(std::uint32_t form, int slot) noexcept
+    WornHand wornRowHand(std::uint32_t form, int slot, bool& outFiring) noexcept
     {
+        outFiring = true;
         if (!s_installed || !form || (slot != 0 && slot != 1)) return WornHand::None;
         const auto worn = wornWeapons(f4vr::getPlayer());
         const auto hand = [](bool left) { return left ? WornHand::Left : WornHand::Right; };
         const int index = worn[slot].form == form ? slot : worn[1 - slot].form == form ? 1 - slot : -1;
         if (index < 0) return WornHand::None;
+        // The second weapon is carried only by its firing grip.
         if (index == 1) return hand(resolveSecondaryHand(worn[1].form, worn[1].instance));
         // Same hand rule as Pip-Boy allocation; a support-held primary shows
         // the hand that holds it.
-        return hand(resolvePrimaryHand(worn[0].form, worn[0].instance).left);
+        const auto primary = resolvePrimaryHand(worn[0].form, worn[0].instance);
+        outFiring = primary.firing;
+        return hand(primary.left);
     }
 
     void recordPrimaryHand(std::uint32_t form, std::uintptr_t instance, bool left, bool firing) noexcept
