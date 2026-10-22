@@ -7,9 +7,8 @@
 
 /*
  * Ammo counter placement: DIAMOND's weapon HUD, mirrored for the left hand.
- * The counter is fixed to the weapon at the firing palm, captured in weapon
- * space once per weapon and hand so transient hand corrections never move
- * it. Its plane lies on the palm side of the firing hand, the weapon's inside:
+ * The counter is fixed to the weapon at its firing grip: the authored firing
+ * seat's palm in weapon space, so hand motion never moves it. Its plane lies on the palm side of the firing hand, the weapon's inside:
  * the weapon's left (-X) for a right firing hand, its right (+X) for a left
  * one. It sits kOutward game units off that side and fades in only while it
  * faces the head: hidden at 60 degrees, the subtle full opacity at 45.
@@ -52,42 +51,6 @@ namespace rock::ammo_counter_pose
         Panel reserve{};
         float opacity{ 0.0f };
         bool valid{ false };
-    };
-
-    // The firing palm in weapon space, kept while the weapon and hand stay.
-    class WeaponAnchor
-    {
-    public:
-        struct Identity
-        {
-            std::uint32_t weaponSlot{ 0 };
-            std::uint32_t weaponFormId{ 0 };
-            std::uint64_t weaponGenerationKey{ 0 };
-
-            friend constexpr bool operator==(const Identity&, const Identity&) = default;
-        };
-
-        void clear() noexcept { _valid = false; }
-        // The anchored firing palm while the same weapon stays, or null.
-        [[nodiscard]] const Point* find(const Identity& identity) const noexcept
-        {
-            return _valid && identity == _identity ? &_palmInWeapon : nullptr;
-        }
-
-        [[nodiscard]] const Point& update(const Identity& identity, const Point& palmInWeapon) noexcept
-        {
-            if (!_valid || !(identity == _identity)) {
-                _identity = identity;
-                _palmInWeapon = palmInWeapon;
-                _valid = true;
-            }
-            return _palmInWeapon;
-        }
-
-    private:
-        Identity _identity{};
-        Point _palmInWeapon{};
-        bool _valid{ false };
     };
 
     namespace detail

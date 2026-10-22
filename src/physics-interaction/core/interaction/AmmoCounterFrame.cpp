@@ -11,23 +11,15 @@ namespace rock
 {
     namespace
     {
-        using Point = ammo_counter_pose::Point;
-
         ammo_counter_pose::Point toPoint(const RE::NiPoint3& value) noexcept
         {
             return { value.x, value.y, value.z };
-        }
-
-        RE::NiPoint3 toNiPoint(const ammo_counter_pose::Point& value) noexcept
-        {
-            return { value[0], value[1], value[2] };
         }
     }
 
     void PhysicsInteraction::publishAmmoCounters()
     {
         std::array<ammo_counters::HandCounter, 2> hands{};
-        std::array<bool, 2> anchored{};
         const auto& runtime = runtime_state::currentFrame();
         provider::Publication publication{};
         auto* nodes = f4vr::getPlayerNodes();
@@ -54,31 +46,19 @@ namespace rock
                     return role.role != api::hands::HandRole::None && role.weaponSlot == slot;
                 };
                 if (!holds(0) && !holds(1)) continue;
-                // The slot's presented weapon and the rendered wrist, both
-                // final after AfterWorldFinal.
-                const RE::NiAVObject* weapon = slot == 0 ?
-                    static_cast<RE::NiAVObject*>(resolveEquippedWeaponInteractionNode()) :
-                    native_secondary_presentation::presentedModel();
-                if (!weapon || !finiteNiTransform(weapon->world)) continue;
-                const auto& weaponWorld = weapon->world;
-                const ammo_counter_pose::WeaponAnchor::Identity identity{ slot, state.weaponFormId, state.weaponGenerationKey };
-                auto& weaponAnchor = _ammoCounterAnchors[slot];
-                anchored[slot] = true;
-                // The firing palm is captured while the firing hand holds the
-                // firing grip (authored seating puts it on the grip) and kept
-                // for this weapon after that hand lets go.
-                const Point* palmInWeapon = weaponAnchor.find(identity);
-                if (!palmInWeapon) {
-                    const auto& firingRole = publication.handRoles[index];
-                    RE::NiTransform hand{};
-                    if (firingRole.role != api::hands::HandRole::Firing || firingRole.weaponSlot != slot ||
-                        !frik_visual_authority::tryGetBoneWorldTransform(isLeft ? "LArm_Hand" : "RArm_Hand", hand)) {
-                        continue;
-                    }
-                    palmInWeapon = &weaponAnchor.update(identity, toPoint(transform_math::worldPointToLocal(
-                        weaponWorld, computeGrabPalmPointWorldFromHandBasis(hand, isLeft))));
+                // The slot's firing seat in its weapon's frame, final after
+                // AfterWorldFinal. It needs no hand on the weapon.
+                RE::NiTransform seat{}, weaponWorld{};
+                if (slot == 0) {
+                    const RE::NiNode* weaponNode = nullptr;
+                    if (!_twoHandedGrip.tryGetFiringSeat(isLeft, weaponNode, seat) || !weaponNode) continue;
+                    weaponWorld = weaponNode->world;
+                } else if (!native_secondary_presentation::tryGetFiringSeat(seat, weaponWorld)) {
+                    continue;
                 }
-                const auto palm = transform_math::localPointToWorld(weaponWorld, toNiPoint(*palmInWeapon));
+                if (!finiteNiTransform(weaponWorld) || !finiteNiTransform(seat)) continue;
+                const auto palmInWeapon = computeGrabPalmPointWorldFromHandBasis(seat, isLeft);
+                const auto palm = transform_math::localPointToWorld(weaponWorld, palmInWeapon);
                 const auto weaponRight = transform_math::rotateLocalVectorToWorld(weaponWorld.rotate, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
                 const auto weaponUp = transform_math::rotateLocalVectorToWorld(weaponWorld.rotate, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
                 auto& counter = hands[index];
@@ -87,10 +67,6 @@ namespace rock
                 counter.loaded = state.loadedRounds;
                 counter.reserve = state.reserveRounds;
             }
-        }
-        // A slot whose weapon is no longer drawn recaptures on its next weapon.
-        for (std::size_t slot = 0; slot < anchored.size(); ++slot) {
-            if (!anchored[slot]) _ammoCounterAnchors[slot].clear();
         }
         // The counters replace the vanilla one only while RPS UI shows them.
         const bool replacing = ammo_counters::update(hands) && native_ammo_counter_visibility::install();

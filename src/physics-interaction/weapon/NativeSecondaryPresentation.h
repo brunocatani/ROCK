@@ -69,6 +69,10 @@ namespace rock::native_secondary_presentation
     // owner only), or null before this frame's placement or without one.
     [[nodiscard]] RE::NiAVObject* presentedModel() noexcept;
 
+    // This frame's firing seat of the second weapon in its attachment's
+    // frame, and that attachment as presented. Frame owner only.
+    [[nodiscard]] bool tryGetFiringSeat(RE::NiTransform& outHandWeaponLocal, RE::NiTransform& outWeaponWorld) noexcept;
+
     // The collision-free world pose of presentedModel() this frame: the
     // controller placement before collision correction. This is the second
     // weapon's dynamic-proxy intent.

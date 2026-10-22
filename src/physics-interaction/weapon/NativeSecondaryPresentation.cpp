@@ -887,6 +887,20 @@ namespace rock::native_secondary_presentation
         return matches(view) ? view.root : nullptr;
     }
 
+    bool tryGetFiringSeat(RE::NiTransform& outHandWeaponLocal, RE::NiTransform& outWeaponWorld) noexcept
+    {
+        if (!onFrameThread() || !s_state.ready ||
+            s_state.dropGrip.role == loose_weapon_authored_grab_policy::Role::None) return false;
+        const auto frame = runtime_state::currentFrame().frameIndex;
+        if (frame < s_state.frame || frame - s_state.frame > 1) return false;
+        const auto view = native_hand_equipment::equippedViews()[1];
+        auto* attachment = matches(view) ? currentAttachment(view) : nullptr;
+        if (!attachment || !usable(attachment->world)) return false;
+        outHandWeaponLocal = s_state.dropGrip.handWeaponLocal;
+        outWeaponWorld = attachment->world;
+        return true;
+    }
+
     bool tryGetModelIntentWorld(RE::NiTransform& out) noexcept
     {
         if (!presentedModel()) return false;

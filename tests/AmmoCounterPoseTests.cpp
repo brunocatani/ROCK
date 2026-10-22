@@ -59,15 +59,6 @@ int main()
     ok &= expect("looking never moves or rotates the counter",
         near(edgeOn.loaded.center[0], right.loaded.center[0]) && near(edgeOn.front[0], right.front[0]));
 
-    WeaponAnchor palmAnchor;
-    const WeaponAnchor::Identity pistol{ 0, 0x100, 7 };
-    const auto& captured = palmAnchor.update(pistol, { 1.0f, 2.0f, 3.0f });
-    ok &= expect("the first palm is captured", near(captured[0], 1.0f));
-    ok &= expect("a hand correction never moves the anchored counter", near(palmAnchor.update(pistol, { 4.0f, 5.0f, 6.0f })[0], 1.0f));
-    ok &= expect("another weapon recaptures the palm", near(palmAnchor.update({ 1, 0x200, 9 }, { 4.0f, 5.0f, 6.0f })[0], 4.0f));
-    palmAnchor.clear();
-    ok &= expect("a cleared anchor recaptures", near(palmAnchor.update({ 1, 0x200, 9 }, { 8.0f, 0.0f, 0.0f })[0], 8.0f));
-
     ok &= expect("a degenerate weapon basis fails closed", !resolve(rightPalm, weaponUp, weaponUp, false, head).valid);
     ok &= expect("a non-finite palm fails closed", !resolve({ NAN, 0.0f, 0.0f }, weaponRight, weaponUp, false, head).valid);
     return ok ? 0 : 1;

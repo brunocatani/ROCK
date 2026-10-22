@@ -714,6 +714,11 @@ namespace rock
 
         bool isPartCarryActive() const { return _session.state == TwoHandedState::PartCarry; }
 
+        // The equipped weapon's firing seat for a hand in its weapon node's
+        // frame, whether or not any hand holds the weapon: the right seat the
+        // firing grip uses, mirrored for the left.
+        bool tryGetFiringSeat(bool isLeft, const RE::NiNode*& outWeaponNode, RE::NiTransform& outHandWeaponLocal) const;
+
         // Diagnostic (support-hand twitch on firing-grip reattach, 14 Oct):
         // how applyPartGripLockedVisual placed a hand's part grip last time.
         struct PartGripVisualTrace
