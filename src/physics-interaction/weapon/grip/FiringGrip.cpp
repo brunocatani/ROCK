@@ -1330,19 +1330,6 @@ namespace rock
             _firing.hasLeftNaturalBoneInWand);
     }
 
-    bool TwoHandedGrip::tryGetFiringSeat(const bool isLeft, const RE::NiNode*& outWeaponNode,
-        RE::NiTransform& outHandWeaponLocal) const
-    {
-        outWeaponNode = _session.weaponNode;
-        if (isLeft) return tryComputeMirroredLeftFiringHandWeaponLocal(outHandWeaponLocal, nullptr, false);
-        if (!hasRightFiringHandCanonicalFrame(_session.weaponNode, _session.weaponGenerationKey,
-                _session.equippedWeaponOwnershipKey)) {
-            return false;
-        }
-        outHandWeaponLocal = _holdingHasNative ? _holdingNativeRight : _firing.rightCanonicalHandWeaponLocal;
-        return true;
-    }
-
     bool TwoHandedGrip::tryComputeMirroredLeftFiringHandWeaponLocal(
         RE::NiTransform& outHandWeaponLocal,
         bool* outUsedAuthoredCanonical,

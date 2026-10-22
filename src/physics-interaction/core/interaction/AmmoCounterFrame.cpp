@@ -2,7 +2,11 @@
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/native/NativeAmmoCounterVisibility.h"
 #include "physics-interaction/visual/AmmoCounters.h"
+#include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
+#include "physics-interaction/weapon/HoldingGripRecords.h"
 #include "physics-interaction/weapon/NativeSecondaryPresentation.h"
+#include "physics-interaction/weapon/WeaponGripSeat.h"
+#include "physics-interaction/weapon/WeaponInstanceClassification.h"
 
 // Ammo counters: one per held weapon at its firing grip, on the palm side of
 // its firing hand, from this frame's publication (hand roles, per-slot rounds).
@@ -49,14 +53,44 @@ namespace rock
                 // The slot's firing seat in its weapon's frame, final after
                 // AfterWorldFinal. It needs no hand on the weapon.
                 RE::NiTransform seat{}, weaponWorld{};
+                const auto hidden = [&](const char* stage) {
+                    ROCK_LOG_SAMPLE_INFO(Weapon, 2000, "Ammo counter hidden slot={} stage={} firingHand={} form={:08X}",
+                        slot, stage, isLeft ? "left" : "right", state.weaponFormId);
+                };
                 if (slot == 0) {
-                    const RE::NiNode* weaponNode = nullptr;
-                    if (!_twoHandedGrip.tryGetFiringSeat(isLeft, weaponNode, seat) || !weaponNode) continue;
-                    weaponWorld = weaponNode->world;
+                    // The same authored seat the firing grip places the hand on.
+                    auto* node = resolveEquippedWeaponInteractionNode();
+                    auto* weaponForm = currentEquippedWeaponForm();
+                    if (!node || !weaponForm) {
+                        hidden("weapon-node");
+                        continue;
+                    }
+                    const bool powerArmor = f4vr::isInPowerArmor();
+                    const auto native = weapon_grip_seat::resolveNative({
+                        .weapon = weaponForm,
+                        .weaponRoot = node,
+                        .variant = authored_weapon_grip_library::identifyWeaponVariant(node),
+                        .keywordFlags = weapon_instance_classification::computeWeaponKeywordFlags(
+                            weaponForm, currentEquippedWeaponInstanceData(weaponForm)),
+                        .inPowerArmor = powerArmor,
+                    });
+                    weapon_grip_seat::FiringSeat firing{};
+                    if (!weapon_grip_seat::firingSeat(native,
+                            holding_grips::find(weaponForm, node, isLeft, state.weaponGenerationKey, powerArmor),
+                            isLeft, _weaponCollision.holdingMirrorPlaneX(), firing)) {
+                        hidden(native.modelRegistered ? "authored-seat" : "model-frame");
+                        continue;
+                    }
+                    seat = firing.handWeaponLocal;
+                    weaponWorld = node->world;
                 } else if (!native_secondary_presentation::tryGetFiringSeat(seat, weaponWorld)) {
+                    hidden("second-weapon-placement");
                     continue;
                 }
-                if (!finiteNiTransform(weaponWorld) || !finiteNiTransform(seat)) continue;
+                if (!finiteNiTransform(weaponWorld) || !finiteNiTransform(seat)) {
+                    hidden("non-finite");
+                    continue;
+                }
                 const auto palmInWeapon = computeGrabPalmPointWorldFromHandBasis(seat, isLeft);
                 const auto palm = transform_math::localPointToWorld(weaponWorld, palmInWeapon);
                 const auto weaponRight = transform_math::rotateLocalVectorToWorld(weaponWorld.rotate, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
