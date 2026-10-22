@@ -155,10 +155,12 @@ namespace rock::native_pipboy_hand_markers
             return true;
         }
 
-        // An equipped weapon row's hand. The native slot from equipState
-        // picks the equipment index; formID must match the weapon worn
-        // there, so other equipped weapon-type items (grenades) get none.
-        // Two identical weapons share a formID and still resolve by slot.
+        // An equipped weapon row's hand label. The native slot from
+        // equipState picks the equipment index; formID must match the weapon
+        // worn there, so other equipped weapon-type items (grenades) get
+        // none. Two identical weapons share a formID and still resolve by
+        // slot. The second weapon is the offhand weapon: "OL"/"OR" tell it
+        // from the first weapon's "L"/"R".
         std::array<std::uint64_t, 8> s_reportedRows{}; // Movie thread only.
         std::uint32_t s_rowReports = 0;
         bool firstReport(std::uint32_t form, int slot)
@@ -169,22 +171,37 @@ namespace rock::native_pipboy_hand_markers
             s_reportedRows[s_rowReports++] = key;
             return true;
         }
-        native_hand_equipment::WornHand rowHand(const Value& data)
+        const char* rowLabel(const Value& data)
         {
             Value equip, form;
-            if (!member(data, "equipState", equip) || !isNumeric(equip)) return native_hand_equipment::WornHand::None;
+            if (!member(data, "equipState", equip) || !isNumeric(equip)) return "";
             const auto state = static_cast<int>(numeric(equip));
             const int slot = state == 2 ? 1 : state == 3 || state == 4 ? 0 : -1;
-            if (slot < 0 || !member(data, "formID", form) || !isNumeric(form)) return native_hand_equipment::WornHand::None;
+            if (slot < 0 || !member(data, "formID", form) || !isNumeric(form)) return "";
             reach(Stage::EquippedRow);
             const auto formID = static_cast<std::uint32_t>(numeric(form));
             const auto hand = native_hand_equipment::wornRowHand(formID, slot);
+            const char* label = hand == native_hand_equipment::WornHand::None ? "" :
+                slot == 1 ? (hand == native_hand_equipment::WornHand::Left ? "OL" : "OR") :
+                hand == native_hand_equipment::WornHand::Left ? "L" : "R";
             if (firstReport(formID, slot)) {
-                ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters row form={:08X} equipState={} slot={} hand={}",
-                    formID, state, slot, hand == native_hand_equipment::WornHand::Left ? "L" :
-                        hand == native_hand_equipment::WornHand::Right ? "R" : "none");
+                ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters row form={:08X} equipState={} slot={} label={}",
+                    formID, state, slot, *label ? label : "none");
             }
-            return hand;
+            return label;
+        }
+
+        // The label was centred on the square at creation; autoSize resizes
+        // it with the text, so a new label keeps that centre.
+        void setLabel(Value& letter, const char* label)
+        {
+            Value x, width;
+            const bool measured = member(letter, "x", x) && member(letter, "width", width) && isNumeric(x) && isNumeric(width);
+            const double centre = measured ? numeric(x) + numeric(width) * 0.5 : 0.0;
+            letter.SetMember("text", Value(label));
+            Value newWidth;
+            if (measured && member(letter, "width", newWidth) && isNumeric(newWidth))
+                letter.SetMember("x", Value(centre - numeric(newWidth) * 0.5));
         }
 
         // GetMember reaches only public AS3 traits: PipboyMenu.PageA/GetPage
@@ -212,22 +229,21 @@ namespace rock::native_pipboy_hand_markers
                 const Value clipIndex(static_cast<double>(c));
                 if (!list.Invoke("GetClipByIndex", &clip, &clipIndex, 1) || !clip.IsObject() ||
                     !member(clip, "EquipIcon_mc", icon) || !icon.IsObject()) continue;
-                std::string hand;
+                const char* hand = "";
                 if (member(clip, "visible", visible) && visible.IsBoolean() && visible.GetBoolean() &&
                     member(clip, "itemIndex", index) && isNumeric(index) && numeric(index) >= 0 && numeric(index) < size) {
                     reach(Stage::VisibleRow, static_cast<std::uint32_t>(c));
                     Value data;
                     const auto key = std::to_string(static_cast<std::uint32_t>(numeric(index)));
                     if (entries.GetMember(key.c_str(), &data) && data.IsObject()) {
-                        const auto worn = rowHand(data);
-                        hand = worn == native_hand_equipment::WornHand::Left ? "L" : worn == native_hand_equipment::WornHand::Right ? "R" : "";
-                        if (!hand.empty()) reach(Stage::HandResolved);
+                        hand = rowLabel(data);
+                        if (*hand) reach(Stage::HandResolved);
                     }
                 }
                 Value letter;
                 const Value name(kLetterName);
                 const bool exists = icon.Invoke("getChildByName", &letter, &name, 1) && letter.IsObject();
-                if (hand.empty()) {
+                if (!*hand) {
                     if (!exists) continue;
                     letter.SetMember("visible", Value(false));
                     showSquare(icon, true);
@@ -235,7 +251,7 @@ namespace rock::native_pipboy_hand_markers
                 }
                 if (!exists && !letterField(movie, clip, icon, letter)) continue;
                 Value current;
-                if (!member(letter, "text", current) || text(current) != hand) letter.SetMember("text", Value(hand.c_str()));
+                if (!member(letter, "text", current) || text(current) != hand) setLabel(letter, hand);
                 letter.SetMember("visible", Value(true));
                 showSquare(icon, false);
                 reach(Stage::LetterShown);
