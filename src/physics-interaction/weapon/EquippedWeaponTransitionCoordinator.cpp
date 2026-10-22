@@ -235,6 +235,7 @@ namespace rock
             ROCK_LOG_INFO(Weapon, "Trigger equip visual bridge disabled for test form={:08X}; native presentation exposed, hand continuity retained", expected.formID);
         }
         _heldBridgeStarted = bridgeStarted && _heldTransfer.active();
+        _holdNativeUntilHandoff = source == Source::InventoryEquip && !bridgeStarted;
         _expectedIdentity = expected;
         _boundIdentity = {};
         _policyState = {};
@@ -293,7 +294,10 @@ namespace rock
             return;
         }
 
-        if (_heldTransfer.gripAcquired || !_heldTransfer.active()) releasePendingNativeCull(true);
+        if (_holdNativeUntilHandoff && (!_active || _source != Source::InventoryEquip)) {
+            _holdNativeUntilHandoff = false;
+        }
+        if ((_heldTransfer.gripAcquired || !_heldTransfer.active()) && !_holdNativeUntilHandoff) releasePendingNativeCull(true);
 
         const auto current = readCurrentIdentity();
         if (_heldTransfer.active() && !input.gripSuspended) {
@@ -557,9 +561,19 @@ namespace rock
             _lateRecoveryWindowGranted = true;
         }
 
-        const bool bridgeOwnsCull = _bridge.ownsNativeInstanceCull(visual.exactInstance);
+        // ROCK's own cull of the native instance (bridge or held inventory
+        // equip) is presentation ownership, not a visibility fault to repair.
+        const bool bridgeOwnsCull = _bridge.ownsNativeInstanceCull(visual.exactInstance) ||
+            (_holdNativeUntilHandoff && visual.exactInstance && _pendingNativeCull.get() == visual.exactInstance);
+        // A held inventory equip waits for the generated firearm pose as a
+        // bridged trigger equip does, once a draw clip of its acceleration
+        // lease has activated (a drawn-to-drawn swap may play none), and only
+        // within that lease; otherwise the stable-frame handoff alone decides.
+        const bool inventoryPoseGate = _holdNativeUntilHandoff &&
+            _activeSeconds < weapon_transition_animation_acceleration_policy::kLeaseTimeoutSeconds;
         bool nativePoseReady = true;
-        if (_source == Source::HeldTriggerEquip && !_policyState.nativeHandoffObserved && _bridge.hasVisualModel()) {
+        if (((_source == Source::HeldTriggerEquip && _bridge.hasVisualModel()) || inventoryPoseGate) &&
+            !_policyState.nativeHandoffObserved) {
             auto* equipped = f4vr::getEquippedWeaponItem();
             auto* object = equipped ? equipped->item.object : nullptr;
             if (object && object->formType == RE::ENUM_FORM_ID::kWEAP) {
@@ -567,8 +581,14 @@ namespace rock
                 auto* instance = equipped->item.instanceData.get();
                 auto* data = instance ? static_cast<RE::TESObjectWEAP::InstanceData*>(instance) : &weapon->weaponData;
                 if (data->type == RE::WEAPON_TYPE::kGun) {
-                    nativePoseReady = weapon_transition_animation_acceleration::hasGeneratedFirearmPose(
-                        f4vr::getPlayer(), {_boundIdentity.formID, _boundIdentity.instanceData, _boundIdentity.equipIndex});
+                    auto* player = f4vr::getPlayer();
+                    const weapon_transition_animation_acceleration::Identity leased{
+                        _boundIdentity.formID, _boundIdentity.instanceData, _boundIdentity.equipIndex };
+                    const bool drawClipActive = !inventoryPoseGate ||
+                        weapon_transition_animation_acceleration::observeExactLeaseActivation(player, leased,
+                            weapon_transition_animation_acceleration_policy::Direction::Draw).matchedActivations > 0;
+                    nativePoseReady = !drawClipActive ||
+                        weapon_transition_animation_acceleration::hasGeneratedFirearmPose(player, leased);
                 }
             }
         }
@@ -594,6 +614,12 @@ namespace rock
                     (_heldTransfer.active() && !_heldTransfer.gripAcquired) || _bridge.isHandPoseHandoffActive(),
                 .nativePoseReady = nativePoseReady,
             });
+        if (_holdNativeUntilHandoff && _policyState.nativeHandoffObserved) {
+            ROCK_LOG_INFO(Weapon, "Inventory equip native reveal formID={:08X} after={:.3f}s poseGate={}",
+                _boundIdentity.formID, _activeSeconds, inventoryPoseGate ? "satisfied" : "lease-elapsed");
+            _holdNativeUntilHandoff = false;
+            releasePendingNativeCull(true);
+        }
 
         using NativeWeaponState =
             held_weapon_equip_state_policy::NativeWeaponState;
@@ -865,10 +891,11 @@ namespace rock
                 input.leftCarrySolvedWeaponWorldValid,
             .leftCarrySolvedWeaponWorld = input.leftCarrySolvedWeaponWorld,
         });
-        if (!_bridgeDisabledForTest && _heldTransfer.phase == held_weapon_transfer::Phase::AwaitGrip && !_bridge.isActive() &&
-            visual.exactInstance && equipped_weapon_visual_state::isLocallyVisible(visual.exactInstance)) {
+        if (!_bridgeDisabledForTest && (_heldTransfer.phase == held_weapon_transfer::Phase::AwaitGrip || _holdNativeUntilHandoff) &&
+            !_bridge.isActive() && visual.exactInstance && equipped_weapon_visual_state::isLocallyVisible(visual.exactInstance)) {
             // Native geometry may arrive after the model bridge has gone
-            // (notably menu recovery). Hide only until actual hand acquisition.
+            // (notably menu recovery). Hide only until actual hand acquisition,
+            // or for a held inventory equip until its native handoff.
             if (_pendingNativeCull.get() != visual.exactInstance) releasePendingNativeCull(true);
             _pendingNativeCull.reset(visual.exactInstance);
             equipped_weapon_visual_state::setLocallyVisible(visual.exactInstance, false);
@@ -1176,6 +1203,11 @@ namespace rock
             _bridge.release(reason);
         } else {
             _bridge.abandonSceneGraph();
+        }
+        if (_holdNativeUntilHandoff) {
+            // Never leave a held inventory equip's weapon culled past its transition.
+            _holdNativeUntilHandoff = false;
+            releasePendingNativeCull(releaseSceneGraph);
         }
         _policyState = {};
         _boundIdentity = {};

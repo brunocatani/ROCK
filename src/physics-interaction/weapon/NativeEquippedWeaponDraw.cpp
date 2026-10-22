@@ -370,9 +370,16 @@ namespace rock::native_equipped_weapon_draw
             }
             if (!held_weapon_equip_state_policy::shouldSubmitDrawFollowup(
                     result.stateBefore)) {
+                // A swap into an already drawn hand stays Drawn while native
+                // plays the new weapon's equip clip; the lease admits that
+                // late clip (Drawn is accelerated for Draw) exactly as it
+                // does for a native favorites or Pip-Boy equip.
                 if (result.stateBefore == static_cast<std::uint32_t>(
                         held_weapon_equip_state_policy::NativeWeaponState::
-                            Drawing)) {
+                            Drawing) ||
+                    result.stateBefore == static_cast<std::uint32_t>(
+                        held_weapon_equip_state_policy::NativeWeaponState::
+                            Drawn)) {
                     requestAnimationAcceleration(
                         current.player,
                         expected,

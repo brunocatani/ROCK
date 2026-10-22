@@ -232,6 +232,10 @@ namespace rock
         held_weapon_transfer::State _completedInventoryTransfer{};
         PendingGrip _pendingGrip{};
         RE::NiPointer<RE::NiAVObject> _pendingNativeCull{};
+        // An inventory equip has no loose model to bridge: its native model
+        // stays culled (_pendingNativeCull) until the same native handoff a
+        // bridged equip waits for, so its parts never assemble on screen.
+        bool _holdNativeUntilHandoff{ false };
         float _heldWaitSeconds{ 0.0f };
         bool _heldBridgeStarted{ false };
         bool _bridgeDisabledForTest{ false };
