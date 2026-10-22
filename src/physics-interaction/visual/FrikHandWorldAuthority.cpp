@@ -96,6 +96,9 @@ namespace rock::frik_hand_world_authority
             std::uint64_t weaponPreparedFrame = 0;
             bool weaponFilteringEnabled = false;
             const char* weaponRoomSource = nullptr;
+            // Wand in the isolated hand, from the last frame outside a menu.
+            std::array<RE::NiTransform, 2> menuWandInHand{};
+            std::array<bool, 2> menuWandInHandValid{};
             registry_policy::Registry registry{};
             // This frame's controller driver per hand (FRIK's dampened weapon offset node).
             DriverFrame driverFrame{};
@@ -725,6 +728,30 @@ namespace rock::frik_hand_world_authority
             }
         }
 
+    }
+
+    void captureMenuWandRelation()
+    {
+        for (const bool isLeft : { false, true }) {
+            const auto index = handIndex(isLeft);
+            const auto wand = sampleTrackedHand(isLeft, TrackedHandKind::Wand);
+            RE::NiTransform hand{};
+            g_service.menuWandInHandValid[index] = wand.valid && tryGetRawHandWorld(isLeft, hand) && weapon_input_filter::usable(hand);
+            if (g_service.menuWandInHandValid[index])
+                g_service.menuWandInHand[index] = transform_math::composeTransforms(transform_math::invertTransform(hand), wand.world);
+        }
+    }
+
+    bool tryGetMenuWandWorld(const bool isLeft, RE::NiTransform& outWorld)
+    {
+        outWorld = {};
+        const auto index = handIndex(isLeft);
+        RE::NiTransform hand{};
+        if (!g_service.menuWandInHandValid[index] ||
+            !frik_visual_authority::tryGetHandWorldTransform(frik_visual_authority::handFromBool(isLeft), hand) ||
+            !weapon_input_filter::usable(hand)) return false;
+        outWorld = transform_math::composeTransforms(hand, g_service.menuWandInHand[index]);
+        return weapon_input_filter::usable(outWorld);
     }
 
     bool tryGetRawHandWorld(const bool isLeft, RE::NiTransform& outWorld)

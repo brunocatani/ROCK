@@ -7,6 +7,10 @@
 #include "physics-interaction/weapon/HoldingGripRecords.h"
 #include "physics-interaction/weapon/WeaponGripSeat.h"
 #include "physics-interaction/weapon/WeaponInstanceClassification.h"
+#include "physics-interaction/weapon/WeaponAimBasis.h"
+#include "physics-interaction/weapon/NativeSecondaryPose.h"
+#include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
+#include "physics-interaction/weapon/EquippedWeaponHandlingRuntime.h"
 #include "physics-interaction/weapon/WeaponInputFilter.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
@@ -128,37 +132,60 @@ namespace rock
 
     void PhysicsInteraction::applyPipboySupportRequest()
     {
-        const auto& saved = _equipped.continuityGrip.pending ? _equipped.continuityGrip : _equipped.nativeCarryCapture;
-        native_hand_equipment::publishMenuCarry(saved.pending ? saved.targetWeaponFormID : 0u,
-            saved.pending ? saved.targetWeaponInstanceData : 0u);
+        constexpr float kDeferredAttachSeconds = 3.0f;
         const auto request = native_hand_equipment::pendingSupportRequest();
         if (!request.sequence) return;
+        const auto& frame = runtime_state::currentFrame();
+        const bool menu = frame.localMenuBlocking;
         const auto sameItem = [&](const EquippedWeaponTransitionCoordinator::PendingGrip& grip) {
             return grip.targetWeaponFormID != 0 && grip.targetWeaponFormID == request.form &&
                 (!grip.targetWeaponInstanceData || !request.instance || grip.targetWeaponInstanceData == request.instance);
         };
         auto& grip = _equipped.continuityGrip;
+        const bool manual = _twoHandedGrip.isManualOwnershipActive();
         const char* refused = nullptr;
+        const char* applied = menu ? "applied-on-menu-exit" : "applied";
         if (request.attach) {
-            auto carry = grip.pending ? grip : _equipped.nativeCarryCapture;
-            if (!carry.pending || !sameItem(carry)) refused = "no-menu-carry-for-weapon";
-            else if (carry.supportGrip.validCarry()) refused = "weapon-support-held";
-            else if (!carry.pairedGrips.valid() && !carry.supportAttach.valid()) refused = "authored-support-grip-unavailable";
-            else {
+            // In a menu: the carry saved when it opened. After a menu that
+            // equipped the weapon: the carry ROCK started for it since.
+            auto carry = menu ? (grip.pending ? grip : _equipped.nativeCarryCapture) :
+                manual ? grip : _equipped.nativeCarryCapture;
+            const bool settling = !menu && (_equipped.gripResumePending || _equipped.transition.pendingGrip().pending);
+            if (!carry.pending || !sameItem(carry) || settling) {
+                auto* weapon = currentEquippedWeaponForm();
+                const bool equipped = weapon && weapon->formID == request.form;
+                if (_equipped.deferredSupportSequence != request.sequence) {
+                    _equipped.deferredSupportSequence = request.sequence;
+                    _equipped.deferredSupportSeconds = 0.0f;
+                    if (equipped) ROCK_LOG_INFO(Weapon, "Pip-Boy support attach weapon={:08X} deferred until its carry starts", request.form);
+                }
+                if (!menu) _equipped.deferredSupportSeconds += frame.deltaSeconds;
+                if (equipped && _equipped.deferredSupportSeconds < kDeferredAttachSeconds) return;
+                refused = equipped ? "carry-did-not-start" : "weapon-not-equipped";
+            } else if (carry.supportGrip.validCarry()) {
+                refused = "weapon-support-held";
+            } else if (!menu && carry.pairedGrips.valid()) {
+                applied = "already-supported";
+            } else if (!carry.pairedGrips.valid() && !carry.supportAttach.valid()) {
+                refused = "authored-support-grip-unavailable";
+            } else {
                 if (!carry.pairedGrips.valid()) carry.pairedGrips = carry.supportAttach;
+                // Outside a menu the paired resume starts its own grip session.
+                if (!menu && manual) _twoHandedGrip.reset();
                 grip = carry;
+                _equipped.gripResumePending = true;
             }
-        } else if (!grip.pending || !sameItem(grip) || !grip.pairedGrips.valid()) {
+        } else if (!menu || !grip.pending || !sameItem(grip) || !grip.pairedGrips.valid()) {
             refused = "no-support-to-detach";
         } else {
             // The firing-only resume keeps the firing grip captured with it.
             grip.supportAttach = grip.pairedGrips;
             grip.pairedGrips = {};
         }
-        _equipped.gripResumePending = grip.pending;
+        _equipped.deferredSupportSequence = 0;
         native_hand_equipment::noteSupportRequestApplied(request.sequence, refused ? !request.attach : request.attach);
         ROCK_LOG_INFO(Weapon, "Pip-Boy support {} weapon={:08X} result={}", request.attach ? "attach" : "detach",
-            request.form, refused ? refused : "applied-on-menu-exit");
+            request.form, refused ? refused : applied);
     }
 
     void PhysicsInteraction::holdEquippedWeaponInMenu()
@@ -172,6 +199,7 @@ namespace rock
         };
         const auto& frame = runtime_state::currentFrame();
         if (!frame.localMenuBlocking) {
+            frik_hand_world_authority::captureMenuWandRelation();
             release();
             return;
         }
@@ -199,6 +227,8 @@ namespace rock
             bool firing = true, supported = false;
             isLeft = native_hand_equipment::wornRowHand(view.weapon->formID, 0, firing, supported) == native_hand_equipment::WornHand::Left;
             const bool powerArmor = f4vr::isInPowerArmor();
+            // Starts the off-screen idle harvest a never-drawn weapon needs.
+            native_idle_grip_preharvest::observeInventoryDisplay(view.weapon, node, view.instance);
             const auto native = weapon_grip_seat::resolveNative({
                 .weapon = view.weapon,
                 .weaponRoot = node,
@@ -220,9 +250,16 @@ namespace rock
         RE::NiTransform handWorld{}, weaponWorld{};
         if (!stage && (!frik_visual_authority::tryGetHandWorldTransform(hand, handWorld) || !weapon_input_filter::usable(handWorld)))
             stage = "hand";
-        if (!stage && !supportCarry && !(isLeft ? TwoHandedGrip::tryGetLeftWeaponAimWorld(node->world.scale, weaponWorld) :
-                TwoHandedGrip::tryGetRightWeaponAimWorld(node->world.scale, weaponWorld)))
-            stage = "controller-aim";
+        RE::NiTransform wand{};
+        if (!stage && !supportCarry) {
+            const auto& handling = equipped_weapon_handling_runtime::current();
+            const bool aimed = frik_hand_world_authority::tryGetMenuWandWorld(isLeft, wand) &&
+                (isLeft ? weapon_aim_basis::tryResolveWorld(wand, node->world.scale,
+                              native_secondary_pose::firingWeaponInWand(true, handling.leftFiringAimYawDegrees,
+                                  handling.leftFiringAimPitchDegrees), weaponWorld) :
+                          weapon_aim_basis::tryResolveWorld(wand, node->world.scale, weaponWorld));
+            if (!aimed) stage = "controller-aim";
+        }
         ROCK_LOG_SAMPLE_INFO(Weapon, 1000, "MENU_WEAPON_HOLD weapon=first stage={} source={} hand={} visible={}",
             stage ? stage : "placed", supportCarry ? "support-carry" : carried ? "menu-carry" : "native-seat",
             isLeft ? "left" : "right", node ? equipped_weapon_visual_state::isLocallyVisible(node) : false);
@@ -335,7 +372,7 @@ namespace rock
             restoreEquippedWeaponContinuity(_equipped.continuityGrip);
             cancelEquippedWeaponTransfersForMenu();
         }
-        if (runtime.localMenuBlocking) applyPipboySupportRequest();
+        applyPipboySupportRequest();
         const auto& transfer = _equipped.transition.heldTransfer();
         const auto& incomingHand = transfer.request.isLeft ? _leftHand : _rightHand;
         auto* incomingReference = incomingHand.getHeldRef();

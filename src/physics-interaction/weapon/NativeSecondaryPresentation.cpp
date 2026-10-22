@@ -639,8 +639,9 @@ namespace rock::native_secondary_presentation
             const bool handAvailable = menu ? frik_visual_authority::tryGetHandWorldTransform(frikHand(left), physicalHand) :
                 frik_hand_world_authority::hasCalibratedRawHandFrame(left) &&
                     frik_hand_world_authority::tryGetWeaponHandWorld(left, physicalHand);
-            if (!usable(seat) || !handAvailable || !usable(physicalHand) ||
-                !frik_hand_world_authority::tryGetWeaponWandWorld(left, wandWorld) || !usable(wandWorld)) {
+            const bool wandAvailable = menu ? frik_hand_world_authority::tryGetMenuWandWorld(left, wandWorld) :
+                frik_hand_world_authority::tryGetWeaponWandWorld(left, wandWorld);
+            if (!usable(seat) || !handAvailable || !usable(physicalHand) || !wandAvailable || !usable(wandWorld)) {
                 waitFor(view, "tracked-hand");
                 return;
             }

@@ -81,6 +81,12 @@ namespace rock::frik_hand_world_authority
     void noteNativeRecoilControlled(bool controlled) noexcept;
     [[nodiscard]] std::uint8_t scopeInputRecoveryMask() noexcept;
 
+    // Menus stop the wand nodes while FRIK keeps rendering tracked hands. Outside
+    // menus the frame owner records each wand in its isolated hand; in menus the
+    // wand is that relation applied to the hand FRIK renders.
+    void captureMenuWandRelation();
+    [[nodiscard]] bool tryGetMenuWandWorld(bool isLeft, RE::NiTransform& outWorld);
+
     // This frame's controller driver (FRIK's dampened weapon offset node).
     [[nodiscard]] bool tryGetInputDriverWorld(bool isLeft, RE::NiTransform& outWorld);
 

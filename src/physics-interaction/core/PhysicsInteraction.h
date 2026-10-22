@@ -165,7 +165,8 @@ namespace rock
         [[nodiscard]] EquippedWeaponTransitionCoordinator::PendingGrip equippedWeaponContinuity() const;
         void restoreEquippedWeaponContinuity(const EquippedWeaponTransitionCoordinator::PendingGrip& grip);
         void captureEquippedWeaponContinuity();
-        // In menus: apply a Pip-Boy support attach/detach to the menu carry.
+        // Apply a Pip-Boy support attach/detach: in menus to the menu carry; for
+        // a weapon equipped in that menu, to its carry once it starts.
         void applyPipboySupportRequest();
         // FRIK weapon/final passes: in menus the first weapon stays at its
         // grip on the rendered hand with that grip's fingers; outside menus
@@ -882,6 +883,10 @@ namespace rock
             EquippedWeaponTransitionCoordinator::PendingGrip nativeCarryCapture{};
             // Hand whose finger pose the menu weapon hold claims; -1 none.
             int menuHoldFingerHand{ -1 };
+            // A Pip-Boy support attach on a weapon equipped in that menu waits
+            // for the weapon's carry after the menu (bounded).
+            std::uint64_t deferredSupportSequence{ 0 };
+            float deferredSupportSeconds{ 0.0f };
             bool gripResumePending{ false };
             std::array<bool, 2> resumeAwaitingHold{};
             // Dedicated stash detector states for the equipped-weapon carry

@@ -91,9 +91,6 @@ namespace rock::native_hand_equipment
     };
     // Frame owner: the request not yet applied, if any.
     [[nodiscard]] SupportRequest pendingSupportRequest() noexcept;
-    // Frame owner, in menus: the index-0 item whose carry the menu saved
-    // (0: none); a support attach is accepted only for it.
-    void publishMenuCarry(std::uint32_t form, std::uintptr_t instance) noexcept;
     // Frame owner: the request is applied; `supported` is the result.
     void noteSupportRequestApplied(std::uint64_t sequence, bool supported) noexcept;
 
