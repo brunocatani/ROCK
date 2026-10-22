@@ -322,12 +322,6 @@ namespace rock
         };
         const auto extension=native_interaction_service::classify(query);
         if(extension.kind!=api::native_interaction::SelectionKind::Unhandled)return fromExtension(extension);
-        // A reference without a form ID is no world object: right after an
-        // equip, the incoming weapon's bodies resolve to one and it was
-        // far-selected and highlighted for the minimum hold.
-        if (ref->GetFormID() == 0) {
-            return { .kind = grab_target::Kind::None, .reason = "no-form-identity", .grabbable = false };
-        }
         if (baseForm->Is(RE::ENUM_FORM_ID::kMSTT) && hasDynamicMovableStaticBodyEvidence(hknpWorld, bodyId)) {
             const bool targetIsCar = fo4vr::isExplodableCar(baseForm);
             const auto carGrabDecision = car_interaction_policy::evaluateGrab(car_interaction_policy::GrabPolicyInput{

@@ -2204,8 +2204,16 @@ namespace rock
         const RE::NiPoint3& farSelectionDirection, const RE::NiPoint3& pinchOrigin, const RE::NiPoint3& pinchDirection, bool hasPinchOrigin,
         const FarSelectionHmdConeGate& farHmdConeGate, float deltaTime, const OtherHandSelectionContext& otherHandContext)
     {
-        if (!selection_state_policy::canUpdateSelectionFromState(_state))
+        if (!selection_state_policy::canUpdateSelectionFromState(_state)) {
+            // The far query runs every third pass and the passes in between
+            // reuse its candidate. A grab, pull or lock pauses the passes, so
+            // the candidate cached before it must not come back when they
+            // resume: after a trigger equip it was the weapon just moved into
+            // the inventory, far-selected and highlighted for the minimum hold.
+            _cachedFarCandidate.clear();
+            _farDetectCounter = 0;
             return;
+        }
 
         // Measured elapsed time only: an unmeasurable frame holds the
         // selection-hold clock.
