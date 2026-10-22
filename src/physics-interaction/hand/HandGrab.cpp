@@ -5917,7 +5917,9 @@ namespace rock
             (void)loose_weapon_grip_zone::tryResolveNearGrab(_isLeft, sel.refr, nearGrip, input.joiningPeerHeldObject);
             const auto role = policy::acquisitionRole(touchingPocket && !grabbedFromPullCatch && !sel.forcedArrival,
                 input.transferPose != nullptr, input.transferPose ? input.transferPose->role : policy::Role::None,
-                nearGrip.arrangement, input.joiningPeerHeldObject, nearGrip.role, nearGrip.nearestRole);
+                nearGrip.arrangement, input.joiningPeerHeldObject, nearGrip.role,
+                policy::freeWeaponRole(policy::acquisitionSource(grabbedFromPullCatch, sel.forcedArrival, input.transferPose != nullptr),
+                    nearGrip.nearestRole));
             const bool dynamicOffhand = policy::dynamicSupportAcquisition(
                 role, input.joiningPeerHeldObject, nearGrip.arrangement, input.transferPose != nullptr);
             ROCK_LOG_SAMPLE_INFO(Hand, 1000,
@@ -8062,7 +8064,7 @@ namespace rock
                 arrival, transferPose != nullptr,
                 transferPose ? transferPose->role : authoredPolicy::Role::None,
                 preparedAuthoredGrip.arrangement, joiningPeerHeldObject, preparedAuthoredGrip.role,
-                preparedAuthoredGrip.nearestRole);
+                authoredPolicy::freeWeaponRole(acquisitionSource, preparedAuthoredGrip.nearestRole));
             ROCK_LOG_SAMPLE_INFO(Hand, 1000,
                 "{} loose weapon arrival role ref={:08X} arrival={} peerHolding={} transfer={} arrangement={} zoneRole={} nearestRole={} selectedRole={}",
                 handName(), sel.refr ? sel.refr->GetFormID() : 0, arrival, joiningPeerHeldObject, transferPose != nullptr,

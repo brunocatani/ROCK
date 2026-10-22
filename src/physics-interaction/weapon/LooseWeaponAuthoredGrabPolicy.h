@@ -15,6 +15,13 @@ namespace rock::loose_weapon_authored_grab_policy
         return forcedArrival ? AcquisitionSource::ForcedArrival : AcquisitionSource::Close;
     }
 
+    // The station a free weapon takes without palm contact: a close grab the
+    // one nearest the palm, a far pull or forced arrival the firing grip.
+    [[nodiscard]] constexpr Role freeWeaponRole(AcquisitionSource source, Role nearestRole) noexcept
+    {
+        return source == AcquisitionSource::Close ? nearestRole : Role::Firing;
+    }
+
     [[nodiscard]] constexpr bool useAuthoredArrival(AcquisitionSource source, bool poseAvailable,
         bool throwable, bool pinchSelection) noexcept
     {
@@ -39,17 +46,16 @@ namespace rock::loose_weapon_authored_grab_policy
         return value == Arrangement::Close || value == Arrangement::OneHanded;
     }
 
-    // nearestRole: the authored station nearest the palm, zones aside.
+    // freeRole: freeWeaponRole for this acquisition.
     [[nodiscard]] constexpr Role acquisitionRole(bool touching, bool transfer,
-        Role transferRole, Arrangement layout, bool peerHolding, Role zoneRole, Role nearestRole) noexcept
+        Role transferRole, Arrangement layout, bool peerHolding, Role zoneRole, Role freeRole) noexcept
     {
         if (transfer) return transferRole;
-        // A free weapon taken without palm contact (far pull or close grab)
-        // seats at its nearest authored station; a touch grab keeps the zone
-        // it lands in, or the mesh grab outside every zone. A second hand on
-        // an already held weapon keeps its selected station even before
-        // palm contact.
-        if (!touching && !peerHolding) return nearestRole;
+        // A free weapon taken without palm contact seats at freeRole; a touch
+        // grab keeps the zone it lands in, or the mesh grab outside every
+        // zone. A second hand on an already held weapon keeps its selected
+        // station even before palm contact.
+        if (!touching && !peerHolding) return freeRole;
         if (sharedFiringZone(layout) && zoneRole != Role::None) {
             return peerHolding ? Role::Support : Role::Firing;
         }
@@ -66,11 +72,11 @@ namespace rock::loose_weapon_authored_grab_policy
     // both possible touch outcomes choose the same authored station, or when
     // an arrival/transfer already determines it independently of touch.
     [[nodiscard]] constexpr Role surfaceIndependentAcquisitionRole(bool programmaticArrival,
-        bool transfer, Role transferRole, Arrangement layout, bool peerHolding, Role zoneRole, Role nearestRole) noexcept
+        bool transfer, Role transferRole, Arrangement layout, bool peerHolding, Role zoneRole, Role freeRole) noexcept
     {
-        const auto role = acquisitionRole(false, transfer, transferRole, layout, peerHolding, zoneRole, nearestRole);
+        const auto role = acquisitionRole(false, transfer, transferRole, layout, peerHolding, zoneRole, freeRole);
         if ((!programmaticArrival &&
-                role != acquisitionRole(true, transfer, transferRole, layout, peerHolding, zoneRole, nearestRole)) ||
+                role != acquisitionRole(true, transfer, transferRole, layout, peerHolding, zoneRole, freeRole)) ||
             dynamicSupportAcquisition(role, peerHolding, layout, transfer)) return Role::None;
         return role;
     }
