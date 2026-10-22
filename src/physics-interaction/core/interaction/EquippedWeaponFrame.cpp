@@ -689,12 +689,11 @@ namespace rock
             pendingGrip.remainingSeconds -= (std::max)(0.0f, w.frame.deltaSeconds);
             if (pendingGrip.remainingSeconds <= 0.0f) {
                 ROCK_LOG_WARN(Weapon,
-                    "Held weapon manual ownership handoff expired targetForm={:08X} targetInstance={:#x} hand={} lastStartFailure={} supportReadiness={}",
+                    "Held weapon manual ownership handoff expired targetForm={:08X} targetInstance={:#x} hand={} lastStartFailure={}",
                     pendingGrip.targetWeaponFormID,
                     pendingGrip.targetWeaponInstanceData,
                     pendingGrip.isLeft ? "left" : "right",
-                    pendingGrip.lastStartFailureReason ? pendingGrip.lastStartFailureReason : "none",
-                    authored_support_grab_policy::leftFiringTakeoverReadinessName(pendingGrip.takeoverWitness.last));
+                    pendingGrip.lastStartFailureReason ? pendingGrip.lastStartFailureReason : "none");
                 pendingGrip = {};
             }
         }
@@ -1246,30 +1245,13 @@ namespace rock
                 pendingPrimaryStart.source == StartSource::DefaultEquip ||
                 pendingPrimaryStart.source == StartSource::InventoryEquip ||
                 w.pendingToggleGripRetained);
-        const auto leftTakeoverReadiness = _twoHandedGrip.getLeftFiringTakeoverReadiness(weaponNode,
-            currentAuthoredGripGenerationKey, currentEquippedWeaponOwnershipKey,
-            _equipped.handlingSettings.authoredOnlySupportGrabsEnabled);
-        const bool leftTakeoverBlocked = pendingMatches && primaryOnlyStartRequested && firingHandIsLeft &&
-            !pendingPrimaryStart.pairedGrips.valid() &&
-            !authored_support_grab_policy::leftFiringTakeoverReady(leftTakeoverReadiness);
         const auto observedWeaponName = [&]() {
             return w.observedEquippedWeapon ? RE::TESFullName::GetFullName(*w.observedEquippedWeapon, false) : std::string_view{ "unknown" };
         };
-        if (leftTakeoverBlocked) {
-            if (pendingPrimaryStart.takeoverWitness.observe(leftTakeoverReadiness)) {
-                ROCK_LOG_WARN(Weapon,
-                    "Left firing-grip start waiting weapon='{}' formID={:08X} authored support readiness={} collisionGeneration={:016X} authoredGeneration={:016X} ownership={:016X} firingCapture={} rightHolding={}",
-                    observedWeaponName(),
-                    pendingPrimaryStart.targetWeaponFormID,
-                    authored_support_grab_policy::leftFiringTakeoverReadinessName(leftTakeoverReadiness),
-                    w.currentWeaponGenerationKey,
-                    currentAuthoredGripGenerationKey,
-                    currentEquippedWeaponOwnershipKey,
-                    pendingPrimaryStart.hasFiringHandWeaponLocal && pendingPrimaryStart.hasFiringGripWeaponLocal,
-                    _rightHand.isHolding());
-            }
-            return;
-        }
+        // The left firing grip starts as soon as its own seat exists. It never
+        // waits for the other hand's support candidate: that wait left the
+        // weapon at the native right-hand pose for frames after a menu exit,
+        // overlapping the right hand's weapon (runtime 22 Oct 11:39:07).
         if (!primaryOnlyStartRequested) {
             return;
         }

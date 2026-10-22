@@ -43,10 +43,8 @@ namespace rock
                 equipped_weapon_manual_ownership_policy::PrimaryOnlyStartSource::GripInput
             };
             // A toggle acquisition is a committed logical grab even after the
-            // physical button opens while left takeover waits for the final
-            // generation-bound authored-support verdict.
+            // physical button opens before the grip starts.
             bool toggleAcquisitionCommitted{ false };
-            left_carry_readiness::TakeoverWitness takeoverWitness{};
             const char* lastStartFailureReason{ nullptr }; // Static diagnostic reason; never an engine pointer.
             bool hasFiringHandWeaponLocal{ false };
             RE::NiTransform firingHandWeaponLocal{};

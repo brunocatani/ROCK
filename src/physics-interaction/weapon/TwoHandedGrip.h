@@ -657,13 +657,6 @@ namespace rock
             bool providerTargetsActive) const noexcept;
         void clearAuthoredSupportGripCandidate();
         bool setAuthoredSupportGripAbsent(RE::NiNode* weaponNode, std::uint64_t generation, std::uint64_t capture);
-        [[nodiscard]] authored_support_grab_policy::
-            LeftFiringTakeoverReadiness
-            getLeftFiringTakeoverReadiness(
-                RE::NiNode* weaponNode,
-                std::uint64_t authoredGenerationKey,
-                std::uint64_t weaponOwnershipKey,
-                bool authoredOnlyModeEnabled) const noexcept;
         bool setAuthoredSupportGripCandidate(
             RE::NiNode* weaponNode,
             const RE::NiTransform& handWeaponLocal,

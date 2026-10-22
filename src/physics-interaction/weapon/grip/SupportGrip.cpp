@@ -2751,57 +2751,6 @@ namespace rock
         _support.authoredCandidate = {};
     }
 
-    authored_support_grab_policy::LeftFiringTakeoverReadiness
-    TwoHandedGrip::getLeftFiringTakeoverReadiness(
-        RE::NiNode* weaponNode,
-        const std::uint64_t authoredGenerationKey,
-        const std::uint64_t weaponOwnershipKey,
-        const bool authoredOnlyModeEnabled) const noexcept
-    {
-        const auto& authoredHand = authoredSupportHand(true);
-        RE::NiTransform mirroredRightSupportHandWeaponLocal{};
-        std::array<RE::NiTransform, 15> mirroredRightFingerLocals{};
-        std::uint16_t mirroredRightFingerMask = 0;
-        const bool mirroredCandidateAvailable =
-            authoredGenerationKey != 0 &&
-            tryResolveAuthoredSupportGripCandidateForHand(
-                false,
-                weaponNode,
-                authoredGenerationKey,
-                mirroredRightSupportHandWeaponLocal,
-                mirroredRightFingerLocals,
-                mirroredRightFingerMask) &&
-            mirroredRightFingerMask == 0x7FFFu;
-
-        const auto& capability = authoredHand.authoredCapability;
-        const bool capabilityIdentityCurrent =
-            capability.initialized &&
-            capability.weaponNodeIdentity == weaponNode &&
-            weaponOwnershipKey != 0 &&
-            capability.weaponOwnershipKey == weaponOwnershipKey &&
-            authoredGenerationKey != 0 &&
-            capability.weaponGenerationKey == authoredGenerationKey &&
-            capability.handTopology ==
-                authored_weapon_grip_activation_policy::HandTopology::
-                    RightFiringLeftSupport;
-        return authored_support_grab_policy::
-            resolveLeftFiringTakeoverReadiness(
-                authored_support_grab_policy::
-                    LeftFiringTakeoverReadinessInput{
-                        .targetFiringHandIsLeft = true,
-                        .authoredOnlyModeEnabled =
-                            authoredOnlyModeEnabled,
-                        .authoredGenerationKey =
-                            authoredGenerationKey,
-                        .capabilityIdentityCurrent =
-                            capabilityIdentityCurrent,
-                        .capability = capability.capability,
-                        .supportPoseAbsent = _support.authoredCandidate.poseAbsent,
-                        .mirroredCandidateAvailable =
-                            mirroredCandidateAvailable,
-                    });
-    }
-
     bool TwoHandedGrip::setAuthoredSupportGripCandidate(
         RE::NiNode* weaponNode,
         const RE::NiTransform& handWeaponLocal,
