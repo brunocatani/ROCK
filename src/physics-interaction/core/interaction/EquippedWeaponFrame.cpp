@@ -197,12 +197,15 @@ namespace rock
             (void)frik_visual_authority::clearHandPose(kTag, frik_visual_authority::handFromBool(_equipped.menuHoldFingerHand == 1));
             _equipped.menuHoldFingerHand = -1;
         };
-        // A menu resets ROCK's grip session and its FRIK primary-pose block;
-        // FRIK would then turn the hand to its per-weapon grip rotation and
-        // pose it for the previous weapon. The hold keeps that pose blocked.
+        // A menu resets ROCK's grip session and its FRIK blocks. Without them
+        // FRIK poses the hand for the previous weapon and returns the weapon
+        // node to the native glue, which turns the hand to the authored grip.
+        // The hold keeps both blocked so the hand stays on its controller.
         const auto setPoseBlocked = [this](bool blocked) {
             if (_equipped.menuHoldPoseBlocked == blocked) return;
-            if (frik_visual_authority::blockPrimaryHandWeaponPose(kTag, blocked)) _equipped.menuHoldPoseBlocked = blocked;
+            const bool pose = frik_visual_authority::blockPrimaryHandWeaponPose(kTag, blocked);
+            const bool node = frik_visual_authority::blockPrimaryWeaponNodeOwnership(kTag, blocked);
+            if (pose && node) _equipped.menuHoldPoseBlocked = blocked;
         };
         const auto& frame = runtime_state::currentFrame();
         const auto view = native_hand_equipment::equippedViews()[0];
