@@ -45,6 +45,7 @@
 #include "physics-interaction/weapon/NativeHandEquipment.h"
 #include "physics-interaction/weapon/NativePipboyHandMarkers.h"
 #include "physics-interaction/weapon/NativeSecondaryPresentation.h"
+#include "physics-interaction/weapon/scope/ScopeRigParentRepair.h"
 #include "physics-interaction/weapon/scope/NativeScopeData.h"
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -810,6 +811,8 @@ namespace
             ~RockFrameEnd()
             {
                 frik_hand_world_authority::endRockFrame();
+                // Last ROCK work before FRIK's weapon positioning carries the scope rig.
+                scope_rig_parent_repair::reattachOrphanedScopeRig();
             }
         };
         const RockFrameEnd rockFrameEnd{};
