@@ -1117,6 +1117,11 @@ namespace rock
     bool TwoHandedGrip::tryGetRightWeaponAimWorld(const float weaponScale, RE::NiTransform& outWorld)
     {
         outWorld = {};
+        if (frik_hand_world_authority::weaponFilteringActive()) {
+            RE::NiTransform wand{};
+            return frik_hand_world_authority::tryGetWeaponWandWorld(false, wand) &&
+                weapon_aim_basis::tryResolveWorld(wand, weaponScale, outWorld);
+        }
         const auto* nodes = f4vr::getPlayerNodes();
         return nodes && nodes->primaryWandNode &&
             weapon_aim_basis::tryResolveWorld(nodes->primaryWandNode->world, weaponScale, outWorld);
@@ -1126,7 +1131,7 @@ namespace rock
     {
         outWorld = {};
         RE::NiTransform wand{};
-        if (!frik_hand_world_authority::tryGetTrackedWandWorld(true, wand)) return false;
+        if (!frik_hand_world_authority::tryGetWeaponWandWorld(true, wand)) return false;
         const auto& handling = equipped_weapon_handling_runtime::current();
         return weapon_aim_basis::tryResolveWorld(wand, weaponScale,
             native_secondary_pose::firingWeaponInWand(true, handling.leftFiringAimYawDegrees, handling.leftFiringAimPitchDegrees),

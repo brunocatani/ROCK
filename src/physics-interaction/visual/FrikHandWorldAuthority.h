@@ -38,11 +38,6 @@
  * Single owner, game thread only. Explicitly reset on skeleton release and
  * session change.
  */
-namespace rock::weapon_input_filter
-{
-    class PoseFilter;
-}
-
 namespace rock::frik_hand_world_authority
 {
     struct RawHandSample
@@ -89,23 +84,15 @@ namespace rock::frik_hand_world_authority
     // This frame's controller driver (FRIK's dampened weapon offset node).
     [[nodiscard]] bool tryGetInputDriverWorld(bool isLeft, RE::NiTransform& outWorld);
 
-    // This frame's tracked controller wand.
-    [[nodiscard]] bool tryGetTrackedWandWorld(bool isLeft, RE::NiTransform& outWorld);
+    // Private equipped-firearm inputs; never replace the published tracked inputs.
+    void prepareWeaponInputs(std::uint64_t ownership, std::uint64_t generation, bool enabled);
+    [[nodiscard]] bool weaponFilteringActive();
+    [[nodiscard]] bool tryGetWeaponHandWorld(bool isLeft, RE::NiTransform& outWorld);
+    [[nodiscard]] bool tryGetWeaponDriverWorld(bool isLeft, RE::NiTransform& outWorld);
+    [[nodiscard]] bool tryGetWeaponWandWorld(bool isLeft, RE::NiTransform& outWorld);
 
-    // Equipped weapon pose filtering: the preset, or the scoped tuning while
-    // looking through a scope, applied to each weapon's final pose. Firearms
-    // only; melee stays unfiltered.
-    void prepareWeaponPoseFilter(std::uint64_t ownership, std::uint64_t generation, bool eligible);
-    // The first weapon passed this frame's eligibility (prepareWeaponPoseFilter).
-    [[nodiscard]] bool weaponPoseFilterEligible();
-    // The first weapon's pose is filtered this frame (tuning on, or settling).
-    [[nodiscard]] bool weaponPoseFilterEngaged(const weapon_input_filter::PoseFilter& filter);
-    // Outputs target unchanged (and resets the filter) when not eligible.
-    void filterWeaponPose(weapon_input_filter::PoseFilter& filter, const char* weaponName, const void* identity, bool eligible,
-        const RE::NiTransform& target, const RE::NiPoint3& pivotLocal, bool holdOffset, RE::NiTransform& outWorld);
-
-    // Private held-object inputs filtered by the preset. Free hands, published
-    // raw input and throw motion remain unfiltered.
+    // Private held-object inputs share controller history with equipped weapons.
+    // Free hands, published raw input and throw motion remain unfiltered.
     [[nodiscard]] bool tryGetHandlingWandWorld(bool isLeft, RE::NiTransform& outWorld);
     [[nodiscard]] bool filterHeldProxyWorld(bool isLeft, RE::NiTransform& proxyWorld);
 

@@ -45,19 +45,13 @@ namespace rock
             return;
         }
 
-        if (frik_hand_world_authority::weaponPoseFilterEngaged(_visuals.weaponPoseFilter)) {
+        if (frik_hand_world_authority::weaponFilteringActive()) {
             // Below grip/recoil authority: collision and recoil may replace
             // this base later in the same frame, including with collision off.
-            // The hand rides the filtered weapon at its physical grip.
-            const auto filteredWeaponWorld = filterWeaponWorld(weaponNode, requestedWeaponWorld);
-            physicalRightHandWorld = transform_math::composeTransforms(filteredWeaponWorld,
-                transform_math::composeTransforms(transform_math::invertTransform(requestedWeaponWorld), physicalRightHandWorld));
-            requestedWeaponWorld = filteredWeaponWorld;
             if (!frik_visual_authority::publishHandWorld("ROCK_WeaponFiltering",
                     handFromBool(false), physicalRightHandWorld, NATIVE_PHYSICAL_HAND_PRIORITY)) return;
             _visuals.weaponFilteringHandAuthorityLive = true;
-            if (!applyWeaponVisualAuthority(weaponNode, requestedWeaponWorld, currentWeaponGenerationKey, false, true,
-                    dynamic_weapon_collision_policy::VisualIntentSource::ManagedGrip, true)) {
+            if (!applyWeaponVisualAuthority(weaponNode, requestedWeaponWorld, currentWeaponGenerationKey, false)) {
                 if (frik_visual_authority::clearHandWorld("ROCK_WeaponFiltering", handFromBool(false)))
                     _visuals.weaponFilteringHandAuthorityLive = false;
                 return;
@@ -797,38 +791,17 @@ namespace rock
         return blended.transform;
     }
 
-    RE::NiTransform TwoHandedGrip::filterWeaponWorld(RE::NiNode* weaponNode, const RE::NiTransform& solvedWeaponWorld)
-    {
-        // Pivot at the firing palm so smoothing never swings the grip around
-        // the weapon origin. A recoil kick holds the previous offset rigid.
-        RE::NiPoint3 pivot{};
-        if (_firing.hasPrimaryHandWeaponLocal) {
-            const auto firingHand = transform_math::composeTransforms(solvedWeaponWorld, _firing.primaryHandWeaponLocal);
-            pivot = transform_math::worldPointToLocal(solvedWeaponWorld,
-                computeGrabPalmPointWorldFromHandBasis(firingHand, weaponCarrierIsLeft()));
-        }
-        RE::NiTransform filtered{};
-        frik_hand_world_authority::filterWeaponPose(_visuals.weaponPoseFilter, "first", weaponNode,
-            frik_hand_world_authority::weaponPoseFilterEligible(), solvedWeaponWorld, pivot,
-            _recoil.kickConsumedFrame == runtime_state::currentFrame().frameIndex, filtered);
-        return filtered;
-    }
-
     bool TwoHandedGrip::applyWeaponVisualAuthority(
         RE::NiNode* weaponNode,
-        const RE::NiTransform& solvedPoseWorld,
+        const RE::NiTransform& solvedWeaponWorld,
         const std::uint64_t authorityGenerationKey,
         const bool notifyVisualIntentObserver,
         const bool recordRenderedWeaponWorld,
-        const dynamic_weapon_collision_policy::VisualIntentSource intentSource,
-        const bool poseFiltered)
+        const dynamic_weapon_collision_policy::VisualIntentSource intentSource)
     {
         if (!weaponNode) {
             return false;
         }
-        // Every weapon pose ROCK writes passes the pose filter once; hands
-        // locked to the weapon read its node afterwards and follow it.
-        const RE::NiTransform solvedWeaponWorld = poseFiltered ? solvedPoseWorld : filterWeaponWorld(weaponNode, solvedPoseWorld);
 
         const std::uint64_t effectiveGenerationKey = authorityGenerationKey != 0 ? authorityGenerationKey : _session.weaponGenerationKey;
         if (notifyVisualIntentObserver && _visuals.weaponIntentObserver) {
@@ -1043,7 +1016,9 @@ namespace rock
                     requestedHandWorld,
                     WEAPON_COLLISION_HAND_TAG,
                     WEAPON_COLLISION_HAND_PRIORITY - 1) ||
-                tryGetRootFlattenedHandBoneTransform(pulse.isLeft, requestedHandWorld);
+                (frik_hand_world_authority::weaponFilteringActive() ?
+                    frik_hand_world_authority::tryGetWeaponHandWorld(pulse.isLeft, requestedHandWorld) :
+                    tryGetRootFlattenedHandBoneTransform(pulse.isLeft, requestedHandWorld));
             pulse.targetWorld =
                 dynamic_weapon_collision_policy::reframeAttachedHand(
                     requestedWeaponWorld,
@@ -1105,10 +1080,7 @@ namespace rock
             weaponNode,
             resolvedWeaponWorld,
             authorityGenerationKey,
-            false,
-            true,
-            dynamic_weapon_collision_policy::VisualIntentSource::ManagedGrip,
-            true);
+            false);
         if (!weaponPublished || !handPulsesSucceeded) {
             ROCK_LOG_SAMPLE_WARN(
                 Weapon,

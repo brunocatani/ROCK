@@ -1,6 +1,5 @@
 #pragma once
 #include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
-#include "physics-interaction/weapon/WeaponInputFilter.h"
 #include "physics-interaction/weapon/WeaponGripTransfer.h"
 #include "physics-interaction/weapon/GunstockDebug.h"
 
@@ -1696,11 +1695,7 @@ namespace rock
             bool notifyVisualIntentObserver = true,
             bool recordRenderedWeaponWorld = true,
             dynamic_weapon_collision_policy::VisualIntentSource intentSource =
-                dynamic_weapon_collision_policy::VisualIntentSource::ManagedGrip,
-            bool poseFiltered = false);
-        // The weapon pose filter's output for this solved pose (pivot at the
-        // firing palm). applyWeaponVisualAuthority filters unless poseFiltered.
-        [[nodiscard]] RE::NiTransform filterWeaponWorld(RE::NiNode* weaponNode, const RE::NiTransform& solvedWeaponWorld);
+                dynamic_weapon_collision_policy::VisualIntentSource::ManagedGrip);
 
         [[nodiscard]] bool isDynamicSupportBaselineActive(
             bool supportHandIsLeft,
@@ -2128,6 +2123,8 @@ namespace rock
         struct WeaponRecoilState
         {
             RE::NiTransform worldDelta{};
+            RE::NiTransform carrierLocalDelta{};
+            bool carrierLocalDeltaValid = false;
             weapon_recoil_policy::SampleTicket ticket{};
             // Current equipped identity also covers native carry without a
             // manual grip session. The callback sees the previous frame's
@@ -2142,9 +2139,6 @@ namespace rock
             bool rightHandClaimActive{ false };
             bool rightNeedsNeutralFrame{ false };
             bool controlledKickActive{ false };
-            // Frame a non-neutral kick was consumed: the weapon pose filter
-            // holds its offset on exactly those frames.
-            std::uint64_t kickConsumedFrame{ 0 };
             bool controllerRegistered{ false };
             // Only actual FRIK hand kicks inhibit raw-hand calibration; owned
             // carry incorporates its sample into the published seat instead.
@@ -2164,7 +2158,6 @@ namespace rock
             // post-solve.
             std::array<bool, 2> weaponCollisionHandAuthorityLive{};
             bool weaponFilteringHandAuthorityLive = false;
-            weapon_input_filter::PoseFilter weaponPoseFilter{};
             // Captured before those tags are cleared. Because ROCK runs after
             // FRIK, this identifies current root/weapon poses that already
             // include the previous render interval's collision presentation.
