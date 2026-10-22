@@ -2091,8 +2091,7 @@ namespace rock
             // seed from ROCK's controller basis, never that animated root.
             const bool meleeWeapon = _recoil.weaponEvidence.resolved && _recoil.weaponEvidence.sizeClass == WeaponSizeClass::Melee;
             RE::NiTransform aimWand = wand ? wand->world : RE::NiTransform{};
-            const bool aimWandValid = frik_hand_world_authority::weaponFilteringActive() ?
-                frik_hand_world_authority::tryGetWeaponWandWorld(primaryHandIsLeft, aimWand) : wand != nullptr;
+            const bool aimWandValid = wand != nullptr;
             const bool aimAvailable = meleeWeapon ?
                 (_firing.hasPrimaryHandWeaponLocal && tryGetMeleeWeaponAimWorld(primaryHandIsLeft,
                     calibratedPrimaryTransform, _firing.primaryHandWeaponLocal, weaponNode->world.scale, solverInput.weaponWorldTransform)) :
@@ -2174,8 +2173,8 @@ namespace rock
         RE::NiTransform appliedWeaponWorld{};
         if (gunstockAim) {
             RE::NiTransform primaryWand{}, supportWand{};
-            if (!frik_hand_world_authority::tryGetWeaponWandWorld(primaryHandIsLeft, primaryWand) ||
-                !frik_hand_world_authority::tryGetWeaponWandWorld(supportHandIsLeft, supportWand) ||
+            if (!frik_hand_world_authority::tryGetTrackedWandWorld(primaryHandIsLeft, primaryWand) ||
+                !frik_hand_world_authority::tryGetTrackedWandWorld(supportHandIsLeft, supportWand) ||
                 !gunstock_mode::configureVirtualAim(solverInput, primaryWand, supportWand,
                     sub(primaryController, primaryBeforeRecoil), dynamicAcquisition ? 1.0f : _support.rotationBlend)) {
                 _hasSolvedWeaponTransform = false;
@@ -3043,8 +3042,8 @@ namespace rock
         // The shared hand service already isolates the current physical hand
         // from our claims and native recoil; use that single authority here.
         const bool calibrated = frik_hand_world_authority::hasCalibratedRawHandFrame(isLeft);
-        const bool driverAvailable = frik_hand_world_authority::tryGetWeaponDriverWorld(isLeft, outDriverWorld);
-        const bool rawAvailable = frik_hand_world_authority::tryGetWeaponHandWorld(isLeft, outHandWorld);
+        const bool driverAvailable = frik_hand_world_authority::tryGetInputDriverWorld(isLeft, outDriverWorld);
+        const bool rawAvailable = frik_hand_world_authority::tryGetRawHandWorld(isLeft, outHandWorld);
         const bool rawUsable = rawAvailable && isUsableHandAuthorityTransform(outHandWorld);
         const bool driverFinite = driverAvailable && isFiniteTransform(outDriverWorld);
         if (!calibrated || !driverAvailable || !rawAvailable || !rawUsable || !driverFinite) {

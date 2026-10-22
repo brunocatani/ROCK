@@ -14,6 +14,7 @@
 #include "physics-interaction/weapon/NativeWeaponModelGeometry.h"
 #include "physics-interaction/weapon/NativeEquippedModelLifetime.h"
 #include "physics-interaction/weapon/NativeSecondaryActions.h"
+#include "physics-interaction/weapon/WeaponInputFilter.h"
 #include "physics-interaction/weapon/EquippedWeaponVisualState.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
@@ -42,6 +43,7 @@ namespace rock::native_secondary_presentation
             // Numeric identities only. Every scene write reacquires the native
             // equipment and biped record; no previous frame pointer is followed.
             std::uintptr_t root = 0, attachment = 0, instance = 0, data = 0;
+            weapon_input_filter::PoseFilter poseFilter{};
             std::uintptr_t hiddenBody = 0, observedBody = 0;
             std::uint32_t form = 0;
             RE::NiTransform originalLocal{}, targetWorld{}, handWorld{};
@@ -627,15 +629,14 @@ namespace rock::native_secondary_presentation
             }
             const RE::NiTransform& seat = firingSeat.handWeaponLocal;
             const auto& fingers = firingSeat.fingers;
-            // The first weapon's firing inputs and aim: ROCK's equipped-weapon
-            // wand and hand (filtered when weapon filtering is active), its
-            // controller basis, and for the left hand the mirrored basis, the
-            // left aim trim and the left firing grip offset.
+            // The first weapon's firing inputs and aim: the tracked wand and
+            // isolated hand, the controller basis, and for the left hand the
+            // mirrored basis, the left aim trim and the left firing grip offset.
             RE::NiTransform physicalHand{}, wandWorld{};
             if (!usable(seat) ||
                 !frik_hand_world_authority::hasCalibratedRawHandFrame(left) ||
-                !frik_hand_world_authority::tryGetWeaponWandWorld(left, wandWorld) || !usable(wandWorld) ||
-                !frik_hand_world_authority::tryGetWeaponHandWorld(left, physicalHand) || !usable(physicalHand)) {
+                !frik_hand_world_authority::tryGetTrackedWandWorld(left, wandWorld) || !usable(wandWorld) ||
+                !frik_hand_world_authority::tryGetRawHandWorld(left, physicalHand) || !usable(physicalHand)) {
                 waitFor(view, "tracked-hand");
                 return;
             }
@@ -652,6 +653,16 @@ namespace rock::native_secondary_presentation
                     palm, s_state.modelScale, weaponInWand, handTargetOffset, target, hand)) {
                 waitFor(view, "invalid-placement");
                 return;
+            }
+            {
+                // The same pose filter as the first weapon, before the kick so
+                // recoil stays unsmoothed; the hand rides the filtered weapon.
+                RE::NiTransform filtered{};
+                frik_hand_world_authority::filterWeaponPose(s_state.poseFilter, view.root, true, target,
+                    transform_math::worldPointToLocal(target, computeGrabPalmPointWorldFromHandBasis(hand, left)), false, filtered);
+                hand = transform_math::composeTransforms(filtered,
+                    transform_math::composeTransforms(transform_math::invertTransform(target), hand));
+                target = filtered;
             }
             native_secondary_actions::applyRecoil(target,hand,wandWorld);
             // The controller-relative grip excludes collision correction.

@@ -262,13 +262,10 @@ namespace rock
                 weaponNode,
                 _session.weaponGenerationKey,
                 _session.equippedWeaponOwnershipKey)) {
-            RE::NiTransform referenceHand = outPhysicalHandWorld;
-            if (frik_hand_world_authority::weaponFilteringActive() &&
-                !frik_hand_world_authority::tryGetRawHandWorld(true, referenceHand)) return false;
             if (!captureLeftFiringDampedFollowFrame(
                     weaponNode,
                     leftWand->world,
-                    referenceHand)) {
+                    outPhysicalHandWorld)) {
                 return false;
             }
             // Probe: the reference the carry's damping correction is measured
@@ -292,10 +289,6 @@ namespace rock
                     _firing.leftDampedFollowFrame.
                         handInWandOrientation,
                     outPhysicalHandWorld);
-        if (frik_hand_world_authority::weaponFilteringActive() &&
-            !frik_hand_world_authority::tryGetWeaponWandWorld(true, dampedAimCarrierWorld)) {
-            return false;
-        }
         if (!isFiniteTransform(dampedAimCarrierWorld)) {
             return false;
         }

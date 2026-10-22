@@ -24,25 +24,17 @@ namespace rock::frik_hand_world_authority
     {
         namespace registry_policy = hand_world_claim_registry_policy;
 
-        // Scoped filtering: heavier, speed-adaptive smoothing while looking
-        // through a scope, on top of or without the general preset.
-        [[nodiscard]] bool scopedFilteringNow()
+        // The scoped tuning while looking through a scope (on top of or
+        // without the preset), otherwise the preset.
+        [[nodiscard]] weapon_input_filter::Tuning weaponPoseTuning()
         {
-            return (g_rockConfig.rockScopedFilterRotationSeconds > 0.0f ||
-                       g_rockConfig.rockScopedFilterTranslationSeconds > 0.0f) &&
-                frik_visual_authority::isLookingThroughScope();
-        }
-
-        [[nodiscard]] bool filteringConfigured()
-        {
-            return g_rockConfig.rockWeaponFilteringPreset > 0 || scopedFilteringNow();
-        }
-
-        [[nodiscard]] weapon_input_filter::Tuning activeFilterTuning()
-        {
-            if (!scopedFilteringNow()) return weapon_input_filter::tuning(g_rockConfig.rockWeaponFilteringPreset);
-            return { g_rockConfig.rockScopedFilterRotationSeconds, g_rockConfig.rockScopedFilterTranslationSeconds,
-                g_rockConfig.rockScopedFilterReleaseDegreesPerSecond };
+            if ((g_rockConfig.rockScopedFilterRotationSeconds > 0.0f ||
+                    g_rockConfig.rockScopedFilterTranslationSeconds > 0.0f) &&
+                frik_visual_authority::isLookingThroughScope()) {
+                return { g_rockConfig.rockScopedFilterRotationSeconds, g_rockConfig.rockScopedFilterTranslationSeconds,
+                    g_rockConfig.rockScopedFilterReleaseDegreesPerSecond };
+            }
+            return weapon_input_filter::tuning(g_rockConfig.rockWeaponFilteringPreset);
         }
         namespace isolation_policy = tracked_hand_isolation_policy;
         namespace scope_policy = scope_hand_input_continuity_policy;
@@ -94,7 +86,7 @@ namespace rock::frik_hand_world_authority
             std::array<DriverSample, 2> weaponWands{};
             std::array<DriverSample, 2> weaponFilteredWands{};
             std::uint64_t weaponPreparedFrame = 0;
-            bool weaponFilteringEnabled = false;
+            bool weaponPoseEligible = false;
             const char* weaponRoomSource = nullptr;
             registry_policy::Registry registry{};
             // This frame's controller driver per hand (FRIK's dampened weapon offset node).
@@ -199,7 +191,7 @@ namespace rock::frik_hand_world_authority
                 const auto nativeDriver = sampleTrackedHand(isLeft, TrackedHandKind::WeaponOffset, &driverFailure);
                 const auto nativeHand = sampleTrackedHand(isLeft, TrackedHandKind::FirstPersonHand, &handFailure);
                 g_service.weaponFilteredWands[hand] = {};
-                g_service.weaponWands[hand] = filteringConfigured() ?
+                g_service.weaponWands[hand] = g_rockConfig.rockWeaponFilteringPreset > 0 ?
                     sampleTrackedHand(isLeft, TrackedHandKind::Wand) : DriverSample{};
                 // Compare the live (restored) graph with the neutral driver
                 // only for diagnostics. It must never select filtered input.
@@ -411,40 +403,53 @@ namespace rock::frik_hand_world_authority
         return true;
     }
 
-    void prepareWeaponInputs(std::uint64_t ownership, std::uint64_t generation, bool enabled)
+    void prepareWeaponPoseFilter(std::uint64_t ownership, std::uint64_t generation, bool eligible)
     {
         const auto& frame = runtime_state::currentFrame();
-        enabled = enabled && ownership && generation && filteringConfigured() &&
-            frame.weaponDrawn && frame.localSkeletonReady && !frame.localMenuBlocking &&
-            !frame.compatibilityConfigBlocking && frame.playerSpace.valid;
-        // Controller history belongs to the physical hand. Native equipment
-        // ownership changes must not discard the incoming loose-hand filter.
-        g_service.weaponFilteringEnabled = enabled;
+        g_service.weaponPoseEligible = eligible && ownership && generation && frame.weaponDrawn;
         g_service.weaponPreparedFrame = frame.frameIndex;
     }
 
-    bool weaponFilteringActive()
+    bool weaponPoseFilterEligible()
     {
-        return filteringConfigured() && g_service.weaponFilteringEnabled &&
-            g_service.weaponPreparedFrame == runtime_state::currentFrame().frameIndex;
+        return g_service.weaponPoseEligible && g_service.weaponPreparedFrame == runtime_state::currentFrame().frameIndex;
     }
 
-    bool tryGetWeaponWandWorld(bool isLeft, RE::NiTransform& outWorld)
+    bool weaponPoseFilterEngaged(const weapon_input_filter::PoseFilter& filter)
     {
-        outWorld = {};
-        if (!weaponFilteringActive()) {
-            const auto wand = sampleTrackedHand(isLeft, TrackedHandKind::Wand);
-            outWorld = wand.world;
-            return wand.valid;
+        const auto tuning = weaponPoseTuning();
+        return weaponPoseFilterEligible() &&
+            (tuning.rotationSeconds > 0.0f || tuning.translationSeconds > 0.0f || filter.settling());
+    }
+
+    void filterWeaponPose(weapon_input_filter::PoseFilter& filter, const void* identity, const bool eligible,
+        const RE::NiTransform& target, const RE::NiPoint3& pivotLocal, const bool holdOffset, RE::NiTransform& outWorld)
+    {
+        outWorld = target;
+        const auto& frame = runtime_state::currentFrame();
+        if (!eligible || !frame.localSkeletonReady || frame.localMenuBlocking ||
+            frame.compatibilityConfigBlocking || !frame.playerSpace.valid) {
+            filter.reset();
+            return;
         }
-        return tryGetHandlingWandWorld(isLeft, outWorld);
+        if (!filter.apply(target, frame.playerSpace.world, frame.playerSpace.source, identity, pivotLocal,
+                frame.frameIndex, frame.deltaSeconds, frame.timing.discontinuity, holdOffset, weaponPoseTuning(), outWorld)) {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Weapon pose filtering input unusable; weapon placed unfiltered");
+        }
+    }
+
+    bool tryGetTrackedWandWorld(bool isLeft, RE::NiTransform& outWorld)
+    {
+        const auto wand = sampleTrackedHand(isLeft, TrackedHandKind::Wand);
+        outWorld = wand.world;
+        return wand.valid;
     }
 
     bool tryGetHandlingWandWorld(bool isLeft, RE::NiTransform& outWorld)
     {
         outWorld = {};
         const auto& frame = runtime_state::currentFrame();
-        const bool enabled = filteringConfigured() &&
+        const bool enabled = g_rockConfig.rockWeaponFilteringPreset > 0 &&
             frame.localSkeletonReady && !frame.localMenuBlocking &&
             !frame.compatibilityConfigBlocking && frame.playerSpace.valid;
         if (!enabled || frame.playerSpace.source != g_service.weaponRoomSource) {
@@ -474,14 +479,14 @@ namespace rock::frik_hand_world_authority
         const auto pivot = transform_math::worldPointToLocal(wand.world, palmWorld);
         cached.valid = weapon_input_filter::update(g_service.weaponFilters[index], wand.world,
             frame.playerSpace.world, pivot, frame.frameIndex, frame.deltaSeconds, frame.timing.discontinuity,
-            activeFilterTuning(), cached.world);
+            weapon_input_filter::tuning(g_rockConfig.rockWeaponFilteringPreset), cached.world);
         outWorld = cached.world;
         return cached.valid;
     }
 
     bool filterHeldProxyWorld(bool isLeft, RE::NiTransform& proxyWorld)
     {
-        if (!filteringConfigured()) return true;
+        if (g_rockConfig.rockWeaponFilteringPreset <= 0) return true;
         RE::NiTransform filteredWand{};
         if (!tryGetHandlingWandWorld(isLeft, filteredWand)) return false;
         const auto& tracked = g_service.weaponWands[handIndex(isLeft)];
@@ -495,30 +500,6 @@ namespace rock::frik_hand_world_authority
                 registry_policy::rotationDeltaDegrees(tracked.world, filteredWand));
         }
         return weapon_input_filter::usable(proxyWorld);
-    }
-
-    bool tryGetWeaponDriverWorld(bool isLeft, RE::NiTransform& outWorld)
-    {
-        if (!weaponFilteringActive()) return tryGetInputDriverWorld(isLeft, outWorld);
-        RE::NiTransform filteredWand{};
-        outWorld = {};
-        if (!tryGetWeaponWandWorld(isLeft, filteredWand)) return false;
-        RE::NiTransform driver{};
-        if (!tryGetInputDriverWorld(isLeft, driver)) return false;
-        outWorld = weapon_input_filter::applyTrackingCorrection(driver,
-            g_service.weaponWands[handIndex(isLeft)].world, filteredWand);
-        return weapon_input_filter::usable(outWorld);
-    }
-
-    bool tryGetWeaponHandWorld(bool isLeft, RE::NiTransform& outWorld)
-    {
-        if (!weaponFilteringActive()) return tryGetRawHandWorld(isLeft, outWorld);
-        RE::NiTransform filteredWand{}, hand{};
-        outWorld = {};
-        if (!tryGetWeaponWandWorld(isLeft, filteredWand) || !tryGetRawHandWorld(isLeft, hand)) return false;
-        outWorld = weapon_input_filter::applyTrackingCorrection(hand,
-            g_service.weaponWands[handIndex(isLeft)].world, filteredWand);
-        return weapon_input_filter::usable(outWorld);
     }
 
     bool publish(const char* tag, const bool isLeft, const RE::NiTransform& requestedTarget, const int priority)
@@ -799,7 +780,7 @@ namespace rock::frik_hand_world_authority
     {
         g_service.weaponFilters = {};
         g_service.weaponFilteredWands = {};
-        g_service.weaponFilteringEnabled = false;
+        g_service.weaponPoseEligible = false;
         for (const auto& claim : g_service.registry.claims) {
             if (claim.valid) {
                 (void)frikClearHandWorld(claim.tag.data(), claim.isLeft);
@@ -818,7 +799,7 @@ namespace rock::frik_hand_world_authority
     {
         g_service.weaponFilters = {};
         g_service.weaponFilteredWands = {};
-        g_service.weaponFilteringEnabled = false;
+        g_service.weaponPoseEligible = false;
         // A guard armed on an edge that coincides with the rebuild still covers
         // the new skeleton's first calibration frames.
         g_service.scopeStateKnown = false;
