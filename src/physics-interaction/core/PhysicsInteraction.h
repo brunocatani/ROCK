@@ -493,8 +493,9 @@ namespace rock
         // from the hand that carries it. Frame thread.
         bool dropSecondaryWeaponToWorld(const PhysicsFrameContext& frame);
         // After the primary leaves index 0: the second weapon becomes the
-        // primary in the hand that holds it. Frame thread.
-        void promoteSecondaryWeapon(RE::TESObjectWEAP* weapon, std::uintptr_t instance, bool left);
+        // primary in the hand that holds it. Frame thread. False when the
+        // native re-equip failed and index 1 still holds the weapon.
+        bool promoteSecondaryWeapon(RE::TESObjectWEAP* weapon, std::uintptr_t instance, bool left);
         std::uint32_t forceGrabHandBlockerMask(const Hand& hand, bool isLeft, bool handDisabled, bool includePendingCommit) const;
         void sampleEquippedSlotOne();
         equipped_weapon_roster::Roster equippedWeaponRoster() const;
@@ -1121,6 +1122,9 @@ namespace rock
         // Slot 1's native equipment, sampled by the frame owner
         // (sampleEquippedSlotOne) for every roster query this frame.
         equipped_weapon_roster::SlotOneFacts _equippedSlotOne{};
+        // The index-1 weapon whose promotion failed; retried only after
+        // index 0 or 1 changes, never every frame.
+        struct FailedPromotion { std::uint32_t formID{}; std::uintptr_t instance{}; } _failedPromotion{};
         TwoHandedGrip _twoHandedGrip;
         DynamicHandCollisionRuntime _dynamicHandCollision{ _contacts.clock };
         feedback_haptics::FeedbackHaptics _feedbackHaptics;

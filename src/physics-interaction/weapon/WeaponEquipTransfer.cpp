@@ -85,7 +85,158 @@ namespace rock::weapon_equip_transfer
             std::uintptr_t stackAddress = 0;
             RE::BSTSmartPointer<RE::TBO_InstanceData> instanceData{};
             const RE::BGSEquipSlot* equipSlot = nullptr;
+            // Worn bits on a stack of identical copies; the unworn copies are
+            // equipped only after separateWornCopy splits one off.
+            std::uint32_t wornCopies = 0;
         };
+
+        [[nodiscard]] std::uint32_t wornCopies(const RE::BGSInventoryItem::Stack& stack) noexcept
+        {
+            using Flag = RE::BGSInventoryItem::Stack::Flag;
+            return static_cast<std::uint32_t>(stack.flags.any(Flag::kSlotIndex1)) +
+                stack.flags.any(Flag::kSlotIndex2) + stack.flags.any(Flag::kSlotIndex3);
+        }
+
+        [[nodiscard]] bool hasUnwornCopy(const RE::BGSInventoryItem::Stack& stack) noexcept
+        {
+            return stack.GetCount() > wornCopies(stack);
+        }
+
+        /*
+         * Identical copies of one base weapon share a stack unless their extra
+         * data differs. FO4VR 1.2.72 raw disassembly:
+         * - 1401AFD00, the merge pass after every stack write, joins stacks
+         *   whose flags match outside the worn bits (mask 0xFFE8) and whose
+         *   extra lists compare equal (140083380), ORing their worn bits.
+         * - ExtraInstanceData always compares equal (1400809A0); ExtraUniqueID
+         *   compares its id and base (1400C3210).
+         * Worn state therefore never keeps two copies apart: a picked-up copy
+         * joins the worn stack, and equipping that stack into the other hand
+         * leaves no stack worn by that hand. Papyrus' HandlePolicy separates
+         * one item the way used here: GetNextUniqueID (1403E3A10), then a
+         * splitting stack write (1403E3700 -> 1401B0510 -> 1401B0690) that tags
+         * the split copy (SetUniqueID 140098880, base = container form). The
+         * tag is saved, so the copies stay two Pip-Boy rows after a reload.
+         */
+        using NextUniqueID = std::uint16_t (*)(RE::TESObjectREFR*);
+        using SetUniqueID = void (*)(RE::ExtraDataList*, std::uint16_t, std::uint32_t);
+        using ItemFilter = bool (*)(RE::TESBoundObject*, RE::TESBoundObject*);
+        using WriteInventoryStacks = void (*)(RE::TESObjectREFR*, RE::TESBoundObject*,
+            RE::BGSInventoryItem::StackDataCompareFunctor*, RE::BGSInventoryItem::StackDataWriteFunctor*, ItemFilter, bool);
+
+        template <std::size_t N>
+        [[nodiscard]] std::uintptr_t verifiedEntry(const std::uintptr_t rva, const std::array<std::uint8_t, N>& expected) noexcept
+        {
+            const auto address = REL::Offset(rva).address();
+            std::array<std::uint8_t, N> live{};
+            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), live.data(), N) &&
+                live == expected ? address : 0;
+        }
+
+        class ExactStack final : public RE::BGSInventoryItem::StackDataCompareFunctor
+        {
+        public:
+            explicit ExactStack(const std::uintptr_t stack) noexcept : _stack(stack) {}
+            bool CompareData(const RE::BGSInventoryItem::Stack& stack) override
+            {
+                return reinterpret_cast<std::uintptr_t>(&stack) == _stack;
+            }
+
+        private:
+            std::uintptr_t _stack;
+        };
+
+        class TagSplitCopy final : public RE::BGSInventoryItem::StackDataWriteFunctor
+        {
+        public:
+            TagSplitCopy(const SetUniqueID set, const std::uint16_t id, const std::uint32_t base) noexcept :
+                _set(set), _id(id), _base(base)
+            {
+                shouldSplitStacks = true;
+                transferEquippedToSplitStack = false;
+            }
+
+            // 1401B0690 passes the split copy: count 1, a fresh extra list and
+            // a copy of every flag, worn bits included.
+            void WriteDataImpl(RE::TESBoundObject&, RE::BGSInventoryItem::Stack& stack) override
+            {
+                if (stack.count != 1 || !stack.extra) return;
+                _set(stack.extra.get(), _id, _base);
+                // Unworn until the engine's equip marks it.
+                using Flag = RE::BGSInventoryItem::Stack::Flag;
+                stack.flags.reset(Flag::kSlotIndex1, Flag::kSlotIndex2, Flag::kSlotIndex3, Flag::kInvShouldEquip);
+                written = true;
+            }
+
+            bool written{ false };
+
+        private:
+            SetUniqueID _set;
+            std::uint16_t _id;
+            std::uint32_t _base;
+        };
+
+        // Splits one unworn copy, tagged with its own unique ID, off a worn
+        // stack and returns it re-resolved: the merge pass reorders the chain.
+        // Frame thread; the player's inventory lock must not be held.
+        [[nodiscard]] InventoryWeaponStack separateWornCopy(
+            RE::PlayerCharacter* player, RE::TESObjectWEAP* weapon, const InventoryWeaponStack& worn) noexcept
+        {
+            struct Entries
+            {
+                WriteInventoryStacks write;
+                NextUniqueID next;
+                SetUniqueID set;
+            };
+            static const Entries entries{
+                reinterpret_cast<WriteInventoryStacks>(verifiedEntry(0x3E3700, std::to_array<std::uint8_t>({
+                    0x48, 0x8B, 0x89, 0xF8, 0x00, 0x00, 0x00, 0x48, 0x85, 0xC9, 0x74, 0x0E,
+                    0x0F, 0xB6, 0x44, 0x24, 0x30, 0x88, 0x44, 0x24, 0x30 }))),
+                reinterpret_cast<NextUniqueID>(verifiedEntry(0x3E3A10, std::to_array<std::uint8_t>({
+                    0x4C, 0x8B, 0xDC, 0x53, 0x56, 0x57, 0x48, 0x83, 0xEC, 0x60, 0x33, 0xF6,
+                    0x4D, 0x89, 0x73, 0x18, 0x4C, 0x8B, 0xB1, 0xF8, 0x00, 0x00, 0x00 }))),
+                reinterpret_cast<SetUniqueID>(verifiedEntry(0x098880, std::to_array<std::uint8_t>({
+                    0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x6C, 0x24, 0x18, 0x56, 0x41,
+                    0x56, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x20 }))),
+            };
+            if (!entries.write || !entries.next || !entries.set) {
+                ROCK_LOG_WARN(Weapon, "Identical copy separation unavailable: stack write entry validation failed");
+                return {};
+            }
+            const std::uint16_t id = entries.next(player);
+            if (!id) return {};
+            const auto base = player->GetFormID();
+            ExactStack compare(worn.stackAddress);
+            TagSplitCopy write(entries.set, id, base);
+            entries.write(player, weapon, &compare, &write,
+                [](RE::TESBoundObject* item, RE::TESBoundObject* object) { return item == object; }, false);
+            if (!write.written) return {};
+
+            const RE::BSAutoReadLock inventoryLock{ player->inventoryList->rwLock };
+            for (auto& inventoryItem : player->inventoryList->data) {
+                if (inventoryItem.object != weapon) continue;
+                std::uint32_t stackID = 0;
+                for (auto* stack = inventoryItem.stackData.get(); stack; stack = stack->nextStack.get(), ++stackID) {
+                    const auto* tag = stack->extra ? stack->extra->GetByType<RE::ExtraUniqueID>() : nullptr;
+                    if (!tag || tag->uniqueID != id || tag->baseID != base) continue;
+                    RE::BSTSmartPointer<RE::TBO_InstanceData> instanceData{};
+                    if (const auto* instanceExtra = stack->extra->GetByType<RE::ExtraInstanceData>()) {
+                        instanceData = instanceExtra->data;
+                    }
+                    return InventoryWeaponStack{
+                        .found = true,
+                        .matchedInstanceData = instanceData.get() == worn.instanceData.get(),
+                        .stackID = stackID,
+                        .count = stack->GetCount(),
+                        .stackAddress = reinterpret_cast<std::uintptr_t>(stack),
+                        .instanceData = std::move(instanceData),
+                        .equipSlot = worn.equipSlot,
+                        .wornCopies = wornCopies(*stack),
+                    };
+                }
+            }
+            return {};
+        }
 
         struct EquippedWeaponSnapshot
         {
@@ -182,6 +333,7 @@ namespace rock::weapon_equip_transfer
                             .stackAddress = reinterpret_cast<std::uintptr_t>(stack),
                             .instanceData = RE::BSTSmartPointer<RE::TBO_InstanceData>{ instanceData },
                             .equipSlot = equipSlot,
+                            .wornCopies = wornCopies(*stack),
                         };
                     }
                 }
@@ -258,9 +410,22 @@ namespace rock::weapon_equip_transfer
         }
 
         EquipResult equipSelectedStack(RE::PlayerCharacter* player, RE::ActorEquipManager* equipManager,
-            const InventoryWeaponStack& stack, held_weapon_instant_transition::RequestReason reason,
+            const InventoryWeaponStack& selected, held_weapon_instant_transition::RequestReason reason,
             EquipResult result, const bool secondary = false, const bool secondaryLeft = false) noexcept
         {
+            // A worn stack holds this copy together with the worn one(s);
+            // equipping it as a whole would hand both hands one stack.
+            InventoryWeaponStack separated{};
+            if (selected.wornCopies) {
+                if (selected.count > selected.wornCopies) separated = separateWornCopy(player, result.weapon, selected);
+                ROCK_LOG_INFO(Weapon, "Identical copy separation weapon={:08X} wornStack={} count={} worn={} separated={} copyStack={}",
+                    result.weapon->formID, selected.stackID, selected.count, selected.wornCopies, separated.found, separated.stackID);
+                if (!separated.found) {
+                    result.reason = EquipReason::InventoryStackNotFound;
+                    return result;
+                }
+            }
+            const auto& stack = separated.found ? separated : selected;
             result.stackID = stack.stackID;
             result.requestedInstanceData = reinterpret_cast<std::uintptr_t>(
                 stack.instanceData.get());
@@ -363,7 +528,7 @@ namespace rock::weapon_equip_transfer
                 for (auto* stack = entry.stackData.get(); stack && index <
                     weapon_inventory_stack_selection_policy::kMaximumObservedStacks; stack = stack->nextStack.get(), ++index) {
                     if (stack != selection.stack.get()) continue;
-                    if (!stack->GetCount() || stack->IsEquipped()) return {};
+                    if (!hasUnwornCopy(*stack)) return {};
                     RE::BSTSmartPointer<RE::TBO_InstanceData> instance{};
                     if (stack->extra) {
                         if (const auto* extra = stack->extra->GetByType<RE::ExtraInstanceData>()) instance = extra->data;
@@ -373,7 +538,7 @@ namespace rock::weapon_equip_transfer
                     if (!slot) slot = weapon->GetEquipSlot(nullptr);
                     return {.found = true, .matchedInstanceData = true, .stackID = index,
                         .count = stack->GetCount(), .stackAddress = reinterpret_cast<std::uintptr_t>(stack),
-                        .instanceData = std::move(instance), .equipSlot = slot};
+                        .instanceData = std::move(instance), .equipSlot = slot, .wornCopies = wornCopies(*stack)};
                 }
                 return {};
             }
@@ -600,7 +765,8 @@ namespace rock::weapon_equip_transfer
             if (entry.object != weapon) continue;
             auto stack = entry.stackData;
             for (std::uint32_t i = 0; stack && i < stackIndex; ++i) stack = stack->nextStack;
-            if (!stack || !stack->GetCount() || stack->IsEquipped()) return {};
+            // A worn stack offers its unworn identical copies.
+            if (!stack || !hasUnwornCopy(*stack)) return {};
             RE::BSTSmartPointer<RE::TBO_InstanceData> instance{};
             if (stack->extra) {
                 if (const auto* extra = stack->extra->GetByType<RE::ExtraInstanceData>()) instance = extra->data;

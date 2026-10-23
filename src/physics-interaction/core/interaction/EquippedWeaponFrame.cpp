@@ -737,10 +737,16 @@ namespace rock
             !_equipped.transition.heldTransfer().active() &&
             !_equipped.transition.getPublicSnapshot().identityPending) {
             const auto views = native_hand_equipment::equippedViews();
-            if (!views[0].weapon && views[1].weapon) {
+            const auto instance = reinterpret_cast<std::uintptr_t>(views[1].instance);
+            const bool failedBefore = views[1].weapon && _failedPromotion.formID == views[1].weapon->formID &&
+                _failedPromotion.instance == instance;
+            if (views[0].weapon || !failedBefore) _failedPromotion = {};
+            if (!views[0].weapon && views[1].weapon && !failedBefore) {
                 ROCK_LOG_INFO(Weapon, "AKIMBO index 0 empty; promoting the second weapon form={:08X}", views[1].weapon->formID);
-                promoteSecondaryWeapon(views[1].weapon, reinterpret_cast<std::uintptr_t>(views[1].instance),
-                    native_hand_equipment::secondaryHandIsLeft());
+                if (!promoteSecondaryWeapon(views[1].weapon, instance, native_hand_equipment::secondaryHandIsLeft())) {
+                    ROCK_LOG_WARN(Weapon, "AKIMBO promotion failed form={:08X} instance={:#x}; retried when either slot changes",
+                        views[1].weapon->formID, instance);
+                }
                 sampleEquippedSlotOne();
             }
         }

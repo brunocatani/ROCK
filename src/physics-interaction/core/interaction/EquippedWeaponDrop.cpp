@@ -277,7 +277,7 @@ namespace rock
         return transferCommitted;
     }
 
-    void PhysicsInteraction::promoteSecondaryWeapon(RE::TESObjectWEAP* weapon, std::uintptr_t instance, bool left)
+    bool PhysicsInteraction::promoteSecondaryWeapon(RE::TESObjectWEAP* weapon, std::uintptr_t instance, bool left)
     {
         /*
          * The re-equip into index 0 destroys this weapon's index-1 model and
@@ -313,7 +313,11 @@ namespace rock
         ROCK_LOG_INFO(Weapon, "AKIMBO second weapon promoted to primary form={:08X} hand={} success={} reason={} observed={:08X}",
             formID, left ? "left" : "right", equipped.success, weapon_equip_transfer::equipReasonName(equipped.reason),
             equipped.observedEquippedFormID);
-        if (!equipped.success) return;
+        if (!equipped.success) {
+            _failedPromotion = { formID, instance };
+            return false;
+        }
+        _failedPromotion = {};
         // Same start as an inventory equip into that hand: its firing grip
         // and the native draw/visual continuity of the new index-0 weapon.
         native_hand_equipment::directPrimaryHand(formID, equipped.observedEquippedInstanceData, left);
@@ -335,6 +339,7 @@ namespace rock
                 .blendSeconds = _equipped.handlingSettings.equipVisualBridgeBlendSeconds,
                 .equippedModelSource = true,
             });
+        return true;
     }
 
     bool PhysicsInteraction::dropSecondaryWeaponToWorld(const PhysicsFrameContext& frame)
