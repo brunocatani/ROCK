@@ -682,6 +682,10 @@ namespace rock
             180.0f);
 
         rockEnableVanillaMelee = ini.GetBoolValue(SECTION, "bEnableVanillaMelee", rockEnableVanillaMelee);
+        rockVanillaMeleeSwingSpeed = readClampedFloat(ini, SECTION, "fVanillaMeleeSwingSpeed",
+            rockVanillaMeleeSwingSpeed, 300.0f, 50.0f, 2000.0f);
+        rockVanillaGunBashSpeed = readClampedFloat(ini, SECTION, "fVanillaGunBashSpeed",
+            rockVanillaGunBashSpeed, 400.0f, 50.0f, 2000.0f);
         rockRockyModeEnabled = ini.GetBoolValue(SECTION, "bRockyModeEnabled", rockRockyModeEnabled);
         rockRockyModeHoldSeconds = readClampedFloat(ini, SECTION, "fRockyModeHoldSeconds",
             rockRockyModeHoldSeconds, bare_fist_gesture::kDefaultHoldSeconds,

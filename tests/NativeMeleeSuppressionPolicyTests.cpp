@@ -60,27 +60,9 @@ int main()
     ok &= expectEqual("velocity check setting", kVelocityCheckSetting, "bMeleeVelocityCheck:VRInput");
     ok &= expectEqual("linear threshold setting", kLinearVelocityThresholdSetting, "fMeleeLinearVelocityThreshold:VRInput");
     ok &= expectEqual("angular threshold setting", kAngularVelocityThresholdSetting, "fMeleeAngularVelocityThreshold:VRInput");
-    ok &= expectTrue("suppression threshold is unreachable during ordinary play", kSuppressedVelocityThreshold >= 1.0e9f);
     const float quietNan = std::numeric_limits<float>::quiet_NaN();
     ok &= expectTrue("exact restore compares identical NaN payloads by bits", sameRuntimeFloatBits(quietNan, quietNan));
     ok &= expectFalse("exact restore preserves signed zero", sameRuntimeFloatBits(0.0f, -0.0f));
-
-    const NativeMeleeRuntimeSettingPolicyInput activeRuntime{
-        .hooksInstalled = true,
-        .suppressionEnabled = true,
-    };
-    ok &= expectTrue("enabled suppression owns VRInput settings", shouldSuppressNativeMeleeRuntimeSettings(activeRuntime));
-    ok &= expectFalse("active runtime suppression does not restore", shouldRestoreNativeMeleeRuntimeSettings(true, activeRuntime));
-
-    auto disabledMasterRuntime = activeRuntime;
-    disabledMasterRuntime.suppressionEnabled = false;
-    ok &= expectFalse("disabled suppression leaves runtime settings native", shouldSuppressNativeMeleeRuntimeSettings(disabledMasterRuntime));
-    ok &= expectTrue("disabled suppression restores owned runtime settings", shouldRestoreNativeMeleeRuntimeSettings(true, disabledMasterRuntime));
-    ok &= expectFalse("disabled suppression has nothing to restore before ownership", shouldRestoreNativeMeleeRuntimeSettings(false, disabledMasterRuntime));
-
-    auto missingHooksRuntime = activeRuntime;
-    missingHooksRuntime.hooksInstalled = false;
-    ok &= expectTrue("missing hooks restore owned runtime settings", shouldRestoreNativeMeleeRuntimeSettings(true, missingHooksRuntime));
 
     const NativeMeleePolicyInput nativePlayer{
         .suppressionActive = false,

@@ -195,6 +195,8 @@ namespace rock
          * rendered hand through one-way visual authority.
          */
         bool rockEnableVanillaMelee = true;
+        float rockVanillaMeleeSwingSpeed = 300.0f;
+        float rockVanillaGunBashSpeed = 400.0f;
         bool rockRockyModeEnabled = true;
         float rockRockyModeHoldSeconds = bare_fist_gesture::kDefaultHoldSeconds;
         bool rockNativeCharacterControllerObjectContactFilterEnabled = true;

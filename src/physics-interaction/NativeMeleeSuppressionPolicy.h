@@ -14,7 +14,39 @@ namespace rock::native_melee_suppression
     inline constexpr char kVelocityCheckSetting[] = "bMeleeVelocityCheck:VRInput";
     inline constexpr char kLinearVelocityThresholdSetting[] = "fMeleeLinearVelocityThreshold:VRInput";
     inline constexpr char kAngularVelocityThresholdSetting[] = "fMeleeAngularVelocityThreshold:VRInput";
+    inline constexpr char kGunBashLinearVelocityThresholdSetting[] = "fGunBashLinearVelocityThreshold:VRInput";
+    inline constexpr char kGunBashAngularVelocityThresholdSetting[] = "fGunBashAngularVelocityThreshold:VRInput";
     inline constexpr float kSuppressedVelocityThreshold = 1.0e9f;
+
+    /*
+     * FO4VR's velocity gate (140EFE880) starts a melee swing (melee weapon) or
+     * gun bash (other weapons) when the wand's averaged linear speed OR its
+     * angular speed exceeds the threshold. The wand update (140C62D10) clamps
+     * each angular axis to 0..1 rad/s before taking the magnitude, so the
+     * angular speed saturates at sqrt(3) from a 57 deg/s wrist turn and the
+     * vanilla threshold of 1.0 fires on ordinary hand movement. ROCK owns the
+     * gate while its hooks are installed: linear speed decides, angular never
+     * does (2.0 is above sqrt(3)); suppression puts every threshold out of
+     * reach. Linear speeds are in game units per second (70 = 1 m/s).
+     */
+    inline constexpr float kAngularGateDisabled = 2.0f;
+
+    struct NativeMeleeVelocityGate
+    {
+        float meleeLinear = kSuppressedVelocityThreshold;
+        float meleeAngular = kSuppressedVelocityThreshold;
+        float gunBashLinear = kSuppressedVelocityThreshold;
+        float gunBashAngular = kSuppressedVelocityThreshold;
+
+        friend constexpr bool operator==(const NativeMeleeVelocityGate&, const NativeMeleeVelocityGate&) = default;
+    };
+
+    [[nodiscard]] constexpr NativeMeleeVelocityGate velocityGate(
+        bool suppressed, float meleeSwingSpeed, float gunBashSpeed) noexcept
+    {
+        if (suppressed) return {};
+        return { meleeSwingSpeed, kAngularGateDisabled, gunBashSpeed, kAngularGateDisabled };
+    }
 
     [[nodiscard]] constexpr bool sameRuntimeFloatBits(float left, float right) noexcept
     {
@@ -98,22 +130,6 @@ namespace rock::native_melee_suppression
         const char* reason = "native";
     };
 
-    struct NativeMeleeRuntimeSettingPolicyInput
-    {
-        bool hooksInstalled = false;
-        bool suppressionEnabled = false;
-    };
-
-    [[nodiscard]] constexpr bool shouldSuppressNativeMeleeRuntimeSettings(const NativeMeleeRuntimeSettingPolicyInput& input) noexcept
-    {
-        return input.hooksInstalled && input.suppressionEnabled;
-    }
-
-    [[nodiscard]] constexpr bool shouldRestoreNativeMeleeRuntimeSettings(
-        bool previouslyApplied, const NativeMeleeRuntimeSettingPolicyInput& input) noexcept
-    {
-        return previouslyApplied && !shouldSuppressNativeMeleeRuntimeSettings(input);
-    }
 
     inline NativeMeleePolicyDecision evaluateNativeMeleeSuppression(NativeMeleeEvent event, const NativeMeleePolicyInput& input)
     {

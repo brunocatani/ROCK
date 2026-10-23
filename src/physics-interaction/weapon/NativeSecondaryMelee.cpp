@@ -100,9 +100,16 @@ namespace rock::native_secondary_melee
             for (auto& body : s_bodies) body.store(kInvalidBody, std::memory_order_relaxed);
         }
 
+        // Why a subtree registered no body: nodes walked, collision objects,
+        // native-physics ones, ones with a body id.
+        struct BodyCensus
+        {
+            std::uint32_t nodes = 0, collisionObjects = 0, nativePhysics = 0, withBody = 0;
+        };
+
         // The ids the attach registered: every native collision object in the
         // model subtree, tested the way the attach visitor tests it.
-        std::uint32_t collectBodies(RE::NiAVObject* root) noexcept
+        std::uint32_t collectBodies(RE::NiAVObject* root, BodyCensus& census) noexcept
         {
             std::array<RE::NiAVObject*, 256> pending{};
             std::size_t queued = 0;
@@ -110,15 +117,20 @@ namespace rock::native_secondary_melee
             pending[queued++] = root;
             for (std::size_t i = 0; i < queued; ++i) {
                 auto* object = pending[i];
+                ++census.nodes;
                 const void* collision = nullptr;
                 const void* vtable = nullptr;
                 AsNpCollision asNp = nullptr;
-                if (native_memory::tryReadField(object, kCollisionObject, collision) && collision &&
-                    native_memory::tryReadField(collision, 0, vtable) && vtable &&
-                    native_memory::tryReadField(vtable, kAsNpCollisionSlot, asNp) && asNp && asNp(collision)) {
-                    std::uint32_t id = kInvalidBody;
-                    reinterpret_cast<BodyId>(REL::Offset(kBodyId).address())(collision, &id);
-                    if (id != kInvalidBody && count < s_bodies.size()) s_bodies[count++].store(id, std::memory_order_relaxed);
+                if (native_memory::tryReadField(object, kCollisionObject, collision) && collision) {
+                    ++census.collisionObjects;
+                    if (native_memory::tryReadField(collision, 0, vtable) && vtable &&
+                        native_memory::tryReadField(vtable, kAsNpCollisionSlot, asNp) && asNp && asNp(collision)) {
+                        ++census.nativePhysics;
+                        std::uint32_t id = kInvalidBody;
+                        reinterpret_cast<BodyId>(REL::Offset(kBodyId).address())(collision, &id);
+                        if (id != kInvalidBody) ++census.withBody;
+                        if (id != kInvalidBody && count < s_bodies.size()) s_bodies[count++].store(id, std::memory_order_relaxed);
+                    }
                 }
                 if (auto* node = object->IsNode()) {
                     for (const auto& child : node->GetRuntimeData().children) {
@@ -248,13 +260,16 @@ namespace rock::native_secondary_melee
         reinterpret_cast<Attach>(REL::Offset(kAttach).address())(player, model);
         s_model.reset(model);
         s_world = world;
-        const auto bodies = collectBodies(model);
+        BodyCensus census{};
+        const auto bodies = collectBodies(model, census);
         if (bodies) {
             ROCK_LOG_INFO(Weapon, "AKIMBO second melee native collision attached model={:#x} bodies={}",
                 reinterpret_cast<std::uintptr_t>(model), bodies);
         } else {
-            ROCK_LOG_WARN(Weapon, "AKIMBO second melee has no native collision bodies model={:#x}; native hits unavailable",
-                reinterpret_cast<std::uintptr_t>(model));
+            ROCK_LOG_WARN(Weapon,
+                "AKIMBO second melee has no native collision bodies model={:#x} name='{}' nodes={} collisionObjects={} nativePhysics={} withBody={}; native hits unavailable",
+                reinterpret_cast<std::uintptr_t>(model), model->name.c_str() ? model->name.c_str() : "", census.nodes,
+                census.collisionObjects, census.nativePhysics, census.withBody);
         }
     }
 
