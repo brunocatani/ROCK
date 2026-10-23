@@ -328,4 +328,27 @@ namespace rock::performance_profiler
         Scope _parentScope{ Scope::UnattributedMemoryQueries };
     };
 
+    enum class ConsumerKind : std::uint8_t { Frame, Animation };
+
+    /*
+     * Wall time spent inside one provider consumer callback, keyed by the
+     * callback's address. Consumer time runs inside ROCK's frame, so external
+     * profilers count it as ROCK; each window names the owning module and
+     * offset of every callback so it can be attributed to its mod.
+     */
+    class ConsumerTimer
+    {
+    public:
+        ConsumerTimer(ConsumerKind kind, const void* callback) noexcept;
+        ~ConsumerTimer();
+
+        ConsumerTimer(const ConsumerTimer&) = delete;
+        ConsumerTimer& operator=(const ConsumerTimer&) = delete;
+        ConsumerTimer(ConsumerTimer&&) = delete;
+        ConsumerTimer& operator=(ConsumerTimer&&) = delete;
+
+    private:
+        std::uint64_t _key{ 0 };
+        std::uint64_t _startTicks{ 0 };
+    };
 }

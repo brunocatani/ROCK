@@ -2206,6 +2206,8 @@ namespace rock::provider
                 FrameCallbackInvocationResult callbackResult{};
                 try {
                     performance_profiler::ScopedTimer consumerTimer(performance_profiler::Scope::ProviderFrameConsumer);
+                    const performance_profiler::ConsumerTimer callbackTimer(
+                        performance_profiler::ConsumerKind::Frame, reinterpret_cast<const void*>(slot.callback));
                     callbackResult = invokeFrameCallbackSafely(
                         slot.callback,
                         &snapshot,
@@ -2360,6 +2362,8 @@ namespace rock::provider
             bool callbackHealthy = true;
             try {
                 performance_profiler::ScopedTimer consumerTimer(performance_profiler::Scope::ProviderAnimationConsumer);
+                const performance_profiler::ConsumerTimer callbackTimer(
+                    performance_profiler::ConsumerKind::Animation, reinterpret_cast<const void*>(slot.callback));
                 callbackHealthy = invokeAnimationPhaseCallbackSafely(
                     slot.callback,
                     &context,

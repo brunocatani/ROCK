@@ -11,6 +11,7 @@
 #include <condition_variable>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <chrono>
 #include <memory>
 #include <mutex>
@@ -107,6 +108,41 @@ namespace rock::performance_profiler
         {
             return reinterpret_cast<std::uintptr_t>(&__ImageBase);
         }
+
+        /*
+         * Provider consumer callbacks, keyed by callback address with the top
+         * bit marking animation-phase callbacks (user-mode addresses never set
+         * it). Same lock-free claim as the read-site table; the writer thread
+         * resolves each address to its module only when logging.
+         */
+        constexpr std::size_t kConsumerSlots = 32;
+        constexpr std::uint64_t kAnimationConsumerBit = 1ull << 63;
+
+        struct ConsumerSlot
+        {
+            std::atomic<std::uint64_t> key{ 0 };
+            std::atomic<std::uint64_t> calls{ 0 };
+            std::atomic<std::uint64_t> ticks{ 0 };
+            std::atomic<std::uint64_t> maxTicks{ 0 };
+        };
+
+        struct ConsumerRow
+        {
+            std::uint64_t key{ 0 };
+            std::uint64_t calls{ 0 };
+            std::uint64_t ticks{ 0 };
+            std::uint64_t maxTicks{ 0 };
+        };
+
+        struct ConsumerSnapshot
+        {
+            std::array<ConsumerRow, kConsumerSlots> rows{};
+            std::size_t size{ 0 };
+            std::uint64_t dropped{ 0 };
+        };
+
+        std::array<ConsumerSlot, kConsumerSlots> s_consumers;
+        std::atomic<std::uint64_t> s_consumersDropped{ 0 };
 
         ContactPairTable<128> s_contactPairs;
         ContactPairTable<512> s_contactChildren;
@@ -556,6 +592,50 @@ namespace rock::performance_profiler
                 slot.count.store(0, std::memory_order_release);
             }
             s_readSitesDropped.store(0, std::memory_order_release);
+            for (auto& slot : s_consumers) {
+                slot.calls.store(0, std::memory_order_release);
+                slot.ticks.store(0, std::memory_order_release);
+                slot.maxTicks.store(0, std::memory_order_release);
+            }
+            s_consumersDropped.store(0, std::memory_order_release);
+        }
+
+        ConsumerSnapshot takeConsumerSnapshot() noexcept
+        {
+            ConsumerSnapshot snapshot{};
+            snapshot.dropped = s_consumersDropped.exchange(0, std::memory_order_acq_rel);
+            for (auto& slot : s_consumers) {
+                const auto key = slot.key.load(std::memory_order_acquire);
+                const auto calls = slot.calls.exchange(0, std::memory_order_acq_rel);
+                const auto ticks = slot.ticks.exchange(0, std::memory_order_acq_rel);
+                const auto maxTicks = slot.maxTicks.exchange(0, std::memory_order_acq_rel);
+                if (key != 0 && calls != 0) {
+                    snapshot.rows[snapshot.size++] = { key, calls, ticks, maxTicks };
+                }
+            }
+            std::sort(snapshot.rows.begin(), snapshot.rows.begin() + snapshot.size,
+                [](const ConsumerRow& a, const ConsumerRow& b) { return a.ticks > b.ticks; });
+            return snapshot;
+        }
+
+        // Module file name and offset of a callback address; writer thread only.
+        void describeCallback(std::uintptr_t address, char (&moduleName)[MAX_PATH], std::uintptr_t& offset) noexcept
+        {
+            strcpy_s(moduleName, "unknown");
+            offset = address;
+            HMODULE module = nullptr;
+            char path[MAX_PATH]{};
+            if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                    reinterpret_cast<LPCSTR>(address), &module) ||
+                !module || GetModuleFileNameA(module, path, MAX_PATH) == 0) {
+                return;
+            }
+            const char* base = path;
+            for (const char* cursor = path; *cursor; ++cursor) {
+                if (*cursor == '\\' || *cursor == '/') base = cursor + 1;
+            }
+            strcpy_s(moduleName, base);
+            offset = address - reinterpret_cast<std::uintptr_t>(module);
         }
 
         ReadSiteSnapshot takeReadSiteSnapshot() noexcept
@@ -688,6 +768,7 @@ namespace rock::performance_profiler
             ContactPairTable<128>::Snapshot pairs{};
             ContactPairTable<512>::Snapshot children{};
             ReadSiteSnapshot readSites{};
+            ConsumerSnapshot consumers{};
             std::uint64_t frames{ 0 };
             std::uint64_t droppedSnapshotsBeforeThis{ 0 };
         };
@@ -933,6 +1014,21 @@ namespace rock::performance_profiler
                             static_cast<double>(row.count) / frames);
                     }
 
+                    const auto& consumers = snapshot.consumers;
+                    if (consumers.dropped) {
+                        logger->info("[ROCK::Performance] Profiler consumers dropped={}", consumers.dropped);
+                    }
+                    for (std::size_t i = 0; i < consumers.size; ++i) {
+                        const auto& row = consumers.rows[i];
+                        char moduleName[MAX_PATH]{};
+                        std::uintptr_t offset = 0;
+                        describeCallback(static_cast<std::uintptr_t>(row.key & ~kAnimationConsumerBit), moduleName, offset);
+                        const double totalMs = ticksToMilliseconds(row.ticks);
+                        logger->info("[ROCK::Performance] Profiler consumer {} {}+0x{:X}: perFrameMs={:.4f} avgMs={:.4f} maxMs={:.4f} calls={}",
+                            (row.key & kAnimationConsumerBit) ? "animation" : "frame", moduleName, offset,
+                            totalMs / frames, totalMs / static_cast<double>(row.calls), ticksToMilliseconds(row.maxTicks), row.calls);
+                    }
+
                     flushIfDue();
                 } catch (...) {
                     _droppedSnapshots.fetch_add(1, std::memory_order_relaxed);
@@ -1056,6 +1152,7 @@ namespace rock::performance_profiler
                 .pairs = s_contactPairs.take(s_settings.generation.load(std::memory_order_acquire)),
                 .children = s_contactChildren.take(s_settings.generation.load(std::memory_order_acquire)),
                 .readSites = takeReadSiteSnapshot(),
+                .consumers = takeConsumerSnapshot(),
                 .frames = frames,
             });
         }
@@ -1285,4 +1382,39 @@ namespace rock::performance_profiler
         _active = false;
     }
 
+    ConsumerTimer::ConsumerTimer(const ConsumerKind kind, const void* callback) noexcept
+    {
+        if (!callback || !s_settings.enabled.load(std::memory_order_relaxed)) {
+            return;
+        }
+        _key = reinterpret_cast<std::uintptr_t>(callback) | (kind == ConsumerKind::Animation ? kAnimationConsumerBit : 0);
+        _startTicks = queryPerformanceTicks();
+    }
+
+    ConsumerTimer::~ConsumerTimer()
+    {
+        if (!_key || !_startTicks) {
+            return;
+        }
+        const auto endTicks = queryPerformanceTicks();
+        if (endTicks < _startTicks) {
+            return;
+        }
+        const auto ticks = endTicks - _startTicks;
+        const auto first = static_cast<std::size_t>(((_key ^ (_key >> 29)) * 0x9E3779B97F4A7C15ull) >> 59);
+        for (std::size_t probe = 0; probe < kConsumerSlots; ++probe) {
+            auto& slot = s_consumers[(first + probe) % kConsumerSlots];
+            auto current = slot.key.load(std::memory_order_acquire);
+            if (current == 0 && slot.key.compare_exchange_strong(current, _key, std::memory_order_acq_rel)) {
+                current = _key;
+            }
+            if (current == _key) {
+                slot.calls.fetch_add(1, std::memory_order_relaxed);
+                slot.ticks.fetch_add(ticks, std::memory_order_relaxed);
+                atomicMax(slot.maxTicks, ticks);
+                return;
+            }
+        }
+        s_consumersDropped.fetch_add(1, std::memory_order_relaxed);
+    }
 }
