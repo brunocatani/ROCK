@@ -358,6 +358,9 @@ namespace rock::native_idle_grip_preharvest
             RE::BSTSmallArray<RE::SubgraphIdentifier, 2> subgraphIdentifiers{};
             AnimationResourceHandle idleClipResource{};
             std::array<char, 260> idleClipPath{};
+            // The subgraph the direct idle clip was chosen from; sampling the
+            // loading clip needs no subgraph handle after that.
+            std::uint64_t idleClipSubgraphIdentifier{ 0 };
             RE::TESObjectWEAP* weapon{ nullptr }; // Stable loaded-form identity; never owns the form.
             RE::TESRace* race{ nullptr }; // Stable loaded-form identity; never owns the form.
             authored_weapon_grip_library::WeaponVariantIdentity variant{};
@@ -373,7 +376,7 @@ namespace rock::native_idle_grip_preharvest
             bool longLoadLogged{ false };
             bool warmOnly{ false };
             // The weapon subgraph request was released once the direct idle
-            // clip was requested; its handles stay only as identity values.
+            // clip was requested (the native release empties the handles).
             bool subgraphReleased{ false };
             CandidateOrigin origin{ CandidateOrigin::Unknown };
         };
@@ -1603,6 +1606,7 @@ namespace rock::native_idle_grip_preharvest
                 }
 
                 job.phase = Phase::IdleClipLoading;
+                job.idleClipSubgraphIdentifier = subgraphIdentifier;
                 job.startedAtMilliseconds = GetTickCount64();
                 job.longLoadLogged = false;
                 job.idleClipResourceState = 0xFFFFFFFFu;
@@ -1869,7 +1873,22 @@ namespace rock::native_idle_grip_preharvest
             std::array<char, 260> clipPath{};
             std::uint64_t subgraphIdentifier = 0;
             IdleGripExtractionDiagnostics extractionDiagnostics{};
-            const auto extractionResult = tryExtractIdleGrip(state, *manager, handInWeapon, rightFiringFingerPose, supportSample, clipPath, subgraphIdentifier, extractionDiagnostics);
+            ExtractionResult extractionResult = ExtractionResult::Failed;
+            if (job.phase == Phase::IdleClipLoading) {
+                // The clip and its subgraph are already chosen; only the
+                // direct resource is still loading.
+                constexpr auto firstPerson = native_idle_grip_preharvest_policy::kFirstPersonGraphIndex;
+                auto* graph = manager->graph.size() > firstPerson ? manager->graph[static_cast<decltype(manager->graph)::size_type>(firstPerson)].get() : nullptr;
+                clipPath = job.idleClipPath;
+                subgraphIdentifier = job.idleClipSubgraphIdentifier;
+                extractionDiagnostics.graphCount = manager->graph.size();
+                extractionDiagnostics.identifierCount = job.subgraphIdentifiers.size();
+                extractionDiagnostics.subgraphIdentifier = subgraphIdentifier;
+                extractionResult = graph ? trySampleClip(state, graph, subgraphIdentifier, clipPath.data(), handInWeapon, rightFiringFingerPose, supportSample, extractionDiagnostics) :
+                    failExtractionResult(extractionDiagnostics, IdleGripExtractionFailure::FirstPersonGraphUnavailable);
+            } else {
+                extractionResult = tryExtractIdleGrip(state, *manager, handInWeapon, rightFiringFingerPose, supportSample, clipPath, subgraphIdentifier, extractionDiagnostics);
+            }
             if (extractionResult == ExtractionResult::Pending) {
                 // The idle clip now loads on its own: stop the full subgraph
                 // load unless this weapon's subgraph is kept warm.
