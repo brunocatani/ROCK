@@ -88,6 +88,8 @@ namespace rock::weapon_equip_transfer
             // Worn bits on a stack of identical copies; the unworn copies are
             // equipped only after separateWornCopy splits one off.
             std::uint32_t wornCopies = 0;
+            // ExtraUniqueID of a separated copy; 0 for an untagged stack.
+            std::uint16_t uniqueID = 0;
         };
 
         [[nodiscard]] std::uint32_t wornCopies(const RE::BGSInventoryItem::Stack& stack) noexcept
@@ -100,6 +102,12 @@ namespace rock::weapon_equip_transfer
         [[nodiscard]] bool hasUnwornCopy(const RE::BGSInventoryItem::Stack& stack) noexcept
         {
             return stack.GetCount() > wornCopies(stack);
+        }
+
+        [[nodiscard]] std::uint16_t uniqueID(const RE::BGSInventoryItem::Stack& stack) noexcept
+        {
+            const auto* tag = stack.extra ? stack.extra->GetByType<RE::ExtraUniqueID>() : nullptr;
+            return tag ? tag->uniqueID : 0;
         }
 
         /*
@@ -392,6 +400,8 @@ namespace rock::weapon_equip_transfer
                         // Unequip the actual native hand, not the authored
                         // BothHands slot which can include the surviving gun.
                         .equipSlot = equipped.equipSlot,
+                        .wornCopies = wornCopies(*stack),
+                        .uniqueID = uniqueID(*stack),
                     };
 
                     if (candidate.matchedInstanceData) {
@@ -407,6 +417,26 @@ namespace rock::weapon_equip_transfer
                 return {};
             }
             return fallback;
+        }
+
+        // The stack now holding an unequipped copy: same instance data and the
+        // same separation tag. Unequip can merge it into an identical stack.
+        [[nodiscard]] std::optional<std::uint32_t> findUnwornCopy(RE::PlayerCharacter* player, RE::TESObjectWEAP* weapon,
+            const RE::TBO_InstanceData* instanceData, const std::uint16_t tag) noexcept
+        {
+            const RE::BSAutoReadLock inventoryLock{ player->inventoryList->rwLock };
+            for (auto& inventoryItem : player->inventoryList->data) {
+                if (inventoryItem.object != weapon) continue;
+                std::uint32_t stackID = 0;
+                for (auto* stack = inventoryItem.stackData.get(); stack; stack = stack->nextStack.get(), ++stackID) {
+                    const auto* instanceExtra = stack->extra ? stack->extra->GetByType<RE::ExtraInstanceData>() : nullptr;
+                    if (hasUnwornCopy(*stack) && (instanceExtra ? instanceExtra->data.get() : nullptr) == instanceData &&
+                        uniqueID(*stack) == tag) {
+                        return stackID;
+                    }
+                }
+            }
+            return std::nullopt;
         }
 
         EquipResult equipSelectedStack(RE::PlayerCharacter* player, RE::ActorEquipManager* equipManager,
@@ -961,9 +991,36 @@ namespace rock::weapon_equip_transfer
             return result;
         }
 
+        /*
+         * Removing a worn copy keeps the actor equipped when an equivalent copy
+         * remains: 1403E1A90 tests the other stacks with 1401AD9A0, whose
+         * filter 1400A2F40 compares only health, charge, mods, cannot-wear,
+         * poison, name, enchantment, instance data and mod rank, never
+         * ExtraUniqueID. With the same base in the other hand, removal hands
+         * this hand's equipment to that copy. Unequip this exact copy first so
+         * removal sees it unworn and leaves the other hand alone.
+         */
+        std::uint32_t removeStackID = stack.stackID;
+        if (input.index <= 1 && readEquippedWeaponSnapshot(1 - input.index).weapon == equipped.weapon) {
+            bool unequipped = false;
+            {
+                const native_equipped_model_lifetime::SurvivorVisibleScope survivor;
+                unequipped = unequipEquippedIndex(input.index, result.formID, reinterpret_cast<std::uintptr_t>(equipped.instanceData));
+            }
+            const auto copy = unequipped ?
+                findUnwornCopy(player, equipped.weapon, equipped.instanceData, stack.uniqueID) : std::nullopt;
+            ROCK_LOG_INFO(Weapon, "Equipped detach unequipped identical copy first weapon={:08X} index={} stack={} tag={} unequipped={} copyStack={}",
+                result.formID, input.index, stack.stackID, stack.uniqueID, unequipped, copy ? static_cast<int>(*copy) : -1);
+            if (!copy) {
+                result.reason = unequipped ? DropReason::InventoryStackNotFound : DropReason::UnequipUnavailable;
+                return result;
+            }
+            removeStackID = *copy;
+        }
+
         result.attempted = true;
         result.count = 1;
-        result.stackID = stack.stackID;
+        result.stackID = removeStackID;
         result.matchedInstanceData = stack.matchedInstanceData;
 
         RE::TESObjectREFR::RemoveItemData removeData(equipped.weapon, result.count);
@@ -974,7 +1031,7 @@ namespace rock::weapon_equip_transfer
         if (input.hasDropRot) {
             removeData.rotate = &input.dropRot;
         }
-        removeData.stackData.push_back(stack.stackID);
+        removeData.stackData.push_back(removeStackID);
 
         if (!clearPreviousWeaponRestore(player)) {
             result.reason = DropReason::PreviousWeaponRestoreResetUnavailable;
