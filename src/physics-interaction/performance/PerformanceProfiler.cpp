@@ -22,6 +22,8 @@
 #include <spdlog/spdlog.h>
 #include <F4SE/Logger.h>
 
+extern "C" IMAGE_DOS_HEADER __ImageBase;
+
 namespace rock::performance_profiler
 {
     namespace
@@ -65,6 +67,47 @@ namespace rock::performance_profiler
         std::array<CounterAccum, static_cast<std::size_t>(Counter::Count)> s_counterAccum;
         std::array<ValueAccum, static_cast<std::size_t>(ValueMetric::Count)> s_valueAccum;
         Settings s_settings;
+
+        /*
+         * Guarded native reads per call site. A site is one 64-bit key: the
+         * offset of its file-name literal inside ROCK.dll and its line, claimed
+         * lock-free by CAS, so any thread may count and no pointer is stored.
+         * Keys persist across windows and counts reset; when a probe sequence
+         * is full the read is counted as dropped.
+         */
+        constexpr std::size_t kReadSiteSlots = 512;
+        constexpr std::size_t kReadSiteProbes = 16;
+        constexpr std::size_t kReadSiteReportRows = 24;
+
+        struct ReadSiteSlot
+        {
+            std::atomic<std::uint64_t> key{ 0 };
+            std::atomic<std::uint64_t> count{ 0 };
+        };
+
+        struct ReadSiteRow
+        {
+            std::uint64_t key{ 0 };
+            std::uint64_t count{ 0 };
+        };
+
+        struct ReadSiteSnapshot
+        {
+            std::array<ReadSiteRow, kReadSiteReportRows> rows{};
+            std::size_t size{ 0 };
+            std::size_t sites{ 0 };
+            std::uint64_t total{ 0 };
+            std::uint64_t dropped{ 0 };
+        };
+
+        std::array<ReadSiteSlot, kReadSiteSlots> s_readSites;
+        std::atomic<std::uint64_t> s_readSitesDropped{ 0 };
+
+        std::uintptr_t moduleBase() noexcept
+        {
+            return reinterpret_cast<std::uintptr_t>(&__ImageBase);
+        }
+
         ContactPairTable<128> s_contactPairs;
         ContactPairTable<512> s_contactChildren;
         // All native/game/render threads merge into the existing atomic window.
@@ -489,6 +532,55 @@ namespace rock::performance_profiler
             for (auto& slot : s_counterAccum) {
                 slot.count.store(0, std::memory_order_release);
             }
+            for (auto& slot : s_readSites) {
+                slot.count.store(0, std::memory_order_release);
+            }
+            s_readSitesDropped.store(0, std::memory_order_release);
+        }
+
+        ReadSiteSnapshot takeReadSiteSnapshot() noexcept
+        {
+            ReadSiteSnapshot snapshot{};
+            snapshot.dropped = s_readSitesDropped.exchange(0, std::memory_order_acq_rel);
+            for (auto& slot : s_readSites) {
+                const auto key = slot.key.load(std::memory_order_acquire);
+                const auto count = slot.count.exchange(0, std::memory_order_acq_rel);
+                if (key == 0 || count == 0) {
+                    continue;
+                }
+                ++snapshot.sites;
+                snapshot.total += count;
+                // Keep the hottest rows, sorted by count, descending.
+                auto position = snapshot.size;
+                if (position == snapshot.rows.size()) {
+                    if (count <= snapshot.rows.back().count) {
+                        continue;
+                    }
+                    --position;
+                } else {
+                    ++snapshot.size;
+                }
+                while (position > 0 && snapshot.rows[position - 1].count < count) {
+                    snapshot.rows[position] = snapshot.rows[position - 1];
+                    --position;
+                }
+                snapshot.rows[position] = { key, count };
+            }
+            return snapshot;
+        }
+
+        // Path below the repository's src folder, for readable site names.
+        const char* readSiteFileName(std::uint64_t key) noexcept
+        {
+            const auto* path = reinterpret_cast<const char*>(moduleBase() + (key >> 32));
+            const char* shortest = path;
+            for (const char* cursor = path; *cursor; ++cursor) {
+                if ((cursor[0] == '\\' || cursor[0] == '/') && cursor[1] == 's' && cursor[2] == 'r' && cursor[3] == 'c' &&
+                    (cursor[4] == '\\' || cursor[4] == '/')) {
+                    shortest = cursor + 5;
+                }
+            }
+            return shortest;
         }
 
         void clearValueAccumulators() noexcept
@@ -575,6 +667,7 @@ namespace rock::performance_profiler
             std::array<ValueSnapshot, static_cast<std::size_t>(ValueMetric::Count)> values{};
             ContactPairTable<128>::Snapshot pairs{};
             ContactPairTable<512>::Snapshot children{};
+            ReadSiteSnapshot readSites{};
             std::uint64_t frames{ 0 };
             std::uint64_t droppedSnapshotsBeforeThis{ 0 };
         };
@@ -807,6 +900,19 @@ namespace rock::performance_profiler
                     writePairs(snapshot.pairs, "Pair");
                     writePairs(snapshot.children, "Child");
 
+                    const auto& reads = snapshot.readSites;
+                    const auto frames = static_cast<double>((std::max)(snapshot.frames, std::uint64_t{ 1 }));
+                    if (reads.total || reads.dropped) {
+                        logger->info("[ROCK::Performance] Profiler guardedReads: total={} perFrame={:.1f} sites={} dropped={}",
+                            reads.total, static_cast<double>(reads.total) / frames, reads.sites, reads.dropped);
+                    }
+                    for (std::size_t i = 0; i < reads.size; ++i) {
+                        const auto& row = reads.rows[i];
+                        logger->info("[ROCK::Performance] Profiler guardedReadSite {}:{} count={} perFrame={:.2f}",
+                            readSiteFileName(row.key), static_cast<std::uint32_t>(row.key), row.count,
+                            static_cast<double>(row.count) / frames);
+                    }
+
                     flushIfDue();
                 } catch (...) {
                     _droppedSnapshots.fetch_add(1, std::memory_order_relaxed);
@@ -929,6 +1035,7 @@ namespace rock::performance_profiler
                 .values = valueSnapshot,
                 .pairs = s_contactPairs.take(s_settings.generation.load(std::memory_order_acquire)),
                 .children = s_contactChildren.take(s_settings.generation.load(std::memory_order_acquire)),
+                .readSites = takeReadSiteSnapshot(),
                 .frames = frames,
             });
         }
@@ -1084,6 +1191,26 @@ namespace rock::performance_profiler
             slot.memoryQueryTotalTicks.fetch_add(ticks, std::memory_order_relaxed);
             atomicMax(slot.memoryQueryMaxTicks, ticks);
         }
+    }
+
+    void countGuardedRead(const std::source_location& site) noexcept
+    {
+        if (!s_settings.enabled.load(std::memory_order_relaxed)) return;
+        const auto fileOffset = reinterpret_cast<std::uintptr_t>(site.file_name()) - moduleBase();
+        const std::uint64_t key = (static_cast<std::uint64_t>(fileOffset) << 32) | site.line();
+        const auto first = static_cast<std::size_t>(((key ^ (key >> 29)) * 0x9E3779B97F4A7C15ull) >> 55);
+        for (std::size_t probe = 0; probe < kReadSiteProbes; ++probe) {
+            auto& slot = s_readSites[(first + probe) % kReadSiteSlots];
+            auto current = slot.key.load(std::memory_order_acquire);
+            if (current == 0 && slot.key.compare_exchange_strong(current, key, std::memory_order_acq_rel)) {
+                current = key;
+            }
+            if (current == key) {
+                slot.count.fetch_add(1, std::memory_order_relaxed);
+                return;
+            }
+        }
+        s_readSitesDropped.fetch_add(1, std::memory_order_relaxed);
     }
 
     IntervalSample beginInterval() noexcept

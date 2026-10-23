@@ -12,6 +12,7 @@ namespace rock::performance_profiler
     MemoryQuerySample beginMemoryQuery() noexcept { return {}; }
     void endMemoryQuery(MemoryQuerySample, MemoryQueryKind, bool) noexcept {}
     void addCounter(Counter, std::uint64_t) noexcept {}
+    void countGuardedRead(const std::source_location&) noexcept {}
 }
 
 int main()

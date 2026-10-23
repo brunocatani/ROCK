@@ -11,6 +11,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <source_location>
 
 namespace rock::performance_profiler
 {
@@ -265,6 +266,10 @@ namespace rock::performance_profiler
     // queries are counted; no per-query allocation, logging, or shared lock.
     MemoryQuerySample beginMemoryQuery() noexcept;
     void endMemoryQuery(MemoryQuerySample sample, MemoryQueryKind kind, bool apiSucceeded) noexcept;
+
+    // Counts guarded native reads per source call site; each window logs the
+    // hottest sites, so per-frame pointer walks can be found and restructured.
+    void countGuardedRead(const std::source_location& site) noexcept;
 
     // Callback-owned wall-time interval. Unlike ScopedTimer, this never changes
     // thread-local query attribution and may end in a later callback. A settings
