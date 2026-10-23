@@ -416,6 +416,9 @@ namespace rock::api::weapon {
         GripZoneEquip = 1u << 3,
         GripZoneHoverHaptics = 1u << 4,
         FiringGripProximitySupport = 1u << 5,
+        // The firing-grip zone becomes one cylinder per side along the
+        // weapon's lateral axis instead of ROCK's default quarter sector.
+        FiringGripCylinderZone = 1u << 6,
     };
 
     // One owner at a time overrides ROCK's weapon handling tuning for

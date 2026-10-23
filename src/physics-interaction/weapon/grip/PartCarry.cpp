@@ -380,12 +380,14 @@ namespace rock
                                               const firing_grip_reattach_zone_policy::ZoneResult* zone) {
             if (!candidate.gripHeld) return;
             ROCK_LOG_SAMPLE_INFO(Weapon, 250,
-                "REATTACH refused hand={} stage={} firingHand={} eligible={} available={} partGrip={} ambidextrous={} canBegin={} zoneInput={} inside={} along={:.2f} perp={:.2f}",
+                "REATTACH refused hand={} stage={} firingHand={} eligible={} available={} partGrip={} ambidextrous={} canBegin={} zoneInput={} shape={} inside={} along={:.2f} perp={:.2f} down={:.2f} fwd={:.2f}",
                 candidate.isLeft ? "left" : "right", stage, firingHandIsLeft ? "left" : "right", candidate.eligible,
                 candidate.isLeft ? frameInput.leftHandAvailableForAcquisition : frameInput.rightHandAvailableForAcquisition,
                 partGrip(candidate.isLeft).active, _handlingSettings.ambidextrousHandoffEnabled,
                 canBeginPrimaryOnlyGripForHand(candidate.isLeft), reattachInputValid,
-                zone && zone->inside, zone ? zone->alongAxisGameUnits : -1.0f, zone ? zone->perpendicularDistanceGameUnits : -1.0f);
+                firing_grip_reattach_zone_policy::shapeName(reattachInput.shape),
+                zone && zone->inside, zone ? zone->alongAxisGameUnits : -1.0f, zone ? zone->perpendicularDistanceGameUnits : -1.0f,
+                zone ? zone->downGameUnits : 0.0f, zone ? zone->forwardGameUnits : 0.0f);
         };
         for (const FiringGripReattachCandidate& candidate : reattachCandidates) {
             if (candidate.isLeft != firingHandIsLeft &&
@@ -408,7 +410,7 @@ namespace rock
             }
             _firing.reattachDebugSnapshot.hands[candidate.isLeft ? 0u : 1u]
                 .gripHeld = candidate.gripHeld;
-            // Station reattachment stays inside its cylinders.
+            // Station reattachment stays inside its zone.
             const bool reattachRequested = weapon_two_handed_grip_math::shouldReattachFiringGripOnGrab(
                 candidate.gripHeld,
                 reattachZone.inside);
@@ -431,13 +433,16 @@ namespace rock
             if (!reattached) traceReattachRefusal(candidate, reattachZone.inside ? "reattach-refused" : "outside-zone", &reattachZone);
             if (reattached) {
                 ROCK_LOG_INFO(Weapon,
-                    "TwoHandedGrip: firing-grip reattach hand={} source={} inside={} side={} along={:.2f} perp={:.2f} reach={:.2f} radius={:.2f}",
+                    "TwoHandedGrip: firing-grip reattach hand={} source={} shape={} inside={} side={} along={:.2f} perp={:.2f} down={:.2f} fwd={:.2f} reach={:.2f} radius={:.2f}",
                     candidate.isLeft ? "left" : "right",
                     "grip-zone",
+                    firing_grip_reattach_zone_policy::shapeName(reattachInput.shape),
                     reattachZone.inside ? "yes" : "no",
                     firing_grip_reattach_zone_policy::sideName(reattachZone.side),
                     reattachZone.alongAxisGameUnits,
                     reattachZone.perpendicularDistanceGameUnits,
+                    reattachZone.downGameUnits,
+                    reattachZone.forwardGameUnits,
                     _handlingSettings.firingGripReattachRadiusGameUnits,
                     _handlingSettings.firingGripReattachCylinderRadiusGameUnits);
                 const bool newSupportHandIsLeft = isSupportHandLeft();

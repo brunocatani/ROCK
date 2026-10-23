@@ -68,7 +68,8 @@
             static_cast<std::uint32_t>(Feature::AmbidextrousHandoff) |
             static_cast<std::uint32_t>(Feature::GripZoneEquip) |
             static_cast<std::uint32_t>(Feature::GripZoneHoverHaptics) |
-            static_cast<std::uint32_t>(Feature::FiringGripProximitySupport);
+            static_cast<std::uint32_t>(Feature::FiringGripProximitySupport) |
+            static_cast<std::uint32_t>(Feature::FiringGripCylinderZone);
         // Detach, handoff and grip-zone equip act on the firing-grip owner.
         constexpr std::uint32_t ownershipDependentFeatures =
             static_cast<std::uint32_t>(Feature::PrimaryDetach) |

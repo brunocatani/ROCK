@@ -507,16 +507,20 @@ namespace rock::loose_weapon_grip_zone
         const bool firingResolved = tryResolveGripWorld(isLeft, ref, firing);
         const float firingDistance = pointDistance(probeLocal, firing.gripWeaponLocal) * std::fabs(root->world.scale);
         const auto& settings = equipped_weapon_handling_runtime::current();
-        const auto canonicalRightWorld = transform_math::composeTransforms(root->world, authored.rightHandWeaponLocal);
-        const auto lateral = computePalmNormalFromHandBasis(canonicalRightWorld, false);
+        RE::NiPoint3 lateral{}, down{}, reference{};
+        const bool firingAxesValid = TwoHandedGrip::tryResolveAuthoredActivationAxes(authored.rightHandWeaponLocal,
+            root->world, activation::HandTopology::RightFiringLeftSupport, lateral, down, reference);
         const auto vec = [](const RE::NiPoint3& p) { return activation::Vec3{p.x, p.y, p.z}; };
         const auto firingZone = firing_grip_reattach_zone_policy::evaluateZone({
             .gripWorld = vec(firing.gripWorld), .palmWorld = vec(probeWorld), .weaponLeftAxisWorld = vec(lateral),
+            .weaponDownAxisWorld = vec(down),
             .reachGameUnits = settings.firingGripReattachRadiusGameUnits,
             .radiusGameUnits = settings.firingGripReattachCylinderRadiusGameUnits,
+            .shape = settings.firingGripCylinderZoneEnabled ? firing_grip_reattach_zone_policy::Shape::Cylinder :
+                firing_grip_reattach_zone_policy::Shape::Sector,
         });
         const bool firingEligible = firingResolved && firing.hasFiringHandWeaponLocal && authored.found &&
-            authored.rightFiringFingerPose.complete() && firingZone.inside;
+            authored.rightFiringFingerPose.complete() && firingAxesValid && firingZone.inside;
         RE::NiTransform supportLocal{};
         const bool supportResolved = resolveSupportRelation(isLeft, authored, supportLocal);
         const auto nativeSupportPalm = computeGrabPalmPointWorldFromHandBasis(authored.supportHandWeaponLocal, true);

@@ -497,12 +497,14 @@ namespace rock
             return false;
         }
         /*
-         * The lateral axis is the seated canonical RIGHT palm normal on this
-         * weapon (weapon LEFT), the same axis the authored support activation
-         * cone is built from. The zone is symmetric in its sign, so one axis
-         * serves handoff and reattachment on both sides. Before acquisition,
-         * use the current canonical grip; an active session keeps its captured
-         * grip. Missing or stale canonical data cannot create a hover zone.
+         * The lateral and DOWN axes are the native right-firing activation
+         * axes of the seated canonical RIGHT hand on this weapon, the same
+         * pair the authored support activation cone is built from. The zone
+         * is symmetric in the lateral sign and the mirror keeps DOWN, so one
+         * pair serves handoff and reattachment on both sides. Before
+         * acquisition, use the current canonical grip; an active session
+         * keeps its captured grip. Missing or stale canonical data cannot
+         * create a hover zone.
          */
         if (!hasRightFiringHandCanonicalFrame(
                 weaponNode,
@@ -516,11 +518,17 @@ namespace rock
             }
             return false;
         }
-        const RE::NiTransform seatedRightHandWorld =
-            transform_math::composeTransforms(
+        RE::NiPoint3 weaponLeftAxisWorld{};
+        RE::NiPoint3 weaponDownAxisWorld{};
+        RE::NiPoint3 referenceAxisWorld{};
+        if (!tryResolveAuthoredActivationAxes(
+                _firing.rightCanonicalHandWeaponLocal,
                 weaponNode->world,
-                _firing.rightCanonicalHandWeaponLocal);
-        if (!isFiniteTransform(seatedRightHandWorld)) {
+                authored_weapon_grip_activation_policy::HandTopology::
+                    RightFiringLeftSupport,
+                weaponLeftAxisWorld,
+                weaponDownAxisWorld,
+                referenceAxisWorld)) {
             return false;
         }
 
@@ -533,8 +541,6 @@ namespace rock
             capturedGripCurrent ? _firing.primaryGripLocal :
                 _firing.rightCanonicalGripWeaponLocal,
             weaponNode);
-        const RE::NiPoint3 weaponLeftAxisWorld =
-            computePalmNormalFromHandBasis(seatedRightHandWorld, false);
         using firing_grip_reattach_zone_policy::Vec3;
         const auto toZoneVector = [](const RE::NiPoint3& value) {
             return Vec3{ value.x, value.y, value.z };
@@ -542,9 +548,13 @@ namespace rock
         outInput = {
             .gripWorld = toZoneVector(gripWorld),
             .weaponLeftAxisWorld = toZoneVector(weaponLeftAxisWorld),
+            .weaponDownAxisWorld = toZoneVector(weaponDownAxisWorld),
             .reachGameUnits = reachGameUnits,
             .radiusGameUnits =
                 _handlingSettings.firingGripReattachCylinderRadiusGameUnits,
+            .shape = _handlingSettings.firingGripCylinderZoneEnabled ?
+                firing_grip_reattach_zone_policy::Shape::Cylinder :
+                firing_grip_reattach_zone_policy::Shape::Sector,
         };
         return true;
     }
@@ -575,8 +585,12 @@ namespace rock
         debugSnapshot.weaponLeftAxisWorld = {
             input.weaponLeftAxisWorld.x, input.weaponLeftAxisWorld.y,
             input.weaponLeftAxisWorld.z };
+        debugSnapshot.weaponDownAxisWorld = {
+            input.weaponDownAxisWorld.x, input.weaponDownAxisWorld.y,
+            input.weaponDownAxisWorld.z };
         debugSnapshot.reachGameUnits = input.reachGameUnits;
         debugSnapshot.cylinderRadiusGameUnits = input.radiusGameUnits;
+        debugSnapshot.shape = input.shape;
         debugSnapshot.valid = true;
         auto& handSample = debugSnapshot.hands[handIsLeft ? 0u : 1u];
         handSample.palmWorld = palmWorld;
@@ -584,6 +598,8 @@ namespace rock
         handSample.perpendicularDistanceGameUnits =
             outZone.perpendicularDistanceGameUnits;
         handSample.radialDistanceGameUnits = outZone.radialDistanceGameUnits;
+        handSample.downGameUnits = outZone.downGameUnits;
+        handSample.forwardGameUnits = outZone.forwardGameUnits;
         handSample.side = outZone.side;
         handSample.evaluated = true;
         handSample.reachPass = outZone.reachPass;

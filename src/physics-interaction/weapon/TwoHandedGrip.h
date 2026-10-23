@@ -167,7 +167,7 @@ namespace rock
 
     /*
      * Main-thread diagnostic record of the firing-grip reattach zone for the
-     * debug overlay: where the cylinders start, their axis and size, plus
+     * debug overlay: the zone shape, where it starts, its axes and size, plus
      * each evaluated free palm's verdict. Values only, never engine pointers.
      */
     struct FiringGripReattachZoneDebugSnapshot
@@ -178,6 +178,8 @@ namespace rock
             float alongAxisGameUnits{ 0.0f };
             float perpendicularDistanceGameUnits{ 0.0f };
             float radialDistanceGameUnits{ 0.0f };
+            float downGameUnits{ 0.0f };
+            float forwardGameUnits{ 0.0f };
             firing_grip_reattach_zone_policy::Side side{
                 firing_grip_reattach_zone_policy::Side::None
             };
@@ -190,8 +192,12 @@ namespace rock
 
         RE::NiPoint3 gripWorld{};
         RE::NiPoint3 weaponLeftAxisWorld{};
+        RE::NiPoint3 weaponDownAxisWorld{};
         float reachGameUnits{ 0.0f };
         float cylinderRadiusGameUnits{ 0.0f };
+        firing_grip_reattach_zone_policy::Shape shape{
+            firing_grip_reattach_zone_policy::Shape::Sector
+        };
         // Index 0 left hand, 1 right hand.
         std::array<HandSample, 2> hands{};
         bool valid{ false };

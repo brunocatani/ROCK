@@ -75,6 +75,8 @@ int main()
         nullptr);
 
     ok &= expectEqual("local yaw has no hidden correction", coreWeaponHandling.leftFiringAimYawDegrees, 1.5f);
+    ok &= expectFalse("ROCK's own firing-grip zone is the sector",
+        coreWeaponHandling.firingGripCylinderZoneEnabled);
     const auto rawHandling = rock::makeEquippedWeaponHandlingSettings({}, nullptr);
     ok &= expectEqual("zero yaw leaves the raw mirror", rawHandling.leftFiringAimYawDegrees, 0.0f);
 
@@ -111,6 +113,8 @@ int main()
             IntegratedImmersive);
     ok &= expectFalse("an active addon request may suppress ROCK ambidextrous handoff",
         externalHandling.ambidextrousHandoffEnabled);
+    ok &= expectFalse("a lease without the cylinder flag keeps the sector",
+        externalHandling.firingGripCylinderZoneEnabled);
     ok &= expectNear("external authority preserves ROCK's radius without an override",
         externalHandling.firingGripProximitySupportRadiusGameUnits,
         7.0f);
@@ -134,6 +138,13 @@ int main()
     ok &= expectNear("an active owner supplies left firing aim tuning",
         externalHandling.leftFiringAimYawDegrees,
         -4.0f);
+
+    externalWeaponHandling.features |= static_cast<std::uint32_t>(
+        rock::api::weapon::HandlingFeature::FiringGripCylinderZone);
+    ok &= expectTrue("the cylinder flag selects the cylinder zone",
+        rock::makeEquippedWeaponHandlingSettings(
+            coreWeaponHandlingBaseline,
+            &externalWeaponHandling).firingGripCylinderZoneEnabled);
 
     ok &= expectFalse("compatible addon activation does not tear down ROCK handoff",
         rock::requiresEquippedWeaponHandlingModeReconcile(

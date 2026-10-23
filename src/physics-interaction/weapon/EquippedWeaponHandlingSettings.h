@@ -48,6 +48,9 @@ namespace rock
         bool gripZoneEquipEnabled{ false };
         bool gripZoneHoverHapticsEnabled{ false };
         bool equippedWeaponShoulderStashEnabled{ false };
+        // ROCK's firing-grip zone is the quarter sector; only a handling
+        // owner that needs the old shape asks for the cylinder.
+        bool firingGripCylinderZoneEnabled{ false };
         immersive_weapon_policy::Config immersiveWeapon{};
 
         float gripZoneEquipRadiusGameUnits{ 3.0f };
@@ -103,7 +106,7 @@ namespace rock
         settings.gripZoneEquipEnabled = rockBaseline.autoEquipEnabled;
         settings.gripZoneEquipSettleSeconds = rockBaseline.autoEquipSettleSeconds;
         settings.immersiveWeapon = rockBaseline.immersiveWeapon;
-        // The reattach cylinder radius is ROCK tuning under both detach
+        // The reattach zone thickness is ROCK tuning under both detach
         // authorities; a handling owner may replace only the reach.
         settings.firingGripReattachCylinderRadiusGameUnits =
             rockBaseline.firingGripReattachCylinderRadiusGameUnits;
@@ -147,6 +150,8 @@ namespace rock
             api::weapon::HandlingFeature::GripZoneEquip);
         settings.gripZoneHoverHapticsEnabled = enabled(
             api::weapon::HandlingFeature::GripZoneHoverHaptics);
+        settings.firingGripCylinderZoneEnabled = enabled(
+            api::weapon::HandlingFeature::FiringGripCylinderZone);
         settings.gripZoneEquipRadiusGameUnits = request->gripZoneEquipRadiusGameUnits;
         if (enabled(api::weapon::HandlingFeature::GripZoneEquip))
             settings.gripZoneEquipSettleSeconds = request->gripZoneEquipSettleSeconds;

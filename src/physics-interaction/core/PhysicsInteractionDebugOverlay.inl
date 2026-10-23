@@ -2088,8 +2088,8 @@
             FiringGripReattachZoneDebugSnapshot snapshot{};
             if (_twoHandedGrip.getFiringGripReattachZoneDebugSnapshot(snapshot)) {
                 namespace reattach_zone = firing_grip_reattach_zone_policy;
-                // YELLOW cross: the captured firing grip point where both
-                // reattach cylinders start. BLUE crosses: each evaluated palm.
+                // YELLOW cross: the captured firing grip point both reattach
+                // regions start from. BLUE crosses: each evaluated palm.
                 addMarkerPoint(
                     debug::MarkerOverlayRole::AuthoredSupportGripPalmSeat,
                     snapshot.gripWorld,
@@ -2149,7 +2149,74 @@
                 RE::NiPoint3 unitAxis{};
                 RE::NiPoint3 tangentA{};
                 RE::NiPoint3 tangentB{};
-                if (drawReachGameUnits > 0.0f &&
+                if (snapshot.shape == reattach_zone::Shape::Sector) {
+                    // Rebuild the policy's frame: forward = left x down.
+                    const auto left = weaponSolverNormalize(snapshot.weaponLeftAxisWorld);
+                    const auto unitDown = weaponSolverNormalize(snapshot.weaponDownAxisWorld);
+                    const auto unitForward =
+                        weaponSolverNormalize(weaponSolverCross(left, unitDown));
+                    const auto sectorPoint = [&](const float lateral,
+                                                 const float down,
+                                                 const float forward) {
+                        return snapshot.gripWorld + left * lateral +
+                               unitDown * down + unitForward * forward;
+                    };
+                    const float rise = drawRadiusGameUnits;
+                    const float reach = drawReachGameUnits;
+                    constexpr std::size_t ArcSegmentCount = 8;
+                    // One quarter sector per side: top edge, short straight
+                    // drop to the grip point's height, quarter arc down the
+                    // grip, then the shared inner edge back up. Drawn on both
+                    // front/back faces with joining lines at each corner.
+                    const auto drawSector = [&](const float sideSign) {
+                        std::array<RE::NiPoint3, ArcSegmentCount + 3> outline{};
+                        outline[0] = RE::NiPoint3{ 0.0f, -rise, 0.0f };
+                        outline[1] = RE::NiPoint3{ reach, -rise, 0.0f };
+                        for (std::size_t segment = 0;
+                             segment <= ArcSegmentCount;
+                             ++segment) {
+                            const float angle =
+                                static_cast<float>(segment) *
+                                0.5f * std::numbers::pi_v<float> /
+                                static_cast<float>(ArcSegmentCount);
+                            outline[2 + segment] = RE::NiPoint3{
+                                std::cos(angle) * reach,
+                                std::sin(angle) * reach,
+                                0.0f,
+                            };
+                        }
+                        for (const float face : { -rise, rise }) {
+                            for (std::size_t index = 0;
+                                 index < outline.size();
+                                 ++index) {
+                                const auto& from = outline[index];
+                                const auto& to =
+                                    outline[(index + 1) % outline.size()];
+                                addMarkerLine(
+                                    debug::MarkerOverlayRole::AuthoredGripActivationAllowedRegion,
+                                    sectorPoint(sideSign * from.x, from.y, face),
+                                    sectorPoint(sideSign * to.x, to.y, face));
+                            }
+                        }
+                        for (const std::size_t corner :
+                             { std::size_t{ 0 }, std::size_t{ 1 },
+                                 std::size_t{ 2 }, outline.size() - 1 }) {
+                            const auto& point = outline[corner];
+                            addMarkerLine(
+                                debug::MarkerOverlayRole::AuthoredGripActivationAllowedRegion,
+                                sectorPoint(sideSign * point.x, point.y, -rise),
+                                sectorPoint(sideSign * point.x, point.y, rise));
+                        }
+                        addMarkerLine(
+                            debug::MarkerOverlayRole::AuthoredGripActivationSupportSideAxis,
+                            snapshot.gripWorld,
+                            sectorPoint(sideSign * reach, 0.0f, 0.0f));
+                    };
+                    if (reach > 0.0f && std::isfinite(rise) && rise > 0.0f) {
+                        drawSector(1.0f);
+                        drawSector(-1.0f);
+                    }
+                } else if (drawReachGameUnits > 0.0f &&
                     std::isfinite(drawRadiusGameUnits) &&
                     drawRadiusGameUnits > 0.0f &&
                     tryBuildCylinderBasis(
@@ -2233,7 +2300,8 @@
                     labelAnchor,
                     2.1f,
                     kSeatColor,
-                    "FIRING REATTACH ZONE reach=%.2f radius=%.2f x2",
+                    "FIRING REATTACH ZONE %s reach=%.2f radius=%.2f x2",
+                    reattach_zone::shapeName(snapshot.shape),
                     snapshot.reachGameUnits,
                     snapshot.cylinderRadiusGameUnits);
                 float labelOffset = 2.2f;
@@ -2256,10 +2324,12 @@
                         labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, labelOffset },
                         1.65f,
                         hand.inside ? kPassColor : kFailColor,
-                        "%s palm along=%.2f perp=%.2f d=%.2f side=%s reach=%d radius=%d grab=%s %s",
+                        "%s palm along=%.2f perp=%.2f down=%.2f fwd=%.2f d=%.2f side=%s reach=%d radius=%d grab=%s %s",
                         handIndex == 0 ? "LEFT" : "RIGHT",
                         hand.alongAxisGameUnits,
                         hand.perpendicularDistanceGameUnits,
+                        hand.downGameUnits,
+                        hand.forwardGameUnits,
                         hand.radialDistanceGameUnits,
                         reattach_zone::sideName(hand.side),
                         hand.reachPass ? 1 : 0,
