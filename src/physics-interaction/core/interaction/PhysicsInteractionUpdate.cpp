@@ -450,7 +450,13 @@ namespace rock
     void PhysicsInteraction::interruptInteractionFrame(const char* reason)
     {
         debug::ClearFrame();
-        _twoHandedGrip.reset();
+        // One grip reset per contiguous interruption. No grip session starts
+        // while the update is interrupted, and resetting on every menu frame
+        // re-entered FRIK's API for each claim and block it clears.
+        if (!_frame.interruptionGripResetDone) {
+            _twoHandedGrip.reset();
+            _frame.interruptionGripResetDone = true;
+        }
         _equipped.transition.pendingGrip() = {};
         clearEquippedWeaponFiringGripInputState();
         restoreHeldMassMovementSlowdown(reason);
@@ -634,6 +640,7 @@ namespace rock
             interruptInteractionFrame("physics-gate-closed");
             return;
         }
+        _frame.interruptionGripResetDone = false;
 
         if (_equipped.gripResumePending &&
             frik_hand_world_authority::hasCalibratedRawHandFrame(false) &&

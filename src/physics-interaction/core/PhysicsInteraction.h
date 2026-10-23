@@ -1021,6 +1021,9 @@ namespace rock
             std::uint64_t debugOverlayFrameIndex = 0;
             std::uint64_t gripZoneIndicatorFrameIndex = 0;
             std::uint64_t poseFrameIndex = 0;
+            // The grip reset of the current interruption ran; cleared by the
+            // next frame that passes every update gate.
+            bool interruptionGripResetDone = false;
             // Central sanitized game delta captured each update; zero until
             // the first frame is measured.
             float deltaTime = 0.0f;

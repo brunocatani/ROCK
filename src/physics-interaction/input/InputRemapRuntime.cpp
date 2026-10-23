@@ -2753,7 +2753,7 @@ namespace rock::input_remap_runtime
 
     void setGameplayInputAllowed(bool allowed)
     {
-        s_gameplayInputAllowed.store(allowed, std::memory_order_release);
+        const bool wasAllowed = s_gameplayInputAllowed.exchange(allowed, std::memory_order_acq_rel);
         if (!allowed) {
             setBareFistAdmission(false);
             native_grenade_throw_runtime::cancel();
@@ -2762,7 +2762,9 @@ namespace rock::input_remap_runtime
                     true,
                     std::memory_order_release);
             }
-            blockManualScopeInputUntilRelease();
+            // Cancel an in-progress tap/hold once on entry; while blocked the
+            // scope policy itself holds a pressed button until release.
+            if (wasAllowed) blockManualScopeInputUntilRelease();
             s_pendingGrenadeQuickDrawHoldRequest.store(false, std::memory_order_release);
             s_grenadeQuickDrawReleaseToRearm.store(true, std::memory_order_release);
         }
