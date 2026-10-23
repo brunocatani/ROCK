@@ -26,6 +26,8 @@ namespace rock
         std::uint64_t weaponKeywordFlags{ 0 };
         bool weaponInstanceContentKnown{ false };
         bool meleeWeapon{ false };
+        // The model's flat-side centre on weapon Z (WeaponCollision mirror offsets).
+        float meleeFlatPlaneZ{ 0.0f };
         bool runtimeInitialized{ false };
         bool visualAuthorityAvailable{ false };
         bool localSkeletonReady{ false };

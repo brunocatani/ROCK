@@ -1,6 +1,7 @@
 #include "physics-interaction/weapon/AuthoredPrimaryFiringGrip.h"
 #include "physics-interaction/weapon/WeaponGripSeat.h"
 #include "physics-interaction/weapon/HoldingGripRecords.h"
+#include "physics-interaction/weapon/KnifeReverseGrip.h"
 #include "physics-interaction/hand/HandFingerMirrorMath.h"
 
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
@@ -954,14 +955,22 @@ namespace rock
             return;
         }
 
+        // The presented relation: the authored seat, or its reverse knife
+        // grip. Canonical, library and support publications keep the
+        // authored seat, so no cache ever learns the reversed hold.
+        const bool reversedKnife = input.meleeWeapon && input.weapon &&
+            knife_reverse_grip::reversed(false, input.weapon->formID);
+        const RE::NiTransform presentedPrimaryHandInWeapon = reversedKnife ?
+            knife_reverse_grip::reverseSeat(authoredPrimaryHandInWeapon, false, input.meleeFlatPlaneZ) :
+            authoredPrimaryHandInWeapon;
         if (input.meleeWeapon) {
             if (!TwoHandedGrip::tryGetMeleeWeaponAimWorld(false, trackedHandWorld,
-                    authoredPrimaryHandInWeapon, input.weaponNode->world.scale, liveWeaponWorld)) {
+                    presentedPrimaryHandInWeapon, input.weaponNode->world.scale, liveWeaponWorld)) {
                 weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
                 endSession("melee-authored-aim-invalid");
                 return;
             }
-            currentAuthoredHandWorld = transform_math::composeTransforms(liveWeaponWorld, authoredPrimaryHandInWeapon);
+            currentAuthoredHandWorld = transform_math::composeTransforms(liveWeaponWorld, presentedPrimaryHandInWeapon);
         }
 
         /*
@@ -988,7 +997,7 @@ namespace rock
 
         const RE::NiPoint3 authoredGripWeaponLocal =
             computeGrabPalmPointWorldFromHandBasis(
-                authoredPrimaryHandInWeapon,
+                presentedPrimaryHandInWeapon,
                 false);
         const RE::NiPoint3 trackedPalmWorld =
             computeGrabPalmPointWorldFromHandBasis(
@@ -1018,7 +1027,7 @@ namespace rock
         const RE::NiTransform solvedFiringHandWorld =
             transform_math::composeTransforms(
                 solvedWeaponWorld,
-                authoredPrimaryHandInWeapon);
+                presentedPrimaryHandInWeapon);
         if (!finiteTransform(solvedFiringHandWorld)) {
             weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
             endSession("position-only-hand-target-invalid");
@@ -1100,62 +1109,65 @@ namespace rock
          * physical hand measured against the final position-only equipped
          * weapon. Miniguns retain hFRIK's independent loose-weapon authority
          * instead of contaminating the native-idle library with this compiled
-         * equipped-only firing seat.
+         * equipped-only firing seat. A reversed knife grip publishes
+         * nothing: its solved weapon is not the authored hold.
          */
-        const RE::NiTransform rightPositionOnlyHandWeaponLocal =
-            transform_math::composeTransforms(
-                transform_math::invertTransform(solvedWeaponWorld),
-                trackedHandWorld);
-        const RE::NiPoint3 cachedPositionOnlyGripWeaponLocal =
-            computeGrabPalmPointWorldFromHandBasis(
-                rightPositionOnlyHandWeaponLocal,
-                false);
-        // Float rounding of the world coordinates the pivot went through
-        // (AuthoredWeaponGripCapturePolicy.h); the identity itself is exact.
-        const float positionOnlyHoldGripErrorTolerance =
-            authored_weapon_grip_capture_policy::positionOnlyHoldGripErrorTolerance(
-                (std::max)({ std::fabs(solvedWeaponWorld.translate.x),
-                    std::fabs(solvedWeaponWorld.translate.y),
-                    std::fabs(solvedWeaponWorld.translate.z),
-                    std::fabs(trackedHandWorld.translate.x),
-                    std::fabs(trackedHandWorld.translate.y),
-                    std::fabs(trackedHandWorld.translate.z) }));
-        const float positionOnlyHoldGripError = pointDistance(
-            cachedPositionOnlyGripWeaponLocal,
-            authoredGripWeaponLocal);
-        const bool positionOnlyHoldValid =
-            finiteTransform(rightPositionOnlyHandWeaponLocal) &&
-            std::isfinite(positionOnlyHoldGripError) &&
-            positionOnlyHoldGripError <= positionOnlyHoldGripErrorTolerance;
-        const bool positionOnlyHoldPublished =
-            compiledMinigunFiringSeat ||
-            (authoredLibraryEntryAvailable &&
-                positionOnlyHoldValid &&
-                authored_weapon_grip_library::publishPositionOnlyHold(
-                    input.weapon,
-                    input.inPowerArmor,
-                    resolvedCaptureSequence,
-                    rightPositionOnlyHandWeaponLocal));
-        if (!positionOnlyHoldPublished) {
-            if (!_positionOnlyHoldPublishFailureLogged) {
-                ROCK_LOG_WARN(Animation,
-                    "Authored position-only loose hold publication failed weaponKey=0x{:X} capture={} entry={} valid={} gripError={:.4f}gu tolerance={:.4f}gu",
-                    currentWeaponKey,
-                    resolvedCaptureSequence,
-                    authoredLibraryEntryAvailable ? "yes" : "no",
-                    positionOnlyHoldValid ? "yes" : "no",
-                    positionOnlyHoldGripError,
-                    positionOnlyHoldGripErrorTolerance);
-                _positionOnlyHoldPublishFailureLogged = true;
-            }
-        } else {
-            _positionOnlyHoldPublishFailureLogged = false;
-            if (!compiledMinigunFiringSeat) {
-                ROCK_LOG_SAMPLE_DEBUG(Animation, 1000,
-                    "Authored position-only loose hold cached weaponKey=0x{:X} capture={} gripError={:.4f}gu",
-                    currentWeaponKey,
-                    resolvedCaptureSequence,
-                    positionOnlyHoldGripError);
+        if (!reversedKnife) {
+            const RE::NiTransform rightPositionOnlyHandWeaponLocal =
+                transform_math::composeTransforms(
+                    transform_math::invertTransform(solvedWeaponWorld),
+                    trackedHandWorld);
+            const RE::NiPoint3 cachedPositionOnlyGripWeaponLocal =
+                computeGrabPalmPointWorldFromHandBasis(
+                    rightPositionOnlyHandWeaponLocal,
+                    false);
+            // Float rounding of the world coordinates the pivot went through
+            // (AuthoredWeaponGripCapturePolicy.h); the identity itself is exact.
+            const float positionOnlyHoldGripErrorTolerance =
+                authored_weapon_grip_capture_policy::positionOnlyHoldGripErrorTolerance(
+                    (std::max)({ std::fabs(solvedWeaponWorld.translate.x),
+                        std::fabs(solvedWeaponWorld.translate.y),
+                        std::fabs(solvedWeaponWorld.translate.z),
+                        std::fabs(trackedHandWorld.translate.x),
+                        std::fabs(trackedHandWorld.translate.y),
+                        std::fabs(trackedHandWorld.translate.z) }));
+            const float positionOnlyHoldGripError = pointDistance(
+                cachedPositionOnlyGripWeaponLocal,
+                authoredGripWeaponLocal);
+            const bool positionOnlyHoldValid =
+                finiteTransform(rightPositionOnlyHandWeaponLocal) &&
+                std::isfinite(positionOnlyHoldGripError) &&
+                positionOnlyHoldGripError <= positionOnlyHoldGripErrorTolerance;
+            const bool positionOnlyHoldPublished =
+                compiledMinigunFiringSeat ||
+                (authoredLibraryEntryAvailable &&
+                    positionOnlyHoldValid &&
+                    authored_weapon_grip_library::publishPositionOnlyHold(
+                        input.weapon,
+                        input.inPowerArmor,
+                        resolvedCaptureSequence,
+                        rightPositionOnlyHandWeaponLocal));
+            if (!positionOnlyHoldPublished) {
+                if (!_positionOnlyHoldPublishFailureLogged) {
+                    ROCK_LOG_WARN(Animation,
+                        "Authored position-only loose hold publication failed weaponKey=0x{:X} capture={} entry={} valid={} gripError={:.4f}gu tolerance={:.4f}gu",
+                        currentWeaponKey,
+                        resolvedCaptureSequence,
+                        authoredLibraryEntryAvailable ? "yes" : "no",
+                        positionOnlyHoldValid ? "yes" : "no",
+                        positionOnlyHoldGripError,
+                        positionOnlyHoldGripErrorTolerance);
+                    _positionOnlyHoldPublishFailureLogged = true;
+                }
+            } else {
+                _positionOnlyHoldPublishFailureLogged = false;
+                if (!compiledMinigunFiringSeat) {
+                    ROCK_LOG_SAMPLE_DEBUG(Animation, 1000,
+                        "Authored position-only loose hold cached weaponKey=0x{:X} capture={} gripError={:.4f}gu",
+                        currentWeaponKey,
+                        resolvedCaptureSequence,
+                        positionOnlyHoldGripError);
+                }
             }
         }
 

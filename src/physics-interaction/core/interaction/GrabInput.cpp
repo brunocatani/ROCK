@@ -5,6 +5,7 @@
 #include "physics-interaction/weapon/EquipSlotAllocationPolicy.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/NativeHandEquipment.h"
+#include "physics-interaction/weapon/KnifeReverseGrip.h"
 #include "physics-interaction/grab/GlobalSurfaceGrabPolicy.h"
 #include "physics-interaction/consume/ImmersiveAid.h"
 #include "physics-interaction/native/HeldScenePresentation.h"
@@ -676,6 +677,20 @@ namespace rock
         const bool firingHandIsLeft = roster.facts().slot0.firingHand == equipped_weapon_roster::Hand::Left;
         const bool handIsFiringHand = isLeft == firingHandIsLeft;
         const bool offhandWeaponOccupiesHand = roster.slotOneHolds(isLeft);
+        {
+            // The trigger of the hand carrying a knife by its firing grip
+            // toggles that knife's reverse grip. The game gives a
+            // non-automatic melee weapon no trigger action.
+            const auto& slot0 = roster.facts().slot0;
+            const bool slotZeroFiringHand = slot0.holdsHand && !slot0.firingGripDetached &&
+                slot0.firingHand == equipped_weapon_roster::handFor(isLeft);
+            const RE::TESObjectWEAP* handWeapon = nullptr;
+            if (offhandWeaponOccupiesHand || slotZeroFiringHand) {
+                handWeapon = native_hand_equipment::equippedViews()[offhandWeaponOccupiesHand ? 1 : 0].weapon;
+            }
+            knife_reverse_grip::observeHand(isLeft,
+                knife_reverse_grip::appliesTo(handWeapon) ? handWeapon->formID : 0u, heldWeaponEquipTriggerPressedEdge);
+        }
         if (offhandWeaponOccupiesHand || roster.slotZeroHolds(isLeft)) {
             grab_input_intent_policy::reset(inputIntentState);
             cancelPeerHeldJoinRetry("normal-grab-suppressed", true);

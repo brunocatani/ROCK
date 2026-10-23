@@ -2,6 +2,7 @@
 
 #include "physics-interaction/hand/TrackedHandIsolationPolicy.h"
 #include "physics-interaction/weapon/WeaponAimBasis.h"
+#include "physics-interaction/weapon/KnifeReverseGrip.h"
 
 // Left-firing equipped carry: position-only carry solve, weapon node ownership/reparenting, feed-forward weapon publish, and owned recoil delivery.
 
@@ -234,6 +235,13 @@ namespace rock
             !isFiniteTransform(weaponNode->world)) {
             return false;
         }
+        // The presented seat: the captured one, or its reverse knife grip
+        // (melee mirror offset is the model's flat-side centre).
+        const bool reversedKnife = meleeWeapon && knife_reverse_grip::reversed(true, _holdingMirrorFormID);
+        const RE::NiTransform seat = reversedKnife ?
+            knife_reverse_grip::reverseSeat(_firing.primaryHandWeaponLocal, true, _holdingMirrorPlane.offset) :
+            _firing.primaryHandWeaponLocal;
+        const RE::NiPoint3 gripLocal = reversedKnife ? computeGrabPalmPointWorldFromHandBasis(seat, true) : _firing.primaryGripLocal;
 
         RE::NiTransform physicalDriverWorld{};
         const char* physicalHandSource = "driver-relation";
@@ -312,7 +320,7 @@ namespace rock
             RE::NiTransform naturalLeftHandWorld{}, meleeWorld{};
             if (!tryResolveNaturalWandHandOrientationFrame(true, naturalLeftHandWorld) ||
                 !weapon_aim_basis::tryResolveMeleeWorld(naturalLeftHandWorld,
-                    _firing.primaryHandWeaponLocal, 1.0f, meleeWorld)) {
+                    seat, 1.0f, meleeWorld)) {
                 return false;
             }
             leftWeaponInWand = left_firing_position_only_math::orientationOnly(
@@ -331,9 +339,8 @@ namespace rock
 
         RE::NiPoint3 firingGripInLeftHand =
             transform_math::localPointToWorld(
-                transform_math::invertTransform(
-                    _firing.primaryHandWeaponLocal),
-                _firing.primaryGripLocal);
+                transform_math::invertTransform(seat),
+                gripLocal);
         firingGripInLeftHand.x +=
             _handlingSettings.leftFiringAimOffsetXGameUnits;
         firingGripInLeftHand.y +=
@@ -351,7 +358,7 @@ namespace rock
                     dampedAimCarrierWorld,
                     leftWeaponInWand,
                     weaponNode->world,
-                    _firing.primaryGripLocal,
+                    gripLocal,
                     physicalGripTargetWorld);
         // The support-release return eases the rendered two-hand pose into
         // this wand-aimed pose; the authored hand rides the eased weapon.
@@ -361,7 +368,7 @@ namespace rock
             supportReleaseReturnAdvanceSeconds);
         outPresentedHandWorld = transform_math::composeTransforms(
             outWeaponWorld,
-            _firing.primaryHandWeaponLocal);
+            seat);
 
         /*
          * Probe: the carry orientation is wandL o damping o mirror(aim). Log

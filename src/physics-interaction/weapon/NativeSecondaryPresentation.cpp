@@ -15,6 +15,7 @@
 #include "physics-interaction/weapon/NativeEquippedModelLifetime.h"
 #include "physics-interaction/weapon/NativeSecondaryActions.h"
 #include "physics-interaction/weapon/NativeSecondaryMelee.h"
+#include "physics-interaction/weapon/KnifeReverseGrip.h"
 #include "physics-interaction/weapon/EquippedWeaponVisualState.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
@@ -635,7 +636,8 @@ namespace rock::native_secondary_presentation
                 waitFor(view, nativeSeat.modelRegistered ? "own-authored-firing-grip" : "native-model-frame");
                 return;
             }
-            const RE::NiTransform& seat = firingSeat.handWeaponLocal;
+            const RE::NiTransform seat = view.firearm ? firingSeat.handWeaponLocal :
+                knife_reverse_grip::presentedSeat(firingSeat.handWeaponLocal, left, view.weapon->formID, s_mirrorOffsets.z);
             const auto& fingers = firingSeat.fingers;
             // The first weapon's firing inputs and aim: ROCK's equipped-weapon
             // wand and hand (filtered when weapon filtering is active), its

@@ -2495,6 +2495,7 @@ namespace rock
             .meleeWeapon = (effectiveWeaponData && weapon_type_policy::isEquippedMelee(effectiveWeaponData->type.get())) ||
                 (equippedWeapon && weaponClassification.formID == equippedWeapon->formID &&
                     weaponClassification.classificationResolved && weaponClassification.sizeClass == WeaponSizeClass::Melee),
+            .meleeFlatPlaneZ = _weaponCollision.holdingMirrorOffsets().z,
             .runtimeInitialized = _lifecycle.initialized.load(std::memory_order_acquire),
             .visualAuthorityAvailable = runtime.visualAuthorityAvailable,
             .localSkeletonReady = runtime.localSkeletonReady,
