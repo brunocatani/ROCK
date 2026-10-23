@@ -87,7 +87,7 @@ namespace rock::native_secondary_presentation
      */
     // The second weapon's geometry mirror plane, from its generated
     // collision (0 until generated). The left seat mirrors across it.
-    void setMirrorPlane(holding_grip_math::MirrorPlane plane) noexcept;
+    void setMirrorOffsets(holding_grip_math::MirrorOffsets offsets) noexcept;
 
     using CollisionResolver = bool (*)(void* context, const RE::NiTransform& modelIntentWorld,
         RE::NiTransform& resolvedModelWorld);

@@ -33,6 +33,12 @@ struct MirrorPlane {
     bool operator==(const MirrorPlane&) const = default;
 };
 inline int mirrorAxis(bool melee){return melee?2:0;}
+// One model's geometry plane on each mirror axis. The holder's weapon kind
+// picks the axis, so a seat never waits for generated collision to decide it.
+struct MirrorOffsets {
+    float x{0}, z{0};
+    MirrorPlane plane(bool melee) const { return melee ? MirrorPlane{2,z} : MirrorPlane{0,x}; }
+};
 inline float geometryPlane(std::span<PlaneEvidence> evidence) {
     std::sort(evidence.begin(),evidence.end(),[](const auto& a,const auto& b){return a.center<b.center;});
     float total=0;for(const auto& e:evidence)total+=e.weight;

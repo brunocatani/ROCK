@@ -1,5 +1,6 @@
 #include "physics-interaction/native/SceneRelation.h"
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
+#include "physics-interaction/weapon/WeaponTypePolicy.h"
 
 // TwoHandedGrip lifecycle and per-frame state dispatch: construction, update(), reset(), core state transitions, firing-hand role switch, and the small shared part-grip coordinate resolvers.
 
@@ -123,7 +124,12 @@ namespace rock
         const EquippedWeaponHandlingSettings& handlingSettings)
     {
         performance_profiler::ScopedTimer gripStageTimer(performance_profiler::Scope::EquippedGripController);
-        const auto mirrorPlane=weaponCollision.holdingMirrorPlane();
+        if(const auto formID=weaponCollision.getCurrentObservedEquippedWeaponFormID();formID!=_holdingMirrorFormID){
+            const auto* weapon=RE::TESForm::GetFormByID<RE::TESObjectWEAP>(formID);
+            _holdingMirrorFormID=formID;
+            _holdingMirrorMelee=weapon&&weapon_type_policy::isEquippedMelee(weapon->weaponData.type.get());
+        }
+        const auto mirrorPlane=weaponCollision.holdingMirrorOffsets().plane(_holdingMirrorMelee);
         if(mirrorPlane!=_holdingMirrorPlane){
             _holdingMirrorPlane=mirrorPlane;
             _support.authoredCandidate.rightMirrorValid=false;

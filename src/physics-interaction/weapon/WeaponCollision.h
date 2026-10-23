@@ -267,7 +267,7 @@ namespace rock
         std::uint32_t getWeaponBodyCount() const;
 
         bool getApproximateBoundsSnapshot(ApproximateBoundsSnapshot& outSnapshot) const;
-        holding_grip_math::MirrorPlane holdingMirrorPlane() const;
+        holding_grip_math::MirrorOffsets holdingMirrorOffsets() const;
 
         bool getCompoundGeometrySnapshot(CompoundGeometrySnapshot& outSnapshot) const;
 
@@ -406,7 +406,7 @@ namespace rock
 
     private:
         mutable std::uint64_t _holdingPlaneGeneration{};
-        mutable holding_grip_math::MirrorPlane _holdingPlane{};
+        mutable holding_grip_math::MirrorOffsets _holdingOffsets{};
         WeaponInteractionContact readPublishedContact(std::uint32_t index) const;
         static constexpr std::uint32_t INVALID_BODY_ID = 0x7FFF'FFFF;
         static constexpr std::size_t MAX_WEAPON_BODIES = MAX_WEAPON_COLLISION_BODIES;

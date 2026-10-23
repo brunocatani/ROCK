@@ -72,7 +72,7 @@ namespace rock::native_secondary_presentation
         // Registered by the physics module's init/shutdown on the game thread.
         void* s_resolverContext = nullptr;
         CollisionResolver s_resolver = nullptr;
-        holding_grip_math::MirrorPlane s_mirrorPlane{};
+        holding_grip_math::MirrorOffsets s_mirrorOffsets{};
 
         bool onFrameThread() noexcept
         {
@@ -631,7 +631,7 @@ namespace rock::native_secondary_presentation
             });
             const auto* handOverride = holding_grips::find(view.weapon, attachment, left, view.data, powerArmor);
             weapon_grip_seat::FiringSeat firingSeat{};
-            if (!weapon_grip_seat::firingSeat(nativeSeat, handOverride, left, s_mirrorPlane, firingSeat)) {
+            if (!weapon_grip_seat::firingSeat(nativeSeat, handOverride, left, s_mirrorOffsets.plane(!view.firearm), firingSeat)) {
                 waitFor(view, nativeSeat.modelRegistered ? "own-authored-firing-grip" : "native-model-frame");
                 return;
             }
@@ -928,9 +928,9 @@ namespace rock::native_secondary_presentation
         return usable(out);
     }
 
-    void setMirrorPlane(holding_grip_math::MirrorPlane plane) noexcept
+    void setMirrorOffsets(holding_grip_math::MirrorOffsets offsets) noexcept
     {
-        s_mirrorPlane = plane;
+        s_mirrorOffsets = offsets;
     }
 
     void setCollisionResolver(void* context, CollisionResolver resolver) noexcept

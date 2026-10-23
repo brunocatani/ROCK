@@ -1493,6 +1493,8 @@ namespace rock
             std::uint64_t weaponOwnershipKey) const;
 
         holding_grip_math::MirrorPlane _holdingMirrorPlane{};
+        std::uint32_t _holdingMirrorFormID{};
+        bool _holdingMirrorMelee{};
         std::array<PartGripVisualTrace, 2> _partGripVisualTrace{};
         std::array<RE::NiTransform, 2> _partGripVisualTraceLastLocal{};
         std::array<std::uint32_t, 2> _partGripVisualTraceLastSequence{};

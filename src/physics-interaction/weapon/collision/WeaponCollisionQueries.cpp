@@ -1,6 +1,5 @@
 #include "physics-interaction/weapon/HoldingGripMath.h"
 #include "physics-interaction/weapon/WeaponCollisionInternal.h"
-#include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "api/ProviderRuntimeServices.h"
 #include "api/ProviderRuntime.h"
 
@@ -100,13 +99,11 @@ namespace rock
         return generation == getCurrentWeaponGenerationKey() ? count : 0;
     }
 
-    holding_grip_math::MirrorPlane WeaponCollision::holdingMirrorPlane() const {
+    holding_grip_math::MirrorOffsets WeaponCollision::holdingMirrorOffsets() const {
         const auto generation=getCurrentWeaponGenerationKey();
         if(!generation)return {};
-        if(_holdingPlaneGeneration==generation)return _holdingPlane;
-        const auto* weapon=RE::TESForm::GetFormByID<RE::TESObjectWEAP>(_identity.observedFormID);
-        const int axis=holding_grip_math::mirrorAxis(weapon&&weapon_type_policy::isEquippedMelee(weapon->weaponData.type.get()));
-        std::array<holding_grip_math::PlaneEvidence,MAX_WEAPON_BODIES> evidence{};
+        if(_holdingPlaneGeneration==generation)return _holdingOffsets;
+        std::array<holding_grip_math::PlaneEvidence,MAX_WEAPON_BODIES> evidence{},evidenceZ{};
         std::array<const void*,MAX_WEAPON_BODIES> seen{};
         std::size_t count=0;
         for(const auto& body:activeWeaponBodies()){
@@ -121,10 +118,15 @@ namespace rock
                 low.x=(std::min)(low.x,v.x);low.y=(std::min)(low.y,v.y);low.z=(std::min)(low.z,v.z);
                 high.x=(std::max)(high.x,v.x);high.y=(std::max)(high.y,v.y);high.z=(std::max)(high.z,v.z);
             }
-            seen[count]=mesh;evidence[count++]=holding_grip_math::planeEvidence({low.x,low.y,low.z},{high.x,high.y,high.z},axis);
+            seen[count]=mesh;
+            evidence[count]=holding_grip_math::planeEvidence({low.x,low.y,low.z},{high.x,high.y,high.z},0);
+            evidenceZ[count++]=holding_grip_math::planeEvidence({low.x,low.y,low.z},{high.x,high.y,high.z},2);
         }
-        if(count){_holdingPlane={axis,holding_grip_math::geometryPlane(std::span(evidence.data(),count))};_holdingPlaneGeneration=generation;}
-        return count?_holdingPlane:holding_grip_math::MirrorPlane{axis,0};
+        if(!count)return {};
+        _holdingOffsets={holding_grip_math::geometryPlane(std::span(evidence.data(),count)),
+            holding_grip_math::geometryPlane(std::span(evidenceZ.data(),count))};
+        _holdingPlaneGeneration=generation;
+        return _holdingOffsets;
     }
 
     bool WeaponCollision::getApproximateBoundsSnapshot(ApproximateBoundsSnapshot& outSnapshot) const
