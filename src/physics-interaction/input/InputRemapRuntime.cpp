@@ -2772,8 +2772,10 @@ namespace rock::input_remap_runtime
 
     void setWeaponDrawn(bool weaponDrawn)
     {
-        s_weaponDrawn.store(weaponDrawn, std::memory_order_release);
-        if (!weaponDrawn) {
+        // Block once when the weapon is put away; while undrawn the scope
+        // policy itself holds a pressed button until release.
+        const bool wasDrawn = s_weaponDrawn.exchange(weaponDrawn, std::memory_order_acq_rel);
+        if (!weaponDrawn && wasDrawn) {
             blockManualScopeInputUntilRelease();
         }
     }
