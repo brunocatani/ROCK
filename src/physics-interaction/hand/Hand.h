@@ -717,7 +717,35 @@ namespace rock
         struct GrabBodyPreparation;
         struct GrabProxyPreparation;
         struct GrabMeshCaptureSetup;
-        struct GrabMeshExtraction;
+        /*
+         * Grab-start mesh buffers, owned by the hand and reused by every grab
+         * attempt. Large objects need tens of megabytes here; freshly allocated
+         * per grab, Windows returns such blocks to the OS on free, so every
+         * grab paid page faults, zero fill and growth copies again. reset()
+         * keeps capacity; nothing in here outlives one grab attempt, and the
+         * held copy lives in the grab frame. Capacity is bounded by the largest
+         * mesh this hand has grabbed.
+         */
+        struct GrabMeshExtraction
+        {
+            RE::NiAVObject* meshSourceNode = nullptr;
+            MeshExtractionStats stats{};
+            std::vector<TriangleData> meshTriangles{};
+            std::vector<GrabSurfaceTriangleData> surfaceTriangles{};
+            GrabSurfaceQueryIndex queryIndex{};
+            // meshTriangles in the resolved body's object frame.
+            std::vector<GrabLocalTriangle> objectLocalTriangles{};
+
+            void reset()
+            {
+                meshSourceNode = nullptr;
+                stats = {};
+                meshTriangles.clear();
+                surfaceTriangles.clear();
+                queryIndex.clear();
+                objectLocalTriangles.clear();
+            }
+        };
         struct GrabSurfaceEvidence;
         struct GrabBodyResolution;
         struct ResolvedGrabBodyCapture;
@@ -815,7 +843,8 @@ namespace rock
             const RE::NiPointer<RE::TESObjectREFR>& selectedRef,
             std::uint16_t selectedOriginalMotionPropsId,
             const std::string& objectName,
-            ResolvedGrabBodyCapture& outCapture);
+            ResolvedGrabBodyCapture& outCapture,
+            std::vector<GrabLocalTriangle>& outLocalMeshTriangles);
         void resolveGrabPivotEvidence(
             const GrabProxyPreparation& proxy,
             const ResolvedGrabBodyCapture& bodyCapture,
@@ -1233,6 +1262,7 @@ namespace rock
         int _heldLogCounter = 0;
 
         CanonicalGrabFrame _grabFrame;
+        GrabMeshExtraction _grabMeshExtraction;
         grab_offset_acquisition::Transition<RE::NiTransform> _grabOffsetAcquisition;
         grab_offset_acquisition::Transition<RE::NiTransform> _looseSharedAcquisition;
         std::uint64_t _looseSharedAcquisitionPeer{};

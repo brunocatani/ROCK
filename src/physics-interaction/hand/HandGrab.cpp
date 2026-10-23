@@ -1847,19 +1847,20 @@ namespace rock
             return multiplyTransforms(bodyWorld, invertTransform(bodyLocalTransform));
         }
 
-        std::vector<GrabLocalTriangle> cacheTrianglesInLocalSpace(const std::vector<TriangleData>& worldTriangles, const RE::NiTransform& nodeWorld)
+        // Replaces outLocalTriangles' contents, reusing its capacity.
+        void cacheTrianglesInLocalSpace(const std::vector<TriangleData>& worldTriangles, const RE::NiTransform& nodeWorld,
+            std::vector<GrabLocalTriangle>& outLocalTriangles)
         {
             performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabLocalTriangleCapture);
-            std::vector<GrabLocalTriangle> localTriangles;
-            localTriangles.reserve(worldTriangles.size());
+            outLocalTriangles.clear();
+            outLocalTriangles.reserve(worldTriangles.size());
             for (const auto& triangle : worldTriangles) {
-                localTriangles.push_back(GrabLocalTriangle{
+                outLocalTriangles.push_back(GrabLocalTriangle{
                     transform_math::worldPointToLocal(nodeWorld, triangle.v0),
                     transform_math::worldPointToLocal(nodeWorld, triangle.v1),
                     transform_math::worldPointToLocal(nodeWorld, triangle.v2),
                 });
             }
-            return localTriangles;
         }
 
         constexpr std::size_t kMaxGrabRuntimeSurfaceContactTriangles = 2048;
@@ -4855,15 +4856,6 @@ namespace rock
         return true;
     }
 
-    struct Hand::GrabMeshExtraction
-    {
-        RE::NiAVObject* meshSourceNode = nullptr;
-        MeshExtractionStats stats{};
-        std::vector<TriangleData> meshTriangles{};
-        std::vector<GrabSurfaceTriangleData> surfaceTriangles{};
-        GrabSurfaceQueryIndex queryIndex{};
-    };
-
     void Hand::extractGrabMeshEvidence(
         RE::hknpWorld* world,
         RE::hknpBodyId objectBodyId,
@@ -4874,7 +4866,7 @@ namespace rock
         bool surfaceEvidenceRequired,
         GrabMeshExtraction& outExtraction)
     {
-        outExtraction = {};
+        outExtraction.reset();
         outExtraction.meshSourceNode = meshSourceNode;
         if (!meshSourceNode) {
             return;
@@ -5411,7 +5403,6 @@ namespace rock
         RE::hknpBodyId bodyId{};
         RE::NiAVObject* collidableNode = nullptr;
         RE::NiTransform objectWorldTransform{};
-        std::vector<GrabLocalTriangle> localMeshTriangles{};
     };
 
     bool Hand::captureResolvedGrabBody(
@@ -5423,10 +5414,12 @@ namespace rock
         const RE::NiPointer<RE::TESObjectREFR>& selectedRef,
         std::uint16_t selectedOriginalMotionPropsId,
         const std::string& objectName,
-        ResolvedGrabBodyCapture& outCapture)
+        ResolvedGrabBodyCapture& outCapture,
+        std::vector<GrabLocalTriangle>& outLocalMeshTriangles)
     {
         performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabResolvedBodyCapture);
         outCapture = {};
+        outLocalMeshTriangles.clear();
         outCapture.bodyId = RE::hknpBodyId{ resolution.primaryChoice.bodyId };
         outCapture.collidableNode = meshCapture.collidableNode;
         outCapture.objectWorldTransform = meshCapture.objectWorldTransform;
@@ -5479,7 +5472,7 @@ namespace rock
         }
 
         if (!meshTriangles.empty()) {
-            outCapture.localMeshTriangles = cacheTrianglesInLocalSpace(meshTriangles, outCapture.objectWorldTransform);
+            cacheTrianglesInLocalSpace(meshTriangles, outCapture.objectWorldTransform, outLocalMeshTriangles);
         }
         return true;
     }
@@ -5753,7 +5746,7 @@ namespace rock
                         mesh.surfaceTriangles,
                         grabGripPoint,
                         kMaxGrabRuntimeFingerPoseTriangles, mesh.queryIndex);
-                    grabFingerPoseLocalMeshTriangles = cacheTrianglesInLocalSpace(grabFingerPoseMeshTriangles, objectWorldTransform);
+                    cacheTrianglesInLocalSpace(grabFingerPoseMeshTriangles, objectWorldTransform, grabFingerPoseLocalMeshTriangles);
                     if (grabFingerPoseMeshTriangles.size() != grabMeshTriangles.size()) {
                         ROCK_LOG_DEBUG(Hand,
                             "{} hand MESH FINGER POSE TRIANGLES: sourceTris={} localTris={} center=({:.1f},{:.1f},{:.1f})",
@@ -8108,10 +8101,11 @@ namespace rock
             // No mesh hit is fabricated: the authored pose is the position authority.
         };
 
-        GrabMeshExtraction meshExtraction{};
+        // Hand-owned buffers, reset by extractGrabMeshEvidence below.
+        auto& meshExtraction = _grabMeshExtraction;
         auto& grabMeshTriangles = meshExtraction.meshTriangles;
         auto& grabSurfaceTriangles = meshExtraction.surfaceTriangles;
-        std::vector<GrabLocalTriangle> grabLocalMeshTriangles;
+        auto& grabLocalMeshTriangles = meshExtraction.objectLocalTriangles;
         std::vector<GrabLocalTriangle> grabFingerPoseLocalMeshTriangles;
         const bool meshContactOnly = g_rockConfig.rockGrabMeshContactOnly;
         extractGrabMeshEvidence(world, objectBodyId, rootNode, collidableNode, meshSourceNode, handPocketOnlyGrab, !authoredBodyOwnerVerified, meshExtraction);
@@ -8296,7 +8290,8 @@ namespace rock
                 selectedRef,
                 selectedOriginalMotionPropsId,
                 objName,
-                resolvedBodyCapture)) {
+                resolvedBodyCapture,
+                grabLocalMeshTriangles)) {
             grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
             return GrabAttemptResult::Rejected;
@@ -8304,7 +8299,6 @@ namespace rock
         objectBodyId = resolvedBodyCapture.bodyId;
         collidableNode = resolvedBodyCapture.collidableNode;
         objectWorldTransform = resolvedBodyCapture.objectWorldTransform;
-        grabLocalMeshTriangles = std::move(resolvedBodyCapture.localMeshTriangles);
         if (grab_target::requiresNativeBodyOwnership(sel.targetKind)) {
             // Skin weights may resolve to a different bone than the cast hit.
             // Later frame/constraint capture reads this setup, so it must use

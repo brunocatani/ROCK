@@ -158,6 +158,20 @@ namespace rock
             std::size_t index;
         };
 
+        // Forgets the indexed vector while keeping node capacity. Required
+        // before that vector is refilled in place: a reused buffer can keep the
+        // same data pointer and size, which the staleness check compares.
+        void clear()
+        {
+            _source = nullptr;
+            _size = 0;
+            _nodes.clear();
+            _nearest.clear();
+            _cachedCount = 0;
+            _cachedSource = nullptr;
+            _cachedSize = 0;
+        }
+
         void build(const std::vector<GrabSurfaceTriangleData>& triangles, std::size_t minimumIndexedTriangles = 2048)
         {
             performance_profiler::ScopedTimer timer(performance_profiler::Scope::GrabMeshQueryIndexBuild);
