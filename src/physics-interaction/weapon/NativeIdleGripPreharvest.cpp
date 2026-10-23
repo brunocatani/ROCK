@@ -1741,6 +1741,24 @@ namespace rock::native_idle_grip_preharvest
             return ExtractionResult::Failed;
         }
 
+        // The weapon subgraph's animation file list comes from the lookup
+        // tables, not from the loaded subgraph: the idle clip path is known as
+        // soon as the subgraph is requested.
+        [[nodiscard]] bool idleClipPathsKnown(const Runtime& state, const RE::BSAnimationGraphManager& manager)
+        {
+            const auto& job = state.job;
+            const auto selection = native_idle_grip_preharvest_policy::selectFirstPersonGraph(
+                manager.graph.size(), job.subgraphHandles.size(), job.subgraphIdentifiers.size());
+            if (!selection.valid) return false;
+            auto identifier = job.subgraphIdentifiers[static_cast<decltype(job.subgraphIdentifiers)::size_type>(selection.graphIndex)].identifier;
+            void* lookupSingleton = nullptr;
+            if (!identifier ||
+                !native_memory::tryReadValue(reinterpret_cast<void* const*>(REL::Offset(kAnimationFileLookupSingleton).address()), lookupSingleton) ||
+                !lookupSingleton) return false;
+            const auto* files = state.native.getAnimationFilesForSubgraph(&identifier);
+            return files && !files->empty();
+        }
+
         [[nodiscard]] bool progressJob(Runtime& state)
         {
             auto& job = state.job;
@@ -1820,7 +1838,12 @@ namespace rock::native_idle_grip_preharvest
                 return true;
             }
             std::int32_t priority = kIoTaskPriority;
-            if (!state.native.isAnimationSubGraphLoaded(&holder->animationGraphManager, &job.subgraphHandles, &priority)) {
+            const bool subgraphLoaded = state.native.isAnimationSubGraphLoaded(&holder->animationGraphManager, &job.subgraphHandles, &priority);
+            // Sampling needs one idle clip, loaded directly in milliseconds; a
+            // whole weapon subgraph (all of 1HM for a knife) can take seconds,
+            // and the index-1 weapon stays hidden until its grip is learned.
+            // Warming exists to load the subgraph, so it still waits for it.
+            if (!subgraphLoaded && (job.warmOnly || !idleClipPathsKnown(state, *manager))) {
                 return false;
             }
             if (job.warmOnly) {
