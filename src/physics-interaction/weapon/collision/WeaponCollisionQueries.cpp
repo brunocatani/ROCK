@@ -687,17 +687,16 @@ namespace rock
     {
         const std::array<RE::NiPoint3, 1> points{ pointWorld };
         std::array<WeaponSurfaceProximityWitness, 1> witnesses{};
-        const auto result = findCurrentWeaponSurfaceNearPoints(
+        const std::size_t witnessCount = findCurrentWeaponSurfaceNearPoints(
             currentWeaponRoot,
             points,
             maxDistanceGameUnits,
             witnesses);
         outWitness = witnesses[0];
-        return result.witnessCount == 1 && outWitness.valid;
+        return witnessCount == 1 && outWitness.valid;
     }
 
-    WeaponCollision::WeaponSurfaceNearPointsResult
-    WeaponCollision::findCurrentWeaponSurfaceNearPoints(
+    std::size_t WeaponCollision::findCurrentWeaponSurfaceNearPoints(
         const RE::NiAVObject* currentWeaponRoot,
         const std::span<const RE::NiPoint3> pointsWorld,
         const float maxDistanceGameUnits,
@@ -721,11 +720,11 @@ namespace rock
             outWitnesses.size() != pointsWorld.size() ||
             !std::isfinite(maxDistanceGameUnits) ||
             maxDistanceGameUnits < 0.0f) {
-            return {};
+            return 0;
         }
         for (const auto& pointWorld : pointsWorld) {
             if (!pointFinite(pointWorld)) {
-                return {};
+                return 0;
             }
         }
 
@@ -736,11 +735,12 @@ namespace rock
          * reject unrelated parts before the exact cached-triangle test.
          *
          * The bounded batch form is also used by the opt-in authored-grip
-         * visualizer. It allocates nothing, scans each current body/triangle
-         * bank once, and retains the true nearest witness per supplied point.
+         * visualizer every frame. It allocates nothing, walks each body's
+         * triangle index (built with the body bank), and retains the true
+         * nearest witness per supplied point.
          */
         for (const auto& instance : activeWeaponBodies()) {
-            if (!instance.body.isValid() || !instance.geometry) {
+            if (!instance.body.isValid() || !instance.geometry || !instance.indices) {
                 continue;
             }
 
@@ -761,6 +761,10 @@ namespace rock
                 useSourceFrame ?
                 instance.geometry->mesh->sourceLocalTrianglesGame :
                 instance.geometry->mesh->localTrianglesGame;
+            const auto& triangleIndex =
+                useSourceFrame ?
+                instance.indices->sourceIndex :
+                instance.indices->localIndex;
             const RE::NiPoint3& boundsMin =
                 useSourceFrame ?
                 instance.generatedSourceLocalMinGame :
@@ -814,54 +818,53 @@ namespace rock
                 continue;
             }
 
-            for (const auto& triangle : localTriangles) {
-                if (!pointFinite(triangle.v0) ||
-                    !pointFinite(triangle.v1) ||
-                    !pointFinite(triangle.v2)) {
+            for (std::size_t pointIndex = 0;
+                 pointIndex < pointsWorld.size();
+                 ++pointIndex) {
+                if (!pointMayReachBody[pointIndex]) {
+                    continue;
+                }
+                const auto nearest = triangleIndex.nearest(
+                    localTriangles,
+                    localPoints[pointIndex],
+                    localRadius * localRadius,
+                    [](const RE::NiPoint3& point, const TriangleData& triangle) {
+                        float squared = (std::numeric_limits<float>::infinity)();
+                        (void)closestPointOnTriangleToPoint(point, triangle, squared);
+                        return squared;
+                    });
+                if (!nearest.valid() ||
+                    !weapon_interaction_probe_math::isWithinProbeRadiusSquared(
+                        nearest.distanceSquared,
+                        localRadius)) {
                     continue;
                 }
 
-                for (std::size_t pointIndex = 0;
-                     pointIndex < pointsWorld.size();
-                     ++pointIndex) {
-                    if (!pointMayReachBody[pointIndex]) {
-                        continue;
-                    }
-                    float surfaceDistanceSquared =
-                        (std::numeric_limits<float>::infinity)();
-                    const RE::NiPoint3 closestPointLocal =
-                        closestPointOnTriangleToPoint(
-                            localPoints[pointIndex],
-                            triangle,
-                            surfaceDistanceSquared);
-                    if (!std::isfinite(surfaceDistanceSquared) ||
-                        surfaceDistanceSquared < 0.0f ||
-                        !weapon_interaction_probe_math::isWithinProbeRadiusSquared(
-                            surfaceDistanceSquared,
-                            localRadius)) {
-                        continue;
-                    }
-
-                    const float distanceGameUnits =
-                        std::sqrt(surfaceDistanceSquared) * absoluteScale;
-                    auto& witness = outWitnesses[pointIndex];
-                    if (!std::isfinite(distanceGameUnits) ||
-                        (witness.valid &&
-                            distanceGameUnits >= witness.distanceGameUnits)) {
-                        continue;
-                    }
-                    witness.closestPointWorld =
-                        weapon_collision_geometry_math::localPointToWorld(
-                            surfaceWorld.rotate,
-                            surfaceWorld.translate,
-                            surfaceWorld.scale,
-                            closestPointLocal);
-                    witness.distanceGameUnits = distanceGameUnits;
-                    witness.bodyId = instance.body.getBodyId().value;
-                    witness.weaponGenerationKey = currentGeneration;
-                    witness.sourceNodeCurrent = useSourceFrame;
-                    witness.valid = pointFinite(witness.closestPointWorld);
+                const float distanceGameUnits =
+                    std::sqrt(nearest.distanceSquared) * absoluteScale;
+                auto& witness = outWitnesses[pointIndex];
+                if (!std::isfinite(distanceGameUnits) ||
+                    (witness.valid &&
+                        distanceGameUnits >= witness.distanceGameUnits)) {
+                    continue;
                 }
+                float closestDistanceSquared = 0.0f;
+                const RE::NiPoint3 closestPointLocal =
+                    closestPointOnTriangleToPoint(
+                        localPoints[pointIndex],
+                        localTriangles[nearest.triangle],
+                        closestDistanceSquared);
+                witness.closestPointWorld =
+                    weapon_collision_geometry_math::localPointToWorld(
+                        surfaceWorld.rotate,
+                        surfaceWorld.translate,
+                        surfaceWorld.scale,
+                        closestPointLocal);
+                witness.distanceGameUnits = distanceGameUnits;
+                witness.bodyId = instance.body.getBodyId().value;
+                witness.weaponGenerationKey = currentGeneration;
+                witness.sourceNodeCurrent = useSourceFrame;
+                witness.valid = pointFinite(witness.closestPointWorld);
             }
         }
 
@@ -869,17 +872,17 @@ namespace rock
             for (auto& witness : outWitnesses) {
                 witness = {};
             }
-            return {};
+            return 0;
         }
 
-        WeaponSurfaceNearPointsResult result{ .scanned = true };
+        std::size_t witnessCount = 0;
         for (const auto& witness : outWitnesses) {
             if (witness.valid &&
                 witness.weaponGenerationKey == currentGeneration) {
-                ++result.witnessCount;
+                ++witnessCount;
             }
         }
-        return result;
+        return witnessCount;
     }
 
     std::vector<WeaponCollisionProfileEvidenceDescriptor> WeaponCollision::buildProfileEvidenceSnapshot(

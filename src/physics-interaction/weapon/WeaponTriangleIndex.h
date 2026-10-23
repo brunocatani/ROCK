@@ -50,12 +50,29 @@ namespace rock
             }
         }
 
+        struct Nearest
+        {
+            float distanceSquared = (std::numeric_limits<float>::infinity)();
+            std::uint32_t triangle = (std::numeric_limits<std::uint32_t>::max)();
+            bool valid() const { return triangle != (std::numeric_limits<std::uint32_t>::max)(); }
+        };
+
         template <class Triangles, class Distance>
         float nearestDistanceSquared(const Triangles& triangles, const RE::NiPoint3& point,
             float radiusSquared, Distance&& distance, QueryStats* stats = nullptr) const
         {
-            float best = (std::numeric_limits<float>::infinity)();
-            if (_nodes.empty() || !finite(point) || std::isnan(radiusSquared) || radiusSquared < 0.0f) return best;
+            return nearest(triangles, point, radiusSquared, distance, stats).distanceSquared;
+        }
+
+        // The nearest triangle within the radius; on equal distance the lowest
+        // source index wins, so the result matches a source-order scan.
+        template <class Triangles, class Distance>
+        Nearest nearest(const Triangles& triangles, const RE::NiPoint3& point,
+            float radiusSquared, Distance&& distance, QueryStats* stats = nullptr) const
+        {
+            Nearest result{};
+            float& best = result.distanceSquared;
+            if (_nodes.empty() || !finite(point) || std::isnan(radiusSquared) || radiusSquared < 0.0f) return result;
             // Median splits halve the index count at every level. A uint32
             // triangle count needs at most 32 deferred siblings.
             std::array<std::uint32_t, 64> stack{};
@@ -68,9 +85,12 @@ namespace rock
                 if (node.count != 0) {
                     for (std::uint32_t i = node.begin; i < node.begin + node.count; ++i) {
                         if (stats) ++stats->triangles;
-                        const float candidate = distance(point, triangles[_indices[i]]);
-                        if (std::isfinite(candidate) && candidate >= 0.0f && candidate <= radiusSquared)
-                            best = (std::min)(best, candidate);
+                        const std::uint32_t triangle = _indices[i];
+                        const float candidate = distance(point, triangles[triangle]);
+                        if (!std::isfinite(candidate) || candidate < 0.0f || candidate > radiusSquared ||
+                            candidate > best || (candidate == best && triangle > result.triangle)) continue;
+                        best = candidate;
+                        result.triangle = triangle;
                     }
                 } else {
                     const float left = boundsDistanceSquared(point, _nodes[node.left]);
@@ -81,7 +101,7 @@ namespace rock
                     if ((std::min)(left, right) <= limit) stack[count++] = nearChild;
                 }
             }
-            return best;
+            return result;
         }
 
         template <class Triangles, class Predicate>

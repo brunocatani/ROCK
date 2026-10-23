@@ -133,6 +133,46 @@ namespace
         same(reference(tied,p,2),Batch(tied).find(p,2));
     }
 
+    // nearest() must pick the triangle a source-order scan keeping strictly
+    // closer hits picks, so the indexed surface witness matches the old loop.
+    void nearestParity()
+    {
+        std::mt19937 random(91873);
+        std::uniform_real_distribution<float> coordinate(-20,20),offset(-1.5f,1.5f);
+        std::vector<TriangleData> triangles;
+        for (int i=0;i<3000;++i) {
+            const RE::NiPoint3 base{coordinate(random),coordinate(random),coordinate(random)};
+            triangles.push_back({base,base+RE::NiPoint3{offset(random),offset(random),offset(random)},
+                base+RE::NiPoint3{offset(random),offset(random),offset(random)}});
+        }
+        for (int i=0;i<200;++i) triangles.push_back(triangles[static_cast<std::size_t>(i)*7]); // exact ties
+        triangles[11].v1.x=std::numeric_limits<float>::quiet_NaN();
+        WeaponTriangleIndex index;
+        index.build(triangles);
+        const auto distance=[](const RE::NiPoint3& p,const TriangleData& t) {
+            float d=(std::numeric_limits<float>::infinity)();
+            (void)closestPointOnTriangleToPoint(p,t,d);
+            return d;
+        };
+        const auto finiteTriangle=[](const TriangleData& t) {
+            return query::finitePoint(t.v0)&&query::finitePoint(t.v1)&&query::finitePoint(t.v2);
+        };
+        for (int i=0;i<2000;++i) {
+            const RE::NiPoint3 point{coordinate(random),coordinate(random),coordinate(random)};
+            const float radiusSquared=i%11==0?0.0f:static_cast<float>(i%9)*0.75f;
+            float best=(std::numeric_limits<float>::infinity)();
+            std::uint32_t bestTriangle=(std::numeric_limits<std::uint32_t>::max)();
+            for (std::uint32_t t=0;t<triangles.size();++t) {
+                if (!finiteTriangle(triangles[t])) continue;
+                const float d=distance(point,triangles[t]);
+                if (std::isfinite(d)&&d>=0&&d<=radiusSquared&&d<best) { best=d; bestTriangle=t; }
+            }
+            const auto found=index.nearest(triangles,point,radiusSquared,distance);
+            assert(found.triangle==bestTriangle);
+            assert(!found.valid()||found.distanceSquared==best);
+        }
+    }
+
     void measure()
     {
         const auto sources=makeSources(68);
@@ -172,6 +212,7 @@ int main()
 
 
     parity();
+    nearestParity();
     const auto sources=makeSources(1);const Batch batch(sources);
     const auto probe= sources[0].world.translate;
     assert(query::find(std::span(batch.parts).first(batch.count),probe,2).valid());
