@@ -7,6 +7,7 @@
 #include <cstdint>
 
 #include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
+#include "physics-interaction/weapon/HoldingGripMath.h"
 #include "RE/NetImmerse/NiAVObject.h"
 
 namespace RE { class PlayerCharacter; class NiNode; }
@@ -86,7 +87,7 @@ namespace rock::native_secondary_presentation
      */
     // The second weapon's geometry mirror plane, from its generated
     // collision (0 until generated). The left seat mirrors across it.
-    void setMirrorPlaneX(float planeX) noexcept;
+    void setMirrorPlane(holding_grip_math::MirrorPlane plane) noexcept;
 
     using CollisionResolver = bool (*)(void* context, const RE::NiTransform& modelIntentWorld,
         RE::NiTransform& resolvedModelWorld);

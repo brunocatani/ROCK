@@ -2,6 +2,7 @@
 
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/HoldingGripRecords.h"
+#include "physics-interaction/weapon/HoldingGripMath.h"
 
 #include <cstdint>
 
@@ -50,7 +51,7 @@ namespace rock::weapon_grip_seat
 
     [[nodiscard]] NativeSeat resolveNative(const Request& request);
 
-    [[nodiscard]] bool leftFiringSeat(const RE::NiTransform& nativeRight, float mirrorPlaneX, RE::NiTransform& outLeft);
+    [[nodiscard]] bool leftFiringSeat(const RE::NiTransform& nativeRight, holding_grip_math::MirrorPlane mirrorPlane, RE::NiTransform& outLeft);
 
     [[nodiscard]] bool mirrorFingerPose(
         const authored_weapon_grip_library::FiringFingerPose& right,
@@ -69,6 +70,6 @@ namespace rock::weapon_grip_seat
         const NativeSeat& native,
         const holding_grips::Record* custom,
         bool isLeft,
-        float mirrorPlaneX,
+        holding_grip_math::MirrorPlane mirrorPlane,
         FiringSeat& out);
 }

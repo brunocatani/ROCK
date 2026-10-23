@@ -94,7 +94,7 @@ namespace rock
                     weapon_grip_seat::FiringSeat firing{};
                     if (!weapon_grip_seat::firingSeat(native,
                             holding_grips::find(weaponForm, node, isLeft, state.weaponGenerationKey, powerArmor),
-                            isLeft, _weaponCollision.holdingMirrorPlaneX(), firing)) {
+                            isLeft, _weaponCollision.holdingMirrorPlane(), firing)) {
                         hidden(native.modelRegistered ? "authored-seat" : "model-frame");
                         continue;
                     }

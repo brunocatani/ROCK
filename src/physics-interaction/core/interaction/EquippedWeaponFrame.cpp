@@ -333,7 +333,7 @@ namespace rock
             });
             weapon_grip_seat::FiringSeat seat{};
             if (!weapon_grip_seat::firingSeat(native, holding_grips::find(view.weapon, node, isLeft, view.data, powerArmor),
-                    isLeft, _weaponCollision.holdingMirrorPlaneX(), seat)) {
+                    isLeft, _weaponCollision.holdingMirrorPlane(), seat)) {
                 stage = native.modelRegistered ? "authored-seat" : "model-frame";
             } else {
                 gripLocal = computeGrabPalmPointWorldFromHandBasis(seat.handWeaponLocal, isLeft);

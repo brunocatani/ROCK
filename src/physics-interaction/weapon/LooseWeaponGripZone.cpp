@@ -94,25 +94,27 @@ namespace rock::loose_weapon_grip_zone
 
         /*
          * The loose model's geometry mirror plane, by the rule equipped
-         * weapons use (WeaponCollision::holdingMirrorPlaneX): the weighted
+         * weapons use (WeaponCollision::holdingMirrorPlane): the weighted
          * median of each mesh's bounds in weapon space. Measured once per
          * model and kept for the few most recent models.
          */
-        float looseMirrorPlaneX(const RE::TESObjectWEAP* weapon, RE::NiAVObject* root)
+        holding_grip_math::MirrorPlane looseMirrorPlane(const RE::TESObjectWEAP* weapon, RE::NiAVObject* root)
         {
             struct Entry
             {
                 const RE::NiAVObject* root{ nullptr };
                 std::uint32_t formId{ 0 };
-                float planeX{ 0.0f };
+                holding_grip_math::MirrorPlane plane{};
             };
             static std::array<Entry, 4> s_entries{};
             static std::size_t s_next{ 0 };
             const auto formId = weapon ? weapon->formID : 0u;
             for (const auto& entry : s_entries) {
-                if (entry.root == root && entry.formId == formId) return entry.planeX;
+                if (entry.root == root && entry.formId == formId) return entry.plane;
             }
 
+            const int planeAxis = holding_grip_math::mirrorAxis(
+                weapon && weapon_type_policy::isEquippedMelee(weapon->weaponData.type.get()));
             constexpr std::size_t kMaxMeshes = 64;
             std::array<holding_grip_math::PlaneEvidence, kMaxMeshes> evidence{};
             std::size_t count = 0;
@@ -137,7 +139,7 @@ namespace rock::loose_weapon_grip_zone
                             first = false;
                         }
                     }
-                    evidence[count++] = holding_grip_math::planeEvidence(low, high);
+                    evidence[count++] = holding_grip_math::planeEvidence(low, high, planeAxis);
                     return;
                 }
                 if (auto* children = node->IsNode()) {
@@ -145,10 +147,11 @@ namespace rock::loose_weapon_grip_zone
                 }
             };
             visit(visit, root, 10);
-            const float planeX = count ? holding_grip_math::geometryPlane(std::span(evidence.data(), count)) : 0.0f;
-            s_entries[s_next] = { root, formId, planeX };
+            const holding_grip_math::MirrorPlane plane{ planeAxis,
+                count ? holding_grip_math::geometryPlane(std::span(evidence.data(), count)) : 0.0f };
+            s_entries[s_next] = { root, formId, plane };
             s_next = (s_next + 1) % s_entries.size();
-            return planeX;
+            return plane;
         }
 
 
@@ -343,7 +346,7 @@ namespace rock::loose_weapon_grip_zone
                     RE::NiTransform leftSeat{};
                     RE::NiTransform leftAimWorld{};
                     if (weapon_grip_seat::leftFiringSeat(canonicalHandWeaponLocal,
-                            looseMirrorPlaneX(weapon, looseRoot), leftSeat) &&
+                            looseMirrorPlane(weapon, looseRoot), leftSeat) &&
                         (meleeWeapon ?
                             TwoHandedGrip::tryGetMeleeWeaponAimWorld(true, leftHandWorld, leftSeat, looseRoot->world.scale, leftAimWorld) :
                             TwoHandedGrip::tryGetLeftWeaponAimWorld(looseRoot->world.scale, leftAimWorld))) {

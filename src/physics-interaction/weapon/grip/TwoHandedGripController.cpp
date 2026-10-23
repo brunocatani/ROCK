@@ -123,9 +123,9 @@ namespace rock
         const EquippedWeaponHandlingSettings& handlingSettings)
     {
         performance_profiler::ScopedTimer gripStageTimer(performance_profiler::Scope::EquippedGripController);
-        const float mirrorPlane=weaponCollision.holdingMirrorPlaneX();
-        if(mirrorPlane!=_holdingMirrorPlaneX){
-            _holdingMirrorPlaneX=mirrorPlane;
+        const auto mirrorPlane=weaponCollision.holdingMirrorPlane();
+        if(mirrorPlane!=_holdingMirrorPlane){
+            _holdingMirrorPlane=mirrorPlane;
             _support.authoredCandidate.rightMirrorValid=false;
             refreshAuthoredSupportRightMirror();
         }

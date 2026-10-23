@@ -29,11 +29,15 @@ int main(){
  }
  // Shifting the weapon's modeling origin must not alter mirrored contact.
  for(float center:{-.8f,0.f,.379f,2.f}) {
-  const auto seat=mirroredHandSeat(right,center);auto expected=point(right,palm);expected[0]=2*center-expected[0];
+  const auto seat=mirroredHandSeat(right,{0,center});auto expected=point(right,palm);expected[0]=2*center-expected[0];
   near(point(seat,leftPalm),expected);
-  auto shifted=right;shifted.t[0]+=3.2f;auto mirroredShift=mirroredHandSeat(shifted,center+3.2f);
+  auto shifted=right;shifted.t[0]+=3.2f;auto mirroredShift=mirroredHandSeat(shifted,{0,center+3.2f});
   auto expectedShift=seat.t;expectedShift[0]+=3.2f;near(mirroredShift.t,expectedShift);
  }
+ // A melee seat mirrors the flat side (Z): the edge on weapon X keeps facing
+ // where it faced in the right hand, and the wrist stays a proper rotation.
+ {const auto melee=mirroredHandSeat(right,{2,0});assert(valid(melee));
+  auto expected=point(right,palm);expected[2]=-expected[2];near(point(melee,leftPalm),expected);}
  std::array<PlaneEvidence,3> planes{planeEvidence({-1.6f,0,-2},{2.4f,20,2}),planeEvidence({-1.6f,-20,-3},{2.4f,0,3}),planeEvidence({5,1,0},{6,2,1})};
  assert(std::abs(geometryPlane(planes)-.4f)<.0001f);
  near(point(compose(right,inverse(right)),{1,2,3}),{1,2,3});Pose bad;bad.r[0]=-1;assert(!valid(bad));

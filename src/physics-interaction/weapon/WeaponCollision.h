@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/weapon/GeneratedWeaponGeometry.h"
+#include "physics-interaction/weapon/HoldingGripMath.h"
 #include "physics-interaction/weapon/WeaponEvidenceSnapshot.h"
 
 #include <array>
@@ -266,7 +267,7 @@ namespace rock
         std::uint32_t getWeaponBodyCount() const;
 
         bool getApproximateBoundsSnapshot(ApproximateBoundsSnapshot& outSnapshot) const;
-        float holdingMirrorPlaneX() const;
+        holding_grip_math::MirrorPlane holdingMirrorPlane() const;
 
         bool getCompoundGeometrySnapshot(CompoundGeometrySnapshot& outSnapshot) const;
 
@@ -405,7 +406,7 @@ namespace rock
 
     private:
         mutable std::uint64_t _holdingPlaneGeneration{};
-        mutable float _holdingPlaneX{};
+        mutable holding_grip_math::MirrorPlane _holdingPlane{};
         WeaponInteractionContact readPublishedContact(std::uint32_t index) const;
         static constexpr std::uint32_t INVALID_BODY_ID = 0x7FFF'FFFF;
         static constexpr std::size_t MAX_WEAPON_BODIES = MAX_WEAPON_COLLISION_BODIES;

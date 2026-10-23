@@ -57,7 +57,7 @@ namespace rock
         if(_holdingHasLeft){outFiringHandWeaponLocal=_holdingLeft;outFiringGripWeaponLocal=computeGrabPalmPointWorldFromHandBasis(_holdingLeft,true);return true;}
         if (!weapon_grip_seat::leftFiringSeat(
                 _holdingHasNative ? _holdingNativeRight : _firing.rightCanonicalHandWeaponLocal,
-                _holdingMirrorPlaneX, outFiringHandWeaponLocal)) {
+                _holdingMirrorPlane, outFiringHandWeaponLocal)) {
             return reject("mirrored-firing-frame-unavailable");
         }
         outFiringGripWeaponLocal = computeGrabPalmPointWorldFromHandBasis(outFiringHandWeaponLocal, true);
@@ -1370,7 +1370,7 @@ namespace rock
         if(_holdingHasLeft){outHandWeaponLocal=_holdingLeft;if(outUsedAuthoredCanonical)*outUsedAuthoredCanonical=true;return true;}
         const bool mirrored = weapon_grip_seat::leftFiringSeat(
             _holdingHasNative ? _holdingNativeRight : _firing.rightCanonicalHandWeaponLocal,
-            _holdingMirrorPlaneX, outHandWeaponLocal);
+            _holdingMirrorPlane, outHandWeaponLocal);
         if (!mirrored) {
             return false;
         }
@@ -1397,12 +1397,12 @@ namespace rock
 
     bool TwoHandedGrip::tryBuildMirroredSupportHandWeaponLocal(
         const RE::NiTransform& leftHandWeaponLocal,
-        RE::NiTransform& outRightHandWeaponLocal, float mirrorPlaneX)
+        RE::NiTransform& outRightHandWeaponLocal, holding_grip_math::MirrorPlane mirrorPlane)
     {
         outRightHandWeaponLocal = {};
         if (!isFiniteTransform(leftHandWeaponLocal)) return false;
         outRightHandWeaponLocal = holding_grip_math::toNative(
-            holding_grip_math::mirroredHandSeat(holding_grip_math::fromNative(leftHandWeaponLocal),mirrorPlaneX));
+            holding_grip_math::mirroredHandSeat(holding_grip_math::fromNative(leftHandWeaponLocal),mirrorPlane));
         return isFiniteTransform(outRightHandWeaponLocal);
     }
 

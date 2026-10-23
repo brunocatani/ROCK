@@ -17,11 +17,22 @@ inline Pose finger(Pose p){return reflected(p,2);}
 // Broad longitudinal surfaces dominate small asymmetric controls. Median
 // weighting avoids moving the plane toward a single side attachment.
 struct PlaneEvidence { float center{}, weight{}; };
-inline PlaneEvidence planeEvidence(V low, V high) {
-    const float weight=(high[1]-low[1])*(high[2]-low[2]);
-    if(!std::isfinite(weight)||weight<=0||high[0]<=low[0])return {};
-    return {(low[0]+high[0])*.5f,weight};
+inline PlaneEvidence planeEvidence(V low, V high, int axis = 0) {
+    const int a=(axis+1)%3,b=(axis+2)%3;
+    const float weight=(high[a]-low[a])*(high[b]-low[b]);
+    if(!std::isfinite(weight)||weight<=0||high[axis]<=low[axis])return {};
+    return {(low[axis]+high[axis])*.5f,weight};
 }
+// The weapon-local plane a left seat mirrors across. A firearm mirrors its
+// lateral X. Melee models carry the edge, head or striking face on X and the
+// flat side on Z (knife, machete, axe, knuckles), so they mirror Z; mirroring
+// X would turn the edge to the back.
+struct MirrorPlane {
+    int axis{0};
+    float offset{0};
+    bool operator==(const MirrorPlane&) const = default;
+};
+inline int mirrorAxis(bool melee){return melee?2:0;}
 inline float geometryPlane(std::span<PlaneEvidence> evidence) {
     std::sort(evidence.begin(),evidence.end(),[](const auto& a,const auto& b){return a.center<b.center;});
     float total=0;for(const auto& e:evidence)total+=e.weight;
@@ -29,14 +40,15 @@ inline float geometryPlane(std::span<PlaneEvidence> evidence) {
     float sum=0;for(const auto& e:evidence){sum+=e.weight;if(sum>=total*.5f)return e.center;}
     return 0;
 }
-// Mirror weapon-local X and hand-local Z together. Both reflections produce
-// a proper wrist rotation; mirrored finger locals then preserve every contact.
-// Controller bases belong to weapon aiming, not this authored mesh relation.
-inline Pose mirroredHandSeat(Pose right, float planeX = 0) {
-    right.t[0] = 2 * planeX - right.t[0];
+// Mirror the weapon-local plane axis and hand-local Z together. Both
+// reflections produce a proper wrist rotation; mirrored finger locals then
+// preserve every contact. Controller bases belong to weapon aiming, not this
+// authored mesh relation.
+inline Pose mirroredHandSeat(Pose right, MirrorPlane plane = {}) {
+    right.t[plane.axis] = 2 * plane.offset - right.t[plane.axis];
     for (int row = 0; row < 3; ++row) {
         for (int column = 0; column < 3; ++column) {
-            if ((row == 0) != (column == 2)) right.r[row * 3 + column] *= -1;
+            if ((row == plane.axis) != (column == 2)) right.r[row * 3 + column] *= -1;
         }
     }
     return right;

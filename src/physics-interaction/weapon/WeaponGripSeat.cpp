@@ -75,14 +75,14 @@ namespace rock::weapon_grip_seat
         return seat;
     }
 
-    bool leftFiringSeat(const RE::NiTransform& nativeRight, const float mirrorPlaneX, RE::NiTransform& outLeft)
+    bool leftFiringSeat(const RE::NiTransform& nativeRight, const holding_grip_math::MirrorPlane mirrorPlane, RE::NiTransform& outLeft)
     {
         const auto source = holding_grip_math::fromNative(nativeRight);
         if (!holding_grip_math::valid(source)) {
             return false;
         }
         outLeft = weapon_grip_calibration::shiftedHand(
-            holding_grip_math::toNative(holding_grip_math::mirroredHandSeat(source, mirrorPlaneX)),
+            holding_grip_math::toNative(holding_grip_math::mirroredHandSeat(source, mirrorPlane)),
             g_rockConfig.rockLeftFiringGripOffsetGameUnits, true);
         return true;
     }
@@ -107,7 +107,7 @@ namespace rock::weapon_grip_seat
         const NativeSeat& native,
         const holding_grips::Record* custom,
         const bool isLeft,
-        const float mirrorPlaneX,
+        const holding_grip_math::MirrorPlane mirrorPlane,
         FiringSeat& out)
     {
         out = {};
@@ -123,7 +123,7 @@ namespace rock::weapon_grip_seat
             out.fingers = native.lookup.rightFiringFingerPose;
             return true;
         }
-        return leftFiringSeat(native.rightHandWeaponLocal, mirrorPlaneX, out.handWeaponLocal) &&
+        return leftFiringSeat(native.rightHandWeaponLocal, mirrorPlane, out.handWeaponLocal) &&
                mirrorFingerPose(native.lookup.rightFiringFingerPose, out.fingers);
     }
 }
