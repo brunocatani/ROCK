@@ -368,7 +368,12 @@ namespace rock
     {
         // The object-grab authority point (palm anchor plus proxy offset),
         // brought into the raw hand frame by inverting
-        // transformHandspaceLocalToWorld.
+        // transformHandspaceLocalToWorld. The anchor comes from the finger
+        // base positions, which the skeleton fixes relative to the hand, so
+        // the point is published only when the colliders are built (skeleton,
+        // power armor or tuning change). Republishing it every pose update
+        // fed world-space float noise and the alternating mid-frame and
+        // final-pose snapshots into every weapon grip seat as jitter.
         const RE::NiTransform authority = applyGrabAuthorityProxyLocalOffsetToFrame(anchorFrame.transform, isLeft);
         const RE::NiTransform& hand = lookup.rollAuthorityWorld;
         if (!std::isfinite(hand.scale) || hand.scale <= 0.0001f) {
@@ -793,7 +798,6 @@ namespace rock
         RoleFrameResult anchorFrame{};
         if (makeRoleFrame(lookup, isLeft, HandColliderRole::PalmAnchor, anchorFrame)) {
             _latestPalmAnchorTarget = anchorFrame.transform;
-            publishPalmPoint(lookup, isLeft, anchorFrame);
             _hasLatestPalmAnchorTarget = true;
             publishTwinSlot(twinTargets.palm, anchorFrame);
             if (publishTargets) queueBodyTarget(palmAnchorBody, anchorFrame.transform, deltaTime, _palmAnchorDriveState);
