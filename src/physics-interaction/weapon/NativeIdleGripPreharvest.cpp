@@ -372,6 +372,9 @@ namespace rock::native_idle_grip_preharvest
             bool graphHolderConstructed{ false };
             bool longLoadLogged{ false };
             bool warmOnly{ false };
+            // The weapon subgraph request was released once the direct idle
+            // clip was requested; its handles stay only as identity values.
+            bool subgraphReleased{ false };
             CandidateOrigin origin{ CandidateOrigin::Unknown };
         };
 
@@ -717,7 +720,7 @@ namespace rock::native_idle_grip_preharvest
             }
             if (job.graphHolderConstructed) {
                 auto* holder = graphHolder(job);
-                if (holder && holder->animationGraphManager && !job.subgraphHandles.empty()) {
+                if (holder && holder->animationGraphManager && !job.subgraphHandles.empty() && !job.subgraphReleased) {
                     state.native.releaseAnimationSubGraph(&holder->animationGraphManager, &job.subgraphHandles);
                 }
                 job.subgraphHandles.clear();
@@ -739,11 +742,19 @@ namespace rock::native_idle_grip_preharvest
             warm.referenceFormId = 0;
         }
 
+        // The only full weapon subgraph ROCK keeps: a held loose gun's, so a
+        // trigger equip from the hand does not wait on the native load. ROCK
+        // itself samples only the idle clip.
+        [[nodiscard]] bool keepsSubgraphWarm(const Job& job) noexcept
+        {
+            return job.origin == CandidateOrigin::LooseReference && job.referenceFormId && job.weapon &&
+                job.weapon->weaponData.type == RE::WEAPON_TYPE::kGun;
+        }
+
         void retainHeldResources(Runtime& state)
         {
             auto& job = state.job;
-            if (job.origin != CandidateOrigin::LooseReference || !job.referenceFormId ||
-                !job.weapon || job.weapon->weaponData.type != RE::WEAPON_TYPE::kGun) return;
+            if (!keepsSubgraphWarm(job)) return;
             auto* holder = graphHolder(job);
             if (!holder || !holder->animationGraphManager || job.subgraphHandles.empty()) return;
             for (std::size_t hand = 0; hand < state.heldReferences.size(); ++hand) {
@@ -1838,12 +1849,13 @@ namespace rock::native_idle_grip_preharvest
                 return true;
             }
             std::int32_t priority = kIoTaskPriority;
-            const bool subgraphLoaded = state.native.isAnimationSubGraphLoaded(&holder->animationGraphManager, &job.subgraphHandles, &priority);
             // Sampling needs one idle clip, loaded directly in milliseconds; a
             // whole weapon subgraph (all of 1HM for a knife) can take seconds,
             // and the index-1 weapon stays hidden until its grip is learned.
             // Warming exists to load the subgraph, so it still waits for it.
-            if (!subgraphLoaded && (job.warmOnly || !idleClipPathsKnown(state, *manager))) {
+            if (!job.subgraphReleased &&
+                !state.native.isAnimationSubGraphLoaded(&holder->animationGraphManager, &job.subgraphHandles, &priority) &&
+                (job.warmOnly || !idleClipPathsKnown(state, *manager))) {
                 return false;
             }
             if (job.warmOnly) {
@@ -1859,6 +1871,12 @@ namespace rock::native_idle_grip_preharvest
             IdleGripExtractionDiagnostics extractionDiagnostics{};
             const auto extractionResult = tryExtractIdleGrip(state, *manager, handInWeapon, rightFiringFingerPose, supportSample, clipPath, subgraphIdentifier, extractionDiagnostics);
             if (extractionResult == ExtractionResult::Pending) {
+                // The idle clip now loads on its own: stop the full subgraph
+                // load unless this weapon's subgraph is kept warm.
+                if (job.phase == Phase::IdleClipLoading && !job.subgraphReleased && !job.subgraphHandles.empty() && !keepsSubgraphWarm(job)) {
+                    state.native.releaseAnimationSubGraph(&holder->animationGraphManager, &job.subgraphHandles);
+                    job.subgraphReleased = true;
+                }
                 return false;
             }
             if (extractionResult == ExtractionResult::Failed) {
