@@ -219,13 +219,14 @@ namespace rock
             *outDampedAimCarrierWorld = {};
         }
         RE::NiTransform rightWeaponAimInWand{};
+        const bool meleeWeapon = _recoil.weaponEvidence.resolved && _recoil.weaponEvidence.sizeClass == WeaponSizeClass::Melee;
         if (!weaponNode || weaponNode != _session.weaponNode ||
             !usesLeftFiringCarry() || !_firing.hasPrimaryHandWeaponLocal ||
-            !tryResolveRightWeaponAimInWand(
+            (!meleeWeapon && !tryResolveRightWeaponAimInWand(
                 weaponNode,
                 _session.weaponGenerationKey,
                 _session.equippedWeaponOwnershipKey,
-                rightWeaponAimInWand) ||
+                rightWeaponAimInWand)) ||
             !isFiniteTransform(_firing.primaryHandWeaponLocal) ||
             !std::isfinite(_firing.primaryGripLocal.x) ||
             !std::isfinite(_firing.primaryGripLocal.y) ||
@@ -303,14 +304,24 @@ namespace rock
             *outDampedAimCarrierWorld = dampedAimCarrierWorld;
         }
 
-        RE::NiTransform leftWeaponInWand =
-            left_firing_position_only_math::
-                mirrorRightWeaponInWandOrientation(
-                    rightWeaponAimInWand, _holdingMirrorPlane.axis);
-        if (_recoil.weaponEvidence.resolved && _recoil.weaponEvidence.sizeClass == WeaponSizeClass::Melee) {
+        RE::NiTransform leftWeaponInWand{};
+        if (meleeWeapon) {
+            // A melee carry follows the left hand's own natural wrist, as the
+            // index-1 melee solve does. Mirroring the right hand's live wrist
+            // let a weapon presented in the right hand steer this one.
+            RE::NiTransform naturalLeftHandWorld{}, meleeWorld{};
+            if (!tryResolveNaturalWandHandOrientationFrame(true, naturalLeftHandWorld) ||
+                !weapon_aim_basis::tryResolveMeleeWorld(naturalLeftHandWorld,
+                    _firing.primaryHandWeaponLocal, 1.0f, meleeWorld)) {
+                return false;
+            }
+            leftWeaponInWand = left_firing_position_only_math::orientationOnly(
+                transform_math::composeTransforms(transform_math::invertTransform(leftWand->world), meleeWorld));
             leftWeaponInWand = transform_math::composeTransforms(
                 weapon_aim_basis::meleePitchInController(g_rockConfig.rockMeleeGripPitchDegrees),
                 leftWeaponInWand);
+        } else {
+            leftWeaponInWand = left_firing_position_only_math::mirrorRightWeaponInWandOrientation(rightWeaponAimInWand);
         }
         const RE::NiTransform aimTrim =
             makeLeftFiringWandAimTrim(_handlingSettings);
