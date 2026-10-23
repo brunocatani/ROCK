@@ -749,7 +749,7 @@ namespace rock::native_secondary_presentation
             if (menu) native_secondary_actions::suspend();
             else native_secondary_actions::update(attachment,frame.deltaSeconds);
             // A placed melee second weapon strikes through native VR melee.
-            native_secondary_melee::present(view.firearm || menu ? nullptr : view.root);
+            native_secondary_melee::present(menu ? nullptr : view.root);
             if (s_state.reason != "ready") {
                 s_state.reason = "ready";
                 ROCK_LOG_INFO(Weapon,

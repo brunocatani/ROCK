@@ -583,8 +583,8 @@ namespace rock
             const auto views = native_hand_equipment::equippedViews();
             native_melee_wand::update({
                 .indexZeroLeft = facts.slot0.holdsHand && facts.slot0.firingHand == equipped_weapon_roster::Hand::Left,
-                .indexZeroMelee = views[0].weapon && !views[0].firearm,
-                .indexOneMelee = facts.slot1.holdsHand && views[1].weapon && !views[1].firearm,
+                .indexZeroHeld = views[0].weapon != nullptr,
+                .indexOneHeld = facts.slot1.holdsHand && views[1].weapon,
                 .indexOneLeft = facts.slot1.hand == equipped_weapon_roster::Hand::Left,
             });
         }

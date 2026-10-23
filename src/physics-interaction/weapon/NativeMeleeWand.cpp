@@ -180,17 +180,17 @@ namespace rock::native_melee_wand
             return;
         }
         const auto zero = holders.indexZeroLeft ? left : right;
-        const auto one = holders.indexOneMelee ? (holders.indexOneLeft ? left : right) : zero;
-        // Melee in both hands: the faster hand starts the swing (speeds are
-        // the wand's own 12-frame averages).
-        const bool oneLeads = holders.indexZeroMelee && holders.indexOneMelee && one != zero && linearSpeed(one) > linearSpeed(zero);
+        const auto one = holders.indexOneHeld ? (holders.indexOneLeft ? left : right) : zero;
+        // A weapon in both hands: the faster hand starts the swing or bash
+        // (speeds are the wand's own 12-frame averages).
+        const bool oneLeads = holders.indexZeroHeld && holders.indexOneHeld && one != zero && linearSpeed(one) > linearSpeed(zero);
         s_indexZeroWand.store(zero, std::memory_order_release);
         s_indexOneWand.store(one, std::memory_order_release);
         s_gateWand.store(oneLeads ? one : zero, std::memory_order_release);
-        if (holders.indexZeroLeft != s_last.indexZeroLeft || holders.indexOneMelee != s_last.indexOneMelee ||
+        if (holders.indexZeroLeft != s_last.indexZeroLeft || holders.indexOneHeld != s_last.indexOneHeld ||
             holders.indexOneLeft != s_last.indexOneLeft) {
             ROCK_LOG_INFO(Weapon, "Native melee wands: index 0 {} wand, index 1 {}", holders.indexZeroLeft ? "left" : "right",
-                holders.indexOneMelee ? (holders.indexOneLeft ? "left wand" : "right wand") : "none");
+                holders.indexOneHeld ? (holders.indexOneLeft ? "left wand" : "right wand") : "none");
         }
         s_last = holders;
     }

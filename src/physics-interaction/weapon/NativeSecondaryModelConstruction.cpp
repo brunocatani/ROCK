@@ -79,16 +79,12 @@ namespace rock::native_secondary_model
         }
 
         // 1CA8C0 strips collision (1DF97C0) from a first-person weapon model
-        // outside the race weapon slot. The index-1 melee model keeps it, as
-        // index 0 does, so native melee collision can attach to it.
+        // outside the race weapon slot. The index-1 model keeps it, as index 0
+        // does, so native melee collision (swings and gun bashes) can attach.
         bool stripCollision(RE::NiAVObject* model, bool force) noexcept
         {
             const auto* context = s_construction;
-            if (context && context->handIndex == 1 && context->firstPerson) {
-                const auto* data = context->instance ? static_cast<const RE::TESObjectWEAP::InstanceData*>(context->instance) :
-                    &context->weapon->weaponData;
-                if (data->type != RE::WEAPON_TYPE::kGun) return false;
-            }
+            if (context && context->handIndex == 1 && context->firstPerson) return false;
             return s_stripCollision(model, force);
         }
 
@@ -305,7 +301,7 @@ namespace rock::native_secondary_model
             }
             if (!FlushInstructionCache(GetCurrentProcess(), nullptr, 0)) throw std::runtime_error("model instruction flush failed");
             s_installed = true;
-            ROCK_LOG_INFO(Init, "Secondary native weapon model construction installed: first-person gun role, exact left stack, melee collision kept, native biped/graph ownership");
+            ROCK_LOG_INFO(Init, "Secondary native weapon model construction installed: first-person gun role, exact left stack, collision kept, native biped/graph ownership");
             return true;
         } catch (...) {
             for (const auto& patch : kPatches)

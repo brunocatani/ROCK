@@ -12,8 +12,8 @@ namespace rock::native_melee_wand
      * ROCK's carry a weapon can be in either hand and index 1 adds a second
      * one, so those four primary-wand loads call ROCK instead:
      *
-     * - the gate reads the index-0 hand's wand, or, with melee in both hands,
-     *   whichever of the two is moving faster;
+     * - the gate reads the index-0 hand's wand, or, with a weapon in both
+     *   hands, whichever of the two is moving faster;
      * - a contact reads the wand of the hand whose weapon made it: the index-1
      *   hand for a contact the index-1 route claims, else the index-0 hand.
      *
@@ -30,8 +30,8 @@ namespace rock::native_melee_wand
     struct Holders
     {
         bool indexZeroLeft = false;
-        bool indexZeroMelee = false;
-        bool indexOneMelee = false; // a presented index-1 melee weapon
+        bool indexZeroHeld = false;
+        bool indexOneHeld = false;
         bool indexOneLeft = false;
     };
     void update(const Holders& holders) noexcept;
