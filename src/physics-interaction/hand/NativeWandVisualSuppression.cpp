@@ -2,6 +2,7 @@
 
 #include "rock_support/Fo4VrRuntime.h"
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 
@@ -11,6 +12,26 @@ namespace rock::native_wand_visual_suppression
     {
         constexpr std::uint64_t kAppCulledFlag = 0x1ull;
         constexpr std::uint32_t kMaximumControllerVisualDepth = 3;
+
+        // Frame thread only. Found fallback roots, re-culled every frame: the
+        // native device-model update can clear the cull flag again, so a
+        // periodic cull alone leaves the model visible between checks. A
+        // reference is held only while the root stays attached. Never
+        // destroyed: releasing game nodes during process exit is unsafe.
+        auto& s_fallbackRoots = *new std::array<RE::NiPointer<RE::NiAVObject>, 4>{};
+
+        void remember(RE::NiAVObject* object) noexcept
+        {
+            for (const auto& root : s_fallbackRoots) {
+                if (root.get() == object) return;
+            }
+            for (auto& root : s_fallbackRoots) {
+                if (!root) {
+                    root.reset(object);
+                    return;
+                }
+            }
+        }
 
         [[nodiscard]] bool isViveFallbackVisual(const RE::NiAVObject& object) noexcept
         {
@@ -30,6 +51,7 @@ namespace rock::native_wand_visual_suppression
 
             if (isViveFallbackVisual(*object)) {
                 object->flags.flags |= kAppCulledFlag;
+                remember(object);
                 return;
             }
 
@@ -52,8 +74,14 @@ namespace rock::native_wand_visual_suppression
 
     void enforce() noexcept
     {
-        // The fallback model appears only when a controller (re)connects, so
-        // a half-second check hides it without walking both wands every frame.
+        for (auto& root : s_fallbackRoots) {
+            if (root && !root->parent) root.reset();
+            if (root) root->flags.flags |= kAppCulledFlag;
+        }
+
+        // The fallback model is attached only when a controller (re)connects,
+        // so a half-second search finds it without walking both wands every
+        // frame; the found roots above stay culled every frame.
         constexpr std::uint32_t kCheckIntervalFrames = 45;
         static std::uint32_t framesUntilCheck = 0;
         if (framesUntilCheck > 0) {
