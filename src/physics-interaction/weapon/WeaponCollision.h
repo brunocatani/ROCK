@@ -190,6 +190,14 @@ namespace rock
             bool valid{ false };
         };
 
+        // scanned: the current weapon's surface was searched to completion,
+        // so zero witnesses means nothing lies near the points.
+        struct WeaponSurfaceNearPointsResult
+        {
+            std::size_t witnessCount{ 0 };
+            bool scanned{ false };
+        };
+
         struct ApproximateBoundsSnapshot
         {
             bool valid{ false };
@@ -373,7 +381,7 @@ namespace rock
             float maxDistanceGameUnits,
             WeaponSurfaceProximityWitness& outWitness) const;
 
-        std::size_t findCurrentWeaponSurfaceNearPoints(
+        WeaponSurfaceNearPointsResult findCurrentWeaponSurfaceNearPoints(
             const RE::NiAVObject* currentWeaponRoot,
             std::span<const RE::NiPoint3> pointsWorld,
             float maxDistanceGameUnits,

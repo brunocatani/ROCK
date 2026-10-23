@@ -687,16 +687,17 @@ namespace rock
     {
         const std::array<RE::NiPoint3, 1> points{ pointWorld };
         std::array<WeaponSurfaceProximityWitness, 1> witnesses{};
-        const std::size_t witnessCount = findCurrentWeaponSurfaceNearPoints(
+        const auto result = findCurrentWeaponSurfaceNearPoints(
             currentWeaponRoot,
             points,
             maxDistanceGameUnits,
             witnesses);
         outWitness = witnesses[0];
-        return witnessCount == 1 && outWitness.valid;
+        return result.witnessCount == 1 && outWitness.valid;
     }
 
-    std::size_t WeaponCollision::findCurrentWeaponSurfaceNearPoints(
+    WeaponCollision::WeaponSurfaceNearPointsResult
+    WeaponCollision::findCurrentWeaponSurfaceNearPoints(
         const RE::NiAVObject* currentWeaponRoot,
         const std::span<const RE::NiPoint3> pointsWorld,
         const float maxDistanceGameUnits,
@@ -720,11 +721,11 @@ namespace rock
             outWitnesses.size() != pointsWorld.size() ||
             !std::isfinite(maxDistanceGameUnits) ||
             maxDistanceGameUnits < 0.0f) {
-            return 0;
+            return {};
         }
         for (const auto& pointWorld : pointsWorld) {
             if (!pointFinite(pointWorld)) {
-                return 0;
+                return {};
             }
         }
 
@@ -868,17 +869,17 @@ namespace rock
             for (auto& witness : outWitnesses) {
                 witness = {};
             }
-            return 0;
+            return {};
         }
 
-        std::size_t witnessCount = 0;
+        WeaponSurfaceNearPointsResult result{ .scanned = true };
         for (const auto& witness : outWitnesses) {
             if (witness.valid &&
                 witness.weaponGenerationKey == currentGeneration) {
-                ++witnessCount;
+                ++result.witnessCount;
             }
         }
-        return witnessCount;
+        return result;
     }
 
     std::vector<WeaponCollisionProfileEvidenceDescriptor> WeaponCollision::buildProfileEvidenceSnapshot(

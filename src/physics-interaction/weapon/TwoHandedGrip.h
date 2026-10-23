@@ -2033,6 +2033,25 @@ namespace rock
                     authored_weapon_grip_activation_policy::HandTopology::Invalid
                 };
             bool lastStableApproachDirectionValid{ false };
+            // Pose surface evidence for the visualizer. The landmarks are the
+            // authored pose, fixed in weapon space for one capture, so one
+            // scan of the weapon's triangles serves that capture. Witnesses
+            // are weapon-local.
+            struct PoseEvidenceCache
+            {
+                std::array<RE::NiPoint3,
+                    AuthoredSupportGripDebugSnapshot::kPoseLandmarkCount>
+                    witnessWeaponLocal{};
+                std::array<float,
+                    AuthoredSupportGripDebugSnapshot::kPoseLandmarkCount>
+                    distanceGameUnits{};
+                std::uint64_t weaponGenerationKey{ 0 };
+                std::uint64_t captureSequence{ 0 };
+                float touchRadiusGameUnits{ 0.0f };
+                std::uint8_t witnessMask{ 0 };
+                bool valid{ false };
+            };
+            PoseEvidenceCache poseEvidenceCache{};
         };
 
         AuthoredSupportHandState& authoredSupportHand(bool isLeft) { return _support.authoredHands[isLeft ? 0u : 1u]; }

@@ -667,20 +667,54 @@ namespace rock
                         fingerWeaponLocal.translate);
             }
 
-            std::array<WeaponCollision::WeaponSurfaceProximityWitness,
-                AuthoredSupportGripDebugSnapshot::kPoseLandmarkCount>
-                poseWitnesses{};
-            (void)weaponCollision.findCurrentWeaponSurfaceNearPoints(
-                weaponNode,
-                surfaceQueryLandmarksWorld,
-                snapshot.touchRadiusGameUnits,
-                poseWitnesses);
+            /*
+             * The scan visits every cached weapon triangle (tens of thousands
+             * on a detailed weapon) for each landmark. Run per frame for both
+             * hands it cost tens of milliseconds, so it runs once per hand and
+             * capture; the touch radius is part of the key because it bounds
+             * the search. A scan the weapon was not ready for is retried next
+             * frame.
+             */
+            auto& cache = authoredHand.poseEvidenceCache;
+            if (!cache.valid ||
+                cache.weaponGenerationKey != currentWeaponGenerationKey ||
+                cache.captureSequence != candidate.captureSequence ||
+                cache.touchRadiusGameUnits != snapshot.touchRadiusGameUnits) {
+                cache = {};
+                std::array<WeaponCollision::WeaponSurfaceProximityWitness,
+                    AuthoredSupportGripDebugSnapshot::kPoseLandmarkCount>
+                    poseWitnesses{};
+                const auto scan = weaponCollision.findCurrentWeaponSurfaceNearPoints(
+                    weaponNode,
+                    surfaceQueryLandmarksWorld,
+                    snapshot.touchRadiusGameUnits,
+                    poseWitnesses);
+                for (std::size_t landmarkIndex = 0;
+                     scan.scanned && landmarkIndex < poseWitnesses.size();
+                     ++landmarkIndex) {
+                    const auto& witness = poseWitnesses[landmarkIndex];
+                    if (!witness.valid ||
+                        witness.weaponGenerationKey != currentWeaponGenerationKey) {
+                        continue;
+                    }
+                    cache.witnessMask |=
+                        static_cast<std::uint8_t>(1u << landmarkIndex);
+                    cache.witnessWeaponLocal[landmarkIndex] =
+                        transform_math::worldPointToLocal(
+                            weaponNode->world,
+                            witness.closestPointWorld);
+                    cache.distanceGameUnits[landmarkIndex] =
+                        witness.distanceGameUnits;
+                }
+                cache.weaponGenerationKey = currentWeaponGenerationKey;
+                cache.captureSequence = candidate.captureSequence;
+                cache.touchRadiusGameUnits = snapshot.touchRadiusGameUnits;
+                cache.valid = scan.scanned;
+            }
             for (std::size_t landmarkIndex = 0;
-                 landmarkIndex < poseWitnesses.size();
+                 landmarkIndex < cache.witnessWeaponLocal.size();
                  ++landmarkIndex) {
-                const auto& witness = poseWitnesses[landmarkIndex];
-                if (!witness.valid ||
-                    witness.weaponGenerationKey != currentWeaponGenerationKey) {
+                if ((cache.witnessMask & (1u << landmarkIndex)) == 0) {
                     continue;
                 }
                 snapshot.poseSurfaceWitnessMask |=
@@ -689,11 +723,9 @@ namespace rock
                 snapshot.poseSurfaceWitnessWorld[landmarkIndex] =
                     transform_math::localPointToWorld(
                         activationWeaponWorld,
-                        transform_math::worldPointToLocal(
-                            weaponNode->world,
-                            witness.closestPointWorld));
+                        cache.witnessWeaponLocal[landmarkIndex]);
                 snapshot.poseSurfaceDistanceGameUnits[landmarkIndex] =
-                    witness.distanceGameUnits;
+                    cache.distanceGameUnits[landmarkIndex];
             }
             snapshot.poseEvidencePass =
                 (snapshot.poseSurfaceWitnessMask & 0x01u) != 0 &&
