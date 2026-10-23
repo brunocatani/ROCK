@@ -535,24 +535,30 @@ namespace rock::left_firing_position_only_math
     }
 
     /*
-     * Weapon geometry uses +Y as muzzle-forward and +X as its lateral axis.
-     * Conjugating the right weapon-in-wand orientation by the X reflection
-     * mirrors the lateral component while retaining a proper rotation. The
+     * The wand is reflected across its lateral X. The weapon is reflected
+     * across the axis its left seat mirrors (holding_grip_math::MirrorPlane):
+     * X for firearms (+Y muzzle-forward), Z for melee models whose edge lies
+     * on X. Using the seat's axis keeps wand * weapon * seat the exact mirror
+     * of the right hand, so only the weapon's facing depends on the axis. The
      * authored hand relation is deliberately absent: wrist correction is a
      * presentation input and must never become weapon aim authority.
      */
     template <class Transform>
     [[nodiscard]] inline Transform mirrorRightWeaponInWandOrientation(
-        const Transform& rightWeaponInWand)
+        const Transform& rightWeaponInWand,
+        const int weaponMirrorAxis = 0)
     {
-        Transform lateralMirror =
+        Transform wandMirror =
             transform_math::makeIdentityTransform<Transform>();
-        lateralMirror.rotate.entry[0][0] = -1.0f;
+        wandMirror.rotate.entry[0][0] = -1.0f;
+        Transform weaponMirror =
+            transform_math::makeIdentityTransform<Transform>();
+        weaponMirror.rotate.entry[weaponMirrorAxis][weaponMirrorAxis] = -1.0f;
         return orientationOnly(transform_math::composeTransforms(
-            lateralMirror,
+            wandMirror,
             transform_math::composeTransforms(
                 orientationOnly(rightWeaponInWand),
-                lateralMirror)));
+                weaponMirror)));
     }
 
     /*

@@ -306,7 +306,7 @@ namespace rock
         RE::NiTransform leftWeaponInWand =
             left_firing_position_only_math::
                 mirrorRightWeaponInWandOrientation(
-                    rightWeaponAimInWand);
+                    rightWeaponAimInWand, _holdingMirrorPlane.axis);
         if (_recoil.weaponEvidence.resolved && _recoil.weaponEvidence.sizeClass == WeaponSizeClass::Melee) {
             leftWeaponInWand = transform_math::composeTransforms(
                 weapon_aim_basis::meleePitchInController(g_rockConfig.rockMeleeGripPitchDegrees),
