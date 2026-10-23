@@ -160,6 +160,16 @@ namespace rock::performance_profiler
         FlushWeapons,
         FlushDynamicHands,
         FlushConsumers,
+        // Sub-steps of interactionFinalize not covered above.
+        FinalizeSelection,
+        FinalizeContacts,
+        HeldLooseWeapons,
+        HeldObjectRest,
+        HeldExclusions,
+        // Sub-steps of runtimePreparation.
+        PrepSettings,
+        PrepRuntimeState,
+        PrepGates,
         Count
     };
 

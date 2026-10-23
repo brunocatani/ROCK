@@ -52,6 +52,16 @@ namespace rock::native_wand_visual_suppression
 
     void enforce() noexcept
     {
+        // The fallback model appears only when a controller (re)connects, so
+        // a half-second check hides it without walking both wands every frame.
+        constexpr std::uint32_t kCheckIntervalFrames = 45;
+        static std::uint32_t framesUntilCheck = 0;
+        if (framesUntilCheck > 0) {
+            --framesUntilCheck;
+            return;
+        }
+        framesUntilCheck = kCheckIntervalFrames;
+
         auto* const playerNodes = f4vr::getPlayerNodes();
         if (!playerNodes) {
             return;

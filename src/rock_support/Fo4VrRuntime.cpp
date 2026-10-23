@@ -8,6 +8,7 @@
 #include <RE/Bethesda/SendPapyrusEvent.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <ranges>
 
@@ -15,6 +16,9 @@ namespace rock::fo4vr
 {
     namespace
     {
+        // Advanced once per game frame by beginNodeLookupFrame().
+        std::atomic<std::uint64_t> s_nodeLookupFrame{ 1 };
+
         [[nodiscard]] bool hasKeyword(const RE::BGSKeywordForm* keywordForm, const std::uint32_t keywordFormId) noexcept
         {
             if (!keywordForm || !keywordForm->keywords) {
@@ -123,7 +127,30 @@ namespace rock::fo4vr
 
     RE::NiNode* getWeaponNode() noexcept
     {
-        return findNode(getFirstPersonSkeleton(), "Weapon");
+        auto* skeleton = getFirstPersonSkeleton();
+        if (!skeleton) return nullptr;
+        /*
+         * The "Weapon" bone lives as long as its skeleton, and a skeleton swap
+         * (power armor) changes firstPerson3D. Search the tree once per frame
+         * and thread instead of on each of the many per-frame callers.
+         */
+        struct Cache
+        {
+            std::uint64_t frame{ 0 };
+            const RE::NiNode* skeleton{ nullptr };
+            RE::NiNode* node{ nullptr };
+        };
+        thread_local Cache cache;
+        const auto frame = s_nodeLookupFrame.load(std::memory_order_acquire);
+        if (cache.frame != frame || cache.skeleton != skeleton || !cache.node) {
+            cache = { frame, skeleton, findNode(skeleton, "Weapon") };
+        }
+        return cache.node;
+    }
+
+    void beginNodeLookupFrame() noexcept
+    {
+        s_nodeLookupFrame.fetch_add(1, std::memory_order_acq_rel);
     }
 
     RE::PlayerCamera* getPlayerCamera() noexcept

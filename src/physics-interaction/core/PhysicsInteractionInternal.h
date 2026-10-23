@@ -1145,8 +1145,7 @@ namespace rock
 
         inline RE::NiNode* resolveEquippedWeaponInteractionNodeDirect()
         {
-            auto* firstPersonSkeleton = f4vr::getFirstPersonSkeleton();
-            return firstPersonSkeleton ? f4vr::findNode(firstPersonSkeleton, "Weapon") : nullptr;
+            return f4vr::getWeaponNode();
         }
 
         inline RE::NiNode* resolveEquippedWeaponInteractionNode()

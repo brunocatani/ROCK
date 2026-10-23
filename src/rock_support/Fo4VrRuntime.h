@@ -124,7 +124,10 @@ namespace rock::fo4vr
     // Native equipment index 0 (primary graph) or 1 (ROCK's second graph).
     [[nodiscard]] RE::EquippedItem* getEquippedWeaponItem(std::uint32_t index = 0) noexcept;
     [[nodiscard]] RE::EquippedWeaponData* getEquippedWeaponData() noexcept;
+    // The first-person skeleton's "Weapon" bone, searched once per frame.
     [[nodiscard]] RE::NiNode* getWeaponNode() noexcept;
+    // Starts a new frame for getWeaponNode(); called once at FRIK's FrameBegin.
+    void beginNodeLookupFrame() noexcept;
     [[nodiscard]] RE::PlayerCamera* getPlayerCamera() noexcept;
     [[nodiscard]] RE::NiPoint3 getCameraPosition() noexcept;
     [[nodiscard]] RE::NiNode* getLeftHandNode() noexcept;

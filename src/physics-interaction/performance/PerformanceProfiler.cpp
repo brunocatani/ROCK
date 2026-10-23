@@ -350,6 +350,14 @@ namespace rock::performance_profiler
             case Scope::FlushWeapons: return "flushWeapons";
             case Scope::FlushDynamicHands: return "flushDynamicHands";
             case Scope::FlushConsumers: return "flushConsumers";
+            case Scope::FinalizeSelection: return "finalizeSelection";
+            case Scope::FinalizeContacts: return "finalizeContacts";
+            case Scope::HeldLooseWeapons: return "heldLooseWeapons";
+            case Scope::HeldObjectRest: return "heldObjectRest";
+            case Scope::HeldExclusions: return "heldExclusions";
+            case Scope::PrepSettings: return "prepSettings";
+            case Scope::PrepRuntimeState: return "prepRuntimeState";
+            case Scope::PrepGates: return "prepGates";
             case Scope::Count:
                 break;
             }

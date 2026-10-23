@@ -235,6 +235,7 @@ namespace
             return;
         }
 
+        performance_profiler::ScopedTimer settingsTimer(performance_profiler::Scope::PrepSettings);
         const bool immersiveScopesWereEnabled = g_rockConfig.rockEnableImmersiveScopes;
         g_rockConfig.processPendingConfigReload();
         reconcileNativeScopeGeometryOwnership();
@@ -249,12 +250,14 @@ namespace
         game_ini_overrides::update();
         advanceNativeRuntimeSettingFrameClock();
         enforceNativeMeleeRuntimeSuppression();
+        settingsTimer.stop();
 
         if (!s_frikAvailable) {
             clearUnavailableRuntimeInputState();
             return;
         }
 
+        performance_profiler::ScopedTimer stateTimer(performance_profiler::Scope::PrepRuntimeState);
         input_remap_runtime::installInputRemapHooks();
 
         runtime_state::updateFrame(runtime_state::RuntimeFrameInput{
@@ -262,6 +265,8 @@ namespace
             .visualSkeletonReadyHint = frik_visual_authority::isSkeletonReadyHint(),
             .compatibilityConfigBlocking = frik_visual_authority::isCompatibilityConfigBlocking(),
         });
+        stateTimer.stop();
+        performance_profiler::ScopedTimer gatesTimer(performance_profiler::Scope::PrepGates);
         const auto& runtime = runtime_state::currentFrame();
         if (runtime.localSkeletonReady &&
             !runtime.compatibilityConfigBlocking) {
@@ -770,6 +775,7 @@ namespace
             g_rockConfig.rockPerformanceProfilerLogIntervalFrames,
             g_rockConfig.rockPerformanceProfilerWarmupFrames);
         performance_profiler::beginFrame();
+        f4vr::beginNodeLookupFrame();
         performance_profiler::ScopedTimer frameBeginTimer(performance_profiler::Scope::FrameBeginPreparation);
         if (s_physicsInteraction) s_physicsInteraction->discardUnfinishedFramePose();
         s_schedulerSequence = nextFrameSequence(s_schedulerSequence);

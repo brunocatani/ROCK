@@ -92,8 +92,7 @@ namespace rock::equipped_weapon_visual_state
         auto* firstPersonSkeleton = f4vr::getFirstPersonSkeleton();
         auto* cachedRoot = cache ? cache->weaponPath.resolve(firstPersonSkeleton) : nullptr;
         if (cachedRoot && (!cachedRoot->name.c_str() || std::strcmp(cachedRoot->name.c_str(), "Weapon") != 0)) cachedRoot = nullptr;
-        snapshot.weaponRoot = cachedRoot ? cachedRoot->IsNode() :
-            (firstPersonSkeleton ? f4vr::findNode(firstPersonSkeleton, "Weapon") : nullptr);
+        snapshot.weaponRoot = cachedRoot ? cachedRoot->IsNode() : f4vr::getWeaponNode();
         if (!snapshot.weaponRoot) {
             if (cache) *cache = {};
             return snapshot;

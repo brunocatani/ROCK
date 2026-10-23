@@ -292,8 +292,11 @@ namespace rock
         const bool leftSupportGripActive = equippedWeaponFrame.leftSupportGripActive;
         const bool rightPartGripActive = equippedWeaponFrame.rightPartGripActive;
 
-        refreshGeneratedBodyContactRegistry();
-        updateSelection(frame);
+        {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::FinalizeSelection);
+            refreshGeneratedBodyContactRegistry();
+            updateSelection(frame);
+        }
 
         /*
          * ROCK applies player/room-space compensation before held-object grab
@@ -308,12 +311,18 @@ namespace rock
             updateGrabInput(frame);
         }
         {
-            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::FinalizeHeldObjects);
+            using performance_profiler::Scope;
+            performance_profiler::ScopedTimer stageTimer(Scope::FinalizeHeldObjects);
+            performance_profiler::ScopedTimer looseTimer(Scope::HeldLooseWeapons);
             _looseWeaponCollision.update(frame,
                 _rightHand.isHolding() ? _rightHand.getHeldRef() : nullptr,
                 _leftHand.isHolding() ? _leftHand.getHeldRef() : nullptr,
                 _generatedBodyStepDrive.callbackGate());
+            looseTimer.stop();
+            performance_profiler::ScopedTimer restTimer(Scope::HeldObjectRest);
             updateObjectRest(frame);
+            restTimer.stop();
+            performance_profiler::ScopedTimer exclusionTimer(Scope::HeldExclusions);
             commitHeldPlacement(frame);
             publishHeldCarExclusion(frame.hknpWorld);
             publishHeldBodyExclusion(frame.hknpWorld);
@@ -371,7 +380,10 @@ namespace rock
 
         _frame.debugOverlayFrameIndex = runtime_state::currentFrame().frameIndex;
 
-        resolveContacts(frame);
+        {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::FinalizeContacts);
+            resolveContacts(frame);
+        }
 
         const float measuredFrameDeltaSeconds =
             frame.timing.valid ? frame.timing.deltaSeconds : 0.0f;
