@@ -6,6 +6,7 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
 #include "physics-interaction/weapon/NativeHandEquipment.h"
+#include "physics-interaction/weapon/NativeMeleeWand.h"
 #include "physics-interaction/weapon/NativeSecondaryPresentation.h"
 
 // Per-frame orchestration: update(), interaction frame finalization, hand transform sampling, physics substep callbacks, held-mass slowdown, and the frame/debug-overlay implementation includes.
@@ -576,6 +577,10 @@ namespace rock
         // accept-button press replay as a reload frames later (see the API doc).
         input_remap_runtime::updateFiringHandReloadInput(runtime.deltaSeconds);
         native_hand_equipment::observe();
+        {
+            const auto& slot0 = equippedWeaponRoster().facts().slot0;
+            native_melee_wand::update(slot0.holdsHand && slot0.firingHand == equipped_weapon_roster::Hand::Left);
+        }
 
         /*
          * runtime.deltaSeconds is the central sanitized game delta; no local
