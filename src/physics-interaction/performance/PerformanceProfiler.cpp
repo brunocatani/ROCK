@@ -294,6 +294,26 @@ namespace rock::performance_profiler
             case Scope::WeaponKinematicDrive: return "weaponKinematicDrive";
             case Scope::WeaponDynamicDrive: return "weaponDynamicDrive";
             case Scope::LooseWeaponLayerRepair: return "looseWeaponLayerRepair";
+            case Scope::FinalizeGrabInput: return "finalizeGrabInput";
+            case Scope::FinalizeHeldObjects: return "finalizeHeldObjects";
+            case Scope::FinalizeHandFeedback: return "finalizeHandFeedback";
+            case Scope::FinalizeConsumers: return "finalizeConsumers";
+            case Scope::FinalizeHandoff: return "finalizeHandoff";
+            case Scope::EquippedObserve: return "equippedObserve";
+            case Scope::EquippedRouting: return "equippedRouting";
+            case Scope::EquippedContacts: return "equippedContacts";
+            case Scope::EquippedGripStart: return "equippedGripStart";
+            case Scope::EquippedGripUpdate: return "equippedGripUpdate";
+            case Scope::EquippedStashDrop: return "equippedStashDrop";
+            case Scope::EquippedPublish: return "equippedPublish";
+            case Scope::PresentedHandPoseCapture: return "presentedHandPoseCapture";
+            case Scope::FinalPoseCommit: return "finalPoseCommit";
+            case Scope::PresentationPublish: return "presentationPublish";
+            case Scope::FlushHands: return "flushHands";
+            case Scope::FlushBody: return "flushBody";
+            case Scope::FlushWeapons: return "flushWeapons";
+            case Scope::FlushDynamicHands: return "flushDynamicHands";
+            case Scope::FlushConsumers: return "flushConsumers";
             case Scope::Count:
                 break;
             }

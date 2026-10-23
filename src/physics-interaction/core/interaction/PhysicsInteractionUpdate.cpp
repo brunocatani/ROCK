@@ -303,17 +303,24 @@ namespace rock
          * written the frame target.
          */
 
-        updateGrabInput(frame);
-        _looseWeaponCollision.update(frame,
-            _rightHand.isHolding() ? _rightHand.getHeldRef() : nullptr,
-            _leftHand.isHolding() ? _leftHand.getHeldRef() : nullptr,
-            _generatedBodyStepDrive.callbackGate());
-        updateObjectRest(frame);
-        commitHeldPlacement(frame);
-        publishHeldCarExclusion(frame.hknpWorld);
-        publishHeldBodyExclusion(frame.hknpWorld);
-        updateHeldMassMovementSlowdown(hknp, frame.deltaSeconds);
-        synchronizeContactEvidenceOwnership(rightHandWeaponAuthorityActive, leftSupportGripActive, rightPartGripActive);
+        {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::FinalizeGrabInput);
+            updateGrabInput(frame);
+        }
+        {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::FinalizeHeldObjects);
+            _looseWeaponCollision.update(frame,
+                _rightHand.isHolding() ? _rightHand.getHeldRef() : nullptr,
+                _leftHand.isHolding() ? _leftHand.getHeldRef() : nullptr,
+                _generatedBodyStepDrive.callbackGate());
+            updateObjectRest(frame);
+            commitHeldPlacement(frame);
+            publishHeldCarExclusion(frame.hknpWorld);
+            publishHeldBodyExclusion(frame.hknpWorld);
+            updateHeldMassMovementSlowdown(hknp, frame.deltaSeconds);
+            synchronizeContactEvidenceOwnership(rightHandWeaponAuthorityActive, leftSupportGripActive, rightPartGripActive);
+        }
+        performance_profiler::ScopedTimer feedbackTimer(performance_profiler::Scope::FinalizeHandFeedback);
 
         /*
          * Dynamic hand collision runs after normal grab input so the final
@@ -360,6 +367,7 @@ namespace rock
                 pulse.intensity);
         }
         updateFeedbackHaptics(frame.deltaSeconds);
+        feedbackTimer.stop();
 
         _frame.debugOverlayFrameIndex = runtime_state::currentFrame().frameIndex;
 
@@ -429,16 +437,20 @@ namespace rock
             }
         }
 
-        updateNativeGrenadeCollisionSuppression(hknp, 0.0f);
-        ::rock::provider::dispatchFrameCallbacks(*this);
-        // Consumers can create and register an ejected reference in this callback.
-        // Apply its pair exclusion in the same frame, before the next solve.
-        updateEjectionContacts(frame);
-        storage_service::update(*this, frame);
-        storage_interaction::update(*this,frame,_dynamicHandCollision,_generatedBodyStepDrive.callbackGate());
-        weapon_part_collision::update(*this, frame);
+        {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::FinalizeConsumers);
+            updateNativeGrenadeCollisionSuppression(hknp, 0.0f);
+            ::rock::provider::dispatchFrameCallbacks(*this);
+            // Consumers can create and register an ejected reference in this callback.
+            // Apply its pair exclusion in the same frame, before the next solve.
+            updateEjectionContacts(frame);
+            storage_service::update(*this, frame);
+            storage_interaction::update(*this,frame,_dynamicHandCollision,_generatedBodyStepDrive.callbackGate());
+            weapon_part_collision::update(*this, frame);
+        }
         // Equip identity/grip reconciliation can clear the early authored pose.
         // Yield the bridge only after every hand owner has finished this frame.
+        performance_profiler::ScopedTimer handoffTimer(performance_profiler::Scope::FinalizeHandoff);
         finishEquippedWeaponHandPoseHandoff();
         captureEquippedWeaponContinuity();
         // Final pose publication consumes this completed decision frame and
@@ -756,17 +768,32 @@ namespace rock
         }
 
         native_interaction_service::preCollide(world, timing);
-        _rightHand.flushPendingCollisionPhysicsDrive(world, timing);
-        _leftHand.flushPendingCollisionPhysicsDrive(world, timing);
-        _bodyBoneColliders.flushPendingPhysicsDrive(world, timing);
-        _weaponCollision.flushPendingPhysicsDrive(world, timing);
-        _secondaryWeaponCollision.flushPendingPhysicsDrive(world, timing);
-        _dynamicWeaponCollision.flushPendingPhysicsDrive(world, timing);
-        _secondaryDynamicWeaponCollision.flushPendingPhysicsDrive(world, timing);
-        _dynamicHandCollision.flushPendingPhysicsDrive(world, timing);
-        storage_interaction::flush(world,timing);
-        _rightHand.flushConsumerObjectPairs(world);
-        _leftHand.flushConsumerObjectPairs(world);
+        {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::FlushHands);
+            _rightHand.flushPendingCollisionPhysicsDrive(world, timing);
+            _leftHand.flushPendingCollisionPhysicsDrive(world, timing);
+        }
+        {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::FlushBody);
+            _bodyBoneColliders.flushPendingPhysicsDrive(world, timing);
+        }
+        {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::FlushWeapons);
+            _weaponCollision.flushPendingPhysicsDrive(world, timing);
+            _secondaryWeaponCollision.flushPendingPhysicsDrive(world, timing);
+            _dynamicWeaponCollision.flushPendingPhysicsDrive(world, timing);
+            _secondaryDynamicWeaponCollision.flushPendingPhysicsDrive(world, timing);
+        }
+        {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::FlushDynamicHands);
+            _dynamicHandCollision.flushPendingPhysicsDrive(world, timing);
+        }
+        {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::FlushConsumers);
+            storage_interaction::flush(world,timing);
+            _rightHand.flushConsumerObjectPairs(world);
+            _leftHand.flushConsumerObjectPairs(world);
+        }
         if (performance_profiler::enabled()) {
             performance_profiler::observeValue(performance_profiler::ValueMetric::GeneratedHandBodies,
                 _rightHand.getHandColliderBodyCount() + _leftHand.getHandColliderBodyCount());

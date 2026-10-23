@@ -864,15 +864,23 @@ namespace
         if (s_pluginLoaded && s_frikAvailable && s_physicsInteraction) s_physicsInteraction->holdEquippedWeaponInMenu();
         performance_profiler::ScopedTimer timer(performance_profiler::Scope::FinalPresentation);
         if (s_skeletonTickedThisFrame && s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
+            using performance_profiler::Scope;
             // The second model is placed only now, after index 0's scope sync.
             s_physicsInteraction->synchronizeSecondaryScopePresentation();
             s_physicsInteraction->captureRenderedHands();
-            s_physicsInteraction->captureProviderPresentedHandPoses();
-            s_physicsInteraction->finalizeFramePose();
+            {
+                performance_profiler::ScopedTimer stage(Scope::PresentedHandPoseCapture);
+                s_physicsInteraction->captureProviderPresentedHandPoses();
+            }
+            {
+                performance_profiler::ScopedTimer stage(Scope::FinalPoseCommit);
+                s_physicsInteraction->finalizeFramePose();
+            }
             rock::provider::dispatchAnimationPhaseCallbacks(
                 ::rock::api::animation::AnimationPhase::Presented,
                 game_timing::currentFrameTiming());
             if (!s_physicsInteraction) return;
+            performance_profiler::ScopedTimer publishStage(Scope::PresentationPublish);
             s_physicsInteraction->finalizeEquipVisualBridgePresentation();
             s_physicsInteraction->sampleTransitionSeam();
             s_physicsInteraction->publishGripZoneIndicatorRenderFrame(runtime_state::currentFrame().frameIndex);

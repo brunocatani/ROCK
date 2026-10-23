@@ -136,6 +136,30 @@ namespace rock::performance_profiler
         WeaponDynamicDrive,
         LooseWeaponCollision,
         LooseWeaponLayerRepair,
+        // Sub-steps of interactionFinalize.
+        FinalizeGrabInput,
+        FinalizeHeldObjects,
+        FinalizeHandFeedback,
+        FinalizeConsumers,
+        FinalizeHandoff,
+        // Sub-steps of equippedWeaponInteraction.
+        EquippedObserve,
+        EquippedRouting,
+        EquippedContacts,
+        EquippedGripStart,
+        EquippedGripUpdate,
+        EquippedStashDrop,
+        EquippedPublish,
+        // Sub-steps of finalPresentation.
+        PresentedHandPoseCapture,
+        FinalPoseCommit,
+        PresentationPublish,
+        // Sub-steps of generatedFlush (physics thread).
+        FlushHands,
+        FlushBody,
+        FlushWeapons,
+        FlushDynamicHands,
+        FlushConsumers,
         Count
     };
 

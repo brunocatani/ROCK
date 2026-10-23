@@ -844,16 +844,28 @@ namespace rock
             .prepared = prepared,
         };
 
-        observeEquippedWeapon(w);
-        routeEquippedWeaponPrimaryHand(w);
-        resolveEquippedWeaponFiringHand(w);
-        probeEquippedWeaponContacts(w);
-        readEquippedWeaponGripButtons(w);
-        resolveEquippedWeaponPartAuthority(w);
-        startEquippedWeaponGrips(w);
-        updateEquippedWeaponGrips(w);
-        queueEquippedWeaponGripHaptics();
-        commitEquippedWeaponStashAndDrop(w);
+        using performance_profiler::Scope;
+        using StageTimer = performance_profiler::ScopedTimer;
+        { StageTimer stage(Scope::EquippedObserve); observeEquippedWeapon(w); }
+        {
+            StageTimer stage(Scope::EquippedRouting);
+            routeEquippedWeaponPrimaryHand(w);
+            resolveEquippedWeaponFiringHand(w);
+        }
+        {
+            StageTimer stage(Scope::EquippedContacts);
+            probeEquippedWeaponContacts(w);
+            readEquippedWeaponGripButtons(w);
+            resolveEquippedWeaponPartAuthority(w);
+        }
+        { StageTimer stage(Scope::EquippedGripStart); startEquippedWeaponGrips(w); }
+        {
+            StageTimer stage(Scope::EquippedGripUpdate);
+            updateEquippedWeaponGrips(w);
+            queueEquippedWeaponGripHaptics();
+        }
+        { StageTimer stage(Scope::EquippedStashDrop); commitEquippedWeaponStashAndDrop(w); }
+        StageTimer publishStage(Scope::EquippedPublish);
         const EquippedWeaponFrameResult result = publishEquippedWeaponGripOwnership(w);
         finishDynamicWeaponCollision(w);
 
