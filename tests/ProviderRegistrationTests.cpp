@@ -44,7 +44,7 @@ namespace rock::provider::runtime {
     struct Resource {void clearOwner(std::uint64_t){}} s_touchGrabTargets;
     struct Reservation {std::uint64_t ownerToken{};} s_offhandReservationSlot;
     struct CallbackSlot {std::uint64_t token{},ownerToken{};api::core::FrameCallback callback{};void* userData{};};
-    struct AnimationPhaseCallbackSlot {std::uint64_t token{},ownerToken{};api::animation::PhaseCallback callback{};void* userData{};};
+    struct AnimationPhaseCallbackSlot {std::uint64_t token{},ownerToken{};api::animation::PhaseCallback callback{};void* userData{};std::uint32_t phaseMask{};};
     std::array<CallbackSlot,16> s_callbacks{};
     std::array<AnimationPhaseCallbackSlot,16> s_animationPhaseCallbacks{};
     std::atomic<std::uint64_t> s_nextCallbackToken{1},s_nextAnimationPhaseCallbackToken{1};

@@ -134,11 +134,10 @@
 
     api::Status registerAnimationPhaseCallback(
         const std::uint64_t ownerToken,
-        api::animation::PhaseCallback callback,
-        void* userData,
+        const api::animation::PhaseCallbackRegistration& registration,
         std::uint64_t* outCallbackToken)
     {
-        if (!callback || !outCallbackToken) {
+        if (!registration.callback || !outCallbackToken) {
             return api::Status::InvalidArgument;
         }
         *outCallbackToken = 0;
@@ -173,8 +172,9 @@
         *available = AnimationPhaseCallbackSlot{
             .token = token,
             .ownerToken = ownerToken,
-            .callback = callback,
-            .userData = userData,
+            .callback = registration.callback,
+            .userData = registration.userData,
+            .phaseMask = registration.phaseMask,
         };
         *outCallbackToken = token;
         return api::Status::Ok;

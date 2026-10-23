@@ -56,6 +56,14 @@ static_assert(offsetof(rock::api::animation::AnimationPhaseContext, deltaSeconds
 static_assert(offsetof(rock::api::animation::AnimationPhaseContext, worldGeneration) == 28);
 static_assert(offsetof(rock::api::animation::AnimationPhaseContext, skeletonGeneration) == 32);
 static_assert(offsetof(rock::api::animation::AnimationPhaseContext, providerGeneration) == 36);
+static_assert(sizeof(rock::api::animation::PhaseCallbackRegistration) == 32);
+static_assert(alignof(rock::api::animation::PhaseCallbackRegistration) == 8);
+static_assert(offsetof(rock::api::animation::PhaseCallbackRegistration, size) == 0);
+static_assert(offsetof(rock::api::animation::PhaseCallbackRegistration, version) == 4);
+static_assert(offsetof(rock::api::animation::PhaseCallbackRegistration, phaseMask) == 8);
+static_assert(offsetof(rock::api::animation::PhaseCallbackRegistration, callback) == 16);
+static_assert(offsetof(rock::api::animation::PhaseCallbackRegistration, userData) == 24);
+static_assert(rock::api::animation::kAllPhases == 0x3Eu);
 static_assert(sizeof(rock::api::animation::NativeAnimationAuthorityRequest) == 32);
 static_assert(alignof(rock::api::animation::NativeAnimationAuthorityRequest) == 4);
 static_assert(offsetof(rock::api::animation::NativeAnimationAuthorityRequest, size) == 0);

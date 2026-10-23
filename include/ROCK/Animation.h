@@ -93,6 +93,22 @@ namespace rock::api::animation {
     // valid through it. A faulting callback revokes everything its owner holds.
     using PhaseCallback = void(ROCK_CALL*)(const AnimationPhaseContext*, void*);
 
+    // Bit of an AnimationPhase in PhaseCallbackRegistration::phaseMask.
+    constexpr std::uint32_t phaseBit(AnimationPhase phase) noexcept { return 1u << static_cast<std::uint32_t>(phase); }
+    inline constexpr std::uint32_t kAllPhases = phaseBit(AnimationPhase::BeforeRock) | phaseBit(AnimationPhase::AfterRock) |
+        phaseBit(AnimationPhase::Complete) | phaseBit(AnimationPhase::NativeGraphOutput) | phaseBit(AnimationPhase::Presented);
+
+    // The callback runs only for the phases in phaseMask, a nonzero subset of
+    // kAllPhases.
+    struct PhaseCallbackRegistration
+    {
+        std::uint32_t size{ sizeof(PhaseCallbackRegistration) };
+        std::uint32_t version{ 1 };
+        std::uint32_t phaseMask{ 0 };
+        PhaseCallback callback{ nullptr };
+        void* userData{ nullptr };
+    };
+
     struct NativeAnimationAuthorityRequest
     {
         std::uint32_t size{ sizeof(NativeAnimationAuthorityRequest) };
@@ -172,7 +188,7 @@ namespace rock::api::animation {
         Status(ROCK_CALL* publishNativeAnimationRuntime)(OwnerToken owner, const NativeAnimationRuntimePublication* publication) noexcept;
         Status(ROCK_CALL* clearNativeAnimationRuntime)(OwnerToken owner) noexcept;
         // Game thread (Callbacks).
-        Status(ROCK_CALL* registerAnimationPhaseCallback)(OwnerToken owner, PhaseCallback callback, void* userData, std::uint64_t* outCallbackToken) noexcept;
+        Status(ROCK_CALL* registerAnimationPhaseCallback)(OwnerToken owner, const PhaseCallbackRegistration* registration, std::uint64_t* outCallbackToken) noexcept;
         Status(ROCK_CALL* unregisterAnimationPhaseCallback)(OwnerToken owner, std::uint64_t callbackToken) noexcept;
         // Any thread. Identity of the current publication.
         Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;

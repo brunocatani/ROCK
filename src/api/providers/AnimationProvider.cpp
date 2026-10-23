@@ -46,10 +46,17 @@ Status ROCK_CALL clearNativeAnimationRuntime(OwnerToken owner) noexcept {
         return provider::runtime::clearNativeAnimationRuntime(owner);
     });
 }
-Status ROCK_CALL registerAnimationPhaseCallback(OwnerToken owner, PhaseCallback callback, void* userData, std::uint64_t* outCallbackToken) noexcept {
-    if (outCallbackToken) *outCallbackToken = 0;
+Status ROCK_CALL registerAnimationPhaseCallback(OwnerToken owner, const PhaseCallbackRegistration* registration, std::uint64_t* outCallbackToken) noexcept {
+    // Validate the record before touching the token: a binary built against
+    // the earlier (callback, userData, token) form lands here with a function
+    // pointer as the record and its userData as the token pointer.
+    if (const auto s = checkInput(registration); s != Status::Ok) return s;
+    if (!outCallbackToken) return Status::InvalidArgument;
+    *outCallbackToken = 0;
+    if (!registration->callback || registration->phaseMask == 0 || (registration->phaseMask & ~kAllPhases) != 0)
+        return Status::InvalidArgument;
     return invoke(owner, kInterfaceId, 4, true, [&] {
-        return static_cast<Status>(provider::runtime::registerAnimationPhaseCallback(owner, callback, userData, outCallbackToken));
+        return static_cast<Status>(provider::runtime::registerAnimationPhaseCallback(owner, *registration, outCallbackToken));
     });
 }
 Status ROCK_CALL unregisterAnimationPhaseCallback(OwnerToken owner, std::uint64_t callbackToken) noexcept {

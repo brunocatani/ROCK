@@ -91,7 +91,7 @@ namespace rock::provider::runtime {
     api::Status setNativeAnimationAuthority(std::uint64_t ownerToken, const api::animation::NativeAnimationAuthorityRequest& request);
     api::Status clearNativeAnimationAuthority(std::uint64_t ownerToken);
     bool getNativeAnimationAuthorityState(api::animation::NativeAnimationAuthorityState& outState);
-    api::Status registerAnimationPhaseCallback(std::uint64_t ownerToken, api::animation::PhaseCallback callback, void* userData, std::uint64_t* outCallbackToken);
+    api::Status registerAnimationPhaseCallback(std::uint64_t ownerToken, const api::animation::PhaseCallbackRegistration& registration, std::uint64_t* outCallbackToken);
     api::Status unregisterAnimationPhaseCallback(std::uint64_t ownerToken, std::uint64_t callbackToken);
     api::Status setHandVisualAuthority(std::uint64_t ownerToken, const api::animation::HandVisualAuthorityRequest& request);
     api::Status clearHandVisualAuthority(std::uint64_t ownerToken, api::Hand hand);

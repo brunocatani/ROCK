@@ -343,6 +343,7 @@ namespace rock::provider::runtime
         std::uint64_t ownerToken{ 0 };
         api::animation::PhaseCallback callback{ nullptr };
         void* userData{ nullptr };
+        std::uint32_t phaseMask{ 0 };
     };
 
     std::mutex s_animationPhaseCallbackMutex;
@@ -2355,7 +2356,7 @@ namespace rock::provider
                 std::scoped_lock lock(s_animationPhaseCallbackMutex);
                 slot = s_animationPhaseCallbacks[index];
             }
-            if (!slot.callback) {
+            if (!slot.callback || !(slot.phaseMask & api::animation::phaseBit(phase))) {
                 continue;
             }
 
