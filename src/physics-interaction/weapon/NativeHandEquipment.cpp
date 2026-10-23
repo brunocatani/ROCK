@@ -562,6 +562,26 @@ namespace rock::native_hand_equipment
             }
         }
 
+        /*
+         * AttackBlockHandler (FC8340) skips the right attack of a non-automatic
+         * gun when 141133BB0 reports an equipped melee weapon. That scan visits
+         * every equipped WEAP (14113F710, type < 7), so a melee second weapon at
+         * index 1 cancelled the primary gun's trigger. For the player only the
+         * primary decides at this call site; the VR melee callers of 141133BB0
+         * keep the full scan. 141133AE0 is its unchanged empty-slot fallback.
+         */
+        using ActorTest = bool (*)(RE::Actor*);
+        ActorTest s_meleeEquipped = nullptr;
+        ActorTest s_defaultSlotEmpty = nullptr;
+
+        bool triggerMeleeEquipped(RE::Actor* actor) noexcept
+        {
+            if (!actor || actor != f4vr::getPlayer()) return s_meleeEquipped(actor);
+            auto* primary = f4vr::getEquippedWeaponItem(0);
+            auto* weapon = primary && primary->item.object ? primary->item.object->As<RE::TESObjectWEAP>() : nullptr;
+            return (weapon && weapon_type_policy::isEquippedMelee(weapon->weaponData.type.get())) || s_defaultSlotEmpty(actor);
+        }
+
         template <std::size_t N>
         bool bytesMatch(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected) noexcept
         {
@@ -872,12 +892,16 @@ namespace rock::native_hand_equipment
         constexpr std::array<std::uint8_t, 5> useBytes{0xE8,0x17,0x50,0x2D,0};
         constexpr std::array<std::uint8_t, 5> slotBytes{0xE8,0x24,0x58,0x2D,0xFF};
         constexpr std::array<std::uint8_t, 12> executionBytes{0x49,0x8B,0x06,0x48,0x8B,0xD3,0x49,0x8B,0xCE,0xFF,0x50,0x38};
+        constexpr std::array<std::uint8_t, 5> triggerMeleeBytes{0xE8,0x70,0xB8,0x16,0x00};
         constexpr std::array<std::uint8_t, 44> executionFrame{
             0x4C,0x89,0x4C,0x24,0x20,0x4C,0x89,0x44,0x24,0x18,
             0x48,0x89,0x54,0x24,0x10,0x48,0x89,0x4C,0x24,0x08,
             0x55,0x53,0x56,0x57,0x41,0x54,0x41,0x55,0x41,0x56,0x41,0x57,
             0x48,0x8D,0x6C,0x24,0xE1,0x48,0x81,0xEC,0xE8,0,0,0};
         if (!bytesMatch(0xB9B904, useBytes) || !bytesMatch(0xE70A37, slotBytes) || !bytesMatch(0xE72E19, executionBytes) ||
+            !bytesMatch(0xFC833B, triggerMeleeBytes) ||
+            !bytesMatch(0x1133BB0, std::array<std::uint8_t,8>{0x40,0x53,0x48,0x83,0xEC,0x20,0x48,0x8B}) ||
+            !bytesMatch(0x1133AE0, std::array<std::uint8_t,8>{0x48,0x89,0x5C,0x24,0x08,0x48,0x89,0x74}) ||
             !bytesMatch(0xEC5230, std::array<std::uint8_t,19>{0x44,0x89,0x4C,0x24,0x20,0x53,0x48,0x83,0xEC,0x20,0x48,0x8B,0x02,0x48,0x8B,0xCA,0x49,0x8B,0xD8}) ||
             !bytesMatch(0x1ABBD0, std::array<std::uint8_t,15>{0x48,0x89,0x5C,0x24,0x08,0x48,0x89,0x74,0x24,0x10,0x57,0x48,0x83,0xEC,0x30}) ||
             !bytesMatch(0xE72DA0, executionFrame) ||
@@ -898,6 +922,8 @@ namespace rock::native_hand_equipment
         s_modelIndex = reinterpret_cast<ModelIndex>(REL::Offset(0x1CAFC0).address());
         s_getAttachment = reinterpret_cast<GetAttachment>(REL::Offset(0xEC5230).address());
         s_readSelection = reinterpret_cast<ReadSelection>(REL::Offset(0x1ABBD0).address());
+        s_meleeEquipped = reinterpret_cast<ActorTest>(REL::Offset(0x1133BB0).address());
+        s_defaultSlotEmpty = reinterpret_cast<ActorTest>(REL::Offset(0x1133AE0).address());
         // A left inventory slot without its complete native first-person gun
         // model is not a usable hand-directed equipment capability.
         if (!native_inventory_hand_slots::install() || !native_secondary_model::install() || !native_equipped_model_lifetime::install() ||
@@ -920,8 +946,10 @@ namespace rock::native_hand_equipment
                 throw std::runtime_error("execution slot branch readback failed");
             (void)trampoline.write_call<5>(REL::Offset(0xE70A37).address(), &toggleSlot);
             (void)trampoline.write_call<5>(REL::Offset(0xB9B904).address(), &useItem);
+            (void)trampoline.write_call<5>(REL::Offset(0xFC833B).address(), &triggerMeleeEquipped);
             if (!callRedirectMatches(0xE70A37, reinterpret_cast<std::uintptr_t>(&toggleSlot)) ||
                 !callRedirectMatches(0xB9B904, reinterpret_cast<std::uintptr_t>(&useItem)) ||
+                !callRedirectMatches(0xFC833B, reinterpret_cast<std::uintptr_t>(&triggerMeleeEquipped)) ||
                 !FlushInstructionCache(GetCurrentProcess(), nullptr, 0))
                 throw std::runtime_error("hand equipment redirect verification failed");
             if (!native_pipboy_hand_input::install())
@@ -933,6 +961,7 @@ namespace rock::native_hand_equipment
             REL::safe_write(REL::Offset(0xE72E19).address(), executionBytes.data(), executionBytes.size());
             REL::safe_write(REL::Offset(0xE70A37).address(), slotBytes.data(), slotBytes.size());
             REL::safe_write(REL::Offset(0xB9B904).address(), useBytes.data(), useBytes.size());
+            REL::safe_write(REL::Offset(0xFC833B).address(), triggerMeleeBytes.data(), triggerMeleeBytes.size());
             FlushInstructionCache(GetCurrentProcess(), nullptr, 0);
             ROCK_LOG_ERROR(Init, "Native hand equipment installation failed; original hooks restored");
             return false;
