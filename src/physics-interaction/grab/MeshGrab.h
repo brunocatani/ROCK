@@ -18,6 +18,7 @@
 #include <cstring>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <span>
 #include <unordered_map>
 #include <vector>
@@ -109,15 +110,39 @@ namespace rock
         float weight = 0.0f;
     };
 
+    using GrabSurfaceVertexInfluences = std::array<GrabSurfaceVertexInfluence, 4>;
+
+    // One skinned shape's per-vertex bone influences, shared by its triangles.
+    // Ragdoll ownership remaps these bones in place, once per table.
+    struct GrabSurfaceSkin
+    {
+        std::vector<GrabSurfaceVertexInfluences> vertices;
+    };
+
+    /*
+     * One extracted surface triangle. Skin influences live in the shape's
+     * shared table, not inline: inline they were 192 of ~264 bytes per
+     * triangle and zero on every static mesh, which made a 78k-triangle
+     * object a 23.6 MB allocation per grab.
+     */
     struct GrabSurfaceTriangleData
     {
         TriangleData triangle{};
         RE::NiAVObject* sourceNode = nullptr;
         RE::BSTriShape* sourceShape = nullptr;
+        // Set only on skinned triangles whose three vertices carry complete
+        // influences; skinVertices index its table.
+        std::shared_ptr<GrabSurfaceSkin> skin;
         std::uint32_t triangleIndex = 0;
+        std::array<std::uint16_t, 3> skinVertices{};
         GrabSurfaceSourceKind sourceKind = GrabSurfaceSourceKind::Static;
-        std::array<std::array<GrabSurfaceVertexInfluence, 4>, 3> skinInfluences{};
         bool hasSkinInfluences = false;
+
+        // Requires skin.
+        [[nodiscard]] const GrabSurfaceVertexInfluences& vertexInfluences(std::size_t corner) const
+        {
+            return skin->vertices[skinVertices[corner]];
+        }
     };
 
     // Owned by one acquisition. Rebuild after filtering/replacing its surface
@@ -351,24 +376,37 @@ namespace rock
         }
     }
 
-    inline bool hasAnySkinInfluence(const std::array<std::array<GrabSurfaceVertexInfluence, 4>, 3>& skinInfluences)
+    inline bool hasAnySkinInfluence(const GrabSurfaceVertexInfluences& vertexInfluences)
     {
-        for (const auto& vertexInfluences : skinInfluences) {
-            for (const auto& influence : vertexInfluences) {
-                if (influence.bone && influence.weight > 0.0f) {
-                    return true;
-                }
+        for (const auto& influence : vertexInfluences) {
+            if (influence.bone && influence.weight > 0.0f) {
+                return true;
             }
         }
         return false;
     }
 
+    inline bool hasAnySkinInfluence(const GrabSurfaceTriangleData& surfaceTriangle)
+    {
+        if (!surfaceTriangle.skin) {
+            return false;
+        }
+        for (std::size_t corner = 0; corner < 3; ++corner) {
+            if (hasAnySkinInfluence(surfaceTriangle.vertexInfluences(corner))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // skin, when given, must hold complete influences for all three vertices.
     inline void appendSurfaceTriangle(std::vector<GrabSurfaceTriangleData>* outSurfaceTriangles,
         const TriangleData& triangle,
         RE::BSTriShape* sourceShape,
         std::uint32_t triangleIndex,
         GrabSurfaceSourceKind sourceKind,
-        const std::array<std::array<GrabSurfaceVertexInfluence, 4>, 3>* skinInfluences = nullptr)
+        const std::shared_ptr<GrabSurfaceSkin>* skin = nullptr,
+        const std::array<std::uint16_t, 3>& skinVertices = {})
     {
         if (!outSurfaceTriangles) {
             return;
@@ -380,9 +418,13 @@ namespace rock
         surfaceTriangle.sourceShape = sourceShape;
         surfaceTriangle.triangleIndex = triangleIndex;
         surfaceTriangle.sourceKind = sourceKind;
-        if (skinInfluences) {
-            surfaceTriangle.skinInfluences = *skinInfluences;
-            surfaceTriangle.hasSkinInfluences = hasAnySkinInfluence(*skinInfluences);
+        if (skin && *skin) {
+            surfaceTriangle.skin = *skin;
+            surfaceTriangle.skinVertices = skinVertices;
+            surfaceTriangle.hasSkinInfluences = hasAnySkinInfluence(surfaceTriangle);
+            if (!surfaceTriangle.hasSkinInfluences) {
+                surfaceTriangle.skin.reset();
+            }
         }
     }
 
@@ -1118,6 +1160,14 @@ namespace rock
             worldVertexValid[vi] = 1;
         }
 
+        // Surface extraction shares the influence table with this shape's
+        // triangles instead of copying three vertices' worth into each.
+        std::shared_ptr<GrabSurfaceSkin> surfaceSkin;
+        if (outSurfaceTriangles) {
+            surfaceSkin = std::make_shared<GrabSurfaceSkin>();
+            surfaceSkin->vertices = std::move(vertexInfluences);
+        }
+
         int added = 0;
         std::uint32_t skippedInvalidVertexTriangles = 0;
         for (std::uint32_t i = 0; i < numTris; i++) {
@@ -1146,13 +1196,10 @@ namespace rock
                     .v2 = dynamicLocalVerts[i2],
                 });
             }
-            std::array<std::array<GrabSurfaceVertexInfluence, 4>, 3> skinInfluences{};
-            skinInfluences[0] = vertexInfluences[i0];
-            skinInfluences[1] = vertexInfluences[i1];
-            skinInfluences[2] = vertexInfluences[i2];
-            const bool triangleHasSkinInfluences =
-                vertexSkinInfluencesValid[i0] && vertexSkinInfluencesValid[i1] && vertexSkinInfluencesValid[i2] && hasAnySkinInfluence(skinInfluences);
-            appendSurfaceTriangle(outSurfaceTriangles, tri, triShape, i, GrabSurfaceSourceKind::Skinned, triangleHasSkinInfluences ? &skinInfluences : nullptr);
+            const bool completeVertexInfluences =
+                vertexSkinInfluencesValid[i0] && vertexSkinInfluencesValid[i1] && vertexSkinInfluencesValid[i2];
+            appendSurfaceTriangle(outSurfaceTriangles, tri, triShape, i, GrabSurfaceSourceKind::Skinned,
+                completeVertexInfluences ? &surfaceSkin : nullptr, { i0, i1, i2 });
             added++;
         }
 
@@ -1663,7 +1710,7 @@ namespace rock
                 distance = 0.001f;
             }
             const float distanceWeight = 1.0f / distance;
-            for (const auto& influence : surfaceTriangle.skinInfluences[vertex]) {
+            for (const auto& influence : surfaceTriangle.vertexInfluences(vertex)) {
                 if (!influence.bone || influence.weight <= 0.0f) {
                     continue;
                 }

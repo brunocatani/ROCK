@@ -8133,14 +8133,25 @@ namespace rock
                 return owner;
             };
             auto mapSurfaceOwners = [&] {
+                // Triangles share their shape's influence table; map each
+                // table's bones to ragdoll owners once.
+                std::vector<const GrabSurfaceSkin*> mappedSkins;
                 for (auto& triangle : grabSurfaceTriangles) {
-                    bool completeOwners = true;
-                    for (auto& vertex : triangle.skinInfluences) for (auto& influence : vertex) {
-                        influence.bone = resolveOwner(influence.bone);
-                        if (influence.weight > 0.0f && !influence.bone) completeOwners = false;
+                    if (triangle.skin &&
+                        std::find(mappedSkins.begin(), mappedSkins.end(), triangle.skin.get()) == mappedSkins.end()) {
+                        for (auto& vertex : triangle.skin->vertices) for (auto& influence : vertex) {
+                            influence.bone = resolveOwner(influence.bone);
+                        }
+                        mappedSkins.push_back(triangle.skin.get());
                     }
                     if (triangle.sourceKind == GrabSurfaceSourceKind::Skinned) {
-                        triangle.hasSkinInfluences = completeOwners && hasAnySkinInfluence(triangle.skinInfluences);
+                        bool completeOwners = true;
+                        for (std::size_t corner = 0; triangle.skin && corner < 3; ++corner) {
+                            for (const auto& influence : triangle.vertexInfluences(corner)) {
+                                if (influence.weight > 0.0f && !influence.bone) completeOwners = false;
+                            }
+                        }
+                        triangle.hasSkinInfluences = completeOwners && hasAnySkinInfluence(triangle);
                         if (!triangle.hasSkinInfluences) triangle.sourceNode = nullptr;
                     } else triangle.sourceNode = resolveOwner(triangle.sourceNode);
                 }
@@ -8264,8 +8275,10 @@ namespace rock
             auto* owner = preparedBodySet.findRecord(primaryChoice.bodyId)->owningNode;
             std::erase_if(grabSurfaceTriangles, [owner](const auto& triangle) {
                 if (!triangle.hasSkinInfluences) return triangle.sourceNode != owner;
-                for (const auto& vertex : triangle.skinInfluences) for (const auto& influence : vertex) {
-                    if (influence.bone == owner && influence.weight > 0.0f) return false;
+                for (std::size_t corner = 0; corner < 3; ++corner) {
+                    for (const auto& influence : triangle.vertexInfluences(corner)) {
+                        if (influence.bone == owner && influence.weight > 0.0f) return false;
+                    }
                 }
                 return true;
             });
