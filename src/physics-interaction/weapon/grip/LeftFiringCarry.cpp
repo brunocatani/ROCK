@@ -74,7 +74,9 @@ namespace rock
         const bool recoilConsumed = consumeOwnedWeaponRecoil(recoilDelta);
         if (recoilConsumed) {
             solvedWeaponWorld = transform_math::composeTransforms(recoilDelta, solvedWeaponWorld);
-            presentedHandWorld = transform_math::composeTransforms(solvedWeaponWorld, _firing.primaryHandWeaponLocal);
+            RE::NiTransform seat{};
+            (void)presentedPrimaryHandWeaponLocal(seat);
+            presentedHandWorld = transform_math::composeTransforms(solvedWeaponWorld, seat);
         }
 
         if (scope_safe_hand_frame_math::
@@ -119,6 +121,17 @@ namespace rock
         _lastSolvedWeaponTransform = weaponNode->world;
         _hasSolvedWeaponTransform = true;
 
+        return true;
+    }
+
+    bool TwoHandedGrip::presentedPrimaryHandWeaponLocal(RE::NiTransform& outSeat) const
+    {
+        outSeat = _firing.primaryHandWeaponLocal;
+        const bool meleeWeapon = _recoil.weaponEvidence.resolved && _recoil.weaponEvidence.sizeClass == WeaponSizeClass::Melee;
+        const bool left = isFiringHandLeft();
+        if (!meleeWeapon || !knife_reverse_grip::reversed(left, _holdingMirrorFormID)) return false;
+        // The melee mirror offset is the model's flat-side centre.
+        outSeat = knife_reverse_grip::reverseSeat(_firing.primaryHandWeaponLocal, left, _holdingMirrorPlane.offset);
         return true;
     }
 
@@ -235,13 +248,9 @@ namespace rock
             !isFiniteTransform(weaponNode->world)) {
             return false;
         }
-        // The presented seat: the captured one, or its reverse knife grip
-        // (melee mirror offset is the model's flat-side centre).
-        const bool reversedKnife = meleeWeapon && knife_reverse_grip::reversed(true, _holdingMirrorFormID);
-        const RE::NiTransform seat = reversedKnife ?
-            knife_reverse_grip::reverseSeat(_firing.primaryHandWeaponLocal, true, _holdingMirrorPlane.offset) :
-            _firing.primaryHandWeaponLocal;
-        const RE::NiPoint3 gripLocal = reversedKnife ? computeGrabPalmPointWorldFromHandBasis(seat, true) : _firing.primaryGripLocal;
+        RE::NiTransform seat{};
+        const bool reversedGrip = presentedPrimaryHandWeaponLocal(seat);
+        const RE::NiPoint3 gripLocal = reversedGrip ? computeGrabPalmPointWorldFromHandBasis(seat, true) : _firing.primaryGripLocal;
 
         RE::NiTransform physicalDriverWorld{};
         const char* physicalHandSource = "driver-relation";

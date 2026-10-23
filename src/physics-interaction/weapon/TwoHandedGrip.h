@@ -1736,6 +1736,10 @@ namespace rock
             RE::NiTransform& outDriverWorld) const;
 
         bool applyFiringHandLockedVisual(RE::NiNode* weaponNode, float dt, const RE::NiTransform* liveHandWorld);
+        // The firing seat every firing-hand placement presents: the captured
+        // seat, or its reverse one-handed melee grip (knife_reverse_grip).
+        // Returns true when reversed.
+        bool presentedPrimaryHandWeaponLocal(RE::NiTransform& outSeat) const;
 
         bool applyPartGripLockedVisual(bool isLeft, RE::NiNode* weaponNode, float dt, const RE::NiTransform* liveHandWorld);
 

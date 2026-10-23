@@ -1114,8 +1114,10 @@ namespace rock
             return false;
         }
 
+        RE::NiTransform presentedSeat{};
+        (void)presentedPrimaryHandWeaponLocal(presentedSeat);
         const RE::NiTransform firingHandWorld =
-            weapon_visual_authority_math::weaponLocalFrameToWorld(weaponNode->world, _firing.primaryHandWeaponLocal);
+            weapon_visual_authority_math::weaponLocalFrameToWorld(weaponNode->world, presentedSeat);
         const auto& returningHand = _visuals.returningHands[isFiringHandLeft() ? 0u : 1u].transition;
         const RE::NiTransform* acquisitionStart =
             returningHand.active && isUsableHandAuthorityTransform(returningHand.lastApplied) ?
