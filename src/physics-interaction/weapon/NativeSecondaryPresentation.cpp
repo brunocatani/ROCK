@@ -21,6 +21,7 @@
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/NativeWeaponFadeSuppression.h"
 #include "physics-interaction/grab/SkinnedBoneOwner.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "RockConfig.h"
@@ -742,6 +743,7 @@ namespace rock::native_secondary_presentation
                 return;
             }
             tracePlacement("solve-after");
+            native_weapon_fade_suppression::presentSecondary(attachment);
             if (menu) native_secondary_actions::suspend();
             else native_secondary_actions::update(attachment,frame.deltaSeconds);
             // A placed melee second weapon strikes through native VR melee.

@@ -15,6 +15,10 @@ namespace rock::native_weapon_fade_suppression
         // Written once at F4SE Load; read by game-thread diagnostic startup.
         bool s_installed = false;
         constexpr std::uintptr_t kAlphaCommit = 0xEF7EAA;
+        // (object, const float*): visits the subtree and stores the scalar in
+        // each geometry's shader-property fade node (+0x1E0, +0x1E4).
+        constexpr std::uintptr_t kWriteGeometryAlpha = 0xF4B270;
+        using WriteGeometryAlpha = std::uint32_t (*)(RE::NiAVObject*, const float*);
         constexpr std::array<std::uint8_t, 13> kOriginal{
             0x0F,0x2E,0xB7,0x10,0x09,0x00,0x00, // ucomiss xmm6,[rdi+910]
             0x0F,0x84,0x7D,0x00,0x00,0x00,      // je 140EF7F34
@@ -38,6 +42,13 @@ namespace rock::native_weapon_fade_suppression
         return s_installed;
     }
 
+    void presentSecondary(RE::NiAVObject* attachment) noexcept
+    {
+        if (!s_installed || !attachment) return;
+        static constexpr float kOpaqueAlpha = 1.0f;
+        (void)reinterpret_cast<WriteGeometryAlpha>(REL::Offset(kWriteGeometryAlpha).address())(attachment, &kOpaqueAlpha);
+    }
+
     bool install() noexcept
     {
         if (s_installed) return true;
@@ -57,7 +68,8 @@ namespace rock::native_weapon_fade_suppression
             !bytesMatch(0xEF7DE7, std::array<std::uint8_t, 9>{0xF3,0x44,0x0F,0x10,0x05,0x50,0x78,0xD8,0x01}) ||
             !bytesMatch(0x2C7F640, std::array<std::uint8_t, 4>{0x00,0x00,0x80,0x3F}) ||
             !bytesMatch(0xEF7EB7, std::array<std::uint8_t, 16>{0xF3,0x0F,0x11,0xB7,0x10,0x09,0x00,0x00,0xF3,0x0F,0x11,0xB5,0x00,0x01,0x00,0x00}) ||
-            !bytesMatch(0xEF7EE4, std::array<std::uint8_t, 5>{0xE8,0x87,0x33,0x05,0x00})) {
+            !bytesMatch(0xEF7EE4, std::array<std::uint8_t, 5>{0xE8,0x87,0x33,0x05,0x00}) ||
+            !bytesMatch(kWriteGeometryAlpha, std::array<std::uint8_t, 10>{0x40,0x53,0x55,0x57,0x48,0x83,0xEC,0x20,0x33,0xDB})) {
             ROCK_LOG_ERROR(Init, "Native weapon fade suppression rejected: player alpha instructions differ from verified FO4VR");
             return false;
         }
