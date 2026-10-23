@@ -12,6 +12,7 @@
 #include <array>
 #include <atomic>
 #include <cstring>
+#include <optional>
 #include <stdexcept>
 
 namespace rock::native_secondary_melee
@@ -26,7 +27,11 @@ namespace rock::native_secondary_melee
         constexpr std::ptrdiff_t kParentCell = 0xB8;
         constexpr std::ptrdiff_t kCollisionObject = 0x100;
         constexpr std::ptrdiff_t kAsNpCollisionSlot = 0xD8; // the attach visitor's own collision-object test
-        constexpr std::ptrdiff_t kPrimaryMeleeNode = 0x750; // PlayerCharacter: the index-0 melee node F0A1B0 attaches
+        // PlayerCharacter byte; bit 2 is the weapon-collision switch the swing
+        // gate 140EFE880 writes (EFEC56/EFEC6B) and 140F0AE70 applies every
+        // frame to the index-0 melee nodes (F075BD..F075FA) as filter bit 14.
+        constexpr std::ptrdiff_t kMeleeCollisionFlags = 0x12A4;
+        constexpr std::uint8_t kWeaponCollisionLive = 1u << 2;
         constexpr std::uint32_t kInvalidBody = 0x7FFFFFFF;
 
         // 140EFF000's indexed calls: weapon (twice), object impact, actor hit.
@@ -77,6 +82,8 @@ namespace rock::native_secondary_melee
         void* s_world = nullptr;
         std::array<std::atomic<std::uint32_t>, 16> s_bodies{};
         std::atomic<std::uint32_t> s_bodyCount{ 0 };
+        // Weapon-collision switch last applied to the bodies; unknown after attach.
+        std::optional<bool> s_appliedLive;
 
         void* readItem(void* actor, void* out, std::uint32_t index) { return s_readItem(actor, out, t_routed ? 1u : index); }
         void objectImpact(void* actor, std::uint32_t index, void* a, void* b, void* c, void* d, void* e)
@@ -101,6 +108,7 @@ namespace rock::native_secondary_melee
         void clearBodies() noexcept
         {
             s_bodyCount.store(0, std::memory_order_release);
+            s_appliedLive.reset();
             for (auto& body : s_bodies) body.store(kInvalidBody, std::memory_order_relaxed);
         }
 
@@ -146,63 +154,34 @@ namespace rock::native_secondary_melee
             return count;
         }
 
-        // The first native body of a subtree, tested as the attach visitor does.
-        std::uint32_t firstBody(RE::NiAVObject* root) noexcept
-        {
-            std::array<RE::NiAVObject*, 64> pending{};
-            std::size_t queued = 0;
-            pending[queued++] = root;
-            for (std::size_t i = 0; i < queued; ++i) {
-                auto* object = pending[i];
-                const void* collision = nullptr;
-                const void* vtable = nullptr;
-                AsNpCollision asNp = nullptr;
-                if (native_memory::tryReadField(object, kCollisionObject, collision) && collision &&
-                    native_memory::tryReadField(collision, 0, vtable) && vtable &&
-                    native_memory::tryReadField(vtable, kAsNpCollisionSlot, asNp) && asNp && asNp(collision)) {
-                    std::uint32_t id = kInvalidBody;
-                    reinterpret_cast<BodyId>(REL::Offset(kBodyId).address())(collision, &id);
-                    if (id != kInvalidBody) return id;
-                }
-                if (auto* node = object->IsNode()) {
-                    for (const auto& child : node->GetRuntimeData().children) {
-                        if (child && queued < pending.size()) pending[queued++] = child.get();
-                    }
-                }
-            }
-            return kInvalidBody;
-        }
-
         /*
-         * The native keeps the index-0 melee bodies no-collide (filter bit 14):
-         * they raise melee events without colliding with character
-         * controllers, shell casings or the player's own projectiles. The
-         * index-1 attach does not set it, so its bodies collided with all of
-         * those (walking into an NPC was a hit, pistol bullets stopped in the
-         * gun's own hull). Index 1 mirrors index 0's bit every frame; with no
-         * index-0 melee body it stays no-collide.
+         * The native keeps melee bodies no-collide (filter bit 14) except while
+         * a swing is live: they raise melee events without colliding with
+         * character controllers, shell casings or the player's own projectiles.
+         * It applies the player's weapon-collision switch only to the index-0
+         * nodes, so the index-1 bodies collided with all of those (walking into
+         * an NPC was a hit, pistol bullets stopped in the gun's own hull). The
+         * same switch is applied to index 1 when it changes or after an attach;
+         * nothing else writes bit 14 on these bodies.
          */
-        void mirrorPrimaryCollision(RE::PlayerCharacter* player, void* world) noexcept
+        void applyWeaponCollisionSwitch(RE::PlayerCharacter* player, void* world) noexcept
         {
+            std::uint8_t flags = 0;
+            if (!native_memory::tryReadField(player, kMeleeCollisionFlags, flags)) return;
+            const bool live = (flags & kWeaponCollisionLive) != 0;
+            if (s_appliedLive == live) return;
             const auto count = s_bodyCount.load(std::memory_order_acquire);
             auto* hknp = world ? havok_runtime::getHknpWorldFromBhk(static_cast<RE::bhkWorld*>(world)) : nullptr;
             if (!count || !hknp) return;
             constexpr auto noCollide = collision_suppression_registry::kSuppressionNoCollideBit;
-            bool primaryNoCollide = true;
-            RE::NiAVObject* primary = nullptr;
-            std::uint32_t primaryFilter = 0;
-            if (native_memory::tryReadField(player, kPrimaryMeleeNode, primary) && primary) {
-                const auto id = firstBody(primary);
-                if (id != kInvalidBody && body_collision::tryReadFilterInfo(hknp, RE::hknpBodyId{ id }, primaryFilter))
-                    primaryNoCollide = (primaryFilter & noCollide) != 0;
-            }
             for (std::uint32_t i = 0; i < count && i < s_bodies.size(); ++i) {
                 const auto id = s_bodies[i].load(std::memory_order_relaxed);
                 std::uint32_t filter = 0;
                 if (id == kInvalidBody || !body_collision::tryReadFilterInfo(hknp, RE::hknpBodyId{ id }, filter)) continue;
-                const auto mirrored = primaryNoCollide ? (filter | noCollide) : (filter & ~noCollide);
-                if (mirrored != filter) body_collision::setFilterInfo(hknp, RE::hknpBodyId{ id }, mirrored);
+                const auto applied = live ? (filter & ~noCollide) : (filter | noCollide);
+                if (applied != filter) body_collision::setFilterInfo(hknp, RE::hknpBodyId{ id }, applied);
             }
+            s_appliedLive = live;
         }
 
         void detachCurrent(RE::PlayerCharacter* player, const char* reason) noexcept
@@ -309,7 +288,7 @@ namespace rock::native_secondary_melee
         auto* player = f4vr::getPlayer();
         void* world = worldOf(player);
         if (s_model && s_model.get() == model && s_world == world) {
-            mirrorPrimaryCollision(player, world);
+            applyWeaponCollisionSwitch(player, world);
             return;
         }
         if (s_model && s_world != world) {
@@ -331,7 +310,7 @@ namespace rock::native_secondary_melee
         if (bodies) {
             ROCK_LOG_INFO(Weapon, "AKIMBO second melee native collision attached model={:#x} bodies={}",
                 reinterpret_cast<std::uintptr_t>(model), bodies);
-            mirrorPrimaryCollision(player, world);
+            applyWeaponCollisionSwitch(player, world);
         } else {
             ROCK_LOG_WARN(Weapon,
                 "AKIMBO second melee has no native collision bodies model={:#x} name='{}' nodes={} collisionObjects={} nativePhysics={} withBody={}; native hits unavailable",
