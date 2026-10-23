@@ -28,6 +28,8 @@ namespace rock
      * before the transition. A gap is a frame with no visible weapon; a
      * duplicate is a count above one; a visible pop is a geometry step.
      * Every rendered frame is observed so the baseline is the frame before.
+     * The observation walks weapon geometry and skin bones each frame, so it
+     * runs only while debug logging is on, like the equip-readiness trace.
      */
     namespace
     {
@@ -207,6 +209,7 @@ namespace rock
 
     void PhysicsInteraction::armTransitionSeamTrace(const char* event) noexcept
     {
+        if (!logger::isDebugEnabled()) return;
         try {
             // A transition inside an open window keeps its baseline.
             if (!s_seam.framesLeft) {
@@ -225,6 +228,11 @@ namespace rock
 
     void PhysicsInteraction::sampleTransitionSeam() noexcept
     {
+        if (!logger::isDebugEnabled()) {
+            // Drop the window and baseline so re-enabling starts clean.
+            if (s_seam.framesLeft || s_seam.hands[0].weapon || s_seam.hands[1].weapon) s_seam = {};
+            return;
+        }
         try {
             const auto hands = observeSeamHands(_equipped.transition.bridgeForTrace(), _twoHandedGrip.isFiringHandLeft());
             std::array<RE::NiTransform, 2> handInWand{};
