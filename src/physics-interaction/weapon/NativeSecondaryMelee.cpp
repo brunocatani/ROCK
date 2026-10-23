@@ -313,4 +313,9 @@ namespace rock::native_secondary_melee
     {
         t_routed = _previous;
     }
+
+    bool routedContact() noexcept
+    {
+        return t_routed;
+    }
 }

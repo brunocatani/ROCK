@@ -15,6 +15,7 @@
 #include "physics-interaction/input/NativePipboyHandInput.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "RockConfig.h"
+#include "physics-interaction/weapon/NativeMeleeWand.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -928,7 +929,7 @@ namespace rock::native_hand_equipment
         // model is not a usable hand-directed equipment capability.
         if (!native_inventory_hand_slots::install() || !native_secondary_model::install() || !native_equipped_model_lifetime::install() ||
             !native_primary_weapon_graph::install() || !native_secondary_actions::install() ||
-            !native_secondary_melee::install()) return false;
+            !native_secondary_melee::install() || !native_melee_wand::install()) return false;
         try {
             native_execution_slot::Stub stub(reinterpret_cast<std::uintptr_t>(&executionSlot), REL::Offset(0xE72E25).address());
             auto* code = trampoline.allocate(stub.getSize());

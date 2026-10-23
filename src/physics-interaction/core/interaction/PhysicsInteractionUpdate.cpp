@@ -578,8 +578,15 @@ namespace rock
         input_remap_runtime::updateFiringHandReloadInput(runtime.deltaSeconds);
         native_hand_equipment::observe();
         {
-            const auto& slot0 = equippedWeaponRoster().facts().slot0;
-            native_melee_wand::update(slot0.holdsHand && slot0.firingHand == equipped_weapon_roster::Hand::Left);
+            const auto roster = equippedWeaponRoster();
+            const auto& facts = roster.facts();
+            const auto views = native_hand_equipment::equippedViews();
+            native_melee_wand::update({
+                .indexZeroLeft = facts.slot0.holdsHand && facts.slot0.firingHand == equipped_weapon_roster::Hand::Left,
+                .indexZeroMelee = views[0].weapon && !views[0].firearm,
+                .indexOneMelee = facts.slot1.holdsHand && views[1].weapon && !views[1].firearm,
+                .indexOneLeft = facts.slot1.hand == equipped_weapon_roster::Hand::Left,
+            });
         }
 
         /*

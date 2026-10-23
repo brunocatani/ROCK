@@ -23,6 +23,7 @@ namespace rock::native_secondary_model
         using Assemble = void* (*)(std::uint32_t, RE::Actor*, RE::NiAVObject*, void*, bool, float, const RE::BGSObjectInstance*, void*);
         using ModelIndex = std::uint32_t (*)(RE::Actor*, RE::TESBoundObject*, std::uint32_t);
         using Instance = RE::TBO_InstanceData* (*)(RE::ExtraDataList*);
+        using StripCollision = bool (*)(RE::NiAVObject*, bool);
         struct WornExtra
         {
             void* extra = nullptr;
@@ -37,6 +38,7 @@ namespace rock::native_secondary_model
         SelectExtra s_selectExtra = nullptr;
         ModelIndex s_modelIndex = nullptr;
         Instance s_instance = nullptr;
+        StripCollision s_stripCollision = nullptr;
         bool s_installed = false; // Plugin load owner; immutable afterwards.
 
         struct Construction
@@ -74,6 +76,20 @@ namespace rock::native_secondary_model
             const void* current = nullptr;
             return firstPerson && context && context->handIndex == 1 && context->firstPerson && context->slot == slot &&
                 context->record == record && native_memory::tryReadValue(biped, current) && current == context->biped;
+        }
+
+        // 1CA8C0 strips collision (1DF97C0) from a first-person weapon model
+        // outside the race weapon slot. The index-1 melee model keeps it, as
+        // index 0 does, so native melee collision can attach to it.
+        bool stripCollision(RE::NiAVObject* model, bool force) noexcept
+        {
+            const auto* context = s_construction;
+            if (context && context->handIndex == 1 && context->firstPerson) {
+                const auto* data = context->instance ? static_cast<const RE::TESObjectWEAP::InstanceData*>(context->instance) :
+                    &context->weapon->weaponData;
+                if (data->type != RE::WEAPON_TYPE::kGun) return false;
+            }
+            return s_stripCollision(model, force);
         }
 
         std::uint32_t selectExtra(const RE::BGSInventoryItem* inventory, WornExtra* output) noexcept
@@ -199,13 +215,14 @@ namespace rock::native_secondary_model
             std::array<std::uint8_t, 8> bytes;
             std::size_t length;
         };
-        constexpr std::array<Patch, 6> kPatches{{
+        constexpr std::array<Patch, 7> kPatches{{
             {0x1CA19D, {0x84,0xC0,0x74,0x1E,0x41,0x83,0xFC,0x20}, 8},
             {0x1CA277, {0x84,0xC0,0x74,0x0A,0x41,0x83,0xFC,0x20}, 8},
             {0x1CA2A7, {0x84,0xC0,0x74,0x16,0x41,0x83,0xFC,0x20}, 8},
             {0x1CCFB8, {0xE8,0xE3,0x18,0,0}, 5},
             {0x1CA323, {0xE8,0x98,0x2B,0,0}, 5},
-            {0x1C831A, {0xE8,0x51,0x1C,0,0}, 5}
+            {0x1C831A, {0xE8,0x51,0x1C,0,0}, 5},
+            {0x1CAD30, {0xE8,0x8B,0xEA,0xC2,0x01}, 5}
         }};
         template<std::size_t N> bool bytesMatch(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected) noexcept
         {
@@ -257,11 +274,12 @@ namespace rock::native_secondary_model
         s_selectExtra = reinterpret_cast<SelectExtra>(REL::Offset(0x1CE8A0).address());
         s_modelIndex = reinterpret_cast<ModelIndex>(REL::Offset(0x1CAFC0).address());
         s_instance = reinterpret_cast<Instance>(REL::Offset(0x08B040).address());
+        s_stripCollision = reinterpret_cast<StripCollision>(REL::Offset(0x1DF97C0).address());
         try {
             constexpr std::array<std::array<std::uintptr_t, 3>, 3> destinations{{
                 {0x1CA1B7,0x1CA1BF,0x1CA1A5}, {0x1CA285,0x1CA285,0x1CA27F}, {0x1CA2C9,0x1CA2C1,0x1CA2AF}
             }};
-            std::array<std::uintptr_t, 6> targets{};
+            std::array<std::uintptr_t, kPatches.size()> targets{};
             for (std::size_t i = 0; i < 3; ++i) {
                 const auto& destination = destinations[i];
                 ModelBranch stub(reinterpret_cast<std::uintptr_t>(&gunRole), REL::Offset(destination[0]).address(),
@@ -274,6 +292,7 @@ namespace rock::native_secondary_model
             targets[3] = reinterpret_cast<std::uintptr_t>(&selectExtra);
             targets[4] = reinterpret_cast<std::uintptr_t>(&assemble);
             targets[5] = reinterpret_cast<std::uintptr_t>(&build);
+            targets[6] = reinterpret_cast<std::uintptr_t>(&stripCollision);
             for (std::size_t i = 0; i < kPatches.size(); ++i) {
                 const auto& patch = kPatches[i];
                 const auto address = REL::Offset(patch.rva).address();
@@ -286,7 +305,7 @@ namespace rock::native_secondary_model
             }
             if (!FlushInstructionCache(GetCurrentProcess(), nullptr, 0)) throw std::runtime_error("model instruction flush failed");
             s_installed = true;
-            ROCK_LOG_INFO(Init, "Secondary native weapon model construction installed: first-person gun role, exact left stack, native biped/graph ownership");
+            ROCK_LOG_INFO(Init, "Secondary native weapon model construction installed: first-person gun role, exact left stack, melee collision kept, native biped/graph ownership");
             return true;
         } catch (...) {
             for (const auto& patch : kPatches)

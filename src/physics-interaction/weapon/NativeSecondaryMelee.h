@@ -17,9 +17,10 @@ namespace rock::native_secondary_melee
      * collision (F0AC60/F0AD90) to the presented index-1 melee model and, for
      * a contact from one of that model's bodies, gives those four indexed
      * calls index 1. Cooldown, target filters, actions, impulse, damage, perks
-     * and hit events stay native. The callback still reads the right
-     * controller's speed for a left-hand contact; it reads the left one only
-     * for its own left-fist node.
+     * and hit events stay native. native_melee_wand gives such a contact the
+     * wand of the index-1 hand, and native_secondary_model keeps the model's
+     * collision, which the first-person builder strips from every weapon
+     * outside the race weapon slot.
      */
     [[nodiscard]] bool install() noexcept;
 
@@ -47,4 +48,7 @@ namespace rock::native_secondary_melee
         bool _routed = false;
         bool _previous = false;
     };
+
+    // Inside one native melee contact callback: the index-1 route claimed it.
+    [[nodiscard]] bool routedContact() noexcept;
 }
