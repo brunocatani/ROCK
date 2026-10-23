@@ -58,9 +58,10 @@ int main()
     assert(memory::tryReadValue(reinterpret_cast<const std::uint32_t*>(pages), copied));
     assert(copied == value && queries[0] == 1 && queries[1] == 1 && rejected == 0);
 
-    // The physics-system scanner now copies its IDs before visiting them.
-    // Compare complete contents and actual OS-query counts with the old
-    // range-check-plus-per-element-read pattern, including invalid-ID values.
+    // Guarded reads reuse this thread's queried region until the system tick
+    // advances, so a burst of reads in one region costs at most one OS query
+    // per tick boundary crossed (bounded below as kBurstQueries).
+    constexpr std::uint64_t kBurstQueries = 2;
     auto* bodyIds = reinterpret_cast<std::uint32_t*>(pages);
     std::array<std::uint32_t, 256> individualIds{};
     std::array<std::uint32_t, 256> batchIds{};
@@ -69,15 +70,16 @@ int main()
     }
     reset();
     assert(memory::pointerRangeLooksReadable(bodyIds, sizeof(individualIds)));
+    assert(queries[0] == 1); // Standalone checks always query.
     for (std::size_t i = 0; i < individualIds.size(); ++i) {
         assert(memory::tryReadValue(bodyIds + i, individualIds[i]));
     }
-    assert(queries[0] == 257);
+    assert(queries[0] <= 1 + kBurstQueries);
     reset();
     assert(memory::guardedCopyFromMemory(bodyIds, batchIds.data(), sizeof(batchIds)));
-    assert(batchIds == individualIds && queries[0] == 1 && rejected == 0);
-    // Neighboring ragdoll fields use one guarded snapshot instead of three
-    // page queries. Compare all decoded values with independent field reads.
+    assert(batchIds == individualIds && queries[0] <= kBurstQueries && rejected == 0);
+    // Neighboring ragdoll fields read as one guarded snapshot and as separate
+    // field reads decode identically.
     constexpr std::size_t recordCount = 32, recordStride = 0xA0;
     struct Fields { std::uint32_t flags{}, motion{}; std::uint64_t owner{}; };
     std::array<Fields, recordCount> expectedFields{}, batchFields{};
@@ -94,7 +96,7 @@ int main()
         assert(memory::tryReadField(pages + i * recordStride, 0x68, expectedFields[i].motion));
         assert(memory::tryReadField(pages + i * recordStride, 0x88, expectedFields[i].owner));
     }
-    assert(queries[0] == recordCount * 3);
+    assert(queries[0] <= kBurstQueries);
     reset();
     for (std::size_t i = 0; i < recordCount; ++i) {
         std::array<std::byte, 0x50> fields{};
@@ -105,7 +107,7 @@ int main()
         assert(batchFields[i].flags == expectedFields[i].flags && batchFields[i].motion == expectedFields[i].motion &&
             batchFields[i].owner == expectedFields[i].owner);
     }
-    assert(queries[0] == recordCount && rejected == 0);
+    assert(queries[0] <= kBurstQueries && rejected == 0);
     const std::uint32_t changedMotion = 0x7FFFFFFF;
     std::memcpy(pages + 0x68, &changedMotion, sizeof(changedMotion));
     std::array<std::byte, 0x50> freshFields{};
@@ -123,7 +125,7 @@ int main()
     reset();
     std::array<std::uint8_t, 16> buffer{};
     assert(memory::guardedCopyFromMemory(pages + pageSize - 8, buffer.data(), buffer.size()));
-    assert(queries[0] == 2 && buffer.front() == 0x5A && buffer.back() == 0x5A);
+    assert(buffer.front() == 0x5A && buffer.back() == 0x5A);
     assert(!memory::guardedCopyToMemory(pages + pageSize - 8, buffer.data(), buffer.size()));
     assert(queries[1] == 2 && rejected == 1 && apiFailures == 0);
     assert(pages[pageSize - 1] == 0x5A); // Refuse the entire copy before any write.
@@ -134,8 +136,19 @@ int main()
     assert(queries[0] == 1 && rejected == 1 && apiFailures == 0);
     batchIds.fill(0xABCDu);
     const auto untouchedIds = batchIds;
+    // The cache may still hold the whole allocation as readable here: the read
+    // must fail closed through SEH and leave the target untouched either way.
     assert(!memory::guardedCopyFromMemory(pages + pageSize * 2 - 16, batchIds.data(), sizeof(batchIds)));
     assert(batchIds == untouchedIds); // Reject the full scan before any IDs can be visited.
+    std::uint32_t afterFailure = 0;
+    assert(memory::tryReadValue(reinterpret_cast<const std::uint32_t*>(pages), afterFailure) && afterFailure == value);
+    // Copies above the staging size keep the exact per-call query.
+    std::array<std::uint8_t, 2048> large{};
+    large.fill(0xCD);
+    const auto untouchedLarge = large;
+    reset();
+    assert(!memory::guardedCopyFromMemory(pages + pageSize * 2 - large.size() / 2, large.data(), large.size()));
+    assert(large == untouchedLarge && queries[0] >= 1);
     assert(VirtualProtect(pages + pageSize * 2, pageSize, PAGE_READWRITE | PAGE_GUARD, &previous));
     assert(!memory::pointerRangeLooksReadable(pages + pageSize * 2, 1));
     MEMORY_BASIC_INFORMATION region{};

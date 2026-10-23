@@ -10,6 +10,8 @@ namespace rock::native_memory
      * object trees. These helpers give callers a common fail-closed boundary:
      * VirtualQuery filters unreadable pages first, then SEH protects the final
      * copy so gameplay code never dereferences a small or stale native pointer.
+     * Guarded reads of up to 1 KB reuse this thread's recently queried regions
+     * (see NativeMemory.cpp); a failed read never modifies its target.
      */
     bool pointerLooksReadable(const void* ptr);
     bool pointerRangeLooksReadable(const void* ptr, std::size_t byteCount);
