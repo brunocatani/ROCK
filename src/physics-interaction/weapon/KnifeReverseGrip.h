@@ -11,11 +11,12 @@ namespace RE
 
 namespace rock::knife_reverse_grip
 {
-    // Small one-handed blades (WEAPON_TYPE kOneHandDagger: combat knife,
-    // switchblade and modded daggers that use the dagger animation type) can
-    // be held in a reverse grip. The trigger of the hand carrying the knife
-    // toggles it; any change of that hand's knife, including holstering,
-    // returns it to the normal grip. Frame-thread state only.
+    // One-handed melee weapons (sword, dagger, axe and mace animation types:
+    // knives, switchblade, baton, pipes and modded one-handers) can be held in
+    // a reverse grip. The trigger of the hand carrying one toggles it; any
+    // change of that hand's weapon, including holstering, returns it to the
+    // normal grip. Automatic melee keeps the native trigger attack.
+    // Frame-thread state only.
     [[nodiscard]] bool appliesTo(const RE::TESObjectWEAP* weapon) noexcept;
 
     // Once per hand per input frame: the knife the hand carries now (0 when

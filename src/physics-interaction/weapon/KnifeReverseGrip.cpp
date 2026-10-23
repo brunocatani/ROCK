@@ -30,7 +30,11 @@ namespace rock::knife_reverse_grip
 
     bool appliesTo(const RE::TESObjectWEAP* weapon) noexcept
     {
-        return weapon && weapon->weaponData.type == RE::WEAPON_TYPE::kOneHandDagger;
+        // Automatic melee (the Ripper) keeps its native trigger attack.
+        if (!weapon || weapon->weaponData.flags.any(RE::WEAPON_FLAGS::kAutomatic)) return false;
+        const auto type = weapon->weaponData.type.get();
+        return type == RE::WEAPON_TYPE::kOneHandSword || type == RE::WEAPON_TYPE::kOneHandDagger ||
+               type == RE::WEAPON_TYPE::kOneHandAxe || type == RE::WEAPON_TYPE::kOneHandMace;
     }
 
     void observeHand(const bool isLeft, const std::uint32_t knifeFormID, const bool triggerPressed) noexcept

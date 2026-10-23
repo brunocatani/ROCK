@@ -678,8 +678,8 @@ namespace rock
         const bool handIsFiringHand = isLeft == firingHandIsLeft;
         const bool offhandWeaponOccupiesHand = roster.slotOneHolds(isLeft);
         {
-            // The trigger of the hand carrying a knife by its firing grip
-            // toggles that knife's reverse grip. The game gives a
+            // The trigger of the hand carrying a one-handed melee weapon by
+            // its firing grip toggles its reverse grip. The game gives a
             // non-automatic melee weapon no trigger action.
             const auto& slot0 = roster.facts().slot0;
             const bool slotZeroFiringHand = slot0.holdsHand && !slot0.firingGripDetached &&
