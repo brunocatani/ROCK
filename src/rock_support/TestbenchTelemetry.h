@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string_view>
 
@@ -139,6 +140,15 @@ namespace rock::testbench_telemetry
     // Frame thread, after the presented skeleton is final (FRIK AfterWorldFinal). Writes the
     // bone-name table when `topologyRevision` changes and every few seconds, then the poses.
     void publishSkeleton(std::uint64_t frameIndex, std::uint64_t topologyRevision, std::span<const SkeletonBone> bones) noexcept;
+
+    // The capture switch in RobCo PALM's Developer wheel (PALM.ini [Developer] bEnabled): each
+    // press starts or stops a capture. While a capture runs the section is open whatever the
+    // setting says, and its header flags bit 1 tells the external recorder to record.
+    // Registered once after every plugin has loaded; ROCK runs without PALM.
+    void registerWheelCapture() noexcept;
+    // Frame thread. Applies a pending wheel press; returns the new capture state when it changed.
+    [[nodiscard]] std::optional<bool> takeCaptureToggle() noexcept;
+    [[nodiscard]] bool captureActive() noexcept;
 
     // Frame thread. Syncs the section with `settingOn`, then writes queued events and one frame.
     // The section lives from the frame the setting turns on until it turns off or the

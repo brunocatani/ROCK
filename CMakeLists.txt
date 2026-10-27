@@ -197,6 +197,14 @@ if(NOT EXISTS "${RPSUI_INCLUDE_DIR}/RPSUIWorldDrawApi.h")
   message(FATAL_ERROR ">> RPS UI Framework headers not found at '${RPSUI_INCLUDE_DIR}'; set RPSUI_INCLUDE_DIR.")
 endif()
 target_include_directories(${PROJECT_NAME} PRIVATE "${RPSUI_INCLUDE_DIR}")
+# RobCo PALM's Developer wheel API; ROCK binds it at runtime for its capture switch and
+# works without PALM.
+set(PALM_INCLUDE_DIR "${WORKSPACE_ROOT}/../ui_mods/ROCK_Whell_Menu/SDK/include" CACHE PATH
+  "RobCo PALM public header directory.")
+if(NOT EXISTS "${PALM_INCLUDE_DIR}/PALMDeveloperApi.h")
+  message(FATAL_ERROR ">> RobCo PALM headers not found at '${PALM_INCLUDE_DIR}'; set PALM_INCLUDE_DIR.")
+endif()
+target_include_directories(${PROJECT_NAME} PRIVATE "${PALM_INCLUDE_DIR}")
 
 include("${ROOT_DIR}/cmake/VerifyDistributionInputs.cmake")
 get_target_property(ROCK_BUILD_INPUTS ${PROJECT_NAME} SOURCES)

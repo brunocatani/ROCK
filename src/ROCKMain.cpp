@@ -48,6 +48,7 @@
 #include "physics-interaction/weapon/scope/ScopeRigParentRepair.h"
 #include "physics-interaction/weapon/scope/NativeScopeData.h"
 #include "rock_support/Fo4VrRuntime.h"
+#include "rock_support/TestbenchTelemetry.h"
 
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESForms.h"
@@ -1246,6 +1247,7 @@ namespace
             logger::info("ROCK: Config loaded.");
             rock::input_remap_runtime::installInputRemapHooks();
             rock::debug::Install();
+            rock::testbench_telemetry::registerWheelCapture();
 
             s_frikAvailable = true;
 

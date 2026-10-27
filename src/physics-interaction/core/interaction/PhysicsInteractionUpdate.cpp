@@ -503,7 +503,7 @@ namespace rock
 
     void PhysicsInteraction::captureTestbenchFrame(const PhysicsFrameContext& frame)
     {
-        if (!g_rockConfig.rockDebugTestbenchTelemetry && !testbench_telemetry::enabled()) {
+        if (!g_rockConfig.rockDebugTestbenchTelemetry && !testbench_telemetry::captureActive() && !testbench_telemetry::enabled()) {
             return;
         }
         // Physics fields only; publishTestbenchFrame() adds the per-frame state at FrameEnd.
@@ -541,7 +541,14 @@ namespace rock
 
     void PhysicsInteraction::publishTestbenchFrame()
     {
-        const bool settingOn = g_rockConfig.rockDebugTestbenchTelemetry;
+        if (const auto capture = testbench_telemetry::takeCaptureToggle()) {
+            // Felt confirmation of the wheel press: a short pulse starts, a long one stops.
+            const float seconds = *capture ? 0.08f : 0.4f;
+            vrcf::VRControllers.triggerHaptic(vrcf::Hand::Left, seconds, 0.6f);
+            vrcf::VRControllers.triggerHaptic(vrcf::Hand::Right, seconds, 0.6f);
+        }
+        // A wheel capture keeps the section open whatever the developer setting says.
+        const bool settingOn = g_rockConfig.rockDebugTestbenchTelemetry || testbench_telemetry::captureActive();
         if (!settingOn && !testbench_telemetry::enabled()) {
             return;
         }

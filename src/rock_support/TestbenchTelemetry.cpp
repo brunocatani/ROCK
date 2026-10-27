@@ -2,6 +2,7 @@
 
 #include "physics-interaction/PhysicsLog.h"
 
+#include <PALMDeveloperApi.h>
 #include <Windows.h>
 
 #include <algorithm>
@@ -22,6 +23,15 @@ namespace rock::testbench_telemetry
         constexpr std::uint32_t kCapacity = 8192; // ~20 s at 90 Hz with a full skeleton; readers poll at 10 Hz
         constexpr std::uint32_t kNameTableRepeatFrames = 300;
         constexpr std::size_t kEventQueueCapacity = 512;
+        constexpr std::uint32_t kHeaderProducerAlive = 1u << 0;
+        constexpr std::uint32_t kHeaderCaptureRunning = 1u << 1;
+        constexpr char kWheelCaptureId[] = "rock.testbench.capture";
+        constexpr char kWheelCaptureLabel[] = "ROCK: Start/stop capture";
+
+        // PALM's game task sets the press; the frame thread applies it and owns s_captureActive.
+        std::atomic<bool> s_capturePressPending{ false };
+        bool s_captureActive = false;
+        palm::developer::Handle s_wheelCaptureAction{};
 
         enum class RecordType : std::uint16_t
         {
@@ -48,7 +58,7 @@ namespace rock::testbench_telemetry
             std::uint64_t qpcFrequency;
             std::uint64_t producerStartQpc;
             std::uint32_t producerPid;
-            std::uint32_t flags; // bit 0: producer alive
+            std::uint32_t flags; // bit 0: producer alive, bit 1: wheel capture running
             std::uint8_t reserved[16];
         };
         static_assert(sizeof(RingHeader) == 64);
@@ -271,7 +281,7 @@ namespace rock::testbench_telemetry
             header->qpcFrequency = static_cast<std::uint64_t>(frequency.QuadPart);
             header->producerStartQpc = queryCounter();
             header->producerPid = GetCurrentProcessId();
-            header->flags = 1;
+            header->flags = kHeaderProducerAlive;
             // Readers validate the magic last, so a half-written header is never accepted.
             std::atomic_ref<std::uint32_t>(header->magic).store(kMagic, std::memory_order_release);
 
@@ -328,6 +338,49 @@ namespace rock::testbench_telemetry
     bool enabled() noexcept
     {
         return s_enabled.load(std::memory_order_relaxed);
+    }
+
+    void registerWheelCapture() noexcept
+    {
+        if (s_wheelCaptureAction) {
+            return;
+        }
+        const auto module = GetModuleHandleW(palm::developer::kModuleName);
+        const auto getApi = module ? reinterpret_cast<palm::developer::GetApi>(GetProcAddress(module, palm::developer::kExportName)) : nullptr;
+        const auto* api = getApi ? getApi(palm::developer::kVersion) : nullptr;
+        if (!api || api->version != palm::developer::kVersion || api->byteSize < sizeof(*api) || !api->enabled || !api->registerAction) {
+            return;
+        }
+        if (!api->enabled()) {
+            ROCK_LOG_INFO(Init, "Testbench capture switch not registered: PALM's Developer wheel is off (PALM.ini [Developer] bEnabled)");
+            return;
+        }
+        palm::developer::ActionV1 action;
+        strcpy_s(action.id, kWheelCaptureId);
+        strcpy_s(action.label, kWheelCaptureLabel);
+        action.invoke = [](void*) noexcept { s_capturePressPending.store(true, std::memory_order_release); };
+        const auto result = api->registerAction(&action, &s_wheelCaptureAction);
+        if (result == palm::developer::Result::Ok) {
+            ROCK_LOG_INFO(Init, "Testbench capture switch registered in PALM's Developer wheel");
+        } else {
+            ROCK_LOG_WARN(Init, "Testbench capture switch rejected by PALM's Developer wheel (result {}); existing actions kept",
+                static_cast<unsigned>(result));
+        }
+    }
+
+    std::optional<bool> takeCaptureToggle() noexcept
+    {
+        if (!s_capturePressPending.exchange(false, std::memory_order_acq_rel)) {
+            return std::nullopt;
+        }
+        s_captureActive = !s_captureActive;
+        ROCK_LOG_INFO(Input, "Testbench capture {} from PALM's Developer wheel", s_captureActive ? "started" : "stopped");
+        return s_captureActive;
+    }
+
+    bool captureActive() noexcept
+    {
+        return s_captureActive;
     }
 
     void observeControllerState(const bool isLeft, const RawControllerState& raw, const std::uint64_t gamePressed,
@@ -464,6 +517,8 @@ namespace rock::testbench_telemetry
         if (!s_ring.header) {
             return;
         }
+        std::atomic_ref<std::uint32_t>(s_ring.header->flags)
+            .store(kHeaderProducerAlive | (s_captureActive ? kHeaderCaptureRunning : 0u), std::memory_order_release);
 
         const auto frameIndex = static_cast<std::uint32_t>(frame.frameIndex);
         s_ring.gameTime += frame.deltaSeconds;
