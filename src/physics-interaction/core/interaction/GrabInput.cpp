@@ -2387,12 +2387,15 @@ namespace rock
         bool gesturePullConfirmed = false;
         if (hand.getState() == HandState::SelectionLocked) {
             RE::NiPoint3 targetWorld{};
-            if (!rawGrabInput.held || rawGrabInput.released || !handInput.hasGestureVelocity ||
+            if (!rawGrabInput.held || rawGrabInput.released ||
                 !hand.refreshGesturePullSelection(frame.bhkWorld, hknp, handInput.rawHandWorld.translate, targetWorld) ||
                 selectedObjectInteractionBlocked()) {
-                cancelLockedFarSelection(hand, isLeft, "release-or-invalid-target-motion");
+                cancelLockedFarSelection(hand, isLeft, "release-or-invalid-target");
                 return;
             }
+            // Velocity is withheld on hitch frames; the lock waits for the next
+            // measured frame instead of dropping the selection.
+            if (!handInput.hasGestureVelocity) return;
             const float speed = far_pull_gesture::speedAwayFromTarget(
                 handInput.gestureVelocityMetersPerSecond, handInput.rawHandWorld.translate, targetWorld);
             gesturePullConfirmed = far_pull_gesture::confirmsPull(rawGrabInput.held, rawGrabInput.released, handInput.hasGestureVelocity, speed);
