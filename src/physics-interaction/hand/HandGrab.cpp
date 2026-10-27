@@ -8519,7 +8519,7 @@ namespace rock
                 _grabFrame.authority.bodyWorldAtGrab : _grabFrame.authority.desiredBodyWorldAtGrab;
             (void)held_scene_presentation::publishTargetTransport(_isLeft, world, objectBodyId.value,
                 _grabFrame.traceId, initialTarget, _grabFrame.authority.bodyWorldAtGrab,
-                rootNode, _grabFrame.rootBodyLocal);
+                rootNode, _grabFrame.rootBodyLocal, runtime_state::currentFrame().timing.deltaSeconds);
         }
         return GrabAttemptResult::Grabbed;
     }
@@ -9217,7 +9217,8 @@ namespace rock
             update.desiredBodyWorld,
             update.solvedBodyWorld,
             presentReferenceRoot && _savedObjectState.refr ? _savedObjectState.refr->Get3D() : nullptr,
-            _grabFrame.rootBodyLocal);
+            _grabFrame.rootBodyLocal,
+            deltaTime);
         update.hasPresentedBodyWorld = presentation.applied;
         update.presentedBodyWorld = presentation.presentedBodyWorld;
 

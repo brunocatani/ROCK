@@ -33,6 +33,7 @@
  */
 
 #include "physics-interaction/native/HavokPhysicsTiming.h"
+#include "physics-interaction/timing/GameFrameTimingPolicy.h"
 
 #include "RE/NetImmerse/NiMatrix3.h"
 #include "RE/NetImmerse/NiPoint.h"
@@ -52,8 +53,9 @@ namespace rock::grab_authority_source_clock
 
     // A source sample farther than one game frame at 10 FPS is a hitch, not motion.
     constexpr float kMaxSourceIntervalSeconds = 0.1f;
-    // One-sample discontinuity gates; beyond these the sample is a snap turn,
-    // teleport, or proxy rebuild and must not become interpolated motion.
+    // One-sample discontinuity gates at 90 Hz, scaled by the sample interval;
+    // beyond these the sample is a snap turn, teleport, or proxy rebuild and
+    // must not become interpolated motion.
     constexpr float kMaxTranslationJumpGameUnits = 35.0f;
     constexpr float kMaxRotationJumpDegrees = 15.0f;
     // Exponential filter weight per accepted source sample (~10-sample
@@ -155,8 +157,10 @@ namespace rock::grab_authority_source_clock
             const float dy = translation.y - currentTranslation.y;
             const float dz = translation.z - currentTranslation.z;
             const float jumpSquared = dx * dx + dy * dy + dz * dz;
-            if (jumpSquared > kMaxTranslationJumpGameUnits * kMaxTranslationJumpGameUnits ||
-                rotationDeltaDegrees(rotation, currentRotation) > kMaxRotationJumpDegrees) {
+            const float motionScale = game_frame_timing_policy::frameMotionScale(sourceDeltaSeconds);
+            const float maxJump = kMaxTranslationJumpGameUnits * motionScale;
+            if (jumpSquared > maxJump * maxJump ||
+                rotationDeltaDegrees(rotation, currentRotation) > kMaxRotationJumpDegrees * motionScale) {
                 rebaseTo(translation, rotation);
                 return;
             }

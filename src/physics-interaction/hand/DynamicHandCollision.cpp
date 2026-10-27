@@ -22,6 +22,7 @@
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/core/RockRuntimeState.h"
+#include "physics-interaction/timing/GameFrameTimingPolicy.h"
 #include "RE/Havok/hknpMotion.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
@@ -2419,8 +2420,11 @@ namespace rock
                 runtimeFrame.timing.sequence == frame.timing.sequence &&
                 frame.timing.valid && !frame.timing.discontinuity &&
                 runtimeFrame.playerSpace.valid ? runtimeFrame.playerSpace.deltaGameUnits : RE::NiPoint3{};
+            // A source jump past the 90 Hz limit, scaled to this frame, is a
+            // discontinuity; ordinary motion of a slow frame is swept, not placed.
             const auto queued = queueGeneratedKeyframedBodyTarget(owner.driveState, targets[kPalmSlot],
-                frame.deltaSeconds, dynamic_hand_collision_policy::kDivergenceTeleportDistanceGameUnits,
+                frame.deltaSeconds, dynamic_hand_collision_policy::kDivergenceTeleportDistanceGameUnits *
+                    game_frame_timing_policy::frameMotionScale(frame.deltaSeconds),
                 transportDelta);
         }
     }

@@ -110,6 +110,7 @@ namespace rock::held_scene_presentation
             std::atomic<std::uint32_t> targetRotationStepBits{ 0 };
             std::atomic<std::uint32_t> physicalResidualBits{ 0 };
             std::atomic<std::uint32_t> transportAdvanceBits{ 0 };
+            std::atomic<std::uint32_t> motionScaleBits{ std::bit_cast<std::uint32_t>(1.0f) };
             std::atomic<bool> valid{ false };
         };
 
@@ -125,6 +126,7 @@ namespace rock::held_scene_presentation
             float targetRotationStepDegrees = 0.0f;
             float physicalResidualGameUnits = 0.0f;
             float transportAdvanceGameUnits = 0.0f;
+            float motionScale = 1.0f;
         };
 
         struct Match
@@ -176,7 +178,8 @@ namespace rock::held_scene_presentation
             std::uint64_t traceId,
             std::uint64_t frameIndex,
             const held_scene_presentation_policy::TargetTransportDecision<
-                RE::NiTransform>& decision) noexcept
+                RE::NiTransform>& decision,
+            float motionScale) noexcept
         {
             auto& destination = s_targetTransport[handIndex];
             destination.sequence.fetch_add(1, std::memory_order_acq_rel);
@@ -209,6 +212,9 @@ namespace rock::held_scene_presentation
             destination.transportAdvanceBits.store(
                 std::bit_cast<std::uint32_t>(
                     decision.transportAdvanceGameUnits),
+                std::memory_order_relaxed);
+            destination.motionScaleBits.store(
+                std::bit_cast<std::uint32_t>(motionScale),
                 std::memory_order_relaxed);
             destination.valid.store(true, std::memory_order_relaxed);
             destination.sequence.fetch_add(1, std::memory_order_release);
@@ -272,6 +278,9 @@ namespace rock::held_scene_presentation
                         std::memory_order_relaxed));
                 snapshot.transportAdvanceGameUnits = std::bit_cast<float>(
                     source.transportAdvanceBits.load(
+                        std::memory_order_relaxed));
+                snapshot.motionScale = std::bit_cast<float>(
+                    source.motionScaleBits.load(
                         std::memory_order_relaxed));
 
                 const std::uint64_t end =
@@ -679,8 +688,8 @@ namespace rock::held_scene_presentation
                                 nativeTarget,
                                 havokToGameScale,
                                 targetWriterInput,
-                                kTargetWriterMaxTranslationDeltaGameUnits,
-                                kTargetWriterMaxRotationDeltaDegrees);
+                                kTargetWriterMaxTranslationDeltaGameUnits * targetTransport.motionScale,
+                                kTargetWriterMaxRotationDeltaDegrees * targetTransport.motionScale);
                     if (targetTransform.apply) {
                         logTargetApplication(
                             targetTransport,
@@ -834,9 +843,11 @@ namespace rock::held_scene_presentation
         const RE::NiTransform& targetBodyWorld,
         const RE::NiTransform& solvedBodyWorld,
         RE::NiAVObject* referenceRoot,
-        const RE::NiTransform& bodyInRoot) noexcept
+        const RE::NiTransform& bodyInRoot,
+        float frameSeconds) noexcept
     {
         const std::size_t handIndex = isLeft ? 1u : 0u;
+        const float motionScale = game_frame_timing_policy::frameMotionScale(frameSeconds);
         if (!world || bodyId == 0x7FFF'FFFFu || traceId == 0) {
             resetTargetTransport(handIndex);
             return {};
@@ -870,7 +881,8 @@ namespace rock::held_scene_presentation
                     buildTargetTransport(
                         history.previousTargetWorld,
                         targetBodyWorld,
-                        solvedBodyWorld);
+                        solvedBodyWorld,
+                        frameSeconds);
                 history.previousTargetWorld = targetBodyWorld;
                 history.valid =
                     held_scene_presentation_policy::finiteTransform(
@@ -933,7 +945,7 @@ namespace rock::held_scene_presentation
             if (body.bodyId == bodyId) {
                 pose.world = decision.presentedWorld;
             } else if (!held_scene_presentation_policy::transportAssemblyBody(
-                           solvedBodyWorld, decision.presentedWorld, solved, pose.world)) {
+                           solvedBodyWorld, decision.presentedWorld, solved, pose.world, frameSeconds)) {
                 failure = "body-transport-rejected";
                 break;
             }
@@ -970,7 +982,7 @@ namespace rock::held_scene_presentation
                 traceId, frameIndex, isLeft ? "left" : "right", failedBody, registration.count, failure);
             return {};
         }
-        publishTargetTransportDecision(handIndex, world, poses.data(), registration.count, traceId, frameIndex, decision);
+        publishTargetTransportDecision(handIndex, world, poses.data(), registration.count, traceId, frameIndex, decision, motionScale);
 
         TargetTransportMatch selected{};
         if (!findTargetTransport(world, bodyId, selected) || selected.frameIndex != frameIndex) {

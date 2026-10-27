@@ -55,7 +55,8 @@ namespace rock::held_scene_presentation
         const RE::NiTransform& targetBodyWorld,
         const RE::NiTransform& solvedBodyWorld,
         RE::NiAVObject* referenceRoot,
-        const RE::NiTransform& bodyInRoot) noexcept;
+        const RE::NiTransform& bodyInRoot,
+        float frameSeconds) noexcept;
     // Copies the selected hand's immutable pose only for this exact frame.
     // No scene pointer crosses into the overlay render thread.
     [[nodiscard]] bool tryGetPresentedBodyWorld(

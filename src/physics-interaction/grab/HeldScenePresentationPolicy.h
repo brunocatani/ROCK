@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/timing/GameFrameTimingPolicy.h"
 
 #include <algorithm>
 #include <cmath>
@@ -122,11 +123,14 @@ namespace rock::held_scene_presentation_policy
             TargetTransportRejectReason::InvalidTransform;
     };
 
+    // Step, advance and rotation limits are per 90 Hz frame; frameSeconds
+    // scales them so a slow frame's real motion still presents on the hand.
     template <class Transform>
     inline TargetTransportDecision<Transform> buildTargetTransport(
         const Transform& previousTargetWorld,
         const Transform& currentTargetWorld,
-        const Transform& previousSolvedBodyWorld) noexcept
+        const Transform& previousSolvedBodyWorld,
+        float frameSeconds = 0.0f) noexcept
     {
         TargetTransportDecision<Transform> decision{};
         if (!finiteTransform(previousTargetWorld) ||
@@ -134,13 +138,14 @@ namespace rock::held_scene_presentation_policy
             !finiteTransform(previousSolvedBodyWorld)) {
             return decision;
         }
+        const float motionScale = game_frame_timing_policy::frameMotionScale(frameSeconds);
 
         decision.targetTranslationStepGameUnits = pointDistance(
             previousTargetWorld.translate,
             currentTargetWorld.translate);
         if (!std::isfinite(decision.targetTranslationStepGameUnits) ||
             decision.targetTranslationStepGameUnits >
-                kMaxTargetTranslationStepGameUnits) {
+                kMaxTargetTranslationStepGameUnits * motionScale) {
             decision.reason = TargetTransportRejectReason::
                 ExcessiveTargetTranslationStep;
             return decision;
@@ -151,7 +156,7 @@ namespace rock::held_scene_presentation_policy
             currentTargetWorld.rotate);
         if (!std::isfinite(decision.targetRotationStepDegrees) ||
             decision.targetRotationStepDegrees >
-                kMaxTargetRotationStepDegrees) {
+                kMaxTargetRotationStepDegrees * motionScale) {
             decision.reason =
                 TargetTransportRejectReason::ExcessiveTargetRotationStep;
             return decision;
@@ -191,8 +196,8 @@ namespace rock::held_scene_presentation_policy
         if (!std::isfinite(decision.transportAdvanceGameUnits) ||
             !std::isfinite(transportRotationDegrees) ||
             decision.transportAdvanceGameUnits >
-                kMaxTargetTransportAdvanceGameUnits ||
-            transportRotationDegrees > kMaxTargetRotationStepDegrees) {
+                kMaxTargetTransportAdvanceGameUnits * motionScale ||
+            transportRotationDegrees > kMaxTargetRotationStepDegrees * motionScale) {
             decision.reason =
                 TargetTransportRejectReason::ExcessiveTransportAdvance;
             return decision;
@@ -210,19 +215,23 @@ namespace rock::held_scene_presentation_policy
         const Transform& solvedPrimary,
         const Transform& presentedPrimary,
         const Transform& solvedBody,
-        Transform& presentedBody) noexcept
+        Transform& presentedBody,
+        float frameSeconds = 0.0f) noexcept
     {
         if (!finiteTransform(solvedPrimary) || !finiteTransform(presentedPrimary) ||
             !finiteTransform(solvedBody)) {
             return false;
         }
+        const float motionScale = game_frame_timing_policy::frameMotionScale(frameSeconds);
         const auto delta = transform_math::composeTransforms(
             presentedPrimary, transform_math::invertTransform(solvedPrimary));
         presentedBody = transform_math::composeTransforms(delta, solvedBody);
         presentedBody.scale = solvedBody.scale;
         return finiteTransform(presentedBody) &&
-               pointDistance(solvedBody.translate, presentedBody.translate) <= kMaxTargetTransportAdvanceGameUnits &&
-               matrixRotationDeltaDegrees(solvedBody.rotate, presentedBody.rotate) <= kMaxTargetRotationStepDegrees;
+               pointDistance(solvedBody.translate, presentedBody.translate) <=
+                   kMaxTargetTransportAdvanceGameUnits * motionScale &&
+               matrixRotationDeltaDegrees(solvedBody.rotate, presentedBody.rotate) <=
+                   kMaxTargetRotationStepDegrees * motionScale;
     }
 
     // Order independent owner subtrees before their descendants. Bound the walk

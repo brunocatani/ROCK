@@ -5,6 +5,7 @@
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/core/PhysicsFrameContext.h"
 #include "physics-interaction/core/RockRuntimeState.h"
+#include "physics-interaction/timing/GameFrameTimingPolicy.h"
 #include "physics-interaction/grab/GrabAuthorityProxy.h"
 #include "physics-interaction/grab/GrabInertiaPolicy.h"
 #include "physics-interaction/grab/GrabMotionController.h"
@@ -802,7 +803,8 @@ namespace rock
         }
         const auto target = dynamic_weapon_collision_policy::makeGripAuthorityTarget(_frameRequestedWeaponWorld, _authorityPivotWeaponLocal);
         const auto queued = queueGeneratedKeyframedBodyTarget(_authorityDriveState, target, frame.deltaSeconds,
-            dynamic_weapon_collision_policy::kDivergenceTeleportDistanceGameUnits);
+            dynamic_weapon_collision_policy::kDivergenceTeleportDistanceGameUnits *
+                game_frame_timing_policy::frameMotionScale(frame.deltaSeconds));
         if (!queued.queued) _rebuildRequestedAtomic.store(true, std::memory_order_release);
     }
 
