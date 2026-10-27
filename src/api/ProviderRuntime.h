@@ -29,6 +29,8 @@ namespace rock::provider
     // FRIK 2.3 FrameBegin precedes provider initialization and BeforeRock.
     // Advance event timestamps here without retiring publication-bound leases.
     void beginGameFrame(std::uint64_t frameIndex) noexcept;
+    // The thread FRIK's FrameBegin runs on, fixed by its first call; 0 before it.
+    [[nodiscard]] std::uint32_t frameThread() noexcept;
     void setPhysicsInteractionInstance(rock::PhysicsInteraction* pi);
     void dispatchFrameCallbacks(rock::PhysicsInteraction& pi);
     // Invalidates live reads and releases every lease after provider loss.

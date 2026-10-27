@@ -222,6 +222,109 @@ namespace
     }
 
     /*
+     * Session and skeleton teardown arrive as F4SE messages, not always on the
+     * game thread. A session load (kPostLoadGame / kNewGame) is delivered on
+     * the thread that finished the load while the game thread keeps running
+     * frames, and FRIK's session handler broadcasts kSkeletonDestroying from
+     * that same thread (found in FRIK's Tracy captures, FRIK engineering
+     * backlog). Both tear down PhysicsInteraction, which the game thread uses
+     * mid-frame. So they run only on ROCK's frame thread, the one FRIK's
+     * FrameBegin runs on: at once when the message arrives there, otherwise at
+     * the next FrameBegin. A message handled on the frame thread first runs
+     * whatever is pending, so the teardowns keep the order they arrived in.
+     */
+    std::atomic<std::uint64_t> s_lifecycleArrival{ 0 };
+    // Arrival stamp of a deferred teardown, 0 when none is pending. The first
+    // arrival keeps its place; a repeat before it runs changes nothing more.
+    std::atomic<std::uint64_t> s_pendingSkeletonDestroying{ 0 };
+    std::atomic<std::uint64_t> s_pendingSessionReset{ 0 };
+
+    struct MessageThread
+    {
+        std::uint32_t caller = 0;
+        std::uint32_t frame = 0;
+
+        [[nodiscard]] bool onFrameThread() const noexcept
+        {
+            return frame != 0 && caller == frame;
+        }
+    };
+
+    MessageThread messageThread() noexcept
+    {
+        return { static_cast<std::uint32_t>(GetCurrentThreadId()), rock::provider::frameThread() };
+    }
+
+    void deferLifecycle(std::atomic<std::uint64_t>& pending) noexcept
+    {
+        std::uint64_t none = 0;
+        (void)pending.compare_exchange_strong(none, s_lifecycleArrival.fetch_add(1, std::memory_order_acq_rel) + 1, std::memory_order_acq_rel);
+    }
+
+    void handleFrikSkeletonDestroying()
+    {
+        s_frikSkeletonAnnounced = false;
+        frik_hand_world_authority::resetForSkeletonRelease();
+        bumpGeneration(s_skeletonGeneration);
+        authored_weapon_grip_capture::resetTransientState();
+        s_physicsCreationRequested = false;
+        if (s_physicsInteraction) {
+            s_physicsInteraction->noteSkeletonLifecycle(
+                s_skeletonGeneration.load(std::memory_order_acquire),
+                api::core::LifecycleReason::SkeletonDestroying);
+        }
+        destroyPhysicsInteraction(api::core::LifecycleReason::SkeletonDestroying);
+        // FRIK runs no skeleton phase without a skeleton: drop the input state now.
+        clearUnavailableRuntimeInputState();
+    }
+
+    void resetForNewGameSession()
+    {
+        s_equippedWeaponContinuity = {};
+        const auto providerGeneration = bumpGeneration(s_providerGeneration);
+        s_physicsCreationRequested = false;
+        runtime_state::resetTransientState();
+        authored_weapon_grip_capture::resetTransientState();
+        if (s_physicsInteraction) {
+            s_physicsInteraction->noteProviderLifecycle(
+                providerGeneration,
+                api::core::LifecycleReason::ProviderLost);
+        }
+
+        destroyPhysicsInteraction();
+
+        if (s_frikAvailable) {
+            rock::LooseMolotovVisual::prepareResources();
+            g_rockConfig.reload();
+            input_remap_runtime::configurePipboyInput();
+            game_ini_overrides::update();
+            logger::info("ROCK: Config reloaded for new session.");
+        }
+    }
+
+    // Frame thread only.
+    void runPendingLifecycle()
+    {
+        const auto destroying = s_pendingSkeletonDestroying.exchange(0, std::memory_order_acq_rel);
+        auto session = s_pendingSessionReset.exchange(0, std::memory_order_acq_rel);
+        const auto runSession = [] {
+            logger::info("ROCK: Running the deferred new-session reset on the frame thread.");
+            resetForNewGameSession();
+        };
+        if (session != 0 && (destroying == 0 || session < destroying)) {
+            runSession();
+            session = 0;
+        }
+        if (destroying != 0) {
+            logger::info("ROCK: Running FRIK's deferred kSkeletonDestroying on the frame thread.");
+            handleFrikSkeletonDestroying();
+        }
+        if (session != 0) {
+            runSession();
+        }
+    }
+
+    /*
      * Per-frame housekeeping that runs with or without a FRIK skeleton
      * (FRIK's FrameBegin phase): config reload, INI enforcement, runtime
      * state, input gating and the physics creation gate.
@@ -766,6 +869,8 @@ namespace
      */
     void onFrikFrameBegin()
     {
+        // Teardown a message delivered off the frame thread, before this frame uses any of it.
+        runPendingLifecycle();
         // FrameBegin precedes FRIK's scope-rig carry (WeaponPositionAdjuster::onFrameStart).
         scope_rig_parent_repair::reattachOrphanedScopeRig();
         native_secondary_presentation::beginFrame();
@@ -988,8 +1093,13 @@ namespace
         using LE = frik::api::FRIKApiV2::LifecycleEvent;
 
         switch (static_cast<LE>(msg->type)) {
-        case LE::kSkeletonReady:
-            logger::info("ROCK: Received kSkeletonReady from FRIK.");
+        case LE::kSkeletonReady: {
+            const auto thread = messageThread();
+            logger::info("ROCK: Received kSkeletonReady from FRIK (thread {}, frame thread {}).", thread.caller, thread.frame);
+            // A teardown deferred from another thread happened before this skeleton existed.
+            if (thread.onFrameThread()) {
+                runPendingLifecycle();
+            }
             if (msg->data && msg->dataLen == sizeof(frik::api::FRIKApiV2::SkeletonLifecycleData)) {
                 const auto* lifecycle = static_cast<const frik::api::FRIKApiV2::SkeletonLifecycleData*>(msg->data);
                 logger::info("ROCK: FRIK skeleton generation {} powerArmor={}.", lifecycle->generation, lifecycle->inPowerArmor ? "yes" : "no");
@@ -1003,23 +1113,21 @@ namespace
             s_physicsCreationRequested = true;
             s_frikSkeletonAnnounced = true;
             break;
+        }
 
-        case LE::kSkeletonDestroying:
-            logger::info("ROCK: Received kSkeletonDestroying from FRIK.");
-            s_frikSkeletonAnnounced = false;
-            frik_hand_world_authority::resetForSkeletonRelease();
-            bumpGeneration(s_skeletonGeneration);
-            authored_weapon_grip_capture::resetTransientState();
-            s_physicsCreationRequested = false;
-            if (s_physicsInteraction) {
-                s_physicsInteraction->noteSkeletonLifecycle(
-                    s_skeletonGeneration.load(std::memory_order_acquire),
-                    api::core::LifecycleReason::SkeletonDestroying);
+        case LE::kSkeletonDestroying: {
+            const auto thread = messageThread();
+            if (thread.onFrameThread()) {
+                logger::info("ROCK: Received kSkeletonDestroying from FRIK (thread {}).", thread.caller);
+                runPendingLifecycle();
+                handleFrikSkeletonDestroying();
+            } else {
+                logger::info("ROCK: Received kSkeletonDestroying from FRIK on thread {}, not the frame thread {}; teardown deferred to the next FrameBegin.",
+                    thread.caller, thread.frame);
+                deferLifecycle(s_pendingSkeletonDestroying);
             }
-            destroyPhysicsInteraction(api::core::LifecycleReason::SkeletonDestroying);
-            // FRIK runs no skeleton phase without a skeleton: drop the input state now.
-            clearUnavailableRuntimeInputState();
             break;
+        }
 
         case LE::kScopeEnter:
         case LE::kScopeExit:
@@ -1156,26 +1264,16 @@ namespace
         }
 
         if (msg->type == F4SE::MessagingInterface::kPostLoadGame || msg->type == F4SE::MessagingInterface::kNewGame) {
-            logger::info("ROCK: New game session -- resetting PhysicsInteraction...");
-            s_equippedWeaponContinuity = {};
-            const auto providerGeneration = bumpGeneration(s_providerGeneration);
-            s_physicsCreationRequested = false;
-            runtime_state::resetTransientState();
-            authored_weapon_grip_capture::resetTransientState();
-            if (s_physicsInteraction) {
-                s_physicsInteraction->noteProviderLifecycle(
-                    providerGeneration,
-                    api::core::LifecycleReason::ProviderLost);
-            }
-
-            destroyPhysicsInteraction();
-
-            if (s_frikAvailable) {
-                rock::LooseMolotovVisual::prepareResources();
-                g_rockConfig.reload();
-                input_remap_runtime::configurePipboyInput();
-                game_ini_overrides::update();
-                logger::info("ROCK: Config reloaded for new session.");
+            const auto thread = messageThread();
+            // Without FRIK no frame runs ROCK, so there is no frame thread to wait for.
+            if (!s_frikAvailable || thread.onFrameThread()) {
+                logger::info("ROCK: New game session (thread {}) -- resetting PhysicsInteraction...", thread.caller);
+                runPendingLifecycle();
+                resetForNewGameSession();
+            } else {
+                logger::info("ROCK: New game session on thread {}, not the frame thread {}; reset deferred to the next FrameBegin.",
+                    thread.caller, thread.frame);
+                deferLifecycle(s_pendingSessionReset);
             }
         }
     }

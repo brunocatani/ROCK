@@ -1998,6 +1998,11 @@ namespace rock::provider
         support_trigger_input::beginFrame(frameIndex);
     }
 
+    std::uint32_t frameThread() noexcept
+    {
+        return s_frameThreadOwner.owner();
+    }
+
     void setPhysicsInteractionInstance(rock::PhysicsInteraction* pi)
     {
         if(!pi) { physical_reload_input::reset(); support_trigger_input::reset(); }

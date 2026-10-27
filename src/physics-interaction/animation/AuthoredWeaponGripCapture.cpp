@@ -641,6 +641,19 @@ namespace rock::authored_weapon_grip_capture
 
         void onNativeGraphOutputPhase()
         {
+            // FRIK's detour can run on a loading thread during a load (FRIK's
+            // engineering backlog). The capture rebuilds bone caches the game
+            // thread reads and the dispatch serves frame-thread consumers, so
+            // any thread but the one FRIK's FrameBegin runs on is refused.
+            const auto frameThread = provider::frameThread();
+            if (frameThread == 0 || frameThread != GetCurrentThreadId()) {
+                if (frameThread != 0) {
+                    ROCK_LOG_SAMPLE_WARN(Animation, 5000,
+                        "NativeGraphOutput refused on thread {}: not the frame thread {}; graph capture skipped",
+                        GetCurrentThreadId(), frameThread);
+                }
+                return;
+            }
 #if defined(_MSC_VER)
             __try {
                 // Animation addons capture first and may publish their ROCK V1
