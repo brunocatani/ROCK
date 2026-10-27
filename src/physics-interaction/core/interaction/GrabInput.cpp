@@ -2220,6 +2220,10 @@ namespace rock
 
             shoulder_stash::Decision stashDecision{};
             if (!consumeCandidateActive && stashEligibility.eligible) {
+                auto stashConfig = makeShoulderStashDetectorConfig();
+                stashConfig.recentContactSeconds = _contacts.clock.freshnessWindowSeconds(stashConfig.recentContactSeconds);
+                stashConfig.sustainedContactMissSeconds =
+                    _contacts.clock.freshnessWindowSeconds(stashConfig.sustainedContactMissSeconds);
                 stashDecision = shoulder_stash::evaluate(shoulder_stash::DetectorInput{
                         .world = hknp,
                         .bodyColliders = &_bodyBoneColliders,
@@ -2234,7 +2238,7 @@ namespace rock
                         .hmdPositionWorld = frame.hmdPositionWorld,
                         .hmdForwardWorld = frame.hmdForwardWorld,
                         .deltaSeconds = frame.deltaSeconds,
-                        .config = makeShoulderStashDetectorConfig(),
+                        .config = stashConfig,
                     },
                     shoulderStashState);
             } else {
@@ -2724,10 +2728,12 @@ namespace rock
             const bool releaseSuppressed = provider::hasHandInputSuppressionFlag(
                 provider::currentHandInputSuppressionFlags(isLeft ? api::Hand::Left : api::Hand::Right),
                 ::rock::api::input::HandInputSuppressionFlag::SuppressGrabRelease);
+            // A frame without controller velocity (hitch) or hand input only
+            // delays the pull gesture; it is not a reason to drop the lock.
             if (!runtime_state::isLocalSkeletonReady() || !frame.worldReady || frame.menuBlocked ||
-                    input.disabled || !input.hasGestureVelocity || !physicsWritesAllowedForWorld(frame.hknpWorld) ||
+                    !physicsWritesAllowedForWorld(frame.hknpWorld) ||
                     (!releaseSuppressed && !readGrabButtonHeld(isLeft, input_remap_policy::kGrabButtonId))) {
-                cancelLockedFarSelection(hand, isLeft, "input-tracking-or-world-unavailable");
+                cancelLockedFarSelection(hand, isLeft, "world-or-grab-button-unavailable");
             }
         }
 

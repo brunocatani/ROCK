@@ -415,7 +415,7 @@ namespace rock
         std::uint32_t getTouchedBodyId() const
         {
             const double stamp = _touchStampSeconds.load(std::memory_order_acquire);
-            if (_contactClock.seconds() - stamp >= kTouchActiveWindowSeconds) {
+            if (_contactClock.seconds() - stamp >= _contactClock.freshnessWindowSeconds(kTouchActiveWindowSeconds)) {
                 return hand_semantic_contact_state::kInvalidBodyId;
             }
             return _touchBodyId.load(std::memory_order_acquire);

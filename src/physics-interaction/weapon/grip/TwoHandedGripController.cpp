@@ -1,4 +1,5 @@
 #include "physics-interaction/native/SceneRelation.h"
+#include "physics-interaction/timing/GameFrameTimingPolicy.h"
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
 
@@ -558,7 +559,9 @@ namespace rock
                 // timeout instead of advancing it by fabricated time.
                 _touchAbsentSeconds +=
                     std::isfinite(dt) && dt > 0.0f ? dt : 0.0f;
-                if (_touchAbsentSeconds > TOUCH_TIMEOUT_SECONDS) {
+                // Five missed frames at 90 Hz; at low frame rates one missed
+                // contact frame alone outlasts that time.
+                if (_touchAbsentSeconds > TOUCH_TIMEOUT_SECONDS * game_frame_timing_policy::frameMotionScale(dt)) {
                     _session.state = TwoHandedState::Inactive;
                     break;
                 }

@@ -113,6 +113,7 @@ namespace rock::dynamic_hand_surface_contact_state
                 _epoch.load(std::memory_order_acquire);
             const std::uint32_t currentFrame = _clock.frame();
             const double nowSeconds = _clock.seconds();
+            const float maximumAge = _clock.freshnessWindowSeconds(maximumAgeSeconds);
 
             for (const auto& slot : _slots[isLeft ? 1u : 0u]) {
                 for (int attempt = 0; attempt < 3; ++attempt) {
@@ -175,7 +176,7 @@ namespace rock::dynamic_hand_surface_contact_state
                     if (contactEpoch != currentEpoch ||
                         contact.handBodyId == hand_semantic_contact_state::kInvalidBodyId ||
                         contact.otherBodyId == hand_semantic_contact_state::kInvalidBodyId ||
-                        contact.secondsSinceContact > maximumAgeSeconds) {
+                        contact.secondsSinceContact > maximumAge) {
                         break;
                     }
                     if (contact.hasContactPointGame &&

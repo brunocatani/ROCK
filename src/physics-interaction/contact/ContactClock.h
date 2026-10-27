@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/timing/GameFrameTimingPolicy.h"
+
 #include <atomic>
 #include <cmath>
 #include <cstdint>
@@ -28,14 +30,28 @@ namespace rock::contact_clock
             _frame.fetch_add(1, std::memory_order_acq_rel);
             if (std::isfinite(validDeltaSeconds) && validDeltaSeconds > 0.0f) {
                 _seconds.store(_seconds.load(std::memory_order_relaxed) + validDeltaSeconds, std::memory_order_release);
+                _lastDeltaSeconds.store(validDeltaSeconds, std::memory_order_release);
             }
         }
 
         [[nodiscard]] std::uint32_t frame() const noexcept { return _frame.load(std::memory_order_acquire); }
         [[nodiscard]] double seconds() const noexcept { return _seconds.load(std::memory_order_acquire); }
 
+        /*
+         * Freshness windows were tuned as frame counts at 90 Hz (a contact
+         * event may skip a few steps). Seconds alone shrink that tolerance at
+         * low frame rates: one 15 fps frame already outlasts a five-frame
+         * 90 Hz window, so a held contact expired after a single missed event.
+         * Scale the window by the last frame length; never below the base.
+         */
+        [[nodiscard]] float freshnessWindowSeconds(float baseSeconds) const noexcept
+        {
+            return baseSeconds * game_frame_timing_policy::frameMotionScale(_lastDeltaSeconds.load(std::memory_order_acquire));
+        }
+
     private:
         std::atomic<std::uint32_t> _frame{ 0 };
         std::atomic<double> _seconds{ 0.0 };
+        std::atomic<float> _lastDeltaSeconds{ 0.0f };
     };
 }

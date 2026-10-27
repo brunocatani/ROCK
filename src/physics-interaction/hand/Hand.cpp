@@ -2026,7 +2026,7 @@ namespace rock
                 if (record.hasContactNormalGame && !hand_semantic_contact_state::hasUsableContactNormal(record)) {
                     record.hasContactNormalGame = false;
                 }
-                if (record.secondsSinceContact <= maxAgeSeconds) {
+                if (record.secondsSinceContact <= _contactClock.freshnessWindowSeconds(maxAgeSeconds)) {
                     contacts.add(record);
                 }
                 break;
@@ -2644,7 +2644,7 @@ namespace rock
                     true,
                     contact,
                     bodyId,
-                    oppositionMaxAgeSeconds);
+                    _contactClock.freshnessWindowSeconds(oppositionMaxAgeSeconds));
                 if (!semanticDecision.accept) {
                     lastMissReason = semanticDecision.reason;
                     continue;
