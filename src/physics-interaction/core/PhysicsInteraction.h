@@ -223,8 +223,6 @@ namespace rock
         void releaseObject(RE::TESObjectREFR* ref, PhysicsObjectClaimOwner owner = PhysicsObjectClaimOwner::External);
         void releaseAllObjects();
 
-        void forceDropHeldObject(bool isLeft);
-
         // Native input dispatch runs on the game thread. Complete collision
         // protection before the native handler can create its grenade/preview.
         bool protectNativeGrenadeThrow();

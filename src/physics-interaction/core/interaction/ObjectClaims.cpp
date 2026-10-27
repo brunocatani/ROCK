@@ -83,30 +83,4 @@ namespace rock
 
         (void)frik_visual_authority::blockOffHandWeaponGripping("ROCK_Physics", false);
     }
-
-    void PhysicsInteraction::forceDropHeldObject(bool isLeft)
-    {
-        auto& hand = isLeft ? _leftHand : _rightHand;
-        if (!hand.isHolding())
-            return;
-
-        auto* bhk = getPlayerBhkWorld();
-        if (!bhk) {
-            ROCK_LOG_WARN(Hand, "forceDropHeldObject: no bhkWorld available");
-            return;
-        }
-        auto* hknp = getHknpWorld(bhk);
-        if (!hknp) {
-            ROCK_LOG_WARN(Hand, "forceDropHeldObject: no hknpWorld available");
-            return;
-        }
-
-        auto* heldRef = hand.getHeldRef();
-        ROCK_LOG_INFO(Hand, "forceDropHeldObject: {} hand dropping {}", isLeft ? "Left" : "Right", heldRef ? heldRef->GetFormID() : 0);
-
-        hand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Delayed, makeGrabReleaseContext(hand, isLeft));
-        if (heldRef)
-            releaseObject(heldRef, claimOwnerForHand(isLeft));
-        dispatchSimpleGrabEvent(GrabEventType::Released, isLeft, heldRef);
-    }
 }
