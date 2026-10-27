@@ -88,6 +88,14 @@ namespace rock::testbench_telemetry
         NodeSample room{};
         NodeSample hmdNode{};
         NodeSample wand[2]{}; // left, right
+        // The player's heading (radians, the reference's angle z) and position. The body follows
+        // the head, so the heading is not the room turn the game applies to the VR nodes.
+        bool playerPoseValid = false;
+        float playerHeading = 0.0f;
+        float playerPosition[3]{};
+        // The tracking-space poses the game received this frame (IVRCompositor::GetLastPoses):
+        // head, left hand, right hand; metres, rotation rows of the device-to-absolute matrix.
+        NodeSample rawPose[3]{};
     };
 
     [[nodiscard]] bool enabled() noexcept;

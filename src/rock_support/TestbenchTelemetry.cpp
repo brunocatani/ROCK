@@ -17,7 +17,7 @@ namespace rock::testbench_telemetry
     {
         constexpr wchar_t kSectionName[] = L"Local\\RPS_Telemetry_ROCK";
         constexpr std::uint32_t kMagic = 0x54535052; // "RPST", shared with the bench's input ring
-        constexpr std::uint32_t kSchemaVersion = 4;
+        constexpr std::uint32_t kSchemaVersion = 5;
         constexpr std::uint32_t kRecordSize = 2048;
         constexpr std::uint32_t kCapacity = 8192; // ~20 s at 90 Hz with a full skeleton; readers poll at 10 Hz
         constexpr std::uint32_t kNameTableRepeatFrames = 300;
@@ -114,8 +114,11 @@ namespace rock::testbench_telemetry
             float roomScale;
             NodeRecord hmdNode;
             NodeRecord wand[2]; // left (secondary), right (primary)
+            float playerPosition[3];
+            float playerHeading; // radians
+            NodeRecord rawPose[3]; // head, left, right in OpenVR tracking space (metres)
         };
-        static_assert(sizeof(FrameRecord) == 588);
+        static_assert(sizeof(FrameRecord) == 748);
 
         struct EventRecord
         {
@@ -167,6 +170,10 @@ namespace rock::testbench_telemetry
             kFlagLeftWandValid = 1u << 10,
             kFlagRightWandValid = 1u << 11,
             kFlagPhysicsFrame = 1u << 12,
+            kFlagPlayerPoseValid = 1u << 13,
+            kFlagRawHeadValid = 1u << 14,
+            kFlagRawLeftValid = 1u << 15,
+            kFlagRawRightValid = 1u << 16,
         };
 
         struct HandInputAccumulator
@@ -495,7 +502,9 @@ namespace rock::testbench_telemetry
                        (frame.worldReady ? kFlagWorldReady : 0u) | (frame.hasHmd ? kFlagHasHmd : 0u) |
                        (frame.room.valid ? kFlagRoomValid : 0u) | (frame.hmdNode.valid ? kFlagHmdNodeValid : 0u) |
                        (frame.wand[0].valid ? kFlagLeftWandValid : 0u) | (frame.wand[1].valid ? kFlagRightWandValid : 0u) |
-                       (frame.physicsFrame ? kFlagPhysicsFrame : 0u);
+                       (frame.physicsFrame ? kFlagPhysicsFrame : 0u) | (frame.playerPoseValid ? kFlagPlayerPoseValid : 0u) |
+                       (frame.rawPose[0].valid ? kFlagRawHeadValid : 0u) | (frame.rawPose[1].valid ? kFlagRawLeftValid : 0u) |
+                       (frame.rawPose[2].valid ? kFlagRawRightValid : 0u);
         record.droppedEvents = dropped;
         record.failedReads = s_failedReads.exchange(0, std::memory_order_relaxed);
         record.noHandRoleReads = s_noHandRoleReads.exchange(0, std::memory_order_relaxed);
@@ -506,6 +515,11 @@ namespace rock::testbench_telemetry
         copyNode(record.hmdNode, frame.hmdNode);
         copyNode(record.wand[0], frame.wand[0]);
         copyNode(record.wand[1], frame.wand[1]);
+        copyVector(record.playerPosition, frame.playerPosition);
+        record.playerHeading = frame.playerHeading;
+        for (std::size_t i = 0; i < 3; ++i) {
+            copyNode(record.rawPose[i], frame.rawPose[i]);
+        }
         for (std::size_t i = 0; i < 2; ++i) {
             const auto& hand = frame.hand[i];
             auto& out = record.hand[i];

@@ -10,6 +10,8 @@
 #include "physics-interaction/weapon/NativeSecondaryPresentation.h"
 #include "rock_support/TestbenchTelemetry.h"
 
+#include <openvr.h>
+
 // Per-frame orchestration: update(), interaction frame finalization, hand transform sampling, physics substep callbacks, held-mass slowdown, and the frame/debug-overlay implementation includes.
 
 namespace rock
@@ -559,6 +561,13 @@ namespace rock
         sample.loadingMenuOpen = runtime.localLoadingMenuOpen;
         sample.gameStopped = runtime.localGameStopped;
         sample.inputMenuBlocking = runtime.inputMenuBlocking;
+        if (const auto* player = f4vr::getPlayer()) {
+            sample.playerPoseValid = true;
+            sample.playerHeading = player->data.angle.z;
+            sample.playerPosition[0] = player->data.location.x;
+            sample.playerPosition[1] = player->data.location.y;
+            sample.playerPosition[2] = player->data.location.z;
+        }
         if (const auto* nodes = f4vr::getPlayerNodes()) {
             const auto copyNode = [](const RE::NiNode* node, testbench_telemetry::NodeSample& out) {
                 if (!node) {
@@ -580,6 +589,33 @@ namespace rock
             copyNode(nodes->HmdNode, sample.hmdNode);
             copyNode(nodes->SecondaryWandNode, sample.wand[0]);
             copyNode(nodes->primaryWandNode, sample.wand[1]);
+        }
+        // Tracking space as the game received it, before its room and heading transforms; the
+        // test bench replays these poses through its driver.
+        auto* system = vr::VRSystem();
+        auto* compositor = vr::VRCompositor();
+        std::array<vr::TrackedDevicePose_t, vr::k_unMaxTrackedDeviceCount> poses{};
+        if (system && compositor &&
+            compositor->GetLastPoses(poses.data(), static_cast<std::uint32_t>(poses.size()), nullptr, 0) == vr::VRCompositorError_None) {
+            const std::array<vr::TrackedDeviceIndex_t, 3> devices{
+                vr::k_unTrackedDeviceIndex_Hmd,
+                system->GetTrackedDeviceIndexForControllerRole(vr::TrackedControllerRole_LeftHand),
+                system->GetTrackedDeviceIndexForControllerRole(vr::TrackedControllerRole_RightHand),
+            };
+            for (std::size_t i = 0; i < devices.size(); ++i) {
+                if (devices[i] >= poses.size() || !poses[devices[i]].bPoseIsValid) {
+                    continue;
+                }
+                const auto& m = poses[devices[i]].mDeviceToAbsoluteTracking.m;
+                auto& out = sample.rawPose[i];
+                for (int row = 0; row < 3; ++row) {
+                    out.position[row] = m[row][3];
+                    out.rotation[row * 3 + 0] = m[row][0];
+                    out.rotation[row * 3 + 1] = m[row][1];
+                    out.rotation[row * 3 + 2] = m[row][2];
+                }
+                out.valid = true;
+            }
         }
         testbench_telemetry::publishFrame(settingOn, sample);
     }
