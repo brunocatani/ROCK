@@ -17,7 +17,7 @@ namespace rock::testbench_telemetry
     {
         constexpr wchar_t kSectionName[] = L"Local\\RPS_Telemetry_ROCK";
         constexpr std::uint32_t kMagic = 0x54535052; // "RPST", shared with the bench's input ring
-        constexpr std::uint32_t kSchemaVersion = 3;
+        constexpr std::uint32_t kSchemaVersion = 4;
         constexpr std::uint32_t kRecordSize = 2048;
         constexpr std::uint32_t kCapacity = 8192; // ~20 s at 90 Hz with a full skeleton; readers poll at 10 Hz
         constexpr std::uint32_t kNameTableRepeatFrames = 300;
@@ -166,6 +166,7 @@ namespace rock::testbench_telemetry
             kFlagHmdNodeValid = 1u << 9,
             kFlagLeftWandValid = 1u << 10,
             kFlagRightWandValid = 1u << 11,
+            kFlagPhysicsFrame = 1u << 12,
         };
 
         struct HandInputAccumulator
@@ -493,7 +494,8 @@ namespace rock::testbench_telemetry
                        (frame.gameStopped ? kFlagGameStopped : 0u) | (frame.inputMenuBlocking ? kFlagInputMenuBlocking : 0u) |
                        (frame.worldReady ? kFlagWorldReady : 0u) | (frame.hasHmd ? kFlagHasHmd : 0u) |
                        (frame.room.valid ? kFlagRoomValid : 0u) | (frame.hmdNode.valid ? kFlagHmdNodeValid : 0u) |
-                       (frame.wand[0].valid ? kFlagLeftWandValid : 0u) | (frame.wand[1].valid ? kFlagRightWandValid : 0u);
+                       (frame.wand[0].valid ? kFlagLeftWandValid : 0u) | (frame.wand[1].valid ? kFlagRightWandValid : 0u) |
+                       (frame.physicsFrame ? kFlagPhysicsFrame : 0u);
         record.droppedEvents = dropped;
         record.failedReads = s_failedReads.exchange(0, std::memory_order_relaxed);
         record.noHandRoleReads = s_noHandRoleReads.exchange(0, std::memory_order_relaxed);

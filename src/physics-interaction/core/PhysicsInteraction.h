@@ -7,6 +7,7 @@
 #include "physics-interaction/grenade/LooseMolotovVisual.h"
 
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
+#include "rock_support/TestbenchTelemetry.h"
 
 #include <ROCK/Hands.h>
 #include <array>
@@ -345,6 +346,9 @@ namespace rock
         void captureProviderPresentedHandPoses();
         // Developer test-bench telemetry: the skeleton captured just above, when enabled.
         void publishTestbenchSkeleton() const;
+        // Developer test-bench telemetry: one frame record per game frame, from FRIK's
+        // FrameEnd, so menus (where the physics update does not run) are recorded too.
+        void publishTestbenchFrame();
         void publishDebugRenderFrame();
 
     private:
@@ -446,7 +450,7 @@ namespace rock
         void finalizeInteractionFrame(const PhysicsFrameContext& frame,
             RE::hknpWorld* hknp,
             const EquippedWeaponFrameResult& equippedWeaponFrame);
-        void publishTestbenchTelemetry(const PhysicsFrameContext& frame);
+        void captureTestbenchFrame(const PhysicsFrameContext& frame);
         GrabReleaseContext makeGrabReleaseContext(const Hand& hand, bool isLeft) const;
         GrabSharedObjectContext makeGrabSharedObjectContext(const Hand& hand, bool isLeft) const;
 
@@ -1087,6 +1091,8 @@ namespace rock
         // stable. API readback and both collider owners share this final copy.
         DirectSkeletonBoneReader _finalPoseBoneReader;
         DirectSkeletonBoneSnapshot _finalPoseBoneSnapshot;
+        // This frame's physics fields for publishTestbenchFrame(); frame thread only.
+        testbench_telemetry::FrameSample _testbenchPhysicsSample{};
         HandFrameResolver _handFrameResolver;
         // Last native recoil kick the FRIK recoil controller saw; a change
         // marks a frame whose rendered hand carries a composed kick.

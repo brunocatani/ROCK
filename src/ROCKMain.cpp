@@ -911,6 +911,7 @@ namespace
         if (!s_providerTickedThisFrame) {
             runFrameTick(false);
         }
+        if (s_physicsInteraction) s_physicsInteraction->publishTestbenchFrame();
         grip_zone_indicators::EndFrame(game_timing::currentFrameTiming().sequence);
         performance_profiler::endFrame();
     }

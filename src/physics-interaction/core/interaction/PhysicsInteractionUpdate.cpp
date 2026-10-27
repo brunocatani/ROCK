@@ -471,7 +471,7 @@ namespace rock
         // registers the callback only after all collider targets are committed.
         _frame.poseFrameIndex = frame.timing.sequence;
         _frame.gripZoneIndicatorFrameIndex = frame.timing.sequence;
-        publishTestbenchTelemetry(frame);
+        captureTestbenchFrame(frame);
     }
 
     void PhysicsInteraction::publishTestbenchSkeleton() const
@@ -499,22 +499,17 @@ namespace rock
         testbench_telemetry::publishSkeleton(runtime_state::currentFrame().timing.sequence, skeleton.topologyRevision, bones);
     }
 
-    void PhysicsInteraction::publishTestbenchTelemetry(const PhysicsFrameContext& frame)
+    void PhysicsInteraction::captureTestbenchFrame(const PhysicsFrameContext& frame)
     {
-        const bool settingOn = g_rockConfig.rockDebugTestbenchTelemetry;
-        if (!settingOn && !testbench_telemetry::enabled()) {
+        if (!g_rockConfig.rockDebugTestbenchTelemetry && !testbench_telemetry::enabled()) {
             return;
         }
-        const auto& runtime = runtime_state::currentFrame();
-        testbench_telemetry::FrameSample sample{};
+        // Physics fields only; publishTestbenchFrame() adds the per-frame state at FrameEnd.
+        auto& sample = _testbenchPhysicsSample;
+        sample = {};
+        sample.physicsFrame = true;
         sample.frameIndex = frame.timing.sequence;
         sample.deltaSeconds = frame.deltaSeconds;
-        sample.playerAvailable = runtime.playerAvailable;
-        sample.weaponDrawn = runtime.weaponDrawn;
-        sample.menuBlocking = runtime.localMenuBlocking;
-        sample.loadingMenuOpen = runtime.localLoadingMenuOpen;
-        sample.gameStopped = runtime.localGameStopped;
-        sample.inputMenuBlocking = runtime.inputMenuBlocking;
         sample.worldReady = frame.worldReady;
         sample.hasHmd = frame.hasHmdFrame;
         sample.hmdPosition[0] = frame.hmdPositionWorld.x;
@@ -540,6 +535,30 @@ namespace rock
             out.hasVelocity = input->hasGestureVelocity;
             out.disabled = input->disabled;
         }
+    }
+
+    void PhysicsInteraction::publishTestbenchFrame()
+    {
+        const bool settingOn = g_rockConfig.rockDebugTestbenchTelemetry;
+        if (!settingOn && !testbench_telemetry::enabled()) {
+            return;
+        }
+        const auto& runtime = runtime_state::currentFrame();
+        // A menu frame keeps the empty physics fields; a stale capture from an earlier frame is
+        // never republished.
+        testbench_telemetry::FrameSample sample{};
+        if (_testbenchPhysicsSample.physicsFrame && _testbenchPhysicsSample.frameIndex == runtime.timing.sequence) {
+            sample = _testbenchPhysicsSample;
+        } else {
+            sample.frameIndex = runtime.timing.sequence;
+            sample.deltaSeconds = runtime.timing.deltaSeconds;
+        }
+        sample.playerAvailable = runtime.playerAvailable;
+        sample.weaponDrawn = runtime.weaponDrawn;
+        sample.menuBlocking = runtime.localMenuBlocking;
+        sample.loadingMenuOpen = runtime.localLoadingMenuOpen;
+        sample.gameStopped = runtime.localGameStopped;
+        sample.inputMenuBlocking = runtime.inputMenuBlocking;
         if (const auto* nodes = f4vr::getPlayerNodes()) {
             const auto copyNode = [](const RE::NiNode* node, testbench_telemetry::NodeSample& out) {
                 if (!node) {

@@ -75,6 +75,10 @@ namespace rock::testbench_telemetry
         bool inputMenuBlocking = false;
         bool worldReady = false;
         bool hasHmd = false;
+        // ROCK's physics update ran this frame. Frames are published every game frame,
+        // menus included; without physics only the runtime state, the player's VR nodes and
+        // the controller input are current, and the hand fields are empty.
+        bool physicsFrame = false;
         float hmdPosition[3]{};
         float hmdForward[3]{};
         HandFrameSample hand[2]{}; // left, right
