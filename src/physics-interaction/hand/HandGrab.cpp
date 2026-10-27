@@ -8989,8 +8989,11 @@ namespace rock
         if (!peer->resolveGrabAuthorityProxyFrame(world, peerProxy,
                 peerSource, GrabAuthorityProxyFramePolicy::PreferQueuedPalmTarget) ||
             !frik_hand_world_authority::filterHeldProxyWorld(peer->_isLeft, peerProxy)) {
-            ROCK_LOG_WARN(Hand, "Loose two-hand pivot missing peer palm source={}", peerSource);
-            return false;
+            // A peer palm frame missing for a frame is not release intent: this
+            // hand keeps its own target and the pair resumes when it returns.
+            ROCK_LOG_SAMPLE_WARN(Hand, 1000, "Loose two-hand pivot missing peer palm source={}; holding own target", peerSource);
+            proxyWorld = correctedProxy(*this, proxyWorld);
+            return isFiniteNiTransform(proxyWorld);
         }
         // A firing seat owns the pivot. For two arbitrary mesh seats, keep
         // the first grab as the pivot until that hand releases.
@@ -10029,15 +10032,13 @@ namespace rock
                 pending.deltaTime,
                 _grabAuthorityProxyQueuedSequence);
             livePalmReferenceOk = tryResolveLivePalmAnchorReference(world, livePalmReference);
-            if (!livePalmReferenceOk) {
-                ++_grabAuthorityProxyFailedFlushes;
-                _grabAuthorityProxyReleasePending.store(true, std::memory_order_release);
-            }
             /*
              * The game-frame held update owns pending.proxyWorld. Rebinding it
              * here to the live palm body reintroduced one-Havok-tick latency
              * during stick locomotion, even after collider targets were bridged.
-             * Keep live palm as a fail-closed health/telemetry read only.
+             * The live palm body supplies only the proxy's angular velocity and
+             * telemetry. A palm collider that is missing or being rebuilt must
+             * not stop the drive: that released the held object.
              */
             previousProxyWorld = _hasLastAppliedGrabAuthorityProxyWorld ? _lastAppliedGrabAuthorityProxyWorld : pending.proxyWorld;
             proxyBodyId = _grabAuthorityProxy.getBodyId();
@@ -10068,7 +10069,7 @@ namespace rock
                 angularVelocityHavok[1] = livePalmReference.angularVelocityRadiansPerSecond.y;
                 angularVelocityHavok[2] = livePalmReference.angularVelocityRadiansPerSecond.z;
                 proxyVelocityTelemetryOk = true;
-            } else if (livePalmReferenceOk) {
+            } else {
                 proxyVelocityTelemetryOk = computeHardKeyframeVelocityForTarget(
                     world,
                     proxyBodyId,
@@ -10084,19 +10085,17 @@ namespace rock
                 angularVelocityHavok[0] * angularVelocityHavok[0] + angularVelocityHavok[1] * angularVelocityHavok[1] +
                 angularVelocityHavok[2] * angularVelocityHavok[2]);
 
-            if (livePalmReferenceOk) {
-                queueGeneratedKeyframedBodyTarget(_grabAuthorityProxyDriveState, pending.proxyWorld, driveDelta, 1000.0f);
-                proxyDriveResult = driveGeneratedKeyframedBody(
-                    world,
-                    _grabAuthorityProxy,
-                    _grabAuthorityProxyDriveState,
-                    timing,
-                    "grab-authority-proxy",
-                    0,
-                    g_rockConfig.rockHandBoneColliderMaxLinearVelocity,
-                    g_rockConfig.rockHandBoneColliderMaxAngularVelocity);
-                proxyDriveOk = proxyDriveResult.driven;
-            }
+            queueGeneratedKeyframedBodyTarget(_grabAuthorityProxyDriveState, pending.proxyWorld, driveDelta, 1000.0f);
+            proxyDriveResult = driveGeneratedKeyframedBody(
+                world,
+                _grabAuthorityProxy,
+                _grabAuthorityProxyDriveState,
+                timing,
+                "grab-authority-proxy",
+                0,
+                g_rockConfig.rockHandBoneColliderMaxLinearVelocity,
+                g_rockConfig.rockHandBoneColliderMaxAngularVelocity);
+            proxyDriveOk = proxyDriveResult.driven;
             if (proxyDriveOk) {
                 proxyReadbackBetweenOk =
                     tryResolveLiveBodyWorldTransform(world, proxyBodyId, proxyReadbackBetween, &proxyReadbackSourceBetween, &proxyReadbackMotionIndexBetween);
