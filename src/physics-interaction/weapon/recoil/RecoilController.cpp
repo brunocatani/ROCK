@@ -230,6 +230,11 @@ namespace rock
             _recoil.ticket.invalidate();
             return false;
         }
+        // Most frames carry no captured recoil; only a pending one needs a
+        // filtered carrier frame.
+        if (!_recoil.ticket.ready || !_recoil.ticket.valid) {
+            return false;
+        }
         RE::NiTransform deliveryDelta = _recoil.worldDelta;
         if (frik_hand_world_authority::weaponFilteringActive()) {
             RE::NiTransform filteredCarrier{};

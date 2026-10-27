@@ -471,7 +471,8 @@ namespace rock::havok_runtime
     {
         PhysicsSystemBodyScanResult result{};
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::PhysicsSystemBodyScan);
-        if (!visitor || maxBodies == 0) {
+        // Tree walkers pass every node's collision slot; most are empty.
+        if (!collisionObject || !visitor || maxBodies == 0) {
             result.status = PhysicsSystemBodyScanStatus::InvalidArguments;
             return result;
         }
