@@ -761,6 +761,13 @@ namespace rock
          * input.
          */
         GrabButtonState grabInput = consumeHandGrabInput();
+        // Edges latch across every controller sample since the last frame. A
+        // grip that is down again at read time is still held: on a slow frame
+        // its latched release and re-press arrive together, and acting on the
+        // release dropped the object with no regrab.
+        if (grabInput.held) {
+            grabInput.released = false;
+        }
         if (inputSuppressionState.deferredGrabRelease) {
             if (grabInput.held) {
                 inputSuppressionState.deferredGrabRelease = false;

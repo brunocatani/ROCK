@@ -362,8 +362,6 @@ namespace rock::held_object_contact_policy
 
 namespace rock::held_object_physics_math
 {
-    inline constexpr float kMaxGrabAuthorityTargetDeltaSeconds = 0.05f;
-
     /*
      * Pure held-object motion formulas shared by the constraint code and the
      * release path so both use one velocity convention.
@@ -401,11 +399,6 @@ namespace rock::held_object_physics_math
     inline float finitePositiveOrZero(float value)
     {
         return std::isfinite(value) && value > 0.0f ? value : 0.0f;
-    }
-
-    inline bool shouldQueueGrabAuthorityTargetForDelta(float deltaTime)
-    {
-        return std::isfinite(deltaTime) && deltaTime > 0.0f && deltaTime <= kMaxGrabAuthorityTargetDeltaSeconds;
     }
 
     /*

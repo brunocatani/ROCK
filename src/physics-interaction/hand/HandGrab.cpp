@@ -9137,8 +9137,8 @@ namespace rock
             // Both endpoints ride the current physical hand frame. The fixed
             // body-local grip follows a straight segment while rotation uses
             // the same fraction; no offset is applied around the body origin.
-            const float acquisitionDelta = held_object_physics_math::shouldQueueGrabAuthorityTargetForDelta(deltaTime) &&
-                _looseWeaponReturnStartFrame != runtime_state::currentFrame().timing.sequence ? deltaTime : 0.0f;
+            const float acquisitionDelta = _looseWeaponReturnStartFrame != runtime_state::currentFrame().timing.sequence ?
+                held_object_physics_math::measuredDeltaOrZero(deltaTime) : 0.0f;
             update.proxyAuthorityWorld = grab_offset_acquisition::advance(_grabOffsetAcquisition,
                 update.proxyAuthorityWorld, _grabFrame.proxyAuthorityBodyHandSpace,
                 _grabFrame.authority.pivotBConstraintLocalGame, acquisitionDelta);
@@ -9257,7 +9257,10 @@ namespace rock
 
         update.authorityForceScale = held_object_drive_policy::sanitizeMotorAuthorityScale(
             sharedGrabAuthorityForceScale(releaseContext.peerHandStillHolding));
-        if (held_object_physics_math::shouldQueueGrabAuthorityTargetForDelta(deltaTime)) {
+        // Every measured frame queues its target, however long it was: a slow
+        // frame is real hand motion. The source clock rebases across hitch
+        // intervals and jumps; skipping the frame left the object behind.
+        if (held_object_physics_math::measuredDeltaOrZero(deltaTime) > 0.0f) {
             queueProxyGrabAuthorityTarget(
                 update.proxyAuthorityWorld,
                 handWorldTransform,
@@ -9269,13 +9272,6 @@ namespace rock
                 update.grabRotationErrorDegrees,
                 update.authorityForceScale,
                 update.heldMotorContactSoftening);
-        } else {
-            ROCK_LOG_SAMPLE_WARN(Hand,
-                500,
-                "{} hand skipped grab authority target after stutter delta dt={:.6f}s threshold={:.3f}s; holding last proxy target",
-                handName(),
-                std::isfinite(deltaTime) ? deltaTime : -1.0f,
-                held_object_physics_math::kMaxGrabAuthorityTargetDeltaSeconds);
         }
 
         update.averageGrabDeviationGameUnits = recordDeviationAverage(
