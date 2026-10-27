@@ -790,6 +790,7 @@ namespace rock
         rockDebugMaxLineVertices = static_cast<int>(overlayLimits.maxLineVertices);
         rockDebugUseBoundsForHeavyConvex = ini.GetBoolValue(SECTION, "bDebugUseBoundsForHeavyConvex", rockDebugUseBoundsForHeavyConvex);
         rockDebugVerboseLogging = ini.GetBoolValue(SECTION, "bDebugVerboseLogging", rockDebugVerboseLogging);
+        rockDebugTestbenchTelemetry = ini.GetBoolValue(SECTION, "bDebugTestbenchTelemetry", rockDebugTestbenchTelemetry);
         rockDebugShowRootFlattenedFingerSkeletonMarkers =
             ini.GetBoolValue(SECTION, "bDebugShowRootFlattenedFingerSkeletonMarkers", rockDebugShowRootFlattenedFingerSkeletonMarkers);
         rockDebugShowSkeletonBoneVisualizer = ini.GetBoolValue(SECTION, "bDebugShowSkeletonBoneVisualizer", rockDebugShowSkeletonBoneVisualizer);

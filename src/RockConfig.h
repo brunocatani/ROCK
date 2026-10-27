@@ -253,6 +253,7 @@ namespace rock
         int rockDebugMaxLineVertices = static_cast<int>(debug_overlay_policy::kDefaultLineVertexBudget);
         bool rockDebugUseBoundsForHeavyConvex = true;
         bool rockDebugVerboseLogging = false;
+        bool rockDebugTestbenchTelemetry = false;
         bool rockDebugShowRootFlattenedFingerSkeletonMarkers = false;
         bool rockDebugShowSkeletonBoneVisualizer = false;
         bool rockDebugDrawSkeletonBoneAxes = false;

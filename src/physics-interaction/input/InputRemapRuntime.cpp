@@ -34,6 +34,7 @@
 #include <F4SE/F4SE.h>
 #include <REL/Relocation.h>
 #include "rock_support/VRControllers.h"
+#include "rock_support/TestbenchTelemetry.h"
 #include <windows.h>
 
 #include <algorithm>
@@ -704,6 +705,21 @@ namespace rock::input_remap_runtime
                    isModuleOnCurrentStack(L"ROCKConfigurator.dll");
         }
 
+        [[nodiscard]] testbench_telemetry::HapticCaller hapticCaller(const void* callerAddress)
+        {
+            HMODULE callerModule = nullptr;
+            if (!callerAddress ||
+                !GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                    reinterpret_cast<LPCWSTR>(callerAddress), &callerModule) ||
+                !callerModule) {
+                return testbench_telemetry::HapticCaller::Other;
+            }
+            if (callerModule == GetModuleHandleW(nullptr)) return testbench_telemetry::HapticCaller::Game;
+            if (callerModule == GetModuleHandleW(L"ROCK.dll")) return testbench_telemetry::HapticCaller::Rock;
+            if (callerModule == GetModuleHandleW(L"FRIK.dll")) return testbench_telemetry::HapticCaller::Frik;
+            return testbench_telemetry::HapticCaller::Other;
+        }
+
         void clearOpenVrControllerStateForGame(vr::VRControllerState_t* state, std::uint32_t stateSize)
         {
             if (!state || stateSize < sizeof(vr::VRControllerState_t)) {
@@ -936,12 +952,66 @@ namespace rock::input_remap_runtime
             observeBareFistCapture((rawTransition.releasedEdges & bare_fist_gesture::kButtons) != 0);
         }
 
+        /*
+         * Game-facing edits to one controller-state read, shared by both
+         * OpenVR state hooks: per-hand trigger/button blanking (physical
+         * reload, support trigger, slot-one trigger ownership), then either
+         * provider suppression (whole state cleared) or the left-hand firing
+         * cross-map. The caller-bypass check walks the stack, so it runs at
+         * most once per read and only when an edit could apply. The bench
+         * telemetry sees the raw and game-facing state and why they differ.
+         */
+        void applyGameControllerStateRemap(const input_remap_policy::Hand hand, const void* callerAddress,
+            vr::VRControllerState_t* state, const std::uint32_t stateSize)
+        {
+            const bool stateValid = state && stateSize >= sizeof(vr::VRControllerState_t);
+            std::optional<bool> bypassCache;
+            const auto bypassed = [&] {
+                if (!bypassCache) {
+                    bypassCache = shouldBypassProviderOpenVrGameInputSuppression(callerAddress);
+                }
+                return *bypassCache;
+            };
+            const bool isLeft = hand == input_remap_policy::Hand::Left;
+            const std::uint64_t rawPressed = stateValid ? state->ulButtonPressed : 0;
+            const float rawTrigger = stateValid ? state->rAxis[1].x : 0.0f;
+            const bool blockingMenu = isInputBlockingMenuActive();
+            std::uint32_t reasons = blockingMenu ? testbench_telemetry::kInputBlockingMenu : 0u;
+
+            if (stateValid && !blockingMenu && !bypassed()) {
+                const auto reloadMask = physical_reload_input::gameMask(isLeft, state->ulButtonPressed);
+                const auto supportMask = support_trigger_input::gameMask(isLeft, state->ulButtonPressed);
+                const auto secondaryMask = secondaryOwnsTrigger(hand) ? (1ull << 33) : 0ull;
+                const auto mask = reloadMask | supportMask | secondaryMask;
+                state->ulButtonPressed &= ~mask;
+                state->ulButtonTouched &= ~mask;
+                if (mask & (1ull << 33)) {
+                    state->rAxis[1] = {};
+                }
+                reasons |= (reloadMask ? testbench_telemetry::kBlankPhysicalReload : 0u) |
+                           (supportMask ? testbench_telemetry::kBlankSupportTrigger : 0u) |
+                           (secondaryMask ? testbench_telemetry::kBlankSecondaryOwnsTrigger : 0u);
+            }
+            if (isProviderOpenVrGameInputSuppressed(hand) && !bypassed()) {
+                clearOpenVrControllerStateForGame(state, stateSize);
+                reasons |= testbench_telemetry::kBlankProviderSuppressed;
+            } else if (shouldRemapLeftHandFireTriggerForGame() && !bypassed()) {
+                applyLeftHandFireTriggerRemapForGame(hand, state, stateSize);
+                reasons |= testbench_telemetry::kLeftFireRemapApplied;
+            }
+            if (stateValid) {
+                testbench_telemetry::observeControllerState(isLeft, rawPressed, state->ulButtonPressed, rawTrigger,
+                    state->rAxis[1].x, reasons, bypassCache.value_or(false));
+            }
+        }
+
         bool hookedGetControllerState(
             vr::IVRSystem* system, vr::TrackedDeviceIndex_t controllerDeviceIndex, vr::VRControllerState_t* controllerState, std::uint32_t controllerStateSize)
         {
             const void* callerAddress = _ReturnAddress();
             const bool result = s_originalGetControllerState ? s_originalGetControllerState(system, controllerDeviceIndex, controllerState, controllerStateSize) : false;
             if (!result) {
+                testbench_telemetry::observeUnobservedRead(testbench_telemetry::UnobservedRead::Failed);
                 input_remap_policy::Hand hand{};
                 if (resolveControllerHand(controllerDeviceIndex, hand)) {
                     s_bareFistSamples[controllerIndex(hand)].store(0, std::memory_order_release);
@@ -952,23 +1022,9 @@ namespace rock::input_remap_runtime
                 captureControllerState(controllerDeviceIndex, controllerState, controllerStateSize);
                 input_remap_policy::Hand hand{};
                 if (resolveControllerHand(controllerDeviceIndex, hand)) {
-                    if(controllerState&&controllerStateSize>=sizeof(vr::VRControllerState_t)&&!isInputBlockingMenuActive()&&
-                        !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
-                        const auto mask=physical_reload_input::gameMask(hand==input_remap_policy::Hand::Left,controllerState->ulButtonPressed) |
-                            support_trigger_input::gameMask(hand==input_remap_policy::Hand::Left,controllerState->ulButtonPressed) |
-                            (secondaryOwnsTrigger(hand) ? (1ull<<33) : 0ull);
-                        controllerState->ulButtonPressed&=~mask;controllerState->ulButtonTouched&=~mask;
-                        if(mask&(1ull<<33))controllerState->rAxis[1]={};
-                    }
-                    if (isProviderOpenVrGameInputSuppressed(hand) &&
-                        !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
-                        clearOpenVrControllerStateForGame(controllerState, controllerStateSize);
-                        return result;
-                    }
-                    if (shouldRemapLeftHandFireTriggerForGame() &&
-                        !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
-                        applyLeftHandFireTriggerRemapForGame(hand, controllerState, controllerStateSize);
-                    }
+                    applyGameControllerStateRemap(hand, callerAddress, controllerState, controllerStateSize);
+                } else {
+                    testbench_telemetry::observeUnobservedRead(testbench_telemetry::UnobservedRead::NoHandRole);
                 }
             }
             return result;
@@ -985,6 +1041,9 @@ namespace rock::input_remap_runtime
             const bool result = s_originalGetControllerStateWithPose ?
                                     s_originalGetControllerStateWithPose(system, origin, controllerDeviceIndex, controllerState, controllerStateSize, trackedDevicePose) :
                                     false;
+            if (!result) {
+                testbench_telemetry::observeUnobservedRead(testbench_telemetry::UnobservedRead::Failed);
+            }
             if (!result || (trackedDevicePose && (!trackedDevicePose->bPoseIsValid || !trackedDevicePose->bDeviceIsConnected))) {
                 input_remap_policy::Hand hand{};
                 if (resolveControllerHand(controllerDeviceIndex, hand)) {
@@ -996,23 +1055,9 @@ namespace rock::input_remap_runtime
                 captureControllerState(controllerDeviceIndex, controllerState, controllerStateSize);
                 input_remap_policy::Hand hand{};
                 if (resolveControllerHand(controllerDeviceIndex, hand)) {
-                    if(controllerState&&controllerStateSize>=sizeof(vr::VRControllerState_t)&&!isInputBlockingMenuActive()&&
-                        !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
-                        const auto mask=physical_reload_input::gameMask(hand==input_remap_policy::Hand::Left,controllerState->ulButtonPressed) |
-                            support_trigger_input::gameMask(hand==input_remap_policy::Hand::Left,controllerState->ulButtonPressed) |
-                            (secondaryOwnsTrigger(hand) ? (1ull<<33) : 0ull);
-                        controllerState->ulButtonPressed&=~mask;controllerState->ulButtonTouched&=~mask;
-                        if(mask&(1ull<<33))controllerState->rAxis[1]={};
-                    }
-                    if (isProviderOpenVrGameInputSuppressed(hand) &&
-                        !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
-                        clearOpenVrControllerStateForGame(controllerState, controllerStateSize);
-                        return result;
-                    }
-                    if (shouldRemapLeftHandFireTriggerForGame() &&
-                        !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
-                        applyLeftHandFireTriggerRemapForGame(hand, controllerState, controllerStateSize);
-                    }
+                    applyGameControllerStateRemap(hand, callerAddress, controllerState, controllerStateSize);
+                } else {
+                    testbench_telemetry::observeUnobservedRead(testbench_telemetry::UnobservedRead::NoHandRole);
                 }
             }
             return result;
@@ -1047,6 +1092,13 @@ namespace rock::input_remap_runtime
                     if (leftIndex != vr::k_unTrackedDeviceIndexInvalid) {
                         targetDeviceIndex = leftIndex;
                     }
+                }
+            }
+            if (testbench_telemetry::enabled()) {
+                input_remap_policy::Hand pulseHand{};
+                if (resolveControllerHand(targetDeviceIndex, pulseHand)) {
+                    testbench_telemetry::recordHaptic(pulseHand == input_remap_policy::Hand::Left, durationMicroSec,
+                        hapticCaller(callerAddress), targetDeviceIndex != controllerDeviceIndex);
                 }
             }
             if (s_originalTriggerHapticPulse) {
@@ -1260,6 +1312,7 @@ namespace rock::input_remap_runtime
             const auto* button = event ? event->As<RE::ButtonEvent>() : nullptr;
             if (!button || (!button->QJustPressed() &&
                 (button->QPressed() || button->QHeldDownSecs() < 0.0f))) return;
+            testbench_telemetry::recordInputGate(gate, input.triggerSourceIsLeft, button->QJustPressed(), suppressed, providerSuppressed);
             if (button->QJustPressed() && std::string_view(gate) == "attack-trigger") {
                 ROCK_LOG_SAMPLE_INFO(Input, 250,
                     "Weapon trigger admission primary={} physicalSource={} suppressed={} provider={} drawn={} sourceLoose={} detached={} transfer={} awaitingRelease={}",

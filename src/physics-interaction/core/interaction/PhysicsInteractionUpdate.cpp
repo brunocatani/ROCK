@@ -8,6 +8,7 @@
 #include "physics-interaction/weapon/NativeHandEquipment.h"
 #include "physics-interaction/weapon/NativeMeleeWand.h"
 #include "physics-interaction/weapon/NativeSecondaryPresentation.h"
+#include "rock_support/TestbenchTelemetry.h"
 
 // Per-frame orchestration: update(), interaction frame finalization, hand transform sampling, physics substep callbacks, held-mass slowdown, and the frame/debug-overlay implementation includes.
 
@@ -470,6 +471,51 @@ namespace rock
         // registers the callback only after all collider targets are committed.
         _frame.poseFrameIndex = frame.timing.sequence;
         _frame.gripZoneIndicatorFrameIndex = frame.timing.sequence;
+        publishTestbenchTelemetry(frame);
+    }
+
+    void PhysicsInteraction::publishTestbenchTelemetry(const PhysicsFrameContext& frame)
+    {
+        const bool settingOn = g_rockConfig.rockDebugTestbenchTelemetry;
+        if (!settingOn && !testbench_telemetry::enabled()) {
+            return;
+        }
+        const auto& runtime = runtime_state::currentFrame();
+        testbench_telemetry::FrameSample sample{};
+        sample.frameIndex = frame.timing.sequence;
+        sample.deltaSeconds = frame.deltaSeconds;
+        sample.playerAvailable = runtime.playerAvailable;
+        sample.weaponDrawn = runtime.weaponDrawn;
+        sample.menuBlocking = runtime.localMenuBlocking;
+        sample.loadingMenuOpen = runtime.localLoadingMenuOpen;
+        sample.gameStopped = runtime.localGameStopped;
+        sample.inputMenuBlocking = runtime.inputMenuBlocking;
+        sample.worldReady = frame.worldReady;
+        sample.hasHmd = frame.hasHmdFrame;
+        sample.hmdPosition[0] = frame.hmdPositionWorld.x;
+        sample.hmdPosition[1] = frame.hmdPositionWorld.y;
+        sample.hmdPosition[2] = frame.hmdPositionWorld.z;
+        sample.hmdForward[0] = frame.hmdForwardWorld.x;
+        sample.hmdForward[1] = frame.hmdForwardWorld.y;
+        sample.hmdForward[2] = frame.hmdForwardWorld.z;
+        for (const auto* input : { &frame.left, &frame.right }) {
+            auto& out = sample.hand[input->isLeft ? 0 : 1];
+            const auto& world = input->rawHandWorld;
+            out.position[0] = world.translate.x;
+            out.position[1] = world.translate.y;
+            out.position[2] = world.translate.z;
+            for (int row = 0; row < 3; ++row) {
+                out.rotation[row * 3 + 0] = world.rotate.entry[row].x;
+                out.rotation[row * 3 + 1] = world.rotate.entry[row].y;
+                out.rotation[row * 3 + 2] = world.rotate.entry[row].z;
+            }
+            out.velocity[0] = input->gestureVelocityMetersPerSecond.x;
+            out.velocity[1] = input->gestureVelocityMetersPerSecond.y;
+            out.velocity[2] = input->gestureVelocityMetersPerSecond.z;
+            out.hasVelocity = input->hasGestureVelocity;
+            out.disabled = input->disabled;
+        }
+        testbench_telemetry::publishFrame(settingOn, sample);
     }
 
     void PhysicsInteraction::interruptInteractionFrame(const char* reason)

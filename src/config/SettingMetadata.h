@@ -369,6 +369,7 @@ namespace rock::config
         { "PhysicsInteraction", "iDebugMaxLineVertices", "15. Debug Overlay", "", api::configuration::Group::Developer },
         { "PhysicsInteraction", "bDebugUseBoundsForHeavyConvex", "15. Debug Overlay", "", api::configuration::Group::Developer },
         { "PhysicsInteraction", "bDebugVerboseLogging", "16. Logs and Telemetry", "Very noisy per-frame diagnostic logging. Use only while investigating a specific issue.", api::configuration::Group::Developer },
+        { "PhysicsInteraction", "bDebugTestbenchTelemetry", "16. Logs and Telemetry", "Publishes per-frame hand, head and controller state and ROCK events to shared memory for the external test bench. Leave off for play.", api::configuration::Group::Developer },
         { "PhysicsInteraction", "bDebugShowRootFlattenedFingerSkeletonMarkers", "17. Skeleton Debug", "Draws markers and axes for live first-person skeleton bones.", api::configuration::Group::Developer },
         { "PhysicsInteraction", "bDebugShowSkeletonBoneVisualizer", "17. Skeleton Debug", "", api::configuration::Group::Developer },
         { "PhysicsInteraction", "iDebugSkeletonBoneMode", "17. Skeleton Debug", "0 = minimal/core bones, 1 = core body and fingers, higher modes may draw more if supported.", api::configuration::Group::Developer },

@@ -444,6 +444,7 @@ namespace rock
         void finalizeInteractionFrame(const PhysicsFrameContext& frame,
             RE::hknpWorld* hknp,
             const EquippedWeaponFrameResult& equippedWeaponFrame);
+        void publishTestbenchTelemetry(const PhysicsFrameContext& frame);
         GrabReleaseContext makeGrabReleaseContext(const Hand& hand, bool isLeft) const;
         GrabSharedObjectContext makeGrabSharedObjectContext(const Hand& hand, bool isLeft) const;
 
