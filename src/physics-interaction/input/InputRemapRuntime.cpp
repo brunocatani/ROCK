@@ -149,6 +149,23 @@ namespace rock::input_remap_runtime
         constexpr std::uintptr_t kPipboyLightHoldQueryFunctionOffset = 0x0FC1C40;
         constexpr std::uintptr_t kPipboyLightHoldQueryCallSiteOffset = 0x132707D;
         /*
+         * FO4VR 1.2.72, raw disassembly: the VR device manager (singleton
+         * 0x59429C0) holds the controller kind at +0x260, written at 0x1BA8AF0
+         * from the device's tracking-system name when a controller activates
+         * ("oculus" 1, "holographic" 2, lighthouse and anything else 0).
+         * PipboyHandler's release path loads it once (0x1326FAE..0x1326FC3,
+         * before every other open gate) and refuses to open unless it is 1
+         * or 2 (0x132706A): vanilla lighthouse wands open the Pip-Boy from
+         * the touchpad instead. ROCK's Y tap is the Pip-Boy input on every
+         * controller, so only ROCK's own synthesized release sees kind 1.
+         */
+        constexpr std::uintptr_t kVrDeviceManagerSingletonOffset = 0x59429C0;
+        constexpr std::ptrdiff_t kVrDeviceManagerControllerKindOffset = 0x260;
+        constexpr std::uintptr_t kPipboyHandlerControllerKindLoadOffset = 0x1326FAE;
+        constexpr std::uintptr_t kPipboyHandlerControllerKindGateOffset = 0x132706A;
+        constexpr std::int32_t kVrControllerKindOculus = 1;
+        constexpr std::int32_t kVrControllerKindHolographic = 2;
+        /*
          * FO4VR's ActivateHandler resolves the wand's current "pick ref" (what it is pointing
          * at/reaching for) from one of these two per-wand handle globals before dispatching
          * Activate/WandAccept - there is no separate "Take" input action; Take vs Talk/Open/
@@ -276,6 +293,8 @@ namespace rock::input_remap_runtime
         // Call-scoped on the dispatching input thread, never published to
         // controller polling threads. Scope exit restores nested dispatches.
         thread_local bool t_explicitNativePipboyTap = false;
+        // Set once at hook installation when the live kind load and gate match.
+        bool s_pipboyControllerKindSiteVerified = false;
         vats_grenade_gesture_policy::RuntimeState s_vatsGrenadeGestureState{};
         // Native input publishes one edge; the interaction frame owns inventory.
         std::atomic<bool> s_pendingGrenadeQuickDrawHoldRequest{ false };
@@ -1961,6 +1980,55 @@ namespace rock::input_remap_runtime
             return pipboyHandler;
         }
 
+        /*
+         * Lets ROCK's synthesized release pass PipboyHandler's controller-kind
+         * gate on lighthouse controllers. Call-scoped on the input thread that
+         * dispatches the release; that loop also polls the device events that
+         * write the kind. An Oculus or WMR kind is left untouched, and the
+         * real value is restored when the release returns. Every other native
+         * open gate still applies.
+         */
+        class ScopedPipboyControllerKindOverride
+        {
+        public:
+            ScopedPipboyControllerKindOverride()
+            {
+                if (!s_pipboyControllerKindSiteVerified) {
+                    return;
+                }
+                static REL::Relocation<std::uintptr_t*> deviceManagerSingleton{ REL::Offset(kVrDeviceManagerSingletonOffset) };
+                const auto deviceManager = *deviceManagerSingleton;
+                if (!deviceManager) {
+                    ROCK_LOG_SAMPLE_WARN(Input, g_rockConfig.rockLogSampleMilliseconds,
+                        "Pip-Boy Y tap: VR device manager unavailable; native controller-kind gate left in place");
+                    return;
+                }
+                auto* kind = reinterpret_cast<std::int32_t*>(deviceManager + kVrDeviceManagerControllerKindOffset);
+                _original = *kind;
+                if (_original == kVrControllerKindOculus || _original == kVrControllerKindHolographic) {
+                    return;
+                }
+                _kind = kind;
+                *_kind = kVrControllerKindOculus;
+                ROCK_LOG_SAMPLE_DEBUG(Input, g_rockConfig.rockLogSampleMilliseconds,
+                    "Pip-Boy Y tap: controller kind {} passed the native trigger-open gate for this release", _original);
+            }
+
+            ~ScopedPipboyControllerKindOverride()
+            {
+                if (_kind) {
+                    *_kind = _original;
+                }
+            }
+
+            ScopedPipboyControllerKindOverride(const ScopedPipboyControllerKindOverride&) = delete;
+            ScopedPipboyControllerKindOverride& operator=(const ScopedPipboyControllerKindOverride&) = delete;
+
+        private:
+            std::int32_t* _kind = nullptr;
+            std::int32_t _original = 0;
+        };
+
         [[nodiscard]] bool dispatchNativePipboyTap(RE::ButtonEvent& event)
         {
             auto* pipboyHandler = resolvePipboyHandlerFromMenuControls();
@@ -1994,6 +2062,7 @@ namespace rock::input_remap_runtime
                 const auto restoreExplicitTap = F4SE::stl::scope_exit([previousExplicitTap] {
                     t_explicitNativePipboyTap = previousExplicitTap;
                 });
+                const ScopedPipboyControllerKindOverride controllerKindOverride;
                 s_originalPipboyEventHandler(pipboyHandler, &event);
             }
 
@@ -2427,8 +2496,54 @@ namespace rock::input_remap_runtime
             return true;
         }
 
+        /*
+         * The kind load and gate in PipboyHandler's release path must match
+         * before ROCK writes the kind; the RIP-relative load must name the
+         * device manager singleton. A mismatch leaves lighthouse Y taps to the
+         * native gate (refused) and changes nothing on Oculus or WMR.
+         */
+        void verifyPipboyControllerKindSite()
+        {
+            // Runs on the frame thread with the hook installation; a mismatch is permanent.
+            static bool attempted = false;
+            if (std::exchange(attempted, true)) {
+                return;
+            }
+            constexpr std::array<std::uint8_t, 21> expectedLoad{
+                0x48, 0x8B, 0x05, 0x0B, 0xBA, 0x61, 0x04, // mov rax,[device manager]
+                0x8B, 0x4F, 0x0C,                         // mov ecx,[rdi+0xC]
+                0x4C, 0x89, 0x74, 0x24, 0x50,             // mov [rsp+0x50],r14
+                0x8B, 0xA8, 0x60, 0x02, 0x00, 0x00,       // mov ebp,[rax+0x260]
+            };
+            constexpr std::array<std::uint8_t, 12> expectedGate{
+                0x8D, 0x45, 0xFF,                   // lea eax,[rbp-1]
+                0x83, 0xF8, 0x01,                   // cmp eax,1
+                0x0F, 0x87, 0xAC, 0x00, 0x00, 0x00, // ja no-open
+            };
+            const auto load = REL::Offset(kPipboyHandlerControllerKindLoadOffset).address();
+            const auto gate = REL::Offset(kPipboyHandlerControllerKindGateOffset).address();
+            std::array<std::uint8_t, expectedLoad.size()> actualLoad{};
+            std::array<std::uint8_t, expectedGate.size()> actualGate{};
+            std::int32_t displacement = 0;
+            std::memcpy(&displacement, expectedLoad.data() + 3, sizeof(displacement));
+            const auto loadTarget = load + 7 + static_cast<std::intptr_t>(displacement);
+            if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(load), actualLoad.data(), actualLoad.size()) ||
+                actualLoad != expectedLoad ||
+                !native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(gate), actualGate.data(), actualGate.size()) ||
+                actualGate != expectedGate ||
+                loadTarget != REL::Offset(kVrDeviceManagerSingletonOffset).address()) {
+                ROCK_LOG_ERROR(Input,
+                    "Pip-Boy controller-kind site validation failed: load=0x{:X} gate=0x{:X}; Y taps on lighthouse controllers stay refused",
+                    load, gate);
+                return;
+            }
+            s_pipboyControllerKindSiteVerified = true;
+            ROCK_LOG_INFO(Input, "Verified Pip-Boy controller-kind gate at 0x{:X}; Y taps open the Pip-Boy on every controller kind", gate);
+        }
+
         bool installPipboyPauseArbitrationHooks()
         {
+            verifyPipboyControllerKindSite();
             const bool lightVetoHookReady = installPipboyLightHoldQueryHook();
             const bool openHookReady = installNativeActionVTableHook(kPipboyHandlerHandleEventVTableSlotOffset,
                 kPipboyHandlerHandleEventFunctionOffset,
