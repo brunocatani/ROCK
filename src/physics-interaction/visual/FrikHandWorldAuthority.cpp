@@ -489,10 +489,14 @@ namespace rock::frik_hand_world_authority
     bool filterHeldProxyWorld(bool isLeft, RE::NiTransform& proxyWorld)
     {
         if (!filteringConfigured()) return true;
+        // Filtering is optional smoothing. A frame without filter input (lost
+        // controller tracking, uncalibrated hand) holds the unfiltered target;
+        // failing here released the held object.
         RE::NiTransform filteredWand{};
-        if (!tryGetHandlingWandWorld(isLeft, filteredWand)) return false;
         const auto& tracked = g_service.weaponWands[handIndex(isLeft)];
-        if (!tracked.valid) return false;
+        if (!tryGetHandlingWandWorld(isLeft, filteredWand) || !tracked.valid) {
+            return weapon_input_filter::usable(proxyWorld);
+        }
         proxyWorld = weapon_input_filter::applyProxyTrackingCorrection(proxyWorld, tracked.world, filteredWand);
         if (logger::isDebugEnabled() && logger::internal::shouldEmitSample(
                 isLeft ? "held-input-filter-left" : "held-input-filter-right", 1000)) {
