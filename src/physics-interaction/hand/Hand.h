@@ -537,6 +537,8 @@ namespace rock
             const RE::NiTransform* peerHandWorld = nullptr);
         void publishHeldBodyScope(RE::hknpWorld* world);
         bool refreshRagdollBodyScope(RE::hknpWorld* world, const GrabReleaseContext& releaseContext);
+        bool placeHeldBodiesOnHandTarget(RE::hknpWorld* world, const RE::NiTransform& primaryBodyWorld,
+            const RE::NiTransform& targetBodyWorld, float gripErrorGameUnits);
         bool validateHeldObjectUpdate(RE::hknpWorld* world, const GrabReleaseContext& releaseContext);
         void captureHeldReleaseMotion(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, const game_frame_timing_policy::GameFrameTiming& timing);
         bool finalizeCollisionPose(RE::hknpWorld* world, const RE::NiTransform& rawHand,
@@ -1284,6 +1286,8 @@ namespace rock
         bool _grabFingerPosePublished = false;
         float _grabConvergeStableInsidePocketSeconds = 0.0f;
         float _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
+        // Grab-elapsed time of the last placement onto the hand target.
+        float _grabTransitPlacementElapsedSeconds = 0.0f;
         std::array<float, 5> _grabDeviationHistory{};
         std::size_t _grabDeviationHistoryCount = 0;
         std::size_t _grabDeviationHistoryNext = 0;

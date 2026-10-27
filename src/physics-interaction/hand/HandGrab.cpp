@@ -5584,6 +5584,7 @@ namespace rock
         _heldObjectUpdateFrame = 0;
         _grabConvergeStableInsidePocketSeconds = 0.0f;
         _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
+        _grabTransitPlacementElapsedSeconds = 0.0f;
     }
 
     struct Hand::GrabBodyFrameCaptureInput
@@ -8730,6 +8731,53 @@ namespace rock
         return true;
     }
 
+    bool Hand::placeHeldBodiesOnHandTarget(RE::hknpWorld* world, const RE::NiTransform& primaryBodyWorld,
+        const RE::NiTransform& targetBodyWorld, float gripErrorGameUnits)
+    {
+        // A mechanically anchored set cannot reach the palm, and an incomplete
+        // scan does not know every body that would have to move with it.
+        if (!world || _heldDriveDecision.mode == held_object_drive_policy::HeldBodySetDriveMode::FixedAttached ||
+            _heldDriveDecision.mode == held_object_drive_policy::HeldBodySetDriveMode::IncompleteNativeScan) {
+            return false;
+        }
+        const auto delta = transform_math::composeTransforms(targetBodyWorld, transform_math::invertTransform(primaryBodyWorld));
+        if (!isFiniteNiTransform(delta)) return false;
+
+        // One rigid move for the whole held set, written once per motion: bodies
+        // sharing a motion move with it.
+        std::array<std::uint32_t, MAX_HELD_BODIES> motions{};
+        std::array<std::uint32_t, MAX_HELD_BODIES> bodies{};
+        std::array<RE::NiTransform, MAX_HELD_BODIES> targets{};
+        std::size_t count = 0;
+        const auto add = [&](std::uint32_t bodyId) {
+            const auto* body = havok_runtime::getBody(world, RE::hknpBodyId{ bodyId });
+            RE::NiTransform current{};
+            if (!body || count == bodies.size() ||
+                !havok_runtime::tryGetBodyArrayWorldTransform(world, RE::hknpBodyId{ bodyId }, current)) return false;
+            for (std::size_t i = 0; i < count; ++i) if (motions[i] == body->motionIndex) return true;
+            motions[count] = body->motionIndex;
+            bodies[count] = bodyId;
+            targets[count] = transform_math::composeTransforms(delta, current);
+            return isFiniteNiTransform(targets[count++]);
+        };
+        if (!add(_savedObjectState.bodyId.value)) return false;
+        for (const auto bodyId : _heldBodyIds) {
+            if (bodyId != _savedObjectState.bodyId.value && !add(bodyId)) return false;
+        }
+
+        const RE::hkVector4f zero{};
+        for (std::size_t i = 0; i < count; ++i) {
+            if (!havok_runtime::setBodyTransformDeferred(world, bodies[i], targets[i], 1) ||
+                !havok_runtime::setBodyVelocityDeferred(world, bodies[i], zero, zero)) return false;
+            (void)havok_runtime::activateBody(world, bodies[i]);
+        }
+        ROCK_LOG_WARN(Hand,
+            "{} hand GRAB placed stuck object on the hand target: trace={} ref={:08X} gripError={:.2f}gu elapsed={:.3f}s motions={} heldBodies={}",
+            handName(), _grabFrame.traceId, _savedObjectState.refr ? _savedObjectState.refr->GetFormID() : 0,
+            gripErrorGameUnits, _grabStartTime, count, _heldBodyIds.size());
+        return true;
+    }
+
     bool Hand::validateHeldObjectUpdate(RE::hknpWorld* world, const GrabReleaseContext& releaseContext)
     {
         if (!refreshRagdollBodyScope(world, releaseContext)) return false;
@@ -9574,6 +9622,22 @@ namespace rock
             _grabConvergePreviousGripErrorGameUnits = gripErrorGameUnits;
             const bool reachedTouchRange = convergenceDecision.reachedTouchRange;
             const bool convergenceTimedOutInsidePocket = convergenceDecision.timedOutInsidePocket;
+            /*
+             * The object always ends in the palm. One that has not arrived by
+             * the convergence timeout (wedged, or snagged in transit) is moved
+             * onto its hand target; the touch test promotes it on a later frame,
+             * never while it is away from the hand. If something knocks it out
+             * again, the move repeats once per timeout interval.
+             */
+            const float convergeTimeout = g_rockConfig.rockGrabConvergeMaxTimeSeconds;
+            if (hasGrabBody && !reachedTouchRange && !convergenceTimedOutInsidePocket && convergeTimeout > 0.0f &&
+                _grabStartTime - _grabTransitPlacementElapsedSeconds >= convergeTimeout) {
+                _grabTransitPlacementElapsedSeconds = _grabStartTime;
+                if (placeHeldBodiesOnHandTarget(world, grabBodyWorld, driveUpdate.desiredBodyWorld, gripErrorGameUnits)) {
+                    _grabConvergeStableInsidePocketSeconds = 0.0f;
+                    _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
+                }
+            }
             if (convergenceTimedOutInsidePocket) {
                 ROCK_LOG_SAMPLE_DEBUG(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
@@ -10464,6 +10528,7 @@ namespace rock
         _grabFingerPosePublished = false;
         _grabConvergeStableInsidePocketSeconds = 0.0f;
         _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
+        _grabTransitPlacementElapsedSeconds = 0.0f;
         _grabDeviationHistory = {};
         _grabDeviationHistoryCount = 0;
         _grabDeviationHistoryNext = 0;

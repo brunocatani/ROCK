@@ -277,6 +277,7 @@ namespace rock
         _grabFingerPosePublished = false;
         _grabConvergeStableInsidePocketSeconds = 0.0f;
         _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
+        _grabTransitPlacementElapsedSeconds = 0.0f;
         clearGrabHandPose(_isLeft);
         clearGrabExternalHandWorldTransform(_isLeft);
         clearGrabVisualReturn("reset", false);
@@ -376,6 +377,7 @@ namespace rock
         _grabFingerPosePublished = false;
         _grabConvergeStableInsidePocketSeconds = 0.0f;
         _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
+        _grabTransitPlacementElapsedSeconds = 0.0f;
         clearGrabHandCollisionSuppressionState();
         _boneColliders.reset();
         _handBody.reset();
