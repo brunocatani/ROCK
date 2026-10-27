@@ -896,8 +896,17 @@ namespace rock::weapon_equip_transfer
             reinterpret_cast<std::uintptr_t>(equipped.instanceData) != instanceData) return false;
         const auto stack = findEquippedWeaponStack(player, equipped.weapon, equipped.instanceData, index);
         const auto unequip = validatedUnequipObject();
-        if (!stack.found || !stack.equipSlot || !stack.count || !unequip ||
-            stack.instanceData.get() != equipped.instanceData || !clearPreviousWeaponRestore(player)) return false;
+        const bool instanceMatch = stack.instanceData.get() == equipped.instanceData;
+        if (!stack.found || !stack.equipSlot || !stack.count || !unequip || !instanceMatch ||
+            !clearPreviousWeaponRestore(player)) {
+            // Identical-copy drops fail here without a native call (runtime
+            // 23 Oct 17:57:04); name the failing precondition.
+            ROCK_LOG_WARN(Weapon,
+                "Equipped index unequip refused index={} form={:08X} stackFound={} slot={} count={} unequip={} instanceMatch={} stackInstance={:#x} equippedInstance={:#x}",
+                index, formID, stack.found, stack.equipSlot != nullptr, stack.count, unequip != nullptr, instanceMatch,
+                reinterpret_cast<std::uintptr_t>(stack.instanceData.get()), instanceData);
+            return false;
+        }
         // The stack's actual hand leaf, so the other index's weapon is untouched.
         RE::BGSObjectInstance object(equipped.weapon, stack.instanceData.get());
         const bool accepted = unequip(manager, player, &object, 1, stack.equipSlot, stack.stackID, false, true, false, true, nullptr);
