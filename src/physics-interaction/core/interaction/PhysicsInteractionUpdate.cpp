@@ -515,6 +515,28 @@ namespace rock
             out.hasVelocity = input->hasGestureVelocity;
             out.disabled = input->disabled;
         }
+        if (const auto* nodes = f4vr::getPlayerNodes()) {
+            const auto copyNode = [](const RE::NiNode* node, testbench_telemetry::NodeSample& out) {
+                if (!node) {
+                    return;
+                }
+                const auto& world = node->world;
+                out.position[0] = world.translate.x;
+                out.position[1] = world.translate.y;
+                out.position[2] = world.translate.z;
+                for (int row = 0; row < 3; ++row) {
+                    out.rotation[row * 3 + 0] = world.rotate.entry[row].x;
+                    out.rotation[row * 3 + 1] = world.rotate.entry[row].y;
+                    out.rotation[row * 3 + 2] = world.rotate.entry[row].z;
+                }
+                out.scale = world.scale;
+                out.valid = true;
+            };
+            copyNode(nodes->roomnode, sample.room);
+            copyNode(nodes->HmdNode, sample.hmdNode);
+            copyNode(nodes->SecondaryWandNode, sample.wand[0]);
+            copyNode(nodes->primaryWandNode, sample.wand[1]);
+        }
         testbench_telemetry::publishFrame(settingOn, sample);
     }
 

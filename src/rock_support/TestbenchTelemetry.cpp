@@ -17,7 +17,7 @@ namespace rock::testbench_telemetry
     {
         constexpr wchar_t kSectionName[] = L"Local\\RPS_Telemetry_ROCK";
         constexpr std::uint32_t kMagic = 0x54535052; // "RPST", shared with the bench's input ring
-        constexpr std::uint32_t kSchemaVersion = 1;
+        constexpr std::uint32_t kSchemaVersion = 2;
         constexpr std::uint32_t kRecordSize = 512;
         constexpr std::uint32_t kCapacity = 16384; // about 3 minutes of frames at 90 Hz plus events
         constexpr std::size_t kEventQueueCapacity = 512;
@@ -72,6 +72,13 @@ namespace rock::testbench_telemetry
         };
         static_assert(sizeof(HandRecord) == 64);
 
+        struct NodeRecord
+        {
+            float position[3];
+            float rotation[9];
+        };
+        static_assert(sizeof(NodeRecord) == 48);
+
         struct InputRecord
         {
             std::uint64_t rawPressed;      // latest raw OpenVR state
@@ -97,8 +104,12 @@ namespace rock::testbench_telemetry
             float hmdForward[3];
             HandRecord hand[2];
             InputRecord input[2];
+            NodeRecord room;
+            float roomScale;
+            NodeRecord hmdNode;
+            NodeRecord wand[2]; // left (secondary), right (primary)
         };
-        static_assert(sizeof(FrameRecord) == 280);
+        static_assert(sizeof(FrameRecord) == 476);
 
         struct EventRecord
         {
@@ -126,6 +137,10 @@ namespace rock::testbench_telemetry
             kFlagInputMenuBlocking = 1u << 5,
             kFlagWorldReady = 1u << 6,
             kFlagHasHmd = 1u << 7,
+            kFlagRoomValid = 1u << 8,
+            kFlagHmdNodeValid = 1u << 9,
+            kFlagLeftWandValid = 1u << 10,
+            kFlagRightWandValid = 1u << 11,
         };
 
         struct HandInputAccumulator
@@ -262,6 +277,12 @@ namespace rock::testbench_telemetry
         {
             std::memcpy(out, in, sizeof(out));
         }
+
+        void copyNode(NodeRecord& out, const NodeSample& in) noexcept
+        {
+            std::memcpy(out.position, in.position, sizeof(out.position));
+            std::memcpy(out.rotation, in.rotation, sizeof(out.rotation));
+        }
     }
 
     bool enabled() noexcept
@@ -380,12 +401,19 @@ namespace rock::testbench_telemetry
         record.flags = (frame.playerAvailable ? kFlagPlayerAvailable : 0u) | (frame.weaponDrawn ? kFlagWeaponDrawn : 0u) |
                        (frame.menuBlocking ? kFlagMenuBlocking : 0u) | (frame.loadingMenuOpen ? kFlagLoadingMenu : 0u) |
                        (frame.gameStopped ? kFlagGameStopped : 0u) | (frame.inputMenuBlocking ? kFlagInputMenuBlocking : 0u) |
-                       (frame.worldReady ? kFlagWorldReady : 0u) | (frame.hasHmd ? kFlagHasHmd : 0u);
+                       (frame.worldReady ? kFlagWorldReady : 0u) | (frame.hasHmd ? kFlagHasHmd : 0u) |
+                       (frame.room.valid ? kFlagRoomValid : 0u) | (frame.hmdNode.valid ? kFlagHmdNodeValid : 0u) |
+                       (frame.wand[0].valid ? kFlagLeftWandValid : 0u) | (frame.wand[1].valid ? kFlagRightWandValid : 0u);
         record.droppedEvents = dropped;
         record.failedReads = s_failedReads.exchange(0, std::memory_order_relaxed);
         record.noHandRoleReads = s_noHandRoleReads.exchange(0, std::memory_order_relaxed);
         copyVector(record.hmdPosition, frame.hmdPosition);
         copyVector(record.hmdForward, frame.hmdForward);
+        copyNode(record.room, frame.room);
+        record.roomScale = frame.room.scale;
+        copyNode(record.hmdNode, frame.hmdNode);
+        copyNode(record.wand[0], frame.wand[0]);
+        copyNode(record.wand[1], frame.wand[1]);
         for (std::size_t i = 0; i < 2; ++i) {
             const auto& hand = frame.hand[i];
             auto& out = record.hand[i];

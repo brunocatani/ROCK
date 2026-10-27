@@ -51,6 +51,15 @@ namespace rock::testbench_telemetry
         bool disabled = false;
     };
 
+    // A scene node's world transform, copied in the frame it was read.
+    struct NodeSample
+    {
+        float position[3]{};
+        float rotation[9]{}; // row-major NiMatrix3
+        float scale = 1.0f;
+        bool valid = false;
+    };
+
     struct FrameSample
     {
         std::uint64_t frameIndex = 0;
@@ -66,6 +75,12 @@ namespace rock::testbench_telemetry
         float hmdPosition[3]{};
         float hmdForward[3]{};
         HandFrameSample hand[2]{}; // left, right
+        // Tracking-space anchors for recording a player's motion: RoomNode (tracking origin
+        // in the world), HmdNode, and the wands (left = secondary, right = primary; ROCK
+        // runs right-handed).
+        NodeSample room{};
+        NodeSample hmdNode{};
+        NodeSample wand[2]{}; // left, right
     };
 
     [[nodiscard]] bool enabled() noexcept;
