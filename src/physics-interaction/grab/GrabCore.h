@@ -1309,6 +1309,24 @@ namespace rock::pull_motion_math
         return std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
     }
 
+    /*
+     * Point of the segment start->end closest to point. Pull arrival tests the
+     * path travelled since the previous frame, not only the current position:
+     * at pull speed a slow frame moves the object farther than the catch
+     * sphere is wide, so a per-frame point test lets it pass the hand unseen.
+     */
+    template <class Vec3>
+    Vec3 closestPointOnSegment(const Vec3& start, const Vec3& end, const Vec3& point)
+    {
+        const Vec3 segment{ end.x - start.x, end.y - start.y, end.z - start.z };
+        const float lengthSquared = segment.x * segment.x + segment.y * segment.y + segment.z * segment.z;
+        if (!std::isfinite(lengthSquared) || lengthSquared <= 1.0e-12f) return end;
+        const float t = ((point.x - start.x) * segment.x + (point.y - start.y) * segment.y + (point.z - start.z) * segment.z) / lengthSquared;
+        if (!std::isfinite(t)) return end;
+        const float clamped = (std::clamp)(t, 0.0f, 1.0f);
+        return Vec3{ start.x + segment.x * clamped, start.y + segment.y * clamped, start.z + segment.z * clamped };
+    }
+
     template <class Vec3>
     Vec3 clampLength(Vec3 value, float maxLength)
     {

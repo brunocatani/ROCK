@@ -4336,6 +4336,7 @@ namespace rock
         _pullDurationSeconds = pull_motion_math::computePullDurationSeconds(pullDistance);
         _pullTargetHavok = {};
         _pullHasTarget = false;
+        _pullHasPreviousObjectPoint = false;
         const auto transition = applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::BeginPull });
         if (!transition.accepted) {
             clearPullRuntimeState(false, "begin-pull-rejected");
@@ -4413,12 +4414,29 @@ namespace rock
         const float nearConvergeDistance = (std::max)(configuredAutoGrabDistance, g_rockConfig.rockGrabNearConvergeDistanceGameUnits);
         const float pocketBand = (std::max)(0.0f, g_rockConfig.rockGrabPocketRadiusGameUnits);
         const float arrivalDistance = (std::max)(configuredAutoGrabDistance, (std::min)(nearConvergeDistance, configuredAutoGrabDistance + pocketBand));
-        if (distanceGameUnits <= arrivalDistance) {
+        const RE::NiPoint3 closestApproachHavok = _pullHasPreviousObjectPoint ?
+            pull_motion_math::closestPointOnSegment(_pullPreviousObjectPointHavok, objectPointHavok, grabPivotHavok) : objectPointHavok;
+        const float closestApproachGameUnits = (grabPivotHavok - closestApproachHavok).Length() * havokToGameScale();
+        _pullPreviousObjectPointHavok = objectPointHavok;
+        _pullHasPreviousObjectPoint = true;
+        RE::NiPoint3 arrivalPointHavok = objectPointHavok;
+        if (distanceGameUnits > arrivalDistance && closestApproachGameUnits <= arrivalDistance) {
+            // The object crossed the catch sphere between frames. Put it back at
+            // its closest approach, where a faster frame would have caught it.
+            auto passBack = makeIdentityTransform();
+            passBack.translate = (closestApproachHavok - objectPointHavok) * havokToGameScale();
+            const auto moved = moveBodySetRigidly(world, _pulledPrimaryBodyId, _pulledBodyIds, passBack);
+            if (moved != 0) arrivalPointHavok = closestApproachHavok;
+            ROCK_LOG_INFO(Hand,
+                "{} hand PULL crossed the catch sphere between frames dist={:.1f} closest={:.1f} arrival={:.1f} movedBack={}",
+                handName(), distanceGameUnits, closestApproachGameUnits, arrivalDistance, moved);
+        }
+        if (distanceGameUnits <= arrivalDistance || closestApproachGameUnits <= arrivalDistance) {
             _currentSelection.isFarSelection = false;
             _currentSelection.hitPointWorld = RE::NiPoint3{
-                objectPointHavok.x * havokToGameScale(),
-                objectPointHavok.y * havokToGameScale(),
-                objectPointHavok.z * havokToGameScale(),
+                arrivalPointHavok.x * havokToGameScale(),
+                arrivalPointHavok.y * havokToGameScale(),
+                arrivalPointHavok.z * havokToGameScale(),
             };
             _currentSelection.hasHitPoint = true;
             markPullCatchIntentArrived();
@@ -8731,20 +8749,13 @@ namespace rock
         return true;
     }
 
-    bool Hand::placeHeldBodiesOnHandTarget(RE::hknpWorld* world, const RE::NiTransform& primaryBodyWorld,
-        const RE::NiTransform& targetBodyWorld, float gripErrorGameUnits)
+    std::size_t Hand::moveBodySetRigidly(RE::hknpWorld* world, std::uint32_t primaryBodyId,
+        const std::vector<std::uint32_t>& bodyIds, const RE::NiTransform& worldDelta)
     {
-        // A mechanically anchored set cannot reach the palm, and an incomplete
-        // scan does not know every body that would have to move with it.
-        if (!world || _heldDriveDecision.mode == held_object_drive_policy::HeldBodySetDriveMode::FixedAttached ||
-            _heldDriveDecision.mode == held_object_drive_policy::HeldBodySetDriveMode::IncompleteNativeScan) {
-            return false;
-        }
-        const auto delta = transform_math::composeTransforms(targetBodyWorld, transform_math::invertTransform(primaryBodyWorld));
-        if (!isFiniteNiTransform(delta)) return false;
-
-        // One rigid move for the whole held set, written once per motion: bodies
-        // sharing a motion move with it.
+        // One rigid move for the whole set, written once per motion (bodies
+        // sharing a motion move with it), with velocity cleared. Every body is
+        // resolved and every target validated before the first write.
+        if (!world || !isFiniteNiTransform(worldDelta)) return 0;
         std::array<std::uint32_t, MAX_HELD_BODIES> motions{};
         std::array<std::uint32_t, MAX_HELD_BODIES> bodies{};
         std::array<RE::NiTransform, MAX_HELD_BODIES> targets{};
@@ -8757,20 +8768,35 @@ namespace rock
             for (std::size_t i = 0; i < count; ++i) if (motions[i] == body->motionIndex) return true;
             motions[count] = body->motionIndex;
             bodies[count] = bodyId;
-            targets[count] = transform_math::composeTransforms(delta, current);
+            targets[count] = transform_math::composeTransforms(worldDelta, current);
             return isFiniteNiTransform(targets[count++]);
         };
-        if (!add(_savedObjectState.bodyId.value)) return false;
-        for (const auto bodyId : _heldBodyIds) {
-            if (bodyId != _savedObjectState.bodyId.value && !add(bodyId)) return false;
+        if (!add(primaryBodyId)) return 0;
+        for (const auto bodyId : bodyIds) {
+            if (bodyId != primaryBodyId && !add(bodyId)) return 0;
         }
 
         const RE::hkVector4f zero{};
         for (std::size_t i = 0; i < count; ++i) {
             if (!havok_runtime::setBodyTransformDeferred(world, bodies[i], targets[i], 1) ||
-                !havok_runtime::setBodyVelocityDeferred(world, bodies[i], zero, zero)) return false;
+                !havok_runtime::setBodyVelocityDeferred(world, bodies[i], zero, zero)) return 0;
             (void)havok_runtime::activateBody(world, bodies[i]);
         }
+        return count;
+    }
+
+    bool Hand::placeHeldBodiesOnHandTarget(RE::hknpWorld* world, const RE::NiTransform& primaryBodyWorld,
+        const RE::NiTransform& targetBodyWorld, float gripErrorGameUnits)
+    {
+        // A mechanically anchored set cannot reach the palm, and an incomplete
+        // scan does not know every body that would have to move with it.
+        if (!world || _heldDriveDecision.mode == held_object_drive_policy::HeldBodySetDriveMode::FixedAttached ||
+            _heldDriveDecision.mode == held_object_drive_policy::HeldBodySetDriveMode::IncompleteNativeScan) {
+            return false;
+        }
+        const auto delta = transform_math::composeTransforms(targetBodyWorld, transform_math::invertTransform(primaryBodyWorld));
+        const auto count = moveBodySetRigidly(world, _savedObjectState.bodyId.value, _heldBodyIds, delta);
+        if (count == 0) return false;
         ROCK_LOG_WARN(Hand,
             "{} hand GRAB placed stuck object on the hand target: trace={} ref={:08X} gripError={:.2f}gu elapsed={:.3f}s motions={} heldBodies={}",
             handName(), _grabFrame.traceId, _savedObjectState.refr ? _savedObjectState.refr->GetFormID() : 0,

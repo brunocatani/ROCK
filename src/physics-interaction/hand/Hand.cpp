@@ -489,6 +489,7 @@ namespace rock
         _pullElapsedSeconds = 0.0f;
         _pullDurationSeconds = 0.0f;
         _pullHasTarget = false;
+        _pullHasPreviousObjectPoint = false;
         _pullPresentationAxisBodyLocal = {};
         _pullPresentationElongationRatio = 0.0f;
         _pullPresentationValid = false;

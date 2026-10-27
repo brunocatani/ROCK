@@ -539,6 +539,8 @@ namespace rock
         bool refreshRagdollBodyScope(RE::hknpWorld* world, const GrabReleaseContext& releaseContext);
         bool placeHeldBodiesOnHandTarget(RE::hknpWorld* world, const RE::NiTransform& primaryBodyWorld,
             const RE::NiTransform& targetBodyWorld, float gripErrorGameUnits);
+        static std::size_t moveBodySetRigidly(RE::hknpWorld* world, std::uint32_t primaryBodyId,
+            const std::vector<std::uint32_t>& bodyIds, const RE::NiTransform& worldDelta);
         bool validateHeldObjectUpdate(RE::hknpWorld* world, const GrabReleaseContext& releaseContext);
         void captureHeldReleaseMotion(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, const game_frame_timing_policy::GameFrameTiming& timing);
         bool finalizeCollisionPose(RE::hknpWorld* world, const RE::NiTransform& rawHand,
@@ -1365,6 +1367,9 @@ namespace rock
         float _pullElapsedSeconds = 0.0f;
         float _pullDurationSeconds = 0.0f;
         bool _pullHasTarget = false;
+        // Object pull point of the previous pull update, for the swept arrival test.
+        RE::NiPoint3 _pullPreviousObjectPointHavok{};
+        bool _pullHasPreviousObjectPoint = false;
         // Long-object presentation during pull flight: mesh principal axis in
         // primary-body local space, captured once at pull start. Flight-only;
         // held objects keep the no-rotate rule.
