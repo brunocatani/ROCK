@@ -877,6 +877,7 @@ namespace
             {
                 performance_profiler::ScopedTimer stage(Scope::PresentedHandPoseCapture);
                 s_physicsInteraction->captureProviderPresentedHandPoses();
+                s_physicsInteraction->publishTestbenchSkeleton();
             }
             {
                 performance_profiler::ScopedTimer stage(Scope::FinalPoseCommit);

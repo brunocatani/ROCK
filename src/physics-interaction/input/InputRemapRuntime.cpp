@@ -973,8 +973,15 @@ namespace rock::input_remap_runtime
                 return *bypassCache;
             };
             const bool isLeft = hand == input_remap_policy::Hand::Left;
-            const std::uint64_t rawPressed = stateValid ? state->ulButtonPressed : 0;
-            const float rawTrigger = stateValid ? state->rAxis[1].x : 0.0f;
+            testbench_telemetry::RawControllerState raw{};
+            if (stateValid && testbench_telemetry::enabled()) {
+                raw.pressed = state->ulButtonPressed;
+                raw.touched = state->ulButtonTouched;
+                for (std::size_t axis = 0; axis < 5; ++axis) {
+                    raw.axes[axis * 2] = state->rAxis[axis].x;
+                    raw.axes[axis * 2 + 1] = state->rAxis[axis].y;
+                }
+            }
             const bool blockingMenu = isInputBlockingMenuActive();
             std::uint32_t reasons = blockingMenu ? testbench_telemetry::kInputBlockingMenu : 0u;
 
@@ -1000,7 +1007,7 @@ namespace rock::input_remap_runtime
                 reasons |= testbench_telemetry::kLeftFireRemapApplied;
             }
             if (stateValid) {
-                testbench_telemetry::observeControllerState(isLeft, rawPressed, state->ulButtonPressed, rawTrigger,
+                testbench_telemetry::observeControllerState(isLeft, raw, state->ulButtonPressed,
                     state->rAxis[1].x, reasons, bypassCache.value_or(false));
             }
         }

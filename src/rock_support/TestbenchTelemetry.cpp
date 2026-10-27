@@ -17,15 +17,18 @@ namespace rock::testbench_telemetry
     {
         constexpr wchar_t kSectionName[] = L"Local\\RPS_Telemetry_ROCK";
         constexpr std::uint32_t kMagic = 0x54535052; // "RPST", shared with the bench's input ring
-        constexpr std::uint32_t kSchemaVersion = 2;
-        constexpr std::uint32_t kRecordSize = 512;
-        constexpr std::uint32_t kCapacity = 16384; // about 3 minutes of frames at 90 Hz plus events
+        constexpr std::uint32_t kSchemaVersion = 3;
+        constexpr std::uint32_t kRecordSize = 2048;
+        constexpr std::uint32_t kCapacity = 8192; // ~20 s at 90 Hz with a full skeleton; readers poll at 10 Hz
+        constexpr std::uint32_t kNameTableRepeatFrames = 300;
         constexpr std::size_t kEventQueueCapacity = 512;
 
         enum class RecordType : std::uint16_t
         {
             Frame = 1,
             Event = 2,
+            SkeletonPose = 3,
+            SkeletonNames = 4,
         };
 
         enum class EventType : std::uint16_t
@@ -85,6 +88,9 @@ namespace rock::testbench_telemetry
             std::uint64_t gamePressed;     // latest state handed to the game
             std::uint64_t rawPressedSeen;  // OR of every raw read since the previous frame
             std::uint64_t gamePressedSeen; // OR of every game-facing read since the previous frame
+            std::uint64_t rawTouched;      // latest raw capacitive touch bits
+            std::uint64_t rawTouchedSeen;  // OR since the previous frame
+            float rawAxes[10];             // latest raw rAxis[0..4] x, y
             float rawTrigger;
             float gameTrigger;
             std::uint32_t blankReasons;  // OR since the previous frame
@@ -92,7 +98,7 @@ namespace rock::testbench_telemetry
             std::uint32_t bypassedReads; // raw reads by RPS UI / configurator since the previous frame
             std::uint32_t pad;
         };
-        static_assert(sizeof(InputRecord) == 56);
+        static_assert(sizeof(InputRecord) == 112);
 
         struct FrameRecord
         {
@@ -109,7 +115,7 @@ namespace rock::testbench_telemetry
             NodeRecord hmdNode;
             NodeRecord wand[2]; // left (secondary), right (primary)
         };
-        static_assert(sizeof(FrameRecord) == 476);
+        static_assert(sizeof(FrameRecord) == 588);
 
         struct EventRecord
         {
@@ -124,6 +130,25 @@ namespace rock::testbench_telemetry
         };
         static_assert(sizeof(EventRecord) == 84);
 #pragma pack(pop)
+        // Skeleton records: header, then poses (SkeletonPose) or NUL-separated names (SkeletonNames).
+        struct SkeletonHeader
+        {
+            std::uint32_t topologyRevision; // low 32 bits of ROCK's skeleton topology revision
+            std::uint16_t firstBone;
+            std::uint16_t count;
+            std::uint16_t totalBones;
+            std::uint16_t pad;
+        };
+        static_assert(sizeof(SkeletonHeader) == 12);
+
+        struct BoneRecord
+        {
+            float position[3];
+            float rotation[9];
+        };
+        static_assert(sizeof(BoneRecord) == 48);
+        constexpr std::size_t kSkeletonPayload = kRecordSize - sizeof(RecordPrefix) - sizeof(SkeletonHeader);
+        constexpr std::size_t kBonesPerRecord = kSkeletonPayload / sizeof(BoneRecord);
         static_assert(sizeof(RecordPrefix) + sizeof(FrameRecord) <= kRecordSize);
         static_assert(sizeof(RecordPrefix) + sizeof(EventRecord) <= kRecordSize);
 
@@ -149,6 +174,9 @@ namespace rock::testbench_telemetry
             std::atomic<std::uint64_t> gamePressed{ 0 };
             std::atomic<std::uint64_t> rawPressedSeen{ 0 };
             std::atomic<std::uint64_t> gamePressedSeen{ 0 };
+            std::atomic<std::uint64_t> rawTouched{ 0 };
+            std::atomic<std::uint64_t> rawTouchedSeen{ 0 };
+            std::array<std::atomic<float>, 10> rawAxes{};
             std::atomic<float> rawTrigger{ 0.0f };
             std::atomic<float> gameTrigger{ 0.0f };
             std::atomic<std::uint32_t> blankReasons{ 0 };
@@ -175,6 +203,8 @@ namespace rock::testbench_telemetry
             std::uint8_t* records = nullptr;
             std::uint64_t next = 0;
             float gameTime = 0.0f;
+            std::uint64_t namesRevision = ~0ull;
+            std::uint32_t framesSinceNames = 0;
         };
 
         std::atomic<bool> s_enabled{ false };
@@ -242,6 +272,8 @@ namespace rock::testbench_telemetry
             s_ring.records = view + sizeof(RingHeader);
             s_ring.next = 0;
             s_ring.gameTime = 0.0f;
+            s_ring.namesRevision = ~0ull;
+            s_ring.framesSinceNames = 0;
             for (auto& hand : s_input) {
                 hand.rawPressedSeen.store(0, std::memory_order_relaxed);
                 hand.gamePressedSeen.store(0, std::memory_order_relaxed);
@@ -290,16 +322,21 @@ namespace rock::testbench_telemetry
         return s_enabled.load(std::memory_order_relaxed);
     }
 
-    void observeControllerState(const bool isLeft, const std::uint64_t rawPressed, const std::uint64_t gamePressed,
-        const float rawTrigger, const float gameTrigger, const std::uint32_t blankReasons, const bool bypassed) noexcept
+    void observeControllerState(const bool isLeft, const RawControllerState& raw, const std::uint64_t gamePressed,
+        const float gameTrigger, const std::uint32_t blankReasons, const bool bypassed) noexcept
     {
         if (!enabled()) {
             return;
         }
         auto& hand = s_input[isLeft ? 0 : 1];
-        hand.rawPressed.store(rawPressed, std::memory_order_relaxed);
-        hand.rawPressedSeen.fetch_or(rawPressed, std::memory_order_relaxed);
-        hand.rawTrigger.store(rawTrigger, std::memory_order_relaxed);
+        hand.rawPressed.store(raw.pressed, std::memory_order_relaxed);
+        hand.rawPressedSeen.fetch_or(raw.pressed, std::memory_order_relaxed);
+        hand.rawTouched.store(raw.touched, std::memory_order_relaxed);
+        hand.rawTouchedSeen.fetch_or(raw.touched, std::memory_order_relaxed);
+        for (std::size_t i = 0; i < hand.rawAxes.size(); ++i) {
+            hand.rawAxes[i].store(raw.axes[i], std::memory_order_relaxed);
+        }
+        hand.rawTrigger.store(raw.axes[2], std::memory_order_relaxed);
         if (bypassed) {
             hand.bypassedReads.fetch_add(1, std::memory_order_relaxed);
             return;
@@ -349,6 +386,59 @@ namespace rock::testbench_telemetry
         }
         const auto detail = static_cast<std::uint8_t>((justPressed ? 1u : 0u) | (suppressed ? 2u : 0u) | (providerSuppressed ? 4u : 0u));
         queueEvent({ EventType::InputGate, static_cast<std::uint8_t>(sourceIsLeft ? 0 : 1), detail, 0.0f, 0, gate });
+    }
+
+    void publishSkeleton(const std::uint64_t frameIndex, const std::uint64_t topologyRevision,
+        const std::span<const SkeletonBone> bones) noexcept
+    {
+        if (!s_ring.header || bones.empty() || bones.size() > 0xFFFF) {
+            return;
+        }
+        const auto frame32 = static_cast<std::uint32_t>(frameIndex);
+        const auto total = static_cast<std::uint16_t>(bones.size());
+        const auto revision32 = static_cast<std::uint32_t>(topologyRevision);
+
+        if (topologyRevision != s_ring.namesRevision || ++s_ring.framesSinceNames >= kNameTableRepeatFrames) {
+            std::size_t index = 0;
+            while (index < bones.size()) {
+                auto* payload = beginRecord(RecordType::SkeletonNames, static_cast<std::uint16_t>(kRecordSize - sizeof(RecordPrefix)), frame32, 0.0f);
+                auto* text = payload + sizeof(SkeletonHeader);
+                std::size_t used = 0;
+                const std::size_t first = index;
+                while (index < bones.size()) {
+                    const auto name = bones[index].name.substr(0, 63);
+                    if (used + name.size() + 1 > kSkeletonPayload) {
+                        break;
+                    }
+                    std::memcpy(text + used, name.data(), name.size());
+                    text[used + name.size()] = 0;
+                    used += name.size() + 1;
+                    ++index;
+                }
+                const SkeletonHeader header{ revision32, static_cast<std::uint16_t>(first), static_cast<std::uint16_t>(index - first), total, 0 };
+                std::memcpy(payload, &header, sizeof(header));
+                commitRecord();
+            }
+            s_ring.namesRevision = topologyRevision;
+            s_ring.framesSinceNames = 0;
+        }
+
+        for (std::size_t first = 0; first < bones.size(); first += kBonesPerRecord) {
+            const std::size_t count = (std::min)(kBonesPerRecord, bones.size() - first);
+            auto* payload = beginRecord(RecordType::SkeletonPose,
+                static_cast<std::uint16_t>(sizeof(SkeletonHeader) + count * sizeof(BoneRecord)), frame32, 0.0f);
+            const SkeletonHeader header{ revision32, static_cast<std::uint16_t>(first), static_cast<std::uint16_t>(count), total, 0 };
+            std::memcpy(payload, &header, sizeof(header));
+            auto* out = reinterpret_cast<BoneRecord*>(payload + sizeof(header));
+            for (std::size_t i = 0; i < count; ++i) {
+                const auto& bone = bones[first + i];
+                BoneRecord record{};
+                std::memcpy(record.position, bone.position, sizeof(record.position));
+                std::memcpy(record.rotation, bone.rotation, sizeof(record.rotation));
+                std::memcpy(out + i, &record, sizeof(record));
+            }
+            commitRecord();
+        }
     }
 
     void publishFrame(const bool settingOn, const FrameSample& frame) noexcept
@@ -429,6 +519,11 @@ namespace rock::testbench_telemetry
             in.gamePressed = input.gamePressed.load(std::memory_order_relaxed);
             in.rawPressedSeen = input.rawPressedSeen.exchange(0, std::memory_order_relaxed);
             in.gamePressedSeen = input.gamePressedSeen.exchange(0, std::memory_order_relaxed);
+            in.rawTouched = input.rawTouched.load(std::memory_order_relaxed);
+            in.rawTouchedSeen = input.rawTouchedSeen.exchange(0, std::memory_order_relaxed);
+            for (std::size_t axis = 0; axis < input.rawAxes.size(); ++axis) {
+                in.rawAxes[axis] = input.rawAxes[axis].load(std::memory_order_relaxed);
+            }
             in.rawTrigger = input.rawTrigger.load(std::memory_order_relaxed);
             in.gameTrigger = input.gameTrigger.load(std::memory_order_relaxed);
             in.blankReasons = input.blankReasons.exchange(0, std::memory_order_relaxed);

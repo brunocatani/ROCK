@@ -343,6 +343,8 @@ namespace rock
         void finalizeFramePose();
         void discardUnfinishedFramePose();
         void captureProviderPresentedHandPoses();
+        // Developer test-bench telemetry: the skeleton captured just above, when enabled.
+        void publishTestbenchSkeleton() const;
         void publishDebugRenderFrame();
 
     private:

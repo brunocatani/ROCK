@@ -1,13 +1,16 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
+#include <string_view>
 
 /*
  * Developer telemetry for the external FO4VR test bench (devbench `rps` tools).
  *
  * When `bDebugTestbenchTelemetry` is on, ROCK publishes one Frame record per
  * finalized interaction frame and Event records (haptics, native input gates)
- * into the shared-memory ring `Local\RPS_Telemetry_ROCK`. The bench reads it
+ * into the shared-memory ring `Local\RPS_Telemetry_ROCK`, and after the presented
+ * skeleton is final, Skeleton records with every bone of the rendered root skeleton. The bench reads it
  * to see what ROCK received from the controllers, what it handed the game and
  * why, instead of inferring that from logs. The record layout is a contract
  * with the bench's reader (`rps\mcp\rock_ring.py`); bump kSchemaVersion on any
@@ -85,10 +88,18 @@ namespace rock::testbench_telemetry
 
     [[nodiscard]] bool enabled() noexcept;
 
+    // Raw OpenVR controller state as read through ROCK's hook (before any remap).
+    struct RawControllerState
+    {
+        std::uint64_t pressed = 0;
+        std::uint64_t touched = 0;
+        float axes[10]{}; // rAxis[0..4] x, y: OpenVR axis 0 stick/trackpad, 1 trigger, 2 grip, 3-4 device-specific
+    };
+
     // Any thread. One call per controller-state read through ROCK's hook. `bypassed` reads
     // (RPS UI and configurator raw reads) count separately and never update the game state.
-    void observeControllerState(bool isLeft, std::uint64_t rawPressed, std::uint64_t gamePressed,
-        float rawTrigger, float gameTrigger, std::uint32_t blankReasons, bool bypassed) noexcept;
+    void observeControllerState(bool isLeft, const RawControllerState& raw, std::uint64_t gamePressed,
+        float gameTrigger, std::uint32_t blankReasons, bool bypassed) noexcept;
 
     // Any thread. Controller-state reads that never reach observeControllerState: OpenVR
     // returned false, or the device is neither the left- nor the right-hand role.
@@ -104,6 +115,18 @@ namespace rock::testbench_telemetry
 
     // Any thread. `gate` must be a string literal (stored by pointer until the next frame).
     void recordInputGate(const char* gate, bool sourceIsLeft, bool justPressed, bool suppressed, bool providerSuppressed) noexcept;
+
+    // One bone of the presented skeleton; `name` must stay valid for the call only.
+    struct SkeletonBone
+    {
+        std::string_view name;
+        float position[3]{};
+        float rotation[9]{}; // row-major NiMatrix3, world
+    };
+
+    // Frame thread, after the presented skeleton is final (FRIK AfterWorldFinal). Writes the
+    // bone-name table when `topologyRevision` changes and every few seconds, then the poses.
+    void publishSkeleton(std::uint64_t frameIndex, std::uint64_t topologyRevision, std::span<const SkeletonBone> bones) noexcept;
 
     // Frame thread. Syncs the section with `settingOn`, then writes queued events and one frame.
     // The section lives from the frame the setting turns on until it turns off or the

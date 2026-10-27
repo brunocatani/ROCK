@@ -474,6 +474,31 @@ namespace rock
         publishTestbenchTelemetry(frame);
     }
 
+    void PhysicsInteraction::publishTestbenchSkeleton() const
+    {
+        // The presented skeleton captured this frame by captureProviderPresentedHandPoses().
+        const auto& skeleton = _finalPoseBoneSnapshot;
+        if (!testbench_telemetry::enabled() || !skeleton.valid || skeleton.bones.empty()) {
+            return;
+        }
+        static std::vector<testbench_telemetry::SkeletonBone> bones; // frame thread only; capacity reused
+        bones.clear();
+        for (const auto& entry : skeleton.bones) {
+            testbench_telemetry::SkeletonBone bone{};
+            bone.name = entry.name;
+            bone.position[0] = entry.world.translate.x;
+            bone.position[1] = entry.world.translate.y;
+            bone.position[2] = entry.world.translate.z;
+            for (int row = 0; row < 3; ++row) {
+                bone.rotation[row * 3 + 0] = entry.world.rotate.entry[row].x;
+                bone.rotation[row * 3 + 1] = entry.world.rotate.entry[row].y;
+                bone.rotation[row * 3 + 2] = entry.world.rotate.entry[row].z;
+            }
+            bones.push_back(bone);
+        }
+        testbench_telemetry::publishSkeleton(runtime_state::currentFrame().timing.sequence, skeleton.topologyRevision, bones);
+    }
+
     void PhysicsInteraction::publishTestbenchTelemetry(const PhysicsFrameContext& frame)
     {
         const bool settingOn = g_rockConfig.rockDebugTestbenchTelemetry;
