@@ -18,7 +18,7 @@ namespace rock::testbench_telemetry
     {
         constexpr wchar_t kSectionName[] = L"Local\\RPS_Telemetry_ROCK";
         constexpr std::uint32_t kMagic = 0x54535052; // "RPST", shared with the bench's input ring
-        constexpr std::uint32_t kSchemaVersion = 5;
+        constexpr std::uint32_t kSchemaVersion = 6;
         constexpr std::uint32_t kRecordSize = 2048;
         constexpr std::uint32_t kCapacity = 8192; // ~20 s at 90 Hz with a full skeleton; readers poll at 10 Hz
         constexpr std::uint32_t kNameTableRepeatFrames = 300;
@@ -127,8 +127,11 @@ namespace rock::testbench_telemetry
             float playerPosition[3];
             float playerHeading; // radians
             NodeRecord rawPose[3]; // head, left, right in OpenVR tracking space (metres)
+            std::uint8_t heldKind[2]; // HeldKind; left, right
+            std::uint16_t pad;
+            std::uint32_t heldFormId[2]; // left, right
         };
-        static_assert(sizeof(FrameRecord) == 748);
+        static_assert(sizeof(FrameRecord) == 760);
 
         struct EventRecord
         {
@@ -583,6 +586,8 @@ namespace rock::testbench_telemetry
             copyVector(out.velocity, hand.velocity);
             out.hasVelocity = hand.hasVelocity ? 1 : 0;
             out.disabled = hand.disabled ? 1 : 0;
+            record.heldKind[i] = static_cast<std::uint8_t>(hand.held);
+            record.heldFormId[i] = hand.heldFormId;
 
             auto& input = s_input[i];
             auto& in = record.input[i];

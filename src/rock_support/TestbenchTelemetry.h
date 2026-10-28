@@ -46,6 +46,18 @@ namespace rock::testbench_telemetry
         Other = 3,
     };
 
+    // What a hand holds at the end of ROCK's physics update, for the bench's visual checks.
+    // ROCK's own grab wins over the equipped weapon's grips. Values are part of the ring
+    // contract; never reuse one.
+    enum class HeldKind : std::uint8_t
+    {
+        None = 0,
+        Object = 1,             // ROCK grab of anything but a weapon
+        LooseWeapon = 2,        // ROCK grab of a weapon reference
+        EquippedWeapon = 3,     // the equipped weapon's firing grip, or the akimbo second weapon
+        EquippedWeaponPart = 4, // a part grip on the equipped weapon (support hand, magazine well...)
+    };
+
     struct HandFrameSample
     {
         float position[3]{};
@@ -53,6 +65,8 @@ namespace rock::testbench_telemetry
         float velocity[3]{}; // metres per second
         bool hasVelocity = false;
         bool disabled = false;
+        HeldKind held = HeldKind::None;
+        std::uint32_t heldFormId = 0; // the grabbed reference (Object, LooseWeapon); 0 otherwise
     };
 
     // A scene node's world transform, copied in the frame it was read.

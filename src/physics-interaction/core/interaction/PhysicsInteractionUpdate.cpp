@@ -537,6 +537,23 @@ namespace rock
             out.hasVelocity = input->hasGestureVelocity;
             out.disabled = input->disabled;
         }
+        // Held state after every hand owner finished this frame (the bench checks it against the picture).
+        const auto roster = equippedWeaponRoster();
+        for (const bool isLeft : { true, false }) {
+            const Hand& hand = isLeft ? _leftHand : _rightHand;
+            auto& out = sample.hand[isLeft ? 0 : 1];
+            const auto grips = roster.slotZeroGrips(isLeft);
+            if (hand.isHolding()) {
+                out.held = hand.isHoldingLooseWeapon() ? testbench_telemetry::HeldKind::LooseWeapon : testbench_telemetry::HeldKind::Object;
+                if (const auto* ref = hand.getHeldRef()) {
+                    out.heldFormId = ref->GetFormID();
+                }
+            } else if (grips.firingGripActive || roster.slotOneHolds(isLeft)) {
+                out.held = testbench_telemetry::HeldKind::EquippedWeapon;
+            } else if (grips.partGripActive) {
+                out.held = testbench_telemetry::HeldKind::EquippedWeaponPart;
+            }
+        }
     }
 
     void PhysicsInteraction::publishTestbenchFrame()
