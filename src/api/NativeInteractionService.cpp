@@ -332,6 +332,24 @@ namespace rock::native_interaction_service {
         releaseWeaponResources(slot->owner,index,world);
         service.weapons[index].command={};service.weapons[index].body=ni::kInvalidBody;
     }
+    void handContact(RE::hknpWorld* world,bool left,ni::HandPart part,std::uint32_t handBody,std::uint32_t target,
+        std::uint32_t layer,const RE::NiPoint3& point,const RE::NiPoint3& normal,std::uint32_t pointCount) {
+        // Only layers some extension opted into; the rest of the hand's
+        // contacts (world, clutter, its own weapon) never leave ROCK.
+        if(layer>=64||!(state().obstacleLayers.load(std::memory_order_acquire)&(std::uint64_t{1}<<layer)))return;
+        auto lease=state().gate.tryEnterCallback();if(!lease)return;
+        if(state().frame.world!=reinterpret_cast<std::uintptr_t>(world))return;
+        ni::HandContact contact{};contact.frame=state().frame;contact.frame.phase=ni::Phase::HandContact;
+        contact.hand=left?1u:0u;contact.part=part;contact.handBody=handBody;contact.target=target;contact.targetLayer=layer;
+        contact.pointWorld=toApi(point);contact.pointCount=pointCount;
+        const float length=normal.x*normal.x+normal.y*normal.y+normal.z*normal.z;
+        if(pointCount>0&&pointCount<=4&&std::isfinite(length)&&length>0.000001f) {
+            const float inverse=1.0f/std::sqrt(length);
+            contact.normalValid=1;contact.normalWorld={normal.x*inverse,normal.y*inverse,normal.z*inverse};
+        }
+        for(auto& slot:state().extensions)
+            if(slot.owner&&slot.callbacks.handContact)invoke(slot,contact.frame,[&]{slot.callbacks.handContact(&contact,slot.callbacks.context);});
+    }
     ni::SelectionReply classify(const ni::SelectionQuery& query) {
         ni::SelectionReply result{};auto& service=state();if(!service.rockGate)return result;
         auto rock=service.rockGate->pauseForMutation();auto mutation=service.gate.pauseForMutation();

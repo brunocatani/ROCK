@@ -34,6 +34,10 @@ namespace rock::native_interaction_service {
     bool preCollideWeapon(std::uint32_t slot,RE::hknpWorld*,const havok_physics_timing::PhysicsTimingSample&);
     void weaponContact(std::uint32_t slot,RE::hknpWorld*,std::uint32_t weapon,std::uint32_t target,std::uint32_t layer,const RE::NiPoint3&,const RE::NiPoint3&,std::uint32_t pointCount);
     void retireWeapon(std::uint32_t slot,RE::hknpWorld*,void* bhkWorld);
+    // Physics thread: one solved manifold of a dynamic hand body (point and
+    // normal in game space, normal from the target toward the hand).
+    void handContact(RE::hknpWorld*,bool left,api::native_interaction::HandPart part,std::uint32_t handBody,std::uint32_t target,
+        std::uint32_t layer,const RE::NiPoint3& point,const RE::NiPoint3& normal,std::uint32_t pointCount);
 
     api::native_interaction::SelectionReply classify(const api::native_interaction::SelectionQuery&);
     bool validateSelection(const api::native_interaction::SelectionQuery&,const api::native_interaction::SelectionReply&);

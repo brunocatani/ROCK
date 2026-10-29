@@ -492,6 +492,35 @@
                 &normalGame);
         }
 
+        // Hand bodies against opted-in extension layers (NPC limbs and their
+        // supplements). Hand-on-hand and hand-on-weapon pairs stay internal.
+        if (solvedChildContact && bodyAIsDynamicHand != bodyBIsDynamicHand &&
+            !bodyAIsDynamicWeapon && !bodyBIsDynamicWeapon) {
+            const auto& source = bodyAIsDynamicHand ? dynamicBodySourceA : dynamicBodySourceB;
+            const auto otherBodyId = bodyAIsDynamicHand ? bodyIdB : bodyIdA;
+            std::uint32_t otherFilterInfo = 0;
+            if (havok_runtime::tryReadFilterInfo(world, RE::hknpBodyId{ otherBodyId }, otherFilterInfo)) {
+                using api::native_interaction::HandPart;
+                const auto part = source.slot == dynamic_hand_collision_telemetry::kPalmSlot ? HandPart::Palm :
+                    source.slot >= dynamic_hand_collision_telemetry::kFirstForearmSlot ? HandPart::Forearm : HandPart::Finger;
+                RE::NiPoint3 pointGame{};
+                const float pointScale = havokToGameScale() / static_cast<float>(manifoldPointCount);
+                for (std::int32_t index = 0; index < manifoldPointCount; ++index) {
+                    const auto* point = reinterpret_cast<const float*>(data + 0x70 + index * 0x10);
+                    pointGame.x += point[0] * pointScale;
+                    pointGame.y += point[1] * pointScale;
+                    pointGame.z += point[2] * pointScale;
+                }
+                // The manifold normal at +0x40 points B -> A; orient it target -> hand.
+                const auto* manifoldNormal = reinterpret_cast<const float*>(data + 0x40);
+                const float sign = bodyAIsDynamicHand ? 1.0f : -1.0f;
+                native_interaction_service::handContact(world, source.isLeft, part, source.bodyId, otherBodyId,
+                    otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK, pointGame,
+                    { manifoldNormal[0] * sign, manifoldNormal[1] * sign, manifoldNormal[2] * sign },
+                    static_cast<std::uint32_t>(manifoldPointCount));
+            }
+        }
+
         // Each held weapon's proxy routes its own side; a gun-on-gun pair
         // reaches both, each seeing the other proxy as its obstacle.
         for (auto* proxyRuntime : { &_dynamicWeaponCollision, &_secondaryDynamicWeaponCollision }) {

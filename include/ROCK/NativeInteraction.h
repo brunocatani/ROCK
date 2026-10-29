@@ -53,6 +53,7 @@ namespace rock::api::native_interaction {
         Selection = 8,
         Extraction = 9,
         Gameplay = 10,
+        HandContact = 11,
     };
 
     // world and bhkWorld are the live hknpWorld and bhkWorld of this step.
@@ -169,6 +170,36 @@ namespace rock::api::native_interaction {
         std::uint32_t pointCount{ 0 };
     };
 
+    // The part of a dynamic hand body that touched: the palm, a finger or
+    // the forearm.
+    enum class HandPart : std::uint32_t
+    {
+        Palm = 0,
+        Finger = 1,
+        Forearm = 2,
+    };
+
+    // One contact of a dynamic hand body with a body on a layer the
+    // extensions enabled through setDynamicObstacleLayers, whether or not that
+    // hand holds anything. hand is 0 for the right hand, 1 for the left.
+    // normalWorld is the unit normal of the target surface toward the hand,
+    // when normalValid.
+    struct HandContact
+    {
+        std::uint32_t size{ sizeof(HandContact) };
+        std::uint32_t version{ 1 };
+        std::uint32_t hand{ 0 };
+        HandPart part{ HandPart::Palm };
+        Frame frame{};
+        std::uint32_t handBody{ kInvalidBody };
+        std::uint32_t target{ kInvalidBody };
+        std::uint32_t targetLayer{ 0 };
+        Point3 pointWorld{};
+        std::uint32_t normalValid{ 0 };
+        Point3 normalWorld{};
+        std::uint32_t pointCount{ 0 };
+    };
+
     // ------------------------------------------------------------------
     // Selection, extraction, proximity, impact
     // ------------------------------------------------------------------
@@ -274,6 +305,8 @@ namespace rock::api::native_interaction {
      * weaponPreCollide and weaponRetire are required). weaponPreCollide
      * returns nonzero to keep driving this substep. weaponRetire runs before
      * ROCK retires the slot's weapon body: remove every constraint on it.
+     * handContact reaches every extension that registers it, on the
+     * physics thread, like weaponContact.
      * extractSelection requires classifySelection and validateSelection.
      * The first extension that handles a selection, proximity or impact query
      * answers it. A faulting callback removes its extension.
@@ -295,6 +328,7 @@ namespace rock::api::native_interaction {
         std::uint32_t(ROCK_CALL* validateSelection)(const SelectionQuery*, const SelectionReply*, void*) noexcept {};
         void(ROCK_CALL* proximityTarget)(const ProximityQuery*, ProximityResult*, void*) noexcept {};
         void(ROCK_CALL* impactEffect)(const ImpactQuery*, ImpactResult*, void*) noexcept {};
+        void(ROCK_CALL* handContact)(const HandContact*, void*) noexcept {};
     };
 
     /*
