@@ -6,6 +6,7 @@
 #include "physics-interaction/visual/GripZoneIndicators.h"
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
+#include "physics-interaction/native/PhysicsShapeCast.h"
 #include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
 #include "physics-interaction/weapon/NativeSecondaryPresentation.h"
 #include "physics-interaction/weapon/NativeSecondaryActions.h"

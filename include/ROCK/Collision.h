@@ -216,6 +216,18 @@ namespace rock::api::collision {
         NormalValid = 1u << 1,
     };
 
+    // What a world raycast can hit.
+    enum class WorldRaycastFilter : std::uint32_t
+    {
+        // The item-picking ray: world geometry, objects and actor bodies.
+        Selection = 0,
+        // Visible solid surfaces only (static and animated world geometry,
+        // terrain, trees, clutter, props, debris, glass); never actors,
+        // weapons, projectiles, triggers or invisible collision. For things
+        // that land on the scene, such as blood. Costs a small sweep.
+        Surfaces = 1,
+    };
+
     // Nonzero generation fields guard the request.
     struct WorldRaycastRequest
     {
@@ -227,9 +239,12 @@ namespace rock::api::collision {
         std::uint32_t worldGeneration{ 0 };
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
+        WorldRaycastFilter filter{ WorldRaycastFilter::Selection };
     };
 
     // frameIndex and the generations are those at the time of the cast.
+    // hitLayer is the Fallout 4 collision layer of the hit body for the
+    // Surfaces filter; 0 without a hit and for Selection.
     struct WorldRaycastResult
     {
         std::uint32_t size{ sizeof(WorldRaycastResult) };
@@ -244,6 +259,7 @@ namespace rock::api::collision {
         std::uint32_t worldGeneration{ 0 };
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
+        std::uint32_t hitLayer{ 0 };
     };
 
     // ------------------------------------------------------------------

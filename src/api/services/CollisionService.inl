@@ -67,7 +67,9 @@
             !finiteProviderPoint(request.directionGame) ||
             !std::isfinite(request.maxDistanceGame) ||
             request.maxDistanceGame <= 0.0f ||
-            request.maxDistanceGame > api::collision::kMaxRaycastDistanceGame) {
+            request.maxDistanceGame > api::collision::kMaxRaycastDistanceGame ||
+            (request.filter != api::collision::WorldRaycastFilter::Selection &&
+             request.filter != api::collision::WorldRaycastFilter::Surfaces)) {
             return api::Status::InvalidArgument;
         }
         const float directionLengthSquared =

@@ -282,7 +282,7 @@ static_assert(offsetof(rock::api::collision::PlayerColliderDescriptor, lengthGam
 static_assert(offsetof(rock::api::collision::PlayerColliderDescriptor, radiusGameUnits) == 52);
 static_assert(offsetof(rock::api::collision::PlayerColliderDescriptor, transform) == 56);
 static_assert(offsetof(rock::api::collision::PlayerColliderDescriptor, collisionGeneration) == 108);
-static_assert(sizeof(rock::api::collision::WorldRaycastRequest) == 48);
+static_assert(sizeof(rock::api::collision::WorldRaycastRequest) == 52);
 static_assert(alignof(rock::api::collision::WorldRaycastRequest) == 4);
 static_assert(offsetof(rock::api::collision::WorldRaycastRequest, size) == 0);
 static_assert(offsetof(rock::api::collision::WorldRaycastRequest, version) == 4);
@@ -292,6 +292,7 @@ static_assert(offsetof(rock::api::collision::WorldRaycastRequest, maxDistanceGam
 static_assert(offsetof(rock::api::collision::WorldRaycastRequest, worldGeneration) == 36);
 static_assert(offsetof(rock::api::collision::WorldRaycastRequest, skeletonGeneration) == 40);
 static_assert(offsetof(rock::api::collision::WorldRaycastRequest, providerGeneration) == 44);
+static_assert(offsetof(rock::api::collision::WorldRaycastRequest, filter) == 48);
 static_assert(sizeof(rock::api::collision::WorldRaycastResult) == 72);
 static_assert(alignof(rock::api::collision::WorldRaycastResult) == 8);
 static_assert(offsetof(rock::api::collision::WorldRaycastResult, size) == 0);
@@ -306,6 +307,7 @@ static_assert(offsetof(rock::api::collision::WorldRaycastResult, frameIndex) == 
 static_assert(offsetof(rock::api::collision::WorldRaycastResult, worldGeneration) == 56);
 static_assert(offsetof(rock::api::collision::WorldRaycastResult, skeletonGeneration) == 60);
 static_assert(offsetof(rock::api::collision::WorldRaycastResult, providerGeneration) == 64);
+static_assert(offsetof(rock::api::collision::WorldRaycastResult, hitLayer) == 68);
 static_assert(sizeof(rock::api::collision::WeaponBodies) == 48);
 static_assert(alignof(rock::api::collision::WeaponBodies) == 8);
 static_assert(offsetof(rock::api::collision::WeaponBodies, weaponGenerationKey) == 0);

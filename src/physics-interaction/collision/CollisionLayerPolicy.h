@@ -201,6 +201,29 @@ namespace rock::collision_layer_policy
         }
     }
 
+    // Solid surfaces a player can see: what scene effects may land on.
+    // Excludes invisible collision helpers that isWorldSurfaceLayer keeps.
+    inline constexpr bool isVisibleSurfaceLayer(std::uint32_t layer)
+    {
+        switch (layer) {
+        case FO4_LAYER_STATIC:
+        case FO4_LAYER_ANIMSTATIC:
+        case FO4_LAYER_TRANSPARENT:
+        case FO4_LAYER_CLUTTER:
+        case FO4_LAYER_TREES:
+        case FO4_LAYER_PROPS:
+        case FO4_LAYER_TERRAIN:
+        case FO4_LAYER_GROUND:
+        case FO4_LAYER_DEBRIS_SMALL:
+        case FO4_LAYER_DEBRIS_LARGE:
+        case FO4_LAYER_TRANSPARENT_SMALL:
+        case FO4_LAYER_TRANSPARENT_SMALL_ANIM:
+            return true;
+        default:
+            return false;
+        }
+    }
+
     inline constexpr bool isDynamicWeaponProxyLayer(std::uint32_t layer)
     {
         return layer == ROCK_LAYER_DYNAMIC_WEAPON_PROXY || layer == ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY;

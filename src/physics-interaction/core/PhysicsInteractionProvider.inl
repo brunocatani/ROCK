@@ -158,6 +158,10 @@
             start.z + direction.z * request.maxDistanceGame,
         };
 
+        if (request.filter == api::collision::WorldRaycastFilter::Surfaces) {
+            return queryProviderSurfaceRaycast(request, start, direction, outResult);
+        }
+
         physics_ray_cast::ClosestSegmentResult rayResult{};
         if (!physics_ray_cast::castClosestSegment(
                 _lifecycle.cachedBhkWorld,
@@ -198,6 +202,73 @@
             _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
         outResult.providerGeneration =
             _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
+        return true;
+    }
+
+    bool PhysicsInteraction::queryProviderSurfaceRaycast(
+        const api::collision::WorldRaycastRequest& request,
+        const RE::NiPoint3& start,
+        const RE::NiPoint3& direction,
+        api::collision::WorldRaycastResult& outResult) const
+    {
+        // The pick ray stops at the first body, actors included. A thin sweep
+        // with the same filter collects every body along the segment; the
+        // closest one on a visible surface layer is the answer.
+        constexpr float kProbeRadiusGame = 1.0f; // selection caches one shape per radius
+        auto* world = _lifecycle.cachedHknpWorld;
+        if (!world) {
+            return false;
+        }
+        physics_query_resources::AllHitsCollector ownedHits;
+        auto& hits = ownedHits.get();
+        if (!physics_shape_cast::castSelectionSphere(world,
+                { .startGame = start, .directionGame = direction, .distanceGame = request.maxDistanceGame,
+                  .radiusGame = kProbeRadiusGame, .collisionFilterInfo = selection_query_policy::kFarClipRayFilterInfo },
+                hits)) {
+            return false;
+        }
+        const RE::hknpCollisionResult* best = nullptr;
+        std::uint32_t bestLayer = 0;
+        for (int index = 0; index < hits.hits._size; ++index) {
+            const auto& hit = hits.hits._data[index];
+            std::uint32_t filterInfo = 0;
+            if (!body_collision::tryReadFilterInfo(world, hit.hitBodyInfo.m_bodyId, filterInfo)) {
+                continue;
+            }
+            const auto layer = filterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+            if (!collision_layer_policy::isVisibleSurfaceLayer(layer) || !std::isfinite(hit.fraction.storage)) {
+                continue;
+            }
+            if (!best || hit.fraction.storage < best->fraction.storage) {
+                best = &hit;
+                bestLayer = layer;
+            }
+        }
+        outResult.hit = best ? 1u : 0u;
+        outResult.flags = 0;
+        outResult.hitFraction = 1.0f;
+        outResult.hitDistanceGame = request.maxDistanceGame;
+        outResult.hitPointGame = { start.x + direction.x * request.maxDistanceGame,
+            start.y + direction.y * request.maxDistanceGame, start.z + direction.z * request.maxDistanceGame };
+        if (best) {
+            outResult.flags = static_cast<std::uint32_t>(api::collision::WorldRaycastResultFlag::Hit);
+            outResult.hitFraction = std::clamp(best->fraction.storage, 0.0f, 1.0f);
+            outResult.hitDistanceGame = outResult.hitFraction * request.maxDistanceGame;
+            // The sweep reports the contact on the surface, not the sphere centre.
+            const auto point = hkVectorToNiPoint(best->position);
+            outResult.hitPointGame = { point.x, point.y, point.z };
+            outResult.hitLayer = bestLayer;
+            const auto& normal = best->normal;
+            const float lengthSquared = normal.x * normal.x + normal.y * normal.y + normal.z * normal.z;
+            if (std::isfinite(lengthSquared) && lengthSquared > 1.0e-8f) {
+                const float inverse = 1.0f / std::sqrt(lengthSquared);
+                outResult.flags |= static_cast<std::uint32_t>(api::collision::WorldRaycastResultFlag::NormalValid);
+                outResult.hitNormalGame = { normal.x * inverse, normal.y * inverse, normal.z * inverse };
+            }
+        }
+        outResult.worldGeneration = _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
+        outResult.skeletonGeneration = _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
+        outResult.providerGeneration = _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
         return true;
     }
     void PhysicsInteraction::fillProviderWeaponPartGripStates(
