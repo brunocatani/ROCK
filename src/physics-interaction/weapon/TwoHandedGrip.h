@@ -2141,6 +2141,8 @@ namespace rock
             // FRIK applies the parent request in its next skeleton pass.
             bool weaponNodeOwnershipBlockEngaged{ false };
             bool weaponNodeReparented{ false };
+            // The check that last refused the carry frames (a string literal), for the clear warning.
+            const char* framesFailure{ "none" };
 
             // Support-release weapon return: the last rendered two-hand pose
             // in the physical firing-hand frame, eased into the wand-aimed

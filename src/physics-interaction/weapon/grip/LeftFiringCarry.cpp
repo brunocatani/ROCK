@@ -63,9 +63,10 @@ namespace rock
                 dt,
                 &dampedAimCarrierWorld)) {
             _hasSolvedWeaponTransform = false;
-            ROCK_LOG_WARN(
-                Weapon,
-                "TwoHandedGrip: clearing left-firing carry because the physical hand, weapon aim, or authored seat is unavailable");
+            // A grip start retries every frame; one line per second is enough.
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
+                "TwoHandedGrip: clearing left-firing carry because the physical hand, weapon aim, or authored seat is unavailable stage={}",
+                _leftCarry.framesFailure);
             transitionToInactive(false);
             return false;
         }
@@ -165,11 +166,19 @@ namespace rock
         const RE::NiTransform& leftWandWorld,
         const RE::NiTransform& physicalLeftHandWorld)
     {
+        auto& failure = _leftCarry.framesFailure;
         if (!weaponNode || weaponNode != _session.weaponNode ||
             !usesLeftFiringCarry() ||
-            _session.equippedWeaponOwnershipKey == 0 ||
-            !isInvertibleTransform(leftWandWorld) ||
-            !isUsableHandAuthorityTransform(physicalLeftHandWorld)) {
+            _session.equippedWeaponOwnershipKey == 0) {
+            failure = "follow-frame:session";
+            return false;
+        }
+        if (!isInvertibleTransform(leftWandWorld)) {
+            failure = "follow-frame:wand";
+            return false;
+        }
+        if (!isUsableHandAuthorityTransform(physicalLeftHandWorld)) {
+            failure = "follow-frame:hand";
             return false;
         }
 
@@ -178,10 +187,13 @@ namespace rock
                 transform_math::invertTransform(leftWandWorld),
                 physicalLeftHandWorld);
         constexpr float kMaxHandToWandDistance = 30.0f;
-        if (!isFiniteTransform(handInWand) ||
-            std::sqrt(dot(
-                handInWand.translate,
-                handInWand.translate)) > kMaxHandToWandDistance) {
+        const float handToWand = std::sqrt(dot(handInWand.translate, handInWand.translate));
+        if (!isFiniteTransform(handInWand) || handToWand > kMaxHandToWandDistance) {
+            failure = "follow-frame:hand-far-from-wand";
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
+                "TwoHandedGrip: left firing damped-follow reference refused handToWand={:.1f}gu (max {:.0f}) hand=({:.1f},{:.1f},{:.1f}) wand=({:.1f},{:.1f},{:.1f})",
+                handToWand, kMaxHandToWandDistance, physicalLeftHandWorld.translate.x, physicalLeftHandWorld.translate.y,
+                physicalLeftHandWorld.translate.z, leftWandWorld.translate.x, leftWandWorld.translate.y, leftWandWorld.translate.z);
             return false;
         }
 
@@ -234,19 +246,28 @@ namespace rock
         }
         RE::NiTransform rightWeaponAimInWand{};
         const bool meleeWeapon = _recoil.weaponEvidence.resolved && _recoil.weaponEvidence.sizeClass == WeaponSizeClass::Melee;
-        if (!weaponNode || weaponNode != _session.weaponNode ||
-            !usesLeftFiringCarry() || !_firing.hasPrimaryHandWeaponLocal ||
-            (!meleeWeapon && !tryResolveRightWeaponAimInWand(
+        auto& failure = _leftCarry.framesFailure;
+        const auto fail = [&failure](const char* stage) {
+            failure = stage;
+            return false;
+        };
+        failure = "none";
+        if (!weaponNode || weaponNode != _session.weaponNode || !usesLeftFiringCarry() || !_firing.hasPrimaryHandWeaponLocal) {
+            return fail("session");
+        }
+        if (!meleeWeapon && !tryResolveRightWeaponAimInWand(
                 weaponNode,
                 _session.weaponGenerationKey,
                 _session.equippedWeaponOwnershipKey,
-                rightWeaponAimInWand)) ||
-            !isFiniteTransform(_firing.primaryHandWeaponLocal) ||
+                rightWeaponAimInWand)) {
+            return fail("right-aim");
+        }
+        if (!isFiniteTransform(_firing.primaryHandWeaponLocal) ||
             !std::isfinite(_firing.primaryGripLocal.x) ||
             !std::isfinite(_firing.primaryGripLocal.y) ||
             !std::isfinite(_firing.primaryGripLocal.z) ||
             !isFiniteTransform(weaponNode->world)) {
-            return false;
+            return fail("non-finite-seat");
         }
         RE::NiTransform seat{};
         const bool reversedGrip = presentedPrimaryHandWeaponLocal(seat);
@@ -260,11 +281,11 @@ namespace rock
                 physicalDriverWorld)) {
             // Before the first left-hand publication, the scope-safe frame is
             // still a valid fallback only if ROCK owns no left visual output.
-            if (_firing.leftHandWorldActive ||
-                hasVisualAuthorityForHand(true) ||
-                !tryGetSolverHandTransform(true, outPhysicalHandWorld) ||
+            if (_firing.leftHandWorldActive) return fail("physical-hand:left-published");
+            if (hasVisualAuthorityForHand(true)) return fail("physical-hand:left-visual-authority");
+            if (!tryGetSolverHandTransform(true, outPhysicalHandWorld) ||
                 !isUsableHandAuthorityTransform(outPhysicalHandWorld)) {
-                return false;
+                return fail("physical-hand:solver");
             }
             physicalHandSource = "solver-fallback";
         }
@@ -273,7 +294,7 @@ namespace rock
         RE::NiNode* leftWand =
             playerNodes ? playerNodes->SecondaryWandNode : nullptr;
         if (!leftWand || !isFiniteTransform(leftWand->world)) {
-            return false;
+            return fail("left-wand");
         }
 
         if (!hasLeftFiringDampedFollowFrame(
@@ -282,12 +303,12 @@ namespace rock
                 _session.equippedWeaponOwnershipKey)) {
             RE::NiTransform referenceHand = outPhysicalHandWorld;
             if (frik_hand_world_authority::weaponFilteringActive() &&
-                !frik_hand_world_authority::tryGetRawHandWorld(true, referenceHand)) return false;
+                !frik_hand_world_authority::tryGetRawHandWorld(true, referenceHand)) return fail("follow-frame:raw-hand");
             if (!captureLeftFiringDampedFollowFrame(
                     weaponNode,
                     leftWand->world,
                     referenceHand)) {
-                return false;
+                return false; // captureLeftFiringDampedFollowFrame names the failure.
             }
             // Probe: the reference the carry's damping correction is measured
             // against, and which hand basis supplied it.
@@ -312,10 +333,10 @@ namespace rock
                     outPhysicalHandWorld);
         if (frik_hand_world_authority::weaponFilteringActive() &&
             !frik_hand_world_authority::tryGetWeaponWandWorld(true, dampedAimCarrierWorld)) {
-            return false;
+            return fail("aim-carrier:weapon-wand");
         }
         if (!isFiniteTransform(dampedAimCarrierWorld)) {
-            return false;
+            return fail("aim-carrier:non-finite");
         }
         if (outDampedAimCarrierWorld) {
             *outDampedAimCarrierWorld = dampedAimCarrierWorld;
@@ -330,7 +351,7 @@ namespace rock
             if (!tryResolveNaturalWandHandOrientationFrame(true, naturalLeftHandWorld) ||
                 !weapon_aim_basis::tryResolveMeleeWorld(naturalLeftHandWorld,
                     seat, 1.0f, meleeWorld)) {
-                return false;
+                return fail("melee-natural-hand");
             }
             leftWeaponInWand = left_firing_position_only_math::orientationOnly(
                 transform_math::composeTransforms(transform_math::invertTransform(leftWand->world), meleeWorld));
@@ -402,9 +423,10 @@ namespace rock
                 barrelInLeftWand.x, barrelInLeftWand.y, barrelInLeftWand.z,
                 aimBarrelInRightWand.x, aimBarrelInRightWand.y, aimBarrelInRightWand.z);
         }
-        return isFiniteTransform(outWeaponWorld) &&
-               isUsableHandAuthorityTransform(outPhysicalHandWorld) &&
-               isUsableHandAuthorityTransform(outPresentedHandWorld);
+        if (!isFiniteTransform(outWeaponWorld)) return fail("weapon-world");
+        if (!isUsableHandAuthorityTransform(outPhysicalHandWorld)) return fail("physical-hand:unusable");
+        if (!isUsableHandAuthorityTransform(outPresentedHandWorld)) return fail("presented-hand:unusable");
+        return true;
     }
 
     void TwoHandedGrip::beginLeftFiringSupportReleaseReturn(const char* reason)
