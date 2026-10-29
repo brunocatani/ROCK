@@ -13,15 +13,31 @@ namespace rock::knife_reverse_grip
 {
     // One-handed melee weapons (sword, dagger, axe and mace animation types:
     // knives, switchblade, baton, pipes and modded one-handers) can be held in
-    // a reverse grip. The trigger of the hand carrying one toggles it; any
-    // change of that hand's weapon, including holstering, returns it to the
-    // normal grip. Automatic melee keeps the native trigger attack.
-    // Frame-thread state only.
+    // a reverse grip. The trigger of the hand carrying one toggles it. The grip
+    // stays while that weapon stays equipped, through menus (which release the
+    // live grip) and save loads (weapon_hand_save); the hand taking another
+    // one-handed melee weapon or the weapon leaving both equip indices returns
+    // it to the normal grip. Automatic melee keeps the native trigger attack.
+    // Frame-thread state; the saved snapshot and a pending restore are atomics.
     [[nodiscard]] bool appliesTo(const RE::TESObjectWEAP* weapon) noexcept;
 
     // Once per hand per input frame: the knife the hand carries now (0 when
-    // none) and whether its trigger was pressed this frame.
-    void observeHand(bool isLeft, std::uint32_t knifeFormID, bool triggerPressed) noexcept;
+    // none or not held right now), the weapon forms at the two native equip
+    // indices, and whether its trigger was pressed this frame.
+    void observeHand(bool isLeft, std::uint32_t knifeFormID, std::uint32_t wornForm0, std::uint32_t wornForm1,
+        bool triggerPressed) noexcept;
+
+    // The reverse grip of one hand for the save game: the knife (0 none) and its grip.
+    struct SavedGrip
+    {
+        std::uint32_t formID = 0;
+        bool reversed = false;
+    };
+    // Any thread.
+    [[nodiscard]] SavedGrip savedGrip(bool isLeft) noexcept;
+    // Any thread (save-load callbacks): the grip the hand takes when it next
+    // carries that knife; another knife in that hand first drops it.
+    void restoreGrip(bool isLeft, SavedGrip grip) noexcept;
 
     [[nodiscard]] bool reversed(bool isLeft, std::uint32_t formID) noexcept;
 

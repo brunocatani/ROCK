@@ -757,6 +757,7 @@ namespace rock
         // Before any early return below: a skipped consume would let a stale
         // accept-button press replay as a reload frames later (see the API doc).
         input_remap_runtime::updateFiringHandReloadInput(runtime.deltaSeconds);
+        native_hand_equipment::applyRestoredHands();
         native_hand_equipment::observe();
         {
             const auto roster = equippedWeaponRoster();

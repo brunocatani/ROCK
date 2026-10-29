@@ -113,6 +113,19 @@ namespace rock::native_hand_equipment
             ReleaseSRWLockExclusive(&s_secondaryHandLock);
         }
 
+        // The first weapon's saved hand, waiting for the loaded item. Written
+        // by the save-load callbacks, consumed by the frame owner; the lock
+        // guards only these fields.
+        struct PendingPrimaryRestore
+        {
+            std::uint32_t form = 0;
+            bool left = false;
+            bool supported = false;
+            std::uint64_t transaction = 0; // s_transaction when restored.
+        };
+        SRWLOCK s_restoreLock = SRWLOCK_INIT;
+        PendingPrimaryRestore s_pendingPrimary{};
+
         /*
          * Hand holding the index-0 weapon, written by the frame owner from
          * its settled grip outside menus (recordPrimaryHand) and when a
@@ -796,6 +809,75 @@ namespace rock::native_hand_equipment
             ReleaseSRWLockExclusive(&s_primaryHandLock);
         }
         s_supportApplied.store(sequence, std::memory_order_release);
+    }
+
+    SavedHands savedHands() noexcept
+    {
+        SavedHands saved{};
+        AcquireSRWLockShared(&s_primaryHandLock);
+        const auto primary = s_primaryHand;
+        ReleaseSRWLockShared(&s_primaryHandLock);
+        AcquireSRWLockShared(&s_secondaryHandLock);
+        const auto secondary = s_secondaryHand;
+        ReleaseSRWLockShared(&s_secondaryHandLock);
+        saved.primaryForm = primary.form;
+        saved.primaryLeft = primary.left;
+        saved.primaryFiring = primary.firing;
+        saved.primarySupported = primary.supported;
+        saved.secondaryForm = secondary.form;
+        saved.secondaryLeft = secondary.left;
+        return saved;
+    }
+
+    void restoreHands(const SavedHands& hands) noexcept
+    {
+        // Instance 0 matches any instance of the form (sameItem).
+        recordSecondaryHand(hands.secondaryForm, 0, hands.secondaryLeft);
+        AcquireSRWLockExclusive(&s_primaryHandLock);
+        s_primaryHand = {};
+        ReleaseSRWLockExclusive(&s_primaryHandLock);
+        // A part-grip carry has no firing hand to direct.
+        const bool primary = hands.primaryForm != 0 && hands.primaryFiring;
+        AcquireSRWLockExclusive(&s_restoreLock);
+        s_pendingPrimary = primary ? PendingPrimaryRestore{hands.primaryForm, hands.primaryLeft, hands.primarySupported,
+                                         s_transaction.load(std::memory_order_acquire)} :
+                                     PendingPrimaryRestore{};
+        ReleaseSRWLockExclusive(&s_restoreLock);
+        if (hands.primaryForm || hands.secondaryForm) {
+            ROCK_LOG_INFO(Weapon, "Saved weapon hands loaded first={:08X} hand={} supported={} firing={} second={:08X} hand={}",
+                hands.primaryForm, hands.primaryLeft ? "left" : "right", hands.primarySupported, hands.primaryFiring,
+                hands.secondaryForm, hands.secondaryLeft ? "left" : "right");
+        }
+    }
+
+    void applyRestoredHands() noexcept
+    {
+        AcquireSRWLockShared(&s_restoreLock);
+        const auto pending = s_pendingPrimary;
+        ReleaseSRWLockShared(&s_restoreLock);
+        if (!pending.form) return;
+        const auto clear = [] {
+            AcquireSRWLockExclusive(&s_restoreLock);
+            s_pendingPrimary = {};
+            ReleaseSRWLockExclusive(&s_restoreLock);
+        };
+        // An equip or cross-hand move chose a hand since the load.
+        if (s_transaction.load(std::memory_order_acquire) != pending.transaction) {
+            ROCK_LOG_INFO(Weapon, "Saved first weapon hand dropped weapon={:08X}: an equip chose a hand first", pending.form);
+            clear();
+            return;
+        }
+        const auto worn = wornWeapons(f4vr::getPlayer());
+        if (!worn[0].form) return;
+        clear();
+        if (worn[0].form != pending.form) {
+            ROCK_LOG_INFO(Weapon, "Saved first weapon hand dropped weapon={:08X}: {:08X} is worn", pending.form, worn[0].form);
+            return;
+        }
+        publishDirectedPrimary(worn[0].form, worn[0].instance, pending.left);
+        if (pending.supported) publishSupportRequest(worn[0].form, worn[0].instance, true);
+        ROCK_LOG_INFO(Weapon, "Saved first weapon hand restored weapon={:08X} instance={:#x} hand={} supported={}",
+            worn[0].form, worn[0].instance, pending.left ? "left" : "right", pending.supported);
     }
 
     void directPrimaryHand(std::uint32_t form, std::uintptr_t instance, bool left) noexcept

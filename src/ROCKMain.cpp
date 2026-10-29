@@ -1,6 +1,7 @@
 
 #include <array>
 #include "api/LooseWeaponStateService.h"
+#include "physics-interaction/weapon/WeaponHandSave.h"
 #include "physics-interaction/weapon/HoldingGripRecords.h"
 #include <atomic>
 #include <cstdint>
@@ -1338,6 +1339,10 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
         return false;
     }
     s_messaging->RegisterListener(onF4SEMessage);
+
+    if (!rock::weapon_hand_save::install()) {
+        logger::warn("ROCK: Save-game weapon hands unavailable; a load returns weapons to their default hands.");
+    }
 
     logger::info("ROCK: Allocate trampoline (4596 bytes)...");
     F4SE::AllocTrampoline(4596);

@@ -8,6 +8,7 @@ ROCK is the FO4VR F4SE plugin for physics-based hand interaction: object grabbin
 - Build output: `build-fast/Release/ROCK.dll` and `ROCK.pdb`, auto-deployed to `F4SE\Plugins` under the mod folder set by `COPY_PLUGIN_BASE_PATH` in `CMakeUserPresets.json`.
 - Config: `Documents\My Games\Fallout4VR\Mods_Config\ROCK\ROCK.ini` and optional `ROCK_Developer.ini`. `SavedGrabOffsets\` and `AuthoredWeaponGripCache\` live in the same folder.
 - Verify the deployed DLL's VersionInfo and timestamp rather than trusting a recorded version.
+- Save game: F4SE co-save unique ID `ROCK`, record `HNDS` (version 1): which hand holds each equipped weapon and each hand's one-handed melee reverse grip (`src/physics-interaction/weapon/WeaponHandSave.cpp`). A layout change needs a new record version.
 
 ## Build
 

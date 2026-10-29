@@ -120,4 +120,27 @@ namespace rock::native_hand_equipment
     // Frame owner: the primary now fires from the directed hand. Until then a
     // later Pip-Boy press decides with the directed hand, not the old one.
     void noteDirectedPrimaryApplied(std::uint64_t sequence) noexcept;
+
+    // The hands the save game keeps (weapon_hand_save). A load restores the
+    // two weapons but not which hand holds which: without this the second
+    // weapon returns to the hand opposite the default and the first follows.
+    // Base forms only; the instance of a loaded item is new.
+    struct SavedHands
+    {
+        std::uint32_t primaryForm = 0;
+        bool primaryLeft = false;
+        bool primaryFiring = true;
+        bool primarySupported = false;
+        std::uint32_t secondaryForm = 0;
+        bool secondaryLeft = true;
+    };
+    // Any thread: the recorded hands of the two weapons.
+    [[nodiscard]] SavedHands savedHands() noexcept;
+    // Any thread (save-load callbacks). The second weapon's hand is recorded at
+    // once. The first weapon's hand and support grip wait for that item to be
+    // worn, then go through the Pip-Boy directed-hand and support requests;
+    // a different item worn there, or any equip transaction first, drops them.
+    void restoreHands(const SavedHands& hands) noexcept;
+    // Frame owner, every frame: applies a pending restore of the first weapon.
+    void applyRestoredHands() noexcept;
 }

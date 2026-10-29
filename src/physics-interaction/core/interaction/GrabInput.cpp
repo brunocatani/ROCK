@@ -684,12 +684,15 @@ namespace rock
             const auto& slot0 = roster.facts().slot0;
             const bool slotZeroFiringHand = slot0.holdsHand && !slot0.firingGripDetached &&
                 slot0.firingHand == equipped_weapon_roster::handFor(isLeft);
+            const auto views = native_hand_equipment::equippedViews();
             const RE::TESObjectWEAP* handWeapon = nullptr;
             if (offhandWeaponOccupiesHand || slotZeroFiringHand) {
-                handWeapon = native_hand_equipment::equippedViews()[offhandWeaponOccupiesHand ? 1 : 0].weapon;
+                handWeapon = views[offhandWeaponOccupiesHand ? 1 : 0].weapon;
             }
             knife_reverse_grip::observeHand(isLeft,
-                knife_reverse_grip::appliesTo(handWeapon) ? handWeapon->formID : 0u, heldWeaponEquipTriggerPressedEdge);
+                knife_reverse_grip::appliesTo(handWeapon) ? handWeapon->formID : 0u,
+                views[0].weapon ? views[0].weapon->formID : 0u, views[1].weapon ? views[1].weapon->formID : 0u,
+                heldWeaponEquipTriggerPressedEdge);
         }
         if (offhandWeaponOccupiesHand || roster.slotZeroHolds(isLeft)) {
             grab_input_intent_policy::reset(inputIntentState);
