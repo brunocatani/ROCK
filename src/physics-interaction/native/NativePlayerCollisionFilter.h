@@ -33,11 +33,13 @@ namespace rock::native_player_collision
     // Single owner: the negotiated equipped-tool extension. Game-thread mutation
     // while its physics callbacks are quiesced. The existing simulation hook
     // consumes this exact pair even when the native-player body list is empty.
-    bool publishToolContactExclusion(RE::hknpWorld* world, std::uint32_t weaponBody, std::uint32_t targetBody);
-    bool hasToolContactExclusion(RE::hknpWorld* world, std::uint32_t weaponBody, std::uint32_t targetBody) noexcept;
+    // One weapon/target pair per weapon slot (0 primary, 1 second weapon).
+    inline constexpr std::uint32_t kToolContactSlots = 2;
+    bool publishToolContactExclusion(std::uint32_t slot, RE::hknpWorld* world, std::uint32_t weaponBody, std::uint32_t targetBody);
+    bool hasToolContactExclusion(std::uint32_t slot, RE::hknpWorld* world, std::uint32_t weaponBody, std::uint32_t targetBody) noexcept;
     std::uint64_t toolContactRejectedCount() noexcept;
     // A null liveWorld clears ownership after world loss without native calls.
-    void clearToolContactExclusion(RE::hknpWorld* liveWorld);
+    void clearToolContactExclusion(std::uint32_t slot, RE::hknpWorld* liveWorld);
 
     // Keyframed hand (and arm) bodies of hands that own an equipped weapon.
     // Only their pairs with that weapon's bodies are removed (suppressWeaponHandContact);

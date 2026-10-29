@@ -82,8 +82,16 @@ namespace rock::native_interaction_service {
             const auto previous=state().obstacleLayers.exchange(mask,std::memory_order_acq_rel);
             if(previous!=mask&&world&&state().refreshLayers)state().refreshLayers(state().retireContext,world);
         }
-        bool hasWeaponConstraintState() {
-            return state().excludedTarget!=ni::kInvalidBody;
+        // The slot's proxy must be retired before its driver goes when the
+        // driver controls it or owns a contact exclusion on it.
+        bool needsWeaponRetire(std::uint32_t slot) {
+            const auto& weapon=state().weapons[slot];
+            return weapon.command.result==ni::DriveResult::Controlled||weapon.excludedTarget!=ni::kInvalidBody;
+        }
+        void retireDrivenWeapons(void* bhk) {
+            auto& service=state();if(!service.driver||!service.retireWeapon)return;
+            for(std::uint32_t slot=0;slot<service.weapons.size();++slot)
+                if(needsWeaponRetire(slot))service.retireWeapon(service.retireContext,slot,bhk);
         }
         Status registerExtension(Owner owner,const ni::Callbacks* callbacks) noexcept {
             return guarded(owner,[&] {
@@ -139,12 +147,12 @@ namespace rock::native_interaction_service {
                     output[i]={};
                 }
                 if(auto s=access(owner);s!=Status::Ok)return s;
-                if(auto s=api::boundary::requireWeaponSlot(slot);s!=Status::Ok)return s;
-                const auto& service=state();
-                if(service.driver!=owner||!service.collision||current->frame.phase!=ni::Phase::WeaponUpdate)return Status::WrongThread;
+                if(auto s=api::boundary::checkWeaponSlot(slot);s!=Status::Ok)return s;
+                const auto& service=state();const auto& weapon=service.weapons[slot];
+                if(service.driver!=owner||!weapon.collision||current->frame.phase!=ni::Phase::WeaponUpdate)return Status::WrongThread;
                 std::uint32_t total=0;
-                for(const auto& source:service.collision->getProfileEvidenceDescriptors()) {
-                    if(!source.valid||source.weaponGenerationKey!=service.generation)continue;
+                for(const auto& source:weapon.collision->getProfileEvidenceDescriptors()) {
+                    if(!source.valid||source.weaponGenerationKey!=weapon.generation)continue;
                     if(source.sourceName.size()>=sizeof(ni::WeaponSource::name)) {
                         for(std::uint32_t i=0;i<capacity;++i)output[i]={};
                         return Status::TargetInvalid;
@@ -165,15 +173,15 @@ namespace rock::native_interaction_service {
                 if(output->version!=1)return Status::UnsupportedVersion;
                 *output={};
                 if(auto s=access(owner);s!=Status::Ok)return s;
-                if(auto s=api::boundary::requireWeaponSlot(slot);s!=Status::Ok)return s;
-                const auto& service=state();
-                if(service.driver!=owner||!service.collision||!service.weaponNode||current->frame.phase!=ni::Phase::WeaponUpdate)return Status::WrongThread;
-                if(!finite(toApi(service.weaponNode->world)))return Status::TargetInvalid;
+                if(auto s=api::boundary::checkWeaponSlot(slot);s!=Status::Ok)return s;
+                const auto& service=state();const auto& weapon=service.weapons[slot];
+                if(service.driver!=owner||!weapon.collision||!weapon.weaponNode||current->frame.phase!=ni::Phase::WeaponUpdate)return Status::WrongThread;
+                if(!finite(toApi(weapon.weaponNode->world)))return Status::TargetInvalid;
                 WeaponCollision::SupportGripEvidenceView view{};
-                if(!service.collision->tryGetSupportGripEvidenceView(body,service.weaponNode,view)||!view.sourceNodeCurrent||
-                    view.weaponGenerationKey!=service.generation)return Status::TargetInvalid;
-                output->generation=service.generation;
-                output->sourceInWeapon=toApi(transform_math::composeTransforms(transform_math::invertTransform(service.weaponNode->world),view.localToWorld));
+                if(!weapon.collision->tryGetSupportGripEvidenceView(body,weapon.weaponNode,view)||!view.sourceNodeCurrent||
+                    view.weaponGenerationKey!=weapon.generation)return Status::TargetInvalid;
+                output->generation=weapon.generation;
+                output->sourceInWeapon=toApi(transform_math::composeTransforms(transform_math::invertTransform(weapon.weaponNode->world),view.localToWorld));
                 if(!finite(output->sourceInWeapon))return Status::TargetInvalid;
                 if(direction) {
                     if(!std::isfinite(direction->x)||!std::isfinite(direction->y)||!std::isfinite(direction->z)||view.localTriangles.empty()||view.localTriangles.size()>10000)return Status::TargetInvalid;
@@ -198,7 +206,7 @@ namespace rock::native_interaction_service {
     void detach(PhysicsCallbackQuiescenceGate* gate) {
         auto& service=state();if(service.rockGate!=gate)return;
         service.gate.pauseAndWait();service.rockGate=nullptr;service.retireWeapon=nullptr;service.refreshLayers=nullptr;service.retireContext=nullptr;
-        service.frame={};service.command={};service.weaponBody=ni::kInvalidBody;
+        service.frame={};service.resetWeapons();
     }
     void update(const PhysicsFrameContext& context) {
         auto& service=state();if(!service.rockGate)return;
@@ -224,14 +232,13 @@ namespace rock::native_interaction_service {
     void clear(RE::hknpWorld* world,void* bhk) {
         auto& service=state();if(!service.rockGate)return;
         auto rock=service.rockGate->pauseForMutation();auto mutation=service.gate.pauseForMutation();
-        if(service.driver&&(service.command.result==ni::DriveResult::Controlled||hasWeaponConstraintState())&&service.retireWeapon)
-            service.retireWeapon(service.retireContext,bhk);
+        retireDrivenWeapons(bhk);
         auto frame=service.frame;frame.phase=ni::Phase::Retire;frame.world=reinterpret_cast<std::uintptr_t>(world);frame.bhkWorld=reinterpret_cast<std::uintptr_t>(bhk);
         for(auto& slot:service.extensions)if(slot.owner) {
             if(slot.callbacks.retire)invoke(slot,frame,[&]{slot.callbacks.retire(&frame,slot.callbacks.context);});
             releaseWeaponResources(slot.owner,world);slot.obstacleLayers=0;
         }
-        service.command={};service.weaponBody=ni::kInvalidBody;combineMasks(world);service.frame={};
+        service.resetWeapons();combineMasks(world);service.frame={};
     }
     Status canUnregisterOwner(Owner owner) {
         if(!owner)return Status::Ok;
@@ -253,7 +260,7 @@ namespace rock::native_interaction_service {
             service.gate.pauseAndWait();releaseWeaponResources(owner,nullptr);
             service.registeredOwners[slot-service.extensions.data()].store(0,std::memory_order_release);
             slot->owner=0;slot->callbacks={};slot->obstacleLayers=0;
-            if(service.driver==owner){service.driver=0;service.command={};service.weaponBody=ni::kInvalidBody;}
+            if(service.driver==owner){service.driver=0;service.resetWeapons();}
             combineMasks();return;
         }
         auto rock=service.rockGate->pauseForMutation();auto mutation=service.gate.pauseForMutation();
@@ -261,47 +268,52 @@ namespace rock::native_interaction_service {
         auto* bhk=cell?cell->GetbhkWorld():nullptr;
         auto* world=bhk?havok_runtime::getHknpWorldFromBhk(bhk):nullptr;
         if(reinterpret_cast<std::uintptr_t>(world)!=service.frame.world){world=nullptr;bhk=nullptr;}
-        if(service.driver==owner&&(service.command.result==ni::DriveResult::Controlled||hasWeaponConstraintState())&&service.retireWeapon)service.retireWeapon(service.retireContext,bhk);
+        if(service.driver==owner)retireDrivenWeapons(bhk);
         auto frame=service.frame;frame.phase=ni::Phase::Retire;frame.world=reinterpret_cast<std::uintptr_t>(world);frame.bhkWorld=reinterpret_cast<std::uintptr_t>(bhk);
         if(slot->callbacks.retire)invoke(*slot,frame,[&]{slot->callbacks.retire(&frame,slot->callbacks.context);});
         releaseWeaponResources(owner,world);service.registeredOwners[slot-service.extensions.data()].store(0,std::memory_order_release);
         slot->owner=0;slot->callbacks={};slot->obstacleLayers=0;
-        if(service.driver==owner){service.driver=0;service.command={};service.weaponBody=ni::kInvalidBody;}
+        if(service.driver==owner){service.driver=0;service.resetWeapons();}
         combineMasks(world);
     }
-    bool updateWeapon(const PhysicsFrameContext& context,const WeaponCollision& collision,RE::NiNode* node,BethesdaPhysicsBody& body,
+    bool updateWeapon(std::uint32_t index,const PhysicsFrameContext& context,const WeaponCollision& collision,RE::NiNode* node,BethesdaPhysicsBody& body,
         const RE::NiPoint3& center,std::uint64_t generation,RE::NiTransform& requested,bool support,const RE::NiPoint3* grip) {
-        auto& service=state();auto* slot=extension(service.driver);if(!slot||!slot->callbacks.weaponUpdate)return true;
+        auto& service=state();auto* slot=extension(service.driver);
+        if(index>=service.weapons.size()||!slot||!slot->callbacks.weaponUpdate)return true;
         auto rock=service.rockGate->pauseForMutation();auto mutation=service.gate.pauseForMutation();
-        ni::WeaponFrame frame{};frame.frame=makeFrame(context,ni::Phase::WeaponUpdate);frame.weaponSlot=0;frame.body=body.getBodyId().value;
+        auto& weapon=service.weapons[index];
+        ni::WeaponFrame frame{};frame.frame=makeFrame(context,ni::Phase::WeaponUpdate);frame.weaponSlot=index;frame.body=body.getBodyId().value;
         const auto composition=collision.getWeaponCompositionSnapshot();
         frame.generation=generation;frame.form=composition.weaponGenerationKey==generation?composition.weaponFormId:0;frame.supportOwnsPose=support;
         frame.requestedWeapon=toApi(requested);frame.centerWeaponLocal=toApi(center);frame.primaryGripValid=grip!=nullptr;if(grip)frame.primaryGripLocal=toApi(*grip);
         frame.recoveryDistanceGame=g_rockConfig.rockWeaponCollisionGripRecoveryDistanceGameUnits;
-        service.weaponBody=frame.body;service.generation=generation;service.collision=&collision;service.weaponNode=node;
+        weapon.body=frame.body;weapon.generation=generation;weapon.collision=&collision;weapon.weaponNode=node;
         ni::WeaponCommand command{};command.requestedWeapon=frame.requestedWeapon;command.presentation=frame.requestedWeapon;
         const bool ok=invoke(*slot,frame.frame,[&]{slot->callbacks.weaponUpdate(&frame,&command,slot->callbacks.context);});
-        service.collision=nullptr;service.weaponNode=nullptr;
+        weapon.collision=nullptr;weapon.weaponNode=nullptr;
         if(!ok||disabled(*slot)||command.size!=sizeof(command)||command.version!=1||(command.result!=ni::DriveResult::Unchanged&&command.result!=ni::DriveResult::Controlled)||
-            (command.result==ni::DriveResult::Unchanged&&hasWeaponConstraintState())||
+            (command.result==ni::DriveResult::Unchanged&&weapon.excludedTarget!=ni::kInvalidBody)||
             (command.result==ni::DriveResult::Controlled&&(!finite(command.requestedWeapon)||!finite(command.presentation))))return false;
-        service.command=command;
+        weapon.command=command;
         if(command.result==ni::DriveResult::Controlled)requested=fromApi(command.requestedWeapon);
         return true;
     }
-    bool weaponControlled(){return state().command.result==ni::DriveResult::Controlled;}
-    RE::NiTransform weaponPresentation(){return fromApi(state().command.presentation);}
-    bool preCollideWeapon(RE::hknpWorld* world,const havok_physics_timing::PhysicsTimingSample& timing) {
-        auto lease=state().gate.tryEnterCallback();if(!lease)return !weaponControlled();
-        if(reinterpret_cast<std::uintptr_t>(world)!=state().frame.world)return !weaponControlled();
+    bool weaponControlled(std::uint32_t slot){return slot<api::kMaxWeaponSlots&&state().weapons[slot].command.result==ni::DriveResult::Controlled;}
+    RE::NiTransform weaponPresentation(std::uint32_t slot){return fromApi(state().weapons[slot].command.presentation);}
+    bool preCollideWeapon(std::uint32_t index,RE::hknpWorld* world,const havok_physics_timing::PhysicsTimingSample& timing) {
+        if(index>=api::kMaxWeaponSlots)return true;
+        auto lease=state().gate.tryEnterCallback();if(!lease)return !weaponControlled(index);
+        if(reinterpret_cast<std::uintptr_t>(world)!=state().frame.world)return !weaponControlled(index);
         auto* slot=extension(state().driver);if(!slot||!slot->callbacks.weaponPreCollide)return true;
         const auto frame=stepFrame(world,timing);std::uint32_t result=0;
-        return invoke(*slot,frame,[&]{result=slot->callbacks.weaponPreCollide(&frame,0,slot->callbacks.context);})&&result!=0;
+        return invoke(*slot,frame,[&]{result=slot->callbacks.weaponPreCollide(&frame,index,slot->callbacks.context);})&&result!=0;
     }
-    void weaponContact(RE::hknpWorld* world,std::uint32_t weapon,std::uint32_t target,std::uint32_t layer,const RE::NiPoint3& point,const RE::NiPoint3& normal,std::uint32_t pointCount) {
+    void weaponContact(std::uint32_t index,RE::hknpWorld* world,std::uint32_t weapon,std::uint32_t target,std::uint32_t layer,const RE::NiPoint3& point,const RE::NiPoint3& normal,std::uint32_t pointCount) {
+        if(index>=api::kMaxWeaponSlots)return;
         auto lease=state().gate.tryEnterCallback();if(!lease)return;
-        auto* slot=extension(state().driver);if(!slot||!slot->callbacks.weaponContact||state().weaponBody!=weapon||state().frame.world!=reinterpret_cast<std::uintptr_t>(world))return;
-        ni::Contact contact{};contact.frame=state().frame;contact.frame.phase=ni::Phase::WeaponContact;contact.weaponSlot=0;
+        auto* slot=extension(state().driver);
+        if(!slot||!slot->callbacks.weaponContact||state().weapons[index].body!=weapon||state().frame.world!=reinterpret_cast<std::uintptr_t>(world))return;
+        ni::Contact contact{};contact.frame=state().frame;contact.frame.phase=ni::Phase::WeaponContact;contact.weaponSlot=index;
         contact.weapon=weapon;contact.target=target;contact.targetLayer=layer;contact.pointWorld=toApi(point);contact.pointCount=pointCount;
         const float length=normal.x*normal.x+normal.y*normal.y+normal.z*normal.z;
         if(pointCount>0&&pointCount<=4&&std::isfinite(length)&&length>0.000001f) {
@@ -310,14 +322,15 @@ namespace rock::native_interaction_service {
         }
         invoke(*slot,contact.frame,[&]{slot->callbacks.weaponContact(&contact,slot->callbacks.context);});
     }
-    void retireWeapon(RE::hknpWorld* world,void* bhk) {
-        auto& service=state();auto* slot=extension(service.driver);if(!slot||!service.rockGate)return;
+    void retireWeapon(std::uint32_t index,RE::hknpWorld* world,void* bhk) {
+        auto& service=state();auto* slot=extension(service.driver);
+        if(index>=service.weapons.size()||!slot||!service.rockGate)return;
         auto rock=service.rockGate->pauseForMutation();auto mutation=service.gate.pauseForMutation();
         auto frame=service.frame;frame.phase=ni::Phase::WeaponRetire;frame.world=reinterpret_cast<std::uintptr_t>(world);frame.bhkWorld=reinterpret_cast<std::uintptr_t>(bhk);
-        if(slot->callbacks.weaponRetire)invoke(*slot,frame,[&]{slot->callbacks.weaponRetire(&frame,0,slot->callbacks.context);});
+        if(slot->callbacks.weaponRetire)invoke(*slot,frame,[&]{slot->callbacks.weaponRetire(&frame,index,slot->callbacks.context);});
         // The parent retires its tool body immediately after this returns.
-        releaseWeaponResources(slot->owner,world);
-        service.command={};service.weaponBody=ni::kInvalidBody;
+        releaseWeaponResources(slot->owner,index,world);
+        service.weapons[index].command={};service.weapons[index].body=ni::kInvalidBody;
     }
     ni::SelectionReply classify(const ni::SelectionQuery& query) {
         ni::SelectionReply result{};auto& service=state();if(!service.rockGate)return result;

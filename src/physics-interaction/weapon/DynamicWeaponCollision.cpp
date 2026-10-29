@@ -560,7 +560,7 @@ namespace rock
         result.proxyActive = true;
         if (!_secondary) updateSurfaceSupport(frame, primaryGripWeaponLocal, handsFree);
         if (!_authorityConstraint.isValid() || _rebuildRequestedAtomic.load(std::memory_order_acquire)) return result;
-        if (!_secondary && !native_interaction_service::updateWeapon(frame, weaponCollision, weaponNode, _body,
+        if (!native_interaction_service::updateWeapon(weaponSlot(), frame, weaponCollision, weaponNode, _body,
                 _createdCenterWeaponLocal, weaponGenerationKey,
                 _frameRequestedWeaponWorld, _surfaceSupport.ownsPose(), primaryGripWeaponLocal)) {
             retireAll(frame.bhkWorld);
@@ -695,7 +695,7 @@ namespace rock
             snapshot.liveProxyBodyWorld,
             _createdCenterWeaponLocal,
             snapshot.weaponScale);
-        const RE::NiTransform resolvedWeaponWorld = externallyControlled() ? native_interaction_service::weaponPresentation() :
+        const RE::NiTransform resolvedWeaponWorld = externallyControlled() ? native_interaction_service::weaponPresentation(weaponSlot()) :
             dynamic_weapon_collision_policy::resolveCurrentIntentFromSample(
             snapshot.requestedProxyBodyWorld,
             snapshot.liveProxyBodyWorld,
@@ -753,7 +753,7 @@ namespace rock
 
     bool DynamicWeaponCollisionRuntime::externallyControlled() const
     {
-        return !_secondary && native_interaction_service::weaponControlled();
+        return native_interaction_service::weaponControlled(weaponSlot());
     }
 
     bool DynamicWeaponCollisionRuntime::resolvePresentedIntent(const RE::hknpWorld* world,
@@ -763,6 +763,13 @@ namespace rock
         if (!_created || !world || _createdWorld != world || !_body.isValid() ||
             !dynamic_weapon_collision_policy::isFiniteTransform(intent)) {
             return false;
+        }
+        if (externallyControlled()) {
+            // The driving extension presents the gun where its body is.
+            const auto presented = native_interaction_service::weaponPresentation(weaponSlot());
+            if (!dynamic_weapon_collision_policy::isFiniteTransform(presented)) return false;
+            resolved = presented;
+            return true;
         }
         PhysicsSnapshot snapshot{};
         if (!readPhysicsSnapshot(snapshot) || !snapshot.valid || snapshot.teleported ||
@@ -1237,7 +1244,7 @@ namespace rock
         }
         _handlingScale = timeScale;
 
-        if (!_secondary && !native_interaction_service::preCollideWeapon(world, timing)) {
+        if (!native_interaction_service::preCollideWeapon(weaponSlot(), world, timing)) {
             _droveThisSubstep = false;
             clearPublishedPhysicsSnapshot();
             return;
@@ -1610,10 +1617,8 @@ namespace rock
         if (!_secondary && contactPointGame && collision_layer_policy::isWorldSurfaceLayer(otherLayer)) {
             recordSurfaceSupportContact(world, otherBodyId, *contactPointGame);
         }
-        // The second gun is not a NativeInteraction target; its proxy stays
-        // out of the published weapon-contact stream.
-        if (!_secondary && contactPointGame && !collision_layer_policy::isDynamicWeaponProxyLayer(otherLayer)) {
-            native_interaction_service::weaponContact(world, proxyBodyId, otherBodyId, otherLayer, *contactPointGame, targetNormalGame, pointCount);
+        if (contactPointGame && !collision_layer_policy::isDynamicWeaponProxyLayer(otherLayer)) {
+            native_interaction_service::weaponContact(weaponSlot(), world, proxyBodyId, otherBodyId, otherLayer, *contactPointGame, targetNormalGame, pointCount);
         }
         _contactWorldAtomic.store(reinterpret_cast<std::uintptr_t>(world), std::memory_order_relaxed);
         _contactProxyBodyIdAtomic.store(proxyBodyId, std::memory_order_relaxed);
@@ -1632,7 +1637,7 @@ namespace rock
             bhkWorld &&
             bhkWorld == _createdBhkWorld;
         if (liveOwnerMatches) {
-            if (!_secondary) native_interaction_service::retireWeapon(_createdWorld, bhkWorld);
+            native_interaction_service::retireWeapon(weaponSlot(), _createdWorld, bhkWorld);
             destroyGrabConstraint(_createdWorld, _authorityConstraint);
             if (_body.isValid()) {
                 _body.retireDeferred(bhkWorld);
@@ -1641,7 +1646,7 @@ namespace rock
                 _authorityProxy.retireDeferred(bhkWorld);
             }
         } else {
-            if (!_secondary) native_interaction_service::retireWeapon(nullptr, nullptr);
+            native_interaction_service::retireWeapon(weaponSlot(), nullptr, nullptr);
             destroyGrabConstraint(nullptr, _authorityConstraint);
             if (_created && (_body.isValid() || _authorityProxy.isValid())) {
                 ROCK_LOG_WARN(
@@ -1751,7 +1756,7 @@ namespace rock
         const auto bodyId = _bodyIdAtomic.exchange(kInvalidBodyId, std::memory_order_acq_rel);
         const auto authorityBodyId = _authorityProxy.isValid() ? _authorityProxy.getBodyId().value : kInvalidBodyId;
         const auto constraintId = _authorityConstraint.constraintId;
-        if (!_secondary) native_interaction_service::retireWeapon(nullptr, nullptr);
+        native_interaction_service::retireWeapon(weaponSlot(), nullptr, nullptr);
         destroyGrabConstraint(nullptr, _authorityConstraint);
         _body.reset();
         _authorityProxy.reset();

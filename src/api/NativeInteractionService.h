@@ -13,7 +13,8 @@ namespace rock {
 namespace rock::debug { struct BodyOverlayFrame; }
 namespace rock::native_interaction_service {
     using Owner = api::OwnerToken;
-    using RetireWeapon = void(*)(void*,void*);
+    // Retires the dynamic weapon proxy of one weapon slot (context, slot, bhkWorld).
+    using RetireWeapon = void(*)(void*,std::uint32_t,void*);
     using RefreshLayers = void(*)(void*,RE::hknpWorld*);
     void initialize(PhysicsCallbackQuiescenceGate*,RetireWeapon,RefreshLayers,void*);
     void detach(PhysicsCallbackQuiescenceGate*);
@@ -24,14 +25,15 @@ namespace rock::native_interaction_service {
     api::Status canUnregisterOwner(Owner);
     std::uint64_t dynamicObstacleLayers();
 
-    bool updateWeapon(const PhysicsFrameContext&,const WeaponCollision&,RE::NiNode*,BethesdaPhysicsBody&,
+    // Weapon slot 0 is the primary weapon, 1 the second equipped weapon.
+    bool updateWeapon(std::uint32_t slot,const PhysicsFrameContext&,const WeaponCollision&,RE::NiNode*,BethesdaPhysicsBody&,
         const RE::NiPoint3& center,std::uint64_t generation,RE::NiTransform& requested,
         bool supportOwnsPose,const RE::NiPoint3* primaryGrip);
-    bool weaponControlled();
-    RE::NiTransform weaponPresentation();
-    bool preCollideWeapon(RE::hknpWorld*,const havok_physics_timing::PhysicsTimingSample&);
-    void weaponContact(RE::hknpWorld*,std::uint32_t weapon,std::uint32_t target,std::uint32_t layer,const RE::NiPoint3&,const RE::NiPoint3&,std::uint32_t pointCount);
-    void retireWeapon(RE::hknpWorld*,void* bhkWorld);
+    bool weaponControlled(std::uint32_t slot);
+    RE::NiTransform weaponPresentation(std::uint32_t slot);
+    bool preCollideWeapon(std::uint32_t slot,RE::hknpWorld*,const havok_physics_timing::PhysicsTimingSample&);
+    void weaponContact(std::uint32_t slot,RE::hknpWorld*,std::uint32_t weapon,std::uint32_t target,std::uint32_t layer,const RE::NiPoint3&,const RE::NiPoint3&,std::uint32_t pointCount);
+    void retireWeapon(std::uint32_t slot,RE::hknpWorld*,void* bhkWorld);
 
     api::native_interaction::SelectionReply classify(const api::native_interaction::SelectionQuery&);
     bool validateSelection(const api::native_interaction::SelectionQuery&,const api::native_interaction::SelectionReply&);

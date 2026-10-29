@@ -11,6 +11,7 @@
 
 namespace rock::native_interaction_service::detail {
     using api::Status;
+    static_assert(native_player_collision::kToolContactSlots==api::kMaxWeaponSlots);
     RE::NiTransform fromApi(const api::Transform& value) {
         return ni::unpackTransform<RE::NiTransform>(value);
     }
@@ -53,34 +54,36 @@ namespace rock::native_interaction_service::detail {
             ni::BodyIdentity live{};
             return world()&&liveIdentity(expected.body,live)&&live==expected;
         }
+        // Any slot ROCK drives; a slot without a live proxy has no weapon body.
         Status weaponSlot(Owner owner,std::uint32_t slot) {
             if(auto s=api::boundary::checkWeaponSlot(slot);s!=Status::Ok)return s;
-            if(state().driver!=owner)return Status::OwnerConflict;
-            return api::boundary::requireWeaponSlot(slot);
+            return state().driver==owner?Status::Ok:Status::OwnerConflict;
         }
+        std::uint32_t weaponBody(std::uint32_t slot){return state().weapons[slot].body;}
     }
     Status activateWeapon(Owner owner,std::uint32_t slot) noexcept {
         return guarded(owner,[&] {
             if(auto s=access(owner,false,true);s!=Status::Ok)return s;
             if(auto s=weaponSlot(owner,slot);s!=Status::Ok)return s;
-            if(state().weaponBody==ni::kInvalidBody)return Status::TargetUnavailable;
-            havok_runtime::activateBody(world(),state().weaponBody);return Status::Ok;
+            if(weaponBody(slot)==ni::kInvalidBody)return Status::TargetUnavailable;
+            havok_runtime::activateBody(world(),weaponBody(slot));return Status::Ok;
         });
     }
     Status setWeaponContactExclusion(Owner owner,std::uint32_t slot,const ni::BodyIdentity* target) noexcept {
         return guarded(owner,[&] {
             if(auto s=access(owner,true,true);s!=Status::Ok)return s;
             if(auto s=weaponSlot(owner,slot);s!=Status::Ok)return s;
+            if(weaponBody(slot)==ni::kInvalidBody)return Status::TargetUnavailable;
             if(!target||!matches(*target))return Status::TargetInvalid;
-            if(!native_player_collision::publishToolContactExclusion(world(),state().weaponBody,target->body))return Status::TargetUnavailable;
-            state().excludedTarget=target->body;return Status::Ok;
+            if(!native_player_collision::publishToolContactExclusion(slot,world(),weaponBody(slot),target->body))return Status::TargetUnavailable;
+            state().weapons[slot].excludedTarget=target->body;return Status::Ok;
         });
     }
     Status clearWeaponContactExclusion(Owner owner,std::uint32_t slot) noexcept {
         return guarded(owner,[&] {
             if(auto s=access(owner,true,true);s!=Status::Ok)return s;
-            if(auto s=weaponSlot(owner,slot);s!=Status::Ok)return s==Status::TargetUnavailable?Status::Ok:s;
-            native_player_collision::clearToolContactExclusion(world());state().excludedTarget=ni::kInvalidBody;return Status::Ok;
+            if(auto s=weaponSlot(owner,slot);s!=Status::Ok)return s;
+            native_player_collision::clearToolContactExclusion(slot,world());state().weapons[slot].excludedTarget=ni::kInvalidBody;return Status::Ok;
         });
     }
     Status hasWeaponContactExclusion(Owner owner,std::uint32_t slot,const ni::BodyIdentity* target,std::uint32_t* result) noexcept {
@@ -89,10 +92,15 @@ namespace rock::native_interaction_service::detail {
             if(auto s=access(owner);s!=Status::Ok)return s;
             if(auto s=weaponSlot(owner,slot);s!=Status::Ok)return s;
             if(!target||!matches(*target))return Status::TargetInvalid;
-            *result=native_player_collision::hasToolContactExclusion(world(),state().weaponBody,target->body);return Status::Ok;
+            *result=weaponBody(slot)!=ni::kInvalidBody&&
+                native_player_collision::hasToolContactExclusion(slot,world(),weaponBody(slot),target->body);return Status::Ok;
         });
     }
+    void releaseWeaponResources(Owner owner,std::uint32_t slot,RE::hknpWorld* live) {
+        if(state().driver!=owner||slot>=state().weapons.size())return;
+        native_player_collision::clearToolContactExclusion(slot,live);state().weapons[slot].excludedTarget=ni::kInvalidBody;
+    }
     void releaseWeaponResources(Owner owner,RE::hknpWorld* live) {
-        if(state().driver==owner){native_player_collision::clearToolContactExclusion(live);state().excludedTarget=ni::kInvalidBody;}
+        for(std::uint32_t slot=0;slot<state().weapons.size();++slot)releaseWeaponResources(owner,slot,live);
     }
 }

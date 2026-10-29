@@ -194,8 +194,17 @@ namespace rock
         if (hasIntent) {
             _secondaryDynamicWeaponCollision.captureIntent(modelNode, intent, generation);
         }
+        // The holding hand on the second weapon, in its model frame: the
+        // firing seat sits in the attachment's frame.
+        RE::NiTransform seat{};
+        RE::NiTransform attachmentWorld{};
+        RE::NiPoint3 grip{};
+        const bool gripValid = modelNode && native_secondary_presentation::tryGetFiringSeat(seat, attachmentWorld) &&
+            dynamic_weapon_collision_policy::isFinitePoint(grip = transform_math::worldPointToLocal(modelNode->world,
+                transform_math::localPointToWorld(attachmentWorld, seat.translate)));
         // Retires the proxy itself when this frame has no current intent.
-        (void)_secondaryDynamicWeaponCollision.finishFrame(frame, true, modelNode, generation, _secondaryWeaponCollision, nullptr);
+        (void)_secondaryDynamicWeaponCollision.finishFrame(frame, true, modelNode, generation, _secondaryWeaponCollision,
+            gripValid ? &grip : nullptr);
         if (_secondaryDynamicWeaponCollision.compoundSourcesUnavailable()) {
             _secondaryWeaponCollision.requestRebuildForReplacedSources();
         }

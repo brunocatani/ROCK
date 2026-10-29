@@ -42,7 +42,9 @@ namespace rock
         _secondaryDynamicWeaponCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
         native_secondary_presentation::setCollisionResolver(this, &PhysicsInteraction::resolveSecondaryWeaponCollision);
         native_interaction_service::initialize(generatedBodyCallbackGate,
-            [](void* context,void* bhk){static_cast<PhysicsInteraction*>(context)->_dynamicWeaponCollision.retireAll(bhk);},
+            [](void* context,std::uint32_t slot,void* bhk){
+                auto* self=static_cast<PhysicsInteraction*>(context);
+                (slot==0?self->_dynamicWeaponCollision:self->_secondaryDynamicWeaponCollision).retireAll(bhk);},
             [](void* context,RE::hknpWorld* world){static_cast<PhysicsInteraction*>(context)->registerCollisionLayer(world);},this);
         _twoHandedGrip.setWeaponVisualIntentObserver(
             &_dynamicWeaponCollision,

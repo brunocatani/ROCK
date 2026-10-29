@@ -71,7 +71,7 @@ namespace rock::native_player_collision
         // Player-body refresh must never bypass an active blade exception;
         // only blade publication pauses this gate and rebuilds its two bodies.
         PhysicsCallbackQuiescenceGate s_toolContactGate;
-        ToolContactExclusion s_toolContactPair;
+        std::array<ToolContactExclusion, kToolContactSlots> s_toolContactPairs;
         PhysicsCallbackQuiescenceGate s_magazineEjectionGate;
         MagazineEjectionSnapshot s_magazineEjection;
         std::atomic<std::uint64_t> s_magazineEjectionRejected{ 0 };
@@ -276,11 +276,14 @@ namespace rock::native_player_collision
 
         bool suppressToolContactPair(RE::hknpWorld* world, const BodyPair& pair, PairReads& reads) noexcept
         {
-            if (!s_toolContactPair.matchesIds(pair)) return false;
-            const auto& a = reads.a();
-            const auto& b = reads.b();
-            return a.valid && b.valid && s_toolContactPair.suppresses(reinterpret_cast<std::uintptr_t>(world),
-                identity(a), identity(b), reads.layerA(), reads.layerB());
+            for (const auto& exclusion : s_toolContactPairs) {
+                if (!exclusion.matchesIds(pair)) continue;
+                const auto& a = reads.a();
+                const auto& b = reads.b();
+                if (a.valid && b.valid && exclusion.suppresses(reinterpret_cast<std::uintptr_t>(world),
+                        identity(a), identity(b), reads.layerA(), reads.layerB())) return true;
+            }
+            return false;
         }
 
         bool suppressMagazineEjectionPair(RE::hknpWorld* world, const BodyPair& pair, PairReads& reads) noexcept
@@ -499,7 +502,8 @@ namespace rock::native_player_collision
             const auto worldAddress = reinterpret_cast<std::uintptr_t>(world);
             const bool shellGrace = shell_casing_grace::filtersPairsIn(world);
             auto toolLease = s_toolContactGate.tryEnterCallback();
-            const bool toolContact = toolLease && worldAddress == s_toolContactPair.world;
+            const bool toolContact = toolLease && std::ranges::any_of(s_toolContactPairs,
+                [&](const ToolContactExclusion& exclusion) { return exclusion.world == worldAddress; });
             auto magazineLease = s_magazineEjectionGate.tryEnterCallback();
             const bool magazineEjection = magazineLease && s_magazineEjection.world == worldAddress;
             const bool retiredWeapon = retiredWeaponHandPairsEnabled(world);
@@ -727,7 +731,7 @@ namespace rock::native_player_collision
         s_heldCars = {};
         s_heldExclusions = {};
         s_toolContactGate.pauseAndWait();
-        s_toolContactPair = {};
+        s_toolContactPairs = {};
         s_toolContactRejectedPairs.store(0, std::memory_order_relaxed);
         clearMagazineEjection(nullptr);
     }
@@ -865,8 +869,10 @@ namespace rock::native_player_collision
         ROCK_LOG_DEBUG(Hand, "Held car pair rule: bodies={} world={:p}", next.count, static_cast<void*>(next.world));
     }
 
-    bool publishToolContactExclusion(RE::hknpWorld* world, std::uint32_t weaponBody, std::uint32_t targetBody)
+    bool publishToolContactExclusion(std::uint32_t slot, RE::hknpWorld* world, std::uint32_t weaponBody, std::uint32_t targetBody)
     {
+        if (slot >= kToolContactSlots) return false;
+        auto& owned = s_toolContactPairs[slot];
         if (!s_installed || !world) {
             ROCK_LOG_WARN(Weapon, "Tool contact exclusion rejected: stage=hook-or-world-unavailable installed={}", s_installed);
             return false;
@@ -885,31 +891,33 @@ namespace rock::native_player_collision
         }
         // Only this game's equipped-tool owner may publish. A second request
         // cannot silently replace another live exception or a recycled body.
-        if (s_toolContactPair.valid()) {
-            const bool same = s_toolContactPair.world == next.world && s_toolContactPair.weapon == next.weapon &&
-                s_toolContactPair.target == next.target && s_toolContactPair.targetLayer == next.targetLayer;
-            if (!same) ROCK_LOG_WARN(Weapon, "Tool contact exclusion rejected: stage=previous-pair-still-owned");
+        if (owned.valid()) {
+            const bool same = owned.world == next.world && owned.weapon == next.weapon &&
+                owned.target == next.target && owned.targetLayer == next.targetLayer;
+            if (!same) ROCK_LOG_WARN(Weapon, "Tool contact exclusion rejected: stage=previous-pair-still-owned slot={}", slot);
             return same;
         }
         {
             auto mutation = s_toolContactGate.pauseForMutation();
             s_toolContactRejectedPairs.store(0, std::memory_order_relaxed);
-            s_toolContactPair = next;
+            owned = next;
         }
         s_toolContactGate.resumeCallbacks();
         invalidateBodyIfCurrent(world, next.weapon);
         invalidateBodyIfCurrent(world, next.target);
-        ROCK_LOG_INFO(Weapon, "Tool contact exclusion published: weapon={} target={} world=0x{:X}", weaponBody, targetBody, next.world);
+        ROCK_LOG_INFO(Weapon, "Tool contact exclusion published: slot={} weapon={} target={} world=0x{:X}", slot, weaponBody, targetBody, next.world);
         return true;
     }
 
-    bool hasToolContactExclusion(RE::hknpWorld* world, std::uint32_t weaponBody, std::uint32_t targetBody) noexcept
+    bool hasToolContactExclusion(std::uint32_t slot, RE::hknpWorld* world, std::uint32_t weaponBody, std::uint32_t targetBody) noexcept
     {
-        if (!s_installed || !s_toolContactPair.valid() || s_toolContactPair.world != reinterpret_cast<std::uintptr_t>(world) ||
-            s_toolContactPair.weapon.bodyId != weaponBody || s_toolContactPair.target.bodyId != targetBody) return false;
+        if (slot >= kToolContactSlots) return false;
+        const auto& owned = s_toolContactPairs[slot];
+        if (!s_installed || !owned.valid() || owned.world != reinterpret_cast<std::uintptr_t>(world) ||
+            owned.weapon.bodyId != weaponBody || owned.target.bodyId != targetBody) return false;
         const auto weapon = havok_runtime::snapshotBody(world, RE::hknpBodyId{ weaponBody });
         const auto target = havok_runtime::snapshotBody(world, RE::hknpBodyId{ targetBody });
-        return weapon.valid && target.valid && s_toolContactPair.suppresses(reinterpret_cast<std::uintptr_t>(world),
+        return weapon.valid && target.valid && owned.suppresses(reinterpret_cast<std::uintptr_t>(world),
             identity(weapon), identity(target),
             weapon.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK,
             target.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK);
@@ -920,19 +928,20 @@ namespace rock::native_player_collision
         return s_toolContactRejectedPairs.load(std::memory_order_relaxed);
     }
 
-    void clearToolContactExclusion(RE::hknpWorld* liveWorld)
+    void clearToolContactExclusion(std::uint32_t slot, RE::hknpWorld* liveWorld)
     {
-        const auto previous = s_toolContactPair;
+        if (slot >= kToolContactSlots) return;
+        const auto previous = s_toolContactPairs[slot];
         if (!previous.valid()) return;
         std::uint64_t rejectedPairs = 0;
         s_toolContactGate.pauseAndWait();
-        s_toolContactPair = {};
+        s_toolContactPairs[slot] = {};
         rejectedPairs = s_toolContactRejectedPairs.exchange(0, std::memory_order_relaxed);
         if (liveWorld && previous.world == reinterpret_cast<std::uintptr_t>(liveWorld)) {
             invalidateBodyIfCurrent(liveWorld, previous.weapon);
             invalidateBodyIfCurrent(liveWorld, previous.target);
         }
-        ROCK_LOG_INFO(Weapon, "Tool contact exclusion cleared: weapon={} target={} rejectedPairs={}",
-            previous.weapon.bodyId, previous.target.bodyId, rejectedPairs);
+        ROCK_LOG_INFO(Weapon, "Tool contact exclusion cleared: slot={} weapon={} target={} rejectedPairs={}",
+            slot, previous.weapon.bodyId, previous.target.bodyId, rejectedPairs);
     }
 }

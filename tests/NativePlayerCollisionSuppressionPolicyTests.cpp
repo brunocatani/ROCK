@@ -330,6 +330,8 @@ int main()
         bladePair.suppresses(bladeWorld, blade, torso, bladeLayer, npcLayer));
     ok &= expect("blade exception accepts reversed native pair order",
         bladePair.suppresses(bladeWorld, torso, blade, npcLayer, bladeLayer));
+    ok &= expect("second-weapon proxy owns its exclusion like the primary",
+        bladePair.suppresses(bladeWorld, blade, torso, ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY, npcLayer));
     ok &= expect("blade exception cannot cross physics worlds",
         !bladePair.suppresses(bladeWorld + 1, blade, torso, bladeLayer, npcLayer));
     auto otherBody = torso;

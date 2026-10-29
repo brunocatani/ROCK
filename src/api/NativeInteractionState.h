@@ -28,12 +28,19 @@ namespace rock::native_interaction_service::detail {
         std::atomic<bool> removeAll{};
         ni::Frame frame{};
         Owner driver{};
-        std::uint32_t weaponBody{ni::kInvalidBody};
-        std::uint32_t excludedTarget{ni::kInvalidBody};
-        ni::WeaponCommand command{};
-        const WeaponCollision* collision{}; // only during WeaponUpdate
-        RE::NiNode* weaponNode{}; // only during WeaponUpdate
-        std::uint64_t generation{};
+        // One per ROCK weapon slot: 0 the primary weapon, 1 the second
+        // equipped (akimbo) weapon. Each slot has its own dynamic proxy.
+        struct Weapon {
+            std::uint32_t body{ni::kInvalidBody};
+            std::uint32_t excludedTarget{ni::kInvalidBody};
+            ni::WeaponCommand command{};
+            const WeaponCollision* collision{}; // only during this slot's WeaponUpdate
+            RE::NiNode* weaponNode{}; // only during this slot's WeaponUpdate
+            std::uint64_t generation{};
+        };
+        std::array<Weapon,api::kMaxWeaponSlots> weapons{};
+        // Body and command of every slot; exclusions are released separately.
+        void resetWeapons(){for(auto& weapon:weapons){weapon.command={};weapon.body=ni::kInvalidBody;}}
     };
     State& state();
     struct CallContext { Owner owner{}; ni::Frame frame{}; };
@@ -57,7 +64,8 @@ namespace rock::native_interaction_service::detail {
     api::Status setWeaponContactExclusion(Owner,std::uint32_t,const ni::BodyIdentity*) noexcept;
     api::Status clearWeaponContactExclusion(Owner,std::uint32_t) noexcept;
     api::Status hasWeaponContactExclusion(Owner,std::uint32_t,const ni::BodyIdentity*,std::uint32_t*) noexcept;
-    void releaseWeaponResources(Owner,RE::hknpWorld*);
+    void releaseWeaponResources(Owner,std::uint32_t slot,RE::hknpWorld*);
+    void releaseWeaponResources(Owner,RE::hknpWorld*); // every slot
     RE::NiTransform fromApi(const api::Transform&);
     api::Transform toApi(const RE::NiTransform&);
     RE::NiPoint3 fromApi(const api::Point3&);

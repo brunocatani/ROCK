@@ -305,8 +305,10 @@ namespace rock::api::native_interaction {
      * WeaponUpdate; activateWeapon also in PreCollide; copyWeaponSources and
      * getSourceGeometry in WeaponUpdate of that slot. Otherwise WrongThread.
      * Weapon calls take weaponSlot < kMaxWeaponSlots (InvalidArgument
-     * otherwise) and are the weapon driver's; ROCK drives slot 0 only yet, so
-     * slot 1 returns TargetUnavailable and clearing it is a no-op.
+     * otherwise) and are the weapon driver's. Slot 0 is the primary weapon,
+     * slot 1 the second equipped (akimbo) weapon; each has its own weapon
+     * body, callbacks, drive command and contact exclusion. A slot without a
+     * weapon body returns TargetUnavailable, and clearing it is a no-op.
      */
     struct Api
     {

@@ -110,8 +110,8 @@ namespace rock
         /*
          * Proxy of the second equipped weapon (layer 56). Its pose intent comes
          * from native_secondary_presentation, not the two-handed grip. It owns
-         * no surface support and is not the weapon published to native
-         * interaction extensions; those stay with the primary proxy.
+         * no surface support. Native interaction extensions see it as weapon
+         * slot 1; the primary proxy is slot 0.
          */
         void configureSecondaryWeapon() noexcept { _secondary = true; }
         [[nodiscard]] bool isSecondaryWeapon() const noexcept { return _secondary; }
@@ -301,7 +301,8 @@ namespace rock
         bool readContactDiagnosticSnapshot(ContactDiagnosticSnapshot& outSnapshot) const;
         static void storeAtomicTransform(AtomicTransform& target, const RE::NiTransform& value);
         static RE::NiTransform loadAtomicTransform(const AtomicTransform& source);
-        // Native interaction extensions control and observe the primary only.
+        [[nodiscard]] std::uint32_t weaponSlot() const noexcept { return _secondary ? 1u : 0u; }
+        // A native interaction extension drives this slot's proxy this frame.
         [[nodiscard]] bool externallyControlled() const;
         [[nodiscard]] const char* ownerName() const noexcept { return _secondary ? "Second-weapon" : "Primary"; }
 

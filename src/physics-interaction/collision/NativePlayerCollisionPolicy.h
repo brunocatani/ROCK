@@ -217,7 +217,7 @@ namespace rock::native_player_collision
             const bool weaponIsA = bodyA.bodyId == weapon.bodyId;
             return matchesLiveBody(weapon, weaponIsA ? bodyA : bodyB) &&
                 matchesLiveBody(target, weaponIsA ? bodyB : bodyA) &&
-                (weaponIsA ? layerA : layerB) == ROCK_LAYER_DYNAMIC_WEAPON_PROXY &&
+                isDynamicWeaponProxyLayer(weaponIsA ? layerA : layerB) &&
                 (weaponIsA ? layerB : layerA) == targetLayer;
         }
     };
