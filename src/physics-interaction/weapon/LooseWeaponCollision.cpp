@@ -62,6 +62,42 @@ namespace {
     };
     using weapon_rest_support::sameSurfacePose;
     using weapon_rest_support::parkingSurface;
+
+    // Meshes the loose extractor would turn into hulls that no covered node
+    // owns. First-person and world models can split one part differently,
+    // so name matching alone cannot prove the dropped weapon is covered.
+    // Mirrors the extractor's admission: visible TriShapes that are not effect
+    // geometry and are large enough for a hull.
+    std::size_t countUncoveredMeshes(RE::NiAVObject* root, const std::vector<const RE::NiAVObject*>& covered,
+        std::string& firstNames)
+    {
+        // Every point lies inside the bound sphere, so a hull diagonal is at
+        // most sqrt(3) times its diameter.
+        constexpr float kMaxDiagonalPerDiameter = 1.7320508f;
+        int budget = 4096;
+        std::size_t uncovered = 0;
+        const auto visit = [&](auto&& self, RE::NiAVObject* node, bool coveredAbove, unsigned depth) -> void {
+            // A Toggle Drop presentation culls the root itself; that is not an absent part.
+            if (!node || --budget < 0 || depth > 15 || (node != root && node->GetAppCulled())) return;
+            const bool isCovered = coveredAbove || std::find(covered.begin(), covered.end(), node) != covered.end();
+            if (auto* triShape = node->IsTriShape()) {
+                const bool extracted = weaponVisualNodeVisible(node) &&
+                    classifyGeneratedWeaponEffectGeometry(triShape) == weapon_effect_geometry_policy::ExclusionReason::None &&
+                    2.0f * node->worldBound.fRadius * kMaxDiagonalPerDiameter >= MIN_HULL_DIAGONAL_GAME_UNITS;
+                if (extracted && !isCovered && uncovered++ < 6)
+                    firstNames += std::string(firstNames.empty() ? "" : ",") + (node->name.c_str() ? node->name.c_str() : "");
+                return;
+            }
+            if (auto* branch = node->IsNode()) {
+                const auto& children = branch->children;
+                for (decltype(children.capacity()) slot = 0; slot < children.capacity(); ++slot)
+                    self(self, children[slot].get(), isCovered, depth + 1);
+            }
+        };
+        visit(visit, root, false, 0);
+        // An exhausted budget cannot prove coverage.
+        return budget < 0 ? uncovered + 1 : uncovered;
+    }
 }
 
 struct LooseWeaponCollision::State
@@ -316,7 +352,7 @@ struct LooseWeaponCollision::State
         covered.reserve(sources.size());
         for (const auto& source:sources) covered.push_back(source.node.get());
         std::string uncoveredNames;
-        if (const auto uncovered=DroppedWeaponCollision::countUncovered(root.get(),covered,uncoveredNames)) {
+        if (const auto uncovered=countUncoveredMeshes(root.get(),covered,uncoveredNames)) {
             ROCK_LOG_WARN(Weapon,"Dropped weapon world model differs from the equipped model ref={:08X} uncoveredMeshes={} first=[{}]",
                 ref->formID,uncovered,uncoveredNames);
             return "world-model-differs";
