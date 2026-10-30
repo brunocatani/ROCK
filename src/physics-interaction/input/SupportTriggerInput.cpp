@@ -27,7 +27,7 @@ namespace {
         constexpr auto valid = static_cast<std::uint32_t>(api::weapon::WeaponStateFlag::Valid);
         if (provider::runtime::copyPublishedWeaponState(equipped) != api::Status::Ok ||
             (equipped.flags & (drawn | valid)) != (drawn | valid) ||
-            provider::runtime::getWeaponGrip(grip) != api::Status::Ok ||
+            provider::runtime::getWeaponGrip(grip, 0) != api::Status::Ok ||
             !provider::runtime::queryWeaponHandling(handling)) return false;
         // The trigger lease belongs to the hand on the weapon's support grip.
         provider_state_policy::applyHandling(equipped, handling);

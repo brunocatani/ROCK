@@ -472,6 +472,65 @@
         return true;
     }
 
+    bool PhysicsInteraction::queryProviderSlotOneWeaponGrip(
+        api::weapon::Grip& outState) const
+    {
+        using Flag = api::weapon::GripFlag;
+
+        outState = {};
+        // Null unless this frame placed the index-1 model in its hand.
+        auto* model = native_secondary_presentation::presentedModel();
+        if (!_lifecycle.initialized.load(std::memory_order_acquire) || !model) {
+            return false;
+        }
+
+        outState.flags = static_cast<std::uint32_t>(Flag::Valid);
+        outState.weaponFormId = _equippedSlotOne.formId;
+        outState.weaponGenerationKey = _secondaryWeaponCollision.getCurrentWeaponGenerationKey();
+        // Its emitters are captured in this model's frame.
+        if (finiteNiTransform(model->world)) {
+            fillProviderTransform(model->world, outState.weaponWorld);
+            outState.flags |= static_cast<std::uint32_t>(Flag::WeaponWorldValid);
+        }
+
+        /*
+         * Index 1's EquippedWeaponData::fireNode is the same equip-time
+         * projectile origin slot 0 publishes. It is accepted only inside the
+         * presented model, so a node left from another model never becomes
+         * this weapon's muzzle.
+         */
+        const auto view = native_hand_equipment::equippedViews()[1];
+        auto* data = view.root == model ? reinterpret_cast<RE::EquippedWeaponData*>(view.data) : nullptr;
+        if (!data || *reinterpret_cast<const std::uintptr_t*>(data) != f4vr::EquippedWeaponData_vtable.address()) {
+            return true;
+        }
+        const RE::NiAVObject* projectileNode = data->fireNode;
+        bool insideModel = false;
+        constexpr int kMaxModelDepth = 64;
+        int depth = 0;
+        for (const RE::NiAVObject* node = projectileNode; node && depth < kMaxModelDepth && !insideModel;
+             node = node->parent, ++depth) {
+            insideModel = node == model;
+        }
+        if (!insideModel || !finiteNiTransform(projectileNode->world)) {
+            return true;
+        }
+        const auto& projectileWorld = projectileNode->world;
+        RE::NiPoint3 muzzleDirection{
+            projectileWorld.rotate.entry[1][0],
+            projectileWorld.rotate.entry[1][1],
+            projectileWorld.rotate.entry[1][2],
+        };
+        const float directionLength = muzzleDirection.Length();
+        if (std::isfinite(directionLength) && directionLength > 0.000001f) {
+            muzzleDirection /= directionLength;
+            outState.muzzleOriginGame = makeProviderPoint(projectileWorld.translate);
+            outState.muzzleDirectionGame = makeProviderPoint(muzzleDirection);
+            outState.flags |= static_cast<std::uint32_t>(Flag::MuzzleWorldValid);
+        }
+        return true;
+    }
+
     bool PhysicsInteraction::queryProviderWeaponHandling(
         ::rock::provider_state_policy::WeaponHandling& outState) const
     {
@@ -567,13 +626,14 @@
         return copied;
     }
 
-    std::uint32_t PhysicsInteraction::getProviderWeaponEmitterCount() const
+    std::uint32_t PhysicsInteraction::getProviderWeaponEmitterCount(std::uint32_t weaponSlot) const
     {
-        const auto snapshot = _weaponCollision.getWeaponEmitterSnapshot();
+        const auto snapshot = (weaponSlot == 1 ? _secondaryWeaponCollision : _weaponCollision).getWeaponEmitterSnapshot();
         return static_cast<std::uint32_t>((std::min)(snapshot.count, snapshot.emitters.size()));
     }
 
     std::uint32_t PhysicsInteraction::copyProviderWeaponEmitters(
+        std::uint32_t weaponSlot,
         api::weapon::Emitter* outEmitters,
         std::uint32_t maxEmitters) const
     {
@@ -582,7 +642,7 @@
         }
 
         static_assert(MAX_WEAPON_EMITTERS == api::weapon::kMaxEmitters);
-        const auto snapshot = _weaponCollision.getWeaponEmitterSnapshot();
+        const auto snapshot = (weaponSlot == 1 ? _secondaryWeaponCollision : _weaponCollision).getWeaponEmitterSnapshot();
         const std::uint32_t count = (std::min)(maxEmitters,
             static_cast<std::uint32_t>((std::min)(snapshot.count, snapshot.emitters.size())));
         for (std::uint32_t i = 0; i < count; ++i) {

@@ -26,17 +26,18 @@
             api::Status::NotReady;
     }
 
-    std::uint32_t weaponEmitterCount()
+    std::uint32_t weaponEmitterCount(const std::uint32_t weaponSlot)
     {
         const auto instanceAccess = s_physicsInteraction.borrow();
         auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
             return 0;
         }
-        return pi->getProviderWeaponEmitterCount();
+        return pi->getProviderWeaponEmitterCount(weaponSlot);
     }
 
     std::uint32_t copyWeaponEmitters(
+        const std::uint32_t weaponSlot,
         api::weapon::Emitter* outEmitters,
         const std::uint32_t capacity)
     {
@@ -45,14 +46,23 @@
         if (!pi || !pi->isInitialized()) {
             return 0;
         }
-        return pi->copyProviderWeaponEmitters(outEmitters, capacity);
+        return pi->copyProviderWeaponEmitters(weaponSlot, outEmitters, capacity);
     }
 
-    api::Status getWeaponGrip(api::weapon::Grip& outGrip)
+    api::Status getWeaponGrip(api::weapon::Grip& outGrip, const std::uint32_t weaponSlot)
     {
         const auto instanceAccess = s_physicsInteraction.borrow();
         auto* pi = instanceAccess.get();
-        return pi && pi->isInitialized() && pi->queryProviderWeaponGrip(outGrip) ?
+        if (!pi || !pi->isInitialized()) {
+            return api::Status::NotReady;
+        }
+        // Slot 1 without a presented weapon has nothing to describe.
+        if (weaponSlot == 1) {
+            return pi->queryProviderSlotOneWeaponGrip(outGrip) ?
+                api::Status::Ok :
+                api::Status::TargetUnavailable;
+        }
+        return pi->queryProviderWeaponGrip(outGrip) ?
             api::Status::Ok :
             api::Status::NotReady;
     }

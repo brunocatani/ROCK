@@ -43,16 +43,16 @@ namespace rock::provider::runtime {
         out.firingHand = firingLeft ? api::Hand::Left : api::Hand::Right;
         return true;
     }
-    api::Status getWeaponGrip(api::weapon::Grip& out) {
+    api::Status getWeaponGrip(api::weapon::Grip& out, std::uint32_t slot) {
         out.flags = static_cast<std::uint32_t>(api::weapon::GripFlag::Valid) | static_cast<std::uint32_t>(api::weapon::GripFlag::MuzzleWorldValid);
-        out.weaponFormId = 123; out.muzzleOriginGame = {1, 2, 3};
+        out.weaponFormId = slot == 1 ? 789 : 123; out.muzzleOriginGame = {1, 2, 3};
         return api::Status::Ok;
     }
     api::Status getWeaponClassification(api::weapon::Classification& out) { out.valid = 1; out.weaponFormId = 123; return api::Status::Ok; }
-    std::uint32_t weaponEmitterCount() { return emitterCount; }
-    std::uint32_t copyWeaponEmitters(api::weapon::Emitter* out, std::uint32_t capacity) {
-        const auto copied = (std::min)(capacity, emitterCount);
-        for (std::uint32_t i = 0; i < copied; ++i) out[i].omodFormId = 100 + i;
+    std::uint32_t weaponEmitterCount(std::uint32_t slot) { return slot == 1 ? 1 : emitterCount; }
+    std::uint32_t copyWeaponEmitters(std::uint32_t slot, api::weapon::Emitter* out, std::uint32_t capacity) {
+        const auto copied = (std::min)(capacity, slot == 1 ? 1u : emitterCount);
+        for (std::uint32_t i = 0; i < copied; ++i) out[i].omodFormId = (slot == 1 ? 200 : 100) + i;
         return copied;
     }
     api::Status setHandlingAuthority(std::uint64_t, const api::weapon::HandlingRequest& request) {
@@ -79,14 +79,15 @@ int main() {
     using namespace rock::api::weapon;
     const auto& api = table();
 
-    // Slots: only equip index 0 is published; slot 1 is valid but unavailable.
     WeaponState state;
     assert(api.getWeaponState(testOwner, kMaxWeaponSlots, &state) == Status::InvalidArgument);
     // Slot 1 publishes its own state and hand; slot 0's handling is not applied to it.
     assert(api.getWeaponState(testOwner, 1, &state) == Status::Ok && state.weaponSlot == 1 && state.weaponFormId == 789 &&
         state.firingHand == Hand::Left && state.supportHand == Hand::None);
+    // Slot 1's grip is its own weapon's.
     Grip grip;
-    assert(api.getGrip(testOwner, 1, &grip) == Status::TargetUnavailable);
+    assert(api.getGrip(testOwner, 1, &grip) == Status::Ok && grip.weaponSlot == 1 && grip.weaponFormId == 789);
+    assert(api.getGrip(testOwner, kMaxWeaponSlots, &grip) == Status::InvalidArgument);
 
     // Slot 0: hand assignment is data. Left fires; the two-hand grip puts the
     // right hand on the support grip.
@@ -111,7 +112,7 @@ int main() {
     assert(api.copyEmitters(testOwner, 0, emitters, 2, &count) == Status::Ok && count == 5 && emitters[1].omodFormId == 101);
     assert(api.copyEmitters(testOwner, 0, nullptr, 0, &count) == Status::Ok && count == 5);
     assert(api.copyEmitters(testOwner, 0, emitters, kMaxEmitters + 1, &count) == Status::CapacityFull && count == 0);
-    assert(api.copyEmitters(testOwner, 1, emitters, 2, &count) == Status::TargetUnavailable);
+    assert(api.copyEmitters(testOwner, 1, emitters, 2, &count) == Status::Ok && count == 1 && emitters[0].omodFormId == 200);
 
     // Handling authority: unknown features are refused before ROCK sees them.
     HandlingRequest request;

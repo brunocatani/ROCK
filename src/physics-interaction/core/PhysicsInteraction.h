@@ -260,8 +260,10 @@ namespace rock
             std::uint32_t bodyId,
             api::Point3* outPoints,
             std::uint32_t maxPoints) const;
-        std::uint32_t getProviderWeaponEmitterCount() const;
+        // Slot 0 reads the primary weapon's collision, slot 1 the second's.
+        std::uint32_t getProviderWeaponEmitterCount(std::uint32_t weaponSlot) const;
         std::uint32_t copyProviderWeaponEmitters(
+            std::uint32_t weaponSlot,
             api::weapon::Emitter* outEmitters,
             std::uint32_t maxEmitters) const;
         bool queryProviderWorldRaycast(
@@ -281,6 +283,10 @@ namespace rock
             std::uint32_t maxContacts) const;
         bool queryProviderWeaponClassification(api::weapon::Classification& outResult) const;
         bool queryProviderWeaponGrip(
+            api::weapon::Grip& outState) const;
+        // Slot 1: the presented second weapon and its own projectile node.
+        // Frame thread, after that weapon's placement.
+        bool queryProviderSlotOneWeaponGrip(
             api::weapon::Grip& outState) const;
         bool queryProviderWeaponHandling(
             ::rock::provider_state_policy::WeaponHandling& outState) const;

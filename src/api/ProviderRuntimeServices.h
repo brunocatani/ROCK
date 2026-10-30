@@ -72,10 +72,11 @@ namespace rock::provider::runtime {
     // Slot 0 unless weaponSlot names slot 1.
     api::Status copyPublishedWeaponState(api::weapon::WeaponState& outState, std::uint32_t weaponSlot = 0);
     bool queryWeaponHandling(provider_state_policy::WeaponHandling& outHandling);
-    api::Status getWeaponGrip(api::weapon::Grip& outGrip);
+    // Grip and emitters are read for either slot; the caller has checked it.
+    api::Status getWeaponGrip(api::weapon::Grip& outGrip, std::uint32_t weaponSlot);
     api::Status getWeaponClassification(api::weapon::Classification& outClassification);
-    std::uint32_t weaponEmitterCount();
-    std::uint32_t copyWeaponEmitters(api::weapon::Emitter* outEmitters, std::uint32_t capacity);
+    std::uint32_t weaponEmitterCount(std::uint32_t weaponSlot);
+    std::uint32_t copyWeaponEmitters(std::uint32_t weaponSlot, api::weapon::Emitter* outEmitters, std::uint32_t capacity);
     api::Status getWeaponCompositionState(api::weapon::CompositionState& outState);
     api::Status copyWeaponCompositionEntries(api::weapon::CompositionEntry* outEntries, std::uint32_t capacity, std::uint32_t& outCount);
     api::Status getAuthoredGripPose(api::weapon::AuthoredGripPose& outPose);

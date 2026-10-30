@@ -48,8 +48,16 @@ Status readSlot(OwnerToken owner, std::uint32_t slot, Record* outRecord, Read&& 
     });
 }
 
+// Grip and emitters describe every equipped weapon, slot 1 included.
 Status ROCK_CALL getGrip(OwnerToken owner, std::uint32_t slot, Grip* outGrip) noexcept {
-    return readSlot(owner, slot, outGrip, [](Grip& grip) { return p::runtime::getWeaponGrip(grip); });
+    if (const auto s = checkOutput(outGrip); s != Status::Ok) return s;
+    if (const auto s = checkWeaponSlot(slot); s != Status::Ok) return s;
+    outGrip->weaponSlot = slot;
+    return invoke(owner, kInterfaceId, 1, true, [&] {
+        const auto status = p::runtime::getWeaponGrip(*outGrip, slot);
+        outGrip->weaponSlot = slot;
+        return status;
+    });
 }
 Status ROCK_CALL getClassification(OwnerToken owner, std::uint32_t slot, Classification* outClassification) noexcept {
     return readSlot(owner, slot, outClassification, [](Classification& value) { return p::runtime::getWeaponClassification(value); });
@@ -68,9 +76,8 @@ Status ROCK_CALL copyEmitters(OwnerToken owner, std::uint32_t slot, Emitter* out
     if (const auto s = checkOutputs(outEmitters, capacity, kMaxEmitters, outCount); s != Status::Ok) return s;
     if (const auto s = checkWeaponSlot(slot); s != Status::Ok) return s;
     return invoke(owner, kInterfaceId, 1, true, [&] {
-        if (!weaponSlotPublished(slot)) return Status::TargetUnavailable;
-        *outCount = p::runtime::weaponEmitterCount();
-        (void)p::runtime::copyWeaponEmitters(outEmitters, capacity);
+        *outCount = p::runtime::weaponEmitterCount(slot);
+        (void)p::runtime::copyWeaponEmitters(slot, outEmitters, capacity);
         return Status::Ok;
     });
 }
