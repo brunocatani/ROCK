@@ -653,14 +653,19 @@ namespace rock::collision_layer_policy
          * row and body row to be normalized together instead of depending on a
          * later standalone body-policy call to repair symmetry.
          */
-        applyRockHandLayerPolicy(matrix, handStaticWorld);
+        // A Biped obstacle means dynamic actor limbs (active ragdolls): only the
+        // dynamic proxies may touch them, with real mass. The keyframed hand
+        // and weapon rows drop Biped then, since a keyframed body would shove
+        // the limbs with infinite mass.
+        const auto keyframedExclusions = extensionObstacleLayers & layerBitOrZero(FO4_LAYER_BIPED);
+        applyLayerExpectedMask(matrix, ROCK_LAYER_HAND, buildRockHandExpectedMask(handStaticWorld) & ~keyframedExclusions);
         applyLayerExpectedMask(matrix,
             ROCK_LAYER_WEAPON,
-            buildRockWeaponExpectedMask(weaponBlocksProjectiles, weaponBlocksSpells, true));
+            buildRockWeaponExpectedMask(weaponBlocksProjectiles, weaponBlocksSpells, true) & ~keyframedExclusions);
         // After the 44 row (row writes are symmetric): restores 44<->53.
         applyLayerExpectedMask(matrix,
             ROCK_LAYER_SECONDARY_WEAPON,
-            buildRockSecondaryWeaponExpectedMask(weaponBlocksProjectiles, weaponBlocksSpells));
+            buildRockSecondaryWeaponExpectedMask(weaponBlocksProjectiles, weaponBlocksSpells) & ~keyframedExclusions);
         applyRockBodyLayerPolicy(matrix);
         applyRockDynamicHandProxyLayerPolicies(matrix, extensionObstacleLayers, pairFilterInstalled);
         applyRockDynamicWeaponProxyLayerPolicy(matrix, extensionObstacleLayers, pairFilterInstalled);
