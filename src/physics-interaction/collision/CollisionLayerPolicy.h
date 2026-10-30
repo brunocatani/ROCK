@@ -249,9 +249,12 @@ namespace rock::collision_layer_policy
         // must reach the same solver/visual response as world contact. Keep
         // surface-grab and weapon-bracing eligibility separate. The other
         // held weapon's proxy is an obstacle like a wall: a proxy never
-        // contacts its own row, so this only ever matches the peer.
+        // contacts its own row, so this only ever matches the peer. Biped (8)
+        // reaches the proxy only while an extension admits it (actor ragdolls,
+        // kOptionalObstacleLayers); its contacts then count and publish like
+        // BipedNoCC's.
         return isWorldSurfaceLayer(layer) || isProxyPropRowLayer(layer) ||
-               layer == FO4_LAYER_BIPED_NO_CC || layer == ROCK_LAYER_PASSIVE_OBSTACLE ||
+               layer == FO4_LAYER_BIPED || layer == FO4_LAYER_BIPED_NO_CC || layer == ROCK_LAYER_PASSIVE_OBSTACLE ||
                isDynamicWeaponProxyLayer(layer);
     }
 
