@@ -220,6 +220,8 @@ namespace rock::api::native_interaction {
         // moves the actor's body set onto the hand.
         DirectLiveLimb = 5,
     };
+    // Highest SelectionKind ROCK accepts from an extension.
+    inline constexpr SelectionKind kLastSelectionKind = SelectionKind::DirectLiveLimb;
     enum class SelectionStage : std::uint32_t
     {
         BeforeCoreTypes = 0,

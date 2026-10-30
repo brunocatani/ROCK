@@ -358,7 +358,7 @@ namespace rock::native_interaction_service {
             ni::SelectionReply candidate{};
             if(!invoke(slot,frame,[&]{slot.callbacks.classifySelection(&query,&candidate,slot.callbacks.context);}))continue;
             if(candidate.size==sizeof(candidate)&&candidate.version==1&&candidate.kind!=ni::SelectionKind::Unhandled&&
-                static_cast<unsigned>(candidate.kind)<=static_cast<unsigned>(ni::SelectionKind::ExtractableItem)&&candidate.reason[63]==0){candidate.owner=slot.owner;return candidate;}
+                static_cast<unsigned>(candidate.kind)<=static_cast<unsigned>(ni::kLastSelectionKind)&&candidate.reason[63]==0){candidate.owner=slot.owner;return candidate;}
         }
         return result;
     }
