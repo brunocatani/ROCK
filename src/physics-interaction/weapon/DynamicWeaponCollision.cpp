@@ -19,6 +19,8 @@
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
 
+#include <ROCK/NativeInteraction.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -34,6 +36,9 @@ namespace rock
         // Each independently driven proxy owns its group, as the two dynamic
         // hands do (0x0C/0x0E).
         constexpr std::uint32_t kSecondaryDynamicWeaponCollisionGroup = 0x000Fu;
+        // Extension bodies on the passive obstacle layer use their own group.
+        static_assert(kDynamicWeaponCollisionGroup != rock::api::native_interaction::kPassiveObstacleGroup &&
+                      kSecondaryDynamicWeaponCollisionGroup != rock::api::native_interaction::kPassiveObstacleGroup);
         // FO4VR 141551F00 installs the contact-impulse creator at bundle+18;
         // 14154BB41..14154BB51 registers it for body flag 0x80, and its
         // 1418012D0 solver callback emits key-3 events consumed by native audio.

@@ -17,6 +17,9 @@ namespace rock::api::native_interaction {
     inline constexpr std::uint32_t kMaxExtensions = 8;
     inline constexpr std::uint32_t kMaxWeaponSources = 128;
     inline constexpr std::uint32_t kPassiveObstacleLayer = 55;
+    // Collision group for extension bodies on kPassiveObstacleLayer. ROCK's
+    // dynamic proxies never use it: the engine filter drops same-group pairs.
+    inline constexpr std::uint32_t kPassiveObstacleGroup = 0x0010;
 
     // Value-only marshalling: real NiMatrix3 rows contain a fourth padding lane.
     // Never memcpy nine floats from/to that native matrix storage.

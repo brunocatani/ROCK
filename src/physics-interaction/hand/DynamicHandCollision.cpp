@@ -1,5 +1,7 @@
 #include "physics-interaction/hand/DynamicHandCollision.h"
 
+#include <ROCK/NativeInteraction.h>
+
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
@@ -44,6 +46,8 @@ namespace rock
         constexpr std::uint32_t kDynamicRightHandProxyCollisionGroup = 0x000C;
         constexpr std::uint32_t kDynamicLeftHandProxyCollisionGroup = 0x000E;
         static_assert(kDynamicRightHandProxyCollisionGroup != kDynamicLeftHandProxyCollisionGroup);
+        static_assert(kDynamicRightHandProxyCollisionGroup != rock::api::native_interaction::kPassiveObstacleGroup &&
+                      kDynamicLeftHandProxyCollisionGroup != rock::api::native_interaction::kPassiveObstacleGroup);
         constexpr std::uint32_t kRaiseManifoldProcessedEvents = 0x40u;
         constexpr std::uint32_t kRebuildBodyCollisionState = 0u;
         constexpr int kSurfaceLatchVisualPriority = 100;
