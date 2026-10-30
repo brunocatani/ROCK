@@ -7,22 +7,6 @@
 
 namespace rock::native_player_collision
 {
-    inline constexpr bool isRetiredWeaponHandPair(std::uint32_t layerA, std::uint32_t layerB)
-    {
-        using namespace collision_layer_policy;
-        return (layerA == FO4_LAYER_WEAPON && isDynamicHandInteractionLayer(layerB)) ||
-               (layerB == FO4_LAYER_WEAPON && isDynamicHandInteractionLayer(layerA));
-    }
-
-    inline constexpr bool allowsRetiredWeaponHandContact(
-        physics_body_classifier::BodyMotionType motion, bool looseWeapon)
-    {
-        using physics_body_classifier::BodyMotionType;
-        // Anchoring preserves native static parts beside the keyframed bodies.
-        // Active grab/pull preparation converts movable bodies back to dynamic.
-        return looseWeapon && (motion == BodyMotionType::Keyframed || motion == BodyMotionType::Static);
-    }
-
     // FO4VR proxy ctor 1E4B268/1E4B28C, dtor 1E4B3E3/1E4B4C0,
     // and processConstraintsCallback 1E4B83E use this same base adjustment.
     // The actor stores the controller interface; the callback receives the
@@ -87,46 +71,60 @@ namespace rock::native_player_collision
     }
 
     /*
-     * Explodable cars are heavy world obstacles on the native clutter rows.
-     * The dynamic hand and weapon proxies stop against them; ROCK's keyframed
-     * hands, weapon hulls and body colliders have infinite mass and would
-     * shove them, so they pass through. A car a hand holds (power armor) is an
-     * ordinary held object: the proxies pass through it and the keyframed
-     * rows keep their native pairs.
+     * Pairs of a native prop-row body (isProxyPropRowLayer) with one of ROCK's
+     * generated rows. The dynamic hand and weapon proxies have real mass: they
+     * stop against fixed props, meaning an explodable car or a keyframed or
+     * static world object such as a retired weapon or a placed decoration, and
+     * pass through moving props, which the keyframed hand and weapon hulls
+     * push natively. Those keyframed rows (hands, weapon hulls, body colliders)
+     * have infinite mass and would shove a car, so they pass through cars. A
+     * body a hand holds (an object, or a car such as power armor) is an
+     * ordinary held object: the proxies pass through it and the keyframed rows
+     * keep their native pairs.
      */
-    enum class CarRowPairKind : std::uint8_t { None, Proxy, Keyframed };
+    enum class PropRowPairKind : std::uint8_t { None, Proxy, Keyframed };
 
-    struct CarRowPair
+    struct PropRowPair
     {
-        CarRowPairKind kind = CarRowPairKind::None;
-        bool carIsA = false;
+        PropRowPairKind kind = PropRowPairKind::None;
+        bool propIsA = false;
     };
 
-    inline constexpr CarRowPairKind carRowPeerKind(std::uint32_t layer)
+    inline constexpr PropRowPairKind propRowPeerKind(std::uint32_t propLayer, std::uint32_t peerLayer)
     {
         using namespace collision_layer_policy;
-        if (isDynamicHandInteractionLayer(layer) || isDynamicWeaponProxyLayer(layer)) return CarRowPairKind::Proxy;
-        if (layer == ROCK_LAYER_HAND || layer == ROCK_LAYER_WEAPON || layer == ROCK_LAYER_BODY ||
-            layer == ROCK_LAYER_SECONDARY_WEAPON) return CarRowPairKind::Keyframed;
-        return CarRowPairKind::None;
+        if (isDynamicHandInteractionLayer(peerLayer) || isDynamicWeaponProxyLayer(peerLayer)) return PropRowPairKind::Proxy;
+        if (isCarRowLayer(propLayer) && (peerLayer == ROCK_LAYER_HAND || peerLayer == ROCK_LAYER_WEAPON ||
+                                            peerLayer == ROCK_LAYER_BODY || peerLayer == ROCK_LAYER_SECONDARY_WEAPON))
+            return PropRowPairKind::Keyframed;
+        return PropRowPairKind::None;
     }
 
-    // A pair of a car-row body with one of ROCK's generated rows, and which
-    // side the car-row body is.
-    inline constexpr CarRowPair classifyCarRowPair(std::uint32_t layerA, std::uint32_t layerB)
+    // Which ROCK row meets the prop-row body, and which side the prop is.
+    inline constexpr PropRowPair classifyPropRowPair(std::uint32_t layerA, std::uint32_t layerB)
     {
         using namespace collision_layer_policy;
-        if (isCarRowLayer(layerA)) return { carRowPeerKind(layerB), true };
-        if (isCarRowLayer(layerB)) return { carRowPeerKind(layerA), false };
+        if (isProxyPropRowLayer(layerA)) {
+            if (const auto kind = propRowPeerKind(layerA, layerB); kind != PropRowPairKind::None) return { kind, true };
+        }
+        if (isProxyPropRowLayer(layerB)) return { propRowPeerKind(layerB, layerA), false };
         return {};
     }
 
-    inline constexpr bool suppressCarRowContact(CarRowPairKind kind, bool explodableCar, bool held)
+    // Anchoring keeps native static parts beside the keyframed bodies, and
+    // grab or pull preparation converts a fixed body back to dynamic.
+    inline constexpr bool isFixedPropMotion(physics_body_classifier::BodyMotionType motion)
+    {
+        using physics_body_classifier::BodyMotionType;
+        return motion == BodyMotionType::Keyframed || motion == BodyMotionType::Static;
+    }
+
+    inline constexpr bool suppressPropRowContact(PropRowPairKind kind, bool fixedWorldObject, bool explodableCar, bool held)
     {
         switch (kind) {
-        case CarRowPairKind::Proxy:
-            return !explodableCar || held;
-        case CarRowPairKind::Keyframed:
+        case PropRowPairKind::Proxy:
+            return held || !(fixedWorldObject || explodableCar);
+        case PropRowPairKind::Keyframed:
             return explodableCar && !held;
         default:
             return false;

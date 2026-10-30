@@ -721,8 +721,8 @@ namespace rock
 
         const bool extensionPairsChanged =
             !collision_layer_policy::rockDynamicExtensionPairsMatch(matrix, native_interaction_service::dynamicObstacleLayers());
-        // Car rows and retired weapons need the simulation pair filter to
-        // narrow them; without it those proxy pairs stay off.
+        // The prop rows need the simulation pair filter to narrow them to
+        // fixed obstacles; without it those proxy pairs stay off.
         const bool pairFilterInstalled = native_player_collision::installed();
         const bool pairFilterRowsChanged = !collision_layer_policy::pairFilterRowsMatch(matrix, pairFilterInstalled);
         auto mutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
@@ -739,7 +739,7 @@ namespace rock
             _secondaryDynamicWeaponCollision.refreshCollisionFilter(world);
         }
         if (pairFilterRowsChanged) {
-            ROCK_LOG_INFO(Config, "Dynamic proxy car and retired weapon collision: active={}", pairFilterInstalled);
+            ROCK_LOG_INFO(Config, "Dynamic proxy fixed prop collision: active={}", pairFilterInstalled);
         }
         _layers = {
             .registered = true,

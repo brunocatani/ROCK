@@ -70,11 +70,11 @@ namespace rock::native_player_collision
     void publishHeldExclusions(RE::hknpWorld* world, std::span<const HeldExclusionBody> colliders,
         std::span<const HeldExclusionBody> held);
 
-    // Bodies of explodable cars a hand holds. The car-row pair rule treats
-    // them as held objects (suppressCarRowContact); publication changes
-    // rebuild the affected bodies' caches. A null world clears the set.
-    inline constexpr std::size_t kMaximumHeldCarBodies = 128;
-    void publishHeldCars(RE::hknpWorld* world, std::span<const std::uint32_t> bodies);
+    // Bodies the hands hold. The prop-row pair rule treats them as held
+    // objects (suppressPropRowContact); publication changes rebuild the
+    // affected bodies' caches. A null world clears the set.
+    inline constexpr std::size_t kMaximumHeldBodies = 128;
+    void publishHeldBodies(RE::hknpWorld* world, std::span<const std::uint32_t> bodies);
 
     // EjectionContacts owns these exact magazine/equipped-weapon sets. Single
     // game-thread publisher under the world write lock; empty sets restore pairs.

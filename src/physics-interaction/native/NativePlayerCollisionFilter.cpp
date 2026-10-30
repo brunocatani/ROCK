@@ -50,13 +50,13 @@ namespace rock::native_player_collision
             std::size_t count{ 0 };
         };
         WeaponHandSnapshot s_weaponHands; // Same game publisher and callback gate.
-        struct HeldCarSnapshot
+        struct HeldBodySnapshot
         {
             RE::hknpWorld* world{ nullptr };
-            std::array<std::uint32_t, kMaximumHeldCarBodies> bodies{};
+            std::array<std::uint32_t, kMaximumHeldBodies> bodies{};
             std::size_t count{ 0 };
         };
-        HeldCarSnapshot s_heldCars; // Same game publisher and callback gate.
+        HeldBodySnapshot s_heldBodies; // Same game publisher and callback gate.
         struct HeldExclusionSnapshot
         {
             RE::hknpWorld* world{ nullptr };
@@ -144,36 +144,64 @@ namespace rock::native_player_collision
             }
         };
 
-        // Callback-local ownership, as in isLooseWeaponBody; no reference or
-        // scene pointer survives the callback.
-        bool isExplodableCarBody(const havok_runtime::BodySnapshot& body) noexcept
+        struct PropIdentity
         {
-            if (!body.valid || !body.ownerNode) return false;
+            bool fixedWorldObject = false;
+            bool explodableCar = false;
+        };
+
+        /*
+         * Callback-local ownership, as in isLooseWeaponBody; no reference or
+         * scene pointer survives the callback. A fixed world object is owned
+         * by a world reference: equipped and attached items resolve to their
+         * actor (1403F0925..31) and stay excluded. On the shared weapon row
+         * only a supported loose WEAP counts. Moving bodies off the car rows
+         * need no ownership read at all.
+         */
+        PropIdentity resolvePropIdentity(const havok_runtime::BodySnapshot& body, std::uint32_t layer) noexcept
+        {
+            using namespace collision_layer_policy;
+            PropIdentity out{};
+            if (!body.valid || !body.body || !body.ownerNode) return out;
+            const bool fixed = isFixedPropMotion(physics_body_classifier::motionTypeFromBodyFlags(body.body->flags));
+            const bool carRow = isCarRowLayer(layer);
+            if (!fixed && !carRow) return out;
             __try {
                 auto* ref = RE::TESObjectREFR::FindReferenceFor3D(body.ownerNode);
-                return ref && fo4vr::isExplodableCar(ref->GetObjectReference());
+                auto* form = ref ? ref->GetObjectReference() : nullptr;
+                if (!form) return out;
+                out.explodableCar = carRow && fo4vr::isExplodableCar(form);
+                if (fixed && !ref->As<RE::Actor>()) {
+                    if (layer == FO4_LAYER_WEAPON) {
+                        auto* weapon = form->As<RE::TESObjectWEAP>();
+                        out.fixedWorldObject = weapon && loose_weapon_collision_policy::eligibleType(weapon->weaponData.type.get());
+                    } else {
+                        out.fixedWorldObject = true;
+                    }
+                }
             } __except (EXCEPTION_EXECUTE_HANDLER) {
-                return false;
+                return {};
             }
+            return out;
         }
 
-        // Car identity of car-row bodies, resolved once per filter invocation.
-        struct CarBatch
+        // Prop identity of prop-row bodies, resolved once per filter invocation.
+        struct PropBatch
         {
-            struct Entry { BodyIdentity body{}; bool car = false; };
+            struct Entry { BodyIdentity body{}; PropIdentity prop{}; };
             std::array<Entry, 16> entries{};
             std::size_t count = 0;
 
-            bool isCar(const havok_runtime::BodySnapshot& body) noexcept
+            PropIdentity resolve(const havok_runtime::BodySnapshot& body, std::uint32_t layer) noexcept
             {
                 const auto live = identity(body);
                 for (std::size_t i = 0; i < count; ++i) {
-                    if (matchesLiveBody(entries[i].body, live)) return entries[i].car;
+                    if (matchesLiveBody(entries[i].body, live)) return entries[i].prop;
                 }
-                const bool car = isExplodableCarBody(body);
+                const auto prop = resolvePropIdentity(body, layer);
                 // Capacity limits memoization, never the decision.
-                if (count < entries.size()) entries[count++] = { live, car };
-                return car;
+                if (count < entries.size()) entries[count++] = { live, prop };
+                return prop;
             }
         };
 
@@ -301,39 +329,6 @@ namespace rock::native_player_collision
             return s_magazineEjection.suppresses(reinterpret_cast<std::uintptr_t>(world),identity(a),identity(b));
         }
 
-        bool isSupportedFixedWeapon(const havok_runtime::BodySnapshot& body) noexcept
-        {
-            // Callback-local ownership only; no engine pointer is published.
-            __try {
-                auto* ref=body.ownerNode ? RE::TESObjectREFR::FindReferenceFor3D(body.ownerNode) : nullptr;
-                auto* form=ref ? ref->GetObjectReference() : nullptr;
-                auto* weapon=form ? form->As<RE::TESObjectWEAP>() : nullptr;
-                return weapon && loose_weapon_collision_policy::eligibleType(weapon->weaponData.type.get());
-            } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
-        }
-
-        // Independent of native-player skeleton publication: this gate must
-        // still protect dynamic weapons when that snapshot is empty.
-        bool retiredWeaponHandPairsEnabled(RE::hknpWorld* world) noexcept
-        {
-            using namespace collision_layer_policy;
-            const auto* matrix = havok_runtime::getCollisionFilterMatrix(world);
-            return layerPairEnabledFromRow(matrix, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, FO4_LAYER_WEAPON) ||
-                layerPairEnabledFromRow(matrix, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY, FO4_LAYER_WEAPON);
-        }
-
-        bool suppressRetiredWeaponHandPair(PairReads& reads) noexcept
-        {
-            using namespace collision_layer_policy;
-            const auto layerA = reads.layerA();
-            const auto layerB = reads.layerB();
-            if (layerA == kUnknownLayer || layerB == kUnknownLayer || !isRetiredWeaponHandPair(layerA, layerB)) return false;
-            const auto& weapon = layerA == FO4_LAYER_WEAPON ? reads.a() : reads.b();
-            if (!weapon.valid || !weapon.body) return true;
-            const auto motion = physics_body_classifier::motionTypeFromBodyFlags(weapon.body->flags);
-            return !allowsRetiredWeaponHandContact(motion, true) || !isSupportedFixedWeapon(weapon);
-        }
-
         bool suppressAuthoredHandPair(const BodyPair& pair, PairReads& reads) noexcept
         {
             const auto* a = findPlayerBody(s_authoredHands, pair.bodyA);
@@ -417,18 +412,24 @@ namespace rock::native_player_collision
                 colliderB, heldExclusionMask(set.held, set.heldCount, pair.bodyB));
         }
 
-        bool isHeldCarBody(std::uint32_t id) noexcept
+        bool isHeldBody(std::uint32_t id) noexcept
         {
-            const auto end = s_heldCars.bodies.begin() + s_heldCars.count;
-            return std::binary_search(s_heldCars.bodies.begin(), end, id);
+            const auto end = s_heldBodies.bodies.begin() + s_heldBodies.count;
+            return std::binary_search(s_heldBodies.bodies.begin(), end, id);
         }
 
-        bool suppressCarRowPair(const BodyPair& pair, PairReads& reads, CarBatch& cars, bool heldCars) noexcept
+        bool suppressPropRowPair(const BodyPair& pair, PairReads& reads, PropBatch& props, bool heldBodies) noexcept
         {
-            const auto carRow = classifyCarRowPair(reads.layerA(), reads.layerB());
-            if (carRow.kind == CarRowPairKind::None) return false;
-            const bool held = heldCars && isHeldCarBody(carRow.carIsA ? pair.bodyA : pair.bodyB);
-            return suppressCarRowContact(carRow.kind, cars.isCar(carRow.carIsA ? reads.a() : reads.b()), held);
+            const auto layerA = reads.layerA();
+            const auto layerB = reads.layerB();
+            const auto propRow = classifyPropRowPair(layerA, layerB);
+            if (propRow.kind == PropRowPairKind::None) return false;
+            const bool held = heldBodies && isHeldBody(propRow.propIsA ? pair.bodyA : pair.bodyB);
+            if (held && propRow.kind == PropRowPairKind::Proxy) return true;
+            // An unreadable prop resolves to neither fixed nor car: proxies
+            // drop the pair and keyframed rows keep it native.
+            const auto prop = props.resolve(propRow.propIsA ? reads.a() : reads.b(), propRow.propIsA ? layerA : layerB);
+            return suppressPropRowContact(propRow.kind, prop.fixedWorldObject, prop.explodableCar, held);
         }
 
         struct PlayerPairCounts
@@ -506,19 +507,18 @@ namespace rock::native_player_collision
                 [&](const ToolContactExclusion& exclusion) { return exclusion.world == worldAddress; });
             auto magazineLease = s_magazineEjectionGate.tryEnterCallback();
             const bool magazineEjection = magazineLease && s_magazineEjection.world == worldAddress;
-            const bool retiredWeapon = retiredWeaponHandPairsEnabled(world);
             const bool storage = storage_interaction::filtersPairs();
             auto lease = s_gate.tryEnterCallback();
             const bool authoredHands = lease && world == s_authoredHands.world && s_authoredHands.count != 0;
             const bool weaponHands = lease && world == s_weaponHands.world && s_weaponHands.count != 0;
-            const bool heldCars = lease && world == s_heldCars.world && s_heldCars.count != 0;
+            const bool heldBodies = lease && world == s_heldBodies.world && s_heldBodies.count != 0;
             const bool heldExclusions = lease && world == s_heldExclusions.world &&
                 s_heldExclusions.colliderCount != 0 && s_heldExclusions.heldCount != 0;
             const bool playerBodies = lease && world == s_snapshot.world && s_snapshot.count != 0;
 
-            // The car-row rule is always armed: it decides every pair of
-            // ROCK's generated rows with a native clutter-row body.
-            CarBatch cars;
+            // The prop-row rule is always armed: it decides every pair of
+            // ROCK's generated rows with a native prop-row body.
+            PropBatch props;
             WeaponOwnerBatch weaponOwners;
             PlayerPairCounts playerCounts;
             std::uint64_t toolRejected = 0;
@@ -531,8 +531,7 @@ namespace rock::native_player_collision
                 if (shellGrace && shell_casing_grace::suppressesPair(world, pair.bodyA, pair.bodyB)) return true;
                 if (toolContact && suppressToolContactPair(world, pair, reads)) { ++toolRejected; return true; }
                 if (magazineEjection && suppressMagazineEjectionPair(world, pair, reads)) { ++magazineRejected; return true; }
-                if (retiredWeapon && suppressRetiredWeaponHandPair(reads)) return true;
-                if (suppressCarRowPair(pair, reads, cars, heldCars)) return true;
+                if (suppressPropRowPair(pair, reads, props, heldBodies)) return true;
                 if (storage && !storage_interaction::allowsPair(world, pair.bodyA, reads.layerA(), pair.bodyB, reads.layerB())) return true;
                 if (authoredHands && suppressAuthoredHandPair(pair, reads)) { ++authoredRejected; return true; }
                 if (weaponHands && suppressWeaponHandPair(pair, reads)) { ++weaponHandRejected; return true; }
@@ -728,7 +727,7 @@ namespace rock::native_player_collision
         s_snapshot = {};
         s_authoredHands = {};
         s_weaponHands = {};
-        s_heldCars = {};
+        s_heldBodies = {};
         s_heldExclusions = {};
         s_toolContactGate.pauseAndWait();
         s_toolContactPairs = {};
@@ -846,9 +845,9 @@ namespace rock::native_player_collision
             next.colliderCount, next.heldCount, static_cast<void*>(next.world));
     }
 
-    void publishHeldCars(RE::hknpWorld* world, std::span<const std::uint32_t> bodies)
+    void publishHeldBodies(RE::hknpWorld* world, std::span<const std::uint32_t> bodies)
     {
-        HeldCarSnapshot next{};
+        HeldBodySnapshot next{};
         if (s_installed && world) {
             next.world = world;
             const auto count = (std::min)(bodies.size(), next.bodies.size());
@@ -856,17 +855,17 @@ namespace rock::native_player_collision
             std::sort(next.bodies.begin(), next.bodies.begin() + count);
             next.count = static_cast<std::size_t>(std::unique(next.bodies.begin(), next.bodies.begin() + count) - next.bodies.begin());
         }
-        const auto previous = s_heldCars; // Only this game thread writes it.
+        const auto previous = s_heldBodies; // Only this game thread writes it.
         if (previous.world == next.world && previous.count == next.count &&
             std::equal(next.bodies.begin(), next.bodies.begin() + next.count, previous.bodies.begin())) return;
         {
             auto mutation = s_gate.pauseForMutation();
-            s_heldCars = next;
+            s_heldBodies = next;
         }
         s_gate.resumeCallbacks();
         rebuildChangedBodies<std::uint32_t>(world, previous.world, std::span(previous.bodies).first(previous.count),
             std::span(next.bodies).first(next.count), [](std::uint32_t id) { return id; });
-        ROCK_LOG_DEBUG(Hand, "Held car pair rule: bodies={} world={:p}", next.count, static_cast<void*>(next.world));
+        ROCK_LOG_DEBUG(Hand, "Held prop pair rule: bodies={} world={:p}", next.count, static_cast<void*>(next.world));
     }
 
     bool publishToolContactExclusion(std::uint32_t slot, RE::hknpWorld* world, std::uint32_t weaponBody, std::uint32_t targetBody)

@@ -181,17 +181,18 @@ namespace rock
     }
 
     /*
-     * A car a hand holds (power armor) is an ordinary held object for the
-     * car-row pair rule: the dynamic proxies pass through it. Its bodies are
-     * published each frame; the filter rebuilds bodies only on change.
+     * A body a hand holds is never a dynamic proxy obstacle, even when it is
+     * keyframed or static (a car such as power armor, or a fixed prop the
+     * grab has not converted yet): the prop-row pair rule lets the proxies
+     * pass through it. The bodies are published each frame; the filter
+     * rebuilds bodies only on change.
      */
-    void PhysicsInteraction::publishHeldCarExclusion(RE::hknpWorld* world)
+    void PhysicsInteraction::publishHeldProxyExclusion(RE::hknpWorld* world)
     {
-        std::array<std::uint32_t, native_player_collision::kMaximumHeldCarBodies> bodies{};
+        std::array<std::uint32_t, native_player_collision::kMaximumHeldBodies> bodies{};
         std::size_t count = 0;
         for (const Hand* hand : { &_rightHand, &_leftHand }) {
-            auto* ref = hand->isHolding() ? hand->getHeldRef() : nullptr;
-            if (!ref || !fo4vr::isExplodableCar(ref->GetObjectReference())) {
+            if (!hand->isHolding()) {
                 continue;
             }
             for (const auto bodyId : hand->getHeldBodyIds()) {
@@ -200,7 +201,7 @@ namespace rock
                 }
             }
         }
-        native_player_collision::publishHeldCars(world, std::span(bodies).first(count));
+        native_player_collision::publishHeldBodies(world, std::span(bodies).first(count));
     }
 
     /*

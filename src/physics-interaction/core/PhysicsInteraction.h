@@ -610,7 +610,7 @@ namespace rock
         void clearWeaponHandSuppression(RE::hknpWorld* world, bool isLeft);
         void abandonWeaponHandSuppression();
         void publishWeaponHandExclusion(RE::hknpWorld* world);
-        void publishHeldCarExclusion(RE::hknpWorld* world);
+        void publishHeldProxyExclusion(RE::hknpWorld* world);
         void publishHeldBodyExclusion(RE::hknpWorld* world);
         void updateWeaponHandSuppression(RE::hknpWorld* world, float deltaSeconds);
         void refreshWeaponHandSuppression(RE::hknpWorld* world, bool isLeft);

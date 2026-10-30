@@ -337,7 +337,7 @@ namespace rock
             restTimer.stop();
             performance_profiler::ScopedTimer exclusionTimer(Scope::HeldExclusions);
             commitHeldPlacement(frame);
-            publishHeldCarExclusion(frame.hknpWorld);
+            publishHeldProxyExclusion(frame.hknpWorld);
             publishHeldBodyExclusion(frame.hknpWorld);
             updateHeldMassMovementSlowdown(hknp, frame.deltaSeconds);
             synchronizeContactEvidenceOwnership(rightHandWeaponAuthorityActive, leftSupportGripActive, rightPartGripActive);

@@ -63,10 +63,11 @@ namespace rock::collision_layer_policy
     inline constexpr std::uint32_t ROCK_LAYER_BODY = 47;
     /*
      * Dynamic hand proxy bodies live on their own extended row so they collide
-     * with static world-surface layers and explodable cars, plus layer 33 when
-     * experimental NPC dynamic collisions are enabled. Cars keep their native
-     * clutter rows; the simulation pair filter admits a proxy pair on those
-     * rows only for an explodable car (isCarRowLayer), never other clutter.
+     * with static world-surface layers and fixed props, plus layer 33 when
+     * experimental NPC dynamic collisions are enabled. Props keep their native
+     * rows; the simulation pair filter admits a proxy pair on those rows only
+     * for an explodable car or a keyframed/static world object no hand holds
+     * (isProxyPropRowLayer), never a moving prop.
      * The proxy is a solver-side visual-stop driver, not ordinary generated
      * gameplay contact evidence. A separate bounded callback channel may use
      * its palm/fingertip pairs for provider-scoped fixed-surface latches.
@@ -75,8 +76,8 @@ namespace rock::collision_layer_policy
     // Rows 49 and 50 held tagged cars; retired, nothing creates bodies on them.
     /*
      * The dynamic weapon proxy is deliberately limited to solver obstacles:
-     * static world surfaces, explodable cars, and
-     * optionally native layer-33 NPC bodies.
+     * static world surfaces, fixed props (explodable cars, retired weapons,
+     * placed objects), and optionally native layer-33 NPC bodies.
      * Layer-44 generated hulls remain the sole weapon contact/evidence path
      * for hands, actors, projectiles, and ordinary dynamic props.
      */
@@ -168,15 +169,24 @@ namespace rock::collision_layer_policy
         }
     }
 
-    /*
-     * ExplodableCar movable statics keep their native clutter rows. Dynamic
-     * hand and weapon proxies collide with these rows only through the
-     * simulation pair filter, which keeps such a pair only for an explodable
-     * car no hand holds, so a proxy contact on these rows is a car.
-     */
+    // ExplodableCar movable statics keep their native clutter rows.
     inline constexpr bool isCarRowLayer(std::uint32_t layer)
     {
         return layer == FO4_LAYER_CLUTTER || layer == FO4_LAYER_CLUTTER_LARGE;
+    }
+
+    /*
+     * Native prop rows the dynamic hand and weapon proxies reach only through
+     * the simulation pair filter. It keeps a proxy pair on these rows only for
+     * an explodable car or a keyframed/static world object (a retired weapon,
+     * a placed decoration, a havok-disabled prop) that no hand holds, so a
+     * proxy contact on these rows is always a fixed obstacle. Moving props
+     * stay off the proxies: the proxies have real mass and would shove them,
+     * while the keyframed hand and weapon hulls already push them natively.
+     */
+    inline constexpr bool isProxyPropRowLayer(std::uint32_t layer)
+    {
+        return isDynamicPropInteractionLayer(layer);
     }
 
     inline constexpr bool isActorOrBipedLayer(std::uint32_t layer)
@@ -240,7 +250,7 @@ namespace rock::collision_layer_policy
         // surface-grab and weapon-bracing eligibility separate. The other
         // held weapon's proxy is an obstacle like a wall: a proxy never
         // contacts its own row, so this only ever matches the peer.
-        return isWorldSurfaceLayer(layer) || isCarRowLayer(layer) ||
+        return isWorldSurfaceLayer(layer) || isProxyPropRowLayer(layer) ||
                layer == FO4_LAYER_BIPED_NO_CC || layer == ROCK_LAYER_PASSIVE_OBSTACLE ||
                isDynamicWeaponProxyLayer(layer);
     }
@@ -267,7 +277,7 @@ namespace rock::collision_layer_policy
 
     inline constexpr bool isDynamicHandProxySurfaceLayer(std::uint32_t layer)
     {
-        return isWorldSurfaceLayer(layer) || isCarRowLayer(layer);
+        return isWorldSurfaceLayer(layer) || isProxyPropRowLayer(layer);
     }
 
     /*
@@ -526,22 +536,19 @@ namespace rock::collision_layer_policy
     /*
      * Matrix pairs that exist only while ROCK's simulation pair filter is
      * installed, because only it can narrow them: every dynamic proxy against
-     * the car rows (explodable cars only) and the hand proxies against the
-     * shared weapon row (fixed retired weapons only).
+     * the native prop rows (fixed obstacles only, isProxyPropRowLayer).
      */
     inline constexpr bool pairFilterRowsMatch(const std::uint64_t* matrix, bool pairFilterInstalled)
     {
         if (!matrix) return false;
         constexpr std::uint32_t proxies[] = { ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY,
             ROCK_LAYER_DYNAMIC_WEAPON_PROXY, ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY };
-        constexpr std::uint32_t carRows[] = { FO4_LAYER_CLUTTER, FO4_LAYER_CLUTTER_LARGE };
         for (const auto proxy : proxies) {
-            for (const auto row : carRows) {
-                if (!layerPairSymmetricMatches(matrix, proxy, row, pairFilterInstalled)) return false;
+            for (std::uint32_t row = 0; row < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++row) {
+                if (isProxyPropRowLayer(row) && !layerPairSymmetricMatches(matrix, proxy, row, pairFilterInstalled)) return false;
             }
         }
-        return layerPairSymmetricMatches(matrix, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, FO4_LAYER_WEAPON, pairFilterInstalled) &&
-               layerPairSymmetricMatches(matrix, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY, FO4_LAYER_WEAPON, pairFilterInstalled);
+        return true;
     }
 
     inline void applyRockHandLayerPolicy(std::uint64_t* matrix, bool includeStaticWorld)
@@ -561,8 +568,8 @@ namespace rock::collision_layer_policy
     {
         std::uint64_t mask = 0;
         for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
-            // The car rows only with the pair filter, which keeps cars alone.
-            if (isWorldSurfaceLayer(layer) || (pairFilterInstalled && isCarRowLayer(layer))) {
+            // The prop rows only with the pair filter, which keeps fixed obstacles alone.
+            if (isWorldSurfaceLayer(layer) || (pairFilterInstalled && isProxyPropRowLayer(layer))) {
                 mask = withLayer(mask, layer);
             }
         }
@@ -573,11 +580,6 @@ namespace rock::collision_layer_policy
         mask = withLayer(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
         mask = withLayer(mask, ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY);
         mask = withLayer(mask, ROCK_LAYER_STORED_DISPLAY);
-        // The simulation-pair filter admits only fixed world WEAP bodies on
-        // this shared native row. Dynamic and actor-owned weapons stay excluded.
-        if (pairFilterInstalled) {
-            mask = withLayer(mask, FO4_LAYER_WEAPON);
-        }
         mask |= extensionObstacleLayers & kOptionalObstacleLayers;
         return mask;
     }
@@ -588,7 +590,7 @@ namespace rock::collision_layer_policy
     {
         std::uint64_t mask = 0;
         for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
-            if (isWorldSurfaceLayer(layer) || (pairFilterInstalled && isCarRowLayer(layer))) {
+            if (isWorldSurfaceLayer(layer) || (pairFilterInstalled && isProxyPropRowLayer(layer))) {
                 mask = withLayer(mask, layer);
             }
         }
