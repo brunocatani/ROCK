@@ -47,5 +47,10 @@ namespace rock
         static RE::NiAVObject* resolvePath(RE::NiAVObject* root, const std::vector<Step>& path);
         // Failure evidence only: the first unmatched step and its siblings.
         static std::string describeUnresolved(RE::NiAVObject* root, const std::vector<Step>& path);
+        // Visible geometry under root with no covered node at or above it.
+        // First-person and world models can split one part differently, so
+        // name matching alone cannot prove the dropped weapon is covered.
+        static std::size_t countUncovered(RE::NiAVObject* root, const std::vector<const RE::NiAVObject*>& covered,
+            std::string& firstNames);
     };
 }

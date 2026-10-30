@@ -75,6 +75,33 @@ namespace rock
         return current;
     }
 
+    std::size_t DroppedWeaponCollision::countUncovered(RE::NiAVObject* root, const std::vector<const RE::NiAVObject*>& covered,
+        std::string& firstNames)
+    {
+        constexpr std::uint64_t kAppCulled = 0x1;
+        constexpr int kVisitBudget = 4096;
+        std::size_t uncovered = 0;
+        int budget = kVisitBudget;
+        const auto visit = [&](auto&& self, RE::NiAVObject* node, bool coveredAbove) -> void {
+            // A Toggle Drop presentation culls the root itself; that is not an absent part.
+            if (!node || --budget < 0 || (node != root && (node->flags.flags & kAppCulled))) return;
+            const bool isCovered = coveredAbove || std::find(covered.begin(), covered.end(), node) != covered.end();
+            if (node->IsGeometry()) {
+                if (!isCovered && uncovered++ < 6) firstNames += std::string(firstNames.empty() ? "" : ",") + nameOf(node);
+                return;
+            }
+            if (const auto* branch = node->IsNode()) {
+                forEachChild(branch, [&](RE::NiAVObject* child) {
+                    self(self, child, isCovered);
+                    return false;
+                });
+            }
+        };
+        visit(visit, root, false);
+        // An exhausted budget cannot prove coverage.
+        return budget < 0 ? uncovered + 1 : uncovered;
+    }
+
     std::string DroppedWeaponCollision::describeUnresolved(RE::NiAVObject* root, const std::vector<Step>& path)
     {
         std::string text;

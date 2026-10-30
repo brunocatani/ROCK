@@ -312,6 +312,15 @@ struct LooseWeaponCollision::State
         }
         collision.parts.clear();
         if (sources.empty()) return "no-parts-in-world-model";
+        std::vector<const RE::NiAVObject*> covered;
+        covered.reserve(sources.size());
+        for (const auto& source:sources) covered.push_back(source.node.get());
+        std::string uncoveredNames;
+        if (const auto uncovered=DroppedWeaponCollision::countUncovered(root.get(),covered,uncoveredNames)) {
+            ROCK_LOG_WARN(Weapon,"Dropped weapon world model differs from the equipped model ref={:08X} uncoveredMeshes={} first=[{}]",
+                ref->formID,uncovered,uncoveredNames);
+            return "world-model-differs";
+        }
         nextSource=sources.size();
         if (!selectPrimaryBody()) return "no-root-collision-body";
         for (nextMapping=0;nextMapping<sources.size();++nextMapping) assignSource(nextMapping);
