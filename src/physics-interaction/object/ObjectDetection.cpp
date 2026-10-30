@@ -315,6 +315,7 @@ namespace rock
             case Kind::Blocked:result.kind=grab_target::Kind::BlockedExtension;result.reason="extension-blocked";break;
             case Kind::ExtractableItem:result.kind=grab_target::Kind::ExtractableItem;result.reason="extension-extractable-item";result.grabbable=true;break;
             case Kind::DirectConnectedBody:result.kind=grab_target::Kind::ConnectedBody;result.reason="extension-connected-body";result.grabbable=true;break;
+            case Kind::DirectLiveLimb:result.kind=grab_target::Kind::ConnectedBody;result.reason="extension-live-limb";result.grabbable=true;break;
             case Kind::DirectDetachedBody:result.kind=grab_target::Kind::DetachedBody;result.reason="extension-detached-body";result.grabbable=true;break;
             default:break;
             }

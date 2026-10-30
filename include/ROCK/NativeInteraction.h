@@ -214,6 +214,11 @@ namespace rock::api::native_interaction {
         DirectConnectedBody = 2,
         DirectDetachedBody = 3,
         ExtractableItem = 4,
+        // A limb of a living actor whose ragdoll the extension drives toward
+        // its animation. ROCK holds it like DirectConnectedBody, but drives
+        // with the limb's own mass (the actor's motors pull back) and never
+        // moves the actor's body set onto the hand.
+        DirectLiveLimb = 5,
     };
     enum class SelectionStage : std::uint32_t
     {

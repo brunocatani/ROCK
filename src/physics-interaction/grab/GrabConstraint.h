@@ -222,6 +222,8 @@ namespace rock
         RE::NiPointer<RE::TESObjectREFR> retainedRef{};
         RE::TESObjectREFR* refr = nullptr;
         grab_target::Kind targetKind = grab_target::Kind::LooseObject;
+        // A ConnectedBody grab of a living actor's limb (extension DirectLiveLimb).
+        bool liveLimb = false;
         std::uint32_t originalFilterInfo = 0;
         std::uint16_t originalMotionPropsId = 0;
         float inverseMass = 0.0f;
@@ -247,6 +249,7 @@ namespace rock
             refr = nullptr;
             retainedRef.reset();
             targetKind = grab_target::Kind::LooseObject;
+            liveLimb = false;
             originalFilterInfo = 0;
             originalMotionPropsId = 0;
             inverseMass = 0.0f;

@@ -5405,7 +5405,10 @@ namespace rock
                 scope.driveDecision.reason = component.reason;
                 scope.driveDecision.includeConnectedLinearVelocity = false;
                 scope.driveDecision.includeConnectedAngularVelocity = false;
-                scope.driveDecision.includeConnectedMass = !component.fixedAttached;
+                // A living actor's motors hold its other limbs to the animation:
+                // drive with the held limb's mass only, never drag the whole body.
+                scope.driveDecision.includeConnectedMass = !component.fixedAttached &&
+                    selectedObject.extensionSelection.kind != api::native_interaction::SelectionKind::DirectLiveLimb;
                 scope.reason = component.reason;
                 outResolution.surfaceOwnerMatchesResolvedBody = true;
                 surface.surfaceHit.resolvedOwnerMatchesBody = true;
@@ -5455,6 +5458,7 @@ namespace rock
         _savedObjectState.bodyId = outCapture.bodyId;
         _savedObjectState.setReference(selectedRef);
         _savedObjectState.targetKind = selectedObject.targetKind;
+        _savedObjectState.liveLimb = selectedObject.extensionSelection.kind == api::native_interaction::SelectionKind::DirectLiveLimb;
         _savedObjectState.originalFilterInfo = preparedBody->collisionFilterInfo;
         _savedObjectState.originalMotionPropsId = selectedOriginalMotionPropsId;
         if (const auto* originalPrimaryRecord = beforePrepBodySet.findRecord(outCapture.bodyId.value)) {
@@ -8721,7 +8725,7 @@ namespace rock
         }
         bool changed = component.count != _heldBodyIds.size();
         for (const auto id : _heldBodyIds) changed = changed || !component.contains(id);
-        _heldDriveDecision.includeConnectedMass = !component.fixedAttached;
+        _heldDriveDecision.includeConnectedMass = !component.fixedAttached && !_savedObjectState.liveLimb;
         if (!changed) return true;
 
         // Native topology changes are rare. Allocation and lease reconciliation
@@ -8790,7 +8794,8 @@ namespace rock
     {
         // A mechanically anchored set cannot reach the palm, and an incomplete
         // scan does not know every body that would have to move with it.
-        if (!world || _heldDriveDecision.mode == held_object_drive_policy::HeldBodySetDriveMode::FixedAttached ||
+        // A living actor's body follows its animation; it is never moved onto the hand.
+        if (!world || _savedObjectState.liveLimb || _heldDriveDecision.mode == held_object_drive_policy::HeldBodySetDriveMode::FixedAttached ||
             _heldDriveDecision.mode == held_object_drive_policy::HeldBodySetDriveMode::IncompleteNativeScan) {
             return false;
         }
