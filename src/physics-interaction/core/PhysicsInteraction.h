@@ -524,7 +524,8 @@ namespace rock
             const RE::ObjectRefHandle& handle,
             std::uint32_t droppedFormId,
             equipped_weapon_drop_policy::SourceHand sourceHand,
-            const WeaponCollision::ReleaseGeometrySnapshot& releaseGeometry);
+            const WeaponCollision::ReleaseGeometrySnapshot& releaseGeometry,
+            DroppedWeaponCollision collision);
         bool hasAvailableEquippedWeaponDropHandoff() const;
         void serviceEquippedWeaponNativeHandoff(const PhysicsFrameContext& frame);
         bool dropEquippedWeaponToWorld(const PhysicsFrameContext& frame,
@@ -730,6 +731,11 @@ namespace rock
             std::uint64_t bodyDiscoverySolveSequence{ 0 };
             std::array<EquippedWeaponDropBodySnapshot, kEquippedWeaponDropBodySnapshotCapacity> bodySnapshots{};
             std::size_t bodySnapshotCount{ 0 };
+            // The equipped hulls this drop's native bodies adopt before their
+            // placement solve. Body identities include the shape, so adoption
+            // never happens while those identities await the settle step.
+            DroppedWeaponCollision collision{};
+            bool collisionAdopted{ false };
             // Value-only terminal evidence. waitReason points only to literals;
             // no scene/body pointers survive the service callback.
             const char* waitReason{ "not-serviced" };

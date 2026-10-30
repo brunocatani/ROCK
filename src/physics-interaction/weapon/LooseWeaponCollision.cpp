@@ -27,6 +27,7 @@ namespace {
     // Match HandGrab's loose-object contact lease (0xC0, mode 0), otherwise
     // hand release clears our manifold events as if it were the final owner.
     constexpr std::uint32_t kContactFlagMode = 0u;
+    constexpr float kInheritedScaleTolerance = 0.005f; // Relative.
     using SetShape = void (*)(RE::hknpWorld*, RE::hknpBodyId, const RE::hknpShape*);
 
     SetShape shapeSetter()
@@ -237,44 +238,78 @@ struct LooseWeaponCollision::State
             return false; // One source (at most eight convex children) per frame.
         }
         phase="Preparing: body compounds";
-        // Assign each mesh to its closest native collision ancestor. Remaining
-        // meshes belong to the shallowest collision owner in the same reference.
-        // Empty auxiliary bodies retain their native identity but lose contacts
-        // through an owned suppression lease until the original set is restored.
         if (nextMapping<sources.size()) {
-            if (!nextMapping) {
-                unsigned primaryDepth=UINT_MAX;
-                for (std::size_t i=0;i<bodies.size();++i) {
-                    auto* node=bodies[i].node.get(); unsigned depth=0;
-                    while (node && node!=root.get() && depth<64) { node=node->parent; ++depth; }
-                    if (node==root.get() && depth<primaryDepth) { primaryBody=i; primaryDepth=depth; }
-                }
-                if (primaryDepth==UINT_MAX) { failed=true; return false; }
-            }
+            if (!nextMapping && !selectPrimaryBody()) { failed=true; return false; }
             const auto end=(std::min)(sources.size(),nextMapping+8);
-            for (;nextMapping<end;++nextMapping) {
-                auto selected=primaryBody; auto* node=sources[nextMapping].node.get(); bool found=false;
-                for (unsigned depth=0;node && depth<64 && !found;++depth,node=node->parent)
-                    for (std::size_t j=0;j<bodies.size();++j) if (node==bodies[j].node.get()) { selected=j; found=true; break; }
-                bodies[selected].sources.push_back(nextMapping);
-            }
+            for (;nextMapping<end;++nextMapping) assignSource(nextMapping);
             return false;
         }
         while (nextCompound<bodies.size()) {
             auto& body=bodies[nextCompound++];
             if (body.sources.empty()) continue;
-            std::vector<havok_compound_shape_builder::CompoundChild> children;
-            body.poses.resize(body.sources.size()); children.reserve(body.sources.size());
-            for (std::size_t i=0;i<body.sources.size();++i) {
-                const auto& source=sources[body.sources[i]];
-                if (!pose(body,source,body.poses[i])) { failed=true; return false; }
-                children.push_back({source.shape.get(),body.poses[i]});
-            }
-            if (!body.generated.create(children)) { failed=true; return false; }
+            if (!buildCompound(body)) { failed=true; return false; }
             return false; // Bound compound construction independently of extraction.
         }
         builder.reset();
         return true;
+    }
+    // Assign each mesh to its closest native collision ancestor. Remaining
+    // meshes belong to the shallowest collision owner in the same reference.
+    // Empty auxiliary bodies retain their native identity but lose contacts
+    // through an owned suppression lease until the original set is restored.
+    bool selectPrimaryBody()
+    {
+        unsigned primaryDepth=UINT_MAX;
+        for (std::size_t i=0;i<bodies.size();++i) {
+            auto* node=bodies[i].node.get(); unsigned depth=0;
+            while (node && node!=root.get() && depth<64) { node=node->parent; ++depth; }
+            if (node==root.get() && depth<primaryDepth) { primaryBody=i; primaryDepth=depth; }
+        }
+        return primaryDepth!=UINT_MAX;
+    }
+    void assignSource(std::size_t index)
+    {
+        auto selected=primaryBody; auto* node=sources[index].node.get(); bool found=false;
+        for (unsigned depth=0;node && depth<64 && !found;++depth,node=node->parent)
+            for (std::size_t j=0;j<bodies.size();++j) if (node==bodies[j].node.get()) { selected=j; found=true; break; }
+        bodies[selected].sources.push_back(index);
+    }
+    bool buildCompound(Body& body)
+    {
+        std::vector<havok_compound_shape_builder::CompoundChild> children;
+        body.poses.resize(body.sources.size()); children.reserve(body.sources.size());
+        for (std::size_t i=0;i<body.sources.size();++i) {
+            const auto& source=sources[body.sources[i]];
+            if (!pose(body,source,body.poses[i])) return false;
+            children.push_back({source.shape.get(),body.poses[i]});
+        }
+        return body.generated.create(children);
+    }
+    // Equipped drop: take the equipped hulls instead of extracting the mesh.
+    // Only compound assembly remains, so it completes in the adopting call.
+    const char* inherit(DroppedWeaponCollision& collision)
+    {
+        if (collision.parts.empty()) return "no-equipped-hulls";
+        sources.reserve(collision.parts.size());
+        for (auto& part:collision.parts) {
+            auto* node=DroppedWeaponCollision::resolvePath(root.get(),part.path);
+            if (!node) return "source-path-unresolved";
+            // The hull bakes the equipped source's world scale; the loose
+            // pose applies none. A different dropped scale needs a rebuild.
+            const float scale=node->world.scale;
+            if (!std::isfinite(scale) || std::abs(scale-part.sourceWorldScale)>kInheritedScaleTolerance*std::abs(part.sourceWorldScale))
+                return "source-scale-mismatch";
+            sources.push_back({std::move(part.shape),RE::NiPointer<RE::NiAVObject>{node},part.sourceCenter});
+        }
+        collision.parts.clear();
+        nextSource=sources.size();
+        if (!selectPrimaryBody()) return "no-root-collision-body";
+        for (nextMapping=0;nextMapping<sources.size();++nextMapping) assignSource(nextMapping);
+        for (nextCompound=0;nextCompound<bodies.size();++nextCompound) {
+            auto& body=bodies[nextCompound];
+            if (!body.sources.empty() && !buildCompound(body)) return "compound-build-failed";
+        }
+        return nullptr;
     }
     bool install()
     {
@@ -383,6 +418,7 @@ void LooseWeaponCollision::publishWatchMask() noexcept
 void LooseWeaponCollision::clear(RE::hknpWorld* liveWorld)
 {
     _watchMask.store(0,std::memory_order_release);
+    _dropped={};
     for (auto& slot:_slots) { slot.clear(liveWorld); slot._declined=slot._rested=0; }
     for(auto& state:_parked)if(state) {
         if(liveWorld&&state->world==liveWorld&&!state->restore())continue;
@@ -397,6 +433,17 @@ void LooseWeaponCollision::update(const PhysicsFrameContext& frame, RE::TESObjec
     if (!frame.worldReady || !frame.hknpWorld || frame.menuBlocked) return;
     performance_profiler::ScopedTimer timer(performance_profiler::Scope::LooseWeaponCollision);
     loose_weapon_state::restoreWithdrawn();
+    // Drops whose native bodies published after placement adopt here, ahead
+    // of held admission, so a regrab never extracts the mesh again.
+    for(auto& dropped:_dropped)if(dropped.handle) {
+        const auto ref=dropped.handle.get();
+        if(!ref||ref->IsDeleted()||ref->IsDisabled()||!ref->Get3D()) { dropped={}; continue; }
+        try { if(adoptDropped(ref.get(),dropped.collision,frame,gate)) dropped={}; }
+        catch(...) {
+            dropped={};
+            ROCK_LOG_SAMPLE_WARN(Weapon,2000,"Dropped weapon collision adoption failed ref={:08X}; native collision retained",ref->formID);
+        }
+    }
     // Retained parked shapes follow their live reference/model identity only.
     // Regrab reuses the same prepared body set rather than briefly restoring
     // an absent magazine's original collision.
@@ -534,6 +581,73 @@ LooseWeaponCollision::NativeRest LooseWeaponCollision::watchNative(RE::TESObject
     if(!dynamic&&state.nativeOnly){free->clear(frame.hknpWorld);return NativeRest::Resting;}
     if(state.nativeOnly&&!state.install()){free->clear(frame.hknpWorld);return NativeRest::Unavailable;}
     free->publishBodies();publishWatchMask();return NativeRest::Watching;
+}
+
+bool LooseWeaponCollision::adoptDropped(RE::TESObjectREFR* ref, DroppedWeaponCollision& collision,
+    const PhysicsFrameContext& frame, PhysicsCallbackQuiescenceGate& gate)
+{
+    if (!frame.worldReady || !frame.hknpWorld || frame.menuBlocked || !ref->Get3D()) return false;
+    // A regrab may already have given this reference its own owner.
+    const auto owned=[&](const auto& state){return state&&state->ref.get()==ref;};
+    if (std::any_of(_parked.begin(),_parked.end(),owned) ||
+        std::any_of(_slots.begin(),_slots.end(),[&](const Slot& slot){return owned(slot._state);})) return true;
+    auto free=std::find_if(_slots.begin(),_slots.end(),[](const Slot& slot){return !slot._state;});
+    if (free==_slots.end()) {
+        ROCK_LOG_SAMPLE_WARN(Weapon,2000,"Dropped weapon collision waiting for capacity ref={:08X}",ref->formID);
+        return false;
+    }
+    if (!native_object_placement::available() || !shapeSetter()) {
+        ROCK_LOG_WARN(Weapon,"Dropped weapon collision unavailable ref={:08X}: native shape setter or placement missing",ref->formID);
+        return true;
+    }
+    auto mutation=gate.pauseForMutation();
+    auto state=std::make_unique<State>(ref,frame.hknpWorld);
+    if (!state->failed && !state->captureBodies(frame) && !state->failed) return false;
+    if (state->failed) {
+        ROCK_LOG_WARN(Weapon,"Dropped weapon collision declined ref={:08X} stage={}; native collision retained",ref->formID,state->phase);
+        return true;
+    }
+    const auto parts=collision.parts.size();
+    const char* declined=state->inherit(collision);
+    if (declined) {
+        for (auto& body:state->bodies) { body.sources.clear(); body.poses.clear(); body.generated.reset(); }
+        state->sources.clear();
+        state->nativeOnly=true;
+    }
+    const bool suppressed=declined || loose_weapon_state::owns(ref->formID) || state->suppressNative();
+    if (!suppressed || !state->install()) {
+        ROCK_LOG_WARN(Weapon,"Dropped weapon collision install failed ref={:08X} stage={}; restoring native collision",ref->formID,state->phase);
+        // A partial change that cannot be undone now stays owned; the slot
+        // update retries restoration before releasing it.
+        if (!state->restore()) {
+            state->failed=true; state->phase="Restore pending";
+            free->_state=std::move(state);
+        }
+        return true;
+    }
+    if (declined) {
+        ROCK_LOG_WARN(Weapon,"Dropped weapon kept native collision ref={:08X} reason={} equippedParts={}; watched to rest retirement",
+            ref->formID,declined,parts);
+    } else {
+        ROCK_LOG_INFO(Weapon,"Dropped weapon collision adopted ref={:08X} equippedParts={} nativeBodies={}; kept until rest retirement",
+            ref->formID,state->sources.size(),state->bodies.size());
+    }
+    free->_rested=0; free->_declined=0;
+    free->_state=std::move(state);
+    free->publishBodies();
+    publishWatchMask();
+    return true;
+}
+
+void LooseWeaponCollision::queueDropped(const RE::ObjectRefHandle& handle, DroppedWeaponCollision collision)
+{
+    auto free=std::find_if(_dropped.begin(),_dropped.end(),[](const DroppedHandoff& entry){return !entry.handle;});
+    if (free==_dropped.end()) {
+        ROCK_LOG_WARN(Weapon,"Dropped weapon collision queue full; equipped hulls discarded");
+        return;
+    }
+    free->handle=handle;
+    free->collision=std::move(collision);
 }
 
 bool LooseWeaponCollision::prepareRelease(RE::TESObjectREFR* reference, RE::hknpWorld* liveWorld,

@@ -1,6 +1,8 @@
 #pragma once
 
+#include "physics-interaction/weapon/DroppedWeaponCollision.h"
 #include "physics-interaction/weapon/LooseWeaponCollisionPolicy.h"
+#include "RE/Bethesda/BSPointerHandle.h"
 #include "RE/NetImmerse/NiTransform.h"
 #include <array>
 #include <atomic>
@@ -24,6 +26,16 @@ namespace rock {
         enum class NativeRest { Watching, Resting, Unavailable, CapacityFull };
         NativeRest watchNative(RE::TESObjectREFR*,const PhysicsFrameContext&,PhysicsCallbackQuiescenceGate&);
         bool takeNativeRestCompletion(std::uint32_t reference) noexcept;
+
+        // Equipped drops: the dropped reference keeps the equipped hulls from
+        // the first frame its native bodies exist until rest retirement.
+        // Returns false while its native bodies are not yet published; the
+        // drop handoff calls it before its placement solve. A declined or
+        // empty set leaves native collision under the same rest watch.
+        bool adoptDropped(RE::TESObjectREFR* reference, DroppedWeaponCollision& collision,
+            const PhysicsFrameContext& frame, PhysicsCallbackQuiescenceGate& gate);
+        // Placement finished before the bodies were published: retry each update.
+        void queueDropped(const RE::ObjectRefHandle& handle, DroppedWeaponCollision collision);
 
         void clear(RE::hknpWorld* liveWorld);
         bool prepareRelease(RE::TESObjectREFR* reference, RE::hknpWorld* liveWorld,
@@ -73,6 +85,13 @@ namespace rock {
         // the active preparation/contact pool. Released on pickup, model/world
         // replacement or consumer withdrawal, never evicted onto default shapes.
         std::array<std::unique_ptr<State>,256> _parked;
+        struct DroppedHandoff
+        {
+            RE::ObjectRefHandle handle;
+            DroppedWeaponCollision collision;
+        };
+        // One entry per concurrent equipped drop handoff.
+        std::array<DroppedHandoff,4> _dropped;
         std::atomic<std::uint32_t> _watchMask{};
         std::size_t _nextPreparationSlot{};
     };

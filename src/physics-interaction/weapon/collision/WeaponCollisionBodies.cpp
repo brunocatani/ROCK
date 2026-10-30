@@ -199,6 +199,43 @@ namespace rock
         return activeWeaponBodies()[0].body;
     }
 
+    DroppedWeaponCollision WeaponCollision::captureDroppedCollision(const RE::NiAVObject* modelRoot) const
+    {
+        DroppedWeaponCollision result;
+        const char* declined = modelRoot ? nullptr : "model-root-unavailable";
+        const WeaponBodyInstance* failedPart = nullptr;
+        for (const auto& instance : activeWeaponBodies()) {
+            if (declined) break;
+            if (!instance.body.isValid()) continue;
+            DroppedWeaponCollision::Part part;
+            // Multi-child hulls are always source-local; a single hull is only
+            // when its source-local point cloud exists (buildGeneratedSourceShape).
+            const bool sourceLocal = instance.geometry && (instance.geometry->childLocalPointCloudsGame.size() > 1 ||
+                !instance.geometry->sourceLocalPointsGame.empty());
+            if (!instance.shape || !instance.sourceNode || !sourceLocal) {
+                declined = "hull-not-source-local";
+            } else if (!DroppedWeaponCollision::capturePath(modelRoot, instance.sourceNode, part.path)) {
+                declined = "source-outside-model";
+            }
+            if (declined) {
+                failedPart = &instance;
+                break;
+            }
+            havok_ref_count::addRef(instance.shape);
+            part.shape.reset(const_cast<RE::hknpShape*>(instance.shape));
+            part.sourceCenter = instance.generatedSourceLocalCenterGame;
+            part.sourceWorldScale = instance.sourceNode->world.scale;
+            result.parts.push_back(std::move(part));
+        }
+        if (!declined && result.parts.empty()) declined = "no-generated-bodies";
+        if (declined) {
+            result.parts.clear();
+            ROCK_LOG_WARN(Weapon, "{} drop hull handoff declined: reason={} part='{}'", collisionOwnerName(), declined,
+                failedPart ? failedPart->sourceName : std::string{});
+        }
+        return result;
+    }
+
     void WeaponCollision::destroyWeaponBody(RE::hknpWorld* world)
     {
         auto structuralMutation = _physicsCallbackGate ?

@@ -177,6 +177,10 @@ namespace rock
                 // index 0 in its own hand below, so the player stays armed.
                 const auto secondary = native_hand_equipment::equippedViews()[1];
                 const bool secondaryLeft = secondary.weapon && native_hand_equipment::secondaryHandIsLeft();
+                // Name the hull sources while the equipped model is still attached.
+                auto droppedCollision = _weaponCollision.captureDroppedCollision(toggleDrop ?
+                    sourceVisual.exactInstance :
+                    equipped_weapon_visual_state::observe(observedEquippedWeaponFormID).exactInstance);
                 _twoHandedGrip.prepareEquippedWeaponDropCommit();
                 armTransitionSeamTrace("first-drop");
                 const auto dropResult = weapon_equip_transfer::dropEquippedWeaponFromPlayer(weapon_equip_transfer::EquippedDropInput{
@@ -235,7 +239,8 @@ namespace rock
                             dropResult.handle,
                             dropResult.droppedFormID,
                             sourceHand,
-                            releaseGeometry);
+                            releaseGeometry,
+                            std::move(droppedCollision));
                     }
                 }
                 if (dropCommitted) {
@@ -372,6 +377,7 @@ namespace rock
         RE::NiPointer<RE::NiAVObject> dropVisualModel(toggleDrop ? drop.model : nullptr);
         const auto dropVisualInWeapon = dropVisualModel ?
             transform_math::composeTransforms(transform_math::invertTransform(drop.weaponWorld), dropVisualModel->world) : RE::NiTransform{};
+        auto droppedCollision = _secondaryWeaponCollision.captureDroppedCollision(drop.model);
         // The second graph retires with its model; stop its actions first.
         armTransitionSeamTrace("second-drop");
         native_secondary_actions::suspend();
@@ -417,7 +423,8 @@ namespace rock
                     _drop.visuals[handIndex].begin(std::move(dropVisualModel), dropVisualInWeapon, drop.pose, dropResult.droppedFormID);
                 }
                 armEquippedWeaponNativeHandoff(dropResult.handle, dropResult.droppedFormID, sourceHand,
-                    WeaponCollision::ReleaseGeometrySnapshot{ .hasCapturedWeaponWorld = true, .capturedWeaponWorld = drop.weaponWorld });
+                    WeaponCollision::ReleaseGeometrySnapshot{ .hasCapturedWeaponWorld = true, .capturedWeaponWorld = drop.weaponWorld },
+                    std::move(droppedCollision));
             }
             // The releasing hand stops colliding briefly with what it let go of.
             setWeaponHandSuppression(frame.hknpWorld, left, WeaponHandReason::Drop, true);
@@ -463,7 +470,8 @@ namespace rock
         const RE::ObjectRefHandle& handle,
         std::uint32_t droppedFormId,
         equipped_weapon_drop_policy::SourceHand sourceHand,
-        const WeaponCollision::ReleaseGeometrySnapshot& releaseGeometry)
+        const WeaponCollision::ReleaseGeometrySnapshot& releaseGeometry,
+        DroppedWeaponCollision collision)
     {
         if (!handle) {
             return;
@@ -496,10 +504,11 @@ namespace rock
             .hasReleaseWeaponWorld = releaseGeometry.hasCapturedWeaponWorld,
             .releaseWeaponWorld = releaseGeometry.capturedWeaponWorld,
             .progressSolveSequence = _frame.completedPhysicsSolveSequence.load(std::memory_order_acquire),
+            .collision = std::move(collision),
         };
         ROCK_LOG_INFO(Weapon,
-            "Equipped weapon native drop placement armed: ref={:08X} hand={}",
-            droppedFormId, equipped_weapon_drop_policy::sourceHandName(sourceHand));
+            "Equipped weapon native drop placement armed: ref={:08X} hand={} equippedHulls={}",
+            droppedFormId, equipped_weapon_drop_policy::sourceHandName(sourceHand), handoff->collision.parts.size());
     }
 
     void PhysicsInteraction::serviceEquippedWeaponNativeHandoff(const PhysicsFrameContext& frame)
@@ -581,6 +590,9 @@ namespace rock
                     reason ? reason : "unknown",
                     static_cast<std::uint32_t>(handoff.stage),
                     handoff.elapsedSeconds);
+            }
+            if (ready && !handoff.collisionAdopted) {
+                _looseWeaponCollision.queueDropped(handoff.handle, std::move(handoff.collision));
             }
             handoff = {};
         };
@@ -846,6 +858,19 @@ namespace rock
         };
 
         if (handoff.stage == EquippedWeaponDropHandoffStage::ResolvingBodies) {
+            if (!handoff.collisionAdopted) {
+                // Install the equipped hulls before identities capture shapes
+                // and before the placement solve: vanilla collision never acts.
+                handoff.waitReason = "equipped-hull-adoption";
+                try {
+                    handoff.collisionAdopted = _looseWeaponCollision.adoptDropped(droppedRef, handoff.collision, frame,
+                        _generatedBodyStepDrive.callbackGate());
+                } catch (...) {
+                    handoff.collisionAdopted = true;
+                    ROCK_LOG_WARN(Weapon, "Equipped weapon drop hull adoption failed: dropped={:08X}; native collision retained",
+                        handoff.droppedFormId);
+                }
+            }
             handoff.waitReason = "body-identity";
             auto placementWorld = handoff.releaseWeaponWorld;
             // Toggle Drop remains carried while native bodies are published.
@@ -1053,10 +1078,9 @@ namespace rock
                 return;
             }
         }
-        // Native bodies have settled and can complete the handoff now.
-        // Saved-state geometry builds incrementally; LooseWeaponCollision
-        // retains native collision until its generated replacements install.
-        // Its work budget must not become a native placement timeout.
+        // Native bodies have settled and can complete the handoff now. Hulls
+        // not yet adopted (bodies still unpublished) queue for adoption by
+        // LooseWeaponCollision; that wait must not become a placement timeout.
         ROCK_LOG_INFO(Weapon,
             "Equipped weapon native drop placement ready: ref={:08X} bodies={} motions={} elapsed={:.3f}s",
             handoff.droppedFormId, acceptedRecordCount, uniqueMotionRecordCount, handoff.elapsedSeconds);

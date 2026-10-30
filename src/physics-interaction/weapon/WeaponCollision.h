@@ -1,5 +1,6 @@
 #pragma once
 
+#include "physics-interaction/weapon/DroppedWeaponCollision.h"
 #include "physics-interaction/weapon/GeneratedWeaponGeometry.h"
 #include "physics-interaction/weapon/HoldingGripMath.h"
 #include "physics-interaction/weapon/WeaponEvidenceSnapshot.h"
@@ -390,6 +391,14 @@ namespace rock
             std::span<SupportGripEvidenceView> outViews) const;
 
         BethesdaPhysicsBody& getWeaponBody();
+
+        /*
+         * Retains the active hull shapes for the reference this weapon drops
+         * into. Call before the drop detaches modelRoot and before
+         * destroyWeaponBody. Empty when any active part is not a source-local
+         * hull named below modelRoot: a partial set would drop collision.
+         */
+        DroppedWeaponCollision captureDroppedCollision(const RE::NiAVObject* modelRoot) const;
 
         void destroyWeaponBody(RE::hknpWorld* world);
 
