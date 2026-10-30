@@ -444,8 +444,8 @@ int main(int argc, char** argv)
             require(rock::RockConfig::parseValues(seatValues).rockGrabCloseSeatMode == 0,
                 "invalid close-grab seat mode must keep the current seat");
         }
-        require(find(store, "iWeaponDropMode").type == ValueType::Integer &&
-            find(store, "iWeaponDropMode").value == "2", "weapon drop must default to toggle drop");
+        require(find(store, "iWeaponEquipMode").type == ValueType::Integer &&
+            find(store, "iWeaponEquipMode").value == "2", "weapon equip mode must default to trigger equip with toggle drop");
         require(find(store, "iWeaponGrabMode").type == ValueType::Integer &&
             find(store, "iWeaponGrabMode").value == "1", "weapon grab must default to toggling both grips");
         for (const auto* invalid : { "-1", "0", "4", "invalid" }) {
@@ -456,27 +456,27 @@ int main(int argc, char** argv)
         }
         require(!store.setValue(Group::Consumer, "ImmersiveWeapons", "bAutoDrop", "true"),
             "removed auto-drop boolean must not remain writable");
-        for (const auto* mode : { "1", "2", "3" }) {
-            require(store.setValue(Group::Consumer, "ImmersiveWeapons", "iWeaponDropMode", mode),
-                "weapon drop mode write failed");
-            require(store.load(false), "weapon drop mode reload failed");
-            CSimpleIniA dropValues;
-            store.appendLoadedValues(dropValues);
-            const auto dropConfig = rock::RockConfig::parseValues(dropValues);
-            require(dropConfig.rockWeaponDropMode == mode[0] - '0',
-                "weapon drop mode did not reach runtime configuration");
-            require(dropConfig.rockWeaponGrabMode == 1,
-                "weapon drop mode must not change the grip release gesture");
+        for (const auto* mode : { "1", "2", "3", "4" }) {
+            require(store.setValue(Group::Consumer, "ImmersiveWeapons", "iWeaponEquipMode", mode),
+                "weapon equip mode write failed");
+            require(store.load(false), "weapon equip mode reload failed");
+            CSimpleIniA equipValues;
+            store.appendLoadedValues(equipValues);
+            const auto equipConfig = rock::RockConfig::parseValues(equipValues);
+            require(equipConfig.rockWeaponEquipMode == mode[0] - '0',
+                "weapon equip mode did not reach runtime configuration");
+            require(equipConfig.rockWeaponGrabMode == 1,
+                "weapon equip mode must not change the grip release gesture");
         }
-        for (const auto* invalid : { "-1", "0", "4", "invalid" }) {
-            CSimpleIniA dropValues;
-            dropValues.SetValue("ImmersiveWeapons", "iWeaponDropMode", invalid);
-            require(rock::RockConfig::parseValues(dropValues).rockWeaponDropMode == 2,
-                "invalid weapon drop mode must fall back to toggle drop");
+        for (const auto* invalid : { "-1", "0", "5", "invalid" }) {
+            CSimpleIniA equipValues;
+            equipValues.SetValue("ImmersiveWeapons", "iWeaponEquipMode", invalid);
+            require(rock::RockConfig::parseValues(equipValues).rockWeaponEquipMode == 2,
+                "invalid weapon equip mode must fall back to trigger equip with toggle drop");
         }
-        require(store.setValue(Group::Consumer, "ImmersiveWeapons", "iWeaponDropMode", "2"),
-            "weapon drop mode reset failed");
-        require(store.load(false), "weapon drop mode reset reload failed");
+        require(store.setValue(Group::Consumer, "ImmersiveWeapons", "iWeaponEquipMode", "2"),
+            "weapon equip mode reset failed");
+        require(store.load(false), "weapon equip mode reset reload failed");
         require(store.setValue(Group::Consumer, "AmbidextrousFiring", "fLeftFiringGripOffsetYGameUnits", "0.25"),
             "left firing relative placement write failed");
         require(store.setValue(Group::Consumer, "AmbidextrousFiring", "fRightSupportGripOffsetZGameUnits", "-0.5"),

@@ -350,7 +350,7 @@ namespace rock
     bool PhysicsInteraction::dropSecondaryWeaponToWorld(const PhysicsFrameContext& frame)
     {
         using equipped_weapon_drop_policy::Mode;
-        const auto mode = equipped_weapon_drop_policy::fromSetting(g_rockConfig.rockWeaponDropMode);
+        const auto mode = equipped_weapon_drop_policy::fromEquipMode(g_rockConfig.rockWeaponEquipMode);
         if (!frame.worldReady || !frame.hknpWorld || frame.menuBlocked || mode == Mode::Off) return false;
         native_secondary_presentation::DropPose drop{};
         if (const char* refused = native_secondary_presentation::tryGetDropPose(drop)) {

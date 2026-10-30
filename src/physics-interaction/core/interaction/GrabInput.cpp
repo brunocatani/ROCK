@@ -1601,6 +1601,11 @@ namespace rock
             const bool acceptedTransfer = _equipped.transition.heldTransfer().wantsEquip(
                 isLeft, heldRefForGameplay ? heldRefForGameplay->GetFormID() : 0u, hand.heldGrabIdentity());
             const bool heldWeaponEquipTriggerPressed = heldWeaponEquipTriggerPressedEdge || replayedSameHandTrigger || acceptedTransfer;
+            // Auto Equip replaces trigger equip for weapons. Grenades still arm
+            // on the trigger, and an accepted hand-to-hand transfer still equips.
+            const bool weaponTriggerEquipPressed = acceptedTransfer ||
+                (!equipped_weapon_drop_policy::autoEquipFromEquipMode(g_rockConfig.rockWeaponEquipMode) &&
+                    (heldWeaponEquipTriggerPressedEdge || replayedSameHandTrigger));
             if (replayedSameHandTrigger && triggerEquipIntent.grabIdentity == 0)
                 triggerEquipIntent.grabIdentity = hand.heldGrabIdentity();
             const bool heldWeaponGripZoneEquipSettled = !heldLooseGrenade &&
@@ -1615,7 +1620,7 @@ namespace rock
                 .heldWeaponNow = hand.isHoldingLooseWeapon(),
                 .heldWeaponHand = isLeft ? input_remap_policy::Hand::Left : input_remap_policy::Hand::Right,
                 .triggerInputHand = isLeft ? input_remap_policy::Hand::Left : input_remap_policy::Hand::Right,
-                .triggerPressedEdge = heldWeaponEquipTriggerPressed,
+                .triggerPressedEdge = weaponTriggerEquipPressed,
                 .gripZoneEquipEnabled = gripZoneSettleEquipEnabled,
                 .gripZoneEquipSettled = heldWeaponGripZoneEquipSettled,
             });
@@ -2143,7 +2148,7 @@ namespace rock
                     static_cast<void>(armHeldLooseGrenade(hand, frame));
                 }
             } else if (heldWeaponEquipRequested) {
-                const bool triggeredByInput = heldWeaponEquipTriggerPressed;
+                const bool triggeredByInput = weaponTriggerEquipPressed;
                 const char* requestReason = triggeredByInput ? "same-hand-trigger-held-weapon-equip" :
                                                                "grip-zone-held-weapon-equip";
                 const char* logAction = triggeredByInput ? "trigger" : "grip-zone";

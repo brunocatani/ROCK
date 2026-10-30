@@ -2591,8 +2591,8 @@ namespace rock
                 g_rockConfig.rockEquippedWeaponShoulderStashEnabled &&
                 !virtualHolstersLoaded,
             .lastGripReleaseDropEnabled =
-                equipped_weapon_drop_policy::fromSetting(g_rockConfig.rockWeaponDropMode) != equipped_weapon_drop_policy::Mode::Off,
-            .autoEquipEnabled = g_rockConfig.rockAutoEquipWeapons,
+                equipped_weapon_drop_policy::fromEquipMode(g_rockConfig.rockWeaponEquipMode) != equipped_weapon_drop_policy::Mode::Off,
+            .autoEquipEnabled = equipped_weapon_drop_policy::autoEquipFromEquipMode(g_rockConfig.rockWeaponEquipMode),
             .autoEquipSettleSeconds = g_rockConfig.rockAutoEquipSettleSeconds,
             .immersiveWeapon = {
                 .firingGripDetachEnabled =

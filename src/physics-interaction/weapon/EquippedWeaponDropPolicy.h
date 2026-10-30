@@ -11,13 +11,31 @@ namespace rock::equipped_weapon_drop_policy
         AutoDrop = 3,
     };
 
-    [[nodiscard]] inline constexpr Mode fromSetting(int value) noexcept
+    /*
+     * iWeaponEquipMode joins how a loose weapon equips with what the last
+     * grip release does, so no contradictory pair can be configured. Auto
+     * Equip re-equips any weapon held at its firing grip: a Toggle Drop would
+     * undo itself and a retained grip could never be released, so mode 4
+     * always drops and replaces trigger equip.
+     *   1 = trigger equip, no drop    2 = trigger equip, Toggle Drop
+     *   3 = trigger equip, Auto Drop  4 = Auto Equip (Auto Drop)
+     */
+    inline constexpr int kFirstEquipMode = 1;
+    inline constexpr int kAutoEquipMode = 4;
+
+    [[nodiscard]] inline constexpr Mode fromEquipMode(int value) noexcept
     {
         switch (value) {
         case 2: return Mode::ToggleDrop;
-        case 3: return Mode::AutoDrop;
+        case 3:
+        case kAutoEquipMode: return Mode::AutoDrop;
         default: return Mode::Off;
         }
+    }
+
+    [[nodiscard]] inline constexpr bool autoEquipFromEquipMode(int value) noexcept
+    {
+        return value == kAutoEquipMode;
     }
 
     enum class SourceHand : std::uint8_t

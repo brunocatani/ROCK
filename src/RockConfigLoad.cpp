@@ -13,6 +13,7 @@
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/RockLoggingPolicy.h"
+#include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 
 namespace
 {
@@ -351,11 +352,12 @@ namespace rock
             IMMERSIVE_WEAPONS_SECTION,
             "bDetachEitherHand",
             rockDetachEitherHand);
-        rockWeaponDropMode = static_cast<int>(ini.GetLongValue(
-            IMMERSIVE_WEAPONS_SECTION, "iWeaponDropMode", rockWeaponDropMode));
-        if (rockWeaponDropMode < 1 || rockWeaponDropMode > 3) {
-            ROCK_LOG_WARN(Config, "Invalid iWeaponDropMode={} -- using 2", rockWeaponDropMode);
-            rockWeaponDropMode = 2;
+        rockWeaponEquipMode = static_cast<int>(ini.GetLongValue(
+            IMMERSIVE_WEAPONS_SECTION, "iWeaponEquipMode", rockWeaponEquipMode));
+        if (rockWeaponEquipMode < equipped_weapon_drop_policy::kFirstEquipMode ||
+            rockWeaponEquipMode > equipped_weapon_drop_policy::kAutoEquipMode) {
+            ROCK_LOG_WARN(Config, "Invalid iWeaponEquipMode={} -- using 2", rockWeaponEquipMode);
+            rockWeaponEquipMode = 2;
         }
         rockWeaponGrabMode = static_cast<int>(ini.GetLongValue(
             IMMERSIVE_WEAPONS_SECTION, "iWeaponGrabMode", rockWeaponGrabMode));
@@ -363,10 +365,6 @@ namespace rock
             ROCK_LOG_WARN(Config, "Invalid iWeaponGrabMode={} -- using 1", rockWeaponGrabMode);
             rockWeaponGrabMode = 1;
         }
-        rockAutoEquipWeapons = ini.GetBoolValue(
-            IMMERSIVE_WEAPONS_SECTION,
-            "bAutoEquipWeapons",
-            rockAutoEquipWeapons);
         rockAutoEquipSettleSeconds = readClampedFloat(
             ini, IMMERSIVE_WEAPONS_SECTION, "fAutoEquipSettleSeconds",
             rockAutoEquipSettleSeconds, 0.15f, 0.0f, 2.0f);

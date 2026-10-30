@@ -556,7 +556,7 @@ namespace rock
                     if (gripCarries(supportGrip) && !gripCarries(freeHandGrip)) {
                         (void)requestEquippedWeaponDrop("support-carry-released",
                             supportHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right,
-                            equipped_weapon_drop_policy::fromSetting(g_rockConfig.rockWeaponDropMode), dt, false, true);
+                            equipped_weapon_drop_policy::fromEquipMode(g_rockConfig.rockWeaponEquipMode), dt, false, true);
                         return;
                     }
                     if (handoffAuthoredSupportCarry(supportHandIsLeft)) {
@@ -581,7 +581,7 @@ namespace rock
                     if (gripCarries(freeHandGrip) && !gripCarries(supportGrip)) {
                         (void)requestEquippedWeaponDrop("part-carry-released",
                             firingHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right,
-                            equipped_weapon_drop_policy::fromSetting(g_rockConfig.rockWeaponDropMode), dt, false, true);
+                            equipped_weapon_drop_policy::fromEquipMode(g_rockConfig.rockWeaponEquipMode), dt, false, true);
                         return;
                     }
                     if (handoffAuthoredSupportCarry(firingHandIsLeft)) {
