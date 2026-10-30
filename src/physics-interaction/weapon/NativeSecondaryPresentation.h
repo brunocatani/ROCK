@@ -80,6 +80,17 @@ namespace rock::native_secondary_presentation
     [[nodiscard]] bool tryGetModelIntentWorld(RE::NiTransform& out) noexcept;
 
     /*
+     * The second weapon's model world and projectile-node world for this
+     * frame, for provider readers that run before this frame's placement
+     * (frame callbacks). A firearm carries the last completed placement (at
+     * most one frame old) to the current weapon wand, which its placement
+     * follows; a melee weapon keeps that placement. outProjectileValid is
+     * false when the model has no projectile node. Frame owner only.
+     */
+    [[nodiscard]] bool tryGetAimFrame(RE::NiTransform& outModelWorld, RE::NiTransform& outProjectileWorld,
+        bool& outProjectileValid) noexcept;
+
+    /*
      * Weapon collision correction for the second weapon, called once per
      * placement on the frame thread with the model's collision-free world pose.
      * Returns true with the resolved pose to present; the gun and the hand

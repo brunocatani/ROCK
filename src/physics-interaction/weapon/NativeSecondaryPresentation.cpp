@@ -930,6 +930,38 @@ namespace rock::native_secondary_presentation
         return usable(out);
     }
 
+    bool tryGetAimFrame(RE::NiTransform& outModelWorld, RE::NiTransform& outProjectileWorld, bool& outProjectileValid) noexcept
+    {
+        outProjectileValid = false;
+        // waitFor and release clear the grip; frame callbacks run after
+        // beginFrame clears `ready` and before this frame's update sets it.
+        if (!onFrameThread() || s_state.dropGrip.role == loose_weapon_authored_grab_policy::Role::None) return false;
+        const auto frame = runtime_state::currentFrame().frameIndex;
+        if (frame < s_state.frame || frame - s_state.frame > 1) return false;
+        const auto view = native_hand_equipment::equippedViews()[1];
+        auto* attachment = matches(view) ? currentAttachment(view) : nullptr;
+        RE::NiTransform modelRelation{};
+        if (!attachment || !view.root || !modelInAttachment(attachment, view.root, modelRelation)) return false;
+        auto attachmentWorld = s_state.targetWorld;
+        RE::NiTransform wandWorld{};
+        if (!s_state.ready && view.firearm && usable(s_state.controllerWorld) &&
+            frik_hand_world_authority::tryGetWeaponWandWorld(s_state.left, wandWorld) && usable(wandWorld)) {
+            attachmentWorld = transform_math::composeTransforms(wandWorld, transform_math::composeTransforms(
+                transform_math::invertTransform(s_state.controllerWorld), s_state.targetWorld));
+        }
+        outModelWorld = transform_math::composeTransforms(attachmentWorld, modelRelation);
+        if (!usable(outModelWorld)) return false;
+        // The equip-time projectile origin, accepted only inside this model.
+        const RE::NiAVObject* projectileNode = nullptr;
+        RE::NiTransform projectileInModel{};
+        if (native_memory::tryReadField(reinterpret_cast<const void*>(view.data), 0x30, projectileNode) && projectileNode &&
+            modelInAttachment(view.root, projectileNode, projectileInModel)) {
+            outProjectileWorld = transform_math::composeTransforms(outModelWorld, projectileInModel);
+            outProjectileValid = usable(outProjectileWorld);
+        }
+        return true;
+    }
+
     void setMirrorOffsets(holding_grip_math::MirrorOffsets offsets) noexcept
     {
         s_mirrorOffsets = offsets;

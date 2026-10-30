@@ -478,44 +478,29 @@
         using Flag = api::weapon::GripFlag;
 
         outState = {};
-        // Null unless this frame placed the index-1 model in its hand.
-        auto* model = native_secondary_presentation::presentedModel();
-        if (!_lifecycle.initialized.load(std::memory_order_acquire) || !model) {
+        /*
+         * Frame callbacks run before this frame places the second weapon, so
+         * its live nodes still hold the native pose. The presentation carries
+         * its last placement to this frame's wand; the projectile node is
+         * index 1's EquippedWeaponData::fireNode, accepted only inside that
+         * model.
+         */
+        RE::NiTransform modelWorld{}, projectileWorld{};
+        bool projectileValid = false;
+        if (!_lifecycle.initialized.load(std::memory_order_acquire) ||
+            !native_secondary_presentation::tryGetAimFrame(modelWorld, projectileWorld, projectileValid)) {
             return false;
         }
 
-        outState.flags = static_cast<std::uint32_t>(Flag::Valid);
+        outState.flags = static_cast<std::uint32_t>(Flag::Valid) |
+            static_cast<std::uint32_t>(Flag::WeaponWorldValid);
         outState.weaponFormId = _equippedSlotOne.formId;
         outState.weaponGenerationKey = _secondaryWeaponCollision.getCurrentWeaponGenerationKey();
         // Its emitters are captured in this model's frame.
-        if (finiteNiTransform(model->world)) {
-            fillProviderTransform(model->world, outState.weaponWorld);
-            outState.flags |= static_cast<std::uint32_t>(Flag::WeaponWorldValid);
-        }
-
-        /*
-         * Index 1's EquippedWeaponData::fireNode is the same equip-time
-         * projectile origin slot 0 publishes. It is accepted only inside the
-         * presented model, so a node left from another model never becomes
-         * this weapon's muzzle.
-         */
-        const auto view = native_hand_equipment::equippedViews()[1];
-        auto* data = view.root == model ? reinterpret_cast<RE::EquippedWeaponData*>(view.data) : nullptr;
-        if (!data || *reinterpret_cast<const std::uintptr_t*>(data) != f4vr::EquippedWeaponData_vtable.address()) {
+        fillProviderTransform(modelWorld, outState.weaponWorld);
+        if (!projectileValid) {
             return true;
         }
-        const RE::NiAVObject* projectileNode = data->fireNode;
-        bool insideModel = false;
-        constexpr int kMaxModelDepth = 64;
-        int depth = 0;
-        for (const RE::NiAVObject* node = projectileNode; node && depth < kMaxModelDepth && !insideModel;
-             node = node->parent, ++depth) {
-            insideModel = node == model;
-        }
-        if (!insideModel || !finiteNiTransform(projectileNode->world)) {
-            return true;
-        }
-        const auto& projectileWorld = projectileNode->world;
         RE::NiPoint3 muzzleDirection{
             projectileWorld.rotate.entry[1][0],
             projectileWorld.rotate.entry[1][1],
