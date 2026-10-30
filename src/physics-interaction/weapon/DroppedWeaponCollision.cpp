@@ -74,4 +74,35 @@ namespace rock
         }
         return current;
     }
+
+    std::string DroppedWeaponCollision::describeUnresolved(RE::NiAVObject* root, const std::vector<Step>& path)
+    {
+        std::string text;
+        for (std::size_t i = 0; i < path.size(); ++i) {
+            text += (i ? "/" : "") + path[i].name + "#" + std::to_string(path[i].ordinal);
+        }
+        auto* current = root;
+        for (std::size_t i = 0; i < path.size(); ++i) {
+            const auto& step = path[i];
+            const auto* parent = current ? current->IsNode() : nullptr;
+            RE::NiAVObject* next = nullptr;
+            std::uint32_t seen = 0;
+            std::string siblings;
+            std::size_t listed = 0;
+            if (parent) {
+                forEachChild(parent, [&](RE::NiAVObject* child) {
+                    if (listed++ < 24) siblings += std::string(listed > 1 ? "," : "") + nameOf(child);
+                    if (!next && step.name == nameOf(child) && seen++ == step.ordinal) next = child;
+                    return false;
+                });
+            }
+            if (!next || (next->IsNode() != nullptr) != step.node) {
+                return "path=" + text + " failedStep=" + std::to_string(i) + " parent='" + (current ? nameOf(current) : "") +
+                    "' wanted='" + step.name + "'#" + std::to_string(step.ordinal) + (step.node ? " node" : " leaf") +
+                    (next ? " typeMismatch" : "") + " children=[" + siblings + "]";
+            }
+            current = next;
+        }
+        return "path=" + text + " resolved";
+    }
 }

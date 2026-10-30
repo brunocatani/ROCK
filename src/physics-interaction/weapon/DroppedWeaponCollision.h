@@ -45,5 +45,7 @@ namespace rock
 
         static bool capturePath(const RE::NiAVObject* root, const RE::NiAVObject* leaf, std::vector<Step>& out);
         static RE::NiAVObject* resolvePath(RE::NiAVObject* root, const std::vector<Step>& path);
+        // Failure evidence only: the first unmatched step and its siblings.
+        static std::string describeUnresolved(RE::NiAVObject* root, const std::vector<Step>& path);
     };
 }

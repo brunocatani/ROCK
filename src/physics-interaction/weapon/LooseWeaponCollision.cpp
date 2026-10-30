@@ -99,6 +99,7 @@ struct LooseWeaponCollision::State
     float unsettledSeconds{};
     bool reportedUnsettled{};
     std::size_t preparationFrames{};
+    std::size_t scanRecords{}, unresolvedSkips{};
     double maxPreparationSliceMs{};
     const char* phase{"Preparing"};
 
@@ -142,6 +143,7 @@ struct LooseWeaponCollision::State
             if (!step.finished) { phase="Native pickup scan exceeded budget"; failed=true; return false; }
             const auto set = object_physics_body_set::buildObjectPhysicsBodySetFromScanCache(frame.bhkWorld, world, ref.get(), scanOptions, scanCache);
             const auto& d = set.diagnostics;
+            scanRecords=set.records.size(); unresolvedSkips=d.unresolvedRefBodySkips;
             if(set.records.empty()||d.unresolvedRefBodySkips) {phase="Waiting for native model physics publication";return false;}
             if (set.records.empty() || set.records.size()>loose_weapon_collision_policy::kMaxNativeBodies || d.scanFailures || d.invalidPhysicsSystems || d.foreignRefBodySkips ||
                 d.unresolvedRefBodySkips || d.depthLimitSkips || d.staleCacheEntrySkips) { failed = true; return false; }
@@ -293,7 +295,11 @@ struct LooseWeaponCollision::State
         sources.reserve(collision.parts.size());
         for (auto& part:collision.parts) {
             auto* node=DroppedWeaponCollision::resolvePath(root.get(),part.path);
-            if (!node) return "source-path-unresolved";
+            if (!node) {
+                ROCK_LOG_WARN(Weapon,"Dropped weapon hull path unresolved ref={:08X} root='{}' {}",ref->formID,
+                    root->name.c_str() ? root->name.c_str() : "",DroppedWeaponCollision::describeUnresolved(root.get(),part.path));
+                return "source-path-unresolved";
+            }
             // The hull bakes the equipped source's world scale; the loose
             // pose applies none. A different dropped scale needs a rebuild.
             const float scale=node->world.scale;
@@ -602,7 +608,11 @@ bool LooseWeaponCollision::adoptDropped(RE::TESObjectREFR* ref, DroppedWeaponCol
     }
     auto mutation=gate.pauseForMutation();
     auto state=std::make_unique<State>(ref,frame.hknpWorld);
-    if (!state->failed && !state->captureBodies(frame) && !state->failed) return false;
+    if (!state->failed && !state->captureBodies(frame) && !state->failed) {
+        ROCK_LOG_SAMPLE_INFO(Weapon,2000,"Dropped weapon collision waiting ref={:08X} stage={} records={} unresolvedRefBodies={}",
+            ref->formID,state->phase,state->scanRecords,state->unresolvedSkips);
+        return false;
+    }
     if (state->failed) {
         ROCK_LOG_WARN(Weapon,"Dropped weapon collision declined ref={:08X} stage={}; native collision retained",ref->formID,state->phase);
         return true;
@@ -850,11 +860,11 @@ void LooseWeaponCollision::Slot::update(const PhysicsFrameContext& frame, RE::TE
     state.phase=state.nativeOnly ? (state.held ? "Dropped: held" : !state.supported ? "Dropped: no support" :
         state.stationary ? "Dropped: resting" : "Dropped: moving") : state.held ? "Generated: held" : !state.supported ? "Generated: no support" :
         state.stationary ? "Generated: resting" : "Generated: moving";
-    if(state.nativeOnly&&!state.held&&!state.reportedUnsettled) {
+    if(!state.held&&!state.reportedUnsettled) {
         if(std::isfinite(frame.deltaSeconds)&&frame.deltaSeconds>0)state.unsettledSeconds+=std::min(frame.deltaSeconds,.1f);
         if(state.unsettledSeconds>=5.f&&!park) {
             state.reportedUnsettled=true;
-            ROCK_LOG_WARN(Weapon,"Native retirement still waiting ref={:08X} phase={} supported={} stationary={} witness={} surface={} restSeconds={:.3f}; object remains native dynamic",
+            ROCK_LOG_WARN(Weapon,"Native retirement still waiting ref={:08X} phase={} supported={} stationary={} witness={} surface={} restSeconds={:.3f}; object remains dynamic",
                 state.ref->formID,state.phase,state.supported,state.stationary,support.valid,support.surfaceBody,state.parking.supportedRestSeconds);
         }
     }
