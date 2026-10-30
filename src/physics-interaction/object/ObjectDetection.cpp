@@ -626,12 +626,6 @@ namespace rock
                 ++outCandidates;
                 const float lateralDistance = lateralDistanceToRay(start, directionUnit, hitPoint);
                 const float signedAlongDistance = signedAlongDistanceOnRay(start, directionUnit, hitPoint);
-                if (classification.extensionSelection.kind == api::native_interaction::SelectionKind::DirectLiveLimb) {
-                    ROCK_LOG_SAMPLE_INFO(Hand, 250, "LIVE_LIMB candidate [{}]: ref={:08X} body={} signedAlong={:.2f} lateral={:.2f} behindPalm={}",
-                        queryName, ref->GetFormID(), hitBodyId.value, signedAlongDistance, lateralDistance,
-                        selection_query_policy::shouldRejectBehindPalmHit(isFarSelection, signedAlongDistance,
-                            selection_query_policy::kCloseSelectionBehindPalmToleranceGameUnits));
-                }
                 if (selection_query_policy::shouldRejectBehindPalmHit(
                         isFarSelection,
                         signedAlongDistance,
