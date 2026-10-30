@@ -113,8 +113,12 @@ namespace rock::collision_layer_policy
      */
     inline constexpr std::uint32_t ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY = 56;
     // Optional solver targets available to negotiated interaction extensions.
+    // Biped (8) carries actor ragdolls in the world: an extension's active
+    // ragdoll and native knockdowns. The player's own biped bodies stay
+    // excluded by the native player pair filter.
     inline constexpr std::uint64_t kOptionalObstacleLayers =
-        (std::uint64_t{1} << FO4_LAYER_BIPED_NO_CC) | (std::uint64_t{1} << ROCK_LAYER_PASSIVE_OBSTACLE);
+        (std::uint64_t{1} << FO4_LAYER_BIPED) | (std::uint64_t{1} << FO4_LAYER_BIPED_NO_CC) |
+        (std::uint64_t{1} << ROCK_LAYER_PASSIVE_OBSTACLE);
 
     inline constexpr std::uint32_t FO4_LAYER_VANILLA_CONFIGURED_COUNT = 47;
     inline constexpr std::uint32_t FO4_LAYER_MATRIX_ADDRESSABLE_COUNT = 64;

@@ -131,7 +131,7 @@ namespace rock::native_interaction_service {
                 if(auto s=access(owner,true,true);s!=Status::Ok)return s;
                 // Only optional passive-object pairs are delegated. Native
                 // actor/controller and generated self-collision policy stays core.
-                constexpr auto allowed=(std::uint64_t{1}<<33)|(std::uint64_t{1}<<ni::kPassiveObstacleLayer);
+                constexpr auto allowed=(std::uint64_t{1}<<8)|(std::uint64_t{1}<<33)|(std::uint64_t{1}<<ni::kPassiveObstacleLayer);
                 if(mask&~allowed)return Status::InvalidArgument;
                 extension(owner)->obstacleLayers=mask;combineMasks(reinterpret_cast<RE::hknpWorld*>(current->frame.world));return Status::Ok;
             });
