@@ -38,6 +38,7 @@
 #include "physics-interaction/native/NativeRagdollSafety.h"
 #include "physics-interaction/native/NativeShapeCastSafety.h"
 #include "physics-interaction/native/NativeImpactAudio.h"
+#include "physics-interaction/native/NativeQuickLootHand.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/timing/RockGameTiming.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
@@ -875,6 +876,7 @@ namespace
         runPendingLifecycle();
         // FrameBegin precedes FRIK's scope-rig carry (WeaponPositionAdjuster::onFrameStart).
         scope_rig_parent_repair::reattachOrphanedScopeRig();
+        native_quick_loot_hand::update();
         native_secondary_presentation::beginFrame();
         frik_hand_world_authority::noteNativeRecoilControlled(false);
         performance_profiler::refreshSettings(
@@ -1344,8 +1346,8 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
         logger::warn("ROCK: Save-game weapon hands unavailable; a load returns weapons to their default hands.");
     }
 
-    logger::info("ROCK: Allocate trampoline (4596 bytes)...");
-    F4SE::AllocTrampoline(4596);
+    logger::info("ROCK: Allocate trampoline (4624 bytes)...");
+    F4SE::AllocTrampoline(4624);
     if (!rock::loose_weapon_state::install()) {
         spdlog::error("Loose weapon state model installation unavailable");
     }
@@ -1354,6 +1356,7 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     if (!rock::native_impact_audio::install()) {
         logger::error("ROCK: Impact audio filtering is unavailable; native audio remains unchanged.");
     }
+    (void)rock::native_quick_loot_hand::install();
 
     logger::info("ROCK: Install native shape-cast safety...");
     if (!rock::native_shape_cast_safety::install()) {
