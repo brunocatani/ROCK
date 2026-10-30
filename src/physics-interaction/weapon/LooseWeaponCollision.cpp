@@ -28,6 +28,7 @@ namespace {
     // hand release clears our manifold events as if it were the final owner.
     constexpr std::uint32_t kContactFlagMode = 0u;
     constexpr float kInheritedScaleTolerance = 0.005f; // Relative.
+    constexpr float kDroppedAdoptionWindowSeconds = 2.0f;
     using SetShape = void (*)(RE::hknpWorld*, RE::hknpBodyId, const RE::hknpShape*);
 
     SetShape shapeSetter()
@@ -296,9 +297,11 @@ struct LooseWeaponCollision::State
         for (auto& part:collision.parts) {
             auto* node=DroppedWeaponCollision::resolvePath(root.get(),part.path);
             if (!node) {
-                ROCK_LOG_WARN(Weapon,"Dropped weapon hull path unresolved ref={:08X} root='{}' {}",ref->formID,
+                // First-person-only geometry (e.g. a third scope segment)
+                // has no mesh in the world model, so it needs no collision.
+                ROCK_LOG_INFO(Weapon,"Dropped weapon hull part absent from world model ref={:08X} root='{}' {}",ref->formID,
                     root->name.c_str() ? root->name.c_str() : "",DroppedWeaponCollision::describeUnresolved(root.get(),part.path));
-                return "source-path-unresolved";
+                continue;
             }
             // The hull bakes the equipped source's world scale; the loose
             // pose applies none. A different dropped scale needs a rebuild.
@@ -308,6 +311,7 @@ struct LooseWeaponCollision::State
             sources.push_back({std::move(part.shape),RE::NiPointer<RE::NiAVObject>{node},part.sourceCenter});
         }
         collision.parts.clear();
+        if (sources.empty()) return "no-parts-in-world-model";
         nextSource=sources.size();
         if (!selectPrimaryBody()) return "no-root-collision-body";
         for (nextMapping=0;nextMapping<sources.size();++nextMapping) assignSource(nextMapping);
@@ -444,6 +448,14 @@ void LooseWeaponCollision::update(const PhysicsFrameContext& frame, RE::TESObjec
     for(auto& dropped:_dropped)if(dropped.handle) {
         const auto ref=dropped.handle.get();
         if(!ref||ref->IsDeleted()||ref->IsDisabled()||!ref->Get3D()) { dropped={}; continue; }
+        // Each retry rescans the reference. A body the engine never links
+        // to its scene node would otherwise keep that scan running forever.
+        if(std::isfinite(frame.deltaSeconds)&&frame.deltaSeconds>0)dropped.waitedSeconds+=std::min(frame.deltaSeconds,.1f);
+        if(dropped.waitedSeconds>=kDroppedAdoptionWindowSeconds) {
+            ROCK_LOG_WARN(Weapon,"Dropped weapon collision abandoned ref={:08X} after {:.1f}s: native bodies never linked to the model; native collision kept without rest retirement",
+                ref->formID,dropped.waitedSeconds);
+            dropped={}; continue;
+        }
         try { if(adoptDropped(ref.get(),dropped.collision,frame,gate)) dropped={}; }
         catch(...) {
             dropped={};
@@ -639,8 +651,8 @@ bool LooseWeaponCollision::adoptDropped(RE::TESObjectREFR* ref, DroppedWeaponCol
         ROCK_LOG_WARN(Weapon,"Dropped weapon kept native collision ref={:08X} reason={} equippedParts={}; watched to rest retirement",
             ref->formID,declined,parts);
     } else {
-        ROCK_LOG_INFO(Weapon,"Dropped weapon collision adopted ref={:08X} equippedParts={} nativeBodies={}; kept until rest retirement",
-            ref->formID,state->sources.size(),state->bodies.size());
+        ROCK_LOG_INFO(Weapon,"Dropped weapon collision adopted ref={:08X} equippedParts={}/{} nativeBodies={}; kept until rest retirement",
+            ref->formID,state->sources.size(),parts,state->bodies.size());
     }
     free->_rested=0; free->_declined=0;
     free->_state=std::move(state);

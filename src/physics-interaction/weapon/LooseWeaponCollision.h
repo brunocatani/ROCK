@@ -89,6 +89,7 @@ namespace rock {
         {
             RE::ObjectRefHandle handle;
             DroppedWeaponCollision collision;
+            float waitedSeconds{};
         };
         // One entry per concurrent equipped drop handoff.
         std::array<DroppedHandoff,4> _dropped;
