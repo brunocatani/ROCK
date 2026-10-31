@@ -701,7 +701,6 @@ namespace rock
 
         _equipped.shoulderGestureConsumedThisFrame = {};
         _equipped.toggleGrabReleasePressConsumedThisFrame = {};
-        _equipped.holsterInputConsumedThisFrame = {};
         const auto& runtime = runtime_state::currentFrame();
         if (!runtime.visualAuthorityAvailable || !runtime.localSkeletonReady ||
             runtime.localMenuBlocking || runtime.compatibilityConfigBlocking) {

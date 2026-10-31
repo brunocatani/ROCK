@@ -56,7 +56,6 @@
 #include "physics-interaction/weapon/EquippedWeaponTransitionCoordinator.h"
 #include "physics-interaction/weapon/InventoryWeaponEquipRuntime.h"
 #include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
-#include "physics-interaction/weapon/VirtualHolstersCompatibility.h"
 #include "physics-interaction/weapon/grip/LeftCarryReadiness.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "physics-interaction/weapon/DynamicWeaponCollision.h"
@@ -456,7 +455,6 @@ namespace rock
             WeaponInteractionContact& outContact, WeaponCollision::InteractionQueryBatch& interactionQueries,
             const weapon_drive_pose::NativeFrame* operatingPose);
         void rearmResumedGripHold(bool isLeft, GrabButtonState& button);
-        void maskHolsterGripInput(const EquippedWeaponFrameWork& w, bool isLeft, GrabButtonState& button) const;
         void maskShoulderGestureGripInput(const EquippedWeaponFrameWork& w, bool isLeft, GrabButtonState& button) const;
         const GrabButtonState& readPrimaryGrabState(EquippedWeaponFrameWork& w);
         void consumeToggleAcquisitionPress(bool isLeft, bool acquired);
@@ -887,7 +885,6 @@ namespace rock
             AuthoredPrimaryFiringGripRuntime authoredPrimaryFiringGrip;
             EquippedWeaponHandlingSettings handlingSettings{};
             bool handlingModeInitialized{ false };
-            bool virtualHolstersStashOverrideLogged{ false };
             bool handlingModeReconcilePending{ false };
             bool menuReconcilePending = false;
             std::uint64_t defaultEquipObservedOwnershipKey{ 0 };
@@ -929,8 +926,6 @@ namespace rock
             std::array<bool, 2> shoulderGestureConsumedThisFrame{};
             equipped_weapon_toggle_grab_policy::RuntimeState toggleGrabState{};
             std::array<bool, 2> toggleGrabReleasePressConsumedThisFrame{};
-            std::array<virtual_holsters::HandState, 2> holsterInputStates{};
-            std::array<bool, 2> holsterInputConsumedThisFrame{};
             std::array<weapon_interaction_acquisition_policy::State, 2> weaponInteractionAcquisitionStates{};
             // Left/right candidates from the actual grab probes, valid only for
             // this frame and weapon generation. No scene pointers cross phases.

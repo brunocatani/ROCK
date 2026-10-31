@@ -618,15 +618,13 @@ namespace rock
         WeaponInteractionContact leftWeaponContact{};
         WeaponInteractionContact rightWeaponContact{};
 
-        // Grab buttons after resume rearm and provider, holster and shoulder
+        // Grab buttons after resume rearm and provider and shoulder
         // masking. The firing hand's state is read lazily, once.
         GrabButtonState leftPhysicalGripState{};
         GrabButtonState rightPhysicalGripState{};
         bool leftGripHeld = false;
         bool rightGripHeld = false;
         EquippedWeaponGripOccupancy providerGripOccupancy{};
-        virtual_holsters::Decision leftHolsterInput{};
-        virtual_holsters::Decision rightHolsterInput{};
         GrabButtonState primaryGrabState{};
         bool primaryGrabStateRead = false;
 
@@ -1249,16 +1247,6 @@ namespace rock
         button = { .held = rearmed.held, .pressed = rearmed.pressed, .released = rearmed.released };
     }
 
-    void PhysicsInteraction::maskHolsterGripInput(const EquippedWeaponFrameWork& w, bool isLeft, GrabButtonState& button) const
-    {
-        const auto& decision = isLeft ? w.leftHolsterInput : w.rightHolsterInput;
-        if (decision.consumeInput) {
-            // Preserve an existing grip before any detach/toggle/drop
-            // decision. Empty hands cannot acquire from this gesture.
-            button = GrabButtonState{ .held = decision.retainGrip };
-        }
-    }
-
     void PhysicsInteraction::maskShoulderGestureGripInput(const EquippedWeaponFrameWork& w, bool isLeft, GrabButtonState& button) const
     {
         const auto& decision = w.shoulderFrame.decision;
@@ -1274,8 +1262,8 @@ namespace rock
         }
     }
 
-    // Both hands' grab buttons, with menu-resume rearm, provider suppression,
-    // Virtual Holsters release deferral and the shoulder gesture applied.
+    // Both hands' grab buttons, with menu-resume rearm, provider suppression
+    // and the shoulder gesture applied.
     void PhysicsInteraction::readEquippedWeaponGripButtons(EquippedWeaponFrameWork& w)
     {
         auto& leftPhysicalGripState = w.leftPhysicalGripState;
@@ -1292,39 +1280,6 @@ namespace rock
         maskProviderWeaponGrabInput(true, w.providerGripOccupancy.left.weaponEngaged(), leftPhysicalGripState);
         maskProviderWeaponGrabInput(false, w.providerGripOccupancy.right.weaponEngaged(), rightPhysicalGripState);
 
-        const auto holsterSnapshot = w.inputBlockingMenuActive || w.frame.menuBlocked ?
-            virtual_holsters::Snapshot{} : virtual_holsters::readSnapshot();
-        const auto holsterOccupancy = equippedWeaponRoster().slotZeroGrips();
-        const auto advanceHolsterInput = [&](const bool isLeft, const GrabButtonState& button) {
-            const auto handIndex = equipped_weapon_toggle_grab_policy::handIndex(isLeft);
-            const auto& occupancy = isLeft ? holsterOccupancy.left : holsterOccupancy.right;
-            const bool toggleGrab = occupancy.usesToggleGrab(_equipped.handlingSettings.weaponGrabMode);
-            const auto decision = virtual_holsters::advance(
-                _equipped.holsterInputStates[handIndex],
-                virtual_holsters::Input{
-                    .holster = holsterSnapshot,
-                    .ownershipKey = w.currentEquippedWeaponOwnershipKey,
-                    .grabButtonId = input_remap_policy::kGrabButtonId,
-                    .isLeft = isLeft,
-                    .weaponEngaged = occupancy.carriesWeapon(),
-                    .toggleGrab = toggleGrab,
-                    .held = button.held,
-                    .pressed = button.pressed,
-                    .released = button.released,
-                });
-            _equipped.holsterInputConsumedThisFrame[handIndex] = decision.consumeInput;
-            if (decision.started) {
-                ROCK_LOG_INFO(Weapon,
-                    "VirtualHolsters weapon release deferred: hand={} slot={} mode={} held={} pressed={} released={} ownership={:016X}",
-                    isLeft ? "left" : "right", holsterSnapshot.slot, toggleGrab ? "toggle" : "hold",
-                    button.held, button.pressed, button.released, w.currentEquippedWeaponOwnershipKey);
-            }
-            return decision;
-        };
-        w.leftHolsterInput = advanceHolsterInput(true, leftPhysicalGripState);
-        w.rightHolsterInput = advanceHolsterInput(false, rightPhysicalGripState);
-        maskHolsterGripInput(w, true, leftPhysicalGripState);
-        maskHolsterGripInput(w, false, rightPhysicalGripState);
         maskShoulderGestureGripInput(w, true, leftPhysicalGripState);
         maskShoulderGestureGripInput(w, false, rightPhysicalGripState);
         w.leftGripHeld = leftPhysicalGripState.held;
@@ -1416,7 +1371,6 @@ namespace rock
         rearmResumedGripHold(firingHandIsLeft, primaryGrabState);
         maskProviderWeaponGrabInput(firingHandIsLeft,
             (firingHandIsLeft ? w.providerGripOccupancy.left : w.providerGripOccupancy.right).weaponEngaged(), primaryGrabState);
-        maskHolsterGripInput(w, firingHandIsLeft, primaryGrabState);
         maskShoulderGestureGripInput(w, firingHandIsLeft, primaryGrabState);
         w.primaryGrabStateRead = true;
         (firingHandIsLeft ? w.leftPhysicalGripState : w.rightPhysicalGripState) = primaryGrabState;
@@ -1754,15 +1708,6 @@ namespace rock
             (firingHandIsLeft ? toggleGrabDecision.leftReleasePressConsumed : toggleGrabDecision.rightReleasePressConsumed) = true;
             _equipped.toggleGrabState.hands[firingHandIndex] = equipped_weapon_toggle_grab_policy::HandState::ReleasePending;
         }
-        // A release may already be pending when the sphere becomes active.
-        // Override that logical open state too, then reconcile it below so
-        // leaving the sphere cannot replay the refused toggle release.
-        if (w.leftHolsterInput.consumeInput) {
-            toggleGrabDecision.left = { .held = w.leftHolsterInput.retainGrip };
-        }
-        if (w.rightHolsterInput.consumeInput) {
-            toggleGrabDecision.right = { .held = w.rightHolsterInput.retainGrip };
-        }
         w.leftGripHeld = toggleGrabDecision.left.held;
         w.rightGripHeld = toggleGrabDecision.right.held;
         const auto& logicalPrimaryGrip = firingHandIsLeft ? toggleGrabDecision.left : toggleGrabDecision.right;
@@ -1851,8 +1796,8 @@ namespace rock
             currentEquippedWeaponOwnershipKey,
             _twoHandedGrip.getGrabInputOccupancy(),
             equipped_weapon_toggle_grab_policy::GripReleaseRetention{
-                .left = w.gripUpdateResult.releaseRetained.left || w.leftHolsterInput.retainGrip,
-                .right = w.gripUpdateResult.releaseRetained.right || w.rightHolsterInput.retainGrip,
+                .left = w.gripUpdateResult.releaseRetained.left,
+                .right = w.gripUpdateResult.releaseRetained.right,
             });
         // A successful weapon grip owns the press that acquired it. Drain
         // that edge before normal-grab suppression can leave it pending;
@@ -2580,17 +2525,6 @@ namespace rock
 
     void PhysicsInteraction::refreshEquippedWeaponHandlingSettings()
     {
-        // Frame updates begin after GameLoaded, when F4SE has loaded every
-        // plugin. Cache module presence for this process without polling or
-        // changing the user's configuration on reloads or new game sessions.
-        const bool virtualHolstersLoaded = virtual_holsters::isLoaded();
-        // Virtual Holsters owns weapon stowing when it is loaded.
-        if (virtualHolstersLoaded && g_rockConfig.rockEquippedWeaponShoulderStashEnabled &&
-            !_equipped.virtualHolstersStashOverrideLogged) {
-            _equipped.virtualHolstersStashOverrideLogged = true;
-            ROCK_LOG_INFO(Weapon, "Virtual Holsters is loaded; equipped-weapon shoulder stash is off and Virtual Holsters stows weapons");
-        }
-
         api::weapon::HandlingRequest request{};
         const bool externalAuthorityActive =
             ::rock::provider::getHandlingAuthorityRequest(request);
@@ -2607,8 +2541,7 @@ namespace rock
             .weaponGrabMode =
                 equipped_weapon_toggle_grab_policy::fromSetting(g_rockConfig.rockWeaponGrabMode),
             .equippedWeaponShoulderStashEnabled =
-                g_rockConfig.rockEquippedWeaponShoulderStashEnabled &&
-                !virtualHolstersLoaded,
+                g_rockConfig.rockEquippedWeaponShoulderStashEnabled,
             .lastGripReleaseDropEnabled =
                 equipped_weapon_drop_policy::fromEquipMode(g_rockConfig.rockWeaponEquipMode) != equipped_weapon_drop_policy::Mode::Off,
             .autoEquipEnabled = equipped_weapon_drop_policy::autoEquipFromEquipMode(g_rockConfig.rockWeaponEquipMode),
