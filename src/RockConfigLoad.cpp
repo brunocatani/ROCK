@@ -26,6 +26,7 @@ namespace
     constexpr auto AMBIDEXTROUS_FIRING_SECTION = "AmbidextrousFiring";
     constexpr auto NATIVE_SCOPES_SECTION = "NativeScopes";
     constexpr auto GRABBING_SECTION = "Grabbing";
+    constexpr auto CONTROLS_SECTION = "Controls";
     constexpr float kDefaultWeaponCollisionVisualStabilizationSeconds = 0.0889f;
     constexpr float kMaxWeaponCollisionVisualStabilizationSeconds = 60.0f / 90.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintLinearTauMultiplier = 1.0f;
@@ -197,6 +198,48 @@ namespace
         return kDefaultHighlightIntensityMode;
     }
 
+    struct ButtonLayoutKey
+    {
+        const char* key;
+        rock::button_layout_policy::Slot slot;
+    };
+
+    constexpr ButtonLayoutKey kLeftButtonLayoutKeys[] = {
+        { "sLeftTriggerButton", rock::button_layout_policy::Slot::Trigger },
+        { "sLeftGrabButton", rock::button_layout_policy::Slot::Grab },
+        { "sLeftXButton", rock::button_layout_policy::Slot::LowerFace },
+        { "sLeftYButton", rock::button_layout_policy::Slot::UpperFace },
+        { "sLeftStickClickButton", rock::button_layout_policy::Slot::StickClick },
+    };
+    constexpr ButtonLayoutKey kRightButtonLayoutKeys[] = {
+        { "sRightTriggerButton", rock::button_layout_policy::Slot::Trigger },
+        { "sRightGrabButton", rock::button_layout_policy::Slot::Grab },
+        { "sRightAButton", rock::button_layout_policy::Slot::LowerFace },
+        { "sRightBButton", rock::button_layout_policy::Slot::UpperFace },
+        { "sRightStickClickButton", rock::button_layout_policy::Slot::StickClick },
+    };
+
+    rock::button_layout_policy::HandLayout readButtonLayout(RockIniReader& ini, const char* section, bool isLeft,
+        const rock::button_layout_policy::HandLayout& current)
+    {
+        namespace layout_policy = rock::button_layout_policy;
+        auto layout = current;
+        const auto& keys = isLeft ? kLeftButtonLayoutKeys : kRightButtonLayoutKeys;
+        for (const auto& entry : keys) {
+            const std::string currentName{ layout_policy::sourceName(layout.source(entry.slot), isLeft) };
+            const std::string configured = ini.GetValue(section, entry.key, currentName.c_str());
+            auto& source = layout.sources[static_cast<std::size_t>(entry.slot)];
+            if (const auto parsed = layout_policy::parseSource(configured)) {
+                source = *parsed;
+                continue;
+            }
+            const auto fallback = layout_policy::defaultSource(entry.slot);
+            ROCK_LOG_WARN(Config, "Invalid {}='{}' -- using {}", entry.key, configured, layout_policy::sourceName(fallback, isLeft));
+            source = fallback;
+        }
+        return layout;
+    }
+
     std::string readHighlightColor(RockIniReader& ini, const char* section, const char* key, const std::string& currentValue)
     {
         std::string configuredValue = ini.GetValue(section, key, currentValue.c_str());
@@ -296,6 +339,8 @@ namespace rock
         rockSuppressNativeVats = ini.GetBoolValue(SECTION, "bSuppressNativeVats", rockSuppressNativeVats);
         rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::sanitizedHoldSeconds(
             static_cast<float>(ini.GetDoubleValue(SECTION, "fPipboyPauseHoldSeconds", rockPipboyPauseHoldSeconds)));
+        rockButtonLayouts[0] = readButtonLayout(ini, CONTROLS_SECTION, true, rockButtonLayouts[0]);
+        rockButtonLayouts[1] = readButtonLayout(ini, CONTROLS_SECTION, false, rockButtonLayouts[1]);
         rockFarGrabMode = far_pull_gesture::sanitizeMode(static_cast<int>(ini.GetLongValue(GRABBING_SECTION, "iFarGrabMode", rockFarGrabMode)));
         rockGrabInputIntentStateEnabled = ini.GetBoolValue(GRABBING_SECTION, "bGrabInputIntentStateEnabled", rockGrabInputIntentStateEnabled);
         rockGrabInputLeewaySeconds = static_cast<float>(ini.GetDoubleValue(GRABBING_SECTION, "fGrabInputLeewaySeconds", rockGrabInputLeewaySeconds));
@@ -319,6 +364,7 @@ namespace rock
         rockBipodMode = ini.GetBoolValue(
             IMMERSIVE_WEAPONS_SECTION, "bBipodMode", rockBipodMode);
         rockGunstockMode = ini.GetBoolValue(IMMERSIVE_WEAPONS_SECTION, "bGunstockMode", rockGunstockMode);
+        rockFrikUserWeaponOffsets = ini.GetBoolValue(IMMERSIVE_WEAPONS_SECTION, "bFrikUserWeaponOffsets", rockFrikUserWeaponOffsets);
         rockBipodHandsFreeRadiusMeters = static_cast<float>(ini.GetDoubleValue(
             IMMERSIVE_WEAPONS_SECTION, "fBipodHandsFreeRadiusMeters", rockBipodHandsFreeRadiusMeters));
         if (!std::isfinite(rockBipodHandsFreeRadiusMeters) || rockBipodHandsFreeRadiusMeters <= 0.0f) {
@@ -364,7 +410,6 @@ namespace rock
         if (rockWeaponGrabMode < 1 || rockWeaponGrabMode > 3) {
             ROCK_LOG_WARN(Config, "Invalid iWeaponGrabMode={} -- using 1", rockWeaponGrabMode);
             rockWeaponGrabMode = 1;
-        rockFrikUserWeaponOffsets = ini.GetBoolValue(IMMERSIVE_WEAPONS_SECTION, "bFrikUserWeaponOffsets", rockFrikUserWeaponOffsets);
         }
         rockAutoEquipSettleSeconds = readClampedFloat(
             ini, IMMERSIVE_WEAPONS_SECTION, "fAutoEquipSettleSeconds",

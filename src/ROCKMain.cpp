@@ -301,6 +301,7 @@ namespace
             rock::LooseMolotovVisual::prepareResources();
             g_rockConfig.reload();
             input_remap_runtime::configurePipboyInput();
+            input_remap_runtime::configureButtonLayout();
             game_ini_overrides::update();
             logger::info("ROCK: Config reloaded for new session.");
         }
@@ -1234,8 +1235,10 @@ namespace
             holding_grips::load("Data/F4SE/Plugins/ROCK/HoldingGrips");
             input_remap_runtime::configurePipboyInput();
             frik_weapon_offsets::load();
+            input_remap_runtime::configureButtonLayout();
             g_rockConfig.subscribeForConfigChanged("ROCKPipboyInput", [](const std::string&) {
                 input_remap_runtime::configurePipboyInput();
+                input_remap_runtime::configureButtonLayout();
             });
             if (!game_ini_overrides::install()) {
                 logger::critical("ROCK: Required VR INI enforcement is unavailable; initialization stopped.");

@@ -6,6 +6,7 @@
 #include "physics-interaction/weapon/NativeHandEquipment.h"
 #include "RPSUIInputApi.h"
 
+#include "physics-interaction/input/ButtonLayoutApply.h"
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/ManualScopeInputPolicy.h"
 #include "physics-interaction/input/NativeVatsInputSuppressionPolicy.h"
@@ -260,6 +261,18 @@ namespace rock::input_remap_runtime
         std::atomic<std::uint64_t> s_nextLogicalJumpSequence{ 1 };
 
         std::array<ControllerTracker, 2> s_controllers;
+        /*
+         * Configured button layout per physical hand (left, right), published
+         * by configureButtonLayout() at load/config-change boundaries and read
+         * by the controller-state hooks on any OpenVR caller thread. The pad
+         * latch belongs to the current physical Axis0 press; every reader
+         * derives it from the same physical state and the first press read
+         * claims it (compare-exchange), so concurrent readers agree.
+         */
+        std::array<std::atomic<std::uint64_t>, 2> s_buttonLayouts{
+            button_layout_policy::pack({}), button_layout_policy::pack({})
+        };
+        std::array<std::atomic<std::uint8_t>, 2> s_padLatches{};
         std::atomic<bool> s_gameplayInputAllowed{ false };
         std::atomic<bool> s_bothHandsHoldWeapons{ false }; // Frame thread -> input dispatch.
         std::atomic<bool> s_weaponDrawn{ false };
@@ -832,6 +845,50 @@ namespace rock::input_remap_runtime
             return false;
         }
 
+        /*
+         * First edit of every successful controller-state read, before ROCK's
+         * capture: the configured layout turns physical buttons into the
+         * logical Quest-layout buttons that ROCK, its consumers and the game
+         * read. Identity layouts (the default) return without touching state.
+         */
+        void applyButtonLayout(vr::TrackedDeviceIndex_t deviceIndex, vr::VRControllerState_t* state, std::uint32_t stateSize)
+        {
+            constexpr auto kIdentity = button_layout_policy::pack({});
+            if (s_buttonLayouts[0].load(std::memory_order_acquire) == kIdentity &&
+                s_buttonLayouts[1].load(std::memory_order_acquire) == kIdentity) {
+                return;
+            }
+            if (!state || stateSize < sizeof(vr::VRControllerState_t)) {
+                return;
+            }
+            input_remap_policy::Hand hand{};
+            if (!resolveControllerHand(deviceIndex, hand)) {
+                return;
+            }
+            const auto index = controllerIndex(hand);
+            const auto layout = button_layout_policy::unpack(s_buttonLayouts[index].load(std::memory_order_acquire));
+            if (layout.identity()) {
+                return;
+            }
+
+            using button_layout_policy::PadLatch;
+            auto& latchSlot = s_padLatches[index];
+            const auto pressLatch = button_layout_policy::resolvePressLatch(layout, *state);
+            auto latch = static_cast<PadLatch>(latchSlot.load(std::memory_order_acquire));
+            if (pressLatch == PadLatch::Released) {
+                latchSlot.store(static_cast<std::uint8_t>(PadLatch::Released), std::memory_order_release);
+                latch = PadLatch::Released;
+            } else if (latch == PadLatch::Released) {
+                auto expected = static_cast<std::uint8_t>(PadLatch::Released);
+                if (latchSlot.compare_exchange_strong(expected, static_cast<std::uint8_t>(pressLatch), std::memory_order_acq_rel)) {
+                    latch = pressLatch;
+                } else {
+                    latch = static_cast<PadLatch>(expected);
+                }
+            }
+            button_layout_policy::apply(layout, *state, latch);
+        }
+
         bool ensureMenuInputGateRegistered()
         {
             auto* ui = RE::UI::GetSingleton();
@@ -980,8 +1037,24 @@ namespace rock::input_remap_runtime
          * most once per read and only when an edit could apply. The bench
          * telemetry sees the raw and game-facing state and why they differ.
          */
+        // Physical state for the bench before the button layout rewrites it.
+        [[nodiscard]] testbench_telemetry::RawControllerState telemetryRawState(const vr::VRControllerState_t* state,
+            std::uint32_t stateSize) noexcept
+        {
+            testbench_telemetry::RawControllerState raw{};
+            if (state && stateSize >= sizeof(vr::VRControllerState_t) && testbench_telemetry::enabled()) {
+                raw.pressed = state->ulButtonPressed;
+                raw.touched = state->ulButtonTouched;
+                for (std::size_t axis = 0; axis < 5; ++axis) {
+                    raw.axes[axis * 2] = state->rAxis[axis].x;
+                    raw.axes[axis * 2 + 1] = state->rAxis[axis].y;
+                }
+            }
+            return raw;
+        }
+
         void applyGameControllerStateRemap(const input_remap_policy::Hand hand, const void* callerAddress,
-            vr::VRControllerState_t* state, const std::uint32_t stateSize)
+            vr::VRControllerState_t* state, const std::uint32_t stateSize, const testbench_telemetry::RawControllerState& raw)
         {
             const bool stateValid = state && stateSize >= sizeof(vr::VRControllerState_t);
             std::optional<bool> bypassCache;
@@ -992,15 +1065,6 @@ namespace rock::input_remap_runtime
                 return *bypassCache;
             };
             const bool isLeft = hand == input_remap_policy::Hand::Left;
-            testbench_telemetry::RawControllerState raw{};
-            if (stateValid && testbench_telemetry::enabled()) {
-                raw.pressed = state->ulButtonPressed;
-                raw.touched = state->ulButtonTouched;
-                for (std::size_t axis = 0; axis < 5; ++axis) {
-                    raw.axes[axis * 2] = state->rAxis[axis].x;
-                    raw.axes[axis * 2 + 1] = state->rAxis[axis].y;
-                }
-            }
             const bool blockingMenu = isInputBlockingMenuActive();
             std::uint32_t reasons = blockingMenu ? testbench_telemetry::kInputBlockingMenu : 0u;
 
@@ -1045,10 +1109,12 @@ namespace rock::input_remap_runtime
                 }
             }
             if (result) {
+                const auto physical = telemetryRawState(controllerState, controllerStateSize);
+                applyButtonLayout(controllerDeviceIndex, controllerState, controllerStateSize);
                 captureControllerState(controllerDeviceIndex, controllerState, controllerStateSize);
                 input_remap_policy::Hand hand{};
                 if (resolveControllerHand(controllerDeviceIndex, hand)) {
-                    applyGameControllerStateRemap(hand, callerAddress, controllerState, controllerStateSize);
+                    applyGameControllerStateRemap(hand, callerAddress, controllerState, controllerStateSize, physical);
                 } else {
                     testbench_telemetry::observeUnobservedRead(testbench_telemetry::UnobservedRead::NoHandRole);
                 }
@@ -1078,10 +1144,12 @@ namespace rock::input_remap_runtime
                 }
             }
             if (result) {
+                const auto physical = telemetryRawState(controllerState, controllerStateSize);
+                applyButtonLayout(controllerDeviceIndex, controllerState, controllerStateSize);
                 captureControllerState(controllerDeviceIndex, controllerState, controllerStateSize);
                 input_remap_policy::Hand hand{};
                 if (resolveControllerHand(controllerDeviceIndex, hand)) {
-                    applyGameControllerStateRemap(hand, callerAddress, controllerState, controllerStateSize);
+                    applyGameControllerStateRemap(hand, callerAddress, controllerState, controllerStateSize, physical);
                 } else {
                     testbench_telemetry::observeUnobservedRead(testbench_telemetry::UnobservedRead::NoHandRole);
                 }
@@ -2923,6 +2991,28 @@ namespace rock::input_remap_runtime
             ROCK_LOG_INFO(Input, "Pip-Boy Y opening configured: FRIK wrist binding='{}'; projected/HMD/power-armor use native handler", binding);
         } catch (const std::exception& error) {
             ROCK_LOG_ERROR(Input, "Cannot configure FRIK Pip-Boy Y opening: {}", error.what());
+        }
+    }
+
+    void configureButtonLayout()
+    {
+        static std::atomic<bool> s_logged{ false };
+        const bool firstPublication = !s_logged.exchange(true, std::memory_order_acq_rel);
+        for (std::size_t index = 0; index < s_buttonLayouts.size(); ++index) {
+            const bool isLeft = index == 0;
+            const auto& layout = g_rockConfig.rockButtonLayouts[index];
+            const auto packed = button_layout_policy::pack(layout);
+            if (s_buttonLayouts[index].exchange(packed, std::memory_order_acq_rel) == packed && !firstPublication) {
+                continue;
+            }
+            using button_layout_policy::Slot;
+            using button_layout_policy::sourceName;
+            ROCK_LOG_INFO(Input, "{} button layout: trigger={} grab={} {}={} {}={} stickClick={}{}",
+                isLeft ? "Left" : "Right",
+                sourceName(layout.source(Slot::Trigger), isLeft), sourceName(layout.source(Slot::Grab), isLeft),
+                isLeft ? "x" : "a", sourceName(layout.source(Slot::LowerFace), isLeft),
+                isLeft ? "y" : "b", sourceName(layout.source(Slot::UpperFace), isLeft),
+                sourceName(layout.source(Slot::StickClick), isLeft), layout.identity() ? " (default)" : "");
         }
     }
 

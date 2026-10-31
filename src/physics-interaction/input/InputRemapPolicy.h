@@ -11,7 +11,8 @@ namespace rock::input_remap_policy
     {
         return target != 0 && (target == left || target == right);
     }
-    // ROCK uses the OpenVR grip button as its fixed grab input.
+    // ROCK's grab is the logical OpenVR grip bit. The [Controls] button layout
+    // chooses the physical input behind it before any ROCK read.
     inline constexpr int kGrabButtonId = 2;
 
     [[nodiscard]] constexpr bool buttonChordHeld(bool available, std::uint64_t pressed, std::uint64_t rearm, std::uint64_t chord) noexcept
@@ -321,7 +322,7 @@ namespace rock::input_remap_policy
 
     [[nodiscard]] constexpr bool shouldSuppressNativeMeleeThrowAction(const NativeActionSuppressionInput& input)
     {
-        // OpenVR grip is ROCK's fixed grab button. It never belongs to the
+        // The logical OpenVR grip is ROCK's grab button. It never belongs to the
         // native grenade/throw handler, including for a real melee weapon.
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched;
     }

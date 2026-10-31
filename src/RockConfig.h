@@ -30,6 +30,7 @@
 #include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 #include "physics-interaction/input/BareFistGesturePolicy.h"
+#include "physics-interaction/input/ButtonLayoutPolicy.h"
 #include "physics-interaction/input/FarPullGesturePolicy.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
 #include "physics-interaction/weapon/GripZoneIndicatorPolicy.h"
@@ -52,6 +53,8 @@ namespace rock
         bool rockGrabInputIntentStateEnabled = true;
         float rockGrabInputLeewaySeconds = 0.12f;
         float rockGrabInputForceSeconds = 0.08f;
+        // [Controls] physical source of each logical button, per hand (left, right).
+        std::array<button_layout_policy::HandLayout, 2> rockButtonLayouts{};
 
         bool rockDeveloperModeEnabled = false;
 

@@ -30,6 +30,10 @@ file(COPY "${ROOT_DIR}/LICENSE" DESTINATION "${PACKAGE_STAGE_DIR}")
 # directly.
 file(COPY "${ROOT_DIR}/include/ROCK" DESTINATION "${PACKAGE_STAGE_DIR}/include")
 
+# SteamVR legacy binding templates for non-Quest controllers. Players install them
+# through SteamVR; they never deploy into a game or mod folder.
+file(COPY "${ROOT_DIR}/steamvr_bindings" DESTINATION "${PACKAGE_STAGE_DIR}")
+
 execute_process(COMMAND ${CMAKE_COMMAND} -E tar cf "${TARGET_ZIP}" --format=7zip -- .
                 WORKING_DIRECTORY "${PACKAGE_STAGE_DIR}"
                 COMMAND_ERROR_IS_FATAL ANY)

@@ -85,6 +85,9 @@ namespace rock::input_remap_runtime
     // GameLoaded/config-change boundary only: the FRIK session override
     // reloads its configuration. Never call from a controller/input hook.
     void configurePipboyInput();
+    // Load/config-change boundary: publishes the [Controls] button layout to
+    // the controller-state hooks. Safe from any thread.
+    void configureButtonLayout();
 
     void setGameplayInputAllowed(bool allowed);
     void setWeaponDrawn(bool weaponDrawn);
