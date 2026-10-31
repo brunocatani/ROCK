@@ -346,8 +346,8 @@ namespace
         performance_profiler::ScopedTimer settingsTimer(performance_profiler::Scope::PrepSettings);
         const bool immersiveScopesWereEnabled = g_rockConfig.rockEnableImmersiveScopes;
         g_rockConfig.processPendingConfigReload();
-        reconcileNativeScopeGeometryOwnership();
         frik_weapon_offsets::processPendingReload();
+        reconcileNativeScopeGeometryOwnership();
         if (immersiveScopesWereEnabled != g_rockConfig.rockEnableImmersiveScopes) {
             if (!g_rockConfig.rockEnableImmersiveScopes && s_physicsInteraction) {
                 s_physicsInteraction->synchronizeNativeScopePresentationAfterFrikUpdate();
@@ -1233,8 +1233,8 @@ namespace
 
             g_rockConfig.load();
             holding_grips::load("Data/F4SE/Plugins/ROCK/HoldingGrips");
-            input_remap_runtime::configurePipboyInput();
             frik_weapon_offsets::load();
+            input_remap_runtime::configurePipboyInput();
             input_remap_runtime::configureButtonLayout();
             g_rockConfig.subscribeForConfigChanged("ROCKPipboyInput", [](const std::string&) {
                 input_remap_runtime::configurePipboyInput();

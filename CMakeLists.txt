@@ -824,16 +824,16 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKWeaponPartDrivePoseTests PRIVATE cxx_std_23)
   list(APPEND ROCK_COMMONLIB_TEST_TARGETS ROCKWeaponPartDrivePoseTests)
   add_rock_test(ROCKWeaponPartDrivePoseTests)
-
-  add_executable(ROCKConfigurationStoreTests
-    "${ROOT_DIR}/tests/ConfigurationStoreTests.cpp"
-    "${SOURCE_DIR}/config/ConfigurationStore.cpp"
-    "${SOURCE_DIR}/RockConfigLoad.cpp"
   add_executable(ROCKFrikWeaponOffsetPolicyTests "${ROOT_DIR}/tests/FrikWeaponOffsetPolicyTests.cpp")
   target_compile_features(ROCKFrikWeaponOffsetPolicyTests PRIVATE cxx_std_23)
   target_link_libraries(ROCKFrikWeaponOffsetPolicyTests PRIVATE nlohmann_json::nlohmann_json)
   list(APPEND ROCK_COMMONLIB_TEST_TARGETS ROCKFrikWeaponOffsetPolicyTests)
   add_rock_test(ROCKFrikWeaponOffsetPolicyTests)
+
+  add_executable(ROCKConfigurationStoreTests
+    "${ROOT_DIR}/tests/ConfigurationStoreTests.cpp"
+    "${SOURCE_DIR}/config/ConfigurationStore.cpp"
+    "${SOURCE_DIR}/RockConfigLoad.cpp"
   )
   target_compile_features(ROCKConfigurationStoreTests PRIVATE cxx_std_23)
   target_compile_definitions(ROCKConfigurationStoreTests PRIVATE ROCK_CONFIG_REFERENCE_DIR="${ROOT_DIR}/data/config")

@@ -82,11 +82,11 @@ namespace rock
         bool rockEmergencyDisableRecoil = false;
         bool rockBipodMode = true;
         bool rockGunstockMode = false;
+        // Player FRIK weapon offset files replace ROCK's grip and scale (opt-in).
+        bool rockFrikUserWeaponOffsets = false;
         float rockBipodHandsFreeRadiusMeters = 2.0f;
         float rockLaserRecoilPercent = 100.0f;
         float rockPistolOneHandRecoilPercent = 300.0f;
-        // Player FRIK weapon offset files replace ROCK's grip and scale (opt-in).
-        bool rockFrikUserWeaponOffsets = false;
         float rockPistolTwoHandRecoilPercent = 80.0f;
         float rockRifleOneHandRecoilPercent = 300.0f;
         float rockRifleTwoHandRecoilPercent = 80.0f;
