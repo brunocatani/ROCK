@@ -137,6 +137,13 @@ Status ROCK_CALL isEquipPickup(OwnerToken owner, std::uint32_t referenceFormId, 
 Status ROCK_CALL getSample(OwnerToken owner, Sample* outSample) noexcept {
     return readSample(owner, kInterfaceId, outSample);
 }
+Status ROCK_CALL unequipWeapon(OwnerToken owner, std::uint32_t slot, std::uint32_t expectedFormId) noexcept {
+    if (const auto s = checkWeaponSlot(slot); s != Status::Ok) return s;
+    if (!expectedFormId) return Status::InvalidArgument;
+    return invoke(owner, kInterfaceId, 2, true, [&] {
+        return p::runtime::unequipWeapon(slot, expectedFormId);
+    }, p::OwnerAccess::Active);
+}
 }
 const Api& table() noexcept {
     static const Api value{
@@ -157,6 +164,7 @@ const Api& table() noexcept {
         &cancelInventoryEquip,
         &isEquipPickup,
         &getSample,
+        &unequipWeapon,
     };
     return value;
 }

@@ -20,3 +20,8 @@
         auto* pi = access.get();
         return pi && pi->isInitialized() ? pi->cancelProviderInventoryEquip(owner, command) : api::Status::NotReady;
     }
+    api::Status unequipWeapon(std::uint32_t weaponSlot, std::uint32_t expectedFormId) {
+        const auto access = s_physicsInteraction.borrow();
+        auto* pi = access.get();
+        return pi && pi->isInitialized() ? pi->unequipProviderWeapon(weaponSlot, expectedFormId) : api::Status::NotReady;
+    }

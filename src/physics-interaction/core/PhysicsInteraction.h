@@ -307,6 +307,7 @@ namespace rock
         api::Status getProviderInventoryEquipResult(api::OwnerToken owner, std::uint64_t command,
             api::weapon::EquipResult& output) const;
         api::Status cancelProviderInventoryEquip(api::OwnerToken owner, std::uint64_t command);
+        api::Status unequipProviderWeapon(std::uint32_t weaponSlot, std::uint32_t expectedFormId);
         std::uint32_t copyProviderWeaponPartPoses(
             api::weaponparts::PartPose* outParts,
             std::uint32_t maxParts) const;

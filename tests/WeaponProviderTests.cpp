@@ -72,6 +72,12 @@ namespace rock::provider::runtime {
     api::Status requestInventoryEquip(std::uint64_t, const api::weapon::EquipRequest&, std::uint64_t& command) { command = 9; return api::Status::RequestQueued; }
     api::Status getInventoryEquipResult(std::uint64_t, std::uint64_t, api::weapon::EquipResult&) { return api::Status::Ok; }
     api::Status cancelInventoryEquip(std::uint64_t, std::uint64_t) { return api::Status::Ok; }
+    unsigned unequipRequests = 0;
+    api::Status unequipWeapon(std::uint32_t slot, std::uint32_t form) {
+        assert(slot == 1 && form == 789);
+        ++unequipRequests;
+        return api::Status::Ok;
+    }
 }
 
 int main() {
@@ -132,8 +138,14 @@ int main() {
         assert(api.isEquipPickup(testOwner, 500, 2, &matches) == Status::Ok && matches == 0);
     }
 
+    // Unequip names its slot and the weapon expected there before ROCK sees it.
+    assert(api.unequipWeapon(testOwner, kMaxWeaponSlots, 789) == Status::InvalidArgument);
+    assert(api.unequipWeapon(testOwner, 1, 0) == Status::InvalidArgument);
+    assert(api.unequipWeapon(testOwner, 1, 789) == Status::Ok && rock::provider::runtime::unequipRequests == 1);
+
     // Permissions are Weapon's own.
     permissions = 1;
+    assert(api.unequipWeapon(testOwner, 1, 789) == Status::PermissionDenied && rock::provider::runtime::unequipRequests == 1);
     request.features = 3;
     assert(api.setHandlingAuthority(testOwner, &request) == Status::PermissionDenied);
     EquipRequest equip;

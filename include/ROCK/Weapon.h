@@ -597,6 +597,12 @@ namespace rock::api::weapon {
         Status(ROCK_CALL* isEquipPickup)(OwnerToken owner, std::uint32_t referenceFormId, std::uint32_t count, std::uint32_t* outMatches) noexcept;
         // Any thread.
         Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
+        // Write. Returns the weapon in weaponSlot to the inventory from its own
+        // hand, synchronously; the other slot's weapon stays in its hand (a
+        // slot-1 weapon then moves to slot 0). expectedFormId must name the
+        // slot's weapon (TargetInvalid otherwise); an empty slot returns
+        // TargetUnavailable and Busy waits for an equip switch to finish.
+        Status(ROCK_CALL* unequipWeapon)(OwnerToken owner, std::uint32_t weaponSlot, std::uint32_t expectedFormId) noexcept;
     };
 }
 #pragma pack(pop)

@@ -2,6 +2,7 @@
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/weapon/InventoryWeaponEquipPolicy.h"
 #include "physics-interaction/weapon/EquipSlotAllocationPolicy.h"
+#include "physics-interaction/weapon/NativeHandEquipment.h"
 
 namespace rock {
     namespace {
@@ -86,6 +87,37 @@ namespace rock {
         if (_inventoryEquip.result.transferSequence && transfer.inventoryCommitted)
             return api::Status::AlreadyCommitted;
         _inventoryEquip.cancelRequested = true;
+        return api::Status::Ok;
+    }
+
+    api::Status PhysicsInteraction::unequipProviderWeapon(std::uint32_t weaponSlot, std::uint32_t expectedFormId)
+    {
+        if (weaponSlot >= api::kMaxWeaponSlots || !expectedFormId) return api::Status::InvalidArgument;
+        if (!isProviderReady() || !runtime_state::isLocalSkeletonReady() ||
+            runtime_state::isPhysicsMenuBlocked() || runtime_state::isCompatibilityConfigBlocked()) return api::Status::NotReady;
+        // A switch owns both native indices until its terminal result.
+        if (_inventoryEquip.active() || _equipped.transition.heldTransfer().active()) return api::Status::Busy;
+        const auto view = native_hand_equipment::equippedViews()[weaponSlot];
+        if (!view.weapon) return api::Status::TargetUnavailable;
+        if (view.weapon->GetFormID() != expectedFormId) return api::Status::TargetInvalid;
+        /*
+         * The same exact-index unequip as a second-weapon promotion: the
+         * stack's own hand leaf, so the other index keeps its weapon. Slot 0
+         * emptied this way is followed by the next frame's promotion of a
+         * slot-1 weapon in its own hand, as after a Pip-Boy unequip.
+         */
+        const auto instance = reinterpret_cast<std::uintptr_t>(view.instance);
+        const bool unequipped = weapon_equip_transfer::unequipEquippedIndex(weaponSlot, expectedFormId, instance);
+        ROCK_LOG_INFO(Weapon, "Provider weapon unequip slot={} form={:08X} instance={:#x} unequipped={}",
+            weaponSlot, expectedFormId, instance, unequipped);
+        if (!unequipped) return api::Status::InternalError;
+        if (weaponSlot == 0) {
+            _equipped.transition.pendingGrip() = {};
+            clearEquippedWeaponFiringGripInputState();
+            enforceNoBareFistState(true);
+        } else {
+            sampleEquippedSlotOne();
+        }
         return api::Status::Ok;
     }
 
