@@ -36,6 +36,10 @@ namespace rock::api::weapon {
         BipodInputReserved = 1u << 12,
         // loadedRounds and reserveRounds hold the weapon's ammo counter.
         AmmoKnown = 1u << 13,
+        // The weapon is seated and scaled from the player's own FRIK weapon
+        // offset file, with dynamic support grabs only. Animation authored
+        // for ROCK's grip of this weapon does not fit its hands.
+        UserWeaponOffset = 1u << 14,
     };
 
     enum class HandlingStateFlag : std::uint32_t

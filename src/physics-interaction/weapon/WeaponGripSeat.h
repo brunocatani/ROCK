@@ -1,10 +1,12 @@
 #pragma once
 
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
+#include "physics-interaction/weapon/FrikWeaponOffsets.h"
 #include "physics-interaction/weapon/HoldingGripRecords.h"
 #include "physics-interaction/weapon/HoldingGripMath.h"
 
 #include <cstdint>
+#include <optional>
 
 /*
  * One firing seat source for every equipped weapon, in either equip slot and
@@ -15,6 +17,10 @@
  * weapon's geometry plane plus the left firing grip offset, with the finger
  * locals mirrored alongside. A player-authored holding grip for a hand
  * replaces that hand's seat and fingers exactly.
+ *
+ * A player's FRIK weapon offset file outranks all of these: it replaces the
+ * native right seat (so the left hand mirrors it too) and ROCK's own holding
+ * grips. The harvested finger pose stays, as it does for the minigun seat.
  */
 namespace rock::weapon_grip_seat
 {
@@ -38,9 +44,17 @@ namespace rock::weapon_grip_seat
         // captures apply it the same way.
         RE::NiPoint3 modelDisplacement{};
         bool compiledMinigun{ false };
+        // The player's FRIK weapon offset for this weapon, if any. userSeat:
+        // rightHandWeaponLocal is the seat it defines (it needs the native
+        // seat when it only rotates the hand).
+        std::optional<frik_weapon_offsets::Override> userOffset{};
+        bool userSeat{ false };
         // The model's registration frame was readable. Nothing may seat a
         // model whose frame is unknown.
         bool modelRegistered{ false };
+
+        // A seat not taken from the weapon's animation.
+        [[nodiscard]] bool fixedSeat() const noexcept { return compiledMinigun || userSeat; }
 
         // The library holds the native idle animation's relation for it.
         [[nodiscard]] bool harvested() const noexcept

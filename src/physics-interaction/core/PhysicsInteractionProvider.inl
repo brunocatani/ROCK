@@ -1064,6 +1064,8 @@
         setFlag(Flag::WeaponPresent, outState.weaponFormId != 0 && resolveEquippedWeaponInteractionNode());
         setFlag(Flag::WeaponDrawn, outState.weaponFormId != 0 && runtime_state::currentFrame().weaponDrawn);
         setFlag(Flag::PresentationKnown, presentationKnown);
+        setFlag(Flag::UserWeaponOffset, outState.weaponFormId != 0 &&
+            frik_weapon_offsets::find(currentEquippedWeaponForm(), resolveEquippedWeaponInteractionNode(), f4vr::isInPowerArmor()).has_value());
         setFlag(Flag::BipodInputReserved, g_rockConfig.rockBipodMode &&
             (outState.flags & static_cast<std::uint32_t>(Flag::Valid)) &&
             _dynamicWeaponCollision.surfaceSupportReservesInput(
@@ -1112,6 +1114,7 @@
         setFlag(Flag::WeaponEquipped, slotOne.equipped);
         setFlag(Flag::WeaponDrawn, slotOne.equipped && frame.weaponDrawn);
         setFlag(Flag::WeaponPresent, slotOne.equipped && native_secondary_presentation::presentedModel() != nullptr);
+        setFlag(Flag::UserWeaponOffset, slotOne.equipped && native_secondary_presentation::usesUserWeaponOffset());
         if (slotOne.equipped) {
             outState.firingHand = slotOne.hand == equipped_weapon_roster::Hand::Left ? api::Hand::Left : api::Hand::Right;
             outState.weaponGenerationKey = _secondaryWeaponCollision.getCurrentWeaponGenerationKey();

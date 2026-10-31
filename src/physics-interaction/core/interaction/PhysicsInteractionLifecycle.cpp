@@ -9,6 +9,7 @@
 #include "physics-interaction/native/PhysicsShapeCast.h"
 #include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
 #include "physics-interaction/weapon/NativeSecondaryPresentation.h"
+#include "physics-interaction/weapon/FrikWeaponOffsets.h"
 #include "physics-interaction/weapon/NativeSecondaryActions.h"
 
 // PhysicsInteraction lifecycle: construction, init/shutdown, skeleton and provider lifecycle notes, generated-body lifecycle, collision layer registration, hand/body collision creation, and world accessors. Includes the provider API surface (PhysicsInteractionProvider.inl).

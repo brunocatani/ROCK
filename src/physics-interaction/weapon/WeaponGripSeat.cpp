@@ -72,6 +72,13 @@ namespace rock::weapon_grip_seat
         seat.compiledMinigun = minigun_firing_grip_policy::usesCompiledFiringSeat(request.keywordFlags) &&
                                compiledMinigunSeat(request.inPowerArmor, minigun);
         seat.rightHandWeaponLocal = seat.compiledMinigun ? minigun : seat.lookup.rightHandWeaponLocal;
+        // FRIK's Weapon offset is in the live Weapon node frame, like the
+        // compiled minigun seat, so it takes no model registration shift.
+        seat.userOffset = frik_weapon_offsets::find(request.weapon, request.weaponRoot, request.inPowerArmor);
+        if (seat.userOffset && (seat.userOffset->replacesSeat() || seat.compiledMinigun || seat.harvested())) {
+            seat.rightHandWeaponLocal = frik_weapon_offsets::seat(*seat.userOffset, seat.rightHandWeaponLocal);
+            seat.userSeat = true;
+        }
         return seat;
     }
 
@@ -111,7 +118,7 @@ namespace rock::weapon_grip_seat
         FiringSeat& out)
     {
         out = {};
-        if (custom) {
+        if (custom && !native.userSeat) {
             out = { .handWeaponLocal = custom->wrist, .fingers = custom->fingers, .custom = true };
             return true;
         }

@@ -264,10 +264,20 @@ namespace rock
         auto authoredLookup = nativeSeat.lookup;
         const RE::NiPoint3& modelDisplacement = nativeSeat.modelDisplacement;
         const bool compiledMinigunFiringSeat = nativeSeat.compiledMinigun;
-        const RE::NiTransform& compiledMinigunFiringHandInWeapon = nativeSeat.rightHandWeaponLocal;
+        const RE::NiTransform& fixedFiringHandInWeapon = nativeSeat.rightHandWeaponLocal;
         const bool harvestedRelationAvailable = nativeSeat.harvested();
-        const auto* customRight=holding_grips::find(input.weapon,input.weaponNode,false,input.weaponGenerationKey,input.inPowerArmor);
-        const auto* customLeft=holding_grips::find(input.weapon,input.weaponNode,true,input.weaponGenerationKey,input.inPowerArmor);
+        /*
+         * A player FRIK weapon offset moves the hands off the animation's
+         * weapon relation. It replaces the firing seat (nativeSeat already
+         * carries it), outranks ROCK's holding grips, and no authored support
+         * relation fits it: support grabs are dynamic only. It never feeds
+         * the authored library, which stays the animation's relation.
+         */
+        const auto& userOffset = nativeSeat.userOffset;
+        const bool userSeat = nativeSeat.userSeat;
+        const bool fixedFiringSeat = nativeSeat.fixedSeat();
+        const auto* customRight=userOffset?nullptr:holding_grips::find(input.weapon,input.weaponNode,false,input.weaponGenerationKey,input.inPowerArmor);
+        const auto* customLeft=userOffset?nullptr:holding_grips::find(input.weapon,input.weaponNode,true,input.weaponGenerationKey,input.inPowerArmor);
         const RE::NiTransform nativeRightHandInWeapon = nativeSeat.rightHandWeaponLocal;
         const RE::NiTransform& selectedRightHandInWeapon =
             customRight?customRight->wrist:nativeRightHandInWeapon;
@@ -331,7 +341,16 @@ namespace rock
          * capability expired to Unavailable and the weapon lost its support
          * grabs and zones (runtime 14 Oct 21:38:29, 0D000FA1).
          */
-        const bool librarySupportPublished = publishLibraryAuthoredSupportCandidate();
+        // A user offset publishes support absence, which selects the dynamic
+        // fallback, and counts as published so no live or stable authored
+        // relation is offered or learned for it.
+        if (userOffset) {
+            clearStableAuthoredSupportGripSnapshot();
+            _liveSupportWitness = {};
+            (void)weaponAuthority.setAuthoredSupportGripAbsent(input.weaponNode, input.weaponGenerationKey,
+                authoredLookup.captureSequence != 0 ? authoredLookup.captureSequence : (std::max<std::uint64_t>)(_supportCaptureSequenceFloor, 1));
+        }
+        const bool librarySupportPublished = userOffset || publishLibraryAuthoredSupportCandidate();
         // Runtime evidence that the clip-sampled relation matches what the
         // native right-primary graph settles to; sampled, debug only.
         const auto traceLiveSupportAgainstLibrary = [&]() {
@@ -933,9 +952,9 @@ namespace rock
             }
         }
         if(alignmentResolved&&customRight){authoredPrimaryHandInWeapon=customRight->wrist;currentAuthoredHandWorld=transform_math::composeTransforms(liveWeaponWorld,authoredPrimaryHandInWeapon);}
-        else if (alignmentResolved && compiledMinigunFiringSeat) {
+        else if (alignmentResolved && fixedFiringSeat) {
             authoredPrimaryHandInWeapon =
-                compiledMinigunFiringHandInWeapon;
+                fixedFiringHandInWeapon;
             currentAuthoredHandWorld =
                 transform_math::composeTransforms(
                     liveWeaponWorld,
@@ -943,9 +962,13 @@ namespace rock
             alignmentResolved =
                 finiteTransform(currentAuthoredHandWorld);
         }
-        if (alignmentResolved && !harvestedRelationAvailable && !compiledMinigunFiringSeat) {
+        if (alignmentResolved && !harvestedRelationAvailable && !fixedFiringSeat) {
             rawPrimaryHandInWeapon = authoredPrimaryHandInWeapon;
             authoredPrimaryHandInWeapon = vanilla_weapon_grip_frame::translateGrip(authoredPrimaryHandInWeapon, modelDisplacement);
+            // A lone FRIK hand rotation on a live-captured seat.
+            if (userOffset) {
+                authoredPrimaryHandInWeapon = frik_weapon_offsets::seat(*userOffset, authoredPrimaryHandInWeapon);
+            }
             currentAuthoredHandWorld = transform_math::composeTransforms(liveWeaponWorld, authoredPrimaryHandInWeapon);
             alignmentResolved = finiteTransform(currentAuthoredHandWorld);
         }
@@ -1079,8 +1102,8 @@ namespace rock
         }
 
         bool authoredLibraryEntryAvailable =
-            !compiledMinigunFiringSeat && harvestedRelationAvailable;
-        if (!compiledMinigunFiringSeat && !harvestedRelationAvailable) {
+            !fixedFiringSeat && harvestedRelationAvailable;
+        if (!fixedFiringSeat && !harvestedRelationAvailable) {
             authoredLibraryEntryAvailable =
                 authored_weapon_grip_library::publishResolvedVariant(
                     input.weapon,
@@ -1090,7 +1113,7 @@ namespace rock
                     resolvedCaptureSequence,
                     authored_weapon_grip_library::CaptureSource::LiveEquippedGraph);
         }
-        if (!compiledMinigunFiringSeat &&
+        if (!fixedFiringSeat &&
             !authoredLibraryEntryAvailable) {
             if (!_libraryPublishFailureLogged) {
                 ROCK_LOG_WARN(Animation,
@@ -1109,10 +1132,10 @@ namespace rock
          * physical hand measured against the final position-only equipped
          * weapon. Miniguns retain hFRIK's independent loose-weapon authority
          * instead of contaminating the native-idle library with this compiled
-         * equipped-only firing seat. A reversed knife grip publishes
-         * nothing: its solved weapon is not the authored hold.
+         * equipped-only firing seat. A reversed knife grip or a player FRIK
+         * offset publishes nothing: its solved weapon is not the authored hold.
          */
-        if (!reversedKnife) {
+        if (!reversedKnife && !userOffset) {
             const RE::NiTransform rightPositionOnlyHandWeaponLocal =
                 transform_math::composeTransforms(
                     transform_math::invertTransform(solvedWeaponWorld),
@@ -1197,7 +1220,9 @@ namespace rock
         // Keep the candidate frame-fresh by republishing the last verified
         // same-weapon snapshot instead of treating that animation gap as the
         // permanent loss of authored support-grip capability.
-        if (librarySupportPublished) {
+        if (userOffset) {
+            // Support absence published above.
+        } else if (librarySupportPublished) {
             traceLiveSupportAgainstLibrary();
         } else if (!publishLiveAuthoredSupportCandidate(
                        resolvedCaptureSequence,
@@ -1233,6 +1258,8 @@ namespace rock
                 currentWeaponKey,
                 input.weaponGenerationKey,
                 resolvedCaptureSequence,
+                userSeat ?
+                    "frik-user-weapon-offset" :
                 compiledMinigunFiringSeat ?
                     "compiled-minigun-frik-seat" :
                     harvestedRelationAvailable ?

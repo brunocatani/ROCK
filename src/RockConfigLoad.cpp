@@ -364,6 +364,7 @@ namespace rock
         if (rockWeaponGrabMode < 1 || rockWeaponGrabMode > 3) {
             ROCK_LOG_WARN(Config, "Invalid iWeaponGrabMode={} -- using 1", rockWeaponGrabMode);
             rockWeaponGrabMode = 1;
+        rockFrikUserWeaponOffsets = ini.GetBoolValue(IMMERSIVE_WEAPONS_SECTION, "bFrikUserWeaponOffsets", rockFrikUserWeaponOffsets);
         }
         rockAutoEquipSettleSeconds = readClampedFloat(
             ini, IMMERSIVE_WEAPONS_SECTION, "fAutoEquipSettleSeconds",

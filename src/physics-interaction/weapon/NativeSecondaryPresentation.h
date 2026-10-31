@@ -70,6 +70,10 @@ namespace rock::native_secondary_presentation
     // owner only), or null before this frame's placement or without one.
     [[nodiscard]] RE::NiAVObject* presentedModel() noexcept;
 
+    // The presented model this frame is seated and scaled by a player FRIK
+    // weapon offset. Frame owner only.
+    [[nodiscard]] bool usesUserWeaponOffset() noexcept;
+
     // This frame's firing seat of the second weapon in its attachment's
     // frame, and that attachment as presented. Frame owner only.
     [[nodiscard]] bool tryGetFiringSeat(RE::NiTransform& outHandWeaponLocal, RE::NiTransform& outWeaponWorld) noexcept;

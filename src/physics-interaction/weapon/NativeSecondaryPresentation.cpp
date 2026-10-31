@@ -54,6 +54,8 @@ namespace rock::native_secondary_presentation
             RE::NiTransform modelIntentWorld{};
             float modelScale = 1.0f;
             bool ownsLocal = false, claimed = false, ready = false;
+            // This frame's seat comes from a player FRIK weapon offset.
+            bool userWeaponOffset = false;
             // Physical hand of the index-1 weapon this frame, and the hand
             // whose FRIK publications are currently claimed.
             bool left = true, claimedLeft = true;
@@ -630,6 +632,9 @@ namespace rock::native_secondary_presentation
                 .keywordFlags = weapon_instance_classification::computeWeaponKeywordFlags(view.weapon, view.instance),
                 .inPowerArmor = powerArmor,
             });
+            s_state.userWeaponOffset = nativeSeat.userOffset.has_value();
+            // FRIK's offset scale resizes the model as it does the first weapon.
+            const float presentedScale = s_state.modelScale * (nativeSeat.userOffset ? nativeSeat.userOffset->weaponScale() : 1.0f);
             const auto* handOverride = holding_grips::find(view.weapon, attachment, left, view.data, powerArmor);
             weapon_grip_seat::FiringSeat firingSeat{};
             if (!weapon_grip_seat::firingSeat(nativeSeat, handOverride, left, s_mirrorOffsets.plane(!view.firearm), firingSeat)) {
@@ -664,9 +669,9 @@ namespace rock::native_secondary_presentation
             // the wrist, as the first weapon's melee carry does.
             const bool solved = view.firearm ?
                 native_secondary_pose::solve(wandWorld, physicalHand, seat,
-                    palm, s_state.modelScale, weaponInWand, handTargetOffset, target, hand) :
+                    palm, presentedScale, weaponInWand, handTargetOffset, target, hand) :
                 native_secondary_pose::solveMelee(wandWorld, physicalHand, seat,
-                    palm, s_state.modelScale, g_rockConfig.rockMeleeGripPitchDegrees, target, hand);
+                    palm, presentedScale, g_rockConfig.rockMeleeGripPitchDegrees, target, hand);
             if (!solved) {
                 waitFor(view, "invalid-placement");
                 return;
@@ -907,6 +912,11 @@ namespace rock::native_secondary_presentation
         if (!onFrameThread() || !s_state.ready) return nullptr;
         const auto view = native_hand_equipment::equippedViews()[1];
         return matches(view) ? view.root : nullptr;
+    }
+
+    bool usesUserWeaponOffset() noexcept
+    {
+        return presentedModel() && s_state.userWeaponOffset;
     }
 
     bool tryGetFiringSeat(RE::NiTransform& outHandWeaponLocal, RE::NiTransform& outWeaponWorld) noexcept

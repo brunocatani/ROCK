@@ -2372,16 +2372,20 @@ namespace rock
         float animationScale = 1.0f;
         const bool animationAvailable = authored_weapon_grip_capture::tryGetAnimationWeaponScale(
             weaponNode, equippedWeapon->formID, animationScale);
-        const float desiredScale = authored_weapon_grip_capture_policy::resolveWeaponPresentationScale(animationAvailable, animationScale);
+        // A player FRIK weapon offset resizes the weapon relative to this
+        // baseline; the scale carries into every solve that reads the node.
+        const auto userOffset = frik_weapon_offsets::find(equippedWeapon, weaponNode, f4vr::isInPowerArmor());
+        const float userScale = userOffset ? userOffset->weaponScale() : 1.0f;
+        const float desiredScale = authored_weapon_grip_capture_policy::resolveWeaponPresentationScale(animationAvailable, animationScale) * userScale;
         if (std::isfinite(parentScale) && std::abs(parentScale) > 0.0001f &&
             std::abs(weaponNode->world.scale - desiredScale) > 0.00001f) {
             const float previousScale = weaponNode->world.scale;
             weaponNode->local.scale = desiredScale / parentScale;
             f4vr::updateDown(weaponNode, true);
             ROCK_LOG_SAMPLE_INFO(Animation, 2000,
-                "Weapon presentation scale form={:08X} incoming={:.6f} target={:.6f} result={:.6f} source={}",
+                "Weapon presentation scale form={:08X} incoming={:.6f} target={:.6f} result={:.6f} source={} frikUserScale={:.4f}",
                 equippedWeapon->formID, previousScale, desiredScale, weaponNode->world.scale,
-                animationAvailable ? "animation-graph" : "unit-default");
+                animationAvailable ? "animation-graph" : "unit-default", userScale);
         }
     }
 

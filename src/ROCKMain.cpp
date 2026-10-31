@@ -3,6 +3,7 @@
 #include "api/LooseWeaponStateService.h"
 #include "physics-interaction/weapon/WeaponHandSave.h"
 #include "physics-interaction/weapon/HoldingGripRecords.h"
+#include "physics-interaction/weapon/FrikWeaponOffsets.h"
 #include <atomic>
 #include <cstdint>
 #include <string>
@@ -345,6 +346,7 @@ namespace
         const bool immersiveScopesWereEnabled = g_rockConfig.rockEnableImmersiveScopes;
         g_rockConfig.processPendingConfigReload();
         reconcileNativeScopeGeometryOwnership();
+        frik_weapon_offsets::processPendingReload();
         if (immersiveScopesWereEnabled != g_rockConfig.rockEnableImmersiveScopes) {
             if (!g_rockConfig.rockEnableImmersiveScopes && s_physicsInteraction) {
                 s_physicsInteraction->synchronizeNativeScopePresentationAfterFrikUpdate();
@@ -1231,6 +1233,7 @@ namespace
             g_rockConfig.load();
             holding_grips::load("Data/F4SE/Plugins/ROCK/HoldingGrips");
             input_remap_runtime::configurePipboyInput();
+            frik_weapon_offsets::load();
             g_rockConfig.subscribeForConfigChanged("ROCKPipboyInput", [](const std::string&) {
                 input_remap_runtime::configurePipboyInput();
             });
