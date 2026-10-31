@@ -68,6 +68,17 @@ namespace rock::input_remap_runtime
         constexpr std::uintptr_t kActivateHandlerHandleEventVTableSlotOffset = 0x2D8A640;
         constexpr std::uintptr_t kFavoritesManagerHandleEventFunctionOffset = 0x12F19D0;
         constexpr std::uintptr_t kFavoritesManagerHandleEventVTableSlotOffset = 0x2DC8520;
+        /*
+         * FavoritesManager's second opener (vtable slot 5, the slot-12 handler's vtable at
+         * 0x2DC84C0): the wand touchpad event. With FO4VR's controller kind 0 (lighthouse:
+         * Index, Vive, any non-Oculus/WMR tracking system) it opens Favorites on a centre
+         * pad/stick click (direction 8), which on Index blocked PALM on the right stick
+         * click. Raw disassembly 2026-10-30: 0x12F1A70 tests the primary wand
+         * (player+0x8CC), reads [0x59429C0]+0x260 and posts FavoritesMenu through the same
+         * 0x20D3C00/0x20D93F0 calls as slot 12; the slot 0x2DC84E8 references it.
+         */
+        constexpr std::uintptr_t kFavoritesManagerWandPadFunctionOffset = 0x12F1A70;
+        constexpr std::uintptr_t kFavoritesManagerWandPadVTableSlotOffset = 0x2DC84E8;
         constexpr std::uintptr_t kMeleeThrowHandlerHandleEventFunctionOffset = 0x0FC8AE0;
         constexpr std::uintptr_t kMeleeThrowHandlerHandleEventVTableSlotOffset = 0x2D8A9F0;
         // JumpHandler::ShouldHandleEvent receives the semantic Jump ButtonEvent
@@ -333,6 +344,7 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_readyWeaponEventHookInstalled{ false };
         std::atomic<bool> s_activateEventHookInstalled{ false };
         std::atomic<bool> s_favoritesEventHookInstalled{ false };
+        std::atomic<bool> s_favoritesWandPadHookInstalled{ false };
         std::atomic<bool> s_meleeThrowEventHookInstalled{ false };
         std::atomic<bool> s_pipboyEventHookInstalled{ false };
         std::atomic<bool> s_pipboyLightEventHookInstalled{ false };
@@ -358,6 +370,7 @@ namespace rock::input_remap_runtime
         NativeInputEventHandler_t s_originalActivateEventHandler = nullptr;
         NativeInputEventHandler_t s_originalMeleeThrowEventHandler = nullptr;
         FavoritesInputEventHandler_t s_originalFavoritesEventHandler = nullptr;
+        FavoritesInputEventHandler_t s_originalFavoritesWandPadHandler = nullptr;
         PipboyInputEventHandler_t s_originalPipboyEventHandler = nullptr;
         PipboyLightHoldQuery_t s_originalPipboyLightHoldQuery = nullptr;
         NativeInputEventHandler_t s_originalPipboyLightEventHandler = nullptr;
@@ -1975,6 +1988,17 @@ namespace rock::input_remap_runtime
             }
         }
 
+        void hookedFavoritesWandPadHandler(void*, RE::InputEvent*)
+        {
+            // The native handler's only effect is opening Favorites from the
+            // pad/stick click, which belongs to PALM while ROCK is installed.
+            // The event is not stopped: later pad consumers (movement, menus)
+            // still receive it.
+            ROCK_LOG_SAMPLE_DEBUG(Input,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "Suppressed native wand-pad Favorites opener");
+        }
+
         void hookedMeleeThrowEventHandler(void* handler, RE::InputEvent* inputEvent, void* cursor, void* unk)
         {
             if (isAnyProviderOpenVrGameInputSuppressed()) {
@@ -2507,6 +2531,16 @@ namespace rock::input_remap_runtime
                 "FavoritesManager::HandleEvent suppression");
         }
 
+        bool installFavoritesWandPadSuppressionHook()
+        {
+            return installNativeActionVTableHook(kFavoritesManagerWandPadVTableSlotOffset,
+                kFavoritesManagerWandPadFunctionOffset,
+                &hookedFavoritesWandPadHandler,
+                s_originalFavoritesWandPadHandler,
+                s_favoritesWandPadHookInstalled,
+                "FavoritesManager wand-pad suppression");
+        }
+
         bool installMeleeThrowEventSuppressionHook()
         {
             return installNativeActionVTableHook(kMeleeThrowHandlerHandleEventVTableSlotOffset,
@@ -2730,6 +2764,7 @@ namespace rock::input_remap_runtime
             ready = installReadyWeaponEventSuppressionHook() && ready;
             ready = installActivateEventReloadHook() && ready;
             ready = installFavoritesEventSuppressionHook() && ready;
+            ready = installFavoritesWandPadSuppressionHook() && ready;
             ready = installMeleeThrowEventSuppressionHook() && ready;
             ready = installPipboyPauseArbitrationHooks() && ready;
             ready = installWandPickFilter(0, 0x2D81EC0, 0x9D54D0, &hookedWandPickUpdate<0>) && ready;
