@@ -2340,6 +2340,17 @@ namespace rock
      */
     void PhysicsInteraction::normalizeWeaponPresentationScaleAfterFrikWeaponPass()
     {
+        applyWeaponPresentationScale(false);
+    }
+
+    /*
+     * userOffsetOnly: the pre-solve pass. The native graph resets the Weapon
+     * scale every frame before ROCK's solves, which read the node's scale for
+     * the hand seat and collision; a player FRIK offset's scale must already
+     * be on the node then, not only re-applied for the render.
+     */
+    void PhysicsInteraction::applyWeaponPresentationScale(const bool userOffsetOnly)
+    {
         const auto& runtime = runtime_state::currentFrame();
         auto* weaponNode = resolveEquippedWeaponInteractionNode();
         auto* equippedWeapon = currentEquippedWeaponForm();
@@ -2375,6 +2386,9 @@ namespace rock
         // A player FRIK weapon offset resizes the weapon relative to this
         // baseline; the scale carries into every solve that reads the node.
         const auto userOffset = frik_weapon_offsets::find(equippedWeapon, weaponNode, f4vr::isInPowerArmor());
+        if (userOffsetOnly && !userOffset) {
+            return;
+        }
         const float userScale = userOffset ? userOffset->weaponScale() : 1.0f;
         const float desiredScale = authored_weapon_grip_capture_policy::resolveWeaponPresentationScale(animationAvailable, animationScale) * userScale;
         if (std::isfinite(parentScale) && std::abs(parentScale) > 0.0001f &&
@@ -2383,9 +2397,9 @@ namespace rock
             weaponNode->local.scale = desiredScale / parentScale;
             f4vr::updateDown(weaponNode, true);
             ROCK_LOG_SAMPLE_INFO(Animation, 2000,
-                "Weapon presentation scale form={:08X} incoming={:.6f} target={:.6f} result={:.6f} source={} frikUserScale={:.4f}",
+                "Weapon presentation scale form={:08X} incoming={:.6f} target={:.6f} result={:.6f} source={} frikUserScale={:.4f} pass={}",
                 equippedWeapon->formID, previousScale, desiredScale, weaponNode->world.scale,
-                animationAvailable ? "animation-graph" : "unit-default", userScale);
+                animationAvailable ? "animation-graph" : "unit-default", userScale, userOffsetOnly ? "pre-solve" : "after-weapon-position");
         }
     }
 
@@ -2413,6 +2427,7 @@ namespace rock
 
     void PhysicsInteraction::updateAuthoredPrimaryFiringGrip()
     {
+        applyWeaponPresentationScale(true);
         const auto& runtime = runtime_state::currentFrame();
         auto* weaponNode = resolveEquippedWeaponInteractionNode();
         // The authored/native canonical weapon frame is always ROCK's

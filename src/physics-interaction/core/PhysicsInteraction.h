@@ -135,6 +135,7 @@ namespace rock
          * where the render and the next frame's latch both see it.
          */
         void normalizeWeaponPresentationScaleAfterFrikWeaponPass();
+        void applyWeaponPresentationScale(bool userOffsetOnly);
         void synchronizeEquipVisualBridgeAfterFrikWeaponPass();
         void finalizeEquipVisualBridgePresentation();
         // Equip/drop seamlessness diagnostic (TransitionSeamTrace.cpp): a
