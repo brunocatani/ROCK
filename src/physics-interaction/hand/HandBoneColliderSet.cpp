@@ -382,6 +382,20 @@ namespace rock
         const RE::NiPoint3 local = (hand.rotate * (authority.translate - hand.translate)) * (1.0f / hand.scale);
         if (std::isfinite(local.x) && std::isfinite(local.y) && std::isfinite(local.z)) {
             palm_point::publishHandLocal(isLeft, local);
+            // Once per collider build. The offline grip tools (Reload Maker,
+            // Offset Maker) seat their hands with this point, measured from
+            // the hand bone, so they need it and the roll frame's offset.
+            float rotationDelta = 0.0f;
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    rotationDelta = (std::max)(rotationDelta, std::abs(hand.rotate.entry[row][column] - lookup.hand.rotate.entry[row][column]));
+                }
+            }
+            const RE::NiPoint3 rollOrigin = transform_math::worldPointToLocal(lookup.hand, hand.translate);
+            ROCK_LOG_INFO(Hand,
+                "{} palm point published: handLocal=({:.4f},{:.4f},{:.4f}) rollFrameOriginInHandBone=({:.4f},{:.4f},{:.4f}) rollFrameRotationDelta={:.5f} powerArmor={}",
+                isLeft ? "Left" : "Right", local.x, local.y, local.z, rollOrigin.x, rollOrigin.y, rollOrigin.z, rotationDelta,
+                _lastCapturedPowerArmor ? "yes" : "no");
         }
     }
 
