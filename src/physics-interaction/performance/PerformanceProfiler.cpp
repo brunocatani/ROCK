@@ -281,7 +281,6 @@ namespace rock::performance_profiler
             case Scope::GrabSurfaceResolution: return "grabSurfaceResolution";
             case Scope::GrabFingerSolve: return "grabFingerSolve";
             case Scope::GrabFingerIndexBuild: return "grabFingerIndexBuild";
-            case Scope::GrabFingerPadProbes: return "grabFingerPadProbes";
             case Scope::NativePhysicsUpdate: return "nativePhysicsUpdate";
             case Scope::NativePhysicsCollideInterval: return "nativePhysicsCollideInterval";
             case Scope::NativePhysicsSolveInterval: return "nativePhysicsSolveInterval";

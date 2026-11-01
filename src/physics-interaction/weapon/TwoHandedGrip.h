@@ -1680,7 +1680,6 @@ namespace rock
         void setSupportGripPose(
             bool isLeft,
             const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPose,
-            const std::array<float, 5>* capturedSplayRadians,
             SupportGripPoseFallback fallback =
                 SupportGripPoseFallback::SelectedClose);
 

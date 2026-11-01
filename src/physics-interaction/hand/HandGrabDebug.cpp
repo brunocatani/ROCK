@@ -22,6 +22,7 @@
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/grab/GrabFinger.h"
+#include "physics-interaction/grab/GrabFingerCapsuleSweep.h"
 #include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/grab/GrabMotionController.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"
@@ -592,13 +593,12 @@ namespace rock
         }
     }
 
-    // Bench only: the solve half of the replay record, taken from the exact inputs and result of the frozen-mesh solve.
+    // Bench only: the solve half of the replay record, taken from the exact inputs and result of the capsule solve.
     void Hand::beginGrabPoseReplay(const GrabFingerSolveFrame& frame,
         const std::vector<GrabLocalTriangle>& localTriangles,
-        const grab_finger_pose_runtime::GrabFingerPoseTargetSet& targets,
         const root_flattened_finger_skeleton_runtime::Snapshot& solveSkeleton,
-        const grab_finger_pose_runtime::FrozenMeshFingerPoseSolveResult& solve,
-        const grab_finger_pose_runtime::FrozenMeshFingerPoseSolveOptions& options)
+        const grab_finger_capsule_sweep::Result& solve,
+        const grab_finger_capsule_sweep::Options& options)
     {
         auto& r = _grabPoseReplay.emplace();
         r.isLeft = _isLeft;
@@ -612,47 +612,27 @@ namespace rock
         r.solveHandWorld = toReplay(frame.solveHandWorld);
         r.liveHandWorld = toReplay(frame.liveHandWorld);
         r.grabAnchorWorld = toReplay(frame.pivotWorld);
-        for (std::size_t f = 0; f < grab_pose_replay::kFingerCount; ++f) {
-            r.targets.targets[f] = toReplay(targets.targets[f]);
-            r.targets.targetNormals[f] = toReplay(targets.targetNormals[f]);
-            r.targets.targetValid[f] = targets.targetValid[f];
-            r.targets.targetNormalValid[f] = targets.targetNormalValid[f];
-            r.commandedOpenDirectionsWorld[f] = toReplay(solve.commandedOpenDirectionsWorld[f]);
-            r.solvedValues[f] = solve.pose.values[f];
-            r.solvedHitKind[f] = static_cast<std::int32_t>(solve.pose.hitKind[f]);
-        }
-        r.targets.seatPoint = toReplay(targets.seatPointWorld);
-        r.targets.seatNormal = toReplay(targets.seatNormalWorld);
-        r.targets.seatPointValid = targets.seatPointValid;
-        r.targets.seatNormalValid = targets.seatNormalValid;
-        r.targets.useSeatPointForMissingTargets = targets.useSeatPointForMissingTargets;
-        r.targets.useWholeMeshForMissingTargets = targets.useWholeMeshForMissingTargets;
-        r.targets.targetCount = targets.targetCount;
         r.solveSkeleton = toReplay(solveSkeleton);
-        r.commandedOpenDirectionsValid = solve.commandedOpenDirectionsValid;
-        r.options = grab_pose_replay::SolveOptions{
+        r.options = grab_pose_replay::CapsuleOptions{
             .minValue = options.minValue,
-            .maxTriangleDistanceSquared = options.maxTriangleDistanceSquared,
-            .rejectBacksideHits = options.rejectBacksideHits,
-            .surfacePlaneToleranceGameUnits = options.surfacePlaneToleranceGameUnits,
-            .allowSurfaceAimTargets = options.allowSurfaceAimTargets,
-            .sweepContactRadiusGameUnits = options.sweepContactRadiusGameUnits,
-            .thumbSweepMaxOpenValue = options.thumbSweepMaxOpenValue,
-            .fingerSweepMaxOpenValue = options.fingerSweepMaxOpenValue,
-            .mode = static_cast<std::uint32_t>(options.mode),
+            .fingerMaxOpenValue = options.fingerMaxOpenValue,
+            .thumbMaxOpenValue = options.thumbMaxOpenValue,
+            .step = options.step,
         };
+        for (std::size_t f = 0; f < grab_pose_replay::kFingerCount; ++f) {
+            r.solvedValues[f] = solve.values[f];
+            r.solvedContact[f] = solve.fingers[f].contact ? 1 : 0;
+            r.solvedOpenedToClear[f] = solve.fingers[f].openedToClear ? 1 : 0;
+            r.solvedBlocked[f] = solve.fingers[f].blocked ? 1 : 0;
+        }
 
-        // FRIK's forward model, from FRIK itself: local transforms of the authored closed and open poses.
-        frik_visual_authority::FingerLocalTransformOverride closed{};
-        frik_visual_authority::FingerLocalTransformOverride open{};
-        const auto hand = frik_visual_authority::handFromBool(_isLeft);
-        r.frikRigValid =
-            frik_visual_authority::getHandPoseLocalTransformsForPose(hand, frik_visual_authority::makeUniformHandPoseData(0.0f, 0.0f, 0.0f, 0.0f, 0.0f), &closed) &&
-            frik_visual_authority::getHandPoseLocalTransformsForPose(hand, frik_visual_authority::makeUniformHandPoseData(1.0f, 1.0f, 1.0f, 1.0f, 1.0f), &open);
+        std::array<RE::NiTransform, 15> closedLocal{};
+        std::array<RE::NiTransform, 15> openLocal{};
+        r.frikRigValid = grab_finger_capsule_sweep::captureFrikRigLocals(_isLeft, closedLocal, openLocal);
         if (r.frikRigValid) {
             for (std::size_t bone = 0; bone < grab_pose_replay::kFingerBoneCount; ++bone) {
-                r.frikClosedLocal[bone] = toReplay(closed.localTransforms[bone]);
-                r.frikOpenLocal[bone] = toReplay(open.localTransforms[bone]);
+                r.frikClosedLocal[bone] = toReplay(closedLocal[bone]);
+                r.frikOpenLocal[bone] = toReplay(openLocal[bone]);
             }
         }
     }
@@ -686,7 +666,7 @@ namespace rock
         RE::NiTransform rawHand{};
         if (!root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(_isLeft, rendered) ||
             !frik_hand_world_authority::tryGetRawHandWorld(_isLeft, rawHand) ||
-            !rebaseGrabFingerSkeleton(rendered, rawHand, _grabVisualHandTransform) || !rendered.palmNormalValid) {
+            !grab_finger_capsule_sweep::rebaseSkeleton(rendered, rawHand, _grabVisualHandTransform) || !rendered.palmNormalValid) {
             ROCK_LOG_INFO(Hand, "{} GRAB POSE QUALITY: skipped drawnSkeleton=no", handName());
             return;
         }
@@ -712,8 +692,6 @@ namespace rock
             return length > 0.000001f ? local * (1.0f / length) : RE::NiPoint3{};
         };
 
-        // The solver's own contact point per finger, carried in object space, at the object's current pose.
-        const auto solvedOnObject = grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, objectWorld);
         static constexpr std::array<const char*, 3> kSegment{ "prox", "mid", "tip" };
         std::string fingers;
         for (std::size_t finger = 0; finger < rendered.fingers.size(); ++finger) {
@@ -741,17 +719,8 @@ namespace rock
             }
             const float openCap = finger == 0 ? g_rockConfig.rockGrabThumbSweepMaxOpenValue : g_rockConfig.rockGrabFingerSweepMaxOpenValue;
             const float curl = _grabFingerPose.values[finger];
-            // Rendered distal segment's closest approach to the solver's contact point: near 0 means the render follows the solve.
-            float tipToSolved = -1.0f;
-            if (solvedOnObject.surfaceAimTargetValid[finger]) {
-                tipToSolved = kNoSurface;
-                for (int sample = 0; sample <= 4; ++sample) {
-                    const RE::NiPoint3 offset = lerp(chain.points[2], tipEnd, sample / 4.0f) - solvedOnObject.surfaceAimTarget[finger];
-                    tipToSolved = (std::min)(tipToSolved, std::sqrt(offset.x * offset.x + offset.y * offset.y + offset.z * offset.z));
-                }
-            }
-            fingers += std::format(" f{}=[min={:.2f}@{} insideShell={}/12 curl={:.2f}{} hit={} tipToSolved={:.2f}]", finger, worst, kSegment[worstSegment], insideSamples,
-                curl, curl >= openCap - 0.01f ? "(openCap)" : "", static_cast<int>(_grabFingerPose.hitKind[finger]), tipToSolved);
+            fingers += std::format(" f{}=[min={:.2f}@{} insideShell={}/12 curl={:.2f}{} contact={}]", finger, worst, kSegment[worstSegment], insideSamples,
+                curl, curl >= openCap - 0.01f ? "(openCap)" : "", (_grabFingerPose.contactValidMask >> finger) & 1u);
         }
 
         // Palm centreline: wrist (visual hand origin) toward the knuckle midpoint.
@@ -800,13 +769,6 @@ namespace rock
         for (std::size_t f = 0; f < grab_pose_replay::kFingerCount; ++f) record.finalValues[f] = _grabFingerPose.values[f];
         record.finalJointValues = _grabFingerPose.jointValues;
         record.publishedJointValues = _grabFingerJointPose;
-        std::array<float, 5> splay{};
-        (void)grab_finger_pose_runtime::resolveSurfaceContactSplayValues(_isLeft, _grabFingerPose, splay);
-        record.publishedSplayRadians = splay;
-        record.publishedLocalTransformMask = _hasGrabFingerLocalTransforms ? _grabFingerLocalTransformMask : 0;
-        for (std::size_t bone = 0; bone < grab_pose_replay::kFingerBoneCount; ++bone) {
-            record.publishedLocalTransforms[bone] = toReplay(_grabFingerLocalTransforms[bone]);
-        }
         record.renderedObjectWorld = toReplay(renderedObjectWorld);
         record.renderedVisualHandWorld = toReplay(_grabVisualHandTransform);
         record.rendered = toReplay(rendered);

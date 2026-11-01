@@ -38,11 +38,6 @@ namespace rock::hand_grab_internal
     [[nodiscard]] RE::NiTransform deriveNodeWorldFromBodyWorld(
         const RE::NiTransform& bodyWorld,
         const RE::NiTransform& bodyLocalTransform);
-    // Moves a finger skeleton captured relative to sourceHandWorld onto targetHandWorld (the grab solve's rebase).
-    [[nodiscard]] bool rebaseGrabFingerSkeleton(
-        root_flattened_finger_skeleton_runtime::Snapshot& snapshot,
-        const RE::NiTransform& sourceHandWorld,
-        const RE::NiTransform& targetHandWorld);
     [[nodiscard]] RE::NiTransform reconstructBodyWorldFromProxyInBody(
         const RE::NiTransform& proxyWorld,
         const RE::NiMatrix3& proxyInBodyRotation,

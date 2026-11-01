@@ -88,10 +88,6 @@ namespace rock
          */
         inline constexpr std::uint32_t SCOPE_DRIVER_MISS_GRACE_FRAMES = 3;
         inline constexpr float SCOPE_ROOT_REBASE_DURATION_SECONDS = 0.075f;
-        inline constexpr float WEAPON_OPPOSITION_MAX_FINGER_GAP_GAME_UNITS =
-            24.0f;
-        inline constexpr float WEAPON_OPPOSITION_SEGMENT_PROBE_RADIUS_GAME_UNITS =
-            0.5f;
 
         inline const char* twoHandedStateDiagnosticName(
             const TwoHandedState state)
@@ -142,70 +138,6 @@ namespace rock
                 return "none";
             }
             return "unknown";
-        }
-
-        inline grab_pinch_pocket_policy::Config
-            currentWeaponOppositionPocketConfig()
-        {
-            return grab_pinch_pocket_policy::sanitizeConfig(
-                grab_pinch_pocket_policy::Config{
-                    .enabled =
-                        g_rockConfig.rockGrabPinchPocketEnabled,
-                    .maxVolumeCubicGameUnits =
-                        g_rockConfig.
-                            rockGrabPinchMaxVolumeCubicGameUnits,
-                    .maxPocketDistanceGameUnits =
-                        g_rockConfig.
-                            rockGrabPinchMaxPocketDistanceGameUnits,
-                    .minFingerGapGameUnits =
-                        g_rockConfig.
-                            rockGrabPinchMinFingerGapGameUnits,
-                    .maxFingerGapGameUnits =
-                        g_rockConfig.
-                            rockGrabPinchMaxFingerGapGameUnits,
-                    .thumbIndexMaxOpenValue =
-                        g_rockConfig.
-                            rockGrabPinchThumbIndexMaxOpenValue,
-                    .otherFingerCurlValue =
-                        g_rockConfig.
-                            rockGrabPinchOtherFingerCurlValue,
-                    .detectionDirectionHandspace =
-                        g_rockConfig.
-                            rockGrabPinchDetectionDirectionHandspace,
-                    .detectionAxisBlend =
-                        g_rockConfig.
-                            rockGrabPinchDetectionAxisBlend,
-                });
-        }
-
-        inline void applyStableWeaponOppositionPose(
-            grab_finger_pose_runtime::SolvedGrabFingerPose& pose,
-            const grab_pinch_pocket_policy::Config& config,
-            const std::size_t opposedFingerIndex)
-        {
-            const auto stable =
-                grab_pinch_pocket_policy::
-                    buildStableOppositionFingerPose(
-                        config,
-                        g_rockConfig.rockGrabFingerMinValue,
-                        opposedFingerIndex);
-            pose.values = stable.values;
-            pose.jointValues = stable.jointValues;
-            pose.surfaceAimTarget = {};
-            pose.surfaceAimNormal = {};
-            pose.surfaceAimTargetValid = {};
-            pose.surfaceAimNormalValid = {};
-            pose.surfaceAimTargetObjectLocal = {};
-            pose.surfaceAimNormalObjectLocal = {};
-            pose.surfaceAimTargetObjectLocalValid = {};
-            pose.surfaceAimNormalObjectLocalValid = {};
-            pose.contactArcRotationRadians = {};
-            pose.contactArcRotationValid = {};
-            pose.hasObjectLocalSurfaceAim = false;
-            pose.usedAlternateThumbCurve = false;
-            pose.usedAlternateThumbSurfaceHit = false;
-            pose.hasJointValues = true;
-            pose.solved = true;
         }
 
         /*
@@ -941,71 +873,6 @@ namespace rock
             return nullptr;
         }
 
-        inline bool buildFullHandLocalTransformsForMeshPose(
-            bool isLeft,
-            const grab_finger_pose_runtime::SolvedGrabFingerPose& meshFingerPose,
-            const frik_visual_authority::HandPoseData& handPose,
-            const DirectSkeletonBoneSnapshot* capturedFingerSnapshot,
-            std::array<RE::NiTransform, 15>& outLocalTransforms,
-            std::uint16_t& outMask)
-        {
-            auto* api = frik_visual_authority::api();
-            const bool canPublish =
-                grab_finger_local_transform_math::shouldPublishLocalTransformPose(
-                    g_rockConfig.rockGrabMeshLocalTransformPoseEnabled,
-                    meshFingerPose.solved,
-                    true,
-                    api && api->getHandPoseLocalTransformsForPose != nullptr,
-                    api && api->setHandPoseCustomLocalTransforms != nullptr);
-            if (!canPublish) {
-                ROCK_LOG_DEBUG(Weapon,
-                    "TwoHandedGrip: full-hand local transform override skipped hand={} enabled={} api={} baselineApi={} publishApi={}",
-                    isLeft ? "left" : "right",
-                    g_rockConfig.rockGrabMeshLocalTransformPoseEnabled ? "yes" : "no",
-                    api ? "yes" : "no",
-                    (api && api->getHandPoseLocalTransformsForPose) ? "yes" : "no",
-                    (api && api->setHandPoseCustomLocalTransforms) ? "yes" : "no");
-                return false;
-            }
-
-            frik_visual_authority::FingerLocalTransformOverride baseline{};
-            if (!frik_visual_authority::getHandPoseLocalTransformsForPose(handFromBool(isLeft), handPose, &baseline)) {
-                ROCK_LOG_WARN(Weapon, "TwoHandedGrip: full-hand local transform override failed hand={} reason=baseline-query", isLeft ? "left" : "right");
-                return false;
-            }
-
-            frik_visual_authority::FingerLocalTransformOverride corrected{};
-            const char* failureReason = "unknown";
-            if (!grab_finger_local_transform_runtime::buildSurfaceCorrectedLocalTransforms(isLeft,
-                    meshFingerPose,
-                    baseline,
-                    grab_finger_local_transform_runtime::Options{
-                        .enabled = g_rockConfig.rockGrabMeshLocalTransformPoseEnabled,
-                        .smoothingSpeed = g_rockConfig.rockGrabFingerLocalTransformSmoothingSpeed,
-                        .maxCorrectionDegrees = g_rockConfig.rockGrabFingerLocalTransformMaxCorrectionDegrees,
-                        .surfaceAimStrength = g_rockConfig.rockGrabFingerSurfaceAimStrength,
-                        .thumbOppositionStrength = g_rockConfig.rockGrabThumbOppositionStrength,
-                        .thumbAlternateCurveStrength = g_rockConfig.rockGrabThumbAlternateCurveStrength,
-                        .thumbSurfaceSafetyEnabled = g_rockConfig.rockGrabThumbSurfaceSafetyEnabled,
-                        .thumbSurfaceSafetyMarginGameUnits = g_rockConfig.rockGrabThumbSurfaceSafetyMarginGameUnits,
-                    },
-                    corrected,
-                    &failureReason,
-                    capturedFingerSnapshot)) {
-                ROCK_LOG_WARN(Weapon,
-                    "TwoHandedGrip: full-hand local transform override failed hand={} reason={}",
-                    isLeft ? "left" : "right",
-                    failureReason ? failureReason : "unknown");
-                return false;
-            }
-
-            outMask = corrected.enabledMask;
-            for (std::size_t i = 0; i < outLocalTransforms.size(); ++i) {
-                outLocalTransforms[i] = corrected.localTransforms[i];
-            }
-            return outMask == grab_finger_local_transform_math::kFullFingerLocalTransformMask;
-        }
-
         /*
          * The controller hand for this frame. Under FRIK API v2 the root
          * flattened bone shows ROCK's previous claim while one is active, so
@@ -1039,7 +906,6 @@ namespace rock
             DirectSkeletonBoneSnapshot capturedBones;
             SkeletonBoneNameIndex capturedBoneNames;
             std::vector<TriangleData> localTriangles;
-            std::vector<TriangleData> worldTriangles;
             grab_finger_pose_runtime::FingerPoseTriangleSpatialIndex spatialIndex;
         };
 

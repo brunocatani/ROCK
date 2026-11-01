@@ -1,21 +1,16 @@
 /*
  * Offline replay of bench grab records (GrabPoseReplay.h) through ROCK's own
- * finger-solve code. Two parity checks decide whether offline iteration can be
- * trusted, then a breakdown says where finger penetration comes from:
+ * capsule finger solve (GrabFingerCapsuleSweep.h).
  *
- *   solver parity  - replaying the recorded inputs through
- *                    solveFrozenMeshFingerPoseBase reproduces the recorded
- *                    curl values and hit kinds (a regression from captured
- *                    input; failing it fails the test).
- *   render parity  - forward kinematics of the published local transforms from
- *                    the rendered hand frame lands on the rendered bones the
- *                    game reported (reported, so a mismatch is visible
- *                    evidence, not a silent pass).
- *   breakdown      - signed centreline-to-mesh distance per finger for
- *                    (a) the rendered pose, (b) FRIK drawing the published
- *                    joint values alone, without ROCK's local-transform layer
- *                    (splay omitted). Comparing (a) and (b) separates the
- *                    solver's choice from the layer applied on top of it.
+ *   solver parity  - replaying the recorded inputs through the capsule solve
+ *                    reproduces the recorded curls and per-finger outcomes
+ *                    (a regression from captured input; failing it fails the
+ *                    test).
+ *   render parity  - FRIK forward kinematics of the published joint values
+ *                    from the published hand lands on the drawn bones the
+ *                    record holds (reported, so a mismatch is visible).
+ *   clearance      - worst skin clearance per finger of the drawn pose
+ *                    against the held mesh (0 = touching, < 0 = inside).
  *
  * Usage: ROCKGrabPoseReplayTests [record.json | directory]...  With no
  * arguments it replays tests/fixtures/grab_replay.
@@ -79,25 +74,6 @@ namespace
         return out;
     }
 
-    runtime::GrabFingerPoseTargetSet toTargets(const replay::PoseTargets& p)
-    {
-        runtime::GrabFingerPoseTargetSet out{};
-        for (std::size_t f = 0; f < 5; ++f) {
-            out.targets[f] = toNi(p.targets[f]);
-            out.targetNormals[f] = toNi(p.targetNormals[f]);
-            out.targetValid[f] = p.targetValid[f];
-            out.targetNormalValid[f] = p.targetNormalValid[f];
-        }
-        out.seatPointWorld = toNi(p.seatPoint);
-        out.seatNormalWorld = toNi(p.seatNormal);
-        out.seatPointValid = p.seatPointValid;
-        out.seatNormalValid = p.seatNormalValid;
-        out.useSeatPointForMissingTargets = p.useSeatPointForMissingTargets;
-        out.useWholeMeshForMissingTargets = p.useWholeMeshForMissingTargets;
-        out.targetCount = p.targetCount;
-        return out;
-    }
-
     struct LocalTriangle
     {
         RE::NiPoint3 v0{};
@@ -107,7 +83,6 @@ namespace
 
     float length(const RE::NiPoint3& v) { return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z); }
 
-    // FRIK's forward model, shared with the prototype solver (GrabFingerCapsuleSweep.h).
     capsule::FrikFingerRig rigFor(const replay::Record& r)
     {
         std::array<RE::NiTransform, 15> closed{}, open{};
@@ -123,21 +98,19 @@ namespace
         std::array<RE::NiPoint3, 4> joints{}; // three bone origins and the tip end
     };
 
-    // Distal tip length from the rendered skeleton: twice the tip-segment centre offset.
-    float tipLength(const replay::FingerChain& rendered)
+    float tipLength(const replay::FingerChain& chain)
     {
-        if (!rendered.tipGeometryValid) return 0.0f;
-        return 2.0f * length(toNi(rendered.tipSegmentCenter) - toNi(rendered.points[2]));
+        if (!chain.tipGeometryValid) return 0.0f;
+        return 2.0f * length(toNi(chain.tipSegmentCenter) - toNi(chain.points[2]));
     }
 
-    template <class LocalOf>
-    std::array<FingerPose, 5> forwardKinematics(const replay::Record& r, const RE::NiTransform& hand, LocalOf&& localOf)
+    std::array<FingerPose, 5> forwardKinematics(const replay::Record& r, const capsule::FrikFingerRig& rig, const RE::NiTransform& hand)
     {
         std::array<FingerPose, 5> out{};
         for (std::size_t f = 0; f < 5; ++f) {
             RE::NiTransform parent = hand;
             for (std::size_t s = 0; s < 3; ++s) {
-                parent = rock::transform_math::composeTransforms(parent, localOf(f * 3 + s));
+                parent = rock::transform_math::composeTransforms(parent, rig.boneLocal(f * 3 + s, r.publishedJointValues[f * 3 + s]));
                 out[f].joints[s] = parent.translate;
             }
             out[f].joints[3] = parent.translate + rock::transform_math::localVectorToWorld(parent, RE::NiPoint3{ tipLength(r.rendered.fingers[f]), 0.0f, 0.0f });
@@ -145,7 +118,7 @@ namespace
         return out;
     }
 
-    std::array<FingerPose, 5> renderedPose(const replay::Record& r)
+    std::array<FingerPose, 5> drawnPose(const replay::Record& r)
     {
         std::array<FingerPose, 5> out{};
         for (std::size_t f = 0; f < 5; ++f) {
@@ -158,7 +131,7 @@ namespace
 
     // Worst skin clearance per finger: signed centreline distance (negative inside, by outward winding) minus
     // that bone's capsule radius. 0 = touching, negative = visibly inside, 12 samples per finger.
-    std::array<float, 5> penetration(const std::array<FingerPose, 5>& pose, const runtime::FingerPoseTriangleSpatialIndex& index, const RE::NiTransform& objectWorld)
+    std::array<float, 5> clearance(const std::array<FingerPose, 5>& pose, const runtime::FingerPoseTriangleSpatialIndex& index, const RE::NiTransform& objectWorld)
     {
         const capsule::CapsuleRadii radii{};
         std::array<float, 5> worst{};
@@ -200,141 +173,73 @@ namespace
         const auto& r = *parsed;
         std::printf("== %s  %s %s (%s, %s)\n", path.filename().string().c_str(), r.objectName.c_str(), r.isLeft ? "left" : "right", r.acquisition.c_str(),
             r.gripSource.c_str());
+        if (!r.frikRigValid) {
+            std::printf("FAIL: record has no FRIK rig\n");
+            return false;
+        }
 
         std::vector<LocalTriangle> triangles;
         for (std::size_t i = 0; i + 8 < r.trianglesObjectLocal.size(); i += 9) {
             const float* t = &r.trianglesObjectLocal[i];
             triangles.push_back({ { t[0], t[1], t[2] }, { t[3], t[4], t[5] }, { t[6], t[7], t[8] } });
         }
-
-        // Solver parity.
-        runtime::FrozenMeshFingerPoseSolveOptions options{
-            .minValue = r.options.minValue,
-            .maxTriangleDistanceSquared = r.options.maxTriangleDistanceSquared,
-            .rejectBacksideHits = r.options.rejectBacksideHits,
-            .surfacePlaneToleranceGameUnits = r.options.surfacePlaneToleranceGameUnits,
-            .allowSurfaceAimTargets = r.options.allowSurfaceAimTargets,
-            .sweepContactRadiusGameUnits = r.options.sweepContactRadiusGameUnits,
-            .thumbSweepMaxOpenValue = r.options.thumbSweepMaxOpenValue,
-            .fingerSweepMaxOpenValue = r.options.fingerSweepMaxOpenValue,
-            .mode = static_cast<runtime::FingerPoseMode>(r.options.mode),
-        };
-        const auto snapshot = toSnapshot(r.solveSkeleton);
-        std::array<RE::NiPoint3, 5> openDirections{};
-        for (std::size_t f = 0; f < 5; ++f) openDirections[f] = toNi(r.commandedOpenDirectionsWorld[f]);
-        runtime::FingerPoseTriangleSpatialIndex solveIndex{};
-        std::vector<rock::TriangleData> scratch;
-        const auto solve = runtime::solveFrozenMeshFingerPoseBase(triangles, toNi(r.solveObjectWorld), toNi(r.solveHandWorld), r.isLeft, toNi(r.grabAnchorWorld),
-            toTargets(r.targets), solveIndex, scratch, options, &snapshot, r.commandedOpenDirectionsValid ? &openDirections : nullptr);
-        bool solverParity = true;
-        std::array<float, 5> replayed{};
-        for (std::size_t f = 0; f < 5; ++f) {
-            replayed[f] = solve.pose.values[f];
-            solverParity = solverParity && std::fabs(replayed[f] - r.solvedValues[f]) <= 1e-4f && static_cast<int>(solve.pose.hitKind[f]) == r.solvedHitKind[f];
-        }
-        std::printf("  solver parity: %s  recorded [%s]  replayed [%s]\n", solverParity ? "OK" : "MISMATCH", row(r.solvedValues).c_str(), row(replayed).c_str());
-
-        // Render parity: published local transforms from the rendered hand frame.
-        const auto rig = rigFor(r);
-        const RE::NiTransform hand = toNi(r.renderedVisualHandWorld);
-        const auto rendered = renderedPose(r);
-        const auto published = forwardKinematics(r, hand, [&](std::size_t bone) {
-            return (r.publishedLocalTransformMask >> bone) & 1u ? toNi(r.publishedLocalTransforms[bone]) : rig.boneLocal(bone, r.publishedJointValues[bone]);
-        });
-        std::array<float, 5> renderError{};
-        for (std::size_t f = 0; f < 5; ++f) {
-            for (std::size_t s = 0; s < 3; ++s) renderError[f] = (std::max)(renderError[f], length(published[f].joints[s] - rendered[f].joints[s]));
-        }
-        // A uniform error is a hand-frame offset, not a pose error: remove the mean offset and see what is left.
-        RE::NiPoint3 meanOffset{};
-        for (std::size_t f = 0; f < 5; ++f) {
-            for (std::size_t s = 0; s < 3; ++s) meanOffset = meanOffset + (rendered[f].joints[s] - published[f].joints[s]) * (1.0f / 15.0f);
-        }
-        std::array<float, 5> residual{};
-        for (std::size_t f = 0; f < 5; ++f) {
-            for (std::size_t s = 0; s < 3; ++s) residual[f] = (std::max)(residual[f], length(published[f].joints[s] + meanOffset - rendered[f].joints[s]));
-        }
-        const float worstResidual = *std::max_element(residual.begin(), residual.end());
-        std::printf("  render parity: %s  hand-frame offset %.2f gu, residual after removing it [%s] gu\n", worstResidual <= 0.25f ? "OK" : "MISMATCH",
-            length(meanOffset), row(residual).c_str());
-
         runtime::FingerPoseTriangleSpatialIndex index{};
         if (!index.buildFromLocalTriangles(triangles)) {
-            std::printf("  breakdown skipped: mesh index failed\n");
-            return solverParity;
+            std::printf("FAIL: mesh index build failed\n");
+            return false;
         }
-        const RE::NiTransform objectWorld = toNi(r.renderedObjectWorld);
-        // Rendered hand bone: from the measured offset, and as the prototype recovers it from finger bases.
-        // Drawn hand bone = ROCK's published hand (latched AfterWorldFinal wrist: 0.00 gu). The in-frame skeleton is stale.
-        const RE::NiTransform drawnHandBone = hand;
-        const auto renderedSnapshot = toSnapshot(r.rendered);
-        const RE::NiTransform recoveredHandBone = capsule::resolveHandBoneWorld(hand, renderedSnapshot, rig);
-        const auto jointsOnly = forwardKinematics(r, drawnHandBone, [&](std::size_t bone) { return rig.boneLocal(bone, r.publishedJointValues[bone]); });
 
-        // Prototype: capsule sweep on FRIK kinematics, solved in the same frozen relation as the current solve.
-        std::array<float, 5> tipLengths{};
-        for (std::size_t f = 0; f < 5; ++f) tipLengths[f] = tipLength(r.solveSkeleton.fingers[f]);
-        const RE::NiTransform solveHandBone = capsule::resolveHandBoneWorld(toNi(r.solveHandWorld), snapshot, rig);
-        const capsule::Options capsuleOptions{
+        // Solver parity: the shipped solve on the recorded inputs.
+        const auto rig = rigFor(r);
+        const auto solveSkeleton = toSnapshot(r.solveSkeleton);
+        const capsule::Options options{
             .minValue = r.options.minValue,
-            .fingerMaxOpenValue = r.options.fingerSweepMaxOpenValue,
-            .thumbMaxOpenValue = r.options.thumbSweepMaxOpenValue,
+            .fingerMaxOpenValue = r.options.fingerMaxOpenValue,
+            .thumbMaxOpenValue = r.options.thumbMaxOpenValue,
+            .step = r.options.step,
         };
-        const auto capsuleSolve = capsule::solve(rig, solveHandBone, tipLengths, index, toNi(r.solveObjectWorld), capsuleOptions);
-        const auto capsulePose = forwardKinematics(r, drawnHandBone, [&](std::size_t bone) { return rig.boneLocal(bone, capsuleSolve.jointValues[bone]); });
+        const auto solve = capsule::solveForHand(rig, toNi(r.solveHandWorld), solveSkeleton, index, toNi(r.solveObjectWorld), options);
+        bool solverParity = true;
+        for (std::size_t f = 0; f < 5; ++f) {
+            solverParity = solverParity && std::fabs(solve.values[f] - r.solvedValues[f]) <= 1e-4f &&
+                solve.fingers[f].contact == (r.solvedContact[f] != 0) && solve.fingers[f].openedToClear == (r.solvedOpenedToClear[f] != 0) &&
+                solve.fingers[f].blocked == (r.solvedBlocked[f] != 0);
+        }
+        std::printf("  solver parity: %s  recorded [%s]  replayed [%s]\n", solverParity ? "OK" : "MISMATCH", row(r.solvedValues).c_str(), row(solve.values).c_str());
 
-        // Cost per solve, both including their mesh index build, as at grab time.
+        // Render parity: FRIK forward kinematics of the published joint values from the published hand.
+        const RE::NiTransform hand = toNi(r.renderedVisualHandWorld);
+        const auto drawn = drawnPose(r);
+        const auto published = forwardKinematics(r, rig, capsule::resolveHandBoneWorld(hand, toSnapshot(r.rendered), rig));
+        std::array<float, 5> renderError{};
+        for (std::size_t f = 0; f < 5; ++f) {
+            for (std::size_t s = 0; s < 3; ++s) renderError[f] = (std::max)(renderError[f], length(published[f].joints[s] - drawn[f].joints[s]));
+        }
+        const float worstRender = *std::max_element(renderError.begin(), renderError.end());
+        std::printf("  render parity: %s  published vs drawn joints [%s] gu\n", worstRender <= 0.25f ? "OK" : "MISMATCH", row(renderError).c_str());
+        if (r.presentedHandValid) {
+            std::printf("  drawn hand bone (AfterWorldFinal) vs published hand: %.2f gu\n", length(toNi(r.presentedHandWorld.translate) - hand.translate));
+        }
+
+        std::array<float, 5> flags{};
+        for (std::size_t f = 0; f < 5; ++f) {
+            const auto& fr = solve.fingers[f];
+            flags[f] = fr.blocked ? -1.0f : (fr.openedToClear ? 2.0f : (fr.contact ? 1.0f : 0.0f));
+        }
         constexpr int kRuns = 40;
         const auto t0 = std::chrono::steady_clock::now();
         for (int i = 0; i < kRuns; ++i) {
             runtime::FingerPoseTriangleSpatialIndex timedIndex{};
-            std::vector<rock::TriangleData> timedScratch;
-            (void)runtime::solveFrozenMeshFingerPoseBase(triangles, toNi(r.solveObjectWorld), toNi(r.solveHandWorld), r.isLeft, toNi(r.grabAnchorWorld),
-                toTargets(r.targets), timedIndex, timedScratch, options, &snapshot, r.commandedOpenDirectionsValid ? &openDirections : nullptr);
-        }
-        const auto t1 = std::chrono::steady_clock::now();
-        for (int i = 0; i < kRuns; ++i) {
-            runtime::FingerPoseTriangleSpatialIndex timedIndex{};
             (void)timedIndex.buildFromLocalTriangles(triangles);
-            (void)capsule::solve(rig, solveHandBone, tipLengths, timedIndex, toNi(r.solveObjectWorld), capsuleOptions);
+            (void)capsule::solveForHand(rig, toNi(r.solveHandWorld), solveSkeleton, timedIndex, toNi(r.solveObjectWorld), options);
         }
-        const auto t2 = std::chrono::steady_clock::now();
-        const auto ms = [&](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count() / kRuns; };
+        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / kRuns;
 
-        std::array<float, 5> capsuleFlags{};
-        for (std::size_t f = 0; f < 5; ++f) {
-            const auto& fr = capsuleSolve.fingers[f];
-            capsuleFlags[f] = fr.blocked ? -1.0f : (fr.openedToClear ? 2.0f : (fr.contact ? 1.0f : 0.0f));
-        }
-        std::printf("  in-frame skeleton hand bone vs drawn hand bone: %.2f gu (stale read)\n", length(recoveredHandBone.translate - drawnHandBone.translate));
-        if (r.presentedHandValid) {
-            // The drawn hand bone (AfterWorldFinal) against ROCK's published hand and against the in-frame skeleton's hand bone.
-            const RE::NiPoint3 presented = toNi(r.presentedHandWorld.translate);
-            std::printf("  drawn hand bone (AfterWorldFinal): %.2f gu from ROCK's published hand, %.2f gu from the in-frame skeleton's hand bone\n",
-                length(presented - hand.translate), length(presented - recoveredHandBone.translate));
-        } else {
-            std::printf("  drawn hand bone (AfterWorldFinal): not in this record\n");
-        }
-        // Did the object stay where the solve put it relative to the hand? Object in hand-bone space, solve versus render.
-        {
-            const RE::NiTransform atSolve = rock::transform_math::composeTransforms(rock::transform_math::invertTransform(solveHandBone), toNi(r.solveObjectWorld));
-            const RE::NiTransform atRender = rock::transform_math::composeTransforms(rock::transform_math::invertTransform(recoveredHandBone), objectWorld);
-            const RE::NiMatrix3 delta = atSolve.rotate.Transpose() * atRender.rotate;
-            const float cosAngle = std::clamp((delta.entry[0][0] + delta.entry[1][1] + delta.entry[2][2] - 1.0f) * 0.5f, -1.0f, 1.0f);
-            const RE::NiPoint3 seatHandLocal = rock::transform_math::worldPointToLocal(solveHandBone, toNi(r.grabAnchorWorld));
-            std::printf("  object drift in hand space, solve -> render: %.2f gu, %.1f deg (grip anchor at hand-local %.1f %.1f %.1f)\n",
-                length(atRender.translate - atSolve.translate), std::acos(cosAngle) * 57.2958f, seatHandLocal.x, seatHandLocal.y, seatHandLocal.z);
-        }
-        std::printf("  skin clearance (gu, 0 = touching, <0 = inside)          thumb  index middle  ring  pinky\n");
-        std::printf("    current: drawn (FK of published transforms)          [%s]\n", row(penetration(published, index, objectWorld)).c_str());
-        std::printf("    current: joint values only (no local layer)         [%s]\n", row(penetration(jointsOnly, index, objectWorld)).c_str());
-        std::printf("    current: curl                                       [%s]\n", row(r.solvedValues).c_str());
-        std::printf("    capsule: clearance                                  [%s]\n", row(penetration(capsulePose, index, objectWorld)).c_str());
-        std::printf("    capsule: curl                                       [%s]\n", row(capsuleSolve.values).c_str());
-        std::printf("    capsule: 1 contact, 2 opened to clear, 0 miss, -1 blocked [%s]\n", row(capsuleFlags).c_str());
-        std::printf("  cost per solve: current %.3f ms, capsule %.3f ms (%u sphere queries, %u triangle tests)\n", ms(t0, t1), ms(t1, t2),
-            capsuleSolve.sphereQueries, capsuleSolve.stats.triangleTests);
-
+        std::printf("  skin clearance (gu, 0 = touching, <0 = inside)   thumb  index middle  ring  pinky\n");
+        std::printf("    drawn pose                                    [%s]\n", row(clearance(drawn, index, toNi(r.renderedObjectWorld))).c_str());
+        std::printf("    curl                                          [%s]\n", row(r.finalValues).c_str());
+        std::printf("    1 contact, 2 opened to clear, 0 miss, -1 blocked [%s]\n", row(flags).c_str());
+        std::printf("  cost per solve incl. index build: %.3f ms (%u sphere queries, %u triangle tests)\n", ms, solve.sphereQueries, solve.stats.triangleTests);
         return solverParity;
     }
 }

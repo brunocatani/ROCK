@@ -87,7 +87,6 @@ namespace rock::performance_profiler
         GrabSurfaceResolution,
         GrabFingerSolve,
         GrabFingerIndexBuild,
-        GrabFingerPadProbes,
         NativePhysicsUpdate,
         NativePhysicsCollideInterval,
         NativePhysicsSolveInterval,

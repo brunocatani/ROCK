@@ -2650,14 +2650,17 @@ namespace rock
     void TwoHandedGrip::setSupportGripPose(
         bool isLeft,
         const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPose,
-        const std::array<float, 5>* capturedSplayRadians,
         const SupportGripPoseFallback fallback)
     {
         WeaponPartGrip& grip = partGrip(isLeft);
         if (meshFingerPose && meshFingerPose->solved) {
+            // Mesh poses are FRIK joint values only: no splay, no per-bone local transforms.
             grip.fingerPose = meshFingerPose->hasJointValues ? meshFingerPose->jointValues : grab_finger_pose_math::expandFingerCurlsToJointValues(meshFingerPose->values);
-            grip.fingerSplayRadians = capturedSplayRadians ? *capturedSplayRadians : std::array<float, 5>{};
-            grip.hasFingerSplay = capturedSplayRadians != nullptr;
+            grip.fingerSplayRadians = {};
+            grip.hasFingerSplay = false;
+            grip.fingerLocalTransforms = {};
+            grip.fingerLocalTransformMask = 0;
+            grip.hasFingerLocalTransforms = false;
             grip.hasFingerPose = true;
             return;
         }
@@ -3218,7 +3221,7 @@ namespace rock
             grip.hasHandWeaponLocal = true;
             grip.authoredSupportGrip = true;
             grip.authoredRole = loose_weapon_authored_grab_policy::Role::Firing;
-            setSupportGripPose(isLeft, nullptr, nullptr);
+            setSupportGripPose(isLeft, nullptr);
             grip.fingerLocalTransforms = isLeft ? _firing.leftFingerLocalTransforms : _firing.rightFingerLocalTransforms;
             grip.fingerLocalTransformMask = isLeft ? _firing.leftFingerLocalTransformMask : _firing.rightFingerLocalTransformMask;
             // FRIK publication honours the joint mask, so a partial authored pose
@@ -3469,7 +3472,7 @@ namespace rock
 
             // hFRIK requires the role-tagged numeric pose to exist before the
             // exact per-joint local override can win at the same priority.
-            setSupportGripPose(isLeft, nullptr, nullptr);
+            setSupportGripPose(isLeft, nullptr);
             grip.fingerLocalTransforms =
                 authoredSupportFingerLocalTransforms;
             grip.fingerLocalTransformMask =
@@ -3646,9 +3649,6 @@ namespace rock
         constexpr float kDegreesToRadians =
             0.01745329251994329577f;
         const float surfaceSeatMaxRadians =
-            grab_finger_pose_runtime::weaponGrabPoseMode(
-                g_rockConfig.rockWeaponGrabPoseMode, g_rockConfig.rockGrabFingerPoseMode) !=
-                    grab_finger_pose_runtime::FingerPoseMode::July9 &&
             g_rockConfig.rockWeaponSupportSurfaceSeatEnabled && meshFound ?
             g_rockConfig.rockWeaponSupportSurfaceSeatMaxDegrees *
                 kDegreesToRadians :
