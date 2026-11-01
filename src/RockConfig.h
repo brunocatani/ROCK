@@ -50,6 +50,7 @@ namespace rock
         float rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::kDefaultHoldSeconds;
         int rockFarGrabMode = static_cast<int>(far_pull_gesture::Mode::Immediate);
         bool rockGrabInputIntentStateEnabled = true;
+        bool rockLootToHand = true;
         float rockGrabInputLeewaySeconds = 0.12f;
         float rockGrabInputForceSeconds = 0.08f;
         // [Controls] physical source of each logical button, per hand (left, right).

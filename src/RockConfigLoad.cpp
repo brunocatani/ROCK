@@ -342,6 +342,7 @@ namespace rock
         rockButtonLayouts[1] = readButtonLayout(ini, CONTROLS_SECTION, false, rockButtonLayouts[1]);
         rockFarGrabMode = far_pull_gesture::sanitizeMode(static_cast<int>(ini.GetLongValue(GRABBING_SECTION, "iFarGrabMode", rockFarGrabMode)));
         rockGrabInputIntentStateEnabled = ini.GetBoolValue(GRABBING_SECTION, "bGrabInputIntentStateEnabled", rockGrabInputIntentStateEnabled);
+        rockLootToHand = ini.GetBoolValue(GRABBING_SECTION, "bLootToHand", rockLootToHand);
         rockGrabInputLeewaySeconds = static_cast<float>(ini.GetDoubleValue(GRABBING_SECTION, "fGrabInputLeewaySeconds", rockGrabInputLeewaySeconds));
         if (!std::isfinite(rockGrabInputLeewaySeconds) || rockGrabInputLeewaySeconds < 0.0f) {
             ROCK_LOG_WARN(Config, "Invalid fGrabInputLeewaySeconds={} -- using 0.12", rockGrabInputLeewaySeconds);

@@ -520,6 +520,7 @@ namespace rock
         bool isPendingForceGrabTarget(RE::TESObjectREFR* ref) const;
         void pruneInactiveProviderForceGrabCommits();
         void serviceLooseGrenadeQuickDraw(const PhysicsFrameContext& frame);
+        void serviceLootToHand(const PhysicsFrameContext& frame);
         void servicePendingForceGrabCommits(const PhysicsFrameContext& frame);
         void clearPendingForceGrabCommits();
         void cancelEquippedWeaponTransfersForMenu();

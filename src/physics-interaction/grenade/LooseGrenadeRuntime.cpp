@@ -378,6 +378,52 @@ namespace rock::loose_grenade_runtime
         return dropInventoryStackToWorld(*player, object, chosenStack, dropLocation);
     }
 
+    DropResult dropLootedItemToWorld(std::uint32_t baseFormId, std::uint16_t uniqueId, const RE::NiPoint3& dropLocation)
+    {
+        DropResult result{};
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        auto* form = RE::TESForm::GetFormByID(baseFormId);
+        auto* object = form ? form->As<RE::TESBoundObject>() : nullptr;
+        auto* model = object ? object->As<RE::TESModel>() : nullptr;
+        const char* modelPath = model ? model->GetModel() : nullptr;
+        if (!player || !player->inventoryList || !object || !object->GetPlayable(object->GetBaseInstanceData()) ||
+            !modelPath || !*modelPath) {
+            result.reason = "unsupported-inventory-item";
+            return result;
+        }
+        std::uint32_t chosenStack = kInvalidStackId;
+        {
+            const RE::BSAutoReadLock lock{ player->inventoryList->rwLock };
+            std::uint32_t scanned = 0;
+            for (const auto& entry : player->inventoryList->data) {
+                if (++scanned > 16384) {
+                    break;
+                }
+                if (entry.object != object) {
+                    continue;
+                }
+                std::uint32_t stackId = 0;
+                for (auto* stack = entry.stackData.get(); stack && stackId < 4096; stack = stack->nextStack.get(), ++stackId) {
+                    if (stack->GetCount() <= 0) {
+                        continue;
+                    }
+                    const auto* extra = stack->extra.get();
+                    const auto* tag = extra ? extra->GetByType<RE::ExtraUniqueID>() : nullptr;
+                    if (uniqueId == 0 || (tag && tag->uniqueID == uniqueId)) {
+                        chosenStack = stackId;
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+        if (chosenStack == kInvalidStackId) {
+            result.reason = "item-no-longer-owned";
+            return result;
+        }
+        return dropInventoryStackToWorld(*player, object, chosenStack, dropLocation);
+    }
+
     DropResult dropEquippedThrowableToWorld(const RE::NiPoint3& dropLocation)
     {
         DropResult result{};

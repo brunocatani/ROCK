@@ -1,4 +1,5 @@
 #include "api/GrabEventCallbacks.h"
+#include "physics-interaction/core/interaction/LootToHand.h"
 #include "api/AuthoredInteractionService.h"
 #include "api/ProviderRuntimeServices.h"
 #include "api/StorageService.h"
@@ -718,6 +719,7 @@ namespace rock
         _frame.gripZoneIndicatorFrameIndex = 0;
         _frame.poseFrameIndex = 0;
         ensureWeaponCollisionWorkbenchExitMenuSinkRegistered();
+        loot_to_hand::ensureRegistered();
 
         _equipped.shoulderGestureConsumedThisFrame = {};
         _equipped.toggleGrabReleasePressConsumedThisFrame = {};
