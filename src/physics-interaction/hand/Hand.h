@@ -11,7 +11,7 @@
 #include "physics-interaction/weapon/WeaponGripTransfer.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/grab/GrabOffsetAcquisition.h"
-#include "physics-interaction/grab/GrabFinger.h"
+#include "physics-interaction/grab/GrabFingerCapsuleSweep.h"
 #include "physics-interaction/grab/GrabTelemetry.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/grab/GrabAuthoritySourceClockResampler.h"
@@ -454,52 +454,6 @@ namespace rock
         bool getGrabPresentationNodeDebugSnapshot(GrabPresentationNodeDebugSnapshot& out) const;
         bool getGrabSupportFrameDebugSnapshot(RE::hknpWorld* world, GrabSupportFrameDebugSnapshot& out) const;
         bool getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, GrabForceTorqueDebugSnapshot& out) const;
-        bool getGrabFingerSweepDebugSnapshot(grab_finger_pose_runtime::FingerSweepDebugSnapshot& out) const
-        {
-            if (!_hasGrabFingerSweepDebug || !_grabFingerSweepDebugCapture.valid) {
-                return false;
-            }
-            out.capture = _grabFingerSweepDebugCapture;
-            out.objectWorld = _grabFingerSweepDebugObjectWorld;
-            out.valid = true;
-            return true;
-        }
-
-        bool getGrabFingerProbeDebug(std::array<RE::NiPoint3, 5>& outStart, std::array<RE::NiPoint3, 5>& outEnd) const
-        {
-            if (!_hasGrabFingerProbeDebug)
-                return false;
-            outStart = _grabFingerProbeStart;
-            outEnd = _grabFingerProbeEnd;
-            return true;
-        }
-
-        bool getGrabFingerPadProbeDebug(
-            std::array<RE::NiPoint3, 5>& outStart,
-            std::array<RE::NiPoint3, 5>& outEnd,
-            std::array<RE::NiPoint3, 5>& outHit,
-            std::array<std::uint8_t, 5>& outHitValid) const
-        {
-            if (!_hasGrabFingerPadProbeDebug)
-                return false;
-            outStart = _grabFingerPadProbeStart;
-            outEnd = _grabFingerPadProbeEnd;
-            outHit = _grabFingerPadProbeHit;
-            outHitValid = _grabFingerPadProbeHitValid;
-            return true;
-        }
-
-        bool getGrabFingerSurfaceTargetDebug(
-            std::array<RE::NiPoint3, 5>& outTarget,
-            std::array<std::uint8_t, 5>& outTargetValid) const
-        {
-            if (!_hasGrabFingerSurfaceTargetDebug)
-                return false;
-            outTarget = _grabFingerSurfaceTarget;
-            outTargetValid = _grabFingerSurfaceTargetValid;
-            return true;
-        }
-
         GrabAttemptResult grabSelectedObject(RE::hknpWorld* world,
             const RE::NiTransform& handWorldTransform,
             float tau,
@@ -888,10 +842,9 @@ namespace rock
         void solveAndPublishGrabFingerPose(const GrabFingerSolveFrame& frame);
         void beginGrabPoseReplay(const GrabFingerSolveFrame& frame,
             const std::vector<GrabLocalTriangle>& localTriangles,
-            const grab_finger_pose_runtime::GrabFingerPoseTargetSet& targets,
             const root_flattened_finger_skeleton_runtime::Snapshot& solveSkeleton,
-            const grab_finger_pose_runtime::FrozenMeshFingerPoseSolveResult& solve,
-            const grab_finger_pose_runtime::FrozenMeshFingerPoseSolveOptions& options);
+            const grab_finger_capsule_sweep::Result& solve,
+            const grab_finger_capsule_sweep::Options& options);
 
         HandTransitionResult applyTransition(const HandTransitionRequest& request);
 
@@ -1310,30 +1263,13 @@ namespace rock
         RE::NiTransform _grabVisualHandLerpStartTransform{};
         float _grabVisualHandLerpElapsedSeconds = 0.0f;
         float _grabVisualHandLerpDurationSeconds = 0.0f;
-        std::array<RE::NiPoint3, 5> _grabFingerProbeStart{};
-        std::array<RE::NiPoint3, 5> _grabFingerProbeEnd{};
-        bool _hasGrabFingerProbeDebug = false;
-        grab_finger_pose_runtime::FingerSweepDebugCapture _grabFingerSweepDebugCapture{};
-        RE::NiTransform _grabFingerSweepDebugObjectWorld{};
-        bool _hasGrabFingerSweepDebug = false;
-        std::array<RE::NiPoint3, 5> _grabFingerPadProbeStart{};
-        std::array<RE::NiPoint3, 5> _grabFingerPadProbeEnd{};
-        std::array<RE::NiPoint3, 5> _grabFingerPadProbeHit{};
-        std::array<std::uint8_t, 5> _grabFingerPadProbeHitValid{};
-        bool _hasGrabFingerPadProbeDebug = false;
-        std::array<RE::NiPoint3, 5> _grabFingerSurfaceTarget{};
-        std::array<std::uint8_t, 5> _grabFingerSurfaceTargetValid{};
-        bool _hasGrabFingerSurfaceTargetDebug = false;
         std::array<float, 15> _grabFingerJointPose{};
         std::array<RE::NiTransform, 15> _grabFingerLocalTransforms{};
         std::uint16_t _grabFingerLocalTransformMask = 0;
         grab_finger_pose_runtime::SolvedGrabFingerPose _grabFingerPose{};
-        unsigned _legacyFingerPoseUpdates = 0;
-        float _legacyFingerPoseDeltaTime = 0.0f;
         grab_finger_pose_runtime::FingerPoseTriangleSpatialIndex _grabFingerTriangleIndex{};
         bool _hasGrabFingerJointPose = false;
         bool _hasGrabFingerLocalTransforms = false;
-        bool _grabFingerLocalTransformFinalizePending = false;
         // Bench-only pose metric: held updates left until the settled grab is measured once (-1 = none).
         int _grabPoseQualityUpdatesRemaining = -1;
         // Bench-only replay record: solve half filled at the finger solve, completed and written with the metric.
