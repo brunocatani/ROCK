@@ -58,7 +58,7 @@ namespace rock::native_equipped_model_lifetime
             std::uint32_t pruned = 0, rejected = 0, unreadable = 0;
             // Ownership sets, built once before the native call. The native
             // connection search visits every node of the biped tree; walking
-            // each node's parents with guarded (VirtualQuery) reads per
+            // each node's parents with guarded page-checked reads per
             // protected model cost ~190 ms per replacement equip (runtime
             // 12 Oct 22:34:33 and 22:35:43). Sorted for binary search.
             // inside:    every node in a protected boundary's subtree.

@@ -35,8 +35,7 @@ namespace rock::performance_profiler
             std::atomic<std::uint64_t> maxTicks{ 0 };
             std::atomic<std::uint64_t> samples{ 0 };
             std::atomic<std::uint64_t> events{ 0 };
-            std::array<std::atomic<std::uint64_t>, 3> memoryQueries{};
-            std::atomic<std::uint64_t> memoryQueryFailures{ 0 };
+            std::array<std::atomic<std::uint64_t>, 2> memoryQueries{};
             std::atomic<std::uint64_t> memoryQueryTimedSamples{ 0 };
             std::atomic<std::uint64_t> memoryQueryTotalTicks{ 0 };
             std::atomic<std::uint64_t> memoryQueryMaxTicks{ 0 };
@@ -581,7 +580,6 @@ namespace rock::performance_profiler
                 slot.samples.store(0, std::memory_order_release);
                 slot.events.store(0, std::memory_order_release);
                 for (auto& count : slot.memoryQueries) count.store(0, std::memory_order_relaxed);
-                slot.memoryQueryFailures.store(0, std::memory_order_relaxed);
                 slot.memoryQueryTimedSamples.store(0, std::memory_order_relaxed);
                 slot.memoryQueryTotalTicks.store(0, std::memory_order_relaxed);
                 slot.memoryQueryMaxTicks.store(0, std::memory_order_relaxed);
@@ -721,8 +719,7 @@ namespace rock::performance_profiler
 
         struct MemoryQueryTotals
         {
-            std::array<std::uint64_t, 3> calls{};
-            std::uint64_t apiFailures{ 0 };
+            std::array<std::uint64_t, 2> calls{};
             std::uint64_t timedSamples{ 0 };
             std::uint64_t totalTicks{ 0 };
             std::uint64_t maxTicks{ 0 };
@@ -738,10 +735,10 @@ namespace rock::performance_profiler
             MemoryQueryTotals memory{};
 
             // Concurrent queries can straddle the individual atomic exchanges
-            // at a window boundary. Retain timing/failure-only tails as well.
+            // at a window boundary. Retain timing-only tails as well.
             [[nodiscard]] bool hasQueries() const noexcept
             {
-                return memory.calls[0] || memory.calls[1] || memory.calls[2] || memory.apiFailures || memory.timedSamples;
+                return memory.calls[0] || memory.calls[1] || memory.timedSamples;
             }
             [[nodiscard]] bool hasData() const noexcept { return samples > 0 || events > 0 || hasQueries(); }
             [[nodiscard]] double totalMs() const noexcept { return ticksToMilliseconds(totalTicks); }
@@ -963,8 +960,8 @@ namespace rock::performance_profiler
                         if (item.hasQueries()) {
                             const auto& query = item.memory;
                             logger->info(
-                                "[ROCK::Performance] Profiler memory {}: readQueries={} writeQueries={} executeQueries={} apiFailures={} timedQueries={} sampledAvgUs={:.3f} sampledMaxUs={:.3f} sampledTotalUs={:.3f}",
-                                scopeName(item.scope), query.calls[0], query.calls[1], query.calls[2], query.apiFailures,
+                                "[ROCK::Performance] Profiler memory {}: readQueries={} writeQueries={} timedQueries={} sampledAvgUs={:.3f} sampledMaxUs={:.3f} sampledTotalUs={:.3f}",
+                                scopeName(item.scope), query.calls[0], query.calls[1],
                                 query.timedSamples,
                                 query.timedSamples ? ticksToMilliseconds(query.totalTicks) * 1000.0 / static_cast<double>(query.timedSamples) : 0.0,
                                 ticksToMilliseconds(query.maxTicks) * 1000.0,
@@ -1106,9 +1103,7 @@ namespace rock::performance_profiler
                     .events = slot.events.exchange(0, std::memory_order_acq_rel),
                     .memory = {
                         .calls = { slot.memoryQueries[0].exchange(0, std::memory_order_acq_rel),
-                            slot.memoryQueries[1].exchange(0, std::memory_order_acq_rel),
-                            slot.memoryQueries[2].exchange(0, std::memory_order_acq_rel) },
-                        .apiFailures = slot.memoryQueryFailures.exchange(0, std::memory_order_acq_rel),
+                            slot.memoryQueries[1].exchange(0, std::memory_order_acq_rel) },
                         .timedSamples = slot.memoryQueryTimedSamples.exchange(0, std::memory_order_acq_rel),
                         .totalTicks = slot.memoryQueryTotalTicks.exchange(0, std::memory_order_acq_rel),
                         .maxTicks = slot.memoryQueryMaxTicks.exchange(0, std::memory_order_acq_rel),
@@ -1303,13 +1298,12 @@ namespace rock::performance_profiler
         return { timed ? queryPerformanceTicks() : 0, t_memoryQueryScope, true };
     }
 
-    void endMemoryQuery(MemoryQuerySample sample, MemoryQueryKind kind, bool apiSucceeded) noexcept
+    void endMemoryQuery(MemoryQuerySample sample, MemoryQueryKind kind) noexcept
     {
         if (!sample.active) return;
         const auto endTicks = sample.startTicks ? queryPerformanceTicks() : 0;
         auto& slot = accumFor(sample.scope);
         slot.memoryQueries[static_cast<std::size_t>(kind)].fetch_add(1, std::memory_order_relaxed);
-        if (!apiSucceeded) slot.memoryQueryFailures.fetch_add(1, std::memory_order_relaxed);
         if (sample.startTicks && endTicks >= sample.startTicks) {
             const auto ticks = endTicks - sample.startTicks;
             slot.memoryQueryTimedSamples.fetch_add(1, std::memory_order_relaxed);

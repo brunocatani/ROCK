@@ -10,7 +10,7 @@ namespace rock::performance_profiler
     // Only the diagnostic sink is substituted; ancestry and guarded native
     // reads execute their production implementations against Windows pages.
     MemoryQuerySample beginMemoryQuery() noexcept { return {}; }
-    void endMemoryQuery(MemoryQuerySample, MemoryQueryKind, bool) noexcept {}
+    void endMemoryQuery(MemoryQuerySample, MemoryQueryKind) noexcept {}
     void addCounter(Counter, std::uint64_t) noexcept {}
     void countGuardedRead(const std::source_location&) noexcept {}
 }

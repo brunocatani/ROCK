@@ -1059,20 +1059,14 @@ namespace rock::native_idle_grip_preharvest
             return true;
         }
 
-        [[nodiscard]] bool addressIsExecutable(const void* address)
+        // Havok animation samplers are game code, so the vtable slot must point into
+        // Fallout4VR.exe's .text. A range compare instead of a page-protection query:
+        // VirtualQuery cost grows with the region size (NativeMemory.h).
+        [[nodiscard]] bool addressIsGameCode(const void* address)
         {
-            if (!address) {
-                return false;
-            }
-            MEMORY_BASIC_INFORMATION memoryInfo{};
-            const auto sample = performance_profiler::beginMemoryQuery();
-            const auto queried = VirtualQuery(address, &memoryInfo, sizeof(memoryInfo));
-            performance_profiler::endMemoryQuery(sample, performance_profiler::MemoryQueryKind::Execute, queried != 0);
-            if (queried == 0 || memoryInfo.State != MEM_COMMIT || (memoryInfo.Protect & (PAGE_GUARD | PAGE_NOACCESS)) != 0) {
-                return false;
-            }
-            const DWORD protection = memoryInfo.Protect & 0xFF;
-            return protection == PAGE_EXECUTE || protection == PAGE_EXECUTE_READ || protection == PAGE_EXECUTE_READWRITE || protection == PAGE_EXECUTE_WRITECOPY;
+            const auto text = REL::Module::get().segment(REL::Segment::text);
+            const auto value = reinterpret_cast<std::uintptr_t>(address);
+            return value >= text.address() && value - text.address() < text.size();
         }
 
         [[nodiscard]] bool guardedSampleTracks(
@@ -1444,7 +1438,7 @@ namespace rock::native_idle_grip_preharvest
             SampleAnimationTracksFn sampleTracks = nullptr;
             if (!native_memory::tryReadValue(reinterpret_cast<void***>(animation), animationVtable) || !animationVtable ||
                 !native_memory::tryReadValue(reinterpret_cast<SampleAnimationTracksFn*>(animationVtable + 5), sampleTracks) ||
-                !addressIsExecutable(reinterpret_cast<const void*>(sampleTracks))) {
+                !addressIsGameCode(reinterpret_cast<const void*>(sampleTracks))) {
                 return failExtraction(diagnostics, IdleGripExtractionFailure::AnimationSamplerUnavailable);
             }
 

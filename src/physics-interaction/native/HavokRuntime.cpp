@@ -188,7 +188,7 @@ namespace rock::havok_runtime
         /*
          * Object-tree scans walk native collision wrappers that may contain
          * stale or transitional Havok pointers while a weapon is being pulled.
-         * VirtualQuery rejects obviously bad pages, but the real contract at
+         * Range checks reject obviously bad pages, but the real contract at
          * this boundary is "do not let a native field read crash the caller."
          * Centralizing guarded reads keeps high-level grab code out of SEH and
          * makes every physics-system pointer/body-id read fail closed.

@@ -11,10 +11,13 @@ namespace rock::native_memory
      * object trees. Guarded reads reject null and low addresses, then copy
      * under SEH: a fault returns false, costs nothing when no fault occurs and
      * may leave the target partially written. Writes and standalone range
-     * checks (callers that dereference without SEH afterwards) query page
-     * protection with VirtualQuery, which costs microseconds per call, so they
-     * stay out of per-frame paths. Each guarded read reports its call site to
-     * the performance profiler, which logs the hottest sites.
+     * checks (callers that dereference without SEH afterwards) touch one byte
+     * per page under SEH (a no-op compare-exchange for writes), so their cost
+     * does not depend on the allocator that owns the memory. Never use
+     * VirtualQuery for these checks: its cost grows with the size of the
+     * region around the address, and the game's own memory pools make it
+     * cost milliseconds. Each guarded read reports its call site to the
+     * performance profiler, which logs the hottest sites.
      */
     bool pointerLooksReadable(const void* ptr);
     bool pointerRangeLooksReadable(const void* ptr, std::size_t byteCount);

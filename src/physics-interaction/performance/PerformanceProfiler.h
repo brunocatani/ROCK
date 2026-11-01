@@ -287,7 +287,8 @@ namespace rock::performance_profiler
     // Diagnostic values only; ownership and collision decisions stay with callers.
     void observeContactPair(ContactPair pair, ContactStage stage) noexcept;
 
-    enum class MemoryQueryKind : std::uint8_t { Read, Write, Execute };
+    // A memory query is one native_memory range check (a page-touch probe).
+    enum class MemoryQueryKind : std::uint8_t { Read, Write };
 
     struct MemoryQuerySample
     {
@@ -299,7 +300,7 @@ namespace rock::performance_profiler
     // One of every 64 queries on each calling thread is timed. All admitted
     // queries are counted; no per-query allocation, logging, or shared lock.
     MemoryQuerySample beginMemoryQuery() noexcept;
-    void endMemoryQuery(MemoryQuerySample sample, MemoryQueryKind kind, bool apiSucceeded) noexcept;
+    void endMemoryQuery(MemoryQuerySample sample, MemoryQueryKind kind) noexcept;
 
     // Counts guarded native reads per source call site; each window logs the
     // hottest sites, so per-frame pointer walks can be found and restructured.
