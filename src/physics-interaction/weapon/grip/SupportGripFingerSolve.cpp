@@ -2,6 +2,8 @@
 
 #include "physics-interaction/grab/GrabFingerCapsuleSweep.h"
 
+#include <chrono>
+
 // Per-finger surface solve for support grip capture, called from
 // capturePartGrip (SupportGrip.cpp) after the hand is seated on the grip.
 
@@ -13,8 +15,9 @@ namespace rock
      * the weapon mesh with the hand collider radii, from the seated hand.
      * The live skeleton is captured once relative to the controller hand and
      * rebased onto the seated hand, so the sweep sees the final grip relation.
-     * Triangle selection stays bounded: only weapon triangles nearest each
-     * finger's sweep are indexed.
+     * The sweep queries the weapon parts' own equip-time triangle indices
+     * (SupportGripWeaponPartIndex), so the grab frame builds nothing and the
+     * fingers see the full mesh however detailed the weapon is.
      */
     void TwoHandedGrip::solveSupportGripFingerPose(
         const bool isLeft,
@@ -23,17 +26,12 @@ namespace rock
         const WeaponCollision& weaponCollision,
         const RE::NiTransform& handTransform,
         const RE::NiTransform& adjustedHandTransform,
-        const RE::NiPoint3& gripWorldPoint,
         const bool cachedTrianglesFound,
-        const WeaponCollision::SupportGripEvidenceView& evidenceView,
-        WeaponPartGrip& grip)
+        const WeaponCollision::SupportGripEvidenceView& evidenceView)
     {
         auto& fingerScratch = _fingerPoseSolveScratch->hands[isLeft ? 0u : 1u];
-        for (auto& ranking : fingerScratch.rankings) {
-            ranking.clear();
-        }
-        fingerScratch.localTriangles.clear();
-        fingerScratch.spatialIndex.clear();
+        fingerScratch.partIndex.clear();
+        fingerScratch.reachTriangleCount = 0;
 
         auto& capturedFingerBoneSnapshot = fingerScratch.capturedBones;
         root_flattened_finger_skeleton_runtime::Snapshot seatedSkeleton{};
@@ -55,18 +53,19 @@ namespace rock
             .thumbMaxOpenValue = g_rockConfig.rockGrabThumbSweepMaxOpenValue,
         };
 
+        using Clock = std::chrono::steady_clock;
+        const auto solveStart = Clock::now();
+        float reachRadius = 0.0f;
+        std::size_t unindexedParts = 0;
         std::size_t compositeEvidenceViewCount = 0;
         std::size_t sourceTriangleCount = 0;
+        grab_finger_pose_runtime::SolvedGrabFingerPose meshFingerPose{};
+        const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPosePtr = nullptr;
+        grab_finger_capsule_sweep::Result capsule{};
         if (g_rockConfig.rockGrabMeshFingerPoseEnabled && rigValid) {
             const RE::NiTransform handBoneWorld = grab_finger_capsule_sweep::resolveHandBoneWorld(adjustedHandTransform, seatedSkeleton, rig);
-            const auto tipLengths = grab_finger_capsule_sweep::tipLengths(seatedSkeleton);
-            SupportGripFingerReferenceSet fingerReferenceSet{};
-            fingerReferenceSet.seatPointWorld = gripWorldPoint;
-            fingerReferenceSet.seatPointValid = grab_finger_pose_runtime::isFinitePoint(gripWorldPoint);
-            for (std::size_t finger = 0; finger < kSupportGripFingerLaneCount; ++finger) {
-                fingerReferenceSet.lanePointCounts[finger] = grab_finger_capsule_sweep::sweepReferencePoints(
-                    rig, handBoneWorld, finger, tipLengths[finger], options.minValue, fingerReferenceSet.lanePointsWorld[finger]);
-            }
+            const auto reach = grab_finger_capsule_sweep::sweepReach(rig, handBoneWorld, grab_finger_capsule_sweep::tipLengths(seatedSkeleton), options);
+            reachRadius = reach.radius;
 
             std::array<WeaponCollision::SupportGripEvidenceView, MAX_WEAPON_COLLISION_BODIES> compositeEvidenceViews{};
             const std::size_t discoveredViewCount = weaponCollision.findSupportGripEvidenceViews(weaponNode, compositeEvidenceViews);
@@ -87,34 +86,33 @@ namespace rock
                 compositeEvidenceViewCount = 1;
                 sourceTriangleCount = evidenceView.localTriangles.size();
             }
-            selectNearestSupportGripFingerTriangles(
+            unindexedParts = fingerScratch.partIndex.build(
                 std::span<const WeaponCollision::SupportGripEvidenceView>(compositeEvidenceViews.data(), compositeEvidenceViewCount),
                 weaponNode->world,
-                fingerReferenceSet,
-                grab_finger_pose_runtime::kMaxFingerPoseCandidateTriangles,
-                fingerScratch.rankings,
-                fingerScratch.localTriangles);
+                reach.center,
+                reach.radius);
+            fingerScratch.reachTriangleCount = fingerScratch.partIndex.triangleCount();
+
+            if (fingerScratch.partIndex.partCount() != 0) {
+                capsule = grab_finger_capsule_sweep::solveForHand(rig, adjustedHandTransform, seatedSkeleton, fingerScratch.partIndex, weaponNode->world, options);
+                meshFingerPose = grab_finger_capsule_sweep::toSolvedPose(capsule, static_cast<std::uint32_t>(fingerScratch.reachTriangleCount));
+                performance_profiler::observeValue(
+                    performance_profiler::ValueMetric::EquippedWeaponFingerPoseSpatialNodeVisits, meshFingerPose.spatialNodeVisitCount);
+                performance_profiler::observeValue(
+                    performance_profiler::ValueMetric::EquippedWeaponFingerPoseTriangleTests, meshFingerPose.spatialTriangleTestCount);
+                // A sweep that touched nothing never reached the weapon: keep the closed fallback grip.
+                if (meshFingerPose.contactValidMask != 0) {
+                    meshFingerPosePtr = &meshFingerPose;
+                }
+            }
+            // The parts view the weapon body bank; never keep them past this call.
+            fingerScratch.partIndex.clear();
         }
+        const double solveMs = std::chrono::duration<double, std::milli>(Clock::now() - solveStart).count();
         performance_profiler::observeValue(
             performance_profiler::ValueMetric::EquippedWeaponFingerPoseSourceTriangles, static_cast<std::uint64_t>(sourceTriangleCount));
         performance_profiler::observeValue(
-            performance_profiler::ValueMetric::EquippedWeaponFingerPoseSelectedTriangles, static_cast<std::uint64_t>(fingerScratch.localTriangles.size()));
-
-        grab_finger_pose_runtime::SolvedGrabFingerPose meshFingerPose{};
-        const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPosePtr = nullptr;
-        grab_finger_capsule_sweep::Result capsule{};
-        if (rigValid && !fingerScratch.localTriangles.empty() && fingerScratch.spatialIndex.buildFromLocalTriangles(fingerScratch.localTriangles)) {
-            capsule = grab_finger_capsule_sweep::solveForHand(rig, adjustedHandTransform, seatedSkeleton, fingerScratch.spatialIndex, weaponNode->world, options);
-            meshFingerPose = grab_finger_capsule_sweep::toSolvedPose(capsule, static_cast<std::uint32_t>(fingerScratch.localTriangles.size()));
-            performance_profiler::observeValue(
-                performance_profiler::ValueMetric::EquippedWeaponFingerPoseSpatialNodeVisits, meshFingerPose.spatialNodeVisitCount);
-            performance_profiler::observeValue(
-                performance_profiler::ValueMetric::EquippedWeaponFingerPoseTriangleTests, meshFingerPose.spatialTriangleTestCount);
-            // A sweep that touched nothing never reached the weapon: keep the closed fallback grip.
-            if (meshFingerPose.contactValidMask != 0) {
-                meshFingerPosePtr = &meshFingerPose;
-            }
-        }
+            performance_profiler::ValueMetric::EquippedWeaponFingerPoseSelectedTriangles, static_cast<std::uint64_t>(fingerScratch.reachTriangleCount));
 
         std::uint32_t openedMask = 0;
         std::uint32_t blockedMask = 0;
@@ -124,11 +122,11 @@ namespace rock
         }
         ROCK_LOG_INFO(Weapon,
             "TwoHandedGrip: support finger pose hand={} pose={} curls=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) contacts=0x{:02X} openedToClear=0x{:02X} "
-            "blocked=0x{:02X} skeleton={} frikRig={} sources={} sourceTris={} candidateTris={} sphereQueries={} tests={}",
+            "blocked=0x{:02X} skeleton={} frikRig={} sources={} unindexedSources={} sourceTris={} reachRadius={:.1f} reachTris={} sphereQueries={} tests={} ms={:.2f}",
             isLeft ? "left" : "right", meshFingerPosePtr ? "mesh" : "closed-fallback", meshFingerPose.values[0], meshFingerPose.values[1],
             meshFingerPose.values[2], meshFingerPose.values[3], meshFingerPose.values[4], meshFingerPose.contactValidMask, openedMask, blockedMask,
-            seatedSkeletonValid, rigValid, compositeEvidenceViewCount, sourceTriangleCount, fingerScratch.localTriangles.size(), capsule.sphereQueries,
-            capsule.stats.triangleTests);
+            seatedSkeletonValid, rigValid, compositeEvidenceViewCount, unindexedParts, sourceTriangleCount, reachRadius, fingerScratch.reachTriangleCount,
+            capsule.sphereQueries, capsule.stats.triangleTests, solveMs);
 
         setSupportGripPose(isLeft, meshFingerPosePtr, SupportGripPoseFallback::FullyClosed);
     }

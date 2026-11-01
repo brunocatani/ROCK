@@ -7106,7 +7106,6 @@ namespace rock
     {
         const RE::NiTransform* handWorldTransform = nullptr;
         const GrabProxyPreparation* proxy = nullptr;
-        const GrabMeshCaptureSetup* meshCapture = nullptr;
         const GrabSurfaceEvidence* surface = nullptr;
         RE::bhkWorld* bhkWorld = nullptr;
         RE::hknpBodyId objectBodyId{};
@@ -7205,7 +7204,6 @@ namespace rock
         performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabConstraintCommit);
         const auto& handWorldTransform = *input.handWorldTransform;
         const auto& proxy = *input.proxy;
-        const auto& meshCapture = *input.meshCapture;
         const auto& surface = *input.surface;
         auto* bhkWorld = input.bhkWorld;
         const auto objectBodyId = input.objectBodyId;
@@ -7221,7 +7219,6 @@ namespace rock
         const float constantRecovery = input.constantRecovery;
         const auto& sel = _currentSelection;
         const auto& proxyFrameWorldAtGrab = proxy.proxyFrameWorldAtGrab;
-        const auto& objectWorldTransform = meshCapture.objectWorldTransform;
         const auto& grabGripPoint = surface.gripPoint;
         const bool meshGrabFound = surface.meshGrabFound;
         const char* grabPointMode = surface.pointMode;
@@ -8300,7 +8297,6 @@ namespace rock
         const GrabConstraintCommitInput constraintCommitInput{
             .handWorldTransform = &handWorldTransform,
             .proxy = &proxyPreparation,
-            .meshCapture = &meshCaptureSetup,
             .surface = &surfaceEvidence,
             .bhkWorld = bhkWorld,
             .objectBodyId = objectBodyId,
@@ -9382,8 +9378,6 @@ namespace rock
         const HeldDriveUpdate& driveUpdate,
         bool convergingAcquisitionPhase)
     {
-        const auto& desiredObjectWorld = driveUpdate.desiredObjectWorld;
-        const auto& proxyAuthorityWorld = driveUpdate.proxyAuthorityWorld;
         const auto& desiredTargetPointWorld = driveUpdate.desiredTargetPointWorld;
         const auto& activePivotBBodyLocalGame = driveUpdate.activePivotBBodyLocalGame;
         const bool heldBodyColliding = driveUpdate.heldBodyColliding;

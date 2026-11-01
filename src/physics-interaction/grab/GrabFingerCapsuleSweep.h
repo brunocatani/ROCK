@@ -357,27 +357,43 @@ namespace rock::grab_finger_capsule_sweep
         return result;
     }
 
-    /*
-     * World points the finger can occupy across its sweep (base, then the
-     * three joint ends at open, half and fully closed). Callers use them to
-     * pick the mesh triangles worth indexing before the solve.
-     */
-    template <std::size_t Capacity>
-    inline std::size_t sweepReferencePoints(const FrikFingerRig& rig, const RE::NiTransform& handBoneWorld, std::size_t finger, float tipLengthGameUnits, float minValue,
-        std::array<RE::NiPoint3, Capacity>& out)
+    struct SweepReach
     {
-        static_assert(Capacity >= 10);
-        std::size_t count = 0;
-        for (const float curl : { 1.0f, 0.6f, minValue }) {
-            const auto pose = poseFinger(rig, handBoneWorld, finger, jointValuesForCurl(finger, curl), tipLengthGameUnits);
-            if (count == 0) {
-                out[count++] = pose.joints[0];
-            }
-            for (std::size_t joint = 1; joint < 4; ++joint) {
-                out[count++] = pose.joints[joint];
+        RE::NiPoint3 center{};
+        float radius = 0.0f;
+    };
+
+    /*
+     * Sphere that holds every capsule of the sweep, centred on the grasp
+     * pocket (the centroid of the finger joints at half curl, where a held
+     * surface sits). Its radius covers the joints at the closed, middle, open
+     * and bent-back limits plus the widest capsule and a margin for the arcs
+     * between those samples. Mesh outside it can never touch a finger, so
+     * callers skip mesh parts whose bounds miss it.
+     */
+    inline SweepReach sweepReach(const FrikFingerRig& rig, const RE::NiTransform& handBoneWorld, const std::array<float, 5>& tipLengthsGameUnits,
+        const Options& options, const CapsuleRadii& radii = {})
+    {
+        SweepReach out{};
+        int count = 0;
+        for (std::size_t finger = 0; finger < 5; ++finger) {
+            for (const auto& joint : poseFinger(rig, handBoneWorld, finger, jointValuesForCurl(finger, 0.5f), tipLengthsGameUnits[finger]).joints) {
+                out.center = out.center + joint;
+                ++count;
             }
         }
-        return count;
+        out.center = out.center * (1.0f / static_cast<float>(count));
+        for (std::size_t finger = 0; finger < 5; ++finger) {
+            const float cap = finger == 0 ? options.thumbMaxOpenValue : options.fingerMaxOpenValue;
+            for (const float curl : { options.minValue, 0.5f, 1.0f, cap }) {
+                for (const auto& joint : poseFinger(rig, handBoneWorld, finger, jointValuesForCurl(finger, curl), tipLengthsGameUnits[finger]).joints) {
+                    const RE::NiPoint3 offset = joint - out.center;
+                    out.radius = (std::max)(out.radius, std::sqrt(offset.x * offset.x + offset.y * offset.y + offset.z * offset.z));
+                }
+            }
+        }
+        out.radius += (std::max)({ radii.segment[0], radii.segment[1], radii.segment[2] }) + 1.0f;
+        return out;
     }
 
     // Distal tip length per finger from a live skeleton: twice the tip-segment centre offset.
@@ -403,6 +419,7 @@ namespace rock::grab_finger_capsule_sweep
     Result solveForHand(const FrikFingerRig& rig, const RE::NiTransform& solveHandWorld, const root_flattened_finger_skeleton_runtime::Snapshot& skeleton,
         const Index& index, const RE::NiTransform& objectWorld, const Options& options)
     {
+        performance_profiler::ScopedTimer timer(performance_profiler::Scope::GrabFingerSolve);
         return solve(rig, resolveHandBoneWorld(solveHandWorld, skeleton, rig), tipLengths(skeleton), index, objectWorld, options);
     }
 

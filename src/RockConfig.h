@@ -154,6 +154,7 @@ namespace rock
         float rockWeaponCollisionGripRecoveryDistanceGameUnits = 210.0f;
         float rockWeaponInteractionTouchRadius = 2.0f;
         float rockWeaponInteractionProbeRadius = 12.0f;
+        bool rockDebugWeaponSupportDynamicOnly = false;
         float rockFiringGripProximitySupportRadius = 8.0f;
         bool rockImmersiveGrenades = true;
         float rockRealisticGrenadeFuseSeconds = 4.0f;

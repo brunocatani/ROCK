@@ -1662,10 +1662,8 @@ namespace rock
             const WeaponCollision& weaponCollision,
             const RE::NiTransform& handTransform,
             const RE::NiTransform& adjustedHandTransform,
-            const RE::NiPoint3& gripWorldPoint,
             bool cachedTrianglesFound,
-            const WeaponCollision::SupportGripEvidenceView& evidenceView,
-            WeaponPartGrip& grip);
+            const WeaponCollision::SupportGripEvidenceView& evidenceView);
 
         void lockPartGripToWeaponRoot(bool isLeft);
 
