@@ -1057,10 +1057,18 @@ namespace rock
             return;
         }
 
+        // A consumer draw continues from where the consumer showed the
+        // weapon (the firing aim) and the tracked hand into this seat.
+        RE::NiTransform presentedWeaponWorld = solvedWeaponWorld;
+        RE::NiTransform presentedFiringHandWorld = solvedFiringHandWorld;
+        if (!input.meleeWeapon) {
+            (void)weaponAuthority.resolveDrawPresentationBlend(_weaponFormId, liveWeaponWorld, trackedHandWorld,
+                presentedWeaponWorld, presentedFiringHandWorld);
+        }
         if (!weaponAuthority.applyAuthoredPrimaryGripWeaponAlignment(
                 input.weaponNode,
-                solvedWeaponWorld,
-                solvedFiringHandWorld,
+                presentedWeaponWorld,
+                presentedFiringHandWorld,
                 input.weaponGenerationKey)) {
             if (!_applyFailureLogged) {
                 ROCK_LOG_WARN(Animation,

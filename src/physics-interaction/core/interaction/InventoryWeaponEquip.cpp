@@ -59,7 +59,7 @@ namespace rock {
     }
 
     api::Status PhysicsInteraction::requestProviderInventoryEquip(api::OwnerToken owner,
-        const equip_api::EquipRequest& request, std::uint64_t& command)
+        const equip_api::EquipRequest& request, std::uint64_t& command, const bool presentedAtFiringAim)
     {
         command = 0;
         if (request.hand != api::Hand::Right && request.hand != api::Hand::Left) return api::Status::InvalidArgument;
@@ -81,6 +81,13 @@ namespace rock {
         pending.selection = std::move(selection);
         command = pending.nextCommandId++;
         if (!command) command = pending.nextCommandId++;
+        // Only the right firing hand's authored seat snaps the hand; the
+        // left firing carry already eases its hand in.
+        auto* incoming = RE::TESForm::GetFormByID<RE::TESObjectWEAP>(current.baseFormId);
+        if (presentedAtFiringAim && request.hand == api::Hand::Right && incoming &&
+            incoming->weaponData.type == RE::WEAPON_TYPE::kGun) {
+            _twoHandedGrip.armDrawPresentationBlend(current.baseFormId);
+        }
         pending.result = {.commandId = command, .state = State::Queued, .hand = request.hand,
             .incomingFormId = current.baseFormId, .worldGeneration = current.worldGeneration,
             .skeletonGeneration = current.skeletonGeneration, .providerGeneration = current.providerGeneration};

@@ -150,6 +150,14 @@ Status ROCK_CALL getFiringAimWorld(OwnerToken owner, Hand hand, Transform* outWo
     if (hand != Hand::Left && hand != Hand::Right) return Status::InvalidArgument;
     return invoke(owner, kInterfaceId, 1, true, [&] { return p::runtime::getFiringAimWorld(hand, *outWorld); });
 }
+Status ROCK_CALL requestInventoryDraw(OwnerToken owner, const EquipRequest* request, std::uint64_t* outCommandId) noexcept {
+    if (!outCommandId) return Status::InvalidArgument;
+    *outCommandId = 0;
+    if (const auto s = checkInput(request); s != Status::Ok) return s;
+    return invoke(owner, kInterfaceId, 2, true, [&] {
+        return p::runtime::requestInventoryDraw(owner, *request, *outCommandId);
+    }, p::OwnerAccess::Active);
+}
 Status ROCK_CALL setWarmInventoryWeapons(OwnerToken owner, const InventoryWeapon* items, std::uint32_t count) noexcept {
     if (count > kMaxWarmInventoryWeapons) return Status::CapacityFull;
     if (count && !items) return Status::InvalidArgument;
@@ -182,6 +190,7 @@ const Api& table() noexcept {
         &unequipWeapon,
         &getFiringAimWorld,
         &setWarmInventoryWeapons,
+        &requestInventoryDraw,
     };
     return value;
 }

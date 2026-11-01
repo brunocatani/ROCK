@@ -62,6 +62,7 @@ namespace rock::provider::runtime {
     api::Status unequipWeapon(std::uint32_t weaponSlot, std::uint32_t expectedFormId);
     api::Status getFiringAimWorld(api::Hand hand, api::Transform& output);
     api::Status setWarmInventoryWeapons(std::uint64_t owner, const api::weapon::InventoryWeapon* items, std::uint32_t count);
+    api::Status requestInventoryDraw(std::uint64_t owner, const api::weapon::EquipRequest& request, std::uint64_t& command);
     std::uint64_t currentGameFrameIndex(); // Atomic game clock, including pre-publication lifecycle events.
     const char* getModVersion();
     bool isProviderReady();

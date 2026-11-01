@@ -679,6 +679,23 @@ namespace rock
 
         void reset();
 
+        /*
+         * Consumer draw (Weapon requestInventoryDraw): until ROCK revealed
+         * the incoming firearm, the consumer showed it at the hand's firing
+         * aim. The first right-hand authored publication of that weapon
+         * therefore starts from the aim pose (weapon) and the tracked hand,
+         * and both ease into the seat with one alpha over the equipped-weapon
+         * return timing, instead of snapping. Expires unused after
+         * kDrawPresentationArmFrames.
+         */
+        void armDrawPresentationBlend(std::uint32_t weaponFormId);
+        bool resolveDrawPresentationBlend(
+            std::uint32_t weaponFormId,
+            const RE::NiTransform& aimWeaponWorld,
+            const RE::NiTransform& trackedHandWorld,
+            RE::NiTransform& inOutWeaponWorld,
+            RE::NiTransform& inOutHandWorld);
+
         void setWeaponVisualIntentObserver(
             void* context,
             WeaponVisualIntentObserver observer)
@@ -2289,6 +2306,16 @@ namespace rock
         const DynamicWeaponCollisionRuntime* _surfaceSupportRuntime{ nullptr };
         RE::NiTransform _retainedWeaponWorld{};
         HandVisualTransitionState _visuals{};
+        struct DrawPresentationBlend
+        {
+            std::uint32_t weaponFormId{ 0 };
+            std::uint64_t armedFrame{ 0 };
+            float elapsedSeconds{ 0.0f };
+            float durationSeconds{ 0.0f };
+            bool armed{ false };
+            bool active{ false };
+        };
+        DrawPresentationBlend _drawPresentation{};
         ScopePresentationState _scope{};
         // Numbers the one-line grip failure warnings within a session.
         std::uint64_t _gripFailureIncidentSequence{ 0 };

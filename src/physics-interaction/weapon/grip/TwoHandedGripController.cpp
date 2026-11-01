@@ -780,6 +780,7 @@ namespace rock
         clearNativeScopeOverlayAuthority(true);
         _equippedWeaponDropRequest = {};
         _firing.transferredPrimaryGrip = {};
+        _drawPresentation = {};
         _hapticEvents = {};
         _gripReleaseRetained = {};
         _gripReleaseRetainedLogged = {};

@@ -25,6 +25,12 @@
         auto* pi = access.get();
         return pi && pi->isInitialized() ? pi->unequipProviderWeapon(weaponSlot, expectedFormId) : api::Status::NotReady;
     }
+    api::Status requestInventoryDraw(std::uint64_t owner, const api::weapon::EquipRequest& request,
+        std::uint64_t& command) {
+        const auto access = s_physicsInteraction.borrow();
+        auto* pi = access.get();
+        return pi && pi->isInitialized() ? pi->requestProviderInventoryEquip(owner, request, command, true) : api::Status::NotReady;
+    }
     api::Status setWarmInventoryWeapons(std::uint64_t owner, const api::weapon::InventoryWeapon* items, std::uint32_t count) {
         const auto access = s_physicsInteraction.borrow();
         auto* pi = access.get();

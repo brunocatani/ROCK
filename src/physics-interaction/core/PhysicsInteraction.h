@@ -300,8 +300,9 @@ namespace rock
         static void fillProviderWeaponAmmo(api::weapon::WeaponState& state);
         api::Status captureProviderInventoryWeapon(std::uint32_t form, std::uint32_t stack,
             api::weapon::InventoryWeapon& output) const;
+        // presentedAtFiringAim: Weapon requestInventoryDraw.
         api::Status requestProviderInventoryEquip(api::OwnerToken owner,
-            const api::weapon::EquipRequest& request, std::uint64_t& command);
+            const api::weapon::EquipRequest& request, std::uint64_t& command, bool presentedAtFiringAim = false);
         api::Status getProviderInventoryEquipResult(api::OwnerToken owner, std::uint64_t command,
             api::weapon::EquipResult& output) const;
         api::Status cancelProviderInventoryEquip(api::OwnerToken owner, std::uint64_t command);

@@ -534,6 +534,67 @@ namespace rock
         clearWeaponPoseHandoffBlend(reason, logCancellation);
     }
 
+    namespace
+    {
+        constexpr std::uint64_t kDrawPresentationArmFrames = 120;
+    }
+
+    void TwoHandedGrip::armDrawPresentationBlend(const std::uint32_t weaponFormId)
+    {
+        _drawPresentation = {};
+        if (!weaponFormId) return;
+        _drawPresentation.weaponFormId = weaponFormId;
+        _drawPresentation.armedFrame = runtime_state::currentFrame().frameIndex;
+        _drawPresentation.armed = true;
+    }
+
+    bool TwoHandedGrip::resolveDrawPresentationBlend(
+        const std::uint32_t weaponFormId,
+        const RE::NiTransform& aimWeaponWorld,
+        const RE::NiTransform& trackedHandWorld,
+        RE::NiTransform& inOutWeaponWorld,
+        RE::NiTransform& inOutHandWorld)
+    {
+        auto& state = _drawPresentation;
+        if (!state.armed && !state.active) return false;
+        const auto& frame = runtime_state::currentFrame();
+        if (state.weaponFormId != weaponFormId ||
+            (state.armed && frame.frameIndex > state.armedFrame + kDrawPresentationArmFrames) ||
+            !isFiniteTransform(aimWeaponWorld) || !isFiniteTransform(trackedHandWorld)) {
+            state = {};
+            return false;
+        }
+        if (state.armed) {
+            state.armed = false;
+            state.active = true;
+            state.elapsedSeconds = 0.0f;
+            state.durationSeconds = hand_visual_lerp_math::computeVisualReturnDuration(
+                trackedHandWorld, inOutHandWorld, hand_visual_lerp_math::kEquippedWeaponReturnConfig);
+            ROCK_LOG_DEBUG(Weapon, "Draw presentation blend started form={:08X} hand={:.2f}gu/{:.1f}deg weapon={:.2f}gu duration={:.3f}s",
+                weaponFormId,
+                hand_visual_lerp_math::distanceGameUnits(trackedHandWorld.translate, inOutHandWorld.translate),
+                hand_visual_lerp_math::rotationDistanceDegrees(trackedHandWorld, inOutHandWorld),
+                hand_visual_lerp_math::distanceGameUnits(aimWeaponWorld.translate, inOutWeaponWorld.translate),
+                state.durationSeconds);
+            if (state.durationSeconds <= 0.0f) {
+                state = {};
+                return false;
+            }
+        } else {
+            state.elapsedSeconds = hand_visual_lerp_math::advanceTimedBlendElapsed(
+                state.elapsedSeconds, frame.deltaSeconds, state.durationSeconds);
+        }
+        const float linear = hand_visual_lerp_math::timedBlendAlpha(state.elapsedSeconds, state.durationSeconds);
+        const float eased = linear * linear * (3.0f - 2.0f * linear);
+        inOutWeaponWorld = hand_visual_lerp_math::interpolateTransform(aimWeaponWorld, inOutWeaponWorld, eased);
+        inOutHandWorld = hand_visual_lerp_math::interpolateTransform(trackedHandWorld, inOutHandWorld, eased);
+        if (linear >= 1.0f) {
+            ROCK_LOG_DEBUG(Weapon, "Draw presentation blend completed form={:08X}", weaponFormId);
+            state = {};
+        }
+        return true;
+    }
+
     void TwoHandedGrip::armWeaponPoseHandoffBlend(const char* reason)
     {
         auto& state = _visuals.weaponHandoff;

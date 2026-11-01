@@ -624,6 +624,13 @@ namespace rock::api::weapon {
         // matches its inventory stack; CapacityFull above
         // kMaxWarmInventoryWeapons across owners. Game thread.
         Status(ROCK_CALL* setWarmInventoryWeapons)(OwnerToken owner, const InventoryWeapon* items, std::uint32_t count) noexcept;
+        // Write. requestInventoryEquip for a weapon the consumer shows in
+        // the hand at getFiringAimWorld until ROCK reveals it (a holster
+        // draw): when ROCK seats a firearm in the right hand, the weapon
+        // continues from that pose and the hand from its tracked pose, and
+        // both ease into the grip instead of snapping. Results as
+        // requestInventoryEquip.
+        Status(ROCK_CALL* requestInventoryDraw)(OwnerToken owner, const EquipRequest* request, std::uint64_t* outCommandId) noexcept;
     };
 }
 #pragma pack(pop)

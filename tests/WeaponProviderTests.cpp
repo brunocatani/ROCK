@@ -78,6 +78,12 @@ namespace rock::provider::runtime {
         ++unequipRequests;
         return api::Status::Ok;
     }
+    unsigned drawRequests = 0;
+    api::Status requestInventoryDraw(std::uint64_t, const api::weapon::EquipRequest&, std::uint64_t& command) {
+        ++drawRequests;
+        command = 11;
+        return api::Status::RequestQueued;
+    }
     unsigned warmSets = 0;
     api::Status setWarmInventoryWeapons(std::uint64_t, const api::weapon::InventoryWeapon*, std::uint32_t count) {
         ++warmSets;
@@ -162,6 +168,14 @@ int main() {
     assert(api.setWarmInventoryWeapons(testOwner, warm, 2) == Status::InvalidSize);
     warm[1] = {};
     assert(api.setWarmInventoryWeapons(testOwner, warm, 2) == Status::Ok && rock::provider::runtime::warmSets == 1);
+    std::uint64_t drawCommand = 0;
+    EquipRequest draw{};
+    assert(api.requestInventoryDraw(testOwner, &draw, nullptr) == Status::InvalidArgument);
+    draw.version = 2;
+    assert(api.requestInventoryDraw(testOwner, &draw, &drawCommand) == Status::UnsupportedVersion && drawCommand == 0);
+    draw.version = 1;
+    assert(api.requestInventoryDraw(testOwner, &draw, &drawCommand) == Status::RequestQueued && drawCommand == 11 &&
+        rock::provider::runtime::drawRequests == 1);
 
     // Permissions are Weapon's own.
     permissions = 1;
