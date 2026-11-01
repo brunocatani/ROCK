@@ -3,6 +3,7 @@
 #include "api/ProviderStatePolicy.h"
 #include "physics-interaction/native/NativeAmmoCounterVisibility.h"
 #include "physics-interaction/visual/AmmoCounters.h"
+#include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/HoldingGripRecords.h"
 #include "physics-interaction/weapon/NativeSecondaryPresentation.h"
@@ -196,16 +197,18 @@ namespace rock
                         hidden("vanilla-screen");
                         continue;
                     }
+                    // The drawn hands: the counter mirrors onto the hand the
+                    // player sees, whatever ROCK's interaction frames hold.
                     ammo_counter_pose::Frame rightBone{}, leftBone{};
                     if (isLeft) {
-                        auto* rightHand = getInteractionHandNode(false);
-                        auto* leftHand = getInteractionHandNode(true);
-                        if (!rightHand || !leftHand) {
+                        RE::NiTransform rightHand{}, leftHand{};
+                        if (!frik_hand_world_authority::tryGetPresentedHandWorld(false, rightHand) ||
+                            !frik_hand_world_authority::tryGetPresentedHandWorld(true, leftHand)) {
                             hidden("hand-bones");
                             continue;
                         }
-                        rightBone = toFrame(rightHand->world);
-                        leftBone = toFrame(leftHand->world);
+                        rightBone = toFrame(rightHand);
+                        leftBone = toFrame(leftHand);
                     }
                     auto& counter = hands[index];
                     counter.pose = ammo_counter_pose::resolveVanilla(toFrame(quad->world), isLeft, rightBone, leftBone, head,
