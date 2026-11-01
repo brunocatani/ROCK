@@ -566,6 +566,7 @@ namespace rock
             references.lanePoints = localReferences.lanePointsWorld;
             references.laneCounts = localReferences.lanePointCounts;
 
+            performance_profiler::ScopedTimer selectionTimer(performance_profiler::Scope::EquippedWeaponFingerTriangleSelection);
             std::vector<support_grip_triangle_selection::Part> parts{};
             parts.reserve(evidenceViews.size());
             std::uint64_t firstOrdinal = 0;
@@ -591,8 +592,12 @@ namespace rock
                 });
                 firstOrdinal += evidenceView.localTriangles.size();
             }
-            support_grip_triangle_selection::rankParts(parts, references, laneLimit, boundedLimit, rankingScratch);
+            support_grip_triangle_selection::Stats selectionStats{};
+            support_grip_triangle_selection::rankParts(parts, references, laneLimit, boundedLimit, rankingScratch, &selectionStats);
             support_grip_triangle_selection::mergeRankings(rankingScratch, boundedLimit, outTriangles);
+            performance_profiler::observeValue(
+                performance_profiler::ValueMetric::EquippedWeaponFingerSelectionMeasuredTriangles, selectionStats.trianglesMeasured);
+            performance_profiler::observeValue(performance_profiler::ValueMetric::EquippedWeaponFingerSelectionNodeVisits, selectionStats.nodesVisited);
         }
 
         struct NativeScopeCameraFollowCapture

@@ -21,6 +21,15 @@ namespace rock
 
         void clear() { _nodes.clear(); _indices.clear(); }
 
+        // Bounds of every indexed triangle (the root node); false when nothing is indexed.
+        bool bounds(RE::NiPoint3& minimum, RE::NiPoint3& maximum) const
+        {
+            if (_nodes.empty()) return false;
+            minimum = _nodes.front().min;
+            maximum = _nodes.front().max;
+            return true;
+        }
+
         template <class Triangles>
         void build(const Triangles& triangles)
         {

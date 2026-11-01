@@ -223,6 +223,8 @@ namespace rock::performance_profiler
                 return "twoHandedGripStart";
             case Scope::EquippedWeaponFingerPoseCapture:
                 return "equippedWeaponFingerPoseCapture";
+            case Scope::EquippedWeaponFingerTriangleSelection:
+                return "equippedWeaponFingerTriangleSelection";
             case Scope::SupportGripSuppression:
                 return "supportGripSuppression";
             case Scope::SelectionCasts:
@@ -461,6 +463,10 @@ namespace rock::performance_profiler
                 return "equippedWeaponFingerPoseSourceTriangles";
             case ValueMetric::EquippedWeaponFingerPoseSelectedTriangles:
                 return "equippedWeaponFingerPoseSelectedTriangles";
+            case ValueMetric::EquippedWeaponFingerSelectionMeasuredTriangles:
+                return "equippedWeaponFingerSelectionMeasuredTriangles";
+            case ValueMetric::EquippedWeaponFingerSelectionNodeVisits:
+                return "equippedWeaponFingerSelectionNodeVisits";
             case ValueMetric::EquippedWeaponFingerPoseSpatialNodeVisits:
                 return "equippedWeaponFingerPoseSpatialNodeVisits";
             case ValueMetric::EquippedWeaponFingerPoseTriangleTests:
