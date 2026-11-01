@@ -58,6 +58,15 @@ namespace rock::testbench_telemetry
         EquippedWeaponPart = 4, // a part grip on the equipped weapon (support hand, magazine well...)
     };
 
+    // A scene node's world transform, copied in the frame it was read.
+    struct NodeSample
+    {
+        float position[3]{};
+        float rotation[9]{}; // row-major NiMatrix3
+        float scale = 1.0f;
+        bool valid = false;
+    };
+
     struct HandFrameSample
     {
         float position[3]{};
@@ -67,15 +76,10 @@ namespace rock::testbench_telemetry
         bool disabled = false;
         HeldKind held = HeldKind::None;
         std::uint32_t heldFormId = 0; // the grabbed reference (Object, LooseWeapon); 0 otherwise
-    };
-
-    // A scene node's world transform, copied in the frame it was read.
-    struct NodeSample
-    {
-        float position[3]{};
-        float rotation[9]{}; // row-major NiMatrix3
-        float scale = 1.0f;
-        bool valid = false;
+        // The grabbed reference's root as its driven Havok body places it this frame (Object,
+        // LooseWeapon). Against `position`/`rotation` it shows how far the object trails the
+        // hand: the bench's slip and rubber-band measure.
+        NodeSample heldRoot{};
     };
 
     struct FrameSample

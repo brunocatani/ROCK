@@ -557,6 +557,19 @@ namespace rock
                 if (const auto* ref = hand.getHeldRef()) {
                     out.heldFormId = ref->GetFormID();
                 }
+                RE::NiTransform root;
+                if (hand.readHeldObjectRoot(frame.hknpWorld, root)) {
+                    out.heldRoot.position[0] = root.translate.x;
+                    out.heldRoot.position[1] = root.translate.y;
+                    out.heldRoot.position[2] = root.translate.z;
+                    for (int row = 0; row < 3; ++row) {
+                        out.heldRoot.rotation[row * 3 + 0] = root.rotate.entry[row].x;
+                        out.heldRoot.rotation[row * 3 + 1] = root.rotate.entry[row].y;
+                        out.heldRoot.rotation[row * 3 + 2] = root.rotate.entry[row].z;
+                    }
+                    out.heldRoot.scale = root.scale;
+                    out.heldRoot.valid = true;
+                }
             } else if (grips.firingGripActive || roster.slotOneHolds(isLeft)) {
                 out.held = testbench_telemetry::HeldKind::EquippedWeapon;
             } else if (grips.partGripActive) {
