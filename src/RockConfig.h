@@ -126,6 +126,9 @@ namespace rock
         float rockFiringGripHapticDurationSeconds = 0.10f;
         float rockFiringGripAttachHapticIntensity = 0.85f;
         float rockFiringGripDetachHapticIntensity = 0.30f;
+        // Ammo counter look and placement; see ammo_counters::Style.
+        // 1: Minimal; 2: Immersive; 3: Vanilla.
+        int rockAmmoCounterStyle = 1;
 
         // Default hand: the firing hand for equips that carry no physical
         // hand (favorites, PALM, scripts) and the grenade preference. Physical

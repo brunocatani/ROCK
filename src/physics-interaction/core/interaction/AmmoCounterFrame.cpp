@@ -8,9 +8,16 @@
 #include "physics-interaction/weapon/NativeSecondaryPresentation.h"
 #include "physics-interaction/weapon/WeaponGripSeat.h"
 #include "physics-interaction/weapon/WeaponInstanceClassification.h"
+#include "rock_support/Fo4VrRuntime.h"
 
-// Ammo counters: one per held weapon at its firing grip, on the palm side of
-// its firing hand, from this frame's publication (hand roles, per-slot rounds).
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstring>
+
+// Ammo counters: one per held weapon on the hand that holds it, from this
+// frame's publication (hand roles, per-slot rounds). Minimal and Immersive sit
+// at the weapon's firing grip on its palm side; Vanilla on the back of the hand.
 
 namespace rock
 {
@@ -20,11 +27,118 @@ namespace rock
         {
             return { value.x, value.y, value.z };
         }
+
+        ammo_counter_pose::Frame toFrame(const RE::NiTransform& world) noexcept
+        {
+            return {
+                .x = toPoint(transform_math::rotateLocalVectorToWorld(world.rotate, RE::NiPoint3{ 1.0f, 0.0f, 0.0f })),
+                .y = toPoint(transform_math::rotateLocalVectorToWorld(world.rotate, RE::NiPoint3{ 0.0f, 1.0f, 0.0f })),
+                .z = toPoint(transform_math::rotateLocalVectorToWorld(world.rotate, RE::NiPoint3{ 0.0f, 0.0f, 1.0f })),
+                .origin = toPoint(world.translate),
+                .scale = world.scale,
+            };
+        }
+
+        /*
+         * The game's HUD color and opacity (Fallout4Prefs.ini [Interface]),
+         * which the HUD styles follow like the vanilla counter. The settings
+         * live in the game's static INI collections for the whole process, so
+         * their pointers are looked up once; the values are read every frame
+         * because the game's settings menu changes them live.
+         */
+        struct HudLook
+        {
+            std::array<float, 3> color{ 18.0f / 255.0f, 1.0f, 21.0f / 255.0f };
+            float opacity{ 1.0f };
+        };
+
+        HudLook readHudLook() noexcept
+        {
+            static bool looked = false;
+            static std::array<RE::Setting*, 3> colors{};
+            static RE::Setting* opacity = nullptr;
+            if (!looked) {
+                looked = true;
+                colors = { f4vr::getIniSetting("iHUDColorR:Interface"), f4vr::getIniSetting("iHUDColorG:Interface"),
+                    f4vr::getIniSetting("iHUDColorB:Interface") };
+                opacity = f4vr::getIniSetting("fHUDOpacity:Interface");
+            }
+            HudLook look{};
+            for (std::size_t i = 0; i < colors.size(); ++i) {
+                if (colors[i] && colors[i]->GetType() == RE::Setting::SETTING_TYPE::kInt) {
+                    look.color[i] = static_cast<float>(std::clamp(colors[i]->GetInt(), 0, 255)) / 255.0f;
+                }
+            }
+            if (opacity && opacity->GetType() == RE::Setting::SETTING_TYPE::kFloat && std::isfinite(opacity->GetFloat())) {
+                look.opacity = std::clamp(opacity->GetFloat(), 0.0f, 1.0f);
+            }
+            return look;
+        }
+
+        /*
+         * The vanilla counter's screen: the ammo:0 quad of the wand HUD mesh
+         * under the primary wand (FRIK's _primaryWand.nif puts it on the back
+         * of the hand). The mesh is attached once and lives with the wand, so
+         * the node is found by a bounded search at most once a second while
+         * missing and kept while it still hangs under the wand. The holder is
+         * never destroyed: releasing game nodes during process exit is unsafe.
+         */
+        constexpr char kVanillaAmmoQuadName[] = "ammo:0";
+        constexpr std::uint32_t kVanillaQuadSearchDepth = 6;
+        constexpr std::uint32_t kVanillaQuadSearchIntervalFrames = 90;
+        auto& s_vanillaAmmoQuad = *new RE::NiPointer<RE::NiAVObject>{};
+
+        RE::NiAVObject* findNamed(RE::NiAVObject* object, const std::uint32_t remainingDepth) noexcept
+        {
+            if (!object) return nullptr;
+            if (const char* name = object->name.c_str(); name && std::strcmp(name, kVanillaAmmoQuadName) == 0) return object;
+            auto* node = remainingDepth > 0 ? object->IsNode() : nullptr;
+            if (!node) return nullptr;
+            for (const auto& child : node->children) {
+                if (auto* found = findNamed(child.get(), remainingDepth - 1)) return found;
+            }
+            return nullptr;
+        }
+
+        RE::NiAVObject* vanillaAmmoQuad(RE::NiNode* wand) noexcept
+        {
+            if (!wand) return nullptr;
+            if (s_vanillaAmmoQuad) {
+                const RE::NiAVObject* ancestor = s_vanillaAmmoQuad->parent;
+                for (std::uint32_t hop = 0; ancestor && ancestor != wand && hop < kVanillaQuadSearchDepth; ++hop) {
+                    ancestor = ancestor->parent;
+                }
+                if (ancestor == wand) return s_vanillaAmmoQuad.get();
+                s_vanillaAmmoQuad.reset();
+            }
+            static std::uint32_t framesUntilSearch = 0;
+            static bool reportedMissing = false;
+            if (framesUntilSearch > 0) {
+                --framesUntilSearch;
+                return nullptr;
+            }
+            framesUntilSearch = kVanillaQuadSearchIntervalFrames;
+            if (auto* found = findNamed(wand, kVanillaQuadSearchDepth)) {
+                s_vanillaAmmoQuad.reset(found);
+                reportedMissing = false;
+                ROCK_LOG_INFO(Weapon, "Ammo counter: vanilla wand ammo screen '{}' found", kVanillaAmmoQuadName);
+                return found;
+            }
+            if (!reportedMissing) {
+                reportedMissing = true;
+                ROCK_LOG_WARN(Weapon, "Ammo counter: no '{}' under the primary wand; the Vanilla style stays hidden",
+                    kVanillaAmmoQuadName);
+            }
+            return nullptr;
+        }
     }
 
     void PhysicsInteraction::publishAmmoCounters()
     {
         std::array<ammo_counters::HandCounter, 2> hands{};
+        const auto style = static_cast<ammo_counters::Style>(g_rockConfig.rockAmmoCounterStyle);
+        const bool hudStyle = style != ammo_counters::Style::Minimal;
+        const auto hudLook = hudStyle ? readHudLook() : HudLook{};
         const auto& runtime = runtime_state::currentFrame();
         provider::Publication publication{};
         auto* nodes = f4vr::getPlayerNodes();
@@ -74,6 +188,34 @@ namespace rock
                     ROCK_LOG_SAMPLE_INFO(Weapon, 2000, "Ammo counter hidden slot={} stage={} firingHand={} form={:08X}",
                         slot, stage, isLeft ? "left" : "right", state.weaponFormId);
                 };
+                if (style == ammo_counters::Style::Vanilla) {
+                    // The back of the holding hand: the wand HUD's ammo screen,
+                    // mirrored onto the left hand. It needs no weapon seat.
+                    auto* quad = vanillaAmmoQuad(nodes->primaryWandNode);
+                    if (!quad) {
+                        hidden("vanilla-screen");
+                        continue;
+                    }
+                    ammo_counter_pose::Frame rightBone{}, leftBone{};
+                    if (isLeft) {
+                        auto* rightHand = getInteractionHandNode(false);
+                        auto* leftHand = getInteractionHandNode(true);
+                        if (!rightHand || !leftHand) {
+                            hidden("hand-bones");
+                            continue;
+                        }
+                        rightBone = toFrame(rightHand->world);
+                        leftBone = toFrame(leftHand->world);
+                    }
+                    auto& counter = hands[index];
+                    counter.pose = ammo_counter_pose::resolveVanilla(toFrame(quad->world), isLeft, rightBone, leftBone, head,
+                        hudLook.opacity);
+                    counter.shown = counter.pose.valid;
+                    counter.loaded = state.loadedRounds;
+                    counter.reserve = state.reserveRounds;
+                    if (!counter.shown) hidden("vanilla-pose");
+                    continue;
+                }
                 if (slot == 0) {
                     // The same authored seat the firing grip places the hand on.
                     auto* node = resolveEquippedWeaponInteractionNode();
@@ -113,14 +255,16 @@ namespace rock
                 const auto weaponRight = transform_math::rotateLocalVectorToWorld(weaponWorld.rotate, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
                 const auto weaponUp = transform_math::rotateLocalVectorToWorld(weaponWorld.rotate, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
                 auto& counter = hands[index];
-                counter.pose = ammo_counter_pose::resolve(toPoint(palm), toPoint(weaponRight), toPoint(weaponUp), isLeft, head);
+                counter.pose = style == ammo_counters::Style::Immersive ?
+                    ammo_counter_pose::resolveImmersive(toPoint(palm), toPoint(weaponRight), toPoint(weaponUp), isLeft, head) :
+                    ammo_counter_pose::resolve(toPoint(palm), toPoint(weaponRight), toPoint(weaponUp), isLeft, head);
                 counter.shown = counter.pose.valid;
                 counter.loaded = state.loadedRounds;
                 counter.reserve = state.reserveRounds;
             }
         }
         // The counters replace the vanilla one only while RPS UI shows them.
-        const bool replacing = ammo_counters::update(hands) && native_ammo_counter_visibility::install();
+        const bool replacing = ammo_counters::update(hands, style, hudLook.color) && native_ammo_counter_visibility::install();
         native_ammo_counter_visibility::replace(replacing);
     }
 }

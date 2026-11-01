@@ -24,10 +24,11 @@ namespace rock::ammo_counters
         };
 
         // [hand * 2 + 0] loaded, [hand * 2 + 1] reserve; hand 0 right, 1 left.
+        // The HUD styles draw the whole counter on the loaded overlay.
         std::array<Overlay, 4> g_overlays{ {
-            { "rock.ammo.right.loaded", "Right hand loaded rounds" },
+            { "rock.ammo.right.loaded", "Right hand ammo counter" },
             { "rock.ammo.right.reserve", "Right hand reserve rounds" },
-            { "rock.ammo.left.loaded", "Left hand loaded rounds" },
+            { "rock.ammo.left.loaded", "Left hand ammo counter" },
             { "rock.ammo.left.reserve", "Left hand reserve rounds" },
         } };
         const rpsui::sdk::ApiV1* g_base{ nullptr };
@@ -107,14 +108,24 @@ namespace rock::ammo_counters
             return false;
         }
 
+        struct Look
+        {
+            rpsui::sdk::NumberOverlayStyleV1 style{ rpsui::sdk::NumberOverlayStyleV1::Plain };
+            std::array<float, 3> color{ 1.0f, 1.0f, 1.0f };
+            std::uint32_t secondaryValue{ 0 };
+        };
+
         bool show(Overlay& overlay, const ammo_counter_pose::Pose& pose, const ammo_counter_pose::Panel& panel,
-            std::uint32_t value) noexcept
+            std::uint32_t value, const Look& look) noexcept
         {
             rpsui::sdk::NumberOverlayPresentationV1 presentation{};
             presentation.sequence = ++overlay.sequence;
             presentation.open = 1;
             presentation.value = value;
             presentation.opacity = pose.opacity;
+            presentation.style = look.style;
+            presentation.secondaryValue = look.secondaryValue;
+            for (unsigned i = 0; i < 3; ++i) presentation.color[i] = look.color[i];
             for (unsigned i = 0; i < 3; ++i) {
                 presentation.pose.center[i] = panel.center[i];
                 presentation.pose.right[i] = pose.right[i];
@@ -133,7 +144,7 @@ namespace rock::ammo_counters
         }
     }
 
-    bool update(const std::array<HandCounter, 2>& hands) noexcept
+    bool update(const std::array<HandCounter, 2>& hands, const Style style, const std::array<float, 3>& hudColor) noexcept
     {
         if (!bind()) return false;
         bool healthy = true;
@@ -142,8 +153,19 @@ namespace rock::ammo_counters
             auto& loaded = g_overlays[hand * 2];
             auto& reserve = g_overlays[hand * 2 + 1];
             if (counter.shown && counter.pose.valid && counter.pose.opacity > 0.0f) {
-                healthy &= show(loaded, counter.pose, counter.pose.loaded, counter.loaded);
-                healthy &= show(reserve, counter.pose, counter.pose.reserve, counter.reserve);
+                if (style == Style::Minimal) {
+                    healthy &= show(loaded, counter.pose, counter.pose.loaded, counter.loaded, {});
+                    healthy &= show(reserve, counter.pose, counter.pose.reserve, counter.reserve, {});
+                } else {
+                    const Look look{
+                        .style = style == Style::Immersive ? rpsui::sdk::NumberOverlayStyleV1::HudBracketed :
+                                                             rpsui::sdk::NumberOverlayStyleV1::Hud,
+                        .color = hudColor,
+                        .secondaryValue = counter.reserve,
+                    };
+                    healthy &= show(loaded, counter.pose, counter.pose.counter, counter.loaded, look);
+                    healthy &= close(reserve);
+                }
             } else {
                 healthy &= close(loaded);
                 healthy &= close(reserve);

@@ -480,6 +480,12 @@ namespace rock
             0.30f,
             0.0f,
             1.0f);
+        rockAmmoCounterStyle = static_cast<int>(ini.GetLongValue(
+            IMMERSIVE_WEAPONS_SECTION, "iAmmoCounterStyle", rockAmmoCounterStyle));
+        if (rockAmmoCounterStyle < 1 || rockAmmoCounterStyle > 3) {
+            ROCK_LOG_WARN(Config, "Invalid iAmmoCounterStyle={} -- using Minimal", rockAmmoCounterStyle);
+            rockAmmoCounterStyle = 1;
+        }
 
         rockLeftHandedMode = ini.GetBoolValue(
             AMBIDEXTROUS_FIRING_SECTION,
