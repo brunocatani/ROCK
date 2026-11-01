@@ -552,4 +552,114 @@ namespace rock
         return true;
     }
 
+    /*
+     * Bench pose metric, logged once per grab 60 held updates (FRIK eases bones ~7.8%/frame, so ~99% settled) after the final pose
+     * publishes. Everything comes from what is drawn: the rendered finger
+     * bones and the held node's world transform, against the grab's cached
+     * mesh index (object space). Distances are from bone centrelines to the
+     * nearest mesh point, signed by the triangle's outward winding: negative
+     * means the bone line is inside the object. Skin sits about 0.7 gu off the
+     * finger centreline, so anything under +0.7 visibly penetrates. Curl
+     * values and the open caps show whether a finger could have opened
+     * further. Object-local palm and finger directions record how the hand sat
+     * on the object, the input for deriving grasp rules from good grabs.
+     */
+    void Hand::logGrabPoseQuality() const
+    {
+        if (!_grabFrame.heldNode || _grabFingerTriangleIndex.empty() || !_hasGrabVisualHandTransform) {
+            ROCK_LOG_INFO(Hand, "{} GRAB POSE QUALITY: skipped heldNode={} meshIndex={} visualHand={}", handName(),
+                _grabFrame.heldNode != nullptr, !_grabFingerTriangleIndex.empty(), _hasGrabVisualHandTransform);
+            return;
+        }
+        root_flattened_finger_skeleton_runtime::Snapshot rendered{};
+        if (!root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(
+                _isLeft, rendered, nullptr, SkeletonBoneCaptureSpace::Rendered) ||
+            !rendered.palmNormalValid) {
+            ROCK_LOG_INFO(Hand, "{} GRAB POSE QUALITY: skipped renderedSkeleton=no", handName());
+            return;
+        }
+
+        const RE::NiTransform objectWorld = _grabFrame.heldNode->world;
+        constexpr float kSearchGameUnits = 12.0f;
+        constexpr float kNoSurface = 99.0f;
+        const auto signedDistance = [&](const RE::NiPoint3& point, bool& inside) {
+            RE::NiPoint3 nearest{};
+            RE::NiPoint3 outward{};
+            inside = _grabFingerTriangleIndex.queryPointInsideWorld(objectWorld, point);
+            if (!_grabFingerTriangleIndex.querySphereWorld(objectWorld, point, kSearchGameUnits, &nearest, &outward, nullptr, false)) {
+                return kNoSurface;
+            }
+            const RE::NiPoint3 offset = point - nearest;
+            const float distance = std::sqrt(offset.x * offset.x + offset.y * offset.y + offset.z * offset.z);
+            return offset.x * outward.x + offset.y * outward.y + offset.z * outward.z < 0.0f ? -distance : distance;
+        };
+        const auto lerp = [](const RE::NiPoint3& a, const RE::NiPoint3& b, float t) { return a + (b - a) * t; };
+        const auto unitLocal = [&](const RE::NiPoint3& world) {
+            RE::NiPoint3 local = transform_math::worldVectorToLocal(objectWorld, world);
+            const float length = std::sqrt(local.x * local.x + local.y * local.y + local.z * local.z);
+            return length > 0.000001f ? local * (1.0f / length) : RE::NiPoint3{};
+        };
+
+        // The solver's own contact point per finger, carried in object space, at the object's current pose.
+        const auto solvedOnObject = grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, objectWorld);
+        static constexpr std::array<const char*, 3> kSegment{ "prox", "mid", "tip" };
+        std::string fingers;
+        for (std::size_t finger = 0; finger < rendered.fingers.size(); ++finger) {
+            const auto& chain = rendered.fingers[finger];
+            if (!chain.valid) {
+                fingers += std::format(" f{}=invalid", finger);
+                continue;
+            }
+            const RE::NiPoint3 tipEnd = chain.tipGeometryValid ? chain.points[2] + (chain.tipSegmentCenterWorld - chain.points[2]) * 2.0f :
+                                                                 chain.points[2] + (chain.points[2] - chain.points[1]) * 0.8f;
+            const std::array<RE::NiPoint3, 4> joints{ chain.points[0], chain.points[1], chain.points[2], tipEnd };
+            float worst = kNoSurface;
+            std::size_t worstSegment = 0;
+            int insideSamples = 0;
+            for (std::size_t segment = 0; segment < 3; ++segment) {
+                for (int sample = 0; sample < 4; ++sample) {
+                    bool inside = false;
+                    const float distance = signedDistance(lerp(joints[segment], joints[segment + 1], (sample + 0.5f) / 4.0f), inside);
+                    insideSamples += inside ? 1 : 0;
+                    if (distance < worst) {
+                        worst = distance;
+                        worstSegment = segment;
+                    }
+                }
+            }
+            const float openCap = finger == 0 ? g_rockConfig.rockGrabThumbSweepMaxOpenValue : g_rockConfig.rockGrabFingerSweepMaxOpenValue;
+            const float curl = _grabFingerPose.values[finger];
+            // Rendered distal segment's closest approach to the solver's contact point: near 0 means the render follows the solve.
+            float tipToSolved = -1.0f;
+            if (solvedOnObject.surfaceAimTargetValid[finger]) {
+                tipToSolved = kNoSurface;
+                for (int sample = 0; sample <= 4; ++sample) {
+                    const RE::NiPoint3 offset = lerp(chain.points[2], tipEnd, sample / 4.0f) - solvedOnObject.surfaceAimTarget[finger];
+                    tipToSolved = (std::min)(tipToSolved, std::sqrt(offset.x * offset.x + offset.y * offset.y + offset.z * offset.z));
+                }
+            }
+            fingers += std::format(" f{}=[min={:.2f}@{} insideShell={}/12 curl={:.2f}{} hit={} tipToSolved={:.2f}]", finger, worst, kSegment[worstSegment], insideSamples,
+                curl, curl >= openCap - 0.01f ? "(openCap)" : "", static_cast<int>(_grabFingerPose.hitKind[finger]), tipToSolved);
+        }
+
+        // Palm centreline: wrist (visual hand origin) toward the knuckle midpoint.
+        RE::NiPoint3 knuckles{};
+        for (std::size_t finger = 1; finger < 5; ++finger) knuckles = knuckles + rendered.fingers[finger].points[0] * 0.25f;
+        const RE::NiPoint3 wrist = _grabVisualHandTransform.translate;
+        float palmMin = kNoSurface;
+        int palmInside = 0;
+        for (const float t : { 0.35f, 0.6f, 0.85f }) {
+            bool inside = false;
+            palmMin = (std::min)(palmMin, signedDistance(lerp(wrist, knuckles, t), inside));
+            palmInside += inside ? 1 : 0;
+        }
+        const RE::NiPoint3 palmNormalLocal = unitLocal(rendered.palmNormalWorld);
+        const RE::NiPoint3 fingerDirLocal = unitLocal(knuckles - wrist);
+        ROCK_LOG_INFO(Hand,
+            "{} GRAB POSE QUALITY: source={} palm=[min={:.2f} insideShell={}/3 normalLocal=({:.2f},{:.2f},{:.2f}) fingerDirLocal=({:.2f},{:.2f},{:.2f})] "
+            "contactMask=0x{:02X}{}",
+            handName(), _grabObjectGripAtGrab.source ? _grabObjectGripAtGrab.source : "none", palmMin, palmInside, palmNormalLocal.x, palmNormalLocal.y,
+            palmNormalLocal.z, fingerDirLocal.x, fingerDirLocal.y, fingerDirLocal.z, _grabFingerPose.contactValidMask, fingers);
+    }
+
 }

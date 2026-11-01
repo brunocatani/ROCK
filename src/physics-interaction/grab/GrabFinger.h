@@ -2843,7 +2843,7 @@ namespace rock::grab_finger_pose_runtime
         }
 
         [[nodiscard]] bool querySphereWorld(const RE::NiTransform& objectWorldTransform, const RE::NiPoint3& centerWorld, float radiusWorld, RE::NiPoint3* outPointWorld,
-            RE::NiPoint3* outNormalWorld, FingerPoseSpatialQueryStats* stats = nullptr) const
+            RE::NiPoint3* outNormalWorld, FingerPoseSpatialQueryStats* stats = nullptr, bool orientNormalTowardCenter = true) const
         {
             if (_nodes.empty() || !isFinitePoint(centerWorld) || !std::isfinite(radiusWorld) || radiusWorld <= 0.0f || !std::isfinite(objectWorldTransform.scale) ||
                 std::abs(objectWorldTransform.scale) <= 0.000001f) {
@@ -2916,7 +2916,8 @@ namespace rock::grab_finger_pose_runtime
                 RE::NiPoint3 normalWorld = transform_math::localVectorToWorld(objectWorldTransform, grab_finger_pose_math::triangleNormal(_triangles[bestTriangleIndex]));
                 normalWorld = normalizedOrFallback(normalWorld, RE::NiPoint3{});
                 const RE::NiPoint3 pointWorld = transform_math::localPointToWorld(objectWorldTransform, bestPointLocal);
-                if (dotPoint(normalWorld, centerWorld - pointWorld) < 0.0f) {
+                // Unoriented, the normal keeps the mesh winding (outward), so a caller can tell inside from outside.
+                if (orientNormalTowardCenter && dotPoint(normalWorld, centerWorld - pointWorld) < 0.0f) {
                     normalWorld = normalWorld * -1.0f;
                 }
                 *outNormalWorld = normalWorld;

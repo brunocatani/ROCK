@@ -632,6 +632,7 @@ namespace rock
         const BethesdaPhysicsBody& getHandBody() const { return _handBody; }
         bool tryResolveLivePalmAnchorReference(RE::hknpWorld* world, LivePalmAnchorReference& outReference) const;
         RE::NiPoint3 computeGrabPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& fallbackHandWorldTransform) const;
+        void logGrabPoseQuality() const;
         bool tryComputeGrabProxyLocalPalmPocketFrameWorld(RE::hknpWorld* world, RE::NiTransform& outFrameWorld) const;
         bool tryComputeGrabProxyLocalPalmPocketPivotAWorld(RE::hknpWorld* world, RE::NiPoint3& outPivotWorld) const;
 
@@ -1325,6 +1326,8 @@ namespace rock
         bool _hasGrabFingerJointPose = false;
         bool _hasGrabFingerLocalTransforms = false;
         bool _grabFingerLocalTransformFinalizePending = false;
+        // Bench-only pose metric: held updates left until the settled grab is measured once (-1 = none).
+        int _grabPoseQualityUpdatesRemaining = -1;
         bool _hasGrabFingerPose = false;
         bool _selectedCloseFingerPoseActive = false;
         RE::NiPoint3 _lastSelectedCloseOrigin{};

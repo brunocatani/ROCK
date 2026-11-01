@@ -5192,6 +5192,55 @@ namespace rock
                     }
                 }
 
+                /*
+                 * A pull is caught about 27 units from the hand, beyond the palm
+                 * pocket's snap range, and its stored hit point was picked by the
+                 * selection ray at range: the face that looked at the player
+                 * then. The seat keeps the object's rotation, so holding that
+                 * point leaves its face sloping away from the palm (a visible gap)
+                 * and the fingers close on air. Take the point the palm faces at
+                 * the catch instead: the nearest front-facing mesh point to the
+                 * palm line, on the object as it arrived.
+                 */
+                if (!meshGrabFound && selection.grabbedFromPullCatch && !grabSurfaceTriangles.empty()) {
+                    const RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(proxyAuthorityFrameWorldAtGrab, _isLeft);
+                    if (findClosestGrabSurfaceHit(grabSurfaceTriangles,
+                            palmPocketPivotAWorld,
+                            palmDir,
+                            g_rockConfig.rockGrabLateralWeight,
+                            g_rockConfig.rockGrabDirectionalWeight,
+                            grabSurfaceHit,
+                            g_rockConfig.rockGrabSurfaceBehindPalmToleranceGameUnits)) {
+                        grabGripPoint = grabSurfaceHit.position;
+                        selectionToMeshDistanceGameUnits =
+                            sel.hasHitPoint ? pointDistanceGameUnits(sel.hitPointWorld, grabGripPoint) : std::numeric_limits<float>::max();
+                        grabSurfaceHit.hasSelectionHit = sel.hasHitPoint;
+                        grabSurfaceHit.selectionToMeshDistanceGameUnits = selectionToMeshDistanceGameUnits;
+                        grabSurfaceHit.pivotToSurfaceDistanceGameUnits = pointDistanceGameUnits(palmPocketPivotAWorld, grabGripPoint);
+                        surfaceOwnerNode = grabSurfaceHit.sourceNode;
+                        meshGrabFound = true;
+                        grabPointMode = "pullCatchPalmLineMeshSurface";
+                        grabPointAuthoritySource = GrabPivotAuthoritySource::PalmPocketMeshPoint;
+                        grabFallbackReason = "pullCatchPalmLine";
+                        ROCK_LOG_DEBUG(Hand,
+                            "{} hand MESH GRAB: mode={} tris={} closest=({:.1f},{:.1f},{:.1f}) tri={} source={} owner='{}' "
+                            "selectionDelta={:.1f}gu surfaceAlong={:.1f} surfaceLateral={:.1f} normalDotPalm={:.2f}",
+                            handName(),
+                            grabPointMode,
+                            grabSurfaceTriangles.size(),
+                            grabSurfaceHit.position.x,
+                            grabSurfaceHit.position.y,
+                            grabSurfaceHit.position.z,
+                            grabSurfaceHit.triangleIndex,
+                            grabSurfaceSourceKindName(grabSurfaceHit.sourceKind),
+                            nodeDebugName(grabSurfaceHit.sourceNode),
+                            sel.hasHitPoint ? selectionToMeshDistanceGameUnits : -1.0f,
+                            grabSurfaceHit.signedAlongPalmDistanceGameUnits,
+                            grabSurfaceHit.lateralPalmDistanceGameUnits,
+                            grabSurfaceHit.normal.x * palmDir.x + grabSurfaceHit.normal.y * palmDir.y + grabSurfaceHit.normal.z * palmDir.z);
+                    }
+                }
+
                 if (!meshGrabFound && !grabSurfaceTriangles.empty() && sel.hasHitPoint) {
                     const RE::NiPoint3 grabPivotAWorld = palmPocketPivotAWorld;
                     RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(proxyAuthorityFrameWorldAtGrab, _isLeft);
@@ -9624,6 +9673,11 @@ namespace rock
             ROCK_LOG_DEBUG(Hand,
                 "{} THREE-PHASE GRAB FINAL POSE: local transforms finalized after settled joint publication",
                 handName());
+            _grabPoseQualityUpdatesRemaining = g_rockConfig.rockDebugTestbenchTelemetry ? 60 : -1;
+        }
+        if (_grabPoseQualityUpdatesRemaining > 0 && --_grabPoseQualityUpdatesRemaining == 0) {
+            logGrabPoseQuality();
+            _grabPoseQualityUpdatesRemaining = -1;
         }
 
         if (convergingAcquisitionPhase && !_grabOffsetAcquisition.active && _grabObjectGripAtGrab.valid) {
@@ -10591,6 +10645,7 @@ namespace rock
         _hasGrabFingerJointPose = false;
         _hasGrabFingerLocalTransforms = false;
         _grabFingerLocalTransformFinalizePending = false;
+        _grabPoseQualityUpdatesRemaining = -1;
         _hasGrabFingerPose = false;
         _controllerReleaseHistory.clear();
         _objectReleaseHistory.clear();
