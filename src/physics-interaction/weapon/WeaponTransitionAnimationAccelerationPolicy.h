@@ -35,6 +35,29 @@ namespace rock::weapon_transition_animation_acceleration_policy
             native_weapon_animation_audio::equalName(path,"EquipFast");
     }
 
+    [[nodiscard]] inline constexpr bool isSheatheClip(std::string_view path) noexcept
+    {
+        const auto slash = path.find_last_of("/\\");
+        if (slash != std::string_view::npos) path.remove_prefix(slash + 1);
+        if (!native_weapon_animation_audio::isEquipClip(path)) return false;
+        path.remove_suffix(4);
+        if (path.size() >= 3 && native_weapon_animation_audio::equalName(path.substr(0,3), "WPN")) path.remove_prefix(3);
+        return native_weapon_animation_audio::equalName(path,"UnEquip");
+    }
+
+    [[nodiscard]] inline constexpr bool isTransitionClip(const Direction direction, const std::string_view path) noexcept
+    {
+        return direction == Direction::Draw ? isDrawClip(path) : isSheatheClip(path);
+    }
+
+    // A put-away lease outlives its weapon's unequip: it stays matched while
+    // no weapon is equipped and ends when another one is.
+    [[nodiscard]] inline constexpr bool leaseIdentityMatches(
+        const Direction direction, const bool sameIdentity, const bool currentIdentityValid) noexcept
+    {
+        return sameIdentity || (direction == Direction::Sheathe && !currentIdentityValid);
+    }
+
     [[nodiscard]] inline constexpr float scaleTransitionTimestep(
         const float timestep) noexcept
     {

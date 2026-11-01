@@ -4,6 +4,7 @@
 #include "physics-interaction/native/TriggerEquipReadinessTrace.h"
 #include "physics-interaction/weapon/EquipPickupScope.h"
 #include "physics-interaction/weapon/NativeInventoryHandSlots.h"
+#include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
 
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -914,11 +915,30 @@ namespace rock::weapon_equip_transfer
         const auto remaining = readEquippedWeaponSnapshot(index);
         const auto sheathesSuppressed = held_weapon_instant_transition_policy::actionCount(
             kept.actionTrace, held_weapon_instant_transition_policy::NativeAction::Sheathe);
+        const auto stateAfter = f4vr::getNativeWeaponState(player);
+        /*
+         * With nothing left the native put-away is the correct end state, but
+         * its UnEquip clip runs about a second and every equip waits for a
+         * settled state (held_weapon_equip_state_policy::canBeginEquip): a
+         * draw right after a holster sat that second out. Its clip runs at
+         * the same accelerated rate as ROCK's draws, so the state settles
+         * within a frame or two and the native transition stays intact.
+         */
+        using AccelerationResult = weapon_transition_animation_acceleration::RequestResult;
+        auto putAway = AccelerationResult::MissingInput;
+        if (!remaining.weapon && !readEquippedWeaponSnapshot(index <= 1 ? 1 - index : 0).weapon &&
+            stateAfter == static_cast<std::uint32_t>(held_weapon_equip_state_policy::NativeWeaponState::Sheathing)) {
+            putAway = weapon_transition_animation_acceleration::request({
+                .player = player,
+                .identity = { .formID = formID, .instanceData = instanceData, .equipIndex = index },
+                .direction = weapon_transition_animation_acceleration_policy::Direction::Sheathe,
+            });
+        }
         ROCK_LOG_INFO(Weapon,
-            "Equipped index unequip index={} form={:08X} instance={:#x} slot={:08X} accepted={} remaining={:08X} keepsOther={} keptDrawn={} sheatheSuppressed={} nativeState={}->{}",
+            "Equipped index unequip index={} form={:08X} instance={:#x} slot={:08X} accepted={} remaining={:08X} keepsOther={} keptDrawn={} sheatheSuppressed={} nativeState={}->{} putAwayAcceleration={}",
             index, formID, instanceData, stack.equipSlot->formID, call.accepted, remaining.weapon ? remaining.weapon->GetFormID() : 0u,
             keepsOther, keepsOther ? held_weapon_instant_transition::immediateEquipCodeName(kept.code) : "n/a", sheathesSuppressed,
-            stateBefore, f4vr::getNativeWeaponState(player));
+            stateBefore, stateAfter, static_cast<int>(putAway));
         return !remaining.weapon;
     }
 

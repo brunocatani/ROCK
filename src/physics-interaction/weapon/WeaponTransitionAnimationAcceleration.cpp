@@ -460,20 +460,22 @@ namespace rock::weapon_transition_animation_acceleration
             }
             const auto direction = weapon_transition_animation_acceleration_policy::directionForTransitionState(
                 static_cast<std::uint32_t>(lease & kEncodedStateMask));
-            if (direction == Direction::Draw) {
+            {
                 // FO4VR hkbClipGenerator animationName is hkStringPtr +90,
                 // independently decoded by existing PAPER clip telemetry.
-                // A draw lease spans late native model replacement, so matching
-                // the character alone would also accelerate idle/fire/reload.
+                // A lease spans other clips on the same character (late native
+                // model replacement on a draw, idle and hand clips during a
+                // put-away), so only the direction's own clips are admitted.
                 std::uintptr_t namePointer{};
                 std::array<char, 256> name{};
                 if (!native_memory::tryReadField(clipGenerator, 0x90, namePointer) ||
                     !native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(namePointer & ~std::uintptr_t{1}), name.data(), name.size())) return;
                 const auto end = std::find(name.begin(), name.end(), '\0');
-                if (end == name.end() || !weapon_transition_animation_acceleration_policy::isDrawClip(
+                if (end == name.end() || !weapon_transition_animation_acceleration_policy::isTransitionClip(direction,
                         std::string_view(name.data(), static_cast<std::size_t>(end-name.begin())))) return;
                 ROCK_LOG_SAMPLE_INFO(Weapon, 10,
-                    "Weapon draw clip admitted after native draw request clip={} name='{}' nativeState={}",
+                    "Weapon {} clip admitted after native {} request clip={} name='{}' nativeState={}",
+                    direction == Direction::Draw ? "draw" : "sheathe", direction == Direction::Draw ? "draw" : "sheathe",
                     clipGenerator, name.data(), f4vr::getNativeWeaponState(reinterpret_cast<RE::Actor*>(lease & ~kEncodedStateMask)));
             }
             s_matchedActivations.fetch_add(1, std::memory_order_relaxed);
@@ -1228,7 +1230,8 @@ namespace rock::weapon_transition_animation_acceleration
 
         const bool identityMatches =
             input.player == s_runtimeLease.player &&
-            input.identity == s_runtimeLease.identity;
+            weapon_transition_animation_acceleration_policy::leaseIdentityMatches(
+                s_runtimeLease.direction, input.identity == s_runtimeLease.identity, input.identity.valid());
         const float elapsed = elapsedSeconds();
         const auto action =
             weapon_transition_animation_acceleration_policy::
