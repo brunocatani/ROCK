@@ -78,6 +78,14 @@ namespace rock::held_weapon_instant_transition_policy
         return count;
     }
 
+    // An unequip that keeps the other index's weapon drawn: the native unequip
+    // submits at most its one sheathe and never a draw.
+    [[nodiscard]] inline constexpr bool isValidKeptDrawnUnequipActionTrace(const ActionTrace& trace) noexcept
+    {
+        return !trace.playerMismatch && !trace.unexpectedCaller && !trace.nestedScope && !trace.overflow &&
+            trace.count <= 1 && actionCount(trace, NativeAction::Draw) == 0;
+    }
+
     [[nodiscard]] inline constexpr bool isValidEquipActionTrace(const ActionTrace& trace) noexcept
     {
         if (trace.playerMismatch || trace.unexpectedCaller || trace.nestedScope ||

@@ -19,6 +19,7 @@ namespace rock::held_weapon_instant_transition
         SameHandTrigger,
         GripZoneSettle,
         InventoryEquip,
+        KeptDrawnUnequip,
     };
 
     enum class ReadinessReason : std::uint8_t
@@ -98,6 +99,26 @@ namespace rock::held_weapon_instant_transition
     // equipped-weapon transition coordinator.
     [[nodiscard]] ImmediateEquipResult equipImmediatelyWithoutActions(
         const ImmediateEquipInput& input) noexcept;
+
+    /*
+     * Main-thread-only transaction around exactly one immediate unequip that
+     * leaves the other index's weapon equipped. FO4VR's unequip (140E10820)
+     * sheathes the drawn player for every weapon but grenades and mines
+     * (140E1094E..140E10988, the verified sheathe callsite; its drawn test
+     * 140F0A130 returns true in VR). That sheathe would take the weapon that
+     * stays in the other hand: its fire and the next equip wait out a native
+     * sheathe and redraw. Only that callsite is suppressed; the unequip itself
+     * stays native. The call reports nothing: the caller reads the result.
+     */
+    using KeptDrawnUnequipCall = void (*)(void* context) noexcept;
+    struct KeptDrawnUnequipResult
+    {
+        ImmediateEquipCode code{ ImmediateEquipCode::NotAttempted };
+        ReadinessReason readinessReason{ ReadinessReason::NotInstalled };
+        held_weapon_instant_transition_policy::ActionTrace actionTrace{};
+    };
+    [[nodiscard]] KeptDrawnUnequipResult unequipKeepingDrawn(
+        RE::PlayerCharacter* player, KeptDrawnUnequipCall call, void* context) noexcept;
 
     [[nodiscard]] const char* requestReasonName(RequestReason reason) noexcept;
     [[nodiscard]] const char* readinessReasonName(ReadinessReason reason) noexcept;

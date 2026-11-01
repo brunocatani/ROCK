@@ -437,6 +437,41 @@ namespace rock::held_weapon_instant_transition
         return result;
     }
 
+    KeptDrawnUnequipResult unequipKeepingDrawn(
+        RE::PlayerCharacter* player, const KeptDrawnUnequipCall call, void* context) noexcept
+    {
+        KeptDrawnUnequipResult result{};
+        if (!player || !call) {
+            result.code = ImmediateEquipCode::MissingInput;
+            return result;
+        }
+        const auto readiness = readinessFor(player);
+        result.readinessReason = readiness.reason;
+        if (!readiness.ready) {
+            result.code = ImmediateEquipCode::CapabilityUnavailable;
+            return result;
+        }
+        if (t_activeScope) {
+            t_activeScope->trace.nestedScope = true;
+            result.actionTrace.nestedScope = true;
+            result.code = ImmediateEquipCode::NestedScope;
+            return result;
+        }
+        TransactionScope scope{
+            .player = player,
+            .reason = RequestReason::KeptDrawnUnequip,
+        };
+        {
+            const ScopeLease scopeLease{ scope };
+            call(context);
+        }
+        result.actionTrace = scope.trace;
+        result.code = held_weapon_instant_transition_policy::isValidKeptDrawnUnequipActionTrace(result.actionTrace) ?
+            ImmediateEquipCode::Accepted :
+            ImmediateEquipCode::InvalidActionTrace;
+        return result;
+    }
+
     void prepareInstantDraw(RE::PlayerCharacter* player) noexcept
     {
         if (!player) return;
@@ -498,6 +533,8 @@ namespace rock::held_weapon_instant_transition
             return "same-hand-trigger";
         case RequestReason::GripZoneSettle:
             return "grip-zone-settle";
+        case RequestReason::KeptDrawnUnequip:
+            return "kept-drawn-unequip";
         default:
             return "unknown";
         }

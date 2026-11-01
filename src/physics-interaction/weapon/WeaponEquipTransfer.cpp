@@ -882,10 +882,43 @@ namespace rock::weapon_equip_transfer
         }
         // The stack's actual hand leaf, so the other index's weapon is untouched.
         RE::BGSObjectInstance object(equipped.weapon, stack.instanceData.get());
-        const bool accepted = unequip(manager, player, &object, 1, stack.equipSlot, stack.stackID, false, true, false, true, nullptr);
+        struct Call
+        {
+            UnequipObject unequip;
+            RE::ActorEquipManager* manager;
+            RE::PlayerCharacter* player;
+            const RE::BGSObjectInstance* object;
+            const RE::BGSEquipSlot* slot;
+            std::uint32_t stackID;
+            bool accepted;
+        } call{ unequip, manager, player, &object, stack.equipSlot, stack.stackID, false };
+        const auto run = [](void* context) noexcept {
+            auto& c = *static_cast<Call*>(context);
+            c.accepted = c.unequip(c.manager, c.player, c.object, 1, c.slot, c.stackID, false, true, false, true, nullptr);
+        };
+        // A weapon that stays at the other index stays drawn: the native
+        // unequip's sheathe would refuse its fire and hold the next equip
+        // until a native redraw ends. With nothing left the sheathe is the
+        // correct end state (the bare-fist guard expects it).
+        const bool keepsOther = index <= 1 && readEquippedWeaponSnapshot(1 - index).weapon != nullptr;
+        const auto stateBefore = f4vr::getNativeWeaponState(player);
+        held_weapon_instant_transition::KeptDrawnUnequipResult kept{};
+        if (keepsOther) kept = held_weapon_instant_transition::unequipKeepingDrawn(player, run, &call);
+        // Without the startup capability (or inside another ROCK equip
+        // transaction, which owns its sheathe) the unequip stays native.
+        if (!keepsOther || kept.code == held_weapon_instant_transition::ImmediateEquipCode::CapabilityUnavailable ||
+            kept.code == held_weapon_instant_transition::ImmediateEquipCode::NestedScope ||
+            kept.code == held_weapon_instant_transition::ImmediateEquipCode::MissingInput) {
+            run(&call);
+        }
         const auto remaining = readEquippedWeaponSnapshot(index);
-        ROCK_LOG_INFO(Weapon, "Equipped index unequip index={} form={:08X} instance={:#x} slot={:08X} accepted={} remaining={:08X}",
-            index, formID, instanceData, stack.equipSlot->formID, accepted, remaining.weapon ? remaining.weapon->GetFormID() : 0u);
+        const auto sheathesSuppressed = held_weapon_instant_transition_policy::actionCount(
+            kept.actionTrace, held_weapon_instant_transition_policy::NativeAction::Sheathe);
+        ROCK_LOG_INFO(Weapon,
+            "Equipped index unequip index={} form={:08X} instance={:#x} slot={:08X} accepted={} remaining={:08X} keepsOther={} keptDrawn={} sheatheSuppressed={} nativeState={}->{}",
+            index, formID, instanceData, stack.equipSlot->formID, call.accepted, remaining.weapon ? remaining.weapon->GetFormID() : 0u,
+            keepsOther, keepsOther ? held_weapon_instant_transition::immediateEquipCodeName(kept.code) : "n/a", sheathesSuppressed,
+            stateBefore, f4vr::getNativeWeaponState(player));
         return !remaining.weapon;
     }
 
