@@ -15,6 +15,8 @@
 #include <limits>
 #include <vector>
 
+#include <ROCK/FingerSweep.h>
+
 #include "physics-interaction/grab/GeneratedGrabFingerCalibration.h"
 #include "physics-interaction/VectorMath.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
@@ -243,8 +245,8 @@ namespace rock::grab_finger_pose_math
     }
 
     // June 2, 2026 (88f8737d): parametric plane contact, without baked reach tables.
-    inline constexpr float kMaxFingerOpenValue = 1.0f;
-    inline constexpr float kMaxOverOpenValue = 2.0f;
+    using finger_sweep::kMaxFingerOpenValue;
+    using finger_sweep::kMaxOverOpenValue;
     struct CalibratedChainCurlEstimate
     {
         float chordAngleRadians = 0.0f;
@@ -350,41 +352,12 @@ namespace rock::grab_finger_pose_math
         };
     }
 
-    /*
-     * Swept-arc finger curl solver. Every allowed baked row is geometrically
-     * walked from the hFRIK flex ceiling toward closed. Contacts above the
-     * authored open pose are clearance evidence, not automatically a selected
-     * pose: an over-open contact is accepted only when the corresponding probe
-     * at value 1.0 touches the mesh or lies inside a consistently wound closed
-     * shell. This preserves the skull/dorsal-graze fix while also detecting the
-     * thick-object case that a single value-1.0 proximity sphere cannot see.
-     */
-    [[nodiscard]] inline float clampOpenValue(float value)
-    {
-        return std::clamp(std::isfinite(value) ? value : kMaxFingerOpenValue, 0.0f, kMaxOverOpenValue);
-    }
+    using finger_sweep::clampOpenValue;
 
-    /*
-     * Every finger may carry an over-open value (the sweep's per-call cap is
-     * the policy boundary, not this expansion). The proximal/distal biases
-     * scale with how CLOSED the finger is, so they vanish past 1.0 and
-     * over-open joints hyper-extend uniformly - mirrored by the offline
-     * generator's expand_rock_grab_open_value.
-     */
+    // Every finger may carry an over-open value; the sweep's per-call cap is the policy boundary.
     inline std::array<float, 15> expandFingerCurlsToJointValues(const std::array<float, 5>& values)
     {
-        std::array<float, 15> joints{};
-        for (std::size_t finger = 0; finger < values.size(); ++finger) {
-            const float value = clampOpenValue(values[finger]);
-            const float closed = kMaxFingerOpenValue - std::min(value, kMaxFingerOpenValue);
-            const float proximalOpenBias = (finger == 0) ? 0.15f : 0.25f;
-            const float distalCloseBias = (finger == 0) ? 0.10f : 0.15f;
-            const std::size_t base = finger * 3;
-            joints[base + 0] = std::clamp(value + closed * proximalOpenBias, 0.0f, kMaxOverOpenValue);
-            joints[base + 1] = value;
-            joints[base + 2] = std::clamp(value - closed * distalCloseBias, 0.0f, kMaxOverOpenValue);
-        }
-        return joints;
+        return finger_sweep::expandCurlsToJointValues(values);
     }
 
     inline std::array<float, 15> advanceJointValues(const std::array<float, 15>& current, const std::array<float, 15>& target, float speed, float deltaTime)
