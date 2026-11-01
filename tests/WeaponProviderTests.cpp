@@ -78,6 +78,10 @@ namespace rock::provider::runtime {
         ++unequipRequests;
         return api::Status::Ok;
     }
+    api::Status getFiringAimWorld(api::Hand hand, api::Transform& output) {
+        output.translate[0] = hand == api::Hand::Left ? -1.0f : 1.0f;
+        return api::Status::Ok;
+    }
 }
 
 int main() {
@@ -142,6 +146,10 @@ int main() {
     assert(api.unequipWeapon(testOwner, kMaxWeaponSlots, 789) == Status::InvalidArgument);
     assert(api.unequipWeapon(testOwner, 1, 0) == Status::InvalidArgument);
     assert(api.unequipWeapon(testOwner, 1, 789) == Status::Ok && rock::provider::runtime::unequipRequests == 1);
+    Transform aim;
+    assert(api.getFiringAimWorld(testOwner, Hand::None, &aim) == Status::InvalidArgument);
+    assert(api.getFiringAimWorld(testOwner, Hand::Left, nullptr) == Status::InvalidArgument);
+    assert(api.getFiringAimWorld(testOwner, Hand::Left, &aim) == Status::Ok && aim.translate[0] == -1.0f);
 
     // Permissions are Weapon's own.
     permissions = 1;

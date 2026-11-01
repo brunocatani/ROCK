@@ -603,6 +603,11 @@ namespace rock::api::weapon {
         // slot's weapon (TargetInvalid otherwise); an empty slot returns
         // TargetUnavailable and Busy waits for an equip switch to finish.
         Status(ROCK_CALL* unequipWeapon)(OwnerToken owner, std::uint32_t weaponSlot, std::uint32_t expectedFormId) noexcept;
+        // Read. Where a firearm held by hand sits this frame: ROCK's fixed
+        // controller-to-weapon aim basis on that hand's filtered controller,
+        // the same for every firearm and independent of what is equipped.
+        // Scale is 1. TargetUnavailable while the controller frame is unknown.
+        Status(ROCK_CALL* getFiringAimWorld)(OwnerToken owner, Hand hand, Transform* outWorld) noexcept;
     };
 }
 #pragma pack(pop)

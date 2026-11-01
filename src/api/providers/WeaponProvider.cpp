@@ -144,6 +144,12 @@ Status ROCK_CALL unequipWeapon(OwnerToken owner, std::uint32_t slot, std::uint32
         return p::runtime::unequipWeapon(slot, expectedFormId);
     }, p::OwnerAccess::Active);
 }
+Status ROCK_CALL getFiringAimWorld(OwnerToken owner, Hand hand, Transform* outWorld) noexcept {
+    if (!outWorld) return Status::InvalidArgument;
+    *outWorld = {};
+    if (hand != Hand::Left && hand != Hand::Right) return Status::InvalidArgument;
+    return invoke(owner, kInterfaceId, 1, true, [&] { return p::runtime::getFiringAimWorld(hand, *outWorld); });
+}
 }
 const Api& table() noexcept {
     static const Api value{
@@ -165,6 +171,7 @@ const Api& table() noexcept {
         &isEquipPickup,
         &getSample,
         &unequipWeapon,
+        &getFiringAimWorld,
     };
     return value;
 }
