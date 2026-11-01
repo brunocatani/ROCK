@@ -527,7 +527,16 @@ namespace rock
         void clearPendingForceGrabCommits();
         void cancelEquippedWeaponTransfersForMenu();
         void updateSavedGrabOffsetGesture(const PhysicsFrameContext& frame);
-        void saveGrabOffsetForHand(Hand& hand, bool isLeft, RE::hknpWorld* hknpWorld);
+        // Result of one hand's saved-offset write; a press merges both hands into one notification.
+        struct SavedGrabOffsetOutcome
+        {
+            bool saved{ false };
+            std::uint32_t baseFormId{ 0 };
+            std::string itemName;
+            bool leftPresent{ false };
+            bool rightPresent{ false };
+        };
+        SavedGrabOffsetOutcome saveGrabOffsetForHand(Hand& hand, bool isLeft, RE::hknpWorld* hknpWorld);
         void armEquippedWeaponNativeHandoff(
             const RE::ObjectRefHandle& handle,
             std::uint32_t droppedFormId,
