@@ -724,9 +724,15 @@ namespace rock
         RE::NiTransform handBodyToRawHandAtGrab{};
         RE::NiTransform rootBodyLocal{};
         RE::NiTransform ownerBodyLocal{};
+        std::array<RE::NiPoint3, 5> fingerPoseTargetLocal{};
+        std::array<RE::NiPoint3, 5> fingerPoseTargetNormalLocal{};
+        std::array<std::uint8_t, 5> fingerPoseTargetValid{};
+        std::array<std::uint8_t, 5> fingerPoseTargetNormalValid{};
+        std::uint32_t fingerPoseTargetCount = 0;
         float handScaleAtGrab = 1.0f;
         std::uint64_t traceId = 0;
         const char* bodyResolutionReason = "none";
+        const char* fingerPoseAimReason = "none";
         /*
          * ROCK only fades the dynamic grab when the object must be synced from
          * an initial/custom alignment. The canonical frame stores that decision
@@ -757,6 +763,7 @@ namespace rock
         bool equippedWeaponTransfer = false;
         bool hasLooseObjectSoloProxyCorrection = false;
         bool hasTelemetryCapture = false;
+        bool fingerPoseAimValid = false;
         bool fadeInGrabConstraint = false;
 
         void freezeCaptureTelemetry(std::uint32_t sourceBodyId)
@@ -778,9 +785,15 @@ namespace rock
             handBodyToRawHandAtGrab = RE::NiTransform();
             rootBodyLocal = RE::NiTransform();
             ownerBodyLocal = RE::NiTransform();
+            fingerPoseTargetLocal = {};
+            fingerPoseTargetNormalLocal = {};
+            fingerPoseTargetValid = {};
+            fingerPoseTargetNormalValid = {};
+            fingerPoseTargetCount = 0;
             handScaleAtGrab = 1.0f;
             traceId = 0;
             bodyResolutionReason = "none";
+            fingerPoseAimReason = "none";
             motorFadeReason = "none";
             captureTelemetry.clear();
             localMeshTriangles.clear();
@@ -803,6 +816,7 @@ namespace rock
             equippedWeaponTransfer = false;
             hasLooseObjectSoloProxyCorrection = false;
             hasTelemetryCapture = false;
+            fingerPoseAimValid = false;
             fadeInGrabConstraint = false;
         }
 

@@ -293,6 +293,8 @@ namespace rock
         _grabFingerTriangleIndex.clear();
         _hasGrabFingerJointPose = false;
         _hasGrabFingerLocalTransforms = false;
+        _grabFingerLocalTransformFinalizePending = false;
+        _grabFingerSweptArc = false;
         _grabPoseQualityUpdatesRemaining = -1;
         _grabPoseReplay.reset();
         _hasGrabFingerPose = false;
@@ -384,6 +386,8 @@ namespace rock
         _grabFingerTriangleIndex.clear();
         _hasGrabFingerJointPose = false;
         _hasGrabFingerLocalTransforms = false;
+        _grabFingerLocalTransformFinalizePending = false;
+        _grabFingerSweptArc = false;
         _grabPoseQualityUpdatesRemaining = -1;
         _grabPoseReplay.reset();
         _hasGrabFingerPose = false;

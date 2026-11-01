@@ -1248,6 +1248,10 @@ namespace rock
         held_object_drive_policy::HeldBodySetDriveDecision _pullDriveDecision{};
         bool _heldObjectIsLooseWeapon = false;
         bool _grabFingerPosePublished = false;
+        // iLooseGrabFingerPoseMode captured at grab start: true runs the pre-capsule swept arc for this grab.
+        bool _grabFingerSweptArc = false;
+        // Swept arc only: publish the surface-aim local-transform layer on the next TouchHeld update.
+        bool _grabFingerLocalTransformFinalizePending = false;
         float _grabConvergeStableInsidePocketSeconds = 0.0f;
         float _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
         // Grab-elapsed time of the last placement onto the hand target.

@@ -1369,6 +1369,102 @@ namespace rock
             return normalizeOrZero(transform_math::localVectorToWorld(fallbackWorld, frame.gripEvidence.gripNormalLocal));
         }
 
+        // iLooseGrabFingerPoseMode = 1 (swept arc): finger targets and skeleton rebase, as before the capsule sweep.
+        grab_finger_pose_runtime::GrabFingerPoseTargetSet buildRuntimeFingerPoseTargets(
+            const RE::NiPoint3& seatPointWorld,
+            const RE::NiPoint3& seatNormalWorld)
+        {
+            auto targets = grab_finger_pose_runtime::makeSharedGripPoseTarget(seatPointWorld, seatNormalWorld);
+            targets.useSeatPointForMissingTargets = false;
+            targets.useWholeMeshForMissingTargets = true;
+            return targets;
+        }
+
+        bool rebaseFingerSkeletonSnapshot(
+            root_flattened_finger_skeleton_runtime::Snapshot& snapshot,
+            const RE::NiTransform& sourceHandWorld,
+            const RE::NiTransform& targetHandWorld)
+        {
+            if (!snapshot.valid ||
+                !std::isfinite(sourceHandWorld.scale) || std::abs(sourceHandWorld.scale) <= 0.000001f ||
+                !std::isfinite(targetHandWorld.scale) || std::abs(targetHandWorld.scale) <= 0.000001f) {
+                return false;
+            }
+
+            for (auto& finger : snapshot.fingers) {
+                if (!finger.valid) {
+                    return false;
+                }
+                for (auto& point : finger.points) {
+                    point = transform_math::localPointToWorld(
+                        targetHandWorld,
+                        transform_math::worldPointToLocal(sourceHandWorld, point));
+                }
+                if (finger.tipGeometryValid) {
+                    finger.tipSegmentCenterWorld = transform_math::localPointToWorld(targetHandWorld,
+                        transform_math::worldPointToLocal(sourceHandWorld, finger.tipSegmentCenterWorld));
+                    finger.tipDirectionWorld = normalizeOrZero(transform_math::localVectorToWorld(targetHandWorld,
+                        transform_math::worldVectorToLocal(sourceHandWorld, finger.tipDirectionWorld)));
+                }
+            }
+            if (snapshot.palmNormalValid) {
+                snapshot.palmNormalWorld = normalizeOrZero(
+                    transform_math::localVectorToWorld(
+                        targetHandWorld,
+                        transform_math::worldVectorToLocal(sourceHandWorld, snapshot.palmNormalWorld)));
+                if (lengthSquared(snapshot.palmNormalWorld) <= 0.000001f) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        void storeFingerPoseTargetsInGrabFrame(CanonicalGrabFrame& frame,
+            const grab_finger_pose_runtime::GrabFingerPoseTargetSet& targets,
+            const RE::NiTransform& objectWorldTransform)
+        {
+            frame.fingerPoseTargetLocal = {};
+            frame.fingerPoseTargetNormalLocal = {};
+            frame.fingerPoseTargetValid = {};
+            frame.fingerPoseTargetNormalValid = {};
+            frame.fingerPoseTargetCount = 0;
+            for (std::size_t finger = 0; finger < targets.targets.size(); ++finger) {
+                if (!targets.targetValid[finger]) {
+                    continue;
+                }
+                frame.fingerPoseTargetLocal[finger] = transform_math::worldPointToLocal(objectWorldTransform, targets.targets[finger]);
+                frame.fingerPoseTargetValid[finger] = 1;
+                if (targets.targetNormalValid[finger]) {
+                    frame.fingerPoseTargetNormalLocal[finger] = transform_math::worldVectorToLocal(objectWorldTransform, targets.targetNormals[finger]);
+                    frame.fingerPoseTargetNormalValid[finger] = 1;
+                }
+                ++frame.fingerPoseTargetCount;
+            }
+        }
+
+        grab_finger_pose_runtime::GrabFingerPoseTargetSet rebuildFingerPoseTargetsFromGrabFrame(
+            const CanonicalGrabFrame& frame,
+            const RE::NiTransform& currentNodeWorld)
+        {
+            const RE::NiPoint3 seatNormalWorld = frame.gripEvidence.hasGripPoint ? gripEvidenceNormalWorld(frame, currentNodeWorld) : RE::NiPoint3{};
+            auto targets = grab_finger_pose_runtime::makeSharedGripPoseTarget(gripEvidencePointWorld(frame, currentNodeWorld), seatNormalWorld);
+            targets.useSeatPointForMissingTargets = false;
+            targets.useWholeMeshForMissingTargets = true;
+            for (std::size_t finger = 0; finger < frame.fingerPoseTargetLocal.size(); ++finger) {
+                if (!frame.fingerPoseTargetValid[finger]) {
+                    continue;
+                }
+                targets.targets[finger] = transform_math::localPointToWorld(currentNodeWorld, frame.fingerPoseTargetLocal[finger]);
+                targets.targetValid[finger] = 1;
+                if (frame.fingerPoseTargetNormalValid[finger]) {
+                    targets.targetNormals[finger] = normalizeOrZero(transform_math::localVectorToWorld(currentNodeWorld, frame.fingerPoseTargetNormalLocal[finger]));
+                    targets.targetNormalValid[finger] = 1;
+                }
+                ++targets.targetCount;
+            }
+            return targets;
+        }
+
         float translationDeltaGameUnits(const RE::NiTransform& a, const RE::NiTransform& b)
         {
             const RE::NiPoint3 delta = a.translate - b.translate;
@@ -2597,6 +2693,113 @@ namespace rock
                 return;
             }
 
+            const float fallbackMin =
+                std::clamp(std::isfinite(g_rockConfig.rockGrabFingerMinValue) ? g_rockConfig.rockGrabFingerMinValue : 0.2f, 0.0f, 1.0f);
+            const float configuredFallback =
+                std::isfinite(g_rockConfig.rockSelectedCloseFingerAnimValue) ? g_rockConfig.rockSelectedCloseFingerAnimValue : 0.9f;
+            const float fallbackValue = std::clamp(configuredFallback, fallbackMin, 1.0f);
+            const auto fallbackPose = frik_visual_authority::makeUniformHandPoseData(
+                fallbackValue,
+                fallbackValue,
+                fallbackValue,
+                fallbackValue,
+                fallbackValue);
+            (void)frik_visual_authority::setHandPoseCustom("ROCK_Grab", hand, fallbackPose, 100);
+        }
+
+        /*
+         * iLooseGrabFingerPoseMode = 1: the pre-capsule publication for a swept-arc
+         * mesh pose (contact splay, then the surface-aim local-transform layer when
+         * publishLocalTransforms is set), unchanged.
+         */
+        void applySweptArcGrabHandPose(bool isLeft, const grab_finger_pose_runtime::SolvedGrabFingerPose& fingerPose, std::array<float, 15>& currentJointPose,
+            bool& hasCurrentJointPose, std::array<RE::NiTransform, 15>& currentLocalTransforms, std::uint16_t& currentLocalTransformMask, bool& hasCurrentLocalTransforms,
+            float deltaTime, bool publishLocalTransforms = true, bool snapJointPoseToTarget = false)
+        {
+            if (!frik_visual_authority::isAvailable()) {
+                return;
+            }
+
+            const auto hand = handFromBool(isLeft);
+            grab_finger_local_transform_runtime::State localTransformState{
+                .currentTransforms = currentLocalTransforms,
+                .currentMask = currentLocalTransformMask,
+                .hasCurrentTransforms = hasCurrentLocalTransforms,
+            };
+            auto syncLocalTransformState = [&]() {
+                currentLocalTransforms = localTransformState.currentTransforms;
+                currentLocalTransformMask = localTransformState.currentMask;
+                hasCurrentLocalTransforms = localTransformState.hasCurrentTransforms;
+            };
+
+            if (!g_rockConfig.rockGrabMeshFingerPoseEnabled) {
+                hasCurrentJointPose = false;
+                grab_finger_local_transform_runtime::clearLocalTransformOverride("ROCK_Grab", hand, 100, localTransformState);
+                syncLocalTransformState();
+                (void)frik_visual_authority::clearHandPose("ROCK_Grab", hand);
+                return;
+            }
+
+            if (g_rockConfig.rockGrabMeshJointPoseEnabled && fingerPose.solved) {
+                const auto targetJointPose = fingerPose.hasJointValues ? fingerPose.jointValues : grab_finger_pose_math::expandFingerCurlsToJointValues(fingerPose.values);
+                if (!hasCurrentJointPose || snapJointPoseToTarget) {
+                    currentJointPose = targetJointPose;
+                    hasCurrentJointPose = true;
+                } else {
+                    currentJointPose = grab_finger_pose_math::advanceJointValues(currentJointPose, targetJointPose, g_rockConfig.rockGrabFingerPoseSmoothingSpeed, deltaTime);
+                }
+
+                std::array<float, 5> currentSplayRadians{};
+                (void)grab_finger_pose_runtime::resolveSurfaceContactSplayValues(isLeft, fingerPose, currentSplayRadians);
+                const auto currentHandPose = frik_visual_authority::makeHandPoseDataFromJointValues(currentJointPose, currentSplayRadians);
+                if (!frik_visual_authority::setHandPoseCustom("ROCK_Grab", hand, currentHandPose, 100)) {
+                    hasCurrentJointPose = false;
+                    grab_finger_local_transform_runtime::clearLocalTransformOverride("ROCK_Grab", hand, 100, localTransformState);
+                    syncLocalTransformState();
+                    return;
+                }
+                (void)grab_finger_local_transform_runtime::publishLocalTransformPose("ROCK_Grab",
+                    hand,
+                    isLeft,
+                    fingerPose,
+                    currentHandPose,
+                    grab_finger_local_transform_runtime::Options{
+                        .enabled = publishLocalTransforms && g_rockConfig.rockGrabMeshLocalTransformPoseEnabled,
+                        .smoothingSpeed = g_rockConfig.rockGrabFingerLocalTransformSmoothingSpeed,
+                        .maxCorrectionDegrees = g_rockConfig.rockGrabFingerLocalTransformMaxCorrectionDegrees,
+                        .surfaceAimStrength = g_rockConfig.rockGrabFingerSurfaceAimStrength,
+                        .thumbOppositionStrength = g_rockConfig.rockGrabThumbOppositionStrength,
+                        .thumbAlternateCurveStrength = g_rockConfig.rockGrabThumbAlternateCurveStrength,
+                        .thumbSurfaceSafetyEnabled = g_rockConfig.rockGrabThumbSurfaceSafetyEnabled,
+                        .thumbSurfaceSafetyMarginGameUnits = g_rockConfig.rockGrabThumbSurfaceSafetyMarginGameUnits,
+                    },
+                    deltaTime,
+                    100,
+                    localTransformState);
+                syncLocalTransformState();
+                return;
+            }
+
+            if (fingerPose.solved) {
+                hasCurrentJointPose = false;
+                grab_finger_local_transform_runtime::clearLocalTransformOverride("ROCK_Grab", hand, 100, localTransformState);
+                syncLocalTransformState();
+                std::array<float, 5> currentSplayRadians{};
+                (void)grab_finger_pose_runtime::resolveSurfaceContactSplayValues(isLeft, fingerPose, currentSplayRadians);
+                const auto handPose = frik_visual_authority::makeUniformHandPoseData(
+                    fingerPose.values[0],
+                    fingerPose.values[1],
+                    fingerPose.values[2],
+                    fingerPose.values[3],
+                    fingerPose.values[4],
+                    currentSplayRadians);
+                (void)frik_visual_authority::setHandPoseCustom("ROCK_Grab", hand, handPose, 100);
+                return;
+            }
+
+            hasCurrentJointPose = false;
+            grab_finger_local_transform_runtime::clearLocalTransformOverride("ROCK_Grab", hand, 100, localTransformState);
+            syncLocalTransformState();
             const float fallbackMin =
                 std::clamp(std::isfinite(g_rockConfig.rockGrabFingerMinValue) ? g_rockConfig.rockGrabFingerMinValue : 0.2f, 0.0f, 1.0f);
             const float configuredFallback =
@@ -6763,6 +6966,8 @@ namespace rock
                         _grabFrame.seat.requiresSettledVisualHandRelation = looseWeaponPrimaryAttachApplied ?
                             true :
                             (!effectivePinchPocket && arrivalSeatSafety.requireSettledVisualRelation);
+                        _grabFrame.fingerPoseAimValid = true;
+                        _grabFrame.fingerPoseAimReason = effectivePinchPocket ? "pinchPocketThumbIndexTargets" : "rockPointToPalmEvidence";
                         /*
                          * An arrival that must settle first solves its final
                          * fingers at TouchHeld, against the arrived pose. Other
@@ -6771,6 +6976,9 @@ namespace rock
                          */
                         const bool fullHeldAuthorityAtCapture =
                             _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld;
+
+                        const auto captureFingerTargets = buildRuntimeFingerPoseTargets(gripEvidencePointWorld, gripEvidenceNormalWorld);
+                        storeFingerPoseTargetsInGrabFrame(_grabFrame, captureFingerTargets, objectWorldTransform);
 
                         ROCK_LOG_DEBUG(Hand,
                             "{} THREE-PHASE GRAB CAPTURE: relation={} seat={} rotation={} phase={} reason={} touchContact={} stableTouch={} pocket=({:.1f},{:.1f},{:.1f}) "
@@ -7146,6 +7354,79 @@ namespace rock
             _grabFrame.fingerPoseLocalMeshTriangles :
             _grabFrame.localMeshTriangles;
 
+        if (_grabFingerSweptArc) {
+            /*
+             * iLooseGrabFingerPoseMode = 1: the pre-capsule solve (finger pose
+             * mode 1, Current), unchanged: frozen-mesh swept arc, pad-probe
+             * refinement, surface-aim capture, joint publication now and the
+             * local-transform layer on the next TouchHeld update. Not recorded
+             * for bench replay (the replay record holds capsule solves).
+             */
+            const auto mode = grab_finger_pose_runtime::FingerPoseMode::Current;
+            const auto fingerPoseTargets = rebuildFingerPoseTargetsFromGrabFrame(_grabFrame, frame.objectWorld);
+
+            root_flattened_finger_skeleton_runtime::Snapshot liveFingerSnapshot{};
+            const bool liveFingerSnapshotValid =
+                root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(_isLeft, liveFingerSnapshot) &&
+                rebaseFingerSkeletonSnapshot(liveFingerSnapshot, frame.liveHandWorld, frame.solveHandWorld);
+            if (!liveFingerSnapshotValid) {
+                liveFingerSnapshot = {};
+            }
+
+            std::vector<TriangleData> worldTriangles;
+            const grab_finger_pose_runtime::FrozenMeshFingerPoseSolveOptions solveOptions{
+                .minValue = g_rockConfig.rockGrabFingerMinValue,
+                .maxTriangleDistanceSquared = g_rockConfig.rockGrabMaxTriangleDistance,
+                .rejectBacksideHits = g_rockConfig.rockGrabFingerRejectBacksideHits,
+                .surfacePlaneToleranceGameUnits = g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
+                .allowSurfaceAimTargets = _grabFrame.fingerPoseAimValid,
+                .sweepContactRadiusGameUnits = g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits,
+                .thumbSweepMaxOpenValue = g_rockConfig.rockGrabThumbSweepMaxOpenValue,
+                .fingerSweepMaxOpenValue = g_rockConfig.rockGrabFingerSweepMaxOpenValue,
+                .meshFingerPoseEnabled = g_rockConfig.rockGrabMeshFingerPoseEnabled,
+                .captureSweepDebug = false,
+                .mode = mode,
+            };
+            const auto frozenSolve = grab_finger_pose_runtime::solveFrozenMeshFingerPoseBase(
+                localFingerPoseTriangles,
+                frame.objectWorld,
+                frame.solveHandWorld,
+                _isLeft,
+                frame.pivotWorld,
+                fingerPoseTargets,
+                _grabFingerTriangleIndex,
+                worldTriangles,
+                solveOptions,
+                &liveFingerSnapshot);
+            _grabFingerPose = frozenSolve.pose;
+            _grabFingerPose.mode = mode;
+            if (pinchFingerPose) {
+                applyPinchFingerPosePolicy(_grabFingerPose, _grabFrame);
+            }
+            grab_finger_pose_runtime::useThumbIndexCurveOnlyPose(_grabFingerPose);
+            const auto* padIndex = frozenSolve.spatialIndexBuilt ? &_grabFingerTriangleIndex : nullptr;
+            std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padCaptureEvidence{};
+            (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(_grabFingerPose, worldTriangles, fingerPoseTargets, liveFingerSnapshot,
+                frame.objectWorld, g_rockConfig.rockGrabMeshFingerPoseEnabled, true, padCaptureEvidence, true, {}, padIndex);
+            grab_finger_pose_runtime::captureSurfaceAimObjectLocal(_grabFingerPose, frame.objectWorld);
+
+            auto publishFingerPose = grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, frame.objectWorld);
+            if (!frame.touchHeld) {
+                publishFingerPose = buildAcquisitionFingerPose(publishFingerPose, 0.0f);
+            }
+            applySweptArcGrabHandPose(_isLeft, publishFingerPose, _grabFingerJointPose, _hasGrabFingerJointPose, _grabFingerLocalTransforms,
+                _grabFingerLocalTransformMask, _hasGrabFingerLocalTransforms, 0.0f, /*publishLocalTransforms=*/false, frame.touchHeld);
+            _grabFingerPosePublished = true;
+            _grabFingerLocalTransformFinalizePending = frame.touchHeld && _grabFingerPose.solved;
+            ROCK_LOG_DEBUG(Hand,
+                "{} THREE-PHASE GRAB POSE SOLVED (swept arc): stage={} phase={} pinch={} solved={} hits={} triangles={} spatial={} nodes={} tests={} commandedAnchors={}",
+                handName(), frame.stage, grab_three_phase::phaseName(_grabAcquisitionPhase), pinchFingerPose ? "yes" : "no",
+                _grabFingerPose.solved ? "yes" : "no", _grabFingerPose.hitCount, _grabFingerPose.candidateTriangleCount,
+                _grabFingerPose.usedSpatialIndex ? "yes" : "no", _grabFingerPose.spatialNodeVisitCount, _grabFingerPose.spatialTriangleTestCount,
+                frozenSolve.commandedOpenDirectionsValid ? "yes" : "no");
+            return;
+        }
+
         root_flattened_finger_skeleton_runtime::Snapshot liveFingerSnapshot{};
         const bool liveFingerSnapshotValid =
             root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(_isLeft, liveFingerSnapshot) &&
@@ -7452,6 +7733,8 @@ namespace rock
             clearSelectedCloseFingerPose();
             _grabFingerPose = {};
             _grabFingerTriangleIndex.clear();
+            _grabFingerSweptArc = g_rockConfig.rockLooseGrabFingerPoseMode == 1;
+            _grabFingerLocalTransformFinalizePending = false;
             const bool useLooseWeaponPrimaryAttachHandPose = _grabFrame.syntheticLooseWeaponPrimaryAttach;
             _hasGrabFingerPose = g_rockConfig.rockGrabMeshFingerPoseEnabled && !useLooseWeaponPrimaryAttachHandPose;
             _grabFingerPosePublished = false;
@@ -7521,7 +7804,8 @@ namespace rock
                     }
                 }
             } else if (_hasGrabFingerPose) {
-                ROCK_LOG_INFO(Hand, "{} dynamic finger pose trace={}", handName(), _grabFrame.traceId);
+                ROCK_LOG_INFO(Hand, "{} dynamic finger pose solver={} trace={}", handName(), _grabFingerSweptArc ? "1 swept arc" : "0 capsule sweep",
+                    _grabFrame.traceId);
                 const bool pinchFingerPose = _grabFrame.seat.mode == GrabSeatMode::PinchPocket;
                 const bool touchHeldAtCommit = _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld;
                 const bool deferFingerPoseUntilSettledTouch =
@@ -7542,15 +7826,20 @@ namespace rock
                      */
                     const grab_finger_pose_runtime::SolvedGrabFingerPose pendingTarget{};
                     const auto acquisitionFingerPose = buildAcquisitionFingerPose(pendingTarget, 0.0f);
-                    applyRockGrabHandPose(_isLeft,
-                        acquisitionFingerPose,
-                        _grabFingerJointPose,
-                        _hasGrabFingerJointPose,
-                        _grabFingerLocalTransforms,
-                        _grabFingerLocalTransformMask,
-                        _hasGrabFingerLocalTransforms,
-                        0.0f,
-                        /*snapJointPoseToTarget=*/true);
+                    if (_grabFingerSweptArc) {
+                        applySweptArcGrabHandPose(_isLeft, acquisitionFingerPose, _grabFingerJointPose, _hasGrabFingerJointPose, _grabFingerLocalTransforms,
+                            _grabFingerLocalTransformMask, _hasGrabFingerLocalTransforms, 0.0f, /*publishLocalTransforms=*/false, /*snapJointPoseToTarget=*/true);
+                    } else {
+                        applyRockGrabHandPose(_isLeft,
+                            acquisitionFingerPose,
+                            _grabFingerJointPose,
+                            _hasGrabFingerJointPose,
+                            _grabFingerLocalTransforms,
+                            _grabFingerLocalTransformMask,
+                            _hasGrabFingerLocalTransforms,
+                            0.0f,
+                            /*snapJointPoseToTarget=*/true);
+                    }
                     ROCK_LOG_DEBUG(Hand,
                         "{} THREE-PHASE GRAB POSE: final mesh solve deferred until seated TouchHeld phase={} cachedTriangles={}",
                         handName(),
@@ -9378,10 +9667,42 @@ namespace rock
         const HeldDriveUpdate& driveUpdate,
         bool convergingAcquisitionPhase)
     {
+        const auto& desiredObjectWorld = driveUpdate.desiredObjectWorld;
+        const auto& proxyAuthorityWorld = driveUpdate.proxyAuthorityWorld;
         const auto& desiredTargetPointWorld = driveUpdate.desiredTargetPointWorld;
         const auto& activePivotBBodyLocalGame = driveUpdate.activePivotBBodyLocalGame;
         const bool heldBodyColliding = driveUpdate.heldBodyColliding;
 
+        /*
+         * Swept arc only. FRIK publishes joint values before the root-flattened
+         * scene reflects them. Surface-local corrections built in that same
+         * update would use the previous finger skeleton and can lock a closed or
+         * displaced pose. Finish the local-transform layer once, on the next
+         * TouchHeld update, after the solved joint pose is the live skeleton source.
+         */
+        if (_grabFingerSweptArc &&
+            _grabFingerLocalTransformFinalizePending &&
+            _grabFingerPosePublished &&
+            _grabFingerPose.solved &&
+            _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld) {
+            const auto finalFingerPose =
+                grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, desiredObjectWorld);
+            applySweptArcGrabHandPose(_isLeft,
+                finalFingerPose,
+                _grabFingerJointPose,
+                _hasGrabFingerJointPose,
+                _grabFingerLocalTransforms,
+                _grabFingerLocalTransformMask,
+                _hasGrabFingerLocalTransforms,
+                deltaTime,
+                /*publishLocalTransforms=*/true,
+                /*snapJointPoseToTarget=*/false);
+            _grabFingerLocalTransformFinalizePending = false;
+            ROCK_LOG_DEBUG(Hand,
+                "{} THREE-PHASE GRAB FINAL POSE: local transforms finalized after settled joint publication",
+                handName());
+            _grabPoseQualityUpdatesRemaining = g_rockConfig.rockDebugTestbenchTelemetry ? 60 : -1;
+        }
         if (_grabPoseQualityUpdatesRemaining > 0 && --_grabPoseQualityUpdatesRemaining == 0) {
             logGrabPoseQuality();
             _grabPoseQualityUpdatesRemaining = -1;
@@ -9454,9 +9775,16 @@ namespace rock
                 const float nearDistance = (std::max)(touchDistance, g_rockConfig.rockGrabNearConvergeDistanceGameUnits);
                 const float progressDenominator = (std::max)(0.001f, nearDistance - touchDistance);
                 const float acquisitionProgress = 1.0f - std::clamp((gripErrorGameUnits - touchDistance) / progressDenominator, 0.0f, 1.0f);
-                const auto acquisitionFingerPose = buildAcquisitionFingerPose(_grabFingerPose, acquisitionProgress);
-                applyRockGrabHandPose(_isLeft, acquisitionFingerPose, _grabFingerJointPose, _hasGrabFingerJointPose, _grabFingerLocalTransforms, _grabFingerLocalTransformMask,
-                    _hasGrabFingerLocalTransforms, deltaTime);
+                if (_grabFingerSweptArc) {
+                    const auto resolvedTargetPose = grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, desiredObjectWorld);
+                    const auto acquisitionFingerPose = buildAcquisitionFingerPose(resolvedTargetPose, acquisitionProgress);
+                    applySweptArcGrabHandPose(_isLeft, acquisitionFingerPose, _grabFingerJointPose, _hasGrabFingerJointPose, _grabFingerLocalTransforms,
+                        _grabFingerLocalTransformMask, _hasGrabFingerLocalTransforms, deltaTime, false);
+                } else {
+                    const auto acquisitionFingerPose = buildAcquisitionFingerPose(_grabFingerPose, acquisitionProgress);
+                    applyRockGrabHandPose(_isLeft, acquisitionFingerPose, _grabFingerJointPose, _hasGrabFingerJointPose, _grabFingerLocalTransforms, _grabFingerLocalTransformMask,
+                        _hasGrabFingerLocalTransforms, deltaTime);
+                }
             }
 
             if (reachedTouchRange || convergenceTimedOutInsidePocket) {
@@ -9490,6 +9818,10 @@ namespace rock
                         RE::NiTransform finalPoseHandWorld =
                             hand_visual_lerp_math::buildHeldObjectRelativeHandWorld(currentNodeWorld, _grabFrame.rawHandSpace);
                         finalPoseHandWorld.scale = handWorldTransform.scale;
+                        if (_grabFingerSweptArc && !_grabFrame.fingerPoseAimValid && _grabFrame.pivotAuthority.normalTrusted) {
+                            _grabFrame.fingerPoseAimValid = true;
+                            _grabFrame.fingerPoseAimReason = "touchHeldNormalTrusted";
+                        }
                         RE::NiPoint3 fingerPosePivotWorld = _grabFrame.hasTelemetryCapture ? _grabFrame.authority.grabPivotWorldAtGrab : computeGrabPivotAWorld(world, handWorldTransform);
                         RE::NiPoint3 livePivotAWorld{};
                         if (tryComputeGrabProxyLocalPalmPocketPivotAWorld(world, livePivotAWorld)) {
@@ -9504,11 +9836,20 @@ namespace rock
                             .stage = "touchHeld",
                         });
                     } else {
-                        // Solved at commit: TouchHeld snaps the acquisition blend to the full pose.
-                        applyRockGrabHandPose(_isLeft, _grabFingerPose, _grabFingerJointPose, _hasGrabFingerJointPose, _grabFingerLocalTransforms, _grabFingerLocalTransformMask,
-                            _hasGrabFingerLocalTransforms, 0.0f, true);
-                        if (_grabFingerPose.solved) {
-                            _grabPoseQualityUpdatesRemaining = g_rockConfig.rockDebugTestbenchTelemetry ? 60 : -1;
+                        if (_grabFingerSweptArc) {
+                            const RE::NiTransform finalPoseObjectWorld =
+                                grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyAuthorityWorld, _grabFrame.proxyAuthorityHandSpace);
+                            const auto finalFingerPose = grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, finalPoseObjectWorld);
+                            applySweptArcGrabHandPose(_isLeft, finalFingerPose, _grabFingerJointPose, _hasGrabFingerJointPose, _grabFingerLocalTransforms,
+                                _grabFingerLocalTransformMask, _hasGrabFingerLocalTransforms, 0.0f, /*publishLocalTransforms=*/false, true);
+                            _grabFingerLocalTransformFinalizePending = _grabFingerPose.solved;
+                        } else {
+                            // Solved at commit: TouchHeld snaps the acquisition blend to the full pose.
+                            applyRockGrabHandPose(_isLeft, _grabFingerPose, _grabFingerJointPose, _hasGrabFingerJointPose, _grabFingerLocalTransforms, _grabFingerLocalTransformMask,
+                                _hasGrabFingerLocalTransforms, 0.0f, true);
+                            if (_grabFingerPose.solved) {
+                                _grabPoseQualityUpdatesRemaining = g_rockConfig.rockDebugTestbenchTelemetry ? 60 : -1;
+                            }
                         }
                     }
                 }
@@ -10311,6 +10652,8 @@ namespace rock
         _grabFingerTriangleIndex.clear();
         _hasGrabFingerJointPose = false;
         _hasGrabFingerLocalTransforms = false;
+        _grabFingerLocalTransformFinalizePending = false;
+        _grabFingerSweptArc = false;
         _grabPoseQualityUpdatesRemaining = -1;
         _grabPoseReplay.reset();
         _hasGrabFingerPose = false;
