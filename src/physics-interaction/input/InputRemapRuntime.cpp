@@ -3198,6 +3198,20 @@ namespace rock::input_remap_runtime
         return classifyActivateTarget(primaryHand) == ActivateTarget::NativeActivation;
     }
 
+    std::uint32_t wandPickRefFormId(bool primaryWand)
+    {
+        const std::uint32_t handleValue = readWandPickRefHandle(
+            primaryWand ? kActivatePrimaryWandPickRefGlobalOffset : kActivateSecondaryWandPickRefGlobalOffset);
+        if (handleValue == 0) {
+            return 0;
+        }
+        RE::ObjectRefHandle handle{};
+        static_assert(sizeof(handle) == sizeof(handleValue));
+        std::memcpy(&handle, &handleValue, sizeof(handle));
+        const auto ref = handle.get();
+        return ref ? ref->GetFormID() : 0;
+    }
+
     bool shouldSuppressNativeTriggerAction(const RE::InputEvent* event)
     {
         return shouldSuppressNativeTriggerActionEvent(event, "attack-trigger");

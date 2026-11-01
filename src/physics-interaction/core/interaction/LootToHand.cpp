@@ -1,17 +1,23 @@
 #include "physics-interaction/core/interaction/LootToHand.h"
 
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/input/InputRemapRuntime.h"
 
 #include <mutex>
 
-// Loot to Hand: an item taken from a container lands in a free hand once the container closes.
+// Loot to Hand: an item taken one at a time through the quick-loot view (a wand pointing at a
+// container, no menu open) lands in that hand. The full ContainerMenu is for bulk looting and
+// keeps the game behaviour: items go to inventory.
 //
-// Thread model: TESContainerChangedEvent is dispatched on the game thread while ContainerMenu is
-// open; the queue is drained on ROCK's frame thread by PhysicsInteraction::serviceLootToHand.
-// The mutex guards only the fixed queue below (no allocation, no engine calls under the lock).
-// ContainerMenu stops ROCK's physics (it is a game-stopping menu), so the transfer runs on the
-// first frame after the menu closes, through the same inventory-transfer commit as grenade
-// quick-draw: on failure the dropped item returns to inventory.
+// Admission: container -> player, a wand's pick target is that container, and neither
+// ContainerMenu nor BarterMenu is open. Script transfers from containers have no wand pointing
+// at the source, so they stay in inventory.
+//
+// Thread model: TESContainerChangedEvent is dispatched on the game thread; the queue is drained
+// on ROCK's frame thread by PhysicsInteraction::serviceLootToHand on the next frame. The mutex
+// guards only the fixed queue below (no allocation, no engine calls under the lock). The drop
+// goes through the same inventory-transfer commit as grenade quick-draw: on failure the item
+// returns to inventory.
 
 namespace rock::loot_to_hand
 {
@@ -36,25 +42,39 @@ namespace rock::loot_to_hand
             RE::BSEventNotifyControl ProcessEvent(const RE::TESContainerChangedEvent& event,
                 RE::BSTEventSource<RE::TESContainerChangedEvent>*) override
             {
-                if (!g_rockConfig.rockLootToHand || event.baseObjectFormID == 0 || event.oldContainerFormID == 0 ||
-                    event.oldContainerFormID == kPlayerFormId || event.newContainerFormID != kPlayerFormId) {
+                const bool taken = event.baseObjectFormID != 0 && event.oldContainerFormID != 0 &&
+                    event.oldContainerFormID != kPlayerFormId && event.newContainerFormID == kPlayerFormId;
+                if (!g_rockConfig.rockLootToHand || !taken) {
                     return RE::BSEventNotifyControl::kContinue;
                 }
-                // Only items the player takes while looting. Vendors, workbenches, quest rewards
-                // and power armor entry move items to the player without ContainerMenu.
                 auto* ui = RE::UI::GetSingleton();
-                if (!menuOpen(ui, "ContainerMenu") || menuOpen(ui, "BarterMenu")) {
+                const bool containerMenu = menuOpen(ui, "ContainerMenu");
+                const bool barterMenu = menuOpen(ui, "BarterMenu");
+                const auto primaryTarget = input_remap_runtime::wandPickRefFormId(true);
+                const auto secondaryTarget = input_remap_runtime::wandPickRefFormId(false);
+                const bool primaryWand = primaryTarget == event.oldContainerFormID;
+                const bool secondaryWand = secondaryTarget == event.oldContainerFormID;
+                const bool admitted = !containerMenu && !barterMenu && (primaryWand || secondaryWand);
+                // Player takes are rare (no per-frame volume); one line each shows which
+                // condition admits or rejects the item.
+                ROCK_LOG_INFO(Hand, "Loot to hand event: item={:08X} count={} from={:08X} uniqueID={} containerMenu={} barterMenu={} primaryWand={:08X} secondaryWand={:08X} admitted={}",
+                    event.baseObjectFormID, event.itemCount, event.oldContainerFormID, event.uniqueID, containerMenu,
+                    barterMenu, primaryTarget, secondaryTarget, admitted);
+                if (!admitted) {
                     return RE::BSEventNotifyControl::kContinue;
                 }
+                // The primary wand is the primary hand (right, or left in left-handed mode).
+                const bool primaryIsLeft = g_rockConfig.rockLeftHandedMode;
+                const bool preferLeft = primaryWand ? primaryIsLeft : !primaryIsLeft;
                 bool queued = false;
                 {
                     const std::scoped_lock lock{ s_queueMutex };
                     if (s_queueSize < s_queue.size()) {
-                        s_queue[s_queueSize++] = { event.baseObjectFormID, event.uniqueID };
+                        s_queue[s_queueSize++] = { event.baseObjectFormID, event.uniqueID, preferLeft };
                         queued = true;
                     }
                 }
-                ROCK_LOG_DEBUG(Hand, "Loot to hand {}: item={:08X} count={} from={:08X} uniqueID={}",
+                ROCK_LOG_INFO(Hand, "Loot to hand {}: item={:08X} count={} from={:08X} uniqueID={}",
                     queued ? "queued" : "queue full, stays in inventory", event.baseObjectFormID, event.itemCount,
                     event.oldContainerFormID, event.uniqueID);
                 return RE::BSEventNotifyControl::kContinue;
@@ -100,15 +120,17 @@ namespace rock
     {
         if (frame.menuBlocked || !frame.worldReady || !frame.bhkWorld || !frame.hknpWorld ||
             !physicsWritesAllowedForWorld(frame.hknpWorld)) {
-            return;  // ContainerMenu is still open, or the world is not ready: keep the queue.
+            return;  // A menu is open or the world is not ready: keep the queue.
         }
         std::array<loot_to_hand::LootedItem, loot_to_hand::kQueueCapacity> items{};
         const auto count = loot_to_hand::drain(items);
+        if (count > 0) {
+            ROCK_LOG_INFO(Hand, "Loot to hand: servicing {} queued item(s)", count);
+        }
         for (std::size_t i = 0; i < count; ++i) {
             const auto& item = items[i];
-            const bool primaryIsLeft = g_rockConfig.rockLeftHandedMode;
             int chosen = -1;  // 0 right, 1 left
-            for (const bool isLeft : { primaryIsLeft, !primaryIsLeft }) {
+            for (const bool isLeft : { item.preferLeft, !item.preferLeft }) {
                 const auto index = isLeft ? 1u : 0u;
                 const auto& hand = isLeft ? _leftHand : _rightHand;
                 const auto& input = isLeft ? frame.left : frame.right;
