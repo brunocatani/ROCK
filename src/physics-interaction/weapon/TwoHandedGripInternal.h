@@ -26,6 +26,7 @@
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
+#include "physics-interaction/weapon/SupportGripTriangleSelection.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -447,29 +448,10 @@ namespace rock
                    std::isfinite(out.frameAgreementErrorGameUnits);
         }
 
-        struct RankedSupportGripTriangle
-        {
-            float distanceSquared = 0.0f;
-            std::uint64_t deterministicOrdinal = 0;
-            TriangleData weaponLocalTriangle{};
-        };
-
-        inline bool rankedSupportGripTriangleLess(const RankedSupportGripTriangle& lhs, const RankedSupportGripTriangle& rhs)
-        {
-            if (lhs.distanceSquared == rhs.distanceSquared) {
-                return lhs.deterministicOrdinal <
-                       rhs.deterministicOrdinal;
-            }
-            return lhs.distanceSquared < rhs.distanceSquared;
-        }
-
-        inline constexpr std::size_t
-            kSupportGripFingerLaneCount = 5;
-        inline constexpr std::size_t
-            kSupportGripFingerLaneReferenceCapacity = 10;
-        inline constexpr std::size_t
-            kSupportGripGlobalRankingIndex =
-                kSupportGripFingerLaneCount;
+        using RankedSupportGripTriangle = support_grip_triangle_selection::RankedTriangle;
+        inline constexpr std::size_t kSupportGripFingerLaneCount = support_grip_triangle_selection::kLaneCount;
+        inline constexpr std::size_t kSupportGripFingerLaneReferenceCapacity = support_grip_triangle_selection::kLaneReferenceCapacity;
+        inline constexpr std::size_t kSupportGripGlobalRankingIndex = support_grip_triangle_selection::kGlobalRankingIndex;
 
         struct SupportGripFingerReferenceSet
         {
@@ -574,34 +556,19 @@ namespace rock
             rankingScratch[kSupportGripGlobalRankingIndex].reserve(
                 boundedLimit);
 
-            const auto retainNearest = [](
-                                           std::vector<RankedSupportGripTriangle>& ranking,
-                                           const std::size_t limit,
-                                           const RankedSupportGripTriangle& candidate) {
-                if (ranking.size() < limit) {
-                    ranking.push_back(candidate);
-                    std::push_heap(
-                        ranking.begin(),
-                        ranking.end(),
-                        rankedSupportGripTriangleLess);
-                    return;
-                }
-                if (rankedSupportGripTriangleLess(
-                        candidate,
-                        ranking.front())) {
-                    std::pop_heap(
-                        ranking.begin(),
-                        ranking.end(),
-                        rankedSupportGripTriangleLess);
-                    ranking.back() = candidate;
-                    std::push_heap(
-                        ranking.begin(),
-                        ranking.end(),
-                        rankedSupportGripTriangleLess);
-                }
-            };
+            /*
+             * Each part's equip-time index replaces the scan of its triangles;
+             * the selection is identical to scanning every triangle (see
+             * SupportGripTriangleSelection.h). Ordinals follow the scan order.
+             */
+            support_grip_triangle_selection::References references{};
+            references.seatPoint = localReferences.seatPointWorld;
+            references.lanePoints = localReferences.lanePointsWorld;
+            references.laneCounts = localReferences.lanePointCounts;
 
-            std::uint64_t deterministicOrdinal = 0;
+            std::vector<support_grip_triangle_selection::Part> parts{};
+            parts.reserve(evidenceViews.size());
+            std::uint64_t firstOrdinal = 0;
             for (const auto& evidenceView : evidenceViews) {
                 if (evidenceView.localTriangles.empty() ||
                     !weapon_support_acquisition_math::isUsableTransform(
@@ -616,144 +583,16 @@ namespace rock
                         sourceToWeapon)) {
                     continue;
                 }
-
-                for (const auto& sourceTriangle :
-                     evidenceView.localTriangles) {
-                    const std::uint64_t ordinal =
-                        deterministicOrdinal++;
-                    if (!grab_finger_pose_runtime::isFinitePoint(
-                            sourceTriangle.v0) ||
-                        !grab_finger_pose_runtime::isFinitePoint(
-                            sourceTriangle.v1) ||
-                        !grab_finger_pose_runtime::isFinitePoint(
-                            sourceTriangle.v2)) {
-                        continue;
-                    }
-
-                    const TriangleData weaponLocalTriangle{
-                        transform_math::localPointToWorld(
-                            sourceToWeapon,
-                            sourceTriangle.v0),
-                        transform_math::localPointToWorld(
-                            sourceToWeapon,
-                            sourceTriangle.v1),
-                        transform_math::localPointToWorld(
-                            sourceToWeapon,
-                            sourceTriangle.v2),
-                    };
-                    float globalMinimumDistanceSquared =
-                        (std::numeric_limits<float>::infinity)();
-                    (void)closestPointOnTriangleToPoint(
-                        localReferences.seatPointWorld,
-                        weaponLocalTriangle,
-                        globalMinimumDistanceSquared);
-                    for (std::size_t lane = 0;
-                         lane < kSupportGripFingerLaneCount;
-                         ++lane) {
-                        float laneMinimumDistanceSquared =
-                            (std::numeric_limits<float>::infinity)();
-                        for (std::size_t referenceIndex = 0;
-                             referenceIndex <
-                                 localReferences.lanePointCounts[lane];
-                             ++referenceIndex) {
-                            float distanceSquared = 0.0f;
-                            (void)closestPointOnTriangleToPoint(
-                                localReferences.lanePointsWorld[lane]
-                                    [referenceIndex],
-                                weaponLocalTriangle,
-                                distanceSquared);
-                            if (std::isfinite(distanceSquared)) {
-                                laneMinimumDistanceSquared = (std::min)(
-                                    laneMinimumDistanceSquared,
-                                    distanceSquared);
-                            }
-                        }
-                        if (std::isfinite(laneMinimumDistanceSquared)) {
-                            globalMinimumDistanceSquared = (std::min)(
-                                globalMinimumDistanceSquared,
-                                laneMinimumDistanceSquared);
-                            retainNearest(
-                                rankingScratch[lane],
-                                laneLimit,
-                                RankedSupportGripTriangle{
-                                    .distanceSquared =
-                                        laneMinimumDistanceSquared,
-                                    .deterministicOrdinal = ordinal,
-                                    .weaponLocalTriangle =
-                                        weaponLocalTriangle,
-                                });
-                        }
-                    }
-                    if (std::isfinite(globalMinimumDistanceSquared)) {
-                        retainNearest(
-                            rankingScratch[
-                                kSupportGripGlobalRankingIndex],
-                            boundedLimit,
-                            RankedSupportGripTriangle{
-                                .distanceSquared =
-                                    globalMinimumDistanceSquared,
-                                .deterministicOrdinal = ordinal,
-                                .weaponLocalTriangle =
-                                    weaponLocalTriangle,
-                            });
-                    }
-                }
+                parts.push_back(support_grip_triangle_selection::Part{
+                    .sourceTriangles = evidenceView.localTriangles,
+                    .index = evidenceView.localTriangleIndex,
+                    .sourceToWeapon = sourceToWeapon,
+                    .firstOrdinal = firstOrdinal,
+                });
+                firstOrdinal += evidenceView.localTriangles.size();
             }
-
-            for (auto& ranking : rankingScratch) {
-                std::sort(
-                    ranking.begin(),
-                    ranking.end(),
-                    rankedSupportGripTriangleLess);
-            }
-            std::vector<std::uint64_t> selectedOrdinals{};
-            selectedOrdinals.reserve(boundedLimit);
-            outTriangles.reserve(boundedLimit);
-            const auto appendUnique = [&](
-                                          const RankedSupportGripTriangle& ranked) {
-                if (outTriangles.size() >= boundedLimit ||
-                    std::find(
-                        selectedOrdinals.begin(),
-                        selectedOrdinals.end(),
-                        ranked.deterministicOrdinal) !=
-                        selectedOrdinals.end()) {
-                    return false;
-                }
-                selectedOrdinals.push_back(
-                    ranked.deterministicOrdinal);
-                outTriangles.push_back(ranked.weaponLocalTriangle);
-                return true;
-            };
-
-            std::array<std::size_t,
-                kSupportGripFingerLaneCount>
-                laneCursors{};
-            bool laneCandidateRemaining = true;
-            while (outTriangles.size() < boundedLimit &&
-                   laneCandidateRemaining) {
-                laneCandidateRemaining = false;
-                for (std::size_t lane = 0;
-                     lane < kSupportGripFingerLaneCount &&
-                     outTriangles.size() < boundedLimit;
-                     ++lane) {
-                    auto& cursor = laneCursors[lane];
-                    const auto& ranking = rankingScratch[lane];
-                    while (cursor < ranking.size()) {
-                        laneCandidateRemaining = true;
-                        const auto& candidate = ranking[cursor++];
-                        if (appendUnique(candidate)) {
-                            break;
-                        }
-                    }
-                }
-            }
-            for (const auto& ranked :
-                 rankingScratch[kSupportGripGlobalRankingIndex]) {
-                if (outTriangles.size() >= boundedLimit) {
-                    break;
-                }
-                (void)appendUnique(ranked);
-            }
+            support_grip_triangle_selection::rankParts(parts, references, laneLimit, boundedLimit, rankingScratch);
+            support_grip_triangle_selection::mergeRankings(rankingScratch, boundedLimit, outTriangles);
         }
 
         struct NativeScopeCameraFollowCapture

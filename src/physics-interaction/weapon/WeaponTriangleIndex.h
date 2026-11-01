@@ -104,6 +104,38 @@ namespace rock
             return result;
         }
 
+        /*
+         * Visits the source index of every triangle under the nodes keepNode
+         * accepts; keepNode(min, max) sees node bounds in the index's own frame
+         * and returning false skips that node and everything below it. The
+         * child nearer orderPoint is visited first. The predicate is asked again
+         * for every node, so it may tighten as visits proceed.
+         */
+        template <class KeepNode, class Visit>
+        void visitPruned(const RE::NiPoint3& orderPoint, KeepNode&& keepNode, Visit&& visit, QueryStats* stats = nullptr) const
+        {
+            if (_nodes.empty()) return;
+            const bool ordered = finite(orderPoint);
+            std::array<std::uint32_t, 64> stack{};
+            std::size_t count = 1;
+            while (count != 0) {
+                const auto& node = _nodes[stack[--count]];
+                if (stats) ++stats->nodes;
+                if (!keepNode(node.min, node.max)) continue;
+                if (node.count != 0) {
+                    for (std::uint32_t i = node.begin; i < node.begin + node.count; ++i) {
+                        if (stats) ++stats->triangles;
+                        visit(_indices[i]);
+                    }
+                } else {
+                    const bool leftNearer = !ordered ||
+                        boundsDistanceSquared(orderPoint, _nodes[node.left]) <= boundsDistanceSquared(orderPoint, _nodes[node.right]);
+                    stack[count++] = leftNearer ? node.right : node.left;
+                    stack[count++] = leftNearer ? node.left : node.right;
+                }
+            }
+        }
+
         template <class Triangles, class Predicate>
         bool anyTriangleOverlappingBounds(const Triangles& triangles, const RE::NiPoint3& minimum,
             const RE::NiPoint3& maximum, Predicate&& predicate, QueryStats* stats = nullptr) const

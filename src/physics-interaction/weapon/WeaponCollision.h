@@ -169,6 +169,8 @@ namespace rock
         struct SupportGripEvidenceView
         {
             std::span<const TriangleData> localTriangles{};
+            // Prebuilt (equip-time) index over localTriangles; owned by the body bank, valid for this call only.
+            const WeaponTriangleIndex* localTriangleIndex{ nullptr };
             RE::NiTransform localToWorld{};
             std::uintptr_t sourceGroupId{ 0 };
             std::uint32_t bodyId{ 0x7FFF'FFFFu };

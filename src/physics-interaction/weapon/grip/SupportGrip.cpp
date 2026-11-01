@@ -1041,7 +1041,7 @@ namespace rock
         if (authored_support_grab_policy::captured(decision.selection)) {
             ROCK_LOG_INFO(
                 Weapon,
-                "TwoHandedGrip: support grab selection={} reason={} hand={} capability={} capabilityReason={} generation={:016X}",
+                "TwoHandedGrip: support grab selection={} reason={} hand={} capability={} capabilityReason={} dynamicOnly={} generation={:016X}",
                 authored_support_grab_policy::selectionName(
                     decision.selection),
                 authored_support_grab_policy::selectionReasonName(
@@ -1051,11 +1051,12 @@ namespace rock
                     capability.capability),
                 authored_support_grab_policy::capabilityReasonName(
                     capability.reason),
+                g_rockConfig.rockDebugWeaponSupportDynamicOnly,
                 weaponGenerationKey);
         } else {
             ROCK_LOG_DEBUG(
                 Weapon,
-                "TwoHandedGrip: support grab selection={} reason={} hand={} capability={} capabilityReason={} generation={:016X}",
+                "TwoHandedGrip: support grab selection={} reason={} hand={} capability={} capabilityReason={} dynamicOnly={} generation={:016X}",
                 authored_support_grab_policy::selectionName(
                     decision.selection),
                 authored_support_grab_policy::selectionReasonName(
@@ -1065,6 +1066,7 @@ namespace rock
                     capability.capability),
                 authored_support_grab_policy::capabilityReasonName(
                     capability.reason),
+                g_rockConfig.rockDebugWeaponSupportDynamicOnly,
                 weaponGenerationKey);
         }
     }
@@ -3366,7 +3368,7 @@ namespace rock
                 WeaponInteractionAcquisitionSource::ProximityProbe;
 
         constexpr std::uint16_t kCompleteAuthoredFingerMask = 0x7FFFu;
-        const bool useAuthoredSupportGrip =
+        const bool useAuthoredSupportGrip = !g_rockConfig.rockDebugWeaponSupportDynamicOnly &&
             authored_weapon_grip_capture_policy::shouldUseAuthoredSupportGrip(
                 authored_weapon_grip_capture_policy::AuthoredSupportGripCandidateInput{
                     .interactionAcquisitionValid =

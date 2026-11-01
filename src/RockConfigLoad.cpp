@@ -582,6 +582,7 @@ namespace rock
             0.25f,
             6.0f);
         rockWeaponInteractionProbeRadius = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponInteractionProbeRadius", rockWeaponInteractionProbeRadius));
+        rockDebugWeaponSupportDynamicOnly = ini.GetBoolValue(SECTION, "bDebugWeaponSupportDynamicOnly", rockDebugWeaponSupportDynamicOnly);
         rockFiringGripProximitySupportRadius = readClampedFloat(ini,
             SECTION,
             "fFiringGripProximitySupportRadius",

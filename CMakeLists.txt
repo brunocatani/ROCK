@@ -822,6 +822,14 @@ if(BUILD_ROCK_TESTS)
   list(APPEND ROCK_COMMONLIB_TEST_TARGETS ROCKGrabMeshQueryTests)
   add_rock_test(ROCKGrabMeshQueryTests)
 
+  # Support finger candidates: the equip-time index walk must select exactly what the full scan selects.
+  add_executable(ROCKSupportGripTriangleSelectionTests "${ROOT_DIR}/tests/SupportGripTriangleSelectionTests.cpp")
+  target_compile_features(ROCKSupportGripTriangleSelectionTests PRIVATE cxx_std_23)
+  target_compile_definitions(ROCKSupportGripTriangleSelectionTests PRIVATE ROCK_TEST_FIXTURE_DIR="${ROOT_DIR}/tests/fixtures")
+  target_link_libraries(ROCKSupportGripTriangleSelectionTests PRIVATE nlohmann_json::nlohmann_json)
+  list(APPEND ROCK_COMMONLIB_TEST_TARGETS ROCKSupportGripTriangleSelectionTests)
+  add_rock_test(ROCKSupportGripTriangleSelectionTests)
+
   add_executable(ROCKWeaponInteractionQueryTests "${ROOT_DIR}/tests/WeaponInteractionQueryTests.cpp")
   target_compile_features(ROCKWeaponInteractionQueryTests PRIVATE cxx_std_23)
   list(APPEND ROCK_COMMONLIB_TEST_TARGETS ROCKWeaponInteractionQueryTests)
