@@ -62,6 +62,7 @@
         if(const auto status=native_interaction_service::canUnregisterOwner(ownerToken);status!=rock::api::Status::Ok)
             return static_cast<api::Status>(status);
         native_interaction_service::clearOwner(ownerToken);
+        native_idle_grip_preharvest::clearConsumerWarmSet(ownerToken);
         loose_weapon_state::clear(ownerToken);
         physical_reload_input::clearOwner(ownerToken);
         support_trigger_input::clearOwner(ownerToken);

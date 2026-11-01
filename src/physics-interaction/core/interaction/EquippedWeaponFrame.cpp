@@ -2419,6 +2419,8 @@ namespace rock
             equippedGenerationMatchesForm ? weaponNode : nullptr,
             equippedGenerationMatchesForm ? currentEquippedWeaponInstanceData(equippedWeapon) : nullptr,
             equippedGenerationMatchesForm ? _weaponCollision.getCurrentEquippedWeaponInstanceContentKey() : 0);
+        // After the equipped weapon's own harvest, which keeps priority.
+        native_idle_grip_preharvest::observeConsumerWarmups();
 
         _twoHandedGrip.beginAuthoredPrimaryFiringGripFrame();
         const auto* equippedInstance = currentEquippedWeaponInstanceData(equippedWeapon);

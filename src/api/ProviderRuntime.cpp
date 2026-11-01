@@ -35,6 +35,7 @@
 #include "physics-interaction/native/ReferenceInteraction.h"
 #include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRuntime.h"
+#include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include "RockConfig.h"

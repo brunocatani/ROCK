@@ -232,7 +232,18 @@ namespace rock::native_idle_grip_preharvest
             LooseReference,
             EquippedWeapon,
             InventoryDisplay,
+            ConsumerWarm,
         };
+
+        [[nodiscard]] const char* originName(const CandidateOrigin origin) noexcept
+        {
+            switch (origin) {
+            case CandidateOrigin::InventoryDisplay: return "inventory-display";
+            case CandidateOrigin::EquippedWeapon: return "equipped";
+            case CandidateOrigin::ConsumerWarm: return "consumer-warm";
+            default: return "loose";
+            }
+        }
 
         enum class ExtractionResult : std::uint8_t
         {
@@ -375,6 +386,8 @@ namespace rock::native_idle_grip_preharvest
             bool graphHolderConstructed{ false };
             bool longLoadLogged{ false };
             bool warmOnly{ false };
+            // ConsumerWarm: the consumerWarm entry this load fills.
+            std::uint8_t consumerSlot{ 0xFF };
             // The weapon subgraph request was released once the direct idle
             // clip was requested (the native release empties the handles).
             bool subgraphReleased{ false };
@@ -403,11 +416,22 @@ namespace rock::native_idle_grip_preharvest
             bool inPowerArmor{};
         };
 
+        // One requested inventory firearm. weapon is a stable loaded-form
+        // identity; resources are empty until its load completes.
+        struct ConsumerWarm
+        {
+            std::uint64_t owner{ 0 };
+            RE::TESObjectWEAP* weapon{ nullptr };
+            RE::BSTSmartPointer<RE::TBO_InstanceData> instance{};
+            WarmResources resources{};
+        };
+
         struct Runtime
         {
             NativeFunctions native{};
             Job job{};
             std::array<WarmResources, 2> warm;
+            std::array<ConsumerWarm, kConsumerWarmCapacity> consumerWarm;
             std::array<std::uint32_t, 2> heldReferences{};
             std::array<FailureEntry, kFailureCapacity> failures{};
             std::uint64_t nextCaptureSequence{ 0 };
@@ -745,13 +769,15 @@ namespace rock::native_idle_grip_preharvest
             warm.referenceFormId = 0;
         }
 
-        // The only full weapon subgraph ROCK keeps: a held loose gun's, so a
-        // trigger equip from the hand does not wait on the native load. ROCK
-        // itself samples only the idle clip.
+        // The only full weapon subgraphs ROCK keeps: a held loose gun's, so a
+        // trigger equip from the hand does not wait on the native load, and a
+        // consumer's inventory guns, for the same reason on an inventory
+        // equip. ROCK itself samples only the idle clip.
         [[nodiscard]] bool keepsSubgraphWarm(const Job& job) noexcept
         {
-            return job.origin == CandidateOrigin::LooseReference && job.referenceFormId && job.weapon &&
-                job.weapon->weaponData.type == RE::WEAPON_TYPE::kGun;
+            if (!job.weapon || job.weapon->weaponData.type != RE::WEAPON_TYPE::kGun) return false;
+            return (job.origin == CandidateOrigin::LooseReference && job.referenceFormId) ||
+                job.origin == CandidateOrigin::ConsumerWarm;
         }
 
         void retainHeldResources(Runtime& state)
@@ -760,6 +786,23 @@ namespace rock::native_idle_grip_preharvest
             if (!keepsSubgraphWarm(job)) return;
             auto* holder = graphHolder(job);
             if (!holder || !holder->animationGraphManager || job.subgraphHandles.empty()) return;
+            if (job.origin == CandidateOrigin::ConsumerWarm) {
+                // The set may have changed while this weapon loaded; an
+                // unclaimed load is released with the job.
+                if (job.consumerSlot >= state.consumerWarm.size()) return;
+                auto& entry = state.consumerWarm[job.consumerSlot];
+                if (!entry.owner || entry.weapon != job.weapon || entry.instance.get() != job.instanceData.get()) return;
+                auto& warm = entry.resources;
+                releaseWarmResources(state, warm);
+                warm.manager = holder->animationGraphManager;
+                warm.handles = std::move(job.subgraphHandles);
+                warm.instance = job.instanceData;
+                warm.race = job.race;
+                warm.inPowerArmor = job.inPowerArmor;
+                ROCK_LOG_INFO(Animation, "Inventory firearm subgraphs warm form={:08X} slot={} count={} loadMs={}",
+                    job.weaponFormId, job.consumerSlot, warm.handles.size(), GetTickCount64() - job.startedAtMilliseconds);
+                return;
+            }
             for (std::size_t hand = 0; hand < state.heldReferences.size(); ++hand) {
                 if (state.heldReferences[hand] != job.referenceFormId) continue;
                 auto& warm = state.warm[hand];
@@ -783,7 +826,7 @@ namespace rock::native_idle_grip_preharvest
                 state.job.weaponFormId,
                 state.job.referenceFormId,
                 state.job.variant.key,
-                state.job.origin == CandidateOrigin::InventoryDisplay?"inventory-display":state.job.origin == CandidateOrigin::EquippedWeapon ? "equipped" : "loose",
+                originName(state.job.origin),
                 state.job.inPowerArmor ? "yes" : "no",
                 static_cast<unsigned>(state.job.phase),
                 reason ? reason : "unknown");
@@ -1958,7 +2001,7 @@ namespace rock::native_idle_grip_preharvest
                 "support={} supportReason={} supportStable={} supportMissingFingerMask=0x{:04X} maxSupportHandT={:.4f} maxSupportHandR={:.3f}deg "
                 "supportHandInWeaponT=({:.3f},{:.3f},{:.3f})",
                 job.weaponFormId, job.referenceFormId, job.variant.key,
-                job.origin == CandidateOrigin::InventoryDisplay?"inventory-display":job.origin == CandidateOrigin::EquippedWeapon ? "equipped" : "loose",
+                originName(job.origin),
                 extractionDiagnostics.subgraphHandle, subgraphIdentifier, extractionDiagnostics.bindingSubgraphIdentifier,
                 clipPath.data(), job.inPowerArmor ? "yes" : "no", extractionDiagnostics.animationType,
                 extractionDiagnostics.animationDurationSeconds, extractionDiagnostics.transformTrackCount, extractionDiagnostics.floatTrackCount,
@@ -2118,7 +2161,7 @@ namespace rock::native_idle_grip_preharvest
                 state.job.weaponFormId,
                 state.job.referenceFormId,
                 state.job.variant.key,
-                state.job.origin == CandidateOrigin::InventoryDisplay?"inventory-display":state.job.origin == CandidateOrigin::EquippedWeapon ? "equipped" : "loose",
+                originName(state.job.origin),
                 state.job.inPowerArmor ? "yes" : "no",
                 state.job.instanceIdentity,
                 graphProjects.size(),
@@ -2169,6 +2212,9 @@ namespace rock::native_idle_grip_preharvest
         for (const auto& warm : state.warm) {
             for (const auto& candidate : warm.handles) if (candidate.handle == handle) return true;
         }
+        for (const auto& entry : state.consumerWarm) {
+            for (const auto& candidate : entry.resources.handles) if (candidate.handle == handle) return true;
+        }
         return false;
     }
 
@@ -2178,6 +2224,102 @@ namespace rock::native_idle_grip_preharvest
         if (!claimOrValidateThread(state)) return;
         state.heldReferences = {};
         for (auto& warm : state.warm) releaseWarmResources(state, warm);
+        // World loss: inventory instances do not survive it. Consumers send
+        // their set again for the new world generation.
+        for (auto& entry : state.consumerWarm) {
+            releaseWarmResources(state, entry.resources);
+            entry = {};
+        }
+    }
+
+    bool setConsumerWarmSet(const std::uint64_t owner, const std::span<const ConsumerWarmRequest> requests) noexcept
+    {
+        auto& state = runtime();
+        if (!owner || !claimOrValidateThread(state)) return false;
+        const auto sameWeapon = [](const ConsumerWarm& entry, const ConsumerWarmRequest& request) {
+            return entry.weapon == request.weapon && entry.instance.get() == request.instance;
+        };
+        std::size_t others = 0;
+        for (const auto& entry : state.consumerWarm) others += entry.owner && entry.owner != owner ? 1 : 0;
+        std::size_t distinct = 0;
+        for (std::size_t i = 0; i < requests.size(); ++i) {
+            if (!requests[i].weapon) continue;
+            bool repeated = false;
+            for (std::size_t j = 0; j < i && !repeated; ++j) {
+                repeated = requests[j].weapon == requests[i].weapon && requests[j].instance == requests[i].instance;
+            }
+            distinct += repeated ? 0 : 1;
+        }
+        if (others + distinct > state.consumerWarm.size()) return false;
+        // Keep what is still requested; release the rest of this owner's.
+        for (auto& entry : state.consumerWarm) {
+            if (entry.owner != owner) continue;
+            const bool wanted = std::any_of(requests.begin(), requests.end(),
+                [&](const ConsumerWarmRequest& request) { return sameWeapon(entry, request); });
+            if (!wanted) {
+                releaseWarmResources(state, entry.resources);
+                entry = {};
+            }
+        }
+        for (const auto& request : requests) {
+            if (!request.weapon) continue;
+            const bool present = std::any_of(state.consumerWarm.begin(), state.consumerWarm.end(),
+                [&](const ConsumerWarm& entry) { return entry.owner == owner && sameWeapon(entry, request); });
+            if (present) continue;
+            for (auto& entry : state.consumerWarm) {
+                if (entry.owner) continue;
+                entry.owner = owner;
+                entry.weapon = request.weapon;
+                entry.instance = RE::BSTSmartPointer<RE::TBO_InstanceData>(request.instance);
+                break;
+            }
+        }
+        return true;
+    }
+
+    void clearConsumerWarmSet(const std::uint64_t owner) noexcept
+    {
+        auto& state = runtime();
+        if (!owner || !claimOrValidateThread(state)) return;
+        for (auto& entry : state.consumerWarm) {
+            if (entry.owner != owner) continue;
+            releaseWarmResources(state, entry.resources);
+            entry = {};
+        }
+    }
+
+    void observeConsumerWarmups() noexcept
+    {
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::NativeIdleGripHarvest);
+        auto& state = runtime();
+        if (!claimOrValidateThread(state)) return;
+        auto* player = f4vr::getPlayer();
+        const bool powerArmor = f4vr::isInPowerArmor();
+        for (auto& entry : state.consumerWarm) {
+            // Loaded for another race or armor state: load it again.
+            if (!entry.resources.handles.empty() &&
+                (!player || entry.resources.race != player->race || entry.resources.inPowerArmor != powerArmor)) {
+                releaseWarmResources(state, entry.resources);
+            }
+        }
+        if (!player || !advanceAndCanStart(state)) return;
+        for (std::size_t slot = 0; slot < state.consumerWarm.size(); ++slot) {
+            const auto& entry = state.consumerWarm[slot];
+            if (!entry.owner || !entry.weapon || !entry.resources.handles.empty() ||
+                entry.weapon->weaponData.type != RE::WEAPON_TYPE::kGun) continue;
+            Job candidate{};
+            candidate.weapon = entry.weapon;
+            candidate.instanceData = entry.instance;
+            candidate.instanceIdentity = reinterpret_cast<std::uintptr_t>(entry.instance.get());
+            candidate.weaponFormId = entry.weapon->GetFormID();
+            candidate.inPowerArmor = powerArmor;
+            candidate.origin = CandidateOrigin::ConsumerWarm;
+            candidate.warmOnly = true;
+            candidate.consumerSlot = static_cast<std::uint8_t>(slot);
+            if (candidateIsCoolingDown(state, candidate, GetTickCount64())) continue;
+            startJob(state, std::move(candidate));
+            return;
+        }
     }
 
     void observeInventoryDisplay(RE::TESObjectWEAP* weapon,RE::NiAVObject* root,RE::TBO_InstanceData* instance) noexcept

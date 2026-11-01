@@ -3,6 +3,9 @@
 #include "physics-interaction/weapon/InventoryWeaponEquipPolicy.h"
 #include "physics-interaction/weapon/EquipSlotAllocationPolicy.h"
 #include "physics-interaction/weapon/NativeHandEquipment.h"
+#include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
+
+#include <array>
 
 namespace rock {
     namespace {
@@ -31,6 +34,28 @@ namespace rock {
         output.skeletonGeneration = _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
         output.providerGeneration = _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
         return api::Status::Ok;
+    }
+
+    api::Status PhysicsInteraction::setProviderWarmInventoryWeapons(api::OwnerToken owner,
+        const equip_api::InventoryWeapon* items, std::uint32_t count)
+    {
+        static_assert(equip_api::kMaxWarmInventoryWeapons == native_idle_grip_preharvest::kConsumerWarmCapacity);
+        if (count > equip_api::kMaxWarmInventoryWeapons || (count && !items)) return api::Status::InvalidArgument;
+        // Resolve every item before changing anything; the selections keep
+        // the instances alive until the preharvest retains them.
+        std::array<weapon_equip_transfer::InventorySelection, equip_api::kMaxWarmInventoryWeapons> selections{};
+        std::array<native_idle_grip_preharvest::ConsumerWarmRequest, equip_api::kMaxWarmInventoryWeapons> requests{};
+        for (std::uint32_t i = 0; i < count; ++i) {
+            equip_api::InventoryWeapon current{};
+            const auto status = captureProviderInventoryWeapon(items[i].baseFormId, items[i].stackIndex, current);
+            if (status != api::Status::Ok) return status == api::Status::NotReady ? status : api::Status::TargetUnavailable;
+            if (current.stackKey != items[i].stackKey || current.instanceKey != items[i].instanceKey) return api::Status::TargetUnavailable;
+            selections[i] = weapon_equip_transfer::captureInventoryWeapon(current.baseFormId, current.stackIndex);
+            if (!selections[i].stack) return api::Status::TargetUnavailable;
+            requests[i] = { RE::TESForm::GetFormByID<RE::TESObjectWEAP>(current.baseFormId), selections[i].instance.get() };
+        }
+        return native_idle_grip_preharvest::setConsumerWarmSet(owner, std::span(requests.data(), count)) ?
+            api::Status::Ok : api::Status::CapacityFull;
     }
 
     api::Status PhysicsInteraction::requestProviderInventoryEquip(api::OwnerToken owner,

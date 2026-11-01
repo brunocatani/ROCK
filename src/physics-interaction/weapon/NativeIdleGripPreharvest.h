@@ -2,7 +2,9 @@
 
 #include "RE/NetImmerse/NiSmartPointer.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <span>
 
 namespace RE
 {
@@ -29,6 +31,27 @@ namespace rock::native_idle_grip_preharvest
     // Inventory-owned display: retain the exact instance data, but identify
     // authored poses in the display model's same local variant domain.
     void observeInventoryDisplay(RE::TESObjectWEAP*,RE::NiAVObject*,RE::TBO_InstanceData*) noexcept;
+
+    /*
+     * Inventory firearms a consumer keeps ready to equip (Weapon
+     * setWarmInventoryWeapons): their full first-person subgraphs stay loaded
+     * in off-screen managers, so the native equip reuses the resources
+     * instead of waiting on the engine's first-use load. Pointers are
+     * borrowed for the call; the instance is retained. Frame-thread only.
+     */
+    inline constexpr std::size_t kConsumerWarmCapacity = 8;
+    struct ConsumerWarmRequest
+    {
+        RE::TESObjectWEAP* weapon{ nullptr };
+        RE::TBO_InstanceData* instance{ nullptr };
+    };
+    // Replaces owner's set, keeping what stays loaded; false (nothing
+    // changed) when every owner's sets together would exceed the capacity.
+    [[nodiscard]] bool setConsumerWarmSet(std::uint64_t owner, std::span<const ConsumerWarmRequest> requests) noexcept;
+    void clearConsumerWarmSet(std::uint64_t owner) noexcept;
+    // Once per frame: reload after a race or power-armor change and start the
+    // next requested weapon that is not loaded yet (one load at a time).
+    void observeConsumerWarmups() noexcept;
 
     /*
      * Offer the currently equipped weapon after its stable generation exists.

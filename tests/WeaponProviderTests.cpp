@@ -78,6 +78,11 @@ namespace rock::provider::runtime {
         ++unequipRequests;
         return api::Status::Ok;
     }
+    unsigned warmSets = 0;
+    api::Status setWarmInventoryWeapons(std::uint64_t, const api::weapon::InventoryWeapon*, std::uint32_t count) {
+        ++warmSets;
+        return count == 2 ? api::Status::Ok : api::Status::TargetUnavailable;
+    }
     api::Status getFiringAimWorld(api::Hand hand, api::Transform& output) {
         output.translate[0] = hand == api::Hand::Left ? -1.0f : 1.0f;
         return api::Status::Ok;
@@ -150,6 +155,13 @@ int main() {
     assert(api.getFiringAimWorld(testOwner, Hand::None, &aim) == Status::InvalidArgument);
     assert(api.getFiringAimWorld(testOwner, Hand::Left, nullptr) == Status::InvalidArgument);
     assert(api.getFiringAimWorld(testOwner, Hand::Left, &aim) == Status::Ok && aim.translate[0] == -1.0f);
+    InventoryWeapon warm[kMaxWarmInventoryWeapons + 1]{};
+    assert(api.setWarmInventoryWeapons(testOwner, warm, kMaxWarmInventoryWeapons + 1) == Status::CapacityFull);
+    assert(api.setWarmInventoryWeapons(testOwner, nullptr, 2) == Status::InvalidArgument);
+    warm[1].size = 0;
+    assert(api.setWarmInventoryWeapons(testOwner, warm, 2) == Status::InvalidSize);
+    warm[1] = {};
+    assert(api.setWarmInventoryWeapons(testOwner, warm, 2) == Status::Ok && rock::provider::runtime::warmSets == 1);
 
     // Permissions are Weapon's own.
     permissions = 1;

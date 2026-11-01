@@ -484,6 +484,9 @@ namespace rock::api::weapon {
         std::uint32_t providerGeneration{ 0 };
     };
 
+    // setWarmInventoryWeapons: every owner's sets together.
+    inline constexpr std::uint32_t kMaxWarmInventoryWeapons = 8;
+
     struct EquipRequest
     {
         std::uint32_t size{ sizeof(EquipRequest) };
@@ -608,6 +611,19 @@ namespace rock::api::weapon {
         // the same for every firearm and independent of what is equipped.
         // Scale is 1. TargetUnavailable while the controller frame is unknown.
         Status(ROCK_CALL* getFiringAimWorld)(OwnerToken owner, Hand hand, Transform* outWorld) noexcept;
+        // Write. Replaces this owner's set of inventory weapons kept ready to
+        // equip: ROCK keeps each firearm's native animation subgraph loaded,
+        // so requestInventoryEquip of it does not wait on the engine's
+        // first-use load (about half a second per weapon after a game load).
+        // items are captureInventoryWeapon records; count 0 clears the set.
+        // Other weapon types are accepted and need no warming. ROCK loads one
+        // weapon at a time in the background, reloads after a race or
+        // power-armor change, and drops the set when the owner unregisters
+        // or physics shuts down: send it again when the Sample's world,
+        // skeleton or provider generation changes. TargetUnavailable (nothing changed) when an item no longer
+        // matches its inventory stack; CapacityFull above
+        // kMaxWarmInventoryWeapons across owners. Game thread.
+        Status(ROCK_CALL* setWarmInventoryWeapons)(OwnerToken owner, const InventoryWeapon* items, std::uint32_t count) noexcept;
     };
 }
 #pragma pack(pop)

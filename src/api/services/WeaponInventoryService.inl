@@ -25,6 +25,11 @@
         auto* pi = access.get();
         return pi && pi->isInitialized() ? pi->unequipProviderWeapon(weaponSlot, expectedFormId) : api::Status::NotReady;
     }
+    api::Status setWarmInventoryWeapons(std::uint64_t owner, const api::weapon::InventoryWeapon* items, std::uint32_t count) {
+        const auto access = s_physicsInteraction.borrow();
+        auto* pi = access.get();
+        return pi && pi->isInitialized() ? pi->setProviderWarmInventoryWeapons(owner, items, count) : api::Status::NotReady;
+    }
     // The pose ROCK seats a firearm at in that hand (EquippedWeaponFrame,
     // FiringGrip): consumers presenting a weapon before ROCK reveals the
     // real one aim it here instead of guessing a grip.
