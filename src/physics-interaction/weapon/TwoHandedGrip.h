@@ -682,15 +682,16 @@ namespace rock
         /*
          * Consumer draw (Weapon requestInventoryDraw): until ROCK revealed
          * the incoming firearm, the consumer showed it at the hand's firing
-         * aim. The first right-hand authored publication of that weapon
-         * therefore starts from the aim pose (weapon) and the tracked hand,
-         * and both ease into the seat with one alpha over the equipped-weapon
-         * return timing, instead of snapping. Expires unused after
-         * kDrawPresentationArmFrames.
+         * aim. The first firing publication of that weapon in that hand (the
+         * right authored grip or the left firing carry) therefore starts from
+         * the aim pose (weapon) and the tracked hand, and both ease into the
+         * seat with one alpha over the equipped-weapon return timing, instead
+         * of snapping. Expires unused after kDrawPresentationArmFrames.
          */
-        void armDrawPresentationBlend(std::uint32_t weaponFormId);
+        void armDrawPresentationBlend(std::uint32_t weaponFormId, bool isLeft);
         bool resolveDrawPresentationBlend(
             std::uint32_t weaponFormId,
+            bool isLeft,
             const RE::NiTransform& aimWeaponWorld,
             const RE::NiTransform& trackedHandWorld,
             RE::NiTransform& inOutWeaponWorld,
@@ -2312,6 +2313,7 @@ namespace rock
             std::uint64_t armedFrame{ 0 };
             float elapsedSeconds{ 0.0f };
             float durationSeconds{ 0.0f };
+            bool isLeft{ false };
             bool armed{ false };
             bool active{ false };
         };

@@ -539,17 +539,19 @@ namespace rock
         constexpr std::uint64_t kDrawPresentationArmFrames = 120;
     }
 
-    void TwoHandedGrip::armDrawPresentationBlend(const std::uint32_t weaponFormId)
+    void TwoHandedGrip::armDrawPresentationBlend(const std::uint32_t weaponFormId, const bool isLeft)
     {
         _drawPresentation = {};
         if (!weaponFormId) return;
         _drawPresentation.weaponFormId = weaponFormId;
+        _drawPresentation.isLeft = isLeft;
         _drawPresentation.armedFrame = runtime_state::currentFrame().frameIndex;
         _drawPresentation.armed = true;
     }
 
     bool TwoHandedGrip::resolveDrawPresentationBlend(
         const std::uint32_t weaponFormId,
+        const bool isLeft,
         const RE::NiTransform& aimWeaponWorld,
         const RE::NiTransform& trackedHandWorld,
         RE::NiTransform& inOutWeaponWorld,
@@ -557,6 +559,9 @@ namespace rock
     {
         auto& state = _drawPresentation;
         if (!state.armed && !state.active) return false;
+        // The other hand's path may run for the same weapon before the
+        // destination hand takes it (a left draw starts on the right).
+        if (state.isLeft != isLeft) return false;
         const auto& frame = runtime_state::currentFrame();
         if (state.weaponFormId != weaponFormId ||
             (state.armed && frame.frameIndex > state.armedFrame + kDrawPresentationArmFrames) ||
@@ -570,8 +575,8 @@ namespace rock
             state.elapsedSeconds = 0.0f;
             state.durationSeconds = hand_visual_lerp_math::computeVisualReturnDuration(
                 trackedHandWorld, inOutHandWorld, hand_visual_lerp_math::kEquippedWeaponReturnConfig);
-            ROCK_LOG_DEBUG(Weapon, "Draw presentation blend started form={:08X} hand={:.2f}gu/{:.1f}deg weapon={:.2f}gu duration={:.3f}s",
-                weaponFormId,
+            ROCK_LOG_DEBUG(Weapon, "Draw presentation blend started form={:08X} side={} hand={:.2f}gu/{:.1f}deg weapon={:.2f}gu duration={:.3f}s",
+                weaponFormId, isLeft ? "left" : "right",
                 hand_visual_lerp_math::distanceGameUnits(trackedHandWorld.translate, inOutHandWorld.translate),
                 hand_visual_lerp_math::rotationDistanceDegrees(trackedHandWorld, inOutHandWorld),
                 hand_visual_lerp_math::distanceGameUnits(aimWeaponWorld.translate, inOutWeaponWorld.translate),

@@ -1062,7 +1062,7 @@ namespace rock
         RE::NiTransform presentedWeaponWorld = solvedWeaponWorld;
         RE::NiTransform presentedFiringHandWorld = solvedFiringHandWorld;
         if (!input.meleeWeapon) {
-            (void)weaponAuthority.resolveDrawPresentationBlend(_weaponFormId, liveWeaponWorld, trackedHandWorld,
+            (void)weaponAuthority.resolveDrawPresentationBlend(_weaponFormId, false, liveWeaponWorld, trackedHandWorld,
                 presentedWeaponWorld, presentedFiringHandWorld);
         }
         if (!weaponAuthority.applyAuthoredPrimaryGripWeaponAlignment(

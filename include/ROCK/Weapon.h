@@ -626,7 +626,7 @@ namespace rock::api::weapon {
         Status(ROCK_CALL* setWarmInventoryWeapons)(OwnerToken owner, const InventoryWeapon* items, std::uint32_t count) noexcept;
         // Write. requestInventoryEquip for a weapon the consumer shows in
         // the hand at getFiringAimWorld until ROCK reveals it (a holster
-        // draw): when ROCK seats a firearm in the right hand, the weapon
+        // draw): when ROCK seats the firearm in that hand, the weapon
         // continues from that pose and the hand from its tracked pose, and
         // both ease into the grip instead of snapping. Results as
         // requestInventoryEquip.

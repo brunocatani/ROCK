@@ -80,6 +80,17 @@ namespace rock
             presentedHandWorld = transform_math::composeTransforms(solvedWeaponWorld, seat);
         }
 
+        // A consumer draw continues from where the consumer showed the
+        // weapon (the published left firing aim) and the tracked hand into
+        // this seat. The left carry is always the slot-0 weapon.
+        auto* equipped = f4vr::getEquippedWeaponItem();
+        const std::uint32_t equippedFormId = equipped && equipped->item.object ? equipped->item.object->GetFormID() : 0;
+        RE::NiTransform leftAimWorld{};
+        if (equippedFormId && tryGetLeftWeaponAimWorld(weaponNode->world.scale, leftAimWorld)) {
+            (void)resolveDrawPresentationBlend(equippedFormId, true, leftAimWorld, physicalHandWorld,
+                solvedWeaponWorld, presentedHandWorld);
+        }
+
         if (scope_safe_hand_frame_math::
                 shouldPublishLockedHandVisualAuthority(
                     _scope.menuOpenThisFrame)) {
