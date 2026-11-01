@@ -24,7 +24,7 @@
  */
 namespace rock::grab_pose_replay
 {
-    inline constexpr std::uint32_t kFormatVersion = 2;
+    inline constexpr std::uint32_t kFormatVersion = 1;
     inline constexpr std::size_t kFingerCount = 5;
     inline constexpr std::size_t kFingerBoneCount = 15;
 
@@ -56,13 +56,33 @@ namespace rock::grab_pose_replay
         bool valid = false;
     };
 
-    // grab_finger_capsule_sweep::Options.
-    struct CapsuleOptions
+    // grab_finger_pose_runtime::GrabFingerPoseTargetSet, world space at the solve.
+    struct PoseTargets
+    {
+        std::array<Vec3, kFingerCount> targets{};
+        std::array<Vec3, kFingerCount> targetNormals{};
+        std::array<std::uint8_t, kFingerCount> targetValid{};
+        std::array<std::uint8_t, kFingerCount> targetNormalValid{};
+        Vec3 seatPoint{};
+        Vec3 seatNormal{};
+        bool seatPointValid = false;
+        bool seatNormalValid = false;
+        bool useSeatPointForMissingTargets = true;
+        bool useWholeMeshForMissingTargets = false;
+        std::uint32_t targetCount = 0;
+    };
+
+    struct SolveOptions
     {
         float minValue = 0.0f;
-        float fingerMaxOpenValue = 0.0f;
-        float thumbMaxOpenValue = 0.0f;
-        float step = 0.0f;
+        float maxTriangleDistanceSquared = 0.0f;
+        bool rejectBacksideHits = true;
+        float surfacePlaneToleranceGameUnits = 0.0f;
+        bool allowSurfaceAimTargets = true;
+        float sweepContactRadiusGameUnits = 0.0f;
+        float thumbSweepMaxOpenValue = 0.0f;
+        float fingerSweepMaxOpenValue = 0.0f;
+        std::uint32_t mode = 0; // grab_finger_pose_runtime::FingerPoseMode
     };
 
     struct Record
@@ -83,14 +103,16 @@ namespace rock::grab_pose_replay
         Transform solveHandWorld;
         Transform liveHandWorld;
         Vec3 grabAnchorWorld{};
+        PoseTargets targets;
         FingerSkeleton solveSkeleton; // live skeleton rebased onto solveHandWorld
-        CapsuleOptions options;
+        std::array<Vec3, kFingerCount> commandedOpenDirectionsWorld{};
+        bool commandedOpenDirectionsValid = false;
+        SolveOptions options;
 
-        // Capsule solve outputs, then after ROCK's pinch policy (what was published).
+        // Solve outputs straight from the frozen-mesh solve, then after ROCK's
+        // pinch/thumb/pad policies (what was published).
         std::array<float, kFingerCount> solvedValues{};
-        std::array<std::uint8_t, kFingerCount> solvedContact{};
-        std::array<std::uint8_t, kFingerCount> solvedOpenedToClear{};
-        std::array<std::uint8_t, kFingerCount> solvedBlocked{};
+        std::array<std::int32_t, kFingerCount> solvedHitKind{};
         std::array<float, kFingerCount> finalValues{};
         std::array<float, kFingerBoneCount> finalJointValues{};
 
@@ -101,10 +123,13 @@ namespace rock::grab_pose_replay
 
         // Published state at the measurement.
         std::array<float, kFingerBoneCount> publishedJointValues{};
+        std::array<float, kFingerCount> publishedSplayRadians{};
+        std::array<Transform, kFingerBoneCount> publishedLocalTransforms{};
+        std::uint16_t publishedLocalTransformMask = 0;
 
-        // Drawn once settled: the finger chain taken relative to its own wrist and placed at the
-        // published hand (the drawn hand bone); presentedHandWorld is the wrist FRIK latched at
-        // AfterWorldFinal of the previous frame.
+        // Rendered once settled. `rendered` is read during ROCK's frame (FRIK AfterArmSolve), where
+        // the flattened array may not be final; presentedHandWorld is the wrist FRIK latched at
+        // AfterWorldFinal (the drawn hand bone) of the previous frame.
         Transform renderedObjectWorld;
         Transform renderedVisualHandWorld;
         FingerSkeleton rendered;

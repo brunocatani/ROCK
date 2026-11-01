@@ -1662,8 +1662,10 @@ namespace rock
             const WeaponCollision& weaponCollision,
             const RE::NiTransform& handTransform,
             const RE::NiTransform& adjustedHandTransform,
+            const RE::NiPoint3& gripWorldPoint,
             bool cachedTrianglesFound,
-            const WeaponCollision::SupportGripEvidenceView& evidenceView);
+            const WeaponCollision::SupportGripEvidenceView& evidenceView,
+            WeaponPartGrip& grip);
 
         void lockPartGripToWeaponRoot(bool isLeft);
 
@@ -1678,6 +1680,7 @@ namespace rock
         void setSupportGripPose(
             bool isLeft,
             const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPose,
+            const std::array<float, 5>* capturedSplayRadians,
             SupportGripPoseFallback fallback =
                 SupportGripPoseFallback::SelectedClose);
 

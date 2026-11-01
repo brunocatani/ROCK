@@ -286,6 +286,20 @@ namespace rock
         _lastPublishedGrabVisualHandTransform = {};
         _hasLastPublishedGrabVisualHandTransform = false;
         _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
+        _grabFingerProbeStart = {};
+        _grabFingerProbeEnd = {};
+        _hasGrabFingerProbeDebug = false;
+        _grabFingerSweepDebugCapture = {};
+        _grabFingerSweepDebugObjectWorld = {};
+        _hasGrabFingerSweepDebug = false;
+        _grabFingerPadProbeStart = {};
+        _grabFingerPadProbeEnd = {};
+        _grabFingerPadProbeHit = {};
+        _grabFingerPadProbeHitValid = {};
+        _hasGrabFingerPadProbeDebug = false;
+        _grabFingerSurfaceTarget = {};
+        _grabFingerSurfaceTargetValid = {};
+        _hasGrabFingerSurfaceTargetDebug = false;
         _grabFingerJointPose = {};
         _grabFingerLocalTransforms = {};
         _grabFingerLocalTransformMask = 0;
@@ -293,6 +307,7 @@ namespace rock
         _grabFingerTriangleIndex.clear();
         _hasGrabFingerJointPose = false;
         _hasGrabFingerLocalTransforms = false;
+        _grabFingerLocalTransformFinalizePending = false;
         _grabPoseQualityUpdatesRemaining = -1;
         _grabPoseReplay.reset();
         _hasGrabFingerPose = false;
@@ -377,6 +392,9 @@ namespace rock
         _lastPublishedGrabVisualHandTransform = {};
         _hasLastPublishedGrabVisualHandTransform = false;
         clearSelectedCloseFingerPose();
+        _grabFingerSweepDebugCapture = {};
+        _grabFingerSweepDebugObjectWorld = {};
+        _hasGrabFingerSweepDebug = false;
         _grabFingerJointPose = {};
         _grabFingerLocalTransforms = {};
         _grabFingerLocalTransformMask = 0;
@@ -384,6 +402,7 @@ namespace rock
         _grabFingerTriangleIndex.clear();
         _hasGrabFingerJointPose = false;
         _hasGrabFingerLocalTransforms = false;
+        _grabFingerLocalTransformFinalizePending = false;
         _grabPoseQualityUpdatesRemaining = -1;
         _grabPoseReplay.reset();
         _hasGrabFingerPose = false;

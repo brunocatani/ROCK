@@ -104,40 +104,6 @@ namespace rock
             return result;
         }
 
-        // True when any triangle's exact distance to the point is within the radius.
-        template <class Triangles, class Distance>
-        bool anyTriangleWithin(const Triangles& triangles, const RE::NiPoint3& point, float radiusSquared, Distance&& distance, QueryStats* stats = nullptr) const
-        {
-            if (_nodes.empty() || !finite(point) || !(radiusSquared >= 0.0f)) return false;
-            std::array<std::uint32_t, 64> stack{};
-            std::size_t count = 1;
-            while (count != 0) {
-                const auto& node = _nodes[stack[--count]];
-                if (stats) ++stats->nodes;
-                if (boundsDistanceSquared(point, node) > radiusSquared) continue;
-                if (node.count != 0) {
-                    for (std::uint32_t i = node.begin; i < node.begin + node.count; ++i) {
-                        if (stats) ++stats->triangles;
-                        const float candidate = distance(point, triangles[_indices[i]]);
-                        if (std::isfinite(candidate) && candidate >= 0.0f && candidate <= radiusSquared) return true;
-                    }
-                } else {
-                    stack[count++] = node.right;
-                    stack[count++] = node.left;
-                }
-            }
-            return false;
-        }
-
-        // Bounds of every indexed triangle (the root node); false when empty.
-        bool bounds(RE::NiPoint3& minimum, RE::NiPoint3& maximum) const
-        {
-            if (_nodes.empty()) return false;
-            minimum = _nodes[0].min;
-            maximum = _nodes[0].max;
-            return true;
-        }
-
         template <class Triangles, class Predicate>
         bool anyTriangleOverlappingBounds(const Triangles& triangles, const RE::NiPoint3& minimum,
             const RE::NiPoint3& maximum, Predicate&& predicate, QueryStats* stats = nullptr) const

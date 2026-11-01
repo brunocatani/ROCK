@@ -585,8 +585,11 @@ namespace rock
             return false;
         }
 
-        const bool useSourceTriangles = sourceNodeCurrent && !instance.geometry->mesh->sourceLocalTrianglesGame.empty();
-        const auto& localTriangles = useSourceTriangles ? instance.geometry->mesh->sourceLocalTrianglesGame : instance.geometry->mesh->localTrianglesGame;
+        const auto& localTriangles =
+            sourceNodeCurrent &&
+                !instance.geometry->mesh->sourceLocalTrianglesGame.empty() ?
+            instance.geometry->mesh->sourceLocalTrianglesGame :
+            instance.geometry->mesh->localTrianglesGame;
         if (localTriangles.empty() ||
             !std::isfinite(localToWorld.scale) ||
             std::abs(localToWorld.scale) <= 0.000001f) {
@@ -596,9 +599,6 @@ namespace rock
         outView.localTriangles = std::span<const TriangleData>(
             localTriangles.data(),
             localTriangles.size());
-        if (instance.indices) {
-            outView.localTriangleIndex = useSourceTriangles ? &instance.indices->sourceIndex : &instance.indices->localIndex;
-        }
         outView.localToWorld = localToWorld;
         outView.sourceGroupId = instance.generatedSourceGroupId != 0 ?
             instance.generatedSourceGroupId :

@@ -376,8 +376,7 @@ namespace rock
         };
         const auto arrangement = authoredGripArrangement(weaponNode, currentWeaponGenerationKey);
         const bool sharedFiringZone = loose_weapon_authored_grab_policy::sharedFiringZone(arrangement);
-        // bDebugWeaponSupportDynamicOnly: authored zones never acquire, so only mesh contact routes a support grip.
-        const bool authoredSeatAcquisitionAvailable = supportHandAvailableForAcquisition && !g_rockConfig.rockDebugWeaponSupportDynamicOnly &&
+        const bool authoredSeatAcquisitionAvailable = supportHandAvailableForAcquisition &&
             authoredSupportSeatAvailable(supportHandIsLeft, currentWeaponGenerationKey, supportRuntimeState);
         firing_grip_reattach_zone_policy::ZoneInput handoffInput{};
         firing_grip_reattach_zone_policy::ZoneResult handoffZone{};

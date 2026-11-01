@@ -100,16 +100,19 @@ static bool testPublicationSafety()
     return ok;
 }
 
-/*
- * The capsule finger sweep asks the mesh index "is any triangle within r of
- * this point, and which is nearest". The BVH answer must match a brute-force
- * scan over the same triangles, including scaled and rotated object frames,
- * duplicate and reversed faces, and degenerate or non-finite input.
- */
-bool testIndexedSphereQueries()
+bool testIndexedFingerPadProbes()
 {
     using namespace rock;
     using namespace grab_finger_pose_runtime;
+    const auto equalPoint = [](const RE::NiPoint3& a, const RE::NiPoint3& b) {
+        return a.x == b.x && a.y == b.y && a.z == b.z;
+    };
+    const auto equalEvidence = [&](const FingerPadSurfaceEvidence& a, const FingerPadSurfaceEvidence& b) {
+        return equalPoint(a.startWorld, b.startWorld) && equalPoint(a.endWorld, b.endWorld) &&
+            equalPoint(a.hitPointWorld, b.hitPointWorld) && equalPoint(a.hitNormalWorld, b.hitNormalWorld) &&
+            a.distanceGameUnits == b.distanceGameUnits && a.quality == b.quality && a.hit == b.hit &&
+            a.fromClosestSurface == b.fromClosestSurface && a.padMayBeInsideSurface == b.padMayBeInsideSurface;
+    };
     std::mt19937 random(81239);
     std::uniform_real_distribution<float> coordinate(-100.0f, 100.0f);
     std::uniform_real_distribution<float> unit(-1.0f, 1.0f);
@@ -118,13 +121,14 @@ bool testIndexedSphereQueries()
         const RE::NiPoint3 p{ coordinate(random), coordinate(random), coordinate(random) };
         local.push_back({ p, p + RE::NiPoint3{ 2.0f, 0.0f, 0.0f }, p + RE::NiPoint3{ 0.0f, 2.0f, 0.5f } });
     }
+    // Duplicate and reversed faces exercise source-order ties. Degenerate and
+    // non-finite inputs exercise the same finite-input admission as the caller.
     local[14] = local[13];
     local[15] = { local[13].v0, local[13].v2, local[13].v1 };
     local[32] = {};
     local[33].v0.x = std::numeric_limits<float>::quiet_NaN();
     FingerPoseTriangleSpatialIndex index;
     if (!index.buildFromLocalTriangles(local)) return false;
-
     std::uint64_t linearTests = 0, indexedTests = 0;
     int compared = 0;
     for (const float scale : { 1.0f, 0.1f, 3.0f, -2.0f }) {
@@ -135,48 +139,48 @@ bool testIndexedSphereQueries()
         world.rotate.entry[0][1] = 0.6f;
         world.rotate.entry[1][0] = -0.6f;
         world.rotate.entry[1][1] = 0.8f;
+        world.rotate.entry[2][0] = 0.0001f; // finite authored basis drift
+        std::vector<TriangleData> triangles;
+        rebuildBoundedWorldTriangles(local, world, triangles);
+        if (triangles.size() != index.triangleCount()) return false;
         for (int query = 0; query < 160; ++query) {
-            const auto& seed = local[(query * 13) % local.size()];
-            const RE::NiPoint3 pointLocal = query < 120 && grab_finger_pose_runtime::isFinitePoint(seed.v0) ?
-                seed.v0 + RE::NiPoint3{ unit(random), unit(random), unit(random) } :
-                RE::NiPoint3{ coordinate(random), coordinate(random), coordinate(random) };
-            const RE::NiPoint3 pointWorld = transform_math::localPointToWorld(world, pointLocal);
-            const float radiusWorld = (0.2f + 3.0f * std::abs(unit(random))) * std::abs(scale);
-
-            // Brute force in object space over the triangles the index admits.
-            float bestLocal = std::numeric_limits<float>::max();
-            for (const auto& triangle : local) {
-                if (!isFinitePoint(triangle.v0) || !isFinitePoint(triangle.v1) || !isFinitePoint(triangle.v2)) continue;
-                const RE::NiPoint3 closest = grab_finger_pose_math::closestPointOnTriangle(pointLocal, grab_finger_pose_math::Triangle<RE::NiPoint3>{ triangle.v0, triangle.v1, triangle.v2 });
-                bestLocal = (std::min)(bestLocal, grab_finger_pose_math::length(grab_finger_pose_math::sub(closest, pointLocal)));
-                ++linearTests;
-            }
-            const bool expectedHit = bestLocal * std::abs(scale) <= radiusWorld;
-
-            RE::NiPoint3 hitWorld{};
-            FingerPoseSpatialQueryStats stats{};
-            const bool hit = index.querySphereWorld(world, pointWorld, radiusWorld, &hitWorld, nullptr, &stats);
-            indexedTests += stats.triangleTests;
-            ++compared;
-            if (hit != expectedHit) {
-                std::printf("Indexed sphere hit mismatch scale=%f query=%d expected=%d\n", scale, query, expectedHit ? 1 : 0);
+            const auto& triangle = triangles[(query * 13) % triangles.size()];
+            const auto point = query < 120 ? triangle.v0 + RE::NiPoint3{ unit(random), unit(random), unit(random) } :
+                transform_math::localPointToWorld(world, RE::NiPoint3{ coordinate(random), coordinate(random), coordinate(random) });
+            const RE::NiPoint3 direction{ unit(random), unit(random), unit(random) };
+            const RE::NiPoint3 preferred{ unit(random), unit(random), unit(random) };
+            FingerPadProbeOptions options;
+            options.probeRadiusGameUnits = 0.1f + std::abs(unit(random));
+            options.probeDistanceGameUnits = 0.2f + 12.0f * std::abs(unit(random));
+            options.closestSurfaceMaxDistanceGameUnits = 0.2f + 5.0f * std::abs(unit(random));
+            FingerPoseSpatialQueryStats linearStats{}, indexedStats{};
+            const auto baseline = solveFingerPadSurfaceEvidenceFromTriangles(triangles, point, direction, preferred, query % 2 != 0,
+                options, nullptr, nullptr, &linearStats);
+            const auto accelerated = solveFingerPadSurfaceEvidenceFromTriangles(triangles, point, direction, preferred, query % 2 != 0,
+                options, &index, &world, &indexedStats);
+            if (!equalEvidence(baseline, accelerated)) {
+                std::printf("Indexed finger pad mismatch scale=%f query=%d\n", scale, query);
                 return false;
             }
-            if (hit) {
-                const RE::NiPoint3 offset = hitWorld - pointWorld;
-                const float distanceWorld = std::sqrt(offset.x * offset.x + offset.y * offset.y + offset.z * offset.z);
-                // World coordinates near 25000 gu carry ~0.002 gu of float error.
-                if (std::abs(distanceWorld - bestLocal * std::abs(scale)) > 0.01f) {
-                    std::printf("Indexed sphere nearest mismatch scale=%f query=%d %f vs %f\n", scale, query, distanceWorld, bestLocal * std::abs(scale));
-                    return false;
-                }
-            }
+            linearTests += linearStats.triangleTests;
+            indexedTests += indexedStats.triangleTests;
+            ++compared;
         }
+    }
+    // Exact tangent, coincident surfaces, capsule-only contact and clear misses.
+    local = { { {0, 0, 0}, {4, 0, 0}, {0, 4, 0} },
+        { {0, 0, 0}, {0, 4, 0}, {4, 0, 0} } };
+    index.buildFromLocalTriangles(local);
+    const auto identity = transform_math::makeIdentityTransform<RE::NiTransform>();
+    for (const auto point : { RE::NiPoint3{1, 1, 1}, RE::NiPoint3{1, 1, 0}, RE::NiPoint3{4.5f, 0, 1}, RE::NiPoint3{100, 100, 100} }) {
+        const auto baseline = solveFingerPadSurfaceEvidenceFromTriangles(local, point, {0, 0, -1}, {}, false);
+        const auto accelerated = solveFingerPadSurfaceEvidenceFromTriangles(local, point, {0, 0, -1}, {}, false, {}, &index, &identity);
+        if (!equalEvidence(baseline, accelerated)) return false;
     }
     index.clear();
     if (index.buildFromLocalTriangles(std::vector<TriangleData>{})) return false;
-    std::printf("Indexed sphere parity: %d queries, %llu linear vs %llu indexed triangle tests\n", compared,
-        static_cast<unsigned long long>(linearTests), static_cast<unsigned long long>(indexedTests));
+    std::printf("Finger pad parity: %d randomized queries, %llu linear vs %llu indexed triangle tests\n",
+        compared, static_cast<unsigned long long>(linearTests), static_cast<unsigned long long>(indexedTests));
     return indexedTests < linearTests / 3;
 }
 
@@ -184,6 +188,6 @@ int main()
 {
     bool ok = true;
     ok &= testPublicationSafety();
-    ok &= testIndexedSphereQueries();
+    ok &= testIndexedFingerPadProbes();
     return ok ? 0 : 1;
 }

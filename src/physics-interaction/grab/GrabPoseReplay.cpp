@@ -42,17 +42,48 @@ namespace rock::grab_pose_replay
         j.at("valid").get_to(s.valid);
     }
 
-    void to_json(json& j, const CapsuleOptions& o)
+    void to_json(json& j, const PoseTargets& p)
     {
-        j = json{ { "minValue", o.minValue }, { "fingerMaxOpenValue", o.fingerMaxOpenValue }, { "thumbMaxOpenValue", o.thumbMaxOpenValue },
-            { "step", o.step } };
+        j = json{ { "targets", p.targets }, { "targetNormals", p.targetNormals }, { "targetValid", p.targetValid },
+            { "targetNormalValid", p.targetNormalValid }, { "seatPoint", p.seatPoint }, { "seatNormal", p.seatNormal },
+            { "seatPointValid", p.seatPointValid }, { "seatNormalValid", p.seatNormalValid },
+            { "useSeatPointForMissingTargets", p.useSeatPointForMissingTargets },
+            { "useWholeMeshForMissingTargets", p.useWholeMeshForMissingTargets }, { "targetCount", p.targetCount } };
     }
-    void from_json(const json& j, CapsuleOptions& o)
+    void from_json(const json& j, PoseTargets& p)
+    {
+        j.at("targets").get_to(p.targets);
+        j.at("targetNormals").get_to(p.targetNormals);
+        j.at("targetValid").get_to(p.targetValid);
+        j.at("targetNormalValid").get_to(p.targetNormalValid);
+        j.at("seatPoint").get_to(p.seatPoint);
+        j.at("seatNormal").get_to(p.seatNormal);
+        j.at("seatPointValid").get_to(p.seatPointValid);
+        j.at("seatNormalValid").get_to(p.seatNormalValid);
+        j.at("useSeatPointForMissingTargets").get_to(p.useSeatPointForMissingTargets);
+        j.at("useWholeMeshForMissingTargets").get_to(p.useWholeMeshForMissingTargets);
+        j.at("targetCount").get_to(p.targetCount);
+    }
+
+    void to_json(json& j, const SolveOptions& o)
+    {
+        j = json{ { "minValue", o.minValue }, { "maxTriangleDistanceSquared", o.maxTriangleDistanceSquared },
+            { "rejectBacksideHits", o.rejectBacksideHits }, { "surfacePlaneToleranceGameUnits", o.surfacePlaneToleranceGameUnits },
+            { "allowSurfaceAimTargets", o.allowSurfaceAimTargets }, { "sweepContactRadiusGameUnits", o.sweepContactRadiusGameUnits },
+            { "thumbSweepMaxOpenValue", o.thumbSweepMaxOpenValue }, { "fingerSweepMaxOpenValue", o.fingerSweepMaxOpenValue },
+            { "mode", o.mode } };
+    }
+    void from_json(const json& j, SolveOptions& o)
     {
         j.at("minValue").get_to(o.minValue);
-        j.at("fingerMaxOpenValue").get_to(o.fingerMaxOpenValue);
-        j.at("thumbMaxOpenValue").get_to(o.thumbMaxOpenValue);
-        j.at("step").get_to(o.step);
+        j.at("maxTriangleDistanceSquared").get_to(o.maxTriangleDistanceSquared);
+        j.at("rejectBacksideHits").get_to(o.rejectBacksideHits);
+        j.at("surfacePlaneToleranceGameUnits").get_to(o.surfacePlaneToleranceGameUnits);
+        j.at("allowSurfaceAimTargets").get_to(o.allowSurfaceAimTargets);
+        j.at("sweepContactRadiusGameUnits").get_to(o.sweepContactRadiusGameUnits);
+        j.at("thumbSweepMaxOpenValue").get_to(o.thumbSweepMaxOpenValue);
+        j.at("fingerSweepMaxOpenValue").get_to(o.fingerSweepMaxOpenValue);
+        j.at("mode").get_to(o.mode);
     }
 
     std::string serialize(const Record& r)
@@ -70,18 +101,22 @@ namespace rock::grab_pose_replay
             { "solveHandWorld", r.solveHandWorld },
             { "liveHandWorld", r.liveHandWorld },
             { "grabAnchorWorld", r.grabAnchorWorld },
+            { "targets", r.targets },
             { "solveSkeleton", r.solveSkeleton },
+            { "commandedOpenDirectionsWorld", r.commandedOpenDirectionsWorld },
+            { "commandedOpenDirectionsValid", r.commandedOpenDirectionsValid },
             { "options", r.options },
             { "solvedValues", r.solvedValues },
-            { "solvedContact", r.solvedContact },
-            { "solvedOpenedToClear", r.solvedOpenedToClear },
-            { "solvedBlocked", r.solvedBlocked },
+            { "solvedHitKind", r.solvedHitKind },
             { "finalValues", r.finalValues },
             { "finalJointValues", r.finalJointValues },
             { "frikClosedLocal", r.frikClosedLocal },
             { "frikOpenLocal", r.frikOpenLocal },
             { "frikRigValid", r.frikRigValid },
             { "publishedJointValues", r.publishedJointValues },
+            { "publishedSplayRadians", r.publishedSplayRadians },
+            { "publishedLocalTransforms", r.publishedLocalTransforms },
+            { "publishedLocalTransformMask", r.publishedLocalTransformMask },
             { "renderedObjectWorld", r.renderedObjectWorld },
             { "renderedVisualHandWorld", r.renderedVisualHandWorld },
             { "rendered", r.rendered },
@@ -112,23 +147,29 @@ namespace rock::grab_pose_replay
             j.at("solveHandWorld").get_to(r.solveHandWorld);
             j.at("liveHandWorld").get_to(r.liveHandWorld);
             j.at("grabAnchorWorld").get_to(r.grabAnchorWorld);
+            j.at("targets").get_to(r.targets);
             j.at("solveSkeleton").get_to(r.solveSkeleton);
+            j.at("commandedOpenDirectionsWorld").get_to(r.commandedOpenDirectionsWorld);
+            j.at("commandedOpenDirectionsValid").get_to(r.commandedOpenDirectionsValid);
             j.at("options").get_to(r.options);
             j.at("solvedValues").get_to(r.solvedValues);
-            j.at("solvedContact").get_to(r.solvedContact);
-            j.at("solvedOpenedToClear").get_to(r.solvedOpenedToClear);
-            j.at("solvedBlocked").get_to(r.solvedBlocked);
+            j.at("solvedHitKind").get_to(r.solvedHitKind);
             j.at("finalValues").get_to(r.finalValues);
             j.at("finalJointValues").get_to(r.finalJointValues);
             j.at("frikClosedLocal").get_to(r.frikClosedLocal);
             j.at("frikOpenLocal").get_to(r.frikOpenLocal);
             j.at("frikRigValid").get_to(r.frikRigValid);
             j.at("publishedJointValues").get_to(r.publishedJointValues);
+            j.at("publishedSplayRadians").get_to(r.publishedSplayRadians);
+            j.at("publishedLocalTransforms").get_to(r.publishedLocalTransforms);
+            j.at("publishedLocalTransformMask").get_to(r.publishedLocalTransformMask);
             j.at("renderedObjectWorld").get_to(r.renderedObjectWorld);
             j.at("renderedVisualHandWorld").get_to(r.renderedVisualHandWorld);
             j.at("rendered").get_to(r.rendered);
-            j.at("presentedHandWorld").get_to(r.presentedHandWorld);
-            j.at("presentedHandValid").get_to(r.presentedHandValid);
+            if (j.contains("presentedHandWorld")) {
+                j.at("presentedHandWorld").get_to(r.presentedHandWorld);
+                j.at("presentedHandValid").get_to(r.presentedHandValid);
+            }
             return r;
         } catch (const std::exception& error) {
             if (outError) *outError = error.what();

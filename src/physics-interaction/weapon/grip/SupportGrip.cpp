@@ -1041,7 +1041,7 @@ namespace rock
         if (authored_support_grab_policy::captured(decision.selection)) {
             ROCK_LOG_INFO(
                 Weapon,
-                "TwoHandedGrip: support grab selection={} reason={} hand={} capability={} capabilityReason={} dynamicOnly={} generation={:016X}",
+                "TwoHandedGrip: support grab selection={} reason={} hand={} capability={} capabilityReason={} generation={:016X}",
                 authored_support_grab_policy::selectionName(
                     decision.selection),
                 authored_support_grab_policy::selectionReasonName(
@@ -1051,12 +1051,11 @@ namespace rock
                     capability.capability),
                 authored_support_grab_policy::capabilityReasonName(
                     capability.reason),
-                g_rockConfig.rockDebugWeaponSupportDynamicOnly,
                 weaponGenerationKey);
         } else {
             ROCK_LOG_DEBUG(
                 Weapon,
-                "TwoHandedGrip: support grab selection={} reason={} hand={} capability={} capabilityReason={} dynamicOnly={} generation={:016X}",
+                "TwoHandedGrip: support grab selection={} reason={} hand={} capability={} capabilityReason={} generation={:016X}",
                 authored_support_grab_policy::selectionName(
                     decision.selection),
                 authored_support_grab_policy::selectionReasonName(
@@ -1066,7 +1065,6 @@ namespace rock
                     capability.capability),
                 authored_support_grab_policy::capabilityReasonName(
                     capability.reason),
-                g_rockConfig.rockDebugWeaponSupportDynamicOnly,
                 weaponGenerationKey);
         }
     }
@@ -2652,17 +2650,14 @@ namespace rock
     void TwoHandedGrip::setSupportGripPose(
         bool isLeft,
         const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPose,
+        const std::array<float, 5>* capturedSplayRadians,
         const SupportGripPoseFallback fallback)
     {
         WeaponPartGrip& grip = partGrip(isLeft);
         if (meshFingerPose && meshFingerPose->solved) {
-            // Mesh poses are FRIK joint values only: no splay, no per-bone local transforms.
             grip.fingerPose = meshFingerPose->hasJointValues ? meshFingerPose->jointValues : grab_finger_pose_math::expandFingerCurlsToJointValues(meshFingerPose->values);
-            grip.fingerSplayRadians = {};
-            grip.hasFingerSplay = false;
-            grip.fingerLocalTransforms = {};
-            grip.fingerLocalTransformMask = 0;
-            grip.hasFingerLocalTransforms = false;
+            grip.fingerSplayRadians = capturedSplayRadians ? *capturedSplayRadians : std::array<float, 5>{};
+            grip.hasFingerSplay = capturedSplayRadians != nullptr;
             grip.hasFingerPose = true;
             return;
         }
@@ -3223,7 +3218,7 @@ namespace rock
             grip.hasHandWeaponLocal = true;
             grip.authoredSupportGrip = true;
             grip.authoredRole = loose_weapon_authored_grab_policy::Role::Firing;
-            setSupportGripPose(isLeft, nullptr);
+            setSupportGripPose(isLeft, nullptr, nullptr);
             grip.fingerLocalTransforms = isLeft ? _firing.leftFingerLocalTransforms : _firing.rightFingerLocalTransforms;
             grip.fingerLocalTransformMask = isLeft ? _firing.leftFingerLocalTransformMask : _firing.rightFingerLocalTransformMask;
             // FRIK publication honours the joint mask, so a partial authored pose
@@ -3371,7 +3366,7 @@ namespace rock
                 WeaponInteractionAcquisitionSource::ProximityProbe;
 
         constexpr std::uint16_t kCompleteAuthoredFingerMask = 0x7FFFu;
-        const bool useAuthoredSupportGrip = !g_rockConfig.rockDebugWeaponSupportDynamicOnly &&
+        const bool useAuthoredSupportGrip =
             authored_weapon_grip_capture_policy::shouldUseAuthoredSupportGrip(
                 authored_weapon_grip_capture_policy::AuthoredSupportGripCandidateInput{
                     .interactionAcquisitionValid =
@@ -3474,7 +3469,7 @@ namespace rock
 
             // hFRIK requires the role-tagged numeric pose to exist before the
             // exact per-joint local override can win at the same priority.
-            setSupportGripPose(isLeft, nullptr);
+            setSupportGripPose(isLeft, nullptr, nullptr);
             grip.fingerLocalTransforms =
                 authoredSupportFingerLocalTransforms;
             grip.fingerLocalTransformMask =
@@ -3651,6 +3646,9 @@ namespace rock
         constexpr float kDegreesToRadians =
             0.01745329251994329577f;
         const float surfaceSeatMaxRadians =
+            grab_finger_pose_runtime::weaponGrabPoseMode(
+                g_rockConfig.rockWeaponGrabPoseMode, g_rockConfig.rockGrabFingerPoseMode) !=
+                    grab_finger_pose_runtime::FingerPoseMode::July9 &&
             g_rockConfig.rockWeaponSupportSurfaceSeatEnabled && meshFound ?
             g_rockConfig.rockWeaponSupportSurfaceSeatMaxDegrees *
                 kDegreesToRadians :
@@ -3711,8 +3709,10 @@ namespace rock
             weaponCollision,
             handTransform,
             adjustedHandTransform,
+            gripWorldPoint,
             cachedTrianglesFound,
-            evidenceView);
+            evidenceView,
+            grip);
 
         grip.visualLerp = {};
         grip.active = true;
@@ -3732,7 +3732,7 @@ namespace rock
             useDynamicHandoffGrip ?
                 "HANDOFF" :
                 (meshFound ? "YES" : "FALLBACK"),
-            fingerScratch.reachTriangleCount,
+            fingerScratch.localTriangles.size(),
             grip.surfaceSeatRotationRadians *
                 RADIANS_TO_DEGREES,
             weaponInteractionAcquisitionSourceName(
