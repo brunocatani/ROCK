@@ -22,7 +22,6 @@ namespace rock::force_grab_policy
         PendingForceGrab = 1u << 5,
         EquippedWeapon = 1u << 6,
         TouchGrab = 1u << 7,
-        InputReserved = 1u << 8,
         // A separately equipped offhand weapon (native equipment index 1).
         // Distinct from EquippedWeapon: equipped-grip and drop exemptions for
         // the primary's own hand never apply to the other weapon's hand.
@@ -40,7 +39,6 @@ namespace rock::force_grab_policy
         bool equippedWeaponOccupiesHand{ false };
         bool offhandWeaponOccupiesHand{ false };
         bool touchGrabActive{ false };
-        bool inputReserved{ false };
     };
 
     [[nodiscard]] inline constexpr std::uint32_t blockerMask(const HandAvailabilityInput& input) noexcept
@@ -61,7 +59,6 @@ namespace rock::force_grab_policy
         add(input.equippedWeaponOccupiesHand, HandBlocker::EquippedWeapon);
         add(input.offhandWeaponOccupiesHand, HandBlocker::OffhandWeapon);
         add(input.touchGrabActive, HandBlocker::TouchGrab);
-        add(input.inputReserved, HandBlocker::InputReserved);
         return result;
     }
 

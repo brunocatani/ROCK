@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include "physics-interaction/input/BareFistGesturePolicy.h"
 #include "physics-interaction/input/WeaponTriggerRouting.h"
 
 namespace RE
@@ -11,27 +10,6 @@ namespace RE
 
 namespace rock::input_remap_runtime
 {
-    // Admission/readiness are published by the interaction frame owner.
-    // Physical capture and cancellation happen before native event dispatch.
-    void setBareFistAdmission(bool allowed);
-    void cancelBareFistInput();
-    [[nodiscard]] std::uint64_t bareFistInputCycle();
-    [[nodiscard]] bool ownsBareFistInput();
-    [[nodiscard]] bool bareFistChordValid();
-    [[nodiscard]] bool bareFistHooksReady();
-    void setBareFistDrawState(std::uint64_t cycle, bool owned, bool ready);
-    [[nodiscard]] bool isBareFistDrawPermitted();
-    [[nodiscard]] bool isBareFistMeleeSuppressed();
-
-    struct BareFistInputSnapshot
-    {
-        bare_fist_gesture::Buttons buttons{};
-        std::uint64_t cycle{};
-        bool admissionFresh{};
-    };
-    // Diagnostics on the frame owner, using the same atomic samples as capture.
-    [[nodiscard]] BareFistInputSnapshot readBareFistInputSnapshot();
-
     enum class RawButtonAvailabilityReason : std::uint32_t
     {
         Available = 0,

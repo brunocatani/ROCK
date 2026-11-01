@@ -29,7 +29,6 @@
 #include "config/ConfigurationStore.h"
 #include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
-#include "physics-interaction/input/BareFistGesturePolicy.h"
 #include "physics-interaction/input/ButtonLayoutPolicy.h"
 #include "physics-interaction/input/FarPullGesturePolicy.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
@@ -205,8 +204,6 @@ namespace rock
         bool rockEnableVanillaMelee = true;
         float rockVanillaMeleeSwingSpeed = 300.0f;
         float rockVanillaGunBashSpeed = 400.0f;
-        bool rockRockyModeEnabled = true;
-        float rockRockyModeHoldSeconds = bare_fist_gesture::kDefaultHoldSeconds;
         bool rockNativeCharacterControllerObjectContactFilterEnabled = true;
 
         bool rockHighlightEnabled = true;

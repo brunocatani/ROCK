@@ -164,10 +164,6 @@
 
         outState.leaseFrameIndex = frameIndex;
         outState.hand = static_cast<api::Hand>(hand);
-        if (rock::input_remap_runtime::ownsBareFistInput()) {
-            outState.effectiveFlags = static_cast<std::uint32_t>(
-                ::rock::api::input::HandInputSuppressionFlag::SuppressConfigModeChord);
-        }
         for (const auto& slot : s_handInputSuppressions) {
             if (slot.hand != hand) {
                 continue;

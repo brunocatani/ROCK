@@ -714,9 +714,6 @@ namespace rock
             } else authored_interaction::reset();
             native_player_collision::publishAuthoredHands(live ? world : nullptr, std::span(bodies).first(count));
         });
-        auto cancelInterruptedFists = F4SE::stl::scope_exit([this] {
-            cancelBareFistMode("interaction-frame-interrupted");
-        });
         _frame.debugOverlayFrameIndex = 0;
         _frame.gripZoneIndicatorFrameIndex = 0;
         _frame.poseFrameIndex = 0;
@@ -924,7 +921,6 @@ namespace rock
                 _equipped.transition.pendingGrip().pending ? "yes" : "no");
         }
         _equipped.menuReconcilePending = false;
-        updateBareFistMode(frame);
         enforceNoBareFistState(forceBareFistRecheck);
 
         native_interaction_service::update(frame);
@@ -951,10 +947,6 @@ namespace rock
         updateNativePlayerCollisionFilter(bhk, hknp, frame.deltaSeconds);
         const auto equippedWeaponFrame = updateEquippedWeaponFrame(frame, bhk, hknp, equippedWeaponPreparation);
         finalizeInteractionFrame(frame, hknp, equippedWeaponFrame);
-        if (input_remap_runtime::ownsBareFistInput()) {
-            if (const auto* reason = bareFistHandBlockReason(frame)) cancelBareFistMode(reason);
-        }
-        cancelInterruptedFists.release();
     }
 
     void PhysicsInteraction::onGeneratedColliderPhysicsSubstep(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)

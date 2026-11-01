@@ -516,9 +516,6 @@ namespace rock
         _bipodRetirementVisual.release("physics-shutdown");
         _bipodRetirementHandle = {};
         _equipped.gripResumePending = _equipped.continuityGrip.pending;
-        cancelBareFistMode("physics-shutdown");
-        _grabInput.bareFistDrawOwned = false;
-        input_remap_runtime::setBareFistDrawState(0, false, false);
         weapon_transition_animation_acceleration::cancel("physics-shutdown");
         grip_zone_indicators::Clear();
         debug::ShutdownShapePipeline();

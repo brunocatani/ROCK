@@ -92,7 +92,6 @@ namespace rock
             .equippedWeaponOccupiesHand = roster.slotZeroHolds(isLeft),
             .offhandWeaponOccupiesHand = roster.slotOneHolds(isLeft),
             .touchGrabActive = _touchGrabRuntime.isHandActive(isLeft),
-            .inputReserved = input_remap_runtime::ownsBareFistInput(),
         });
     }
 

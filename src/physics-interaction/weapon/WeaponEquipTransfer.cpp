@@ -834,33 +834,6 @@ namespace rock::weapon_equip_transfer
         return result;
     }
 
-    bool replaceHolsteredWeaponWithUnarmed() noexcept
-    {
-        auto* player = RE::PlayerCharacter::GetSingleton();
-        auto* manager = RE::ActorEquipManager::GetSingleton();
-        if (!player || !manager || f4vr::getNativeWeaponState(player) != 0) return false;
-        const auto equipped = readEquippedWeaponSnapshot();
-        if (!equipped.weapon) return true;
-        const auto stack = findEquippedWeaponStack(player, equipped.weapon, equipped.instanceData);
-        if (!stack.found || !stack.equipSlot ||
-            (equipped.instanceData && stack.instanceData.get() != equipped.instanceData)) {
-            ROCK_LOG_WARN(Weapon, "Bare fists refused: holstered inventory stack unavailable weapon={:08X}", equipped.weapon->GetFormID());
-            return false;
-        }
-        const auto unequip = validatedUnequipObject();
-        if (!unequip || !clearPreviousWeaponRestore(player)) {
-            ROCK_LOG_WARN(Weapon, "Bare fists refused: native unequip/previous-weapon validation failed");
-            return false;
-        }
-        RE::BGSObjectInstance object(equipped.weapon, stack.instanceData.get());
-        const bool accepted = unequip(manager, player, &object, 1, stack.equipSlot,
-            stack.stackID, false, true, false, true, nullptr);
-        const auto remaining = readEquippedWeaponSnapshot();
-        ROCK_LOG_INFO(Weapon, "Bare fists equipment replacement: previous={:08X} stack={} accepted={} remaining={:08X}",
-            equipped.weapon->GetFormID(), stack.stackID, accepted, remaining.weapon ? remaining.weapon->GetFormID() : 0);
-        return accepted && !remaining.weapon;
-    }
-
     bool canRecoverHeldEquip() noexcept
     {
         return RE::PlayerCharacter::GetSingleton() && RE::ActorEquipManager::GetSingleton() && validatedUnequipObject();

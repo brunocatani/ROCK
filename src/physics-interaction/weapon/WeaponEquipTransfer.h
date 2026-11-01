@@ -161,8 +161,6 @@ namespace rock::weapon_equip_transfer
     // slotOne equips into equip slot 1 in the given hand; slot 0 stays.
     [[nodiscard]] EquipResult equipInventoryWeapon(const InventorySelection& selection, bool slotOne = false, bool slotOneLeft = false) noexcept;
     [[nodiscard]] EquippedDropResult dropEquippedWeaponFromPlayer(const EquippedDropInput& input) noexcept;
-    // Frame-thread only. Changes selection, never removes an inventory item.
-    [[nodiscard]] bool replaceHolsteredWeaponWithUnarmed() noexcept;
     // Exact-current compensation after a held equip; never removes an item.
     [[nodiscard]] bool unequipExactCurrentWeapon(std::uint32_t formID, std::uintptr_t instanceData) noexcept;
     // Unequips the exact weapon at native equipment index 0 or 1 from its own

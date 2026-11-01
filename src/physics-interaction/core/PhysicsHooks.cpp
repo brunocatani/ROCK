@@ -480,12 +480,21 @@ namespace rock
                 .inputEvent = event };
         }
 
+        // ROCK holsters the player's unarmed fallback (enforceNoBareFistState),
+        // but a script or delayed native draw can reach melee before that
+        // lands. A player without a real equipped weapon never deals native
+        // melee damage; SCISSORS_Redux owns free-hand strikes.
+        [[nodiscard]] bool playerUnarmedMeleeSuppressed(bool player)
+        {
+            return player && !f4vr::getEquippedWeaponItem();
+        }
+
         native_melee_suppression::NativeMeleeImpactPolicyInput makeNativeMeleeImpactPolicyInput(const RE::Actor* actor)
         {
             const bool player = isPlayerActor(actor);
             return native_melee_suppression::NativeMeleeImpactPolicyInput{
                 .suppressionActive = g_nativeMeleeSuppressionActive.load(std::memory_order_acquire) ||
-                    (player && input_remap_runtime::isBareFistMeleeSuppressed() && !f4vr::getEquippedWeaponItem()),
+                    playerUnarmedMeleeSuppressed(player),
                 .actorIsPlayer = player };
         }
 
@@ -882,7 +891,7 @@ namespace rock
             const bool player = isPlayerActor(actor);
             return native_melee_suppression::NativeMeleePolicyInput{
                 .suppressionActive = g_nativeMeleeSuppressionActive.load(std::memory_order_acquire) ||
-                    (player && input_remap_runtime::isBareFistMeleeSuppressed() && !f4vr::getEquippedWeaponItem()),
+                    playerUnarmedMeleeSuppressed(player),
                 .actorIsPlayer = player };
         }
 
@@ -1294,11 +1303,6 @@ namespace rock
     bool isNativeMeleeSuppressionActive()
     {
         return g_nativeMeleeSuppressionActive.load(std::memory_order_acquire);
-    }
-
-    bool areNativeMeleeHooksInstalled()
-    {
-        return g_nativeMeleeSuppressionHooksInstalled.load(std::memory_order_acquire);
     }
 
     void enforceNativeMeleeRuntimeSuppression(bool forceCheck)
