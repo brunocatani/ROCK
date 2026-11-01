@@ -29,6 +29,7 @@ namespace rock::native_interaction_service {
     void clearOwner(std::uint64_t){}
 }
 namespace rock::loose_weapon_state {void clear(std::uint64_t){}}
+namespace rock::native_idle_grip_preharvest {void clearConsumerWarmSet(std::uint64_t) noexcept {}}
 namespace rock::support_trigger_input {void clearOwner(std::uint64_t){}}
 namespace rock::provider::runtime {
     // Exercise the actual registration/teardown service. Unrelated gameplay
