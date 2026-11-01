@@ -7350,6 +7350,19 @@ namespace rock
                 grab_finger_pose_runtime::FingerPoseMeshRelation::CurrentMeshRequiresVirtualSeat,
                 mode);
         } else {
+            const grab_finger_pose_runtime::FrozenMeshFingerPoseSolveOptions solveOptions{
+                .minValue = g_rockConfig.rockGrabFingerMinValue,
+                .maxTriangleDistanceSquared = g_rockConfig.rockGrabMaxTriangleDistance,
+                .rejectBacksideHits = g_rockConfig.rockGrabFingerRejectBacksideHits,
+                .surfacePlaneToleranceGameUnits = g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
+                .allowSurfaceAimTargets = _grabFrame.fingerPoseAimValid,
+                .sweepContactRadiusGameUnits = g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits,
+                .thumbSweepMaxOpenValue = g_rockConfig.rockGrabThumbSweepMaxOpenValue,
+                .fingerSweepMaxOpenValue = g_rockConfig.rockGrabFingerSweepMaxOpenValue,
+                .meshFingerPoseEnabled = g_rockConfig.rockGrabMeshFingerPoseEnabled,
+                .captureSweepDebug = g_rockConfig.rockDebugShowGrabFingerSweptArc,
+                .mode = mode,
+            };
             const auto frozenSolve = grab_finger_pose_runtime::solveFrozenMeshFingerPoseBase(
                 localFingerPoseTriangles,
                 frame.objectWorld,
@@ -7359,20 +7372,11 @@ namespace rock
                 fingerPoseTargets,
                 _grabFingerTriangleIndex,
                 worldTriangles,
-                grab_finger_pose_runtime::FrozenMeshFingerPoseSolveOptions{
-                    .minValue = g_rockConfig.rockGrabFingerMinValue,
-                    .maxTriangleDistanceSquared = g_rockConfig.rockGrabMaxTriangleDistance,
-                    .rejectBacksideHits = g_rockConfig.rockGrabFingerRejectBacksideHits,
-                    .surfacePlaneToleranceGameUnits = g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
-                    .allowSurfaceAimTargets = _grabFrame.fingerPoseAimValid,
-                    .sweepContactRadiusGameUnits = g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits,
-                    .thumbSweepMaxOpenValue = g_rockConfig.rockGrabThumbSweepMaxOpenValue,
-                    .fingerSweepMaxOpenValue = g_rockConfig.rockGrabFingerSweepMaxOpenValue,
-                    .meshFingerPoseEnabled = g_rockConfig.rockGrabMeshFingerPoseEnabled,
-                    .captureSweepDebug = g_rockConfig.rockDebugShowGrabFingerSweptArc,
-                    .mode = mode,
-                },
+                solveOptions,
                 &liveFingerSnapshot);
+            if (g_rockConfig.rockDebugTestbenchTelemetry) {
+                beginGrabPoseReplay(frame, localFingerPoseTriangles, fingerPoseTargets, liveFingerSnapshot, frozenSolve, solveOptions);
+            }
             _grabFingerPose = frozenSolve.pose;
             sweepDebug = frozenSolve.sweepDebug;
             spatialIndexBuilt = frozenSolve.spatialIndexBuilt;
@@ -9678,6 +9682,7 @@ namespace rock
         if (_grabPoseQualityUpdatesRemaining > 0 && --_grabPoseQualityUpdatesRemaining == 0) {
             logGrabPoseQuality();
             _grabPoseQualityUpdatesRemaining = -1;
+            _grabPoseReplay.reset();
         }
 
         if (convergingAcquisitionPhase && !_grabOffsetAcquisition.active && _grabObjectGripAtGrab.valid) {
@@ -10646,6 +10651,7 @@ namespace rock
         _hasGrabFingerLocalTransforms = false;
         _grabFingerLocalTransformFinalizePending = false;
         _grabPoseQualityUpdatesRemaining = -1;
+        _grabPoseReplay.reset();
         _hasGrabFingerPose = false;
         _controllerReleaseHistory.clear();
         _objectReleaseHistory.clear();

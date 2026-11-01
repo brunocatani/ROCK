@@ -442,6 +442,18 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKGrabFingerLocalTransformPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKGrabFingerLocalTransformPolicyTests)
 
+  # Replays bench grab records through the shipped finger solve (solver and render parity).
+  add_executable(ROCKGrabPoseReplayTests
+    "${ROOT_DIR}/tests/GrabPoseReplayTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/grab/GeneratedGrabFingerCalibration.cpp"
+    "${SOURCE_DIR}/physics-interaction/grab/GrabPoseReplay.cpp"
+  )
+  target_compile_features(ROCKGrabPoseReplayTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKGrabPoseReplayTests PRIVATE ${SOURCE_DIR})
+  target_compile_definitions(ROCKGrabPoseReplayTests PRIVATE ROCK_TEST_FIXTURE_DIR="${ROOT_DIR}/tests/fixtures")
+  target_link_libraries(ROCKGrabPoseReplayTests PRIVATE nlohmann_json::nlohmann_json)
+  add_rock_test(ROCKGrabPoseReplayTests)
+
   add_executable(ROCKSurfaceMeshGrabPolicyTests
     "${ROOT_DIR}/tests/SurfaceMeshGrabPolicyTests.cpp"
   )
@@ -739,6 +751,7 @@ if(BUILD_ROCK_TESTS)
     ROCKEquippedWeaponHandlingRequestTests
     ROCKInteractionSafetyPolicyTests
     ROCKGrabFingerLocalTransformPolicyTests
+    ROCKGrabPoseReplayTests
     ROCKSurfaceMeshGrabPolicyTests
     ROCKContactSignalSubscriptionPolicyTests
     ROCKGrabAuthorityFramePolicyTests

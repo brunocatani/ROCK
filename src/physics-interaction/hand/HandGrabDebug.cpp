@@ -1,6 +1,11 @@
 #include "physics-interaction/hand/Hand.h"
 #include "physics-interaction/hand/HandGrabInternal.h"
 
+#include <ctime>
+#include <filesystem>
+#include <format>
+#include <fstream>
+
 #include "physics-interaction/body/BodyBoneColliderSet.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HeldScenePresentation.h"
@@ -552,6 +557,106 @@ namespace rock
         return true;
     }
 
+    namespace
+    {
+        grab_pose_replay::Vec3 toReplay(const RE::NiPoint3& p) { return { p.x, p.y, p.z }; }
+
+        grab_pose_replay::Transform toReplay(const RE::NiTransform& t)
+        {
+            grab_pose_replay::Transform out{};
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) out.rotate[row * 3 + column] = t.rotate.entry[row][column];
+            }
+            out.translate = toReplay(t.translate);
+            out.scale = t.scale;
+            return out;
+        }
+
+        grab_pose_replay::FingerSkeleton toReplay(const root_flattened_finger_skeleton_runtime::Snapshot& s)
+        {
+            grab_pose_replay::FingerSkeleton out{};
+            for (std::size_t f = 0; f < out.fingers.size(); ++f) {
+                const auto& in = s.fingers[f];
+                auto& chain = out.fingers[f];
+                for (std::size_t p = 0; p < 3; ++p) chain.points[p] = toReplay(in.points[p]);
+                chain.tipSegmentCenter = toReplay(in.tipSegmentCenterWorld);
+                chain.tipDirection = toReplay(in.tipDirectionWorld);
+                chain.tipGeometryValid = in.tipGeometryValid;
+                chain.valid = in.valid;
+            }
+            out.palmNormal = toReplay(s.palmNormalWorld);
+            out.palmNormalValid = s.palmNormalValid;
+            out.inPowerArmor = s.inPowerArmor;
+            out.valid = s.valid;
+            return out;
+        }
+    }
+
+    // Bench only: the solve half of the replay record, taken from the exact inputs and result of the frozen-mesh solve.
+    void Hand::beginGrabPoseReplay(const GrabFingerSolveFrame& frame,
+        const std::vector<GrabLocalTriangle>& localTriangles,
+        const grab_finger_pose_runtime::GrabFingerPoseTargetSet& targets,
+        const root_flattened_finger_skeleton_runtime::Snapshot& solveSkeleton,
+        const grab_finger_pose_runtime::FrozenMeshFingerPoseSolveResult& solve,
+        const grab_finger_pose_runtime::FrozenMeshFingerPoseSolveOptions& options)
+    {
+        auto& r = _grabPoseReplay.emplace();
+        r.isLeft = _isLeft;
+        r.trianglesObjectLocal.reserve(localTriangles.size() * 9);
+        for (const auto& triangle : localTriangles) {
+            for (const auto* v : { &triangle.v0, &triangle.v1, &triangle.v2 }) {
+                r.trianglesObjectLocal.insert(r.trianglesObjectLocal.end(), { v->x, v->y, v->z });
+            }
+        }
+        r.solveObjectWorld = toReplay(frame.objectWorld);
+        r.solveHandWorld = toReplay(frame.solveHandWorld);
+        r.liveHandWorld = toReplay(frame.liveHandWorld);
+        r.grabAnchorWorld = toReplay(frame.pivotWorld);
+        for (std::size_t f = 0; f < grab_pose_replay::kFingerCount; ++f) {
+            r.targets.targets[f] = toReplay(targets.targets[f]);
+            r.targets.targetNormals[f] = toReplay(targets.targetNormals[f]);
+            r.targets.targetValid[f] = targets.targetValid[f];
+            r.targets.targetNormalValid[f] = targets.targetNormalValid[f];
+            r.commandedOpenDirectionsWorld[f] = toReplay(solve.commandedOpenDirectionsWorld[f]);
+            r.solvedValues[f] = solve.pose.values[f];
+            r.solvedHitKind[f] = static_cast<std::int32_t>(solve.pose.hitKind[f]);
+        }
+        r.targets.seatPoint = toReplay(targets.seatPointWorld);
+        r.targets.seatNormal = toReplay(targets.seatNormalWorld);
+        r.targets.seatPointValid = targets.seatPointValid;
+        r.targets.seatNormalValid = targets.seatNormalValid;
+        r.targets.useSeatPointForMissingTargets = targets.useSeatPointForMissingTargets;
+        r.targets.useWholeMeshForMissingTargets = targets.useWholeMeshForMissingTargets;
+        r.targets.targetCount = targets.targetCount;
+        r.solveSkeleton = toReplay(solveSkeleton);
+        r.commandedOpenDirectionsValid = solve.commandedOpenDirectionsValid;
+        r.options = grab_pose_replay::SolveOptions{
+            .minValue = options.minValue,
+            .maxTriangleDistanceSquared = options.maxTriangleDistanceSquared,
+            .rejectBacksideHits = options.rejectBacksideHits,
+            .surfacePlaneToleranceGameUnits = options.surfacePlaneToleranceGameUnits,
+            .allowSurfaceAimTargets = options.allowSurfaceAimTargets,
+            .sweepContactRadiusGameUnits = options.sweepContactRadiusGameUnits,
+            .thumbSweepMaxOpenValue = options.thumbSweepMaxOpenValue,
+            .fingerSweepMaxOpenValue = options.fingerSweepMaxOpenValue,
+            .mode = static_cast<std::uint32_t>(options.mode),
+        };
+
+        // FRIK's forward model, from FRIK itself: local transforms of the authored closed and open poses.
+        frik_visual_authority::FingerLocalTransformOverride closed{};
+        frik_visual_authority::FingerLocalTransformOverride open{};
+        const auto hand = frik_visual_authority::handFromBool(_isLeft);
+        r.frikRigValid =
+            frik_visual_authority::getHandPoseLocalTransformsForPose(hand, frik_visual_authority::makeUniformHandPoseData(0.0f, 0.0f, 0.0f, 0.0f, 0.0f), &closed) &&
+            frik_visual_authority::getHandPoseLocalTransformsForPose(hand, frik_visual_authority::makeUniformHandPoseData(1.0f, 1.0f, 1.0f, 1.0f, 1.0f), &open);
+        if (r.frikRigValid) {
+            for (std::size_t bone = 0; bone < grab_pose_replay::kFingerBoneCount; ++bone) {
+                r.frikClosedLocal[bone] = toReplay(closed.localTransforms[bone]);
+                r.frikOpenLocal[bone] = toReplay(open.localTransforms[bone]);
+            }
+        }
+    }
+
     /*
      * Bench pose metric, logged once per grab 60 held updates (FRIK eases bones ~7.8%/frame, so ~99% settled) after the final pose
      * publishes. Everything comes from what is drawn: the rendered finger
@@ -564,7 +669,7 @@ namespace rock
      * further. Object-local palm and finger directions record how the hand sat
      * on the object, the input for deriving grasp rules from good grabs.
      */
-    void Hand::logGrabPoseQuality() const
+    void Hand::logGrabPoseQuality()
     {
         if (!_grabFrame.heldNode || _grabFingerTriangleIndex.empty() || !_hasGrabVisualHandTransform) {
             ROCK_LOG_INFO(Hand, "{} GRAB POSE QUALITY: skipped heldNode={} meshIndex={} visualHand={}", handName(),
@@ -660,6 +765,62 @@ namespace rock
             "contactMask=0x{:02X}{}",
             handName(), _grabObjectGripAtGrab.source ? _grabObjectGripAtGrab.source : "none", palmMin, palmInside, palmNormalLocal.x, palmNormalLocal.y,
             palmNormalLocal.z, fingerDirLocal.x, fingerDirLocal.y, fingerDirLocal.z, _grabFingerPose.contactValidMask, fingers);
+        writeGrabPoseReplay(rendered, objectWorld);
+    }
+
+    // Bench only: completes the replay record with what was published and rendered, and writes it once.
+    void Hand::writeGrabPoseReplay(const root_flattened_finger_skeleton_runtime::Snapshot& rendered, const RE::NiTransform& renderedObjectWorld)
+    {
+        if (!_grabPoseReplay) {
+            return;
+        }
+        auto record = std::move(*_grabPoseReplay);
+        _grabPoseReplay.reset();
+
+        const std::uint32_t formId = _savedObjectState.refr ? _savedObjectState.refr->GetFormID() : 0;
+        record.object = std::format("0x{:08X}", formId);
+        if (_savedObjectState.refr) {
+            if (const char* name = _savedObjectState.refr->GetDisplayFullName(); name && *name) record.objectName = name;
+        }
+        record.acquisition = _grabFrame.seat.diagnostics.acquisitionMode;
+        record.gripSource = _grabObjectGripAtGrab.source ? _grabObjectGripAtGrab.source : "none";
+        const std::time_t now = std::time(nullptr);
+        std::tm local{};
+        char stamp[32]{};
+        if (localtime_s(&local, &now) == 0) std::strftime(stamp, sizeof(stamp), "%Y-%m-%d_%H-%M-%S", &local);
+        record.capturedLocal = stamp;
+
+        for (std::size_t f = 0; f < grab_pose_replay::kFingerCount; ++f) record.finalValues[f] = _grabFingerPose.values[f];
+        record.finalJointValues = _grabFingerPose.jointValues;
+        record.publishedJointValues = _grabFingerJointPose;
+        std::array<float, 5> splay{};
+        (void)grab_finger_pose_runtime::resolveSurfaceContactSplayValues(_isLeft, _grabFingerPose, splay);
+        record.publishedSplayRadians = splay;
+        record.publishedLocalTransformMask = _hasGrabFingerLocalTransforms ? _grabFingerLocalTransformMask : 0;
+        for (std::size_t bone = 0; bone < grab_pose_replay::kFingerBoneCount; ++bone) {
+            record.publishedLocalTransforms[bone] = toReplay(_grabFingerLocalTransforms[bone]);
+        }
+        record.renderedObjectWorld = toReplay(renderedObjectWorld);
+        record.renderedVisualHandWorld = toReplay(_grabVisualHandTransform);
+        record.rendered = toReplay(rendered);
+
+        // One small file per grab, bench only, written after the pose settled (never on the solve frame).
+        try {
+            auto directory = F4SE::log::log_directory();
+            if (!directory) {
+                ROCK_LOG_WARN(Hand, "{} GRAB POSE REPLAY: no F4SE log directory", handName());
+                return;
+            }
+            const auto folder = *directory / "ROCK_GrabReplay";
+            std::filesystem::create_directories(folder);
+            const auto path = folder / std::format("{}_{:08X}_{}.json", record.capturedLocal, formId, _isLeft ? "left" : "right");
+            std::ofstream out(path, std::ios::binary | std::ios::trunc);
+            out << grab_pose_replay::serialize(record);
+            ROCK_LOG_INFO(Hand, "{} GRAB POSE REPLAY: wrote {} ({} triangles){}", handName(), path.string(), record.trianglesObjectLocal.size() / 9,
+                out.good() ? "" : " WRITE FAILED");
+        } catch (const std::exception& error) {
+            ROCK_LOG_WARN(Hand, "{} GRAB POSE REPLAY: write failed: {}", handName(), error.what());
+        }
     }
 
 }

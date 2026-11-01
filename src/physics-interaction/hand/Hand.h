@@ -20,6 +20,7 @@
 #include "physics-interaction/grab/GrabMotionController.h"
 #include "physics-interaction/grab/TimedReleaseVelocityHistory.h"
 #include "physics-interaction/grab/SavedGrabCaptureFormat.h"
+#include "physics-interaction/grab/GrabPoseReplay.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/contact/ContactClock.h"
 #include "physics-interaction/hand/HandBoneColliderSet.h"
@@ -632,7 +633,8 @@ namespace rock
         const BethesdaPhysicsBody& getHandBody() const { return _handBody; }
         bool tryResolveLivePalmAnchorReference(RE::hknpWorld* world, LivePalmAnchorReference& outReference) const;
         RE::NiPoint3 computeGrabPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& fallbackHandWorldTransform) const;
-        void logGrabPoseQuality() const;
+        void logGrabPoseQuality();
+        void writeGrabPoseReplay(const root_flattened_finger_skeleton_runtime::Snapshot& rendered, const RE::NiTransform& renderedObjectWorld);
         bool tryComputeGrabProxyLocalPalmPocketFrameWorld(RE::hknpWorld* world, RE::NiTransform& outFrameWorld) const;
         bool tryComputeGrabProxyLocalPalmPocketPivotAWorld(RE::hknpWorld* world, RE::NiPoint3& outPivotWorld) const;
 
@@ -884,6 +886,12 @@ namespace rock
             const char* stage = "";
         };
         void solveAndPublishGrabFingerPose(const GrabFingerSolveFrame& frame);
+        void beginGrabPoseReplay(const GrabFingerSolveFrame& frame,
+            const std::vector<GrabLocalTriangle>& localTriangles,
+            const grab_finger_pose_runtime::GrabFingerPoseTargetSet& targets,
+            const root_flattened_finger_skeleton_runtime::Snapshot& solveSkeleton,
+            const grab_finger_pose_runtime::FrozenMeshFingerPoseSolveResult& solve,
+            const grab_finger_pose_runtime::FrozenMeshFingerPoseSolveOptions& options);
 
         HandTransitionResult applyTransition(const HandTransitionRequest& request);
 
@@ -1328,6 +1336,8 @@ namespace rock
         bool _grabFingerLocalTransformFinalizePending = false;
         // Bench-only pose metric: held updates left until the settled grab is measured once (-1 = none).
         int _grabPoseQualityUpdatesRemaining = -1;
+        // Bench-only replay record: solve half filled at the finger solve, completed and written with the metric.
+        std::optional<grab_pose_replay::Record> _grabPoseReplay;
         bool _hasGrabFingerPose = false;
         bool _selectedCloseFingerPoseActive = false;
         RE::NiPoint3 _lastSelectedCloseOrigin{};

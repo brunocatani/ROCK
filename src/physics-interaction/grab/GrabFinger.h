@@ -5337,7 +5337,8 @@ namespace rock::grab_finger_pose_runtime
         std::vector<TriangleData>& worldTriangleScratch,
         const FrozenMeshFingerPoseSolveOptions& options,
         const root_flattened_finger_skeleton_runtime::Snapshot*
-            capturedFingerSnapshot = nullptr)
+            capturedFingerSnapshot = nullptr,
+        const std::array<RE::NiPoint3, 5>* capturedOpenDirectionsWorld = nullptr)
     {
         FrozenMeshFingerPoseSolveResult result{};
         rebuildBoundedWorldTriangles(boundedLocalTriangles, frozenMeshWorldTransform, worldTriangleScratch);
@@ -5357,8 +5358,14 @@ namespace rock::grab_finger_pose_runtime
         }
         const auto* liveFingerSnapshotPtr = result.liveFingerSnapshotValid ? &result.liveFingerSnapshot : nullptr;
 
-        result.commandedOpenDirectionsValid = options.mode == FingerPoseMode::Current &&
-            resolveCommandedOpenDirectionsWorld(isLeft, handWorldTransform, result.commandedOpenDirectionsWorld);
+        // Captured directions (offline replay) stand in for the FRIK query, as the captured snapshot does for the scene.
+        if (capturedOpenDirectionsWorld) {
+            result.commandedOpenDirectionsWorld = *capturedOpenDirectionsWorld;
+            result.commandedOpenDirectionsValid = options.mode == FingerPoseMode::Current;
+        } else {
+            result.commandedOpenDirectionsValid = options.mode == FingerPoseMode::Current &&
+                resolveCommandedOpenDirectionsWorld(isLeft, handWorldTransform, result.commandedOpenDirectionsWorld);
+        }
         result.pose = solveGrabFingerPoseFromTriangles(
             worldTriangleScratch,
             handWorldTransform,
