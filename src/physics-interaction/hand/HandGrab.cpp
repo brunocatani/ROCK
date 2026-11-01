@@ -10673,4 +10673,12 @@ namespace rock
         ROCK_LOG_DEBUG(Hand, "{} hand: Idle", handName());
         return outcome;
     }
+
+    bool hand_grab_internal::rebaseGrabFingerSkeleton(
+        root_flattened_finger_skeleton_runtime::Snapshot& snapshot,
+        const RE::NiTransform& sourceHandWorld,
+        const RE::NiTransform& targetHandWorld)
+    {
+        return rebaseFingerSkeletonSnapshot(snapshot, sourceHandWorld, targetHandWorld);
+    }
 }

@@ -127,10 +127,14 @@ namespace rock::grab_pose_replay
         std::array<Transform, kFingerBoneCount> publishedLocalTransforms{};
         std::uint16_t publishedLocalTransformMask = 0;
 
-        // Rendered once settled.
+        // Rendered once settled. `rendered` is read during ROCK's frame (FRIK AfterArmSolve), where
+        // the flattened array may not be final; presentedHandWorld is the wrist FRIK latched at
+        // AfterWorldFinal (the drawn hand bone) of the previous frame.
         Transform renderedObjectWorld;
         Transform renderedVisualHandWorld;
         FingerSkeleton rendered;
+        Transform presentedHandWorld;
+        bool presentedHandValid = false;
     };
 
     [[nodiscard]] std::string serialize(const Record& record);

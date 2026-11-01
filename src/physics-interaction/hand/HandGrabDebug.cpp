@@ -676,11 +676,18 @@ namespace rock
                 _grabFrame.heldNode != nullptr, !_grabFingerTriangleIndex.empty(), _hasGrabVisualHandTransform);
             return;
         }
+        /*
+         * The drawn fingers: the in-frame flattened array may still hold pre-IK bones
+         * (bench: 4.2 gu off the drawn wrist), so take the chain relative to its own
+         * wrist (Controller capture, transported onto the raw hand) and place it at the
+         * hand ROCK published, which is the drawn hand bone (AfterWorldFinal: 0.00 gu).
+         */
         root_flattened_finger_skeleton_runtime::Snapshot rendered{};
-        if (!root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(
-                _isLeft, rendered, nullptr, SkeletonBoneCaptureSpace::Rendered) ||
-            !rendered.palmNormalValid) {
-            ROCK_LOG_INFO(Hand, "{} GRAB POSE QUALITY: skipped renderedSkeleton=no", handName());
+        RE::NiTransform rawHand{};
+        if (!root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(_isLeft, rendered) ||
+            !frik_hand_world_authority::tryGetRawHandWorld(_isLeft, rawHand) ||
+            !rebaseGrabFingerSkeleton(rendered, rawHand, _grabVisualHandTransform) || !rendered.palmNormalValid) {
+            ROCK_LOG_INFO(Hand, "{} GRAB POSE QUALITY: skipped drawnSkeleton=no", handName());
             return;
         }
 
@@ -803,6 +810,9 @@ namespace rock
         record.renderedObjectWorld = toReplay(renderedObjectWorld);
         record.renderedVisualHandWorld = toReplay(_grabVisualHandTransform);
         record.rendered = toReplay(rendered);
+        RE::NiTransform presented{};
+        record.presentedHandValid = frik_hand_world_authority::tryGetPresentedHandWorld(_isLeft, presented);
+        record.presentedHandWorld = toReplay(presented);
 
         // One small file per grab, bench only, written after the pose settled (never on the solve frame).
         try {

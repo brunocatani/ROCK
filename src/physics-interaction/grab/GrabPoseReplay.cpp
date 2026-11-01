@@ -120,6 +120,8 @@ namespace rock::grab_pose_replay
             { "renderedObjectWorld", r.renderedObjectWorld },
             { "renderedVisualHandWorld", r.renderedVisualHandWorld },
             { "rendered", r.rendered },
+            { "presentedHandWorld", r.presentedHandWorld },
+            { "presentedHandValid", r.presentedHandValid },
         };
         return j.dump(1);
     }
@@ -164,6 +166,10 @@ namespace rock::grab_pose_replay
             j.at("renderedObjectWorld").get_to(r.renderedObjectWorld);
             j.at("renderedVisualHandWorld").get_to(r.renderedVisualHandWorld);
             j.at("rendered").get_to(r.rendered);
+            if (j.contains("presentedHandWorld")) {
+                j.at("presentedHandWorld").get_to(r.presentedHandWorld);
+                j.at("presentedHandValid").get_to(r.presentedHandValid);
+            }
             return r;
         } catch (const std::exception& error) {
             if (outError) *outError = error.what();
