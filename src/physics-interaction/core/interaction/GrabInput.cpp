@@ -102,15 +102,15 @@ namespace rock
             equippedWeaponFormId);
     }
 
-    PhysicsInteraction::SavedGrabOffsetOutcome PhysicsInteraction::saveGrabOffsetForHand(Hand& hand, bool isLeft, RE::hknpWorld* hknpWorld)
+    bool PhysicsInteraction::saveGrabOffsetForHand(Hand& hand, bool isLeft, RE::hknpWorld* hknpWorld)
     {
         if (!hknpWorld) {
             ROCK_LOG_WARN(Hand, "Saved grab offset: aborted, no hknpWorld this frame ({} hand)", isLeft ? "left" : "right");
-            return {};
+            return false;
         }
         if (!hand.isHolding()) {
             ROCK_LOG_WARN(Hand, "Saved grab offset: aborted, {} hand is not holding anything", isLeft ? "left" : "right");
-            return {};
+            return false;
         }
 
         auto* heldRef = hand.getHeldRef();
@@ -121,7 +121,7 @@ namespace rock
                 "Saved grab offset: aborted, held ref missing 3D root or base form ({} hand, refr={:08X})",
                 isLeft ? "left" : "right",
                 heldRef ? heldRef->GetFormID() : 0);
-            return {};
+            return false;
         }
 
         const auto* weaponForm = baseForm->As<RE::TESObjectWEAP>();
@@ -134,20 +134,20 @@ namespace rock
                 isLeft ? "left" : "right",
                 heldRef->GetDisplayFullName() ? heldRef->GetDisplayFullName() : "",
                 baseForm->GetFormID());
-            return {};
+            return false;
         }
 
         const auto formRef = saved_grab_offset::formRefFromRuntimeId(baseForm->GetFormID());
         if (formRef.empty()) {
             ROCK_LOG_WARN(Hand, "Saved grab offset: aborted, could not resolve load-order-independent identity for base form {:08X}",
                 baseForm->GetFormID());
-            return {};
+            return false;
         }
 
         RE::NiTransform proxyWorld{};
         if (!hand.tryComputeGrabProxyLocalPalmPocketFrameWorld(hknpWorld, proxyWorld)) {
             ROCK_LOG_WARN(Hand, "Saved grab offset: could not resolve live proxy frame for {} hand", isLeft ? "left" : "right");
-            return {};
+            return false;
         }
 
         const RE::NiTransform objectProxyLocal = grab_frame_math::objectInGeneratedProxyLocalSpace(proxyWorld, rootNode->world);
@@ -264,14 +264,7 @@ namespace rock
             isLeft ? "left" : "right",
             handOffset.hasFingerPose ? "captured" : "unchanged");
 
-        const char* itemName = heldRef->GetDisplayFullName();
-        return SavedGrabOffsetOutcome{
-            .saved = true,
-            .baseFormId = baseForm->GetFormID(),
-            .itemName = itemName && *itemName ? itemName : "item",
-            .leftPresent = file.left.present,
-            .rightPresent = file.right.present,
-        };
+        return true;
     }
 
     void PhysicsInteraction::updateSavedGrabOffsetGesture(const PhysicsFrameContext& frame)
@@ -283,30 +276,17 @@ namespace rock
          * dispatch; this just consumes the resulting per-hand request.
          */
         // One press saves every hand holding an object (both hands on one object save both
-        // offsets) and reports them in one notification naming the hands, so the user knows
-        // which side was written and which side of that object still has no saved offset.
-        SavedGrabOffsetOutcome right{};
-        SavedGrabOffsetOutcome left{};
+        // offsets) and reports what this press wrote: right, left or both.
+        bool rightSaved = false;
+        bool leftSaved = false;
         if (input_remap_runtime::consumePendingSavedGrabOffsetRequest(false)) {
-            right = saveGrabOffsetForHand(_rightHand, false, frame.hknpWorld);
+            rightSaved = saveGrabOffsetForHand(_rightHand, false, frame.hknpWorld);
         }
         if (input_remap_runtime::consumePendingSavedGrabOffsetRequest(true)) {
-            left = saveGrabOffsetForHand(_leftHand, true, frame.hknpWorld);
+            leftSaved = saveGrabOffsetForHand(_leftHand, true, frame.hknpWorld);
         }
-        const auto missingText = [](const SavedGrabOffsetOutcome& outcome) -> std::string {
-            if (!outcome.leftPresent) return " - LEFT not saved yet";
-            if (!outcome.rightPresent) return " - RIGHT not saved yet";
-            return " - both hands saved";
-        };
-        if (right.saved && left.saved && right.baseFormId == left.baseFormId) {
-            f4vr::showNotification("Saved LEFT + RIGHT grab offsets: " + left.itemName);
-            return;
-        }
-        if (right.saved) {
-            f4vr::showNotification("Saved RIGHT grab offset: " + right.itemName + missingText(right));
-        }
-        if (left.saved) {
-            f4vr::showNotification("Saved LEFT grab offset: " + left.itemName + missingText(left));
+        if (rightSaved || leftSaved) {
+            f4vr::showNotification(rightSaved && leftSaved ? "Both saved" : (rightSaved ? "Right saved" : "Left saved"));
         }
     }
 
