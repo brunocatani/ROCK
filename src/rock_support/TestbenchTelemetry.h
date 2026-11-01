@@ -80,6 +80,9 @@ namespace rock::testbench_telemetry
         // LooseWeapon). Against `position`/`rotation` it shows how far the object trails the
         // hand: the bench's slip and rubber-band measure.
         NodeSample heldRoot{};
+        // The grabbed reference's 3D root as the scene holds it at FRIK's frame end, after the
+        // presented skeleton and ROCK's held-scene writer: what is drawn, against the drawn hand.
+        NodeSample heldNode{};
     };
 
     struct FrameSample

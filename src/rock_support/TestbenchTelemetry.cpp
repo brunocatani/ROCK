@@ -18,7 +18,7 @@ namespace rock::testbench_telemetry
     {
         constexpr wchar_t kSectionName[] = L"Local\\RPS_Telemetry_ROCK";
         constexpr std::uint32_t kMagic = 0x54535052; // "RPST", shared with the bench's input ring
-        constexpr std::uint32_t kSchemaVersion = 7;
+        constexpr std::uint32_t kSchemaVersion = 8;
         constexpr std::uint32_t kRecordSize = 2048;
         constexpr std::uint32_t kCapacity = 8192; // ~20 s at 90 Hz with a full skeleton; readers poll at 10 Hz
         constexpr std::uint32_t kNameTableRepeatFrames = 300;
@@ -133,8 +133,11 @@ namespace rock::testbench_telemetry
             NodeRecord heldRoot[2];      // left, right; the held reference's body-driven root
             std::uint8_t heldRootValid[2];
             std::uint16_t pad2;
+            NodeRecord heldNode[2];      // left, right; the held reference's scene root at frame end
+            std::uint8_t heldNodeValid[2];
+            std::uint16_t pad3;
         };
-        static_assert(sizeof(FrameRecord) == 860);
+        static_assert(sizeof(FrameRecord) == 960);
 
         struct EventRecord
         {
@@ -593,6 +596,8 @@ namespace rock::testbench_telemetry
             record.heldFormId[i] = hand.heldFormId;
             copyNode(record.heldRoot[i], hand.heldRoot);
             record.heldRootValid[i] = hand.heldRoot.valid ? 1 : 0;
+            copyNode(record.heldNode[i], hand.heldNode);
+            record.heldNodeValid[i] = hand.heldNode.valid ? 1 : 0;
 
             auto& input = s_input[i];
             auto& in = record.input[i];

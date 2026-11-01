@@ -635,6 +635,16 @@ namespace rock
             copyNode(nodes->HmdNode, sample.hmdNode);
             copyNode(nodes->SecondaryWandNode, sample.wand[0]);
             copyNode(nodes->primaryWandNode, sample.wand[1]);
+            // The held reference as drawn: its scene root after this frame's skeleton and
+            // held-scene writer, for the bench's drawn-hand-to-drawn-object comparison.
+            if (sample.physicsFrame) {
+                for (const bool isLeft : { true, false }) {
+                    Hand& hand = isLeft ? _leftHand : _rightHand;
+                    auto* ref = hand.isHolding() ? hand.getHeldRef() : nullptr;
+                    auto* root = ref ? ref->Get3D() : nullptr;
+                    copyNode(root ? root->IsNode() : nullptr, sample.hand[isLeft ? 0 : 1].heldNode);
+                }
+            }
         }
         // Tracking space as the game received it, before its room and heading transforms; the
         // test bench replays these poses through its driver.
