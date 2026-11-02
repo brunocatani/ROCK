@@ -17,6 +17,7 @@ namespace rock
         using Failure = equip_api::EquipFailure;
         using State = equip_api::EquipState;
         using Flag = equip_api::EquipResultFlag;
+
         constexpr std::uint32_t bit(Flag flag) { return static_cast<std::uint32_t>(flag); }
     }
 

@@ -35,6 +35,7 @@ namespace rock::immutable_snapshot
         }
 
         [[nodiscard]] std::size_t size() const noexcept { return _size; }
+
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
     private:

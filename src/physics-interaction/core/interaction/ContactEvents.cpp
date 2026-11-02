@@ -65,6 +65,7 @@ namespace rock
         processHeldImpact(_rightHand, false, _contacts.lastHeldImpactPairRight);
         processHeldImpact(_leftHand, true, _contacts.lastHeldImpactPairLeft);
     }
+
     void PhysicsInteraction::subscribeContactEvents(RE::hknpWorld* world)
     {
         if (!world) {

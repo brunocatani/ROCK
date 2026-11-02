@@ -35,6 +35,7 @@ namespace rock::runtime_state
             bool gameStopped = false;
             bool gamePaused = false;
         };
+
         FrameMenuSample s_frameMenuSample{};
 
         /*
@@ -49,6 +50,7 @@ namespace rock::runtime_state
             const auto* ui = RE::UI::GetSingleton();
             return ui && ui->menuMode != 0;
         }
+
         constexpr float kPlayerMovingThresholdGameUnits = 0.05f;
         bool s_hasPreviousPlayerPosition = false;
         RE::NiPoint3 s_previousPlayerPosition{};
@@ -66,6 +68,7 @@ namespace rock::runtime_state
             const void* transforms = nullptr;
             std::uint32_t transformCount = 0;
         };
+
         VerifiedSkeleton s_verifiedSkeleton{};
 
         [[nodiscard]] bool hasPlayer() { return RE::PlayerCharacter::GetSingleton() != nullptr; }

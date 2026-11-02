@@ -49,6 +49,7 @@ namespace rock::testbench_telemetry
         };
 
 #pragma pack(push, 1)
+
         struct RingHeader
         {
             std::uint32_t magic;
@@ -62,6 +63,7 @@ namespace rock::testbench_telemetry
             std::uint32_t flags; // bit 0: producer alive, bit 1: wheel capture running
             std::uint8_t reserved[16];
         };
+
         static_assert(sizeof(RingHeader) == 64);
 
         struct RecordPrefix
@@ -73,6 +75,7 @@ namespace rock::testbench_telemetry
             float gameTimeSeconds; // sum of frame deltas since the section was opened
             float deltaSeconds;
         };
+
         static_assert(sizeof(RecordPrefix) == 24);
 
         struct HandRecord
@@ -84,6 +87,7 @@ namespace rock::testbench_telemetry
             std::uint8_t disabled;
             std::uint16_t pad;
         };
+
         static_assert(sizeof(HandRecord) == 64);
 
         struct NodeRecord
@@ -91,6 +95,7 @@ namespace rock::testbench_telemetry
             float position[3];
             float rotation[9];
         };
+
         static_assert(sizeof(NodeRecord) == 48);
 
         struct InputRecord
@@ -109,6 +114,7 @@ namespace rock::testbench_telemetry
             std::uint32_t bypassedReads; // raw reads by RPS UI / configurator since the previous frame
             std::uint32_t pad;
         };
+
         static_assert(sizeof(InputRecord) == 112);
 
         struct FrameRecord
@@ -138,6 +144,7 @@ namespace rock::testbench_telemetry
             std::uint8_t heldNodeValid[2];
             std::uint16_t pad3;
         };
+
         static_assert(sizeof(FrameRecord) == 960);
 
         struct EventRecord
@@ -151,8 +158,10 @@ namespace rock::testbench_telemetry
             std::uint32_t aux[2];
             char text[48];
         };
+
         static_assert(sizeof(EventRecord) == 84);
 #pragma pack(pop)
+
         // Skeleton records: header, then poses (SkeletonPose) or NUL-separated names (SkeletonNames).
         struct SkeletonHeader
         {
@@ -162,6 +171,7 @@ namespace rock::testbench_telemetry
             std::uint16_t totalBones;
             std::uint16_t pad;
         };
+
         static_assert(sizeof(SkeletonHeader) == 12);
 
         struct BoneRecord
@@ -169,6 +179,7 @@ namespace rock::testbench_telemetry
             float position[3];
             float rotation[9];
         };
+
         static_assert(sizeof(BoneRecord) == 48);
         constexpr std::size_t kSkeletonPayload = kRecordSize - sizeof(RecordPrefix) - sizeof(SkeletonHeader);
         constexpr std::size_t kBonesPerRecord = kSkeletonPayload / sizeof(BoneRecord);

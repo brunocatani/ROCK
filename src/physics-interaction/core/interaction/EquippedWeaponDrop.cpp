@@ -114,6 +114,7 @@ namespace rock
             return nullptr;
         return resolveEquippedWeaponInteractionNode();
     }
+
     bool PhysicsInteraction::storageHandoffPending(std::uint32_t reference) const
     {
         for (const auto& pending : _forceGrab.pendingCommits)

@@ -248,6 +248,7 @@ namespace rock
         outResult.providerGeneration = _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
         return true;
     }
+
     void PhysicsInteraction::fillProviderWeaponPartGripStates(
         std::array<api::weaponparts::GripState, 2>& outStates) const
     {

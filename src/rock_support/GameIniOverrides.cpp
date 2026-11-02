@@ -49,6 +49,7 @@ namespace rock::game_ini_overrides
         {
             return entry.recoilSetting ? !g_rockConfig.rockEmergencyDisableRecoil : entry.required;
         }
+
         static_assert(std::atomic<bool>::is_always_lock_free);
 
         using Notify = void (*)(RE::Setting*);

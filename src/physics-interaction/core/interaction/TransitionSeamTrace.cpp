@@ -95,6 +95,7 @@ namespace rock
                 return "not-ready";
             }
         }
+
         SeamTrace s_seam{};
         constexpr std::uint32_t kSeamFrames = 40;
 
@@ -114,6 +115,7 @@ namespace rock
             const char* name = "none";
             int depth = -1;
         };
+
         CulledAt firstCulled(const RE::NiAVObject* node)
         {
             for (int depth = 0; node && depth < 48; ++depth, node = node->parent) {
@@ -210,12 +212,14 @@ namespace rock
             bool incomingLeft = false;
             const auto* incoming = native_secondary_presentation::incomingModelForTrace(incomingLeft);
             const bool slot1Left = views[1].weapon && native_hand_equipment::secondaryHandIsLeft();
+
             struct Candidate
             {
                 const RE::NiAVObject* node;
                 bool left;
                 SeamSource source;
             };
+
             const std::array<Candidate, 4> candidates{ {
                 { bridge.isModelPresented() ? bridge.traceModel() : nullptr, bridge.isLeftHandForTrace(),
                     SeamSource::EquipBridge },
@@ -355,12 +359,14 @@ namespace rock
             --s_seam.framesLeft;
             ++s_seam.frame;
             s_seam.elapsedMs += runtime_state::currentFrame().deltaSeconds * 1000.0f;
+
             struct Metrics
             {
                 float worldC = -1, worldF = -1, handC = -1, handF = -1, baseC = -1, baseF = -1, handMove = -1,
                       handTurn = -1;
                 bool switched = false;
             };
+
             std::array<Metrics, 2> m{};
             for (std::size_t h = 0; h < hands.size(); ++h) {
                 const auto& previous = s_seam.hands[h];

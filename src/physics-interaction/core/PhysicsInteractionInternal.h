@@ -486,6 +486,7 @@ namespace rock
 
             return flags;
         }
+
         inline DirectSkeletonBoneReader s_directSkeletonBoneReader;
         inline std::uint32_t s_directSkeletonBoneLogCounter = 0;
 

@@ -46,6 +46,7 @@ namespace rock
         out.rootWorld.scale = root.scale;
         return api::Status::Ok;
     }
+
     api::Status PhysicsInteraction::setHeldObjectTarget(api::OwnerToken owner,
         const api::grab::HeldObjectTarget& request)
     {
@@ -81,12 +82,14 @@ namespace rock
             .setHeldObjectTarget(owner, request,
                 std::span(weapon.bodyIds).first(request.connectedWeaponFormId ? weapon.count : 0));
     }
+
     api::Status PhysicsInteraction::clearHeldObjectTarget(api::OwnerToken owner, api::Hand hand)
     {
         if (hand != api::Hand::Left && hand != api::Hand::Right)
             return api::Status::InvalidArgument;
         return (hand == api::Hand::Left ? _leftHand : _rightHand).clearHeldObjectTarget(owner);
     }
+
     api::Status PhysicsInteraction::queryHeldPlacementState(api::grab::HeldPlacementState& out) const
     {
         out = {};

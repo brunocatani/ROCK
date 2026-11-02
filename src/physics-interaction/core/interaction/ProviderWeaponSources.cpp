@@ -20,6 +20,7 @@ namespace rock
             out.scale = in.scale;
         }
     }
+
     void PhysicsInteraction::refreshProviderWeaponSources()
     {
         auto* root = resolveEquippedWeaponInteractionNode();
@@ -118,6 +119,7 @@ namespace rock
                 }
         }
     }
+
     std::uintptr_t PhysicsInteraction::resolveProviderWeaponSource(std::uint64_t generation, std::uint64_t key) const
     {
         const auto& catalog = _providerSources;
@@ -131,6 +133,7 @@ namespace rock
             }
         return 0;
     }
+
     api::Status PhysicsInteraction::collectProviderWeaponCollisionBodies(std::uint64_t generation,
         std::span<const std::uint64_t> sources, std::span<std::uint32_t> bodies, std::uint32_t& count) const
     {
@@ -163,6 +166,7 @@ namespace rock
         }
         return count ? api::Status::Ok : api::Status::TargetUnavailable;
     }
+
     std::uint64_t PhysicsInteraction::providerWeaponSourceKey(std::uint64_t generation, std::uintptr_t node) const
     {
         const auto& catalog = _providerSources;
@@ -175,12 +179,14 @@ namespace rock
                 return catalog.entries[i].value.sourceKey;
         return 0;
     }
+
     std::uint64_t PhysicsInteraction::providerWeaponSourceKeyForBody(std::uint64_t generation, std::uint32_t body) const
     {
         const auto evidence = _weaponCollision.getProfileEvidenceDescriptors();
         const auto* descriptor = evidence.find(body);
         return descriptor ? providerWeaponSourceKey(generation, descriptor->sourceRootAddress) : 0;
     }
+
     std::uintptr_t PhysicsInteraction::resolveProviderWeaponSourceName(std::uint64_t generation, const char* name) const
     {
         if (!name || !*name || _providerSources.overflow || generation != _providerSources.generation)
@@ -196,6 +202,7 @@ namespace rock
         }
         return resolveProviderWeaponSource(generation, found);
     }
+
     api::Status PhysicsInteraction::copyProviderWeaponSources(std::uint64_t generation, std::uint32_t offset,
         provider::WeaponSourceRecord* output, std::uint32_t capacity, std::uint32_t& copied, std::uint32_t& total) const
     {

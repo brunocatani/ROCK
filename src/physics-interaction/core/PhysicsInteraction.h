@@ -220,20 +220,24 @@ namespace rock
         // Called before a final hand release, while the exact world reference
         // and native body set still exist. A failed restore retains the grab.
         bool prepareLooseWeaponRelease(RE::TESObjectREFR* reference, RE::hknpWorld* world, bool physicalDrop);
+
         api::Status watchObjectRest(api::OwnerToken owner, const api::collision::ObjectRestRequest& request,
             api::collision::ObjectRestState& state)
         {
             return _objectRestRequests.watch(owner, request, state);
         }
+
         api::Status requestEjectionContacts(api::OwnerToken owner,
             const api::collision::EjectionClearanceRequest& request)
         {
             return _ejectionContacts.request(owner, request);
         }
+
         void cancelEjectionContacts(api::OwnerToken owner, std::uint32_t reference)
         {
             _ejectionContacts.cancel(owner, reference);
         }
+
         void cancelObjectRest(api::OwnerToken owner, std::uint32_t reference)
         {
             _objectRestRequests.cancel(owner, reference);
@@ -247,6 +251,7 @@ namespace rock
         void shutdown(api::core::LifecycleReason reason = api::core::LifecycleReason::Shutdown);
 
         bool isInitialized() const { return _lifecycle.initialized; }
+
         void queryPlacementClickState(api::input::PlacementClickState& out) const;
         api::Status queryHeldPlacementState(api::grab::HeldPlacementState& out) const;
         api::Status submitHeldPlacementIntent(api::OwnerToken owner, const api::grab::HeldPlacementIntent& intent);
@@ -254,14 +259,18 @@ namespace rock
         api::Status setHeldObjectTarget(api::OwnerToken, const api::grab::HeldObjectTarget&);
         api::Status clearHeldObjectTarget(api::OwnerToken, api::Hand);
         api::Status getHeldObjectPose(api::OwnerToken, api::Hand, api::grab::HeldObjectPose&) const;
+
         bool isProviderReady() const
         {
             return _lifecycle.initialized.load(std::memory_order_acquire) &&
                 ::rock::provider::hasLifecycleFlag(_lifecycle.flagsAtomic.load(std::memory_order_acquire),
                     api::core::LifecycleFlag::ProviderReady);
         }
+
         void requestWeaponCollisionRebuildAfterWorkbenchExit(const char* sourceMenuName);
+
         void requestWeaponCollisionRefresh() { _weaponCollision.requestExternalVisualRebuild(); }
+
         void noteSkeletonLifecycle(std::uint32_t skeletonGeneration, api::core::LifecycleReason reason);
         void noteProviderLifecycle(std::uint32_t providerGeneration, api::core::LifecycleReason reason);
 
@@ -278,9 +287,13 @@ namespace rock
         bool storageHandoffPending(std::uint32_t reference) const;
         RE::NiAVObject* storageEquippedVisual(bool left, std::uint32_t expectedBase) const;
         api::Status extractEquippedForStorage(bool left, std::uint32_t weapon, std::uint32_t& reference);
+
         Hand& getRightHand() { return _rightHand; }
+
         Hand& getLeftHand() { return _leftHand; }
+
         const Hand& getRightHand() const { return _rightHand; }
+
         const Hand& getLeftHand() const { return _leftHand; }
 
         bool tryGetRootFlattenedHandTransform(bool isLeft, RE::NiTransform& outTransform) const;
@@ -583,12 +596,14 @@ namespace rock
 
         void refreshEquippedWeaponHandlingSettings();
         void reconcileEquippedWeaponHandlingMode();
+
         struct EquippedWeaponShoulderFrameResult
         {
             equipped_weapon_shoulder::Decision decision{};
             equipped_weapon_drop_policy::SourceHand sourceHand{ equipped_weapon_drop_policy::SourceHand::None };
             shoulder_stash::Decision detectorDecision{};
         };
+
         // Returns the weapon at native equipment index 0 or 1 to the inventory
         // from the shoulder. True once that index is empty. Frame owner.
         bool stashEquippedWeaponAtShoulder(const PhysicsFrameContext& frame, std::uint32_t index, bool left,
@@ -617,11 +632,13 @@ namespace rock
         void publishHeldBodyExclusion(RE::hknpWorld* world);
         void updateWeaponHandSuppression(RE::hknpWorld* world, float deltaSeconds);
         void refreshWeaponHandSuppression(RE::hknpWorld* world, bool isLeft);
+
         [[nodiscard]] bool weaponHandSuppressedFor(bool isLeft, WeaponHandReason reason) const
         {
             return (_suppression.weaponHands[isLeft ? 1 : 0].published.load(std::memory_order_acquire) &
                        static_cast<std::uint8_t>(reason)) != 0;
         }
+
         bool refreshNativeGrenadeCollisionSuppression(RE::hknpWorld* world);
         void updateNativeGrenadeCollisionSuppression(RE::hknpWorld* world, float deltaSeconds);
         void restoreNativeGrenadeCollisionSuppression(RE::hknpWorld* world);
@@ -904,14 +921,17 @@ namespace rock
             int menuHoldHandClaim{ -1 };
             // Support hand the menu weapon hold places on a two-handed carry; -1 none.
             int menuHoldSupportHand{ -1 };
+
             // The hand that last fired the item of this ownership key.
             struct FiringHandMemory
             {
                 std::uint64_t ownershipKey{ 0 };
                 bool left{ false };
             } firingHandMemory{};
+
             // The menu hold blocks FRIK's primary weapon hand pose and node ownership.
             bool menuHoldPoseBlocked{ false };
+
             // A weapon equipped inside a menu while the game runs, kept hidden
             // by the menu hold until its draw has posed its parts.
             struct MenuEquipReveal
@@ -928,6 +948,7 @@ namespace rock
                 // the gate ends without a reveal.
                 RE::NiPointer<RE::NiAVObject> culled{};
             } menuEquipReveal{};
+
             // A Pip-Boy support attach on a weapon equipped in that menu waits
             // for the weapon's carry after the menu (bounded).
             std::uint64_t deferredSupportSequence{ 0 };
@@ -989,6 +1010,7 @@ namespace rock
                 std::uint64_t grabIdentity{ 0 };
                 transferred_weapon_grab_policy::State inputState{};
             };
+
             std::array<PendingForceGrabCommit, 2> pendingCommits{};
             std::array<RetainedWeaponGrab, 2> retainedWeaponGrabs{};
             std::array<bool, 2> committedThisFrame{};
@@ -1024,6 +1046,7 @@ namespace rock
         {
             collision_suppression_registry::SuppressionLeaseSet<kGeneratedBodyContactRegistryCapacity + 3>
                 nativeGrenadeLeases{ collision_suppression_registry::CollisionSuppressionOwner::NativeGrenadeThrow };
+
             struct WeaponHand
             {
                 // Bodies whose pairs with weapon bodies are excluded now.
@@ -1034,7 +1057,9 @@ namespace rock
                 float restoreSeconds = 0.0f;
                 std::atomic<std::uint8_t> published{ 0 }; // active | lingering, for contact callbacks
             };
+
             std::array<WeaponHand, 2> weaponHands{};
+
             // The held bodies each hand's arm must not touch: refreshed while
             // holding, kept through the hand colliders' delayed restore.
             struct HeldBodyExclusion
@@ -1043,6 +1068,7 @@ namespace rock
                 std::size_t heldCount = 0;
                 bool looseWeapon = false;
             };
+
             std::array<HeldBodyExclusion, 2> heldBodyExclusions{};
             float nativePlayerRefreshSeconds = 0.0f;
             bool nativePlayerOverflowLogged = false;
@@ -1158,6 +1184,7 @@ namespace rock
         // Slot 1's native equipment, sampled by the frame owner
         // (sampleEquippedSlotOne) for every roster query this frame.
         equipped_weapon_roster::SlotOneFacts _equippedSlotOne{};
+
         // The index-1 weapon whose promotion failed; retried only after
         // index 0 or 1 changes, never every frame.
         struct FailedPromotion
@@ -1165,6 +1192,7 @@ namespace rock
             std::uint32_t formID{};
             std::uintptr_t instance{};
         } _failedPromotion{};
+
         TwoHandedGrip _twoHandedGrip;
         DynamicHandCollisionRuntime _dynamicHandCollision{ _contacts.clock };
         feedback_haptics::FeedbackHaptics _feedbackHaptics;

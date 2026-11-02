@@ -132,6 +132,7 @@ namespace rock::fo4vr
         auto* skeleton = getFirstPersonSkeleton();
         if (!skeleton)
             return nullptr;
+
         /*
          * The "Weapon" bone lives as long as its skeleton, and a skeleton swap
          * (power armor) changes firstPerson3D. Search the tree once per frame
@@ -143,6 +144,7 @@ namespace rock::fo4vr
             const RE::NiNode* skeleton{ nullptr };
             RE::NiNode* node{ nullptr };
         };
+
         thread_local Cache cache;
         const auto frame = s_nodeLookupFrame.load(std::memory_order_acquire);
         if (cache.frame != frame || cache.skeleton != skeleton || !cache.node) {

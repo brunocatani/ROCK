@@ -6,6 +6,7 @@
 #include "physics-interaction/native/MagazineEjectionSnapshot.h"
 #include "physics-interaction/native/NativeObjectPlacement.h"
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
+
 namespace rock
 {
     namespace
@@ -13,6 +14,7 @@ namespace rock
         struct WriteScope
         {
             RE::hknpWorld* world{};
+
             explicit WriteScope(RE::hknpWorld* value)
             {
                 if (havok_world_lock::detail::currentThreadInsidePhysicsStep())
@@ -20,17 +22,20 @@ namespace rock
                 reinterpret_cast<void (*)(RE::hknpWorld*)>(REL::Offset(0x1DF5FB0).address())(value);
                 world = value;
             }
+
             ~WriteScope()
             {
                 if (world)
                     reinterpret_cast<void (*)(RE::hknpWorld*)>(REL::Offset(0x1DF5FD0).address())(world);
             }
         };
+
         struct Bodies
         {
             std::array<std::uint32_t, 4> ids{};
             std::size_t count{};
         };
+
         bool body(std::uint32_t id, void* data)
         {
             auto& out = *static_cast<Bodies*>(data);
@@ -41,6 +46,7 @@ namespace rock
             out.ids[out.count++] = id;
             return true;
         }
+
         bool collect(RE::NiAVObject* root, RE::hknpWorld* world, Bodies& out)
         {
             std::array<RE::NiAVObject*, 128> nodes{};
@@ -67,6 +73,7 @@ namespace rock
             return out.count != 0;
         }
     }
+
     void PhysicsInteraction::clearEjectionContacts(RE::hknpWorld* world)
     {
         if (world && native_object_placement::available()) {
@@ -79,6 +86,7 @@ namespace rock
         _ejectionContacts.handContactReported = false;
         (void)native_player_collision::takeMagazineEjectionHandPair();
     }
+
     void PhysicsInteraction::updateEjectionContacts(const PhysicsFrameContext& frame)
     {
         auto& service = _ejectionContacts;

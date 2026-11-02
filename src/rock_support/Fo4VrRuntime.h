@@ -61,6 +61,7 @@ namespace rock::fo4vr
         RE::NiNode* unk820; // + 0x0820
         RE::NiNode* LockPickParentNode; // + 0x0828
     };
+
     static_assert(sizeof(PlayerNodes) == 0x150);
 
     class BSFlattenedBoneTree : public RE::NiNode
@@ -96,6 +97,7 @@ namespace rock::fo4vr
         std::uint64_t unk1b0;
         BoneNodePosition* bonePositions;
     };
+
     static_assert(sizeof(BSFlattenedBoneTree::BoneTransforms) == 0xA0);
     static_assert(sizeof(BSFlattenedBoneTree::BoneNodePosition) == 0x18);
     static_assert(sizeof(BSFlattenedBoneTree) == 0x1C0);
@@ -108,6 +110,7 @@ namespace rock::fo4vr
         RE::NiNode* fireNode;
         RE::NiNode* projectileNode;
     };
+
     static_assert(sizeof(MuzzleFlash) == 0x20);
 
     using LoadNif = int (*)(std::uint64_t path, std::uint64_t output, std::uint64_t flags);
