@@ -1,5 +1,7 @@
 #include "physics-interaction/input/NativePipboyHandInput.h"
 
+#include "api/FRIKApiV2.h"
+#include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/weapon/NativePipboyHandMarkers.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -246,10 +248,44 @@ namespace rock::native_pipboy_hand_input
             return s_destroyMovie(movie, flags);
         }
 
+        /*
+         * FRIK operates the open wrist Pip-Boy itself: its primary-controller
+         * trigger and its index finger on the select control press rows
+         * through ActionScript from FRIK's frame update, so no native input
+         * event carries a physical hand (the native menu reads only the
+         * Pip-Boy arm's controller). Untagged, such a press was an ordinary
+         * native equip on the authored slot that unequipped both hands'
+         * weapons. FRIK selects in the frame of the trigger press, so a
+         * physically held right trigger is that press (ROCK forces
+         * bLeftHandedMode:VR off: FRIK's primary controller is the right
+         * one); otherwise the press came from the finger of the hand that
+         * does not wear the Pip-Boy.
+         */
+        Origin frikWristOrigin() noexcept
+        {
+            const auto* frik = frik::api::FRIKApiV2::inst;
+            if (!frik || !frik->isWristPipboyOpen || !frik->isWristPipboyOpen()) return {};
+            Hand hand = Hand::Right;
+            if (!input_remap_runtime::isRawButtonPhysicallyHeld(false, vr::k_EButton_SteamVR_Trigger) && frik->getConfigValue) {
+                std::array<char, 16> text{};
+                frik->getConfigValue("Fallout4VRBody", "PipboyRightArmLeftHandedMode", text.data(), static_cast<int>(text.size()), "false");
+                if (_stricmp(text.data(), "true") == 0 || std::strcmp(text.data(), "1") == 0) hand = Hand::Left;
+            }
+            return {hand, s_sequence.fetch_add(1, std::memory_order_relaxed) + 1, GetCurrentThreadId()};
+        }
+
         void flashCall(void* menu, const RE::Scaleform::GFx::FunctionHandler::Params& params) noexcept
         {
             native_pipboy_hand_markers::onPipboyCodeCall(menu);
             if (reinterpret_cast<std::uintptr_t>(params.userData) == 12) {
+                if (s_origin.hand == Hand::None) {
+                    if (const auto origin = frikWristOrigin(); origin.hand != Hand::None) {
+                        const Scope scope{origin};
+                        trace("frik-wrist-inventory-callback", origin, menu, params.argCount);
+                        s_flashCall(menu, params);
+                        return;
+                    }
+                }
                 trace("inventory-callback", s_origin, menu, params.argCount);
                 if (s_origin.hand == Hand::None) {
                     // Bounded, failure-only stack evidence distinguishes a

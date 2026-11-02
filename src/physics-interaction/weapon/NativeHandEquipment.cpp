@@ -40,6 +40,7 @@ namespace rock::native_hand_equipment
         using ResolveIndex = std::uint32_t* (*)(RE::Actor*, std::uint32_t*, const RE::BGSEquipSlot*);
         using ModelIndex = std::uint32_t (*)(RE::Actor*, RE::TESBoundObject*, std::uint32_t);
         using GetAttachment = RE::NiAVObject* (*)(void*, RE::Actor*, const void* const*, std::uint32_t);
+        using QueuesEquip = bool (*)(RE::Actor*, RE::TESForm*);
         struct InventorySelection
         {
             RE::TESForm* object = nullptr;
@@ -59,6 +60,7 @@ namespace rock::native_hand_equipment
         ModelIndex s_modelIndex = nullptr;
         GetAttachment s_getAttachment = nullptr;
         ReadSelection s_readSelection = nullptr;
+        QueuesEquip s_queuesEquip = nullptr;
         bool s_installed = false; // Load owner; immutable after hook installation.
         std::atomic<std::uint64_t> s_transaction{0}; // Input/UI -> frame diagnostic publication.
         // Input/UI writer, frame reader: fields first, then the sequence with
@@ -237,6 +239,7 @@ namespace rock::native_hand_equipment
             RE::TBO_InstanceData* instance = nullptr;
             bool eligible = false;
             bool consumed = false;
+            bool nativeQueued = false; // UseItem would have queued it for the equip animation.
         };
         // Borrowed only for one synchronous native inventory transaction.
         // Nested/native unrelated equipment cannot reuse the consumed choice.
@@ -374,6 +377,28 @@ namespace rock::native_hand_equipment
                 OutputDebugStringA("ROCK: native execution slot diagnostic failed\n");
             }
             return context->slot;
+        }
+
+        /*
+         * UseItem (E70920) asks 140DF5050 once, at 140E70A79, whether its
+         * equip waits for the actor's equip animation, and passes that answer
+         * to every EquipObject and UnequipObject of the transaction. It is
+         * yes only while no game-pausing menu is open (UI menuMode 0): the
+         * wrist Pip-Boy, never the projected one. The process drain
+         * (EC4BE0/EC4DA0) builds a queued equip later, outside this
+         * transaction, where E72DA0 ignores the queued hand leaf (race bit 19)
+         * and builds the authored slot: a left equip replaced the right gun
+         * at index 0 after the native swap had sheathed it. A hand-directed
+         * equip completes inside its transaction, as with the projected
+         * Pip-Boy; every other UseItem keeps the native answer.
+         */
+        bool useItemQueuesEquip(RE::Actor* actor, RE::TESForm* object) noexcept
+        {
+            const bool queues = s_queuesEquip(actor, object);
+            auto* execution = s_execution;
+            if (!execution || execution->actor != actor || execution->weapon != object) return queues;
+            execution->nativeQueued = queues;
+            return false;
         }
 
         void canonicalizeRestoredPrimary(RE::Actor* actor, const Slots& slots) noexcept
@@ -564,9 +589,9 @@ namespace rock::native_hand_equipment
                 // Native return means request accepted, not model/graph ready.
                 const auto sequence = s_transaction.fetch_add(1, std::memory_order_release) + 1;
                 ROCK_LOG_INFO(Weapon,
-                    "AKIMBO equip request={} inputToken={} hand={} weapon={:08X} handle={:08X} stack={} index={} toggleOff={} requestedSlot={:08X} accepted={} executionSelected={} nativeInventory=true",
+                    "AKIMBO equip request={} inputToken={} hand={} weapon={:08X} handle={:08X} stack={} index={} toggleOff={} requestedSlot={:08X} accepted={} executionSelected={} nativeQueued={} nativeInventory=true",
                     sequence, origin.sequence, handName(hand), formID, inventoryHandle, stack, index, toggles,
-                    selected->formID, accepted, execution.consumed);
+                    selected->formID, accepted, execution.consumed, execution.nativeQueued);
                 return accepted;
             } catch (...) {
                 // Never retry an inventory mutation after an exception: it
@@ -976,13 +1001,15 @@ namespace rock::native_hand_equipment
         constexpr std::array<std::uint8_t, 5> slotBytes{0xE8,0x24,0x58,0x2D,0xFF};
         constexpr std::array<std::uint8_t, 12> executionBytes{0x49,0x8B,0x06,0x48,0x8B,0xD3,0x49,0x8B,0xCE,0xFF,0x50,0x38};
         constexpr std::array<std::uint8_t, 5> triggerMeleeBytes{0xE8,0x70,0xB8,0x16,0x00};
+        constexpr std::array<std::uint8_t, 5> queueBytes{0xE8,0xD2,0x45,0xF8,0xFF};
         constexpr std::array<std::uint8_t, 44> executionFrame{
             0x4C,0x89,0x4C,0x24,0x20,0x4C,0x89,0x44,0x24,0x18,
             0x48,0x89,0x54,0x24,0x10,0x48,0x89,0x4C,0x24,0x08,
             0x55,0x53,0x56,0x57,0x41,0x54,0x41,0x55,0x41,0x56,0x41,0x57,
             0x48,0x8D,0x6C,0x24,0xE1,0x48,0x81,0xEC,0xE8,0,0,0};
         if (!bytesMatch(0xB9B904, useBytes) || !bytesMatch(0xE70A37, slotBytes) || !bytesMatch(0xE72E19, executionBytes) ||
-            !bytesMatch(0xFC833B, triggerMeleeBytes) ||
+            !bytesMatch(0xFC833B, triggerMeleeBytes) || !bytesMatch(0xE70A79, queueBytes) ||
+            !bytesMatch(0xDF5050, std::array<std::uint8_t,14>{0x48,0x89,0x5C,0x24,0x08,0x57,0x48,0x83,0xEC,0x20,0x0F,0xB6,0x42,0x1A}) ||
             !bytesMatch(0x1133BB0, std::array<std::uint8_t,8>{0x40,0x53,0x48,0x83,0xEC,0x20,0x48,0x8B}) ||
             !bytesMatch(0x1133AE0, std::array<std::uint8_t,8>{0x48,0x89,0x5C,0x24,0x08,0x48,0x89,0x74}) ||
             !bytesMatch(0xEC5230, std::array<std::uint8_t,19>{0x44,0x89,0x4C,0x24,0x20,0x53,0x48,0x83,0xEC,0x20,0x48,0x8B,0x02,0x48,0x8B,0xCA,0x49,0x8B,0xD8}) ||
@@ -1007,6 +1034,7 @@ namespace rock::native_hand_equipment
         s_readSelection = reinterpret_cast<ReadSelection>(REL::Offset(0x1ABBD0).address());
         s_meleeEquipped = reinterpret_cast<ActorTest>(REL::Offset(0x1133BB0).address());
         s_defaultSlotEmpty = reinterpret_cast<ActorTest>(REL::Offset(0x1133AE0).address());
+        s_queuesEquip = reinterpret_cast<QueuesEquip>(REL::Offset(0xDF5050).address());
         // A left inventory slot without its complete native first-person gun
         // model is not a usable hand-directed equipment capability.
         if (!native_inventory_hand_slots::install() || !native_secondary_model::install() || !native_equipped_model_lifetime::install() ||
@@ -1030,21 +1058,24 @@ namespace rock::native_hand_equipment
             (void)trampoline.write_call<5>(REL::Offset(0xE70A37).address(), &toggleSlot);
             (void)trampoline.write_call<5>(REL::Offset(0xB9B904).address(), &useItem);
             (void)trampoline.write_call<5>(REL::Offset(0xFC833B).address(), &triggerMeleeEquipped);
+            (void)trampoline.write_call<5>(REL::Offset(0xE70A79).address(), &useItemQueuesEquip);
             if (!callRedirectMatches(0xE70A37, reinterpret_cast<std::uintptr_t>(&toggleSlot)) ||
                 !callRedirectMatches(0xB9B904, reinterpret_cast<std::uintptr_t>(&useItem)) ||
                 !callRedirectMatches(0xFC833B, reinterpret_cast<std::uintptr_t>(&triggerMeleeEquipped)) ||
+                !callRedirectMatches(0xE70A79, reinterpret_cast<std::uintptr_t>(&useItemQueuesEquip)) ||
                 !FlushInstructionCache(GetCurrentProcess(), nullptr, 0))
                 throw std::runtime_error("hand equipment redirect verification failed");
             if (!native_pipboy_hand_input::install())
                 throw std::runtime_error("queued Pip-Boy provenance installation failed");
             s_installed = true;
-            ROCK_LOG_INFO(Init, "Native hand-directed Pip-Boy equipment installed; scoped execution-slot resolver and independent equipped action hooks active");
+            ROCK_LOG_INFO(Init, "Native hand-directed Pip-Boy equipment installed; scoped execution-slot resolver, unqueued directed equips and independent equipped action hooks active");
             return true;
         } catch (...) {
             REL::safe_write(REL::Offset(0xE72E19).address(), executionBytes.data(), executionBytes.size());
             REL::safe_write(REL::Offset(0xE70A37).address(), slotBytes.data(), slotBytes.size());
             REL::safe_write(REL::Offset(0xB9B904).address(), useBytes.data(), useBytes.size());
             REL::safe_write(REL::Offset(0xFC833B).address(), triggerMeleeBytes.data(), triggerMeleeBytes.size());
+            REL::safe_write(REL::Offset(0xE70A79).address(), queueBytes.data(), queueBytes.size());
             FlushInstructionCache(GetCurrentProcess(), nullptr, 0);
             ROCK_LOG_ERROR(Init, "Native hand equipment installation failed; original hooks restored");
             return false;
