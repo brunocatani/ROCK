@@ -524,6 +524,19 @@ namespace rock
                     !runtime.localMenuBlocking &&
                     !runtime.compatibilityConfigBlocking,
             });
+        if (nativeWeaponState != _equipped.tracedNativeWeaponState) {
+            // Logged only on a change, with how long the previous state
+            // lasted and whether an inventory equip is waiting on it.
+            const auto now = std::chrono::steady_clock::now();
+            const bool first = _equipped.tracedNativeWeaponState == 0xFFFFFFFFu;
+            ROCK_LOG_INFO(Weapon, "Native weapon state {}->{} previousLastedMs={:.0f} form={:08X} inventoryEquipPending={}",
+                first ? "none" : held_weapon_equip_state_policy::nativeWeaponStateName(_equipped.tracedNativeWeaponState),
+                held_weapon_equip_state_policy::nativeWeaponStateName(nativeWeaponState),
+                first ? 0.0 : std::chrono::duration<double, std::milli>(now - _equipped.tracedNativeWeaponStateAt).count(),
+                currentIdentityCaptured ? currentIdentity.formID : 0u, _inventoryEquip.active());
+            _equipped.tracedNativeWeaponState = nativeWeaponState;
+            _equipped.tracedNativeWeaponStateAt = now;
+        }
         const bool nativeWeaponAnimationActive =
             provider::currentNativeAnimationAuthorityFlags() != 0 ||
             nativeGunState ==

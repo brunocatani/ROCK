@@ -12,6 +12,7 @@
 #include <ROCK/Hands.h>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -894,6 +895,10 @@ namespace rock
             // Native carry resumes natively after a menu; this capture is only
             // the base a Pip-Boy support attach turns into a two-handed resume.
             EquippedWeaponTransitionCoordinator::PendingGrip nativeCarryCapture{};
+            // The last native weapon state seen and when it began (change
+            // trace: the timing of every holster, put-away and draw).
+            std::uint32_t tracedNativeWeaponState{ 0xFFFFFFFFu };
+            std::chrono::steady_clock::time_point tracedNativeWeaponStateAt{};
             // Hand whose finger pose the menu weapon hold claims; -1 none.
             int menuHoldFingerHand{ -1 };
             // Hand whose world transform the menu weapon hold claims; -1 none.
