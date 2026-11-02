@@ -275,7 +275,8 @@ namespace rock::api::collision {
     };
 
     // Physics scale and each weapon slot's generated bodies for the
-    // publication named by sample. Only slot 0 is published yet.
+    // publication named by sample. Both slots are published; a slot without
+    // generated bodies has bodyCount 0.
     struct Environment
     {
         std::uint32_t size{ sizeof(Environment) };

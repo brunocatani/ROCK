@@ -322,8 +322,8 @@ namespace rock::api::grab {
      * offhand of the weapon in weaponSlot (HandUnavailable otherwise); while
      * the roles change, the reservation applies only while its hand is that
      * offhand. The lease runs 1 to kMaxReservationLeaseFrames frames from
-     * acquire or renew. Expiry, generation changes and owner loss end it with
-     * an Event of kind ReservationLost.
+     * acquire or renew. Expiry, generation changes and owner loss end it;
+     * getHandReservationState then reports it inactive.
      */
     struct HandReservationRequest
     {
@@ -605,8 +605,8 @@ namespace rock::api::grab {
         static constexpr InterfaceId interfaceId = kInterfaceId;
         static constexpr std::uint32_t majorVersion = kMajor;
         static constexpr std::uint32_t minorVersion = kMinor;
-        // Game thread (Write). Commands queue; read the outcome with
-        // getInteractionCommandResult or the CommandCompleted event.
+        // Game thread (Write). Commands queue; poll the outcome with
+        // getInteractionCommandResult.
         Status(ROCK_CALL* requestForceGrab)(OwnerToken owner, const ForceGrabRequest* request, std::uint64_t* outCommandId) noexcept;
         Status(ROCK_CALL* requestForceRelease)(OwnerToken owner, const ForceReleaseRequest* request, std::uint64_t* outCommandId) noexcept;
         Status(ROCK_CALL* requestThrownDrop)(OwnerToken owner, const ThrownDropRequest* request, std::uint64_t* outCommandId) noexcept;
