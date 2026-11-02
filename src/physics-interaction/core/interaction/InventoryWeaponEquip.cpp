@@ -231,7 +231,24 @@ namespace rock {
         // make the hand busy; anything else the hand holds or does does.
         constexpr auto ownWeapon = static_cast<std::uint32_t>(force_grab_policy::HandBlocker::EquippedWeapon) |
             static_cast<std::uint32_t>(force_grab_policy::HandBlocker::OffhandWeapon);
-        if ((forceGrabHandBlockerMask(hand, left, handFrame.disabled, true) & ~ownWeapon) != 0) {
+        const auto blockers = forceGrabHandBlockerMask(hand, left, handFrame.disabled, true) & ~ownWeapon;
+        // The hand's own auto drop (its released weapon, left in the world)
+        // never takes the hand; it holds the hand's commit slot only until the
+        // native placement solve, bounded by its commit limit. It finishes
+        // first and the command stays queued, as for another weapon transfer:
+        // a holster draw on the let-go that dropped a support-carried weapon
+        // failed HandBusy 10 ms before that drop completed (runtime 2 Nov
+        // 12:44:25).
+        const auto& handCommit = _forceGrab.pendingCommits[left ? 1u : 0u];
+        if (blockers == static_cast<std::uint32_t>(force_grab_policy::HandBlocker::PendingForceGrab) &&
+            handCommit.active && handCommit.equippedWeaponDropMode == equipped_weapon_drop_policy::Mode::AutoDrop) {
+            ROCK_LOG_SAMPLE_INFO(Weapon, 500, "Inventory equip command={} waiting for the {} hand's auto drop",
+                result.commandId, left ? "left" : "right");
+            return;
+        }
+        if (blockers != 0) {
+            ROCK_LOG_INFO(Weapon, "Inventory equip command={} refused: {} hand busy blockers={:X}",
+                result.commandId, left ? "left" : "right", blockers);
             reject(handFrame.disabled ? Failure::HandUnavailable : Failure::HandBusy, "inventory-destination-busy");
             return;
         }
