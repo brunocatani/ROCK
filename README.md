@@ -52,7 +52,23 @@ ROCK is the base of the RPS suite: [SCISSORS Redux](https://github.com/brunocata
 
 ### Recommended install
 
-Install the archive from [Nexus Mods](https://www.nexusmods.com/fallout4/mods/108881) with your mod manager. `ROCK.dll` goes to `Data/F4SE/Plugins`. The archive also holds the API headers for mod authors (`include/`) and the SteamVR binding templates (`steamvr_bindings/`); the game uses neither.
+Install the archive from [Nexus Mods](https://www.nexusmods.com/fallout4/mods/108881) with your mod manager. `ROCK.dll` goes to `Data/F4SE/Plugins`. The archive also holds the API headers for mod authors (`include/`) and the SteamVR bindings (`steamvr_bindings/`); the game uses neither directly.
+
+### Index, Vive and Steam Frame controllers
+
+ROCK expects the Oculus Touch (Quest) button layout. For these controllers the archive's `steamvr_bindings/` folder has a SteamVR binding that maps the buttons to that layout and makes the game see Touch controllers:
+
+| Controller | File | Name in SteamVR |
+| --- | --- | --- |
+| Valve Index | `legacy_bindings_knuckles_rock.json` | ROCK - Index as Touch |
+| HTC Vive wands | `legacy_bindings_vive_controller_rock.json` | ROCK - Vive wands as Touch |
+| Steam Frame | `legacy_bindings_frame_controller_rock.json` | ROCK - Steam Frame as Touch |
+
+1. Copy the file for your controller into `Documents\steamvr\input\imports`. Create the folder if it does not exist.
+2. In SteamVR, open the controller bindings for Fallout 4 VR: Settings, Controllers, Manage Controller Bindings, then Fallout 4 VR.
+3. Choose a custom binding and select the ROCK binding from the bindings in your documents folder.
+
+Menu names can differ between SteamVR versions. After that, the `[Controls]` section of `ROCK.ini` can move any button further.
 
 ### Compatibility
 
