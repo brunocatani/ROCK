@@ -52,9 +52,9 @@ namespace rock::testbench_telemetry
     enum class HeldKind : std::uint8_t
     {
         None = 0,
-        Object = 1,             // ROCK grab of anything but a weapon
-        LooseWeapon = 2,        // ROCK grab of a weapon reference
-        EquippedWeapon = 3,     // the equipped weapon's firing grip, or the akimbo second weapon
+        Object = 1, // ROCK grab of anything but a weapon
+        LooseWeapon = 2, // ROCK grab of a weapon reference
+        EquippedWeapon = 3, // the equipped weapon's firing grip, or the akimbo second weapon
         EquippedWeaponPart = 4, // a part grip on the equipped weapon (support hand, magazine well...)
     };
 
@@ -148,7 +148,8 @@ namespace rock::testbench_telemetry
     void recordHaptic(bool isLeft, std::uint16_t durationMicroseconds, HapticCaller caller, bool retargeted) noexcept;
 
     // Any thread. `gate` must be a string literal (stored by pointer until the next frame).
-    void recordInputGate(const char* gate, bool sourceIsLeft, bool justPressed, bool suppressed, bool providerSuppressed) noexcept;
+    void recordInputGate(const char* gate, bool sourceIsLeft, bool justPressed, bool suppressed,
+        bool providerSuppressed) noexcept;
 
     // One bone of the presented skeleton; `name` must stay valid for the call only.
     struct SkeletonBone
@@ -160,7 +161,8 @@ namespace rock::testbench_telemetry
 
     // Frame thread, after the presented skeleton is final (FRIK AfterWorldFinal). Writes the
     // bone-name table when `topologyRevision` changes and every few seconds, then the poses.
-    void publishSkeleton(std::uint64_t frameIndex, std::uint64_t topologyRevision, std::span<const SkeletonBone> bones) noexcept;
+    void publishSkeleton(std::uint64_t frameIndex, std::uint64_t topologyRevision,
+        std::span<const SkeletonBone> bones) noexcept;
 
     // The capture switch in RobCo PALM's Developer wheel (PALM.ini [Developer] bEnabled): each
     // press starts or stops a capture. While a capture runs the section is open whatever the

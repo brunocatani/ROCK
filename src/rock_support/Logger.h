@@ -16,31 +16,25 @@
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/spdlog.h>
 
-#define ROCK_MAKE_SOURCE_LOGGER(log_func, log_level)                                                                                      \
-    template <class... Args>                                                                                                             \
-    struct [[maybe_unused]] log_func                                                                                                     \
-    {                                                                                                                                    \
-        log_func() = delete;                                                                                                             \
-                                                                                                                                         \
-        explicit log_func(                                                                                                               \
-            spdlog::format_string_t<Args...> fmt,                                                                                        \
-            Args&&... args,                                                                                                              \
-            const std::source_location& loc = std::source_location::current())                                                          \
-        {                                                                                                                                \
-            constexpr auto level = spdlog::level::log_level;                                                                             \
-            if (!internal::loggerInstance || !internal::loggerInstance->should_log(level)) {                                             \
-                return;                                                                                                                  \
-            }                                                                                                                            \
-            const spdlog::source_loc sourceLoc{                                                                                          \
-                loc.file_name(),                                                                                                         \
-                static_cast<int>(loc.line()),                                                                                            \
-                loc.function_name()                                                                                                      \
-            };                                                                                                                           \
-            internal::loggerInstance->log(sourceLoc, level, fmt, std::forward<Args>(args)...);                                           \
-        }                                                                                                                                \
-    };                                                                                                                                   \
-                                                                                                                                         \
-    template <class... Args>                                                                                                             \
+#define ROCK_MAKE_SOURCE_LOGGER(log_func, log_level)                                                                  \
+    template <class... Args>                                                                                          \
+    struct [[maybe_unused]] log_func                                                                                  \
+    {                                                                                                                 \
+        log_func() = delete;                                                                                          \
+                                                                                                                      \
+        explicit log_func(spdlog::format_string_t<Args...> fmt, Args&&... args,                                       \
+            const std::source_location& loc = std::source_location::current())                                        \
+        {                                                                                                             \
+            constexpr auto level = spdlog::level::log_level;                                                          \
+            if (!internal::loggerInstance || !internal::loggerInstance->should_log(level)) {                          \
+                return;                                                                                               \
+            }                                                                                                         \
+            const spdlog::source_loc sourceLoc{ loc.file_name(), static_cast<int>(loc.line()), loc.function_name() }; \
+            internal::loggerInstance->log(sourceLoc, level, fmt, std::forward<Args>(args)...);                        \
+        }                                                                                                             \
+    };                                                                                                                \
+                                                                                                                      \
+    template <class... Args>                                                                                          \
     log_func(spdlog::format_string_t<Args...>, Args&&...) -> log_func<Args...>;
 
 namespace rock::logger::internal
@@ -137,10 +131,7 @@ namespace rock::logger::internal
 
         auto observedNextMs = slot.nextAllowedMs.load(std::memory_order_acquire);
         while (nowMs >= observedNextMs) {
-            if (slot.nextAllowedMs.compare_exchange_weak(
-                    observedNextMs,
-                    nextAllowedMs,
-                    std::memory_order_acq_rel,
+            if (slot.nextAllowedMs.compare_exchange_weak(observedNextMs, nextAllowedMs, std::memory_order_acq_rel,
                     std::memory_order_acquire)) {
                 return true;
             }
@@ -162,14 +153,9 @@ namespace rock::logger::internal
     class HybridFormatter final : public spdlog::formatter
     {
     public:
-        HybridFormatter() :
-            _inner(std::make_unique<spdlog::pattern_formatter>(logPattern))
-        {}
+        HybridFormatter() : _inner(std::make_unique<spdlog::pattern_formatter>(logPattern)) {}
 
-        [[nodiscard]] std::unique_ptr<formatter> clone() const override
-        {
-            return std::make_unique<HybridFormatter>();
-        }
+        [[nodiscard]] std::unique_ptr<formatter> clone() const override { return std::make_unique<HybridFormatter>(); }
 
         void format(const spdlog::details::log_msg& message, spdlog::memory_buf_t& destination) override
         {
@@ -229,9 +215,7 @@ namespace rock::logger
     // ROCK_LOG_SAMPLE_* calls admitSample() with the format literal (the
     // throttle key) and only evaluates and formats arguments for an admitted
     // sample. Admission claims the throttle slot, so emitSample() must follow.
-    [[nodiscard]] inline bool admitSample(
-        const spdlog::level::level_enum level,
-        const std::string_view format,
+    [[nodiscard]] inline bool admitSample(const spdlog::level::level_enum level, const std::string_view format,
         const int intervalMs)
     {
         return internal::loggerInstance && internal::loggerInstance->should_log(level) &&
@@ -254,11 +238,7 @@ namespace rock::logger
         }
 
         *path /= fmt::format("{}.log", logFileName);
-        auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-            path->string(),
-            10 * 1024 * 1024,
-            5,
-            true);
+        auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(path->string(), 10 * 1024 * 1024, 5, true);
 
         internal::loggerInstance = std::make_shared<spdlog::logger>("GLOBAL", sink);
         internal::loggerInstance->set_level(spdlog::level::info);
@@ -286,8 +266,8 @@ namespace rock::logger
             internal::applyFlushPolicy();
         }
 
-        const std::string normalizedPattern = requestedPattern.empty() ?
-            std::string(internal::kDefaultPattern) : requestedPattern;
+        const std::string normalizedPattern =
+            requestedPattern.empty() ? std::string(internal::kDefaultPattern) : requestedPattern;
         if (internal::logPattern != normalizedPattern) {
             info("Set log pattern = {}", normalizedPattern);
             internal::logPattern = normalizedPattern;

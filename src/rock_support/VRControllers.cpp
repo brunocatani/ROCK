@@ -49,15 +49,11 @@ namespace rock::vr_input
         if (!validButtonId(buttonId)) {
             return false;
         }
-        return stateFor(resolveHand(hand)).justPressed(
-            static_cast<std::size_t>(buttonId),
-            _currentTime,
-            _debounceSeconds);
+        return stateFor(resolveHand(hand))
+            .justPressed(static_cast<std::size_t>(buttonId), _currentTime, _debounceSeconds);
     }
 
-    bool VRControllersManager::isPressHeldDown(
-        const Hand hand,
-        const int buttonId,
+    bool VRControllersManager::isPressHeldDown(const Hand hand, const int buttonId,
         const float minimumHoldSeconds) const noexcept
     {
         if (!validButtonId(buttonId)) {
@@ -69,10 +65,7 @@ namespace rock::vr_input
             controller.heldDuration(buttonIndex, _currentTime) >= std::max(0.0f, minimumHoldSeconds);
     }
 
-    bool VRControllersManager::isReleased(
-        const Hand hand,
-        const int buttonId,
-        const float maximumHoldSeconds) noexcept
+    bool VRControllersManager::isReleased(const Hand hand, const int buttonId, const float maximumHoldSeconds) noexcept
     {
         if (!validButtonId(buttonId)) {
             return false;
@@ -83,18 +76,14 @@ namespace rock::vr_input
             controller.releasedHoldDuration(buttonIndex, _currentTime) < std::max(0.0f, maximumHoldSeconds);
     }
 
-    void VRControllersManager::triggerHaptic(
-        const Hand hand,
-        const float durationSeconds,
+    void VRControllersManager::triggerHaptic(const Hand hand, const float durationSeconds,
         const float intensity) noexcept
     {
-        stateFor(resolveHand(hand)).startHaptic(
-            _currentTime + std::max(0.0f, durationSeconds),
-            std::clamp(intensity, 0.0f, 1.0f));
+        stateFor(resolveHand(hand))
+            .startHaptic(_currentTime + std::max(0.0f, durationSeconds), std::clamp(intensity, 0.0f, 1.0f));
     }
 
-    void VRControllersManager::ControllerState::update(
-        const vr::TrackedDeviceIndex_t newIndex,
+    void VRControllersManager::ControllerState::update(const vr::TrackedDeviceIndex_t newIndex,
         const float now) noexcept
     {
         previous = current;
@@ -108,11 +97,7 @@ namespace rock::vr_input
             return;
         }
 
-        valid = vrSystem->GetControllerStateWithPose(
-            vr::TrackingUniverseStanding,
-            newIndex,
-            &current,
-            sizeof(current),
+        valid = vrSystem->GetControllerStateWithPose(vr::TrackingUniverseStanding, newIndex, &current, sizeof(current),
             &pose);
         if (!valid) {
             current = {};
@@ -164,9 +149,7 @@ namespace rock::vr_input
         return valid && (current.ulButtonPressed & (std::uint64_t{ 1 } << buttonIndex)) != 0;
     }
 
-    bool VRControllersManager::ControllerState::justPressed(
-        const std::size_t buttonIndex,
-        const float now,
+    bool VRControllersManager::ControllerState::justPressed(const std::size_t buttonIndex, const float now,
         const float debounceSeconds) noexcept
     {
         if (!valid) {
@@ -181,9 +164,7 @@ namespace rock::vr_input
         return true;
     }
 
-    bool VRControllersManager::ControllerState::justReleased(
-        const std::size_t buttonIndex,
-        const float now,
+    bool VRControllersManager::ControllerState::justReleased(const std::size_t buttonIndex, const float now,
         const float debounceSeconds) noexcept
     {
         if (!valid) {
@@ -198,15 +179,13 @@ namespace rock::vr_input
         return true;
     }
 
-    float VRControllersManager::ControllerState::heldDuration(
-        const std::size_t buttonIndex,
+    float VRControllersManager::ControllerState::heldDuration(const std::size_t buttonIndex,
         const float now) const noexcept
     {
         return pressStartValid[buttonIndex] ? now - pressStartTimes[buttonIndex] : 0.0f;
     }
 
-    float VRControllersManager::ControllerState::releasedHoldDuration(
-        const std::size_t buttonIndex,
+    float VRControllersManager::ControllerState::releasedHoldDuration(const std::size_t buttonIndex,
         const float now) const noexcept
     {
         return releaseStartValid[buttonIndex] ? now - releaseStartTimes[buttonIndex] : 0.0f;
@@ -230,8 +209,7 @@ namespace rock::vr_input
         if (!vrSystem || !valid || index == vr::k_unTrackedDeviceIndexInvalid) {
             return;
         }
-        const auto pulse = static_cast<std::uint16_t>(
-            std::clamp(static_cast<int>(hapticIntensity * 3000.0f), 0, 3000));
+        const auto pulse = static_cast<std::uint16_t>(std::clamp(static_cast<int>(hapticIntensity * 3000.0f), 0, 3000));
         vrSystem->TriggerHapticPulse(index, 0, pulse);
     }
 
@@ -261,7 +239,8 @@ namespace rock::vr_input
         return vr::TrackedControllerRole_OptOut;
     }
 
-    VRControllersManager::ControllerState& VRControllersManager::stateFor(const vr::ETrackedControllerRole hand) noexcept
+    VRControllersManager::ControllerState& VRControllersManager::stateFor(
+        const vr::ETrackedControllerRole hand) noexcept
     {
         return hand == vr::TrackedControllerRole_LeftHand ? _left : _right;
     }

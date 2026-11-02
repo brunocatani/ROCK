@@ -41,10 +41,11 @@ namespace rock::native_melee_suppression
         friend constexpr bool operator==(const NativeMeleeVelocityGate&, const NativeMeleeVelocityGate&) = default;
     };
 
-    [[nodiscard]] constexpr NativeMeleeVelocityGate velocityGate(
-        bool suppressed, float meleeSwingSpeed, float gunBashSpeed) noexcept
+    [[nodiscard]] constexpr NativeMeleeVelocityGate velocityGate(bool suppressed, float meleeSwingSpeed,
+        float gunBashSpeed) noexcept
     {
-        if (suppressed) return {};
+        if (suppressed)
+            return {};
         return { meleeSwingSpeed, kAngularGateDisabled, gunBashSpeed, kAngularGateDisabled };
     }
 
@@ -130,8 +131,8 @@ namespace rock::native_melee_suppression
         const char* reason = "native";
     };
 
-
-    inline NativeMeleePolicyDecision evaluateNativeMeleeSuppression(NativeMeleeEvent event, const NativeMeleePolicyInput& input)
+    inline NativeMeleePolicyDecision evaluateNativeMeleeSuppression(NativeMeleeEvent event,
+        const NativeMeleePolicyInput& input)
     {
         if (!input.suppressionActive) {
             return { .action = NativeMeleeSuppressionAction::CallNative, .reason = "suppression-disabled" };
@@ -143,7 +144,8 @@ namespace rock::native_melee_suppression
 
         switch (event) {
         case NativeMeleeEvent::WeaponSwing:
-            return { .action = NativeMeleeSuppressionAction::ReturnHandled, .reason = "player-weapon-swing-suppressed" };
+            return { .action = NativeMeleeSuppressionAction::ReturnHandled,
+                .reason = "player-weapon-swing-suppressed" };
 
         case NativeMeleeEvent::HitFrame:
             return { .action = NativeMeleeSuppressionAction::ReturnHandled, .reason = "player-hitframe-suppressed" };
@@ -162,10 +164,12 @@ namespace rock::native_melee_suppression
             return { .action = NativeMeleeInputGateAction::CallNative, .reason = "non-right-stick" };
         }
 
-        return { .action = NativeMeleeInputGateAction::ReturnFalse, .reason = "right-stick-native-melee-gate-suppressed" };
+        return { .action = NativeMeleeInputGateAction::ReturnFalse,
+            .reason = "right-stick-native-melee-gate-suppressed" };
     }
 
-    inline NativeMeleeImpactPolicyDecision evaluateNativeMeleeImpactSuppression(const NativeMeleeImpactPolicyInput& input)
+    inline NativeMeleeImpactPolicyDecision evaluateNativeMeleeImpactSuppression(
+        const NativeMeleeImpactPolicyInput& input)
     {
         if (!input.suppressionActive) {
             return { .action = NativeMeleeImpactAction::CallNative, .reason = "suppression-disabled" };

@@ -94,17 +94,17 @@ namespace rock::testbench_telemetry
 
         struct InputRecord
         {
-            std::uint64_t rawPressed;      // latest raw OpenVR state
-            std::uint64_t gamePressed;     // latest state handed to the game
-            std::uint64_t rawPressedSeen;  // OR of every raw read since the previous frame
+            std::uint64_t rawPressed; // latest raw OpenVR state
+            std::uint64_t gamePressed; // latest state handed to the game
+            std::uint64_t rawPressedSeen; // OR of every raw read since the previous frame
             std::uint64_t gamePressedSeen; // OR of every game-facing read since the previous frame
-            std::uint64_t rawTouched;      // latest raw capacitive touch bits
-            std::uint64_t rawTouchedSeen;  // OR since the previous frame
-            float rawAxes[10];             // latest raw rAxis[0..4] x, y
+            std::uint64_t rawTouched; // latest raw capacitive touch bits
+            std::uint64_t rawTouchedSeen; // OR since the previous frame
+            float rawAxes[10]; // latest raw rAxis[0..4] x, y
             float rawTrigger;
             float gameTrigger;
-            std::uint32_t blankReasons;  // OR since the previous frame
-            std::uint32_t reads;         // game-facing reads since the previous frame
+            std::uint32_t blankReasons; // OR since the previous frame
+            std::uint32_t reads; // game-facing reads since the previous frame
             std::uint32_t bypassedReads; // raw reads by RPS UI / configurator since the previous frame
             std::uint32_t pad;
         };
@@ -114,7 +114,7 @@ namespace rock::testbench_telemetry
         {
             std::uint32_t flags;
             std::uint32_t droppedEvents;
-            std::uint32_t failedReads;     // controller-state reads OpenVR answered false, since the previous frame
+            std::uint32_t failedReads; // controller-state reads OpenVR answered false, since the previous frame
             std::uint32_t noHandRoleReads; // reads for a device in neither hand role, since the previous frame
             float hmdPosition[3];
             float hmdForward[3];
@@ -130,10 +130,10 @@ namespace rock::testbench_telemetry
             std::uint8_t heldKind[2]; // HeldKind; left, right
             std::uint16_t pad;
             std::uint32_t heldFormId[2]; // left, right
-            NodeRecord heldRoot[2];      // left, right; the held reference's body-driven root
+            NodeRecord heldRoot[2]; // left, right; the held reference's body-driven root
             std::uint8_t heldRootValid[2];
             std::uint16_t pad2;
-            NodeRecord heldNode[2];      // left, right; the held reference's scene root at frame end
+            NodeRecord heldNode[2]; // left, right; the held reference's scene root at frame end
             std::uint8_t heldNodeValid[2];
             std::uint16_t pad3;
         };
@@ -240,9 +240,9 @@ namespace rock::testbench_telemetry
         std::atomic<std::uint32_t> s_noHandRoleReads{ 0 };
         std::mutex s_eventLock;
         std::array<PendingEvent, kEventQueueCapacity> s_events{};
-        std::size_t s_eventCount = 0;           // guarded by s_eventLock
-        std::uint32_t s_droppedEvents = 0;      // guarded by s_eventLock
-        Ring s_ring;                            // frame thread only
+        std::size_t s_eventCount = 0; // guarded by s_eventLock
+        std::uint32_t s_droppedEvents = 0; // guarded by s_eventLock
+        Ring s_ring; // frame thread only
 
         std::uint64_t queryCounter() noexcept
         {
@@ -273,7 +273,8 @@ namespace rock::testbench_telemetry
                 ROCK_LOG_WARN(Init, "Testbench telemetry: CreateFileMapping failed (error {})", GetLastError());
                 return false;
             }
-            auto* view = static_cast<std::uint8_t*>(MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, static_cast<SIZE_T>(bytes)));
+            auto* view = static_cast<std::uint8_t*>(
+                MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, static_cast<SIZE_T>(bytes)));
             if (!view) {
                 ROCK_LOG_WARN(Init, "Testbench telemetry: MapViewOfFile failed (error {})", GetLastError());
                 CloseHandle(mapping);
@@ -314,14 +315,17 @@ namespace rock::testbench_telemetry
                 s_droppedEvents = 0;
             }
             s_enabled.store(true, std::memory_order_release);
-            ROCK_LOG_INFO(Init, "Testbench telemetry publishing to RPS_Telemetry_ROCK ({} records of {} bytes)", kCapacity, kRecordSize);
+            ROCK_LOG_INFO(Init, "Testbench telemetry publishing to RPS_Telemetry_ROCK ({} records of {} bytes)",
+                kCapacity, kRecordSize);
             return true;
         }
 
-        std::uint8_t* beginRecord(RecordType type, std::uint16_t payloadSize, std::uint32_t frameIndex, float deltaSeconds) noexcept
+        std::uint8_t* beginRecord(RecordType type, std::uint16_t payloadSize, std::uint32_t frameIndex,
+            float deltaSeconds) noexcept
         {
             auto* record = s_ring.records + (s_ring.next % kCapacity) * kRecordSize;
-            RecordPrefix prefix{ static_cast<std::uint16_t>(type), payloadSize, frameIndex, queryCounter(), s_ring.gameTime, deltaSeconds };
+            RecordPrefix prefix{ static_cast<std::uint16_t>(type), payloadSize, frameIndex, queryCounter(),
+                s_ring.gameTime, deltaSeconds };
             std::memcpy(record, &prefix, sizeof(prefix));
             return record + sizeof(prefix);
         }
@@ -332,10 +336,7 @@ namespace rock::testbench_telemetry
             std::atomic_ref<std::uint64_t>(s_ring.header->writeIndex).store(s_ring.next, std::memory_order_release);
         }
 
-        void copyVector(float (&out)[3], const float (&in)[3]) noexcept
-        {
-            std::memcpy(out, in, sizeof(out));
-        }
+        void copyVector(float (&out)[3], const float (&in)[3]) noexcept { std::memcpy(out, in, sizeof(out)); }
 
         void copyNode(NodeRecord& out, const NodeSample& in) noexcept
         {
@@ -344,10 +345,7 @@ namespace rock::testbench_telemetry
         }
     }
 
-    bool enabled() noexcept
-    {
-        return s_enabled.load(std::memory_order_relaxed);
-    }
+    bool enabled() noexcept { return s_enabled.load(std::memory_order_relaxed); }
 
     void registerWheelCapture() noexcept
     {
@@ -355,13 +353,18 @@ namespace rock::testbench_telemetry
             return;
         }
         const auto module = GetModuleHandleW(palm::developer::kModuleName);
-        const auto getApi = module ? reinterpret_cast<palm::developer::GetApi>(GetProcAddress(module, palm::developer::kExportName)) : nullptr;
+        const auto getApi = module
+            ? reinterpret_cast<palm::developer::GetApi>(GetProcAddress(module, palm::developer::kExportName))
+            : nullptr;
         const auto* api = getApi ? getApi(palm::developer::kVersion) : nullptr;
-        if (!api || api->version != palm::developer::kVersion || api->byteSize < sizeof(*api) || !api->enabled || !api->registerAction) {
+        if (!api || api->version != palm::developer::kVersion || api->byteSize < sizeof(*api) || !api->enabled ||
+            !api->registerAction) {
             return;
         }
         if (!api->enabled()) {
-            ROCK_LOG_INFO(Init, "Testbench capture switch not registered: PALM's Developer wheel is off (PALM.ini [Developer] bEnabled)");
+            ROCK_LOG_INFO(Init,
+                "Testbench capture switch not registered: PALM's Developer wheel is off (PALM.ini [Developer] "
+                "bEnabled)");
             return;
         }
         palm::developer::ActionV1 action;
@@ -372,7 +375,8 @@ namespace rock::testbench_telemetry
         if (result == palm::developer::Result::Ok) {
             ROCK_LOG_INFO(Init, "Testbench capture switch registered in PALM's Developer wheel");
         } else {
-            ROCK_LOG_WARN(Init, "Testbench capture switch rejected by PALM's Developer wheel (result {}); existing actions kept",
+            ROCK_LOG_WARN(Init,
+                "Testbench capture switch rejected by PALM's Developer wheel (result {}); existing actions kept",
                 static_cast<unsigned>(result));
         }
     }
@@ -383,14 +387,12 @@ namespace rock::testbench_telemetry
             return std::nullopt;
         }
         s_captureActive = !s_captureActive;
-        ROCK_LOG_INFO(Input, "Testbench capture {} from PALM's Developer wheel", s_captureActive ? "started" : "stopped");
+        ROCK_LOG_INFO(Input, "Testbench capture {} from PALM's Developer wheel",
+            s_captureActive ? "started" : "stopped");
         return s_captureActive;
     }
 
-    bool captureActive() noexcept
-    {
-        return s_captureActive;
-    }
+    bool captureActive() noexcept { return s_captureActive; }
 
     void observeControllerState(const bool isLeft, const RawControllerState& raw, const std::uint64_t gamePressed,
         const float gameTrigger, const std::uint32_t blankReasons, const bool bypassed) noexcept
@@ -439,13 +441,15 @@ namespace rock::testbench_telemetry
         }
     }
 
-    void recordHaptic(const bool isLeft, const std::uint16_t durationMicroseconds, const HapticCaller caller, const bool retargeted) noexcept
+    void recordHaptic(const bool isLeft, const std::uint16_t durationMicroseconds, const HapticCaller caller,
+        const bool retargeted) noexcept
     {
         if (!enabled()) {
             return;
         }
-        queueEvent({ EventType::Haptic, static_cast<std::uint8_t>(isLeft ? 0 : 1), static_cast<std::uint8_t>(retargeted ? 1 : 0),
-            static_cast<float>(durationMicroseconds), static_cast<std::uint32_t>(caller), nullptr });
+        queueEvent({ EventType::Haptic, static_cast<std::uint8_t>(isLeft ? 0 : 1),
+            static_cast<std::uint8_t>(retargeted ? 1 : 0), static_cast<float>(durationMicroseconds),
+            static_cast<std::uint32_t>(caller), nullptr });
     }
 
     void recordInputGate(const char* gate, const bool sourceIsLeft, const bool justPressed, const bool suppressed,
@@ -454,7 +458,8 @@ namespace rock::testbench_telemetry
         if (!enabled()) {
             return;
         }
-        const auto detail = static_cast<std::uint8_t>((justPressed ? 1u : 0u) | (suppressed ? 2u : 0u) | (providerSuppressed ? 4u : 0u));
+        const auto detail = static_cast<std::uint8_t>(
+            (justPressed ? 1u : 0u) | (suppressed ? 2u : 0u) | (providerSuppressed ? 4u : 0u));
         queueEvent({ EventType::InputGate, static_cast<std::uint8_t>(sourceIsLeft ? 0 : 1), detail, 0.0f, 0, gate });
     }
 
@@ -471,7 +476,8 @@ namespace rock::testbench_telemetry
         if (topologyRevision != s_ring.namesRevision || ++s_ring.framesSinceNames >= kNameTableRepeatFrames) {
             std::size_t index = 0;
             while (index < bones.size()) {
-                auto* payload = beginRecord(RecordType::SkeletonNames, static_cast<std::uint16_t>(kRecordSize - sizeof(RecordPrefix)), frame32, 0.0f);
+                auto* payload = beginRecord(RecordType::SkeletonNames,
+                    static_cast<std::uint16_t>(kRecordSize - sizeof(RecordPrefix)), frame32, 0.0f);
                 auto* text = payload + sizeof(SkeletonHeader);
                 std::size_t used = 0;
                 const std::size_t first = index;
@@ -485,7 +491,8 @@ namespace rock::testbench_telemetry
                     used += name.size() + 1;
                     ++index;
                 }
-                const SkeletonHeader header{ revision32, static_cast<std::uint16_t>(first), static_cast<std::uint16_t>(index - first), total, 0 };
+                const SkeletonHeader header{ revision32, static_cast<std::uint16_t>(first),
+                    static_cast<std::uint16_t>(index - first), total, 0 };
                 std::memcpy(payload, &header, sizeof(header));
                 commitRecord();
             }
@@ -497,7 +504,8 @@ namespace rock::testbench_telemetry
             const std::size_t count = (std::min)(kBonesPerRecord, bones.size() - first);
             auto* payload = beginRecord(RecordType::SkeletonPose,
                 static_cast<std::uint16_t>(sizeof(SkeletonHeader) + count * sizeof(BoneRecord)), frame32, 0.0f);
-            const SkeletonHeader header{ revision32, static_cast<std::uint16_t>(first), static_cast<std::uint16_t>(count), total, 0 };
+            const SkeletonHeader header{ revision32, static_cast<std::uint16_t>(first),
+                static_cast<std::uint16_t>(count), total, 0 };
             std::memcpy(payload, &header, sizeof(header));
             auto* out = reinterpret_cast<BoneRecord*>(payload + sizeof(header));
             for (std::size_t i = 0; i < count; ++i) {
@@ -555,20 +563,21 @@ namespace rock::testbench_telemetry
             if (pending.gate) {
                 strncpy_s(record.text, pending.gate, _TRUNCATE);
             }
-            std::memcpy(beginRecord(RecordType::Event, sizeof(record), frameIndex, frame.deltaSeconds), &record, sizeof(record));
+            std::memcpy(beginRecord(RecordType::Event, sizeof(record), frameIndex, frame.deltaSeconds), &record,
+                sizeof(record));
             commitRecord();
         }
 
         FrameRecord record{};
-        record.flags = (frame.playerAvailable ? kFlagPlayerAvailable : 0u) | (frame.weaponDrawn ? kFlagWeaponDrawn : 0u) |
-                       (frame.menuBlocking ? kFlagMenuBlocking : 0u) | (frame.loadingMenuOpen ? kFlagLoadingMenu : 0u) |
-                       (frame.gameStopped ? kFlagGameStopped : 0u) | (frame.inputMenuBlocking ? kFlagInputMenuBlocking : 0u) |
-                       (frame.worldReady ? kFlagWorldReady : 0u) | (frame.hasHmd ? kFlagHasHmd : 0u) |
-                       (frame.room.valid ? kFlagRoomValid : 0u) | (frame.hmdNode.valid ? kFlagHmdNodeValid : 0u) |
-                       (frame.wand[0].valid ? kFlagLeftWandValid : 0u) | (frame.wand[1].valid ? kFlagRightWandValid : 0u) |
-                       (frame.physicsFrame ? kFlagPhysicsFrame : 0u) | (frame.playerPoseValid ? kFlagPlayerPoseValid : 0u) |
-                       (frame.rawPose[0].valid ? kFlagRawHeadValid : 0u) | (frame.rawPose[1].valid ? kFlagRawLeftValid : 0u) |
-                       (frame.rawPose[2].valid ? kFlagRawRightValid : 0u);
+        record.flags = (frame.playerAvailable ? kFlagPlayerAvailable : 0u) |
+            (frame.weaponDrawn ? kFlagWeaponDrawn : 0u) | (frame.menuBlocking ? kFlagMenuBlocking : 0u) |
+            (frame.loadingMenuOpen ? kFlagLoadingMenu : 0u) | (frame.gameStopped ? kFlagGameStopped : 0u) |
+            (frame.inputMenuBlocking ? kFlagInputMenuBlocking : 0u) | (frame.worldReady ? kFlagWorldReady : 0u) |
+            (frame.hasHmd ? kFlagHasHmd : 0u) | (frame.room.valid ? kFlagRoomValid : 0u) |
+            (frame.hmdNode.valid ? kFlagHmdNodeValid : 0u) | (frame.wand[0].valid ? kFlagLeftWandValid : 0u) |
+            (frame.wand[1].valid ? kFlagRightWandValid : 0u) | (frame.physicsFrame ? kFlagPhysicsFrame : 0u) |
+            (frame.playerPoseValid ? kFlagPlayerPoseValid : 0u) | (frame.rawPose[0].valid ? kFlagRawHeadValid : 0u) |
+            (frame.rawPose[1].valid ? kFlagRawLeftValid : 0u) | (frame.rawPose[2].valid ? kFlagRawRightValid : 0u);
         record.droppedEvents = dropped;
         record.failedReads = s_failedReads.exchange(0, std::memory_order_relaxed);
         record.noHandRoleReads = s_noHandRoleReads.exchange(0, std::memory_order_relaxed);
@@ -616,7 +625,8 @@ namespace rock::testbench_telemetry
             in.reads = input.reads.exchange(0, std::memory_order_relaxed);
             in.bypassedReads = input.bypassedReads.exchange(0, std::memory_order_relaxed);
         }
-        std::memcpy(beginRecord(RecordType::Frame, sizeof(record), frameIndex, frame.deltaSeconds), &record, sizeof(record));
+        std::memcpy(beginRecord(RecordType::Frame, sizeof(record), frameIndex, frame.deltaSeconds), &record,
+            sizeof(record));
         commitRecord();
     }
 }

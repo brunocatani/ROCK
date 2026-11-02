@@ -49,17 +49,17 @@ namespace rock::body_frame
         return motionIndex > 0 && motionIndex < kFreeMotionIndex;
     }
 
-    inline bool motionSlotCanBeRead(std::uint32_t motionIndex, std::uint32_t slotCount,
-        std::uint32_t capacityAndFlags)
+    inline bool motionSlotCanBeRead(std::uint32_t motionIndex, std::uint32_t slotCount, std::uint32_t capacityAndFlags)
     {
         const auto capacity = capacityAndFlags & 0x3FFF'FFFFu;
-        return hasUsableMotionIndex(motionIndex) && motionIndex < slotCount &&
-               slotCount <= capacity && capacity <= kMaxReadableBodyIndex + 1u;
+        return hasUsableMotionIndex(motionIndex) && motionIndex < slotCount && slotCount <= capacity &&
+            capacity <= kMaxReadableBodyIndex + 1u;
     }
 
     inline bool bodySlotCanBeRead(std::uint32_t bodyId, std::uint32_t highWaterMark)
     {
-        return bodyId != kInvalidBodyId && bodyId <= kMaxReadableBodyIndex && highWaterMark <= kMaxReadableBodyIndex && bodyId <= highWaterMark;
+        return bodyId != kInvalidBodyId && bodyId <= kMaxReadableBodyIndex && highWaterMark <= kMaxReadableBodyIndex &&
+            bodyId <= highWaterMark;
     }
 
     inline BodyFrameSource chooseLiveBodyFrameSource(bool hasBodyTransform, bool hasMotionTransform)
@@ -79,15 +79,9 @@ namespace rock::body_frame
         return BodyFrameSource::Fallback;
     }
 
-    inline BodyFrameAnchor chooseSelectionDistanceAnchor(bool hasContactPoint,
-        const RE::NiPoint3& contactPoint,
-        bool hasBodyTransform,
-        const RE::NiPoint3& bodyTransform,
-        bool hasOwnerNode,
-        const RE::NiPoint3& ownerNode,
-        bool hasMotionCenterOfMass,
-        const RE::NiPoint3& motionCenterOfMass,
-        const RE::NiPoint3& fallback)
+    inline BodyFrameAnchor chooseSelectionDistanceAnchor(bool hasContactPoint, const RE::NiPoint3& contactPoint,
+        bool hasBodyTransform, const RE::NiPoint3& bodyTransform, bool hasOwnerNode, const RE::NiPoint3& ownerNode,
+        bool hasMotionCenterOfMass, const RE::NiPoint3& motionCenterOfMass, const RE::NiPoint3& fallback)
     {
         if (hasContactPoint) {
             return BodyFrameAnchor{ contactPoint, BodyFrameSource::ContactPoint };

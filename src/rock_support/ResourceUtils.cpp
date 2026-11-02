@@ -2,8 +2,8 @@
 
 #include "rock_support/Logger.h"
 
-#include <Windows.h>
 #include <ShlObj_core.h>
+#include <Windows.h>
 
 #include <filesystem>
 #include <stdexcept>

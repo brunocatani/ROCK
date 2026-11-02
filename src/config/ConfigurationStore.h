@@ -29,7 +29,10 @@ namespace rock::config
         std::size_t displayOrder = 0;
     };
 
-    struct Change { std::string_view section, key, value; };
+    struct Change
+    {
+        std::string_view section, key, value;
+    };
 
     // Owned and serialized by RockConfig. Configuration tasks save/visit through
     // that owner; only its runtime reload applies the catalog to live settings.
@@ -42,8 +45,8 @@ namespace rock::config
     public:
         ConfigurationStore(std::filesystem::path directory, const CSimpleIniA& defaults);
         [[nodiscard]] bool load(bool createConsumer);
-        [[nodiscard]] bool setValue(Group group, std::string_view section,
-            std::string_view key, std::string_view value);
+        [[nodiscard]] bool setValue(Group group, std::string_view section, std::string_view key,
+            std::string_view value);
         [[nodiscard]] bool setValues(Group group, std::span<const Change> changes);
         void appendLoadedValues(CSimpleIniA& target) const;
         [[nodiscard]] const std::vector<Setting>& settings() const noexcept { return _settings; }

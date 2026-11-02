@@ -18,7 +18,6 @@ using std::min;
 
 #include "rock_support/Logger.h"
 
-
 #define DLLEXPORT __declspec(dllexport)
 
 #include "Version.h"

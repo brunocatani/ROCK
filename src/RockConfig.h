@@ -28,9 +28,9 @@
 
 #include "config/ConfigurationStore.h"
 #include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
-#include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 #include "physics-interaction/input/ButtonLayoutPolicy.h"
 #include "physics-interaction/input/FarPullGesturePolicy.h"
+#include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
 #include "physics-interaction/weapon/GripZoneIndicatorPolicy.h"
 
@@ -97,7 +97,6 @@ namespace rock
         float rockDefaultOneHandRecoilPercent = 300.0f;
         float rockDefaultTwoHandRecoilPercent = 80.0f;
 
-
         // ROCK-native Immersive Weapons firing-role boundary. The same
         // release, part-carry, reattach and haptic contract follows whichever
         // physical hand currently occupies the firing grip.
@@ -121,8 +120,7 @@ namespace rock
         float rockScopedFilterReleaseDegreesPerSecond = 45.0f;
         float rockFiringGripReattachRadiusGameUnits = 10.0f;
         float rockFiringGripReattachCylinderRadiusGameUnits = 3.0f;
-        float rockGripZoneIndicatorDiameterGameUnits =
-            grip_zone_indicator_policy::kDefaultDiameterGameUnits;
+        float rockGripZoneIndicatorDiameterGameUnits = grip_zone_indicator_policy::kDefaultDiameterGameUnits;
         float rockFiringGripHapticDurationSeconds = 0.10f;
         float rockFiringGripAttachHapticIntensity = 0.85f;
         float rockFiringGripDetachHapticIntensity = 0.30f;
@@ -242,7 +240,8 @@ namespace rock
         bool rockDebugDrawLooseWeaponGripZones = false;
         bool rockDebugDrawDynamicWeaponColliders = false;
         int rockDebugMaxWeaponBodiesDrawn = 100;
-        int rockDebugMaxShapeCapturesPerFrame = static_cast<int>(debug_overlay_runtime::kDefaultMaxShapeCapturesPerFrame);
+        int rockDebugMaxShapeCapturesPerFrame =
+            static_cast<int>(debug_overlay_runtime::kDefaultMaxShapeCapturesPerFrame);
         int rockDebugMaxConvexSupportVertices = 8;
         int rockDebugMaxCompoundChildren = static_cast<int>(debug_overlay_policy::kDefaultMaxCompoundChildren);
         int rockDebugMaxCompoundDepth = static_cast<int>(debug_overlay_policy::kDefaultMaxCompoundDepth);
@@ -447,7 +446,6 @@ namespace rock
         float rockPullPresentationMaxAngularSpeedRadiansPerSecond = 8.0f;
         float rockPullPresentationGripAxisTiltDegrees = 15.0f;
 
-
         bool rockGrabHapticsEnabled = true;
         float rockGrabHapticDurationSeconds = 0.055f;
         float rockGrabHapticBaseIntensity = 0.12f;
@@ -499,12 +497,16 @@ namespace rock
 
         static void buildCompiledDefaults(CSimpleIniA& target);
         [[nodiscard]] static RockConfigValues parseValues(CSimpleIniA& source);
-        [[nodiscard]] std::uint64_t configRevision() const noexcept { return _configRevision.load(std::memory_order_acquire); }
+        [[nodiscard]] std::uint64_t configRevision() const noexcept
+        {
+            return _configRevision.load(std::memory_order_acquire);
+        }
         // Receives each setting of a group; the record and its strings are
         // borrowed for the call.
         using SettingVisitor = void (*)(const api::configuration::Setting&, void*) noexcept;
         [[nodiscard]] bool visitSettings(api::configuration::Group group, SettingVisitor visitor, void* context) const;
-        [[nodiscard]] bool persistSetting(api::configuration::Group group, const char* section, const char* key, const char* value, std::string& error);
+        [[nodiscard]] bool persistSetting(api::configuration::Group group, const char* section, const char* key,
+            const char* value, std::string& error);
 
         void processPendingConfigReload();
 
@@ -513,7 +515,6 @@ namespace rock
         void subscribeForConfigChanged(const std::string& key, std::function<void(const std::string&)> callback);
         void unsubscribeFromConfigChanged(const std::string& key);
         [[nodiscard]] std::filesystem::path getConfigDirectory() const;
-
 
     private:
         void resetToDefaults();

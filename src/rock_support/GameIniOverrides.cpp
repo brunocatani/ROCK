@@ -1,8 +1,8 @@
 #include "rock_support/GameIniOverrides.h"
 
-#include "rock_support/Fo4VrRuntime.h"
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 #include <Windows.h>
 #include <array>
@@ -18,13 +18,13 @@ namespace rock::game_ini_overrides
         {
             const char* name;
             const bool recoilSetting;
-            const bool required;  // Enforced value; recoil settings follow emergency suppression instead.
+            const bool required; // Enforced value; recoil settings follow emergency suppression instead.
             std::atomic<bool> desired{ true };
             // Non-owning, statically registered engine SettingT objects. Published
             // once before installing the hook; never retain a collection iterator.
             RE::Setting* setting = nullptr;
             std::atomic<bool> rejected{ false };
-            bool rejectionLogged = false;  // Main thread only.
+            bool rejectionLogged = false; // Main thread only.
         };
 
         // Main-thread configuration publishes the desired value atomically for
@@ -32,12 +32,12 @@ namespace rock::game_ini_overrides
         // Native left-handed mode is unsupported: equipment index 1, the
         // offhand wand chain and ROCK's physical controller binding must all be
         // the physical left hand (akimbo, recoil, FRIK hand authority).
-        constinit std::array<Override, 4> s_overrides{{
+        constinit std::array<Override, 4> s_overrides{ {
             { "bUseKickback:VR", true, true },
             { "bUseRecoil:VR", true, true },
             { "bIgnoreConeOfFireCalculationsForPlayer:VR", false, true },
             { "bLeftHandedMode:VR", false, false },
-        }};
+        } };
 
         [[nodiscard]] bool requiredValue(const Override& entry) noexcept
         {
@@ -75,12 +75,12 @@ namespace rock::game_ini_overrides
             // after writing Setting+8. Enforce the required values before
             // observer dispatch; other settings retain their native behavior.
             constexpr std::uintptr_t kNotifyRva = 0x1D11C30;
-            constexpr std::array<std::uint8_t, 10> kPrefix{
-                0x48, 0x89, 0x5C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20
-            };
+            constexpr std::array<std::uint8_t, 10> kPrefix{ 0x48, 0x89, 0x5C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC,
+                0x20 };
             const auto target = REL::Module::get().base() + kNotifyRva;
             if (std::memcmp(reinterpret_cast<const void*>(target), kPrefix.data(), kPrefix.size()) != 0) {
-                ROCK_LOG_ERROR(Init, "VR INI override notifier bytes differ at RVA 0x{:X}; enforcement not installed", kNotifyRva);
+                ROCK_LOG_ERROR(Init, "VR INI override notifier bytes differ at RVA 0x{:X}; enforcement not installed",
+                    kNotifyRva);
                 return false;
             }
 
@@ -88,15 +88,15 @@ namespace rock::game_ini_overrides
             // bytes). The later RIP-relative access stays at its original address.
             // The existing >=14-byte entry helper cannot relocate that access.
             constexpr std::size_t kStolenBytes = 6;
-            constexpr std::size_t kTrampolineBytes = 28;  // prologue + absolute return jump + hook pointer
+            constexpr std::size_t kTrampolineBytes = 28; // prologue + absolute return jump + hook pointer
             auto& trampoline = F4SE::GetTrampoline();
             if (trampoline.free_size() < kTrampolineBytes) {
                 ROCK_LOG_ERROR(Init, "VR INI override notifier has insufficient trampoline space");
                 return false;
             }
             auto* code = static_cast<std::uint8_t*>(trampoline.allocate(kTrampolineBytes));
-            const auto displacement = reinterpret_cast<std::intptr_t>(code + 20) -
-                static_cast<std::intptr_t>(target + kStolenBytes);
+            const auto displacement =
+                reinterpret_cast<std::intptr_t>(code + 20) - static_cast<std::intptr_t>(target + kStolenBytes);
             if (displacement < std::numeric_limits<std::int32_t>::min() ||
                 displacement > std::numeric_limits<std::int32_t>::max()) {
                 ROCK_LOG_ERROR(Init, "VR INI override notifier trampoline is out of branch range");
@@ -125,7 +125,8 @@ namespace rock::game_ini_overrides
             FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<void*>(target), patch.size());
             DWORD ignored = 0;
             if (!VirtualProtect(reinterpret_cast<void*>(target), patch.size(), protection, &ignored)) {
-                ROCK_LOG_ERROR(Init, "VR INI override notifier installed but code protection restoration failed: {}", GetLastError());
+                ROCK_LOG_ERROR(Init, "VR INI override notifier installed but code protection restoration failed: {}",
+                    GetLastError());
             }
             return true;
         }
@@ -140,7 +141,8 @@ namespace rock::game_ini_overrides
             entry.desired.store(requiredValue(entry), std::memory_order_relaxed);
             entry.setting = f4vr::getIniSetting(entry.name);
             if (!entry.setting || entry.setting->GetType() != RE::Setting::SETTING_TYPE::kBinary) {
-                ROCK_LOG_ERROR(Init, "VR INI override '{}' is missing or has the wrong type; enforcement not installed", entry.name);
+                ROCK_LOG_ERROR(Init, "VR INI override '{}' is missing or has the wrong type; enforcement not installed",
+                    entry.name);
                 return false;
             }
         }
@@ -150,13 +152,15 @@ namespace rock::game_ini_overrides
         s_installed = true;
         for (auto& entry : s_overrides) {
             const bool desired = entry.desired.load(std::memory_order_relaxed);
-            ROCK_LOG_INFO(Config, "VR INI override '{}': native={} required={}", entry.name, entry.setting->GetBinary(), desired);
+            ROCK_LOG_INFO(Config, "VR INI override '{}': native={} required={}", entry.name, entry.setting->GetBinary(),
+                desired);
             if (entry.setting->GetBinary() != desired) {
                 entry.setting->SetBinary(desired);
                 s_originalNotify(entry.setting);
             }
         }
-        ROCK_LOG_INFO(Init, "ROCK VR settings enforced; emergency recoil suppression={} (kickback/recoil disabled together)",
+        ROCK_LOG_INFO(Init,
+            "ROCK VR settings enforced; emergency recoil suppression={} (kickback/recoil disabled together)",
             g_rockConfig.rockEmergencyDisableRecoil);
         return true;
     }
@@ -170,17 +174,21 @@ namespace rock::game_ini_overrides
             const bool desired = requiredValue(entry);
             const bool modeChanged = entry.desired.exchange(desired, std::memory_order_relaxed) != desired;
             if (entry.setting->GetBinary() != desired) {
-                if (!modeChanged) entry.rejected.store(true, std::memory_order_relaxed);
+                if (!modeChanged)
+                    entry.rejected.store(true, std::memory_order_relaxed);
                 entry.setting->SetBinary(desired);
                 s_originalNotify(entry.setting);
             }
             if (modeChanged) {
-                ROCK_LOG_INFO(Config, "Recoil native source: {}={} emergencyDisabled={}",
-                    entry.name, entry.setting->GetBinary(), g_rockConfig.rockEmergencyDisableRecoil);
+                ROCK_LOG_INFO(Config, "Recoil native source: {}={} emergencyDisabled={}", entry.name,
+                    entry.setting->GetBinary(), g_rockConfig.rockEmergencyDisableRecoil);
             }
             if (!entry.rejectionLogged && entry.rejected.load(std::memory_order_relaxed)) {
                 entry.rejectionLogged = true;
-                ROCK_LOG_INFO(Config, "VR INI override '{}' rejected an external change; required behavior remains enforced (reported once)", entry.name);
+                ROCK_LOG_INFO(Config,
+                    "VR INI override '{}' rejected an external change; required behavior remains enforced (reported "
+                    "once)",
+                    entry.name);
             }
         }
     }

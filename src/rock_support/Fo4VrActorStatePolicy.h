@@ -31,28 +31,22 @@ namespace rock::fo4vr_actor_state_policy
 
     // Equipment identity survives holstering. Only the terminal Sheathed
     // state frees native carry; drawing, sheathing and unknown states do not.
-    [[nodiscard]] inline constexpr bool equippedWeaponOccupiesHand(
-        bool equipped, std::uint32_t weaponState) noexcept
+    [[nodiscard]] inline constexpr bool equippedWeaponOccupiesHand(bool equipped, std::uint32_t weaponState) noexcept
     {
         return equipped && weaponState != 0;
     }
 
-    [[nodiscard]] inline constexpr std::uint32_t decodeWeaponState(
-        const std::uint32_t actorStateStorage) noexcept
+    [[nodiscard]] inline constexpr std::uint32_t decodeWeaponState(const std::uint32_t actorStateStorage) noexcept
     {
-        return (actorStateStorage >> kWeaponStateShift) &
-               kWeaponStateValueMask;
+        return (actorStateStorage >> kWeaponStateShift) & kWeaponStateValueMask;
     }
 
-    [[nodiscard]] inline constexpr std::uint32_t decodeGunState(
-        const std::uint32_t actorStateStorage) noexcept
+    [[nodiscard]] inline constexpr std::uint32_t decodeGunState(const std::uint32_t actorStateStorage) noexcept
     {
-        return (actorStateStorage >> kGunStateShift) &
-               kGunStateValueMask;
+        return (actorStateStorage >> kGunStateShift) & kGunStateValueMask;
     }
 
-    [[nodiscard]] inline constexpr bool isWeaponMagicDrawn(
-        const std::uint32_t weaponState) noexcept
+    [[nodiscard]] inline constexpr bool isWeaponMagicDrawn(const std::uint32_t weaponState) noexcept
     {
         // Native states 3..5 are Drawn, WantToSheathe, and Sheathing.
         return weaponState >= 3 && weaponState <= 5;
