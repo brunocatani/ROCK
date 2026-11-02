@@ -913,6 +913,22 @@ namespace rock
             } firingHandMemory{};
             // The menu hold blocks FRIK's primary weapon hand pose and node ownership.
             bool menuHoldPoseBlocked{ false };
+            // A weapon equipped inside a menu while the game runs, kept hidden
+            // by the menu hold until its draw has posed its parts.
+            struct MenuEquipReveal
+            {
+                std::uint32_t formID{ 0 };
+                std::uintptr_t instance{ 0 };
+                // Wall clock, as the draw lease it waits on: menu frame deltas
+                // do not measure real time.
+                std::chrono::steady_clock::time_point seenAt{};
+                // The native state left Drawn after this weapon was seen.
+                bool drawStarted{ false };
+                bool revealed{ false };
+                // The node the hold hid itself (native had not); restored when
+                // the gate ends without a reveal.
+                RE::NiPointer<RE::NiAVObject> culled{};
+            } menuEquipReveal{};
             // A Pip-Boy support attach on a weapon equipped in that menu waits
             // for the weapon's carry after the menu (bounded).
             std::uint64_t deferredSupportSequence{ 0 };

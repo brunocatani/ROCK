@@ -56,6 +56,9 @@ namespace rock::weapon_transition_animation_acceleration
         Identity identity{};
         std::uint32_t nativeWeaponState{ 0 };
         bool runtimeAllowed{ false };
+        // The gate that refused the runtime (static string), logged as the
+        // cancel reason; null when runtimeAllowed.
+        const char* runtimeBlockedBy{ nullptr };
     };
 
     struct ActivationEvidence

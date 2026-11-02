@@ -33,8 +33,22 @@ namespace rock::runtime_state
             bool scopeMenuOpen = false;
             bool loadingMenuOpen = false;
             bool gameStopped = false;
+            bool gamePaused = false;
         };
         FrameMenuSample s_frameMenuSample{};
+
+        /*
+         * UI::menuMode at UI+0x1E0 counts the open menus that pause the game.
+         * Raw FO4VR disassembly: 140DF5050 (UseItem's "queue the equip for the
+         * animation" test) compares that dword with zero on the UI singleton
+         * 145932320, and 140D04360 uses the BSSpinLock at 0x1D8 just before
+         * it, both matching CommonLibF4VR's UI layout.
+         */
+        [[nodiscard]] bool sampleGamePaused()
+        {
+            const auto* ui = RE::UI::GetSingleton();
+            return ui && ui->menuMode != 0;
+        }
         constexpr float kPlayerMovingThresholdGameUnits = 0.05f;
         bool s_hasPreviousPlayerPosition = false;
         RE::NiPoint3 s_previousPlayerPosition{};
@@ -208,6 +222,7 @@ namespace rock::runtime_state
         s_frameMenuSample.scopeMenuOpen = isScopeMenuOpenNow();
         s_frameMenuSample.loadingMenuOpen = s_menuHandlerInitialized && s_gameMenus.isLoadingMenuOpen();
         s_frameMenuSample.gameStopped = s_menuHandlerInitialized && s_gameMenus.isGameStopped();
+        s_frameMenuSample.gamePaused = sampleGamePaused();
         return game_timing::beginGameFrame(s_frameMenuSample.gameStopped || menuInputBlocking);
     }
 
@@ -227,6 +242,7 @@ namespace rock::runtime_state
         next.localScopeMenuOpen = s_frameMenuSample.scopeMenuOpen;
         next.localLoadingMenuOpen = s_frameMenuSample.loadingMenuOpen;
         next.localGameStopped = s_frameMenuSample.gameStopped;
+        next.localGamePaused = s_frameMenuSample.gamePaused;
         next.localMenuBlocking = next.localGameStopped || next.inputMenuBlocking;
         next.timing = game_timing::currentFrameTiming();
         next.frameIndex = next.timing.sequence;

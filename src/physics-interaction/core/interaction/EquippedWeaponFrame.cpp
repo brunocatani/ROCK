@@ -279,12 +279,18 @@ namespace rock
             const bool node = frik_visual_authority::blockPrimaryWeaponNodeOwnership(kTag, blocked);
             if (pose && node) _equipped.menuHoldPoseBlocked = blocked;
         };
+        auto& reveal = _equipped.menuEquipReveal;
+        const auto endReveal = [&reveal]() {
+            if (reveal.culled) equipped_weapon_visual_state::setLocallyVisible(reveal.culled.get(), true);
+            reveal = {};
+        };
         const auto& frame = runtime_state::currentFrame();
         auto view = native_hand_equipment::equippedViews()[0];
         // The hold aims by the firearm controller basis; a melee primary
         // keeps FRIK's own menu pose.
         if (!view.firearm) view = {};
         if (!frame.localMenuBlocking) {
+            endReveal();
             release();
             setPoseBlocked(false);
             return;
@@ -294,6 +300,60 @@ namespace rock
         auto* node = view.weapon ? resolveEquippedWeaponInteractionNodeDirect() : nullptr;
         const auto& carry = _equipped.continuityGrip.pending ? _equipped.continuityGrip : _equipped.nativeCarryCapture;
         const bool carried = carry.pending && view.weapon && view.weapon->formID == carry.targetWeaponFormID;
+        /*
+         * A weapon equipped inside this menu while the game runs (the wrist
+         * Pip-Boy) stays hidden until its draw has posed it. Its graph runs at
+         * once and, before the equip clip's first firearm pose, outputs the
+         * part bones at their origin; shown then, the parts assembled on
+         * screen (runtime 2 Nov 11:30:38: shown 20 ms before that pose). The
+         * native equip hide covers this only when native applies it, never
+         * when one of two worn weapons changes, so the hold hides the node
+         * itself if needed. A paused game (the projected Pip-Boy) never
+         * evaluates that graph and shows the model's assembled parts at once,
+         * as does a weapon carried into the menu.
+         */
+        bool awaitingPose = false;
+        if (node && !carried && !frame.localGamePaused) {
+            const auto instance = reinterpret_cast<std::uintptr_t>(view.instance);
+            if (reveal.formID != view.weapon->formID || reveal.instance != instance) {
+                endReveal();
+                reveal.formID = view.weapon->formID;
+                reveal.instance = instance;
+                reveal.seenAt = std::chrono::steady_clock::now();
+            }
+            if (!reveal.revealed) {
+                auto* player = f4vr::getPlayer();
+                const bool drawn = f4vr::getNativeWeaponState(player) ==
+                    static_cast<std::uint32_t>(held_weapon_equip_state_policy::NativeWeaponState::Drawn);
+                reveal.drawStarted |= !drawn;
+                const float waited = std::chrono::duration<float>(std::chrono::steady_clock::now() - reveal.seenAt).count();
+                const bool posed =
+                    weapon_transition_animation_acceleration::hasGeneratedFirearmPose(player, { reveal.formID, reveal.instance, 0 });
+                const bool drawComplete = reveal.drawStarted && drawn;
+                // Backstop for a draw that never runs: logged, never silent.
+                const bool timedOut = waited >= weapon_transition_animation_acceleration_policy::kLeaseTimeoutSeconds;
+                if (posed || drawComplete || timedOut) {
+                    if (posed || drawComplete) {
+                        ROCK_LOG_INFO(Weapon, "Menu equip reveal formID={:08X} by={} after={:.3f}s hiddenByHold={}", reveal.formID,
+                            posed ? "firearm-pose" : "draw-complete", waited, static_cast<bool>(reveal.culled));
+                    } else {
+                        ROCK_LOG_WARN(Weapon, "Menu equip reveal formID={:08X} by=timeout after={:.3f}s drawStarted={}; shown without a posed draw",
+                            reveal.formID, waited, reveal.drawStarted);
+                    }
+                    reveal.revealed = true;
+                    // The hold's show below takes over the node it hid.
+                    reveal.culled.reset();
+                } else {
+                    awaitingPose = true;
+                    if (equipped_weapon_visual_state::isLocallyVisible(node)) {
+                        equipped_weapon_visual_state::setLocallyVisible(node, false);
+                        reveal.culled.reset(node);
+                    }
+                }
+            }
+        } else if (reveal.formID) {
+            endReveal();
+        }
         const bool supportCarry = carried && carry.supportGrip.validCarry();
         // A two-handed carry, held when the menu opened or attached in it.
         const bool paired = carried && !supportCarry && carry.pairedGrips.valid();
@@ -438,8 +498,10 @@ namespace rock
             if (posed || placed) _equipped.menuHoldSupportHand = supportSide;
         }
         // Opening a menu or equipping culls the first weapon's node natively
-        // (the second is ROCK's own model); the native show after the menu matches.
-        if (!equipped_weapon_visual_state::isLocallyVisible(node)) equipped_weapon_visual_state::setLocallyVisible(node, true);
+        // (the second is ROCK's own model); the native show after the menu
+        // matches. A weapon still awaiting its posed draw stays hidden.
+        if (!awaitingPose && !equipped_weapon_visual_state::isLocallyVisible(node))
+            equipped_weapon_visual_state::setLocallyVisible(node, true);
         (void)weapon_scene_presentation::moveWeaponPresentationRigidly(node, weaponWorld);
     }
 
@@ -507,6 +569,22 @@ namespace rock
         const bool currentIdentityCaptured =
             native_equipped_weapon_draw::captureCurrentIdentity(
                 currentIdentity);
+        /*
+         * The lease ends when the engine pauses the game, not on every input
+         * menu or FRIK compatibility block: the wrist Pip-Boy blocks input
+         * and holds FRIK's compatibility block (ROCK leaves the hands to
+         * FRIK), but the game keeps running and its equips play their draw
+         * clip while it stays open. The lease only speeds that clip in the
+         * animation graph and never touches the hands; ending it there let
+         * the clip run at native speed, so the parts assembled on screen.
+         * The projected Pip-Boy pauses the game; its clip plays after the
+         * menu closes, under the menu-exit lease.
+         */
+        const char* accelerationBlockedBy =
+            !runtime.visualAuthorityAvailable ? "visual-authority-unavailable" :
+            !runtime.localSkeletonReady ? "skeleton-not-ready" :
+            runtime.localGamePaused ? "game-paused" :
+            nullptr;
         weapon_transition_animation_acceleration::service(
             weapon_transition_animation_acceleration::ServiceInput{
                 .player = player,
@@ -518,11 +596,8 @@ namespace rock
                     } :
                     weapon_transition_animation_acceleration::Identity{},
                 .nativeWeaponState = nativeWeaponState,
-                .runtimeAllowed =
-                    runtime.visualAuthorityAvailable &&
-                    runtime.localSkeletonReady &&
-                    !runtime.localMenuBlocking &&
-                    !runtime.compatibilityConfigBlocking,
+                .runtimeAllowed = accelerationBlockedBy == nullptr,
+                .runtimeBlockedBy = accelerationBlockedBy,
             });
         if (nativeWeaponState != _equipped.tracedNativeWeaponState) {
             // Logged only on a change, with how long the previous state

@@ -1249,7 +1249,7 @@ namespace rock::weapon_transition_animation_acceleration
         case weapon_transition_animation_acceleration_policy::
             LifecycleAction::Cancel: {
             const char* reason = !input.runtimeAllowed ?
-                "runtime-unavailable" :
+                (input.runtimeBlockedBy ? input.runtimeBlockedBy : "runtime-unavailable") :
                 !identityMatches ?
                     "identity-changed" :
                     !held_weapon_equip_state_policy::

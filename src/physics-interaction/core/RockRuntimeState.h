@@ -43,6 +43,12 @@ namespace rock::runtime_state
         bool localScopeMenuOpen = false;
         bool localLoadingMenuOpen = false;
         bool localGameStopped = false;
+        /*
+         * The engine's own pause: UI menu mode (UI+0x1E0) is nonzero. Unlike
+         * localGameStopped (a fixed list of menu names), it tells the wrist
+         * Pip-Boy, which keeps the game running, from the projected one.
+         */
+        bool localGamePaused = false;
         bool inputMenuBlocking = false;
         bool compatibilityConfigBlocking = false;
         bool visualAuthorityAvailable = false;
