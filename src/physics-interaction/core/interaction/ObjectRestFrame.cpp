@@ -1,3 +1,8 @@
+// Object rest watches (Collision API watchObjectRest): a dropped item is
+// watched until it rests; after two seconds of supported rest its native
+// bodies are frozen and their final pose saved. updateObjectRest services the
+// watches each frame and cancels those whose owner, generation or reference is
+// gone.
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/core/PhysicsInteraction.h"

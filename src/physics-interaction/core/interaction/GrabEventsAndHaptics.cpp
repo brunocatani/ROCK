@@ -1,8 +1,9 @@
+// Grab events (grab, commit, release, held-object impact) and the controller
+// haptics they trigger. Delivery to provider clients is in
+// ProviderEventDispatch.cpp.
 #include "api/GrabEventCallbacks.h"
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
-
-// Grab event dispatch and haptic feedback.
 
 namespace rock
 {

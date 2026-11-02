@@ -1,9 +1,15 @@
-#include <algorithm>
-#include <cstring>
-#include <functional>
+// Weapon source catalog for provider clients: every scene node of the equipped
+// weapon gets a stable key for the current weapon generation, so clients can
+// address weapon parts by key or name, read their poses and parent paths, and
+// map nodes to ROCK's collision bodies. Rebuilt when the weapon or its scene
+// hierarchy changes.
 #include "api/WeaponPartCollisionLease.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/weapon/WeaponHierarchy.h"
+
+#include <algorithm>
+#include <cstring>
+#include <functional>
 
 namespace rock
 {

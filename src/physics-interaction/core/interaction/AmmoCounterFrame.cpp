@@ -1,3 +1,6 @@
+// Ammo counters: one per held weapon on the hand that holds it, from this
+// frame's publication (hand roles, per-slot rounds). Minimal and Immersive sit
+// at the weapon's firing grip on its palm side; Vanilla on the back of the hand.
 #include "api/ProviderRuntimeServices.h"
 #include "api/ProviderStatePolicy.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
@@ -15,10 +18,6 @@
 #include <array>
 #include <cmath>
 #include <cstring>
-
-// Ammo counters: one per held weapon on the hand that holds it, from this
-// frame's publication (hand roles, per-slot rounds). Minimal and Immersive sit
-// at the weapon's firing grip on its palm side; Vanilla on the back of the hand.
 
 namespace rock
 {

@@ -1,7 +1,7 @@
+// Object claims: which world references ROCK's hands or an external provider
+// client currently hold, as an owner bit mask per form ID. physicsModOwnsObject
+// answers whether anyone holds a reference.
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
-
-// Physics object claims: which world objects ROCK's hands or an external
-// provider client currently hold, so other systems leave them alone.
 
 namespace rock
 {

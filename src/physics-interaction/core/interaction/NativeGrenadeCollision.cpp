@@ -1,3 +1,7 @@
+// Native grenade throws: while the game's own throw runs, and for half a second
+// after release, every ROCK generated body (hand, body bone, weapon and proxy
+// colliders) stops colliding, so the new grenade cannot hit the player's own
+// colliders. A throw is blocked when that protection cannot be applied.
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/input/NativeGrenadeThrowRuntime.h"
 

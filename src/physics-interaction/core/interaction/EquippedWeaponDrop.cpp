@@ -1,3 +1,9 @@
+// Equipped weapons leaving the hand: Weapon Drop Mode (Toggle Drop and Auto
+// Drop) places the weapon in the world as a loose reference through one native
+// placement transaction and hands it to a force grab; the second weapon drops
+// from the hand that carries it; the second weapon takes the primary's place
+// when the primary leaves; and provider storage extracts an equipped weapon.
+// The bipod's hands-free weapon is retired here too.
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/native/BipodFrozenRetirement.h"
@@ -6,8 +12,6 @@
 #include "physics-interaction/weapon/NativeHandEquipment.h"
 #include "physics-interaction/weapon/NativeSecondaryActions.h"
 #include "physics-interaction/weapon/NativeSecondaryPresentation.h"
-
-// Shared native placement for equipped-to-loose Toggle Drop and Auto Drop.
 
 namespace rock
 {

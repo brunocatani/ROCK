@@ -1,3 +1,10 @@
+// Provider control of held objects (Grab API):
+//   held placement intent   a client reserves the placement click and has ROCK
+//                           release the held reference into a native fixed
+//                           placement (commitHeldPlacement)
+//   held object target      a client steers the held reference through the
+//                           grab constraint toward a pose, for example into a
+//                           socket, and reads the held object's pose back
 #include "RE/Havok/hknpBody.h"
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"

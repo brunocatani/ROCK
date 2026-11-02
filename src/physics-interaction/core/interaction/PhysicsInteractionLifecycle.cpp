@@ -1,3 +1,8 @@
+// PhysicsInteraction lifecycle: construction and destruction, init() and
+// shutdown(), skeleton and provider generation changes, the lifecycle state
+// published to providers, ROCK's collision layer registration, and creation and
+// destruction of the generated hand and body-bone colliders. The Havok world
+// accessors are here too.
 #include "api/AuthoredInteractionService.h"
 #include "api/ProviderRuntimeServices.h"
 #include "api/StorageService.h"
@@ -12,8 +17,6 @@
 #include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
 #include "physics-interaction/weapon/NativeSecondaryActions.h"
 #include "physics-interaction/weapon/NativeSecondaryPresentation.h"
-
-// PhysicsInteraction lifecycle: construction, init/shutdown, skeleton and provider lifecycle notes, generated-body lifecycle, collision layer registration, hand/body collision creation, and world accessors.
 
 namespace rock
 {

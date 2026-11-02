@@ -1,3 +1,7 @@
+// Builds the per-frame runtime snapshot (RockRuntimeState.h): samples menu and
+// pause state once in beginFrameTiming, then updateFrame adds weapon-drawn,
+// skeleton readiness (root attached, required hand bones readable) and the
+// player-space frame used to compensate player movement.
 #include "physics-interaction/core/RockRuntimeState.h"
 
 #include "RockConfig.h"

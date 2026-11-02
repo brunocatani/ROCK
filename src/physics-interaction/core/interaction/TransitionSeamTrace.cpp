@@ -1,3 +1,18 @@
+// Equip/drop seamlessness diagnostic. For a bounded window after each weapon
+// transition it records, once per rendered frame, which model is visible in
+// each hand (equip bridge, incoming second-weapon bridge, index-0 or index-1
+// native model) and how many are visible there.
+//
+// Model roots of different sources are not registered to each other, so the
+// visible gun is measured by its geometry: the mean of its shapes' centres (C;
+// a skinned shape by its bones, others by world transform and model bound) and
+// the shape centre farthest from it (F, the tip, along the gun). Per frame it
+// logs how far C and F moved in the world and in the hand's frame, and where
+// they sit in the hand against the last frame before the transition. A gap is a
+// frame with no visible weapon; a duplicate is a count above one; a visible pop
+// is a geometry step. Every rendered frame is observed so the baseline is the
+// frame before. The observation walks weapon geometry and skin bones each frame,
+// so it runs only while debug logging is on, like the equip-readiness trace.
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
@@ -12,25 +27,6 @@
 
 namespace rock
 {
-    /*
-     * Equip/drop seamlessness diagnostic. For a bounded window after each
-     * weapon transition it records, once per rendered frame, which model is
-     * visible in each hand (equip bridge, incoming second-weapon bridge,
-     * index-0 or index-1 native model) and how many are visible there.
-     *
-     * Model roots of different sources are not registered to each other, so
-     * the visible gun is measured by its geometry: the mean of its shapes'
-     * centres (C; a skinned shape by its bones, others by world transform
-     * and model bound) and the
-     * shape centre farthest from it (F, the tip, along
-     * the gun). Per frame it logs how far C and F moved in the world and in
-     * the hand's frame, and where they sit in the hand against the last frame
-     * before the transition. A gap is a frame with no visible weapon; a
-     * duplicate is a count above one; a visible pop is a geometry step.
-     * Every rendered frame is observed so the baseline is the frame before.
-     * The observation walks weapon geometry and skin bones each frame, so it
-     * runs only while debug logging is on, like the equip-readiness trace.
-     */
     namespace
     {
         enum class SeamSource : std::uint8_t

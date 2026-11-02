@@ -1,3 +1,7 @@
+// Provider inventory equips (Weapon API): a client captures an inventory weapon,
+// asks ROCK to equip it into a hand, then polls or cancels the request.
+// processProviderInventoryEquip advances the pending requests each frame. Also
+// unequip by slot and the client's list of weapons to pre-warm.
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/weapon/EquipSlotAllocationPolicy.h"

@@ -1,3 +1,8 @@
+// Ejection clearances (Collision API requestEjectionClearance). For one second
+// after an ejected object, such as a dropped magazine, is found in the world,
+// its bodies do not collide with the equipped weapon, nor with the hands when
+// the request asks for that. updateEjectionContacts collects those body sets
+// every frame and publishes them to the native player collision filter.
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
@@ -11,6 +16,11 @@ namespace rock
 {
     namespace
     {
+        // Holds the hknpWorld write lock (FO4VR 0x1DF5FB0 lock, 0x1DF5FD0
+        // unlock). Their entry bytes are verified by
+        // native_object_placement::available(), which every caller checks
+        // first. A thread already inside the physics step owns the world, so
+        // it takes no lock.
         struct WriteScope
         {
             RE::hknpWorld* world{};
@@ -30,12 +40,14 @@ namespace rock
             }
         };
 
+        // The distinct body IDs of one ejected reference (at most four).
         struct Bodies
         {
             std::array<std::uint32_t, 4> ids{};
             std::size_t count{};
         };
 
+        // Body visitor for collect(): adds a new ID, false when the set is full.
         bool body(std::uint32_t id, void* data)
         {
             auto& out = *static_cast<Bodies*>(data);
@@ -47,6 +59,9 @@ namespace rock
             return true;
         }
 
+        // Walks the reference's scene graph breadth-first (at most 128 nodes)
+        // and gathers its Havok bodies. False when the graph is inconsistent,
+        // too large or has no bodies.
         bool collect(RE::NiAVObject* root, RE::hknpWorld* world, Bodies& out)
         {
             std::array<RE::NiAVObject*, 128> nodes{};

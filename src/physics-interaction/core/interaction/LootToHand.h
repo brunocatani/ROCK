@@ -1,3 +1,6 @@
+// Loot to Hand: items the player takes from a container are queued here by a
+// container-changed event sink, then the frame thread drains the queue and puts
+// each item into the hand whose wand pointed at the container (LootToHand.cpp).
 #pragma once
 
 #include <array>

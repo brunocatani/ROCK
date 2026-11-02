@@ -1,3 +1,8 @@
+// Helpers and state shared by the PhysicsInteraction implementation files in
+// core/interaction/ (physics_interaction_internal). A using-directive at the end
+// of the namespace makes them visible unqualified in those files. Mutable shared
+// state is declared inline, so one instance exists across all of them.
+// Include only from PhysicsInteraction implementation files.
 #pragma once
 #include "api/NativeInteractionService.h"
 #include "api/StorageInteractionService.h"
@@ -113,16 +118,6 @@
 #include "rock_support/Fo4VrActorStatePolicy.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include "rock_support/VRControllers.h"
-
-/*
- * Shared internals of the PhysicsInteraction implementation, split across
- * the interaction/ translation units. These helpers lived in the anonymous
- * namespace of the former single PhysicsInteraction.cpp; the using-directive
- * below preserves unqualified name lookup for the moved method bodies.
- * Mutable former file-scope state is declared inline so exactly one
- * instance exists across the split, matching the single-TU behavior.
- * Include only from PhysicsInteraction implementation files.
- */
 
 namespace rock
 {
