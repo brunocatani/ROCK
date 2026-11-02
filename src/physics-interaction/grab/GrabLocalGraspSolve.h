@@ -30,7 +30,7 @@
  * A broad flat face is deliberately left to the current seat. Swinging a face
  * flat onto the palm was tried for arrivals and removed: verified holds of
  * flat objects sit on an edge, well off the palm normal (the plate note in
- * HandGrab.cpp's seat alignment). The Edge class above is that hold.
+ * HandGrabSeat.cpp's seat alignment). The Edge class above is that hold.
  *
  * Whole-mesh shape classes cannot do this: a mug is compact as a whole and its
  * handle is a bar only locally. The direction of the part comes from the
