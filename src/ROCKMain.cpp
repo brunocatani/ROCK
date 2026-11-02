@@ -41,7 +41,7 @@
 #include "physics-interaction/native/NativeRagdollSafety.h"
 #include "physics-interaction/native/NativeShapeCastSafety.h"
 #include "physics-interaction/native/NativeImpactAudio.h"
-#include "physics-interaction/native/NativeQuickLootHand.h"
+#include "physics-interaction/native/NativeQuickLootPanel.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/timing/RockGameTiming.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
@@ -881,7 +881,7 @@ namespace
         runPendingLifecycle();
         // FrameBegin precedes FRIK's scope-rig carry (WeaponPositionAdjuster::onFrameStart).
         scope_rig_parent_repair::reattachOrphanedScopeRig();
-        native_quick_loot_hand::update();
+        native_quick_loot_panel::update();
         native_secondary_presentation::beginFrame();
         frik_hand_world_authority::noteNativeRecoilControlled(false);
         performance_profiler::refreshSettings(
@@ -1364,7 +1364,7 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     if (!rock::native_impact_audio::install()) {
         logger::error("ROCK: Impact audio filtering is unavailable; native audio remains unchanged.");
     }
-    (void)rock::native_quick_loot_hand::install();
+    (void)rock::native_quick_loot_panel::install();
 
     logger::info("ROCK: Install native shape-cast safety...");
     if (!rock::native_shape_cast_safety::install()) {
