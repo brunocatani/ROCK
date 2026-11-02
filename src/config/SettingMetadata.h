@@ -174,55 +174,55 @@ namespace rock::config
             "other free hand; with no free hand it stays in inventory.\nFalse: taken items go to inventory (game "
             "default).",
             api::configuration::Group::Consumer },
-        { "AmbidextrousFiring", "sDefaultHand", "07. Handedness",
+        { "FiringHand","sDefaultHand", "07. Firing Hand",
             "Default Hand\nright or left: the firing hand for equips that come without a hand (favorites, PALM, "
             "scripts and other mods).\nGrenade draws prefer this hand and use the other one when it is busy.\nPip-Boy "
             "and trigger equips and grip handoffs always use the hand that acts.\nApplies on the next equip or draw. "
             "The game's own left-handed mode is not supported and stays off.",
             api::configuration::Group::Consumer },
-        { "AmbidextrousFiring", "fLeftFiringAimYawDegrees", "07. Handedness",
+        { "FiringHand","fLeftFiringAimYawDegrees", "07. Firing Hand",
             "Left Firing Aim: Yaw\nTurns the aim of a weapon fired from the left hand, in degrees. 0 uses the plain "
             "mirror of the right-hand hold. Range: -30 to 30.",
             api::configuration::Group::Consumer },
-        { "AmbidextrousFiring", "fLeftFiringAimPitchDegrees", "07. Handedness",
+        { "FiringHand","fLeftFiringAimPitchDegrees", "07. Firing Hand",
             "Left Firing Aim: Pitch\nTilts the aim of a weapon fired from the left hand up or down, in degrees. "
             "Range: -30 to 30.",
             api::configuration::Group::Consumer },
-        { "AmbidextrousFiring", "fLeftFiringAimOffsetXGameUnits", "07. Handedness",
+        { "FiringHand","fLeftFiringAimOffsetXGameUnits", "07. Firing Hand",
             "Left Firing Aim: Offset X\nShifts the aim of a weapon fired from the left hand, in game units (70 = 1 "
             "metre). Range: -15 to 15.",
             api::configuration::Group::Consumer },
-        { "AmbidextrousFiring", "fLeftFiringAimOffsetYGameUnits", "07. Handedness",
+        { "FiringHand","fLeftFiringAimOffsetYGameUnits", "07. Firing Hand",
             "Left Firing Aim: Offset Y\nShifts the aim of a weapon fired from the left hand, in game units. Range: "
             "-15 to 15.",
             api::configuration::Group::Consumer },
-        { "AmbidextrousFiring", "fLeftFiringAimOffsetZGameUnits", "07. Handedness",
+        { "FiringHand","fLeftFiringAimOffsetZGameUnits", "07. Firing Hand",
             "Left Firing Aim: Offset Z\nShifts the aim of a weapon fired from the left hand, in game units. Range: "
             "-15 to 15.",
             api::configuration::Group::Consumer },
-        { "AmbidextrousFiring", "fLeftFiringGripOffsetXGameUnits", "07. Handedness",
+        { "FiringHand","fLeftFiringGripOffsetXGameUnits", "07. Firing Hand",
             "Left Firing Grip: Along Fingers\nMoves where the left hand holds the firing grip, along the fingers, in "
             "game units (70 = 1 metre).\n0 = the plain mirror of the right-hand grip. The hand stays put and the "
             "weapon moves the other way. Range: -15 to 15. Regrab to apply.",
             api::configuration::Group::Consumer },
-        { "AmbidextrousFiring", "fLeftFiringGripOffsetYGameUnits", "07. Handedness",
+        { "FiringHand","fLeftFiringGripOffsetYGameUnits", "07. Firing Hand",
             "Left Firing Grip: Palm Depth\nMoves the left firing grip into or out of the palm, in game units. Range: "
             "-15 to 15. Regrab to apply.",
             api::configuration::Group::Consumer },
-        { "AmbidextrousFiring", "fLeftFiringGripOffsetZGameUnits", "07. Handedness",
+        { "FiringHand","fLeftFiringGripOffsetZGameUnits", "07. Firing Hand",
             "Left Firing Grip: Across Palm\nMoves the left firing grip across the palm, in game units. Range: -15 to "
             "15. Regrab to apply.",
             api::configuration::Group::Consumer },
-        { "AmbidextrousFiring", "fRightSupportGripOffsetXGameUnits", "07. Handedness",
+        { "FiringHand","fRightSupportGripOffsetXGameUnits", "07. Firing Hand",
             "Right Support Grip: Along Fingers\nMoves where the right hand holds a support grip when the left hand "
             "fires, along the fingers, in game units (70 = 1 metre).\n0 = the plain mirror of the left-hand support "
             "grip. Range: -15 to 15. Regrab to apply.",
             api::configuration::Group::Consumer },
-        { "AmbidextrousFiring", "fRightSupportGripOffsetYGameUnits", "07. Handedness",
+        { "FiringHand","fRightSupportGripOffsetYGameUnits", "07. Firing Hand",
             "Right Support Grip: Palm Depth\nMoves the mirrored right support grip into or out of the palm, in game "
             "units. Range: -15 to 15. Regrab to apply.",
             api::configuration::Group::Consumer },
-        { "AmbidextrousFiring", "fRightSupportGripOffsetZGameUnits", "07. Handedness",
+        { "FiringHand","fRightSupportGripOffsetZGameUnits", "07. Firing Hand",
             "Right Support Grip: Across Palm\nMoves the mirrored right support grip across the palm, in game units. "
             "Range: -15 to 15. Regrab to apply.",
             api::configuration::Group::Consumer },

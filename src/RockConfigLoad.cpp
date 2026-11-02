@@ -26,7 +26,7 @@ namespace
     constexpr auto RECOIL_SECTION = "Recoil";
     constexpr auto NATIVE_GAMEPLAY_SECTION = "NativeGameplay";
     constexpr auto HIGHLIGHT_SECTION = "Highlight";
-    constexpr auto AMBIDEXTROUS_FIRING_SECTION = "AmbidextrousFiring";
+    constexpr auto FIRING_HAND_SECTION = "FiringHand";
     constexpr auto NATIVE_SCOPES_SECTION = "NativeScopes";
     constexpr auto GRABBING_SECTION = "Grabbing";
     constexpr auto CONTROLS_SECTION = "Controls";
@@ -431,30 +431,30 @@ namespace rock
         }
 
         rockDefaultHandLeft =
-            readDefaultHandLeft(ini, AMBIDEXTROUS_FIRING_SECTION, "sDefaultHand", rockDefaultHandLeft);
-        rockLeftFiringAimYawDegrees = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION, "fLeftFiringAimYawDegrees",
+            readDefaultHandLeft(ini, FIRING_HAND_SECTION, "sDefaultHand", rockDefaultHandLeft);
+        rockLeftFiringAimYawDegrees = readClampedFloat(ini, FIRING_HAND_SECTION, "fLeftFiringAimYawDegrees",
             rockLeftFiringAimYawDegrees, 0.0f, -30.0f, 30.0f);
-        rockLeftFiringAimPitchDegrees = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION, "fLeftFiringAimPitchDegrees",
+        rockLeftFiringAimPitchDegrees = readClampedFloat(ini, FIRING_HAND_SECTION, "fLeftFiringAimPitchDegrees",
             rockLeftFiringAimPitchDegrees, 0.0f, -30.0f, 30.0f);
-        rockLeftFiringAimOffsetXGameUnits = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION,
+        rockLeftFiringAimOffsetXGameUnits = readClampedFloat(ini, FIRING_HAND_SECTION,
             "fLeftFiringAimOffsetXGameUnits", rockLeftFiringAimOffsetXGameUnits, 0.0f, -15.0f, 15.0f);
-        rockLeftFiringAimOffsetYGameUnits = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION,
+        rockLeftFiringAimOffsetYGameUnits = readClampedFloat(ini, FIRING_HAND_SECTION,
             "fLeftFiringAimOffsetYGameUnits", rockLeftFiringAimOffsetYGameUnits, 0.0f, -15.0f, 15.0f);
-        rockLeftFiringAimOffsetZGameUnits = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION,
+        rockLeftFiringAimOffsetZGameUnits = readClampedFloat(ini, FIRING_HAND_SECTION,
             "fLeftFiringAimOffsetZGameUnits", rockLeftFiringAimOffsetZGameUnits, 0.0f, -15.0f, 15.0f);
         rockWeaponCollisionBlocksProjectiles =
             ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksProjectiles", rockWeaponCollisionBlocksProjectiles);
-        rockLeftFiringGripOffsetGameUnits.x = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION,
+        rockLeftFiringGripOffsetGameUnits.x = readClampedFloat(ini, FIRING_HAND_SECTION,
             "fLeftFiringGripOffsetXGameUnits", rockLeftFiringGripOffsetGameUnits.x, 0.0f, -15.0f, 15.0f);
-        rockLeftFiringGripOffsetGameUnits.y = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION,
+        rockLeftFiringGripOffsetGameUnits.y = readClampedFloat(ini, FIRING_HAND_SECTION,
             "fLeftFiringGripOffsetYGameUnits", rockLeftFiringGripOffsetGameUnits.y, 0.0f, -15.0f, 15.0f);
-        rockLeftFiringGripOffsetGameUnits.z = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION,
+        rockLeftFiringGripOffsetGameUnits.z = readClampedFloat(ini, FIRING_HAND_SECTION,
             "fLeftFiringGripOffsetZGameUnits", rockLeftFiringGripOffsetGameUnits.z, 0.0f, -15.0f, 15.0f);
-        rockRightSupportGripOffsetGameUnits.x = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION,
+        rockRightSupportGripOffsetGameUnits.x = readClampedFloat(ini, FIRING_HAND_SECTION,
             "fRightSupportGripOffsetXGameUnits", rockRightSupportGripOffsetGameUnits.x, 0.0f, -15.0f, 15.0f);
-        rockRightSupportGripOffsetGameUnits.y = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION,
+        rockRightSupportGripOffsetGameUnits.y = readClampedFloat(ini, FIRING_HAND_SECTION,
             "fRightSupportGripOffsetYGameUnits", rockRightSupportGripOffsetGameUnits.y, 0.0f, -15.0f, 15.0f);
-        rockRightSupportGripOffsetGameUnits.z = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION,
+        rockRightSupportGripOffsetGameUnits.z = readClampedFloat(ini, FIRING_HAND_SECTION,
             "fRightSupportGripOffsetZGameUnits", rockRightSupportGripOffsetGameUnits.z, 0.0f, -15.0f, 15.0f);
         rockWeaponCollisionBlocksSpells =
             ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksSpells", rockWeaponCollisionBlocksSpells);

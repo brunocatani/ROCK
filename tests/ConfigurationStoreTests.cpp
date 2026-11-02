@@ -497,7 +497,7 @@ int main(int argc, char** argv)
                 find(store, "sDefaultHand").defaultValue == "right" &&
                 !rock::RockConfig::parseValues(missingOptions).rockDefaultHandLeft,
             "the default hand must be a consumer string defaulting to right");
-        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "sDefaultHand", "left") && store.load(false),
+        require(store.setValue(Group::Consumer, "FiringHand","sDefaultHand", "left") && store.load(false),
             "default hand change/reload failed");
         CSimpleIniA leftHandValues;
         store.appendLoadedValues(leftHandValues);
@@ -506,11 +506,11 @@ int main(int argc, char** argv)
         for (const auto& [value, left] :
             { std::pair{ "LEFT", true }, { "Right", false }, { "up", false }, { "", false } }) {
             CSimpleIniA handValues;
-            handValues.SetValue("AmbidextrousFiring", "sDefaultHand", value);
+            handValues.SetValue("FiringHand", "sDefaultHand", value);
             require(rock::RockConfig::parseValues(handValues).rockDefaultHandLeft == left,
                 "the default hand did not parse case-insensitively or fall back to right");
         }
-        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "sDefaultHand", "right") && store.load(false),
+        require(store.setValue(Group::Consumer, "FiringHand","sDefaultHand", "right") && store.load(false),
             "default hand reset/reload failed");
         require(find(store, "bVatsPhysicsFixes").group == Group::Developer &&
                 find(store, "bVatsPhysicsFixes").type == ValueType::Boolean &&
@@ -671,9 +671,9 @@ int main(int argc, char** argv)
         require(store.setValue(Group::Consumer, "ImmersiveWeapons", "iWeaponEquipMode", "2"),
             "weapon equip mode reset failed");
         require(store.load(false), "weapon equip mode reset reload failed");
-        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "fLeftFiringGripOffsetYGameUnits", "0.25"),
+        require(store.setValue(Group::Consumer, "FiringHand","fLeftFiringGripOffsetYGameUnits", "0.25"),
             "left firing relative placement write failed");
-        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "fRightSupportGripOffsetZGameUnits", "-0.5"),
+        require(store.setValue(Group::Consumer, "FiringHand","fRightSupportGripOffsetZGameUnits", "-0.5"),
             "right support relative placement write failed");
         require(store.load(false), "relative grip placement reload failed");
         CSimpleIniA gripPlacementValues;
@@ -685,9 +685,9 @@ int main(int argc, char** argv)
         require(gripPlacement.rockLeftFiringAimOffsetYGameUnits == 0.0f &&
                 gripPlacement.rockLeftFiringAimYawDegrees == 0.0f,
             "relative grip placement must not change whole-carry position or aim");
-        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "fLeftFiringGripOffsetYGameUnits", "0"),
+        require(store.setValue(Group::Consumer, "FiringHand","fLeftFiringGripOffsetYGameUnits", "0"),
             "left placement reset failed");
-        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "fRightSupportGripOffsetZGameUnits", "0"),
+        require(store.setValue(Group::Consumer, "FiringHand","fRightSupportGripOffsetZGameUnits", "0"),
             "right placement reset failed");
         require(store.load(false), "relative grip placement reset reload failed");
         require(find(store, "bEnableImmersiveScopes").value == "true", "immersive scopes must default on");
