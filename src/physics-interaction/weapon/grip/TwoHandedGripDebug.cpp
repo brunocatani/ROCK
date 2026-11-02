@@ -13,7 +13,7 @@
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/hand/HandVisual.h"
-#include "physics-interaction/native/SceneRelation.h"
+#include "physics-interaction/native/scene/SceneRelation.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/weapon/authored/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/collision/DynamicWeaponCollisionPolicy.h"

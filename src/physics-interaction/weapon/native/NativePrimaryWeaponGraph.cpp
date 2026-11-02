@@ -5,9 +5,9 @@
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/native/NativeTriggerEquipGraph.h"
 #include "physics-interaction/weapon/classification/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/native/NativeEquippedBoneOwnership.h"
+#include "physics-interaction/weapon/native/NativeTriggerEquipGraph.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 namespace rock::native_primary_weapon_graph

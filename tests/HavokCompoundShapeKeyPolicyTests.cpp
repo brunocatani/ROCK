@@ -1,4 +1,4 @@
-#include "physics-interaction/native/HavokCompoundShapeBuilder.h"
+#include "physics-interaction/native/havok/HavokCompoundShapeBuilder.h"
 
 #include <cassert>
 #include <cstdint>

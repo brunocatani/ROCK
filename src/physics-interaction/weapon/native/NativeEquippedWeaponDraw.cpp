@@ -1,11 +1,11 @@
 #include "physics-interaction/weapon/native/NativeEquippedWeaponDraw.h"
 
-#include "physics-interaction/native/HavokOffsets.h"
-#include "physics-interaction/native/HeldWeaponInstantTransition.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/native/NativeTriggerEquipGraph.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/weapon/equip/HeldWeaponEquipStatePolicy.h"
 #include "physics-interaction/weapon/equip/WeaponTransitionAnimationAcceleration.h"
+#include "physics-interaction/weapon/native/HeldWeaponInstantTransition.h"
+#include "physics-interaction/weapon/native/NativeTriggerEquipGraph.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include "RE/Bethesda/Actor.h"

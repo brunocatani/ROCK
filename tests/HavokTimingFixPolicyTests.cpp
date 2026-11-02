@@ -1,4 +1,4 @@
-#include "physics-interaction/native/HavokTimingFixPolicy.h"
+#include "physics-interaction/native/havok/HavokTimingFixPolicy.h"
 
 #include <cmath>
 #include <cstdio>

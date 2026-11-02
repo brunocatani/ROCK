@@ -4,7 +4,7 @@
 #include "physics-interaction/body/BodyBoneColliderSet.h"
 #include "physics-interaction/consume/ImmersiveAidContact.h"
 #include "physics-interaction/hand/Hand.h"
-#include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/native/havok/PhysicsUtils.h"
 
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/Bethesda/TESFile.h"

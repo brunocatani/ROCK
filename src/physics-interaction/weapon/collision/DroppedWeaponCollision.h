@@ -4,7 +4,7 @@
 #pragma once
 
 #include "RE/NetImmerse/NiPoint.h"
-#include "physics-interaction/native/HavokCompoundShapeBuilder.h"
+#include "physics-interaction/native/havok/HavokCompoundShapeBuilder.h"
 
 #include <cstdint>
 #include <memory>

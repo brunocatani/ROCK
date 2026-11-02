@@ -4,9 +4,9 @@
 #include "physics-interaction/grab/GrabConstraintMath.h"
 #include "physics-interaction/grab/GrabInertiaPolicy.h"
 #include "physics-interaction/grab/GrabMassPolicy.h"
-#include "physics-interaction/native/HavokOffsets.h"
-#include "physics-interaction/native/HavokRuntime.h"
-#include "physics-interaction/native/PhysicsScale.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
+#include "physics-interaction/native/havok/PhysicsScale.h"
 
 #include <algorithm>
 #include <array>

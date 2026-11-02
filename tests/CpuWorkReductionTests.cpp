@@ -1,7 +1,7 @@
 #include "physics-interaction/consume/ImmersiveAidContact.h"
 #include "physics-interaction/contact/GeneratedBodyContactRegistry.h"
-#include "physics-interaction/native/CollisionSystemOwner.h"
-#include "physics-interaction/native/PhysicsSystemBodyScanCache.h"
+#include "physics-interaction/native/havok/CollisionSystemOwner.h"
+#include "physics-interaction/native/havok/PhysicsSystemBodyScanCache.h"
 #include "physics-interaction/weapon/classification/WeaponEvidenceSnapshot.h"
 #include "physics-interaction/weapon/collision/GeneratedWeaponGeometry.h"
 

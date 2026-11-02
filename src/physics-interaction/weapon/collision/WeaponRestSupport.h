@@ -5,7 +5,7 @@
 #include <cmath>
 #include "RE/Havok/hknpBody.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
-#include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
 #include "physics-interaction/object/PhysicsBodyClassifier.h"
 
 namespace rock::weapon_rest_support

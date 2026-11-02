@@ -1,9 +1,9 @@
 #include "physics-interaction/object/RagdollBodyScope.h"
 
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/native/HavokRuntime.h"
-#include "physics-interaction/native/HavokWorldLock.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
+#include "physics-interaction/native/havok/HavokWorldLock.h"
 #include "physics-interaction/object/PhysicsBodyClassifier.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 

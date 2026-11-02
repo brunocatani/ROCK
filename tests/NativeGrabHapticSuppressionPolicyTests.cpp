@@ -1,4 +1,4 @@
-#include "physics-interaction/native/NativeGrabHapticSuppressionPolicy.h"
+#include "physics-interaction/native/player/NativeGrabHapticSuppressionPolicy.h"
 
 #include <cstdio>
 #include <string_view>

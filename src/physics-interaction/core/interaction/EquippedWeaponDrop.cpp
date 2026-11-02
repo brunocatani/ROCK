@@ -6,9 +6,9 @@
 // The bipod's hands-free weapon is retired here too.
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/hand/HandFrame.h"
-#include "physics-interaction/native/BipodFrozenRetirement.h"
-#include "physics-interaction/native/PhysicsScale.h"
+#include "physics-interaction/native/havok/PhysicsScale.h"
 #include "physics-interaction/weapon/handling/BipodRetentionPolicy.h"
+#include "physics-interaction/weapon/native/BipodFrozenRetirement.h"
 #include "physics-interaction/weapon/native/NativeHandEquipment.h"
 #include "physics-interaction/weapon/secondary/NativeSecondaryActions.h"
 #include "physics-interaction/weapon/secondary/NativeSecondaryPresentation.h"

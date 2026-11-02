@@ -6,11 +6,11 @@
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
-#include "physics-interaction/native/HavokRuntime.h"
-#include "physics-interaction/native/HavokWorldLock.h"
-#include "physics-interaction/native/MagazineEjectionSnapshot.h"
-#include "physics-interaction/native/NativeObjectPlacement.h"
-#include "physics-interaction/native/NativePlayerCollisionFilter.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
+#include "physics-interaction/native/havok/HavokWorldLock.h"
+#include "physics-interaction/native/player/NativePlayerCollisionFilter.h"
+#include "physics-interaction/native/scene/NativeObjectPlacement.h"
+#include "physics-interaction/weapon/native/MagazineEjectionSnapshot.h"
 
 namespace rock
 {

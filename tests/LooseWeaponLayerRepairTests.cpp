@@ -1,5 +1,5 @@
 #include "physics-interaction/grab/GrabInteractionPolicy.h"
-#include "physics-interaction/native/LooseWeaponLayerRepair.h"
+#include "physics-interaction/weapon/native/LooseWeaponLayerRepair.h"
 
 #include <cassert>
 

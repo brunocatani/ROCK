@@ -2,8 +2,8 @@
 #include <array>
 #include <atomic>
 #include "NativeInteractionService.h"
-#include "physics-interaction/native/BethesdaPhysicsBody.h"
-#include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
+#include "physics-interaction/native/havok/BethesdaPhysicsBody.h"
+#include "physics-interaction/native/havok/PhysicsCallbackQuiescenceGate.h"
 
 namespace rock::native_interaction_service::detail
 {

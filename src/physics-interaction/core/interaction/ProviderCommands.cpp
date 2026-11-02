@@ -1,7 +1,7 @@
 // Provider interaction commands and provider weapon-part drives.
 #include "api/StorageService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
-#include "physics-interaction/native/SceneRelation.h"
+#include "physics-interaction/native/scene/SceneRelation.h"
 
 namespace rock
 {

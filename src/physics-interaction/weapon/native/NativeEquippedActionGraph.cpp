@@ -11,7 +11,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/native/NativeNiNodeFactory.h"
+#include "physics-interaction/native/scene/NativeNiNodeFactory.h"
 #include "physics-interaction/weapon/authored/HoldingGripRecords.h"
 #include "physics-interaction/weapon/native/NativeSubgraphMetadata.h"
 #include "physics-interaction/weapon/secondary/NativeSecondaryPose.h"

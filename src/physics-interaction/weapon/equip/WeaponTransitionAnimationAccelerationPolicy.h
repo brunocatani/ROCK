@@ -1,7 +1,7 @@
 #pragma once
 
-#include "physics-interaction/native/NativeWeaponAnimationAudio.h"
 #include "physics-interaction/weapon/equip/HeldWeaponEquipStatePolicy.h"
+#include "physics-interaction/weapon/native/NativeWeaponAnimationAudio.h"
 
 #include <cstdint>
 

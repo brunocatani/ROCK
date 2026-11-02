@@ -24,7 +24,7 @@
 #include "api/WeaponPartCollisionService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/core/interaction/LootToHand.h"
-#include "physics-interaction/native/NativePlayerCollisionFilter.h"
+#include "physics-interaction/native/player/NativePlayerCollisionFilter.h"
 #include "physics-interaction/weapon/native/NativeHandEquipment.h"
 #include "physics-interaction/weapon/native/NativeMeleeWand.h"
 #include "physics-interaction/weapon/secondary/NativeSecondaryPresentation.h"

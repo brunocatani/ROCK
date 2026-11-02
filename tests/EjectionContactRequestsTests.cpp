@@ -1,7 +1,7 @@
 #include <ROCK/Collision.h>
 #include <cassert>
 #include "api/EjectionContactRequests.h"
-#include "physics-interaction/native/MagazineEjectionSnapshot.h"
+#include "physics-interaction/weapon/native/MagazineEjectionSnapshot.h"
 
 int main()
 {

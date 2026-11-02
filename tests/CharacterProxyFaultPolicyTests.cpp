@@ -1,4 +1,4 @@
-#include "physics-interaction/native/CharacterProxyFaultPolicy.h"
+#include "physics-interaction/native/safety/CharacterProxyFaultPolicy.h"
 
 #include <cstdio>
 

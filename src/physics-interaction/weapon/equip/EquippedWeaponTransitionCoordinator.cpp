@@ -3,12 +3,12 @@
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
-#include "physics-interaction/native/TriggerEquipReadinessTrace.h"
 #include "physics-interaction/weapon/equip/EquippedWeaponVisualState.h"
 #include "physics-interaction/weapon/equip/WeaponEquipTransfer.h"
 #include "physics-interaction/weapon/equip/WeaponTransitionAnimationAcceleration.h"
 #include "physics-interaction/weapon/native/NativeEquippedWeaponAttach.h"
 #include "physics-interaction/weapon/native/NativeEquippedWeaponDraw.h"
+#include "physics-interaction/weapon/native/TriggerEquipReadinessTrace.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include "RE/Bethesda/Actor.h"

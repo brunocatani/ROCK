@@ -1,6 +1,6 @@
 #include <cassert>
 #include <cstdint>
-#include "physics-interaction/native/NiReferenceOwnership.h"
+#include "physics-interaction/native/scene/NiReferenceOwnership.h"
 
 struct NativeObject
 {

@@ -1,7 +1,7 @@
 #pragma once
 #include <ROCK/NativeInteraction.h>
 #include "RE/NetImmerse/NiTransform.h"
-#include "physics-interaction/native/HavokPhysicsTiming.h"
+#include "physics-interaction/native/havok/HavokPhysicsTiming.h"
 
 namespace RE
 {

@@ -5,10 +5,10 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/hand/Hand.h"
-#include "physics-interaction/native/HavokConvexShapeBuilder.h"
-#include "physics-interaction/native/HavokMaterialRegistry.h"
-#include "physics-interaction/native/HavokRefCount.h"
-#include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/native/havok/HavokConvexShapeBuilder.h"
+#include "physics-interaction/native/havok/HavokMaterialRegistry.h"
+#include "physics-interaction/native/havok/HavokRefCount.h"
+#include "physics-interaction/native/havok/PhysicsUtils.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 
 #include <algorithm>

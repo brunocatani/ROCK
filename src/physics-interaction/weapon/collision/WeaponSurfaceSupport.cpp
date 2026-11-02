@@ -8,7 +8,7 @@
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/core/PhysicsFrameContext.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
-#include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
 
 #include <chrono>
 

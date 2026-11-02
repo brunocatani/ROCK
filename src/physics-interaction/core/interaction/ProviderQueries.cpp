@@ -5,7 +5,7 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 
 #include "api/ProviderRuntimeServices.h"
-#include "physics-interaction/native/PhysicsShapeCast.h"
+#include "physics-interaction/native/query/PhysicsShapeCast.h"
 #include "physics-interaction/weapon/handling/FrikWeaponOffsets.h"
 #include "physics-interaction/weapon/secondary/NativeSecondaryActions.h"
 #include "physics-interaction/weapon/secondary/NativeSecondaryPresentation.h"

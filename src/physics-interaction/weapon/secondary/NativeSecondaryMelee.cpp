@@ -10,9 +10,9 @@
 #include "RE/NetImmerse/NiNode.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
-#include "physics-interaction/native/BodyCollisionControl.h"
-#include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/havok/BodyCollisionControl.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 namespace rock::native_secondary_melee

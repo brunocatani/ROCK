@@ -1,4 +1,4 @@
-#include "physics-interaction/native/HavokRefCount.h"
+#include "physics-interaction/native/havok/HavokRefCount.h"
 
 #include <array>
 #include <cstddef>

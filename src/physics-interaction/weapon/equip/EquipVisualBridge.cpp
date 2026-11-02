@@ -10,7 +10,6 @@
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/hand/HandFrame.h"
-#include "physics-interaction/native/TriggerEquipReadinessTrace.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/authored/AuthoredWeaponGripLibrary.h"
@@ -19,6 +18,7 @@
 #include "physics-interaction/weapon/grip/LooseWeaponGripZone.h"
 #include "physics-interaction/weapon/grip/TwoHandedGrip.h"
 #include "physics-interaction/weapon/grip/WeaponAuthority.h"
+#include "physics-interaction/weapon/native/TriggerEquipReadinessTrace.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 namespace rock

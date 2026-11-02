@@ -6,7 +6,7 @@
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
-#include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/timing/RockGameTiming.h"
 #include "rock_support/Fo4VrRuntime.h"
 

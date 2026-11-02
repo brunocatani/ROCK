@@ -1,7 +1,7 @@
 #pragma once
 #include <span>
 #include "physics-interaction/grab/HeldObjectTarget.h"
-#include "physics-interaction/native/HavokPairCollisionFilter.h"
+#include "physics-interaction/native/havok/HavokPairCollisionFilter.h"
 
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
@@ -28,8 +28,8 @@
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/hand/HandSelection.h"
 #include "physics-interaction/hand/HandVisual.h"
-#include "physics-interaction/native/BethesdaPhysicsBody.h"
-#include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/native/havok/BethesdaPhysicsBody.h"
+#include "physics-interaction/native/havok/PhysicsUtils.h"
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/object/RagdollBodyScope.h"

@@ -1,8 +1,8 @@
 #include "physics-interaction/weapon/scope/NativeScopeData.h"
 
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/weapon/scope/ManualScopeTargetPolicy.h"
 #include "physics-interaction/weapon/scope/NativeScopeAdmissionStub.h"
 #include "rock_support/Fo4VrRuntime.h"

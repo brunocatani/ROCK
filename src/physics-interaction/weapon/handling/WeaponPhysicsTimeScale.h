@@ -2,7 +2,7 @@
 
 #include "RE/NetImmerse/NiTransform.h"
 #include "physics-interaction/TransformMath.h"
-#include "physics-interaction/native/HavokPhysicsTiming.h"
+#include "physics-interaction/native/havok/HavokPhysicsTiming.h"
 
 namespace rock::weapon_physics_time_scale
 {

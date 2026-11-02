@@ -19,7 +19,7 @@
 #include "physics-interaction/input/NativeSecondaryTrigger.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/native/NativeNiNodeFactory.h"
+#include "physics-interaction/native/scene/NativeNiNodeFactory.h"
 #include "physics-interaction/weapon/authored/HoldingGripAdapter.h"
 #include "physics-interaction/weapon/classification/WeaponInstanceClassification.h"
 #include "physics-interaction/weapon/native/NativeEquippedActionGraph.h"

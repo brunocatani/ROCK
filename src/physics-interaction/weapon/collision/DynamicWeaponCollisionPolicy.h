@@ -5,7 +5,7 @@
 
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/VectorMath.h"
-#include "physics-interaction/native/HavokPhysicsTiming.h"
+#include "physics-interaction/native/havok/HavokPhysicsTiming.h"
 
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"

@@ -8,9 +8,9 @@
 
 #include "api/NativeInteractionService.h"
 #include "physics-interaction/grab/GrabConstraint.h"
-#include "physics-interaction/native/BethesdaPhysicsBody.h"
-#include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
-#include "physics-interaction/native/HavokCompoundShapeBuilder.h"
+#include "physics-interaction/native/havok/BethesdaPhysicsBody.h"
+#include "physics-interaction/native/havok/GeneratedKeyframedBodyDrive.h"
+#include "physics-interaction/native/havok/HavokCompoundShapeBuilder.h"
 #include "physics-interaction/weapon/collision/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/collision/WeaponCollision.h"
 #include "physics-interaction/weapon/collision/WeaponSurfaceSupport.h"

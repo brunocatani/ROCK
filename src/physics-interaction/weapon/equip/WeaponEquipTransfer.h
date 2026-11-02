@@ -7,8 +7,8 @@
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiSmartPointer.h"
 
-#include "physics-interaction/native/HeldWeaponInstantTransition.h"
 #include "physics-interaction/weapon/equip/WeaponInventoryStackSelectionPolicy.h"
+#include "physics-interaction/weapon/native/HeldWeaponInstantTransition.h"
 
 #include <cstdint>
 

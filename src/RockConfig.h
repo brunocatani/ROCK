@@ -9,7 +9,7 @@
 #include <unordered_map>
 
 #include "RE/NetImmerse/NiPoint.h"
-#include "physics-interaction/native/ShellCasingGracePolicy.h"
+#include "physics-interaction/weapon/native/ShellCasingGracePolicy.h"
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -31,7 +31,7 @@
 #include "physics-interaction/input/ButtonLayoutPolicy.h"
 #include "physics-interaction/input/FarPullGesturePolicy.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
-#include "physics-interaction/native/HavokTimingFixPolicy.h"
+#include "physics-interaction/native/havok/HavokTimingFixPolicy.h"
 #include "physics-interaction/weapon/grip/GripZoneIndicatorPolicy.h"
 
 namespace rock

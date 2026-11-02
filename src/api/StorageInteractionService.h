@@ -1,7 +1,7 @@
 #pragma once
 #include <ROCK/Storage.h>
 #include <cstdint>
-#include "physics-interaction/native/HavokPhysicsTiming.h"
+#include "physics-interaction/native/havok/HavokPhysicsTiming.h"
 
 namespace RE
 {

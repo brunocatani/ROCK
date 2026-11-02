@@ -5,7 +5,7 @@
 #include "physics-interaction/consume/ImmersiveAid.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/grab/GlobalSurfaceGrabPolicy.h"
-#include "physics-interaction/native/HeldScenePresentation.h"
+#include "physics-interaction/native/scene/HeldScenePresentation.h"
 #include "physics-interaction/weapon/authored/VanillaWeaponGripFrame.h"
 #include "physics-interaction/weapon/classification/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/equip/EquipSlotAllocationPolicy.h"

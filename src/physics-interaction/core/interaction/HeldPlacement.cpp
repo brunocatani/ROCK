@@ -10,9 +10,9 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
-#include "physics-interaction/native/HavokRuntime.h"
-#include "physics-interaction/native/HavokWorldLock.h"
-#include "physics-interaction/native/NativeObjectPlacement.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
+#include "physics-interaction/native/havok/HavokWorldLock.h"
+#include "physics-interaction/native/scene/NativeObjectPlacement.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 
 namespace rock

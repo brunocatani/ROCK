@@ -1,7 +1,7 @@
 #include "AuthoredInteractionService.h"
 #include "ProviderRuntimeServices.h"
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/native/NativePlayerCollisionFilter.h"
+#include "physics-interaction/native/player/NativePlayerCollisionFilter.h"
 
 namespace rock::authored_interaction
 {

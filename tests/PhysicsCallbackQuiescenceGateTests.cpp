@@ -1,4 +1,4 @@
-#include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
+#include "physics-interaction/native/havok/PhysicsCallbackQuiescenceGate.h"
 
 #include <atomic>
 #include <cassert>

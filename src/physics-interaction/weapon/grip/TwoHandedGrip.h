@@ -15,7 +15,7 @@
 #include "physics-interaction/grab/MeshGrab.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/hand/HandVisual.h"
-#include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/native/havok/PhysicsUtils.h"
 #include "physics-interaction/visual/HandWorldClaimRegistryPolicy.h"
 #include "physics-interaction/weapon/authored/AuthoredSupportGrabPolicy.h"
 #include "physics-interaction/weapon/authored/AuthoredWeaponGripActivationPolicy.h"

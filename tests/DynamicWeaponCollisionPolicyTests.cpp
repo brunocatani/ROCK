@@ -2,7 +2,7 @@
 #include "RE/NetImmerse/NiAVObject.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/collision/ImpactAudioPolicy.h"
-#include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
+#include "physics-interaction/native/havok/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/visual/HandWorldClaimRegistryPolicy.h"
 #include "physics-interaction/weapon/collision/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/handling/WeaponPhysicsTimeScale.h"

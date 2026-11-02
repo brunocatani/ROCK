@@ -11,8 +11,8 @@
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/grab/GrabAuthorityProxyMotion.h"
-#include "physics-interaction/native/HavokConvexShapeBuilder.h"
-#include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/native/havok/HavokConvexShapeBuilder.h"
+#include "physics-interaction/native/havok/PhysicsUtils.h"
 
 #include "RE/Havok/hknpShape.h"
 #include "RE/NetImmerse/NiTransform.h"

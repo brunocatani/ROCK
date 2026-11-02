@@ -1,7 +1,7 @@
 // Weapon body banks: lifecycle, retirement, collision enablement, atomic
 // body-id publication, drive queueing, and retired-body servicing.
-#include "physics-interaction/native/ShellCasingGrace.h"
 #include "physics-interaction/weapon/collision/WeaponCollisionInternal.h"
+#include "physics-interaction/weapon/native/ShellCasingGrace.h"
 
 namespace rock
 {

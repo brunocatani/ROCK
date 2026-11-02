@@ -2,8 +2,8 @@
 // dominant-weapon and weapon-support hand suppression, post-drop suppression,
 // and native player physical-pair ownership.
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
-#include "physics-interaction/native/HavokWorldLock.h"
-#include "physics-interaction/native/NativePlayerCollisionFilter.h"
+#include "physics-interaction/native/havok/HavokWorldLock.h"
+#include "physics-interaction/native/player/NativePlayerCollisionFilter.h"
 
 namespace rock
 {

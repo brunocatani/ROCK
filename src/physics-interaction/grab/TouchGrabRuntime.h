@@ -2,8 +2,8 @@
 
 #include "api/ProviderRuntime.h"
 #include "physics-interaction/hand/HandLifecycle.h"
-#include "physics-interaction/native/BethesdaPhysicsBody.h"
-#include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
+#include "physics-interaction/native/havok/BethesdaPhysicsBody.h"
+#include "physics-interaction/native/havok/PhysicsCallbackQuiescenceGate.h"
 
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/NetImmerse/NiTransform.h"

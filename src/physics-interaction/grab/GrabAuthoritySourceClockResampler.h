@@ -32,7 +32,7 @@
  * enters only the discontinuity check.
  */
 
-#include "physics-interaction/native/HavokPhysicsTiming.h"
+#include "physics-interaction/native/havok/HavokPhysicsTiming.h"
 #include "physics-interaction/timing/GameFrameTimingPolicy.h"
 
 #include "RE/NetImmerse/NiMatrix3.h"
