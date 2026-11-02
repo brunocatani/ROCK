@@ -697,6 +697,17 @@ namespace rock
             RE::NiTransform& inOutWeaponWorld,
             RE::NiTransform& inOutHandWorld);
 
+        /*
+         * Firing-grip takeover presentation (FiringHandoffBlendState). The
+         * receiving hand's carry passes its solved weapon and hand poses
+         * through here before publishing them. Returns true while the blend
+         * owns this frame's presentation, including its completing frame.
+         */
+        bool resolveFiringHandoffBlend(
+            bool isLeft,
+            RE::NiTransform& inOutWeaponWorld,
+            RE::NiTransform& inOutHandWorld);
+
         void setWeaponVisualIntentObserver(
             void* context,
             WeaponVisualIntentObserver observer)
@@ -1164,6 +1175,33 @@ namespace rock
             hand_visual_lerp_math::VisualReturnTransition<RE::NiTransform> residual{};
             std::uint64_t weaponGenerationKey{ 0 };
             bool armed{ false };
+        };
+
+        /*
+         * Firing-grip takeover: the support hand at the firing station takes
+         * the firing grip when the old firing hand lets go. Its new carry
+         * (left carry, right authored seat or right native carry) places the
+         * weapon and the receiving hand away from the pose on screen. The
+         * promotion arms this with that rendered weapon pose and the receiving
+         * hand's rendered seat on it; the carry's first presentation captures
+         * the weapon as a residual in its solved frame. The residual decays to
+         * identity while the seat slides onto the carry seat with one eased
+         * alpha, so the hand stays on the weapon and both follow the live
+         * controller. Value-only: the generation witness and the missed-frame
+         * check fail it closed when another owner presents meanwhile.
+         */
+        struct FiringHandoffBlendState
+        {
+            RE::NiTransform startWeaponWorld{};
+            RE::NiTransform startSeatInWeapon{};
+            RE::NiTransform weaponResidualLocal{};
+            std::uint64_t weaponGenerationKey{ 0 };
+            std::uint64_t lastFrame{ 0 };
+            float elapsedSeconds{ 0.0f };
+            float durationSeconds{ 0.0f };
+            bool handIsLeft{ false };
+            bool armed{ false };
+            bool active{ false };
         };
 
         struct ScopeSafeHandFrameState
@@ -1841,6 +1879,21 @@ namespace rock
             const RE::NiTransform& solvedWeaponWorld,
             float dt);
         void clearWeaponPoseHandoffBlend(const char* reason, bool logCancellation);
+        /*
+         * Firing-grip takeover blend (FiringHandoffBlendState). Arm after the
+         * firing role switches and before transitionToPrimaryOnly drops the
+         * support presentation it reads. A right receiving hand has no carry
+         * presenter on the promotion frame, so it holds the start pose then;
+         * native right carry is presented by ROCK until the blend completes.
+         */
+        void armFiringHandoffBlend(RE::NiNode* weaponNode, bool receivingHandIsLeft);
+        void holdRightFiringHandoffStart(RE::NiNode* weaponNode);
+        bool presentNativeRightFiringHandoff(RE::NiNode* weaponNode);
+        bool publishRightFiringHandoffPose(
+            RE::NiNode* weaponNode,
+            const RE::NiTransform& weaponWorld,
+            const RE::NiTransform& handWorld);
+        void clearFiringHandoffBlend(const char* reason, bool logCancellation);
         bool tryResolveAuthoredPrimaryWeaponReturnTargetLocal(
             RE::NiNode* weaponNode,
             RE::NiNode* nativeParent,
@@ -2216,7 +2269,10 @@ namespace rock
             std::array<bool, 2> weaponCollisionHandPresentationFromPreviousFrame{};
             ReturningWeaponVisualState returningWeapon{};
             WeaponPoseHandoffBlendState weaponHandoff{};
+            FiringHandoffBlendState firingHandoff{};
             RE::NiTransform lastRenderedWeaponWorld{};
+            // Frame of that record: FRIK-native carry leaves it unrefreshed.
+            std::uint64_t lastRenderedWeaponFrame{ 0 };
             bool hasLastRenderedWeaponWorld{ false };
             LockedHandVisualLerpState primaryHandLerp{};
             void* weaponIntentObserverContext{ nullptr };

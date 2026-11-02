@@ -74,10 +74,10 @@ namespace rock
         RE::NiTransform recoilDelta{};
         const bool recoilConsumed = consumeOwnedWeaponRecoil(recoilDelta);
         if (recoilConsumed) {
+            // The kick carries the hand with the weapon. Rebuilding the hand
+            // from the raw seat would drop a takeover's sliding seat.
             solvedWeaponWorld = transform_math::composeTransforms(recoilDelta, solvedWeaponWorld);
-            RE::NiTransform seat{};
-            (void)presentedPrimaryHandWeaponLocal(seat);
-            presentedHandWorld = transform_math::composeTransforms(solvedWeaponWorld, seat);
+            presentedHandWorld = transform_math::composeTransforms(recoilDelta, presentedHandWorld);
         }
 
         // A consumer draw continues from where the consumer showed the
@@ -410,6 +410,9 @@ namespace rock
         outPresentedHandWorld = transform_math::composeTransforms(
             outWeaponWorld,
             seat);
+        // A firing-grip takeover continues from the pose on screen: the
+        // weapon eases into this carry while the hand slides onto the seat.
+        (void)resolveFiringHandoffBlend(true, outWeaponWorld, outPresentedHandWorld);
 
         /*
          * Probe: the carry orientation is wandL o damping o mirror(aim). Log

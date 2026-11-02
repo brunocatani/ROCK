@@ -975,6 +975,7 @@ namespace rock
             "transition-to-inactive",
             true);
         clearWeaponPoseHandoffBlend("transition-to-inactive", true);
+        clearFiringHandoffBlend("transition-to-inactive", true);
         const bool weaponReturnActive = _visuals.returningWeapon.localTransition.active;
         // Weapon-node topology always returns to native immediately. A visual
         // return owns only ROCK's later transform publication, never hFRIK's
@@ -1084,6 +1085,7 @@ namespace rock
         }
         _firing.leftDampedFollowFrame = {};
         clearLeftFiringSupportReleaseReturn("firing-hand-changed");
+        clearFiringHandoffBlend("firing-hand-changed", true);
         _session.firingHandIsLeft = isLeft;
         // Each physical hand retains its own identity-bound support verdict;
         // changing the firing role does not change either handguard seat.

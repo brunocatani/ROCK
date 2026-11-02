@@ -53,6 +53,21 @@ namespace rock::hand_visual_lerp_math
     };
 
     /*
+     * Firing-grip takeover between hands: the receiving hand slides from its
+     * support seat onto the carry seat while the weapon moves into the new
+     * hand's carry. That is a larger, two-part motion than a release return,
+     * so it gets a longer window and blends any residual a player can see.
+     */
+    inline constexpr VisualReturnConfig kFiringHandoffBlendConfig{
+        .minSeconds = 0.18f,
+        .maxSeconds = 0.30f,
+        .minDistanceGameUnits = 0.25f,
+        .maxDistanceGameUnits = 14.0f,
+        .minAngleDegrees = 1.5f,
+        .maxAngleDegrees = 90.0f,
+    };
+
+    /*
      * Visual-only release state. It deliberately owns transform values only:
      * no scene nodes, Havok bodies, constraints, or object identity can leak
      * past the gameplay release that created it.
@@ -370,6 +385,37 @@ namespace rock::hand_visual_lerp_math
         return transform_math::composeTransforms(
             solvedWorld,
             interpolateTransform(residualLocal, transform_math::makeIdentityTransform<Transform>(), alpha));
+    }
+
+    /*
+     * A handoff that also moves the hand to another seat on the weapon (the
+     * support hand taking the firing grip). The weapon decays its residual
+     * while the hand's seat slides from the rendered seat to the solved one
+     * with the same alpha, so the hand stays on the presented weapon: alpha 0
+     * is the rendered pair, alpha 1 the solved pair.
+     */
+    template <class Transform>
+    struct SeatHandoffPose
+    {
+        Transform weaponWorld{};
+        Transform handWorld{};
+    };
+
+    template <class Transform>
+    inline SeatHandoffPose<Transform> applySeatHandoff(
+        const Transform& solvedWeaponWorld,
+        const Transform& solvedHandWorld,
+        const Transform& weaponResidualLocal,
+        const Transform& renderedSeatInWeapon,
+        float alpha)
+    {
+        SeatHandoffPose<Transform> pose{};
+        pose.weaponWorld = applyHandoffResidual(solvedWeaponWorld, weaponResidualLocal, alpha);
+        const Transform solvedSeat = transform_math::composeTransforms(
+            transform_math::invertTransform(solvedWeaponWorld), solvedHandWorld);
+        pose.handWorld = transform_math::composeTransforms(
+            pose.weaponWorld, interpolateTransform(renderedSeatInWeapon, solvedSeat, alpha));
+        return pose;
     }
 
     enum class VisualReturnDriveStatus : std::uint8_t

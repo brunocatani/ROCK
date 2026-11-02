@@ -1065,6 +1065,9 @@ namespace rock
             (void)weaponAuthority.resolveDrawPresentationBlend(_weaponFormId, false, liveWeaponWorld, trackedHandWorld,
                 presentedWeaponWorld, presentedFiringHandWorld);
         }
+        // A firing-grip takeover from the left hand continues from the pose
+        // on screen into this seat, the hand kept on the weapon.
+        (void)weaponAuthority.resolveFiringHandoffBlend(false, presentedWeaponWorld, presentedFiringHandWorld);
         if (!weaponAuthority.applyAuthoredPrimaryGripWeaponAlignment(
                 input.weaponNode,
                 presentedWeaponWorld,

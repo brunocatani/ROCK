@@ -451,8 +451,10 @@ namespace rock
         }
 
         if (usesNativeRightCarry()) {
-            // Right firing hand: FRIK-native carry, ROCK bookkeeping only.
+            // Right firing hand: FRIK-native carry, ROCK bookkeeping only,
+            // except while a firing-grip takeover eases into that carry.
             _hasSolvedWeaponTransform = false;
+            (void)presentNativeRightFiringHandoff(weaponNode);
             return;
         }
 
@@ -1507,19 +1509,15 @@ namespace rock
             recordFiringGripDetachedHaptic();
         }
         setFiringHand(supportHandIsLeft, "support-grip-promotion");
-        if (ownsWeaponTransform()) {
-            /*
-             * The promoted hand leaves the two-hand solve for one-hand carry.
-             * Ease the rendered two-hand pose into that carry the same way a
-             * support release does: the native right baseline return, or the
-             * left carry's wand-aimed return.
-             */
-            if (usesNativeRightCarry()) {
-                beginWeaponVisualReturn("support-grip-promotion");
-            } else {
-                beginLeftFiringSupportReleaseReturn("support-grip-promotion");
-            }
-        }
+        /*
+         * The promoted hand leaves its support seat for one-hand carry, which
+         * places the weapon and that hand away from the pose on screen in
+         * every support authority mode (firing-station support is visual-only,
+         * so the old firing hand's carry was on screen). Capture the rendered
+         * pose before transitionToPrimaryOnly drops the support presentation;
+         * the new carry eases out of it with the hand kept on the weapon.
+         */
+        armFiringHandoffBlend(weaponNode, supportHandIsLeft);
         if (!transitionToPrimaryOnly(weaponNode, _session.weaponGenerationKey, _session.equippedWeaponOwnershipKey, "firing-grip-hand-promotion")) {
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: firing-grip promotion failed to enter primary-only; clearing authority");
             transitionToInactive(false);
@@ -1533,6 +1531,9 @@ namespace rock
         if (usesLeftFiringCarry() &&
             !solveLeftFiringWeaponCarry(weaponNode, dt)) {
             return Result::Promoted;
+        }
+        if (usesNativeRightCarry()) {
+            holdRightFiringHandoffStart(weaponNode);
         }
         _session.firingGripSequence = ++_session.gripCaptureSequence;
         _visuals.primaryHandLerp = {};

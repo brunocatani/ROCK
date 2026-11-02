@@ -123,6 +123,50 @@ namespace
         return ok;
     }
 
+    /*
+     * Firing-grip takeover, sized from the 2026-11-01 20:50:37 handoff (hand
+     * 7.75gu/28.2deg, weapon about 7gu in one frame): the support hand left
+     * its seat and snapped onto the new carry. The presentation must start on
+     * the rendered pair, keep the hand on the weapon, and land on the carry.
+     */
+    bool checkFiringHandoffSeatSlide()
+    {
+        using namespace rock;
+        namespace visual = hand_visual_lerp_math;
+        bool ok = true;
+        auto rendered = transform_math::makeIdentityTransform<RE::NiTransform>();
+        rendered.rotate = weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>({ 0.2f, 0.1f, 0.97f }, 0.9f);
+        rendered.translate = { 2614.191f, 2466.283f, 112.888f };
+        auto renderedSeat = transform_math::makeIdentityTransform<RE::NiTransform>();
+        renderedSeat.rotate = weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>({ 0.0f, 1.0f, 0.0f }, 0.35f);
+        renderedSeat.translate = { -0.542f, -1.691f, -3.291f };
+        const auto renderedHand = transform_math::composeTransforms(rendered, renderedSeat);
+
+        auto carryMotion = transform_math::makeIdentityTransform<RE::NiTransform>();
+        carryMotion.rotate = weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>({ 1.0f, 0.0f, 0.0f }, 0.49f);
+        carryMotion.translate = { 4.0f, -5.0f, 3.0f };
+        const auto solved = transform_math::composeTransforms(carryMotion, rendered);
+        auto carrySeat = transform_math::makeIdentityTransform<RE::NiTransform>();
+        carrySeat.rotate = weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>({ 0.0f, 0.0f, 1.0f }, -0.2f);
+        carrySeat.translate = { 1.070f, -1.689f, -3.291f };
+        const auto solvedHand = transform_math::composeTransforms(solved, carrySeat);
+
+        const auto residual = visual::captureHandoffResidualLocal(solved, rendered);
+        const auto seat = transform_math::composeTransforms(transform_math::invertTransform(rendered), renderedHand);
+        const auto start = visual::applySeatHandoff(solved, solvedHand, residual, seat, 0.0f);
+        ok &= expect("takeover starts on the rendered weapon and hand",
+            samePose(start.weaponWorld, rendered) && samePose(start.handWorld, renderedHand));
+        const auto end = visual::applySeatHandoff(solved, solvedHand, residual, seat, 1.0f);
+        ok &= expect("takeover lands on the new carry", samePose(end.weaponWorld, solved) && samePose(end.handWorld, solvedHand));
+        for (const float alpha : { 0.25f, 0.5f, 0.75f }) {
+            const auto mid = visual::applySeatHandoff(solved, solvedHand, residual, seat, alpha);
+            const auto handInWeapon = transform_math::composeTransforms(transform_math::invertTransform(mid.weaponWorld), mid.handWorld);
+            ok &= expect("hand stays on the weapon while its seat slides",
+                samePose(handInWeapon, visual::interpolateTransform(renderedSeat, carrySeat, alpha)));
+        }
+        return ok;
+    }
+
     bool checkMeleePitch()
     {
         using namespace rock;
@@ -267,6 +311,7 @@ int main()
     using namespace rock;
     bool ok = checkMeleeAim();
     ok &= checkMeleePitch();
+    ok &= checkFiringHandoffSeatSlide();
     RE::NiTransform controller{};
     controller.scale = 1.0f;
     controller.translate = { -335.86664f, -341.83038f, 107.02197f };

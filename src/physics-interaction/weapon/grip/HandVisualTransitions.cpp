@@ -532,6 +532,7 @@ namespace rock
         clearHandVisualReturn(false, reason, logCancellation);
         clearWeaponVisualReturn(reason, logCancellation, restoreBlockers);
         clearWeaponPoseHandoffBlend(reason, logCancellation);
+        clearFiringHandoffBlend(reason, logCancellation);
     }
 
     namespace
@@ -723,6 +724,249 @@ namespace rock
         if (wasPending && logCancellation) {
             ROCK_LOG_DEBUG(Weapon,
                 "TwoHandedGrip: weapon handoff blend cancelled reason={}",
+                reason ? reason : "unknown");
+        }
+    }
+
+    void TwoHandedGrip::armFiringHandoffBlend(RE::NiNode* weaponNode, const bool receivingHandIsLeft)
+    {
+        auto& state = _visuals.firingHandoff;
+        state = {};
+        const char* const handName = receivingHandIsLeft ? "left" : "right";
+        const auto notArmed = [handName](const char* reason) {
+            ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip: firing handoff blend not armed hand={} reason={}", handName, reason);
+        };
+        // The scoped frame publishes no locked hands, so the records below
+        // would not describe what is on screen.
+        if (!hand_visual_lerp_math::kEquippedWeaponReturnEnabled || !weaponNode ||
+            _session.weaponGenerationKey == 0 || _scope.menuOpenThisFrame) {
+            notArmed("unavailable");
+            return;
+        }
+
+        // ROCK's own presentation from this or the previous frame is on
+        // screen. Otherwise FRIK placed the weapon and the node holds it.
+        const std::uint64_t frameIndex = runtime_state::currentFrame().frameIndex;
+        const bool renderedRecordCurrent = _visuals.hasLastRenderedWeaponWorld &&
+            _visuals.lastRenderedWeaponFrame + 1 >= frameIndex;
+        const RE::NiTransform startWeaponWorld =
+            renderedRecordCurrent ? _visuals.lastRenderedWeaponWorld : weaponNode->world;
+
+        // The support presentation shows the receiving hand on its seat.
+        const std::size_t index = receivingHandIsLeft ? 0u : 1u;
+        RE::NiTransform startHandWorld{};
+        const char* handSource = "support-seat";
+        if (_visuals.hasLastPublishedHandWorld[index] &&
+            isUsableHandAuthorityTransform(_visuals.lastPublishedHandWorld[index])) {
+            startHandWorld = _visuals.lastPublishedHandWorld[index];
+        } else if (tryGetSolverHandTransform(receivingHandIsLeft, startHandWorld) &&
+                   isUsableHandAuthorityTransform(startHandWorld)) {
+            handSource = "tracked";
+        } else {
+            notArmed("receiving-hand-pose-unavailable");
+            return;
+        }
+        if (!isInvertibleTransform(startWeaponWorld)) {
+            notArmed("rendered-weapon-pose-invalid");
+            return;
+        }
+        const RE::NiTransform startSeat = transform_math::composeTransforms(
+            transform_math::invertTransform(startWeaponWorld), startHandWorld);
+        if (!isFiniteTransform(startSeat)) {
+            notArmed("non-finite-start-seat");
+            return;
+        }
+
+        state.startWeaponWorld = startWeaponWorld;
+        state.startSeatInWeapon = startSeat;
+        state.weaponGenerationKey = _session.weaponGenerationKey;
+        state.lastFrame = frameIndex;
+        state.handIsLeft = receivingHandIsLeft;
+        state.armed = true;
+        ROCK_LOG_DEBUG(Weapon,
+            "TwoHandedGrip: firing handoff blend armed hand={} weaponSource={} handSource={} generation={:016X}",
+            handName, renderedRecordCurrent ? "rendered" : "node", handSource, state.weaponGenerationKey);
+    }
+
+    bool TwoHandedGrip::resolveFiringHandoffBlend(
+        const bool isLeft,
+        RE::NiTransform& inOutWeaponWorld,
+        RE::NiTransform& inOutHandWorld)
+    {
+        auto& state = _visuals.firingHandoff;
+        if ((!state.armed && !state.active) || state.handIsLeft != isLeft) {
+            return false;
+        }
+        if (state.weaponGenerationKey != _session.weaponGenerationKey ||
+            !isInvertibleTransform(inOutWeaponWorld) ||
+            !isUsableHandAuthorityTransform(inOutHandWorld)) {
+            clearFiringHandoffBlend("weapon-identity-or-solve-invalid", true);
+            return false;
+        }
+        // A new two-hand solve owns the weapon; the carry pose is only its
+        // basis pre-write and must stay unblended.
+        if (ownsWeaponTransform()) {
+            clearFiringHandoffBlend("support-solve-owns-weapon", true);
+            return false;
+        }
+        const auto& frame = runtime_state::currentFrame();
+        // Every presented frame continues the previous one. A gap means
+        // another owner presented meanwhile, so the start no longer holds.
+        if (frame.frameIndex > state.lastFrame + 1) {
+            clearFiringHandoffBlend("presentation-interrupted", true);
+            return false;
+        }
+
+        const RE::NiTransform identity = transform_math::makeIdentityTransform<RE::NiTransform>();
+        if (state.armed) {
+            state.armed = false;
+            state.weaponResidualLocal = hand_visual_lerp_math::captureHandoffResidualLocal(
+                inOutWeaponWorld, state.startWeaponWorld);
+            const RE::NiTransform handResidualLocal = hand_visual_lerp_math::captureHandoffResidualLocal(
+                inOutHandWorld, transform_math::composeTransforms(state.startWeaponWorld, state.startSeatInWeapon));
+            if (!isFiniteTransform(state.weaponResidualLocal) || !isFiniteTransform(handResidualLocal)) {
+                clearFiringHandoffBlend("non-finite-residual", true);
+                return false;
+            }
+            // The hand residual includes the seat slide; the slower motion sets the window.
+            state.durationSeconds = (std::max)(
+                hand_visual_lerp_math::computeVisualReturnDuration(
+                    state.weaponResidualLocal, identity, hand_visual_lerp_math::kFiringHandoffBlendConfig),
+                hand_visual_lerp_math::computeVisualReturnDuration(
+                    handResidualLocal, identity, hand_visual_lerp_math::kFiringHandoffBlendConfig));
+            const float weaponDistance = hand_visual_lerp_math::distanceGameUnits(
+                state.weaponResidualLocal.translate, identity.translate);
+            const float weaponAngle = hand_visual_lerp_math::rotationDistanceDegrees(state.weaponResidualLocal, identity);
+            const float handDistance = hand_visual_lerp_math::distanceGameUnits(handResidualLocal.translate, identity.translate);
+            const float handAngle = hand_visual_lerp_math::rotationDistanceDegrees(handResidualLocal, identity);
+            if (state.durationSeconds <= 0.0f) {
+                ROCK_LOG_DEBUG(Weapon,
+                    "TwoHandedGrip: firing handoff blend skipped hand={} weapon=({:.3f}gu,{:.2f}deg) hand=({:.3f}gu,{:.2f}deg)",
+                    isLeft ? "left" : "right", weaponDistance, weaponAngle, handDistance, handAngle);
+                state = {};
+                return false;
+            }
+            state.active = true;
+            state.elapsedSeconds = 0.0f;
+            state.lastFrame = frame.frameIndex;
+            ROCK_LOG_DEBUG(Weapon,
+                "TwoHandedGrip: firing handoff blend started hand={} weapon=({:.2f}gu,{:.1f}deg) hand=({:.2f}gu,{:.1f}deg) duration={:.3f}s",
+                isLeft ? "left" : "right", weaponDistance, weaponAngle, handDistance, handAngle, state.durationSeconds);
+        } else if (frame.frameIndex != state.lastFrame) {
+            // Advance once per frame: the left carry presents twice per frame
+            // (basis pre-write, then the final pose) and both must agree.
+            state.elapsedSeconds = hand_visual_lerp_math::advanceTimedBlendElapsed(
+                state.elapsedSeconds, frame.deltaSeconds, state.durationSeconds);
+            state.lastFrame = frame.frameIndex;
+        }
+
+        const float linear = hand_visual_lerp_math::timedBlendAlpha(state.elapsedSeconds, state.durationSeconds);
+        if (linear >= 1.0f) {
+            ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip: firing handoff blend completed hand={} duration={:.3f}s",
+                isLeft ? "left" : "right", state.durationSeconds);
+            state = {};
+            return true;
+        }
+        // Ease in and out so neither end of the slide has a velocity step.
+        const float eased = linear * linear * (3.0f - 2.0f * linear);
+        const auto blended = hand_visual_lerp_math::applySeatHandoff(
+            inOutWeaponWorld, inOutHandWorld, state.weaponResidualLocal, state.startSeatInWeapon, eased);
+        if (!isFiniteTransform(blended.weaponWorld) || !isUsableHandAuthorityTransform(blended.handWorld)) {
+            clearFiringHandoffBlend("non-finite-blended-pose", true);
+            return false;
+        }
+        inOutWeaponWorld = blended.weaponWorld;
+        inOutHandWorld = blended.handWorld;
+        return true;
+    }
+
+    bool TwoHandedGrip::publishRightFiringHandoffPose(
+        RE::NiNode* weaponNode,
+        const RE::NiTransform& weaponWorld,
+        const RE::NiTransform& handWorld)
+    {
+        if (!weaponNode ||
+            !frik_visual_authority::publishHandWorld(
+                PRIMARY_GRIP_TAG, frik_visual_authority::Hand::Right, handWorld, GRIP_HAND_POSE_PRIORITY)) {
+            clearPrimaryGripWorldAuthority(false);
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "TwoHandedGrip: firing handoff could not present the right hand");
+            return false;
+        }
+        // The authored seat's lifetime: the next authored frame replaces this
+        // claim, or finishAuthoredPrimaryFiringGripFrame clears it once
+        // nothing refreshes it.
+        _firing.authoredHandWorldActive = true;
+        _firing.authoredHandWorldRefreshed = true;
+        recordScopeHandAuthorityPublication(scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip, false);
+        clearHandVisualReturn(false, "firing-handoff-hand-presented", false);
+        recordPublishedHandWorld(false, handWorld);
+        // Publish the weapon after the hand: the arm solve moves its parent.
+        if (!applyWeaponVisualAuthority(weaponNode, weaponWorld, _session.weaponGenerationKey)) {
+            clearPrimaryGripWorldAuthority(false);
+            return false;
+        }
+        _lastSolvedWeaponTransform = weaponNode->world;
+        _hasSolvedWeaponTransform = true;
+        return true;
+    }
+
+    void TwoHandedGrip::holdRightFiringHandoffStart(RE::NiNode* weaponNode)
+    {
+        const auto& state = _visuals.firingHandoff;
+        if (!state.armed || state.handIsLeft) {
+            return;
+        }
+        // transitionToPrimaryOnly released the support seat, and the right
+        // carry presents only from the next frame. Show the start pose now.
+        const RE::NiTransform handWorld =
+            transform_math::composeTransforms(state.startWeaponWorld, state.startSeatInWeapon);
+        (void)publishAuthoredPrimaryFiringGripFingerPose(false);
+        if (!isUsableHandAuthorityTransform(handWorld) ||
+            !publishRightFiringHandoffPose(weaponNode, state.startWeaponWorld, handWorld)) {
+            clearFiringHandoffBlend("start-hold-publish-failed", true);
+        }
+    }
+
+    bool TwoHandedGrip::presentNativeRightFiringHandoff(RE::NiNode* weaponNode)
+    {
+        const auto& state = _visuals.firingHandoff;
+        // An authored canonical is presented by the authored seat runtime.
+        if ((!state.armed && !state.active) || state.handIsLeft || !weaponNode ||
+            _firing.authoredHandWorldRefreshed ||
+            _firing.rightCanonicalSource == RightFiringCanonicalSource::AuthoredAnimation) {
+            return false;
+        }
+        // FRIK's native carry: the weapon hangs at its native baseline from
+        // the tracked hand, which is where FRIK resumes when the blend ends.
+        RE::NiTransform handWorld{};
+        if (!_hasWeaponNodeLocalBaseline || !isFiniteTransform(_weaponNodeLocalBaseline) ||
+            !tryGetSolverHandTransform(false, handWorld) || !isUsableHandAuthorityTransform(handWorld)) {
+            clearFiringHandoffBlend("native-right-target-unavailable", true);
+            return false;
+        }
+        RE::NiTransform weaponWorld = transform_math::composeTransforms(handWorld, _weaponNodeLocalBaseline);
+        weaponWorld.scale = weaponNode->world.scale;
+        if (!resolveFiringHandoffBlend(false, weaponWorld, handWorld)) {
+            return false;
+        }
+        // This frame's native intent sample is not the presented pose and
+        // cannot become a one-hand recoil base (as for a weapon return).
+        _recoil.rightBaseValid = false;
+        if (!publishRightFiringHandoffPose(weaponNode, weaponWorld, handWorld)) {
+            clearFiringHandoffBlend("native-right-publish-failed", true);
+            return false;
+        }
+        return true;
+    }
+
+    void TwoHandedGrip::clearFiringHandoffBlend(const char* reason, const bool logCancellation)
+    {
+        auto& state = _visuals.firingHandoff;
+        const bool wasPending = state.armed || state.active;
+        state = {};
+        if (wasPending && logCancellation) {
+            ROCK_LOG_DEBUG(Weapon,
+                "TwoHandedGrip: firing handoff blend cancelled reason={}",
                 reason ? reason : "unknown");
         }
     }
@@ -946,6 +1190,7 @@ namespace rock
         }
         if (recordRenderedWeaponWorld) {
             _visuals.lastRenderedWeaponWorld = weaponNode->world;
+            _visuals.lastRenderedWeaponFrame = runtime_state::currentFrame().frameIndex;
             _visuals.hasLastRenderedWeaponWorld = isFiniteTransform(_visuals.lastRenderedWeaponWorld);
         }
         if (g_rockConfig.rockDebugDrawNativeScopeActivation) {
