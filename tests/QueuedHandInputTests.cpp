@@ -6,8 +6,8 @@ int main()
 {
     using namespace rock::queued_hand_input;
     Records records;
-    const Origin right{Hand::Right, 1, 27};
-    const Origin left{Hand::Left, 2, 27};
+    const Origin right{ Hand::Right, 1, 27 };
+    const Origin left{ Hand::Left, 2, 27 };
     constexpr std::uintptr_t movie = 0x100000, secondMovie = 0x200000;
     constexpr std::uintptr_t first = movie + 0x268, second = first + 0x50;
 

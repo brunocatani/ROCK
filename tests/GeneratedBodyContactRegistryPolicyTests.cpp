@@ -1,7 +1,7 @@
 #include "physics-interaction/contact/GeneratedBodyContactRegistry.h"
 
-#include <cstdio>
 #include <cstdint>
+#include <cstdio>
 
 namespace
 {
@@ -32,7 +32,8 @@ namespace
             return true;
         }
 
-        std::printf("%s expected %llu got %llu\n", label, static_cast<unsigned long long>(expected), static_cast<unsigned long long>(actual));
+        std::printf("%s expected %llu got %llu\n", label, static_cast<unsigned long long>(expected),
+            static_cast<unsigned long long>(actual));
         return false;
     }
 }

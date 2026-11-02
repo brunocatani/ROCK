@@ -42,7 +42,8 @@ int main()
 
     bool ok = true;
     ForceGrabReservations reservations;
-    ok &= expectFalse("invalid API hand cannot reserve", reservations.reserve(static_cast<rock::api::Hand>(99), 11, 100));
+    ok &=
+        expectFalse("invalid API hand cannot reserve", reservations.reserve(static_cast<rock::api::Hand>(99), 11, 100));
     ok &= expectFalse("auto hand rejects missing owner", reservations.reserve(rock::api::Hand::None, 0, 100));
     ok &= expectTrue("auto hand reserves both hands", reservations.reserve(rock::api::Hand::None, 11, 100));
     ok &= expectTrue("auto hand reserves right", reservations.isReserved(rock::api::Hand::Right));
@@ -54,8 +55,10 @@ int main()
     ok &= expectFalse("auto hand completion releases both", reservations.isReserved(rock::api::Hand::None));
     ok &= expectTrue("first right API force grab reserves", reservations.reserve(rock::api::Hand::Right, 11, 101));
     ok &= expectFalse("auto hand cannot overtake reserved right", reservations.reserve(rock::api::Hand::None, 22, 200));
-    ok &= expectFalse("duplicate right API force grab is rejected", reservations.reserve(rock::api::Hand::Right, 11, 102));
-    ok &= expectTrue("independent left API force grab is allowed", reservations.reserve(rock::api::Hand::Left, 22, 201));
+    ok &= expectFalse("duplicate right API force grab is rejected",
+        reservations.reserve(rock::api::Hand::Right, 11, 102));
+    ok &=
+        expectTrue("independent left API force grab is allowed", reservations.reserve(rock::api::Hand::Left, 22, 201));
     ok &= expectTrue("dequeue does not implicitly release right", reservations.isReserved(rock::api::Hand::Right));
     reservations.release(11, 101);
     ok &= expectFalse("terminal result releases matching right", reservations.isReserved(rock::api::Hand::Right));
@@ -78,8 +81,10 @@ int main()
     ok &= expectEqual("completion preserves acceptance frame", mergedCompletion.acceptedFrame, std::uint64_t{ 17 });
     ok &= expectEqual("completion preserves committed frame", mergedCompletion.committedFrame, std::uint64_t{ 19 });
     ok &= expectEqual("completion records terminal frame", mergedCompletion.frameIndex, std::uint64_t{ 29 });
-    ok &= expectEqual("successful completion records applied frame", mergedCompletion.appliedFrame, std::uint64_t{ 29 });
-    ok &= expectEqual("completion normalizes terminal stage", mergedCompletion.stage, rock::api::grab::CommandStage::Terminal);
+    ok &=
+        expectEqual("successful completion records applied frame", mergedCompletion.appliedFrame, std::uint64_t{ 29 });
+    ok &= expectEqual("completion normalizes terminal stage", mergedCompletion.stage,
+        rock::api::grab::CommandStage::Terminal);
 
     completed.state = rock::api::grab::InteractionCommandState::Rejected;
     completed.failure = rock::api::grab::InteractionFailure::TargetUnavailable;
@@ -88,7 +93,8 @@ int main()
     completed.appliedFrame = 0;
     const auto mergedRejection = mergeResultHistory(accepted, completed, 37);
     ok &= expectEqual("rejection preserves explicit terminal frame", mergedRejection.frameIndex, std::uint64_t{ 31 });
-    ok &= expectEqual("rejection records failure stage", mergedRejection.failureStage, rock::api::grab::InteractionFailure::TargetUnavailable);
+    ok &= expectEqual("rejection records failure stage", mergedRejection.failureStage,
+        rock::api::grab::InteractionFailure::TargetUnavailable);
     ok &= expectEqual("rejection does not invent applied frame", mergedRejection.appliedFrame, std::uint64_t{ 0 });
 
     return ok ? 0 : 1;

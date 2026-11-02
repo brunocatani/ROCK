@@ -1,17 +1,20 @@
-#include "physics-interaction/weapon/native/NativeModelAncestry.h"
-#include "physics-interaction/performance/PerformanceProfiler.h"
 #include <Windows.h>
 #include <cassert>
 #include <cstddef>
 #include <cstring>
+#include "physics-interaction/performance/PerformanceProfiler.h"
+#include "physics-interaction/weapon/native/NativeModelAncestry.h"
 
 namespace rock::performance_profiler
 {
     // Only the diagnostic sink is substituted; ancestry and guarded native
     // reads execute their production implementations against Windows pages.
     MemoryQuerySample beginMemoryQuery() noexcept { return {}; }
+
     void endMemoryQuery(MemoryQuerySample, MemoryQueryKind) noexcept {}
+
     void addCounter(Counter, std::uint64_t) noexcept {}
+
     void countGuardedRead(const std::source_location&) noexcept {}
 }
 
@@ -21,8 +24,8 @@ int main()
     using rock::native_model_ancestry::within;
     SYSTEM_INFO system{};
     GetSystemInfo(&system);
-    auto* capture = static_cast<std::byte*>(VirtualAlloc(nullptr, system.dwPageSize * 2,
-        MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+    auto* capture =
+        static_cast<std::byte*>(VirtualAlloc(nullptr, system.dwPageSize * 2, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
     assert(capture);
     // Native NiAVObject record bytes, including +28 parent pointers; no engine
     // constructors, stand-in scene classes or test implementation of traversal.
@@ -35,8 +38,11 @@ int main()
     auto* leftModel = capture + 0x100;
     auto* leftPart = capture + 0x140;
     const auto parent = [](std::byte* child, const void* value) { std::memcpy(child + 0x28, &value, sizeof(value)); };
-    parent(rightAttachment, scene); parent(rightModel, rightAttachment);
-    parent(leftAttachment, scene); parent(leftModel, leftAttachment); parent(leftPart, leftModel);
+    parent(rightAttachment, scene);
+    parent(rightModel, rightAttachment);
+    parent(leftAttachment, scene);
+    parent(leftModel, leftAttachment);
+    parent(leftPart, leftModel);
     const void* sameName = capture + 0x1C0;
     std::memcpy(rightModel + 0x10, &sameName, sizeof(sameName));
     std::memcpy(leftModel + 0x10, &sameName, sizeof(sameName));

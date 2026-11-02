@@ -31,14 +31,16 @@ int main()
 
     {
         const Roster roster(slotZeroFiring(Hand::Right));
-        ok &= expect("right only: slot 0 holds the right hand", roster.slotZeroHolds(false) && !roster.slotZeroHolds(true));
+        ok &= expect("right only: slot 0 holds the right hand",
+            roster.slotZeroHolds(false) && !roster.slotZeroHolds(true));
         ok &= expect("right only: the right firing grip is confirmed",
             roster.slotZeroGrips(false).firingGripActive && !roster.slotZeroGrips(true).weaponEngaged());
         ok &= expect("right only: one weapon does not fill both hands", !roster.bothHandsHoldWeapons());
     }
     {
         const Roster roster(slotZeroFiring(Hand::Left));
-        ok &= expect("left only: slot 0 holds the left hand", roster.slotZeroHolds(true) && !roster.slotZeroHolds(false));
+        ok &=
+            expect("left only: slot 0 holds the left hand", roster.slotZeroHolds(true) && !roster.slotZeroHolds(false));
         ok &= expect("left only: the left firing grip is confirmed",
             roster.slotZeroGrips(true).firingGripActive && !roster.slotZeroGrips(false).weaponEngaged());
     }
@@ -47,10 +49,12 @@ int main()
         facts.slot1 = { .equipped = true, .holdsHand = true, .hand = Hand::Left };
         const Roster roster(facts);
         ok &= expect("two weapons: each slot holds its own hand",
-            roster.slotZeroHolds(false) && roster.slotOneHolds(true) && !roster.slotOneHolds(false) && !roster.slotZeroHolds(true));
+            roster.slotZeroHolds(false) && roster.slotOneHolds(true) && !roster.slotOneHolds(false) &&
+                !roster.slotZeroHolds(true));
         ok &= expect("two weapons: both hands hold weapons", roster.bothHandsHoldWeapons());
         facts.slot1.holdsHand = false;
-        ok &= expect("a sheathed second weapon holds no hand", !Roster(facts).slotOneHolds(true) && !Roster(facts).bothHandsHoldWeapons());
+        ok &= expect("a sheathed second weapon holds no hand",
+            !Roster(facts).slotOneHolds(true) && !Roster(facts).bothHandsHoldWeapons());
     }
     {
         auto facts = slotZeroFiring(Hand::Right);
@@ -89,7 +93,8 @@ int main()
     {
         Facts facts{};
         facts.pending.bothHands = true;
-        ok &= expect("a pending paired grip reserves both hands", Roster(facts).slotZeroHolds(false) && Roster(facts).slotZeroHolds(true));
+        ok &= expect("a pending paired grip reserves both hands",
+            Roster(facts).slotZeroHolds(false) && Roster(facts).slotZeroHolds(true));
         facts.pending = { .supportHand = Hand::Left };
         facts.slot0 = slotZeroFiring(Hand::Left).slot0;
         ok &= expect("a pending support grip reserves only its hand",

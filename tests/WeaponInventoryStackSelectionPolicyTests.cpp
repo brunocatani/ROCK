@@ -30,33 +30,25 @@ int main()
     newStackAfter.stacks[2] = StackWitness{ .stackAddress = 0x3000, .instanceDataAddress = 0xC000, .count = 1 };
     const auto newStack = selectTransferredStack(duplicateBefore, newStackAfter, 0xDEAD);
     ok &= expect("a newly inserted stack must win among same-base duplicates",
-        newStack.found &&
-            newStack.postIndex == 2 &&
-            newStack.evidence == Evidence::NewStack);
+        newStack.found && newStack.postIndex == 2 && newStack.evidence == Evidence::NewStack);
 
     Snapshot mergedAfter = duplicateBefore;
     mergedAfter.stacks[1].count = 2;
     mergedAfter.stacks[1].instanceDataAddress = 0xC000;
     const auto merged = selectTransferredStack(duplicateBefore, mergedAfter, 0xDEAD);
     ok &= expect("the only increased stack must identify a merged pickup",
-        merged.found &&
-            merged.postIndex == 1 &&
-            merged.evidence == Evidence::ExistingStackCountIncrease);
+        merged.found && merged.postIndex == 1 && merged.evidence == Evidence::ExistingStackCountIncrease);
 
     const auto exact = selectTransferredStack(duplicateBefore, newStackAfter, 0xB000);
     ok &= expect("an exact surviving instance pointer must remain authoritative",
-        exact.found &&
-            exact.postIndex == 1 &&
-            exact.evidence == Evidence::ExactInstance);
+        exact.found && exact.postIndex == 1 && exact.evidence == Evidence::ExactInstance);
 
     Snapshot ambiguousAfter = duplicateBefore;
     ambiguousAfter.stacks[0].count = 2;
     ambiguousAfter.stacks[1].count = 2;
     const auto ambiguous = selectTransferredStack(duplicateBefore, ambiguousAfter, 0);
     ok &= expect("multiple mutated stacks must fail closed",
-        !ambiguous.found &&
-            ambiguous.mutationCandidateCount == 2 &&
-            ambiguous.evidence == Evidence::AmbiguousMutation);
+        !ambiguous.found && ambiguous.mutationCandidateCount == 2 && ambiguous.evidence == Evidence::AmbiguousMutation);
 
     Snapshot soleBefore{};
     Snapshot soleAfter{};
@@ -64,14 +56,11 @@ int main()
     soleAfter.stacks[0] = StackWitness{ .stackAddress = 0x4000, .instanceDataAddress = 0xD000, .count = 1 };
     const auto sole = selectTransferredStack(soleBefore, soleAfter, 0);
     ok &= expect("a sole post-transfer stack must remain a safe fallback",
-        sole.found &&
-            sole.postIndex == 0 &&
-            sole.evidence == Evidence::NewStack);
+        sole.found && sole.postIndex == 0 && sole.evidence == Evidence::NewStack);
 
     const auto soleUnchanged = selectTransferredStack(soleAfter, soleAfter, 0);
     ok &= expect("a sole unchanged stack remains an unambiguous fallback",
-        soleUnchanged.found &&
-            soleUnchanged.postIndex == 0 &&
+        soleUnchanged.found && soleUnchanged.postIndex == 0 &&
             soleUnchanged.evidence == Evidence::SolePostTransferStack);
 
     Snapshot rebuiltBefore{};
@@ -83,22 +72,17 @@ int main()
     rebuiltAfter.stacks[1] = StackWitness{ .stackAddress = 0x7000, .instanceDataAddress = 0xF000, .count = 1 };
     const auto rebuilt = selectTransferredStack(rebuiltBefore, rebuiltAfter, 0);
     ok &= expect("a stable instance pointer must survive inventory stack-node rebuilding",
-        rebuilt.found &&
-            rebuilt.postIndex == 1 &&
-            rebuilt.evidence == Evidence::NewStack);
+        rebuilt.found && rebuilt.postIndex == 1 && rebuilt.evidence == Evidence::NewStack);
 
     Snapshot incompleteBefore = duplicateBefore;
     incompleteBefore.complete = false;
     const auto incomplete = selectTransferredStack(incompleteBefore, duplicateBefore, 0);
     ok &= expect("a capacity-truncated differential must fail closed",
-        !incomplete.found &&
-            incomplete.evidence == Evidence::SnapshotCapacityExceeded);
+        !incomplete.found && incomplete.evidence == Evidence::SnapshotCapacityExceeded);
 
     const auto incompleteExact = selectTransferredStack(incompleteBefore, duplicateBefore, 0xA000);
     ok &= expect("an exact pointer remains safe even if the differential was truncated",
-        incompleteExact.found &&
-            incompleteExact.postIndex == 0 &&
-            incompleteExact.evidence == Evidence::ExactInstance);
+        incompleteExact.found && incompleteExact.postIndex == 0 && incompleteExact.evidence == Evidence::ExactInstance);
 
     return ok ? 0 : 1;
 }

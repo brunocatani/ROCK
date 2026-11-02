@@ -29,7 +29,8 @@ int main()
     const SlotState supportHeld{ .worn = true, .firingHand = Hand::None };
 
     ok &= expect("an empty roster fills slot 0", equips(decide(Hand::Left, { { empty, empty } }), 0));
-    ok &= expect("the free hand fills slot 1 beside a firing slot 0", equips(decide(Hand::Left, { { rightFired, empty } }), 1));
+    ok &= expect("the free hand fills slot 1 beside a firing slot 0",
+        equips(decide(Hand::Left, { { rightFired, empty } }), 1));
     ok &= expect("the hand firing slot 0 replaces it", equips(decide(Hand::Right, { { rightFired, empty } }), 0));
     ok &= expect("the hand firing slot 1 replaces it", equips(decide(Hand::Left, { { rightFired, leftFired } }), 1));
     ok &= expect("with both slots worn the support-held weapon is replaced",
@@ -39,7 +40,8 @@ int main()
 
     auto ownItem = rightFired;
     ownItem.requestedItem = true;
-    ok &= expect("the same hand on its own item toggles that slot", equips(decide(Hand::Right, { { ownItem, empty } }), 0));
+    ok &= expect("the same hand on its own item toggles that slot",
+        equips(decide(Hand::Right, { { ownItem, empty } }), 0));
 
     ok &= expect("an equip without a hand never claims a firing slot",
         equips(decide(Hand::None, { { rightFired, empty } }), 1));

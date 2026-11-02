@@ -28,12 +28,8 @@ namespace
         if (actual == expected) {
             return true;
         }
-        std::printf("%s expected '%.*s' got '%.*s'\n",
-            label,
-            static_cast<int>(expected.size()),
-            expected.data(),
-            static_cast<int>(actual.size()),
-            actual.data());
+        std::printf("%s expected '%.*s' got '%.*s'\n", label, static_cast<int>(expected.size()), expected.data(),
+            static_cast<int>(actual.size()), actual.data());
         return false;
     }
 }

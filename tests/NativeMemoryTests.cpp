@@ -17,26 +17,39 @@ namespace
     std::uint64_t rejected = 0;
     std::uint64_t guardedReads = 0;
     std::uint_least32_t lastReadLine = 0;
-    void reset() { queries = {}; rejected = 0; guardedReads = 0; lastReadLine = 0; }
+
+    void reset()
+    {
+        queries = {};
+        rejected = 0;
+        guardedReads = 0;
+        lastReadLine = 0;
+    }
 }
 
 namespace rock::performance_profiler
 {
     // Exercise the real page probes and SEH copy against Windows pages; substitute
     // only the diagnostics sink so this executable never loads the game or writes a log.
-    MemoryQuerySample beginMemoryQuery() noexcept
-    {
-        return { 0, Scope::UnattributedMemoryQueries, profiling };
-    }
+    MemoryQuerySample beginMemoryQuery() noexcept { return { 0, Scope::UnattributedMemoryQueries, profiling }; }
+
     void endMemoryQuery(MemoryQuerySample sample, MemoryQueryKind kind) noexcept
     {
-        if (!sample.active) return;
+        if (!sample.active)
+            return;
         ++queries[static_cast<std::size_t>(kind)];
     }
-    void addCounter(Counter, std::uint64_t count) noexcept { if (profiling) rejected += count; }
+
+    void addCounter(Counter, std::uint64_t count) noexcept
+    {
+        if (profiling)
+            rejected += count;
+    }
+
     void countGuardedRead(const std::source_location& site) noexcept
     {
-        if (!profiling) return;
+        if (!profiling)
+            return;
         ++guardedReads;
         lastReadLine = site.line();
     }
@@ -48,7 +61,8 @@ int main()
     SYSTEM_INFO info{};
     GetSystemInfo(&info);
     const auto pageSize = static_cast<std::size_t>(info.dwPageSize);
-    auto* pages = static_cast<std::uint8_t*>(VirtualAlloc(nullptr, pageSize * 3, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
+    auto* pages =
+        static_cast<std::uint8_t*>(VirtualAlloc(nullptr, pageSize * 3, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
     assert(pages);
     std::memset(pages, 0x5A, pageSize * 3);
 
@@ -110,7 +124,8 @@ int main()
     ones.fill(0x11);
     assert(!memory::guardedCopyToMemory(pages + pageSize - 8, ones.data(), ones.size()));
     assert(queries[1] == 1 && rejected == 1);
-    assert(pages[pageSize - 8] == 0x5A && pages[pageSize - 1] == 0x5A); // Refuse the entire write before any byte lands.
+    assert(
+        pages[pageSize - 8] == 0x5A && pages[pageSize - 1] == 0x5A); // Refuse the entire write before any byte lands.
 
     // A read that faults fails closed and later reads keep working.
     assert(VirtualProtect(pages + pageSize * 2, pageSize, PAGE_NOACCESS, &previous));
@@ -129,7 +144,8 @@ int main()
     reset();
     assert(!memory::tryReadValue(static_cast<const std::uint32_t*>(nullptr), copied));
     assert(!memory::tryReadValue(reinterpret_cast<const std::uint32_t*>(0x10000), copied));
-    assert(!memory::guardedCopyFromMemory(reinterpret_cast<void*>((std::numeric_limits<std::uintptr_t>::max)() - 3), &copied, 8));
+    assert(!memory::guardedCopyFromMemory(reinterpret_cast<void*>((std::numeric_limits<std::uintptr_t>::max)() - 3),
+        &copied, 8));
     assert(rejected == 3 && queries[0] == 0);
 
     assert(VirtualProtect(pages + pageSize * 2, pageSize, PAGE_READWRITE | PAGE_GUARD, &previous));
@@ -146,12 +162,14 @@ int main()
     assert(!memory::pointerRangeLooksReadable(nullptr, 8));
     assert(!memory::pointerRangeLooksReadable(pages, 0));
     assert(!memory::pointerRangeLooksReadable(reinterpret_cast<void*>(0x10000), 1));
-    assert(!memory::pointerRangeLooksReadable(reinterpret_cast<void*>((std::numeric_limits<std::uintptr_t>::max)() - 3), 8));
+    assert(!memory::pointerRangeLooksReadable(reinterpret_cast<void*>((std::numeric_limits<std::uintptr_t>::max)() - 3),
+        8));
     assert(queries[0] == 0 && rejected == 4);
 
     // Kernel and non-canonical addresses are refused without a probe.
     reset();
-    assert(!memory::pointerRangeLooksReadable(reinterpret_cast<void*>((std::numeric_limits<std::uintptr_t>::max)() - 4095), 8));
+    assert(!memory::pointerRangeLooksReadable(
+        reinterpret_cast<void*>((std::numeric_limits<std::uintptr_t>::max)() - 4095), 8));
     assert(!memory::pointerRangeLooksReadable(reinterpret_cast<void*>(0x0000'7FFF'FFFF'0000ull), 1));
     assert(queries[0] == 0 && rejected == 2);
 

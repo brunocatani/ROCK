@@ -34,8 +34,9 @@ int main()
     passed &= expect(batch.addLine(a, b, red, 8), "First line was rejected.");
     passed &= expect(!batch.addLine(b, a, red, 8), "Reversed duplicate was not coalesced.");
     passed &= expect(batch.addLine(b, c, blue, 8), "Second ordered line was rejected.");
-    passed &= expect(batch.segments().size() == 2 && batch.segments()[0].color == red && batch.segments()[1].color == blue,
-        "Line insertion order or per-vertex color was not preserved.");
+    passed &=
+        expect(batch.segments().size() == 2 && batch.segments()[0].color == red && batch.segments()[1].color == blue,
+            "Line insertion order or per-vertex color was not preserved.");
     passed &= expect(batch.rejectedLineCount() == 1, "Duplicate rejection was not counted.");
 
     batch.clear();
@@ -55,13 +56,14 @@ int main()
 
     LineBatch markerBatch;
     passed &= expect(markerBatch.prepare(4), "Marker scratch preparation failed.");
-    passed &= expect(!markerBatch.addPointMarker(a, 1.0f, blue, 64),
-        "A point marker bypassed the prepared hard capacity.");
+    passed &=
+        expect(!markerBatch.addPointMarker(a, 1.0f, blue, 64), "A point marker bypassed the prepared hard capacity.");
     passed &= expect(markerBatch.empty() && markerBatch.rejectedLineCount() == 3,
         "A capacity-rejected marker was partially emitted or miscounted.");
 
     passed &= expect(markerBatch.prepare(8), "Marker scratch resize failed.");
-    passed &= expect(markerBatch.addPointMarker(a, 1.0f, blue, 8), "A marker that fits the prepared capacity was rejected.");
+    passed &=
+        expect(markerBatch.addPointMarker(a, 1.0f, blue, 8), "A marker that fits the prepared capacity was rejected.");
     passed &= expect(markerBatch.lineCount() == 3 && markerBatch.vertexCount() == 6,
         "A successful marker did not emit exactly three lines.");
 

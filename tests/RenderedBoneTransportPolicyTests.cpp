@@ -1,7 +1,7 @@
 #include "physics-interaction/hand/RenderedBoneTransportPolicy.h"
 
-#include <cmath>
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <limits>
 
@@ -38,10 +38,7 @@ namespace
         return false;
     }
 
-    RE::NiTransform identity()
-    {
-        return rock::transform_math::makeIdentityTransform<RE::NiTransform>();
-    }
+    RE::NiTransform identity() { return rock::transform_math::makeIdentityTransform<RE::NiTransform>(); }
 
     RE::NiTransform yawed(float degrees, float x, float y, float z, float scale = 1.0f)
     {
@@ -116,12 +113,14 @@ int main()
         const HandTransport transport = makeHandTransport(controllerRoot, true, renderedRoot, true);
         ok &= expectTrue("claimed active", transport.active);
         ok &= expectSameTransform("root lands on controller", transportWorld(transport, renderedRoot), controllerRoot);
-        ok &= expectSameTransform("finger keeps its local", transportWorld(transport, renderedFinger), compose(controllerRoot, fingerLocal));
-        ok &= expectSameTransform("forearm keeps its local", transportWorld(transport, renderedForearm), compose(controllerRoot, forearmLocal));
+        ok &= expectSameTransform("finger keeps its local", transportWorld(transport, renderedFinger),
+            compose(controllerRoot, fingerLocal));
+        ok &= expectSameTransform("forearm keeps its local", transportWorld(transport, renderedForearm),
+            compose(controllerRoot, forearmLocal));
         // Finger pose relative to the root is unchanged by the transport.
-        const RE::NiTransform relative = compose(
-            rock::transform_math::invertTransform(transportWorld(transport, renderedRoot)),
-            transportWorld(transport, renderedFinger));
+        const RE::NiTransform relative =
+            compose(rock::transform_math::invertTransform(transportWorld(transport, renderedRoot)),
+                transportWorld(transport, renderedFinger));
         ok &= expectSameTransform("relative pose preserved", relative, fingerLocal);
     }
 
@@ -151,9 +150,11 @@ int main()
         moved.translate.x += 4.0f;
         const HandTransport active = makeHandTransport(moved, true, far, true);
         ok &= expectTrue("drifted moved roots active", active.active);
-        ok &= expectNear("drifted delta translation", isolation::translationGameUnits(active.delta, identity()), 4.0f, 0.05f);
+        ok &= expectNear("drifted delta translation", isolation::translationGameUnits(active.delta, identity()), 4.0f,
+            0.05f);
         ok &= expectNear("drifted delta rotation", isolation::rotationDegrees(active.delta, identity()), 0.0f, 0.05f);
-        ok &= expectTrue("delta orthonormal", rock::transform_math::storedRotationOrthonormalityError(active.delta.rotate) < 1e-5);
+        ok &= expectTrue("delta orthonormal",
+            rock::transform_math::storedRotationOrthonormalityError(active.delta.rotate) < 1e-5);
     }
 
     // API 2.3 regression: the pre-IK live array is displaced while the saved
@@ -166,23 +167,28 @@ int main()
             const auto target = yawed(40.0f, 10.0f, -25.0f, 70.0f, rotated ? 1.3f : 1.0f);
             auto sampledRoot = target;
             sampledRoot.translate.z -= 4.2f;
-            if (rotated) sampledRoot = yawed(-30.0f, 8.0f, -29.0f, 65.8f, 0.9f);
+            if (rotated)
+                sampledRoot = yawed(-30.0f, 8.0f, -29.0f, 65.8f, 0.9f);
             const auto sampledFinger = compose(sampledRoot, fingerLocal);
-            std::array<BoneSample, 4> bones{{
+            std::array<BoneSample, 4> bones{ {
                 { left ? "LArm_Hand" : "RArm_Hand", sampledRoot, target },
                 { left ? "LArm_Finger23" : "RArm_Finger23", sampledFinger, compose(target, fingerLocal) },
-                { left ? "LArm_ForeArm1" : "RArm_ForeArm1", compose(sampledRoot, forearmLocal), compose(target, forearmLocal) },
+                { left ? "LArm_ForeArm1" : "RArm_ForeArm1", compose(sampledRoot, forearmLocal),
+                    compose(target, forearmLocal) },
                 { left ? "RArm_Hand" : "LArm_Hand", renderedRoot, renderedRoot },
-            }};
+            } };
             const auto oldTransport = makeHandTransport(target, true, target, true);
             ok &= expectTrue("previous-final transport reproduces offset",
                 isolation::translationGameUnits(transportWorld(oldTransport, sampledRoot), target) >= 4.19f);
-            ok &= expectTrue("sampled chain transported", transportSnapshotHand(bones, left ? HandChainSide::Left : HandChainSide::Right, target));
+            ok &= expectTrue("sampled chain transported",
+                transportSnapshotHand(bones, left ? HandChainSide::Left : HandChainSide::Right, target));
             ok &= expectSameTransform("sample wrist reaches current input", bones[0].world, target);
-            ok &= expectSameTransform("finger pivot follows current input", bones[1].world, compose(target, fingerLocal));
+            ok &=
+                expectSameTransform("finger pivot follows current input", bones[1].world, compose(target, fingerLocal));
             ok &= expectSameTransform("forearm shares hand frame", bones[2].world, compose(target, forearmLocal));
             ok &= expectSameTransform("live node is not transported twice", bones[0].nodeWorld, target);
-            ok &= expectSameTransform("live finger node is unchanged", bones[1].nodeWorld, compose(target, fingerLocal));
+            ok &=
+                expectSameTransform("live finger node is unchanged", bones[1].nodeWorld, compose(target, fingerLocal));
             ok &= expectSameTransform("other hand is untouched", bones[3].world, renderedRoot);
         }
     }
@@ -190,27 +196,30 @@ int main()
         const auto target = yawed(30.0f, 100.0f, -40.0f, 60.0f, 1.35f);
         const auto transport = makeHandTransport(target, true, renderedRoot, true);
         ok &= expectTrue("scale-only transport active", transport.active);
-        ok &= expectSameTransform("scaled finger follows wrist scale", transportWorld(transport, renderedFinger), compose(target, fingerLocal));
+        ok &= expectSameTransform("scaled finger follows wrist scale", transportWorld(transport, renderedFinger),
+            compose(target, fingerLocal));
     }
     {
-        std::array<BoneSample, 2> bones{{
+        std::array<BoneSample, 2> bones{ {
             { "RArm_Hand", renderedRoot, renderedRoot },
             { "RArm_Finger23", renderedFinger, renderedFinger },
-        }};
-        ok &= expectTrue("missing opposite wrist rejected", !transportSnapshotHand(bones, HandChainSide::Left, renderedRoot));
+        } };
+        ok &= expectTrue("missing opposite wrist rejected",
+            !transportSnapshotHand(bones, HandChainSide::Left, renderedRoot));
         bones[1].world.translate.x = std::numeric_limits<float>::quiet_NaN();
-        ok &= expectTrue("broken chain rejected", !transportSnapshotHand(bones, HandChainSide::Right, yawed(70.0f, 3.0f, 4.0f, 5.0f)));
+        ok &= expectTrue("broken chain rejected",
+            !transportSnapshotHand(bones, HandChainSide::Right, yawed(70.0f, 3.0f, 4.0f, 5.0f)));
         ok &= expectSameTransform("rejected chain leaves wrist unchanged", bones[0].world, renderedRoot);
     }
 
     {
         auto unused = renderedFinger;
         unused.translate.x = std::numeric_limits<float>::quiet_NaN();
-        std::array<BoneSample, 3> bones{{
+        std::array<BoneSample, 3> bones{ {
             { "RArm_Hand", renderedRoot, renderedRoot },
             { "RArm_Finger23", renderedFinger, renderedFinger },
             { "RArm_FingerAttachment", unused, unused },
-        }};
+        } };
         const auto target = yawed(30.0f, 20.0f, -10.0f, 50.0f);
         ok &= expectTrue("full-body helpers do not invalidate the standard hand chain",
             transportSnapshotHand(bones, HandChainSide::Right, target));

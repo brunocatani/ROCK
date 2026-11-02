@@ -9,10 +9,7 @@
 
 namespace
 {
-    void near(float actual, float expected)
-    {
-        assert(std::abs(actual - expected) < 0.0001f);
-    }
+    void near(float actual, float expected) { assert(std::abs(actual - expected) < 0.0001f); }
 
     void verifyLookup(rock::SkeletonBoneNameIndex& index, const rock::DirectSkeletonBoneSnapshot& snapshot)
     {
@@ -88,9 +85,11 @@ int main()
     near(defaults.roles[finger].radiusScale, 1.0f);
 
     config.rockHandBoneColliderRadiusScaleOverrides =
-        "IndexBase=0.8;PowerArmor.IndexBase=1.7;IndexBase=0.6;PowerArmor.IndexBase=1.9;PowerArmor.IndexBase=nan;IndexBase=bad";
+        "IndexBase=0.8;PowerArmor.IndexBase=1.7;IndexBase=0.6;PowerArmor.IndexBase=1.9;PowerArmor.IndexBase=nan;"
+        "IndexBase=bad";
     config.rockHandPalmColliderDimensionScaleOverrides =
-        "PalmAnchor=0.8,1,2;PowerArmor.PalmAnchor=2,3,4;PowerArmor.PalmAnchor=5,6,7;PalmAnchor=1,1,1;PowerArmor.PalmAnchor=1,2,3,4";
+        "PalmAnchor=0.8,1,2;PowerArmor.PalmAnchor=2,3,4;PowerArmor.PalmAnchor=5,6,7;PalmAnchor=1,1,1;PowerArmor."
+        "PalmAnchor=1,2,3,4";
     const auto handStandard = collider_tuning::prepareHand(config, false);
     const auto handArmor = collider_tuning::prepareHand(config, true);
     near(handStandard.roles[finger].radiusScale, 0.6f);

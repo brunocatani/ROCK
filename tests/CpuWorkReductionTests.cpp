@@ -1,9 +1,9 @@
-#include "physics-interaction/contact/GeneratedBodyContactRegistry.h"
 #include "physics-interaction/consume/ImmersiveAidContact.h"
-#include "physics-interaction/native/PhysicsSystemBodyScanCache.h"
+#include "physics-interaction/contact/GeneratedBodyContactRegistry.h"
 #include "physics-interaction/native/CollisionSystemOwner.h"
-#include "physics-interaction/weapon/collision/GeneratedWeaponGeometry.h"
+#include "physics-interaction/native/PhysicsSystemBodyScanCache.h"
 #include "physics-interaction/weapon/classification/WeaponEvidenceSnapshot.h"
+#include "physics-interaction/weapon/collision/GeneratedWeaponGeometry.h"
 
 #include <cassert>
 #include <cstdio>
@@ -21,7 +21,8 @@ namespace
         for (unsigned frame = 0; frame < 1000; ++frame) {
             const auto count = frame % 33;
             for (std::size_t i = 0; i < count; ++i) {
-                if (frame % 4 == 0) entries[i].bodyId = random() % 25;
+                if (frame % 4 == 0)
+                    entries[i].bodyId = random() % 25;
                 entries[i].kind = i % 7 == 0 ? GeneratedBodyKind::Unknown : GeneratedBodyKind::Weapon;
                 entries[i].generationKey = frame;
                 entries[i].lengthGameUnits = static_cast<float>(frame + i);
@@ -44,7 +45,10 @@ namespace
                 }
             }
             assert(registry.count() == unique);
-            if (frame % 23 == 0) { registry.clear(); assert(registry.count() == 0); }
+            if (frame % 23 == 0) {
+                registry.clear();
+                assert(registry.count() == 0);
+            }
         }
     }
 
@@ -68,8 +72,10 @@ namespace
             const auto b = a + RE::NiPoint3{ 0.4f, -0.2f, 1.1f };
             const float r = radius(random);
             rock::WeaponTriangleIndex::QueryStats linear{}, indexed{};
-            const bool expected = rock::immersive_aid::capsuleTouchesMesh(mesh, cache.minimum, cache.maximum, a, b, r, nullptr, &linear);
-            const bool actual = rock::immersive_aid::capsuleTouchesMesh(mesh, cache.minimum, cache.maximum, a, b, r, &cache.index, &indexed);
+            const bool expected =
+                rock::immersive_aid::capsuleTouchesMesh(mesh, cache.minimum, cache.maximum, a, b, r, nullptr, &linear);
+            const bool actual = rock::immersive_aid::capsuleTouchesMesh(mesh, cache.minimum, cache.maximum, a, b, r,
+                &cache.index, &indexed);
             assert(actual == expected);
             indexedWork += indexed.triangles;
             linearWork += linear.triangles;
@@ -79,8 +85,10 @@ namespace
         for (const auto& triangle : mesh) {
             const auto a = triangle.v0 + RE::NiPoint3{ 0, 0, 0.01f };
             for (float r : { 0.009999f, 0.01f, 0.010001f }) {
-                const bool expected = rock::immersive_aid::capsuleTouchesMesh(mesh, cache.minimum, cache.maximum, a, a, r);
-                assert(rock::immersive_aid::capsuleTouchesMesh(mesh, cache.minimum, cache.maximum, a, a, r, &cache.index) == expected);
+                const bool expected =
+                    rock::immersive_aid::capsuleTouchesMesh(mesh, cache.minimum, cache.maximum, a, a, r);
+                assert(rock::immersive_aid::capsuleTouchesMesh(mesh, cache.minimum, cache.maximum, a, a, r,
+                           &cache.index) == expected);
             }
         }
         std::printf("Exact injection workload: %llu -> %llu triangle predicates, identical contacts\n",
@@ -111,7 +119,8 @@ namespace
         }
         unsigned visited = 0;
         assert(bodies.forEachUniqueAcceptedMotion([&](const auto& body) {
-            assert(body.bodyId == visited * 2); ++visited;
+            assert(body.bodyId == visited * 2);
+            ++visited;
         }) == 100);
         assert(visited == 100 && bodies.diagnostics.duplicateMotionSkips == 100);
     }
@@ -124,13 +133,16 @@ namespace
         auto records = std::make_shared<WeaponEvidenceSnapshot::Records>();
         records->resize(4);
         (*records)[0].bodyId = 8; // Invalid records must not shadow the first valid match.
-        (*records)[1].valid = true; (*records)[1].bodyId = 8;
+        (*records)[1].valid = true;
+        (*records)[1].bodyId = 8;
         (*records)[1].weaponGenerationKey = 100;
         (*records)[1].sourceName = "scope";
         (*records)[1].localMeshPointsGame.resize(1000);
         (*records)[1].pointCount = 1000;
-        (*records)[2] = (*records)[1]; (*records)[2].sourceName = "second";
-        (*records)[3].valid = true; (*records)[3].bodyId = 0x7FFF'FFFF;
+        (*records)[2] = (*records)[1];
+        (*records)[2].sourceName = "second";
+        (*records)[3].valid = true;
+        (*records)[3].bodyId = 0x7FFF'FFFF;
         WeaponEvidenceSnapshot publication{ records };
         const auto retained = publication;
         const auto* found = retained.find(8);
@@ -155,7 +167,8 @@ namespace
         cache.remember(key, ids);
         ids[0] = 100;
         assert(cache.find(key, 3)[0] == 7); // Owns copies, not native array storage.
-        auto changed = key; changed.bodyCount = 2;
+        auto changed = key;
+        changed.bodyCount = 2;
         assert(cache.find(changed, 2).empty());
         assert(cache.find(key, 4).empty());
         assert(cache.find(key, 1).size() == 1);
@@ -172,7 +185,9 @@ namespace
         auto active = pending;
         const auto* originalPoints = source->localPointsGame.data();
         std::weak_ptr<const rock::GeneratedWeaponHullGeometry> lifetime = source;
-        source.reset(); pending.reset(); mesh.reset();
+        source.reset();
+        pending.reset();
+        mesh.reset();
         assert(!lifetime.expired() && active->localPointsGame.data() == originalPoints);
         assert(active->mesh->localTrianglesGame.size() == 1);
         active.reset();
@@ -184,19 +199,22 @@ namespace
         using namespace rock::collision_system_owner;
         // The proxy's +20 points to the BODY object. Its +20 then owns the
         // system. Treating these as the same layout reads flags as an instance.
-        std::map<std::uintptr_t, std::uintptr_t> tables{{0x1000, kProxy}, {0x2000, kNativeBody},
-            {0x3000, kUnlinkedBody}, {0x4000, kSceneOnly}, {0x5000, 0xBAD}};
+        std::map<std::uintptr_t, std::uintptr_t> tables{ { 0x1000, kProxy }, { 0x2000, kNativeBody },
+            { 0x3000, kUnlinkedBody }, { 0x4000, kSceneOnly }, { 0x5000, 0xBAD } };
         std::uintptr_t proxyTarget = 0x2000;
         unsigned targetReads = 0;
         const auto readTable = [&](std::uintptr_t object, std::uintptr_t& out) {
             const auto found = tables.find(object);
-            if (found == tables.end()) return false;
-            out = found->second; return true;
+            if (found == tables.end())
+                return false;
+            out = found->second;
+            return true;
         };
         const auto readTarget = [&](std::uintptr_t object, std::uintptr_t& out) {
             ++targetReads;
             assert(object == 0x1000);
-            out = proxyTarget; return true;
+            out = proxyTarget;
+            return true;
         };
         assert(resolve(0x2000, readTable, readTarget).owner == 0x2000);
         assert(resolve(0x3000, readTable, readTarget).owner == 0x3000);
@@ -205,7 +223,7 @@ namespace
         assert(targetReads == 0); // Unknown and scene-only types have no readable system field.
         const auto proxy = resolve(0x1000, readTable, readTarget);
         assert(proxy.stage == Stage::Proxy && proxy.owner == 0x2000 && targetReads == 1);
-        for (const std::uintptr_t invalid : {0u, 0x1000u, 0x4000u, 0x5000u, 0x6000u}) {
+        for (const std::uintptr_t invalid : { 0u, 0x1000u, 0x4000u, 0x5000u, 0x6000u }) {
             proxyTarget = invalid;
             assert(!resolve(0x1000, readTable, readTarget).usable());
         }

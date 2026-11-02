@@ -11,10 +11,7 @@
 
 namespace
 {
-    RE::NiTransform identityTransform()
-    {
-        return rock::transform_math::makeIdentityTransform<RE::NiTransform>();
-    }
+    RE::NiTransform identityTransform() { return rock::transform_math::makeIdentityTransform<RE::NiTransform>(); }
 
     bool expectNear(const char* label, float actual, float expected, float epsilon)
     {
@@ -89,7 +86,8 @@ int main()
         ok &= expectTrue("acquisition captures a scaled rotated palm", transition.active);
         const auto firstProxy = acquisition::advance(transition, palm, seated, grip, 0.0f);
         const auto firstBody = frames::objectFromGeneratedProxyLocalSpace(firstProxy, seated);
-        ok &= expectPointNear("initial constraint target keeps live body", firstBody.translate, initialWorld.translate, 0.02f);
+        ok &= expectPointNear("initial constraint target keeps live body", firstBody.translate, initialWorld.translate,
+            0.02f);
         ok &= expectNear("initial target keeps live rotation", rotationDegrees(firstBody, initialWorld), 0.0f, 0.06f);
         ok &= expectPointNear("fixed pivots meet at initial grip",
             rock::generatedProxyLocalPointToWorld(firstProxy, pivotA), math::localPointToWorld(firstBody, grip), 0.02f);
@@ -98,13 +96,15 @@ int main()
         movedPalm.rotate = math::transposeRotation(movedPalm.rotate);
         movedPalm.translate = palm.translate + RE::NiPoint3{ 10.0f, 20.0f, -5.0f };
         movedPalm.scale = palm.scale;
-        const auto halfProxy = acquisition::advance(transition, movedPalm, seated, grip, transition.durationSeconds * 0.5f);
+        const auto halfProxy =
+            acquisition::advance(transition, movedPalm, seated, grip, transition.durationSeconds * 0.5f);
         const auto halfBody = frames::objectFromGeneratedProxyLocalSpace(halfProxy, seated);
         const auto firstGrip = math::localPointToWorld(initial, grip);
         const auto lastGrip = math::localPointToWorld(seated, grip);
         const auto middleGrip = (firstGrip + lastGrip) * 0.5f;
         ok &= expectPointNear("grip moves on straight segment in current hand space",
-            math::localPointToWorld(halfBody, grip), rock::generatedProxyLocalPointToWorld(movedPalm, middleGrip), 0.03f);
+            math::localPointToWorld(halfBody, grip), rock::generatedProxyLocalPointToWorld(movedPalm, middleGrip),
+            0.03f);
         const auto halfLocal = frames::objectInGeneratedProxyLocalSpace(movedPalm, halfBody);
         ok &= expectNear("rotation shares grip progress", rotationDegrees(initial, halfLocal),
             rotationDegrees(initial, seated) * 0.5f, 0.02f);
@@ -114,7 +114,8 @@ int main()
         (void)acquisition::advance(transition, movedPalm, seated, grip, std::numeric_limits<float>::quiet_NaN());
         ok &= expectNear("invalid delta does not advance acquisition", transition.elapsedSeconds, beforePause, 0.0f);
         const auto lastProxy = acquisition::advance(transition, movedPalm, seated, grip, transition.durationSeconds);
-        ok &= expectPointNear("finished target returns exactly to live palm", lastProxy.translate, movedPalm.translate, 0.0f);
+        ok &= expectPointNear("finished target returns exactly to live palm", lastProxy.translate, movedPalm.translate,
+            0.0f);
 
         ok &= expectFalse("completed acquisition stops advancing", transition.active);
         initial.translate = {};
@@ -124,7 +125,8 @@ int main()
         // Use a representable zero-error capture for the no-op case. The large
         // world-coordinate round trip above carries float position quantization.
         const auto origin = identityTransform();
-        transition = acquisition::begin(origin, frames::objectFromGeneratedProxyLocalSpace(origin, seated), seated, grip);
+        transition =
+            acquisition::begin(origin, frames::objectFromGeneratedProxyLocalSpace(origin, seated), seated, grip);
         ok &= expectFalse("already seated resets acquisition", transition.active);
         // Two physical hands update once each in the same runtime frame. The
         // common target must not advance twice or separate at the shared grip.
@@ -134,30 +136,39 @@ int main()
         const float step = shared.durationSeconds * 0.25f;
         const auto joinProxy = acquisition::advanceShared(shared, sharedFrame, 10, palm, seated, grip, step);
         const auto joinBody = frames::objectFromGeneratedProxyLocalSpace(joinProxy, seated);
-        ok &= expectPointNear("pair acquisition starts at displayed body", joinBody.translate, initialWorld.translate, 0.03f);
-        ok &= expectNear("pair acquisition starts at displayed rotation", rotationDegrees(joinBody, initialWorld), 0.0f, 0.02f);
+        ok &= expectPointNear("pair acquisition starts at displayed body", joinBody.translate, initialWorld.translate,
+            0.03f);
+        ok &= expectNear("pair acquisition starts at displayed rotation", rotationDegrees(joinBody, initialWorld), 0.0f,
+            0.02f);
         const auto primaryStep = acquisition::advanceShared(shared, sharedFrame, 11, movedPalm, seated, grip, step);
         const float elapsedOnce = shared.elapsedSeconds;
         const auto supportStep = acquisition::advanceShared(shared, sharedFrame, 11, movedPalm, seated, grip, step);
         ok &= expectNear("second hand cannot advance shared clock twice", shared.elapsedSeconds, elapsedOnce, 0.0f);
-        ok &= expectPointNear("both hands receive one shared position", primaryStep.translate, supportStep.translate, 0.0f);
-        ok &= expectNear("both hands receive one shared rotation", rotationDegrees(primaryStep,supportStep), 0.0f, 0.02f);
+        ok &= expectPointNear("both hands receive one shared position", primaryStep.translate, supportStep.translate,
+            0.0f);
+        ok &= expectNear("both hands receive one shared rotation", rotationDegrees(primaryStep, supportStep), 0.0f,
+            0.02f);
         // Letting go midway must rebase from the display, not the old final
         // two-hand target. This also covers swapping the primary during entry.
-        const auto interruptedBody = frames::objectFromGeneratedProxyLocalSpace(primaryStep,seated);
+        const auto interruptedBody = frames::objectFromGeneratedProxyLocalSpace(primaryStep, seated);
         auto soloTarget = rotated(0.2f);
-        soloTarget.translate = {2.0f,-3.0f,1.0f};
-        auto returning = acquisition::beginWeapon(movedPalm,interruptedBody,soloTarget,grip,
+        soloTarget.translate = { 2.0f, -3.0f, 1.0f };
+        auto returning = acquisition::beginWeapon(movedPalm, interruptedBody, soloTarget, grip,
             rock::hand_visual_lerp_math::kEquippedWeaponReturnConfig);
-        const auto returnProxy = acquisition::advance(returning,movedPalm,soloTarget,grip,0.0f);
-        const auto returnBody = frames::objectFromGeneratedProxyLocalSpace(returnProxy,soloTarget);
-        ok &= expectPointNear("interrupted return preserves visible position", returnBody.translate,interruptedBody.translate,0.03f);
-        ok &= expectNear("interrupted return preserves visible rotation", rotationDegrees(returnBody,interruptedBody),0.0f,0.02f);
-        const auto completedReturn = acquisition::advance(returning,movedPalm,soloTarget,grip,returning.durationSeconds);
-        ok &= expectPointNear("solo return converges to current controller",completedReturn.translate,movedPalm.translate,0.0f);
+        const auto returnProxy = acquisition::advance(returning, movedPalm, soloTarget, grip, 0.0f);
+        const auto returnBody = frames::objectFromGeneratedProxyLocalSpace(returnProxy, soloTarget);
+        ok &= expectPointNear("interrupted return preserves visible position", returnBody.translate,
+            interruptedBody.translate, 0.03f);
+        ok &= expectNear("interrupted return preserves visible rotation", rotationDegrees(returnBody, interruptedBody),
+            0.0f, 0.02f);
+        const auto completedReturn =
+            acquisition::advance(returning, movedPalm, soloTarget, grip, returning.durationSeconds);
+        ok &= expectPointNear("solo return converges to current controller", completedReturn.translate,
+            movedPalm.translate, 0.0f);
         auto invalid = palm;
         invalid.translate.x = std::numeric_limits<float>::quiet_NaN();
-        ok &= expectFalse("nonfinite capture fails closed", acquisition::begin(invalid, initialWorld, seated, grip).active);
+        ok &= expectFalse("nonfinite capture fails closed",
+            acquisition::begin(invalid, initialWorld, seated, grip).active);
     }
 
     {
@@ -192,45 +203,29 @@ int main()
             });
 
         ok &= expectTrue("freeze creates a valid authority frame", frozen.valid);
-        ok &= expectPointNear("body-local pivot B is frozen from selected world point",
-            frozen.pivotBBodyLocalGame,
-            RE::NiPoint3{ -1.0f, 0.0f, 0.0f },
-            0.001f);
-        ok &= expectPointNear("constraint-local pivot B matches selected world point",
-            frozen.pivotBConstraintLocalGame,
-            RE::NiPoint3{ -1.0f, 0.0f, 0.0f },
-            0.001f);
-        ok &= expectPointNear("desired object shifts selected point to pivot A",
-            frozen.desiredObjectWorld.translate,
-            RE::NiPoint3{ 4.0f, 0.0f, 0.0f },
-            0.001f);
-        ok &= expectPointNear("desired body preserves body-local relation",
-            frozen.desiredBodyWorld.translate,
-            RE::NiPoint3{ 6.0f, 0.0f, 0.0f },
-            0.001f);
-        ok &= expectPointNear("pivot A is preserved as a non-origin proxy-local point",
-            frozen.pivotAHandBodyLocalGame,
-            RE::NiPoint3{ 2.0f, 0.0f, 0.0f },
-            0.001f);
+        ok &= expectPointNear("body-local pivot B is frozen from selected world point", frozen.pivotBBodyLocalGame,
+            RE::NiPoint3{ -1.0f, 0.0f, 0.0f }, 0.001f);
+        ok &= expectPointNear("constraint-local pivot B matches selected world point", frozen.pivotBConstraintLocalGame,
+            RE::NiPoint3{ -1.0f, 0.0f, 0.0f }, 0.001f);
+        ok &= expectPointNear("desired object shifts selected point to pivot A", frozen.desiredObjectWorld.translate,
+            RE::NiPoint3{ 4.0f, 0.0f, 0.0f }, 0.001f);
+        ok &= expectPointNear("desired body preserves body-local relation", frozen.desiredBodyWorld.translate,
+            RE::NiPoint3{ 6.0f, 0.0f, 0.0f }, 0.001f);
+        ok &= expectPointNear("pivot A is preserved as a non-origin proxy-local point", frozen.pivotAHandBodyLocalGame,
+            RE::NiPoint3{ 2.0f, 0.0f, 0.0f }, 0.001f);
 
-        const RE::NiTransform recomposedDesiredBody =
-            rock::transform_math::composeTransforms(rock::makeGeneratedProxyAuthorityRelationFrame(proxyWorld), frozen.proxyAuthorityBodyHandSpace);
-        ok &= expectPointNear("frozen body relation recomposes through proxy frame",
-            recomposedDesiredBody.translate,
-            frozen.desiredBodyWorld.translate,
-            0.001f);
-        const RE::NiPoint3 relationPivotA =
-            rock::transform_math::localPointToWorld(frozen.proxyAuthorityBodyHandSpace, frozen.pivotBConstraintLocalGame);
-        ok &= expectPointNear("proxy BODY relation maps selected pivot B to pivot A local",
-            relationPivotA,
-            frozen.pivotAHandBodyLocalGame,
-            0.001f);
+        const RE::NiTransform recomposedDesiredBody = rock::transform_math::composeTransforms(
+            rock::makeGeneratedProxyAuthorityRelationFrame(proxyWorld), frozen.proxyAuthorityBodyHandSpace);
+        ok &= expectPointNear("frozen body relation recomposes through proxy frame", recomposedDesiredBody.translate,
+            frozen.desiredBodyWorld.translate, 0.001f);
+        const RE::NiPoint3 relationPivotA = rock::transform_math::localPointToWorld(frozen.proxyAuthorityBodyHandSpace,
+            frozen.pivotBConstraintLocalGame);
+        ok &= expectPointNear("proxy BODY relation maps selected pivot B to pivot A local", relationPivotA,
+            frozen.pivotAHandBodyLocalGame, 0.001f);
 
         const RE::NiPoint3 targetGripPoint =
             rock::transform_math::localPointToWorld(frozen.desiredBodyWorld, frozen.pivotBConstraintLocalGame);
-        ok &= expectPointNear("frozen pivot B reaches pivot A through desired body",
-            targetGripPoint,
-            pivotAWorld,
+        ok &= expectPointNear("frozen pivot B reaches pivot A through desired body", targetGripPoint, pivotAWorld,
             0.001f);
     }
 
@@ -269,16 +264,12 @@ int main()
             });
 
         ok &= expectTrue("explicit desired body authority frame is valid", frozen.valid);
-        ok &= expectPointNear("explicit desired body target is solver authority",
-            frozen.desiredBodyWorld.translate,
-            desiredBodyWorld.translate,
-            0.001f);
+        ok &= expectPointNear("explicit desired body target is solver authority", frozen.desiredBodyWorld.translate,
+            desiredBodyWorld.translate, 0.001f);
         const RE::NiTransform oldVisualDerivedBody =
             rock::transform_math::composeTransforms(frozen.desiredObjectWorld, frozen.bodyLocal);
-        ok &= expectPointNear("visual target is derived from BODY authority",
-            oldVisualDerivedBody.translate,
-            frozen.desiredBodyWorld.translate,
-            0.001f);
+        ok &= expectPointNear("visual target is derived from BODY authority", oldVisualDerivedBody.translate,
+            frozen.desiredBodyWorld.translate, 0.001f);
     }
 
     {
@@ -317,15 +308,11 @@ int main()
 
         ok &= expectTrue("misaligned explicit body authority frame is valid", frozen.valid);
         ok &= expectPointNear("BODY target translation is canonicalized around selected pivot",
-            frozen.desiredBodyWorld.translate,
-            RE::NiPoint3{ 6.0f, 0.0f, 0.0f },
-            0.001f);
-        const RE::NiPoint3 relationPivotA =
-            rock::transform_math::localPointToWorld(frozen.proxyAuthorityBodyHandSpace, frozen.pivotBConstraintLocalGame);
-        ok &= expectPointNear("canonicalized BODY relation keeps transform-B on selected pivot",
-            relationPivotA,
-            frozen.pivotAHandBodyLocalGame,
-            0.001f);
+            frozen.desiredBodyWorld.translate, RE::NiPoint3{ 6.0f, 0.0f, 0.0f }, 0.001f);
+        const RE::NiPoint3 relationPivotA = rock::transform_math::localPointToWorld(frozen.proxyAuthorityBodyHandSpace,
+            frozen.pivotBConstraintLocalGame);
+        ok &= expectPointNear("canonicalized BODY relation keeps transform-B on selected pivot", relationPivotA,
+            frozen.pivotAHandBodyLocalGame, 0.001f);
     }
 
     {
@@ -338,13 +325,11 @@ int main()
         proxyWorld.rotate = rock::hand_bone_collider_geometry_math::matrixFromAxes<RE::NiMatrix3>(xAxis, yAxis, zAxis);
 
         const RE::NiPoint3 proxyLocalPivot{ 0.0f, -2.0f, 0.0f };
-        const RE::NiPoint3 pivotAWorld =
-            proxyWorld.translate + rock::hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(proxyWorld, proxyLocalPivot);
+        const RE::NiPoint3 pivotAWorld = proxyWorld.translate +
+            rock::hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(proxyWorld, proxyLocalPivot);
 
         ok &= expectPointNear("generated proxy pivot A freezes through stored column local space",
-            rock::grab_frame_math::computePivotAHandBodyLocal(proxyWorld, pivotAWorld),
-            proxyLocalPivot,
-            0.001f);
+            rock::grab_frame_math::computePivotAHandBodyLocal(proxyWorld, pivotAWorld), proxyLocalPivot, 0.001f);
     }
 
     {

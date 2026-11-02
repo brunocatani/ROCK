@@ -13,12 +13,10 @@ namespace
         long referenceWord;
         int destroyed = 0;
     };
+
     static_assert(offsetof(NativeObject, referenceWord) == 8);
 
-    void destroy(void* pointer)
-    {
-        ++static_cast<NativeObject*>(pointer)->destroyed;
-    }
+    void destroy(void* pointer) { ++static_cast<NativeObject*>(pointer)->destroyed; }
 }
 
 int main()
@@ -47,8 +45,7 @@ int main()
     // owner. Releasing the former must not destroy the latter's live shape.
     NativeObject shape{ vtable.data(), static_cast<long>(0x00400002u) };
     release(&shape);
-    check(shape.referenceWord == 0x00400001 && shape.destroyed == 0,
-        "shared shape survives the local owner's release");
+    check(shape.referenceWord == 0x00400001 && shape.destroyed == 0, "shared shape survives the local owner's release");
     release(&shape);
     check(shape.referenceWord == 0x00400000 && shape.destroyed == 1,
         "final shape reference invokes the native destroy callback");
@@ -63,8 +60,7 @@ int main()
     NativeObject borrowed{ vtable.data(), 1 };
     addRef(&borrowed);
     release(&borrowed);
-    check(borrowed.referenceWord == 1 && borrowed.destroyed == 0,
-        "non-reference-counted storage is not released");
+    check(borrowed.referenceWord == 1 && borrowed.destroyed == 0, "non-reference-counted storage is not released");
     addRef(nullptr);
     release(nullptr);
     return passed ? 0 : 1;

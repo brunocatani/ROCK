@@ -1,6 +1,6 @@
-#include "physics-interaction/weapon/handling/FrikWeaponOffsetPolicy.h"
-#include "physics-interaction/weapon/authored/HoldingGripAdapter.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/weapon/authored/HoldingGripAdapter.h"
+#include "physics-interaction/weapon/handling/FrikWeaponOffsetPolicy.h"
 
 #include <cassert>
 #include <cmath>
@@ -18,7 +18,8 @@ namespace
     namespace policy = frik_weapon_offset_policy;
 
     // FRIK's own Minigun.json, values as FRIK stores them.
-    constexpr const char* kMinigun = R"({"Minigun":{"rotation":[-0.12200000137090683,0.9900000095367432,0.0689999982714653,0.0,
+    constexpr const char* kMinigun =
+        R"({"Minigun":{"rotation":[-0.12200000137090683,0.9900000095367432,0.0689999982714653,0.0,
         0.9869999885559082,0.11400000005960464,0.10899999737739563,0.0,0.10000000149011612,0.08100000023841858,-0.9919999837875366,0.0],
         "scale":1.25,"x":9.201794624328613,"y":6.294676780700684,"z":6.744982719421387},
         "Minigun-primHand-PowerArmor":{"rotation":[0.9659258,0.0,-0.2588190,0.0,0.0,1.0,0.0,0.0,0.2588190,0.0,0.9659258,0.0],
@@ -93,11 +94,13 @@ int main()
     assert(armored && armored->hasWeaponOffset && armored->hasPrimaryHandRotation);
     const RE::NiTransform forearm = rotationAbout(0.3f, -1.1f, 2.0f, 40.0f);
     RE::NiTransform handLocal = rotationAbout(-0.4f, 0.2f, 0.7f, 12.0f);
-    const RE::NiTransform weaponWorld = transform_math::composeTransforms(transform_math::composeTransforms(forearm, handLocal), weaponInHand);
+    const RE::NiTransform weaponWorld =
+        transform_math::composeTransforms(transform_math::composeTransforms(forearm, handLocal), weaponInHand);
     const RE::NiTransform primaryHand = engineTransform(json["Minigun-primHand-PowerArmor"]);
     handLocal.rotate = primaryHand.rotate * handLocal.rotate;
     const RE::NiTransform handWorld = transform_math::composeTransforms(forearm, handLocal);
-    const RE::NiTransform frikHandInWeapon = transform_math::composeTransforms(transform_math::invertTransform(weaponWorld), handWorld);
+    const RE::NiTransform frikHandInWeapon =
+        transform_math::composeTransforms(transform_math::invertTransform(weaponWorld), handWorld);
     near(holding_grip_math::toNative(policy::seat(*armored, {})), frikHandInWeapon, 0.002f);
 
     // A lone hand rotation keeps the native seat's wrist position.
@@ -120,7 +123,8 @@ int main()
     // A mirrored rotation is not a hand placement; the file is rejected.
     bool rejected = false;
     try {
-        (void)policy::readFile(nlohmann::json::parse(R"({"X":{"rotation":[-1,0,0,0,0,1,0,0,0,0,1,0],"scale":1,"x":0,"y":0,"z":0}})"));
+        (void)policy::readFile(
+            nlohmann::json::parse(R"({"X":{"rotation":[-1,0,0,0,0,1,0,0,0,0,1,0],"scale":1,"x":0,"y":0,"z":0}})"));
     } catch (const std::exception&) {
         rejected = true;
     }

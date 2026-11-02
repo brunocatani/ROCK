@@ -30,12 +30,8 @@ namespace
         if (actual == expected) {
             return true;
         }
-        std::printf("%s expected '%.*s' got '%.*s'\n",
-            label,
-            static_cast<int>(expected.size()),
-            expected.data(),
-            static_cast<int>(actual.size()),
-            actual.data());
+        std::printf("%s expected '%.*s' got '%.*s'\n", label, static_cast<int>(expected.size()), expected.data(),
+            static_cast<int>(actual.size()), actual.data());
         return false;
     }
 
@@ -58,8 +54,10 @@ int main()
     bool ok = true;
 
     ok &= expectEqual("velocity check setting", kVelocityCheckSetting, "bMeleeVelocityCheck:VRInput");
-    ok &= expectEqual("linear threshold setting", kLinearVelocityThresholdSetting, "fMeleeLinearVelocityThreshold:VRInput");
-    ok &= expectEqual("angular threshold setting", kAngularVelocityThresholdSetting, "fMeleeAngularVelocityThreshold:VRInput");
+    ok &= expectEqual("linear threshold setting", kLinearVelocityThresholdSetting,
+        "fMeleeLinearVelocityThreshold:VRInput");
+    ok &= expectEqual("angular threshold setting", kAngularVelocityThresholdSetting,
+        "fMeleeAngularVelocityThreshold:VRInput");
     const float quietNan = std::numeric_limits<float>::quiet_NaN();
     ok &= expectTrue("exact restore compares identical NaN payloads by bits", sameRuntimeFloatBits(quietNan, quietNan));
     ok &= expectFalse("exact restore preserves signed zero", sameRuntimeFloatBits(0.0f, -0.0f));
@@ -77,16 +75,18 @@ int main()
 
     ok &= expectEqual("disabled suppression passes RightStick gate through",
         evaluateNativeMeleeInputGate(NativeMeleeInputGatePolicyInput{
-            .suppressionActive = false,
-            .inputEvent = NativeMeleeInputEvent::RightStick,
-        }).action,
+                                         .suppressionActive = false,
+                                         .inputEvent = NativeMeleeInputEvent::RightStick,
+                                     })
+            .action,
         NativeMeleeInputGateAction::CallNative);
 
     ok &= expectEqual("disabled suppression passes VR melee impact through",
         evaluateNativeMeleeImpactSuppression(NativeMeleeImpactPolicyInput{
-            .suppressionActive = false,
-            .actorIsPlayer = true,
-        }).action,
+                                                 .suppressionActive = false,
+                                                 .actorIsPlayer = true,
+                                             })
+            .action,
         NativeMeleeImpactAction::CallNative);
 
     const NativeMeleePolicyInput suppressedPlayer{
@@ -101,21 +101,24 @@ int main()
         NativeMeleeSuppressionAction::ReturnHandled);
     ok &= expectEqual("enabled suppression blocks RightStick melee gate",
         evaluateNativeMeleeInputGate(NativeMeleeInputGatePolicyInput{
-            .suppressionActive = true,
-            .inputEvent = NativeMeleeInputEvent::RightStick,
-        }).action,
+                                         .suppressionActive = true,
+                                         .inputEvent = NativeMeleeInputEvent::RightStick,
+                                     })
+            .action,
         NativeMeleeInputGateAction::ReturnFalse);
     ok &= expectEqual("enabled suppression leaves primary attack input native",
         evaluateNativeMeleeInputGate(NativeMeleeInputGatePolicyInput{
-            .suppressionActive = true,
-            .inputEvent = NativeMeleeInputEvent::PrimaryAttack,
-        }).action,
+                                         .suppressionActive = true,
+                                         .inputEvent = NativeMeleeInputEvent::PrimaryAttack,
+                                     })
+            .action,
         NativeMeleeInputGateAction::CallNative);
     ok &= expectEqual("enabled suppression blocks player VR melee impact",
         evaluateNativeMeleeImpactSuppression(NativeMeleeImpactPolicyInput{
-            .suppressionActive = true,
-            .actorIsPlayer = true,
-        }).action,
+                                                 .suppressionActive = true,
+                                                 .actorIsPlayer = true,
+                                             })
+            .action,
         NativeMeleeImpactAction::Suppress);
 
     const NativeMeleePolicyInput suppressedNpc{
@@ -127,9 +130,10 @@ int main()
         NativeMeleeSuppressionAction::CallNative);
     ok &= expectEqual("enabled suppression preserves NPC VR melee impact",
         evaluateNativeMeleeImpactSuppression(NativeMeleeImpactPolicyInput{
-            .suppressionActive = true,
-            .actorIsPlayer = false,
-        }).action,
+                                                 .suppressionActive = true,
+                                                 .actorIsPlayer = false,
+                                             })
+            .action,
         NativeMeleeImpactAction::CallNative);
 
     return ok ? 0 : 1;

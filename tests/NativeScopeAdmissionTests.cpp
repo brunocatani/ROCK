@@ -8,29 +8,27 @@
 namespace
 {
     using Site = rock::native_scope_admission::Site;
+
     struct Observation
     {
         std::array<std::uint64_t, 8> registers{};
         std::array<std::array<std::uint64_t, 2>, 6> xmm{};
         std::uint64_t stackAlignment{};
     };
+
     std::array<std::uint64_t, 4> arguments{};
     std::uint32_t callbackAlignment = 0;
     constexpr std::uintptr_t weapon = 0x12345678;
     constexpr std::uintptr_t instance = 0x76543210;
-    constexpr std::array<std::uint64_t, 8> sentinels{
-        0xAA11AA11AA11AA11, 0xBB22BB22BB22BB22, weapon, 0xDD44DD44DD44DD44,
-        0x8811881188118811, 0x9922992299229922, 0xAA33AA33AA33AA33, 0xBB44BB44BB44BB44
-    };
-    constexpr std::array<std::array<std::uint64_t, 2>, 6> vectors{{
-        { 0x1020304050607080, 0x9080706050403020 }, { 11, 22 }, { 33, 44 },
-        { 55, 66 }, { 77, 88 }, { 99, 111 }
-    }};
+    constexpr std::array<std::uint64_t, 8> sentinels{ 0xAA11AA11AA11AA11, 0xBB22BB22BB22BB22, weapon,
+        0xDD44DD44DD44DD44, 0x8811881188118811, 0x9922992299229922, 0xAA33AA33AA33AA33, 0xBB44BB44BB44BB44 };
+    constexpr std::array<std::array<std::uint64_t, 2>, 6> vectors{ { { 0x1020304050607080, 0x9080706050403020 },
+        { 11, 22 }, { 33, 44 }, { 55, 66 }, { 77, 88 }, { 99, 111 } } };
 
     void capture(std::uint32_t native, const void* form, const void* data, Site site)
     {
-        arguments = { native, reinterpret_cast<std::uintptr_t>(form),
-            reinterpret_cast<std::uintptr_t>(data), static_cast<std::uint32_t>(site) };
+        arguments = { native, reinterpret_cast<std::uintptr_t>(form), reinterpret_cast<std::uintptr_t>(data),
+            static_cast<std::uint32_t>(site) };
     }
 
     class Predicate final : public Xbyak::CodeGenerator
@@ -123,22 +121,24 @@ int main()
             for (bool admit : { false, true }) {
                 Resume resume;
                 Predicate predicate(admit);
-                rock::native_scope_admission::Stub stub(site,
-                    reinterpret_cast<std::uintptr_t>(predicate.getCode()), reinterpret_cast<std::uintptr_t>(resume.getCode()));
+                rock::native_scope_admission::Stub stub(site, reinterpret_cast<std::uintptr_t>(predicate.getCode()),
+                    reinterpret_cast<std::uintptr_t>(resume.getCode()));
                 NativeCaller caller(site, flags, stub.getCode());
                 Observation observed{};
                 caller.getCode<void (*)(Observation*)>()(&observed);
                 auto expected = sentinels;
                 expected[site == Site::Geometry ? 1 : 0] = ((flags >> 21) & 0xFFFFFF01u) | (admit ? 1u : 0u);
-                const std::array<std::uint64_t, 4> expectedArguments{
-                    (flags >> 21) & 1u, weapon, instance, static_cast<std::uint32_t>(site)
-                };
+                const std::array<std::uint64_t, 4> expectedArguments{ (flags >> 21) & 1u, weapon, instance,
+                    static_cast<std::uint32_t>(site) };
                 const bool pass = observed.registers == expected && observed.xmm == vectors &&
                     observed.stackAlignment == 0 && callbackAlignment == 8 && arguments == expectedArguments;
                 if (!pass) {
-                    std::printf("Scope admission ABI failed site=%u flags=%08X admit=%u registers=%u xmm=%u stack=%llu callback=%u arguments=%u\n",
-                        static_cast<unsigned>(site), flags, admit, observed.registers == expected, observed.xmm == vectors,
-                        observed.stackAlignment, callbackAlignment, arguments == expectedArguments);
+                    std::printf(
+                        "Scope admission ABI failed site=%u flags=%08X admit=%u registers=%u xmm=%u stack=%llu "
+                        "callback=%u arguments=%u\n",
+                        static_cast<unsigned>(site), flags, admit, observed.registers == expected,
+                        observed.xmm == vectors, observed.stackAlignment, callbackAlignment,
+                        arguments == expectedArguments);
                 }
                 ok &= pass;
             }

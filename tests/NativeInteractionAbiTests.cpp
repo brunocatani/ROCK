@@ -1,14 +1,20 @@
-#pragma pack(push,1)
+#pragma pack(push, 1)
 #include <ROCK/NativeInteraction.h>
-struct CallerPacking {char byte;std::uint64_t value;};
-static_assert(alignof(CallerPacking)==1);
+
+struct CallerPacking
+{
+    char byte;
+    std::uint64_t value;
+};
+
+static_assert(alignof(CallerPacking) == 1);
 #pragma pack(pop)
 #include <cstddef>
 
-namespace ni=rock::api::native_interaction;
-static_assert(static_cast<unsigned>(ni::kInterfaceId)==14);
-static_assert(ni::Api::majorVersion==2&&ni::Api::minorVersion==0);
-static_assert(static_cast<unsigned>(ni::Phase::Retire)==4&&static_cast<unsigned>(ni::Phase::Gameplay)==10);
+namespace ni = rock::api::native_interaction;
+static_assert(static_cast<unsigned>(ni::kInterfaceId) == 14);
+static_assert(ni::Api::majorVersion == 2 && ni::Api::minorVersion == 0);
+static_assert(static_cast<unsigned>(ni::Phase::Retire) == 4 && static_cast<unsigned>(ni::Phase::Gameplay) == 10);
 static_assert(sizeof(ni::Frame) == 112 && alignof(ni::Frame) == 8);
 static_assert(offsetof(ni::Frame, size) == 0);
 static_assert(offsetof(ni::Frame, version) == 4);
@@ -128,7 +134,7 @@ static_assert(offsetof(ni::ImpactResult, size) == 0);
 static_assert(offsetof(ni::ImpactResult, version) == 4);
 static_assert(offsetof(ni::ImpactResult, handled) == 8);
 static_assert(offsetof(ni::ImpactResult, targetForm) == 12);
-static_assert(static_cast<unsigned>(ni::Phase::HandContact)==11);
+static_assert(static_cast<unsigned>(ni::Phase::HandContact) == 11);
 static_assert(sizeof(ni::HandContact) == 176 && alignof(ni::HandContact) == 8);
 static_assert(offsetof(ni::HandContact, size) == 0);
 static_assert(offsetof(ni::HandContact, version) == 4);
@@ -169,5 +175,6 @@ static_assert(offsetof(ni::Api, clearWeaponContactExclusion) == 40);
 static_assert(offsetof(ni::Api, hasWeaponContactExclusion) == 48);
 static_assert(offsetof(ni::Api, copyWeaponSources) == 56);
 static_assert(offsetof(ni::Api, getSourceGeometry) == 64);
-static_assert(std::is_standard_layout_v<ni::Callbacks>&&std::is_trivially_copyable_v<ni::SelectionReply>);
+static_assert(std::is_standard_layout_v<ni::Callbacks> && std::is_trivially_copyable_v<ni::SelectionReply>);
+
 int main() {}

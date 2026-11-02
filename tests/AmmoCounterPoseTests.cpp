@@ -45,7 +45,7 @@ int main()
 
     ok &= expect("panels keep the number overlay aspect",
         near(right.loaded.width / right.loaded.height, kNumberAspect) &&
-        near(right.reserve.width / right.reserve.height, kNumberAspect));
+            near(right.reserve.width / right.reserve.height, kNumberAspect));
     const float loadedBottom = right.loaded.center[2] - right.loaded.height * kDigitHeightFraction * 0.5f;
     const float reserveBottom = right.reserve.center[2] - right.reserve.height * kDigitHeightFraction * 0.5f;
     ok &= expect("loaded and reserve digits share a baseline", near(loadedBottom, reserveBottom));
@@ -53,14 +53,17 @@ int main()
     // Look-at fade: facing from 45 degrees is full, from beyond 60 hidden.
     const Point anchor{ rightPalm[0] - kOutward, rightPalm[1], rightPalm[2] };
     ok &= expect("a counter facing the head is fully visible",
-        near(resolve(rightPalm, weaponRight, weaponUp, false, { anchor[0] - 20.0f, anchor[1], anchor[2] }).opacity, kMaxOpacity));
-    const auto edgeOn = resolve(rightPalm, weaponRight, weaponUp, false, { anchor[0] - 5.0f, anchor[1] - 20.0f, anchor[2] });
+        near(resolve(rightPalm, weaponRight, weaponUp, false, { anchor[0] - 20.0f, anchor[1], anchor[2] }).opacity,
+            kMaxOpacity));
+    const auto edgeOn =
+        resolve(rightPalm, weaponRight, weaponUp, false, { anchor[0] - 5.0f, anchor[1] - 20.0f, anchor[2] });
     ok &= expect("a counter seen edge-on is hidden", edgeOn.valid && edgeOn.opacity == 0.0f);
     ok &= expect("looking never moves or rotates the counter",
         near(edgeOn.loaded.center[0], right.loaded.center[0]) && near(edgeOn.front[0], right.front[0]));
 
     ok &= expect("a degenerate weapon basis fails closed", !resolve(rightPalm, weaponUp, weaponUp, false, head).valid);
-    ok &= expect("a non-finite palm fails closed", !resolve({ NAN, 0.0f, 0.0f }, weaponRight, weaponUp, false, head).valid);
+    ok &= expect("a non-finite palm fails closed",
+        !resolve({ NAN, 0.0f, 0.0f }, weaponRight, weaponUp, false, head).valid);
 
     // Immersive keeps Minimal's plane, anchor and fade with one panel.
     const auto immersive = resolveImmersive(rightPalm, weaponRight, weaponUp, false, head);
@@ -91,14 +94,18 @@ int main()
     const auto vanillaLeft = resolveVanilla(quad, true, rightBone, leftBone, viewer, 1.0f);
     const auto vanillaRightSeen = resolveVanilla(quad, false, {}, {}, viewer, 1.0f);
     const auto mirrored = [](const Point& value) { return Point{ -value[0], value[1], value[2] }; };
-    const auto same = [](const Point& a, const Point& b) { return near(a[0], b[0]) && near(a[1], b[1]) && near(a[2], b[2]); };
+    const auto same = [](const Point& a, const Point& b) {
+        return near(a[0], b[0]) && near(a[1], b[1]) && near(a[2], b[2]);
+    };
     ok &= expect("a left vanilla counter resolves", vanillaLeft.valid);
     ok &= expect("it is the right counter's mirror image in place",
         same(vanillaLeft.counter.center, mirrored(vanillaRightSeen.counter.center)));
     ok &= expect("it faces the mirrored way and stays upright the mirrored way",
-        same(vanillaLeft.front, mirrored(vanillaRightSeen.front)) && same(vanillaLeft.up, mirrored(vanillaRightSeen.up)));
+        same(vanillaLeft.front, mirrored(vanillaRightSeen.front)) &&
+            same(vanillaLeft.up, mirrored(vanillaRightSeen.up)));
     ok &= expect("its digits still read left to right, not mirrored",
-        same(vanillaLeft.right, Point{ vanillaRightSeen.right[0], -vanillaRightSeen.right[1], -vanillaRightSeen.right[2] }));
+        same(vanillaLeft.right,
+            Point{ vanillaRightSeen.right[0], -vanillaRightSeen.right[1], -vanillaRightSeen.right[2] }));
     ok &= expect("a vanilla counter seen from behind is hidden",
         resolveVanilla(quad, false, {}, {}, { -200.0f, 0.0f, 0.0f }, 1.0f).opacity == 0.0f);
     ok &= expect("a vanilla counter faced directly takes the HUD opacity",

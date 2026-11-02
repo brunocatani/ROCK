@@ -35,10 +35,7 @@ namespace
         return false;
     }
 
-    RE::NiTransform identity()
-    {
-        return rock::transform_math::makeIdentityTransform<RE::NiTransform>();
-    }
+    RE::NiTransform identity() { return rock::transform_math::makeIdentityTransform<RE::NiTransform>(); }
 
     RE::NiTransform translated(float x, float y, float z)
     {
@@ -46,7 +43,6 @@ namespace
         t.translate = RE::NiPoint3{ x, y, z };
         return t;
     }
-
 
 }
 
@@ -57,20 +53,24 @@ int main()
     // Commit, update in place, tie-break by registration order (a republish keeps its place), remove.
     {
         Registry registry{};
-        ok &= expectEnum("insert A", commit(registry, "ROCK_A", false, 100, translated(1, 0, 0)), CommitResult::Inserted);
-        ok &= expectEnum("insert B", commit(registry, "ROCK_B", false, 100, translated(2, 0, 0)), CommitResult::Inserted);
+        ok &=
+            expectEnum("insert A", commit(registry, "ROCK_A", false, 100, translated(1, 0, 0)), CommitResult::Inserted);
+        ok &=
+            expectEnum("insert B", commit(registry, "ROCK_B", false, 100, translated(2, 0, 0)), CommitResult::Inserted);
         ok &= expectTrue("right has claim", hasClaim(registry, false));
         ok &= expectFalse("left has no claim", hasClaim(registry, true));
         const Claim* top = winner(registry, false);
         ok &= expectTrue("winner exists", top != nullptr);
         ok &= expectTrue("newest publish wins the tie", top && tagView(*top) == "ROCK_B");
 
-        ok &= expectEnum("update A", commit(registry, "ROCK_A", false, 100, translated(3, 0, 0)), CommitResult::Updated);
+        ok &=
+            expectEnum("update A", commit(registry, "ROCK_A", false, 100, translated(3, 0, 0)), CommitResult::Updated);
         top = winner(registry, false);
         ok &= expectTrue("re-published A keeps its place, B still wins the tie", top && tagView(*top) == "ROCK_B");
         ok &= expectTrue("claim count is two", claimCount(registry) == 2);
 
-        ok &= expectEnum("higher priority", commit(registry, "ROCK_C", false, 110, translated(4, 0, 0)), CommitResult::Inserted);
+        ok &= expectEnum("higher priority", commit(registry, "ROCK_C", false, 110, translated(4, 0, 0)),
+            CommitResult::Inserted);
         top = winner(registry, false);
         ok &= expectTrue("priority beats order", top && tagView(*top) == "ROCK_C");
 
@@ -82,7 +82,8 @@ int main()
 
         // Clear and set again: the tag registers anew, takes the newest order and wins the tie.
         ok &= expectTrue("clear A", remove(registry, "ROCK_A", false));
-        ok &= expectEnum("set A again", commit(registry, "ROCK_A", false, 100, translated(5, 0, 0)), CommitResult::Inserted);
+        ok &= expectEnum("set A again", commit(registry, "ROCK_A", false, 100, translated(5, 0, 0)),
+            CommitResult::Inserted);
         top = winner(registry, false);
         ok &= expectTrue("re-registered A wins the tie", top && tagView(*top) == "ROCK_A");
         const Claim* claimB = find(registry, "ROCK_B", false);
@@ -131,7 +132,8 @@ int main()
         const auto captured = snapshotConsumedTarget(registry, false);
         (void)commit(registry, "ROCK_A", false, 100, translated(2, 0, 0));
         ok &= expectTrue("captured target keeps its source pose", captured.valid && captured.target.translate.x == 1);
-        ok &= expectTrue("new publication is independent", snapshotConsumedTarget(registry, false).target.translate.x == 2);
+        ok &= expectTrue("new publication is independent",
+            snapshotConsumedTarget(registry, false).target.translate.x == 2);
     }
 
     // A target whose basis is not a rotation is refused; drift is accepted.
@@ -143,14 +145,16 @@ int main()
                 stretched.rotate.entry[row][column] *= 1.2f;
             }
         }
-        ok &= expectEnum("stretched target refused", commit(rotationRegistry, "ROCK_S", false, 100, stretched), CommitResult::InvalidTarget);
+        ok &= expectEnum("stretched target refused", commit(rotationRegistry, "ROCK_S", false, 100, stretched),
+            CommitResult::InvalidTarget);
         RE::NiTransform drifted = translated(1.0f, 2.0f, 3.0f);
         for (int row = 0; row < 3; ++row) {
             for (int column = 0; column < 3; ++column) {
                 drifted.rotate.entry[row][column] *= 1.0003f;
             }
         }
-        ok &= expectEnum("drifted target accepted", commit(rotationRegistry, "ROCK_S", false, 100, drifted), CommitResult::Inserted);
+        ok &= expectEnum("drifted target accepted", commit(rotationRegistry, "ROCK_S", false, 100, drifted),
+            CommitResult::Inserted);
     }
 
     if (!ok) {

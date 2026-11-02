@@ -23,19 +23,23 @@ namespace
         poseRegistered = true;
         return true;
     }
+
     Api::HandPoseTagState FRIK_CALL poseState(const char*, Api::Hand)
     {
         return poseRegistered ? Api::HandPoseTagState::Active : Api::HandPoseTagState::None;
     }
+
     bool FRIK_CALL publishLocals(const char*, Api::Hand, const Api::FingerLocalTransformOverride* locals, int)
     {
         ++fingerPublications;
         // Published FRIK 2.3 contract, and the exact rejection observed in the
         // 2026-10-12 12:03:21.932 runtime log: locals require a tagged pose.
-        if (!poseRegistered || !acceptFingerLocals) return false;
+        if (!poseRegistered || !acceptFingerLocals)
+            return false;
         receivedFingers = *locals;
         return true;
     }
+
     bool FRIK_CALL clearPose(const char*, Api::Hand)
     {
         ++clears;
@@ -86,25 +90,30 @@ int main()
 
     Api::FingerLocalTransformOverride authored{};
     authored.enabledMask = 0x7FFF;
-    for (auto& local : authored.localTransforms) local = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+    for (auto& local : authored.localTransforms)
+        local = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
     authored.localTransforms[4].translate = { 0.25f, -0.5f, 0.75f };
     constexpr const char* tag = "secondary-pose-contract-test";
-    ok &= expect("authored locals acquire their required tagged pose", bridge::setAuthoredFingerPose(tag, Api::Hand::Left, authored, 100) &&
-        poseRegistrations == 1 && fingerPublications == 1 && receivedFingers.enabledMask == authored.enabledMask &&
-        receivedFingers.localTransforms[4].translate.z == 0.75f);
-    ok &= expect("unchanged authored pose does not re-register each frame", bridge::setAuthoredFingerPose(tag, Api::Hand::Left, authored, 100) &&
-        poseRegistrations == 1 && fingerPublications == 1);
+    ok &= expect("authored locals acquire their required tagged pose",
+        bridge::setAuthoredFingerPose(tag, Api::Hand::Left, authored, 100) && poseRegistrations == 1 &&
+            fingerPublications == 1 && receivedFingers.enabledMask == authored.enabledMask &&
+            receivedFingers.localTransforms[4].translate.z == 0.75f);
+    ok &= expect("unchanged authored pose does not re-register each frame",
+        bridge::setAuthoredFingerPose(tag, Api::Hand::Left, authored, 100) && poseRegistrations == 1 &&
+            fingerPublications == 1);
     // A released skeleton erases provider registrations behind the client's
     // cache. The next publication must reacquire before sending bone locals.
     poseRegistered = false;
-    ok &= expect("skeleton recreation restores the required pose", bridge::setAuthoredFingerPose(tag, Api::Hand::Left, authored, 100) &&
-        poseRegistrations == 2 && fingerPublications == 2);
+    ok &= expect("skeleton recreation restores the required pose",
+        bridge::setAuthoredFingerPose(tag, Api::Hand::Left, authored, 100) && poseRegistrations == 2 &&
+            fingerPublications == 2);
     acceptFingerLocals = false;
     authored.localTransforms[4].translate.z = 0.8f;
-    ok &= expect("partial publication cannot leave a scalar pose behind", !bridge::setAuthoredFingerPose(tag, Api::Hand::Left, authored, 100) &&
-        !poseRegistered && clears == 1);
+    ok &= expect("partial publication cannot leave a scalar pose behind",
+        !bridge::setAuthoredFingerPose(tag, Api::Hand::Left, authored, 100) && !poseRegistered && clears == 1);
     acceptFingerLocals = true;
-    ok &= expect("publication recovers after a provider refusal", bridge::setAuthoredFingerPose(tag, Api::Hand::Left, authored, 100) && poseRegistered);
+    ok &= expect("publication recovers after a provider refusal",
+        bridge::setAuthoredFingerPose(tag, Api::Hand::Left, authored, 100) && poseRegistered);
     (void)bridge::clearHandPose(tag, Api::Hand::Left);
 
     // BeforeArmSolve during left carry: the live first-person hand holds
@@ -113,8 +122,7 @@ int main()
         bridge::tryGetPresentedHandWorldTransform(true, actual) && actual.translate.x == 1.0f &&
             std::strcmp(requestedBone, "LArm_Hand") == 0);
     ok &= expect("right hand uses the matching body bone",
-        bridge::tryGetPresentedHandWorldTransform(false, actual) &&
-            std::strcmp(requestedBone, "RArm_Hand") == 0);
+        bridge::tryGetPresentedHandWorldTransform(false, actual) && std::strcmp(requestedBone, "RArm_Hand") == 0);
 
     // World final publishes a new rendered pose; no explicit ROCK cache can
     // keep the old one alive or substitute the controller for a claimed hand.

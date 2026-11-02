@@ -1,5 +1,5 @@
-#include "physics-interaction/grab/GrabAuthorityProxyMotion.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/grab/GrabAuthorityProxyMotion.h"
 #include "physics-interaction/grab/GrabConstraintMath.h"
 
 #include <algorithm>
@@ -22,10 +22,7 @@ namespace
         return false;
     }
 
-    RE::NiTransform identityTransform()
-    {
-        return rock::transform_math::makeIdentityTransform<RE::NiTransform>();
-    }
+    RE::NiTransform identityTransform() { return rock::transform_math::makeIdentityTransform<RE::NiTransform>(); }
 
     RE::NiMatrix3 rotationAroundZ(float radians)
     {
@@ -108,8 +105,10 @@ namespace
     bool expectTransformClose(const char* label, const RE::NiTransform& actual, const RE::NiTransform& expected)
     {
         bool ok = true;
-        ok &= expectNear((std::string(label) + " position").c_str(), pointDistance(actual.translate, expected.translate), 0.0f, 0.001f);
-        ok &= expectNear((std::string(label) + " rotation").c_str(), rotationDeltaDegrees(actual.rotate, expected.rotate), 0.0f, 0.01f);
+        ok &= expectNear((std::string(label) + " position").c_str(),
+            pointDistance(actual.translate, expected.translate), 0.0f, 0.001f);
+        ok &= expectNear((std::string(label) + " rotation").c_str(),
+            rotationDeltaDegrees(actual.rotate, expected.rotate), 0.0f, 0.01f);
         return ok;
     }
 }
@@ -147,8 +146,8 @@ int main()
     }
 
     {
-        const RE::NiMatrix3 compositeRotation =
-            composeRotations(rotationAroundZ(kPi * 0.37f), composeRotations(rotationAroundX(-kPi * 0.23f), rotationAroundY(kPi * 0.41f)));
+        const RE::NiMatrix3 compositeRotation = composeRotations(rotationAroundZ(kPi * 0.37f),
+            composeRotations(rotationAroundX(-kPi * 0.23f), rotationAroundY(kPi * 0.41f)));
         const RE::NiMatrix3 cases[2]{
             rotationAroundZ(kPi * 0.5f),
             compositeRotation,
@@ -169,72 +168,60 @@ int main()
             const RE::NiTransform expectedHeldProxyInBody =
                 rock::grab_constraint_math::proxyInBodyFromBodyInProxy(bodyInProxyHeld);
             const RE::NiPoint3 expectedInitialPivotB =
-                rock::grab_constraint_math::computeHiggsTransformBTranslationGame(bodyInProxyAtCreation, frozenPivotAProxyLocal);
-            const RE::NiPoint3 expectedHeldPivotB =
-                rock::grab_constraint_math::computeHiggsTransformBTranslationGame(bodyInProxyHeld, frozenPivotAProxyLocal);
+                rock::grab_constraint_math::computeHiggsTransformBTranslationGame(bodyInProxyAtCreation,
+                    frozenPivotAProxyLocal);
+            const RE::NiPoint3 expectedHeldPivotB = rock::grab_constraint_math::computeHiggsTransformBTranslationGame(
+                bodyInProxyHeld, frozenPivotAProxyLocal);
 
             {
                 float transformBRotation[12]{};
                 float transformBTranslation[4]{};
                 float targetBRca[12]{};
-                rock::grab_constraint_math::writeGrabConstraintCreationAtoms(
-                    transformBRotation,
-                    transformBTranslation,
-                    targetBRca,
-                    bodyInProxyAtCreation,
-                    frozenPivotAProxyLocal,
-                    gameToHavokScale);
+                rock::grab_constraint_math::writeGrabConstraintCreationAtoms(transformBRotation, transformBTranslation,
+                    targetBRca, bodyInProxyAtCreation, frozenPivotAProxyLocal, gameToHavokScale);
 
                 // The zero-separation contract: transform-B carries the same
                 // solver-row proxy-in-BODY rotation bytes as target_bRca.
-                ok &= expectNear(
-                    "creation transformB rows carry initial proxy-in-BODY rotation",
+                ok &= expectNear("creation transformB rows carry initial proxy-in-BODY rotation",
                     rotationDeltaDegrees(matrixFromRawRows(transformBRotation), expectedInitialProxyInBody.rotate),
-                    0.0f,
+                    0.0f, 0.01f);
+                ok &= expectNear("creation target rows carry initial proxy-in-BODY rotation",
+                    rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedInitialProxyInBody.rotate), 0.0f,
                     0.01f);
-                ok &= expectNear(
-                    "creation target rows carry initial proxy-in-BODY rotation",
-                    rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedInitialProxyInBody.rotate),
-                    0.0f,
-                    0.01f);
-                ok &= expectNear("creation transformB relation pivot x", transformBTranslation[0], expectedInitialPivotB.x * gameToHavokScale, 0.001f);
-                ok &= expectNear("creation transformB relation pivot y", transformBTranslation[1], expectedInitialPivotB.y * gameToHavokScale, 0.001f);
-                ok &= expectNear("creation transformB relation pivot z", transformBTranslation[2], expectedInitialPivotB.z * gameToHavokScale, 0.001f);
+                ok &= expectNear("creation transformB relation pivot x", transformBTranslation[0],
+                    expectedInitialPivotB.x * gameToHavokScale, 0.001f);
+                ok &= expectNear("creation transformB relation pivot y", transformBTranslation[1],
+                    expectedInitialPivotB.y * gameToHavokScale, 0.001f);
+                ok &= expectNear("creation transformB relation pivot z", transformBTranslation[2],
+                    expectedInitialPivotB.z * gameToHavokScale, 0.001f);
 
                 for (int i = 0; i < 12; ++i) {
                     if (transformBRotation[i] != targetBRca[i]) {
-                        std::printf("creation transformB[%d]=%.6f must equal targetBRca[%d]=%.6f\n",
-                            i, transformBRotation[i], i, targetBRca[i]);
+                        std::printf("creation transformB[%d]=%.6f must equal targetBRca[%d]=%.6f\n", i,
+                            transformBRotation[i], i, targetBRca[i]);
                         ok = false;
                     }
                 }
 
-                rock::grab_constraint_math::writeGrabConstraintHeldTargetAtoms(
-                    transformBRotation,
-                    transformBTranslation,
-                    targetBRca,
-                    bodyInProxyHeld,
-                    frozenPivotAProxyLocal,
-                    gameToHavokScale);
+                rock::grab_constraint_math::writeGrabConstraintHeldTargetAtoms(transformBRotation,
+                    transformBTranslation, targetBRca, bodyInProxyHeld, frozenPivotAProxyLocal, gameToHavokScale);
 
-                ok &= expectNear(
-                    "held transformB rows carry current proxy-in-BODY rotation",
-                    rotationDeltaDegrees(matrixFromRawRows(transformBRotation), expectedHeldProxyInBody.rotate),
-                    0.0f,
+                ok &= expectNear("held transformB rows carry current proxy-in-BODY rotation",
+                    rotationDeltaDegrees(matrixFromRawRows(transformBRotation), expectedHeldProxyInBody.rotate), 0.0f,
                     0.01f);
-                ok &= expectNear(
-                    "held target rows carry current proxy-in-BODY rotation",
-                    rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedHeldProxyInBody.rotate),
-                    0.0f,
-                    0.01f);
-                ok &= expectNear("held transformB relation pivot x", transformBTranslation[0], expectedHeldPivotB.x * gameToHavokScale, 0.001f);
-                ok &= expectNear("held transformB relation pivot y", transformBTranslation[1], expectedHeldPivotB.y * gameToHavokScale, 0.001f);
-                ok &= expectNear("held transformB relation pivot z", transformBTranslation[2], expectedHeldPivotB.z * gameToHavokScale, 0.001f);
+                ok &= expectNear("held target rows carry current proxy-in-BODY rotation",
+                    rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedHeldProxyInBody.rotate), 0.0f, 0.01f);
+                ok &= expectNear("held transformB relation pivot x", transformBTranslation[0],
+                    expectedHeldPivotB.x * gameToHavokScale, 0.001f);
+                ok &= expectNear("held transformB relation pivot y", transformBTranslation[1],
+                    expectedHeldPivotB.y * gameToHavokScale, 0.001f);
+                ok &= expectNear("held transformB relation pivot z", transformBTranslation[2],
+                    expectedHeldPivotB.z * gameToHavokScale, 0.001f);
 
                 for (int i = 0; i < 12; ++i) {
                     if (transformBRotation[i] != targetBRca[i]) {
-                        std::printf("held transformB[%d]=%.6f must equal targetBRca[%d]=%.6f\n",
-                            i, transformBRotation[i], i, targetBRca[i]);
+                        std::printf("held transformB[%d]=%.6f must equal targetBRca[%d]=%.6f\n", i,
+                            transformBRotation[i], i, targetBRca[i]);
                         ok = false;
                     }
                 }
@@ -252,21 +239,25 @@ int main()
         objectToBody.rotate = rotationAroundX(kPi * 0.5f);
 
         const RE::NiTransform bodyWorld = rock::transform_math::composeTransforms(objectWorld, objectToBody);
-        const RE::NiTransform capturedObjectToBody = rock::transform_math::composeTransforms(rock::transform_math::invertTransform(objectWorld), bodyWorld);
+        const RE::NiTransform capturedObjectToBody =
+            rock::transform_math::composeTransforms(rock::transform_math::invertTransform(objectWorld), bodyWorld);
 
         RE::NiTransform desiredObjectWorld = identityTransform();
         desiredObjectWorld.translate = RE::NiPoint3{ -7.0f, 2.0f, 19.0f };
         desiredObjectWorld.rotate = rotationAroundZ(-kPi * 0.5f);
 
-        const RE::NiTransform desiredBodyWorld = rock::transform_math::composeTransforms(desiredObjectWorld, capturedObjectToBody);
-        const RE::NiTransform recoveredObjectWorld =
-            rock::transform_math::composeTransforms(desiredBodyWorld, rock::transform_math::invertTransform(capturedObjectToBody));
+        const RE::NiTransform desiredBodyWorld =
+            rock::transform_math::composeTransforms(desiredObjectWorld, capturedObjectToBody);
+        const RE::NiTransform recoveredObjectWorld = rock::transform_math::composeTransforms(desiredBodyWorld,
+            rock::transform_math::invertTransform(capturedObjectToBody));
 
-        ok &= expectTransformClose("visual object recovered from body target", recoveredObjectWorld, desiredObjectWorld);
+        ok &=
+            expectTransformClose("visual object recovered from body target", recoveredObjectWorld, desiredObjectWorld);
 
-        const RE::NiTransform identityBodyTarget = rock::transform_math::composeTransforms(desiredObjectWorld, identityTransform());
-        const RE::NiTransform identityRecoveredObject =
-            rock::transform_math::composeTransforms(identityBodyTarget, rock::transform_math::invertTransform(capturedObjectToBody));
+        const RE::NiTransform identityBodyTarget =
+            rock::transform_math::composeTransforms(desiredObjectWorld, identityTransform());
+        const RE::NiTransform identityRecoveredObject = rock::transform_math::composeTransforms(identityBodyTarget,
+            rock::transform_math::invertTransform(capturedObjectToBody));
         if (pointDistance(identityRecoveredObject.translate, desiredObjectWorld.translate) <= 0.1f &&
             rotationDeltaDegrees(identityRecoveredObject.rotate, desiredObjectWorld.rotate) <= 0.1f) {
             std::printf("identity bodyLocal unexpectedly preserved visual object relation\n");

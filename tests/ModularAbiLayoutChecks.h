@@ -3,7 +3,6 @@
 #include <ROCK/Abi.h>
 #include <ROCK/Animation.h>
 #include <ROCK/Collision.h>
-#include <ROCK/Storage.h>
 #include <ROCK/Configuration.h>
 #include <ROCK/Core.h>
 #include <ROCK/Discovery.h>
@@ -11,6 +10,7 @@
 #include <ROCK/Hands.h>
 #include <ROCK/Input.h>
 #include <ROCK/PlayerController.h>
+#include <ROCK/Storage.h>
 #include <ROCK/Touch.h>
 #include <ROCK/Weapon.h>
 #include <ROCK/WeaponParts.h>
@@ -1427,4 +1427,3 @@ static_assert(offsetof(rock::api::weaponparts::Api, setItemState) == 144);
 static_assert(offsetof(rock::api::weaponparts::Api, moveItemState) == 152);
 static_assert(offsetof(rock::api::weaponparts::Api, clearItemStates) == 160);
 static_assert(offsetof(rock::api::weaponparts::Api, getSample) == 168);
-

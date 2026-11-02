@@ -1,47 +1,75 @@
 // Exercise the production service boundary with a completed-pose owner and
 // a separately advancing control snapshot. No live engine is needed.
-#include "api/ProviderPublication.h"
-#include "api/ProviderStatePolicy.h"
 #include <ROCK/Hands.h>
 #include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <mutex>
+#include "api/ProviderPublication.h"
+#include "api/ProviderStatePolicy.h"
 
-namespace rock::frik_visual_authority {
+namespace rock::frik_visual_authority
+{
     bool ready = true;
+
     bool isAvailable() { return ready; }
+
     bool isSkeletonReadyHint() { return ready; }
 }
-namespace rock::provider {
-    struct PhysicsInteraction {
+
+namespace rock::provider
+{
+    struct PhysicsInteraction
+    {
         api::hands::PresentedHandPose captured{};
         Publication metadata{};
+
         bool isInitialized() const { return true; }
-        bool queryProviderPresentedHandPose(api::Hand hand, api::hands::PresentedHandPose& out, Publication* frame = nullptr) {
-            if (!captured.frameIndex || hand != captured.hand) return false;
+
+        bool queryProviderPresentedHandPose(api::Hand hand, api::hands::PresentedHandPose& out,
+            Publication* frame = nullptr)
+        {
+            if (!captured.frameIndex || hand != captured.hand)
+                return false;
             out = captured;
-            if (frame) *frame = metadata;
+            if (frame)
+                *frame = metadata;
             return true;
         }
     } instance;
-    struct Access { PhysicsInteraction* get() const { return &instance; } };
-    struct InstanceAccess { Access borrow() const { return {}; } } s_physicsInteraction;
+
+    struct Access
+    {
+        PhysicsInteraction* get() const { return &instance; }
+    };
+
+    struct InstanceAccess
+    {
+        Access borrow() const { return {}; }
+    } s_physicsInteraction;
+
     std::mutex s_snapshotMutex;
     bool s_hasSnapshot = true;
     Publication s_lastSnapshot{};
     bool ownerThread = true;
+
     bool onAnimationOwnerThread() { return ownerThread; }
+
     bool isProviderReady() { return frik_visual_authority::ready; }
-    template<class Output, class Query>
-    api::Status queryPhysicsInteractionValue(std::uint64_t owner,
-        Output& output, Query query, bool) {
+
+    template <class Output, class Query>
+    api::Status queryPhysicsInteractionValue(std::uint64_t owner, Output& output, Query query, bool)
+    {
         output = {};
-        if (!owner) return api::Status::InvalidArgument;
-        if (!ownerThread) return api::Status::WrongThread;
-        if (!isProviderReady()) return api::Status::NotReady;
+        if (!owner)
+            return api::Status::InvalidArgument;
+        if (!ownerThread)
+            return api::Status::WrongThread;
+        if (!isProviderReady())
+            return api::Status::NotReady;
         return query(instance, output) ? api::Status::Ok : api::Status::TargetUnavailable;
     }
+
 #include "api/services/HandsService.inl"
 }
 
@@ -78,7 +106,8 @@ int main()
     assert(pose.frameIndex == 10 && pose.presentationSequence == 10 && pose.handWorld.translate[0] == 100);
     assert(pose.fingerLocalTransforms[0].translate[0] == 5);
     assert(getPresentedHandFrame(Hand::Right, frame) == Status::Ok);
-    assert(frame.sample.frameIndex == 10 && frame.sample.skeletonGeneration == 3 && frame.transform.translate[0] == 100);
+    assert(
+        frame.sample.frameIndex == 10 && frame.sample.skeletonGeneration == 3 && frame.transform.translate[0] == 100);
     assert(frame.sample.publicationSequence == 42 && frame.sample.collisionGeneration == 7);
     assert((frame.flags & static_cast<std::uint32_t>(Flag::PresentedVisual)) != 0);
     assert((frame.flags & static_cast<std::uint32_t>(Flag::Left)) == 0);
@@ -90,7 +119,8 @@ int main()
     assert(pose.frameIndex == 11 && pose.presentationSequence == 11 && pose.handWorld.translate[0] == 200);
     frame = {};
     assert(getPresentedHandFrame(Hand::Right, frame) == Status::Ok);
-    assert(frame.sample.frameIndex == 11 && frame.sample.publicationSequence == 43 && frame.sample.collisionGeneration == 8);
+    assert(frame.sample.frameIndex == 11 && frame.sample.publicationSequence == 43 &&
+        frame.sample.collisionGeneration == 8);
     frame = {};
     assert(getPresentedHandFrame(Hand::Left, frame) == Status::NotReady && frame.flags == 0);
     instance.captured.handWorld.scale = std::nanf("");

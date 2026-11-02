@@ -49,13 +49,15 @@ int main()
     ok &= expectFalse("null world does not subscribe", plan.subscribeRequestedSignal);
 
     plan = planSubscription(inactive, 0x1000, 0x2000);
-    ok &= expectEqual("inactive runtime subscribes fresh", plan.action, ContactSignalSubscriptionAction::SubscribeFresh);
+    ok &=
+        expectEqual("inactive runtime subscribes fresh", plan.action, ContactSignalSubscriptionAction::SubscribeFresh);
     ok &= expectTrue("fresh plan subscribes requested signal", plan.subscribeRequestedSignal);
     ok &= expectFalse("fresh plan does not reuse a native slot", plan.reuseExistingNativeSlot);
     ok &= expectFalse("fresh plan does not replace existing state", plan.replaceExistingRuntimeStateWithoutUnsubscribe);
 
     plan = planSubscription(inactive, 0x1000, 0x2000, true);
-    ok &= expectEqual("inactive runtime reuses retained native slot", plan.action, ContactSignalSubscriptionAction::AlreadySubscribed);
+    ok &= expectEqual("inactive runtime reuses retained native slot", plan.action,
+        ContactSignalSubscriptionAction::AlreadySubscribed);
     ok &= expectTrue("retained native slot is reused", plan.reuseExistingNativeSlot);
     ok &= expectFalse("retained native slot does not resubscribe", plan.subscribeRequestedSignal);
 
@@ -66,32 +68,40 @@ int main()
     };
 
     plan = planSubscription(active, 0x1000, 0x2000);
-    ok &= expectEqual("same world and signal reuses native slot", plan.action, ContactSignalSubscriptionAction::AlreadySubscribed);
+    ok &= expectEqual("same world and signal reuses native slot", plan.action,
+        ContactSignalSubscriptionAction::AlreadySubscribed);
     ok &= expectTrue("same world plan marks native slot reuse", plan.reuseExistingNativeSlot);
     ok &= expectFalse("same world plan does not resubscribe", plan.subscribeRequestedSignal);
-    ok &= expectFalse("same world plan does not replace bridge state", plan.replaceExistingRuntimeStateWithoutUnsubscribe);
+    ok &= expectFalse("same world plan does not replace bridge state",
+        plan.replaceExistingRuntimeStateWithoutUnsubscribe);
 
     plan = planSubscription(active, 0x1000, 0x3000);
-    ok &= expectEqual("same world changed signal is replaced without native unsubscribe", plan.action, ContactSignalSubscriptionAction::ReplaceSameWorldSignal);
+    ok &= expectEqual("same world changed signal is replaced without native unsubscribe", plan.action,
+        ContactSignalSubscriptionAction::ReplaceSameWorldSignal);
     ok &= expectTrue("same world changed signal subscribes requested signal", plan.subscribeRequestedSignal);
-    ok &= expectTrue("same world changed signal replaces bridge state only", plan.replaceExistingRuntimeStateWithoutUnsubscribe);
+    ok &= expectTrue("same world changed signal replaces bridge state only",
+        plan.replaceExistingRuntimeStateWithoutUnsubscribe);
     ok &= expectFalse("same world changed signal does not reuse old slot", plan.reuseExistingNativeSlot);
 
     plan = planSubscription(active, 0x4000, 0x5000);
-    ok &= expectEqual("different world is replaced without native unsubscribe", plan.action, ContactSignalSubscriptionAction::ReplaceDifferentWorldSignal);
+    ok &= expectEqual("different world is replaced without native unsubscribe", plan.action,
+        ContactSignalSubscriptionAction::ReplaceDifferentWorldSignal);
     ok &= expectTrue("different world subscribes requested signal", plan.subscribeRequestedSignal);
     ok &= expectTrue("different world replaces bridge state only", plan.replaceExistingRuntimeStateWithoutUnsubscribe);
     ok &= expectFalse("different world does not reuse old slot", plan.reuseExistingNativeSlot);
 
     plan = planSubscription(active, 0x4000, 0x5000, true);
-    ok &= expectEqual("different retained world reuses existing native slot", plan.action, ContactSignalSubscriptionAction::AlreadySubscribed);
+    ok &= expectEqual("different retained world reuses existing native slot", plan.action,
+        ContactSignalSubscriptionAction::AlreadySubscribed);
     ok &= expectTrue("different retained world marks native slot reuse", plan.reuseExistingNativeSlot);
     ok &= expectFalse("different retained world does not resubscribe", plan.subscribeRequestedSignal);
-    ok &= expectFalse("different retained world does not replace bridge before activation", plan.replaceExistingRuntimeStateWithoutUnsubscribe);
+    ok &= expectFalse("different retained world does not replace bridge before activation",
+        plan.replaceExistingRuntimeStateWithoutUnsubscribe);
 
     auto acceptance = evaluateCallbackAcceptance(active, 0x1000);
     ok &= expectTrue("matching callback world is accepted", acceptance.accept);
-    ok &= expectEqual("matching callback world is effective world", acceptance.effectiveWorld, static_cast<std::uintptr_t>(0x1000));
+    ok &= expectEqual("matching callback world is effective world", acceptance.effectiveWorld,
+        static_cast<std::uintptr_t>(0x1000));
     ok &= expectTrue("matching callback marks world matched", acceptance.callbackWorldMatched);
     ok &= expectFalse("matching callback does not use fallback", acceptance.usedSubscribedWorldFallback);
 
@@ -107,11 +117,9 @@ int main()
     acceptance = evaluateCallbackAcceptance(inactive, 0x1000);
     ok &= expectFalse("inactive subscription rejects callbacks", acceptance.accept);
 
-    ok &= expectTrue(
-        "active subscription retains native slot on shutdown",
+    ok &= expectTrue("active subscription retains native slot on shutdown",
         shouldRetainNativeSlotAfterDeactivation(active));
-    ok &= expectFalse(
-        "inactive subscription has no native slot to retain",
+    ok &= expectFalse("inactive subscription has no native slot to retain",
         shouldRetainNativeSlotAfterDeactivation(inactive));
 
     return ok ? 0 : 1;

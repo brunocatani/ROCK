@@ -11,8 +11,8 @@
 #include <fstream>
 #include <limits>
 #include <random>
-#include <utility>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace
@@ -79,10 +79,12 @@ namespace
         selection::Stats stats;
     };
 
-    Run select(std::vector<selection::Part> parts, bool useIndex, const selection::References& references, std::size_t laneLimit, std::size_t globalLimit)
+    Run select(std::vector<selection::Part> parts, bool useIndex, const selection::References& references,
+        std::size_t laneLimit, std::size_t globalLimit)
     {
         if (!useIndex) {
-            for (auto& part : parts) part.index = nullptr;
+            for (auto& part : parts)
+                part.index = nullptr;
         }
         selection::Rankings rankings{};
         Run run{};
@@ -94,8 +96,8 @@ namespace
 
 int main()
 {
-    std::vector<std::vector<TriangleData>> meshes{ loadFixtureMesh("typewriter_pull_right.json"), loadFixtureMesh("basketball_pull_right.json"),
-        loadFixtureMesh("basketball_close_left.json") };
+    std::vector<std::vector<TriangleData>> meshes{ loadFixtureMesh("typewriter_pull_right.json"),
+        loadFixtureMesh("basketball_pull_right.json"), loadFixtureMesh("basketball_close_left.json") };
     // A non-finite triangle: the index omits it and the scan skips it, but it still consumes a scan ordinal.
     meshes[1][17].v1.x = std::numeric_limits<float>::quiet_NaN();
     // Triangles with a repeated vertex: the exact distance routine returns NaN (0/0 on the v0-v1 edge) for points on
@@ -132,7 +134,10 @@ int main()
             std::uint64_t ordinal = 0;
             for (std::size_t i = 0; i < partCount; ++i) {
                 const std::size_t mesh = i % meshes.size();
-                parts.push_back({ .sourceTriangles = meshes[mesh], .index = &indices[mesh], .sourceToWeapon = randomTransform(random), .firstOrdinal = ordinal });
+                parts.push_back({ .sourceTriangles = meshes[mesh],
+                    .index = &indices[mesh],
+                    .sourceToWeapon = randomTransform(random),
+                    .firstOrdinal = ordinal });
                 ordinal += meshes[mesh].size();
             }
 
@@ -140,7 +145,8 @@ int main()
             const auto& part = parts[random() % parts.size()];
             const auto& triangle = part.sourceTriangles[random() % part.sourceTriangles.size()];
             RE::NiPoint3 anchor = rock::transform_math::localPointToWorld(part.sourceToWeapon, triangle.v0);
-            if (!std::isfinite(anchor.x)) anchor = part.sourceToWeapon.translate;
+            if (!std::isfinite(anchor.x))
+                anchor = part.sourceToWeapon.translate;
             std::uniform_real_distribution<float> jitter(-3.0f, 3.0f), spread(-8.0f, 8.0f);
             selection::References references{};
             references.seatPoint = { anchor.x + jitter(random), anchor.y + jitter(random), anchor.z + jitter(random) };
@@ -149,20 +155,23 @@ int main()
                 references.laneCounts[lane] = random() % (selection::kLaneReferenceCapacity + 1);
                 referencePoints += references.laneCounts[lane];
                 for (std::size_t k = 0; k < references.laneCounts[lane]; ++k) {
-                    references.lanePoints[lane][k] = { references.seatPoint.x + spread(random), references.seatPoint.y + spread(random),
-                        references.seatPoint.z + spread(random) };
+                    references.lanePoints[lane][k] = { references.seatPoint.x + spread(random),
+                        references.seatPoint.y + spread(random), references.seatPoint.z + spread(random) };
                 }
             }
             for (std::size_t p = 0; p < parts.size(); ++p) {
                 for (const auto& [mesh, i] : collinear) {
-                    if (mesh != p % meshes.size()) continue;
+                    if (mesh != p % meshes.size())
+                        continue;
                     const auto& source = meshes[mesh][i];
-                    const TriangleData placed{ rock::transform_math::localPointToWorld(parts[p].sourceToWeapon, source.v0),
+                    const TriangleData placed{ rock::transform_math::localPointToWorld(parts[p].sourceToWeapon,
+                                                   source.v0),
                         rock::transform_math::localPointToWorld(parts[p].sourceToWeapon, source.v1),
                         rock::transform_math::localPointToWorld(parts[p].sourceToWeapon, source.v2) };
                     float distanceSquared = 0.0f;
                     (void)rock::closestPointOnTriangleToPoint(references.seatPoint, placed, distanceSquared);
-                    if (std::isnan(distanceSquared)) ++nanSeatDistances;
+                    if (std::isnan(distanceSquared))
+                        ++nanSeatDistances;
                 }
             }
 
@@ -172,10 +181,12 @@ int main()
                 const Run scanned = select(parts, false, references, limit[0], limit[1]);
                 check(indexed.selected.size() == scanned.selected.size(), "selection size", trial);
                 bool same = indexed.selected.size() == scanned.selected.size();
-                for (std::size_t i = 0; same && i < indexed.selected.size(); ++i) same = sameTriangle(indexed.selected[i], scanned.selected[i]);
+                for (std::size_t i = 0; same && i < indexed.selected.size(); ++i)
+                    same = sameTriangle(indexed.selected[i], scanned.selected[i]);
                 check(same, "selected triangles and order", trial);
                 check(scanned.stats.trianglesMeasured == finiteTriangles, "scan measured every finite triangle", trial);
-                check(scanned.stats.exactDistances == finiteTriangles * referencePoints, "scan computed every distance", trial);
+                check(scanned.stats.exactDistances == finiteTriangles * referencePoints, "scan computed every distance",
+                    trial);
                 indexedMeasured += indexed.stats.trianglesMeasured;
                 scanMeasured += scanned.stats.trianglesMeasured;
                 indexedDistances += indexed.stats.exactDistances;
@@ -183,12 +194,16 @@ int main()
             }
         }
 
-        std::printf("%d trials so far, %zu triangles in %zu parts: indexed walk measured %.1f%% of the triangles and computed %.1f%% of the distances\n",
-            trial, totalTriangles, partCount, 100.0 * static_cast<double>(indexedMeasured) / static_cast<double>(scanMeasured),
+        std::printf(
+            "%d trials so far, %zu triangles in %zu parts: indexed walk measured %.1f%% of the triangles and computed "
+            "%.1f%% of the distances\n",
+            trial, totalTriangles, partCount,
+            100.0 * static_cast<double>(indexedMeasured) / static_cast<double>(scanMeasured),
             100.0 * static_cast<double>(indexedDistances) / static_cast<double>(scanDistances));
         check(indexedDistances < scanDistances, "the index skips work", 0);
     }
-    std::printf("repeated-vertex triangles with a NaN seat distance: %llu\n", static_cast<unsigned long long>(nanSeatDistances));
+    std::printf("repeated-vertex triangles with a NaN seat distance: %llu\n",
+        static_cast<unsigned long long>(nanSeatDistances));
     if (g_failures != 0) {
         std::printf("%d failures\n", g_failures);
         return 1;

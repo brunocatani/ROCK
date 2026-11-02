@@ -12,7 +12,11 @@ namespace
     using rock::grab_local_grasp::Vec3;
     namespace math = rock::grab_local_grasp::detail;
 
-    struct Triangle { Vec3 v0, v1, v2; };
+    struct Triangle
+    {
+        Vec3 v0, v1, v2;
+    };
+
     using Mesh = std::vector<Triangle>;
 
     constexpr float kDegrees = 0.01745329252f;
@@ -34,7 +38,8 @@ namespace
         mesh.push_back({ a, c, d });
     }
 
-    void addBox(Mesh& mesh, const Vec3& centre, const Vec3& u, float hu, const Vec3& v, float hv, const Vec3& w, float hw)
+    void addBox(Mesh& mesh, const Vec3& centre, const Vec3& u, float hu, const Vec3& v, float hv, const Vec3& w,
+        float hw)
     {
         for (const float sign : { -1.0f, 1.0f }) {
             addQuad(mesh, at(centre, u, sign * hu, v, -hv, w, -hw), at(centre, u, sign * hu, v, hv, w, -hw),
@@ -46,7 +51,8 @@ namespace
         }
     }
 
-    void addCylinder(Mesh& mesh, const Vec3& centre, const Vec3& axis, float radius, float halfLength, int segments = 24)
+    void addCylinder(Mesh& mesh, const Vec3& centre, const Vec3& axis, float radius, float halfLength,
+        int segments = 24)
     {
         const Vec3 reference = std::abs(axis.z) < 0.9f ? Vec3{ 0.0f, 0.0f, 1.0f } : Vec3{ 1.0f, 0.0f, 0.0f };
         const Vec3 p = math::normalizeOrZero(math::cross(axis, reference));
@@ -58,7 +64,8 @@ namespace
         for (int i = 0; i < segments; ++i) {
             addQuad(mesh, ring(i, -halfLength), ring(i + 1, -halfLength), ring(i + 1, halfLength), ring(i, halfLength));
             for (const float sign : { -1.0f, 1.0f }) {
-                mesh.push_back({ math::add(centre, math::mul(axis, sign * halfLength)), ring(i, sign * halfLength), ring(i + 1, sign * halfLength) });
+                mesh.push_back({ math::add(centre, math::mul(axis, sign * halfLength)), ring(i, sign * halfLength),
+                    ring(i + 1, sign * halfLength) });
             }
         }
     }
@@ -71,7 +78,8 @@ namespace
 
     Result solveMesh(const Mesh& mesh, const Vec3& gripLine = Vec3{ 0.0f, 1.0f, 0.0f })
     {
-        return rock::grab_local_grasp::solve(mesh, nearestToPalm(mesh), gripLine, Config{}, [](const Vec3& point) { return point; });
+        return rock::grab_local_grasp::solve(mesh, nearestToPalm(mesh), gripLine, Config{},
+            [](const Vec3& point) { return point; });
     }
 
     bool ok = true;
@@ -80,24 +88,30 @@ namespace
     {
         if (!condition) {
             ok = false;
-            std::printf("FAIL: %s\n  kind=%s reason=%s valid=%d align=%.2f(%d) elong=%.2f width=%.2f thick=%.2f length=%.2f gap=%.2f thread=%d limit=%.2f "
-                        "station=%.2f pivot=(%.2f,%.2f,%.2f) from=(%.2f,%.2f,%.2f) samples=%u near=%u\n",
-                message, rock::grab_local_grasp::kindName(result.kind), result.reason, result.valid, result.alignDegrees, result.hasAlignment,
-                result.elongation, result.widthGameUnits, result.thicknessGameUnits, result.lengthGameUnits, result.gapBehindGameUnits,
-                result.threadFingers, result.threadDepthLimitGameUnits, result.stationShiftGameUnits,
-                result.pivot.x, result.pivot.y, result.pivot.z, result.alignFrom.x, result.alignFrom.y, result.alignFrom.z,
-                result.sampleCount, result.nearSampleCount);
+            std::printf(
+                "FAIL: %s\n  kind=%s reason=%s valid=%d align=%.2f(%d) elong=%.2f width=%.2f thick=%.2f length=%.2f "
+                "gap=%.2f thread=%d limit=%.2f "
+                "station=%.2f pivot=(%.2f,%.2f,%.2f) from=(%.2f,%.2f,%.2f) samples=%u near=%u\n",
+                message, rock::grab_local_grasp::kindName(result.kind), result.reason, result.valid,
+                result.alignDegrees, result.hasAlignment, result.elongation, result.widthGameUnits,
+                result.thicknessGameUnits, result.lengthGameUnits, result.gapBehindGameUnits, result.threadFingers,
+                result.threadDepthLimitGameUnits, result.stationShiftGameUnits, result.pivot.x, result.pivot.y,
+                result.pivot.z, result.alignFrom.x, result.alignFrom.y, result.alignFrom.z, result.sampleCount,
+                result.nearSampleCount);
         }
     }
 
     bool near(float value, float expected, float tolerance) { return std::abs(value - expected) <= tolerance; }
+
     bool nearPoint(const Vec3& value, const Vec3& expected, float tolerance)
     {
         return std::sqrt(math::lengthSquared(math::sub(value, expected))) <= tolerance;
     }
+
     bool parallel(const Vec3& lhs, const Vec3& rhs, float degrees)
     {
-        return std::abs(math::dot(math::normalizeOrZero(lhs), math::normalizeOrZero(rhs))) >= std::cos(degrees * kDegrees);
+        return std::abs(math::dot(math::normalizeOrZero(lhs), math::normalizeOrZero(rhs))) >=
+            std::cos(degrees * kDegrees);
     }
 
     // A mug with its handle in front of the palm: bar, two bridges, body behind.
@@ -109,7 +123,8 @@ namespace
         Mesh mesh;
         addBox(mesh, Vec3{ 0.0f, 0.0f, 1.4f }, along, 1.75f, side, 0.35f, depth, 0.4f);
         for (const float sign : { -1.0f, 1.0f }) {
-            addBox(mesh, math::add(Vec3{ 0.0f, 0.0f, 2.9f }, math::mul(along, sign * 1.55f)), along, 0.2f, side, 0.35f, depth, 1.1f);
+            addBox(mesh, math::add(Vec3{ 0.0f, 0.0f, 2.9f }, math::mul(along, sign * 1.55f)), along, 0.2f, side, 0.35f,
+                depth, 1.1f);
         }
         addCylinder(mesh, Vec3{ 0.0f, 0.0f, 6.75f }, along, 2.75f, 2.75f);
         return mesh;
@@ -121,9 +136,12 @@ int main()
     {
         const auto result = solveMesh(mugWithHandle(30.0f));
         expect(result.valid && result.kind == Kind::Bar, "a handle in front of the palm is a bar, not the mug", result);
-        expect(result.threadFingers && near(result.gapBehindGameUnits, 2.2f, 0.45f), "the gap behind the handle is found for the fingers", result);
-        expect(nearPoint(result.pivot, Vec3{ 0.0f, 0.0f, 1.4f }, 0.3f), "the handle centreline is the seat point", result);
-        expect(parallel(result.alignFrom, inPlane(30.0f), 4.0f) && result.hasAlignment && near(result.alignDegrees, 30.0f, 4.0f),
+        expect(result.threadFingers && near(result.gapBehindGameUnits, 2.2f, 0.45f),
+            "the gap behind the handle is found for the fingers", result);
+        expect(nearPoint(result.pivot, Vec3{ 0.0f, 0.0f, 1.4f }, 0.3f), "the handle centreline is the seat point",
+            result);
+        expect(parallel(result.alignFrom, inPlane(30.0f), 4.0f) && result.hasAlignment &&
+                near(result.alignDegrees, 30.0f, 4.0f),
             "the handle turns onto the grip line by the smallest rotation", result);
         expect(result.threadDepthLimitGameUnits > 0.4f && result.threadDepthLimitGameUnits < 2.6f,
             "the thread limit lies inside the gap, behind the handle and in front of the body", result);
@@ -136,7 +154,8 @@ int main()
         std::size_t handleDropped = 0, bridgesDropped = 0, spanningKept = 0, capsDropped = 0;
         for (std::size_t i = 0; i < mug.size(); ++i) {
             const bool dropped = rock::grab_local_grasp::behindThreadGap(result, mug[i].v0, mug[i].v1, mug[i].v2);
-            const float s0 = math::dot(mug[i].v0, along), s1 = math::dot(mug[i].v1, along), s2 = math::dot(mug[i].v2, along);
+            const float s0 = math::dot(mug[i].v0, along), s1 = math::dot(mug[i].v1, along),
+                        s2 = math::dot(mug[i].v2, along);
             const bool spansOpening = (std::min)({ s0, s1, s2 }) < 0.0f && (std::max)({ s0, s1, s2 }) > 0.0f;
             if (i < 12) {
                 handleDropped += dropped ? 1 : 0;
@@ -156,22 +175,27 @@ int main()
     {
         // Same mug, hand's grip line tilted: the turn follows the hand.
         const auto result = solveMesh(mugWithHandle(30.0f), inPlane(15.0f));
-        expect(result.kind == Kind::Bar && near(result.alignDegrees, 15.0f, 4.0f) && math::dot(result.alignTo, inPlane(15.0f)) > 0.99f,
+        expect(result.kind == Kind::Bar && near(result.alignDegrees, 15.0f, 4.0f) &&
+                math::dot(result.alignTo, inPlane(15.0f)) > 0.99f,
             "alignment targets the supplied grip line", result);
     }
     {
         // Handle pointing the other way round: the line is unoriented.
         const auto result = solveMesh(mugWithHandle(150.0f));
-        expect(result.kind == Kind::Bar && near(result.alignDegrees, 30.0f, 4.0f), "a bar never turns more than a quarter turn", result);
+        expect(result.kind == Kind::Bar && near(result.alignDegrees, 30.0f, 4.0f),
+            "a bar never turns more than a quarter turn", result);
     }
     {
         Mesh mesh;
         addCylinder(mesh, Vec3{ 0.0f, 0.0f, 1.6f }, inPlane(50.0f), 0.6f, 8.0f);
         const auto result = solveMesh(mesh);
-        expect(result.kind == Kind::Bar && !result.threadFingers && result.gapBehindGameUnits < 0.0f, "a free rod is a bar with nothing to thread", result);
-        expect(!rock::grab_local_grasp::behindThreadGap(result, Vec3{ 0.0f, 0.0f, 50.0f }, Vec3{ 1.0f, 0.0f, 50.0f }, Vec3{ 0.0f, 1.0f, 50.0f }),
+        expect(result.kind == Kind::Bar && !result.threadFingers && result.gapBehindGameUnits < 0.0f,
+            "a free rod is a bar with nothing to thread", result);
+        expect(!rock::grab_local_grasp::behindThreadGap(result, Vec3{ 0.0f, 0.0f, 50.0f }, Vec3{ 1.0f, 0.0f, 50.0f },
+                   Vec3{ 0.0f, 1.0f, 50.0f }),
             "nothing is dropped from finger closure without a gap to thread", result);
-        expect(near(result.alignDegrees, 50.0f, 4.0f) && nearPoint(result.pivot, Vec3{ 0.0f, 0.0f, 1.6f }, 0.3f), "a rod seats by its centreline", result);
+        expect(near(result.alignDegrees, 50.0f, 4.0f) && nearPoint(result.pivot, Vec3{ 0.0f, 0.0f, 1.6f }, 0.3f),
+            "a rod seats by its centreline", result);
     }
     {
         // Rod leaning out of the palm plane.
@@ -179,7 +203,8 @@ int main()
         const Vec3 axis{ 0.0f, std::cos(25.0f * kDegrees), std::sin(25.0f * kDegrees) };
         addCylinder(mesh, Vec3{ 0.0f, 0.0f, 1.8f }, axis, 0.5f, 8.0f);
         const auto result = solveMesh(mesh);
-        expect(result.kind == Kind::Bar && parallel(result.alignFrom, axis, 4.0f) && near(result.alignDegrees, 25.0f, 4.0f),
+        expect(result.kind == Kind::Bar && parallel(result.alignFrom, axis, 4.0f) &&
+                near(result.alignDegrees, 25.0f, 4.0f),
             "a leaning rod is laid into the palm plane", result);
     }
     {
@@ -193,26 +218,33 @@ int main()
     {
         // Plank lying flat under the palm.
         Mesh mesh;
-        addBox(mesh, Vec3{ 0.0f, 0.0f, 1.15f }, inPlane(35.0f), 8.0f, inPlane(125.0f), 1.0f, Vec3{ 0.0f, 0.0f, 1.0f }, 0.15f);
+        addBox(mesh, Vec3{ 0.0f, 0.0f, 1.15f }, inPlane(35.0f), 8.0f, inPlane(125.0f), 1.0f, Vec3{ 0.0f, 0.0f, 1.0f },
+            0.15f);
         const auto result = solveMesh(mesh);
-        expect(result.kind == Kind::Bar && near(result.alignDegrees, 35.0f, 4.0f) && near(result.widthGameUnits, 2.0f, 0.4f),
+        expect(result.kind == Kind::Bar && near(result.alignDegrees, 35.0f, 4.0f) &&
+                near(result.widthGameUnits, 2.0f, 0.4f),
             "a narrow plank is wrapped, not laid flat", result);
     }
     {
         // Plate seen edge-on.
         Mesh mesh;
-        addBox(mesh, Vec3{ 0.0f, 0.0f, 7.0f }, inPlane(40.0f), 7.0f, inPlane(130.0f), 0.25f, Vec3{ 0.0f, 0.0f, 1.0f }, 6.0f);
+        addBox(mesh, Vec3{ 0.0f, 0.0f, 7.0f }, inPlane(40.0f), 7.0f, inPlane(130.0f), 0.25f, Vec3{ 0.0f, 0.0f, 1.0f },
+            6.0f);
         const auto result = solveMesh(mesh);
-        expect(result.kind == Kind::Edge && near(result.alignDegrees, 40.0f, 4.0f), "a plate rim is an edge held along the grip line", result);
-        expect(nearPoint(result.pivot, Vec3{ 0.0f, 0.0f, 1.0f }, 0.35f) && !result.threadFingers, "an edge seats by its crest", result);
+        expect(result.kind == Kind::Edge && near(result.alignDegrees, 40.0f, 4.0f),
+            "a plate rim is an edge held along the grip line", result);
+        expect(nearPoint(result.pivot, Vec3{ 0.0f, 0.0f, 1.0f }, 0.35f) && !result.threadFingers,
+            "an edge seats by its crest", result);
     }
     {
         // Bottle body.
         Mesh mesh;
         addCylinder(mesh, Vec3{ 0.0f, 0.0f, 3.3f }, inPlane(60.0f), 2.3f, 6.0f, 32);
         const auto result = solveMesh(mesh);
-        expect(result.kind == Kind::Cylinder && near(result.alignDegrees, 60.0f, 5.0f), "a bottle body turns its axis onto the grip line", result);
-        expect(nearPoint(result.pivot, Vec3{ 0.0f, 0.0f, 1.0f }, 0.2f), "a wide ridge keeps the nearest point as its seat", result);
+        expect(result.kind == Kind::Cylinder && near(result.alignDegrees, 60.0f, 5.0f),
+            "a bottle body turns its axis onto the grip line", result);
+        expect(nearPoint(result.pivot, Vec3{ 0.0f, 0.0f, 1.0f }, 0.2f),
+            "a wide ridge keeps the nearest point as its seat", result);
     }
     {
         // Mug-sized body: round and cuppable, but about as tall as it is wide.
@@ -225,7 +257,8 @@ int main()
         Mesh can;
         addCylinder(can, Vec3{ 0.0f, 0.0f, 3.0f }, inPlane(40.0f), 2.0f, 3.4f, 32);
         const auto canResult = solveMesh(can);
-        expect(canResult.kind == Kind::Cylinder && near(canResult.alignDegrees, 40.0f, 5.0f), "a can turns its axis onto the grip line", canResult);
+        expect(canResult.kind == Kind::Cylinder && near(canResult.alignDegrees, 40.0f, 5.0f),
+            "a can turns its axis onto the grip line", canResult);
     }
     {
         // Mug body with no handle in front: compact, nothing to align.
@@ -241,13 +274,16 @@ int main()
         addQuad(mesh, Vec3{ -20.0f, -20.0f, 1.0f - 20.0f * slope }, Vec3{ 20.0f, -20.0f, 1.0f + 20.0f * slope },
             Vec3{ 20.0f, 20.0f, 1.0f + 20.0f * slope }, Vec3{ -20.0f, 20.0f, 1.0f - 20.0f * slope });
         const auto result = solveMesh(mesh);
-        expect(result.valid && result.kind == Kind::None && !result.hasAlignment, "a tilted flat face keeps the current seat", result);
+        expect(result.valid && result.kind == Kind::None && !result.hasAlignment,
+            "a tilted flat face keeps the current seat", result);
     }
     {
         Mesh mesh;
-        addQuad(mesh, Vec3{ -20.0f, -20.0f, 1.0f }, Vec3{ 20.0f, -20.0f, 1.0f }, Vec3{ 20.0f, 20.0f, 1.0f }, Vec3{ -20.0f, 20.0f, 1.0f });
+        addQuad(mesh, Vec3{ -20.0f, -20.0f, 1.0f }, Vec3{ 20.0f, -20.0f, 1.0f }, Vec3{ 20.0f, 20.0f, 1.0f },
+            Vec3{ -20.0f, 20.0f, 1.0f });
         const auto result = solveMesh(mesh);
-        expect(result.valid && result.kind == Kind::None && !result.hasAlignment, "a face flat on the palm keeps the current seat", result);
+        expect(result.valid && result.kind == Kind::None && !result.hasAlignment,
+            "a face flat on the palm keeps the current seat", result);
     }
     {
         // Steep single face: neither a face to flatten nor an edge.
@@ -267,29 +303,35 @@ int main()
         for (const float sign : { -1.0f, 1.0f }) {
             const Vec3 slopeOut = math::add(math::mul(side, sign * 14.0f), Vec3{ 0.0f, 0.0f, 14.0f });
             addQuad(mesh, math::add(crest, math::mul(along, -14.0f)), math::add(crest, math::mul(along, 14.0f)),
-                math::add(math::add(crest, math::mul(along, 14.0f)), slopeOut), math::add(math::add(crest, math::mul(along, -14.0f)), slopeOut));
+                math::add(math::add(crest, math::mul(along, 14.0f)), slopeOut),
+                math::add(math::add(crest, math::mul(along, -14.0f)), slopeOut));
         }
         const auto result = solveMesh(mesh);
-        expect(result.valid && result.kind == Kind::None, "a box edge is nothing the hand closes on and keeps the current seat", result);
+        expect(result.valid && result.kind == Kind::None,
+            "a box edge is nothing the hand closes on and keeps the current seat", result);
     }
     {
         const Mesh empty;
-        const auto result = rock::grab_local_grasp::solve(empty, Vec3{}, Vec3{ 0.0f, 1.0f, 0.0f }, Config{}, [](const Vec3& point) { return point; });
+        const auto result = rock::grab_local_grasp::solve(empty, Vec3{}, Vec3{ 0.0f, 1.0f, 0.0f }, Config{},
+            [](const Vec3& point) { return point; });
         expect(!result.valid && result.kind == Kind::None, "no mesh keeps the current seat", result);
     }
     {
         auto mesh = mugWithHandle(30.0f);
         mesh[0].v0.x = std::numeric_limits<float>::quiet_NaN();
-        const auto result = rock::grab_local_grasp::solve(mesh, Vec3{ 0.0f, 0.0f, 1.0f }, Vec3{ 0.0f, 1.0f, 0.0f }, Config{}, [](const Vec3& point) { return point; });
+        const auto result = rock::grab_local_grasp::solve(mesh, Vec3{ 0.0f, 0.0f, 1.0f }, Vec3{ 0.0f, 1.0f, 0.0f },
+            Config{}, [](const Vec3& point) { return point; });
         expect(!result.valid, "non-finite mesh cannot author a seat", result);
-        const auto zeroLine = rock::grab_local_grasp::solve(mugWithHandle(30.0f), Vec3{ 0.0f, 0.0f, 1.0f }, Vec3{}, Config{}, [](const Vec3& point) { return point; });
+        const auto zeroLine = rock::grab_local_grasp::solve(mugWithHandle(30.0f), Vec3{ 0.0f, 0.0f, 1.0f }, Vec3{},
+            Config{}, [](const Vec3& point) { return point; });
         expect(!zeroLine.valid, "a missing grip line cannot author a seat", zeroLine);
     }
     {
         Config tiny{};
         tiny.maxSamples = 64;
         const auto mesh = mugWithHandle(30.0f);
-        const auto result = rock::grab_local_grasp::solve(mesh, nearestToPalm(mesh), Vec3{ 0.0f, 1.0f, 0.0f }, tiny, [](const Vec3& point) { return point; });
+        const auto result = rock::grab_local_grasp::solve(mesh, nearestToPalm(mesh), Vec3{ 0.0f, 1.0f, 0.0f }, tiny,
+            [](const Vec3& point) { return point; });
         expect(!result.valid && result.kind == Kind::None, "an exhausted sample budget keeps the current seat", result);
     }
     {
@@ -311,17 +353,21 @@ int main()
         Result body{};
         body.kind = Kind::Cylinder;
         body.widthGameUnits = 6.0f;
-        expect(fingerBaseSeat(body, bases, 0.55f, straightLine) == 0.0f, "a part too wide for the finger corner seats on the palm centre", body);
+        expect(fingerBaseSeat(body, bases, 0.55f, straightLine) == 0.0f,
+            "a part too wide for the finger corner seats on the palm centre", body);
         // A tilted grip line through off-centre finger bases still crosses
         // the palm centre's cross-palm coordinate at the right place.
         const Vec3 offCentre{ 3.5f, 1.0f, 0.0f };
         const float tilted = fingerBaseSeat(bar, offCentre, 0.55f, inPlane(15.0f));
-        expect(near(tilted, 3.5f - 0.55f - 0.3f - std::tan(15.0f * kDegrees), 0.001f), "the seat follows the grip line to the palm centre", bar);
-        expect(fingerBaseSeat(bar, Vec3{ 0.4f, 0.0f, 0.0f }, 0.55f, straightLine) == 0.0f, "the seat never moves behind the palm centre", bar);
-        expect(fingerBaseSeat(Result{}, bases, 0.55f, straightLine) == 0.0f, "an unrecognised window keeps the palm centre", bar);
+        expect(near(tilted, 3.5f - 0.55f - 0.3f - std::tan(15.0f * kDegrees), 0.001f),
+            "the seat follows the grip line to the palm centre", bar);
+        expect(fingerBaseSeat(bar, Vec3{ 0.4f, 0.0f, 0.0f }, 0.55f, straightLine) == 0.0f,
+            "the seat never moves behind the palm centre", bar);
+        expect(fingerBaseSeat(Result{}, bases, 0.55f, straightLine) == 0.0f,
+            "an unrecognised window keeps the palm centre", bar);
         expect(fingerBaseSeat(bar, Vec3{ -1.0f, 0.0f, 0.0f }, 0.55f, straightLine) == 0.0f &&
-               fingerBaseSeat(bar, bases, std::numeric_limits<float>::quiet_NaN(), straightLine) == 0.0f &&
-               fingerBaseSeat(bar, bases, 0.55f, Vec3{ 1.0f, 0.0f, 0.0f }) == 0.0f,
+                fingerBaseSeat(bar, bases, std::numeric_limits<float>::quiet_NaN(), straightLine) == 0.0f &&
+                fingerBaseSeat(bar, bases, 0.55f, Vec3{ 1.0f, 0.0f, 0.0f }) == 0.0f,
             "unusable hand measurements keep the palm centre", bar);
     }
     {
@@ -329,8 +375,9 @@ int main()
         const auto mesh = mugWithHandle(30.0f);
         const auto first = solveMesh(mesh);
         const auto second = solveMesh(mesh);
-        expect(first.kind == second.kind && first.alignDegrees == second.alignDegrees && first.pivot.x == second.pivot.x &&
-               first.pivot.y == second.pivot.y && first.pivot.z == second.pivot.z, "the solve is deterministic", second);
+        expect(first.kind == second.kind && first.alignDegrees == second.alignDegrees &&
+                first.pivot.x == second.pivot.x && first.pivot.y == second.pivot.y && first.pivot.z == second.pivot.z,
+            "the solve is deterministic", second);
     }
     return ok ? 0 : 1;
 }
