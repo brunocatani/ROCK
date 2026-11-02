@@ -328,8 +328,8 @@ MigrationBackup/
 
 .zip
 
-# Local research, analysis, and Markdown notes stay machine-local.
-/docs/
+# Local analysis stays machine-local. docs/ is tracked and holds only published
+# documentation for players and mod authors.
 /analysis/
 
 # Machine-local investigation logs, captures, extracted assets, and scratch files.
