@@ -1,3 +1,5 @@
+// Refines the kind of an already-classified weapon part from its attachment
+// record and emitter evidence: scope, laser, flashlight or sight.
 #pragma once
 
 #include "physics-interaction/weapon/classification/WeaponSemantics.h"

@@ -1,3 +1,7 @@
+// LooseWeaponCollision: gives loose weapon references in the world ROCK's
+// generated collision compound. Held or moving references use a small slot
+// pool; at rest they are parked with their native state saved, and the native
+// collision is restored when the reference unloads or changes.
 #include "physics-interaction/weapon/collision/LooseWeaponCollision.h"
 #include <bit>
 #include <chrono>

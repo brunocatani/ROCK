@@ -1,3 +1,5 @@
+// WeaponTriangleIndex: a bounding-volume tree over the weapon's triangles for
+// allocation-free nearest-surface and overlap queries.
 #pragma once
 
 #include "RE/NetImmerse/NiPoint.h"

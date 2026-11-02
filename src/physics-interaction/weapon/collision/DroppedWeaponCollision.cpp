@@ -1,3 +1,6 @@
+// Captures the equipped weapon's generated hulls as node-name paths below the
+// model root, and resolves those paths again on the dropped reference's own
+// model clone.
 #include "physics-interaction/weapon/collision/DroppedWeaponCollision.h"
 
 #include "RE/NetImmerse/NiAVObject.h"

@@ -1,3 +1,5 @@
+// Resolves a weapon descendant's local and world transform through its
+// bounded parent path, with plausibility checks on every node.
 #pragma once
 #include <array>
 #include <cstdint>

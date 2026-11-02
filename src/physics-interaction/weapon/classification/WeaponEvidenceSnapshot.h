@@ -1,3 +1,5 @@
+// WeaponEvidenceSnapshot: an immutable published copy of a weapon's profile
+// evidence and emitter records, shared with readers by reference count.
 #pragma once
 
 #include "physics-interaction/weapon/classification/WeaponTypes.h"

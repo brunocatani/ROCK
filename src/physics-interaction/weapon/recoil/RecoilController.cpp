@@ -1,3 +1,6 @@
+// TwoHandedGrip's recoil: takes native hand recoil from FRIK, delivers it to
+// the hand that carries the weapon, and applies one-handed recoil to the
+// right hand.
 #include "physics-interaction/weapon/collision/DynamicWeaponCollision.h"
 #include "physics-interaction/weapon/grip/TwoHandedGripInternal.h"
 

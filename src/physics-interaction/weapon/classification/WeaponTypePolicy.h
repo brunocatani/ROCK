@@ -1,3 +1,5 @@
+// Exact WEAPON_TYPE comparisons: melee, equipped melee and whether a type
+// occupies a hand slot.
 #pragma once
 
 namespace rock::weapon_type_policy

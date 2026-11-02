@@ -1,11 +1,11 @@
+// Generated weapon collision sources: visual-source discovery, completeness
+// tracking, source cache, incremental pending builds, and body creation.
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/native/SceneRelation.h"
 #include "physics-interaction/weapon/collision/WeaponCollisionInternal.h"
 #include "physics-interaction/weapon/collision/WeaponGapDecomposition.h"
 
 #include <chrono>
-
-// Generated weapon collision sources: visual-source discovery, completeness tracking, source cache, incremental pending builds, and body creation.
 
 namespace rock
 {

@@ -1,8 +1,8 @@
+// Part-carry sessions: baseline construction, transition, per-frame update, and
+// part-carry weapon authority solve.
 #include <chrono>
 #include "physics-interaction/weapon/collision/DynamicWeaponCollision.h"
 #include "physics-interaction/weapon/grip/TwoHandedGripInternal.h"
-
-// Part-carry sessions: baseline construction, transition, per-frame update, and part-carry weapon authority solve.
 
 namespace rock
 {

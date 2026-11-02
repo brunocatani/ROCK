@@ -1,3 +1,5 @@
+// A weapon node identified by its child-slot path from the weapon root, so an
+// owner can find it again without keeping a node pointer.
 #pragma once
 
 #include <array>

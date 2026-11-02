@@ -1,9 +1,10 @@
+// TwoHandedGrip lifecycle and per-frame state dispatch: construction, update(),
+// reset(), core state transitions, firing-hand role switch, and the small
+// shared part-grip coordinate resolvers.
 #include "physics-interaction/native/SceneRelation.h"
 #include "physics-interaction/timing/GameFrameTimingPolicy.h"
 #include "physics-interaction/weapon/classification/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/grip/TwoHandedGripInternal.h"
-
-// TwoHandedGrip lifecycle and per-frame state dispatch: construction, update(), reset(), core state transitions, firing-hand role switch, and the small shared part-grip coordinate resolvers.
 
 namespace rock
 {

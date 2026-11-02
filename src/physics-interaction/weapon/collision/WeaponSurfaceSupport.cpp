@@ -1,3 +1,6 @@
+// DynamicWeaponCollisionRuntime's surface support: resting the equipped
+// weapon on a world surface. Records contacts, latches a surface anchor and
+// updates the support state each frame.
 #include "RockConfig.h"
 #include "physics-interaction/weapon/collision/DynamicWeaponCollision.h"
 

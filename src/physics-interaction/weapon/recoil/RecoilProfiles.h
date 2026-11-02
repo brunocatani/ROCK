@@ -1,3 +1,4 @@
+// Recoil profiles per weapon family and hold, and the gains each profile uses.
 #pragma once
 
 #include "physics-interaction/weapon/classification/WeaponTypes.h"

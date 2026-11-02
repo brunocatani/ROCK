@@ -1,3 +1,6 @@
+// Shared internals of the WeaponCollision implementation files: visual and
+// content keys, point-cloud helpers, OMOD model templates, collision sound
+// materials, manual scope markers and the native shape-key layouts.
 #pragma once
 
 #include "physics-interaction/weapon/collision/WeaponCollision.h"

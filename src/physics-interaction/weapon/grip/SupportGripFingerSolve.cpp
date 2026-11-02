@@ -1,7 +1,6 @@
-#include "physics-interaction/weapon/grip/TwoHandedGripInternal.h"
-
 // Per-finger surface solve for support grip capture, called from
 // capturePartGrip (SupportGrip.cpp) after the hand is seated on the grip.
+#include "physics-interaction/weapon/grip/TwoHandedGripInternal.h"
 
 namespace rock
 {

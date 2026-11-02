@@ -1,3 +1,5 @@
+// Provider part targets: matches hand contacts on weapon parts against the
+// targets a provider registered and resolves the grab mode they grant.
 #pragma once
 
 #include <array>

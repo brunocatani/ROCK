@@ -1,3 +1,5 @@
+// Rest-surface checks shared by loose weapon references and the retained
+// equipped-drop compound.
 #pragma once
 
 #include <cmath>

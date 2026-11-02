@@ -1,3 +1,5 @@
+// Classifies weapon emitter nodes (laser, flashlight, reticle) from their
+// names and AddOnNode values, and parses the AddOnNode number.
 #pragma once
 
 #include <cstddef>

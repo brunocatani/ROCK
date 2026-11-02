@@ -1,3 +1,9 @@
+// WeaponCollision: the generated collision bodies of an equipped weapon. Builds
+// convex hulls from the weapon's visual meshes, keeps them in body banks that
+// follow the weapon's nodes, and answers contact, surface and evidence queries.
+// The primary weapon uses layer 44; the second equipped weapon uses layer 53.
+// Implementation: GeneratedWeaponSources.cpp, WeaponCollisionBodies.cpp,
+// WeaponCollisionQueries.cpp and WeaponCollisionUpdate.cpp.
 #pragma once
 
 #include "physics-interaction/weapon/authored/HoldingGripMath.h"

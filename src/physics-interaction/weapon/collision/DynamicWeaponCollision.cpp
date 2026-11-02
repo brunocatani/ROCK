@@ -1,3 +1,8 @@
+// DynamicWeaponCollisionRuntime: the dynamic Havok proxy body that follows the
+// equipped weapon's intended pose through a grip constraint, so the weapon
+// collides with the world. After each solve it samples where the proxy ended
+// up, reports contacts and the correction the world forced on the weapon, and
+// publishes atomic snapshots for physics-thread readers.
 #include "physics-interaction/weapon/collision/DynamicWeaponCollision.h"
 
 #include "RockConfig.h"

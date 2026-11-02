@@ -1,3 +1,5 @@
+// Recoil delivery policy: which hand receives recoil, when the one-handed
+// presentation is needed, and the sample identity that consumes each kick once.
 #pragma once
 
 #include "physics-interaction/weapon/recoil/RecoilMath.h"

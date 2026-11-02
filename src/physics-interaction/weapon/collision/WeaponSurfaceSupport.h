@@ -1,3 +1,5 @@
+// Surface support state: the contact channel between physics callbacks and the
+// game frame, the toggle input and the latched support phase.
 #pragma once
 
 #include "physics-interaction/weapon/collision/DynamicWeaponCollisionPolicy.h"

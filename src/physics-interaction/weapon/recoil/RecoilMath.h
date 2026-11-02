@@ -1,3 +1,5 @@
+// Recoil kick math: building the controlled kick, mirroring it across the body
+// and resolving it in world and carrier space.
 #pragma once
 
 #include "physics-interaction/TransformMath.h"

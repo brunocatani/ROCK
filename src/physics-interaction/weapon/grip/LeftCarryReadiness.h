@@ -1,12 +1,11 @@
+// Shared observations for handing the equipped weapon carrier to the left
+// firing hand (held trigger/grip-zone equip and shoulder retrieval).
 #pragma once
 
 #include "RE/NetImmerse/NiTransform.h"
 
 #include <cmath>
 #include <cstdint>
-
-// Shared observations for handing the equipped weapon carrier to the left
-// firing hand (held trigger/grip-zone equip and shoulder retrieval).
 
 namespace rock::left_carry_readiness
 {

@@ -1,8 +1,8 @@
+// Frame update and Havok drive: init/shutdown, world-loss handling, the
+// per-frame update, source-transform body updates, and drive flushing.
 #include "physics-interaction/weapon/collision/WeaponCollisionInternal.h"
 
 #include <bit>
-
-// Frame update and Havok drive: init/shutdown, world-loss handling, the per-frame update, source-transform body updates, and drive flushing.
 
 namespace rock
 {

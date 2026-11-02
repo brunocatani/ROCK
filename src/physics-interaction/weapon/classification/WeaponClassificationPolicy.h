@@ -1,3 +1,5 @@
+// Classifies an equipped weapon's size class (melee, pistol, rifle and so on)
+// from its keywords, its effective equip slot and the native melee type.
 #pragma once
 
 #include "physics-interaction/weapon/classification/WeaponTypes.h"

@@ -1,3 +1,4 @@
+// Visits a weapon node's child slots, skipping empty slots in the sparse array.
 #pragma once
 
 namespace rock

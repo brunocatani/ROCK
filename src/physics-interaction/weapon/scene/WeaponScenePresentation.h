@@ -1,3 +1,5 @@
+// Moves the presented weapon rigidly: validates the whole subtree, then applies
+// one transform delta to the root and its descendants.
 #pragma once
 
 #include "RE/NetImmerse/NiNode.h"

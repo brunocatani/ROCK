@@ -1,3 +1,5 @@
+// Cooperative, resumable geometry work that runs in bounded slices on the
+// frame thread, so a large hull build never stalls one frame.
 #pragma once
 
 #include <coroutine>

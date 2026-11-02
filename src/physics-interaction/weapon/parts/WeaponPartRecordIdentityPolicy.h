@@ -1,3 +1,5 @@
+// Classifies weapon parts from the assembled weapon's structure (attach-point
+// anchors and OMOD records) instead of mesh names.
 #pragma once
 
 #include <cstdint>

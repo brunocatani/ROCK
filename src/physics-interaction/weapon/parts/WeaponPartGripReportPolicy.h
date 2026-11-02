@@ -1,3 +1,5 @@
+// What a hand currently holds on the equipped weapon, for the provider grip
+// report and for part-carry accounting.
 #pragma once
 
 #include <cstdint>

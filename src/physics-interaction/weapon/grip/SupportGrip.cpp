@@ -1,3 +1,11 @@
+// Support-hand grip: authored capability qualification and selection, dynamic
+// acquisition, the capture transaction (capturePartGrip, whose finger solve
+// lives in SupportGripFingerSolve.cpp), grip formation (transitionToGripping),
+// release, and rebind across collision generations.
+//
+// updateFullWeaponAuthorityGrip also lives here deliberately: the full two-hand
+// solve only runs while a support grip holds the weapon, so its state and
+// lifetime are owned by this module.
 #include "physics-interaction/hand/HandFingerMirrorMath.h"
 #include "physics-interaction/weapon/authored/VanillaWeaponGripFrame.h"
 #include "physics-interaction/weapon/collision/DynamicWeaponCollision.h"
@@ -6,15 +14,6 @@
 #include "physics-interaction/weapon/handling/GunstockMode.h"
 #include "physics-interaction/weapon/handling/WeaponAimBasis.h"
 #include "physics-interaction/weapon/scene/WeaponHierarchy.h"
-
-// Support-hand grip: authored capability qualification and selection, dynamic
-// acquisition, the capture transaction (capturePartGrip, whose finger solve
-// lives in SupportGripFingerSolve.cpp), grip formation (transitionToGripping),
-// release, and rebind across collision generations.
-//
-// updateFullWeaponAuthorityGrip also lives here deliberately: the full
-// two-hand solve only runs while a support grip holds the weapon, so its
-// state and lifetime are owned by this module.
 
 namespace rock
 {

@@ -1,3 +1,5 @@
+// Pure rules for loose weapon collision: which references qualify, rest
+// tolerances, parking and anchored rest.
 #pragma once
 #include <algorithm>
 #include <array>

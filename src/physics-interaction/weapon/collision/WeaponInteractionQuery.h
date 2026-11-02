@@ -1,3 +1,5 @@
+// Finds the weapon part nearest a hand point from an immutable geometry
+// snapshot and one current pose.
 #pragma once
 
 #include "physics-interaction/grab/MeshGrab.h"

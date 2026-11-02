@@ -1,3 +1,5 @@
+// Replays the provider part-drive writes for one frame without touching native
+// nodes, so readers see the driven part poses.
 #pragma once
 #include <array>
 #include "RE/NetImmerse/NiNode.h"

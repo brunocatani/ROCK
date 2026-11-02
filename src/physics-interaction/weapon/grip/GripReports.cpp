@@ -1,6 +1,6 @@
+// Outward grip reporting: occupancy, HandGripReport, haptic events, drop
+// requests, and authored grip pose snapshots.
 #include "physics-interaction/weapon/grip/TwoHandedGripInternal.h"
-
-// Outward grip reporting: occupancy, HandGripReport, haptic events, drop requests, and authored grip pose snapshots.
 
 namespace rock
 {

@@ -1,3 +1,4 @@
+// Bounded depth-first traversal of a weapon scene graph.
 #pragma once
 
 #include <algorithm>

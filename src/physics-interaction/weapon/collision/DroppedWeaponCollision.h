@@ -1,3 +1,6 @@
+// DroppedWeaponCollision: the equipped weapon's generated hulls handed to the
+// world reference an equipped drop creates, so the dropped weapon keeps the
+// same collision shapes.
 #pragma once
 
 #include "RE/NetImmerse/NiPoint.h"

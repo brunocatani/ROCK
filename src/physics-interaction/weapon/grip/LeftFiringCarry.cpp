@@ -1,10 +1,11 @@
+// Left-firing equipped carry: position-only carry solve, weapon node
+// ownership/reparenting, feed-forward weapon publish, and owned recoil
+// delivery.
 #include "physics-interaction/weapon/grip/TwoHandedGripInternal.h"
 
 #include "physics-interaction/hand/TrackedHandIsolationPolicy.h"
 #include "physics-interaction/weapon/grip/KnifeReverseGrip.h"
 #include "physics-interaction/weapon/handling/WeaponAimBasis.h"
-
-// Left-firing equipped carry: position-only carry solve, weapon node ownership/reparenting, feed-forward weapon publish, and owned recoil delivery.
 
 namespace rock
 {

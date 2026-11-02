@@ -1,3 +1,5 @@
+// Splits a weapon's mesh at its gaps and concavities into convex-friendly
+// pieces before hull building. Build-time geometry only.
 #pragma once
 
 #include "physics-interaction/weapon/collision/WeaponGeometryTask.h"

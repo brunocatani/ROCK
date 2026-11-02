@@ -1,3 +1,6 @@
+// Pure decisions and math for the dynamic weapon proxy: contact retention,
+// grip recovery, visual correction, proxy mass and bounding box, and the
+// frames that map between the weapon, its grip and the proxy body.
 #pragma once
 
 #include "physics-interaction/TransformMath.h"

@@ -1,3 +1,7 @@
+// Firing-hand grip: canonical right frame, right weapon aim orientation,
+// left/right mirroring, authored primary firing grip canonical and finger pose,
+// reattach, support-to-firing promotion, and PrimaryOnly (persistent equipped
+// carry) sessions.
 #include "physics-interaction/weapon/authored/HoldingGripAdapter.h"
 #include "physics-interaction/weapon/grip/TwoHandedGripInternal.h"
 #include "physics-interaction/weapon/grip/WeaponGripCalibration.h"
@@ -6,8 +10,6 @@
 
 #include "physics-interaction/hand/TrackedHandIsolationPolicy.h"
 #include "physics-interaction/weapon/handling/WeaponAimBasis.h"
-
-// Firing-hand grip: canonical right frame, right weapon aim orientation, left/right mirroring, authored primary firing grip canonical and finger pose, reattach, support-to-firing promotion, and PrimaryOnly (persistent equipped carry) sessions.
 
 namespace rock
 {

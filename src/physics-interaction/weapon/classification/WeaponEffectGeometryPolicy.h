@@ -1,3 +1,5 @@
+// Decides which weapon NIF geometry is a visual effect (laser beams and dots,
+// reticles, glow effects) and must not get collision.
 #pragma once
 
 #include <array>

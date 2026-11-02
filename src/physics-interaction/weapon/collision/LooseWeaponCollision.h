@@ -1,3 +1,5 @@
+// LooseWeaponCollision: generated collision for loose weapon references in
+// the world, kept in a small bounded pool (see LooseWeaponCollision.cpp).
 #pragma once
 
 #include <array>

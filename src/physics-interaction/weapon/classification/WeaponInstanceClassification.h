@@ -1,3 +1,6 @@
+// Classifies the equipped weapon instance: resolves the weapon keyword forms
+// once, turns an instance's keywords into flags and classifies it with
+// WeaponClassificationPolicy.h.
 #pragma once
 
 #include <array>

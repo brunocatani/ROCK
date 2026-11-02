@@ -1,3 +1,7 @@
+// DynamicWeaponCollisionRuntime: the dynamic Havok proxy body that makes the
+// equipped weapon collide with the world (see DynamicWeaponCollision.cpp).
+// One instance per equipped weapon; surface support lives in
+// WeaponSurfaceSupport.cpp.
 #pragma once
 
 #include "physics-interaction/weapon/handling/WeaponPhysicsTimeScale.h"

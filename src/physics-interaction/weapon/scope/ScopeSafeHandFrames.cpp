@@ -1,6 +1,5 @@
-#include "physics-interaction/weapon/grip/TwoHandedGripInternal.h"
-
 // ScopeMenu-safe hand frames and deferred scope hand-authority role clears.
+#include "physics-interaction/weapon/grip/TwoHandedGripInternal.h"
 
 namespace rock
 {

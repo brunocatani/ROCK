@@ -1,3 +1,6 @@
+// Firing-grip detach: whether the firing hand may let go of the equipped
+// weapon, whether ROCK or an external provider owns that, and which part grab
+// the detached firing hand may take.
 #pragma once
 
 #include <string_view>

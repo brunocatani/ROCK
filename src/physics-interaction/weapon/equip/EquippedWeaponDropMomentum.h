@@ -1,9 +1,9 @@
+// Native body identity and solve progress for the equipped-to-loose handoff.
+// Throw momentum is owned by the ordinary held-object release path.
 #pragma once
 
 #include <cstdint>
 
-// Native body identity and solve progress for the equipped-to-loose handoff.
-// Throw momentum is owned by the ordinary held-object release path.
 namespace rock::equipped_weapon_drop_momentum
 {
     /*
