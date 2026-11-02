@@ -8,10 +8,10 @@
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/native/BipodFrozenRetirement.h"
 #include "physics-interaction/native/PhysicsScale.h"
-#include "physics-interaction/weapon/BipodRetentionPolicy.h"
-#include "physics-interaction/weapon/NativeHandEquipment.h"
-#include "physics-interaction/weapon/NativeSecondaryActions.h"
-#include "physics-interaction/weapon/NativeSecondaryPresentation.h"
+#include "physics-interaction/weapon/handling/BipodRetentionPolicy.h"
+#include "physics-interaction/weapon/native/NativeHandEquipment.h"
+#include "physics-interaction/weapon/secondary/NativeSecondaryActions.h"
+#include "physics-interaction/weapon/secondary/NativeSecondaryPresentation.h"
 
 namespace rock
 {

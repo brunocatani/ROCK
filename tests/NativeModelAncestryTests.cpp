@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/NativeModelAncestry.h"
+#include "physics-interaction/weapon/native/NativeModelAncestry.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include <Windows.h>
 #include <cassert>

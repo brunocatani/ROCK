@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/TwoHandedGripInternal.h"
+#include "physics-interaction/weapon/grip/TwoHandedGripInternal.h"
 
 // Hand and weapon visual transitions: visual returns, locked-hand visuals, grip hand pose publication, weapon visual/collision-resolved authority application, and FRIK primary pose blocking.
 

@@ -4,12 +4,12 @@
 // unequip by slot and the client's list of weapons to pre-warm.
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
-#include "physics-interaction/weapon/EquipSlotAllocationPolicy.h"
-#include "physics-interaction/weapon/InventoryWeaponEquipPolicy.h"
-#include "physics-interaction/weapon/NativeEquippedModelLifetime.h"
-#include "physics-interaction/weapon/NativeHandEquipment.h"
-#include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
-#include "physics-interaction/weapon/NativeSecondaryActions.h"
+#include "physics-interaction/weapon/authored/NativeIdleGripPreharvest.h"
+#include "physics-interaction/weapon/equip/EquipSlotAllocationPolicy.h"
+#include "physics-interaction/weapon/equip/InventoryWeaponEquipPolicy.h"
+#include "physics-interaction/weapon/native/NativeEquippedModelLifetime.h"
+#include "physics-interaction/weapon/native/NativeHandEquipment.h"
+#include "physics-interaction/weapon/secondary/NativeSecondaryActions.h"
 
 #include <array>
 

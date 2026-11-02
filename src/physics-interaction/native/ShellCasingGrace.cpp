@@ -8,7 +8,7 @@
 #include "physics-interaction/native/HavokPhysicsTiming.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/weapon/WeaponTypes.h"
+#include "physics-interaction/weapon/classification/WeaponTypes.h"
 
 #include <F4SE/Trampoline.h>
 #include <RE/Bethesda/PlayerCharacter.h>

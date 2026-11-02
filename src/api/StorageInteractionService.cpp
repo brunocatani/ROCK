@@ -10,10 +10,10 @@
 #include "physics-interaction/native/HavokConvexShapeBuilder.h"
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
-#include "physics-interaction/weapon/EquippedWeaponHandlingRuntime.h"
-#include "physics-interaction/weapon/LooseWeaponGripZone.h"
-#include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
-#include "physics-interaction/weapon/WeaponGeometry.h"
+#include "physics-interaction/weapon/authored/NativeIdleGripPreharvest.h"
+#include "physics-interaction/weapon/collision/WeaponGeometry.h"
+#include "physics-interaction/weapon/grip/LooseWeaponGripZone.h"
+#include "physics-interaction/weapon/handling/EquippedWeaponHandlingRuntime.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 namespace rock::storage_interaction

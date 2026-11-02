@@ -37,9 +37,9 @@
 #include "physics-interaction/native/CharacterControllerRuntime.h"
 #include "physics-interaction/native/ReferenceInteraction.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
-#include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
-#include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
-#include "physics-interaction/weapon/WeaponPartRuntime.h"
+#include "physics-interaction/weapon/authored/NativeIdleGripPreharvest.h"
+#include "physics-interaction/weapon/parts/WeaponPartGripReportPolicy.h"
+#include "physics-interaction/weapon/parts/WeaponPartRuntime.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #ifdef DrawText

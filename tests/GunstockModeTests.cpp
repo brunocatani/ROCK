@@ -1,6 +1,6 @@
-#include "physics-interaction/weapon/GunstockMode.h"
+#include "physics-interaction/weapon/handling/GunstockMode.h"
 #include "physics-interaction/grab/GrabCore.h"
-#include "physics-interaction/weapon/EquipVisualBridgePolicy.h"
+#include "physics-interaction/weapon/equip/EquipVisualBridgePolicy.h"
 #include "GunstockCapturedFrames.h"
 #include <iostream>
 #include <limits>

@@ -16,7 +16,7 @@
 #include "physics-interaction/native/PhysicsSystemBodyScanCache.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/object/ObjectDetection.h"
-#include "physics-interaction/weapon/WeaponSceneChildren.h"
+#include "physics-interaction/weapon/scene/WeaponSceneChildren.h"
 
 #include "RE/Bethesda/BSHavok.h"
 #include "RE/Bethesda/PlayerCharacter.h"

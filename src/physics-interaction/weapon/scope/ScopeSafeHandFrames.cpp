@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/TwoHandedGripInternal.h"
+#include "physics-interaction/weapon/grip/TwoHandedGripInternal.h"
 
 // ScopeMenu-safe hand frames and deferred scope hand-authority role clears.
 

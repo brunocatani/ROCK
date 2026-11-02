@@ -1,6 +1,6 @@
 #pragma once
 
-#include "physics-interaction/weapon/WeaponTypes.h"
+#include "physics-interaction/weapon/classification/WeaponTypes.h"
 
 namespace rock::weapon_recoil_policy
 {

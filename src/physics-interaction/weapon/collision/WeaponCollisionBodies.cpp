@@ -1,5 +1,5 @@
 #include "physics-interaction/native/ShellCasingGrace.h"
-#include "physics-interaction/weapon/WeaponCollisionInternal.h"
+#include "physics-interaction/weapon/collision/WeaponCollisionInternal.h"
 
 // Weapon body banks: lifecycle, retirement, collision enablement, atomic body-id publication, drive queueing, and retired-body servicing.
 

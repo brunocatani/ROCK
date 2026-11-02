@@ -1,9 +1,9 @@
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/TransformMath.h"
-#include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
-#include "physics-interaction/weapon/WeaponGripTransfer.h"
-#include "physics-interaction/weapon/WeaponGripCalibration.h"
-#include "physics-interaction/weapon/WeaponAuthority.h"
+#include "physics-interaction/weapon/authored/AuthoredWeaponGripPose.h"
+#include "physics-interaction/weapon/grip/WeaponGripTransfer.h"
+#include "physics-interaction/weapon/grip/WeaponGripCalibration.h"
+#include "physics-interaction/weapon/grip/WeaponAuthority.h"
 
 #include <array>
 #include <cmath>

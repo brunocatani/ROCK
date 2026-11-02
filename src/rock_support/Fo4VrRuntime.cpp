@@ -3,7 +3,7 @@
 #include "rock_support/Fo4VrRuntime.h"
 
 #include "physics-interaction/object/CarInteractionPolicy.h"
-#include "physics-interaction/weapon/WeaponTypePolicy.h"
+#include "physics-interaction/weapon/classification/WeaponTypePolicy.h"
 #include "rock_support/Fo4VrActorStatePolicy.h"
 #include "rock_support/Logger.h"
 

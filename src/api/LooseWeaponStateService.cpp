@@ -12,7 +12,7 @@
 #include "RE/NetImmerse/NiNode.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/weapon/EquippedWeaponVisualState.h"
+#include "physics-interaction/weapon/equip/EquippedWeaponVisualState.h"
 
 namespace rock::loose_weapon_state
 {

@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/EquippedWeaponRoster.h"
+#include "physics-interaction/weapon/equip/EquippedWeaponRoster.h"
 
 #include <cstdio>
 

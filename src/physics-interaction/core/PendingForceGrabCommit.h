@@ -9,8 +9,8 @@
 
 #include <ROCK/Grab.h>
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
-#include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
-#include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
+#include "physics-interaction/weapon/authored/AuthoredWeaponGripPose.h"
+#include "physics-interaction/weapon/equip/EquippedWeaponDropPolicy.h"
 
 namespace rock
 {

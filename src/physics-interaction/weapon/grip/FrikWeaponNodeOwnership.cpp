@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/TwoHandedGripInternal.h"
+#include "physics-interaction/weapon/grip/TwoHandedGripInternal.h"
 #include "physics-interaction/weapon/grip/WeaponNodeWriteBlockPolicy.h"
 
 namespace rock

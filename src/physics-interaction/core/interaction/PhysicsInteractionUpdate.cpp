@@ -25,9 +25,9 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/core/interaction/LootToHand.h"
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
-#include "physics-interaction/weapon/NativeHandEquipment.h"
-#include "physics-interaction/weapon/NativeMeleeWand.h"
-#include "physics-interaction/weapon/NativeSecondaryPresentation.h"
+#include "physics-interaction/weapon/native/NativeHandEquipment.h"
+#include "physics-interaction/weapon/native/NativeMeleeWand.h"
+#include "physics-interaction/weapon/secondary/NativeSecondaryPresentation.h"
 #include "rock_support/TestbenchTelemetry.h"
 
 #include <openvr.h>

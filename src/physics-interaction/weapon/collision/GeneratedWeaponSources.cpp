@@ -1,7 +1,7 @@
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/native/SceneRelation.h"
-#include "physics-interaction/weapon/WeaponCollisionInternal.h"
-#include "physics-interaction/weapon/WeaponGapDecomposition.h"
+#include "physics-interaction/weapon/collision/WeaponCollisionInternal.h"
+#include "physics-interaction/weapon/collision/WeaponGapDecomposition.h"
 
 #include <chrono>
 

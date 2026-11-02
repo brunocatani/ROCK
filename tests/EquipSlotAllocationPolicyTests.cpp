@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/EquipSlotAllocationPolicy.h"
+#include "physics-interaction/weapon/equip/EquipSlotAllocationPolicy.h"
 
 #include <cstdio>
 

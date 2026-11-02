@@ -5,7 +5,7 @@
 // hierarchy changes.
 #include "api/WeaponPartCollisionLease.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
-#include "physics-interaction/weapon/WeaponHierarchy.h"
+#include "physics-interaction/weapon/scene/WeaponHierarchy.h"
 
 #include <algorithm>
 #include <cstring>

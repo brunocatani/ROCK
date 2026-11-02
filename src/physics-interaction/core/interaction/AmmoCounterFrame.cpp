@@ -7,11 +7,11 @@
 #include "physics-interaction/native/NativeAmmoCounterVisibility.h"
 #include "physics-interaction/visual/AmmoCounters.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
-#include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
-#include "physics-interaction/weapon/HoldingGripRecords.h"
-#include "physics-interaction/weapon/NativeSecondaryPresentation.h"
-#include "physics-interaction/weapon/WeaponGripSeat.h"
-#include "physics-interaction/weapon/WeaponInstanceClassification.h"
+#include "physics-interaction/weapon/authored/AuthoredWeaponGripLibrary.h"
+#include "physics-interaction/weapon/authored/HoldingGripRecords.h"
+#include "physics-interaction/weapon/classification/WeaponInstanceClassification.h"
+#include "physics-interaction/weapon/grip/WeaponGripSeat.h"
+#include "physics-interaction/weapon/secondary/NativeSecondaryPresentation.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include <algorithm>

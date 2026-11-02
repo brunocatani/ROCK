@@ -16,7 +16,7 @@
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/NativeObjectPlacement.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
-#include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
+#include "physics-interaction/weapon/collision/DynamicWeaponCollisionPolicy.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 namespace rock::bipod_frozen_retirement

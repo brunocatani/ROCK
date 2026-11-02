@@ -32,7 +32,7 @@
 #include "physics-interaction/input/FarPullGesturePolicy.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
-#include "physics-interaction/weapon/GripZoneIndicatorPolicy.h"
+#include "physics-interaction/weapon/grip/GripZoneIndicatorPolicy.h"
 
 namespace rock
 {

@@ -28,7 +28,7 @@
 #include "physics-interaction/timing/GameFrameTimingPolicy.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
-#include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
+#include "physics-interaction/weapon/collision/DynamicWeaponCollisionPolicy.h"
 
 #include <algorithm>
 #include <cmath>

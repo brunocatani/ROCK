@@ -18,8 +18,8 @@
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
-#include "physics-interaction/weapon/EquippedWeaponVisualState.h"
-#include "physics-interaction/weapon/WeaponScenePath.h"
+#include "physics-interaction/weapon/equip/EquippedWeaponVisualState.h"
+#include "physics-interaction/weapon/scene/WeaponScenePath.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 namespace rock::trigger_equip_readiness_trace

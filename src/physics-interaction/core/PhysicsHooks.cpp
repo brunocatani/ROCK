@@ -32,7 +32,7 @@
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/performance/ContactPairProfile.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
-#include "physics-interaction/weapon/NativeSecondaryMelee.h"
+#include "physics-interaction/weapon/secondary/NativeSecondaryMelee.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include "RockConfig.h"

@@ -16,7 +16,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/weapon/NativePipboyHandMarkers.h"
+#include "physics-interaction/weapon/native/NativePipboyHandMarkers.h"
 
 namespace rock::native_pipboy_hand_input
 {

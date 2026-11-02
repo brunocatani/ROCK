@@ -1,7 +1,7 @@
 #include "api/ProviderRuntime.h"
 #include "api/ProviderRuntimeServices.h"
-#include "physics-interaction/weapon/HoldingGripMath.h"
-#include "physics-interaction/weapon/WeaponCollisionInternal.h"
+#include "physics-interaction/weapon/authored/HoldingGripMath.h"
+#include "physics-interaction/weapon/collision/WeaponCollisionInternal.h"
 
 // Read-side snapshots and queries: bounds, compound geometry, contacts, support-grip evidence views, surface probes, profile evidence, and emitters.
 

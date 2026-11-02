@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/GunstockDebug.h"
+#include "physics-interaction/weapon/handling/GunstockDebug.h"
 #include "physics-interaction/TransformMath.h"
 #include <cmath>
 #include <iostream>

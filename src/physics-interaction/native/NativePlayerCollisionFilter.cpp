@@ -4,7 +4,7 @@
 #include "physics-interaction/native/MagazineEjectionSnapshot.h"
 #include "physics-interaction/performance/ContactPairProfile.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
-#include "physics-interaction/weapon/LooseWeaponCollisionPolicy.h"
+#include "physics-interaction/weapon/collision/LooseWeaponCollisionPolicy.h"
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/HavokOffsets.h"

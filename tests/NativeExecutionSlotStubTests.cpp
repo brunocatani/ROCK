@@ -1,5 +1,5 @@
-#include "physics-interaction/weapon/NativeExecutionSlotStub.h"
-#include "physics-interaction/weapon/NativeInventorySlotStub.h"
+#include "physics-interaction/weapon/native/NativeExecutionSlotStub.h"
+#include "physics-interaction/weapon/native/NativeInventorySlotStub.h"
 #include <array>
 #include <cassert>
 #include <cstdint>

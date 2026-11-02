@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/WeaponPartDrivePose.h"
+#include "physics-interaction/weapon/parts/WeaponPartDrivePose.h"
 #include "api/WeaponPartGrabPoints.h"
 #include <cassert>
 #include <iostream>

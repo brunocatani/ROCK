@@ -16,10 +16,10 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
-#include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
-#include "physics-interaction/weapon/NativeEquippedModelLifetime.h"
-#include "physics-interaction/weapon/NativeHandEquipment.h"
-#include "physics-interaction/weapon/NativeSecondaryPresentation.h"
+#include "physics-interaction/weapon/collision/DynamicWeaponCollisionPolicy.h"
+#include "physics-interaction/weapon/native/NativeEquippedModelLifetime.h"
+#include "physics-interaction/weapon/native/NativeHandEquipment.h"
+#include "physics-interaction/weapon/secondary/NativeSecondaryPresentation.h"
 
 #include <array>
 #include <cmath>

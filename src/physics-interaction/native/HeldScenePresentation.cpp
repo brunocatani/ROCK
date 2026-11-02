@@ -1,6 +1,6 @@
 #include "physics-interaction/native/HeldScenePresentation.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
-#include "physics-interaction/weapon/WeaponSceneTraversal.h"
+#include "physics-interaction/weapon/scene/WeaponSceneTraversal.h"
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/core/RockRuntimeState.h"

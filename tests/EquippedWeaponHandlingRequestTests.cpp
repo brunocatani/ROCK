@@ -2,7 +2,7 @@
 // An addon handling lease must keep the observable meaning of each flag and
 // tuning field it publishes, and must not switch off ROCK-owned behavior it
 // never requested (shoulder stash, toggle grab, authored-only support).
-#include "physics-interaction/weapon/EquippedWeaponHandlingSettings.h"
+#include "physics-interaction/weapon/handling/EquippedWeaponHandlingSettings.h"
 
 #include <cmath>
 #include <cstdint>

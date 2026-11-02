@@ -1,5 +1,5 @@
-#include "physics-interaction/weapon/WeaponGapDecomposition.h"
-#include "physics-interaction/weapon/WeaponGeometry.h"
+#include "physics-interaction/weapon/collision/WeaponGapDecomposition.h"
+#include "physics-interaction/weapon/collision/WeaponGeometry.h"
 
 #include <cstdio>
 #include <chrono>

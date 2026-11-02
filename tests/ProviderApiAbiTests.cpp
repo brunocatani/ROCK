@@ -11,7 +11,7 @@ static_assert([] {
             if(preparationIndex(i,frame,count)!=(i+frame)%count) return false;
     return true;
 }());
-#include "physics-interaction/weapon/EquipPickupScope.h"
+#include "physics-interaction/weapon/equip/EquipPickupScope.h"
 #include <cstdlib>
 #include <thread>
 int main() {

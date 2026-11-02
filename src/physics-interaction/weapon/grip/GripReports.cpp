@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/TwoHandedGripInternal.h"
+#include "physics-interaction/weapon/grip/TwoHandedGripInternal.h"
 
 // Outward grip reporting: occupancy, HandGripReport, haptic events, drop requests, and authored grip pose snapshots.
 

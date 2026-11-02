@@ -1,5 +1,5 @@
 #pragma once
-#include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
+#include "physics-interaction/weapon/authored/AuthoredWeaponGripPose.h"
 
 #include "physics-interaction/VectorMath.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"

@@ -9,7 +9,7 @@
 #include "physics-interaction/native/HavokWorldLock.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
-#include "physics-interaction/weapon/WeaponTypePolicy.h"
+#include "physics-interaction/weapon/classification/WeaponTypePolicy.h"
 
 #include <array>
 #include <chrono>

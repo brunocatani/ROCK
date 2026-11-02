@@ -6,9 +6,9 @@
 
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/native/PhysicsShapeCast.h"
-#include "physics-interaction/weapon/FrikWeaponOffsets.h"
-#include "physics-interaction/weapon/NativeSecondaryActions.h"
-#include "physics-interaction/weapon/NativeSecondaryPresentation.h"
+#include "physics-interaction/weapon/handling/FrikWeaponOffsets.h"
+#include "physics-interaction/weapon/secondary/NativeSecondaryActions.h"
+#include "physics-interaction/weapon/secondary/NativeSecondaryPresentation.h"
 
 namespace rock
 {

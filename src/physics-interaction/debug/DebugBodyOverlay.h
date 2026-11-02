@@ -7,7 +7,7 @@
 #include "physics-interaction/body/BodyColliderDescriptors.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
-#include "physics-interaction/weapon/WeaponTypes.h"
+#include "physics-interaction/weapon/classification/WeaponTypes.h"
 
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/NetImmerse/NiPoint.h"

@@ -1,7 +1,7 @@
 #pragma once
 #include "api/WeaponSourceCatalogRuntime.h"
 #include "api/GrabEventCallbacks.h"
-#include "physics-interaction/weapon/WeaponHierarchy.h"
+#include "physics-interaction/weapon/scene/WeaponHierarchy.h"
 #include <span>
 namespace rock {
     inline bool finiteNiTransform(const RE::NiTransform& value) {return weapon_hierarchy::weaponTransformFinite(value);}

@@ -1,5 +1,5 @@
-#include "physics-interaction/weapon/DynamicWeaponCollision.h"
-#include "physics-interaction/weapon/TwoHandedGripInternal.h"
+#include "physics-interaction/weapon/collision/DynamicWeaponCollision.h"
+#include "physics-interaction/weapon/grip/TwoHandedGripInternal.h"
 
 namespace rock
 {

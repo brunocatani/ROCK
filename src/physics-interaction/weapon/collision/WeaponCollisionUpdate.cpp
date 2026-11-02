@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/WeaponCollisionInternal.h"
+#include "physics-interaction/weapon/collision/WeaponCollisionInternal.h"
 
 #include <bit>
 

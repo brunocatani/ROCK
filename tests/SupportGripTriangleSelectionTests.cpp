@@ -1,7 +1,7 @@
 // Optimized-versus-reference equivalence: the support finger candidate selection walking each
 // part's equip-time WeaponTriangleIndex must select exactly what scanning every triangle selects.
 // Geometry: the recorded meshes in the grab replay fixtures, placed as weapon parts.
-#include "physics-interaction/weapon/SupportGripTriangleSelection.h"
+#include "physics-interaction/weapon/grip/SupportGripTriangleSelection.h"
 
 #include <nlohmann/json.hpp>
 

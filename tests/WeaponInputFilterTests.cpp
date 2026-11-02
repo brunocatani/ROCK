@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/WeaponInputFilter.h"
+#include "physics-interaction/weapon/handling/WeaponInputFilter.h"
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/weapon/recoil/RecoilMath.h"
 #include "physics-interaction/weapon/recoil/RecoilController.h"

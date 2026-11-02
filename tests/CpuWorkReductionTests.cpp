@@ -2,8 +2,8 @@
 #include "physics-interaction/consume/ImmersiveAidContact.h"
 #include "physics-interaction/native/PhysicsSystemBodyScanCache.h"
 #include "physics-interaction/native/CollisionSystemOwner.h"
-#include "physics-interaction/weapon/GeneratedWeaponGeometry.h"
-#include "physics-interaction/weapon/WeaponEvidenceSnapshot.h"
+#include "physics-interaction/weapon/collision/GeneratedWeaponGeometry.h"
+#include "physics-interaction/weapon/classification/WeaponEvidenceSnapshot.h"
 
 #include <cassert>
 #include <cstdio>

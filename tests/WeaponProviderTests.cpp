@@ -1,5 +1,5 @@
 #include "api/providers/Boundary.h"
-#include "physics-interaction/weapon/EquipPickupScope.h"
+#include "physics-interaction/weapon/equip/EquipPickupScope.h"
 #include <ROCK/Weapon.h>
 #include <cassert>
 

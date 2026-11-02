@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/EquippedAmmoPolicy.h"
+#include "physics-interaction/weapon/equip/EquippedAmmoPolicy.h"
 
 #include <cstdio>
 

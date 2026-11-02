@@ -7,8 +7,8 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
-#include "physics-interaction/weapon/NativePrimaryWeaponGraph.h"
+#include "physics-interaction/weapon/authored/NativeIdleGripPreharvest.h"
+#include "physics-interaction/weapon/native/NativePrimaryWeaponGraph.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 namespace rock::native_trigger_equip_graph

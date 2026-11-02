@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/HoldingGripMath.h"
+#include "physics-interaction/weapon/authored/HoldingGripMath.h"
 #include <cassert>
 #include <iostream>
 using namespace rock::holding_grip_math;

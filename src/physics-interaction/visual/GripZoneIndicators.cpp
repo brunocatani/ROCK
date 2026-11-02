@@ -5,7 +5,7 @@
 #include <cmath>
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/visual/WorldOverlayRenderer.h"
-#include "physics-interaction/weapon/GripZoneIndicatorPolicy.h"
+#include "physics-interaction/weapon/grip/GripZoneIndicatorPolicy.h"
 #include "rock_support/ImmutableSnapshotPool.h"
 
 namespace rock::grip_zone_indicators

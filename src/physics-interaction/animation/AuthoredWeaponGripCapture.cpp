@@ -1,5 +1,5 @@
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
-#include "physics-interaction/weapon/NativeSecondaryPresentation.h"
+#include "physics-interaction/weapon/secondary/NativeSecondaryPresentation.h"
 
 #include "api/ProviderRuntime.h"
 #include "physics-interaction/PhysicsLog.h"

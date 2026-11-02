@@ -1,6 +1,6 @@
 #include <ROCK/Weapon.h>
 #include "Boundary.h"
-#include "physics-interaction/weapon/EquipPickupScope.h"
+#include "physics-interaction/weapon/equip/EquipPickupScope.h"
 
 namespace rock::api::weapon
 {

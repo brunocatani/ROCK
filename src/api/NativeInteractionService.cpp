@@ -10,7 +10,7 @@
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
 #include "physics-interaction/native/PhysicsUtils.h"
-#include "physics-interaction/weapon/WeaponCollision.h"
+#include "physics-interaction/weapon/collision/WeaponCollision.h"
 #include "providers/Boundary.h"
 
 namespace rock::native_interaction_service

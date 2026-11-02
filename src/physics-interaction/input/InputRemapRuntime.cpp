@@ -3,8 +3,8 @@
 #include "physics-interaction/input/PhysicalReloadInput.h"
 #include "physics-interaction/input/SupportTriggerInput.h"
 #include "physics-interaction/input/WeaponTriggerRouting.h"
-#include "physics-interaction/weapon/NativeHandEquipment.h"
-#include "physics-interaction/weapon/NativeSecondaryActions.h"
+#include "physics-interaction/weapon/native/NativeHandEquipment.h"
+#include "physics-interaction/weapon/secondary/NativeSecondaryActions.h"
 
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"

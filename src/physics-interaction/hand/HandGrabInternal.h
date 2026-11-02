@@ -66,11 +66,11 @@
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
-#include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
-#include "physics-interaction/weapon/GunstockMode.h"
-#include "physics-interaction/weapon/LooseWeaponGripZone.h"
-#include "physics-interaction/weapon/WeaponSupport.h"
-#include "physics-interaction/weapon/WeaponTypePolicy.h"
+#include "physics-interaction/weapon/authored/AuthoredWeaponGripLibrary.h"
+#include "physics-interaction/weapon/classification/WeaponTypePolicy.h"
+#include "physics-interaction/weapon/grip/LooseWeaponGripZone.h"
+#include "physics-interaction/weapon/grip/WeaponSupport.h"
+#include "physics-interaction/weapon/handling/GunstockMode.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include <algorithm>

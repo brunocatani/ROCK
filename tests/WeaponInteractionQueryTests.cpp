@@ -1,5 +1,5 @@
-#include "physics-interaction/weapon/WeaponInteractionQuery.h"
-#include "physics-interaction/weapon/WeaponInteraction.h"
+#include "physics-interaction/weapon/collision/WeaponInteractionQuery.h"
+#include "physics-interaction/weapon/parts/WeaponInteraction.h"
 
 #include <cassert>
 #include <chrono>

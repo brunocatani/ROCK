@@ -1,6 +1,6 @@
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
-#include "physics-interaction/weapon/LooseWeaponCollisionPolicy.h"
+#include "physics-interaction/weapon/collision/LooseWeaponCollisionPolicy.h"
 
 #include "RE/NetImmerse/NiMatrix3.h"
 #include "RE/NetImmerse/NiPoint.h"

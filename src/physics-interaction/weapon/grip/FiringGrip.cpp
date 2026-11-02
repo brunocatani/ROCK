@@ -1,11 +1,11 @@
-#include "physics-interaction/weapon/HoldingGripAdapter.h"
-#include "physics-interaction/weapon/NativeSecondaryPose.h"
-#include "physics-interaction/weapon/TwoHandedGripInternal.h"
-#include "physics-interaction/weapon/WeaponGripCalibration.h"
-#include "physics-interaction/weapon/WeaponGripSeat.h"
+#include "physics-interaction/weapon/authored/HoldingGripAdapter.h"
+#include "physics-interaction/weapon/grip/TwoHandedGripInternal.h"
+#include "physics-interaction/weapon/grip/WeaponGripCalibration.h"
+#include "physics-interaction/weapon/grip/WeaponGripSeat.h"
+#include "physics-interaction/weapon/secondary/NativeSecondaryPose.h"
 
 #include "physics-interaction/hand/TrackedHandIsolationPolicy.h"
-#include "physics-interaction/weapon/WeaponAimBasis.h"
+#include "physics-interaction/weapon/handling/WeaponAimBasis.h"
 
 // Firing-hand grip: canonical right frame, right weapon aim orientation, left/right mirroring, authored primary firing grip canonical and finger pose, reattach, support-to-firing promotion, and PrimaryOnly (persistent equipped carry) sessions.
 

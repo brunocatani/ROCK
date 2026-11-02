@@ -1,5 +1,5 @@
-#include "physics-interaction/weapon/WeaponSceneTraversal.h"
-#include "physics-interaction/weapon/WeaponSceneChildren.h"
+#include "physics-interaction/weapon/scene/WeaponSceneTraversal.h"
+#include "physics-interaction/weapon/scene/WeaponSceneChildren.h"
 
 #include <array>
 #include <cstddef>

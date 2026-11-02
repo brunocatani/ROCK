@@ -1,8 +1,8 @@
 #include "physics-interaction/native/HeldWeaponInstantTransitionPolicy.h"
 #include "physics-interaction/native/NativeWeaponEquipAudio.h"
 #include "physics-interaction/native/NativeWeaponAnimationAudio.h"
-#include "physics-interaction/weapon/WeaponTransitionAnimationAccelerationPolicy.h"
-#include "physics-interaction/weapon/EquippedWeaponTransitionPolicy.h"
+#include "physics-interaction/weapon/equip/WeaponTransitionAnimationAccelerationPolicy.h"
+#include "physics-interaction/weapon/equip/EquippedWeaponTransitionPolicy.h"
 
 #include <cstdio>
 

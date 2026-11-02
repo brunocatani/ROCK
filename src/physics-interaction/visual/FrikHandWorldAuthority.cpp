@@ -16,7 +16,7 @@
 #include "physics-interaction/hand/TrackedHandIsolationPolicy.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/visual/ScopeHandInputContinuityPolicy.h"
-#include "physics-interaction/weapon/WeaponInputFilter.h"
+#include "physics-interaction/weapon/handling/WeaponInputFilter.h"
 
 namespace rock::frik_hand_world_authority
 {

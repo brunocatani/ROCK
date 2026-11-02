@@ -33,7 +33,7 @@
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/object/RagdollBodyScope.h"
-#include "physics-interaction/weapon/WeaponGripTransfer.h"
+#include "physics-interaction/weapon/grip/WeaponGripTransfer.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include "RE/Bethesda/TESObjectREFRs.h"

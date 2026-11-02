@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/HoldingGripFormat.h"
+#include "physics-interaction/weapon/authored/HoldingGripFormat.h"
 #include <cassert>
 #include <fstream>
 #include <iostream>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "physics-interaction/weapon/WeaponTriangleIndex.h"
+#include "physics-interaction/weapon/collision/WeaponTriangleIndex.h"
 
 namespace rock
 {

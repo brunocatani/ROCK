@@ -6,12 +6,12 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/grab/GlobalSurfaceGrabPolicy.h"
 #include "physics-interaction/native/HeldScenePresentation.h"
-#include "physics-interaction/weapon/EquipSlotAllocationPolicy.h"
-#include "physics-interaction/weapon/KnifeReverseGrip.h"
-#include "physics-interaction/weapon/NativeHandEquipment.h"
-#include "physics-interaction/weapon/NativeSecondaryPresentation.h"
-#include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
-#include "physics-interaction/weapon/WeaponTypePolicy.h"
+#include "physics-interaction/weapon/authored/VanillaWeaponGripFrame.h"
+#include "physics-interaction/weapon/classification/WeaponTypePolicy.h"
+#include "physics-interaction/weapon/equip/EquipSlotAllocationPolicy.h"
+#include "physics-interaction/weapon/grip/KnifeReverseGrip.h"
+#include "physics-interaction/weapon/native/NativeHandEquipment.h"
+#include "physics-interaction/weapon/secondary/NativeSecondaryPresentation.h"
 
 namespace rock
 {

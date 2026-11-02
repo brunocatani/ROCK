@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include "RE/NetImmerse/NiPoint.h"
-#include "physics-interaction/weapon/WeaponTypes.h"
+#include "physics-interaction/weapon/classification/WeaponTypes.h"
 
 namespace rock::grip_zone_indicators
 {

@@ -7,7 +7,7 @@
 #include "api/TouchGrabRegistry.h"
 #include "api/WeaponPartRequests.h"
 #include "physics-interaction/timing/GameFrameTimingPolicy.h"
-#include "physics-interaction/weapon/WeaponPartRuntime.h"
+#include "physics-interaction/weapon/parts/WeaponPartRuntime.h"
 
 namespace rock
 {

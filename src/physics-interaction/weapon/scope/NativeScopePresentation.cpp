@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/TwoHandedGripInternal.h"
+#include "physics-interaction/weapon/grip/TwoHandedGripInternal.h"
 
 // Native scope presentation: rigid frame capture/synchronization, overlay calibration and target application, camera follow, and sight anchor refresh.
 

@@ -1,11 +1,11 @@
 #include "physics-interaction/hand/HandFingerMirrorMath.h"
-#include "physics-interaction/weapon/DynamicWeaponCollision.h"
-#include "physics-interaction/weapon/GunstockMode.h"
-#include "physics-interaction/weapon/TwoHandedGripInternal.h"
-#include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
-#include "physics-interaction/weapon/WeaponAimBasis.h"
-#include "physics-interaction/weapon/WeaponGripCalibration.h"
-#include "physics-interaction/weapon/WeaponHierarchy.h"
+#include "physics-interaction/weapon/authored/VanillaWeaponGripFrame.h"
+#include "physics-interaction/weapon/collision/DynamicWeaponCollision.h"
+#include "physics-interaction/weapon/grip/TwoHandedGripInternal.h"
+#include "physics-interaction/weapon/grip/WeaponGripCalibration.h"
+#include "physics-interaction/weapon/handling/GunstockMode.h"
+#include "physics-interaction/weapon/handling/WeaponAimBasis.h"
+#include "physics-interaction/weapon/scene/WeaponHierarchy.h"
 
 // Support-hand grip: authored capability qualification and selection, dynamic
 // acquisition, the capture transaction (capturePartGrip, whose finger solve

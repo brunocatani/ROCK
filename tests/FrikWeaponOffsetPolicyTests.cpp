@@ -1,5 +1,5 @@
-#include "physics-interaction/weapon/FrikWeaponOffsetPolicy.h"
-#include "physics-interaction/weapon/HoldingGripAdapter.h"
+#include "physics-interaction/weapon/handling/FrikWeaponOffsetPolicy.h"
+#include "physics-interaction/weapon/authored/HoldingGripAdapter.h"
 #include "physics-interaction/TransformMath.h"
 
 #include <cassert>

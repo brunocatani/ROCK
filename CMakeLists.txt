@@ -723,7 +723,7 @@ if(BUILD_ROCK_TESTS)
 
   add_executable(ROCKGunstockDebugTests
     "${ROOT_DIR}/tests/GunstockDebugTests.cpp"
-    "${SOURCE_DIR}/physics-interaction/weapon/GunstockDebug.cpp")
+    "${SOURCE_DIR}/physics-interaction/weapon/handling/GunstockDebug.cpp")
   target_compile_features(ROCKGunstockDebugTests PRIVATE cxx_std_23)
   target_include_directories(ROCKGunstockDebugTests PRIVATE ${SOURCE_DIR})
   add_test(NAME ROCKGunstockDebugTests COMMAND ROCKGunstockDebugTests)

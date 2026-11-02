@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/NativeSecondaryModelBranch.h"
+#include "physics-interaction/weapon/secondary/NativeSecondaryModelBranch.h"
 #include <array>
 #include <cassert>
 #include <cstddef>

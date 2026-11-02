@@ -1,0 +1,179 @@
+#pragma once
+
+#include "RE/Bethesda/BGSInventoryItem.h"
+#include "RE/Bethesda/TESForms.h"
+#include "RE/Bethesda/TESObjectREFRs.h"
+#include "RE/NetImmerse/NiAVObject.h"
+#include "RE/NetImmerse/NiPoint.h"
+#include "RE/NetImmerse/NiSmartPointer.h"
+
+#include "physics-interaction/native/HeldWeaponInstantTransition.h"
+#include "physics-interaction/weapon/equip/WeaponInventoryStackSelectionPolicy.h"
+
+#include <cstdint>
+
+namespace RE
+{
+    class TESObjectREFR;
+    class TESObjectWEAP;
+}
+
+namespace rock::weapon_equip_transfer
+{
+    enum class EquipReason : std::uint8_t
+    {
+        NotAttempted = 0,
+        MissingRef,
+        MissingPlayer,
+        MissingEquipManager,
+        DeletedOrDisabled,
+        PlayerRef,
+        MissingBaseForm,
+        UnsupportedBaseForm,
+        MissingEquipSlot,
+        ActivateRefFailed,
+        MissingInventoryList,
+        InventoryStackNotFound,
+        EquipObjectFailed,
+        InstantTransitionUnavailable,
+        InvalidNativeActionTrace,
+        EquippedIdentityMismatch,
+        EquippedStackMismatch,
+        ActivateRefThenInstantEquip,
+        InventoryInstantEquip,
+        OneHandRestoreActive,
+    };
+
+    enum class DropReason : std::uint8_t
+    {
+        NotAttempted = 0,
+        MissingPlayer,
+        MissingEquippedWeapon,
+        UnsupportedEquippedForm,
+        MissingInventoryList,
+        InventoryStackNotFound,
+        RemoveItemFailed,
+        DroppedReferenceUnavailable,
+        Dropped,
+        OneHandRestoreActive,
+        UnequipUnavailable,
+    };
+
+    struct EquipInput
+    {
+        // Sole ROCK ownership of the released world reference. The transfer
+        // consumes this lease immediately after ActivateRef succeeds so the
+        // native equip/draw path never runs with the picked ref artificially
+        // alive.
+        RE::NiPointer<RE::TESObjectREFR> heldRef{};
+        held_weapon_instant_transition::RequestReason transitionReason{
+            held_weapon_instant_transition::RequestReason::SameHandTrigger
+        };
+        // Equip into native index 1 for this physical hand; the primary stays
+        // equipped. Otherwise the item replaces the primary (index 0).
+        bool secondary{ false };
+        bool secondaryLeft{ false };
+    };
+
+    struct EquipResult
+    {
+        bool attempted = false;
+        bool transferredToInventory = false;
+        // The one immediate manager call was accepted, its exact equipped
+        // identity/stack was observed synchronously, and its intercepted
+        // native action trace authorizes the caller's final draw completion.
+        bool success = false;
+        bool committed = false;
+        bool matchedInstanceData = false;
+        bool matchedEquippedStack = false;
+        bool usedImmediateEquip = false;
+        EquipReason reason = EquipReason::NotAttempted;
+        std::int32_t count = 1;
+        std::uint32_t formID = 0;
+        std::uint32_t previousEquippedFormID = 0;
+        std::uint32_t observedEquippedFormID = 0;
+        std::uintptr_t observedEquippedInstanceData = 0;
+        std::uint32_t observedEquipIndex = 0;
+        std::uint32_t stackID = 0;
+        std::uint32_t preTransferStackCount = 0;
+        std::uint32_t postTransferStackCount = 0;
+        std::uint32_t stackMutationCandidateCount = 0;
+        std::uintptr_t previousEquippedInstanceData = 0;
+        std::uintptr_t requestedInstanceData = 0;
+        weapon_inventory_stack_selection_policy::Evidence stackSelectionEvidence =
+            weapon_inventory_stack_selection_policy::Evidence::None;
+        held_weapon_instant_transition::ImmediateEquipResult instantTransition{};
+        RE::TESObjectWEAP* weapon = nullptr;
+        // Present only when native pickup did not acquire the released world
+        // reference. This keeps failure recovery and release events safe.
+        RE::NiPointer<RE::TESObjectREFR> untransferredRef{};
+        /*
+         * Loose weapon 3D captured before ActivateRef. The engine detaches it
+         * from the scene graph synchronously during pickup but only releases
+         * its own reference; this pointer keeps the assembled model alive so
+         * the caller can bridge the visual gap until the equipped 3D attaches.
+         */
+        RE::NiPointer<RE::NiAVObject> detachedWorldModel{};
+    };
+
+    struct EquippedDropInput
+    {
+        RE::NiPoint3 dropLoc{};
+        // Native reference Euler radians: stored rotation = Rz(z)*Ry(y)*Rx(x).
+        RE::NiPoint3 dropRot{};
+        bool hasDropLoc{ false };
+        bool hasDropRot{ false };
+        // Native equipment index of the weapon to drop (0 primary, 1 second).
+        std::uint32_t index{ 0 };
+    };
+
+    struct EquippedDropResult
+    {
+        bool attempted{ false };
+        bool success{ false };
+        // A valid drop still owns cleanup/rollback if native duplicate
+        // unequip fails. Only an empty equipped slot admits the loose grab.
+        bool equippedSlotReleased{ false };
+        bool matchedInstanceData{ false };
+        DropReason reason{ DropReason::NotAttempted };
+        std::int32_t count{ 1 };
+        std::uint32_t formID{ 0 };
+        std::uint32_t stackID{ 0 };
+        std::uint32_t droppedFormID{ 0 };
+        RE::TESObjectWEAP* weapon{ nullptr };
+        RE::ObjectRefHandle handle{};
+        RE::NiPointer<RE::TESObjectREFR> droppedRef{};
+    };
+
+    [[nodiscard]] const char* equipReasonName(EquipReason reason) noexcept;
+    [[nodiscard]] const char* dropReasonName(DropReason reason) noexcept;
+    [[nodiscard]] EquipResult transferHeldWeaponToPlayerAndEquip(EquipInput input) noexcept;
+
+    // Frame-thread lease. Stack and instance remain owned while a provider
+    // switch is pending; the native stack index is re-resolved before equip.
+    struct InventorySelection
+    {
+        std::uint32_t formID{};
+        std::uint32_t stackIndex{};
+        RE::BSTSmartPointer<RE::BGSInventoryItem::Stack> stack{};
+        RE::BSTSmartPointer<RE::TBO_InstanceData> instance{};
+    };
+
+    [[nodiscard]] InventorySelection captureInventoryWeapon(std::uint32_t formID, std::uint32_t stackIndex) noexcept;
+    [[nodiscard]] bool inventoryWeaponCurrent(const InventorySelection& selection) noexcept;
+    // slotOne equips into equip slot 1 in the given hand; slot 0 stays.
+    [[nodiscard]] EquipResult equipInventoryWeapon(const InventorySelection& selection, bool slotOne = false,
+        bool slotOneLeft = false) noexcept;
+    [[nodiscard]] EquippedDropResult dropEquippedWeaponFromPlayer(const EquippedDropInput& input) noexcept;
+    // Exact-current compensation after a held equip; never removes an item.
+    [[nodiscard]] bool unequipExactCurrentWeapon(std::uint32_t formID, std::uintptr_t instanceData) noexcept;
+    // Unequips the exact weapon at native equipment index 0 or 1 from its own
+    // hand leaf; the weapon at the other index stays equipped. True when the
+    // index is empty afterwards.
+    [[nodiscard]] bool unequipEquippedIndex(std::uint32_t index, std::uint32_t formID,
+        std::uintptr_t instanceData) noexcept;
+    // Moves the exact weapon worn at index 1 to the empty index 0 with the
+    // same action-free immediate equip as a held trigger equip. Frame thread.
+    [[nodiscard]] EquipResult promoteSecondaryToPrimary(std::uint32_t formID, std::uintptr_t instanceData) noexcept;
+    [[nodiscard]] bool canRecoverHeldEquip() noexcept;
+}

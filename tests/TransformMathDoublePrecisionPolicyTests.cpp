@@ -1,6 +1,6 @@
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/grenade/LooseMolotovVisualPolicy.h"
-#include "physics-interaction/weapon/WeaponGeometry.h"
+#include "physics-interaction/weapon/collision/WeaponGeometry.h"
 
 #include <cmath>
 #include <cstdio>
