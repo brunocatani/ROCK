@@ -41,7 +41,7 @@ namespace rock::weapon_equip_transfer
         EquippedStackMismatch,
         ActivateRefThenInstantEquip,
         InventoryInstantEquip,
-        PreviousWeaponRestoreResetUnavailable,
+        OneHandRestoreActive,
     };
 
     enum class DropReason : std::uint8_t
@@ -55,7 +55,7 @@ namespace rock::weapon_equip_transfer
         RemoveItemFailed,
         DroppedReferenceUnavailable,
         Dropped,
-        PreviousWeaponRestoreResetUnavailable,
+        OneHandRestoreActive,
         UnequipUnavailable,
     };
 

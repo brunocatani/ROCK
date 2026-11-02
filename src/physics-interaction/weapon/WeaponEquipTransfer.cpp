@@ -9,6 +9,7 @@
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/NativeOneHandRestore.h"
 #include "physics-interaction/native/NativeWeaponEquipAudio.h"
 
 #include "RE/Bethesda/Actor.h"
@@ -48,33 +49,6 @@ namespace rock::weapon_equip_transfer
             if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(target), actual.data(), actual.size()) ||
                 (actual != expected && !native_inventory_hand_slots::ownsNativeUnequipEntry())) return nullptr;
             return reinterpret_cast<UnequipObject>(target);
-        }
-
-        [[nodiscard]] bool clearPreviousWeaponRestore(RE::PlayerCharacter* player) noexcept
-        {
-            // FO4VR 1.2.72: Unequip at 140E745F0 snapshots the player's saved
-            // one-hand items, clears them at 140E7482D, then re-equips each via
-            // 140E7486D -> 140E714A0 -> EquipObject. Intentional ROCK detach
-            // must invalidate that restoration before RemoveItem can unequip.
-            // Use the native destructor/clear routine (140F7CF70), not the
-            // incompatible CommonLib PlayerCharacter::lastOneHandItems layout.
-            constexpr std::array<std::uint8_t, 17> expected{
-                0x48, 0x89, 0x5C, 0x24, 0x18, 0x56, 0x48, 0x83, 0xEC,
-                0x20, 0x48, 0x8D, 0xB1, 0x08, 0x11, 0x00, 0x00,
-            };
-            if (!player || !REL::Module::IsVR() ||
-                REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) return false;
-            const auto address = REL::Offset(0xF7CF70).address();
-            std::array<std::uint8_t, expected.size()> actual{};
-            if (!native_memory::guardedCopyFromMemory(
-                    reinterpret_cast<const void*>(address), actual.data(), actual.size()) ||
-                actual != expected) {
-                ROCK_LOG_WARN(Weapon, "Equipped detach refused: previous-weapon restore reset entry validation failed");
-                return false;
-            }
-            using ClearLastOneHandItems = void (*)(RE::PlayerCharacter*);
-            reinterpret_cast<ClearLastOneHandItems>(address)(player);
-            return true;
         }
 
         struct InventoryWeaponStack
@@ -462,18 +436,9 @@ namespace rock::weapon_equip_transfer
                 stack.instanceData.get());
             RE::BGSObjectInstance objectInstance(result.weapon, stack.instanceData.get());
             const std::uint32_t index = secondary ? 1u : 0u;
-            /*
-             * The native unequip re-equips the player's remembered one-hand
-             * items (clearPreviousWeaponRestore). A replacing equip leaves the
-             * weapon it replaced there, and a later second-weapon equip then
-             * put it back over the primary and lost its own weapon: after two
-             * holster swaps the primary alternated between the swapped pair
-             * on every attempt, and the first attempt after an unequip had
-             * cleared the memory succeeded (runtime 2 Nov 12:01:00-12:01:22).
-             * ROCK equips never restore.
-             */
-            if (!clearPreviousWeaponRestore(player)) {
-                result.reason = EquipReason::PreviousWeaponRestoreResetUnavailable;
+            // A native restore would put a replaced weapon back over this one.
+            if (!native_one_hand_restore::disabled()) {
+                result.reason = EquipReason::OneHandRestoreActive;
                 return result;
             }
             /*
@@ -627,8 +592,8 @@ namespace rock::weapon_equip_transfer
             return "equipped-identity-mismatch";
         case EquipReason::EquippedStackMismatch:
             return "equipped-stack-mismatch";
-        case EquipReason::PreviousWeaponRestoreResetUnavailable:
-            return "previous-weapon-restore-reset-unavailable";
+        case EquipReason::OneHandRestoreActive:
+            return "one-hand-restore-active";
         case EquipReason::InventoryInstantEquip:
             return "inventory-instant-equip";
         case EquipReason::ActivateRefThenInstantEquip:
@@ -657,8 +622,8 @@ namespace rock::weapon_equip_transfer
             return "dropped-reference-unavailable";
         case DropReason::Dropped:
             return "dropped";
-        case DropReason::PreviousWeaponRestoreResetUnavailable:
-            return "previous-weapon-restore-reset-unavailable";
+        case DropReason::OneHandRestoreActive:
+            return "one-hand-restore-active";
         case DropReason::UnequipUnavailable:
             return "unequip-unavailable";
         default:
@@ -867,7 +832,7 @@ namespace rock::weapon_equip_transfer
         const auto stack = findEquippedWeaponStack(player, equipped.weapon, equipped.instanceData);
         const auto unequip = validatedUnequipObject();
         if (!stack.found || !stack.equipSlot || !stack.count || !unequip ||
-            stack.instanceData.get() != equipped.instanceData || !clearPreviousWeaponRestore(player)) return false;
+            stack.instanceData.get() != equipped.instanceData || !native_one_hand_restore::disabled()) return false;
         RE::BGSObjectInstance object(equipped.weapon, stack.instanceData.get());
         const bool accepted = unequip(manager, player, &object, 1, stack.equipSlot, stack.stackID, false, true, false, true, nullptr);
         const auto remaining = readEquippedWeaponSnapshot();
@@ -888,7 +853,7 @@ namespace rock::weapon_equip_transfer
         const auto unequip = validatedUnequipObject();
         const bool instanceMatch = stack.instanceData.get() == equipped.instanceData;
         if (!stack.found || !stack.equipSlot || !stack.count || !unequip || !instanceMatch ||
-            !clearPreviousWeaponRestore(player)) {
+            !native_one_hand_restore::disabled()) {
             // Identical-copy drops fail here without a native call (runtime
             // 23 Oct 17:57:04); name the failing precondition.
             ROCK_LOG_WARN(Weapon,
@@ -1097,8 +1062,9 @@ namespace rock::weapon_equip_transfer
         }
         removeData.stackData.push_back(removeStackID);
 
-        if (!clearPreviousWeaponRestore(player)) {
-            result.reason = DropReason::PreviousWeaponRestoreResetUnavailable;
+        // Removal unequips; a native restore would equip another weapon.
+        if (!native_one_hand_restore::disabled()) {
+            result.reason = DropReason::OneHandRestoreActive;
             return result;
         }
         {
@@ -1120,8 +1086,7 @@ namespace rock::weapon_equip_transfer
             // Native removal can move equipped flags to an equivalent stack
             // with different instance data. The selector's sole-equipped-stack
             // witness is sufficient for unequip; this copy is never dropped.
-            if (remainingStack.found && remainingStack.count != 0 && remainingStack.equipSlot &&
-                clearPreviousWeaponRestore(player)) {
+            if (remainingStack.found && remainingStack.count != 0 && remainingStack.equipSlot) {
                 RE::BGSObjectInstance remainingObject(equippedAfterDrop.weapon, remainingStack.instanceData.get());
                 duplicateUnequipAccepted = unequip(equipManager, player, &remainingObject, 1,
                     remainingStack.equipSlot, remainingStack.stackID, false, true, false, true, nullptr);
