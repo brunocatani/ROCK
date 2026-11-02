@@ -1,58 +1,75 @@
+// ROCK plugin entry point and frame scheduler.
+//
+// F4SE loads ROCK through F4SEPlugin_Query and F4SEPlugin_Load (end of this
+// file). Load installs the native safety and presentation hooks. GameLoaded
+// binds FRIK's API v2, loads the configuration and registers ROCK's FRIK frame
+// callbacks. From then on ROCK runs inside FRIK's frame, one handler per phase:
+//
+//   FrameBegin           housekeeping, config reload, PhysicsInteraction creation
+//   NativeGraphOutput    authored weapon grip capture
+//   AfterArmSolve        ROCK's tick: provider callbacks around PhysicsInteraction::update
+//   AfterWeaponPosition  weapon presentation after FRIK's weapon pass
+//   AfterWorldFinal      rendered-pose capture and publication
+//   FrameEnd             a tick without physics when the skeleton phases did not run
+//
+// One PhysicsInteraction exists per FRIK skeleton. It is created after FRIK's
+// kSkeletonReady and destroyed on kSkeletonDestroying or a new game session.
+// Those messages can arrive off the frame thread; their teardown then waits
+// for the next FrameBegin so the game thread never loses it mid-frame.
 
 #include <array>
-#include "api/LooseWeaponStateService.h"
-#include "physics-interaction/weapon/WeaponHandSave.h"
-#include "physics-interaction/weapon/HoldingGripRecords.h"
-#include "physics-interaction/weapon/FrikWeaponOffsets.h"
 #include <atomic>
 #include <cstdint>
 #include <string>
 
 #include <windows.h>
 
-#include "api/FRIKApiV2.h"
-#define ROCK_API_EXPORTS
 #include "RockConfig.h"
-#include "physics-interaction/native/BipodFrozenRetirement.h"
-#include "rock_support/GameIniOverrides.h"
+#include "api/FRIKApiV2.h"
+#include "api/LooseWeaponStateService.h"
 #include "api/ProviderRuntime.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
-#include "physics-interaction/visual/AmmoCounters.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/debug/DebugBodyOverlay.h"
-#include "physics-interaction/visual/GripZoneIndicators.h"
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/hand/NativeWandVisualSuppression.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
+#include "physics-interaction/native/BipodFrozenRetirement.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/HeldScenePresentation.h"
 #include "physics-interaction/native/HeldWeaponInstantTransition.h"
-#include "physics-interaction/native/NativeOneHandRestore.h"
-#include "physics-interaction/native/NativeWristPipboyLook.h"
-#include "physics-interaction/native/TriggerEquipReadinessTrace.h"
 #include "physics-interaction/native/NativeCharacterProxySafety.h"
 #include "physics-interaction/native/NativeCollisionFilterSafety.h"
+#include "physics-interaction/native/NativeImpactAudio.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/native/NativeWeaponFadeSuppression.h"
-#include "physics-interaction/native/NativeWeaponEquipAudio.h"
+#include "physics-interaction/native/NativeOneHandRestore.h"
+#include "physics-interaction/native/NativeQuickLootPanel.h"
 #include "physics-interaction/native/NativeRagdollSafety.h"
 #include "physics-interaction/native/NativeShapeCastSafety.h"
-#include "physics-interaction/native/NativeImpactAudio.h"
-#include "physics-interaction/native/NativeQuickLootPanel.h"
+#include "physics-interaction/native/NativeWeaponEquipAudio.h"
+#include "physics-interaction/native/NativeWeaponFadeSuppression.h"
+#include "physics-interaction/native/NativeWristPipboyLook.h"
+#include "physics-interaction/native/TriggerEquipReadinessTrace.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/timing/RockGameTiming.h"
+#include "physics-interaction/visual/AmmoCounters.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
-#include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
+#include "physics-interaction/visual/GripZoneIndicators.h"
+#include "physics-interaction/weapon/FrikWeaponOffsets.h"
+#include "physics-interaction/weapon/HoldingGripRecords.h"
 #include "physics-interaction/weapon/NativeHandEquipment.h"
 #include "physics-interaction/weapon/NativePipboyHandMarkers.h"
 #include "physics-interaction/weapon/NativeSecondaryPresentation.h"
-#include "physics-interaction/weapon/scope/ScopeRigParentRepair.h"
+#include "physics-interaction/weapon/WeaponHandSave.h"
+#include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
 #include "physics-interaction/weapon/scope/NativeScopeData.h"
+#include "physics-interaction/weapon/scope/ScopeRigParentRepair.h"
 #include "rock_support/Fo4VrRuntime.h"
+#include "rock_support/GameIniOverrides.h"
 #include "rock_support/TestbenchTelemetry.h"
 
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -62,6 +79,10 @@
 namespace
 {
     using namespace rock;
+
+    // -----------------------------------------------------------------------
+    // Plugin state (game thread unless noted)
+    // -----------------------------------------------------------------------
 
     const F4SE::MessagingInterface* s_messaging = nullptr;
 
@@ -85,6 +106,10 @@ namespace
     // Set by FRIK's kSkeletonReady; consumed by the next frame whose skeleton,
     // world and menu state allow creating PhysicsInteraction.
     bool s_physicsCreationRequested = false;
+
+    // -----------------------------------------------------------------------
+    // PhysicsInteraction lifecycle
+    // -----------------------------------------------------------------------
 
     struct PlayerPhysicsWorlds
     {
@@ -115,12 +140,15 @@ namespace
         };
     }
 
+    // Advances a provider or skeleton generation, skipping 0 (0 means "none").
     std::uint32_t bumpGeneration(std::atomic<std::uint32_t>& generation)
     {
         const auto next = generation.fetch_add(1, std::memory_order_acq_rel) + 1;
         return next == 0 ? generation.fetch_add(1, std::memory_order_acq_rel) + 1 : next;
     }
 
+    // Enables the physics hooks and hands the instance to the provider API once
+    // its (possibly lazy) initialization has succeeded. Runs every frame until then.
     void publishPhysicsInteractionIfReady()
     {
         if (!s_physicsInteraction || !s_physicsInteraction->isInitialized() || s_physicsPublished) {
@@ -213,6 +241,8 @@ namespace
         logger::info("ROCK: PhysicsInteraction destroyed.");
     }
 
+    // Returns every input gate ROCK drives to "no ROCK": used whenever the
+    // plugin, FRIK or the skeleton is unavailable for this frame.
     void clearUnavailableRuntimeInputState()
     {
         weapon_transition_animation_acceleration::cancel(
@@ -226,6 +256,10 @@ namespace
         input_remap_runtime::setEquippedWeaponFiringGripInputActive(false);
         input_remap_runtime::setEquippedWeaponPrimaryDetached(false);
     }
+
+    // -----------------------------------------------------------------------
+    // Teardown messages that arrive off the frame thread
+    // -----------------------------------------------------------------------
 
     /*
      * Session and skeleton teardown arrive as F4SE messages, not always on the
@@ -261,6 +295,7 @@ namespace
         return { static_cast<std::uint32_t>(GetCurrentThreadId()), rock::provider::frameThread() };
     }
 
+    // Queues a teardown for the next FrameBegin, stamped with its arrival order.
     void deferLifecycle(std::atomic<std::uint64_t>& pending) noexcept
     {
         std::uint64_t none = 0;
@@ -309,7 +344,7 @@ namespace
         }
     }
 
-    // Frame thread only.
+    // Frame thread only. Runs deferred teardowns in the order they arrived.
     void runPendingLifecycle()
     {
         const auto destroying = s_pendingSkeletonDestroying.exchange(0, std::memory_order_acq_rel);
@@ -330,6 +365,10 @@ namespace
             runSession();
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Per-frame work
+    // -----------------------------------------------------------------------
 
     /*
      * Per-frame housekeeping that runs with or without a FRIK skeleton
@@ -445,6 +484,16 @@ namespace
         return next == 0 ? 1 : next;
     }
 
+    // -----------------------------------------------------------------------
+    // Immersive (button-held) scopes: native scope hooks
+    //
+    // With immersive scopes on, the scope opens while the firing hand holds the
+    // scope button instead of when the head enters the game's scope cone. ROCK
+    // wraps the native scope state transition at its geometry decision call
+    // site, feeds it the button level, and drives the transition itself when
+    // no native callback will come (a scope on the second weapon).
+    // -----------------------------------------------------------------------
+
     using NativeScopeStateTransitionFunc = void (*)(RE::PlayerCharacter*, bool);
     NativeScopeStateTransitionFunc s_originalNativeScopeStateTransition = nullptr;
     /*
@@ -469,6 +518,9 @@ namespace
     std::uintptr_t s_manualScopeConfiguredWorldScope = 0;
     std::uint64_t s_manualScopeConfigureFailureLoggedGeneration = 0;
 
+    // Points the native world-scope singleton (WSScope) at the held weapon's
+    // scope overlay. Verifies the configure function's entry bytes once and the
+    // singleton's vtable on every call; skips the call when nothing changed.
     bool configureNativeWorldScopeForManualTarget(
         const std::uint64_t weaponGenerationKey,
         const std::uint32_t overlayIndex)
@@ -546,6 +598,8 @@ namespace
         return true;
     }
 
+    // Replaces the native scope-cone verdict with the scope button level while
+    // immersive scopes are on (and no reload or menu forces the native state).
     bool onNativeScopeGeometryDecision(RE::PlayerCharacter* player, const bool nativeGeometryDecision)
     {
         bool finalGeometryDecision = nativeGeometryDecision;
@@ -579,6 +633,8 @@ namespace
         return buttonDecisionApplied ? true : finalGeometryDecision;
     }
 
+    // Calls the native scope transition directly and, on each hold edge, logs
+    // whether the aiming setter it depends on is still the native one.
     void applyManualScopeTransition(RE::PlayerCharacter* player, bool requested)
     {
         if (!s_originalNativeScopeStateTransition) {
@@ -622,6 +678,9 @@ namespace
         }
     }
 
+    // Runs after ROCK's input classification each tick. Opens or closes the
+    // scope for the held slot when the native path will not: always for slot 1,
+    // and for slot 0 when its scope target asks for a direct transition.
     void driveManualScopeTransitionFallback()
     {
         if (!s_originalNativeScopeStateTransition) {
@@ -726,6 +785,7 @@ namespace
         return slash == std::string::npos ? full : full.substr(slash + 1);
     }
 
+    // Installed at Load; inert until reconcileNativeScopeGeometryOwnership enables it.
     bool installNativeScopeDataHooks()
     {
         // Off until the geometry decision site is claimed: these hooks pass
@@ -734,6 +794,8 @@ namespace
         return native_scope_data::install(&isManualScopeEligibleForNative);
     }
 
+    // Hooks the geometry decision call and repoints the fade test after it.
+    // Verifies both sites first; refuses when another mod already holds the call.
     bool claimNativeScopeGeometryDecision()
     {
         REL::Relocation<std::uintptr_t> callSite{ REL::Offset(rock::offsets::kHookSite_NativeScopeGeometryDecision) };
@@ -814,6 +876,10 @@ namespace
         }
         native_scope_data::setEnabled(g_rockConfig.rockEnableImmersiveScopes);
     }
+
+    // -----------------------------------------------------------------------
+    // FRIK frame phases
+    // -----------------------------------------------------------------------
 
     // The provider tick ran or began this frame (AfterArmSolve, or FrameEnd without a skeleton).
     bool s_providerTickedThisFrame = false;
@@ -1013,6 +1079,8 @@ namespace
         }
     }
 
+    // Power armor state for f4vr helpers: FRIK's debounced value once its
+    // skeleton reports it, the biped otherwise.
     bool frikPowerArmorState() noexcept
     {
         return frik_visual_authority::isSkeletonReadyHint() && frik_visual_authority::canReportPowerArmor() ?
@@ -1094,6 +1162,11 @@ namespace
         return true;
     }
 
+    // -----------------------------------------------------------------------
+    // F4SE and FRIK messages
+    // -----------------------------------------------------------------------
+
+    // FRIK lifecycle broadcasts: skeleton ready/destroying and scope edges.
     void onFRIKMessage(F4SE::MessagingInterface::Message* msg)
     {
         if (!msg || !s_frikAvailable) {
@@ -1162,6 +1235,8 @@ namespace
         }
     }
 
+    // F4SE messages. GameLoaded performs ROCK's real initialization (FRIK API,
+    // config, hooks that need game data); PostLoadGame/NewGame reset the session.
     void onF4SEMessage(F4SE::MessagingInterface::Message* msg)
     {
         if (!msg) {
@@ -1298,6 +1373,11 @@ namespace rock
     const F4SE::MessagingInterface* getROCKMessaging() { return s_messaging; }
 }
 
+// ---------------------------------------------------------------------------
+// F4SE entry points
+// ---------------------------------------------------------------------------
+
+// Accepts only Fallout4VR.exe 1.2.72 outside the editor.
 extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Query(const F4SE::QueryInterface* a_f4se, F4SE::PluginInfo* a_info)
 {
     logger::init("ROCK");
@@ -1335,6 +1415,9 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Query(const F4SE::QueryInterface* a
     return true;
 }
 
+// Installs every hook that does not need game data. Each one verifies its own
+// call sites and fails closed, leaving that native behaviour unchanged; only a
+// missing messaging interface or scope data hook stops the load.
 extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f4se)
 {
     logger::info("ROCK: F4SEPlugin_Load -- initializing...");
