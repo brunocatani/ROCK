@@ -8,7 +8,7 @@ endif()
 
 
 include("${ROOT_DIR}/cmake/VerifyDistributionInputs.cmake")
-rock_verify_distribution_inputs(TREES "${ROOT_DIR}/data/mod" "${ROOT_DIR}/include")
+rock_verify_distribution_inputs(TREES "${ROOT_DIR}/data/mod")
 
 set(PACKAGE_DIR "${BUILD_DIR}/package")
 set(PACKAGE_STAGE_DIR "${PACKAGE_DIR}/stageing")
@@ -26,9 +26,9 @@ file(COPY "${TARGET_FILE}" DESTINATION "${PACKAGE_STAGE_PLUGINS_DIR}")
 file(COPY "${TARGET_PDB_FILE}" DESTINATION "${PACKAGE_STAGE_PLUGINS_DIR}")
 file(COPY "${ROOT_DIR}/LICENSE" DESTINATION "${PACKAGE_STAGE_DIR}")
 
-# The public provider headers ship next to the DLL; consumers include them
-# directly.
-file(COPY "${ROOT_DIR}/include/ROCK" DESTINATION "${PACKAGE_STAGE_DIR}/include")
+# Only files a player installs ship. Development files (the provider headers,
+# example INIs, docs) stay in the repository; mod authors take include/ROCK
+# from the release tag.
 
 # SteamVR legacy binding templates for non-Quest controllers. Players install them
 # through SteamVR; they never deploy into a game or mod folder.

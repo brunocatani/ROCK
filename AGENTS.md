@@ -23,7 +23,7 @@ ROCK is a Fallout 4 VR F4SE plugin (`ROCK.dll`) that gives the player physical h
 | `include/ROCK/` | Public provider API headers, the only copy |
 | `docs/api/` | One page per provider interface |
 | `data/config/` | Example INIs, generated from the catalog |
-| `data/mod/` | Files shipped in the mod package |
+| `data/mod/` | Game data shipped in the mod package, when there is any (absent today) |
 | `steamvr_bindings/` | SteamVR binding templates for non-Quest controllers, shipped only in release packages |
 | `third_party/openvr/` | Vendored OpenVR ABI for raw controller input and haptics |
 | `tests/`, `tools/Invoke-RockTests.ps1` | Tests and the affected-test selector |
@@ -50,7 +50,7 @@ The selector picks tests from staged, unstaged and untracked files (or the lates
 
 Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp`; never re-implement engine math in test stubs. `ROCKPublicHeaderTests` compiles every public header on its own and checks the ABI layout of published records and tables.
 
-`custom-release` builds into `build-release` and packages a `.7z` with the DLL and PDB, `data/mod`, the license, `include/ROCK/` and `steamvr_bindings/`.
+`custom-release` builds into `build-release` and packages a `.7z` with the DLL and PDB, any `data/mod` game data, the license and `steamvr_bindings/`. Headers and every other development file stay in the repository.
 
 ## Runtime files
 

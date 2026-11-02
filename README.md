@@ -52,7 +52,7 @@ ROCK is the base of the RPS suite: [SCISSORS Redux](https://github.com/brunocata
 
 ### Recommended install
 
-Install the archive from [Nexus Mods](https://www.nexusmods.com/fallout4/mods/108881) with your mod manager. `ROCK.dll` goes to `Data/F4SE/Plugins`. The archive also holds the API headers for mod authors (`include/`) and the SteamVR bindings (`steamvr_bindings/`); the game uses neither directly.
+Install the archive from [Nexus Mods](https://www.nexusmods.com/fallout4/mods/108881) with your mod manager. `ROCK.dll` goes to `Data/F4SE/Plugins`. The archive also holds SteamVR bindings (`steamvr_bindings/`) for the controllers below; they are installed into SteamVR, not the game.
 
 ### Index, Vive and Steam Frame controllers
 
@@ -91,7 +91,7 @@ My Games/Fallout4VR/Mods_Config/ROCK/ROCK_Developer.ini
 
 ## Building mods with ROCK
 
-ROCK 1.0 publishes **provider API 2.0**: 13 interfaces your F4SE plugin discovers at runtime from `ROCK.dll`. The headers are in [include/ROCK/](include/ROCK/) and in the release archive. They need only the C++20 standard library, and there is nothing to link.
+ROCK 1.0 publishes **provider API 2.0**: 13 interfaces your F4SE plugin discovers at runtime from `ROCK.dll`. The headers are in [include/ROCK/](include/ROCK/); take them from the release tag you ship against. They need only the C++20 standard library, and there is nothing to link.
 
 ### Set up
 
@@ -210,7 +210,7 @@ cmake --preset custom-release
 cmake --build build-release --config Release --target ROCK
 ```
 
-This creates a `.7z` in `build-release/package` with `F4SE/Plugins/ROCK.dll` and its `.pdb`, the files under `data/mod`, the license, `include/ROCK/` and `steamvr_bindings/`. It publishes nothing.
+This creates a `.7z` in `build-release/package` with `F4SE/Plugins/ROCK.dll` and its `.pdb`, any game data under `data/mod`, the license and `steamvr_bindings/`: only what players install, never headers or other development files. It publishes nothing.
 
 ### Source layout
 

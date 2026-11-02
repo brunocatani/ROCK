@@ -1,8 +1,9 @@
 # ROCK provider API 2.0: overview
 
 ROCK publishes its provider API from `include/ROCK/`. The headers are
-self-contained (C++ standard library only), ship in the release archive next to
-the DLL, and are the only copy: there is no SDK. This page covers what every
+self-contained (C++ standard library only) and are the only copy: there is no
+SDK, and the release archive does not carry them. Take them from the release
+tag you ship against. This page covers what every
 interface shares: discovery, the `Client` helper, records, statuses, threads,
 generations and weapon slots. Each interface has its own page.
 

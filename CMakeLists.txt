@@ -219,6 +219,11 @@ if(POST_BUILD_COPY_PLUGIN)
     message(">>> Create post build command: copy targets to:")
     foreach(copy_path IN LISTS COPY_PLUGIN_PATH_LIST)
       message("    ${copy_path}/F4SE/Plugins/")
+      # data/mod holds game data only and may be absent; adding it needs a reconfigure.
+      set(ROCK_DATA_MOD_COPY)
+      if(EXISTS "${ROOT_DIR}/data/mod")
+        set(ROCK_DATA_MOD_COPY COMMAND ${CMAKE_COMMAND} -E copy_directory "${ROOT_DIR}/data/mod" "${copy_path}")
+      endif()
       add_custom_command(
         TARGET ${PROJECT_NAME}
         POST_BUILD
@@ -230,7 +235,8 @@ if(POST_BUILD_COPY_PLUGIN)
         COMMAND ${CMAKE_COMMAND} -E rm -f "${copy_path}/ROCK.esp"
         COMMAND ${CMAKE_COMMAND} -E rm -rf "${copy_path}/Scripts/ROCK"
         COMMAND ${CMAKE_COMMAND} -E rm -rf "${copy_path}/Meshes/ROCK"
-        COMMAND ${CMAKE_COMMAND} -E copy_directory "${ROOT_DIR}/data/mod" "${copy_path}"
+        COMMAND ${CMAKE_COMMAND} -E rm -f "${copy_path}/README.txt"
+        ${ROCK_DATA_MOD_COPY}
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${PROJECT_NAME}> ${copy_path}/F4SE/Plugins/
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_PDB_FILE:${PROJECT_NAME}> ${copy_path}/F4SE/Plugins/
       )
