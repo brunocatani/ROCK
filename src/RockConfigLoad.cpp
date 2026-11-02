@@ -21,8 +21,11 @@ namespace
     constexpr auto SECTION = "PhysicsInteraction";
     constexpr auto LOGGING_SECTION = "Logging";
     constexpr auto DEBUG_SECTION = "Debug";
-    constexpr auto REALISTIC_WEAPONS_SECTION = "RealisticWeapons";
+    constexpr auto GRENADES_SECTION = "Grenades";
     constexpr auto IMMERSIVE_WEAPONS_SECTION = "ImmersiveWeapons";
+    constexpr auto RECOIL_SECTION = "Recoil";
+    constexpr auto NATIVE_GAMEPLAY_SECTION = "NativeGameplay";
+    constexpr auto HIGHLIGHT_SECTION = "Highlight";
     constexpr auto AMBIDEXTROUS_FIRING_SECTION = "AmbidextrousFiring";
     constexpr auto NATIVE_SCOPES_SECTION = "NativeScopes";
     constexpr auto GRABBING_SECTION = "Grabbing";
@@ -204,6 +207,24 @@ namespace
         ROCK_LOG_WARN(Config, "Invalid {}='{}' -- using {}", key, configuredValue, kDefaultHighlightColor);
         return kDefaultHighlightColor;
     }
+
+    // sDefaultHand = right | left; returns true for left.
+    bool readDefaultHandLeft(RockIniReader& ini, const char* section, const char* key, const bool currentLeft)
+    {
+        std::string configuredValue = ini.GetValue(section, key, currentLeft ? "left" : "right");
+        for (auto& ch : configuredValue) {
+            if (ch >= 'A' && ch <= 'Z') {
+                ch = static_cast<char>(ch - 'A' + 'a');
+            }
+        }
+        if (configuredValue == "left") {
+            return true;
+        }
+        if (configuredValue != "right") {
+            ROCK_LOG_WARN(Config, "Invalid {}='{}' -- using right", key, configuredValue);
+        }
+        return false;
+    }
 }
 
 namespace rock
@@ -291,25 +312,25 @@ namespace rock
             ini.GetDoubleValue(SECTION, "fHavokTimingFixMinPhysicsFrameRate", rockHavokTimingFixMinPhysicsFrameRate)));
         rockHavokTimingFixMaxSubsteps = havok_timing_fix_policy::sanitizeMaxSubsteps(
             static_cast<int>(ini.GetLongValue(SECTION, "iHavokTimingFixMaxSubsteps", rockHavokTimingFixMaxSubsteps)));
-        rockSuppressNativeVats = ini.GetBoolValue(SECTION, "bSuppressNativeVats", rockSuppressNativeVats);
-        rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::sanitizedHoldSeconds(
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fPipboyPauseHoldSeconds", rockPipboyPauseHoldSeconds)));
+        rockSuppressNativeVats = ini.GetBoolValue(CONTROLS_SECTION, "bSuppressNativeVats", rockSuppressNativeVats);
+        rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::sanitizedHoldSeconds(static_cast<float>(
+            ini.GetDoubleValue(CONTROLS_SECTION, "fPipboyPauseHoldSeconds", rockPipboyPauseHoldSeconds)));
         rockButtonLayouts[0] = readButtonLayout(ini, CONTROLS_SECTION, true, rockButtonLayouts[0]);
         rockButtonLayouts[1] = readButtonLayout(ini, CONTROLS_SECTION, false, rockButtonLayouts[1]);
         rockFarGrabMode = far_pull_gesture::sanitizeMode(
             static_cast<int>(ini.GetLongValue(GRABBING_SECTION, "iFarGrabMode", rockFarGrabMode)));
         rockGrabInputIntentStateEnabled =
-            ini.GetBoolValue(GRABBING_SECTION, "bGrabInputIntentStateEnabled", rockGrabInputIntentStateEnabled);
+            ini.GetBoolValue(SECTION, "bGrabInputIntentStateEnabled", rockGrabInputIntentStateEnabled);
         rockLootToHand = ini.GetBoolValue(GRABBING_SECTION, "bLootToHand", rockLootToHand);
-        rockGrabInputLeewaySeconds = static_cast<float>(
-            ini.GetDoubleValue(GRABBING_SECTION, "fGrabInputLeewaySeconds", rockGrabInputLeewaySeconds));
+        rockGrabInputLeewaySeconds =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabInputLeewaySeconds", rockGrabInputLeewaySeconds));
         if (!std::isfinite(rockGrabInputLeewaySeconds) || rockGrabInputLeewaySeconds < 0.0f) {
             ROCK_LOG_WARN(Config, "Invalid fGrabInputLeewaySeconds={} -- using 0.12", rockGrabInputLeewaySeconds);
             rockGrabInputLeewaySeconds = 0.12f;
         }
         rockGrabInputLeewaySeconds = std::clamp(rockGrabInputLeewaySeconds, 0.0f, 0.5f);
-        rockGrabInputForceSeconds = static_cast<float>(
-            ini.GetDoubleValue(GRABBING_SECTION, "fGrabInputForceSeconds", rockGrabInputForceSeconds));
+        rockGrabInputForceSeconds =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabInputForceSeconds", rockGrabInputForceSeconds));
         if (!std::isfinite(rockGrabInputForceSeconds) || rockGrabInputForceSeconds < 0.0f) {
             ROCK_LOG_WARN(Config, "Invalid fGrabInputForceSeconds={} -- using 0.08", rockGrabInputForceSeconds);
             rockGrabInputForceSeconds = 0.08f;
@@ -317,7 +338,7 @@ namespace rock
         rockGrabInputForceSeconds = std::clamp(rockGrabInputForceSeconds, 0.0f, 0.3f);
 
         rockImmersiveAidEnabled = ini.GetBoolValue("ImmersiveAid", "bEnabled", rockImmersiveAidEnabled);
-        rockImmersiveRecoil = ini.GetBoolValue(IMMERSIVE_WEAPONS_SECTION, "bImmersiveRecoil", rockImmersiveRecoil);
+        rockImmersiveRecoil = ini.GetBoolValue(RECOIL_SECTION, "bImmersiveRecoil", rockImmersiveRecoil);
         rockEmergencyDisableRecoil =
             ini.GetBoolValue(DEBUG_SECTION, "bEmergencyDisableRecoil", rockEmergencyDisableRecoil);
         rockBipodMode = ini.GetBoolValue(IMMERSIVE_WEAPONS_SECTION, "bBipodMode", rockBipodMode);
@@ -331,28 +352,28 @@ namespace rock
                 rockBipodHandsFreeRadiusMeters);
             rockBipodHandsFreeRadiusMeters = 2.0f;
         }
-        rockLaserRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fLaserRecoilPercent",
-            rockLaserRecoilPercent, 100.0f, 0.0f, 300.0f);
-        rockPistolOneHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fPistolOneHandRecoilPercent",
+        rockLaserRecoilPercent =
+            readClampedFloat(ini, RECOIL_SECTION, "fLaserRecoilPercent", rockLaserRecoilPercent, 100.0f, 0.0f, 300.0f);
+        rockPistolOneHandRecoilPercent = readClampedFloat(ini, RECOIL_SECTION, "fPistolOneHandRecoilPercent",
             rockPistolOneHandRecoilPercent, 300.0f, 0.0f, 300.0f);
-        rockPistolTwoHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fPistolTwoHandRecoilPercent",
+        rockPistolTwoHandRecoilPercent = readClampedFloat(ini, RECOIL_SECTION, "fPistolTwoHandRecoilPercent",
             rockPistolTwoHandRecoilPercent, 80.0f, 0.0f, 300.0f);
-        rockRifleOneHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fRifleOneHandRecoilPercent",
+        rockRifleOneHandRecoilPercent = readClampedFloat(ini, RECOIL_SECTION, "fRifleOneHandRecoilPercent",
             rockRifleOneHandRecoilPercent, 300.0f, 0.0f, 300.0f);
-        rockRifleTwoHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fRifleTwoHandRecoilPercent",
+        rockRifleTwoHandRecoilPercent = readClampedFloat(ini, RECOIL_SECTION, "fRifleTwoHandRecoilPercent",
             rockRifleTwoHandRecoilPercent, 80.0f, 0.0f, 300.0f);
-        rockShotgunOneHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION,
-            "fShotgunOneHandRecoilPercent", rockShotgunOneHandRecoilPercent, 300.0f, 0.0f, 300.0f);
-        rockShotgunTwoHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION,
-            "fShotgunTwoHandRecoilPercent", rockShotgunTwoHandRecoilPercent, 80.0f, 0.0f, 300.0f);
-        rockHeavyOneHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fHeavyOneHandRecoilPercent",
+        rockShotgunOneHandRecoilPercent = readClampedFloat(ini, RECOIL_SECTION, "fShotgunOneHandRecoilPercent",
+            rockShotgunOneHandRecoilPercent, 300.0f, 0.0f, 300.0f);
+        rockShotgunTwoHandRecoilPercent = readClampedFloat(ini, RECOIL_SECTION, "fShotgunTwoHandRecoilPercent",
+            rockShotgunTwoHandRecoilPercent, 80.0f, 0.0f, 300.0f);
+        rockHeavyOneHandRecoilPercent = readClampedFloat(ini, RECOIL_SECTION, "fHeavyOneHandRecoilPercent",
             rockHeavyOneHandRecoilPercent, 300.0f, 0.0f, 300.0f);
-        rockHeavyTwoHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fHeavyTwoHandRecoilPercent",
-            rockHeavyTwoHandRecoilPercent, 292.1f, 0.0f, 300.0f);
-        rockDefaultOneHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION,
-            "fDefaultOneHandRecoilPercent", rockDefaultOneHandRecoilPercent, 300.0f, 0.0f, 300.0f);
-        rockDefaultTwoHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION,
-            "fDefaultTwoHandRecoilPercent", rockDefaultTwoHandRecoilPercent, 80.0f, 0.0f, 300.0f);
+        rockHeavyTwoHandRecoilPercent = readClampedFloat(ini, RECOIL_SECTION, "fHeavyTwoHandRecoilPercent",
+            rockHeavyTwoHandRecoilPercent, 300.0f, 0.0f, 300.0f);
+        rockDefaultOneHandRecoilPercent = readClampedFloat(ini, RECOIL_SECTION, "fDefaultOneHandRecoilPercent",
+            rockDefaultOneHandRecoilPercent, 300.0f, 0.0f, 300.0f);
+        rockDefaultTwoHandRecoilPercent = readClampedFloat(ini, RECOIL_SECTION, "fDefaultTwoHandRecoilPercent",
+            rockDefaultTwoHandRecoilPercent, 80.0f, 0.0f, 300.0f);
 
         rockDetachEitherHand = ini.GetBoolValue(IMMERSIVE_WEAPONS_SECTION, "bDetachEitherHand", rockDetachEitherHand);
         rockWeaponEquipMode =
@@ -388,20 +409,20 @@ namespace rock
             "fScopedFilterReleaseDegreesPerSecond", rockScopedFilterReleaseDegreesPerSecond, 45.0f, 0.0f, 720.0f);
         rockFiringGripReattachRadiusGameUnits = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION,
             "fFiringGripReattachRadiusGameUnits", rockFiringGripReattachRadiusGameUnits, 10.0f, 0.25f, 30.0f);
-        rockFiringGripReattachCylinderRadiusGameUnits =
-            readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fFiringGripReattachCylinderRadiusGameUnits",
-                rockFiringGripReattachCylinderRadiusGameUnits, 3.0f, 0.1f, 30.0f);
+        rockFiringGripReattachCylinderRadiusGameUnits = readClampedFloat(ini, SECTION,
+            "fFiringGripReattachCylinderRadiusGameUnits", rockFiringGripReattachCylinderRadiusGameUnits, 3.0f, 0.1f,
+            30.0f);
         rockGripZoneIndicatorDiameterGameUnits =
             readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fGripZoneIndicatorDiameterGameUnits",
                 rockGripZoneIndicatorDiameterGameUnits, grip_zone_indicator_policy::kDefaultDiameterGameUnits,
                 grip_zone_indicator_policy::kMinimumDiameterGameUnits,
                 grip_zone_indicator_policy::kMaximumDiameterGameUnits);
-        rockFiringGripHapticDurationSeconds = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION,
-            "fFiringGripHapticDurationSeconds", rockFiringGripHapticDurationSeconds, 0.10f, 0.01f, 0.50f);
-        rockFiringGripAttachHapticIntensity = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION,
-            "fFiringGripAttachHapticIntensity", rockFiringGripAttachHapticIntensity, 0.85f, 0.0f, 1.0f);
-        rockFiringGripDetachHapticIntensity = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION,
-            "fFiringGripDetachHapticIntensity", rockFiringGripDetachHapticIntensity, 0.30f, 0.0f, 1.0f);
+        rockFiringGripHapticDurationSeconds = readClampedFloat(ini, SECTION, "fFiringGripHapticDurationSeconds",
+            rockFiringGripHapticDurationSeconds, 0.10f, 0.01f, 0.50f);
+        rockFiringGripAttachHapticIntensity = readClampedFloat(ini, SECTION, "fFiringGripAttachHapticIntensity",
+            rockFiringGripAttachHapticIntensity, 0.85f, 0.0f, 1.0f);
+        rockFiringGripDetachHapticIntensity = readClampedFloat(ini, SECTION, "fFiringGripDetachHapticIntensity",
+            rockFiringGripDetachHapticIntensity, 0.30f, 0.0f, 1.0f);
         rockAmmoCounterStyle =
             static_cast<int>(ini.GetLongValue(IMMERSIVE_WEAPONS_SECTION, "iAmmoCounterStyle", rockAmmoCounterStyle));
         if (rockAmmoCounterStyle < 1 || rockAmmoCounterStyle > 3) {
@@ -409,7 +430,7 @@ namespace rock
             rockAmmoCounterStyle = 1;
         }
 
-        rockLeftHandedMode = ini.GetBoolValue(AMBIDEXTROUS_FIRING_SECTION, "bLeftHandedMode", rockLeftHandedMode);
+        rockDefaultHandLeft = readDefaultHandLeft(ini, AMBIDEXTROUS_FIRING_SECTION, "sDefaultHand", rockDefaultHandLeft);
         rockLeftFiringAimYawDegrees = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION, "fLeftFiringAimYawDegrees",
             rockLeftFiringAimYawDegrees, 0.0f, -30.0f, 30.0f);
         rockLeftFiringAimPitchDegrees = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION, "fLeftFiringAimPitchDegrees",
@@ -465,10 +486,9 @@ namespace rock
             ini.GetBoolValue(SECTION, "bDebugWeaponSupportDynamicOnly", rockDebugWeaponSupportDynamicOnly);
         rockFiringGripProximitySupportRadius = readClampedFloat(ini, SECTION, "fFiringGripProximitySupportRadius",
             rockFiringGripProximitySupportRadius, 8.0f, 0.25f, 30.0f);
-        rockImmersiveGrenades =
-            ini.GetBoolValue(REALISTIC_WEAPONS_SECTION, "bImmersiveGrenades", rockImmersiveGrenades);
-        rockRealisticGrenadeFuseSeconds = readClampedFloat(ini, REALISTIC_WEAPONS_SECTION,
-            "fRealisticGrenadeFuseSeconds", rockRealisticGrenadeFuseSeconds, 4.0f, 0.0f, 30.0f);
+        rockImmersiveGrenades = ini.GetBoolValue(GRENADES_SECTION, "bImmersiveGrenades", rockImmersiveGrenades);
+        rockRealisticGrenadeFuseSeconds = readClampedFloat(ini, GRENADES_SECTION, "fRealisticGrenadeFuseSeconds",
+            rockRealisticGrenadeFuseSeconds, 4.0f, 0.0f, 30.0f);
         rockWeaponSupportGripHandLerpEnabled =
             ini.GetBoolValue(SECTION, "bWeaponSupportGripHandLerpEnabled", rockWeaponSupportGripHandLerpEnabled);
         rockWeaponSupportGripHandLerpTimeMin = readClampedFloat(ini, SECTION, "fWeaponSupportGripHandLerpTimeMin",
@@ -489,51 +509,46 @@ namespace rock
         rockManualScopeHoldSeconds = readClampedFloat(ini, NATIVE_SCOPES_SECTION, "fManualScopeHoldSeconds",
             rockManualScopeHoldSeconds, 0.30f, 0.05f, 2.0f);
         rockNativeScopeFiringGripFallbackOffsetXGameUnits =
-            readClampedFloat(ini, NATIVE_SCOPES_SECTION, "fNativeScopeFiringGripFallbackOffsetXGameUnits",
+            readClampedFloat(ini, SECTION, "fNativeScopeFiringGripFallbackOffsetXGameUnits",
                 rockNativeScopeFiringGripFallbackOffsetXGameUnits, 0.0f, -100.0f, 100.0f);
         rockNativeScopeFiringGripFallbackOffsetYGameUnits =
-            readClampedFloat(ini, NATIVE_SCOPES_SECTION, "fNativeScopeFiringGripFallbackOffsetYGameUnits",
+            readClampedFloat(ini, SECTION, "fNativeScopeFiringGripFallbackOffsetYGameUnits",
                 rockNativeScopeFiringGripFallbackOffsetYGameUnits, 0.0f, -100.0f, 100.0f);
         rockNativeScopeFiringGripFallbackOffsetZGameUnits =
-            readClampedFloat(ini, NATIVE_SCOPES_SECTION, "fNativeScopeFiringGripFallbackOffsetZGameUnits",
+            readClampedFloat(ini, SECTION, "fNativeScopeFiringGripFallbackOffsetZGameUnits",
                 rockNativeScopeFiringGripFallbackOffsetZGameUnits, 10.0f, -100.0f, 100.0f);
-        rockNativeScopeFiringGripFallbackPitchDegrees =
-            readClampedFloat(ini, NATIVE_SCOPES_SECTION, "fNativeScopeFiringGripFallbackPitchDegrees",
-                rockNativeScopeFiringGripFallbackPitchDegrees, 0.0f, -180.0f, 180.0f);
-        rockNativeScopeFiringGripFallbackYawDegrees =
-            readClampedFloat(ini, NATIVE_SCOPES_SECTION, "fNativeScopeFiringGripFallbackYawDegrees",
-                rockNativeScopeFiringGripFallbackYawDegrees, 0.0f, -180.0f, 180.0f);
-        rockNativeScopeFiringGripFallbackRollDegrees =
-            readClampedFloat(ini, NATIVE_SCOPES_SECTION, "fNativeScopeFiringGripFallbackRollDegrees",
-                rockNativeScopeFiringGripFallbackRollDegrees, 0.0f, -180.0f, 180.0f);
-        rockNativeScopeOverlayOffsetXGameUnits = readClampedFloat(ini, NATIVE_SCOPES_SECTION,
-            "fNativeScopeOverlayOffsetXGameUnits", rockNativeScopeOverlayOffsetXGameUnits, 0.0f, -100.0f, 100.0f);
-        rockNativeScopeOverlayOffsetYGameUnits = readClampedFloat(ini, NATIVE_SCOPES_SECTION,
-            "fNativeScopeOverlayOffsetYGameUnits", rockNativeScopeOverlayOffsetYGameUnits, 10.0f, -100.0f, 100.0f);
-        rockNativeScopeOverlayOffsetZGameUnits = readClampedFloat(ini, NATIVE_SCOPES_SECTION,
-            "fNativeScopeOverlayOffsetZGameUnits", rockNativeScopeOverlayOffsetZGameUnits, 0.0f, -100.0f, 100.0f);
-        rockNativeScopeOverlayPitchDegrees = readClampedFloat(ini, NATIVE_SCOPES_SECTION,
-            "fNativeScopeOverlayPitchDegrees", rockNativeScopeOverlayPitchDegrees, 0.0f, -180.0f, 180.0f);
-        rockNativeScopeOverlayYawDegrees = readClampedFloat(ini, NATIVE_SCOPES_SECTION, "fNativeScopeOverlayYawDegrees",
+        rockNativeScopeFiringGripFallbackPitchDegrees = readClampedFloat(ini, SECTION,
+            "fNativeScopeFiringGripFallbackPitchDegrees", rockNativeScopeFiringGripFallbackPitchDegrees, 0.0f, -180.0f,
+            180.0f);
+        rockNativeScopeFiringGripFallbackYawDegrees = readClampedFloat(ini, SECTION,
+            "fNativeScopeFiringGripFallbackYawDegrees", rockNativeScopeFiringGripFallbackYawDegrees, 0.0f, -180.0f,
+            180.0f);
+        rockNativeScopeFiringGripFallbackRollDegrees = readClampedFloat(ini, SECTION,
+            "fNativeScopeFiringGripFallbackRollDegrees", rockNativeScopeFiringGripFallbackRollDegrees, 0.0f, -180.0f,
+            180.0f);
+        rockNativeScopeOverlayOffsetXGameUnits = readClampedFloat(ini, SECTION, "fNativeScopeOverlayOffsetXGameUnits",
+            rockNativeScopeOverlayOffsetXGameUnits, 0.0f, -100.0f, 100.0f);
+        rockNativeScopeOverlayOffsetYGameUnits = readClampedFloat(ini, SECTION, "fNativeScopeOverlayOffsetYGameUnits",
+            rockNativeScopeOverlayOffsetYGameUnits, 10.0f, -100.0f, 100.0f);
+        rockNativeScopeOverlayOffsetZGameUnits = readClampedFloat(ini, SECTION, "fNativeScopeOverlayOffsetZGameUnits",
+            rockNativeScopeOverlayOffsetZGameUnits, 0.0f, -100.0f, 100.0f);
+        rockNativeScopeOverlayPitchDegrees = readClampedFloat(ini, SECTION, "fNativeScopeOverlayPitchDegrees",
+            rockNativeScopeOverlayPitchDegrees, 0.0f, -180.0f, 180.0f);
+        rockNativeScopeOverlayYawDegrees = readClampedFloat(ini, SECTION, "fNativeScopeOverlayYawDegrees",
             rockNativeScopeOverlayYawDegrees, 0.0f, -180.0f, 180.0f);
-        rockNativeScopeOverlayRollDegrees = readClampedFloat(ini, NATIVE_SCOPES_SECTION,
-            "fNativeScopeOverlayRollDegrees", rockNativeScopeOverlayRollDegrees, 0.0f, -180.0f, 180.0f);
+        rockNativeScopeOverlayRollDegrees = readClampedFloat(ini, SECTION, "fNativeScopeOverlayRollDegrees",
+            rockNativeScopeOverlayRollDegrees, 0.0f, -180.0f, 180.0f);
 
-        rockEnableVanillaMelee = ini.GetBoolValue(SECTION, "bEnableVanillaMelee", rockEnableVanillaMelee);
-        rockVanillaMeleeSwingSpeed = readClampedFloat(ini, SECTION, "fVanillaMeleeSwingSpeed",
+        rockEnableVanillaMelee = ini.GetBoolValue(NATIVE_GAMEPLAY_SECTION, "bEnableVanillaMelee", rockEnableVanillaMelee);
+        rockVanillaMeleeSwingSpeed = readClampedFloat(ini, NATIVE_GAMEPLAY_SECTION, "fVanillaMeleeSwingSpeed",
             rockVanillaMeleeSwingSpeed, 300.0f, 50.0f, 2000.0f);
-        rockVanillaGunBashSpeed =
-            readClampedFloat(ini, SECTION, "fVanillaGunBashSpeed", rockVanillaGunBashSpeed, 400.0f, 50.0f, 2000.0f);
-        rockNativeCharacterControllerObjectContactFilterEnabled =
-            ini.GetBoolValue(SECTION, "bNativeCharacterControllerObjectContactFilterEnabled",
-                rockNativeCharacterControllerObjectContactFilterEnabled);
+        rockVanillaGunBashSpeed = readClampedFloat(ini, NATIVE_GAMEPLAY_SECTION, "fVanillaGunBashSpeed",
+            rockVanillaGunBashSpeed, 400.0f, 50.0f, 2000.0f);
 
-        rockHighlightEnabled = ini.GetBoolValue(SECTION, "bHighlightEnabled", rockHighlightEnabled);
+        rockHighlightEnabled = ini.GetBoolValue(HIGHLIGHT_SECTION, "bHighlightEnabled", rockHighlightEnabled);
         rockHighlightIntensityMode =
-            readHighlightIntensityMode(ini, SECTION, "iHighlightIntensityMode", rockHighlightIntensityMode);
-        rockHighlightColor = readHighlightColor(ini, SECTION, "sHighlightColor", rockHighlightColor);
-        rockDebugDisableTriggerEquipBridge =
-            ini.GetBoolValue(SECTION, "bDebugDisableTriggerEquipBridge", rockDebugDisableTriggerEquipBridge);
+            readHighlightIntensityMode(ini, HIGHLIGHT_SECTION, "iHighlightIntensityMode", rockHighlightIntensityMode);
+        rockHighlightColor = readHighlightColor(ini, HIGHLIGHT_SECTION, "sHighlightColor", rockHighlightColor);
         rockDebugShowColliders = ini.GetBoolValue(SECTION, "bDebugShowColliders", rockDebugShowColliders);
         rockDebugShowTargetColliders =
             ini.GetBoolValue(SECTION, "bDebugShowTargetColliders", rockDebugShowTargetColliders);

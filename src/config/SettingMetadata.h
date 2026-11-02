@@ -15,316 +15,281 @@ namespace rock::config
     // Setting types and defaults remain owned by the compiled loader.
     inline constexpr SettingMetadata kSettingMetadata[] = {
         { "Logging", "iLogLevel", "01. Logging",
-            "ROCK.log detail level for normal plugin messages.\nModes: 0=trace, 1=debug, 2=info, 3=warn, 4=error, "
-            "5=critical, 6=off.\nTrace/debug/info can be expensive if hot-path diagnostics are enabled.\nSet 6 to keep "
-            "the main ROCK.log silent during performance testing.",
+            "How much ROCK writes to ROCK.log.\n0 = Trace. 1 = Debug. 2 = Info. 3 = Warn. 4 = Error. 5 = Critical. "
+            "6 = Off.\nTrace and Debug write a lot and can cost frame time; keep Info for normal play.",
             api::configuration::Group::Consumer },
-        { "RealisticWeapons", "bImmersiveGrenades", "02. Grenades",
-            "Hold B draws an immersive grenade.\nFalse uses vanilla hold/release throwing instead. PALM uses right "
-            "trigger + grab.\nRelease B before changing modes. Grenades already drawn or armed keep their existing "
-            "behavior.",
+        { "Grenades", "bImmersiveGrenades", "02. Grenades",
+            "Immersive Grenades\nHold the grenade button (right B by default) to draw a grenade into your hand and "
+            "throw it by hand.\nSelecting a grenade in PALM also puts it in your hand.\nFalse: the game's own hold "
+            "and release throw.\nRelease the grenade button before changing this; a grenade already drawn keeps its "
+            "mode.",
             api::configuration::Group::Consumer },
-        { "RealisticWeapons", "fRealisticGrenadeFuseSeconds", "02. Grenades",
-            "Seconds from pin pull to ROCK detonation. Set 0 to use the grenade projectile's native fuse timer.",
+        { "Grenades", "fRealisticGrenadeFuseSeconds", "02. Grenades",
+            "Grenade Fuse\nSeconds from pulling the pin to detonation for grenades drawn by hand.\n0 uses the "
+            "grenade's own fuse time. Range: 0 to 30.",
             api::configuration::Group::Consumer },
         { "ImmersiveAid", "bEnabled", "03. Immersive Aid",
-            "Fixed Stimpak/Med-X grips and automatic injection after 0.5 seconds of body contact.\nFalse restores "
-            "ordinary grabs and mouth consumption for these aid items.\nRelease and grab again after changing this "
-            "mode to change an existing grip pose.",
+            "Immersive Aid\nStimpaks and Med-X sit in a fixed syringe grip and inject after touching your body for "
+            "0.5 seconds.\nFalse: they are grabbed like any object and used by bringing them to your mouth.\nRelease "
+            "and grab again to see the change on an item already in your hand.",
             api::configuration::Group::Consumer },
         { "ImmersiveWeapons", "bGunstockMode", "04. Weapon Handling",
-            "Gunstock Mode\nAligns firearm forward with the tracked firing-to-support controller line using virtual "
-            "collinear aiming anchors.\nPreserves authored hand and finger poses; the support hand may sit away from "
-            "its controller.\nNo weapon-specific angular offset. Applies to loose and equipped firearms while holding "
-            "a support grip with either firing hand.\nMelee, operating parts and latched bipods keep their normal "
-            "handling. False restores normal two-hand aiming.",
+            "Gunstock Mode\nTwo-handed firearms aim along the line from your firing hand to your support hand, like "
+            "a rifle with a stock.\nHand and finger poses stay as authored; the support hand may sit slightly away "
+            "from its controller.\nMelee weapons, weapon parts you operate and bipod-latched weapons are not "
+            "affected.\nFalse: normal two-hand aiming.",
             api::configuration::Group::Consumer },
         { "ImmersiveWeapons", "bFrikUserWeaponOffsets", "04. Weapon Handling",
-            "FRIK Weapon Offsets\nUses the weapon offset files you saved in FRIK (FRIK_Config\\Weapons_Offsets) "
-            "instead of ROCK's animated grip, including the weapon scale.\nFRIK's built-in default offsets never "
-            "apply.\nWeapons with a file use dynamic support grabs only and skip PAPER reload and cycle animations.",
+            "FRIK Weapon Offsets\nUse the weapon offset files you saved in FRIK (FRIK_Config\\Weapons_Offsets), "
+            "including their weapon scale, instead of ROCK's grip.\nFRIK's built-in default offsets are never "
+            "used.\nWeapons with a saved file use dynamic support grabs only and skip PAPER's reload and cycle "
+            "animations.",
             api::configuration::Group::Consumer },
         { "ImmersiveWeapons", "bBipodMode", "04. Weapon Handling",
-            "Bipod Mode: right-stick click latches any equipped weapon part to a surface.\nFalse releases the latch "
-            "and leaves the click available to other input handlers.\nWhile latched, ROCK recoil uses a fixed 10% "
-            "profile, regardless of hand count or armor.",
+            "Bipod Mode\nClick the right stick to latch any equipped weapon part to the surface it touches.\nWhile "
+            "latched, recoil is a fixed 10% whatever your hands or armor.\nFalse: the click is left to other mods.",
             api::configuration::Group::Consumer },
         { "ImmersiveWeapons", "fBipodHandsFreeRadiusMeters", "04. Weapon Handling",
-            "A latched weapon stays equipped without a carrying hand inside this radius.\n3D headset-to-surface-anchor "
-            "distance in world metres; must be positive.\nOutside the radius, the exact weapon becomes a frozen world "
-            "object without a physics drop.",
+            "Bipod Hands-Free Distance\nA latched weapon stays equipped with no hand on it while your headset is "
+            "within this distance of the latch point, in metres.\nFarther away it is left in place as a world object "
+            "(it does not fall). Must be above 0.",
             api::configuration::Group::Consumer },
         { "ImmersiveWeapons", "bDetachEitherHand", "04. Weapon Handling",
-            "Detach Either Hand\nAllows either hand to detach from the weapon, including the hand on the firing "
-            "grip.\nFiring and support grips follow Weapon Grab Mode, on either hand.\nAttach-only parts always "
-            "release with the button.\nThe other hand keeps holding the weapon until its grip is released.\nWeapon "
-            "Equip Mode controls what happens when the last carrying grip releases.",
+            "Detach Either Hand\nEither hand may let go of the weapon, including the hand on the firing grip; the "
+            "other hand keeps holding it.\nGrips release as Weapon Grab Mode sets. Parts you only attach to release "
+            "when you let go of the button.\nWhat happens when the last hand lets go is set by Weapon Equip Mode.",
             api::configuration::Group::Consumer },
         { "ImmersiveWeapons", "iWeaponEquipMode", "04. Weapon Handling",
-            "Weapon Equip Mode\n1 = Trigger Equip with no drop (game default). 2 = Trigger Equip with Toggle Drop.\n3 "
-            "= Trigger Equip with Auto Drop. 4 = Auto Equip (always Auto Drop).\nTrigger Equip: the trigger equips a "
-            "held loose weapon into that hand.\n1 keeps the last carrying grip attached and the weapon equipped.\n2 "
-            "unequips into a held loose weapon in the releasing hand.\nPress grab again, then release to drop or stash "
-            "it; trigger equips it again.\n3 drops the weapon in place with the same release rules, without the forced "
-            "grab.\n4 equips a loose weapon held at its authored firing grip once the palm settles there,\nwith no "
-            "trigger equip. Far grabs seat a loose weapon at its firing grip,\nclose grabs at its nearest authored "
-            "grip; touch grabs equip only inside an authored grip zone.\nWith a weapon already in the other hand it "
-            "equips as the second weapon.\nApplies per weapon. Weapon Grab Mode controls the release gesture in all "
-            "modes.",
+            "Weapon Equip Mode\n1 = Trigger Equip with no drop (game default). 2 = Trigger Equip with Toggle Drop.\n"
+            "3 = Trigger Equip with Auto Drop. 4 = Auto Equip (always Auto Drop).\nTrigger Equip: pull the trigger "
+            "while holding a loose weapon to equip it in that hand.\nWhen the last hand lets go of an equipped "
+            "weapon:\nmode 1 keeps it equipped and held;\nmode 2 unequips it into a loose weapon held in that hand: "
+            "press grab again and release to drop or stash it, or pull the trigger to equip it again;\nmode 3 drops "
+            "it in place, with the same release rules but no forced grab.\nMode 4 equips a loose weapon once your "
+            "palm settles on its firing grip (see Auto Equip Settle Time), without the trigger.\nFar grabs seat a "
+            "loose weapon at its firing grip and close grabs at its nearest grip; touch grabs equip only inside a "
+            "grip zone.\nWith a weapon already in the other hand, the new one becomes the second weapon.\nApplies "
+            "per weapon. Weapon Grab Mode sets the release gesture in every mode.",
             api::configuration::Group::Consumer },
         { "ImmersiveWeapons", "iWeaponGrabMode", "04. Weapon Handling",
-            "Weapon Grab Mode\n1 = Toggle both grips. 2 = Toggle firing grip only. 3 = Hold both grips.\nMode 2 "
-            "follows the firing role on either hand; support grips must stay held.\nToggle grips release on the next "
-            "press; hold grips release with the button.\nAttach-only weapon parts always require holding grab.\nWeapon "
-            "Equip Mode selects whether the last release keeps a loose grab or drops it.\nOrdinary loose objects and "
-            "surfaces use hold-to-grab. Toggle Drop weapons remain held until a later grab press and release.",
+            "Weapon Grab Mode\n1 = Toggle both grips. 2 = Toggle firing grip only. 3 = Hold both grips.\nToggle: "
+            "press grab to take the grip and press again to let go. Hold: the grip lasts while you hold grab.\nMode "
+            "2 toggles whichever hand holds the firing grip; support grips must be held.\nParts you only attach to "
+            "always need grab held. Ordinary objects and surfaces always use hold to grab.\nWeapon Equip Mode "
+            "decides whether the last release keeps a loose grab or drops the weapon.",
             api::configuration::Group::Consumer },
         { "ImmersiveWeapons", "fAutoEquipSettleSeconds", "04. Weapon Handling",
-            "Seconds the palm must stay at the firing grip before Auto Equip (Weapon Equip Mode 4) equips. Range: "
-            "0..2.",
+            "Auto Equip Settle Time\nSeconds your palm must stay on the firing grip before Auto Equip (Weapon Equip "
+            "Mode 4) equips. Range: 0 to 2.",
             api::configuration::Group::Consumer },
         { "ImmersiveWeapons", "bGrabAnywhereOnWeapon", "04. Weapon Handling",
-            "Grab Anywhere on Weapon\nTrue: allow dynamic support grabs anywhere on the weapon.\nFalse: restrict "
-            "non-melee weapons to authored support grips where available (default).\nMelee weapons always allow "
-            "dynamic support grabs anywhere on the weapon.\nWeapons without an authored support pose keep their "
-            "dynamic-grab fallback.\nApplies to either support hand and is independent of Ambidextrous "
-            "Firing.\nAuthored grips and ROCK API weapon-part targets keep their existing priority.",
+            "Grab Anywhere on Weapon\nTrue: your support hand can hold a firearm anywhere.\nFalse: firearms with "
+            "authored support grips take the support hand only there (default).\nMelee weapons, and firearms without "
+            "an authored support grip, can always be held anywhere.\nApplies to either support hand.",
             api::configuration::Group::Consumer },
         { "ImmersiveWeapons", "fMeleeGripPitchDegrees", "04. Weapon Handling",
-            "Rotates melee weapon and gripping hand together around the palm grip point.\nAdjustment from the built-in "
-            "30-degree forward tilt: positive adds tilt, negative reduces it.\nZero keeps that baseline; -30 restores "
-            "the authored angle. Range: -180..180. Regrab loose weapons after tuning.",
+            "Melee Grip Angle\nTilts a held melee weapon and your hand together around the grip, in degrees, on top "
+            "of ROCK's built-in 30 degree forward tilt.\nPositive tilts further forward, negative tilts back; -30 "
+            "gives the weapon's authored angle. Range: -180 to 180.\nRegrab a loose weapon to see the change.",
             api::configuration::Group::Consumer },
         { "ImmersiveWeapons", "iWeaponFilteringPreset", "04. Weapon Handling",
-            "Held weapon/object controller filtering: 0=Off (existing FRIK behavior), 1=Responsive, 2=Balanced, "
-            "3=Steady, 4=Heavy.\nHigher settings reduce shake at the cost of aiming response. Filters equipped "
-            "firearms, loose weapons and held objects using shared controller history; preserves existing FRIK and "
-            "recoil behavior. Free hands are unchanged.\nRotation/translation time constants: 12/6, 25/12, 45/22, "
-            "70/35 ms. Changes apply immediately.",
+            "Shake Filtering\n0 = Off. 1 = Responsive. 2 = Balanced. 3 = Steady. 4 = Heavy.\nSmooths controller "
+            "shake on equipped firearms, loose weapons and held objects. Higher steadies more but responds more "
+            "slowly.\nRotation and position smoothing: Responsive 12 and 6 ms, Balanced 25 and 12 ms, Steady 45 and "
+            "22 ms, Heavy 70 and 35 ms.\nFree hands, FRIK and recoil are not affected. Applies at once.",
             api::configuration::Group::Consumer },
         { "ImmersiveWeapons", "fScopedFilterRotationSeconds", "04. Weapon Handling",
-            "Scoped filtering: rotation smoothing time in seconds while looking through a scope.\nApplies with or "
-            "without the general filtering preset. 0 with translation 0 turns it off. Range: 0..1.",
+            "Scoped Filtering: Rotation\nExtra rotation smoothing, in seconds, while you look through a scope, with "
+            "or without Shake Filtering.\n0 here and in Scoped Filtering: Position turns scoped filtering off. "
+            "Range: 0 to 1.",
             api::configuration::Group::Consumer },
         { "ImmersiveWeapons", "fScopedFilterTranslationSeconds", "04. Weapon Handling",
-            "Scoped filtering: translation smoothing time in seconds while looking through a scope. Range: 0..1.",
+            "Scoped Filtering: Position\nExtra position smoothing, in seconds, while you look through a scope. "
+            "Range: 0 to 1.",
             api::configuration::Group::Consumer },
         { "ImmersiveWeapons", "fScopedFilterReleaseDegreesPerSecond", "04. Weapon Handling",
-            "Scoped filtering: controller rotation speed at which the smoothing halves.\nHolding still gets the full "
-            "smoothing; swinging to a new target releases it.\n0 keeps the full smoothing at any speed. Range: 0..720.",
+            "Scoped Filtering: Release Speed\nHow fast you turn the controller, in degrees per second, before the "
+            "scoped smoothing drops to half.\nHolding still gets full smoothing; swinging to a new target loosens "
+            "it.\n0 keeps full smoothing at any speed. Range: 0 to 720.",
             api::configuration::Group::Consumer },
         { "ImmersiveWeapons", "fFiringGripReattachRadiusGameUnits", "04. Weapon Handling",
-            "Shared reach of the firing-grip handoff and reattach zone in game units.\nThe zone is a quarter sector on "
-            "each side of the grip, swept from straight out\nto straight down the grip; this is its radius. Press grab "
-            "inside to attach the\nreceiving hand; tap the current firing hand's grab button to transfer.\nDetached "
-            "firing-grip reattachment uses the same zone.",
-            api::configuration::Group::Consumer },
-        { "ImmersiveWeapons", "fFiringGripReattachCylinderRadiusGameUnits", "04. Weapon Handling",
-            "Thickness of the firing-grip reattach zone in game units: how far above the\ngrip point and how far "
-            "forward or back along the barrel the palm may sit.\nA handling mod that selects the cylinder zone uses it "
-            "as the cylinder radius.",
+            "Firing Grip Reach\nHow far from the firing grip a hand can take it over or grab it again, in game units "
+            "(70 = 1 metre).\nThe zone is a quarter circle on each side of the grip, from straight out to straight "
+            "down.\nPress grab inside it to move the firing grip to that hand; the firing hand can also pass it with "
+            "a grab tap. Range: 0.25 to 30.",
             api::configuration::Group::Consumer },
         { "ImmersiveWeapons", "fGripZoneIndicatorDiameterGameUnits", "04. Weapon Handling",
-            "Diameter of the permanent grip-zone sphere in game units. Valid range: 0.10..5.00.",
-            api::configuration::Group::Consumer },
-        { "ImmersiveWeapons", "fFiringGripHapticDurationSeconds", "04. Weapon Handling",
-            "Successful firing-grip attach and detach transition pulses on the acting hand.",
-            api::configuration::Group::Consumer },
-        { "ImmersiveWeapons", "fFiringGripAttachHapticIntensity", "04. Weapon Handling", "",
-            api::configuration::Group::Consumer },
-        { "ImmersiveWeapons", "fFiringGripDetachHapticIntensity", "04. Weapon Handling", "",
+            "Grip Zone Marker Size\nDiameter of the sphere that marks a weapon's grip zones, in game units (70 = 1 "
+            "metre). Range: 0.1 to 5.",
             api::configuration::Group::Consumer },
         { "ImmersiveWeapons", "iAmmoCounterStyle", "04. Weapon Handling",
-            "Ammo Counter Style\n1 = Minimal: white loaded and reserve rounds beside the firing grip, on the palm "
-            "side; shown while you look at it.\n2 = Immersive: the same place and look-to-show, in the game's HUD "
-            "style: HUD color, loaded over reserve, inside the HUD bracket frame.\n3 = Vanilla: the game's ammo "
-            "counter on the back of the hand holding the weapon, in HUD color, always shown.\nThe right hand uses the "
-            "game's own back-of-hand spot; the left hand mirrors it.\nEvery style replaces the game's counter, one "
-            "counter per held weapon.",
+            "Ammo Counter Style\n1 = Minimal. 2 = Immersive. 3 = Vanilla.\nMinimal: white loaded and reserve rounds "
+            "beside the firing grip on the palm side, shown while you look at them.\nImmersive: the same place and "
+            "look to show, in the game's HUD color and bracket frame, loaded over reserve.\nVanilla: the game's "
+            "counter on the back of the hand holding the weapon, in HUD color, always shown (mirrored on the left "
+            "hand).\nEvery style replaces the game's counter with one counter per held weapon. The counters are "
+            "drawn through RPS UI Framework.",
             api::configuration::Group::Consumer },
-        { "ImmersiveWeapons", "bImmersiveRecoil", "05. Weapon Recoil",
-            "Enables all ROCK visual recoil profiles for either hand, including power armor.\nFalse uses unscaled "
-            "native recoil on the actual firing hand.\nEmergency Disable Recoil overrides both modes.",
+        { "Recoil", "bImmersiveRecoil", "05. Weapon Recoil",
+            "Immersive Recoil\nUses the recoil strengths below, for either hand and in power armor.\nFalse: the "
+            "game's own recoil strength, on the hand that fires.\nThe developer setting Emergency Disable Recoil "
+            "overrides both.",
             api::configuration::Group::Consumer },
-        { "ImmersiveWeapons", "fLaserRecoilPercent", "05. Weapon Recoil",
-            "Laser weapons use bipod recoil for either hold, including power armor.\n100 = 10% native movement and "
-            "rotation; 0 = none; range 0..300.\nLatched bipod support retains its fixed 10% recoil override.",
+        { "Recoil", "fLaserRecoilPercent", "05. Weapon Recoil",
+            "Laser Recoil\nRecoil for laser weapons in any hold and in power armor: 100 = 10% of the game's "
+            "movement and rotation, 0 = none. Range: 0 to 300.\nA bipod-latched weapon keeps its fixed 10%.",
             api::configuration::Group::Consumer },
-        { "ImmersiveWeapons", "fPistolOneHandRecoilPercent", "05. Weapon Recoil",
-            "Recoil percentages when not surface-latched or in power armor: 0 = none, 100 = unscaled hold profile, 300 "
-            "= triple.\nOneHand applies without a support grip; TwoHand preserves the full/close support "
-            "profile.\nBipod support and power armor override both controls. Values are limited to 0..300.",
+        { "Recoil", "fPistolOneHandRecoilPercent", "05. Weapon Recoil",
+            "Recoil Strength by Weapon Type\nPercent of each weapon type's recoil: 0 = none, 100 = full, 300 = "
+            "triple. Range: 0 to 300.\nOne Hand applies without a support grip, Two Hand with one.\nBipod latching "
+            "and power armor use their own fixed recoil.\nThis key: pistols held with one hand.",
             api::configuration::Group::Consumer },
-        { "ImmersiveWeapons", "fPistolTwoHandRecoilPercent", "05. Weapon Recoil", "",
-            api::configuration::Group::Consumer },
-        { "ImmersiveWeapons", "fRifleOneHandRecoilPercent", "05. Weapon Recoil", "",
-            api::configuration::Group::Consumer },
-        { "ImmersiveWeapons", "fRifleTwoHandRecoilPercent", "05. Weapon Recoil", "",
-            api::configuration::Group::Consumer },
-        { "ImmersiveWeapons", "fShotgunOneHandRecoilPercent", "05. Weapon Recoil", "",
-            api::configuration::Group::Consumer },
-        { "ImmersiveWeapons", "fShotgunTwoHandRecoilPercent", "05. Weapon Recoil", "",
-            api::configuration::Group::Consumer },
-        { "ImmersiveWeapons", "fHeavyOneHandRecoilPercent", "05. Weapon Recoil", "",
-            api::configuration::Group::Consumer },
-        { "ImmersiveWeapons", "fHeavyTwoHandRecoilPercent", "05. Weapon Recoil", "",
-            api::configuration::Group::Consumer },
-        { "ImmersiveWeapons", "fDefaultOneHandRecoilPercent", "05. Weapon Recoil", "",
-            api::configuration::Group::Consumer },
-        { "ImmersiveWeapons", "fDefaultTwoHandRecoilPercent", "05. Weapon Recoil", "",
-            api::configuration::Group::Consumer },
+        { "Recoil", "fPistolTwoHandRecoilPercent", "05. Weapon Recoil",
+            "Pistols held with two hands. Range: 0 to 300.", api::configuration::Group::Consumer },
+        { "Recoil", "fRifleOneHandRecoilPercent", "05. Weapon Recoil",
+            "Rifles held with one hand. Range: 0 to 300.", api::configuration::Group::Consumer },
+        { "Recoil", "fRifleTwoHandRecoilPercent", "05. Weapon Recoil",
+            "Rifles held with two hands. Range: 0 to 300.", api::configuration::Group::Consumer },
+        { "Recoil", "fShotgunOneHandRecoilPercent", "05. Weapon Recoil",
+            "Shotguns held with one hand. Range: 0 to 300.", api::configuration::Group::Consumer },
+        { "Recoil", "fShotgunTwoHandRecoilPercent", "05. Weapon Recoil",
+            "Shotguns held with two hands. Range: 0 to 300.", api::configuration::Group::Consumer },
+        { "Recoil", "fHeavyOneHandRecoilPercent", "05. Weapon Recoil",
+            "Heavy weapons held with one hand. Range: 0 to 300.", api::configuration::Group::Consumer },
+        { "Recoil", "fHeavyTwoHandRecoilPercent", "05. Weapon Recoil",
+            "Heavy weapons held with two hands. Range: 0 to 300.", api::configuration::Group::Consumer },
+        { "Recoil", "fDefaultOneHandRecoilPercent", "05. Weapon Recoil",
+            "Any other firearm held with one hand. Range: 0 to 300.", api::configuration::Group::Consumer },
+        { "Recoil", "fDefaultTwoHandRecoilPercent", "05. Weapon Recoil",
+            "Any other firearm held with two hands. Range: 0 to 300.", api::configuration::Group::Consumer },
         { "Grabbing", "iFarGrabMode", "06. Grabbing",
-            "Far Grab Mode\n1 = Immediate Pull. 2 = Higgs Pull Mode.\nHiggs Pull Mode: hold grab to lock, then flick "
-            "the hand back toward yourself.\nKeep holding grab to pull the object toward your hand and catch it "
-            "automatically.\nRelease before the flick or during the pull to cancel.\nMode changes apply to the next "
-            "far grab.",
+            "Far Grab Mode\n1 = Immediate Pull. 2 = Higgs Pull Mode.\nImmediate Pull: grabbing a far object pulls it "
+            "to your hand and catches it, with no flick.\nHiggs Pull Mode: hold grab to lock on, flick your hand "
+            "toward yourself, then keep holding to pull the object in and catch it.\nRelease before the flick or "
+            "during the pull to cancel. Applies to the next far grab.",
             api::configuration::Group::Consumer },
-        { "Grabbing", "bGrabInputIntentStateEnabled", "06. Grabbing",
-            "Keeps a grab press alive briefly while selection, pull catch, or input suppression settles.",
-            api::configuration::Group::Consumer },
-        { "Grabbing", "fGrabInputLeewaySeconds", "06. Grabbing", "", api::configuration::Group::Consumer },
-        { "Grabbing", "fGrabInputForceSeconds", "06. Grabbing", "", api::configuration::Group::Consumer },
         { "Grabbing", "bLootToHand", "06. Grabbing",
             "Loot to Hand\nTrue: an item taken with the quick-loot view (pointing at a container) lands in that "
-            "hand.\nThe full container menu keeps sending items to inventory. A busy hand passes the item to the other "
-            "free hand; with no free hand it stays in inventory.\nFalse: taken items go to inventory (game default).",
+            "hand.\nThe full container menu keeps sending items to inventory. A busy hand passes the item to the "
+            "other free hand; with no free hand it stays in inventory.\nFalse: taken items go to inventory (game "
+            "default).",
             api::configuration::Group::Consumer },
-        { "AmbidextrousFiring", "bLeftHandedMode", "07. Handedness",
-            "Default Hand: Left\nEquips that carry no physical hand (favorites, PALM, scripts and other mods)\nuse the "
-            "left firing hand. Applies on the next equip/draw.\nGrenade draws prefer the left hand, using the right if "
-            "the left is occupied.\nPip-Boy and trigger equips and grip handoffs use the hand that acts.\nController "
-            "bindings are unchanged; the game's own left-handed mode is not supported and stays off.",
+        { "AmbidextrousFiring", "sDefaultHand", "07. Handedness",
+            "Default Hand\nright or left: the firing hand for equips that come without a hand (favorites, PALM, "
+            "scripts and other mods).\nGrenade draws prefer this hand and use the other one when it is busy.\nPip-Boy "
+            "and trigger equips and grip handoffs always use the hand that acts.\nApplies on the next equip or draw. "
+            "The game's own left-handed mode is not supported and stays off.",
             api::configuration::Group::Consumer },
         { "AmbidextrousFiring", "fLeftFiringAimYawDegrees", "07. Handedness",
-            "Optional left firing aim correction. Zero uses the raw mirrored aim without a built-in yaw offset.",
+            "Left Firing Aim: Yaw\nTurns the aim of a weapon fired from the left hand, in degrees. 0 uses the plain "
+            "mirror of the right-hand hold. Range: -30 to 30.",
             api::configuration::Group::Consumer },
-        { "AmbidextrousFiring", "fLeftFiringAimPitchDegrees", "07. Handedness", "",
+        { "AmbidextrousFiring", "fLeftFiringAimPitchDegrees", "07. Handedness",
+            "Left Firing Aim: Pitch\nTilts the aim of a weapon fired from the left hand up or down, in degrees. "
+            "Range: -30 to 30.",
             api::configuration::Group::Consumer },
-        { "AmbidextrousFiring", "fLeftFiringAimOffsetXGameUnits", "07. Handedness", "",
+        { "AmbidextrousFiring", "fLeftFiringAimOffsetXGameUnits", "07. Handedness",
+            "Left Firing Aim: Offset X\nShifts the aim of a weapon fired from the left hand, in game units (70 = 1 "
+            "metre). Range: -15 to 15.",
             api::configuration::Group::Consumer },
-        { "AmbidextrousFiring", "fLeftFiringAimOffsetYGameUnits", "07. Handedness", "",
+        { "AmbidextrousFiring", "fLeftFiringAimOffsetYGameUnits", "07. Handedness",
+            "Left Firing Aim: Offset Y\nShifts the aim of a weapon fired from the left hand, in game units. Range: "
+            "-15 to 15.",
             api::configuration::Group::Consumer },
-        { "AmbidextrousFiring", "fLeftFiringAimOffsetZGameUnits", "07. Handedness", "",
+        { "AmbidextrousFiring", "fLeftFiringAimOffsetZGameUnits", "07. Handedness",
+            "Left Firing Aim: Offset Z\nShifts the aim of a weapon fired from the left hand, in game units. Range: "
+            "-15 to 15.",
             api::configuration::Group::Consumer },
         { "AmbidextrousFiring", "fLeftFiringGripOffsetXGameUnits", "07. Handedness",
-            "Optional left firing grip adjustment along the fingers. Zero offsets use the raw mirrored placement. "
-            "Regrab after tuning.",
+            "Left Firing Grip: Along Fingers\nMoves where the left hand holds the firing grip, along the fingers, in "
+            "game units (70 = 1 metre).\n0 = the plain mirror of the right-hand grip. The hand stays put and the "
+            "weapon moves the other way. Range: -15 to 15. Regrab to apply.",
             api::configuration::Group::Consumer },
         { "AmbidextrousFiring", "fLeftFiringGripOffsetYGameUnits", "07. Handedness",
-            "Optional left firing grip palm-depth adjustment. Zero has no added correction. Regrab after tuning.",
+            "Left Firing Grip: Palm Depth\nMoves the left firing grip into or out of the palm, in game units. Range: "
+            "-15 to 15. Regrab to apply.",
             api::configuration::Group::Consumer },
         { "AmbidextrousFiring", "fLeftFiringGripOffsetZGameUnits", "07. Handedness",
-            "Optional left firing grip signed cross-palm adjustment using the palm-tuning convention. Regrab after "
-            "tuning.",
+            "Left Firing Grip: Across Palm\nMoves the left firing grip across the palm, in game units. Range: -15 to "
+            "15. Regrab to apply.",
             api::configuration::Group::Consumer },
         { "AmbidextrousFiring", "fRightSupportGripOffsetXGameUnits", "07. Handedness",
-            "Optional mirrored right support adjustment along the fingers. Zero preserves mirrored source contact. "
-            "Regrab after tuning.",
+            "Right Support Grip: Along Fingers\nMoves where the right hand holds a support grip when the left hand "
+            "fires, along the fingers, in game units (70 = 1 metre).\n0 = the plain mirror of the left-hand support "
+            "grip. Range: -15 to 15. Regrab to apply.",
             api::configuration::Group::Consumer },
         { "AmbidextrousFiring", "fRightSupportGripOffsetYGameUnits", "07. Handedness",
-            "Optional mirrored right support palm-depth adjustment. Regrab after tuning.",
+            "Right Support Grip: Palm Depth\nMoves the mirrored right support grip into or out of the palm, in game "
+            "units. Range: -15 to 15. Regrab to apply.",
             api::configuration::Group::Consumer },
         { "AmbidextrousFiring", "fRightSupportGripOffsetZGameUnits", "07. Handedness",
-            "Optional mirrored right support signed cross-palm adjustment using the palm-tuning convention. Regrab "
-            "after tuning.",
+            "Right Support Grip: Across Palm\nMoves the mirrored right support grip across the palm, in game units. "
+            "Range: -15 to 15. Regrab to apply.",
             api::configuration::Group::Consumer },
         { "NativeScopes", "bEnableImmersiveScopes", "08. Scopes",
-            "True enables ROCK scope positioning, button-hold activation, and overlay/zoom corrections.\nFalse "
-            "restores vanilla cone-based activation and native camera, overlay, and zoom behavior.\nStarting with "
-            "immersive scopes off leaves the native scope activation site free for other mods.\nEnabling claims that "
-            "site; if another mod owns it, immersive scopes stay off for the session.\nOnce claimed, the hook remains "
-            "installed until restart; disabling passes native behavior through.\nRelease A/X before changing modes. "
-            "Firing-hand reload remains available.",
+            "Immersive Scopes\nROCK places the scope view on the weapon, raises it while you hold the scope button "
+            "(right A by default), and corrects the overlay and zoom.\nFalse: the game's own scopes.\nStarting with "
+            "this off leaves the game's scope hook free for other scope mods. Turning it on takes the hook until you "
+            "restart; if another mod owns it, ROCK's scopes stay off.\nRelease the scope button before changing "
+            "this. Reload stays on a tap of the same button.",
             api::configuration::Group::Consumer },
-        { "NativeScopes", "fManualScopeHoldSeconds", "08. Scopes", "", api::configuration::Group::Consumer },
-        { "NativeScopes", "fNativeScopeFiringGripFallbackOffsetXGameUnits", "08. Scopes",
-            "Missing or unusable generated Scope/Sight geometry falls back to the current\nfiring-grip palm seat. "
-            "Offsets are game units\nfrom that firing-grip origin in Weapon-local axes: X lateral, +Y muzzle\nforward, "
-            "and Z vertical. Zeroes place the anchor exactly at the firing grip.\nRotations are additive degrees after "
-            "native camera calibration: pitch about\nX, yaw about Z, and roll about +Y/the muzzle axis. Position moves "
-            "activation,\ncamera, and overlay together; rotation corrects the camera and overlay only.",
-            api::configuration::Group::Consumer },
-        { "NativeScopes", "fNativeScopeFiringGripFallbackOffsetYGameUnits", "08. Scopes", "",
-            api::configuration::Group::Consumer },
-        { "NativeScopes", "fNativeScopeFiringGripFallbackOffsetZGameUnits", "08. Scopes", "",
-            api::configuration::Group::Consumer },
-        { "NativeScopes", "fNativeScopeFiringGripFallbackPitchDegrees", "08. Scopes", "",
-            api::configuration::Group::Consumer },
-        { "NativeScopes", "fNativeScopeFiringGripFallbackYawDegrees", "08. Scopes", "",
-            api::configuration::Group::Consumer },
-        { "NativeScopes", "fNativeScopeFiringGripFallbackRollDegrees", "08. Scopes", "",
-            api::configuration::Group::Consumer },
-        { "NativeScopes", "fNativeScopeOverlayOffsetXGameUnits", "08. Scopes",
-            "Fine-tunes only FO4VR's game-native world_scope.nif overlay. ROCK keeps the\nactivation camera on the "
-            "resolved generated-sight/firing-grip anchor\nindependently, so these values do not change when the native "
-            "scope activates.\nZero values keep automatic anchor placement plus Bethesda's native\nmodel "
-            "orientation/scale. Offsets are game units in the calibrated model-local\nframe. Rotations are degrees: "
-            "pitch about local X, yaw about local Z, and roll\nabout the optical/depth Y axis. Tune one axis at a "
-            "time; loose replacement\nNIFs can use a visually reversed sign convention.",
-            api::configuration::Group::Consumer },
-        { "NativeScopes", "fNativeScopeOverlayOffsetYGameUnits", "08. Scopes", "",
-            api::configuration::Group::Consumer },
-        { "NativeScopes", "fNativeScopeOverlayOffsetZGameUnits", "08. Scopes", "",
-            api::configuration::Group::Consumer },
-        { "NativeScopes", "fNativeScopeOverlayPitchDegrees", "08. Scopes", "", api::configuration::Group::Consumer },
-        { "NativeScopes", "fNativeScopeOverlayYawDegrees", "08. Scopes", "", api::configuration::Group::Consumer },
-        { "NativeScopes", "fNativeScopeOverlayRollDegrees", "08. Scopes", "", api::configuration::Group::Consumer },
-        { "PhysicsInteraction", "bSuppressNativeVats", "09. Controller Input",
-            "Blocks only ordinary VATS, which fires when the native VATS button is released.\nThe raw OpenVR button "
-            "remains readable.",
-            api::configuration::Group::Consumer },
-        { "PhysicsInteraction", "fPipboyPauseHoldSeconds", "09. Controller Input",
-            "ROCK owns the native Pause button during gameplay. Releasing it before this\nthreshold opens the Pip-Boy; "
-            "holding through the threshold opens Pause. On\nQuest 2 this is Y in right-handed mode and follows "
-            "Bethesda's secondary-wand\nmapping in left-handed mode. The old trigger-release Pip-Boy open is disabled.",
+        { "NativeScopes", "fManualScopeHoldSeconds", "08. Scopes",
+            "Scope Hold Time\nSeconds to hold the scope button (right A, or left X for a left firing hand) before the "
+            "scope view comes up; a shorter press reloads. Range: 0.05 to 2.",
             api::configuration::Group::Consumer },
         { "Controls", "sRightTriggerButton", "09. Controller Input",
-            "Button layout: the physical input that acts as each ROCK button, per hand.\nEvery ROCK feature, PALM, "
-            "PAPER, SCISSORS_Redux, FRIK and the game follow it.\nDefaults are the Quest/Touch layout and change "
-            "nothing.\nValues: trigger, grip, a, b (x, y on the left), thumbstick, grip_click, axis3, axis4,\npad_up, "
+            "Button Layout\nThe physical input that acts as each ROCK button, per hand. ROCK, PALM, PAPER, SCISSORS "
+            "Redux, FRIK and the game all follow it.\nThe defaults are the Quest and Touch layout and change "
+            "nothing.\nValues: trigger, grip, a, b (x, y on the left), thumbstick, grip_click, axis3, axis4, pad_up, "
             "pad_down, pad_left, pad_right, pad_center (trackpad click regions), none.\nSwapping two buttons moves "
-            "every action of each. Stick movement is never remapped.\nControllers whose SteamVR binding merges buttons "
-            "(Index A reports as grip) need\nthe binding fixed in SteamVR first; ROCK only sees what SteamVR sends.",
+            "every action of each. Stick movement is never remapped.\nControllers whose SteamVR binding merges "
+            "buttons (Index A reports as grip) need the binding fixed in SteamVR first; ROCK only sees what SteamVR "
+            "sends.\nThis key: the right trigger.",
             api::configuration::Group::Consumer },
-        { "Controls", "sRightGrabButton", "09. Controller Input", "", api::configuration::Group::Consumer },
-        { "Controls", "sRightAButton", "09. Controller Input", "Right lower face button: reload tap, scope hold.",
+        { "Controls", "sRightGrabButton", "09. Controller Input", "The right grab button (grip by default).",
             api::configuration::Group::Consumer },
-        { "Controls", "sRightBButton", "09. Controller Input", "Right upper face button: grenade draw hold, VATS.",
+        { "Controls", "sRightAButton", "09. Controller Input", "Right A: reload tap, scope hold.",
+            api::configuration::Group::Consumer },
+        { "Controls", "sRightBButton", "09. Controller Input", "Right B: grenade draw hold, VATS.",
             api::configuration::Group::Consumer },
         { "Controls", "sRightStickClickButton", "09. Controller Input",
-            "Right stick click: bipod latch; PALM by default.", api::configuration::Group::Consumer },
-        { "Controls", "sLeftTriggerButton", "09. Controller Input", "", api::configuration::Group::Consumer },
-        { "Controls", "sLeftGrabButton", "09. Controller Input", "", api::configuration::Group::Consumer },
+            "Right stick click: bipod latch; opens PALM by default.", api::configuration::Group::Consumer },
+        { "Controls", "sLeftTriggerButton", "09. Controller Input", "The left trigger.",
+            api::configuration::Group::Consumer },
+        { "Controls", "sLeftGrabButton", "09. Controller Input", "The left grab button (grip by default).",
+            api::configuration::Group::Consumer },
         { "Controls", "sLeftXButton", "09. Controller Input",
-            "Left lower face button: reload tap and scope hold for a left firing hand.",
+            "Left X: reload tap and scope hold for a left firing hand.", api::configuration::Group::Consumer },
+        { "Controls", "sLeftYButton", "09. Controller Input", "Left Y: Pip-Boy tap, Pause hold.",
             api::configuration::Group::Consumer },
-        { "Controls", "sLeftYButton", "09. Controller Input", "Left upper face button: Pip-Boy tap, Pause hold.",
+        { "Controls", "sLeftStickClickButton", "09. Controller Input", "Left stick click.",
             api::configuration::Group::Consumer },
-        { "Controls", "sLeftStickClickButton", "09. Controller Input", "", api::configuration::Group::Consumer },
-        { "PhysicsInteraction", "bEnableVanillaMelee", "10. Native Gameplay",
-            "Enables vanilla Fallout VR player melee. True allows every native\nreal-weapon input, swing, hit-frame, "
-            "impact, damage, and VRInput-setting path.\nFalse suppresses that complete chain. NPC melee always passes "
-            "through.",
+        { "Controls", "bSuppressNativeVats", "09. Controller Input",
+            "Block VATS\nStops the game's VATS from opening on the VATS button (right B by default).\nThe button "
+            "still works for ROCK and other mods.",
             api::configuration::Group::Consumer },
-        { "PhysicsInteraction", "fVanillaMeleeSwingSpeed", "10. Native Gameplay",
-            "Hand speed that starts a vanilla melee swing, in game units per second\n(70 = 1 m/s). Vanilla is 200. "
-            "Wrist rotation never starts a swing. Range: 50-2000.",
+        { "Controls", "fPipboyPauseHoldSeconds", "09. Controller Input",
+            "Pip-Boy and Pause Hold Time\nTap left Y to open the Pip-Boy; hold it this many seconds to open the Pause "
+            "menu instead. Range: 0.15 to 2.",
             api::configuration::Group::Consumer },
-        { "PhysicsInteraction", "fVanillaGunBashSpeed", "10. Native Gameplay",
-            "Hand speed that starts a vanilla gun bash, in game units per second\n(70 = 1 m/s). Vanilla is 200. Wrist "
-            "rotation never starts a bash. Range: 50-2000.",
+        { "NativeGameplay", "bEnableVanillaMelee", "10. Native Gameplay",
+            "Vanilla Melee\nThe game's own player melee: swings, gun bashes, their hits and their damage.\nFalse "
+            "turns all of it off for the player. NPC melee is not affected.",
             api::configuration::Group::Consumer },
-        { "PhysicsInteraction", "bNativeCharacterControllerObjectContactFilterEnabled", "10. Native Gameplay",
-            "Filters only the native player character-controller bubble contacts.\nKeeps native world/support and "
-            "actor collision, but prevents the vanilla bubble from pushing clutter, loose guns, and ROCK-generated "
-            "bodies.",
+        { "NativeGameplay", "fVanillaMeleeSwingSpeed", "10. Native Gameplay",
+            "Melee Swing Speed\nHand speed that starts a vanilla melee swing, in game units per second (70 = 1 metre "
+            "per second). The game uses 200.\nTurning the wrist alone never swings. Range: 50 to 2000.",
             api::configuration::Group::Consumer },
-        { "PhysicsInteraction", "bHighlightEnabled", "11. Selection Feedback",
-            "Highlights the object ROCK thinks your hand can grab.", api::configuration::Group::Consumer },
-        { "PhysicsInteraction", "iHighlightIntensityMode", "11. Selection Feedback",
-            "ROCK-owned grab highlight intensity: 1=40%, 2=60%, 3=80%, 4=100%.", api::configuration::Group::Consumer },
-        { "PhysicsInteraction", "sHighlightColor", "11. Selection Feedback",
-            "ROCK-owned grab highlight color: red, blue, orange, or white.", api::configuration::Group::Consumer },
+        { "NativeGameplay", "fVanillaGunBashSpeed", "10. Native Gameplay",
+            "Gun Bash Speed\nHand speed that starts a vanilla gun bash, in game units per second (70 = 1 metre per "
+            "second). The game uses 200.\nTurning the wrist alone never bashes. Range: 50 to 2000.",
+            api::configuration::Group::Consumer },
+        { "Highlight", "bHighlightEnabled", "11. Selection Feedback",
+            "Grab Highlight\nOutlines the object your hand would grab.", api::configuration::Group::Consumer },
+        { "Highlight", "iHighlightIntensityMode", "11. Selection Feedback",
+            "Grab Highlight Strength\n1 = 40%. 2 = 60%. 3 = 80%. 4 = 100%.", api::configuration::Group::Consumer },
+        { "Highlight", "sHighlightColor", "11. Selection Feedback",
+            "Grab Highlight Color\nred, blue, orange or white.", api::configuration::Group::Consumer },
         { "Debug", "bDeveloperModeEnabled", "01. Developer Controls",
             "Gates advanced/tuning-only features not meant for normal play. Currently:\npressing A while holding an "
             "object records/overwrites a saved grab offset\nfor that object+hand. Saved offsets keep applying on "
@@ -434,6 +399,11 @@ namespace rock::config
             "Seats the visual support palm toward the contacted surface without rotating the weapon.",
             api::configuration::Group::Developer },
         { "PhysicsInteraction", "fWeaponSupportSurfaceSeatMaxDegrees", "04. Weapon Collision and Support", "",
+            api::configuration::Group::Developer },
+        { "PhysicsInteraction", "fFiringGripReattachCylinderRadiusGameUnits", "04. Weapon Collision and Support",
+            "Thickness of the firing-grip reattach zone in game units (70 = 1 metre): how far above the grip point "
+            "and how far forward or back along the barrel the palm may sit.\nA handling mod that selects the cylinder "
+            "zone uses it as the cylinder radius. Range: 0.1 to 30.",
             api::configuration::Group::Developer },
         { "PhysicsInteraction", "bHandCollisionStaticWorldEnabled", "05. Hand and Body Collision",
             "Allows generated hand colliders to collide with static/animstatic world geometry for native contact "
@@ -676,6 +646,18 @@ namespace rock::config
             api::configuration::Group::Developer },
         { "PhysicsInteraction", "fGrabHeldMassMovementFadeOutSeconds", "08. Grab Safety and Release", "",
             api::configuration::Group::Developer },
+        { "PhysicsInteraction", "bGrabInputIntentStateEnabled", "09. Grab Acquisition",
+            "Grab Press Leeway\nKeeps a held grab press alive while the hand becomes ready to grab (after a selection "
+            "change, a pull catch or input suppression), so a press made a moment early still grabs.\nReleasing grab "
+            "always cancels at once.",
+            api::configuration::Group::Developer },
+        { "PhysicsInteraction", "fGrabInputLeewaySeconds", "09. Grab Acquisition",
+            "Seconds a held grab press waits for the hand to become ready to grab. Range: 0 to 0.5.",
+            api::configuration::Group::Developer },
+        { "PhysicsInteraction", "fGrabInputForceSeconds", "09. Grab Acquisition",
+            "After that wait, seconds the held press keeps being sent every frame before ROCK stops trying. Range: 0 "
+            "to 0.3.",
+            api::configuration::Group::Developer },
         { "PhysicsInteraction", "fGrabTouchAcquireDistanceGameUnits", "09. Grab Acquisition",
             "Distance from the hand pocket where an object is considered already touching.",
             api::configuration::Group::Developer },
@@ -861,6 +843,14 @@ namespace rock::config
             api::configuration::Group::Developer },
         { "PhysicsInteraction", "fSelectedCloseFingerAnimValue", "13. Close-Hand Curl", "",
             api::configuration::Group::Developer },
+        { "PhysicsInteraction", "fFiringGripHapticDurationSeconds", "14. Haptics",
+            "Length of the pulse on the acting hand when the firing grip attaches or detaches, in seconds. Range: 0.01 "
+            "to 0.5.",
+            api::configuration::Group::Developer },
+        { "PhysicsInteraction", "fFiringGripAttachHapticIntensity", "14. Haptics",
+            "Strength of the firing-grip attach pulse. Range: 0 to 1.", api::configuration::Group::Developer },
+        { "PhysicsInteraction", "fFiringGripDetachHapticIntensity", "14. Haptics",
+            "Strength of the firing-grip detach pulse. Range: 0 to 1.", api::configuration::Group::Developer },
         { "PhysicsInteraction", "bGrabHapticsEnabled", "14. Haptics",
             "Pulses for grab commit, pull start/catch, and held-object impacts.",
             api::configuration::Group::Developer },
@@ -934,11 +924,6 @@ namespace rock::config
             api::configuration::Group::Developer },
         { "PhysicsInteraction", "bDebugDrawGrabAuthorityProxy", "14. Haptics",
             "Draws the hidden no-contact grab authority proxy target/axes used by ROCK dynamic grab.",
-            api::configuration::Group::Developer },
-        { "PhysicsInteraction", "bDebugDisableTriggerEquipBridge", "04. Weapon Handling",
-            "Temporary trigger-equip gap test. Skips the loose visual model and native-model hiding. Hand-pose "
-            "continuity, native equip and firing remain active. Applies to the next trigger equip; restore false after "
-            "testing.",
             api::configuration::Group::Developer },
         { "PhysicsInteraction", "bDebugShowColliders", "15. Debug Overlay",
             "Master switch for all ROCK-owned collider visualizations below.", api::configuration::Group::Developer },
@@ -1097,5 +1082,44 @@ namespace rock::config
             api::configuration::Group::Developer },
         { "PhysicsInteraction", "iHavokTimingFixMaxSubsteps", "18. Physics Timing", "",
             api::configuration::Group::Developer },
+        { "PhysicsInteraction", "fNativeScopeFiringGripFallbackOffsetXGameUnits", "19. Scope Placement",
+            "Scope Fallback Anchor\nWhen a weapon has no usable generated Scope or Sight geometry, the scope anchors "
+            "at the firing grip, moved by these values.\nOffsets are game units (70 = 1 metre) in the weapon's axes: "
+            "X sideways, +Y toward the muzzle, Z up; all zero puts the anchor on the firing grip.\nRotations are "
+            "degrees added after the game's camera calibration: pitch about X, yaw about Z, roll about the muzzle "
+            "axis.\nPosition moves the activation point, camera and overlay together; rotation corrects the camera "
+            "and overlay only.\nThis key: offset X. Range: -100 to 100.",
+            api::configuration::Group::Developer },
+        { "PhysicsInteraction", "fNativeScopeFiringGripFallbackOffsetYGameUnits", "19. Scope Placement",
+            "Scope fallback anchor offset Y (toward the muzzle), in game units. Range: -100 to 100.",
+            api::configuration::Group::Developer },
+        { "PhysicsInteraction", "fNativeScopeFiringGripFallbackOffsetZGameUnits", "19. Scope Placement",
+            "Scope fallback anchor offset Z (up), in game units. Range: -100 to 100.",
+            api::configuration::Group::Developer },
+        { "PhysicsInteraction", "fNativeScopeFiringGripFallbackPitchDegrees", "19. Scope Placement",
+            "Scope fallback pitch, in degrees. Range: -180 to 180.", api::configuration::Group::Developer },
+        { "PhysicsInteraction", "fNativeScopeFiringGripFallbackYawDegrees", "19. Scope Placement",
+            "Scope fallback yaw, in degrees. Range: -180 to 180.", api::configuration::Group::Developer },
+        { "PhysicsInteraction", "fNativeScopeFiringGripFallbackRollDegrees", "19. Scope Placement",
+            "Scope fallback roll, in degrees. Range: -180 to 180.", api::configuration::Group::Developer },
+        { "PhysicsInteraction", "fNativeScopeOverlayOffsetXGameUnits", "19. Scope Placement",
+            "Scope Overlay\nFine-tunes only the game's own world_scope.nif overlay. The activation camera stays on "
+            "the resolved sight or firing-grip anchor, so these values do not change when the scope activates.\nAll "
+            "zero keeps automatic placement with the game's own model orientation and scale.\nOffsets are game units "
+            "in the calibrated model frame; rotations are degrees: pitch about X, yaw about Z, roll about the optical "
+            "Y axis.\nTune one axis at a time; replacement scope meshes can use a reversed sign.\nThis key: offset "
+            "X. Range: -100 to 100.",
+            api::configuration::Group::Developer },
+        { "PhysicsInteraction", "fNativeScopeOverlayOffsetYGameUnits", "19. Scope Placement",
+            "Scope overlay offset Y (optical depth), in game units. Range: -100 to 100.",
+            api::configuration::Group::Developer },
+        { "PhysicsInteraction", "fNativeScopeOverlayOffsetZGameUnits", "19. Scope Placement",
+            "Scope overlay offset Z, in game units. Range: -100 to 100.", api::configuration::Group::Developer },
+        { "PhysicsInteraction", "fNativeScopeOverlayPitchDegrees", "19. Scope Placement",
+            "Scope overlay pitch, in degrees. Range: -180 to 180.", api::configuration::Group::Developer },
+        { "PhysicsInteraction", "fNativeScopeOverlayYawDegrees", "19. Scope Placement",
+            "Scope overlay yaw, in degrees. Range: -180 to 180.", api::configuration::Group::Developer },
+        { "PhysicsInteraction", "fNativeScopeOverlayRollDegrees", "19. Scope Placement",
+            "Scope overlay roll, in degrees. Range: -180 to 180.", api::configuration::Group::Developer },
     };
 }

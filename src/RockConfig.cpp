@@ -62,7 +62,7 @@ namespace rock
             return false;
         }
         if (!_store->error().empty()) {
-            ROCK_LOG_WARN(Config, "Configuration loaded, but missing regular options could not be saved: {}",
+            ROCK_LOG_WARN(Config, "Configuration loaded, but the INI files could not be updated: {}",
                 _store->error());
         }
         if (_store->revision() == configRevision())

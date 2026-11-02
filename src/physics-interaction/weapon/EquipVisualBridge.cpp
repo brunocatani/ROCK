@@ -339,9 +339,8 @@ namespace rock
             equip_visual_bridge_policy::effectivePresentationLeaseSeconds(
                 input.timeoutSeconds);
         _presentationLeaseStartedAt = std::chrono::steady_clock::now();
-        _handPoseOnly = input.handPoseOnly;
         _equippedModelSource = input.equippedModelSource;
-        _modelPresented = !_handPoseOnly;
+        _modelPresented = true;
         _followEquippedPose = false;
         _nativeCarrierTraceLogged = false;
         _nativeCarrierWasUsable = false;
@@ -372,11 +371,7 @@ namespace rock
          * for the detach and attaches then. Either way ROCK never steals a
          * live scene node.
          */
-        const bool attachedNow = !_handPoseOnly && !model->parent && tryAttachToWorldRoot();
-        if (_handPoseOnly) {
-            ROCK_LOG_INFO(Weapon, "Trigger equip hands-only handoff form={:08X} captured={} active={}; native weapon visibility unchanged",
-                _weaponFormID, _capturedGrips.primary.valid(), _handPoseHandoffActive);
-        }
+        const bool attachedNow = !model->parent && tryAttachToWorldRoot();
         ROCK_LOG_INFO(Weapon, "EquipVisualBridge begin formID={:08X} hand={} attachedNow={} blend={:.2f}s requestedTimeout={:.2f}s presentationLease={:.2f}s target={} exactPoseHandoff={} capturedHands={}",
             _weaponFormID, _isLeftHand ? "left" : "right", attachedNow ? "yes" : "no", _blendSeconds,
             input.timeoutSeconds, _presentationLeaseSeconds,
@@ -548,23 +543,6 @@ namespace rock
         }
 
         const float frameSeconds = (std::max)(0.0f, input.deltaSeconds);
-        if (_handPoseOnly) {
-            if (input.advanceLifetime && advancePresentationLeaseImpl(frameSeconds, false)) return;
-            _elapsedSeconds += frameSeconds;
-            if (!_handPoseHandoffActive) {
-                clear("hands-only-handoff-complete", false);
-                return;
-            }
-            RE::NiTransform wand{};
-            if (!frik_hand_world_authority::tryGetHandlingWandWorld(_isLeftHand, wand) ||
-                !publishHandPoseHandoff() || (_capturedGrips.primary.valid() &&
-                !publishCapturedHandsAt(transform_math::composeTransforms(wand, _modelInHandLocal), RE::NiPoint3{}))) {
-                clear("hands-only-pose-unavailable", false);
-            }
-            // The retained source is a pose reference only: never attach it,
-            // advance its scene, or acquire a native-instance cull lease.
-            return;
-        }
         const bool presentThisFrame = input.presentModel && _model != nullptr;
         if (input.advanceLifetime &&
             advancePresentationLeaseImpl(frameSeconds, presentThisFrame)) {
@@ -886,14 +864,7 @@ namespace rock
                 const auto& grip = primary ? _capturedGrips.primary : _capturedGrips.support;
                 const auto* driver = resolveHandWandNode(_isLeftHand);
                 bool compensated = driver && _lastPresentedInDriverValid && isFiniteTransform(driver->world);
-                auto bridgeWorld = compensated ? transform_math::composeTransforms(driver->world,_lastPresentedInDriver) : _model->world;
-                if (_handPoseOnly) {
-                    RE::NiTransform wand{};
-                    if (frik_hand_world_authority::tryGetHandlingWandWorld(_isLeftHand, wand)) {
-                        bridgeWorld = transform_math::composeTransforms(wand, _modelInHandLocal);
-                        compensated = true;
-                    } else compensated = false;
-                }
+                const auto bridgeWorld = compensated ? transform_math::composeTransforms(driver->world,_lastPresentedInDriver) : _model->world;
                 const auto bridgeHand = transform_math::composeTransforms(bridgeWorld,grip.handWeaponLocal);
                 const auto delta = replacement.target.translate - bridgeHand.translate;
                 ROCK_LOG_INFO(Weapon, "EQUIP-POSE hand-transfer form={:08X} hand={} ageMs={:.2f} deltaWorld=({:.4f},{:.4f},{:.4f}) distance={:.4f}gu rotation={:.3f}deg owner={} priority={} sourceFingerMask={:04X} controllerMotionCompensated={}",
@@ -912,8 +883,8 @@ namespace rock
                     const auto actualLocal = transform_math::composeTransforms(
                         transform_math::invertTransform(native.weaponRoot->world), replacement.target);
                     const auto seatDelta = actualLocal.translate - expectedLocal.translate;
-                    ROCK_LOG_INFO(Weapon, "EQUIP-POSE hand-seat form={:08X} hand={} visualBridge={} distance={:.5f}gu rotation={:.4f}deg owner={}",
-                        _weaponFormID, (primary ? _isLeftHand : !_isLeftHand) ? "left" : "right", !_handPoseOnly,
+                    ROCK_LOG_INFO(Weapon, "EQUIP-POSE hand-seat form={:08X} hand={} distance={:.5f}gu rotation={:.4f}deg owner={}",
+                        _weaponFormID, (primary ? _isLeftHand : !_isLeftHand) ? "left" : "right",
                         std::sqrt(seatDelta.x*seatDelta.x + seatDelta.y*seatDelta.y + seatDelta.z*seatDelta.z),
                         rotationDistanceDegrees(expectedLocal, actualLocal), hand_world_claim_registry_policy::tagView(replacement));
                 }
@@ -1013,13 +984,8 @@ namespace rock
         }
 
         if (model) {
-            if (_handPoseOnly) {
-                ROCK_LOG_DEBUG(Weapon, "EquipVisualBridge pose reference released reason={} formID={:08X} lifetime={:.3f}s",
-                    reason ? reason : "unknown", _weaponFormID, _lifetimeSeconds);
-            } else {
-                ROCK_LOG_INFO(Weapon, "EquipVisualBridge model released reason={} formID={:08X} elapsed={:.3f}s",
-                    reason ? reason : "unknown", _weaponFormID, _elapsedSeconds);
-            }
+            ROCK_LOG_INFO(Weapon, "EquipVisualBridge model released reason={} formID={:08X} elapsed={:.3f}s",
+                reason ? reason : "unknown", _weaponFormID, _elapsedSeconds);
         }
 
         _model.reset();
@@ -1100,7 +1066,6 @@ namespace rock
         _nativeCarrierTraceLogged = false;
         _nativeCarrierWasUsable = false;
         _active = false;
-        _handPoseOnly = false;
         _followEquippedPose = false;
         _supportGripInWandLocal = {};
     }

@@ -1847,12 +1847,11 @@ namespace rock
         }
 
         __try {
-            const bool playerControllerFilterEnabled = g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled;
             void* playerControllerPointer = resolvePlayerCharacterController();
             const bool playerController = isPlayerProxyListener(listener, charProxy, playerControllerPointer);
             RE::bhkWorld* playerBhkWorld = playerController ? resolvePlayerBhkWorld() : nullptr;
             RE::hknpWorld* playerHknpWorld = playerBhkWorld ? havok_runtime::getHknpWorldFromBhk(playerBhkWorld) : nullptr;
-            const bool playerControllerFilterActive = playerControllerFilterEnabled && playerController && playerHknpWorld;
+            const bool playerControllerFilterActive = playerController && playerHknpWorld;
 
             auto* pi = PhysicsInteraction::s_instance.load(std::memory_order_acquire);
             const bool piReady = pi && pi->isInitialized();

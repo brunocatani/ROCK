@@ -119,6 +119,70 @@ namespace rock::config
             }
             return false;
         }
+
+        template <class Visitor>
+        void forEachLine(std::string_view text, Visitor&& visit)
+        {
+            while (!text.empty()) {
+                const auto end = text.find('\n');
+                auto line = text.substr(0, end);
+                if (!line.empty() && line.back() == '\r')
+                    line.remove_suffix(1);
+                if (!line.empty())
+                    visit(line);
+                if (end == std::string_view::npos)
+                    break;
+                text.remove_prefix(end + 1);
+            }
+        }
+
+        // SimpleIni prints every '\n' of a comment as a line break, so a trailing
+        // one would leave a blank line between an option's help and its key.
+        void appendCommentLine(std::string& comment, std::string_view line)
+        {
+            if (!comment.empty())
+                comment += '\n';
+            comment.append(line);
+        }
+
+        constexpr std::string_view kConsumerHeader =
+            "; ROCK.ini - player options\n"
+            "; Change these in game in the RobCo PALM wheel menu, or edit this file. Changes are picked up while "
+            "the game runs.\n"
+            "; Each option has its help above it. Options missing from this file use their defaults.\n"
+            "; When ROCK starts it adds new options with their defaults, rewrites its help lines (the lines "
+            "starting with ;),\n"
+            "; and moves options it no longer reads into the [Unused] block at the end, as comments.\n"
+            "; Your own notes are kept when they start with #.\n"
+            "; Section headers are labels only. If an option appears twice, the last one wins.\n"
+            "; Developer options live in ROCK_Developer.ini, which exists only while a developer option is "
+            "changed.\n"
+            "; README.txt in the ROCK download explains both files.\n\n";
+        constexpr std::string_view kDeveloperHeader =
+            "; ROCK_Developer.ini - developer options\n"
+            "; PALM saves only developer options that differ from their defaults. Resetting an option removes it,\n"
+            "; and this file is removed when no options remain. Changes are picked up while the game runs.\n"
+            "; When ROCK starts it rewrites its help lines (the lines starting with ;) and moves options it no "
+            "longer\n"
+            "; reads into the [Unused] block at the end, as comments. Your own notes are kept when they start "
+            "with #.\n"
+            "; Section headers are labels only. If an option appears twice, the last one wins.\n"
+            "; README.txt in the ROCK download explains both files.\n\n";
+
+        // SimpleIni drops comments that end a file, so retired entries live in
+        // the comment of an empty section that every rewrite carries forward.
+        constexpr const char* kUnusedSection = "Unused";
+        constexpr std::string_view kUnusedPreamble[] = {
+            "; === Not read by this version of ROCK ===",
+            "; ROCK ignores the lines below. They keep your old values for reference; delete them whenever you "
+            "like.",
+        };
+
+        bool isUnusedPreamble(std::string_view line)
+        {
+            return std::find(std::begin(kUnusedPreamble), std::end(kUnusedPreamble), line) !=
+                std::end(kUnusedPreamble);
+        }
     }
 
     Group settingGroup(std::string_view, std::string_view key) noexcept
@@ -189,26 +253,35 @@ namespace rock::config
         return true;
     }
 
-    bool ConfigurationStore::writeFile(Group group, CSimpleIniA& ini, bool replace, std::string_view prefix)
+    bool ConfigurationStore::writeFile(Group group, const CSimpleIniA& ini, bool replace)
     {
-        const auto destination = path(group);
-        std::error_code ec;
-        if (group == Group::Developer && !hasKeys(ini)) {
-            std::filesystem::remove(destination, ec);
-            if (ec)
-                _error = std::format("Cannot remove empty {}: {}", destination.string(), ec.message());
-            return !ec;
-        }
         CSimpleIniA organized;
         if (!organizeFile(group, ini, organized))
             return false;
-        std::string contents(prefix);
-        if (!contents.empty())
-            contents += "\r\n\r\n";
+        if (group == Group::Developer && !hasKeys(organized))
+            return removeDeveloperFile();
+        std::string contents;
         if (organized.Save(contents, false) < 0) {
             _error = "Cannot serialize configuration";
             return false;
         }
+        return publish(group, contents, replace);
+    }
+
+    bool ConfigurationStore::removeDeveloperFile()
+    {
+        const auto destination = path(Group::Developer);
+        std::error_code ec;
+        std::filesystem::remove(destination, ec);
+        if (ec)
+            _error = std::format("Cannot remove empty {}: {}", destination.string(), ec.message());
+        return !ec;
+    }
+
+    bool ConfigurationStore::publish(Group group, std::string_view contents, bool replace)
+    {
+        const auto destination = path(group);
+        std::error_code ec;
         std::filesystem::create_directories(_directory, ec);
         if (ec) {
             _error = std::format("Cannot create {}: {}", _directory.string(), ec.message());
@@ -236,9 +309,9 @@ namespace rock::config
         return true;
     }
 
-    bool ConfigurationStore::completeConsumerDefaults()
+    bool ConfigurationStore::refreshFile(Group group)
     {
-        const auto source = path(Group::Consumer);
+        const auto source = path(group);
         std::string contents;
         {
             std::ifstream input(source, std::ios::binary);
@@ -253,24 +326,25 @@ namespace rock::config
             }
         }
         CSimpleIniA existing;
+        existing.SetUnicode(false);
         existing.SetMultiKey(true);
         if (existing.LoadData(contents) < 0) {
             _error = std::format("Cannot parse {}", source.string());
             return false;
         }
-        const auto keys = indexKeys(existing);
-        CSimpleIniA missing;
-        for (const auto& setting : _settings) {
-            if (setting.group != Group::Consumer || keys.contains(CSimpleIniA::Entry(setting.key.c_str())))
-                continue;
-            if (missing.SetValue(setting.section.c_str(), setting.key.c_str(), setting.defaultValue.c_str()) < 0) {
-                _error = "Cannot prepare missing consumer defaults";
-                return false;
-            }
+        // Organizing writes each recognized key once with its effective (last)
+        // value, so the rewrite cannot change what the loader reads.
+        CSimpleIniA organized;
+        if (!organizeFile(group, existing, organized))
+            return false;
+        if (group == Group::Developer && !hasKeys(organized))
+            return removeDeveloperFile();
+        std::string updated;
+        if (organized.Save(updated, false) < 0) {
+            _error = "Cannot serialize configuration";
+            return false;
         }
-        // Append only absent keys. Re-serializing existing sections could reorder
-        // repeated keys and replace the user's effective value with an older one.
-        return !hasKeys(missing) || writeFile(Group::Consumer, missing, true, contents);
+        return updated == contents || publish(group, updated, true);
     }
 
     bool ConfigurationStore::load(bool createConsumer)
@@ -284,15 +358,20 @@ namespace rock::config
                 return false;
             }
             if (!exists) {
-                CSimpleIniA defaults;
-                if (!materializeConsumerDefaults(defaults))
-                    return false;
-                if (!writeFile(Group::Consumer, defaults, false))
+                // Organizing an empty file writes every player option at its default.
+                const CSimpleIniA empty;
+                if (!writeFile(Group::Consumer, empty, false))
                     return false;
             } else {
-                // An unwritable INI can still be read. Keep the completion error
+                // An unwritable INI can still be read. Keep the refresh error
                 // for the owner to report, then load the user's existing values.
-                (void)completeConsumerDefaults();
+                (void)refreshFile(Group::Consumer);
+            }
+            const bool developerExists = std::filesystem::exists(path(Group::Developer), ec);
+            if (!ec && developerExists) {
+                const auto consumerError = _error;
+                if (!refreshFile(Group::Developer) && !consumerError.empty())
+                    _error = consumerError + "; " + _error;
             }
         }
         CSimpleIniA consumer;
@@ -339,16 +418,6 @@ namespace rock::config
         CSimpleIniA current;
         if (!readFile(group, current))
             return false;
-        if (group == Group::Consumer) {
-            std::error_code ec;
-            const bool exists = std::filesystem::exists(path(group), ec);
-            if (ec) {
-                _error = ec.message();
-                return false;
-            }
-            if (!exists && !materializeConsumerDefaults(current))
-                return false;
-        }
         for (const auto& change : changes) {
             const auto found = std::find_if(_settings.begin(), _settings.end(),
                 [&](const Setting& setting) { return setting.group == group && sameKey(setting.key, change.key); });
@@ -393,30 +462,12 @@ namespace rock::config
         }
     }
 
-    bool ConfigurationStore::materializeConsumerDefaults(CSimpleIniA& ini)
-    {
-        for (const auto& setting : _settings) {
-            if (setting.group == Group::Consumer &&
-                ini.SetValue(setting.section.c_str(), setting.key.c_str(), setting.defaultValue.c_str()) < 0) {
-                _error = "Cannot materialize compiled consumer defaults";
-                return false;
-            }
-        }
-        return true;
-    }
-
+    // Lines starting with ';' belong to ROCK and are rebuilt from the catalog
+    // on every write; lines starting with '#' are the player's notes and stay
+    // with their option. ROCK.ini also gains every missing player option.
     bool ConfigurationStore::organizeFile(Group group, const CSimpleIniA& source, CSimpleIniA& output)
     {
-        const auto header = group == Group::Consumer
-            ? "; ROCK.ini - regular options\n; Created with all regular defaults when missing.\n"
-              "; At startup, missing regular options are added without changing existing entries.\n"
-            : "; ROCK_Developer.ini - developer options\n; Created only after a non-default developer change.\n"
-              "; New files contain only changed options. Existing entries are preserved.\n"
-              "; Resetting an option removes its entry; an empty developer file is removed.\n";
-        if (output.LoadData(std::string(header) +
-                "; Missing options use compiled defaults. Section numbers match the wheel menu.\n"
-                "; Section headers are decorative; key names are case-insensitive within their owning file.\n"
-                "; If a key is repeated, its last occurrence in the file wins.\n\n") < 0) {
+        if (output.LoadData(std::string(group == Group::Consumer ? kConsumerHeader : kDeveloperHeader)) < 0) {
             _error = "Cannot prepare configuration header";
             return false;
         }
@@ -428,40 +479,22 @@ namespace rock::config
             if (setting.group != group)
                 continue;
             const auto found = keys.find(CSimpleIniA::Entry(setting.key.c_str()));
-            if (found == keys.end())
+            if (found == keys.end() && group != Group::Consumer)
                 continue;
-            const auto* value = found->second.value;
+            const char* value = found != keys.end() ? found->second.value : setting.defaultValue.c_str();
 
             std::string comment;
             if (setting.category != previousCategory) {
-                comment = std::format("; === {} ===\n", setting.category);
+                appendCommentLine(comment, std::format("; === {} ===", setting.category));
                 previousCategory = setting.category;
             }
-            const char* existing = found->second.comment;
-            if (existing) {
-                // Rebuild only our category banner. Keep authored per-option help.
-                std::string_view remaining(existing);
-                while (!remaining.empty()) {
-                    const auto end = remaining.find('\n');
-                    auto line = remaining.substr(0, end);
-                    if (!line.empty() && line.back() == '\r')
-                        line.remove_suffix(1);
-                    if (!line.empty() && !(line.starts_with("; === ") && line.ends_with(" ==="))) {
-                        comment.append(line);
-                        comment += '\n';
-                    }
-                    if (end == std::string_view::npos)
-                        break;
-                    remaining.remove_prefix(end + 1);
-                }
-            } else if (!setting.description.empty()) {
-                comment += "; ";
-                for (const char c : setting.description) {
-                    comment += c;
-                    if (c == '\n')
-                        comment += "; ";
-                }
-                comment += '\n';
+            forEachLine(setting.description,
+                [&](std::string_view line) { appendCommentLine(comment, std::format("; {}", line)); });
+            if (found != keys.end() && found->second.comment) {
+                forEachLine(found->second.comment, [&](std::string_view line) {
+                    if (line.front() == '#')
+                        appendCommentLine(comment, line);
+                });
             }
             if (output.SetValue(setting.section.c_str(), setting.key.c_str(), value,
                     comment.empty() ? nullptr : comment.c_str()) < 0) {
@@ -471,18 +504,51 @@ namespace rock::config
             writtenKeys.emplace(setting.key.c_str());
         }
 
-        // Explicit writes organize recognized settings using their effective
-        // value/comment once. Preserve unknown and other-file entries as data;
-        // copying shadowed recognized keys would reintroduce stale overrides.
+        // Every other entry is one ROCK does not read from this file: a retired
+        // option, an option owned by the other file, or a foreign key. Keep it
+        // as a comment so the value stays visible but can never apply. Shadowed
+        // copies of recognized keys are dropped; they never applied either.
+        std::vector<std::string> unused;
+        const auto addUnused = [&](std::string line) {
+            // Trailing blanks would not survive a reload and would break deduplication.
+            line.erase(line.find_last_not_of(" \t") + 1);
+            if (std::find(unused.begin(), unused.end(), line) == unused.end())
+                unused.push_back(std::move(line));
+        };
         CSimpleIniA::TNamesDepend sections;
         source.GetAllSections(sections);
+        sections.sort(CSimpleIniA::Entry::LoadOrder());
         for (const auto& section : sections) {
-            for (const auto& [key, value] : *source.GetSection(section.pItem)) {
-                if (!writtenKeys.contains(key) && output.SetValue(section.pItem, key.pItem, value, key.pComment) < 0) {
-                    _error = "Cannot preserve external configuration option";
-                    return false;
-                }
+            if (section.pComment && sameKey(section.pItem, kUnusedSection)) {
+                forEachLine(section.pComment, [&](std::string_view line) {
+                    if (!isUnusedPreamble(line))
+                        addUnused(std::string(line));
+                });
             }
+        }
+        for (const auto& section : sections) {
+            CSimpleIniA::TNamesDepend entries;
+            source.GetAllKeys(section.pItem, entries);
+            entries.sort(CSimpleIniA::Entry::LoadOrder());
+            for (const auto& key : entries) {
+                if (writtenKeys.contains(key))
+                    continue;
+                CSimpleIniA::TNamesDepend values;
+                source.GetAllValues(section.pItem, key.pItem, values);
+                for (const auto& value : values)
+                    addUnused(std::format("; {} = {}", key.pItem, value.pItem));
+            }
+        }
+        if (unused.empty())
+            return true;
+        std::string comment;
+        for (const auto line : kUnusedPreamble)
+            appendCommentLine(comment, line);
+        for (const auto& line : unused)
+            appendCommentLine(comment, line);
+        if (output.SetValue(kUnusedSection, nullptr, nullptr, comment.c_str()) < 0) {
+            _error = "Cannot keep unused configuration entries";
+            return false;
         }
         return true;
     }

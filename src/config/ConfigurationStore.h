@@ -37,9 +37,11 @@ namespace rock::config
     // Owned and serialized by RockConfig. Configuration tasks save/visit through
     // that owner; only its runtime reload applies the catalog to live settings.
     // INI sections are labels. Case-insensitive keys identify settings within
-    // their owning file; the last physical occurrence wins. Startup appends missing
-    // consumer defaults without rewriting existing text; hot reload only reads.
-    // Explicit writes retain effective values under the catalog's display labels.
+    // their owning file; the last physical occurrence wins. Startup and explicit
+    // writes organize each existing file the same way: effective values under the
+    // catalog's labels and help, missing player options added, entries ROCK does
+    // not read kept only as comments. Startup writes only when that text differs;
+    // hot reload only reads.
     class ConfigurationStore
     {
     public:
@@ -58,10 +60,11 @@ namespace rock::config
 
     private:
         bool readFile(Group group, CSimpleIniA& ini);
-        bool completeConsumerDefaults();
-        bool materializeConsumerDefaults(CSimpleIniA& ini);
+        bool refreshFile(Group group);
         bool organizeFile(Group group, const CSimpleIniA& source, CSimpleIniA& output);
-        bool writeFile(Group group, CSimpleIniA& ini, bool replace, std::string_view prefix = {});
+        bool writeFile(Group group, const CSimpleIniA& ini, bool replace);
+        bool removeDeveloperFile();
+        bool publish(Group group, std::string_view contents, bool replace);
         std::filesystem::path _directory;
         std::vector<Setting> _settings;
         std::string _error;

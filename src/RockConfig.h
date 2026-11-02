@@ -93,7 +93,7 @@ namespace rock
         float rockShotgunOneHandRecoilPercent = 300.0f;
         float rockShotgunTwoHandRecoilPercent = 80.0f;
         float rockHeavyOneHandRecoilPercent = 300.0f;
-        float rockHeavyTwoHandRecoilPercent = 292.1f;
+        float rockHeavyTwoHandRecoilPercent = 300.0f;
         float rockDefaultOneHandRecoilPercent = 300.0f;
         float rockDefaultTwoHandRecoilPercent = 80.0f;
 
@@ -128,12 +128,12 @@ namespace rock
         // 1: Minimal; 2: Immersive; 3: Vanilla.
         int rockAmmoCounterStyle = 1;
 
-        // Default hand: the firing hand for equips that carry no physical
+        // sDefaultHand: the firing hand for equips that carry no physical
         // hand (favorites, PALM, scripts) and the grenade preference. Physical
         // Pip-Boy/trigger equips, grip handoffs and shoulder retrieval keep
         // the acting hand. Several weapons may always be equipped; firing
         // belongs to whichever hand holds a weapon's firing grip.
-        bool rockLeftHandedMode = false;
+        bool rockDefaultHandLeft = false;
         // Left firing-hand aim correction for the mirrored hold.
         float rockLeftFiringAimYawDegrees = 0.0f;
         float rockLeftFiringAimPitchDegrees = 0.0f;
@@ -203,13 +203,11 @@ namespace rock
         bool rockEnableVanillaMelee = true;
         float rockVanillaMeleeSwingSpeed = 300.0f;
         float rockVanillaGunBashSpeed = 400.0f;
-        bool rockNativeCharacterControllerObjectContactFilterEnabled = true;
 
         bool rockHighlightEnabled = true;
         int rockHighlightIntensityMode = 2;
         std::string rockHighlightColor = "blue";
 
-        bool rockDebugDisableTriggerEquipBridge = false;
         bool rockDebugShowColliders = false;
         bool rockDebugShowTargetColliders = false;
         bool rockDebugShowHandAxes = false;

@@ -438,11 +438,6 @@ namespace rock
 
     void PhysicsInteraction::updateNativePlayerCollisionFilter(RE::bhkWorld* bhk, RE::hknpWorld* hknp, float deltaSeconds)
     {
-        if (!g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled) {
-            clearNativePlayerCollisionFilter(hknp);
-            return;
-        }
-
         if (!bhk || !hknp) {
             native_player_collision::abandon();
             return;

@@ -161,7 +161,7 @@ namespace rock
             return;
         }
         const bool isLeft = force_grab_policy::selectGrenadeHand(
-            false, rightFree, leftFree, g_rockConfig.rockLeftHandedMode).hand == force_grab_policy::HandChoice::Left;
+            false, rightFree, leftFree, g_rockConfig.rockDefaultHandLeft).hand == force_grab_policy::HandChoice::Left;
         auto location = (isLeft ? frame.left : frame.right).grabAnchorWorld;
         location.z -= 3.0f;
         const auto drop = loose_grenade_runtime::dropEquippedThrowableToWorld(location);

@@ -225,15 +225,7 @@ namespace rock
         if (_bridge.isActive()) {
             _bridge.shutdown();
         }
-        _bridgeDisabledForTest = source == Source::HeldTriggerEquip &&
-            g_rockConfig.rockDebugDisableTriggerEquipBridge;
-        auto handoffInput = bridgeInput;
-        handoffInput.handPoseOnly = _bridgeDisabledForTest;
-        const bool bridgeStarted = _bridge.begin(handoffInput);
-        if (_bridgeDisabledForTest) {
-            releasePendingNativeCull(true);
-            ROCK_LOG_INFO(Weapon, "Trigger equip visual bridge disabled for test form={:08X}; native presentation exposed, hand continuity retained", expected.formID);
-        }
+        const bool bridgeStarted = _bridge.begin(bridgeInput);
         _heldBridgeStarted = bridgeStarted && _heldTransfer.active();
         _holdNativeUntilHandoff = source == Source::InventoryEquip && !bridgeStarted;
         _expectedIdentity = expected;
@@ -860,7 +852,7 @@ namespace rock
                 input.leftCarrySolvedWeaponWorldValid,
             .leftCarrySolvedWeaponWorld = input.leftCarrySolvedWeaponWorld,
         });
-        if (!_bridgeDisabledForTest && (_heldTransfer.phase == held_weapon_transfer::Phase::AwaitGrip || _holdNativeUntilHandoff) &&
+        if ((_heldTransfer.phase == held_weapon_transfer::Phase::AwaitGrip || _holdNativeUntilHandoff) &&
             !_bridge.isActive() && visual.exactInstance && equipped_weapon_visual_state::isLocallyVisible(visual.exactInstance)) {
             // Native geometry may arrive after the model bridge has gone
             // (notably menu recovery). Hide only until actual hand acquisition,
@@ -933,7 +925,6 @@ namespace rock
         resetDrawRecoveryClock(false);
         _observationInitialized = false;
         _active = false;
-        _bridgeDisabledForTest = false;
         _waitingForExpectedIdentity = false;
         _requestCurrentPending = false;
         _wasMenuBlocking = false;
@@ -977,7 +968,6 @@ namespace rock
         resetDrawRecoveryClock(false);
         _observationInitialized = false;
         _active = false;
-        _bridgeDisabledForTest = false;
         _waitingForExpectedIdentity = false;
         _requestCurrentPending = false;
         _wasMenuBlocking = false;
@@ -1185,7 +1175,6 @@ namespace rock
         _activeSeconds = 0.0f;
         resetDrawRecoveryClock(false);
         _active = false;
-        _bridgeDisabledForTest = false;
         _waitingForExpectedIdentity = false;
         _lateRecoveryWindowGranted = false;
         _drawExhaustionLogged = false;

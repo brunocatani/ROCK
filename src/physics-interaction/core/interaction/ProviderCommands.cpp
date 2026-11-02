@@ -159,7 +159,7 @@ namespace rock
                 const bool rightFree = forceGrabHandBlockerMask(_rightHand, false, frame.right.disabled, true) == 0;
                 const bool leftFree = forceGrabHandBlockerMask(_leftHand, true, frame.left.disabled, true) == 0;
                 const auto choice = force_grab_policy::selectGrenadeHand(
-                    false, rightFree, leftFree, inventoryThrowable && g_rockConfig.rockLeftHandedMode);
+                    false, rightFree, leftFree, inventoryThrowable && g_rockConfig.rockDefaultHandLeft);
                 if (!rightFree && !leftFree) {
                     f4vr::showNotification("ROCK: Cannot take item - neither hand is free.");
                     complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::HandBusy);

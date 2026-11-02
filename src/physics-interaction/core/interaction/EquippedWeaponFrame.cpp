@@ -1055,7 +1055,7 @@ namespace rock
         // the Pip-Boy closed, the weapon drawn and this exact item equipped.
         const bool directedPrimaryPending = directedPrimary.sequence != _equipped.directedPrimarySequence;
         const bool primaryDefaultLeft = prepared.secondaryEquipped ? prepared.secondaryRight :
-            directedPrimaryMatches ? directedPrimary.left : g_rockConfig.rockLeftHandedMode;
+            directedPrimaryMatches ? directedPrimary.left : g_rockConfig.rockDefaultHandLeft;
         if (equipGrip.pending && equipGrip.source == StartSource::DefaultEquip &&
             (!primaryDefaultLeft || !pendingGripMatches || !runtime.weaponDrawn)) {
             equipGrip = {};
@@ -2616,7 +2616,7 @@ namespace rock
             ::rock::provider::getHandlingAuthorityRequest(request);
         const auto weaponClassification = _weaponCollision.getEquippedWeaponClassification();
         const RockEquippedWeaponHandlingBaseline rockBaseline{
-            .leftHandedModeEnabled = g_rockConfig.rockLeftHandedMode,
+            .leftHandedModeEnabled = g_rockConfig.rockDefaultHandLeft,
             // Firing belongs to whichever hand holds the firing grip; the
             // handoff is the general rule, not an option.
             .ambidextrousHandoffEnabled = true,

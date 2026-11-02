@@ -84,9 +84,6 @@ namespace rock
             RE::NiTransform firingHandWeaponLocal{};
             float timeoutSeconds = 1.0f;
             float blendSeconds = 0.15f;
-            // Preserve hand continuity without attaching a visual model or
-            // hiding the native weapon (bridge-off latency tests).
-            bool handPoseOnly = false;
             // worldModel is another equipped first-person model (a promoted
             // second weapon), not a loose 3D. Its root is not registered to
             // the native Weapon node, so it neither follows the left carry
@@ -151,7 +148,7 @@ namespace rock
 
         [[nodiscard]] bool isActive() const noexcept { return _active; }
         [[nodiscard]] bool presentationLeaseWouldExpire(float deltaSeconds) const noexcept;
-        [[nodiscard]] bool hasVisualModel() const noexcept { return _model != nullptr && !_handPoseOnly; }
+        [[nodiscard]] bool hasVisualModel() const noexcept { return _model != nullptr; }
         [[nodiscard]] bool isModelPresented() const noexcept { return _modelPresented; }
         // Transition seam diagnostic only.
         [[nodiscard]] const RE::NiAVObject* traceModel() const noexcept { return _model.get(); }
@@ -240,7 +237,6 @@ namespace rock
         bool _meleeWeapon = false;
         bool _isLeftHand = false;
         bool _modelPresented = false;
-        bool _handPoseOnly = false;
         bool _equippedModelSource = false;
         bool _culledNativeInstanceWasVisible = false;
         bool _handPoseHandoffActive = false;

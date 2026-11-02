@@ -172,7 +172,7 @@ namespace rock::native_hand_equipment
             const auto secondary = s_secondaryHand;
             ReleaseSRWLockShared(&s_secondaryHandLock);
             const bool left = sameItem(secondary.form, secondary.instance, worn[1].form, worn[1].instance) ?
-                !secondary.left : g_rockConfig.rockLeftHandedMode;
+                !secondary.left : g_rockConfig.rockDefaultHandLeft;
             return { form, instance, left, true };
         }
 

@@ -64,7 +64,7 @@ namespace rock::loot_to_hand
                     return RE::BSEventNotifyControl::kContinue;
                 }
                 // The primary wand is the primary hand (right, or left in left-handed mode).
-                const bool primaryIsLeft = g_rockConfig.rockLeftHandedMode;
+                const bool primaryIsLeft = g_rockConfig.rockDefaultHandLeft;
                 const bool preferLeft = primaryWand ? primaryIsLeft : !primaryIsLeft;
                 bool queued = false;
                 {
