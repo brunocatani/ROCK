@@ -880,6 +880,24 @@ namespace rock
 
         if (_equipped.gripResumePending && frik_hand_world_authority::hasCalibratedRawHandFrame(false) &&
             frik_hand_world_authority::hasCalibratedRawHandFrame(true)) {
+            /*
+             * A Pip-Boy equip in the menu that gave the carried item to the
+             * other hand supersedes the carry saved when the menu opened.
+             * Resumed, the carry pulled the weapon back to the old hand, which
+             * may now hold the second weapon, and the directed move waited
+             * behind its pending grip with the weapon culled (bench 2 Nov
+             * 16:07:22). The directed move then applies as for any equip.
+             */
+            const auto directed = native_hand_equipment::lastDirectedPrimaryEquip();
+            auto& carry = _equipped.continuityGrip;
+            if (carry.pending && directed.sequence != 0 && directed.sequence != _equipped.directedPrimarySequence &&
+                directed.form == carry.targetWeaponFormID && directed.instance == carry.targetWeaponInstanceData &&
+                (directed.left != carry.isLeft || carry.supportGrip.validCarry())) {
+                ROCK_LOG_INFO(Weapon, "Equipped grip resume dropped form={:08X}: the Pip-Boy moved it from hand={} to hand={}",
+                    carry.targetWeaponFormID, carry.isLeft ? "left" : "right", directed.left ? "left" : "right");
+                carry = {};
+                _equipped.resumeAwaitingHold = {};
+            }
             _equipped.transition.resumeMenuGrip(_equipped.continuityGrip,
                 _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire),
                 _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire));
