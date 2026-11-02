@@ -1,3 +1,5 @@
+// PhysicsInteraction's lifecycle state machine as published to the Core
+// provider: world and generation tracking, and when physics writes are allowed.
 #pragma once
 
 #include <ROCK/Core.h>

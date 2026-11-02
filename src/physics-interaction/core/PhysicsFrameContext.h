@@ -1,3 +1,6 @@
+// PhysicsFrameContext: the worlds, timing and both hands' inputs for one
+// PhysicsInteraction frame, built once by buildFrameContext and passed to
+// every stage.
 #pragma once
 
 #include "physics-interaction/timing/GameFrameTimingPolicy.h"

@@ -1,3 +1,5 @@
+// A force grab that cannot finish on the frame it was requested: the target
+// reference, the phase it waits in, and what to attach once it settles.
 #pragma once
 
 #include <cstdint>

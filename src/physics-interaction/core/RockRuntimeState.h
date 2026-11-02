@@ -1,3 +1,6 @@
+// The per-frame runtime snapshot every ROCK subsystem reads: frame index and
+// timing, menu and pause state, weapon drawn, skeleton readiness and the
+// player-space frame. Built once per game frame (beginFrameTiming, updateFrame).
 #pragma once
 
 #include "physics-interaction/timing/GameFrameTimingPolicy.h"

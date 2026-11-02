@@ -1,3 +1,6 @@
+// Which hand may accept a force grab (provider world grab, inventory transfer,
+// grenade quick draw): the reasons a hand is busy, as a bit mask, and the
+// grenade hand choice built on it.
 #pragma once
 
 #include <cstdint>
