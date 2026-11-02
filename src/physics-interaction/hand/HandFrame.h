@@ -2,12 +2,18 @@
 
 #include <array>
 #include <atomic>
+#include <cmath>
+#include "RE/NetImmerse/NiPoint.h"
+#include "RE/NetImmerse/NiTransform.h"
+#include "RockConfig.h"
+#include "physics-interaction/hand/HandColliderTypes.h"
+#include "physics-interaction/hand/HandSelection.h"
 
 /*
  * Hand frame helpers are grouped here because handspace convention, palm transform, and pointing direction define the same coordinate authority.
  */
 
-// ---- HandspaceConvention.h ----
+// ---- Handspace convention ----
 
 namespace rock::handspace_convention
 {
@@ -43,15 +49,7 @@ namespace rock::handspace_convention
     }
 }
 
-// ---- PalmTransform.h ----
-
-#include <cmath>
-
-#include "RE/NetImmerse/NiPoint.h"
-#include "RE/NetImmerse/NiTransform.h"
-#include "RockConfig.h"
-#include "physics-interaction/hand/HandColliderTypes.h"
-#include "physics-interaction/hand/HandSelection.h"
+// ---- Palm transform ----
 
 namespace rock
 {

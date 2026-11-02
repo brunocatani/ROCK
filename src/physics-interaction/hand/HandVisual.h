@@ -8,14 +8,13 @@
  * decisions.
  */
 
-// ---- HandVisualLerpMath.h ----
-
-#include "physics-interaction/TransformMath.h"
-
 #include <algorithm>
 #include <cmath>
 #include <functional>
 #include <utility>
+#include "physics-interaction/TransformMath.h"
+
+// ---- Hand visual lerp math ----
 
 namespace rock::hand_visual_lerp_math
 {

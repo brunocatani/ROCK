@@ -4,7 +4,16 @@
  * Weapon support-grip behavior is grouped here so support authority, pose policy, and the two-handed solver evolve as one coherent subsystem.
  */
 
-// ---- WeaponSupportAuthorityPolicy.h ----
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <limits>
+#include "physics-interaction/TransformMath.h"
+#include "physics-interaction/VectorMath.h"
+#include "physics-interaction/weapon/classification/WeaponTypes.h"
+#include "physics-interaction/weapon/immersive/ImmersiveWeaponPolicy.h"
+
+// ---- Weapon support authority policy ----
 
 /*
  * Equipped-weapon support authority is selected by distance from the firing
@@ -14,12 +23,6 @@
  * full two-handed manipulation authority. Explicit provider grab modes remain
  * authoritative and bypass this proximity contract.
  */
-
-#include "physics-interaction/TransformMath.h"
-#include "physics-interaction/VectorMath.h"
-#include "physics-interaction/weapon/immersive/ImmersiveWeaponPolicy.h"
-
-#include <cstdint>
 
 namespace rock::weapon_support_authority_policy
 {
@@ -134,9 +137,7 @@ namespace rock::weapon_support_authority_policy
 
 }
 
-// ---- WeaponSupportGripPolicy.h ----
-
-#include "physics-interaction/weapon/classification/WeaponTypes.h"
+// ---- Weapon support grip policy ----
 
 namespace rock::weapon_support_grip_policy
 {
@@ -206,7 +207,7 @@ namespace rock::weapon_support_grip_policy
     }
 }
 
-// ---- EquippedWeaponManualOwnershipPolicy.h ----
+// ---- Equipped weapon manual ownership policy ----
 
 namespace rock::equipped_weapon_manual_ownership_policy
 {
@@ -463,7 +464,7 @@ namespace rock::equipped_weapon_manual_ownership_policy
     }
 }
 
-// ---- WeaponTwoHandedGripMath.h ----
+// ---- Weapon two handed grip math ----
 
 namespace rock
 {
@@ -626,13 +627,7 @@ namespace rock::weapon_two_handed_grip_math
     }
 }
 
-// ---- WeaponTwoHandedSolver.h ----
-
-#include "physics-interaction/TransformMath.h"
-
-#include <algorithm>
-#include <cmath>
-#include <limits>
+// ---- Weapon two handed solver ----
 
 namespace rock
 {

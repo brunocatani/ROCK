@@ -4,15 +4,15 @@
  * Weapon type declarations are grouped here so semantic IDs, evidence payloads, and hard limits stay in one stable public weapon surface without changing their namespaces.
  */
 
-// ---- WeaponSemanticTypes.h ----
-
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
-
+#include <vector>
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
+
+// ---- Weapon semantic types ----
 
 namespace RE
 {
@@ -345,11 +345,7 @@ namespace rock
     };
 }
 
-// ---- WeaponCollisionEvidence.h ----
-
-#include <cstdint>
-#include <string>
-#include <vector>
+// ---- Weapon collision evidence ----
 
 namespace rock
 {
@@ -451,9 +447,7 @@ namespace rock
     }
 }
 
-// ---- WeaponCollisionLimits.h ----
-
-#include <cstddef>
+// ---- Weapon collision limits ----
 
 namespace rock
 {

@@ -4,19 +4,28 @@
  * Grab finger helpers are grouped here so pose math and live runtime transform sampling stay in one hand-contact surface.
  */
 
-// ---- GrabFingerPoseMath.h ----
-
 #include <algorithm>
 #include <array>
 #include <bitset>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <string_view>
 #include <vector>
-
+#include "RE/NetImmerse/NiTransform.h"
+#include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/TransformMath.h"
 #include "physics-interaction/VectorMath.h"
 #include "physics-interaction/grab/GeneratedGrabFingerCalibration.h"
+#include "physics-interaction/grab/MeshGrab.h"
+#include "physics-interaction/hand/HandFrame.h"
+#include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
+#include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
+
+// ---- Grab finger pose math ----
 
 namespace rock::grab_finger_pose_math
 {
@@ -1821,18 +1830,7 @@ namespace rock::grab_finger_pose_math
     }
 }
 
-// ---- GrabFingerPoseRuntime.h ----
-
-#include "physics-interaction/grab/MeshGrab.h"
-#include "physics-interaction/hand/HandFrame.h"
-#include "physics-interaction/hand/HandSkeleton.h"
-
-#include "RE/NetImmerse/NiTransform.h"
-
-#include <algorithm>
-#include <array>
-#include <cmath>
-#include <vector>
+// ---- Grab finger pose runtime ----
 
 namespace rock::grab_finger_pose_runtime
 {
@@ -3957,7 +3955,7 @@ namespace rock::grab_finger_pose_runtime
     }
 }
 
-// ---- GrabFingerLocalTransformMath.h ----
+// ---- Grab finger local transform math ----
 
 /*
  * ROCK gets convincing wrapped fingers by driving the visible skeleton, not by
@@ -3966,11 +3964,6 @@ namespace rock::grab_finger_pose_runtime
  * curls, and this policy decides when ROCK may add bounded surface-aim
  * corrections to that baseline.
  */
-
-#include <algorithm>
-#include <cmath>
-#include <cstddef>
-#include <cstdint>
 
 namespace rock::grab_finger_local_transform_math
 {
@@ -4324,7 +4317,7 @@ namespace rock::grab_finger_local_transform_math
     }
 }
 
-// ---- GrabFingerLocalTransformRuntime.h ----
+// ---- Grab finger local transform runtime ----
 
 /*
  * ROCK publishes full-hand local transforms only after FRIK has generated the
@@ -4334,20 +4327,6 @@ namespace rock::grab_finger_local_transform_math
  * displayed finger rotations never become a new pose baseline in Current mode.
  * June2 deliberately restores live-chain aiming, with the same validation.
  */
-
-#include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/TransformMath.h"
-#include "physics-interaction/hand/HandSkeleton.h"
-#include "physics-interaction/hand/HandVisual.h"
-#include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
-
-#include "RE/NetImmerse/NiTransform.h"
-
-#include <algorithm>
-#include <array>
-#include <cmath>
-#include <cstdint>
-#include <string_view>
 
 namespace rock::grab_finger_local_transform_runtime
 {
@@ -5064,7 +5043,7 @@ namespace rock::grab_finger_local_transform_runtime
     }
 }
 
-// ---- GrabFingerFrozenMeshRuntime.h ----
+// ---- Grab finger frozen mesh runtime ----
 
 /*
  * The indexed frozen-mesh base owns the common authored-open anchor, bounded

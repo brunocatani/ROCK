@@ -4,17 +4,21 @@
  * Hand skeleton helpers are grouped here so direct skeleton reads, cached hand frames, root-flattened runtime, and frame resolution stay on one authority path.
  */
 
-// ---- DirectSkeletonBoneReader.h ----
-
+#include <algorithm>
 #include <array>
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
-
+#include "RE/NetImmerse/NiNode.h"
+#include "RE/NetImmerse/NiPoint.h"
+#include "RE/NetImmerse/NiTransform.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/hand/RenderedBoneTransportPolicy.h"
 
-#include "RE/NetImmerse/NiTransform.h"
+// ---- Direct skeleton bone reader ----
 
 namespace rock
 {
@@ -116,11 +120,7 @@ namespace rock
     };
 }
 
-// ---- HandBoneCache.h ----
-
-#include "RE/NetImmerse/NiTransform.h"
-
-#include <string_view>
+// ---- Hand bone cache ----
 
 namespace rock
 {
@@ -247,7 +247,7 @@ namespace rock
     };
 }
 
-// ---- RootFlattenedFingerSkeletonRuntime.h ----
+// ---- Root flattened finger skeleton runtime ----
 
 /*
  * ROCK's runtime hand geometry is sourced from the live root-flattened FO4VR
@@ -256,14 +256,6 @@ namespace rock
  * snapshot for collider, pose, and debug systems while leaving final pose
  * publication to the FRIK API.
  */
-
-#include "RE/NetImmerse/NiPoint.h"
-
-#include <algorithm>
-#include <array>
-#include <cmath>
-#include <cstddef>
-#include <string>
 
 namespace rock::root_flattened_finger_skeleton_runtime
 {
@@ -384,10 +376,7 @@ namespace rock::root_flattened_finger_skeleton_runtime
         SkeletonBoneCaptureSpace space = SkeletonBoneCaptureSpace::Controller);
 }
 
-// ---- HandFrameResolver.h ----
-
-#include "RE/NetImmerse/NiNode.h"
-#include "RE/NetImmerse/NiTransform.h"
+// ---- Hand frame resolver ----
 
 namespace rock
 {

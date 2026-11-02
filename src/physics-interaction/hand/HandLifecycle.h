@@ -1,14 +1,18 @@
 #pragma once
 
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include "physics-interaction/VectorMath.h"
+#include "physics-interaction/hand/HandColliderTypes.h"
 
 /*
  * Hand lifecycle helpers are grouped here so lifecycle state, semantic contact state, and collision suppression share one hand-state policy surface.
  */
 
-// ---- HandLifecyclePolicy.h ----
-
-#include <cstddef>
+// ---- Hand lifecycle policy ----
 
 namespace rock::hand_lifecycle_policy
 {
@@ -26,9 +30,7 @@ namespace rock::hand_lifecycle_policy
     }
 }
 
-// ---- HandState.h ----
-
-#include <cstdint>
+// ---- Hand state ----
 
 namespace rock
 {
@@ -53,15 +55,7 @@ namespace rock
     };
 }
 
-// ---- HandSemanticContactState.h ----
-
-#include "physics-interaction/hand/HandColliderTypes.h"
-
-#include <algorithm>
-#include <array>
-#include <cmath>
-#include <cstddef>
-#include <cstdint>
+// ---- Hand semantic contact state ----
 
 namespace rock::hand_semantic_contact_state
 {
@@ -290,13 +284,7 @@ namespace rock::hand_semantic_contact_state
     }
 }
 
-// ---- HandCollisionSuppressionMath.h ----
-
-#include <algorithm>
-#include <array>
-#include <cmath>
-#include <cstddef>
-#include <cstdint>
+// ---- Hand collision suppression math ----
 
 namespace rock::hand_collision_suppression_math
 {

@@ -4,8 +4,6 @@
  * Weapon authority helpers are grouped here because lifecycle, visual authority, muzzle authority, and visual composition all decide final weapon ownership.
  */
 
-// ---- WeaponAuthorityLifecyclePolicy.h ----
-
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -13,6 +11,10 @@
 #include <cstdint>
 #include <limits>
 #include <string_view>
+#include "physics-interaction/TransformMath.h"
+#include "physics-interaction/weapon/classification/WeaponTypes.h"
+
+// ---- Weapon authority lifecycle policy ----
 
 namespace rock::weapon_authority_lifecycle_policy
 {
@@ -30,11 +32,7 @@ namespace rock::weapon_authority_lifecycle_policy
 
 }
 
-// ---- WeaponVisualAuthorityMath.h ----
-
-#include "physics-interaction/TransformMath.h"
-
-#include <array>
+// ---- Weapon visual authority math ----
 
 namespace rock::weapon_visual_authority_math
 {
@@ -182,7 +180,7 @@ namespace rock::weapon_visual_authority_math
 
 }
 
-// ---- NativeScopeRotationMath.h ----
+// ---- Native scope rotation math ----
 
 namespace rock::native_scope_rotation_math
 {
@@ -249,7 +247,7 @@ namespace rock::native_scope_rotation_math
     }
 }
 
-// ---- NativeScopeCameraFollowMath.h ----
+// ---- Native scope camera follow math ----
 
 namespace rock::native_scope_camera_follow_math
 {
@@ -378,7 +376,7 @@ namespace rock::native_scope_camera_follow_math
 
 }
 
-// ---- NativeScopeOverlayFollowMath.h ----
+// ---- Native scope overlay follow math ----
 
 namespace rock::native_scope_overlay_follow_math
 {
@@ -457,7 +455,7 @@ namespace rock::native_scope_overlay_follow_math
     }
 }
 
-// ---- LeftFiringPositionOnlyMath.h ----
+// ---- Left firing position only math ----
 
 namespace rock::left_firing_position_only_math
 {
@@ -592,7 +590,7 @@ namespace rock::left_firing_position_only_math
     }
 }
 
-// ---- ScopeSafeHandFrameMath.h ----
+// ---- Scope safe hand frame math ----
 
 namespace rock::scope_safe_hand_frame_math
 {
@@ -881,7 +879,7 @@ namespace rock::scope_safe_hand_frame_math
     }
 }
 
-// ---- WeaponMuzzleAuthorityMath.h ----
+// ---- Weapon muzzle authority math ----
 
 namespace rock::weapon_muzzle_authority_math
 {
@@ -899,10 +897,7 @@ namespace rock::weapon_muzzle_authority_math
     }
 }
 
-// ---- WeaponVisualCompositionPolicy.h ----
-
-#include <cstdint>
-#include <string_view>
+// ---- Weapon visual composition policy ----
 
 namespace rock::weapon_visual_composition_policy
 {
@@ -971,11 +966,7 @@ namespace rock::weapon_visual_composition_policy
 
 }
 
-// ---- WeaponGeneratedSourceCompletenessPolicy.h ----
-
-#include "physics-interaction/weapon/classification/WeaponTypes.h"
-
-#include <cstdint>
+// ---- Weapon generated source completeness policy ----
 
 namespace rock::weapon_generated_source_completeness_policy
 {
@@ -1171,7 +1162,7 @@ namespace rock::weapon_generated_source_completeness_policy
     }
 }
 
-// ---- WeaponGenerationIdentityPolicy.h ----
+// ---- Weapon generation identity policy ----
 
 namespace rock::weapon_generation_identity_policy
 {

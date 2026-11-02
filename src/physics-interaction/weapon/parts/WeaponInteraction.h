@@ -4,10 +4,12 @@
  * Weapon interaction routing is grouped here so offhand reservation and semantic route selection stay together without becoming part of collision generation.
  */
 
-// ---- WeaponInteractionRouter.h ----
-
+#include <ROCK/Grab.h>
+#include <cstdint>
 #include "physics-interaction/weapon/classification/WeaponTypes.h"
 #include "physics-interaction/weapon/grip/WeaponSupport.h"
+
+// ---- Weapon interaction router ----
 
 namespace rock
 {
@@ -103,11 +105,7 @@ namespace rock
     }
 }
 
-// ---- OffhandInteractionReservation.h ----
-
-#include <cstdint>
-
-#include <ROCK/Grab.h>
+// ---- Offhand interaction reservation ----
 
 namespace rock
 {

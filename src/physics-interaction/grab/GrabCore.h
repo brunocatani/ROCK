@@ -1,17 +1,29 @@
 #pragma once
-#include "physics-interaction/weapon/authored/AuthoredWeaponGripPose.h"
-
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <span>
+#include <utility>
+#include <vector>
+#include "RE/NetImmerse/NiPoint.h"
+#include "RE/NetImmerse/NiTransform.h"
+#include "physics-interaction/TransformMath.h"
 #include "physics-interaction/VectorMath.h"
+#include "physics-interaction/grab/GrabContact.h"
+#include "physics-interaction/grab/GrabInteractionPolicy.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/grab/HeldContactMeshCache.h"
+#include "physics-interaction/hand/HandColliderTypes.h"
+#include "physics-interaction/object/ObjectPhysicsBodySet.h"
+#include "physics-interaction/object/PhysicsBodyClassifier.h"
+#include "physics-interaction/weapon/authored/AuthoredWeaponGripPose.h"
 
 /*
  * Grab core policy is grouped here to keep object preparation, lifecycle, canonical frames, frame math, interaction decisions, and pull motion together.
  */
 
-// ---- ActiveObjectPrepPolicy.h ----
-
-#include <cstdint>
+// ---- Active object prep policy ----
 
 namespace rock::active_object_prep_policy
 {
@@ -31,7 +43,7 @@ namespace rock::active_object_prep_policy
     }
 }
 
-// ---- ActiveGrabBodyLifecycle.h ----
+// ---- Active grab body lifecycle ----
 
 /*
  * Active grab lifecycle is captured as a full object-body snapshot because
@@ -42,13 +54,6 @@ namespace rock::active_object_prep_policy
  * can apply them without re-deriving intent from whichever body happened to
  * become the primary constraint target.
  */
-
-#include "physics-interaction/object/ObjectPhysicsBodySet.h"
-#include "physics-interaction/object/PhysicsBodyClassifier.h"
-
-#include <algorithm>
-#include <cstdint>
-#include <vector>
 
 namespace rock::active_grab_body_lifecycle
 {
@@ -525,7 +530,7 @@ namespace rock
     }
 }
 
-// ---- CanonicalGrabFrame.h ----
+// ---- Canonical grab frame ----
 
 /*
  * ROCK keeps one canonical object-local grab frame so constraint pivots, visible
@@ -535,14 +540,6 @@ namespace rock
  * the existing transform convention while making the grab frame an explicit piece
  * of held-object state.
  */
-
-#include "RE/NetImmerse/NiPoint.h"
-#include "RE/NetImmerse/NiTransform.h"
-#include "physics-interaction/grab/GrabContact.h"
-
-#include <array>
-#include <cstdint>
-#include <vector>
 
 namespace RE
 {
@@ -830,11 +827,9 @@ namespace rock
     };
 }
 
-// ---- GrabInteractionPolicy.h ----
+// ---- Grab interaction policy ----
 
-#include "physics-interaction/grab/GrabInteractionPolicy.h"
-
-// ---- GrabFrameMath.h ----
+// ---- Grab frame math ----
 
 /*
  * ROCK's calibrated grab pivot is authored in semantic handspace, but the live
@@ -844,12 +839,6 @@ namespace rock
  * split explicit so pivot A, pivot B, captured object frames, and debug
  * measurements cannot silently drift onto different conventions.
  */
-
-#include "physics-interaction/TransformMath.h"
-#include "physics-interaction/hand/HandColliderTypes.h"
-
-#include <span>
-#include <utility>
 
 namespace rock::grab_frame_math
 {
@@ -1000,7 +989,7 @@ namespace rock::grab_frame_math
     }
 }
 
-// ---- GrabAuthorityFrameMath.h ----
+// ---- Grab authority frame math ----
 
 /*
  * Active grab authority is one resolved point frozen through one coherent set of
@@ -1235,10 +1224,7 @@ namespace rock::grab_authority_frame_math
     }
 }
 
-// ---- PullMotionMath.h ----
-
-#include <algorithm>
-#include <cmath>
+// ---- Pull motion math ----
 
 namespace rock::pull_motion_math
 {

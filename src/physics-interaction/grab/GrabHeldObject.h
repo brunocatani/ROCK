@@ -1,18 +1,21 @@
 #pragma once
 
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <unordered_set>
+#include <vector>
 #include "physics-interaction/VectorMath.h"
+#include "physics-interaction/native/havok/PhysicsScale.h"
 
 /*
  * Held-object helpers are grouped here because body-set policy, damping, physics math, player-space math, and character-controller contact policy shape the same held-object behavior.
  */
 
-// ---- HeldObjectBodySetPolicy.h ----
-
-#include <algorithm>
-#include <cmath>
-#include <cstdint>
-#include <unordered_set>
-#include <vector>
+// ---- Held object body set policy ----
 
 namespace rock::held_object_body_set_policy
 {
@@ -59,7 +62,7 @@ namespace rock::held_object_body_set_policy
     }
 }
 
-// ---- HeldObjectDrivePolicy.h ----
+// ---- Held object drive policy ----
 
 namespace rock::held_object_drive_policy
 {
@@ -174,7 +177,7 @@ namespace rock::held_object_drive_policy
     }
 }
 
-// ---- HeldObjectContactPolicy.h ----
+// ---- Held object contact policy ----
 
 namespace rock::held_object_contact_policy
 {
@@ -353,14 +356,7 @@ namespace rock::held_object_contact_policy
     }
 }
 
-// ---- HeldObjectPhysicsMath.h ----
-
-#include "physics-interaction/native/havok/PhysicsScale.h"
-
-#include <algorithm>
-#include <array>
-#include <cmath>
-#include <cstddef>
+// ---- Held object physics math ----
 
 namespace rock::held_object_physics_math
 {
@@ -503,10 +499,7 @@ namespace rock::held_object_physics_math
 
 }
 
-// ---- GrabHeldResponse.h ----
-
-#include <algorithm>
-#include <cmath>
+// ---- Grab held response ----
 
 namespace rock::grab_held_response
 {
@@ -629,7 +622,7 @@ namespace rock::grab_held_response
     }
 }
 
-// ---- HeldGrabCharacterControllerPolicy.h ----
+// ---- Held grab character controller policy ----
 
 /*
  * Held grabs must not have a hidden character-controller authority fighting the
@@ -641,9 +634,6 @@ namespace rock::grab_held_response
  * contact alive and adds a late writer against the same body the grab constraint
  * is already controlling.
  */
-
-#include <cstdint>
-#include <cstring>
 
 namespace rock::held_grab_cc_policy
 {

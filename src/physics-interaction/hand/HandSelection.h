@@ -4,17 +4,17 @@
  * Hand selection helpers are grouped here so selection query, highlight, state, close-finger, and VATS highlight policy stay together.
  */
 
-// ---- SelectionQueryPolicy.h ----
-
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <string_view>
-
 #include "RE/NetImmerse/NiPoint.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/hand/HandInteractionStateMachine.h"
+
+// ---- Selection query policy ----
 
 namespace rock::selection_query_policy
 {
@@ -342,9 +342,7 @@ namespace rock
     };
 }
 
-// ---- SelectionHighlightPolicy.h ----
-
-#include <cstdint>
+// ---- Selection highlight policy ----
 
 namespace RE
 {
@@ -405,9 +403,7 @@ namespace rock::selection_highlight_policy
     }
 }
 
-// ---- SelectionStatePolicy.h ----
-
-#include "physics-interaction/hand/HandInteractionStateMachine.h"
+// ---- Selection state policy ----
 
 namespace rock::selection_state_policy
 {
@@ -444,10 +440,7 @@ namespace rock
     };
 }
 
-// ---- SelectedCloseFingerPolicy.h ----
-
-#include <algorithm>
-#include <cmath>
+// ---- Selected close finger policy ----
 
 namespace rock::selected_close_finger_policy
 {
@@ -483,7 +476,7 @@ namespace rock::selected_close_finger_policy
     }
 }
 
-// ---- VatsSelectionHighlight.h ----
+// ---- Vats selection highlight ----
 
 namespace RE
 {

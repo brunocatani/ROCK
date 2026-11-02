@@ -1,16 +1,21 @@
 #pragma once
 
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <vector>
+#include "physics-interaction/TransformMath.h"
 #include "physics-interaction/VectorMath.h"
+#include "physics-interaction/debug/DebugMath.h"
 
 /*
  * Hand collider types are grouped here so semantic IDs, collider geometry, and grab pivot math remain one generated-hand-collider surface.
  */
 
-// ---- HandColliderSemanticTypes.h ----
-
-#include <array>
-#include <cstddef>
-#include <cstdint>
+// ---- Hand collider semantic types ----
 
 namespace rock::hand_collider_semantics
 {
@@ -230,16 +235,7 @@ namespace rock::hand_collider_semantics
     }
 }
 
-// ---- HandBoneColliderGeometryMath.h ----
-
-#include "physics-interaction/TransformMath.h"
-#include "physics-interaction/debug/DebugMath.h"
-
-#include <algorithm>
-#include <array>
-#include <cmath>
-#include <limits>
-#include <vector>
+// ---- Hand bone collider geometry math ----
 
 namespace rock::hand_bone_collider_geometry_math
 {

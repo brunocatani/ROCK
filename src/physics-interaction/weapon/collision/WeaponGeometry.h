@@ -1,14 +1,5 @@
 #pragma once
 
-#include "physics-interaction/VectorMath.h"
-#include "physics-interaction/weapon/collision/WeaponGeometryTask.h"
-
-/*
- * Weapon geometry helpers are grouped here because collision hull construction and interaction probe math are one geometry policy surface.
- */
-
-// ---- WeaponCollisionGeometryMath.h ----
-
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -17,6 +8,14 @@
 #include <limits>
 #include <type_traits>
 #include <vector>
+#include "physics-interaction/VectorMath.h"
+#include "physics-interaction/weapon/collision/WeaponGeometryTask.h"
+
+/*
+ * Weapon geometry helpers are grouped here because collision hull construction and interaction probe math are one geometry policy surface.
+ */
+
+// ---- Weapon collision geometry math ----
 
 namespace rock::weapon_collision_geometry_math
 {
@@ -1317,10 +1316,7 @@ namespace rock::weapon_collision_geometry_math
     }
 }
 
-// ---- WeaponInteractionProbeMath.h ----
-
-#include <algorithm>
-#include <cmath>
+// ---- Weapon interaction probe math ----
 
 namespace rock::weapon_interaction_probe_math
 {

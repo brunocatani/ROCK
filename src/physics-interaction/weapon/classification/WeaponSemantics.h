@@ -4,14 +4,13 @@
  * Weapon semantic classification helpers are grouped here because generated geometry still needs part metadata for contact, reload, and debug evidence.
  */
 
-// ---- WeaponPartClassifier.h ----
-
-#include "physics-interaction/weapon/classification/WeaponTypes.h"
-
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
 #include <string_view>
+#include "physics-interaction/weapon/classification/WeaponTypes.h"
+
+// ---- Weapon part classifier ----
 
 namespace rock
 {
@@ -262,7 +261,7 @@ namespace rock
     }
 }
 
-// ---- WeaponCollisionGroupingPolicy.h ----
+// ---- Weapon collision grouping policy ----
 
 namespace rock::weapon_collision_grouping_policy
 {

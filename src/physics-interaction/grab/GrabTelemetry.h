@@ -4,7 +4,20 @@
  * Grab telemetry helpers are grouped here to keep sampled transform diagnostics and overlay formatting separate from grab authority.
  */
 
-// ---- GrabTransformTelemetry.h ----
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <string>
+#include "RE/NetImmerse/NiPoint.h"
+#include "RE/NetImmerse/NiTransform.h"
+#include "physics-interaction/PhysicsBodyFrame.h"
+#include "physics-interaction/TransformMath.h"
+#include "physics-interaction/grab/GrabCore.h"
+
+// ---- Grab transform telemetry ----
 
 /*
  * Grab transform telemetry is diagnostic-only: it compares ROCK's live grab
@@ -13,21 +26,6 @@
  * formatting here lets the VR overlay and log rows report the same values, so an
  * in-game screenshot can be matched to the exact numeric frame in ROCK.log.
  */
-
-#include "physics-interaction/PhysicsBodyFrame.h"
-#include "physics-interaction/TransformMath.h"
-#include "physics-interaction/grab/GrabCore.h"
-
-#include "RE/NetImmerse/NiPoint.h"
-#include "RE/NetImmerse/NiTransform.h"
-
-#include <algorithm>
-#include <array>
-#include <cmath>
-#include <cstddef>
-#include <cstdint>
-#include <cstdio>
-#include <string>
 
 namespace rock::grab_transform_telemetry
 {
