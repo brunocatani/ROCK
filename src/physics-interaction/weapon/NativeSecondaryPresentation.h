@@ -1,16 +1,20 @@
 #pragma once
 
-#include "RE/NetImmerse/NiSmartPointer.h"
 #include "RE/NetImmerse/NiAVObject.h"
+#include "RE/NetImmerse/NiSmartPointer.h"
 
 #include <array>
 #include <cstdint>
 
+#include "RE/NetImmerse/NiAVObject.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
 #include "physics-interaction/weapon/HoldingGripMath.h"
-#include "RE/NetImmerse/NiAVObject.h"
 
-namespace RE { class PlayerCharacter; class NiNode; }
+namespace RE
+{
+    class PlayerCharacter;
+    class NiNode;
+}
 
 namespace rock::native_secondary_presentation
 {
@@ -23,7 +27,8 @@ namespace rock::native_secondary_presentation
     void afterWorldFinal() noexcept;
     // The return value belongs to this exact native call, including nested calls.
     // Only the secondary offset's arm pass leaves the left branch in world space.
-    [[nodiscard]] bool beforeNativeArm(const RE::PlayerCharacter* player, const RE::NiNode* weapon, const RE::NiNode* offset) noexcept;
+    [[nodiscard]] bool beforeNativeArm(const RE::PlayerCharacter* player, const RE::NiNode* weapon,
+        const RE::NiNode* offset) noexcept;
     void afterNativeArm(const RE::PlayerCharacter* player, bool secondaryPass) noexcept;
     void endFrame(bool skeletonUpdated) noexcept;
 
@@ -40,6 +45,7 @@ namespace rock::native_secondary_presentation
         RE::NiTransform handWorld{};
         RE::NiAVObject* model = nullptr;
     };
+
     // Null when `out` is valid; otherwise the reason it is not.
     [[nodiscard]] const char* tryGetDropPose(DropPose& out) noexcept;
 

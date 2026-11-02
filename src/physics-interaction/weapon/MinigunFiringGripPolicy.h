@@ -40,16 +40,12 @@ namespace rock::minigun_firing_grip_policy
         .scale = 0.9999999403953552f,
     };
 
-    [[nodiscard]] constexpr bool usesCompiledFiringSeat(
-        const std::uint64_t keywordFlags) noexcept
+    [[nodiscard]] constexpr bool usesCompiledFiringSeat(const std::uint64_t keywordFlags) noexcept
     {
-        return hasWeaponKeywordFlag(
-            keywordFlags,
-            WeaponKeywordFlag::Minigun);
+        return hasWeaponKeywordFlag(keywordFlags, WeaponKeywordFlag::Minigun);
     }
 
-    [[nodiscard]] constexpr const FixedWeaponLocalTransform&
-        weaponInFiringHand(const bool /* inPowerArmor */) noexcept
+    [[nodiscard]] constexpr const FixedWeaponLocalTransform& weaponInFiringHand(const bool /* inPowerArmor */) noexcept
     {
         return kWeaponInFiringHand;
     }

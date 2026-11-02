@@ -2,40 +2,40 @@
 
 #include "physics-interaction/weapon/WeaponCollision.h"
 
-#include "physics-interaction/native/SceneRelation.h"
-#include "physics-interaction/native/BodyCollisionControl.h"
-#include "physics-interaction/native/HavokRuntime.h"
-#include "physics-interaction/native/HavokRefCount.h"
+#include "RockConfig.h"
+#include "physics-interaction/TransformMath.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
+#include "physics-interaction/grab/MeshGrab.h"
+#include "physics-interaction/native/BodyCollisionControl.h"
 #include "physics-interaction/native/HavokCompoundShapeBuilder.h"
 #include "physics-interaction/native/HavokConvexShapeBuilder.h"
 #include "physics-interaction/native/HavokOffsets.h"
-#include "physics-interaction/native/NativeNiNodeFactory.h"
+#include "physics-interaction/native/HavokRefCount.h"
+#include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/NativeCollisionShape.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/grab/MeshGrab.h"
-#include "RockConfig.h"
+#include "physics-interaction/native/NativeNiNodeFactory.h"
+#include "physics-interaction/native/SceneRelation.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
-#include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
 #include "physics-interaction/weapon/WeaponAccessoryPartKindPolicy.h"
-#include "physics-interaction/weapon/WeaponInstanceClassification.h"
+#include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponEffectGeometryPolicy.h"
 #include "physics-interaction/weapon/WeaponEmitterPolicy.h"
-#include "physics-interaction/weapon/WeaponPartRecordIdentityPolicy.h"
-#include "physics-interaction/weapon/WeaponSemantics.h"
-#include "physics-interaction/weapon/WeaponSceneChildren.h"
-#include "physics-interaction/weapon/WeaponTypePolicy.h"
-#include "physics-interaction/weapon/WeaponAuthority.h"
-#include "physics-interaction/TransformMath.h"
+#include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponHierarchy.h"
+#include "physics-interaction/weapon/WeaponInstanceClassification.h"
+#include "physics-interaction/weapon/WeaponPartRecordIdentityPolicy.h"
+#include "physics-interaction/weapon/WeaponSceneChildren.h"
+#include "physics-interaction/weapon/WeaponSemantics.h"
+#include "physics-interaction/weapon/WeaponTypePolicy.h"
 
 #include <intrin.h>
 
 #include "RE/Bethesda/BGSMod.h"
-#include "RE/Bethesda/FormComponents.h"
 #include "RE/Bethesda/BSExtraData.h"
+#include "RE/Bethesda/FormComponents.h"
 #include "RE/Bethesda/MagicItems.h"
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/Bethesda/TESForms.h"
@@ -56,10 +56,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
-#include <unordered_map>
-#include <unordered_set>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace RE
@@ -77,6 +77,7 @@ namespace RE
         hknpShapeKeyMask* shapeKeyMask{ nullptr };
         std::uint64_t reserved{ 0 };
     };
+
     static_assert(sizeof(hknpShape::GetShapeKeysConfig) == 0x18);
     static_assert(offsetof(hknpShape::GetShapeKeysConfig, shapeKeyMask) == 0x08);
 }
@@ -116,7 +117,10 @@ namespace rock
             std::int64_t y = 0;
             std::int64_t z = 0;
 
-            bool operator==(const QuantizedPointKey& rhs) const noexcept { return x == rhs.x && y == rhs.y && z == rhs.z; }
+            bool operator==(const QuantizedPointKey& rhs) const noexcept
+            {
+                return x == rhs.x && y == rhs.y && z == rhs.z;
+            }
         };
 
         struct QuantizedPointKeyHash
@@ -126,7 +130,8 @@ namespace rock
                 const auto hx = std::hash<std::int64_t>{}(key.x);
                 const auto hy = std::hash<std::int64_t>{}(key.y);
                 const auto hz = std::hash<std::int64_t>{}(key.z);
-                return hx ^ (hy + 0x9e3779b97f4a7c15ull + (hx << 6) + (hx >> 2)) ^ (hz + 0x9e3779b97f4a7c15ull + (hy << 6) + (hy >> 2));
+                return hx ^ (hy + 0x9e3779b97f4a7c15ull + (hx << 6) + (hx >> 2)) ^
+                    (hz + 0x9e3779b97f4a7c15ull + (hy << 6) + (hy >> 2));
             }
         };
 
@@ -263,9 +268,12 @@ namespace rock
 
         inline float matrixDeterminant(const RE::NiMatrix3& matrix)
         {
-            return matrix.entry[0][0] * (matrix.entry[1][1] * matrix.entry[2][2] - matrix.entry[1][2] * matrix.entry[2][1]) -
-                matrix.entry[0][1] * (matrix.entry[1][0] * matrix.entry[2][2] - matrix.entry[1][2] * matrix.entry[2][0]) +
-                matrix.entry[0][2] * (matrix.entry[1][0] * matrix.entry[2][1] - matrix.entry[1][1] * matrix.entry[2][0]);
+            return matrix.entry[0][0] *
+                (matrix.entry[1][1] * matrix.entry[2][2] - matrix.entry[1][2] * matrix.entry[2][1]) -
+                matrix.entry[0][1] *
+                (matrix.entry[1][0] * matrix.entry[2][2] - matrix.entry[1][2] * matrix.entry[2][0]) +
+                matrix.entry[0][2] *
+                (matrix.entry[1][0] * matrix.entry[2][1] - matrix.entry[1][1] * matrix.entry[2][0]);
         }
 
         inline RE::NiTransform makeIdentityTransform()
@@ -281,7 +289,8 @@ namespace rock
         inline QuantizedPointKey quantizePoint(const RE::NiPoint3& point, float grid)
         {
             const float safeGrid = (std::max)(grid, 0.0001f);
-            return QuantizedPointKey{ static_cast<std::int64_t>(std::llround(point.x / safeGrid)), static_cast<std::int64_t>(std::llround(point.y / safeGrid)),
+            return QuantizedPointKey{ static_cast<std::int64_t>(std::llround(point.x / safeGrid)),
+                static_cast<std::int64_t>(std::llround(point.y / safeGrid)),
                 static_cast<std::int64_t>(std::llround(point.z / safeGrid)) };
         }
 
@@ -319,8 +328,9 @@ namespace rock
 
         inline bool pointCloudCanBuildHull(const std::vector<RE::NiPoint3>& points, float sourceScale = 1.0f)
         {
-            return points.size() >= 4 && weapon_collision_geometry_math::scaledHullDiagonalCanBuild(
-                                             pointCloudDiagonalSquared(points), sourceScale, MIN_HULL_DIAGONAL_GAME_UNITS);
+            return points.size() >= 4 &&
+                weapon_collision_geometry_math::scaledHullDiagonalCanBuild(pointCloudDiagonalSquared(points),
+                    sourceScale, MIN_HULL_DIAGONAL_GAME_UNITS);
         }
 
         inline PointCloudBounds pointCloudBounds(const std::vector<RE::NiPoint3>& points)
@@ -339,10 +349,7 @@ namespace rock
             return bounds;
         }
 
-        inline std::array<float, 3> pointToArray(const RE::NiPoint3& point)
-        {
-            return { point.x, point.y, point.z };
-        }
+        inline std::array<float, 3> pointToArray(const RE::NiPoint3& point) { return { point.x, point.y, point.z }; }
 
         inline void mixFormStableContent(std::uint64_t& key, const RE::TESForm* form)
         {
@@ -449,9 +456,7 @@ namespace rock
         }
 
         inline const RE::BGSObjectInstanceExtra* findEquippedWeaponObjectInstanceExtra(
-            const RE::PlayerCharacter* player,
-            const RE::TESForm* weaponForm,
-            const RE::TBO_InstanceData* instanceData)
+            const RE::PlayerCharacter* player, const RE::TESForm* weaponForm, const RE::TBO_InstanceData* instanceData)
         {
             if (!player || !weaponForm) {
                 return nullptr;
@@ -462,8 +467,7 @@ namespace rock
                     return nullptr;
                 }
                 for (std::uint32_t slotIndex = 0;
-                     slotIndex < static_cast<std::uint32_t>(std::to_underlying(RE::BIPED_OBJECT::kTotal));
-                     ++slotIndex) {
+                    slotIndex < static_cast<std::uint32_t>(std::to_underlying(RE::BIPED_OBJECT::kTotal)); ++slotIndex) {
                     const auto& slot = biped->object[slotIndex];
                     if (slot.parent.object != weaponForm) {
                         continue;
@@ -500,8 +504,7 @@ namespace rock
             return true;
         }
 
-        inline RE::NiPointer<RE::NiNode> loadOmodModelTemplate(
-            const std::string& modelPath,
+        inline RE::NiPointer<RE::NiNode> loadOmodModelTemplate(const std::string& modelPath,
             const std::uint8_t modelDemandFlags)
         {
             if (modelPath.empty()) {
@@ -511,7 +514,8 @@ namespace rock
             std::string resourcePath;
             if (startsWithAsciiInsensitive(modelPath, "Data\\") || startsWithAsciiInsensitive(modelPath, "Data/")) {
                 resourcePath = modelPath;
-            } else if (startsWithAsciiInsensitive(modelPath, "Meshes\\") || startsWithAsciiInsensitive(modelPath, "Meshes/")) {
+            } else if (startsWithAsciiInsensitive(modelPath, "Meshes\\") ||
+                startsWithAsciiInsensitive(modelPath, "Meshes/")) {
                 resourcePath = "Data/" + modelPath;
             } else {
                 resourcePath = "Data/Meshes/" + modelPath;
@@ -519,10 +523,8 @@ namespace rock
 
             std::uint64_t loadFlags[2]{ 0, modelDemandFlags };
             std::uint64_t loadedRoot = 0;
-            const int result = f4vr::loadNif(
-                reinterpret_cast<std::uint64_t>(resourcePath.c_str()),
-                reinterpret_cast<std::uint64_t>(&loadedRoot),
-                reinterpret_cast<std::uint64_t>(&loadFlags));
+            const int result = f4vr::loadNif(reinterpret_cast<std::uint64_t>(resourcePath.c_str()),
+                reinterpret_cast<std::uint64_t>(&loadedRoot), reinterpret_cast<std::uint64_t>(&loadFlags));
             if (result != 0 || loadedRoot == 0) {
                 return nullptr;
             }
@@ -562,15 +564,13 @@ namespace rock
             const RE::BGSMaterialType* material{ nullptr };
             bool blocksFallback{ false };
 
-            [[nodiscard]] bool valid() const noexcept
-            {
-                return materialId != 0 && material != nullptr;
-            }
+            [[nodiscard]] bool valid() const noexcept { return materialId != 0 && material != nullptr; }
         };
 
         struct CollisionSoundMaterialDiagnostics
         {
-            std::array<std::size_t, static_cast<std::size_t>(native_scene::CollisionShapeQueryStage::Count)> shapeQueryStages{};
+            std::array<std::size_t, static_cast<std::size_t>(native_scene::CollisionShapeQueryStage::Count)>
+                shapeQueryStages{};
             bool worldModelLoaded{ false };
             std::size_t inspectedShapes{ 0 };
             std::size_t simpleShapes{ 0 };
@@ -587,11 +587,9 @@ namespace rock
             std::unordered_map<std::uint32_t, std::size_t> materialKeyCounts;
         };
 
-        using CollisionSoundMaterialCache =
-            std::unordered_map<RE::hknpShape*, CollisionSoundMaterialEvidence>;
+        using CollisionSoundMaterialCache = std::unordered_map<RE::hknpShape*, CollisionSoundMaterialEvidence>;
 
-        [[nodiscard]] inline const RE::BGSMaterialType* findRegisteredCollisionMaterial(
-            const std::uint32_t materialId)
+        [[nodiscard]] inline const RE::BGSMaterialType* findRegisteredCollisionMaterial(const std::uint32_t materialId)
         {
             if (materialId == 0) {
                 return nullptr;
@@ -602,8 +600,7 @@ namespace rock
                 return nullptr;
             }
 
-            for (const auto* material :
-                dataHandler->GetFormArray<RE::BGSMaterialType>()) {
+            for (const auto* material : dataHandler->GetFormArray<RE::BGSMaterialType>()) {
                 if (material && material->materialID == materialId) {
                     return material;
                 }
@@ -611,25 +608,19 @@ namespace rock
             return nullptr;
         }
 
-        [[nodiscard]] inline std::uint32_t nativeCollisionSoundMaterialForShape(
-            RE::hknpShape* shape,
+        [[nodiscard]] inline std::uint32_t nativeCollisionSoundMaterialForShape(RE::hknpShape* shape,
             const std::uint32_t shapeKey)
         {
             if (!shape) {
                 return 0;
             }
 
-            using GetMaterialForShape =
-                std::uint32_t (*)(RE::hknpShape*, std::uint32_t);
-            static REL::Relocation<GetMaterialForShape> getMaterialForShape{
-                REL::ID(1349330)
-            };
+            using GetMaterialForShape = std::uint32_t (*)(RE::hknpShape*, std::uint32_t);
+            static REL::Relocation<GetMaterialForShape> getMaterialForShape{ REL::ID(1349330) };
             return getMaterialForShape(shape, shapeKey);
         }
 
-        [[nodiscard]] inline CollisionSoundMaterialEvidence
-        resolveCollisionSoundMaterial(
-            RE::hknpShape* shape,
+        [[nodiscard]] inline CollisionSoundMaterialEvidence resolveCollisionSoundMaterial(RE::hknpShape* shape,
             CollisionSoundMaterialDiagnostics& diagnostics)
         {
             CollisionSoundMaterialEvidence evidence{};
@@ -644,8 +635,7 @@ namespace rock
             std::size_t zeroMaterialShapeKeys = 0;
             const auto recordShapeKey = [&](const std::uint32_t shapeKey) {
                 ++diagnostics.materialQueries;
-                const auto materialId =
-                    nativeCollisionSoundMaterialForShape(shape, shapeKey);
+                const auto materialId = nativeCollisionSoundMaterialForShape(shape, shapeKey);
                 if (materialId == 0) {
                     ++zeroMaterialShapeKeys;
                     return;
@@ -654,8 +644,7 @@ namespace rock
             };
 
             bool scanComplete = true;
-            const bool isComposite = shape->flags.all(
-                RE::hknpShape::FlagsEnum::kIsCompositeShape);
+            const bool isComposite = shape->flags.all(RE::hknpShape::FlagsEnum::kIsCompositeShape);
             if (!isComposite) {
                 ++diagnostics.simpleShapes;
                 recordShapeKey(INVALID_COLLISION_SOUND_SHAPE_KEY);
@@ -663,25 +652,16 @@ namespace rock
                 ++diagnostics.compositeShapes;
                 scanComplete = false;
                 RE::hknpShape::GetShapeKeysConfig keyConfig{};
-                std::array<std::uint32_t, COLLISION_SOUND_SHAPE_KEY_BATCH>
-                    shapeKeys{};
-                std::uint32_t previousShapeKey =
-                    INVALID_COLLISION_SOUND_SHAPE_KEY;
+                std::array<std::uint32_t, COLLISION_SOUND_SHAPE_KEY_BATCH> shapeKeys{};
+                std::uint32_t previousShapeKey = INVALID_COLLISION_SOUND_SHAPE_KEY;
                 std::size_t enumeratedShapeKeys = 0;
                 bool enumerationInvalid = false;
 
-                while (enumeratedShapeKeys <
-                       MAX_COLLISION_SOUND_SHAPE_KEYS) {
-                    const auto remaining =
-                        MAX_COLLISION_SOUND_SHAPE_KEYS -
-                        enumeratedShapeKeys;
-                    const auto capacity = static_cast<std::int32_t>(
-                        std::min(remaining, shapeKeys.size()));
-                    const auto shapeKeyCount = shape->GetShapeKeys(
-                        shapeKeys.data(),
-                        capacity,
-                        previousShapeKey,
-                        keyConfig);
+                while (enumeratedShapeKeys < MAX_COLLISION_SOUND_SHAPE_KEYS) {
+                    const auto remaining = MAX_COLLISION_SOUND_SHAPE_KEYS - enumeratedShapeKeys;
+                    const auto capacity = static_cast<std::int32_t>(std::min(remaining, shapeKeys.size()));
+                    const auto shapeKeyCount =
+                        shape->GetShapeKeys(shapeKeys.data(), capacity, previousShapeKey, keyConfig);
                     if (shapeKeyCount < 0 || shapeKeyCount > capacity) {
                         ++diagnostics.invalidEnumerationShapes;
                         enumerationInvalid = true;
@@ -692,22 +672,17 @@ namespace rock
                         break;
                     }
 
-                    const auto lastShapeKey =
-                        shapeKeys[static_cast<std::size_t>(shapeKeyCount - 1)];
+                    const auto lastShapeKey = shapeKeys[static_cast<std::size_t>(shapeKeyCount - 1)];
                     if (lastShapeKey == previousShapeKey) {
                         ++diagnostics.stalledShapes;
                         enumerationInvalid = true;
                         break;
                     }
 
-                    for (std::int32_t index = 0;
-                         index < shapeKeyCount;
-                         ++index) {
-                        recordShapeKey(
-                            shapeKeys[static_cast<std::size_t>(index)]);
+                    for (std::int32_t index = 0; index < shapeKeyCount; ++index) {
+                        recordShapeKey(shapeKeys[static_cast<std::size_t>(index)]);
                     }
-                    enumeratedShapeKeys +=
-                        static_cast<std::size_t>(shapeKeyCount);
+                    enumeratedShapeKeys += static_cast<std::size_t>(shapeKeyCount);
                     previousShapeKey = lastShapeKey;
 
                     if (shapeKeyCount < capacity) {
@@ -717,19 +692,13 @@ namespace rock
                 }
 
                 diagnostics.enumeratedShapeKeys += enumeratedShapeKeys;
-                if (!scanComplete && !enumerationInvalid &&
-                    enumeratedShapeKeys ==
-                        MAX_COLLISION_SOUND_SHAPE_KEYS) {
+                if (!scanComplete && !enumerationInvalid && enumeratedShapeKeys == MAX_COLLISION_SOUND_SHAPE_KEYS) {
                     std::uint32_t nextShapeKey = 0;
-                    const auto remainingShapeKeyCount = shape->GetShapeKeys(
-                        &nextShapeKey,
-                        1,
-                        previousShapeKey,
-                        keyConfig);
+                    const auto remainingShapeKeyCount =
+                        shape->GetShapeKeys(&nextShapeKey, 1, previousShapeKey, keyConfig);
                     if (remainingShapeKeyCount == 0) {
                         scanComplete = true;
-                    } else if (remainingShapeKeyCount == 1 &&
-                               nextShapeKey != previousShapeKey) {
+                    } else if (remainingShapeKeyCount == 1 && nextShapeKey != previousShapeKey) {
                         ++diagnostics.truncatedShapes;
                     } else if (remainingShapeKeyCount == 1) {
                         ++diagnostics.stalledShapes;
@@ -744,8 +713,7 @@ namespace rock
             }
 
             diagnostics.zeroMaterialShapeKeys += zeroMaterialShapeKeys;
-            for (const auto& [materialId, shapeKeyCount] :
-                 materialKeyCounts) {
+            for (const auto& [materialId, shapeKeyCount] : materialKeyCounts) {
                 diagnostics.materialKeyCounts[materialId] += shapeKeyCount;
             }
 
@@ -769,10 +737,8 @@ namespace rock
                 return evidence;
             }
 
-            const auto [materialId, shapeKeyCount] =
-                *materialKeyCounts.begin();
-            const auto* material =
-                findRegisteredCollisionMaterial(materialId);
+            const auto [materialId, shapeKeyCount] = *materialKeyCounts.begin();
+            const auto* material = findRegisteredCollisionMaterial(materialId);
             if (!material) {
                 diagnostics.unregisteredMaterialShapeKeys += shapeKeyCount;
                 evidence.blocksFallback = true;
@@ -784,11 +750,8 @@ namespace rock
             return evidence;
         }
 
-        [[nodiscard]] inline CollisionSoundMaterialEvidence
-        collisionSoundMaterialFromNode(
-            RE::NiAVObject* node,
-            CollisionSoundMaterialCache& cache,
-            CollisionSoundMaterialDiagnostics& diagnostics)
+        [[nodiscard]] inline CollisionSoundMaterialEvidence collisionSoundMaterialFromNode(RE::NiAVObject* node,
+            CollisionSoundMaterialCache& cache, CollisionSoundMaterialDiagnostics& diagnostics)
         {
             CollisionSoundMaterialEvidence evidence{};
             if (!node) {
@@ -819,21 +782,14 @@ namespace rock
             return evidence;
         }
 
-        [[nodiscard]] inline CollisionSoundMaterialEvidence
-        nearestCollisionSoundMaterial(
-            RE::NiAVObject* sourceNode,
-            const RE::NiAVObject* weaponBoundary,
-            CollisionSoundMaterialCache& cache,
+        [[nodiscard]] inline CollisionSoundMaterialEvidence nearestCollisionSoundMaterial(RE::NiAVObject* sourceNode,
+            const RE::NiAVObject* weaponBoundary, CollisionSoundMaterialCache& cache,
             CollisionSoundMaterialDiagnostics& diagnostics)
         {
             constexpr int kMaximumAncestorSteps = 32;
             auto* node = sourceNode;
-            for (int step = 0; node && step < kMaximumAncestorSteps;
-                 ++step, node = node->parent) {
-                auto evidence = collisionSoundMaterialFromNode(
-                    node,
-                    cache,
-                    diagnostics);
+            for (int step = 0; node && step < kMaximumAncestorSteps; ++step, node = node->parent) {
+                auto evidence = collisionSoundMaterialFromNode(node, cache, diagnostics);
                 if (evidence.valid() || evidence.blocksFallback) {
                     return evidence;
                 }
@@ -844,28 +800,19 @@ namespace rock
             return {};
         }
 
-        [[nodiscard]] inline CollisionSoundMaterialEvidence
-        firstCollisionSoundMaterialRecursive(
-            RE::NiAVObject* node,
-            std::unordered_set<std::uintptr_t>& visited,
-            std::size_t& visitedCount,
-            CollisionSoundMaterialCache& cache,
-            CollisionSoundMaterialDiagnostics& diagnostics,
-            const int depth = 0)
+        [[nodiscard]] inline CollisionSoundMaterialEvidence firstCollisionSoundMaterialRecursive(RE::NiAVObject* node,
+            std::unordered_set<std::uintptr_t>& visited, std::size_t& visitedCount, CollisionSoundMaterialCache& cache,
+            CollisionSoundMaterialDiagnostics& diagnostics, const int depth = 0)
         {
             constexpr int kMaximumDepth = 24;
             constexpr std::size_t kMaximumVisitedNodes = 1024;
-            if (!node || depth > kMaximumDepth ||
-                visitedCount >= kMaximumVisitedNodes ||
+            if (!node || depth > kMaximumDepth || visitedCount >= kMaximumVisitedNodes ||
                 !visited.insert(reinterpret_cast<std::uintptr_t>(node)).second) {
                 return {};
             }
 
             ++visitedCount;
-            auto evidence = collisionSoundMaterialFromNode(
-                node,
-                cache,
-                diagnostics);
+            auto evidence = collisionSoundMaterialFromNode(node, cache, diagnostics);
             if (evidence.valid() || evidence.blocksFallback) {
                 return evidence;
             }
@@ -876,13 +823,8 @@ namespace rock
             }
             const auto& children = treeNode->GetRuntimeData().children;
             for (std::uint16_t index = 0; index < children.capacity(); ++index) {
-                evidence = firstCollisionSoundMaterialRecursive(
-                    children[index].get(),
-                    visited,
-                    visitedCount,
-                    cache,
-                    diagnostics,
-                    depth + 1);
+                evidence = firstCollisionSoundMaterialRecursive(children[index].get(), visited, visitedCount, cache,
+                    diagnostics, depth + 1);
                 if (evidence.valid() || evidence.blocksFallback) {
                     return evidence;
                 }
@@ -890,28 +832,17 @@ namespace rock
             return {};
         }
 
-        [[nodiscard]] inline CollisionSoundMaterialEvidence
-        firstCollisionSoundMaterial(
-            RE::NiAVObject* root,
-            CollisionSoundMaterialCache& cache,
-            CollisionSoundMaterialDiagnostics& diagnostics)
+        [[nodiscard]] inline CollisionSoundMaterialEvidence firstCollisionSoundMaterial(RE::NiAVObject* root,
+            CollisionSoundMaterialCache& cache, CollisionSoundMaterialDiagnostics& diagnostics)
         {
             std::unordered_set<std::uintptr_t> visited;
             visited.reserve(128);
             std::size_t visitedCount = 0;
-            return firstCollisionSoundMaterialRecursive(
-                root,
-                visited,
-                visitedCount,
-                cache,
-                diagnostics);
+            return firstCollisionSoundMaterialRecursive(root, visited, visitedCount, cache, diagnostics);
         }
 
-        [[nodiscard]] inline CollisionSoundMaterialEvidence
-        equippedWeaponWorldModelCollisionSoundMaterial(
-            std::string& outModelPath,
-            CollisionSoundMaterialDiagnostics& diagnostics,
-            std::uint32_t equipIndex)
+        [[nodiscard]] inline CollisionSoundMaterialEvidence equippedWeaponWorldModelCollisionSoundMaterial(
+            std::string& outModelPath, CollisionSoundMaterialDiagnostics& diagnostics, std::uint32_t equipIndex)
         {
             outModelPath.clear();
             auto* equippedItem = f4vr::getEquippedWeaponItem(equipIndex);
@@ -921,57 +852,35 @@ namespace rock
                 return {};
             }
 
-            const auto* model =
-                static_cast<const RE::BGSModelMaterialSwap*>(weapon);
+            const auto* model = static_cast<const RE::BGSModelMaterialSwap*>(weapon);
             const char* modelPath = model->GetModel();
             if (!modelPath || modelPath[0] == '\0') {
                 return {};
             }
 
             outModelPath = modelPath;
-            auto modelRoot =
-                loadGeometryInspectionOmodModelTemplate(outModelPath);
+            auto modelRoot = loadGeometryInspectionOmodModelTemplate(outModelPath);
             diagnostics.worldModelLoaded = modelRoot != nullptr;
             CollisionSoundMaterialCache modelMaterialCache;
             modelMaterialCache.reserve(16);
-            return firstCollisionSoundMaterial(
-                modelRoot.get(),
-                modelMaterialCache,
-                diagnostics);
+            return firstCollisionSoundMaterial(modelRoot.get(), modelMaterialCache, diagnostics);
         }
 
         [[nodiscard]] inline std::string collisionSoundMaterialHistogram(
             const CollisionSoundMaterialDiagnostics& diagnostics)
         {
-            std::vector<std::pair<std::uint32_t, std::size_t>> rows(
-                diagnostics.materialKeyCounts.begin(),
+            std::vector<std::pair<std::uint32_t, std::size_t>> rows(diagnostics.materialKeyCounts.begin(),
                 diagnostics.materialKeyCounts.end());
-            std::sort(
-                rows.begin(),
-                rows.end(),
-                [](const auto& lhs, const auto& rhs) {
-                    return lhs.first < rhs.first;
-                });
+            std::sort(rows.begin(), rows.end(), [](const auto& lhs, const auto& rhs) { return lhs.first < rhs.first; });
 
             std::string histogram;
-            const auto rowCount = std::min(
-                rows.size(),
-                MAX_COLLISION_SOUND_HISTOGRAM_ROWS);
+            const auto rowCount = std::min(rows.size(), MAX_COLLISION_SOUND_HISTOGRAM_ROWS);
             for (std::size_t index = 0; index < rowCount; ++index) {
                 std::array<char, 48> row{};
-                const auto written = std::snprintf(
-                    row.data(),
-                    row.size(),
-                    "%s0x%08X:%zu",
-                    histogram.empty() ? "" : ",",
-                    rows[index].first,
-                    rows[index].second);
+                const auto written = std::snprintf(row.data(), row.size(), "%s0x%08X:%zu", histogram.empty() ? "" : ",",
+                    rows[index].first, rows[index].second);
                 if (written > 0) {
-                    histogram.append(
-                        row.data(),
-                        std::min(
-                            static_cast<std::size_t>(written),
-                            row.size() - 1));
+                    histogram.append(row.data(), std::min(static_cast<std::size_t>(written), row.size() - 1));
                 }
             }
             if (rows.size() > rowCount) {
@@ -984,9 +893,7 @@ namespace rock
         }
 
         template <class SourceRange>
-        void assignCollisionSoundMaterials(
-            RE::NiAVObject* assembledWeaponRoot,
-            SourceRange& sources,
+        void assignCollisionSoundMaterials(RE::NiAVObject* assembledWeaponRoot, SourceRange& sources,
             std::uint32_t equipIndex)
         {
             CollisionSoundMaterialCache materialCache;
@@ -999,43 +906,27 @@ namespace rock
             std::size_t localSourceCount = 0;
             for (auto& source : sources) {
                 const auto localEvidence =
-                    nearestCollisionSoundMaterial(
-                        source.sourceRoot,
-                        assembledWeaponRoot,
-                        materialCache,
-                        diagnostics);
+                    nearestCollisionSoundMaterial(source.sourceRoot, assembledWeaponRoot, materialCache, diagnostics);
                 if (localEvidence.valid()) {
-                    source.collisionSoundMaterialId =
-                        localEvidence.materialId;
+                    source.collisionSoundMaterialId = localEvidence.materialId;
                     ++localSourceCount;
                 } else if (localEvidence.blocksFallback) {
-                    blockedFallbackSources.insert(
-                        reinterpret_cast<std::uintptr_t>(&source));
+                    blockedFallbackSources.insert(reinterpret_cast<std::uintptr_t>(&source));
                 }
             }
 
-            const bool needsFallback = std::any_of(
-                sources.begin(),
-                sources.end(),
-                [](const auto& source) {
-                    return source.collisionSoundMaterialId == 0;
-                });
+            const bool needsFallback = std::any_of(sources.begin(), sources.end(),
+                [](const auto& source) { return source.collisionSoundMaterialId == 0; });
 
             CollisionSoundMaterialEvidence fallback{};
             std::string fallbackSource = "none";
             std::string worldModelPath;
             if (needsFallback) {
-                fallback = equippedWeaponWorldModelCollisionSoundMaterial(
-                    worldModelPath,
-                    diagnostics,
-                    equipIndex);
+                fallback = equippedWeaponWorldModelCollisionSoundMaterial(worldModelPath, diagnostics, equipIndex);
                 if (fallback.valid()) {
                     fallbackSource = "world-model";
                 } else if (!fallback.blocksFallback) {
-                    fallback = firstCollisionSoundMaterial(
-                        assembledWeaponRoot,
-                        materialCache,
-                        diagnostics);
+                    fallback = firstCollisionSoundMaterial(assembledWeaponRoot, materialCache, diagnostics);
                     if (fallback.valid()) {
                         fallbackSource = "assembled-root";
                     }
@@ -1046,10 +937,8 @@ namespace rock
             std::size_t unresolvedSourceCount = 0;
             std::unordered_map<std::uint32_t, std::size_t> materialCounts;
             for (auto& source : sources) {
-                if (source.collisionSoundMaterialId == 0 &&
-                    fallback.valid() &&
-                    !blockedFallbackSources.contains(
-                        reinterpret_cast<std::uintptr_t>(&source))) {
+                if (source.collisionSoundMaterialId == 0 && fallback.valid() &&
+                    !blockedFallbackSources.contains(reinterpret_cast<std::uintptr_t>(&source))) {
                     source.collisionSoundMaterialId = fallback.materialId;
                     ++fallbackSourceCount;
                 }
@@ -1061,75 +950,50 @@ namespace rock
             }
 
             for (const auto& [materialId, sourceCount] : materialCounts) {
-                const auto* material =
-                    findRegisteredCollisionMaterial(materialId);
-                ROCK_LOG_INFO(
-                    Weapon,
-                    "Equipped weapon collision audio material: id=0x{:08X} form={:08X} name='{}' sources={} localSources={} fallbackSources={} fallback={} model='{}'",
-                    materialId,
-                    material ? material->formID : 0,
-                    material && material->materialName.c_str() ?
-                        material->materialName.c_str() :
-                        "(unnamed)",
-                    sourceCount,
-                    localSourceCount,
-                    fallbackSourceCount,
-                    fallbackSource,
-                    worldModelPath);
+                const auto* material = findRegisteredCollisionMaterial(materialId);
+                ROCK_LOG_INFO(Weapon,
+                    "Equipped weapon collision audio material: id=0x{:08X} form={:08X} name='{}' sources={} "
+                    "localSources={} fallbackSources={} fallback={} model='{}'",
+                    materialId, material ? material->formID : 0,
+                    material && material->materialName.c_str() ? material->materialName.c_str() : "(unnamed)",
+                    sourceCount, localSourceCount, fallbackSourceCount, fallbackSource, worldModelPath);
             }
 
-            const auto nativeMaterialHistogram =
-                collisionSoundMaterialHistogram(diagnostics);
-            ROCK_LOG_SAMPLE_INFO(
-                Weapon,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "Equipped weapon collision audio native scan: shapes={} simple={} composite={} keys={} queries={} zeroKeys={} unregisteredKeys={} ambiguousShapes={} incompleteShapes={} truncatedShapes={} stalledShapes={} invalidEnumerations={} blockedFallbackSources={} candidates='{}' model='{}' modelLoaded={} shapeStages(node/object/dispatch/system/shape/ok)={}/{}/{}/{}/{}/{}",
-                diagnostics.inspectedShapes,
-                diagnostics.simpleShapes,
-                diagnostics.compositeShapes,
-                diagnostics.enumeratedShapeKeys,
-                diagnostics.materialQueries,
-                diagnostics.zeroMaterialShapeKeys,
-                diagnostics.unregisteredMaterialShapeKeys,
-                diagnostics.ambiguousShapes,
-                diagnostics.incompleteShapes,
-                diagnostics.truncatedShapes,
-                diagnostics.stalledShapes,
-                diagnostics.invalidEnumerationShapes,
-                blockedFallbackSources.size(),
-                nativeMaterialHistogram,
-                worldModelPath,
-                diagnostics.worldModelLoaded,
+            const auto nativeMaterialHistogram = collisionSoundMaterialHistogram(diagnostics);
+            ROCK_LOG_SAMPLE_INFO(Weapon, g_rockConfig.rockLogSampleMilliseconds,
+                "Equipped weapon collision audio native scan: shapes={} simple={} composite={} keys={} queries={} "
+                "zeroKeys={} unregisteredKeys={} ambiguousShapes={} incompleteShapes={} truncatedShapes={} "
+                "stalledShapes={} invalidEnumerations={} blockedFallbackSources={} candidates='{}' model='{}' "
+                "modelLoaded={} shapeStages(node/object/dispatch/system/shape/ok)={}/{}/{}/{}/{}/{}",
+                diagnostics.inspectedShapes, diagnostics.simpleShapes, diagnostics.compositeShapes,
+                diagnostics.enumeratedShapeKeys, diagnostics.materialQueries, diagnostics.zeroMaterialShapeKeys,
+                diagnostics.unregisteredMaterialShapeKeys, diagnostics.ambiguousShapes, diagnostics.incompleteShapes,
+                diagnostics.truncatedShapes, diagnostics.stalledShapes, diagnostics.invalidEnumerationShapes,
+                blockedFallbackSources.size(), nativeMaterialHistogram, worldModelPath, diagnostics.worldModelLoaded,
                 diagnostics.shapeQueryStages[static_cast<std::size_t>(native_scene::CollisionShapeQueryStage::Node)],
-                diagnostics.shapeQueryStages[static_cast<std::size_t>(native_scene::CollisionShapeQueryStage::CollisionObject)],
-                diagnostics.shapeQueryStages[static_cast<std::size_t>(native_scene::CollisionShapeQueryStage::NativeDispatch)],
-                diagnostics.shapeQueryStages[static_cast<std::size_t>(native_scene::CollisionShapeQueryStage::PhysicsSystem)],
+                diagnostics.shapeQueryStages[static_cast<std::size_t>(
+                    native_scene::CollisionShapeQueryStage::CollisionObject)],
+                diagnostics
+                    .shapeQueryStages[static_cast<std::size_t>(native_scene::CollisionShapeQueryStage::NativeDispatch)],
+                diagnostics
+                    .shapeQueryStages[static_cast<std::size_t>(native_scene::CollisionShapeQueryStage::PhysicsSystem)],
                 diagnostics.shapeQueryStages[static_cast<std::size_t>(native_scene::CollisionShapeQueryStage::Shape)],
-                diagnostics.shapeQueryStages[static_cast<std::size_t>(native_scene::CollisionShapeQueryStage::Complete)]);
+                diagnostics
+                    .shapeQueryStages[static_cast<std::size_t>(native_scene::CollisionShapeQueryStage::Complete)]);
 
             if (unresolvedSourceCount != 0) {
-                ROCK_LOG_SAMPLE_WARN(
-                    Weapon,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "Equipped weapon collision audio material unresolved: sources={}/{} policy=fail-closed shapes={} composite={} keys={} zeroKeys={} ambiguousShapes={} incompleteShapes={} candidates='{}' model='{}'",
-                    unresolvedSourceCount,
-                    sources.size(),
-                    diagnostics.inspectedShapes,
-                    diagnostics.compositeShapes,
-                    diagnostics.enumeratedShapeKeys,
-                    diagnostics.zeroMaterialShapeKeys,
-                    diagnostics.ambiguousShapes,
-                    diagnostics.incompleteShapes,
-                    nativeMaterialHistogram,
-                    worldModelPath);
+                ROCK_LOG_SAMPLE_WARN(Weapon, g_rockConfig.rockLogSampleMilliseconds,
+                    "Equipped weapon collision audio material unresolved: sources={}/{} policy=fail-closed shapes={} "
+                    "composite={} keys={} zeroKeys={} ambiguousShapes={} incompleteShapes={} candidates='{}' "
+                    "model='{}'",
+                    unresolvedSourceCount, sources.size(), diagnostics.inspectedShapes, diagnostics.compositeShapes,
+                    diagnostics.enumeratedShapeKeys, diagnostics.zeroMaterialShapeKeys, diagnostics.ambiguousShapes,
+                    diagnostics.incompleteShapes, nativeMaterialHistogram, worldModelPath);
             }
         }
 
-        inline void collectManualScopeStructuralMarkers(
-            RE::NiAVObject* node,
-            manual_scope_target_policy::StructuralMarkerEvidence& evidence,
-            std::size_t& visited,
-            const int depth = 0)
+        inline void collectManualScopeStructuralMarkers(RE::NiAVObject* node,
+            manual_scope_target_policy::StructuralMarkerEvidence& evidence, std::size_t& visited, const int depth = 0)
         {
             if (!node || depth > 16 || visited >= 512 ||
                 manual_scope_target_policy::hasMagnifiedScopeStructure(evidence)) {
@@ -1181,22 +1045,17 @@ namespace rock
             std::uint32_t stableIndex = 0;
             for (const auto& modIndex : indexData) {
                 auto* omod = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(modIndex.objectID);
-                const RE::BGSKeyword* attachPointKeyword =
-                    omod ? RE::BGSKeyword::GetTypedKeywordByIndex(
-                               RE::KeywordType::kAttachPoint,
-                               omod->attachPoint.keywordIndex) :
-                           nullptr;
+                const RE::BGSKeyword* attachPointKeyword = omod
+                    ? RE::BGSKeyword::GetTypedKeywordByIndex(RE::KeywordType::kAttachPoint,
+                          omod->attachPoint.keywordIndex)
+                    : nullptr;
                 if (!modIndex.disabled && attachPointKeyword && omod) {
                     result.emplace(attachPointKeyword->formID, omod->formID);
                 }
-                if (outComposition &&
-                    outComposition->entryCount <
-                        outComposition->entries.size()) {
-                    auto& entry = outComposition->entries[
-                        outComposition->entryCount++];
+                if (outComposition && outComposition->entryCount < outComposition->entries.size()) {
+                    auto& entry = outComposition->entries[outComposition->entryCount++];
                     entry.omodFormId = omod ? omod->formID : modIndex.objectID;
-                    entry.attachPointFormId =
-                        attachPointKeyword ? attachPointKeyword->formID : 0;
+                    entry.attachPointFormId = attachPointKeyword ? attachPointKeyword->formID : 0;
                     entry.stableIndex = stableIndex;
                     entry.flags = modIndex.disabled ? (1u << 1) : (1u << 0);
                     if (attachPointKeyword) {
@@ -1228,8 +1087,8 @@ namespace rock
             return false;
         }
 
-        [[nodiscard]] inline EquippedManualScopeTarget resolveEquippedManualScopeTarget(RE::NiAVObject* assembledWeaponRoot,
-            std::uint32_t equipIndex)
+        [[nodiscard]] inline EquippedManualScopeTarget resolveEquippedManualScopeTarget(
+            RE::NiAVObject* assembledWeaponRoot, std::uint32_t equipIndex)
         {
             EquippedManualScopeTarget target{};
             auto* player = f4vr::getPlayer();
@@ -1244,9 +1103,9 @@ namespace rock
             }
             target.weaponIdentity = reinterpret_cast<std::uintptr_t>(weapon);
             target.instanceIdentity = reinterpret_cast<std::uintptr_t>(equippedInstanceData);
-            auto* instanceData = weapon && equippedInstanceData ?
-                static_cast<RE::TESObjectWEAP::InstanceData*>(equippedInstanceData) :
-                nullptr;
+            auto* instanceData = weapon && equippedInstanceData
+                ? static_cast<RE::TESObjectWEAP::InstanceData*>(equippedInstanceData)
+                : nullptr;
             RE::BGSZoomData* zoomData = instanceData ? instanceData->zoomData : nullptr;
             if (!zoomData && weapon) {
                 zoomData = weapon->weaponData.zoomData;
@@ -1256,8 +1115,7 @@ namespace rock
             }
             // An instance can explicitly clear a base weapon's HasScope bit.
             // Neither a base flag nor an OMOD property declaration may undo it.
-            const bool nativeScopeMetadataAuthored = manual_scope_target_policy::nativeHasScope(
-                instanceData != nullptr,
+            const bool nativeScopeMetadataAuthored = manual_scope_target_policy::nativeHasScope(instanceData != nullptr,
                 instanceData && instanceData->flags.all(RE::WEAPON_FLAGS::kHasScope),
                 weapon->weaponData.flags.all(RE::WEAPON_FLAGS::kHasScope));
             bool explicitScopeModelInstalled = false;
@@ -1280,12 +1138,13 @@ namespace rock
                             omod->model.c_str() ? omod->model.c_str() : "");
 
                     if (!manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence)) {
-                        const RE::BGSKeyword* attachPointKeyword =
-                            RE::BGSKeyword::GetTypedKeywordByIndex(RE::KeywordType::kAttachPoint, omod->attachPoint.keywordIndex);
+                        const RE::BGSKeyword* attachPointKeyword = RE::BGSKeyword::GetTypedKeywordByIndex(
+                            RE::KeywordType::kAttachPoint, omod->attachPoint.keywordIndex);
                         const std::string_view recordName = omod->fullName.c_str() ? omod->fullName.c_str() : "";
                         const std::string modelPath = omod->model.c_str() ? omod->model.c_str() : "";
                         const bool opticalCandidate =
-                            (attachPointKeyword && attachPointKeyword->formID == weapon_part_record_identity_policy::kAttachPointSight) ||
+                            (attachPointKeyword &&
+                                attachPointKeyword->formID == weapon_part_record_identity_policy::kAttachPointSight) ||
                             weapon_effect_geometry_policy::containsAsciiInsensitive(recordName, "optic") ||
                             weapon_effect_geometry_policy::containsAsciiInsensitive(recordName, "sight") ||
                             weapon_effect_geometry_policy::containsAsciiInsensitive(recordName, "scope") ||
@@ -1295,26 +1154,26 @@ namespace rock
                         if (opticalCandidate) {
                             auto templateRoot = loadCompleteOmodModelTemplate(modelPath);
                             std::size_t templateVisited = 0;
-                            collectManualScopeStructuralMarkers(templateRoot.get(), structuralEvidence, templateVisited);
+                            collectManualScopeStructuralMarkers(templateRoot.get(), structuralEvidence,
+                                templateVisited);
                         }
                     }
                 }
             }
-            target.scopeEligible = manual_scope_target_policy::isScopeEligible(
-                nativeScopeMetadataAuthored, explicitScopeModelInstalled,
-                manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence));
+            target.scopeEligible =
+                manual_scope_target_policy::isScopeEligible(nativeScopeMetadataAuthored, explicitScopeModelInstalled,
+                    manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence));
             target.overlayValid = target.scopeEligible;
             if (target.scopeEligible) {
                 target.overlayIndex = manual_scope_target_policy::resolveOverlay(target.overlayIndex);
             }
             target.directTransitionRequired = manual_scope_target_policy::requiresDirectNativeTransition(
-                nativeScopeMetadataAuthored,
-                explicitScopeModelInstalled,
-                manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence),
-                target.overlayValid);
+                nativeScopeMetadataAuthored, explicitScopeModelInstalled,
+                manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence), target.overlayValid);
             if (target.scopeEligible) {
                 ROCK_LOG_DEBUG(Weapon,
-                    "Native scope target weapon={:08X} nativeHasScope={} named={} structure={} authoredOverlay={} selectedOverlay={} authoredZoom={} direct={}",
+                    "Native scope target weapon={:08X} nativeHasScope={} named={} structure={} authoredOverlay={} "
+                    "selectedOverlay={} authoredZoom={} direct={}",
                     weapon->formID, nativeScopeMetadataAuthored, explicitScopeModelInstalled,
                     manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence),
                     zoomData ? zoomData->zoomData.overlay : 0, target.overlayIndex,
@@ -1344,10 +1203,8 @@ namespace rock
          */
         using weapon_instance_classification::classifyEquippedWeapon;
 
-        inline std::uint64_t makeEquippedWeaponInstanceContentKey(
-            const RE::TESObjectWEAP* weapon,
-            const RE::TBO_InstanceData* instanceData,
-            const RE::BGSObjectInstanceExtra* objectInstanceExtra)
+        inline std::uint64_t makeEquippedWeaponInstanceContentKey(const RE::TESObjectWEAP* weapon,
+            const RE::TBO_InstanceData* instanceData, const RE::BGSObjectInstanceExtra* objectInstanceExtra)
         {
             if (!instanceData && !objectInstanceExtra) {
                 return 0;
@@ -1389,12 +1246,13 @@ namespace rock
             identity.formID = weaponForm->formID;
             identity.formAddress = reinterpret_cast<std::uintptr_t>(weaponForm);
             identity.instanceDataAddress = reinterpret_cast<std::uintptr_t>(instanceData);
-            identity.instanceKeywordDataAddress = reinterpret_cast<std::uintptr_t>(
-                instanceData ? instanceData->GetKeywordData() : nullptr);
-            auto* equippedWeaponData = equipData->data ? static_cast<RE::EquippedWeaponData*>(equipData->data.get()) : nullptr;
+            identity.instanceKeywordDataAddress =
+                reinterpret_cast<std::uintptr_t>(instanceData ? instanceData->GetKeywordData() : nullptr);
+            auto* equippedWeaponData =
+                equipData->data ? static_cast<RE::EquippedWeaponData*>(equipData->data.get()) : nullptr;
             identity.equippedDataAddress = reinterpret_cast<std::uintptr_t>(equippedWeaponData);
-            identity.equippedObjectAddress = reinterpret_cast<std::uintptr_t>(
-                equippedWeaponData ? equippedWeaponData->fireNode : nullptr);
+            identity.equippedObjectAddress =
+                reinterpret_cast<std::uintptr_t>(equippedWeaponData ? equippedWeaponData->fireNode : nullptr);
             const auto* objectInstanceExtra = findEquippedWeaponObjectInstanceExtra(player, weaponForm, instanceData);
             const auto objectInstanceWitness = makeObjectInstanceExtraWitness(objectInstanceExtra);
             identity.objectInstanceExtraAddress = reinterpret_cast<std::uintptr_t>(objectInstanceExtra);
@@ -1403,7 +1261,8 @@ namespace rock
             identity.activeModCount = objectInstanceWitness.activeCount;
             identity.disabledModCount = objectInstanceWitness.disabledCount;
             if (const auto* weapon = asEquippedWeaponForm(weaponForm)) {
-                identity.instanceContentKey = makeEquippedWeaponInstanceContentKey(weapon, instanceData, objectInstanceExtra);
+                identity.instanceContentKey =
+                    makeEquippedWeaponInstanceContentKey(weapon, instanceData, objectInstanceExtra);
                 /*
                  * FO4VR binary verification (2026-08-05): the TESObjectWEAP
                  * BGSEquipType-subobject override at 0x14033FD70 returns
@@ -1414,29 +1273,24 @@ namespace rock
                  */
                 const auto* baseEquipSlot = weapon->GetEquipSlot(nullptr);
                 const auto* effectiveEquipSlot = weapon->GetEquipSlot(instanceData);
-                identity.baseEquipSlotFormID =
-                    baseEquipSlot ? baseEquipSlot->formID : 0;
-                identity.effectiveEquipSlotFormID =
-                    effectiveEquipSlot ? effectiveEquipSlot->formID : 0;
-                identity.effectiveEquipSlotUsesInstanceData =
-                    instanceData != nullptr;
+                identity.baseEquipSlotFormID = baseEquipSlot ? baseEquipSlot->formID : 0;
+                identity.effectiveEquipSlotFormID = effectiveEquipSlot ? effectiveEquipSlot->formID : 0;
+                identity.effectiveEquipSlotUsesInstanceData = instanceData != nullptr;
                 float weightGame = instanceData ? instanceData->GetWeight() : -1.0f;
                 if (weightGame < 0.0f) {
                     weightGame = weapon->weaponData.weight;
                 }
                 identity.weightGame = std::isfinite(weightGame) && weightGame > 0.0f ? weightGame : 0.0f;
-                const auto classification = classifyEquippedWeapon(
-                    weapon,
-                    instanceData,
-                    identity.effectiveEquipSlotFormID);
+                const auto classification =
+                    classifyEquippedWeapon(weapon, instanceData, identity.effectiveEquipSlotFormID);
                 identity.sizeClass = classification.sizeClass;
                 identity.classificationSource = classification.source;
                 identity.keywordFlags = classification.keywordFlags;
-                identity.usedEffectiveInstanceKeywordData =
-                    classification.usedEffectiveInstanceKeywordData;
+                identity.usedEffectiveInstanceKeywordData = classification.usedEffectiveInstanceKeywordData;
                 identity.classificationResolved = classification.resolved;
             } else {
-                identity.instanceContentKey = makeEquippedWeaponInstanceContentKey(nullptr, instanceData, objectInstanceExtra);
+                identity.instanceContentKey =
+                    makeEquippedWeaponInstanceContentKey(nullptr, instanceData, objectInstanceExtra);
             }
             const auto fullName = RE::TESFullName::GetFullName(*weaponForm);
             if (!fullName.empty()) {
@@ -1445,17 +1299,17 @@ namespace rock
             return identity;
         }
 
-        inline weapon_geometry_work::Task splitGeneratedWeaponPointCloudForCollisionDeferred(const std::vector<RE::NiPoint3>& localPoints, GeneratedPointCloudClusterSet& result)
+        inline weapon_geometry_work::Task splitGeneratedWeaponPointCloudForCollisionDeferred(
+            const std::vector<RE::NiPoint3>& localPoints, GeneratedPointCloudClusterSet& result)
         {
             result = {};
             constexpr auto targetPoints = WEAPON_COLLISION_SUPPORT_FIT_TARGET_POINTS;
             weapon_collision_geometry_math::ConvexSupportFitResult<RE::NiPoint3> fit;
-            auto fitting = weapon_collision_geometry_math::fitConvexSupportPointCloudDeferred(
-                localPoints,
-                targetPoints,
-                MAX_CONVEX_HULL_POINTS,
-                WEAPON_COLLISION_SUPPORT_FIT_MAX_ERROR_GAME_UNITS, false, fit);
-            while (fitting.step()) { co_yield 0; }
+            auto fitting = weapon_collision_geometry_math::fitConvexSupportPointCloudDeferred(localPoints, targetPoints,
+                MAX_CONVEX_HULL_POINTS, WEAPON_COLLISION_SUPPORT_FIT_MAX_ERROR_GAME_UNITS, false, fit);
+            while (fitting.step()) {
+                co_yield 0;
+            }
             result.supportFitAttempted = fit.attempted;
             result.supportFitAccepted = fit.accepted;
             result.supportFitMaxError = fit.maxSupportError;
@@ -1471,17 +1325,20 @@ namespace rock
 
             result.supportFitFallbackSplit = true;
             std::vector<std::vector<RE::NiPoint3>> splitClusters;
-            auto splitting = weapon_collision_geometry_math::splitOversizedClusterDeferred(localPoints, MAX_CONVEX_HULL_POINTS, splitClusters);
-            while (splitting.step()) { co_yield 0; }
+            auto splitting = weapon_collision_geometry_math::splitOversizedClusterDeferred(localPoints,
+                MAX_CONVEX_HULL_POINTS, splitClusters);
+            while (splitting.step()) {
+                co_yield 0;
+            }
             result.clusters.reserve(splitClusters.size());
             for (const auto& splitCluster : splitClusters) {
                 weapon_collision_geometry_math::ConvexSupportFitResult<RE::NiPoint3> childFit;
-                auto childFitting = weapon_collision_geometry_math::fitConvexSupportPointCloudDeferred(
-                    splitCluster,
-                    targetPoints,
-                    MAX_CONVEX_HULL_POINTS,
-                    WEAPON_COLLISION_SUPPORT_FIT_MAX_ERROR_GAME_UNITS, false, childFit);
-                while (childFitting.step()) { co_yield 0; }
+                auto childFitting =
+                    weapon_collision_geometry_math::fitConvexSupportPointCloudDeferred(splitCluster, targetPoints,
+                        MAX_CONVEX_HULL_POINTS, WEAPON_COLLISION_SUPPORT_FIT_MAX_ERROR_GAME_UNITS, false, childFit);
+                while (childFitting.step()) {
+                    co_yield 0;
+                }
                 if (childFit.accepted && !childFit.points.empty()) {
                     result.clusters.push_back(childFit.points);
                 } else {
@@ -1544,19 +1401,14 @@ namespace rock
             }
         }
 
-        inline weapon_collision_geometry_math::HullSelectionInput makeHullSelectionInput(const RE::NiPoint3& localCenterGame, const RE::NiPoint3& localMinGame,
-            const RE::NiPoint3& localMaxGame, std::size_t pointCount, const WeaponPartClassification& semantic)
+        inline weapon_collision_geometry_math::HullSelectionInput makeHullSelectionInput(
+            const RE::NiPoint3& localCenterGame, const RE::NiPoint3& localMinGame, const RE::NiPoint3& localMaxGame,
+            std::size_t pointCount, const WeaponPartClassification& semantic)
         {
             const auto coverage = classifyGeneratedHullSemantic(semantic);
-            return weapon_collision_geometry_math::HullSelectionInput{
-                pointToArray(localCenterGame),
-                pointToArray(localMinGame),
-                pointToArray(localMaxGame),
-                pointCount,
-                coverage.coverageClass,
-                coverage.priority,
-                coverage.cosmetic
-            };
+            return weapon_collision_geometry_math::HullSelectionInput{ pointToArray(localCenterGame),
+                pointToArray(localMinGame), pointToArray(localMaxGame), pointCount, coverage.coverageClass,
+                coverage.priority, coverage.cosmetic };
         }
 
         inline bool isAssembledWeaponComponentAnchor(WeaponPartKind partKind)
@@ -1575,7 +1427,8 @@ namespace rock
             }
         }
 
-        inline void addUniqueWeaponMeshRootCandidate(std::vector<WeaponMeshRootCandidate>& candidates, RE::NiAVObject* root, const char* label)
+        inline void addUniqueWeaponMeshRootCandidate(std::vector<WeaponMeshRootCandidate>& candidates,
+            RE::NiAVObject* root, const char* label)
         {
             if (!root) {
                 return;
@@ -1590,8 +1443,8 @@ namespace rock
 
         // includePlayerRoots is false for the second weapon: the player's
         // Weapon/primary nodes hold the primary gun, never index 1's model.
-        inline std::vector<WeaponMeshRootCandidate> makeGeneratedWeaponMeshRootCandidates(RE::NiAVObject* updateWeaponNode,
-            bool includePlayerRoots)
+        inline std::vector<WeaponMeshRootCandidate> makeGeneratedWeaponMeshRootCandidates(
+            RE::NiAVObject* updateWeaponNode, bool includePlayerRoots)
         {
             /*
              * Weapon mesh collision has to be rooted on the visual weapon tree, not
@@ -1605,8 +1458,10 @@ namespace rock
             if (includePlayerRoots) {
                 addUniqueWeaponMeshRootCandidate(candidates, f4vr::getWeaponNode(), "firstPersonSkeleton:Weapon");
                 if (auto* playerNodes = f4vr::getPlayerNodes()) {
-                    addUniqueWeaponMeshRootCandidate(candidates, playerNodes->primaryWeapontoWeaponNode, "PlayerNodes.primaryWeapontoWeaponNode");
-                    addUniqueWeaponMeshRootCandidate(candidates, playerNodes->primaryWeaponOffsetNOde, "PlayerNodes.primaryWeaponOffsetNode");
+                    addUniqueWeaponMeshRootCandidate(candidates, playerNodes->primaryWeapontoWeaponNode,
+                        "PlayerNodes.primaryWeapontoWeaponNode");
+                    addUniqueWeaponMeshRootCandidate(candidates, playerNodes->primaryWeaponOffsetNOde,
+                        "PlayerNodes.primaryWeaponOffsetNode");
                 }
             }
 
@@ -1615,7 +1470,8 @@ namespace rock
         }
 
         template <class Visitor>
-        void visitGeneratedWeaponMeshRootCandidates(RE::NiAVObject* updateWeaponNode, bool includePlayerRoots, Visitor&& visitor)
+        void visitGeneratedWeaponMeshRootCandidates(RE::NiAVObject* updateWeaponNode, bool includePlayerRoots,
+            Visitor&& visitor)
         {
             std::array<WeaponMeshRootCandidate, 4> candidates{};
             std::size_t count = 0;
@@ -1650,9 +1506,10 @@ namespace rock
         inline std::uint64_t makeWeaponEmitterRootSetKey(RE::NiAVObject* updateWeaponNode, bool includePlayerRoots)
         {
             std::uint64_t key = weapon_visual_composition_policy::kWeaponVisualCompositionOffset;
-            visitGeneratedWeaponMeshRootCandidates(updateWeaponNode, includePlayerRoots, [&](const WeaponMeshRootCandidate& candidate) {
-                mixWeaponVisualKey(key, reinterpret_cast<std::uintptr_t>(candidate.root));
-            });
+            visitGeneratedWeaponMeshRootCandidates(updateWeaponNode, includePlayerRoots,
+                [&](const WeaponMeshRootCandidate& candidate) {
+                    mixWeaponVisualKey(key, reinterpret_cast<std::uintptr_t>(candidate.root));
+                });
             return key;
         }
 
@@ -1666,14 +1523,15 @@ namespace rock
          * (sourceLocalPointsGame), since Havok never re-applies NiNode scale
          * to a built shape at runtime.
          */
-        inline std::vector<RE::NiPoint3> makeCenteredHavokPointCloud(const std::vector<RE::NiPoint3>& localPointsGame, const RE::NiPoint3& localCenterGame, float sourceScale = 1.0f)
+        inline std::vector<RE::NiPoint3> makeCenteredHavokPointCloud(const std::vector<RE::NiPoint3>& localPointsGame,
+            const RE::NiPoint3& localCenterGame, float sourceScale = 1.0f)
         {
             std::vector<RE::NiPoint3> result;
             result.reserve(localPointsGame.size());
             const float scaledHavokScale = sourceScale * gameToHavokScale();
             for (const auto& point : localPointsGame) {
-                result.emplace_back((point.x - localCenterGame.x) * scaledHavokScale, (point.y - localCenterGame.y) * scaledHavokScale,
-                    (point.z - localCenterGame.z) * scaledHavokScale);
+                result.emplace_back((point.x - localCenterGame.x) * scaledHavokScale,
+                    (point.y - localCenterGame.y) * scaledHavokScale, (point.z - localCenterGame.z) * scaledHavokScale);
             }
             return result;
         }
@@ -1738,7 +1596,8 @@ namespace rock
             if (!node) {
                 return false;
             }
-            if ((node->flags.flags & 1) != 0 || node->GetAppCulled() || node->local.scale == 0.0f) return false;
+            if ((node->flags.flags & 1) != 0 || node->GetAppCulled() || node->local.scale == 0.0f)
+                return false;
             return true;
         }
 
@@ -1754,17 +1613,15 @@ namespace rock
             return reinterpret_cast<std::uintptr_t>(*reinterpret_cast<void**>(reinterpret_cast<char*>(child) + 0x08));
         }
 
-        inline weapon_visual_composition_policy::VisualRecord makeWeaponVisualRecord(
-            RE::NiAVObject* node,
-            RE::NiAVObject* parent,
-            std::uint32_t childIndex,
-            std::uint32_t childCount,
-            std::uint32_t depth,
+        inline weapon_visual_composition_policy::VisualRecord makeWeaponVisualRecord(RE::NiAVObject* node,
+            RE::NiAVObject* parent, std::uint32_t childIndex, std::uint32_t childCount, std::uint32_t depth,
             bool visible)
         {
             weapon_visual_composition_policy::VisualRecord record{
                 .nodeAddress = reinterpret_cast<std::uintptr_t>(node),
-                .parentAddress = reinterpret_cast<std::uintptr_t>(parent ? parent : node ? node->parent : nullptr),
+                .parentAddress = reinterpret_cast<std::uintptr_t>(parent ? parent
+                        : node                                           ? node->parent
+                                                                         : nullptr),
                 .name = safeNodeName(node),
                 .depth = depth,
                 .childIndex = childIndex,
@@ -1777,7 +1634,8 @@ namespace rock
                 auto* base = reinterpret_cast<char*>(triShape);
                 auto* rendererData = *reinterpret_cast<void**>(base + VROffset::rendererData);
                 record.rendererData = reinterpret_cast<std::uintptr_t>(rendererData);
-                record.skinInstance = reinterpret_cast<std::uintptr_t>(*reinterpret_cast<void**>(base + VROffset::skinInstance));
+                record.skinInstance =
+                    reinterpret_cast<std::uintptr_t>(*reinterpret_cast<void**>(base + VROffset::skinInstance));
                 record.vertexDesc = *reinterpret_cast<std::uint64_t*>(base + VROffset::vertexDesc);
                 record.numTriangles = *reinterpret_cast<std::uint32_t*>(base + VROffset::numTriangles);
                 record.numVertices = *reinterpret_cast<std::uint16_t*>(base + VROffset::numVertices);
@@ -1789,7 +1647,8 @@ namespace rock
             return record;
         }
 
-        inline void accumulateWeaponVisualKey(RE::NiAVObject* node, RE::NiAVObject* parent, std::uint32_t childIndex, int depth, std::uint64_t& key, WeaponVisualKeyStats& stats)
+        inline void accumulateWeaponVisualKey(RE::NiAVObject* node, RE::NiAVObject* parent, std::uint32_t childIndex,
+            int depth, std::uint64_t& key, WeaponVisualKeyStats& stats)
         {
             if (!node || depth > 15 || stats.nodeCount > 512) {
                 return;
@@ -1804,8 +1663,9 @@ namespace rock
             if (niObjectRttiChainContains(node, "NiBillboardNode")) {
                 return;
             }
-            if (auto* triShape = node->IsTriShape();
-                triShape && classifyGeneratedWeaponEffectGeometry(triShape) != weapon_effect_geometry_policy::ExclusionReason::None) {
+            if (auto* triShape = node->IsTriShape(); triShape &&
+                classifyGeneratedWeaponEffectGeometry(triShape) !=
+                    weapon_effect_geometry_policy::ExclusionReason::None) {
                 return;
             }
 
@@ -1819,7 +1679,8 @@ namespace rock
             if (auto* niNode = node->IsNode()) {
                 childCount = static_cast<std::uint32_t>(niNode->GetRuntimeData().children.size());
             }
-            const auto record = makeWeaponVisualRecord(node, parent, childIndex, childCount, static_cast<std::uint32_t>(depth), visible);
+            const auto record = makeWeaponVisualRecord(node, parent, childIndex, childCount,
+                static_cast<std::uint32_t>(depth), visible);
             weapon_visual_composition_policy::mixVisualRecord(key, record);
 
             if (node->IsTriShape()) {
@@ -1863,7 +1724,8 @@ namespace rock
         [[nodiscard]] bool weaponEmitterAncestorMatches(const RE::NiAVObject* node, Predicate&& predicate)
         {
             int step = 0;
-            for (auto* ancestor = node ? node->parent : nullptr; ancestor && step < 32; ancestor = ancestor->parent, ++step) {
+            for (auto* ancestor = node ? node->parent : nullptr; ancestor && step < 32;
+                ancestor = ancestor->parent, ++step) {
                 if (predicate(std::string_view{ safeNodeName(ancestor) })) {
                     return true;
                 }
@@ -1891,24 +1753,23 @@ namespace rock
 
         struct WeaponEmitterStructuralContext
         {
-            weapon_part_record_identity_policy::StructureAnchor anchor{ weapon_part_record_identity_policy::StructureAnchor::None };
+            weapon_part_record_identity_policy::StructureAnchor anchor{
+                weapon_part_record_identity_policy::StructureAnchor::None
+            };
             RE::NiAVObject* ownerRoot{ nullptr };
             bool ownerRootStructural{ false };
         };
 
-        [[nodiscard]] inline bool isWeaponAttachmentPointNode(std::string_view name)
-        {
-            return name.starts_with("P-");
-        }
+        [[nodiscard]] inline bool isWeaponAttachmentPointNode(std::string_view name) { return name.starts_with("P-"); }
 
-        [[nodiscard]] inline WeaponEmitterStructuralContext resolveWeaponEmitterStructuralContext(
-            RE::NiAVObject* node,
+        [[nodiscard]] inline WeaponEmitterStructuralContext resolveWeaponEmitterStructuralContext(RE::NiAVObject* node,
             RE::NiAVObject* candidateRoot)
         {
             WeaponEmitterStructuralContext result{};
             RE::NiAVObject* childBelowAncestor = node;
             int step = 0;
-            for (auto* ancestor = node ? node->parent : nullptr; ancestor && step < 32; ancestor = ancestor->parent, ++step) {
+            for (auto* ancestor = node ? node->parent : nullptr; ancestor && step < 32;
+                ancestor = ancestor->parent, ++step) {
                 const std::string_view ancestorName{ safeNodeName(ancestor) };
                 const auto anchor = weapon_part_record_identity_policy::resolveStructureAnchor(ancestorName);
                 if (anchor != weapon_part_record_identity_policy::StructureAnchor::None) {
@@ -1934,14 +1795,12 @@ namespace rock
             return result;
         }
 
-        using weapon_hierarchy::weaponTransformFinite;
         using weapon_hierarchy::tryResolveDescendantLocalTransform;
         using weapon_hierarchy::tryResolveDescendantWorldTransform;
+        using weapon_hierarchy::weaponTransformFinite;
 
-        inline bool updateWeaponEmitterTransform(
-            WeaponEmitterDescriptor& descriptor,
-            const RE::NiAVObject* transformNode,
-            const RE::NiAVObject* weaponRoot)
+        inline bool updateWeaponEmitterTransform(WeaponEmitterDescriptor& descriptor,
+            const RE::NiAVObject* transformNode, const RE::NiAVObject* weaponRoot)
         {
             if (!transformNode || !weaponRoot || !weaponTransformFinite(transformNode->world) ||
                 !weaponTransformFinite(weaponRoot->world) || std::abs(weaponRoot->world.scale) <= 0.000001f) {
@@ -1949,15 +1808,15 @@ namespace rock
             }
 
             const RE::NiTransform weaponLocal = transform_math::composeTransforms(
-                transform_math::invertTransform(weaponRoot->world),
-                transformNode->world);
+                transform_math::invertTransform(weaponRoot->world), transformNode->world);
             if (!weaponTransformFinite(weaponLocal)) {
                 return false;
             }
 
             for (int row = 0; row < 3; ++row) {
                 for (int column = 0; column < 3; ++column) {
-                    descriptor.rotate[static_cast<std::size_t>(row * 3 + column)] = weaponLocal.rotate.entry[row][column];
+                    descriptor.rotate[static_cast<std::size_t>(row * 3 + column)] =
+                        weaponLocal.rotate.entry[row][column];
                 }
             }
             descriptor.translate = { weaponLocal.translate.x, weaponLocal.translate.y, weaponLocal.translate.z };
@@ -1987,8 +1846,7 @@ namespace rock
             }
         }
 
-        [[nodiscard]] inline bool weaponEmitterDescriptorsShareOwner(
-            const WeaponEmitterDescriptor& lhs,
+        [[nodiscard]] inline bool weaponEmitterDescriptorsShareOwner(const WeaponEmitterDescriptor& lhs,
             const WeaponEmitterDescriptor& rhs)
         {
             if (lhs.kind != rhs.kind) {
@@ -2006,7 +1864,8 @@ namespace rock
             return lhs.ownerRootAddress != 0 && lhs.ownerRootAddress == rhs.ownerRootAddress;
         }
 
-        inline void mergeWeaponEmitterDescriptor(WeaponEmitterSnapshot& snapshot, const WeaponEmitterDescriptor& candidate)
+        inline void mergeWeaponEmitterDescriptor(WeaponEmitterSnapshot& snapshot,
+            const WeaponEmitterDescriptor& candidate)
         {
             WeaponEmitterDescriptor* destination = nullptr;
             for (std::size_t i = 0; i < snapshot.count; ++i) {
@@ -2058,15 +1917,9 @@ namespace rock
             }
         }
 
-        inline void collectWeaponEmittersRecursive(
-            RE::NiAVObject* node,
-            RE::NiAVObject* candidateRoot,
-            RE::NiAVObject* weaponRoot,
-            const std::unordered_map<std::uint32_t, std::uint32_t>& omodByAttachPointFormId,
-            std::uint64_t weaponGenerationKey,
-            int depth,
-            std::uint32_t& visitedNodes,
-            WeaponEmitterSnapshot& snapshot)
+        inline void collectWeaponEmittersRecursive(RE::NiAVObject* node, RE::NiAVObject* candidateRoot,
+            RE::NiAVObject* weaponRoot, const std::unordered_map<std::uint32_t, std::uint32_t>& omodByAttachPointFormId,
+            std::uint64_t weaponGenerationKey, int depth, std::uint32_t& visitedNodes, WeaponEmitterSnapshot& snapshot)
         {
             if (!node || depth > 15 || visitedNodes >= 512) {
                 return;
@@ -2079,17 +1932,22 @@ namespace rock
                 classifyGeneratedWeaponEffectGeometry(triShape) != weapon_effect_geometry_policy::ExclusionReason::None;
             if (valueNode || effectGeometry) {
                 const auto structural = resolveWeaponEmitterStructuralContext(node, candidateRoot);
-                const auto hasLaserName = [](std::string_view name) { return weapon_emitter_policy::hasLaserRoleName(name); };
-                const auto hasFlashlightName = [](std::string_view name) { return weapon_emitter_policy::hasFlashlightRoleName(name); };
+                const auto hasLaserName = [](std::string_view name) {
+                    return weapon_emitter_policy::hasLaserRoleName(name);
+                };
+                const auto hasFlashlightName = [](std::string_view name) {
+                    return weapon_emitter_policy::hasFlashlightRoleName(name);
+                };
                 const bool laserContext = weaponEmitterAncestorMatches(node, hasLaserName) ||
                     (valueNode && weaponEmitterImmediateSiblingMatches(node, hasLaserName));
                 const bool flashlightContext = weaponEmitterAncestorMatches(node, hasFlashlightName) ||
                     (valueNode && weaponEmitterImmediateSiblingMatches(node, hasFlashlightName));
-                const bool sightContext = structural.anchor == weapon_part_record_identity_policy::StructureAnchor::SlotSight ||
+                const bool sightContext =
+                    structural.anchor == weapon_part_record_identity_policy::StructureAnchor::SlotSight ||
                     weaponEmitterAncestorMatches(node, [](std::string_view name) {
                         return weapon_effect_geometry_policy::containsAsciiInsensitive(name, "scope") ||
-                               weapon_effect_geometry_policy::containsAsciiInsensitive(name, "sight") ||
-                               weapon_effect_geometry_policy::containsAsciiInsensitive(name, "optic");
+                            weapon_effect_geometry_policy::containsAsciiInsensitive(name, "sight") ||
+                            weapon_effect_geometry_policy::containsAsciiInsensitive(name, "optic");
                     });
                 const auto kind = weapon_emitter_policy::classify({
                     .nodeName = safeNodeName(node),
@@ -2106,15 +1964,18 @@ namespace rock
                     descriptor.visible = weaponEmitterNodeEffectivelyVisible(node);
                     descriptor.effectStateKnown = effectGeometry;
                     descriptor.kind = static_cast<std::uint32_t>(kind);
-                    const auto source = valueNode ? weapon_emitter_policy::Source::AddOnNode : weapon_emitter_policy::Source::EffectGeometry;
+                    const auto source = valueNode ? weapon_emitter_policy::Source::AddOnNode
+                                                  : weapon_emitter_policy::Source::EffectGeometry;
                     descriptor.source = static_cast<std::uint32_t>(source);
-                    descriptor.transformPriority = weapon_emitter_policy::transformPriority(kind, source, safeNodeName(node));
+                    descriptor.transformPriority =
+                        weapon_emitter_policy::transformPriority(kind, source, safeNodeName(node));
                     descriptor.weaponGenerationKey = weaponGenerationKey;
                     descriptor.transformNodeAddress = reinterpret_cast<std::uintptr_t>(node);
                     descriptor.effectNodeAddress = effectGeometry ? reinterpret_cast<std::uintptr_t>(node) : 0;
                     descriptor.ownerRootAddress = reinterpret_cast<std::uintptr_t>(structural.ownerRoot);
                     descriptor.ownerRootStructural = structural.ownerRootStructural;
-                    descriptor.attachPointFormId = weapon_part_record_identity_policy::attachPointFormIdForAnchor(structural.anchor);
+                    descriptor.attachPointFormId =
+                        weapon_part_record_identity_policy::attachPointFormIdForAnchor(structural.anchor);
                     if (descriptor.attachPointFormId != 0) {
                         const auto omod = omodByAttachPointFormId.find(descriptor.attachPointFormId);
                         if (omod != omodByAttachPointFormId.end()) {
@@ -2139,24 +2000,14 @@ namespace rock
             }
             const auto& children = niNode->GetRuntimeData().children;
             for (std::uint16_t i = 0; i < children.capacity(); ++i) {
-                collectWeaponEmittersRecursive(
-                    children[i].get(),
-                    candidateRoot,
-                    weaponRoot,
-                    omodByAttachPointFormId,
-                    weaponGenerationKey,
-                    depth + 1,
-                    visitedNodes,
-                    snapshot);
+                collectWeaponEmittersRecursive(children[i].get(), candidateRoot, weaponRoot, omodByAttachPointFormId,
+                    weaponGenerationKey, depth + 1, visitedNodes, snapshot);
             }
         }
 
-        [[nodiscard]] inline WeaponEmitterSnapshot collectWeaponEmitterSnapshot(
-            RE::NiAVObject* weaponNode,
+        [[nodiscard]] inline WeaponEmitterSnapshot collectWeaponEmitterSnapshot(RE::NiAVObject* weaponNode,
             const std::unordered_map<std::uint32_t, std::uint32_t>& omodByAttachPointFormId,
-            std::uint64_t equippedWeaponKey,
-            std::uint64_t weaponGenerationKey,
-            std::uint64_t rootSetKey,
+            std::uint64_t equippedWeaponKey, std::uint64_t weaponGenerationKey, std::uint64_t rootSetKey,
             bool includePlayerRoots)
         {
             WeaponEmitterSnapshot snapshot{};
@@ -2168,29 +2019,18 @@ namespace rock
             snapshot.equippedWeaponKey = equippedWeaponKey;
             snapshot.rootSetKey = rootSetKey;
             snapshot.weaponRootAddress = reinterpret_cast<std::uintptr_t>(weaponNode);
-            visitGeneratedWeaponMeshRootCandidates(weaponNode, includePlayerRoots, [&](const WeaponMeshRootCandidate& candidate) {
-                std::uint32_t visitedNodes = 0;
-                collectWeaponEmittersRecursive(
-                    candidate.root,
-                    candidate.root,
-                    weaponNode,
-                    omodByAttachPointFormId,
-                    weaponGenerationKey,
-                    0,
-                    visitedNodes,
-                    snapshot);
-            });
+            visitGeneratedWeaponMeshRootCandidates(weaponNode, includePlayerRoots,
+                [&](const WeaponMeshRootCandidate& candidate) {
+                    std::uint32_t visitedNodes = 0;
+                    collectWeaponEmittersRecursive(candidate.root, candidate.root, weaponNode, omodByAttachPointFormId,
+                        weaponGenerationKey, 0, visitedNodes, snapshot);
+                });
             return snapshot;
         }
 
         template <class Remember>
-        inline void refreshWeaponEmittersRecursive(
-            RE::NiAVObject* node,
-            RE::NiAVObject* weaponRoot,
-            int depth,
-            std::uint32_t& visitedNodes,
-            WeaponEmitterSnapshot& snapshot,
-            Remember& remember)
+        inline void refreshWeaponEmittersRecursive(RE::NiAVObject* node, RE::NiAVObject* weaponRoot, int depth,
+            std::uint32_t& visitedNodes, WeaponEmitterSnapshot& snapshot, Remember& remember)
         {
             if (!node || depth > 15 || visitedNodes >= 512) {
                 return;
@@ -2217,7 +2057,8 @@ namespace rock
             }
             const auto& children = niNode->GetRuntimeData().children;
             for (std::uint16_t i = 0; i < children.capacity(); ++i) {
-                refreshWeaponEmittersRecursive(children[i].get(), weaponRoot, depth + 1, visitedNodes, snapshot, remember);
+                refreshWeaponEmittersRecursive(children[i].get(), weaponRoot, depth + 1, visitedNodes, snapshot,
+                    remember);
             }
         }
 
@@ -2227,19 +2068,20 @@ namespace rock
         inline std::uint32_t generatedWeaponCollisionFilterInfo(bool collisionEnabled, std::uint32_t layer)
         {
             const std::uint32_t baseFilterInfo = (0x000B << 16) | (layer & 0x7F);
-            return collisionEnabled ? baseFilterInfo : (baseFilterInfo | collision_suppression_registry::kSuppressionNoCollideBit);
+            return collisionEnabled ? baseFilterInfo
+                                    : (baseFilterInfo | collision_suppression_registry::kSuppressionNoCollideBit);
         }
 
         inline bool isFiniteOrderedEvidenceBounds(const WeaponEvidenceBounds3& bounds)
         {
-            return bounds.valid && std::isfinite(bounds.min.x) && std::isfinite(bounds.min.y) && std::isfinite(bounds.min.z) && std::isfinite(bounds.max.x) &&
-                std::isfinite(bounds.max.y) && std::isfinite(bounds.max.z) && bounds.min.x <= bounds.max.x && bounds.min.y <= bounds.max.y && bounds.min.z <= bounds.max.z;
+            return bounds.valid && std::isfinite(bounds.min.x) && std::isfinite(bounds.min.y) &&
+                std::isfinite(bounds.min.z) && std::isfinite(bounds.max.x) && std::isfinite(bounds.max.y) &&
+                std::isfinite(bounds.max.z) && bounds.min.x <= bounds.max.x && bounds.min.y <= bounds.max.y &&
+                bounds.min.z <= bounds.max.z;
         }
 
         inline WeaponCollision::NativeScopeSightAnchorSnapshot buildNativeScopeSightAnchorSnapshot(
-            std::uint64_t weaponGenerationKey,
-            std::uint64_t equippedWeaponOwnershipKey,
-            std::uint32_t weaponFormID,
+            std::uint64_t weaponGenerationKey, std::uint64_t equippedWeaponOwnershipKey, std::uint32_t weaponFormID,
             const std::vector<WeaponCollisionProfileEvidenceDescriptor>& descriptors)
         {
             WeaponCollision::NativeScopeSightAnchorSnapshot snapshot{};
@@ -2252,7 +2094,8 @@ namespace rock
             RE::NiPoint3 sightBoundsMax{};
             const auto accumulatePartKind = [&](WeaponPartKind partKind) {
                 for (const auto& descriptor : descriptors) {
-                    if (!descriptor.valid || descriptor.weaponGenerationKey != weaponGenerationKey || descriptor.semantic.partKind != partKind ||
+                    if (!descriptor.valid || descriptor.weaponGenerationKey != weaponGenerationKey ||
+                        descriptor.semantic.partKind != partKind ||
                         !isFiniteOrderedEvidenceBounds(descriptor.localBoundsGame)) {
                         continue;
                     }
@@ -2294,7 +2137,8 @@ namespace rock
                 return snapshot;
             }
 
-            const RE::NiPoint3 anchor = native_scope_camera_follow_math::rearPlaneCenterFromSightBounds(sightBoundsMin, sightBoundsMax);
+            const RE::NiPoint3 anchor =
+                native_scope_camera_follow_math::rearPlaneCenterFromSightBounds(sightBoundsMin, sightBoundsMax);
             if (!std::isfinite(anchor.x) || !std::isfinite(anchor.y) || !std::isfinite(anchor.z)) {
                 snapshot.sightBodyCount = 0;
                 return snapshot;

@@ -34,5 +34,6 @@ namespace rock::native_melee_wand
         bool indexOneHeld = false;
         bool indexOneLeft = false;
     };
+
     void update(const Holders& holders) noexcept;
 }

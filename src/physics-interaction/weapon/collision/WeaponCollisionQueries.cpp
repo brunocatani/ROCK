@@ -1,18 +1,15 @@
+#include "api/ProviderRuntime.h"
+#include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/weapon/HoldingGripMath.h"
 #include "physics-interaction/weapon/WeaponCollisionInternal.h"
-#include "api/ProviderRuntimeServices.h"
-#include "api/ProviderRuntime.h"
 
 // Read-side snapshots and queries: bounds, compound geometry, contacts, support-grip evidence views, surface probes, profile evidence, and emitters.
 
 namespace rock
 {
-    std::size_t WeaponCollision::collectAttachOnlyGripIndicators(
-        const RE::NiAVObject* currentWeaponRoot,
-        std::span<const weapon_part_runtime::Target> targets,
-        std::span<const std::uint32_t> candidateBodyIds,
-        std::span<RE::NiPoint3> outPositions,
-        std::span<const WeaponGrabPointLocation> grabPoints) const
+    std::size_t WeaponCollision::collectAttachOnlyGripIndicators(const RE::NiAVObject* currentWeaponRoot,
+        std::span<const weapon_part_runtime::Target> targets, std::span<const std::uint32_t> candidateBodyIds,
+        std::span<RE::NiPoint3> outPositions, std::span<const WeaponGrabPointLocation> grabPoints) const
     {
         const auto generation = getCurrentWeaponGenerationKey();
         if (!currentWeaponRoot || generation == 0 || outPositions.empty() || candidateBodyIds.empty() ||
@@ -26,20 +23,31 @@ namespace rock
 
         std::array<std::uintptr_t, MAX_WEAPON_BODIES> markedSources{};
         std::size_t count = 0;
-        for(std::size_t i=0;i<grabPoints.size()&&i<candidateBodyIds.size()&&count<outPositions.size();++i) {
-            const auto& point=grabPoints[i];
-            if(!point.pointId||candidateBodyIds[i]==weapon_part_runtime::kInvalidBodyId)continue;
-            if(i&&grabPoints[0].ownerToken==point.ownerToken&&grabPoints[0].groupId==point.groupId&&grabPoints[0].pointId==point.pointId&&candidateBodyIds[0]!=weapon_part_runtime::kInvalidBodyId)continue;
-            const auto registered=std::any_of(targets.begin(),targets.end(),[&](const auto& target){
-                return target.ownerToken==point.ownerToken&&target.groupId==point.groupId&&
-                    weapon_part_runtime::targetAppliesToGeneration(target,generation)&&target.grabMode==weapon_part_runtime::GrabMode::AttachOnly;
+        for (std::size_t i = 0; i < grabPoints.size() && i < candidateBodyIds.size() && count < outPositions.size();
+            ++i) {
+            const auto& point = grabPoints[i];
+            if (!point.pointId || candidateBodyIds[i] == weapon_part_runtime::kInvalidBodyId)
+                continue;
+            if (i && grabPoints[0].ownerToken == point.ownerToken && grabPoints[0].groupId == point.groupId &&
+                grabPoints[0].pointId == point.pointId && candidateBodyIds[0] != weapon_part_runtime::kInvalidBodyId)
+                continue;
+            const auto registered = std::any_of(targets.begin(), targets.end(), [&](const auto& target) {
+                return target.ownerToken == point.ownerToken && target.groupId == point.groupId &&
+                    weapon_part_runtime::targetAppliesToGeneration(target, generation) &&
+                    target.grabMode == weapon_part_runtime::GrabMode::AttachOnly;
             });
-            if(!registered)continue;
-            auto* source=reinterpret_cast<RE::NiAVObject*>(provider::runtime::resolveSourceKey(generation,point.sourceKey));
+            if (!registered)
+                continue;
+            auto* source =
+                reinterpret_cast<RE::NiAVObject*>(provider::runtime::resolveSourceKey(generation, point.sourceKey));
             RE::NiTransform world{};
-            if(!source||!tryResolveDescendantWorldTransform(currentWeaponRoot,currentWeaponRoot->world,source,world)||!f4vr::isNodeVisible(source))continue;
-            const auto position=transform_math::localPointToWorld(world,point.pointInSource);
-            if(weapon_interaction_query::finitePoint(position))outPositions[count++]=position;
+            if (!source ||
+                !tryResolveDescendantWorldTransform(currentWeaponRoot, currentWeaponRoot->world, source, world) ||
+                !f4vr::isNodeVisible(source))
+                continue;
+            const auto position = transform_math::localPointToWorld(world, point.pointInSource);
+            if (weapon_interaction_query::finitePoint(position))
+                outPositions[count++] = position;
         }
         for (const auto& instance : activeWeaponBodies()) {
             if (count == outPositions.size() || count == markedSources.size()) {
@@ -50,14 +58,16 @@ namespace rock
             }
             // Registration alone is not a hover. Only the exact body selected
             // by an available hand's current grab probe may show a marker.
-            if (std::find(candidateBodyIds.begin(), candidateBodyIds.end(),
-                    instance.body.getBodyId().value) == candidateBodyIds.end()) {
+            if (std::find(candidateBodyIds.begin(), candidateBodyIds.end(), instance.body.getBodyId().value) ==
+                candidateBodyIds.end()) {
                 continue;
             }
-            bool authored=false;
-            for(std::size_t i=0;i<grabPoints.size()&&i<candidateBodyIds.size();++i)
-                if(grabPoints[i].pointId&&candidateBodyIds[i]==instance.body.getBodyId().value)authored=true;
-            if(authored)continue; // A missing authored frame must never fall back to a part center.
+            bool authored = false;
+            for (std::size_t i = 0; i < grabPoints.size() && i < candidateBodyIds.size(); ++i)
+                if (grabPoints[i].pointId && candidateBodyIds[i] == instance.body.getBodyId().value)
+                    authored = true;
+            if (authored)
+                continue; // A missing authored frame must never fall back to a part center.
             const auto source = reinterpret_cast<std::uintptr_t>(instance.sourceNode);
             if (std::find(markedSources.begin(), markedSources.begin() + count, source) !=
                 markedSources.begin() + count) {
@@ -65,32 +75,30 @@ namespace rock
             }
             // Resolve the same identity and semantic fields as contact routing.
             // A higher-priority full-authority target must suppress an attach-only mark.
-            const auto resolution = weapon_part_runtime::resolveTarget(targets, {
-                .weaponGenerationKey = generation,
-                .bodyId = instance.body.getBodyId().value,
-                .sourceRoot = source,
-                .sourceName = instance.sourceName,
-                .partKind = instance.semantic.partKind,
-                .reloadRole = instance.semantic.reloadRole,
-                .supportRole = instance.semantic.supportGripRole,
-                .socketRole = instance.semantic.socketRole,
-                .actionRole = instance.semantic.actionRole,
-            });
-            if (!resolution.matched ||
-                resolution.grabMode != weapon_part_runtime::GrabMode::AttachOnly) {
+            const auto resolution = weapon_part_runtime::resolveTarget(targets,
+                {
+                    .weaponGenerationKey = generation,
+                    .bodyId = instance.body.getBodyId().value,
+                    .sourceRoot = source,
+                    .sourceName = instance.sourceName,
+                    .partKind = instance.semantic.partKind,
+                    .reloadRole = instance.semantic.reloadRole,
+                    .supportRole = instance.semantic.supportGripRole,
+                    .socketRole = instance.semantic.socketRole,
+                    .actionRole = instance.semantic.actionRole,
+                });
+            if (!resolution.matched || resolution.grabMode != weapon_part_runtime::GrabMode::AttachOnly) {
                 continue;
             }
             RE::NiTransform sourceWorld{};
-            if (!tryResolveDescendantWorldTransform(currentWeaponRoot,
-                    currentWeaponRoot->world, instance.sourceNode, sourceWorld) ||
-                !f4vr::isNodeVisible(instance.sourceNode) ||
-                std::abs(sourceWorld.scale) <= 0.000001f) {
+            if (!tryResolveDescendantWorldTransform(currentWeaponRoot, currentWeaponRoot->world, instance.sourceNode,
+                    sourceWorld) ||
+                !f4vr::isNodeVisible(instance.sourceNode) || std::abs(sourceWorld.scale) <= 0.000001f) {
                 continue;
             }
-            const auto position = transform_math::localPointToWorld(
-                sourceWorld, instance.generatedSourceLocalCenterGame);
-            if (!std::isfinite(position.x) || !std::isfinite(position.y) ||
-                !std::isfinite(position.z)) {
+            const auto position =
+                transform_math::localPointToWorld(sourceWorld, instance.generatedSourceLocalCenterGame);
+            if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(position.z)) {
                 continue;
             }
             markedSources[count] = source;
@@ -99,33 +107,46 @@ namespace rock
         return generation == getCurrentWeaponGenerationKey() ? count : 0;
     }
 
-    holding_grip_math::MirrorOffsets WeaponCollision::holdingMirrorOffsets() const {
-        const auto generation=getCurrentWeaponGenerationKey();
-        if(!generation)return {};
-        if(_holdingPlaneGeneration==generation)return _holdingOffsets;
-        std::array<holding_grip_math::PlaneEvidence,MAX_WEAPON_BODIES> evidence{},evidenceZ{};
-        std::array<const void*,MAX_WEAPON_BODIES> seen{};
-        std::size_t count=0;
-        for(const auto& body:activeWeaponBodies()){
-            if(!body.body.isValid()||!body.geometry||!body.geometry->mesh)continue;
-            const auto* mesh=body.geometry->mesh.get();
-            if(std::find(seen.begin(),seen.begin()+count,mesh)!=seen.begin()+count)continue;
-            const auto& triangles=mesh->localTrianglesGame;
-            if(triangles.empty()||count==evidence.size())continue;
-            auto low=triangles.front().v0,high=low;
-            const std::size_t step=(std::max)(std::size_t{1},(triangles.size()+8191)/8192);
-            for(std::size_t i=0;i<triangles.size();i+=step)for(const auto& v:{triangles[i].v0,triangles[i].v1,triangles[i].v2}){
-                low.x=(std::min)(low.x,v.x);low.y=(std::min)(low.y,v.y);low.z=(std::min)(low.z,v.z);
-                high.x=(std::max)(high.x,v.x);high.y=(std::max)(high.y,v.y);high.z=(std::max)(high.z,v.z);
-            }
-            seen[count]=mesh;
-            evidence[count]=holding_grip_math::planeEvidence({low.x,low.y,low.z},{high.x,high.y,high.z},0);
-            evidenceZ[count++]=holding_grip_math::planeEvidence({low.x,low.y,low.z},{high.x,high.y,high.z},2);
+    holding_grip_math::MirrorOffsets WeaponCollision::holdingMirrorOffsets() const
+    {
+        const auto generation = getCurrentWeaponGenerationKey();
+        if (!generation)
+            return {};
+        if (_holdingPlaneGeneration == generation)
+            return _holdingOffsets;
+        std::array<holding_grip_math::PlaneEvidence, MAX_WEAPON_BODIES> evidence{}, evidenceZ{};
+        std::array<const void*, MAX_WEAPON_BODIES> seen{};
+        std::size_t count = 0;
+        for (const auto& body : activeWeaponBodies()) {
+            if (!body.body.isValid() || !body.geometry || !body.geometry->mesh)
+                continue;
+            const auto* mesh = body.geometry->mesh.get();
+            if (std::find(seen.begin(), seen.begin() + count, mesh) != seen.begin() + count)
+                continue;
+            const auto& triangles = mesh->localTrianglesGame;
+            if (triangles.empty() || count == evidence.size())
+                continue;
+            auto low = triangles.front().v0, high = low;
+            const std::size_t step = (std::max)(std::size_t{ 1 }, (triangles.size() + 8191) / 8192);
+            for (std::size_t i = 0; i < triangles.size(); i += step)
+                for (const auto& v : { triangles[i].v0, triangles[i].v1, triangles[i].v2 }) {
+                    low.x = (std::min)(low.x, v.x);
+                    low.y = (std::min)(low.y, v.y);
+                    low.z = (std::min)(low.z, v.z);
+                    high.x = (std::max)(high.x, v.x);
+                    high.y = (std::max)(high.y, v.y);
+                    high.z = (std::max)(high.z, v.z);
+                }
+            seen[count] = mesh;
+            evidence[count] = holding_grip_math::planeEvidence({ low.x, low.y, low.z }, { high.x, high.y, high.z }, 0);
+            evidenceZ[count++] =
+                holding_grip_math::planeEvidence({ low.x, low.y, low.z }, { high.x, high.y, high.z }, 2);
         }
-        if(!count)return {};
-        _holdingOffsets={holding_grip_math::geometryPlane(std::span(evidence.data(),count)),
-            holding_grip_math::geometryPlane(std::span(evidenceZ.data(),count))};
-        _holdingPlaneGeneration=generation;
+        if (!count)
+            return {};
+        _holdingOffsets = { holding_grip_math::geometryPlane(std::span(evidence.data(), count)),
+            holding_grip_math::geometryPlane(std::span(evidenceZ.data(), count)) };
+        _holdingPlaneGeneration = generation;
         return _holdingOffsets;
     }
 
@@ -142,7 +163,8 @@ namespace rock
         };
         bool sampled = false;
         for (const auto& instance : activeWeaponBodies()) {
-            if (!instance.body.isValid() || !instance.geometry || !finitePoint(instance.generatedLocalMinGame) || !finitePoint(instance.generatedLocalMaxGame)) {
+            if (!instance.body.isValid() || !instance.geometry || !finitePoint(instance.generatedLocalMinGame) ||
+                !finitePoint(instance.generatedLocalMaxGame)) {
                 continue;
             }
             if (instance.generatedLocalMaxGame.x < instance.generatedLocalMinGame.x ||
@@ -156,12 +178,18 @@ namespace rock
                 outSnapshot.maxWeaponLocal = instance.generatedLocalMaxGame;
                 sampled = true;
             } else {
-                outSnapshot.minWeaponLocal.x = (std::min)(outSnapshot.minWeaponLocal.x, instance.generatedLocalMinGame.x);
-                outSnapshot.minWeaponLocal.y = (std::min)(outSnapshot.minWeaponLocal.y, instance.generatedLocalMinGame.y);
-                outSnapshot.minWeaponLocal.z = (std::min)(outSnapshot.minWeaponLocal.z, instance.generatedLocalMinGame.z);
-                outSnapshot.maxWeaponLocal.x = (std::max)(outSnapshot.maxWeaponLocal.x, instance.generatedLocalMaxGame.x);
-                outSnapshot.maxWeaponLocal.y = (std::max)(outSnapshot.maxWeaponLocal.y, instance.generatedLocalMaxGame.y);
-                outSnapshot.maxWeaponLocal.z = (std::max)(outSnapshot.maxWeaponLocal.z, instance.generatedLocalMaxGame.z);
+                outSnapshot.minWeaponLocal.x =
+                    (std::min)(outSnapshot.minWeaponLocal.x, instance.generatedLocalMinGame.x);
+                outSnapshot.minWeaponLocal.y =
+                    (std::min)(outSnapshot.minWeaponLocal.y, instance.generatedLocalMinGame.y);
+                outSnapshot.minWeaponLocal.z =
+                    (std::min)(outSnapshot.minWeaponLocal.z, instance.generatedLocalMinGame.z);
+                outSnapshot.maxWeaponLocal.x =
+                    (std::max)(outSnapshot.maxWeaponLocal.x, instance.generatedLocalMaxGame.x);
+                outSnapshot.maxWeaponLocal.y =
+                    (std::max)(outSnapshot.maxWeaponLocal.y, instance.generatedLocalMaxGame.y);
+                outSnapshot.maxWeaponLocal.z =
+                    (std::max)(outSnapshot.maxWeaponLocal.z, instance.generatedLocalMaxGame.z);
             }
             ++outSnapshot.sourceBodyCount;
         }
@@ -180,7 +208,8 @@ namespace rock
             (outSnapshot.maxWeaponLocal.y - outSnapshot.minWeaponLocal.y) * 0.5f,
             (outSnapshot.maxWeaponLocal.z - outSnapshot.minWeaponLocal.z) * 0.5f,
         };
-        outSnapshot.valid = finitePoint(outSnapshot.centerWeaponLocal) && finitePoint(outSnapshot.halfExtentsWeaponLocal);
+        outSnapshot.valid =
+            finitePoint(outSnapshot.centerWeaponLocal) && finitePoint(outSnapshot.halfExtentsWeaponLocal);
         return outSnapshot.valid;
     }
 
@@ -210,8 +239,7 @@ namespace rock
         const auto finitePoint = [](const RE::NiPoint3& point) {
             return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
         };
-        auto fail = [&](const CompoundGeometrySnapshotFailure failure,
-                        const std::uint32_t sourceIndex,
+        auto fail = [&](const CompoundGeometrySnapshotFailure failure, const std::uint32_t sourceIndex,
                         const std::uint32_t bodyId) {
             outSnapshot.failure = failure;
             outSnapshot.failedSourceIndex = sourceIndex;
@@ -258,8 +286,10 @@ namespace rock
                     outSnapshot.maxWeaponLocal = point;
                     sampledPoint = true;
                 } else {
-                    outSnapshot.minWeaponLocal = weapon_collision_geometry_math::pointMin(outSnapshot.minWeaponLocal, point);
-                    outSnapshot.maxWeaponLocal = weapon_collision_geometry_math::pointMax(outSnapshot.maxWeaponLocal, point);
+                    outSnapshot.minWeaponLocal =
+                        weapon_collision_geometry_math::pointMin(outSnapshot.minWeaponLocal, point);
+                    outSnapshot.maxWeaponLocal =
+                        weapon_collision_geometry_math::pointMax(outSnapshot.maxWeaponLocal, point);
                 }
             }
 
@@ -289,8 +319,7 @@ namespace rock
             (outSnapshot.maxWeaponLocal.z - outSnapshot.minWeaponLocal.z) * 0.5f,
         };
         if (!finitePoint(outSnapshot.centerWeaponLocal) || !finitePoint(outSnapshot.halfExtentsWeaponLocal) ||
-            outSnapshot.halfExtentsWeaponLocal.x < 0.0f ||
-            outSnapshot.halfExtentsWeaponLocal.y < 0.0f ||
+            outSnapshot.halfExtentsWeaponLocal.x < 0.0f || outSnapshot.halfExtentsWeaponLocal.y < 0.0f ||
             outSnapshot.halfExtentsWeaponLocal.z < 0.0f) {
             return fail(CompoundGeometrySnapshotFailure::InvalidBounds, sourceIndex, INVALID_BODY_ID);
         }
@@ -300,10 +329,8 @@ namespace rock
         return true;
     }
 
-    bool WeaponCollision::resolveCompoundChildPose(
-        const WeaponBodyInstance& instance,
-        const RE::NiAVObject* packageDriveNode,
-        CompoundChildPoseSnapshot& outPose)
+    bool WeaponCollision::resolveCompoundChildPose(const WeaponBodyInstance& instance,
+        const RE::NiAVObject* packageDriveNode, CompoundChildPoseSnapshot& outPose)
     {
         outPose = {};
         if (!packageDriveNode || !instance.shape) {
@@ -319,9 +346,8 @@ namespace rock
             if (!weaponTransformFinite(sourceInWeapon)) {
                 return false;
             }
-            shapeCenterWeaponLocal = transform_math::localPointToWorld(
-                sourceInWeapon,
-                instance.generatedSourceLocalCenterGame);
+            shapeCenterWeaponLocal =
+                transform_math::localPointToWorld(sourceInWeapon, instance.generatedSourceLocalCenterGame);
         }
 
         outPose.shapeInWeapon = sourceInWeapon;
@@ -333,10 +359,8 @@ namespace rock
         return weaponTransformFinite(outPose.shapeInWeapon);
     }
 
-    bool WeaponCollision::getCompoundChildPoseSnapshot(
-        const RE::NiAVObject* currentWeaponRoot,
-        const std::uint64_t expectedGenerationKey,
-        std::span<CompoundChildPoseSnapshot> outChildren,
+    bool WeaponCollision::getCompoundChildPoseSnapshot(const RE::NiAVObject* currentWeaponRoot,
+        const std::uint64_t expectedGenerationKey, std::span<CompoundChildPoseSnapshot> outChildren,
         std::size_t& outChildCount) const
     {
         outChildCount = 0;
@@ -366,8 +390,7 @@ namespace rock
             ++outChildCount;
         }
 
-        if (outChildCount != expectedBodyCount ||
-            getCurrentWeaponGenerationKey() != expectedGenerationKey) {
+        if (outChildCount != expectedBodyCount || getCurrentWeaponGenerationKey() != expectedGenerationKey) {
             outChildCount = 0;
             return false;
         }
@@ -375,16 +398,12 @@ namespace rock
     }
 
     WeaponCollision::ReleaseGeometrySnapshot WeaponCollision::getCurrentWeaponReleaseGeometry(
-        const RE::NiPoint3& gripWorldPoint,
-        const RE::NiTransform& capturedWeaponWorld) const
+        const RE::NiPoint3& gripWorldPoint, const RE::NiTransform& capturedWeaponWorld) const
     {
         ReleaseGeometrySnapshot result{};
-        bool capturedTransformFinite =
-            std::isfinite(capturedWeaponWorld.translate.x) &&
-            std::isfinite(capturedWeaponWorld.translate.y) &&
-            std::isfinite(capturedWeaponWorld.translate.z) &&
-            std::isfinite(capturedWeaponWorld.scale) &&
-            std::abs(capturedWeaponWorld.scale) > 0.0001f;
+        bool capturedTransformFinite = std::isfinite(capturedWeaponWorld.translate.x) &&
+            std::isfinite(capturedWeaponWorld.translate.y) && std::isfinite(capturedWeaponWorld.translate.z) &&
+            std::isfinite(capturedWeaponWorld.scale) && std::abs(capturedWeaponWorld.scale) > 0.0001f;
         for (int row = 0; capturedTransformFinite && row < 3; ++row) {
             for (int column = 0; capturedTransformFinite && column < 3; ++column) {
                 capturedTransformFinite = std::isfinite(capturedWeaponWorld.rotate.entry[row][column]);
@@ -406,11 +425,8 @@ namespace rock
             if (!std::isfinite(localPoint.x) || !std::isfinite(localPoint.y) || !std::isfinite(localPoint.z)) {
                 return;
             }
-            const auto worldPoint = weapon_collision_geometry_math::localPointToWorld(
-                capturedWeaponWorld.rotate,
-                capturedWeaponWorld.translate,
-                capturedWeaponWorld.scale,
-                localPoint);
+            const auto worldPoint = weapon_collision_geometry_math::localPointToWorld(capturedWeaponWorld.rotate,
+                capturedWeaponWorld.translate, capturedWeaponWorld.scale, localPoint);
             const float dx = worldPoint.x - gripWorldPoint.x;
             const float dy = worldPoint.y - gripWorldPoint.y;
             const float dz = worldPoint.z - gripWorldPoint.z;
@@ -466,7 +482,8 @@ namespace rock
             }
 
             WeaponInteractionContact candidate{};
-            const std::uint32_t count = (std::min)(_published.count.load(std::memory_order_acquire), static_cast<std::uint32_t>(MAX_WEAPON_BODIES));
+            const std::uint32_t count = (std::min)(_published.count.load(std::memory_order_acquire),
+                static_cast<std::uint32_t>(MAX_WEAPON_BODIES));
             bool found = false;
             for (std::uint32_t i = 0; i < count; ++i) {
                 if (_published.ids[i].load(std::memory_order_acquire) != bodyId) {
@@ -497,12 +514,16 @@ namespace rock
         contact.valid = contact.bodyId != INVALID_BODY_ID;
         contact.partKind = static_cast<WeaponPartKind>(_published.partKinds[i].load(std::memory_order_acquire));
         contact.reloadRole = static_cast<WeaponReloadRole>(_published.reloadRoles[i].load(std::memory_order_acquire));
-        contact.supportGripRole = static_cast<WeaponSupportGripRole>(_published.supportRoles[i].load(std::memory_order_acquire));
+        contact.supportGripRole =
+            static_cast<WeaponSupportGripRole>(_published.supportRoles[i].load(std::memory_order_acquire));
         contact.socketRole = static_cast<WeaponSocketRole>(_published.socketRoles[i].load(std::memory_order_acquire));
         contact.actionRole = static_cast<WeaponActionRole>(_published.actionRoles[i].load(std::memory_order_acquire));
-        contact.fallbackGripPose = static_cast<WeaponGripPoseId>(_published.gripPoses[i].load(std::memory_order_acquire));
-        contact.interactionRoot = reinterpret_cast<RE::NiAVObject*>(_published.interactionRoots[i].load(std::memory_order_acquire));
-        contact.sourceRoot = reinterpret_cast<RE::NiAVObject*>(_published.sourceRoots[i].load(std::memory_order_acquire));
+        contact.fallbackGripPose =
+            static_cast<WeaponGripPoseId>(_published.gripPoses[i].load(std::memory_order_acquire));
+        contact.interactionRoot =
+            reinterpret_cast<RE::NiAVObject*>(_published.interactionRoots[i].load(std::memory_order_acquire));
+        contact.sourceRoot =
+            reinterpret_cast<RE::NiAVObject*>(_published.sourceRoots[i].load(std::memory_order_acquire));
         contact.weaponGenerationKey = _published.generationKeys[i].load(std::memory_order_acquire);
         return contact;
     }
@@ -554,28 +575,20 @@ namespace rock
         return false;
     }
 
-    bool WeaponCollision::tryBuildSupportGripEvidenceView(
-        const WeaponBodyInstance& instance,
-        const RE::NiAVObject* currentWeaponRoot,
-        SupportGripEvidenceView& outView) const
+    bool WeaponCollision::tryBuildSupportGripEvidenceView(const WeaponBodyInstance& instance,
+        const RE::NiAVObject* currentWeaponRoot, SupportGripEvidenceView& outView) const
     {
         outView = {};
-        if (!instance.body.isValid() || !instance.geometry ||
-            instance.geometry->mesh->localTrianglesGame.empty()) {
+        if (!instance.body.isValid() || !instance.geometry || instance.geometry->mesh->localTrianglesGame.empty()) {
             return false;
         }
 
         RE::NiTransform localToWorld{};
         const bool sourceNodeCurrent = instance.sourceNode && currentWeaponRoot &&
-            tryResolveDescendantWorldTransform(
-                currentWeaponRoot,
-                currentWeaponRoot->world,
-                instance.sourceNode,
+            tryResolveDescendantWorldTransform(currentWeaponRoot, currentWeaponRoot->world, instance.sourceNode,
                 localToWorld);
         if (!sourceNodeCurrent) {
-            const RE::NiAVObject* fallbackRoot = currentWeaponRoot ?
-                currentWeaponRoot :
-                instance.driveNode;
+            const RE::NiAVObject* fallbackRoot = currentWeaponRoot ? currentWeaponRoot : instance.driveNode;
             if (!fallbackRoot) {
                 return false;
             }
@@ -586,59 +599,49 @@ namespace rock
         }
 
         const bool useSourceTriangles = sourceNodeCurrent && !instance.geometry->mesh->sourceLocalTrianglesGame.empty();
-        const auto& localTriangles = useSourceTriangles ? instance.geometry->mesh->sourceLocalTrianglesGame : instance.geometry->mesh->localTrianglesGame;
-        if (localTriangles.empty() ||
-            !std::isfinite(localToWorld.scale) ||
-            std::abs(localToWorld.scale) <= 0.000001f) {
+        const auto& localTriangles = useSourceTriangles ? instance.geometry->mesh->sourceLocalTrianglesGame
+                                                        : instance.geometry->mesh->localTrianglesGame;
+        if (localTriangles.empty() || !std::isfinite(localToWorld.scale) || std::abs(localToWorld.scale) <= 0.000001f) {
             return false;
         }
 
-        outView.localTriangles = std::span<const TriangleData>(
-            localTriangles.data(),
-            localTriangles.size());
+        outView.localTriangles = std::span<const TriangleData>(localTriangles.data(), localTriangles.size());
         if (instance.indices) {
-            outView.localTriangleIndex = useSourceTriangles ? &instance.indices->sourceIndex : &instance.indices->localIndex;
+            outView.localTriangleIndex =
+                useSourceTriangles ? &instance.indices->sourceIndex : &instance.indices->localIndex;
         }
         outView.localToWorld = localToWorld;
-        outView.sourceGroupId = instance.generatedSourceGroupId != 0 ?
-            instance.generatedSourceGroupId :
-            reinterpret_cast<std::uintptr_t>(instance.sourceNode);
+        outView.sourceGroupId = instance.generatedSourceGroupId != 0
+            ? instance.generatedSourceGroupId
+            : reinterpret_cast<std::uintptr_t>(instance.sourceNode);
         outView.bodyId = instance.body.getBodyId().value;
         outView.weaponGenerationKey = getCurrentWeaponGenerationKey();
         outView.sourceNodeCurrent = sourceNodeCurrent;
         return outView.weaponGenerationKey != 0;
     }
 
-    bool WeaponCollision::tryGetSupportGripEvidenceView(
-        std::uint32_t bodyId,
-        const RE::NiAVObject* currentWeaponRoot,
+    bool WeaponCollision::tryGetSupportGripEvidenceView(std::uint32_t bodyId, const RE::NiAVObject* currentWeaponRoot,
         SupportGripEvidenceView& outView) const
     {
         outView = {};
         if (bodyId == INVALID_BODY_ID) {
             return false;
         }
-        if (getCurrentWeaponGenerationKey() == 0 ||
-            !activeWeaponBodyRootMatches(currentWeaponRoot)) {
+        if (getCurrentWeaponGenerationKey() == 0 || !activeWeaponBodyRootMatches(currentWeaponRoot)) {
             return false;
         }
 
         for (const auto& instance : activeWeaponBodies()) {
-            if (!instance.body.isValid() || !instance.geometry ||
-                instance.body.getBodyId().value != bodyId) {
+            if (!instance.body.isValid() || !instance.geometry || instance.body.getBodyId().value != bodyId) {
                 continue;
             }
-            return tryBuildSupportGripEvidenceView(
-                instance,
-                currentWeaponRoot,
-                outView);
+            return tryBuildSupportGripEvidenceView(instance, currentWeaponRoot, outView);
         }
 
         return false;
     }
 
-    std::size_t WeaponCollision::findSupportGripEvidenceViews(
-        const RE::NiAVObject* currentWeaponRoot,
+    std::size_t WeaponCollision::findSupportGripEvidenceViews(const RE::NiAVObject* currentWeaponRoot,
         std::span<SupportGripEvidenceView> outViews) const
     {
         for (auto& view : outViews) {
@@ -654,25 +657,18 @@ namespace rock
         std::size_t viewCount = 0;
         for (const auto& instance : activeWeaponBodies()) {
             SupportGripEvidenceView view{};
-            if (!tryBuildSupportGripEvidenceView(
-                    instance,
-                    currentWeaponRoot,
-                    view)) {
+            if (!tryBuildSupportGripEvidenceView(instance, currentWeaponRoot, view)) {
                 continue;
             }
 
             const std::uintptr_t sourceGroup = view.sourceGroupId;
             const bool duplicate = sourceGroup != 0 &&
-                std::find(
-                    seenSourceGroups.begin(),
-                    seenSourceGroups.begin() + seenSourceCount,
-                    sourceGroup) !=
+                std::find(seenSourceGroups.begin(), seenSourceGroups.begin() + seenSourceCount, sourceGroup) !=
                     seenSourceGroups.begin() + seenSourceCount;
             if (duplicate) {
                 continue;
             }
-            if (sourceGroup != 0 &&
-                seenSourceCount < seenSourceGroups.size()) {
+            if (sourceGroup != 0 && seenSourceCount < seenSourceGroups.size()) {
                 seenSourceGroups[seenSourceCount++] = sourceGroup;
             }
 
@@ -684,27 +680,19 @@ namespace rock
         return viewCount;
     }
 
-    bool WeaponCollision::tryFindCurrentWeaponSurfaceNearPoint(
-        const RE::NiAVObject* currentWeaponRoot,
-        const RE::NiPoint3& pointWorld,
-        float maxDistanceGameUnits,
-        WeaponSurfaceProximityWitness& outWitness) const
+    bool WeaponCollision::tryFindCurrentWeaponSurfaceNearPoint(const RE::NiAVObject* currentWeaponRoot,
+        const RE::NiPoint3& pointWorld, float maxDistanceGameUnits, WeaponSurfaceProximityWitness& outWitness) const
     {
         const std::array<RE::NiPoint3, 1> points{ pointWorld };
         std::array<WeaponSurfaceProximityWitness, 1> witnesses{};
-        const std::size_t witnessCount = findCurrentWeaponSurfaceNearPoints(
-            currentWeaponRoot,
-            points,
-            maxDistanceGameUnits,
-            witnesses);
+        const std::size_t witnessCount =
+            findCurrentWeaponSurfaceNearPoints(currentWeaponRoot, points, maxDistanceGameUnits, witnesses);
         outWitness = witnesses[0];
         return witnessCount == 1 && outWitness.valid;
     }
 
-    std::size_t WeaponCollision::findCurrentWeaponSurfaceNearPoints(
-        const RE::NiAVObject* currentWeaponRoot,
-        const std::span<const RE::NiPoint3> pointsWorld,
-        const float maxDistanceGameUnits,
+    std::size_t WeaponCollision::findCurrentWeaponSurfaceNearPoints(const RE::NiAVObject* currentWeaponRoot,
+        const std::span<const RE::NiPoint3> pointsWorld, const float maxDistanceGameUnits,
         const std::span<WeaponSurfaceProximityWitness> outWitnesses) const
     {
         constexpr std::size_t kMaximumPointCount = 16;
@@ -713,17 +701,11 @@ namespace rock
         }
         const std::uint64_t currentGeneration = getCurrentWeaponGenerationKey();
         const auto pointFinite = [](const RE::NiPoint3& point) {
-            return std::isfinite(point.x) &&
-                   std::isfinite(point.y) &&
-                   std::isfinite(point.z);
+            return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
         };
-        if (!currentWeaponRoot ||
-            currentGeneration == 0 ||
-            !activeWeaponBodyRootMatches(currentWeaponRoot) ||
-            pointsWorld.empty() ||
-            pointsWorld.size() > kMaximumPointCount ||
-            outWitnesses.size() != pointsWorld.size() ||
-            !std::isfinite(maxDistanceGameUnits) ||
+        if (!currentWeaponRoot || currentGeneration == 0 || !activeWeaponBodyRootMatches(currentWeaponRoot) ||
+            pointsWorld.empty() || pointsWorld.size() > kMaximumPointCount ||
+            outWitnesses.size() != pointsWorld.size() || !std::isfinite(maxDistanceGameUnits) ||
             maxDistanceGameUnits < 0.0f) {
             return 0;
         }
@@ -751,41 +733,22 @@ namespace rock
 
             RE::NiTransform surfaceWorld = currentWeaponRoot->world;
             const bool sourceNodeCurrent = instance.sourceNode &&
-                tryResolveDescendantWorldTransform(
-                    currentWeaponRoot,
-                    currentWeaponRoot->world,
-                    instance.sourceNode,
+                tryResolveDescendantWorldTransform(currentWeaponRoot, currentWeaponRoot->world, instance.sourceNode,
                     surfaceWorld);
-            const bool useSourceFrame =
-                sourceNodeCurrent &&
-                !instance.geometry->mesh->sourceLocalTrianglesGame.empty();
+            const bool useSourceFrame = sourceNodeCurrent && !instance.geometry->mesh->sourceLocalTrianglesGame.empty();
             if (!useSourceFrame) {
                 surfaceWorld = currentWeaponRoot->world;
             }
-            const auto& localTriangles =
-                useSourceFrame ?
-                instance.geometry->mesh->sourceLocalTrianglesGame :
-                instance.geometry->mesh->localTrianglesGame;
-            const auto& triangleIndex =
-                useSourceFrame ?
-                instance.indices->sourceIndex :
-                instance.indices->localIndex;
+            const auto& localTriangles = useSourceFrame ? instance.geometry->mesh->sourceLocalTrianglesGame
+                                                        : instance.geometry->mesh->localTrianglesGame;
+            const auto& triangleIndex = useSourceFrame ? instance.indices->sourceIndex : instance.indices->localIndex;
             const RE::NiPoint3& boundsMin =
-                useSourceFrame ?
-                instance.generatedSourceLocalMinGame :
-                instance.generatedLocalMinGame;
+                useSourceFrame ? instance.generatedSourceLocalMinGame : instance.generatedLocalMinGame;
             const RE::NiPoint3& boundsMax =
-                useSourceFrame ?
-                instance.generatedSourceLocalMaxGame :
-                instance.generatedLocalMaxGame;
-            if (localTriangles.empty() ||
-                !weaponTransformFinite(surfaceWorld) ||
-                std::abs(surfaceWorld.scale) <= 0.000001f ||
-                !pointFinite(boundsMin) ||
-                !pointFinite(boundsMax) ||
-                boundsMin.x > boundsMax.x ||
-                boundsMin.y > boundsMax.y ||
-                boundsMin.z > boundsMax.z) {
+                useSourceFrame ? instance.generatedSourceLocalMaxGame : instance.generatedLocalMaxGame;
+            if (localTriangles.empty() || !weaponTransformFinite(surfaceWorld) ||
+                std::abs(surfaceWorld.scale) <= 0.000001f || !pointFinite(boundsMin) || !pointFinite(boundsMax) ||
+                boundsMin.x > boundsMax.x || boundsMin.y > boundsMax.y || boundsMin.z > boundsMax.z) {
                 continue;
             }
 
@@ -794,77 +757,48 @@ namespace rock
             std::array<RE::NiPoint3, kMaximumPointCount> localPoints{};
             std::array<bool, kMaximumPointCount> pointMayReachBody{};
             bool anyPointMayReachBody = false;
-            for (std::size_t pointIndex = 0;
-                 pointIndex < pointsWorld.size();
-                 ++pointIndex) {
-                localPoints[pointIndex] =
-                    weapon_collision_geometry_math::worldPointToLocal(
-                        surfaceWorld.rotate,
-                        surfaceWorld.translate,
-                        surfaceWorld.scale,
-                        pointsWorld[pointIndex]);
+            for (std::size_t pointIndex = 0; pointIndex < pointsWorld.size(); ++pointIndex) {
+                localPoints[pointIndex] = weapon_collision_geometry_math::worldPointToLocal(surfaceWorld.rotate,
+                    surfaceWorld.translate, surfaceWorld.scale, pointsWorld[pointIndex]);
                 if (!pointFinite(localPoints[pointIndex])) {
                     continue;
                 }
-                const float boundsDistanceSquared =
-                    weapon_interaction_probe_math::pointAabbDistanceSquared(
-                        localPoints[pointIndex],
-                        boundsMin,
-                        boundsMax);
-                pointMayReachBody[pointIndex] =
-                    std::isfinite(boundsDistanceSquared) &&
-                    weapon_interaction_probe_math::isWithinProbeRadiusSquared(
-                        boundsDistanceSquared,
-                        localRadius);
-                anyPointMayReachBody =
-                    anyPointMayReachBody || pointMayReachBody[pointIndex];
+                const float boundsDistanceSquared = weapon_interaction_probe_math::pointAabbDistanceSquared(
+                    localPoints[pointIndex], boundsMin, boundsMax);
+                pointMayReachBody[pointIndex] = std::isfinite(boundsDistanceSquared) &&
+                    weapon_interaction_probe_math::isWithinProbeRadiusSquared(boundsDistanceSquared, localRadius);
+                anyPointMayReachBody = anyPointMayReachBody || pointMayReachBody[pointIndex];
             }
             if (!anyPointMayReachBody) {
                 continue;
             }
 
-            for (std::size_t pointIndex = 0;
-                 pointIndex < pointsWorld.size();
-                 ++pointIndex) {
+            for (std::size_t pointIndex = 0; pointIndex < pointsWorld.size(); ++pointIndex) {
                 if (!pointMayReachBody[pointIndex]) {
                     continue;
                 }
-                const auto nearest = triangleIndex.nearest(
-                    localTriangles,
-                    localPoints[pointIndex],
-                    localRadius * localRadius,
-                    [](const RE::NiPoint3& point, const TriangleData& triangle) {
+                const auto nearest = triangleIndex.nearest(localTriangles, localPoints[pointIndex],
+                    localRadius * localRadius, [](const RE::NiPoint3& point, const TriangleData& triangle) {
                         float squared = (std::numeric_limits<float>::infinity)();
                         (void)closestPointOnTriangleToPoint(point, triangle, squared);
                         return squared;
                     });
                 if (!nearest.valid() ||
-                    !weapon_interaction_probe_math::isWithinProbeRadiusSquared(
-                        nearest.distanceSquared,
-                        localRadius)) {
+                    !weapon_interaction_probe_math::isWithinProbeRadiusSquared(nearest.distanceSquared, localRadius)) {
                     continue;
                 }
 
-                const float distanceGameUnits =
-                    std::sqrt(nearest.distanceSquared) * absoluteScale;
+                const float distanceGameUnits = std::sqrt(nearest.distanceSquared) * absoluteScale;
                 auto& witness = outWitnesses[pointIndex];
                 if (!std::isfinite(distanceGameUnits) ||
-                    (witness.valid &&
-                        distanceGameUnits >= witness.distanceGameUnits)) {
+                    (witness.valid && distanceGameUnits >= witness.distanceGameUnits)) {
                     continue;
                 }
                 float closestDistanceSquared = 0.0f;
-                const RE::NiPoint3 closestPointLocal =
-                    closestPointOnTriangleToPoint(
-                        localPoints[pointIndex],
-                        localTriangles[nearest.triangle],
-                        closestDistanceSquared);
-                witness.closestPointWorld =
-                    weapon_collision_geometry_math::localPointToWorld(
-                        surfaceWorld.rotate,
-                        surfaceWorld.translate,
-                        surfaceWorld.scale,
-                        closestPointLocal);
+                const RE::NiPoint3 closestPointLocal = closestPointOnTriangleToPoint(localPoints[pointIndex],
+                    localTriangles[nearest.triangle], closestDistanceSquared);
+                witness.closestPointWorld = weapon_collision_geometry_math::localPointToWorld(surfaceWorld.rotate,
+                    surfaceWorld.translate, surfaceWorld.scale, closestPointLocal);
                 witness.distanceGameUnits = distanceGameUnits;
                 witness.bodyId = instance.body.getBodyId().value;
                 witness.weaponGenerationKey = currentGeneration;
@@ -882,8 +816,7 @@ namespace rock
 
         std::size_t witnessCount = 0;
         for (const auto& witness : outWitnesses) {
-            if (witness.valid &&
-                witness.weaponGenerationKey == currentGeneration) {
+            if (witness.valid && witness.weaponGenerationKey == currentGeneration) {
                 ++witnessCount;
             }
         }
@@ -891,8 +824,7 @@ namespace rock
     }
 
     std::vector<WeaponCollisionProfileEvidenceDescriptor> WeaponCollision::buildProfileEvidenceSnapshot(
-        const WeaponBodyBank& bank,
-        WeaponCompositionSnapshot& outComposition) const
+        const WeaponBodyBank& bank, WeaponCompositionSnapshot& outComposition) const
     {
         std::vector<WeaponCollisionProfileEvidenceDescriptor> descriptors;
         descriptors.reserve(bankWeaponBodyCount(bank));
@@ -903,8 +835,7 @@ namespace rock
          * them by attach-point keyword FormID. Runs once per publication on
          * the main thread; ~a dozen form lookups.
          */
-        const auto omodByAttachPointFormId =
-            readEquippedOmodsByAttachPointFormId(&outComposition, _equipIndex);
+        const auto omodByAttachPointFormId = readEquippedOmodsByAttachPointFormId(&outComposition, _equipIndex);
         outComposition.weaponGenerationKey = _identity.cachedBodySetKey;
         outComposition.weaponFormId = _identity.cachedFormID;
 
@@ -935,8 +866,10 @@ namespace rock
             descriptor.sourceName = instance.sourceName;
             descriptor.semantic = instance.semantic;
             descriptor.localBoundsGame = WeaponEvidenceBounds3{
-                .min = makeWeaponEvidencePoint(instance.generatedLocalMinGame.x, instance.generatedLocalMinGame.y, instance.generatedLocalMinGame.z),
-                .max = makeWeaponEvidencePoint(instance.generatedLocalMaxGame.x, instance.generatedLocalMaxGame.y, instance.generatedLocalMaxGame.z),
+                .min = makeWeaponEvidencePoint(instance.generatedLocalMinGame.x, instance.generatedLocalMinGame.y,
+                    instance.generatedLocalMinGame.z),
+                .max = makeWeaponEvidencePoint(instance.generatedLocalMaxGame.x, instance.generatedLocalMaxGame.y,
+                    instance.generatedLocalMaxGame.z),
                 .valid = true,
             };
             descriptor.localMeshPointsGame = copyLocalPoints(instance.geometry->localPointsGame);
@@ -947,20 +880,16 @@ namespace rock
                     descriptor.omodFormId = omodIt->second;
                 }
             }
-            const auto partValue = static_cast<std::uint32_t>(
-                instance.semantic.partKind);
+            const auto partValue = static_cast<std::uint32_t>(instance.semantic.partKind);
             if (partValue < 64) {
                 const auto coverageBit = 1ull << partValue;
                 outComposition.semanticCoverageMask |= coverageBit;
-                for (std::uint32_t compositionIndex = 0;
-                     compositionIndex < outComposition.entryCount;
-                     ++compositionIndex) {
+                for (std::uint32_t compositionIndex = 0; compositionIndex < outComposition.entryCount;
+                    ++compositionIndex) {
                     auto& entry = outComposition.entries[compositionIndex];
-                    if ((descriptor.omodFormId != 0 &&
-                            entry.omodFormId == descriptor.omodFormId) ||
+                    if ((descriptor.omodFormId != 0 && entry.omodFormId == descriptor.omodFormId) ||
                         (instance.semantic.attachPointFormId != 0 &&
-                            entry.attachPointFormId ==
-                                instance.semantic.attachPointFormId)) {
+                            entry.attachPointFormId == instance.semantic.attachPointFormId)) {
                         entry.semanticCoverageMask |= coverageBit;
                         entry.flags |= 1u << 3;
                     }
@@ -974,45 +903,28 @@ namespace rock
         auto signature = kFnvOffset;
         for (std::uint32_t i = 0; i < outComposition.entryCount; ++i) {
             const auto& entry = outComposition.entries[i];
-            for (const auto value : {
-                     entry.omodFormId,
-                     entry.attachPointFormId,
-                     entry.stableIndex,
-                     entry.flags }) {
+            for (const auto value : { entry.omodFormId, entry.attachPointFormId, entry.stableIndex, entry.flags }) {
                 signature ^= value;
                 signature *= kFnvPrime;
             }
-            if ((entry.flags & (1u << 0)) != 0 &&
-                entry.semanticCoverageMask == 0 && i < 64) {
+            if ((entry.flags & (1u << 0)) != 0 && entry.semanticCoverageMask == 0 && i < 64) {
                 outComposition.missingCoverageMask |= 1ull << i;
             }
         }
-        outComposition.compositionSignature =
-            outComposition.entryCount != 0 ? signature : 0;
+        outComposition.compositionSignature = outComposition.entryCount != 0 ? signature : 0;
 
         return descriptors;
     }
 
-    WeaponEmitterSnapshot WeaponCollision::buildWeaponEmitterSnapshot(
-        RE::NiAVObject* weaponNode,
-        std::uint64_t equippedWeaponKey,
-        std::uint64_t weaponGenerationKey,
-        std::uint64_t rootSetKey) const
+    WeaponEmitterSnapshot WeaponCollision::buildWeaponEmitterSnapshot(RE::NiAVObject* weaponNode,
+        std::uint64_t equippedWeaponKey, std::uint64_t weaponGenerationKey, std::uint64_t rootSetKey) const
     {
         const auto omodByAttachPointFormId = readEquippedOmodsByAttachPointFormId(nullptr, _equipIndex);
-        auto snapshot = collectWeaponEmitterSnapshot(
-            weaponNode,
-            omodByAttachPointFormId,
-            equippedWeaponKey,
-            weaponGenerationKey,
-            rootSetKey,
-            usesPlayerWeaponRoots());
+        auto snapshot = collectWeaponEmitterSnapshot(weaponNode, omodByAttachPointFormId, equippedWeaponKey,
+            weaponGenerationKey, rootSetKey, usesPlayerWeaponRoots());
 
-        ROCK_LOG_DEBUG(Weapon,
-            "Weapon emitter snapshot discovered generation={:016X} emitters={} roots={:016X}",
-            weaponGenerationKey,
-            snapshot.count,
-            rootSetKey);
+        ROCK_LOG_DEBUG(Weapon, "Weapon emitter snapshot discovered generation={:016X} emitters={} roots={:016X}",
+            weaponGenerationKey, snapshot.count, rootSetKey);
         return snapshot;
     }
 
@@ -1020,7 +932,8 @@ namespace rock
     {
         performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponEmitterRefresh);
         const std::uint64_t weaponGenerationKey = getCurrentWeaponGenerationKey();
-        if (!weaponNode || equippedWeaponKey == 0 || weaponGenerationKey == 0 || _identity.cachedWeaponKey != equippedWeaponKey) {
+        if (!weaponNode || equippedWeaponKey == 0 || weaponGenerationKey == 0 ||
+            _identity.cachedWeaponKey != equippedWeaponKey) {
             clearWeaponEmitterSnapshot();
             return;
         }
@@ -1033,25 +946,27 @@ namespace rock
         }
 
         const bool discoveryRequired = snapshot.weaponGenerationKey != weaponGenerationKey ||
-            snapshot.equippedWeaponKey != equippedWeaponKey ||
-            snapshot.rootSetKey != rootSetKey ||
+            snapshot.equippedWeaponKey != equippedWeaponKey || snapshot.rootSetKey != rootSetKey ||
             snapshot.weaponRootAddress != reinterpret_cast<std::uintptr_t>(weaponNode);
         if (discoveryRequired) {
             snapshot = buildWeaponEmitterSnapshot(weaponNode, equippedWeaponKey, weaponGenerationKey, rootSetKey);
-            for (auto& path : _emitterPaths) { path.transform.clear(); path.effect.clear(); }
+            for (auto& path : _emitterPaths) {
+                path.transform.clear();
+                path.effect.clear();
+            }
         }
         std::array<RE::NiAVObject*, 4> roots{};
         std::size_t rootCount = 0;
-        visitGeneratedWeaponMeshRootCandidates(weaponNode, usesPlayerWeaponRoots(), [&](const WeaponMeshRootCandidate& candidate) {
-            roots[rootCount++] = candidate.root;
-        });
+        visitGeneratedWeaponMeshRootCandidates(weaponNode, usesPlayerWeaponRoots(),
+            [&](const WeaponMeshRootCandidate& candidate) { roots[rootCount++] = candidate.root; });
         bool pathsValid = !discoveryRequired;
         for (std::size_t i = 0; i < snapshot.count; ++i) {
             auto& descriptor = snapshot.emitters[i];
             const auto& path = _emitterPaths[i];
             descriptor.active = false;
             descriptor.visible = false;
-            auto* transform = path.transformRoot < rootCount ? path.transform.resolve(roots[path.transformRoot]) : nullptr;
+            auto* transform =
+                path.transformRoot < rootCount ? path.transform.resolve(roots[path.transformRoot]) : nullptr;
             if (transform && reinterpret_cast<std::uintptr_t>(transform) == descriptor.transformNodeAddress) {
                 descriptor.visible = weaponEmitterNodeEffectivelyVisible(transform);
                 (void)updateWeaponEmitterTransform(descriptor, transform, weaponNode);
@@ -1069,7 +984,10 @@ namespace rock
         if (!pathsValid && snapshot.count != 0) {
             // A changed path gets one bounded rediscovery pass for the whole
             // snapshot. No stored address is dereferenced, even during recovery.
-            for (auto& path : _emitterPaths) { path.transform.clear(); path.effect.clear(); }
+            for (auto& path : _emitterPaths) {
+                path.transform.clear();
+                path.effect.clear();
+            }
             for (std::size_t i = 0; i < snapshot.count; ++i) {
                 snapshot.emitters[i].active = false;
                 snapshot.emitters[i].visible = false;
@@ -1096,11 +1014,13 @@ namespace rock
 
     void WeaponCollision::clearWeaponEmitterSnapshot()
     {
-        for (auto& path : _emitterPaths) { path.transform.clear(); path.effect.clear(); }
+        for (auto& path : _emitterPaths) {
+            path.transform.clear();
+            path.effect.clear();
+        }
         std::scoped_lock lock(_evidence.mutex);
         _evidence.emitters = {};
     }
-
 
     WeaponEvidenceSnapshot WeaponCollision::getProfileEvidenceDescriptors() const
     {
@@ -1154,12 +1074,10 @@ namespace rock
         return {};
     }
 
-    WeaponCollision::WeaponCompositionSnapshot
-    WeaponCollision::getWeaponCompositionSnapshot() const
+    WeaponCollision::WeaponCompositionSnapshot WeaponCollision::getWeaponCompositionSnapshot() const
     {
         for (int attempt = 0; attempt < 4; ++attempt) {
-            const auto startVersion =
-                _published.version.load(std::memory_order_acquire);
+            const auto startVersion = _published.version.load(std::memory_order_acquire);
             if ((startVersion & 1u) != 0) {
                 continue;
             }
@@ -1168,8 +1086,7 @@ namespace rock
                 std::scoped_lock lock(_evidence.mutex);
                 snapshot = _evidence.composition;
             }
-            const auto endVersion =
-                _published.version.load(std::memory_order_acquire);
+            const auto endVersion = _published.version.load(std::memory_order_acquire);
             if (startVersion == endVersion && (endVersion & 1u) == 0) {
                 return snapshot;
             }
@@ -1177,34 +1094,30 @@ namespace rock
         return {};
     }
 
-    bool WeaponCollision::tryFindInteractionContactNearPoint(
-        const RE::NiAVObject* weaponNode,
-        const RE::NiPoint3& probeWorldPoint,
-        float probeRadiusGame,
-        WeaponInteractionContact& outContact) const
+    bool WeaponCollision::tryFindInteractionContactNearPoint(const RE::NiAVObject* weaponNode,
+        const RE::NiPoint3& probeWorldPoint, float probeRadiusGame, WeaponInteractionContact& outContact) const
     {
         InteractionQueryBatch batch;
         return tryFindInteractionContactNearPoint(weaponNode, probeWorldPoint, probeRadiusGame, outContact, batch);
     }
 
-    bool WeaponCollision::tryFindInteractionContactNearPoint(
-        const RE::NiAVObject* weaponNode,
-        const RE::NiPoint3& probeWorldPoint,
-        float probeRadiusGame,
-        WeaponInteractionContact& outContact,
-        InteractionQueryBatch& batch,
-        api::Hand hand,const weapon_drive_pose::NativeFrame* operatingPose,
-        std::span<const std::array<float,3>> extraProbes,bool operatingOnly,std::span<const std::array<float,3>> pinkyProbes) const
+    bool WeaponCollision::tryFindInteractionContactNearPoint(const RE::NiAVObject* weaponNode,
+        const RE::NiPoint3& probeWorldPoint, float probeRadiusGame, WeaponInteractionContact& outContact,
+        InteractionQueryBatch& batch, api::Hand hand, const weapon_drive_pose::NativeFrame* operatingPose,
+        std::span<const std::array<float, 3>> extraProbes, bool operatingOnly,
+        std::span<const std::array<float, 3>> pinkyProbes) const
     {
         performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponContactProbe);
         outContact = {};
         const auto currentGeneration = getCurrentWeaponGenerationKey();
         if (!weaponNode || currentGeneration == 0 || !activeWeaponBodyRootMatches(weaponNode) ||
-            !weapon_interaction_query::finitePoint(probeWorldPoint) ||
-            !std::isfinite(probeRadiusGame) || probeRadiusGame <= 0.0f) return false;
+            !weapon_interaction_query::finitePoint(probeWorldPoint) || !std::isfinite(probeRadiusGame) ||
+            probeRadiusGame <= 0.0f)
+            return false;
 
         if (batch.owner) {
-            if (batch.owner != this || batch.root != weaponNode || batch.generation != currentGeneration) return false;
+            if (batch.owner != this || batch.root != weaponNode || batch.generation != currentGeneration)
+                return false;
             performance_profiler::addCounter(performance_profiler::Counter::WeaponProbeBatchReuses);
         } else {
             performance_profiler::ScopedTimer prepareTimer(performance_profiler::Scope::WeaponProbePoseCapture);
@@ -1213,64 +1126,91 @@ namespace rock
             batch.generation = currentGeneration;
             const RE::NiTransform rootWorld = weaponNode->world;
             for (const auto& instance : activeWeaponBodies()) {
-                if (!instance.body.isValid() || !instance.geometry || !instance.indices) continue;
+                if (!instance.body.isValid() || !instance.geometry || !instance.indices)
+                    continue;
                 RE::NiTransform probeWorld = rootWorld;
                 const bool sourceCurrent = instance.sourceNode &&
                     tryResolveDescendantWorldTransform(weaponNode, rootWorld, instance.sourceNode, probeWorld);
                 const bool useSourceFrame = sourceCurrent && !instance.geometry->mesh->sourceLocalTrianglesGame.empty();
-                if (!useSourceFrame) probeWorld = rootWorld;
-                const auto& triangles = useSourceFrame ? instance.geometry->mesh->sourceLocalTrianglesGame :
-                    instance.geometry->mesh->localTrianglesGame;
+                if (!useSourceFrame)
+                    probeWorld = rootWorld;
+                const auto& triangles = useSourceFrame ? instance.geometry->mesh->sourceLocalTrianglesGame
+                                                       : instance.geometry->mesh->localTrianglesGame;
                 const auto& index = useSourceFrame ? instance.indices->sourceIndex : instance.indices->localIndex;
-                const auto& boundsMin = useSourceFrame ? instance.generatedSourceLocalMinGame : instance.generatedLocalMinGame;
-                const auto& boundsMax = useSourceFrame ? instance.generatedSourceLocalMaxGame : instance.generatedLocalMaxGame;
+                const auto& boundsMin =
+                    useSourceFrame ? instance.generatedSourceLocalMinGame : instance.generatedLocalMinGame;
+                const auto& boundsMax =
+                    useSourceFrame ? instance.generatedSourceLocalMaxGame : instance.generatedLocalMaxGame;
                 if (weapon_interaction_query::prepare(triangles, index, probeWorld, boundsMin, boundsMax,
                         instance.semantic.priority, batch.parts[batch.count])) {
                     batch.instances[batch.count++] = &instance;
                 }
             }
-            std::array<weapon_part_points::OwnedPoint,weapon_part_points::kCapacity> rules{};
+            std::array<weapon_part_points::OwnedPoint, weapon_part_points::kCapacity> rules{};
             std::size_t ruleCount{};
-            std::array<weapon_part_runtime::Target,api::weaponparts::kMaxTargets> targets{};
-            const auto targetCount=provider::runtime::copyWeaponPartPointSelection(targets,rules,ruleCount);
-            for(std::size_t p=0;p<ruleCount;++p) {
-                if(rules[p].point.weaponGenerationKey!=currentGeneration)continue;
-                auto& candidate=batch.points[batch.pointCount++];candidate.rule=rules[p];
-                auto* source=reinterpret_cast<RE::NiAVObject*>(provider::runtime::resolveSourceKey(currentGeneration,rules[p].point.sourceKey));
+            std::array<weapon_part_runtime::Target, api::weaponparts::kMaxTargets> targets{};
+            const auto targetCount = provider::runtime::copyWeaponPartPointSelection(targets, rules, ruleCount);
+            for (std::size_t p = 0; p < ruleCount; ++p) {
+                if (rules[p].point.weaponGenerationKey != currentGeneration)
+                    continue;
+                auto& candidate = batch.points[batch.pointCount++];
+                candidate.rule = rules[p];
+                auto* source = reinterpret_cast<RE::NiAVObject*>(
+                    provider::runtime::resolveSourceKey(currentGeneration, rules[p].point.sourceKey));
                 RE::NiTransform world{};
-                if(!source||!f4vr::isNodeVisible(source))continue;
+                if (!source || !f4vr::isNodeVisible(source))
+                    continue;
                 // Points follow the currently driven pose of their source.
-                if(!operatingPose||!operatingPose->world(source,world))continue;
-                const RE::NiPoint3 local{rules[p].point.pointInSource.x,rules[p].point.pointInSource.y,rules[p].point.pointInSource.z};
-                const auto position=transform_math::localPointToWorld(world,local);candidate.world={position.x,position.y,position.z};
-                candidate.validWorld=weapon_interaction_query::finitePoint(position);
-                RE::NiTransform native{};const bool valid=tryResolveDescendantWorldTransform(weaponNode,rootWorld,source,native);
-                const auto rest=valid?transform_math::localPointToWorld(native,local):RE::NiPoint3{};
-                ROCK_LOG_SAMPLE_INFO(Weapon,1500,"OperatingGrabPose source={} point={} drives={} native=({:.2f},{:.2f},{:.2f}) driven=({:.2f},{:.2f},{:.2f}) valid={}",
-                    rules[p].point.sourceKey,rules[p].point.pointId,operatingPose->size(),rest.x,rest.y,rest.z,position.x,position.y,position.z,candidate.validWorld);
+                if (!operatingPose || !operatingPose->world(source, world))
+                    continue;
+                const RE::NiPoint3 local{ rules[p].point.pointInSource.x, rules[p].point.pointInSource.y,
+                    rules[p].point.pointInSource.z };
+                const auto position = transform_math::localPointToWorld(world, local);
+                candidate.world = { position.x, position.y, position.z };
+                candidate.validWorld = weapon_interaction_query::finitePoint(position);
+                RE::NiTransform native{};
+                const bool valid = tryResolveDescendantWorldTransform(weaponNode, rootWorld, source, native);
+                const auto rest = valid ? transform_math::localPointToWorld(native, local) : RE::NiPoint3{};
+                ROCK_LOG_SAMPLE_INFO(Weapon, 1500,
+                    "OperatingGrabPose source={} point={} drives={} native=({:.2f},{:.2f},{:.2f}) "
+                    "driven=({:.2f},{:.2f},{:.2f}) valid={}",
+                    rules[p].point.sourceKey, rules[p].point.pointId, operatingPose->size(), rest.x, rest.y, rest.z,
+                    position.x, position.y, position.z, candidate.validWorld);
             }
-            for(std::size_t i=0;batch.pointCount&&i<batch.count;++i) {
-                const auto& instance=*batch.instances[i];
-                const auto resolution=weapon_part_runtime::resolveTarget(std::span(targets).first(targetCount),{
-                    .weaponGenerationKey=currentGeneration,.bodyId=instance.body.getBodyId().value,
-                    .sourceRoot=reinterpret_cast<std::uintptr_t>(instance.sourceNode),.sourceName=instance.sourceName,
-                    .partKind=instance.semantic.partKind,.reloadRole=instance.semantic.reloadRole,
-                    .supportRole=instance.semantic.supportGripRole,.socketRole=instance.semantic.socketRole,.actionRole=instance.semantic.actionRole});
-                if(!resolution.matched||resolution.grabMode!=weapon_part_runtime::GrabMode::AttachOnly)continue;
-                for(std::size_t p=0;p<batch.pointCount;++p) {
-                    auto& candidate=batch.points[p];
-                    if(candidate.rule.owner!=resolution.ownerToken||candidate.rule.point.groupId!=resolution.groupId)continue;
-                    batch.pointRestricted[i]=true;
-                    if(candidate.validWorld && operatingPose) {
-                        RE::NiTransform driven{};weapon_interaction_query::Part part;
-                        if(!operatingPose->world(instance.sourceNode,driven) ||
+            for (std::size_t i = 0; batch.pointCount && i < batch.count; ++i) {
+                const auto& instance = *batch.instances[i];
+                const auto resolution = weapon_part_runtime::resolveTarget(std::span(targets).first(targetCount),
+                    { .weaponGenerationKey = currentGeneration,
+                        .bodyId = instance.body.getBodyId().value,
+                        .sourceRoot = reinterpret_cast<std::uintptr_t>(instance.sourceNode),
+                        .sourceName = instance.sourceName,
+                        .partKind = instance.semantic.partKind,
+                        .reloadRole = instance.semantic.reloadRole,
+                        .supportRole = instance.semantic.supportGripRole,
+                        .socketRole = instance.semantic.socketRole,
+                        .actionRole = instance.semantic.actionRole });
+                if (!resolution.matched || resolution.grabMode != weapon_part_runtime::GrabMode::AttachOnly)
+                    continue;
+                for (std::size_t p = 0; p < batch.pointCount; ++p) {
+                    auto& candidate = batch.points[p];
+                    if (candidate.rule.owner != resolution.ownerToken ||
+                        candidate.rule.point.groupId != resolution.groupId)
+                        continue;
+                    batch.pointRestricted[i] = true;
+                    if (candidate.validWorld && operatingPose) {
+                        RE::NiTransform driven{};
+                        weapon_interaction_query::Part part;
+                        if (!operatingPose->world(instance.sourceNode, driven) ||
                             !weapon_interaction_query::prepare(instance.geometry->mesh->sourceLocalTrianglesGame,
-                                instance.indices->sourceIndex,driven,instance.generatedSourceLocalMinGame,
-                                instance.generatedSourceLocalMaxGame,instance.semantic.priority,part))continue;
-                        const auto& point=candidate.world;
-                        const auto surface=weapon_interaction_query::find(std::span(&part,1),
-                            {point[0],point[1],point[2]},candidate.rule.point.radiusGame);
-                        if(surface.valid())weapon_part_points::offerPart(candidate,i,surface.rank.distanceSquaredGame,instance.body.getBodyId().value);
+                                instance.indices->sourceIndex, driven, instance.generatedSourceLocalMinGame,
+                                instance.generatedSourceLocalMaxGame, instance.semantic.priority, part))
+                            continue;
+                        const auto& point = candidate.world;
+                        const auto surface = weapon_interaction_query::find(std::span(&part, 1),
+                            { point[0], point[1], point[2] }, candidate.rule.point.radiusGame);
+                        if (surface.valid())
+                            weapon_part_points::offerPart(candidate, i, surface.rank.distanceSquaredGame,
+                                instance.body.getBodyId().value);
                     }
                 }
             }
@@ -1281,48 +1221,64 @@ namespace rock
         weapon_interaction_query::Selection selection;
         // Grab points take part only in operating queries; ordinary queries
         // still exclude their groups' parts (pointRestricted).
-        const auto pointSelection=operatingOnly?weapon_part_points::nearest(std::span(batch.points).first(batch.pointCount),hand,
-            {probeWorldPoint.x,probeWorldPoint.y,probeWorldPoint.z},probeRadiusGame,extraProbes,pinkyProbes):
-            weapon_part_points::Selection{batch.pointCount,0};
-        const auto picked=pointSelection.point;
-        const bool handMask=hand==api::Hand::Left||hand==api::Hand::Right;
-        if(picked<batch.pointCount){selection.part=batch.points[picked].part;selection.rank.distanceSquaredGame=pointSelection.distanceSquared;}
-        if(!selection.valid()&&!operatingOnly)selection=weapon_interaction_query::find(
-            {batch.parts.data(),batch.count},probeWorldPoint,probeRadiusGame,
-            handMask?std::span<const bool>(batch.pointRestricted).first(batch.count):std::span<const bool>{});
-        if(operatingOnly){
-            const auto first=extraProbes.empty()?std::array<float,3>{}:extraProbes[0];
-            const auto second=extraProbes.size()<2?std::array<float,3>{}:extraProbes[1];
-            if(hand==api::Hand::Left){
-                ROCK_LOG_SAMPLE_INFO(Weapon,1500,"OperatingGrabProbe left extraProbes={} pinkyProbes={} selected={} distance={:.3f} palm=({:.2f},{:.2f},{:.2f}) extra0=({:.2f},{:.2f},{:.2f}) extra1=({:.2f},{:.2f},{:.2f})",
-                    extraProbes.size(),pinkyProbes.size(),picked<batch.pointCount?batch.points[picked].rule.point.pointId:0,picked<batch.pointCount?std::sqrt(pointSelection.distanceSquared):-1.f,
-                    probeWorldPoint.x,probeWorldPoint.y,probeWorldPoint.z,first[0],first[1],first[2],second[0],second[1],second[2]);
-            }else{
-                ROCK_LOG_SAMPLE_INFO(Weapon,1500,"OperatingGrabProbe right extraProbes={} pinkyProbes={} selected={} distance={:.3f} palm=({:.2f},{:.2f},{:.2f}) extra0=({:.2f},{:.2f},{:.2f}) extra1=({:.2f},{:.2f},{:.2f})",
-                    extraProbes.size(),pinkyProbes.size(),picked<batch.pointCount?batch.points[picked].rule.point.pointId:0,picked<batch.pointCount?std::sqrt(pointSelection.distanceSquared):-1.f,
-                    probeWorldPoint.x,probeWorldPoint.y,probeWorldPoint.z,first[0],first[1],first[2],second[0],second[1],second[2]);
+        const auto pointSelection = operatingOnly
+            ? weapon_part_points::nearest(std::span(batch.points).first(batch.pointCount), hand,
+                  { probeWorldPoint.x, probeWorldPoint.y, probeWorldPoint.z }, probeRadiusGame, extraProbes,
+                  pinkyProbes)
+            : weapon_part_points::Selection{ batch.pointCount, 0 };
+        const auto picked = pointSelection.point;
+        const bool handMask = hand == api::Hand::Left || hand == api::Hand::Right;
+        if (picked < batch.pointCount) {
+            selection.part = batch.points[picked].part;
+            selection.rank.distanceSquaredGame = pointSelection.distanceSquared;
+        }
+        if (!selection.valid() && !operatingOnly)
+            selection = weapon_interaction_query::find({ batch.parts.data(), batch.count }, probeWorldPoint,
+                probeRadiusGame,
+                handMask ? std::span<const bool>(batch.pointRestricted).first(batch.count) : std::span<const bool>{});
+        if (operatingOnly) {
+            const auto first = extraProbes.empty() ? std::array<float, 3>{} : extraProbes[0];
+            const auto second = extraProbes.size() < 2 ? std::array<float, 3>{} : extraProbes[1];
+            if (hand == api::Hand::Left) {
+                ROCK_LOG_SAMPLE_INFO(Weapon, 1500,
+                    "OperatingGrabProbe left extraProbes={} pinkyProbes={} selected={} distance={:.3f} "
+                    "palm=({:.2f},{:.2f},{:.2f}) extra0=({:.2f},{:.2f},{:.2f}) extra1=({:.2f},{:.2f},{:.2f})",
+                    extraProbes.size(), pinkyProbes.size(),
+                    picked < batch.pointCount ? batch.points[picked].rule.point.pointId : 0,
+                    picked < batch.pointCount ? std::sqrt(pointSelection.distanceSquared) : -1.f, probeWorldPoint.x,
+                    probeWorldPoint.y, probeWorldPoint.z, first[0], first[1], first[2], second[0], second[1],
+                    second[2]);
+            } else {
+                ROCK_LOG_SAMPLE_INFO(Weapon, 1500,
+                    "OperatingGrabProbe right extraProbes={} pinkyProbes={} selected={} distance={:.3f} "
+                    "palm=({:.2f},{:.2f},{:.2f}) extra0=({:.2f},{:.2f},{:.2f}) extra1=({:.2f},{:.2f},{:.2f})",
+                    extraProbes.size(), pinkyProbes.size(),
+                    picked < batch.pointCount ? batch.points[picked].rule.point.pointId : 0,
+                    picked < batch.pointCount ? std::sqrt(pointSelection.distanceSquared) : -1.f, probeWorldPoint.x,
+                    probeWorldPoint.y, probeWorldPoint.z, first[0], first[1], first[2], second[0], second[1],
+                    second[2]);
             }
         }
-        performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponProbeBoundsCandidates, selection.boundsCandidates);
-        performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponProbeSurfaceCandidates, selection.surfaceCandidates);
-        if (!selection.valid() || getCurrentWeaponGenerationKey() != currentGeneration) return false;
+        performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponProbeBoundsCandidates,
+            selection.boundsCandidates);
+        performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponProbeSurfaceCandidates,
+            selection.surfaceCandidates);
+        if (!selection.valid() || getCurrentWeaponGenerationKey() != currentGeneration)
+            return false;
         const auto* bestInstance = batch.instances[selection.part];
-        if (!bestInstance->body.isValid()) return false;
+        if (!bestInstance->body.isValid())
+            return false;
         const auto& bestRank = selection.rank;
         const auto boundsCandidateCount = selection.boundsCandidates;
         const auto surfaceCandidateCount = selection.surfaceCandidates;
         const auto* packageDriveRoot = weaponNode;
 
-        ROCK_LOG_SAMPLE_DEBUG(Weapon,
-            g_rockConfig.rockLogSampleMilliseconds,
-            "WeaponInteractionProbe exact surface ranked: part={} bodyId={} dist={:.2f} diag={:.1f} priority={} boundsCandidates={} surfaceCandidates={}",
-            static_cast<int>(bestInstance->semantic.partKind),
-            bestInstance->body.getBodyId().value,
-            std::sqrt(bestRank.distanceSquaredGame),
-            std::sqrt(bestRank.aabbDiagonalSquaredGame),
-            bestInstance->semantic.priority,
-            boundsCandidateCount,
-            surfaceCandidateCount);
+        ROCK_LOG_SAMPLE_DEBUG(Weapon, g_rockConfig.rockLogSampleMilliseconds,
+            "WeaponInteractionProbe exact surface ranked: part={} bodyId={} dist={:.2f} diag={:.1f} priority={} "
+            "boundsCandidates={} surfaceCandidates={}",
+            static_cast<int>(bestInstance->semantic.partKind), bestInstance->body.getBodyId().value,
+            std::sqrt(bestRank.distanceSquaredGame), std::sqrt(bestRank.aabbDiagonalSquaredGame),
+            bestInstance->semantic.priority, boundsCandidateCount, surfaceCandidateCount);
 
         outContact.valid = true;
         outContact.bodyId = bestInstance->body.getBodyId().value;
@@ -1336,13 +1292,17 @@ namespace rock
         outContact.sourceRoot = bestInstance->sourceNode;
         outContact.weaponGenerationKey = currentGeneration;
         outContact.probeDistanceGame = std::sqrt(bestRank.distanceSquaredGame);
-        if(picked<batch.pointCount) {
-            const auto& point=batch.points[picked].rule.point;
-            outContact.grabPoint={batch.points[picked].rule.owner,point.groupId,point.sourceKey,point.pointId,{point.pointInSource.x,point.pointInSource.y,point.pointInSource.z}};
-            auto& anchor=outContact.grabPoint;const auto& world=batch.points[picked].world;
-            anchor.anchorAtPoint=true;anchor.worldPoint={world[0],world[1],world[2]};
-            if(!operatingPose||!operatingPose->world(bestInstance->sourceNode,anchor.attachmentWorld)) {
-                outContact={};return false;
+        if (picked < batch.pointCount) {
+            const auto& point = batch.points[picked].rule.point;
+            outContact.grabPoint = { batch.points[picked].rule.owner, point.groupId, point.sourceKey, point.pointId,
+                { point.pointInSource.x, point.pointInSource.y, point.pointInSource.z } };
+            auto& anchor = outContact.grabPoint;
+            const auto& world = batch.points[picked].world;
+            anchor.anchorAtPoint = true;
+            anchor.worldPoint = { world[0], world[1], world[2] };
+            if (!operatingPose || !operatingPose->world(bestInstance->sourceNode, anchor.attachmentWorld)) {
+                outContact = {};
+                return false;
             }
         }
         return true;

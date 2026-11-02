@@ -24,15 +24,18 @@ namespace rock
             const auto& children = parent->children;
             for (decltype(children.capacity()) slot = 0; slot < children.capacity(); ++slot) {
                 auto* child = children[slot].get();
-                if (child && visit(child)) return;
+                if (child && visit(child))
+                    return;
             }
         }
     }
 
-    bool DroppedWeaponCollision::capturePath(const RE::NiAVObject* root, const RE::NiAVObject* leaf, std::vector<Step>& out)
+    bool DroppedWeaponCollision::capturePath(const RE::NiAVObject* root, const RE::NiAVObject* leaf,
+        std::vector<Step>& out)
     {
         out.clear();
-        if (!root || !leaf) return false;
+        if (!root || !leaf)
+            return false;
         for (const auto* node = leaf; node != root; node = node->parent) {
             const RE::NiNode* parent = node->parent;
             if (!parent || out.size() >= kMaxPathDepth) {
@@ -42,8 +45,10 @@ namespace rock
             Step step{ nameOf(node), 0, node->IsNode() != nullptr };
             bool found = false;
             forEachChild(parent, [&](RE::NiAVObject* child) {
-                if (child == node) return found = true;
-                if (step.name == nameOf(child)) ++step.ordinal;
+                if (child == node)
+                    return found = true;
+                if (step.name == nameOf(child))
+                    ++step.ordinal;
                 return false;
             });
             if (!found) {
@@ -61,15 +66,18 @@ namespace rock
         auto* current = root;
         for (const auto& step : path) {
             const auto* parent = current ? current->IsNode() : nullptr;
-            if (!parent) return nullptr;
+            if (!parent)
+                return nullptr;
             RE::NiAVObject* next = nullptr;
             std::uint32_t seen = 0;
             forEachChild(parent, [&](RE::NiAVObject* child) {
-                if (step.name != nameOf(child) || seen++ != step.ordinal) return false;
+                if (step.name != nameOf(child) || seen++ != step.ordinal)
+                    return false;
                 next = child;
                 return true;
             });
-            if (!next || (next->IsNode() != nullptr) != step.node) return nullptr;
+            if (!next || (next->IsNode() != nullptr) != step.node)
+                return nullptr;
             current = next;
         }
         return current;
@@ -91,15 +99,17 @@ namespace rock
             std::size_t listed = 0;
             if (parent) {
                 forEachChild(parent, [&](RE::NiAVObject* child) {
-                    if (listed++ < 24) siblings += std::string(listed > 1 ? "," : "") + nameOf(child);
-                    if (!next && step.name == nameOf(child) && seen++ == step.ordinal) next = child;
+                    if (listed++ < 24)
+                        siblings += std::string(listed > 1 ? "," : "") + nameOf(child);
+                    if (!next && step.name == nameOf(child) && seen++ == step.ordinal)
+                        next = child;
                     return false;
                 });
             }
             if (!next || (next->IsNode() != nullptr) != step.node) {
-                return "path=" + text + " failedStep=" + std::to_string(i) + " parent='" + (current ? nameOf(current) : "") +
-                    "' wanted='" + step.name + "'#" + std::to_string(step.ordinal) + (step.node ? " node" : " leaf") +
-                    (next ? " typeMismatch" : "") + " children=[" + siblings + "]";
+                return "path=" + text + " failedStep=" + std::to_string(i) + " parent='" +
+                    (current ? nameOf(current) : "") + "' wanted='" + step.name + "'#" + std::to_string(step.ordinal) +
+                    (step.node ? " node" : " leaf") + (next ? " typeMismatch" : "") + " children=[" + siblings + "]";
             }
             current = next;
         }

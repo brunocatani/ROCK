@@ -9,12 +9,18 @@ namespace rock
     void PhysicsInteraction::clearLeftWeaponContact()
     {
         _weaponContact.left.bodyId.store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
-        _weaponContact.left.partKind.store(static_cast<std::uint32_t>(WeaponPartKind::Other), std::memory_order_release);
-        _weaponContact.left.reloadRole.store(static_cast<std::uint32_t>(WeaponReloadRole::None), std::memory_order_release);
-        _weaponContact.left.supportRole.store(static_cast<std::uint32_t>(WeaponSupportGripRole::None), std::memory_order_release);
-        _weaponContact.left.socketRole.store(static_cast<std::uint32_t>(WeaponSocketRole::None), std::memory_order_release);
-        _weaponContact.left.actionRole.store(static_cast<std::uint32_t>(WeaponActionRole::None), std::memory_order_release);
-        _weaponContact.left.gripPose.store(static_cast<std::uint32_t>(WeaponGripPoseId::None), std::memory_order_release);
+        _weaponContact.left.partKind.store(static_cast<std::uint32_t>(WeaponPartKind::Other),
+            std::memory_order_release);
+        _weaponContact.left.reloadRole.store(static_cast<std::uint32_t>(WeaponReloadRole::None),
+            std::memory_order_release);
+        _weaponContact.left.supportRole.store(static_cast<std::uint32_t>(WeaponSupportGripRole::None),
+            std::memory_order_release);
+        _weaponContact.left.socketRole.store(static_cast<std::uint32_t>(WeaponSocketRole::None),
+            std::memory_order_release);
+        _weaponContact.left.actionRole.store(static_cast<std::uint32_t>(WeaponActionRole::None),
+            std::memory_order_release);
+        _weaponContact.left.gripPose.store(static_cast<std::uint32_t>(WeaponGripPoseId::None),
+            std::memory_order_release);
         _weaponContact.left.missedFrames.store(WEAPON_CONTACT_TIMEOUT_FRAMES + 1, std::memory_order_release);
         _equipped.weaponInteractionAcquisitionStates[0] = {};
     }
@@ -22,12 +28,18 @@ namespace rock
     void PhysicsInteraction::clearRightWeaponContact()
     {
         _weaponContact.right.bodyId.store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
-        _weaponContact.right.partKind.store(static_cast<std::uint32_t>(WeaponPartKind::Other), std::memory_order_release);
-        _weaponContact.right.reloadRole.store(static_cast<std::uint32_t>(WeaponReloadRole::None), std::memory_order_release);
-        _weaponContact.right.supportRole.store(static_cast<std::uint32_t>(WeaponSupportGripRole::None), std::memory_order_release);
-        _weaponContact.right.socketRole.store(static_cast<std::uint32_t>(WeaponSocketRole::None), std::memory_order_release);
-        _weaponContact.right.actionRole.store(static_cast<std::uint32_t>(WeaponActionRole::None), std::memory_order_release);
-        _weaponContact.right.gripPose.store(static_cast<std::uint32_t>(WeaponGripPoseId::None), std::memory_order_release);
+        _weaponContact.right.partKind.store(static_cast<std::uint32_t>(WeaponPartKind::Other),
+            std::memory_order_release);
+        _weaponContact.right.reloadRole.store(static_cast<std::uint32_t>(WeaponReloadRole::None),
+            std::memory_order_release);
+        _weaponContact.right.supportRole.store(static_cast<std::uint32_t>(WeaponSupportGripRole::None),
+            std::memory_order_release);
+        _weaponContact.right.socketRole.store(static_cast<std::uint32_t>(WeaponSocketRole::None),
+            std::memory_order_release);
+        _weaponContact.right.actionRole.store(static_cast<std::uint32_t>(WeaponActionRole::None),
+            std::memory_order_release);
+        _weaponContact.right.gripPose.store(static_cast<std::uint32_t>(WeaponGripPoseId::None),
+            std::memory_order_release);
         _weaponContact.right.missedFrames.store(WEAPON_CONTACT_TIMEOUT_FRAMES + 1, std::memory_order_release);
         _equipped.weaponInteractionAcquisitionStates[1] = {};
     }
@@ -42,8 +54,8 @@ namespace rock
          */
         const Hand& hand = isLeft ? _leftHand : _rightHand;
         return hand.hasContactEvidenceSuppressedAtomic() ||
-               (!isLeft && weaponHandSuppressedFor(false, WeaponHandReason::Dominant)) ||
-               weaponHandSuppressedFor(isLeft, WeaponHandReason::Grip);
+            (!isLeft && weaponHandSuppressedFor(false, WeaponHandReason::Dominant)) ||
+            weaponHandSuppressedFor(isLeft, WeaponHandReason::Grip);
     }
 
     void PhysicsInteraction::clearContactEvidenceForHand(bool isLeft)
@@ -55,7 +67,8 @@ namespace rock
         }
     }
 
-    void PhysicsInteraction::synchronizeContactEvidenceOwnership(bool rightHandWeaponAuthorityActive, bool leftSupportGripActive, bool rightPartGripActive)
+    void PhysicsInteraction::synchronizeContactEvidenceOwnership(bool rightHandWeaponAuthorityActive,
+        bool leftSupportGripActive, bool rightPartGripActive)
     {
         /*
          * ROCK disables generated hand collision when a grab or two-hand/tool
@@ -85,8 +98,8 @@ namespace rock
      * from the owning hand is gated separately. The exclusion ends when no
      * reason remains and any requested restore delay has elapsed.
      */
-    void PhysicsInteraction::setWeaponHandSuppression(
-        RE::hknpWorld* world, bool isLeft, WeaponHandReason reason, bool active, float restoreDelaySeconds)
+    void PhysicsInteraction::setWeaponHandSuppression(RE::hknpWorld* world, bool isLeft, WeaponHandReason reason,
+        bool active, float restoreDelaySeconds)
     {
         auto& state = _suppression.weaponHands[isLeft ? 1 : 0];
         const auto bit = static_cast<std::uint8_t>(reason);
@@ -164,7 +177,8 @@ namespace rock
                 bodies[count++] = hand.getCollisionBodyId().value;
             }
             if (dropped && count < bodies.size()) {
-                count += _bodyBoneColliders.copyGrabSuppressionArmBodyIdsAtomic(isLeft, bodies.data() + count, bodies.size() - count);
+                count += _bodyBoneColliders.copyGrabSuppressionArmBodyIdsAtomic(isLeft, bodies.data() + count,
+                    bodies.size() - count);
             }
             for (const auto bodyId : std::span(bodies).first(count)) {
                 if (bodyId != INVALID_CONTACT_BODY_ID) {
@@ -291,11 +305,9 @@ namespace rock
     void PhysicsInteraction::captureHandColliderBones()
     {
         performance_profiler::ScopedTimer captureTimer(performance_profiler::Scope::HandBoneCapture);
-        (void)_handColliderBoneReader.capture(
-            skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
+        (void)_handColliderBoneReader.capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
             skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
-            SkeletonBoneCaptureSpace::Controller,
-            _handColliderBoneSnapshot);
+            SkeletonBoneCaptureSpace::Controller, _handColliderBoneSnapshot);
     }
 
     void PhysicsInteraction::updateHandCollisions(const PhysicsFrameContext& frame)
@@ -317,10 +329,8 @@ namespace rock
                 return;
             }
 
-            ROCK_LOG_WARN(Hand,
-                "Hand collider runtime missing generated bodies; recreating rightBody={} leftBody={}",
-                _rightHand.hasCollisionBody() ? "yes" : "no",
-                _leftHand.hasCollisionBody() ? "yes" : "no");
+            ROCK_LOG_WARN(Hand, "Hand collider runtime missing generated bodies; recreating rightBody={} leftBody={}",
+                _rightHand.hasCollisionBody() ? "yes" : "no", _leftHand.hasCollisionBody() ? "yes" : "no");
             destroyHandCollisions(frame.bhkWorld);
             if (createHandCollisions(frame.hknpWorld, frame.bhkWorld)) {
                 markGeneratedBodiesRebuilt(frame.bhkWorld, frame.hknpWorld);
@@ -343,10 +353,12 @@ namespace rock
         // Neither collider update writes the skeleton or hand-chain transport.
         // Both sides therefore consume the same freshly copied controller pose.
         if (!frame.right.disabled) {
-            _rightHand.updateCollisionTransform(world, frame.right.rawHandWorld, frame.deltaSeconds, _handColliderBoneSnapshot);
+            _rightHand.updateCollisionTransform(world, frame.right.rawHandWorld, frame.deltaSeconds,
+                _handColliderBoneSnapshot);
         }
         if (!frame.left.disabled) {
-            _leftHand.updateCollisionTransform(world, frame.left.rawHandWorld, frame.deltaSeconds, _handColliderBoneSnapshot);
+            _leftHand.updateCollisionTransform(world, frame.left.rawHandWorld, frame.deltaSeconds,
+                _handColliderBoneSnapshot);
         }
     }
 
@@ -376,20 +388,17 @@ namespace rock
         _bodyBoneColliders.update(frame.hknpWorld, frame.deltaSeconds);
     }
 
-    bool PhysicsInteraction::isNativePlayerCollisionBody(RE::bhkWorld* bhk, RE::hknpWorld* hknp, std::uint32_t bodyId) const
+    bool PhysicsInteraction::isNativePlayerCollisionBody(RE::bhkWorld* bhk, RE::hknpWorld* hknp,
+        std::uint32_t bodyId) const
     {
         if (!bhk || !hknp || !contact_pipeline_policy::isValidBodyId(bodyId)) {
             return false;
         }
 
-        if (bodyId == _rightHand.getCollisionBodyId().value ||
-            bodyId == _leftHand.getCollisionBodyId().value ||
-            _rightHand.isHandColliderBodyId(bodyId) ||
-            _leftHand.isHandColliderBodyId(bodyId) ||
-            _rightHand.isHeldBodyId(bodyId) ||
-            _leftHand.isHeldBodyId(bodyId) ||
-            _weaponCollision.isWeaponBodyIdAtomic(bodyId) ||
-            _secondaryWeaponCollision.isWeaponBodyIdAtomic(bodyId) ||
+        if (bodyId == _rightHand.getCollisionBodyId().value || bodyId == _leftHand.getCollisionBodyId().value ||
+            _rightHand.isHandColliderBodyId(bodyId) || _leftHand.isHandColliderBodyId(bodyId) ||
+            _rightHand.isHeldBodyId(bodyId) || _leftHand.isHeldBodyId(bodyId) ||
+            _weaponCollision.isWeaponBodyIdAtomic(bodyId) || _secondaryWeaponCollision.isWeaponBodyIdAtomic(bodyId) ||
             _bodyBoneColliders.isColliderBodyIdAtomic(bodyId)) {
             return false;
         }
@@ -436,7 +445,8 @@ namespace rock
         _suppression.nativePlayerRefreshSeconds = 0.0f;
     }
 
-    void PhysicsInteraction::updateNativePlayerCollisionFilter(RE::bhkWorld* bhk, RE::hknpWorld* hknp, float deltaSeconds)
+    void PhysicsInteraction::updateNativePlayerCollisionFilter(RE::bhkWorld* bhk, RE::hknpWorld* hknp,
+        float deltaSeconds)
     {
         if (!bhk || !hknp) {
             native_player_collision::abandon();
@@ -471,8 +481,12 @@ namespace rock
                 const auto key = bodyId + 1u; // Scanner admits only IDs <= 0xFFFFF.
                 std::size_t slot = (bodyId * 2654435761u) & (visited.size() - 1);
                 for (std::size_t probe = 0; probe < visited.size(); ++probe) {
-                    if (visited[slot] == key) return true;
-                    if (visited[slot] == 0) { visited[slot] = key; return false; }
+                    if (visited[slot] == key)
+                        return true;
+                    if (visited[slot] == 0) {
+                        visited[slot] = key;
+                        return false;
+                    }
                     slot = (slot + 1) & (visited.size() - 1);
                 }
                 return false; // Full scratch never prevents discovery.
@@ -490,7 +504,8 @@ namespace rock
 
             void append(std::uint32_t bodyId)
             {
-                if (alreadyVisited(bodyId)) return;
+                if (alreadyVisited(bodyId))
+                    return;
                 if (!self || !self->isNativePlayerCollisionBody(bhk, hknp, bodyId) || contains(bodyId)) {
                     return;
                 }
@@ -535,7 +550,8 @@ namespace rock
             // Freeze membership only during discovery.
             havok_world_lock::ScopedWorldReadLock readLock(hknp);
             if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-                if (player->currentProcess && player->currentProcess->middleHigh && player->currentProcess->middleHigh->poseBound) {
+                if (player->currentProcess && player->currentProcess->middleHigh &&
+                    player->currentProcess->middleHigh->poseBound) {
                     scanCollisionObject(player->currentProcess->middleHigh->poseBound.get());
                 }
             }
@@ -546,7 +562,8 @@ namespace rock
         if (scanContext.overflow && !_suppression.nativePlayerOverflowLogged) {
             _suppression.nativePlayerOverflowLogged = true;
             ROCK_LOG_WARN(Hand,
-                "Native player contact filter capacity exceeded; additional bodies retain native collision (capacity={})",
+                "Native player contact filter capacity exceeded; additional bodies retain native collision "
+                "(capacity={})",
                 native_player_collision::kMaximumPlayerBodies);
         } else if (!scanContext.overflow) {
             _suppression.nativePlayerOverflowLogged = false;
@@ -556,7 +573,8 @@ namespace rock
         std::size_t count = 0;
         for (std::uint32_t i = 0; i < scanContext.bodyCount; ++i) {
             const auto body = havok_runtime::snapshotBodyIdentity(hknp, RE::hknpBodyId{ scanContext.bodyIds[i] });
-            auto* ownerNode = body.valid ? havok_runtime::getOwnerNodeFromCollisionObject(body.collisionObject) : nullptr;
+            auto* ownerNode =
+                body.valid ? havok_runtime::getOwnerNodeFromCollisionObject(body.collisionObject) : nullptr;
             if (body.valid && body.collisionObject && ownerNode) {
                 bodies[count++] = { body.bodyId.value, body.motionIndex,
                     reinterpret_cast<std::uintptr_t>(body.collisionObject),

@@ -1,62 +1,61 @@
-#include "physics-interaction/weapon/TwoHandedGripInternal.h"
 #include "physics-interaction/weapon/DynamicWeaponCollision.h"
+#include "physics-interaction/weapon/TwoHandedGripInternal.h"
 
 namespace rock
 {
     bool TwoHandedGrip::hasVisualOnlySupportRecoilAssist() const noexcept
     {
-        if (g_rockConfig.rockEmergencyDisableRecoil ||
-            _session.state != TwoHandedState::Gripping ||
-            !_session.weaponNode ||
-            _session.weaponGenerationKey == 0 ||
-            _session.equippedWeaponOwnershipKey == 0 ||
-            (usesLeftFiringCarry() &&
-                (!_leftCarry.weaponNodeOwnershipBlockEngaged ||
-                    !isManualOwnershipActive()))) {
+        if (g_rockConfig.rockEmergencyDisableRecoil || _session.state != TwoHandedState::Gripping ||
+            !_session.weaponNode || _session.weaponGenerationKey == 0 || _session.equippedWeaponOwnershipKey == 0 ||
+            (usesLeftFiringCarry() && (!_leftCarry.weaponNodeOwnershipBlockEngaged || !isManualOwnershipActive()))) {
             return false;
         }
 
         const WeaponPartGrip& supportGrip = supportPartGrip();
-        return supportGrip.weaponGenerationKey ==
-                   _session.weaponGenerationKey &&
-               supportGrip.gripSequence != 0 &&
-               weapon_support_authority_policy::
-                   shouldApplyVisualOnlySupportRecoilAssist(
-                       _session.authorityMode,
-                       supportGrip.active,
-                       supportGrip.providerPartAuthority.active,
-                       supportGrip.attachOnly);
+        return supportGrip.weaponGenerationKey == _session.weaponGenerationKey && supportGrip.gripSequence != 0 &&
+            weapon_support_authority_policy::shouldApplyVisualOnlySupportRecoilAssist(_session.authorityMode,
+                supportGrip.active, supportGrip.providerPartAuthority.active, supportGrip.attachOnly);
     }
 
     weapon_recoil_policy::SampleIdentity TwoHandedGrip::recoilSampleIdentity(
         const bool nativePrimaryIsLeft) const noexcept
     {
         const bool fullTwoHanded = _session.state == TwoHandedState::Gripping &&
-            _session.authorityMode == weapon_support_authority_policy::
-                WeaponSupportAuthorityMode::FullTwoHandedSolver;
+            _session.authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;
         auto identity = _recoil.equippedIdentity;
         identity.immersiveRecoil = g_rockConfig.rockImmersiveRecoil;
         const bool surfaceLatched = g_rockConfig.rockBipodMode && _surfaceSupportRuntime &&
             _surfaceSupportRuntime->hasLatchedSurfaceSupport(identity.weaponNode, identity.weaponGeneration);
-        identity.profile = weapon_recoil_policy::selectProfile(
-            f4vr::isInPowerArmor(), hasVisualOnlySupportRecoilAssist(), fullTwoHanded, surfaceLatched);
+        identity.profile = weapon_recoil_policy::selectProfile(f4vr::isInPowerArmor(),
+            hasVisualOnlySupportRecoilAssist(), fullTwoHanded, surfaceLatched);
         identity.firingHandIsLeft = isFiringHandLeft();
         identity.nativePrimaryIsLeft = nativePrimaryIsLeft;
         identity.fullTwoHanded = fullTwoHanded;
-        identity.oneHanded = _session.state != TwoHandedState::Gripping &&
-            _session.state != TwoHandedState::PartCarry;
+        identity.oneHanded = _session.state != TwoHandedState::Gripping && _session.state != TwoHandedState::PartCarry;
         switch (identity.family) {
-        case weapon_recoil_policy::Family::Laser: identity.familyPercent = g_rockConfig.rockLaserRecoilPercent; break;
-        case weapon_recoil_policy::Family::Pistol: identity.familyPercent = weapon_recoil_policy::selectHoldPercent(identity.oneHanded,
-            g_rockConfig.rockPistolOneHandRecoilPercent, g_rockConfig.rockPistolTwoHandRecoilPercent); break;
-        case weapon_recoil_policy::Family::Rifle: identity.familyPercent = weapon_recoil_policy::selectHoldPercent(identity.oneHanded,
-            g_rockConfig.rockRifleOneHandRecoilPercent, g_rockConfig.rockRifleTwoHandRecoilPercent); break;
-        case weapon_recoil_policy::Family::Shotgun: identity.familyPercent = weapon_recoil_policy::selectHoldPercent(identity.oneHanded,
-            g_rockConfig.rockShotgunOneHandRecoilPercent, g_rockConfig.rockShotgunTwoHandRecoilPercent); break;
-        case weapon_recoil_policy::Family::Heavy: identity.familyPercent = weapon_recoil_policy::selectHoldPercent(identity.oneHanded,
-            g_rockConfig.rockHeavyOneHandRecoilPercent, g_rockConfig.rockHeavyTwoHandRecoilPercent); break;
-        default: identity.familyPercent = weapon_recoil_policy::selectHoldPercent(identity.oneHanded,
-            g_rockConfig.rockDefaultOneHandRecoilPercent, g_rockConfig.rockDefaultTwoHandRecoilPercent); break;
+        case weapon_recoil_policy::Family::Laser:
+            identity.familyPercent = g_rockConfig.rockLaserRecoilPercent;
+            break;
+        case weapon_recoil_policy::Family::Pistol:
+            identity.familyPercent = weapon_recoil_policy::selectHoldPercent(identity.oneHanded,
+                g_rockConfig.rockPistolOneHandRecoilPercent, g_rockConfig.rockPistolTwoHandRecoilPercent);
+            break;
+        case weapon_recoil_policy::Family::Rifle:
+            identity.familyPercent = weapon_recoil_policy::selectHoldPercent(identity.oneHanded,
+                g_rockConfig.rockRifleOneHandRecoilPercent, g_rockConfig.rockRifleTwoHandRecoilPercent);
+            break;
+        case weapon_recoil_policy::Family::Shotgun:
+            identity.familyPercent = weapon_recoil_policy::selectHoldPercent(identity.oneHanded,
+                g_rockConfig.rockShotgunOneHandRecoilPercent, g_rockConfig.rockShotgunTwoHandRecoilPercent);
+            break;
+        case weapon_recoil_policy::Family::Heavy:
+            identity.familyPercent = weapon_recoil_policy::selectHoldPercent(identity.oneHanded,
+                g_rockConfig.rockHeavyOneHandRecoilPercent, g_rockConfig.rockHeavyTwoHandRecoilPercent);
+            break;
+        default:
+            identity.familyPercent = weapon_recoil_policy::selectHoldPercent(identity.oneHanded,
+                g_rockConfig.rockDefaultOneHandRecoilPercent, g_rockConfig.rockDefaultTwoHandRecoilPercent);
+            break;
         }
         if (identity.profile == weapon_recoil_policy::Profile::Bipod ||
             (identity.profile == weapon_recoil_policy::Profile::PowerArmor &&
@@ -66,17 +65,15 @@ namespace rock
         return identity;
     }
 
-    bool FRIK_CALL TwoHandedGrip::controlWeaponHandRecoil(
-        const frik::api::FRIKApiV2::RecoilSample* const sample,
-        frik::api::FRIKApiV2::RecoilResponse* const outResponse,
-        void* const userData) noexcept
+    bool FRIK_CALL TwoHandedGrip::controlWeaponHandRecoil(const frik::api::FRIKApiV2::RecoilSample* const sample,
+        frik::api::FRIKApiV2::RecoilResponse* const outResponse, void* const userData) noexcept
     {
         using Api = frik::api::FRIKApiV2;
         using namespace weapon_recoil_policy;
-        static_assert(static_cast<std::uint32_t>(HandMask::Primary) ==
-            static_cast<std::uint32_t>(Api::RecoilHandMask::Primary));
-        static_assert(static_cast<std::uint32_t>(HandMask::Offhand) ==
-            static_cast<std::uint32_t>(Api::RecoilHandMask::Offhand));
+        static_assert(
+            static_cast<std::uint32_t>(HandMask::Primary) == static_cast<std::uint32_t>(Api::RecoilHandMask::Primary));
+        static_assert(
+            static_cast<std::uint32_t>(HandMask::Offhand) == static_cast<std::uint32_t>(Api::RecoilHandMask::Offhand));
         auto* const self = static_cast<TwoHandedGrip*>(userData);
         if (!self) {
             return false;
@@ -123,16 +120,18 @@ namespace rock
         }
         const auto context = self->recoilSampleIdentity(handedMode->GetBinary());
         const bool rightCandidate = self->canUseRightOneHandRecoil();
-        const bool directRight = rightCandidate && needsOneHandPresentation(
-            weapon_recoil_authority_math::hasKick(sample->nativeKickLocal), state.rightNeedsNeutralFrame);
+        const bool directRight = rightCandidate &&
+            needsOneHandPresentation(weapon_recoil_authority_math::hasKick(sample->nativeKickLocal),
+                state.rightNeedsNeutralFrame);
         if (!directRight) {
             self->clearOneHandRecoilClaim();
         }
-        const bool ownedCarry = directRight || (self->isManualOwnershipActive() &&
-            (context.fullTwoHanded ||
-                (self->_session.state == TwoHandedState::Gripping && self->_firing.transferredPrimaryGrip.valid()) ||
-                (self->usesLeftFiringCarry() &&
-                self->_leftCarry.weaponNodeOwnershipBlockEngaged)));
+        const bool ownedCarry = directRight ||
+            (self->isManualOwnershipActive() &&
+                (context.fullTwoHanded ||
+                    (self->_session.state == TwoHandedState::Gripping &&
+                        self->_firing.transferredPrimaryGrip.valid()) ||
+                    (self->usesLeftFiringCarry() && self->_leftCarry.weaponNodeOwnershipBlockEngaged)));
         // Like armor, the laser profile also controls FRIK's native hand path
         // when ROCK does not currently own a weapon presentation target.
         if (context.immersiveRecoil && !ownedCarry && context.family != Family::Laser &&
@@ -141,10 +140,10 @@ namespace rock
         }
 
         RE::NiTransform controlled{};
-        const auto gains = context.immersiveRecoil ?
-            effectiveGains(context.family, context.profile, context.familyPercent) : ProfileGains{ 1.0f, 1.0f };
-        if (!weapon_recoil_authority_math::tryBuildControlledKick(
-                sample->nativeKickLocal, gains, controlled)) {
+        const auto gains = context.immersiveRecoil
+            ? effectiveGains(context.family, context.profile, context.familyPercent)
+            : ProfileGains{ 1.0f, 1.0f };
+        if (!weapon_recoil_authority_math::tryBuildControlledKick(sample->nativeKickLocal, gains, controlled)) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Weapon recoil: invalid native sample; controlled delivery declined");
             return false;
         }
@@ -159,9 +158,9 @@ namespace rock
         if (nativeKick) {
             ROCK_LOG_SAMPLE_INFO(Weapon, 1000,
                 "Recoil routing: mode={} firingHand={} nativePrimary={} owned={} mask={} captured={} filter={}",
-                context.immersiveRecoil ? "immersive" : "native-strength",
-                context.firingHandIsLeft ? "left" : "right", context.nativePrimaryIsLeft ? "left" : "right",
-                ownedCarry, static_cast<std::uint32_t>(mask), state.ticket.valid, g_rockConfig.rockWeaponFilteringPreset);
+                context.immersiveRecoil ? "immersive" : "native-strength", context.firingHandIsLeft ? "left" : "right",
+                context.nativePrimaryIsLeft ? "left" : "right", ownedCarry, static_cast<std::uint32_t>(mask),
+                state.ticket.valid, g_rockConfig.rockWeaponFilteringPreset);
         }
         if (nativeKick && mask != HandMask::None) {
             ++state.nativeKickSequence;
@@ -175,8 +174,7 @@ namespace rock
         return true;
     }
 
-    bool TwoHandedGrip::captureOwnedWeaponRecoil(
-        const RE::NiTransform& controlledKickLocal,
+    bool TwoHandedGrip::captureOwnedWeaponRecoil(const RE::NiTransform& controlledKickLocal,
         const weapon_recoil_policy::SampleIdentity& identity) noexcept
     {
         _recoil.carrierLocalDeltaValid = false;
@@ -187,14 +185,14 @@ namespace rock
             return false;
         }
         const bool nativeOffhand = identity.firingHandIsLeft != identity.nativePrimaryIsLeft;
-        if (nativeOffhand && (!nodes->primaryWandNode || !nodes->SecondaryWandNode ||
+        if (nativeOffhand &&
+            (!nodes->primaryWandNode || !nodes->SecondaryWandNode ||
                 !isInvertibleTransform(nodes->primaryWandNode->world) ||
                 !isInvertibleTransform(nodes->SecondaryWandNode->world))) {
             return false;
         }
         const auto neutral = transform_math::makeIdentityTransform<RE::NiTransform>();
-        const auto delta = weapon_recoil_authority_math::resolveWorldDelta(
-            controlledKickLocal, parent->world,
+        const auto delta = weapon_recoil_authority_math::resolveWorldDelta(controlledKickLocal, parent->world,
             nativeOffhand ? nodes->primaryWandNode->world : neutral,
             nativeOffhand ? nodes->SecondaryWandNode->world : neutral, nativeOffhand);
         if (!isFiniteTransform(delta) || !isInvertibleTransform(delta)) {
@@ -203,8 +201,8 @@ namespace rock
         _recoil.controlledKickActive = weapon_recoil_authority_math::hasKick(controlledKickLocal);
         _recoil.worldDelta = delta;
         if (nodes->primaryWandNode && isInvertibleTransform(nodes->primaryWandNode->world)) {
-            _recoil.carrierLocalDelta = weapon_recoil_authority_math::resolveCarrierLocalDelta(
-                controlledKickLocal, parent->world, nodes->primaryWandNode->world, nativeOffhand);
+            _recoil.carrierLocalDelta = weapon_recoil_authority_math::resolveCarrierLocalDelta(controlledKickLocal,
+                parent->world, nodes->primaryWandNode->world, nativeOffhand);
             _recoil.carrierLocalDeltaValid = isInvertibleTransform(_recoil.carrierLocalDelta);
         }
         _recoil.ticket.identity = identity;
@@ -243,9 +241,10 @@ namespace rock
                 ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Weapon recoil: filtered controller delivery unavailable");
                 return false;
             }
-            deliveryDelta = weapon_recoil_authority_math::resolveCarrierWorldDelta(
-                _recoil.carrierLocalDelta, filteredCarrier);
-            if (!isInvertibleTransform(deliveryDelta)) return false;
+            deliveryDelta =
+                weapon_recoil_authority_math::resolveCarrierWorldDelta(_recoil.carrierLocalDelta, filteredCarrier);
+            if (!isInvertibleTransform(deliveryDelta))
+                return false;
         }
         if (!_recoil.ticket.consume(context)) {
             return false;
@@ -254,7 +253,8 @@ namespace rock
         if (frik_hand_world_authority::weaponFilteringActive() && _recoil.controlledKickActive) {
             const auto neutral = transform_math::makeIdentityTransform<RE::NiTransform>();
             ROCK_LOG_SAMPLE_INFO(Weapon, 500,
-                "Weapon filtering recoil delivered preset={} hand={} profile={} localKick={:.3f}gu/{:.3f}deg worldRotation={:.3f}deg",
+                "Weapon filtering recoil delivered preset={} hand={} profile={} localKick={:.3f}gu/{:.3f}deg "
+                "worldRotation={:.3f}deg",
                 g_rockConfig.rockWeaponFilteringPreset, context.firingHandIsLeft ? "left" : "right",
                 weapon_recoil_policy::name(context.profile),
                 hand_world_claim_registry_policy::translationDeltaGameUnits(_recoil.carrierLocalDelta, neutral),
@@ -267,13 +267,11 @@ namespace rock
     bool TwoHandedGrip::canUseRightOneHandRecoil() const noexcept
     {
         return !g_rockConfig.rockEmergencyDisableRecoil &&
-            frik_hand_world_authority::hasCalibratedRawHandFrame(false) &&
-            !usesLeftFiringCarry() &&
-            weapon_recoil_policy::canPresentRightRecoilForGrip(
-                isGripping(), hasVisualOnlySupportRecoilAssist(), _firing.transferredPrimaryGrip.valid()) &&
-            !_firing.rightHandHoldingObjectForPose &&
-            !isWeaponVisualReturnActive() && !isHandVisualReturnActive(false) &&
-            _recoil.rightBaseValid && _recoil.equippedIdentity.weaponNode != 0 &&
+            frik_hand_world_authority::hasCalibratedRawHandFrame(false) && !usesLeftFiringCarry() &&
+            weapon_recoil_policy::canPresentRightRecoilForGrip(isGripping(), hasVisualOnlySupportRecoilAssist(),
+                _firing.transferredPrimaryGrip.valid()) &&
+            !_firing.rightHandHoldingObjectForPose && !isWeaponVisualReturnActive() &&
+            !isHandVisualReturnActive(false) && _recoil.rightBaseValid && _recoil.equippedIdentity.weaponNode != 0 &&
             _recoil.equippedIdentity.equippedOwnership != 0;
     }
 
@@ -281,8 +279,7 @@ namespace rock
     {
         // Gated on the path itself, so a kick flag left over from a holster, a
         // grip or a disabled setting never holds FRIK's weapon-node write block.
-        return canUseRightOneHandRecoil() &&
-            (_recoil.controlledKickActive || _recoil.rightNeedsNeutralFrame);
+        return canUseRightOneHandRecoil() && (_recoil.controlledKickActive || _recoil.rightNeedsNeutralFrame);
     }
 
     void TwoHandedGrip::clearOneHandRecoilClaim()
@@ -290,8 +287,7 @@ namespace rock
         if (!_recoil.rightHandClaimActive) {
             return;
         }
-        if (frik_visual_authority::clearHandWorld(ONE_HAND_RECOIL_TAG,
-                frik_visual_authority::Hand::Right)) {
+        if (frik_visual_authority::clearHandWorld(ONE_HAND_RECOIL_TAG, frik_visual_authority::Hand::Right)) {
             _recoil.rightHandClaimActive = false;
         } else {
             ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Weapon recoil: right firing-hand claim could not be cleared");
@@ -303,7 +299,8 @@ namespace rock
         if (!g_rockConfig.rockEmergencyDisableRecoil && _recoil.rightBaseValid &&
             !frik_hand_world_authority::hasCalibratedRawHandFrame(false)) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
-                "Weapon recoil: right acquisition deferred; rawSource={} controller/body relation unavailable form={:08X} generation={:016X}",
+                "Weapon recoil: right acquisition deferred; rawSource={} controller/body relation unavailable "
+                "form={:08X} generation={:016X}",
                 frik_hand_world_authority::rawHandSourceName(false), _recoil.equippedIdentity.formID,
                 _recoil.equippedIdentity.weaponGeneration);
         }
@@ -322,8 +319,8 @@ namespace rock
         }
         RE::NiTransform weaponTarget{};
         RE::NiTransform handTarget{};
-        weapon_recoil_authority_math::applyOneHandKick(delta,
-            _recoil.rightWeaponBase, _recoil.rightHandBase, weaponTarget, handTarget);
+        weapon_recoil_authority_math::applyOneHandKick(delta, _recoil.rightWeaponBase, _recoil.rightHandBase,
+            weaponTarget, handTarget);
         if (!isFiniteTransform(weaponTarget) || !isUsableHandAuthorityTransform(handTarget)) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Weapon recoil: invalid right one-hand target; publication skipped");
             return false;
@@ -333,15 +330,15 @@ namespace rock
         // collision. FRIK consumes it with no additional kick. The current
         // controller-derived base never contains the preceding frame's recoil.
         if (scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(_scope.menuOpenThisFrame)) {
-            if (!frik_visual_authority::publishHandWorld(ONE_HAND_RECOIL_TAG,
-                    frik_visual_authority::Hand::Right, handTarget, GRIP_HAND_POSE_PRIORITY)) {
+            if (!frik_visual_authority::publishHandWorld(ONE_HAND_RECOIL_TAG, frik_visual_authority::Hand::Right,
+                    handTarget, GRIP_HAND_POSE_PRIORITY)) {
                 ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Weapon recoil: right firing-hand publication failed");
                 return false;
             }
             _recoil.rightHandClaimActive = true;
         }
-        if (!applyWeaponVisualAuthority(weaponNode, weaponTarget,
-                _recoil.equippedIdentity.weaponGeneration, true, true, _recoil.rightBaseSource)) {
+        if (!applyWeaponVisualAuthority(weaponNode, weaponTarget, _recoil.equippedIdentity.weaponGeneration, true, true,
+                _recoil.rightBaseSource)) {
             clearOneHandRecoilClaim();
             return false;
         }

@@ -26,17 +26,17 @@ namespace rock::equipped_weapon_drop_policy
     [[nodiscard]] inline constexpr Mode fromEquipMode(int value) noexcept
     {
         switch (value) {
-        case 2: return Mode::ToggleDrop;
+        case 2:
+            return Mode::ToggleDrop;
         case 3:
-        case kAutoEquipMode: return Mode::AutoDrop;
-        default: return Mode::Off;
+        case kAutoEquipMode:
+            return Mode::AutoDrop;
+        default:
+            return Mode::Off;
         }
     }
 
-    [[nodiscard]] inline constexpr bool autoEquipFromEquipMode(int value) noexcept
-    {
-        return value == kAutoEquipMode;
-    }
+    [[nodiscard]] inline constexpr bool autoEquipFromEquipMode(int value) noexcept { return value == kAutoEquipMode; }
 
     enum class SourceHand : std::uint8_t
     {
@@ -45,17 +45,14 @@ namespace rock::equipped_weapon_drop_policy
         Left,
     };
 
-    [[nodiscard]] inline constexpr bool captureOwnerCurrent(bool manual, bool sourceIsLeft,
-        std::uint64_t confirmed, std::uint64_t sessionOwner, std::uint64_t generation, bool nativeCanonicalCurrent) noexcept
+    [[nodiscard]] inline constexpr bool captureOwnerCurrent(bool manual, bool sourceIsLeft, std::uint64_t confirmed,
+        std::uint64_t sessionOwner, std::uint64_t generation, bool nativeCanonicalCurrent) noexcept
     {
         return confirmed != 0 && generation != 0 &&
             (manual ? sessionOwner == confirmed : (!sourceIsLeft && nativeCanonicalCurrent));
     }
 
-    [[nodiscard]] inline constexpr bool isLeft(SourceHand hand) noexcept
-    {
-        return hand == SourceHand::Left;
-    }
+    [[nodiscard]] inline constexpr bool isLeft(SourceHand hand) noexcept { return hand == SourceHand::Left; }
 
     [[nodiscard]] inline constexpr const char* sourceHandName(SourceHand hand) noexcept
     {
@@ -76,16 +73,16 @@ namespace rock::equipped_weapon_drop_policy
         return leftCarries != rightCarries && !freeFiringStationHovered;
     }
 
-    [[nodiscard]] inline constexpr SourceHand simultaneousReleaseSource(bool enabled,
-        bool leftCarries, bool rightCarries, bool leftReleased, bool rightReleased,
-        bool firingOccupied, bool firingLeft, bool pivotLeft) noexcept
+    [[nodiscard]] inline constexpr SourceHand simultaneousReleaseSource(bool enabled, bool leftCarries,
+        bool rightCarries, bool leftReleased, bool rightReleased, bool firingOccupied, bool firingLeft,
+        bool pivotLeft) noexcept
     {
-        if (!enabled || !leftCarries || !rightCarries || !leftReleased || !rightReleased) return SourceHand::None;
+        if (!enabled || !leftCarries || !rightCarries || !leftReleased || !rightReleased)
+            return SourceHand::None;
         return (firingOccupied ? firingLeft : pivotLeft) ? SourceHand::Left : SourceHand::Right;
     }
 
-    [[nodiscard]] inline constexpr bool equippedWeaponShoulderStashAvailable(
-        bool shoulderStashConfigured) noexcept
+    [[nodiscard]] inline constexpr bool equippedWeaponShoulderStashAvailable(bool shoulderStashConfigured) noexcept
     {
         return shoulderStashConfigured;
     }
@@ -97,12 +94,8 @@ namespace rock::equipped_weapon_drop_policy
      * lets go. The attached native firing-hand fallback is selected by the
      * coordinator adapter, outside this drop policy.
      */
-    [[nodiscard]] inline constexpr SourceHand resolveEquippedWeaponStashCarryHand(
-        bool primaryOnlyActive,
-        bool partCarryActive,
-        bool leftPartGripActive,
-        bool rightPartGripActive,
-        bool firingHandIsLeft) noexcept
+    [[nodiscard]] inline constexpr SourceHand resolveEquippedWeaponStashCarryHand(bool primaryOnlyActive,
+        bool partCarryActive, bool leftPartGripActive, bool rightPartGripActive, bool firingHandIsLeft) noexcept
     {
         if (primaryOnlyActive) {
             return firingHandIsLeft ? SourceHand::Left : SourceHand::Right;

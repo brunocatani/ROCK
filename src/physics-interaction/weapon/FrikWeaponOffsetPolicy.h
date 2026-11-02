@@ -54,10 +54,10 @@ namespace rock::frik_weapon_offset_policy
         bool rifle = false;
         if (name == "Plasma") {
             rifle = gripStockName.starts_with("RiotGrip") || gripStockName.starts_with("Sniper") ||
-                    gripStockName.find("Rifle") != std::string_view::npos;
+                gripStockName.find("Rifle") != std::string_view::npos;
         } else if (name == "Pipe" || name == "Pipe Bolt-Action") {
             rifle = gripStockName.starts_with("HandmadePaddedStock") || gripStockName.starts_with("SpringStock") ||
-                    gripStockName.starts_with("PipeStock");
+                gripStockName.starts_with("PipeStock");
         } else if (name == "Laser" || name == "Institute") {
             rifle = gripStockName.find("Rifle") != std::string_view::npos;
         }
@@ -72,7 +72,9 @@ namespace rock::frik_weapon_offset_policy
     [[nodiscard]] inline std::optional<Pose> orthonormalized(Pose pose)
     {
         auto column = [&](int c) { return holding_grip_math::V{ pose.r[c], pose.r[3 + c], pose.r[6 + c] }; };
-        auto dot = [](const holding_grip_math::V& a, const holding_grip_math::V& b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; };
+        auto dot = [](const holding_grip_math::V& a, const holding_grip_math::V& b) {
+            return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        };
         auto normalized = [&](holding_grip_math::V v) -> std::optional<holding_grip_math::V> {
             const float length = std::sqrt(dot(v, v));
             if (!std::isfinite(length) || length < 0.5f) {
@@ -185,7 +187,8 @@ namespace rock::frik_weapon_offset_policy
         [[nodiscard]] bool replacesSeat() const noexcept { return hasWeaponOffset; }
     };
 
-    [[nodiscard]] inline std::optional<Override> resolve(const EntryMap& entries, const std::string& key, const bool inPowerArmor)
+    [[nodiscard]] inline std::optional<Override> resolve(const EntryMap& entries, const std::string& key,
+        const bool inPowerArmor)
     {
         Override result{};
         if (const auto* weapon = lookup(entries, key, inPowerArmor)) {

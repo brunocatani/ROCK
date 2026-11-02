@@ -10,7 +10,8 @@ namespace rock
     bool visitWeaponChildSlots(const Children& children, Visitor&& visitor)
     {
         for (decltype(children.capacity()) slot = 0; slot < children.capacity(); ++slot) {
-            if (auto* child = children[slot].get(); child && !visitor(child, slot)) return false;
+            if (auto* child = children[slot].get(); child && !visitor(child, slot))
+                return false;
         }
         return true;
     }

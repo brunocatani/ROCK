@@ -1,7 +1,7 @@
 #pragma once
 
-#include "physics-interaction/native/HavokCompoundShapeBuilder.h"
 #include "RE/NetImmerse/NiPoint.h"
+#include "physics-interaction/native/HavokCompoundShapeBuilder.h"
 
 #include <cstdint>
 #include <memory>
@@ -28,7 +28,7 @@ namespace rock
         struct Step
         {
             std::string name;
-            std::uint32_t ordinal{};  // among same-named siblings, in slot order
+            std::uint32_t ordinal{}; // among same-named siblings, in slot order
             bool node{};
         };
 

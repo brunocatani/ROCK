@@ -1,7 +1,7 @@
 #pragma once
 
-#include "physics-interaction/weapon/HeldWeaponEquipStatePolicy.h"
 #include "physics-interaction/native/NativeWeaponAnimationAudio.h"
+#include "physics-interaction/weapon/HeldWeaponEquipStatePolicy.h"
 
 #include <cstdint>
 
@@ -27,93 +27,82 @@ namespace rock::weapon_transition_animation_acceleration_policy
     [[nodiscard]] inline constexpr bool isDrawClip(std::string_view path) noexcept
     {
         const auto slash = path.find_last_of("/\\");
-        if (slash != std::string_view::npos) path.remove_prefix(slash + 1);
-        if (!native_weapon_animation_audio::isEquipClip(path)) return false;
+        if (slash != std::string_view::npos)
+            path.remove_prefix(slash + 1);
+        if (!native_weapon_animation_audio::isEquipClip(path))
+            return false;
         path.remove_suffix(4);
-        if (path.size() >= 3 && native_weapon_animation_audio::equalName(path.substr(0,3), "WPN")) path.remove_prefix(3);
-        return native_weapon_animation_audio::equalName(path,"Equip") ||
-            native_weapon_animation_audio::equalName(path,"EquipFast");
+        if (path.size() >= 3 && native_weapon_animation_audio::equalName(path.substr(0, 3), "WPN"))
+            path.remove_prefix(3);
+        return native_weapon_animation_audio::equalName(path, "Equip") ||
+            native_weapon_animation_audio::equalName(path, "EquipFast");
     }
 
     [[nodiscard]] inline constexpr bool isSheatheClip(std::string_view path) noexcept
     {
         const auto slash = path.find_last_of("/\\");
-        if (slash != std::string_view::npos) path.remove_prefix(slash + 1);
-        if (!native_weapon_animation_audio::isEquipClip(path)) return false;
+        if (slash != std::string_view::npos)
+            path.remove_prefix(slash + 1);
+        if (!native_weapon_animation_audio::isEquipClip(path))
+            return false;
         path.remove_suffix(4);
-        if (path.size() >= 3 && native_weapon_animation_audio::equalName(path.substr(0,3), "WPN")) path.remove_prefix(3);
-        return native_weapon_animation_audio::equalName(path,"UnEquip");
+        if (path.size() >= 3 && native_weapon_animation_audio::equalName(path.substr(0, 3), "WPN"))
+            path.remove_prefix(3);
+        return native_weapon_animation_audio::equalName(path, "UnEquip");
     }
 
-    [[nodiscard]] inline constexpr bool isTransitionClip(const Direction direction, const std::string_view path) noexcept
+    [[nodiscard]] inline constexpr bool isTransitionClip(const Direction direction,
+        const std::string_view path) noexcept
     {
         return direction == Direction::Draw ? isDrawClip(path) : isSheatheClip(path);
     }
 
     // A put-away lease outlives its weapon's unequip: it stays matched while
     // no weapon is equipped and ends when another one is.
-    [[nodiscard]] inline constexpr bool leaseIdentityMatches(
-        const Direction direction, const bool sameIdentity, const bool currentIdentityValid) noexcept
+    [[nodiscard]] inline constexpr bool leaseIdentityMatches(const Direction direction, const bool sameIdentity,
+        const bool currentIdentityValid) noexcept
     {
         return sameIdentity || (direction == Direction::Sheathe && !currentIdentityValid);
     }
 
-    [[nodiscard]] inline constexpr float scaleTransitionTimestep(
-        const float timestep) noexcept
+    [[nodiscard]] inline constexpr float scaleTransitionTimestep(const float timestep) noexcept
     {
         return timestep * kAcceleratedSpeedMultiplier;
     }
 
-    [[nodiscard]] inline constexpr std::uint32_t transitionState(
-        const Direction direction) noexcept
+    [[nodiscard]] inline constexpr std::uint32_t transitionState(const Direction direction) noexcept
     {
-        using NativeWeaponState =
-            held_weapon_equip_state_policy::NativeWeaponState;
+        using NativeWeaponState = held_weapon_equip_state_policy::NativeWeaponState;
         return static_cast<std::uint32_t>(
-            direction == Direction::Draw ?
-                NativeWeaponState::Drawing :
-                NativeWeaponState::Sheathing);
+            direction == Direction::Draw ? NativeWeaponState::Drawing : NativeWeaponState::Sheathing);
     }
 
-    [[nodiscard]] inline constexpr std::uint32_t terminalState(
-        const Direction direction) noexcept
+    [[nodiscard]] inline constexpr std::uint32_t terminalState(const Direction direction) noexcept
     {
-        using NativeWeaponState =
-            held_weapon_equip_state_policy::NativeWeaponState;
+        using NativeWeaponState = held_weapon_equip_state_policy::NativeWeaponState;
         return static_cast<std::uint32_t>(
-            direction == Direction::Draw ?
-                NativeWeaponState::Drawn :
-                NativeWeaponState::Sheathed);
+            direction == Direction::Draw ? NativeWeaponState::Drawn : NativeWeaponState::Sheathed);
     }
 
-    [[nodiscard]] inline constexpr Direction directionForTransitionState(
-        const std::uint32_t nativeState) noexcept
+    [[nodiscard]] inline constexpr Direction directionForTransitionState(const std::uint32_t nativeState) noexcept
     {
-        return nativeState == transitionState(Direction::Sheathe) ?
-            Direction::Sheathe :
-            Direction::Draw;
+        return nativeState == transitionState(Direction::Sheathe) ? Direction::Sheathe : Direction::Draw;
     }
 
-    [[nodiscard]] inline constexpr bool shouldAccelerateSample(
-        const bool registeredTransitionClip,
-        const Direction direction,
-        const std::uint32_t nativeState) noexcept
+    [[nodiscard]] inline constexpr bool shouldAccelerateSample(const bool registeredTransitionClip,
+        const Direction direction, const std::uint32_t nativeState) noexcept
     {
         return registeredTransitionClip &&
-               (nativeState == transitionState(direction) ||
+            (nativeState == transitionState(direction) ||
                 (direction == Direction::Draw && nativeState == terminalState(direction)));
     }
 
-    [[nodiscard]] inline constexpr LifecycleAction classifyLifecycle(
-        const bool runtimeAllowed,
-        const bool identityMatches,
-        const Direction direction,
-        const std::uint32_t nativeState,
+    [[nodiscard]] inline constexpr LifecycleAction classifyLifecycle(const bool runtimeAllowed,
+        const bool identityMatches, const Direction direction, const std::uint32_t nativeState,
         const float elapsedSeconds) noexcept
     {
         if (!runtimeAllowed || !identityMatches ||
-            !held_weapon_equip_state_policy::isValidNativeWeaponState(
-                nativeState)) {
+            !held_weapon_equip_state_policy::isValidNativeWeaponState(nativeState)) {
             return LifecycleAction::Cancel;
         }
         if (nativeState == terminalState(direction)) {

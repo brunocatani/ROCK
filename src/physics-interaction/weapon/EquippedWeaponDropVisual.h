@@ -14,18 +14,20 @@ namespace rock
     {
     public:
         EquippedWeaponDropVisual() = default;
+
         ~EquippedWeaponDropVisual() { release("destruction"); }
+
         EquippedWeaponDropVisual(const EquippedWeaponDropVisual&) = delete;
         EquippedWeaponDropVisual& operator=(const EquippedWeaponDropVisual&) = delete;
-        void begin(RE::NiPointer<RE::NiAVObject> model,
-            const RE::NiTransform& modelInWeapon,
+        void begin(RE::NiPointer<RE::NiAVObject> model, const RE::NiTransform& modelInWeapon,
             const AuthoredWeaponGripPose& grip, std::uint32_t referenceId);
-        void beginStationary(RE::NiPointer<RE::NiAVObject> model,
-            const RE::NiTransform& modelInWeapon, const RE::NiTransform& weaponWorld, std::uint32_t referenceId);
+        void beginStationary(RE::NiPointer<RE::NiAVObject> model, const RE::NiTransform& modelInWeapon,
+            const RE::NiTransform& weaponWorld, std::uint32_t referenceId);
         void update(const RE::NiTransform& physicalHandWorld, RE::NiAVObject* looseRoot);
         void prepareGrab();
         void release(const char* reason);
         void abandonSceneGraph();
+
         [[nodiscard]] bool active() const { return _model != nullptr; }
 
     private:

@@ -4,7 +4,6 @@
  * Weapon support-grip behavior is grouped here so support authority, pose policy, and the two-handed solver evolve as one coherent subsystem.
  */
 
-
 // ---- WeaponSupportAuthorityPolicy.h ----
 
 /*
@@ -37,9 +36,7 @@ namespace rock::weapon_support_authority_policy
         VisualOnlySupport = 1,
     };
 
-    [[nodiscard]] inline constexpr bool
-    canCarryAfterFiringGripDetach(
-        const WeaponSupportAuthorityMode mode) noexcept
+    [[nodiscard]] inline constexpr bool canCarryAfterFiringGripDetach(const WeaponSupportAuthorityMode mode) noexcept
     {
         return mode == WeaponSupportAuthorityMode::FullTwoHandedSolver;
     }
@@ -51,19 +48,16 @@ namespace rock::weapon_support_authority_policy
      * The decision is made once at grip capture; changing modes requires
      * releasing and re-grabbing.
      */
-    inline constexpr bool canApplyFiringGripProximityAuthority(
-        bool providerGrabModeOverride)
+    inline constexpr bool canApplyFiringGripProximityAuthority(bool providerGrabModeOverride)
     {
         return !providerGrabModeOverride;
     }
 
     inline constexpr WeaponSupportAuthorityMode resolveFiringGripProximityAuthorityMode(
-        float supportPalmToFiringGripDistance,
-        float visualOnlyRadius)
+        float supportPalmToFiringGripDistance, float visualOnlyRadius)
     {
-        return supportPalmToFiringGripDistance <= visualOnlyRadius ?
-                   WeaponSupportAuthorityMode::VisualOnlySupport :
-                   WeaponSupportAuthorityMode::FullTwoHandedSolver;
+        return supportPalmToFiringGripDistance <= visualOnlyRadius ? WeaponSupportAuthorityMode::VisualOnlySupport
+                                                                   : WeaponSupportAuthorityMode::FullTwoHandedSolver;
     }
 
     inline constexpr bool supportGripOwnsWeaponTransform(WeaponSupportAuthorityMode mode)
@@ -82,33 +76,21 @@ namespace rock::weapon_support_authority_policy
      * two-hand firing hold. Give that hold recoil-only authority without
      * upgrading provider AttachOnly glue or changing the full two-hand solver.
      */
-    inline constexpr bool shouldApplyVisualOnlySupportRecoilAssist(
-        WeaponSupportAuthorityMode mode,
-        bool supportGripActive,
-        bool providerAuthorityActive,
-        bool attachOnly)
+    inline constexpr bool shouldApplyVisualOnlySupportRecoilAssist(WeaponSupportAuthorityMode mode,
+        bool supportGripActive, bool providerAuthorityActive, bool attachOnly)
     {
-        return mode == WeaponSupportAuthorityMode::VisualOnlySupport &&
-               supportGripActive &&
-               !providerAuthorityActive &&
-               !attachOnly;
+        return mode == WeaponSupportAuthorityMode::VisualOnlySupport && supportGripActive && !providerAuthorityActive &&
+            !attachOnly;
     }
 
-    inline constexpr bool shouldUseDynamicSupportAcquisition(
-        WeaponSupportAuthorityMode mode,
-        bool authoredSupportGrip,
-        bool providerAuthorityActive,
-        bool attachOnly)
+    inline constexpr bool shouldUseDynamicSupportAcquisition(WeaponSupportAuthorityMode mode, bool authoredSupportGrip,
+        bool providerAuthorityActive, bool attachOnly)
     {
-        return mode == WeaponSupportAuthorityMode::FullTwoHandedSolver &&
-               !authoredSupportGrip &&
-               !providerAuthorityActive &&
-               !attachOnly;
+        return mode == WeaponSupportAuthorityMode::FullTwoHandedSolver && !authoredSupportGrip &&
+            !providerAuthorityActive && !attachOnly;
     }
 
-    inline constexpr bool canPromoteSupportGripToFiringGrip(
-        bool supportGripActive,
-        bool attachOnly,
+    inline constexpr bool canPromoteSupportGripToFiringGrip(bool supportGripActive, bool attachOnly,
         bool insideFiringZone)
     {
         // Authored versus dynamic is pose selection, while VisualOnlySupport
@@ -135,11 +117,8 @@ namespace rock::weapon_support_authority_policy
     [[nodiscard]] inline constexpr bool shouldCaptureDynamicHandoffGrip(
         const DynamicHandoffGripCaptureInput& input) noexcept
     {
-        if (!input.normalSupportAcquisition ||
-            !input.supportPoseAbsent ||
-            !input.firingGripProximityAuthorityEnabled ||
-            input.providerPartAuthorityActive ||
-            !input.supportPalmInsideHandoffZone) {
+        if (!input.normalSupportAcquisition || !input.supportPoseAbsent || !input.firingGripProximityAuthorityEnabled ||
+            input.providerPartAuthorityActive || !input.supportPalmInsideHandoffZone) {
             return false;
         }
 
@@ -147,7 +126,8 @@ namespace rock::weapon_support_authority_policy
     }
 
     template <class Transform>
-    inline Transform buildVisualOnlySupportHandWorld(const Transform& weaponWorld, const Transform& supportHandWeaponLocal)
+    inline Transform buildVisualOnlySupportHandWorld(const Transform& weaponWorld,
+        const Transform& supportHandWeaponLocal)
     {
         return transform_math::composeTransforms(weaponWorld, supportHandWeaponLocal);
     }
@@ -215,10 +195,12 @@ namespace rock::weapon_support_grip_policy
 
     inline WeaponGripPoseId resolveSupportGripPose(const WeaponInteractionContact& contact)
     {
-        return contact.fallbackGripPose != WeaponGripPoseId::None ? contact.fallbackGripPose : fallbackPoseForPart(contact.partKind);
+        return contact.fallbackGripPose != WeaponGripPoseId::None ? contact.fallbackGripPose
+                                                                  : fallbackPoseForPart(contact.partKind);
     }
 
-    inline bool canUseContactForSupportGrip(const WeaponInteractionContact& contact, const WeaponInteractionRuntimeState& runtimeState)
+    inline bool canUseContactForSupportGrip(const WeaponInteractionContact& contact,
+        const WeaponInteractionRuntimeState& runtimeState)
     {
         return contact.valid && runtimeState.supportGripAllowed;
     }
@@ -300,24 +282,20 @@ namespace rock::equipped_weapon_manual_ownership_policy
         bool holdingLooseWeapon{ false };
     };
 
-    [[nodiscard]] inline constexpr bool firingGripOwnershipEnabled(
-        const FiringGripModeAvailability& modes) noexcept
+    [[nodiscard]] inline constexpr bool firingGripOwnershipEnabled(const FiringGripModeAvailability& modes) noexcept
     {
-        return modes.primaryDetachEnabled ||
-               modes.integratedDetachEnabled ||
-               modes.ambidextrousHandoffAvailable ||
-               modes.leftHandedModeEnabled;
+        return modes.primaryDetachEnabled || modes.integratedDetachEnabled || modes.ambidextrousHandoffAvailable ||
+            modes.leftHandedModeEnabled;
     }
 
-    [[nodiscard]] inline constexpr bool shouldStartHeldWeaponEquipOwnership(const HeldWeaponEquipOwnershipInput& input) noexcept
+    [[nodiscard]] inline constexpr bool shouldStartHeldWeaponEquipOwnership(
+        const HeldWeaponEquipOwnershipInput& input) noexcept
     {
         // Trigger equip runs before loose-grab release. The retained weapon
         // owns the hand choice even on a simultaneous trigger/release frame.
         return input.holdingLooseWeapon &&
-               (input.modes.primaryDetachEnabled ||
-                   input.modes.integratedDetachEnabled ||
-                   input.modes.leftHandedModeEnabled ||
-                   (input.handIsLeft && input.modes.ambidextrousHandoffAvailable));
+            (input.modes.primaryDetachEnabled || input.modes.integratedDetachEnabled ||
+                input.modes.leftHandedModeEnabled || (input.handIsLeft && input.modes.ambidextrousHandoffAvailable));
     }
 
     [[nodiscard]] inline constexpr bool canSettleEquipInGripZone(bool gripZoneEquipEnabled) noexcept
@@ -325,19 +303,14 @@ namespace rock::equipped_weapon_manual_ownership_policy
         return gripZoneEquipEnabled;
     }
 
-    [[nodiscard]] inline constexpr bool shouldTrackHeldWeaponGripFrame(
-        const bool holdingLooseWeapon,
-        const bool gripZoneEquipEnabled,
-        const bool equipOwnershipEligible) noexcept
+    [[nodiscard]] inline constexpr bool shouldTrackHeldWeaponGripFrame(const bool holdingLooseWeapon,
+        const bool gripZoneEquipEnabled, const bool equipOwnershipEligible) noexcept
     {
-        return holdingLooseWeapon &&
-               (gripZoneEquipEnabled || equipOwnershipEligible);
+        return holdingLooseWeapon && (gripZoneEquipEnabled || equipOwnershipEligible);
     }
 
-    [[nodiscard]] inline constexpr bool shouldRetainPrimaryOnlyOwnership(
-        bool primaryDetachEnabled,
-        bool primaryGripHeld,
-        bool lastGripReleaseDropEnabled) noexcept
+    [[nodiscard]] inline constexpr bool shouldRetainPrimaryOnlyOwnership(bool primaryDetachEnabled,
+        bool primaryGripHeld, bool lastGripReleaseDropEnabled) noexcept
     {
         // In PrimaryOnly the firing grip is the weapon's only carrier, so a
         // detach release here can only drop the weapon. With the last-grip
@@ -351,46 +324,34 @@ namespace rock::equipped_weapon_manual_ownership_policy
         return primaryGripHeld;
     }
 
-    [[nodiscard]] inline constexpr bool featureAvailable(
-        bool ownershipModeEnabled,
-        bool primaryPoseBlockerAvailable,
-        bool weaponNodeAvailable,
-        std::uint64_t equippedWeaponOwnershipKey) noexcept
+    [[nodiscard]] inline constexpr bool featureAvailable(bool ownershipModeEnabled, bool primaryPoseBlockerAvailable,
+        bool weaponNodeAvailable, std::uint64_t equippedWeaponOwnershipKey) noexcept
     {
-        return ownershipModeEnabled &&
-               primaryPoseBlockerAvailable &&
-               weaponNodeAvailable &&
-               equippedWeaponOwnershipKey != 0;
+        return ownershipModeEnabled && primaryPoseBlockerAvailable && weaponNodeAvailable &&
+            equippedWeaponOwnershipKey != 0;
     }
 
-    [[nodiscard]] inline constexpr bool shouldKeepPendingPrimaryOnlyStart(const PendingPrimaryOnlyStartInput& input) noexcept
+    [[nodiscard]] inline constexpr bool shouldKeepPendingPrimaryOnlyStart(
+        const PendingPrimaryOnlyStartInput& input) noexcept
     {
         // Physical release is processed by the equipped grip once the chosen
         // hand takes ownership; it must not silently select native right.
-        return input.pending &&
-               (input.gripHeld || input.source != PrimaryOnlyStartSource::GripInput) &&
-               input.ownershipModeEnabled &&
-               input.primaryPoseBlockerAvailable;
+        return input.pending && (input.gripHeld || input.source != PrimaryOnlyStartSource::GripInput) &&
+            input.ownershipModeEnabled && input.primaryPoseBlockerAvailable;
     }
 
-    [[nodiscard]] inline constexpr bool shouldStartPendingPrimaryOnlyGrip(
-        bool pendingMatchesCurrentWeapon,
-        bool gripHeld,
-        PrimaryOnlyStartSource source) noexcept
+    [[nodiscard]] inline constexpr bool shouldStartPendingPrimaryOnlyGrip(bool pendingMatchesCurrentWeapon,
+        bool gripHeld, PrimaryOnlyStartSource source) noexcept
     {
-        return pendingMatchesCurrentWeapon &&
-               (gripHeld || source != PrimaryOnlyStartSource::GripInput);
+        return pendingMatchesCurrentWeapon && (gripHeld || source != PrimaryOnlyStartSource::GripInput);
     }
 
-    [[nodiscard]] inline constexpr bool canPreserveManualOwnership(
-        std::uint64_t activeEquippedOwnershipKey,
-        std::uint64_t currentEquippedOwnershipKey,
-        std::uint64_t currentCollisionGenerationKey,
+    [[nodiscard]] inline constexpr bool canPreserveManualOwnership(std::uint64_t activeEquippedOwnershipKey,
+        std::uint64_t currentEquippedOwnershipKey, std::uint64_t currentCollisionGenerationKey,
         bool collisionGenerationRequired = true) noexcept
     {
-        return activeEquippedOwnershipKey != 0 &&
-               activeEquippedOwnershipKey == currentEquippedOwnershipKey &&
-               (!collisionGenerationRequired || currentCollisionGenerationKey != 0);
+        return activeEquippedOwnershipKey != 0 && activeEquippedOwnershipKey == currentEquippedOwnershipKey &&
+            (!collisionGenerationRequired || currentCollisionGenerationKey != 0);
     }
 
     struct PrimaryReleaseIntentState
@@ -421,7 +382,7 @@ namespace rock::equipped_weapon_manual_ownership_policy
         PrimaryReleaseIntentState& state, const PrimaryReleaseIntentInput& input) noexcept
     {
         if (state.ownershipKey != input.ownershipKey || state.firingHandIsLeft != input.firingHandIsLeft) {
-            state = {input.ownershipKey, input.firingHandIsLeft, false};
+            state = { input.ownershipKey, input.firingHandIsLeft, false };
         }
         // Native equipped carry is ownership even before the first squeeze.
         // An open input level alone must never manufacture a release/handoff.
@@ -431,24 +392,22 @@ namespace rock::equipped_weapon_manual_ownership_policy
         }
         if (!input.primaryOwned) {
             state.pending = false;
-            return {.retained = input.logicalHeld};
+            return { .retained = input.logicalHeld };
         }
         if (input.logicalReleased) {
             if (!input.supportGripActive && input.freeSupportIndicatorActive) {
                 state.pending = false;
-                return {.retained = true, .blockedBySupportHover = true};
+                return { .retained = true, .blockedBySupportHover = true };
             }
             state.pending = true;
         } else if (input.logicalHeld) {
             state.pending = false;
         }
-        return {.retained = !state.pending};
+        return { .retained = !state.pending };
     }
 
     [[nodiscard]] inline constexpr GripReleaseDebounceDecision debouncePrimaryGripRelease(
-        GripReleaseDebounceState& state,
-        bool physicallyHeld,
-        bool primaryOwned,
+        GripReleaseDebounceState& state, bool physicallyHeld, bool primaryOwned,
         std::uint8_t confirmFrames = kPrimaryReleaseConfirmFrames) noexcept
     {
         if (physicallyHeld) {
@@ -537,7 +496,8 @@ namespace rock::weapon_two_handed_grip_math
      */
 
     template <class Transform, class Vector>
-    inline Transform alignHandFrameToGripPoint(const Transform& handWorldTransform, const Vector& currentGripPivotWorld, const Vector& targetGripPointWorld)
+    inline Transform alignHandFrameToGripPoint(const Transform& handWorldTransform, const Vector& currentGripPivotWorld,
+        const Vector& targetGripPointWorld)
     {
         Transform result = handWorldTransform;
         const Vector correction = weaponSolverSub(targetGripPointWorld, currentGripPivotWorld);
@@ -553,10 +513,8 @@ namespace rock::weapon_two_handed_grip_math
      * object-local surface capture all observe one coherent final relation.
      */
     template <class Transform, class Vector>
-    inline Transform virtualizeMeshForTranslatedHandSeat(
-        const Transform& meshWorldTransform,
-        const Vector& currentGripPivotWorld,
-        const Vector& targetGripPointWorld)
+    inline Transform virtualizeMeshForTranslatedHandSeat(const Transform& meshWorldTransform,
+        const Vector& currentGripPivotWorld, const Vector& targetGripPointWorld)
     {
         Transform result = meshWorldTransform;
         const Vector handSeatCorrection = weaponSolverSub(targetGripPointWorld, currentGripPivotWorld);
@@ -572,27 +530,20 @@ namespace rock::weapon_two_handed_grip_math
      * hand/mesh relation without moving a live scene node.
      */
     template <class Transform>
-    inline Transform virtualizeMeshForSeatedHand(
-        const Transform& meshWorldTransform,
-        const Transform& rawHandWorld,
+    inline Transform virtualizeMeshForSeatedHand(const Transform& meshWorldTransform, const Transform& rawHandWorld,
         const Transform& seatedHandWorld)
     {
         return transform_math::composeTransforms(
-            transform_math::composeTransforms(
-                rawHandWorld,
-                transform_math::invertTransform(seatedHandWorld)),
+            transform_math::composeTransforms(rawHandWorld, transform_math::invertTransform(seatedHandWorld)),
             meshWorldTransform);
     }
 
     template <class Transform, class Vector>
-    inline Vector virtualizeWorldPointForSeatedHand(
-        const Vector& pointWorld,
-        const Transform& rawHandWorld,
+    inline Vector virtualizeWorldPointForSeatedHand(const Vector& pointWorld, const Transform& rawHandWorld,
         const Transform& seatedHandWorld)
     {
-        const Transform seatedToRawWorld = transform_math::composeTransforms(
-            rawHandWorld,
-            transform_math::invertTransform(seatedHandWorld));
+        const Transform seatedToRawWorld =
+            transform_math::composeTransforms(rawHandWorld, transform_math::invertTransform(seatedHandWorld));
         return transform_math::localPointToWorld(seatedToRawWorld, pointWorld);
     }
 
@@ -606,7 +557,8 @@ namespace rock::weapon_two_handed_grip_math
         return gripPressed && !supportHandHoldingObject;
     }
 
-    inline constexpr SupportReleaseManualAction resolveSupportReleaseManualAction(const SupportReleaseOwnershipInput& input)
+    inline constexpr SupportReleaseManualAction resolveSupportReleaseManualAction(
+        const SupportReleaseOwnershipInput& input)
     {
         if (!input.firingGripOwnershipEnabled) {
             return SupportReleaseManualAction::EndSupportOnly;
@@ -624,11 +576,8 @@ namespace rock::weapon_two_handed_grip_math
      * only when that release is allowed to drop the weapon; otherwise the
      * hand keeps the grip until the peer takes the weapon or it is unequipped.
      */
-    [[nodiscard]] inline constexpr bool canReleaseCarryGrip(
-        bool gripCarries,
-        bool peerGripCarries,
-        bool lastGripReleaseDropEnabled,
-        bool releaseRequiresNewHold = false) noexcept
+    [[nodiscard]] inline constexpr bool canReleaseCarryGrip(bool gripCarries, bool peerGripCarries,
+        bool lastGripReleaseDropEnabled, bool releaseRequiresNewHold = false) noexcept
     {
         return !gripCarries || (!releaseRequiresNewHold && (peerGripCarries || lastGripReleaseDropEnabled));
     }
@@ -670,10 +619,7 @@ namespace rock::weapon_two_handed_grip_math
         return !gripHeld && palmInsideReattachZone;
     }
 
-    inline constexpr bool canStartFreeHandPartGrip(
-        bool routedSupportGrip,
-        bool gripPressed,
-        bool handHoldingObject,
+    inline constexpr bool canStartFreeHandPartGrip(bool routedSupportGrip, bool gripPressed, bool handHoldingObject,
         bool handAlreadyGripping)
     {
         return routedSupportGrip && gripPressed && !handHoldingObject && !handAlreadyGripping;
@@ -834,9 +780,12 @@ namespace rock
         const float oneMinusCos = 1.0f - cosTheta;
 
         Vector conventionalRows[3]{
-            Vector{ cosTheta + x * x * oneMinusCos, x * y * oneMinusCos - z * sinTheta, x * z * oneMinusCos + y * sinTheta },
-            Vector{ y * x * oneMinusCos + z * sinTheta, cosTheta + y * y * oneMinusCos, y * z * oneMinusCos - x * sinTheta },
-            Vector{ z * x * oneMinusCos - y * sinTheta, z * y * oneMinusCos + x * sinTheta, cosTheta + z * z * oneMinusCos },
+            Vector{ cosTheta + x * x * oneMinusCos, x * y * oneMinusCos - z * sinTheta,
+                x * z * oneMinusCos + y * sinTheta },
+            Vector{ y * x * oneMinusCos + z * sinTheta, cosTheta + y * y * oneMinusCos,
+                y * z * oneMinusCos - x * sinTheta },
+            Vector{ z * x * oneMinusCos - y * sinTheta, z * y * oneMinusCos + x * sinTheta,
+                cosTheta + z * z * oneMinusCos },
         };
 
         return weaponSolverStoredRotationFromConventionalRows<Matrix, Vector>(conventionalRows);
@@ -854,16 +803,20 @@ namespace rock
         const float oneMinusCos = 1.0f - cosTheta;
 
         Vector conventionalRows[3]{
-            Vector{ cosTheta + x * x * oneMinusCos, x * y * oneMinusCos - z * sinTheta, x * z * oneMinusCos + y * sinTheta },
-            Vector{ y * x * oneMinusCos + z * sinTheta, cosTheta + y * y * oneMinusCos, y * z * oneMinusCos - x * sinTheta },
-            Vector{ z * x * oneMinusCos - y * sinTheta, z * y * oneMinusCos + x * sinTheta, cosTheta + z * z * oneMinusCos },
+            Vector{ cosTheta + x * x * oneMinusCos, x * y * oneMinusCos - z * sinTheta,
+                x * z * oneMinusCos + y * sinTheta },
+            Vector{ y * x * oneMinusCos + z * sinTheta, cosTheta + y * y * oneMinusCos,
+                y * z * oneMinusCos - x * sinTheta },
+            Vector{ z * x * oneMinusCos - y * sinTheta, z * y * oneMinusCos + x * sinTheta,
+                cosTheta + z * z * oneMinusCos },
         };
 
         return weaponSolverStoredRotationFromConventionalRows<Matrix, Vector>(conventionalRows);
     }
 
     template <class Matrix, class Vector>
-    inline Matrix weaponSolverApplyWorldRotationToStoredBasis(const Matrix& worldRotationStored, const Matrix& baseRotation)
+    inline Matrix weaponSolverApplyWorldRotationToStoredBasis(const Matrix& worldRotationStored,
+        const Matrix& baseRotation)
     {
         Matrix result{};
         const Vector basis[3]{
@@ -897,24 +850,16 @@ namespace rock
     // The zero-correction support seat shares the solver's aim and primary
     // pivot. A scene-node sample from another frame phase is not this seat.
     template <class Transform, class Vector>
-    inline Vector makePrimaryAnchoredSupportGripTarget(
-        const Transform& weaponAimWorld,
-        const Vector& primaryGripLocal,
-        const Vector& supportGripLocal,
-        const Vector& primaryTargetWorld)
+    inline Vector makePrimaryAnchoredSupportGripTarget(const Transform& weaponAimWorld, const Vector& primaryGripLocal,
+        const Vector& supportGripLocal, const Vector& primaryTargetWorld)
     {
         return weaponSolverAdd(primaryTargetWorld,
-            transform_math::localVectorToWorld(weaponAimWorld,
-                weaponSolverSub(supportGripLocal, primaryGripLocal)));
+            transform_math::localVectorToWorld(weaponAimWorld, weaponSolverSub(supportGripLocal, primaryGripLocal)));
     }
 
     template <class Vector>
-    inline Vector makeLockedSupportGripTarget(
-        const Vector& primaryTargetWorld,
-        const Vector& supportControllerWorld,
-        const Vector& fallbackSupportTargetWorld,
-        float lockedGripDistance,
-        float minimumSeparation)
+    inline Vector makeLockedSupportGripTarget(const Vector& primaryTargetWorld, const Vector& supportControllerWorld,
+        const Vector& fallbackSupportTargetWorld, float lockedGripDistance, float minimumSeparation)
     {
         /*
          * ROCK keeps two-handed weapon grabs as captured hand-to-weapon
@@ -940,7 +885,8 @@ namespace rock
     }
 
     template <class Transform, class Vector>
-    inline WeaponTwoHandedSolverResult<Transform> solveTwoHandedWeaponTransform(const WeaponTwoHandedSolverInput<Transform, Vector>& input)
+    inline WeaponTwoHandedSolverResult<Transform> solveTwoHandedWeaponTransform(
+        const WeaponTwoHandedSolverInput<Transform, Vector>& input)
     {
         WeaponTwoHandedSolverResult<Transform> result{};
         result.weaponWorldTransform = input.weaponWorldTransform;
@@ -950,52 +896,77 @@ namespace rock
         const Vector currentAxisWorld = transform_math::localVectorToWorld(input.weaponWorldTransform, localAxis);
         const Vector desiredAxisWorld = weaponSolverSub(input.supportTargetWorld, input.primaryTargetWorld);
 
-        if (weaponSolverLength(currentAxisWorld) <= input.minimumSeparation || weaponSolverLength(desiredAxisWorld) <= input.minimumSeparation) {
+        if (weaponSolverLength(currentAxisWorld) <= input.minimumSeparation ||
+            weaponSolverLength(desiredAxisWorld) <= input.minimumSeparation) {
             return result;
         }
 
-        const auto rotationDelta = weaponSolverRotationBetweenStored<decltype(input.weaponWorldTransform.rotate), Vector>(currentAxisWorld, desiredAxisWorld);
+        const auto rotationDelta =
+            weaponSolverRotationBetweenStored<decltype(input.weaponWorldTransform.rotate), Vector>(currentAxisWorld,
+                desiredAxisWorld);
         result.rotationDelta = rotationDelta;
         result.weaponWorldTransform.rotate =
-            weaponSolverApplyWorldRotationToStoredBasis<decltype(input.weaponWorldTransform.rotate), Vector>(rotationDelta, input.weaponWorldTransform.rotate);
+            weaponSolverApplyWorldRotationToStoredBasis<decltype(input.weaponWorldTransform.rotate), Vector>(
+                rotationDelta, input.weaponWorldTransform.rotate);
 
-        const Vector primaryAfterRotation = transform_math::localPointToWorld(result.weaponWorldTransform, input.primaryGripLocal);
+        const Vector primaryAfterRotation =
+            transform_math::localPointToWorld(result.weaponWorldTransform, input.primaryGripLocal);
         const Vector primaryCorrection = weaponSolverSub(input.primaryTargetWorld, primaryAfterRotation);
-        result.weaponWorldTransform.translate = weaponSolverAdd(result.weaponWorldTransform.translate, primaryCorrection);
+        result.weaponWorldTransform.translate =
+            weaponSolverAdd(result.weaponWorldTransform.translate, primaryCorrection);
 
-        const Vector primaryWorld = transform_math::localPointToWorld(result.weaponWorldTransform, input.primaryGripLocal);
-        const Vector supportWorld = transform_math::localPointToWorld(result.weaponWorldTransform, input.supportGripLocal);
+        const Vector primaryWorld =
+            transform_math::localPointToWorld(result.weaponWorldTransform, input.primaryGripLocal);
+        const Vector supportWorld =
+            transform_math::localPointToWorld(result.weaponWorldTransform, input.supportGripLocal);
         result.primaryError = weaponSolverLength(weaponSolverSub(primaryWorld, input.primaryTargetWorld));
         result.supportError = weaponSolverLength(weaponSolverSub(supportWorld, input.supportTargetWorld));
 
         if (input.useSupportNormalTwist && input.supportNormalTwistFactor > 0.0f) {
-            const Vector twistAxis = weaponSolverNormalize(weaponSolverSub(input.supportTargetWorld, input.primaryTargetWorld));
-            const Vector currentNormalWorld = transform_math::localVectorToWorld(result.weaponWorldTransform, input.supportNormalLocal);
+            const Vector twistAxis =
+                weaponSolverNormalize(weaponSolverSub(input.supportTargetWorld, input.primaryTargetWorld));
+            const Vector currentNormalWorld =
+                transform_math::localVectorToWorld(result.weaponWorldTransform, input.supportNormalLocal);
             const Vector desiredNormalWorld = input.supportNormalTargetWorld;
-            const Vector currentProjected = weaponSolverNormalize(weaponSolverProjectOntoPlane(currentNormalWorld, twistAxis));
-            const Vector desiredProjected = weaponSolverNormalize(weaponSolverProjectOntoPlane(desiredNormalWorld, twistAxis));
+            const Vector currentProjected =
+                weaponSolverNormalize(weaponSolverProjectOntoPlane(currentNormalWorld, twistAxis));
+            const Vector desiredProjected =
+                weaponSolverNormalize(weaponSolverProjectOntoPlane(desiredNormalWorld, twistAxis));
 
-            if (weaponSolverLength(currentProjected) > input.minimumSeparation && weaponSolverLength(desiredProjected) > input.minimumSeparation) {
-                const float dotValue = (std::max)(-1.0f, (std::min)(1.0f, weaponSolverDot(currentProjected, desiredProjected)));
+            if (weaponSolverLength(currentProjected) > input.minimumSeparation &&
+                weaponSolverLength(desiredProjected) > input.minimumSeparation) {
+                const float dotValue =
+                    (std::max)(-1.0f, (std::min)(1.0f, weaponSolverDot(currentProjected, desiredProjected)));
                 const Vector crossValue = weaponSolverCross(currentProjected, desiredProjected);
-                const float signedAngle = std::atan2(weaponSolverDot(twistAxis, crossValue), dotValue) * input.supportNormalTwistFactor;
-                const auto twistRotation = weaponSolverAxisAngleStored<decltype(input.weaponWorldTransform.rotate), Vector>(twistAxis, signedAngle);
+                const float signedAngle =
+                    std::atan2(weaponSolverDot(twistAxis, crossValue), dotValue) * input.supportNormalTwistFactor;
+                const auto twistRotation =
+                    weaponSolverAxisAngleStored<decltype(input.weaponWorldTransform.rotate), Vector>(twistAxis,
+                        signedAngle);
                 result.rotationDelta =
-                    weaponSolverApplyWorldRotationToStoredBasis<decltype(input.weaponWorldTransform.rotate), Vector>(twistRotation, result.rotationDelta);
+                    weaponSolverApplyWorldRotationToStoredBasis<decltype(input.weaponWorldTransform.rotate), Vector>(
+                        twistRotation, result.rotationDelta);
 
                 const Vector supportPivot = input.supportTargetWorld;
                 const Vector pivotToWeapon = weaponSolverSub(result.weaponWorldTransform.translate, supportPivot);
-                const Vector rotatedPivotToWeapon = weaponSolverApplyStoredWorldRotationToVector<decltype(input.weaponWorldTransform.rotate), Vector>(twistRotation, pivotToWeapon);
+                const Vector rotatedPivotToWeapon =
+                    weaponSolverApplyStoredWorldRotationToVector<decltype(input.weaponWorldTransform.rotate), Vector>(
+                        twistRotation, pivotToWeapon);
                 result.weaponWorldTransform.translate = weaponSolverAdd(supportPivot, rotatedPivotToWeapon);
                 result.weaponWorldTransform.rotate =
-                    weaponSolverApplyWorldRotationToStoredBasis<decltype(input.weaponWorldTransform.rotate), Vector>(twistRotation, result.weaponWorldTransform.rotate);
+                    weaponSolverApplyWorldRotationToStoredBasis<decltype(input.weaponWorldTransform.rotate), Vector>(
+                        twistRotation, result.weaponWorldTransform.rotate);
 
-                const Vector primaryAfterTwist = transform_math::localPointToWorld(result.weaponWorldTransform, input.primaryGripLocal);
+                const Vector primaryAfterTwist =
+                    transform_math::localPointToWorld(result.weaponWorldTransform, input.primaryGripLocal);
                 const Vector primaryTwistCorrection = weaponSolverSub(input.primaryTargetWorld, primaryAfterTwist);
-                result.weaponWorldTransform.translate = weaponSolverAdd(result.weaponWorldTransform.translate, primaryTwistCorrection);
+                result.weaponWorldTransform.translate =
+                    weaponSolverAdd(result.weaponWorldTransform.translate, primaryTwistCorrection);
 
-                const Vector primaryFinal = transform_math::localPointToWorld(result.weaponWorldTransform, input.primaryGripLocal);
-                const Vector supportFinal = transform_math::localPointToWorld(result.weaponWorldTransform, input.supportGripLocal);
+                const Vector primaryFinal =
+                    transform_math::localPointToWorld(result.weaponWorldTransform, input.primaryGripLocal);
+                const Vector supportFinal =
+                    transform_math::localPointToWorld(result.weaponWorldTransform, input.supportGripLocal);
                 result.primaryError = weaponSolverLength(weaponSolverSub(primaryFinal, input.primaryTargetWorld));
                 result.supportError = weaponSolverLength(weaponSolverSub(supportFinal, input.supportTargetWorld));
             }
@@ -1006,7 +977,8 @@ namespace rock
     }
 
     template <class Transform, class Vector>
-    inline WeaponTwoHandedSolverResult<Transform> solveTwoHandedWeaponTransformFrikPivot(const WeaponTwoHandedSolverInput<Transform, Vector>& input)
+    inline WeaponTwoHandedSolverResult<Transform> solveTwoHandedWeaponTransformFrikPivot(
+        const WeaponTwoHandedSolverInput<Transform, Vector>& input)
     {
         /*
          * This named entry point is intentionally kept beside the generic
@@ -1045,9 +1017,7 @@ namespace rock
         template <class Vector>
         inline bool isFiniteVector(const Vector& value)
         {
-            return std::isfinite(value.x) &&
-                   std::isfinite(value.y) &&
-                   std::isfinite(value.z);
+            return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
         }
 
         template <class Matrix>
@@ -1066,16 +1036,14 @@ namespace rock
         template <class Transform>
         inline bool isFiniteTransform(const Transform& transform)
         {
-            return isFiniteRotation(transform.rotate) &&
-                   isFiniteVector(transform.translate) &&
-                   std::isfinite(transform.scale);
+            return isFiniteRotation(transform.rotate) && isFiniteVector(transform.translate) &&
+                std::isfinite(transform.scale);
         }
 
         template <class Transform>
         inline bool isUsableTransform(const Transform& transform)
         {
-            return isFiniteTransform(transform) &&
-                   std::abs(transform.scale) > 0.0001f;
+            return isFiniteTransform(transform) && std::abs(transform.scale) > 0.0001f;
         }
 
         /*
@@ -1087,20 +1055,16 @@ namespace rock
          * controller versus authored wrist axes.
          */
         template <class Transform>
-        inline bool tryCaptureSupportInputBaseline(
-            const Transform& supportInputWorld,
-            const Transform& supportGripTargetWorld,
-            Transform& outInputToGripTargetLocal)
+        inline bool tryCaptureSupportInputBaseline(const Transform& supportInputWorld,
+            const Transform& supportGripTargetWorld, Transform& outInputToGripTargetLocal)
         {
             outInputToGripTargetLocal = {};
-            if (!isUsableTransform(supportInputWorld) ||
-                !isUsableTransform(supportGripTargetWorld)) {
+            if (!isUsableTransform(supportInputWorld) || !isUsableTransform(supportGripTargetWorld)) {
                 return false;
             }
 
             const Transform relation = transform_math::composeTransforms(
-                transform_math::invertTransform(supportInputWorld),
-                supportGripTargetWorld);
+                transform_math::invertTransform(supportInputWorld), supportGripTargetWorld);
             if (!isUsableTransform(relation)) {
                 return false;
             }
@@ -1110,20 +1074,15 @@ namespace rock
         }
 
         template <class Transform>
-        inline bool tryResolveSupportInputTarget(
-            const Transform& supportInputWorld,
-            const Transform& inputToGripTargetLocal,
-            Transform& outSupportTargetWorld)
+        inline bool tryResolveSupportInputTarget(const Transform& supportInputWorld,
+            const Transform& inputToGripTargetLocal, Transform& outSupportTargetWorld)
         {
             outSupportTargetWorld = {};
-            if (!isUsableTransform(supportInputWorld) ||
-                !isUsableTransform(inputToGripTargetLocal)) {
+            if (!isUsableTransform(supportInputWorld) || !isUsableTransform(inputToGripTargetLocal)) {
                 return false;
             }
 
-            const Transform target = transform_math::composeTransforms(
-                supportInputWorld,
-                inputToGripTargetLocal);
+            const Transform target = transform_math::composeTransforms(supportInputWorld, inputToGripTargetLocal);
             if (!isUsableTransform(target)) {
                 return false;
             }
@@ -1140,26 +1099,17 @@ namespace rock
          * becoming solver input after ROCK publishes its locked-hand visual.
          */
         template <class Transform>
-        inline bool tryCaptureDynamicSupportDriverBaseline(
-            const Transform& primaryDriverWorld,
-            const Transform& primaryGripTargetWorld,
-            const Transform& supportDriverWorld,
-            const Transform& supportGripTargetWorld,
-            Transform& outPrimaryDriverToTargetLocal,
+        inline bool tryCaptureDynamicSupportDriverBaseline(const Transform& primaryDriverWorld,
+            const Transform& primaryGripTargetWorld, const Transform& supportDriverWorld,
+            const Transform& supportGripTargetWorld, Transform& outPrimaryDriverToTargetLocal,
             Transform& outSupportDriverToTargetLocal)
         {
             outPrimaryDriverToTargetLocal = {};
             outSupportDriverToTargetLocal = {};
             Transform primaryRelation{};
             Transform supportRelation{};
-            if (!tryCaptureSupportInputBaseline(
-                    primaryDriverWorld,
-                    primaryGripTargetWorld,
-                    primaryRelation) ||
-                !tryCaptureSupportInputBaseline(
-                    supportDriverWorld,
-                    supportGripTargetWorld,
-                    supportRelation)) {
+            if (!tryCaptureSupportInputBaseline(primaryDriverWorld, primaryGripTargetWorld, primaryRelation) ||
+                !tryCaptureSupportInputBaseline(supportDriverWorld, supportGripTargetWorld, supportRelation)) {
                 return false;
             }
 
@@ -1169,26 +1119,17 @@ namespace rock
         }
 
         template <class Transform>
-        inline bool tryResolveDynamicSupportDriverTargets(
-            const Transform& primaryDriverWorld,
-            const Transform& primaryDriverToTargetLocal,
-            const Transform& supportDriverWorld,
-            const Transform& supportDriverToTargetLocal,
-            Transform& outPrimaryTargetWorld,
+        inline bool tryResolveDynamicSupportDriverTargets(const Transform& primaryDriverWorld,
+            const Transform& primaryDriverToTargetLocal, const Transform& supportDriverWorld,
+            const Transform& supportDriverToTargetLocal, Transform& outPrimaryTargetWorld,
             Transform& outSupportTargetWorld)
         {
             outPrimaryTargetWorld = {};
             outSupportTargetWorld = {};
             Transform primaryTarget{};
             Transform supportTarget{};
-            if (!tryResolveSupportInputTarget(
-                    primaryDriverWorld,
-                    primaryDriverToTargetLocal,
-                    primaryTarget) ||
-                !tryResolveSupportInputTarget(
-                    supportDriverWorld,
-                    supportDriverToTargetLocal,
-                    supportTarget)) {
+            if (!tryResolveSupportInputTarget(primaryDriverWorld, primaryDriverToTargetLocal, primaryTarget) ||
+                !tryResolveSupportInputTarget(supportDriverWorld, supportDriverToTargetLocal, supportTarget)) {
                 return false;
             }
 
@@ -1198,9 +1139,7 @@ namespace rock
         }
 
         template <class Matrix>
-        inline bool shortestArcSlerpFromIdentity(
-            const Matrix& fullRotationDelta,
-            float alpha,
+        inline bool shortestArcSlerpFromIdentity(const Matrix& fullRotationDelta, float alpha,
             Matrix& outPartialRotationDelta);
 
         template <class Matrix>
@@ -1222,47 +1161,35 @@ namespace rock
          * translated onto the selected mesh point exactly.
          */
         template <class Transform, class Vector>
-        inline SurfaceAlignedHandFrameResult<Transform, Vector>
-        alignHandFrameToGripSurface(
-            const Transform& handWorld,
-            const Vector& palmPivotWorld,
-            const Vector& palmNormalWorld,
-            const Vector& targetGripPointWorld,
-            const Vector& surfaceNormalWorld,
-            float maxCorrectionRadians)
+        inline SurfaceAlignedHandFrameResult<Transform, Vector> alignHandFrameToGripSurface(const Transform& handWorld,
+            const Vector& palmPivotWorld, const Vector& palmNormalWorld, const Vector& targetGripPointWorld,
+            const Vector& surfaceNormalWorld, float maxCorrectionRadians)
         {
             SurfaceAlignedHandFrameResult<Transform, Vector> result{};
             result.handWorld = handWorld;
-            if (!isUsableTransform(handWorld) ||
-                !isFiniteVector(palmPivotWorld) ||
+            if (!isUsableTransform(handWorld) || !isFiniteVector(palmPivotWorld) ||
                 !isFiniteVector(targetGripPointWorld)) {
                 return result;
             }
 
             auto seatWithoutRotation = [&]() {
-                result.handWorld.translate = weaponSolverAdd(
-                    result.handWorld.translate,
-                    weaponSolverSub(targetGripPointWorld, palmPivotWorld));
+                result.handWorld.translate =
+                    weaponSolverAdd(result.handWorld.translate, weaponSolverSub(targetGripPointWorld, palmPivotWorld));
                 result.valid = isUsableTransform(result.handWorld);
             };
 
             const float palmLength = weaponSolverLength(palmNormalWorld);
             const float surfaceLength = weaponSolverLength(surfaceNormalWorld);
-            if (!std::isfinite(maxCorrectionRadians) ||
-                maxCorrectionRadians <= 0.0f ||
-                palmLength <= 0.0001f ||
+            if (!std::isfinite(maxCorrectionRadians) || maxCorrectionRadians <= 0.0f || palmLength <= 0.0001f ||
                 surfaceLength <= 0.0001f) {
                 seatWithoutRotation();
                 return result;
             }
 
             const Vector currentPalmNormal = weaponSolverNormalize(palmNormalWorld);
-            const Vector desiredPalmNormal = weaponSolverScale(
-                weaponSolverNormalize(surfaceNormalWorld),
-                -1.0f);
-            const auto fullRotation = weaponSolverRotationBetweenStored<
-                decltype(handWorld.rotate),
-                Vector>(currentPalmNormal, desiredPalmNormal);
+            const Vector desiredPalmNormal = weaponSolverScale(weaponSolverNormalize(surfaceNormalWorld), -1.0f);
+            const auto fullRotation = weaponSolverRotationBetweenStored<decltype(handWorld.rotate), Vector>(
+                currentPalmNormal, desiredPalmNormal);
             const float fullAngle = rotationAngleRadians(fullRotation);
             if (!std::isfinite(fullAngle)) {
                 seatWithoutRotation();
@@ -1271,36 +1198,21 @@ namespace rock
 
             decltype(handWorld.rotate) boundedRotation =
                 transform_math::makeIdentityRotation<decltype(handWorld.rotate)>();
-            const float alpha = fullAngle > 0.000001f ?
-                std::clamp(maxCorrectionRadians / fullAngle, 0.0f, 1.0f) :
-                0.0f;
-            if (fullAngle > 0.000001f &&
-                !shortestArcSlerpFromIdentity(
-                    fullRotation,
-                    alpha,
-                    boundedRotation)) {
+            const float alpha = fullAngle > 0.000001f ? std::clamp(maxCorrectionRadians / fullAngle, 0.0f, 1.0f) : 0.0f;
+            if (fullAngle > 0.000001f && !shortestArcSlerpFromIdentity(fullRotation, alpha, boundedRotation)) {
                 seatWithoutRotation();
                 return result;
             }
 
-            result.handWorld.rotate =
-                weaponSolverApplyWorldRotationToStoredBasis<
-                    decltype(handWorld.rotate),
-                    Vector>(boundedRotation, handWorld.rotate);
-            const Vector originFromPalm = weaponSolverSub(
-                handWorld.translate,
-                palmPivotWorld);
-            result.handWorld.translate = weaponSolverAdd(
-                targetGripPointWorld,
-                weaponSolverApplyStoredWorldRotationToVector<
-                    decltype(handWorld.rotate),
-                    Vector>(boundedRotation, originFromPalm));
-            result.appliedRotationRadians =
-                rotationAngleRadians(boundedRotation);
+            result.handWorld.rotate = weaponSolverApplyWorldRotationToStoredBasis<decltype(handWorld.rotate), Vector>(
+                boundedRotation, handWorld.rotate);
+            const Vector originFromPalm = weaponSolverSub(handWorld.translate, palmPivotWorld);
+            result.handWorld.translate = weaponSolverAdd(targetGripPointWorld,
+                weaponSolverApplyStoredWorldRotationToVector<decltype(handWorld.rotate), Vector>(boundedRotation,
+                    originFromPalm));
+            result.appliedRotationRadians = rotationAngleRadians(boundedRotation);
             result.usedSurfaceNormal = fullAngle > 0.000001f;
-            result.valid =
-                isUsableTransform(result.handWorld) &&
-                std::isfinite(result.appliedRotationRadians);
+            result.valid = isUsableTransform(result.handWorld) && std::isfinite(result.appliedRotationRadians);
             return result;
         }
 
@@ -1325,9 +1237,7 @@ namespace rock
         }
 
         template <class Matrix>
-        inline bool shortestArcSlerpFromIdentity(
-            const Matrix& fullRotationDelta,
-            float alpha,
+        inline bool shortestArcSlerpFromIdentity(const Matrix& fullRotationDelta, float alpha,
             Matrix& outPartialRotationDelta)
         {
             outPartialRotationDelta = transform_math::makeIdentityRotation<Matrix>();
@@ -1382,15 +1292,12 @@ namespace rock
             if (!normalizeQuaternion(partial)) {
                 return false;
             }
-            outPartialRotationDelta =
-                transform_math::havokQuaternionToNiRows<Matrix>(partial);
+            outPartialRotationDelta = transform_math::havokQuaternionToNiRows<Matrix>(partial);
             return isFiniteRotation(outPartialRotationDelta);
         }
 
         template <class Matrix>
-        inline float rotationDistanceRadians(
-            const Matrix& from,
-            const Matrix& to)
+        inline float rotationDistanceRadians(const Matrix& from, const Matrix& to)
         {
             if (!isFiniteRotation(from) || !isFiniteRotation(to)) {
                 return (std::numeric_limits<float>::quiet_NaN)();
@@ -1400,26 +1307,19 @@ namespace rock
             float toQuaternion[4]{};
             transform_math::niRowsToHavokQuaternion(from, fromQuaternion);
             transform_math::niRowsToHavokQuaternion(to, toQuaternion);
-            if (!normalizeQuaternion(fromQuaternion) ||
-                !normalizeQuaternion(toQuaternion)) {
+            if (!normalizeQuaternion(fromQuaternion) || !normalizeQuaternion(toQuaternion)) {
                 return (std::numeric_limits<float>::quiet_NaN)();
             }
 
-            const float dotValue = std::abs(
-                fromQuaternion[0] * toQuaternion[0] +
-                fromQuaternion[1] * toQuaternion[1] +
-                fromQuaternion[2] * toQuaternion[2] +
-                fromQuaternion[3] * toQuaternion[3]);
-            return 2.0f *
-                   std::acos(std::clamp(dotValue, 0.0f, 1.0f));
+            const float dotValue = std::abs(fromQuaternion[0] * toQuaternion[0] + fromQuaternion[1] * toQuaternion[1] +
+                fromQuaternion[2] * toQuaternion[2] + fromQuaternion[3] * toQuaternion[3]);
+            return 2.0f * std::acos(std::clamp(dotValue, 0.0f, 1.0f));
         }
 
         template <class Matrix>
         inline float rotationAngleRadians(const Matrix& rotation)
         {
-            return rotationDistanceRadians(
-                transform_math::makeIdentityRotation<Matrix>(),
-                rotation);
+            return rotationDistanceRadians(transform_math::makeIdentityRotation<Matrix>(), rotation);
         }
 
         template <class Transform>
@@ -1439,66 +1339,42 @@ namespace rock
          * second hand gains steering authority.
          */
         template <class Transform, class Vector>
-        inline PivotPreservingRotationResult<Transform>
-        applyRotationAroundPrimaryPivot(
-            const Transform& oneHandWeaponWorld,
-            const decltype(Transform{}.rotate)& fullRotationDelta,
-            const Vector& primaryGripLocal,
-            const Vector& primaryTargetWorld,
-            float alpha)
+        inline PivotPreservingRotationResult<Transform> applyRotationAroundPrimaryPivot(
+            const Transform& oneHandWeaponWorld, const decltype(Transform{}.rotate)& fullRotationDelta,
+            const Vector& primaryGripLocal, const Vector& primaryTargetWorld, float alpha)
         {
             PivotPreservingRotationResult<Transform> result{};
             result.weaponWorldTransform = oneHandWeaponWorld;
-            result.partialRotationDelta =
-                transform_math::makeIdentityRotation<
-                    decltype(oneHandWeaponWorld.rotate)>();
+            result.partialRotationDelta = transform_math::makeIdentityRotation<decltype(oneHandWeaponWorld.rotate)>();
 
-            if (!isFiniteTransform(oneHandWeaponWorld) ||
-                std::abs(oneHandWeaponWorld.scale) <= 0.0001f ||
-                !isFiniteRotation(fullRotationDelta) ||
-                !isFiniteVector(primaryGripLocal) ||
-                !isFiniteVector(primaryTargetWorld) ||
-                !std::isfinite(alpha) ||
-                !shortestArcSlerpFromIdentity(
-                    fullRotationDelta,
-                    alpha,
-                    result.partialRotationDelta)) {
+            if (!isFiniteTransform(oneHandWeaponWorld) || std::abs(oneHandWeaponWorld.scale) <= 0.0001f ||
+                !isFiniteRotation(fullRotationDelta) || !isFiniteVector(primaryGripLocal) ||
+                !isFiniteVector(primaryTargetWorld) || !std::isfinite(alpha) ||
+                !shortestArcSlerpFromIdentity(fullRotationDelta, alpha, result.partialRotationDelta)) {
                 return result;
             }
 
             result.weaponWorldTransform.rotate =
-                weaponSolverApplyWorldRotationToStoredBasis<
-                    decltype(oneHandWeaponWorld.rotate),
-                    Vector>(
-                    result.partialRotationDelta,
-                    oneHandWeaponWorld.rotate);
+                weaponSolverApplyWorldRotationToStoredBasis<decltype(oneHandWeaponWorld.rotate), Vector>(
+                    result.partialRotationDelta, oneHandWeaponWorld.rotate);
 
             const Vector primaryAfterRotation =
-                transform_math::localPointToWorld(
-                    result.weaponWorldTransform,
-                    primaryGripLocal);
-            result.weaponWorldTransform.translate = weaponSolverAdd(
-                result.weaponWorldTransform.translate,
+                transform_math::localPointToWorld(result.weaponWorldTransform, primaryGripLocal);
+            result.weaponWorldTransform.translate = weaponSolverAdd(result.weaponWorldTransform.translate,
                 weaponSolverSub(primaryTargetWorld, primaryAfterRotation));
 
             if (!isFiniteTransform(result.weaponWorldTransform)) {
                 result.weaponWorldTransform = oneHandWeaponWorld;
                 result.partialRotationDelta =
-                    transform_math::makeIdentityRotation<
-                        decltype(oneHandWeaponWorld.rotate)>();
+                    transform_math::makeIdentityRotation<decltype(oneHandWeaponWorld.rotate)>();
                 return result;
             }
 
-            const Vector primaryFinal = transform_math::localPointToWorld(
-                result.weaponWorldTransform,
-                primaryGripLocal);
-            result.primaryError = weaponSolverLength(
-                weaponSolverSub(primaryFinal, primaryTargetWorld));
-            result.appliedRotationRadians =
-                rotationAngleRadians(result.partialRotationDelta);
-            result.valid =
-                std::isfinite(result.primaryError) &&
-                std::isfinite(result.appliedRotationRadians);
+            const Vector primaryFinal =
+                transform_math::localPointToWorld(result.weaponWorldTransform, primaryGripLocal);
+            result.primaryError = weaponSolverLength(weaponSolverSub(primaryFinal, primaryTargetWorld));
+            result.appliedRotationRadians = rotationAngleRadians(result.partialRotationDelta);
+            result.valid = std::isfinite(result.primaryError) && std::isfinite(result.appliedRotationRadians);
             return result;
         }
     }

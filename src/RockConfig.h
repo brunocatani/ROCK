@@ -495,10 +495,12 @@ namespace rock
 
         static void buildCompiledDefaults(CSimpleIniA& target);
         [[nodiscard]] static RockConfigValues parseValues(CSimpleIniA& source);
+
         [[nodiscard]] std::uint64_t configRevision() const noexcept
         {
             return _configRevision.load(std::memory_order_acquire);
         }
+
         // Receives each setting of a group; the record and its strings are
         // borrowed for the call.
         using SettingVisitor = void (*)(const api::configuration::Setting&, void*) noexcept;

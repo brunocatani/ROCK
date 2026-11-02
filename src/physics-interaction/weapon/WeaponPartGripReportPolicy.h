@@ -44,29 +44,24 @@ namespace rock::weapon_part_grip_report_policy
 
     // Both authored handguard seats may retain the gun, but only the current
     // pivot moves it. Provider grips keep their explicitly requested authority.
-    [[nodiscard]] inline constexpr bool usesAuthoredSupportCarryPair(
-        const CarryGripInput& left, const CarryGripInput& right) noexcept
+    [[nodiscard]] inline constexpr bool usesAuthoredSupportCarryPair(const CarryGripInput& left,
+        const CarryGripInput& right) noexcept
     {
         const auto authoredCarrier = [](const CarryGripInput& grip) {
-            return grip.active && grip.authoredSupportSeat &&
-                !grip.providerAuthorityActive && !grip.attachOnly;
+            return grip.active && grip.authoredSupportSeat && !grip.providerAuthorityActive && !grip.attachOnly;
         };
         return authoredCarrier(left) && authoredCarrier(right);
     }
 
-    [[nodiscard]] inline constexpr bool providerGrabModeIsAttachOnly(bool providerAuthorityActive, std::uint32_t grabMode) noexcept
+    [[nodiscard]] inline constexpr bool providerGrabModeIsAttachOnly(bool providerAuthorityActive,
+        std::uint32_t grabMode) noexcept
     {
         return providerAuthorityActive &&
-               grabMode == static_cast<std::uint32_t>(weapon_part_runtime::GrabMode::AttachOnly);
+            grabMode == static_cast<std::uint32_t>(weapon_part_runtime::GrabMode::AttachOnly);
     }
 
-    [[nodiscard]] inline constexpr HandGripKind resolveHandGripKind(
-        bool grippingActive,
-        bool partCarryActive,
-        bool primaryOnlyActive,
-        bool isFiringHand,
-        bool partGripActive,
-        bool partGripAttachOnly,
+    [[nodiscard]] inline constexpr HandGripKind resolveHandGripKind(bool grippingActive, bool partCarryActive,
+        bool primaryOnlyActive, bool isFiringHand, bool partGripActive, bool partGripAttachOnly,
         bool visualOnlyAuthority) noexcept
     {
         // The firing hand owns the firing grip in Gripping/PrimaryOnly; it can

@@ -34,9 +34,7 @@ namespace rock::equipped_weapon_visual_state
         std::uintptr_t excludedInstance = 0;
     };
 
-    [[nodiscard]] Snapshot observe(
-        std::uint32_t weaponBaseFormID,
-        std::uintptr_t excludedInstanceAddress = 0,
+    [[nodiscard]] Snapshot observe(std::uint32_t weaponBaseFormID, std::uintptr_t excludedInstanceAddress = 0,
         ObservationCache* cache = nullptr) noexcept;
     [[nodiscard]] bool isLocallyVisible(const RE::NiAVObject* node) noexcept;
     void setLocallyVisible(RE::NiAVObject* node, bool visible) noexcept;

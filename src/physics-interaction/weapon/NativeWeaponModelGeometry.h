@@ -1,7 +1,7 @@
 #pragma once
 
-#include "RE/NetImmerse/NiNode.h"
 #include <cstdint>
+#include "RE/NetImmerse/NiNode.h"
 
 namespace rock::native_weapon_model_geometry
 {
@@ -13,16 +13,19 @@ namespace rock::native_weapon_model_geometry
 
     inline void count(RE::NiAVObject* object, Census& result, std::uint32_t depth = 0) noexcept
     {
-        if (!object || !result.complete) return;
+        if (!object || !result.complete)
+            return;
         if (depth >= 128 || result.objects >= 8192) {
             result.complete = false;
             return;
         }
         ++result.objects;
-        if (object->IsGeometry() || object->IsTriShape()) ++result.shapes;
+        if (object->IsGeometry() || object->IsTriShape())
+            ++result.shapes;
         if (auto* node = object->IsNode()) {
             for (const auto& child : node->GetRuntimeData().children)
-                if (child) count(child.get(), result, depth + 1);
+                if (child)
+                    count(child.get(), result, depth + 1);
         }
     }
 

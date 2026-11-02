@@ -17,10 +17,7 @@ namespace rock
         engageFrikWeaponNodeWriteBlock();
     }
 
-    void TwoHandedGrip::noteFrikRecoilWeaponNodeWrite()
-    {
-        _frikWeaponNode.recoilWrittenThisFrame = true;
-    }
+    void TwoHandedGrip::noteFrikRecoilWeaponNodeWrite() { _frikWeaponNode.recoilWrittenThisFrame = true; }
 
     void TwoHandedGrip::engageFrikWeaponNodeWriteBlock()
     {
@@ -29,11 +26,12 @@ namespace rock
         }
         if (frik_visual_authority::blockPrimaryWeaponNodeOwnership(WEAPON_NODE_WRITE_TAG, true)) {
             _frikWeaponNode.writeBlockEngaged = true;
-            ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip: FRIK weapon-node writes blocked while ROCK owns the weapon transform");
+            ROCK_LOG_DEBUG(Weapon,
+                "TwoHandedGrip: FRIK weapon-node writes blocked while ROCK owns the weapon transform");
         } else {
-            ROCK_LOG_SAMPLE_WARN(Weapon,
-                5000,
-                "TwoHandedGrip: FRIK weapon-node write block unavailable; FRIK's weapon pass may overwrite ROCK's weapon transform");
+            ROCK_LOG_SAMPLE_WARN(Weapon, 5000,
+                "TwoHandedGrip: FRIK weapon-node write block unavailable; FRIK's weapon pass may overwrite ROCK's "
+                "weapon transform");
         }
     }
 
@@ -49,13 +47,11 @@ namespace rock
             _frikWeaponNode.framesSinceWrite = write_block_policy::kNeverWritten;
             _frikWeaponNode.framesSinceRecoilWrite = write_block_policy::kNeverWritten;
         }
-        _frikWeaponNode.framesSinceWrite = write_block_policy::advanceFramesSinceWrite(
-            _frikWeaponNode.framesSinceWrite,
+        _frikWeaponNode.framesSinceWrite = write_block_policy::advanceFramesSinceWrite(_frikWeaponNode.framesSinceWrite,
             _frikWeaponNode.writtenThisFrame);
         _frikWeaponNode.writtenThisFrame = false;
         _frikWeaponNode.framesSinceRecoilWrite = write_block_policy::advanceFramesSinceWrite(
-            _frikWeaponNode.framesSinceRecoilWrite,
-            _frikWeaponNode.recoilWrittenThisFrame);
+            _frikWeaponNode.framesSinceRecoilWrite, _frikWeaponNode.recoilWrittenThisFrame);
         _frikWeaponNode.recoilWrittenThisFrame = false;
         // Right-firing PrimaryOnly is lifecycle/input ownership only and stays with FRIK.
         const write_block_policy::OwnershipInput input{
@@ -74,10 +70,9 @@ namespace rock
             // The tail is a backstop: it says when it acts, so a hold that no
             // ownership predicate explains is visible in the log.
             ROCK_LOG_DEBUG(Weapon,
-                "TwoHandedGrip: FRIK weapon-node write block held by {} tail (framesSinceWrite={} framesSinceRecoilWrite={})",
-                write_block_policy::holdReasonName(reason),
-                input.framesSinceWrite,
-                input.framesSinceRecoilWrite);
+                "TwoHandedGrip: FRIK weapon-node write block held by {} tail (framesSinceWrite={} "
+                "framesSinceRecoilWrite={})",
+                write_block_policy::holdReasonName(reason), input.framesSinceWrite, input.framesSinceRecoilWrite);
         }
         _frikWeaponNode.lastHoldReason = reason;
         if (reason != write_block_policy::HoldReason::None) {
@@ -94,13 +89,13 @@ namespace rock
         }
         (void)frik_visual_authority::blockPrimaryWeaponNodeOwnership(WEAPON_NODE_WRITE_TAG, false);
         _frikWeaponNode.writeBlockEngaged = false;
-        ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip: FRIK weapon-node writes released reason={}", reason ? reason : "unknown");
+        ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip: FRIK weapon-node writes released reason={}",
+            reason ? reason : "unknown");
     }
 
     void TwoHandedGrip::syncFrikOffHandGripReport()
     {
-        const bool active =
-            _session.state == TwoHandedState::Gripping || _session.state == TwoHandedState::PartCarry;
+        const bool active = _session.state == TwoHandedState::Gripping || _session.state == TwoHandedState::PartCarry;
         const bool supportIsLeft = isSupportHandLeft();
         const std::uint64_t weaponKey = _session.equippedWeaponOwnershipKey;
         /*
@@ -111,18 +106,16 @@ namespace rock
          * own detector, so it is not consulted here.
          */
         const bool changed = active != _frikWeaponNode.gripReported ||
-            (active && (supportIsLeft != _frikWeaponNode.gripReportedSupportIsLeft ||
-                           weaponKey != _frikWeaponNode.gripReportedWeaponKey));
+            (active &&
+                (supportIsLeft != _frikWeaponNode.gripReportedSupportIsLeft ||
+                    weaponKey != _frikWeaponNode.gripReportedWeaponKey));
         if (!changed) {
             return;
         }
         RE::NiTransform supportWorld{};
         const bool supportWorldValid = active && tryGetSolverHandTransform(supportIsLeft, supportWorld);
-        if (!frik_visual_authority::setOffHandGripping(
-                TWO_HANDED_GRIP_REPORT_TAG,
-                active,
-                frik_visual_authority::handFromBool(supportIsLeft),
-                supportWorldValid ? &supportWorld : nullptr)) {
+        if (!frik_visual_authority::setOffHandGripping(TWO_HANDED_GRIP_REPORT_TAG, active,
+                frik_visual_authority::handFromBool(supportIsLeft), supportWorldValid ? &supportWorld : nullptr)) {
             if (active) {
                 ROCK_LOG_SAMPLE_WARN(Weapon, 5000, "TwoHandedGrip: FRIK rejected the two-handed grip report");
             }
@@ -132,10 +125,8 @@ namespace rock
         _frikWeaponNode.gripReported = active;
         _frikWeaponNode.gripReportedSupportIsLeft = supportIsLeft;
         _frikWeaponNode.gripReportedWeaponKey = active ? weaponKey : 0;
-        ROCK_LOG_DEBUG(Weapon,
-            "TwoHandedGrip: two-handed grip {} reported to FRIK support={}",
-            active ? "engaged" : "released",
-            supportIsLeft ? "left" : "right");
+        ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip: two-handed grip {} reported to FRIK support={}",
+            active ? "engaged" : "released", supportIsLeft ? "left" : "right");
     }
 
     void TwoHandedGrip::resetFrikWeaponOwnership()
@@ -143,15 +134,13 @@ namespace rock
         if (_visuals.weaponFilteringHandAuthorityLive) {
             if (frik_visual_authority::clearHandWorld("ROCK_WeaponFiltering", handFromBool(false)))
                 _visuals.weaponFilteringHandAuthorityLive = false;
-            else ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Weapon filtering hand authority reset failed");
+            else
+                ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Weapon filtering hand authority reset failed");
         }
         releaseFrikWeaponNodeWriteBlock("reset");
         if (_frikWeaponNode.gripReported) {
-            (void)frik_visual_authority::setOffHandGripping(
-                TWO_HANDED_GRIP_REPORT_TAG,
-                false,
-                frik_visual_authority::handFromBool(_frikWeaponNode.gripReportedSupportIsLeft),
-                nullptr);
+            (void)frik_visual_authority::setOffHandGripping(TWO_HANDED_GRIP_REPORT_TAG, false,
+                frik_visual_authority::handFromBool(_frikWeaponNode.gripReportedSupportIsLeft), nullptr);
         }
         _frikWeaponNode = {};
     }

@@ -1,6 +1,6 @@
-#include "physics-interaction/native/SceneRelation.h"
 #include "api/StorageService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/native/SceneRelation.h"
 
 // Provider interaction commands and provider weapon-part drives.
 
@@ -131,35 +131,42 @@ namespace rock
                 continue;
             }
             if (!physicsWritesAllowedForWorld(frame.hknpWorld)) {
-                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::PhysicsWritesBlocked);
+                complete(api::grab::InteractionCommandState::Rejected,
+                    api::grab::InteractionFailure::PhysicsWritesBlocked);
                 continue;
             }
             if (requestWorldGeneration != 0 && requestWorldGeneration != result.worldGeneration) {
-                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::StaleWorldGeneration);
+                complete(api::grab::InteractionCommandState::Rejected,
+                    api::grab::InteractionFailure::StaleWorldGeneration);
                 continue;
             }
             if (requestSkeletonGeneration != 0 && requestSkeletonGeneration != result.skeletonGeneration) {
-                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::StaleSkeletonGeneration);
+                complete(api::grab::InteractionCommandState::Rejected,
+                    api::grab::InteractionFailure::StaleSkeletonGeneration);
                 continue;
             }
             if (requestProviderGeneration != 0 && requestProviderGeneration != result.providerGeneration) {
-                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::StaleProviderGeneration);
+                complete(api::grab::InteractionCommandState::Rejected,
+                    api::grab::InteractionFailure::StaleProviderGeneration);
                 continue;
             }
 
-            const bool inventoryTransfer = isForceGrabCommand &&
-                (command.forceGrab.flags & provider::kForceGrabFromPlayerInventory) != 0;
-            if (isForceGrabCommand && !inventoryTransfer && !storage_service::allowsGrab(requestTargetFormId, command.ownerToken)) {
-                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::TargetUnavailable);
+            const bool inventoryTransfer =
+                isForceGrabCommand && (command.forceGrab.flags & provider::kForceGrabFromPlayerInventory) != 0;
+            if (isForceGrabCommand && !inventoryTransfer &&
+                !storage_service::allowsGrab(requestTargetFormId, command.ownerToken)) {
+                complete(api::grab::InteractionCommandState::Rejected,
+                    api::grab::InteractionFailure::TargetUnavailable);
                 continue;
             }
-            const bool inventoryThrowable = inventoryTransfer && loose_grenade_runtime::isThrowableWeapon(
-                RE::TESForm::GetFormByID<RE::TESObjectWEAP>(command.forceGrab.targetFormId));
+            const bool inventoryThrowable = inventoryTransfer &&
+                loose_grenade_runtime::isThrowableWeapon(
+                    RE::TESForm::GetFormByID<RE::TESObjectWEAP>(command.forceGrab.targetFormId));
             if (inventoryTransfer) {
                 const bool rightFree = forceGrabHandBlockerMask(_rightHand, false, frame.right.disabled, true) == 0;
                 const bool leftFree = forceGrabHandBlockerMask(_leftHand, true, frame.left.disabled, true) == 0;
-                const auto choice = force_grab_policy::selectGrenadeHand(
-                    false, rightFree, leftFree, inventoryThrowable && g_rockConfig.rockDefaultHandLeft);
+                const auto choice = force_grab_policy::selectGrenadeHand(false, rightFree, leftFree,
+                    inventoryThrowable && g_rockConfig.rockDefaultHandLeft);
                 if (!rightFree && !leftFree) {
                     f4vr::showNotification("ROCK: Cannot take item - neither hand is free.");
                     complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::HandBusy);
@@ -186,7 +193,8 @@ namespace rock
                 if (requestTargetFormId != 0 && heldFormId != requestTargetFormId) {
                     return false;
                 }
-                if (requestTargetBodyId != INVALID_BODY_ID && primaryBodyId != requestTargetBodyId && !hand.isHeldBodyId(requestTargetBodyId)) {
+                if (requestTargetBodyId != INVALID_BODY_ID && primaryBodyId != requestTargetBodyId &&
+                    !hand.isHeldBodyId(requestTargetBodyId)) {
                     return false;
                 }
                 return true;
@@ -204,13 +212,17 @@ namespace rock
 
             if (isForceReleaseCommand || isThrownDropCommand) {
                 TouchGrabRuntime::HandReport surface{};
-                if (isForceReleaseCommand && _touchGrabRuntime.getHandReport(isLeft, surface) && surface.globalSurface) {
+                if (isForceReleaseCommand && _touchGrabRuntime.getHandReport(isLeft, surface) &&
+                    surface.globalSurface) {
                     if (!heldObjectMatchesRequest(surface.referenceFormId, surface.bodyId)) {
-                        complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::HeldObjectMismatch);
+                        complete(api::grab::InteractionCommandState::Rejected,
+                            api::grab::InteractionFailure::HeldObjectMismatch);
                         continue;
                     }
-                    if ((command.forceRelease.flags & static_cast<std::uint32_t>(api::grab::ForceReleaseFlag::UseVelocityHavok)) != 0) {
-                        complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::InvalidRequest);
+                    if ((command.forceRelease.flags &
+                            static_cast<std::uint32_t>(api::grab::ForceReleaseFlag::UseVelocityHavok)) != 0) {
+                        complete(api::grab::InteractionCommandState::Rejected,
+                            api::grab::InteractionFailure::InvalidRequest);
                         continue;
                     }
                     result.targetFormId = surface.referenceFormId;
@@ -223,7 +235,8 @@ namespace rock
                     continue;
                 }
                 if (!hand.isHolding()) {
-                    complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::HandNotHolding);
+                    complete(api::grab::InteractionCommandState::Rejected,
+                        api::grab::InteractionFailure::HandNotHolding);
                     continue;
                 }
 
@@ -233,7 +246,8 @@ namespace rock
                 result.targetFormId = heldFormId;
                 result.targetBodyId = primaryBodyId;
                 if (!heldObjectMatchesRequest(heldFormId, primaryBodyId)) {
-                    complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::HeldObjectMismatch);
+                    complete(api::grab::InteractionCommandState::Rejected,
+                        api::grab::InteractionFailure::HeldObjectMismatch);
                     continue;
                 }
 
@@ -245,17 +259,19 @@ namespace rock
 
                 GrabReleaseOutcome::VelocitySnapshot requestedVelocity{};
                 const bool forceReleaseUsesVelocity = isForceReleaseCommand &&
-                    (command.forceRelease.flags & static_cast<std::uint32_t>(api::grab::ForceReleaseFlag::UseVelocityHavok)) != 0;
+                    (command.forceRelease.flags &
+                        static_cast<std::uint32_t>(api::grab::ForceReleaseFlag::UseVelocityHavok)) != 0;
                 const bool thrownDropUsesVelocity = isThrownDropCommand &&
-                    (command.thrownDrop.flags & static_cast<std::uint32_t>(api::grab::ThrownDropFlag::UseVelocityHavok)) != 0;
+                    (command.thrownDrop.flags &
+                        static_cast<std::uint32_t>(api::grab::ThrownDropFlag::UseVelocityHavok)) != 0;
                 const bool applyRequestedVelocity = forceReleaseUsesVelocity || thrownDropUsesVelocity;
                 if (applyRequestedVelocity) {
-                    const float* linearVelocityHavok = forceReleaseUsesVelocity ?
-                        command.forceRelease.linearVelocityHavok :
-                        command.thrownDrop.linearVelocityHavok;
-                    const float* angularVelocityRadiansPerSecond = forceReleaseUsesVelocity ?
-                        command.forceRelease.angularVelocityRadiansPerSecond :
-                        command.thrownDrop.angularVelocityRadiansPerSecond;
+                    const float* linearVelocityHavok = forceReleaseUsesVelocity
+                        ? command.forceRelease.linearVelocityHavok
+                        : command.thrownDrop.linearVelocityHavok;
+                    const float* angularVelocityRadiansPerSecond = forceReleaseUsesVelocity
+                        ? command.forceRelease.angularVelocityRadiansPerSecond
+                        : command.thrownDrop.angularVelocityRadiansPerSecond;
 
                     requestedVelocity.available = true;
                     requestedVelocity.primaryBodyId = RE::hknpBodyId{ primaryBodyId };
@@ -283,18 +299,20 @@ namespace rock
                 }
 
                 const std::uint32_t flags = isThrownDropCommand ? command.thrownDrop.flags : command.forceRelease.flags;
-                const bool immediateCollisionRestore = isThrownDropCommand ?
-                    (flags & static_cast<std::uint32_t>(api::grab::ThrownDropFlag::ImmediateCollisionRestore)) != 0 :
-                    (flags & static_cast<std::uint32_t>(api::grab::ForceReleaseFlag::ImmediateCollisionRestore)) != 0;
+                const bool immediateCollisionRestore = isThrownDropCommand
+                    ? (flags & static_cast<std::uint32_t>(api::grab::ThrownDropFlag::ImmediateCollisionRestore)) != 0
+                    : (flags & static_cast<std::uint32_t>(api::grab::ForceReleaseFlag::ImmediateCollisionRestore)) != 0;
                 auto releaseContext = makeGrabReleaseContext(hand, isLeft);
                 releaseContext.disposition = GrabReleaseDisposition::PhysicalDrop;
                 releaseContext.applyCapturedReleaseVelocity = isThrownDropCommand && !applyRequestedVelocity;
                 releaseContext.reason = isThrownDropCommand ? "provider-thrown-drop" : "provider-force-release";
                 const auto releaseOutcome = hand.releaseGrabbedObject(frame.hknpWorld,
-                    immediateCollisionRestore ? GrabReleaseCollisionRestoreMode::Immediate : GrabReleaseCollisionRestoreMode::Delayed,
+                    immediateCollisionRestore ? GrabReleaseCollisionRestoreMode::Immediate
+                                              : GrabReleaseCollisionRestoreMode::Delayed,
                     releaseContext);
                 if (!releaseOutcome.released) {
-                    complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::HandNotHolding);
+                    complete(api::grab::InteractionCommandState::Rejected,
+                        api::grab::InteractionFailure::HandNotHolding);
                     continue;
                 }
 
@@ -330,23 +348,30 @@ namespace rock
                 query.referenceNativeHandle = command.powerArmorReferenceNativeHandle;
                 api::grab::PowerArmorTarget target{};
                 RE::NiTransform presented{};
-                if (frame.menuBlocked || !reference_interaction::describePowerArmor(reference_interaction::resolveQuery(query), target) ||
-                    target.frameReference.referenceFormId == 0 || !_dynamicHandCollision.getLastPresentedHandWorld(isLeft, presented)) {
-                    complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::TargetUnavailable);
+                if (frame.menuBlocked ||
+                    !reference_interaction::describePowerArmor(reference_interaction::resolveQuery(query), target) ||
+                    target.frameReference.referenceFormId == 0 ||
+                    !_dynamicHandCollision.getLastPresentedHandWorld(isLeft, presented)) {
+                    complete(api::grab::InteractionCommandState::Rejected,
+                        api::grab::InteractionFailure::TargetUnavailable);
                     continue;
                 }
                 const auto candidate = _touchGrabRuntime.findPowerArmorCandidate(frame.hknpWorld, presented.translate,
                     target.frameReference.referenceFormId, command.powerArmorPoint,
-                    command.forceGrab.maxDistanceGame > 0 ? command.forceGrab.maxDistanceGame : TouchGrabRuntime::kPowerArmorProximityRadiusGame);
-                if (!candidate.valid || !_touchGrabRuntime.tryAcquirePowerArmor(isLeft, candidate, frame.bhkWorld,
-                    frame.hknpWorld, result.worldGeneration, result.skeletonGeneration, result.providerGeneration,
-                    _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire), command.ownerToken)) {
-                    complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::TargetUnavailable);
+                    command.forceGrab.maxDistanceGame > 0 ? command.forceGrab.maxDistanceGame
+                                                          : TouchGrabRuntime::kPowerArmorProximityRadiusGame);
+                if (!candidate.valid ||
+                    !_touchGrabRuntime.tryAcquirePowerArmor(isLeft, candidate, frame.bhkWorld, frame.hknpWorld,
+                        result.worldGeneration, result.skeletonGeneration, result.providerGeneration,
+                        _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire), command.ownerToken)) {
+                    complete(api::grab::InteractionCommandState::Rejected,
+                        api::grab::InteractionFailure::TargetUnavailable);
                     continue;
                 }
                 result.targetFormId = candidate.referenceFormId;
                 result.targetBodyId = candidate.bodyId;
-                if (hand.hasSelection()) hand.clearSelectionState(false);
+                if (hand.hasSelection())
+                    hand.clearSelectionState(false);
                 clearProviderReleaseInputState();
                 if (!complete(api::grab::InteractionCommandState::Succeeded, api::grab::InteractionFailure::None)) {
                     _touchGrabRuntime.releaseHand(isLeft, frame.bhkWorld, frame.hknpWorld,
@@ -357,18 +382,24 @@ namespace rock
             }
 
             if (inventoryTransfer) {
-                if (inventoryThrowable && (handHoldsLooseGrenade(_rightHand) || handHoldsLooseGrenade(_leftHand) || hasActiveLooseGrenadeCommit())) {
+                if (inventoryThrowable &&
+                    (handHoldsLooseGrenade(_rightHand) || handHoldsLooseGrenade(_leftHand) ||
+                        hasActiveLooseGrenadeCommit())) {
                     f4vr::showNotification("ROCK: A throwable is already held or attaching.");
-                    complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::TargetAlreadyOwned);
+                    complete(api::grab::InteractionCommandState::Rejected,
+                        api::grab::InteractionFailure::TargetAlreadyOwned);
                     continue;
                 }
                 RE::NiPoint3 dropLocation = handInput.grabAnchorWorld;
                 dropLocation.z -= 3.0f;
-                const auto drop = loose_grenade_runtime::dropInventoryItemToWorld(command.forceGrab.targetFormId, dropLocation);
+                const auto drop =
+                    loose_grenade_runtime::dropInventoryItemToWorld(command.forceGrab.targetFormId, dropLocation);
                 if (!drop.success) {
-                    ROCK_LOG_WARN(Hand, "Inventory handoff rejected: item={:08X} reason={}", command.forceGrab.targetFormId, drop.reason);
+                    ROCK_LOG_WARN(Hand, "Inventory handoff rejected: item={:08X} reason={}",
+                        command.forceGrab.targetFormId, drop.reason);
                     f4vr::showNotification("ROCK: This inventory item could not be taken.");
-                    complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::TargetUnavailable);
+                    complete(api::grab::InteractionCommandState::Rejected,
+                        api::grab::InteractionFailure::TargetUnavailable);
                     continue;
                 }
                 result.targetFormId = drop.droppedRef ? drop.droppedRef->GetFormID() : 0;
@@ -386,7 +417,8 @@ namespace rock
                 // Keep the pending transfer even if cancellation won the race:
                 // the normal prune path owns rollback of this exact handle.
                 complete(api::grab::InteractionCommandState::Queued, api::grab::InteractionFailure::None);
-                ROCK_LOG_INFO(Hand, "Inventory handoff queued: item={:08X} command={} hand={}", command.forceGrab.targetFormId, command.commandId, isLeft ? "left" : "right");
+                ROCK_LOG_INFO(Hand, "Inventory handoff queued: item={:08X} command={} hand={}",
+                    command.forceGrab.targetFormId, command.commandId, isLeft ? "left" : "right");
                 continue;
             }
 
@@ -397,22 +429,24 @@ namespace rock
             }
             result.targetFormId = targetRef->GetFormID();
             if (targetRef->IsDeleted() || targetRef->IsDisabled()) {
-                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::TargetUnavailable);
+                complete(api::grab::InteractionCommandState::Rejected,
+                    api::grab::InteractionFailure::TargetUnavailable);
                 continue;
             }
             if (command.forceGrab.targetFormId != 0 && targetRef->GetFormID() != command.forceGrab.targetFormId) {
-                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::TargetUnavailable);
+                complete(api::grab::InteractionCommandState::Rejected,
+                    api::grab::InteractionFailure::TargetUnavailable);
                 continue;
             }
             if (physicsModOwnsObject(targetRef)) {
-                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::TargetAlreadyOwned);
+                complete(api::grab::InteractionCommandState::Rejected,
+                    api::grab::InteractionFailure::TargetAlreadyOwned);
                 continue;
             }
 
             const bool targetIsLooseThrowable = loose_grenade_runtime::isThrowableRef(targetRef);
             if (targetIsLooseThrowable &&
-                (handHoldsLooseGrenade(_rightHand) ||
-                    handHoldsLooseGrenade(_leftHand) ||
+                (handHoldsLooseGrenade(_rightHand) || handHoldsLooseGrenade(_leftHand) ||
                     hasActiveLooseGrenadeCommit())) {
                 complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::HandBusy);
                 continue;
@@ -425,7 +459,8 @@ namespace rock
             }
 
             const bool hasSourcePointOverride =
-                (command.forceGrab.flags & static_cast<std::uint32_t>(api::grab::ForceGrabFlag::UsePreferredGrabPointGame)) != 0;
+                (command.forceGrab.flags &
+                    static_cast<std::uint32_t>(api::grab::ForceGrabFlag::UsePreferredGrabPointGame)) != 0;
 
             commit = PendingForceGrabCommit{
                 .active = true,
@@ -452,9 +487,8 @@ namespace rock
         }
     }
 
-    RE::NiAVObject* PhysicsInteraction::resolveProviderWeaponPartDriveNode(
-        RE::NiNode* weaponNode,std::uint64_t currentWeaponGenerationKey,
-        const provider::PartDrive& drive,
+    RE::NiAVObject* PhysicsInteraction::resolveProviderWeaponPartDriveNode(RE::NiNode* weaponNode,
+        std::uint64_t currentWeaponGenerationKey, const provider::PartDrive& drive,
         const WeaponEvidenceSnapshot& evidenceDescriptors) const
     {
         if (drive.weaponGenerationKey != 0 && drive.weaponGenerationKey != currentWeaponGenerationKey) {
@@ -473,14 +507,16 @@ namespace rock
             return true;
         };
 
-        if ((drive.flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceKey)) != 0 && drive.sourceRoot != 0) {
+        if ((drive.flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceKey)) != 0 &&
+            drive.sourceRoot != 0) {
             auto* node = reinterpret_cast<RE::NiAVObject*>(drive.sourceRoot);
             if (!acceptResolvedNode(node)) {
                 return nullptr;
             }
         }
 
-        if ((drive.flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchBodyId)) != 0 && drive.bodyId != INVALID_CONTACT_BODY_ID) {
+        if ((drive.flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchBodyId)) != 0 &&
+            drive.bodyId != INVALID_CONTACT_BODY_ID) {
             const auto* descriptor = evidenceDescriptors.find(drive.bodyId);
             if (descriptor && descriptor->sourceRootAddress != 0 &&
                 descriptor->weaponGenerationKey == currentWeaponGenerationKey &&
@@ -491,10 +527,12 @@ namespace rock
         }
 
         const auto sourceName = providerFixedStringView(drive.sourceName, weapon_part_runtime::kMaxSourceName);
-        if ((drive.flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceName)) != 0 && !sourceName.empty()) {
+        if ((drive.flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceName)) != 0 &&
+            !sourceName.empty()) {
             RE::NiAVObject* matchedSourceNode = nullptr;
             for (const auto& descriptor : evidenceDescriptors) {
-                if (!descriptor.valid || descriptor.weaponGenerationKey != currentWeaponGenerationKey || descriptor.sourceName != sourceName) {
+                if (!descriptor.valid || descriptor.weaponGenerationKey != currentWeaponGenerationKey ||
+                    descriptor.sourceName != sourceName) {
                     continue;
                 }
                 matchedSourceNode = reinterpret_cast<RE::NiAVObject*>(descriptor.sourceRootAddress);
@@ -511,32 +549,40 @@ namespace rock
         return candidate;
     }
 
-    weapon_drive_pose::NativeFrame PhysicsInteraction::captureProviderPartQueryPose(RE::NiNode* weaponNode,std::uint64_t generation) const
+    weapon_drive_pose::NativeFrame PhysicsInteraction::captureProviderPartQueryPose(RE::NiNode* weaponNode,
+        std::uint64_t generation) const
     {
-        weapon_drive_pose::NativeFrame result(weaponNode,weaponNode->world);
-        std::array<provider::PartDrive,api::weaponparts::kMaxDrives> drives{};
-        const auto count=provider::copyWeaponPartDrives(drives.data(),static_cast<unsigned>(drives.size()),nullptr,false);
-        const auto evidence=_weaponCollision.getProfileEvidenceDescriptors();
-        std::array<RE::NiAVObject*,api::weaponparts::kMaxDrives> slots{};
-        if(_providerDrives.generationKey==generation)for(std::size_t i=0;i<slots.size();++i)slots[i]=_providerDrives.nodeStates[i].node;
-        for(unsigned i=0;i<count;++i)if(auto* node=resolveProviderWeaponPartDriveNode(weaponNode,generation,drives[i],evidence)){
-            auto slot=std::find(slots.begin(),slots.end(),node);
-            if(slot==slots.end())slot=std::find(slots.begin(),slots.end(),nullptr);
-            if(slot!=slots.end()&&result.apply(node,providerTransformToNi(drives[i].targetTransform),
-                drives[i].driveSpace==api::weaponparts::DriveSpace::WeaponRootLocal,drives[i].priority))*slot=node;
-        }
+        weapon_drive_pose::NativeFrame result(weaponNode, weaponNode->world);
+        std::array<provider::PartDrive, api::weaponparts::kMaxDrives> drives{};
+        const auto count =
+            provider::copyWeaponPartDrives(drives.data(), static_cast<unsigned>(drives.size()), nullptr, false);
+        const auto evidence = _weaponCollision.getProfileEvidenceDescriptors();
+        std::array<RE::NiAVObject*, api::weaponparts::kMaxDrives> slots{};
+        if (_providerDrives.generationKey == generation)
+            for (std::size_t i = 0; i < slots.size(); ++i)
+                slots[i] = _providerDrives.nodeStates[i].node;
+        for (unsigned i = 0; i < count; ++i)
+            if (auto* node = resolveProviderWeaponPartDriveNode(weaponNode, generation, drives[i], evidence)) {
+                auto slot = std::find(slots.begin(), slots.end(), node);
+                if (slot == slots.end())
+                    slot = std::find(slots.begin(), slots.end(), nullptr);
+                if (slot != slots.end() &&
+                    result.apply(node, providerTransformToNi(drives[i].targetTransform),
+                        drives[i].driveSpace == api::weaponparts::DriveSpace::WeaponRootLocal, drives[i].priority))
+                    *slot = node;
+            }
         // The writer restores expired/revoked nodes after active drives. Their
         // old driven locals may still be present if native animation left them alone.
-        if(_providerDrives.generationKey==generation)for(const auto& state:_providerDrives.nodeStates)
-            if(state.node&&!result.contains(state.node)&&scene_relation::nodeContainsNode(weaponNode,state.node,64))
-                result.apply(state.node,state.baselineLocal,false,0);
+        if (_providerDrives.generationKey == generation)
+            for (const auto& state : _providerDrives.nodeStates)
+                if (state.node && !result.contains(state.node) &&
+                    scene_relation::nodeContainsNode(weaponNode, state.node, 64))
+                    result.apply(state.node, state.baselineLocal, false, 0);
         return result;
     }
 
-    std::size_t PhysicsInteraction::applyProviderWeaponPartDrives(
-        RE::NiNode* weaponNode,
-        std::uint64_t currentWeaponGenerationKey,
-        const PhysicsFrameContext& frame,
+    std::size_t PhysicsInteraction::applyProviderWeaponPartDrives(RE::NiNode* weaponNode,
+        std::uint64_t currentWeaponGenerationKey, const PhysicsFrameContext& frame,
         std::array<const RE::NiAVObject*, api::weaponparts::kMaxDrives>& outDrivenSourceNodes)
     {
         outDrivenSourceNodes = {};
@@ -557,13 +603,9 @@ namespace rock
         }
 
         std::array<provider::PartDrive, api::weaponparts::kMaxDrives> driveTargets{};
-        std::array<std::uint64_t,
-            api::weaponparts::kMaxDrives>
-            driveOwners{};
-        const std::uint32_t driveCount = ::rock::provider::copyWeaponPartDrives(
-            driveTargets.data(),
-            static_cast<std::uint32_t>(driveTargets.size()),
-            driveOwners.data());
+        std::array<std::uint64_t, api::weaponparts::kMaxDrives> driveOwners{};
+        const std::uint32_t driveCount = ::rock::provider::copyWeaponPartDrives(driveTargets.data(),
+            static_cast<std::uint32_t>(driveTargets.size()), driveOwners.data());
         if (driveCount == 0) {
             restoreExpiredProviderWeaponPartDriveNodes(weaponNode, currentWeaponGenerationKey);
             return 0;
@@ -580,10 +622,7 @@ namespace rock
         std::size_t appliedNodeCount = 0;
         const auto evidenceDescriptors = _weaponCollision.getProfileEvidenceDescriptors();
 
-        auto shouldApplyPriority = [&](
-                                       RE::NiAVObject* node,
-                                       std::uint32_t priority,
-                                       const std::uint32_t resultIndex) {
+        auto shouldApplyPriority = [&](RE::NiAVObject* node, std::uint32_t priority, const std::uint32_t resultIndex) {
             for (std::size_t i = 0; i < appliedNodeCount; ++i) {
                 if (appliedNodes[i].node != node) {
                     continue;
@@ -591,8 +630,7 @@ namespace rock
                 if (priority < appliedNodes[i].priority) {
                     return false;
                 }
-                _providerDrives.results[
-                    appliedNodes[i].resultIndex].result =
+                _providerDrives.results[appliedNodes[i].resultIndex].result =
                     api::weaponparts::DriveApplication::LostPriority;
                 appliedNodes[i].priority = priority;
                 appliedNodes[i].resultIndex = resultIndex;
@@ -609,9 +647,7 @@ namespace rock
             return false;
         };
 
-        auto markDrivenNode = [&](
-                                  RE::NiAVObject* node,
-                                  const api::weaponparts::DriveResult& result) {
+        auto markDrivenNode = [&](RE::NiAVObject* node, const api::weaponparts::DriveResult& result) {
             if (!node) {
                 return false;
             }
@@ -625,10 +661,7 @@ namespace rock
                     state.bodyId = result.bodyId;
                     state.groupId = result.groupId;
                     state.priority = result.priority;
-                    std::memcpy(
-                        state.sourceName.data(),
-                        result.sourceName,
-                        state.sourceName.size());
+                    std::memcpy(state.sourceName.data(), result.sourceName, state.sourceName.size());
                     return true;
                 }
             }
@@ -640,10 +673,7 @@ namespace rock
                     state.bodyId = result.bodyId;
                     state.groupId = result.groupId;
                     state.priority = result.priority;
-                    std::memcpy(
-                        state.sourceName.data(),
-                        result.sourceName,
-                        state.sourceName.size());
+                    std::memcpy(state.sourceName.data(), result.sourceName, state.sourceName.size());
                     state.activeThisFrame = true;
                     return true;
                 }
@@ -654,44 +684,33 @@ namespace rock
         std::size_t drivenSourceNodeCount = 0;
         for (std::uint32_t i = 0; i < driveCount && i < driveTargets.size(); ++i) {
             const auto& drive = driveTargets[i];
-            auto& applicationResult = _providerDrives.results[
-                _providerDrives.resultCount++];
+            auto& applicationResult = _providerDrives.results[_providerDrives.resultCount++];
             applicationResult = {};
-            applicationResult.frameIndex =
-                _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
+            applicationResult.frameIndex = _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
             applicationResult.owner = driveOwners[i];
-            applicationResult.weaponGenerationKey =
-                currentWeaponGenerationKey;
+            applicationResult.weaponGenerationKey = currentWeaponGenerationKey;
             applicationResult.bodyId = drive.bodyId;
             applicationResult.groupId = drive.groupId;
             applicationResult.priority = drive.priority;
-            std::memcpy(
-                applicationResult.sourceName,
-                drive.sourceName,
-                sizeof(applicationResult.sourceName));
-            applicationResult.sourceName[
-                sizeof(applicationResult.sourceName) - 1] = '\0';
-            if (drive.weaponGenerationKey != 0 &&
-                drive.weaponGenerationKey != currentWeaponGenerationKey) {
-                applicationResult.result =
-                    api::weaponparts::DriveApplication::StaleGeneration;
+            std::memcpy(applicationResult.sourceName, drive.sourceName, sizeof(applicationResult.sourceName));
+            applicationResult.sourceName[sizeof(applicationResult.sourceName) - 1] = '\0';
+            if (drive.weaponGenerationKey != 0 && drive.weaponGenerationKey != currentWeaponGenerationKey) {
+                applicationResult.result = api::weaponparts::DriveApplication::StaleGeneration;
                 continue;
             }
-            auto* sourceNode = resolveProviderWeaponPartDriveNode(weaponNode,currentWeaponGenerationKey,drive,evidenceDescriptors);
+            auto* sourceNode =
+                resolveProviderWeaponPartDriveNode(weaponNode, currentWeaponGenerationKey, drive, evidenceDescriptors);
             if (!sourceNode) {
-                applicationResult.result =
-                    api::weaponparts::DriveApplication::Unresolved;
+                applicationResult.result = api::weaponparts::DriveApplication::Unresolved;
                 continue;
             }
             if (!sourceNode->parent) {
-                applicationResult.result =
-                    api::weaponparts::DriveApplication::MissingParent;
+                applicationResult.result = api::weaponparts::DriveApplication::MissingParent;
                 continue;
             }
             const RE::NiTransform requestedLocal = providerTransformToNi(drive.targetTransform);
             if (!finiteNiTransform(requestedLocal)) {
-                applicationResult.result =
-                    api::weaponparts::DriveApplication::InvalidTransform;
+                applicationResult.result = api::weaponparts::DriveApplication::InvalidTransform;
                 continue;
             }
 
@@ -706,37 +725,28 @@ namespace rock
                 break;
             }
             if (!finiteNiTransform(desiredWorld)) {
-                applicationResult.result =
-                    api::weaponparts::DriveApplication::InvalidTransform;
+                applicationResult.result = api::weaponparts::DriveApplication::InvalidTransform;
                 continue;
             }
 
-            const RE::NiTransform requestedNodeLocal = transform_math::composeTransforms(transform_math::invertTransform(sourceNode->parent->world), desiredWorld);
+            const RE::NiTransform requestedNodeLocal = transform_math::composeTransforms(
+                transform_math::invertTransform(sourceNode->parent->world), desiredWorld);
             if (!finiteNiTransform(requestedNodeLocal)) {
-                applicationResult.result =
-                    api::weaponparts::DriveApplication::InvalidTransform;
+                applicationResult.result = api::weaponparts::DriveApplication::InvalidTransform;
                 continue;
             }
-            if (!shouldApplyPriority(
-                    sourceNode,
-                    drive.priority,
-                    _providerDrives.resultCount - 1)) {
-                applicationResult.result =
-                    api::weaponparts::DriveApplication::LostPriority;
+            if (!shouldApplyPriority(sourceNode, drive.priority, _providerDrives.resultCount - 1)) {
+                applicationResult.result = api::weaponparts::DriveApplication::LostPriority;
                 continue;
             }
             if (!markDrivenNode(sourceNode, applicationResult)) {
-                applicationResult.result =
-                    api::weaponparts::DriveApplication::CapacityRejected;
+                applicationResult.result = api::weaponparts::DriveApplication::CapacityRejected;
                 continue;
             }
             sourceNode->local = requestedNodeLocal;
             f4vr::updateTransformsDown(sourceNode, true);
-            applicationResult.result =
-                api::weaponparts::DriveApplication::Applied;
-            fillProviderTransform(
-                requestedNodeLocal,
-                applicationResult.appliedSourceParentLocal);
+            applicationResult.result = api::weaponparts::DriveApplication::Applied;
+            fillProviderTransform(requestedNodeLocal, applicationResult.appliedSourceParentLocal);
 
             if (drivenSourceNodeCount < outDrivenSourceNodes.size()) {
                 outDrivenSourceNodes[drivenSourceNodeCount++] = sourceNode;
@@ -747,12 +757,14 @@ namespace rock
         return drivenSourceNodeCount;
     }
 
-    void PhysicsInteraction::restoreExpiredProviderWeaponPartDriveNodes(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey)
+    void PhysicsInteraction::restoreExpiredProviderWeaponPartDriveNodes(RE::NiNode* weaponNode,
+        std::uint64_t currentWeaponGenerationKey)
     {
         if (_providerDrives.generationKey == 0) {
             return;
         }
-        if (!weaponNode || currentWeaponGenerationKey == 0 || _providerDrives.generationKey != currentWeaponGenerationKey) {
+        if (!weaponNode || currentWeaponGenerationKey == 0 ||
+            _providerDrives.generationKey != currentWeaponGenerationKey) {
             _providerDrives.nodeStates = {};
             _providerDrives.generationKey = 0;
             return;
@@ -770,29 +782,18 @@ namespace rock
             if (scene_relation::nodeContainsNode(weaponNode, state.node, 64)) {
                 state.node->local = state.baselineLocal;
                 f4vr::updateTransformsDown(state.node, true);
-                if (_providerDrives.resultCount <
-                    _providerDrives.results.size()) {
-                    auto& result = _providerDrives.results[
-                        _providerDrives.resultCount++];
+                if (_providerDrives.resultCount < _providerDrives.results.size()) {
+                    auto& result = _providerDrives.results[_providerDrives.resultCount++];
                     result = {};
-                    result.frameIndex =
-                        _frame.palmClockGameFrameIndex.load(
-                            std::memory_order_acquire);
+                    result.frameIndex = _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
                     result.owner = state.ownerToken;
-                    result.weaponGenerationKey =
-                        currentWeaponGenerationKey;
+                    result.weaponGenerationKey = currentWeaponGenerationKey;
                     result.bodyId = state.bodyId;
                     result.groupId = state.groupId;
                     result.priority = state.priority;
-                    result.result =
-                        api::weaponparts::DriveApplication::Restored;
-                    fillProviderTransform(
-                        state.baselineLocal,
-                        result.appliedSourceParentLocal);
-                    std::memcpy(
-                        result.sourceName,
-                        state.sourceName.data(),
-                        sizeof(result.sourceName));
+                    result.result = api::weaponparts::DriveApplication::Restored;
+                    fillProviderTransform(state.baselineLocal, result.appliedSourceParentLocal);
+                    std::memcpy(result.sourceName, state.sourceName.data(), sizeof(result.sourceName));
                     result.sourceName[sizeof(result.sourceName) - 1] = '\0';
                 }
             }

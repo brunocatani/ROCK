@@ -25,10 +25,11 @@ namespace rock::weapon_inventory_stack_selection_policy
     // Stack IDs are list positions used for the equip request, not persistent
     // identities across that mutation. Retain exact instance authority; for
     // base-data stacks require the same live stack node instead.
-    [[nodiscard]] inline constexpr bool matchesEquippedStack(
-        const StackWitness& requested, const StackWitness& equipped) noexcept
+    [[nodiscard]] inline constexpr bool matchesEquippedStack(const StackWitness& requested,
+        const StackWitness& equipped) noexcept
     {
-        if (equipped.count == 0) return false;
+        if (equipped.count == 0)
+            return false;
         if (requested.instanceDataAddress != 0) {
             return equipped.instanceDataAddress == requested.instanceDataAddress;
         }
@@ -76,9 +77,7 @@ namespace rock::weapon_inventory_stack_selection_policy
         }
     }
 
-    [[nodiscard]] inline constexpr Selection selectTransferredStack(
-        const Snapshot& before,
-        const Snapshot& after,
+    [[nodiscard]] inline constexpr Selection selectTransferredStack(const Snapshot& before, const Snapshot& after,
         const std::uintptr_t expectedInstanceData) noexcept
     {
         Selection selection{};
@@ -122,8 +121,7 @@ namespace rock::weapon_inventory_stack_selection_policy
                 const StackWitness* instancePrior = nullptr;
                 std::size_t instancePriorCount = 0;
                 for (std::size_t beforeIndex = 0; beforeIndex < before.count; ++beforeIndex) {
-                    if (before.stacks[beforeIndex].instanceDataAddress ==
-                        afterStack.instanceDataAddress) {
+                    if (before.stacks[beforeIndex].instanceDataAddress == afterStack.instanceDataAddress) {
                         instancePrior = &before.stacks[beforeIndex];
                         ++instancePriorCount;
                     }

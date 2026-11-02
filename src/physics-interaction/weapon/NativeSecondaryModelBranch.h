@@ -11,22 +11,23 @@ namespace rock::native_secondary_model
     class ModelBranch final : public Xbyak::CodeGenerator
     {
     public:
-        ModelBranch(std::uintptr_t resolver, std::uintptr_t gunRole,
-            std::uintptr_t nativeSkip, std::uintptr_t nativeCompare) : CodeGenerator(512)
+        ModelBranch(std::uintptr_t resolver, std::uintptr_t gunRole, std::uintptr_t nativeSkip,
+            std::uintptr_t nativeCompare) : CodeGenerator(512)
         {
             // Native RSP is 16-byte aligned. Preserve all volatile values:
             // this inserts a call where the original code only tested flags.
             sub(rsp, 0xC0);
             int offset = 0x20;
-            for (auto reg : {rax, rcx, rdx, r8, r9, r10, r11}) {
+            for (auto reg : { rax, rcx, rdx, r8, r9, r10, r11 }) {
                 mov(ptr[rsp + offset], reg);
                 offset += 8;
             }
-            for (int i = 0; i < 6; ++i) movdqu(ptr[rsp + 0x60 + i * 16], Xbyak::Xmm(i));
+            for (int i = 0; i < 6; ++i)
+                movdqu(ptr[rsp + 0x60 + i * 16], Xbyak::Xmm(i));
             mov(rcx, ptr[rbp + 0x98]); // pointer to the retained biped argument
             mov(edx, r12d);
-            mov(r8, r13);             // exact native BIPOBJECT record
-            movzx(r9d, al);           // actual IsFirstPersonBiped result
+            mov(r8, r13); // exact native BIPOBJECT record
+            movzx(r9d, al); // actual IsFirstPersonBiped result
             mov(rax, resolver);
             call(rax);
             test(al, al);
@@ -42,17 +43,22 @@ namespace rock::native_secondary_model
             jmp(ptr[rip + compareTarget]); // original following JL consumes flags
             L(skip);
             jmp(ptr[rip + skipTarget]);
-            L(forcedTarget); dq(gunRole);
-            L(skipTarget); dq(nativeSkip);
-            L(compareTarget); dq(nativeCompare);
+            L(forcedTarget);
+            dq(gunRole);
+            L(skipTarget);
+            dq(nativeSkip);
+            L(compareTarget);
+            dq(nativeCompare);
             ready();
         }
+
     private:
         void restore()
         {
-            for (int i = 0; i < 6; ++i) movdqu(Xbyak::Xmm(i), ptr[rsp + 0x60 + i * 16]);
+            for (int i = 0; i < 6; ++i)
+                movdqu(Xbyak::Xmm(i), ptr[rsp + 0x60 + i * 16]);
             int offset = 0x20;
-            for (auto reg : {rax, rcx, rdx, r8, r9, r10, r11}) {
+            for (auto reg : { rax, rcx, rdx, r8, r9, r10, r11 }) {
                 mov(reg, ptr[rsp + offset]);
                 offset += 8;
             }

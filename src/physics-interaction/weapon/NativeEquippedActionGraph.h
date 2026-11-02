@@ -1,14 +1,18 @@
 #pragma once
 
-#include "RE/Bethesda/BSAnimationGraph.h"
-#include "RE/Bethesda/TESObjectREFRs.h"
-#include "RE/NetImmerse/NiNode.h"
 #include <array>
 #include <cstdint>
 #include <memory>
 #include <span>
+#include "RE/Bethesda/BSAnimationGraph.h"
+#include "RE/Bethesda/TESObjectREFRs.h"
+#include "RE/NetImmerse/NiNode.h"
 
-namespace RE { class Actor; class TESRace; }
+namespace RE
+{
+    class Actor;
+    class TESRace;
+}
 
 namespace rock::native_equipped_action_graph
 {
@@ -17,8 +21,18 @@ namespace rock::native_equipped_action_graph
     class Graph final
     {
     public:
-        enum class Load { Pending, Ready, Failed };
-        struct Event { RE::BSFixedString tag, payload; };
+        enum class Load
+        {
+            Pending,
+            Ready,
+            Failed
+        };
+
+        struct Event
+        {
+            RE::BSFixedString tag, payload;
+        };
+
         using Events = std::array<Event, 128>;
 
         Graph();
@@ -45,6 +59,7 @@ namespace rock::native_equipped_action_graph
         // Anchor the entire evaluated skeleton to the held weapon. Animation
         // keeps the local part motion; tracking owns only its world frame.
         bool place(const RE::NiTransform& weaponWorld) noexcept;
+
         // Idle-root records from this graph's weapon subgraph request in
         // request order (de-duplicated by identifier).
         struct IdleRoot
@@ -53,6 +68,7 @@ namespace rock::native_equipped_action_graph
             std::uint8_t person{};
             std::uint64_t identifier{};
         };
+
         std::span<const IdleRoot> idleRoots() const noexcept;
 
     private:
@@ -62,5 +78,5 @@ namespace rock::native_equipped_action_graph
 
     // Diagnostic: logs the player's live native idle-root list (the names the
     // native idle collector resolves), tagged with the given weapon and context.
-    void logPlayerIdleRoots(const RE::Actor* player,std::uint32_t form,const char* context);
+    void logPlayerIdleRoots(const RE::Actor* player, std::uint32_t form, const char* context);
 }

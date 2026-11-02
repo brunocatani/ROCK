@@ -33,6 +33,7 @@ namespace rock::knife_reverse_grip
         std::uint32_t formID = 0;
         bool reversed = false;
     };
+
     // Any thread.
     [[nodiscard]] SavedGrip savedGrip(bool isLeft) noexcept;
     // Any thread (save-load callbacks): the grip the hand takes when it next

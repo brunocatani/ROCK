@@ -1,6 +1,11 @@
 #pragma once
 
-namespace RE { class TESObjectREFR; class BGSEquipSlot; }
+namespace RE
+{
+    class TESObjectREFR;
+    class BGSEquipSlot;
+}
+
 namespace rock::native_inventory_hand_slots
 {
     // Synchronous native inventory-owner scope. Never changes a form, an
@@ -8,12 +13,14 @@ namespace rock::native_inventory_hand_slots
     class Scope
     {
         bool _previous;
+
     public:
         explicit Scope(const RE::TESObjectREFR* owner) noexcept;
         ~Scope();
-        Scope(const Scope&)=delete;
-        Scope& operator=(const Scope&)=delete;
+        Scope(const Scope&) = delete;
+        Scope& operator=(const Scope&) = delete;
     };
+
     bool install() noexcept;
     // A multi-hand firearm slot (EitherHand, BothHands, BothHandsLeftOptional
     // or a mod's own) that names the right hand leaf. A firearm on such a

@@ -82,6 +82,7 @@ namespace rock::config
             const char* comment;
             int order;
         };
+
         using KeyIndex = std::map<CSimpleIniA::Entry, IniValue, CSimpleIniA::Entry::KeyOrder>;
 
         // Borrowed only while the source INI is unchanged. Multi-key parsing
@@ -180,8 +181,7 @@ namespace rock::config
 
         bool isUnusedPreamble(std::string_view line)
         {
-            return std::find(std::begin(kUnusedPreamble), std::end(kUnusedPreamble), line) !=
-                std::end(kUnusedPreamble);
+            return std::find(std::begin(kUnusedPreamble), std::end(kUnusedPreamble), line) != std::end(kUnusedPreamble);
         }
     }
 

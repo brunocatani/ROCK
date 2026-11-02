@@ -42,6 +42,7 @@ namespace rock::native_secondary_melee
         ~ImpactRoute();
         ImpactRoute(const ImpactRoute&) = delete;
         ImpactRoute& operator=(const ImpactRoute&) = delete;
+
         [[nodiscard]] bool routed() const noexcept { return _routed; }
 
     private:

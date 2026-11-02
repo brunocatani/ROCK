@@ -4,7 +4,6 @@
  * Weapon type declarations are grouped here so semantic IDs, evidence payloads, and hard limits stay in one stable public weapon surface without changing their namespaces.
  */
 
-
 // ---- WeaponSemanticTypes.h ----
 
 #include <array>
@@ -247,7 +246,8 @@ namespace rock
         std::uint32_t attachPointFormId{ 0 };
     };
 
-    struct WeaponGrabPointLocation {
+    struct WeaponGrabPointLocation
+    {
         std::uint64_t ownerToken{};
         std::uint32_t groupId{};
         std::uint64_t sourceKey{};
@@ -346,7 +346,6 @@ namespace rock
 }
 
 // ---- WeaponCollisionEvidence.h ----
-
 
 #include <cstdint>
 #include <string>

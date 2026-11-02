@@ -39,7 +39,8 @@ namespace rock::weapon_effect_geometry_policy
         return true;
     }
 
-    [[nodiscard]] inline constexpr bool containsAsciiInsensitive(std::string_view value, std::string_view token) noexcept
+    [[nodiscard]] inline constexpr bool containsAsciiInsensitive(std::string_view value,
+        std::string_view token) noexcept
     {
         if (token.empty() || token.size() > value.size()) {
             return false;

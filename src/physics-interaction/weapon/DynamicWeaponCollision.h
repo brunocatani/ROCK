@@ -2,14 +2,14 @@
 
 #include "physics-interaction/weapon/WeaponPhysicsTimeScale.h"
 
+#include "api/NativeInteractionService.h"
+#include "physics-interaction/grab/GrabConstraint.h"
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/native/HavokCompoundShapeBuilder.h"
-#include "physics-interaction/grab/GrabConstraint.h"
-#include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
+#include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/WeaponSurfaceSupport.h"
-#include "api/NativeInteractionService.h"
 
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/NetImmerse/NiTransform.h"
@@ -114,6 +114,7 @@ namespace rock
          * slot 1; the primary proxy is slot 0.
          */
         void configureSecondaryWeapon() noexcept { _secondary = true; }
+
         [[nodiscard]] bool isSecondaryWeapon() const noexcept { return _secondary; }
 
         // Collision-free intent of this frame's weapon root (between beginFrame
@@ -134,54 +135,42 @@ namespace rock
         void updateSurfaceSupportInput(bool placementOwnsClick = false);
 
         bool tryGetLatchedSurfacePose(RE::NiNode* weapon, std::uint64_t generation, RE::NiTransform& pose) const;
+
         bool surfaceRetirementRequested() const { return _surfaceSupport.retirementRequested; }
+
         bool tryGetSurfaceAnchor(RE::NiPoint3& anchor) const;
 
         // Game-frame observation, published through the provider snapshot.
-        [[nodiscard]] bool surfaceSupportReservesInput(std::uintptr_t weaponNode, std::uint64_t generation) const noexcept
+        [[nodiscard]] bool surfaceSupportReservesInput(std::uintptr_t weaponNode,
+            std::uint64_t generation) const noexcept
         {
-            return _surfaceInputReserved && generation != 0 && generation == _frameGenerationKey &&
-                weaponNode != 0 && weaponNode == reinterpret_cast<std::uintptr_t>(_frameWeaponNode);
+            return _surfaceInputReserved && generation != 0 && generation == _frameGenerationKey && weaponNode != 0 &&
+                weaponNode == reinterpret_cast<std::uintptr_t>(_frameWeaponNode);
         }
 
         // Same game-thread owner as the recoil callback; no cached hand-mode
         // flag can keep the reduced profile alive after this latch releases.
         [[nodiscard]] bool hasLatchedSurfaceSupport(std::uintptr_t weaponNode, std::uint64_t generation) const noexcept
         {
-            return _surfaceSupport.latched() && generation != 0 &&
-                generation == _surfaceSupport.contact.generation &&
+            return _surfaceSupport.latched() && generation != 0 && generation == _surfaceSupport.contact.generation &&
                 weaponNode != 0 && weaponNode == reinterpret_cast<std::uintptr_t>(_frameWeaponNode);
         }
 
-        void beginFrame(
-            std::uint64_t frameIndex,
-            RE::hknpWorld* world,
-            void* bhkWorld,
-            RE::NiNode* weaponNode,
-            std::uint64_t weaponGenerationKey,
-            bool enabled);
+        void beginFrame(std::uint64_t frameIndex, RE::hknpWorld* world, void* bhkWorld, RE::NiNode* weaponNode,
+            std::uint64_t weaponGenerationKey, bool enabled);
 
-        static void observeWeaponVisualIntent(
-            void* context,
-            RE::NiNode* weaponNode,
-            const RE::NiTransform& requestedWeaponWorld,
-            std::uint64_t weaponGenerationKey,
-            dynamic_weapon_collision_policy::VisualIntentSource source,
-            const RE::NiTransform* physicalDriverWorld);
+        static void observeWeaponVisualIntent(void* context, RE::NiNode* weaponNode,
+            const RE::NiTransform& requestedWeaponWorld, std::uint64_t weaponGenerationKey,
+            dynamic_weapon_collision_policy::VisualIntentSource source, const RE::NiTransform* physicalDriverWorld);
 
-        FrameResult finishFrame(
-            const PhysicsFrameContext& frame,
-            bool physicsWritesAllowed,
-            RE::NiNode* weaponNode,
-            std::uint64_t weaponGenerationKey,
-            const WeaponCollision& weaponCollision,
+        FrameResult finishFrame(const PhysicsFrameContext& frame, bool physicsWritesAllowed, RE::NiNode* weaponNode,
+            std::uint64_t weaponGenerationKey, const WeaponCollision& weaponCollision,
             const RE::NiPoint3* primaryGripWeaponLocal, bool handsFree = false);
+
         // This frame's compound snapshot found a generated source the weapon root no longer contains.
         [[nodiscard]] bool compoundSourcesUnavailable() const { return _compoundSourcesUnavailable; }
 
-        void flushPendingPhysicsDrive(
-            RE::hknpWorld* world,
-            const havok_physics_timing::PhysicsTimingSample& timing);
+        void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         void samplePostSolve(RE::hknpWorld* world, std::uint64_t solveSequence,
             const havok_physics_timing::PhysicsTimingSample& timing);
         void finalizeCompoundPose(const WeaponCollision& weaponCollision, RE::NiNode* weaponNode,
@@ -189,20 +178,11 @@ namespace rock
         // Game-thread witness after the final claimed-hand presentation.
 
         bool isProxyBodyIdAtomic(std::uint32_t bodyId) const;
-        void recordObstacleContactCallback(
-            RE::hknpWorld* world,
-            std::uint32_t proxyBodyId,
-            std::uint32_t otherBodyId,
-            bool otherLayerRead,
-            std::uint32_t otherLayer,
-            bool proxyWasBodyA,
+        void recordObstacleContactCallback(RE::hknpWorld* world, std::uint32_t proxyBodyId, std::uint32_t otherBodyId,
+            bool otherLayerRead, std::uint32_t otherLayer, bool proxyWasBodyA,
             const havok_runtime::ContactSignalPointResult* rawContactPoint);
-        void recordObstacleManifoldProcessedCallback(
-            RE::hknpWorld* world,
-            std::uint32_t proxyBodyId,
-            std::uint32_t otherBodyId,
-            bool otherLayerRead,
-            std::uint32_t otherLayer,
+        void recordObstacleManifoldProcessedCallback(RE::hknpWorld* world, std::uint32_t proxyBodyId,
+            std::uint32_t otherBodyId, bool otherLayerRead, std::uint32_t otherLayer,
             const RE::NiPoint3* contactPointGame, const RE::NiPoint3& targetNormalGame, std::uint32_t pointCount);
 
         void retireAll(void* bhkWorld, bool preserveSurfaceSupport = false);
@@ -269,26 +249,19 @@ namespace rock
             RE::NiTransform otherBodyWorld{};
         };
 
-        void captureVisualIntent(
-            RE::NiNode* weaponNode,
-            const RE::NiTransform& requestedWeaponWorld,
-            std::uint64_t weaponGenerationKey,
-            const RE::NiTransform* physicalDriverWorld);
-        void recordSurfaceSupportContact(RE::hknpWorld* world,
-            std::uint32_t otherBodyId, const RE::NiPoint3& contactPointGame);
+        void captureVisualIntent(RE::NiNode* weaponNode, const RE::NiTransform& requestedWeaponWorld,
+            std::uint64_t weaponGenerationKey, const RE::NiTransform* physicalDriverWorld);
+        void recordSurfaceSupportContact(RE::hknpWorld* world, std::uint32_t otherBodyId,
+            const RE::NiPoint3& contactPointGame);
         bool resolveSurfaceSupportBody(const weapon_surface_support::Contact& contact,
             RE::NiTransform& surfaceWorld) const;
-        bool setAuthorityPivot(const PhysicsFrameContext& frame,
-            const RE::NiPoint3& pivotWeaponLocal, const RE::NiTransform& weaponWorld);
-        void updateSurfaceSupport(const PhysicsFrameContext& frame,
-            const RE::NiPoint3* primaryGripWeaponLocal, bool handsFree);
-        bool ensureProxyBody(
-            const PhysicsFrameContext& frame,
-            const WeaponCollision& weaponCollision,
+        bool setAuthorityPivot(const PhysicsFrameContext& frame, const RE::NiPoint3& pivotWeaponLocal,
+            const RE::NiTransform& weaponWorld);
+        void updateSurfaceSupport(const PhysicsFrameContext& frame, const RE::NiPoint3* primaryGripWeaponLocal,
+            bool handsFree);
+        bool ensureProxyBody(const PhysicsFrameContext& frame, const WeaponCollision& weaponCollision,
             const RE::NiTransform& requestedWeaponWorld);
-        bool queueCompoundChildTransforms(
-            const WeaponCollision& weaponCollision,
-            const RE::NiAVObject* weaponNode,
+        bool queueCompoundChildTransforms(const WeaponCollision& weaponCollision, const RE::NiAVObject* weaponNode,
             float weaponScale);
         bool flushCompoundChildTransforms();
         void retireProxyLocked(void* bhkWorld);
@@ -301,9 +274,12 @@ namespace rock
         bool readContactDiagnosticSnapshot(ContactDiagnosticSnapshot& outSnapshot) const;
         static void storeAtomicTransform(AtomicTransform& target, const RE::NiTransform& value);
         static RE::NiTransform loadAtomicTransform(const AtomicTransform& source);
+
         [[nodiscard]] std::uint32_t weaponSlot() const noexcept { return _secondary ? 1u : 0u; }
+
         // A native interaction extension drives this slot's proxy this frame.
         [[nodiscard]] bool externallyControlled() const;
+
         [[nodiscard]] const char* ownerName() const noexcept { return _secondary ? "Second-weapon" : "Primary"; }
 
         bool _secondary{ false };
@@ -365,7 +341,7 @@ namespace rock
         RE::NiNode* _frameWeaponNode{ nullptr };
         RE::NiTransform _frameRequestedWeaponWorld{};
         RE::NiTransform _frameIntentDriverWorld{};
-        bool _frameIntentDriverValid{false};
+        bool _frameIntentDriverValid{ false };
         // Toggle, latch, and return are owned by the game frame. The contact
         // channel is the only callback-to-frame transfer for surface support.
         weapon_surface_support::ContactChannel _surfaceContacts;

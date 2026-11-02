@@ -1,7 +1,7 @@
 #pragma once
 
-#include "RE/Bethesda/TESForms.h"
 #include "RE/Bethesda/BGSInventoryItem.h"
+#include "RE/Bethesda/TESForms.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
 #include "RE/NetImmerse/NiAVObject.h"
 #include "RE/NetImmerse/NiPoint.h"
@@ -148,6 +148,7 @@ namespace rock::weapon_equip_transfer
     [[nodiscard]] const char* equipReasonName(EquipReason reason) noexcept;
     [[nodiscard]] const char* dropReasonName(DropReason reason) noexcept;
     [[nodiscard]] EquipResult transferHeldWeaponToPlayerAndEquip(EquipInput input) noexcept;
+
     // Frame-thread lease. Stack and instance remain owned while a provider
     // switch is pending; the native stack index is re-resolved before equip.
     struct InventorySelection
@@ -157,17 +158,20 @@ namespace rock::weapon_equip_transfer
         RE::BSTSmartPointer<RE::BGSInventoryItem::Stack> stack{};
         RE::BSTSmartPointer<RE::TBO_InstanceData> instance{};
     };
+
     [[nodiscard]] InventorySelection captureInventoryWeapon(std::uint32_t formID, std::uint32_t stackIndex) noexcept;
     [[nodiscard]] bool inventoryWeaponCurrent(const InventorySelection& selection) noexcept;
     // slotOne equips into equip slot 1 in the given hand; slot 0 stays.
-    [[nodiscard]] EquipResult equipInventoryWeapon(const InventorySelection& selection, bool slotOne = false, bool slotOneLeft = false) noexcept;
+    [[nodiscard]] EquipResult equipInventoryWeapon(const InventorySelection& selection, bool slotOne = false,
+        bool slotOneLeft = false) noexcept;
     [[nodiscard]] EquippedDropResult dropEquippedWeaponFromPlayer(const EquippedDropInput& input) noexcept;
     // Exact-current compensation after a held equip; never removes an item.
     [[nodiscard]] bool unequipExactCurrentWeapon(std::uint32_t formID, std::uintptr_t instanceData) noexcept;
     // Unequips the exact weapon at native equipment index 0 or 1 from its own
     // hand leaf; the weapon at the other index stays equipped. True when the
     // index is empty afterwards.
-    [[nodiscard]] bool unequipEquippedIndex(std::uint32_t index, std::uint32_t formID, std::uintptr_t instanceData) noexcept;
+    [[nodiscard]] bool unequipEquippedIndex(std::uint32_t index, std::uint32_t formID,
+        std::uintptr_t instanceData) noexcept;
     // Moves the exact weapon worn at index 1 to the empty index 0 with the
     // same action-free immediate equip as a held trigger equip. Frame thread.
     [[nodiscard]] EquipResult promoteSecondaryToPrimary(std::uint32_t formID, std::uintptr_t instanceData) noexcept;

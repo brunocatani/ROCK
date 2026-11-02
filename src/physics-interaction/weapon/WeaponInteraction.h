@@ -4,23 +4,20 @@
  * Weapon interaction routing is grouped here so offhand reservation and semantic route selection stay together without becoming part of collision generation.
  */
 
-
 // ---- WeaponInteractionRouter.h ----
 
-#include "physics-interaction/weapon/WeaponTypes.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
+#include "physics-interaction/weapon/WeaponTypes.h"
 
 namespace rock
 {
     // The firing-grip station has its own spatial admission. Normal support
     // and provider part grabs continue through their existing routes below.
-    [[nodiscard]] inline bool canAcquireFiringGripHandoff(
-        const bool insideFiringGripZone,
-        const WeaponInteractionRuntimeState& runtimeState,
-        const bool providerWhitelistActive)
+    [[nodiscard]] inline bool canAcquireFiringGripHandoff(const bool insideFiringGripZone,
+        const WeaponInteractionRuntimeState& runtimeState, const bool providerWhitelistActive)
     {
-        return insideFiringGripZone && runtimeState.supportGripAllowed &&
-               !runtimeState.providerPartAuthority.active && !providerWhitelistActive;
+        return insideFiringGripZone && runtimeState.supportGripAllowed && !runtimeState.providerPartAuthority.active &&
+            !providerWhitelistActive;
     }
 
     namespace weapon_interaction_acquisition_policy
@@ -44,14 +41,13 @@ namespace rock
          * presentation frame, so the number of missed publications to
          * tolerate is rate-independent while its elapsed time is not.
          */
-        [[nodiscard]] inline constexpr WeaponInteractionAcquisitionSource resolve(
-            State& state,
-            bool touchObserved,
+        [[nodiscard]] inline constexpr WeaponInteractionAcquisitionSource resolve(State& state, bool touchObserved,
             bool candidateResolved)
         {
             if (touchObserved) {
                 state.touchGraceFramesRemaining = kTouchGraceFrames;
-                return candidateResolved ? WeaponInteractionAcquisitionSource::PhysicalContact : WeaponInteractionAcquisitionSource::None;
+                return candidateResolved ? WeaponInteractionAcquisitionSource::PhysicalContact
+                                         : WeaponInteractionAcquisitionSource::None;
             }
 
             const bool touchLeaseActive = state.touchGraceFramesRemaining > 0;
@@ -61,7 +57,8 @@ namespace rock
             if (!candidateResolved) {
                 return WeaponInteractionAcquisitionSource::None;
             }
-            return touchLeaseActive ? WeaponInteractionAcquisitionSource::PhysicalContact : WeaponInteractionAcquisitionSource::ProximityProbe;
+            return touchLeaseActive ? WeaponInteractionAcquisitionSource::PhysicalContact
+                                    : WeaponInteractionAcquisitionSource::ProximityProbe;
         }
     }
 
@@ -74,7 +71,8 @@ namespace rock
      * owns all physical reload action decisions.
      */
 
-    inline WeaponInteractionDecision routeWeaponInteraction(const WeaponInteractionContact& contact, const WeaponInteractionRuntimeState& runtimeState)
+    inline WeaponInteractionDecision routeWeaponInteraction(const WeaponInteractionContact& contact,
+        const WeaponInteractionRuntimeState& runtimeState)
     {
         WeaponInteractionDecision decision{};
         if (!contact.valid) {

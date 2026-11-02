@@ -1,22 +1,22 @@
 #include "physics-interaction/weapon/NativeMeleeWand.h"
-#include "physics-interaction/weapon/NativeSecondaryMelee.h"
-#include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/PhysicsLog.h"
 #include <REL/Relocation.h>
 #include <Windows.h>
-#include <xbyak/xbyak.h>
 #include <array>
 #include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
+#include <xbyak/xbyak.h>
+#include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/weapon/NativeSecondaryMelee.h"
 
 namespace rock::native_melee_wand
 {
     namespace
     {
         // FO4VR 1.2.72, verified in ghidra_fo4vr and checked live before patching.
-        constexpr std::uintptr_t kPrimaryWand = 0x5AC8EB0;   // right wand singleton
+        constexpr std::uintptr_t kPrimaryWand = 0x5AC8EB0; // right wand singleton
         constexpr std::uintptr_t kSecondaryWand = 0x5AC72B8; // left wand singleton
         constexpr std::ptrdiff_t kAveragedLinearSpeed = 0x28;
 
@@ -26,6 +26,7 @@ namespace rock::native_melee_wand
             Gate,
             Contact
         };
+
         struct Load
         {
             std::uintptr_t site;
@@ -33,10 +34,11 @@ namespace rock::native_melee_wand
             bool intoR14;
             Reader reader;
         };
+
         constexpr std::array<Load, 4> kLoads{ {
-            { 0xEFED63, { 0x48, 0x8B, 0x05 }, false, Reader::Gate },    // velocity gate
+            { 0xEFED63, { 0x48, 0x8B, 0x05 }, false, Reader::Gate }, // velocity gate
             { 0xEFF333, { 0x48, 0x8B, 0x05 }, false, Reader::Contact }, // contact gun-bash speed
-            { 0xEFF50A, { 0x4C, 0x8B, 0x35 }, true, Reader::Contact },  // contact hit wand
+            { 0xEFF50A, { 0x4C, 0x8B, 0x35 }, true, Reader::Contact }, // contact hit wand
             { 0xEFF6F8, { 0x48, 0x8B, 0x05 }, false, Reader::Contact }, // contact hit velocity
         } };
         constexpr std::size_t kLoadSize = 7;
@@ -51,20 +53,23 @@ namespace rock::native_melee_wand
         std::uintptr_t wand(std::uintptr_t rva) noexcept
         {
             std::uintptr_t value = 0;
-            (void)native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(REL::Offset(rva).address()), value);
+            (void)native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(REL::Offset(rva).address()),
+                value);
             return value;
         }
 
         std::uintptr_t orNative(std::uintptr_t published) noexcept
         {
-            return published ? published : *reinterpret_cast<const std::uintptr_t*>(REL::Offset(kPrimaryWand).address());
+            return published ? published
+                             : *reinterpret_cast<const std::uintptr_t*>(REL::Offset(kPrimaryWand).address());
         }
 
         std::uintptr_t gateWand() noexcept { return orNative(s_gateWand.load(std::memory_order_acquire)); }
 
         std::uintptr_t contactWand() noexcept
         {
-            return orNative((native_secondary_melee::routedContact() ? s_indexOneWand : s_indexZeroWand).load(std::memory_order_acquire));
+            return orNative((native_secondary_melee::routedContact() ? s_indexOneWand : s_indexZeroWand)
+                    .load(std::memory_order_acquire));
         }
 
         // Replaces one 7-byte load with CALL + 2 NOPs. The native code keeps
@@ -79,7 +84,8 @@ namespace rock::native_melee_wand
                 save(intoR14);
                 mov(rax, resolver);
                 call(rax);
-                if (intoR14) mov(r14, rax);
+                if (intoR14)
+                    mov(r14, rax);
                 restore(intoR14);
                 add(rsp, 0xC8);
                 ret();
@@ -94,18 +100,23 @@ namespace rock::native_melee_wand
                     mov(ptr[rsp + offset], reg);
                     offset += 8;
                 }
-                if (keepRax) mov(ptr[rsp + offset], rax);
-                for (int i = 0; i < 6; ++i) movdqu(ptr[rsp + 0x60 + i * 16], Xbyak::Xmm(i));
+                if (keepRax)
+                    mov(ptr[rsp + offset], rax);
+                for (int i = 0; i < 6; ++i)
+                    movdqu(ptr[rsp + 0x60 + i * 16], Xbyak::Xmm(i));
             }
+
             void restore(bool keepRax)
             {
-                for (int i = 0; i < 6; ++i) movdqu(Xbyak::Xmm(i), ptr[rsp + 0x60 + i * 16]);
+                for (int i = 0; i < 6; ++i)
+                    movdqu(Xbyak::Xmm(i), ptr[rsp + 0x60 + i * 16]);
                 int offset = 0x20;
                 for (auto reg : { rcx, rdx, r8, r9, r10, r11 }) {
                     mov(reg, ptr[rsp + offset]);
                     offset += 8;
                 }
-                if (keepRax) mov(rax, ptr[rsp + offset]);
+                if (keepRax)
+                    mov(rax, ptr[rsp + offset]);
             }
         };
 
@@ -113,8 +124,10 @@ namespace rock::native_melee_wand
         {
             std::array<std::uint8_t, kLoadSize> live{};
             const auto address = REL::Offset(load.site).address();
-            if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), live.data(), live.size()) ||
-                std::memcmp(live.data(), load.opcode.data(), load.opcode.size()) != 0) return false;
+            if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), live.data(),
+                    live.size()) ||
+                std::memcmp(live.data(), load.opcode.data(), load.opcode.size()) != 0)
+                return false;
             std::int32_t displacement = 0;
             std::memcpy(&displacement, live.data() + load.opcode.size(), sizeof(displacement));
             return address + kLoadSize + displacement == REL::Offset(kPrimaryWand).address();
@@ -130,23 +143,27 @@ namespace rock::native_melee_wand
 
     bool install() noexcept
     {
-        if (s_installed) return true;
-        if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) return false;
+        if (s_installed)
+            return true;
+        if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72)
+            return false;
         std::array<std::array<std::uint8_t, kLoadSize>, kLoads.size()> originals{};
         for (std::size_t i = 0; i < kLoads.size(); ++i) {
             if (!loadMatches(kLoads[i])) {
-                ROCK_LOG_ERROR(Init, "Melee wand routing refused: load at {:#x} is not the primary wand", kLoads[i].site);
+                ROCK_LOG_ERROR(Init, "Melee wand routing refused: load at {:#x} is not the primary wand",
+                    kLoads[i].site);
                 return false;
             }
-            (void)native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(kLoads[i].site).address()),
-                originals[i].data(), kLoadSize);
+            (void)native_memory::guardedCopyFromMemory(
+                reinterpret_cast<const void*>(REL::Offset(kLoads[i].site).address()), originals[i].data(), kLoadSize);
         }
         try {
             auto& trampoline = F4SE::GetTrampoline();
-            if (trampoline.free_size() < 1024) throw std::runtime_error("trampoline space");
+            if (trampoline.free_size() < 1024)
+                throw std::runtime_error("trampoline space");
             for (const auto& load : kLoads) {
-                const auto resolver = load.reader == Reader::Gate ? reinterpret_cast<std::uintptr_t>(&gateWand) :
-                    reinterpret_cast<std::uintptr_t>(&contactWand);
+                const auto resolver = load.reader == Reader::Gate ? reinterpret_cast<std::uintptr_t>(&gateWand)
+                                                                  : reinterpret_cast<std::uintptr_t>(&contactWand);
                 WandLoad stub(resolver, load.intoR14);
                 auto* code = trampoline.allocate(stub.getSize());
                 std::memcpy(code, stub.getCode(), stub.getSize());
@@ -155,7 +172,8 @@ namespace rock::native_melee_wand
                 REL::safe_write(address + 5, nops.data(), nops.size());
                 (void)trampoline.write_call<5>(address, reinterpret_cast<std::uintptr_t>(code));
             }
-            if (!FlushInstructionCache(GetCurrentProcess(), nullptr, 0)) throw std::runtime_error("instruction cache");
+            if (!FlushInstructionCache(GetCurrentProcess(), nullptr, 0))
+                throw std::runtime_error("instruction cache");
         } catch (...) {
             for (std::size_t i = 0; i < kLoads.size(); ++i)
                 REL::safe_write(REL::Offset(kLoads[i].site).address(), originals[i].data(), kLoadSize);
@@ -164,13 +182,15 @@ namespace rock::native_melee_wand
             return false;
         }
         s_installed = true;
-        ROCK_LOG_INFO(Init, "Melee wand routing installed: swing gate and contacts read the wand of the hand holding the weapon");
+        ROCK_LOG_INFO(Init,
+            "Melee wand routing installed: swing gate and contacts read the wand of the hand holding the weapon");
         return true;
     }
 
     void update(const Holders& holders) noexcept
     {
-        if (!s_installed) return;
+        if (!s_installed)
+            return;
         const auto right = wand(kPrimaryWand);
         const auto left = wand(kSecondaryWand);
         if (!right || !left) {
@@ -183,13 +203,15 @@ namespace rock::native_melee_wand
         const auto one = holders.indexOneHeld ? (holders.indexOneLeft ? left : right) : zero;
         // A weapon in both hands: the faster hand starts the swing or bash
         // (speeds are the wand's own 12-frame averages).
-        const bool oneLeads = holders.indexZeroHeld && holders.indexOneHeld && one != zero && linearSpeed(one) > linearSpeed(zero);
+        const bool oneLeads =
+            holders.indexZeroHeld && holders.indexOneHeld && one != zero && linearSpeed(one) > linearSpeed(zero);
         s_indexZeroWand.store(zero, std::memory_order_release);
         s_indexOneWand.store(one, std::memory_order_release);
         s_gateWand.store(oneLeads ? one : zero, std::memory_order_release);
         if (holders.indexZeroLeft != s_last.indexZeroLeft || holders.indexOneHeld != s_last.indexOneHeld ||
             holders.indexOneLeft != s_last.indexOneLeft) {
-            ROCK_LOG_INFO(Weapon, "Native melee wands: index 0 {} wand, index 1 {}", holders.indexZeroLeft ? "left" : "right",
+            ROCK_LOG_INFO(Weapon, "Native melee wands: index 0 {} wand, index 1 {}",
+                holders.indexZeroLeft ? "left" : "right",
                 holders.indexOneHeld ? (holders.indexOneLeft ? "left wand" : "right wand") : "none");
         }
         s_last = holders;

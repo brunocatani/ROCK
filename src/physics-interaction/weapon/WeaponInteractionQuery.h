@@ -34,7 +34,8 @@ namespace rock::weapon_interaction_query
         out = {};
         if (triangles.empty() || !weapon_hierarchy::weaponTransformFinite(world) ||
             std::abs(world.scale) <= 0.000001f || !finitePoint(boundsMin) || !finitePoint(boundsMax) ||
-            boundsMin.x > boundsMax.x || boundsMin.y > boundsMax.y || boundsMin.z > boundsMax.z) return false;
+            boundsMin.x > boundsMax.x || boundsMin.y > boundsMax.y || boundsMin.z > boundsMax.z)
+            return false;
         out.triangles = &triangles;
         out.index = &index;
         out.world = world;
@@ -53,41 +54,50 @@ namespace rock::weapon_interaction_query
         weapon_interaction_probe_math::ProbeCandidateRank rank{};
         std::uint32_t boundsCandidates = 0;
         std::uint32_t surfaceCandidates = 0;
+
         bool valid() const { return part != (std::numeric_limits<std::size_t>::max)(); }
     };
 
-    inline Selection find(std::span<const Part> parts, const RE::NiPoint3& point, float radiusGame, std::span<const bool> excluded = {})
+    inline Selection find(std::span<const Part> parts, const RE::NiPoint3& point, float radiusGame,
+        std::span<const bool> excluded = {})
     {
         Selection result{};
-        if (!finitePoint(point) || !std::isfinite(radiusGame) || radiusGame <= 0.0f) return result;
+        if (!finitePoint(point) || !std::isfinite(radiusGame) || radiusGame <= 0.0f)
+            return result;
         for (std::size_t i = 0; i < parts.size(); ++i) {
-            if(i<excluded.size()&&excluded[i])continue;
+            if (i < excluded.size() && excluded[i])
+                continue;
             const auto& part = parts[i];
-            if (!part.triangles || !part.index) continue;
+            if (!part.triangles || !part.index)
+                continue;
             const float localRadius = radiusGame / part.absoluteScale;
-            const auto localPoint = weapon_collision_geometry_math::worldPointToLocal(
-                part.world.rotate, part.world.translate, part.world.scale, point);
-            if (!finitePoint(localPoint)) continue;
-            const auto boundsDistance = weapon_interaction_probe_math::pointAabbDistanceSquared(
-                localPoint, part.boundsMin, part.boundsMax);
+            const auto localPoint = weapon_collision_geometry_math::worldPointToLocal(part.world.rotate,
+                part.world.translate, part.world.scale, point);
+            if (!finitePoint(localPoint))
+                continue;
+            const auto boundsDistance =
+                weapon_interaction_probe_math::pointAabbDistanceSquared(localPoint, part.boundsMin, part.boundsMax);
             if (!std::isfinite(boundsDistance) ||
-                !weapon_interaction_probe_math::isWithinProbeRadiusSquared(boundsDistance, localRadius)) continue;
+                !weapon_interaction_probe_math::isWithinProbeRadiusSquared(boundsDistance, localRadius))
+                continue;
             ++result.boundsCandidates;
-            const auto distance = part.index->nearestDistanceSquared(*part.triangles, localPoint, localRadius * localRadius,
-                [](const RE::NiPoint3& p, const TriangleData& triangle) {
+            const auto distance = part.index->nearestDistanceSquared(*part.triangles, localPoint,
+                localRadius * localRadius, [](const RE::NiPoint3& p, const TriangleData& triangle) {
                     float squared = (std::numeric_limits<float>::infinity)();
                     (void)closestPointOnTriangleToPoint(p, triangle, squared);
                     return squared;
                 });
             if (!std::isfinite(distance) ||
-                !weapon_interaction_probe_math::isWithinProbeRadiusSquared(distance, localRadius)) continue;
+                !weapon_interaction_probe_math::isWithinProbeRadiusSquared(distance, localRadius))
+                continue;
             ++result.surfaceCandidates;
             const weapon_interaction_probe_math::ProbeCandidateRank rank{
                 .distanceSquaredGame = distance * (part.absoluteScale * part.absoluteScale),
                 .aabbDiagonalSquaredGame = part.diagonalSquaredGame,
                 .semanticPriority = part.priority,
             };
-            if (result.valid() && !weapon_interaction_probe_math::isBetterProbeCandidate(rank, result.rank)) continue;
+            if (result.valid() && !weapon_interaction_probe_math::isBetterProbeCandidate(rank, result.rank))
+                continue;
             result.part = i;
             result.rank = rank;
         }

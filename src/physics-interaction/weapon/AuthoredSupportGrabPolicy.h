@@ -6,13 +6,10 @@
 
 namespace rock::authored_support_grab_policy
 {
-    [[nodiscard]] constexpr std::uint64_t resolveAuthoredGenerationKey(
-        const std::uint64_t collisionGenerationKey,
+    [[nodiscard]] constexpr std::uint64_t resolveAuthoredGenerationKey(const std::uint64_t collisionGenerationKey,
         const std::uint64_t weaponOwnershipKey) noexcept
     {
-        return collisionGenerationKey != 0 ?
-            collisionGenerationKey :
-            weaponOwnershipKey;
+        return collisionGenerationKey != 0 ? collisionGenerationKey : weaponOwnershipKey;
     }
 
     // Qualification is measured in elapsed ready-state time, never frame
@@ -22,20 +19,14 @@ namespace rock::authored_support_grab_policy
     inline constexpr float kQualificationSeconds = 0.20f;
     inline constexpr float kUsableCandidateLossSeconds = 0.20f;
 
-    [[nodiscard]] inline float advanceContinuousEvidenceSeconds(
-        const float currentSeconds,
-        const float deltaSeconds,
-        const float limitSeconds,
-        const bool ready) noexcept
+    [[nodiscard]] inline float advanceContinuousEvidenceSeconds(const float currentSeconds, const float deltaSeconds,
+        const float limitSeconds, const bool ready) noexcept
     {
-        if (!ready || !std::isfinite(limitSeconds) ||
-            limitSeconds <= 0.0f) {
+        if (!ready || !std::isfinite(limitSeconds) || limitSeconds <= 0.0f) {
             return 0.0f;
         }
         const float current =
-            std::isfinite(currentSeconds) && currentSeconds > 0.0f ?
-            (std::min)(currentSeconds, limitSeconds) :
-            0.0f;
+            std::isfinite(currentSeconds) && currentSeconds > 0.0f ? (std::min)(currentSeconds, limitSeconds) : 0.0f;
         if (!std::isfinite(deltaSeconds) || deltaSeconds <= 0.0f) {
             return current;
         }
@@ -85,8 +76,7 @@ namespace rock::authored_support_grab_policy
         CapabilityReason reason{ CapabilityReason::AwaitingIdentity };
     };
 
-    [[nodiscard]] constexpr CapabilityObservation observeCapability(
-        const CapabilityObservationInput& input) noexcept
+    [[nodiscard]] constexpr CapabilityObservation observeCapability(const CapabilityObservationInput& input) noexcept
     {
         if (!input.modeEnabled) {
             return {
@@ -101,13 +91,11 @@ namespace rock::authored_support_grab_policy
             };
         }
         if (input.supportPoseAbsent) {
-            return {Capability::Unavailable, CapabilityReason::NoAuthoredSupportPose};
+            return { Capability::Unavailable, CapabilityReason::NoAuthoredSupportPose };
         }
         // Captured authored data is authoritative immediately. Generated
         // collision never qualifies or rejects the canonical pose or mirror.
-        if (input.candidateResolvedForSupportHand &&
-            input.weaponFamilySupported &&
-            input.canonicalAxesValid &&
+        if (input.candidateResolvedForSupportHand && input.weaponFamilySupported && input.canonicalAxesValid &&
             input.completeFingerPose) {
             return {
                 .capability = Capability::Usable,
@@ -118,9 +106,8 @@ namespace rock::authored_support_grab_policy
         if (!input.qualificationExpired) {
             return {
                 .capability = Capability::Pending,
-                .reason = input.candidatePublished ?
-                    CapabilityReason::AwaitingQualification :
-                    CapabilityReason::AwaitingCandidate,
+                .reason = input.candidatePublished ? CapabilityReason::AwaitingQualification
+                                                   : CapabilityReason::AwaitingCandidate,
             };
         }
         if (!input.candidatePublished) {
@@ -205,8 +192,7 @@ namespace rock::authored_support_grab_policy
         SelectionReason reason{ SelectionReason::None };
     };
 
-    [[nodiscard]] constexpr SelectionDecision select(
-        const SelectionInput& input) noexcept
+    [[nodiscard]] constexpr SelectionDecision select(const SelectionInput& input) noexcept
     {
         // Exact provider part authority is the public override boundary. It
         // remains ahead of every ROCK-local authored/dynamic policy.
@@ -246,9 +232,8 @@ namespace rock::authored_support_grab_policy
         }
         return {
             .selection = Selection::Reject,
-            .reason = input.capability == Capability::Pending ?
-                SelectionReason::CapabilityPending :
-                SelectionReason::AuthoredActivationRejected,
+            .reason = input.capability == Capability::Pending ? SelectionReason::CapabilityPending
+                                                              : SelectionReason::AuthoredActivationRejected,
         };
     }
 
@@ -263,28 +248,26 @@ namespace rock::authored_support_grab_policy
     {
         // Authored seats and firing-grip handoffs supply their own activation
         // zones. Only a possible mesh-based acquisition needs a part search.
-        const auto selection = select({
-            .modeEnabled = input.modeEnabled,
-            .providerPartAuthorityActive = input.providerTargetsActive,
-            .capability = input.supportPoseAbsenceCurrent ? Capability::Unavailable : Capability::Pending,
-            .supportPoseAbsent = input.supportPoseAbsenceCurrent,
-        }).selection;
-        return selection == Selection::ProviderDynamic ||
-               selection == Selection::DynamicFallback ||
-               selection == Selection::DynamicUnrestricted;
+        const auto selection =
+            select({
+                       .modeEnabled = input.modeEnabled,
+                       .providerPartAuthorityActive = input.providerTargetsActive,
+                       .capability = input.supportPoseAbsenceCurrent ? Capability::Unavailable : Capability::Pending,
+                       .supportPoseAbsent = input.supportPoseAbsenceCurrent,
+                   })
+                .selection;
+        return selection == Selection::ProviderDynamic || selection == Selection::DynamicFallback ||
+            selection == Selection::DynamicUnrestricted;
     }
 
     [[nodiscard]] constexpr bool captured(const Selection selection) noexcept
     {
-        return selection == Selection::ProviderDynamic ||
-               selection == Selection::DynamicHandoff ||
-               selection == Selection::Authored ||
-               selection == Selection::DynamicFallback ||
-               selection == Selection::DynamicUnrestricted;
+        return selection == Selection::ProviderDynamic || selection == Selection::DynamicHandoff ||
+            selection == Selection::Authored || selection == Selection::DynamicFallback ||
+            selection == Selection::DynamicUnrestricted;
     }
 
-    [[nodiscard]] constexpr const char* capabilityName(
-        const Capability capability) noexcept
+    [[nodiscard]] constexpr const char* capabilityName(const Capability capability) noexcept
     {
         switch (capability) {
         case Capability::Pending:
@@ -297,8 +280,7 @@ namespace rock::authored_support_grab_policy
         return "UNKNOWN";
     }
 
-    [[nodiscard]] constexpr const char* capabilityReasonName(
-        const CapabilityReason reason) noexcept
+    [[nodiscard]] constexpr const char* capabilityReasonName(const CapabilityReason reason) noexcept
     {
         switch (reason) {
         case CapabilityReason::ModeDisabled:
@@ -329,8 +311,7 @@ namespace rock::authored_support_grab_policy
         return "unknown";
     }
 
-    [[nodiscard]] constexpr const char* selectionName(
-        const Selection selection) noexcept
+    [[nodiscard]] constexpr const char* selectionName(const Selection selection) noexcept
     {
         switch (selection) {
         case Selection::None:
@@ -353,8 +334,7 @@ namespace rock::authored_support_grab_policy
         return "UNKNOWN";
     }
 
-    [[nodiscard]] constexpr const char* selectionReasonName(
-        const SelectionReason reason) noexcept
+    [[nodiscard]] constexpr const char* selectionReasonName(const SelectionReason reason) noexcept
     {
         switch (reason) {
         case SelectionReason::None:

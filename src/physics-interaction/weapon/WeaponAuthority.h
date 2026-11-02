@@ -4,14 +4,13 @@
  * Weapon authority helpers are grouped here because lifecycle, visual authority, muzzle authority, and visual composition all decide final weapon ownership.
  */
 
-
 // ---- WeaponAuthorityLifecyclePolicy.h ----
 
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <string_view>
 
@@ -71,11 +70,8 @@ namespace rock::weapon_visual_authority_math
          * the hand pose must be published before FRIK applies/finalizes the
          * external wrist target so right-hand fingers inherit the pivoted wrist.
          */
-        return {
-            TwoHandedExternalAuthorityStep::ApplyWeaponVisual,
-            TwoHandedExternalAuthorityStep::PublishHandPose,
-            TwoHandedExternalAuthorityStep::ApplyLockedHandVisual
-        };
+        return { TwoHandedExternalAuthorityStep::ApplyWeaponVisual, TwoHandedExternalAuthorityStep::PublishHandPose,
+            TwoHandedExternalAuthorityStep::ApplyLockedHandVisual };
     }
 
     inline constexpr int authorityOrderIndex(const TwoHandedExternalAuthorityStep step)
@@ -92,13 +88,13 @@ namespace rock::weapon_visual_authority_math
     inline constexpr bool handPosePrecedesLockedHandAuthority()
     {
         return authorityOrderIndex(TwoHandedExternalAuthorityStep::PublishHandPose) <
-               authorityOrderIndex(TwoHandedExternalAuthorityStep::ApplyLockedHandVisual);
+            authorityOrderIndex(TwoHandedExternalAuthorityStep::ApplyLockedHandVisual);
     }
 
     inline constexpr bool weaponVisualPrecedesLockedHandAuthority()
     {
         return authorityOrderIndex(TwoHandedExternalAuthorityStep::ApplyWeaponVisual) <
-               authorityOrderIndex(TwoHandedExternalAuthorityStep::ApplyLockedHandVisual);
+            authorityOrderIndex(TwoHandedExternalAuthorityStep::ApplyLockedHandVisual);
     }
 
     inline constexpr bool shouldPublishTwoHandedGripPose(const LockedHandRole role)
@@ -165,8 +161,7 @@ namespace rock::weapon_visual_authority_math
     }
 
     template <class Transform>
-    [[nodiscard]] inline Transform makePresentationWorldDelta(
-        const Transform& oldWeaponWorld,
+    [[nodiscard]] inline Transform makePresentationWorldDelta(const Transform& oldWeaponWorld,
         const Transform& newWeaponWorld)
     {
         /*
@@ -175,19 +170,14 @@ namespace rock::weapon_visual_authority_math
          * frame while ROCK moves the weapon root; descendant locals remain
          * native/controller-owned and are deliberately not consulted here.
          */
-        return transform_math::composeTransforms(
-            newWeaponWorld,
-            invertSceneTransform(oldWeaponWorld));
+        return transform_math::composeTransforms(newWeaponWorld, invertSceneTransform(oldWeaponWorld));
     }
 
     template <class Transform>
-    [[nodiscard]] inline Transform applyPresentationWorldDelta(
-        const Transform& presentationWorldDelta,
+    [[nodiscard]] inline Transform applyPresentationWorldDelta(const Transform& presentationWorldDelta,
         const Transform& presentationWorld)
     {
-        return transform_math::composeTransforms(
-            presentationWorldDelta,
-            presentationWorld);
+        return transform_math::composeTransforms(presentationWorldDelta, presentationWorld);
     }
 
 }
@@ -203,9 +193,7 @@ namespace rock::native_scope_rotation_math
      * The stored Ni basis composes pitch, then yaw, then roll.
      */
     template <class Transform>
-    [[nodiscard]] inline Transform makePitchYawRollLocal(
-        const float pitchDegrees,
-        const float yawDegrees,
+    [[nodiscard]] inline Transform makePitchYawRollLocal(const float pitchDegrees, const float yawDegrees,
         const float rollDegrees)
     {
         constexpr float kDegreesToRadians = 0.017453292519943295769f;
@@ -256,8 +244,7 @@ namespace rock::native_scope_rotation_math
 
         Transform result = transform_math::makeIdentityTransform<Transform>();
         result.rotate = transform_math::multiplyStoredRotations(
-            transform_math::multiplyStoredRotations(pitch.rotate, yaw.rotate),
-            roll.rotate);
+            transform_math::multiplyStoredRotations(pitch.rotate, yaw.rotate), roll.rotate);
         return result;
     }
 }
@@ -273,8 +260,7 @@ namespace rock::native_scope_camera_follow_math
      * physical ocular end instead of at the firing controller near the cheek.
      */
     template <class Point>
-    [[nodiscard]] inline Point rearPlaneCenterFromSightBounds(
-        const Point& sightBoundsMinWeaponLocal,
+    [[nodiscard]] inline Point rearPlaneCenterFromSightBounds(const Point& sightBoundsMinWeaponLocal,
         const Point& sightBoundsMaxWeaponLocal)
     {
         Point result = sightBoundsMinWeaponLocal;
@@ -288,18 +274,19 @@ namespace rock::native_scope_camera_follow_math
     // Its vec2Vec steering establishes only forward. Resolve the remaining
     // twist from weapon-local +Z, never from the controller at capture time.
     template <class Rotation>
-    [[nodiscard]] inline bool tryBuildWeaponAlignedCameraRotation(
-        const Rotation& cameraWeaponLocal, Rotation& result)
+    [[nodiscard]] inline bool tryBuildWeaponAlignedCameraRotation(const Rotation& cameraWeaponLocal, Rotation& result)
     {
         const auto& row = cameraWeaponLocal.entry[0];
-        const double length = std::sqrt(static_cast<double>(row[0]) * row[0] +
-            static_cast<double>(row[1]) * row[1] + static_cast<double>(row[2]) * row[2]);
-        if (!std::isfinite(length) || length <= 0.000001) return false;
+        const double length = std::sqrt(static_cast<double>(row[0]) * row[0] + static_cast<double>(row[1]) * row[1] +
+            static_cast<double>(row[2]) * row[2]);
+        if (!std::isfinite(length) || length <= 0.000001)
+            return false;
         const double x = row[0] / length, y = row[1] / length, z = row[2] / length;
         // forward cross weapon-up. A forward parallel to weapon-up cannot
         // define a roll; reject it rather than capture an arbitrary frame.
         const double rightLength = std::sqrt(x * x + y * y);
-        if (rightLength <= 0.000001) return false;
+        if (rightLength <= 0.000001)
+            return false;
         const double rightX = y / rightLength, rightY = -x / rightLength;
         result = {};
         transform_math::detail::setMatrixEntry(result, 0, 0, x);
@@ -336,30 +323,32 @@ namespace rock::native_scope_camera_follow_math
     // Keep the post-FRIK optical direction and scale, but establish roll in
     // the weapon frame before retaining it across hand-role/menu changes.
     template <class Transform, class Point>
-    [[nodiscard]] inline bool tryCaptureRigidAnchorFrameWeaponLocal(
-        const Transform& weaponWorld,
-        const Transform& nativeScopeCameraWorld,
-        const Point& anchorWeaponLocal,
-        Transform& result)
+    [[nodiscard]] inline bool tryCaptureRigidAnchorFrameWeaponLocal(const Transform& weaponWorld,
+        const Transform& nativeScopeCameraWorld, const Point& anchorWeaponLocal, Transform& result)
     {
         result = {};
         result.scale = 0.0f;
         if (!std::isfinite(weaponWorld.scale) || weaponWorld.scale <= 0.0001f ||
             !std::isfinite(nativeScopeCameraWorld.scale) || nativeScopeCameraWorld.scale <= 0.0001f ||
-            !std::isfinite(anchorWeaponLocal.x) || !std::isfinite(anchorWeaponLocal.y) || !std::isfinite(anchorWeaponLocal.z)) return false;
+            !std::isfinite(anchorWeaponLocal.x) || !std::isfinite(anchorWeaponLocal.y) ||
+            !std::isfinite(anchorWeaponLocal.z))
+            return false;
         for (int row = 0; row < 3; ++row) {
             for (int column = 0; column < 3; ++column) {
                 if (!std::isfinite(weaponWorld.rotate.entry[row][column]) ||
-                    !std::isfinite(nativeScopeCameraWorld.rotate.entry[row][column])) return false;
+                    !std::isfinite(nativeScopeCameraWorld.rotate.entry[row][column]))
+                    return false;
             }
         }
-        const auto cameraWeaponLocal = transform_math::multiplyStoredRotations(
-            nativeScopeCameraWorld.rotate, transform_math::transposeRotation(weaponWorld.rotate));
+        const auto cameraWeaponLocal = transform_math::multiplyStoredRotations(nativeScopeCameraWorld.rotate,
+            transform_math::transposeRotation(weaponWorld.rotate));
         Transform captured{};
-        if (!tryBuildWeaponAlignedCameraRotation(cameraWeaponLocal, captured.rotate)) return false;
+        if (!tryBuildWeaponAlignedCameraRotation(cameraWeaponLocal, captured.rotate))
+            return false;
         captured.translate = anchorWeaponLocal;
         captured.scale = nativeScopeCameraWorld.scale / weaponWorld.scale;
-        if (!std::isfinite(captured.scale) || captured.scale <= 0.0001f) return false;
+        if (!std::isfinite(captured.scale) || captured.scale <= 0.0001f)
+            return false;
         result = captured;
         return true;
     }
@@ -370,27 +359,18 @@ namespace rock::native_scope_camera_follow_math
      * composing whole transforms would also orbit the anchor translation.
      */
     template <class Transform>
-    [[nodiscard]] inline Transform applyWeaponLocalRotationOffset(
-        const Transform& scopeFrameWeaponLocal,
-        const float pitchDegrees,
-        const float yawDegrees,
-        const float rollDegrees)
+    [[nodiscard]] inline Transform applyWeaponLocalRotationOffset(const Transform& scopeFrameWeaponLocal,
+        const float pitchDegrees, const float yawDegrees, const float rollDegrees)
     {
         const Transform rotationOffset =
-            native_scope_rotation_math::makePitchYawRollLocal<Transform>(
-                pitchDegrees,
-                yawDegrees,
-                rollDegrees);
+            native_scope_rotation_math::makePitchYawRollLocal<Transform>(pitchDegrees, yawDegrees, rollDegrees);
         Transform result = scopeFrameWeaponLocal;
-        result.rotate = transform_math::multiplyStoredRotations(
-            scopeFrameWeaponLocal.rotate,
-            rotationOffset.rotate);
+        result.rotate = transform_math::multiplyStoredRotations(scopeFrameWeaponLocal.rotate, rotationOffset.rotate);
         return result;
     }
 
     template <class Transform>
-    [[nodiscard]] inline Transform resolveRigidAnchorFrameWorld(
-        const Transform& weaponWorld,
+    [[nodiscard]] inline Transform resolveRigidAnchorFrameWorld(const Transform& weaponWorld,
         const Transform& scopeFrameWeaponLocal)
     {
         return transform_math::composeTransforms(weaponWorld, scopeFrameWeaponLocal);
@@ -407,8 +387,8 @@ namespace rock::native_scope_overlay_follow_math
     // controller frame; calibrating against the already aimed camera bakes
     // the first two-hand/carry rotation into the overlay for the whole equip.
     template <class Transform>
-    [[nodiscard]] inline Transform resolveUnsteeredCameraWorld(
-        const Transform& cameraParentWorld, const Transform& cameraLocal)
+    [[nodiscard]] inline Transform resolveUnsteeredCameraWorld(const Transform& cameraParentWorld,
+        const Transform& cameraLocal)
     {
         Transform baseline = cameraLocal;
         baseline.rotate = {};
@@ -426,13 +406,11 @@ namespace rock::native_scope_overlay_follow_math
      * replace only the obsolete translation with the generated sight anchor.
      */
     template <class Transform>
-    [[nodiscard]] inline Transform captureModelRootCalibrationInCameraLocal(
-        const Transform& nativeScopeCameraWorld,
+    [[nodiscard]] inline Transform captureModelRootCalibrationInCameraLocal(const Transform& nativeScopeCameraWorld,
         const Transform& nativeScopeModelRootWorld)
     {
         Transform calibration = transform_math::composeTransforms(
-            transform_math::invertTransform(nativeScopeCameraWorld),
-            nativeScopeModelRootWorld);
+            transform_math::invertTransform(nativeScopeCameraWorld), nativeScopeModelRootWorld);
         calibration.translate = {};
         return calibration;
     }
@@ -444,19 +422,12 @@ namespace rock::native_scope_overlay_follow_math
      * about Y. Euler composition is pitch, then yaw, then roll.
      */
     template <class Transform>
-    [[nodiscard]] inline Transform makeModelRootFineTuneLocal(
-        const float offsetXGameUnits,
-        const float offsetYGameUnits,
-        const float offsetZGameUnits,
-        const float pitchDegrees,
-        const float yawDegrees,
+    [[nodiscard]] inline Transform makeModelRootFineTuneLocal(const float offsetXGameUnits,
+        const float offsetYGameUnits, const float offsetZGameUnits, const float pitchDegrees, const float yawDegrees,
         const float rollDegrees)
     {
         Transform fineTune =
-            native_scope_rotation_math::makePitchYawRollLocal<Transform>(
-                pitchDegrees,
-                yawDegrees,
-                rollDegrees);
+            native_scope_rotation_math::makePitchYawRollLocal<Transform>(pitchDegrees, yawDegrees, rollDegrees);
         fineTune.translate.x = offsetXGameUnits;
         fineTune.translate.y = offsetYGameUnits;
         fineTune.translate.z = offsetZGameUnits;
@@ -464,10 +435,8 @@ namespace rock::native_scope_overlay_follow_math
     }
 
     template <class Transform>
-    [[nodiscard]] inline Transform resolveScopeModelRootWorld(
-        const Transform& correctedScopeCameraWorld,
-        const Transform& modelRootCalibrationInCameraLocal,
-        const Transform& modelRootFineTuneLocal)
+    [[nodiscard]] inline Transform resolveScopeModelRootWorld(const Transform& correctedScopeCameraWorld,
+        const Transform& modelRootCalibrationInCameraLocal, const Transform& modelRootFineTuneLocal)
     {
         return transform_math::composeTransforms(
             transform_math::composeTransforms(correctedScopeCameraWorld, modelRootCalibrationInCameraLocal),
@@ -480,12 +449,10 @@ namespace rock::native_scope_overlay_follow_math
      * both compensated without hard-coded mesh offsets.
      */
     template <class Transform>
-    [[nodiscard]] inline Transform resolveScopeParentWorldForModelRoot(
-        const Transform& targetScopeModelRootWorld,
+    [[nodiscard]] inline Transform resolveScopeParentWorldForModelRoot(const Transform& targetScopeModelRootWorld,
         const Transform& scopeModelRootLocal)
     {
-        return transform_math::composeTransforms(
-            targetScopeModelRootWorld,
+        return transform_math::composeTransforms(targetScopeModelRootWorld,
             transform_math::invertTransform(scopeModelRootLocal));
     }
 }
@@ -542,17 +509,12 @@ namespace rock::left_firing_position_only_math
      * presentation input and must never become weapon aim authority.
      */
     template <class Transform>
-    [[nodiscard]] inline Transform mirrorRightWeaponInWandOrientation(
-        const Transform& rightWeaponInWand)
+    [[nodiscard]] inline Transform mirrorRightWeaponInWandOrientation(const Transform& rightWeaponInWand)
     {
-        Transform lateralMirror =
-            transform_math::makeIdentityTransform<Transform>();
+        Transform lateralMirror = transform_math::makeIdentityTransform<Transform>();
         lateralMirror.rotate.entry[0][0] = -1.0f;
-        return orientationOnly(transform_math::composeTransforms(
-            lateralMirror,
-            transform_math::composeTransforms(
-                orientationOnly(rightWeaponInWand),
-                lateralMirror)));
+        return orientationOnly(transform_math::composeTransforms(lateralMirror,
+            transform_math::composeTransforms(orientationOnly(rightWeaponInWand), lateralMirror)));
     }
 
     /*
@@ -566,24 +528,15 @@ namespace rock::left_firing_position_only_math
      * Translation remains owned by the position-only grip solve below.
      */
     template <class Transform>
-    [[nodiscard]] inline Transform resolveDampedAimCarrierWorld(
-        const Transform& rawCarrierWorld,
-        const Transform& referenceHandInCarrierOrientation,
-        const Transform& dampedPhysicalHandWorld)
+    [[nodiscard]] inline Transform resolveDampedAimCarrierWorld(const Transform& rawCarrierWorld,
+        const Transform& referenceHandInCarrierOrientation, const Transform& dampedPhysicalHandWorld)
     {
-        const Transform rawHandWorldOrientation =
-            transform_math::composeTransforms(
-                orientationOnly(rawCarrierWorld),
-                orientationOnly(referenceHandInCarrierOrientation));
-        const Transform dampingWorldRotation =
-            transform_math::composeTransforms(
-                orientationOnly(dampedPhysicalHandWorld),
-                transform_math::invertTransform(
-                    rawHandWorldOrientation));
+        const Transform rawHandWorldOrientation = transform_math::composeTransforms(orientationOnly(rawCarrierWorld),
+            orientationOnly(referenceHandInCarrierOrientation));
+        const Transform dampingWorldRotation = transform_math::composeTransforms(
+            orientationOnly(dampedPhysicalHandWorld), transform_math::invertTransform(rawHandWorldOrientation));
         const Transform dampedCarrierOrientation =
-            transform_math::composeTransforms(
-                orientationOnly(dampingWorldRotation),
-                orientationOnly(rawCarrierWorld));
+            transform_math::composeTransforms(orientationOnly(dampingWorldRotation), orientationOnly(rawCarrierWorld));
 
         Transform result = rawCarrierWorld;
         result.rotate = dampedCarrierOrientation.rotate;
@@ -596,28 +549,19 @@ namespace rock::left_firing_position_only_math
      * the physical left-hand target. Scale remains owned by the live weapon.
      */
     template <class Transform, class Point>
-    [[nodiscard]] inline Transform resolveWeaponWorldPositionOnly(
-        const Transform& leftWandWorld,
-        const Transform& leftWeaponInWandOrientation,
-        const Transform& liveWeaponWorld,
-        const Point& firingGripWeaponLocal,
-        const Point& physicalGripTargetWorld)
+    [[nodiscard]] inline Transform resolveWeaponWorldPositionOnly(const Transform& leftWandWorld,
+        const Transform& leftWeaponInWandOrientation, const Transform& liveWeaponWorld,
+        const Point& firingGripWeaponLocal, const Point& physicalGripTargetWorld)
     {
-        Transform solvedWeaponWorld = transform_math::composeTransforms(
-            leftWandWorld,
-            orientationOnly(leftWeaponInWandOrientation));
+        Transform solvedWeaponWorld =
+            transform_math::composeTransforms(leftWandWorld, orientationOnly(leftWeaponInWandOrientation));
         solvedWeaponWorld.translate = liveWeaponWorld.translate;
         solvedWeaponWorld.scale = liveWeaponWorld.scale;
 
-        const Point currentGripWorld = transform_math::localPointToWorld(
-            solvedWeaponWorld,
-            firingGripWeaponLocal);
-        solvedWeaponWorld.translate.x +=
-            physicalGripTargetWorld.x - currentGripWorld.x;
-        solvedWeaponWorld.translate.y +=
-            physicalGripTargetWorld.y - currentGripWorld.y;
-        solvedWeaponWorld.translate.z +=
-            physicalGripTargetWorld.z - currentGripWorld.z;
+        const Point currentGripWorld = transform_math::localPointToWorld(solvedWeaponWorld, firingGripWeaponLocal);
+        solvedWeaponWorld.translate.x += physicalGripTargetWorld.x - currentGripWorld.x;
+        solvedWeaponWorld.translate.y += physicalGripTargetWorld.y - currentGripWorld.y;
+        solvedWeaponWorld.translate.z += physicalGripTargetWorld.z - currentGripWorld.z;
         return solvedWeaponWorld;
     }
 
@@ -632,24 +576,17 @@ namespace rock::left_firing_position_only_math
      * the grip never leaves the controller during the blend.
      */
     template <class Transform>
-    [[nodiscard]] inline Transform weaponWorldToPhysicalHandLocal(
-        const Transform& physicalHandWorld,
+    [[nodiscard]] inline Transform weaponWorldToPhysicalHandLocal(const Transform& physicalHandWorld,
         const Transform& weaponWorld)
     {
-        return transform_math::composeTransforms(
-            transform_math::invertTransform(physicalHandWorld),
-            weaponWorld);
+        return transform_math::composeTransforms(transform_math::invertTransform(physicalHandWorld), weaponWorld);
     }
 
     template <class Transform>
-    [[nodiscard]] inline Transform physicalHandLocalToWeaponWorld(
-        const Transform& physicalHandWorld,
-        const Transform& weaponHandLocal,
-        const float liveWeaponScale)
+    [[nodiscard]] inline Transform physicalHandLocalToWeaponWorld(const Transform& physicalHandWorld,
+        const Transform& weaponHandLocal, const float liveWeaponScale)
     {
-        Transform weaponWorld = transform_math::composeTransforms(
-            physicalHandWorld,
-            weaponHandLocal);
+        Transform weaponWorld = transform_math::composeTransforms(physicalHandWorld, weaponHandLocal);
         weaponWorld.scale = liveWeaponScale;
         return weaponWorld;
     }
@@ -666,19 +603,13 @@ namespace rock::scope_safe_hand_frame_math
      * the collapse and reconstruct it from the current driver while scoped.
      */
     template <class Transform>
-    [[nodiscard]] inline Transform captureDriverToHandLocal(
-        const Transform& driverWorld,
-        const Transform& handWorld)
+    [[nodiscard]] inline Transform captureDriverToHandLocal(const Transform& driverWorld, const Transform& handWorld)
     {
-        return transform_math::composeTransforms(
-            transform_math::invertTransform(driverWorld),
-            handWorld);
+        return transform_math::composeTransforms(transform_math::invertTransform(driverWorld), handWorld);
     }
 
     template <class Transform>
-    [[nodiscard]] inline Transform resolveHandWorld(
-        const Transform& driverWorld,
-        const Transform& driverToHandLocal)
+    [[nodiscard]] inline Transform resolveHandWorld(const Transform& driverWorld, const Transform& driverToHandLocal)
     {
         return transform_math::composeTransforms(driverWorld, driverToHandLocal);
     }
@@ -699,14 +630,11 @@ namespace rock::scope_safe_hand_frame_math
      * hFRIK has restored its visible root, and a still-active manual grip must
      * not keep a stale hidden-scope driver authoritative for the exit frame.
      */
-    [[nodiscard]] inline constexpr bool retainDriverFrameAuthority(
-        bool scopeMenuOpen,
-        bool manualScopeActivationRequested,
-        bool manualOwnershipActive,
-        bool driverFrameAuthorityWasActive)
+    [[nodiscard]] inline constexpr bool retainDriverFrameAuthority(bool scopeMenuOpen,
+        bool manualScopeActivationRequested, bool manualOwnershipActive, bool driverFrameAuthorityWasActive)
     {
         return scopeMenuOpen ||
-               (manualScopeActivationRequested && manualOwnershipActive && driverFrameAuthorityWasActive);
+            (manualScopeActivationRequested && manualOwnershipActive && driverFrameAuthorityWasActive);
     }
 
     /*
@@ -721,13 +649,10 @@ namespace rock::scope_safe_hand_frame_math
      * that frame is a calibrated, uncontaminated source: never from ROCK's
      * own rendered output. Refreshes still wait for the menu to close.
      */
-    [[nodiscard]] inline constexpr bool canSampleScopeRootHand(
-        bool driverFrameAuthorityActive,
-        bool hasDriverToHandLocal,
-        bool rawHandFrameCalibrated)
+    [[nodiscard]] inline constexpr bool canSampleScopeRootHand(bool driverFrameAuthorityActive,
+        bool hasDriverToHandLocal, bool rawHandFrameCalibrated)
     {
-        return !driverFrameAuthorityActive ||
-               (!hasDriverToHandLocal && rawHandFrameCalibrated);
+        return !driverFrameAuthorityActive || (!hasDriverToHandLocal && rawHandFrameCalibrated);
     }
 
     /*
@@ -746,30 +671,22 @@ namespace rock::scope_safe_hand_frame_math
 
     [[nodiscard]] inline constexpr bool isPlausibleScopeSeedHand(float handToDriverGameUnits)
     {
-        return handToDriverGameUnits >= 0.0f &&
-               handToDriverGameUnits <= kMaxScopeSeedHandToDriverGameUnits;
+        return handToDriverGameUnits >= 0.0f && handToDriverGameUnits <= kMaxScopeSeedHandToDriverGameUnits;
     }
 
-    [[nodiscard]] inline constexpr bool shouldStartRootRebase(
-        bool manualScopeActivationRequested,
-        bool driverFrameAuthorityStoppedThisFrame,
-        bool reconstructedHandValid,
-        bool recentScopedHandAvailable)
+    [[nodiscard]] inline constexpr bool shouldStartRootRebase(bool manualScopeActivationRequested,
+        bool driverFrameAuthorityStoppedThisFrame, bool reconstructedHandValid, bool recentScopedHandAvailable)
     {
         // The scoped frame is hidden, so it is useful continuity only while
         // the user still requests the scope. On a real button release the
         // restored visible root is authoritative immediately; blending from
         // the hidden frame can stretch both arms and the weapon through space.
         return manualScopeActivationRequested && driverFrameAuthorityStoppedThisFrame &&
-               (reconstructedHandValid || recentScopedHandAvailable);
+            (reconstructedHandValid || recentScopedHandAvailable);
     }
 
-    [[nodiscard]] inline constexpr ResolutionMode resolveMode(
-        bool scopeMenuOpen,
-        bool rootHandValid,
-        bool reconstructedHandValid,
-        bool hasLastHandWorld,
-        std::uint32_t consecutiveDriverMissFrames,
+    [[nodiscard]] inline constexpr ResolutionMode resolveMode(bool scopeMenuOpen, bool rootHandValid,
+        bool reconstructedHandValid, bool hasLastHandWorld, std::uint32_t consecutiveDriverMissFrames,
         std::uint32_t maxDriverMissGraceFrames)
     {
         if (!scopeMenuOpen) {
@@ -789,19 +706,13 @@ namespace rock::scope_safe_hand_frame_math
         if (rootHandValid) {
             return ResolutionMode::RootFlattened;
         }
-        return hasLastHandWorld && consecutiveDriverMissFrames < maxDriverMissGraceFrames ?
-                   ResolutionMode::LastKnown :
-                   ResolutionMode::Unavailable;
+        return hasLastHandWorld && consecutiveDriverMissFrames < maxDriverMissGraceFrames ? ResolutionMode::LastKnown
+                                                                                          : ResolutionMode::Unavailable;
     }
 
-    [[nodiscard]] inline constexpr ResolutionMode resolveCollisionIsolatedMode(
-        bool collisionPresentationWasLive,
-        bool scopeDriverFrameAuthorityActive,
-        bool rootHandValid,
-        bool reconstructedHandValid,
-        bool hasLastHandWorld,
-        std::uint32_t consecutiveDriverMissFrames,
-        std::uint32_t maxDriverMissGraceFrames)
+    [[nodiscard]] inline constexpr ResolutionMode resolveCollisionIsolatedMode(bool collisionPresentationWasLive,
+        bool scopeDriverFrameAuthorityActive, bool rootHandValid, bool reconstructedHandValid, bool hasLastHandWorld,
+        std::uint32_t consecutiveDriverMissFrames, std::uint32_t maxDriverMissGraceFrames)
     {
         /*
          * ROCK runs after FRIK's skeleton pass. If the previous render interval
@@ -811,17 +722,10 @@ namespace rock::scope_safe_hand_frame_math
          * would both feed collision output back into the next drive target.
          */
         if (collisionPresentationWasLive) {
-            return reconstructedHandValid ?
-                       ResolutionMode::DriverReconstructed :
-                       ResolutionMode::Unavailable;
+            return reconstructedHandValid ? ResolutionMode::DriverReconstructed : ResolutionMode::Unavailable;
         }
-        return resolveMode(
-            scopeDriverFrameAuthorityActive,
-            rootHandValid,
-            reconstructedHandValid,
-            hasLastHandWorld,
-            consecutiveDriverMissFrames,
-            maxDriverMissGraceFrames);
+        return resolveMode(scopeDriverFrameAuthorityActive, rootHandValid, reconstructedHandValid, hasLastHandWorld,
+            consecutiveDriverMissFrames, maxDriverMissGraceFrames);
     }
 
     [[nodiscard]] inline constexpr bool shouldPublishLockedHandVisualAuthority([[maybe_unused]] bool scopeMenuOpen)
@@ -868,8 +772,7 @@ namespace rock::scope_safe_hand_frame_math
      * every active part grip owns its physical support wrist in either firing
      * topology or PartCarry.
      */
-    [[nodiscard]] inline constexpr HandAuthorityRoleMask desiredRolesForHand(
-        const DesiredHandAuthorityInput& input,
+    [[nodiscard]] inline constexpr HandAuthorityRoleMask desiredRolesForHand(const DesiredHandAuthorityInput& input,
         bool isLeft)
     {
         HandAuthorityRoleMask desired = 0;
@@ -895,10 +798,8 @@ namespace rock::scope_safe_hand_frame_math
      * restoring the tracked arm between two ROCK roles. Reacquiring the same
      * role simply cancels its deferred clear and keeps the existing tag alive.
      */
-    [[nodiscard]] inline constexpr DeferredClearAction resolveDeferredClearAction(
-        HandAuthorityRole pendingRole,
-        HandAuthorityRoleMask desiredRoles,
-        HandAuthorityRoleMask publishedRolesThisFrame)
+    [[nodiscard]] inline constexpr DeferredClearAction resolveDeferredClearAction(HandAuthorityRole pendingRole,
+        HandAuthorityRoleMask desiredRoles, HandAuthorityRoleMask publishedRolesThisFrame)
     {
         if (hasRole(desiredRoles, pendingRole)) {
             return DeferredClearAction::RetainLiveRole;
@@ -914,8 +815,7 @@ namespace rock::scope_safe_hand_frame_math
      * update ownership differs from the visible weapon node. Neither is a
      * valid source for replacing the native, visible right-hand calibration.
      */
-    [[nodiscard]] inline constexpr bool canRefreshRightFiringCanonicalFrame(
-        bool scopeMenuOpen,
+    [[nodiscard]] inline constexpr bool canRefreshRightFiringCanonicalFrame(bool scopeMenuOpen,
         bool rightHandRootRebaseActive)
     {
         return !scopeMenuOpen && !rightHandRootRebaseActive;
@@ -926,18 +826,11 @@ namespace rock::scope_safe_hand_frame_math
      * firing hold from hFRIK's hidden/reconstructed hand. Reuse only the exact
      * pre-scope right-hand grip from the same generated weapon.
      */
-    [[nodiscard]] inline constexpr bool shouldReuseRightFiringCanonicalGrip(
-        bool scopeMenuOpen,
-        bool firingHandIsLeft,
-        bool canonicalValid,
-        std::uint64_t canonicalWeaponGenerationKey,
-        std::uint64_t currentWeaponGenerationKey)
+    [[nodiscard]] inline constexpr bool shouldReuseRightFiringCanonicalGrip(bool scopeMenuOpen, bool firingHandIsLeft,
+        bool canonicalValid, std::uint64_t canonicalWeaponGenerationKey, std::uint64_t currentWeaponGenerationKey)
     {
-        return scopeMenuOpen &&
-               !firingHandIsLeft &&
-               canonicalValid &&
-               canonicalWeaponGenerationKey != 0 &&
-               canonicalWeaponGenerationKey == currentWeaponGenerationKey;
+        return scopeMenuOpen && !firingHandIsLeft && canonicalValid && canonicalWeaponGenerationKey != 0 &&
+            canonicalWeaponGenerationKey == currentWeaponGenerationKey;
     }
 
     [[nodiscard]] inline float rebaseAlpha(float elapsedSeconds, float durationSeconds)
@@ -950,10 +843,7 @@ namespace rock::scope_safe_hand_frame_math
     }
 
     template <class Transform>
-    [[nodiscard]] inline Transform interpolateRebaseTransform(
-        const Transform& from,
-        const Transform& to,
-        float alpha)
+    [[nodiscard]] inline Transform interpolateRebaseTransform(const Transform& from, const Transform& to, float alpha)
     {
         const float t = std::clamp(std::isfinite(alpha) ? alpha : 1.0f, 0.0f, 1.0f);
         Transform result = to;
@@ -966,10 +856,8 @@ namespace rock::scope_safe_hand_frame_math
         float toQuaternion[4]{};
         transform_math::niRowsToHavokQuaternion(from.rotate, fromQuaternion);
         transform_math::niRowsToHavokQuaternion(to.rotate, toQuaternion);
-        const float dot = fromQuaternion[0] * toQuaternion[0] +
-                          fromQuaternion[1] * toQuaternion[1] +
-                          fromQuaternion[2] * toQuaternion[2] +
-                          fromQuaternion[3] * toQuaternion[3];
+        const float dot = fromQuaternion[0] * toQuaternion[0] + fromQuaternion[1] * toQuaternion[1] +
+            fromQuaternion[2] * toQuaternion[2] + fromQuaternion[3] * toQuaternion[3];
         if (dot < 0.0f) {
             for (float& component : toQuaternion) {
                 component = -component;
@@ -1138,17 +1026,14 @@ namespace rock::weapon_generated_source_completeness_policy
 
     inline bool hasFrontPackageCoverage(const GeneratedSourceCompleteness& completeness)
     {
-        return hasPart(completeness, WeaponPartKind::Barrel) ||
-               hasPart(completeness, WeaponPartKind::MuzzleDevice) ||
-               hasPart(completeness, WeaponPartKind::Handguard) ||
-               hasPart(completeness, WeaponPartKind::Foregrip) ||
-               hasPart(completeness, WeaponPartKind::Pump);
+        return hasPart(completeness, WeaponPartKind::Barrel) || hasPart(completeness, WeaponPartKind::MuzzleDevice) ||
+            hasPart(completeness, WeaponPartKind::Handguard) || hasPart(completeness, WeaponPartKind::Foregrip) ||
+            hasPart(completeness, WeaponPartKind::Pump);
     }
 
     inline bool hasCompactRearPackageCoverage(const GeneratedSourceCompleteness& completeness)
     {
-        return hasPart(completeness, WeaponPartKind::Stock) ||
-               hasPart(completeness, WeaponPartKind::Grip);
+        return hasPart(completeness, WeaponPartKind::Stock) || hasPart(completeness, WeaponPartKind::Grip);
     }
 
     inline bool hasLongGunRearPackageCoverage(const GeneratedSourceCompleteness& completeness)
@@ -1158,16 +1043,12 @@ namespace rock::weapon_generated_source_completeness_policy
 
     inline bool hasFirearmActionPackageEvidence(const GeneratedSourceCompleteness& completeness)
     {
-        return hasPart(completeness, WeaponPartKind::Magazine) ||
-               hasPart(completeness, WeaponPartKind::Magwell) ||
-               hasPart(completeness, WeaponPartKind::Bolt) ||
-               hasPart(completeness, WeaponPartKind::Slide) ||
-               hasPart(completeness, WeaponPartKind::ChargingHandle) ||
-               hasPart(completeness, WeaponPartKind::BreakAction) ||
-               hasPart(completeness, WeaponPartKind::Cylinder) ||
-               hasPart(completeness, WeaponPartKind::Chamber) ||
-               hasPart(completeness, WeaponPartKind::LaserCell) ||
-               hasPart(completeness, WeaponPartKind::Lever);
+        return hasPart(completeness, WeaponPartKind::Magazine) || hasPart(completeness, WeaponPartKind::Magwell) ||
+            hasPart(completeness, WeaponPartKind::Bolt) || hasPart(completeness, WeaponPartKind::Slide) ||
+            hasPart(completeness, WeaponPartKind::ChargingHandle) ||
+            hasPart(completeness, WeaponPartKind::BreakAction) || hasPart(completeness, WeaponPartKind::Cylinder) ||
+            hasPart(completeness, WeaponPartKind::Chamber) || hasPart(completeness, WeaponPartKind::LaserCell) ||
+            hasPart(completeness, WeaponPartKind::Lever);
     }
 
     inline bool isFirearmLikeSourcePackage(const GeneratedSourceCompleteness& completeness)
@@ -1183,7 +1064,8 @@ namespace rock::weapon_generated_source_completeness_policy
         }
 
         const bool actionOrSocketEvidence = hasFirearmActionPackageEvidence(completeness);
-        const bool authoredLongGunCoverage = hasFrontPackageCoverage(completeness) && hasCompactRearPackageCoverage(completeness);
+        const bool authoredLongGunCoverage =
+            hasFrontPackageCoverage(completeness) && hasCompactRearPackageCoverage(completeness);
         const bool sightedWeaponPackage =
             (hasPart(completeness, WeaponPartKind::Sight) || hasPart(completeness, WeaponPartKind::Scope)) &&
             (actionOrSocketEvidence || authoredLongGunCoverage);
@@ -1197,20 +1079,16 @@ namespace rock::weapon_generated_source_completeness_policy
          * blocking, but modded weapons can expose valid visible parts without
          * those names. Collision generation now consumes the visible mesh set.
          */
-        return hasPart(completeness, WeaponPartKind::Stock) ||
-               hasPart(completeness, WeaponPartKind::Handguard) ||
-               hasPart(completeness, WeaponPartKind::Foregrip) ||
-               hasPart(completeness, WeaponPartKind::Pump) ||
-               hasPart(completeness, WeaponPartKind::Bolt) ||
-               hasPart(completeness, WeaponPartKind::ChargingHandle) ||
-               hasPart(completeness, WeaponPartKind::Lever);
+        return hasPart(completeness, WeaponPartKind::Stock) || hasPart(completeness, WeaponPartKind::Handguard) ||
+            hasPart(completeness, WeaponPartKind::Foregrip) || hasPart(completeness, WeaponPartKind::Pump) ||
+            hasPart(completeness, WeaponPartKind::Bolt) || hasPart(completeness, WeaponPartKind::ChargingHandle) ||
+            hasPart(completeness, WeaponPartKind::Lever);
     }
 
     inline bool hasRequiredRearPackageCoverage(const GeneratedSourceCompleteness& completeness)
     {
-        return hasLongGunPackageEvidence(completeness) ?
-            hasLongGunRearPackageCoverage(completeness) :
-            hasCompactRearPackageCoverage(completeness);
+        return hasLongGunPackageEvidence(completeness) ? hasLongGunRearPackageCoverage(completeness)
+                                                       : hasCompactRearPackageCoverage(completeness);
     }
 
     inline std::uint32_t missingRequiredPackageCoverageMask(const GeneratedSourceCompleteness& completeness)
@@ -1245,38 +1123,23 @@ namespace rock::weapon_generated_source_completeness_policy
          * receiver, barrel/support, magazine/socket, and action components are
          * persistent weapon structure for collision and support-grip routing.
          */
-        return partMask(WeaponPartKind::Receiver) |
-               partMask(WeaponPartKind::Barrel) |
-               partMask(WeaponPartKind::MuzzleDevice) |
-               partMask(WeaponPartKind::Bipod) |
-               partMask(WeaponPartKind::Handguard) |
-               partMask(WeaponPartKind::Foregrip) |
-               partMask(WeaponPartKind::Pump) |
-               partMask(WeaponPartKind::Stock) |
-               partMask(WeaponPartKind::Grip) |
-               partMask(WeaponPartKind::Magazine) |
-               partMask(WeaponPartKind::Magwell) |
-               partMask(WeaponPartKind::Bolt) |
-               partMask(WeaponPartKind::Slide) |
-               partMask(WeaponPartKind::ChargingHandle) |
-               partMask(WeaponPartKind::BreakAction) |
-               partMask(WeaponPartKind::Cylinder) |
-               partMask(WeaponPartKind::Chamber) |
-               partMask(WeaponPartKind::LaserCell) |
-               partMask(WeaponPartKind::Lever);
+        return partMask(WeaponPartKind::Receiver) | partMask(WeaponPartKind::Barrel) |
+            partMask(WeaponPartKind::MuzzleDevice) | partMask(WeaponPartKind::Bipod) |
+            partMask(WeaponPartKind::Handguard) | partMask(WeaponPartKind::Foregrip) | partMask(WeaponPartKind::Pump) |
+            partMask(WeaponPartKind::Stock) | partMask(WeaponPartKind::Grip) | partMask(WeaponPartKind::Magazine) |
+            partMask(WeaponPartKind::Magwell) | partMask(WeaponPartKind::Bolt) | partMask(WeaponPartKind::Slide) |
+            partMask(WeaponPartKind::ChargingHandle) | partMask(WeaponPartKind::BreakAction) |
+            partMask(WeaponPartKind::Cylinder) | partMask(WeaponPartKind::Chamber) |
+            partMask(WeaponPartKind::LaserCell) | partMask(WeaponPartKind::Lever);
     }
 
     inline bool isTransientReloadPart(WeaponPartKind kind)
     {
-        return kind == WeaponPartKind::Shell ||
-               kind == WeaponPartKind::Round ||
-               kind == WeaponPartKind::CosmeticAmmo;
+        return kind == WeaponPartKind::Shell || kind == WeaponPartKind::Round || kind == WeaponPartKind::CosmeticAmmo;
     }
 
-    inline std::uint64_t makeGeneratedWeaponBodySetKey(
-        std::uint64_t equippedWeaponKey,
-        const GeneratedSourceCompleteness& sourceCompleteness,
-        std::uint64_t bodySetEpoch)
+    inline std::uint64_t makeGeneratedWeaponBodySetKey(std::uint64_t equippedWeaponKey,
+        const GeneratedSourceCompleteness& sourceCompleteness, std::uint64_t bodySetEpoch)
     {
         if (equippedWeaponKey == 0 || sourceCompleteness.signature == 0 || bodySetEpoch == 0) {
             return 0;

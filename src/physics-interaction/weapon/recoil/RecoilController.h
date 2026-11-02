@@ -1,30 +1,33 @@
 #pragma once
 
-#include "physics-interaction/weapon/recoil/RecoilProfiles.h"
 #include "physics-interaction/weapon/recoil/RecoilMath.h"
+#include "physics-interaction/weapon/recoil/RecoilProfiles.h"
 
 namespace rock::weapon_recoil_policy
 {
     // FRIK resolves these roles against the physically carried weapon, not
     // bLeftHandedMode. Primary is always the actual firing hand.
-    enum class HandMask : std::uint32_t { None = 0, Primary = 1, Offhand = 2 };
+    enum class HandMask : std::uint32_t
+    {
+        None = 0,
+        Primary = 1,
+        Offhand = 2
+    };
 
-    [[nodiscard]] inline constexpr HandMask deliveryHand(
-        const bool ownedCarry) noexcept
+    [[nodiscard]] inline constexpr HandMask deliveryHand(const bool ownedCarry) noexcept
     {
         // Owned carry/solver publishes already-recoiled weapon AND hand targets.
         // FRIK must not add a second kick to those targets next skeleton frame.
         return ownedCarry ? HandMask::None : HandMask::Primary;
     }
 
-    [[nodiscard]] inline constexpr bool needsOneHandPresentation(
-        const bool kickActive, const bool needsNeutralFrame) noexcept
+    [[nodiscard]] inline constexpr bool needsOneHandPresentation(const bool kickActive,
+        const bool needsNeutralFrame) noexcept
     {
         return kickActive || needsNeutralFrame;
     }
 
-    [[nodiscard]] inline constexpr bool canPresentRightRecoilForGrip(
-        const bool gripping, const bool closeSupportAssist,
+    [[nodiscard]] inline constexpr bool canPresentRightRecoilForGrip(const bool gripping, const bool closeSupportAssist,
         const bool transferredPrimaryGrip) noexcept
     {
         // Close support follows the firing-hand aim and must share its recoil.
@@ -37,7 +40,7 @@ namespace rock::weapon_recoil_policy
         std::uint32_t formID{ 0 };
         Family family{ Family::Default };
         float familyPercent{ 100.0f };
-        std::uintptr_t weaponNode{ 0 };  // Identity only; never dereferenced.
+        std::uintptr_t weaponNode{ 0 }; // Identity only; never dereferenced.
         std::uint64_t weaponGeneration{ 0 };
         std::uint64_t equippedOwnership{ 0 };
         Profile profile{ Profile::OneHand };
@@ -60,7 +63,12 @@ namespace rock::weapon_recoil_policy
         bool valid{ false };
         bool ready{ false };
 
-        void invalidate() noexcept { valid = false; ready = false; }
+        void invalidate() noexcept
+        {
+            valid = false;
+            ready = false;
+        }
+
         void beginUpdate(const bool enabled) noexcept
         {
             if (!enabled) {
@@ -69,6 +77,7 @@ namespace rock::weapon_recoil_policy
             ready = valid && sequence != observed;
             observed = sequence;
         }
+
         [[nodiscard]] bool consume(const SampleIdentity& current) noexcept
         {
             const bool accepted = ready && valid && identity == current;
@@ -77,4 +86,3 @@ namespace rock::weapon_recoil_policy
         }
     };
 }
-

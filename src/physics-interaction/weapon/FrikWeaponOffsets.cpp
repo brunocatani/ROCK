@@ -51,7 +51,9 @@ namespace rock::frik_weapon_offsets
 
         [[nodiscard]] std::int64_t ticks() noexcept
         {
-            return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+            return std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                .count();
         }
 
         void readDirectory()
@@ -76,13 +78,15 @@ namespace rock::frik_weapon_offsets
                         }
                         ++files;
                     } catch (const std::exception& e) {
-                        ROCK_LOG_WARN(Weapon, "FRIK weapon offset file {} skipped: {}", path.filename().string(), e.what());
+                        ROCK_LOG_WARN(Weapon, "FRIK weapon offset file {} skipped: {}", path.filename().string(),
+                            e.what());
                     }
                 }
             }
             s_entries = std::move(entries);
             ++s_revision;
-            ROCK_LOG_INFO(Weapon, "FRIK user weapon offsets: {} entries from {} files in {}", s_entries.size(), files, s_directory.string());
+            ROCK_LOG_INFO(Weapon, "FRIK user weapon offsets: {} entries from {} files in {}", s_entries.size(), files,
+                s_directory.string());
         }
 
         void startWatch()
@@ -92,12 +96,14 @@ namespace rock::frik_weapon_offsets
                 return;
             }
             try {
-                s_watch = std::make_unique<filewatch::FileWatch<std::string>>(s_directory.string(), [](const std::string&, filewatch::Event) {
-                    s_lastEventTicks.store(ticks(), std::memory_order_release);
-                    s_reloadPending.store(true, std::memory_order_release);
-                });
+                s_watch = std::make_unique<filewatch::FileWatch<std::string>>(s_directory.string(),
+                    [](const std::string&, filewatch::Event) {
+                        s_lastEventTicks.store(ticks(), std::memory_order_release);
+                        s_reloadPending.store(true, std::memory_order_release);
+                    });
             } catch (const std::exception& e) {
-                ROCK_LOG_WARN(Weapon, "FRIK weapon offset folder cannot be watched ({}); changes apply after a restart", e.what());
+                ROCK_LOG_WARN(Weapon, "FRIK weapon offset folder cannot be watched ({}); changes apply after a restart",
+                    e.what());
             }
         }
 
@@ -120,7 +126,8 @@ namespace rock::frik_weapon_offsets
     {
         // The watcher publishes only a flag; editor and FRIK save bursts are
         // coalesced here without sleeping on either thread.
-        if (!s_reloadPending.load(std::memory_order_acquire) || ticks() - s_lastEventTicks.load(std::memory_order_acquire) < 200) {
+        if (!s_reloadPending.load(std::memory_order_acquire) ||
+            ticks() - s_lastEventTicks.load(std::memory_order_acquire) < 200) {
             return;
         }
         if (s_reloadPending.exchange(false, std::memory_order_acq_rel)) {
@@ -128,14 +135,16 @@ namespace rock::frik_weapon_offsets
         }
     }
 
-    std::optional<Override> find(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot, const bool inPowerArmor)
+    std::optional<Override> find(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot,
+        const bool inPowerArmor)
     {
         // Opt-in: without the setting no file affects any weapon.
         if (!g_rockConfig.rockFrikUserWeaponOffsets || !weapon || s_entries.empty()) {
             return std::nullopt;
         }
         for (const auto& slot : s_cache) {
-            if (slot.used && slot.weapon == weapon && slot.root == weaponRoot && slot.powerArmor == inPowerArmor && slot.revision == s_revision) {
+            if (slot.used && slot.weapon == weapon && slot.root == weaponRoot && slot.powerArmor == inPowerArmor &&
+                slot.revision == s_revision) {
                 return slot.result;
             }
         }
@@ -143,11 +152,18 @@ namespace rock::frik_weapon_offsets
         const auto key = policy::weaponKey(name, gripStockName(weaponRoot));
         auto& slot = s_cache[s_nextSlot];
         s_nextSlot = (s_nextSlot + 1) % s_cache.size();
-        slot = { .weapon = weapon, .root = weaponRoot, .revision = s_revision, .powerArmor = inPowerArmor, .used = true,
+        slot = { .weapon = weapon,
+            .root = weaponRoot,
+            .revision = s_revision,
+            .powerArmor = inPowerArmor,
+            .used = true,
             .result = policy::resolve(s_entries, key, inPowerArmor) };
         if (slot.result) {
-            ROCK_LOG_INFO(Weapon, "FRIK user weapon offset applies to {:08X} key='{}' powerArmor={} weapon={} primaryHand={} scale={:.4f}",
-                weapon->formID, key, inPowerArmor, slot.result->hasWeaponOffset, slot.result->hasPrimaryHandRotation, slot.result->weaponScale());
+            ROCK_LOG_INFO(Weapon,
+                "FRIK user weapon offset applies to {:08X} key='{}' powerArmor={} weapon={} primaryHand={} "
+                "scale={:.4f}",
+                weapon->formID, key, inPowerArmor, slot.result->hasWeaponOffset, slot.result->hasPrimaryHandRotation,
+                slot.result->weaponScale());
         }
         return slot.result;
     }

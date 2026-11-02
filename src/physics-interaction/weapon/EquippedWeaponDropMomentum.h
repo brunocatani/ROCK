@@ -32,20 +32,17 @@ namespace rock::equipped_weapon_drop_momentum
         std::uintptr_t discoveredSystemInstance) noexcept
     {
         return discoveredBodyId != 0x7FFF'FFFF && discoveredSystemInstance != 0 &&
-               nativeIdentity.bodyId == discoveredBodyId &&
-               nativeIdentity.motionId == discoveredMotionId &&
-               nativeIdentity.physicsSystemInstanceIdentity == discoveredSystemInstance;
+            nativeIdentity.bodyId == discoveredBodyId && nativeIdentity.motionId == discoveredMotionId &&
+            nativeIdentity.physicsSystemInstanceIdentity == discoveredSystemInstance;
     }
 
     [[nodiscard]] constexpr bool sameBodyIdentity(const BodyIdentityKey& lhs, const BodyIdentityKey& rhs) noexcept
     {
-        return lhs.bodyId == rhs.bodyId &&
-               lhs.motionId == rhs.motionId &&
-               lhs.motionFirstBodyId == rhs.motionFirstBodyId &&
-               lhs.shapeIdentity == rhs.shapeIdentity &&
-               lhs.owningNodeIdentity == rhs.owningNodeIdentity &&
-               lhs.collisionObjectIdentity == rhs.collisionObjectIdentity &&
-               lhs.physicsSystemInstanceIdentity == rhs.physicsSystemInstanceIdentity;
+        return lhs.bodyId == rhs.bodyId && lhs.motionId == rhs.motionId &&
+            lhs.motionFirstBodyId == rhs.motionFirstBodyId && lhs.shapeIdentity == rhs.shapeIdentity &&
+            lhs.owningNodeIdentity == rhs.owningNodeIdentity &&
+            lhs.collisionObjectIdentity == rhs.collisionObjectIdentity &&
+            lhs.physicsSystemInstanceIdentity == rhs.physicsSystemInstanceIdentity;
     }
 
     inline bool completedSettleStep(std::uint64_t discoverySequence, std::uint64_t completedSequence) noexcept
@@ -53,14 +50,11 @@ namespace rock::equipped_weapon_drop_momentum
         return completedSequence > discoverySequence;
     }
 
-    inline bool publicationProgressStalled(
-        std::uint64_t lastProgressSequence,
-        std::uint64_t completedSequence,
+    inline bool publicationProgressStalled(std::uint64_t lastProgressSequence, std::uint64_t completedSequence,
         std::uint64_t maximumIdleSolveSteps) noexcept
     {
-        return maximumIdleSolveSteps > 0 &&
-               completedSequence >= lastProgressSequence &&
-               completedSequence - lastProgressSequence >= maximumIdleSolveSteps;
+        return maximumIdleSolveSteps > 0 && completedSequence >= lastProgressSequence &&
+            completedSequence - lastProgressSequence >= maximumIdleSolveSteps;
     }
 
 }

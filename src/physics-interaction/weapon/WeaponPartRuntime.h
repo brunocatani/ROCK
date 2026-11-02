@@ -39,15 +39,8 @@ namespace rock::weapon_part_runtime
         NonExclusive = 1u << 8,
     };
 
-    inline constexpr std::uint32_t kMatcherTargetFlags =
-        MatchBodyId |
-        MatchSourceRoot |
-        MatchSourceName |
-        MatchPartKind |
-        MatchReloadRole |
-        MatchSupportRole |
-        MatchSocketRole |
-        MatchActionRole;
+    inline constexpr std::uint32_t kMatcherTargetFlags = MatchBodyId | MatchSourceRoot | MatchSourceName |
+        MatchPartKind | MatchReloadRole | MatchSupportRole | MatchSocketRole | MatchActionRole;
 
     inline constexpr std::uint32_t kImplementedTargetFlags = kMatcherTargetFlags | NonExclusive;
 
@@ -114,10 +107,8 @@ namespace rock::weapon_part_runtime
 
     inline bool targetAppliesToGeneration(const Target& target, std::uint64_t weaponGenerationKey)
     {
-        return target.active &&
-               target.ownerToken != 0 &&
-               target.grabMode != GrabMode::None &&
-               (target.weaponGenerationKey == 0 || target.weaponGenerationKey == weaponGenerationKey);
+        return target.active && target.ownerToken != 0 && target.grabMode != GrabMode::None &&
+            (target.weaponGenerationKey == 0 || target.weaponGenerationKey == weaponGenerationKey);
     }
 
     inline bool targetHasUsableMatcher(const Target& target)
@@ -137,15 +128,9 @@ namespace rock::weapon_part_runtime
         return (target.flags & kMatcherTargetFlags) != 0;
     }
 
-    inline bool targetIsExclusive(const Target& target)
-    {
-        return (target.flags & NonExclusive) == 0;
-    }
+    inline bool targetIsExclusive(const Target& target) { return (target.flags & NonExclusive) == 0; }
 
-    inline bool sourceNamesMatch(std::string_view lhs, std::string_view rhs)
-    {
-        return !lhs.empty() && lhs == rhs;
-    }
+    inline bool sourceNamesMatch(std::string_view lhs, std::string_view rhs) { return !lhs.empty() && lhs == rhs; }
 
     inline bool targetMatchesContact(const Target& target, const Contact& contact)
     {
@@ -158,7 +143,8 @@ namespace rock::weapon_part_runtime
         if ((target.flags & MatchSourceRoot) != 0 && target.sourceRoot != contact.sourceRoot) {
             return false;
         }
-        if ((target.flags & MatchSourceName) != 0 && !sourceNamesMatch(fixedStringView(target.sourceName), contact.sourceName)) {
+        if ((target.flags & MatchSourceName) != 0 &&
+            !sourceNamesMatch(fixedStringView(target.sourceName), contact.sourceName)) {
             return false;
         }
         if ((target.flags & MatchPartKind) != 0 && target.partKind != contact.partKind) {

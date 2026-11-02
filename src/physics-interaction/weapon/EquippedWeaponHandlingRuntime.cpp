@@ -7,18 +7,9 @@ namespace rock::equipped_weapon_handling_runtime
         EquippedWeaponHandlingSettings s_settings{};
     }
 
-    void publish(const EquippedWeaponHandlingSettings& settings) noexcept
-    {
-        s_settings = settings;
-    }
+    void publish(const EquippedWeaponHandlingSettings& settings) noexcept { s_settings = settings; }
 
-    const EquippedWeaponHandlingSettings& current() noexcept
-    {
-        return s_settings;
-    }
+    const EquippedWeaponHandlingSettings& current() noexcept { return s_settings; }
 
-    void reset() noexcept
-    {
-        s_settings = {};
-    }
+    void reset() noexcept { s_settings = {}; }
 }

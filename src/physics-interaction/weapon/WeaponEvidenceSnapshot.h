@@ -18,22 +18,30 @@ namespace rock
         using Records = std::vector<WeaponCollisionProfileEvidenceDescriptor>;
 
         WeaponEvidenceSnapshot() = default;
+
         explicit WeaponEvidenceSnapshot(std::shared_ptr<const Records> records) : _records(std::move(records)) {}
 
         [[nodiscard]] std::span<const WeaponCollisionProfileEvidenceDescriptor> records() const
         {
-            return _records ? std::span<const WeaponCollisionProfileEvidenceDescriptor>{ *_records } :
-                              std::span<const WeaponCollisionProfileEvidenceDescriptor>{};
+            return _records ? std::span<const WeaponCollisionProfileEvidenceDescriptor>{ *_records }
+                            : std::span<const WeaponCollisionProfileEvidenceDescriptor>{};
         }
+
         [[nodiscard]] auto begin() const { return records().begin(); }
+
         [[nodiscard]] auto end() const { return records().end(); }
+
         [[nodiscard]] auto size() const { return records().size(); }
+
         [[nodiscard]] const auto& operator[](std::size_t index) const { return records()[index]; }
+
         [[nodiscard]] const WeaponCollisionProfileEvidenceDescriptor* find(std::uint32_t bodyId) const
         {
-            if (bodyId == 0x7FFF'FFFF) return nullptr;
+            if (bodyId == 0x7FFF'FFFF)
+                return nullptr;
             for (const auto& record : records())
-                if (record.valid && record.bodyId == bodyId) return &record;
+                if (record.valid && record.bodyId == bodyId)
+                    return &record;
             return nullptr;
         }
 

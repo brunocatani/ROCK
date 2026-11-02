@@ -17,24 +17,42 @@
 
 namespace rock::native_equipped_weapon_draw
 {
-    static_assert(
-        offsetof(RE::PlayerCharacter, drawSheatheSafetyTimer) == 0x1130);
+    static_assert(offsetof(RE::PlayerCharacter, drawSheatheSafetyTimer) == 0x1130);
 
     namespace
     {
         constexpr std::array<std::uint8_t, 7> kExpectedPrepareDrawEntry{
-            0x80, 0x89, 0xA3, 0x12, 0x00, 0x00, 0x80,
+            0x80,
+            0x89,
+            0xA3,
+            0x12,
+            0x00,
+            0x00,
+            0x80,
         };
         constexpr std::array<std::uint8_t, 10> kExpectedApplyAcceptedDrawEntry{
-            0x48, 0x89, 0x5C, 0x24, 0x08,
+            0x48,
+            0x89,
+            0x5C,
+            0x24,
+            0x08,
             0x57,
-            0x48, 0x83, 0xEC, 0x20,
+            0x48,
+            0x83,
+            0xEC,
+            0x20,
         };
         constexpr std::array<std::uint8_t, 10> kExpectedRefreshEquipmentEntry{
             0x53,
             0x55,
             0x56,
-            0x48, 0x81, 0xEC, 0xA0, 0x00, 0x00, 0x00,
+            0x48,
+            0x81,
+            0xEC,
+            0xA0,
+            0x00,
+            0x00,
+            0x00,
         };
 
         struct ExactCurrent
@@ -46,8 +64,7 @@ namespace rock::native_equipped_weapon_draw
         struct PartialActionWitness
         {
             Identity identity{};
-            weapon_transition_animation_acceleration::ActivationEvidence
-                evidenceAtReturn{};
+            weapon_transition_animation_acceleration::ActivationEvidence evidenceAtReturn{};
             bool active{ false };
         };
 
@@ -59,55 +76,41 @@ namespace rock::native_equipped_weapon_draw
         [[nodiscard]] bool prepareDrawEntryMatchesVerifiedRuntime() noexcept
         {
             static const bool matches = []() noexcept {
-                if (!REL::Module::IsVR() ||
-                    REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) {
+                if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) {
                     return false;
                 }
 
                 std::array<std::uint8_t, kExpectedPrepareDrawEntry.size()> actual{};
-                const auto address = REL::Offset(
-                    offsets::kFunc_PrepareEquippedWeaponDraw).address();
-                return native_memory::guardedCopyFromMemory(
-                           reinterpret_cast<const void*>(address),
-                           actual.data(),
+                const auto address = REL::Offset(offsets::kFunc_PrepareEquippedWeaponDraw).address();
+                return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), actual.data(),
                            actual.size()) &&
-                       actual == kExpectedPrepareDrawEntry;
+                    actual == kExpectedPrepareDrawEntry;
             }();
             return matches;
         }
 
         template <std::size_t N>
-        [[nodiscard]] bool entryMatches(
-            const std::uintptr_t offset,
+        [[nodiscard]] bool entryMatches(const std::uintptr_t offset,
             const std::array<std::uint8_t, N>& expected) noexcept
         {
             std::array<std::uint8_t, N> actual{};
             const auto address = REL::Offset(offset).address();
-            return native_memory::guardedCopyFromMemory(
-                       reinterpret_cast<const void*>(address),
-                       actual.data(),
+            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), actual.data(),
                        actual.size()) &&
-                   actual == expected;
+                actual == expected;
         }
 
         [[nodiscard]] bool partialDrawCompletionMatchesVerifiedRuntime() noexcept
         {
             static const bool matches = []() noexcept {
-                return REL::Module::IsVR() &&
-                       REL::Module::get().version() ==
-                           F4SE::RUNTIME_VR_1_2_72 &&
-                       entryMatches(
-                           offsets::kFunc_ApplyAcceptedWeaponDraw,
-                           kExpectedApplyAcceptedDrawEntry) &&
-                       entryMatches(
-                           offsets::kFunc_RefreshActorEquipmentAfterAction,
-                           kExpectedRefreshEquipmentEntry);
+                return REL::Module::IsVR() && REL::Module::get().version() == F4SE::RUNTIME_VR_1_2_72 &&
+                    entryMatches(offsets::kFunc_ApplyAcceptedWeaponDraw, kExpectedApplyAcceptedDrawEntry) &&
+                    entryMatches(offsets::kFunc_RefreshActorEquipmentAfterAction, kExpectedRefreshEquipmentEntry);
             }();
             return matches;
         }
 
-        [[nodiscard]] ExactCurrent resolveExactCurrent(
-            const Identity& expected) noexcept
+        [[nodiscard]] ExactCurrent resolveExactCurrent(const Identity& expected) noexcept
         {
             ExactCurrent current{};
             current.player = f4vr::getPlayer();
@@ -120,8 +123,7 @@ namespace rock::native_equipped_weapon_draw
                 current.result = SubmitResult::MissingEquippedWeapon;
                 return current;
             }
-            if (observed.formID != expected.formID ||
-                observed.instanceData != expected.instanceData ||
+            if (observed.formID != expected.formID || observed.instanceData != expected.instanceData ||
                 observed.equipIndex != expected.equipIndex) {
                 current.result = SubmitResult::IdentityChanged;
                 return current;
@@ -131,11 +133,8 @@ namespace rock::native_equipped_weapon_draw
             return current;
         }
 
-        void requestAnimationAcceleration(
-            RE::PlayerCharacter* player,
-            const Identity& identity,
-            const weapon_transition_animation_acceleration_policy::Direction
-                direction) noexcept
+        void requestAnimationAcceleration(RE::PlayerCharacter* player, const Identity& identity,
+            const weapon_transition_animation_acceleration_policy::Direction direction) noexcept
         {
             (void)weapon_transition_animation_acceleration::request(
                 weapon_transition_animation_acceleration::RequestInput{
@@ -149,27 +148,20 @@ namespace rock::native_equipped_weapon_draw
                 });
         }
 
-        [[nodiscard]] weapon_transition_animation_acceleration::
-            ActivationEvidence observeDrawActivationEvidence(
-                RE::PlayerCharacter* player,
-                const Identity& identity) noexcept
+        [[nodiscard]] weapon_transition_animation_acceleration::ActivationEvidence observeDrawActivationEvidence(
+            RE::PlayerCharacter* player, const Identity& identity) noexcept
         {
-            return weapon_transition_animation_acceleration::
-                observeExactLeaseActivation(
-                    player,
-                    weapon_transition_animation_acceleration::Identity{
-                        .formID = identity.formID,
-                        .instanceData = identity.instanceData,
-                        .equipIndex = identity.equipIndex,
-                    },
-                    weapon_transition_animation_acceleration_policy::
-                        Direction::Draw);
+            return weapon_transition_animation_acceleration::observeExactLeaseActivation(player,
+                weapon_transition_animation_acceleration::Identity{
+                    .formID = identity.formID,
+                    .instanceData = identity.instanceData,
+                    .equipIndex = identity.equipIndex,
+                },
+                weapon_transition_animation_acceleration_policy::Direction::Draw);
         }
 
-        void copyEvidence(
-            Result& result,
-            const weapon_transition_animation_acceleration::
-                ActivationEvidence& evidence) noexcept
+        void copyEvidence(Result& result,
+            const weapon_transition_animation_acceleration::ActivationEvidence& evidence) noexcept
         {
             result.evidenceSequence = evidence.sequence;
             result.matchedActivations = evidence.matchedActivations;
@@ -178,15 +170,11 @@ namespace rock::native_equipped_weapon_draw
             result.updatedActiveClips = evidence.updatedActiveClips;
         }
 
-        void recordRejectedSubmissionWitness(
-            const Identity& identity,
-            const weapon_transition_animation_acceleration::
-                ActivationEvidence& before,
-            const weapon_transition_animation_acceleration::
-                ActivationEvidence& after) noexcept
+        void recordRejectedSubmissionWitness(const Identity& identity,
+            const weapon_transition_animation_acceleration::ActivationEvidence& before,
+            const weapon_transition_animation_acceleration::ActivationEvidence& after) noexcept
         {
-            weapon_transition_animation_acceleration::ActivationEvidence
-                submissionEvidence = after;
+            weapon_transition_animation_acceleration::ActivationEvidence submissionEvidence = after;
             submissionEvidence.activeClips = 0;
             submissionEvidence.updatedActiveClips = 0;
             submissionEvidence.activeClipIdentities.fill(0);
@@ -203,17 +191,13 @@ namespace rock::native_equipped_weapon_draw
                     }
                 }
                 if (!existedBeforeSubmission &&
-                    submissionEvidence.activeClips <
-                        submissionEvidence.activeClipIdentities.size()) {
-                    submissionEvidence.activeClipIdentities
-                        [submissionEvidence.activeClips++] = submittedClip;
+                    submissionEvidence.activeClips < submissionEvidence.activeClipIdentities.size()) {
+                    submissionEvidence.activeClipIdentities[submissionEvidence.activeClips++] = submittedClip;
                 }
             }
 
-            if (before.exactLease && after.exactLease &&
-                before.sequence != 0 && before.sequence == after.sequence &&
-                after.matchedActivations > before.matchedActivations &&
-                submissionEvidence.activeClips > 0) {
+            if (before.exactLease && after.exactLease && before.sequence != 0 && before.sequence == after.sequence &&
+                after.matchedActivations > before.matchedActivations && submissionEvidence.activeClips > 0) {
                 s_partialActionWitness = PartialActionWitness{
                     .identity = identity,
                     .evidenceAtReturn = submissionEvidence,
@@ -227,29 +211,19 @@ namespace rock::native_equipped_weapon_draw
             }
         }
 
-        [[nodiscard]] bool partialActionWitnessProvesAcceptance(
-            const Identity& identity,
-            const weapon_transition_animation_acceleration::
-                ActivationEvidence& evidence) noexcept
+        [[nodiscard]] bool partialActionWitnessProvesAcceptance(const Identity& identity,
+            const weapon_transition_animation_acceleration::ActivationEvidence& evidence) noexcept
         {
-            return s_partialActionWitness.active &&
-                   s_partialActionWitness.identity == identity &&
-                   evidence.exactLease && evidence.sequence != 0 &&
-                   evidence.sequence ==
-                       s_partialActionWitness.evidenceAtReturn.sequence &&
-                   evidence.matchedActivations >=
-                       s_partialActionWitness.evidenceAtReturn.
-                           matchedActivations &&
-                   evidence.hasActiveUpdatedClips() &&
-                   evidence.hasUpdatedClipFrom(
-                       s_partialActionWitness.evidenceAtReturn);
+            return s_partialActionWitness.active && s_partialActionWitness.identity == identity &&
+                evidence.exactLease && evidence.sequence != 0 &&
+                evidence.sequence == s_partialActionWitness.evidenceAtReturn.sequence &&
+                evidence.matchedActivations >= s_partialActionWitness.evidenceAtReturn.matchedActivations &&
+                evidence.hasActiveUpdatedClips() &&
+                evidence.hasUpdatedClipFrom(s_partialActionWitness.evidenceAtReturn);
         }
 
-        [[nodiscard]] Result recoverPartiallyAcceptedDraw(
-            const ExactCurrent& current,
-            const Identity& expected,
-            const weapon_transition_animation_acceleration::
-                ActivationEvidence& evidence) noexcept
+        [[nodiscard]] Result recoverPartiallyAcceptedDraw(const ExactCurrent& current, const Identity& expected,
+            const weapon_transition_animation_acceleration::ActivationEvidence& evidence) noexcept
         {
             Result result{};
             result.result = current.result;
@@ -260,12 +234,10 @@ namespace rock::native_equipped_weapon_draw
 
             result.stateBefore = f4vr::getNativeWeaponState(current.player);
             result.stateAfter = result.stateBefore;
-            if (result.stateBefore != static_cast<std::uint32_t>(
-                    held_weapon_equip_state_policy::NativeWeaponState::
-                        Sheathed) &&
-                result.stateBefore != static_cast<std::uint32_t>(
-                    held_weapon_equip_state_policy::NativeWeaponState::
-                        WantToDraw)) {
+            if (result.stateBefore !=
+                    static_cast<std::uint32_t>(held_weapon_equip_state_policy::NativeWeaponState::Sheathed) &&
+                result.stateBefore !=
+                    static_cast<std::uint32_t>(held_weapon_equip_state_policy::NativeWeaponState::WantToDraw)) {
                 result.result = SubmitResult::RecoveryStateChanged;
                 return result;
             }
@@ -282,66 +254,47 @@ namespace rock::native_equipped_weapon_draw
 
             float drawSheatheSafetyTimer = 0.0f;
             if (!native_memory::tryReadValue(
-                    reinterpret_cast<const float*>(
-                        REL::Offset(
-                            offsets::kData_DrawSheatheSafetyTimer)
-                            .address()),
+                    reinterpret_cast<const float*>(REL::Offset(offsets::kData_DrawSheatheSafetyTimer).address()),
                     drawSheatheSafetyTimer) ||
                 !std::isfinite(drawSheatheSafetyTimer)) {
                 result.result = SubmitResult::PartialRecoveryUnavailable;
                 return result;
             }
 
-            const bool stateAccepted = current.player->SetWeaponState(
-                RE::WEAPON_STATE::kDrawing);
+            const bool stateAccepted = current.player->SetWeaponState(RE::WEAPON_STATE::kDrawing);
             result.stateAfter = f4vr::getNativeWeaponState(current.player);
             if (!stateAccepted ||
-                (result.stateAfter != static_cast<std::uint32_t>(
-                     held_weapon_equip_state_policy::NativeWeaponState::
-                         Drawing) &&
-                    result.stateAfter != static_cast<std::uint32_t>(
-                        held_weapon_equip_state_policy::NativeWeaponState::
-                            Drawn))) {
+                (result.stateAfter !=
+                        static_cast<std::uint32_t>(held_weapon_equip_state_policy::NativeWeaponState::Drawing) &&
+                    result.stateAfter !=
+                        static_cast<std::uint32_t>(held_weapon_equip_state_policy::NativeWeaponState::Drawn))) {
                 result.result = SubmitResult::PartialRecoveryRejected;
                 return result;
             }
-            current.player->drawSheatheSafetyTimer =
-                drawSheatheSafetyTimer;
+            current.player->drawSheatheSafetyTimer = drawSheatheSafetyTimer;
 
-            using ApplyAcceptedWeaponDraw = void (*)(
-                RE::PlayerCharacter*, bool);
+            using ApplyAcceptedWeaponDraw = void (*)(RE::PlayerCharacter*, bool);
             const auto apply = reinterpret_cast<ApplyAcceptedWeaponDraw>(
-                REL::Offset(
-                    offsets::kFunc_ApplyAcceptedWeaponDraw).address());
+                REL::Offset(offsets::kFunc_ApplyAcceptedWeaponDraw).address());
             apply(current.player, false);
 
-            using RefreshActorEquipmentAfterAction = void (*)(
-                RE::PlayerCharacter*,
-                std::uintptr_t,
-                std::uintptr_t,
-                std::uintptr_t);
-            const auto refresh =
-                reinterpret_cast<RefreshActorEquipmentAfterAction>(
-                    REL::Offset(
-                        offsets::kFunc_RefreshActorEquipmentAfterAction)
-                        .address());
+            using RefreshActorEquipmentAfterAction =
+                void (*)(RE::PlayerCharacter*, std::uintptr_t, std::uintptr_t, std::uintptr_t);
+            const auto refresh = reinterpret_cast<RefreshActorEquipmentAfterAction>(
+                REL::Offset(offsets::kFunc_RefreshActorEquipmentAfterAction).address());
             refresh(current.player, 0, 0, 0);
 
             Identity observed{};
-            if (!captureCurrentIdentity(observed) ||
-                observed.formID != expected.formID ||
-                observed.instanceData != expected.instanceData ||
-                observed.equipIndex != expected.equipIndex) {
+            if (!captureCurrentIdentity(observed) || observed.formID != expected.formID ||
+                observed.instanceData != expected.instanceData || observed.equipIndex != expected.equipIndex) {
                 result.result = SubmitResult::IdentityChanged;
                 return result;
             }
             result.stateAfter = f4vr::getNativeWeaponState(current.player);
-            if (result.stateAfter != static_cast<std::uint32_t>(
-                    held_weapon_equip_state_policy::NativeWeaponState::
-                        Drawing) &&
-                result.stateAfter != static_cast<std::uint32_t>(
-                    held_weapon_equip_state_policy::NativeWeaponState::
-                        Drawn)) {
+            if (result.stateAfter !=
+                    static_cast<std::uint32_t>(held_weapon_equip_state_policy::NativeWeaponState::Drawing) &&
+                result.stateAfter !=
+                    static_cast<std::uint32_t>(held_weapon_equip_state_policy::NativeWeaponState::Drawn)) {
                 result.result = SubmitResult::PartialRecoveryRejected;
                 return result;
             }
@@ -349,11 +302,8 @@ namespace rock::native_equipped_weapon_draw
             return result;
         }
 
-        [[nodiscard]] Result submitResolvedDraw(
-            const ExactCurrent& current,
-            const Identity& expected,
-            const bool prepareEquipRecovery,
-            const bool triggerEquip = false) noexcept
+        [[nodiscard]] Result submitResolvedDraw(const ExactCurrent& current, const Identity& expected,
+            const bool prepareEquipRecovery, const bool triggerEquip = false) noexcept
         {
             Result result{};
             result.result = current.result;
@@ -363,48 +313,33 @@ namespace rock::native_equipped_weapon_draw
 
             result.stateBefore = f4vr::getNativeWeaponState(current.player);
             result.stateAfter = result.stateBefore;
-            if (!held_weapon_equip_state_policy::isValidNativeWeaponState(
-                    result.stateBefore)) {
+            if (!held_weapon_equip_state_policy::isValidNativeWeaponState(result.stateBefore)) {
                 result.result = SubmitResult::InvalidWeaponState;
                 return result;
             }
-            if (!held_weapon_equip_state_policy::shouldSubmitDrawFollowup(
-                    result.stateBefore)) {
+            if (!held_weapon_equip_state_policy::shouldSubmitDrawFollowup(result.stateBefore)) {
                 // A swap into an already drawn hand stays Drawn while native
                 // plays the new weapon's equip clip; the lease admits that
                 // late clip (Drawn is accelerated for Draw) exactly as it
                 // does for a native favorites or Pip-Boy equip.
-                if (result.stateBefore == static_cast<std::uint32_t>(
-                        held_weapon_equip_state_policy::NativeWeaponState::
-                            Drawing) ||
-                    result.stateBefore == static_cast<std::uint32_t>(
-                        held_weapon_equip_state_policy::NativeWeaponState::
-                            Drawn)) {
-                    requestAnimationAcceleration(
-                        current.player,
-                        expected,
-                        weapon_transition_animation_acceleration_policy::
-                            Direction::Draw);
+                if (result.stateBefore ==
+                        static_cast<std::uint32_t>(held_weapon_equip_state_policy::NativeWeaponState::Drawing) ||
+                    result.stateBefore ==
+                        static_cast<std::uint32_t>(held_weapon_equip_state_policy::NativeWeaponState::Drawn)) {
+                    requestAnimationAcceleration(current.player, expected,
+                        weapon_transition_animation_acceleration_policy::Direction::Draw);
                 }
                 result.result = SubmitResult::AlreadyDrawingOrDrawn;
                 return result;
             }
 
-            if (result.stateBefore == static_cast<std::uint32_t>(
-                    held_weapon_equip_state_policy::NativeWeaponState::
-                        Sheathed) ||
-                result.stateBefore == static_cast<std::uint32_t>(
-                    held_weapon_equip_state_policy::NativeWeaponState::
-                        WantToDraw)) {
-                const auto priorEvidence =
-                    observeDrawActivationEvidence(current.player, expected);
-                if (partialActionWitnessProvesAcceptance(
-                        expected,
-                        priorEvidence)) {
-                    return recoverPartiallyAcceptedDraw(
-                        current,
-                        expected,
-                        priorEvidence);
+            if (result.stateBefore ==
+                    static_cast<std::uint32_t>(held_weapon_equip_state_policy::NativeWeaponState::Sheathed) ||
+                result.stateBefore ==
+                    static_cast<std::uint32_t>(held_weapon_equip_state_policy::NativeWeaponState::WantToDraw)) {
+                const auto priorEvidence = observeDrawActivationEvidence(current.player, expected);
+                if (partialActionWitnessProvesAcceptance(expected, priorEvidence)) {
+                    return recoverPartiallyAcceptedDraw(current, expected, priorEvidence);
                 }
             }
 
@@ -413,8 +348,9 @@ namespace rock::native_equipped_weapon_draw
                     weapon_transition_animation_acceleration_policy::Direction::Draw);
                 const auto graph = native_trigger_equip_graph::prepare(current.player);
                 if (graph != native_trigger_equip_graph::Result::Ready) {
-                    result.result = graph == native_trigger_equip_graph::Result::Pending ?
-                        SubmitResult::GraphPending : SubmitResult::GraphPreparationUnavailable;
+                    result.result = graph == native_trigger_equip_graph::Result::Pending
+                        ? SubmitResult::GraphPending
+                        : SubmitResult::GraphPreparationUnavailable;
                     return result;
                 }
                 const auto afterGraph = resolveExactCurrent(expected);
@@ -433,15 +369,13 @@ namespace rock::native_equipped_weapon_draw
             }
 
             if (prepareEquipRecovery) {
-                if (result.stateBefore != static_cast<std::uint32_t>(
-                        held_weapon_equip_state_policy::NativeWeaponState::
-                            Sheathed)) {
+                if (result.stateBefore !=
+                    static_cast<std::uint32_t>(held_weapon_equip_state_policy::NativeWeaponState::Sheathed)) {
                     result.result = SubmitResult::RecoveryStateChanged;
                     return result;
                 }
                 if (!prepareDrawEntryMatchesVerifiedRuntime()) {
-                    result.result =
-                        SubmitResult::RecoveryPreparationUnavailable;
+                    result.result = SubmitResult::RecoveryPreparationUnavailable;
                     return result;
                 }
 
@@ -450,34 +384,23 @@ namespace rock::native_equipped_weapon_draw
                 held_weapon_instant_transition::prepareInstantDraw(current.player);
             }
 
-            requestAnimationAcceleration(
-                current.player,
-                expected,
-                weapon_transition_animation_acceleration_policy::Direction::
-                    Draw);
-            const auto evidenceBefore =
-                observeDrawActivationEvidence(current.player, expected);
+            requestAnimationAcceleration(current.player, expected,
+                weapon_transition_animation_acceleration_policy::Direction::Draw);
+            const auto evidenceBefore = observeDrawActivationEvidence(current.player, expected);
             current.player->DrawWeaponMagicHands(true);
             result.stateAfter = f4vr::getNativeWeaponState(current.player);
-            const auto evidenceAfter =
-                observeDrawActivationEvidence(current.player, expected);
-            copyEvidence(
-                result,
-                evidenceAfter);
+            const auto evidenceAfter = observeDrawActivationEvidence(current.player, expected);
+            copyEvidence(result, evidenceAfter);
             /*
              * FO4VR 1.2.72 at 0x140F78D10 changes the native weapon state
              * synchronously whenever ActionDraw is accepted. An unchanged
              * retryable state therefore means the action was rejected; the
              * void CommonLib boundary must not be reported as success.
              */
-            result.result = result.stateAfter == result.stateBefore ?
-                SubmitResult::NativeActionRejected :
-                SubmitResult::Submitted;
+            result.result =
+                result.stateAfter == result.stateBefore ? SubmitResult::NativeActionRejected : SubmitResult::Submitted;
             if (result.result == SubmitResult::NativeActionRejected) {
-                recordRejectedSubmissionWitness(
-                    expected,
-                    evidenceBefore,
-                    evidenceAfter);
+                recordRejectedSubmissionWitness(expected, evidenceBefore, evidenceAfter);
             } else if (s_partialActionWitness.identity == expected) {
                 s_partialActionWitness = {};
             }
@@ -527,23 +450,21 @@ namespace rock::native_equipped_weapon_draw
 
         result.stateBefore = f4vr::getNativeWeaponState(current.player);
         result.stateAfter = result.stateBefore;
-        if (result.stateBefore != static_cast<std::uint32_t>(
-                held_weapon_equip_state_policy::NativeWeaponState::Drawing)) {
+        if (result.stateBefore !=
+            static_cast<std::uint32_t>(held_weapon_equip_state_policy::NativeWeaponState::Drawing)) {
             result.result = SubmitResult::RecoveryStateChanged;
             return result;
         }
 
-        const bool stateAccepted = current.player->SetWeaponState(
-            RE::WEAPON_STATE::kDrawn);
+        const bool stateAccepted = current.player->SetWeaponState(RE::WEAPON_STATE::kDrawn);
         result.stateAfter = f4vr::getNativeWeaponState(current.player);
         result.result = stateAccepted &&
-                result.stateAfter == static_cast<std::uint32_t>(
-                    held_weapon_equip_state_policy::NativeWeaponState::Drawn) ?
-            SubmitResult::PartialActionFinalized :
-            SubmitResult::PartialRecoveryRejected;
+                result.stateAfter ==
+                    static_cast<std::uint32_t>(held_weapon_equip_state_policy::NativeWeaponState::Drawn)
+            ? SubmitResult::PartialActionFinalized
+            : SubmitResult::PartialRecoveryRejected;
         if (result.result == SubmitResult::PartialRecoveryRejected) {
-            (void)current.player->SetWeaponState(
-                RE::WEAPON_STATE::kSheathed);
+            (void)current.player->SetWeaponState(RE::WEAPON_STATE::kSheathed);
             result.stateAfter = f4vr::getNativeWeaponState(current.player);
         }
         return result;

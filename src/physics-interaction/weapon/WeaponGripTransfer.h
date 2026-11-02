@@ -1,8 +1,8 @@
 #pragma once
 
-#include "physics-interaction/weapon/LooseWeaponAuthoredGrabPolicy.h"
-#include "physics-interaction/TransformMath.h"
 #include "RE/NetImmerse/NiTransform.h"
+#include "physics-interaction/TransformMath.h"
+#include "physics-interaction/weapon/LooseWeaponAuthoredGrabPolicy.h"
 
 #include <array>
 #include <cmath>
@@ -13,14 +13,15 @@ namespace rock::weapon_grip_transfer
 {
     [[nodiscard]] inline bool validFrame(const RE::NiTransform& value) noexcept
     {
-        if (!std::isfinite(value.scale) || value.scale <= 0.0001f ||
-            !std::isfinite(value.translate.x) || !std::isfinite(value.translate.y) || !std::isfinite(value.translate.z)) return false;
+        if (!std::isfinite(value.scale) || value.scale <= 0.0001f || !std::isfinite(value.translate.x) ||
+            !std::isfinite(value.translate.y) || !std::isfinite(value.translate.z))
+            return false;
         for (const auto& row : value.rotate.entry)
-            if (!std::isfinite(row.x) || !std::isfinite(row.y) || !std::isfinite(row.z)) return false;
+            if (!std::isfinite(row.x) || !std::isfinite(row.y) || !std::isfinite(row.z))
+                return false;
         const auto& r = value.rotate.entry;
         const float determinant = r[0].x * (r[1].y * r[2].z - r[1].z * r[2].y) -
-            r[0].y * (r[1].x * r[2].z - r[1].z * r[2].x) +
-            r[0].z * (r[1].x * r[2].y - r[1].y * r[2].x);
+            r[0].y * (r[1].x * r[2].z - r[1].z * r[2].x) + r[0].z * (r[1].x * r[2].y - r[1].y * r[2].x);
         return std::isfinite(determinant) && std::abs(determinant) > 0.000001f;
     }
 
@@ -39,9 +40,12 @@ namespace rock::weapon_grip_transfer
         [[nodiscard]] bool valid() const noexcept
         {
             if (!hasFingerPose || !validFrame(handWeaponLocal) || (fingerMask & ~0x7FFFu) ||
-                !std::isfinite(gripWeaponLocal.x) || !std::isfinite(gripWeaponLocal.y) || !std::isfinite(gripWeaponLocal.z)) return false;
+                !std::isfinite(gripWeaponLocal.x) || !std::isfinite(gripWeaponLocal.y) ||
+                !std::isfinite(gripWeaponLocal.z))
+                return false;
             for (std::size_t i = 0; i < fingerValues.size(); ++i) {
-                if (!std::isfinite(fingerValues[i]) || ((fingerMask & (1u << i)) && !validFrame(fingerLocals[i]))) return false;
+                if (!std::isfinite(fingerValues[i]) || ((fingerMask & (1u << i)) && !validFrame(fingerLocals[i])))
+                    return false;
             }
             return true;
         }
@@ -65,12 +69,14 @@ namespace rock::weapon_grip_transfer
         // Private carry-state witness, not a setting override. Preserve the
         // actual incoming mode so adoption is not mistaken for a mode change.
         bool gunstockAim{ false };
-        loose_weapon_authored_grab_policy::Arrangement arrangement{ loose_weapon_authored_grab_policy::Arrangement::Pending };
+        loose_weapon_authored_grab_policy::Arrangement arrangement{
+            loose_weapon_authored_grab_policy::Arrangement::Pending
+        };
 
         [[nodiscard]] bool valid() const noexcept
         {
-            return weaponFormID != 0 && primary.valid() && support.valid() &&
-                std::isfinite(sourceModelTranslation.x) && std::isfinite(sourceModelTranslation.y) && std::isfinite(sourceModelTranslation.z);
+            return weaponFormID != 0 && primary.valid() && support.valid() && std::isfinite(sourceModelTranslation.x) &&
+                std::isfinite(sourceModelTranslation.y) && std::isfinite(sourceModelTranslation.z);
         }
     };
 
@@ -101,7 +107,8 @@ namespace rock::weapon_grip_transfer
         [[nodiscard]] bool validCarry() const noexcept
         {
             return weaponFormID != 0 && grip.valid() && weaponInDriver && validFrame(*weaponInDriver) &&
-                std::isfinite(sourceModelTranslation.x) && std::isfinite(sourceModelTranslation.y) && std::isfinite(sourceModelTranslation.z);
+                std::isfinite(sourceModelTranslation.x) && std::isfinite(sourceModelTranslation.y) &&
+                std::isfinite(sourceModelTranslation.z);
         }
 
         [[nodiscard]] RE::NiTransform registeredWeaponInDriver(const RE::NiPoint3& targetModelTranslation) const
@@ -115,7 +122,8 @@ namespace rock::weapon_grip_transfer
         }
 
     private:
-        [[nodiscard]] RE::NiTransform registered(const RE::NiTransform& weaponInFrame, const RE::NiPoint3& targetModelTranslation) const
+        [[nodiscard]] RE::NiTransform registered(const RE::NiTransform& weaponInFrame,
+            const RE::NiPoint3& targetModelTranslation) const
         {
             auto registration = transform_math::makeIdentityTransform<RE::NiTransform>();
             registration.translate = sourceModelTranslation - targetModelTranslation;
@@ -125,8 +133,8 @@ namespace rock::weapon_grip_transfer
 
     // Match the loose shared-pivot owner: a firing station wins; otherwise the
     // first grab remains primary. Triggering with the support hand cannot swap it.
-    [[nodiscard]] constexpr bool requesterIsPrimary(bool requesterFiring, bool peerFiring,
-        std::uint64_t requesterGrab, std::uint64_t peerGrab) noexcept
+    [[nodiscard]] constexpr bool requesterIsPrimary(bool requesterFiring, bool peerFiring, std::uint64_t requesterGrab,
+        std::uint64_t peerGrab) noexcept
     {
         return requesterFiring != peerFiring ? requesterFiring : requesterGrab < peerGrab;
     }

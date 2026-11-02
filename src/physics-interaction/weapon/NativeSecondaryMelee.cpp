@@ -1,12 +1,4 @@
 #include "physics-interaction/weapon/NativeSecondaryMelee.h"
-#include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/native/BodyCollisionControl.h"
-#include "physics-interaction/native/HavokRuntime.h"
-#include "physics-interaction/collision/CollisionSuppressionRegistry.h"
-#include "physics-interaction/PhysicsLog.h"
-#include "rock_support/Fo4VrRuntime.h"
-#include "RE/Bethesda/PlayerCharacter.h"
-#include "RE/NetImmerse/NiNode.h"
 #include <REL/Relocation.h>
 #include <Windows.h>
 #include <array>
@@ -14,16 +6,25 @@
 #include <cstring>
 #include <optional>
 #include <stdexcept>
+#include "RE/Bethesda/PlayerCharacter.h"
+#include "RE/NetImmerse/NiNode.h"
+#include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/collision/CollisionSuppressionRegistry.h"
+#include "physics-interaction/native/BodyCollisionControl.h"
+#include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/NativeMemory.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 namespace rock::native_secondary_melee
 {
     namespace
     {
         // FO4VR 1.2.72, verified in ghidra_fo4vr and checked live at install.
-        constexpr std::uintptr_t kAttach = 0xF0AC60;      // (actor, node): add the subtree's bodies, keyframed, with the melee callback
-        constexpr std::uintptr_t kDetach = 0xF0AD90;      // (actor, node, bhkWorld or null): unregister and remove them
+        constexpr std::uintptr_t kAttach =
+            0xF0AC60; // (actor, node): add the subtree's bodies, keyframed, with the melee callback
+        constexpr std::uintptr_t kDetach = 0xF0AD90; // (actor, node, bhkWorld or null): unregister and remove them
         constexpr std::uintptr_t kWorldOfCell = 0x39B070; // (cell) -> its bhkWorld
-        constexpr std::uintptr_t kBodyId = 0x1E07EE0;     // (collision object, out) -> body id, 7FFFFFFF when none
+        constexpr std::uintptr_t kBodyId = 0x1E07EE0; // (collision object, out) -> body id, 7FFFFFFF when none
         constexpr std::ptrdiff_t kParentCell = 0xB8;
         constexpr std::ptrdiff_t kCollisionObject = 0x100;
         constexpr std::ptrdiff_t kAsNpCollisionSlot = 0xD8; // the attach visitor's own collision-object test
@@ -41,8 +42,12 @@ namespace rock::native_secondary_melee
             std::uintptr_t site;
             std::uintptr_t target;
         };
+
         constexpr std::array<Relay, 4> kRelays{ {
-            { 0xEFF043, 0xE50DA0 }, { 0xEFF063, 0xE50DA0 }, { 0xEFF8E2, 0xE56FA0 }, { 0xEFF8F3, 0xE56B10 },
+            { 0xEFF043, 0xE50DA0 },
+            { 0xEFF063, 0xE50DA0 },
+            { 0xEFF8E2, 0xE56FA0 },
+            { 0xEFF8F3, 0xE56B10 },
         } };
         // PlayerCharacter vtable 142D80F80: slot 172 moves the player's havok
         // to another world (detaching its melee nodes in the old one first),
@@ -85,12 +90,20 @@ namespace rock::native_secondary_melee
         // Weapon-collision switch last applied to the bodies; unknown after attach.
         std::optional<bool> s_appliedLive;
 
-        void* readItem(void* actor, void* out, std::uint32_t index) { return s_readItem(actor, out, t_routed ? 1u : index); }
+        void* readItem(void* actor, void* out, std::uint32_t index)
+        {
+            return s_readItem(actor, out, t_routed ? 1u : index);
+        }
+
         void objectImpact(void* actor, std::uint32_t index, void* a, void* b, void* c, void* d, void* e)
         {
             s_objectImpact(actor, t_routed ? 1u : index, a, b, c, d, e);
         }
-        void actorHit(void* actor, std::uint32_t index, void* target, void* d) { s_actorHit(actor, t_routed ? 1u : index, target, d); }
+
+        void actorHit(void* actor, std::uint32_t index, void* target, void* d)
+        {
+            s_actorHit(actor, t_routed ? 1u : index, target, d);
+        }
 
         bool onOwner() noexcept
         {
@@ -101,7 +114,8 @@ namespace rock::native_secondary_melee
         void* worldOf(const RE::PlayerCharacter* player) noexcept
         {
             const void* cell = nullptr;
-            if (!player || !native_memory::tryReadField(player, kParentCell, cell) || !cell) return nullptr;
+            if (!player || !native_memory::tryReadField(player, kParentCell, cell) || !cell)
+                return nullptr;
             return reinterpret_cast<WorldOfCell>(REL::Offset(kWorldOfCell).address())(cell);
         }
 
@@ -109,7 +123,8 @@ namespace rock::native_secondary_melee
         {
             s_bodyCount.store(0, std::memory_order_release);
             s_appliedLive.reset();
-            for (auto& body : s_bodies) body.store(kInvalidBody, std::memory_order_relaxed);
+            for (auto& body : s_bodies)
+                body.store(kInvalidBody, std::memory_order_relaxed);
         }
 
         // Why a subtree registered no body: nodes walked, collision objects,
@@ -140,13 +155,16 @@ namespace rock::native_secondary_melee
                         ++census.nativePhysics;
                         std::uint32_t id = kInvalidBody;
                         reinterpret_cast<BodyId>(REL::Offset(kBodyId).address())(collision, &id);
-                        if (id != kInvalidBody) ++census.withBody;
-                        if (id != kInvalidBody && count < s_bodies.size()) s_bodies[count++].store(id, std::memory_order_relaxed);
+                        if (id != kInvalidBody)
+                            ++census.withBody;
+                        if (id != kInvalidBody && count < s_bodies.size())
+                            s_bodies[count++].store(id, std::memory_order_relaxed);
                     }
                 }
                 if (auto* node = object->IsNode()) {
                     for (const auto& child : node->GetRuntimeData().children) {
-                        if (child && queued < pending.size()) pending[queued++] = child.get();
+                        if (child && queued < pending.size())
+                            pending[queued++] = child.get();
                     }
                 }
             }
@@ -167,28 +185,35 @@ namespace rock::native_secondary_melee
         void applyWeaponCollisionSwitch(RE::PlayerCharacter* player, void* world) noexcept
         {
             std::uint8_t flags = 0;
-            if (!native_memory::tryReadField(player, kMeleeCollisionFlags, flags)) return;
+            if (!native_memory::tryReadField(player, kMeleeCollisionFlags, flags))
+                return;
             const bool live = (flags & kWeaponCollisionLive) != 0;
-            if (s_appliedLive == live) return;
+            if (s_appliedLive == live)
+                return;
             const auto count = s_bodyCount.load(std::memory_order_acquire);
             auto* hknp = world ? havok_runtime::getHknpWorldFromBhk(static_cast<RE::bhkWorld*>(world)) : nullptr;
-            if (!count || !hknp) return;
+            if (!count || !hknp)
+                return;
             constexpr auto noCollide = collision_suppression_registry::kSuppressionNoCollideBit;
             for (std::uint32_t i = 0; i < count && i < s_bodies.size(); ++i) {
                 const auto id = s_bodies[i].load(std::memory_order_relaxed);
                 std::uint32_t filter = 0;
-                if (id == kInvalidBody || !body_collision::tryReadFilterInfo(hknp, RE::hknpBodyId{ id }, filter)) continue;
+                if (id == kInvalidBody || !body_collision::tryReadFilterInfo(hknp, RE::hknpBodyId{ id }, filter))
+                    continue;
                 const auto applied = live ? (filter & ~noCollide) : (filter | noCollide);
-                if (applied != filter) body_collision::setFilterInfo(hknp, RE::hknpBodyId{ id }, applied);
+                if (applied != filter)
+                    body_collision::setFilterInfo(hknp, RE::hknpBodyId{ id }, applied);
             }
             s_appliedLive = live;
         }
 
         void detachCurrent(RE::PlayerCharacter* player, const char* reason) noexcept
         {
-            if (!s_model) return;
+            if (!s_model)
+                return;
             clearBodies();
-            if (player && s_world) reinterpret_cast<Detach>(REL::Offset(kDetach).address())(player, s_model.get(), s_world);
+            if (player && s_world)
+                reinterpret_cast<Detach>(REL::Offset(kDetach).address())(player, s_model.get(), s_world);
             ROCK_LOG_INFO(Weapon, "AKIMBO second melee native collision detached model={:#x} reason={}",
                 reinterpret_cast<std::uintptr_t>(s_model.get()), reason);
             s_model.reset();
@@ -206,7 +231,8 @@ namespace rock::native_secondary_melee
 
         void detachAll(RE::PlayerCharacter* player, void* a, std::uint32_t b, std::uint8_t c, std::uint8_t d)
         {
-            if (s_model && player == f4vr::getPlayer() && onOwner()) detachCurrent(player, "player-detach");
+            if (s_model && player == f4vr::getPlayer() && onOwner())
+                detachCurrent(player, "player-detach");
             s_detachAll(player, a, b, c, d);
         }
 
@@ -215,8 +241,10 @@ namespace rock::native_secondary_melee
             std::array<std::uint8_t, 5> live{};
             const auto address = REL::Offset(site).address();
             std::int32_t displacement = 0;
-            if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), live.data(), live.size()) ||
-                live[0] != 0xE8) return false;
+            if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), live.data(),
+                    live.size()) ||
+                live[0] != 0xE8)
+                return false;
             std::memcpy(&displacement, live.data() + 1, sizeof(displacement));
             return address + 5 + displacement == REL::Offset(target).address();
         }
@@ -224,42 +252,50 @@ namespace rock::native_secondary_melee
         bool entryMatches(std::uintptr_t entry, std::uintptr_t function) noexcept
         {
             std::uintptr_t live = 0;
-            return native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(REL::Offset(entry).address()), live) &&
+            return native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(REL::Offset(entry).address()),
+                       live) &&
                 live == REL::Offset(function).address();
         }
     }
 
     bool install() noexcept
     {
-        if (s_installed) return true;
-        if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) return false;
+        if (s_installed)
+            return true;
+        if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72)
+            return false;
         for (const auto& relay : kRelays) {
             if (!callMatches(relay.site, relay.target)) {
-                ROCK_LOG_ERROR(Init, "Second melee routing refused: call at {:#x} is not to {:#x}", relay.site, relay.target);
+                ROCK_LOG_ERROR(Init, "Second melee routing refused: call at {:#x} is not to {:#x}", relay.site,
+                    relay.target);
                 return false;
             }
         }
-        if (!entryMatches(kWorldChangeEntry, kWorldChangeFunction) || !entryMatches(kDetachAllEntry, kDetachAllFunction)) {
+        if (!entryMatches(kWorldChangeEntry, kWorldChangeFunction) ||
+            !entryMatches(kDetachAllEntry, kDetachAllFunction)) {
             ROCK_LOG_ERROR(Init, "Second melee routing refused: PlayerCharacter world/detach vtable entries differ");
             return false;
         }
         std::array<std::array<std::uint8_t, 5>, kRelays.size()> originals{};
         for (std::size_t i = 0; i < kRelays.size(); ++i) {
-            (void)native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(kRelays[i].site).address()),
-                originals[i].data(), originals[i].size());
+            (void)native_memory::guardedCopyFromMemory(
+                reinterpret_cast<const void*>(REL::Offset(kRelays[i].site).address()), originals[i].data(),
+                originals[i].size());
         }
         const std::array<std::uintptr_t, kRelays.size()> hooks{ reinterpret_cast<std::uintptr_t>(&readItem),
             reinterpret_cast<std::uintptr_t>(&readItem), reinterpret_cast<std::uintptr_t>(&objectImpact),
             reinterpret_cast<std::uintptr_t>(&actorHit) };
         try {
             auto& trampoline = F4SE::GetTrampoline();
-            if (trampoline.free_size() < kRelays.size() * 14) throw std::runtime_error("trampoline space");
+            if (trampoline.free_size() < kRelays.size() * 14)
+                throw std::runtime_error("trampoline space");
             s_readItem = reinterpret_cast<ReadItem>(REL::Offset(0xE50DA0).address());
             s_objectImpact = reinterpret_cast<ObjectImpact>(REL::Offset(0xE56FA0).address());
             s_actorHit = reinterpret_cast<ActorHit>(REL::Offset(0xE56B10).address());
             for (std::size_t i = 0; i < kRelays.size(); ++i)
                 (void)trampoline.write_call<5>(REL::Offset(kRelays[i].site).address(), hooks[i]);
-            if (!FlushInstructionCache(GetCurrentProcess(), nullptr, 0)) throw std::runtime_error("instruction cache");
+            if (!FlushInstructionCache(GetCurrentProcess(), nullptr, 0))
+                throw std::runtime_error("instruction cache");
         } catch (...) {
             for (std::size_t i = 0; i < kRelays.size(); ++i)
                 REL::safe_write(REL::Offset(kRelays[i].site).address(), originals[i].data(), originals[i].size());
@@ -275,16 +311,19 @@ namespace rock::native_secondary_melee
         REL::safe_write(REL::Offset(kDetachAllEntry).address(), &detachHook, sizeof(detachHook));
         clearBodies();
         s_installed = true;
-        ROCK_LOG_INFO(Init, "Second melee native routing installed: four indexed melee calls, player world-change and detach");
+        ROCK_LOG_INFO(Init,
+            "Second melee native routing installed: four indexed melee calls, player world-change and detach");
         return true;
     }
 
     void present(RE::NiAVObject* model) noexcept
     {
-        if (!s_installed) return;
+        if (!s_installed)
+            return;
         DWORD absent = 0;
         (void)s_owner.compare_exchange_strong(absent, GetCurrentThreadId(), std::memory_order_acq_rel);
-        if (!onOwner()) return;
+        if (!onOwner())
+            return;
         auto* player = f4vr::getPlayer();
         void* world = worldOf(player);
         if (s_model && s_model.get() == model && s_world == world) {
@@ -301,7 +340,8 @@ namespace rock::native_secondary_melee
             s_world = nullptr;
         }
         detachCurrent(player, model ? "model-changed" : "not-presented");
-        if (!model || !player || !world) return;
+        if (!model || !player || !world)
+            return;
         reinterpret_cast<Attach>(REL::Offset(kAttach).address())(player, model);
         s_model.reset(model);
         s_world = world;
@@ -313,7 +353,8 @@ namespace rock::native_secondary_melee
             applyWeaponCollisionSwitch(player, world);
         } else {
             ROCK_LOG_WARN(Weapon,
-                "AKIMBO second melee has no native collision bodies model={:#x} name='{}' nodes={} collisionObjects={} nativePhysics={} withBody={}; native hits unavailable",
+                "AKIMBO second melee has no native collision bodies model={:#x} name='{}' nodes={} collisionObjects={} "
+                "nativePhysics={} withBody={}; native hits unavailable",
                 reinterpret_cast<std::uintptr_t>(model), model->name.c_str() ? model->name.c_str() : "", census.nodes,
                 census.collisionObjects, census.nativePhysics, census.withBody);
         }
@@ -321,7 +362,8 @@ namespace rock::native_secondary_melee
 
     void beforeModelRetired(const RE::NiAVObject* root) noexcept
     {
-        if (!s_installed || !root || s_model.get() != root) return;
+        if (!s_installed || !root || s_model.get() != root)
+            return;
         if (!onOwner()) {
             // Never call into the physics world off the frame owner; stop
             // routing now and let the frame owner forget the model.
@@ -333,19 +375,22 @@ namespace rock::native_secondary_melee
         detachCurrent(f4vr::getPlayer(), "model-retired");
     }
 
-    ImpactRoute::ImpactRoute(const void* contactEvent, const void* collisionEvent) noexcept :
-        _previous(t_routed)
+    ImpactRoute::ImpactRoute(const void* contactEvent, const void* collisionEvent) noexcept : _previous(t_routed)
     {
         const auto count = s_bodyCount.load(std::memory_order_acquire);
-        if (!count || !contactEvent || !collisionEvent) return;
+        if (!count || !contactEvent || !collisionEvent)
+            return;
         // Same event layout the existing partner decode reads: the callback's
         // own body index at +20, the pair's body ids at +08.
         std::uint32_t ownIndex = 0;
         std::uint32_t ownBody = kInvalidBody;
-        if (!native_memory::guardedCopyFromMemory(static_cast<const char*>(contactEvent) + 0x20, &ownIndex, sizeof(ownIndex)) ||
+        if (!native_memory::guardedCopyFromMemory(static_cast<const char*>(contactEvent) + 0x20, &ownIndex,
+                sizeof(ownIndex)) ||
             ownIndex > 1 ||
-            !native_memory::guardedCopyFromMemory(static_cast<const char*>(collisionEvent) + 0x08 + ownIndex * sizeof(ownBody),
-                &ownBody, sizeof(ownBody))) return;
+            !native_memory::guardedCopyFromMemory(static_cast<const char*>(collisionEvent) + 0x08 +
+                    ownIndex * sizeof(ownBody),
+                &ownBody, sizeof(ownBody)))
+            return;
         for (std::uint32_t i = 0; i < count && i < s_bodies.size(); ++i) {
             if (s_bodies[i].load(std::memory_order_relaxed) == ownBody) {
                 _routed = true;
@@ -355,13 +400,7 @@ namespace rock::native_secondary_melee
         t_routed = _routed;
     }
 
-    ImpactRoute::~ImpactRoute()
-    {
-        t_routed = _previous;
-    }
+    ImpactRoute::~ImpactRoute() { t_routed = _previous; }
 
-    bool routedContact() noexcept
-    {
-        return t_routed;
-    }
+    bool routedContact() noexcept { return t_routed; }
 }

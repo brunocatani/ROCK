@@ -1,9 +1,9 @@
 #include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
 
+#include "RE/NetImmerse/NiNode.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/weapon/WeaponSceneTraversal.h"
-#include "RE/NetImmerse/NiNode.h"
 
 #include <array>
 #include <cmath>
@@ -11,17 +11,17 @@
 
 namespace rock::vanilla_weapon_grip_frame
 {
-    bool resolveModelTranslation(const std::uint32_t formId,
-        const RE::NiAVObject* model, RE::NiPoint3& outTranslation)
+    bool resolveModelTranslation(const std::uint32_t formId, const RE::NiAVObject* model, RE::NiPoint3& outTranslation)
     {
         outTranslation = {};
-        if (!hasVanillaModelRegistration(formId) || !model) return true;
+        if (!hasVanillaModelRegistration(formId) || !model)
+            return true;
 
         const RE::NiAVObject* receiver = nullptr;
         const RE::NiAVObject* marker = nullptr;
         bool ambiguous = false;
-        const auto traversal = weapon_scene::visitScene(
-            const_cast<RE::NiAVObject*>(model), [&](const RE::NiAVObject* node) {
+        const auto traversal =
+            weapon_scene::visitScene(const_cast<RE::NiAVObject*>(model), [&](const RE::NiAVObject* node) {
                 const std::string_view name{ node->name.c_str() ? node->name.c_str() : "" };
                 if (name == "TGunReceiver") {
                     ambiguous = ambiguous || receiver != nullptr;
@@ -34,16 +34,16 @@ namespace rock::vanilla_weapon_grip_frame
             });
         // Replacement models without this vanilla assembly are outside this
         // correction. A partial/ambiguous vanilla assembly cannot define a grip.
-        if (!traversal.truncated && !receiver && !marker) return true;
+        if (!traversal.truncated && !receiver && !marker)
+            return true;
         if (!traversal.truncated && !ambiguous && receiver && !marker &&
-            std::abs(receiver->local.translate.x) <= 0.001f &&
-            std::abs(receiver->local.translate.y) <= 0.001f &&
+            std::abs(receiver->local.translate.x) <= 0.001f && std::abs(receiver->local.translate.y) <= 0.001f &&
             std::abs(receiver->local.translate.z) <= 0.001f) {
             // The undisplaced loose model needs no registration adjustment.
             return true;
         }
-        bool valid = !traversal.truncated && !ambiguous && receiver && marker &&
-            receiver->parent && receiver->parent == marker->parent;
+        bool valid = !traversal.truncated && !ambiguous && receiver && marker && receiver->parent &&
+            receiver->parent == marker->parent;
         if (valid) {
             // The SMG's receiver and independent WeaponOffset marker carry
             // the same model registration translation. It survives both menu
@@ -52,7 +52,8 @@ namespace rock::vanilla_weapon_grip_frame
             valid = registrationAgrees(receiver->local, marker->local);
         }
         if (!valid) {
-            ROCK_LOG_SAMPLE_WARN(Animation, 1000, "SMG authored grip unavailable: ambiguous or mismatched model registration");
+            ROCK_LOG_SAMPLE_WARN(Animation, 1000,
+                "SMG authored grip unavailable: ambiguous or mismatched model registration");
             return false;
         }
 
@@ -64,11 +65,13 @@ namespace rock::vanilla_weapon_grip_frame
             parent = parent->parent;
         }
         if (parent != model) {
-            ROCK_LOG_SAMPLE_WARN(Animation, 1000, "SMG authored grip unavailable: model registration parent chain is incomplete");
+            ROCK_LOG_SAMPLE_WARN(Animation, 1000,
+                "SMG authored grip unavailable: model registration parent chain is incomplete");
             return false;
         }
         auto parentInModel = transform_math::makeIdentityTransform<RE::NiTransform>();
-        while (count) parentInModel = transform_math::composeTransforms(parentInModel, chain[--count]->local);
+        while (count)
+            parentInModel = transform_math::composeTransforms(parentInModel, chain[--count]->local);
         // Transform the displacement as a vector: wrapper translations are
         // already represented by the model frame and must not be added twice.
         const auto shifted = transform_math::localPointToWorld(parentInModel, receiver->local.translate);

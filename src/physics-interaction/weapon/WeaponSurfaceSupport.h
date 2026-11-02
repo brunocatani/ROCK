@@ -1,8 +1,8 @@
 #pragma once
 
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
-#include "physics-interaction/weapon/WeaponSupport.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
+#include "physics-interaction/weapon/WeaponSupport.h"
 
 #include <atomic>
 #include <cstdint>
@@ -39,14 +39,16 @@ namespace rock::weapon_surface_support
     public:
         void publish(const Contact& value) noexcept
         {
-            if (_busy.test_and_set(std::memory_order_acquire)) return;
+            if (_busy.test_and_set(std::memory_order_acquire))
+                return;
             _value = value;
             _busy.clear(std::memory_order_release);
         }
 
         bool read(Contact& value) noexcept
         {
-            if (_busy.test_and_set(std::memory_order_acquire)) return false;
+            if (_busy.test_and_set(std::memory_order_acquire))
+                return false;
             value = _value;
             _busy.clear(std::memory_order_release);
             return value.valid;
@@ -60,23 +62,22 @@ namespace rock::weapon_surface_support
         Contact _value{};
     };
 
-    [[nodiscard]] inline bool isFresh(const Contact& contact,
-        std::uintptr_t world, std::uint64_t generation,
+    [[nodiscard]] inline bool isFresh(const Contact& contact, std::uintptr_t world, std::uint64_t generation,
         std::uint32_t proxyBodyId, std::uint64_t now) noexcept
     {
-        return contact.valid && contact.world == world &&
-               contact.generation == generation && contact.proxyBodyId == proxyBodyId &&
-               contact.shape != 0 && now >= contact.sampledAtMilliseconds &&
-               now - contact.sampledAtMilliseconds <= kMaximumSampleAgeMilliseconds;
+        return contact.valid && contact.world == world && contact.generation == generation &&
+            contact.proxyBodyId == proxyBodyId && contact.shape != 0 && now >= contact.sampledAtMilliseconds &&
+            now - contact.sampledAtMilliseconds <= kMaximumSampleAgeMilliseconds;
     }
 
-    [[nodiscard]] inline bool contactStillTouches(const Contact& contact,
-        const RE::NiTransform& weaponWorld, const RE::NiTransform& surfaceWorld)
+    [[nodiscard]] inline bool contactStillTouches(const Contact& contact, const RE::NiTransform& weaponWorld,
+        const RE::NiTransform& surfaceWorld)
     {
         using dynamic_weapon_collision_policy::isFinitePoint;
         using dynamic_weapon_collision_policy::isFiniteTransform;
         if (!isFiniteTransform(weaponWorld) || !isFiniteTransform(surfaceWorld) ||
-            std::abs(weaponWorld.scale) < 0.0001f || std::abs(surfaceWorld.scale) < 0.0001f) return false;
+            std::abs(weaponWorld.scale) < 0.0001f || std::abs(surfaceWorld.scale) < 0.0001f)
+            return false;
         const auto weaponPoint = transform_math::localPointToWorld(weaponWorld, contact.weaponPointLocal);
         const auto surfacePoint = transform_math::localPointToWorld(surfaceWorld, contact.surfacePointLocal);
         return isFinitePoint(weaponPoint) && isFinitePoint(surfacePoint) &&
@@ -108,13 +109,19 @@ namespace rock::weapon_surface_support
                 armed = true;
                 return click;
             }
-            if (!armed || !input.pressed) return false;
+            if (!armed || !input.pressed)
+                return false;
             armed = false;
             return true;
         }
     };
 
-    enum class Phase : std::uint8_t { Free, Latched, Returning };
+    enum class Phase : std::uint8_t
+    {
+        Free,
+        Latched,
+        Returning
+    };
 
     struct State
     {
@@ -130,23 +137,25 @@ namespace rock::weapon_surface_support
         bool retirementRequested{ false };
 
         [[nodiscard]] bool latched() const noexcept { return phase == Phase::Latched; }
+
         [[nodiscard]] bool ownsPose() const noexcept { return phase != Phase::Free; }
     };
 
-    [[nodiscard]] inline bool capture(State& state, const Contact& contact,
-        const RE::NiTransform& requestedWeaponWorld, const RE::NiPoint3& primaryGripLocal)
+    [[nodiscard]] inline bool capture(State& state, const Contact& contact, const RE::NiTransform& requestedWeaponWorld,
+        const RE::NiPoint3& primaryGripLocal)
     {
         using dynamic_weapon_collision_policy::isFinitePoint;
         using dynamic_weapon_collision_policy::isFiniteTransform;
-        if (!contact.valid || !isFiniteTransform(contact.weaponWorld) ||
-            !isFiniteTransform(contact.surfaceWorld) || !isFinitePoint(contact.weaponPointLocal) ||
-            !isFinitePoint(contact.surfacePointLocal) || std::abs(contact.weaponWorld.scale) < 0.0001f ||
-            std::abs(contact.surfaceWorld.scale) < 0.0001f ||
-            !isFiniteTransform(requestedWeaponWorld) || !isFinitePoint(primaryGripLocal)) return false;
+        if (!contact.valid || !isFiniteTransform(contact.weaponWorld) || !isFiniteTransform(contact.surfaceWorld) ||
+            !isFinitePoint(contact.weaponPointLocal) || !isFinitePoint(contact.surfacePointLocal) ||
+            std::abs(contact.weaponWorld.scale) < 0.0001f || std::abs(contact.surfaceWorld.scale) < 0.0001f ||
+            !isFiniteTransform(requestedWeaponWorld) || !isFinitePoint(primaryGripLocal))
+            return false;
         const auto anchor = transform_math::localPointToWorld(contact.surfaceWorld, contact.surfacePointLocal);
         const auto primary = transform_math::localPointToWorld(requestedWeaponWorld, primaryGripLocal);
         if (!isFinitePoint(anchor) || !isFinitePoint(primary) ||
-            weaponSolverLength(weaponSolverSub(primary, anchor)) < kMinimumAimSeparationGameUnits) return false;
+            weaponSolverLength(weaponSolverSub(primary, anchor)) < kMinimumAimSeparationGameUnits)
+            return false;
         state = {};
         state.phase = Phase::Latched;
         state.contact = contact;
@@ -166,44 +175,52 @@ namespace rock::weapon_surface_support
     {
         using dynamic_weapon_collision_policy::isFinitePoint;
         using dynamic_weapon_collision_policy::isFiniteTransform;
-        if (!state.latched() || !isFiniteTransform(requestedWeaponWorld) || !isFiniteTransform(surfaceWorld)) return false;
+        if (!state.latched() || !isFiniteTransform(requestedWeaponWorld) || !isFiniteTransform(surfaceWorld))
+            return false;
         const auto anchor = transform_math::localPointToWorld(surfaceWorld, state.contact.surfacePointLocal);
-        const auto captureAnchor = transform_math::localPointToWorld(state.contact.surfaceWorld, state.contact.surfacePointLocal);
+        const auto captureAnchor =
+            transform_math::localPointToWorld(state.contact.surfaceWorld, state.contact.surfacePointLocal);
         const auto primary = transform_math::localPointToWorld(requestedWeaponWorld, state.primaryGripLocal);
         const auto captureAxis = weaponSolverSub(state.primaryTargetAtCapture, captureAnchor);
         const auto targetAxis = weaponSolverSub(primary, anchor);
-        if (!isFinitePoint(primary) || weaponSolverLength(targetAxis) < kMinimumAimSeparationGameUnits) return false;
+        if (!isFinitePoint(primary) || weaponSolverLength(targetAxis) < kMinimumAimSeparationGameUnits)
+            return false;
 
         // Aim from isolated grip intent about the real surface pivot. Native
         // wrist/IK rotation must not become a lever that drags this anchor.
         const auto delta = weaponSolverRotationBetweenStored<RE::NiMatrix3, RE::NiPoint3>(captureAxis, targetAxis);
         result = state.captureWorld;
-        result.rotate = weaponSolverApplyWorldRotationToStoredBasis<RE::NiMatrix3, RE::NiPoint3>(delta, state.captureWorld.rotate);
+        result.rotate =
+            weaponSolverApplyWorldRotationToStoredBasis<RE::NiMatrix3, RE::NiPoint3>(delta, state.captureWorld.rotate);
         result.translate = weaponSolverAdd(result.translate,
             weaponSolverSub(anchor, transform_math::localPointToWorld(result, state.contact.weaponPointLocal)));
-        if (!isFiniteTransform(result)) return false;
+        if (!isFiniteTransform(result))
+            return false;
         state.lastWorld = result;
         return true;
     }
 
     inline void release(State& state) noexcept
     {
-        if (!state.ownsPose()) return;
+        if (!state.ownsPose())
+            return;
         state.phase = Phase::Returning;
         state.returnFrom = state.lastWorld;
         state.returnElapsed = 0.0f;
     }
 
-    [[nodiscard]] inline RE::NiTransform advanceReturn(State& state,
-        const RE::NiTransform& requested, float deltaSeconds)
+    [[nodiscard]] inline RE::NiTransform advanceReturn(State& state, const RE::NiTransform& requested,
+        float deltaSeconds)
     {
-        if (state.phase != Phase::Returning) return requested;
+        if (state.phase != Phase::Returning)
+            return requested;
         state.returnElapsed += std::isfinite(deltaSeconds) ? std::clamp(deltaSeconds, 0.0f, 0.1f) : 0.0f;
         const float alpha = std::clamp(state.returnElapsed / kReturnSeconds, 0.0f, 1.0f);
-        const auto result = scope_safe_hand_frame_math::interpolateRebaseTransform(
-            state.returnFrom, requested, alpha * alpha * (3.0f - 2.0f * alpha));
+        const auto result = scope_safe_hand_frame_math::interpolateRebaseTransform(state.returnFrom, requested,
+            alpha * alpha * (3.0f - 2.0f * alpha));
         state.lastWorld = result;
-        if (alpha >= 1.0f) state = {};
+        if (alpha >= 1.0f)
+            state = {};
         return result;
     }
 }

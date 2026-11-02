@@ -1,8 +1,8 @@
 #include "physics-interaction/weapon/KnifeReverseGrip.h"
 
-#include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/hand/HandFrame.h"
 
 #include "RE/Bethesda/TESBoundObjects.h"
 
@@ -37,22 +37,21 @@ namespace rock::knife_reverse_grip
 
         void publish(const bool isLeft, const HandState& state) noexcept
         {
-            s_saved[isLeft ? 1u : 0u].store(state.formID ? pack(state.formID, state.reversed) : 0, std::memory_order_relaxed);
+            s_saved[isLeft ? 1u : 0u].store(state.formID ? pack(state.formID, state.reversed) : 0,
+                std::memory_order_relaxed);
         }
 
-        HandState& handState(const bool isLeft) noexcept
-        {
-            return s_hands[isLeft ? 1u : 0u];
-        }
+        HandState& handState(const bool isLeft) noexcept { return s_hands[isLeft ? 1u : 0u]; }
     }
 
     bool appliesTo(const RE::TESObjectWEAP* weapon) noexcept
     {
         // Automatic melee (the Ripper) keeps its native trigger attack.
-        if (!weapon || weapon->weaponData.flags.any(RE::WEAPON_FLAGS::kAutomatic)) return false;
+        if (!weapon || weapon->weaponData.flags.any(RE::WEAPON_FLAGS::kAutomatic))
+            return false;
         const auto type = weapon->weaponData.type.get();
         return type == RE::WEAPON_TYPE::kOneHandSword || type == RE::WEAPON_TYPE::kOneHandDagger ||
-               type == RE::WEAPON_TYPE::kOneHandAxe || type == RE::WEAPON_TYPE::kOneHandMace;
+            type == RE::WEAPON_TYPE::kOneHandAxe || type == RE::WEAPON_TYPE::kOneHandMace;
     }
 
     void observeHand(const bool isLeft, const std::uint32_t knifeFormID, const std::uint32_t wornForm0,
@@ -63,7 +62,8 @@ namespace rock::knife_reverse_grip
         // A menu or detached grip reports no knife for a while; the grip is
         // kept until the weapon itself leaves the hand's equipment.
         if (state.formID && state.formID != wornForm0 && state.formID != wornForm1) {
-            if (state.reversed) ROCK_LOG_INFO(Weapon, "Knife grip normal hand={} weapon={:08X}: unequipped", hand, state.formID);
+            if (state.reversed)
+                ROCK_LOG_INFO(Weapon, "Knife grip normal hand={} weapon={:08X}: unequipped", hand, state.formID);
             state = {};
             publish(isLeft, state);
         }
@@ -76,27 +76,30 @@ namespace rock::knife_reverse_grip
             pending && static_cast<std::uint32_t>((pending & ~kPresent) >> 1) == knifeFormID) {
             state.reversed = (pending & 1u) != 0;
             publish(isLeft, state);
-            ROCK_LOG_INFO(Weapon, "Knife grip {} hand={} weapon={:08X}: saved", state.reversed ? "reversed" : "normal", hand,
-                knifeFormID);
+            ROCK_LOG_INFO(Weapon, "Knife grip {} hand={} weapon={:08X}: saved", state.reversed ? "reversed" : "normal",
+                hand, knifeFormID);
         }
         if (!knifeFormID || !triggerPressed) {
             return;
         }
         state.reversed = !state.reversed;
         publish(isLeft, state);
-        ROCK_LOG_INFO(Weapon, "Knife grip {} hand={} weapon={:08X}", state.reversed ? "reversed" : "normal", hand, knifeFormID);
+        ROCK_LOG_INFO(Weapon, "Knife grip {} hand={} weapon={:08X}", state.reversed ? "reversed" : "normal", hand,
+            knifeFormID);
     }
 
     SavedGrip savedGrip(const bool isLeft) noexcept
     {
         const auto value = s_saved[isLeft ? 1u : 0u].load(std::memory_order_relaxed);
-        if (!value) return {};
+        if (!value)
+            return {};
         return { static_cast<std::uint32_t>((value & ~kPresent) >> 1), (value & 1u) != 0 };
     }
 
     void restoreGrip(const bool isLeft, const SavedGrip grip) noexcept
     {
-        s_pending[isLeft ? 1u : 0u].store(grip.formID ? pack(grip.formID, grip.reversed) : 0, std::memory_order_relaxed);
+        s_pending[isLeft ? 1u : 0u].store(grip.formID ? pack(grip.formID, grip.reversed) : 0,
+            std::memory_order_relaxed);
     }
 
     bool reversed(const bool isLeft, const std::uint32_t formID) noexcept

@@ -43,29 +43,23 @@ namespace rock::weapon_emitter_policy
     [[nodiscard]] inline constexpr bool hasLaserRoleName(std::string_view name) noexcept
     {
         using weapon_effect_geometry_policy::containsAsciiInsensitive;
-        return containsAsciiInsensitive(name, "lasersight") ||
-               containsAsciiInsensitive(name, "laserbeam") ||
-               containsAsciiInsensitive(name, "laserdot") ||
-               containsAsciiInsensitive(name, "laserray");
+        return containsAsciiInsensitive(name, "lasersight") || containsAsciiInsensitive(name, "laserbeam") ||
+            containsAsciiInsensitive(name, "laserdot") || containsAsciiInsensitive(name, "laserray");
     }
 
     [[nodiscard]] inline constexpr bool hasFlashlightRoleName(std::string_view name) noexcept
     {
         using weapon_effect_geometry_policy::containsAsciiInsensitive;
-        return containsAsciiInsensitive(name, "flashlight") ||
-               containsAsciiInsensitive(name, "weaponlight") ||
-               containsAsciiInsensitive(name, "screengloweffect") ||
-               containsAsciiInsensitive(name, "gloweffect") ||
-               containsAsciiInsensitive(name, "lightfx");
+        return containsAsciiInsensitive(name, "flashlight") || containsAsciiInsensitive(name, "weaponlight") ||
+            containsAsciiInsensitive(name, "screengloweffect") || containsAsciiInsensitive(name, "gloweffect") ||
+            containsAsciiInsensitive(name, "lightfx");
     }
 
     [[nodiscard]] inline constexpr bool hasReticleRoleName(std::string_view name) noexcept
     {
         using weapon_effect_geometry_policy::containsAsciiInsensitive;
-        return containsAsciiInsensitive(name, "reticle") ||
-               containsAsciiInsensitive(name, "parallax") ||
-               containsAsciiInsensitive(name, "tritium") ||
-               containsAsciiInsensitive(name, "trit");
+        return containsAsciiInsensitive(name, "reticle") || containsAsciiInsensitive(name, "parallax") ||
+            containsAsciiInsensitive(name, "tritium") || containsAsciiInsensitive(name, "trit");
     }
 
     [[nodiscard]] inline constexpr Kind classify(const ClassificationEvidence& evidence) noexcept
@@ -137,7 +131,8 @@ namespace rock::weapon_emitter_policy
         return digitCount != 0 ? AddOnNodeValue{ static_cast<std::uint32_t>(value), true } : AddOnNodeValue{};
     }
 
-    [[nodiscard]] inline constexpr std::uint32_t transformPriority(Kind kind, Source source, std::string_view nodeName) noexcept
+    [[nodiscard]] inline constexpr std::uint32_t transformPriority(Kind kind, Source source,
+        std::string_view nodeName) noexcept
     {
         if (source == Source::AddOnNode) {
             return 400;

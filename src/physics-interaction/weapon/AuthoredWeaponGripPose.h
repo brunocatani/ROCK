@@ -1,8 +1,8 @@
 #pragma once
 
-#include "physics-interaction/weapon/LooseWeaponAuthoredGrabPolicy.h"
-#include "physics-interaction/TransformMath.h"
 #include "RE/NetImmerse/NiTransform.h"
+#include "physics-interaction/TransformMath.h"
+#include "physics-interaction/weapon/LooseWeaponAuthoredGrabPolicy.h"
 
 #include <array>
 #include <cmath>
@@ -26,8 +26,8 @@ namespace rock
         // Placement uses the same physical palm as equipped alignment. The
         // generated physics proxy has a different pivot; callers derive its
         // constraint anchor from this pose instead of moving this pose to it.
-        [[nodiscard]] RE::NiTransform placementWorld(const RE::NiTransform& physicalHandWorld,
-            float modelScale, const RE::NiPoint3& palmInHand) const
+        [[nodiscard]] RE::NiTransform placementWorld(const RE::NiTransform& physicalHandWorld, float modelScale,
+            const RE::NiPoint3& palmInHand) const
         {
             auto world = transform_math::composeTransforms(physicalHandWorld,
                 transform_math::invertTransform(placementHandWeaponLocal));
@@ -44,21 +44,25 @@ namespace rock
             const auto finite = [](const RE::NiTransform& transform) {
                 if (!std::isfinite(transform.scale) || transform.scale <= 0.0001f ||
                     !std::isfinite(transform.translate.x) || !std::isfinite(transform.translate.y) ||
-                    !std::isfinite(transform.translate.z)) return false;
+                    !std::isfinite(transform.translate.z))
+                    return false;
                 for (int row = 0; row < 3; ++row) {
                     for (int column = 0; column < 3; ++column) {
-                        if (!std::isfinite(transform.rotate.entry[row][column])) return false;
+                        if (!std::isfinite(transform.rotate.entry[row][column]))
+                            return false;
                     }
                 }
                 const auto& r = transform.rotate.entry;
                 const float determinant = r[0].x * (r[1].y * r[2].z - r[1].z * r[2].y) -
-                    r[0].y * (r[1].x * r[2].z - r[1].z * r[2].x) +
-                    r[0].z * (r[1].x * r[2].y - r[1].y * r[2].x);
+                    r[0].y * (r[1].x * r[2].z - r[1].z * r[2].x) + r[0].z * (r[1].x * r[2].y - r[1].y * r[2].x);
                 return std::isfinite(determinant) && std::abs(determinant) > 0.000001f;
             };
-            if (role == loose_weapon_authored_grab_policy::Role::None || weaponFormId == 0 ||
-                fingerMask != 0x7FFFu || !finite(handWeaponLocal) || !finite(placementHandWeaponLocal)) return false;
-            for (const auto& local : fingerLocals) if (!finite(local)) return false;
+            if (role == loose_weapon_authored_grab_policy::Role::None || weaponFormId == 0 || fingerMask != 0x7FFFu ||
+                !finite(handWeaponLocal) || !finite(placementHandWeaponLocal))
+                return false;
+            for (const auto& local : fingerLocals)
+                if (!finite(local))
+                    return false;
             return true;
         }
     };

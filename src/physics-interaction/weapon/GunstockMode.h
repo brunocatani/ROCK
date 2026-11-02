@@ -7,29 +7,29 @@ namespace rock::gunstock_mode
 {
     // Only the solver gets these virtual seats. The authored primary/support
     // hand frames and finger poses remain unchanged. No weapon-specific trim.
-    inline bool configureVirtualAim(
-        WeaponTwoHandedSolverInput<RE::NiTransform, RE::NiPoint3>& input,
-        const RE::NiTransform& primaryController,
-        const RE::NiTransform& supportController,
-        const RE::NiPoint3& primaryRecoilDisplacement,
-        const float acquisitionAlpha)
+    inline bool configureVirtualAim(WeaponTwoHandedSolverInput<RE::NiTransform, RE::NiPoint3>& input,
+        const RE::NiTransform& primaryController, const RE::NiTransform& supportController,
+        const RE::NiPoint3& primaryRecoilDisplacement, const float acquisitionAlpha)
     {
         if (!weapon_support_acquisition_math::isUsableTransform(primaryController) ||
             !weapon_support_acquisition_math::isUsableTransform(supportController) ||
             !weapon_support_acquisition_math::isFiniteVector(input.primaryGripLocal) ||
             !weapon_support_acquisition_math::isFiniteVector(input.primaryTargetWorld) ||
             !weapon_support_acquisition_math::isFiniteVector(primaryRecoilDisplacement) ||
-            !std::isfinite(acquisitionAlpha)) return false;
+            !std::isfinite(acquisitionAlpha))
+            return false;
 
         RE::NiTransform seed{};
-        if (!weapon_aim_basis::tryResolveWorld(primaryController, input.weaponWorldTransform.scale, seed)) return false;
+        if (!weapon_aim_basis::tryResolveWorld(primaryController, input.weaponWorldTransform.scale, seed))
+            return false;
         // Recoil has already displaced the physical firing pivot. Apply the
         // same displacement to the rear aiming endpoint, keeping the front
         // fixed, as the normal two-hand recoil constraint does.
-        const auto baseline = weaponSolverSub(
-            weaponSolverSub(supportController.translate, primaryController.translate), primaryRecoilDisplacement);
+        const auto baseline = weaponSolverSub(weaponSolverSub(supportController.translate, primaryController.translate),
+            primaryRecoilDisplacement);
         const float separation = weaponSolverLength(baseline);
-        if (!std::isfinite(separation) || separation <= input.minimumSeparation) return false;
+        if (!std::isfinite(separation) || separation <= input.minimumSeparation)
+            return false;
 
         auto candidate = input;
         candidate.weaponWorldTransform = seed;
@@ -37,13 +37,14 @@ namespace rock::gunstock_mode
         candidate.supportGripLocal.y += separation / seed.scale;
         candidate.useSupportNormalTwist = false;
         candidate.supportNormalTwistFactor = 0;
-        const auto forward = transform_math::rotateLocalVectorToWorld(seed.rotate, RE::NiPoint3{0, 1, 0});
+        const auto forward = transform_math::rotateLocalVectorToWorld(seed.rotate, RE::NiPoint3{ 0, 1, 0 });
         const auto start = weaponSolverAdd(candidate.primaryTargetWorld, weaponSolverScale(forward, separation));
         const auto target = weaponSolverAdd(candidate.primaryTargetWorld, baseline);
         const float alpha = std::clamp(acquisitionAlpha, 0.0f, 1.0f);
         candidate.supportTargetWorld = weaponSolverAdd(start, weaponSolverScale(weaponSolverSub(target, start), alpha));
         if (!weapon_support_acquisition_math::isFiniteVector(candidate.supportGripLocal) ||
-            !weapon_support_acquisition_math::isFiniteVector(candidate.supportTargetWorld)) return false;
+            !weapon_support_acquisition_math::isFiniteVector(candidate.supportTargetWorld))
+            return false;
         input = candidate;
         return true;
     }
@@ -58,11 +59,14 @@ namespace rock::gunstock_mode
         // orientation around a zero pivot, then restore translation once.
         auto local = input;
         local.primaryTargetWorld = {};
-        if (!configureVirtualAim(local, primaryController, supportController, primaryRecoilDisplacement, acquisitionAlpha)) return {};
+        if (!configureVirtualAim(local, primaryController, supportController, primaryRecoilDisplacement,
+                acquisitionAlpha))
+            return {};
         local.weaponWorldTransform.translate = {};
         auto result = solveTwoHandedWeaponTransformFrikPivot(local);
-        if (result.solved) result.weaponWorldTransform.translate =
-            weaponSolverAdd(result.weaponWorldTransform.translate, input.primaryTargetWorld);
+        if (result.solved)
+            result.weaponWorldTransform.translate =
+                weaponSolverAdd(result.weaponWorldTransform.translate, input.primaryTargetWorld);
         return result;
     }
 }

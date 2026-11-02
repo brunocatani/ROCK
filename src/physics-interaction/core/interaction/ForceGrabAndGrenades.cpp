@@ -14,13 +14,15 @@ namespace rock
             }
             const auto ref = commit.targetHandle.get();
             const bool returned = ref && loose_grenade_runtime::returnDroppedReferenceToInventory(ref.get());
-            f4vr::showNotification(returned ?
-                "ROCK: Item handoff failed; returned to inventory." :
-                "ROCK: Item handoff failed; check the dropped item near your hand.");
-            ROCK_LOG_WARN(Hand, "Inventory handoff rollback: command={} owner={} ref={:08X} returned={} reason={} hand={} dropMode={} phase={} elapsed={:.3f}s",
+            f4vr::showNotification(returned ? "ROCK: Item handoff failed; returned to inventory."
+                                            : "ROCK: Item handoff failed; check the dropped item near your hand.");
+            ROCK_LOG_WARN(Hand,
+                "Inventory handoff rollback: command={} owner={} ref={:08X} returned={} reason={} hand={} dropMode={} "
+                "phase={} elapsed={:.3f}s",
                 commit.providerResultTemplate.commandId, commit.providerResultTemplate.ownerToken,
                 ref ? ref->GetFormID() : 0, returned, reason, commit.isLeft ? "left" : "right",
-                static_cast<unsigned>(commit.equippedWeaponDropMode), static_cast<unsigned>(commit.phase), commit.elapsedTotalSeconds);
+                static_cast<unsigned>(commit.equippedWeaponDropMode), static_cast<unsigned>(commit.phase),
+                commit.elapsedTotalSeconds);
         }
     }
 
@@ -34,11 +36,14 @@ namespace rock
 
     void PhysicsInteraction::clearPendingForceGrabCommits()
     {
-        for (auto& visual : _drop.visuals) visual.release("pending-grabs-cleared");
+        for (auto& visual : _drop.visuals)
+            visual.release("pending-grabs-cleared");
         _forceGrab.retainedWeaponGrabs = {};
         for (auto& commit : _forceGrab.pendingCommits) {
-            if (!commit.active) continue;
-            if (provider::isInteractionCommandActive(commit.providerResultTemplate.ownerToken,commit.providerResultTemplate.commandId)) {
+            if (!commit.active)
+                continue;
+            if (provider::isInteractionCommandActive(commit.providerResultTemplate.ownerToken,
+                    commit.providerResultTemplate.commandId)) {
                 commit.providerResultTemplate.state = api::grab::InteractionCommandState::Cancelled;
                 commit.providerResultTemplate.failure = api::grab::InteractionFailure::ProviderNotReady;
                 provider::completeInteractionCommand(commit.providerResultTemplate);
@@ -52,10 +57,12 @@ namespace rock
     {
         for (auto& commit : _forceGrab.pendingCommits) {
             if (!commit.active || !commit.isEquippedWeaponTransfer() ||
-                commit.equippedWeaponDropMode == equipped_weapon_drop_policy::Mode::AutoDrop) continue;
+                commit.equippedWeaponDropMode == equipped_weapon_drop_policy::Mode::AutoDrop)
+                continue;
             _drop.visuals[commit.isLeft ? 1u : 0u].release("blocking-menu");
             for (auto& handoff : _drop.nativeHandoffs) {
-                if (handoff.active && handoff.handle == commit.targetHandle) handoff = {};
+                if (handoff.active && handoff.handle == commit.targetHandle)
+                    handoff = {};
             }
             rollbackInventoryTransfer(commit, "blocking-menu");
             _forceGrab.retainedWeaponGrabs[commit.isLeft ? 1u : 0u] = {};
@@ -69,10 +76,7 @@ namespace rock
         clearLooseGrenadeImpactWatches();
     }
 
-    std::uint32_t PhysicsInteraction::forceGrabHandBlockerMask(
-        const Hand& hand,
-        bool isLeft,
-        bool handDisabled,
+    std::uint32_t PhysicsInteraction::forceGrabHandBlockerMask(const Hand& hand, bool isLeft, bool handDisabled,
         bool includePendingCommit) const
     {
         const auto state = hand.getState();
@@ -136,8 +140,7 @@ namespace rock
     {
         for (auto& commit : _forceGrab.pendingCommits) {
             if (commit.active && !commit.internallyOwned() &&
-                !provider::isInteractionCommandActive(
-                    commit.providerResultTemplate.ownerToken,
+                !provider::isInteractionCommandActive(commit.providerResultTemplate.ownerToken,
                     commit.providerResultTemplate.commandId)) {
                 rollbackInventoryTransfer(commit, "provider-command-pruned");
                 commit = {};
@@ -147,9 +150,10 @@ namespace rock
 
     void PhysicsInteraction::serviceLooseGrenadeQuickDraw(const PhysicsFrameContext& frame)
     {
-        if (!input_remap_runtime::consumeGrenadeQuickDrawHoldRequest()) return;
-        if (!frame.worldReady || !frame.bhkWorld || !frame.hknpWorld ||
-            !physicsWritesAllowedForWorld(frame.hknpWorld)) return;
+        if (!input_remap_runtime::consumeGrenadeQuickDrawHoldRequest())
+            return;
+        if (!frame.worldReady || !frame.bhkWorld || !frame.hknpWorld || !physicsWritesAllowedForWorld(frame.hknpWorld))
+            return;
         if (handHoldsLooseGrenade(_rightHand) || handHoldsLooseGrenade(_leftHand) || hasActiveLooseGrenadeCommit()) {
             f4vr::showNotification("ROCK: A throwable is already held or attaching.");
             return;
@@ -160,8 +164,9 @@ namespace rock
             f4vr::showNotification("ROCK: Cannot draw throwable - both hands are occupied.");
             return;
         }
-        const bool isLeft = force_grab_policy::selectGrenadeHand(
-            false, rightFree, leftFree, g_rockConfig.rockDefaultHandLeft).hand == force_grab_policy::HandChoice::Left;
+        const bool isLeft =
+            force_grab_policy::selectGrenadeHand(false, rightFree, leftFree, g_rockConfig.rockDefaultHandLeft).hand ==
+            force_grab_policy::HandChoice::Left;
         auto location = (isLeft ? frame.left : frame.right).grabAnchorWorld;
         location.z -= 3.0f;
         const auto drop = loose_grenade_runtime::dropEquippedThrowableToWorld(location);
@@ -198,15 +203,17 @@ namespace rock
             Hand& hand = commit.isLeft ? _leftHand : _rightHand;
             const auto& handInput = commit.isLeft ? frame.left : frame.right;
 
-            auto abandon = [&](const char* reason,
-                               api::grab::InteractionFailure providerFailure,
+            auto abandon = [&](const char* reason, api::grab::InteractionFailure providerFailure,
                                RE::TESObjectREFR* target) {
                 ROCK_LOG_WARN(Hand,
-                    "Pending force-grab commit abandoned ({}): hand={} ref={:08X} root={} phase={} elapsed={:.3f}s limit={:.3f}s blockers={:X} preferredBody={} selectionBody={} maxDistance={:.2f} sourceOverride={}",
+                    "Pending force-grab commit abandoned ({}): hand={} ref={:08X} root={} phase={} elapsed={:.3f}s "
+                    "limit={:.3f}s blockers={:X} preferredBody={} selectionBody={} maxDistance={:.2f} "
+                    "sourceOverride={}",
                     reason, commit.isLeft ? "left" : "right", target ? target->GetFormID() : 0,
-                    target && target->Get3D(), static_cast<unsigned>(commit.phase), commit.elapsedTotalSeconds, commit.maxTotalSeconds,
-                    forceGrabHandBlockerMask(hand, commit.isLeft, handInput.disabled, false), commit.preferredBodyId,
-                    hand.getSelection().bodyId.value, commit.maxDistanceGame, commit.hasSourcePointOverride);
+                    target && target->Get3D(), static_cast<unsigned>(commit.phase), commit.elapsedTotalSeconds,
+                    commit.maxTotalSeconds, forceGrabHandBlockerMask(hand, commit.isLeft, handInput.disabled, false),
+                    commit.preferredBodyId, hand.getSelection().bodyId.value, commit.maxDistanceGame,
+                    commit.hasSourcePointOverride);
                 commit.providerResultTemplate.state = api::grab::InteractionCommandState::Rejected;
                 commit.providerResultTemplate.failure = providerFailure;
                 if (!commit.internallyOwned()) {
@@ -226,13 +233,13 @@ namespace rock
                 commit = {};
             };
 
-            if (!commit.internallyOwned() && !provider::isInteractionCommandActive(
-                    commit.providerResultTemplate.ownerToken,
+            if (!commit.internallyOwned() &&
+                !provider::isInteractionCommandActive(commit.providerResultTemplate.ownerToken,
                     commit.providerResultTemplate.commandId)) {
                 ROCK_LOG_INFO(Hand,
-                    "Pending provider force-grab commit cancelled because its command is no longer active: command={} hand={}",
-                    commit.providerResultTemplate.commandId,
-                    commit.isLeft ? "left" : "right");
+                    "Pending provider force-grab commit cancelled because its command is no longer active: command={} "
+                    "hand={}",
+                    commit.providerResultTemplate.commandId, commit.isLeft ? "left" : "right");
                 rollbackInventoryTransfer(commit, "provider-command-cancelled");
                 commit = {};
                 continue;
@@ -253,7 +260,8 @@ namespace rock
                 abandon("target ref disappeared", api::grab::InteractionFailure::TargetUnavailable, targetRef);
                 continue;
             }
-            if (!commit.internallyOwned() && !storage_service::allowsGrab(targetRef->formID, commit.providerResultTemplate.ownerToken)) {
+            if (!commit.internallyOwned() &&
+                !storage_service::allowsGrab(targetRef->formID, commit.providerResultTemplate.ownerToken)) {
                 abandon("target reserved by item storage", api::grab::InteractionFailure::TargetUnavailable, targetRef);
                 continue;
             }
@@ -268,7 +276,8 @@ namespace rock
             }
             if (commit.phase == PendingForceGrabCommitPhase::WaitingForNativePlacement) {
                 if (timedOut) {
-                    abandon("native weapon placement timed out", api::grab::InteractionFailure::TargetUnavailable, targetRef);
+                    abandon("native weapon placement timed out", api::grab::InteractionFailure::TargetUnavailable,
+                        targetRef);
                 }
                 continue;
             }
@@ -276,8 +285,7 @@ namespace rock
             // Auto Drop shares the placement/failure transaction, but leaves the
             // native loose weapon in the world without acquiring or retaining it.
             if (commit.equippedWeaponDropMode == equipped_weapon_drop_policy::Mode::AutoDrop) {
-                ROCK_LOG_INFO(Weapon,
-                    "Equipped weapon auto drop completed without force grab: hand={} ref={:08X}",
+                ROCK_LOG_INFO(Weapon, "Equipped weapon auto drop completed without force grab: hand={} ref={:08X}",
                     commit.isLeft ? "left" : "right", targetRef->GetFormID());
                 commit = {};
                 continue;
@@ -303,24 +311,22 @@ namespace rock
                 }
             }
 
-            if (commit.isEquippedWeaponTransfer()) _drop.visuals[commit.isLeft ? 1u : 0u].prepareGrab();
+            if (commit.isEquippedWeaponTransfer())
+                _drop.visuals[commit.isLeft ? 1u : 0u].prepareGrab();
             if (hand.hasSelection()) {
                 hand.clearSelectionState(false);
             }
-            const RE::NiPoint3 sourcePoint = commit.hasSourcePointOverride ? commit.sourcePointOverride : handInput.grabAnchorWorld;
-            if (!hand.acquireForceGrabLooseSelection(frame.bhkWorld,
-                    frame.hknpWorld,
-                    targetRef,
-                    sourcePoint,
-                    commit.preferredBodyId,
-                    commit.maxDistanceGame,
-                    commit.inventoryTransfer &&
-                        commit.targetIsLooseThrowable &&
+            const RE::NiPoint3 sourcePoint =
+                commit.hasSourcePointOverride ? commit.sourcePointOverride : handInput.grabAnchorWorld;
+            if (!hand.acquireForceGrabLooseSelection(frame.bhkWorld, frame.hknpWorld, targetRef, sourcePoint,
+                    commit.preferredBodyId, commit.maxDistanceGame,
+                    commit.inventoryTransfer && commit.targetIsLooseThrowable &&
                         loose_grenade_runtime::isThrowableRef(targetRef),
                     commit.isEquippedWeaponTransfer())) {
                 commit.phase = PendingForceGrabCommitPhase::WaitingForSettle;
                 if (timedOut) {
-                    abandon("failed to resolve physics body", api::grab::InteractionFailure::TargetBodyMissing, targetRef);
+                    abandon("failed to resolve physics body", api::grab::InteractionFailure::TargetBodyMissing,
+                        targetRef);
                 }
                 continue;
             }
@@ -329,17 +335,20 @@ namespace rock
                 hand.clearSelectionState(false);
                 commit.phase = PendingForceGrabCommitPhase::WaitingForSettle;
                 if (timedOut) {
-                    abandon("selection did not retain exact target", api::grab::InteractionFailure::TargetUnavailable, targetRef);
+                    abandon("selection did not retain exact target", api::grab::InteractionFailure::TargetUnavailable,
+                        targetRef);
                 }
                 continue;
             }
-            if (commit.preferredBodyId != INVALID_BODY_ID && hand.getSelection().bodyId.value != commit.preferredBodyId) {
+            if (commit.preferredBodyId != INVALID_BODY_ID &&
+                hand.getSelection().bodyId.value != commit.preferredBodyId) {
                 const std::uint32_t resolvedBodyId = hand.getSelection().bodyId.value;
                 hand.clearSelectionState(false);
 
                 commit.providerResultTemplate.targetBodyId = resolvedBodyId;
 
-                abandon("resolved body does not match requested body", api::grab::InteractionFailure::TargetBodyMissing, targetRef);
+                abandon("resolved body does not match requested body", api::grab::InteractionFailure::TargetBodyMissing,
+                    targetRef);
                 continue;
             }
 
@@ -352,15 +361,12 @@ namespace rock
             commit.phase = PendingForceGrabCommitPhase::AcquireAndCommitExactTarget;
 
             const auto sharedContext = makeGrabSharedObjectContext(hand, commit.isLeft);
-            const bool grabbed = hand.grabSelectedObject(frame.hknpWorld,
-                handInput.rawHandWorld,
-                g_rockConfig.rockGrabLinearTau,
-                g_rockConfig.rockGrabLinearDamping,
-                g_rockConfig.rockGrabConstraintMaxForce,
-                g_rockConfig.rockGrabLinearProportionalRecovery,
-                g_rockConfig.rockGrabLinearConstantRecovery,
-                sharedContext,
-                commit.isEquippedWeaponTransfer() ? &commit.weaponGripPose : nullptr) == GrabAttemptResult::Grabbed;
+            const bool grabbed =
+                hand.grabSelectedObject(frame.hknpWorld, handInput.rawHandWorld, g_rockConfig.rockGrabLinearTau,
+                    g_rockConfig.rockGrabLinearDamping, g_rockConfig.rockGrabConstraintMaxForce,
+                    g_rockConfig.rockGrabLinearProportionalRecovery, g_rockConfig.rockGrabLinearConstantRecovery,
+                    sharedContext,
+                    commit.isEquippedWeaponTransfer() ? &commit.weaponGripPose : nullptr) == GrabAttemptResult::Grabbed;
             if (!grabbed) {
                 hand.clearSelectionState(false);
                 commit.phase = PendingForceGrabCommitPhase::WaitingForSettle;
@@ -374,11 +380,10 @@ namespace rock
             const std::uint32_t primaryBodyId = hand.getSavedObjectState().bodyId.value;
             const bool exactBody = commit.preferredBodyId == INVALID_BODY_ID || primaryBodyId == commit.preferredBodyId;
             if (heldRef != targetRef || !exactBody) {
-                hand.releaseGrabbedObject(
-                    frame.hknpWorld,
-                    GrabReleaseCollisionRestoreMode::Immediate,
+                hand.releaseGrabbedObject(frame.hknpWorld, GrabReleaseCollisionRestoreMode::Immediate,
                     makeGrabReleaseContext(hand, commit.isLeft));
-                abandon("grab postcondition did not match exact target", api::grab::InteractionFailure::TargetUnavailable, targetRef);
+                abandon("grab postcondition did not match exact target",
+                    api::grab::InteractionFailure::TargetUnavailable, targetRef);
                 continue;
             }
 
@@ -387,11 +392,11 @@ namespace rock
                 // the new owner must drive and present now before the bridge exits.
                 hand.updateHeldObject(frame.hknpWorld, handInput.rawHandWorld, frame.deltaSeconds,
                     g_rockConfig.rockGrabForceFadeInTime, g_rockConfig.rockGrabTauMin,
-                    makeGrabReleaseContext(hand, commit.isLeft),
-                    commit.isLeft ? &_rightHand : &_leftHand,
+                    makeGrabReleaseContext(hand, commit.isLeft), commit.isLeft ? &_rightHand : &_leftHand,
                     &(commit.isLeft ? frame.right : frame.left).rawHandWorld);
                 if (!hand.isHolding() || hand.getHeldRef() != targetRef) {
-                    abandon("first held update rejected the transfer", api::grab::InteractionFailure::TargetUnavailable, targetRef);
+                    abandon("first held update rejected the transfer", api::grab::InteractionFailure::TargetUnavailable,
+                        targetRef);
                     continue;
                 }
             }
@@ -405,14 +410,11 @@ namespace rock
                  * commit. Do not publish or retain a grab whose command
                  * reservation was cancelled before the terminal result.
                  */
-                hand.releaseGrabbedObject(
-                    frame.hknpWorld,
-                    GrabReleaseCollisionRestoreMode::Immediate,
+                hand.releaseGrabbedObject(frame.hknpWorld, GrabReleaseCollisionRestoreMode::Immediate,
                     makeGrabReleaseContext(hand, commit.isLeft));
                 ROCK_LOG_INFO(Hand,
                     "Provider force-grab rolled back because command ownership ended during commit: command={} hand={}",
-                    commit.providerResultTemplate.commandId,
-                    commit.isLeft ? "left" : "right");
+                    commit.providerResultTemplate.commandId, commit.isLeft ? "left" : "right");
                 rollbackInventoryTransfer(commit, "provider-command-ended-during-commit");
                 commit = {};
                 continue;
@@ -425,7 +427,8 @@ namespace rock
             // initiating button is already up. Preserve an equipped transfer's
             // pending gesture, but start every other arrival with a fresh latch.
             auto& retained = _forceGrab.retainedWeaponGrabs[commit.isLeft ? 1u : 0u];
-            if (!commit.isEquippedWeaponTransfer()) retained = {};
+            if (!commit.isEquippedWeaponTransfer())
+                retained = {};
             retained.grabIdentity = hand.heldGrabIdentity();
             ROCK_LOG_INFO(Hand,
                 "Force grab retained until a fresh grab/release: hand={} ref={:08X} grab={} inputState={}",
@@ -433,7 +436,8 @@ namespace rock
                 static_cast<unsigned>(retained.inputState));
             claimObject(heldRef, claimOwnerForHand(commit.isLeft));
             dispatchGrabCommittedEvent(commit.isLeft, heldRef, primaryBodyId, frame.hknpWorld);
-            input_remap_runtime::setHandHeldWeapon(commit.isLeft, (commit.isLeft ? _leftHand : _rightHand).isHoldingLooseWeapon());
+            input_remap_runtime::setHandHeldWeapon(commit.isLeft,
+                (commit.isLeft ? _leftHand : _rightHand).isHoldingLooseWeapon());
 
             _forceGrab.committedThisFrame[commit.isLeft ? 1u : 0u] = true;
             commit = {};
@@ -450,12 +454,10 @@ namespace rock
         for (const auto& fuse : _forceGrab.grenadeFuses) {
             const auto fuseRefPtr = fuse.handle.get();
             if (fuse.active && fuseRefPtr.get() == heldRef) {
-                ROCK_LOG_SAMPLE_DEBUG(Hand,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "{} hand loose throwable trigger ignored because activation is already active: ref={:08X} remaining={:.3f}s",
-                    hand.handName(),
-                    heldRef->GetFormID(),
-                    fuse.remainingSeconds);
+                ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
+                    "{} hand loose throwable trigger ignored because activation is already active: ref={:08X} "
+                    "remaining={:.3f}s",
+                    hand.handName(), heldRef->GetFormID(), fuse.remainingSeconds);
                 return true;
             }
         }
@@ -463,9 +465,9 @@ namespace rock
         loose_grenade_runtime::GrenadeRuntimeData runtime{};
         if (!loose_grenade_runtime::resolveGrenadeRuntimeDataForReference(heldRef, runtime)) {
             ROCK_LOG_WARN(Hand,
-                "{} hand loose throwable trigger could not arm because its authored runtime data is unsupported: ref={:08X}",
-                hand.handName(),
-                heldRef->GetFormID());
+                "{} hand loose throwable trigger could not arm because its authored runtime data is unsupported: "
+                "ref={:08X}",
+                hand.handName(), heldRef->GetFormID());
             return true;
         }
 
@@ -486,8 +488,7 @@ namespace rock
             if (impactBodyId == INVALID_CONTACT_BODY_ID) {
                 ROCK_LOG_WARN(Hand,
                     "{} hand loose impact throwable could not arm because no held body id was available: ref={:08X}",
-                    hand.handName(),
-                    heldRef->GetFormID());
+                    hand.handName(), heldRef->GetFormID());
                 return true;
             }
         }
@@ -507,38 +508,33 @@ namespace rock
                 .impactBodyId = impactBodyId,
                 .releasedSinceArming = false,
             };
-            _forceGrab.grenadeImpactBodyIds[slotIndex].store(
-                runtime.detonationMode == loose_grenade_runtime::GrenadeDetonationMode::Impact ? impactBodyId : INVALID_CONTACT_BODY_ID,
+            _forceGrab.grenadeImpactBodyIds[slotIndex].store(runtime.detonationMode ==
+                        loose_grenade_runtime::GrenadeDetonationMode::Impact
+                    ? impactBodyId
+                    : INVALID_CONTACT_BODY_ID,
                 std::memory_order_release);
             ROCK_LOG_INFO(Hand,
-                "{} hand armed loose throwable: ref={:08X} projectile={:08X} explosion={:08X} mode={} delay={:.3f}s proximity={:.1f}gu preserveRef={} impactBody={} frameDt={:.4f}",
-                hand.handName(),
-                heldRef->GetFormID(),
-                runtime.projectile ? runtime.projectile->GetFormID() : 0,
+                "{} hand armed loose throwable: ref={:08X} projectile={:08X} explosion={:08X} mode={} delay={:.3f}s "
+                "proximity={:.1f}gu preserveRef={} impactBody={} frameDt={:.4f}",
+                hand.handName(), heldRef->GetFormID(), runtime.projectile ? runtime.projectile->GetFormID() : 0,
                 runtime.explosion ? runtime.explosion->GetFormID() : 0,
-                loose_grenade_runtime::detonationModeName(runtime.detonationMode),
-                runtime.fuseSeconds,
-                runtime.proximityRadiusGameUnits,
-                runtime.preserveReferenceAfterDetonation ? "yes" : "no",
-                impactBodyId,
+                loose_grenade_runtime::detonationModeName(runtime.detonationMode), runtime.fuseSeconds,
+                runtime.proximityRadiusGameUnits, runtime.preserveReferenceAfterDetonation ? "yes" : "no", impactBodyId,
                 frame.deltaSeconds);
             const bool feedbackPlayed = loose_grenade_runtime::playPinPulledFeedbackAtReference(heldRef);
             if (runtime.molotov) {
                 fuse.visual = LooseMolotovVisual::create(heldRef);
-                if (fuse.visual) fuse.visual->update(heldRef, 0.0f);
+                if (fuse.visual)
+                    fuse.visual->update(heldRef, 0.0f);
             }
-            ROCK_LOG_DEBUG(Hand,
-                "{} hand loose throwable activation feedback: ref={:08X} played={}",
-                hand.handName(),
-                heldRef->GetFormID(),
-                feedbackPlayed ? "yes" : "no");
+            ROCK_LOG_DEBUG(Hand, "{} hand loose throwable activation feedback: ref={:08X} played={}", hand.handName(),
+                heldRef->GetFormID(), feedbackPlayed ? "yes" : "no");
             return true;
         }
 
         ROCK_LOG_WARN(Hand,
             "{} hand loose throwable trigger could not arm because armed throwable capacity is full: ref={:08X}",
-            hand.handName(),
-            heldRef->GetFormID());
+            hand.handName(), heldRef->GetFormID());
         return true;
     }
 
@@ -552,11 +548,9 @@ namespace rock
 
         std::uint32_t pendingImpactBodyId = INVALID_CONTACT_BODY_ID;
         std::uint32_t pendingImpactOtherBodyId = INVALID_CONTACT_BODY_ID;
-        const bool pendingImpact =
-            unpackHeldImpactPair(
-                _forceGrab.pendingGrenadeImpactPair.exchange(INVALID_HELD_IMPACT_PAIR, std::memory_order_acq_rel),
-                pendingImpactBodyId,
-                pendingImpactOtherBodyId);
+        const bool pendingImpact = unpackHeldImpactPair(
+            _forceGrab.pendingGrenadeImpactPair.exchange(INVALID_HELD_IMPACT_PAIR, std::memory_order_acq_rel),
+            pendingImpactBodyId, pendingImpactOtherBodyId);
 
         auto releaseHandIfHolding = [&](Hand& hand, bool isLeft, RE::TESObjectREFR* ref) {
             if (!ref || !hand.isHolding() || hand.getHeldRef() != ref) {
@@ -564,43 +558,40 @@ namespace rock
             }
 
             const auto releaseContext = makeGrabReleaseContext(hand, isLeft);
-            static_cast<void>(hand.releaseGrabbedObject(frame.hknpWorld, GrabReleaseCollisionRestoreMode::Immediate, releaseContext));
+            static_cast<void>(
+                hand.releaseGrabbedObject(frame.hknpWorld, GrabReleaseCollisionRestoreMode::Immediate, releaseContext));
             releaseObject(ref, claimOwnerForHand(isLeft));
             dispatchSimpleGrabEvent(GrabEventType::Released, isLeft, ref);
         };
 
-        auto detonateLooseGrenade = [&](ArmedLooseGrenadeFuseState& fuse,
-                                         std::size_t slotIndex,
-                                         RE::TESObjectREFR* ref,
-                                         const char* reason,
-                                         std::uint32_t triggerActorFormID = 0) {
+        auto detonateLooseGrenade = [&](ArmedLooseGrenadeFuseState& fuse, std::size_t slotIndex, RE::TESObjectREFR* ref,
+                                        const char* reason, std::uint32_t triggerActorFormID = 0) {
             const std::uint32_t formID = ref ? ref->GetFormID() : fuse.refFormID;
             releaseHandIfHolding(_rightHand, false, ref);
             releaseHandIfHolding(_leftHand, true, ref);
 
             // The detonation attempt ends this armed state even if creation
             // fails. Retire its visual before the source 3D can be deleted.
-            if (fuse.visual) fuse.visual->release("detonation");
-            const bool explosionCreated = loose_grenade_runtime::createExplosionAtReference(ref, fuse.runtime.explosion);
+            if (fuse.visual)
+                fuse.visual->release("detonation");
+            const bool explosionCreated =
+                loose_grenade_runtime::createExplosionAtReference(ref, fuse.runtime.explosion);
             if (explosionCreated) {
                 if (!fuse.runtime.preserveReferenceAfterDetonation) {
                     loose_grenade_runtime::disableAndDeleteReference(ref);
                 }
                 ROCK_LOG_INFO(Hand,
-                    "Loose throwable activated: ref={:08X} explosion={:08X} mode={} reason={} consumed={} triggerActor={:08X} impactBody={} otherBody={}",
-                    formID,
-                    fuse.runtime.explosion ? fuse.runtime.explosion->GetFormID() : 0,
-                    loose_grenade_runtime::detonationModeName(fuse.runtime.detonationMode),
-                    reason ? reason : "unknown",
-                    fuse.runtime.preserveReferenceAfterDetonation ? "no" : "yes",
-                    triggerActorFormID,
-                    fuse.impactBodyId,
+                    "Loose throwable activated: ref={:08X} explosion={:08X} mode={} reason={} consumed={} "
+                    "triggerActor={:08X} impactBody={} otherBody={}",
+                    formID, fuse.runtime.explosion ? fuse.runtime.explosion->GetFormID() : 0,
+                    loose_grenade_runtime::detonationModeName(fuse.runtime.detonationMode), reason ? reason : "unknown",
+                    fuse.runtime.preserveReferenceAfterDetonation ? "no" : "yes", triggerActorFormID, fuse.impactBodyId,
                     pendingImpactOtherBodyId);
             } else {
                 ROCK_LOG_WARN(Hand,
-                    "Loose throwable activation failed; leaving ref loose: ref={:08X} explosion={:08X} mode={} reason={}",
-                    formID,
-                    fuse.runtime.explosion ? fuse.runtime.explosion->GetFormID() : 0,
+                    "Loose throwable activation failed; leaving ref loose: ref={:08X} explosion={:08X} mode={} "
+                    "reason={}",
+                    formID, fuse.runtime.explosion ? fuse.runtime.explosion->GetFormID() : 0,
                     loose_grenade_runtime::detonationModeName(fuse.runtime.detonationMode),
                     reason ? reason : "unknown");
             }
@@ -619,14 +610,14 @@ namespace rock
             if (!ref || ref->IsDeleted() || ref->IsDisabled()) {
                 ROCK_LOG_DEBUG(Hand,
                     "Loose throwable activation cleared because ref is gone: ref={:08X} remaining={:.3f}s",
-                    fuse.refFormID,
-                    fuse.remainingSeconds);
+                    fuse.refFormID, fuse.remainingSeconds);
                 _forceGrab.grenadeImpactBodyIds[slotIndex].store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
                 fuse = {};
                 continue;
             }
 
-            if (fuse.visual) fuse.visual->update(ref, deltaSeconds);
+            if (fuse.visual)
+                fuse.visual->update(ref, deltaSeconds);
 
             if (fuse.runtime.detonationMode == loose_grenade_runtime::GrenadeDetonationMode::Impact) {
                 if (!pendingImpact || pendingImpactBodyId != fuse.impactBodyId) {
@@ -634,41 +625,29 @@ namespace rock
                 }
                 if ((_rightHand.isHolding() && _rightHand.getHeldRef() == ref) ||
                     (_leftHand.isHolding() && _leftHand.getHeldRef() == ref)) {
-                    ROCK_LOG_SAMPLE_DEBUG(Hand,
-                        g_rockConfig.rockLogSampleMilliseconds,
-                        "Loose impact throwable contact ignored while still held: ref={:08X} impactBody={} otherBody={}",
-                        fuse.refFormID,
-                        pendingImpactBodyId,
-                        pendingImpactOtherBodyId);
+                    ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
+                        "Loose impact throwable contact ignored while still held: ref={:08X} impactBody={} "
+                        "otherBody={}",
+                        fuse.refFormID, pendingImpactBodyId, pendingImpactOtherBodyId);
                     continue;
                 }
 
-                auto* impactOtherRef = !isInvalidGrabBodyId(pendingImpactOtherBodyId) ?
-                                           resolveBodyToRef(
-                                               frame.bhkWorld,
-                                               frame.hknpWorld,
-                                               RE::hknpBodyId{ pendingImpactOtherBodyId }) :
-                                           nullptr;
+                auto* impactOtherRef = !isInvalidGrabBodyId(pendingImpactOtherBodyId)
+                    ? resolveBodyToRef(frame.bhkWorld, frame.hknpWorld, RE::hknpBodyId{ pendingImpactOtherBodyId })
+                    : nullptr;
                 auto* player = f4vr::getPlayer();
                 if (impactOtherRef && (impactOtherRef == ref || impactOtherRef == player)) {
-                    ROCK_LOG_SAMPLE_DEBUG(Hand,
-                        g_rockConfig.rockLogSampleMilliseconds,
-                        "Loose impact throwable ignored self/player contact: ref={:08X} impactBody={} otherBody={} otherRef={:08X}",
-                        fuse.refFormID,
-                        pendingImpactBodyId,
-                        pendingImpactOtherBodyId,
-                        impactOtherRef->GetFormID());
+                    ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
+                        "Loose impact throwable ignored self/player contact: ref={:08X} impactBody={} otherBody={} "
+                        "otherRef={:08X}",
+                        fuse.refFormID, pendingImpactBodyId, pendingImpactOtherBodyId, impactOtherRef->GetFormID());
                     continue;
                 }
 
-                const auto impactTargetFormID=native_interaction_service::impactEffect(
-                    reinterpret_cast<std::uintptr_t>(ref),reinterpret_cast<std::uintptr_t>(impactOtherRef),fuse.runtime.directImpactDamage);
-                detonateLooseGrenade(
-                    fuse,
-                    slotIndex,
-                    ref,
-                    "impact",
-                    impactTargetFormID);
+                const auto impactTargetFormID =
+                    native_interaction_service::impactEffect(reinterpret_cast<std::uintptr_t>(ref),
+                        reinterpret_cast<std::uintptr_t>(impactOtherRef), fuse.runtime.directImpactDamage);
+                detonateLooseGrenade(fuse, slotIndex, ref, "impact", impactTargetFormID);
                 continue;
             }
 
@@ -680,10 +659,9 @@ namespace rock
                 if (!fuse.releasedSinceArming) {
                     fuse.releasedSinceArming = true;
                     ROCK_LOG_INFO(Hand,
-                        "Placed mine released; proximity arming delay started: ref={:08X} delay={:.3f}s radius={:.1f}gu",
-                        fuse.refFormID,
-                        fuse.remainingSeconds,
-                        fuse.runtime.proximityRadiusGameUnits);
+                        "Placed mine released; proximity arming delay started: ref={:08X} delay={:.3f}s "
+                        "radius={:.1f}gu",
+                        fuse.refFormID, fuse.remainingSeconds, fuse.runtime.proximityRadiusGameUnits);
                     continue;
                 }
                 if (fuse.remainingSeconds > 0.0f) {
@@ -695,22 +673,14 @@ namespace rock
                 }
 
                 const auto proximity = native_interaction_service::proximityTarget(
-                    reinterpret_cast<std::uintptr_t>(ref),
-                    fuse.runtime.proximityRadiusGameUnits);
+                    reinterpret_cast<std::uintptr_t>(ref), fuse.runtime.proximityRadiusGameUnits);
                 if (proximity.truncated) {
-                    ROCK_LOG_SAMPLE_WARN(Hand,
-                        g_rockConfig.rockLogSampleMilliseconds,
+                    ROCK_LOG_SAMPLE_WARN(Hand, g_rockConfig.rockLogSampleMilliseconds,
                         "Placed mine proximity scan reached its actor-handle bound: ref={:08X} scanned={}",
-                        fuse.refFormID,
-                        proximity.scanned);
+                        fuse.refFormID, proximity.scanned);
                 }
                 if (proximity.targetForm) {
-                    detonateLooseGrenade(
-                        fuse,
-                        slotIndex,
-                        ref,
-                        "proximity",
-                        proximity.targetForm);
+                    detonateLooseGrenade(fuse, slotIndex, ref, "proximity", proximity.targetForm);
                     continue;
                 }
 
@@ -719,10 +689,8 @@ namespace rock
             }
 
             if (fuse.runtime.detonationMode != loose_grenade_runtime::GrenadeDetonationMode::TimedFuse) {
-                ROCK_LOG_WARN(Hand,
-                    "Cleared loose throwable with unsupported live mode: ref={:08X} mode={}",
-                    fuse.refFormID,
-                    loose_grenade_runtime::detonationModeName(fuse.runtime.detonationMode));
+                ROCK_LOG_WARN(Hand, "Cleared loose throwable with unsupported live mode: ref={:08X} mode={}",
+                    fuse.refFormID, loose_grenade_runtime::detonationModeName(fuse.runtime.detonationMode));
                 _forceGrab.grenadeImpactBodyIds[slotIndex].store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
                 fuse = {};
                 continue;

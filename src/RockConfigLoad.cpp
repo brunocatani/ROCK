@@ -409,9 +409,9 @@ namespace rock
             "fScopedFilterReleaseDegreesPerSecond", rockScopedFilterReleaseDegreesPerSecond, 45.0f, 0.0f, 720.0f);
         rockFiringGripReattachRadiusGameUnits = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION,
             "fFiringGripReattachRadiusGameUnits", rockFiringGripReattachRadiusGameUnits, 10.0f, 0.25f, 30.0f);
-        rockFiringGripReattachCylinderRadiusGameUnits = readClampedFloat(ini, SECTION,
-            "fFiringGripReattachCylinderRadiusGameUnits", rockFiringGripReattachCylinderRadiusGameUnits, 3.0f, 0.1f,
-            30.0f);
+        rockFiringGripReattachCylinderRadiusGameUnits =
+            readClampedFloat(ini, SECTION, "fFiringGripReattachCylinderRadiusGameUnits",
+                rockFiringGripReattachCylinderRadiusGameUnits, 3.0f, 0.1f, 30.0f);
         rockGripZoneIndicatorDiameterGameUnits =
             readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fGripZoneIndicatorDiameterGameUnits",
                 rockGripZoneIndicatorDiameterGameUnits, grip_zone_indicator_policy::kDefaultDiameterGameUnits,
@@ -430,7 +430,8 @@ namespace rock
             rockAmmoCounterStyle = 1;
         }
 
-        rockDefaultHandLeft = readDefaultHandLeft(ini, AMBIDEXTROUS_FIRING_SECTION, "sDefaultHand", rockDefaultHandLeft);
+        rockDefaultHandLeft =
+            readDefaultHandLeft(ini, AMBIDEXTROUS_FIRING_SECTION, "sDefaultHand", rockDefaultHandLeft);
         rockLeftFiringAimYawDegrees = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION, "fLeftFiringAimYawDegrees",
             rockLeftFiringAimYawDegrees, 0.0f, -30.0f, 30.0f);
         rockLeftFiringAimPitchDegrees = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION, "fLeftFiringAimPitchDegrees",
@@ -517,15 +518,15 @@ namespace rock
         rockNativeScopeFiringGripFallbackOffsetZGameUnits =
             readClampedFloat(ini, SECTION, "fNativeScopeFiringGripFallbackOffsetZGameUnits",
                 rockNativeScopeFiringGripFallbackOffsetZGameUnits, 10.0f, -100.0f, 100.0f);
-        rockNativeScopeFiringGripFallbackPitchDegrees = readClampedFloat(ini, SECTION,
-            "fNativeScopeFiringGripFallbackPitchDegrees", rockNativeScopeFiringGripFallbackPitchDegrees, 0.0f, -180.0f,
-            180.0f);
-        rockNativeScopeFiringGripFallbackYawDegrees = readClampedFloat(ini, SECTION,
-            "fNativeScopeFiringGripFallbackYawDegrees", rockNativeScopeFiringGripFallbackYawDegrees, 0.0f, -180.0f,
-            180.0f);
-        rockNativeScopeFiringGripFallbackRollDegrees = readClampedFloat(ini, SECTION,
-            "fNativeScopeFiringGripFallbackRollDegrees", rockNativeScopeFiringGripFallbackRollDegrees, 0.0f, -180.0f,
-            180.0f);
+        rockNativeScopeFiringGripFallbackPitchDegrees =
+            readClampedFloat(ini, SECTION, "fNativeScopeFiringGripFallbackPitchDegrees",
+                rockNativeScopeFiringGripFallbackPitchDegrees, 0.0f, -180.0f, 180.0f);
+        rockNativeScopeFiringGripFallbackYawDegrees =
+            readClampedFloat(ini, SECTION, "fNativeScopeFiringGripFallbackYawDegrees",
+                rockNativeScopeFiringGripFallbackYawDegrees, 0.0f, -180.0f, 180.0f);
+        rockNativeScopeFiringGripFallbackRollDegrees =
+            readClampedFloat(ini, SECTION, "fNativeScopeFiringGripFallbackRollDegrees",
+                rockNativeScopeFiringGripFallbackRollDegrees, 0.0f, -180.0f, 180.0f);
         rockNativeScopeOverlayOffsetXGameUnits = readClampedFloat(ini, SECTION, "fNativeScopeOverlayOffsetXGameUnits",
             rockNativeScopeOverlayOffsetXGameUnits, 0.0f, -100.0f, 100.0f);
         rockNativeScopeOverlayOffsetYGameUnits = readClampedFloat(ini, SECTION, "fNativeScopeOverlayOffsetYGameUnits",
@@ -539,7 +540,8 @@ namespace rock
         rockNativeScopeOverlayRollDegrees = readClampedFloat(ini, SECTION, "fNativeScopeOverlayRollDegrees",
             rockNativeScopeOverlayRollDegrees, 0.0f, -180.0f, 180.0f);
 
-        rockEnableVanillaMelee = ini.GetBoolValue(NATIVE_GAMEPLAY_SECTION, "bEnableVanillaMelee", rockEnableVanillaMelee);
+        rockEnableVanillaMelee =
+            ini.GetBoolValue(NATIVE_GAMEPLAY_SECTION, "bEnableVanillaMelee", rockEnableVanillaMelee);
         rockVanillaMeleeSwingSpeed = readClampedFloat(ini, NATIVE_GAMEPLAY_SECTION, "fVanillaMeleeSwingSpeed",
             rockVanillaMeleeSwingSpeed, 300.0f, 50.0f, 2000.0f);
         rockVanillaGunBashSpeed = readClampedFloat(ini, NATIVE_GAMEPLAY_SECTION, "fVanillaGunBashSpeed",

@@ -9,16 +9,26 @@ namespace rock::weapon_input_filter
     // releaseDegreesPerSecond > 0 makes the smoothing speed-adaptive: each
     // time constant scales by release / (release + controller rotation speed),
     // full while the hand holds still and fading as it swings.
-    struct Tuning { float rotationSeconds; float translationSeconds; float releaseDegreesPerSecond = 0.0f; };
+    struct Tuning
+    {
+        float rotationSeconds;
+        float translationSeconds;
+        float releaseDegreesPerSecond = 0.0f;
+    };
 
     [[nodiscard]] inline Tuning tuning(int preset)
     {
         switch (preset) {
-        case 1: return { 0.012f, 0.006f };
-        case 2: return { 0.025f, 0.012f };
-        case 3: return { 0.045f, 0.022f };
-        case 4: return { 0.070f, 0.035f };
-        default: return {};
+        case 1:
+            return { 0.012f, 0.006f };
+        case 2:
+            return { 0.025f, 0.012f };
+        case 3:
+            return { 0.045f, 0.022f };
+        case 4:
+            return { 0.070f, 0.035f };
+        default:
+            return {};
         }
     }
 
@@ -42,9 +52,8 @@ namespace rock::weapon_input_filter
     // Reframe the existing input by controller motion only. An animated offset
     // node is not a controller frame: FRIK may restore native recoil there after
     // solving the neutral hand, so its inverse would subtract recoil from input.
-    [[nodiscard]] inline RE::NiTransform applyTrackingCorrection(
-        const RE::NiTransform& input, const RE::NiTransform& trackedWand,
-        const RE::NiTransform& filteredWand)
+    [[nodiscard]] inline RE::NiTransform applyTrackingCorrection(const RE::NiTransform& input,
+        const RE::NiTransform& trackedWand, const RE::NiTransform& filteredWand)
     {
         return transform_math::composeTransforms(filteredWand,
             transform_math::composeTransforms(transform_math::invertTransform(trackedWand), input));
@@ -52,9 +61,8 @@ namespace rock::weapon_input_filter
 
     // Generated grab proxies store column axes; TransformMath uses row axes.
     // Correct the row view, then restore proxy storage before driving Havok.
-    [[nodiscard]] inline RE::NiTransform applyProxyTrackingCorrection(
-        RE::NiTransform proxy, const RE::NiTransform& trackedWand,
-        const RE::NiTransform& filteredWand)
+    [[nodiscard]] inline RE::NiTransform applyProxyTrackingCorrection(RE::NiTransform proxy,
+        const RE::NiTransform& trackedWand, const RE::NiTransform& filteredWand)
     {
         proxy.rotate = transform_math::transposeRotation(proxy.rotate);
         proxy = applyTrackingCorrection(proxy, trackedWand, filteredWand);
@@ -64,14 +72,13 @@ namespace rock::weapon_input_filter
 
     // State is in room space: locomotion and artificial turning transport it
     // without filtering. The caller resets on ownership/tracking discontinuity.
-    [[nodiscard]] inline bool update(State& state, const RE::NiTransform& target,
-        const RE::NiTransform& room, const RE::NiPoint3& pivotInTarget,
-        std::uint64_t sequence, float dt, bool discontinuity, Tuning config,
+    [[nodiscard]] inline bool update(State& state, const RE::NiTransform& target, const RE::NiTransform& room,
+        const RE::NiPoint3& pivotInTarget, std::uint64_t sequence, float dt, bool discontinuity, Tuning config,
         RE::NiTransform& output)
     {
         output = {};
-        if (!sequence || !usable(target) || !usable(room) ||
-            !std::isfinite(pivotInTarget.x) || !std::isfinite(pivotInTarget.y) || !std::isfinite(pivotInTarget.z)) {
+        if (!sequence || !usable(target) || !usable(room) || !std::isfinite(pivotInTarget.x) ||
+            !std::isfinite(pivotInTarget.y) || !std::isfinite(pivotInTarget.z)) {
             state = {};
             return false;
         }
@@ -86,7 +93,8 @@ namespace rock::weapon_input_filter
         }
         const auto local = transform_math::composeTransforms(transform_math::invertTransform(room), target);
         const bool seed = !state.valid || discontinuity || sequence != state.sequence + 1;
-        if (seed) state.pivotInTarget = pivotInTarget;
+        if (seed)
+            state.pivotInTarget = pivotInTarget;
         // Keep the physical controller pivot fixed for this input session.
         // Current animation/recoil offsets must not enter tracking history.
         const auto pivot = transform_math::localPointToWorld(local, state.pivotInTarget);
@@ -97,7 +105,8 @@ namespace rock::weapon_input_filter
             float scale = 1.0f;
             if (config.releaseDegreesPerSecond > 0.0f) {
                 const float speed = hand_world_claim_registry_policy::rotationDeltaDegrees(state.lastLocal, local) / dt;
-                if (std::isfinite(speed)) scale = config.releaseDegreesPerSecond / (config.releaseDegreesPerSecond + speed);
+                if (std::isfinite(speed))
+                    scale = config.releaseDegreesPerSecond / (config.releaseDegreesPerSecond + speed);
             }
             const auto alpha = [dt, scale](float tau) { return tau > 0.0f ? -std::expm1(-dt / (tau * scale)) : 1.0f; };
             state.filteredPivotLocal += (pivot - state.filteredPivotLocal) * alpha(config.translationSeconds);
@@ -107,8 +116,8 @@ namespace rock::weapon_input_filter
             state.filteredLocal.scale = local.scale;
         }
         state.filteredLocal.translate = {};
-        state.filteredLocal.translate = state.filteredPivotLocal -
-            transform_math::localPointToWorld(state.filteredLocal, state.pivotInTarget);
+        state.filteredLocal.translate =
+            state.filteredPivotLocal - transform_math::localPointToWorld(state.filteredLocal, state.pivotInTarget);
         state.output = transform_math::composeTransforms(room, state.filteredLocal);
         state.lastLocal = local;
         state.sequence = sequence;

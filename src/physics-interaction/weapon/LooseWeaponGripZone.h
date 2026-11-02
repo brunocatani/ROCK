@@ -3,9 +3,9 @@
 #include <span>
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
-#include "physics-interaction/weapon/LooseWeaponAuthoredGrabPolicy.h"
-#include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h"
+#include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
+#include "physics-interaction/weapon/LooseWeaponAuthoredGrabPolicy.h"
 
 namespace RE
 {
@@ -68,7 +68,9 @@ namespace rock::loose_weapon_grip_zone
         // The complete authored station nearest the palm, zones aside;
         // firing when the weapon has no complete support station.
         loose_weapon_authored_grab_policy::Role nearestRole{ loose_weapon_authored_grab_policy::Role::Firing };
-        loose_weapon_authored_grab_policy::Arrangement arrangement{ loose_weapon_authored_grab_policy::Arrangement::Pending };
+        loose_weapon_authored_grab_policy::Arrangement arrangement{
+            loose_weapon_authored_grab_policy::Arrangement::Pending
+        };
         RE::NiTransform handWorld{};
         AuthoredWeaponGripPose pose{};
         bool handWorldValid{ false };
@@ -90,12 +92,12 @@ namespace rock::loose_weapon_grip_zone
     // Frame-thread only. Reprojects both seats from the current loose root;
     // never borrows equipped ownership or retains scene pointers.
     bool tryResolveNearGrab(bool isLeft, RE::TESObjectREFR* ref, NearGrab& out, bool peerHolding = false);
-    bool tryResolveAuthoredGrabPose(bool isLeft, RE::TESObjectREFR* ref,
-        loose_weapon_authored_grab_policy::Role role, AuthoredWeaponGripPose& out);
+    bool tryResolveAuthoredGrabPose(bool isLeft, RE::TESObjectREFR* ref, loose_weapon_authored_grab_policy::Role role,
+        AuthoredWeaponGripPose& out);
     // Copied-pose projection for a consumer's detached visual of a stored item.
     // Uses the same library and physical-hand mirroring as ordinary loose grabs.
-    bool tryResolveAuthoredGrabPoseForModel(bool isLeft,const RE::TESObjectWEAP* weapon,RE::NiAVObject* root,
-        loose_weapon_authored_grab_policy::Role role,AuthoredWeaponGripPose& out,std::uint64_t& sequence);
+    bool tryResolveAuthoredGrabPoseForModel(bool isLeft, const RE::TESObjectWEAP* weapon, RE::NiAVObject* root,
+        loose_weapon_authored_grab_policy::Role role, AuthoredWeaponGripPose& out, std::uint64_t& sequence);
     void updateNearGrabCandidate(bool isLeft, RE::TESObjectREFR* ref, bool peerHolding);
     bool tryGetAuthoredSupportDebug(bool isLeft, AuthoredSupportDebug& out);
     std::size_t collectIndicators(bool isLeft, RE::TESObjectREFR* ref, std::span<RE::NiPoint3> positions);
@@ -106,15 +108,8 @@ namespace rock::loose_weapon_grip_zone
      * state (HeldBody); the inside-radius settle timer only accumulates then.
      * Pass holdingLooseWeapon=false to clear the hand's state.
      */
-    void updateHeldLooseWeapon(
-        bool isLeft,
-        bool holdingLooseWeapon,
-        RE::TESObjectREFR* heldRef,
-        bool heldSettled,
-        float dt,
-        float equipRadiusGameUnits,
-        bool firingGripEligible,
-        bool supportSeatHeld);
+    void updateHeldLooseWeapon(bool isLeft, bool holdingLooseWeapon, RE::TESObjectREFR* heldRef, bool heldSettled,
+        float dt, float equipRadiusGameUnits, bool firingGripEligible, bool supportSeatHeld);
 
     /*
      * True when the hand's palm has stayed inside the configured grip radius
@@ -129,18 +124,12 @@ namespace rock::loose_weapon_grip_zone
      * weapon this frame. The frame is weapon-root-local and therefore remains
      * valid across the loose-reference to equipped-node inventory transfer.
      */
-    bool tryGetFiringHandWeaponLocal(
-        bool isLeft,
-        RE::NiTransform& outHandWeaponLocal,
+    bool tryGetFiringHandWeaponLocal(bool isLeft, RE::NiTransform& outHandWeaponLocal,
         RE::NiPoint3& outFiringGripWeaponLocal);
 
     // ROCK controller-placement relation for a detached model during equip.
-    bool tryResolveLooseWeaponFiringHandHoldForModel(
-        bool isLeft,
-        const RE::TESObjectWEAP* weapon,
-        RE::NiAVObject* weaponRoot,
-        RE::NiTransform& outHandWorld,
-        RE::NiTransform& outHandWeaponLocal,
+    bool tryResolveLooseWeaponFiringHandHoldForModel(bool isLeft, const RE::TESObjectWEAP* weapon,
+        RE::NiAVObject* weaponRoot, RE::NiTransform& outHandWorld, RE::NiTransform& outHandWeaponLocal,
         const char** outReason);
 
     /*
@@ -153,10 +142,7 @@ namespace rock::loose_weapon_grip_zone
      * both physical hands; grenade exclusion, feature toggles, and menu gating
      * are enforced by the caller.
      */
-    void updateHoverCandidateWeapon(
-        bool isLeft,
-        RE::TESObjectREFR* candidateRef,
-        float equipRadiusGameUnits);
+    void updateHoverCandidateWeapon(bool isLeft, RE::TESObjectREFR* candidateRef, float equipRadiusGameUnits);
 
     /*
      * True while the open palm hovers inside the configured grip-zone equip

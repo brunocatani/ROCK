@@ -7,7 +7,6 @@
  * Weapon geometry helpers are grouped here because collision hull construction and interaction probe math are one geometry policy surface.
  */
 
-
 // ---- WeaponCollisionGeometryMath.h ----
 
 #include <algorithm>
@@ -60,15 +59,15 @@ namespace rock::weapon_collision_geometry_math
         inline double rotateLocalPointAxis(const Matrix& matrix, const Vector& point, int column)
         {
             return static_cast<double>(matrix.entry[0][column]) * static_cast<double>(point.x) +
-                   static_cast<double>(matrix.entry[1][column]) * static_cast<double>(point.y) +
-                   static_cast<double>(matrix.entry[2][column]) * static_cast<double>(point.z);
+                static_cast<double>(matrix.entry[1][column]) * static_cast<double>(point.y) +
+                static_cast<double>(matrix.entry[2][column]) * static_cast<double>(point.z);
         }
 
         template <class Matrix>
         inline double rotateWorldDeltaAxis(const Matrix& matrix, double deltaX, double deltaY, double deltaZ, int row)
         {
-            return static_cast<double>(matrix.entry[row][0]) * deltaX + static_cast<double>(matrix.entry[row][1]) * deltaY +
-                   static_cast<double>(matrix.entry[row][2]) * deltaZ;
+            return static_cast<double>(matrix.entry[row][0]) * deltaX +
+                static_cast<double>(matrix.entry[row][1]) * deltaY + static_cast<double>(matrix.entry[row][2]) * deltaZ;
         }
     }
 
@@ -86,25 +85,27 @@ namespace rock::weapon_collision_geometry_math
     }
 
     template <class Matrix, class Vector>
-    inline Vector localPointToWorld(const Matrix& rootRotation, const Vector& rootTranslation, float rootScale, const Vector& localPoint)
+    inline Vector localPointToWorld(const Matrix& rootRotation, const Vector& rootTranslation, float rootScale,
+        const Vector& localPoint)
     {
         const double scale = static_cast<double>(rootScale);
-        return detail::makeVector<Vector>(
-            static_cast<double>(rootTranslation.x) + detail::rotateLocalPointAxis(rootRotation, localPoint, 0) * scale,
+        return detail::makeVector<Vector>(static_cast<double>(rootTranslation.x) +
+                detail::rotateLocalPointAxis(rootRotation, localPoint, 0) * scale,
             static_cast<double>(rootTranslation.y) + detail::rotateLocalPointAxis(rootRotation, localPoint, 1) * scale,
             static_cast<double>(rootTranslation.z) + detail::rotateLocalPointAxis(rootRotation, localPoint, 2) * scale);
     }
 
     template <class Matrix, class Vector>
-    inline Vector worldPointToLocal(const Matrix& rootRotation, const Vector& rootTranslation, float rootScale, const Vector& worldPoint)
+    inline Vector worldPointToLocal(const Matrix& rootRotation, const Vector& rootTranslation, float rootScale,
+        const Vector& worldPoint)
     {
         const double scale = static_cast<double>(rootScale);
         const double invScale = std::abs(scale) > 1.0e-6 ? 1.0 / scale : 1.0;
         const double deltaX = static_cast<double>(worldPoint.x) - static_cast<double>(rootTranslation.x);
         const double deltaY = static_cast<double>(worldPoint.y) - static_cast<double>(rootTranslation.y);
         const double deltaZ = static_cast<double>(worldPoint.z) - static_cast<double>(rootTranslation.z);
-        return detail::makeVector<Vector>(
-            detail::rotateWorldDeltaAxis(rootRotation, deltaX, deltaY, deltaZ, 0) * invScale,
+        return detail::makeVector<Vector>(detail::rotateWorldDeltaAxis(rootRotation, deltaX, deltaY, deltaZ, 0) *
+                invScale,
             detail::rotateWorldDeltaAxis(rootRotation, deltaX, deltaY, deltaZ, 1) * invScale,
             detail::rotateWorldDeltaAxis(rootRotation, deltaX, deltaY, deltaZ, 2) * invScale);
     }
@@ -135,7 +136,8 @@ namespace rock::weapon_collision_geometry_math
             maxPoint = pointMax(maxPoint, point);
         }
 
-        return Vector{ (minPoint.x + maxPoint.x) * 0.5f, (minPoint.y + maxPoint.y) * 0.5f, (minPoint.z + maxPoint.z) * 0.5f };
+        return Vector{ (minPoint.x + maxPoint.x) * 0.5f, (minPoint.y + maxPoint.y) * 0.5f,
+            (minPoint.z + maxPoint.z) * 0.5f };
     }
 
     template <class Vector>
@@ -185,7 +187,8 @@ namespace rock::weapon_collision_geometry_math
         }
 
         const int axis = longestAxis(points);
-        std::stable_sort(points.begin(), points.end(), [axis](const Vector& a, const Vector& b) { return pointAxisValue(a, axis) < pointAxisValue(b, axis); });
+        std::stable_sort(points.begin(), points.end(),
+            [axis](const Vector& a, const Vector& b) { return pointAxisValue(a, axis) < pointAxisValue(b, axis); });
 
         std::vector<Vector> result;
         result.reserve(maxPoints);
@@ -197,7 +200,8 @@ namespace rock::weapon_collision_geometry_math
     }
 
     template <class Vector>
-    inline weapon_geometry_work::Task splitOversizedClusterDeferred(const std::vector<Vector>& points, std::size_t maxPoints, std::vector<std::vector<Vector>>& outClusters)
+    inline weapon_geometry_work::Task splitOversizedClusterDeferred(const std::vector<Vector>& points,
+        std::size_t maxPoints, std::vector<std::vector<Vector>>& outClusters)
     {
         if (points.size() <= maxPoints || maxPoints < 4) {
             outClusters.push_back(points);
@@ -207,15 +211,20 @@ namespace rock::weapon_collision_geometry_math
         co_yield 0;
         std::vector<Vector> sorted = points;
         const int axis = longestAxis(sorted);
-        std::stable_sort(sorted.begin(), sorted.end(), [axis](const Vector& a, const Vector& b) { return pointAxisValue(a, axis) < pointAxisValue(b, axis); });
+        std::stable_sort(sorted.begin(), sorted.end(),
+            [axis](const Vector& a, const Vector& b) { return pointAxisValue(a, axis) < pointAxisValue(b, axis); });
 
         const auto mid = sorted.begin() + static_cast<std::ptrdiff_t>(sorted.size() / 2);
         std::vector<Vector> left(sorted.begin(), mid);
         std::vector<Vector> right(mid, sorted.end());
         auto leftTask = splitOversizedClusterDeferred(left, maxPoints, outClusters);
-        while (leftTask.step()) { co_yield 0; }
+        while (leftTask.step()) {
+            co_yield 0;
+        }
         auto rightTask = splitOversizedClusterDeferred(right, maxPoints, outClusters);
-        while (rightTask.step()) { co_yield 0; }
+        while (rightTask.step()) {
+            co_yield 0;
+        }
     }
 
     template <class Vector>
@@ -354,7 +363,8 @@ namespace rock::weapon_collision_geometry_math
         directions.push_back(normalized);
     }
 
-    inline void appendSignedSupportDirection(std::vector<SupportDirection>& directions, const SupportDirection& direction)
+    inline void appendSignedSupportDirection(std::vector<SupportDirection>& directions,
+        const SupportDirection& direction)
     {
         appendSupportDirection(directions, direction.x, direction.y, direction.z);
         appendSupportDirection(directions, -direction.x, -direction.y, -direction.z);
@@ -366,7 +376,8 @@ namespace rock::weapon_collision_geometry_math
         return point.x * direction.x + point.y * direction.y + point.z * direction.z;
     }
 
-    inline SupportDirection multiplySymmetric3(const std::array<std::array<float, 3>, 3>& matrix, const SupportDirection& direction)
+    inline SupportDirection multiplySymmetric3(const std::array<std::array<float, 3>, 3>& matrix,
+        const SupportDirection& direction)
     {
         return SupportDirection{
             matrix[0][0] * direction.x + matrix[0][1] * direction.y + matrix[0][2] * direction.z,
@@ -375,7 +386,8 @@ namespace rock::weapon_collision_geometry_math
         };
     }
 
-    inline SupportDirection principalAxisForSymmetric3(const std::array<std::array<float, 3>, 3>& matrix, SupportDirection seed)
+    inline SupportDirection principalAxisForSymmetric3(const std::array<std::array<float, 3>, 3>& matrix,
+        SupportDirection seed)
     {
         SupportDirection axis = normalizeSupportDirection(seed);
         if (supportDirectionLengthSquared(axis) <= 0.0f) {
@@ -446,8 +458,8 @@ namespace rock::weapon_collision_geometry_math
         const std::array<float, 3> firstValues{ first.x, first.y, first.z };
         for (int row = 0; row < 3; ++row) {
             for (int col = 0; col < 3; ++col) {
-                deflated[static_cast<std::size_t>(row)][static_cast<std::size_t>(col)] -=
-                    firstLambda * firstValues[static_cast<std::size_t>(row)] * firstValues[static_cast<std::size_t>(col)];
+                deflated[static_cast<std::size_t>(row)][static_cast<std::size_t>(col)] -= firstLambda *
+                    firstValues[static_cast<std::size_t>(row)] * firstValues[static_cast<std::size_t>(col)];
             }
         }
 
@@ -467,9 +479,11 @@ namespace rock::weapon_collision_geometry_math
         }
 
         auto second = principalAxisForSymmetric3(deflated, secondSeed);
-        second = normalizeSupportDirection(supportDirectionSub(second, supportDirectionScale(first, supportDirectionDot(second, first))));
+        second = normalizeSupportDirection(
+            supportDirectionSub(second, supportDirectionScale(first, supportDirectionDot(second, first))));
         if (supportDirectionLengthSquared(second) <= 0.0f) {
-            second = normalizeSupportDirection(supportDirectionSub(secondSeed, supportDirectionScale(first, supportDirectionDot(secondSeed, first))));
+            second = normalizeSupportDirection(
+                supportDirectionSub(secondSeed, supportDirectionScale(first, supportDirectionDot(secondSeed, first))));
         }
 
         auto third = normalizeSupportDirection(supportDirectionCross(first, second));
@@ -484,7 +498,8 @@ namespace rock::weapon_collision_geometry_math
         return basis;
     }
 
-    inline void appendBaseSupportDirections(std::vector<SupportDirection>& directions, const std::array<SupportDirection, 3>& basis)
+    inline void appendBaseSupportDirections(std::vector<SupportDirection>& directions,
+        const std::array<SupportDirection, 3>& basis)
     {
         appendSignedSupportDirection(directions, SupportDirection{ 1.0f, 0.0f, 0.0f });
         appendSignedSupportDirection(directions, SupportDirection{ 0.0f, 1.0f, 0.0f });
@@ -496,7 +511,8 @@ namespace rock::weapon_collision_geometry_math
         for (int x = -1; x <= 1; x += 2) {
             for (int y = -1; y <= 1; y += 2) {
                 for (int z = -1; z <= 1; z += 2) {
-                    appendSupportDirection(directions, static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+                    appendSupportDirection(directions, static_cast<float>(x), static_cast<float>(y),
+                        static_cast<float>(z));
                 }
             }
         }
@@ -527,7 +543,8 @@ namespace rock::weapon_collision_geometry_math
                     if (x == 0 && y == 0 && z == 0) {
                         continue;
                     }
-                    appendSupportDirection(directions, static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+                    appendSupportDirection(directions, static_cast<float>(x), static_cast<float>(y),
+                        static_cast<float>(z));
                 }
             }
         }
@@ -536,7 +553,8 @@ namespace rock::weapon_collision_geometry_math
     }
 
     template <class Vector>
-    inline std::size_t supportPointIndexForDirection(const std::vector<Vector>& points, const SupportDirection& direction)
+    inline std::size_t supportPointIndexForDirection(const std::vector<Vector>& points,
+        const SupportDirection& direction)
     {
         std::size_t bestIndex = 0;
         float bestValue = -std::numeric_limits<float>::infinity();
@@ -551,11 +569,8 @@ namespace rock::weapon_collision_geometry_math
     }
 
     template <class Vector>
-    inline bool selectSupportPointIndex(const std::vector<Vector>& points,
-        const SupportDirection& direction,
-        std::vector<std::uint8_t>& selected,
-        std::size_t& selectedCount,
-        std::size_t maxPoints)
+    inline bool selectSupportPointIndex(const std::vector<Vector>& points, const SupportDirection& direction,
+        std::vector<std::uint8_t>& selected, std::size_t& selectedCount, std::size_t maxPoints)
     {
         if (points.empty() || selectedCount >= maxPoints) {
             return false;
@@ -573,10 +588,7 @@ namespace rock::weapon_collision_geometry_math
 
     template <class Vector>
     inline weapon_geometry_work::Task selectSlicedSupportPointsDeferred(const std::vector<Vector>& points,
-        std::vector<std::uint8_t>& selected,
-        std::size_t& selectedCount,
-        std::size_t maxPoints,
-        bool singlePass = false)
+        std::vector<std::uint8_t>& selected, std::size_t& selectedCount, std::size_t maxPoints, bool singlePass = false)
     {
         const auto bounds = pointBounds(points);
         if (!bounds.valid || selectedCount >= maxPoints) {
@@ -622,7 +634,9 @@ namespace rock::weapon_collision_geometry_math
                 winners[slice].fill(points.size());
                 scores[slice].fill(-std::numeric_limits<float>::infinity());
                 starts[slice] = minAxis + span * (static_cast<float>(slice) / static_cast<float>(kSliceCount));
-                ends[slice] = slice + 1 == kSliceCount ? maxAxis : minAxis + span * (static_cast<float>(slice + 1) / static_cast<float>(kSliceCount));
+                ends[slice] = slice + 1 == kSliceCount
+                    ? maxAxis
+                    : minAxis + span * (static_cast<float>(slice + 1) / static_cast<float>(kSliceCount));
             }
             for (std::size_t first = 0; first < points.size(); first += 1024) {
                 co_yield 0;
@@ -630,25 +644,37 @@ namespace rock::weapon_collision_geometry_math
                 for (std::size_t i = first; i < blockEnd; ++i) {
                     const float value = pointAxisValue(points[i], longAxis);
                     for (std::size_t slice = 0; slice < kSliceCount; ++slice) {
-                        if (value < starts[slice] || value > ends[slice]) { continue; }
+                        if (value < starts[slice] || value > ends[slice]) {
+                            continue;
+                        }
                         for (std::size_t d = 0; d < crossDirections.size(); ++d) {
                             const float support = pointSupportDot(points[i], crossDirections[d]);
-                            if (support > scores[slice][d]) { scores[slice][d] = support; winners[slice][d] = i; }
+                            if (support > scores[slice][d]) {
+                                scores[slice][d] = support;
+                                winners[slice][d] = i;
+                            }
                         }
                     }
                 }
             }
             for (const auto& slice : winners) {
                 for (auto index : slice) {
-                    if (selectedCount >= maxPoints) { co_return; }
-                    if (index < selected.size() && !selected[index]) { selected[index] = 1; ++selectedCount; }
+                    if (selectedCount >= maxPoints) {
+                        co_return;
+                    }
+                    if (index < selected.size() && !selected[index]) {
+                        selected[index] = 1;
+                        ++selectedCount;
+                    }
                 }
             }
             co_return;
         }
         for (std::size_t slice = 0; slice < kSliceCount && selectedCount < maxPoints; ++slice) {
             const float start = minAxis + span * (static_cast<float>(slice) / static_cast<float>(kSliceCount));
-            const float end = slice + 1 == kSliceCount ? maxAxis : minAxis + span * (static_cast<float>(slice + 1) / static_cast<float>(kSliceCount));
+            const float end = slice + 1 == kSliceCount
+                ? maxAxis
+                : minAxis + span * (static_cast<float>(slice + 1) / static_cast<float>(kSliceCount));
             for (const auto& direction : crossDirections) {
                 if (selectedCount >= maxPoints) {
                     co_return;
@@ -681,9 +707,8 @@ namespace rock::weapon_collision_geometry_math
     }
 
     template <class Vector>
-    inline void selectSlicedSupportPoints(const std::vector<Vector>& points,
-        std::vector<std::uint8_t>& selected, std::size_t& selectedCount,
-        std::size_t maxPoints, bool singlePass = false)
+    inline void selectSlicedSupportPoints(const std::vector<Vector>& points, std::vector<std::uint8_t>& selected,
+        std::size_t& selectedCount, std::size_t maxPoints, bool singlePass = false)
     {
         auto task = selectSlicedSupportPointsDeferred(points, selected, selectedCount, maxPoints, singlePass);
         while (task.step()) {}
@@ -691,8 +716,7 @@ namespace rock::weapon_collision_geometry_math
 
     template <class Vector>
     inline weapon_geometry_work::Task supportErrorForSelectedPointsDeferred(const std::vector<Vector>& points,
-        const std::vector<std::uint8_t>& selected,
-        const std::vector<SupportDirection>& validationDirections,
+        const std::vector<std::uint8_t>& selected, const std::vector<SupportDirection>& validationDirections,
         SupportDirection* outWorstDirection, float& maxError)
     {
         maxError = 0.0f;
@@ -726,7 +750,8 @@ namespace rock::weapon_collision_geometry_math
     }
 
     template <class Vector>
-    inline std::vector<Vector> collectSelectedSupportPoints(const std::vector<Vector>& points, const std::vector<std::uint8_t>& selected)
+    inline std::vector<Vector> collectSelectedSupportPoints(const std::vector<Vector>& points,
+        const std::vector<std::uint8_t>& selected)
     {
         std::vector<Vector> result;
         result.reserve(points.size());
@@ -740,10 +765,8 @@ namespace rock::weapon_collision_geometry_math
 
     template <class Vector>
     inline weapon_geometry_work::Task fitConvexSupportPointCloudDeferred(const std::vector<Vector>& points,
-        std::size_t targetPoints,
-        std::size_t maxPoints,
-        float maxSupportError,
-        bool incrementalValidation, ConvexSupportFitResult<Vector>& result)
+        std::size_t targetPoints, std::size_t maxPoints, float maxSupportError, bool incrementalValidation,
+        ConvexSupportFitResult<Vector>& result)
     {
         /*
          * Weapon visual meshes often contain dense bevels, triangle duplicates,
@@ -789,8 +812,11 @@ namespace rock::weapon_collision_geometry_math
             selectSupportPointIndex(points, direction, selected, selectedCount, safeMaxPoints);
             co_yield 0;
         }
-        auto sliced = selectSlicedSupportPointsDeferred(points, selected, selectedCount, safeMaxPoints, incrementalValidation);
-        while (sliced.step()) { co_yield 0; }
+        auto sliced =
+            selectSlicedSupportPointsDeferred(points, selected, selectedCount, safeMaxPoints, incrementalValidation);
+        while (sliced.step()) {
+            co_yield 0;
+        }
 
         for (std::size_t i = 0; selectedCount < 4 && i < points.size(); ++i) {
             if (!selected[i]) {
@@ -818,7 +844,10 @@ namespace rock::weapon_collision_geometry_math
                     co_yield 0;
                     const auto blockEnd = (std::min)(first + 1024, points.size());
                     for (std::size_t i = first; i < blockEnd; ++i) {
-                        if (selected[i]) { selectedSupports[d] = (std::max)(selectedSupports[d], pointSupportDot(points[i], direction)); }
+                        if (selected[i]) {
+                            selectedSupports[d] =
+                                (std::max)(selectedSupports[d], pointSupportDot(points[i], direction));
+                        }
                     }
                 }
             }
@@ -827,29 +856,44 @@ namespace rock::weapon_collision_geometry_math
                 std::size_t worst = 0;
                 for (std::size_t d = 0; d < validationDirections.size(); ++d) {
                     const float error = (std::max)(0.0f, originalSupports[d] - selectedSupports[d]);
-                    if (error > result.maxSupportError) { result.maxSupportError = error; worst = d; }
+                    if (error > result.maxSupportError) {
+                        result.maxSupportError = error;
+                        worst = d;
+                    }
                 }
-                if (result.maxSupportError <= safeMaxSupportError || selectedCount >= safeMaxPoints) { break; }
+                if (result.maxSupportError <= safeMaxSupportError || selectedCount >= safeMaxPoints) {
+                    break;
+                }
                 const auto index = originalIndices[worst];
-                if (selected[index]) { break; }
+                if (selected[index]) {
+                    break;
+                }
                 selected[index] = 1;
                 ++selectedCount;
                 ++result.repairPointCount;
                 for (std::size_t d = 0; d < validationDirections.size(); ++d) {
-                    selectedSupports[d] = (std::max)(selectedSupports[d], pointSupportDot(points[index], validationDirections[d]));
+                    selectedSupports[d] =
+                        (std::max)(selectedSupports[d], pointSupportDot(points[index], validationDirections[d]));
                 }
             }
         } else {
-            auto validation = supportErrorForSelectedPointsDeferred(points, selected, validationDirections, &worstDirection, result.maxSupportError);
-            while (validation.step()) { co_yield 0; }
+            auto validation = supportErrorForSelectedPointsDeferred(points, selected, validationDirections,
+                &worstDirection, result.maxSupportError);
+            while (validation.step()) {
+                co_yield 0;
+            }
             while (result.maxSupportError > safeMaxSupportError && selectedCount < safeMaxPoints) {
-                const bool added = selectSupportPointIndex(points, worstDirection, selected, selectedCount, safeMaxPoints);
+                const bool added =
+                    selectSupportPointIndex(points, worstDirection, selected, selectedCount, safeMaxPoints);
                 if (!added) {
                     break;
                 }
                 ++result.repairPointCount;
-                auto repairValidation = supportErrorForSelectedPointsDeferred(points, selected, validationDirections, &worstDirection, result.maxSupportError);
-                while (repairValidation.step()) { co_yield 0; }
+                auto repairValidation = supportErrorForSelectedPointsDeferred(points, selected, validationDirections,
+                    &worstDirection, result.maxSupportError);
+                while (repairValidation.step()) {
+                    co_yield 0;
+                }
             }
         }
 
@@ -866,7 +910,8 @@ namespace rock::weapon_collision_geometry_math
         std::size_t targetPoints, std::size_t maxPoints, float maxSupportError, bool incrementalValidation = false)
     {
         ConvexSupportFitResult<Vector> result;
-        auto task = fitConvexSupportPointCloudDeferred(points, targetPoints, maxPoints, maxSupportError, incrementalValidation, result);
+        auto task = fitConvexSupportPointCloudDeferred(points, targetPoints, maxPoints, maxSupportError,
+            incrementalValidation, result);
         while (task.step()) {}
         return result;
     }
@@ -882,9 +927,7 @@ namespace rock::weapon_collision_geometry_math
         bool cosmetic = false;
     };
 
-    [[nodiscard]] inline bool scaledHullDiagonalCanBuild(
-        float diagonalSquaredGame,
-        float sourceScale,
+    [[nodiscard]] inline bool scaledHullDiagonalCanBuild(float diagonalSquaredGame, float sourceScale,
         float minimumDiagonalGame) noexcept
     {
         if (!std::isfinite(diagonalSquaredGame) || !std::isfinite(sourceScale) || !std::isfinite(minimumDiagonalGame) ||
@@ -898,7 +941,7 @@ namespace rock::weapon_collision_geometry_math
         }
         const float effectiveDiagonalSquared = diagonalSquaredGame * absoluteScale * absoluteScale;
         return std::isfinite(effectiveDiagonalSquared) &&
-               effectiveDiagonalSquared >= minimumDiagonalGame * minimumDiagonalGame;
+            effectiveDiagonalSquared >= minimumDiagonalGame * minimumDiagonalGame;
     }
 
     inline float hullAxisValue(const std::array<float, 3>& value, int axis)
@@ -942,7 +985,8 @@ namespace rock::weapon_collision_geometry_math
         return 0;
     }
 
-    inline std::vector<std::size_t> selectBalancedHullIndices(const std::vector<HullSelectionInput>& inputs, std::size_t budget)
+    inline std::vector<std::size_t> selectBalancedHullIndices(const std::vector<HullSelectionInput>& inputs,
+        std::size_t budget)
     {
         std::vector<std::size_t> result;
         if (inputs.empty() || budget == 0) {
@@ -1007,7 +1051,8 @@ namespace rock::weapon_collision_geometry_math
             if (input.cosmetic) {
                 continue;
             }
-            if (std::find(coverageClasses.begin(), coverageClasses.end(), input.coverageClass) == coverageClasses.end()) {
+            if (std::find(coverageClasses.begin(), coverageClasses.end(), input.coverageClass) ==
+                coverageClasses.end()) {
                 coverageClasses.push_back(input.coverageClass);
             }
         }
@@ -1036,13 +1081,15 @@ namespace rock::weapon_collision_geometry_math
             int bestPriority = std::numeric_limits<int>::min();
             float bestScore = 0.0f;
             for (std::size_t i = 0; i < inputs.size(); ++i) {
-                if (selected[i] || inputs[i].coverageClass != coverageClass || (!includeCosmetic && inputs[i].cosmetic)) {
+                if (selected[i] || inputs[i].coverageClass != coverageClass ||
+                    (!includeCosmetic && inputs[i].cosmetic)) {
                     continue;
                 }
 
                 const int priority = inputs[i].priority;
                 const float score = hullSelectionScore(inputs[i]);
-                if (best == inputs.size() || priority > bestPriority || (priority == bestPriority && score > bestScore)) {
+                if (best == inputs.size() || priority > bestPriority ||
+                    (priority == bestPriority && score > bestScore)) {
                     best = i;
                     bestPriority = priority;
                     bestScore = score;
@@ -1080,7 +1127,8 @@ namespace rock::weapon_collision_geometry_math
 
                 const int priority = inputs[i].priority;
                 const float score = hullSelectionScore(inputs[i]);
-                if (best == inputs.size() || priority > bestPriority || (priority == bestPriority && score > bestScore)) {
+                if (best == inputs.size() || priority > bestPriority ||
+                    (priority == bestPriority && score > bestScore)) {
                     best = i;
                     bestPriority = priority;
                     bestScore = score;
@@ -1129,7 +1177,8 @@ namespace rock::weapon_collision_geometry_math
     inline bool detachedComponentBoundsValid(const DetachedComponentInput& input)
     {
         for (std::size_t axis = 0; axis < 3; ++axis) {
-            if (!std::isfinite(input.min[axis]) || !std::isfinite(input.max[axis]) || input.max[axis] < input.min[axis]) {
+            if (!std::isfinite(input.min[axis]) || !std::isfinite(input.max[axis]) ||
+                input.max[axis] < input.min[axis]) {
                 return false;
             }
         }
@@ -1140,7 +1189,8 @@ namespace rock::weapon_collision_geometry_math
     {
         float gapSquared = 0.0f;
         for (std::size_t axis = 0; axis < 3; ++axis) {
-            const float gap = (std::max)(0.0f, (std::max)(lhs.min[axis] - rhs.max[axis], rhs.min[axis] - lhs.max[axis]));
+            const float gap =
+                (std::max)(0.0f, (std::max)(lhs.min[axis] - rhs.max[axis], rhs.min[axis] - lhs.max[axis]));
             gapSquared += gap * gap;
         }
         return gapSquared;
@@ -1154,9 +1204,7 @@ namespace rock::weapon_collision_geometry_math
      * is rejected. Ambiguous inventories fail open so collider fidelity wins.
      */
     inline DetachedComponentFilterResult findDetachedSourceComponentIndices(
-        const std::vector<DetachedComponentInput>& inputs,
-        float componentJoinTolerance,
-        float minimumDetachedGap)
+        const std::vector<DetachedComponentInput>& inputs, float componentJoinTolerance, float minimumDetachedGap)
     {
         DetachedComponentFilterResult result{};
         if (inputs.empty()) {
@@ -1171,9 +1219,8 @@ namespace rock::weapon_collision_geometry_math
             result.verdict = DetachedComponentVerdict::FailOpenInvalidInput;
             return result;
         }
-        if (std::any_of(inputs.begin(), inputs.end(), [](const DetachedComponentInput& input) {
-                return !detachedComponentBoundsValid(input);
-            })) {
+        if (std::any_of(inputs.begin(), inputs.end(),
+                [](const DetachedComponentInput& input) { return !detachedComponentBoundsValid(input); })) {
             result.verdict = DetachedComponentVerdict::FailOpenInvalidInput;
             return result;
         }
@@ -1192,9 +1239,10 @@ namespace rock::weapon_collision_geometry_math
         const float joinToleranceSquared = componentJoinTolerance * componentJoinTolerance;
         for (std::size_t lhs = 0; lhs < inputs.size(); ++lhs) {
             for (std::size_t rhs = lhs + 1; rhs < inputs.size(); ++rhs) {
-                const bool sameAuthoredSource = inputs[lhs].coherenceGroup != 0 &&
-                    inputs[lhs].coherenceGroup == inputs[rhs].coherenceGroup;
-                if (!sameAuthoredSource && detachedComponentBoundsGapSquared(inputs[lhs], inputs[rhs]) > joinToleranceSquared) {
+                const bool sameAuthoredSource =
+                    inputs[lhs].coherenceGroup != 0 && inputs[lhs].coherenceGroup == inputs[rhs].coherenceGroup;
+                if (!sameAuthoredSource &&
+                    detachedComponentBoundsGapSquared(inputs[lhs], inputs[rhs]) > joinToleranceSquared) {
                     continue;
                 }
                 const auto lhsRoot = findRoot(lhs);
@@ -1215,9 +1263,10 @@ namespace rock::weapon_collision_geometry_math
                 assembledAnchorComponent[roots[i]] = 1;
             }
         }
-        result.componentCount = static_cast<std::size_t>(std::count(rootPresent.begin(), rootPresent.end(), std::uint8_t{ 1 }));
-        result.assembledAnchorComponentCount =
-            static_cast<std::size_t>(std::count(assembledAnchorComponent.begin(), assembledAnchorComponent.end(), std::uint8_t{ 1 }));
+        result.componentCount =
+            static_cast<std::size_t>(std::count(rootPresent.begin(), rootPresent.end(), std::uint8_t{ 1 }));
+        result.assembledAnchorComponentCount = static_cast<std::size_t>(
+            std::count(assembledAnchorComponent.begin(), assembledAnchorComponent.end(), std::uint8_t{ 1 }));
         if (result.componentCount <= 1) {
             return result;
         }

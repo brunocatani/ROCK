@@ -85,9 +85,7 @@ namespace rock::firing_grip_reattach_zone_policy
 
     [[nodiscard]] inline bool isFinite(const Vec3& value)
     {
-        return std::isfinite(value.x) &&
-               std::isfinite(value.y) &&
-               std::isfinite(value.z);
+        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
     }
 
     [[nodiscard]] constexpr Vec3 cross(const Vec3& lhs, const Vec3& rhs)
@@ -106,21 +104,16 @@ namespace rock::firing_grip_reattach_zone_policy
         if (!isFinite(input.gripWorld) || !isFinite(input.palmWorld)) {
             return result;
         }
-        const bool reachValid =
-            std::isfinite(input.reachGameUnits) && input.reachGameUnits >= 0.0f;
-        const bool radiusValid =
-            std::isfinite(input.radiusGameUnits) && input.radiusGameUnits >= 0.0f;
+        const bool reachValid = std::isfinite(input.reachGameUnits) && input.reachGameUnits >= 0.0f;
+        const bool radiusValid = std::isfinite(input.radiusGameUnits) && input.radiusGameUnits >= 0.0f;
         Vec3 lateralAxis{};
-        result.axisValid =
-            activation::tryNormalize(input.weaponLeftAxisWorld, lateralAxis);
+        result.axisValid = activation::tryNormalize(input.weaponLeftAxisWorld, lateralAxis);
         // The sector's DOWN must come from the same seated hand frame as the
         // lateral axis; a skewed pair means the frame is not a rotation.
         Vec3 downAxis{};
         if (result.axisValid && input.shape == Shape::Sector) {
-            result.axisValid =
-                activation::tryNormalize(input.weaponDownAxisWorld, downAxis) &&
-                std::abs(activation::dot(lateralAxis, downAxis)) <=
-                    kAxisOrthogonalityTolerance;
+            result.axisValid = activation::tryNormalize(input.weaponDownAxisWorld, downAxis) &&
+                std::abs(activation::dot(lateralAxis, downAxis)) <= kAxisOrthogonalityTolerance;
         }
         if (!reachValid || !radiusValid || !result.axisValid) {
             return result;
@@ -144,8 +137,7 @@ namespace rock::firing_grip_reattach_zone_policy
 
         if (input.shape == Shape::Sector) {
             const float down = activation::dot(offset, downAxis);
-            const float forward =
-                activation::dot(offset, cross(lateralAxis, downAxis));
+            const float forward = activation::dot(offset, cross(lateralAxis, downAxis));
             if (!std::isfinite(down) || !std::isfinite(forward)) {
                 return result;
             }
@@ -154,12 +146,8 @@ namespace rock::firing_grip_reattach_zone_policy
             // Above the grip point the disc continues as a band up to the
             // top edge, so the outline runs straight down before it curves.
             const float discDown = (std::max)(down, 0.0f);
-            result.reachPass =
-                along * along + discDown * discDown <=
-                input.reachGameUnits * input.reachGameUnits;
-            result.radiusPass =
-                down >= -input.radiusGameUnits &&
-                std::abs(forward) <= input.radiusGameUnits;
+            result.reachPass = along * along + discDown * discDown <= input.reachGameUnits * input.reachGameUnits;
+            result.radiusPass = down >= -input.radiusGameUnits && std::abs(forward) <= input.radiusGameUnits;
         } else {
             result.reachPass = std::abs(along) <= input.reachGameUnits;
             result.radiusPass = perpendicularDistance <= input.radiusGameUnits;
@@ -168,12 +156,9 @@ namespace rock::firing_grip_reattach_zone_policy
         if (result.inside) {
             const float indicatorSign = result.side == Side::Left ? 1.0f : -1.0f;
             result.indicatorWorld = Vec3{
-                input.gripWorld.x +
-                    lateralAxis.x * indicatorSign * kIndicatorOffsetGameUnits,
-                input.gripWorld.y +
-                    lateralAxis.y * indicatorSign * kIndicatorOffsetGameUnits,
-                input.gripWorld.z +
-                    lateralAxis.z * indicatorSign * kIndicatorOffsetGameUnits,
+                input.gripWorld.x + lateralAxis.x * indicatorSign * kIndicatorOffsetGameUnits,
+                input.gripWorld.y + lateralAxis.y * indicatorSign * kIndicatorOffsetGameUnits,
+                input.gripWorld.z + lateralAxis.z * indicatorSign * kIndicatorOffsetGameUnits,
             };
             result.indicatorValid = isFinite(result.indicatorWorld);
         }

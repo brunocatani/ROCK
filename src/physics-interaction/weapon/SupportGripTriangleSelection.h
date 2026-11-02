@@ -110,20 +110,25 @@ namespace rock::support_grip_triangle_selection
         }
 
         // Weapon-frame box of a source-frame box's eight corners, padded. False when a corner is not finite.
-        inline bool weaponFrameBox(const RE::NiTransform& sourceToWeapon, const RE::NiPoint3& minimum, const RE::NiPoint3& maximum, RE::NiPoint3& outMinimum,
-            RE::NiPoint3& outMaximum)
+        inline bool weaponFrameBox(const RE::NiTransform& sourceToWeapon, const RE::NiPoint3& minimum,
+            const RE::NiPoint3& maximum, RE::NiPoint3& outMinimum, RE::NiPoint3& outMaximum)
         {
-            outMinimum = { (std::numeric_limits<float>::max)(), (std::numeric_limits<float>::max)(), (std::numeric_limits<float>::max)() };
-            outMaximum = { -(std::numeric_limits<float>::max)(), -(std::numeric_limits<float>::max)(), -(std::numeric_limits<float>::max)() };
+            outMinimum = { (std::numeric_limits<float>::max)(), (std::numeric_limits<float>::max)(),
+                (std::numeric_limits<float>::max)() };
+            outMaximum = { -(std::numeric_limits<float>::max)(), -(std::numeric_limits<float>::max)(),
+                -(std::numeric_limits<float>::max)() };
             float magnitude = 0.0f;
             for (int corner = 0; corner < 8; ++corner) {
-                const RE::NiPoint3 local{ (corner & 1) ? maximum.x : minimum.x, (corner & 2) ? maximum.y : minimum.y, (corner & 4) ? maximum.z : minimum.z };
+                const RE::NiPoint3 local{ (corner & 1) ? maximum.x : minimum.x, (corner & 2) ? maximum.y : minimum.y,
+                    (corner & 4) ? maximum.z : minimum.z };
                 const RE::NiPoint3 p = transform_math::localPointToWorld(sourceToWeapon, local);
                 if (!vector_math::hasFiniteComponents(p)) {
                     return false;
                 }
-                outMinimum = { (std::min)(outMinimum.x, p.x), (std::min)(outMinimum.y, p.y), (std::min)(outMinimum.z, p.z) };
-                outMaximum = { (std::max)(outMaximum.x, p.x), (std::max)(outMaximum.y, p.y), (std::max)(outMaximum.z, p.z) };
+                outMinimum = { (std::min)(outMinimum.x, p.x), (std::min)(outMinimum.y, p.y),
+                    (std::min)(outMinimum.z, p.z) };
+                outMaximum = { (std::max)(outMaximum.x, p.x), (std::max)(outMaximum.y, p.y),
+                    (std::max)(outMaximum.z, p.z) };
                 magnitude = (std::max)({ magnitude, std::abs(p.x), std::abs(p.y), std::abs(p.z) });
             }
             padBox(outMinimum, outMaximum, magnitude);
@@ -137,26 +142,31 @@ namespace rock::support_grip_triangle_selection
             outMaximum = triangle.v0;
             float magnitude = (std::max)({ std::abs(triangle.v0.x), std::abs(triangle.v0.y), std::abs(triangle.v0.z) });
             for (const auto& p : { triangle.v1, triangle.v2 }) {
-                outMinimum = { (std::min)(outMinimum.x, p.x), (std::min)(outMinimum.y, p.y), (std::min)(outMinimum.z, p.z) };
-                outMaximum = { (std::max)(outMaximum.x, p.x), (std::max)(outMaximum.y, p.y), (std::max)(outMaximum.z, p.z) };
+                outMinimum = { (std::min)(outMinimum.x, p.x), (std::min)(outMinimum.y, p.y),
+                    (std::min)(outMinimum.z, p.z) };
+                outMaximum = { (std::max)(outMaximum.x, p.x), (std::max)(outMaximum.y, p.y),
+                    (std::max)(outMaximum.z, p.z) };
                 magnitude = (std::max)({ magnitude, std::abs(p.x), std::abs(p.y), std::abs(p.z) });
             }
             padBox(outMinimum, outMaximum, magnitude);
         }
 
         // Smallest distance from the box to the seat point or any lane point: the part visiting order key.
-        inline float nearestReferenceBoxDistanceSquared(const References& references, const RE::NiPoint3& minimum, const RE::NiPoint3& maximum)
+        inline float nearestReferenceBoxDistanceSquared(const References& references, const RE::NiPoint3& minimum,
+            const RE::NiPoint3& maximum)
         {
             float bound = boxDistanceSquared(references.seatPoint, minimum, maximum);
             for (std::size_t lane = 0; lane < kLaneCount; ++lane) {
                 for (std::size_t referenceIndex = 0; referenceIndex < references.laneCounts[lane]; ++referenceIndex) {
-                    bound = (std::min)(bound, boxDistanceSquared(references.lanePoints[lane][referenceIndex], minimum, maximum));
+                    bound = (std::min)(bound,
+                        boxDistanceSquared(references.lanePoints[lane][referenceIndex], minimum, maximum));
                 }
             }
             return bound;
         }
 
-        inline void retainNearest(std::vector<RankedTriangle>& ranking, std::size_t limit, const RankedTriangle& candidate)
+        inline void retainNearest(std::vector<RankedTriangle>& ranking, std::size_t limit,
+            const RankedTriangle& candidate)
         {
             if (ranking.size() < limit) {
                 ranking.push_back(candidate);
@@ -175,12 +185,12 @@ namespace rock::support_grip_triangle_selection
      * Ranks every triangle of the parts. rankings must be empty; each ranking
      * stays a max-heap (front = worst kept entry) until mergeRankings sorts it.
      */
-    inline void rankParts(std::span<const Part> parts, const References& references, std::size_t laneLimit, std::size_t globalLimit, Rankings& rankings,
-        Stats* stats = nullptr)
+    inline void rankParts(std::span<const Part> parts, const References& references, std::size_t laneLimit,
+        std::size_t globalLimit, Rankings& rankings, Stats* stats = nullptr)
     {
         const auto finiteTriangle = [](const TriangleData& triangle) {
             return vector_math::hasFiniteComponents(triangle.v0) && vector_math::hasFiniteComponents(triangle.v1) &&
-                   vector_math::hasFiniteComponents(triangle.v2);
+                vector_math::hasFiniteComponents(triangle.v2);
         };
         const auto toWeaponFrame = [](const TriangleData& sourceTriangle, const RE::NiTransform& sourceToWeapon) {
             return TriangleData{
@@ -198,25 +208,35 @@ namespace rock::support_grip_triangle_selection
          * always computed: a NaN there keeps the triangle out of the global
          * ranking, exactly as in the full scan.
          */
-        const auto measure = [&](std::uint64_t ordinal, const TriangleData& weaponLocalTriangle, const RE::NiPoint3* boxMinimum, const RE::NiPoint3* boxMaximum) {
-            if (stats) ++stats->trianglesMeasured;
+        const auto measure = [&](std::uint64_t ordinal, const TriangleData& weaponLocalTriangle,
+                                 const RE::NiPoint3* boxMinimum, const RE::NiPoint3* boxMaximum) {
+            if (stats)
+                ++stats->trianglesMeasured;
             const auto& global = rankings[kGlobalRankingIndex];
             const bool globalFull = !global.empty() && global.size() >= globalLimit;
             float globalMinimumDistanceSquared = (std::numeric_limits<float>::infinity)();
-            (void)closestPointOnTriangleToPoint(references.seatPoint, weaponLocalTriangle, globalMinimumDistanceSquared);
-            if (stats) ++stats->exactDistances;
+            (void)closestPointOnTriangleToPoint(references.seatPoint, weaponLocalTriangle,
+                globalMinimumDistanceSquared);
+            if (stats)
+                ++stats->exactDistances;
             for (std::size_t lane = 0; lane < kLaneCount; ++lane) {
                 const auto& ranking = rankings[lane];
-                const bool bounded = boxMinimum && boxMaximum && globalFull && !ranking.empty() && ranking.size() >= laneLimit;
-                const float skipAbove = bounded ? (std::max)(ranking.front().distanceSquared, global.front().distanceSquared) : 0.0f;
+                const bool bounded =
+                    boxMinimum && boxMaximum && globalFull && !ranking.empty() && ranking.size() >= laneLimit;
+                const float skipAbove =
+                    bounded ? (std::max)(ranking.front().distanceSquared, global.front().distanceSquared) : 0.0f;
                 float laneMinimumDistanceSquared = (std::numeric_limits<float>::infinity)();
                 for (std::size_t referenceIndex = 0; referenceIndex < references.laneCounts[lane]; ++referenceIndex) {
-                    if (bounded && detail::boxDistanceSquared(references.lanePoints[lane][referenceIndex], *boxMinimum, *boxMaximum) > skipAbove) {
+                    if (bounded &&
+                        detail::boxDistanceSquared(references.lanePoints[lane][referenceIndex], *boxMinimum,
+                            *boxMaximum) > skipAbove) {
                         continue;
                     }
-                    if (stats) ++stats->exactDistances;
+                    if (stats)
+                        ++stats->exactDistances;
                     float distanceSquared = 0.0f;
-                    (void)closestPointOnTriangleToPoint(references.lanePoints[lane][referenceIndex], weaponLocalTriangle, distanceSquared);
+                    (void)closestPointOnTriangleToPoint(references.lanePoints[lane][referenceIndex],
+                        weaponLocalTriangle, distanceSquared);
                     if (std::isfinite(distanceSquared)) {
                         laneMinimumDistanceSquared = (std::min)(laneMinimumDistanceSquared, distanceSquared);
                     }
@@ -224,12 +244,16 @@ namespace rock::support_grip_triangle_selection
                 if (std::isfinite(laneMinimumDistanceSquared)) {
                     globalMinimumDistanceSquared = (std::min)(globalMinimumDistanceSquared, laneMinimumDistanceSquared);
                     detail::retainNearest(rankings[lane], laneLimit,
-                        RankedTriangle{ .distanceSquared = laneMinimumDistanceSquared, .deterministicOrdinal = ordinal, .weaponLocalTriangle = weaponLocalTriangle });
+                        RankedTriangle{ .distanceSquared = laneMinimumDistanceSquared,
+                            .deterministicOrdinal = ordinal,
+                            .weaponLocalTriangle = weaponLocalTriangle });
                 }
             }
             if (std::isfinite(globalMinimumDistanceSquared)) {
                 detail::retainNearest(rankings[kGlobalRankingIndex], globalLimit,
-                    RankedTriangle{ .distanceSquared = globalMinimumDistanceSquared, .deterministicOrdinal = ordinal, .weaponLocalTriangle = weaponLocalTriangle });
+                    RankedTriangle{ .distanceSquared = globalMinimumDistanceSquared,
+                        .deterministicOrdinal = ordinal,
+                        .weaponLocalTriangle = weaponLocalTriangle });
             }
         };
 
@@ -250,7 +274,8 @@ namespace rock::support_grip_triangle_selection
                 }
                 float laneBound = (std::numeric_limits<float>::infinity)();
                 for (std::size_t referenceIndex = 0; referenceIndex < references.laneCounts[lane]; ++referenceIndex) {
-                    laneBound = (std::min)(laneBound, detail::boxDistanceSquared(references.lanePoints[lane][referenceIndex], minimum, maximum));
+                    laneBound = (std::min)(laneBound,
+                        detail::boxDistanceSquared(references.lanePoints[lane][referenceIndex], minimum, maximum));
                 }
                 // An entry at the worst distance with a lower ordinal still enters, so equality keeps the node.
                 if (!(laneBound > ranking.front().distanceSquared)) {
@@ -272,14 +297,16 @@ namespace rock::support_grip_triangle_selection
             if (!part.index) {
                 for (std::size_t i = 0; i < part.sourceTriangles.size(); ++i) {
                     if (finiteTriangle(part.sourceTriangles[i])) {
-                        measure(part.firstOrdinal + i, toWeaponFrame(part.sourceTriangles[i], part.sourceToWeapon), nullptr, nullptr);
+                        measure(part.firstOrdinal + i, toWeaponFrame(part.sourceTriangles[i], part.sourceToWeapon),
+                            nullptr, nullptr);
                     }
                 }
                 continue;
             }
             RE::NiPoint3 rootMinimum{}, rootMaximum{}, boxMinimum{}, boxMaximum{};
             float orderKey = 0.0f;
-            if (part.index->bounds(rootMinimum, rootMaximum) && detail::weaponFrameBox(part.sourceToWeapon, rootMinimum, rootMaximum, boxMinimum, boxMaximum)) {
+            if (part.index->bounds(rootMinimum, rootMaximum) &&
+                detail::weaponFrameBox(part.sourceToWeapon, rootMinimum, rootMaximum, boxMinimum, boxMaximum)) {
                 orderKey = detail::nearestReferenceBoxDistanceSquared(references, boxMinimum, boxMaximum);
             }
             walkOrder.emplace_back(std::isfinite(orderKey) ? orderKey : 0.0f, partIndex);
@@ -288,15 +315,16 @@ namespace rock::support_grip_triangle_selection
 
         for (const auto& [orderKey, partIndex] : walkOrder) {
             const auto& part = parts[partIndex];
-            const RE::NiPoint3 orderPoint =
-                transform_math::localPointToWorld(transform_math::invertTransform(part.sourceToWeapon), references.seatPoint);
+            const RE::NiPoint3 orderPoint = transform_math::localPointToWorld(
+                transform_math::invertTransform(part.sourceToWeapon), references.seatPoint);
             WeaponTriangleIndex::QueryStats queryStats{};
             part.index->visitPruned(
                 orderPoint,
                 [&](const RE::NiPoint3& minimum, const RE::NiPoint3& maximum) {
                     RE::NiPoint3 boxMinimum{}, boxMaximum{};
                     // A non-finite corner keeps the node: its triangles are checked one by one.
-                    return !detail::weaponFrameBox(part.sourceToWeapon, minimum, maximum, boxMinimum, boxMaximum) || !boxCannotRank(boxMinimum, boxMaximum);
+                    return !detail::weaponFrameBox(part.sourceToWeapon, minimum, maximum, boxMinimum, boxMaximum) ||
+                        !boxCannotRank(boxMinimum, boxMaximum);
                 },
                 [&](std::uint32_t sourceIndex) {
                     const auto& sourceTriangle = part.sourceTriangles[sourceIndex];
@@ -311,7 +339,8 @@ namespace rock::support_grip_triangle_selection
                     }
                 },
                 &queryStats);
-            if (stats) stats->nodesVisited += queryStats.nodes;
+            if (stats)
+                stats->nodesVisited += queryStats.nodes;
         }
     }
 
@@ -326,7 +355,8 @@ namespace rock::support_grip_triangle_selection
         outTriangles.reserve(limit);
         const auto appendUnique = [&](const RankedTriangle& ranked) {
             if (outTriangles.size() >= limit ||
-                std::find(selectedOrdinals.begin(), selectedOrdinals.end(), ranked.deterministicOrdinal) != selectedOrdinals.end()) {
+                std::find(selectedOrdinals.begin(), selectedOrdinals.end(), ranked.deterministicOrdinal) !=
+                    selectedOrdinals.end()) {
                 return false;
             }
             selectedOrdinals.push_back(ranked.deterministicOrdinal);

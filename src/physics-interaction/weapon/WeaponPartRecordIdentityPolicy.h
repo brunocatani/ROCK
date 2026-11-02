@@ -85,8 +85,7 @@ namespace rock::weapon_part_record_identity_policy
         }
         if (nodeName == "P-Bipod" ||
             (nodeName.starts_with("P-") &&
-                (nodeName.find("Bipod") != std::string_view::npos ||
-                    nodeName.find("bipod") != std::string_view::npos ||
+                (nodeName.find("Bipod") != std::string_view::npos || nodeName.find("bipod") != std::string_view::npos ||
                     nodeName.find("BIPOD") != std::string_view::npos))) {
             return StructureAnchor::SlotBipod;
         }
@@ -127,8 +126,7 @@ namespace rock::weapon_part_record_identity_policy
         }
     }
 
-    [[nodiscard]] inline constexpr StructureAnchor chooseStructureAnchor(
-        StructureAnchor slotAnchor,
+    [[nodiscard]] inline constexpr StructureAnchor chooseStructureAnchor(StructureAnchor slotAnchor,
         StructureAnchor rigAnchor) noexcept
     {
         if (slotAnchor == StructureAnchor::None) {
@@ -184,17 +182,12 @@ namespace rock::weapon_part_record_identity_policy
      */
     [[nodiscard]] inline constexpr bool isAmmoPieceKind(WeaponPartKind kind) noexcept
     {
-        return kind == WeaponPartKind::Shell ||
-               kind == WeaponPartKind::Round ||
-               kind == WeaponPartKind::LaserCell ||
-               kind == WeaponPartKind::CosmeticAmmo;
+        return kind == WeaponPartKind::Shell || kind == WeaponPartKind::Round || kind == WeaponPartKind::LaserCell ||
+            kind == WeaponPartKind::CosmeticAmmo;
     }
 
-    [[nodiscard]] inline constexpr bool anchorOverridesName(
-        StructureAnchor anchor,
-        WeaponPartKind namePartKind,
-        bool nameHasActionRole,
-        bool nameGameplayCritical)
+    [[nodiscard]] inline constexpr bool anchorOverridesName(StructureAnchor anchor, WeaponPartKind namePartKind,
+        bool nameHasActionRole, bool nameGameplayCritical)
     {
         switch (anchor) {
         case StructureAnchor::SlotMagazine:
@@ -224,19 +217,19 @@ namespace rock::weapon_part_record_identity_policy
         }
     }
 
-    [[nodiscard]] inline WeaponPartClassification applyStructureAnchor(
-        const WeaponPartClassification& nameResult,
+    [[nodiscard]] inline WeaponPartClassification applyStructureAnchor(const WeaponPartClassification& nameResult,
         StructureAnchor anchor)
     {
-        if (!anchorOverridesName(anchor, nameResult.partKind, nameResult.actionRole != WeaponActionRole::None, nameResult.gameplayCritical)) {
+        if (!anchorOverridesName(anchor, nameResult.partKind, nameResult.actionRole != WeaponActionRole::None,
+                nameResult.gameplayCritical)) {
             return nameResult;
         }
 
         WeaponPartClassification result = classifyWeaponPartKind(partKindForAnchor(anchor));
         result.classificationSource =
-            (anchor == StructureAnchor::RigBolt || anchor == StructureAnchor::RigMagazineDisplay) ?
-                WeaponPartClassificationSource::RigAnchor :
-                WeaponPartClassificationSource::SlotAnchor;
+            (anchor == StructureAnchor::RigBolt || anchor == StructureAnchor::RigMagazineDisplay)
+            ? WeaponPartClassificationSource::RigAnchor
+            : WeaponPartClassificationSource::SlotAnchor;
         result.attachPointFormId = attachPointFormIdForAnchor(anchor);
         return result;
     }

@@ -1,9 +1,9 @@
 #pragma once
 
+#include <array>
+#include "RE/Bethesda/TESBoundObjects.h"
 #include "physics-interaction/weapon/WeaponClassificationPolicy.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
-#include "RE/Bethesda/TESBoundObjects.h"
-#include <array>
 
 namespace rock::weapon_instance_classification
 {
@@ -78,8 +78,7 @@ namespace rock::weapon_instance_classification
         return resolved;
     }
 
-    inline std::uint64_t computeWeaponKeywordFlags(
-        const RE::TESObjectWEAP* weapon,
+    inline std::uint64_t computeWeaponKeywordFlags(const RE::TESObjectWEAP* weapon,
         const RE::TBO_InstanceData* instanceData)
     {
         std::uint64_t flags = 0;
@@ -111,33 +110,30 @@ namespace rock::weapon_instance_classification
      * equip slot only disambiguates conflicting pistol and rifle tags.
      * Inconclusive weapons remain unclassified.
      */
-    inline WeaponClassificationResult classifyEquippedWeapon(
-        const RE::TESObjectWEAP* weapon,
-        const RE::TBO_InstanceData* instanceData,
-        const std::uint32_t effectiveEquipSlotFormID)
+    inline WeaponClassificationResult classifyEquippedWeapon(const RE::TESObjectWEAP* weapon,
+        const RE::TBO_InstanceData* instanceData, const std::uint32_t effectiveEquipSlotFormID)
     {
         WeaponClassificationResult result{};
         if (!weapon) {
             return result;
         }
 
-        const auto* effectiveData = instanceData ?
-            static_cast<const RE::TESObjectWEAP::InstanceData*>(instanceData) :
-            static_cast<const RE::TESObjectWEAP::InstanceData*>(&weapon->weaponData);
+        const auto* effectiveData = instanceData
+            ? static_cast<const RE::TESObjectWEAP::InstanceData*>(instanceData)
+            : static_cast<const RE::TESObjectWEAP::InstanceData*>(&weapon->weaponData);
         result.keywordFlags = computeWeaponKeywordFlags(weapon, instanceData);
         const auto policyResult = weapon_classification_policy::classify({
             .keywordFlags = result.keywordFlags,
             .effectiveEquipSlotFormID = effectiveEquipSlotFormID,
             .nativeMeleeType = effectiveData &&
                 (effectiveData->type == RE::WEAPON_TYPE::kHandToHand ||
-                 weapon_type_policy::isMelee(effectiveData->type.get())),
+                    weapon_type_policy::isMelee(effectiveData->type.get())),
         });
         result.sizeClass = policyResult.sizeClass;
         result.source = policyResult.source;
         result.resolved = policyResult.resolved;
         result.usedEffectiveInstanceKeywordData =
-            result.keywordFlags != 0 && instanceData &&
-            instanceData->GetKeywordData();
+            result.keywordFlags != 0 && instanceData && instanceData->GetKeywordData();
         return result;
     }
 

@@ -5,7 +5,11 @@
 
 namespace rock::native_scope_admission
 {
-    enum class Site : std::uint32_t { Geometry, Menu };
+    enum class Site : std::uint32_t
+    {
+        Geometry,
+        Menu
+    };
 
     // Both patched instructions are inside native functions with RSP aligned
     // to 16 bytes. Their next instruction tests BL/AL, so incoming arithmetic

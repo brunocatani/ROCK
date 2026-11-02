@@ -18,8 +18,7 @@ namespace rock::weapon_accessory_part_kind_policy
         bool flashlightEmitter{ false };
     };
 
-    [[nodiscard]] inline constexpr WeaponPartKind resolvePartKind(
-        WeaponPartKind baseKind,
+    [[nodiscard]] inline constexpr WeaponPartKind resolvePartKind(WeaponPartKind baseKind,
         const Evidence& evidence) noexcept
     {
         if (evidence.nativeScopeOverlay) {
@@ -37,8 +36,7 @@ namespace rock::weapon_accessory_part_kind_policy
         return baseKind;
     }
 
-    [[nodiscard]] inline WeaponPartClassification applyAttachmentEvidence(
-        const WeaponPartClassification& base,
+    [[nodiscard]] inline WeaponPartClassification applyAttachmentEvidence(const WeaponPartClassification& base,
         const Evidence& evidence)
     {
         const auto resolvedKind = resolvePartKind(base.partKind, evidence);

@@ -105,19 +105,15 @@ namespace rock::equipped_weapon_transition_policy
         state.partialDrawRecoveryActive = false;
     }
 
-    [[nodiscard]] inline constexpr bool matchesExpectedIdentity(
-        const std::uint32_t currentFormID,
-        const std::uintptr_t currentInstanceData,
-        const std::uint32_t expectedFormID,
-        const std::uintptr_t expectedInstanceData,
-        const std::uint32_t previousFormID,
+    [[nodiscard]] inline constexpr bool matchesExpectedIdentity(const std::uint32_t currentFormID,
+        const std::uintptr_t currentInstanceData, const std::uint32_t expectedFormID,
+        const std::uintptr_t expectedInstanceData, const std::uint32_t previousFormID,
         const std::uintptr_t previousInstanceData) noexcept
     {
         if (currentFormID == 0 || currentFormID != expectedFormID) {
             return false;
         }
-        if (expectedInstanceData == 0 ||
-            currentInstanceData == expectedInstanceData) {
+        if (expectedInstanceData == 0 || currentInstanceData == expectedInstanceData) {
             return true;
         }
 
@@ -126,19 +122,18 @@ namespace rock::equipped_weapon_transition_policy
         // EquipObject. Accept that clone only after the current identity has
         // moved away from the pre-request weapon. This prevents a same-base
         // equip from accidentally binding to the old stack.
-        return currentFormID != previousFormID ||
-               currentInstanceData != previousInstanceData;
+        return currentFormID != previousFormID || currentInstanceData != previousInstanceData;
     }
 
     // Observe once per drawn inventory ownership, independently of transient
     // grip/geometry resets. Explicit hand requests consume this boundary too:
     // their completion must never be followed by a default-hand takeover.
-    [[nodiscard]] inline constexpr bool observeDefaultLeftEquip(
-        std::uint64_t& observedOwnershipKey, const std::uint64_t ownershipKey,
-        const bool leftHandedMode, const bool handSpecificOwnership,
+    [[nodiscard]] inline constexpr bool observeDefaultLeftEquip(std::uint64_t& observedOwnershipKey,
+        const std::uint64_t ownershipKey, const bool leftHandedMode, const bool handSpecificOwnership,
         const bool menuBlocked = false) noexcept
     {
-        if (menuBlocked) return false;
+        if (menuBlocked)
+            return false;
         const bool changed = observedOwnershipKey != ownershipKey;
         observedOwnershipKey = ownershipKey;
         return changed && ownershipKey != 0 && leftHandedMode && !handSpecificOwnership;
@@ -154,17 +149,18 @@ namespace rock::equipped_weapon_transition_policy
         std::uintptr_t previousInstanceData{ 0 };
     };
 
-    [[nodiscard]] inline constexpr bool resolveFiringHandIsLeft(
-        bool currentFiringHandIsLeft, std::uint32_t currentFormID,
-        std::uintptr_t currentInstanceData, const FiringHandReservation& reservation) noexcept
+    [[nodiscard]] inline constexpr bool resolveFiringHandIsLeft(bool currentFiringHandIsLeft,
+        std::uint32_t currentFormID, std::uintptr_t currentInstanceData,
+        const FiringHandReservation& reservation) noexcept
     {
         // Native draw can finish before the requested physical grip is ready.
         // Reserve its hand only for the accepted weapon identity; an expired
         // or replaced transfer must not override the live firing role.
-        return reservation.pending && matchesExpectedIdentity(currentFormID, currentInstanceData,
-                   reservation.formID, reservation.instanceData,
-                   reservation.previousFormID, reservation.previousInstanceData) ?
-            reservation.isLeft : currentFiringHandIsLeft;
+        return reservation.pending &&
+                matchesExpectedIdentity(currentFormID, currentInstanceData, reservation.formID,
+                    reservation.instanceData, reservation.previousFormID, reservation.previousInstanceData)
+            ? reservation.isLeft
+            : currentFiringHandIsLeft;
     }
 
     [[nodiscard]] inline constexpr Decision advance(State& state, const FrameInput& input) noexcept
@@ -189,8 +185,7 @@ namespace rock::equipped_weapon_transition_policy
             // real gap which the bridge must cover. After a completed handoff,
             // a later non-drawn state belongs to a new engine/menu transition;
             // never resurrect the completed equip's loose model over it.
-            decision.presentBridgeModel =
-                input.bridgeModelAvailable && !state.nativeHandoffObserved;
+            decision.presentBridgeModel = input.bridgeModelAvailable && !state.nativeHandoffObserved;
 
             if (state.nativeHandoffObserved || !input.mutationAllowed) {
                 return decision;
@@ -198,8 +193,7 @@ namespace rock::equipped_weapon_transition_policy
 
             using NativeWeaponState = held_weapon_equip_state_policy::NativeWeaponState;
             const auto nativeState = static_cast<NativeWeaponState>(input.nativeWeaponState);
-            if (!held_weapon_equip_state_policy::isValidNativeWeaponState(
-                    input.nativeWeaponState)) {
+            if (!held_weapon_equip_state_policy::isValidNativeWeaponState(input.nativeWeaponState)) {
                 state.drawRecoveryExhausted = true;
                 decision.repair = RepairAction::DrawExhausted;
                 return decision;
@@ -224,12 +218,10 @@ namespace rock::equipped_weapon_transition_policy
                 state.drawRecoveryWindowActive = false;
                 state.wantToDrawObserved = false;
                 const float partialRecoveryElapsedSeconds =
-                    input.drawRecoveryElapsedSeconds -
-                    state.partialDrawRecoveryStartedAtSeconds;
+                    input.drawRecoveryElapsedSeconds - state.partialDrawRecoveryStartedAtSeconds;
                 if (state.drawRecoveryExhausted) {
                     decision.repair = RepairAction::DrawExhausted;
-                } else if (partialRecoveryElapsedSeconds >=
-                           kPartialDrawCompletionDeadlineSeconds) {
+                } else if (partialRecoveryElapsedSeconds >= kPartialDrawCompletionDeadlineSeconds) {
                     decision.repair = RepairAction::FinalizePartialDraw;
                 }
                 return decision;
@@ -241,19 +233,15 @@ namespace rock::equipped_weapon_transition_policy
              * Wait for stable Sheathed, then repeat the engine's equip-draw
              * preparation before requesting the new weapon.
              */
-            if (nativeState == NativeWeaponState::WantToSheathe ||
-                nativeState == NativeWeaponState::Sheathing) {
+            if (nativeState == NativeWeaponState::WantToSheathe || nativeState == NativeWeaponState::Sheathing) {
                 resetDrawRecoveryWindow(state);
                 return decision;
             }
 
             if (nativeState == NativeWeaponState::WantToDraw) {
                 if (!state.wantToDrawObserved) {
-                    state.drawRecoveryWindowStartedAtSeconds =
-                        input.drawRecoveryElapsedSeconds;
-                    state.nextDrawRequestAtSeconds =
-                        input.drawRecoveryElapsedSeconds +
-                        kWantToDrawStallSeconds;
+                    state.drawRecoveryWindowStartedAtSeconds = input.drawRecoveryElapsedSeconds;
+                    state.nextDrawRequestAtSeconds = input.drawRecoveryElapsedSeconds + kWantToDrawStallSeconds;
                     state.drawRecoveryWindowActive = true;
                     state.wantToDrawObserved = true;
                     state.drawRecoveryExhausted = false;
@@ -261,64 +249,49 @@ namespace rock::equipped_weapon_transition_policy
                 }
 
                 const float wantToDrawElapsedSeconds =
-                    input.drawRecoveryElapsedSeconds -
-                    state.drawRecoveryWindowStartedAtSeconds;
-                if (state.drawRecoveryExhausted ||
-                    wantToDrawElapsedSeconds >=
-                        kDrawRecoveryDeadlineSeconds) {
+                    input.drawRecoveryElapsedSeconds - state.drawRecoveryWindowStartedAtSeconds;
+                if (state.drawRecoveryExhausted || wantToDrawElapsedSeconds >= kDrawRecoveryDeadlineSeconds) {
                     state.drawRecoveryExhausted = true;
                     decision.repair = RepairAction::DrawExhausted;
                     return decision;
                 }
-                if (input.drawRecoveryElapsedSeconds <
-                    state.nextDrawRequestAtSeconds) {
+                if (input.drawRecoveryElapsedSeconds < state.nextDrawRequestAtSeconds) {
                     return decision;
                 }
 
                 ++state.drawRequests;
-                state.nextDrawRequestAtSeconds =
-                    input.drawRecoveryElapsedSeconds +
-                    kWantToDrawStallSeconds;
+                state.nextDrawRequestAtSeconds = input.drawRecoveryElapsedSeconds + kWantToDrawStallSeconds;
                 decision.repair = RepairAction::RequestDraw;
                 return decision;
             }
 
-            const bool returnedFromWantToDraw =
-                state.wantToDrawObserved;
+            const bool returnedFromWantToDraw = state.wantToDrawObserved;
             state.wantToDrawObserved = false;
             if (nativeState != NativeWeaponState::Sheathed) {
                 return decision;
             }
-            if (returnedFromWantToDraw ||
-                !state.drawRecoveryWindowActive) {
-                state.drawRecoveryWindowStartedAtSeconds =
-                    input.drawRecoveryElapsedSeconds;
-                state.nextDrawRequestAtSeconds =
-                    input.drawRecoveryElapsedSeconds;
+            if (returnedFromWantToDraw || !state.drawRecoveryWindowActive) {
+                state.drawRecoveryWindowStartedAtSeconds = input.drawRecoveryElapsedSeconds;
+                state.nextDrawRequestAtSeconds = input.drawRecoveryElapsedSeconds;
                 state.drawRecoveryWindowActive = true;
                 state.drawRecoveryExhausted = false;
             }
 
             const float unacknowledgedSeconds =
-                input.drawRecoveryElapsedSeconds -
-                state.drawRecoveryWindowStartedAtSeconds;
-            if (state.drawRecoveryExhausted ||
-                unacknowledgedSeconds >= kDrawRecoveryDeadlineSeconds) {
+                input.drawRecoveryElapsedSeconds - state.drawRecoveryWindowStartedAtSeconds;
+            if (state.drawRecoveryExhausted || unacknowledgedSeconds >= kDrawRecoveryDeadlineSeconds) {
                 state.drawRecoveryExhausted = true;
                 decision.repair = RepairAction::DrawExhausted;
                 return decision;
             }
-            if (input.drawRecoveryElapsedSeconds <
-                state.nextDrawRequestAtSeconds) {
+            if (input.drawRecoveryElapsedSeconds < state.nextDrawRequestAtSeconds) {
                 return decision;
             }
 
             // The coordinator repeats FO4VR's equip-draw preparation before
             // this request. Only native state acknowledgment counts as progress.
             ++state.drawRequests;
-            state.nextDrawRequestAtSeconds =
-                input.drawRecoveryElapsedSeconds +
-                kDrawRetryIntervalSeconds;
+            state.nextDrawRequestAtSeconds = input.drawRecoveryElapsedSeconds + kDrawRetryIntervalSeconds;
             decision.repair = RepairAction::RequestPreparedDraw;
             return decision;
         }
@@ -326,9 +299,7 @@ namespace rock::equipped_weapon_transition_policy
         resetDrawRecoveryWindow(state);
         resetPartialDrawRecovery(state);
 
-        const bool exactInstanceRenderable =
-            input.nativeInstanceFound &&
-            input.nativeAncestorPathVisible &&
+        const bool exactInstanceRenderable = input.nativeInstanceFound && input.nativeAncestorPathVisible &&
             (input.nativeInstanceLocallyVisible || input.bridgeOwnsNativeInstanceCull);
         if (exactInstanceRenderable) {
             state.missingFrames = 0;
@@ -337,14 +308,14 @@ namespace rock::equipped_weapon_transition_policy
                 ++state.stableFrames;
             }
 
-            if (state.stableFrames >= kStableFramesBeforeNativeHandoff && !input.gripHandoffPending && input.nativePoseReady) {
+            if (state.stableFrames >= kStableFramesBeforeNativeHandoff && !input.gripHandoffPending &&
+                input.nativePoseReady) {
                 if (!state.nativeHandoffObserved) {
                     state.nativeHandoffObserved = true;
                     decision.handoffBridgeToNative = input.bridgeModelAvailable;
                 }
             } else {
-                decision.presentBridgeModel =
-                    input.bridgeModelAvailable && !state.nativeHandoffObserved;
+                decision.presentBridgeModel = input.bridgeModelAvailable && !state.nativeHandoffObserved;
             }
             return decision;
         }
@@ -355,8 +326,7 @@ namespace rock::equipped_weapon_transition_policy
         }
         // Native recovery remains active after the equip handoff, but the
         // loose-model bridge is equip-only and may never be resurrected.
-        decision.presentBridgeModel =
-            input.bridgeModelAvailable && !state.nativeHandoffObserved;
+        decision.presentBridgeModel = input.bridgeModelAvailable && !state.nativeHandoffObserved;
 
         /*
          * A drawn, exactly equipped weapon whose instance path is culled is
@@ -365,8 +335,8 @@ namespace rock::equipped_weapon_transition_policy
          * later every time (runtime 14 Oct 20:37-20:38, eleven exits). Later
          * attempts keep their settle timing.
          */
-        if (input.mutationAllowed && input.nativeInstanceFound &&
-            state.localVisibilityAttempts == 0 && !state.presentationRecoveryWindowActive) {
+        if (input.mutationAllowed && input.nativeInstanceFound && state.localVisibilityAttempts == 0 &&
+            !state.presentationRecoveryWindowActive) {
             ++state.localVisibilityAttempts;
             state.presentationRecoveryWindowStartedAtSeconds = input.drawRecoveryElapsedSeconds;
             state.nextPresentationRepairAtSeconds = input.drawRecoveryElapsedSeconds + kLocalVisibilitySettleSeconds;
@@ -376,58 +346,44 @@ namespace rock::equipped_weapon_transition_policy
         }
 
         if (!state.presentationRecoveryWindowActive) {
-            state.presentationRecoveryWindowStartedAtSeconds =
-                input.drawRecoveryElapsedSeconds;
+            state.presentationRecoveryWindowStartedAtSeconds = input.drawRecoveryElapsedSeconds;
             state.nextPresentationRepairAtSeconds =
-                input.drawRecoveryElapsedSeconds +
-                kPresentationRecoveryGraceSeconds;
+                input.drawRecoveryElapsedSeconds + kPresentationRecoveryGraceSeconds;
             state.presentationRecoveryWindowActive = true;
         }
 
-        if (!input.mutationAllowed ||
-            state.missingFrames < kMissingFramesBeforeRepair ||
-            input.drawRecoveryElapsedSeconds <
-                state.nextPresentationRepairAtSeconds) {
+        if (!input.mutationAllowed || state.missingFrames < kMissingFramesBeforeRepair ||
+            input.drawRecoveryElapsedSeconds < state.nextPresentationRepairAtSeconds) {
             return decision;
         }
 
         const float presentationRecoveryElapsedSeconds =
-            input.drawRecoveryElapsedSeconds -
-            state.presentationRecoveryWindowStartedAtSeconds;
-        if (presentationRecoveryElapsedSeconds >=
-            kPresentationRecoveryDeadlineSeconds) {
+            input.drawRecoveryElapsedSeconds - state.presentationRecoveryWindowStartedAtSeconds;
+        if (presentationRecoveryElapsedSeconds >= kPresentationRecoveryDeadlineSeconds) {
             decision.repair = RepairAction::Exhausted;
             return decision;
         }
 
         const bool localVisibilityRepairAvailable =
-            input.nativeInstanceFound &&
-            state.localVisibilityAttempts < kMaximumLocalVisibilityAttempts;
-        if (localVisibilityRepairAvailable &&
-            state.localVisibilityAttempts <= state.attachAttempts) {
+            input.nativeInstanceFound && state.localVisibilityAttempts < kMaximumLocalVisibilityAttempts;
+        if (localVisibilityRepairAvailable && state.localVisibilityAttempts <= state.attachAttempts) {
             ++state.localVisibilityAttempts;
             decision.repair = RepairAction::RestoreLocalVisibility;
-            state.nextPresentationRepairAtSeconds =
-                input.drawRecoveryElapsedSeconds +
-                kLocalVisibilitySettleSeconds;
+            state.nextPresentationRepairAtSeconds = input.drawRecoveryElapsedSeconds + kLocalVisibilitySettleSeconds;
             return decision;
         }
 
         if (state.attachAttempts < kMaximumAttachAttempts) {
             ++state.attachAttempts;
             decision.repair = RepairAction::QueueNativeAttach;
-            state.nextPresentationRepairAtSeconds =
-                input.drawRecoveryElapsedSeconds +
-                kNativeAttachSettleSeconds;
+            state.nextPresentationRepairAtSeconds = input.drawRecoveryElapsedSeconds + kNativeAttachSettleSeconds;
             return decision;
         }
 
         if (localVisibilityRepairAvailable) {
             ++state.localVisibilityAttempts;
             decision.repair = RepairAction::RestoreLocalVisibility;
-            state.nextPresentationRepairAtSeconds =
-                input.drawRecoveryElapsedSeconds +
-                kLocalVisibilitySettleSeconds;
+            state.nextPresentationRepairAtSeconds = input.drawRecoveryElapsedSeconds + kLocalVisibilitySettleSeconds;
         }
         return decision;
     }

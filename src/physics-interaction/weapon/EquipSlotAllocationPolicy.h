@@ -71,10 +71,13 @@ namespace rock::equip_slot_allocation
         if (wornSlot >= 0 && wornSlot != actingSlot) {
             const auto firing = slots[wornSlot].firingHand;
             if (firing != Hand::None && firing != acting) {
-                return { .action = Action::ToggleSupport, .slot = static_cast<std::uint32_t>(wornSlot),
+                return { .action = Action::ToggleSupport,
+                    .slot = static_cast<std::uint32_t>(wornSlot),
                     .displacedSlot = actingSlot >= 0 ? actingSlot : heldSlot };
             }
-            return { .action = Action::MoveFiringGrip, .slot = static_cast<std::uint32_t>(wornSlot), .displacedSlot = actingSlot };
+            return { .action = Action::MoveFiringGrip,
+                .slot = static_cast<std::uint32_t>(wornSlot),
+                .displacedSlot = actingSlot };
         }
         if (wornSlot >= 0) {
             return { .slot = static_cast<std::uint32_t>(wornSlot) };

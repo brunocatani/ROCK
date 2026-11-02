@@ -57,7 +57,9 @@ namespace rock::loot_to_hand
                 const bool admitted = !containerMenu && !barterMenu && (primaryWand || secondaryWand);
                 // Player takes are rare (no per-frame volume); one line each shows which
                 // condition admits or rejects the item.
-                ROCK_LOG_INFO(Hand, "Loot to hand event: item={:08X} count={} from={:08X} uniqueID={} containerMenu={} barterMenu={} primaryWand={:08X} secondaryWand={:08X} admitted={}",
+                ROCK_LOG_INFO(Hand,
+                    "Loot to hand event: item={:08X} count={} from={:08X} uniqueID={} containerMenu={} barterMenu={} "
+                    "primaryWand={:08X} secondaryWand={:08X} admitted={}",
                     event.baseObjectFormID, event.itemCount, event.oldContainerFormID, event.uniqueID, containerMenu,
                     barterMenu, primaryTarget, secondaryTarget, admitted);
                 if (!admitted) {
@@ -87,7 +89,8 @@ namespace rock::loot_to_hand
     void ensureRegistered()
     {
         bool expected = false;
-        if (!s_registered.compare_exchange_strong(expected, true, std::memory_order_acq_rel, std::memory_order_acquire)) {
+        if (!s_registered.compare_exchange_strong(expected, true, std::memory_order_acq_rel,
+                std::memory_order_acquire)) {
             return;
         }
         auto* source = RE::TESContainerChangedEvent::GetEventSource();
@@ -120,7 +123,7 @@ namespace rock
     {
         if (frame.menuBlocked || !frame.worldReady || !frame.bhkWorld || !frame.hknpWorld ||
             !physicsWritesAllowedForWorld(frame.hknpWorld)) {
-            return;  // A menu is open or the world is not ready: keep the queue.
+            return; // A menu is open or the world is not ready: keep the queue.
         }
         std::array<loot_to_hand::LootedItem, loot_to_hand::kQueueCapacity> items{};
         const auto count = loot_to_hand::drain(items);
@@ -129,7 +132,7 @@ namespace rock
         }
         for (std::size_t i = 0; i < count; ++i) {
             const auto& item = items[i];
-            int chosen = -1;  // 0 right, 1 left
+            int chosen = -1; // 0 right, 1 left
             for (const bool isLeft : { item.preferLeft, !item.preferLeft }) {
                 const auto index = isLeft ? 1u : 0u;
                 const auto& hand = isLeft ? _leftHand : _rightHand;

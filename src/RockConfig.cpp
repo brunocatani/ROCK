@@ -62,8 +62,7 @@ namespace rock
             return false;
         }
         if (!_store->error().empty()) {
-            ROCK_LOG_WARN(Config, "Configuration loaded, but the INI files could not be updated: {}",
-                _store->error());
+            ROCK_LOG_WARN(Config, "Configuration loaded, but the INI files could not be updated: {}", _store->error());
         }
         if (_store->revision() == configRevision())
             return true;
@@ -175,9 +174,11 @@ namespace rock
     }
 
     void RockConfig::stopFileWatch() { _fileWatch.reset(); }
+
     void RockConfig::subscribeForConfigChanged(const std::string& key, std::function<void(const std::string&)> callback)
     {
         _onConfigChangedSubscribers[key] = std::move(callback);
     }
+
     void RockConfig::unsubscribeFromConfigChanged(const std::string& key) { _onConfigChangedSubscribers.erase(key); }
 }

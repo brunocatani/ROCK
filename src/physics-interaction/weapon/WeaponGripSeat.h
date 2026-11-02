@@ -2,8 +2,8 @@
 
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/FrikWeaponOffsets.h"
-#include "physics-interaction/weapon/HoldingGripRecords.h"
 #include "physics-interaction/weapon/HoldingGripMath.h"
+#include "physics-interaction/weapon/HoldingGripRecords.h"
 
 #include <cstdint>
 #include <optional>
@@ -65,10 +65,10 @@ namespace rock::weapon_grip_seat
 
     [[nodiscard]] NativeSeat resolveNative(const Request& request);
 
-    [[nodiscard]] bool leftFiringSeat(const RE::NiTransform& nativeRight, holding_grip_math::MirrorPlane mirrorPlane, RE::NiTransform& outLeft);
+    [[nodiscard]] bool leftFiringSeat(const RE::NiTransform& nativeRight, holding_grip_math::MirrorPlane mirrorPlane,
+        RE::NiTransform& outLeft);
 
-    [[nodiscard]] bool mirrorFingerPose(
-        const authored_weapon_grip_library::FiringFingerPose& right,
+    [[nodiscard]] bool mirrorFingerPose(const authored_weapon_grip_library::FiringFingerPose& right,
         authored_weapon_grip_library::FiringFingerPose& outLeft);
 
     struct FiringSeat
@@ -80,10 +80,6 @@ namespace rock::weapon_grip_seat
 
     // The firing seat for a hand. The custom holding grip wins; otherwise
     // the native seat requires the harvested finger pose.
-    [[nodiscard]] bool firingSeat(
-        const NativeSeat& native,
-        const holding_grips::Record* custom,
-        bool isLeft,
-        holding_grip_math::MirrorPlane mirrorPlane,
-        FiringSeat& out);
+    [[nodiscard]] bool firingSeat(const NativeSeat& native, const holding_grips::Record* custom, bool isLeft,
+        holding_grip_math::MirrorPlane mirrorPlane, FiringSeat& out);
 }

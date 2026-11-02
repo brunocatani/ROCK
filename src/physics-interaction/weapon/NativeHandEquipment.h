@@ -25,6 +25,7 @@ namespace rock::native_hand_equipment
         // A gun; otherwise an equipped melee weapon (no ammo, fire or recoil).
         bool firearm = false;
     };
+
     // Main-frame borrowed views, indexed by native equipment index (0: the
     // player's own graph; 1: ROCK's second graph). An index is not a hand.
     // Both indices hold any hand weapon, guns and melee alike.
@@ -61,6 +62,7 @@ namespace rock::native_hand_equipment
         bool left = false;
         std::uint64_t sequence = 0; // 0: none since load.
     };
+
     [[nodiscard]] DirectedEquip lastDirectedPrimaryEquip() noexcept;
     // Equips one exact inventory item into native index 1 for the physical
     // hand `left`: `equip` performs the caller's native equip call with the
@@ -78,7 +80,12 @@ namespace rock::native_hand_equipment
     // base form `form` in the row's native slot (0 or 1). The other index
     // is used only when the slot wears a different form; None when neither
     // index wears that form.
-    enum class WornHand : std::uint8_t { None, Right, Left };
+    enum class WornHand : std::uint8_t
+    {
+        None,
+        Right,
+        Left
+    };
     // outFiring: that hand holds the weapon's firing grip, not another grip.
     // outSupported: the other hand holds its support grip.
     [[nodiscard]] WornHand wornRowHand(std::uint32_t form, int slot, bool& outFiring, bool& outSupported) noexcept;
@@ -92,6 +99,7 @@ namespace rock::native_hand_equipment
         bool attach = false;
         std::uint64_t sequence = 0; // 0: none pending.
     };
+
     // Frame owner: the request not yet applied, if any.
     [[nodiscard]] SupportRequest pendingSupportRequest() noexcept;
     // Frame owner: the request is applied; `supported` is the result.
@@ -108,10 +116,12 @@ namespace rock::native_hand_equipment
         // The other hand holds its support grip.
         bool supported = false;
     };
+
     // Frame owner, outside menus: the settled hand holding this index-0
     // item. Menus release the live grip; this record keeps the hand for
     // Pip-Boy display and allocation.
-    void recordPrimaryHand(std::uint32_t form, std::uintptr_t instance, bool left, bool firing, bool supported) noexcept;
+    void recordPrimaryHand(std::uint32_t form, std::uintptr_t instance, bool left, bool firing,
+        bool supported) noexcept;
 
     // Frame owner: the item now at index 0 fires from `left`'s hand, as a
     // Pip-Boy directed equip would (used when the second weapon is promoted).
@@ -134,6 +144,7 @@ namespace rock::native_hand_equipment
         std::uint32_t secondaryForm = 0;
         bool secondaryLeft = true;
     };
+
     // Any thread: the recorded hands of the two weapons.
     [[nodiscard]] SavedHands savedHands() noexcept;
     // Any thread (save-load callbacks). The second weapon's hand is recorded at

@@ -6,9 +6,28 @@
 
 namespace rock::held_weapon_transfer
 {
-    enum class Role : std::uint8_t { Firing, Support, Paired };
-    enum class Phase : std::uint8_t { Idle, AwaitEquip, AwaitGrip, Completing, Recovering, Terminal };
-    enum class Outcome : std::uint8_t { None, Completed, Cancelled, Failed };
+    enum class Role : std::uint8_t
+    {
+        Firing,
+        Support,
+        Paired
+    };
+    enum class Phase : std::uint8_t
+    {
+        Idle,
+        AwaitEquip,
+        AwaitGrip,
+        Completing,
+        Recovering,
+        Terminal
+    };
+    enum class Outcome : std::uint8_t
+    {
+        None,
+        Completed,
+        Cancelled,
+        Failed
+    };
 
     struct Request
     {
@@ -44,17 +63,24 @@ namespace rock::held_weapon_transfer
         {
             return phase != Phase::Idle && phase != Phase::Terminal;
         }
+
         [[nodiscard]] constexpr bool wantsEquip(bool left, std::uint32_t ref, std::uint64_t grab) const noexcept
         {
-            return phase == Phase::AwaitEquip && request.isLeft == left && request.reference == ref && request.grab == grab;
+            return phase == Phase::AwaitEquip && request.isLeft == left && request.reference == ref &&
+                request.grab == grab;
         }
+
         [[nodiscard]] constexpr bool matchesTarget(std::uint32_t form, std::uintptr_t instance) const noexcept
         {
-            if (identityBound) return targetForm != 0 && form == targetForm && instance == observedInstance;
-            if (form == request.previousForm && instance == request.previousInstance) return false;
-            return targetForm != 0 && equipped_weapon_transition_policy::matchesExpectedIdentity(
-                form, instance, targetForm, targetInstance, request.previousForm, request.previousInstance);
+            if (identityBound)
+                return targetForm != 0 && form == targetForm && instance == observedInstance;
+            if (form == request.previousForm && instance == request.previousInstance)
+                return false;
+            return targetForm != 0 &&
+                equipped_weapon_transition_policy::matchesExpectedIdentity(form, instance, targetForm, targetInstance,
+                    request.previousForm, request.previousInstance);
         }
+
         [[nodiscard]] constexpr bool blocksFire() const noexcept
         {
             return phase == Phase::AwaitEquip || phase == Phase::AwaitGrip || phase == Phase::Recovering;
@@ -72,14 +98,17 @@ namespace rock::held_weapon_transfer
     // there is only one outstanding provider inventory command.
     inline constexpr void rememberInventoryCompletion(const State& current, State& completed) noexcept
     {
-        if (current.request.inventorySource && current.phase == Phase::Terminal) completed = current;
+        if (current.request.inventorySource && current.phase == Phase::Terminal)
+            completed = current;
     }
 
     [[nodiscard]] inline constexpr const State* inventoryResult(const State& current, const State& completed,
         std::uint64_t sequence) noexcept
     {
-        if (!sequence) return nullptr;
-        if (current.sequence == sequence && current.request.inventorySource) return &current;
+        if (!sequence)
+            return nullptr;
+        if (current.sequence == sequence && current.request.inventorySource)
+            return &current;
         return completed.sequence == sequence && completed.phase == Phase::Terminal ? &completed : nullptr;
     }
 
@@ -91,16 +120,19 @@ namespace rock::held_weapon_transfer
                 (held && state.request.reference == reference && state.request.grab == grab));
     }
 
-    [[nodiscard]] inline constexpr bool equippedSourceCurrent(const State& state, std::uint32_t form, std::uintptr_t instance) noexcept
+    [[nodiscard]] inline constexpr bool equippedSourceCurrent(const State& state, std::uint32_t form,
+        std::uintptr_t instance) noexcept
     {
-        if (state.phase != Phase::AwaitEquip) return true;
+        if (state.phase != Phase::AwaitEquip)
+            return true;
         return form == state.request.previousForm && instance == state.request.previousInstance;
     }
 
     inline constexpr bool admit(State& state, const Request& request) noexcept
     {
         if (state.active() || (!request.inventorySource && (!request.reference || !request.grab)) ||
-            (request.inventorySource && (request.reference || request.grab))) return false;
+            (request.inventorySource && (request.reference || request.grab)))
+            return false;
         const auto sequence = state.sequence + 1;
         state = State{ .sequence = sequence ? sequence : 1, .request = request, .phase = Phase::AwaitEquip };
         return true;
@@ -109,9 +141,11 @@ namespace rock::held_weapon_transfer
     inline constexpr bool resumeMenu(State& state, std::uint32_t form, std::uintptr_t instance,
         const Request& destination) noexcept
     {
-        if (!form) return false;
+        if (!form)
+            return false;
         if (state.active()) {
-            if (!state.inventoryCommitted || !state.matchesTarget(form, instance)) return false;
+            if (!state.inventoryCommitted || !state.matchesTarget(form, instance))
+                return false;
             state.request.world = destination.world;
             state.request.skeleton = destination.skeleton;
             state.request.isLeft = destination.isLeft;
@@ -121,9 +155,14 @@ namespace rock::held_weapon_transfer
             state.presentationAcquired = false;
         } else {
             const auto sequence = state.sequence + 1;
-            state = { .sequence = sequence ? sequence : 1, .request = destination,
-                .phase = Phase::AwaitGrip, .targetForm = form, .targetInstance = instance,
-                .observedInstance = instance, .identityBound = true, .inventoryCommitted = true };
+            state = { .sequence = sequence ? sequence : 1,
+                .request = destination,
+                .phase = Phase::AwaitGrip,
+                .targetForm = form,
+                .targetInstance = instance,
+                .observedInstance = instance,
+                .identityBound = true,
+                .inventoryCommitted = true };
         }
         state.restoringEquippedGrip = true;
         return true;
@@ -131,14 +170,17 @@ namespace rock::held_weapon_transfer
 
     inline constexpr void finishIfReady(State& state) noexcept
     {
-        if (state.phase != Phase::Completing) return;
-        if (state.outcome == Outcome::Completed && (!state.gripAcquired || !state.presentationAcquired)) return;
+        if (state.phase != Phase::Completing)
+            return;
+        if (state.outcome == Outcome::Completed && (!state.gripAcquired || !state.presentationAcquired))
+            return;
         state.phase = Phase::Terminal;
     }
 
     inline constexpr bool inventoryCommitted(State& state, std::uint32_t form, std::uintptr_t instance) noexcept
     {
-        if (state.phase != Phase::AwaitEquip || !form) return false;
+        if (state.phase != Phase::AwaitEquip || !form)
+            return false;
         state.inventoryCommitted = true;
         state.targetForm = form;
         state.targetInstance = instance;
@@ -148,7 +190,8 @@ namespace rock::held_weapon_transfer
 
     inline constexpr void cancel(State& state, Outcome outcome = Outcome::Failed) noexcept
     {
-        if (!state.active()) return;
+        if (!state.active())
+            return;
         state.outcome = outcome;
         // Resuming an already equipped item performs no inventory mutation.
         // Failed grip restoration must never unequip it as compensation.
@@ -156,28 +199,33 @@ namespace rock::held_weapon_transfer
         finishIfReady(state);
     }
 
-    inline constexpr bool acquireGrip(State& state, std::uint32_t form, std::uintptr_t instance, bool left, Role role) noexcept
+    inline constexpr bool acquireGrip(State& state, std::uint32_t form, std::uintptr_t instance, bool left,
+        Role role) noexcept
     {
-        if (state.phase != Phase::AwaitGrip || !state.matchesTarget(form, instance) ||
-            left != state.request.isLeft || role != state.request.role) return false;
+        if (state.phase != Phase::AwaitGrip || !state.matchesTarget(form, instance) || left != state.request.isLeft ||
+            role != state.request.role)
+            return false;
         state.gripAcquired = true;
         state.observedInstance = instance;
         state.identityBound = true;
         state.phase = Phase::Completing;
-        if (state.outcome == Outcome::None) state.outcome = Outcome::Completed;
+        if (state.outcome == Outcome::None)
+            state.outcome = Outcome::Completed;
         return true;
     }
 
     inline constexpr void presentationAcquired(State& state) noexcept
     {
-        if (!state.active() || !state.gripAcquired) return;
+        if (!state.active() || !state.gripAcquired)
+            return;
         state.presentationAcquired = true;
         finishIfReady(state);
     }
 
     inline constexpr void recovered(State& state) noexcept
     {
-        if (state.phase != Phase::Recovering) return;
+        if (state.phase != Phase::Recovering)
+            return;
         state.inventoryCommitted = false;
         state.phase = Phase::Completing;
         finishIfReady(state);

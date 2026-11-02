@@ -28,8 +28,7 @@ namespace rock::weapon_node_write_block_policy
     inline constexpr std::uint32_t kHoldFramesAfterRecoilWrite = 30;
     inline constexpr std::uint32_t kNeverWritten = 0xFFFFFFFFu;
 
-    [[nodiscard]] constexpr std::uint32_t advanceFramesSinceWrite(
-        const std::uint32_t framesSinceWrite,
+    [[nodiscard]] constexpr std::uint32_t advanceFramesSinceWrite(const std::uint32_t framesSinceWrite,
         const bool wroteThisFrame) noexcept
     {
         if (wroteThisFrame) {

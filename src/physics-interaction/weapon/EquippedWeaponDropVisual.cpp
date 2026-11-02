@@ -24,8 +24,10 @@ namespace rock
             for (std::size_t index = 0; index < count; ++index) {
                 if (auto* node = nodes[index]->IsNode()) {
                     for (const auto& child : node->children) {
-                        if (!child) continue;
-                        if (count == nodes.size()) return false;
+                        if (!child)
+                            continue;
+                        if (count == nodes.size())
+                            return false;
                         nodes[count++] = child.get();
                     }
                 }
@@ -36,29 +38,29 @@ namespace rock
         }
     }
 
-    void EquippedWeaponDropVisual::begin(RE::NiPointer<RE::NiAVObject> model,
-        const RE::NiTransform& modelInWeapon, const AuthoredWeaponGripPose& grip,
-        std::uint32_t referenceId)
+    void EquippedWeaponDropVisual::begin(RE::NiPointer<RE::NiAVObject> model, const RE::NiTransform& modelInWeapon,
+        const AuthoredWeaponGripPose& grip, std::uint32_t referenceId)
     {
         release("superseded");
         if (!model || !grip.valid() || !held_scene_presentation_policy::finiteTransform(modelInWeapon)) {
-            ROCK_LOG_WARN(Weapon, "Toggle drop visual unavailable: ref={:08X} model={} grip={}",
-                referenceId, model != nullptr, grip.valid());
+            ROCK_LOG_WARN(Weapon, "Toggle drop visual unavailable: ref={:08X} model={} grip={}", referenceId,
+                model != nullptr, grip.valid());
             return;
         }
         _model = std::move(model);
         _modelInWeapon = modelInWeapon;
         _grip = grip;
         _referenceId = referenceId;
-        ROCK_LOG_INFO(Weapon, "Toggle drop visual armed: ref={:08X} hand={} nativeDetached={}",
-            _referenceId, _grip.isLeft ? "left" : "right", _model->parent == nullptr);
+        ROCK_LOG_INFO(Weapon, "Toggle drop visual armed: ref={:08X} hand={} nativeDetached={}", _referenceId,
+            _grip.isLeft ? "left" : "right", _model->parent == nullptr);
     }
 
     void EquippedWeaponDropVisual::beginStationary(RE::NiPointer<RE::NiAVObject> model,
         const RE::NiTransform& modelInWeapon, const RE::NiTransform& weaponWorld, const std::uint32_t referenceId)
     {
         release("stationary-replaced");
-        if (!model || !held_scene_presentation_policy::finiteTransform(weaponWorld)) return;
+        if (!model || !held_scene_presentation_policy::finiteTransform(weaponWorld))
+            return;
         _model = std::move(model);
         _modelInWeapon = modelInWeapon;
         _stationaryWorld = weaponWorld;
@@ -68,7 +70,8 @@ namespace rock
 
     void EquippedWeaponDropVisual::update(const RE::NiTransform& physicalHandWorld, RE::NiAVObject* looseRoot)
     {
-        if (!_model) return;
+        if (!_model)
+            return;
         if (looseRoot == _model.get()) {
             release("native-reused-model");
             return;
@@ -78,8 +81,9 @@ namespace rock
             abandonSceneGraph();
             return;
         }
-        const auto weaponWorld = _stationary ? _stationaryWorld : transform_math::composeTransforms(physicalHandWorld,
-            transform_math::invertTransform(_grip.placementHandWeaponLocal));
+        const auto weaponWorld = _stationary ? _stationaryWorld
+                                             : transform_math::composeTransforms(physicalHandWorld,
+                                                   transform_math::invertTransform(_grip.placementHandWeaponLocal));
         if ((!_stationary && !held_scene_presentation_policy::finiteTransform(physicalHandWorld)) ||
             !held_scene_presentation_policy::finiteTransform(weaponWorld)) {
             release("invalid-pose");
@@ -98,7 +102,8 @@ namespace rock
                 return;
             }
             if (!stripDetachedCollision(_model.get())) {
-                ROCK_LOG_WARN(Weapon, "Toggle drop visual rejected: ref={:08X} subtree exceeds presentation bound", _referenceId);
+                ROCK_LOG_WARN(Weapon, "Toggle drop visual rejected: ref={:08X} subtree exceeds presentation bound",
+                    _referenceId);
                 release("model-too-large");
                 return;
             }
@@ -111,8 +116,8 @@ namespace rock
             return;
         }
         const auto modelWorld = transform_math::composeTransforms(weaponWorld, _modelInWeapon);
-        const auto modelLocal = transform_math::composeTransforms(
-            transform_math::invertTransform(worldRoot->world), modelWorld);
+        const auto modelLocal =
+            transform_math::composeTransforms(transform_math::invertTransform(worldRoot->world), modelWorld);
         if (!held_scene_presentation_policy::finiteTransform(modelLocal)) {
             release("invalid-pose");
             return;
@@ -128,7 +133,8 @@ namespace rock
                 _looseRootWasVisible = equipped_weapon_visual_state::isLocallyVisible(looseRoot);
             }
         }
-        if (_hiddenLooseRoot) equipped_weapon_visual_state::setLocallyVisible(_hiddenLooseRoot.get(), false);
+        if (_hiddenLooseRoot)
+            equipped_weapon_visual_state::setLocallyVisible(_hiddenLooseRoot.get(), false);
 
         ++_presentedFrames;
     }
@@ -178,6 +184,7 @@ namespace rock
     {
         clear(reason, !_parent || _parent.get() == f4vr::getWorldRootNode());
     }
+
     void EquippedWeaponDropVisual::abandonSceneGraph() { clear("scene-unavailable", false); }
 
     void EquippedWeaponDropVisual::clear(const char* reason, bool sceneAvailable)
@@ -190,8 +197,9 @@ namespace rock
                 _parent->DetachChild(_model.get(), detached);
             }
         }
-        if (_model) ROCK_LOG_INFO(Weapon, "Toggle drop visual ended: ref={:08X} reason={} presentedFrames={}",
-            _referenceId, reason, _presentedFrames);
+        if (_model)
+            ROCK_LOG_INFO(Weapon, "Toggle drop visual ended: ref={:08X} reason={} presentedFrames={}", _referenceId,
+                reason, _presentedFrames);
         _hiddenLooseRoot.reset();
         _model.reset();
         _parent.reset();

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "physics-interaction/weapon/WeaponAuthority.h"
 #include "RE/NetImmerse/NiNode.h"
+#include "physics-interaction/weapon/WeaponAuthority.h"
 
 namespace rock::weapon_scene_presentation
 {
@@ -22,33 +22,27 @@ namespace rock::weapon_scene_presentation
 
     inline bool isFiniteTransform(const RE::NiTransform& transform)
     {
-        return isFiniteRotation(transform.rotate) && std::isfinite(transform.translate.x) && std::isfinite(transform.translate.y) &&
-               std::isfinite(transform.translate.z) && std::isfinite(transform.scale);
+        return isFiniteRotation(transform.rotate) && std::isfinite(transform.translate.x) &&
+            std::isfinite(transform.translate.y) && std::isfinite(transform.translate.z) &&
+            std::isfinite(transform.scale);
     }
 
     inline bool isInvertibleTransform(const RE::NiTransform& transform)
     {
-        return isFiniteTransform(transform) &&
-            std::abs(transform.scale) > 0.0001f;
+        return isFiniteTransform(transform) && std::abs(transform.scale) > 0.0001f;
     }
 
-    inline bool validateWeaponPresentationSubtree(
-        RE::NiAVObject* object,
-        const RE::NiTransform& presentationWorldDelta,
-        const std::size_t depth,
-        std::size_t& objectCount)
+    inline bool validateWeaponPresentationSubtree(RE::NiAVObject* object, const RE::NiTransform& presentationWorldDelta,
+        const std::size_t depth, std::size_t& objectCount)
     {
-        if (!object || depth > WEAPON_PRESENTATION_MAX_DEPTH ||
-            objectCount >= WEAPON_PRESENTATION_MAX_OBJECTS ||
+        if (!object || depth > WEAPON_PRESENTATION_MAX_DEPTH || objectCount >= WEAPON_PRESENTATION_MAX_OBJECTS ||
             !isFiniteTransform(object->world)) {
             return false;
         }
         ++objectCount;
 
         const RE::NiTransform reframedWorld =
-            weapon_visual_authority_math::applyPresentationWorldDelta(
-                presentationWorldDelta,
-                object->world);
+            weapon_visual_authority_math::applyPresentationWorldDelta(presentationWorldDelta, object->world);
         if (!isFiniteTransform(reframedWorld)) {
             return false;
         }
@@ -58,19 +52,15 @@ namespace rock::weapon_scene_presentation
             return true;
         }
         for (const auto& child : node->children) {
-            if (child && !validateWeaponPresentationSubtree(
-                             child.get(),
-                             presentationWorldDelta,
-                             depth + 1,
-                             objectCount)) {
+            if (child &&
+                !validateWeaponPresentationSubtree(child.get(), presentationWorldDelta, depth + 1, objectCount)) {
                 return false;
             }
         }
         return true;
     }
 
-    inline void applyWeaponPresentationDeltaToDescendants(
-        RE::NiNode* parent,
+    inline void applyWeaponPresentationDeltaToDescendants(RE::NiNode* parent,
         const RE::NiTransform& presentationWorldDelta)
     {
         for (const auto& child : parent->children) {
@@ -78,20 +68,14 @@ namespace rock::weapon_scene_presentation
                 continue;
             }
             child->world =
-                weapon_visual_authority_math::applyPresentationWorldDelta(
-                    presentationWorldDelta,
-                    child->world);
+                weapon_visual_authority_math::applyPresentationWorldDelta(presentationWorldDelta, child->world);
             if (auto* childNode = child->IsNode()) {
-                applyWeaponPresentationDeltaToDescendants(
-                    childNode,
-                    presentationWorldDelta);
+                applyWeaponPresentationDeltaToDescendants(childNode, presentationWorldDelta);
             }
         }
     }
 
-    inline bool tryResolveWeaponRootLocal(
-        const RE::NiNode* parent,
-        const RE::NiTransform& weaponWorld,
+    inline bool tryResolveWeaponRootLocal(const RE::NiNode* parent, const RE::NiTransform& weaponWorld,
         RE::NiTransform& outWeaponLocal)
     {
         if (!isFiniteTransform(weaponWorld)) {
@@ -103,16 +87,12 @@ namespace rock::weapon_scene_presentation
             if (!isInvertibleTransform(parent->world)) {
                 return false;
             }
-            outWeaponLocal =
-                weapon_visual_authority_math::worldTargetToParentLocal(
-                    parent->world,
-                    weaponWorld);
+            outWeaponLocal = weapon_visual_authority_math::worldTargetToParentLocal(parent->world, weaponWorld);
         }
         return isFiniteTransform(outWeaponLocal);
     }
 
-    inline bool restoreWeaponRootPreservingPresentedDescendants(
-        RE::NiNode* weaponNode,
+    inline bool restoreWeaponRootPreservingPresentedDescendants(RE::NiNode* weaponNode,
         const RE::NiTransform& weaponWorld)
     {
         if (!weaponNode) {
@@ -120,10 +100,7 @@ namespace rock::weapon_scene_presentation
         }
 
         RE::NiTransform weaponLocal{};
-        if (!tryResolveWeaponRootLocal(
-                weaponNode->parent,
-                weaponWorld,
-                weaponLocal)) {
+        if (!tryResolveWeaponRootLocal(weaponNode->parent, weaponWorld, weaponLocal)) {
             return false;
         }
         weaponNode->local = weaponLocal;
@@ -131,28 +108,20 @@ namespace rock::weapon_scene_presentation
         return true;
     }
 
-    inline bool moveWeaponPresentationRigidly(
-        RE::NiNode* weaponNode,
-        const RE::NiTransform& solvedWeaponWorld)
+    inline bool moveWeaponPresentationRigidly(RE::NiNode* weaponNode, const RE::NiTransform& solvedWeaponWorld)
     {
-        if (!weaponNode || !isInvertibleTransform(weaponNode->world) ||
-            !isFiniteTransform(solvedWeaponWorld)) {
+        if (!weaponNode || !isInvertibleTransform(weaponNode->world) || !isFiniteTransform(solvedWeaponWorld)) {
             return false;
         }
 
         RE::NiTransform weaponLocal{};
-        if (!tryResolveWeaponRootLocal(
-                weaponNode->parent,
-                solvedWeaponWorld,
-                weaponLocal)) {
+        if (!tryResolveWeaponRootLocal(weaponNode->parent, solvedWeaponWorld, weaponLocal)) {
             return false;
         }
 
         const RE::NiTransform oldWeaponWorld = weaponNode->world;
         const RE::NiTransform presentationWorldDelta =
-            weapon_visual_authority_math::makePresentationWorldDelta(
-                oldWeaponWorld,
-                solvedWeaponWorld);
+            weapon_visual_authority_math::makePresentationWorldDelta(oldWeaponWorld, solvedWeaponWorld);
         if (!isFiniteTransform(presentationWorldDelta)) {
             return false;
         }
@@ -160,19 +129,13 @@ namespace rock::weapon_scene_presentation
         // Validate the entire bounded tree before the first write so an
         // invalid modded node cannot leave a partially moved presentation.
         std::size_t objectCount = 0;
-        if (!validateWeaponPresentationSubtree(
-                weaponNode,
-                presentationWorldDelta,
-                0,
-                objectCount)) {
+        if (!validateWeaponPresentationSubtree(weaponNode, presentationWorldDelta, 0, objectCount)) {
             return false;
         }
 
         weaponNode->local = weaponLocal;
         weaponNode->world = solvedWeaponWorld;
-        applyWeaponPresentationDeltaToDescendants(
-            weaponNode,
-            presentationWorldDelta);
+        applyWeaponPresentationDeltaToDescendants(weaponNode, presentationWorldDelta);
         return true;
     }
 }

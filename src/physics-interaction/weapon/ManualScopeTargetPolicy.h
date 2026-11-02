@@ -14,9 +14,8 @@ namespace rock::manual_scope_target_policy
     inline constexpr std::uint32_t kDefaultOverlayIndex = 6;
     inline constexpr float kDefaultMagnification = 4.0f;
 
-    [[nodiscard]] inline constexpr bool matchesNativeIdentity(
-        std::uintptr_t publishedWeapon, std::uintptr_t publishedInstance,
-        std::uintptr_t nativeWeapon, std::uintptr_t nativeInstance) noexcept
+    [[nodiscard]] inline constexpr bool matchesNativeIdentity(std::uintptr_t publishedWeapon,
+        std::uintptr_t publishedInstance, std::uintptr_t nativeWeapon, std::uintptr_t nativeInstance) noexcept
     {
         return publishedWeapon != 0 && publishedWeapon == nativeWeapon && publishedInstance == nativeInstance;
     }
@@ -28,8 +27,7 @@ namespace rock::manual_scope_target_policy
         bool scopeFade{ false };
     };
 
-    [[nodiscard]] inline constexpr bool nodeBaseNameEquals(
-        std::string_view nodeName,
+    [[nodiscard]] inline constexpr bool nodeBaseNameEquals(std::string_view nodeName,
         std::string_view expectedBaseName) noexcept
     {
         const auto suffix = nodeName.find(':');
@@ -49,8 +47,7 @@ namespace rock::manual_scope_target_policy
         return true;
     }
 
-    inline constexpr void observeStructuralNodeName(
-        StructuralMarkerEvidence& evidence,
+    inline constexpr void observeStructuralNodeName(StructuralMarkerEvidence& evidence,
         std::string_view nodeName) noexcept
     {
         evidence.scopeAiming = evidence.scopeAiming || nodeBaseNameEquals(nodeName, "ScopeAiming");
@@ -58,8 +55,7 @@ namespace rock::manual_scope_target_policy
         evidence.scopeFade = evidence.scopeFade || nodeBaseNameEquals(nodeName, "ScopeFade");
     }
 
-    [[nodiscard]] inline constexpr bool hasMagnifiedScopeStructure(
-        const StructuralMarkerEvidence& evidence) noexcept
+    [[nodiscard]] inline constexpr bool hasMagnifiedScopeStructure(const StructuralMarkerEvidence& evidence) noexcept
     {
         return evidence.scopeAiming && (evidence.scopeViewParts || evidence.scopeFade);
     }
@@ -90,18 +86,19 @@ namespace rock::manual_scope_target_policy
             return 0.0f;
         }
         constexpr float radiansPerDegree = std::numbers::pi_v<float> / 180.0f;
-        return 2.0f * std::atan(std::tan(fieldOfViewDegrees * radiansPerDegree * 0.5f) /
-                   resolveMagnification(magnification)) / radiansPerDegree;
+        return 2.0f *
+            std::atan(std::tan(fieldOfViewDegrees * radiansPerDegree * 0.5f) / resolveMagnification(magnification)) /
+            radiansPerDegree;
     }
 
-    [[nodiscard]] inline constexpr bool isScopeEligible(
-        bool nativeHasScope, bool explicitScopeModelInstalled, bool magnifiedScopeStructurePresent) noexcept
+    [[nodiscard]] inline constexpr bool isScopeEligible(bool nativeHasScope, bool explicitScopeModelInstalled,
+        bool magnifiedScopeStructurePresent) noexcept
     {
         return nativeHasScope || explicitScopeModelInstalled || magnifiedScopeStructurePresent;
     }
 
-    [[nodiscard]] inline constexpr bool nativeHasScope(
-        bool hasInstance, bool instanceHasScope, bool baseHasScope) noexcept
+    [[nodiscard]] inline constexpr bool nativeHasScope(bool hasInstance, bool instanceHasScope,
+        bool baseHasScope) noexcept
     {
         return hasInstance ? instanceHasScope : baseHasScope;
     }
@@ -114,8 +111,7 @@ namespace rock::manual_scope_target_policy
      * ScopeViewParts/ScopeFade contract used by generically named magnified
      * optics. Generic sights and red dots satisfy neither contract.
      */
-    [[nodiscard]] inline constexpr bool hasExplicitScopeIdentity(
-        std::string_view recordName,
+    [[nodiscard]] inline constexpr bool hasExplicitScopeIdentity(std::string_view recordName,
         std::string_view modelPath) noexcept
     {
         if (modelPath.empty()) {
@@ -147,14 +143,10 @@ namespace rock::manual_scope_target_policy
         return false;
     }
 
-    [[nodiscard]] inline constexpr bool requiresDirectNativeTransition(
-        bool nativeScopeMetadataAuthored,
-        bool explicitScopeModelInstalled,
-        bool magnifiedScopeStructurePresent,
-        bool validNativeOverlay) noexcept
+    [[nodiscard]] inline constexpr bool requiresDirectNativeTransition(bool nativeScopeMetadataAuthored,
+        bool explicitScopeModelInstalled, bool magnifiedScopeStructurePresent, bool validNativeOverlay) noexcept
     {
-        return !nativeScopeMetadataAuthored &&
-               validNativeOverlay &&
-               (explicitScopeModelInstalled || magnifiedScopeStructurePresent);
+        return !nativeScopeMetadataAuthored && validNativeOverlay &&
+            (explicitScopeModelInstalled || magnifiedScopeStructurePresent);
     }
 }

@@ -36,7 +36,8 @@ namespace rock::frik_weapon_offsets
 
     // The override for this weapon model, or none. weaponRoot is the model
     // whose P-Grip child picks FRIK's pistol/rifle name variant.
-    [[nodiscard]] std::optional<Override> find(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot, bool inPowerArmor);
+    [[nodiscard]] std::optional<Override> find(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot,
+        bool inPowerArmor);
 
     // RArm_Hand in Weapon for the override, from the weapon's native seat.
     [[nodiscard]] RE::NiTransform seat(const Override& override, const RE::NiTransform& nativeHandInWeapon);

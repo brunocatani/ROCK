@@ -1,7 +1,12 @@
 #pragma once
 
 #include "RE/Bethesda/BSTArray.h"
-namespace RE { class Actor; class IKeywordFormBase; }
+
+namespace RE
+{
+    class Actor;
+    class IKeywordFormBase;
+}
 
 namespace rock::native_primary_weapon_graph
 {

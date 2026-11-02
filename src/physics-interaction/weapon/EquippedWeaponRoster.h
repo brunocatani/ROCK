@@ -26,10 +26,7 @@ namespace rock::equipped_weapon_roster
         Left,
     };
 
-    [[nodiscard]] constexpr Hand handFor(bool isLeft) noexcept
-    {
-        return isLeft ? Hand::Left : Hand::Right;
-    }
+    [[nodiscard]] constexpr Hand handFor(bool isLeft) noexcept { return isLeft ? Hand::Left : Hand::Right; }
 
     struct PartGripFacts
     {
@@ -84,9 +81,7 @@ namespace rock::equipped_weapon_roster
     class Roster
     {
     public:
-        explicit constexpr Roster(const Facts& facts) noexcept :
-            _facts(facts)
-        {}
+        explicit constexpr Roster(const Facts& facts) noexcept : _facts(facts) {}
 
         [[nodiscard]] constexpr const Facts& facts() const noexcept { return _facts; }
 

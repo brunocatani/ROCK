@@ -4,30 +4,30 @@
 
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 
+#include "RockConfig.h"
+#include "RockUtils.h"
 #include "api/ProviderRuntime.h"
-#include "physics-interaction/native/SceneRelation.h"
+#include "physics-interaction/TransformMath.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
-#include "physics-interaction/hand/HandSkeleton.h"
-#include "physics-interaction/hand/HandVisual.h"
+#include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/hand/HandFrame.h"
-#include "physics-interaction/core/RockRuntimeState.h"
+#include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/hand/HandVisual.h"
+#include "physics-interaction/native/SceneRelation.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
-#include "RockConfig.h"
-#include "RockUtils.h"
-#include "physics-interaction/TransformMath.h"
+#include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingRuntime.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
+#include "physics-interaction/weapon/SupportGripTriangleSelection.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
-#include "physics-interaction/weapon/WeaponScenePresentation.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
+#include "physics-interaction/weapon/WeaponScenePresentation.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
-#include "physics-interaction/weapon/SupportGripTriangleSelection.h"
-#include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include <algorithm>
@@ -61,8 +61,7 @@ namespace rock
         inline constexpr const char* PRIMARY_DETACH_TAG = "ROCK_WeaponPrimaryDetach";
         inline constexpr const char* SUPPORT_GRIP_TAG = "ROCK_WeaponSupportGrip";
         inline constexpr const char* RETURN_HAND_TAG = "ROCK_WeaponReturn";
-        inline constexpr const char* WEAPON_COLLISION_HAND_TAG =
-            "ROCK_WeaponCollisionHand";
+        inline constexpr const char* WEAPON_COLLISION_HAND_TAG = "ROCK_WeaponCollisionHand";
         inline constexpr const char* WEAPON_NODE_OWNERSHIP_TAG = "ROCK_LeftFiringCarry";
         // FRIK v2.3 pure write block held while ROCK owns the weapon transform.
         inline constexpr const char* WEAPON_NODE_WRITE_TAG = "ROCK_WeaponAuthority";
@@ -79,8 +78,7 @@ namespace rock
         inline constexpr int WEAPON_COLLISION_HAND_PRIORITY = 110;
         inline constexpr int RETURN_HAND_VISUAL_PRIORITY = 85;
         inline constexpr float SUPPORT_NORMAL_TWIST_FACTOR = 0.5f;
-        inline constexpr float DYNAMIC_SUPPORT_MINIMUM_SMOOTHED_ROTATION_RADIANS =
-            0.5f * 0.01745329251994329577f;
+        inline constexpr float DYNAMIC_SUPPORT_MINIMUM_SMOOTHED_ROTATION_RADIANS = 0.5f * 0.01745329251994329577f;
         inline constexpr float RADIANS_TO_DEGREES = 57.295779513082320876f;
         /*
          * Clock domain: a consecutive-publication count by design. The hFRIK
@@ -89,13 +87,10 @@ namespace rock
          */
         inline constexpr std::uint32_t SCOPE_DRIVER_MISS_GRACE_FRAMES = 3;
         inline constexpr float SCOPE_ROOT_REBASE_DURATION_SECONDS = 0.075f;
-        inline constexpr float WEAPON_OPPOSITION_MAX_FINGER_GAP_GAME_UNITS =
-            24.0f;
-        inline constexpr float WEAPON_OPPOSITION_SEGMENT_PROBE_RADIUS_GAME_UNITS =
-            0.5f;
+        inline constexpr float WEAPON_OPPOSITION_MAX_FINGER_GAP_GAME_UNITS = 24.0f;
+        inline constexpr float WEAPON_OPPOSITION_SEGMENT_PROBE_RADIUS_GAME_UNITS = 0.5f;
 
-        inline const char* twoHandedStateDiagnosticName(
-            const TwoHandedState state)
+        inline const char* twoHandedStateDiagnosticName(const TwoHandedState state)
         {
             switch (state) {
             case TwoHandedState::Inactive:
@@ -113,22 +108,18 @@ namespace rock
         }
 
         inline const char* supportAuthorityDiagnosticName(
-            const weapon_support_authority_policy::
-                WeaponSupportAuthorityMode mode)
+            const weapon_support_authority_policy::WeaponSupportAuthorityMode mode)
         {
             switch (mode) {
-            case weapon_support_authority_policy::
-                WeaponSupportAuthorityMode::FullTwoHandedSolver:
+            case weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver:
                 return "full";
-            case weapon_support_authority_policy::
-                WeaponSupportAuthorityMode::VisualOnlySupport:
+            case weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport:
                 return "visual-only";
             }
             return "unknown";
         }
 
-        inline const char* weaponInteractionAcquisitionSourceName(
-            const WeaponInteractionAcquisitionSource source)
+        inline const char* weaponInteractionAcquisitionSourceName(const WeaponInteractionAcquisitionSource source)
         {
             switch (source) {
             case WeaponInteractionAcquisitionSource::PhysicalContact:
@@ -145,51 +136,26 @@ namespace rock
             return "unknown";
         }
 
-        inline grab_pinch_pocket_policy::Config
-            currentWeaponOppositionPocketConfig()
+        inline grab_pinch_pocket_policy::Config currentWeaponOppositionPocketConfig()
         {
-            return grab_pinch_pocket_policy::sanitizeConfig(
-                grab_pinch_pocket_policy::Config{
-                    .enabled =
-                        g_rockConfig.rockGrabPinchPocketEnabled,
-                    .maxVolumeCubicGameUnits =
-                        g_rockConfig.
-                            rockGrabPinchMaxVolumeCubicGameUnits,
-                    .maxPocketDistanceGameUnits =
-                        g_rockConfig.
-                            rockGrabPinchMaxPocketDistanceGameUnits,
-                    .minFingerGapGameUnits =
-                        g_rockConfig.
-                            rockGrabPinchMinFingerGapGameUnits,
-                    .maxFingerGapGameUnits =
-                        g_rockConfig.
-                            rockGrabPinchMaxFingerGapGameUnits,
-                    .thumbIndexMaxOpenValue =
-                        g_rockConfig.
-                            rockGrabPinchThumbIndexMaxOpenValue,
-                    .otherFingerCurlValue =
-                        g_rockConfig.
-                            rockGrabPinchOtherFingerCurlValue,
-                    .detectionDirectionHandspace =
-                        g_rockConfig.
-                            rockGrabPinchDetectionDirectionHandspace,
-                    .detectionAxisBlend =
-                        g_rockConfig.
-                            rockGrabPinchDetectionAxisBlend,
-                });
+            return grab_pinch_pocket_policy::sanitizeConfig(grab_pinch_pocket_policy::Config{
+                .enabled = g_rockConfig.rockGrabPinchPocketEnabled,
+                .maxVolumeCubicGameUnits = g_rockConfig.rockGrabPinchMaxVolumeCubicGameUnits,
+                .maxPocketDistanceGameUnits = g_rockConfig.rockGrabPinchMaxPocketDistanceGameUnits,
+                .minFingerGapGameUnits = g_rockConfig.rockGrabPinchMinFingerGapGameUnits,
+                .maxFingerGapGameUnits = g_rockConfig.rockGrabPinchMaxFingerGapGameUnits,
+                .thumbIndexMaxOpenValue = g_rockConfig.rockGrabPinchThumbIndexMaxOpenValue,
+                .otherFingerCurlValue = g_rockConfig.rockGrabPinchOtherFingerCurlValue,
+                .detectionDirectionHandspace = g_rockConfig.rockGrabPinchDetectionDirectionHandspace,
+                .detectionAxisBlend = g_rockConfig.rockGrabPinchDetectionAxisBlend,
+            });
         }
 
-        inline void applyStableWeaponOppositionPose(
-            grab_finger_pose_runtime::SolvedGrabFingerPose& pose,
-            const grab_pinch_pocket_policy::Config& config,
-            const std::size_t opposedFingerIndex)
+        inline void applyStableWeaponOppositionPose(grab_finger_pose_runtime::SolvedGrabFingerPose& pose,
+            const grab_pinch_pocket_policy::Config& config, const std::size_t opposedFingerIndex)
         {
-            const auto stable =
-                grab_pinch_pocket_policy::
-                    buildStableOppositionFingerPose(
-                        config,
-                        g_rockConfig.rockGrabFingerMinValue,
-                        opposedFingerIndex);
+            const auto stable = grab_pinch_pocket_policy::buildStableOppositionFingerPose(config,
+                g_rockConfig.rockGrabFingerMinValue, opposedFingerIndex);
             pose.values = stable.values;
             pose.jointValues = stable.jointValues;
             pose.surfaceAimTarget = {};
@@ -268,7 +234,8 @@ namespace rock
         inline RE::NiPoint3 lerpPoint(const RE::NiPoint3& from, const RE::NiPoint3& to, float alpha)
         {
             const float t = (std::max)(0.0f, (std::min)(1.0f, alpha));
-            return RE::NiPoint3{ from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t, from.z + (to.z - from.z) * t };
+            return RE::NiPoint3{ from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t,
+                from.z + (to.z - from.z) * t };
         }
 
         inline bool isFiniteRotation(const RE::NiMatrix3& rotation)
@@ -285,32 +252,31 @@ namespace rock
 
         inline bool isFiniteTransform(const RE::NiTransform& transform)
         {
-            return isFiniteRotation(transform.rotate) && std::isfinite(transform.translate.x) && std::isfinite(transform.translate.y) &&
-                   std::isfinite(transform.translate.z) && std::isfinite(transform.scale);
+            return isFiniteRotation(transform.rotate) && std::isfinite(transform.translate.x) &&
+                std::isfinite(transform.translate.y) && std::isfinite(transform.translate.z) &&
+                std::isfinite(transform.scale);
         }
 
         inline bool isInvertibleTransform(const RE::NiTransform& transform)
         {
-            return isFiniteTransform(transform) &&
-                std::abs(transform.scale) > 0.0001f;
+            return isFiniteTransform(transform) && std::abs(transform.scale) > 0.0001f;
         }
 
-        inline RE::NiTransform makeLeftFiringWandAimTrim(
-            const EquippedWeaponHandlingSettings& handlingSettings)
+        inline RE::NiTransform makeLeftFiringWandAimTrim(const EquippedWeaponHandlingSettings& handlingSettings)
         {
             return left_firing_position_only_math::leftAimTrim<RE::NiTransform>(
                 handlingSettings.leftFiringAimYawDegrees, handlingSettings.leftFiringAimPitchDegrees);
         }
 
-        using weapon_scene_presentation::restoreWeaponRootPreservingPresentedDescendants;
         using weapon_scene_presentation::moveWeaponPresentationRigidly;
+        using weapon_scene_presentation::restoreWeaponRootPreservingPresentedDescendants;
 
-        inline bool areTransformsNearlyEqual(const RE::NiTransform& lhs, const RE::NiTransform& rhs, const float epsilon = 0.001f)
+        inline bool areTransformsNearlyEqual(const RE::NiTransform& lhs, const RE::NiTransform& rhs,
+            const float epsilon = 0.001f)
         {
             if (std::abs(lhs.translate.x - rhs.translate.x) > epsilon ||
                 std::abs(lhs.translate.y - rhs.translate.y) > epsilon ||
-                std::abs(lhs.translate.z - rhs.translate.z) > epsilon ||
-                std::abs(lhs.scale - rhs.scale) > epsilon) {
+                std::abs(lhs.translate.z - rhs.translate.z) > epsilon || std::abs(lhs.scale - rhs.scale) > epsilon) {
                 return false;
             }
             for (int row = 0; row < 3; ++row) {
@@ -325,9 +291,8 @@ namespace rock
 
         inline bool arePointsNearlyEqual(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs, const float epsilon = 0.001f)
         {
-            return std::abs(lhs.x - rhs.x) <= epsilon &&
-                   std::abs(lhs.y - rhs.y) <= epsilon &&
-                   std::abs(lhs.z - rhs.z) <= epsilon;
+            return std::abs(lhs.x - rhs.x) <= epsilon && std::abs(lhs.y - rhs.y) <= epsilon &&
+                std::abs(lhs.z - rhs.z) <= epsilon;
         }
 
         inline bool tryGetComposedNodeWorld(const RE::NiAVObject* node, RE::NiTransform& outWorld)
@@ -335,9 +300,7 @@ namespace rock
             if (!node) {
                 return false;
             }
-            outWorld = node->parent ?
-                transform_math::composeTransforms(node->parent->world, node->local) :
-                node->world;
+            outWorld = node->parent ? transform_math::composeTransforms(node->parent->world, node->local) : node->world;
             return isFiniteTransform(outWorld);
         }
 
@@ -359,52 +322,29 @@ namespace rock
             float frameAgreementErrorGameUnits{ 0.0f };
         };
 
-        [[nodiscard]] inline bool resolveAuthoredSupportPalmSeatProximity(
-            const RE::NiTransform& weaponWorld,
-            const RE::NiTransform& liveHandWorld,
-            const RE::NiTransform& authoredHandWeaponLocal,
-            const bool isLeft,
+        [[nodiscard]] inline bool resolveAuthoredSupportPalmSeatProximity(const RE::NiTransform& weaponWorld,
+            const RE::NiTransform& liveHandWorld, const RE::NiTransform& authoredHandWeaponLocal, const bool isLeft,
             AuthoredSupportPalmSeatProximity& out)
         {
             out = {};
-            if (!isFiniteTransform(weaponWorld) ||
-                std::abs(weaponWorld.scale) <= 0.0001f ||
-                !isUsableHandAuthorityTransform(liveHandWorld) ||
-                !isFiniteTransform(authoredHandWeaponLocal) ||
+            if (!isFiniteTransform(weaponWorld) || std::abs(weaponWorld.scale) <= 0.0001f ||
+                !isUsableHandAuthorityTransform(liveHandWorld) || !isFiniteTransform(authoredHandWeaponLocal) ||
                 std::abs(authoredHandWeaponLocal.scale) <= 0.0001f) {
                 return false;
             }
 
-            out.authoredHandWorld = transform_math::composeTransforms(
-                weaponWorld,
-                authoredHandWeaponLocal);
-            out.authoredPalmSeatWeaponLocal =
-                computeGrabPalmPointWorldFromHandBasis(
-                    authoredHandWeaponLocal,
-                    isLeft);
-            out.authoredPalmSeatWorld = transform_math::localPointToWorld(
-                weaponWorld,
-                out.authoredPalmSeatWeaponLocal);
-            out.liveTouchProbeWorld =
-                computeGrabPalmPointWorldFromHandBasis(
-                    liveHandWorld,
-                    isLeft);
-            out.liveTouchProbeWeaponLocal = transform_math::worldPointToLocal(
-                weaponWorld,
-                out.liveTouchProbeWorld);
-            if (!isFiniteTransform(out.authoredHandWorld) ||
-                !std::isfinite(out.authoredPalmSeatWeaponLocal.x) ||
+            out.authoredHandWorld = transform_math::composeTransforms(weaponWorld, authoredHandWeaponLocal);
+            out.authoredPalmSeatWeaponLocal = computeGrabPalmPointWorldFromHandBasis(authoredHandWeaponLocal, isLeft);
+            out.authoredPalmSeatWorld = transform_math::localPointToWorld(weaponWorld, out.authoredPalmSeatWeaponLocal);
+            out.liveTouchProbeWorld = computeGrabPalmPointWorldFromHandBasis(liveHandWorld, isLeft);
+            out.liveTouchProbeWeaponLocal = transform_math::worldPointToLocal(weaponWorld, out.liveTouchProbeWorld);
+            if (!isFiniteTransform(out.authoredHandWorld) || !std::isfinite(out.authoredPalmSeatWeaponLocal.x) ||
                 !std::isfinite(out.authoredPalmSeatWeaponLocal.y) ||
-                !std::isfinite(out.authoredPalmSeatWeaponLocal.z) ||
-                !std::isfinite(out.authoredPalmSeatWorld.x) ||
-                !std::isfinite(out.authoredPalmSeatWorld.y) ||
-                !std::isfinite(out.authoredPalmSeatWorld.z) ||
-                !std::isfinite(out.liveTouchProbeWeaponLocal.x) ||
-                !std::isfinite(out.liveTouchProbeWeaponLocal.y) ||
-                !std::isfinite(out.liveTouchProbeWeaponLocal.z) ||
-                !std::isfinite(out.liveTouchProbeWorld.x) ||
-                !std::isfinite(out.liveTouchProbeWorld.y) ||
-                !std::isfinite(out.liveTouchProbeWorld.z)) {
+                !std::isfinite(out.authoredPalmSeatWeaponLocal.z) || !std::isfinite(out.authoredPalmSeatWorld.x) ||
+                !std::isfinite(out.authoredPalmSeatWorld.y) || !std::isfinite(out.authoredPalmSeatWorld.z) ||
+                !std::isfinite(out.liveTouchProbeWeaponLocal.x) || !std::isfinite(out.liveTouchProbeWeaponLocal.y) ||
+                !std::isfinite(out.liveTouchProbeWeaponLocal.z) || !std::isfinite(out.liveTouchProbeWorld.x) ||
+                !std::isfinite(out.liveTouchProbeWorld.y) || !std::isfinite(out.liveTouchProbeWorld.z)) {
                 return false;
             }
 
@@ -412,59 +352,39 @@ namespace rock
             // wrist bones. Compare them in one current Weapon frame so a ROCK
             // physical-left reparent or world translation cannot contaminate
             // acquisition.
-            const float localDeltaX =
-                out.liveTouchProbeWeaponLocal.x -
-                out.authoredPalmSeatWeaponLocal.x;
-            const float localDeltaY =
-                out.liveTouchProbeWeaponLocal.y -
-                out.authoredPalmSeatWeaponLocal.y;
-            const float localDeltaZ =
-                out.liveTouchProbeWeaponLocal.z -
-                out.authoredPalmSeatWeaponLocal.z;
-            const float weaponLocalDistance = std::sqrt(
-                localDeltaX * localDeltaX +
-                localDeltaY * localDeltaY +
-                localDeltaZ * localDeltaZ);
-            out.weaponRelativeDistanceGameUnits =
-                weaponLocalDistance * std::abs(weaponWorld.scale);
+            const float localDeltaX = out.liveTouchProbeWeaponLocal.x - out.authoredPalmSeatWeaponLocal.x;
+            const float localDeltaY = out.liveTouchProbeWeaponLocal.y - out.authoredPalmSeatWeaponLocal.y;
+            const float localDeltaZ = out.liveTouchProbeWeaponLocal.z - out.authoredPalmSeatWeaponLocal.z;
+            const float weaponLocalDistance =
+                std::sqrt(localDeltaX * localDeltaX + localDeltaY * localDeltaY + localDeltaZ * localDeltaZ);
+            out.weaponRelativeDistanceGameUnits = weaponLocalDistance * std::abs(weaponWorld.scale);
 
             // Readback is diagnostic only. The Weapon-relative value above is
             // the acquisition gate.
-            const float worldDeltaX =
-                out.liveTouchProbeWorld.x - out.authoredPalmSeatWorld.x;
-            const float worldDeltaY =
-                out.liveTouchProbeWorld.y - out.authoredPalmSeatWorld.y;
-            const float worldDeltaZ =
-                out.liveTouchProbeWorld.z - out.authoredPalmSeatWorld.z;
-            out.worldReadbackDistanceGameUnits = std::sqrt(
-                worldDeltaX * worldDeltaX +
-                worldDeltaY * worldDeltaY +
-                worldDeltaZ * worldDeltaZ);
-            out.frameAgreementErrorGameUnits = std::abs(
-                out.weaponRelativeDistanceGameUnits -
-                out.worldReadbackDistanceGameUnits);
+            const float worldDeltaX = out.liveTouchProbeWorld.x - out.authoredPalmSeatWorld.x;
+            const float worldDeltaY = out.liveTouchProbeWorld.y - out.authoredPalmSeatWorld.y;
+            const float worldDeltaZ = out.liveTouchProbeWorld.z - out.authoredPalmSeatWorld.z;
+            out.worldReadbackDistanceGameUnits =
+                std::sqrt(worldDeltaX * worldDeltaX + worldDeltaY * worldDeltaY + worldDeltaZ * worldDeltaZ);
+            out.frameAgreementErrorGameUnits =
+                std::abs(out.weaponRelativeDistanceGameUnits - out.worldReadbackDistanceGameUnits);
             return std::isfinite(out.weaponRelativeDistanceGameUnits) &&
-                   std::isfinite(out.worldReadbackDistanceGameUnits) &&
-                   std::isfinite(out.frameAgreementErrorGameUnits);
+                std::isfinite(out.worldReadbackDistanceGameUnits) && std::isfinite(out.frameAgreementErrorGameUnits);
         }
 
         using RankedSupportGripTriangle = support_grip_triangle_selection::RankedTriangle;
         inline constexpr std::size_t kSupportGripFingerLaneCount = support_grip_triangle_selection::kLaneCount;
-        inline constexpr std::size_t kSupportGripFingerLaneReferenceCapacity = support_grip_triangle_selection::kLaneReferenceCapacity;
-        inline constexpr std::size_t kSupportGripGlobalRankingIndex = support_grip_triangle_selection::kGlobalRankingIndex;
+        inline constexpr std::size_t kSupportGripFingerLaneReferenceCapacity =
+            support_grip_triangle_selection::kLaneReferenceCapacity;
+        inline constexpr std::size_t kSupportGripGlobalRankingIndex =
+            support_grip_triangle_selection::kGlobalRankingIndex;
 
         struct SupportGripFingerReferenceSet
         {
             RE::NiPoint3 seatPointWorld{};
-            std::array<
-                std::array<
-                    RE::NiPoint3,
-                    kSupportGripFingerLaneReferenceCapacity>,
-                kSupportGripFingerLaneCount>
+            std::array<std::array<RE::NiPoint3, kSupportGripFingerLaneReferenceCapacity>, kSupportGripFingerLaneCount>
                 lanePointsWorld{};
-            std::array<std::size_t,
-                kSupportGripFingerLaneCount>
-                lanePointCounts{};
+            std::array<std::size_t, kSupportGripFingerLaneCount> lanePointCounts{};
             bool seatPointValid{ false };
         };
 
@@ -487,74 +407,51 @@ namespace rock
         };
 
         inline void selectNearestSupportGripFingerTriangles(
-            std::span<const WeaponCollision::SupportGripEvidenceView> evidenceViews,
-            const RE::NiTransform& weaponWorld,
-            const SupportGripFingerReferenceSet& referenceSet,
-            std::size_t maxTriangles,
-            std::array<std::vector<RankedSupportGripTriangle>,
-                kSupportGripFingerLaneCount + 1>& rankingScratch,
+            std::span<const WeaponCollision::SupportGripEvidenceView> evidenceViews, const RE::NiTransform& weaponWorld,
+            const SupportGripFingerReferenceSet& referenceSet, std::size_t maxTriangles,
+            std::array<std::vector<RankedSupportGripTriangle>, kSupportGripFingerLaneCount + 1>& rankingScratch,
             std::vector<TriangleData>& outTriangles)
         {
             for (auto& ranking : rankingScratch) {
                 ranking.clear();
             }
             outTriangles.clear();
-            const std::size_t boundedLimit = (std::min)(maxTriangles, grab_finger_pose_runtime::kMaxFingerPoseCandidateTriangles);
-            if (boundedLimit == 0 ||
-                evidenceViews.empty() ||
-                !referenceSet.seatPointValid ||
-                !weapon_support_acquisition_math::isUsableTransform(
-                    weaponWorld)) {
+            const std::size_t boundedLimit =
+                (std::min)(maxTriangles, grab_finger_pose_runtime::kMaxFingerPoseCandidateTriangles);
+            if (boundedLimit == 0 || evidenceViews.empty() || !referenceSet.seatPointValid ||
+                !weapon_support_acquisition_math::isUsableTransform(weaponWorld)) {
                 return;
             }
 
             SupportGripFingerReferenceSet localReferences{};
             localReferences.seatPointWorld =
-                transform_math::worldPointToLocal(
-                    weaponWorld,
-                    referenceSet.seatPointWorld);
-            localReferences.seatPointValid =
-                grab_finger_pose_runtime::isFinitePoint(
-                    localReferences.seatPointWorld);
+                transform_math::worldPointToLocal(weaponWorld, referenceSet.seatPointWorld);
+            localReferences.seatPointValid = grab_finger_pose_runtime::isFinitePoint(localReferences.seatPointWorld);
             if (!localReferences.seatPointValid) {
                 return;
             }
-            for (std::size_t lane = 0;
-                 lane < kSupportGripFingerLaneCount;
-                 ++lane) {
-                const std::size_t count = (std::min)(
-                    referenceSet.lanePointCounts[lane],
-                    kSupportGripFingerLaneReferenceCapacity);
+            for (std::size_t lane = 0; lane < kSupportGripFingerLaneCount; ++lane) {
+                const std::size_t count =
+                    (std::min)(referenceSet.lanePointCounts[lane], kSupportGripFingerLaneReferenceCapacity);
                 for (std::size_t point = 0; point < count; ++point) {
                     const RE::NiPoint3 localPoint =
-                        transform_math::worldPointToLocal(
-                            weaponWorld,
-                            referenceSet.lanePointsWorld[lane][point]);
-                    if (!grab_finger_pose_runtime::isFinitePoint(
-                            localPoint)) {
+                        transform_math::worldPointToLocal(weaponWorld, referenceSet.lanePointsWorld[lane][point]);
+                    if (!grab_finger_pose_runtime::isFinitePoint(localPoint)) {
                         continue;
                     }
-                    localReferences.lanePointsWorld[lane]
-                        [localReferences.lanePointCounts[lane]++] =
-                        localPoint;
+                    localReferences.lanePointsWorld[lane][localReferences.lanePointCounts[lane]++] = localPoint;
                 }
-                if (localReferences.lanePointCounts[lane] >
-                    kSupportGripFingerLaneReferenceCapacity) {
+                if (localReferences.lanePointCounts[lane] > kSupportGripFingerLaneReferenceCapacity) {
                     return;
                 }
             }
 
-            const std::size_t laneLimit = (std::max)(
-                static_cast<std::size_t>(1),
-                (boundedLimit + kSupportGripFingerLaneCount - 1) /
-                    kSupportGripFingerLaneCount);
-            for (std::size_t lane = 0;
-                 lane < kSupportGripFingerLaneCount;
-                 ++lane) {
+            const std::size_t laneLimit = (std::max)(static_cast<std::size_t>(1),
+                (boundedLimit + kSupportGripFingerLaneCount - 1) / kSupportGripFingerLaneCount);
+            for (std::size_t lane = 0; lane < kSupportGripFingerLaneCount; ++lane) {
                 rankingScratch[lane].reserve(laneLimit);
             }
-            rankingScratch[kSupportGripGlobalRankingIndex].reserve(
-                boundedLimit);
+            rankingScratch[kSupportGripGlobalRankingIndex].reserve(boundedLimit);
 
             /*
              * Each part's equip-time index replaces the scan of its triangles;
@@ -566,22 +463,19 @@ namespace rock
             references.lanePoints = localReferences.lanePointsWorld;
             references.laneCounts = localReferences.lanePointCounts;
 
-            performance_profiler::ScopedTimer selectionTimer(performance_profiler::Scope::EquippedWeaponFingerTriangleSelection);
+            performance_profiler::ScopedTimer selectionTimer(
+                performance_profiler::Scope::EquippedWeaponFingerTriangleSelection);
             std::vector<support_grip_triangle_selection::Part> parts{};
             parts.reserve(evidenceViews.size());
             std::uint64_t firstOrdinal = 0;
             for (const auto& evidenceView : evidenceViews) {
                 if (evidenceView.localTriangles.empty() ||
-                    !weapon_support_acquisition_math::isUsableTransform(
-                        evidenceView.localToWorld)) {
+                    !weapon_support_acquisition_math::isUsableTransform(evidenceView.localToWorld)) {
                     continue;
                 }
-                const RE::NiTransform sourceToWeapon =
-                    transform_math::composeTransforms(
-                        transform_math::invertTransform(weaponWorld),
-                        evidenceView.localToWorld);
-                if (!weapon_support_acquisition_math::isUsableTransform(
-                        sourceToWeapon)) {
+                const RE::NiTransform sourceToWeapon = transform_math::composeTransforms(
+                    transform_math::invertTransform(weaponWorld), evidenceView.localToWorld);
+                if (!weapon_support_acquisition_math::isUsableTransform(sourceToWeapon)) {
                     continue;
                 }
                 parts.push_back(support_grip_triangle_selection::Part{
@@ -593,11 +487,15 @@ namespace rock
                 firstOrdinal += evidenceView.localTriangles.size();
             }
             support_grip_triangle_selection::Stats selectionStats{};
-            support_grip_triangle_selection::rankParts(parts, references, laneLimit, boundedLimit, rankingScratch, &selectionStats);
+            support_grip_triangle_selection::rankParts(parts, references, laneLimit, boundedLimit, rankingScratch,
+                &selectionStats);
             support_grip_triangle_selection::mergeRankings(rankingScratch, boundedLimit, outTriangles);
             performance_profiler::observeValue(
-                performance_profiler::ValueMetric::EquippedWeaponFingerSelectionMeasuredTriangles, selectionStats.trianglesMeasured);
-            performance_profiler::observeValue(performance_profiler::ValueMetric::EquippedWeaponFingerSelectionNodeVisits, selectionStats.nodesVisited);
+                performance_profiler::ValueMetric::EquippedWeaponFingerSelectionMeasuredTriangles,
+                selectionStats.trianglesMeasured);
+            performance_profiler::observeValue(
+                performance_profiler::ValueMetric::EquippedWeaponFingerSelectionNodeVisits,
+                selectionStats.nodesVisited);
         }
 
         struct NativeScopeCameraFollowCapture
@@ -641,7 +539,8 @@ namespace rock
             if (scopeCamera) {
                 RE::NiTransform scopeCameraWorld = scopeCamera->world;
                 if (scopeCamera->parent) {
-                    scopeCameraWorld = transform_math::composeTransforms(scopeCamera->parent->world, scopeCamera->local);
+                    scopeCameraWorld =
+                        transform_math::composeTransforms(scopeCamera->parent->world, scopeCamera->local);
                 }
                 if (isFiniteTransform(scopeCameraWorld)) {
                     snapshot.scopeCamera = scopeCamera;
@@ -655,16 +554,13 @@ namespace rock
         inline void restoreScopeHandAuthorityCleanupVisuals(const ScopeHandAuthorityCleanupVisualSnapshot& snapshot)
         {
             if (snapshot.weaponValid && snapshot.weapon) {
-                (void)restoreWeaponRootPreservingPresentedDescendants(
-                    snapshot.weapon,
-                    snapshot.weaponWorld);
+                (void)restoreWeaponRootPreservingPresentedDescendants(snapshot.weapon, snapshot.weaponWorld);
             }
 
             if (snapshot.scopeCameraValid && snapshot.scopeCamera) {
                 if (snapshot.scopeCamera->parent) {
                     snapshot.scopeCamera->local = weapon_visual_authority_math::worldTargetToParentLocal(
-                        snapshot.scopeCamera->parent->world,
-                        snapshot.scopeCameraWorld);
+                        snapshot.scopeCamera->parent->world, snapshot.scopeCameraWorld);
                     f4vr::updateTransforms(snapshot.scopeCamera);
                 } else {
                     snapshot.scopeCamera->local = snapshot.scopeCameraWorld;
@@ -697,7 +593,9 @@ namespace rock
             };
         }
 
-        inline NativeScopeCameraFollowResult applyNativeScopeCameraWorldTarget(const NativeScopeCameraFollowCapture& capture, const RE::NiTransform& targetCameraWorld, NativeScopeRigidFrameState& authority)
+        inline NativeScopeCameraFollowResult applyNativeScopeCameraWorldTarget(
+            const NativeScopeCameraFollowCapture& capture, const RE::NiTransform& targetCameraWorld,
+            NativeScopeRigidFrameState& authority)
         {
             NativeScopeCameraFollowResult result{};
             if (!g_rockConfig.rockEnableImmersiveScopes || !capture.valid || !capture.camera ||
@@ -715,8 +613,7 @@ namespace rock
             }
             if (scopeCamera->parent) {
                 const RE::NiTransform targetCameraLocal = weapon_visual_authority_math::worldTargetToParentLocal(
-                    scopeCamera->parent->world,
-                    targetCameraWorld);
+                    scopeCamera->parent->world, targetCameraWorld);
                 if (!isFiniteTransform(targetCameraLocal)) {
                     return result;
                 }
@@ -743,8 +640,10 @@ namespace rock
             return result;
         }
 
-        inline NativeScopeCameraDebugSnapshot makeNativeScopeCameraDebugSnapshot(const NativeScopeCameraDebugSnapshot& previous, const std::uint64_t weaponGenerationKey,
-            const NativeScopeCameraWriteSource writeSource, const NativeScopeCameraFollowCapture& capture, const NativeScopeCameraFollowResult& result,
+        inline NativeScopeCameraDebugSnapshot makeNativeScopeCameraDebugSnapshot(
+            const NativeScopeCameraDebugSnapshot& previous, const std::uint64_t weaponGenerationKey,
+            const NativeScopeCameraWriteSource writeSource, const NativeScopeCameraFollowCapture& capture,
+            const NativeScopeCameraFollowResult& result,
             const native_scope_sight_anchor_policy::AnchorSource anchorSource)
         {
             NativeScopeCameraDebugSnapshot snapshot{};
@@ -775,7 +674,8 @@ namespace rock
             return reader;
         }
 
-        inline const DirectSkeletonBoneEntry* findSnapshotBone(const DirectSkeletonBoneSnapshot& snapshot, std::string_view name)
+        inline const DirectSkeletonBoneEntry* findSnapshotBone(const DirectSkeletonBoneSnapshot& snapshot,
+            std::string_view name)
         {
             for (const auto& bone : snapshot.bones) {
                 if (bone.name == name) {
@@ -785,43 +685,38 @@ namespace rock
             return nullptr;
         }
 
-        inline bool buildFullHandLocalTransformsForMeshPose(
-            bool isLeft,
+        inline bool buildFullHandLocalTransformsForMeshPose(bool isLeft,
             const grab_finger_pose_runtime::SolvedGrabFingerPose& meshFingerPose,
             const frik_visual_authority::HandPoseData& handPose,
             const DirectSkeletonBoneSnapshot* capturedFingerSnapshot,
-            std::array<RE::NiTransform, 15>& outLocalTransforms,
-            std::uint16_t& outMask)
+            std::array<RE::NiTransform, 15>& outLocalTransforms, std::uint16_t& outMask)
         {
             auto* api = frik_visual_authority::api();
-            const bool canPublish =
-                grab_finger_local_transform_math::shouldPublishLocalTransformPose(
-                    g_rockConfig.rockGrabMeshLocalTransformPoseEnabled,
-                    meshFingerPose.solved,
-                    true,
-                    api && api->getHandPoseLocalTransformsForPose != nullptr,
-                    api && api->setHandPoseCustomLocalTransforms != nullptr);
+            const bool canPublish = grab_finger_local_transform_math::shouldPublishLocalTransformPose(
+                g_rockConfig.rockGrabMeshLocalTransformPoseEnabled, meshFingerPose.solved, true,
+                api && api->getHandPoseLocalTransformsForPose != nullptr,
+                api && api->setHandPoseCustomLocalTransforms != nullptr);
             if (!canPublish) {
                 ROCK_LOG_DEBUG(Weapon,
-                    "TwoHandedGrip: full-hand local transform override skipped hand={} enabled={} api={} baselineApi={} publishApi={}",
-                    isLeft ? "left" : "right",
-                    g_rockConfig.rockGrabMeshLocalTransformPoseEnabled ? "yes" : "no",
-                    api ? "yes" : "no",
-                    (api && api->getHandPoseLocalTransformsForPose) ? "yes" : "no",
+                    "TwoHandedGrip: full-hand local transform override skipped hand={} enabled={} api={} "
+                    "baselineApi={} publishApi={}",
+                    isLeft ? "left" : "right", g_rockConfig.rockGrabMeshLocalTransformPoseEnabled ? "yes" : "no",
+                    api ? "yes" : "no", (api && api->getHandPoseLocalTransformsForPose) ? "yes" : "no",
                     (api && api->setHandPoseCustomLocalTransforms) ? "yes" : "no");
                 return false;
             }
 
             frik_visual_authority::FingerLocalTransformOverride baseline{};
             if (!frik_visual_authority::getHandPoseLocalTransformsForPose(handFromBool(isLeft), handPose, &baseline)) {
-                ROCK_LOG_WARN(Weapon, "TwoHandedGrip: full-hand local transform override failed hand={} reason=baseline-query", isLeft ? "left" : "right");
+                ROCK_LOG_WARN(Weapon,
+                    "TwoHandedGrip: full-hand local transform override failed hand={} reason=baseline-query",
+                    isLeft ? "left" : "right");
                 return false;
             }
 
             frik_visual_authority::FingerLocalTransformOverride corrected{};
             const char* failureReason = "unknown";
-            if (!grab_finger_local_transform_runtime::buildSurfaceCorrectedLocalTransforms(isLeft,
-                    meshFingerPose,
+            if (!grab_finger_local_transform_runtime::buildSurfaceCorrectedLocalTransforms(isLeft, meshFingerPose,
                     baseline,
                     grab_finger_local_transform_runtime::Options{
                         .enabled = g_rockConfig.rockGrabMeshLocalTransformPoseEnabled,
@@ -833,13 +728,9 @@ namespace rock
                         .thumbSurfaceSafetyEnabled = g_rockConfig.rockGrabThumbSurfaceSafetyEnabled,
                         .thumbSurfaceSafetyMarginGameUnits = g_rockConfig.rockGrabThumbSurfaceSafetyMarginGameUnits,
                     },
-                    corrected,
-                    &failureReason,
-                    capturedFingerSnapshot)) {
-                ROCK_LOG_WARN(Weapon,
-                    "TwoHandedGrip: full-hand local transform override failed hand={} reason={}",
-                    isLeft ? "left" : "right",
-                    failureReason ? failureReason : "unknown");
+                    corrected, &failureReason, capturedFingerSnapshot)) {
+                ROCK_LOG_WARN(Weapon, "TwoHandedGrip: full-hand local transform override failed hand={} reason={}",
+                    isLeft ? "left" : "right", failureReason ? failureReason : "unknown");
                 return false;
             }
 
@@ -877,9 +768,7 @@ namespace rock
     {
         struct HandScratch
         {
-            std::array<std::vector<RankedSupportGripTriangle>,
-                kSupportGripFingerLaneCount + 1>
-                rankings;
+            std::array<std::vector<RankedSupportGripTriangle>, kSupportGripFingerLaneCount + 1> rankings;
             DirectSkeletonBoneSnapshot capturedBones;
             SkeletonBoneNameIndex capturedBoneNames;
             std::vector<TriangleData> localTriangles;

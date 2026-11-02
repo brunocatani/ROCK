@@ -14,7 +14,8 @@ namespace rock::bare_fist_guard_policy
 
     [[nodiscard]] inline constexpr bool shouldHolster(const Witness& witness) noexcept
     {
-        return witness.rockEnabled && witness.weaponDrawn && witness.actorUsingMelee && !witness.realMeleeWeaponEquipped;
+        return witness.rockEnabled && witness.weaponDrawn && witness.actorUsingMelee &&
+            !witness.realMeleeWeaponEquipped;
     }
 
     struct RecheckState
@@ -26,15 +27,10 @@ namespace rock::bare_fist_guard_policy
         bool realMeleeWeaponEquipped{ false };
     };
 
-    [[nodiscard]] inline constexpr bool shouldRefreshWitness(
-        const RecheckState& state,
-        bool forceRecheck,
-        bool weaponDrawn,
-        std::uint32_t equippedWeaponFormId,
-        bool actorUsingMelee) noexcept
+    [[nodiscard]] inline constexpr bool shouldRefreshWitness(const RecheckState& state, bool forceRecheck,
+        bool weaponDrawn, std::uint32_t equippedWeaponFormId, bool actorUsingMelee) noexcept
     {
         return forceRecheck || !state.initialized || state.weaponDrawn != weaponDrawn ||
-               state.equippedWeaponFormId != equippedWeaponFormId ||
-               state.actorUsingMelee != actorUsingMelee;
+            state.equippedWeaponFormId != equippedWeaponFormId || state.actorUsingMelee != actorUsingMelee;
     }
 }

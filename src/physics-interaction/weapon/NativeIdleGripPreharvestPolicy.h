@@ -3,8 +3,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <span>
 #include <optional>
+#include <span>
 #include <string_view>
 
 namespace rock::native_idle_grip_preharvest_policy
@@ -58,11 +58,8 @@ namespace rock::native_idle_grip_preharvest_policy
      * suppresses native-idle work because it cannot carry the exact finger
      * locals.
      */
-    [[nodiscard]] constexpr bool shouldStartNativeIdleHarvest(
-        const bool lookupFound,
-        const bool lookupIsNativeIdle,
-        const bool lookupUsedVariantFallback,
-        const std::uint64_t candidateVariantKey) noexcept
+    [[nodiscard]] constexpr bool shouldStartNativeIdleHarvest(const bool lookupFound, const bool lookupIsNativeIdle,
+        const bool lookupUsedVariantFallback, const std::uint64_t candidateVariantKey) noexcept
     {
         if (!lookupFound || !lookupIsNativeIdle) {
             return true;
@@ -78,12 +75,11 @@ namespace rock::native_idle_grip_preharvest_policy
      * Never fall back to graph zero: that would silently harvest a flat/third-
      * person relation instead of the FO4VR first-person grip.
      */
-    [[nodiscard]] constexpr FirstPersonSelection selectFirstPersonGraph(
-        const std::size_t graphCount,
-        const std::size_t handleCount,
-        const std::size_t identifierCount) noexcept
+    [[nodiscard]] constexpr FirstPersonSelection selectFirstPersonGraph(const std::size_t graphCount,
+        const std::size_t handleCount, const std::size_t identifierCount) noexcept
     {
-        if (graphCount <= kFirstPersonGraphIndex || handleCount <= kFirstPersonGraphIndex || identifierCount <= kFirstPersonGraphIndex) {
+        if (graphCount <= kFirstPersonGraphIndex || handleCount <= kFirstPersonGraphIndex ||
+            identifierCount <= kFirstPersonGraphIndex) {
             return {};
         }
         return FirstPersonSelection{
@@ -117,9 +113,11 @@ namespace rock::native_idle_grip_preharvest_policy
         return -1;
     }
 
-    [[nodiscard]] constexpr bool weaponIsDirectChildOfHand(const int weaponBoneIndex, const int handBoneIndex, const std::span<const std::int16_t> parentIndices) noexcept
+    [[nodiscard]] constexpr bool weaponIsDirectChildOfHand(const int weaponBoneIndex, const int handBoneIndex,
+        const std::span<const std::int16_t> parentIndices) noexcept
     {
-        return weaponBoneIndex >= 0 && handBoneIndex >= 0 && static_cast<std::size_t>(weaponBoneIndex) < parentIndices.size() &&
+        return weaponBoneIndex >= 0 && handBoneIndex >= 0 &&
+            static_cast<std::size_t>(weaponBoneIndex) < parentIndices.size() &&
             parentIndices[static_cast<std::size_t>(weaponBoneIndex)] == handBoneIndex;
     }
 
@@ -139,7 +137,8 @@ namespace rock::native_idle_grip_preharvest_policy
         return state == 3u || state == 4u;
     }
 
-    [[nodiscard]] constexpr bool clipPathHasStem(const std::string_view path, const std::string_view expectedStem) noexcept
+    [[nodiscard]] constexpr bool clipPathHasStem(const std::string_view path,
+        const std::string_view expectedStem) noexcept
     {
         const auto separator = path.find_last_of("/\\");
         const auto stemBegin = separator == std::string_view::npos ? 0 : separator + 1;
@@ -149,7 +148,9 @@ namespace rock::native_idle_grip_preharvest_policy
             return false;
         }
 
-        const auto asciiLower = [](const char value) { return value >= 'A' && value <= 'Z' ? static_cast<char>(value + ('a' - 'A')) : value; };
+        const auto asciiLower = [](const char value) {
+            return value >= 'A' && value <= 'Z' ? static_cast<char>(value + ('a' - 'A')) : value;
+        };
         for (std::size_t index = 0; index < expectedStem.size(); ++index) {
             if (asciiLower(path[stemBegin + index]) != asciiLower(expectedStem[index])) {
                 return false;
@@ -195,47 +196,42 @@ namespace rock::native_idle_grip_preharvest_policy
         return true;
     }
 
-    [[nodiscard]] constexpr float validationSampleTimeSeconds(const float durationSeconds, const std::size_t sampleIndex) noexcept
+    [[nodiscard]] constexpr float validationSampleTimeSeconds(const float durationSeconds,
+        const std::size_t sampleIndex) noexcept
     {
-        return sampleIndex < kValidationSampleFractions.size() ? durationSeconds * kValidationSampleFractions[sampleIndex] : 0.0f;
+        return sampleIndex < kValidationSampleFractions.size()
+            ? durationSeconds * kValidationSampleFractions[sampleIndex]
+            : 0.0f;
     }
 
-    [[nodiscard]] constexpr bool stableAcrossSamples(
-        const std::size_t sampleCount,
-        const float durationSeconds,
-        const float maxHandTranslationDelta,
-        const float maxHandRotationDeltaDegrees,
-        const float maxFingerTranslationDelta,
-        const float maxFingerRotationDeltaDegrees,
+    [[nodiscard]] constexpr bool stableAcrossSamples(const std::size_t sampleCount, const float durationSeconds,
+        const float maxHandTranslationDelta, const float maxHandRotationDeltaDegrees,
+        const float maxFingerTranslationDelta, const float maxFingerRotationDeltaDegrees,
         const float maxScaleDelta) noexcept
     {
         return sampleCount == kValidationSampleFractions.size() &&
-               durationSeconds >= kMinimumValidationDurationSeconds &&
-               durationSeconds <= kMaximumValidationDurationSeconds &&
-               maxHandTranslationDelta <= kMaximumStableHandTranslationDelta &&
-               maxHandRotationDeltaDegrees <= kMaximumStableHandRotationDeltaDegrees &&
-               maxFingerTranslationDelta <= kMaximumStableFingerTranslationDelta &&
-               maxFingerRotationDeltaDegrees <= kMaximumStableFingerRotationDeltaDegrees &&
-               maxScaleDelta <= kMaximumStableScaleDelta;
+            durationSeconds >= kMinimumValidationDurationSeconds &&
+            durationSeconds <= kMaximumValidationDurationSeconds &&
+            maxHandTranslationDelta <= kMaximumStableHandTranslationDelta &&
+            maxHandRotationDeltaDegrees <= kMaximumStableHandRotationDeltaDegrees &&
+            maxFingerTranslationDelta <= kMaximumStableFingerTranslationDelta &&
+            maxFingerRotationDeltaDegrees <= kMaximumStableFingerRotationDeltaDegrees &&
+            maxScaleDelta <= kMaximumStableScaleDelta;
     }
 
-    [[nodiscard]] constexpr bool supportStableAcrossSamples(
-        const std::size_t sampleCount,
-        const float durationSeconds,
-        const float maxSupportHandTranslationDelta,
-        const float maxSupportHandRotationDeltaDegrees,
-        const float maxSupportFingerTranslationDelta,
-        const float maxSupportFingerRotationDeltaDegrees,
+    [[nodiscard]] constexpr bool supportStableAcrossSamples(const std::size_t sampleCount, const float durationSeconds,
+        const float maxSupportHandTranslationDelta, const float maxSupportHandRotationDeltaDegrees,
+        const float maxSupportFingerTranslationDelta, const float maxSupportFingerRotationDeltaDegrees,
         const float maxSupportScaleDelta) noexcept
     {
         return sampleCount == kValidationSampleFractions.size() &&
-               durationSeconds >= kMinimumValidationDurationSeconds &&
-               durationSeconds <= kMaximumValidationDurationSeconds &&
-               maxSupportHandTranslationDelta <= kMaximumStableSupportHandTranslationDelta &&
-               maxSupportHandRotationDeltaDegrees <= kMaximumStableSupportHandRotationDeltaDegrees &&
-               maxSupportFingerTranslationDelta <= kMaximumStableFingerTranslationDelta &&
-               maxSupportFingerRotationDeltaDegrees <= kMaximumStableFingerRotationDeltaDegrees &&
-               maxSupportScaleDelta <= kMaximumStableScaleDelta;
+            durationSeconds >= kMinimumValidationDurationSeconds &&
+            durationSeconds <= kMaximumValidationDurationSeconds &&
+            maxSupportHandTranslationDelta <= kMaximumStableSupportHandTranslationDelta &&
+            maxSupportHandRotationDeltaDegrees <= kMaximumStableSupportHandRotationDeltaDegrees &&
+            maxSupportFingerTranslationDelta <= kMaximumStableFingerTranslationDelta &&
+            maxSupportFingerRotationDeltaDegrees <= kMaximumStableFingerRotationDeltaDegrees &&
+            maxSupportScaleDelta <= kMaximumStableScaleDelta;
     }
 
     /*
@@ -247,16 +243,13 @@ namespace rock::native_idle_grip_preharvest_policy
      * out-of-range parent, a chain longer than the caller's buffer, or a
      * cycle, so a malformed skeleton can never drive an unbounded walk.
      */
-    [[nodiscard]] constexpr std::size_t collectBoneChainToRoot(
-        const int leafBoneIndex,
-        const std::span<const std::int16_t> parentIndices,
-        const std::span<int> outChain) noexcept
+    [[nodiscard]] constexpr std::size_t collectBoneChainToRoot(const int leafBoneIndex,
+        const std::span<const std::int16_t> parentIndices, const std::span<int> outChain) noexcept
     {
         std::size_t length = 0;
         int current = leafBoneIndex;
         while (current >= 0) {
-            if (static_cast<std::size_t>(current) >= parentIndices.size() ||
-                length >= outChain.size() ||
+            if (static_cast<std::size_t>(current) >= parentIndices.size() || length >= outChain.size() ||
                 length >= parentIndices.size()) {
                 return 0;
             }
@@ -267,20 +260,22 @@ namespace rock::native_idle_grip_preharvest_policy
     }
 
     // Common animated ancestors (spine/root) do not author an offhand grip.
-    [[nodiscard]] constexpr std::optional<bool> supportBranchHasAnimation(int primaryHand,
-        int supportHand, std::span<const std::int16_t> parents, int trackCount,
-        std::span<const std::int16_t> mapping) noexcept
+    [[nodiscard]] constexpr std::optional<bool> supportBranchHasAnimation(int primaryHand, int supportHand,
+        std::span<const std::int16_t> parents, int trackCount, std::span<const std::int16_t> mapping) noexcept
     {
         std::array<int, kMaxBoneChainLength> primary{}, support{};
         const auto primaryCount = collectBoneChainToRoot(primaryHand, parents, primary);
         const auto supportCount = collectBoneChainToRoot(supportHand, parents, support);
         if (!primaryCount || !supportCount || primary[primaryCount - 1] != support[supportCount - 1] ||
-            trackCount <= 0 || (!mapping.empty() && mapping.size() < static_cast<std::size_t>(trackCount))) return {};
+            trackCount <= 0 || (!mapping.empty() && mapping.size() < static_cast<std::size_t>(trackCount)))
+            return {};
         for (std::size_t i = 0; i < supportCount; ++i) {
             for (std::size_t j = 0; j < primaryCount; ++j) {
-                if (support[i] == primary[j]) return false;
+                if (support[i] == primary[j])
+                    return false;
             }
-            if (findTransformTrackForBone(support[i], trackCount, mapping) >= 0) return true;
+            if (findTransformTrackForBone(support[i], trackCount, mapping) >= 0)
+                return true;
         }
         return {};
     }

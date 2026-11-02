@@ -15,25 +15,36 @@ namespace rock::native_equipped_weapon_attach
     namespace
     {
         constexpr std::array<std::uint8_t, 16> kExpectedAttachEntry{
-            0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C,
-            0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57,
+            0x48,
+            0x89,
+            0x5C,
+            0x24,
+            0x08,
+            0x48,
+            0x89,
+            0x6C,
+            0x24,
+            0x10,
+            0x48,
+            0x89,
+            0x74,
+            0x24,
+            0x18,
+            0x57,
         };
 
         [[nodiscard]] bool attachEntryMatchesVerifiedRuntime() noexcept
         {
             static const bool matches = []() noexcept {
-                if (!REL::Module::IsVR() ||
-                    REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) {
+                if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) {
                     return false;
                 }
 
                 std::array<std::uint8_t, kExpectedAttachEntry.size()> actual{};
                 const auto address = REL::Offset(offsets::kFunc_QueueEquippedWeaponAttach).address();
-                return native_memory::guardedCopyFromMemory(
-                           reinterpret_cast<const void*>(address),
-                           actual.data(),
+                return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), actual.data(),
                            actual.size()) &&
-                       actual == kExpectedAttachEntry;
+                    actual == kExpectedAttachEntry;
             }();
             return matches;
         }
@@ -41,8 +52,7 @@ namespace rock::native_equipped_weapon_attach
 
     SubmitResult submitExactCurrent(const Identity& expected) noexcept
     {
-        if (!REL::Module::IsVR() ||
-            REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) {
+        if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) {
             return SubmitResult::UnsupportedRuntime;
         }
         if (!attachEntryMatchesVerifiedRuntime()) {
@@ -70,21 +80,14 @@ namespace rock::native_equipped_weapon_attach
 
         void* manager = nullptr;
         const auto managerAddress = REL::Offset(offsets::kData_EquippedWeaponAttachManager).address();
-        if (!native_memory::tryReadValue(
-                reinterpret_cast<void* const*>(managerAddress),
-                manager) ||
-            !manager) {
+        if (!native_memory::tryReadValue(reinterpret_cast<void* const*>(managerAddress), manager) || !manager) {
             return SubmitResult::MissingManager;
         }
 
         RE::BGSObjectInstance exactInstance(object, instanceData);
-        using QueueAttach = void (*)(
-            void*,
-            RE::PlayerCharacter*,
-            RE::BGSObjectInstance*,
-            std::uint32_t);
-        const auto queueAttach = reinterpret_cast<QueueAttach>(
-            REL::Offset(offsets::kFunc_QueueEquippedWeaponAttach).address());
+        using QueueAttach = void (*)(void*, RE::PlayerCharacter*, RE::BGSObjectInstance*, std::uint32_t);
+        const auto queueAttach =
+            reinterpret_cast<QueueAttach>(REL::Offset(offsets::kFunc_QueueEquippedWeaponAttach).address());
         queueAttach(manager, player, &exactInstance, currentEquipIndex);
         return SubmitResult::Submitted;
     }

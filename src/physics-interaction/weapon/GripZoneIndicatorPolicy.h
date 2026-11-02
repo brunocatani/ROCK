@@ -8,11 +8,9 @@ namespace rock::grip_zone_indicator_policy
     inline constexpr float kMinimumDiameterGameUnits = 0.10f;
     inline constexpr float kMaximumDiameterGameUnits = 5.00f;
 
-    [[nodiscard]] constexpr bool isCurrentRenderFrame(
-        const std::uint64_t markerFrameIndex,
+    [[nodiscard]] constexpr bool isCurrentRenderFrame(const std::uint64_t markerFrameIndex,
         const std::uint64_t latestPublishedFrameIndex) noexcept
     {
-        return markerFrameIndex != 0 &&
-               markerFrameIndex == latestPublishedFrameIndex;
+        return markerFrameIndex != 0 && markerFrameIndex == latestPublishedFrameIndex;
     }
 }

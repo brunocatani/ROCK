@@ -1,12 +1,12 @@
 #include "physics-interaction/weapon/WeaponGripSeat.h"
 
+#include "RockConfig.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/hand/HandFingerMirrorMath.h"
 #include "physics-interaction/weapon/HoldingGripAdapter.h"
 #include "physics-interaction/weapon/MinigunFiringGripPolicy.h"
 #include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
 #include "physics-interaction/weapon/WeaponGripCalibration.h"
-#include "RockConfig.h"
 
 #include <cmath>
 #include <span>
@@ -25,8 +25,8 @@ namespace rock::weapon_grip_seat
                 }
             }
             return std::isfinite(transform.translate.x) && std::isfinite(transform.translate.y) &&
-                   std::isfinite(transform.translate.z) && std::isfinite(transform.scale) &&
-                   std::abs(transform.scale) > 0.000001f;
+                std::isfinite(transform.translate.z) && std::isfinite(transform.scale) &&
+                std::abs(transform.scale) > 0.000001f;
         }
 
         // hFRIK authored Weapon-in-Hand; the seat is the inverse
@@ -37,7 +37,8 @@ namespace rock::weapon_grip_seat
             RE::NiTransform weaponInHand{};
             for (int row = 0; row < 3; ++row) {
                 for (int column = 0; column < 3; ++column) {
-                    weaponInHand.rotate.entry[row][column] = source.rotation[static_cast<std::size_t>(row * 3 + column)];
+                    weaponInHand.rotate.entry[row][column] =
+                        source.rotation[static_cast<std::size_t>(row * 3 + column)];
                 }
             }
             weaponInHand.translate = { source.translation[0], source.translation[1], source.translation[2] };
@@ -55,22 +56,26 @@ namespace rock::weapon_grip_seat
     {
         NativeSeat seat{};
         if (!request.weapon ||
-            !vanilla_weapon_grip_frame::resolveModelTranslation(request.weapon->formID, request.weaponRoot, seat.modelDisplacement)) {
+            !vanilla_weapon_grip_frame::resolveModelTranslation(request.weapon->formID, request.weaponRoot,
+                seat.modelDisplacement)) {
             return seat;
         }
         const RE::NiPoint3& displacement = seat.modelDisplacement;
         seat.modelRegistered = true;
-        seat.lookup = authored_weapon_grip_library::findResolvedVariant(request.weapon, request.variant, request.inPowerArmor);
+        seat.lookup =
+            authored_weapon_grip_library::findResolvedVariant(request.weapon, request.variant, request.inPowerArmor);
         authored_weapon_grip_library::applyPipeDefaultOffset(seat.lookup);
         if (seat.lookup.found) {
-            seat.lookup.rightHandWeaponLocal = vanilla_weapon_grip_frame::translateGrip(seat.lookup.rightHandWeaponLocal, displacement);
+            seat.lookup.rightHandWeaponLocal =
+                vanilla_weapon_grip_frame::translateGrip(seat.lookup.rightHandWeaponLocal, displacement);
             if (seat.lookup.hasSupportRelation) {
-                seat.lookup.supportHandWeaponLocal = vanilla_weapon_grip_frame::translateGrip(seat.lookup.supportHandWeaponLocal, displacement);
+                seat.lookup.supportHandWeaponLocal =
+                    vanilla_weapon_grip_frame::translateGrip(seat.lookup.supportHandWeaponLocal, displacement);
             }
         }
         RE::NiTransform minigun{};
         seat.compiledMinigun = minigun_firing_grip_policy::usesCompiledFiringSeat(request.keywordFlags) &&
-                               compiledMinigunSeat(request.inPowerArmor, minigun);
+            compiledMinigunSeat(request.inPowerArmor, minigun);
         seat.rightHandWeaponLocal = seat.compiledMinigun ? minigun : seat.lookup.rightHandWeaponLocal;
         // FRIK's Weapon offset is in the live Weapon node frame, like the
         // compiled minigun seat, so it takes no model registration shift.
@@ -82,7 +87,8 @@ namespace rock::weapon_grip_seat
         return seat;
     }
 
-    bool leftFiringSeat(const RE::NiTransform& nativeRight, const holding_grip_math::MirrorPlane mirrorPlane, RE::NiTransform& outLeft)
+    bool leftFiringSeat(const RE::NiTransform& nativeRight, const holding_grip_math::MirrorPlane mirrorPlane,
+        RE::NiTransform& outLeft)
     {
         const auto source = holding_grip_math::fromNative(nativeRight);
         if (!holding_grip_math::valid(source)) {
@@ -94,8 +100,7 @@ namespace rock::weapon_grip_seat
         return true;
     }
 
-    bool mirrorFingerPose(
-        const authored_weapon_grip_library::FiringFingerPose& right,
+    bool mirrorFingerPose(const authored_weapon_grip_library::FiringFingerPose& right,
         authored_weapon_grip_library::FiringFingerPose& outLeft)
     {
         outLeft = {};
@@ -110,12 +115,8 @@ namespace rock::weapon_grip_seat
         return true;
     }
 
-    bool firingSeat(
-        const NativeSeat& native,
-        const holding_grips::Record* custom,
-        const bool isLeft,
-        const holding_grip_math::MirrorPlane mirrorPlane,
-        FiringSeat& out)
+    bool firingSeat(const NativeSeat& native, const holding_grips::Record* custom, const bool isLeft,
+        const holding_grip_math::MirrorPlane mirrorPlane, FiringSeat& out)
     {
         out = {};
         if (custom && !native.userSeat) {
@@ -131,6 +132,6 @@ namespace rock::weapon_grip_seat
             return true;
         }
         return leftFiringSeat(native.rightHandWeaponLocal, mirrorPlane, out.handWeaponLocal) &&
-               mirrorFingerPose(native.lookup.rightFiringFingerPose, out.fingers);
+            mirrorFingerPose(native.lookup.rightFiringFingerPose, out.fingers);
     }
 }

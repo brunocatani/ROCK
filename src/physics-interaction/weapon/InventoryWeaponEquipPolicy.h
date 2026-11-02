@@ -1,17 +1,23 @@
 #pragma once
 #include <ROCK/Weapon.h>
 
-namespace rock::inventory_weapon_equip_policy {
+namespace rock::inventory_weapon_equip_policy
+{
     using api::Status;
     using api::weapon::InventoryWeapon;
-    [[nodiscard]] constexpr Status validateCapture(const InventoryWeapon& requested, const InventoryWeapon& current) noexcept {
+
+    [[nodiscard]] constexpr Status validateCapture(const InventoryWeapon& requested,
+        const InventoryWeapon& current) noexcept
+    {
         if (!requested.worldGeneration || !requested.skeletonGeneration || !requested.providerGeneration ||
             requested.frameIndex != current.frameIndex || requested.worldGeneration != current.worldGeneration ||
-            requested.skeletonGeneration != current.skeletonGeneration || requested.providerGeneration != current.providerGeneration)
+            requested.skeletonGeneration != current.skeletonGeneration ||
+            requested.providerGeneration != current.providerGeneration)
             return Status::GenerationMismatch;
         if (!requested.stackKey || !requested.count || requested.baseFormId != current.baseFormId ||
             requested.stackIndex != current.stackIndex || requested.stackKey != current.stackKey ||
-            requested.instanceKey != current.instanceKey || requested.count != current.count) return Status::TargetUnavailable;
+            requested.instanceKey != current.instanceKey || requested.count != current.count)
+            return Status::TargetUnavailable;
         return Status::Ok;
     }
 }

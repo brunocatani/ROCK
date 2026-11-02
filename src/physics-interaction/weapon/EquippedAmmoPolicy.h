@@ -47,15 +47,21 @@ namespace rock::equipped_ammo
 
     [[nodiscard]] constexpr Counts resolve(const Facts& facts) noexcept
     {
-        if (!facts.weapon || facts.notPlayable) return {};
-        if (!facts.hasAmmo) return { .known = true };
+        if (!facts.weapon || facts.notPlayable)
+            return {};
+        if (!facts.hasAmmo)
+            return { .known = true };
         const bool inventory = !facts.countAsLoaded && !facts.nonPlayableAmmo;
-        const std::uint32_t count = facts.countAsLoaded ? facts.loaded :
-            facts.nonPlayableAmmo ? facts.capacity :
-            facts.inventoryCount > 0 ? static_cast<std::uint32_t>(facts.inventoryCount) : 0u;
-        if (facts.charge != 0) return { .known = true, .loaded = facts.loaded, .reserve = count };
-        const std::uint64_t held = static_cast<std::uint64_t>(facts.loaded) + (inventory ? facts.otherLoadedSameAmmo : 0u);
-        return { .known = true, .loaded = facts.loaded,
+        const std::uint32_t count = facts.countAsLoaded ? facts.loaded
+            : facts.nonPlayableAmmo                     ? facts.capacity
+            : facts.inventoryCount > 0                  ? static_cast<std::uint32_t>(facts.inventoryCount)
+                                                        : 0u;
+        if (facts.charge != 0)
+            return { .known = true, .loaded = facts.loaded, .reserve = count };
+        const std::uint64_t held =
+            static_cast<std::uint64_t>(facts.loaded) + (inventory ? facts.otherLoadedSameAmmo : 0u);
+        return { .known = true,
+            .loaded = facts.loaded,
             .reserve = count > held ? static_cast<std::uint32_t>(count - held) : 0u };
     }
 }

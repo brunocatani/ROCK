@@ -27,16 +27,13 @@ namespace rock::native_scope_sight_anchor_policy
      * ownership witness. Scope geometry is usable only when its body-set
      * publication still belongs to the exact equipped instance and form.
      */
-    [[nodiscard]] inline constexpr bool matchesCurrentEquippedWeapon(
-        const PublicationIdentity& published,
+    [[nodiscard]] inline constexpr bool matchesCurrentEquippedWeapon(const PublicationIdentity& published,
         const PublicationIdentity& current) noexcept
     {
-        return published.weaponGenerationKey != 0 &&
-               published.equippedWeaponOwnershipKey != 0 &&
-               published.weaponFormID != 0 &&
-               published.weaponGenerationKey == current.weaponGenerationKey &&
-               published.equippedWeaponOwnershipKey == current.equippedWeaponOwnershipKey &&
-               published.weaponFormID == current.weaponFormID;
+        return published.weaponGenerationKey != 0 && published.equippedWeaponOwnershipKey != 0 &&
+            published.weaponFormID != 0 && published.weaponGenerationKey == current.weaponGenerationKey &&
+            published.equippedWeaponOwnershipKey == current.equippedWeaponOwnershipKey &&
+            published.weaponFormID == current.weaponFormID;
     }
 
     template <class Point>
@@ -62,15 +59,11 @@ namespace rock::native_scope_sight_anchor_policy
      * Generated geometry remains authoritative whenever it is valid.
      */
     template <class Point>
-    [[nodiscard]] inline ResolvedAnchor<Point> resolve(
-        const bool generatedSightValid,
-        const Point& generatedSightWeaponLocal,
-        const bool firingGripValid,
-        const Point& firingGripWeaponLocal,
+    [[nodiscard]] inline ResolvedAnchor<Point> resolve(const bool generatedSightValid,
+        const Point& generatedSightWeaponLocal, const bool firingGripValid, const Point& firingGripWeaponLocal,
         const Point& firingGripOffsetWeaponLocal) noexcept
     {
-        if (generatedSightValid &&
-            isFinitePoint(generatedSightWeaponLocal)) {
+        if (generatedSightValid && isFinitePoint(generatedSightWeaponLocal)) {
             return ResolvedAnchor<Point>{
                 .weaponLocal = generatedSightWeaponLocal,
                 .source = AnchorSource::GeneratedSight,
@@ -78,9 +71,7 @@ namespace rock::native_scope_sight_anchor_policy
             };
         }
 
-        if (!firingGripValid ||
-            !isFinitePoint(firingGripWeaponLocal) ||
-            !isFinitePoint(firingGripOffsetWeaponLocal)) {
+        if (!firingGripValid || !isFinitePoint(firingGripWeaponLocal) || !isFinitePoint(firingGripOffsetWeaponLocal)) {
             return {};
         }
 

@@ -3,10 +3,10 @@
 #include "physics-interaction/weapon/EquipVisualBridge.h"
 #include "physics-interaction/weapon/EquippedWeaponTransitionPolicy.h"
 
-#include "physics-interaction/weapon/HeldWeaponTransferPolicy.h"
-#include "physics-interaction/weapon/grip/LeftCarryReadiness.h"
 #include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
+#include "physics-interaction/weapon/HeldWeaponTransferPolicy.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
+#include "physics-interaction/weapon/grip/LeftCarryReadiness.h"
 
 #include <chrono>
 #include <cstdint>
@@ -18,8 +18,17 @@ namespace rock
     public:
         // Transition seam diagnostic only.
         [[nodiscard]] const EquipVisualBridge& bridgeForTrace() const noexcept { return _bridge; }
-        [[nodiscard]] const RE::NiAVObject* pendingNativeCullForTrace() const noexcept { return _pendingNativeCull.get(); }
-        [[nodiscard]] std::uint8_t heldTransferPhaseForTrace() const noexcept { return static_cast<std::uint8_t>(_heldTransfer.phase); }
+
+        [[nodiscard]] const RE::NiAVObject* pendingNativeCullForTrace() const noexcept
+        {
+            return _pendingNativeCull.get();
+        }
+
+        [[nodiscard]] std::uint8_t heldTransferPhaseForTrace() const noexcept
+        {
+            return static_cast<std::uint8_t>(_heldTransfer.phase);
+        }
+
         struct PendingGrip
         {
             weapon_grip_transfer::Pair pairedGrips{};
@@ -135,29 +144,36 @@ namespace rock
         };
 
         [[nodiscard]] PendingGrip& pendingGrip() noexcept { return _pendingGrip; }
+
         [[nodiscard]] const PendingGrip& pendingGrip() const noexcept { return _pendingGrip; }
+
         [[nodiscard]] const held_weapon_transfer::State& heldTransfer() const noexcept { return _heldTransfer; }
+
         [[nodiscard]] const held_weapon_transfer::State* inventoryTransferResult(std::uint64_t sequence) const noexcept
         {
             return held_weapon_transfer::inventoryResult(_heldTransfer, _completedInventoryTransfer, sequence);
         }
+
         bool beginHeldRequest(const held_weapon_transfer::Request& request);
-        void cancelHeldRequest(const char* reason, held_weapon_transfer::Outcome outcome = held_weapon_transfer::Outcome::Failed);
-        void recordInventoryCommit(std::uint32_t form, std::uintptr_t instance, bool accepted, std::uintptr_t observedInstance);
-        void recordGripAcquired(std::uint32_t form, std::uintptr_t instance, bool left, held_weapon_transfer::Role role);
+        void cancelHeldRequest(const char* reason,
+            held_weapon_transfer::Outcome outcome = held_weapon_transfer::Outcome::Failed);
+        void recordInventoryCommit(std::uint32_t form, std::uintptr_t instance, bool accepted,
+            std::uintptr_t observedInstance);
+        void recordGripAcquired(std::uint32_t form, std::uintptr_t instance, bool left,
+            held_weapon_transfer::Role role);
         void recordGripPresentation();
-        void validateHeldSource(bool held, std::uint32_t reference, std::uint64_t grab,
-            std::uint32_t world, std::uint32_t skeleton);
+        void validateHeldSource(bool held, std::uint32_t reference, std::uint64_t grab, std::uint32_t world,
+            std::uint32_t skeleton);
         void resumeMenuGrip(const PendingGrip& grip, std::uint32_t world, std::uint32_t skeleton);
+
         [[nodiscard]] bool observedItemMatches(std::uint32_t form, std::uintptr_t instance) const noexcept
         {
-            return _observationInitialized && held_weapon_transfer::sameMenuItem(_observedIdentity.formID,
-                _observedIdentity.instanceData, form, instance);
+            return _observationInitialized &&
+                held_weapon_transfer::sameMenuItem(_observedIdentity.formID, _observedIdentity.instanceData, form,
+                    instance);
         }
 
-        bool beginHeldTransition(
-            const ExpectedIdentity& expected,
-            Source source,
+        bool beginHeldTransition(const ExpectedIdentity& expected, Source source,
             const EquipVisualBridge::BeginInput& bridgeInput);
         void requestCurrentWeaponReconcile(Source source) noexcept;
         void update(const FrameInput& input);
@@ -166,29 +182,29 @@ namespace rock
         void abandonSceneGraph();
         [[nodiscard]] PublicSnapshot getPublicSnapshot() const noexcept;
 
-        [[nodiscard]] bool isHandPoseHandoffActive() const noexcept
-        {
-            return _bridge.isHandPoseHandoffActive();
-        }
+        [[nodiscard]] bool isHandPoseHandoffActive() const noexcept { return _bridge.isHandPoseHandoffActive(); }
+
         [[nodiscard]] bool hasPairedHandPoseHandoff() const noexcept { return _bridge.hasPairedHandPoseHandoff(); }
-        [[nodiscard]] bool hasSupportOnlyHandPoseHandoff() const noexcept { return _bridge.hasSupportOnlyHandPoseHandoff(); }
+
+        [[nodiscard]] bool hasSupportOnlyHandPoseHandoff() const noexcept
+        {
+            return _bridge.hasSupportOnlyHandPoseHandoff();
+        }
+
         [[nodiscard]] bool hasCapturedHandPoseHandoff() const noexcept { return _bridge.hasCapturedHandPoseHandoff(); }
-        [[nodiscard]] bool handPoseHandoffIsLeft() const noexcept
-        {
-            return _bridge.handPoseHandoffIsLeft();
-        }
-        [[nodiscard]] std::uint32_t bridgeWeaponBaseFormID() const noexcept
-        {
-            return _bridge.weaponBaseFormID();
-        }
-        void completeHandPoseHandoff(const char* reason)
-        {
-            _bridge.completeHandPoseHandoff(reason);
-        }
+
+        [[nodiscard]] bool handPoseHandoffIsLeft() const noexcept { return _bridge.handPoseHandoffIsLeft(); }
+
+        [[nodiscard]] std::uint32_t bridgeWeaponBaseFormID() const noexcept { return _bridge.weaponBaseFormID(); }
+
+        void completeHandPoseHandoff(const char* reason) { _bridge.completeHandPoseHandoff(reason); }
+
         void tryCompleteHandPoseHandoff() { _bridge.tryCompleteHandPoseHandoff(); }
+
         void synchronizeEquippedPresentation(RE::NiNode* weaponNode, std::uint32_t formID)
         {
-            if (formID == _bridge.weaponBaseFormID()) _bridge.synchronizeEquippedPresentation(weaponNode);
+            if (formID == _bridge.weaponBaseFormID())
+                _bridge.synchronizeEquippedPresentation(weaponNode);
         }
 
     private:
@@ -199,23 +215,17 @@ namespace rock
             std::uint32_t equipIndex{ 0 };
 
             [[nodiscard]] bool valid() const noexcept { return formID != 0; }
+
             [[nodiscard]] bool operator==(const Identity&) const noexcept = default;
         };
 
         [[nodiscard]] static Identity readCurrentIdentity() noexcept;
         [[nodiscard]] bool expectedMatches(const Identity& identity) const noexcept;
-        void bindCurrentIdentity(
-            const Identity& identity,
-            Source source,
-            const char* reason,
-            Identity previousIdentity = {},
-            std::uintptr_t previousNativeInstanceNode = 0);
+        void bindCurrentIdentity(const Identity& identity, Source source, const char* reason,
+            Identity previousIdentity = {}, std::uintptr_t previousNativeInstanceNode = 0);
         void resetDrawRecoveryClock(bool armed) noexcept;
         [[nodiscard]] float sampleDrawRecoveryWallDelta() noexcept;
-        void finish(
-            TerminalResult result,
-            const char* reason,
-            bool releaseSceneGraph);
+        void finish(TerminalResult result, const char* reason, bool releaseSceneGraph);
 
         void traceHeldTransfer(const char* event) const;
         void updateHeldRecovery();

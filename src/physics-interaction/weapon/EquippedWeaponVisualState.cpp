@@ -4,8 +4,8 @@
 #include "RE/NetImmerse/NiNode.h"
 #include "REL/Relocation.h"
 
-#include "rock_support/Fo4VrRuntime.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 #include <array>
 #include <cstdio>
@@ -17,8 +17,7 @@ namespace rock::equipped_weapon_visual_state
     {
         constexpr std::uint64_t kAppCulledFlag = 0x1ull;
         constexpr int kSubtreeWalkBudget = 2048;
-        constexpr int kMaximumInstanceSearchDepth =
-            static_cast<int>(kMaximumObservedPathNodes) - 1;
+        constexpr int kMaximumInstanceSearchDepth = static_cast<int>(kMaximumObservedPathNodes) - 1;
 
         struct SearchContext
         {
@@ -29,14 +28,10 @@ namespace rock::equipped_weapon_visual_state
             Snapshot result{};
         };
 
-        bool findExactInstance(
-            RE::NiAVObject* node,
-            const int depth,
-            const std::size_t pathDepth,
+        bool findExactInstance(RE::NiAVObject* node, const int depth, const std::size_t pathDepth,
             SearchContext& context) noexcept
         {
-            if (!node || depth < 0 || context.budget <= 0 ||
-                pathDepth >= context.path.size()) {
+            if (!node || depth < 0 || context.budget <= 0 || pathDepth >= context.path.size()) {
                 return false;
             }
 
@@ -44,8 +39,7 @@ namespace rock::equipped_weapon_visual_state
             context.path[pathDepth] = node;
             const char* name = node->name.c_str();
             if (name && *name && std::strstr(name, context.token) &&
-                reinterpret_cast<std::uintptr_t>(node) !=
-                    context.excludedInstanceAddress) {
+                reinterpret_cast<std::uintptr_t>(node) != context.excludedInstanceAddress) {
                 context.result.exactInstance = node;
                 context.result.pathNodeCount = pathDepth + 1;
                 for (std::size_t index = 0; index <= pathDepth; ++index) {
@@ -78,9 +72,7 @@ namespace rock::equipped_weapon_visual_state
         }
     }
 
-    Snapshot observe(
-        const std::uint32_t weaponBaseFormID,
-        const std::uintptr_t excludedInstanceAddress,
+    Snapshot observe(const std::uint32_t weaponBaseFormID, const std::uintptr_t excludedInstanceAddress,
         ObservationCache* cache) noexcept
     {
         performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponVisualObservation);
@@ -91,10 +83,12 @@ namespace rock::equipped_weapon_visual_state
 
         auto* firstPersonSkeleton = f4vr::getFirstPersonSkeleton();
         auto* cachedRoot = cache ? cache->weaponPath.resolve(firstPersonSkeleton) : nullptr;
-        if (cachedRoot && (!cachedRoot->name.c_str() || std::strcmp(cachedRoot->name.c_str(), "Weapon") != 0)) cachedRoot = nullptr;
+        if (cachedRoot && (!cachedRoot->name.c_str() || std::strcmp(cachedRoot->name.c_str(), "Weapon") != 0))
+            cachedRoot = nullptr;
         snapshot.weaponRoot = cachedRoot ? cachedRoot->IsNode() : f4vr::getWeaponNode();
         if (!snapshot.weaponRoot) {
-            if (cache) *cache = {};
+            if (cache)
+                *cache = {};
             return snapshot;
         }
         if (cache && !cachedRoot) {
@@ -107,7 +101,8 @@ namespace rock::equipped_weapon_visual_state
         if (cache && cache->formID == weaponBaseFormID && cache->excludedInstance == excludedInstanceAddress) {
             snapshot.ancestorPathVisible = true;
             auto* instance = cache->instancePath.resolve(snapshot.weaponRoot, [&](RE::NiAVObject* node) {
-                if (snapshot.pathNodeCount < snapshot.pathNodes.size()) snapshot.pathNodes[snapshot.pathNodeCount++] = node;
+                if (snapshot.pathNodeCount < snapshot.pathNodes.size())
+                    snapshot.pathNodes[snapshot.pathNodeCount++] = node;
             });
             if (instance && instance->name.c_str() && std::strstr(instance->name.c_str(), token) &&
                 reinterpret_cast<std::uintptr_t>(instance) != excludedInstanceAddress) {
@@ -124,11 +119,7 @@ namespace rock::equipped_weapon_visual_state
         context.token = token;
         context.excludedInstanceAddress = excludedInstanceAddress;
         context.result.weaponRoot = snapshot.weaponRoot;
-        if (findExactInstance(
-                snapshot.weaponRoot,
-                kMaximumInstanceSearchDepth,
-                0,
-                context)) {
+        if (findExactInstance(snapshot.weaponRoot, kMaximumInstanceSearchDepth, 0, context)) {
             if (cache) {
                 cache->formID = weaponBaseFormID;
                 cache->excludedInstance = excludedInstanceAddress;
@@ -136,7 +127,8 @@ namespace rock::equipped_weapon_visual_state
             }
             return context.result;
         }
-        if (cache) cache->instancePath.clear();
+        if (cache)
+            cache->instancePath.clear();
         return snapshot;
     }
 

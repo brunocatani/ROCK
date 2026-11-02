@@ -1,15 +1,15 @@
 #include "physics-interaction/weapon/NativePipboyHandMarkers.h"
 
-#include "physics-interaction/weapon/NativeHandEquipment.h"
-#include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/PhysicsLog.h"
-#include "RE/Scaleform/GFx/GFx_Player.h"
 #include <REL/Relocation.h>
 #include <Windows.h>
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <string>
+#include "RE/Scaleform/GFx/GFx_Player.h"
+#include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/weapon/NativeHandEquipment.h"
 
 namespace rock::native_pipboy_hand_markers
 {
@@ -46,7 +46,8 @@ namespace rock::native_pipboy_hand_markers
         {
             std::array<std::uint8_t, N> actual{};
             return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(rva).address()),
-                actual.data(), actual.size()) && actual == expected;
+                       actual.data(), actual.size()) &&
+                actual == expected;
         }
 
         // ---- Inventory list presentation (Pip-Boy movie thread) ----------
@@ -57,38 +58,52 @@ namespace rock::native_pipboy_hand_markers
         // native script, so the letter shows exactly when the square would
         // and takes the same selection tint. Nothing else in the row moves.
 
-        std::atomic<std::uint32_t> s_reports{0};
+        std::atomic<std::uint32_t> s_reports{ 0 };
 
         // Deepest point the per-frame walk reached in the current movie,
         // logged once per new depth so a stop in the chain names itself.
-        enum class Stage : std::uint8_t { None, Menu, InventoryPage, List, VisibleRow, EquippedRow, HandResolved, LetterShown };
+        enum class Stage : std::uint8_t
+        {
+            None,
+            Menu,
+            InventoryPage,
+            List,
+            VisibleRow,
+            EquippedRow,
+            HandResolved,
+            LetterShown
+        };
         constexpr const char* kStageNames[]{ "none", "menu", "inventory-page", "list", "visible-row", "equipped-row",
             "hand-resolved", "letter-shown" };
         Stage s_deepest = Stage::None; // Movie thread only.
+
         void reach(Stage stage, std::uint32_t a = 0, std::uint32_t b = 0)
         {
-            if (stage <= s_deepest) return;
+            if (stage <= s_deepest)
+                return;
             s_deepest = stage;
-            ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters reached stage={} a={} b={}", kStageNames[static_cast<int>(stage)], a, b);
+            ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters reached stage={} a={} b={}",
+                kStageNames[static_cast<int>(stage)], a, b);
         }
 
         // AS3 int and uint members arrive as Int/UInt values, not Number.
-        bool isNumeric(const Value& value)
-        {
-            return value.IsNumber() || value.IsInt() || value.IsUInt();
-        }
+        bool isNumeric(const Value& value) { return value.IsNumber() || value.IsInt() || value.IsUInt(); }
+
         double numeric(const Value& value)
         {
-            return value.IsNumber() ? value.GetNumber() : value.IsInt() ? static_cast<double>(value.GetInt()) :
-                value.IsUInt() ? static_cast<double>(value.GetUInt()) : 0.0;
+            return value.IsNumber() ? value.GetNumber()
+                : value.IsInt()     ? static_cast<double>(value.GetInt())
+                : value.IsUInt()    ? static_cast<double>(value.GetUInt())
+                                    : 0.0;
         }
 
         // AS3 Array or Vector length; GFx's array size does not cover Vectors.
         std::uint32_t lengthOf(const Value& value)
         {
             Value length;
-            return value.IsObject() && value.GetMember("length", &length) && isNumeric(length) && numeric(length) > 0 ?
-                static_cast<std::uint32_t>(numeric(length)) : 0u;
+            return value.IsObject() && value.GetMember("length", &length) && isNumeric(length) && numeric(length) > 0
+                ? static_cast<std::uint32_t>(numeric(length))
+                : 0u;
         }
 
         bool member(const Value& object, const char* name, Value& out) noexcept
@@ -105,13 +120,16 @@ namespace rock::native_pipboy_hand_markers
         void showSquare(Value& icon, bool visible)
         {
             Value count;
-            if (!member(icon, "numChildren", count) || !isNumeric(count)) return;
+            if (!member(icon, "numChildren", count) || !isNumeric(count))
+                return;
             const auto n = static_cast<int>(numeric(count));
             for (int i = 0; i < n && i < 16; ++i) {
                 Value child, name;
                 const Value index(static_cast<double>(i));
-                if (!icon.Invoke("getChildAt", &child, &index, 1) || !child.IsObject()) continue;
-                if (member(child, "name", name) && text(name) == kLetterName) continue;
+                if (!icon.Invoke("getChildAt", &child, &index, 1) || !child.IsObject())
+                    continue;
+                if (member(child, "name", name) && text(name) == kLetterName)
+                    continue;
                 child.SetMember("visible", Value(visible));
             }
         }
@@ -119,16 +137,19 @@ namespace rock::native_pipboy_hand_markers
         bool letterField(RE::Scaleform::GFx::Movie* movie, Value& entry, Value& icon, Value& out)
         {
             const Value name(kLetterName);
-            if (icon.Invoke("getChildByName", &out, &name, 1) && out.IsObject()) return true;
+            if (icon.Invoke("getChildByName", &out, &name, 1) && out.IsObject())
+                return true;
             // First use on this row: size the letter to the square and copy
             // the row's own font so it renders through the menu's font set.
             Value bounds, field, format, embed, x, y, w, h;
             if (!icon.Invoke("getBounds", &bounds, &icon, 1) || !member(bounds, "x", x) || !member(bounds, "y", y) ||
                 !member(bounds, "width", w) || !member(bounds, "height", h) || !isNumeric(x) || !isNumeric(h) ||
                 !member(entry, "textField", field) || !field.IsObject() || !field.Invoke("getTextFormat", &format) ||
-                !format.IsObject()) return false;
+                !format.IsObject())
+                return false;
             movie->CreateObject(&out, "flash.text.TextField");
-            if (!out.IsObject()) return false;
+            if (!out.IsObject())
+                return false;
             const double squareHeight = numeric(h);
             const double size = std::max(8.0, squareHeight * kLetterScale);
             // The row's format carries the row's text colour, which is not
@@ -137,21 +158,25 @@ namespace rock::native_pipboy_hand_markers
             format.SetMember("bold", Value(true));
             format.SetMember("color", Value(kLetterColor));
             out.SetMember("name", Value(kLetterName));
-            if (member(field, "embedFonts", embed)) out.SetMember("embedFonts", embed);
+            if (member(field, "embedFonts", embed))
+                out.SetMember("embedFonts", embed);
             out.SetMember("defaultTextFormat", format);
             out.SetMember("selectable", Value(false));
             out.SetMember("mouseEnabled", Value(false));
             out.SetMember("autoSize", Value("left"));
             out.SetMember("text", Value("R"));
             Value fieldWidth, fieldHeight;
-            if (member(out, "width", fieldWidth) && member(out, "height", fieldHeight) && isNumeric(fieldWidth) && isNumeric(fieldHeight)) {
+            if (member(out, "width", fieldWidth) && member(out, "height", fieldHeight) && isNumeric(fieldWidth) &&
+                isNumeric(fieldHeight)) {
                 out.SetMember("x", Value(numeric(x) + numeric(w) * 0.5 - numeric(fieldWidth) * 0.5));
                 out.SetMember("y", Value(numeric(y) + squareHeight * 0.5 - numeric(fieldHeight) * 0.5));
             }
-            if (!icon.Invoke("addChild", nullptr, &out, 1)) return false;
+            if (!icon.Invoke("addChild", nullptr, &out, 1))
+                return false;
             if (s_reports.fetch_add(1, std::memory_order_relaxed) < 2)
-                ROCK_LOG_INFO(Weapon, "Pip-Boy hand letter created square=({:.1f},{:.1f} {:.1f}x{:.1f}) letterSize={:.1f}",
-                    numeric(x), numeric(y), isNumeric(w) ? numeric(w) : 0.0, squareHeight, size);
+                ROCK_LOG_INFO(Weapon,
+                    "Pip-Boy hand letter created square=({:.1f},{:.1f} {:.1f}x{:.1f}) letterSize={:.1f}", numeric(x),
+                    numeric(y), isNumeric(w) ? numeric(w) : 0.0, squareHeight, size);
             return true;
         }
 
@@ -168,27 +193,37 @@ namespace rock::native_pipboy_hand_markers
             std::uint32_t form = 0;
             const char* label = "";
         };
+
         std::array<ReportedRow, 16> s_reportedRows{};
+
         void reportRow(std::uint32_t form, int state, int slot, const char* label)
         {
-            auto row = std::find_if(s_reportedRows.begin(), s_reportedRows.end(), [form](const ReportedRow& r) { return r.form == form; });
+            auto row = std::find_if(s_reportedRows.begin(), s_reportedRows.end(),
+                [form](const ReportedRow& r) { return r.form == form; });
             if (row == s_reportedRows.end()) {
-                if (!*label) return;
-                row = std::find_if(s_reportedRows.begin(), s_reportedRows.end(), [](const ReportedRow& r) { return r.form == 0; });
-                if (row == s_reportedRows.end()) return;
+                if (!*label)
+                    return;
+                row = std::find_if(s_reportedRows.begin(), s_reportedRows.end(),
+                    [](const ReportedRow& r) { return r.form == 0; });
+                if (row == s_reportedRows.end())
+                    return;
                 row->form = form;
             }
-            if (std::string_view{ row->label } == label) return;
+            if (std::string_view{ row->label } == label)
+                return;
             ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters row form={:08X} equipState={} slot={} label={} previous={}",
                 form, state, slot, *label ? label : "none", *row->label ? row->label : "none");
             row->label = label;
         }
+
         const char* rowLabel(const Value& data)
         {
             Value equip, form;
-            if (!member(data, "formID", form) || !isNumeric(form)) return "";
+            if (!member(data, "formID", form) || !isNumeric(form))
+                return "";
             const auto formID = static_cast<std::uint32_t>(numeric(form));
-            const int state = member(data, "equipState", equip) && isNumeric(equip) ? static_cast<int>(numeric(equip)) : -1;
+            const int state =
+                member(data, "equipState", equip) && isNumeric(equip) ? static_cast<int>(numeric(equip)) : -1;
             const int slot = state == 2 ? 1 : state == 3 || state == 4 ? 0 : -1;
             const char* label = "";
             if (slot >= 0) {
@@ -197,8 +232,10 @@ namespace rock::native_pipboy_hand_markers
                 const auto hand = native_hand_equipment::wornRowHand(formID, slot, firing, supported);
                 const bool left = hand == native_hand_equipment::WornHand::Left;
                 // Firing hand first, then the support hand.
-                label = hand == native_hand_equipment::WornHand::None ? "" :
-                    supported ? (left ? "LR" : "RL") : firing ? (left ? "L" : "R") : (left ? "OL" : "OR");
+                label = hand == native_hand_equipment::WornHand::None ? ""
+                    : supported                                       ? (left ? "LR" : "RL")
+                    : firing                                          ? (left ? "L" : "R")
+                                                                      : (left ? "OL" : "OR");
             }
             reportRow(formID, state, slot, label);
             return label;
@@ -209,7 +246,8 @@ namespace rock::native_pipboy_hand_markers
         void setLabel(Value& letter, const char* label)
         {
             Value x, width;
-            const bool measured = member(letter, "x", x) && member(letter, "width", width) && isNumeric(x) && isNumeric(width);
+            const bool measured =
+                member(letter, "x", x) && member(letter, "width", width) && isNumeric(x) && isNumeric(width);
             const double centre = measured ? numeric(x) + numeric(width) * 0.5 : 0.0;
             letter.SetMember("text", Value(label));
             Value newWidth;
@@ -221,9 +259,11 @@ namespace rock::native_pipboy_hand_markers
         // and BSScrollingList.uiNumListItems are private/protected (ABC trait
         // namespaces), so the walk uses CurrentPage and numListItems.
         const char* s_reportedStop = nullptr; // Movie thread only.
+
         void stop(const char* step)
         {
-            if (s_reportedStop == step) return;
+            if (s_reportedStop == step)
+                return;
             s_reportedStop = step;
             ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters stopped at {} after stage={}", step,
                 kStageNames[static_cast<int>(s_deepest)]);
@@ -232,8 +272,10 @@ namespace rock::native_pipboy_hand_markers
         void updateList(RE::Scaleform::GFx::Movie* movie, Value& list)
         {
             Value entries, count;
-            if (!member(list, "entryList", entries) || !entries.IsObject()) return stop("entryList");
-            if (!member(list, "numListItems", count) || !isNumeric(count)) return stop("numListItems");
+            if (!member(list, "entryList", entries) || !entries.IsObject())
+                return stop("entryList");
+            if (!member(list, "numListItems", count) || !isNumeric(count))
+                return stop("numListItems");
             const auto clips = static_cast<int>(numeric(count));
             const auto size = lengthOf(entries);
             reach(Stage::List, size, static_cast<std::uint32_t>(clips));
@@ -241,30 +283,36 @@ namespace rock::native_pipboy_hand_markers
                 Value clip, visible, index, icon;
                 const Value clipIndex(static_cast<double>(c));
                 if (!list.Invoke("GetClipByIndex", &clip, &clipIndex, 1) || !clip.IsObject() ||
-                    !member(clip, "EquipIcon_mc", icon) || !icon.IsObject()) continue;
+                    !member(clip, "EquipIcon_mc", icon) || !icon.IsObject())
+                    continue;
                 const char* hand = "";
                 if (member(clip, "visible", visible) && visible.IsBoolean() && visible.GetBoolean() &&
-                    member(clip, "itemIndex", index) && isNumeric(index) && numeric(index) >= 0 && numeric(index) < size) {
+                    member(clip, "itemIndex", index) && isNumeric(index) && numeric(index) >= 0 &&
+                    numeric(index) < size) {
                     reach(Stage::VisibleRow, static_cast<std::uint32_t>(c));
                     Value data;
                     const auto key = std::to_string(static_cast<std::uint32_t>(numeric(index)));
                     if (entries.GetMember(key.c_str(), &data) && data.IsObject()) {
                         hand = rowLabel(data);
-                        if (*hand) reach(Stage::HandResolved);
+                        if (*hand)
+                            reach(Stage::HandResolved);
                     }
                 }
                 Value letter;
                 const Value name(kLetterName);
                 const bool exists = icon.Invoke("getChildByName", &letter, &name, 1) && letter.IsObject();
                 if (!*hand) {
-                    if (!exists) continue;
+                    if (!exists)
+                        continue;
                     letter.SetMember("visible", Value(false));
                     showSquare(icon, true);
                     continue;
                 }
-                if (!exists && !letterField(movie, clip, icon, letter)) continue;
+                if (!exists && !letterField(movie, clip, icon, letter))
+                    continue;
                 Value current;
-                if (!member(letter, "text", current) || text(current) != hand) setLabel(letter, hand);
+                if (!member(letter, "text", current) || text(current) != hand)
+                    setLabel(letter, hand);
                 letter.SetMember("visible", Value(true));
                 showSquare(icon, false);
                 reach(Stage::LetterShown);
@@ -274,12 +322,16 @@ namespace rock::native_pipboy_hand_markers
         void updateMovie(RE::Scaleform::GFx::Movie* movie)
         {
             Value menu, page, list, doll;
-            if (!movie->GetVariable(&menu, "root.Menu_mc") || !menu.IsObject()) return stop("root.Menu_mc");
+            if (!movie->GetVariable(&menu, "root.Menu_mc") || !menu.IsObject())
+                return stop("root.Menu_mc");
             reach(Stage::Menu);
-            if (!member(menu, "CurrentPage", page) || !page.IsObject()) return stop("CurrentPage");
+            if (!member(menu, "CurrentPage", page) || !page.IsObject())
+                return stop("CurrentPage");
             // Only the inventory page has the paper doll; other tabs are skipped.
-            if (!member(page, "PaperDoll_mc", doll) || !doll.IsObject()) return;
-            if (!member(page, "List_mc", list) || !list.IsObject()) return stop("List_mc");
+            if (!member(page, "PaperDoll_mc", doll) || !doll.IsObject())
+                return;
+            if (!member(page, "List_mc", list) || !list.IsObject())
+                return stop("List_mc");
             reach(Stage::InventoryPage);
             updateList(movie, list);
         }
@@ -313,7 +365,8 @@ namespace rock::native_pipboy_hand_markers
             s_advance(menu, delta, time);
             try {
                 RE::Scaleform::GFx::Movie* movie = nullptr;
-                if (!native_memory::tryReadField(menu, kMenuMovieOffset, movie) || !movie) return;
+                if (!native_memory::tryReadField(menu, kMenuMovieOffset, movie) || !movie)
+                    return;
                 refresh(movie, "advance");
             } catch (...) {
                 OutputDebugStringA("ROCK: Pip-Boy hand letters failed\n");
@@ -323,10 +376,12 @@ namespace rock::native_pipboy_hand_markers
 
     void onPipboyCodeCall(void* menu) noexcept
     {
-        if (!s_installed) return;
+        if (!s_installed)
+            return;
         try {
             RE::Scaleform::GFx::Movie* movie = nullptr;
-            if (native_memory::tryReadField(menu, kMenuMovieOffset, movie) && movie) refresh(movie, "code-call");
+            if (native_memory::tryReadField(menu, kMenuMovieOffset, movie) && movie)
+                refresh(movie, "code-call");
         } catch (...) {
             OutputDebugStringA("ROCK: Pip-Boy hand letters failed\n");
         }
@@ -338,7 +393,7 @@ namespace rock::native_pipboy_hand_markers
         const auto slot = REL::Offset(kAdvanceSlot).address();
         if (!native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(slot), current) ||
             current != REL::Offset(kAdvanceOriginal).address() ||
-            !matches(0xBA0A95, std::to_array<std::uint8_t>({0xE8,0xA6,0x82,0x5F,0x01}))) {
+            !matches(0xBA0A95, std::to_array<std::uint8_t>({ 0xE8, 0xA6, 0x82, 0x5F, 0x01 }))) {
             ROCK_LOG_WARN(Weapon, "Pip-Boy hand letters unavailable: PipboyMenu advance slot differs");
             return false;
         }

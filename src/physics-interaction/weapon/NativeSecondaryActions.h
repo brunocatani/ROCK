@@ -4,7 +4,12 @@
 
 #include <cstdint>
 
-namespace RE { class NiNode; class NiTransform; }
+namespace RE
+{
+    class NiNode;
+    class NiTransform;
+}
+
 namespace rock::native_secondary_actions
 {
     bool install() noexcept;
@@ -14,7 +19,7 @@ namespace rock::native_secondary_actions
     // All lifecycle and action calls are on the existing interaction frame owner.
     void update(RE::NiNode* attachment, float deltaSeconds) noexcept;
     void present(RE::NiNode* attachment) noexcept;
-    void carryPresentation(const RE::NiTransform& previous,const RE::NiTransform& target) noexcept;
+    void carryPresentation(const RE::NiTransform& previous, const RE::NiTransform& target) noexcept;
     void suspend() noexcept;
     // Promotion: the index-1 model leaves the private skeleton at its
     // rendered pose, for a carrier that moves only its root, and the private

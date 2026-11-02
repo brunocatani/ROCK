@@ -30,7 +30,7 @@ namespace rock::native_idle_grip_preharvest
     void clearHeldWarmups() noexcept;
     // Inventory-owned display: retain the exact instance data, but identify
     // authored poses in the display model's same local variant domain.
-    void observeInventoryDisplay(RE::TESObjectWEAP*,RE::NiAVObject*,RE::TBO_InstanceData*) noexcept;
+    void observeInventoryDisplay(RE::TESObjectWEAP*, RE::NiAVObject*, RE::TBO_InstanceData*) noexcept;
 
     /*
      * Inventory firearms a consumer keeps ready to equip (Weapon
@@ -40,11 +40,13 @@ namespace rock::native_idle_grip_preharvest
      * borrowed for the call; the instance is retained. Frame-thread only.
      */
     inline constexpr std::size_t kConsumerWarmCapacity = 8;
+
     struct ConsumerWarmRequest
     {
         RE::TESObjectWEAP* weapon{ nullptr };
         RE::TBO_InstanceData* instance{ nullptr };
     };
+
     // Replaces owner's set, keeping what stays loaded; false (nothing
     // changed) when every owner's sets together would exceed the capacity.
     [[nodiscard]] bool setConsumerWarmSet(std::uint64_t owner, std::span<const ConsumerWarmRequest> requests) noexcept;
@@ -59,9 +61,6 @@ namespace rock::native_idle_grip_preharvest
      * variant and deterministic instance-content identities and retains
      * instance data with Bethesda's smart pointer before asynchronous work.
      */
-    void observeEquippedWeapon(
-        RE::TESObjectWEAP* weapon,
-        RE::NiAVObject* weaponRoot,
-        RE::TBO_InstanceData* instanceData,
-        std::uint64_t instanceContentKey) noexcept;
+    void observeEquippedWeapon(RE::TESObjectWEAP* weapon, RE::NiAVObject* weaponRoot,
+        RE::TBO_InstanceData* instanceData, std::uint64_t instanceContentKey) noexcept;
 }

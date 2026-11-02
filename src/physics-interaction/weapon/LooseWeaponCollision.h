@@ -1,15 +1,21 @@
 #pragma once
 
-#include "physics-interaction/weapon/DroppedWeaponCollision.h"
-#include "physics-interaction/weapon/LooseWeaponCollisionPolicy.h"
-#include "RE/Bethesda/BSPointerHandle.h"
-#include "RE/NetImmerse/NiTransform.h"
 #include <array>
 #include <atomic>
 #include <memory>
+#include "RE/Bethesda/BSPointerHandle.h"
+#include "RE/NetImmerse/NiTransform.h"
+#include "physics-interaction/weapon/DroppedWeaponCollision.h"
+#include "physics-interaction/weapon/LooseWeaponCollisionPolicy.h"
 
-namespace RE { class TESObjectREFR; class hknpWorld; }
-namespace rock {
+namespace RE
+{
+    class TESObjectREFR;
+    class hknpWorld;
+}
+
+namespace rock
+{
     struct PhysicsFrameContext;
     class PhysicsCallbackQuiescenceGate;
 
@@ -21,10 +27,16 @@ namespace rock {
     public:
         LooseWeaponCollision();
         ~LooseWeaponCollision();
-        void update(const PhysicsFrameContext& frame, RE::TESObjectREFR* right,
-            RE::TESObjectREFR* left, PhysicsCallbackQuiescenceGate& gate,bool admitWeapons=true);
-        enum class NativeRest { Watching, Resting, Unavailable, CapacityFull };
-        NativeRest watchNative(RE::TESObjectREFR*,const PhysicsFrameContext&,PhysicsCallbackQuiescenceGate&);
+        void update(const PhysicsFrameContext& frame, RE::TESObjectREFR* right, RE::TESObjectREFR* left,
+            PhysicsCallbackQuiescenceGate& gate, bool admitWeapons = true);
+        enum class NativeRest
+        {
+            Watching,
+            Resting,
+            Unavailable,
+            CapacityFull
+        };
+        NativeRest watchNative(RE::TESObjectREFR*, const PhysicsFrameContext&, PhysicsCallbackQuiescenceGate&);
         bool takeNativeRestCompletion(std::uint32_t reference) noexcept;
 
         // Equipped drops: the dropped reference keeps the equipped hulls from
@@ -38,28 +50,29 @@ namespace rock {
         void queueDropped(const RE::ObjectRefHandle& handle, DroppedWeaponCollision collision);
 
         void clear(RE::hknpWorld* liveWorld);
-        bool prepareRelease(RE::TESObjectREFR* reference, RE::hknpWorld* liveWorld,
-            PhysicsCallbackQuiescenceGate& gate, bool physicalDrop);
+        bool prepareRelease(RE::TESObjectREFR* reference, RE::hknpWorld* liveWorld, PhysicsCallbackQuiescenceGate& gate,
+            bool physicalDrop);
         bool releaseReference(RE::TESObjectREFR* reference, RE::hknpWorld* liveWorld,
             PhysicsCallbackQuiescenceGate& gate);
         bool watches(std::uint32_t body) const noexcept;
-        void contact(RE::hknpWorld* world, std::uint32_t a, std::uint32_t b,
-            const RE::NiPoint3& point, const RE::NiPoint3& normal) noexcept;
+        void contact(RE::hknpWorld* world, std::uint32_t a, std::uint32_t b, const RE::NiPoint3& point,
+            const RE::NiPoint3& normal) noexcept;
 
     private:
         struct State;
+
         struct Slot
         {
             Slot();
             ~Slot();
             void admit(RE::TESObjectREFR* reference, const PhysicsFrameContext& frame);
-            void update(const PhysicsFrameContext& frame, RE::TESObjectREFR* right,
-                RE::TESObjectREFR* left, PhysicsCallbackQuiescenceGate& gate, bool prepare);
+            void update(const PhysicsFrameContext& frame, RE::TESObjectREFR* right, RE::TESObjectREFR* left,
+                PhysicsCallbackQuiescenceGate& gate, bool prepare);
             void clear(RE::hknpWorld* liveWorld);
             void publishBodies();
             bool watches(std::uint32_t body) const noexcept;
-            void contact(RE::hknpWorld* world, std::uint32_t a, std::uint32_t b,
-                const RE::NiPoint3& point, const RE::NiPoint3& normal) noexcept;
+            void contact(RE::hknpWorld* world, std::uint32_t a, std::uint32_t b, const RE::NiPoint3& point,
+                const RE::NiPoint3& normal) noexcept;
 
             std::unique_ptr<State> _state;
             std::uint32_t _declined{};
@@ -67,7 +80,8 @@ namespace rock {
             std::atomic<RE::hknpWorld*> _world{};
             std::array<std::atomic<std::uint32_t>, loose_weapon_collision_policy::kMaxNativeBodies> _bodies{};
             std::atomic<unsigned> _count{};
-            std::atomic<std::uint64_t> _generation{1};
+            std::atomic<std::uint64_t> _generation{ 1 };
+
             struct Support
             {
                 std::uint64_t generation{};
@@ -76,23 +90,27 @@ namespace rock {
                 RE::NiTransform weaponPose{}, surfacePose{};
                 bool valid{};
             };
+
             std::atomic_flag _supportBusy = ATOMIC_FLAG_INIT;
             Support _support{};
         };
+
         void publishWatchMask() noexcept;
         std::array<Slot, loose_weapon_collision_policy::kMaxWeapons> _slots;
         // Settled stateful weapons retain their exact generated shapes outside
         // the active preparation/contact pool. Released on pickup, model/world
         // replacement or consumer withdrawal, never evicted onto default shapes.
-        std::array<std::unique_ptr<State>,256> _parked;
+        std::array<std::unique_ptr<State>, 256> _parked;
+
         struct DroppedHandoff
         {
             RE::ObjectRefHandle handle;
             DroppedWeaponCollision collision;
             float waitedSeconds{};
         };
+
         // One entry per concurrent equipped drop handoff.
-        std::array<DroppedHandoff,4> _dropped;
+        std::array<DroppedHandoff, 4> _dropped;
         std::atomic<std::uint32_t> _watchMask{};
         std::size_t _nextPreparationSlot{};
     };

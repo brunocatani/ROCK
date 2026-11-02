@@ -146,10 +146,7 @@ namespace rock::equipped_weapon_shoulder
         std::uint64_t serial{ 0 };
     };
 
-    [[nodiscard]] inline constexpr bool isLeft(const Hand hand) noexcept
-    {
-        return hand == Hand::Left;
-    }
+    [[nodiscard]] inline constexpr bool isLeft(const Hand hand) noexcept { return hand == Hand::Left; }
 
     [[nodiscard]] inline constexpr const char* handName(const Hand hand) noexcept
     {
@@ -186,19 +183,15 @@ namespace rock::equipped_weapon_shoulder
         return action == Action::SubmitStash ? "submit-stash" : "none";
     }
 
-    [[nodiscard]] inline constexpr StashInputMode resolveStashInputMode(
-        const bool immersiveWeaponsEnabled,
+    [[nodiscard]] inline constexpr StashInputMode resolveStashInputMode(const bool immersiveWeaponsEnabled,
         const bool toggleGrabEnabled) noexcept
     {
-        return immersiveWeaponsEnabled && !toggleGrabEnabled ?
-            StashInputMode::HoldRelease : StashInputMode::Tap;
+        return immersiveWeaponsEnabled && !toggleGrabEnabled ? StashInputMode::HoldRelease : StashInputMode::Tap;
     }
 
-    [[nodiscard]] inline constexpr const char* stashInputModeName(
-        const StashInputMode mode) noexcept
+    [[nodiscard]] inline constexpr const char* stashInputModeName(const StashInputMode mode) noexcept
     {
-        return mode == StashInputMode::HoldRelease ?
-            "hold-release" : "tap";
+        return mode == StashInputMode::HoldRelease ? "hold-release" : "tap";
     }
 
     [[nodiscard]] inline constexpr const char* reasonName(const Reason reason) noexcept
@@ -226,22 +219,16 @@ namespace rock::equipped_weapon_shoulder
         return "none";
     }
 
-    inline constexpr void reset(RuntimeState& state) noexcept
-    {
-        state = {};
-    }
+    inline constexpr void reset(RuntimeState& state) noexcept { state = {}; }
 
     namespace detail
     {
-        [[nodiscard]] inline constexpr const HandInput& inputFor(
-            const FrameInput& input,
-            const Hand hand) noexcept
+        [[nodiscard]] inline constexpr const HandInput& inputFor(const FrameInput& input, const Hand hand) noexcept
         {
             return hand == Hand::Left ? input.left : input.right;
         }
 
-        [[nodiscard]] inline constexpr GestureFrame prepareGesture(
-            GestureRuntime& runtime,
+        [[nodiscard]] inline constexpr GestureFrame prepareGesture(GestureRuntime& runtime,
             const ButtonState& button) noexcept
         {
             GestureFrame frame{};
@@ -253,8 +240,7 @@ namespace rock::equipped_weapon_shoulder
                 return frame;
             }
 
-            const bool beginsNow =
-                !runtime.active && (button.pressed || button.held);
+            const bool beginsNow = !runtime.active && (button.pressed || button.held);
             if (beginsNow) {
                 ++runtime.serial;
                 if (runtime.serial == 0) {
@@ -269,43 +255,32 @@ namespace rock::equipped_weapon_shoulder
 
             frame.valid = true;
             frame.serial = runtime.serial;
-            frame.ended = button.released ||
-                          (!button.held && !button.pressed);
+            frame.ended = button.released || (!button.held && !button.pressed);
             return frame;
         }
 
-        inline constexpr void finishGesture(
-            GestureRuntime& runtime,
-            const GestureFrame& frame) noexcept
+        inline constexpr void finishGesture(GestureRuntime& runtime, const GestureFrame& frame) noexcept
         {
             if (frame.valid && frame.ended) {
                 runtime.active = false;
             }
         }
 
-        [[nodiscard]] inline constexpr bool gestureStillActive(
-            const RuntimeState& state,
-            const Hand hand,
+        [[nodiscard]] inline constexpr bool gestureStillActive(const RuntimeState& state, const Hand hand,
             const std::uint64_t serial) noexcept
         {
             if (hand == Hand::None || serial == 0) {
                 return false;
             }
-            const auto& gesture = hand == Hand::Left ?
-                state.leftGesture : state.rightGesture;
+            const auto& gesture = hand == Hand::Left ? state.leftGesture : state.rightGesture;
             return gesture.active && gesture.serial == serial;
         }
 
-        inline constexpr void consumeActionGesture(
-            const RuntimeState& state,
-            const GestureFrame& right,
-            const GestureFrame& left,
-            Decision& decision) noexcept
+        inline constexpr void consumeActionGesture(const RuntimeState& state, const GestureFrame& right,
+            const GestureFrame& left, Decision& decision) noexcept
         {
             const auto& frame = state.actionHand == Hand::Left ? left : right;
-            if (state.actionHand == Hand::None ||
-                !frame.valid ||
-                frame.serial != state.actionGestureSerial) {
+            if (state.actionHand == Hand::None || !frame.valid || frame.serial != state.actionGestureSerial) {
                 return;
             }
             decision.consumeLeftInput = state.actionHand == Hand::Left;
@@ -317,11 +292,10 @@ namespace rock::equipped_weapon_shoulder
             decision.reason = Reason::GestureConsumed;
         }
 
-        [[nodiscard]] inline constexpr Phase stablePhaseFor(
-            const FrameInput& input) noexcept
+        [[nodiscard]] inline constexpr Phase stablePhaseFor(const FrameInput& input) noexcept
         {
-            return input.presentation == NativePresentation::StableDrawn ?
-                Phase::DrawnReady : Phase::NativeTransitionBlocked;
+            return input.presentation == NativePresentation::StableDrawn ? Phase::DrawnReady
+                                                                         : Phase::NativeTransitionBlocked;
         }
 
         inline constexpr void clearAction(RuntimeState& state) noexcept
@@ -339,13 +313,8 @@ namespace rock::equipped_weapon_shoulder
             state.armedConfidence = 0.0f;
         }
 
-        inline constexpr void beginAction(
-            RuntimeState& state,
-            Decision& decision,
-            const Reason reason,
-            const Hand hand,
-            const GestureFrame& gesture,
-            const DetectorDecision& detector) noexcept
+        inline constexpr void beginAction(RuntimeState& state, Decision& decision, const Reason reason, const Hand hand,
+            const GestureFrame& gesture, const DetectorDecision& detector) noexcept
         {
             state.activeAction = Action::SubmitStash;
             state.actionHand = hand;
@@ -366,9 +335,7 @@ namespace rock::equipped_weapon_shoulder
         }
     }
 
-    [[nodiscard]] inline constexpr Decision advance(
-        RuntimeState& state,
-        const FrameInput& input) noexcept
+    [[nodiscard]] inline constexpr Decision advance(RuntimeState& state, const FrameInput& input) noexcept
     {
         Decision decision{};
         if (!input.enabled) {
@@ -397,23 +364,16 @@ namespace rock::equipped_weapon_shoulder
         if (state.weaponOwnershipKey != input.weaponOwnershipKey) {
             reset(state);
             state.weaponOwnershipKey = input.weaponOwnershipKey;
-            state.rightGesture.blockedUntilRelease =
-                input.right.button.held && !input.right.button.pressed;
-            state.leftGesture.blockedUntilRelease =
-                input.left.button.held && !input.left.button.pressed;
+            state.rightGesture.blockedUntilRelease = input.right.button.held && !input.right.button.pressed;
+            state.leftGesture.blockedUntilRelease = input.left.button.held && !input.left.button.pressed;
             state.phase = detail::stablePhaseFor(input);
         }
 
-        const GestureFrame rightGesture = detail::prepareGesture(
-            state.rightGesture,
-            input.right.button);
-        const GestureFrame leftGesture = detail::prepareGesture(
-            state.leftGesture,
-            input.left.button);
+        const GestureFrame rightGesture = detail::prepareGesture(state.rightGesture, input.right.button);
+        const GestureFrame leftGesture = detail::prepareGesture(state.leftGesture, input.left.button);
 
         bool pendingOrConsumed = false;
-        if ((state.phase == Phase::DrawnReady ||
-                state.phase == Phase::DrawnShoulderArmed) &&
+        if ((state.phase == Phase::DrawnReady || state.phase == Phase::DrawnShoulderArmed) &&
             input.presentation != NativePresentation::StableDrawn) {
             detail::clearArm(state);
             state.phase = Phase::NativeTransitionBlocked;
@@ -435,11 +395,7 @@ namespace rock::equipped_weapon_shoulder
         }
 
         if (pendingOrConsumed) {
-            detail::consumeActionGesture(
-                state,
-                rightGesture,
-                leftGesture,
-                decision);
+            detail::consumeActionGesture(state, rightGesture, leftGesture, decision);
             if (decision.reason == Reason::None) {
                 decision.reason = Reason::NativeTransition;
             }
@@ -447,10 +403,7 @@ namespace rock::equipped_weapon_shoulder
             detail::finishGesture(state.leftGesture, leftGesture);
 
             if (state.phase == Phase::WaitForGestureEnd &&
-                !detail::gestureStillActive(
-                    state,
-                    state.actionHand,
-                    state.actionGestureSerial)) {
+                !detail::gestureStillActive(state, state.actionHand, state.actionGestureSerial)) {
                 state.phase = detail::stablePhaseFor(input);
                 detail::clearAction(state);
             }
@@ -458,47 +411,32 @@ namespace rock::equipped_weapon_shoulder
         }
 
         if (state.phase == Phase::DrawnReady) {
-            const Hand carryHand = input.left.carriesWeapon ?
-                Hand::Left : input.right.carriesWeapon ?
-                Hand::Right : Hand::None;
+            const Hand carryHand = input.left.carriesWeapon ? Hand::Left
+                : input.right.carriesWeapon                 ? Hand::Right
+                                                            : Hand::None;
             if (carryHand != Hand::None) {
                 const auto& handInput = detail::inputFor(input, carryHand);
-                const auto& gesture = carryHand == Hand::Left ?
-                    leftGesture : rightGesture;
-                if (!handInput.disabled && handInput.eligible &&
-                    gesture.valid && !gesture.blocked) {
-                    if (handInput.stashInputMode == StashInputMode::Tap &&
-                        handInput.button.pressed &&
+                const auto& gesture = carryHand == Hand::Left ? leftGesture : rightGesture;
+                if (!handInput.disabled && handInput.eligible && gesture.valid && !gesture.blocked) {
+                    if (handInput.stashInputMode == StashInputMode::Tap && handInput.button.pressed &&
                         handInput.detector.candidate) {
-                        detail::beginAction(
-                            state,
-                            decision,
-                            Reason::StashTap,
-                            carryHand,
-                            gesture,
-                            handInput.detector);
-                    } else if (handInput.stashInputMode ==
-                                   StashInputMode::HoldRelease &&
-                               handInput.button.held &&
-                               handInput.detector.confirmed) {
+                        detail::beginAction(state, decision, Reason::StashTap, carryHand, gesture, handInput.detector);
+                    } else if (handInput.stashInputMode == StashInputMode::HoldRelease && handInput.button.held &&
+                        handInput.detector.confirmed) {
                         state.phase = Phase::DrawnShoulderArmed;
                         state.armedHand = carryHand;
                         state.armedGestureSerial = gesture.serial;
                         state.armedZone = handInput.detector.zone;
-                        state.armedConfidence =
-                            handInput.detector.confidence;
+                        state.armedConfidence = handInput.detector.confidence;
                     }
                 }
             }
         } else if (state.phase == Phase::DrawnShoulderArmed) {
             const Hand armedHand = state.armedHand;
             const auto& handInput = detail::inputFor(input, armedHand);
-            const auto& gesture = armedHand == Hand::Left ?
-                leftGesture : rightGesture;
-            const bool sameGesture = gesture.valid &&
-                gesture.serial == state.armedGestureSerial;
-            if (!sameGesture || handInput.disabled ||
-                !handInput.eligible || !handInput.carriesWeapon ||
+            const auto& gesture = armedHand == Hand::Left ? leftGesture : rightGesture;
+            const bool sameGesture = gesture.valid && gesture.serial == state.armedGestureSerial;
+            if (!sameGesture || handInput.disabled || !handInput.eligible || !handInput.carriesWeapon ||
                 handInput.stashInputMode != StashInputMode::HoldRelease) {
                 state.phase = Phase::DrawnReady;
                 detail::clearArm(state);
@@ -509,13 +447,7 @@ namespace rock::equipped_weapon_shoulder
                     .zone = state.armedZone,
                     .confidence = state.armedConfidence,
                 };
-                detail::beginAction(
-                    state,
-                    decision,
-                    Reason::HoldRelease,
-                    armedHand,
-                    gesture,
-                    armedDetector);
+                detail::beginAction(state, decision, Reason::HoldRelease, armedHand, gesture, armedDetector);
             } else if (gesture.ended) {
                 state.phase = Phase::DrawnReady;
                 detail::clearArm(state);

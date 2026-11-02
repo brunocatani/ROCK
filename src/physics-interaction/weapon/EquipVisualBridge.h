@@ -147,21 +147,33 @@ namespace rock
         void abandonSceneGraph();
 
         [[nodiscard]] bool isActive() const noexcept { return _active; }
+
         [[nodiscard]] bool presentationLeaseWouldExpire(float deltaSeconds) const noexcept;
+
         [[nodiscard]] bool hasVisualModel() const noexcept { return _model != nullptr; }
+
         [[nodiscard]] bool isModelPresented() const noexcept { return _modelPresented; }
+
         // Transition seam diagnostic only.
         [[nodiscard]] const RE::NiAVObject* traceModel() const noexcept { return _model.get(); }
+
         [[nodiscard]] bool isLeftHandForTrace() const noexcept { return _isLeftHand; }
+
         [[nodiscard]] bool ownsNativeInstanceCull(const RE::NiAVObject* node) const noexcept;
+
         [[nodiscard]] bool isHandPoseHandoffActive() const noexcept { return _handPoseHandoffActive; }
+
         [[nodiscard]] bool handPoseHandoffIsLeft() const noexcept { return _isLeftHand; }
+
         [[nodiscard]] bool hasPairedHandPoseHandoff() const noexcept { return _capturedGrips.valid(); }
+
         [[nodiscard]] bool hasSupportOnlyHandPoseHandoff() const noexcept { return _supportOnly; }
+
         [[nodiscard]] bool hasCapturedHandPoseHandoff() const noexcept
         {
             return _handPoseHandoffActive && _capturedGrips.primary.valid();
         }
+
         [[nodiscard]] std::uint32_t weaponBaseFormID() const noexcept { return _weaponFormID; }
 
         // Called only after the equipped exact-pose publisher has positively
@@ -191,16 +203,13 @@ namespace rock
         bool publishHandPoseHandoff();
         bool publishCapturedHandWorld(RE::NiAVObject* model, bool equippedModel);
         bool publishCapturedHandsAt(const RE::NiTransform& world, const RE::NiPoint3& displacement);
-        void synchronizeNativeInstanceCull(
-            const equipped_weapon_visual_state::Snapshot* nativeVisual,
+        void synchronizeNativeInstanceCull(const equipped_weapon_visual_state::Snapshot* nativeVisual,
             bool bridgePresented);
         void restoreNativeInstanceCull();
         void clearModel(const char* reason, bool detachFromParent);
         void clearHandPoseHandoff(const char* reason, bool logCompletion, bool discardPayload);
         void clear(const char* reason, bool detachFromParent, bool restoreNativeCull = true);
-        [[nodiscard]] bool advancePresentationLeaseImpl(
-            float deltaSeconds,
-            bool presentedForLogging);
+        [[nodiscard]] bool advancePresentationLeaseImpl(float deltaSeconds, bool presentedForLogging);
 
         // Primary may be valid on its own; Pair::valid() still means two hands.
         weapon_grip_transfer::Pair _capturedGrips{};

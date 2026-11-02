@@ -21,10 +21,7 @@ namespace rock::weapon_transition_animation_acceleration
         std::uintptr_t instanceData{ 0 };
         std::uint32_t equipIndex{ 0 };
 
-        [[nodiscard]] bool valid() const noexcept
-        {
-            return formID != 0;
-        }
+        [[nodiscard]] bool valid() const noexcept { return formID != 0; }
 
         [[nodiscard]] bool operator==(const Identity&) const noexcept = default;
     };
@@ -68,28 +65,23 @@ namespace rock::weapon_transition_animation_acceleration
         std::uint32_t registeredUpdates{ 0 };
         std::uint32_t activeClips{ 0 };
         std::uint32_t updatedActiveClips{ 0 };
-        std::array<std::uintptr_t, kMaximumActivationEvidenceClips>
-            activeClipIdentities{};
-        std::array<std::uintptr_t, kMaximumActivationEvidenceClips>
-            updatedActiveClipIdentities{};
+        std::array<std::uintptr_t, kMaximumActivationEvidenceClips> activeClipIdentities{};
+        std::array<std::uintptr_t, kMaximumActivationEvidenceClips> updatedActiveClipIdentities{};
         bool exactLease{ false };
 
         [[nodiscard]] bool hasActiveUpdatedClips() const noexcept
         {
-            return exactLease && matchedActivations > 0 &&
-                   registeredUpdates > 0 && activeClips > 0 &&
-                   updatedActiveClips > 0;
+            return exactLease && matchedActivations > 0 && registeredUpdates > 0 && activeClips > 0 &&
+                updatedActiveClips > 0;
         }
 
-        [[nodiscard]] bool hasUpdatedClipFrom(
-            const ActivationEvidence& submission) const noexcept
+        [[nodiscard]] bool hasUpdatedClipFrom(const ActivationEvidence& submission) const noexcept
         {
             for (const auto clip : updatedActiveClipIdentities) {
                 if (clip == 0) {
                     continue;
                 }
-                for (const auto submittedClip :
-                     submission.activeClipIdentities) {
+                for (const auto submittedClip : submission.activeClipIdentities) {
                     if (clip == submittedClip) {
                         return true;
                     }
@@ -107,9 +99,7 @@ namespace rock::weapon_transition_animation_acceleration
     // different engine thread; they consume only bounded atomic snapshots of
     // the lease, player graph characters, and clips activated by that lease.
     [[nodiscard]] RequestResult request(const RequestInput& input) noexcept;
-    [[nodiscard]] ActivationEvidence observeExactLeaseActivation(
-        RE::PlayerCharacter* player,
-        const Identity& identity,
+    [[nodiscard]] ActivationEvidence observeExactLeaseActivation(RE::PlayerCharacter* player, const Identity& identity,
         weapon_transition_animation_acceleration_policy::Direction direction) noexcept;
     void service(const ServiceInput& input) noexcept;
     [[nodiscard]] bool hasGeneratedFirearmPose(RE::PlayerCharacter* player, const Identity& identity) noexcept;

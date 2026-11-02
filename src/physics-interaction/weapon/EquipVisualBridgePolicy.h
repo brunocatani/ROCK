@@ -1,7 +1,7 @@
 #pragma once
 
-#include "physics-interaction/weapon/WeaponSupport.h"
 #include "physics-interaction/weapon/GunstockMode.h"
+#include "physics-interaction/weapon/WeaponSupport.h"
 
 namespace rock::equip_visual_bridge_policy
 {
@@ -17,14 +17,13 @@ namespace rock::equip_visual_bridge_policy
     }
 
     template <class Transform, class Point>
-    [[nodiscard]] inline WeaponTwoHandedSolverResult<Transform> solvePairedBridge(
-        const Transform& primaryWorld, const Point& primaryLocal,
-        const Point& supportLocal, const Point& supportTargetWorld)
+    [[nodiscard]] inline WeaponTwoHandedSolverResult<Transform> solvePairedBridge(const Transform& primaryWorld,
+        const Point& primaryLocal, const Point& supportLocal, const Point& supportTargetWorld)
     {
         const auto primaryTarget = transform_math::localPointToWorld(primaryWorld, primaryLocal);
         const auto supportBase = transform_math::localPointToWorld(primaryWorld, supportLocal);
-        const auto lockedSupport = makeLockedSupportGripTarget(primaryTarget, supportTargetWorld,
-            supportBase, weaponSolverLength(weaponSolverSub(supportBase, primaryTarget)), 0.001f);
+        const auto lockedSupport = makeLockedSupportGripTarget(primaryTarget, supportTargetWorld, supportBase,
+            weaponSolverLength(weaponSolverSub(supportBase, primaryTarget)), 0.001f);
         return solveTwoHandedWeaponTransformFrikPivot(WeaponTwoHandedSolverInput<Transform, Point>{
             .weaponWorldTransform = primaryWorld,
             .primaryGripLocal = primaryLocal,
@@ -34,15 +33,15 @@ namespace rock::equip_visual_bridge_policy
         });
     }
 
-    inline WeaponTwoHandedSolverResult<RE::NiTransform> solvePairedGunstockBridge(
-        const RE::NiTransform& capturedWorld, const RE::NiPoint3& primaryLocal,
-        const RE::NiTransform& primaryController, const RE::NiTransform& supportController)
+    inline WeaponTwoHandedSolverResult<RE::NiTransform> solvePairedGunstockBridge(const RE::NiTransform& capturedWorld,
+        const RE::NiPoint3& primaryLocal, const RE::NiTransform& primaryController,
+        const RE::NiTransform& supportController)
     {
-        WeaponTwoHandedSolverInput<RE::NiTransform,RE::NiPoint3> aim{};
+        WeaponTwoHandedSolverInput<RE::NiTransform, RE::NiPoint3> aim{};
         aim.weaponWorldTransform = capturedWorld;
         aim.primaryGripLocal = primaryLocal;
-        aim.primaryTargetWorld = transform_math::localPointToWorld(capturedWorld,primaryLocal);
-        return gunstock_mode::solveVirtualAim(aim,primaryController,supportController,{},1.0f);
+        aim.primaryTargetWorld = transform_math::localPointToWorld(capturedWorld, primaryLocal);
+        return gunstock_mode::solveVirtualAim(aim, primaryController, supportController, {}, 1.0f);
     }
 
     // The detached loose model is visual-only. It may cover the native
@@ -50,22 +49,18 @@ namespace rock::equip_visual_bridge_policy
     // substitute for the equipped weapon's render and collision authority.
     constexpr float kMaximumPresentationLeaseSeconds = 1.0f;
 
-    [[nodiscard]] inline constexpr float effectivePresentationLeaseSeconds(
-        const float requestedSeconds) noexcept
+    [[nodiscard]] inline constexpr float effectivePresentationLeaseSeconds(const float requestedSeconds) noexcept
     {
         if (!(requestedSeconds > 0.0f)) {
             return kMaximumPresentationLeaseSeconds;
         }
-        return requestedSeconds < kMaximumPresentationLeaseSeconds ?
-            requestedSeconds :
-            kMaximumPresentationLeaseSeconds;
+        return requestedSeconds < kMaximumPresentationLeaseSeconds ? requestedSeconds
+                                                                   : kMaximumPresentationLeaseSeconds;
     }
 
-    [[nodiscard]] inline constexpr bool presentationLeaseExpired(
-        const float elapsedSeconds,
+    [[nodiscard]] inline constexpr bool presentationLeaseExpired(const float elapsedSeconds,
         const float requestedSeconds) noexcept
     {
-        return elapsedSeconds >=
-               effectivePresentationLeaseSeconds(requestedSeconds);
+        return elapsedSeconds >= effectivePresentationLeaseSeconds(requestedSeconds);
     }
 }

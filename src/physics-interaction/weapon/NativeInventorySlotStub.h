@@ -12,10 +12,10 @@ namespace rock::native_inventory_hand_slots
     class OrdinalStub final : public Xbyak::CodeGenerator
     {
     public:
-        explicit OrdinalStub(std::uintptr_t resolver):CodeGenerator(64)
+        explicit OrdinalStub(std::uintptr_t resolver) : CodeGenerator(64)
         {
-            mov(r8,rbx);
-            mov(rax,resolver);
+            mov(r8, rbx);
+            mov(rax, resolver);
             jmp(rax);
             ready();
         }

@@ -47,8 +47,7 @@ namespace rock::held_weapon_equip_state_policy
         return classifyForEquip(nativeState) == EquipReadiness::Stable;
     }
 
-    [[nodiscard]] inline constexpr bool isValidNativeWeaponState(
-        const std::uint32_t nativeState) noexcept
+    [[nodiscard]] inline constexpr bool isValidNativeWeaponState(const std::uint32_t nativeState) noexcept
     {
         return nativeState <= static_cast<std::uint32_t>(NativeWeaponState::Sheathing);
     }
@@ -61,8 +60,7 @@ namespace rock::held_weapon_equip_state_policy
      * the verified equip-draw preparation. Direct shoulder retrieval may still
      * ask the engine to reverse its own intentional holster.
      */
-    [[nodiscard]] inline constexpr bool shouldSubmitDrawFollowup(
-        const std::uint32_t nativeState) noexcept
+    [[nodiscard]] inline constexpr bool shouldSubmitDrawFollowup(const std::uint32_t nativeState) noexcept
     {
         switch (static_cast<NativeWeaponState>(nativeState)) {
         case NativeWeaponState::Sheathed:
@@ -76,7 +74,6 @@ namespace rock::held_weapon_equip_state_policy
             return false;
         }
     }
-
 
     [[nodiscard]] inline constexpr const char* nativeWeaponStateName(const std::uint32_t nativeState) noexcept
     {

@@ -1,16 +1,16 @@
 #include "physics-interaction/weapon/WeaponEquipTransfer.h"
-#include "physics-interaction/weapon/NativeHandEquipment.h"
-#include "physics-interaction/weapon/NativeEquippedModelLifetime.h"
 #include "physics-interaction/native/TriggerEquipReadinessTrace.h"
 #include "physics-interaction/weapon/EquipPickupScope.h"
+#include "physics-interaction/weapon/NativeEquippedModelLifetime.h"
+#include "physics-interaction/weapon/NativeHandEquipment.h"
 #include "physics-interaction/weapon/NativeInventoryHandSlots.h"
 #include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
 
-#include "physics-interaction/stash/ShoulderStashTransfer.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/NativeOneHandRestore.h"
 #include "physics-interaction/native/NativeWeaponEquipAudio.h"
+#include "physics-interaction/stash/ShoulderStashTransfer.h"
 
 #include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/BGSInventoryItem.h"
@@ -20,8 +20,8 @@
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
 
-#include "rock_support/Fo4VrRuntime.h"
 #include <REL/Relocation.h>
+#include "rock_support/Fo4VrRuntime.h"
 
 #include <array>
 #include <optional>
@@ -31,23 +31,38 @@ namespace rock::weapon_equip_transfer
 {
     namespace
     {
-        using UnequipObject = bool (*)(RE::ActorEquipManager*, RE::Actor*, const RE::BGSObjectInstance*,
-            std::uint32_t, const RE::BGSEquipSlot*, std::uint32_t, bool, bool, bool, bool, const RE::BGSEquipSlot*);
+        using UnequipObject = bool (*)(RE::ActorEquipManager*, RE::Actor*, const RE::BGSObjectInstance*, std::uint32_t,
+            const RE::BGSEquipSlot*, std::uint32_t, bool, bool, bool, bool, const RE::BGSEquipSlot*);
 
         [[nodiscard]] UnequipObject validatedUnequipObject() noexcept
         {
-            if (!REL::Module::IsVR() ||
-                REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) return nullptr;
+            if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72)
+                return nullptr;
             // VR raw witnesses: 140E70280 builds the synchronous request to
             // 140E745F0; caller 1409CB31F supplies the same stack/slot ABI.
             constexpr std::array<std::uint8_t, 15> expected{
-                0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, 0x18, 0x55,
-                0x57, 0x41, 0x56, 0x48, 0x83, 0xEC, 0x70,
+                0x48,
+                0x8B,
+                0xC4,
+                0x48,
+                0x89,
+                0x58,
+                0x18,
+                0x55,
+                0x57,
+                0x41,
+                0x56,
+                0x48,
+                0x83,
+                0xEC,
+                0x70,
             };
             const auto target = REL::Offset(0xE70280).address();
             std::array<std::uint8_t, expected.size()> actual{};
-            if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(target), actual.data(), actual.size()) ||
-                (actual != expected && !native_inventory_hand_slots::ownsNativeUnequipEntry())) return nullptr;
+            if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(target), actual.data(),
+                    actual.size()) ||
+                (actual != expected && !native_inventory_hand_slots::ownsNativeUnequipEntry()))
+                return nullptr;
             return reinterpret_cast<UnequipObject>(target);
         }
 
@@ -70,8 +85,8 @@ namespace rock::weapon_equip_transfer
         [[nodiscard]] std::uint32_t wornCopies(const RE::BGSInventoryItem::Stack& stack) noexcept
         {
             using Flag = RE::BGSInventoryItem::Stack::Flag;
-            return static_cast<std::uint32_t>(stack.flags.any(Flag::kSlotIndex1)) +
-                stack.flags.any(Flag::kSlotIndex2) + stack.flags.any(Flag::kSlotIndex3);
+            return static_cast<std::uint32_t>(stack.flags.any(Flag::kSlotIndex1)) + stack.flags.any(Flag::kSlotIndex2) +
+                stack.flags.any(Flag::kSlotIndex3);
         }
 
         [[nodiscard]] bool hasUnwornCopy(const RE::BGSInventoryItem::Stack& stack) noexcept
@@ -105,21 +120,26 @@ namespace rock::weapon_equip_transfer
         using SetUniqueID = void (*)(RE::ExtraDataList*, std::uint16_t, std::uint32_t);
         using ItemFilter = bool (*)(RE::TESBoundObject*, RE::TESBoundObject*);
         using WriteInventoryStacks = void (*)(RE::TESObjectREFR*, RE::TESBoundObject*,
-            RE::BGSInventoryItem::StackDataCompareFunctor*, RE::BGSInventoryItem::StackDataWriteFunctor*, ItemFilter, bool);
+            RE::BGSInventoryItem::StackDataCompareFunctor*, RE::BGSInventoryItem::StackDataWriteFunctor*, ItemFilter,
+            bool);
 
         template <std::size_t N>
-        [[nodiscard]] std::uintptr_t verifiedEntry(const std::uintptr_t rva, const std::array<std::uint8_t, N>& expected) noexcept
+        [[nodiscard]] std::uintptr_t verifiedEntry(const std::uintptr_t rva,
+            const std::array<std::uint8_t, N>& expected) noexcept
         {
             const auto address = REL::Offset(rva).address();
             std::array<std::uint8_t, N> live{};
             return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), live.data(), N) &&
-                live == expected ? address : 0;
+                    live == expected
+                ? address
+                : 0;
         }
 
         class ExactStack final : public RE::BGSInventoryItem::StackDataCompareFunctor
         {
         public:
             explicit ExactStack(const std::uintptr_t stack) noexcept : _stack(stack) {}
+
             bool CompareData(const RE::BGSInventoryItem::Stack& stack) override
             {
                 return reinterpret_cast<std::uintptr_t>(&stack) == _stack;
@@ -143,7 +163,8 @@ namespace rock::weapon_equip_transfer
             // a copy of every flag, worn bits included.
             void WriteDataImpl(RE::TESBoundObject&, RE::BGSInventoryItem::Stack& stack) override
             {
-                if (stack.count != 1 || !stack.extra) return;
+                if (stack.count != 1 || !stack.extra)
+                    return;
                 _set(stack.extra.get(), _id, _base);
                 // Unworn until the engine's equip marks it.
                 using Flag = RE::BGSInventoryItem::Stack::Flag;
@@ -162,8 +183,8 @@ namespace rock::weapon_equip_transfer
         // Splits one unworn copy, tagged with its own unique ID, off a worn
         // stack and returns it re-resolved: the merge pass reorders the chain.
         // Frame thread; the player's inventory lock must not be held.
-        [[nodiscard]] InventoryWeaponStack separateWornCopy(
-            RE::PlayerCharacter* player, RE::TESObjectWEAP* weapon, const InventoryWeaponStack& worn) noexcept
+        [[nodiscard]] InventoryWeaponStack separateWornCopy(RE::PlayerCharacter* player, RE::TESObjectWEAP* weapon,
+            const InventoryWeaponStack& worn) noexcept
         {
             struct Entries
             {
@@ -171,37 +192,43 @@ namespace rock::weapon_equip_transfer
                 NextUniqueID next;
                 SetUniqueID set;
             };
+
             static const Entries entries{
-                reinterpret_cast<WriteInventoryStacks>(verifiedEntry(0x3E3700, std::to_array<std::uint8_t>({
-                    0x48, 0x8B, 0x89, 0xF8, 0x00, 0x00, 0x00, 0x48, 0x85, 0xC9, 0x74, 0x0E,
-                    0x0F, 0xB6, 0x44, 0x24, 0x30, 0x88, 0x44, 0x24, 0x30 }))),
-                reinterpret_cast<NextUniqueID>(verifiedEntry(0x3E3A10, std::to_array<std::uint8_t>({
-                    0x4C, 0x8B, 0xDC, 0x53, 0x56, 0x57, 0x48, 0x83, 0xEC, 0x60, 0x33, 0xF6,
-                    0x4D, 0x89, 0x73, 0x18, 0x4C, 0x8B, 0xB1, 0xF8, 0x00, 0x00, 0x00 }))),
-                reinterpret_cast<SetUniqueID>(verifiedEntry(0x098880, std::to_array<std::uint8_t>({
-                    0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x6C, 0x24, 0x18, 0x56, 0x41,
-                    0x56, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x20 }))),
+                reinterpret_cast<WriteInventoryStacks>(verifiedEntry(0x3E3700,
+                    std::to_array<std::uint8_t>({ 0x48, 0x8B, 0x89, 0xF8, 0x00, 0x00, 0x00, 0x48, 0x85, 0xC9, 0x74,
+                        0x0E, 0x0F, 0xB6, 0x44, 0x24, 0x30, 0x88, 0x44, 0x24, 0x30 }))),
+                reinterpret_cast<NextUniqueID>(verifiedEntry(0x3E3A10,
+                    std::to_array<std::uint8_t>({ 0x4C, 0x8B, 0xDC, 0x53, 0x56, 0x57, 0x48, 0x83, 0xEC, 0x60, 0x33,
+                        0xF6, 0x4D, 0x89, 0x73, 0x18, 0x4C, 0x8B, 0xB1, 0xF8, 0x00, 0x00, 0x00 }))),
+                reinterpret_cast<SetUniqueID>(verifiedEntry(0x098880,
+                    std::to_array<std::uint8_t>({ 0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x6C, 0x24, 0x18, 0x56,
+                        0x41, 0x56, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x20 }))),
             };
             if (!entries.write || !entries.next || !entries.set) {
                 ROCK_LOG_WARN(Weapon, "Identical copy separation unavailable: stack write entry validation failed");
                 return {};
             }
             const std::uint16_t id = entries.next(player);
-            if (!id) return {};
+            if (!id)
+                return {};
             const auto base = player->GetFormID();
             ExactStack compare(worn.stackAddress);
             TagSplitCopy write(entries.set, id, base);
-            entries.write(player, weapon, &compare, &write,
+            entries.write(
+                player, weapon, &compare, &write,
                 [](RE::TESBoundObject* item, RE::TESBoundObject* object) { return item == object; }, false);
-            if (!write.written) return {};
+            if (!write.written)
+                return {};
 
             const RE::BSAutoReadLock inventoryLock{ player->inventoryList->rwLock };
             for (auto& inventoryItem : player->inventoryList->data) {
-                if (inventoryItem.object != weapon) continue;
+                if (inventoryItem.object != weapon)
+                    continue;
                 std::uint32_t stackID = 0;
                 for (auto* stack = inventoryItem.stackData.get(); stack; stack = stack->nextStack.get(), ++stackID) {
                     const auto* tag = stack->extra ? stack->extra->GetByType<RE::ExtraUniqueID>() : nullptr;
-                    if (!tag || tag->uniqueID != id || tag->baseID != base) continue;
+                    if (!tag || tag->uniqueID != id || tag->baseID != base)
+                        continue;
                     RE::BSTSmartPointer<RE::TBO_InstanceData> instanceData{};
                     if (const auto* instanceExtra = stack->extra->GetByType<RE::ExtraInstanceData>()) {
                         instanceData = instanceExtra->data;
@@ -232,9 +259,7 @@ namespace rock::weapon_equip_transfer
         struct InventoryWeaponStackSnapshot
         {
             weapon_inventory_stack_selection_policy::Snapshot witnesses{};
-            std::array<InventoryWeaponStack,
-                weapon_inventory_stack_selection_policy::kMaximumObservedStacks>
-                stacks{};
+            std::array<InventoryWeaponStack, weapon_inventory_stack_selection_policy::kMaximumObservedStacks> stacks{};
         };
 
         [[nodiscard]] RE::TESObjectWEAP* asWeaponForm(RE::TESForm* form) noexcept
@@ -258,7 +283,8 @@ namespace rock::weapon_equip_transfer
             return snapshot;
         }
 
-        [[nodiscard]] RE::BSTSmartPointer<RE::TBO_InstanceData> resolveReferenceInstanceData(RE::TESObjectREFR* refr) noexcept
+        [[nodiscard]] RE::BSTSmartPointer<RE::TBO_InstanceData> resolveReferenceInstanceData(
+            RE::TESObjectREFR* refr) noexcept
         {
             if (!refr || !refr->extraList) {
                 return {};
@@ -268,10 +294,8 @@ namespace rock::weapon_equip_transfer
             return instanceExtra ? instanceExtra->data : RE::BSTSmartPointer<RE::TBO_InstanceData>{};
         }
 
-        [[nodiscard]] InventoryWeaponStackSnapshot captureWeaponStacks(
-            RE::PlayerCharacter* player,
-            RE::TESObjectWEAP* weapon,
-            const bool retainRuntimeStacks) noexcept
+        [[nodiscard]] InventoryWeaponStackSnapshot captureWeaponStacks(RE::PlayerCharacter* player,
+            RE::TESObjectWEAP* weapon, const bool retainRuntimeStacks) noexcept
         {
             InventoryWeaponStackSnapshot snapshot{};
             if (!player || !weapon || !player->inventoryList) {
@@ -302,12 +326,11 @@ namespace rock::weapon_equip_transfer
                         equipSlot = weapon->GetEquipSlot(nullptr);
                     }
                     const auto snapshotIndex = snapshot.witnesses.count++;
-                    snapshot.witnesses.stacks[snapshotIndex] =
-                        weapon_inventory_stack_selection_policy::StackWitness{
-                            .stackAddress = reinterpret_cast<std::uintptr_t>(stack),
-                            .instanceDataAddress = reinterpret_cast<std::uintptr_t>(instanceData),
-                            .count = stack->GetCount(),
-                        };
+                    snapshot.witnesses.stacks[snapshotIndex] = weapon_inventory_stack_selection_policy::StackWitness{
+                        .stackAddress = reinterpret_cast<std::uintptr_t>(stack),
+                        .instanceDataAddress = reinterpret_cast<std::uintptr_t>(instanceData),
+                        .count = stack->GetCount(),
+                    };
                     if (retainRuntimeStacks) {
                         snapshot.stacks[snapshotIndex] = InventoryWeaponStack{
                             .found = true,
@@ -324,10 +347,8 @@ namespace rock::weapon_equip_transfer
             return snapshot;
         }
 
-        [[nodiscard]] InventoryWeaponStack findEquippedWeaponStack(
-            RE::PlayerCharacter* player,
-            RE::TESObjectWEAP* weapon,
-            const RE::TBO_InstanceData* expectedInstanceData,
+        [[nodiscard]] InventoryWeaponStack findEquippedWeaponStack(RE::PlayerCharacter* player,
+            RE::TESObjectWEAP* weapon, const RE::TBO_InstanceData* expectedInstanceData,
             const std::uint32_t index = 0) noexcept
         {
             InventoryWeaponStack fallback{};
@@ -336,14 +357,17 @@ namespace rock::weapon_equip_transfer
                 return fallback;
             }
 
-            const auto equipped=readEquippedWeaponSnapshot(index);
-            if (equipped.weapon!=weapon || equipped.instanceData!=expectedInstanceData || !equipped.equipSlot) return fallback;
-            const RE::BGSObjectInstance exact(weapon,equipped.instanceData);
+            const auto equipped = readEquippedWeaponSnapshot(index);
+            if (equipped.weapon != weapon || equipped.instanceData != expectedInstanceData || !equipped.equipSlot)
+                return fallback;
+            const RE::BGSObjectInstance exact(weapon, equipped.instanceData);
             const native_inventory_hand_slots::Scope inventoryOwner(player);
-            using RelativeSlot=int(*)(const RE::BGSObjectInstance*,const RE::BGSEquipSlot*);
-            const auto ordinal=reinterpret_cast<RelativeSlot>(REL::Offset(0x146340).address())(&exact,equipped.equipSlot);
-            if (ordinal<0 || ordinal>2) return fallback;
-            const auto worn=static_cast<RE::BGSInventoryItem::Stack::Flag>(1u<<ordinal);
+            using RelativeSlot = int (*)(const RE::BGSObjectInstance*, const RE::BGSEquipSlot*);
+            const auto ordinal =
+                reinterpret_cast<RelativeSlot>(REL::Offset(0x146340).address())(&exact, equipped.equipSlot);
+            if (ordinal < 0 || ordinal > 2)
+                return fallback;
+            const auto worn = static_cast<RE::BGSInventoryItem::Stack::Flag>(1u << ordinal);
 
             const RE::BSAutoReadLock inventoryLock{ player->inventoryList->rwLock };
             for (auto& inventoryItem : player->inventoryList->data) {
@@ -396,16 +420,19 @@ namespace rock::weapon_equip_transfer
 
         // The stack now holding an unequipped copy: same instance data and the
         // same separation tag. Unequip can merge it into an identical stack.
-        [[nodiscard]] std::optional<std::uint32_t> findUnwornCopy(RE::PlayerCharacter* player, RE::TESObjectWEAP* weapon,
-            const RE::TBO_InstanceData* instanceData, const std::uint16_t tag) noexcept
+        [[nodiscard]] std::optional<std::uint32_t> findUnwornCopy(RE::PlayerCharacter* player,
+            RE::TESObjectWEAP* weapon, const RE::TBO_InstanceData* instanceData, const std::uint16_t tag) noexcept
         {
             const RE::BSAutoReadLock inventoryLock{ player->inventoryList->rwLock };
             for (auto& inventoryItem : player->inventoryList->data) {
-                if (inventoryItem.object != weapon) continue;
+                if (inventoryItem.object != weapon)
+                    continue;
                 std::uint32_t stackID = 0;
                 for (auto* stack = inventoryItem.stackData.get(); stack; stack = stack->nextStack.get(), ++stackID) {
-                    const auto* instanceExtra = stack->extra ? stack->extra->GetByType<RE::ExtraInstanceData>() : nullptr;
-                    if (hasUnwornCopy(*stack) && (instanceExtra ? instanceExtra->data.get() : nullptr) == instanceData &&
+                    const auto* instanceExtra =
+                        stack->extra ? stack->extra->GetByType<RE::ExtraInstanceData>() : nullptr;
+                    if (hasUnwornCopy(*stack) &&
+                        (instanceExtra ? instanceExtra->data.get() : nullptr) == instanceData &&
                         uniqueID(*stack) == tag) {
                         return stackID;
                     }
@@ -422,9 +449,12 @@ namespace rock::weapon_equip_transfer
             // equipping it as a whole would hand both hands one stack.
             InventoryWeaponStack separated{};
             if (selected.wornCopies) {
-                if (selected.count > selected.wornCopies) separated = separateWornCopy(player, result.weapon, selected);
-                ROCK_LOG_INFO(Weapon, "Identical copy separation weapon={:08X} wornStack={} count={} worn={} separated={} copyStack={}",
-                    result.weapon->formID, selected.stackID, selected.count, selected.wornCopies, separated.found, separated.stackID);
+                if (selected.count > selected.wornCopies)
+                    separated = separateWornCopy(player, result.weapon, selected);
+                ROCK_LOG_INFO(Weapon,
+                    "Identical copy separation weapon={:08X} wornStack={} count={} worn={} separated={} copyStack={}",
+                    result.weapon->formID, selected.stackID, selected.count, selected.wornCopies, separated.found,
+                    separated.stackID);
                 if (!separated.found) {
                     result.reason = EquipReason::InventoryStackNotFound;
                     return result;
@@ -432,8 +462,7 @@ namespace rock::weapon_equip_transfer
             }
             const auto& stack = separated.found ? separated : selected;
             result.stackID = stack.stackID;
-            result.requestedInstanceData = reinterpret_cast<std::uintptr_t>(
-                stack.instanceData.get());
+            result.requestedInstanceData = reinterpret_cast<std::uintptr_t>(stack.instanceData.get());
             RE::BGSObjectInstance objectInstance(result.weapon, stack.instanceData.get());
             const std::uint32_t index = secondary ? 1u : 0u;
             // A native restore would put a replaced weapon back over this one.
@@ -441,6 +470,7 @@ namespace rock::weapon_equip_transfer
                 result.reason = EquipReason::OneHandRestoreActive;
                 return result;
             }
+
             /*
              * The native wrapper owns one immediate manager call and suppresses
              * only the verified sheathe/draw action submissions made inside that
@@ -453,23 +483,26 @@ namespace rock::weapon_equip_transfer
                 held_weapon_instant_transition::ImmediateEquipInput input;
                 held_weapon_instant_transition::ImmediateEquipResult result{};
             } immediate{ .input = {
-                .manager = equipManager,
-                .player = player,
-                .object = &objectInstance,
-                .stackID = stack.stackID,
-                .equipSlot = stack.equipSlot,
-                .reason = reason,
-            } };
+                             .manager = equipManager,
+                             .player = player,
+                             .object = &objectInstance,
+                             .stackID = stack.stackID,
+                             .equipSlot = stack.equipSlot,
+                             .reason = reason,
+                         } };
+
             if (secondary) {
                 // The second weapon is constructed on the LeftHand leaf
                 // (index 1) in the acting hand; the primary stays equipped.
-                (void)native_hand_equipment::equipIntoSecondary(player, result.weapon, stack.instanceData.get(), secondaryLeft,
+                (void)native_hand_equipment::equipIntoSecondary(
+                    player, result.weapon, stack.instanceData.get(), secondaryLeft,
                     [](const RE::BGSEquipSlot* slot, void* context) {
                         auto& call = *static_cast<ImmediateEquip*>(context);
                         call.input.equipSlot = slot;
                         call.result = held_weapon_instant_transition::equipImmediatelyWithoutActions(call.input);
                         return call.result.managerAccepted;
-                    }, &immediate);
+                    },
+                    &immediate);
             } else {
                 immediate.result = held_weapon_instant_transition::equipImmediatelyWithoutActions(immediate.input);
             }
@@ -477,9 +510,9 @@ namespace rock::weapon_equip_transfer
             result.usedImmediateEquip = result.instantTransition.managerAccepted;
             if (!result.instantTransition.managerAccepted) {
                 result.reason = result.instantTransition.code ==
-                        held_weapon_instant_transition::ImmediateEquipCode::CapabilityUnavailable ?
-                    EquipReason::InstantTransitionUnavailable :
-                    EquipReason::EquipObjectFailed;
+                        held_weapon_instant_transition::ImmediateEquipCode::CapabilityUnavailable
+                    ? EquipReason::InstantTransitionUnavailable
+                    : EquipReason::EquipObjectFailed;
                 return result;
             }
             if (!result.instantTransition.success()) {
@@ -489,8 +522,7 @@ namespace rock::weapon_equip_transfer
 
             const auto equippedAfter = readEquippedWeaponSnapshot(index);
             result.observedEquippedFormID = equippedAfter.weapon ? equippedAfter.weapon->GetFormID() : 0;
-            result.observedEquippedInstanceData = reinterpret_cast<std::uintptr_t>(
-                equippedAfter.instanceData);
+            result.observedEquippedInstanceData = reinterpret_cast<std::uintptr_t>(equippedAfter.instanceData);
             result.observedEquipIndex = equippedAfter.equipIndex;
             result.committed = equippedAfter.weapon == result.weapon &&
                 (!stack.instanceData || equippedAfter.instanceData == stack.instanceData.get());
@@ -499,20 +531,18 @@ namespace rock::weapon_equip_transfer
                 return result;
             }
 
-            const auto equippedStack = findEquippedWeaponStack(
-                player,
-                result.weapon,
-                stack.instanceData.get(),
-                index);
+            const auto equippedStack = findEquippedWeaponStack(player, result.weapon, stack.instanceData.get(), index);
             result.matchedEquippedStack = equippedStack.found &&
                 weapon_inventory_stack_selection_policy::matchesEquippedStack(
                     { stack.stackAddress, reinterpret_cast<std::uintptr_t>(stack.instanceData.get()), stack.count },
-                    { equippedStack.stackAddress, reinterpret_cast<std::uintptr_t>(equippedStack.instanceData.get()), equippedStack.count });
+                    { equippedStack.stackAddress, reinterpret_cast<std::uintptr_t>(equippedStack.instanceData.get()),
+                        equippedStack.count });
             ROCK_LOG_INFO(Weapon,
-                "Held equip stack validation weapon={:08X} requestedIndex={} equippedIndex={} found={} identityMatch={} requestedNode=0x{:X} equippedNode=0x{:X} requestedInstance=0x{:X} equippedInstance=0x{:X}",
-                result.weapon->formID, stack.stackID, equippedStack.stackID,
-                equippedStack.found, result.matchedEquippedStack,
-                stack.stackAddress, equippedStack.stackAddress,
+                "Held equip stack validation weapon={:08X} requestedIndex={} equippedIndex={} found={} "
+                "identityMatch={} requestedNode=0x{:X} equippedNode=0x{:X} requestedInstance=0x{:X} "
+                "equippedInstance=0x{:X}",
+                result.weapon->formID, stack.stackID, equippedStack.stackID, equippedStack.found,
+                result.matchedEquippedStack, stack.stackAddress, equippedStack.stackAddress,
                 reinterpret_cast<std::uintptr_t>(stack.instanceData.get()),
                 reinterpret_cast<std::uintptr_t>(equippedStack.instanceData.get()));
             if (!result.matchedEquippedStack) {
@@ -528,27 +558,41 @@ namespace rock::weapon_equip_transfer
         {
             auto* player = RE::PlayerCharacter::GetSingleton();
             auto* weapon = RE::TESForm::GetFormByID<RE::TESObjectWEAP>(selection.formID);
-            if (!selection.stack || !player || !player->inventoryList || !weapon) return {};
-            const RE::BSAutoReadLock lock{player->inventoryList->rwLock};
+            if (!selection.stack || !player || !player->inventoryList || !weapon)
+                return {};
+            const RE::BSAutoReadLock lock{ player->inventoryList->rwLock };
             std::size_t scanned = 0;
             for (const auto& entry : player->inventoryList->data) {
-                if (++scanned > 16384) return {};
-                if (entry.object != weapon) continue;
+                if (++scanned > 16384)
+                    return {};
+                if (entry.object != weapon)
+                    continue;
                 std::uint32_t index = 0;
-                for (auto* stack = entry.stackData.get(); stack && index <
-                    weapon_inventory_stack_selection_policy::kMaximumObservedStacks; stack = stack->nextStack.get(), ++index) {
-                    if (stack != selection.stack.get()) continue;
-                    if (!hasUnwornCopy(*stack)) return {};
+                for (auto* stack = entry.stackData.get();
+                    stack && index < weapon_inventory_stack_selection_policy::kMaximumObservedStacks;
+                    stack = stack->nextStack.get(), ++index) {
+                    if (stack != selection.stack.get())
+                        continue;
+                    if (!hasUnwornCopy(*stack))
+                        return {};
                     RE::BSTSmartPointer<RE::TBO_InstanceData> instance{};
                     if (stack->extra) {
-                        if (const auto* extra = stack->extra->GetByType<RE::ExtraInstanceData>()) instance = extra->data;
+                        if (const auto* extra = stack->extra->GetByType<RE::ExtraInstanceData>())
+                            instance = extra->data;
                     }
-                    if (instance.get() != selection.instance.get()) return {};
+                    if (instance.get() != selection.instance.get())
+                        return {};
                     auto* slot = weapon->GetEquipSlot(instance.get());
-                    if (!slot) slot = weapon->GetEquipSlot(nullptr);
-                    return {.found = true, .matchedInstanceData = true, .stackID = index,
-                        .count = stack->GetCount(), .stackAddress = reinterpret_cast<std::uintptr_t>(stack),
-                        .instanceData = std::move(instance), .equipSlot = slot, .wornCopies = wornCopies(*stack)};
+                    if (!slot)
+                        slot = weapon->GetEquipSlot(nullptr);
+                    return { .found = true,
+                        .matchedInstanceData = true,
+                        .stackID = index,
+                        .count = stack->GetCount(),
+                        .stackAddress = reinterpret_cast<std::uintptr_t>(stack),
+                        .instanceData = std::move(instance),
+                        .equipSlot = slot,
+                        .wornCopies = wornCopies(*stack) };
                 }
                 return {};
             }
@@ -685,17 +729,11 @@ namespace rock::weapon_equip_transfer
         const auto expectedInstanceData = resolveReferenceInstanceData(heldRef);
         if (input.transitionReason == held_weapon_instant_transition::RequestReason::SameHandTrigger)
             trigger_equip_readiness_trace::begin(result.weapon->formID, result.formID);
-        const auto inventoryBeforeTransfer = captureWeaponStacks(
-            player,
-            result.weapon,
-            false);
+        const auto inventoryBeforeTransfer = captureWeaponStacks(player, result.weapon, false);
         result.attempted = true;
         const auto equippedBeforeTransfer = readEquippedWeaponSnapshot();
-        result.previousEquippedFormID = equippedBeforeTransfer.weapon ?
-            equippedBeforeTransfer.weapon->GetFormID() :
-            0;
-        result.previousEquippedInstanceData = reinterpret_cast<std::uintptr_t>(
-            equippedBeforeTransfer.instanceData);
+        result.previousEquippedFormID = equippedBeforeTransfer.weapon ? equippedBeforeTransfer.weapon->GetFormID() : 0;
+        result.previousEquippedInstanceData = reinterpret_cast<std::uintptr_t>(equippedBeforeTransfer.instanceData);
         /*
          * Capture the loose 3D before ActivateRef. The pickup path detaches it
          * from the scene graph synchronously inside this call (DetachHavok +
@@ -708,7 +746,7 @@ namespace rock::weapon_equip_transfer
         trigger_equip_readiness_trace::parts(result.detachedWorldModel.get(), 0);
         trigger_equip_readiness_trace::stage("before-activate-ref");
         const bool activated = [&] {
-            const equip_pickup::Scope intent(heldRef->GetFormID(),result.count);
+            const equip_pickup::Scope intent(heldRef->GetFormID(), result.count);
             return heldRef->ActivateRef(player, nullptr, result.count, false, false, false);
         }();
         trigger_equip_readiness_trace::stage("after-activate-ref");
@@ -728,26 +766,17 @@ namespace rock::weapon_equip_transfer
         result.untransferredRef.reset();
         trigger_equip_readiness_trace::stage("world-ref-lease-released");
 
-        const auto inventoryAfterTransfer = captureWeaponStacks(
-            player,
-            result.weapon,
-            true);
+        const auto inventoryAfterTransfer = captureWeaponStacks(player, result.weapon, true);
         const auto stackSelection =
-            weapon_inventory_stack_selection_policy::selectTransferredStack(
-                inventoryBeforeTransfer.witnesses,
-                inventoryAfterTransfer.witnesses,
-                reinterpret_cast<std::uintptr_t>(expectedInstanceData.get()));
+            weapon_inventory_stack_selection_policy::selectTransferredStack(inventoryBeforeTransfer.witnesses,
+                inventoryAfterTransfer.witnesses, reinterpret_cast<std::uintptr_t>(expectedInstanceData.get()));
         trigger_equip_readiness_trace::stage("inventory-stack-resolved");
-        result.preTransferStackCount = static_cast<std::uint32_t>(
-            inventoryBeforeTransfer.witnesses.count);
-        result.postTransferStackCount = static_cast<std::uint32_t>(
-            inventoryAfterTransfer.witnesses.count);
-        result.stackMutationCandidateCount = static_cast<std::uint32_t>(
-            stackSelection.mutationCandidateCount);
+        result.preTransferStackCount = static_cast<std::uint32_t>(inventoryBeforeTransfer.witnesses.count);
+        result.postTransferStackCount = static_cast<std::uint32_t>(inventoryAfterTransfer.witnesses.count);
+        result.stackMutationCandidateCount = static_cast<std::uint32_t>(stackSelection.mutationCandidateCount);
         result.stackSelectionEvidence = stackSelection.evidence;
-        const auto stack = stackSelection.found ?
-            inventoryAfterTransfer.stacks[stackSelection.postIndex] :
-            InventoryWeaponStack{};
+        const auto stack =
+            stackSelection.found ? inventoryAfterTransfer.stacks[stackSelection.postIndex] : InventoryWeaponStack{};
         if (!stack.found) {
             result.reason = EquipReason::InventoryStackNotFound;
             return result;
@@ -757,8 +786,7 @@ namespace rock::weapon_equip_transfer
             return result;
         }
 
-        result.matchedInstanceData = expectedInstanceData &&
-            stack.instanceData.get() == expectedInstanceData.get();
+        result.matchedInstanceData = expectedInstanceData && stack.instanceData.get() == expectedInstanceData.get();
         result = equipSelectedStack(player, equipManager, stack, input.transitionReason, std::move(result),
             input.secondary, input.secondaryLeft);
         return result;
@@ -768,22 +796,28 @@ namespace rock::weapon_equip_transfer
     {
         auto* player = RE::PlayerCharacter::GetSingleton();
         auto* weapon = RE::TESForm::GetFormByID<RE::TESObjectWEAP>(formID);
-        if (!player || !player->inventoryList || !weapon || stackIndex >=
-            weapon_inventory_stack_selection_policy::kMaximumObservedStacks) return {};
-        const RE::BSAutoReadLock lock{player->inventoryList->rwLock};
+        if (!player || !player->inventoryList || !weapon ||
+            stackIndex >= weapon_inventory_stack_selection_policy::kMaximumObservedStacks)
+            return {};
+        const RE::BSAutoReadLock lock{ player->inventoryList->rwLock };
         std::size_t scanned = 0;
         for (const auto& entry : player->inventoryList->data) {
-            if (++scanned > 16384) return {};
-            if (entry.object != weapon) continue;
+            if (++scanned > 16384)
+                return {};
+            if (entry.object != weapon)
+                continue;
             auto stack = entry.stackData;
-            for (std::uint32_t i = 0; stack && i < stackIndex; ++i) stack = stack->nextStack;
+            for (std::uint32_t i = 0; stack && i < stackIndex; ++i)
+                stack = stack->nextStack;
             // A worn stack offers its unworn identical copies.
-            if (!stack || !hasUnwornCopy(*stack)) return {};
+            if (!stack || !hasUnwornCopy(*stack))
+                return {};
             RE::BSTSmartPointer<RE::TBO_InstanceData> instance{};
             if (stack->extra) {
-                if (const auto* extra = stack->extra->GetByType<RE::ExtraInstanceData>()) instance = extra->data;
+                if (const auto* extra = stack->extra->GetByType<RE::ExtraInstanceData>())
+                    instance = extra->data;
             }
-            return {formID, stackIndex, std::move(stack), std::move(instance)};
+            return { formID, stackIndex, std::move(stack), std::move(instance) };
         }
         return {};
     }
@@ -793,7 +827,8 @@ namespace rock::weapon_equip_transfer
         return findSelectedInventoryStack(selection).found;
     }
 
-    EquipResult equipInventoryWeapon(const InventorySelection& selection, const bool slotOne, const bool slotOneLeft) noexcept
+    EquipResult equipInventoryWeapon(const InventorySelection& selection, const bool slotOne,
+        const bool slotOneLeft) noexcept
     {
         EquipResult result{};
         auto* player = RE::PlayerCharacter::GetSingleton();
@@ -812,7 +847,8 @@ namespace rock::weapon_equip_transfer
         result.matchedInstanceData = stack.instanceData.get() == selection.instance.get();
         result = equipSelectedStack(player, manager, stack,
             held_weapon_instant_transition::RequestReason::InventoryEquip, std::move(result), slotOne, slotOneLeft);
-        if (result.success) result.reason = EquipReason::InventoryInstantEquip;
+        if (result.success)
+            result.reason = EquipReason::InventoryInstantEquip;
         return result;
     }
 
@@ -826,29 +862,36 @@ namespace rock::weapon_equip_transfer
         auto* player = RE::PlayerCharacter::GetSingleton();
         auto* manager = RE::ActorEquipManager::GetSingleton();
         const auto equipped = readEquippedWeaponSnapshot();
-        if (!equipped.weapon) return true;
+        if (!equipped.weapon)
+            return true;
         if (!player || !manager || equipped.weapon->GetFormID() != formID ||
-            reinterpret_cast<std::uintptr_t>(equipped.instanceData) != instanceData) return false;
+            reinterpret_cast<std::uintptr_t>(equipped.instanceData) != instanceData)
+            return false;
         const auto stack = findEquippedWeaponStack(player, equipped.weapon, equipped.instanceData);
         const auto unequip = validatedUnequipObject();
         if (!stack.found || !stack.equipSlot || !stack.count || !unequip ||
-            stack.instanceData.get() != equipped.instanceData || !native_one_hand_restore::disabled()) return false;
+            stack.instanceData.get() != equipped.instanceData || !native_one_hand_restore::disabled())
+            return false;
         RE::BGSObjectInstance object(equipped.weapon, stack.instanceData.get());
-        const bool accepted = unequip(manager, player, &object, 1, stack.equipSlot, stack.stackID, false, true, false, true, nullptr);
+        const bool accepted =
+            unequip(manager, player, &object, 1, stack.equipSlot, stack.stackID, false, true, false, true, nullptr);
         const auto remaining = readEquippedWeaponSnapshot();
         ROCK_LOG_INFO(Weapon, "Held transfer recovery unequip form={:08X} instance={:#x} accepted={} remaining={:08X}",
             formID, instanceData, accepted, remaining.weapon ? remaining.weapon->GetFormID() : 0u);
         return !remaining.weapon;
     }
 
-    bool unequipEquippedIndex(const std::uint32_t index, const std::uint32_t formID, const std::uintptr_t instanceData) noexcept
+    bool unequipEquippedIndex(const std::uint32_t index, const std::uint32_t formID,
+        const std::uintptr_t instanceData) noexcept
     {
         auto* player = RE::PlayerCharacter::GetSingleton();
         auto* manager = RE::ActorEquipManager::GetSingleton();
         const auto equipped = readEquippedWeaponSnapshot(index);
-        if (!equipped.weapon) return true;
+        if (!equipped.weapon)
+            return true;
         if (!player || !manager || index > 1 || equipped.weapon->GetFormID() != formID ||
-            reinterpret_cast<std::uintptr_t>(equipped.instanceData) != instanceData) return false;
+            reinterpret_cast<std::uintptr_t>(equipped.instanceData) != instanceData)
+            return false;
         const auto stack = findEquippedWeaponStack(player, equipped.weapon, equipped.instanceData, index);
         const auto unequip = validatedUnequipObject();
         const bool instanceMatch = stack.instanceData.get() == equipped.instanceData;
@@ -857,13 +900,15 @@ namespace rock::weapon_equip_transfer
             // Identical-copy drops fail here without a native call (runtime
             // 23 Oct 17:57:04); name the failing precondition.
             ROCK_LOG_WARN(Weapon,
-                "Equipped index unequip refused index={} form={:08X} stackFound={} slot={} count={} unequip={} instanceMatch={} stackInstance={:#x} equippedInstance={:#x}",
+                "Equipped index unequip refused index={} form={:08X} stackFound={} slot={} count={} unequip={} "
+                "instanceMatch={} stackInstance={:#x} equippedInstance={:#x}",
                 index, formID, stack.found, stack.equipSlot != nullptr, stack.count, unequip != nullptr, instanceMatch,
                 reinterpret_cast<std::uintptr_t>(stack.instanceData.get()), instanceData);
             return false;
         }
         // The stack's actual hand leaf, so the other index's weapon is untouched.
         RE::BGSObjectInstance object(equipped.weapon, stack.instanceData.get());
+
         struct Call
         {
             UnequipObject unequip;
@@ -874,9 +919,11 @@ namespace rock::weapon_equip_transfer
             std::uint32_t stackID;
             bool accepted;
         } call{ unequip, manager, player, &object, stack.equipSlot, stack.stackID, false };
+
         const auto run = [](void* context) noexcept {
             auto& c = *static_cast<Call*>(context);
-            c.accepted = c.unequip(c.manager, c.player, c.object, 1, c.slot, c.stackID, false, true, false, true, nullptr);
+            c.accepted =
+                c.unequip(c.manager, c.player, c.object, 1, c.slot, c.stackID, false, true, false, true, nullptr);
         };
         // A weapon that stays at the other index stays drawn: the native
         // unequip's sheathe would refuse its fire and hold the next equip
@@ -887,7 +934,8 @@ namespace rock::weapon_equip_transfer
         // The equip executor's weapon hide runs after this weapon has left the
         // equipment list, so it would blank only the one that stays.
         std::optional<native_equipped_model_lifetime::SurvivorVisibleScope> survivor;
-        if (keepsOther) survivor.emplace();
+        if (keepsOther)
+            survivor.emplace();
         /*
          * With nothing left the native put-away is the correct end state, but
          * its UnEquip clip runs about a second and every equip waits for a
@@ -910,7 +958,8 @@ namespace rock::weapon_equip_transfer
             });
         }
         held_weapon_instant_transition::KeptDrawnUnequipResult kept{};
-        if (keepsOther) kept = held_weapon_instant_transition::unequipKeepingDrawn(player, run, &call);
+        if (keepsOther)
+            kept = held_weapon_instant_transition::unequipKeepingDrawn(player, run, &call);
         // Without the startup capability (or inside another ROCK equip
         // transaction, which owns its sheathe) the unequip stays native.
         if (!keepsOther || kept.code == held_weapon_instant_transition::ImmediateEquipCode::CapabilityUnavailable ||
@@ -920,8 +969,8 @@ namespace rock::weapon_equip_transfer
         }
         survivor.reset();
         const auto remaining = readEquippedWeaponSnapshot(index);
-        const auto sheathesSuppressed = held_weapon_instant_transition_policy::actionCount(
-            kept.actionTrace, held_weapon_instant_transition_policy::NativeAction::Sheathe);
+        const auto sheathesSuppressed = held_weapon_instant_transition_policy::actionCount(kept.actionTrace,
+            held_weapon_instant_transition_policy::NativeAction::Sheathe);
         const auto stateAfter = f4vr::getNativeWeaponState(player);
         // An unequip that started no put-away leaves no lease behind.
         if (putAway == AccelerationResult::Armed &&
@@ -929,9 +978,11 @@ namespace rock::weapon_equip_transfer
             weapon_transition_animation_acceleration::cancel("unequip-started-no-put-away");
         }
         ROCK_LOG_INFO(Weapon,
-            "Equipped index unequip index={} form={:08X} instance={:#x} slot={:08X} accepted={} remaining={:08X} keepsOther={} keptDrawn={} sheatheSuppressed={} nativeState={}->{} putAwayAcceleration={}",
-            index, formID, instanceData, stack.equipSlot->formID, call.accepted, remaining.weapon ? remaining.weapon->GetFormID() : 0u,
-            keepsOther, keepsOther ? held_weapon_instant_transition::immediateEquipCodeName(kept.code) : "n/a", sheathesSuppressed,
+            "Equipped index unequip index={} form={:08X} instance={:#x} slot={:08X} accepted={} remaining={:08X} "
+            "keepsOther={} keptDrawn={} sheatheSuppressed={} nativeState={}->{} putAwayAcceleration={}",
+            index, formID, instanceData, stack.equipSlot->formID, call.accepted,
+            remaining.weapon ? remaining.weapon->GetFormID() : 0u, keepsOther,
+            keepsOther ? held_weapon_instant_transition::immediateEquipCodeName(kept.code) : "n/a", sheathesSuppressed,
             stateBefore, stateAfter, static_cast<int>(putAway));
         return !remaining.weapon;
     }
@@ -943,7 +994,9 @@ namespace rock::weapon_equip_transfer
         auto* player = RE::PlayerCharacter::GetSingleton();
         auto* weapon = RE::TESForm::GetFormByID<RE::TESObjectWEAP>(formID);
         if (!player || !player->inventoryList || !weapon) {
-            result.reason = !player ? EquipReason::MissingPlayer : !weapon ? EquipReason::MissingBaseForm : EquipReason::MissingInventoryList;
+            result.reason = !player ? EquipReason::MissingPlayer
+                : !weapon           ? EquipReason::MissingBaseForm
+                                    : EquipReason::MissingInventoryList;
             return result;
         }
         if (readEquippedWeaponSnapshot(0).weapon) {
@@ -957,14 +1010,17 @@ namespace rock::weapon_equip_transfer
         // The now unequipped stack holding this exact instance.
         std::uint32_t stackIndex = weapon_inventory_stack_selection_policy::kMaximumObservedStacks;
         {
-            const RE::BSAutoReadLock lock{player->inventoryList->rwLock};
+            const RE::BSAutoReadLock lock{ player->inventoryList->rwLock };
             std::size_t scanned = 0;
             for (const auto& entry : player->inventoryList->data) {
-                if (++scanned > 16384 || entry.object != weapon) continue;
+                if (++scanned > 16384 || entry.object != weapon)
+                    continue;
                 std::uint32_t index = 0;
-                for (auto* stack = entry.stackData.get(); stack && index < weapon_inventory_stack_selection_policy::kMaximumObservedStacks;
+                for (auto* stack = entry.stackData.get();
+                    stack && index < weapon_inventory_stack_selection_policy::kMaximumObservedStacks;
                     stack = stack->nextStack.get(), ++index) {
-                    const RE::ExtraInstanceData* extra = stack->extra ? stack->extra->GetByType<RE::ExtraInstanceData>() : nullptr;
+                    const RE::ExtraInstanceData* extra =
+                        stack->extra ? stack->extra->GetByType<RE::ExtraInstanceData>() : nullptr;
                     if (stack->GetCount() && !stack->IsEquipped() &&
                         reinterpret_cast<std::uintptr_t>(extra ? extra->data.get() : nullptr) == instanceData) {
                         stackIndex = index;
@@ -977,7 +1033,8 @@ namespace rock::weapon_equip_transfer
         const auto selection = captureInventoryWeapon(formID, stackIndex);
         if (!selection.stack) {
             result.reason = EquipReason::InventoryStackNotFound;
-            ROCK_LOG_WARN(Weapon, "AKIMBO second weapon promotion lost its stack form={:08X} instance={:#x}", formID, instanceData);
+            ROCK_LOG_WARN(Weapon, "AKIMBO second weapon promotion lost its stack form={:08X} instance={:#x}", formID,
+                instanceData);
             return result;
         }
         return equipInventoryWeapon(selection);
@@ -1034,12 +1091,17 @@ namespace rock::weapon_equip_transfer
             bool unequipped = false;
             {
                 const native_equipped_model_lifetime::SurvivorVisibleScope survivor;
-                unequipped = unequipEquippedIndex(input.index, result.formID, reinterpret_cast<std::uintptr_t>(equipped.instanceData));
+                unequipped = unequipEquippedIndex(input.index, result.formID,
+                    reinterpret_cast<std::uintptr_t>(equipped.instanceData));
             }
-            const auto copy = unequipped ?
-                findUnwornCopy(player, equipped.weapon, equipped.instanceData, stack.uniqueID) : std::nullopt;
-            ROCK_LOG_INFO(Weapon, "Equipped detach unequipped identical copy first weapon={:08X} index={} stack={} tag={} unequipped={} copyStack={}",
-                result.formID, input.index, stack.stackID, stack.uniqueID, unequipped, copy ? static_cast<int>(*copy) : -1);
+            const auto copy = unequipped
+                ? findUnwornCopy(player, equipped.weapon, equipped.instanceData, stack.uniqueID)
+                : std::nullopt;
+            ROCK_LOG_INFO(Weapon,
+                "Equipped detach unequipped identical copy first weapon={:08X} index={} stack={} tag={} unequipped={} "
+                "copyStack={}",
+                result.formID, input.index, stack.stackID, stack.uniqueID, unequipped,
+                copy ? static_cast<int>(*copy) : -1);
             if (!copy) {
                 result.reason = unequipped ? DropReason::InventoryStackNotFound : DropReason::UnequipUnavailable;
                 return result;
@@ -1070,7 +1132,8 @@ namespace rock::weapon_equip_transfer
         {
             // The other index's weapon stays; keep it rendered through removal.
             std::optional<native_equipped_model_lifetime::SurvivorVisibleScope> survivor;
-            if (input.index <= 1 && readEquippedWeaponSnapshot(1 - input.index).weapon) survivor.emplace();
+            if (input.index <= 1 && readEquippedWeaponSnapshot(1 - input.index).weapon)
+                survivor.emplace();
             result.handle = player->RemoveItem(removeData);
         }
         const auto equippedAfterDrop = readEquippedWeaponSnapshot(input.index);
@@ -1081,24 +1144,24 @@ namespace rock::weapon_equip_transfer
             // equipped stack first: unequipping first can merge/reorder its
             // extra data. Then resolve only the surviving equipped copy;
             // never reuse the pre-removal stack index for this second call.
-            const auto remainingStack = findEquippedWeaponStack(
-                player, equippedAfterDrop.weapon, equippedAfterDrop.instanceData, input.index);
+            const auto remainingStack =
+                findEquippedWeaponStack(player, equippedAfterDrop.weapon, equippedAfterDrop.instanceData, input.index);
             // Native removal can move equipped flags to an equivalent stack
             // with different instance data. The selector's sole-equipped-stack
             // witness is sufficient for unequip; this copy is never dropped.
             if (remainingStack.found && remainingStack.count != 0 && remainingStack.equipSlot) {
                 RE::BGSObjectInstance remainingObject(equippedAfterDrop.weapon, remainingStack.instanceData.get());
-                duplicateUnequipAccepted = unequip(equipManager, player, &remainingObject, 1,
-                    remainingStack.equipSlot, remainingStack.stackID, false, true, false, true, nullptr);
+                duplicateUnequipAccepted = unequip(equipManager, player, &remainingObject, 1, remainingStack.equipSlot,
+                    remainingStack.stackID, false, true, false, true, nullptr);
             }
         }
         const auto equippedAfterRelease = readEquippedWeaponSnapshot(input.index);
         result.equippedSlotReleased = !equippedAfterRelease.weapon;
         ROCK_LOG_INFO(Weapon,
-            "Equipped detach native removal: weapon={:08X} stack={} countBefore={} previousRestoreCleared=yes afterRemoval={:08X} duplicateUnequipAccepted={} remainingEquipped={:08X} handleValid={}",
+            "Equipped detach native removal: weapon={:08X} stack={} countBefore={} previousRestoreCleared=yes "
+            "afterRemoval={:08X} duplicateUnequipAccepted={} remainingEquipped={:08X} handleValid={}",
             result.formID, result.stackID, stack.count,
-            equippedAfterDrop.weapon ? equippedAfterDrop.weapon->GetFormID() : 0,
-            duplicateUnequipAccepted,
+            equippedAfterDrop.weapon ? equippedAfterDrop.weapon->GetFormID() : 0, duplicateUnequipAccepted,
             equippedAfterRelease.weapon ? equippedAfterRelease.weapon->GetFormID() : 0,
             static_cast<bool>(result.handle));
         if (!result.handle) {
@@ -1119,4 +1182,3 @@ namespace rock::weapon_equip_transfer
     }
 
 }
-

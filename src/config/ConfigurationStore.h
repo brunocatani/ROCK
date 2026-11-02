@@ -51,11 +51,17 @@ namespace rock::config
             std::string_view value);
         [[nodiscard]] bool setValues(Group group, std::span<const Change> changes);
         void appendLoadedValues(CSimpleIniA& target) const;
+
         [[nodiscard]] const std::vector<Setting>& settings() const noexcept { return _settings; }
+
         [[nodiscard]] const std::string& error() const noexcept { return _error; }
+
         [[nodiscard]] const std::filesystem::path& directory() const noexcept { return _directory; }
+
         [[nodiscard]] std::filesystem::path path(Group group) const;
+
         [[nodiscard]] std::uint64_t revision() const noexcept { return _revision; }
+
         [[nodiscard]] static bool isDefault(const Setting& setting, std::string_view value);
 
     private:

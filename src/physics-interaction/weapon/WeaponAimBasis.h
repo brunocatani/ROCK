@@ -1,7 +1,7 @@
 #pragma once
 
-#include "physics-interaction/TransformMath.h"
 #include "RE/NetImmerse/NiTransform.h"
+#include "physics-interaction/TransformMath.h"
 
 #include <cmath>
 
@@ -42,18 +42,13 @@ namespace rock::weapon_aim_basis
         return result;
     }
 
-    [[nodiscard]] inline bool tryResolveWorld(
-        const RE::NiTransform& controllerWorld,
-        const float weaponScale,
-        const RE::NiTransform& weaponInWand,
-        RE::NiTransform& result) noexcept
+    [[nodiscard]] inline bool tryResolveWorld(const RE::NiTransform& controllerWorld, const float weaponScale,
+        const RE::NiTransform& weaponInWand, RE::NiTransform& result) noexcept
     {
         result = {};
-        if (!std::isfinite(weaponScale) || weaponScale <= 0.0f ||
-            !std::isfinite(controllerWorld.scale) || controllerWorld.scale <= 0.0f ||
-            !std::isfinite(controllerWorld.translate.x) ||
-            !std::isfinite(controllerWorld.translate.y) ||
-            !std::isfinite(controllerWorld.translate.z)) {
+        if (!std::isfinite(weaponScale) || weaponScale <= 0.0f || !std::isfinite(controllerWorld.scale) ||
+            controllerWorld.scale <= 0.0f || !std::isfinite(controllerWorld.translate.x) ||
+            !std::isfinite(controllerWorld.translate.y) || !std::isfinite(controllerWorld.translate.z)) {
             return false;
         }
         for (int row = 0; row < 3; ++row) {
@@ -68,9 +63,7 @@ namespace rock::weapon_aim_basis
         return true;
     }
 
-    [[nodiscard]] inline bool tryResolveWorld(
-        const RE::NiTransform& controllerWorld,
-        const float weaponScale,
+    [[nodiscard]] inline bool tryResolveWorld(const RE::NiTransform& controllerWorld, const float weaponScale,
         RE::NiTransform& result) noexcept
     {
         return tryResolveWorld(controllerWorld, weaponScale, weaponInController(), result);
@@ -80,49 +73,45 @@ namespace rock::weapon_aim_basis
     // relation by rotating the weapon onto the physical hand, rather than
     // bending the presented wrist onto the firearm aim. Palm seating remains
     // the caller's responsibility, including non-unit presentation scales.
-    [[nodiscard]] inline bool tryResolveMeleeWorld(
-        const RE::NiTransform& physicalHandWorld,
-        const RE::NiTransform& authoredHandWeaponLocal,
-        const float weaponScale,
-        RE::NiTransform& result) noexcept
+    [[nodiscard]] inline bool tryResolveMeleeWorld(const RE::NiTransform& physicalHandWorld,
+        const RE::NiTransform& authoredHandWeaponLocal, const float weaponScale, RE::NiTransform& result) noexcept
     {
         result = {};
         const auto usable = [](const RE::NiTransform& transform) {
             if (!std::isfinite(transform.scale) || transform.scale <= 0.000001f ||
-                !std::isfinite(transform.translate.x) ||
-                !std::isfinite(transform.translate.y) ||
-                !std::isfinite(transform.translate.z)) return false;
+                !std::isfinite(transform.translate.x) || !std::isfinite(transform.translate.y) ||
+                !std::isfinite(transform.translate.z))
+                return false;
             for (int row = 0; row < 3; ++row) {
                 for (int column = 0; column < 3; ++column) {
-                    if (!std::isfinite(transform.rotate.entry[row][column])) return false;
+                    if (!std::isfinite(transform.rotate.entry[row][column]))
+                        return false;
                 }
             }
             return true;
         };
-        if (!std::isfinite(weaponScale) || weaponScale <= 0.0f ||
-            !usable(physicalHandWorld) || !usable(authoredHandWeaponLocal)) return false;
+        if (!std::isfinite(weaponScale) || weaponScale <= 0.0f || !usable(physicalHandWorld) ||
+            !usable(authoredHandWeaponLocal))
+            return false;
 
-        result = transform_math::composeTransforms(
-            physicalHandWorld, transform_math::invertTransform(authoredHandWeaponLocal));
+        result = transform_math::composeTransforms(physicalHandWorld,
+            transform_math::invertTransform(authoredHandWeaponLocal));
         result.translate = physicalHandWorld.translate;
         result.scale = weaponScale;
         return usable(result);
     }
 
-    [[nodiscard]] inline bool tryResolveMeleeWorld(
-        const RE::NiTransform& physicalHandWorld,
-        const RE::NiTransform& authoredHandWeaponLocal,
-        const RE::NiTransform& controllerWorld,
-        const float weaponScale,
-        const float pitchAdjustmentDegrees,
-        RE::NiTransform& result) noexcept
+    [[nodiscard]] inline bool tryResolveMeleeWorld(const RE::NiTransform& physicalHandWorld,
+        const RE::NiTransform& authoredHandWeaponLocal, const RE::NiTransform& controllerWorld, const float weaponScale,
+        const float pitchAdjustmentDegrees, RE::NiTransform& result) noexcept
     {
         if (!std::isfinite(pitchAdjustmentDegrees) ||
             !tryResolveMeleeWorld(physicalHandWorld, authoredHandWeaponLocal, weaponScale, result)) {
             result = {};
             return false;
         }
-        if (pitchAdjustmentDegrees == -kMeleeBasePitchDegrees) return true;
+        if (pitchAdjustmentDegrees == -kMeleeBasePitchDegrees)
+            return true;
         for (int row = 0; row < 3; ++row) {
             for (int column = 0; column < 3; ++column) {
                 if (!std::isfinite(controllerWorld.rotate.entry[row][column])) {
@@ -137,10 +126,10 @@ namespace rock::weapon_aim_basis
         controller.rotate = controllerWorld.rotate;
         auto aim = transform_math::makeIdentityTransform<RE::NiTransform>();
         aim.rotate = result.rotate;
-        const auto inController = transform_math::composeTransforms(
-            transform_math::invertTransform(controller), aim);
+        const auto inController = transform_math::composeTransforms(transform_math::invertTransform(controller), aim);
         result.rotate = transform_math::composeTransforms(controller,
-            transform_math::composeTransforms(meleePitchInController(pitchAdjustmentDegrees), inController)).rotate;
+            transform_math::composeTransforms(meleePitchInController(pitchAdjustmentDegrees), inController))
+                            .rotate;
         return true;
     }
 }

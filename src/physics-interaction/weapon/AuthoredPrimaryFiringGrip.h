@@ -56,9 +56,7 @@ namespace rock
     class AuthoredPrimaryFiringGripRuntime
     {
     public:
-        void update(
-            const AuthoredPrimaryFiringGripFrameInput& input,
-            TwoHandedGrip& weaponAuthority);
+        void update(const AuthoredPrimaryFiringGripFrameInput& input, TwoHandedGrip& weaponAuthority);
         void reset(const char* reason, TwoHandedGrip& weaponAuthority);
 
     private:

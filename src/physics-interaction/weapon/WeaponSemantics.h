@@ -4,7 +4,6 @@
  * Weapon semantic classification helpers are grouped here because generated geometry still needs part metadata for contact, reload, and debug evidence.
  */
 
-
 // ---- WeaponPartClassifier.h ----
 
 #include "physics-interaction/weapon/WeaponTypes.h"
@@ -275,7 +274,6 @@ namespace rock::weapon_collision_grouping_policy
      * reload, and debug evidence; they do not decide whether visible geometry
      * gets collision.
      */
-    inline constexpr const char* kProductionWeaponCollisionGroupingName =
-        "OptimizedTriShape";
+    inline constexpr const char* kProductionWeaponCollisionGroupingName = "OptimizedTriShape";
 
 }
