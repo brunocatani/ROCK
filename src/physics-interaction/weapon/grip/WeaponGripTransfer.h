@@ -1,3 +1,5 @@
+// Weapon-relative hand grips captured from a loose weapon, carried by value
+// into equipped ownership when it is picked up.
 #pragma once
 
 #include "RE/NetImmerse/NiTransform.h"

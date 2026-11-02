@@ -1,3 +1,5 @@
+// Native VR melee follows the hand that holds each weapon (see
+// NativeMeleeWand.cpp).
 #pragma once
 
 namespace rock::native_melee_wand

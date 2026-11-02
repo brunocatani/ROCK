@@ -1,3 +1,6 @@
+// Hand-directed equipment: which hand each equipped weapon belongs to, equips
+// into the second slot, support-hand requests and restoring the hands after a
+// load. Installs the native hooks of the second weapon slot.
 #include "physics-interaction/weapon/native/NativeHandEquipment.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/weapon/classification/WeaponTypePolicy.h"

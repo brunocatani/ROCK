@@ -1,3 +1,6 @@
+// The authored grip library: animation-authored firing and support hand
+// relations per weapon variant, published by the idle preharvest or a live
+// capture and looked up when a hand grips the weapon.
 #include "physics-interaction/weapon/authored/AuthoredWeaponGripLibrary.h"
 
 #include "physics-interaction/PhysicsLog.h"

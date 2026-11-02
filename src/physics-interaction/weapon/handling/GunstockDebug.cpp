@@ -1,3 +1,4 @@
+// Aim error math and pose recording for the gunstock debug overlay.
 #include "physics-interaction/weapon/handling/GunstockDebug.h"
 #include <algorithm>
 #include <cmath>

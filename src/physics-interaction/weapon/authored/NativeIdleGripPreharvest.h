@@ -1,3 +1,4 @@
+// Idle grip preharvest entry points (see NativeIdleGripPreharvest.cpp).
 #pragma once
 
 #include "RE/NetImmerse/NiSmartPointer.h"

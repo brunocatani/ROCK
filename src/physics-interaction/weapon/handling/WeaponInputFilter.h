@@ -1,3 +1,5 @@
+// Smooths the controller input that drives the equipped weapon, with
+// speed-adaptive time constants.
 #pragma once
 
 #include "physics-interaction/TransformMath.h"

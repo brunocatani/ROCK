@@ -1,3 +1,6 @@
+// EquipVisualBridge: covers the gap between a loose weapon's pickup and the
+// equipped weapon's first rendered frame by keeping the loose model in the
+// hands, then hands the pose over to the equipped weapon.
 #include "physics-interaction/weapon/equip/EquipVisualBridge.h"
 #include "physics-interaction/hand/HandFingerMirrorMath.h"
 #include "physics-interaction/weapon/authored/VanillaWeaponGripFrame.h"

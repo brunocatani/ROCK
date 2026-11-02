@@ -1,3 +1,4 @@
+// The second weapon's pose in its firing hand's wand, for guns and melee.
 #pragma once
 
 #include "physics-interaction/weapon/authored/HoldingGripAdapter.h"

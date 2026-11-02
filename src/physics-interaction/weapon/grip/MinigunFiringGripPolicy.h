@@ -1,3 +1,4 @@
+// The compiled firing seat for the Avenger minigun.
 #pragma once
 
 #include "physics-interaction/weapon/classification/WeaponTypes.h"

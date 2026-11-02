@@ -1,3 +1,5 @@
+// Patch for the native model classification branch that builds the second
+// weapon as a gun model.
 #pragma once
 
 #include <cstdint>

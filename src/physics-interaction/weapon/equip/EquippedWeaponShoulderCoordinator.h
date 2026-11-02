@@ -1,3 +1,6 @@
+// Shoulder stash gesture: the hand carrying the primary weapon taps or holds
+// grab behind the shoulder and the weapon returns to the inventory. Decides
+// the gesture only; the frame owner performs the stash.
 #pragma once
 
 #include "physics-interaction/body/BodyZone.h"

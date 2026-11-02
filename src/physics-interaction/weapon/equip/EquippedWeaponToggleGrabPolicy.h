@@ -1,3 +1,5 @@
+// Toggle and hold grab for equipped weapons: per hand, whether grab presses
+// grip, keep or release the weapon in each grab mode.
 #pragma once
 
 #include <array>

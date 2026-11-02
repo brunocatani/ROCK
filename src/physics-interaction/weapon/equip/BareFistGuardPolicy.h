@@ -1,3 +1,5 @@
+// Whether to holster a drawn melee stance that has no real melee weapon
+// equipped (bare fists), and when to recheck that.
 #pragma once
 
 #include <cstdint>

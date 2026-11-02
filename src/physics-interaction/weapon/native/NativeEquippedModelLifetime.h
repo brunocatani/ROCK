@@ -1,3 +1,4 @@
+// Equipped model lifetime protection (see NativeEquippedModelLifetime.cpp).
 #pragma once
 
 namespace rock::native_equipped_model_lifetime

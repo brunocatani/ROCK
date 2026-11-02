@@ -1,3 +1,5 @@
+// Helpers shared by the TwoHandedGrip implementation files. Include only from
+// those files.
 #pragma once
 
 #include "physics-interaction/hand/SkeletonBoneNameIndex.h"

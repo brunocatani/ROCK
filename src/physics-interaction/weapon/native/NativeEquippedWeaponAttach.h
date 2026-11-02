@@ -1,3 +1,5 @@
+// Native re-attach request for the current equipped weapon (see
+// NativeEquippedWeaponAttach.cpp).
 #pragma once
 
 #include <cstdint>

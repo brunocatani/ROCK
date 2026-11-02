@@ -1,3 +1,6 @@
+// TwoHandedGrip's ownership of FRIK's weapon node: engages FRIK's primary
+// weapon-node write block on the frame ROCK writes the node, holds it while
+// needed and releases it when ROCK stops writing.
 #include "physics-interaction/weapon/grip/TwoHandedGripInternal.h"
 #include "physics-interaction/weapon/grip/WeaponNodeWriteBlockPolicy.h"
 

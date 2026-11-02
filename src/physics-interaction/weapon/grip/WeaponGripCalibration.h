@@ -1,3 +1,5 @@
+// Grip calibration math: moves the hand-in-weapon relation by a weapon-local
+// offset while the hand stays where it is.
 #pragma once
 
 #include "physics-interaction/hand/HandFrame.h"

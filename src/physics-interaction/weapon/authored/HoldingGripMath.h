@@ -1,3 +1,5 @@
+// Holding-grip pose math, including the weapon's mirror plane, which turns a
+// right-hand grip into the matching left-hand grip.
 #pragma once
 #include <algorithm>
 #include <array>

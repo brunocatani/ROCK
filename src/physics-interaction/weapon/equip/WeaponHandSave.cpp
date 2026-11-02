@@ -1,3 +1,5 @@
+// Saves and loads the HNDS co-save record: which hand holds each equipped
+// weapon and each hand's melee reverse grip.
 #include "physics-interaction/weapon/equip/WeaponHandSave.h"
 
 #include "physics-interaction/PhysicsLog.h"

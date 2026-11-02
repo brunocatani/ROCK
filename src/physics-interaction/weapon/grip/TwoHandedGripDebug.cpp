@@ -1,3 +1,5 @@
+// TwoHandedGrip's debug output: the gunstock overlay samples and the authority,
+// authored support and reattach-zone debug snapshots.
 #include "physics-interaction/weapon/grip/TwoHandedGrip.h"
 #include "physics-interaction/weapon/grip/TwoHandedGripInternal.h"
 #include "physics-interaction/weapon/handling/WeaponAimBasis.h"

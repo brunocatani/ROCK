@@ -1,3 +1,5 @@
+// Shows "R" or "L" on the Pip-Boy inventory rows of equipped weapons, in
+// place of the native equipped square. Display only.
 #include "physics-interaction/weapon/native/NativePipboyHandMarkers.h"
 
 #include <REL/Relocation.h>

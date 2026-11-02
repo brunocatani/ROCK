@@ -1,3 +1,6 @@
+// Speeds up the player's weapon draw and put-away animations: hooks the native
+// clip lifecycle entries, leases the matching transition clips and scales their
+// timestep.
 #include "physics-interaction/weapon/equip/WeaponTransitionAnimationAcceleration.h"
 #include "physics-interaction/weapon/secondary/NativeSecondaryActions.h"
 

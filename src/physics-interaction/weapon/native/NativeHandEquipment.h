@@ -1,3 +1,5 @@
+// Hand-directed equipment (see NativeHandEquipment.cpp): the equipped views,
+// directed equips, worn hands and saved hands.
 #pragma once
 
 #include <array>

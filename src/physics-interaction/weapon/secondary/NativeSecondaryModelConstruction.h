@@ -1,3 +1,4 @@
+// Second weapon model construction (see NativeSecondaryModelConstruction.cpp).
 #pragma once
 
 namespace rock::native_secondary_model

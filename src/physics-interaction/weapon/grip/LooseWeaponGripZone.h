@@ -1,3 +1,4 @@
+// Firing-grip zone for loose weapons (see LooseWeaponGripZone.cpp).
 #pragma once
 
 #include <span>

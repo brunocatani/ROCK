@@ -1,3 +1,5 @@
+// The authored grip library (see AuthoredWeaponGripLibrary.cpp): records,
+// variant identity, publication and lookup.
 #pragma once
 
 #include "RE/NetImmerse/NiTransform.h"

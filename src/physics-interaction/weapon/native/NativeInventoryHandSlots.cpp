@@ -1,3 +1,5 @@
+// Hooks native inventory equip and unequip so each equipped weapon item is
+// owned by its hand slot, identified by its exact inventory element.
 #include "physics-interaction/weapon/native/NativeInventoryHandSlots.h"
 #include <Windows.h>
 #include <algorithm>

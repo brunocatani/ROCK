@@ -1,3 +1,5 @@
+// Gunstock mode: the two-handed solver aims the weapon along the line between
+// the controllers, using virtual seats; the authored hand poses are unchanged.
 #pragma once
 
 #include "physics-interaction/weapon/grip/WeaponSupport.h"

@@ -1,3 +1,4 @@
+// Native scope hooks and per-frame scope state (see NativeScopeData.cpp).
 #pragma once
 
 #include <cstdint>

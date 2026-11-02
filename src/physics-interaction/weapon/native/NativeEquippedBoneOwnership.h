@@ -1,3 +1,5 @@
+// Bone binding protection for the primary graph (see
+// NativeEquippedBoneOwnership.cpp).
 #pragma once
 
 namespace rock::native_equipped_bone_ownership

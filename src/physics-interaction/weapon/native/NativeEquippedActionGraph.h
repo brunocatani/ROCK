@@ -1,3 +1,5 @@
+// A private native behavior graph for one equipped weapon (see
+// NativeEquippedActionGraph.cpp).
 #pragma once
 
 #include <array>

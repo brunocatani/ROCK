@@ -1,3 +1,4 @@
+// Primary weapon graph binding (see NativePrimaryWeaponGraph.cpp).
 #pragma once
 
 #include "RE/Bethesda/BSTArray.h"

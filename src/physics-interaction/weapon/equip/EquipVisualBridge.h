@@ -1,3 +1,5 @@
+// EquipVisualBridge: visual-only bridge across the loose-to-equipped weapon
+// gap (see EquipVisualBridge.cpp).
 #pragma once
 
 #include "RE/NetImmerse/NiNode.h"

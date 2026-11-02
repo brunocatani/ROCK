@@ -1,3 +1,7 @@
+// AuthoredPrimaryFiringGripRuntime: each frame, publishes the animation-
+// authored firing grip and support relation for the equipped weapon to the
+// two-handed grip, from a fresh capture or the last stable snapshot, and falls
+// back to the dynamic grip when neither is valid.
 #include "physics-interaction/weapon/authored/AuthoredPrimaryFiringGrip.h"
 #include "physics-interaction/hand/HandFingerMirrorMath.h"
 #include "physics-interaction/weapon/authored/HoldingGripRecords.h"

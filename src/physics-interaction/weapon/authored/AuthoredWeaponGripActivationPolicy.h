@@ -1,3 +1,6 @@
+// Where an authored support grip activates: weapon family, hand topology
+// (right or left firing), the activation region around the weapon, the
+// approach direction gate and the grip-zone indicator.
 #pragma once
 
 #include "physics-interaction/VectorMath.h"

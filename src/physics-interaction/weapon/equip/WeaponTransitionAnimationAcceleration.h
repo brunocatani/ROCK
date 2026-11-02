@@ -1,3 +1,5 @@
+// Draw and put-away animation acceleration requests, service and evidence (see
+// WeaponTransitionAnimationAcceleration.cpp).
 #pragma once
 
 #include "physics-interaction/weapon/equip/WeaponTransitionAnimationAccelerationPolicy.h"

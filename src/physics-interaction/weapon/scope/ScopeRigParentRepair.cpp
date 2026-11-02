@@ -1,3 +1,4 @@
+// Re-parents an orphaned scope rig after its weapon node is torn down.
 #include "physics-interaction/weapon/scope/ScopeRigParentRepair.h"
 
 #include "physics-interaction/PhysicsLog.h"

@@ -1,3 +1,4 @@
+// Counts a weapon model's geometry once per construction or identity change.
 #pragma once
 
 #include <cstdint>

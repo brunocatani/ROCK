@@ -1,3 +1,5 @@
+// Submits a native draw of the exact current equipped weapon and recovers a
+// draw the engine only partly accepted.
 #include "physics-interaction/weapon/native/NativeEquippedWeaponDraw.h"
 
 #include "physics-interaction/native/NativeMemory.h"

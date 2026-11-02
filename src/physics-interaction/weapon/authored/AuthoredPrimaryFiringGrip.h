@@ -1,3 +1,5 @@
+// AuthoredPrimaryFiringGripRuntime: publishes the animation-authored firing
+// grip and support relation to TwoHandedGrip (see AuthoredPrimaryFiringGrip.cpp).
 #pragma once
 
 #include "physics-interaction/weapon/authored/AuthoredWeaponGripLibrary.h"

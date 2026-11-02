@@ -1,3 +1,5 @@
+// Places the second equipped weapon's native model in the hand that holds it,
+// at its own firing seat, through the native arm and world passes of each frame.
 #include "physics-interaction/weapon/secondary/NativeSecondaryPresentation.h"
 
 #include <Windows.h>

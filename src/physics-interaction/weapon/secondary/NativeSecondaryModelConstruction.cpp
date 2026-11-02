@@ -1,3 +1,5 @@
+// Adapts the native inventory weapon builder so it builds the second equipped
+// weapon's first-person model.
 #include "physics-interaction/weapon/secondary/NativeSecondaryModelConstruction.h"
 #include <REL/Relocation.h>
 #include <Windows.h>

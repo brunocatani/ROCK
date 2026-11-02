@@ -1,3 +1,5 @@
+// Reverse grip for one-handed melee weapons: per-hand toggle state, the
+// reversed seat, and saving and restoring it with the save game.
 #include "physics-interaction/weapon/grip/KnifeReverseGrip.h"
 
 #include "physics-interaction/PhysicsLog.h"

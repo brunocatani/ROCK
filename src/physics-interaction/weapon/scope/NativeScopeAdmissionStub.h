@@ -1,3 +1,4 @@
+// Machine-code stubs for the native scope admission patch sites.
 #pragma once
 
 #include <cstdint>

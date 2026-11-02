@@ -1,3 +1,5 @@
+// The weapon's orientation in the controller (aim pitch), for guns and melee,
+// shared by both hands.
 #pragma once
 
 #include "RE/NetImmerse/NiTransform.h"

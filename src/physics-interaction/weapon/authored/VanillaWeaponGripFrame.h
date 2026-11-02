@@ -1,3 +1,5 @@
+// Moves an authored grip from the vanilla model's frame to the gripped model's
+// frame (see VanillaWeaponGripFrame.cpp).
 #pragma once
 
 #include <cmath>

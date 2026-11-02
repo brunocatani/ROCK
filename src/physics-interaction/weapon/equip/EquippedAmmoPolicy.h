@@ -1,3 +1,5 @@
+// Loaded and reserve ammo counts for one equipped weapon slot, by the native
+// HUD ammo rule.
 #pragma once
 
 #include <cstdint>

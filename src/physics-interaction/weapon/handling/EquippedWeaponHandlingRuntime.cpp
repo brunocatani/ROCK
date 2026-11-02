@@ -1,3 +1,5 @@
+// The published equipped weapon handling settings (see
+// EquippedWeaponHandlingRuntime.h).
 #include "physics-interaction/weapon/handling/EquippedWeaponHandlingRuntime.h"
 
 namespace rock::equipped_weapon_handling_runtime

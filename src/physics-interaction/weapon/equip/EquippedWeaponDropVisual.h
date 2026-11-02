@@ -1,3 +1,5 @@
+// EquippedWeaponDropVisual: the in-hand presentation of a pending Toggle Drop
+// (see EquippedWeaponDropVisual.cpp).
 #pragma once
 
 #include "RE/NetImmerse/NiAVObject.h"

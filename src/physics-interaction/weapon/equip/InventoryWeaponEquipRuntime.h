@@ -1,3 +1,4 @@
+// InventoryWeaponEquipRuntime: the one inventory weapon switch in progress.
 #pragma once
 #include <ROCK/Weapon.h>
 #include <array>

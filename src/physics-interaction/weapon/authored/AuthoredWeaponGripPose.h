@@ -1,3 +1,5 @@
+// AuthoredWeaponGripPose: the authored grip pose carried by value across the
+// equipped reference's inventory transfer.
 #pragma once
 
 #include "RE/NetImmerse/NiTransform.h"

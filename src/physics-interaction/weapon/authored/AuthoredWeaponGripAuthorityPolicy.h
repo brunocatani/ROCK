@@ -1,3 +1,6 @@
+// Which authored grip publication wins: an off-screen idle sample outranks a
+// live equipped capture, and a complete finger pose is never replaced by an
+// incomplete one.
 #pragma once
 
 #include <cstddef>

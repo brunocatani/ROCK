@@ -1,3 +1,4 @@
+// Equipped weapon visibility observation (see EquippedWeaponVisualState.cpp).
 #pragma once
 
 #include <array>

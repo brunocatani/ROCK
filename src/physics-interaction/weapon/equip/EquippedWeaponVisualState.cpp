@@ -1,3 +1,5 @@
+// Finds the exact equipped weapon instance in the scene and reads or sets its
+// local visibility through the native culling call.
 #include "physics-interaction/weapon/equip/EquippedWeaponVisualState.h"
 
 #include "RE/NetImmerse/NiAVObject.h"

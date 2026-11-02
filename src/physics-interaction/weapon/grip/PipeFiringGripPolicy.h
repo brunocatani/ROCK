@@ -1,3 +1,5 @@
+// The compiled firing seat for pipe weapons: recognizes their vanilla firing
+// poses and supplies the calibrated weapon-in-hand transform.
 #pragma once
 
 #include <array>

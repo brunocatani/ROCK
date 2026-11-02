@@ -1,3 +1,5 @@
+// Hooks native bone binding so a second equipped model with the same bone
+// names cannot take over the primary graph's bones.
 #include "physics-interaction/weapon/native/NativeEquippedBoneOwnership.h"
 #include <Windows.h>
 #include <array>

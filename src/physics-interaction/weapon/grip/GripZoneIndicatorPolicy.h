@@ -1,3 +1,5 @@
+// Grip-zone indicator size limits and the check that a marker belongs to the
+// latest published frame.
 #pragma once
 
 #include <cstdint>

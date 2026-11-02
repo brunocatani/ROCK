@@ -1,3 +1,4 @@
+// Native inventory hand-slot ownership scope (see NativeInventoryHandSlots.cpp).
 #pragma once
 
 namespace RE

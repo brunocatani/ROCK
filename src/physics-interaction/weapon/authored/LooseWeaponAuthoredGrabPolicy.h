@@ -1,3 +1,5 @@
+// Which station a grabbed loose weapon takes: the firing grip or the authored
+// support seat, by how it was acquired (close grab, far pull, forced arrival).
 #pragma once
 
 #include <cmath>

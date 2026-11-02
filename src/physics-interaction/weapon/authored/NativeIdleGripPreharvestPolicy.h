@@ -1,3 +1,5 @@
+// Pure rules for the idle grip preharvest: when to start, which first-person
+// graph and idle clip to sample, and when a sampled pose is stable enough.
 #pragma once
 
 #include <array>

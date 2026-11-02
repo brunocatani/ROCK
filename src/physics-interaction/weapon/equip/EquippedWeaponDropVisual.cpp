@@ -1,3 +1,5 @@
+// EquippedWeaponDropVisual: keeps the dropped weapon visible in the hand while
+// a Toggle Drop turns the equipped weapon into a loose reference.
 #include "physics-interaction/weapon/equip/EquippedWeaponDropVisual.h"
 
 #include "physics-interaction/PhysicsLog.h"

@@ -1,3 +1,5 @@
+// EquippedWeaponTransitionCoordinator: held-to-equipped weapon transitions
+// (see EquippedWeaponTransitionCoordinator.cpp).
 #pragma once
 
 #include "physics-interaction/weapon/equip/EquipVisualBridge.h"

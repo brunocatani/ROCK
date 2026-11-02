@@ -1,3 +1,5 @@
+// Holding-grip records: per-weapon hand poses that override the firing seat
+// (see HoldingGripRecords.cpp).
 #pragma once
 #include <filesystem>
 #include <string>

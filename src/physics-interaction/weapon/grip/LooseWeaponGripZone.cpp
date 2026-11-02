@@ -1,3 +1,6 @@
+// Firing-grip zone for loose weapons: projects the learned firing grip onto a
+// held loose weapon, tracks whether the holding palm is inside it, resolves
+// authored grab poses and near grabs, and probes the hover candidate.
 #include "physics-interaction/weapon/grip/LooseWeaponGripZone.h"
 #include "physics-interaction/weapon/classification/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/grip/PipeFiringGripPolicy.h"

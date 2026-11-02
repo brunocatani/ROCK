@@ -1,3 +1,12 @@
+// TwoHandedGrip: the equipped weapon's grip controller. Owns the firing grip,
+// each hand's part grips, part carry, recoil, scope hand authority and the grip
+// reports, and solves the weapon pose from the hands each frame.
+// Implementation files: grip/TwoHandedGripController.cpp (lifecycle and state
+// dispatch), FiringGrip.cpp, SupportGrip.cpp, SupportGripFingerSolve.cpp,
+// PartCarry.cpp, LeftFiringCarry.cpp, HandVisualTransitions.cpp,
+// GripReports.cpp, FrikWeaponNodeOwnership.cpp, TwoHandedGripDebug.cpp,
+// recoil/RecoilController.cpp, scope/NativeScopePresentation.cpp and
+// scope/ScopeSafeHandFrames.cpp.
 #pragma once
 #include "physics-interaction/weapon/authored/AuthoredWeaponGripPose.h"
 #include "physics-interaction/weapon/grip/WeaponGripTransfer.h"

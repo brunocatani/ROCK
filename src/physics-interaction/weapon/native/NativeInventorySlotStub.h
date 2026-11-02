@@ -1,3 +1,5 @@
+// Machine-code stub that replaces a native worn-bit call so the inventory hand
+// slots receive the owning actor.
 #pragma once
 
 #include <cstdint>

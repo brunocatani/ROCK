@@ -1,3 +1,5 @@
+// Resolves the translation between the animation library's vanilla weapon
+// model and the model actually being gripped.
 #include "physics-interaction/weapon/authored/VanillaWeaponGripFrame.h"
 
 #include "RE/NetImmerse/NiNode.h"

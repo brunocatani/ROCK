@@ -1,3 +1,5 @@
+// Whether the equipped weapon has an authored support grip, and which support
+// grab a hand takes: the authored seat, a dynamic grab, or none.
 #pragma once
 
 #include <algorithm>

@@ -1,3 +1,5 @@
+// Patches native VR melee to read the wand of the hand that holds each weapon
+// instead of always the right wand.
 #include "physics-interaction/weapon/native/NativeMeleeWand.h"
 #include <REL/Relocation.h>
 #include <Windows.h>

@@ -1,3 +1,5 @@
+// Which weapons get ROCK's manual scope: native scope identity, magnified scope
+// structure, overlay index and magnification.
 #pragma once
 
 #include <cmath>

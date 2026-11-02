@@ -1,3 +1,5 @@
+// Which equip slot an equip lands in, decided by the acting hand. Every ROCK
+// equip path uses this one rule.
 #pragma once
 
 #include "physics-interaction/weapon/equip/EquippedWeaponRoster.h"

@@ -1,3 +1,4 @@
+// Pip-Boy hand markers for equipped weapons (see NativePipboyHandMarkers.cpp).
 #pragma once
 
 namespace rock::native_pipboy_hand_markers

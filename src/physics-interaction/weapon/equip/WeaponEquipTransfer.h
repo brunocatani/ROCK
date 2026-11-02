@@ -1,3 +1,5 @@
+// Native weapon equip, unequip and drop requests and results (see
+// WeaponEquipTransfer.cpp).
 #pragma once
 
 #include "RE/Bethesda/BGSInventoryItem.h"

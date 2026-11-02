@@ -1,3 +1,5 @@
+// Scope rig re-parenting after a native unequip of a left-carried weapon (see
+// ScopeRigParentRepair.cpp).
 #pragma once
 
 /*

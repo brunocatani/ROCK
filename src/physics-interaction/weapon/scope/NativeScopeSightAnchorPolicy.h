@@ -1,3 +1,5 @@
+// Resolves the scope sight anchor, accepting generated scope geometry only
+// while it belongs to the exact equipped weapon.
 #pragma once
 
 #include "physics-interaction/VectorMath.h"

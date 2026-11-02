@@ -1,3 +1,5 @@
+// Classifies the native weapon state for equipping a held weapon: whether an
+// equip can begin and whether a draw follow-up is needed.
 #pragma once
 
 #include <cstdint>

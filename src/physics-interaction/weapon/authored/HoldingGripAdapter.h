@@ -1,3 +1,4 @@
+// Converts holding-grip poses to and from native transforms.
 #pragma once
 #include "RE/NetImmerse/NiTransform.h"
 #include "physics-interaction/weapon/authored/HoldingGripMath.h"

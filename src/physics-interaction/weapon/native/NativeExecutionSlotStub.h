@@ -1,3 +1,5 @@
+// Machine-code stub that replaces the native equip-slot getter call, so ROCK
+// chooses the equip slot of a hand-directed equip.
 #pragma once
 
 #include <cstdint>

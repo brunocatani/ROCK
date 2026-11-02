@@ -1,3 +1,5 @@
+// Native VR melee for the second equipped weapon: attaches the native melee
+// collision to its presented model and routes its impacts and hits.
 #include "physics-interaction/weapon/secondary/NativeSecondaryMelee.h"
 #include <REL/Relocation.h>
 #include <Windows.h>

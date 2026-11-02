@@ -1,3 +1,5 @@
+// Loads the player-made FRIK weapon offset files, reloads them when the folder
+// changes and looks up the offset for a weapon.
 #include "physics-interaction/weapon/handling/FrikWeaponOffsets.h"
 
 #include "RockConfig.h"

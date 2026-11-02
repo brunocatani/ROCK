@@ -1,3 +1,6 @@
+// Equipped weapon handling settings (handedness, support grabs, drop, auto
+// equip, shoulder stash, firing-grip radii), built each frame from ROCK's
+// settings and any external provider's handling request.
 #pragma once
 
 #include <ROCK/Weapon.h>

@@ -1,3 +1,5 @@
+// Validates that a provider's inventory weapon capture still matches the
+// current frame and inventory stack.
 #pragma once
 #include <ROCK/Weapon.h>
 

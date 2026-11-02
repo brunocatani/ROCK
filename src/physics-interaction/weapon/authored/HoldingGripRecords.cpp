@@ -1,3 +1,5 @@
+// Loads the holding-grip files from Data/F4SE/Plugins/ROCK/HoldingGrips once at
+// startup and answers lookups by weapon, grip node, hand and power armor.
 #include "physics-interaction/weapon/authored/HoldingGripRecords.h"
 #include <Windows.h>
 #include <algorithm>

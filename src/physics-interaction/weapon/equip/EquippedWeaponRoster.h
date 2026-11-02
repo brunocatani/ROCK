@@ -1,3 +1,5 @@
+// The equipped weapon roster: which hand holds which equipped weapon, and in
+// which role (firing grip, part grip or nothing).
 #pragma once
 
 #include "physics-interaction/weapon/equip/EquippedWeaponToggleGrabPolicy.h"

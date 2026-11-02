@@ -1,3 +1,5 @@
+// Weapon equip mode (iWeaponEquipMode): how a loose weapon equips and what the
+// last grip release does, plus the drop and shoulder-stash decisions it implies.
 #pragma once
 
 #include <cstdint>

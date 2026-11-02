@@ -1,3 +1,5 @@
+// The current equipped weapon handling settings, published once per frame for
+// helpers that cannot reach PhysicsInteraction. Game thread only.
 #pragma once
 
 #include "physics-interaction/weapon/handling/EquippedWeaponHandlingSettings.h"

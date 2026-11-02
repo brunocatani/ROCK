@@ -1,3 +1,5 @@
+// Reverse grip for one-handed melee weapons: the trigger of the carrying hand
+// toggles it (see KnifeReverseGrip.cpp).
 #pragma once
 
 #include "RE/NetImmerse/NiTransform.h"

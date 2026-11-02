@@ -1,3 +1,4 @@
+// Read-only check whether a native scene node lies inside a protected model.
 #pragma once
 
 #include <cstdint>

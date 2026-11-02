@@ -1,3 +1,4 @@
+// Second weapon presentation (see NativeSecondaryPresentation.cpp).
 #pragma once
 
 #include "RE/NetImmerse/NiAVObject.h"

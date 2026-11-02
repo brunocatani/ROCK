@@ -1,3 +1,5 @@
+// EquipPickupScope: marks the exact reference and count ROCK is picking up for
+// an equip, so the weapon provider's isEquipPickup query can report it.
 #pragma once
 #include <cstdint>
 

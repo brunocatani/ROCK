@@ -1,3 +1,5 @@
+// Pose solves for the equip visual bridge, so the retained loose model and the
+// equipped hands share one weapon pose, and the presentation lease timing.
 #pragma once
 
 #include "physics-interaction/weapon/grip/WeaponSupport.h"

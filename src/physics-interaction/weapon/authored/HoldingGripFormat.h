@@ -1,3 +1,5 @@
+// Reads holding-grip JSON records: per weapon and grip node, a wrist pose and
+// fifteen finger poses, for each hand and for power armor.
 #pragma once
 #include <nlohmann/json.hpp>
 #include <stdexcept>

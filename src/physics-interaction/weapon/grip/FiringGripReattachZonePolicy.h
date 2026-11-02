@@ -1,3 +1,6 @@
+// The firing-grip reattach zone: one region on each side of the weapon around
+// the captured grip point. A free palm inside a region may take the firing grip
+// back.
 #pragma once
 
 #include "physics-interaction/weapon/authored/AuthoredWeaponGripActivationPolicy.h"

@@ -1,3 +1,7 @@
+// Idle grip preharvest: samples a weapon's native first-person idle animation
+// off screen, one weapon at a time, to record its authored firing and support
+// hand relations before the player grips it. Validates every native entry
+// point and layout before use and fails closed.
 #include "physics-interaction/weapon/authored/NativeIdleGripPreharvest.h"
 #include "physics-interaction/weapon/grip/PipeFiringGripPolicy.h"
 #include "physics-interaction/weapon/native/NativeSubgraphMetadata.h"

@@ -1,3 +1,6 @@
+// Resolves the firing seat for an equipped weapon: the harvested native seat,
+// a holding-grip override or the compiled minigun seat, mirrored for the left
+// hand.
 #include "physics-interaction/weapon/grip/WeaponGripSeat.h"
 
 #include "RockConfig.h"

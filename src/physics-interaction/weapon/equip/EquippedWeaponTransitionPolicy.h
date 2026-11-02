@@ -1,3 +1,5 @@
+// Pure rules for equipped weapon transitions: renderability confirmation,
+// draw and presentation recovery windows, and firing-hand resolution.
 #pragma once
 
 #include "physics-interaction/weapon/equip/HeldWeaponEquipStatePolicy.h"

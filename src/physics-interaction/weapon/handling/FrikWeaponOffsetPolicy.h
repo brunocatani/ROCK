@@ -1,3 +1,5 @@
+// Reads player-made FRIK weapon offset files and turns one into a firing seat
+// and scale for its weapon.
 #pragma once
 
 #include "physics-interaction/weapon/authored/HoldingGripMath.h"

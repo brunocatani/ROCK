@@ -1,3 +1,5 @@
+// Whether the player has moved beyond the hands-free radius from a weapon
+// resting on a surface (bipod), so the weapon is retired.
 #pragma once
 #include <cmath>
 

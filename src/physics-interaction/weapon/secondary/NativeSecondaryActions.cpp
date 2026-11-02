@@ -1,3 +1,6 @@
+// Native actions for the second equipped weapon (equipment index 1): draw,
+// firing, reload, recoil and haptics on its private animation graph, routed
+// through ROCK's forwarder in the player's graph-manager slot.
 #include "physics-interaction/weapon/secondary/NativeSecondaryActions.h"
 #include <Windows.h>
 #include <algorithm>

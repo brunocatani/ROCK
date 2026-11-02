@@ -1,3 +1,5 @@
+// Queues a native re-attach of the exact current equipped weapon model, after
+// checking the runtime, the native entry point and the weapon identity.
 #include "physics-interaction/weapon/native/NativeEquippedWeaponAttach.h"
 
 #include "physics-interaction/native/NativeMemory.h"

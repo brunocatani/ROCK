@@ -1,3 +1,6 @@
+// Native inventory operations for weapons: equip an inventory stack or a held
+// world reference, unequip by equipment index, promote the second weapon to
+// primary, and drop the equipped weapon into the world.
 #include "physics-interaction/weapon/equip/WeaponEquipTransfer.h"
 #include "physics-interaction/weapon/equip/EquipPickupScope.h"
 #include "physics-interaction/weapon/equip/WeaponTransitionAnimationAcceleration.h"

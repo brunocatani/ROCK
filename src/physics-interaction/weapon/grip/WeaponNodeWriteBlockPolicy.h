@@ -1,3 +1,4 @@
+// When ROCK must hold FRIK's primary weapon-node write block, and why.
 #pragma once
 
 #include <cstdint>

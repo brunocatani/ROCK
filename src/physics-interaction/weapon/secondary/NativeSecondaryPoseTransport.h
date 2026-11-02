@@ -1,3 +1,5 @@
+// Moves presented poses between frames and nodes without accumulating the
+// native float error of rendered matrices.
 #pragma once
 
 #include <algorithm>

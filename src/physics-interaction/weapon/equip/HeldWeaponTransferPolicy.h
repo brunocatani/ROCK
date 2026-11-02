@@ -1,3 +1,5 @@
+// The held weapon transfer sequence: from a weapon in the hand to the
+// inventory commit, grip acquisition and presentation, with cancel and recovery.
 #pragma once
 
 #include "physics-interaction/weapon/equip/EquippedWeaponTransitionPolicy.h"

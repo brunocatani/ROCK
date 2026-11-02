@@ -1,3 +1,5 @@
+// Hooks native model retirement and culling so an equipped model ROCK still
+// presents is not detached or hidden by another equipped model's teardown.
 #include "physics-interaction/weapon/native/NativeEquippedModelLifetime.h"
 #include <REL/Relocation.h>
 #include <Windows.h>

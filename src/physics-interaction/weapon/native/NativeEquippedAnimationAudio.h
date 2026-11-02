@@ -1,3 +1,5 @@
+// Native sound handles for one private equipped graph (see
+// NativeEquippedAnimationAudio.cpp).
 #pragma once
 
 #include <array>

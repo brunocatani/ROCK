@@ -1,3 +1,5 @@
+// The native subgraph metadata list passed to off-screen graph requests, so
+// they stay out of the actor's live idle roots.
 #pragma once
 #include <array>
 #include <cstddef>

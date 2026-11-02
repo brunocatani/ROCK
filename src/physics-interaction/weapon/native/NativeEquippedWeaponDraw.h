@@ -1,3 +1,5 @@
+// Native draw request for the current equipped weapon (see
+// NativeEquippedWeaponDraw.cpp).
 #pragma once
 
 #include <cstdint>

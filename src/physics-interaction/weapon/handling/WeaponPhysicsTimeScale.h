@@ -1,3 +1,4 @@
+// Rescales weapon handling for slow motion: time scale and velocity rebasing.
 #pragma once
 
 #include "RE/NetImmerse/NiTransform.h"

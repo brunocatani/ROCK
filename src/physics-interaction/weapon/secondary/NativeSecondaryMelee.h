@@ -1,3 +1,5 @@
+// Native VR melee for the weapon at equipment index 1 (see
+// NativeSecondaryMelee.cpp).
 #pragma once
 
 namespace RE

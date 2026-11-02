@@ -1,3 +1,5 @@
+// Selects the candidate weapon triangles for the support-hand finger solve,
+// ranked by distance to the support seat and to each finger's reference points.
 #pragma once
 
 #include "physics-interaction/TransformMath.h"

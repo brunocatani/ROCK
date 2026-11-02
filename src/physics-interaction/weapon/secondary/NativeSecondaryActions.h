@@ -1,3 +1,4 @@
+// Native actions for the second equipped weapon (see NativeSecondaryActions.cpp).
 #pragma once
 
 #include "physics-interaction/weapon/equip/EquippedAmmoPolicy.h"

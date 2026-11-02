@@ -1,3 +1,5 @@
+// Finds the inventory stack a transferred weapon landed in, by exact instance
+// or by the same live stack.
 #pragma once
 
 #include <array>

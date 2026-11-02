@@ -1,3 +1,5 @@
+// Player-made FRIK weapon offsets (see FrikWeaponOffsetPolicy.h and
+// FrikWeaponOffsets.cpp).
 #pragma once
 
 #include "physics-interaction/weapon/handling/FrikWeaponOffsetPolicy.h"

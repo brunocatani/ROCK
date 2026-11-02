@@ -1,3 +1,5 @@
+// Plays a private equipped graph's animation sounds through the native sound
+// calls, with its own handles.
 #include "physics-interaction/weapon/native/NativeEquippedAnimationAudio.h"
 #include <REL/Relocation.h>
 #include <string>

@@ -1,3 +1,5 @@
+// Pure rules for draw and put-away acceleration: clip classification, lease
+// matching and timestep scaling.
 #pragma once
 
 #include "physics-interaction/weapon/equip/HeldWeaponEquipStatePolicy.h"

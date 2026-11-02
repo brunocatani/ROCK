@@ -1,3 +1,5 @@
+// Native scope hooks: scope menu messages, housing configuration, overlay and
+// field of view, and the second weapon's scope target.
 #include "physics-interaction/weapon/scope/NativeScopeData.h"
 
 #include "physics-interaction/PhysicsLog.h"

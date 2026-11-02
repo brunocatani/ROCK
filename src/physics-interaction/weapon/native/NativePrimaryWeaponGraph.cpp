@@ -1,3 +1,5 @@
+// Redirects the native animation-equipment lookup so the player's action graph
+// stays bound to the real primary weapon while a second gun is equipped.
 #include "physics-interaction/weapon/native/NativePrimaryWeaponGraph.h"
 #include <REL/Relocation.h>
 #include <array>

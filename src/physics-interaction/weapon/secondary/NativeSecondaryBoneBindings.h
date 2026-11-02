@@ -1,3 +1,5 @@
+// Binds the second weapon model's animation targets privately to its hand,
+// while the native model stays the rendered model.
 #pragma once
 
 #include <Windows.h>

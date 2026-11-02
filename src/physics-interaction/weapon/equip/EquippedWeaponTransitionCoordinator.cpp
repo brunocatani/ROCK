@@ -1,3 +1,6 @@
+// EquippedWeaponTransitionCoordinator: carries a held weapon through equip,
+// draw and presentation until the equipped weapon is in the hand, recovering
+// from native draw or visibility failures and finishing each transition once.
 #include "physics-interaction/weapon/equip/EquippedWeaponTransitionCoordinator.h"
 #include "RockConfig.h"
 

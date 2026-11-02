@@ -1,3 +1,5 @@
+// The one firing seat source for every equipped weapon, in either equip slot
+// and either hand (see WeaponGripSeat.cpp).
 #pragma once
 
 #include "physics-interaction/weapon/authored/AuthoredWeaponGripLibrary.h"

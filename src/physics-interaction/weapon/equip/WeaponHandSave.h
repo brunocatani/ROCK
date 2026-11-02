@@ -1,3 +1,4 @@
+// The HNDS co-save record (see WeaponHandSave.cpp).
 #pragma once
 
 namespace rock::weapon_hand_save

@@ -1,3 +1,4 @@
+// Live samples for the gunstock and controller-aim debug overlays.
 #pragma once
 #include <array>
 #include <cstdint>

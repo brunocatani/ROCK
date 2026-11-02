@@ -1,3 +1,5 @@
+// Keeps a node's last final presented pose, which native arm passes may
+// overwrite several times in one frame.
 #pragma once
 
 #include <cstdint>

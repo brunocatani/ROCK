@@ -1,3 +1,5 @@
+// A private native behavior graph for one equipped weapon: loads and validates
+// it, advances it, sets its variables, collects its events and places its bones.
 #include "physics-interaction/weapon/native/NativeEquippedActionGraph.h"
 #include <Windows.h>
 #include <algorithm>
