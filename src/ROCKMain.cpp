@@ -31,6 +31,7 @@
 #include "physics-interaction/native/HeldScenePresentation.h"
 #include "physics-interaction/native/HeldWeaponInstantTransition.h"
 #include "physics-interaction/native/NativeOneHandRestore.h"
+#include "physics-interaction/native/NativeWristPipboyLook.h"
 #include "physics-interaction/native/TriggerEquipReadinessTrace.h"
 #include "physics-interaction/native/NativeCharacterProxySafety.h"
 #include "physics-interaction/native/NativeCollisionFilterSafety.h"
@@ -1397,6 +1398,9 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     }
     if (!rock::native_one_hand_restore::install()) {
         logger::error("ROCK: Native one-hand item restore could not be disabled; ROCK weapon equips, unequips and drops refuse.");
+    }
+    if (!rock::native_wrist_pipboy_look::install()) {
+        logger::warn("ROCK: A closed FRIK wrist Pip-Boy still reacts to gaze (native hum and look-open).");
     }
     logger::info("ROCK: Install held weapon instant-transition capability...");
     if (!rock::held_weapon_instant_transition::install()) {
