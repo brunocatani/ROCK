@@ -3,6 +3,8 @@
 #include "physics-interaction/weapon/InventoryWeaponEquipPolicy.h"
 #include "physics-interaction/weapon/EquipSlotAllocationPolicy.h"
 #include "physics-interaction/weapon/NativeHandEquipment.h"
+#include "physics-interaction/weapon/NativeEquippedModelLifetime.h"
+#include "physics-interaction/weapon/NativeSecondaryActions.h"
 #include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
 
 #include <array>
@@ -138,10 +140,15 @@ namespace rock {
          * slot-1 weapon in its own hand, as after a Pip-Boy unequip.
          */
         const auto instance = reinterpret_cast<std::uintptr_t>(view.instance);
+        // As the shoulder stash and the second weapon's drop: the second
+        // graph retires with its model, so its actions stop first, and the
+        // equipment change completes the survivor's visibility handoff.
+        if (weaponSlot == 1) native_secondary_actions::suspend();
         const bool unequipped = weapon_equip_transfer::unequipEquippedIndex(weaponSlot, expectedFormId, instance);
         ROCK_LOG_INFO(Weapon, "Provider weapon unequip slot={} form={:08X} instance={:#x} unequipped={}",
             weaponSlot, expectedFormId, instance, unequipped);
         if (!unequipped) return api::Status::InternalError;
+        native_equipped_model_lifetime::noteEquipmentChange();
         if (weaponSlot == 0) {
             _equipped.transition.pendingGrip() = {};
             clearEquippedWeaponFiringGripInputState();

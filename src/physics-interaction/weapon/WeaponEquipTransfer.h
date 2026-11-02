@@ -41,6 +41,7 @@ namespace rock::weapon_equip_transfer
         EquippedStackMismatch,
         ActivateRefThenInstantEquip,
         InventoryInstantEquip,
+        PreviousWeaponRestoreResetUnavailable,
     };
 
     enum class DropReason : std::uint8_t

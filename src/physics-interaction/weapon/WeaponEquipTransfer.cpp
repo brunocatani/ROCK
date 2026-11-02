@@ -463,6 +463,20 @@ namespace rock::weapon_equip_transfer
             RE::BGSObjectInstance objectInstance(result.weapon, stack.instanceData.get());
             const std::uint32_t index = secondary ? 1u : 0u;
             /*
+             * The native unequip re-equips the player's remembered one-hand
+             * items (clearPreviousWeaponRestore). A replacing equip leaves the
+             * weapon it replaced there, and a later second-weapon equip then
+             * put it back over the primary and lost its own weapon: after two
+             * holster swaps the primary alternated between the swapped pair
+             * on every attempt, and the first attempt after an unequip had
+             * cleared the memory succeeded (runtime 2 Nov 12:01:00-12:01:22).
+             * ROCK equips never restore.
+             */
+            if (!clearPreviousWeaponRestore(player)) {
+                result.reason = EquipReason::PreviousWeaponRestoreResetUnavailable;
+                return result;
+            }
+            /*
              * The native wrapper owns one immediate manager call and suppresses
              * only the verified sheathe/draw action submissions made inside that
              * synchronous transaction. A queued retry cannot rescue an immediate
@@ -613,6 +627,8 @@ namespace rock::weapon_equip_transfer
             return "equipped-identity-mismatch";
         case EquipReason::EquippedStackMismatch:
             return "equipped-stack-mismatch";
+        case EquipReason::PreviousWeaponRestoreResetUnavailable:
+            return "previous-weapon-restore-reset-unavailable";
         case EquipReason::InventoryInstantEquip:
             return "inventory-instant-equip";
         case EquipReason::ActivateRefThenInstantEquip:
@@ -903,6 +919,10 @@ namespace rock::weapon_equip_transfer
         // correct end state (the bare-fist guard expects it).
         const bool keepsOther = index <= 1 && readEquippedWeaponSnapshot(1 - index).weapon != nullptr;
         const auto stateBefore = f4vr::getNativeWeaponState(player);
+        // The equip executor's weapon hide runs after this weapon has left the
+        // equipment list, so it would blank only the one that stays.
+        std::optional<native_equipped_model_lifetime::SurvivorVisibleScope> survivor;
+        if (keepsOther) survivor.emplace();
         held_weapon_instant_transition::KeptDrawnUnequipResult kept{};
         if (keepsOther) kept = held_weapon_instant_transition::unequipKeepingDrawn(player, run, &call);
         // Without the startup capability (or inside another ROCK equip
@@ -912,6 +932,7 @@ namespace rock::weapon_equip_transfer
             kept.code == held_weapon_instant_transition::ImmediateEquipCode::MissingInput) {
             run(&call);
         }
+        survivor.reset();
         const auto remaining = readEquippedWeaponSnapshot(index);
         const auto sheathesSuppressed = held_weapon_instant_transition_policy::actionCount(
             kept.actionTrace, held_weapon_instant_transition_policy::NativeAction::Sheathe);
