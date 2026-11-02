@@ -59,6 +59,28 @@ namespace rock::native_quick_loot_hand
         } };
 
         /*
+         * HUDRolloverModel vtable slot 16 (call [vtable+0x80]) says whether a
+         * wand's Search prompt hosts the quick container: the primary model
+         * returns true (0xADDD60, mov al,1), the secondary false (0xADDD80,
+         * xor al,al). Its only callers in the rollover code (0xAC7870,
+         * 0xAC7E10, 0xAC7F60, 0xAD8930) pair it with the quick container
+         * state's primary-lootable flag (0xAC5C30 reads state +0xC0) to hide
+         * the hosting wand's prompt while the panel lists, and with dead-actor
+         * picks. Both slots are replaced so the hand that holds the panel
+         * hosts it: the left prompt hides while the left hand lists, and the
+         * right prompt keeps its own target.
+         */
+        struct RolloverHostSlot
+        {
+            std::uintptr_t vtable;
+            std::uintptr_t native;
+            std::array<std::uint8_t, 3> nativeBytes;
+        };
+        constexpr std::size_t kHostsQuickContainerSlot = 16;
+        constexpr RolloverHostSlot kPrimaryRolloverHost{ 0x2D4ED78, 0xADDD60, { 0xB0, 0x01, 0xC3 } };
+        constexpr RolloverHostSlot kSecondaryRolloverHost{ 0x2D4EF98, 0xADDD80, { 0x32, 0xC0, 0xC3 } };
+
+        /*
          * WSLootModel: its constructor 0xC85560 stores itself at 0x5ACBC98.
          * The player VR node builder 0xEF21A0 attaches it to
          * PrimaryUIAttachNode (player +0x700) through 0xC90220, which attaches
@@ -93,6 +115,8 @@ namespace rock::native_quick_loot_hand
         std::atomic<Hand> g_panelHand{ Hand::Right };
         std::atomic<std::uint32_t> g_rightPick{ 0 };
         std::atomic<std::uint32_t> g_leftPick{ 0 };
+        // Written by the HUD data model update, read by the rollover models.
+        std::atomic<bool> g_leftHostsPanel{ false };
         // Written by the game thread, read by the HUD data model update.
         std::atomic<bool> g_preferLeft{ false };
         // Game thread only. The ROCK node under the left wand that carries the
@@ -120,6 +144,7 @@ namespace rock::native_quick_loot_hand
             g_rightPick.store(rightLootable ? right : 0, std::memory_order_relaxed);
             g_leftPick.store(leftLootable ? left : 0, std::memory_order_relaxed);
             if (!rightLootable && !leftLootable) {
+                g_leftHostsPanel.store(false, std::memory_order_relaxed);
                 return;
             }
 
@@ -128,7 +153,49 @@ namespace rock::native_quick_loot_hand
                 *rightSlot = left;
                 *leftSlot = right;
             }
+            g_leftHostsPanel.store(leftOwns, std::memory_order_relaxed);
             g_panelHand.store(leftOwns ? Hand::Left : Hand::Right, std::memory_order_release);
+        }
+
+        bool primaryRolloverHostsPanel(void*)
+        {
+            return !g_leftHostsPanel.load(std::memory_order_relaxed);
+        }
+
+        bool secondaryRolloverHostsPanel(void*)
+        {
+            return g_leftHostsPanel.load(std::memory_order_relaxed);
+        }
+
+        std::uintptr_t rolloverHostSlotAddress(const RolloverHostSlot& host)
+        {
+            return REL::Offset(host.vtable).address() + sizeof(std::uintptr_t) * kHostsQuickContainerSlot;
+        }
+
+        bool rolloverHostSlotMatches(const RolloverHostSlot& host)
+        {
+            std::uintptr_t current{};
+            std::array<std::uint8_t, 3> bytes{};
+            const auto native = REL::Offset(host.native).address();
+            return native_memory::guardedCopyFromMemory(
+                       reinterpret_cast<const void*>(rolloverHostSlotAddress(host)), &current, sizeof(current)) &&
+                   current == native &&
+                   native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(native), bytes.data(), bytes.size()) &&
+                   bytes == host.nativeBytes;
+        }
+
+        // Both prompts switch together or neither does.
+        void installRolloverHosts()
+        {
+            if (!rolloverHostSlotMatches(kPrimaryRolloverHost) || !rolloverHostSlotMatches(kSecondaryRolloverHost)) {
+                ROCK_LOG_WARN(Init, "Quick loot hand: the rollover host slots do not match; "
+                    "the left hand's Search prompt stays visible while it lists a container");
+                return;
+            }
+            REL::safe_write(rolloverHostSlotAddress(kPrimaryRolloverHost),
+                reinterpret_cast<std::uintptr_t>(&primaryRolloverHostsPanel));
+            REL::safe_write(rolloverHostSlotAddress(kSecondaryRolloverHost),
+                reinterpret_cast<std::uintptr_t>(&secondaryRolloverHostsPanel));
         }
 
         void* afterPicksCopied(void* lock, const std::uintptr_t argument)
@@ -305,6 +372,7 @@ namespace rock::native_quick_loot_hand
             ROCK_LOG_ERROR(Init, "Quick loot hand installation failed; the panel stays on the right hand");
             return false;
         }
+        installRolloverHosts();
         ROCK_LOG_INFO(Init, "Quick loot hand installed: the loot panel follows the hand closer to its container");
         return true;
     }

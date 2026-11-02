@@ -15,7 +15,9 @@
  * both do and the left wand is closer to its container by a switch margin.
  * The game thread measures those distances and moves the panel to the owning
  * hand once per frame, mirrored across the wand's X axis as the native
- * left-handed layout does. Only one hand ever carries the panel.
+ * left-handed layout does. Only one hand ever carries the panel. The owning
+ * hand's Search prompt hides while the panel lists, as the right hand's does
+ * natively; the other hand keeps its own prompt.
  */
 namespace rock::native_quick_loot_hand
 {
