@@ -41,6 +41,11 @@ Policy tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp`; never re-i
 - NPC behaviour belongs to SCISSORS_Redux. ROCK keeps only shared mechanisms: native allocation and quarantine, callback lifetime, hand and weapon authority, connected-body grab execution, native safety and grenade lifecycle. For contact-only blade damage, ROCK publishes the contact point and the optional NativeInteraction manifold normal and count; it never owns blade profiles, native melee damage hooks, actor-limb policy or their experiment flags. For 1.0, Redux creates and reads its own NPC bodies and constraints and reads Havok directly; ROCK stops proxying NPC body work (`Docs/ROCK/docs/ProviderApiV2Plan.md`).
 - All world drawing, gameplay indicators and debug shapes moves to RPS UI Framework, and ROCK keeps no renderer (`Docs/ROCK/docs/DebugRenderingMigrationPlan.md`). ROCK keeps its own hand and weapon visualization master setting.
 
+## Behaviour invariants
+
+- A grab always places the object. Never answer a poor grab pose by rejecting the grab; improve the seat and the finger posing. A held object always ends in the palm, locked to the hand (`placeHeldBodiesOnHandTarget`): a grab is never marked held while the object is still away from the hand.
+- Players on weak PCs never send logs, so their bugs are found from code. Per-frame limits (distance per frame, frame-time gates, sample ages, retention windows) scale with frame length (`frameMotionScale`, `ContactClock::freshnessWindowSeconds`), never with 90 Hz frame counts.
+
 ## Configuration contract
 
 - Runtime authority belongs only to `ROCK.ini` (consumer) and `ROCK_Developer.ini` (developer overrides). Each supported key has exactly one owning file, following the split in `src/config/DeveloperSettingMetadata.h`, including advanced options without a Debug prefix.
