@@ -13,7 +13,7 @@
 
 #include <openvr.h>
 
-// Per-frame orchestration: update(), interaction frame finalization, hand transform sampling, physics substep callbacks, held-mass slowdown, and the frame/debug-overlay implementation includes.
+// Per-frame orchestration: update(), interaction frame finalization, hand transform sampling, physics substep callbacks and held-mass slowdown.
 
 namespace rock
 {
@@ -244,7 +244,6 @@ namespace rock
         return nullptr;
     }
 
-#include "physics-interaction/core/PhysicsInteractionFrame.inl"
 
     void PhysicsInteraction::synchronizeNativeScopePresentationAfterFrikUpdate()
     {
@@ -1080,7 +1079,6 @@ namespace rock
         BethesdaPhysicsBody::serviceRetiredDeferredPayloads(world);
     }
 
-#include "physics-interaction/core/PhysicsInteractionDebugOverlay.inl"
     void PhysicsInteraction::updateSelection(const PhysicsFrameContext& frame)
     {
         if (!runtime_state::isLocalSkeletonReady()) {

@@ -1,3 +1,42 @@
+// PhysicsInteraction: ROCK's runtime for one FRIK skeleton. ROCKMain creates it
+// once FRIK reports the skeleton ready and destroys it when the skeleton or the
+// session goes away. It owns both Hands, every generated collision body (hand,
+// body bone, weapon), grabbing, equipped-weapon handling and the data published
+// to provider API consumers.
+//
+// The implementation is split by topic across core/interaction/:
+//
+//   PhysicsInteractionLifecycle  construction, init/shutdown, world and generation
+//                                tracking, hand and body collider creation
+//   PhysicsInteractionUpdate     update(): the per-frame pipeline, final pose
+//                                publication and physics-step callbacks
+//   FrameContext                 buildFrameContext: one snapshot of both hands
+//   ContactEvents                Havok contact signal subscription and routing
+//   GrabInput                    grab buttons, selection, touch grab, grab commit
+//   GrabEventsAndHaptics         grab events and controller haptics
+//   HeldPlacement                provider-driven placement of held objects
+//   ForceGrabAndGrenades         deferred force grabs, grenade quick draw and fuses
+//   LootToHand                   items taken from the quick-loot view into a hand
+//   ObjectClaims                 which objects ROCK or a provider client holds
+//   ObjectRestFrame              provider object-rest watches
+//   EjectionContactsFrame        provider shell-ejection contact requests
+//   EquippedWeaponFrame          the equipped weapon each frame: grips, firing hand,
+//                                shoulder stash, handling settings
+//   EquippedWeaponDrop           dropping, storing and promoting equipped weapons
+//   InventoryWeaponEquip         provider inventory equip requests
+//   LooseWeaponCollisionFrame    release of a loose weapon's collision
+//   HandCollisionSuppression     when hand colliders and native player collision
+//                                are switched off, and contact evidence ownership
+//   NativeGrenadeCollision       collision protection for native grenade throws
+//   AmmoCounterFrame             ammo counters on the firing hands
+//   TransitionSeamTrace          equip/drop seam diagnostic
+//   ProviderCommands             provider interaction commands and part drives
+//   ProviderQueries              provider snapshot and query answers
+//   ProviderEventDispatch        grab events delivered to provider clients
+//   ProviderWeaponSources        provider weapon source node catalog
+//   DebugOverlayPublish          debug collider overlay publication
+//
+// Shared helpers for those files are in PhysicsInteractionInternal.h.
 #pragma once
 #include "api/HandInteractionPublication.h"
 #include "api/ObjectRestRequests.h"
@@ -852,7 +891,7 @@ namespace rock
             std::uint64_t extensionObstacleLayers = 0;
         };
 
-        // State owned by the contact callback (PhysicsInteractionContacts.inl):
+        // State owned by the contact callbacks (interaction/ContactEvents.cpp):
         // event registration witnesses, the shared contact clock, contact
         // stores and last-contact witnesses.
         struct ContactEvidenceState
@@ -1006,7 +1045,7 @@ namespace rock
         };
 
         // State owned by the ProviderCommands module and the provider API
-        // surface (PhysicsInteractionProvider.inl).
+        // queries (interaction/ProviderQueries.cpp).
         struct ProviderDriveState
         {
             std::array<ProviderWeaponPartDriveNodeState, api::weaponparts::kMaxDrives> nodeStates{};

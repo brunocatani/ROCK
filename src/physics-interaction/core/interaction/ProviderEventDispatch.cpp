@@ -1,5 +1,14 @@
-// Included in namespace rock. Event identity belongs to this live producer,
-// not the last completed provider publication (which may belong to another world).
+// Grab events delivered to provider clients. Kept in its own file so
+// ProviderWeaponSourceTests can compile it against a test PhysicsInteraction.
+#include "physics-interaction/core/PhysicsInteractionInternal.h"
+
+#include "api/GrabEventCallbacks.h"
+#include "api/ProviderRuntimeServices.h"
+
+namespace rock
+{
+// Event identity belongs to this live producer, not the last completed
+// provider publication (which may belong to another world).
 api::Sample PhysicsInteraction::providerEventSample() const {
     return {provider::runtime::currentGameFrameIndex(), 0,
         _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire),
@@ -20,3 +29,4 @@ api::Sample PhysicsInteraction::providerEventSample() const {
         const auto sample=providerEventSample();
         provider::grab_callbacks::deliver(eventData,sample);
     }
+}

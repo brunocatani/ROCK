@@ -1,10 +1,10 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 
-// Physics object claims and forced drops. Includes the contact-callback implementation (PhysicsInteractionContacts.inl).
+// Physics object claims: which world objects ROCK's hands or an external
+// provider client currently hold, so other systems leave them alone.
 
 namespace rock
 {
-#include "physics-interaction/core/PhysicsInteractionContacts.inl"
     bool PhysicsInteraction::physicsModOwnsObject(RE::TESObjectREFR* ref) const
     {
         if (!ref)

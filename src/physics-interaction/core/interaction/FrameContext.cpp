@@ -1,11 +1,14 @@
+// buildFrameContext: one snapshot of the worlds, timing, menu state and both
+// hands' inputs, built at the top of a PhysicsInteraction frame so every stage
+// reads the same values instead of querying FRIK and the game separately.
+#include "physics-interaction/core/PhysicsInteractionInternal.h"
+
+#include "api/ProviderRuntimeServices.h"
+
+namespace rock
+{
 PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE::hknpWorld* hknp)
 {
-    /*
-     * Frame-context construction is separated from the main update loop so
-     * lifecycle, collision, grab, weapon, and debug phases consume one coherent
-     * snapshot of ROCK/FO4VR hand state. This keeps future frame inputs from
-     * being added as scattered global reads throughout PhysicsInteraction::update().
-     */
     PhysicsFrameContext frame{};
     frame.bhkWorld = bhk;
     frame.hknpWorld = hknp;
@@ -90,4 +93,5 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
     frame.right = buildHandInput(false, _rightHand);
     frame.left = buildHandInput(true, _leftHand);
     return frame;
+}
 }

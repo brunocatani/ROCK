@@ -4,9 +4,6 @@
 #include <cassert>
 #include <limits>
 namespace { rock::provider::ProviderFrameClock eventClock; }
-namespace rock {
-#include "physics-interaction/core/interaction/ProviderEventDispatch.inl"
-}
 namespace rock::provider::runtime {
     // The old event producer used this stale snapshot. The current one must not.
     std::uint64_t currentGameFrameIndex(){return eventClock.current();}

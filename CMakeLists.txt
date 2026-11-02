@@ -1002,6 +1002,7 @@ if(BUILD_ROCK_TESTS)
   add_executable(ROCKProviderWeaponSourceTests
     "${ROOT_DIR}/tests/ProviderWeaponSourceTests.cpp"
     "${SOURCE_DIR}/physics-interaction/core/interaction/ProviderWeaponSources.cpp"
+    "${SOURCE_DIR}/physics-interaction/core/interaction/ProviderEventDispatch.cpp"
     "${SOURCE_DIR}/api/GrabEventCallbacks.cpp")
   target_compile_features(ROCKProviderWeaponSourceTests PRIVATE cxx_std_23)
   target_include_directories(ROCKProviderWeaponSourceTests PRIVATE "${ROOT_DIR}/tests/fixtures/weapon_sources" ${SOURCE_DIR})

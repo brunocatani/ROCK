@@ -13,7 +13,7 @@
 #include "physics-interaction/weapon/FrikWeaponOffsets.h"
 #include "physics-interaction/weapon/NativeSecondaryActions.h"
 
-// PhysicsInteraction lifecycle: construction, init/shutdown, skeleton and provider lifecycle notes, generated-body lifecycle, collision layer registration, hand/body collision creation, and world accessors. Includes the provider API surface (PhysicsInteractionProvider.inl).
+// PhysicsInteraction lifecycle: construction, init/shutdown, skeleton and provider lifecycle notes, generated-body lifecycle, collision layer registration, hand/body collision creation, and world accessors.
 
 namespace rock
 {
@@ -342,7 +342,6 @@ namespace rock
             api::core::LifecycleFlag::PhysicsWriteAllowed);
     }
 
-#include "physics-interaction/core/PhysicsInteractionProvider.inl"
     bool PhysicsInteraction::validateCriticalOffsets() const
     {
         auto* bhk = getPlayerBhkWorld();

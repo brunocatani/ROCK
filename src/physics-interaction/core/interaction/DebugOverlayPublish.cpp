@@ -1,6 +1,10 @@
-/*
- * Debug overlay publishing is split from the runtime frame loop because it is diagnostic fan-out over many subsystems, not interaction authority. The fragment remains in this translation unit so existing helper visibility and behavior stay unchanged.
- */
+// Debug collider overlay: gathers the colliders, grab frames, grip zones and
+// skeleton bones selected by the debug settings and publishes one overlay frame
+// for drawing. Diagnostic only; nothing here changes interaction state.
+#include "physics-interaction/core/PhysicsInteractionInternal.h"
+
+namespace rock
+{
     void PhysicsInteraction::publishDebugBodyOverlay(const PhysicsFrameContext& context)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::DebugOverlayPublish);
@@ -2725,3 +2729,4 @@
 
         debug::PublishFrame(frame);
     }
+}

@@ -186,8 +186,6 @@ namespace rock
         }
     }
 
-    #include "ProviderEventDispatch.inl"
-
     void PhysicsInteraction::dispatchSimpleGrabEvent(
         GrabEventType type,
         bool isLeft,

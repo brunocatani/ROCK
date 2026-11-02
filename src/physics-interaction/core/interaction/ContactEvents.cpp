@@ -1,6 +1,16 @@
-/*
- * Contact routing is kept as a separate core fragment because it bridges the native hknp contact signal, hand semantic and touch state, and weapon contacts. Keeping it in the PhysicsInteraction translation unit preserves the existing anonymous-namespace helpers while making the frame loop readable.
- */
+// Havok contact events for ROCK's generated bodies. ROCK subscribes to the
+// world's contact and manifold-processed signals (subscribeContactEvents). Both
+// callbacks run on the physics thread under SEH:
+//   handleManifoldProcessedEvent  hand semantic contacts, native impact audio,
+//                                 storage and NativeInteraction hand contacts
+//   handleContactEvent            body contact records, hand and weapon-part
+//                                 contact witnesses, held-object impact pairs
+// On the frame thread, resolveContacts turns the held-object impact pairs into
+// grab events.
+#include "physics-interaction/core/PhysicsInteractionInternal.h"
+
+namespace rock
+{
     void PhysicsInteraction::resolveContacts(const PhysicsFrameContext& frame)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::ContactResolve);
@@ -1149,3 +1159,4 @@
                 contact_pipeline_policy::routeName(contactRoute.route));
         }
     }
+}

@@ -1,6 +1,17 @@
-/*
- * Provider snapshot and query glue is split from lifecycle/update orchestration because it exposes ROCK state to external consumers without owning physics behavior. It stays in this translation unit to preserve helper visibility and public API behavior.
- */
+// Answers to provider API queries: the frame snapshot, raycasts, weapon grip,
+// state, handling and composition, hand poses and contacts, collider
+// descriptors. These read ROCK's state for consumers and own no physics
+// behaviour.
+#include "physics-interaction/core/PhysicsInteractionInternal.h"
+
+#include "api/ProviderRuntimeServices.h"
+#include "physics-interaction/native/PhysicsShapeCast.h"
+#include "physics-interaction/weapon/FrikWeaponOffsets.h"
+#include "physics-interaction/weapon/NativeSecondaryActions.h"
+#include "physics-interaction/weapon/NativeSecondaryPresentation.h"
+
+namespace rock
+{
     void PhysicsInteraction::fillProviderFrameSnapshot(::rock::provider::Publication& outSnapshot) const
     {
         const auto& runtime = runtime_state::currentFrame();
@@ -1844,3 +1855,4 @@
             _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
         return true;
     }
+}
