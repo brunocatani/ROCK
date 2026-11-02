@@ -20,8 +20,7 @@
  * I/O). save() updates the cache synchronously so the very next grab of the
  * same object sees it, in addition to queuing the on-disk write.
  *
- * Threading model (mirrors PAPER_Toolkit's MotionLibraryStore for the write
- * side):
+ * Threading model (write side):
  *  - Every function below is FRAME-THREAD ONLY.
  *  - save() updates the in-memory cache immediately, then enqueues a
  *    pre-serialized string for a single background writer thread

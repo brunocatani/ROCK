@@ -89,8 +89,8 @@ namespace rock::provider::runtime
                   static_cast<std::uint32_t>(WeaponClassificationSource::WeaponData));
     static_assert(static_cast<std::uint32_t>(api::weapon::ClassificationSource::EquipSlot) ==
                   static_cast<std::uint32_t>(WeaponClassificationSource::EquipSlot));
-    // Public V1 part-kind / action-role values are a wire contract for
-    // external consumers (PAPER_Toolkit); pin every enumerator to the internal
+    // Public part-kind / action-role values are a wire contract for
+    // external consumers; pin every enumerator to the internal
     // classification enums so a reorder breaks this build, not a consumer.
     static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Receiver) == static_cast<std::uint32_t>(WeaponPartKind::Receiver));
     static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Barrel) == static_cast<std::uint32_t>(WeaponPartKind::Barrel));
