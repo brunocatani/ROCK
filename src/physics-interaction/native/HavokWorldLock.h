@@ -55,7 +55,8 @@ namespace rock::havok_world_lock
                 return;
             }
 
-            static REL::Relocation<detail::BSReadWriteLockFn_t> lockForRead{ REL::Offset(offsets::kFunc_BSReadWriteLock_LockForRead) };
+            static REL::Relocation<detail::BSReadWriteLockFn_t> lockForRead{ REL::Offset(
+                offsets::kFunc_BSReadWriteLock_LockForRead) };
             _lock = reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(world) + offsets::kHknpWorld_AccessLock);
             performance_profiler::ScopedTimer waitTimer(performance_profiler::Scope::NativeWorldReadWait);
             lockForRead(_lock);
@@ -67,7 +68,8 @@ namespace rock::havok_world_lock
                 return;
             }
 
-            static REL::Relocation<detail::BSReadWriteLockFn_t> unlockForRead{ REL::Offset(offsets::kFunc_BSReadWriteLock_UnlockForRead) };
+            static REL::Relocation<detail::BSReadWriteLockFn_t> unlockForRead{ REL::Offset(
+                offsets::kFunc_BSReadWriteLock_UnlockForRead) };
             unlockForRead(_lock);
         }
 

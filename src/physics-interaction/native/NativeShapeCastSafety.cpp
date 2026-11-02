@@ -23,24 +23,9 @@ namespace rock::native_shape_cast_safety
 {
     namespace
     {
-        using WorldCastShapeFn = void (*)(
-            RE::hknpWorld*,
-            void*,
-            void*,
-            void*,
-            void*);
+        using WorldCastShapeFn = void (*)(RE::hknpWorld*, void*, void*, void*, void*);
 
-        using DispatcherCastShapeFn = void (*)(
-            void*,
-            void*,
-            void*,
-            void*,
-            void*,
-            void*,
-            void*,
-            void*,
-            bool,
-            void*,
+        using DispatcherCastShapeFn = void (*)(void*, void*, void*, void*, void*, void*, void*, void*, bool, void*,
             void*);
 
         /*
@@ -49,17 +34,38 @@ namespace rock::native_shape_cast_safety
          * the 2026-08-29 castShape crash at module+0x15FFD43.
          */
         constexpr std::array<std::uint8_t, 15> kExpectedWorldCastShapeEntry{
-            0x48, 0x89, 0x5C, 0x24, 0x08,
-            0x48, 0x89, 0x6C, 0x24, 0x10,
-            0x48, 0x89, 0x74, 0x24, 0x18,
+            0x48,
+            0x89,
+            0x5C,
+            0x24,
+            0x08,
+            0x48,
+            0x89,
+            0x6C,
+            0x24,
+            0x10,
+            0x48,
+            0x89,
+            0x74,
+            0x24,
+            0x18,
         };
 
         constexpr std::array<std::uint8_t, 14> kExpectedDispatcherCastShapeEntry{
-            0x4C, 0x8B, 0xDC,
-            0x49, 0x89, 0x6B, 0x10,
-            0x49, 0x89, 0x73, 0x18,
+            0x4C,
+            0x8B,
+            0xDC,
+            0x49,
+            0x89,
+            0x6B,
+            0x10,
+            0x49,
+            0x89,
+            0x73,
+            0x18,
             0x57,
-            0x41, 0x54,
+            0x41,
+            0x54,
         };
 
         constexpr std::ptrdiff_t kShapeCastQueryShapeOffset = 0x20;
@@ -136,10 +142,7 @@ namespace rock::native_shape_cast_safety
                 };
             }
 
-            ~ScopedWorldCastContext() noexcept
-            {
-                t_worldCastContext = _previous;
-            }
+            ~ScopedWorldCastContext() noexcept { t_worldCastContext = _previous; }
 
             ScopedWorldCastContext(const ScopedWorldCastContext&) = delete;
             ScopedWorldCastContext& operator=(const ScopedWorldCastContext&) = delete;
@@ -148,9 +151,7 @@ namespace rock::native_shape_cast_safety
             WorldCastContext _previous{};
         };
 
-        [[nodiscard]] bool tryReadFastWorldState(
-            RE::hknpWorld* world,
-            FastWorldState& out) noexcept
+        [[nodiscard]] bool tryReadFastWorldState(RE::hknpWorld* world, FastWorldState& out) noexcept
         {
             out = {};
             if (!world) {
@@ -161,102 +162,76 @@ namespace rock::native_shape_cast_safety
             __try {
                 const auto base = reinterpret_cast<std::uintptr_t>(world);
                 out.vtable = *reinterpret_cast<const std::uintptr_t*>(base);
-                out.dispatcher = *reinterpret_cast<const std::uintptr_t*>(
-                    base + offsets::kHknpWorld_CollisionQueryDispatcher);
+                out.dispatcher =
+                    *reinterpret_cast<const std::uintptr_t*>(base + offsets::kHknpWorld_CollisionQueryDispatcher);
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 return false;
             }
 #else
             const auto base = reinterpret_cast<std::uintptr_t>(world);
             out.vtable = *reinterpret_cast<const std::uintptr_t*>(base);
-            out.dispatcher = *reinterpret_cast<const std::uintptr_t*>(
-                base + offsets::kHknpWorld_CollisionQueryDispatcher);
+            out.dispatcher =
+                *reinterpret_cast<const std::uintptr_t*>(base + offsets::kHknpWorld_CollisionQueryDispatcher);
 #endif
 
-            const auto destroyingVtable =
-                s_destroyingWorldVtable.load(std::memory_order_acquire);
+            const auto destroyingVtable = s_destroyingWorldVtable.load(std::memory_order_acquire);
             out.destroying = destroyingVtable != 0 && out.vtable == destroyingVtable;
             return true;
         }
 
-        [[nodiscard]] std::uintptr_t gameTextRelativeAddress(
-            const std::uintptr_t address) noexcept
+        [[nodiscard]] std::uintptr_t gameTextRelativeAddress(const std::uintptr_t address) noexcept
         {
             const auto text = REL::Module::get().segment(REL::Segment::text);
-            if (text.size() == 0 || address < text.address() ||
-                address >= text.address() + text.size()) {
+            if (text.size() == 0 || address < text.address() || address >= text.address() + text.size()) {
                 return 0;
             }
             return address - REL::Module::get().base();
         }
 
-        [[nodiscard]] bool shouldLogOccurrence(
-            const std::uint64_t occurrence) noexcept
+        [[nodiscard]] bool shouldLogOccurrence(const std::uint64_t occurrence) noexcept
         {
             return occurrence <= 4 || std::has_single_bit(occurrence);
         }
 
-        DiagnosticState captureDiagnosticState(
-            const WorldCastContext& context,
-            void* query,
-            void* targetFilterData,
+        DiagnosticState captureDiagnosticState(const WorldCastContext& context, void* query, void* targetFilterData,
             void* targetShapeInfo) noexcept
         {
             DiagnosticState state{};
             if (context.world) {
-                if (native_memory::tryReadField(
-                        context.world,
-                        0,
-                        state.worldVtable)) {
+                if (native_memory::tryReadField(context.world, 0, state.worldVtable)) {
                     state.readableFields |= kWorldVtableReadable;
                 }
-                if (native_memory::tryReadField(
-                        context.world,
-                        static_cast<std::ptrdiff_t>(offsets::kHknpWorld_BodyArrayPtr),
-                        state.bodyArray)) {
+                if (native_memory::tryReadField(context.world,
+                        static_cast<std::ptrdiff_t>(offsets::kHknpWorld_BodyArrayPtr), state.bodyArray)) {
                     state.readableFields |= kBodyArrayReadable;
                 }
-                if (native_memory::tryReadField(
-                        context.world,
-                        static_cast<std::ptrdiff_t>(offsets::kHknpWorld_BroadPhase),
-                        state.broadPhase)) {
+                if (native_memory::tryReadField(context.world,
+                        static_cast<std::ptrdiff_t>(offsets::kHknpWorld_BroadPhase), state.broadPhase)) {
                     state.readableFields |= kBroadPhaseReadable;
                 }
-                if (native_memory::tryReadField(
-                        context.world,
+                if (native_memory::tryReadField(context.world,
                         static_cast<std::ptrdiff_t>(offsets::kHknpWorld_CollisionQueryDispatcher),
                         state.worldDispatcher)) {
                     state.readableFields |= kWorldDispatcherReadable;
                 }
-                if (native_memory::tryReadField(
-                        context.world,
-                        static_cast<std::ptrdiff_t>(offsets::kHknpWorld_InternalQueryLock),
-                        state.internalLock)) {
+                if (native_memory::tryReadField(context.world,
+                        static_cast<std::ptrdiff_t>(offsets::kHknpWorld_InternalQueryLock), state.internalLock)) {
                     state.readableFields |= kInternalLockReadable;
                 }
-                if (native_memory::tryReadField(
-                        context.world,
-                        static_cast<std::ptrdiff_t>(offsets::kHknpWorld_AccessLock),
-                        state.accessLock)) {
+                if (native_memory::tryReadField(context.world,
+                        static_cast<std::ptrdiff_t>(offsets::kHknpWorld_AccessLock), state.accessLock)) {
                     state.readableFields |= kAccessLockReadable;
                 }
             }
 
-            const auto destroyingVtable =
-                s_destroyingWorldVtable.load(std::memory_order_acquire);
-            state.destroying = destroyingVtable != 0 &&
-                               state.worldVtable == destroyingVtable;
+            const auto destroyingVtable = s_destroyingWorldVtable.load(std::memory_order_acquire);
+            state.destroying = destroyingVtable != 0 && state.worldVtable == destroyingVtable;
 
-            if (query && native_memory::tryReadField(
-                             query,
-                             kShapeCastQueryShapeOffset,
-                             state.queryShape)) {
+            if (query && native_memory::tryReadField(query, kShapeCastQueryShapeOffset, state.queryShape)) {
                 state.readableFields |= kQueryShapeReadable;
             }
-            if (targetShapeInfo && native_memory::tryReadField(
-                                           targetShapeInfo,
-                                           kShapeQueryInfoBodyOffset,
-                                           state.candidateBody)) {
+            if (targetShapeInfo &&
+                native_memory::tryReadField(targetShapeInfo, kShapeQueryInfoBodyOffset, state.candidateBody)) {
                 state.readableFields |= kCandidateBodyReadable;
             }
             if (targetFilterData) {
@@ -264,18 +239,9 @@ namespace rock::native_shape_cast_safety
                 std::uint32_t collisionFilterInfo = 0;
                 std::uintptr_t collisionObject = 0;
                 const bool filterReadable =
-                    native_memory::tryReadField(
-                        targetFilterData,
-                        kQueryFilterMaterialOffset,
-                        materialId) &&
-                    native_memory::tryReadField(
-                        targetFilterData,
-                        kQueryFilterInfoOffset,
-                        collisionFilterInfo) &&
-                    native_memory::tryReadField(
-                        targetFilterData,
-                        kQueryFilterCollisionObjectOffset,
-                        collisionObject);
+                    native_memory::tryReadField(targetFilterData, kQueryFilterMaterialOffset, materialId) &&
+                    native_memory::tryReadField(targetFilterData, kQueryFilterInfoOffset, collisionFilterInfo) &&
+                    native_memory::tryReadField(targetFilterData, kQueryFilterCollisionObjectOffset, collisionObject);
                 if (filterReadable) {
                     state.materialId = materialId;
                     state.collisionFilterInfo = collisionFilterInfo;
@@ -284,14 +250,12 @@ namespace rock::native_shape_cast_safety
                 }
             }
 
-            if ((state.readableFields &
-                    (kBodyArrayReadable | kCandidateBodyReadable)) ==
+            if ((state.readableFields & (kBodyArrayReadable | kCandidateBodyReadable)) ==
                     (kBodyArrayReadable | kCandidateBodyReadable) &&
                 state.bodyArray != 0 && state.candidateBody >= state.bodyArray) {
                 const auto byteOffset = state.candidateBody - state.bodyArray;
                 const auto bodyIndex = byteOffset / kHknpBodyStride;
-                if (byteOffset % kHknpBodyStride == 0 &&
-                    bodyIndex <= (std::numeric_limits<std::uint32_t>::max)()) {
+                if (byteOffset % kHknpBodyStride == 0 && bodyIndex <= (std::numeric_limits<std::uint32_t>::max)()) {
                     state.candidateBodyId = static_cast<std::uint32_t>(bodyIndex);
                 }
             }
@@ -299,103 +263,57 @@ namespace rock::native_shape_cast_safety
             return state;
         }
 
-        void recordSuppressedCast(
-            const char* stage,
-            const WorldCastContext& context,
-            const std::uintptr_t dispatcherCaller,
-            void* queryContext,
-            void* query,
-            void* targetShape,
-            void* targetFilterData,
-            void* targetShapeInfo) noexcept
+        void recordSuppressedCast(const char* stage, const WorldCastContext& context,
+            const std::uintptr_t dispatcherCaller, void* queryContext, void* query, void* targetShape,
+            void* targetFilterData, void* targetShapeInfo) noexcept
         {
-            const auto occurrence =
-                s_suppressedCastCount.fetch_add(1, std::memory_order_acq_rel) + 1;
+            const auto occurrence = s_suppressedCastCount.fetch_add(1, std::memory_order_acq_rel) + 1;
             if (!shouldLogOccurrence(occurrence) || t_recordingSuppression) {
                 return;
             }
 
             t_recordingSuppression = true;
-            const auto state = captureDiagnosticState(
-                context,
-                query,
-                targetFilterData,
-                targetShapeInfo);
+            const auto state = captureDiagnosticState(context, query, targetFilterData, targetShapeInfo);
             const auto worldCallerRva = gameTextRelativeAddress(context.caller);
-            const auto dispatcherCallerRva =
-                gameTextRelativeAddress(dispatcherCaller);
-            const auto insidePhysicsStep =
-                havok_world_lock::detail::currentThreadInsidePhysicsStep();
+            const auto dispatcherCallerRva = gameTextRelativeAddress(dispatcherCaller);
+            const auto insidePhysicsStep = havok_world_lock::detail::currentThreadInsidePhysicsStep();
 
             ROCK_LOG_CRITICAL(PhysicsSafety,
-                "Suppressed unsafe native shape cast: stage={} occurrence={} thread={} physicsStep={} depth={} world={:p} worldCaller=0x{:X} worldCallerRva=0x{:X} dispatcherCaller=0x{:X} dispatcherCallerRva=0x{:X} queryContext={:p}",
-                stage,
-                occurrence,
-                GetCurrentThreadId(),
-                insidePhysicsStep ? "yes" : "no",
-                context.depth,
-                static_cast<void*>(context.world),
-                context.caller,
-                worldCallerRva,
-                dispatcherCaller,
-                dispatcherCallerRva,
-                queryContext);
+                "Suppressed unsafe native shape cast: stage={} occurrence={} thread={} physicsStep={} depth={} "
+                "world={:p} worldCaller=0x{:X} worldCallerRva=0x{:X} dispatcherCaller=0x{:X} "
+                "dispatcherCallerRva=0x{:X} queryContext={:p}",
+                stage, occurrence, GetCurrentThreadId(), insidePhysicsStep ? "yes" : "no", context.depth,
+                static_cast<void*>(context.world), context.caller, worldCallerRva, dispatcherCaller,
+                dispatcherCallerRva, queryContext);
             ROCK_LOG_CRITICAL(PhysicsSafety,
-                "Unsafe shape-cast state: readable=0x{:03X} destroying={} worldVtable=0x{:X} worldDispatcher=0x{:X} broadPhase=0x{:X} bodyArray=0x{:X} internalLock=0x{:016X} accessLock=0x{:016X} query={:p} queryShape=0x{:X} targetShape={:p} candidateBody=0x{:X} bodyId={} material={} filter=0x{:08X} layer={} collisionObject=0x{:X}",
-                state.readableFields,
-                state.destroying ? "yes" : "no",
-                state.worldVtable,
-                state.worldDispatcher,
-                state.broadPhase,
-                state.bodyArray,
-                state.internalLock,
-                state.accessLock,
-                query,
-                state.queryShape,
-                targetShape,
-                state.candidateBody,
-                state.candidateBodyId,
-                state.materialId,
-                state.collisionFilterInfo,
-                state.collisionFilterInfo & 0x7Fu,
-                state.collisionObject);
+                "Unsafe shape-cast state: readable=0x{:03X} destroying={} worldVtable=0x{:X} worldDispatcher=0x{:X} "
+                "broadPhase=0x{:X} bodyArray=0x{:X} internalLock=0x{:016X} accessLock=0x{:016X} query={:p} "
+                "queryShape=0x{:X} targetShape={:p} candidateBody=0x{:X} bodyId={} material={} filter=0x{:08X} "
+                "layer={} collisionObject=0x{:X}",
+                state.readableFields, state.destroying ? "yes" : "no", state.worldVtable, state.worldDispatcher,
+                state.broadPhase, state.bodyArray, state.internalLock, state.accessLock, query, state.queryShape,
+                targetShape, state.candidateBody, state.candidateBodyId, state.materialId, state.collisionFilterInfo,
+                state.collisionFilterInfo & 0x7Fu, state.collisionObject);
             t_recordingSuppression = false;
         }
 
-        __declspec(noinline) void onWorldCastShape(
-            RE::hknpWorld* world,
-            void* query,
-            void* queryShapeInfo,
-            void* collector,
-            void* startPointCollector) noexcept
+        __declspec(noinline) void onWorldCastShape(RE::hknpWorld* world, void* query, void* queryShapeInfo,
+            void* collector, void* startPointCollector) noexcept
         {
-            const auto caller =
-                reinterpret_cast<std::uintptr_t>(_ReturnAddress());
+            const auto caller = reinterpret_cast<std::uintptr_t>(_ReturnAddress());
             FastWorldState worldState{};
             const bool worldReadable = tryReadFastWorldState(world, worldState);
-            if (!world || !worldReadable || worldState.destroying ||
-                worldState.dispatcher == 0) {
-                const char* stage = !world ?
-                    "world-null" :
-                    !worldReadable ?
-                        "world-unreadable" :
-                        worldState.destroying ?
-                            "world-destroying" :
-                            "world-dispatcher-null";
+            if (!world || !worldReadable || worldState.destroying || worldState.dispatcher == 0) {
+                const char* stage = !world  ? "world-null"
+                    : !worldReadable        ? "world-unreadable"
+                    : worldState.destroying ? "world-destroying"
+                                            : "world-dispatcher-null";
                 const WorldCastContext context{
                     .world = world,
                     .caller = caller,
                     .depth = t_worldCastContext.depth + 1,
                 };
-                recordSuppressedCast(
-                    stage,
-                    context,
-                    0,
-                    nullptr,
-                    query,
-                    nullptr,
-                    nullptr,
-                    nullptr);
+                recordSuppressedCast(stage, context, 0, nullptr, query, nullptr, nullptr, nullptr);
                 return;
             }
 
@@ -405,37 +323,17 @@ namespace rock::native_shape_cast_safety
             }
 
             const ScopedWorldCastContext contextScope{ world, caller };
-            original(
-                world,
-                query,
-                queryShapeInfo,
-                collector,
-                startPointCollector);
+            original(world, query, queryShapeInfo, collector, startPointCollector);
         }
 
-        __declspec(noinline) void onDispatcherCastShape(
-            void* dispatcher,
-            void* queryContext,
-            void* query,
-            void* queryShapeInfo,
-            void* targetShape,
-            void* targetFilterData,
-            void* targetShapeInfo,
-            void* targetTransform,
-            const bool queryAgainstTarget,
-            void* collector,
-            void* startPointCollector) noexcept
+        __declspec(noinline) void onDispatcherCastShape(void* dispatcher, void* queryContext, void* query,
+            void* queryShapeInfo, void* targetShape, void* targetFilterData, void* targetShapeInfo,
+            void* targetTransform, const bool queryAgainstTarget, void* collector, void* startPointCollector) noexcept
         {
             if (!dispatcher) {
-                recordSuppressedCast(
-                    "dispatcher-null-after-world-entry",
-                    t_worldCastContext,
-                    reinterpret_cast<std::uintptr_t>(_ReturnAddress()),
-                    queryContext,
-                    query,
-                    targetShape,
-                    targetFilterData,
-                    targetShapeInfo);
+                recordSuppressedCast("dispatcher-null-after-world-entry", t_worldCastContext,
+                    reinterpret_cast<std::uintptr_t>(_ReturnAddress()), queryContext, query, targetShape,
+                    targetFilterData, targetShapeInfo);
                 return;
             }
 
@@ -443,18 +341,8 @@ namespace rock::native_shape_cast_safety
             if (!original) {
                 return;
             }
-            original(
-                dispatcher,
-                queryContext,
-                query,
-                queryShapeInfo,
-                targetShape,
-                targetFilterData,
-                targetShapeInfo,
-                targetTransform,
-                queryAgainstTarget,
-                collector,
-                startPointCollector);
+            original(dispatcher, queryContext, query, queryShapeInfo, targetShape, targetFilterData, targetShapeInfo,
+                targetTransform, queryAgainstTarget, collector, startPointCollector);
         }
     }
 
@@ -463,58 +351,38 @@ namespace rock::native_shape_cast_safety
         if (s_dispatcherGuardInstalled.load(std::memory_order_acquire)) {
             return true;
         }
-        if (!REL::Module::IsVR() ||
-            REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) {
-            ROCK_LOG_ERROR(Init,
-                "Native shape-cast safety unavailable: unsupported runtime");
+        if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) {
+            ROCK_LOG_ERROR(Init, "Native shape-cast safety unavailable: unsupported runtime");
             return false;
         }
 
-        s_destroyingWorldVtable.store(
-            REL::Offset(offsets::kVtable_HknpWorldDestroying).address(),
+        s_destroyingWorldVtable.store(REL::Offset(offsets::kVtable_HknpWorldDestroying).address(),
             std::memory_order_release);
 
-        void* dispatcherOriginal =
-            reinterpret_cast<void*>(s_originalDispatcherCastShape);
-        const bool dispatcherInstalled = entry_trampoline_hook::install(
-            "hknp collision-query dispatcher safety",
-            offsets::kFunc_HknpCollisionQueryDispatcherBase_CastShape,
-            kExpectedDispatcherCastShapeEntry.data(),
-            kExpectedDispatcherCastShapeEntry.size(),
-            reinterpret_cast<void*>(&onDispatcherCastShape),
+        void* dispatcherOriginal = reinterpret_cast<void*>(s_originalDispatcherCastShape);
+        const bool dispatcherInstalled = entry_trampoline_hook::install("hknp collision-query dispatcher safety",
+            offsets::kFunc_HknpCollisionQueryDispatcherBase_CastShape, kExpectedDispatcherCastShapeEntry.data(),
+            kExpectedDispatcherCastShapeEntry.size(), reinterpret_cast<void*>(&onDispatcherCastShape),
             dispatcherOriginal);
-        s_originalDispatcherCastShape =
-            reinterpret_cast<DispatcherCastShapeFn>(dispatcherOriginal);
-        const bool dispatcherReady = dispatcherInstalled &&
-                                     s_originalDispatcherCastShape != nullptr;
-        s_dispatcherGuardInstalled.store(
-            dispatcherReady,
-            std::memory_order_release);
+        s_originalDispatcherCastShape = reinterpret_cast<DispatcherCastShapeFn>(dispatcherOriginal);
+        const bool dispatcherReady = dispatcherInstalled && s_originalDispatcherCastShape != nullptr;
+        s_dispatcherGuardInstalled.store(dispatcherReady, std::memory_order_release);
         if (!dispatcherReady) {
-            ROCK_LOG_ERROR(Init,
-                "Native shape-cast safety unavailable: dispatcher guard installation failed");
+            ROCK_LOG_ERROR(Init, "Native shape-cast safety unavailable: dispatcher guard installation failed");
             return false;
         }
 
         void* worldOriginal = reinterpret_cast<void*>(s_originalWorldCastShape);
-        const bool worldInstalled = entry_trampoline_hook::install(
-            "hknp world shape-cast context",
-            offsets::kFunc_HknpWorld_CastShape,
-            kExpectedWorldCastShapeEntry.data(),
-            kExpectedWorldCastShapeEntry.size(),
-            reinterpret_cast<void*>(&onWorldCastShape),
-            worldOriginal);
-        s_originalWorldCastShape =
-            reinterpret_cast<WorldCastShapeFn>(worldOriginal);
-        const bool worldReady = worldInstalled &&
-                                s_originalWorldCastShape != nullptr;
+        const bool worldInstalled = entry_trampoline_hook::install("hknp world shape-cast context",
+            offsets::kFunc_HknpWorld_CastShape, kExpectedWorldCastShapeEntry.data(),
+            kExpectedWorldCastShapeEntry.size(), reinterpret_cast<void*>(&onWorldCastShape), worldOriginal);
+        s_originalWorldCastShape = reinterpret_cast<WorldCastShapeFn>(worldOriginal);
+        const bool worldReady = worldInstalled && s_originalWorldCastShape != nullptr;
         if (!worldReady) {
-            ROCK_LOG_WARN(Init,
-                "Native shape-cast dispatcher guard is active without world/caller context");
+            ROCK_LOG_WARN(Init, "Native shape-cast dispatcher guard is active without world/caller context");
         }
 
-        ROCK_LOG_INFO(Init,
-            "Native shape-cast safety active: dispatcherGuard=yes worldContext={}",
+        ROCK_LOG_INFO(Init, "Native shape-cast safety active: dispatcherGuard=yes worldContext={}",
             worldReady ? "yes" : "no");
         return true;
     }

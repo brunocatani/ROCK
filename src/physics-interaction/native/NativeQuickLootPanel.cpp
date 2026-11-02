@@ -8,10 +8,10 @@
 #include <cstring>
 #include <optional>
 
-#include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/native/NativeNiNodeFactory.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/NativeNiNodeFactory.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 namespace rock::native_quick_loot_panel
@@ -52,11 +52,12 @@ namespace rock::native_quick_loot_panel
             std::array<std::uint8_t, 7> bytes;
             std::size_t size;
         };
+
         constexpr std::array<ExpectedBytes, 4> kExpectedPickCopy{ {
-            { 0xA923E4, { 0x89, 0x86, 0x64, 0x03, 0x00, 0x00 }, 6 },        // mov [rsi+0x364], eax
-            { 0xA923F7, { 0x89, 0x86, 0x68, 0x03, 0x00, 0x00 }, 6 },        // mov [rsi+0x368], eax
-            { 0xA923FD, { 0x48, 0x8D, 0x9E, 0x68, 0x02, 0x00, 0x00 }, 7 },  // lea rbx, [rsi+0x268]
-            { 0xA9240D, { 0x48, 0x8B, 0xCB }, 3 },                          // mov rcx, rbx
+            { 0xA923E4, { 0x89, 0x86, 0x64, 0x03, 0x00, 0x00 }, 6 }, // mov [rsi+0x364], eax
+            { 0xA923F7, { 0x89, 0x86, 0x68, 0x03, 0x00, 0x00 }, 6 }, // mov [rsi+0x368], eax
+            { 0xA923FD, { 0x48, 0x8D, 0x9E, 0x68, 0x02, 0x00, 0x00 }, 7 }, // lea rbx, [rsi+0x268]
+            { 0xA9240D, { 0x48, 0x8B, 0xCB }, 3 }, // mov rcx, rbx
         } };
 
         /*
@@ -76,6 +77,7 @@ namespace rock::native_quick_loot_panel
             std::uintptr_t native;
             std::array<std::uint8_t, 3> nativeBytes;
         };
+
         constexpr std::size_t kHostsQuickContainerSlot = 16;
         constexpr RolloverHostSlot kPrimaryRolloverHost{ 0x2D4ED78, 0xADDD60, { 0xB0, 0x01, 0xC3 } };
         constexpr RolloverHostSlot kSecondaryRolloverHost{ 0x2D4EF98, 0xADDD80, { 0x32, 0xC0, 0xC3 } };
@@ -155,7 +157,7 @@ namespace rock::native_quick_loot_panel
                 *leftSlot = right;
             }
             g_listedFlags.store(static_cast<std::uint8_t>(kListed | (right == listed ? kRightPicksListed : 0) |
-                                                          (left == listed ? kLeftPicksListed : 0)),
+                                    (left == listed ? kLeftPicksListed : 0)),
                 std::memory_order_relaxed);
             g_listedPick.store(listed, std::memory_order_release);
         }
@@ -191,18 +193,20 @@ namespace rock::native_quick_loot_panel
             std::uintptr_t current{};
             std::array<std::uint8_t, 3> bytes{};
             const auto native = REL::Offset(host.native).address();
-            return native_memory::guardedCopyFromMemory(
-                       reinterpret_cast<const void*>(rolloverHostSlotAddress(host)), &current, sizeof(current)) &&
-                   current == native &&
-                   native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(native), bytes.data(), bytes.size()) &&
-                   bytes == host.nativeBytes;
+            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(rolloverHostSlotAddress(host)),
+                       &current, sizeof(current)) &&
+                current == native &&
+                native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(native), bytes.data(),
+                    bytes.size()) &&
+                bytes == host.nativeBytes;
         }
 
         // Both prompts switch together or neither does.
         void installRolloverHosts()
         {
             if (!rolloverHostSlotMatches(kPrimaryRolloverHost) || !rolloverHostSlotMatches(kSecondaryRolloverHost)) {
-                ROCK_LOG_WARN(Init, "Quick loot panel: the rollover host slots do not match; "
+                ROCK_LOG_WARN(Init,
+                    "Quick loot panel: the rollover host slots do not match; "
                     "the left wand's Search prompt stays visible while the panel lists its container");
                 return;
             }
@@ -295,7 +299,8 @@ namespace rock::native_quick_loot_panel
                 g_carrier = native_scene::createEngineNiNode(1);
                 if (!g_carrier) {
                     g_carrierFailed = true;
-                    ROCK_LOG_ERROR(Hand, "Quick loot: the container panel node could not be created; the panel stays on the right hand");
+                    ROCK_LOG_ERROR(Hand,
+                        "Quick loot: the container panel node could not be created; the panel stays on the right hand");
                     return false;
                 }
             }
@@ -330,13 +335,16 @@ namespace rock::native_quick_loot_panel
                 // Nothing lists, so the panel is hidden; it stays where it was.
                 return;
             }
-            const RE::NiPoint3 eyeRight{ eye->world.rotate.entry[0][0], eye->world.rotate.entry[0][1], eye->world.rotate.entry[0][2] };
-            const auto pose = panelAtContainer(listed, eye->world.translate, eyeRight, handAttach->world.scale * root->local.scale);
+            const RE::NiPoint3 eyeRight{ eye->world.rotate.entry[0][0], eye->world.rotate.entry[0][1],
+                eye->world.rotate.entry[0][2] };
+            const auto pose =
+                panelAtContainer(listed, eye->world.translate, eyeRight, handAttach->world.scale * root->local.scale);
             if (!pose) {
                 if (onCarrier) {
                     move(root, g_carrier.get(), handAttach);
                 }
-                ROCK_LOG_SAMPLE_DEBUG(Hand, 1000, "Quick loot panel: the listed container has no reference; the panel is on the right hand");
+                ROCK_LOG_SAMPLE_DEBUG(Hand, 1000,
+                    "Quick loot panel: the listed container has no reference; the panel is on the right hand");
                 return;
             }
             if (!attachCarrier(room)) {
@@ -368,31 +376,38 @@ namespace rock::native_quick_loot_panel
         for (const auto& expected : kExpectedPickCopy) {
             std::array<std::uint8_t, 7> live{};
             if (!native_memory::guardedCopyFromMemory(
-                    reinterpret_cast<const void*>(REL::Offset(expected.address).address()), live.data(), expected.size) ||
+                    reinterpret_cast<const void*>(REL::Offset(expected.address).address()), live.data(),
+                    expected.size) ||
                 std::memcmp(live.data(), expected.bytes.data(), expected.size) != 0) {
-                ROCK_LOG_WARN(Init, "Quick loot panel: the quick container pick copy at 0x{:X} does not match; "
-                    "the panel stays on the right hand", expected.address);
+                ROCK_LOG_WARN(Init,
+                    "Quick loot panel: the quick container pick copy at 0x{:X} does not match; "
+                    "the panel stays on the right hand",
+                    expected.address);
                 return false;
             }
         }
         const auto callAddress = REL::Offset(kPicksCopiedLockCall).address();
         std::array<std::uint8_t, 5> call{};
         std::int32_t displacement{};
-        if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(callAddress), call.data(), call.size()) ||
+        if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(callAddress), call.data(),
+                call.size()) ||
             call[0] != 0xE8) {
-            ROCK_LOG_WARN(Init, "Quick loot panel: 0x{:X} is not a call; the panel stays on the right hand", kPicksCopiedLockCall);
+            ROCK_LOG_WARN(Init, "Quick loot panel: 0x{:X} is not a call; the panel stays on the right hand",
+                kPicksCopiedLockCall);
             return false;
         }
         std::memcpy(&displacement, call.data() + 1, sizeof(displacement));
         if (callAddress + call.size() + displacement != REL::Offset(kSpinLockAcquire).address()) {
-            ROCK_LOG_WARN(Init, "Quick loot panel: call 0x{:X} no longer reaches the model lock "
-                "(another mod may own it); the panel stays on the right hand", kPicksCopiedLockCall);
+            ROCK_LOG_WARN(Init,
+                "Quick loot panel: call 0x{:X} no longer reaches the model lock "
+                "(another mod may own it); the panel stays on the right hand",
+                kPicksCopiedLockCall);
             return false;
         }
 
         try {
-            g_lockAcquire = reinterpret_cast<SpinLockAcquire>(
-                F4SE::GetTrampoline().write_call<5>(callAddress, &afterPicksCopied));
+            g_lockAcquire =
+                reinterpret_cast<SpinLockAcquire>(F4SE::GetTrampoline().write_call<5>(callAddress, &afterPicksCopied));
         } catch (...) {
             REL::safe_write(callAddress, call.data(), call.size());
             g_lockAcquire = nullptr;

@@ -93,7 +93,8 @@ namespace rock::generated_body_contact_registry
                 _inputBodyIds[i] = sorted[i].bodyId;
             }
             if (membershipChanged) {
-                for (std::size_t i = 0; i < sortedCount; ++i) _order[i] = i;
+                for (std::size_t i = 0; i < sortedCount; ++i)
+                    _order[i] = i;
                 std::sort(_order.begin(), _order.begin() + sortedCount,
                     [&](std::size_t lhs, std::size_t rhs) { return sorted[lhs].bodyId < sorted[rhs].bodyId; });
                 _orderedInputCount = sortedCount;
@@ -135,7 +136,8 @@ namespace rock::generated_body_contact_registry
                     continue;
                 }
 
-                const std::uint32_t count = (std::min)(_count.load(std::memory_order_acquire), static_cast<std::uint32_t>(Capacity));
+                const std::uint32_t count =
+                    (std::min)(_count.load(std::memory_order_acquire), static_cast<std::uint32_t>(Capacity));
                 std::uint32_t low = 0;
                 std::uint32_t high = count;
                 bool found = false;

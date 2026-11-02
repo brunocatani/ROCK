@@ -72,7 +72,8 @@ namespace rock::provider
 
         [[nodiscard]] api::Sample sample() const noexcept
         {
-            return { frameIndex, stateSequence, worldGeneration, skeletonGeneration, providerGeneration, collisionGeneration };
+            return { frameIndex, stateSequence, worldGeneration, skeletonGeneration, providerGeneration,
+                collisionGeneration };
         }
     };
 }

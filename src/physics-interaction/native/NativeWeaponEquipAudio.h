@@ -11,8 +11,7 @@ namespace rock::native_weapon_equip_audio
         return player != 0 && position == player + 0xD0;
     }
 
-    [[nodiscard]] constexpr bool isPlayerWeaponItem(std::uintptr_t player,
-        std::uintptr_t actor, bool weapon) noexcept
+    [[nodiscard]] constexpr bool isPlayerWeaponItem(std::uintptr_t player, std::uintptr_t actor, bool weapon) noexcept
     {
         return player != 0 && player == actor && weapon;
     }

@@ -48,7 +48,8 @@ namespace rock::grab_target
 
     [[nodiscard]] inline constexpr bool isPhysicalRockObject(Kind kind) noexcept
     {
-        return kind == Kind::LooseObject || kind == Kind::DetachedBody || kind == Kind::DynamicMovableStatic || kind == Kind::ConnectedBody;
+        return kind == Kind::LooseObject || kind == Kind::DetachedBody || kind == Kind::DynamicMovableStatic ||
+            kind == Kind::ConnectedBody;
     }
 
     [[nodiscard]] inline constexpr GrabAcquisitionMode acquisitionMode(Kind kind) noexcept
@@ -78,10 +79,7 @@ namespace rock::grab_target
         return isPhysicalRockObject(kind) && !requiresHandPocketGrab(kind);
     }
 
-    [[nodiscard]] inline constexpr bool canUseRockActiveGrab(Kind kind) noexcept
-    {
-        return isPhysicalRockObject(kind);
-    }
+    [[nodiscard]] inline constexpr bool canUseRockActiveGrab(Kind kind) noexcept { return isPhysicalRockObject(kind); }
 
     [[nodiscard]] inline constexpr bool requiresNativeBodyOwnership(Kind kind) noexcept
     {

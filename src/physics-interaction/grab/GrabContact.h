@@ -13,8 +13,8 @@ namespace rock::grab_contact_source_policy
     // branches. Prove both branches belong to that reference without crossing
     // another collision owner. No node is retained beyond this acquisition.
     template <class Node>
-    [[nodiscard]] bool isSingleBodyOwnerlessVisualBranch(
-        const Node* root, const Node* bodyOwner, const Node* visualNode)
+    [[nodiscard]] bool isSingleBodyOwnerlessVisualBranch(const Node* root, const Node* bodyOwner,
+        const Node* visualNode)
     {
         if (!root || !bodyOwner || !bodyOwner->collisionObject || !visualNode) {
             return false;
@@ -23,8 +23,10 @@ namespace rock::grab_contact_source_policy
         for (unsigned depth = 0; ownerAncestor && depth < 64; ++depth) {
             if (ownerAncestor == root) {
                 for (unsigned visualDepth = 0; visualNode && visualDepth < 64; ++visualDepth) {
-                    if (visualNode == root) return true;
-                    if (visualNode->collisionObject) return false;
+                    if (visualNode == root)
+                        return true;
+                    if (visualNode->collisionObject)
+                        return false;
                     visualNode = visualNode->parent;
                 }
                 return false;
@@ -36,9 +38,8 @@ namespace rock::grab_contact_source_policy
 
 }
 
-
-#include "physics-interaction/hand/HandColliderTypes.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/hand/HandColliderTypes.h"
 
 #include <algorithm>
 #include <array>

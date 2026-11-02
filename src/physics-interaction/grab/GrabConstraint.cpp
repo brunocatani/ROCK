@@ -1,12 +1,12 @@
 #include "physics-interaction/grab/GrabConstraint.h"
 
-#include "physics-interaction/grab/GrabInertiaPolicy.h"
+#include "RockConfig.h"
 #include "physics-interaction/grab/GrabConstraintMath.h"
+#include "physics-interaction/grab/GrabInertiaPolicy.h"
 #include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/PhysicsScale.h"
-#include "RockConfig.h"
 
 #include <algorithm>
 #include <array>
@@ -28,10 +28,7 @@ namespace rock
             std::uint32_t constraintId = 0x7FFF'FFFFu;
             std::uint32_t remainingPhysicsSteps = 0;
 
-            [[nodiscard]] bool occupied() const
-            {
-                return constraintData || angularMotor || linearMotor;
-            }
+            [[nodiscard]] bool occupied() const { return constraintData || angularMotor || linearMotor; }
         };
 
         inline constexpr std::uint32_t kRetiredGrabConstraintPayloadGraceSteps = 8;
@@ -78,12 +75,9 @@ namespace rock
                 if (!retired.occupied()) {
                     retired = payload;
                     ++s_retiredGrabConstraintPayloadCount;
-                    ROCK_LOG_SAMPLE_DEBUG(GrabConstraint,
-                        1000,
-                        "Constraint {} payload retired for {} physics steps activeRetired={}",
-                        payload.constraintId,
-                        kRetiredGrabConstraintPayloadGraceSteps,
-                        s_retiredGrabConstraintPayloadCount);
+                    ROCK_LOG_SAMPLE_DEBUG(GrabConstraint, 1000,
+                        "Constraint {} payload retired for {} physics steps activeRetired={}", payload.constraintId,
+                        kRetiredGrabConstraintPayloadGraceSteps, s_retiredGrabConstraintPayloadCount);
                     return;
                 }
             }
@@ -93,17 +87,19 @@ namespace rock
              * freeing memory that the native solver may still read.
              */
             ROCK_LOG_ERROR(GrabConstraint,
-                "Retired grab constraint payload queue full; intentionally leaking constraint {} payload to avoid native use-after-free",
+                "Retired grab constraint payload queue full; intentionally leaking constraint {} payload to avoid "
+                "native use-after-free",
                 payload.constraintId);
         }
     }
 
-    GrabMotorBodyProperties readGrabMotorBodyProperties(RE::hknpWorld* world,
-        RE::hknpBodyId bodyId, const RE::NiPoint3& pivotBodyLocalGame)
+    GrabMotorBodyProperties readGrabMotorBodyProperties(RE::hknpWorld* world, RE::hknpBodyId bodyId,
+        const RE::NiPoint3& pivotBodyLocalGame)
     {
         GrabMotorBodyProperties out{};
         const auto body = havok_runtime::snapshotBody(world, bodyId);
-        if (!body.valid || !body.body || !body.motion) return out;
+        if (!body.valid || !body.body || !body.motion)
+            return out;
         // The native Jacobian builder (141979EF0) expands these same packed
         // inverse principal moments; 141A58D83..DDF uses them in angular rows.
         // Their maximum moment is rotation-invariant, so this shared-capacity
@@ -112,11 +108,13 @@ namespace rock
         float minimumInverseInertia = std::numeric_limits<float>::max();
         for (int axis = 0; axis < 3; ++axis) {
             const float inverse = unpackBfloat16(body.motion->packedInverseInertia[axis]);
-            if (!std::isfinite(inverse) || inverse <= 0.0f) return out;
+            if (!std::isfinite(inverse) || inverse <= 0.0f)
+                return out;
             minimumInverseInertia = (std::min)(minimumInverseInertia, inverse);
         }
         const float inverseMass = unpackBfloat16(body.motion->packedInverseInertia[3]);
-        if (!std::isfinite(inverseMass) || inverseMass <= 0.0f) return out;
+        if (!std::isfinite(inverseMass) || inverseMass <= 0.0f)
+            return out;
         const auto bodyWorld = havok_runtime::bodyArrayWorldTransform(*body.body);
         const auto gripWorld = transform_math::localPointToWorld(bodyWorld, pivotBodyLocalGame);
         const float scale = physics_scale::gameToHavok();
@@ -125,14 +123,14 @@ namespace rock
         const float z = gripWorld.z * scale - body.motion->position.z;
         out.mass = 1.0f / inverseMass;
         out.maximumInertia = 1.0f / minimumInverseInertia;
-        out.gripRadiusHavok = std::sqrt(x*x + y*y + z*z);
-        out.valid = std::isfinite(out.mass) && out.mass > 0.0f &&
-            std::isfinite(out.maximumInertia) && out.maximumInertia > 0.0f &&
-            std::isfinite(out.gripRadiusHavok) && std::isfinite(scale) && scale > 0.0f;
+        out.gripRadiusHavok = std::sqrt(x * x + y * y + z * z);
+        out.valid = std::isfinite(out.mass) && out.mass > 0.0f && std::isfinite(out.maximumInertia) &&
+            out.maximumInertia > 0.0f && std::isfinite(out.gripRadiusHavok) && std::isfinite(scale) && scale > 0.0f;
         return out;
     }
 
-    HkPositionMotor* createPositionMotor(float tau, float damping, float proportionalRecoveryVelocity, float constantRecoveryVelocity, float minForce, float maxForce)
+    HkPositionMotor* createPositionMotor(float tau, float damping, float proportionalRecoveryVelocity,
+        float constantRecoveryVelocity, float minForce, float maxForce)
     {
         auto* motor = static_cast<HkPositionMotor*>(havok_runtime::allocateHavok(HK_POSITION_MOTOR_SIZE));
         if (!motor) {
@@ -164,7 +162,8 @@ namespace rock
     }
 
     using GetConstraintInfoUtil_t = void(const void*, int, void*);
-    static REL::Relocation<GetConstraintInfoUtil_t> s_getConstraintInfoUtil{ REL::Offset(offsets::kFunc_GetConstraintInfoUtil) };
+    static REL::Relocation<GetConstraintInfoUtil_t> s_getConstraintInfoUtil{ REL::Offset(
+        offsets::kFunc_GetConstraintInfoUtil) };
 
     static void __cdecl getRuntimeInfoCallback(void* thisPtr, void* param2, void* param3)
     {
@@ -186,7 +185,8 @@ namespace rock
 
     static void __cdecl addInstanceCallback(void* thisPtr, void* constraint, void* runtime, int sizeOfRuntime)
     {
-        ROCK_LOG_TRACE(GrabConstraint, "addInstance CALLED: this={:p} constraint={:p} runtime={:p} size={}", thisPtr, constraint, runtime, sizeOfRuntime);
+        ROCK_LOG_TRACE(GrabConstraint, "addInstance CALLED: this={:p} constraint={:p} runtime={:p} size={}", thisPtr,
+            constraint, runtime, sizeOfRuntime);
         if (runtime) {
             std::memset(runtime, 0, sizeOfRuntime);
             ROCK_LOG_TRACE(GrabConstraint, "  memset runtime OK");
@@ -282,7 +282,8 @@ namespace rock
         s_customVtable[VTABLE_SLOT_GET_MAX_FRICTION] = reinterpret_cast<void*>(&outStatusValueCallback);
 
         auto allocShellcode = [](std::size_t size) -> std::uint8_t* {
-            auto* code = static_cast<std::uint8_t*>(VirtualAlloc(nullptr, size, kVirtualMemoryCommitReserve, kPageExecuteReadWrite));
+            auto* code = static_cast<std::uint8_t*>(
+                VirtualAlloc(nullptr, size, kVirtualMemoryCommitReserve, kPageExecuteReadWrite));
             if (code && s_shellcodeCount < MAX_SHELLCODE_BLOCKS) {
                 s_shellcodeBlocks[s_shellcodeCount++] = code;
             }
@@ -430,21 +431,15 @@ namespace rock
             }
         }
 
-        ROCK_LOG_DEBUG(GrabConstraint, "Custom constraint data at {:p} ({:#x} bytes, atomBase={:#x}, 6 atoms, {} solver results, runtime {:#x})",
-            cd,
-            GRAB_CONSTRAINT_SIZE,
-            ATOMS_START,
-            RUNTIME_SOLVER_RESULTS,
-            RUNTIME_REPORTED_SIZE);
-        ROCK_LOG_TRACE(GrabConstraint, "RagdollMotor offsets: init={:#x} prevAng={:#x} (absolute runtime offsets)", RT_RAGDOLL_INIT_OFFSET, RT_RAGDOLL_PREV_ANG_OFFSET);
+        ROCK_LOG_DEBUG(GrabConstraint,
+            "Custom constraint data at {:p} ({:#x} bytes, atomBase={:#x}, 6 atoms, {} solver results, runtime {:#x})",
+            cd, GRAB_CONSTRAINT_SIZE, ATOMS_START, RUNTIME_SOLVER_RESULTS, RUNTIME_REPORTED_SIZE);
+        ROCK_LOG_TRACE(GrabConstraint, "RagdollMotor offsets: init={:#x} prevAng={:#x} (absolute runtime offsets)",
+            RT_RAGDOLL_INIT_OFFSET, RT_RAGDOLL_PREV_ANG_OFFSET);
         ROCK_LOG_TRACE(GrabConstraint,
             "LinMotor offsets: [{:#x},{:#x}] [{:#x},{:#x}] [{:#x},{:#x}] (absolute runtime offsets)",
-            RT_LINEAR_INIT_BASE + 0,
-            RT_LINEAR_PREV_POS_BASE + 0x00,
-            RT_LINEAR_INIT_BASE + 1,
-            RT_LINEAR_PREV_POS_BASE + 0x04,
-            RT_LINEAR_INIT_BASE + 2,
-            RT_LINEAR_PREV_POS_BASE + 0x08);
+            RT_LINEAR_INIT_BASE + 0, RT_LINEAR_PREV_POS_BASE + 0x00, RT_LINEAR_INIT_BASE + 1,
+            RT_LINEAR_PREV_POS_BASE + 0x04, RT_LINEAR_INIT_BASE + 2, RT_LINEAR_PREV_POS_BASE + 0x08);
 
         {
             auto* tA_col0 = reinterpret_cast<float*>(header + GRAB_TRANSFORM_A_COL0);
@@ -477,13 +472,8 @@ namespace rock
             auto* tB_pos = reinterpret_cast<float*>(header + GRAB_TRANSFORM_B_POS);
             auto* targetBRca = reinterpret_cast<float*>(header + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
 
-            grab_constraint_math::writeGrabConstraintCreationAtoms(
-                tB_col0,
-                tB_pos,
-                targetBRca,
-                desiredBodyTransformHandSpace,
-                pivotAProxyLocalGame,
-                gameToHkScale);
+            grab_constraint_math::writeGrabConstraintCreationAtoms(tB_col0, tB_pos, targetBRca,
+                desiredBodyTransformHandSpace, pivotAProxyLocalGame, gameToHkScale);
 
             ROCK_LOG_TRACE(GrabConstraint,
                 "setInBodySpace: pivotA=({:.3f},{:.3f},{:.3f}) [palm] "
@@ -491,37 +481,33 @@ namespace rock
                 "tB_proxyInBody_col0=({:.3f},{:.3f},{:.3f})",
                 tA_pos[0], tA_pos[1], tA_pos[2], tB_pos[0], tB_pos[1], tB_pos[2], tB_col0[0], tB_col0[1], tB_col0[2]);
 
-            ROCK_LOG_TRACE(GrabConstraint, "target_bRca initial proxy-in-BODY solver rows: row0=[{:.3f},{:.3f},{:.3f}] row1=[{:.3f},{:.3f},{:.3f}]", targetBRca[0], targetBRca[1],
-                targetBRca[2], targetBRca[4], targetBRca[5], targetBRca[6]);
+            ROCK_LOG_TRACE(GrabConstraint,
+                "target_bRca initial proxy-in-BODY solver rows: row0=[{:.3f},{:.3f},{:.3f}] "
+                "row1=[{:.3f},{:.3f},{:.3f}]",
+                targetBRca[0], targetBRca[1], targetBRca[2], targetBRca[4], targetBRca[5], targetBRca[6]);
         }
 
         const float linearTau = safePositiveMotorValue(tuning.linearTau, 0.03f);
         const float linearDamping = safePositiveMotorValue(tuning.linearDamping, 0.8f);
         const float linearProportionalRecovery = safePositiveMotorValue(tuning.linearProportionalRecovery, 2.0f);
         const float linearConstantRecovery = safePositiveMotorValue(tuning.linearConstantRecovery, 1.0f);
-        const float linearMaxForce = (std::max)(0.0f, std::isfinite(tuning.linearMaxForce) ? tuning.linearMaxForce : 0.0f);
+        const float linearMaxForce =
+            (std::max)(0.0f, std::isfinite(tuning.linearMaxForce) ? tuning.linearMaxForce : 0.0f);
 
         const float angularTau = safePositiveMotorValue(tuning.angularTau, linearTau);
         const float angularDamping = safePositiveMotorValue(tuning.angularDamping, linearDamping);
-        const float angularProportionalRecovery = safePositiveMotorValue(tuning.angularProportionalRecovery, linearProportionalRecovery);
-        const float angularConstantRecovery = safePositiveMotorValue(tuning.angularConstantRecovery, linearConstantRecovery);
-        const float angularMaxForce = (std::max)(0.0f, std::isfinite(tuning.angularMaxForce) ? tuning.angularMaxForce : 0.0f);
+        const float angularProportionalRecovery =
+            safePositiveMotorValue(tuning.angularProportionalRecovery, linearProportionalRecovery);
+        const float angularConstantRecovery =
+            safePositiveMotorValue(tuning.angularConstantRecovery, linearConstantRecovery);
+        const float angularMaxForce =
+            (std::max)(0.0f, std::isfinite(tuning.angularMaxForce) ? tuning.angularMaxForce : 0.0f);
 
-        auto* angMotor = createPositionMotor(
-            angularTau,
-            angularDamping,
-            angularProportionalRecovery,
-            angularConstantRecovery,
-            -angularMaxForce,
-            angularMaxForce);
+        auto* angMotor = createPositionMotor(angularTau, angularDamping, angularProportionalRecovery,
+            angularConstantRecovery, -angularMaxForce, angularMaxForce);
 
-        auto* linMotor = createPositionMotor(
-            linearTau,
-            linearDamping,
-            linearProportionalRecovery,
-            linearConstantRecovery,
-            -linearMaxForce,
-            linearMaxForce);
+        auto* linMotor = createPositionMotor(linearTau, linearDamping, linearProportionalRecovery,
+            linearConstantRecovery, -linearMaxForce, linearMaxForce);
 
         if (!angMotor || !linMotor) {
             ROCK_LOG_ERROR(GrabConstraint, "Motor creation failed — aborting");
@@ -554,10 +540,9 @@ namespace rock
         setGrabMotorAtomsActive(header, true, true);
 
         ROCK_LOG_DEBUG(GrabConstraint,
-            "Motors attached before CreateConstraint: angularBudget={:.0f} authority={} ragdollAtom=enabled linear={:.0f}",
-            angularMaxForce,
-            grabAngularAuthorityName(tuning.angularAuthority),
-            linearMaxForce);
+            "Motors attached before CreateConstraint: angularBudget={:.0f} authority={} ragdollAtom=enabled "
+            "linear={:.0f}",
+            angularMaxForce, grabAngularAuthorityName(tuning.angularAuthority), linearMaxForce);
 
         RE::hknpConstraintCinfo cinfo{};
         cinfo.constraintData = reinterpret_cast<RE::hkpConstraintData*>(cd);
@@ -579,7 +564,8 @@ namespace rock
             return result;
         }
 
-        ROCK_LOG_DEBUG(GrabConstraint, "Constraint created: id={}, hand={}, obj={}", outId, handBodyId.value, objectBodyId.value);
+        ROCK_LOG_DEBUG(GrabConstraint, "Constraint created: id={}, hand={}, obj={}", outId, handBodyId.value,
+            objectBodyId.value);
 
         result.constraintId = outId;
         result.constraintData = cd;
@@ -595,15 +581,11 @@ namespace rock
 
     ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
         const RE::NiTransform& handBodyWorld, const RE::NiPoint3& palmWorldGame,
-        const RE::NiTransform& desiredBodyTransformHandSpace, float tau, float damping, float maxForce, float proportionalRecovery, float constantRecovery)
+        const RE::NiTransform& desiredBodyTransformHandSpace, float tau, float damping, float maxForce,
+        float proportionalRecovery, float constantRecovery)
     {
         const float linearMaxForce = (std::max)(0.0f, std::isfinite(maxForce) ? maxForce : 0.0f);
-        return createGrabConstraint(
-            world,
-            handBodyId,
-            objectBodyId,
-            handBodyWorld,
-            palmWorldGame,
+        return createGrabConstraint(world, handBodyId, objectBodyId, handBodyWorld, palmWorldGame,
             desiredBodyTransformHandSpace,
             GrabConstraintMotorTuning{
                 .linearTau = tau,
@@ -633,7 +615,9 @@ namespace rock
             world->DestroyConstraints(ids, 1);
             ROCK_LOG_DEBUG(GrabConstraint, "Constraint {} destroyed", constraint.constraintId);
         } else {
-            ROCK_LOG_WARN(GrabConstraint, "Constraint {} destroy requested without world; payload retired but native constraint removal could not be issued",
+            ROCK_LOG_WARN(GrabConstraint,
+                "Constraint {} destroy requested without world; payload retired but native constraint removal could "
+                "not be issued",
                 constraint.constraintId);
         }
 
@@ -653,30 +637,25 @@ namespace rock
                 continue;
             }
 
-            payload.remainingPhysicsSteps =
-                payload.remainingPhysicsSteps > completedPhysicsSteps ? payload.remainingPhysicsSteps - completedPhysicsSteps : 0;
+            payload.remainingPhysicsSteps = payload.remainingPhysicsSteps > completedPhysicsSteps
+                ? payload.remainingPhysicsSteps - completedPhysicsSteps
+                : 0;
             if (payload.remainingPhysicsSteps == 0) {
                 const auto constraintId = payload.constraintId;
                 freeRetiredGrabConstraintPayload(payload);
                 if (s_retiredGrabConstraintPayloadCount > 0) {
                     --s_retiredGrabConstraintPayloadCount;
                 }
-                ROCK_LOG_SAMPLE_DEBUG(GrabConstraint,
-                    1000,
-                    "Retired constraint {} payload reclaimed activeRetired={}",
-                    constraintId,
-                    s_retiredGrabConstraintPayloadCount);
+                ROCK_LOG_SAMPLE_DEBUG(GrabConstraint, 1000, "Retired constraint {} payload reclaimed activeRetired={}",
+                    constraintId, s_retiredGrabConstraintPayloadCount);
             }
         }
     }
 
     namespace
     {
-        bool normalizeGrabbedInertiaMotion(
-            RE::hknpWorld* world,
-            RE::hknpBodyId bodyId,
-            SavedObjectState::SavedMotionInertiaState& savedMotionState,
-            bool looseWeaponGrab)
+        bool normalizeGrabbedInertiaMotion(RE::hknpWorld* world, RE::hknpBodyId bodyId,
+            SavedObjectState::SavedMotionInertiaState& savedMotionState, bool looseWeaponGrab)
         {
             if (!world)
                 return false;
@@ -690,7 +669,8 @@ namespace rock
             if (!motion)
                 return false;
 
-            auto* packed = reinterpret_cast<std::int16_t*>(reinterpret_cast<char*>(motion) + MOTION_PACKED_INERTIA_OFFSET);
+            auto* packed =
+                reinterpret_cast<std::int16_t*>(reinterpret_cast<char*>(motion) + MOTION_PACKED_INERTIA_OFFSET);
 
             savedMotionState.bodyId = bodyId;
             savedMotionState.motionIndex = motionIndex;
@@ -726,12 +706,8 @@ namespace rock
             }
 
             if (inertiaUsable) {
-                const auto normalizedInertia = grab_inertia_policy::normalizeInverseInertiaAxesForGrab(
-                    invI[0],
-                    invI[1],
-                    invI[2],
-                    g_rockConfig.rockGrabMaxInertiaRatio,
-                    g_rockConfig.rockGrabMinInertia);
+                const auto normalizedInertia = grab_inertia_policy::normalizeInverseInertiaAxesForGrab(invI[0], invI[1],
+                    invI[2], g_rockConfig.rockGrabMaxInertiaRatio, g_rockConfig.rockGrabMinInertia);
                 if (!normalizedInertia.valid) {
                     ROCK_LOG_WARN(GrabConstraint, "Skipping inertia normalization: invalid unpacked values");
                     inertiaUsable = false;
@@ -751,24 +727,15 @@ namespace rock
                     ROCK_LOG_DEBUG(GrabConstraint,
                         "Inertia clamped: ratio {:.1f}x -> {:.1f}x limit={:.1f} minInertiaMaxInv={:.6e} "
                         "packed [{},{},{}] -> [{},{},{}] float [{:.6e},{:.6e},{:.6e}]",
-                        normalizedInertia.originalRatio,
-                        normalizedInertia.normalizedRatio,
-                        normalizedInertia.ratioLimit,
-                        normalizedInertia.maxInverseInertiaFromMinimum,
-                        savedMotionState.savedPackedInertia[0],
-                        savedMotionState.savedPackedInertia[1],
-                        savedMotionState.savedPackedInertia[2],
-                        packed[0],
-                        packed[1],
-                        packed[2],
-                        invI[0],
-                        invI[1],
+                        normalizedInertia.originalRatio, normalizedInertia.normalizedRatio,
+                        normalizedInertia.ratioLimit, normalizedInertia.maxInverseInertiaFromMinimum,
+                        savedMotionState.savedPackedInertia[0], savedMotionState.savedPackedInertia[1],
+                        savedMotionState.savedPackedInertia[2], packed[0], packed[1], packed[2], invI[0], invI[1],
                         invI[2]);
                 } else {
                     ROCK_LOG_DEBUG(GrabConstraint,
                         "Inertia OK: ratio {:.1f}x limit={:.1f} minInertiaMaxInv={:.6e}, no clamping needed",
-                        normalizedInertia.originalRatio,
-                        normalizedInertia.ratioLimit,
+                        normalizedInertia.originalRatio, normalizedInertia.ratioLimit,
                         normalizedInertia.maxInverseInertiaFromMinimum);
                 }
             }
@@ -785,12 +752,7 @@ namespace rock
                     savedMotionState.massModified = true;
                     ROCK_LOG_DEBUG(GrabConstraint,
                         "Loose weapon mass clamped: body={} motion={} mass={:.3f}->{:.3f} packedMass {}->{}",
-                        bodyId.value,
-                        motionIndex,
-                        mass,
-                        normalizedMass,
-                        savedMotionState.savedPackedMass,
-                        packed[3]);
+                        bodyId.value, motionIndex, mass, normalizedMass, savedMotionState.savedPackedMass, packed[3]);
                 } else if (mass > 0.0f) {
                     if (inertiaModified) {
                         // hknp can recompute packed mass when inertia is rebuilt. Loose weapons keep the
@@ -798,19 +760,13 @@ namespace rock
                         desiredPackedMass = packed[3];
                         savedMotionState.massModified = true;
                         ROCK_LOG_DEBUG(GrabConstraint,
-                            "Loose weapon mass preserved through inertia rebuild: body={} motion={} mass={:.3f} limit={:.3f} packedMass={}",
-                            bodyId.value,
-                            motionIndex,
-                            mass,
-                            grab_mass_policy::kLooseWeaponGrabMassCeiling,
-                            packed[3]);
+                            "Loose weapon mass preserved through inertia rebuild: body={} motion={} mass={:.3f} "
+                            "limit={:.3f} packedMass={}",
+                            bodyId.value, motionIndex, mass, grab_mass_policy::kLooseWeaponGrabMassCeiling, packed[3]);
                     } else {
                         ROCK_LOG_DEBUG(GrabConstraint,
-                            "Loose weapon mass OK: body={} motion={} mass={:.3f} limit={:.3f}",
-                            bodyId.value,
-                            motionIndex,
-                            mass,
-                            grab_mass_policy::kLooseWeaponGrabMassCeiling);
+                            "Loose weapon mass OK: body={} motion={} mass={:.3f} limit={:.3f}", bodyId.value,
+                            motionIndex, mass, grab_mass_policy::kLooseWeaponGrabMassCeiling);
                     }
                 }
             }
@@ -836,7 +792,8 @@ namespace rock
         }
     }
 
-    void normalizeGrabbedInertia(RE::hknpWorld* world, RE::hknpBodyId bodyId, SavedObjectState& savedState, bool looseWeaponGrab)
+    void normalizeGrabbedInertia(RE::hknpWorld* world, RE::hknpBodyId bodyId, SavedObjectState& savedState,
+        bool looseWeaponGrab)
     {
         savedState.motionInertiaStates.clear();
         savedState.inertiaModified = false;
@@ -851,12 +808,8 @@ namespace rock
         }
     }
 
-    void normalizeGrabbedInertiaForBodies(
-        RE::hknpWorld* world,
-        RE::hknpBodyId primaryBodyId,
-        const std::vector<std::uint32_t>& heldBodyIds,
-        SavedObjectState& savedState,
-        bool looseWeaponGrab)
+    void normalizeGrabbedInertiaForBodies(RE::hknpWorld* world, RE::hknpBodyId primaryBodyId,
+        const std::vector<std::uint32_t>& heldBodyIds, SavedObjectState& savedState, bool looseWeaponGrab)
     {
         savedState.motionInertiaStates.clear();
         savedState.inertiaModified = false;
@@ -927,7 +880,8 @@ namespace rock
             if (!motion) {
                 continue;
             }
-            auto* packed = reinterpret_cast<std::int16_t*>(reinterpret_cast<char*>(motion) + MOTION_PACKED_INERTIA_OFFSET);
+            auto* packed =
+                reinterpret_cast<std::int16_t*>(reinterpret_cast<char*>(motion) + MOTION_PACKED_INERTIA_OFFSET);
 
             packed[0] = savedMotion.savedPackedInertia[0];
             packed[1] = savedMotion.savedPackedInertia[1];
@@ -936,14 +890,8 @@ namespace rock
                 packed[3] = savedMotion.savedPackedMass;
             }
 
-            ROCK_LOG_DEBUG(GrabConstraint,
-                "Inertia restored: body={} motion={} -> packed=[{},{},{}] massPacked={}",
-                savedMotion.bodyId.value,
-                savedMotion.motionIndex,
-                packed[0],
-                packed[1],
-                packed[2],
-                packed[3]);
+            ROCK_LOG_DEBUG(GrabConstraint, "Inertia restored: body={} motion={} -> packed=[{},{},{}] massPacked={}",
+                savedMotion.bodyId.value, savedMotion.motionIndex, packed[0], packed[1], packed[2], packed[3]);
             havok_runtime::rebuildMotionMassProperties(world, savedMotion.motionIndex);
             packed[0] = savedMotion.savedPackedInertia[0];
             packed[1] = savedMotion.savedPackedInertia[1];
@@ -951,21 +899,13 @@ namespace rock
             if (savedMotion.massModified) {
                 packed[3] = savedMotion.savedPackedMass;
                 ROCK_LOG_TRACE(GrabConstraint,
-                    "Restored packed inertia/mass override reapplied after rebuild: body={} motion={} packed=[{},{},{}] massPacked={}",
-                    savedMotion.bodyId.value,
-                    savedMotion.motionIndex,
-                    packed[0],
-                    packed[1],
-                    packed[2],
-                    packed[3]);
+                    "Restored packed inertia/mass override reapplied after rebuild: body={} motion={} "
+                    "packed=[{},{},{}] massPacked={}",
+                    savedMotion.bodyId.value, savedMotion.motionIndex, packed[0], packed[1], packed[2], packed[3]);
             } else {
                 ROCK_LOG_TRACE(GrabConstraint,
                     "Restored packed inertia override reapplied after rebuild: body={} motion={} packed=[{},{},{}]",
-                    savedMotion.bodyId.value,
-                    savedMotion.motionIndex,
-                    packed[0],
-                    packed[1],
-                    packed[2]);
+                    savedMotion.bodyId.value, savedMotion.motionIndex, packed[0], packed[1], packed[2]);
             }
             savedMotion.inertiaModified = false;
             savedMotion.massModified = false;

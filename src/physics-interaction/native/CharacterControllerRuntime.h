@@ -33,9 +33,7 @@ namespace rock::character_controller_runtime
         bool velocityValid{ false };
         bool shapeValid{ false };
         bool supportNormalValid{ false };
-        PlayerControllerImplementation implementation{
-            PlayerControllerImplementation::Unknown
-        };
+        PlayerControllerImplementation implementation{ PlayerControllerImplementation::Unknown };
         PlayerSupportState supportState{ PlayerSupportState::Unsupported };
         std::uintptr_t controllerIdentity{ 0 };
         RE::NiPoint3 positionGame{};

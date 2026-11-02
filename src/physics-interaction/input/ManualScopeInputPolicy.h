@@ -163,8 +163,7 @@ namespace rock::manual_scope_input_policy
             // The primary wand returns to its ordinary native event route.
             // ROCK still supplies reload for a left-hand firing grip, once
             // on press. Neither hold nor release can request a scope.
-            decision.dispatchReload = input.firingHandIsLeft &&
-                input.leftButton.available && input.leftButton.pressed;
+            decision.dispatchReload = input.firingHandIsLeft && input.leftButton.available && input.leftButton.pressed;
             decision.reason = "vanilla-scopes";
             return decision;
         }

@@ -34,22 +34,30 @@ namespace rock::havok_runtime
 
         void remember(const Key& key, std::span<const std::uint32_t> ids)
         {
-            if (ids.empty() || ids.size() > 4096) return;
+            if (ids.empty() || ids.size() > 4096)
+                return;
             for (std::size_t i = 0; i < _count; ++i) {
                 if (_entries[i].key == key) {
-                    if (_entries[i].ids.size() < ids.size()) _entries[i].ids.assign(ids.begin(), ids.end());
+                    if (_entries[i].ids.size() < ids.size())
+                        _entries[i].ids.assign(ids.begin(), ids.end());
                     return;
                 }
             }
             // Capacity limits memoization only; the caller still scans every system.
-            if (_count == _entries.size()) return;
+            if (_count == _entries.size())
+                return;
             auto& entry = _entries[_count++];
             entry.key = key;
             entry.ids.assign(ids.begin(), ids.end());
         }
 
     private:
-        struct Entry { Key key; std::vector<std::uint32_t> ids; };
+        struct Entry
+        {
+            Key key;
+            std::vector<std::uint32_t> ids;
+        };
+
         std::array<Entry, 32> _entries{};
         std::size_t _count = 0;
     };

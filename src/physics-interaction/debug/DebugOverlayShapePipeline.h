@@ -41,8 +41,8 @@ namespace rock::debug_overlay_shape
     // release, wherever the last cache reference drops.
     struct MeshSink
     {
-        bool (*registerMesh)(std::uint64_t meshId, const MeshData& mesh) noexcept{ nullptr };
-        void (*releaseMesh)(std::uint64_t meshId) noexcept{ nullptr };
+        bool (*registerMesh)(std::uint64_t meshId, const MeshData& mesh) noexcept { nullptr };
+        void (*releaseMesh)(std::uint64_t meshId) noexcept { nullptr };
     };
 
     // A mesh registered with the display host. Releasing the last reference
@@ -52,13 +52,15 @@ namespace rock::debug_overlay_shape
         RegisteredShape() = default;
         RegisteredShape(const RegisteredShape&) = delete;
         RegisteredShape& operator=(const RegisteredShape&) = delete;
+
         ~RegisteredShape()
         {
-            if (release && meshId != 0) release(meshId);
+            if (release && meshId != 0)
+                release(meshId);
         }
 
         std::uint64_t meshId{ 0 };
-        void (*release)(std::uint64_t meshId) noexcept{ nullptr };
+        void (*release)(std::uint64_t meshId) noexcept { nullptr };
         std::uint32_t indexCount{ 0 };
         debug_overlay_policy::ShapeDecodeMode decodeMode{ debug_overlay_policy::ShapeDecodeMode::Detailed };
         int shapeType{ -1 };
@@ -133,8 +135,8 @@ namespace rock::debug_overlay_shape
         void markUnsupported(ShapeReservation reservation) noexcept;
 
         [[nodiscard]] LookupResult lookup(const ShapeKey& key);
-        [[nodiscard]] UploadResult processCompletedUploads(
-            const MeshSink& sink, std::uint32_t maxUploads, const PipelineLimits& limits);
+        [[nodiscard]] UploadResult processCompletedUploads(const MeshSink& sink, std::uint32_t maxUploads,
+            const PipelineLimits& limits);
         [[nodiscard]] PipelineStats stats() const noexcept;
 
     private:

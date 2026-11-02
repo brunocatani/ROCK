@@ -26,8 +26,7 @@ namespace RE
 
 namespace rock::havok_compound_shape_builder
 {
-    [[nodiscard]] constexpr std::uint8_t compoundShapeKeyBitCount(
-        std::size_t childCount) noexcept
+    [[nodiscard]] constexpr std::uint8_t compoundShapeKeyBitCount(std::size_t childCount) noexcept
     {
         std::uint8_t bits = 0;
         do {
@@ -37,16 +36,13 @@ namespace rock::havok_compound_shape_builder
         return bits;
     }
 
-    [[nodiscard]] constexpr std::optional<std::uint16_t>
-    decodeTopLevelCompoundInstanceId(
-        std::uint32_t shapeKey,
+    [[nodiscard]] constexpr std::optional<std::uint16_t> decodeTopLevelCompoundInstanceId(std::uint32_t shapeKey,
         std::uint8_t bitCount) noexcept
     {
         if (shapeKey == 0xFFFF'FFFFu || bitCount == 0 || bitCount >= 32) {
             return std::nullopt;
         }
-        return static_cast<std::uint16_t>(
-            shapeKey >> (32u - bitCount));
+        return static_cast<std::uint16_t>(shapeKey >> (32u - bitCount));
     }
 
     /*
@@ -120,13 +116,13 @@ namespace rock::havok_compound_shape_builder
         void reset() noexcept;
 
         [[nodiscard]] RE::hknpShape* get() const noexcept { return _shape.get(); }
+
         [[nodiscard]] std::size_t childCount() const noexcept { return _instances.size(); }
-        [[nodiscard]] std::optional<std::size_t> tryResolveChildIndex(
-            std::uint32_t shapeKey) const noexcept;
-        [[nodiscard]] std::uint8_t shapeKeyBitCount() const noexcept
-        {
-            return _shapeKeyBitCount;
-        }
+
+        [[nodiscard]] std::optional<std::size_t> tryResolveChildIndex(std::uint32_t shapeKey) const noexcept;
+
+        [[nodiscard]] std::uint8_t shapeKeyBitCount() const noexcept { return _shapeKeyBitCount; }
+
         [[nodiscard]] explicit operator bool() const noexcept { return _shape != nullptr; }
 
     private:

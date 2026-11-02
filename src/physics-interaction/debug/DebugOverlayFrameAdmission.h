@@ -87,10 +87,7 @@ namespace rock::debug_overlay_frame_admission
                 finishFrame();
                 return {};
             }
-            if (!_lastRenderedSerial.compare_exchange_strong(
-                    previouslyRendered,
-                    published,
-                    std::memory_order_acq_rel,
+            if (!_lastRenderedSerial.compare_exchange_strong(previouslyRendered, published, std::memory_order_acq_rel,
                     std::memory_order_relaxed)) {
                 _serialRaceSkips.fetch_add(1, std::memory_order_relaxed);
                 finishFrame();
@@ -103,14 +100,10 @@ namespace rock::debug_overlay_frame_admission
 
         [[nodiscard]] AdmissionStats stats() const noexcept
         {
-            return AdmissionStats{
-                _publishedSerial.load(std::memory_order_acquire),
-                _acquiredFrames.load(std::memory_order_relaxed),
-                _activeSkips.load(std::memory_order_relaxed),
-                _noPublicationSkips.load(std::memory_order_relaxed),
-                _duplicateSkips.load(std::memory_order_relaxed),
-                _serialRaceSkips.load(std::memory_order_relaxed)
-            };
+            return AdmissionStats{ _publishedSerial.load(std::memory_order_acquire),
+                _acquiredFrames.load(std::memory_order_relaxed), _activeSkips.load(std::memory_order_relaxed),
+                _noPublicationSkips.load(std::memory_order_relaxed), _duplicateSkips.load(std::memory_order_relaxed),
+                _serialRaceSkips.load(std::memory_order_relaxed) };
         }
 
     private:

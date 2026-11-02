@@ -42,10 +42,7 @@ namespace rock::grab_input_intent_policy
         std::uint32_t formId = 0;
         std::uint32_t bodyId = 0x7FFF'FFFF;
 
-        [[nodiscard]] constexpr bool valid() const noexcept
-        {
-            return formId != 0 && bodyId != 0x7FFF'FFFF;
-        }
+        [[nodiscard]] constexpr bool valid() const noexcept { return formId != 0 && bodyId != 0x7FFF'FFFF; }
 
         bool operator==(const Target&) const = default;
     };
@@ -93,10 +90,7 @@ namespace rock::grab_input_intent_policy
         return std::isfinite(value) && value >= 0.0f ? value : fallback;
     }
 
-    inline void reset(RuntimeState& state)
-    {
-        state = {};
-    }
+    inline void reset(RuntimeState& state) { state = {}; }
 
     // A contact refusal can resolve as the hand moves. Retain only the target
     // identity, never an engine pointer; throttle mesh work without expiring intent.
@@ -110,7 +104,8 @@ namespace rock::grab_input_intent_policy
         }
     }
 
-    [[nodiscard]] inline Decision update(RuntimeState& state, const RawButtonState& raw, bool pressConsumerReady, bool resetIntent, float deltaSeconds, const Config& config, Target selectedTarget = {})
+    [[nodiscard]] inline Decision update(RuntimeState& state, const RawButtonState& raw, bool pressConsumerReady,
+        bool resetIntent, float deltaSeconds, const Config& config, Target selectedTarget = {})
     {
         Decision decision{};
         decision.held = raw.held;
@@ -291,21 +286,12 @@ namespace rock::peer_held_join_retry_policy
         return std::clamp(finiteNonNegative(config.retryIntervalSeconds, 0.05f), 0.016f, 0.125f);
     }
 
-    inline void reset(RuntimeState& state)
-    {
-        state = {};
-    }
+    inline void reset(RuntimeState& state) { state = {}; }
 
     [[nodiscard]] inline bool canStartRetry(const Input& input)
     {
-        return input.config.enabled &&
-               input.rawPressed &&
-               input.rawHeld &&
-               !input.normalGrabSuppressed &&
-               !input.handHolding &&
-               input.peerHoldingLooseObject &&
-               input.peerFormId != 0 &&
-               !input.unrelatedSelection;
+        return input.config.enabled && input.rawPressed && input.rawHeld && !input.normalGrabSuppressed &&
+            !input.handHolding && input.peerHoldingLooseObject && input.peerFormId != 0 && !input.unrelatedSelection;
     }
 
     [[nodiscard]] inline Decision update(RuntimeState& state, const Input& input)

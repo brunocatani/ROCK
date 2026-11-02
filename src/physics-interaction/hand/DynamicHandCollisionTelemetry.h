@@ -26,10 +26,8 @@ namespace rock::dynamic_hand_collision_telemetry
     inline constexpr std::size_t kPalmSlot = 0;
     inline constexpr std::size_t kFirstFingerSlot = kPalmSlot + 1;
     inline constexpr std::size_t kFingerSlotCount =
-        hand_collider_semantics::kHandFingerCount *
-        hand_collider_semantics::kHandFingerSegmentCount;
-    inline constexpr std::size_t kFirstForearmSlot =
-        kFirstFingerSlot + kFingerSlotCount;
+        hand_collider_semantics::kHandFingerCount * hand_collider_semantics::kHandFingerSegmentCount;
+    inline constexpr std::size_t kFirstForearmSlot = kFirstFingerSlot + kFingerSlotCount;
     inline constexpr std::size_t kForearmSlot = kFirstForearmSlot;
     inline constexpr std::size_t kBodiesPerHand = kFirstForearmSlot + dynamic_hand_twin::kForearmSegmentCountPerHand;
     inline constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFF;
@@ -55,50 +53,39 @@ namespace rock::dynamic_hand_collision_telemetry
         Forearm,
     };
 
-    [[nodiscard]] constexpr bool isFingerSlot(
-        const std::size_t bodyIndex) noexcept
+    [[nodiscard]] constexpr bool isFingerSlot(const std::size_t bodyIndex) noexcept
     {
         return bodyIndex >= kFirstFingerSlot && bodyIndex < kFirstForearmSlot;
     }
 
-    [[nodiscard]] constexpr std::size_t fingerIndexForBodyIndex(
-        const std::size_t bodyIndex) noexcept
+    [[nodiscard]] constexpr std::size_t fingerIndexForBodyIndex(const std::size_t bodyIndex) noexcept
     {
-        return isFingerSlot(bodyIndex) ?
-            (bodyIndex - kFirstFingerSlot) /
-                hand_collider_semantics::kHandFingerSegmentCount :
-            hand_collider_semantics::kHandFingerCount;
+        return isFingerSlot(bodyIndex)
+            ? (bodyIndex - kFirstFingerSlot) / hand_collider_semantics::kHandFingerSegmentCount
+            : hand_collider_semantics::kHandFingerCount;
     }
 
-    [[nodiscard]] constexpr std::size_t fingerSegmentIndexForBodyIndex(
-        const std::size_t bodyIndex) noexcept
+    [[nodiscard]] constexpr std::size_t fingerSegmentIndexForBodyIndex(const std::size_t bodyIndex) noexcept
     {
-        return isFingerSlot(bodyIndex) ?
-            (bodyIndex - kFirstFingerSlot) %
-                hand_collider_semantics::kHandFingerSegmentCount :
-            hand_collider_semantics::kHandFingerSegmentCount;
+        return isFingerSlot(bodyIndex)
+            ? (bodyIndex - kFirstFingerSlot) % hand_collider_semantics::kHandFingerSegmentCount
+            : hand_collider_semantics::kHandFingerSegmentCount;
     }
 
-    [[nodiscard]] constexpr std::size_t bodyIndexForFingerSegment(
-        const std::size_t fingerIndex,
+    [[nodiscard]] constexpr std::size_t bodyIndexForFingerSegment(const std::size_t fingerIndex,
         const std::size_t segmentIndex) noexcept
     {
-        return kFirstFingerSlot +
-               fingerIndex * hand_collider_semantics::kHandFingerSegmentCount +
-               segmentIndex;
+        return kFirstFingerSlot + fingerIndex * hand_collider_semantics::kHandFingerSegmentCount + segmentIndex;
     }
 
-    [[nodiscard]] constexpr bool isFingerTipSlot(
-        const std::size_t bodyIndex) noexcept
+    [[nodiscard]] constexpr bool isFingerTipSlot(const std::size_t bodyIndex) noexcept
     {
         return isFingerSlot(bodyIndex) &&
-               fingerSegmentIndexForBodyIndex(bodyIndex) ==
-                   static_cast<std::size_t>(
-                       hand_collider_semantics::HandFingerSegment::Tip);
+            fingerSegmentIndexForBodyIndex(bodyIndex) ==
+            static_cast<std::size_t>(hand_collider_semantics::HandFingerSegment::Tip);
     }
 
-    [[nodiscard]] constexpr bool isSurfaceGrabSourceSlot(
-        const std::size_t bodyIndex) noexcept
+    [[nodiscard]] constexpr bool isSurfaceGrabSourceSlot(const std::size_t bodyIndex) noexcept
     {
         return bodyIndex == kPalmSlot || isFingerTipSlot(bodyIndex);
     }
@@ -171,10 +158,9 @@ namespace rock::dynamic_hand_collision_telemetry
     struct HandSample
     {
         std::array<TwinSample, kBodiesPerHand> twins{};
-        std::array<float, hand_collider_semantics::kHandFingerCount>
-            surfaceFingerOpenValues{ 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
-        std::array<std::int8_t, hand_collider_semantics::kHandFingerCount>
-            surfaceFingerDirections{};
+        std::array<float, hand_collider_semantics::kHandFingerCount> surfaceFingerOpenValues{ 1.0f, 1.0f, 1.0f, 1.0f,
+            1.0f };
+        std::array<std::int8_t, hand_collider_semantics::kHandFingerCount> surfaceFingerDirections{};
         RE::NiPoint3 combinedContactDeviationWorldGame{};
         RE::NiPoint3 appliedVisualDeviationWorldGame{};
 

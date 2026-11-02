@@ -4,11 +4,10 @@
  * Hand skeleton helpers are grouped here so direct skeleton reads, cached hand frames, root-flattened runtime, and frame resolution stay on one authority path.
  */
 
-
 // ---- DirectSkeletonBoneReader.h ----
 
-#include <cstdint>
 #include <array>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -58,7 +57,8 @@ namespace rock
         bool valid = false;
         bool inPowerArmor = false;
         skeleton_bone_debug_math::DebugSkeletonBoneMode mode = skeleton_bone_debug_math::DebugSkeletonBoneMode::Off;
-        skeleton_bone_debug_math::SkeletonBoneSnapshotSource source = skeleton_bone_debug_math::SkeletonBoneSnapshotSource::None;
+        skeleton_bone_debug_math::SkeletonBoneSnapshotSource source =
+            skeleton_bone_debug_math::SkeletonBoneSnapshotSource::None;
         SkeletonBoneCaptureSpace space = SkeletonBoneCaptureSpace::Rendered;
         SkeletonBoneCapturePayload payload = SkeletonBoneCapturePayload::FlattenedTransforms;
         std::array<bool, 2> controllerHandsValid{};
@@ -77,10 +77,8 @@ namespace rock
     class DirectSkeletonBoneReader
     {
     public:
-        bool capture(
-            skeleton_bone_debug_math::DebugSkeletonBoneMode mode,
-            skeleton_bone_debug_math::DebugSkeletonBoneSource source,
-            SkeletonBoneCaptureSpace space,
+        bool capture(skeleton_bone_debug_math::DebugSkeletonBoneMode mode,
+            skeleton_bone_debug_math::DebugSkeletonBoneSource source, SkeletonBoneCaptureSpace space,
             DirectSkeletonBoneSnapshot& outSnapshot,
             SkeletonBoneCapturePayload payload = SkeletonBoneCapturePayload::FlattenedTransforms);
         void resetCache();
@@ -95,19 +93,19 @@ namespace rock
             bool included = false;
         };
 
-        bool rebuildTreeCache(
-            void* skeleton,
-            void* boneTree,
+        bool rebuildTreeCache(void* skeleton, void* boneTree,
             skeleton_bone_debug_math::SkeletonBoneSnapshotSource source,
-            skeleton_bone_debug_math::DebugSkeletonBoneMode mode,
-            bool inPowerArmor);
+            skeleton_bone_debug_math::DebugSkeletonBoneMode mode, bool inPowerArmor);
 
-        bool captureFromCachedTree(DirectSkeletonBoneSnapshot& outSnapshot, SkeletonBoneCaptureSpace space, SkeletonBoneCapturePayload payload);
+        bool captureFromCachedTree(DirectSkeletonBoneSnapshot& outSnapshot, SkeletonBoneCaptureSpace space,
+            SkeletonBoneCapturePayload payload);
 
         const void* _cachedSkeleton = nullptr;
         void* _cachedBoneTree = nullptr;
-        skeleton_bone_debug_math::SkeletonBoneSnapshotSource _cachedSource = skeleton_bone_debug_math::SkeletonBoneSnapshotSource::None;
-        skeleton_bone_debug_math::DebugSkeletonBoneMode _cachedMode = skeleton_bone_debug_math::DebugSkeletonBoneMode::Off;
+        skeleton_bone_debug_math::SkeletonBoneSnapshotSource _cachedSource =
+            skeleton_bone_debug_math::SkeletonBoneSnapshotSource::None;
+        skeleton_bone_debug_math::DebugSkeletonBoneMode _cachedMode =
+            skeleton_bone_debug_math::DebugSkeletonBoneMode::Off;
         int _cachedTotalBoneCount = 0;
         bool _cachedInPowerArmor = false;
         bool _missingSourceLogged = false;
@@ -143,8 +141,8 @@ namespace rock
             auto& snapshot = _snapshot;
             if (!_reader.capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
                     skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
-                    SkeletonBoneCaptureSpace::Rendered,
-                    snapshot, SkeletonBoneCapturePayload::HandRootsWithSceneNodes)) {
+                    SkeletonBoneCaptureSpace::Rendered, snapshot,
+                    SkeletonBoneCapturePayload::HandRootsWithSceneNodes)) {
                 clearResolvedState();
                 return false;
             }
@@ -156,10 +154,7 @@ namespace rock
                 return false;
             }
 
-            const bool changed =
-                !_ready ||
-                snapshot.skeleton != _skeleton ||
-                snapshot.boneTree != _boneTree ||
+            const bool changed = !_ready || snapshot.skeleton != _skeleton || snapshot.boneTree != _boneTree ||
                 snapshot.inPowerArmor != _inPowerArmor;
 
             _skeleton = snapshot.skeleton;
@@ -206,7 +201,9 @@ namespace rock
         }
 
         [[nodiscard]] const void* getSkeleton() const { return _skeleton; }
+
         [[nodiscard]] const void* getBoneTree() const { return _boneTree; }
+
         [[nodiscard]] bool isInPowerArmor() const { return _inPowerArmor; }
 
     private:
@@ -224,7 +221,8 @@ namespace rock
             _ready = false;
         }
 
-        static const DirectSkeletonBoneEntry* findBone(const DirectSkeletonBoneSnapshot& snapshot, std::string_view name)
+        static const DirectSkeletonBoneEntry* findBone(const DirectSkeletonBoneSnapshot& snapshot,
+            std::string_view name)
         {
             for (const auto& bone : snapshot.bones) {
                 if (bone.name == name) {
@@ -304,40 +302,12 @@ namespace rock::root_flattened_finger_skeleton_runtime
 
     inline const char* fingerBoneName(bool isLeft, std::size_t fingerIndex, std::size_t segmentIndex)
     {
-        static constexpr std::array<const char*, 15> kRightNames{
-            "RArm_Finger11",
-            "RArm_Finger12",
-            "RArm_Finger13",
-            "RArm_Finger21",
-            "RArm_Finger22",
-            "RArm_Finger23",
-            "RArm_Finger31",
-            "RArm_Finger32",
-            "RArm_Finger33",
-            "RArm_Finger41",
-            "RArm_Finger42",
-            "RArm_Finger43",
-            "RArm_Finger51",
-            "RArm_Finger52",
-            "RArm_Finger53"
-        };
-        static constexpr std::array<const char*, 15> kLeftNames{
-            "LArm_Finger11",
-            "LArm_Finger12",
-            "LArm_Finger13",
-            "LArm_Finger21",
-            "LArm_Finger22",
-            "LArm_Finger23",
-            "LArm_Finger31",
-            "LArm_Finger32",
-            "LArm_Finger33",
-            "LArm_Finger41",
-            "LArm_Finger42",
-            "LArm_Finger43",
-            "LArm_Finger51",
-            "LArm_Finger52",
-            "LArm_Finger53"
-        };
+        static constexpr std::array<const char*, 15> kRightNames{ "RArm_Finger11", "RArm_Finger12", "RArm_Finger13",
+            "RArm_Finger21", "RArm_Finger22", "RArm_Finger23", "RArm_Finger31", "RArm_Finger32", "RArm_Finger33",
+            "RArm_Finger41", "RArm_Finger42", "RArm_Finger43", "RArm_Finger51", "RArm_Finger52", "RArm_Finger53" };
+        static constexpr std::array<const char*, 15> kLeftNames{ "LArm_Finger11", "LArm_Finger12", "LArm_Finger13",
+            "LArm_Finger21", "LArm_Finger22", "LArm_Finger23", "LArm_Finger31", "LArm_Finger32", "LArm_Finger33",
+            "LArm_Finger41", "LArm_Finger42", "LArm_Finger43", "LArm_Finger51", "LArm_Finger52", "LArm_Finger53" };
 
         if (fingerIndex >= 5 || segmentIndex >= 3) {
             return nullptr;
@@ -359,7 +329,8 @@ namespace rock::root_flattened_finger_skeleton_runtime
     {
         const float lengthSquared = value.x * value.x + value.y * value.y + value.z * value.z;
         if (!std::isfinite(lengthSquared) || lengthSquared <= 0.000001f) {
-            const float fallbackLengthSquared = fallback.x * fallback.x + fallback.y * fallback.y + fallback.z * fallback.z;
+            const float fallbackLengthSquared =
+                fallback.x * fallback.x + fallback.y * fallback.y + fallback.z * fallback.z;
             if (!std::isfinite(fallbackLengthSquared) || fallbackLengthSquared <= 0.000001f) {
                 return RE::NiPoint3(1.0f, 0.0f, 0.0f);
             }
@@ -386,7 +357,8 @@ namespace rock::root_flattened_finger_skeleton_runtime
         }
 
         landmark.base = chain.points[0];
-        landmark.openDirection = normalizedOrFallback(chain.points[2] - chain.points[0], RE::NiPoint3(1.0f, 0.0f, 0.0f));
+        landmark.openDirection =
+            normalizedOrFallback(chain.points[2] - chain.points[0], RE::NiPoint3(1.0f, 0.0f, 0.0f));
         landmark.length = fullLength;
         landmark.valid = true;
         return landmark;
@@ -405,13 +377,10 @@ namespace rock::root_flattened_finger_skeleton_runtime
         return set;
     }
 
-    bool buildFingerSkeletonSnapshot(
-        const DirectSkeletonBoneSnapshot& boneSnapshot,
-        bool isLeft,
-        Snapshot& outSnapshot,
+    bool buildFingerSkeletonSnapshot(const DirectSkeletonBoneSnapshot& boneSnapshot, bool isLeft, Snapshot& outSnapshot,
+        std::string* outMissingBoneName = nullptr, SkeletonBoneNameIndex* nameIndex = nullptr);
+    bool resolveLiveFingerSkeletonSnapshot(bool isLeft, Snapshot& outSnapshot,
         std::string* outMissingBoneName = nullptr,
-        SkeletonBoneNameIndex* nameIndex = nullptr);
-    bool resolveLiveFingerSkeletonSnapshot(bool isLeft, Snapshot& outSnapshot, std::string* outMissingBoneName = nullptr,
         SkeletonBoneCaptureSpace space = SkeletonBoneCaptureSpace::Controller);
 }
 
@@ -445,12 +414,8 @@ namespace rock
                 return {};
             }
 
-            return HandFrame{
-                rootFlattenedHandWorld,
-                nullptr,
-                isLeft ? "left-root-flattened-hand-bone" : "right-root-flattened-hand-bone",
-                true
-            };
+            return HandFrame{ rootFlattenedHandWorld, nullptr,
+                isLeft ? "left-root-flattened-hand-bone" : "right-root-flattened-hand-bone", true };
         }
     };
 }

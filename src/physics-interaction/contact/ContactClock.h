@@ -35,6 +35,7 @@ namespace rock::contact_clock
         }
 
         [[nodiscard]] std::uint32_t frame() const noexcept { return _frame.load(std::memory_order_acquire); }
+
         [[nodiscard]] double seconds() const noexcept { return _seconds.load(std::memory_order_acquire); }
 
         /*
@@ -46,7 +47,8 @@ namespace rock::contact_clock
          */
         [[nodiscard]] float freshnessWindowSeconds(float baseSeconds) const noexcept
         {
-            return baseSeconds * game_frame_timing_policy::frameMotionScale(_lastDeltaSeconds.load(std::memory_order_acquire));
+            return baseSeconds *
+                game_frame_timing_policy::frameMotionScale(_lastDeltaSeconds.load(std::memory_order_acquire));
         }
 
     private:

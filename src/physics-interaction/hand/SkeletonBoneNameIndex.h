@@ -20,7 +20,8 @@ namespace rock
 
             [[nodiscard]] const DirectSkeletonBoneEntry* find(std::string_view name) const
             {
-                if (!snapshot.valid) return nullptr;
+                if (!snapshot.valid)
+                    return nullptr;
                 const auto it = std::lower_bound(indices.begin(), indices.end(), name,
                     [&](std::size_t index, std::string_view key) { return snapshot.bones[index].name < key; });
                 return it != indices.end() && snapshot.bones[*it].name == name ? &snapshot.bones[*it] : nullptr;
@@ -35,8 +36,8 @@ namespace rock
                 _indices.clear();
                 return { snapshot, _indices };
             }
-            if (!snapshot.topologyOwner || _owner != snapshot.topologyOwner ||
-                _revision != snapshot.topologyRevision || _payload != snapshot.payload || _indices.size() != snapshot.bones.size()) {
+            if (!snapshot.topologyOwner || _owner != snapshot.topologyOwner || _revision != snapshot.topologyRevision ||
+                _payload != snapshot.payload || _indices.size() != snapshot.bones.size()) {
                 _indices.resize(snapshot.bones.size());
                 std::iota(_indices.begin(), _indices.end(), std::size_t{ 0 });
                 std::sort(_indices.begin(), _indices.end(), [&](std::size_t a, std::size_t b) {

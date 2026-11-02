@@ -20,14 +20,16 @@ namespace rock::grip_zone_indicators
 
     void EndFrame(const std::uint64_t gameFrameIndex) noexcept
     {
-        if (currentFrame.load(std::memory_order_acquire) != gameFrameIndex) Clear();
+        if (currentFrame.load(std::memory_order_acquire) != gameFrameIndex)
+            Clear();
     }
 
     std::shared_ptr<const Frame> Snapshot() noexcept
     {
         auto frame = published.load(std::memory_order_acquire);
-        if (!frame || !grip_zone_indicator_policy::isCurrentRenderFrame(
-                frame->gameFrameIndex, currentFrame.load(std::memory_order_acquire))) {
+        if (!frame ||
+            !grip_zone_indicator_policy::isCurrentRenderFrame(frame->gameFrameIndex,
+                currentFrame.load(std::memory_order_acquire))) {
             return {};
         }
         return frame;
@@ -45,8 +47,7 @@ namespace rock::grip_zone_indicators
     {
         currentFrame.store(frame.gameFrameIndex, std::memory_order_release);
         const auto count = (std::min)(frame.count, static_cast<std::uint32_t>(frame.positions.size()));
-        if (frame.gameFrameIndex == 0 || count == 0 ||
-            !std::isfinite(frame.diameterGameUnits) ||
+        if (frame.gameFrameIndex == 0 || count == 0 || !std::isfinite(frame.diameterGameUnits) ||
             frame.diameterGameUnits < grip_zone_indicator_policy::kMinimumDiameterGameUnits ||
             frame.diameterGameUnits > grip_zone_indicator_policy::kMaximumDiameterGameUnits) {
             Clear();

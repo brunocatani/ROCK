@@ -1,27 +1,27 @@
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 
-#include "physics-interaction/native/HavokOffsets.h"
-#include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/native/PhysicsSystemBodyScanCache.h"
-#include "physics-interaction/native/CollisionSystemOwner.h"
-#include "physics-interaction/native/PhysicsScale.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/native/CollisionSystemOwner.h"
+#include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/PhysicsScale.h"
+#include "physics-interaction/native/PhysicsSystemBodyScanCache.h"
 
 #include "F4SE/Impl/PCH.h"
-#include "RE/RTTI.h"
-#include "RE/RTTI_IDs.h"
-#include "RE/VTABLE_IDs.h"
 #include "RE/Bethesda/bhkPhysicsSystem.h"
 #include "RE/Havok/hkVector4.h"
-#include "RE/Havok/hknpCollisionQueryCollector.h"
 #include "RE/Havok/hknpBody.h"
+#include "RE/Havok/hknpCollisionQueryCollector.h"
 #include "RE/Havok/hknpMotion.h"
 #include "RE/Havok/hknpWorld.h"
 #include "RE/NetImmerse/NiAVObject.h"
 #include "RE/NetImmerse/NiCollisionObject.h"
 #include "RE/NetImmerse/NiPoint.h"
+#include "RE/RTTI.h"
+#include "RE/RTTI_IDs.h"
+#include "RE/VTABLE_IDs.h"
 #include "REL/Relocation.h"
 
 #include <algorithm>
@@ -44,6 +44,7 @@ namespace rock::havok_runtime
             std::uint32_t slotCount = 0;
             std::uint32_t capacityAndFlags = 0;
         };
+
         static_assert(sizeof(NativeMotionArray) == 0x10);
 
         RE::hknpMotion* readAllocatedMotionSlot(RE::hknpWorld* world, std::uint32_t motionIndex,
@@ -59,8 +60,7 @@ namespace rock::havok_runtime
             __try {
 #endif
                 stage = "array-header";
-                array = *reinterpret_cast<const NativeMotionArray*>(
-                    reinterpret_cast<std::uintptr_t>(world) + 0xE0);
+                array = *reinterpret_cast<const NativeMotionArray*>(reinterpret_cast<std::uintptr_t>(world) + 0xE0);
                 const auto address = reinterpret_cast<std::uintptr_t>(array.data);
                 stage = "array-pointer";
                 if (address < 0x10000 || (address & 0xF) != 0) {
@@ -72,8 +72,7 @@ namespace rock::havok_runtime
                 }
                 stage = "slot-allocation";
                 auto* motion = &array.data[motionIndex];
-                if (*reinterpret_cast<const std::uint8_t*>(
-                        reinterpret_cast<std::uintptr_t>(motion) + 0x3F) == 0) {
+                if (*reinterpret_cast<const std::uint8_t*>(reinterpret_cast<std::uintptr_t>(motion) + 0x3F) == 0) {
                     return nullptr;
                 }
                 return motion;
@@ -95,6 +94,7 @@ namespace rock::havok_runtime
             float normalImpulseHavok[4]{};
             float contactPointsHavok[kMaxContactSignalPoints][4]{};
         };
+
         static_assert(offsetof(NativeContactSignalPointBuffer, contactNormalHavok) == 0x10);
         static_assert(offsetof(NativeContactSignalPointBuffer, contactPointsHavok) == 0x40);
         static_assert(sizeof(NativeContactSignalPointBuffer) == 0x80);
@@ -113,12 +113,8 @@ namespace rock::havok_runtime
         std::mutex g_bodyFlagLeaseMutex;
         std::vector<BodyFlagLeaseEntry> g_bodyFlagLeases;
 
-        bool bodyFlagLeaseMatches(
-            const BodyFlagLeaseEntry& lease,
-            RE::hknpWorld* world,
-            std::uint32_t bodyId,
-            std::uint32_t flags,
-            std::uint32_t mode)
+        bool bodyFlagLeaseMatches(const BodyFlagLeaseEntry& lease, RE::hknpWorld* world, std::uint32_t bodyId,
+            std::uint32_t flags, std::uint32_t mode)
         {
             return lease.world == world && lease.bodyId == bodyId && lease.flags == flags && lease.mode == mode;
         }
@@ -148,14 +144,16 @@ namespace rock::havok_runtime
 #if defined(_MSC_VER)
             __try {
                 const auto worldAddress = reinterpret_cast<std::uintptr_t>(world);
-                *outHighWaterMark = *reinterpret_cast<const std::uint32_t*>(worldAddress + kHknpWorldBodyHighWaterMarkOffset);
+                *outHighWaterMark =
+                    *reinterpret_cast<const std::uint32_t*>(worldAddress + kHknpWorldBodyHighWaterMarkOffset);
                 return true;
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 return false;
             }
 #else
             const auto worldAddress = reinterpret_cast<std::uintptr_t>(world);
-            *outHighWaterMark = *reinterpret_cast<const std::uint32_t*>(worldAddress + kHknpWorldBodyHighWaterMarkOffset);
+            *outHighWaterMark =
+                *reinterpret_cast<const std::uint32_t*>(worldAddress + kHknpWorldBodyHighWaterMarkOffset);
             return true;
 #endif
         }
@@ -175,10 +173,7 @@ namespace rock::havok_runtime
             return body.bodyId.value == bodyId.value ? &body : nullptr;
         }
 
-        bool pointerLooksReadable(const void* ptr)
-        {
-            return native_memory::pointerLooksReadable(ptr);
-        }
+        bool pointerLooksReadable(const void* ptr) { return native_memory::pointerLooksReadable(ptr); }
 
         bool pointerRangeLooksReadable(const void* ptr, std::size_t byteCount)
         {
@@ -231,13 +226,11 @@ namespace rock::havok_runtime
     bool tryReadBodyHighWaterMark(RE::hknpWorld* world, std::uint32_t& outHighWaterMark)
     {
         outHighWaterMark = 0;
-        return tryReadBodyHighWaterMarkRaw(world, &outHighWaterMark) && outHighWaterMark <= body_frame::kMaxReadableBodyIndex;
+        return tryReadBodyHighWaterMarkRaw(world, &outHighWaterMark) &&
+            outHighWaterMark <= body_frame::kMaxReadableBodyIndex;
     }
 
-    RE::hknpBody* getBodyArray(RE::hknpWorld* world)
-    {
-        return world ? world->GetBodyArray() : nullptr;
-    }
+    RE::hknpBody* getBodyArray(RE::hknpWorld* world) { return world ? world->GetBodyArray() : nullptr; }
 
     RE::hknpBody* getBody(RE::hknpWorld* world, RE::hknpBodyId bodyId)
     {
@@ -261,8 +254,8 @@ namespace rock::havok_runtime
         if (!motion) {
             ROCK_LOG_SAMPLE_WARN(Physics, 1000,
                 "Motion lookup rejected: stage={} world={:p} motion={} array={:p} slots={} capacityFlags=0x{:08X}",
-                stage, static_cast<void*>(world), motionIndex, static_cast<void*>(array.data),
-                array.slotCount, array.capacityAndFlags);
+                stage, static_cast<void*>(world), motionIndex, static_cast<void*>(array.data), array.slotCount,
+                array.capacityAndFlags);
         }
         return motion;
     }
@@ -300,7 +293,8 @@ namespace rock::havok_runtime
         const auto identity = snapshotBodyIdentity(world, bodyId);
         BodySnapshot snapshot{};
         snapshot.bodyId = bodyId;
-        if (!identity.valid) return snapshot;
+        if (!identity.valid)
+            return snapshot;
         snapshot.valid = true;
         snapshot.body = identity.body;
         snapshot.motionIndex = identity.motionIndex;
@@ -317,7 +311,8 @@ namespace rock::havok_runtime
             return nullptr;
         }
 
-        const auto modifierMgr = *reinterpret_cast<std::uintptr_t*>(reinterpret_cast<std::uintptr_t>(world) + offsets::kHknpWorld_ModifierManager);
+        const auto modifierMgr = *reinterpret_cast<std::uintptr_t*>(
+            reinterpret_cast<std::uintptr_t>(world) + offsets::kHknpWorld_ModifierManager);
         if (!modifierMgr) {
             return nullptr;
         }
@@ -337,22 +332,26 @@ namespace rock::havok_runtime
             return nullptr;
         }
 
-        return *reinterpret_cast<RE::hknpWorld**>(reinterpret_cast<std::uintptr_t>(bhkWorld) + offsets::kBhkWorld_HknpWorldPtr);
+        return *reinterpret_cast<RE::hknpWorld**>(
+            reinterpret_cast<std::uintptr_t>(bhkWorld) + offsets::kBhkWorld_HknpWorldPtr);
     }
 
     namespace
     {
-        bool readSystemOwnership(RE::NiCollisionObject* collisionObject,
-            RE::bhkPhysicsSystem*& system, RE::hknpPhysicsSystemInstance*& instance, bool* knownEmpty = nullptr)
+        bool readSystemOwnership(RE::NiCollisionObject* collisionObject, RE::bhkPhysicsSystem*& system,
+            RE::hknpPhysicsSystemInstance*& instance, bool* knownEmpty = nullptr)
         {
-            if (knownEmpty) *knownEmpty = false;
+            if (knownEmpty)
+                *knownEmpty = false;
             system = nullptr;
             instance = nullptr;
             std::array<std::byte, offsets::kCollisionObject_PhysSystemPtr + sizeof(void*)> wrapper{};
-            if (!native_memory::guardedCopyFromMemory(collisionObject, wrapper.data(), wrapper.size())) return false;
+            if (!native_memory::guardedCopyFromMemory(collisionObject, wrapper.data(), wrapper.size()))
+                return false;
             std::memcpy(&system, wrapper.data() + offsets::kCollisionObject_PhysSystemPtr, sizeof(system));
             if (!system) {
-                if (knownEmpty) *knownEmpty = true;
+                if (knownEmpty)
+                    *knownEmpty = true;
                 return false;
             }
             // Copy bytes, never construct/copy an owning native C++ object.
@@ -376,15 +375,14 @@ namespace rock::havok_runtime
     void* getPhysicsSystemInstance(RE::bhkPhysicsSystem* physicsSystem)
     {
         std::array<std::byte, sizeof(RE::bhkPhysicsSystem)> bytes{};
-        if (!native_memory::guardedCopyFromMemory(physicsSystem, bytes.data(), bytes.size())) return nullptr;
+        if (!native_memory::guardedCopyFromMemory(physicsSystem, bytes.data(), bytes.size()))
+            return nullptr;
         RE::hknpPhysicsSystemInstance* instance = nullptr;
         std::memcpy(&instance, bytes.data() + offsetof(RE::bhkPhysicsSystem, instance), sizeof(instance));
         return pointerRangeLooksReadable(instance, sizeof(RE::hknpPhysicsSystemInstance)) ? instance : nullptr;
     }
 
-    bool tryResolveCollisionObjectBody(
-        RE::NiCollisionObject* collisionObject,
-        RE::hknpWorld*& outWorld,
+    bool tryResolveCollisionObjectBody(RE::NiCollisionObject* collisionObject, RE::hknpWorld*& outWorld,
         RE::hknpBodyId& outBodyId)
     {
         outWorld = nullptr;
@@ -401,26 +399,17 @@ namespace rock::havok_runtime
         std::int32_t systemBodyIndex = -1;
         const auto bodyCount = header.bodyCount;
         auto* world = header.world;
-        if (!tryReadField(
-                collisionObject,
-                offsets::kCollisionObject_SystemBodyIndex,
-                systemBodyIndex) ||
-            !world || systemBodyIndex < 0 || systemBodyIndex >= bodyCount) {
+        if (!tryReadField(collisionObject, offsets::kCollisionObject_SystemBodyIndex, systemBodyIndex) || !world ||
+            systemBodyIndex < 0 || systemBodyIndex >= bodyCount) {
             return false;
         }
 
-        using PhysicsSystemGetBodyId = void (*)(
-            void*,
-            RE::hknpBodyId*,
-            std::int32_t);
-        static REL::Relocation<PhysicsSystemGetBodyId> getBodyId{
-            REL::Offset(offsets::kFunc_PhysicsSystem_GetBodyId)
-        };
+        using PhysicsSystemGetBodyId = void (*)(void*, RE::hknpBodyId*, std::int32_t);
+        static REL::Relocation<PhysicsSystemGetBodyId> getBodyId{ REL::Offset(offsets::kFunc_PhysicsSystem_GetBodyId) };
 
         RE::hknpBodyId bodyId{ body_frame::kInvalidBodyId };
         getBodyId(physicsSystem, &bodyId, systemBodyIndex);
-        if (!isValidBodyId(bodyId) ||
-            !bodySlotLooksReadable(world, bodyId) ||
+        if (!isValidBodyId(bodyId) || !bodySlotLooksReadable(world, bodyId) ||
             getCollisionObjectFromBody(world, bodyId) != collisionObject) {
             return false;
         }
@@ -461,13 +450,9 @@ namespace rock::havok_runtime
         return "unknown";
     }
 
-    PhysicsSystemBodyScanResult forEachPhysicsSystemBodyIdDetailed(
-        RE::NiCollisionObject* collisionObject,
-        RE::hknpWorld* expectedWorld,
-        std::uint32_t maxBodies,
-        bool (*visitor)(std::uint32_t bodyId, void* userData),
-        void* userData,
-        PhysicsSystemBodyScanCache* transactionCache)
+    PhysicsSystemBodyScanResult forEachPhysicsSystemBodyIdDetailed(RE::NiCollisionObject* collisionObject,
+        RE::hknpWorld* expectedWorld, std::uint32_t maxBodies, bool (*visitor)(std::uint32_t bodyId, void* userData),
+        void* userData, PhysicsSystemBodyScanCache* transactionCache)
     {
         PhysicsSystemBodyScanResult result{};
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::PhysicsSystemBodyScan);
@@ -483,22 +468,28 @@ namespace rock::havok_runtime
         // takes two +20 hops; interpreting the first as a system reads the
         // body's flags as an instance and used to reject complete weapon scans.
         static const bool proxyLayoutQualified = [] {
-            constexpr std::array<std::uint8_t, 12> expected{
-                0x48,0x8B,0x49,0x20,0x48,0x8B,0x41,0x20,0x48,0x85,0xC0,0x0F };
+            constexpr std::array<std::uint8_t, 12> expected{ 0x48, 0x8B, 0x49, 0x20, 0x48, 0x8B, 0x41, 0x20, 0x48, 0x85,
+                0xC0, 0x0F };
             std::array<std::uint8_t, expected.size()> actual{};
-            return native_memory::guardedCopyFromMemory(
-                reinterpret_cast<const void*>(REL::Offset(0x1E0A43C).address()), actual.data(), actual.size()) && actual == expected;
+            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(0x1E0A43C).address()),
+                       actual.data(), actual.size()) &&
+                actual == expected;
         }();
-        const auto owner = collision_system_owner::resolve(reinterpret_cast<std::uintptr_t>(collisionObject),
+        const auto owner = collision_system_owner::resolve(
+            reinterpret_cast<std::uintptr_t>(collisionObject),
             [](std::uintptr_t object, std::uintptr_t& table) {
-                if (!native_memory::tryReadField(reinterpret_cast<const void*>(object), 0, table)) return false;
+                if (!native_memory::tryReadField(reinterpret_cast<const void*>(object), 0, table))
+                    return false;
                 const auto base = REL::Module::get().base();
-                if (table < base) return false;
+                if (table < base)
+                    return false;
                 table -= base;
                 return true;
-            }, [](std::uintptr_t object, std::uintptr_t& target) {
-                return proxyLayoutQualified && native_memory::tryReadField(reinterpret_cast<const void*>(object),
-                    offsets::kCollisionObject_PhysSystemPtr, target);
+            },
+            [](std::uintptr_t object, std::uintptr_t& target) {
+                return proxyLayoutQualified &&
+                    native_memory::tryReadField(reinterpret_cast<const void*>(object),
+                        offsets::kCollisionObject_PhysSystemPtr, target);
             });
         if (owner.stage == collision_system_owner::Stage::SceneOnly) {
             result.status = PhysicsSystemBodyScanStatus::EmptyPhysicsSystem;
@@ -506,8 +497,10 @@ namespace rock::havok_runtime
         }
         if (!owner.usable()) {
             ROCK_LOG_SAMPLE_WARN(Physics, 1000,
-                "Collision system owner rejected: stage={} object={:p} sourceVtableRva={:X} targetVtableRva={:X} proxyLayout={}",
-                static_cast<unsigned>(owner.stage), static_cast<void*>(collisionObject), owner.sourceVtable, owner.targetVtable, proxyLayoutQualified);
+                "Collision system owner rejected: stage={} object={:p} sourceVtableRva={:X} targetVtableRva={:X} "
+                "proxyLayout={}",
+                static_cast<unsigned>(owner.stage), static_cast<void*>(collisionObject), owner.sourceVtable,
+                owner.targetVtable, proxyLayoutQualified);
             result.status = PhysicsSystemBodyScanStatus::UnsupportedCollisionObject;
             return result;
         }
@@ -516,8 +509,10 @@ namespace rock::havok_runtime
                 static_cast<void*>(collisionObject), owner.owner);
         }
         bool knownEmpty = false;
-        if (!readSystemOwnership(reinterpret_cast<RE::NiCollisionObject*>(owner.owner), physicsSystem, instance, &knownEmpty)) {
-            result.status = knownEmpty ? PhysicsSystemBodyScanStatus::EmptyPhysicsSystem : PhysicsSystemBodyScanStatus::MissingPhysicsSystem;
+        if (!readSystemOwnership(reinterpret_cast<RE::NiCollisionObject*>(owner.owner), physicsSystem, instance,
+                &knownEmpty)) {
+            result.status = knownEmpty ? PhysicsSystemBodyScanStatus::EmptyPhysicsSystem
+                                       : PhysicsSystemBodyScanStatus::MissingPhysicsSystem;
             return result;
         }
         RE::hknpPhysicsSystemInstance header{};
@@ -565,7 +560,8 @@ namespace rock::havok_runtime
                 return result;
             }
             ids = { copiedBodyIds.data(), static_cast<std::size_t>(count) };
-            if (transactionCache) transactionCache->remember(cacheKey, ids);
+            if (transactionCache)
+                transactionCache->remember(cacheKey, ids);
         }
 
         for (std::int32_t i = 0; i < count; ++i) {
@@ -585,14 +581,11 @@ namespace rock::havok_runtime
         return result;
     }
 
-    bool forEachPhysicsSystemBodyId(
-        RE::NiCollisionObject* collisionObject,
-        RE::hknpWorld* expectedWorld,
-        std::uint32_t maxBodies,
-        bool (*visitor)(std::uint32_t bodyId, void* userData),
-        void* userData)
+    bool forEachPhysicsSystemBodyId(RE::NiCollisionObject* collisionObject, RE::hknpWorld* expectedWorld,
+        std::uint32_t maxBodies, bool (*visitor)(std::uint32_t bodyId, void* userData), void* userData)
     {
-        return forEachPhysicsSystemBodyIdDetailed(collisionObject, expectedWorld, maxBodies, visitor, userData).enumerated();
+        return forEachPhysicsSystemBodyIdDetailed(collisionObject, expectedWorld, maxBodies, visitor, userData)
+            .enumerated();
     }
 
     void* getQueryFilterRefWithFallback(RE::hknpWorld* world)
@@ -616,7 +609,8 @@ namespace rock::havok_runtime
             return nullptr;
         }
 
-        return reinterpret_cast<std::uint64_t*>(reinterpret_cast<std::uintptr_t>(filter) + offsets::kFilter_CollisionMatrix);
+        return reinterpret_cast<std::uint64_t*>(
+            reinterpret_cast<std::uintptr_t>(filter) + offsets::kFilter_CollisionMatrix);
     }
 
     std::uint64_t* getCollisionFilterMatrix(RE::hknpWorld* world, bool* outUsedFallback)
@@ -724,7 +718,8 @@ namespace rock::havok_runtime
             return false;
         }
 
-        const float quaternion[4]{ motion->orientation.x, motion->orientation.y, motion->orientation.z, motion->orientation.w };
+        const float quaternion[4]{ motion->orientation.x, motion->orientation.y, motion->orientation.z,
+            motion->orientation.w };
         outTransform.rotate = transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(quaternion);
         outTransform.translate = hkVectorToNiPoint(motion->position);
         outTransform.scale = 1.0f;
@@ -738,25 +733,24 @@ namespace rock::havok_runtime
         RE::NiTransform motionTransform{};
         const bool hasMotionTransform = tryGetMotionWorldTransform(world, body, motionTransform);
         result.source = body_frame::chooseLiveBodyFrameSource(true, hasMotionTransform);
-        result.transform = result.source == body_frame::BodyFrameSource::MotionCenterOfMass ? motionTransform : bodyArrayWorldTransform(body);
+        result.transform = result.source == body_frame::BodyFrameSource::MotionCenterOfMass
+            ? motionTransform
+            : bodyArrayWorldTransform(body);
         result.valid = result.source != body_frame::BodyFrameSource::Fallback;
         return result;
     }
 
     ResolvedBodyWorldTransform resolveLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId)
     {
-        if (const auto* body = getBody(world, bodyId)) return resolveLiveBodyWorldTransform(world, *body);
+        if (const auto* body = getBody(world, bodyId))
+            return resolveLiveBodyWorldTransform(world, *body);
         ResolvedBodyWorldTransform result{};
         result.transform = transform_math::makeIdentityTransform<RE::NiTransform>();
         return result;
     }
 
-    bool tryResolveLiveBodyWorldTransform(
-        RE::hknpWorld* world,
-        RE::hknpBodyId bodyId,
-        RE::NiTransform& outTransform,
-        body_frame::BodyFrameSource* outSource,
-        std::uint32_t* outMotionIndex)
+    bool tryResolveLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform,
+        body_frame::BodyFrameSource* outSource, std::uint32_t* outMotionIndex)
     {
         const auto resolved = resolveLiveBodyWorldTransform(world, bodyId);
         outTransform = resolved.transform;
@@ -788,7 +782,8 @@ namespace rock::havok_runtime
         return tryReadField(motion, offsets::kMotion_PropertiesId, outMotionPropertiesId);
     }
 
-    bool tryReadBodyMotionPropertiesId(RE::hknpWorld* world, RE::hknpBodyId bodyId, std::uint16_t& outMotionPropertiesId)
+    bool tryReadBodyMotionPropertiesId(RE::hknpWorld* world, RE::hknpBodyId bodyId,
+        std::uint16_t& outMotionPropertiesId)
     {
         outMotionPropertiesId = 0;
         if (auto* motion = getBodyMotion(world, bodyId)) {
@@ -834,8 +829,7 @@ namespace rock::havok_runtime
         char* entries = nullptr;
         std::int32_t count = 0;
         if (!tryReadField(library, offsets::kMotionPropertiesLibrary_Entries, entries) ||
-            !tryReadField(library, offsets::kMotionPropertiesLibrary_Count, count) ||
-            count < 0) {
+            !tryReadField(library, offsets::kMotionPropertiesLibrary_Count, count) || count < 0) {
             return false;
         }
 
@@ -878,14 +872,13 @@ namespace rock::havok_runtime
         (void)body;
 
         using SetCollisionFilter_t = void (*)(void*, std::uint32_t, std::uint32_t, std::uint32_t);
-        static REL::Relocation<SetCollisionFilter_t> setBodyCollisionFilterInfo{ REL::Offset(offsets::kFunc_SetBodyCollisionFilterInfo) };
+        static REL::Relocation<SetCollisionFilter_t> setBodyCollisionFilterInfo{ REL::Offset(
+            offsets::kFunc_SetBodyCollisionFilterInfo) };
         setBodyCollisionFilterInfo(world, bodyId.value, filterInfo, rebuildMode);
         return true;
     }
-    bool setBodyVelocityDeferred(
-        RE::hknpWorld* world,
-        std::uint32_t bodyId,
-        const RE::hkVector4f& linearVelocity,
+
+    bool setBodyVelocityDeferred(RE::hknpWorld* world, std::uint32_t bodyId, const RE::hkVector4f& linearVelocity,
         const RE::hkVector4f& angularVelocity)
     {
         auto* body = getBody(world, RE::hknpBodyId{ bodyId });
@@ -897,12 +890,14 @@ namespace rock::havok_runtime
         alignas(16) float angular[4] = { angularVelocity.x, angularVelocity.y, angularVelocity.z, angularVelocity.w };
 
         using SetVelocityDeferred_t = void (*)(void*, std::uint32_t, const float*, const float*);
-        static REL::Relocation<SetVelocityDeferred_t> setVelocityDeferred{ REL::Offset(offsets::kFunc_SetBodyVelocityDeferred) };
+        static REL::Relocation<SetVelocityDeferred_t> setVelocityDeferred{ REL::Offset(
+            offsets::kFunc_SetBodyVelocityDeferred) };
         setVelocityDeferred(world, bodyId, linear, angular);
         return true;
     }
 
-    bool setBodyTransformDeferred(RE::hknpWorld* world, std::uint32_t bodyId, const RE::NiTransform& transform, int mode)
+    bool setBodyTransformDeferred(RE::hknpWorld* world, std::uint32_t bodyId, const RE::NiTransform& transform,
+        int mode)
     {
         auto* body = getReadableBodySlot(world, RE::hknpBodyId{ bodyId });
         if (!body) {
@@ -913,10 +908,12 @@ namespace rock::havok_runtime
         RE::hkTransformf hkTransform;
         hkTransform.rotation = transform_math::niStoredAxesToHknpBodyColumns(transform.rotate);
         const float scale = physics_scale::gameToHavok();
-        hkTransform.translation = RE::NiPoint4(transform.translate.x * scale, transform.translate.y * scale, transform.translate.z * scale, 0.0f);
+        hkTransform.translation = RE::NiPoint4(transform.translate.x * scale, transform.translate.y * scale,
+            transform.translate.z * scale, 0.0f);
 
         using SetTransformDeferred_t = void (*)(void*, std::uint32_t, const float*, int);
-        static REL::Relocation<SetTransformDeferred_t> setBodyTransform{ REL::Offset(offsets::kFunc_SetBodyTransformDeferred) };
+        static REL::Relocation<SetTransformDeferred_t> setBodyTransform{ REL::Offset(
+            offsets::kFunc_SetBodyTransformDeferred) };
         setBodyTransform(world, bodyId, reinterpret_cast<const float*>(&hkTransform), mode);
         return true;
     }
@@ -962,11 +959,7 @@ namespace rock::havok_runtime
         return true;
     }
 
-    bool acquireBodyFlagLease(
-        RE::hknpWorld* world,
-        std::uint32_t bodyId,
-        std::uint32_t flags,
-        std::uint32_t mode,
+    bool acquireBodyFlagLease(RE::hknpWorld* world, std::uint32_t bodyId, std::uint32_t flags, std::uint32_t mode,
         std::uintptr_t ownerToken)
     {
         /*
@@ -982,11 +975,10 @@ namespace rock::havok_runtime
         }
 
         std::scoped_lock lock(g_bodyFlagLeaseMutex);
-        auto leaseIt = std::find_if(g_bodyFlagLeases.begin(), g_bodyFlagLeases.end(), [&](const BodyFlagLeaseEntry& lease) {
-            return bodyFlagLeaseMatches(lease, world, bodyId, flags, mode);
-        });
+        auto leaseIt = std::find_if(g_bodyFlagLeases.begin(), g_bodyFlagLeases.end(),
+            [&](const BodyFlagLeaseEntry& lease) { return bodyFlagLeaseMatches(lease, world, bodyId, flags, mode); });
         if (leaseIt != g_bodyFlagLeases.end()) {
-            auto* live = getReadableBodySlot(world, RE::hknpBodyId{bodyId});
+            auto* live = getReadableBodySlot(world, RE::hknpBodyId{ bodyId });
             if (!live || getCollisionObjectFromBody(live) != leaseIt->collisionObject.get()) {
                 // A removed ragdoll body ID may be reused before the old hand
                 // releases. Its old lease must not transfer to the new body.
@@ -1023,25 +1015,22 @@ namespace rock::havok_runtime
         return true;
     }
 
-    bool releaseBodyFlagLease(
-        RE::hknpWorld* world,
-        std::uint32_t bodyId,
-        std::uint32_t flags,
-        std::uint32_t mode,
-        std::uintptr_t ownerToken,
-        bool restoreOnFinalLease)
+    bool releaseBodyFlagLease(RE::hknpWorld* world, std::uint32_t bodyId, std::uint32_t flags, std::uint32_t mode,
+        std::uintptr_t ownerToken, bool restoreOnFinalLease)
     {
         if (flags == 0 || ownerToken == 0) {
             return false;
         }
 
         std::scoped_lock lock(g_bodyFlagLeaseMutex);
-        auto leaseIt = std::find_if(g_bodyFlagLeases.begin(), g_bodyFlagLeases.end(), [&](const BodyFlagLeaseEntry& lease) {
-            if (world) {
-                return bodyFlagLeaseMatches(lease, world, bodyId, flags, mode);
-            }
-            return lease.bodyId == bodyId && lease.flags == flags && lease.mode == mode && bodyFlagLeaseContainsOwner(lease, ownerToken);
-        });
+        auto leaseIt =
+            std::find_if(g_bodyFlagLeases.begin(), g_bodyFlagLeases.end(), [&](const BodyFlagLeaseEntry& lease) {
+                if (world) {
+                    return bodyFlagLeaseMatches(lease, world, bodyId, flags, mode);
+                }
+                return lease.bodyId == bodyId && lease.flags == flags && lease.mode == mode &&
+                    bodyFlagLeaseContainsOwner(lease, ownerToken);
+            });
         if (leaseIt == g_bodyFlagLeases.end()) {
             return false;
         }
@@ -1057,32 +1046,25 @@ namespace rock::havok_runtime
         }
 
         const std::uint32_t flagsIntroducedByLease = leaseIt->flags & ~leaseIt->originalEnabledFlags;
-        auto* live = world ? getReadableBodySlot(world, RE::hknpBodyId{bodyId}) : nullptr;
+        auto* live = world ? getReadableBodySlot(world, RE::hknpBodyId{ bodyId }) : nullptr;
         const bool sameIdentity = live && getCollisionObjectFromBody(live) == leaseIt->collisionObject.get();
         const bool shouldRestore = restoreOnFinalLease && sameIdentity && flagsIntroducedByLease != 0;
         g_bodyFlagLeases.erase(leaseIt);
         return shouldRestore ? disableBodyFlags(world, bodyId, flagsIntroducedByLease, mode) : true;
     }
 
-    bool applyLinearVelocityDeltaDeferred(RE::hknpWorld* world, std::uint32_t bodyId, const RE::NiPoint3& velocityDeltaHavok)
+    bool applyLinearVelocityDeltaDeferred(RE::hknpWorld* world, std::uint32_t bodyId,
+        const RE::NiPoint3& velocityDeltaHavok)
     {
         auto* motion = getBodyMotion(world, RE::hknpBodyId{ bodyId });
         if (!motion) {
             return false;
         }
 
-        RE::hkVector4f linearVelocity{
-            motion->linearVelocity.x + velocityDeltaHavok.x,
-            motion->linearVelocity.y + velocityDeltaHavok.y,
-            motion->linearVelocity.z + velocityDeltaHavok.z,
-            0.0f
-        };
-        RE::hkVector4f angularVelocity{
-            motion->angularVelocity.x,
-            motion->angularVelocity.y,
-            motion->angularVelocity.z,
-            0.0f
-        };
+        RE::hkVector4f linearVelocity{ motion->linearVelocity.x + velocityDeltaHavok.x,
+            motion->linearVelocity.y + velocityDeltaHavok.y, motion->linearVelocity.z + velocityDeltaHavok.z, 0.0f };
+        RE::hkVector4f angularVelocity{ motion->angularVelocity.x, motion->angularVelocity.y, motion->angularVelocity.z,
+            0.0f };
 
         return setBodyVelocityDeferred(world, bodyId, linearVelocity, angularVelocity);
     }
@@ -1094,12 +1076,14 @@ namespace rock::havok_runtime
         }
 
         using RebuildMotionMassProperties_t = void (*)(void*, std::uint32_t, int);
-        static REL::Relocation<RebuildMotionMassProperties_t> rebuildMotionMassProperties{ REL::Offset(offsets::kFunc_RebuildMotionMassProperties) };
+        static REL::Relocation<RebuildMotionMassProperties_t> rebuildMotionMassProperties{ REL::Offset(
+            offsets::kFunc_RebuildMotionMassProperties) };
         rebuildMotionMassProperties(world, motionIndex, rebuildMode);
         return true;
     }
 
-    bool tryExtractContactSignalPoint(RE::hknpWorld* world, const void* contactSignalData, ContactSignalPointResult& outResult)
+    bool tryExtractContactSignalPoint(RE::hknpWorld* world, const void* contactSignalData,
+        ContactSignalPointResult& outResult)
     {
         outResult = {};
         if (!world || !contactSignalData) {
@@ -1114,7 +1098,8 @@ namespace rock::havok_runtime
          * differ between single-point and multi-point contacts.
          */
         using ExtractContactSignalPoints_t = void (*)(const void*, RE::hknpWorld*, NativeContactSignalPointBuffer*);
-        static REL::Relocation<ExtractContactSignalPoints_t> extractContactSignalPoints{ REL::Offset(offsets::kFunc_ExtractContactSignalPoints) };
+        static REL::Relocation<ExtractContactSignalPoints_t> extractContactSignalPoints{ REL::Offset(
+            offsets::kFunc_ExtractContactSignalPoints) };
 
         NativeContactSignalPointBuffer native{};
         extractContactSignalPoints(contactSignalData, world, &native);

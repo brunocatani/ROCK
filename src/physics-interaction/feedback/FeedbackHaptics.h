@@ -41,7 +41,8 @@ namespace rock::feedback_haptics
         void setArmedThrowable(FeedbackHand hand, std::uint32_t referenceId) noexcept;
         bool queue(FeedbackHand hand, float durationSeconds, float intensity) noexcept;
         bool queue(FeedbackHand hand, float durationSeconds, float startIntensity, float endIntensity) noexcept;
-        [[nodiscard]] std::size_t update(float deltaSeconds, HapticOutput* outputs, std::size_t outputCapacity) noexcept;
+        [[nodiscard]] std::size_t update(float deltaSeconds, HapticOutput* outputs,
+            std::size_t outputCapacity) noexcept;
         [[nodiscard]] std::size_t activeEventCount(FeedbackHand hand) const noexcept;
 
     private:

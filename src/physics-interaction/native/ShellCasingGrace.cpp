@@ -10,10 +10,10 @@
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/weapon/WeaponTypes.h"
 
+#include <F4SE/Trampoline.h>
 #include <RE/Bethesda/PlayerCharacter.h>
 #include <RE/Bethesda/TESBoundObjects.h>
 #include <RE/NetImmerse/NiNode.h>
-#include <F4SE/Trampoline.h>
 #include <REL/Relocation.h>
 #include <Windows.h>
 
@@ -41,6 +41,7 @@ namespace rock::shell_casing_grace
         // payloads make failed seqlock reads legal even during world teardown.
         constexpr std::size_t kSlots = 256;
         constexpr std::size_t kProbes = 8;
+
         struct Record
         {
             BodyIdentity body;
@@ -50,6 +51,7 @@ namespace rock::shell_casing_grace
             std::uint64_t birth{};
             GraceWindow window;
         };
+
         struct Slot
         {
             std::atomic<std::uint64_t> version{};
@@ -61,26 +63,35 @@ namespace rock::shell_casing_grace
             bool read(Record& out, std::uint64_t& stamp) const noexcept
             {
                 stamp = version.load(std::memory_order_acquire);
-                if (stamp & 1) return false;
-                out = { { id.load(), motion.load(), collisionObject.load() }, world.load(),
-                    epoch.load(), weaponGeneration.load(), birth.load(),
+                if (stamp & 1)
+                    return false;
+                out = { { id.load(), motion.load(), collisionObject.load() }, world.load(), epoch.load(),
+                    weaponGeneration.load(), birth.load(),
                     { bornSeconds.load(), expiresSeconds.load(), bornSolve.load() } };
                 return version.load(std::memory_order_acquire) == stamp;
             }
+
             bool claim(std::uint64_t stamp) noexcept
             {
                 return version.compare_exchange_strong(stamp, stamp + 1, std::memory_order_acq_rel);
             }
+
             void write(const Record& value, std::uint64_t stamp) noexcept
             {
-                id.store(value.body.id); motion.store(value.body.motion);
-                collisionObject.store(value.body.collisionObject); world.store(value.world);
-                epoch.store(value.epoch); weaponGeneration.store(value.weaponGeneration);
-                birth.store(value.birth); bornSolve.store(value.window.bornSolve);
-                bornSeconds.store(value.window.bornSeconds); expiresSeconds.store(value.window.expiresSeconds);
+                id.store(value.body.id);
+                motion.store(value.body.motion);
+                collisionObject.store(value.body.collisionObject);
+                world.store(value.world);
+                epoch.store(value.epoch);
+                weaponGeneration.store(value.weaponGeneration);
+                birth.store(value.birth);
+                bornSolve.store(value.window.bornSolve);
+                bornSeconds.store(value.window.bornSeconds);
+                expiresSeconds.store(value.window.expiresSeconds);
                 version.store(stamp + 2, std::memory_order_release);
             }
         };
+
         std::array<Slot, kSlots> s_slots;
         std::atomic<std::uint32_t> s_active{};
         std::atomic<RE::hknpWorld*> s_world{};
@@ -94,28 +105,50 @@ namespace rock::shell_casing_grace
             std::atomic<std::uint32_t> formId{}, count{};
             std::array<std::atomic<std::uint32_t>, MAX_WEAPON_COLLISION_BODIES> bodies{};
         } s_weapon;
+
         struct BirthContext
         {
             std::uint64_t weaponGeneration{};
             std::uint64_t birth{};
         };
+
         thread_local BirthContext s_birthContext;
 
-        enum class Failure : std::uint32_t { None, Source, World, TreeBudget, BodyScan, BodyIdentity, Capacity, Timing };
+        enum class Failure : std::uint32_t
+        {
+            None,
+            Source,
+            World,
+            TreeBudget,
+            BodyScan,
+            BodyIdentity,
+            Capacity,
+            Timing
+        };
+
         const char* failureName(Failure stage) noexcept
         {
             switch (stage) {
-            case Failure::None: return "none";
-            case Failure::Source: return "source-weapon";
-            case Failure::World: return "attached-world";
-            case Failure::TreeBudget: return "scene-traversal-budget";
-            case Failure::BodyScan: return "physics-system-bodies";
-            case Failure::BodyIdentity: return "live-body-identity";
-            case Failure::Capacity: return "tracking-capacity";
-            case Failure::Timing: return "unmeasured-physics-time";
+            case Failure::None:
+                return "none";
+            case Failure::Source:
+                return "source-weapon";
+            case Failure::World:
+                return "attached-world";
+            case Failure::TreeBudget:
+                return "scene-traversal-budget";
+            case Failure::BodyScan:
+                return "physics-system-bodies";
+            case Failure::BodyIdentity:
+                return "live-body-identity";
+            case Failure::Capacity:
+                return "tracking-capacity";
+            case Failure::Timing:
+                return "unmeasured-physics-time";
             }
             return "unknown";
         }
+
         std::atomic<std::uint64_t> s_registered{}, s_suppressed{}, s_restored{}, s_stale{}, s_failures{};
         std::atomic<std::uint64_t> s_nonShellLayerRegistered{};
         std::atomic<std::uint32_t> s_lastCandidateLayer{ UINT32_MAX };
@@ -138,7 +171,8 @@ namespace rock::shell_casing_grace
         std::uint64_t weaponGenerationFor(std::uint32_t formId) noexcept
         {
             const auto version = s_weapon.version.load(std::memory_order_acquire);
-            if ((version & 1) || formId == 0 || s_weapon.formId.load() != formId || s_weapon.count.load() == 0) return 0;
+            if ((version & 1) || formId == 0 || s_weapon.formId.load() != formId || s_weapon.count.load() == 0)
+                return 0;
             const auto generation = s_weapon.generation.load();
             return s_weapon.version.load(std::memory_order_acquire) == version ? generation : 0;
         }
@@ -146,14 +180,19 @@ namespace rock::shell_casing_grace
         bool weaponContains(std::uint32_t body, std::uint64_t generation) noexcept
         {
             const auto version = s_weapon.version.load(std::memory_order_acquire);
-            if ((version & 1) || !generation || s_weapon.generation.load() != generation) return false;
-            std::size_t low = 0, high = (std::min)(s_weapon.count.load(), static_cast<std::uint32_t>(s_weapon.bodies.size()));
+            if ((version & 1) || !generation || s_weapon.generation.load() != generation)
+                return false;
+            std::size_t low = 0,
+                        high = (std::min)(s_weapon.count.load(), static_cast<std::uint32_t>(s_weapon.bodies.size()));
             while (low < high) {
                 const auto mid = low + (high - low) / 2;
                 const auto candidate = s_weapon.bodies[mid].load();
-                if (candidate < body) low = mid + 1;
-                else if (candidate > body) high = mid;
-                else return s_weapon.version.load(std::memory_order_acquire) == version;
+                if (candidate < body)
+                    low = mid + 1;
+                else if (candidate > body)
+                    high = mid;
+                else
+                    return s_weapon.version.load(std::memory_order_acquire) == version;
             }
             return false;
         }
@@ -161,7 +200,10 @@ namespace rock::shell_casing_grace
         void recordBirth(RE::hknpWorld* world, std::uint32_t id) noexcept
         {
             const auto live = havok_runtime::snapshotBodyIdentity(world, RE::hknpBodyId{ id });
-            if (!live.valid || !live.collisionObject || !live.motionIndex) { fail(Failure::BodyIdentity); return; }
+            if (!live.valid || !live.collisionObject || !live.motionIndex) {
+                fail(Failure::BodyIdentity);
+                return;
+            }
             const auto layer = live.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
             s_lastCandidateLayer.store(layer, std::memory_order_relaxed);
             // The verified native ejection scope owns this body. Casing assets
@@ -176,12 +218,17 @@ namespace rock::shell_casing_grace
                 auto& slot = s_slots[(id + probe) % kSlots];
                 Record prior{};
                 std::uint64_t stamp{};
-                if (!slot.read(prior, stamp)) continue;
+                if (!slot.read(prior, stamp))
+                    continue;
                 const bool occupied = prior.body.id != kInvalidBody;
-                if (occupied && prior.epoch == epoch && prior.body.id != id) continue;
-                if (occupied && prior.birth == born.birth && prior.body.matches(born.body)) return;
-                if (!slot.claim(stamp)) continue;
-                if (!occupied) s_active.fetch_add(1);
+                if (occupied && prior.epoch == epoch && prior.body.id != id)
+                    continue;
+                if (occupied && prior.birth == born.birth && prior.body.matches(born.body))
+                    return;
+                if (!slot.claim(stamp))
+                    continue;
+                if (!occupied)
+                    s_active.fetch_add(1);
                 slot.write(born, stamp);
                 s_registered.fetch_add(1, std::memory_order_relaxed);
                 if (layer != collision_layer_policy::FO4_LAYER_SHELLCASING)
@@ -201,32 +248,45 @@ namespace rock::shell_casing_grace
         void recordAttachedTree(RE::bhkWorld* bhk, RE::NiAVObject* root)
         {
             auto* world = havok_runtime::getHknpWorldFromBhk(bhk);
-            if (!world || world != s_world.load() || !root) { fail(Failure::World); return; }
+            if (!world || world != s_world.load() || !root) {
+                fail(Failure::World);
+                return;
+            }
             std::array<RE::NiAVObject*, 128> pending{};
             std::size_t count = 1, visited = 0;
             pending[0] = root;
             while (count && visited++ < pending.size()) {
                 auto* object = pending[--count];
-                if (!object) continue;
+                if (!object)
+                    continue;
                 if (auto* collision = object->collisionObject.get()) {
-                    const auto scan = havok_runtime::forEachPhysicsSystemBodyIdDetailed(collision, world, 32, &visitBody, world);
-                    if (scan.status != havok_runtime::PhysicsSystemBodyScanStatus::Enumerated) fail(Failure::BodyScan);
+                    const auto scan =
+                        havok_runtime::forEachPhysicsSystemBodyIdDetailed(collision, world, 32, &visitBody, world);
+                    if (scan.status != havok_runtime::PhysicsSystemBodyScanStatus::Enumerated)
+                        fail(Failure::BodyScan);
                 }
                 if (auto* node = object->IsNode()) {
                     const auto& children = node->GetRuntimeData().children;
                     if (children.capacity() > pending.size() || count + children.capacity() > pending.size()) {
-                        fail(Failure::TreeBudget); return;
+                        fail(Failure::TreeBudget);
+                        return;
                     }
-                    for (std::uint16_t i = 0; i < children.capacity(); ++i) if (children[i]) pending[count++] = children[i].get();
+                    for (std::uint16_t i = 0; i < children.capacity(); ++i)
+                        if (children[i])
+                            pending[count++] = children[i].get();
                 }
             }
-            if (count) fail(Failure::TreeBudget);
+            if (count)
+                fail(Failure::TreeBudget);
         }
 
         void recordAttachedTreeGuarded(RE::bhkWorld* world, RE::NiAVObject* root) noexcept
         {
-            __try { recordAttachedTree(world, root); }
-            __except (EXCEPTION_EXECUTE_HANDLER) { fail(Failure::BodyIdentity); }
+            __try {
+                recordAttachedTree(world, root);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                fail(Failure::BodyIdentity);
+            }
         }
 
         bool attachHook(RE::bhkWorld* world, RE::NiAVObject* physicsRoot, RE::NiAVObject* visualRoot)
@@ -254,8 +314,10 @@ namespace rock::shell_casing_grace
                 if (native_memory::tryReadField(instance, 0, weapon) && weapon) {
                     s_birthContext.weaponGeneration = weaponGenerationFor(weapon->GetFormID());
                     s_birthContext.birth = s_birth.fetch_add(1) + 1;
-                    if (!s_birthContext.weaponGeneration) fail(Failure::Source);
-                } else fail(Failure::Source);
+                    if (!s_birthContext.weaponGeneration)
+                        fail(Failure::Source);
+                } else
+                    fail(Failure::Source);
             }
             s_eject(actor, instance, equipIndex);
             s_birthContext = previous;
@@ -268,12 +330,15 @@ namespace rock::shell_casing_grace
                 Record record{};
                 std::uint64_t stamp{};
                 const auto& slot = s_slots[(casing + probe) % kSlots];
-                if (slot.id.load(std::memory_order_relaxed) != casing) continue;
+                if (slot.id.load(std::memory_order_relaxed) != casing)
+                    continue;
                 if (!slot.read(record, stamp) || record.body.id != casing || record.epoch != epoch ||
-                    record.world != reinterpret_cast<std::uintptr_t>(world) || !weaponContains(weapon, record.weaponGeneration)) continue;
+                    record.world != reinterpret_cast<std::uintptr_t>(world) ||
+                    !weaponContains(weapon, record.weaponGeneration))
+                    continue;
                 const auto live = havok_runtime::snapshotBodyIdentity(world, RE::hknpBodyId{ casing });
-                return live.valid && record.body.matches(identity(live)) &&
-                    slot.version.load() == stamp && s_epoch.load() == epoch;
+                return live.valid && record.body.matches(identity(live)) && slot.version.load() == stamp &&
+                    s_epoch.load() == epoch;
             }
             return false;
         }
@@ -282,26 +347,32 @@ namespace rock::shell_casing_grace
         bool bytesMatch(std::uintptr_t offset, const std::array<std::uint8_t, N>& expected)
         {
             std::array<std::uint8_t, N> actual{};
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(offset).address()), actual.data(), N) && actual == expected;
+            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(offset).address()),
+                       actual.data(), N) &&
+                actual == expected;
         }
     }
 
     bool install() noexcept
     {
-        if (s_installed) return true;
-        constexpr std::array<std::uint8_t, 22> ejectPrefix{
-            0x4C,0x8B,0xDC,0x45,0x89,0x43,0x18,0x55,0x41,0x56,0x48,0x8D,0x6C,0x24,0x88,0x48,0x81,0xEC,0x78,0x01,0x00,0x00 };
-        constexpr std::array<std::uint8_t, 5> attachCall{ 0xE8,0x59,0xB7,0x6D,0x01 };
-        constexpr std::array<std::uint8_t, 26> initializerPrefix{
-            0x40,0x56,0x57,0x41,0x54,0x41,0x56,0x48,0x83,0xEC,0x28,0x48,0x8B,0x01,0x4C,0x8B,0xE2,0x4C,0x8B,0xF1,0xFF,0x90,0x70,0x01,0x00,0x00 };
-        if (!bytesMatch(0x330C80, ejectPrefix) || !bytesMatch(0x71DAF2, attachCall) || !bytesMatch(0x71D9B0, initializerPrefix)) {
-            ROCK_LOG_ERROR(Init, "Shell casing grace unavailable: native ejection/locked attachment bytes differ from FO4VR");
+        if (s_installed)
+            return true;
+        constexpr std::array<std::uint8_t, 22> ejectPrefix{ 0x4C, 0x8B, 0xDC, 0x45, 0x89, 0x43, 0x18, 0x55, 0x41, 0x56,
+            0x48, 0x8D, 0x6C, 0x24, 0x88, 0x48, 0x81, 0xEC, 0x78, 0x01, 0x00, 0x00 };
+        constexpr std::array<std::uint8_t, 5> attachCall{ 0xE8, 0x59, 0xB7, 0x6D, 0x01 };
+        constexpr std::array<std::uint8_t, 26> initializerPrefix{ 0x40, 0x56, 0x57, 0x41, 0x54, 0x41, 0x56, 0x48, 0x83,
+            0xEC, 0x28, 0x48, 0x8B, 0x01, 0x4C, 0x8B, 0xE2, 0x4C, 0x8B, 0xF1, 0xFF, 0x90, 0x70, 0x01, 0x00, 0x00 };
+        if (!bytesMatch(0x330C80, ejectPrefix) || !bytesMatch(0x71DAF2, attachCall) ||
+            !bytesMatch(0x71D9B0, initializerPrefix)) {
+            ROCK_LOG_ERROR(Init,
+                "Shell casing grace unavailable: native ejection/locked attachment bytes differ from FO4VR");
             return false;
         }
         // Install the passive attachment observer first. Without the ejection
         // scope it does nothing, so failure of the second hook stays native.
         try {
-            s_attach = reinterpret_cast<Attach>(F4SE::GetTrampoline().write_call<5>(REL::Offset(0x71DAF2).address(), &attachHook));
+            s_attach = reinterpret_cast<Attach>(
+                F4SE::GetTrampoline().write_call<5>(REL::Offset(0x71DAF2).address(), &attachHook));
             void* original{};
             if (!entry_trampoline_hook::install("ShellCasingEject", 0x330C80, ejectPrefix.data(), ejectPrefix.size(),
                     reinterpret_cast<void*>(&ejectHook), original)) {
@@ -311,7 +382,9 @@ namespace rock::shell_casing_grace
             }
             s_eject = reinterpret_cast<Eject>(original);
             s_installed = true;
-            ROCK_LOG_INFO(Init, "Shell casing grace installed: native player ejection, capture before world unlock, simulation-time expiry");
+            ROCK_LOG_INFO(Init,
+                "Shell casing grace installed: native player ejection, capture before world unlock, simulation-time "
+                "expiry");
             return true;
         } catch (...) {
             if (s_attach && !s_eject) {
@@ -331,9 +404,11 @@ namespace rock::shell_casing_grace
         std::sort(sorted.begin(), sorted.begin() + count);
         const auto version = s_weapon.version.load();
         s_weapon.version.store(version + 1, std::memory_order_release);
-        s_weapon.formId.store(formId); s_weapon.generation.store(generation);
+        s_weapon.formId.store(formId);
+        s_weapon.generation.store(generation);
         s_weapon.count.store(static_cast<std::uint32_t>(count));
-        for (std::size_t i = 0; i < count; ++i) s_weapon.bodies[i].store(sorted[i]);
+        for (std::size_t i = 0; i < count; ++i)
+            s_weapon.bodies[i].store(sorted[i]);
         s_weapon.version.store(version + 2, std::memory_order_release);
     }
 
@@ -341,21 +416,26 @@ namespace rock::shell_casing_grace
     {
         if (s_world.load() != world) {
             s_epoch.fetch_add(1);
-            s_simulatedSeconds.store(seconds); s_completedSolve.store(solve);
+            s_simulatedSeconds.store(seconds);
+            s_completedSolve.store(solve);
             s_world.store(world);
         }
         s_milliseconds.store(sanitizeMilliseconds(milliseconds));
         const auto now = GetTickCount64();
-        if (now < s_nextReportMs) return;
+        if (now < s_nextReportMs)
+            return;
         s_nextReportMs = now + 5000;
         const auto registered = s_registered.exchange(0), suppressed = s_suppressed.exchange(0);
         const auto restored = s_restored.exchange(0), stale = s_stale.exchange(0), failures = s_failures.exchange(0);
         const auto nonShellLayerRegistered = s_nonShellLayerRegistered.exchange(0);
         if (registered || restored || suppressed || failures) {
-            ROCK_LOG_INFO(Weapon, "Shell casing grace: registered={} suppressedPairs={} restored={} stale={} failures={} deepestStage={} active={} graceMs={:.3f} lastBornBody={} lastRestoredBody={} lastRestoreMs={:.3f} rootScope=full-debris nonShellLayerRegistered={} lastLayer={}",
+            ROCK_LOG_INFO(Weapon,
+                "Shell casing grace: registered={} suppressedPairs={} restored={} stale={} failures={} deepestStage={} "
+                "active={} graceMs={:.3f} lastBornBody={} lastRestoredBody={} lastRestoreMs={:.3f} "
+                "rootScope=full-debris nonShellLayerRegistered={} lastLayer={}",
                 registered, suppressed, restored, stale, failures, failureName(s_failure.exchange(Failure::None)),
-                s_active.load(), s_milliseconds.load(), s_lastBody.load(), s_lastRestoredBody.load(), s_lastRestoreMs.load(),
-                nonShellLayerRegistered, s_lastCandidateLayer.load());
+                s_active.load(), s_milliseconds.load(), s_lastBody.load(), s_lastRestoredBody.load(),
+                s_lastRestoreMs.load(), nonShellLayerRegistered, s_lastCandidateLayer.load());
         }
     }
 
@@ -369,24 +449,33 @@ namespace rock::shell_casing_grace
 
     void beforeCollide(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing) noexcept
     {
-        if (!world || world != s_world.load() || !s_active.load()) return;
+        if (!world || world != s_world.load() || !s_active.load())
+            return;
         const auto epoch = s_epoch.load();
         const bool measured = timing.valid && !timing.usedFallback;
         for (auto& slot : s_slots) {
             Record record{};
             std::uint64_t stamp{};
-            if (!slot.read(record, stamp) || record.body.id == kInvalidBody) continue;
+            if (!slot.read(record, stamp) || record.body.id == kInvalidBody)
+                continue;
             const bool currentWorldAddress = record.world == reinterpret_cast<std::uintptr_t>(world);
             const bool sameWorld = record.epoch == epoch && currentWorldAddress;
             const bool expired = record.window.expired(timing.elapsedSimulatedSeconds, timing.solveSequence);
-            const bool keep = sameWorld && measured && !expired &&
-                record.weaponGeneration == s_weapon.generation.load();
-            if (keep || !slot.claim(stamp)) continue;
+            const bool keep =
+                sameWorld && measured && !expired && record.weaponGeneration == s_weapon.generation.load();
+            if (keep || !slot.claim(stamp))
+                continue;
             slot.write(Record{}, stamp);
             s_active.fetch_sub(1);
-            if (!currentWorldAddress) { s_stale.fetch_add(1); continue; }
+            if (!currentWorldAddress) {
+                s_stale.fetch_add(1);
+                continue;
+            }
             const auto live = havok_runtime::snapshotBodyIdentity(world, RE::hknpBodyId{ record.body.id });
-            if (!live.valid || !record.body.matches(identity(live))) { s_stale.fetch_add(1); continue; }
+            if (!live.valid || !record.body.matches(identity(live))) {
+                s_stale.fetch_add(1);
+                continue;
+            }
             // Pair rejection can leave a cached exclusion. Reconsider this
             // casing before collision so contacts really resume at expiry.
             // A coordinator reset can preserve the live world: an old epoch
@@ -397,7 +486,8 @@ namespace rock::shell_casing_grace
             s_restored.fetch_add(1);
             s_lastRestoredBody.store(record.body.id);
             s_lastRestoreMs.store((timing.elapsedSimulatedSeconds - record.window.bornSeconds) * 1000.0);
-            if (!measured) fail(Failure::Timing);
+            if (!measured)
+                fail(Failure::Timing);
         }
     }
 
@@ -409,14 +499,12 @@ namespace rock::shell_casing_grace
         }
     }
 
-    bool filtersPairsIn(RE::hknpWorld* world) noexcept
-    {
-        return world && world == s_world.load() && s_active.load();
-    }
+    bool filtersPairsIn(RE::hknpWorld* world) noexcept { return world && world == s_world.load() && s_active.load(); }
 
     bool suppressesPair(RE::hknpWorld* world, std::uint32_t bodyA, std::uint32_t bodyB) noexcept
     {
-        if (!suppress(world, bodyA, bodyB) && !suppress(world, bodyB, bodyA)) return false;
+        if (!suppress(world, bodyA, bodyB) && !suppress(world, bodyB, bodyA))
+            return false;
         s_suppressed.fetch_add(1, std::memory_order_relaxed);
         return true;
     }

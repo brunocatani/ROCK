@@ -60,10 +60,9 @@ namespace rock::mouth_consume
     void resetRuntime(RuntimeState& state) noexcept;
 
     [[nodiscard]] bool finitePoint(const RE::NiPoint3& value) noexcept;
-    [[nodiscard]] RE::NiPoint3 computeMouthCenter(
-        const RE::NiPoint3& hmdPositionWorld,
-        const RE::NiPoint3& hmdForwardWorld,
-        const RE::NiPoint3& offsetGameUnits) noexcept;
-    [[nodiscard]] float candidateConfidence(float distanceGameUnits, float thresholdGameUnits, float radiusGameUnits) noexcept;
+    [[nodiscard]] RE::NiPoint3 computeMouthCenter(const RE::NiPoint3& hmdPositionWorld,
+        const RE::NiPoint3& hmdForwardWorld, const RE::NiPoint3& offsetGameUnits) noexcept;
+    [[nodiscard]] float candidateConfidence(float distanceGameUnits, float thresholdGameUnits,
+        float radiusGameUnits) noexcept;
     [[nodiscard]] Decision evaluate(const DetectorInput& input, RuntimeState& runtime) noexcept;
 }

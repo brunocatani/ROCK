@@ -3,9 +3,20 @@
 #include <cstdint>
 #include <span>
 
-namespace RE { class hknpWorld; }
-namespace rock::native_player_collision { struct BodyPair; }
-namespace rock::havok_physics_timing { struct PhysicsTimingSample; }
+namespace RE
+{
+    class hknpWorld;
+}
+
+namespace rock::native_player_collision
+{
+    struct BodyPair;
+}
+
+namespace rock::havok_physics_timing
+{
+    struct PhysicsTimingSample;
+}
 
 namespace rock::shell_casing_grace
 {
@@ -14,19 +25,16 @@ namespace rock::shell_casing_grace
     bool install() noexcept;
 
     // Game-thread publication from the existing generated-weapon bank owner.
-    void publishWeapon(std::uint32_t formId, std::uint64_t generation,
-        std::span<const std::uint32_t> bodyIds) noexcept;
-    void prepareFrame(RE::hknpWorld* world, float milliseconds,
-        double simulatedSeconds, std::uint64_t completedSolve) noexcept;
+    void publishWeapon(std::uint32_t formId, std::uint64_t generation, std::span<const std::uint32_t> bodyIds) noexcept;
+    void prepareFrame(RE::hknpWorld* world, float milliseconds, double simulatedSeconds,
+        std::uint64_t completedSolve) noexcept;
     void abandon() noexcept;
 
     // Native world mutation is excluded during pair callbacks. Birth is
     // recorded under the engine's existing world write lock; expiry and cache
     // invalidation run before collision, never inside the pair callback.
-    void beforeCollide(RE::hknpWorld* world,
-        const havok_physics_timing::PhysicsTimingSample& timing) noexcept;
-    void afterSolve(RE::hknpWorld* world,
-        const havok_physics_timing::PhysicsTimingSample& timing) noexcept;
+    void beforeCollide(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing) noexcept;
+    void afterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing) noexcept;
     // Pair-filter callback. filtersPairsIn is checked once per batch;
     // suppressesPair rejects (and counts) a casing/weapon pair inside its grace.
     bool filtersPairsIn(RE::hknpWorld* world) noexcept;

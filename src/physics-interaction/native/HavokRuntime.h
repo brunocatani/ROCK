@@ -140,10 +140,7 @@ namespace rock::havok_runtime
         }
     };
 
-    constexpr bool isValidBodyId(RE::hknpBodyId bodyId)
-    {
-        return bodyId.value != body_frame::kInvalidBodyId;
-    }
+    constexpr bool isValidBodyId(RE::hknpBodyId bodyId) { return bodyId.value != body_frame::kInvalidBodyId; }
 
     inline bool bodySlotCanBeRead(std::uint32_t bodyId, std::uint32_t highWaterMark)
     {
@@ -162,25 +159,15 @@ namespace rock::havok_runtime
     RE::hknpWorld* getHknpWorldFromBhk(RE::bhkWorld* bhkWorld);
     RE::bhkPhysicsSystem* getPhysicsSystemFromCollisionObject(RE::NiCollisionObject* collisionObject);
     void* getPhysicsSystemInstance(RE::bhkPhysicsSystem* physicsSystem);
-    bool tryResolveCollisionObjectBody(
-        RE::NiCollisionObject* collisionObject,
-        RE::hknpWorld*& outWorld,
+    bool tryResolveCollisionObjectBody(RE::NiCollisionObject* collisionObject, RE::hknpWorld*& outWorld,
         RE::hknpBodyId& outBodyId);
     class PhysicsSystemBodyScanCache;
     const char* physicsSystemBodyScanStatusName(PhysicsSystemBodyScanStatus status);
-    PhysicsSystemBodyScanResult forEachPhysicsSystemBodyIdDetailed(
-        RE::NiCollisionObject* collisionObject,
-        RE::hknpWorld* expectedWorld,
-        std::uint32_t maxBodies,
-        bool (*visitor)(std::uint32_t bodyId, void* userData),
-        void* userData,
-        PhysicsSystemBodyScanCache* transactionCache = nullptr);
-    bool forEachPhysicsSystemBodyId(
-        RE::NiCollisionObject* collisionObject,
-        RE::hknpWorld* expectedWorld,
-        std::uint32_t maxBodies,
-        bool (*visitor)(std::uint32_t bodyId, void* userData),
-        void* userData);
+    PhysicsSystemBodyScanResult forEachPhysicsSystemBodyIdDetailed(RE::NiCollisionObject* collisionObject,
+        RE::hknpWorld* expectedWorld, std::uint32_t maxBodies, bool (*visitor)(std::uint32_t bodyId, void* userData),
+        void* userData, PhysicsSystemBodyScanCache* transactionCache = nullptr);
+    bool forEachPhysicsSystemBodyId(RE::NiCollisionObject* collisionObject, RE::hknpWorld* expectedWorld,
+        std::uint32_t maxBodies, bool (*visitor)(std::uint32_t bodyId, void* userData), void* userData);
     void* getQueryFilterRef(RE::hknpWorld* world);
     void* getQueryFilterRefWithFallback(RE::hknpWorld* world);
     std::uint64_t* getCollisionFilterMatrix(void* filter);
@@ -199,44 +186,33 @@ namespace rock::havok_runtime
     // The borrowed body must remain valid for this operation; never retain it across native mutation.
     ResolvedBodyWorldTransform resolveLiveBodyWorldTransform(RE::hknpWorld* world, const RE::hknpBody& body);
     ResolvedBodyWorldTransform resolveLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId);
-    bool tryResolveLiveBodyWorldTransform(
-        RE::hknpWorld* world,
-        RE::hknpBodyId bodyId,
-        RE::NiTransform& outTransform,
-        body_frame::BodyFrameSource* outSource = nullptr,
-        std::uint32_t* outMotionIndex = nullptr);
+    bool tryResolveLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform,
+        body_frame::BodyFrameSource* outSource = nullptr, std::uint32_t* outMotionIndex = nullptr);
 
     bool getBodyCOMWorld(RE::hknpWorld* world, RE::hknpBodyId bodyId, float& outX, float& outY, float& outZ);
     bool tryReadMotionPropertiesId(const RE::hknpMotion* motion, std::uint16_t& outMotionPropertiesId);
-    bool tryReadBodyMotionPropertiesId(RE::hknpWorld* world, RE::hknpBodyId bodyId, std::uint16_t& outMotionPropertiesId);
+    bool tryReadBodyMotionPropertiesId(RE::hknpWorld* world, RE::hknpBodyId bodyId,
+        std::uint16_t& outMotionPropertiesId);
     bool tryReadMotionVelocityCaps(const RE::hknpMotion* motion, MotionVelocityCaps& outCaps);
     bool snapshotMotionPropertiesLibrary(RE::hknpWorld* world, MotionPropertiesLibrarySnapshot& outSnapshot);
     bool tryReadFilterInfo(RE::hknpWorld* world, RE::hknpBodyId bodyId, std::uint32_t& outFilterInfo);
-    bool setFilterInfo(RE::hknpWorld* world, RE::hknpBodyId bodyId, std::uint32_t filterInfo, std::uint32_t rebuildMode = 0);
-    bool setBodyVelocityDeferred(
-        RE::hknpWorld* world,
-        std::uint32_t bodyId,
-        const RE::hkVector4f& linearVelocity,
+    bool setFilterInfo(RE::hknpWorld* world, RE::hknpBodyId bodyId, std::uint32_t filterInfo,
+        std::uint32_t rebuildMode = 0);
+    bool setBodyVelocityDeferred(RE::hknpWorld* world, std::uint32_t bodyId, const RE::hkVector4f& linearVelocity,
         const RE::hkVector4f& angularVelocity);
-    bool setBodyTransformDeferred(RE::hknpWorld* world, std::uint32_t bodyId, const RE::NiTransform& transform, int mode = 1);
+    bool setBodyTransformDeferred(RE::hknpWorld* world, std::uint32_t bodyId, const RE::NiTransform& transform,
+        int mode = 1);
     bool activateBody(RE::hknpWorld* world, std::uint32_t bodyId);
     bool enableBodyFlags(RE::hknpWorld* world, std::uint32_t bodyId, std::uint32_t flags, std::uint32_t mode);
     bool disableBodyFlags(RE::hknpWorld* world, std::uint32_t bodyId, std::uint32_t flags, std::uint32_t mode);
-    bool acquireBodyFlagLease(
-        RE::hknpWorld* world,
-        std::uint32_t bodyId,
-        std::uint32_t flags,
-        std::uint32_t mode,
+    bool acquireBodyFlagLease(RE::hknpWorld* world, std::uint32_t bodyId, std::uint32_t flags, std::uint32_t mode,
         std::uintptr_t ownerToken);
-    bool releaseBodyFlagLease(
-        RE::hknpWorld* world,
-        std::uint32_t bodyId,
-        std::uint32_t flags,
-        std::uint32_t mode,
-        std::uintptr_t ownerToken,
-        bool restoreOnFinalLease = true);
-    bool applyLinearVelocityDeltaDeferred(RE::hknpWorld* world, std::uint32_t bodyId, const RE::NiPoint3& velocityDeltaHavok);
+    bool releaseBodyFlagLease(RE::hknpWorld* world, std::uint32_t bodyId, std::uint32_t flags, std::uint32_t mode,
+        std::uintptr_t ownerToken, bool restoreOnFinalLease = true);
+    bool applyLinearVelocityDeltaDeferred(RE::hknpWorld* world, std::uint32_t bodyId,
+        const RE::NiPoint3& velocityDeltaHavok);
     bool rebuildMotionMassProperties(RE::hknpWorld* world, std::uint32_t motionIndex, int rebuildMode = 0);
+
     inline bool isFinite3(const float* value)
     {
         return value && std::isfinite(value[0]) && std::isfinite(value[1]) && std::isfinite(value[2]);
@@ -255,7 +231,8 @@ namespace rock::havok_runtime
         target[3] = source[3];
     }
 
-    inline bool selectContactSignalPoint(const ContactSignalPointSelectionInput& input, ContactSignalPointResult& outResult)
+    inline bool selectContactSignalPoint(const ContactSignalPointSelectionInput& input,
+        ContactSignalPointResult& outResult)
     {
         outResult = {};
 
@@ -324,7 +301,9 @@ namespace rock::havok_runtime
         outResult.valid = true;
         return true;
     }
-    bool tryExtractContactSignalPoint(RE::hknpWorld* world, const void* contactSignalData, ContactSignalPointResult& outResult);
+
+    bool tryExtractContactSignalPoint(RE::hknpWorld* world, const void* contactSignalData,
+        ContactSignalPointResult& outResult);
 
     void* allocateHavok(std::size_t size);
     void freeHavok(void* ptr, std::size_t size);

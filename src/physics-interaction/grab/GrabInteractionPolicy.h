@@ -38,7 +38,8 @@ namespace rock::grab_interaction_policy
      * pull from bypassing the close-grab checks for doors, furniture, fixed
      * activators, and live actors.
      */
-    inline bool shouldBlockSelectedObjectInteraction(std::string_view formType, bool hasMotionProps, std::uint16_t motionPropsId)
+    inline bool shouldBlockSelectedObjectInteraction(std::string_view formType, bool hasMotionProps,
+        std::uint16_t motionPropsId)
     {
         if (formType == "DOOR" || formType == "CONT" || formType == "TERM" || formType == "FURN") {
             return true;
@@ -54,14 +55,10 @@ namespace rock::grab_interaction_policy
         return false;
     }
 
-    inline bool shouldBlockSelectedObjectInteractionForTarget(
-        grab_target::Kind targetKind,
-        std::string_view formType,
-        bool hasMotionProps,
-        std::uint16_t motionPropsId)
+    inline bool shouldBlockSelectedObjectInteractionForTarget(grab_target::Kind targetKind, std::string_view formType,
+        bool hasMotionProps, std::uint16_t motionPropsId)
     {
-        if (targetKind == grab_target::Kind::ExtractableItem ||
-            targetKind == grab_target::Kind::BlockedExtension) {
+        if (targetKind == grab_target::Kind::ExtractableItem || targetKind == grab_target::Kind::BlockedExtension) {
             return true;
         }
 
@@ -70,15 +67,12 @@ namespace rock::grab_interaction_policy
 
     inline bool looseObjectSelectionLayerCanReachActiveGrab(std::uint32_t layer) noexcept
     {
-        return collision_layer_policy::isDynamicPropInteractionLayer(layer) || layer == collision_layer_policy::FO4_LAYER_PROPS;
+        return collision_layer_policy::isDynamicPropInteractionLayer(layer) ||
+            layer == collision_layer_policy::FO4_LAYER_PROPS;
     }
 
-    inline LooseObjectSelectionDecision evaluateLooseObjectSelectionCandidate(
-        std::string_view formType,
-        bool hasMotionProps,
-        std::uint16_t motionPropsId,
-        bool hasCollisionLayer,
-        std::uint32_t collisionLayer)
+    inline LooseObjectSelectionDecision evaluateLooseObjectSelectionCandidate(std::string_view formType,
+        bool hasMotionProps, std::uint16_t motionPropsId, bool hasCollisionLayer, std::uint32_t collisionLayer)
     {
         if (shouldBlockSelectedObjectInteraction(formType, hasMotionProps, motionPropsId)) {
             return { .blocked = true, .reason = "blocked-selected-interaction" };

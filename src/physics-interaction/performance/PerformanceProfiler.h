@@ -291,7 +291,11 @@ namespace rock::performance_profiler
     void observeContactPair(ContactPair pair, ContactStage stage) noexcept;
 
     // A memory query is one native_memory range check (a page-touch probe).
-    enum class MemoryQueryKind : std::uint8_t { Read, Write };
+    enum class MemoryQueryKind : std::uint8_t
+    {
+        Read,
+        Write
+    };
 
     struct MemoryQuerySample
     {
@@ -317,6 +321,7 @@ namespace rock::performance_profiler
         std::uint64_t startTicks{ 0 };
         std::uint64_t generation{ 0 };
     };
+
     IntervalSample beginInterval() noexcept;
     bool endInterval(Scope scope, IntervalSample& sample) noexcept;
 
@@ -342,7 +347,11 @@ namespace rock::performance_profiler
         Scope _parentScope{ Scope::UnattributedMemoryQueries };
     };
 
-    enum class ConsumerKind : std::uint8_t { Frame, Animation };
+    enum class ConsumerKind : std::uint8_t
+    {
+        Frame,
+        Animation
+    };
 
     /*
      * Wall time spent inside one provider consumer callback, keyed by the

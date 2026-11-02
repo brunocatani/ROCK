@@ -11,11 +11,22 @@ namespace rock::collision_system_owner
     inline constexpr std::uintptr_t kProxy = 0x2E83A98;
     inline constexpr std::uintptr_t kSceneOnly = 0x30C5AA8;
 
-    enum class Stage { Native, Proxy, SceneOnly, SourceUnreadable, SourceType, ProxyTarget, ProxyTargetType };
+    enum class Stage
+    {
+        Native,
+        Proxy,
+        SceneOnly,
+        SourceUnreadable,
+        SourceType,
+        ProxyTarget,
+        ProxyTargetType
+    };
+
     struct Resolution
     {
         std::uintptr_t owner{}, sourceVtable{}, targetVtable{};
         Stage stage{ Stage::SourceUnreadable };
+
         bool usable() const { return owner && (stage == Stage::Native || stage == Stage::Proxy); }
     };
 
@@ -25,19 +36,32 @@ namespace rock::collision_system_owner
     // physics system (141DFC5FB..601). UpdateWorldData independently follows
     // proxy+20 -> body+20 -> system at 141E0A43C..452 and 141E0A495..4BE.
     // Never reinterpret an unknown/proxy target as a bhkPhysicsSystem.
-    template<class ReadVtable, class ReadTarget>
+    template <class ReadVtable, class ReadTarget>
     Resolution resolve(std::uintptr_t source, ReadVtable&& readVtable, ReadTarget&& readTarget)
     {
         Resolution result{};
-        if (!source || !readVtable(source, result.sourceVtable)) return result;
-        if (nativeBody(result.sourceVtable)) { result.owner = source; result.stage = Stage::Native; return result; }
-        if (result.sourceVtable == kSceneOnly) { result.stage = Stage::SceneOnly; return result; }
-        if (result.sourceVtable != kProxy) { result.stage = Stage::SourceType; return result; }
+        if (!source || !readVtable(source, result.sourceVtable))
+            return result;
+        if (nativeBody(result.sourceVtable)) {
+            result.owner = source;
+            result.stage = Stage::Native;
+            return result;
+        }
+        if (result.sourceVtable == kSceneOnly) {
+            result.stage = Stage::SceneOnly;
+            return result;
+        }
+        if (result.sourceVtable != kProxy) {
+            result.stage = Stage::SourceType;
+            return result;
+        }
         std::uintptr_t target{};
         result.stage = Stage::ProxyTarget;
-        if (!readTarget(source, target) || !target || target == source || !readVtable(target, result.targetVtable)) return result;
+        if (!readTarget(source, target) || !target || target == source || !readVtable(target, result.targetVtable))
+            return result;
         result.stage = Stage::ProxyTargetType;
-        if (!nativeBody(result.targetVtable)) return result;
+        if (!nativeBody(result.targetVtable))
+            return result;
         result.owner = target;
         result.stage = Stage::Proxy;
         return result;

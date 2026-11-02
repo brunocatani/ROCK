@@ -1,8 +1,8 @@
 #pragma once
 
-#include "physics-interaction/hand/HandColliderTypes.h"
-#include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "RE/NetImmerse/NiPoint.h"
+#include "physics-interaction/debug/SkeletonBoneDebugMath.h"
+#include "physics-interaction/hand/HandColliderTypes.h"
 
 #include <array>
 #include <cstdint>

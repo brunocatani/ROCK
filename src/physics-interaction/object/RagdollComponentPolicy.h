@@ -31,11 +31,12 @@ namespace rock::ragdoll
         bool fixedAttached = false;
     };
 
-    inline Membership connectedComponent(std::span<const BodyNode> bodies,
-        std::span<const Joint> joints, std::uint32_t primary) noexcept
+    inline Membership connectedComponent(std::span<const BodyNode> bodies, std::span<const Joint> joints,
+        std::uint32_t primary) noexcept
     {
         Membership result{};
-        if (bodies.size() > kMaxBodies || joints.size() > kMaxConstraints || primary == kInvalidId) return result;
+        if (bodies.size() > kMaxBodies || joints.size() > kMaxConstraints || primary == kInvalidId)
+            return result;
         std::array<std::size_t, kMaxBodies> queue{};
         std::size_t read = 0, count = 0;
         for (std::size_t i = 0; i < bodies.size(); ++i) {
@@ -45,12 +46,16 @@ namespace rock::ragdoll
                 break;
             }
         }
-        if (count == 0) return result;
+        if (count == 0)
+            return result;
         auto include = [&](std::size_t i) {
-            if (result.included[i] || bodies[i].id == kInvalidId) return;
+            if (result.included[i] || bodies[i].id == kInvalidId)
+                return;
             result.included[i] = true;
-            if (bodies[i].dynamic) queue[count++] = i;
-            else result.fixedAttached = true;
+            if (bodies[i].dynamic)
+                queue[count++] = i;
+            else
+                result.fixedAttached = true;
         };
         while (read < count) {
             const auto& from = bodies[queue[read++]];
@@ -58,13 +63,20 @@ namespace rock::ragdoll
                 const auto& to = bodies[i];
                 // Motion zero is the fixed world; it does not connect unrelated statics.
                 if (from.dynamic && to.dynamic && from.motion != 0 && from.motion != kInvalidId &&
-                    from.motion == to.motion) include(i);
+                    from.motion == to.motion)
+                    include(i);
             }
             for (const auto& joint : joints) {
-                if (!joint.enabled) continue;
+                if (!joint.enabled)
+                    continue;
                 const auto neighbor = joint.a == from.id ? joint.b : joint.b == from.id ? joint.a : kInvalidId;
-                if (neighbor == kInvalidId) continue;
-                for (std::size_t i = 0; i < bodies.size(); ++i) if (bodies[i].id == neighbor) { include(i); break; }
+                if (neighbor == kInvalidId)
+                    continue;
+                for (std::size_t i = 0; i < bodies.size(); ++i)
+                    if (bodies[i].id == neighbor) {
+                        include(i);
+                        break;
+                    }
             }
         }
         result.valid = true;

@@ -87,39 +87,30 @@ namespace rock::debug_visualization_policy
             .bodyBoneColliders = colliders && input.bodyBoneColliders,
             .dynamicHandColliders = colliders && input.dynamicHandColliders,
             .weaponColliders = colliders && input.weaponColliders,
-            .grabbedWeaponPartCollider =
-                colliders && input.grabbedWeaponPartCollider,
-            .dynamicWeaponColliders =
-                colliders && input.dynamicWeaponColliders,
-            .grabAuthorityProxyCollider =
-                colliders && input.grabAuthorityProxy,
-            .grabPivotSourceCollider =
-                colliders && forceTorque && input.grabPivotSourceCollider,
+            .grabbedWeaponPartCollider = colliders && input.grabbedWeaponPartCollider,
+            .dynamicWeaponColliders = colliders && input.dynamicWeaponColliders,
+            .grabAuthorityProxyCollider = colliders && input.grabAuthorityProxy,
+            .grabPivotSourceCollider = colliders && forceTorque && input.grabPivotSourceCollider,
 
             .handAxes = input.handAxes,
             .grabPivots = input.grabPivots,
             .palmVectors = input.palmVectors,
             .grabPockets = input.grabPockets,
-            .rootFlattenedFingerSkeleton =
-                input.rootFlattenedFingerSkeleton,
+            .rootFlattenedFingerSkeleton = input.rootFlattenedFingerSkeleton,
             .skeletonBones = skeleton,
             .skeletonBoneAxes = skeleton && input.skeletonBoneAxes,
             .skeletonBoneLogging = skeleton && input.skeletonBoneLogging,
-            .skeletonBoneTruncationLogging =
-                skeleton && input.skeletonBoneTruncationLogging,
+            .skeletonBoneTruncationLogging = skeleton && input.skeletonBoneTruncationLogging,
             .grabPocketNormal = input.grabPocketNormal,
             .grabForceTorque = forceTorque,
-            .grabForceTorqueText =
-                forceTorque && input.grabForceTorqueText,
-            .grabPivotSourceEvidence =
-                forceTorque && input.grabPivotSourceEvidence,
+            .grabForceTorqueText = forceTorque && input.grabForceTorqueText,
+            .grabPivotSourceEvidence = forceTorque && input.grabPivotSourceEvidence,
             .grabSupportFrame = input.grabSupportFrame,
             .handBoneContacts = input.handBoneContacts,
             .grabAuthorityProxy = input.grabAuthorityProxy,
             .weaponAuthority = input.weaponAuthority,
             .looseWeaponGripZones = input.looseWeaponGripZones,
-            .authoredGripActivationZones =
-                input.authoredGripActivationZones,
+            .authoredGripActivationZones = input.authoredGripActivationZones,
             .nativeScopeActivation = input.nativeScopeActivation,
         };
     }

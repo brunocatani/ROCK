@@ -73,26 +73,34 @@ namespace rock::button_layout_policy
 
     struct HandLayout
     {
-        std::array<Source, kSlotCount> sources{
-            Source::Trigger, Source::Grip, Source::LowerFace, Source::UpperFace, Source::Stick
-        };
+        std::array<Source, kSlotCount> sources{ Source::Trigger, Source::Grip, Source::LowerFace, Source::UpperFace,
+            Source::Stick };
 
-        [[nodiscard]] constexpr Source source(Slot slot) const noexcept { return sources[static_cast<std::size_t>(slot)]; }
+        [[nodiscard]] constexpr Source source(Slot slot) const noexcept
+        {
+            return sources[static_cast<std::size_t>(slot)];
+        }
+
         [[nodiscard]] constexpr bool identity() const noexcept { return *this == HandLayout{}; }
+
         [[nodiscard]] constexpr bool usesPadRegions() const noexcept
         {
             for (const auto value : sources) {
-                if (value >= Source::PadUp && value <= Source::PadCenter) return true;
+                if (value >= Source::PadUp && value <= Source::PadCenter)
+                    return true;
             }
             return false;
         }
+
         [[nodiscard]] constexpr bool uses(Source value) const noexcept
         {
             for (const auto entry : sources) {
-                if (entry == value) return true;
+                if (entry == value)
+                    return true;
             }
             return false;
         }
+
         constexpr bool operator==(const HandLayout&) const = default;
     };
 
@@ -111,22 +119,28 @@ namespace rock::button_layout_policy
         HandLayout layout{};
         for (std::size_t i = 0; i < kSlotCount; ++i) {
             const auto value = static_cast<std::uint8_t>((packed >> (i * 8)) & 0xFF);
-            layout.sources[i] = value < static_cast<std::uint8_t>(Source::Count) ? static_cast<Source>(value) : Source::None;
+            layout.sources[i] =
+                value < static_cast<std::uint8_t>(Source::Count) ? static_cast<Source>(value) : Source::None;
         }
         return layout;
     }
 
     [[nodiscard]] constexpr Source defaultSource(Slot slot) noexcept { return HandLayout{}.source(slot); }
 
-    [[nodiscard]] constexpr char lower(char c) noexcept { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; }
+    [[nodiscard]] constexpr char lower(char c) noexcept
+    {
+        return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
+    }
 
     // Case-insensitive; '_', '-' and spaces are ignored so "pad_up", "Pad Up" and "padup" match.
     [[nodiscard]] constexpr bool tokenEquals(std::string_view text, std::string_view token) noexcept
     {
         std::size_t t = 0;
         for (const char c : text) {
-            if (c == '_' || c == '-' || c == ' ' || c == '\t') continue;
-            if (t >= token.size() || lower(c) != token[t]) return false;
+            if (c == '_' || c == '-' || c == ' ' || c == '\t')
+                continue;
+            if (t >= token.size() || lower(c) != token[t])
+                return false;
             ++t;
         }
         return t == token.size();
@@ -139,24 +153,40 @@ namespace rock::button_layout_policy
             std::string_view token;
             Source source;
         };
+
         constexpr Alias kAliases[] = {
-            { "none", Source::None }, { "off", Source::None }, { "disabled", Source::None },
+            { "none", Source::None },
+            { "off", Source::None },
+            { "disabled", Source::None },
             { "trigger", Source::Trigger },
-            { "grip", Source::Grip }, { "grab", Source::Grip },
-            { "a", Source::LowerFace }, { "x", Source::LowerFace },
-            { "b", Source::UpperFace }, { "y", Source::UpperFace }, { "menu", Source::UpperFace },
+            { "grip", Source::Grip },
+            { "grab", Source::Grip },
+            { "a", Source::LowerFace },
+            { "x", Source::LowerFace },
+            { "b", Source::UpperFace },
+            { "y", Source::UpperFace },
+            { "menu", Source::UpperFace },
             { "applicationmenu", Source::UpperFace },
-            { "thumbstick", Source::Stick }, { "stick", Source::Stick }, { "joystick", Source::Stick },
-            { "touchpad", Source::Stick }, { "trackpad", Source::Stick },
-            { "gripclick", Source::GripClick }, { "axis2", Source::GripClick },
-            { "axis3", Source::Axis3Click }, { "bumper", Source::Axis3Click },
+            { "thumbstick", Source::Stick },
+            { "stick", Source::Stick },
+            { "joystick", Source::Stick },
+            { "touchpad", Source::Stick },
+            { "trackpad", Source::Stick },
+            { "gripclick", Source::GripClick },
+            { "axis2", Source::GripClick },
+            { "axis3", Source::Axis3Click },
+            { "bumper", Source::Axis3Click },
             { "axis4", Source::Axis4Click },
-            { "padup", Source::PadUp }, { "paddown", Source::PadDown },
-            { "padleft", Source::PadLeft }, { "padright", Source::PadRight },
-            { "padcenter", Source::PadCenter }, { "padcentre", Source::PadCenter },
+            { "padup", Source::PadUp },
+            { "paddown", Source::PadDown },
+            { "padleft", Source::PadLeft },
+            { "padright", Source::PadRight },
+            { "padcenter", Source::PadCenter },
+            { "padcentre", Source::PadCenter },
         };
         for (const auto& alias : kAliases) {
-            if (tokenEquals(text, alias.token)) return alias.source;
+            if (tokenEquals(text, alias.token))
+                return alias.source;
         }
         return std::nullopt;
     }
@@ -165,21 +195,36 @@ namespace rock::button_layout_policy
     [[nodiscard]] constexpr std::string_view sourceName(Source source, bool isLeft) noexcept
     {
         switch (source) {
-        case Source::None: return "none";
-        case Source::Trigger: return "trigger";
-        case Source::Grip: return "grip";
-        case Source::LowerFace: return isLeft ? "x" : "a";
-        case Source::UpperFace: return isLeft ? "y" : "b";
-        case Source::Stick: return "thumbstick";
-        case Source::GripClick: return "grip_click";
-        case Source::Axis3Click: return "axis3";
-        case Source::Axis4Click: return "axis4";
-        case Source::PadUp: return "pad_up";
-        case Source::PadDown: return "pad_down";
-        case Source::PadLeft: return "pad_left";
-        case Source::PadRight: return "pad_right";
-        case Source::PadCenter: return "pad_center";
-        case Source::Count: break;
+        case Source::None:
+            return "none";
+        case Source::Trigger:
+            return "trigger";
+        case Source::Grip:
+            return "grip";
+        case Source::LowerFace:
+            return isLeft ? "x" : "a";
+        case Source::UpperFace:
+            return isLeft ? "y" : "b";
+        case Source::Stick:
+            return "thumbstick";
+        case Source::GripClick:
+            return "grip_click";
+        case Source::Axis3Click:
+            return "axis3";
+        case Source::Axis4Click:
+            return "axis4";
+        case Source::PadUp:
+            return "pad_up";
+        case Source::PadDown:
+            return "pad_down";
+        case Source::PadLeft:
+            return "pad_left";
+        case Source::PadRight:
+            return "pad_right";
+        case Source::PadCenter:
+            return "pad_center";
+        case Source::Count:
+            break;
         }
         return "none";
     }

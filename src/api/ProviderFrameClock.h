@@ -1,8 +1,8 @@
 #pragma once
 
+#include <ROCK/Animation.h>
 #include <atomic>
 #include <cstdint>
-#include <ROCK/Animation.h>
 
 namespace rock::provider
 {
@@ -16,19 +16,14 @@ namespace rock::provider
             // Native graph observations can occur between Complete and BeforeRock.
             // BeforeRock repeats the measured frame established at FRIK FrameBegin;
             // native graph observations never advance the clock or retire leases.
-            if (phase == api::animation::AnimationPhase::BeforeRock) beginFrame(gameFrame);
+            if (phase == api::animation::AnimationPhase::BeforeRock)
+                beginFrame(gameFrame);
             return phase == api::animation::AnimationPhase::NativeGraphOutput ? gameFrame : current();
         }
 
-        void beginFrame(std::uint64_t gameFrame) noexcept
-        {
-            _current.store(gameFrame, std::memory_order_release);
-        }
+        void beginFrame(std::uint64_t gameFrame) noexcept { _current.store(gameFrame, std::memory_order_release); }
 
-        [[nodiscard]] std::uint64_t current() const noexcept
-        {
-            return _current.load(std::memory_order_acquire);
-        }
+        [[nodiscard]] std::uint64_t current() const noexcept { return _current.load(std::memory_order_acquire); }
 
         std::uint64_t publishFrame() noexcept
         {
@@ -44,7 +39,7 @@ namespace rock::provider
         }
 
     private:
-        std::atomic<std::uint64_t> _current{0};
-        std::atomic<std::uint64_t> _published{0};
+        std::atomic<std::uint64_t> _current{ 0 };
+        std::atomic<std::uint64_t> _published{ 0 };
     };
 }

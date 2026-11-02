@@ -36,10 +36,20 @@ namespace rock::native_character_proxy_safety
          * successful accessor return (the 2026-09-10 GetGravity crash).
          */
         constexpr std::array<std::uint8_t, 14> kExpectedWorldAccessorEntry{
-            0x40, 0x53,
-            0x48, 0x83, 0xEC, 0x20,
-            0x48, 0x8B, 0x01,
-            0x48, 0x8D, 0x54, 0x24, 0x30,
+            0x40,
+            0x53,
+            0x48,
+            0x83,
+            0xEC,
+            0x20,
+            0x48,
+            0x8B,
+            0x01,
+            0x48,
+            0x8D,
+            0x54,
+            0x24,
+            0x30,
         };
 
         constexpr std::uintptr_t kBodyStride = 0x90;
@@ -50,8 +60,20 @@ namespace rock::native_character_proxy_safety
         constexpr std::uintptr_t kDestructorReturnRva = 0x1E4B4CA;
         // CALL [RAX+0x210]; MOV RBX,RAX; TEST RAX,RAX; JZ cleanup.
         constexpr std::array<std::uint8_t, 14> kExpectedDestructorCall{
-            0xFF, 0x90, 0x10, 0x02, 0x00, 0x00,
-            0x48, 0x8B, 0xD8, 0x48, 0x85, 0xC0, 0x74, 0x6D,
+            0xFF,
+            0x90,
+            0x10,
+            0x02,
+            0x00,
+            0x00,
+            0x48,
+            0x8B,
+            0xD8,
+            0x48,
+            0x85,
+            0xC0,
+            0x74,
+            0x6D,
         };
 
         enum ReadableField : std::uint32_t
@@ -104,59 +126,49 @@ namespace rock::native_character_proxy_safety
         std::atomic<std::uint64_t> s_preservedFaultCount{ 0 };
         thread_local FaultContext t_faultContext{};
 
-        void recordFault(void* controller, std::uintptr_t caller,
-            bool recoveredTeardown) noexcept;
+        void recordFault(void* controller, std::uintptr_t caller, bool recoveredTeardown) noexcept;
 
-        [[nodiscard]] bool shouldLogOccurrence(
-            const std::uint64_t occurrence) noexcept
+        [[nodiscard]] bool shouldLogOccurrence(const std::uint64_t occurrence) noexcept
         {
             return occurrence <= 4 || std::has_single_bit(occurrence);
         }
 
-        [[nodiscard]] std::uintptr_t gameTextRelativeAddress(
-            const std::uintptr_t address) noexcept
+        [[nodiscard]] std::uintptr_t gameTextRelativeAddress(const std::uintptr_t address) noexcept
         {
             const auto text = REL::Module::get().segment(REL::Segment::text);
-            if (text.size() == 0 || address < text.address() ||
-                address >= text.address() + text.size()) {
+            if (text.size() == 0 || address < text.address() || address >= text.address() + text.size()) {
                 return 0;
             }
             return address - REL::Module::get().base();
         }
 
-        int captureVerifiedBodyFieldFault(
-            EXCEPTION_POINTERS* exceptionPointers,
-            void* controller,
+        int captureVerifiedBodyFieldFault(EXCEPTION_POINTERS* exceptionPointers, void* controller,
             const std::uintptr_t caller) noexcept
         {
-            if (!exceptionPointers || !exceptionPointers->ExceptionRecord ||
-                !exceptionPointers->ContextRecord) {
+            if (!exceptionPointers || !exceptionPointers->ExceptionRecord || !exceptionPointers->ContextRecord) {
                 return EXCEPTION_CONTINUE_SEARCH;
             }
 
             const auto* record = exceptionPointers->ExceptionRecord;
             const auto* context = exceptionPointers->ContextRecord;
-            const auto expectedAddress =
-                s_expectedFaultAddress.load(std::memory_order_acquire);
-            const auto exceptionAddress =
-                reinterpret_cast<std::uintptr_t>(record->ExceptionAddress);
-            if (record->ExceptionCode != EXCEPTION_ACCESS_VIOLATION ||
-                record->NumberParameters < 2 ||
-                record->ExceptionInformation[0] != 0 ||
-                expectedAddress == 0 || exceptionAddress != expectedAddress) {
+            const auto expectedAddress = s_expectedFaultAddress.load(std::memory_order_acquire);
+            const auto exceptionAddress = reinterpret_cast<std::uintptr_t>(record->ExceptionAddress);
+            if (record->ExceptionCode != EXCEPTION_ACCESS_VIOLATION || record->NumberParameters < 2 ||
+                record->ExceptionInformation[0] != 0 || expectedAddress == 0 || exceptionAddress != expectedAddress) {
                 return EXCEPTION_CONTINUE_SEARCH;
             }
 
-            const auto accessAddress = static_cast<std::uintptr_t>(
-                record->ExceptionInformation[1]);
+            const auto accessAddress = static_cast<std::uintptr_t>(record->ExceptionInformation[1]);
             const auto bodyAddress = static_cast<std::uintptr_t>(context->Rax);
-            const auto disposition = character_proxy_fault_policy::classify({
+            const auto disposition = character_proxy_fault_policy::classify(
+                {
                     .instruction = exceptionAddress,
                     .readAddress = accessAddress,
                     .bodyAddress = bodyAddress,
                     .caller = caller,
                     .insidePhysicsStep = havok_world_lock::detail::currentThreadInsidePhysicsStep(),
-                }, expectedAddress, s_teardownCaller.load(std::memory_order_acquire));
+                },
+                expectedAddress, s_teardownCaller.load(std::memory_order_acquire));
             if (disposition == character_proxy_fault_policy::Disposition::Unrelated) {
                 return EXCEPTION_CONTINUE_SEARCH;
             }
@@ -173,16 +185,12 @@ namespace rock::native_character_proxy_safety
                 .rdi = static_cast<std::uintptr_t>(context->Rdi),
                 .rsp = static_cast<std::uintptr_t>(context->Rsp),
             };
-            const bool recoveredTeardown = disposition ==
-                character_proxy_fault_policy::Disposition::RecoverDestructor;
+            const bool recoveredTeardown = disposition == character_proxy_fault_policy::Disposition::RecoverDestructor;
             recordFault(controller, caller, recoveredTeardown);
-            return recoveredTeardown ? EXCEPTION_EXECUTE_HANDLER :
-                                       EXCEPTION_CONTINUE_SEARCH;
+            return recoveredTeardown ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH;
         }
 
-        [[nodiscard]] __declspec(noinline) bool invokeOriginal(
-            void* controller,
-            const std::uintptr_t caller,
+        [[nodiscard]] __declspec(noinline) bool invokeOriginal(void* controller, const std::uintptr_t caller,
             void*& result) noexcept
         {
             auto* original = s_originalResolveWorld;
@@ -196,8 +204,7 @@ namespace rock::native_character_proxy_safety
             __try {
                 result = original(controller);
                 return true;
-            } __except (captureVerifiedBodyFieldFault(
-                GetExceptionInformation(), controller, caller)) {
+            } __except (captureVerifiedBodyFieldFault(GetExceptionInformation(), controller, caller)) {
                 result = nullptr;
                 return false;
             }
@@ -207,33 +214,23 @@ namespace rock::native_character_proxy_safety
 #endif
         }
 
-        DiagnosticState captureDiagnosticState(
-            void* controller,
-            const FaultContext& fault) noexcept
+        DiagnosticState captureDiagnosticState(void* controller, const FaultContext& fault) noexcept
         {
             DiagnosticState state{};
-            if (native_memory::tryReadField(
-                    controller,
-                    kControllerPhysicsSystemOffset,
-                    state.physicsSystem)) {
+            if (native_memory::tryReadField(controller, kControllerPhysicsSystemOffset, state.physicsSystem)) {
                 state.readableFields |= kPhysicsSystemReadable;
             }
-            if (native_memory::tryReadField(
-                    controller,
-                    kControllerSystemBodyIndexOffset,
-                    state.systemBodyIndex)) {
+            if (native_memory::tryReadField(controller, kControllerSystemBodyIndexOffset, state.systemBodyIndex)) {
                 state.readableFields |= kSystemBodyIndexReadable;
             }
-            if (state.physicsSystem != 0 && native_memory::tryReadField(
-                    reinterpret_cast<const void*>(state.physicsSystem),
-                    static_cast<std::ptrdiff_t>(offsets::kBhkPhysicsSystem_Instance),
-                    state.physicsSystemInstance)) {
+            if (state.physicsSystem != 0 &&
+                native_memory::tryReadField(reinterpret_cast<const void*>(state.physicsSystem),
+                    static_cast<std::ptrdiff_t>(offsets::kBhkPhysicsSystem_Instance), state.physicsSystemInstance)) {
                 state.readableFields |= kPhysicsSystemInstanceReadable;
             }
-            if (state.physicsSystemInstance != 0 && native_memory::tryReadField(
-                    reinterpret_cast<const void*>(state.physicsSystemInstance),
-                    static_cast<std::ptrdiff_t>(offsets::kHknpPhysicsSystemInstance_World),
-                    state.world)) {
+            if (state.physicsSystemInstance != 0 &&
+                native_memory::tryReadField(reinterpret_cast<const void*>(state.physicsSystemInstance),
+                    static_cast<std::ptrdiff_t>(offsets::kHknpPhysicsSystemInstance_World), state.world)) {
                 state.readableFields |= kWorldReadable;
             }
             if (state.world != 0) {
@@ -241,30 +238,22 @@ namespace rock::native_character_proxy_safety
                 if (native_memory::tryReadField(world, 0, state.worldVtable)) {
                     state.readableFields |= kWorldVtableReadable;
                 }
-                if (native_memory::tryReadField(
-                        world,
-                        static_cast<std::ptrdiff_t>(offsets::kHknpWorld_BodyArrayPtr),
+                if (native_memory::tryReadField(world, static_cast<std::ptrdiff_t>(offsets::kHknpWorld_BodyArrayPtr),
                         state.bodyArray)) {
                     state.readableFields |= kWorldBodyArrayReadable;
                 }
-                if (native_memory::tryReadField(
-                        world,
-                        static_cast<std::ptrdiff_t>(offsets::kHknpWorld_ConstraintArrayPtr),
-                        state.constraintArray)) {
+                if (native_memory::tryReadField(world,
+                        static_cast<std::ptrdiff_t>(offsets::kHknpWorld_ConstraintArrayPtr), state.constraintArray)) {
                     state.readableFields |= kWorldConstraintArrayReadable;
                 }
-                if (native_memory::tryReadField(
-                        world,
-                        static_cast<std::ptrdiff_t>(offsets::kHknpWorld_ConstraintCount),
+                if (native_memory::tryReadField(world, static_cast<std::ptrdiff_t>(offsets::kHknpWorld_ConstraintCount),
                         state.worldConstraintCount)) {
                     state.readableFields |= kWorldConstraintCountReadable;
                 }
             }
 
-            const auto destroyingVtable =
-                s_destroyingWorldVtable.load(std::memory_order_acquire);
-            state.destroying = destroyingVtable != 0 &&
-                               state.worldVtable == destroyingVtable;
+            const auto destroyingVtable = s_destroyingWorldVtable.load(std::memory_order_acquire);
+            state.destroying = destroyingVtable != 0 && state.worldVtable == destroyingVtable;
             if (fault.rax % kBodyStride == 0) {
                 const auto id = fault.rax / kBodyStride;
                 if (id <= kInvalidBodyId) {
@@ -274,14 +263,10 @@ namespace rock::native_character_proxy_safety
             return state;
         }
 
-        void recordFault(
-            void* controller,
-            const std::uintptr_t caller,
-            const bool recoveredTeardown) noexcept
+        void recordFault(void* controller, const std::uintptr_t caller, const bool recoveredTeardown) noexcept
         {
             const auto fault = t_faultContext;
-            auto& count = recoveredTeardown ? s_suppressedFaultCount :
-                                             s_preservedFaultCount;
+            auto& count = recoveredTeardown ? s_suppressedFaultCount : s_preservedFaultCount;
             const auto occurrence = count.fetch_add(1, std::memory_order_relaxed) + 1;
             if (!fault.captured || !shouldLogOccurrence(occurrence)) {
                 return;
@@ -289,48 +274,29 @@ namespace rock::native_character_proxy_safety
 
             const auto state = captureDiagnosticState(controller, fault);
             const auto callerRva = gameTextRelativeAddress(caller);
-            const auto exceptionRva =
-                gameTextRelativeAddress(fault.exceptionAddress);
-            const auto insidePhysicsStep =
-                havok_world_lock::detail::currentThreadInsidePhysicsStep();
+            const auto exceptionRva = gameTextRelativeAddress(fault.exceptionAddress);
+            const auto insidePhysicsStep = havok_world_lock::detail::currentThreadInsidePhysicsStep();
 
             ROCK_LOG_CRITICAL(PhysicsSafety,
-                "Native character-proxy world fault: recovery={} occurrence={} thread={} physicsStep={} controller={:p} caller=0x{:X} callerRva=0x{:X} exceptionRva=0x{:X} access=0x{:X}",
-                recoveredTeardown ? "verified-destructor-null" : "preserve-native-exception",
-                occurrence,
-                GetCurrentThreadId(),
-                insidePhysicsStep ? "yes" : "no",
-                controller,
-                caller,
-                callerRva,
-                exceptionRva,
+                "Native character-proxy world fault: recovery={} occurrence={} thread={} physicsStep={} "
+                "controller={:p} caller=0x{:X} callerRva=0x{:X} exceptionRva=0x{:X} access=0x{:X}",
+                recoveredTeardown ? "verified-destructor-null" : "preserve-native-exception", occurrence,
+                GetCurrentThreadId(), insidePhysicsStep ? "yes" : "no", controller, caller, callerRva, exceptionRva,
                 fault.accessAddress);
             ROCK_LOG_CRITICAL(PhysicsSafety,
-                "Character-proxy world state: readable=0x{:02X} baseWorldVtable={} physicsSystem=0x{:X} instance=0x{:X} world=0x{:X} worldVtable=0x{:X} bodyArray=0x{:X} constraintArray=0x{:X} worldConstraintCount={} systemBodyIndex={} faultBodyId={} computedBody=0x{:X} regs(rbx/rcx/rdx/rsi/rdi/rsp)=0x{:X}/0x{:X}/0x{:X}/0x{:X}/0x{:X}/0x{:X}",
-                state.readableFields,
-                state.destroying ? "yes" : "no",
-                state.physicsSystem,
-                state.physicsSystemInstance,
-                state.world,
-                state.worldVtable,
-                state.bodyArray,
-                state.constraintArray,
-                state.worldConstraintCount,
-                state.systemBodyIndex,
-                state.faultBodyId,
-                fault.rax,
-                fault.rbx,
-                fault.rcx,
-                fault.rdx,
-                fault.rsi,
-                fault.rdi,
-                fault.rsp);
+                "Character-proxy world state: readable=0x{:02X} baseWorldVtable={} physicsSystem=0x{:X} "
+                "instance=0x{:X} world=0x{:X} worldVtable=0x{:X} bodyArray=0x{:X} constraintArray=0x{:X} "
+                "worldConstraintCount={} systemBodyIndex={} faultBodyId={} computedBody=0x{:X} "
+                "regs(rbx/rcx/rdx/rsi/rdi/rsp)=0x{:X}/0x{:X}/0x{:X}/0x{:X}/0x{:X}/0x{:X}",
+                state.readableFields, state.destroying ? "yes" : "no", state.physicsSystem, state.physicsSystemInstance,
+                state.world, state.worldVtable, state.bodyArray, state.constraintArray, state.worldConstraintCount,
+                state.systemBodyIndex, state.faultBodyId, fault.rax, fault.rbx, fault.rcx, fault.rdx, fault.rsi,
+                fault.rdi, fault.rsp);
         }
 
         __declspec(noinline) void* onResolveWorld(void* controller) noexcept
         {
-            const auto caller =
-                reinterpret_cast<std::uintptr_t>(_ReturnAddress());
+            const auto caller = reinterpret_cast<std::uintptr_t>(_ReturnAddress());
             void* result = nullptr;
             if (invokeOriginal(controller, caller, result)) {
                 return result;
@@ -350,51 +316,40 @@ namespace rock::native_character_proxy_safety
         if (s_installed.load(std::memory_order_acquire)) {
             return true;
         }
-        if (!REL::Module::IsVR() ||
-            REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) {
-            ROCK_LOG_ERROR(Init,
-                "Native character-proxy safety unavailable: unsupported runtime");
+        if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) {
+            ROCK_LOG_ERROR(Init, "Native character-proxy safety unavailable: unsupported runtime");
             return false;
         }
 
         const auto destructorCall = REL::Offset(kDestructorCallRva).address();
-        if (std::memcmp(reinterpret_cast<const void*>(destructorCall),
-                kExpectedDestructorCall.data(), kExpectedDestructorCall.size()) != 0) {
-            ROCK_LOG_ERROR(Init,
-                "Native character-proxy safety unavailable: destructor caller validation failed");
+        if (std::memcmp(reinterpret_cast<const void*>(destructorCall), kExpectedDestructorCall.data(),
+                kExpectedDestructorCall.size()) != 0) {
+            ROCK_LOG_ERROR(Init, "Native character-proxy safety unavailable: destructor caller validation failed");
             return false;
         }
-        s_teardownCaller.store(REL::Offset(kDestructorReturnRva).address(),
-            std::memory_order_release);
+        s_teardownCaller.store(REL::Offset(kDestructorReturnRva).address(), std::memory_order_release);
 
-        s_expectedFaultAddress.store(
-            REL::Offset(offsets::kFault_BhkCharProxyController_BodyFieldRead).address(),
+        s_expectedFaultAddress.store(REL::Offset(offsets::kFault_BhkCharProxyController_BodyFieldRead).address(),
             std::memory_order_release);
-        s_destroyingWorldVtable.store(
-            REL::Offset(offsets::kVtable_HknpWorldDestroying).address(),
+        s_destroyingWorldVtable.store(REL::Offset(offsets::kVtable_HknpWorldDestroying).address(),
             std::memory_order_release);
 
         void* original = reinterpret_cast<void*>(s_originalResolveWorld);
-        const bool installed = entry_trampoline_hook::install(
-            "bhk character-proxy teardown safety",
-            offsets::kFunc_BhkCharProxyController_WorldAccessor,
-            kExpectedWorldAccessorEntry.data(),
-            kExpectedWorldAccessorEntry.size(),
-            reinterpret_cast<void*>(&onResolveWorld),
-            original);
+        const bool installed = entry_trampoline_hook::install("bhk character-proxy teardown safety",
+            offsets::kFunc_BhkCharProxyController_WorldAccessor, kExpectedWorldAccessorEntry.data(),
+            kExpectedWorldAccessorEntry.size(), reinterpret_cast<void*>(&onResolveWorld), original);
         s_originalResolveWorld = reinterpret_cast<ResolveWorldFn>(original);
         const bool ready = installed && s_originalResolveWorld != nullptr;
         s_installed.store(ready, std::memory_order_release);
         if (!ready) {
-            ROCK_LOG_ERROR(Init,
-                "Native character-proxy safety unavailable: hook installation failed");
+            ROCK_LOG_ERROR(Init, "Native character-proxy safety unavailable: hook installation failed");
             return false;
         }
 
         ROCK_LOG_INFO(Init,
-            "Native character-proxy teardown safety active: exactFaultRva=0x{:X} recoveryCallerRva=0x{:X} activeCallerRecovery=disabled",
-            offsets::kFault_BhkCharProxyController_BodyFieldRead,
-            kDestructorReturnRva);
+            "Native character-proxy teardown safety active: exactFaultRva=0x{:X} recoveryCallerRva=0x{:X} "
+            "activeCallerRecovery=disabled",
+            offsets::kFault_BhkCharProxyController_BodyFieldRead, kDestructorReturnRva);
         return true;
     }
 }

@@ -1,7 +1,8 @@
 #include "physics-interaction/native/SceneRelation.h"
 #include "RE/NetImmerse/NiNode.h"
 
-namespace rock::scene_relation {
+namespace rock::scene_relation
+{
     bool nodeContainsNode(RE::NiAVObject* root, RE::NiAVObject* target, int maxDepth)
     {
         if (!root || !target || maxDepth < 0) {
@@ -25,6 +26,5 @@ namespace rock::scene_relation {
         }
         return false;
     }
-
 
 }

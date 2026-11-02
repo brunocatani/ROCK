@@ -32,10 +32,7 @@ namespace rock::game_timing
         return s_currentTiming;
     }
 
-    const GameFrameTiming& currentFrameTiming()
-    {
-        return s_currentTiming;
-    }
+    const GameFrameTiming& currentFrameTiming() { return s_currentTiming; }
 
     void resetForNewSession()
     {

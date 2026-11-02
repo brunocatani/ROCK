@@ -1,8 +1,8 @@
 #include "physics-interaction/native/NativeCollisionShape.h"
 
+#include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/PhysicsLog.h"
 
 #include <array>
 #include <limits>
@@ -27,7 +27,8 @@ namespace rock::native_scene
             const auto text = REL::Module::get().segment(REL::Segment::text);
             std::array<std::uint8_t, N> actual{};
             return address >= text.address() && address + N <= text.address() + text.size() &&
-                native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), actual.data(), actual.size()) &&
+                native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), actual.data(),
+                    actual.size()) &&
                 actual == expected;
         }
 
@@ -41,8 +42,9 @@ namespace rock::native_scene
                 const auto query = REL::Offset(0x1E07980).address();
                 const auto shape = REL::Offset(offsets::kFunc_CollisionObject_GetShape).address();
                 if (!entryMatches(query, std::array<std::uint8_t, 4>{ 0x48, 0x8B, 0xC1, 0xC3 }) ||
-                    !entryMatches(shape, std::array<std::uint8_t, 13>{
-                        0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0x48, 0x8B, 0x49, 0x20 })) {
+                    !entryMatches(shape,
+                        std::array<std::uint8_t, 13>{ 0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0x48, 0x8B,
+                            0x49, 0x20 })) {
                     ROCK_LOG_ERROR(Weapon, "Collision shape query rejected: native entry bytes differ");
                     return {};
                 }
@@ -81,8 +83,7 @@ namespace rock::native_scene
         const auto& entries = nativeEntries();
         std::uintptr_t vtable = 0;
         CollisionObjectQuery query = nullptr;
-        if (!entries.query ||
-            !native_memory::tryReadField(collision, 0, vtable) ||
+        if (!entries.query || !native_memory::tryReadField(collision, 0, vtable) ||
             !native_memory::tryReadField(reinterpret_cast<const void*>(vtable), 0xD8, query) ||
             query != entries.query) {
             return { nullptr, CollisionShapeQueryStage::NativeDispatch };

@@ -33,20 +33,24 @@ namespace rock::grab_offset_acquisition
     }
 
     template <class Transform, class Vector>
-    inline Transform interpolateAtGrip(const Transform& start, const Transform& target,
-        const Vector& gripBodyLocal, float fraction)
+    inline Transform interpolateAtGrip(const Transform& start, const Transform& target, const Vector& gripBodyLocal,
+        float fraction)
     {
         const float t = std::clamp(fraction, 0.0f, 1.0f);
-        if (t <= 0.0f) return start;
-        if (t >= 1.0f) return target;
+        if (t <= 0.0f)
+            return start;
+        if (t >= 1.0f)
+            return target;
 
         float a[4]{}, b[4]{}, blended[4]{};
         transform_math::niRowsToHavokQuaternion(start.rotate, a);
         transform_math::niRowsToHavokQuaternion(target.rotate, b);
         float dot = 0.0f;
-        for (int i = 0; i < 4; ++i) dot += a[i] * b[i];
+        for (int i = 0; i < 4; ++i)
+            dot += a[i] * b[i];
         if (dot < 0.0f) {
-            for (float& component : b) component = -component;
+            for (float& component : b)
+                component = -component;
             dot = -dot;
         }
         dot = std::clamp(dot, 0.0f, 1.0f);
@@ -58,7 +62,8 @@ namespace rock::grab_offset_acquisition
             fromWeight = std::sin((1.0f - t) * angle) * inverseSin;
             toWeight = std::sin(t * angle) * inverseSin;
         }
-        for (int i = 0; i < 4; ++i) blended[i] = a[i] * fromWeight + b[i] * toWeight;
+        for (int i = 0; i < 4; ++i)
+            blended[i] = a[i] * fromWeight + b[i] * toWeight;
         Transform result = target;
         result.rotate = transform_math::havokQuaternionToNiRows<decltype(result.rotate)>(blended);
         result.scale = start.scale + (target.scale - start.scale) * t;
@@ -72,17 +77,20 @@ namespace rock::grab_offset_acquisition
     }
 
     template <class Transform, class Vector>
-    inline Transition<Transform> begin(const Transform& rawProxyWorld,
-        const Transform& bodyWorld, const Transform& targetBodyInProxy, const Vector& gripBodyLocal)
+    inline Transition<Transform> begin(const Transform& rawProxyWorld, const Transform& bodyWorld,
+        const Transform& targetBodyInProxy, const Vector& gripBodyLocal)
     {
         Transition<Transform> state{};
         state.startBodyInProxy = grab_frame_math::objectInGeneratedProxyLocalSpace(rawProxyWorld, bodyWorld);
         const auto firstGrip = transform_math::localPointToWorld(state.startBodyInProxy, gripBodyLocal);
         const auto lastGrip = transform_math::localPointToWorld(targetBodyInProxy, gripBodyLocal);
-        const float distance = std::sqrt(vector_math::lengthSquared(lastGrip - firstGrip)) * std::abs(rawProxyWorld.scale);
+        const float distance =
+            std::sqrt(vector_math::lengthSquared(lastGrip - firstGrip)) * std::abs(rawProxyWorld.scale);
         const float angle = rotationAngleRadians(state.startBodyInProxy.rotate, targetBodyInProxy.rotate);
-        if (!std::isfinite(distance) || !std::isfinite(angle)) return state;
-        if (distance < 0.001f && angle < 0.0001f) return state;
+        if (!std::isfinite(distance) || !std::isfinite(angle))
+            return state;
+        if (distance < 0.001f && angle < 0.0001f)
+            return state;
         // A smoothstep takes 1.5 times its average speed at the midpoint.
         // Size the interval from both errors, so pure rotation also receives
         // a continuous target and a tiny translation never requests a swing.
@@ -94,12 +102,13 @@ namespace rock::grab_offset_acquisition
     // Match equipped acquisition/return timing at the held pivot. Long barrels
     // must not extend the wrist transition merely because their origins differ.
     template <class Transform, class Vector>
-    inline Transition<Transform> beginWeapon(const Transform& proxyWorld,
-        const Transform& presentedBodyWorld, const Transform& targetBodyInProxy,
-        const Vector& gripBodyLocal, const hand_visual_lerp_math::VisualReturnConfig& config)
+    inline Transition<Transform> beginWeapon(const Transform& proxyWorld, const Transform& presentedBodyWorld,
+        const Transform& targetBodyInProxy, const Vector& gripBodyLocal,
+        const hand_visual_lerp_math::VisualReturnConfig& config)
     {
         auto state = begin(proxyWorld, presentedBodyWorld, targetBodyInProxy, gripBodyLocal);
-        if (!state.active) return state;
+        if (!state.active)
+            return state;
         auto start = state.startBodyInProxy;
         auto target = targetBodyInProxy;
         start.translate = transform_math::localPointToWorld(start, gripBodyLocal) * std::abs(proxyWorld.scale);
@@ -113,7 +122,8 @@ namespace rock::grab_offset_acquisition
     inline Transform advance(Transition<Transform>& state, const Transform& rawProxyWorld,
         const Transform& targetBodyInProxy, const Vector& gripBodyLocal, float deltaSeconds)
     {
-        if (!state.active) return rawProxyWorld;
+        if (!state.active)
+            return rawProxyWorld;
         if (std::isfinite(deltaSeconds) && deltaSeconds > 0.0f) {
             state.elapsedSeconds = (std::min)(state.durationSeconds, state.elapsedSeconds + deltaSeconds);
         }
@@ -130,9 +140,9 @@ namespace rock::grab_offset_acquisition
 
     // Both hands resolve the same target; advance their shared clock once.
     template <class Transform, class Vector>
-    inline Transform advanceShared(Transition<Transform>& state, std::uint64_t& lastFrame,
-        std::uint64_t frame, const Transform& proxyWorld, const Transform& targetBodyInProxy,
-        const Vector& gripBodyLocal, float deltaSeconds)
+    inline Transform advanceShared(Transition<Transform>& state, std::uint64_t& lastFrame, std::uint64_t frame,
+        const Transform& proxyWorld, const Transform& targetBodyInProxy, const Vector& gripBodyLocal,
+        float deltaSeconds)
     {
         const float delta = lastFrame != frame ? deltaSeconds : 0.0f;
         lastFrame = frame;

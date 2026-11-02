@@ -2,8 +2,16 @@
 
 #include <cstdint>
 
-namespace RE { class InputEvent; class NiAVObject; }
-namespace rock::equipped_weapon_visual_state { struct Snapshot; }
+namespace RE
+{
+    class InputEvent;
+    class NiAVObject;
+}
+
+namespace rock::equipped_weapon_visual_state
+{
+    struct Snapshot;
+}
 
 namespace rock::trigger_equip_readiness_trace
 {
@@ -16,9 +24,9 @@ namespace rock::trigger_equip_readiness_trace
     bool partCaptureActive() noexcept;
     void parts(RE::NiAVObject* root, unsigned phase, bool bridgeVisible = false) noexcept;
     void renderedHands() noexcept;
-    void frame(const equipped_weapon_visual_state::Snapshot& visual,
-        bool bridgeVisible, bool gripPending, bool nativeAnimation, bool menu) noexcept;
-    void input(const RE::InputEvent* event, bool rockBlocked,
-        bool nativeCalled, bool nativeAccepted, const void* handler = nullptr) noexcept;
+    void frame(const equipped_weapon_visual_state::Snapshot& visual, bool bridgeVisible, bool gripPending,
+        bool nativeAnimation, bool menu) noexcept;
+    void input(const RE::InputEvent* event, bool rockBlocked, bool nativeCalled, bool nativeAccepted,
+        const void* handler = nullptr) noexcept;
     void stop(const char* reason) noexcept;
 }

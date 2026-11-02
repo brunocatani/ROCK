@@ -19,11 +19,6 @@ namespace rock::entry_trampoline_hook
      * FO4VR binary (resolved via REL::Offset). Install once at startup;
      * there is no uninstall.
      */
-    [[nodiscard]] bool install(
-        const char* label,
-        std::uintptr_t targetModuleOffset,
-        const std::uint8_t* expectedPrefix,
-        std::size_t stolenBytes,
-        void* hook,
-        void*& original);
+    [[nodiscard]] bool install(const char* label, std::uintptr_t targetModuleOffset, const std::uint8_t* expectedPrefix,
+        std::size_t stolenBytes, void* hook, void*& original);
 }

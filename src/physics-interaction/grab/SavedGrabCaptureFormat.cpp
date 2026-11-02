@@ -123,7 +123,8 @@ namespace rock::saved_grab_capture
             return json{
                 { "seatDepthMaxGameUnits", tuning.seatDepthMaxGameUnits },
                 { "seatDepthFootprintRadiusGameUnits", tuning.seatDepthFootprintRadiusGameUnits },
-                { "seatPenetrationBackstopFootprintRadiusGameUnits", tuning.seatPenetrationBackstopFootprintRadiusGameUnits },
+                { "seatPenetrationBackstopFootprintRadiusGameUnits",
+                    tuning.seatPenetrationBackstopFootprintRadiusGameUnits },
                 { "seatDepthSkinGameUnits", tuning.seatDepthSkinGameUnits },
                 { "gripInsetGameUnits", tuning.gripInsetGameUnits },
                 { "pullPresentationMinElongationRatio", tuning.pullPresentationMinElongationRatio },

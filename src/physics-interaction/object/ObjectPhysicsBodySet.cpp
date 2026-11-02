@@ -6,17 +6,17 @@
 #include <unordered_map>
 #include <utility>
 
+#include "REL/Relocation.h"
+#include "RockConfig.h"
+#include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/CollisionSystemOwner.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/HavokWorldLock.h"
-#include "physics-interaction/native/PhysicsSystemBodyScanCache.h"
-#include "physics-interaction/native/CollisionSystemOwner.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "REL/Relocation.h"
-#include "physics-interaction/object/ObjectDetection.h"
-#include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/PhysicsSystemBodyScanCache.h"
 #include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/weapon/WeaponSceneChildren.h"
-#include "RockConfig.h"
 
 #include "RE/Bethesda/BSHavok.h"
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -86,9 +86,9 @@ namespace rock::object_physics_body_set
         {
             using havok_runtime::PhysicsSystemBodyScanStatus;
             return status == PhysicsSystemBodyScanStatus::InvalidBodyCount ||
-                   status == PhysicsSystemBodyScanStatus::UnsupportedCollisionObject ||
-                   status == PhysicsSystemBodyScanStatus::UnreadableBodyIds ||
-                   status == PhysicsSystemBodyScanStatus::MissingBodyIds;
+                status == PhysicsSystemBodyScanStatus::UnsupportedCollisionObject ||
+                status == PhysicsSystemBodyScanStatus::UnreadableBodyIds ||
+                status == PhysicsSystemBodyScanStatus::MissingBodyIds;
         }
 
         ObjectPhysicsBodyScanBudget sanitizeBudget(ObjectPhysicsBodyScanBudget budget)
@@ -166,7 +166,8 @@ namespace rock::object_physics_body_set
             record.filterInfo = body->collisionFilterInfo;
             record.collisionLayer = body->collisionFilterInfo & 0x7F;
             auto* motion = havok_runtime::getMotion(hknpWorld, record.motionId);
-            const std::uint16_t motionPropertiesId = motion ? motion->motionPropertiesId : static_cast<std::uint16_t>(body->motionPropertiesId);
+            const std::uint16_t motionPropertiesId =
+                motion ? motion->motionPropertiesId : static_cast<std::uint16_t>(body->motionPropertiesId);
             record.bodyFlags = body->flags;
             record.motionPropertiesId = motionPropertiesId;
             record.motionType = physics_body_classifier::motionTypeFromBodyFlags(record.bodyFlags);
@@ -180,9 +181,11 @@ namespace rock::object_physics_body_set
 
             const auto* base = context.rootRef ? context.rootRef->GetObjectReference() : nullptr;
             const bool bodyTarget = grab_target::requiresNativeBodyOwnership(options.targetKind) ||
-                (base && base->Is(RE::ENUM_FORM_ID::kNPC_)) || grab_target::isNativeDetachedBodyLayer(record.collisionLayer);
+                (base && base->Is(RE::ENUM_FORM_ID::kNPC_)) ||
+                grab_target::isNativeDetachedBodyLayer(record.collisionLayer);
             std::uintptr_t sourceVtable{};
-            const bool proxySource = context.collisionObject && native_memory::tryReadField(context.collisionObject, 0, sourceVtable) &&
+            const bool proxySource = context.collisionObject &&
+                native_memory::tryReadField(context.collisionObject, 0, sourceVtable) &&
                 sourceVtable == REL::Offset(collision_system_owner::kProxy).address();
             if (bodyTarget || proxySource) {
                 // A shared physics system is discovery, not ownership. Its first
@@ -191,7 +194,7 @@ namespace rock::object_physics_body_set
                 // never store the proxy as that body's native collision object.
                 auto* owner = havok_runtime::getCollisionObjectFromBody(hknpWorld, bodyId);
                 RE::hknpWorld* ownerWorld = nullptr;
-                RE::hknpBodyId ownerId{INVALID_BODY_ID};
+                RE::hknpBodyId ownerId{ INVALID_BODY_ID };
                 if (!owner || !havok_runtime::tryResolveCollisionObjectBody(owner, ownerWorld, ownerId) ||
                     ownerWorld != hknpWorld || ownerId.value != rawBodyId) {
                     ++out.diagnostics.scanFailures;
@@ -199,7 +202,10 @@ namespace rock::object_physics_body_set
                 }
                 record.collisionObject = owner;
                 record.owningNode = havok_runtime::getOwnerNodeFromCollisionObject(owner);
-                if (!record.owningNode) { ++out.diagnostics.scanFailures; return true; }
+                if (!record.owningNode) {
+                    ++out.diagnostics.scanFailures;
+                    return true;
+                }
             }
 
             const auto* bodyFloats = reinterpret_cast<const float*>(body);
@@ -238,9 +244,10 @@ namespace rock::object_physics_body_set
             input.motionType = record.motionType;
             input.targetKind = options.targetKind;
             input.bodyFlags = record.bodyFlags;
-            input.referenceDeletedOrDisabled = !record.resolvedRef || record.resolvedRef->IsDeleted() || record.resolvedRef->IsDisabled();
-            input.isRockHandBody =
-                rawBodyId == options.rightHandBodyId || rawBodyId == options.leftHandBodyId || record.collisionLayer == collision_layer_policy::ROCK_LAYER_HAND;
+            input.referenceDeletedOrDisabled =
+                !record.resolvedRef || record.resolvedRef->IsDeleted() || record.resolvedRef->IsDisabled();
+            input.isRockHandBody = rawBodyId == options.rightHandBodyId || rawBodyId == options.leftHandBodyId ||
+                record.collisionLayer == collision_layer_policy::ROCK_LAYER_HAND;
             input.isRockGeneratedBody = collision_layer_policy::isRockOwnedReusableLayer(record.collisionLayer);
             input.isRockWeaponSourceBody = rawBodyId == options.sourceWeaponBodyId || rawBodyId == options.sourceBodyId;
             input.isHeldBySameHand = containsBodyId(options.heldBySameHand, rawBodyId);
@@ -253,23 +260,17 @@ namespace rock::object_physics_body_set
             if (!record.accepted) {
                 recordReject(out.diagnostics, record.rejectReason);
                 if (g_rockConfig.rockDebugVerboseLogging) {
-                    ROCK_LOG_SAMPLE_DEBUG(Hand,
-                        g_rockConfig.rockLogSampleMilliseconds,
-                        "BODY reject: formID={:08X} resolvedFormID={:08X} body={} reason={} targetKind={} layer={} filter=0x{:08X} "
-                        "motionId={} motionProps={} motionType={} bodyFlags=0x{:08X} refKnown={} seeded={} ownerNode='{}'",
+                    ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
+                        "BODY reject: formID={:08X} resolvedFormID={:08X} body={} reason={} targetKind={} layer={} "
+                        "filter=0x{:08X} "
+                        "motionId={} motionProps={} motionType={} bodyFlags=0x{:08X} refKnown={} seeded={} "
+                        "ownerNode='{}'",
                         context.rootRef ? context.rootRef->GetFormID() : 0,
-                        record.resolvedRef ? record.resolvedRef->GetFormID() : 0,
-                        record.bodyId,
+                        record.resolvedRef ? record.resolvedRef->GetFormID() : 0, record.bodyId,
                         physics_body_classifier::rejectReasonName(record.rejectReason),
-                        grab_target::name(options.targetKind),
-                        record.collisionLayer,
-                        record.filterInfo,
-                        record.motionId,
-                        record.motionPropertiesId,
-                        bodyMotionTypeName(record.motionType),
-                        record.bodyFlags,
-                        record.refResolutionKnown ? "yes" : "no",
-                        record.seeded ? "yes" : "no",
+                        grab_target::name(options.targetKind), record.collisionLayer, record.filterInfo,
+                        record.motionId, record.motionPropertiesId, bodyMotionTypeName(record.motionType),
+                        record.bodyFlags, record.refResolutionKnown ? "yes" : "no", record.seeded ? "yes" : "no",
                         nodeName(record.owningNode));
                 }
             }
@@ -281,15 +282,9 @@ namespace rock::object_physics_body_set
             return true;
         }
 
-        void scanNode(RE::bhkWorld* bhkWorld,
-            RE::hknpWorld* hknpWorld,
-            RE::TESObjectREFR* rootRef,
-            RE::NiAVObject* node,
-            int depth,
-            const BodySetScanOptions& options,
-            ObjectPhysicsBodySet& out,
-            std::unordered_set<std::uint32_t>& seenBodyIds,
-            havok_runtime::PhysicsSystemBodyScanCache& systems)
+        void scanNode(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, RE::TESObjectREFR* rootRef,
+            RE::NiAVObject* node, int depth, const BodySetScanOptions& options, ObjectPhysicsBodySet& out,
+            std::unordered_set<std::uint32_t>& seenBodyIds, havok_runtime::PhysicsSystemBodyScanCache& systems)
         {
             if (!node) {
                 return;
@@ -305,7 +300,8 @@ namespace rock::object_physics_body_set
             if (collisionObject) {
                 ++out.diagnostics.collisionObjects;
 
-                ScanBodyContext context{ bhkWorld, hknpWorld, rootRef, node, collisionObject, &options, &out, &seenBodyIds };
+                ScanBodyContext context{ bhkWorld, hknpWorld, rootRef, node, collisionObject, &options, &out,
+                    &seenBodyIds };
 
                 auto visitBody = [](std::uint32_t rawBodyId, void* userData) {
                     auto* context = static_cast<ScanBodyContext*>(userData);
@@ -314,28 +310,26 @@ namespace rock::object_physics_body_set
                     }
                     return appendBodyRecord(*context, rawBodyId, false);
                 };
-                const auto scanResult = havok_runtime::forEachPhysicsSystemBodyIdDetailed(collisionObject, hknpWorld, 256, visitBody, &context, &systems);
+                const auto scanResult = havok_runtime::forEachPhysicsSystemBodyIdDetailed(collisionObject, hknpWorld,
+                    256, visitBody, &context, &systems);
                 if (!scanResult.enumerated()) {
                     if (isInvalidPhysicsSystemStatus(scanResult.status)) {
                         ++out.diagnostics.scanFailures;
                         ++out.diagnostics.invalidPhysicsSystems;
-                        ROCK_LOG_SAMPLE_WARN(Hand,
-                            1000,
-                            "Object body scan skipped invalid physics system: status={} rootFormID={:08X} node='{}' bodyCount={} visited={} invalidIds={} seedBody={} weaponRef={}",
+                        ROCK_LOG_SAMPLE_WARN(Hand, 1000,
+                            "Object body scan skipped invalid physics system: status={} rootFormID={:08X} node='{}' "
+                            "bodyCount={} visited={} invalidIds={} seedBody={} weaponRef={}",
                             havok_runtime::physicsSystemBodyScanStatusName(scanResult.status),
-                            rootRef ? rootRef->GetFormID() : 0,
-                            nodeName(node),
-                            scanResult.bodyCount,
-                            scanResult.visitedBodies,
-                            scanResult.skippedInvalidBodies,
-                            options.seedBodyId,
+                            rootRef ? rootRef->GetFormID() : 0, nodeName(node), scanResult.bodyCount,
+                            scanResult.visitedBodies, scanResult.skippedInvalidBodies, options.seedBodyId,
                             isWeaponReference(rootRef) ? "yes" : "no");
                     } else {
                         ++out.diagnostics.benignScanSkips;
                         if (scanResult.status == havok_runtime::PhysicsSystemBodyScanStatus::NoBodies ||
                             scanResult.status == havok_runtime::PhysicsSystemBodyScanStatus::EmptyPhysicsSystem)
                             ++out.diagnostics.emptyScanSkips;
-                        else out.diagnostics.unverifiedScanSkipStatus = static_cast<std::uint8_t>(scanResult.status);
+                        else
+                            out.diagnostics.unverifiedScanSkipStatus = static_cast<std::uint8_t>(scanResult.status);
                     }
                 }
             }
@@ -372,32 +366,26 @@ namespace rock::object_physics_body_set
                 entry->bodyIds.push_back(rawBodyId);
                 return true;
             };
-            const auto scanResult = havok_runtime::forEachPhysicsSystemBodyIdDetailed(
-                context.collisionObject,
-                context.hknpWorld,
-                256,
-                visitBody,
-                &entry);
+            const auto scanResult = havok_runtime::forEachPhysicsSystemBodyIdDetailed(context.collisionObject,
+                context.hknpWorld, 256, visitBody, &entry);
             if (!scanResult.enumerated()) {
                 if (isInvalidPhysicsSystemStatus(scanResult.status)) {
                     ++out.diagnostics.scanFailures;
                     ++out.diagnostics.invalidPhysicsSystems;
-                    ROCK_LOG_SAMPLE_WARN(Hand,
-                        1000,
-                        "Object body scan cache skipped invalid physics system: status={} rootFormID={:08X} node='{}' bodyCount={} visited={} invalidIds={} weaponRef={}",
+                    ROCK_LOG_SAMPLE_WARN(Hand, 1000,
+                        "Object body scan cache skipped invalid physics system: status={} rootFormID={:08X} node='{}' "
+                        "bodyCount={} visited={} invalidIds={} weaponRef={}",
                         havok_runtime::physicsSystemBodyScanStatusName(scanResult.status),
-                        context.rootRef ? context.rootRef->GetFormID() : 0,
-                        nodeName(context.node),
-                        scanResult.bodyCount,
-                        scanResult.visitedBodies,
-                        scanResult.skippedInvalidBodies,
+                        context.rootRef ? context.rootRef->GetFormID() : 0, nodeName(context.node),
+                        scanResult.bodyCount, scanResult.visitedBodies, scanResult.skippedInvalidBodies,
                         isWeaponReference(context.rootRef) ? "yes" : "no");
                 } else {
                     ++out.diagnostics.benignScanSkips;
                     if (scanResult.status == havok_runtime::PhysicsSystemBodyScanStatus::NoBodies ||
                         scanResult.status == havok_runtime::PhysicsSystemBodyScanStatus::EmptyPhysicsSystem)
                         ++out.diagnostics.emptyScanSkips;
-                    else out.diagnostics.unverifiedScanSkipStatus = static_cast<std::uint8_t>(scanResult.status);
+                    else
+                        out.diagnostics.unverifiedScanSkipStatus = static_cast<std::uint8_t>(scanResult.status);
                 }
             }
 
@@ -409,7 +397,8 @@ namespace rock::object_physics_body_set
             out.entries.push_back(std::move(entry));
         }
 
-        void pushScanChildren(RE::NiAVObject* node, int childDepth, std::vector<ObjectPhysicsBodyScanCursorEntry>& pendingNodes)
+        void pushScanChildren(RE::NiAVObject* node, int childDepth,
+            std::vector<ObjectPhysicsBodyScanCursorEntry>& pendingNodes)
         {
             auto* niNode = node ? node->IsNode() : nullptr;
             if (!niNode) {
@@ -436,20 +425,12 @@ namespace rock::object_physics_body_set
         {
             auto* node = entry.node.get();
             auto* collisionObject = entry.collisionObject.get();
-            return rootNode &&
-                   node &&
-                   collisionObject &&
-                   nodeIsOrContains(rootNode, node) &&
-                   node->collisionObject.get() == collisionObject;
+            return rootNode && node && collisionObject && nodeIsOrContains(rootNode, node) &&
+                node->collisionObject.get() == collisionObject;
         }
 
-        void captureScanNode(RE::bhkWorld* bhkWorld,
-            RE::hknpWorld* hknpWorld,
-            RE::TESObjectREFR* rootRef,
-            RE::NiAVObject* node,
-            int depth,
-            const BodySetScanOptions& options,
-            ObjectPhysicsBodyScanCache& out)
+        void captureScanNode(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, RE::TESObjectREFR* rootRef,
+            RE::NiAVObject* node, int depth, const BodySetScanOptions& options, ObjectPhysicsBodyScanCache& out)
         {
             (void)bhkWorld;
             if (!node) {
@@ -481,14 +462,9 @@ namespace rock::object_physics_body_set
             });
         }
 
-        void appendCachedBodyRecords(RE::bhkWorld* bhkWorld,
-            RE::hknpWorld* hknpWorld,
-            RE::TESObjectREFR* rootRef,
-            RE::NiAVObject* rootNode,
-            const BodySetScanOptions& options,
-            const ObjectPhysicsBodyScanCache& cache,
-            ObjectPhysicsBodySet& out,
-            std::unordered_set<std::uint32_t>& seenBodyIds)
+        void appendCachedBodyRecords(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, RE::TESObjectREFR* rootRef,
+            RE::NiAVObject* rootNode, const BodySetScanOptions& options, const ObjectPhysicsBodyScanCache& cache,
+            ObjectPhysicsBodySet& out, std::unordered_set<std::uint32_t>& seenBodyIds)
         {
             for (const auto& entry : cache.entries) {
                 if (!cacheEntryStillReachable(rootNode, entry)) {
@@ -496,7 +472,8 @@ namespace rock::object_physics_body_set
                     out.records.clear();
                     return;
                 }
-                ScanBodyContext context{ bhkWorld, hknpWorld, rootRef, entry.node.get(), entry.collisionObject.get(), &options, &out, &seenBodyIds };
+                ScanBodyContext context{ bhkWorld, hknpWorld, rootRef, entry.node.get(), entry.collisionObject.get(),
+                    &options, &out, &seenBodyIds };
                 for (const auto rawBodyId : entry.bodyIds) {
                     if (!appendBodyRecord(context, rawBodyId, false)) {
                         return;
@@ -529,8 +506,8 @@ namespace rock::object_physics_body_set
 
     std::size_t ObjectPhysicsBodySet::acceptedCount() const
     {
-        return static_cast<std::size_t>(
-            std::count_if(records.begin(), records.end(), [](const ObjectPhysicsBodyRecord& record) { return record.accepted; }));
+        return static_cast<std::size_t>(std::count_if(records.begin(), records.end(),
+            [](const ObjectPhysicsBodyRecord& record) { return record.accepted; }));
     }
 
     std::size_t ObjectPhysicsBodySet::rejectedCount() const { return records.size() - acceptedCount(); }
@@ -549,26 +526,30 @@ namespace rock::object_physics_body_set
 
     bool ObjectPhysicsBodySet::containsAcceptedBody(std::uint32_t bodyId) const
     {
-        return std::any_of(records.begin(), records.end(), [&](const ObjectPhysicsBodyRecord& record) {
-            return record.accepted && record.bodyId == bodyId;
-        });
+        return std::any_of(records.begin(), records.end(),
+            [&](const ObjectPhysicsBodyRecord& record) { return record.accepted && record.bodyId == bodyId; });
     }
 
     const ObjectPhysicsBodyRecord* ObjectPhysicsBodySet::findRecord(std::uint32_t bodyId) const
     {
-        const auto it = std::find_if(records.begin(), records.end(), [&](const ObjectPhysicsBodyRecord& record) { return record.bodyId == bodyId; });
+        const auto it = std::find_if(records.begin(), records.end(),
+            [&](const ObjectPhysicsBodyRecord& record) { return record.bodyId == bodyId; });
         return it != records.end() ? &*it : nullptr;
     }
 
     const ObjectPhysicsBodyRecord* ObjectPhysicsBodySet::findAcceptedRagdollOwner(RE::NiAVObject* bone) const
     {
         for (int depth = 0; bone && depth < 64; ++depth, bone = bone->parent) {
-            if (!bone->collisionObject) continue;
+            if (!bone->collisionObject)
+                continue;
             RE::hknpWorld* world = nullptr;
-            RE::hknpBodyId id{INVALID_BODY_ID};
-            if (!havok_runtime::tryResolveCollisionObjectBody(bone->collisionObject.get(), world, id)) return nullptr;
+            RE::hknpBodyId id{ INVALID_BODY_ID };
+            if (!havok_runtime::tryResolveCollisionObjectBody(bone->collisionObject.get(), world, id))
+                return nullptr;
             const auto* record = findRecord(id.value);
-            if (record && record->accepted && record->owningNode == bone && record->collisionObject == bone->collisionObject.get()) return record;
+            if (record && record->accepted && record->owningNode == bone &&
+                record->collisionObject == bone->collisionObject.get())
+                return record;
             // A collision-bearing ancestor is the ownership boundary, including
             // fixed/disabled bodies. Do not jump past it to a different limb.
             return nullptr;
@@ -609,10 +590,12 @@ namespace rock::object_physics_body_set
         return nullptr;
     }
 
-    PrimaryBodyChoice ObjectPhysicsBodySet::choosePrimaryBody(std::uint32_t preferredBodyId, PurePoint3 targetPointGame) const
+    PrimaryBodyChoice ObjectPhysicsBodySet::choosePrimaryBody(std::uint32_t preferredBodyId,
+        PurePoint3 targetPointGame) const
     {
         if (containsAcceptedBody(preferredBodyId)) {
-            return PrimaryBodyChoice{ .bodyId = preferredBodyId, .reason = PrimaryBodyChoiceReason::PreferredHitAccepted };
+            return PrimaryBodyChoice{ .bodyId = preferredBodyId,
+                .reason = PrimaryBodyChoiceReason::PreferredHitAccepted };
         }
 
         float bestDistance = std::numeric_limits<float>::max();
@@ -634,10 +617,12 @@ namespace rock::object_physics_body_set
         return PrimaryBodyChoice{ .bodyId = bestBodyId, .reason = PrimaryBodyChoiceReason::NearestAcceptedFallback };
     }
 
-    PrimaryBodyChoice ObjectPhysicsBodySet::choosePrimaryBodyWithSurfaceOwner(std::uint32_t preferredBodyId, RE::NiAVObject* ownerNode, PurePoint3 targetPointGame) const
+    PrimaryBodyChoice ObjectPhysicsBodySet::choosePrimaryBodyWithSurfaceOwner(std::uint32_t preferredBodyId,
+        RE::NiAVObject* ownerNode, PurePoint3 targetPointGame) const
     {
         if (const auto* surfaceOwner = findAcceptedRecordByOwnerNode(ownerNode)) {
-            return PrimaryBodyChoice{ .bodyId = surfaceOwner->bodyId, .reason = PrimaryBodyChoiceReason::SurfaceOwnerAccepted };
+            return PrimaryBodyChoice{ .bodyId = surfaceOwner->bodyId,
+                .reason = PrimaryBodyChoiceReason::SurfaceOwnerAccepted };
         }
 
         return choosePrimaryBody(preferredBodyId, targetPointGame);
@@ -658,16 +643,12 @@ namespace rock::object_physics_body_set
         }
 
         auto& children = niNode->GetRuntimeData().children;
-        return !visitWeaponChildSlots(children, [&](auto* child, auto) {
-            return !hasCollisionObjectInSubtree(child, maxDepth - 1);
-        });
+        return !visitWeaponChildSlots(children,
+            [&](auto* child, auto) { return !hasCollisionObjectInSubtree(child, maxDepth - 1); });
     }
 
-    bool beginObjectPhysicsBodyScanCache(
-        RE::TESObjectREFR* ref,
-        const BodySetScanOptions& options,
-        ObjectPhysicsBodyScanCursor& cursor,
-        ObjectPhysicsBodyScanCache& outCache)
+    bool beginObjectPhysicsBodyScanCache(RE::TESObjectREFR* ref, const BodySetScanOptions& options,
+        ObjectPhysicsBodyScanCursor& cursor, ObjectPhysicsBodyScanCache& outCache)
     {
         cursor.clear();
         outCache.clear();
@@ -702,17 +683,15 @@ namespace rock::object_physics_body_set
         return true;
     }
 
-    ObjectPhysicsBodyScanStepResult advanceObjectPhysicsBodyScanCache(
-        RE::hknpWorld* hknpWorld,
-        const BodySetScanOptions& options,
-        const ObjectPhysicsBodyScanBudget& rawBudget,
-        ObjectPhysicsBodyScanCursor& cursor,
-        ObjectPhysicsBodyScanCache& outCache)
+    ObjectPhysicsBodyScanStepResult advanceObjectPhysicsBodyScanCache(RE::hknpWorld* hknpWorld,
+        const BodySetScanOptions& options, const ObjectPhysicsBodyScanBudget& rawBudget,
+        ObjectPhysicsBodyScanCursor& cursor, ObjectPhysicsBodyScanCache& outCache)
     {
         (void)options;
         ObjectPhysicsBodyScanStepResult result{};
         const auto budget = sanitizeBudget(rawBudget);
-        if (!hknpWorld || !cursor.initialized || !cursor.rootRef || cursor.rootRef->IsDeleted() || cursor.rootRef->IsDisabled()) {
+        if (!hknpWorld || !cursor.initialized || !cursor.rootRef || cursor.rootRef->IsDeleted() ||
+            cursor.rootRef->IsDisabled()) {
             result.invalidated = true;
             cursor.clear();
             outCache.clear();
@@ -720,7 +699,8 @@ namespace rock::object_physics_body_set
         }
 
         auto* currentRoot = cursor.rootRef->Get3D();
-        if (!currentRoot || currentRoot != cursor.rootNode.get() || outCache.rootRef != cursor.rootRef || outCache.rootNode.get() != currentRoot) {
+        if (!currentRoot || currentRoot != cursor.rootNode.get() || outCache.rootRef != cursor.rootRef ||
+            outCache.rootNode.get() != currentRoot) {
             result.invalidated = true;
             cursor.clear();
             outCache.clear();
@@ -766,8 +746,7 @@ namespace rock::object_physics_body_set
             pushScanChildren(node, item.depth - 1, cursor.pendingNodes);
 
             if (result.visitedNodes >= budget.maxVisitedNodes ||
-                result.collisionObjects >= budget.maxCollisionObjects ||
-                result.bodyIds >= budget.maxBodyIds) {
+                result.collisionObjects >= budget.maxCollisionObjects || result.bodyIds >= budget.maxBodyIds) {
                 result.budgetExhausted = !cursor.pendingNodes.empty();
                 break;
             }
@@ -782,11 +761,8 @@ namespace rock::object_physics_body_set
         return result;
     }
 
-    ObjectPhysicsBodyScanCache captureObjectPhysicsBodyScanCache(
-        RE::bhkWorld* bhkWorld,
-        RE::hknpWorld* hknpWorld,
-        RE::TESObjectREFR* ref,
-        const BodySetScanOptions& options)
+    ObjectPhysicsBodyScanCache captureObjectPhysicsBodyScanCache(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
+        RE::TESObjectREFR* ref, const BodySetScanOptions& options)
     {
         ObjectPhysicsBodyScanCache result;
         result.rootRef = ref;
@@ -801,7 +777,8 @@ namespace rock::object_physics_body_set
         }
 
         if (options.allowWeaponRefExpansion || !isWeaponReference(ref)) {
-            captureScanNode(bhkWorld, hknpWorld, ref, result.rootNode.get(), (std::max)(0, options.maxDepth), options, result);
+            captureScanNode(bhkWorld, hknpWorld, ref, result.rootNode.get(), (std::max)(0, options.maxDepth), options,
+                result);
         } else {
             ++result.diagnostics.weaponExpansionSkips;
         }
@@ -810,16 +787,13 @@ namespace rock::object_physics_body_set
         return result;
     }
 
-    ObjectPhysicsBodySet buildObjectPhysicsBodySetFromScanCache(
-        RE::bhkWorld* bhkWorld,
-        RE::hknpWorld* hknpWorld,
-        RE::TESObjectREFR* ref,
-        const BodySetScanOptions& options,
-        const ObjectPhysicsBodyScanCache& cache)
+    ObjectPhysicsBodySet buildObjectPhysicsBodySetFromScanCache(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
+        RE::TESObjectREFR* ref, const BodySetScanOptions& options, const ObjectPhysicsBodyScanCache& cache)
     {
         ObjectPhysicsBodySet result;
         result.rootRef = ref;
-        if (!bhkWorld || !hknpWorld || !ref || ref->IsDeleted() || ref->IsDisabled() || !cache.valid || cache.rootRef != ref) {
+        if (!bhkWorld || !hknpWorld || !ref || ref->IsDeleted() || ref->IsDisabled() || !cache.valid ||
+            cache.rootRef != ref) {
             return result;
         }
 
@@ -835,7 +809,8 @@ namespace rock::object_physics_body_set
 
         std::unordered_set<std::uint32_t> seenBodyIds;
         if (options.seedBodyId != INVALID_BODY_ID) {
-            ScanBodyContext seedContext{ bhkWorld, hknpWorld, ref, options.seedHitNode ? options.seedHitNode : result.rootNode, nullptr, &options, &result, &seenBodyIds };
+            ScanBodyContext seedContext{ bhkWorld, hknpWorld, ref,
+                options.seedHitNode ? options.seedHitNode : result.rootNode, nullptr, &options, &result, &seenBodyIds };
             appendBodyRecord(seedContext, options.seedBodyId, true);
         }
 
@@ -843,7 +818,8 @@ namespace rock::object_physics_body_set
         return result;
     }
 
-    ObjectPhysicsBodySet scanObjectPhysicsBodySet(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, RE::TESObjectREFR* ref, const BodySetScanOptions& options)
+    ObjectPhysicsBodySet scanObjectPhysicsBodySet(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
+        RE::TESObjectREFR* ref, const BodySetScanOptions& options)
     {
         ObjectPhysicsBodySet result;
         result.rootRef = ref;
@@ -862,7 +838,8 @@ namespace rock::object_physics_body_set
         havok_runtime::PhysicsSystemBodyScanCache systems;
         std::unordered_set<std::uint32_t> seenBodyIds;
         if (options.seedBodyId != INVALID_BODY_ID) {
-            ScanBodyContext seedContext{ bhkWorld, hknpWorld, ref, options.seedHitNode ? options.seedHitNode : result.rootNode, nullptr, &options, &result, &seenBodyIds };
+            ScanBodyContext seedContext{ bhkWorld, hknpWorld, ref,
+                options.seedHitNode ? options.seedHitNode : result.rootNode, nullptr, &options, &result, &seenBodyIds };
             appendBodyRecord(seedContext, options.seedBodyId, true);
             if (grab_target::requiresNativeBodyOwnership(options.targetKind) && options.seedHitNode) {
                 // Detached systems may no longer be under the actor's current 3D.
@@ -871,7 +848,8 @@ namespace rock::object_physics_body_set
         }
 
         if (options.allowWeaponRefExpansion || !isWeaponReference(ref)) {
-            scanNode(bhkWorld, hknpWorld, ref, result.rootNode, (std::max)(0, options.maxDepth), options, result, seenBodyIds, systems);
+            scanNode(bhkWorld, hknpWorld, ref, result.rootNode, (std::max)(0, options.maxDepth), options, result,
+                seenBodyIds, systems);
         } else {
             ++result.diagnostics.weaponExpansionSkips;
         }

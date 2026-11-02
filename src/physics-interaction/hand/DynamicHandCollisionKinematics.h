@@ -16,8 +16,7 @@ namespace rock::dynamic_hand_collision_kinematics
     // Preserve the existing bounded half-space projection: contacts sharing a
     // surface collapse to one correction; contacts around a corner compose.
     template <class Vector, std::size_t SlotCount>
-    [[nodiscard]] inline Vector combineTwinDeviations(
-        const std::array<Vector, SlotCount>& deviations,
+    [[nodiscard]] inline Vector combineTwinDeviations(const std::array<Vector, SlotCount>& deviations,
         const std::array<bool, SlotCount>& deviationValid) noexcept
     {
         constexpr float kTinyDeviation = 1.0e-4f;
@@ -26,14 +25,12 @@ namespace rock::dynamic_hand_collision_kinematics
             bool changed = false;
             for (std::size_t i = 0; i < deviations.size(); ++i) {
                 const auto& deviation = deviations[i];
-                if (!deviationValid[i] || !std::isfinite(deviation.x) ||
-                    !std::isfinite(deviation.y) || !std::isfinite(deviation.z)) {
+                if (!deviationValid[i] || !std::isfinite(deviation.x) || !std::isfinite(deviation.y) ||
+                    !std::isfinite(deviation.z)) {
                     continue;
                 }
-                const float length = std::sqrt(
-                    deviation.x * deviation.x +
-                    deviation.y * deviation.y +
-                    deviation.z * deviation.z);
+                const float length =
+                    std::sqrt(deviation.x * deviation.x + deviation.y * deviation.y + deviation.z * deviation.z);
                 if (!std::isfinite(length) || length <= kTinyDeviation) {
                     continue;
                 }

@@ -2,7 +2,10 @@
 
 #include <cstdint>
 
-namespace RE { class hknpWorld; }
+namespace RE
+{
+    class hknpWorld;
+}
 
 namespace rock::native_impact_audio
 {
@@ -11,6 +14,6 @@ namespace rock::native_impact_audio
 
     // Physics-callback-only profiler observation of generated-collider
     // manifolds. No engine pointers escape the call.
-    void observeManifold(RE::hknpWorld* world, std::uint32_t bodyA,
-        std::uint32_t bodyB, std::uint32_t shapeKeyA, std::uint32_t shapeKeyB) noexcept;
+    void observeManifold(RE::hknpWorld* world, std::uint32_t bodyA, std::uint32_t bodyB, std::uint32_t shapeKeyA,
+        std::uint32_t shapeKeyB) noexcept;
 }

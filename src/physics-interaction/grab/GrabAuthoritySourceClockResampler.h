@@ -79,10 +79,7 @@ namespace rock::grab_authority_source_clock
         return std::acos(cosAngle) * 57.29577951308232f;
     }
 
-    inline bool isFiniteVector(const RE::NiPoint3& value) noexcept
-    {
-        return vector_math::hasFiniteComponents(value);
-    }
+    inline bool isFiniteVector(const RE::NiPoint3& value) noexcept { return vector_math::hasFiniteComponents(value); }
 
     struct GameClockPhaseLock
     {
@@ -107,10 +104,7 @@ namespace rock::grab_authority_source_clock
         std::uint32_t duplicateSourceCount = 0;
         std::uint32_t invalidSourceCount = 0;
 
-        void reset() noexcept
-        {
-            *this = GameClockPhaseLock{};
-        }
+        void reset() noexcept { *this = GameClockPhaseLock{}; }
 
         // Snap: adopt the sample as a degenerate (fully played) segment so the
         // next evaluate holds exactly on it instead of interpolating across a
@@ -128,7 +122,8 @@ namespace rock::grab_authority_source_clock
         // Accept one game-frame source sample. Sequence identity keeps
         // multi-substep re-flushes of the same pending target from advancing
         // the source segment twice.
-        void advanceSource(const RE::NiPoint3& translation, const RE::NiMatrix3& rotation, float sourceDeltaSeconds, std::uint64_t sourceSequence) noexcept
+        void advanceSource(const RE::NiPoint3& translation, const RE::NiMatrix3& rotation, float sourceDeltaSeconds,
+            std::uint64_t sourceSequence) noexcept
         {
             if (initialized && sourceSequence == lastSourceSequence) {
                 ++duplicateSourceCount;
@@ -148,7 +143,8 @@ namespace rock::grab_authority_source_clock
                 return;
             }
 
-            if (!havok_physics_timing::isUsableDelta(sourceDeltaSeconds) || sourceDeltaSeconds > kMaxSourceIntervalSeconds) {
+            if (!havok_physics_timing::isUsableDelta(sourceDeltaSeconds) ||
+                sourceDeltaSeconds > kMaxSourceIntervalSeconds) {
                 rebaseTo(translation, rotation);
                 return;
             }
@@ -171,10 +167,9 @@ namespace rock::grab_authority_source_clock
             playedFraction = 0.0f;
             // Only validated ordinary intervals feed the cadence filter;
             // hitches and invalid samples took the rebase paths above.
-            filteredSourceIntervalSeconds = filteredSourceIntervalSeconds > 0.0f ?
-                filteredSourceIntervalSeconds +
-                    kSourceIntervalFilterAlpha * (sourceDeltaSeconds - filteredSourceIntervalSeconds) :
-                sourceDeltaSeconds;
+            filteredSourceIntervalSeconds = filteredSourceIntervalSeconds > 0.0f ? filteredSourceIntervalSeconds +
+                    kSourceIntervalFilterAlpha * (sourceDeltaSeconds - filteredSourceIntervalSeconds)
+                                                                                 : sourceDeltaSeconds;
         }
 
         // Command the segment point for physics substep (substepIndex + 1) /
@@ -183,7 +178,8 @@ namespace rock::grab_authority_source_clock
         // game-clock lock that keeps frame-end proxy positions on the sampled
         // wand path. Always returns a finite, previously accepted (or
         // segment-interpolated) translation.
-        RE::NiPoint3 evaluate(std::uint32_t substepIndex, std::uint32_t substepCount, ResampleAction& outAction) noexcept
+        RE::NiPoint3 evaluate(std::uint32_t substepIndex, std::uint32_t substepCount,
+            ResampleAction& outAction) noexcept
         {
             if (!initialized) {
                 outAction = ResampleAction::Hold;

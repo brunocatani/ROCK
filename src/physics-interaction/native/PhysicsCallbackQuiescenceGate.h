@@ -26,12 +26,14 @@ namespace rock
         {
         public:
             CallbackLease() = default;
+
             ~CallbackLease() { release(); }
 
             CallbackLease(const CallbackLease&) = delete;
             CallbackLease& operator=(const CallbackLease&) = delete;
 
             CallbackLease(CallbackLease&& other) noexcept : _gate(std::exchange(other._gate, nullptr)) {}
+
             CallbackLease& operator=(CallbackLease&& other) noexcept
             {
                 if (this != &other) {
@@ -45,6 +47,7 @@ namespace rock
 
         private:
             friend class PhysicsCallbackQuiescenceGate;
+
             explicit CallbackLease(PhysicsCallbackQuiescenceGate* gate) : _gate(gate) {}
 
             void release()
@@ -62,6 +65,7 @@ namespace rock
         {
         public:
             MutationLease() = default;
+
             ~MutationLease()
             {
                 if (_resumeOnExit && _gate) {
@@ -73,9 +77,9 @@ namespace rock
             MutationLease& operator=(const MutationLease&) = delete;
 
             MutationLease(MutationLease&& other) noexcept :
-                _gate(std::exchange(other._gate, nullptr)),
-                _resumeOnExit(std::exchange(other._resumeOnExit, false))
+                _gate(std::exchange(other._gate, nullptr)), _resumeOnExit(std::exchange(other._resumeOnExit, false))
             {}
+
             MutationLease& operator=(MutationLease&& other) noexcept
             {
                 if (this != &other) {
@@ -90,9 +94,9 @@ namespace rock
 
         private:
             friend class PhysicsCallbackQuiescenceGate;
+
             MutationLease(PhysicsCallbackQuiescenceGate* gate, bool resumeOnExit) :
-                _gate(gate),
-                _resumeOnExit(resumeOnExit)
+                _gate(gate), _resumeOnExit(resumeOnExit)
             {}
 
             PhysicsCallbackQuiescenceGate* _gate = nullptr;
@@ -130,21 +134,16 @@ namespace rock
             waitForCallbacks();
         }
 
-        void resumeCallbacks()
-        {
-            _callbacksPaused.store(false, std::memory_order_release);
-        }
+        void resumeCallbacks() { _callbacksPaused.store(false, std::memory_order_release); }
 
-        [[nodiscard]] bool callbacksPaused() const
-        {
-            return _callbacksPaused.load(std::memory_order_acquire);
-        }
+        [[nodiscard]] bool callbacksPaused() const { return _callbacksPaused.load(std::memory_order_acquire); }
 
     private:
         void waitForCallbacks()
         {
             std::uint32_t active = _callbacksInFlight.load(std::memory_order_acquire);
-            if (active == 0) return;
+            if (active == 0)
+                return;
             performance_profiler::ScopedTimer waitTimer(performance_profiler::Scope::CallbackQuiescenceWait);
             while (active != 0) {
                 _callbacksInFlight.wait(active, std::memory_order_acquire);

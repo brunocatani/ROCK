@@ -16,27 +16,27 @@
 #include <utility>
 #include <vector>
 
-#include "physics-interaction/native/HavokOffsets.h"
-#include "physics-interaction/native/HavokPhysicsTiming.h"
-#include "physics-interaction/native/HavokWorldLock.h"
+#include "RPSUIWorldDrawApi.h"
+#include "RockConfig.h"
+#include "physics-interaction/PhysicsBodyFrame.h"
+#include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/debug/DebugOverlayFrameAdmission.h"
-#include "physics-interaction/native/HeldScenePresentation.h"
 #include "physics-interaction/debug/DebugOverlayLineBatch.h"
 #include "physics-interaction/debug/DebugOverlayPolicy.h"
 #include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
 #include "physics-interaction/debug/DebugOverlayShapeGeometry.h"
 #include "physics-interaction/debug/DebugOverlayShapePipeline.h"
-#include "rock_support/ImmutableSnapshotPool.h"
 #include "physics-interaction/debug/DebugOverlayStats.h"
-#include "physics-interaction/PhysicsBodyFrame.h"
-#include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/HavokPhysicsTiming.h"
+#include "physics-interaction/native/HavokWorldLock.h"
+#include "physics-interaction/native/HeldScenePresentation.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/GripZoneIndicators.h"
 #include "physics-interaction/visual/WorldDrawClient.h"
 #include "physics-interaction/visual/WorldOverlayRenderer.h"
-#include "RockConfig.h"
-#include "RPSUIWorldDrawApi.h"
+#include "rock_support/ImmutableSnapshotPool.h"
 
 #include "RE/Havok/hknpMotion.h"
 #include "RE/Havok/hknpShape.h"
@@ -173,8 +173,7 @@ namespace rock::debug
             ShapeKey shapeKey{};
             DirectX::XMMATRIX worldMatrix = DirectX::XMMatrixIdentity();
             DirectX::XMMATRIX physicsWorldMatrix = DirectX::XMMatrixIdentity();
-            DirectX::XMMATRIX childLocalMatrix =
-                DirectX::XMMatrixIdentity();
+            DirectX::XMMATRIX childLocalMatrix = DirectX::XMMatrixIdentity();
             DirectX::XMFLOAT3 worldAabbMin{};
             DirectX::XMFLOAT3 worldAabbMax{};
             BodyOverlayRole role{ BodyOverlayRole::Target };
@@ -313,6 +312,7 @@ namespace rock::debug
             std::atomic<std::uint64_t> lastRequestFrame{ 0 };
             std::atomic<std::uint64_t> lastCaptureFrame{ 0 };
         };
+
         static PhaseCaptureDiagnostics s_phaseCaptureDiagnostics{};
 
         static debug_overlay_frame_admission::FrameAdmission s_frameAdmission{};
@@ -354,11 +354,8 @@ namespace rock::debug
             return mixShapeFingerprint(seed, floatBits(value));
         }
 
-        std::uint64_t computeShapeGeometryFingerprintUnsafe(
-            std::uintptr_t shapeAddress,
-            const OverlayRenderSettings& settings,
-            int depth = 0,
-            int* rootShapeType = nullptr,
+        std::uint64_t computeShapeGeometryFingerprintUnsafe(std::uintptr_t shapeAddress,
+            const OverlayRenderSettings& settings, int depth = 0, int* rootShapeType = nullptr,
             float* rootConvexRadius = nullptr)
         {
             /*
@@ -393,7 +390,8 @@ namespace rock::debug
                 case 1:
                 case 4: {
                     const int vertexCount = shape->GetNumberOfSupportVertices();
-                    fingerprint = mixShapeFingerprint(fingerprint, static_cast<std::uint32_t>((std::max)(vertexCount, 0)));
+                    fingerprint =
+                        mixShapeFingerprint(fingerprint, static_cast<std::uint32_t>((std::max)(vertexCount, 0)));
                     if (vertexCount <= 0 || vertexCount > 256) {
                         return fingerprint;
                     }
@@ -427,9 +425,12 @@ namespace rock::debug
                 }
                 case 7:
                 case 8: {
-                    const auto slotArray = *reinterpret_cast<const std::uintptr_t*>(shapeAddress + kCompoundSlotArrayOffset);
-                    const auto slotCount = *reinterpret_cast<const std::int32_t*>(shapeAddress + kCompoundSlotCountOffset);
-                    fingerprint = mixShapeFingerprint(fingerprint, static_cast<std::uint32_t>((std::max)(slotCount, 0)));
+                    const auto slotArray =
+                        *reinterpret_cast<const std::uintptr_t*>(shapeAddress + kCompoundSlotArrayOffset);
+                    const auto slotCount =
+                        *reinterpret_cast<const std::int32_t*>(shapeAddress + kCompoundSlotCountOffset);
+                    fingerprint =
+                        mixShapeFingerprint(fingerprint, static_cast<std::uint32_t>((std::max)(slotCount, 0)));
                     if (!slotArray || slotCount <= 0 ||
                         static_cast<std::uint32_t>(slotCount) > settings.limits.maxCompoundChildren) {
                         return fingerprint;
@@ -448,7 +449,8 @@ namespace rock::debug
                             continue;
                         }
 
-                        const auto childShape = *reinterpret_cast<const std::uintptr_t*>(slot + kCompoundSlotShapeOffset);
+                        const auto childShape =
+                            *reinterpret_cast<const std::uintptr_t*>(slot + kCompoundSlotShapeOffset);
                         fingerprint = mixShapeFingerprint(fingerprint, childShape);
                         const auto* transform = reinterpret_cast<const float*>(slot + kCompoundSlotTransformOffset);
                         const auto* childScale = reinterpret_cast<const float*>(slot + kCompoundSlotScaleOffset);
@@ -458,20 +460,20 @@ namespace rock::debug
                         for (std::size_t component = 0; component < 3; ++component) {
                             fingerprint = mixShapeFloat(fingerprint, childScale[component]);
                         }
-                        fingerprint = mixShapeFingerprint(
-                            fingerprint,
+                        fingerprint = mixShapeFingerprint(fingerprint,
                             computeShapeGeometryFingerprintUnsafe(childShape, settings, depth + 1));
                     }
                     return fingerprint;
                 }
                 case 11: {
-                    const auto innerShape = *reinterpret_cast<const std::uintptr_t*>(shapeAddress + kScaledConvexInnerShapeOffset);
+                    const auto innerShape =
+                        *reinterpret_cast<const std::uintptr_t*>(shapeAddress + kScaledConvexInnerShapeOffset);
                     fingerprint = mixShapeFingerprint(fingerprint, innerShape);
-                    fingerprint = mixShapeFingerprint(
-                        fingerprint,
+                    fingerprint = mixShapeFingerprint(fingerprint,
                         computeShapeGeometryFingerprintUnsafe(innerShape, settings, depth + 1));
                     const auto* scaleVector = reinterpret_cast<const float*>(shapeAddress + kScaledConvexScaleOffset);
-                    const auto* translationVector = reinterpret_cast<const float*>(shapeAddress + kScaledConvexTranslationOffset);
+                    const auto* translationVector =
+                        reinterpret_cast<const float*>(shapeAddress + kScaledConvexTranslationOffset);
                     for (std::size_t component = 0; component < 3; ++component) {
                         fingerprint = mixShapeFloat(fingerprint, scaleVector[component]);
                         fingerprint = mixShapeFloat(fingerprint, translationVector[component]);
@@ -486,11 +488,8 @@ namespace rock::debug
             }
         }
 
-        std::uint64_t computeShapeGeometryFingerprintSeh(
-            std::uintptr_t shapeAddress,
-            const OverlayRenderSettings* settings,
-            int* rootShapeType,
-            float* rootConvexRadius)
+        std::uint64_t computeShapeGeometryFingerprintSeh(std::uintptr_t shapeAddress,
+            const OverlayRenderSettings* settings, int* rootShapeType, float* rootConvexRadius)
         {
             if (rootShapeType) {
                 *rootShapeType = -1;
@@ -502,22 +501,18 @@ namespace rock::debug
                 return 0;
             }
             __try {
-                return computeShapeGeometryFingerprintUnsafe(shapeAddress, *settings, 0, rootShapeType, rootConvexRadius);
+                return computeShapeGeometryFingerprintUnsafe(shapeAddress, *settings, 0, rootShapeType,
+                    rootConvexRadius);
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 return 0;
             }
         }
 
-        ShapeKey makeShapeKey(
-            std::uintptr_t shapeAddress,
-            const OverlayRenderSettings& settings,
-            int& shapeType,
+        ShapeKey makeShapeKey(std::uintptr_t shapeAddress, const OverlayRenderSettings& settings, int& shapeType,
             float& convexRadius)
         {
-            return ShapeKey{
-                shapeAddress,
-                computeShapeGeometryFingerprintSeh(shapeAddress, &settings, &shapeType, &convexRadius)
-            };
+            return ShapeKey{ shapeAddress,
+                computeShapeGeometryFingerprintSeh(shapeAddress, &settings, &shapeType, &convexRadius) };
         }
 
         RE::NiPoint3 normalizedNi(const RE::NiPoint3& value)
@@ -540,33 +535,32 @@ namespace rock::debug
 
         DirectX::XMMATRIX quaternionToMatrix(const float* quaternion)
         {
-            return DirectX::XMMatrixRotationQuaternion(DirectX::XMVectorSet(quaternion[0], quaternion[1], quaternion[2], quaternion[3]));
+            return DirectX::XMMatrixRotationQuaternion(
+                DirectX::XMVectorSet(quaternion[0], quaternion[1], quaternion[2], quaternion[3]));
         }
 
         DirectX::XMMATRIX motionToWorldMatrix(const float* position, const float* orientation)
         {
             const DirectX::XMMATRIX rotation = quaternionToMatrix(orientation);
-            const DirectX::XMMATRIX translation =
-                DirectX::XMMatrixTranslation(position[0] * havokToGameScale(), position[1] * havokToGameScale(), position[2] * havokToGameScale());
+            const DirectX::XMMATRIX translation = DirectX::XMMatrixTranslation(position[0] * havokToGameScale(),
+                position[1] * havokToGameScale(), position[2] * havokToGameScale());
             return DirectX::XMMatrixMultiply(rotation, translation);
         }
 
         DirectX::XMMATRIX bodyToWorldMatrix(const float* transform)
         {
-            const DirectX::XMMATRIX rotation = DirectX::XMMatrixSet(transform[0], transform[1], transform[2], 0.0f, transform[4], transform[5], transform[6], 0.0f,
-                transform[8], transform[9], transform[10], 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
-            const DirectX::XMMATRIX translation =
-                DirectX::XMMatrixTranslation(transform[12] * havokToGameScale(), transform[13] * havokToGameScale(), transform[14] * havokToGameScale());
+            const DirectX::XMMATRIX rotation =
+                DirectX::XMMatrixSet(transform[0], transform[1], transform[2], 0.0f, transform[4], transform[5],
+                    transform[6], 0.0f, transform[8], transform[9], transform[10], 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+            const DirectX::XMMATRIX translation = DirectX::XMMatrixTranslation(transform[12] * havokToGameScale(),
+                transform[13] * havokToGameScale(), transform[14] * havokToGameScale());
             return DirectX::XMMatrixMultiply(rotation, translation);
         }
 
         bool isFiniteTransform(const RE::NiTransform& transform)
         {
-            if (!std::isfinite(transform.translate.x) ||
-                !std::isfinite(transform.translate.y) ||
-                !std::isfinite(transform.translate.z) ||
-                !std::isfinite(transform.scale) ||
-                transform.scale <= 0.0f) {
+            if (!std::isfinite(transform.translate.x) || !std::isfinite(transform.translate.y) ||
+                !std::isfinite(transform.translate.z) || !std::isfinite(transform.scale) || transform.scale <= 0.0f) {
                 return false;
             }
             for (std::uint32_t row = 0; row < 3; ++row) {
@@ -588,15 +582,12 @@ namespace rock::debug
              * convention. bodyToWorldMatrix copies the corresponding native
              * BODY axis blocks into these same D3D matrix rows.
              */
-            const DirectX::XMMATRIX rotation = DirectX::XMMatrixSet(
-                transform.rotate.entry[0][0], transform.rotate.entry[0][1], transform.rotate.entry[0][2], 0.0f,
-                transform.rotate.entry[1][0], transform.rotate.entry[1][1], transform.rotate.entry[1][2], 0.0f,
-                transform.rotate.entry[2][0], transform.rotate.entry[2][1], transform.rotate.entry[2][2], 0.0f,
-                0.0f, 0.0f, 0.0f, 1.0f);
-            const DirectX::XMMATRIX translation = DirectX::XMMatrixTranslation(
-                transform.translate.x,
-                transform.translate.y,
-                transform.translate.z);
+            const DirectX::XMMATRIX rotation = DirectX::XMMatrixSet(transform.rotate.entry[0][0],
+                transform.rotate.entry[0][1], transform.rotate.entry[0][2], 0.0f, transform.rotate.entry[1][0],
+                transform.rotate.entry[1][1], transform.rotate.entry[1][2], 0.0f, transform.rotate.entry[2][0],
+                transform.rotate.entry[2][1], transform.rotate.entry[2][2], 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+            const DirectX::XMMATRIX translation =
+                DirectX::XMMatrixTranslation(transform.translate.x, transform.translate.y, transform.translate.z);
             return DirectX::XMMatrixMultiply(rotation, translation);
         }
 
@@ -608,8 +599,7 @@ namespace rock::debug
             const float centerX = (body.worldAabbMin.x + body.worldAabbMax.x) * 0.5f;
             const float centerY = (body.worldAabbMin.y + body.worldAabbMax.y) * 0.5f;
             const float centerZ = (body.worldAabbMin.z + body.worldAabbMax.z) * 0.5f;
-            return DirectX::XMMatrixMultiply(
-                DirectX::XMMatrixScaling(extentX, extentY, extentZ),
+            return DirectX::XMMatrixMultiply(DirectX::XMMatrixScaling(extentX, extentY, extentZ),
                 DirectX::XMMatrixTranslation(centerX, centerY, centerZ));
         }
 
@@ -620,19 +610,18 @@ namespace rock::debug
              * BODY array transform, matching body-B authority, instead of the
              * generic live MOTION/COM frame used by non-target body readback.
              */
-            return role == BodyOverlayRole::Target ?
-                       BodyOverlayFrameSource::BodyArrayTransform :
-                       BodyOverlayFrameSource::LiveMotionWhenAvailable;
+            return role == BodyOverlayRole::Target ? BodyOverlayFrameSource::BodyArrayTransform
+                                                   : BodyOverlayFrameSource::LiveMotionWhenAvailable;
         }
 
         BodyOverlayFrameSource targetAxisOverlayFrameSource(AxisOverlayRole role)
         {
-            return role == AxisOverlayRole::TargetBody ?
-                       BodyOverlayFrameSource::BodyArrayTransform :
-                       BodyOverlayFrameSource::LiveMotionWhenAvailable;
+            return role == AxisOverlayRole::TargetBody ? BodyOverlayFrameSource::BodyArrayTransform
+                                                       : BodyOverlayFrameSource::LiveMotionWhenAvailable;
         }
 
-        bool extractBody(RE::hknpWorld* world, RE::hknpBodyId bodyId, BodyOverlayFrameSource frameSource, BodyRenderInfo& out)
+        bool extractBody(RE::hknpWorld* world, RE::hknpBodyId bodyId, BodyOverlayFrameSource frameSource,
+            BodyRenderInfo& out)
         {
             const auto* body = havok_runtime::getBody(world, bodyId);
             if (!body || !body->shape) {
@@ -667,9 +656,7 @@ namespace rock::debug
         // missing array, freed motion, or non-finite component.
         void stagePhysicsPhaseCapture(const PublishedOverlayFrame& frame) noexcept
         {
-            s_physicsPhaseCaptureEnabled.store(
-                false,
-                std::memory_order_release);
+            s_physicsPhaseCaptureEnabled.store(false, std::memory_order_release);
             AtomicFlagLease lease(s_physicsPhaseCaptureGate);
             if (!lease) {
                 return;
@@ -678,9 +665,7 @@ namespace rock::debug
             s_physicsPhaseCaptureRequest = {};
             if (!frame.worldIdentity || frame.gameFrameIndex == 0 ||
                 (!frame.drawRockBodies && !frame.drawTargetBodies && !frame.drawAxes)) {
-                s_physicsPhaseCaptureEnabled.store(
-                    false,
-                    std::memory_order_release);
+                s_physicsPhaseCaptureEnabled.store(false, std::memory_order_release);
                 s_completedBodyPhaseFrame = {};
                 return;
             }
@@ -698,12 +683,9 @@ namespace rock::debug
                 }
 
                 bool alreadyStaged = false;
-                for (std::uint32_t index = 0;
-                     index < s_physicsPhaseCaptureRequest.count;
-                     ++index) {
+                for (std::uint32_t index = 0; index < s_physicsPhaseCaptureRequest.count; ++index) {
                     const auto& staged = s_physicsPhaseCaptureRequest.entries[index];
-                    if (staged.bodyId.value == source.bodyId &&
-                        staged.role == source.role) {
+                    if (staged.bodyId.value == source.bodyId && staged.role == source.role) {
                         alreadyStaged = true;
                         break;
                     }
@@ -712,46 +694,43 @@ namespace rock::debug
                     continue;
                 }
 
-                if (s_physicsPhaseCaptureRequest.count >=
-                    s_physicsPhaseCaptureRequest.entries.size()) {
+                if (s_physicsPhaseCaptureRequest.count >= s_physicsPhaseCaptureRequest.entries.size()) {
                     break;
                 }
 
-                auto& destination = s_physicsPhaseCaptureRequest.entries[
-                    s_physicsPhaseCaptureRequest.count++];
+                auto& destination = s_physicsPhaseCaptureRequest.entries[s_physicsPhaseCaptureRequest.count++];
                 destination.bodyId = RE::hknpBodyId{ source.bodyId };
                 destination.role = source.role;
-                destination.useBodyArrayTransform =
-                    source.role == BodyOverlayRole::Target;
+                destination.useBodyArrayTransform = source.role == BodyOverlayRole::Target;
             }
             // Body axes can be enabled without collider shells. Capture their
             // physical frame too, sharing a request when the shell is present.
             for (const auto& axis : frame.axes) {
-                if (axis.entry.source != AxisOverlaySource::Body || axis.entry.bodyId.value == kInvalidBodyId) continue;
-                const auto role = axis.entry.role == AxisOverlayRole::TargetBody ? BodyOverlayRole::Target :
-                    axis.entry.role == AxisOverlayRole::LeftHandBody ? BodyOverlayRole::LeftHand : BodyOverlayRole::RightHand;
+                if (axis.entry.source != AxisOverlaySource::Body || axis.entry.bodyId.value == kInvalidBodyId)
+                    continue;
+                const auto role = axis.entry.role == AxisOverlayRole::TargetBody ? BodyOverlayRole::Target
+                    : axis.entry.role == AxisOverlayRole::LeftHandBody           ? BodyOverlayRole::LeftHand
+                                                                                 : BodyOverlayRole::RightHand;
                 bool alreadyStaged = false;
                 for (std::uint32_t index = 0; index < s_physicsPhaseCaptureRequest.count; ++index) {
                     const auto& entry = s_physicsPhaseCaptureRequest.entries[index];
                     alreadyStaged |= entry.bodyId.value == axis.entry.bodyId.value && entry.role == role;
                 }
-                if (alreadyStaged) continue;
-                if (s_physicsPhaseCaptureRequest.count >= s_physicsPhaseCaptureRequest.entries.size()) break;
+                if (alreadyStaged)
+                    continue;
+                if (s_physicsPhaseCaptureRequest.count >= s_physicsPhaseCaptureRequest.entries.size())
+                    break;
                 auto& request = s_physicsPhaseCaptureRequest.entries[s_physicsPhaseCaptureRequest.count++];
                 request.bodyId = axis.entry.bodyId;
                 request.role = role;
                 request.useBodyArrayTransform = role == BodyOverlayRole::Target;
             }
-            s_physicsPhaseCaptureEnabled.store(
-                s_physicsPhaseCaptureRequest.count != 0,
-                std::memory_order_release);
+            s_physicsPhaseCaptureEnabled.store(s_physicsPhaseCaptureRequest.count != 0, std::memory_order_release);
         }
 
         void clearPhysicsPhaseCapture() noexcept
         {
-            s_physicsPhaseCaptureEnabled.store(
-                false,
-                std::memory_order_release);
+            s_physicsPhaseCaptureEnabled.store(false, std::memory_order_release);
             AtomicFlagLease lease(s_physicsPhaseCaptureGate);
             if (!lease) {
                 return;
@@ -760,48 +739,38 @@ namespace rock::debug
             s_completedBodyPhaseFrame = {};
         }
 
-        bool tryCopyCompletedBodyPhaseFrame(
-            const PublishedOverlayFrame& published,
+        bool tryCopyCompletedBodyPhaseFrame(const PublishedOverlayFrame& published,
             CompletedBodyPhaseFrame& outFrame) noexcept
         {
             constexpr std::uint64_t kMaxCompletedPhaseAgeFrames = 3;
             AtomicFlagLease lease(s_physicsPhaseCaptureGate);
-            if (!lease ||
-                s_completedBodyPhaseFrame.worldIdentity != published.worldIdentity ||
+            if (!lease || s_completedBodyPhaseFrame.worldIdentity != published.worldIdentity ||
                 s_completedBodyPhaseFrame.gameFrameIndex > published.gameFrameIndex ||
-                published.gameFrameIndex - s_completedBodyPhaseFrame.gameFrameIndex >
-                    kMaxCompletedPhaseAgeFrames ||
+                published.gameFrameIndex - s_completedBodyPhaseFrame.gameFrameIndex > kMaxCompletedPhaseAgeFrames ||
                 s_completedBodyPhaseFrame.count == 0) {
-                s_phaseCaptureDiagnostics.consumeMisses.fetch_add(
-                    1, std::memory_order_relaxed);
+                s_phaseCaptureDiagnostics.consumeMisses.fetch_add(1, std::memory_order_relaxed);
                 return false;
             }
 
-            s_phaseCaptureDiagnostics.consumeHits.fetch_add(
-                1, std::memory_order_relaxed);
+            s_phaseCaptureDiagnostics.consumeHits.fetch_add(1, std::memory_order_relaxed);
             outFrame = s_completedBodyPhaseFrame;
             return true;
         }
 
-        const CompletedBodyPhaseEntry* findCompletedBodyPhaseEntry(
-            const CompletedBodyPhaseFrame& frame,
+        const CompletedBodyPhaseEntry* findCompletedBodyPhaseEntry(const CompletedBodyPhaseFrame& frame,
             std::uint32_t bodyId, BodyOverlayRole role)
         {
-            for (std::uint32_t index = 0;
-                 index < frame.count && index < frame.entries.size();
-                 ++index) {
+            for (std::uint32_t index = 0; index < frame.count && index < frame.entries.size(); ++index) {
                 const auto& candidate = frame.entries[index];
-                if (candidate.postSolveValid &&
-                    candidate.bodyId.value == bodyId &&
-                    candidate.role == role) {
+                if (candidate.postSolveValid && candidate.bodyId.value == bodyId && candidate.role == role) {
                     return &candidate;
                 }
             }
             return nullptr;
         }
 
-        bool captureBodyWorldAabb(
-            RE::hknpWorld* world, RE::hknpBodyId bodyId, DirectX::XMFLOAT3& outMin, DirectX::XMFLOAT3& outMax)
+        bool captureBodyWorldAabb(RE::hknpWorld* world, RE::hknpBodyId bodyId, DirectX::XMFLOAT3& outMin,
+            DirectX::XMFLOAT3& outMax)
         {
             // FO4VR 1.2.72 function 0x141539120 (CommonLibF4VR ID 249572)
             // zero-extends the body's eight compressed 16-bit AABB components,
@@ -813,6 +782,7 @@ namespace rock::debug
                 float minimum[4]{};
                 float maximum[4]{};
             };
+
             static_assert(sizeof(RawBodyAabb) == 32);
 
             if (!world || bodyId.value == kInvalidBodyId || bodyId.value > kMaxBodyIndex) {
@@ -828,9 +798,8 @@ namespace rock::debug
             const float maxX = raw.maximum[0] * scale;
             const float maxY = raw.maximum[1] * scale;
             const float maxZ = raw.maximum[2] * scale;
-            if (!std::isfinite(minX) || !std::isfinite(minY) || !std::isfinite(minZ) ||
-                !std::isfinite(maxX) || !std::isfinite(maxY) || !std::isfinite(maxZ) ||
-                minX > maxX || minY > maxY || minZ > maxZ) {
+            if (!std::isfinite(minX) || !std::isfinite(minY) || !std::isfinite(minZ) || !std::isfinite(maxX) ||
+                !std::isfinite(maxY) || !std::isfinite(maxZ) || minX > maxX || minY > maxY || minZ > maxZ) {
                 return false;
             }
 
@@ -857,11 +826,8 @@ namespace rock::debug
             return true;
         }
 
-        bool captureShapeRecipeUnsafe(
-            std::uintptr_t shapeAddress,
-            const OverlayRenderSettings& settings,
-            debug_overlay_shape::ShapeRecipe& recipe,
-            int depth)
+        bool captureShapeRecipeUnsafe(std::uintptr_t shapeAddress, const OverlayRenderSettings& settings,
+            debug_overlay_shape::ShapeRecipe& recipe, int depth)
         {
             recipe = {};
             recipe.settings.havokToGameScale = havokToGameScale();
@@ -869,8 +835,8 @@ namespace rock::debug
             recipe.settings.maxCompoundChildren = settings.limits.maxCompoundChildren;
             recipe.settings.maxCompoundDepth = settings.limits.maxCompoundDepth;
             recipe.settings.useBoundsForHeavyConvex = settings.useBoundsForHeavyConvex;
-            if (!shapeAddress || depth > static_cast<int>(settings.limits.maxCompoundDepth) || !std::isfinite(recipe.settings.havokToGameScale) ||
-                recipe.settings.havokToGameScale <= 0.0f) {
+            if (!shapeAddress || depth > static_cast<int>(settings.limits.maxCompoundDepth) ||
+                !std::isfinite(recipe.settings.havokToGameScale) || recipe.settings.havokToGameScale <= 0.0f) {
                 return false;
             }
 
@@ -905,11 +871,8 @@ namespace rock::debug
                     if (!finiteShapeVector3(values)) {
                         return false;
                     }
-                    recipe.vertices.push_back(Vertex{
-                        values[0] * recipe.settings.havokToGameScale,
-                        values[1] * recipe.settings.havokToGameScale,
-                        values[2] * recipe.settings.havokToGameScale
-                    });
+                    recipe.vertices.push_back(Vertex{ values[0] * recipe.settings.havokToGameScale,
+                        values[1] * recipe.settings.havokToGameScale, values[2] * recipe.settings.havokToGameScale });
                 }
                 if (recipe.shapeType == 4) {
                     recipe.vertices.resize(3);
@@ -939,7 +902,8 @@ namespace rock::debug
             }
             case 7:
             case 8: {
-                const auto slotArray = *reinterpret_cast<const std::uintptr_t*>(shapeAddress + kCompoundSlotArrayOffset);
+                const auto slotArray =
+                    *reinterpret_cast<const std::uintptr_t*>(shapeAddress + kCompoundSlotArrayOffset);
                 const auto slotCount = *reinterpret_cast<const std::int32_t*>(shapeAddress + kCompoundSlotCountOffset);
                 if (!slotArray || slotCount <= 0 ||
                     static_cast<std::uint32_t>(slotCount) > settings.limits.maxCompoundChildren) {
@@ -958,7 +922,8 @@ namespace rock::debug
                         continue;
                     }
 
-                    const auto childShapeAddress = *reinterpret_cast<const std::uintptr_t*>(slot + kCompoundSlotShapeOffset);
+                    const auto childShapeAddress =
+                        *reinterpret_cast<const std::uintptr_t*>(slot + kCompoundSlotShapeOffset);
                     const auto* transform = reinterpret_cast<const float*>(slot + kCompoundSlotTransformOffset);
                     const auto* childScale = reinterpret_cast<const float*>(slot + kCompoundSlotScaleOffset);
                     if (!childShapeAddress || !finiteShapeTransform(transform) || !finiteShapeVector3(childScale)) {
@@ -978,9 +943,11 @@ namespace rock::debug
                 return recipe.valid;
             }
             case 11: {
-                const auto innerShapeAddress = *reinterpret_cast<const std::uintptr_t*>(shapeAddress + kScaledConvexInnerShapeOffset);
+                const auto innerShapeAddress =
+                    *reinterpret_cast<const std::uintptr_t*>(shapeAddress + kScaledConvexInnerShapeOffset);
                 const auto* scaleVector = reinterpret_cast<const float*>(shapeAddress + kScaledConvexScaleOffset);
-                const auto* translationVector = reinterpret_cast<const float*>(shapeAddress + kScaledConvexTranslationOffset);
+                const auto* translationVector =
+                    reinterpret_cast<const float*>(shapeAddress + kScaledConvexTranslationOffset);
                 if (!innerShapeAddress || !finiteShapeVector3(scaleVector) || !finiteShapeVector3(translationVector)) {
                     return false;
                 }
@@ -1000,9 +967,7 @@ namespace rock::debug
             }
         }
 
-        bool captureShapeRecipeSeh(
-            std::uintptr_t shapeAddress,
-            const OverlayRenderSettings* settings,
+        bool captureShapeRecipeSeh(std::uintptr_t shapeAddress, const OverlayRenderSettings* settings,
             debug_overlay_shape::ShapeRecipe* recipe)
         {
             if (!settings || !recipe) {
@@ -1015,9 +980,7 @@ namespace rock::debug
             }
         }
 
-        bool captureShapeRecipeGuarded(
-            std::uintptr_t shapeAddress,
-            const OverlayRenderSettings& settings,
+        bool captureShapeRecipeGuarded(std::uintptr_t shapeAddress, const OverlayRenderSettings& settings,
             debug_overlay_shape::ShapeRecipe& recipe)
         {
             recipe = {};
@@ -1037,71 +1000,43 @@ namespace rock::debug
 
         inline constexpr std::size_t kMaxExpandedCompoundChildren = 64;
 
-        std::int32_t captureCompoundChildSlotsUnsafe(
-            const std::uintptr_t shapeAddress,
+        std::int32_t captureCompoundChildSlotsUnsafe(const std::uintptr_t shapeAddress,
             const OverlayRenderSettings& settings,
-            std::array<CapturedCompoundChild,
-                kMaxExpandedCompoundChildren>& outChildren)
+            std::array<CapturedCompoundChild, kMaxExpandedCompoundChildren>& outChildren)
         {
             try {
                 const auto slotArray =
-                    *reinterpret_cast<const std::uintptr_t*>(
-                        shapeAddress + kCompoundSlotArrayOffset);
-                const auto slotCount =
-                    *reinterpret_cast<const std::int32_t*>(
-                        shapeAddress + kCompoundSlotCountOffset);
+                    *reinterpret_cast<const std::uintptr_t*>(shapeAddress + kCompoundSlotArrayOffset);
+                const auto slotCount = *reinterpret_cast<const std::int32_t*>(shapeAddress + kCompoundSlotCountOffset);
                 if (!slotArray || slotCount <= 0 ||
-                    static_cast<std::uint32_t>(slotCount) >
-                        settings.limits.maxCompoundChildren ||
-                    static_cast<std::size_t>(slotCount) >
-                        outChildren.size()) {
+                    static_cast<std::uint32_t>(slotCount) > settings.limits.maxCompoundChildren ||
+                    static_cast<std::size_t>(slotCount) > outChildren.size()) {
                     return -1;
                 }
 
                 std::int32_t captured = 0;
-                for (std::int32_t index = 0;
-                     index < slotCount;
-                     ++index) {
-                    const auto slotOffset =
-                        static_cast<std::uintptr_t>(index) *
-                        kCompoundSlotStride;
-                    if (slotArray >
-                        (std::numeric_limits<std::uintptr_t>::max)() -
-                            slotOffset) {
+                for (std::int32_t index = 0; index < slotCount; ++index) {
+                    const auto slotOffset = static_cast<std::uintptr_t>(index) * kCompoundSlotStride;
+                    if (slotArray > (std::numeric_limits<std::uintptr_t>::max)() - slotOffset) {
                         return -1;
                     }
                     const auto slot = slotArray + slotOffset;
-                    if (*reinterpret_cast<const std::uint8_t*>(
-                            slot + kCompoundSlotActiveOffset) != 0) {
+                    if (*reinterpret_cast<const std::uint8_t*>(slot + kCompoundSlotActiveOffset) != 0) {
                         continue;
                     }
 
                     const auto childShapeAddress =
-                        *reinterpret_cast<const std::uintptr_t*>(
-                            slot + kCompoundSlotShapeOffset);
-                    const auto* transform =
-                        reinterpret_cast<const float*>(
-                            slot + kCompoundSlotTransformOffset);
-                    const auto* childScale =
-                        reinterpret_cast<const float*>(
-                            slot + kCompoundSlotScaleOffset);
-                    if (!childShapeAddress ||
-                        !finiteShapeTransform(transform) ||
-                        !finiteShapeVector3(childScale)) {
+                        *reinterpret_cast<const std::uintptr_t*>(slot + kCompoundSlotShapeOffset);
+                    const auto* transform = reinterpret_cast<const float*>(slot + kCompoundSlotTransformOffset);
+                    const auto* childScale = reinterpret_cast<const float*>(slot + kCompoundSlotScaleOffset);
+                    if (!childShapeAddress || !finiteShapeTransform(transform) || !finiteShapeVector3(childScale)) {
                         return -1;
                     }
 
-                    auto& child = outChildren[
-                        static_cast<std::size_t>(captured++)];
+                    auto& child = outChildren[static_cast<std::size_t>(captured++)];
                     child.shapeAddress = childShapeAddress;
-                    std::copy_n(
-                        transform,
-                        child.transform.size(),
-                        child.transform.begin());
-                    std::copy_n(
-                        childScale,
-                        child.scale.size(),
-                        child.scale.begin());
+                    std::copy_n(transform, child.transform.size(), child.transform.begin());
+                    std::copy_n(childScale, child.scale.size(), child.scale.begin());
                 }
                 return captured;
             } catch (...) {
@@ -1109,48 +1044,36 @@ namespace rock::debug
             }
         }
 
-        std::int32_t captureCompoundChildSlotsSeh(
-            const std::uintptr_t shapeAddress,
+        std::int32_t captureCompoundChildSlotsSeh(const std::uintptr_t shapeAddress,
             const OverlayRenderSettings* settings,
-            std::array<CapturedCompoundChild,
-                kMaxExpandedCompoundChildren>* outChildren)
+            std::array<CapturedCompoundChild, kMaxExpandedCompoundChildren>* outChildren)
         {
             if (!settings || !outChildren) {
                 return -1;
             }
             __try {
-                return captureCompoundChildSlotsUnsafe(
-                    shapeAddress,
-                    *settings,
-                    *outChildren);
+                return captureCompoundChildSlotsUnsafe(shapeAddress, *settings, *outChildren);
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 return -1;
             }
         }
 
-        DirectX::XMMATRIX compoundChildLocalMatrix(
-            const CapturedCompoundChild& child)
+        DirectX::XMMATRIX compoundChildLocalMatrix(const CapturedCompoundChild& child)
         {
-            return DirectX::XMMatrixMultiply(
-                DirectX::XMMatrixScaling(
-                    child.scale[0],
-                    child.scale[1],
-                    child.scale[2]),
+            return DirectX::XMMatrixMultiply(DirectX::XMMatrixScaling(child.scale[0], child.scale[1], child.scale[2]),
                 bodyToWorldMatrix(child.transform.data()));
         }
 
         bool isRockBodyRole(BodyOverlayRole role)
         {
             return role == BodyOverlayRole::RightHand || role == BodyOverlayRole::LeftHand ||
-                   role == BodyOverlayRole::RightHandSegment || role == BodyOverlayRole::LeftHandSegment ||
-                   role == BodyOverlayRole::BodyTorsoSegment || role == BodyOverlayRole::BodyArmSegment ||
-                   role == BodyOverlayRole::Weapon ||
-                   role == BodyOverlayRole::DynamicWeaponProxy ||
-                   role == BodyOverlayRole::FocusedWeaponPart ||
-                   role == BodyOverlayRole::RightGrabAuthorityProxy ||
-                   role == BodyOverlayRole::LeftGrabAuthorityProxy ||
-                   role == BodyOverlayRole::RightGrabPivotSourceCollider ||
-                   role == BodyOverlayRole::LeftGrabPivotSourceCollider;
+                role == BodyOverlayRole::RightHandSegment || role == BodyOverlayRole::LeftHandSegment ||
+                role == BodyOverlayRole::BodyTorsoSegment || role == BodyOverlayRole::BodyArmSegment ||
+                role == BodyOverlayRole::Weapon || role == BodyOverlayRole::DynamicWeaponProxy ||
+                role == BodyOverlayRole::FocusedWeaponPart || role == BodyOverlayRole::RightGrabAuthorityProxy ||
+                role == BodyOverlayRole::LeftGrabAuthorityProxy ||
+                role == BodyOverlayRole::RightGrabPivotSourceCollider ||
+                role == BodyOverlayRole::LeftGrabPivotSourceCollider;
         }
 
         OverlayRenderSettings captureOverlayRenderSettings()
@@ -1171,8 +1094,7 @@ namespace rock::debug
             settings.limits = debug_overlay_runtime::sanitize(requested);
             settings.useBoundsForHeavyConvex = g_rockConfig.rockDebugUseBoundsForHeavyConvex;
             settings.shapeDecodeSettingsKey = debug_overlay_policy::makeShapeDecodeSettingsKey(
-                static_cast<int>(settings.limits.maxConvexSupportVertices),
-                settings.useBoundsForHeavyConvex,
+                static_cast<int>(settings.limits.maxConvexSupportVertices), settings.useBoundsForHeavyConvex,
                 static_cast<int>(settings.limits.maxCompoundChildren),
                 static_cast<int>(settings.limits.maxCompoundDepth));
             settings.pipelineLimits.maxQueuedJobs = settings.limits.maxShapeQueuedJobs;
@@ -1232,8 +1154,7 @@ namespace rock::debug
             return captured;
         }
 
-        void requestShapeBuildForFrame(
-            PublishedOverlayFrame& frame, const ShapeKey& key, std::uintptr_t shapeAddress)
+        void requestShapeBuildForFrame(PublishedOverlayFrame& frame, const ShapeKey& key, std::uintptr_t shapeAddress)
         {
             if (shapePipeline().lookup(key).state != debug_overlay_shape::CacheState::Missing) {
                 return;
@@ -1328,45 +1249,29 @@ namespace rock::debug
                 // Use that same immutable frame for the ordinary collider shell,
                 // while phase diagnostics retain the unmodified physics sample.
                 RE::NiTransform presentedBody{};
-                const bool hasPresentation = held_scene_presentation::tryGetPresentedBodyWorld(
-                    source.world, entry.bodyId.value, source.gameFrameIndex, presentedBody);
-                const auto displayedWorldMatrix = hasPresentation ?
-                    niStoredBodyAxesToWorldMatrix(presentedBody) : body.worldMatrix;
+                const bool hasPresentation = held_scene_presentation::tryGetPresentedBodyWorld(source.world,
+                    entry.bodyId.value, source.gameFrameIndex, presentedBody);
+                const auto displayedWorldMatrix =
+                    hasPresentation ? niStoredBodyAxesToWorldMatrix(presentedBody) : body.worldMatrix;
 
                 const auto shapeIdentity = captureShapeIdentityForFrame(destination, body.shapeAddress);
-                if (rockRole &&
-                    (shapeIdentity.shapeType == 7 ||
-                        shapeIdentity.shapeType == 8)) {
-                    std::array<CapturedCompoundChild,
-                        kMaxExpandedCompoundChildren> children{};
-                    const auto childCount = captureCompoundChildSlotsSeh(
-                        body.shapeAddress,
-                        &destination.settings,
-                        &children);
+                if (rockRole && (shapeIdentity.shapeType == 7 || shapeIdentity.shapeType == 8)) {
+                    std::array<CapturedCompoundChild, kMaxExpandedCompoundChildren> children{};
+                    const auto childCount =
+                        captureCompoundChildSlotsSeh(body.shapeAddress, &destination.settings, &children);
                     if (childCount > 0) {
                         DirectX::XMFLOAT3 aabbMin{};
                         DirectX::XMFLOAT3 aabbMax{};
-                        const bool aabbValid = captureBodyWorldAabb(
-                            source.world,
-                            entry.bodyId,
-                            aabbMin,
-                            aabbMax);
-                        for (std::int32_t childIndex = 0;
-                             childIndex < childCount;
-                             ++childIndex) {
-                            const auto& child = children[
-                                static_cast<std::size_t>(childIndex)];
-                            const auto childIdentity =
-                                captureShapeIdentityForFrame(
-                                    destination,
-                                    child.shapeAddress);
+                        const bool aabbValid = captureBodyWorldAabb(source.world, entry.bodyId, aabbMin, aabbMax);
+                        for (std::int32_t childIndex = 0; childIndex < childCount; ++childIndex) {
+                            const auto& child = children[static_cast<std::size_t>(childIndex)];
+                            const auto childIdentity = captureShapeIdentityForFrame(destination, child.shapeAddress);
                             PublishedBodyEntry published{};
                             published.shapeKey = childIdentity.key;
                             published.worldMatrix = displayedWorldMatrix;
                             published.physicsWorldMatrix = body.worldMatrix;
                             published.hasHeldPresentation = hasPresentation;
-                            published.childLocalMatrix =
-                                compoundChildLocalMatrix(child);
+                            published.childLocalMatrix = compoundChildLocalMatrix(child);
                             published.hasChildLocalMatrix = true;
                             published.role = entry.role;
                             // Keep the array-index id, not the +0x6C
@@ -1374,17 +1279,12 @@ namespace rock::debug
                             // feeds this value back into extractBody, whose
                             // index guard rejects the serial bits.
                             published.bodyId = entry.bodyId.value;
-                            published.detailUniformScale =
-                                childIdentity.detailUniformScale;
+                            published.detailUniformScale = childIdentity.detailUniformScale;
                             published.hasValidWorldAabb = aabbValid;
                             published.worldAabbMin = aabbMin;
                             published.worldAabbMax = aabbMax;
-                            requestShapeBuildForFrame(
-                                destination,
-                                published.shapeKey,
-                                child.shapeAddress);
-                            destination.bodies.push_back(
-                                std::move(published));
+                            requestShapeBuildForFrame(destination, published.shapeKey, child.shapeAddress);
+                            destination.bodies.push_back(std::move(published));
                         }
                         continue;
                     }
@@ -1415,7 +1315,8 @@ namespace rock::debug
                     published.entry = source.axisEntries[index];
                     if (published.entry.source == AxisOverlaySource::Body) {
                         BodyRenderInfo body{};
-                        if (!extractBody(source.world, published.entry.bodyId, targetAxisOverlayFrameSource(published.entry.role), body)) {
+                        if (!extractBody(source.world, published.entry.bodyId,
+                                targetAxisOverlayFrameSource(published.entry.role), body)) {
                             ++destination.bodyExtractFailures;
                             continue;
                         }
@@ -1432,21 +1333,20 @@ namespace rock::debug
             }
 
             if (source.drawMarkers) {
-                const auto count = (std::min)(source.markerCount, static_cast<std::uint32_t>(source.markerEntries.size()));
+                const auto count =
+                    (std::min)(source.markerCount, static_cast<std::uint32_t>(source.markerEntries.size()));
                 destination.markers.assign(source.markerEntries.begin(), source.markerEntries.begin() + count);
             }
             if (source.drawSkeleton) {
-                const auto count = (std::min)(source.skeletonCount, static_cast<std::uint32_t>(source.skeletonEntries.size()));
+                const auto count =
+                    (std::min)(source.skeletonCount, static_cast<std::uint32_t>(source.skeletonEntries.size()));
                 destination.skeleton.assign(source.skeletonEntries.begin(), source.skeletonEntries.begin() + count);
             }
             return !destination.bodies.empty() || !destination.axes.empty() || !destination.markers.empty() ||
-                   !destination.skeleton.empty() || !destination.text.empty();
+                !destination.skeleton.empty() || !destination.text.empty();
         }
 
-        void bodyColor(
-            BodyOverlayRole role,
-            debug_overlay_policy::ShapeDecodeMode decodeMode,
-            float color[4])
+        void bodyColor(BodyOverlayRole role, debug_overlay_policy::ShapeDecodeMode decodeMode, float color[4])
         {
             color[0] = 1.0f;
             color[1] = 1.0f;
@@ -1546,7 +1446,6 @@ namespace rock::debug
                 color[2] = 0.05f;
                 color[3] = 0.90f;
             }
-
         }
 
         float axisLengthForRole(AxisOverlayRole role)
@@ -2271,12 +2170,14 @@ namespace rock::debug
             return debug_overlay_line_batch::Rgba{ color[0], color[1], color[2], color[3] };
         }
 
-        void appendDebugLine(debug_overlay_line_batch::LineBatch& batch, const Vertex& start, const Vertex& end, const float color[4])
+        void appendDebugLine(debug_overlay_line_batch::LineBatch& batch, const Vertex& start, const Vertex& end,
+            const float color[4])
         {
             batch.addLine(toLineVec(start), toLineVec(end), toLineColor(color));
         }
 
-        void appendPointMarker(debug_overlay_line_batch::LineBatch& batch, const RE::NiPoint3& position, float size, const float color[4])
+        void appendPointMarker(debug_overlay_line_batch::LineBatch& batch, const RE::NiPoint3& position, float size,
+            const float color[4])
         {
             batch.addPointMarker(toLineVec(toVertex(position)), size, toLineColor(color));
         }
@@ -2293,7 +2194,8 @@ namespace rock::debug
 
         // RPS UI rejects a whole publication for one non-finite record, so each
         // record is checked here and skipped alone.
-        void emitLineBatch(const debug_overlay_line_batch::LineBatch& batch, WorldDrawScratch& out, OverlayRuntimeStats& stats)
+        void emitLineBatch(const debug_overlay_line_batch::LineBatch& batch, WorldDrawScratch& out,
+            OverlayRuntimeStats& stats)
         {
             stats.lineVertices += static_cast<std::uint32_t>(batch.vertexCount());
             stats.lineLogicalLines += static_cast<std::uint32_t>(batch.lineCount());
@@ -2322,7 +2224,8 @@ namespace rock::debug
             }
         }
 
-        void appendAxisTripod(debug_overlay_line_batch::LineBatch& batch, const Vertex& origin, const Vertex& xEnd, const Vertex& yEnd, const Vertex& zEnd, AxisOverlayRole role)
+        void appendAxisTripod(debug_overlay_line_batch::LineBatch& batch, const Vertex& origin, const Vertex& xEnd,
+            const Vertex& yEnd, const Vertex& zEnd, AxisOverlayRole role)
         {
             const float alpha = axisAlphaForRole(role);
             const float xColor[4] = { 1.0f, 0.05f, 0.05f, alpha };
@@ -2345,12 +2248,16 @@ namespace rock::debug
                 yAxis = normalizedNi(storedColumnAxis(entry.transform.rotate, 1));
                 zAxis = normalizedNi(storedColumnAxis(entry.transform.rotate, 2));
             } else {
-                xAxis = normalizedNi(debug_axis_math::rotateNiLocalToWorld(entry.transform.rotate, RE::NiPoint3(1.0f, 0.0f, 0.0f)));
-                yAxis = normalizedNi(debug_axis_math::rotateNiLocalToWorld(entry.transform.rotate, RE::NiPoint3(0.0f, 1.0f, 0.0f)));
-                zAxis = normalizedNi(debug_axis_math::rotateNiLocalToWorld(entry.transform.rotate, RE::NiPoint3(0.0f, 0.0f, 1.0f)));
+                xAxis = normalizedNi(
+                    debug_axis_math::rotateNiLocalToWorld(entry.transform.rotate, RE::NiPoint3(1.0f, 0.0f, 0.0f)));
+                yAxis = normalizedNi(
+                    debug_axis_math::rotateNiLocalToWorld(entry.transform.rotate, RE::NiPoint3(0.0f, 1.0f, 0.0f)));
+                zAxis = normalizedNi(
+                    debug_axis_math::rotateNiLocalToWorld(entry.transform.rotate, RE::NiPoint3(0.0f, 0.0f, 1.0f)));
             }
 
-            appendAxisTripod(batch, toVertex(origin), toVertex(origin + xAxis * length), toVertex(origin + yAxis * length), toVertex(origin + zAxis * length), entry.role);
+            appendAxisTripod(batch, toVertex(origin), toVertex(origin + xAxis * length),
+                toVertex(origin + yAxis * length), toVertex(origin + zAxis * length), entry.role);
 
             if (entry.drawTranslationLine) {
                 const float color[4] = { 1.0f, 0.86f, 0.05f, axisAlphaForRole(entry.role) };
@@ -2384,10 +2291,13 @@ namespace rock::debug
             for (const auto& published : frame.axes) {
                 if (published.entry.source == AxisOverlaySource::Body) {
                     auto displayed = published;
-                    if (!published.hasHeldPresentation && completedFrame && completedFrame->gameFrameIndex == frame.gameFrameIndex) {
-                        const auto role = published.entry.role == AxisOverlayRole::TargetBody ? BodyOverlayRole::Target :
-                            published.entry.role == AxisOverlayRole::LeftHandBody ? BodyOverlayRole::LeftHand : BodyOverlayRole::RightHand;
-                        if (const auto* completed = findCompletedBodyPhaseEntry(*completedFrame, published.entry.bodyId.value, role)) {
+                    if (!published.hasHeldPresentation && completedFrame &&
+                        completedFrame->gameFrameIndex == frame.gameFrameIndex) {
+                        const auto role = published.entry.role == AxisOverlayRole::TargetBody ? BodyOverlayRole::Target
+                            : published.entry.role == AxisOverlayRole::LeftHandBody ? BodyOverlayRole::LeftHand
+                                                                                    : BodyOverlayRole::RightHand;
+                        if (const auto* completed =
+                                findCompletedBodyPhaseEntry(*completedFrame, published.entry.bodyId.value, role)) {
                             displayed.bodyWorldMatrix = DirectX::XMLoadFloat4x4(&completed->postSolveWorldMatrix);
                         }
                     }
@@ -2434,7 +2344,8 @@ namespace rock::debug
                     appendPointMarker(batch, entry.transform.translate, entry.pointSize, color);
                 }
                 if (entry.drawAxis) {
-                    const auto endpoints = skeleton_bone_debug_math::computeAxisEndpoints(entry.transform, entry.axisLength);
+                    const auto endpoints =
+                        skeleton_bone_debug_math::computeAxisEndpoints(entry.transform, entry.axisLength);
                     const float axisAlpha = entry.inPowerArmor ? 0.95f : 0.70f;
                     const float xColor[4] = { 1.0f, 0.08f, 0.06f, axisAlpha };
                     const float yColor[4] = { 0.05f, 1.0f, 0.10f, axisAlpha };
@@ -2469,7 +2380,8 @@ namespace rock::debug
                 text.offsetPixels[1] = entry.y;
                 text.pixelSize = (std::max)(1.0f, entry.size);
                 std::copy_n(entry.color, 4, text.color);
-                if (!finiteValues(text.anchor, 3) || !finiteValues(text.offsetPixels, 2) || !finiteValues(text.color, 4)) {
+                if (!finiteValues(text.anchor, 3) || !finiteValues(text.offsetPixels, 2) ||
+                    !finiteValues(text.color, 4)) {
                     ++stats.textInvalidRejects;
                     continue;
                 }
@@ -2484,9 +2396,7 @@ namespace rock::debug
         // Gameplay markers: solid white unit spheres scaled to the marker size.
         void appendGripZoneIndicators(const grip_zone_indicators::Frame& frame, WorldDrawScratch& out)
         {
-            const std::uint32_t count = (std::min)(
-                frame.count,
-                static_cast<std::uint32_t>(frame.positions.size()));
+            const std::uint32_t count = (std::min)(frame.count, static_cast<std::uint32_t>(frame.positions.size()));
             if (count == 0 || !std::isfinite(frame.diameterGameUnits) || frame.diameterGameUnits <= 0.0f) {
                 return;
             }
@@ -2526,10 +2436,7 @@ namespace rock::debug
         }
 
         // Any thread: the shape cache drops entries on the game thread too.
-        void releaseMeshData(std::uint64_t meshId) noexcept
-        {
-            world_draw_client::releaseMesh(meshId);
-        }
+        void releaseMeshData(std::uint64_t meshId) noexcept { world_draw_client::releaseMesh(meshId); }
 
         constexpr debug_overlay_shape::MeshSink kMeshSink{ &registerMeshData, &releaseMeshData };
 
@@ -2542,16 +2449,11 @@ namespace rock::debug
             s_aabbProxyRegistered = registerMeshData(kAabbProxyMeshId, box);
         }
 
-        void appendBodies(
-            const PublishedOverlayFrame& frame,
-            const CompletedBodyPhaseFrame* completedPhaseFrame,
-            WorldDrawScratch& out,
-            OverlayRuntimeStats& stats)
+        void appendBodies(const PublishedOverlayFrame& frame, const CompletedBodyPhaseFrame* completedPhaseFrame,
+            WorldDrawScratch& out, OverlayRuntimeStats& stats)
         {
             const std::size_t baseEntryLimit = frame.settings.limits.maxBodyInstances;
-            const std::size_t renderInstanceLimit = (std::min)(
-                kBodyInstanceCapacity,
-                baseEntryLimit);
+            const std::size_t renderInstanceLimit = (std::min)(kBodyInstanceCapacity, baseEntryLimit);
             std::size_t admittedBaseEntries = 0;
             for (const auto& entry : frame.bodies) {
                 ++stats.bodyEntries;
@@ -2564,7 +2466,8 @@ namespace rock::debug
                 const auto cached = shapePipeline().lookup(entry.shapeKey);
                 const RegisteredShape* shape = nullptr;
                 bool shapeReady = false;
-                if (cached.state == debug_overlay_shape::CacheState::Ready && cached.shape && cached.shape->indexCount > 0) {
+                if (cached.state == debug_overlay_shape::CacheState::Ready && cached.shape &&
+                    cached.shape->indexCount > 0) {
                     shape = cached.shape.get();
                     shapeReady = true;
                     ++stats.shapeCacheHits;
@@ -2598,14 +2501,10 @@ namespace rock::debug
 
                     if (shapeReady) {
                         if (entry.hasChildLocalMatrix) {
-                            model = DirectX::XMMatrixMultiply(
-                                entry.childLocalMatrix,
-                                model);
+                            model = DirectX::XMMatrixMultiply(entry.childLocalMatrix, model);
                         }
                         if (entry.detailUniformScale != 1.0f) {
-                            model = DirectX::XMMatrixScaling(
-                                        entry.detailUniformScale,
-                                        entry.detailUniformScale,
+                            model = DirectX::XMMatrixScaling(entry.detailUniformScale, entry.detailUniformScale,
                                         entry.detailUniformScale) *
                                 model;
                         }
@@ -2616,7 +2515,8 @@ namespace rock::debug
                         DirectX::XMVECTOR determinant{};
                         const auto inversePhysics = DirectX::XMMatrixInverse(&determinant, entry.physicsWorldMatrix);
                         const float determinantValue = DirectX::XMVectorGetX(determinant);
-                        if (!std::isfinite(determinantValue) || std::abs(determinantValue) < 0.000001f) return;
+                        if (!std::isfinite(determinantValue) || std::abs(determinantValue) < 0.000001f)
+                            return;
                         model = worldAabbMatrix(entry) * inversePhysics * model;
                     }
 
@@ -2626,7 +2526,8 @@ namespace rock::debug
                     DirectX::XMStoreFloat4x4(&stored, model);
                     static_assert(sizeof(stored) == sizeof(instance.transform));
                     std::memcpy(instance.transform, &stored, sizeof(instance.transform));
-                    const auto drawnMode = shapeReady ? shape->decodeMode : debug_overlay_policy::ShapeDecodeMode::Proxy;
+                    const auto drawnMode =
+                        shapeReady ? shape->decodeMode : debug_overlay_policy::ShapeDecodeMode::Proxy;
                     bodyColor(entry.role, drawnMode, instance.color);
                     instance.fill = rpsui::sdk::WorldFillV1::Wire;
                     if (!finiteValues(instance.transform, 16) || !finiteValues(instance.color, 4)) {
@@ -2641,8 +2542,10 @@ namespace rock::debug
                 };
 
                 auto displayedWorld = entry.worldMatrix;
-                if (!entry.hasHeldPresentation && completedPhaseFrame && completedPhaseFrame->gameFrameIndex == frame.gameFrameIndex) {
-                    if (const auto* completed = findCompletedBodyPhaseEntry(*completedPhaseFrame, entry.bodyId, entry.role)) {
+                if (!entry.hasHeldPresentation && completedPhaseFrame &&
+                    completedPhaseFrame->gameFrameIndex == frame.gameFrameIndex) {
+                    if (const auto* completed =
+                            findCompletedBodyPhaseEntry(*completedPhaseFrame, entry.bodyId, entry.role)) {
                         displayedWorld = DirectX::XMLoadFloat4x4(&completed->postSolveWorldMatrix);
                     }
                 }
@@ -2656,36 +2559,26 @@ namespace rock::debug
 
             auto frame = s_publishedFrame.load(std::memory_order_acquire);
             // Invalid diagnostic worlds must not suppress gameplay markers.
-            if (frame && !frame->worldIdentity) frame.reset();
+            if (frame && !frame->worldIdentity)
+                frame.reset();
             const auto gripZoneIndicatorFrame = grip_zone_indicators::Snapshot();
-            const bool hasGripZoneIndicatorsToDraw =
-                gripZoneIndicatorFrame && gripZoneIndicatorFrame->count > 0;
+            const bool hasGripZoneIndicatorsToDraw = gripZoneIndicatorFrame && gripZoneIndicatorFrame->count > 0;
             if (!frame && !hasGripZoneIndicatorsToDraw) {
                 return;
             }
 
             // Frame-callback thread only; too large for the host's render stack.
             static CompletedBodyPhaseFrame completedPhaseFrame{};
-            const bool hasCompletedPhaseFrame =
-                frame &&
-                tryCopyCompletedBodyPhaseFrame(
-                    *frame,
-                    completedPhaseFrame);
+            const bool hasCompletedPhaseFrame = frame && tryCopyCompletedBodyPhaseFrame(*frame, completedPhaseFrame);
 
-            const bool hasBodiesToDraw = frame &&
-                (frame->drawRockBodies || frame->drawTargetBodies) &&
-                !frame->bodies.empty();
-            const bool hasAxesToDraw =
-                frame && frame->drawAxes && !frame->axes.empty();
-            const bool hasMarkersToDraw =
-                frame && frame->drawMarkers && !frame->markers.empty();
-            const bool hasSkeletonToDraw =
-                frame && frame->drawSkeleton && !frame->skeleton.empty();
-            const bool hasTextToDraw =
-                frame && frame->drawText && !frame->text.empty();
+            const bool hasBodiesToDraw =
+                frame && (frame->drawRockBodies || frame->drawTargetBodies) && !frame->bodies.empty();
+            const bool hasAxesToDraw = frame && frame->drawAxes && !frame->axes.empty();
+            const bool hasMarkersToDraw = frame && frame->drawMarkers && !frame->markers.empty();
+            const bool hasSkeletonToDraw = frame && frame->drawSkeleton && !frame->skeleton.empty();
+            const bool hasTextToDraw = frame && frame->drawText && !frame->text.empty();
             const bool hasStandardOverlayToDraw =
-                hasBodiesToDraw || hasAxesToDraw || hasMarkersToDraw ||
-                hasSkeletonToDraw || hasTextToDraw;
+                hasBodiesToDraw || hasAxesToDraw || hasMarkersToDraw || hasSkeletonToDraw || hasTextToDraw;
             if (!hasStandardOverlayToDraw && !hasGripZoneIndicatorsToDraw) {
                 return;
             }
@@ -2705,11 +2598,8 @@ namespace rock::debug
                 stats.bodyExtractFailures = frame->bodyExtractFailures;
                 stats.shapeCaptures = frame->shapeCaptures;
                 stats.shapeCaptureDeferrals = frame->shapeCaptureDeferrals;
-                const auto uploadResult =
-                    shapePipeline().processCompletedUploads(
-                        kMeshSink,
-                        frame->settings.limits.maxShapeUploadsPerFrame,
-                        frame->settings.pipelineLimits);
+                const auto uploadResult = shapePipeline().processCompletedUploads(kMeshSink,
+                    frame->settings.limits.maxShapeUploadsPerFrame, frame->settings.pipelineLimits);
                 stats.shapeUploadsProcessed = uploadResult.processed;
                 stats.shapeUploadsCompleted = uploadResult.uploaded;
                 stats.shapeUploadFailures = uploadResult.failed;
@@ -2717,13 +2607,7 @@ namespace rock::debug
 
             if (hasBodiesToDraw) {
                 ensureAabbProxyRegistered();
-                appendBodies(
-                    *frame,
-                    hasCompletedPhaseFrame ?
-                        &completedPhaseFrame :
-                        nullptr,
-                    scratch,
-                    stats);
+                appendBodies(*frame, hasCompletedPhaseFrame ? &completedPhaseFrame : nullptr, scratch, stats);
             }
 
             if (hasGripZoneIndicatorsToDraw) {
@@ -2732,8 +2616,7 @@ namespace rock::debug
 
             if (frame) {
                 auto& lineBatch = scratch.lines;
-                lineBatch.beginFrame(
-                    frame->settings.limits.maxLineVertices);
+                lineBatch.beginFrame(frame->settings.limits.maxLineVertices);
                 collectAxisOverlays(lineBatch, *frame, hasCompletedPhaseFrame ? &completedPhaseFrame : nullptr);
                 collectMarkerOverlays(lineBatch, *frame);
                 collectSkeletonOverlays(lineBatch, *frame);
@@ -2768,98 +2651,52 @@ namespace rock::debug
                 ROCK_LOG_WARN(Hand, "Debug overlay: text without a world anchor has no VR placement and is not drawn");
             }
 
-            if (frame && frame->settings.verboseLogging &&
-                ++s_overlayStatsLogCounter >= 90) {
+            if (frame && frame->settings.verboseLogging && ++s_overlayStatsLogCounter >= 90) {
                 s_overlayStatsLogCounter = 0;
                 const auto pipelineStats = shapePipeline().stats();
                 const auto admissionStats = s_frameAdmission.stats();
                 ROCK_LOG_DEBUG(Hand,
-                    "Debug overlay frame: entries={} drawn={} bodyRejects={} bodyInvalid={} axes={} markers={} skeleton={} text={}/{} textTrunc={} textInvalid={} screenTextSkips={} cacheHits={} cacheMisses={} shapeCaptures={} captureDefers={} captureCap={} registrations={}/{} registrationFails={} proxies={} pendingProxy={} unsupportedProxy={} unsupportedSkip={} cache(ready/pending/unsupported/total/bytes)={}/{}/{}/{}/{} jobs(reserved/queued/active/completed)={}/{}/{}/{} evictions={} staleDrops={} completedDrops={} bodyReadFails={} lineVerts={} lineLines={} lineRejects={} lineInvalid={} limits(convex/compound/depth/queue/completed/uploads/cacheEntries/cacheBytes/bodies/lines)={}/{}/{}/{}/{}/{}/{}/{}/{}/{}",
-                    stats.bodyEntries,
-                    stats.bodiesDrawn,
-                    stats.bodyInstanceRejects,
-                    stats.bodyInvalidRejects,
-                    frame->axes.size(),
-                    frame->markers.size(),
-                    frame->skeleton.size(),
-                    scratch.texts.size(),
-                    frame->text.size(),
-                    stats.textTruncations,
-                    stats.textInvalidRejects,
-                    stats.screenTextSkips,
-                    stats.shapeCacheHits,
-                    stats.shapeCacheMisses,
-                    stats.shapeCaptures,
-                    stats.shapeCaptureDeferrals,
-                    frame->settings.limits.maxShapeCapturesPerFrame,
-                    stats.shapeUploadsCompleted,
-                    stats.shapeUploadsProcessed,
-                    stats.shapeUploadFailures,
-                    stats.shapeProxyFallbacks,
-                    stats.shapePendingProxies,
-                    stats.unsupportedShapeProxies,
-                    stats.unsupportedShapeSkips,
-                    pipelineStats.ready,
-                    pipelineStats.pending,
-                    pipelineStats.unsupported,
-                    pipelineStats.entries,
-                    pipelineStats.approximateBytes,
-                    pipelineStats.reservedJobs,
-                    pipelineStats.queuedJobs,
-                    pipelineStats.activeJobs,
-                    pipelineStats.completedJobs,
-                    pipelineStats.evictions,
-                    pipelineStats.staleResultDrops,
-                    pipelineStats.completedQueueDrops,
-                    stats.bodyExtractFailures,
-                    stats.lineVertices,
-                    stats.lineLogicalLines,
-                    stats.lineBudgetRejects,
-                    stats.lineInvalidRejects,
-                    frame->settings.limits.maxConvexSupportVertices,
-                    frame->settings.limits.maxCompoundChildren,
-                    frame->settings.limits.maxCompoundDepth,
-                    frame->settings.limits.maxShapeQueuedJobs,
-                    frame->settings.limits.maxShapeCompletedJobs,
-                    frame->settings.limits.maxShapeUploadsPerFrame,
-                    frame->settings.limits.maxShapeCacheEntries,
-                    frame->settings.limits.maxShapeCacheBytes,
-                    frame->settings.limits.maxBodyInstances,
-                    frame->settings.limits.maxLineVertices);
+                    "Debug overlay frame: entries={} drawn={} bodyRejects={} bodyInvalid={} axes={} markers={} "
+                    "skeleton={} text={}/{} textTrunc={} textInvalid={} screenTextSkips={} cacheHits={} cacheMisses={} "
+                    "shapeCaptures={} captureDefers={} captureCap={} registrations={}/{} registrationFails={} "
+                    "proxies={} pendingProxy={} unsupportedProxy={} unsupportedSkip={} "
+                    "cache(ready/pending/unsupported/total/bytes)={}/{}/{}/{}/{} "
+                    "jobs(reserved/queued/active/completed)={}/{}/{}/{} evictions={} staleDrops={} completedDrops={} "
+                    "bodyReadFails={} lineVerts={} lineLines={} lineRejects={} lineInvalid={} "
+                    "limits(convex/compound/depth/queue/completed/uploads/cacheEntries/cacheBytes/bodies/lines)={}/{}/"
+                    "{}/{}/{}/{}/{}/{}/{}/{}",
+                    stats.bodyEntries, stats.bodiesDrawn, stats.bodyInstanceRejects, stats.bodyInvalidRejects,
+                    frame->axes.size(), frame->markers.size(), frame->skeleton.size(), scratch.texts.size(),
+                    frame->text.size(), stats.textTruncations, stats.textInvalidRejects, stats.screenTextSkips,
+                    stats.shapeCacheHits, stats.shapeCacheMisses, stats.shapeCaptures, stats.shapeCaptureDeferrals,
+                    frame->settings.limits.maxShapeCapturesPerFrame, stats.shapeUploadsCompleted,
+                    stats.shapeUploadsProcessed, stats.shapeUploadFailures, stats.shapeProxyFallbacks,
+                    stats.shapePendingProxies, stats.unsupportedShapeProxies, stats.unsupportedShapeSkips,
+                    pipelineStats.ready, pipelineStats.pending, pipelineStats.unsupported, pipelineStats.entries,
+                    pipelineStats.approximateBytes, pipelineStats.reservedJobs, pipelineStats.queuedJobs,
+                    pipelineStats.activeJobs, pipelineStats.completedJobs, pipelineStats.evictions,
+                    pipelineStats.staleResultDrops, pipelineStats.completedQueueDrops, stats.bodyExtractFailures,
+                    stats.lineVertices, stats.lineLogicalLines, stats.lineBudgetRejects, stats.lineInvalidRejects,
+                    frame->settings.limits.maxConvexSupportVertices, frame->settings.limits.maxCompoundChildren,
+                    frame->settings.limits.maxCompoundDepth, frame->settings.limits.maxShapeQueuedJobs,
+                    frame->settings.limits.maxShapeCompletedJobs, frame->settings.limits.maxShapeUploadsPerFrame,
+                    frame->settings.limits.maxShapeCacheEntries, frame->settings.limits.maxShapeCacheBytes,
+                    frame->settings.limits.maxBodyInstances, frame->settings.limits.maxLineVertices);
                 ROCK_LOG_DEBUG(Hand,
-                    "Debug overlay admission: published={} acquired={} active={} noPublication={} duplicate={} serialRace={}",
-                    admissionStats.publishedSerial,
-                    admissionStats.acquiredFrames,
-                    admissionStats.activeSkips,
-                    admissionStats.noPublicationSkips,
-                    admissionStats.duplicateSkips,
-                    admissionStats.serialRaceSkips);
+                    "Debug overlay admission: published={} acquired={} active={} noPublication={} duplicate={} "
+                    "serialRace={}",
+                    admissionStats.publishedSerial, admissionStats.acquiredFrames, admissionStats.activeSkips,
+                    admissionStats.noPublicationSkips, admissionStats.duplicateSkips, admissionStats.serialRaceSkips);
                 ROCK_LOG_DEBUG(Hand,
                     "Debug overlay phase: completed={} source={} display={} age={} solve={} substep={}/{} bodies={}/{}",
                     hasCompletedPhaseFrame ? "yes" : "no",
-                    hasCompletedPhaseFrame ?
-                        completedPhaseFrame.gameFrameIndex :
-                        0,
-                    frame->gameFrameIndex,
-                    hasCompletedPhaseFrame ?
-                        frame->gameFrameIndex -
-                            completedPhaseFrame.gameFrameIndex :
-                        0,
-                    hasCompletedPhaseFrame ?
-                        completedPhaseFrame.solveSequence :
-                        0,
-                    hasCompletedPhaseFrame ?
-                        completedPhaseFrame.substepIndex + 1 :
-                        0,
-                    hasCompletedPhaseFrame ?
-                        completedPhaseFrame.substepCount :
-                        0,
-                    hasCompletedPhaseFrame ?
-                        completedPhaseFrame.validCount :
-                        0,
-                    hasCompletedPhaseFrame ?
-                        completedPhaseFrame.count :
-                        0);
+                    hasCompletedPhaseFrame ? completedPhaseFrame.gameFrameIndex : 0, frame->gameFrameIndex,
+                    hasCompletedPhaseFrame ? frame->gameFrameIndex - completedPhaseFrame.gameFrameIndex : 0,
+                    hasCompletedPhaseFrame ? completedPhaseFrame.solveSequence : 0,
+                    hasCompletedPhaseFrame ? completedPhaseFrame.substepIndex + 1 : 0,
+                    hasCompletedPhaseFrame ? completedPhaseFrame.substepCount : 0,
+                    hasCompletedPhaseFrame ? completedPhaseFrame.validCount : 0,
+                    hasCompletedPhaseFrame ? completedPhaseFrame.count : 0);
             }
         }
 
@@ -2870,9 +2707,9 @@ namespace rock::debug
             }
 
             try {
-                ROCK_LOG_ERROR(Hand, "Debug overlay: compositor draw aborted by exception ({})", detail ? detail : "unknown");
-            } catch (...) {
-            }
+                ROCK_LOG_ERROR(Hand, "Debug overlay: compositor draw aborted by exception ({})",
+                    detail ? detail : "unknown");
+            } catch (...) {}
         }
 
         // RPS UI frame callback (render thread). Draws at most once per ROCK
@@ -2903,22 +2740,17 @@ namespace rock::debug
         }
     }
 
-    bool EnsureWorldOverlayInstalled()
-    {
-        return world_draw_client::ensureBound(&composeWorldDrawFrame);
-    }
+    bool EnsureWorldOverlayInstalled() { return world_draw_client::ensureBound(&composeWorldDrawFrame); }
 
-    void Install()
-    {
-        (void)world_overlay_renderer::EnsureInstalled();
-    }
+    void Install() { (void)world_overlay_renderer::EnsureInstalled(); }
 
     void PublishFrame(const BodyOverlayFrame& frame)
     {
         auto next = s_framePool.acquire();
         if (!next) {
             if (!s_snapshotPoolExhaustionReported.exchange(true, std::memory_order_relaxed)) {
-                ROCK_LOG_WARN(Hand, "Debug body overlay: immutable snapshot pool exhausted; retaining the last safe publication");
+                ROCK_LOG_WARN(Hand,
+                    "Debug body overlay: immutable snapshot pool exhausted; retaining the last safe publication");
             }
             (void)s_frameAdmission.publish();
             return;
@@ -2942,12 +2774,11 @@ namespace rock::debug
             if (++s_phaseDiagPublishCounter >= 600) {
                 s_phaseDiagPublishCounter = 0;
                 const auto& diag = s_phaseCaptureDiagnostics;
-                ROCK_LOG_INFO(
-                    Hand,
-                    "PHASE_CAPTURE store={} invalid={} gate={} notStaged={} worldMis={} frameMis={} extractFail={} consume={}/{} reqFrame={} capFrame={}",
+                ROCK_LOG_INFO(Hand,
+                    "PHASE_CAPTURE store={} invalid={} gate={} notStaged={} worldMis={} frameMis={} extractFail={} "
+                    "consume={}/{} reqFrame={} capFrame={}",
                     diag.storedFrames.load(std::memory_order_relaxed),
-                    diag.invalidInputs.load(std::memory_order_relaxed),
-                    diag.gateMisses.load(std::memory_order_relaxed),
+                    diag.invalidInputs.load(std::memory_order_relaxed), diag.gateMisses.load(std::memory_order_relaxed),
                     diag.notStaged.load(std::memory_order_relaxed),
                     diag.worldMismatches.load(std::memory_order_relaxed),
                     diag.frameMismatches.load(std::memory_order_relaxed),
@@ -2967,56 +2798,41 @@ namespace rock::debug
         (void)s_frameAdmission.publish();
     }
 
-    void CapturePostSolveBodyPhases(
-        RE::hknpWorld* world,
-        const havok_physics_timing::PhysicsTimingSample& timing,
-        const std::uint64_t gameFrameIndex,
-        const std::uint64_t solveSequence) noexcept
+    void CapturePostSolveBodyPhases(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing,
+        const std::uint64_t gameFrameIndex, const std::uint64_t solveSequence) noexcept
     {
-        if (!s_physicsPhaseCaptureEnabled.load(
-                std::memory_order_acquire)) {
+        if (!s_physicsPhaseCaptureEnabled.load(std::memory_order_acquire)) {
             return;
         }
-        if (!world || gameFrameIndex == 0 || solveSequence == 0 ||
-            !timing.valid) {
-            s_phaseCaptureDiagnostics.invalidInputs.fetch_add(
-                1, std::memory_order_relaxed);
+        if (!world || gameFrameIndex == 0 || solveSequence == 0 || !timing.valid) {
+            s_phaseCaptureDiagnostics.invalidInputs.fetch_add(1, std::memory_order_relaxed);
             return;
         }
 
         const std::uint32_t substepCount = (std::max)(timing.substepCount, 1u);
-        const bool finalSubstep =
-            timing.substepIndex + 1 >= substepCount ||
-            timing.substepProgress >= 0.999f;
+        const bool finalSubstep = timing.substepIndex + 1 >= substepCount || timing.substepProgress >= 0.999f;
         if (!finalSubstep) {
             return;
         }
 
         AtomicFlagLease lease(s_physicsPhaseCaptureGate);
         if (!lease) {
-            s_phaseCaptureDiagnostics.gateMisses.fetch_add(
-                1, std::memory_order_relaxed);
+            s_phaseCaptureDiagnostics.gateMisses.fetch_add(1, std::memory_order_relaxed);
             return;
         }
-        s_phaseCaptureDiagnostics.lastRequestFrame.store(
-            s_physicsPhaseCaptureRequest.gameFrameIndex,
+        s_phaseCaptureDiagnostics.lastRequestFrame.store(s_physicsPhaseCaptureRequest.gameFrameIndex,
             std::memory_order_relaxed);
-        s_phaseCaptureDiagnostics.lastCaptureFrame.store(
-            gameFrameIndex, std::memory_order_relaxed);
+        s_phaseCaptureDiagnostics.lastCaptureFrame.store(gameFrameIndex, std::memory_order_relaxed);
         if (s_physicsPhaseCaptureRequest.count == 0) {
-            s_phaseCaptureDiagnostics.notStaged.fetch_add(
-                1, std::memory_order_relaxed);
+            s_phaseCaptureDiagnostics.notStaged.fetch_add(1, std::memory_order_relaxed);
             return;
         }
-        if (s_physicsPhaseCaptureRequest.worldIdentity !=
-            reinterpret_cast<std::uintptr_t>(world)) {
-            s_phaseCaptureDiagnostics.worldMismatches.fetch_add(
-                1, std::memory_order_relaxed);
+        if (s_physicsPhaseCaptureRequest.worldIdentity != reinterpret_cast<std::uintptr_t>(world)) {
+            s_phaseCaptureDiagnostics.worldMismatches.fetch_add(1, std::memory_order_relaxed);
             return;
         }
         if (s_physicsPhaseCaptureRequest.gameFrameIndex != gameFrameIndex) {
-            s_phaseCaptureDiagnostics.frameMismatches.fetch_add(
-                1, std::memory_order_relaxed);
+            s_phaseCaptureDiagnostics.frameMismatches.fetch_add(1, std::memory_order_relaxed);
             return;
         }
 
@@ -3027,37 +2843,29 @@ namespace rock::debug
         captured.substepIndex = timing.substepIndex;
         captured.substepCount = substepCount;
         for (std::uint32_t index = 0;
-             index < s_physicsPhaseCaptureRequest.count &&
-             index < s_physicsPhaseCaptureRequest.entries.size();
-             ++index) {
+            index < s_physicsPhaseCaptureRequest.count && index < s_physicsPhaseCaptureRequest.entries.size();
+            ++index) {
             const auto& request = s_physicsPhaseCaptureRequest.entries[index];
             auto& destination = captured.entries[captured.count++];
             destination.bodyId = request.bodyId;
             destination.role = request.role;
 
             BodyRenderInfo body{};
-            if (!extractBody(
-                    world,
-                    request.bodyId,
-                    request.useBodyArrayTransform ?
-                        BodyOverlayFrameSource::BodyArrayTransform :
-                        BodyOverlayFrameSource::LiveMotionWhenAvailable,
+            if (!extractBody(world, request.bodyId,
+                    request.useBodyArrayTransform ? BodyOverlayFrameSource::BodyArrayTransform
+                                                  : BodyOverlayFrameSource::LiveMotionWhenAvailable,
                     body)) {
-                s_phaseCaptureDiagnostics.extractFailures.fetch_add(
-                    1, std::memory_order_relaxed);
+                s_phaseCaptureDiagnostics.extractFailures.fetch_add(1, std::memory_order_relaxed);
                 continue;
             }
 
-            DirectX::XMStoreFloat4x4(
-                &destination.postSolveWorldMatrix,
-                body.worldMatrix);
+            DirectX::XMStoreFloat4x4(&destination.postSolveWorldMatrix, body.worldMatrix);
             destination.postSolveValid = true;
             ++captured.validCount;
         }
 
         s_completedBodyPhaseFrame = captured;
-        s_phaseCaptureDiagnostics.storedFrames.fetch_add(
-            1, std::memory_order_relaxed);
+        s_phaseCaptureDiagnostics.storedFrames.fetch_add(1, std::memory_order_relaxed);
     }
 
     void ClearFrame()
@@ -3068,10 +2876,7 @@ namespace rock::debug
         (void)s_frameAdmission.publish();
     }
 
-    void ClearShapeCache()
-    {
-        shapePipeline().invalidate();
-    }
+    void ClearShapeCache() { shapePipeline().invalidate(); }
 
     void ShutdownShapePipeline()
     {
@@ -3083,13 +2888,7 @@ namespace rock::debug
 
 namespace rock::world_overlay_renderer
 {
-    bool EnsureInstalled()
-    {
-        return debug::EnsureWorldOverlayInstalled();
-    }
+    bool EnsureInstalled() { return debug::EnsureWorldOverlayInstalled(); }
 
-    void NotifyPublication() noexcept
-    {
-        (void)debug::s_frameAdmission.publish();
-    }
+    void NotifyPublication() noexcept { (void)debug::s_frameAdmission.publish(); }
 }

@@ -9,7 +9,14 @@
 
 namespace rock::immersive_aid
 {
-    enum class Injector : std::uint8_t { None, Stimpak, MedX, Psycho, Serum };
+    enum class Injector : std::uint8_t
+    {
+        None,
+        Stimpak,
+        MedX,
+        Psycho,
+        Serum
+    };
 
     // Explicit Fallout4.esm ALCH identities. Syringer ammunition, inhalers,
     // oral chems, and unknown forms never acquire an injection gesture.
@@ -63,9 +70,8 @@ namespace rock::immersive_aid
 
     // Only consecutive, observed gameplay frames count. A pause, hitch, lost
     // body provider, new grab, or rebuilt collider set starts a fresh gesture.
-    [[nodiscard]] inline bool advanceContact(ContactState& state, bool touching,
-        std::uint64_t grabIdentity, std::uint64_t collisionGeneration,
-        const game_frame_timing_policy::GameFrameTiming& timing)
+    [[nodiscard]] inline bool advanceContact(ContactState& state, bool touching, std::uint64_t grabIdentity,
+        std::uint64_t collisionGeneration, const game_frame_timing_policy::GameFrameTiming& timing)
     {
         if (!grabIdentity || !touching || !timing.valid || timing.menuPaused || timing.discontinuity ||
             !std::isfinite(timing.deltaSeconds) || timing.deltaSeconds <= 0.0f ||

@@ -29,7 +29,9 @@ namespace rock::ragdoll
 
         bool contains(std::uint32_t id) const noexcept
         {
-            for (std::size_t i = 0; i < count; ++i) if (bodies[i].body.id == id) return true;
+            for (std::size_t i = 0; i < count; ++i)
+                if (bodies[i].body.id == id)
+                    return true;
             return false;
         }
     };

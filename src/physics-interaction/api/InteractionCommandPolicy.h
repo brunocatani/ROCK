@@ -11,13 +11,12 @@ namespace rock::provider::interaction_command_policy
     [[nodiscard]] inline constexpr bool isTerminal(api::grab::InteractionCommandState state) noexcept
     {
         return state == api::grab::InteractionCommandState::Succeeded ||
-               state == api::grab::InteractionCommandState::Rejected ||
-               state == api::grab::InteractionCommandState::Cancelled;
+            state == api::grab::InteractionCommandState::Rejected ||
+            state == api::grab::InteractionCommandState::Cancelled;
     }
 
     [[nodiscard]] inline constexpr api::grab::InteractionCommandResult mergeResultHistory(
-        const api::grab::InteractionCommandResult& existing,
-        const api::grab::InteractionCommandResult& update,
+        const api::grab::InteractionCommandResult& existing, const api::grab::InteractionCommandResult& update,
         const std::uint64_t currentFrame) noexcept
     {
         auto merged = update;
@@ -37,8 +36,7 @@ namespace rock::provider::interaction_command_policy
             if (merged.frameIndex == 0) {
                 merged.frameIndex = currentFrame;
             }
-            if (merged.state == api::grab::InteractionCommandState::Succeeded &&
-                merged.appliedFrame == 0) {
+            if (merged.state == api::grab::InteractionCommandState::Succeeded && merged.appliedFrame == 0) {
                 merged.appliedFrame = merged.frameIndex;
             }
             if (merged.failureStage == api::grab::InteractionFailure::None) {

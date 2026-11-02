@@ -16,15 +16,12 @@ namespace rock::grab_inertia_policy
         bool modified = false;
     };
 
-    inline InverseInertiaNormalizationResult normalizeInverseInertiaAxesForGrab(
-        float invX,
-        float invY,
-        float invZ,
-        float maxInertiaRatio,
-        float minInertia)
+    inline InverseInertiaNormalizationResult normalizeInverseInertiaAxesForGrab(float invX, float invY, float invZ,
+        float maxInertiaRatio, float minInertia)
     {
         InverseInertiaNormalizationResult result{};
-        if (!std::isfinite(invX) || !std::isfinite(invY) || !std::isfinite(invZ) || invX <= 0.0f || invY <= 0.0f || invZ <= 0.0f) {
+        if (!std::isfinite(invX) || !std::isfinite(invY) || !std::isfinite(invZ) || invX <= 0.0f || invY <= 0.0f ||
+            invZ <= 0.0f) {
             return result;
         }
 
@@ -50,8 +47,10 @@ namespace rock::grab_inertia_policy
             }
         }
 
-        const float normalizedMinAxis = (std::min)((std::min)(result.normalized[0], result.normalized[1]), result.normalized[2]);
-        const float normalizedMaxAxis = (std::max)((std::max)(result.normalized[0], result.normalized[1]), result.normalized[2]);
+        const float normalizedMinAxis =
+            (std::min)((std::min)(result.normalized[0], result.normalized[1]), result.normalized[2]);
+        const float normalizedMaxAxis =
+            (std::max)((std::max)(result.normalized[0], result.normalized[1]), result.normalized[2]);
         result.normalizedRatio = normalizedMaxAxis / normalizedMinAxis;
         return result;
     }

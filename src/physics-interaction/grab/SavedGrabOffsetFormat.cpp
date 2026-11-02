@@ -3,8 +3,8 @@
 #include <nlohmann/json.hpp>
 
 #include <charconv>
-#include <cstdio>
 #include <cmath>
+#include <cstdio>
 
 namespace rock::saved_grab_offset
 {
@@ -37,8 +37,8 @@ namespace rock::saved_grab_offset
 
         bool formRefFromJson(const json& j, FormRef& out)
         {
-            if (!j.is_object() || !j.contains("plugin") || !j["plugin"].is_string() ||
-                !j.contains("id") || !j["id"].is_string()) {
+            if (!j.is_object() || !j.contains("plugin") || !j["plugin"].is_string() || !j.contains("id") ||
+                !j["id"].is_string()) {
                 return false;
             }
             out.plugin = j["plugin"].get<std::string>();
@@ -105,24 +105,28 @@ namespace rock::saved_grab_offset
         bool validExactRotation(const float (&r)[9])
         {
             for (float value : r) {
-                if (!std::isfinite(value)) return false;
+                if (!std::isfinite(value))
+                    return false;
             }
             for (int row = 0; row < 3; ++row) {
                 for (int other = row; other < 3; ++other) {
                     float dot = 0.0f;
-                    for (int c = 0; c < 3; ++c) dot += r[row * 3 + c] * r[other * 3 + c];
-                    if (std::abs(dot - (row == other ? 1.0f : 0.0f)) > 0.002f) return false;
+                    for (int c = 0; c < 3; ++c)
+                        dot += r[row * 3 + c] * r[other * 3 + c];
+                    if (std::abs(dot - (row == other ? 1.0f : 0.0f)) > 0.002f)
+                        return false;
                 }
             }
-            const float determinant = r[0] * (r[4] * r[8] - r[5] * r[7]) -
-                r[1] * (r[3] * r[8] - r[5] * r[6]) + r[2] * (r[3] * r[7] - r[4] * r[6]);
+            const float determinant = r[0] * (r[4] * r[8] - r[5] * r[7]) - r[1] * (r[3] * r[8] - r[5] * r[6]) +
+                r[2] * (r[3] * r[7] - r[4] * r[6]);
             return std::abs(determinant - 1.0f) <= 0.002f;
         }
 
         bool handOffsetFromJson(const json& j, HandOffset& out, bool allowExact)
         {
-            if (!j.is_object() || !j.contains("translate") || !j["translate"].is_array() || j["translate"].size() != 3 ||
-                !j.contains("rotate") || !j["rotate"].is_array() || j["rotate"].size() != 9) {
+            if (!j.is_object() || !j.contains("translate") || !j["translate"].is_array() ||
+                j["translate"].size() != 3 || !j.contains("rotate") || !j["rotate"].is_array() ||
+                j["rotate"].size() != 9) {
                 return false;
             }
             for (std::size_t i = 0; i < 3; ++i) {
@@ -151,31 +155,40 @@ namespace rock::saved_grab_offset
             if (allowExact && j.contains("exactFinger")) {
                 const auto& exact = j["exactFinger"];
                 if (!exact.is_object() || !exact.contains("rig") || !exact["rig"].is_string() ||
-                    exact["rig"].get_ref<const std::string&>() != kExactFingerRig ||
-                    !exact.contains("rotations") || !exact["rotations"].is_array() || exact["rotations"].size() != 15) {
+                    exact["rig"].get_ref<const std::string&>() != kExactFingerRig || !exact.contains("rotations") ||
+                    !exact["rotations"].is_array() || exact["rotations"].size() != 15) {
                     return false;
                 }
                 for (std::size_t i = 0; i < 15; ++i) {
                     const auto& rotation = exact["rotations"][i];
-                    if (!rotation.is_array() || rotation.size() != 9) return false;
+                    if (!rotation.is_array() || rotation.size() != 9)
+                        return false;
                     for (std::size_t c = 0; c < 9; ++c) {
-                        if (!rotation[c].is_number()) return false;
+                        if (!rotation[c].is_number())
+                            return false;
                         out.exactFingerRotations[i][c] = rotation[c].get<float>();
                     }
-                    if (!validExactRotation(out.exactFingerRotations[i])) return false;
+                    if (!validExactRotation(out.exactFingerRotations[i]))
+                        return false;
                 }
                 // The scalar seed establishes the existing tagged override and
                 // provides its normal-rig rest translations. It is never a
                 // lossy substitute for an invalid exact pose.
-                if (!out.hasFingerPose || !out.hasFingerJointValues) return false;
+                if (!out.hasFingerPose || !out.hasFingerJointValues)
+                    return false;
                 for (float value : out.fingerJointValues) {
-                    if (!std::isfinite(value) || value < 0.0f || value > 2.0f) return false;
+                    if (!std::isfinite(value) || value < 0.0f || value > 2.0f)
+                        return false;
                 }
                 for (float value : out.fingerValues) {
-                    if (!std::isfinite(value) || value < 0.0f || value > 2.0f) return false;
+                    if (!std::isfinite(value) || value < 0.0f || value > 2.0f)
+                        return false;
                 }
-                if (!validExactRotation(out.rotate)) return false;
-                for (float value : out.translateGame) if (!std::isfinite(value)) return false;
+                if (!validExactRotation(out.rotate))
+                    return false;
+                for (float value : out.translateGame)
+                    if (!std::isfinite(value))
+                        return false;
                 out.hasExactFingerRotations = true;
             }
             return true;
@@ -243,7 +256,8 @@ namespace rock::saved_grab_offset
             return true;
         } catch (const json::exception&) {
             out = SavedGrabOffsetFile{};
-            if (outError) *outError = "invalid offset field type or numeric range";
+            if (outError)
+                *outError = "invalid offset field type or numeric range";
             return false;
         }
     }

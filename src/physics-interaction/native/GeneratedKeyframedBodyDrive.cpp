@@ -1,11 +1,11 @@
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 
+#include "RockConfig.h"
+#include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRuntime.h"
-#include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
-#include "RockConfig.h"
 
 #include <algorithm>
 #include <cmath>
@@ -18,11 +18,8 @@ namespace rock
         {
             RE::hkTransformf transform{};
             transform.rotation = niRotToHkTransformRotation(target.rotate);
-            transform.translation = RE::NiPoint4(
-                target.translate.x * gameToHavokScale(),
-                target.translate.y * gameToHavokScale(),
-                target.translate.z * gameToHavokScale(),
-                0.0f);
+            transform.translation = RE::NiPoint4(target.translate.x * gameToHavokScale(),
+                target.translate.y * gameToHavokScale(), target.translate.z * gameToHavokScale(), 0.0f);
             return transform;
         }
 
@@ -31,7 +28,8 @@ namespace rock
             return RE::NiPoint3{ target.translation.x, target.translation.y, target.translation.z };
         }
 
-        bool targetMovedFarEnoughForTeleport(const RE::NiPoint3& previous, const RE::NiPoint3& current, float thresholdGameUnits)
+        bool targetMovedFarEnoughForTeleport(const RE::NiPoint3& previous, const RE::NiPoint3& current,
+            float thresholdGameUnits)
         {
             if (thresholdGameUnits <= 0.0f) {
                 return false;
@@ -53,10 +51,7 @@ namespace rock
             return std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
         }
 
-        float radiansToDegrees(float radians)
-        {
-            return radians * 57.29577951308232f;
-        }
+        float radiansToDegrees(float radians) { return radians * 57.29577951308232f; }
 
         RE::NiPoint3 localAxisWorld(const RE::NiMatrix3& matrix, const RE::NiPoint3& axis)
         {
@@ -90,11 +85,8 @@ namespace rock
             return radiansToDegrees(std::acos(directionDot(lhs, rhs)));
         }
 
-        void fillRequiredVelocityTelemetry(
-            const RE::NiTransform& liveTransform,
-            const RE::NiTransform& target,
-            float driveDeltaSeconds,
-            GeneratedKeyframedBodyDriveResult& result)
+        void fillRequiredVelocityTelemetry(const RE::NiTransform& liveTransform, const RE::NiTransform& target,
+            float driveDeltaSeconds, GeneratedKeyframedBodyDriveResult& result)
         {
             if (!havok_physics_timing::isUsableDelta(driveDeltaSeconds)) {
                 result.requiredLinearVelocityHavok = 0.0f;
@@ -103,13 +95,12 @@ namespace rock
             }
             const float linearGame = pointLength(pointDelta(liveTransform.translate, target.translate));
             result.requiredLinearVelocityHavok = linearGame * gameToHavokScale() / driveDeltaSeconds;
-            const float angle = generated_keyframed_body_drive_math::rotationAngleRadians(liveTransform.rotate, target.rotate);
+            const float angle =
+                generated_keyframed_body_drive_math::rotationAngleRadians(liveTransform.rotate, target.rotate);
             result.requiredAngularVelocityRadians = std::isfinite(angle) ? angle / driveDeltaSeconds : 0.0f;
         }
 
-        void fillRotationReadbackTelemetry(
-            const RE::NiTransform& liveTransform,
-            const RE::NiTransform& target,
+        void fillRotationReadbackTelemetry(const RE::NiTransform& liveTransform, const RE::NiTransform& target,
             GeneratedKeyframedBodyDriveResult& result)
         {
             /*
@@ -126,16 +117,16 @@ namespace rock
             result.liveBodyAxisYWorld = localAxisWorld(liveTransform.rotate, RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
             result.liveBodyAxisZWorld = localAxisWorld(liveTransform.rotate, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
 
-            const float rotationRadians = generated_keyframed_body_drive_math::rotationAngleRadians(liveTransform.rotate, target.rotate);
-            result.targetToBodyRotationDegrees = std::isfinite(rotationRadians) ? radiansToDegrees(rotationRadians) : 0.0f;
+            const float rotationRadians =
+                generated_keyframed_body_drive_math::rotationAngleRadians(liveTransform.rotate, target.rotate);
+            result.targetToBodyRotationDegrees =
+                std::isfinite(rotationRadians) ? radiansToDegrees(rotationRadians) : 0.0f;
             result.targetToBodyAxisXDegrees = directionDeltaDegrees(result.targetAxisXWorld, result.liveBodyAxisXWorld);
             result.targetToBodyAxisYDegrees = directionDeltaDegrees(result.targetAxisYWorld, result.liveBodyAxisYWorld);
             result.targetToBodyAxisZDegrees = directionDeltaDegrees(result.targetAxisZWorld, result.liveBodyAxisZWorld);
         }
 
-        void fillTargetTelemetry(
-            const RE::NiTransform& target,
-            const RE::hkTransformf& targetHavok,
+        void fillTargetTelemetry(const RE::NiTransform& target, const RE::hkTransformf& targetHavok,
             GeneratedKeyframedBodyDriveResult& result)
         {
             result.hasCommandedTargetGameTransform = true;
@@ -144,12 +135,8 @@ namespace rock
             result.targetHavokPosition = havokTranslationToGamePoint(targetHavok);
         }
 
-        void fillLiveBodyTelemetry(
-            const RE::NiTransform& liveTransform,
-            body_frame::BodyFrameSource frameSource,
-            std::uint32_t motionIndex,
-            const RE::NiTransform& target,
-            GeneratedKeyframedBodyDriveResult& result)
+        void fillLiveBodyTelemetry(const RE::NiTransform& liveTransform, body_frame::BodyFrameSource frameSource,
+            std::uint32_t motionIndex, const RE::NiTransform& target, GeneratedKeyframedBodyDriveResult& result)
         {
             result.hasLiveBodyTransform = true;
             result.liveBodyGameTransform = liveTransform;
@@ -161,18 +148,15 @@ namespace rock
             fillRotationReadbackTelemetry(liveTransform, target, result);
         }
 
-        void captureTargetAndBodyTelemetry(
-            RE::hknpWorld* world,
-            const RE::hknpBody& liveBody,
-            const RE::NiTransform& target,
-            const RE::hkTransformf& targetHavok,
-            GeneratedKeyframedBodyDriveResult& result,
-            RE::NiTransform* outLiveTransform = nullptr)
+        void captureTargetAndBodyTelemetry(RE::hknpWorld* world, const RE::hknpBody& liveBody,
+            const RE::NiTransform& target, const RE::hkTransformf& targetHavok,
+            GeneratedKeyframedBodyDriveResult& result, RE::NiTransform* outLiveTransform = nullptr)
         {
             fillTargetTelemetry(target, targetHavok, result);
             const auto live = havok_runtime::resolveLiveBodyWorldTransform(world, liveBody);
             if (live.valid) {
-                if (outLiveTransform) *outLiveTransform = live.transform;
+                if (outLiveTransform)
+                    *outLiveTransform = live.transform;
                 fillLiveBodyTelemetry(live.transform, live.source, live.motionIndex, target, result);
             }
         }
@@ -189,74 +173,51 @@ namespace rock
             }
         }
 
-        void logGeneratedBodyDriveTelemetry(
-            const GeneratedKeyframedBodyDriveResult& result,
-            const havok_physics_timing::PhysicsTimingSample& timing,
-            const char* ownerName,
-            std::uint32_t bodyIndex,
+        void logGeneratedBodyDriveTelemetry(const GeneratedKeyframedBodyDriveResult& result,
+            const havok_physics_timing::PhysicsTimingSample& timing, const char* ownerName, std::uint32_t bodyIndex,
             RE::hknpBodyId bodyId)
         {
-
             if (!g_rockConfig.rockDebugVerboseLogging || !result.driven) {
                 return;
             }
 
-            ROCK_LOG_SAMPLE_DEBUG(Physics,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "Generated keyframed body drive owner={} bodyIndex={} bodyId={} phase={} substep={}/{} progress={:.3f} targetGame=({:.2f},{:.2f},{:.2f}) targetHavok=({:.4f},{:.4f},{:.4f}) bodyGame=({:.2f},{:.2f},{:.2f}) bodyDeltaGame={:.2f} bodyRotErr={:.2f} axisDeg=({:.1f},{:.1f},{:.1f}) bodySource={} motion={} rawDt={:.6f} subDt={:.6f} simulatedDt={:.6f} driveDt={:.6f} sourceDt={:.6f} sourceAge={:.6f} predictLead={:.6f} stale={} noSourceSteps={} reqLinHavok={:.2f} reqAng={:.2f} uncappedReqLinHavok={:.2f} uncappedReqAng={:.2f} linCap={} angCap={} capAlpha={:.3f} substeps={} scaleG2H={:.8f} teleported={} hardSync={}",
-                ownerName ? ownerName : "unknown",
-                bodyIndex,
-                bodyId.value,
-                physicsStepPhaseName(timing.phase),
-                timing.substepIndex + 1,
-                timing.substepCount,
-                timing.substepProgress,
-                result.targetGamePosition.x,
-                result.targetGamePosition.y,
-                result.targetGamePosition.z,
-                result.targetHavokPosition.x,
-                result.targetHavokPosition.y,
-                result.targetHavokPosition.z,
-                result.liveBodyGamePosition.x,
-                result.liveBodyGamePosition.y,
-                result.liveBodyGamePosition.z,
+            ROCK_LOG_SAMPLE_DEBUG(Physics, g_rockConfig.rockLogSampleMilliseconds,
+                "Generated keyframed body drive owner={} bodyIndex={} bodyId={} phase={} substep={}/{} progress={:.3f} "
+                "targetGame=({:.2f},{:.2f},{:.2f}) targetHavok=({:.4f},{:.4f},{:.4f}) bodyGame=({:.2f},{:.2f},{:.2f}) "
+                "bodyDeltaGame={:.2f} bodyRotErr={:.2f} axisDeg=({:.1f},{:.1f},{:.1f}) bodySource={} motion={} "
+                "rawDt={:.6f} subDt={:.6f} simulatedDt={:.6f} driveDt={:.6f} sourceDt={:.6f} sourceAge={:.6f} "
+                "predictLead={:.6f} stale={} noSourceSteps={} reqLinHavok={:.2f} reqAng={:.2f} "
+                "uncappedReqLinHavok={:.2f} uncappedReqAng={:.2f} linCap={} angCap={} capAlpha={:.3f} substeps={} "
+                "scaleG2H={:.8f} teleported={} hardSync={}",
+                ownerName ? ownerName : "unknown", bodyIndex, bodyId.value, physicsStepPhaseName(timing.phase),
+                timing.substepIndex + 1, timing.substepCount, timing.substepProgress, result.targetGamePosition.x,
+                result.targetGamePosition.y, result.targetGamePosition.z, result.targetHavokPosition.x,
+                result.targetHavokPosition.y, result.targetHavokPosition.z, result.liveBodyGamePosition.x,
+                result.liveBodyGamePosition.y, result.liveBodyGamePosition.z,
                 result.hasLiveBodyTransform ? result.bodyDeltaGameUnits : -1.0f,
                 result.hasLiveBodyTransform ? result.targetToBodyRotationDegrees : -1.0f,
                 result.hasLiveBodyTransform ? result.targetToBodyAxisXDegrees : -1.0f,
                 result.hasLiveBodyTransform ? result.targetToBodyAxisYDegrees : -1.0f,
                 result.hasLiveBodyTransform ? result.targetToBodyAxisZDegrees : -1.0f,
-                result.hasLiveBodyTransform ? body_frame::bodyFrameSourceName(result.liveBodyFrameSource) : "unreadable",
-                result.motionIndex,
-                timing.rawDeltaSeconds,
-                timing.substepDeltaSeconds,
-                timing.simulatedDeltaSeconds,
-                result.driveDeltaSeconds,
-                result.sourceDeltaSeconds,
-                result.sourceAgeSeconds,
-                result.predictionLeadSeconds,
-                result.sourceStale ? "yes" : "no",
-                result.stepsWithoutSource,
-                result.requiredLinearVelocityHavok,
-                result.requiredAngularVelocityRadians,
-                result.uncappedRequiredLinearVelocityHavok,
-                result.uncappedRequiredAngularVelocityRadians,
-                result.linearLimitExceeded ? "yes" : "no",
-                result.angularLimitExceeded ? "yes" : "no",
-                result.targetLimitAlpha,
-                timing.substepCount,
-                gameToHavokScale(),
-                result.teleported ? "yes" : "no",
+                result.hasLiveBodyTransform ? body_frame::bodyFrameSourceName(result.liveBodyFrameSource)
+                                            : "unreadable",
+                result.motionIndex, timing.rawDeltaSeconds, timing.substepDeltaSeconds, timing.simulatedDeltaSeconds,
+                result.driveDeltaSeconds, result.sourceDeltaSeconds, result.sourceAgeSeconds,
+                result.predictionLeadSeconds, result.sourceStale ? "yes" : "no", result.stepsWithoutSource,
+                result.requiredLinearVelocityHavok, result.requiredAngularVelocityRadians,
+                result.uncappedRequiredLinearVelocityHavok, result.uncappedRequiredAngularVelocityRadians,
+                result.linearLimitExceeded ? "yes" : "no", result.angularLimitExceeded ? "yes" : "no",
+                result.targetLimitAlpha, timing.substepCount, gameToHavokScale(), result.teleported ? "yes" : "no",
                 result.hardSynced ? "yes" : "no");
         }
 
-        RE::NiTransform selectGeneratedDriveTarget(const GeneratedKeyframedBodyDriveState& state, const havok_physics_timing::PhysicsTimingSample& timing)
+        RE::NiTransform selectGeneratedDriveTarget(const GeneratedKeyframedBodyDriveState& state,
+            const havok_physics_timing::PhysicsTimingSample& timing)
         {
-            if (generated_keyframed_body_drive_math::shouldUseSubstepInterpolatedTarget(
-                    timing,
-                    state.hasPendingTarget,
-                    state.hasPreviousTarget,
-                    false)) {
-                return generated_keyframed_body_drive_math::interpolateTargetTransform(state.previousTarget, state.pendingTarget, timing.substepProgress);
+            if (generated_keyframed_body_drive_math::shouldUseSubstepInterpolatedTarget(timing, state.hasPendingTarget,
+                    state.hasPreviousTarget, false)) {
+                return generated_keyframed_body_drive_math::interpolateTargetTransform(state.previousTarget,
+                    state.pendingTarget, timing.substepProgress);
             }
 
             return state.hasPendingTarget ? state.pendingTarget : state.previousTarget;
@@ -291,18 +252,22 @@ namespace rock
         }
     }
 
-    void invalidateGeneratedColliderPose(RE::hknpWorld* world, BethesdaPhysicsBody& body, GeneratedKeyframedBodyDriveState& state)
+    void invalidateGeneratedColliderPose(RE::hknpWorld* world, BethesdaPhysicsBody& body,
+        GeneratedKeyframedBodyDriveState& state)
     {
         {
             std::scoped_lock lock(state.mutex);
             resetGeneratedKeyframedBodyDriveStateUnlocked(state);
             state.finalPoseSuppressed = true;
         }
-        if (!world || !body.isValid()) return;
+        if (!world || !body.isValid())
+            return;
         const auto* liveBody = havok_runtime::getBody(world, body.getBodyId());
         if (!liveBody || !body.getCollisionObject() ||
             havok_runtime::getCollisionObjectFromBody(liveBody) != body.getCollisionObject()) {
-            ROCK_LOG_SAMPLE_WARN(Physics, 1000, "Missing-pose collider identity unavailable body={}; native state left untouched", body.getBodyId().value);
+            ROCK_LOG_SAMPLE_WARN(Physics, 1000,
+                "Missing-pose collider identity unavailable body={}; native state left untouched",
+                body.getBodyId().value);
             return;
         }
         using namespace collision_suppression_registry;
@@ -310,33 +275,38 @@ namespace rock
             CollisionSuppressionOwner::InvalidFinalPose, "final-pose-unavailable");
         alignas(16) const float zero[4]{};
         if (!body.setVelocity(zero, zero)) {
-            ROCK_LOG_SAMPLE_WARN(Physics, 1000, "Failed to stop collider with missing final pose body={}", body.getBodyId().value);
+            ROCK_LOG_SAMPLE_WARN(Physics, 1000, "Failed to stop collider with missing final pose body={}",
+                body.getBodyId().value);
         }
     }
 
     bool releaseGeneratedColliderPoseSuppression(RE::hknpWorld* world, BethesdaPhysicsBody& body)
     {
-        if (!world || !body.isValid()) return false;
+        if (!world || !body.isValid())
+            return false;
         using namespace collision_suppression_registry;
         auto& registry = globalCollisionSuppressionRegistry();
         if (registry.hasLease(world, body.getBodyId().value, CollisionSuppressionOwner::InvalidFinalPose)) {
             const auto* liveBody = havok_runtime::getBody(world, body.getBodyId());
             if (!liveBody || !body.getCollisionObject() ||
-                havok_runtime::getCollisionObjectFromBody(liveBody) != body.getCollisionObject()) return false;
-            (void)registry.release(world, body.getBodyId().value,
-                CollisionSuppressionOwner::InvalidFinalPose, "final-pose-restored-or-retired");
+                havok_runtime::getCollisionObjectFromBody(liveBody) != body.getCollisionObject())
+                return false;
+            (void)registry.release(world, body.getBodyId().value, CollisionSuppressionOwner::InvalidFinalPose,
+                "final-pose-restored-or-retired");
         }
         return !registry.hasLease(world, body.getBodyId().value, CollisionSuppressionOwner::InvalidFinalPose);
     }
 
-    void restoreGeneratedColliderPoseAfterDrive(RE::hknpWorld* world, BethesdaPhysicsBody& body, GeneratedKeyframedBodyDriveState& state)
+    void restoreGeneratedColliderPoseAfterDrive(RE::hknpWorld* world, BethesdaPhysicsBody& body,
+        GeneratedKeyframedBodyDriveState& state)
     {
         std::scoped_lock lock(state.mutex);
         // Invalidation resets consumedSequence. Keep collision suppressed
         // until a measured native step has driven a new, valid target. Never
         // destroy or teleport a palm that may still anchor a constraint.
         if (state.finalPoseSuppressed && state.consumedSequence != 0 &&
-            releaseGeneratedColliderPoseSuppression(world, body)) state.finalPoseSuppressed = false;
+            releaseGeneratedColliderPoseSuppression(world, body))
+            state.finalPoseSuppressed = false;
     }
 
     void clearGeneratedKeyframedBodyDriveState(GeneratedKeyframedBodyDriveState& state)
@@ -345,7 +315,8 @@ namespace rock
         resetGeneratedKeyframedBodyDriveStateUnlocked(state);
     }
 
-    void initializeGeneratedKeyframedBodyDriveState(GeneratedKeyframedBodyDriveState& state, const RE::NiTransform& target)
+    void initializeGeneratedKeyframedBodyDriveState(GeneratedKeyframedBodyDriveState& state,
+        const RE::NiTransform& target)
     {
         std::scoped_lock lock(state.mutex);
         resetGeneratedKeyframedBodyDriveStateUnlocked(state);
@@ -359,21 +330,18 @@ namespace rock
         state.consumedSequence = 1;
     }
 
-    GeneratedKeyframedBodyDriveQueueResult queueGeneratedKeyframedBodyTarget(
-        GeneratedKeyframedBodyDriveState& state,
-        const RE::NiTransform& target,
-        float sourceDeltaSeconds,
-        float teleportDistanceGameUnits,
+    GeneratedKeyframedBodyDriveQueueResult queueGeneratedKeyframedBodyTarget(GeneratedKeyframedBodyDriveState& state,
+        const RE::NiTransform& target, float sourceDeltaSeconds, float teleportDistanceGameUnits,
         const RE::NiPoint3& sourceTransportDeltaGame)
     {
         std::scoped_lock lock(state.mutex);
         GeneratedKeyframedBodyDriveQueueResult result{};
-        const float sanitizedSourceDelta = generated_keyframed_body_drive_math::sanitizeSourceDeltaSeconds(sourceDeltaSeconds);
+        const float sanitizedSourceDelta =
+            generated_keyframed_body_drive_math::sanitizeSourceDeltaSeconds(sourceDeltaSeconds);
         state.sourceTransportVelocityHavok = {};
         RE::NiPoint3 transportVelocity{};
-        if (generated_keyframed_body_drive_math::tryComputeSampledLinearVelocityHavok(
-                RE::NiPoint3{}, sourceTransportDeltaGame, sanitizedSourceDelta,
-                gameToHavokScale(), transportVelocity)) {
+        if (generated_keyframed_body_drive_math::tryComputeSampledLinearVelocityHavok(RE::NiPoint3{},
+                sourceTransportDeltaGame, sanitizedSourceDelta, gameToHavokScale(), transportVelocity)) {
             state.sourceTransportVelocityHavok = transportVelocity;
         }
         const bool hadReferenceTarget = state.hasPendingTarget || state.hasPreviousTarget;
@@ -381,12 +349,9 @@ namespace rock
         state.hasSampledLinearVelocityHavok = false;
         state.sampledLinearVelocityHavok = {};
         if (hadReferenceTarget) {
-            state.hasSampledLinearVelocityHavok = generated_keyframed_body_drive_math::tryComputeSampledLinearVelocityHavok(
-                referenceTarget.translate,
-                target.translate,
-                sanitizedSourceDelta,
-                gameToHavokScale(),
-                state.sampledLinearVelocityHavok);
+            state.hasSampledLinearVelocityHavok =
+                generated_keyframed_body_drive_math::tryComputeSampledLinearVelocityHavok(referenceTarget.translate,
+                    target.translate, sanitizedSourceDelta, gameToHavokScale(), state.sampledLinearVelocityHavok);
         }
         if (!state.hasPreviousTarget) {
             state.previousTarget = target;
@@ -397,7 +362,9 @@ namespace rock
         state.sourceDeltaSeconds = sanitizedSourceDelta;
         state.secondsSinceSourceSample = 0.0f;
         state.teleportDistanceGameUnits = teleportDistanceGameUnits;
-        state.pendingTeleport = state.hasPreviousTarget && targetMovedFarEnoughForTeleport(state.previousTarget.translate, target.translate, teleportDistanceGameUnits);
+        state.pendingTeleport = state.hasPreviousTarget &&
+            targetMovedFarEnoughForTeleport(state.previousTarget.translate, target.translate,
+                teleportDistanceGameUnits);
         state.hasPendingTarget = true;
         ++state.queuedSequence;
         result.queued = true;
@@ -405,28 +372,22 @@ namespace rock
         return result;
     }
 
-    GeneratedKeyframedBodyDriveSampledVelocity snapshotGeneratedKeyframedBodyDriveSampledVelocity(const GeneratedKeyframedBodyDriveState& state)
+    GeneratedKeyframedBodyDriveSampledVelocity snapshotGeneratedKeyframedBodyDriveSampledVelocity(
+        const GeneratedKeyframedBodyDriveState& state)
     {
         std::scoped_lock lock(state.mutex);
         GeneratedKeyframedBodyDriveSampledVelocity snapshot{};
         snapshot.velocityHavok = state.sampledLinearVelocityHavok;
-        snapshot.valid = state.hasSampledLinearVelocityHavok &&
-                         std::isfinite(snapshot.velocityHavok.x) &&
-                         std::isfinite(snapshot.velocityHavok.y) &&
-                         std::isfinite(snapshot.velocityHavok.z);
+        snapshot.valid = state.hasSampledLinearVelocityHavok && std::isfinite(snapshot.velocityHavok.x) &&
+            std::isfinite(snapshot.velocityHavok.y) && std::isfinite(snapshot.velocityHavok.z);
         return snapshot;
     }
 
     namespace
     {
-        bool driveDynamicBodyVelocityTowardTarget(
-            RE::hknpWorld* world,
-            BethesdaPhysicsBody& body,
-            const RE::NiTransform& target,
-            float driveDeltaSeconds,
-            float maximumLinearVelocityHavok,
-            const GeneratedBodyDriveMode& mode,
-            GeneratedKeyframedBodyDriveResult& result)
+        bool driveDynamicBodyVelocityTowardTarget(RE::hknpWorld* world, BethesdaPhysicsBody& body,
+            const RE::NiTransform& target, float driveDeltaSeconds, float maximumLinearVelocityHavok,
+            const GeneratedBodyDriveMode& mode, GeneratedKeyframedBodyDriveResult& result)
         {
             if (!world || !body.isValid() || !havok_physics_timing::isUsableDelta(driveDeltaSeconds)) {
                 return false;
@@ -443,23 +404,25 @@ namespace rock
 
             alignas(16) float linearVelocityHavok[4]{};
             alignas(16) float angularVelocityRadians[4]{};
-            using ComputeHardKeyFrame_t = void (*)(RE::hknpWorld*, RE::hknpBodyId, float*, float*, float, float*, float*);
+            using ComputeHardKeyFrame_t =
+                void (*)(RE::hknpWorld*, RE::hknpBodyId, float*, float*, float, float*, float*);
             static REL::Relocation<ComputeHardKeyFrame_t> compute{ REL::Offset(offsets::kFunc_ComputeHardKeyFrame) };
-            compute(world, body.getBodyId(), targetPositionHavok, targetRotationHavok, driveDeltaSeconds, linearVelocityHavok, angularVelocityRadians);
+            compute(world, body.getBodyId(), targetPositionHavok, targetRotationHavok, driveDeltaSeconds,
+                linearVelocityHavok, angularVelocityRadians);
 
             if (!havok_runtime::isFinite3(linearVelocityHavok) || !havok_runtime::isFinite3(angularVelocityRadians)) {
                 return false;
             }
 
             result.dynamicVelocityValid = true;
-            result.dynamicLinearBeforePressHavok = { linearVelocityHavok[0], linearVelocityHavok[1], linearVelocityHavok[2] };
+            result.dynamicLinearBeforePressHavok = { linearVelocityHavok[0], linearVelocityHavok[1],
+                linearVelocityHavok[2] };
             if (mode.hasContactPressDirection) {
                 auto velocity = result.dynamicLinearBeforePressHavok;
-                result.contactPressClamped = generated_keyframed_body_drive_math::clampContactPressVelocity(
-                    velocity,
-                    RE::NiPoint3{ mode.contactPressDirection[0], mode.contactPressDirection[1], mode.contactPressDirection[2] },
-                    result.contactPressReferenceVelocityHavok,
-                    mode.contactPressMaxVelocityHavok,
+                result.contactPressClamped = generated_keyframed_body_drive_math::clampContactPressVelocity(velocity,
+                    RE::NiPoint3{ mode.contactPressDirection[0], mode.contactPressDirection[1],
+                        mode.contactPressDirection[2] },
+                    result.contactPressReferenceVelocityHavok, mode.contactPressMaxVelocityHavok,
                     maximumLinearVelocityHavok);
                 linearVelocityHavok[0] = velocity.x;
                 linearVelocityHavok[1] = velocity.y;
@@ -468,7 +431,8 @@ namespace rock
 
             linearVelocityHavok[3] = 0.0f;
             angularVelocityRadians[3] = 0.0f;
-            result.dynamicLinearAfterPressHavok = { linearVelocityHavok[0], linearVelocityHavok[1], linearVelocityHavok[2] };
+            result.dynamicLinearAfterPressHavok = { linearVelocityHavok[0], linearVelocityHavok[1],
+                linearVelocityHavok[2] };
             return body.setVelocity(linearVelocityHavok, angularVelocityRadians);
         }
     }
@@ -486,15 +450,9 @@ namespace rock
         return moved && zeroed;
     }
 
-    GeneratedKeyframedBodyDriveResult driveGeneratedKeyframedBody(
-        RE::hknpWorld* world,
-        BethesdaPhysicsBody& body,
-        GeneratedKeyframedBodyDriveState& state,
-        const havok_physics_timing::PhysicsTimingSample& timing,
-        const char* ownerName,
-        std::uint32_t bodyIndex,
-        float maxLinearVelocityHavok,
-        float maxAngularVelocityRadians,
+    GeneratedKeyframedBodyDriveResult driveGeneratedKeyframedBody(RE::hknpWorld* world, BethesdaPhysicsBody& body,
+        GeneratedKeyframedBodyDriveState& state, const havok_physics_timing::PhysicsTimingSample& timing,
+        const char* ownerName, std::uint32_t bodyIndex, float maxLinearVelocityHavok, float maxAngularVelocityRadians,
         const GeneratedBodyDriveMode& mode)
     {
         GeneratedKeyframedBodyDriveResult result{};
@@ -505,14 +463,11 @@ namespace rock
              * of integrating against a fabricated rate.
              */
             result.skippedInvalidTiming = true;
-            ROCK_LOG_SAMPLE_WARN(Physics,
-                1000,
-                "Generated keyframed body drive skipped unmeasured physics timing owner={} bodyIndex={} bodyId={} phase={} fallback={}",
-                ownerName ? ownerName : "unknown",
-                bodyIndex,
-                body.getBodyId().value,
-                physicsStepPhaseName(timing.phase),
-                timing.usedFallback ? "yes" : "no");
+            ROCK_LOG_SAMPLE_WARN(Physics, 1000,
+                "Generated keyframed body drive skipped unmeasured physics timing owner={} bodyIndex={} bodyId={} "
+                "phase={} fallback={}",
+                ownerName ? ownerName : "unknown", bodyIndex, body.getBodyId().value,
+                physicsStepPhaseName(timing.phase), timing.usedFallback ? "yes" : "no");
             return result;
         }
 
@@ -543,13 +498,9 @@ namespace rock
         auto* liveBody = world ? havok_runtime::getBody(world, body.getBodyId()) : nullptr;
         if (!world || !body.isValid() || !liveBody) {
             result.missingBody = true;
-            ROCK_LOG_SAMPLE_WARN(Physics,
-                1000,
+            ROCK_LOG_SAMPLE_WARN(Physics, 1000,
                 "Generated keyframed body drive missing owner={} bodyIndex={} bodyId={} world={:p}",
-                ownerName ? ownerName : "unknown",
-                bodyIndex,
-                body.getBodyId().value,
-                static_cast<void*>(world));
+                ownerName ? ownerName : "unknown", bodyIndex, body.getBodyId().value, static_cast<void*>(world));
             return result;
         }
 
@@ -560,14 +511,11 @@ namespace rock
         auto* liveCollisionObject = havok_runtime::getCollisionObjectFromBody(liveBody);
         if (!expectedCollisionObject || liveCollisionObject != expectedCollisionObject) {
             result.bodyCollisionObjectMismatch = true;
-            ROCK_LOG_SAMPLE_WARN(Physics,
-                1000,
-                "Generated keyframed body drive ownership mismatch owner={} bodyIndex={} bodyId={} expectedCollObj={:p} liveCollObj={:p}",
-                ownerName ? ownerName : "unknown",
-                bodyIndex,
-                body.getBodyId().value,
-                static_cast<void*>(expectedCollisionObject),
-                static_cast<void*>(liveCollisionObject));
+            ROCK_LOG_SAMPLE_WARN(Physics, 1000,
+                "Generated keyframed body drive ownership mismatch owner={} bodyIndex={} bodyId={} "
+                "expectedCollObj={:p} liveCollObj={:p}",
+                ownerName ? ownerName : "unknown", bodyIndex, body.getBodyId().value,
+                static_cast<void*>(expectedCollisionObject), static_cast<void*>(liveCollisionObject));
             return result;
         }
 
@@ -575,7 +523,8 @@ namespace rock
         result.predicted = false;
         const bool hardSyncForVelocity = false;
         const bool immediatePlacement = state.pendingTeleport || hardSyncForVelocity;
-        const RE::NiTransform requestedTarget = immediatePlacement ? selectGeneratedImmediatePlacementTarget(state) : selectGeneratedDriveTarget(state, timing);
+        const RE::NiTransform requestedTarget = immediatePlacement ? selectGeneratedImmediatePlacementTarget(state)
+                                                                   : selectGeneratedDriveTarget(state, timing);
         result.hasRequestedTargetGameTransform = true;
         result.requestedTargetGameTransform = requestedTarget;
         result.requestedTargetGamePosition = requestedTarget.translate;
@@ -591,13 +540,9 @@ namespace rock
         result.targetLimitAlpha = 1.0f;
 
         if (!immediatePlacement && result.hasLiveBodyTransform) {
-            const auto limitedTarget = generated_keyframed_body_drive_math::limitGeneratedDriveTarget(
-                liveTransform,
-                requestedTarget,
-                result.driveDeltaSeconds,
-                gameToHavokScale(),
-                maxLinearVelocityHavok,
-                maxAngularVelocityRadians);
+            const auto limitedTarget =
+                generated_keyframed_body_drive_math::limitGeneratedDriveTarget(liveTransform, requestedTarget,
+                    result.driveDeltaSeconds, gameToHavokScale(), maxLinearVelocityHavok, maxAngularVelocityRadians);
             result.linearLimitExceeded = limitedTarget.limit.linearLimitExceeded;
             result.angularLimitExceeded = limitedTarget.limit.angularLimitExceeded;
             result.targetLimitAlpha = limitedTarget.limit.alpha;
@@ -617,20 +562,13 @@ namespace rock
             result.driven = result.teleported;
             result.placementFailed = !result.teleported;
             if (!result.teleported) {
-                ROCK_LOG_SAMPLE_WARN(Physics,
-                    1000,
-                    "Generated keyframed body immediate placement failed owner={} bodyIndex={} bodyId={} teleport={} hardSync={} targetGame=({:.2f},{:.2f},{:.2f}) targetHavok=({:.4f},{:.4f},{:.4f})",
-                    ownerName ? ownerName : "unknown",
-                    bodyIndex,
-                    body.getBodyId().value,
-                    state.pendingTeleport ? "yes" : "no",
-                    hardSyncForVelocity ? "yes" : "no",
-                    result.targetGamePosition.x,
-                    result.targetGamePosition.y,
-                    result.targetGamePosition.z,
-                    result.targetHavokPosition.x,
-                    result.targetHavokPosition.y,
-                    result.targetHavokPosition.z);
+                ROCK_LOG_SAMPLE_WARN(Physics, 1000,
+                    "Generated keyframed body immediate placement failed owner={} bodyIndex={} bodyId={} teleport={} "
+                    "hardSync={} targetGame=({:.2f},{:.2f},{:.2f}) targetHavok=({:.4f},{:.4f},{:.4f})",
+                    ownerName ? ownerName : "unknown", bodyIndex, body.getBodyId().value,
+                    state.pendingTeleport ? "yes" : "no", hardSyncForVelocity ? "yes" : "no",
+                    result.targetGamePosition.x, result.targetGamePosition.y, result.targetGamePosition.z,
+                    result.targetHavokPosition.x, result.targetHavokPosition.y, result.targetHavokPosition.z);
             }
         } else if (mode.dynamicVelocity) {
             const float driveDelta = result.driveDeltaSeconds;
@@ -646,11 +584,8 @@ namespace rock
             const float requestedGapGameUnits = result.hasLiveBodyTransform
                 ? body_frame::distance(liveTransform.translate, requestedTarget.translate)
                 : 0.0f;
-            const bool divergenceTeleport =
-                mode.divergenceTeleportGameUnits > 0.0f &&
-                result.hasLiveBodyTransform &&
-                std::isfinite(requestedGapGameUnits) &&
-                requestedGapGameUnits > mode.divergenceTeleportGameUnits;
+            const bool divergenceTeleport = mode.divergenceTeleportGameUnits > 0.0f && result.hasLiveBodyTransform &&
+                std::isfinite(requestedGapGameUnits) && requestedGapGameUnits > mode.divergenceTeleportGameUnits;
             if (divergenceTeleport) {
                 result.divergencePlacement = true;
                 // The requested target becomes the commanded one: post-solve
@@ -663,40 +598,30 @@ namespace rock
                 result.driven = result.teleported;
                 result.placementFailed = !result.teleported;
             } else {
-                result.driven = driveDynamicBodyVelocityTowardTarget(world, body, target, driveDelta, maxLinearVelocityHavok, mode, result);
+                result.driven = driveDynamicBodyVelocityTowardTarget(world, body, target, driveDelta,
+                    maxLinearVelocityHavok, mode, result);
                 result.nativeDriveFailed = !result.driven;
             }
             if (!result.driven) {
-                ROCK_LOG_SAMPLE_WARN(Physics,
-                    1000,
-                    "Generated dynamic velocity drive failed owner={} bodyIndex={} bodyId={} physicsDt={:.6f} divergenceTeleport={} bodyDeltaGame={:.2f}",
-                    ownerName ? ownerName : "unknown",
-                    bodyIndex,
-                    body.getBodyId().value,
-                    driveDelta,
-                    divergenceTeleport ? "yes" : "no",
-                    result.hasLiveBodyTransform ? result.bodyDeltaGameUnits : -1.0f);
+                ROCK_LOG_SAMPLE_WARN(Physics, 1000,
+                    "Generated dynamic velocity drive failed owner={} bodyIndex={} bodyId={} physicsDt={:.6f} "
+                    "divergenceTeleport={} bodyDeltaGame={:.2f}",
+                    ownerName ? ownerName : "unknown", bodyIndex, body.getBodyId().value, driveDelta,
+                    divergenceTeleport ? "yes" : "no", result.hasLiveBodyTransform ? result.bodyDeltaGameUnits : -1.0f);
             }
         } else {
             const float driveDelta = result.driveDeltaSeconds;
             result.driven = body.driveToKeyFrame(targetHavok, driveDelta);
             result.nativeDriveFailed = !result.driven;
             if (!result.driven) {
-                ROCK_LOG_SAMPLE_WARN(Physics,
-                    1000,
-                    "Generated keyframed body drive failed owner={} bodyIndex={} bodyId={} physicsDt={:.6f} sourceAge={:.6f} predictLead={:.6f} targetGame=({:.2f},{:.2f},{:.2f}) targetHavok=({:.4f},{:.4f},{:.4f}) bodyDeltaGame={:.2f}",
-                    ownerName ? ownerName : "unknown",
-                    bodyIndex,
-                    body.getBodyId().value,
-                    driveDelta,
-                    result.sourceAgeSeconds,
-                    result.predictionLeadSeconds,
-                    result.targetGamePosition.x,
-                    result.targetGamePosition.y,
-                    result.targetGamePosition.z,
-                    result.targetHavokPosition.x,
-                    result.targetHavokPosition.y,
-                    result.targetHavokPosition.z,
+                ROCK_LOG_SAMPLE_WARN(Physics, 1000,
+                    "Generated keyframed body drive failed owner={} bodyIndex={} bodyId={} physicsDt={:.6f} "
+                    "sourceAge={:.6f} predictLead={:.6f} targetGame=({:.2f},{:.2f},{:.2f}) "
+                    "targetHavok=({:.4f},{:.4f},{:.4f}) bodyDeltaGame={:.2f}",
+                    ownerName ? ownerName : "unknown", bodyIndex, body.getBodyId().value, driveDelta,
+                    result.sourceAgeSeconds, result.predictionLeadSeconds, result.targetGamePosition.x,
+                    result.targetGamePosition.y, result.targetGamePosition.z, result.targetHavokPosition.x,
+                    result.targetHavokPosition.y, result.targetHavokPosition.z,
                     result.hasLiveBodyTransform ? result.bodyDeltaGameUnits : -1.0f);
             }
         }
@@ -704,10 +629,9 @@ namespace rock
         logGeneratedBodyDriveTelemetry(result, timing, ownerName, bodyIndex, body.getBodyId());
 
         if (result.driven) {
-            markGeneratedKeyframedBodyDrivePlacedUnlocked(
-                state,
-                result.driveDeltaSeconds,
-                generated_keyframed_body_drive_math::shouldFinalizePlacedTargetForNextSource(timing, immediatePlacement));
+            markGeneratedKeyframedBodyDrivePlacedUnlocked(state, result.driveDeltaSeconds,
+                generated_keyframed_body_drive_math::shouldFinalizePlacedTargetForNextSource(timing,
+                    immediatePlacement));
         }
 
         return result;

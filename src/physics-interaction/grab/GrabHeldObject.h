@@ -6,7 +6,6 @@
  * Held-object helpers are grouped here because body-set policy, damping, physics math, player-space math, and character-controller contact policy shape the same held-object behavior.
  */
 
-
 // ---- HeldObjectBodySetPolicy.h ----
 
 #include <algorithm>
@@ -19,7 +18,8 @@ namespace rock::held_object_body_set_policy
 {
     inline constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFF;
 
-    inline std::vector<std::uint32_t> makePrimaryFirstUniqueBodyList(std::uint32_t primaryBodyId, const std::vector<std::uint32_t>& heldBodyIds)
+    inline std::vector<std::uint32_t> makePrimaryFirstUniqueBodyList(std::uint32_t primaryBodyId,
+        const std::vector<std::uint32_t>& heldBodyIds)
     {
         std::vector<std::uint32_t> result;
         std::unordered_set<std::uint32_t> seen;
@@ -52,8 +52,7 @@ namespace rock::held_object_body_set_policy
         return false;
     }
 
-    inline bool containsAnyBody(const std::vector<std::uint32_t>& first,
-        const std::vector<std::uint32_t>& second,
+    inline bool containsAnyBody(const std::vector<std::uint32_t>& first, const std::vector<std::uint32_t>& second,
         std::uint32_t bodyId)
     {
         return containsBody(first, bodyId) || containsBody(second, bodyId);
@@ -117,8 +116,10 @@ namespace rock::held_object_drive_policy
          * velocity writes that can energize unknown or anchored object parts.
          */
         const std::uint32_t acceptedBodies = input.acceptedBodyCount;
-        const std::uint32_t uniqueMotions = input.uniqueMotionCount > 0 ? input.uniqueMotionCount : (acceptedBodies > 0 ? 1u : 0u);
-        if (acceptedBodies == 0 || input.incompleteNativeScan || input.scanFailureCount > 0 || input.invalidPhysicsSystemCount > 0) {
+        const std::uint32_t uniqueMotions =
+            input.uniqueMotionCount > 0 ? input.uniqueMotionCount : (acceptedBodies > 0 ? 1u : 0u);
+        if (acceptedBodies == 0 || input.incompleteNativeScan || input.scanFailureCount > 0 ||
+            input.invalidPhysicsSystemCount > 0) {
             return HeldBodySetDriveDecision{
                 .mode = HeldBodySetDriveMode::IncompleteNativeScan,
                 .includeConnectedLinearVelocity = false,
@@ -139,12 +140,11 @@ namespace rock::held_object_drive_policy
         }
 
         if (acceptedBodies <= 1 || uniqueMotions <= 1) {
-            return acceptedBodies <= 1 ?
-                       HeldBodySetDriveDecision{} :
-                       HeldBodySetDriveDecision{
-                           .mode = HeldBodySetDriveMode::ConnectedDynamic,
-                           .reason = "connected-rigid-dynamic",
-                       };
+            return acceptedBodies <= 1 ? HeldBodySetDriveDecision{}
+                                       : HeldBodySetDriveDecision{
+                                             .mode = HeldBodySetDriveMode::ConnectedDynamic,
+                                             .reason = "connected-rigid-dynamic",
+                                         };
         }
 
         return HeldBodySetDriveDecision{
@@ -156,9 +156,8 @@ namespace rock::held_object_drive_policy
         };
     }
 
-    [[nodiscard]] inline constexpr bool canShareTwoHandPivot(
-        HeldBodySetDriveMode firstMode, HeldBodySetDriveMode secondMode,
-        bool sameBody, bool sharedWeaponRoot) noexcept
+    [[nodiscard]] inline constexpr bool canShareTwoHandPivot(HeldBodySetDriveMode firstMode,
+        HeldBodySetDriveMode secondMode, bool sameBody, bool sharedWeaponRoot) noexcept
     {
         // Weapons already provide one canonical assembly frame. Other props
         // can share a root only when both captures establish a rigid assembly;
@@ -220,7 +219,8 @@ namespace rock::held_object_contact_policy
                 .reason = "same-held-object",
             };
         }
-        if (input.otherIsRightHand || input.otherIsLeftHand || input.otherIsRightPalmBody || input.otherIsLeftPalmBody) {
+        if (input.otherIsRightHand || input.otherIsLeftHand || input.otherIsRightPalmBody ||
+            input.otherIsLeftPalmBody) {
             return HeldExternalContactDecision{ .reason = "hand-endpoint" };
         }
         if (input.otherIsBodyCollider) {
@@ -335,13 +335,15 @@ namespace rock::held_object_contact_policy
             }
         }
 
-        const float threshold = std::clamp(std::isfinite(input.pushDotThreshold) ? input.pushDotThreshold : 0.15f, -1.0f, 1.0f);
+        const float threshold =
+            std::clamp(std::isfinite(input.pushDotThreshold) ? input.pushDotThreshold : 0.15f, -1.0f, 1.0f);
         const float pushDot = dot(correction, outward);
         if (pushDot > threshold) {
             return HeldContactMotorSofteningDecision{
                 .soften = true,
                 .directional = true,
-                .reason = input.otherMotion == HeldContactOtherMotion::FixedOrStatic ? "pushing-into-fixed-contact" : "pushing-into-unknown-contact",
+                .reason = input.otherMotion == HeldContactOtherMotion::FixedOrStatic ? "pushing-into-fixed-contact"
+                                                                                     : "pushing-into-unknown-contact",
             };
         }
         return HeldContactMotorSofteningDecision{
@@ -396,10 +398,7 @@ namespace rock::held_object_physics_math
         return (std::isfinite(deltaTime) && deltaTime > 0.00001f) ? deltaTime : 0.0f;
     }
 
-    inline float finitePositiveOrZero(float value)
-    {
-        return std::isfinite(value) && value > 0.0f ? value : 0.0f;
-    }
+    inline float finitePositiveOrZero(float value) { return std::isfinite(value) && value > 0.0f ? value : 0.0f; }
 
     /*
      * Axis-angle rate extraction from two rotation matrices sampled deltaTime
@@ -407,16 +406,18 @@ namespace rock::held_object_physics_math
      * columns (RE::NiMatrix3 layout).
      */
     template <class Matrix3, class Vec3>
-    [[nodiscard]] inline Vec3 angularVelocityFromRotationDelta(const Matrix3& previous, const Matrix3& current, float deltaTime)
+    [[nodiscard]] inline Vec3 angularVelocityFromRotationDelta(const Matrix3& previous, const Matrix3& current,
+        float deltaTime)
     {
         if (!std::isfinite(deltaTime) || deltaTime <= 0.000001f) {
             return Vec3{};
         }
 
-        const float trace =
-            previous.entry[0][0] * current.entry[0][0] + previous.entry[0][1] * current.entry[0][1] + previous.entry[0][2] * current.entry[0][2] +
-            previous.entry[1][0] * current.entry[1][0] + previous.entry[1][1] * current.entry[1][1] + previous.entry[1][2] * current.entry[1][2] +
-            previous.entry[2][0] * current.entry[2][0] + previous.entry[2][1] * current.entry[2][1] + previous.entry[2][2] * current.entry[2][2];
+        const float trace = previous.entry[0][0] * current.entry[0][0] + previous.entry[0][1] * current.entry[0][1] +
+            previous.entry[0][2] * current.entry[0][2] + previous.entry[1][0] * current.entry[1][0] +
+            previous.entry[1][1] * current.entry[1][1] + previous.entry[1][2] * current.entry[1][2] +
+            previous.entry[2][0] * current.entry[2][0] + previous.entry[2][1] * current.entry[2][1] +
+            previous.entry[2][2] * current.entry[2][2];
         const float angle = std::acos(std::clamp((trace - 1.0f) * 0.5f, -1.0f, 1.0f));
         if (!std::isfinite(angle) || angle <= 0.000001f) {
             return Vec3{};
@@ -426,9 +427,7 @@ namespace rock::held_object_physics_math
             return makeVector<Vec3>(matrix.entry[0][index], matrix.entry[1][index], matrix.entry[2][index]);
         };
         const auto crossOf = [](const Vec3& lhs, const Vec3& rhs) {
-            return makeVector<Vec3>(
-                lhs.y * rhs.z - lhs.z * rhs.y,
-                lhs.z * rhs.x - lhs.x * rhs.z,
+            return makeVector<Vec3>(lhs.y * rhs.z - lhs.z * rhs.y, lhs.z * rhs.x - lhs.x * rhs.z,
                 lhs.x * rhs.y - lhs.y * rhs.x);
         };
         const auto normalizedOrZero = [](const Vec3& value) {
@@ -460,10 +459,8 @@ namespace rock::held_object_physics_math
             for (int index = 0; index < 3; ++index) {
                 const Vec3 previousColumn = column(previous, index);
                 const Vec3 currentColumn = column(current, index);
-                const Vec3 candidate = makeVector<Vec3>(
-                    previousColumn.x + currentColumn.x,
-                    previousColumn.y + currentColumn.y,
-                    previousColumn.z + currentColumn.z);
+                const Vec3 candidate = makeVector<Vec3>(previousColumn.x + currentColumn.x,
+                    previousColumn.y + currentColumn.y, previousColumn.z + currentColumn.z);
                 const float candidateLength = lengthSquared(candidate);
                 if (candidateLength > bestAxisLength) {
                     bestAxisLength = candidateLength;
@@ -519,10 +516,7 @@ namespace rock::grab_held_response
      * measured hand translation and rotation. Solver lag and the grip-to-COM
      * lever must not steer a throw away from the hand's movement.
      */
-    inline float finiteOr(float value, float fallback)
-    {
-        return std::isfinite(value) ? value : fallback;
-    }
+    inline float finiteOr(float value, float fallback) { return std::isfinite(value) ? value : fallback; }
 
     inline float safePositive(float value, float fallback)
     {
@@ -800,7 +794,8 @@ namespace rock::held_grab_cc_policy
     }
 
     template <class IsHeldBody>
-    inline GeneratedContactFilterResult filterGeneratedContactBuffers(const GeneratedContactBufferView& view, IsHeldBody&& isHeldBody)
+    inline GeneratedContactFilterResult filterGeneratedContactBuffers(const GeneratedContactBufferView& view,
+        IsHeldBody&& isHeldBody)
     {
         if (!view.valid) {
             return GeneratedContactFilterResult{
@@ -826,12 +821,10 @@ namespace rock::held_grab_cc_policy
             }
 
             if (writeIndex != readIndex) {
-                std::memmove(view.manifoldEntries + writeIndex * kGeneratedContactStride,
-                    manifoldEntry,
+                std::memmove(view.manifoldEntries + writeIndex * kGeneratedContactStride, manifoldEntry,
                     kGeneratedContactStride);
                 std::memmove(view.constraintEntries + writeIndex * kGeneratedContactStride,
-                    view.constraintEntries + readIndex * kGeneratedContactStride,
-                    kGeneratedContactStride);
+                    view.constraintEntries + readIndex * kGeneratedContactStride, kGeneratedContactStride);
             }
             ++writeIndex;
         }

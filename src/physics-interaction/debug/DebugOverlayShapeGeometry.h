@@ -70,12 +70,8 @@ namespace rock::debug_overlay_shape
 
         struct Child
         {
-            std::array<float, 16> transform{
-                1.0f, 0.0f, 0.0f, 0.0f,
-                0.0f, 1.0f, 0.0f, 0.0f,
-                0.0f, 0.0f, 1.0f, 0.0f,
-                0.0f, 0.0f, 0.0f, 1.0f
-            };
+            std::array<float, 16> transform{ 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 1.0f };
             std::array<float, 4> scale{ 1.0f, 1.0f, 1.0f, 0.0f };
             std::unique_ptr<ShapeRecipe> recipe;
         };

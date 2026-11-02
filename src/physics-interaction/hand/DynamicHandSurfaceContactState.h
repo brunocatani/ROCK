@@ -19,12 +19,9 @@ namespace rock::dynamic_hand_surface_contact_state
         bool valid = false;
         bool isLeft = false;
         std::size_t slot = 0;
-        hand_collider_semantics::HandColliderRole role =
-            hand_collider_semantics::HandColliderRole::PalmAnchor;
-        hand_collider_semantics::HandFinger finger =
-            hand_collider_semantics::HandFinger::None;
-        hand_collider_semantics::HandFingerSegment segment =
-            hand_collider_semantics::HandFingerSegment::None;
+        hand_collider_semantics::HandColliderRole role = hand_collider_semantics::HandColliderRole::PalmAnchor;
+        hand_collider_semantics::HandFinger finger = hand_collider_semantics::HandFinger::None;
+        hand_collider_semantics::HandFingerSegment segment = hand_collider_semantics::HandFingerSegment::None;
         std::uint32_t bodyId = hand_semantic_contact_state::kInvalidBodyId;
     };
 
@@ -43,21 +40,15 @@ namespace rock::dynamic_hand_surface_contact_state
     public:
         explicit State(const contact_clock::ContactClock& clock) noexcept : _clock(clock) {}
 
-        void clear() noexcept
-        {
-            _epoch.fetch_add(1, std::memory_order_acq_rel);
-        }
+        void clear() noexcept { _epoch.fetch_add(1, std::memory_order_acq_rel); }
 
-        [[nodiscard]] bool record(
-            const ContactSource& source,
-            const std::uint32_t otherBodyId,
+        [[nodiscard]] bool record(const ContactSource& source, const std::uint32_t otherBodyId,
             const hand_semantic_contact_state::SemanticContactVector* contactPointGame,
             const hand_semantic_contact_state::SemanticContactVector* contactNormalGame) noexcept
         {
             if (!source.valid || source.slot >= kContactRolesPerHand ||
                 source.bodyId == hand_semantic_contact_state::kInvalidBodyId ||
-                otherBodyId == hand_semantic_contact_state::kInvalidBodyId ||
-                source.bodyId == otherBodyId) {
+                otherBodyId == hand_semantic_contact_state::kInvalidBodyId || source.bodyId == otherBodyId) {
                 return false;
             }
 
@@ -66,17 +57,14 @@ namespace rock::dynamic_hand_surface_contact_state
                 return false;
             }
 
-            const bool hasPoint =
-                contactPointGame && finite(*contactPointGame);
+            const bool hasPoint = contactPointGame && finite(*contactPointGame);
             const bool hasNormal =
-                contactNormalGame && finite(*contactNormalGame) &&
-                lengthSquared(*contactNormalGame) > 1.0e-6f;
+                contactNormalGame && finite(*contactNormalGame) && lengthSquared(*contactNormalGame) > 1.0e-6f;
             const hand_semantic_contact_state::SemanticContactVector empty{};
             const auto& point = hasPoint ? *contactPointGame : empty;
             const auto& normal = hasNormal ? *contactNormalGame : empty;
 
-            std::uint32_t sequence =
-                slot.sequence.load(std::memory_order_relaxed);
+            std::uint32_t sequence = slot.sequence.load(std::memory_order_relaxed);
             if ((sequence & 1u) != 0) {
                 ++sequence;
             }
@@ -104,21 +92,18 @@ namespace rock::dynamic_hand_surface_contact_state
             return true;
         }
 
-        [[nodiscard]] hand_semantic_contact_state::SemanticContactCollection collectFresh(
-            const bool isLeft,
+        [[nodiscard]] hand_semantic_contact_state::SemanticContactCollection collectFresh(const bool isLeft,
             const float maximumAgeSeconds) const noexcept
         {
             hand_semantic_contact_state::SemanticContactCollection result{};
-            const std::uint64_t currentEpoch =
-                _epoch.load(std::memory_order_acquire);
+            const std::uint64_t currentEpoch = _epoch.load(std::memory_order_acquire);
             const std::uint32_t currentFrame = _clock.frame();
             const double nowSeconds = _clock.seconds();
             const float maximumAge = _clock.freshnessWindowSeconds(maximumAgeSeconds);
 
             for (const auto& slot : _slots[isLeft ? 1u : 0u]) {
                 for (int attempt = 0; attempt < 3; ++attempt) {
-                    const std::uint32_t sequenceBefore =
-                        slot.sequence.load(std::memory_order_acquire);
+                    const std::uint32_t sequenceBefore = slot.sequence.load(std::memory_order_acquire);
                     if ((sequenceBefore & 1u) != 0) {
                         continue;
                     }
@@ -126,50 +111,35 @@ namespace rock::dynamic_hand_surface_contact_state
                         break;
                     }
 
-                    const std::uint64_t contactEpoch =
-                        slot.epoch.load(std::memory_order_relaxed);
-                    const std::uint32_t contactFrame =
-                        slot.frame.load(std::memory_order_relaxed);
-                    const double contactSeconds =
-                        slot.seconds.load(std::memory_order_relaxed);
+                    const std::uint64_t contactEpoch = slot.epoch.load(std::memory_order_relaxed);
+                    const std::uint32_t contactFrame = slot.frame.load(std::memory_order_relaxed);
+                    const double contactSeconds = slot.seconds.load(std::memory_order_relaxed);
                     hand_semantic_contact_state::SemanticContactRecord contact{};
                     contact.valid = true;
                     contact.isLeft = isLeft;
                     contact.role = static_cast<hand_collider_semantics::HandColliderRole>(
                         slot.role.load(std::memory_order_relaxed));
-                    contact.finger = static_cast<hand_collider_semantics::HandFinger>(
-                        slot.finger.load(std::memory_order_relaxed));
+                    contact.finger =
+                        static_cast<hand_collider_semantics::HandFinger>(slot.finger.load(std::memory_order_relaxed));
                     contact.segment = static_cast<hand_collider_semantics::HandFingerSegment>(
                         slot.segment.load(std::memory_order_relaxed));
-                    contact.handBodyId =
-                        slot.handBodyId.load(std::memory_order_relaxed);
-                    contact.otherBodyId =
-                        slot.otherBodyId.load(std::memory_order_relaxed);
+                    contact.handBodyId = slot.handBodyId.load(std::memory_order_relaxed);
+                    contact.otherBodyId = slot.otherBodyId.load(std::memory_order_relaxed);
                     contact.sequence = sequenceBefore;
                     contact.contactFrame = contactFrame;
                     contact.contactRunStartFrame = contactFrame;
                     contact.framesSinceContact = currentFrame - contactFrame;
-                    contact.secondsSinceContact = static_cast<float>(
-                        nowSeconds >= contactSeconds ? nowSeconds - contactSeconds : 0.0);
-                    contact.hasContactPointGame =
-                        slot.hasPoint.load(std::memory_order_relaxed) != 0;
-                    contact.hasContactNormalGame =
-                        slot.hasNormal.load(std::memory_order_relaxed) != 0;
-                    contact.contactPointGame = {
-                        slot.pointX.load(std::memory_order_relaxed),
-                        slot.pointY.load(std::memory_order_relaxed),
-                        slot.pointZ.load(std::memory_order_relaxed)
-                    };
-                    contact.contactNormalGame = {
-                        slot.normalX.load(std::memory_order_relaxed),
-                        slot.normalY.load(std::memory_order_relaxed),
-                        slot.normalZ.load(std::memory_order_relaxed)
-                    };
+                    contact.secondsSinceContact =
+                        static_cast<float>(nowSeconds >= contactSeconds ? nowSeconds - contactSeconds : 0.0);
+                    contact.hasContactPointGame = slot.hasPoint.load(std::memory_order_relaxed) != 0;
+                    contact.hasContactNormalGame = slot.hasNormal.load(std::memory_order_relaxed) != 0;
+                    contact.contactPointGame = { slot.pointX.load(std::memory_order_relaxed),
+                        slot.pointY.load(std::memory_order_relaxed), slot.pointZ.load(std::memory_order_relaxed) };
+                    contact.contactNormalGame = { slot.normalX.load(std::memory_order_relaxed),
+                        slot.normalY.load(std::memory_order_relaxed), slot.normalZ.load(std::memory_order_relaxed) };
 
-                    const std::uint32_t sequenceAfter =
-                        slot.sequence.load(std::memory_order_acquire);
-                    if (!hand_semantic_contact_state::semanticContactSequenceSnapshotStable(
-                            sequenceBefore,
+                    const std::uint32_t sequenceAfter = slot.sequence.load(std::memory_order_acquire);
+                    if (!hand_semantic_contact_state::semanticContactSequenceSnapshotStable(sequenceBefore,
                             sequenceAfter)) {
                         continue;
                     }
@@ -183,8 +153,7 @@ namespace rock::dynamic_hand_surface_contact_state
                         !hand_semantic_contact_state::isFiniteVector(contact.contactPointGame)) {
                         contact.hasContactPointGame = false;
                     }
-                    if (contact.hasContactNormalGame &&
-                        !hand_semantic_contact_state::hasUsableContactNormal(contact)) {
+                    if (contact.hasContactNormalGame && !hand_semantic_contact_state::hasUsableContactNormal(contact)) {
                         contact.hasContactNormalGame = false;
                     }
                     result.add(contact);
@@ -206,12 +175,8 @@ namespace rock::dynamic_hand_surface_contact_state
             std::atomic<std::uint32_t> role{ 0 };
             std::atomic<std::uint32_t> finger{ 0 };
             std::atomic<std::uint32_t> segment{ 0 };
-            std::atomic<std::uint32_t> handBodyId{
-                hand_semantic_contact_state::kInvalidBodyId
-            };
-            std::atomic<std::uint32_t> otherBodyId{
-                hand_semantic_contact_state::kInvalidBodyId
-            };
+            std::atomic<std::uint32_t> handBodyId{ hand_semantic_contact_state::kInvalidBodyId };
+            std::atomic<std::uint32_t> otherBodyId{ hand_semantic_contact_state::kInvalidBodyId };
             std::atomic<std::uint32_t> hasPoint{ 0 };
             std::atomic<std::uint32_t> hasNormal{ 0 };
             std::atomic<float> pointX{ 0.0f };
@@ -222,20 +187,14 @@ namespace rock::dynamic_hand_surface_contact_state
             std::atomic<float> normalZ{ 0.0f };
         };
 
-        static bool finite(
-            const hand_semantic_contact_state::SemanticContactVector& value) noexcept
+        static bool finite(const hand_semantic_contact_state::SemanticContactVector& value) noexcept
         {
-            return std::isfinite(value.x) &&
-                   std::isfinite(value.y) &&
-                   std::isfinite(value.z);
+            return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
         }
 
-        static float lengthSquared(
-            const hand_semantic_contact_state::SemanticContactVector& value) noexcept
+        static float lengthSquared(const hand_semantic_contact_state::SemanticContactVector& value) noexcept
         {
-            return value.x * value.x +
-                   value.y * value.y +
-                   value.z * value.z;
+            return value.x * value.x + value.y * value.y + value.z * value.z;
         }
 
         std::array<std::array<AtomicSlot, kContactRolesPerHand>, kHandCount> _slots{};

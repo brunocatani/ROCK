@@ -69,13 +69,15 @@ namespace rock::grab_haptic_policy
         return std::clamp(base + massScale * std::pow(finiteMass, massExponent), base, maxIntensity);
     }
 
-    [[nodiscard]] inline float computeImpactPulseIntensity(float mass, float speedGameUnitsPerSecond, bool damped, const ImpactPulseConfig& config)
+    [[nodiscard]] inline float computeImpactPulseIntensity(float mass, float speedGameUnitsPerSecond, bool damped,
+        const ImpactPulseConfig& config)
     {
         if (!config.enabled) {
             return 0.0f;
         }
 
-        const float speed = std::isfinite(speedGameUnitsPerSecond) && speedGameUnitsPerSecond > 0.0f ? speedGameUnitsPerSecond : 0.0f;
+        const float speed =
+            std::isfinite(speedGameUnitsPerSecond) && speedGameUnitsPerSecond > 0.0f ? speedGameUnitsPerSecond : 0.0f;
         const float minSpeed = (std::max)(0.0f, finiteOr(config.minSpeedGameUnitsPerSecond, 8.0f));
         if (speed < minSpeed) {
             return 0.0f;
@@ -117,7 +119,8 @@ namespace rock::candidate_haptic_policy
         return haptic_policy_detail::sanitizeIntensity(value, fallback);
     }
 
-    [[nodiscard]] inline float computeCandidatePulseIntensity(float confidence, const CandidatePulseConfig& config) noexcept
+    [[nodiscard]] inline float computeCandidatePulseIntensity(float confidence,
+        const CandidatePulseConfig& config) noexcept
     {
         if (!config.enabled) {
             return 0.0f;
@@ -146,7 +149,8 @@ namespace rock::shoulder_stash_haptic_policy
 {
     using CandidatePulseConfig = candidate_haptic_policy::CandidatePulseConfig;
 
-    [[nodiscard]] inline float computeCandidatePulseIntensity(float confidence, const CandidatePulseConfig& config) noexcept
+    [[nodiscard]] inline float computeCandidatePulseIntensity(float confidence,
+        const CandidatePulseConfig& config) noexcept
     {
         return candidate_haptic_policy::computeCandidatePulseIntensity(confidence, config);
     }

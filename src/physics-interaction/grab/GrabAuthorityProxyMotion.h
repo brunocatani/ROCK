@@ -14,12 +14,8 @@
 
 namespace rock::grab_authority_proxy_motion
 {
-    inline void computeLinearVelocityHavok(
-        const RE::NiTransform& previous,
-        const RE::NiTransform& current,
-        float deltaSeconds,
-        float gameToHavokScale,
-        float outVelocity[4])
+    inline void computeLinearVelocityHavok(const RE::NiTransform& previous, const RE::NiTransform& current,
+        float deltaSeconds, float gameToHavokScale, float outVelocity[4])
     {
         outVelocity[0] = 0.0f;
         outVelocity[1] = 0.0f;

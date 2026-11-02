@@ -94,10 +94,7 @@ namespace rock::hand_visual_lerp_math
             lastAlpha = 0.0f;
         }
 
-        void clear()
-        {
-            *this = {};
-        }
+        void clear() { *this = {}; }
     };
 
     struct Quaternion
@@ -122,10 +119,7 @@ namespace rock::hand_visual_lerp_math
         return q;
     }
 
-    inline float dot(const Quaternion& a, const Quaternion& b)
-    {
-        return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
-    }
+    inline float dot(const Quaternion& a, const Quaternion& b) { return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w; }
 
     template <class Matrix>
     inline Quaternion matrixToQuaternion(const Matrix& matrix)
@@ -234,7 +228,8 @@ namespace rock::hand_visual_lerp_math
         return std::isfinite(value) && value >= 0.0f ? value : fallback;
     }
 
-    inline float computeDistanceMappedDurationGameUnits(float distanceGameUnits, float minSeconds, float maxSeconds, float minDistanceGameUnits, float maxDistanceGameUnits)
+    inline float computeDistanceMappedDurationGameUnits(float distanceGameUnits, float minSeconds, float maxSeconds,
+        float minDistanceGameUnits, float maxDistanceGameUnits)
     {
         const float distance = sanitizeNonNegative(distanceGameUnits, 0.0f);
         const float minTime = sanitizeNonNegative(minSeconds, 0.0f);
@@ -252,41 +247,30 @@ namespace rock::hand_visual_lerp_math
         return minTime + (maxTime - minTime) * alpha;
     }
 
-    inline float computeAngleMappedDurationDegrees(float angleDegrees, float minSeconds, float maxSeconds, float minAngleDegrees, float maxAngleDegrees)
+    inline float computeAngleMappedDurationDegrees(float angleDegrees, float minSeconds, float maxSeconds,
+        float minAngleDegrees, float maxAngleDegrees)
     {
-        return computeDistanceMappedDurationGameUnits(
-            angleDegrees,
-            minSeconds,
-            maxSeconds,
-            minAngleDegrees,
+        return computeDistanceMappedDurationGameUnits(angleDegrees, minSeconds, maxSeconds, minAngleDegrees,
             maxAngleDegrees);
     }
 
     template <class Transform>
     inline float rotationDistanceDegrees(const Transform& start, const Transform& target)
     {
-        return quaternionAngleRadians(
-                   matrixToQuaternion(start.rotate),
-                   matrixToQuaternion(target.rotate)) *
+        return quaternionAngleRadians(matrixToQuaternion(start.rotate), matrixToQuaternion(target.rotate)) *
             57.295779513082320876f;
     }
 
     template <class Transform>
-    inline float computeVisualReturnDuration(const Transform& start, const Transform& target, const VisualReturnConfig& config)
+    inline float computeVisualReturnDuration(const Transform& start, const Transform& target,
+        const VisualReturnConfig& config)
     {
-        const float linearDuration = computeDistanceMappedDurationGameUnits(
-            distanceGameUnits(start.translate, target.translate),
-            config.minSeconds,
-            config.maxSeconds,
-            config.minDistanceGameUnits,
-            config.maxDistanceGameUnits);
+        const float linearDuration =
+            computeDistanceMappedDurationGameUnits(distanceGameUnits(start.translate, target.translate),
+                config.minSeconds, config.maxSeconds, config.minDistanceGameUnits, config.maxDistanceGameUnits);
         const float angleDegrees = rotationDistanceDegrees(start, target);
-        const float angularDuration = computeAngleMappedDurationDegrees(
-            angleDegrees,
-            config.minSeconds,
-            config.maxSeconds,
-            config.minAngleDegrees,
-            config.maxAngleDegrees);
+        const float angularDuration = computeAngleMappedDurationDegrees(angleDegrees, config.minSeconds,
+            config.maxSeconds, config.minAngleDegrees, config.maxAngleDegrees);
         return (std::max)(linearDuration, angularDuration);
     }
 
@@ -325,12 +309,14 @@ namespace rock::hand_visual_lerp_math
             start.translate.y + (target.translate.y - start.translate.y) * t,
             start.translate.z + (target.translate.z - start.translate.z) * t,
         };
-        result.rotate = quaternionToMatrix<decltype(result.rotate)>(slerp(matrixToQuaternion(start.rotate), matrixToQuaternion(target.rotate), t));
+        result.rotate = quaternionToMatrix<decltype(result.rotate)>(
+            slerp(matrixToQuaternion(start.rotate), matrixToQuaternion(target.rotate), t));
         return result;
     }
 
     template <class Transform>
-    inline AdvanceResult<Transform> blendTransformOverDuration(const Transform& start, const Transform& target, float elapsedSeconds, float durationSeconds)
+    inline AdvanceResult<Transform> blendTransformOverDuration(const Transform& start, const Transform& target,
+        float elapsedSeconds, float durationSeconds)
     {
         AdvanceResult<Transform> result{};
         const float alpha = timedBlendAlpha(elapsedSeconds, durationSeconds);
@@ -340,11 +326,8 @@ namespace rock::hand_visual_lerp_math
     }
 
     template <class Transform>
-    inline AdvanceResult<Transform> advanceVisualReturn(
-        VisualReturnTransition<Transform>& state,
-        const Transform& movingTarget,
-        float deltaTime,
-        const VisualReturnConfig& config)
+    inline AdvanceResult<Transform> advanceVisualReturn(VisualReturnTransition<Transform>& state,
+        const Transform& movingTarget, float deltaTime, const VisualReturnConfig& config)
     {
         if (!state.active) {
             return AdvanceResult<Transform>{ .transform = movingTarget, .reachedTarget = true };
@@ -355,11 +338,8 @@ namespace rock::hand_visual_lerp_math
             state.durationInitialized = true;
         }
         state.elapsedSeconds = advanceTimedBlendElapsed(state.elapsedSeconds, deltaTime, state.durationSeconds);
-        const auto result = blendTransformOverDuration(
-            state.start,
-            movingTarget,
-            state.elapsedSeconds,
-            state.durationSeconds);
+        const auto result =
+            blendTransformOverDuration(state.start, movingTarget, state.elapsedSeconds, state.durationSeconds);
         state.lastApplied = result.transform;
         state.lastAlpha = timedBlendAlpha(state.elapsedSeconds, state.durationSeconds);
         return result;
@@ -382,8 +362,7 @@ namespace rock::hand_visual_lerp_math
     template <class Transform>
     inline Transform applyHandoffResidual(const Transform& solvedWorld, const Transform& residualLocal, float alpha)
     {
-        return transform_math::composeTransforms(
-            solvedWorld,
+        return transform_math::composeTransforms(solvedWorld,
             interpolateTransform(residualLocal, transform_math::makeIdentityTransform<Transform>(), alpha));
     }
 
@@ -402,19 +381,16 @@ namespace rock::hand_visual_lerp_math
     };
 
     template <class Transform>
-    inline SeatHandoffPose<Transform> applySeatHandoff(
-        const Transform& solvedWeaponWorld,
-        const Transform& solvedHandWorld,
-        const Transform& weaponResidualLocal,
-        const Transform& renderedSeatInWeapon,
+    inline SeatHandoffPose<Transform> applySeatHandoff(const Transform& solvedWeaponWorld,
+        const Transform& solvedHandWorld, const Transform& weaponResidualLocal, const Transform& renderedSeatInWeapon,
         float alpha)
     {
         SeatHandoffPose<Transform> pose{};
         pose.weaponWorld = applyHandoffResidual(solvedWeaponWorld, weaponResidualLocal, alpha);
-        const Transform solvedSeat = transform_math::composeTransforms(
-            transform_math::invertTransform(solvedWeaponWorld), solvedHandWorld);
-        pose.handWorld = transform_math::composeTransforms(
-            pose.weaponWorld, interpolateTransform(renderedSeatInWeapon, solvedSeat, alpha));
+        const Transform solvedSeat =
+            transform_math::composeTransforms(transform_math::invertTransform(solvedWeaponWorld), solvedHandWorld);
+        pose.handWorld = transform_math::composeTransforms(pose.weaponWorld,
+            interpolateTransform(renderedSeatInWeapon, solvedSeat, alpha));
         return pose;
     }
 
@@ -439,13 +415,9 @@ namespace rock::hand_visual_lerp_math
     };
 
     template <class Transform, class ValidateTransform, class PublishTransform>
-    inline VisualReturnDriveResult<Transform> driveVisualReturn(
-        VisualReturnTransition<Transform>& state,
-        const Transform& movingTarget,
-        float deltaTime,
-        const VisualReturnConfig& config,
-        ValidateTransform&& validateTransform,
-        PublishTransform&& publishTransform)
+    inline VisualReturnDriveResult<Transform> driveVisualReturn(VisualReturnTransition<Transform>& state,
+        const Transform& movingTarget, float deltaTime, const VisualReturnConfig& config,
+        ValidateTransform&& validateTransform, PublishTransform&& publishTransform)
     {
         VisualReturnDriveResult<Transform> output{};
         if (!state.active) {
@@ -454,42 +426,32 @@ namespace rock::hand_visual_lerp_math
 
         output.timingInitializedThisFrame = !state.durationInitialized;
         if (output.timingInitializedThisFrame) {
-            output.initialDistanceGameUnits =
-                distanceGameUnits(state.start.translate, movingTarget.translate);
-            output.initialAngleDegrees =
-                rotationDistanceDegrees(state.start, movingTarget);
+            output.initialDistanceGameUnits = distanceGameUnits(state.start.translate, movingTarget.translate);
+            output.initialAngleDegrees = rotationDistanceDegrees(state.start, movingTarget);
         }
 
-        const auto advanced = advanceVisualReturn(
-            state,
-            movingTarget,
-            deltaTime,
-            config);
+        const auto advanced = advanceVisualReturn(state, movingTarget, deltaTime, config);
         output.transform = advanced.transform;
         output.durationSeconds = state.durationSeconds;
-        if (!std::invoke(
-                std::forward<ValidateTransform>(validateTransform),
-                output.transform)) {
+        if (!std::invoke(std::forward<ValidateTransform>(validateTransform), output.transform)) {
             output.status = VisualReturnDriveStatus::InvalidTransform;
             return output;
         }
-        if (!std::invoke(
-                std::forward<PublishTransform>(publishTransform),
-                output.transform)) {
+        if (!std::invoke(std::forward<PublishTransform>(publishTransform), output.transform)) {
             output.status = VisualReturnDriveStatus::PublishFailed;
             return output;
         }
 
-        output.status = advanced.reachedTarget ?
-            VisualReturnDriveStatus::Completed :
-            VisualReturnDriveStatus::Active;
+        output.status = advanced.reachedTarget ? VisualReturnDriveStatus::Completed : VisualReturnDriveStatus::Active;
         return output;
     }
 
     template <class Transform>
-    inline Transform buildHeldObjectRelativeHandWorld(const Transform& heldObjectWorld, const Transform& frozenObjectHandSpace)
+    inline Transform buildHeldObjectRelativeHandWorld(const Transform& heldObjectWorld,
+        const Transform& frozenObjectHandSpace)
     {
-        return transform_math::composeTransforms(heldObjectWorld, transform_math::invertTransform(frozenObjectHandSpace));
+        return transform_math::composeTransforms(heldObjectWorld,
+            transform_math::invertTransform(frozenObjectHandSpace));
     }
 
     inline bool shouldSmoothHeldObjectRelativeHand(bool lerpEnabled, bool touchHeldPhase, bool acquisitionVisual,

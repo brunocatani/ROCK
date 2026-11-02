@@ -33,17 +33,11 @@ namespace rock::debug_overlay_shape
 
         Vertex cross(const Vertex& left, const Vertex& right)
         {
-            return Vertex{
-                left.y * right.z - left.z * right.y,
-                left.z * right.x - left.x * right.z,
-                left.x * right.y - left.y * right.x
-            };
+            return Vertex{ left.y * right.z - left.z * right.y, left.z * right.x - left.x * right.z,
+                left.x * right.y - left.y * right.x };
         }
 
-        float lengthSquared(const Vertex& value)
-        {
-            return dot(value, value);
-        }
+        float lengthSquared(const Vertex& value) { return dot(value, value); }
 
         Vertex normalized(const Vertex& value)
         {
@@ -83,12 +77,42 @@ namespace rock::debug_overlay_shape
                 { minimum.x, maximum.y, maximum.z },
             };
             mesh.indices = {
-                0, 1, 2, 0, 2, 3,
-                4, 6, 5, 4, 7, 6,
-                0, 4, 5, 0, 5, 1,
-                1, 5, 6, 1, 6, 2,
-                2, 6, 7, 2, 7, 3,
-                3, 7, 4, 3, 4, 0,
+                0,
+                1,
+                2,
+                0,
+                2,
+                3,
+                4,
+                6,
+                5,
+                4,
+                7,
+                6,
+                0,
+                4,
+                5,
+                0,
+                5,
+                1,
+                1,
+                5,
+                6,
+                1,
+                6,
+                2,
+                2,
+                6,
+                7,
+                2,
+                7,
+                3,
+                3,
+                7,
+                4,
+                3,
+                4,
+                0,
             };
             mesh.valid = true;
             return mesh;
@@ -108,11 +132,8 @@ namespace rock::debug_overlay_shape
                 for (int segment = 0; segment <= segments; ++segment) {
                     const float u = segment / static_cast<float>(segments);
                     const float phi = u * pi * 2.0f;
-                    mesh.vertices.push_back(Vertex{
-                        std::cos(phi) * std::sin(theta) * radius,
-                        std::cos(theta) * radius,
-                        std::sin(phi) * std::sin(theta) * radius
-                    });
+                    mesh.vertices.push_back(Vertex{ std::cos(phi) * std::sin(theta) * radius, std::cos(theta) * radius,
+                        std::sin(phi) * std::sin(theta) * radius });
                 }
             }
 
@@ -160,9 +181,9 @@ namespace rock::debug_overlay_shape
             for (int segment = 0; segment <= segments; ++segment) {
                 const float theta = segment / static_cast<float>(segments) * pi * 2.0f;
                 for (int endpoint = 0; endpoint < 2; ++endpoint) {
-                    mesh.vertices.push_back(add(
-                        add(vertexA, multiply(direction, endpoint * capsuleLength)),
-                        add(multiply(axis, std::cos(theta) * radius), multiply(perpendicular, std::sin(theta) * radius))));
+                    mesh.vertices.push_back(add(add(vertexA, multiply(direction, endpoint * capsuleLength)),
+                        add(multiply(axis, std::cos(theta) * radius),
+                            multiply(perpendicular, std::sin(theta) * radius))));
                 }
             }
 
@@ -188,7 +209,8 @@ namespace rock::debug_overlay_shape
                         const float y = std::cos(theta);
                         const float z = std::sin(phi) * std::sin(theta);
                         mesh.vertices.push_back(add(center,
-                            add(add(multiply(axis, x * radius), multiply(direction, y * radius)), multiply(perpendicular, z * radius))));
+                            add(add(multiply(axis, x * radius), multiply(direction, y * radius)),
+                                multiply(perpendicular, z * radius))));
                     }
                 }
 
@@ -227,11 +249,9 @@ namespace rock::debug_overlay_shape
                 return result;
             }
 
-            result.decodeMode = debug_overlay_policy::chooseShapeDecodeMode(
-                recipe.shapeType,
+            result.decodeMode = debug_overlay_policy::chooseShapeDecodeMode(recipe.shapeType,
                 static_cast<std::uint32_t>(hullVertices.size()),
-                static_cast<int>(recipe.settings.maxConvexSupportVertices),
-                recipe.settings.useBoundsForHeavyConvex);
+                static_cast<int>(recipe.settings.maxConvexSupportVertices), recipe.settings.useBoundsForHeavyConvex);
             if (result.decodeMode == debug_overlay_policy::ShapeDecodeMode::Proxy) {
                 std::vector<Vertex> boundsVertices;
                 boundsVertices.reserve(hullVertices.size());
@@ -243,13 +263,14 @@ namespace rock::debug_overlay_shape
             }
 
             if (recipe.convexRadius > 0.0f) {
-                debug_convex_hull_mesh::inflateVerticesFromCentroid(
-                    hullVertices, recipe.convexRadius * recipe.settings.havokToGameScale);
+                debug_convex_hull_mesh::inflateVerticesFromCentroid(hullVertices,
+                    recipe.convexRadius * recipe.settings.havokToGameScale);
             }
 
             const auto triangles = debug_convex_hull_mesh::triangulateConvexHullFaces(hullVertices);
             if (triangles.empty() ||
-                triangles.size() > debug_convex_hull_mesh::maxExpectedConvexHullTriangles(static_cast<std::uint32_t>(hullVertices.size()))) {
+                triangles.size() > debug_convex_hull_mesh::maxExpectedConvexHullTriangles(
+                                       static_cast<std::uint32_t>(hullVertices.size()))) {
                 if (!recipe.settings.useBoundsForHeavyConvex) {
                     result.decodeMode = debug_overlay_policy::ShapeDecodeMode::Unsupported;
                     return result;
@@ -275,7 +296,8 @@ namespace rock::debug_overlay_shape
                 result.mesh.vertices.push_back(Vertex{ vertex.x, vertex.y, vertex.z });
             }
             result.mesh.valid = !result.mesh.vertices.empty() && !result.mesh.indices.empty();
-            result.decodeMode = result.mesh.valid ? debug_overlay_policy::ShapeDecodeMode::Detailed : debug_overlay_policy::ShapeDecodeMode::Unsupported;
+            result.decodeMode = result.mesh.valid ? debug_overlay_policy::ShapeDecodeMode::Detailed
+                                                  : debug_overlay_policy::ShapeDecodeMode::Unsupported;
             return result;
         }
 
@@ -333,7 +355,8 @@ namespace rock::debug_overlay_shape
                 return false;
             }
             constexpr std::size_t maxVertices = (std::numeric_limits<std::uint16_t>::max)();
-            if (source.vertices.size() > maxVertices || destination.vertices.size() > maxVertices - source.vertices.size()) {
+            if (source.vertices.size() > maxVertices ||
+                destination.vertices.size() > maxVertices - source.vertices.size()) {
                 return false;
             }
             for (const auto index : source.indices) {
@@ -369,7 +392,8 @@ namespace rock::debug_overlay_shape
                 }
 
                 auto childBuilt = buildMeshFromRecipe(*child.recipe);
-                if (!childBuilt.mesh.valid || childBuilt.decodeMode == debug_overlay_policy::ShapeDecodeMode::Unsupported ||
+                if (!childBuilt.mesh.valid ||
+                    childBuilt.decodeMode == debug_overlay_policy::ShapeDecodeMode::Unsupported ||
                     !transformCompoundChild(childBuilt.mesh, child, recipe.settings.havokToGameScale) ||
                     !appendMesh(result.mesh, childBuilt.mesh)) {
                     result.mesh = {};
@@ -393,7 +417,8 @@ namespace rock::debug_overlay_shape
     {
         BuiltShape result{};
         result.shapeType = recipe.shapeType;
-        if (!recipe.valid || !std::isfinite(recipe.settings.havokToGameScale) || recipe.settings.havokToGameScale <= 0.0f) {
+        if (!recipe.valid || !std::isfinite(recipe.settings.havokToGameScale) ||
+            recipe.settings.havokToGameScale <= 0.0f) {
             return result;
         }
 
@@ -402,9 +427,9 @@ namespace rock::debug_overlay_shape
             // A direct sphere carries radius in the published per-body model
             // scale. Nested spheres retain baked dimensions so wrapping scaled
             // shapes preserve their existing geometry exactly.
-            result.mesh = recipe.canonicalUnitSphere ?
-                makeSphere(1.0f, 1.0f) :
-                makeSphere(recipe.convexRadius, recipe.settings.havokToGameScale);
+            result.mesh = recipe.canonicalUnitSphere
+                ? makeSphere(1.0f, 1.0f)
+                : makeSphere(recipe.convexRadius, recipe.settings.havokToGameScale);
             result.decodeMode = debug_overlay_policy::ShapeDecodeMode::Detailed;
             return result;
         case ShapeRecipe::Kind::Capsule:

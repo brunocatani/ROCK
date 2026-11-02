@@ -83,7 +83,8 @@ namespace rock::debug_overlay_policy
         return static_cast<std::uint32_t>(requested);
     }
 
-    inline bool shouldUseBoundsForHeavyConvex(std::uint32_t supportVertexCount, int maxDetailedSupportVertices, bool boundsFallbackEnabled)
+    inline bool shouldUseBoundsForHeavyConvex(std::uint32_t supportVertexCount, int maxDetailedSupportVertices,
+        bool boundsFallbackEnabled)
     {
         if (!boundsFallbackEnabled) {
             return false;
@@ -108,17 +109,16 @@ namespace rock::debug_overlay_policy
         }
     }
 
-    inline bool isConvexSupportShapeType(int shapeType)
-    {
-        return shapeType == 0 || shapeType == 1 || shapeType == 4;
-    }
+    inline bool isConvexSupportShapeType(int shapeType) { return shapeType == 0 || shapeType == 1 || shapeType == 4; }
 
-    inline ShapeDecodeMode chooseShapeDecodeMode(int shapeType, std::uint32_t supportVertexCount, int maxDetailedSupportVertices, bool proxyFallbackEnabled)
+    inline ShapeDecodeMode chooseShapeDecodeMode(int shapeType, std::uint32_t supportVertexCount,
+        int maxDetailedSupportVertices, bool proxyFallbackEnabled)
     {
         if (!isSupportedDetailedShapeType(shapeType)) {
             return proxyFallbackEnabled ? ShapeDecodeMode::Proxy : ShapeDecodeMode::Unsupported;
         }
-        if (isConvexSupportShapeType(shapeType) && shouldUseBoundsForHeavyConvex(supportVertexCount, maxDetailedSupportVertices, proxyFallbackEnabled)) {
+        if (isConvexSupportShapeType(shapeType) &&
+            shouldUseBoundsForHeavyConvex(supportVertexCount, maxDetailedSupportVertices, proxyFallbackEnabled)) {
             return ShapeDecodeMode::Proxy;
         }
         return ShapeDecodeMode::Detailed;
@@ -133,9 +133,7 @@ namespace rock::debug_overlay_policy
         return seed ^ (value + 0x9e3779b97f4a7c15ull + (seed << 6) + (seed >> 2));
     }
 
-    inline std::uint64_t makeShapeDecodeSettingsKey(
-        int maxConvexSupportVertices,
-        bool useBoundsForHeavyConvex,
+    inline std::uint64_t makeShapeDecodeSettingsKey(int maxConvexSupportVertices, bool useBoundsForHeavyConvex,
         int maxCompoundChildren = static_cast<int>(kDefaultMaxCompoundChildren),
         int maxCompoundDepth = static_cast<int>(kDefaultMaxCompoundDepth))
     {

@@ -59,7 +59,8 @@ namespace rock::mouth_consume_haptic_policy
 {
     using CandidatePulseConfig = candidate_haptic_policy::CandidatePulseConfig;
 
-    [[nodiscard]] inline float computeCandidatePulseIntensity(float confidence, const CandidatePulseConfig& config) noexcept
+    [[nodiscard]] inline float computeCandidatePulseIntensity(float confidence,
+        const CandidatePulseConfig& config) noexcept
     {
         return candidate_haptic_policy::computeCandidatePulseIntensity(confidence, config);
     }

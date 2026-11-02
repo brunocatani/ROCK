@@ -42,11 +42,8 @@ namespace rock::hand_finger_mirror_math
                 }
             }
         }
-        return std::isfinite(local.translate.x) &&
-               std::isfinite(local.translate.y) &&
-               std::isfinite(local.translate.z) &&
-               std::isfinite(local.scale) &&
-               std::abs(local.scale) > 0.0001f;
+        return std::isfinite(local.translate.x) && std::isfinite(local.translate.y) &&
+            std::isfinite(local.translate.z) && std::isfinite(local.scale) && std::abs(local.scale) > 0.0001f;
     }
 
     /*
@@ -56,8 +53,7 @@ namespace rock::hand_finger_mirror_math
      * local and clears the target.
      */
     template <class Transform>
-    [[nodiscard]] inline bool mirrorFingerLocalsAcrossHands(
-        std::span<const Transform> source,
+    [[nodiscard]] inline bool mirrorFingerLocalsAcrossHands(std::span<const Transform> source,
         std::span<Transform> target)
     {
         if (source.size() != target.size()) {

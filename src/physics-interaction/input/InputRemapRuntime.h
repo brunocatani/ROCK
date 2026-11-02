@@ -27,9 +27,7 @@ namespace rock::input_remap_runtime
         bool released{ false };
         std::uint64_t sampleSequence{ 0 };
         std::uint32_t sampleAgeMilliseconds{ 0 };
-        RawButtonAvailabilityReason availabilityReason{
-            RawButtonAvailabilityReason::HookNotSampled
-        };
+        RawButtonAvailabilityReason availabilityReason{ RawButtonAvailabilityReason::HookNotSampled };
     };
 
     struct LogicalJumpState
@@ -39,18 +37,17 @@ namespace rock::input_remap_runtime
         std::uint64_t sampleSequence{ 0 };
         std::uint64_t pressSequence{ 0 };
         std::uint32_t sampleAgeMilliseconds{ 0 };
-        RawButtonAvailabilityReason availabilityReason{
-            RawButtonAvailabilityReason::HookNotSampled
-        };
+        RawButtonAvailabilityReason availabilityReason{ RawButtonAvailabilityReason::HookNotSampled };
     };
 
     struct PhysicalTraceSnapshot
     {
-        bool valid{false};
-        std::uint64_t sequence{0}, ageMilliseconds{0}, pressed{0};
-        std::uint64_t pendingPressed{0}, pendingReleased{0}, rearm{0};
-        float trigger{0.0f};
+        bool valid{ false };
+        std::uint64_t sequence{ 0 }, ageMilliseconds{ 0 }, pressed{ 0 };
+        std::uint64_t pendingPressed{ 0 }, pendingReleased{ 0 }, rearm{ 0 };
+        float trigger{ 0.0f };
     };
+
     // Diagnostic-only atomic loads. Unlike peekRawButtonState, this never
     // drains edges or rearms buttons when a menu/UI owns input.
     PhysicalTraceSnapshot readPhysicalTraceSnapshot(bool isLeft) noexcept;

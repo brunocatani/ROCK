@@ -72,10 +72,7 @@ namespace rock::held_weapon_instant_transition
         bool attempted{ false };
         bool managerAccepted{ false };
 
-        [[nodiscard]] bool success() const noexcept
-        {
-            return code == ImmediateEquipCode::Accepted;
-        }
+        [[nodiscard]] bool success() const noexcept { return code == ImmediateEquipCode::Accepted; }
     };
 
     // Optional startup capability. Failure disables only held trigger/grip-zone
@@ -97,8 +94,7 @@ namespace rock::held_weapon_instant_transition
     // virtual callsites. Exact equipped identity/stack validation belongs to
     // WeaponEquipTransfer; normal native draw presentation belongs to the
     // equipped-weapon transition coordinator.
-    [[nodiscard]] ImmediateEquipResult equipImmediatelyWithoutActions(
-        const ImmediateEquipInput& input) noexcept;
+    [[nodiscard]] ImmediateEquipResult equipImmediatelyWithoutActions(const ImmediateEquipInput& input) noexcept;
 
     /*
      * Main-thread-only transaction around exactly one immediate unequip that
@@ -111,14 +107,16 @@ namespace rock::held_weapon_instant_transition
      * stays native. The call reports nothing: the caller reads the result.
      */
     using KeptDrawnUnequipCall = void (*)(void* context) noexcept;
+
     struct KeptDrawnUnequipResult
     {
         ImmediateEquipCode code{ ImmediateEquipCode::NotAttempted };
         ReadinessReason readinessReason{ ReadinessReason::NotInstalled };
         held_weapon_instant_transition_policy::ActionTrace actionTrace{};
     };
-    [[nodiscard]] KeptDrawnUnequipResult unequipKeepingDrawn(
-        RE::PlayerCharacter* player, KeptDrawnUnequipCall call, void* context) noexcept;
+
+    [[nodiscard]] KeptDrawnUnequipResult unequipKeepingDrawn(RE::PlayerCharacter* player, KeptDrawnUnequipCall call,
+        void* context) noexcept;
 
     [[nodiscard]] const char* requestReasonName(RequestReason reason) noexcept;
     [[nodiscard]] const char* readinessReasonName(ReadinessReason reason) noexcept;

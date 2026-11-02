@@ -4,8 +4,8 @@
 #include <string_view>
 
 #include "physics-interaction/TransformMath.h"
-#include "physics-interaction/hand/TrackedHandIsolationPolicy.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
+#include "physics-interaction/hand/TrackedHandIsolationPolicy.h"
 
 #include "RE/NetImmerse/NiTransform.h"
 
@@ -57,8 +57,8 @@ namespace rock::rendered_bone_transport_policy
         const std::string_view tail = name.substr(5);
         // A shared full-body capture also contains optional attachment/helper
         // bones. Preserve the original hand-only capture's admitted chain.
-        const bool finger = tail.starts_with("Finger") && skeleton_bone_debug_math::containsExact(
-            skeleton_bone_debug_math::kRequiredFingerBoneNames, name);
+        const bool finger = tail.starts_with("Finger") &&
+            skeleton_bone_debug_math::containsExact(skeleton_bone_debug_math::kRequiredFingerBoneNames, name);
         if (tail == "Hand" || tail == "ForeArm1" || tail == "ForeArm2" || tail == "ForeArm3" || finger) {
             return side;
         }
@@ -69,16 +69,13 @@ namespace rock::rendered_bone_transport_policy
      * delta = controllerRoot * inverse(renderedRoot). Inactive when either root
      * is missing or when the two coincide, so claim-free frames pass through.
      */
-    [[nodiscard]] inline HandTransport makeHandTransport(
-        const RE::NiTransform& controllerRootInput,
-        const bool controllerRootValid,
-        const RE::NiTransform& renderedRootInput,
-        const bool renderedRootValid) noexcept
+    [[nodiscard]] inline HandTransport makeHandTransport(const RE::NiTransform& controllerRootInput,
+        const bool controllerRootValid, const RE::NiTransform& renderedRootInput, const bool renderedRootValid) noexcept
     {
         namespace isolation = tracked_hand_isolation_policy;
         HandTransport transport{};
-        if (!controllerRootValid || !renderedRootValid ||
-            !isolation::isFiniteTransform(controllerRootInput) || !isolation::isFiniteTransform(renderedRootInput)) {
+        if (!controllerRootValid || !renderedRootValid || !isolation::isFiniteTransform(controllerRootInput) ||
+            !isolation::isFiniteTransform(renderedRootInput)) {
             return transport;
         }
         // Both roots are scene bases with float drift; the transpose inverse
@@ -93,9 +90,8 @@ namespace rock::rendered_bone_transport_policy
             std::fabs(controllerRoot.scale - renderedRoot.scale) <= 0.000001f) {
             return transport;
         }
-        const RE::NiTransform delta = transform_math::composeTransforms(
-            controllerRoot,
-            transform_math::invertTransform(renderedRoot));
+        const RE::NiTransform delta =
+            transform_math::composeTransforms(controllerRoot, transform_math::invertTransform(renderedRoot));
         if (!isolation::isFiniteTransform(delta)) {
             return transport;
         }
@@ -104,40 +100,47 @@ namespace rock::rendered_bone_transport_policy
         return transport;
     }
 
-    [[nodiscard]] inline RE::NiTransform transportWorld(const HandTransport& transport, const RE::NiTransform& renderedWorld) noexcept
+    [[nodiscard]] inline RE::NiTransform transportWorld(const HandTransport& transport,
+        const RE::NiTransform& renderedWorld) noexcept
     {
         if (!transport.active) {
             return renderedWorld;
         }
-        return transform_math::composeTransforms(transport.delta, transform_math::orthonormalizedTransform(renderedWorld));
+        return transform_math::composeTransforms(transport.delta,
+            transform_math::orthonormalizedTransform(renderedWorld));
     }
 
     // Move only array worlds. refNode worlds are independent, current scene
     // samples and must never receive a delta derived from the flattened array.
     // Validate the whole chain before changing any entry.
     template <class Bones>
-    [[nodiscard]] inline bool transportSnapshotHand(
-        Bones& bones, HandChainSide side, const RE::NiTransform& controllerRoot,
-        std::string_view* rejectedSource = nullptr) noexcept
+    [[nodiscard]] inline bool transportSnapshotHand(Bones& bones, HandChainSide side,
+        const RE::NiTransform& controllerRoot, std::string_view* rejectedSource = nullptr) noexcept
     {
         // The optional diagnostic borrows a bone name only until the caller logs it.
-        if (rejectedSource) *rejectedSource = {};
+        if (rejectedSource)
+            *rejectedSource = {};
         if (side == HandChainSide::None || !tracked_hand_isolation_policy::isFiniteTransform(controllerRoot)) {
-            if (rejectedSource) *rejectedSource = side == HandChainSide::None ? "hand-side" : "controller-root";
+            if (rejectedSource)
+                *rejectedSource = side == HandChainSide::None ? "hand-side" : "controller-root";
             return false;
         }
         const std::string_view handName = side == HandChainSide::Left ? "LArm_Hand" : "RArm_Hand";
         const RE::NiTransform* sourceRoot = nullptr;
         for (const auto& bone : bones) {
-            if (chainSideForBone(bone.name) != side) continue;
+            if (chainSideForBone(bone.name) != side)
+                continue;
             if (!tracked_hand_isolation_policy::isFiniteTransform(bone.world)) {
-                if (rejectedSource) *rejectedSource = bone.name;
+                if (rejectedSource)
+                    *rejectedSource = bone.name;
                 return false;
             }
-            if (bone.name == handName) sourceRoot = &bone.world;
+            if (bone.name == handName)
+                sourceRoot = &bone.world;
         }
         if (!sourceRoot) {
-            if (rejectedSource) *rejectedSource = "sampled-wrist-missing";
+            if (rejectedSource)
+                *rejectedSource = "sampled-wrist-missing";
             return false;
         }
         const auto transport = makeHandTransport(controllerRoot, true, *sourceRoot, true);

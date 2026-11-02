@@ -39,8 +39,7 @@ namespace rock::held_scene_presentation_policy
         ExcessiveTransportAdvance,
     };
 
-    inline const char* targetTransportRejectReasonName(
-        TargetTransportRejectReason reason) noexcept
+    inline const char* targetTransportRejectReasonName(TargetTransportRejectReason reason) noexcept
     {
         switch (reason) {
         case TargetTransportRejectReason::None:
@@ -62,18 +61,14 @@ namespace rock::held_scene_presentation_policy
     template <class Transform>
     inline bool finiteTransform(const Transform& transform) noexcept
     {
-        if (!std::isfinite(transform.translate.x) ||
-            !std::isfinite(transform.translate.y) ||
-            !std::isfinite(transform.translate.z) ||
-            !std::isfinite(transform.scale) ||
-            transform.scale <= 0.000001f ||
+        if (!std::isfinite(transform.translate.x) || !std::isfinite(transform.translate.y) ||
+            !std::isfinite(transform.translate.z) || !std::isfinite(transform.scale) || transform.scale <= 0.000001f ||
             transform.scale >= 10000.0f) {
             return false;
         }
         for (int row = 0; row < 3; ++row) {
             for (int column = 0; column < 3; ++column) {
-                if (!std::isfinite(
-                        transform.rotate.entry[row][column])) {
+                if (!std::isfinite(transform.rotate.entry[row][column])) {
                     return false;
                 }
             }
@@ -87,26 +82,19 @@ namespace rock::held_scene_presentation_policy
         const float deltaX = first.x - second.x;
         const float deltaY = first.y - second.y;
         const float deltaZ = first.z - second.z;
-        return std::sqrt(
-            deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
+        return std::sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
     }
 
     template <class Matrix>
-    inline float matrixRotationDeltaDegrees(
-        const Matrix& first,
-        const Matrix& second) noexcept
+    inline float matrixRotationDeltaDegrees(const Matrix& first, const Matrix& second) noexcept
     {
         float frobeniusDot = 0.0f;
         for (int row = 0; row < 3; ++row) {
             for (int column = 0; column < 3; ++column) {
-                frobeniusDot += first.entry[row][column] *
-                                second.entry[row][column];
+                frobeniusDot += first.entry[row][column] * second.entry[row][column];
             }
         }
-        const float cosine = std::clamp(
-            (frobeniusDot - 1.0f) * 0.5f,
-            -1.0f,
-            1.0f);
+        const float cosine = std::clamp((frobeniusDot - 1.0f) * 0.5f, -1.0f, 1.0f);
         return std::acos(cosine) * 57.2957795131f;
     }
 
@@ -119,87 +107,64 @@ namespace rock::held_scene_presentation_policy
         float targetRotationStepDegrees = 0.0f;
         float physicalResidualGameUnits = 0.0f;
         float transportAdvanceGameUnits = 0.0f;
-        TargetTransportRejectReason reason =
-            TargetTransportRejectReason::InvalidTransform;
+        TargetTransportRejectReason reason = TargetTransportRejectReason::InvalidTransform;
     };
 
     // Step, advance and rotation limits are per 90 Hz frame; frameSeconds
     // scales them so a slow frame's real motion still presents on the hand.
     template <class Transform>
-    inline TargetTransportDecision<Transform> buildTargetTransport(
-        const Transform& previousTargetWorld,
-        const Transform& currentTargetWorld,
-        const Transform& previousSolvedBodyWorld,
+    inline TargetTransportDecision<Transform> buildTargetTransport(const Transform& previousTargetWorld,
+        const Transform& currentTargetWorld, const Transform& previousSolvedBodyWorld,
         float frameSeconds = 0.0f) noexcept
     {
         TargetTransportDecision<Transform> decision{};
-        if (!finiteTransform(previousTargetWorld) ||
-            !finiteTransform(currentTargetWorld) ||
+        if (!finiteTransform(previousTargetWorld) || !finiteTransform(currentTargetWorld) ||
             !finiteTransform(previousSolvedBodyWorld)) {
             return decision;
         }
         const float motionScale = game_frame_timing_policy::frameMotionScale(frameSeconds);
 
-        decision.targetTranslationStepGameUnits = pointDistance(
-            previousTargetWorld.translate,
-            currentTargetWorld.translate);
+        decision.targetTranslationStepGameUnits =
+            pointDistance(previousTargetWorld.translate, currentTargetWorld.translate);
         if (!std::isfinite(decision.targetTranslationStepGameUnits) ||
-            decision.targetTranslationStepGameUnits >
-                kMaxTargetTranslationStepGameUnits * motionScale) {
-            decision.reason = TargetTransportRejectReason::
-                ExcessiveTargetTranslationStep;
+            decision.targetTranslationStepGameUnits > kMaxTargetTranslationStepGameUnits * motionScale) {
+            decision.reason = TargetTransportRejectReason::ExcessiveTargetTranslationStep;
             return decision;
         }
 
-        decision.targetRotationStepDegrees = matrixRotationDeltaDegrees(
-            previousTargetWorld.rotate,
-            currentTargetWorld.rotate);
+        decision.targetRotationStepDegrees =
+            matrixRotationDeltaDegrees(previousTargetWorld.rotate, currentTargetWorld.rotate);
         if (!std::isfinite(decision.targetRotationStepDegrees) ||
-            decision.targetRotationStepDegrees >
-                kMaxTargetRotationStepDegrees * motionScale) {
-            decision.reason =
-                TargetTransportRejectReason::ExcessiveTargetRotationStep;
+            decision.targetRotationStepDegrees > kMaxTargetRotationStepDegrees * motionScale) {
+            decision.reason = TargetTransportRejectReason::ExcessiveTargetRotationStep;
             return decision;
         }
 
-        const Transform physicalResidual =
-            transform_math::composeTransforms(
-                transform_math::invertTransform(previousTargetWorld),
-                previousSolvedBodyWorld);
+        const Transform physicalResidual = transform_math::composeTransforms(
+            transform_math::invertTransform(previousTargetWorld), previousSolvedBodyWorld);
         if (!finiteTransform(physicalResidual)) {
             return decision;
         }
         const decltype(physicalResidual.translate) residualOrigin{};
-        decision.physicalResidualGameUnits = pointDistance(
-            physicalResidual.translate,
-            residualOrigin);
+        decision.physicalResidualGameUnits = pointDistance(physicalResidual.translate, residualOrigin);
         if (!std::isfinite(decision.physicalResidualGameUnits) ||
-            decision.physicalResidualGameUnits >
-                kMaxTargetResidualTranslationGameUnits) {
-            decision.reason =
-                TargetTransportRejectReason::ExcessivePhysicalResidual;
+            decision.physicalResidualGameUnits > kMaxTargetResidualTranslationGameUnits) {
+            decision.reason = TargetTransportRejectReason::ExcessivePhysicalResidual;
             return decision;
         }
 
-        decision.presentedWorld = transform_math::composeTransforms(
-            currentTargetWorld,
-            physicalResidual);
+        decision.presentedWorld = transform_math::composeTransforms(currentTargetWorld, physicalResidual);
         if (!finiteTransform(decision.presentedWorld)) {
             return decision;
         }
-        decision.transportAdvanceGameUnits = pointDistance(
-            previousSolvedBodyWorld.translate,
-            decision.presentedWorld.translate);
-        const float transportRotationDegrees = matrixRotationDeltaDegrees(
-            previousSolvedBodyWorld.rotate,
-            decision.presentedWorld.rotate);
-        if (!std::isfinite(decision.transportAdvanceGameUnits) ||
-            !std::isfinite(transportRotationDegrees) ||
-            decision.transportAdvanceGameUnits >
-                kMaxTargetTransportAdvanceGameUnits * motionScale ||
+        decision.transportAdvanceGameUnits =
+            pointDistance(previousSolvedBodyWorld.translate, decision.presentedWorld.translate);
+        const float transportRotationDegrees =
+            matrixRotationDeltaDegrees(previousSolvedBodyWorld.rotate, decision.presentedWorld.rotate);
+        if (!std::isfinite(decision.transportAdvanceGameUnits) || !std::isfinite(transportRotationDegrees) ||
+            decision.transportAdvanceGameUnits > kMaxTargetTransportAdvanceGameUnits * motionScale ||
             transportRotationDegrees > kMaxTargetRotationStepDegrees * motionScale) {
-            decision.reason =
-                TargetTransportRejectReason::ExcessiveTransportAdvance;
+            decision.reason = TargetTransportRejectReason::ExcessiveTransportAdvance;
             return decision;
         }
 
@@ -211,27 +176,22 @@ namespace rock::held_scene_presentation_policy
     // Every body keeps its own solved pose. Only the primary target's clock
     // advance is shared; freezing offsets here would erase articulation.
     template <class Transform>
-    inline bool transportAssemblyBody(
-        const Transform& solvedPrimary,
-        const Transform& presentedPrimary,
-        const Transform& solvedBody,
-        Transform& presentedBody,
-        float frameSeconds = 0.0f) noexcept
+    inline bool transportAssemblyBody(const Transform& solvedPrimary, const Transform& presentedPrimary,
+        const Transform& solvedBody, Transform& presentedBody, float frameSeconds = 0.0f) noexcept
     {
-        if (!finiteTransform(solvedPrimary) || !finiteTransform(presentedPrimary) ||
-            !finiteTransform(solvedBody)) {
+        if (!finiteTransform(solvedPrimary) || !finiteTransform(presentedPrimary) || !finiteTransform(solvedBody)) {
             return false;
         }
         const float motionScale = game_frame_timing_policy::frameMotionScale(frameSeconds);
-        const auto delta = transform_math::composeTransforms(
-            presentedPrimary, transform_math::invertTransform(solvedPrimary));
+        const auto delta =
+            transform_math::composeTransforms(presentedPrimary, transform_math::invertTransform(solvedPrimary));
         presentedBody = transform_math::composeTransforms(delta, solvedBody);
         presentedBody.scale = solvedBody.scale;
         return finiteTransform(presentedBody) &&
-               pointDistance(solvedBody.translate, presentedBody.translate) <=
-                   kMaxTargetTransportAdvanceGameUnits * motionScale &&
-               matrixRotationDeltaDegrees(solvedBody.rotate, presentedBody.rotate) <=
-                   kMaxTargetRotationStepDegrees * motionScale;
+            pointDistance(solvedBody.translate, presentedBody.translate) <=
+            kMaxTargetTransportAdvanceGameUnits * motionScale &&
+            matrixRotationDeltaDegrees(solvedBody.rotate, presentedBody.rotate) <=
+            kMaxTargetRotationStepDegrees * motionScale;
     }
 
     // Order independent owner subtrees before their descendants. Bound the walk
@@ -252,8 +212,7 @@ namespace rock::held_scene_presentation_policy
     // solved pose. The captured root/body relation never uses last frame's
     // presented node as a new physics input.
     template <class Node, class Transform>
-    inline bool appendAssemblyRootPose(
-        ScenePose<Node, Transform>* poses, std::size_t& count, std::size_t capacity,
+    inline bool appendAssemblyRootPose(ScenePose<Node, Transform>* poses, std::size_t& count, std::size_t capacity,
         Node* root, const Transform& presentedBody, const Transform& bodyInRoot) noexcept
     {
         if (!root || count == 0 || count >= capacity || !finiteTransform(root->world) ||
@@ -264,16 +223,19 @@ namespace rock::held_scene_presentation_policy
         for (std::size_t index = 0; index < count; ++index) {
             auto* node = poses[index].node;
             std::size_t depth = 0;
-            while (node && node != root && depth++ < 128) node = node->parent;
-            if (node != root) return false;
+            while (node && node != root && depth++ < 128)
+                node = node->parent;
+            if (node != root)
+                return false;
             rootIsBodyOwner |= poses[index].node == root;
         }
-        if (rootIsBodyOwner) return true;
-        auto rootWorld = transform_math::composeTransforms(
-            presentedBody, transform_math::invertTransform(bodyInRoot));
+        if (rootIsBodyOwner)
+            return true;
+        auto rootWorld = transform_math::composeTransforms(presentedBody, transform_math::invertTransform(bodyInRoot));
         rootWorld.scale = root->world.scale;
-        if (!finiteTransform(rootWorld)) return false;
-        poses[count++] = {root, rootWorld};
+        if (!finiteTransform(rootWorld))
+            return false;
+        poses[count++] = { root, rootWorld };
         return true;
     }
 
@@ -307,9 +269,8 @@ namespace rock::held_scene_presentation_policy
                 }
             }
         }
-        std::sort(poses, poses + count, [](const auto& first, const auto& second) {
-            return first.depth < second.depth;
-        });
+        std::sort(poses, poses + count,
+            [](const auto& first, const auto& second) { return first.depth < second.depth; });
         for (std::size_t index = 0; index < count; ++index) {
             auto& pose = poses[index];
             // An ancestor's native refresh covers this subtree after every
@@ -327,8 +288,8 @@ namespace rock::held_scene_presentation_policy
     }
 
     template <class Node, class Transform, class UpdateTransforms, class RefreshSubtree>
-    inline void applyScenePoses(
-        const ScenePose<Node, Transform>* poses, std::size_t count, UpdateTransforms updateTransforms, RefreshSubtree refreshSubtree) noexcept
+    inline void applyScenePoses(const ScenePose<Node, Transform>* poses, std::size_t count,
+        UpdateTransforms updateTransforms, RefreshSubtree refreshSubtree) noexcept
     {
         for (std::size_t index = 0; index < count; ++index) {
             const auto& pose = poses[index];
@@ -337,15 +298,17 @@ namespace rock::held_scene_presentation_policy
             }
             auto* node = pose.node;
             node->world = pose.world;
-            node->local = node->parent ? transform_math::composeTransforms(
-                transform_math::invertTransform(node->parent->world), pose.world) : pose.world;
+            node->local = node->parent
+                ? transform_math::composeTransforms(transform_math::invertTransform(node->parent->world), pose.world)
+                : pose.world;
             // Intermediate non-owner parents must follow an updated ancestor
             // before the next owner's local is derived. This pass changes only
             // transforms; geometry/skin notification follows the complete batch.
             updateTransforms(node);
         }
         for (std::size_t index = 0; index < count; ++index) {
-            if (!poses[index].duplicate && poses[index].refreshRoot) refreshSubtree(poses[index].node);
+            if (!poses[index].duplicate && poses[index].refreshRoot)
+                refreshSubtree(poses[index].node);
         }
     }
 
@@ -367,14 +330,15 @@ namespace rock::held_scene_presentation_policy
     {
         historyCount = 0;
         for (std::size_t index = 0; index < count; ++index) {
-            if (poses[index].duplicate || !poses[index].refreshRoot) continue;
+            if (poses[index].duplicate || !poses[index].refreshRoot)
+                continue;
             bool complete = true;
             const auto traversal = visitSubtree(poses[index].node, [&](Node* node) {
                 if (!node || historyCount == capacity || !finiteTransform(node->world)) {
                     complete = false;
                     return false;
                 }
-                history[historyCount++] = {node, node->world};
+                history[historyCount++] = { node, node->world };
                 return true;
             });
             if (!complete || traversal.truncated) {
@@ -443,10 +407,7 @@ namespace rock::held_scene_presentation_policy
         RejectReason reason = RejectReason::InvalidRawFrame;
     };
 
-    inline TimingDecision evaluateTiming(
-        bool mainWriterCallsite,
-        float rawFrameSeconds,
-        float nativeRemainderSeconds)
+    inline TimingDecision evaluateTiming(bool mainWriterCallsite, float rawFrameSeconds, float nativeRemainderSeconds)
     {
         TimingDecision decision{
             .rawFrameSeconds = rawFrameSeconds,
@@ -457,23 +418,18 @@ namespace rock::held_scene_presentation_policy
             decision.reason = RejectReason::UnsupportedCallsite;
             return decision;
         }
-        if (!std::isfinite(rawFrameSeconds) ||
-            rawFrameSeconds < kMinRawFrameSeconds ||
+        if (!std::isfinite(rawFrameSeconds) || rawFrameSeconds < kMinRawFrameSeconds ||
             rawFrameSeconds > kMaxRawFrameSeconds) {
             decision.reason = RejectReason::InvalidRawFrame;
             return decision;
         }
-        if (!std::isfinite(nativeRemainderSeconds) ||
-            std::fabs(nativeRemainderSeconds) >
-                kMaxNativeRemainderSeconds) {
+        if (!std::isfinite(nativeRemainderSeconds) || std::fabs(nativeRemainderSeconds) > kMaxNativeRemainderSeconds) {
             decision.reason = RejectReason::InvalidRemainder;
             return decision;
         }
 
-        const float predictionSeconds =
-            rawFrameSeconds + nativeRemainderSeconds;
-        if (!std::isfinite(predictionSeconds) ||
-            predictionSeconds < kMinPredictionSeconds ||
+        const float predictionSeconds = rawFrameSeconds + nativeRemainderSeconds;
+        if (!std::isfinite(predictionSeconds) || predictionSeconds < kMinPredictionSeconds ||
             predictionSeconds > kMaxPredictionSeconds) {
             decision.reason = RejectReason::ExcessivePredictionTime;
             return decision;
@@ -512,10 +468,18 @@ namespace rock::held_scene_presentation_policy
             return false;
         }
         constexpr std::size_t usedIndices[]{
-            0, 1, 2,
-            4, 5, 6,
-            8, 9, 10,
-            12, 13, 14,
+            0,
+            1,
+            2,
+            4,
+            5,
+            6,
+            8,
+            9,
+            10,
+            12,
+            13,
+            14,
         };
         for (const std::size_t index : usedIndices) {
             if (!std::isfinite(transform[index])) {
@@ -525,38 +489,33 @@ namespace rock::held_scene_presentation_policy
         return true;
     }
 
-    inline float rotationDeltaDegrees(
-        const float* first,
-        const float* second)
+    inline float rotationDeltaDegrees(const float* first, const float* second)
     {
         constexpr std::size_t rotationIndices[]{
-            0, 1, 2,
-            4, 5, 6,
-            8, 9, 10,
+            0,
+            1,
+            2,
+            4,
+            5,
+            6,
+            8,
+            9,
+            10,
         };
         float frobeniusDot = 0.0f;
         for (const std::size_t index : rotationIndices) {
             frobeniusDot += first[index] * second[index];
         }
-        const float cosine = std::clamp(
-            (frobeniusDot - 1.0f) * 0.5f,
-            -1.0f,
-            1.0f);
+        const float cosine = std::clamp((frobeniusDot - 1.0f) * 0.5f, -1.0f, 1.0f);
         return std::acos(cosine) * 57.2957795131f;
     }
 
-    inline TransformDecision buildWriterTransform(
-        const float* originalWriterInput,
-        const float* nativePredictedTransformHavok,
-        float havokToGameScale,
-        float* correctedWriterInput,
-        float maxTranslationDeltaGameUnits =
-            kMaxTranslationDeltaGameUnits,
+    inline TransformDecision buildWriterTransform(const float* originalWriterInput,
+        const float* nativePredictedTransformHavok, float havokToGameScale, float* correctedWriterInput,
+        float maxTranslationDeltaGameUnits = kMaxTranslationDeltaGameUnits,
         float maxRotationDeltaDegrees = kMaxRotationDeltaDegrees)
     {
-        if (!std::isfinite(havokToGameScale) ||
-            havokToGameScale <= 0.000001f ||
-            havokToGameScale >= 10000.0f) {
+        if (!std::isfinite(havokToGameScale) || havokToGameScale <= 0.000001f || havokToGameScale >= 10000.0f) {
             return TransformDecision{ .reason = RejectReason::InvalidScale };
         }
         if (!finiteWriterInput(originalWriterInput) || !correctedWriterInput) {
@@ -572,42 +531,36 @@ namespace rock::held_scene_presentation_policy
         correctedWriterInput[15] = 0.0f;
 
         constexpr std::size_t rotationIndices[]{
-            0, 1, 2,
-            4, 5, 6,
-            8, 9, 10,
+            0,
+            1,
+            2,
+            4,
+            5,
+            6,
+            8,
+            9,
+            10,
         };
         for (const std::size_t index : rotationIndices) {
-            correctedWriterInput[index] =
-                nativePredictedTransformHavok[index];
+            correctedWriterInput[index] = nativePredictedTransformHavok[index];
         }
-        correctedWriterInput[12] =
-            nativePredictedTransformHavok[12] * havokToGameScale;
-        correctedWriterInput[13] =
-            nativePredictedTransformHavok[13] * havokToGameScale;
-        correctedWriterInput[14] =
-            nativePredictedTransformHavok[14] * havokToGameScale;
+        correctedWriterInput[12] = nativePredictedTransformHavok[12] * havokToGameScale;
+        correctedWriterInput[13] = nativePredictedTransformHavok[13] * havokToGameScale;
+        correctedWriterInput[14] = nativePredictedTransformHavok[14] * havokToGameScale;
 
-        const float deltaX =
-            correctedWriterInput[12] - originalWriterInput[12];
-        const float deltaY =
-            correctedWriterInput[13] - originalWriterInput[13];
-        const float deltaZ =
-            correctedWriterInput[14] - originalWriterInput[14];
-        const float translationDelta = std::sqrt(
-            deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
-        if (!std::isfinite(translationDelta) ||
-            translationDelta > maxTranslationDeltaGameUnits) {
+        const float deltaX = correctedWriterInput[12] - originalWriterInput[12];
+        const float deltaY = correctedWriterInput[13] - originalWriterInput[13];
+        const float deltaZ = correctedWriterInput[14] - originalWriterInput[14];
+        const float translationDelta = std::sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
+        if (!std::isfinite(translationDelta) || translationDelta > maxTranslationDeltaGameUnits) {
             return TransformDecision{
                 .translationDeltaGameUnits = translationDelta,
                 .reason = RejectReason::ExcessiveTranslationDelta,
             };
         }
 
-        const float rotationDelta = rotationDeltaDegrees(
-            originalWriterInput,
-            correctedWriterInput);
-        if (!std::isfinite(rotationDelta) ||
-            rotationDelta > maxRotationDeltaDegrees) {
+        const float rotationDelta = rotationDeltaDegrees(originalWriterInput, correctedWriterInput);
+        if (!std::isfinite(rotationDelta) || rotationDelta > maxRotationDeltaDegrees) {
             return TransformDecision{
                 .translationDeltaGameUnits = translationDelta,
                 .rotationDeltaDegrees = rotationDelta,

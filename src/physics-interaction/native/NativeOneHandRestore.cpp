@@ -33,27 +33,33 @@ namespace rock::native_one_hand_restore
 
         [[nodiscard]] bool readCall(const std::uintptr_t callsite, std::array<std::uint8_t, 5>& out) noexcept
         {
-            return native_memory::guardedCopyFromMemory(
-                reinterpret_cast<const void*>(REL::Offset(callsite).address()), out.data(), out.size());
+            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(callsite).address()),
+                out.data(), out.size());
         }
 
         [[nodiscard]] bool callsRestore(const std::uintptr_t callsite) noexcept
         {
             std::array<std::uint8_t, 5> bytes{};
-            if (!readCall(callsite, bytes) || bytes[0] != 0xE8) return false;
+            if (!readCall(callsite, bytes) || bytes[0] != 0xE8)
+                return false;
             std::int32_t displacement = 0;
             std::memcpy(&displacement, bytes.data() + 1, sizeof(displacement));
-            return REL::Offset(callsite).address() + bytes.size() + displacement == REL::Offset(kRestoreEntry).address();
+            return REL::Offset(callsite).address() + bytes.size() + displacement ==
+                REL::Offset(kRestoreEntry).address();
         }
     }
 
     bool install() noexcept
     {
-        if (s_disabled.load(std::memory_order_acquire)) return true;
-        if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) return false;
+        if (s_disabled.load(std::memory_order_acquire))
+            return true;
+        if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72)
+            return false;
         for (const auto callsite : kRestoreCallsites) {
             if (!callsRestore(callsite)) {
-                ROCK_LOG_ERROR(Init, "Native one-hand item restore left active: callsite {:#x} is not the verified restore call", callsite);
+                ROCK_LOG_ERROR(Init,
+                    "Native one-hand item restore left active: callsite {:#x} is not the verified restore call",
+                    callsite);
                 return false;
             }
         }
@@ -67,7 +73,8 @@ namespace rock::native_one_hand_restore
         try {
             for (; written < kRestoreCallsites.size(); ++written) {
                 const auto callsite = kRestoreCallsites[written];
-                if (!readCall(callsite, originals[written])) throw std::runtime_error("callsite unreadable");
+                if (!readCall(callsite, originals[written]))
+                    throw std::runtime_error("callsite unreadable");
                 const auto address = REL::Offset(callsite).address();
                 (void)trampoline.write_call<5>(address, &skipRestore);
                 if (!FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<const void*>(address), 5))
@@ -78,7 +85,8 @@ namespace rock::native_one_hand_restore
             for (std::size_t index = 0; index < written; ++index) {
                 const auto address = REL::Offset(kRestoreCallsites[index]).address();
                 REL::safe_write(address, originals[index].data(), originals[index].size());
-                FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<const void*>(address), originals[index].size());
+                FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<const void*>(address),
+                    originals[index].size());
             }
             ROCK_LOG_ERROR(Init, "Native one-hand item restore left active: callsite redirect failed");
             return false;
@@ -88,8 +96,5 @@ namespace rock::native_one_hand_restore
         return true;
     }
 
-    bool disabled() noexcept
-    {
-        return s_disabled.load(std::memory_order_acquire);
-    }
+    bool disabled() noexcept { return s_disabled.load(std::memory_order_acquire); }
 }

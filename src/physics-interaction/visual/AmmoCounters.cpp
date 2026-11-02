@@ -2,8 +2,8 @@
 
 #include <cstdio>
 
-#include "physics-interaction/PhysicsLog.h"
 #include "RPSUINumberOverlayApi.h"
+#include "physics-interaction/PhysicsLog.h"
 
 namespace rock::ammo_counters
 {
@@ -41,7 +41,8 @@ namespace rock::ammo_counters
 
         void report(const char* step, ResultV1 result) noexcept
         {
-            if (result == g_reported) return;
+            if (result == g_reported)
+                return;
             g_reported = result;
             ROCK_LOG_WARN(Weapon, "Ammo counters: RPS UI {} returned {}; the vanilla counter stays until it succeeds",
                 step, static_cast<std::uint32_t>(result));
@@ -49,22 +50,27 @@ namespace rock::ammo_counters
 
         bool bind() noexcept
         {
-            if (g_bound) return true;
+            if (g_bound)
+                return true;
             if (g_retryCountdown > 0) {
                 --g_retryCountdown;
                 return false;
             }
             g_retryCountdown = kBindRetryCalls;
-            if (!g_base) g_base = rpsui::sdk::RequestApiV1();
-            if (!g_numbers && g_base) g_numbers = rpsui::sdk::RequestNumberOverlayApiV1();
+            if (!g_base)
+                g_base = rpsui::sdk::RequestApiV1();
+            if (!g_numbers && g_base)
+                g_numbers = rpsui::sdk::RequestNumberOverlayApiV1();
             if (!g_base || !g_numbers) {
                 if (!g_absentReported) {
                     g_absentReported = true;
-                    ROCK_LOG_INFO(Weapon, "Ammo counters: RPS UI number overlays unavailable; the vanilla counter stays");
+                    ROCK_LOG_INFO(Weapon,
+                        "Ammo counters: RPS UI number overlays unavailable; the vanilla counter stays");
                 }
                 return false;
             }
-            if (!g_base->isFrameworkReady || !g_base->isFrameworkReady()) return false;
+            if (!g_base->isFrameworkReady || !g_base->isFrameworkReady())
+                return false;
             if (g_owner == 0) {
                 rpsui::sdk::ConsumerRegistrationV1 registration{};
                 std::snprintf(registration.consumerId, sizeof(registration.consumerId), "%s", "rock.ammo-counters");
@@ -78,7 +84,8 @@ namespace rock::ammo_counters
                 g_owner = handle.ownerToken;
             }
             for (auto& overlay : g_overlays) {
-                if (overlay.handle) continue;
+                if (overlay.handle)
+                    continue;
                 rpsui::sdk::NumberOverlayRegistrationV1 registration{};
                 std::snprintf(registration.overlayId, sizeof(registration.overlayId), "%s", overlay.id);
                 std::snprintf(registration.displayName, sizeof(registration.displayName), "%s", overlay.name);
@@ -96,7 +103,8 @@ namespace rock::ammo_counters
 
         bool close(Overlay& overlay) noexcept
         {
-            if (!overlay.open) return true;
+            if (!overlay.open)
+                return true;
             rpsui::sdk::NumberOverlayPresentationV1 presentation{};
             presentation.sequence = ++overlay.sequence;
             const auto result = g_numbers->submit(g_owner, overlay.handle, &presentation);
@@ -125,7 +133,8 @@ namespace rock::ammo_counters
             presentation.opacity = pose.opacity;
             presentation.style = look.style;
             presentation.secondaryValue = look.secondaryValue;
-            for (unsigned i = 0; i < 3; ++i) presentation.color[i] = look.color[i];
+            for (unsigned i = 0; i < 3; ++i)
+                presentation.color[i] = look.color[i];
             for (unsigned i = 0; i < 3; ++i) {
                 presentation.pose.center[i] = panel.center[i];
                 presentation.pose.right[i] = pose.right[i];
@@ -144,9 +153,11 @@ namespace rock::ammo_counters
         }
     }
 
-    bool update(const std::array<HandCounter, 2>& hands, const Style style, const std::array<float, 3>& hudColor) noexcept
+    bool update(const std::array<HandCounter, 2>& hands, const Style style,
+        const std::array<float, 3>& hudColor) noexcept
     {
-        if (!bind()) return false;
+        if (!bind())
+            return false;
         bool healthy = true;
         for (std::size_t hand = 0; hand < hands.size(); ++hand) {
             const auto& counter = hands[hand];
@@ -158,8 +169,8 @@ namespace rock::ammo_counters
                     healthy &= show(reserve, counter.pose, counter.pose.reserve, counter.reserve, {});
                 } else {
                     const Look look{
-                        .style = style == Style::Immersive ? rpsui::sdk::NumberOverlayStyleV1::HudBracketed :
-                                                             rpsui::sdk::NumberOverlayStyleV1::Hud,
+                        .style = style == Style::Immersive ? rpsui::sdk::NumberOverlayStyleV1::HudBracketed
+                                                           : rpsui::sdk::NumberOverlayStyleV1::Hud,
                         .color = hudColor,
                         .secondaryValue = counter.reserve,
                     };
@@ -171,13 +182,16 @@ namespace rock::ammo_counters
                 healthy &= close(reserve);
             }
         }
-        if (healthy) g_reported = ResultV1::Ok;
+        if (healthy)
+            g_reported = ResultV1::Ok;
         return healthy;
     }
 
     void hide() noexcept
     {
-        if (!g_bound) return;
-        for (auto& overlay : g_overlays) (void)close(overlay);
+        if (!g_bound)
+            return;
+        for (auto& overlay : g_overlays)
+            (void)close(overlay);
     }
 }

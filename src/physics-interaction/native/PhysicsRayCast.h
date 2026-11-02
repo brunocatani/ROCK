@@ -24,10 +24,6 @@ namespace rock::physics_ray_cast
      * required world synchronization; callers must stay on ROCK's game-thread
      * query boundary and must not retain the world or pick-data storage.
      */
-    [[nodiscard]] bool castClosestSegment(
-        RE::bhkWorld* world,
-        const RE::NiPoint3& startGame,
-        const RE::NiPoint3& endGame,
-        std::uint32_t collisionFilterInfo,
-        ClosestSegmentResult& outResult);
+    [[nodiscard]] bool castClosestSegment(RE::bhkWorld* world, const RE::NiPoint3& startGame,
+        const RE::NiPoint3& endGame, std::uint32_t collisionFilterInfo, ClosestSegmentResult& outResult);
 }

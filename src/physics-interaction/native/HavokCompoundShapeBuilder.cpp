@@ -1,10 +1,10 @@
 #include "physics-interaction/native/HavokCompoundShapeBuilder.h"
 
+#include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRefCount.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/PhysicsLog.h"
 
 #include <REL/Relocation.h>
 
@@ -74,7 +74,8 @@ namespace rock::havok_compound_shape_builder
 
             [[nodiscard]] bool dynamicReady() const noexcept
             {
-                return constructCinfo && constructDynamicCompound && setShape && setTransform && setScale && updateInstances;
+                return constructCinfo && constructDynamicCompound && setShape && setTransform && setScale &&
+                    updateInstances;
             }
         };
 
@@ -86,9 +87,7 @@ namespace rock::havok_compound_shape_builder
 
         template <std::size_t N>
         [[nodiscard]] bool validateNativeEntry(
-            const char* label,
-            const std::uintptr_t offset,
-            const std::array<std::uint8_t, N>& expected,
+            const char* label, const std::uintptr_t offset, const std::array<std::uint8_t, N>& expected,
             const std::array<std::uint8_t, N>& mask = [] {
                 std::array<std::uint8_t, N> result{};
                 result.fill(0xFF);
@@ -98,7 +97,8 @@ namespace rock::havok_compound_shape_builder
             const auto address = REL::Offset(offset).address();
             std::array<std::uint8_t, N> actual{};
             if (!addressIsInGameText(address) ||
-                !native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), actual.data(), actual.size())) {
+                !native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), actual.data(),
+                    actual.size())) {
                 ROCK_LOG_ERROR(Init, "Native compound-shape validation could not read {} at 0x{:X}", label, address);
                 return false;
             }
@@ -127,41 +127,44 @@ namespace rock::havok_compound_shape_builder
                  * then signals registered shape owners about the mutation.
                  */
                 const bool entriesMatch =
-                    validateNativeEntry(
-                        "hknpShapeInstance::setShape",
-                        offsets::kFunc_ShapeInstance_SetShape,
+                    validateNativeEntry("hknpShapeInstance::setShape", offsets::kFunc_ShapeInstance_SetShape,
                         std::array<std::uint8_t, 10>{ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20 }) &&
-                    validateNativeEntry(
-                        "hknpShapeInstance::setTransform",
-                        offsets::kFunc_ShapeInstance_SetTransform,
-                        std::array<std::uint8_t, 15>{ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18 }) &&
-                    validateNativeEntry(
-                        "hknpShapeInstance::setScale",
-                        offsets::kFunc_ShapeInstance_SetScale,
-                        std::array<std::uint8_t, 14>{ 0x0F, 0x28, 0x12, 0x0F, 0x28, 0x1D, 0x00, 0x00, 0x00, 0x00, 0x44, 0x8B, 0x49, 0x0C },
-                        std::array<std::uint8_t, 14>{ 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF }) &&
-                    validateNativeEntry(
-                        "hknpCompoundShapeCinfo constructor",
+                    validateNativeEntry("hknpShapeInstance::setTransform", offsets::kFunc_ShapeInstance_SetTransform,
+                        std::array<std::uint8_t, 15>{ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48,
+                            0x89, 0x74, 0x24, 0x18 }) &&
+                    validateNativeEntry("hknpShapeInstance::setScale", offsets::kFunc_ShapeInstance_SetScale,
+                        std::array<std::uint8_t, 14>{ 0x0F, 0x28, 0x12, 0x0F, 0x28, 0x1D, 0x00, 0x00, 0x00, 0x00, 0x44,
+                            0x8B, 0x49, 0x0C },
+                        std::array<std::uint8_t, 14>{ 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0xFF,
+                            0xFF, 0xFF, 0xFF }) &&
+                    validateNativeEntry("hknpCompoundShapeCinfo constructor",
                         offsets::kFunc_CompoundShapeCinfo_FromInstances,
-                        std::array<std::uint8_t, 12>{ 0x33, 0xC0, 0x48, 0x89, 0x11, 0x44, 0x89, 0x41, 0x08, 0x89, 0x41, 0x0C }) &&
-                    validateNativeEntry(
-                        "hknpDynamicCompoundShape constructor",
+                        std::array<std::uint8_t, 12>{ 0x33, 0xC0, 0x48, 0x89, 0x11, 0x44, 0x89, 0x41, 0x08, 0x89, 0x41,
+                            0x0C }) &&
+                    validateNativeEntry("hknpDynamicCompoundShape constructor",
                         offsets::kFunc_DynamicCompoundShape_Ctor,
-                        std::array<std::uint8_t, 15>{ 0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x60 }) &&
-                    validateNativeEntry(
-                        "hknpDynamicCompoundShape::updateInstances",
+                        std::array<std::uint8_t, 15>{ 0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57,
+                            0x48, 0x83, 0xEC, 0x60 }) &&
+                    validateNativeEntry("hknpDynamicCompoundShape::updateInstances",
                         offsets::kFunc_DynamicCompoundShape_UpdateInstances,
-                        std::array<std::uint8_t, 17>{ 0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x83, 0xEC });
+                        std::array<std::uint8_t, 17>{ 0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x41, 0x54, 0x41, 0x55, 0x41,
+                            0x56, 0x41, 0x57, 0x48, 0x83, 0xEC });
                 if (!entriesMatch) {
                     return result;
                 }
 
-                result.constructCinfo = reinterpret_cast<CompoundCinfoCtor_t>(REL::Offset(offsets::kFunc_CompoundShapeCinfo_FromInstances).address());
-                result.constructDynamicCompound = reinterpret_cast<DynamicCompoundCtor_t>(REL::Offset(offsets::kFunc_DynamicCompoundShape_Ctor).address());
-                result.setShape = reinterpret_cast<SetShape_t>(REL::Offset(offsets::kFunc_ShapeInstance_SetShape).address());
-                result.setTransform = reinterpret_cast<SetTransform_t>(REL::Offset(offsets::kFunc_ShapeInstance_SetTransform).address());
-                result.setScale = reinterpret_cast<SetScale_t>(REL::Offset(offsets::kFunc_ShapeInstance_SetScale).address());
-                result.updateInstances = reinterpret_cast<UpdateInstances_t>(REL::Offset(offsets::kFunc_DynamicCompoundShape_UpdateInstances).address());
+                result.constructCinfo = reinterpret_cast<CompoundCinfoCtor_t>(
+                    REL::Offset(offsets::kFunc_CompoundShapeCinfo_FromInstances).address());
+                result.constructDynamicCompound = reinterpret_cast<DynamicCompoundCtor_t>(
+                    REL::Offset(offsets::kFunc_DynamicCompoundShape_Ctor).address());
+                result.setShape =
+                    reinterpret_cast<SetShape_t>(REL::Offset(offsets::kFunc_ShapeInstance_SetShape).address());
+                result.setTransform =
+                    reinterpret_cast<SetTransform_t>(REL::Offset(offsets::kFunc_ShapeInstance_SetTransform).address());
+                result.setScale =
+                    reinterpret_cast<SetScale_t>(REL::Offset(offsets::kFunc_ShapeInstance_SetScale).address());
+                result.updateInstances = reinterpret_cast<UpdateInstances_t>(
+                    REL::Offset(offsets::kFunc_DynamicCompoundShape_UpdateInstances).address());
                 return result;
             }();
             return api;
@@ -173,7 +176,8 @@ namespace rock::havok_compound_shape_builder
                 return;
             }
 
-            auto* refCountDword = reinterpret_cast<volatile long*>(const_cast<char*>(reinterpret_cast<const char*>(shape)) + 0x08);
+            auto* refCountDword =
+                reinterpret_cast<volatile long*>(const_cast<char*>(reinterpret_cast<const char*>(shape)) + 0x08);
             for (;;) {
                 const long oldValue = *refCountDword;
                 const auto oldRef = static_cast<std::uint16_t>(oldValue & 0xFFFF);
@@ -217,7 +221,8 @@ namespace rock::havok_compound_shape_builder
 
             if (children.size() > kMaxStaticCompoundChildren ||
                 children.size() > static_cast<std::size_t>((std::numeric_limits<std::int32_t>::max)())) {
-                ROCK_LOG_WARN(Weapon, "Compound build skipped: child count {} exceeds supported maximum {}", children.size(), kMaxStaticCompoundChildren);
+                ROCK_LOG_WARN(Weapon, "Compound build skipped: child count {} exceeds supported maximum {}",
+                    children.size(), kMaxStaticCompoundChildren);
                 return false;
             }
 
@@ -234,30 +239,26 @@ namespace rock::havok_compound_shape_builder
         [[nodiscard]] bool vectorNearlyEqual(const Vector4& lhs, const Vector4& rhs) noexcept
         {
             return std::abs(lhs.x - rhs.x) <= kTransformComparisonEpsilon &&
-                   std::abs(lhs.y - rhs.y) <= kTransformComparisonEpsilon &&
-                   std::abs(lhs.z - rhs.z) <= kTransformComparisonEpsilon &&
-                   std::abs(lhs.w - rhs.w) <= kTransformComparisonEpsilon;
+                std::abs(lhs.y - rhs.y) <= kTransformComparisonEpsilon &&
+                std::abs(lhs.z - rhs.z) <= kTransformComparisonEpsilon &&
+                std::abs(lhs.w - rhs.w) <= kTransformComparisonEpsilon;
         }
 
         [[nodiscard]] bool transformsNearlyEqual(const ChildTransform& lhs, const ChildTransform& rhs) noexcept
         {
-            return vectorNearlyEqual(lhs.column0, rhs.column0) &&
-                   vectorNearlyEqual(lhs.column1, rhs.column1) &&
-                   vectorNearlyEqual(lhs.column2, rhs.column2) &&
-                   vectorNearlyEqual(lhs.translation, rhs.translation) &&
-                   vectorNearlyEqual(lhs.scale, rhs.scale) &&
-                   lhs.scaleMode == rhs.scaleMode;
+            return vectorNearlyEqual(lhs.column0, rhs.column0) && vectorNearlyEqual(lhs.column1, rhs.column1) &&
+                vectorNearlyEqual(lhs.column2, rhs.column2) && vectorNearlyEqual(lhs.translation, rhs.translation) &&
+                vectorNearlyEqual(lhs.scale, rhs.scale) && lhs.scaleMode == rhs.scaleMode;
         }
 
         [[nodiscard]] bool transformIsFinite(const ChildTransform& transform) noexcept
         {
             const auto finiteVector = [](const Vector4& value) noexcept {
-                return std::isfinite(value.x) && std::isfinite(value.y) &&
-                       std::isfinite(value.z) && std::isfinite(value.w);
+                return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z) &&
+                    std::isfinite(value.w);
             };
             return finiteVector(transform.column0) && finiteVector(transform.column1) &&
-                   finiteVector(transform.column2) && finiteVector(transform.translation) &&
-                   finiteVector(transform.scale);
+                finiteVector(transform.column2) && finiteVector(transform.translation) && finiteVector(transform.scale);
         }
     }
 
@@ -285,7 +286,8 @@ namespace rock::havok_compound_shape_builder
 
         CompoundShapeCinfo cinfo;
         const auto childCount = static_cast<std::int32_t>(instances.size());
-        static REL::Relocation<CompoundCinfoCtor_t> constructCinfo{ REL::Offset(offsets::kFunc_CompoundShapeCinfo_FromInstances) };
+        static REL::Relocation<CompoundCinfoCtor_t> constructCinfo{ REL::Offset(
+            offsets::kFunc_CompoundShapeCinfo_FromInstances) };
         constructCinfo(std::addressof(cinfo), instances.data(), childCount, nullptr);
 
         auto* storage = havok_runtime::allocateHavok(kStaticCompoundShapeSize);
@@ -297,23 +299,23 @@ namespace rock::havok_compound_shape_builder
 
         std::memset(storage, 0, kStaticCompoundShapeSize);
 
-        static REL::Relocation<StaticCompoundCtor_t> constructStaticCompound{ REL::Offset(offsets::kFunc_StaticCompoundShape_Ctor) };
-        auto* compound = constructStaticCompound(storage, std::addressof(cinfo), static_cast<std::uint64_t>(childCount), nullptr);
+        static REL::Relocation<StaticCompoundCtor_t> constructStaticCompound{ REL::Offset(
+            offsets::kFunc_StaticCompoundShape_Ctor) };
+        auto* compound =
+            constructStaticCompound(storage, std::addressof(cinfo), static_cast<std::uint64_t>(childCount), nullptr);
         releaseTemporaryInstanceShapeReferences(instances);
 
         if (!compound) {
             havok_runtime::freeHavok(storage, kStaticCompoundShapeSize);
-            ROCK_LOG_WARN(Weapon, "Static compound build failed: native constructor returned null for {} children", children.size());
+            ROCK_LOG_WARN(Weapon, "Static compound build failed: native constructor returned null for {} children",
+                children.size());
             return nullptr;
         }
 
         return compound;
     }
 
-    void HavokShapeRelease::operator()(RE::hknpShape* shape) const noexcept
-    {
-        havok_ref_count::release(shape);
-    }
+    void HavokShapeRelease::operator()(RE::hknpShape* shape) const noexcept { havok_ref_count::release(shape); }
 
     bool DynamicCompoundShape::create(std::span<const CompoundChild> children) noexcept
     {
@@ -344,7 +346,8 @@ namespace rock::havok_compound_shape_builder
         for (std::size_t i = 0; i < children.size(); ++i) {
             initializeDefaultInstance(instances[i]);
             api.setTransform(std::addressof(instances[i]), std::addressof(children[i].transform));
-            api.setScale(std::addressof(instances[i]), std::addressof(children[i].transform.scale), children[i].transform.scaleMode);
+            api.setScale(std::addressof(instances[i]), std::addressof(children[i].transform.scale),
+                children[i].transform.scaleMode);
             api.setShape(std::addressof(instances[i]), children[i].shape);
             _lastTransforms[i] = children[i].transform;
         }
@@ -368,30 +371,28 @@ namespace rock::havok_compound_shape_builder
         if (!compound) {
             havok_runtime::freeHavok(storage, kDynamicCompoundShapeSize);
             reset();
-            ROCK_LOG_WARN(Weapon, "Dynamic compound build failed: native constructor returned null for {} children", children.size());
+            ROCK_LOG_WARN(Weapon, "Dynamic compound build failed: native constructor returned null for {} children",
+                children.size());
             return false;
         }
 
         _shape.reset(compound);
         _shapeKeyBitCount = compoundShapeKeyBitCount(children.size());
-        const std::uint32_t maximumEncodedInstanceId =
-            (1u << _shapeKeyBitCount) - 1u;
+        const std::uint32_t maximumEncodedInstanceId = (1u << _shapeKeyBitCount) - 1u;
         for (std::size_t i = 0; i < _instanceIds.size(); ++i) {
             if (_instanceIds[i] < 0 || _instanceIds[i] >= 0x7FFF ||
-                static_cast<std::uint32_t>(_instanceIds[i]) >
-                    maximumEncodedInstanceId) {
-                ROCK_LOG_ERROR(
-                    Weapon,
-                    "Dynamic compound build failed: constructor returned unencodable child id {} at index {} for {} key bits",
-                    _instanceIds[i],
-                    i,
-                    _shapeKeyBitCount);
+                static_cast<std::uint32_t>(_instanceIds[i]) > maximumEncodedInstanceId) {
+                ROCK_LOG_ERROR(Weapon,
+                    "Dynamic compound build failed: constructor returned unencodable child id {} at index {} for {} "
+                    "key bits",
+                    _instanceIds[i], i, _shapeKeyBitCount);
                 reset();
                 return false;
             }
             for (std::size_t previous = 0; previous < i; ++previous) {
                 if (_instanceIds[previous] == _instanceIds[i]) {
-                    ROCK_LOG_ERROR(Weapon, "Dynamic compound build failed: constructor returned duplicate child id {}", _instanceIds[i]);
+                    ROCK_LOG_ERROR(Weapon, "Dynamic compound build failed: constructor returned duplicate child id {}",
+                        _instanceIds[i]);
                     reset();
                     return false;
                 }
@@ -400,42 +401,34 @@ namespace rock::havok_compound_shape_builder
         return true;
     }
 
-    std::optional<std::size_t> DynamicCompoundShape::tryResolveChildIndex(
-        const std::uint32_t shapeKey) const noexcept
+    std::optional<std::size_t> DynamicCompoundShape::tryResolveChildIndex(const std::uint32_t shapeKey) const noexcept
     {
-        if (!_shape || shapeKey == 0xFFFF'FFFFu ||
-            _shapeKeyBitCount == 0 || _shapeKeyBitCount >= 32 ||
+        if (!_shape || shapeKey == 0xFFFF'FFFFu || _shapeKeyBitCount == 0 || _shapeKeyBitCount >= 32 ||
             _instanceIds.size() != _instances.size()) {
             return std::nullopt;
         }
 
-        const auto decodedId = decodeTopLevelCompoundInstanceId(
-            shapeKey,
-            _shapeKeyBitCount);
+        const auto decodedId = decodeTopLevelCompoundInstanceId(shapeKey, _shapeKeyBitCount);
         if (!decodedId) {
             return std::nullopt;
         }
         const auto nativeInstanceId = static_cast<std::int16_t>(*decodedId);
-        const auto found = std::find(
-            _instanceIds.begin(),
-            _instanceIds.end(),
-            nativeInstanceId);
+        const auto found = std::find(_instanceIds.begin(), _instanceIds.end(), nativeInstanceId);
         if (found == _instanceIds.end()) {
             return std::nullopt;
         }
-        return static_cast<std::size_t>(
-            std::distance(_instanceIds.begin(), found));
+        return static_cast<std::size_t>(std::distance(_instanceIds.begin(), found));
     }
 
-    DynamicCompoundUpdateResult DynamicCompoundShape::updateTransforms(std::span<const ChildTransform> transforms) noexcept
+    DynamicCompoundUpdateResult DynamicCompoundShape::updateTransforms(
+        std::span<const ChildTransform> transforms) noexcept
     {
         DynamicCompoundUpdateResult result{};
         if (!_shape || transforms.size() != _instances.size() || _instanceIds.size() != _instances.size()) {
             return result;
         }
-        if (std::any_of(transforms.begin(), transforms.end(), [](const ChildTransform& transform) {
-                return !transformIsFinite(transform);
-            })) {
+        if (std::any_of(transforms.begin(), transforms.end(),
+                [](const ChildTransform& transform) { return !transformIsFinite(transform); })) {
             return result;
         }
 
@@ -461,10 +454,7 @@ namespace rock::havok_compound_shape_builder
 
         result.changedChildCount = _updateIds.size();
         if (!_updateIds.empty()) {
-            api.updateInstances(
-                _shape.get(),
-                _updateIds.data(),
-                static_cast<std::int32_t>(_updateIds.size()),
+            api.updateInstances(_shape.get(), _updateIds.data(), static_cast<std::int32_t>(_updateIds.size()),
                 reinterpret_cast<const ShapeInstance*>(_updateInstances.data()));
         }
         result.succeeded = true;

@@ -1,13 +1,13 @@
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/grab/DefaultGrabPoseRegistry.h"
 
-#include "physics-interaction/grab/SavedGrabCaptureFormat.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/grab/SavedGrabCaptureFormat.h"
 
 #include "rock_support/ResourceUtils.h"
 
-#include "RE/Bethesda/TESForms.h"
 #include "RE/Bethesda/TESDataHandler.h"
+#include "RE/Bethesda/TESForms.h"
 
 #include <condition_variable>
 #include <cstdio>
@@ -37,8 +37,8 @@ namespace rock::saved_grab_offset
             std::string out;
             out.reserve(text.size());
             for (const char c : text) {
-                const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-                                (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '_' || c == ' ';
+                const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                    c == '.' || c == '-' || c == '_' || c == ' ';
                 out.push_back(ok ? c : '_');
             }
             return out;
@@ -59,15 +59,9 @@ namespace rock::saved_grab_offset
         class Store
         {
         public:
-            Store() :
-                _directory(resolveStoreDirectory())
-            {
-            }
+            Store() : _directory(resolveStoreDirectory()) {}
 
-            ~Store()
-            {
-                shutdown();
-            }
+            ~Store() { shutdown(); }
 
             std::string filePathForObject(const FormRef& object) const
             {
@@ -123,16 +117,19 @@ namespace rock::saved_grab_offset
                 std::lock_guard lock(_mutex);
                 return _defaults.set(owner, request);
             }
+
             api::Status clearDefaults(api::OwnerToken owner, std::uint32_t form)
             {
                 std::lock_guard lock(_mutex);
                 return _defaults.clear(owner, form);
             }
+
             void clearDefaultOwner(api::OwnerToken owner)
             {
                 std::lock_guard lock(_mutex);
                 _defaults.clearOwner(owner);
             }
+
             bool loadDefault(std::uint32_t form, bool left, HandOffset& out) const
             {
                 std::lock_guard lock(_mutex);
@@ -151,7 +148,7 @@ namespace rock::saved_grab_offset
                 std::lock_guard lock(_mutex);
                 const auto it = _cache.find(path);
                 if (it == _cache.end()) {
-                    return false;  // no saved offset for this object; normal, empty error
+                    return false; // no saved offset for this object; normal, empty error
                 }
                 out = it->second;
                 return true;
@@ -168,7 +165,8 @@ namespace rock::saved_grab_offset
                 char idText[16]{};
                 std::snprintf(idText, sizeof(idText), "%08X", object.localFormId);
                 const std::string handSuffix = hand.empty() ? std::string("hand") : sanitizeForFileName(hand);
-                return _directory + "\\captures\\" + sanitizeForFileName(object.plugin) + "_" + idText + "_" + handSuffix + ".capture.json";
+                return _directory + "\\captures\\" + sanitizeForFileName(object.plugin) + "_" + idText + "_" +
+                    handSuffix + ".capture.json";
             }
 
             void saveCapture(const saved_grab_capture::SavedGrabCaptureFile& capture)
@@ -178,7 +176,8 @@ namespace rock::saved_grab_offset
                 }
                 // Captures are write-only records; nothing caches or reads
                 // them back, so this only rides the existing writer thread.
-                enqueue(PendingWrite{ capturePathForObject(capture.object, capture.hand), saved_grab_capture::serialize(capture) });
+                enqueue(PendingWrite{ capturePathForObject(capture.object, capture.hand),
+                    saved_grab_capture::serialize(capture) });
             }
 
             void save(const SavedGrabOffsetFile& file)
@@ -329,39 +328,31 @@ namespace rock::saved_grab_offset
     api::Status setDefaultGrabPoses(api::OwnerToken owner, const api::grab::DefaultGrabPoses& request)
     {
         auto* form = RE::TESForm::GetFormByID(request.baseFormId);
-        if (!form || !form->As<RE::TESBoundObject>()) return api::Status::TargetInvalid;
+        if (!form || !form->As<RE::TESBoundObject>())
+            return api::Status::TargetInvalid;
         return instance().setDefaults(owner, request);
     }
+
     api::Status clearDefaultGrabPoses(api::OwnerToken owner, std::uint32_t form)
     {
         return instance().clearDefaults(owner, form);
     }
-    void clearDefaultGrabPosesForOwner(api::OwnerToken owner)
-    {
-        instance().clearDefaultOwner(owner);
-    }
+
+    void clearDefaultGrabPosesForOwner(api::OwnerToken owner) { instance().clearDefaultOwner(owner); }
+
     bool loadDefaultGrabPose(std::uint32_t form, bool left, HandOffset& out)
     {
         return instance().loadDefault(form, left, out);
     }
 
-    void preload()
-    {
-        instance().preload();
-    }
+    void preload() { instance().preload(); }
 
     bool load(const FormRef& object, SavedGrabOffsetFile& out, std::string* outError)
     {
         return instance().load(object, out, outError);
     }
 
-    void save(const SavedGrabOffsetFile& file)
-    {
-        instance().save(file);
-    }
+    void save(const SavedGrabOffsetFile& file) { instance().save(file); }
 
-    void saveCapture(const saved_grab_capture::SavedGrabCaptureFile& capture)
-    {
-        instance().saveCapture(capture);
-    }
+    void saveCapture(const saved_grab_capture::SavedGrabCaptureFile& capture) { instance().saveCapture(capture); }
 }

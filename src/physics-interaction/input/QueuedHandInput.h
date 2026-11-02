@@ -5,7 +5,13 @@
 
 namespace rock::queued_hand_input
 {
-    enum class Hand { None, Right, Left };
+    enum class Hand
+    {
+        None,
+        Right,
+        Left
+    };
+
     struct Origin
     {
         Hand hand = Hand::None;
@@ -26,10 +32,11 @@ namespace rock::queued_hand_input
         bool replace(std::uintptr_t entry, std::uintptr_t owner, Origin origin) noexcept
         {
             discard(entry);
-            if (!entry || !owner || origin.hand == Hand::None || !origin.sequence) return false;
+            if (!entry || !owner || origin.hand == Hand::None || !origin.sequence)
+                return false;
             for (auto& record : _records) {
                 if (!record.entry) {
-                    record = {entry, owner, origin};
+                    record = { entry, owner, origin };
                     return true;
                 }
             }
@@ -50,12 +57,16 @@ namespace rock::queued_hand_input
 
         void discard(std::uintptr_t entry) noexcept
         {
-            for (auto& record : _records) if (record.entry == entry) record = {};
+            for (auto& record : _records)
+                if (record.entry == entry)
+                    record = {};
         }
 
         void retire(std::uintptr_t owner) noexcept
         {
-            for (auto& record : _records) if (record.owner == owner) record = {};
+            for (auto& record : _records)
+                if (record.owner == owner)
+                    record = {};
         }
 
     private:
@@ -64,6 +75,7 @@ namespace rock::queued_hand_input
             std::uintptr_t entry = 0, owner = 0;
             Origin origin{};
         };
+
         std::array<Record, capacity> _records{};
     };
 }

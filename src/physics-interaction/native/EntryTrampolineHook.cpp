@@ -27,16 +27,12 @@ namespace rock::entry_trampoline_hook
         }
     }
 
-    bool install(
-        const char* label,
-        std::uintptr_t targetModuleOffset,
-        const std::uint8_t* expectedPrefix,
-        std::size_t stolenBytes,
-        void* hook,
-        void*& original)
+    bool install(const char* label, std::uintptr_t targetModuleOffset, const std::uint8_t* expectedPrefix,
+        std::size_t stolenBytes, void* hook, void*& original)
     {
         if (stolenBytes < 14) {
-            ROCK_LOG_ERROR(Init, "{} hook install failed: stolen byte count {} cannot hold an absolute jump", label, stolenBytes);
+            ROCK_LOG_ERROR(Init, "{} hook install failed: stolen byte count {} cannot hold an absolute jump", label,
+                stolenBytes);
             return false;
         }
 
@@ -48,13 +44,15 @@ namespace rock::entry_trampoline_hook
         }
 
         if (std::memcmp(targetAddr, expectedPrefix, stolenBytes) != 0) {
-            ROCK_LOG_ERROR(Init, "{} hook validation failed at 0x{:X}; native bytes changed, hook not installed", label, target.address());
+            ROCK_LOG_ERROR(Init, "{} hook validation failed at 0x{:X}; native bytes changed, hook not installed", label,
+                target.address());
             return false;
         }
 
         constexpr std::size_t kJumpBytes = 14;
         const std::size_t trampolineBytes = stolenBytes + kJumpBytes;
-        auto* trampolineMem = reinterpret_cast<std::uint8_t*>(VirtualAlloc(nullptr, trampolineBytes, kVirtualMemoryCommitReserve, kPageExecuteReadWrite));
+        auto* trampolineMem = reinterpret_cast<std::uint8_t*>(
+            VirtualAlloc(nullptr, trampolineBytes, kVirtualMemoryCommitReserve, kPageExecuteReadWrite));
         if (!trampolineMem) {
             ROCK_LOG_ERROR(Init, "{} hook install failed: trampoline allocation failed", label);
             return false;
@@ -86,7 +84,8 @@ namespace rock::entry_trampoline_hook
         VirtualProtect(targetAddr, stolenBytes, oldProtect, &oldProtect);
 
         original = trampolineMem;
-        ROCK_LOG_INFO(Init, "Installed {} hook at 0x{:X}, original trampoline=0x{:X}", label, target.address(), reinterpret_cast<std::uintptr_t>(trampolineMem));
+        ROCK_LOG_INFO(Init, "Installed {} hook at 0x{:X}, original trampoline=0x{:X}", label, target.address(),
+            reinterpret_cast<std::uintptr_t>(trampolineMem));
         return true;
     }
 }

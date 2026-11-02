@@ -23,7 +23,8 @@ namespace rock::native_wand_visual_suppression
         void remember(RE::NiAVObject* object) noexcept
         {
             for (const auto& root : s_fallbackRoots) {
-                if (root.get() == object) return;
+                if (root.get() == object)
+                    return;
             }
             for (auto& root : s_fallbackRoots) {
                 if (!root) {
@@ -37,13 +38,10 @@ namespace rock::native_wand_visual_suppression
         {
             const char* const name = object.name.c_str();
             return name &&
-                (std::strcmp(name, "ViveController") == 0 ||
-                    std::strcmp(name, "vr_controller_vive_1_5") == 0);
+                (std::strcmp(name, "ViveController") == 0 || std::strcmp(name, "vr_controller_vive_1_5") == 0);
         }
 
-        void suppressViveFallbackVisuals(
-            RE::NiAVObject* object,
-            const std::uint32_t remainingDepth) noexcept
+        void suppressViveFallbackVisuals(RE::NiAVObject* object, const std::uint32_t remainingDepth) noexcept
         {
             if (!object) {
                 return;
@@ -65,9 +63,7 @@ namespace rock::native_wand_visual_suppression
             }
 
             for (const auto& child : node->children) {
-                suppressViveFallbackVisuals(
-                    child.get(),
-                    remainingDepth - 1);
+                suppressViveFallbackVisuals(child.get(), remainingDepth - 1);
             }
         }
     }
@@ -75,8 +71,10 @@ namespace rock::native_wand_visual_suppression
     void enforce() noexcept
     {
         for (auto& root : s_fallbackRoots) {
-            if (root && !root->parent) root.reset();
-            if (root) root->flags.flags |= kAppCulledFlag;
+            if (root && !root->parent)
+                root.reset();
+            if (root)
+                root->flags.flags |= kAppCulledFlag;
         }
 
         // The fallback model is attached only when a controller (re)connects,
@@ -102,11 +100,7 @@ namespace rock::native_wand_visual_suppression
          * fallback node names: the wand roots also own weapon, UI, laser, and
          * Pip-Boy presentation that must remain visible.
          */
-        suppressViveFallbackVisuals(
-            playerNodes->primaryWandNode,
-            kMaximumControllerVisualDepth);
-        suppressViveFallbackVisuals(
-            playerNodes->SecondaryWandNode,
-            kMaximumControllerVisualDepth);
+        suppressViveFallbackVisuals(playerNodes->primaryWandNode, kMaximumControllerVisualDepth);
+        suppressViveFallbackVisuals(playerNodes->SecondaryWandNode, kMaximumControllerVisualDepth);
     }
 }

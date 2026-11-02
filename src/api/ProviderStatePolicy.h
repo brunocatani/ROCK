@@ -1,9 +1,9 @@
 #pragma once
 
-#include "api/HandInteractionPublication.h"
 #include <ROCK/Collision.h>
 #include <ROCK/Weapon.h>
 #include <ROCK/WeaponParts.h>
+#include "api/HandInteractionPublication.h"
 
 #include <algorithm>
 
@@ -11,7 +11,8 @@ namespace rock::provider_state_policy
 {
     using namespace rock::provider;
 
-    [[nodiscard]] constexpr bool firingGripOccupied(bool weaponPresent, bool partCarry, bool surfaceSupported = false) noexcept
+    [[nodiscard]] constexpr bool firingGripOccupied(bool weaponPresent, bool partCarry,
+        bool surfaceSupported = false) noexcept
     {
         return weaponPresent && !partCarry && !surfaceSupported;
     }
@@ -38,10 +39,12 @@ namespace rock::provider_state_policy
     // a present weapon.
     inline void applyHandling(api::weapon::WeaponState& state, const WeaponHandling& handling) noexcept
     {
-        if (!handling.weaponPresent) return;
+        if (!handling.weaponPresent)
+            return;
         using Flag = api::weapon::HandlingStateFlag;
         const auto add = [&state](const bool enabled, const Flag flag) {
-            if (enabled) state.handlingFlags |= static_cast<std::uint32_t>(flag);
+            if (enabled)
+                state.handlingFlags |= static_cast<std::uint32_t>(flag);
         };
         add(handling.firingGripOccupied, Flag::FiringGripHeld);
         add(handling.manualOwnership, Flag::ManualOwnership);
@@ -56,76 +59,86 @@ namespace rock::provider_state_policy
     {
         using Flag = api::grab::HandInteractionFlag;
         using Phase = api::grab::HandInteractionPhase;
-        if (!(state.flags & static_cast<std::uint32_t>(Flag::Valid))) return false;
+        if (!(state.flags & static_cast<std::uint32_t>(Flag::Valid)))
+            return false;
         return state.phase == Phase::Holding || state.phase == Phase::StashCandidate ||
-               state.phase == Phase::ConsumeCandidate;
+            state.phase == Phase::ConsumeCandidate;
     }
 
     // Detailed captured grips remain ROCK-owned. Generic hand occupancy also
     // includes native equipped carry; stale selection metadata must not leak
     // into that occupied hand and masquerade as a held loose reference.
-    inline void applyWeaponOccupancy(provider::HandInteractionPublication& state,
-        const WeaponHandling& handling,
+    inline void applyWeaponOccupancy(provider::HandInteractionPublication& state, const WeaponHandling& handling,
         const api::weaponparts::GripState& grip) noexcept
     {
         using Flag = api::grab::HandInteractionFlag;
-        if (!(state.flags & static_cast<std::uint32_t>(Flag::Valid)) || !handling.weaponPresent) return;
+        if (!(state.flags & static_cast<std::uint32_t>(Flag::Valid)) || !handling.weaponPresent)
+            return;
         const bool firing = state.hand == handling.firingHand && handling.firingGripOccupied;
-        if (!firing && !grip.active) return;
+        if (!firing && !grip.active)
+            return;
 
         state.phase = api::grab::HandInteractionPhase::Holding;
-        state.flags &= ~(static_cast<std::uint32_t>(Flag::LooseObject) |
-                         static_cast<std::uint32_t>(Flag::LooseWeapon) |
-                         static_cast<std::uint32_t>(Flag::HeldBodyListTruncated));
+        state.flags &= ~(static_cast<std::uint32_t>(Flag::LooseObject) | static_cast<std::uint32_t>(Flag::LooseWeapon) |
+            static_cast<std::uint32_t>(Flag::HeldBodyListTruncated));
         state.targetKind = api::grab::BodyContactTargetKind::Weapon;
         state.targetFormId = handling.weaponFormId;
         state.reservedTargetIdentity = handling.weaponGenerationKey;
         state.primaryBodyId = grip.active ? grip.bodyId : 0x7FFF'FFFF;
         state.heldBodyCount = 0;
         std::fill(std::begin(state.heldBodyIds), std::end(state.heldBodyIds), 0u);
-        if (grip.active) state.flags |= static_cast<std::uint32_t>(Flag::RockGripActive);
+        if (grip.active)
+            state.flags |= static_cast<std::uint32_t>(Flag::RockGripActive);
         if (firing) {
             state.flags |= static_cast<std::uint32_t>(Flag::FiringGrip);
-            if (!grip.active) state.flags |= static_cast<std::uint32_t>(Flag::NativeWeaponCarry);
+            if (!grip.active)
+                state.flags |= static_cast<std::uint32_t>(Flag::NativeWeaponCarry);
         } else if (grip.gripKind == api::weaponparts::GripKind::PartCarry) {
             state.flags |= static_cast<std::uint32_t>(Flag::PartCarry);
         } else {
             state.flags |= static_cast<std::uint32_t>(Flag::PartGrip);
         }
-        if (grip.attachOnly) state.flags |= static_cast<std::uint32_t>(Flag::AttachOnly);
+        if (grip.attachOnly)
+            state.flags |= static_cast<std::uint32_t>(Flag::AttachOnly);
     }
 
     // Slot 1's firing hand is occupied like slot 0's: ROCK carries that weapon
     // in the hand without a physics grip. Without this the hand reads as free
     // to every occupancy check (storage, consumers' gestures) while it fires.
-    inline void applySecondWeaponOccupancy(provider::HandInteractionPublication& state, const std::uint32_t formId) noexcept
+    inline void applySecondWeaponOccupancy(provider::HandInteractionPublication& state,
+        const std::uint32_t formId) noexcept
     {
         using Flag = api::grab::HandInteractionFlag;
-        constexpr auto weaponFlags = static_cast<std::uint32_t>(Flag::FiringGrip) | static_cast<std::uint32_t>(Flag::PartGrip) |
-            static_cast<std::uint32_t>(Flag::PartCarry);
-        if (!(state.flags & static_cast<std::uint32_t>(Flag::Valid)) || (state.flags & weaponFlags)) return;
+        constexpr auto weaponFlags = static_cast<std::uint32_t>(Flag::FiringGrip) |
+            static_cast<std::uint32_t>(Flag::PartGrip) | static_cast<std::uint32_t>(Flag::PartCarry);
+        if (!(state.flags & static_cast<std::uint32_t>(Flag::Valid)) || (state.flags & weaponFlags))
+            return;
         state.phase = api::grab::HandInteractionPhase::Holding;
-        state.flags &= ~(static_cast<std::uint32_t>(Flag::LooseObject) |
-                         static_cast<std::uint32_t>(Flag::LooseWeapon) |
-                         static_cast<std::uint32_t>(Flag::HeldBodyListTruncated));
+        state.flags &= ~(static_cast<std::uint32_t>(Flag::LooseObject) | static_cast<std::uint32_t>(Flag::LooseWeapon) |
+            static_cast<std::uint32_t>(Flag::HeldBodyListTruncated));
         state.targetKind = api::grab::BodyContactTargetKind::Weapon;
         state.targetFormId = formId;
         state.reservedTargetIdentity = 0;
         state.primaryBodyId = 0x7FFF'FFFF;
         state.heldBodyCount = 0;
         std::fill(std::begin(state.heldBodyIds), std::end(state.heldBodyIds), 0u);
-        state.flags |= static_cast<std::uint32_t>(Flag::FiringGrip) | static_cast<std::uint32_t>(Flag::NativeWeaponCarry);
+        state.flags |=
+            static_cast<std::uint32_t>(Flag::FiringGrip) | static_cast<std::uint32_t>(Flag::NativeWeaponCarry);
     }
 
-    [[nodiscard]] constexpr std::uint32_t colliderFlags(
-        bool lifecycleAllowed, bool filterKnown, bool suppressed) noexcept
+    [[nodiscard]] constexpr std::uint32_t colliderFlags(bool lifecycleAllowed, bool filterKnown,
+        bool suppressed) noexcept
     {
         using Flag = api::collision::PlayerColliderFlag;
         std::uint32_t flags = static_cast<std::uint32_t>(Flag::Valid);
-        if (lifecycleAllowed) flags |= static_cast<std::uint32_t>(Flag::LifecycleAllowed);
-        if (filterKnown) flags |= static_cast<std::uint32_t>(Flag::FilterKnown);
-        if (filterKnown && suppressed) flags |= static_cast<std::uint32_t>(Flag::CollisionSuppressed);
-        if (lifecycleAllowed && filterKnown && !suppressed) flags |= static_cast<std::uint32_t>(Flag::Enabled);
+        if (lifecycleAllowed)
+            flags |= static_cast<std::uint32_t>(Flag::LifecycleAllowed);
+        if (filterKnown)
+            flags |= static_cast<std::uint32_t>(Flag::FilterKnown);
+        if (filterKnown && suppressed)
+            flags |= static_cast<std::uint32_t>(Flag::CollisionSuppressed);
+        if (lifecycleAllowed && filterKnown && !suppressed)
+            flags |= static_cast<std::uint32_t>(Flag::Enabled);
         return flags;
     }
 }

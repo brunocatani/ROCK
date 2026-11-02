@@ -12,21 +12,15 @@ namespace rock::provider
         // an API caller. The owner remains fixed for the plugin lifetime.
         bool beginFrame(std::uint32_t thread) noexcept
         {
-            if (!thread) return false;
+            if (!thread)
+                return false;
             std::uint32_t expected = 0;
-            return _thread.compare_exchange_strong(expected, thread, std::memory_order_acq_rel) ||
-                expected == thread;
+            return _thread.compare_exchange_strong(expected, thread, std::memory_order_acq_rel) || expected == thread;
         }
 
-        [[nodiscard]] bool allows(std::uint32_t thread) const noexcept
-        {
-            return thread != 0 && owner() == thread;
-        }
+        [[nodiscard]] bool allows(std::uint32_t thread) const noexcept { return thread != 0 && owner() == thread; }
 
-        [[nodiscard]] std::uint32_t owner() const noexcept
-        {
-            return _thread.load(std::memory_order_acquire);
-        }
+        [[nodiscard]] std::uint32_t owner() const noexcept { return _thread.load(std::memory_order_acquire); }
 
     private:
         std::atomic<std::uint32_t> _thread{ 0 };

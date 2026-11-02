@@ -32,8 +32,7 @@ namespace rock::dynamic_hand_twin
     struct TwinTargets
     {
         TwinSlotFrame palm{};
-        std::array<
-            std::array<TwinSlotFrame, hand_collider_semantics::kHandFingerSegmentCount>,
+        std::array<std::array<TwinSlotFrame, hand_collider_semantics::kHandFingerSegmentCount>,
             hand_collider_semantics::kHandFingerCount>
             fingers{};
         std::uint64_t updateCounter = 0;
@@ -69,9 +68,7 @@ namespace rock::dynamic_hand_twin
      * target, but always publish the dimensions captured by
      * the owning BodyBoneColliderSet generation.
      */
-    inline void applyCanonicalSlotDimensions(
-        TwinSlotFrame& live,
-        const TwinSlotFrame& canonical)
+    inline void applyCanonicalSlotDimensions(TwinSlotFrame& live, const TwinSlotFrame& canonical)
     {
         if (!live.valid) {
             return;
@@ -85,24 +82,18 @@ namespace rock::dynamic_hand_twin
         live.convexRadius = canonical.convexRadius;
     }
 
-    inline void applyCanonicalHandDimensions(
-        TwinTargets& liveTargets,
-        const TwinTargets& canonicalTargets)
+    inline void applyCanonicalHandDimensions(TwinTargets& liveTargets, const TwinTargets& canonicalTargets)
     {
         applyCanonicalSlotDimensions(liveTargets.palm, canonicalTargets.palm);
         for (std::size_t finger = 0; finger < liveTargets.fingers.size(); ++finger) {
-            for (std::size_t segment = 0;
-                 segment < liveTargets.fingers[finger].size();
-                 ++segment) {
-                applyCanonicalSlotDimensions(
-                    liveTargets.fingers[finger][segment],
+            for (std::size_t segment = 0; segment < liveTargets.fingers[finger].size(); ++segment) {
+                applyCanonicalSlotDimensions(liveTargets.fingers[finger][segment],
                     canonicalTargets.fingers[finger][segment]);
             }
         }
     }
 
-    inline void applyCanonicalForearmDimensions(
-        ForearmTwinTargets& liveTargets,
+    inline void applyCanonicalForearmDimensions(ForearmTwinTargets& liveTargets,
         const ForearmTwinTargets& canonicalTargets)
     {
         for (std::size_t index = 0; index < kForearmSegmentCountPerHand; ++index) {

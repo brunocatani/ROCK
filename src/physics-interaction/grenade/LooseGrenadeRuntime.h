@@ -1,7 +1,7 @@
 #pragma once
 
-#include "RE/Bethesda/BSTSmartPointer.h"
 #include "RE/Bethesda/BSPointerHandle.h"
+#include "RE/Bethesda/BSTSmartPointer.h"
 
 #include "physics-interaction/grenade/LooseThrowablePolicy.h"
 
@@ -58,12 +58,9 @@ namespace rock::loose_grenade_runtime
 
     [[nodiscard]] bool isThrowableWeapon(const RE::TESObjectWEAP* weapon) noexcept;
     [[nodiscard]] bool isThrowableRef(RE::TESObjectREFR* ref) noexcept;
-    [[nodiscard]] bool resolveGrenadeRuntimeData(
-        RE::TESObjectWEAP* weapon,
-        RE::TBO_InstanceData* instanceData,
+    [[nodiscard]] bool resolveGrenadeRuntimeData(RE::TESObjectWEAP* weapon, RE::TBO_InstanceData* instanceData,
         GrenadeRuntimeData& outRuntime) noexcept;
-    [[nodiscard]] bool resolveGrenadeRuntimeDataForReference(
-        RE::TESObjectREFR* ref,
+    [[nodiscard]] bool resolveGrenadeRuntimeDataForReference(RE::TESObjectREFR* ref,
         GrenadeRuntimeData& outRuntime) noexcept;
 
     [[nodiscard]] bool createExplosionAtReference(RE::TESObjectREFR* ref, RE::BGSExplosion* explosion);
@@ -72,7 +69,8 @@ namespace rock::loose_grenade_runtime
     [[nodiscard]] DropResult dropEquippedThrowableToWorld(const RE::NiPoint3& dropLocation);
     // Main-thread loot-to-hand transfer of one playable item with a world model. uniqueId selects
     // the stack the container event reported (0 = the first stack that still holds the item).
-    [[nodiscard]] DropResult dropLootedItemToWorld(std::uint32_t baseFormId, std::uint16_t uniqueId, const RE::NiPoint3& dropLocation);
+    [[nodiscard]] DropResult dropLootedItemToWorld(std::uint32_t baseFormId, std::uint16_t uniqueId,
+        const RE::NiPoint3& dropLocation);
     [[nodiscard]] const char* detonationModeName(GrenadeDetonationMode mode) noexcept;
     [[nodiscard]] bool playPinPulledFeedbackAtReference(RE::TESObjectREFR* ref);
     [[nodiscard]] bool returnDroppedReferenceToInventory(RE::TESObjectREFR* ref);

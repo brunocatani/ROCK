@@ -1,9 +1,9 @@
 #pragma once
 
-#include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
-#include "physics-interaction/native/PhysicsScale.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/PhysicsScale.h"
 
 #include "RE/Havok/hkVector4.h"
 #include "RE/Havok/hknpBody.h"
@@ -15,7 +15,8 @@
 
 namespace rock
 {
-    inline constexpr std::uintptr_t kHknpWorldBodyHighWaterMarkOffset = havok_runtime::kHknpWorldBodyHighWaterMarkOffset;
+    inline constexpr std::uintptr_t kHknpWorldBodyHighWaterMarkOffset =
+        havok_runtime::kHknpWorldBodyHighWaterMarkOffset;
 
     inline float gameToHavokScale() { return physics_scale::gameToHavok(); }
 
@@ -33,10 +34,7 @@ namespace rock
         return RE::NiPoint3{ v.x * scale, v.y * scale, v.z * scale };
     }
 
-    inline void* getQueryFilterRef(RE::hknpWorld* world)
-    {
-        return havok_runtime::getQueryFilterRef(world);
-    }
+    inline void* getQueryFilterRef(RE::hknpWorld* world) { return havok_runtime::getQueryFilterRef(world); }
 
     inline RE::NiCollisionObject* getCollisionObjectFromBody(const RE::hknpBody* body)
     {
@@ -58,13 +56,25 @@ namespace rock
         return havok_runtime::getOwnerNodeFromCollisionObject(collisionObject);
     }
 
-    inline RE::NiAVObject* getOwnerNodeFromBody(const RE::hknpBody* body) { return havok_runtime::getOwnerNodeFromBody(body); }
+    inline RE::NiAVObject* getOwnerNodeFromBody(const RE::hknpBody* body)
+    {
+        return havok_runtime::getOwnerNodeFromBody(body);
+    }
 
-    inline RE::NiAVObject* getOwnerNodeFromBody(RE::hknpWorld* world, RE::hknpBodyId bodyId) { return havok_runtime::getOwnerNodeFromBody(world, bodyId); }
+    inline RE::NiAVObject* getOwnerNodeFromBody(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+    {
+        return havok_runtime::getOwnerNodeFromBody(world, bodyId);
+    }
 
-    inline RE::NiMatrix3 niRotToHkTransformRotation(const RE::NiMatrix3& m) { return transform_math::niRowsToHavokColumns(m); }
+    inline RE::NiMatrix3 niRotToHkTransformRotation(const RE::NiMatrix3& m)
+    {
+        return transform_math::niRowsToHavokColumns(m);
+    }
 
-    inline RE::NiMatrix3 havokRotationBlocksToNiMatrix(const float* bodyFloats) { return transform_math::hknpBodyColumnsToNiStoredAxes<RE::NiMatrix3>(bodyFloats); }
+    inline RE::NiMatrix3 havokRotationBlocksToNiMatrix(const float* bodyFloats)
+    {
+        return transform_math::hknpBodyColumnsToNiStoredAxes<RE::NiMatrix3>(bodyFloats);
+    }
 
     using ResolvedBodyWorldTransform = havok_runtime::ResolvedBodyWorldTransform;
 
@@ -73,7 +83,8 @@ namespace rock
         return havok_runtime::bodyArrayWorldTransform(body);
     }
 
-    inline bool tryGetBodyArrayWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform)
+    inline bool tryGetBodyArrayWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId,
+        RE::NiTransform& outTransform)
     {
         return havok_runtime::tryGetBodyArrayWorldTransform(world, bodyId, outTransform);
     }
@@ -83,7 +94,8 @@ namespace rock
         return havok_runtime::tryGetBodyWorldTransform(world, bodyId, outTransform);
     }
 
-    inline bool tryGetMotionWorldTransform(RE::hknpWorld* world, const RE::hknpBody& body, RE::NiTransform& outTransform)
+    inline bool tryGetMotionWorldTransform(RE::hknpWorld* world, const RE::hknpBody& body,
+        RE::NiTransform& outTransform)
     {
         return havok_runtime::tryGetMotionWorldTransform(world, body, outTransform);
     }
@@ -93,11 +105,8 @@ namespace rock
         return havok_runtime::resolveLiveBodyWorldTransform(world, bodyId);
     }
 
-    inline bool tryResolveLiveBodyWorldTransform(
-        RE::hknpWorld* world,
-        RE::hknpBodyId bodyId,
-        RE::NiTransform& outTransform,
-        body_frame::BodyFrameSource* outSource = nullptr,
+    inline bool tryResolveLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId,
+        RE::NiTransform& outTransform, body_frame::BodyFrameSource* outSource = nullptr,
         std::uint32_t* outMotionIndex = nullptr)
     {
         return havok_runtime::tryResolveLiveBodyWorldTransform(world, bodyId, outTransform, outSource, outMotionIndex);

@@ -41,9 +41,7 @@ namespace rock
             std::array<std::uint32_t, OwnerGroupCount> activePairsByOwnerGroup{};
         };
 
-        [[nodiscard]] ReconcileResult reconcile(
-            RE::hknpWorld* world,
-            const DesiredPair* desiredPairs,
+        [[nodiscard]] ReconcileResult reconcile(RE::hknpWorld* world, const DesiredPair* desiredPairs,
             std::size_t desiredPairCount) noexcept;
 
         // World teardown invalidates both the filter and its pair table. No
@@ -70,6 +68,5 @@ namespace rock
         std::size_t _activePairCount{ 0 };
     };
 
-    using HavokPairCollisionLeaseSet =
-        BasicHavokPairCollisionLeaseSet<34, 2>;
+    using HavokPairCollisionLeaseSet = BasicHavokPairCollisionLeaseSet<34, 2>;
 }

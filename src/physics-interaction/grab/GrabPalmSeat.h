@@ -27,12 +27,12 @@ namespace rock::grab_palm_seat
     // depth. A tab beside the palm cannot displace the seat. Clipping also
     // retains coarse faces whose vertices all lie outside the footprint.
     template <class Triangles, class ProjectPoint>
-    DepthResult computeDepth(const Triangles& triangles, float halfAlong, float halfAcross,
-        float maxDepth, ProjectPoint project)
+    DepthResult computeDepth(const Triangles& triangles, float halfAlong, float halfAcross, float maxDepth,
+        ProjectPoint project)
     {
         DepthResult result{};
-        if (!std::isfinite(halfAlong) || !std::isfinite(halfAcross) ||
-            halfAlong <= 0.0f || halfAcross <= 0.0f || !std::isfinite(maxDepth) || maxDepth < 0.0f) {
+        if (!std::isfinite(halfAlong) || !std::isfinite(halfAcross) || halfAlong <= 0.0f || halfAcross <= 0.0f ||
+            !std::isfinite(maxDepth) || maxDepth < 0.0f) {
             result.reason = "invalidPalmFootprint";
             return result;
         }
@@ -85,7 +85,8 @@ namespace rock::grab_palm_seat
                             return static_cast<float>(from + t * (static_cast<double>(to) - from));
                         };
                         if (!append(Point{ interpolate(previous.along, current.along),
-                                interpolate(previous.across, current.across), interpolate(previous.depth, current.depth) })) {
+                                interpolate(previous.across, current.across),
+                                interpolate(previous.depth, current.depth) })) {
                             result.reason = "palmClipCapacityExceeded";
                             return result;
                         }

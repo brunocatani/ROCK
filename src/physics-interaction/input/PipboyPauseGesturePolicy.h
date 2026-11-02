@@ -17,8 +17,7 @@ namespace rock::pipboy_pause_gesture_policy
         FrikWrist,
     };
 
-    [[nodiscard]] constexpr PipboyRoute selectPipboyRoute(
-        bool settingsAvailable, bool projected, bool attachedToHmd,
+    [[nodiscard]] constexpr PipboyRoute selectPipboyRoute(bool settingsAvailable, bool projected, bool attachedToHmd,
         bool inPowerArmor, bool wristBindingReady)
     {
         if (!settingsAvailable) {
@@ -69,10 +68,7 @@ namespace rock::pipboy_pause_gesture_policy
         return std::isfinite(value) ? std::clamp(value, kMinimumHoldSeconds, kMaximumHoldSeconds) : kDefaultHoldSeconds;
     }
 
-    inline void reset(RuntimeState& state)
-    {
-        state = {};
-    }
+    inline void reset(RuntimeState& state) { state = {}; }
 
     [[nodiscard]] inline Decision update(RuntimeState& state, const Input& input)
     {

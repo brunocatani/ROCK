@@ -5,10 +5,10 @@
 #include "physics-interaction/native/NativeMemory.h"
 #include "rock_support/Fo4VrRuntime.h"
 
-#include "RE/Bethesda/PlayerCharacter.h"
-#include "RE/Bethesda/Settings.h"
 #include <REL/Relocation.h>
 #include <Windows.h>
+#include "RE/Bethesda/PlayerCharacter.h"
+#include "RE/Bethesda/Settings.h"
 
 #include <array>
 #include <cstdint>
@@ -27,8 +27,26 @@ namespace rock::native_wrist_pipboy_look
         constexpr std::uintptr_t kLookUpdateEntry = 0xEF67B0;
         constexpr std::array<std::uint8_t, 8> kExpectedCallSite{ 0x48, 0x8B, 0xCF, 0xE8, 0xE0, 0x4C, 0x00, 0x00 };
         constexpr std::array<std::uint8_t, 20> kExpectedEntry{
-            0x40, 0x53, 0x48, 0x81, 0xEC, 0x00, 0x01, 0x00, 0x00, 0x48,
-            0x83, 0xB9, 0x68, 0x07, 0x00, 0x00, 0x00, 0x48, 0x8B, 0xD9,
+            0x40,
+            0x53,
+            0x48,
+            0x81,
+            0xEC,
+            0x00,
+            0x01,
+            0x00,
+            0x00,
+            0x48,
+            0x83,
+            0xB9,
+            0x68,
+            0x07,
+            0x00,
+            0x00,
+            0x00,
+            0x48,
+            0x8B,
+            0xD9,
         };
 
         // Static Setting objects (value at +8, name at +0x10). 140EF67B0 reads
@@ -115,11 +133,16 @@ namespace rock::native_wrist_pipboy_look
         [[nodiscard]] Decision decide() noexcept
         {
             const auto* frik = frik::api::FRIKApiV2::inst;
-            if (!frik || !frik->isWristPipboyOpen) return Decision::NoFrik;
-            if (s_settings[kProjected]->GetBinary() || s_settings[kAttachedToHmd]->GetBinary()) return Decision::NotOnWrist;
-            if (f4vr::isInPowerArmor()) return Decision::PowerArmor;
-            if (frik->isFeatureBlocked && frik->isFeatureBlocked(frik::api::FRIKApiV2::Feature::Pipboy)) return Decision::FrikPipboyBlocked;
-            if (frik->isWristPipboyOpen()) return Decision::FrikPipboyOpen;
+            if (!frik || !frik->isWristPipboyOpen)
+                return Decision::NoFrik;
+            if (s_settings[kProjected]->GetBinary() || s_settings[kAttachedToHmd]->GetBinary())
+                return Decision::NotOnWrist;
+            if (f4vr::isInPowerArmor())
+                return Decision::PowerArmor;
+            if (frik->isFeatureBlocked && frik->isFeatureBlocked(frik::api::FRIKApiV2::Feature::Pipboy))
+                return Decision::FrikPipboyBlocked;
+            if (frik->isWristPipboyOpen())
+                return Decision::FrikPipboyOpen;
             // Equal inner and outer angles divide by zero in 140EF67B0, which
             // counts every gaze as a look: FRIK opens with all four at 0.
             if (s_settings[kPipboyInner]->GetFloat() == s_settings[kPipboyOuter]->GetFloat() &&
@@ -131,7 +154,8 @@ namespace rock::native_wrist_pipboy_look
 
         void logDecision(const Decision decision) noexcept
         {
-            if (decision == s_loggedDecision) return;
+            if (decision == s_loggedDecision)
+                return;
             s_loggedDecision = decision;
             try {
                 ROCK_LOG_INFO(Input, "Native wrist Pip-Boy look detection {}", describe(decision));
@@ -199,15 +223,18 @@ namespace rock::native_wrist_pipboy_look
         [[nodiscard]] bool bytesMatch(const std::uintptr_t rva, const std::array<std::uint8_t, N>& expected) noexcept
         {
             std::array<std::uint8_t, N> actual{};
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(rva).address()), actual.data(), actual.size()) &&
-                   actual == expected;
+            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(rva).address()),
+                       actual.data(), actual.size()) &&
+                actual == expected;
         }
     }
 
     bool install() noexcept
     {
-        if (s_installed) return true;
-        if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) return false;
+        if (s_installed)
+            return true;
+        if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72)
+            return false;
         std::array<RE::Setting*, kSettingCount> settings{};
         for (std::size_t index = 0; index < kSettingCount; ++index) {
             if (!resolveSetting(kSettings[index], settings[index])) {
@@ -217,7 +244,8 @@ namespace rock::native_wrist_pipboy_look
             }
         }
         if (!bytesMatch(kLookUpdateCallSite, kExpectedCallSite) || !bytesMatch(kLookUpdateEntry, kExpectedEntry)) {
-            ROCK_LOG_ERROR(Init, "Native wrist Pip-Boy look gate unavailable: look update call {:#x} or entry {:#x} changed",
+            ROCK_LOG_ERROR(Init,
+                "Native wrist Pip-Boy look gate unavailable: look update call {:#x} or entry {:#x} changed",
                 kLookUpdateCall, kLookUpdateEntry);
             return false;
         }
@@ -238,7 +266,9 @@ namespace rock::native_wrist_pipboy_look
         }
         FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<const void*>(address), 5);
         s_installed = true;
-        ROCK_LOG_INFO(Init, "Native wrist Pip-Boy look gate installed at {:#x}: a closed FRIK wrist Pip-Boy ignores gaze", kLookUpdateCall);
+        ROCK_LOG_INFO(Init,
+            "Native wrist Pip-Boy look gate installed at {:#x}: a closed FRIK wrist Pip-Boy ignores gaze",
+            kLookUpdateCall);
         return true;
     }
 }

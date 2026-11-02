@@ -46,15 +46,11 @@ namespace rock::surface_mesh_grab_policy
         bool valid = false;
     };
 
-    [[nodiscard]] inline bool finitePoint(const RE::NiPoint3& point)
-    {
-        return vector_math::hasFiniteComponents(point);
-    }
+    [[nodiscard]] inline bool finitePoint(const RE::NiPoint3& point) { return vector_math::hasFiniteComponents(point); }
 
     [[nodiscard]] inline bool finiteTransform(const RE::NiTransform& value)
     {
-        if (!finitePoint(value.translate) || !std::isfinite(value.scale) ||
-            value.scale <= 0.0001f) {
+        if (!finitePoint(value.translate) || !std::isfinite(value.scale) || value.scale <= 0.0001f) {
             return false;
         }
         for (int row = 0; row < 3; ++row) {
@@ -67,13 +63,9 @@ namespace rock::surface_mesh_grab_policy
         return true;
     }
 
-    [[nodiscard]] inline float lengthSquared(const RE::NiPoint3& value)
-    {
-        return vector_math::lengthSquared(value);
-    }
+    [[nodiscard]] inline float lengthSquared(const RE::NiPoint3& value) { return vector_math::lengthSquared(value); }
 
-    [[nodiscard]] inline RE::NiPoint3 normalizedOrZero(
-        const RE::NiPoint3& value)
+    [[nodiscard]] inline RE::NiPoint3 normalizedOrZero(const RE::NiPoint3& value)
     {
         const float squared = lengthSquared(value);
         if (!std::isfinite(squared) || squared <= 1.0e-6f) {
@@ -82,42 +74,31 @@ namespace rock::surface_mesh_grab_policy
         return value * (1.0f / std::sqrt(squared));
     }
 
-    [[nodiscard]] inline ProjectionResult projectHandToMesh(
-        const ProjectionInput& input)
+    [[nodiscard]] inline ProjectionResult projectHandToMesh(const ProjectionInput& input)
     {
         ProjectionResult result{};
-        if (!finiteTransform(input.handWorld) ||
-            !finitePoint(input.collisionPointWorld) ||
+        if (!finiteTransform(input.handWorld) || !finitePoint(input.collisionPointWorld) ||
             !finitePoint(input.meshPointWorld)) {
             return result;
         }
         const float maximumDistance = std::clamp(
-            std::isfinite(input.maximumProjectionDistanceGameUnits) ?
-                input.maximumProjectionDistanceGameUnits :
-                48.0f,
-            1.0f,
-            128.0f);
-        const RE::NiPoint3 delta =
-            input.meshPointWorld - input.collisionPointWorld;
+            std::isfinite(input.maximumProjectionDistanceGameUnits) ? input.maximumProjectionDistanceGameUnits : 48.0f,
+            1.0f, 128.0f);
+        const RE::NiPoint3 delta = input.meshPointWorld - input.collisionPointWorld;
         const float distanceSquared = lengthSquared(delta);
-        if (!std::isfinite(distanceSquared) ||
-            distanceSquared > maximumDistance * maximumDistance) {
+        if (!std::isfinite(distanceSquared) || distanceSquared > maximumDistance * maximumDistance) {
             return result;
         }
 
         result.correctedHandWorld = input.handWorld;
-        result.correctedHandWorld.translate =
-            input.handWorld.translate + delta;
+        result.correctedHandWorld.translate = input.handWorld.translate + delta;
         result.meshPointWorld = input.meshPointWorld;
-        result.meshNormalWorld = input.hasMeshNormal ?
-            normalizedOrZero(input.meshNormalWorld) :
-            (input.hasCollisionNormal ?
-                    normalizedOrZero(input.collisionNormalWorld) :
-                    RE::NiPoint3{});
+        result.meshNormalWorld = input.hasMeshNormal
+            ? normalizedOrZero(input.meshNormalWorld)
+            : (input.hasCollisionNormal ? normalizedOrZero(input.collisionNormalWorld) : RE::NiPoint3{});
         result.shellToMeshDeltaWorld = delta;
         result.shellToMeshDistanceGameUnits = std::sqrt(distanceSquared);
-        result.valid = finiteTransform(result.correctedHandWorld) &&
-                       finitePoint(result.meshNormalWorld);
+        result.valid = finiteTransform(result.correctedHandWorld) && finitePoint(result.meshNormalWorld);
         return result;
     }
 }

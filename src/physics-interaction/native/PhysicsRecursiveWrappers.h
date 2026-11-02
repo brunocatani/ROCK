@@ -24,7 +24,10 @@ namespace rock::physics_recursive_wrappers
         Keyframed = 2,
     };
 
-    inline constexpr std::uint32_t toNativeMotionPreset(MotionPreset preset) { return static_cast<std::uint32_t>(preset); }
+    inline constexpr std::uint32_t toNativeMotionPreset(MotionPreset preset)
+    {
+        return static_cast<std::uint32_t>(preset);
+    }
 
     bool setMotionRecursive(RE::NiAVObject* root, MotionPreset preset, bool recursive, bool force, bool activate);
 

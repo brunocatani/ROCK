@@ -5,8 +5,8 @@
 #include <atomic>
 #include <cstdint>
 
-#include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/NativeMemory.h"
 
 namespace rock::native_ammo_counter_visibility
 {
@@ -23,7 +23,8 @@ namespace rock::native_ammo_counter_visibility
         constexpr std::uintptr_t kVtable = 0x2D48C98;
         constexpr std::uintptr_t kVisibleSlot = kVtable + 7 * sizeof(std::uintptr_t);
         constexpr std::uintptr_t kVisible = 0xA22520;
-        constexpr auto kVisiblePrefix = std::to_array<std::uint8_t>({ 0x48, 0x83, 0xEC, 0x28, 0x80, 0xB9, 0xF1, 0, 0, 0, 0 });
+        constexpr auto kVisiblePrefix =
+            std::to_array<std::uint8_t>({ 0x48, 0x83, 0xEC, 0x28, 0x80, 0xB9, 0xF1, 0, 0, 0, 0 });
         constexpr std::uint64_t kLeaseMilliseconds = 250;
 
         using Visible = bool (*)(void*);
@@ -40,8 +41,10 @@ namespace rock::native_ammo_counter_visibility
 
     bool install() noexcept
     {
-        if (g_original) return true;
-        if (g_attempted) return false;
+        if (g_original)
+            return true;
+        if (g_attempted)
+            return false;
         g_attempted = true;
         const auto slot = REL::Offset(kVisibleSlot).address();
         std::uintptr_t current{};
@@ -50,7 +53,8 @@ namespace rock::native_ammo_counter_visibility
             current != REL::Offset(kVisible).address() ||
             !native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(current), prefix.data(), prefix.size()) ||
             prefix != kVisiblePrefix) {
-            ROCK_LOG_WARN(Weapon, "Ammo counters: the vanilla ammo widget's visibility slot is not the expected one "
+            ROCK_LOG_WARN(Weapon,
+                "Ammo counters: the vanilla ammo widget's visibility slot is not the expected one "
                 "(another mod may own it); the vanilla counter stays visible");
             return false;
         }
@@ -62,6 +66,7 @@ namespace rock::native_ammo_counter_visibility
 
     void replace(const bool active) noexcept
     {
-        g_replacedUntil.store(active && g_original ? GetTickCount64() + kLeaseMilliseconds : 0, std::memory_order_release);
+        g_replacedUntil.store(active && g_original ? GetTickCount64() + kLeaseMilliseconds : 0,
+            std::memory_order_release);
     }
 }

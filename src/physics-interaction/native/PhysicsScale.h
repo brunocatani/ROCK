@@ -25,12 +25,10 @@ namespace rock::physics_scale
         std::uint32_t revision = 0;
     };
 
-    inline bool isUsableScale(float value)
-    {
-        return std::isfinite(value) && value > 0.000001f && value < 10000.0f;
-    }
+    inline bool isUsableScale(float value) { return std::isfinite(value) && value > 0.000001f && value < 10000.0f; }
 
-    inline Snapshot makeSnapshot(float gameToHavok, float havokToGame, float vrScale, std::uint32_t revision = 0, float vrGlobalScale = 0.0f, float raycastScale = 0.0f)
+    inline Snapshot makeSnapshot(float gameToHavok, float havokToGame, float vrScale, std::uint32_t revision = 0,
+        float vrGlobalScale = 0.0f, float raycastScale = 0.0f)
     {
         Snapshot snapshot{};
         snapshot.vrScale = std::isfinite(vrScale) ? vrScale : 0.0f;
@@ -55,7 +53,8 @@ namespace rock::physics_scale
 
     inline bool sameConversionScale(const Snapshot& a, const Snapshot& b)
     {
-        return std::fabs(a.gameToHavok - b.gameToHavok) <= 0.0000001f && std::fabs(a.havokToGame - b.havokToGame) <= 0.0001f;
+        return std::fabs(a.gameToHavok - b.gameToHavok) <= 0.0000001f &&
+            std::fabs(a.havokToGame - b.havokToGame) <= 0.0001f;
     }
 
     inline float reciprocalDriftGameUnits(const Snapshot& scale)

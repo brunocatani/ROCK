@@ -39,17 +39,13 @@ namespace rock::dynamic_hand_collision_feedback
     };
 
     template <class Vector>
-    [[nodiscard]] inline float projectedApproachSpeedGameUnitsPerSecond(
-        const Vector& targetVelocityGameUnitsPerSecond,
+    [[nodiscard]] inline float projectedApproachSpeedGameUnitsPerSecond(const Vector& targetVelocityGameUnitsPerSecond,
         const Vector& contactDeviationGame)
     {
-        const float deviationLengthSquared =
-            contactDeviationGame.x * contactDeviationGame.x +
-            contactDeviationGame.y * contactDeviationGame.y +
-            contactDeviationGame.z * contactDeviationGame.z;
+        const float deviationLengthSquared = contactDeviationGame.x * contactDeviationGame.x +
+            contactDeviationGame.y * contactDeviationGame.y + contactDeviationGame.z * contactDeviationGame.z;
         if (!std::isfinite(deviationLengthSquared) || deviationLengthSquared <= 1.0e-8f ||
-            !std::isfinite(targetVelocityGameUnitsPerSecond.x) ||
-            !std::isfinite(targetVelocityGameUnitsPerSecond.y) ||
+            !std::isfinite(targetVelocityGameUnitsPerSecond.x) || !std::isfinite(targetVelocityGameUnitsPerSecond.y) ||
             !std::isfinite(targetVelocityGameUnitsPerSecond.z)) {
             return 0.0f;
         }
@@ -62,12 +58,8 @@ namespace rock::dynamic_hand_collision_feedback
         return std::isfinite(velocityAlongOutwardDeviation) ? std::max(0.0f, -velocityAlongOutwardDeviation) : 0.0f;
     }
 
-    [[nodiscard]] inline ContactPulseDecision updateContactPulse(
-        ContactPulseState& state,
-        std::uint64_t entrySequence,
-        float approachSpeedGameUnitsPerSecond,
-        float deltaSeconds,
-        bool authorityAllowsFeedback,
+    [[nodiscard]] inline ContactPulseDecision updateContactPulse(ContactPulseState& state, std::uint64_t entrySequence,
+        float approachSpeedGameUnitsPerSecond, float deltaSeconds, bool authorityAllowsFeedback,
         const ContactPulseConfig& config)
     {
         // Unmeasurable frames advance no cooldown time (hold, never a
@@ -87,10 +79,10 @@ namespace rock::dynamic_hand_collision_feedback
             state.observedEntrySequence = entrySequence;
         }
 
-        const float minApproachSpeed =
-            std::isfinite(config.minApproachSpeedGameUnitsPerSecond) ? std::max(0.0f, config.minApproachSpeedGameUnitsPerSecond) : 0.0f;
-        if (!config.enabled || !authorityAllowsFeedback || !newEntry ||
-            state.cooldownRemainingSeconds > 0.0f ||
+        const float minApproachSpeed = std::isfinite(config.minApproachSpeedGameUnitsPerSecond)
+            ? std::max(0.0f, config.minApproachSpeedGameUnitsPerSecond)
+            : 0.0f;
+        if (!config.enabled || !authorityAllowsFeedback || !newEntry || state.cooldownRemainingSeconds > 0.0f ||
             decision.approachSpeedGameUnitsPerSecond < minApproachSpeed) {
             return decision;
         }
@@ -102,10 +94,8 @@ namespace rock::dynamic_hand_collision_feedback
         const float speedScale = std::isfinite(config.speedScale) ? std::max(0.0f, config.speedScale) : 0.0f;
 
         decision.fire = true;
-        decision.intensity = std::clamp(
-            baseIntensity + decision.approachSpeedGameUnitsPerSecond * speedScale,
-            baseIntensity,
-            maxIntensity);
+        decision.intensity = std::clamp(baseIntensity + decision.approachSpeedGameUnitsPerSecond * speedScale,
+            baseIntensity, maxIntensity);
         state.cooldownRemainingSeconds =
             std::isfinite(config.cooldownSeconds) ? std::max(0.0f, config.cooldownSeconds) : 0.12f;
         return decision;

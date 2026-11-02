@@ -1,19 +1,19 @@
 #include "physics-interaction/input/NativeGrenadeThrowRuntime.h"
-#include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/grenade/LooseGrenadeRuntime.h"
-#include "physics-interaction/core/PhysicsInteraction.h"
-#include "physics-interaction/PhysicsLog.h"
-#include "RockConfig.h"
-#include "RE/Bethesda/BGSInventoryItem.h"
-#include "RE/Bethesda/BSLock.h"
-#include "RE/Bethesda/InputEvent.h"
-#include "RE/Bethesda/PlayerCharacter.h"
-#include "RE/Bethesda/TESBoundObjects.h"
 #include <REL/Relocation.h>
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include "RE/Bethesda/BGSInventoryItem.h"
+#include "RE/Bethesda/BSLock.h"
+#include "RE/Bethesda/InputEvent.h"
+#include "RE/Bethesda/PlayerCharacter.h"
+#include "RE/Bethesda/TESBoundObjects.h"
+#include "RockConfig.h"
+#include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/core/PhysicsInteraction.h"
+#include "physics-interaction/grenade/LooseGrenadeRuntime.h"
+#include "physics-interaction/native/NativeMemory.h"
 
 namespace rock::native_grenade_throw_runtime
 {
@@ -40,19 +40,28 @@ namespace rock::native_grenade_throw_runtime
         bool matches(std::uintptr_t rva, const std::array<unsigned char, N>& expected)
         {
             std::array<unsigned char, N> live{};
-            return native_memory::guardedCopyFromMemory(
-                       reinterpret_cast<const void*>(REL::Offset(rva).address()), live.data(), N) && live == expected;
+            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(rva).address()),
+                       live.data(), N) &&
+                live == expected;
         }
 
         bool available()
         {
             static const bool verified = [] {
-                const bool valid =
-                    matches(kProcess, std::array<unsigned char, 13>{0x40,0x55,0x56,0x57,0x41,0x56,0x48,0x8B,0xEC,0x48,0x83,0xEC,0x78}) &&
-                    matches(kShouldHandle, std::array<unsigned char, 16>{0x40,0x57,0x48,0x83,0xEC,0x20,0x48,0x8B,0x0D,0xA3,0x62,0xB3,0x04,0x48,0x8B,0xFA}) &&
-                    matches(kRestoreMode, std::array<unsigned char, 16>{0x40,0x57,0x48,0x83,0xEC,0x20,0x48,0x8B,0xF9,0x48,0x8B,0x0D,0xB0,0xFA,0xE9,0x04}) &&
-                    matches(0xFC1C00, std::array<unsigned char, 16>{0x48,0x8B,0x81,0x00,0x03,0x00,0x00,0x48,0x85,0xC0,0x74,0x04,0xC6,0x40,0x2A,0x00});
-                if (!valid) ROCK_LOG_ERROR(Input, "Vanilla grenade fallback disabled: native code validation failed");
+                const bool valid = matches(kProcess,
+                                       std::array<unsigned char, 13>{ 0x40, 0x55, 0x56, 0x57, 0x41, 0x56, 0x48, 0x8B,
+                                           0xEC, 0x48, 0x83, 0xEC, 0x78 }) &&
+                    matches(kShouldHandle,
+                        std::array<unsigned char, 16>{ 0x40, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0x0D, 0xA3, 0x62,
+                            0xB3, 0x04, 0x48, 0x8B, 0xFA }) &&
+                    matches(kRestoreMode,
+                        std::array<unsigned char, 16>{ 0x40, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xF9, 0x48, 0x8B,
+                            0x0D, 0xB0, 0xFA, 0xE9, 0x04 }) &&
+                    matches(0xFC1C00,
+                        std::array<unsigned char, 16>{ 0x48, 0x8B, 0x81, 0x00, 0x03, 0x00, 0x00, 0x48, 0x85, 0xC0, 0x74,
+                            0x04, 0xC6, 0x40, 0x2A, 0x00 });
+                if (!valid)
+                    ROCK_LOG_ERROR(Input, "Vanilla grenade fallback disabled: native code validation failed");
                 return valid;
             }();
             return verified;
@@ -64,13 +73,15 @@ namespace rock::native_grenade_throw_runtime
             void* handler{};
             std::uintptr_t vtable{};
             const char* stage = "controls";
-            if (native_memory::tryReadValue(reinterpret_cast<void**>(REL::Offset(kControls).address()), controls) && controls) {
+            if (native_memory::tryReadValue(reinterpret_cast<void**>(REL::Offset(kControls).address()), controls) &&
+                controls) {
                 stage = "melee-throw-handler";
                 if (native_memory::tryReadField(controls, 0x300, handler) && handler) {
                     stage = "handler-vtable";
                     if (native_memory::tryReadField(handler, 0, vtable) &&
                         vtable == REL::Offset(kHandlerVtable).address() &&
-                        native_memory::pointerRangeLooksReadable(handler, 0x30)) return handler;
+                        native_memory::pointerRangeLooksReadable(handler, 0x30))
+                        return handler;
                 }
             }
             ROCK_LOG_SAMPLE_WARN(Input, g_rockConfig.rockLogSampleMilliseconds,
@@ -81,17 +92,22 @@ namespace rock::native_grenade_throw_runtime
         bool hasEquippedThrowable()
         {
             auto* player = RE::PlayerCharacter::GetSingleton();
-            if (!player || !player->inventoryList) return false;
-            const RE::BSAutoReadLock lock{player->inventoryList->rwLock};
+            if (!player || !player->inventoryList)
+                return false;
+            const RE::BSAutoReadLock lock{ player->inventoryList->rwLock };
             std::uint32_t entries = 0;
             for (const auto& entry : player->inventoryList->data) {
-                if (++entries > 16384) return false;
+                if (++entries > 16384)
+                    return false;
                 const auto* weapon = entry.object ? entry.object->As<RE::TESObjectWEAP>() : nullptr;
-                if (!loose_grenade_runtime::isThrowableWeapon(weapon)) continue;
+                if (!loose_grenade_runtime::isThrowableWeapon(weapon))
+                    continue;
                 std::uint32_t stacks = 0;
                 for (auto* stack = entry.stackData.get(); stack; stack = stack->nextStack.get()) {
-                    if (++stacks > 4096) return false;
-                    if (stack->GetCount() && stack->IsEquipped()) return true;
+                    if (++stacks > 4096)
+                        return false;
+                    if (stack->GetCount() && stack->IsEquipped())
+                        return true;
                 }
             }
             return false;
@@ -103,10 +119,14 @@ namespace rock::native_grenade_throw_runtime
             RE::BSFixedString name;
             float value, seconds;
             decltype(RE::InputEvent::handled) handled;
+
             explicit NativeGripEvent(RE::ButtonEvent& source) :
-                event(source), name(source.strUserEvent), value(source.value),
-                seconds(source.heldDownSecs), handled(source.handled)
-            { event.strUserEvent = "WandGrip"; }
+                event(source), name(source.strUserEvent), value(source.value), seconds(source.heldDownSecs),
+                handled(source.handled)
+            {
+                event.strUserEvent = "WandGrip";
+            }
+
             ~NativeGripEvent()
             {
                 event.strUserEvent = name;
@@ -120,8 +140,8 @@ namespace rock::native_grenade_throw_runtime
     float holdSeconds()
     {
         float seconds = 0.3f;
-        if (available()) native_memory::tryReadValue(
-            reinterpret_cast<const float*>(REL::Offset(0x37D5B18).address()), seconds);
+        if (available())
+            native_memory::tryReadValue(reinterpret_cast<const float*>(REL::Offset(0x37D5B18).address()), seconds);
         return std::isfinite(seconds) ? std::clamp(seconds, 0.05f, 10.0f) : 0.3f;
     }
 
@@ -129,20 +149,22 @@ namespace rock::native_grenade_throw_runtime
 
     bool begin(RE::ButtonEvent& source)
     {
-        if (s_active || !available()) return false;
+        if (s_active || !available())
+            return false;
         if (!hasEquippedThrowable()) {
             ROCK_LOG_DEBUG(Input, "Vanilla grenade hold rejected: no equipped throwable");
             return false;
         }
         auto* handler = resolveHandler();
-        if (!handler) return false;
+        if (!handler)
+            return false;
         std::uint8_t enabled{}, armed{};
         if (!native_memory::tryReadField(handler, 0x8, enabled) || !enabled ||
             !native_memory::tryReadField(handler, 0x2A, armed) || armed) {
             ROCK_LOG_DEBUG(Input, "Vanilla grenade hold rejected: handler disabled or already armed");
             return false;
         }
-        NativeGripEvent restore{source};
+        NativeGripEvent restore{ source };
         source.value = 1.0f;
         source.heldDownSecs = 0.0f;
         source.handled = RE::InputEvent::HANDLED_RESULT::kUnhandled;
@@ -168,7 +190,8 @@ namespace rock::native_grenade_throw_runtime
 
     void cancel()
     {
-        if (!s_active) return;
+        if (!s_active)
+            return;
         void* ui{};
         int mode{};
         if (!native_memory::tryReadValue(reinterpret_cast<void**>(REL::Offset(kVrUi).address()), ui) ||
@@ -192,10 +215,11 @@ namespace rock::native_grenade_throw_runtime
 
     void release(RE::ButtonEvent& source)
     {
-        if (!s_active) return;
+        if (!s_active)
+            return;
         auto* handler = resolveHandler();
         if (handler) {
-            NativeGripEvent restore{source};
+            NativeGripEvent restore{ source };
             source.value = 0.0f;
             source.heldDownSecs = (std::max)(source.heldDownSecs, holdSeconds());
             source.handled = RE::InputEvent::HANDLED_RESULT::kUnhandled;

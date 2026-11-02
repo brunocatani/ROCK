@@ -1,7 +1,17 @@
 #pragma once
 #include <cstdint>
-namespace RE { class hknpWorld; }
-namespace rock { class PhysicsInteraction; struct PhysicsFrameContext; }
+
+namespace RE
+{
+    class hknpWorld;
+}
+
+namespace rock
+{
+    class PhysicsInteraction;
+    struct PhysicsFrameContext;
+}
+
 namespace rock::storage_service
 {
     void update(PhysicsInteraction&, const PhysicsFrameContext&);

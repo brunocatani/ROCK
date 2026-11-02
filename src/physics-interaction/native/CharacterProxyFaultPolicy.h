@@ -21,8 +21,8 @@ namespace rock::character_proxy_fault_policy
     };
 
     // Applies only after the SEH boundary has identified a read access violation.
-    [[nodiscard]] constexpr Disposition classify(const Evidence& evidence,
-        std::uintptr_t verifiedInstruction, std::uintptr_t verifiedDestructorCaller)
+    [[nodiscard]] constexpr Disposition classify(const Evidence& evidence, std::uintptr_t verifiedInstruction,
+        std::uintptr_t verifiedDestructorCaller)
     {
         if (verifiedInstruction == 0 || evidence.instruction != verifiedInstruction ||
             evidence.bodyAddress >= 0x1000'0000 || evidence.bodyAddress % 0x90 != 0 ||

@@ -1,12 +1,12 @@
 #pragma once
 
-#include "physics-interaction/native/BethesdaPhysicsBody.h"
+#include "physics-interaction/collision/ColliderTuning.h"
+#include "physics-interaction/hand/DynamicHandTwinTargets.h"
+#include "physics-interaction/hand/HandColliderTypes.h"
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/hand/SkeletonBoneNameIndex.h"
-#include "physics-interaction/collision/ColliderTuning.h"
+#include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
-#include "physics-interaction/hand/HandColliderTypes.h"
-#include "physics-interaction/hand/DynamicHandTwinTargets.h"
 #include "physics-interaction/native/HavokPhysicsTiming.h"
 #include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
 
@@ -39,34 +39,30 @@ namespace rock
 
         void setPhysicsCallbackGate(PhysicsCallbackQuiescenceGate* gate) { _physicsCallbackGate = gate; }
 
-        bool create(
-            RE::hknpWorld* world,
-            void* bhkWorld,
-            bool isLeft,
-            const RE::NiTransform& rollAuthorityWorld,
+        bool create(RE::hknpWorld* world, void* bhkWorld, bool isLeft, const RE::NiTransform& rollAuthorityWorld,
             BethesdaPhysicsBody& palmAnchorBody);
         void destroy(void* bhkWorld, BethesdaPhysicsBody& palmAnchorBody);
         void reset();
-        void update(
-            RE::hknpWorld* world,
-            bool isLeft,
-            const RE::NiTransform& rollAuthorityWorld,
-            BethesdaPhysicsBody& palmAnchorBody,
-            float deltaTime,
-            const DirectSkeletonBoneSnapshot& colliderBones);
-        void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing, BethesdaPhysicsBody& palmAnchorBody);
+        void update(RE::hknpWorld* world, bool isLeft, const RE::NiTransform& rollAuthorityWorld,
+            BethesdaPhysicsBody& palmAnchorBody, float deltaTime, const DirectSkeletonBoneSnapshot& colliderBones);
+        void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing,
+            BethesdaPhysicsBody& palmAnchorBody);
         bool finalizePose(RE::hknpWorld* world, bool isLeft, const RE::NiTransform& rawHand,
             BethesdaPhysicsBody& palmAnchorBody, float deltaTime, const DirectSkeletonBoneSnapshot& bones);
         void invalidatePose(RE::hknpWorld* world, BethesdaPhysicsBody& palmAnchorBody);
 
         bool hasBodies() const { return _created; }
+
         std::uint32_t getBodyCount() const { return _bodyCountAtomic.load(std::memory_order_acquire); }
+
         std::uint32_t getBodyIdAtomic(std::size_t index) const;
         bool isColliderBodyIdAtomic(std::uint32_t bodyId) const;
         bool tryGetBodyMetadataAtomic(std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const;
-        bool tryGetBodyMetadataAtIndexAtomic(std::uint32_t index, std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const;
+        bool tryGetBodyMetadataAtIndexAtomic(std::uint32_t index, std::uint32_t bodyId,
+            HandColliderBodyMetadata& outMetadata) const;
         bool tryGetBodyRoleAtomic(std::uint32_t bodyId, hand_collider_semantics::HandColliderRole& outRole) const;
         bool tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const;
+
         // Main-thread debug publication only. Returns the exact pending target
         // that the next generated-body physics callback will consume.
 
@@ -89,6 +85,7 @@ namespace rock
             // Bounds of the palm hull actually created, including dimension overrides.
             RE::NiPoint3 palmHalfExtents{};
         };
+
         using PublishedSegmentFrames =
             std::array<PublishedSegmentFrame, hand_collider_semantics::kHandSegmentColliderBodyCountPerHand>;
 
@@ -99,6 +96,7 @@ namespace rock
          * same contract as dynamicTwinTargets().
          */
         const PublishedSegmentFrames& segmentColliderFrames() const { return _segmentFrames; }
+
         RE::hknpShape* buildDynamicTwinShape(const dynamic_hand_twin::TwinSlotFrame& slotFrame, bool isPalm) const;
 
     private:
@@ -136,22 +134,23 @@ namespace rock
             float convexRadius = 0.1f;
         };
 
-        bool captureBoneLookup(
-            bool isLeft,
-            const RE::NiTransform& rollAuthorityWorld,
-            BoneFrameLookup& outLookup);
+        bool captureBoneLookup(bool isLeft, const RE::NiTransform& rollAuthorityWorld, BoneFrameLookup& outLookup);
         bool makeBoneLookup(const DirectSkeletonBoneSnapshot& snapshot, bool isLeft,
             const RE::NiTransform& rollAuthorityWorld, BoneFrameLookup& outLookup, bool finalPose = false);
-        bool makeRoleFrame(const BoneFrameLookup& lookup, bool isLeft, hand_collider_semantics::HandColliderRole role, RoleFrameResult& outFrame) const;
+        bool makeRoleFrame(const BoneFrameLookup& lookup, bool isLeft, hand_collider_semantics::HandColliderRole role,
+            RoleFrameResult& outFrame) const;
         void publishPalmPoint(const BoneFrameLookup& lookup, bool isLeft, const RoleFrameResult& anchorFrame) const;
         bool updatePose(const BoneFrameLookup& lookup, bool isLeft, BethesdaPhysicsBody& palmAnchorBody,
             float deltaTime, bool publishTargets);
         std::uint64_t refreshTuning(bool powerArmor);
         RE::hknpShape* buildShapeForRole(const RoleFrameResult& frame, hand_collider_semantics::HandColliderRole role,
             RE::NiPoint3* outPalmHalfExtents = nullptr) const;
-        bool createBodyForRole(RE::hknpWorld* world, void* bhkWorld, bool isLeft, hand_collider_semantics::HandColliderRole role, const RoleFrameResult& frame, BodyInstance& instance);
-        void queueBodyTarget(BethesdaPhysicsBody& body, const RE::NiTransform& target, float sourceDeltaSeconds, GeneratedKeyframedBodyDriveState& driveState);
-        void handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex);
+        bool createBodyForRole(RE::hknpWorld* world, void* bhkWorld, bool isLeft,
+            hand_collider_semantics::HandColliderRole role, const RoleFrameResult& frame, BodyInstance& instance);
+        void queueBodyTarget(BethesdaPhysicsBody& body, const RE::NiTransform& target, float sourceDeltaSeconds,
+            GeneratedKeyframedBodyDriveState& driveState);
+        void handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName,
+            std::uint32_t bodyIndex);
         void clearInstance(BodyInstance& instance, bool releaseShapeRef);
         void publishAtomicBodyIds(const BethesdaPhysicsBody& palmAnchorBody, bool isLeft);
         void clearAtomicBodyIds();
@@ -190,8 +189,10 @@ namespace rock
         std::array<std::atomic<std::uint32_t>, hand_collider_semantics::kHandColliderBodyCountPerHand> _bodyIdsAtomic{};
         std::array<std::atomic<std::uint32_t>, hand_collider_semantics::kHandColliderBodyCountPerHand> _rolesAtomic{};
         std::array<std::atomic<std::uint32_t>, hand_collider_semantics::kHandColliderBodyCountPerHand> _fingersAtomic{};
-        std::array<std::atomic<std::uint32_t>, hand_collider_semantics::kHandColliderBodyCountPerHand> _segmentsAtomic{};
-        std::array<std::atomic<std::uint32_t>, hand_collider_semantics::kHandColliderBodyCountPerHand> _primaryAnchorAtomic{};
+        std::array<std::atomic<std::uint32_t>, hand_collider_semantics::kHandColliderBodyCountPerHand>
+            _segmentsAtomic{};
+        std::array<std::atomic<std::uint32_t>, hand_collider_semantics::kHandColliderBodyCountPerHand>
+            _primaryAnchorAtomic{};
         std::atomic<std::uint32_t> _bodyCountAtomic{ 0 };
     };
 }

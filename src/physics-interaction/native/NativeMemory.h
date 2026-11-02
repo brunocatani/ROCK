@@ -34,7 +34,8 @@ namespace rock::native_memory
     }
 
     template <class T>
-    bool tryReadField(const void* base, std::ptrdiff_t offset, T& out, const std::source_location& site = std::source_location::current())
+    bool tryReadField(const void* base, std::ptrdiff_t offset, T& out,
+        const std::source_location& site = std::source_location::current())
     {
         if (!base) {
             return false;

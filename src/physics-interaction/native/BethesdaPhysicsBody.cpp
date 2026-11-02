@@ -1,10 +1,10 @@
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 
-#include "physics-interaction/native/HavokRefCount.h"
+#include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/HavokRefCount.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/NiReferenceOwnership.h"
-#include "physics-interaction/PhysicsLog.h"
 
 #include "RE/Havok/hknpBody.h"
 #include "RE/NetImmerse/NiRefObject.h"
@@ -18,10 +18,7 @@
 
 namespace rock
 {
-    static void releaseRefCounted(void* obj)
-    {
-        ni_reference_ownership::release(static_cast<RE::NiRefObject*>(obj));
-    }
+    static void releaseRefCounted(void* obj) { ni_reference_ownership::release(static_cast<RE::NiRefObject*>(obj)); }
 
     static void* bethesdaAllocatorPool()
     {
@@ -180,22 +177,15 @@ namespace rock
         std::atomic_bool s_retirementQuarantineExhausted{ false };
         std::atomic_bool s_retirementCreateRejectionLogged{ false };
 
-        void markRetirementQuarantineExhausted(
-            const char* owner,
-            std::uint32_t bodyId,
-            void* collisionObject,
+        void markRetirementQuarantineExhausted(const char* owner, std::uint32_t bodyId, void* collisionObject,
             std::size_t capacity)
         {
-            const bool firstFailure =
-                !s_retirementQuarantineExhausted.exchange(true, std::memory_order_acq_rel);
+            const bool firstFailure = !s_retirementQuarantineExhausted.exchange(true, std::memory_order_acq_rel);
             if (firstFailure) {
-                ROCK_LOG_CRITICAL(
-                    BethesdaBody,
-                    "Generated-body retirement quarantine exhausted owner={} body={} collisionObject={:p} capacity={}; future generated-body creation is disabled",
-                    owner ? owner : "unknown",
-                    bodyId,
-                    collisionObject,
-                    capacity);
+                ROCK_LOG_CRITICAL(BethesdaBody,
+                    "Generated-body retirement quarantine exhausted owner={} body={} collisionObject={:p} capacity={}; "
+                    "future generated-body creation is disabled",
+                    owner ? owner : "unknown", bodyId, collisionObject, capacity);
             }
         }
     }
@@ -253,7 +243,8 @@ namespace rock
             return nullptr;
         }
 
-        return *reinterpret_cast<RE::hknpWorld**>(reinterpret_cast<char*>(instance) + offsets::kHknpPhysicsSystemInstance_World);
+        return *reinterpret_cast<RE::hknpWorld**>(
+            reinterpret_cast<char*>(instance) + offsets::kHknpPhysicsSystemInstance_World);
     }
 
     static bool validateGeneratedBodyMotion(RE::hknpWorld* world, RE::hknpBodyId bodyId, BethesdaMotionType motionType)
@@ -276,17 +267,13 @@ namespace rock
             return true;
         }
 
-        ROCK_LOG_ERROR(
-            BethesdaBody,
-            "Generated body {} was created without a live non-static motion: observedMotion={}",
-            bodyId.value,
+        ROCK_LOG_ERROR(BethesdaBody,
+            "Generated body {} was created without a live non-static motion: observedMotion={}", bodyId.value,
             before.motionIndex);
         return false;
     }
 
-    static bool validateGeneratedBodyCollisionProfile(
-        RE::hknpWorld* world,
-        RE::hknpBodyId bodyId,
+    static bool validateGeneratedBodyCollisionProfile(RE::hknpWorld* world, RE::hknpBodyId bodyId,
         const BethesdaPhysicsBodyCreationOptions& options)
     {
         if (options.bodyQuality == BethesdaGeneratedBodyQuality::Default &&
@@ -303,16 +290,12 @@ namespace rock
         const auto expectedQuality = static_cast<std::uint8_t>(options.bodyQuality);
         const auto observedQuality = snapshot.body->qualityId;
         const float observedLookAhead = snapshot.body->translation[3];
-        if (observedQuality != expectedQuality ||
-            !std::isfinite(observedLookAhead) ||
+        if (observedQuality != expectedQuality || !std::isfinite(observedLookAhead) ||
             std::abs(observedLookAhead - options.collisionLookAheadDistanceHavok) > 0.0001f) {
-            ROCK_LOG_ERROR(
-                BethesdaBody,
-                "Generated body {} collision profile mismatch: requestedQuality={} observedQuality={} requestedLookAhead={:.4f} observedLookAhead={:.4f}",
-                bodyId.value,
-                expectedQuality,
-                observedQuality,
-                options.collisionLookAheadDistanceHavok,
+            ROCK_LOG_ERROR(BethesdaBody,
+                "Generated body {} collision profile mismatch: requestedQuality={} observedQuality={} "
+                "requestedLookAhead={:.4f} observedLookAhead={:.4f}",
+                bodyId.value, expectedQuality, observedQuality, options.collisionLookAheadDistanceHavok,
                 observedLookAhead);
             return false;
         }
@@ -334,17 +317,15 @@ namespace rock
             return false;
         }
 
-        static REL::Relocation<SetBodyMaterial_t> setBodyMaterial{ REL::Offset(offsets::kFunc_HknpWorld_SetBodyMaterial) };
+        static REL::Relocation<SetBodyMaterial_t> setBodyMaterial{ REL::Offset(
+            offsets::kFunc_HknpWorld_SetBodyMaterial) };
         setBodyMaterial(world, bodyId.value, materialId.value, 0);
 
         const auto snapshot = havok_runtime::snapshotBody(world, bodyId);
         if (!snapshot.valid || !snapshot.body || snapshot.body->materialId.value != materialId.value) {
-            ROCK_LOG_ERROR(
-                BethesdaBody,
-                "Generated body {} material assignment failed: requested={} observed={} readable={}",
-                bodyId.value,
-                materialId.value,
-                snapshot.body ? snapshot.body->materialId.value : 0xFFFF,
+            ROCK_LOG_ERROR(BethesdaBody,
+                "Generated body {} material assignment failed: requested={} observed={} readable={}", bodyId.value,
+                materialId.value, snapshot.body ? snapshot.body->materialId.value : 0xFFFF,
                 snapshot.valid ? "yes" : "no");
             return false;
         }
@@ -363,7 +344,8 @@ namespace rock
         setMotion(collisionObject, static_cast<int>(motionType));
     }
 
-    static void applyGeneratedBodyMotionType(RE::hknpWorld* world, void* collisionObject, RE::hknpBodyId bodyId, BethesdaMotionType motionType)
+    static void applyGeneratedBodyMotionType(RE::hknpWorld* world, void* collisionObject, RE::hknpBodyId bodyId,
+        BethesdaMotionType motionType)
     {
         /*
          * ROCK-generated bodies are solver drivers. The bhk collision-object
@@ -381,8 +363,9 @@ namespace rock
         applyCollisionObjectMotionType(collisionObject, motionType);
     }
 
-    bool BethesdaPhysicsBody::create(RE::hknpWorld* world, void* bhkWorld, RE::hknpShape* shape, std::uint32_t filterInfo, RE::hknpMaterialId materialId,
-        BethesdaMotionType motionType, const char* name, const BethesdaPhysicsBodyCreationOptions& options)
+    bool BethesdaPhysicsBody::create(RE::hknpWorld* world, void* bhkWorld, RE::hknpShape* shape,
+        std::uint32_t filterInfo, RE::hknpMaterialId materialId, BethesdaMotionType motionType, const char* name,
+        const BethesdaPhysicsBodyCreationOptions& options)
     {
         if (_created) {
             ROCK_LOG_WARN(BethesdaBody, "create() called on already-created body — destroy first");
@@ -390,23 +373,19 @@ namespace rock
         }
         if (s_retirementQuarantineExhausted.load(std::memory_order_acquire)) {
             if (!s_retirementCreateRejectionLogged.exchange(true, std::memory_order_acq_rel)) {
-                ROCK_LOG_CRITICAL(
-                    BethesdaBody,
+                ROCK_LOG_CRITICAL(BethesdaBody,
                     "Generated-body creation rejected because the process-lifetime retirement quarantine is exhausted");
             }
             return false;
         }
         if (!world || !bhkWorld || !shape) {
-            ROCK_LOG_ERROR(BethesdaBody, "create() null params: world={} bhkWorld={} shape={}", (void*)world, bhkWorld, (void*)shape);
+            ROCK_LOG_ERROR(BethesdaBody, "create() null params: world={} bhkWorld={} shape={}", (void*)world, bhkWorld,
+                (void*)shape);
             return false;
         }
-        if (!std::isfinite(options.collisionLookAheadDistanceHavok) ||
-            options.collisionLookAheadDistanceHavok < 0.0f) {
-            ROCK_LOG_ERROR(
-                BethesdaBody,
-                "create() invalid collision look-ahead for '{}': {:.4f}",
-                name ? name : "(null)",
-                options.collisionLookAheadDistanceHavok);
+        if (!std::isfinite(options.collisionLookAheadDistanceHavok) || options.collisionLookAheadDistanceHavok < 0.0f) {
+            ROCK_LOG_ERROR(BethesdaBody, "create() invalid collision look-ahead for '{}': {:.4f}",
+                name ? name : "(null)", options.collisionLookAheadDistanceHavok);
             return false;
         }
 
@@ -452,7 +431,8 @@ namespace rock
             auto* motionCinfoArray = reinterpret_cast<char*>(_systemData) + offsets::kSysData_MotionCinfos;
             const auto motionIndexBeforeAppend = *reinterpret_cast<std::int32_t*>(motionCinfoArray + 0x08);
             if (motionIndexBeforeAppend < 0) {
-                ROCK_LOG_ERROR(BethesdaBody, "Generated motion-cinfo array has invalid size {}", motionIndexBeforeAppend);
+                ROCK_LOG_ERROR(BethesdaBody, "Generated motion-cinfo array has invalid size {}",
+                    motionIndexBeforeAppend);
 
                 releaseLocalSystemDataRef();
                 _systemData = nullptr;
@@ -564,7 +544,8 @@ namespace rock
         {
             BethesdaAllocatorContextGuard collisionObjectAllocatorContext{ 0x41 };
             if (!collisionObjectAllocatorContext.active()) {
-                ROCK_LOG_ERROR(BethesdaBody, "Failed to access Bethesda allocator TLS context for bhkNPCollisionObject allocation");
+                ROCK_LOG_ERROR(BethesdaBody,
+                    "Failed to access Bethesda allocator TLS context for bhkNPCollisionObject allocation");
 
                 releaseRefCounted(_physicsSystem);
                 _physicsSystem = nullptr;
@@ -582,7 +563,8 @@ namespace rock
                 return false;
             }
 
-            static REL::Relocation<CollisionObjectCtor_t> collObjCtor{ REL::Offset(offsets::kFunc_CollisionObject_Ctor) };
+            static REL::Relocation<CollisionObjectCtor_t> collObjCtor{ REL::Offset(
+                offsets::kFunc_CollisionObject_Ctor) };
             collObjCtor(_collisionObject, 0, _physicsSystem);
             // FO4VR 1C142F7 initializes NiObject+8 to zero; 1E07745
             // retains the physics-system edge, and 2996CD1 later retains
@@ -592,7 +574,8 @@ namespace rock
         }
 
         if (!createNiNode(name)) {
-            ROCK_LOG_ERROR(BethesdaBody, "Failed to create/link owner NiNode for generated body '{}'", name ? name : "(null)");
+            ROCK_LOG_ERROR(BethesdaBody, "Failed to create/link owner NiNode for generated body '{}'",
+                name ? name : "(null)");
             releaseRefCounted(_collisionObject);
             _collisionObject = nullptr;
             _physicsSystem = nullptr;
@@ -601,7 +584,8 @@ namespace rock
         }
 
         {
-            static REL::Relocation<CollisionObjectAddToWorld_t> addToWorld{ REL::Offset(offsets::kFunc_CollisionObject_AddToWorld) };
+            static REL::Relocation<CollisionObjectAddToWorld_t> addToWorld{ REL::Offset(
+                offsets::kFunc_CollisionObject_AddToWorld) };
             addToWorld(_collisionObject, bhkWorld);
         }
         _createdHknpWorld = world;
@@ -609,10 +593,12 @@ namespace rock
 
         RE::hknpBodyId bodyId{ kInvalidGeneratedId };
         {
-            static REL::Relocation<PhysicsSystemGetBodyId_t> getBodyId{ REL::Offset(offsets::kFunc_PhysicsSystem_GetBodyId) };
+            static REL::Relocation<PhysicsSystemGetBodyId_t> getBodyId{ REL::Offset(
+                offsets::kFunc_PhysicsSystem_GetBodyId) };
             getBodyId(_physicsSystem, &bodyId, 0);
             if (bodyId.value == kInvalidGeneratedId) {
-                ROCK_LOG_ERROR(BethesdaBody, "Native wrapper add-to-world returned invalid body id for '{}'", name ? name : "(null)");
+                ROCK_LOG_ERROR(BethesdaBody, "Native wrapper add-to-world returned invalid body id for '{}'",
+                    name ? name : "(null)");
                 destroy(bhkWorld);
                 return false;
             }
@@ -658,11 +644,8 @@ namespace rock
         if (snapshot.valid) {
             ROCK_LOG_DEBUG(BethesdaBody,
                 "Native wrapper body state: bodyId={} motion={} filter=0x{:08X} collObj={:p} ownerNode={:p}",
-                bodyId.value,
-                snapshot.motionIndex,
-                snapshot.collisionFilterInfo,
-                static_cast<void*>(snapshot.collisionObject),
-                static_cast<void*>(snapshot.ownerNode));
+                bodyId.value, snapshot.motionIndex, snapshot.collisionFilterInfo,
+                static_cast<void*>(snapshot.collisionObject), static_cast<void*>(snapshot.ownerNode));
         } else {
             ROCK_LOG_ERROR(BethesdaBody, "Native wrapper body {} is not readable after setup", bodyId.value);
         }
@@ -670,29 +653,28 @@ namespace rock
         auto* instanceWorld = nativeWorldFromPhysicsSystem(_physicsSystem);
         auto* wrapperWorld = havok_runtime::getHknpWorldFromBhk(reinterpret_cast<RE::bhkWorld*>(bhkWorld));
         if (instanceWorld != world || wrapperWorld != world) {
-            ROCK_LOG_ERROR(
-                BethesdaBody,
-                "Generated body world identity mismatch after create: bodyId={} requestedHknp={:p} wrapperHknp={:p} instanceHknp={:p} bhk={:p}",
-                _bodyId.value,
-                static_cast<void*>(world),
-                static_cast<void*>(wrapperWorld),
-                static_cast<void*>(instanceWorld),
-                bhkWorld);
+            ROCK_LOG_ERROR(BethesdaBody,
+                "Generated body world identity mismatch after create: bodyId={} requestedHknp={:p} wrapperHknp={:p} "
+                "instanceHknp={:p} bhk={:p}",
+                _bodyId.value, static_cast<void*>(world), static_cast<void*>(wrapperWorld),
+                static_cast<void*>(instanceWorld), bhkWorld);
             destroy(bhkWorld);
             return false;
         }
 
         _created = true;
 
-        ROCK_LOG_DEBUG(BethesdaBody, "Created '{}': bodyId={} collObj={:p} physSys={:p} sysData={:p} motionType={}", name, _bodyId.value, _collisionObject, _physicsSystem,
-            _systemData, static_cast<int>(motionType));
+        ROCK_LOG_DEBUG(BethesdaBody, "Created '{}': bodyId={} collObj={:p} physSys={:p} sysData={:p} motionType={}",
+            name, _bodyId.value, _collisionObject, _physicsSystem, _systemData, static_cast<int>(motionType));
 
         {
             auto* backPtr = havok_runtime::getCollisionObjectFromBody(world, _bodyId);
             if (backPtr == _collisionObject) {
-                ROCK_LOG_DEBUG(BethesdaBody, "  body+0x88 back-pointer VERIFIED: {:p} == collisionObject", static_cast<void*>(backPtr));
+                ROCK_LOG_DEBUG(BethesdaBody, "  body+0x88 back-pointer VERIFIED: {:p} == collisionObject",
+                    static_cast<void*>(backPtr));
             } else {
-                ROCK_LOG_ERROR(BethesdaBody, "  body+0x88 back-pointer MISMATCH: {:p} != {:p}", static_cast<void*>(backPtr), _collisionObject);
+                ROCK_LOG_ERROR(BethesdaBody, "  body+0x88 back-pointer MISMATCH: {:p} != {:p}",
+                    static_cast<void*>(backPtr), _collisionObject);
             }
         }
 
@@ -705,10 +687,12 @@ namespace rock
             return;
 
         if (collisionObject) {
-            *reinterpret_cast<void**>(reinterpret_cast<char*>(collisionObject) + offsets::kCollisionObject_OwnerNode) = nullptr;
+            *reinterpret_cast<void**>(reinterpret_cast<char*>(collisionObject) + offsets::kCollisionObject_OwnerNode) =
+                nullptr;
         }
 
-        auto** nodeCollisionObjectSlot = reinterpret_cast<void**>(reinterpret_cast<char*>(niNode) + offsets::kNiAVObject_CollisionObject);
+        auto** nodeCollisionObjectSlot =
+            reinterpret_cast<void**>(reinterpret_cast<char*>(niNode) + offsets::kNiAVObject_CollisionObject);
         void* nodeCollisionObject = *nodeCollisionObjectSlot;
         *nodeCollisionObjectSlot = nullptr;
         if (nodeCollisionObject) {
@@ -728,27 +712,22 @@ namespace rock
 
         auto* physicsSystemInstance = nativePhysicsSystemInstance(_physicsSystem);
         if (bhkWorld && physicsSystemInstance && !matchesCreationWorld(_createdHknpWorld, bhkWorld)) {
-            ROCK_LOG_ERROR(
-                BethesdaBody,
-                "Rejected body destruction through mismatched world: bodyId={} callerBhk={:p} createdBhk={:p} createdHknp={:p} instanceHknp={:p}",
-                _bodyId.value,
-                bhkWorld,
-                _createdBhkWorld,
-                static_cast<void*>(_createdHknpWorld),
+            ROCK_LOG_ERROR(BethesdaBody,
+                "Rejected body destruction through mismatched world: bodyId={} callerBhk={:p} createdBhk={:p} "
+                "createdHknp={:p} instanceHknp={:p}",
+                _bodyId.value, bhkWorld, _createdBhkWorld, static_cast<void*>(_createdHknpWorld),
                 static_cast<void*>(nativeWorldFromPhysicsSystem(_physicsSystem)));
             return;
         }
         if (bhkWorld && physicsSystemInstance) {
-            static REL::Relocation<RemovePhysicsSystem_t> removePhysicsSystem{ REL::Offset(offsets::kFunc_BhkWorld_RemovePhysicsSystemInstance) };
+            static REL::Relocation<RemovePhysicsSystem_t> removePhysicsSystem{ REL::Offset(
+                offsets::kFunc_BhkWorld_RemovePhysicsSystemInstance) };
             removePhysicsSystem(bhkWorld, physicsSystemInstance);
             ROCK_LOG_DEBUG(BethesdaBody, "Removed native physics system instance for body {}", _bodyId.value);
         } else if (_physicsSystem) {
-            ROCK_LOG_WARN(
-                BethesdaBody,
-                "Destroying body {} without native physics-system removal: bhkWorld={:p} instance={:p}",
-                _bodyId.value,
-                bhkWorld,
-                physicsSystemInstance);
+            ROCK_LOG_WARN(BethesdaBody,
+                "Destroying body {} without native physics-system removal: bhkWorld={:p} instance={:p}", _bodyId.value,
+                bhkWorld, physicsSystemInstance);
         }
 
         destroyNiNode();
@@ -771,31 +750,27 @@ namespace rock
             return false;
         }
 
-        ROCK_LOG_DEBUG(BethesdaBody, "Retiring body from world: bodyId={} collObj={:p}", _bodyId.value, _collisionObject);
+        ROCK_LOG_DEBUG(BethesdaBody, "Retiring body from world: bodyId={} collObj={:p}", _bodyId.value,
+            _collisionObject);
 
         auto* physicsSystemInstance = nativePhysicsSystemInstance(_physicsSystem);
         if (bhkWorld && physicsSystemInstance && !matchesCreationWorld(_createdHknpWorld, bhkWorld)) {
-            ROCK_LOG_ERROR(
-                BethesdaBody,
-                "Rejected body retirement through mismatched world: bodyId={} callerBhk={:p} createdBhk={:p} createdHknp={:p} instanceHknp={:p}",
-                _bodyId.value,
-                bhkWorld,
-                _createdBhkWorld,
-                static_cast<void*>(_createdHknpWorld),
+            ROCK_LOG_ERROR(BethesdaBody,
+                "Rejected body retirement through mismatched world: bodyId={} callerBhk={:p} createdBhk={:p} "
+                "createdHknp={:p} instanceHknp={:p}",
+                _bodyId.value, bhkWorld, _createdBhkWorld, static_cast<void*>(_createdHknpWorld),
                 static_cast<void*>(nativeWorldFromPhysicsSystem(_physicsSystem)));
             return false;
         }
         if (bhkWorld && physicsSystemInstance) {
-            static REL::Relocation<RemovePhysicsSystem_t> removePhysicsSystem{ REL::Offset(offsets::kFunc_BhkWorld_RemovePhysicsSystemInstance) };
+            static REL::Relocation<RemovePhysicsSystem_t> removePhysicsSystem{ REL::Offset(
+                offsets::kFunc_BhkWorld_RemovePhysicsSystemInstance) };
             removePhysicsSystem(bhkWorld, physicsSystemInstance);
             ROCK_LOG_DEBUG(BethesdaBody, "Removed native physics system instance for retired body {}", _bodyId.value);
         } else if (_physicsSystem) {
-            ROCK_LOG_WARN(
-                BethesdaBody,
-                "Retiring body {} without native physics-system removal: bhkWorld={:p} instance={:p}",
-                _bodyId.value,
-                bhkWorld,
-                physicsSystemInstance);
+            ROCK_LOG_WARN(BethesdaBody,
+                "Retiring body {} without native physics-system removal: bhkWorld={:p} instance={:p}", _bodyId.value,
+                bhkWorld, physicsSystemInstance);
         }
 
         outPayload.collisionObject = _collisionObject;
@@ -825,10 +800,7 @@ namespace rock
         {
             std::scoped_lock quarantineLock(s_collisionObjectTombstoneMutex);
             if (s_collisionObjectTombstoneCount >= s_collisionObjectTombstones.size()) {
-                markRetirementQuarantineExhausted(
-                    "collision-object-tombstone",
-                    payload.bodyId,
-                    collisionObject,
+                markRetirementQuarantineExhausted("collision-object-tombstone", payload.bodyId, collisionObject,
                     s_collisionObjectTombstones.size());
                 return false;
             }
@@ -847,44 +819,26 @@ namespace rock
         detachAndReleaseNiNode(collisionObject, niNode);
 
         auto* physicsSystemSlot = reinterpret_cast<void* volatile*>(
-            reinterpret_cast<std::uintptr_t>(collisionObject) +
-            offsets::kCollisionObject_PhysSystemPtr);
-        auto* observedPhysicsSystem =
-            InterlockedCompareExchangePointer(physicsSystemSlot, nullptr, nullptr);
+            reinterpret_cast<std::uintptr_t>(collisionObject) + offsets::kCollisionObject_PhysSystemPtr);
+        auto* observedPhysicsSystem = InterlockedCompareExchangePointer(physicsSystemSlot, nullptr, nullptr);
         auto* observedInstance = nativePhysicsSystemInstance(observedPhysicsSystem);
-        auto* observedInstanceWorld =
-            observedInstance ? nativeWorldFromPhysicsSystem(observedPhysicsSystem) : nullptr;
+        auto* observedInstanceWorld = observedInstance ? nativeWorldFromPhysicsSystem(observedPhysicsSystem) : nullptr;
         const auto systemBodyIndex = *reinterpret_cast<const std::uint32_t*>(
-            reinterpret_cast<std::uintptr_t>(collisionObject) +
-            offsets::kCollisionObject_SystemBodyIndex);
+            reinterpret_cast<std::uintptr_t>(collisionObject) + offsets::kCollisionObject_SystemBodyIndex);
         RE::hknpBodyId mappedBodyId{ kInvalidGeneratedId };
-        const bool mappingReadable =
-            observedPhysicsSystem &&
-            observedInstance &&
-            observedInstanceWorld == payload.retiredHknpWorld &&
-            systemBodyIndex < 4096;
+        const bool mappingReadable = observedPhysicsSystem && observedInstance &&
+            observedInstanceWorld == payload.retiredHknpWorld && systemBodyIndex < 4096;
         if (mappingReadable) {
-            static REL::Relocation<PhysicsSystemGetBodyId_t> getBodyId{
-                REL::Offset(offsets::kFunc_PhysicsSystem_GetBodyId)
-            };
-            getBodyId(
-                observedPhysicsSystem,
-                &mappedBodyId,
-                static_cast<std::int32_t>(systemBodyIndex));
+            static REL::Relocation<PhysicsSystemGetBodyId_t> getBodyId{ REL::Offset(
+                offsets::kFunc_PhysicsSystem_GetBodyId) };
+            getBodyId(observedPhysicsSystem, &mappedBodyId, static_cast<std::int32_t>(systemBodyIndex));
         }
 
-        ROCK_LOG_SAMPLE_DEBUG(
-            BethesdaBody,
-            1000,
-            "Retired wrapper quarantine witness body={} mappedBody={} mappingReadable={} systemBodyIndex={} collisionObject={:p} physicsSystem={:p} instance={:p} retiredWorld={:p} instanceWorld={:p}",
-            payload.bodyId,
-            mappedBodyId.value,
-            mappingReadable ? "yes" : "no",
-            systemBodyIndex,
-            collisionObject,
-            observedPhysicsSystem,
-            observedInstance,
-            static_cast<void*>(payload.retiredHknpWorld),
+        ROCK_LOG_SAMPLE_DEBUG(BethesdaBody, 1000,
+            "Retired wrapper quarantine witness body={} mappedBody={} mappingReadable={} systemBodyIndex={} "
+            "collisionObject={:p} physicsSystem={:p} instance={:p} retiredWorld={:p} instanceWorld={:p}",
+            payload.bodyId, mappedBodyId.value, mappingReadable ? "yes" : "no", systemBodyIndex, collisionObject,
+            observedPhysicsSystem, observedInstance, static_cast<void*>(payload.retiredHknpWorld),
             static_cast<void*>(observedInstanceWorld));
 
         auto* physicsSystem = InterlockedExchangePointer(physicsSystemSlot, nullptr);
@@ -896,30 +850,21 @@ namespace rock
         const auto bodyId = payload.bodyId;
         payload = {};
 
-        ROCK_LOG_SAMPLE_DEBUG(
-            BethesdaBody,
-            1000,
+        ROCK_LOG_SAMPLE_DEBUG(BethesdaBody, 1000,
             "Retired body {} collision object neutralized and quarantined for process lifetime activeQuarantined={}",
-            bodyId,
-            tombstoneIndex + 1);
+            bodyId, tombstoneIndex + 1);
         return true;
     }
 
-    void BethesdaPhysicsBody::retainRetiredPayloadForProcessLifetime(
-        RetiredBethesdaPhysicsBodyPayload& payload,
-        const char* owner,
-        std::size_t capacity)
+    void BethesdaPhysicsBody::retainRetiredPayloadForProcessLifetime(RetiredBethesdaPhysicsBodyPayload& payload,
+        const char* owner, std::size_t capacity)
     {
         if (!payload.occupied()) {
             payload = {};
             return;
         }
 
-        markRetirementQuarantineExhausted(
-            owner,
-            payload.bodyId,
-            payload.collisionObject,
-            capacity);
+        markRetirementQuarantineExhausted(owner, payload.bodyId, payload.collisionObject, capacity);
         // Ownership is intentionally transferred to process lifetime without a
         // release. Creation is now disabled, so only the finite set of bodies
         // already live when capacity failed can enter this emergency path.
@@ -939,12 +884,9 @@ namespace rock
                 retired.payload = payload;
                 retired.remainingPhysicsSteps = kRetiredDeferredBodyGraceSteps;
                 ++s_retiredDeferredBodyCount;
-                ROCK_LOG_SAMPLE_DEBUG(BethesdaBody,
-                    1000,
-                    "Body {} collision object retired for {} physics steps activeRetired={}",
-                    payload.bodyId,
-                    kRetiredDeferredBodyGraceSteps,
-                    s_retiredDeferredBodyCount);
+                ROCK_LOG_SAMPLE_DEBUG(BethesdaBody, 1000,
+                    "Body {} collision object retired for {} physics steps activeRetired={}", payload.bodyId,
+                    kRetiredDeferredBodyGraceSteps, s_retiredDeferredBodyCount);
                 return;
             }
         }
@@ -952,14 +894,10 @@ namespace rock
         // Queue exhaustion is a terminal safety boundary for generated-body
         // creation. Preserve this already-retired payload for process lifetime;
         // the remaining live set is finite once new creates are rejected.
-        retainRetiredPayloadForProcessLifetime(
-            payload,
-            "deferred-body-queue",
-            s_retiredDeferredBodies.size());
+        retainRetiredPayloadForProcessLifetime(payload, "deferred-body-queue", s_retiredDeferredBodies.size());
     }
 
-    void BethesdaPhysicsBody::serviceRetiredDeferredPayloads(
-        RE::hknpWorld* currentWorld,
+    void BethesdaPhysicsBody::serviceRetiredDeferredPayloads(RE::hknpWorld* currentWorld,
         std::uint32_t completedPhysicsSteps)
     {
         if (!currentWorld || completedPhysicsSteps == 0) {
@@ -976,16 +914,16 @@ namespace rock
             }
             if (retired.payload.retiredHknpWorld != currentWorld) {
                 retired.processLifetimeHold = true;
-                ROCK_LOG_SAMPLE_WARN(
-                    BethesdaBody,
-                    1000,
-                    "Retired body {} belongs to a departed Havok world; retaining its complete native payload for process lifetime",
+                ROCK_LOG_SAMPLE_WARN(BethesdaBody, 1000,
+                    "Retired body {} belongs to a departed Havok world; retaining its complete native payload for "
+                    "process lifetime",
                     retired.payload.bodyId);
                 continue;
             }
 
-            retired.remainingPhysicsSteps =
-                retired.remainingPhysicsSteps > completedPhysicsSteps ? retired.remainingPhysicsSteps - completedPhysicsSteps : 0;
+            retired.remainingPhysicsSteps = retired.remainingPhysicsSteps > completedPhysicsSteps
+                ? retired.remainingPhysicsSteps - completedPhysicsSteps
+                : 0;
             if (retired.remainingPhysicsSteps != 0) {
                 continue;
             }
@@ -999,10 +937,8 @@ namespace rock
             if (s_retiredDeferredBodyCount > 0) {
                 --s_retiredDeferredBodyCount;
             }
-            ROCK_LOG_SAMPLE_DEBUG(BethesdaBody,
-                1000,
-                "Retired deferred body {} transferred to collision-object quarantine activeRetired={}",
-                bodyId,
+            ROCK_LOG_SAMPLE_DEBUG(BethesdaBody, 1000,
+                "Retired deferred body {} transferred to collision-object quarantine activeRetired={}", bodyId,
                 s_retiredDeferredBodyCount);
         }
     }
@@ -1021,9 +957,7 @@ namespace rock
 
     bool BethesdaPhysicsBody::matchesCreationWorld(RE::hknpWorld* world, void* bhkWorld) const
     {
-        if (!world || !bhkWorld ||
-            world != _createdHknpWorld ||
-            bhkWorld != _createdBhkWorld) {
+        if (!world || !bhkWorld || world != _createdHknpWorld || bhkWorld != _createdBhkWorld) {
             return false;
         }
 
@@ -1032,8 +966,7 @@ namespace rock
             return false;
         }
 
-        auto* wrapperWorld =
-            havok_runtime::getHknpWorldFromBhk(reinterpret_cast<RE::bhkWorld*>(bhkWorld));
+        auto* wrapperWorld = havok_runtime::getHknpWorldFromBhk(reinterpret_cast<RE::bhkWorld*>(bhkWorld));
         return wrapperWorld == world;
     }
 
@@ -1084,14 +1017,16 @@ namespace rock
         }
 
         {
-            auto* collObjOwner = *reinterpret_cast<void**>(reinterpret_cast<char*>(_collisionObject) + offsets::kCollisionObject_OwnerNode);
-            auto* nodeCollObj = *reinterpret_cast<void**>(reinterpret_cast<char*>(_niNode) + offsets::kNiAVObject_CollisionObject);
+            auto* collObjOwner = *reinterpret_cast<void**>(
+                reinterpret_cast<char*>(_collisionObject) + offsets::kCollisionObject_OwnerNode);
+            auto* nodeCollObj =
+                *reinterpret_cast<void**>(reinterpret_cast<char*>(_niNode) + offsets::kNiAVObject_CollisionObject);
 
             bool ownerOk = (collObjOwner == _niNode);
             bool collOk = (nodeCollObj == _collisionObject);
 
-            ROCK_LOG_DEBUG(BethesdaBody, "NiNode '{}' created: node={:p} collObjOwner={} nodeCollObj={}", name ? name : "(null)", _niNode, ownerOk ? "VERIFIED" : "MISMATCH",
-                collOk ? "VERIFIED" : "MISMATCH");
+            ROCK_LOG_DEBUG(BethesdaBody, "NiNode '{}' created: node={:p} collObjOwner={} nodeCollObj={}",
+                name ? name : "(null)", _niNode, ownerOk ? "VERIFIED" : "MISMATCH", collOk ? "VERIFIED" : "MISMATCH");
         }
 
         return true;
@@ -1177,8 +1112,7 @@ namespace rock
         // edit therefore needs the same explicit cache rebuild used by the
         // native player pair filter; do not toggle body flags to force it.
         using RebuildBodyCaches = void (*)(RE::hknpWorld*, std::uint32_t);
-        static REL::Relocation<RebuildBodyCaches> rebuild{
-            REL::Offset(offsets::kFunc_RebuildBodyCollisionCaches) };
+        static REL::Relocation<RebuildBodyCaches> rebuild{ REL::Offset(offsets::kFunc_RebuildBodyCollisionCaches) };
         rebuild(world, _bodyId.value);
         return true;
     }

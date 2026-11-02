@@ -45,10 +45,7 @@ namespace rock::havok_timing_fix_policy
         return std::clamp(value, kMinPhysicsFrameRateFloor, kMinPhysicsFrameRateCeiling);
     }
 
-    inline int sanitizeMaxSubsteps(int value)
-    {
-        return std::clamp(value, 1, kEngineMaxSubsteps);
-    }
+    inline int sanitizeMaxSubsteps(int value) { return std::clamp(value, 1, kEngineMaxSubsteps); }
 
     inline TimingFixDecision evaluateTimingFix(const TimingFixInput& input)
     {
@@ -89,9 +86,10 @@ namespace rock::havok_timing_fix_policy
         }
 
         constexpr float kSubstepCountEpsilon = 1.0e-4f;
-        const float rawSubstepCount = std::floor((input.accumulatedDeltaSeconds / substepDeltaSeconds) + kSubstepCountEpsilon);
-        const auto substepCount = static_cast<std::uint32_t>(
-            std::clamp(rawSubstepCount, 1.0f, static_cast<float>(maxSubsteps)));
+        const float rawSubstepCount =
+            std::floor((input.accumulatedDeltaSeconds / substepDeltaSeconds) + kSubstepCountEpsilon);
+        const auto substepCount =
+            static_cast<std::uint32_t>(std::clamp(rawSubstepCount, 1.0f, static_cast<float>(maxSubsteps)));
 
         return TimingFixDecision{
             .valid = true,

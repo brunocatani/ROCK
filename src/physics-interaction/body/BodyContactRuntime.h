@@ -1,7 +1,7 @@
 #pragma once
 
-#include "physics-interaction/collision/ContactPipelinePolicy.h"
 #include "physics-interaction/body/BodyColliderDescriptors.h"
+#include "physics-interaction/collision/ContactPipelinePolicy.h"
 
 #include "RE/NetImmerse/NiPoint.h"
 
@@ -56,8 +56,7 @@ namespace rock::body_contact_runtime
         void record(const BodyContactRecord& record)
         {
             if (!contact_pipeline_policy::isValidBodyId(record.bodyId) ||
-                !contact_pipeline_policy::isValidBodyId(record.targetBodyId) ||
-                record.bodyId == record.targetBodyId) {
+                !contact_pipeline_policy::isValidBodyId(record.targetBodyId) || record.bodyId == record.targetBodyId) {
                 return;
             }
 

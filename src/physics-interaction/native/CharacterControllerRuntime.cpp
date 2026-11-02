@@ -46,9 +46,7 @@ namespace rock::character_controller_runtime
             Complete,
         };
 
-        std::atomic<ControllerResolveStage> s_lastControllerResolveStage{
-            ControllerResolveStage::Complete
-        };
+        std::atomic<ControllerResolveStage> s_lastControllerResolveStage{ ControllerResolveStage::Complete };
 
         enum class ControllerDispatchFailure : std::uint8_t
         {
@@ -62,9 +60,7 @@ namespace rock::character_controller_runtime
 
         struct ControllerDispatchDiagnostic
         {
-            ControllerDispatchFailure failure{
-                ControllerDispatchFailure::None
-            };
+            ControllerDispatchFailure failure{ ControllerDispatchFailure::None };
             std::uintptr_t moduleBase{ 0 };
             std::uintptr_t actualVtable{ 0 };
             std::uintptr_t expectedVtable{ 0 };
@@ -74,8 +70,7 @@ namespace rock::character_controller_runtime
 
         std::atomic<std::uint64_t> s_lastDispatchFailureSignature{ 0 };
 
-        [[nodiscard]] const char* resolveStageName(
-            const ControllerResolveStage stage) noexcept
+        [[nodiscard]] const char* resolveStageName(const ControllerResolveStage stage) noexcept
         {
             switch (stage) {
             case ControllerResolveStage::None:
@@ -98,28 +93,22 @@ namespace rock::character_controller_runtime
             return "unknown";
         }
 
-        void observeResolveStage(
-            const ControllerResolveStage stage) noexcept
+        void observeResolveStage(const ControllerResolveStage stage) noexcept
         {
-            const auto previous = s_lastControllerResolveStage.exchange(
-                stage,
-                std::memory_order_acq_rel);
+            const auto previous = s_lastControllerResolveStage.exchange(stage, std::memory_order_acq_rel);
             if (stage == previous) {
                 return;
             }
             if (stage == ControllerResolveStage::Complete) {
-                ROCK_LOG_INFO(PlayerController,
-                    "FO4VR player-controller chain recovered after deepest stage '{}'.",
+                ROCK_LOG_INFO(PlayerController, "FO4VR player-controller chain recovered after deepest stage '{}'.",
                     resolveStageName(previous));
                 return;
             }
             ROCK_LOG_WARN(PlayerController,
-                "FO4VR player-controller chain failed closed at deepest verified stage '{}'.",
-                resolveStageName(stage));
+                "FO4VR player-controller chain failed closed at deepest verified stage '{}'.", resolveStageName(stage));
         }
 
-        [[nodiscard]] const char* dispatchFailureName(
-            const ControllerDispatchFailure failure) noexcept
+        [[nodiscard]] const char* dispatchFailureName(const ControllerDispatchFailure failure) noexcept
         {
             switch (failure) {
             case ControllerDispatchFailure::None:
@@ -138,36 +127,27 @@ namespace rock::character_controller_runtime
             return "unknown";
         }
 
-        void observeDispatchFailure(
-            const RE::bhkCharacterController* controller,
+        void observeDispatchFailure(const RE::bhkCharacterController* controller,
             const ControllerDispatchDiagnostic& diagnostic) noexcept
         {
-            std::uint64_t signature =
-                static_cast<std::uint64_t>(diagnostic.failure);
+            std::uint64_t signature = static_cast<std::uint64_t>(diagnostic.failure);
             signature ^= diagnostic.actualVtable;
             signature ^= diagnostic.actualFunction << 1;
             if (signature == 0) {
                 signature = 1;
             }
-            if (s_lastDispatchFailureSignature.exchange(
-                    signature,
-                    std::memory_order_acq_rel) == signature) {
+            if (s_lastDispatchFailureSignature.exchange(signature, std::memory_order_acq_rel) == signature) {
                 return;
             }
             ROCK_LOG_WARN(PlayerController,
-                "Controller dispatch rejected: reason={} controller=0x{:X} moduleBase=0x{:X} vtable=0x{:X} expectedVtable=0x{:X} slot=0x{:X} function=0x{:X} expectedFunction=0x{:X}.",
-                dispatchFailureName(diagnostic.failure),
-                reinterpret_cast<std::uintptr_t>(controller),
-                diagnostic.moduleBase,
-                diagnostic.actualVtable,
-                diagnostic.expectedVtable,
-                kPenetrationVtableSlotOffset,
-                diagnostic.actualFunction,
-                diagnostic.expectedFunction);
+                "Controller dispatch rejected: reason={} controller=0x{:X} moduleBase=0x{:X} vtable=0x{:X} "
+                "expectedVtable=0x{:X} slot=0x{:X} function=0x{:X} expectedFunction=0x{:X}.",
+                dispatchFailureName(diagnostic.failure), reinterpret_cast<std::uintptr_t>(controller),
+                diagnostic.moduleBase, diagnostic.actualVtable, diagnostic.expectedVtable, kPenetrationVtableSlotOffset,
+                diagnostic.actualFunction, diagnostic.expectedFunction);
         }
 
-        [[nodiscard]] bool plausiblePointerWitness(
-            const void* pointer) noexcept
+        [[nodiscard]] bool plausiblePointerWitness(const void* pointer) noexcept
         {
             const auto address = reinterpret_cast<std::uintptr_t>(pointer);
             return address >= 0x1'0000 && (address & 0x7u) == 0;
@@ -177,9 +157,7 @@ namespace rock::character_controller_runtime
         {
             std::uintptr_t vtableRva{};
             std::uintptr_t penetrationFunctionRva{};
-            PlayerControllerImplementation implementation{
-                PlayerControllerImplementation::Unknown
-            };
+            PlayerControllerImplementation implementation{ PlayerControllerImplementation::Unknown };
             std::array<std::uint8_t, 11> penetrationPrefix{};
         };
 
@@ -204,22 +182,17 @@ namespace rock::character_controller_runtime
 
         [[nodiscard]] bool finitePoint(const RE::NiPoint3& point) noexcept
         {
-            return std::isfinite(point.x) && std::isfinite(point.y) &&
-                   std::isfinite(point.z);
+            return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
         }
 
-        [[nodiscard]] bool validCoordinate(
-            const RE::NiPoint3& point) noexcept
+        [[nodiscard]] bool validCoordinate(const RE::NiPoint3& point) noexcept
         {
-            return finitePoint(point) &&
-                   std::abs(point.x) < kMaximumCoordinateGame &&
-                   std::abs(point.y) < kMaximumCoordinateGame &&
-                   std::abs(point.z) < kMaximumCoordinateGame;
+            return finitePoint(point) && std::abs(point.x) < kMaximumCoordinateGame &&
+                std::abs(point.y) < kMaximumCoordinateGame && std::abs(point.z) < kMaximumCoordinateGame;
         }
 
-        [[nodiscard]] RE::bhkCharacterController*
-            tryResolvePlayerControllerRaw(
-                ControllerResolveStage* outStage = nullptr) noexcept
+        [[nodiscard]] RE::bhkCharacterController* tryResolvePlayerControllerRaw(
+            ControllerResolveStage* outStage = nullptr) noexcept
         {
             RE::bhkCharacterController* controller = nullptr;
             ControllerResolveStage stage = ControllerResolveStage::None;
@@ -227,26 +200,17 @@ namespace rock::character_controller_runtime
                 auto* player = RE::PlayerCharacter::GetSingleton();
                 if (plausiblePointerWitness(player)) {
                     stage = ControllerResolveStage::Player;
-                    const auto* playerBytes =
-                        reinterpret_cast<const std::uint8_t*>(player);
-                    const void* currentProcess =
-                        *reinterpret_cast<void* const*>(playerBytes + 0x300);
+                    const auto* playerBytes = reinterpret_cast<const std::uint8_t*>(player);
+                    const void* currentProcess = *reinterpret_cast<void* const*>(playerBytes + 0x300);
                     if (plausiblePointerWitness(currentProcess)) {
                         stage = ControllerResolveStage::CurrentProcess;
-                        const auto* processBytes =
-                            reinterpret_cast<const std::uint8_t*>(
-                                currentProcess);
-                        const void* middleHigh =
-                            *reinterpret_cast<void* const*>(
-                                processBytes + 0x08);
+                        const auto* processBytes = reinterpret_cast<const std::uint8_t*>(currentProcess);
+                        const void* middleHigh = *reinterpret_cast<void* const*>(processBytes + 0x08);
                         if (plausiblePointerWitness(middleHigh)) {
                             stage = ControllerResolveStage::MiddleHigh;
-                            const auto* middleHighBytes =
-                                reinterpret_cast<const std::uint8_t*>(
-                                    middleHigh);
-                            auto* resolved = *reinterpret_cast<
-                                RE::bhkCharacterController* const*>(
-                                    middleHighBytes + 0x3E8);
+                            const auto* middleHighBytes = reinterpret_cast<const std::uint8_t*>(middleHigh);
+                            auto* resolved =
+                                *reinterpret_cast<RE::bhkCharacterController* const*>(middleHighBytes + 0x3E8);
                             if (plausiblePointerWitness(resolved)) {
                                 controller = resolved;
                                 stage = ControllerResolveStage::Controller;
@@ -263,17 +227,13 @@ namespace rock::character_controller_runtime
             return controller;
         }
 
-        [[nodiscard]] const ControllerDispatchSpec* resolveDispatch(
-            RE::bhkCharacterController* controller,
-            std::uintptr_t& outPenetrationFunction,
-            ControllerDispatchDiagnostic* outDiagnostic = nullptr) noexcept
+        [[nodiscard]] const ControllerDispatchSpec* resolveDispatch(RE::bhkCharacterController* controller,
+            std::uintptr_t& outPenetrationFunction, ControllerDispatchDiagnostic* outDiagnostic = nullptr) noexcept
         {
             outPenetrationFunction = 0;
             ControllerDispatchDiagnostic diagnostic{};
-            if (!controller || !REL::Module::IsVR() ||
-                REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) {
-                diagnostic.failure =
-                    ControllerDispatchFailure::UnsupportedRuntime;
+            if (!controller || !REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) {
+                diagnostic.failure = ControllerDispatchFailure::UnsupportedRuntime;
                 if (outDiagnostic) {
                     *outDiagnostic = diagnostic;
                 }
@@ -284,32 +244,24 @@ namespace rock::character_controller_runtime
             diagnostic.moduleBase = moduleBase;
             const ControllerDispatchSpec* matched = nullptr;
             __try {
-                const auto vtable = *reinterpret_cast<const std::uintptr_t*>(
-                    controller);
+                const auto vtable = *reinterpret_cast<const std::uintptr_t*>(controller);
                 diagnostic.actualVtable = vtable;
                 for (const auto& spec : kControllerDispatchSpecs) {
                     if (vtable != moduleBase + spec.vtableRva) {
                         continue;
                     }
-                    diagnostic.expectedVtable =
-                        moduleBase + spec.vtableRva;
+                    diagnostic.expectedVtable = moduleBase + spec.vtableRva;
                     const auto function =
-                        *reinterpret_cast<const std::uintptr_t*>(
-                            vtable + kPenetrationVtableSlotOffset);
+                        *reinterpret_cast<const std::uintptr_t*>(vtable + kPenetrationVtableSlotOffset);
                     diagnostic.actualFunction = function;
-                    diagnostic.expectedFunction =
-                        moduleBase + spec.penetrationFunctionRva;
+                    diagnostic.expectedFunction = moduleBase + spec.penetrationFunctionRva;
                     if (function != diagnostic.expectedFunction) {
-                        diagnostic.failure =
-                            ControllerDispatchFailure::SlotMismatch;
+                        diagnostic.failure = ControllerDispatchFailure::SlotMismatch;
                         break;
                     }
-                    if (std::memcmp(
-                            reinterpret_cast<const void*>(function),
-                            spec.penetrationPrefix.data(),
+                    if (std::memcmp(reinterpret_cast<const void*>(function), spec.penetrationPrefix.data(),
                             spec.penetrationPrefix.size()) != 0) {
-                        diagnostic.failure =
-                            ControllerDispatchFailure::PrefixMismatch;
+                        diagnostic.failure = ControllerDispatchFailure::PrefixMismatch;
                         break;
                     }
                     matched = &spec;
@@ -317,10 +269,8 @@ namespace rock::character_controller_runtime
                     diagnostic.failure = ControllerDispatchFailure::None;
                     break;
                 }
-                if (!matched &&
-                    diagnostic.failure == ControllerDispatchFailure::None) {
-                    diagnostic.failure =
-                        ControllerDispatchFailure::UnknownVtable;
+                if (!matched && diagnostic.failure == ControllerDispatchFailure::None) {
+                    diagnostic.failure = ControllerDispatchFailure::UnknownVtable;
                 }
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 matched = nullptr;
@@ -333,35 +283,23 @@ namespace rock::character_controller_runtime
             return matched;
         }
 
-        [[nodiscard]] bool validateJumpFunction(
-            std::uintptr_t& outFunction) noexcept
+        [[nodiscard]] bool validateJumpFunction(std::uintptr_t& outFunction) noexcept
         {
             outFunction = 0;
-            if (!REL::Module::IsVR() ||
-                REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) {
+            if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) {
                 return false;
             }
-            const auto function =
-                REL::Module::get().base() + kPlayerJumpFunctionRva;
+            const auto function = REL::Module::get().base() + kPlayerJumpFunctionRva;
             bool valid = false;
             __try {
-                const auto* bytes =
-                    reinterpret_cast<const std::uint8_t*>(function);
-                valid =
-                    bytes[0] == 0xF3 && bytes[1] == 0x0F &&
-                    bytes[2] == 0x10 && bytes[3] == 0x05 &&
-                    bytes[8] == 0xC7 && bytes[9] == 0x81 &&
-                    bytes[10] == 0x04 && bytes[11] == 0x03 &&
-                    bytes[12] == 0x00 && bytes[13] == 0x00 &&
-                    bytes[14] == 0x01 && bytes[15] == 0x00 &&
-                    bytes[16] == 0x00 && bytes[17] == 0x00 &&
-                    bytes[18] == 0xF3 && bytes[19] == 0x0F &&
-                    bytes[20] == 0x59 && bytes[21] == 0xC1 &&
-                    bytes[22] == 0xF3 && bytes[23] == 0x0F &&
-                    bytes[24] == 0x11 && bytes[25] == 0x81 &&
-                    bytes[26] == 0x24 && bytes[27] == 0x03 &&
-                    bytes[28] == 0x00 && bytes[29] == 0x00 &&
-                    bytes[30] == 0xC3;
+                const auto* bytes = reinterpret_cast<const std::uint8_t*>(function);
+                valid = bytes[0] == 0xF3 && bytes[1] == 0x0F && bytes[2] == 0x10 && bytes[3] == 0x05 &&
+                    bytes[8] == 0xC7 && bytes[9] == 0x81 && bytes[10] == 0x04 && bytes[11] == 0x03 &&
+                    bytes[12] == 0x00 && bytes[13] == 0x00 && bytes[14] == 0x01 && bytes[15] == 0x00 &&
+                    bytes[16] == 0x00 && bytes[17] == 0x00 && bytes[18] == 0xF3 && bytes[19] == 0x0F &&
+                    bytes[20] == 0x59 && bytes[21] == 0xC1 && bytes[22] == 0xF3 && bytes[23] == 0x0F &&
+                    bytes[24] == 0x11 && bytes[25] == 0x81 && bytes[26] == 0x24 && bytes[27] == 0x03 &&
+                    bytes[28] == 0x00 && bytes[29] == 0x00 && bytes[30] == 0xC3;
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 valid = false;
             }
@@ -387,10 +325,7 @@ namespace rock::character_controller_runtime
         return controller;
     }
 
-    RE::bhkCharacterController* tryGetPlayerCharacterController() noexcept
-    {
-        return tryResolvePlayerControllerRaw();
-    }
+    RE::bhkCharacterController* tryGetPlayerCharacterController() noexcept { return tryResolvePlayerControllerRaw(); }
 
     bool tryGetPlayerControllerState(PlayerControllerState& outState) noexcept
     {
@@ -408,10 +343,7 @@ namespace rock::character_controller_runtime
         }
         std::uintptr_t penetrationFunction = 0;
         ControllerDispatchDiagnostic dispatchDiagnostic{};
-        const auto* dispatch = resolveDispatch(
-            controller,
-            penetrationFunction,
-            &dispatchDiagnostic);
+        const auto* dispatch = resolveDispatch(controller, penetrationFunction, &dispatchDiagnostic);
         if (!dispatch) {
             observeDispatchFailure(controller, dispatchDiagnostic);
             observeResolveStage(ControllerResolveStage::Dispatch);
@@ -421,21 +353,15 @@ namespace rock::character_controller_runtime
 
         bool read = false;
         __try {
-            const auto* bytes = reinterpret_cast<const std::uint8_t*>(
-                controller);
-            const void* implementation =
-                *reinterpret_cast<void* const*>(
-                    bytes + kCharacterImplementationOffset);
+            const auto* bytes = reinterpret_cast<const std::uint8_t*>(controller);
+            const void* implementation = *reinterpret_cast<void* const*>(bytes + kCharacterImplementationOffset);
             if (!plausiblePointerWitness(implementation)) {
-                observeResolveStage(
-                    ControllerResolveStage::CharacterImplementation);
+                observeResolveStage(ControllerResolveStage::CharacterImplementation);
                 return false;
             }
-            const auto* implementationBytes =
-                reinterpret_cast<const std::uint8_t*>(implementation);
-            const auto positionHavok = *reinterpret_cast<const RE::NiPoint3*>(
-                implementationBytes +
-                kCharacterImplementationPositionOffset);
+            const auto* implementationBytes = reinterpret_cast<const std::uint8_t*>(implementation);
+            const auto positionHavok =
+                *reinterpret_cast<const RE::NiPoint3*>(implementationBytes + kCharacterImplementationPositionOffset);
             outState.positionGame = RE::NiPoint3{
                 positionHavok.x * havokToGame,
                 positionHavok.y * havokToGame,
@@ -443,44 +369,28 @@ namespace rock::character_controller_runtime
             };
             outState.positionValid = validCoordinate(outState.positionGame);
 
-            outState.velocityGame = *reinterpret_cast<const RE::NiPoint3*>(
-                bytes + kCachedVelocityOffset);
+            outState.velocityGame = *reinterpret_cast<const RE::NiPoint3*>(bytes + kCachedVelocityOffset);
             outState.velocityValid = finitePoint(outState.velocityGame);
 
-            const auto supportValue =
-                *(bytes + kSurfaceSupportedStateOffset);
-            if (supportValue <= static_cast<std::uint8_t>(
-                    PlayerSupportState::Supported)) {
-                outState.supportState =
-                    static_cast<PlayerSupportState>(supportValue);
+            const auto supportValue = *(bytes + kSurfaceSupportedStateOffset);
+            if (supportValue <= static_cast<std::uint8_t>(PlayerSupportState::Supported)) {
+                outState.supportState = static_cast<PlayerSupportState>(supportValue);
             }
-            outState.supportNormal = *reinterpret_cast<const RE::NiPoint3*>(
-                bytes + kSurfaceNormalOffset);
-            const float supportLengthSquared =
-                outState.supportNormal.x * outState.supportNormal.x +
+            outState.supportNormal = *reinterpret_cast<const RE::NiPoint3*>(bytes + kSurfaceNormalOffset);
+            const float supportLengthSquared = outState.supportNormal.x * outState.supportNormal.x +
                 outState.supportNormal.y * outState.supportNormal.y +
                 outState.supportNormal.z * outState.supportNormal.z;
-            outState.supportNormalValid =
-                finitePoint(outState.supportNormal) &&
-                std::isfinite(supportLengthSquared) &&
-                supportLengthSquared >= 0.25f &&
-                supportLengthSquared <= 2.25f;
+            outState.supportNormalValid = finitePoint(outState.supportNormal) && std::isfinite(supportLengthSquared) &&
+                supportLengthSquared >= 0.25f && supportLengthSquared <= 2.25f;
 
-            const float radiusHavok =
-                *reinterpret_cast<const float*>(bytes + kRadiusOffset);
-            const float heightHavok =
-                *reinterpret_cast<const float*>(bytes + kHeightOffset);
+            const float radiusHavok = *reinterpret_cast<const float*>(bytes + kRadiusOffset);
+            const float heightHavok = *reinterpret_cast<const float*>(bytes + kHeightOffset);
             outState.radiusGame = radiusHavok * havokToGame;
             outState.heightGame = heightHavok * havokToGame;
-            outState.shapeValid =
-                std::isfinite(outState.radiusGame) &&
-                std::isfinite(outState.heightGame) &&
-                outState.radiusGame > 0.0f &&
-                outState.radiusGame <= 256.0f &&
-                outState.heightGame > 0.0f &&
+            outState.shapeValid = std::isfinite(outState.radiusGame) && std::isfinite(outState.heightGame) &&
+                outState.radiusGame > 0.0f && outState.radiusGame <= 256.0f && outState.heightGame > 0.0f &&
                 outState.heightGame <= 512.0f;
-            outState.controllerIdentity =
-                reinterpret_cast<std::uintptr_t>(controller);
+            outState.controllerIdentity = reinterpret_cast<std::uintptr_t>(controller);
             outState.implementation = dispatch->implementation;
             read = outState.positionValid && outState.velocityValid;
         } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -498,8 +408,7 @@ namespace rock::character_controller_runtime
 
     bool requestPlayerJump(const float heightGameUnits) noexcept
     {
-        if (!std::isfinite(heightGameUnits) ||
-            heightGameUnits <= 0.0f || heightGameUnits > 256.0f) {
+        if (!std::isfinite(heightGameUnits) || heightGameUnits <= 0.0f || heightGameUnits > 256.0f) {
             return false;
         }
         auto* controller = tryResolvePlayerControllerRaw();
@@ -514,12 +423,8 @@ namespace rock::character_controller_runtime
 
         bool requested = false;
         __try {
-            using JumpFunction = void (*)(
-                RE::bhkCharacterController*,
-                float);
-            reinterpret_cast<JumpFunction>(jumpFunction)(
-                controller,
-                heightGameUnits);
+            using JumpFunction = void (*)(RE::bhkCharacterController*, float);
+            reinterpret_cast<JumpFunction>(jumpFunction)(controller, heightGameUnits);
             requested = true;
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             requested = false;
@@ -537,16 +442,20 @@ namespace rock::character_controller_runtime
             if (player) {
                 // Verified FO4VR offsets only -- do not substitute CommonLibF4VR struct members here.
                 const auto* playerBytes = reinterpret_cast<const std::uint8_t*>(player);
-                const void* currentProcess = *reinterpret_cast<void* const*>(playerBytes + 0x300);  // Actor::currentProcess
+                const void* currentProcess =
+                    *reinterpret_cast<void* const*>(playerBytes + 0x300); // Actor::currentProcess
                 if (currentProcess) {
                     const auto* processBytes = reinterpret_cast<const std::uint8_t*>(currentProcess);
-                    const void* middleHigh = *reinterpret_cast<void* const*>(processBytes + 0x08);  // AIProcess::middleHigh
+                    const void* middleHigh =
+                        *reinterpret_cast<void* const*>(processBytes + 0x08); // AIProcess::middleHigh
                     if (middleHigh) {
                         const auto* middleHighBytes = reinterpret_cast<const std::uint8_t*>(middleHigh);
-                        const void* charController = *reinterpret_cast<void* const*>(middleHighBytes + 0x3E8);  // VR-verified (CommonLib 0x3E0 is wrong)
+                        const void* charController = *reinterpret_cast<void* const*>(
+                            middleHighBytes + 0x3E8); // VR-verified (CommonLib 0x3E0 is wrong)
                         if (charController) {
                             const auto* ccBytes = reinterpret_cast<const std::uint8_t*>(charController);
-                            const float vx = *reinterpret_cast<const float*>(ccBytes + 0x250);  // cachedLinearVelocity.x (game units)
+                            const float vx =
+                                *reinterpret_cast<const float*>(ccBytes + 0x250); // cachedLinearVelocity.x (game units)
                             const float vy = *reinterpret_cast<const float*>(ccBytes + 0x254);
                             const float vz = *reinterpret_cast<const float*>(ccBytes + 0x258);
                             if (std::isfinite(vx) && std::isfinite(vy) && std::isfinite(vz)) {

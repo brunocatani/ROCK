@@ -1,8 +1,8 @@
 #include "physics-interaction/native/PhysicsShapeCast.h"
 
+#include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokWorldLock.h"
-#include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 
@@ -48,7 +48,8 @@ namespace rock::physics_shape_cast
             RE::hkVector4f center{ 0.0f, 0.0f, 0.0f, 0.0f };
             auto* shape = createSphere(&center, radiusHavok);
             if (!shape) {
-                ROCK_LOG_ERROR(Hand, "Selection shape cast: failed to create hknp sphere shape radiusHk={:.4f}", radiusHavok);
+                ROCK_LOG_ERROR(Hand, "Selection shape cast: failed to create hknp sphere shape radiusHk={:.4f}",
+                    radiusHavok);
                 return nullptr;
             }
 
@@ -91,7 +92,8 @@ namespace rock::physics_shape_cast
         }
     }
 
-    bool castSelectionSphere(RE::hknpWorld* world, const SphereCastInput& input, RE::hknpAllHitsCollector& collector, SphereCastDiagnostics* diagnostics)
+    bool castSelectionSphere(RE::hknpWorld* world, const SphereCastInput& input, RE::hknpAllHitsCollector& collector,
+        SphereCastDiagnostics* diagnostics)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::SelectionCasts);
 
@@ -103,8 +105,8 @@ namespace rock::physics_shape_cast
             diagnostics->collisionFilterInfo = input.collisionFilterInfo;
         }
 
-        if (!world || !physics_query_resources::nativeCleanupReady() ||
-            input.distanceGame <= 0.001f || input.radiusGame <= 0.001f) {
+        if (!world || !physics_query_resources::nativeCleanupReady() || input.distanceGame <= 0.001f ||
+            input.radiusGame <= 0.001f) {
             return false;
         }
 
@@ -142,7 +144,8 @@ namespace rock::physics_shape_cast
             1.0f,
         };
 
-        auto query = physics_shape_cast_math::buildRuntimeShapeCastQuery(filterRef, shape, input.collisionFilterInfo, start, displacement);
+        auto query = physics_shape_cast_math::buildRuntimeShapeCastQuery(filterRef, shape, input.collisionFilterInfo,
+            start, displacement);
         auto transform = identityTransform();
         prepareAllHitsCollector(collector);
         {
@@ -162,7 +165,8 @@ namespace rock::physics_shape_cast
             diagnostics->hitCount = collector.hits._size;
         }
         if (collector.hits._size > 0) {
-            performance_profiler::addEventCount(performance_profiler::Scope::SelectionCasts, static_cast<std::uint64_t>(collector.hits._size));
+            performance_profiler::addEventCount(performance_profiler::Scope::SelectionCasts,
+                static_cast<std::uint64_t>(collector.hits._size));
         }
 
         return true;

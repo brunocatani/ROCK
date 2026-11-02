@@ -43,7 +43,8 @@ namespace rock::shoulder_stash
             Candidate candidate{};
         };
 
-        [[nodiscard]] bool heldBodyContains(const std::vector<std::uint32_t>* heldBodyIds, std::uint32_t bodyId) noexcept
+        [[nodiscard]] bool heldBodyContains(const std::vector<std::uint32_t>* heldBodyIds,
+            std::uint32_t bodyId) noexcept
         {
             if (!heldBodyIds || bodyId == kInvalidBodyId || bodyId == body_contact_runtime::kInvalidBodyContactId) {
                 return false;
@@ -57,7 +58,8 @@ namespace rock::shoulder_stash
             return bodyId != kInvalidBodyId && bodyId != body_contact_runtime::kInvalidBodyContactId;
         }
 
-        [[nodiscard]] bool contactIsRecent(double nowElapsedSeconds, double recordElapsedSeconds, float recentSeconds) noexcept
+        [[nodiscard]] bool contactIsRecent(double nowElapsedSeconds, double recordElapsedSeconds,
+            float recentSeconds) noexcept
         {
             if (!std::isfinite(recentSeconds) || recentSeconds < 0.0f) {
                 return false;
@@ -68,7 +70,8 @@ namespace rock::shoulder_stash
             return (nowElapsedSeconds - recordElapsedSeconds) <= static_cast<double>(recentSeconds);
         }
 
-        [[nodiscard]] float candidateConfidence(float distanceGameUnits, float radiusGameUnits, float thresholdGameUnits, bool sameSide) noexcept
+        [[nodiscard]] float candidateConfidence(float distanceGameUnits, float radiusGameUnits,
+            float thresholdGameUnits, bool sameSide) noexcept
         {
             if (thresholdGameUnits <= 0.0001f) {
                 return 0.0f;
@@ -85,8 +88,7 @@ namespace rock::shoulder_stash
             if (!candidate.valid) {
                 return;
             }
-            if (!best.valid ||
-                candidate.confidence > best.confidence ||
+            if (!best.valid || candidate.confidence > best.confidence ||
                 (candidate.confidence == best.confidence && candidate.distanceGameUnits < best.distanceGameUnits)) {
                 best = candidate;
             }
@@ -94,7 +96,9 @@ namespace rock::shoulder_stash
 
         [[nodiscard]] const Probe& hmdKinematicProbe(const DetectorInput& input) noexcept
         {
-            return input.config.useHmdBackVolume && input.hasHmdProbe && finitePoint(input.hmdProbe.pointGame) ? input.hmdProbe : input.probe;
+            return input.config.useHmdBackVolume && input.hasHmdProbe && finitePoint(input.hmdProbe.pointGame)
+                ? input.hmdProbe
+                : input.probe;
         }
 
         struct SpeedProbePoint
@@ -113,9 +117,7 @@ namespace rock::shoulder_stash
                  * keeps stick movement and crouching out of the measurement.
                  */
                 return {
-                    .pointGame = probePointRelativeToHmdTranslation(
-                        probe.pointGame,
-                        input.hmdPositionWorld),
+                    .pointGame = probePointRelativeToHmdTranslation(probe.pointGame, input.hmdPositionWorld),
                     .hmdRelative = true,
                 };
             }
@@ -123,22 +125,18 @@ namespace rock::shoulder_stash
             return { .pointGame = probe.pointGame };
         }
 
-        [[nodiscard]] bool tryBuildShoulderCapsule(
-            const DetectorInput& input,
-            std::uint32_t shoulderBodyId,
-            body_zone::BodyZoneKind expectedZone,
-            ShoulderCapsule& outCapsule)
+        [[nodiscard]] bool tryBuildShoulderCapsule(const DetectorInput& input, std::uint32_t shoulderBodyId,
+            body_zone::BodyZoneKind expectedZone, ShoulderCapsule& outCapsule)
         {
             outCapsule = {};
-            if (!input.world || !input.bodyColliders || !validStashBodyId(shoulderBodyId) || !isShoulderZone(expectedZone)) {
+            if (!input.world || !input.bodyColliders || !validStashBodyId(shoulderBodyId) ||
+                !isShoulderZone(expectedZone)) {
                 return false;
             }
 
             BodyBoneColliderMetadata metadata{};
-            if (!input.bodyColliders->tryGetBodyMetadataAtomic(shoulderBodyId, metadata) ||
-                !metadata.valid ||
-                metadata.zone != expectedZone ||
-                !isShoulderZone(metadata.zone)) {
+            if (!input.bodyColliders->tryGetBodyMetadataAtomic(shoulderBodyId, metadata) || !metadata.valid ||
+                metadata.zone != expectedZone || !isShoulderZone(metadata.zone)) {
                 return false;
             }
 
@@ -152,7 +150,8 @@ namespace rock::shoulder_stash
             outCapsule.valid = true;
             outCapsule.zone = metadata.zone;
             outCapsule.bodyId = shoulderBodyId;
-            outCapsule.startGame = transform_math::localPointToWorld(bodyWorld, RE::NiPoint3{ -halfLength, 0.0f, 0.0f });
+            outCapsule.startGame =
+                transform_math::localPointToWorld(bodyWorld, RE::NiPoint3{ -halfLength, 0.0f, 0.0f });
             outCapsule.endGame = transform_math::localPointToWorld(bodyWorld, RE::NiPoint3{ halfLength, 0.0f, 0.0f });
             outCapsule.radiusGameUnits = radius;
             return true;
@@ -167,11 +166,8 @@ namespace rock::shoulder_stash
          */
         void captureSustainedContactAnchor(const DetectorInput& input, const Candidate& contact, RuntimeState& runtime)
         {
-            if (!contact.valid ||
-                !input.world ||
-                !validStashBodyId(contact.shoulderBodyId) ||
-                !validStashBodyId(contact.heldBodyId) ||
-                !finitePoint(contact.nearestPointGame)) {
+            if (!contact.valid || !input.world || !validStashBodyId(contact.shoulderBodyId) ||
+                !validStashBodyId(contact.heldBodyId) || !finitePoint(contact.nearestPointGame)) {
                 return;
             }
 
@@ -183,7 +179,8 @@ namespace rock::shoulder_stash
             runtime.sustainedZone = contact.zone;
             runtime.sustainedShoulderBodyId = contact.shoulderBodyId;
             runtime.sustainedHeldBodyId = contact.heldBodyId;
-            runtime.sustainedHeldBodyLocalPointGame = transform_math::worldPointToLocal(heldWorld, contact.nearestPointGame);
+            runtime.sustainedHeldBodyLocalPointGame =
+                transform_math::worldPointToLocal(heldWorld, contact.nearestPointGame);
             runtime.sustainedPointGame = contact.nearestPointGame;
             runtime.sustainedMissSeconds = 0.0f;
             runtime.hasSustainedContactAnchor = true;
@@ -197,7 +194,8 @@ namespace rock::shoulder_stash
             runtime.sustainedMissSeconds +=
                 std::isfinite(input.deltaSeconds) && input.deltaSeconds > 0.0f ? input.deltaSeconds : 0.0f;
             if (!runtime.hasSustainedPointGame ||
-                !sustainedContactMissWithinTolerance(runtime.sustainedMissSeconds, input.config.sustainedContactMissSeconds)) {
+                !sustainedContactMissWithinTolerance(runtime.sustainedMissSeconds,
+                    input.config.sustainedContactMissSeconds)) {
                 clearSustainedContact(runtime);
                 return {};
             }
@@ -222,8 +220,7 @@ namespace rock::shoulder_stash
             }
 
             if (!heldBodyContains(input.heldBodyIds, runtime.sustainedHeldBodyId) ||
-                !isShoulderZone(runtime.sustainedZone) ||
-                !validStashBodyId(runtime.sustainedShoulderBodyId)) {
+                !isShoulderZone(runtime.sustainedZone) || !validStashBodyId(runtime.sustainedShoulderBodyId)) {
                 clearSustainedContact(runtime);
                 return {};
             }
@@ -242,7 +239,8 @@ namespace rock::shoulder_stash
                 return makeSustainedMissToleranceCandidate(input, runtime);
             }
 
-            const auto anchorWorld = transform_math::localPointToWorld(heldWorld, runtime.sustainedHeldBodyLocalPointGame);
+            const auto anchorWorld =
+                transform_math::localPointToWorld(heldWorld, runtime.sustainedHeldBodyLocalPointGame);
             if (!finitePoint(anchorWorld)) {
                 return makeSustainedMissToleranceCandidate(input, runtime);
             }
@@ -268,11 +266,14 @@ namespace rock::shoulder_stash
             candidate.nearestPointGame = anchorWorld;
             candidate.distanceGameUnits = distance;
             candidate.radiusGameUnits = shoulder.radiusGameUnits;
-            candidate.confidence = candidateConfidence(distance, shoulder.radiusGameUnits, threshold, isSameSideShoulder(input.isLeftHand, shoulder.zone)) * 0.96f;
+            candidate.confidence = candidateConfidence(distance, shoulder.radiusGameUnits, threshold,
+                                       isSameSideShoulder(input.isLeftHand, shoulder.zone)) *
+                0.96f;
             return candidate;
         }
 
-        [[nodiscard]] BodyCandidateSearchResult findBodyColliderCandidate(const DetectorInput& input, const RuntimeState& runtime)
+        [[nodiscard]] BodyCandidateSearchResult findBodyColliderCandidate(const DetectorInput& input,
+            const RuntimeState& runtime)
         {
             /*
              * Body-zone evidence is retained as a backup for shoulder stash and
@@ -281,7 +282,8 @@ namespace rock::shoulder_stash
              * when the HMD path has no candidate.
              */
             BodyCandidateSearchResult result{};
-            if (!input.config.useBodyZoneColliders || !input.world || !input.bodyColliders || !input.bodyColliders->hasBodies()) {
+            if (!input.config.useBodyZoneColliders || !input.world || !input.bodyColliders ||
+                !input.bodyColliders->hasBodies()) {
                 return result;
             }
 
@@ -289,7 +291,8 @@ namespace rock::shoulder_stash
             for (std::uint32_t i = 0; i < bodyCount; ++i) {
                 const auto bodyId = input.bodyColliders->getBodyIdAtomic(i);
                 BodyBoneColliderMetadata metadata{};
-                if (!input.bodyColliders->tryGetBodyMetadataAtIndexAtomic(i, bodyId, metadata) || !metadata.valid || !isShoulderZone(metadata.zone)) {
+                if (!input.bodyColliders->tryGetBodyMetadataAtIndexAtomic(i, bodyId, metadata) || !metadata.valid ||
+                    !isShoulderZone(metadata.zone)) {
                     continue;
                 }
 
@@ -311,8 +314,10 @@ namespace rock::shoulder_stash
                     continue;
                 }
 
-                const bool continuing = runtime.candidate && runtime.zone == metadata.zone && runtime.shoulderBodyId == bodyId;
-                const float padding = continuing ? input.config.exitPaddingGameUnits : input.config.enterPaddingGameUnits;
+                const bool continuing =
+                    runtime.candidate && runtime.zone == metadata.zone && runtime.shoulderBodyId == bodyId;
+                const float padding =
+                    continuing ? input.config.exitPaddingGameUnits : input.config.enterPaddingGameUnits;
                 const float threshold = radius + (std::max)(0.0f, padding);
                 if (distance > threshold) {
                     continue;
@@ -326,7 +331,8 @@ namespace rock::shoulder_stash
                 candidate.nearestPointGame = nearest;
                 candidate.distanceGameUnits = distance;
                 candidate.radiusGameUnits = radius;
-                candidate.confidence = candidateConfidence(distance, radius, threshold, isSameSideShoulder(input.isLeftHand, metadata.zone));
+                candidate.confidence = candidateConfidence(distance, radius, threshold,
+                    isSameSideShoulder(input.isLeftHand, metadata.zone));
                 considerCandidate(result.candidate, candidate);
             }
 
@@ -344,7 +350,9 @@ namespace rock::shoulder_stash
             const auto count = input.bodyContacts->snapshot(records.data(), records.size());
             for (std::size_t i = 0; i < count; ++i) {
                 const auto& record = records[i];
-                if (!contactIsRecent(input.contactElapsedSeconds, record.elapsedSeconds, input.config.recentContactSeconds) || !isShoulderZone(record.zone)) {
+                if (!contactIsRecent(input.contactElapsedSeconds, record.elapsedSeconds,
+                        input.config.recentContactSeconds) ||
+                    !isShoulderZone(record.zone)) {
                     continue;
                 }
                 if (!heldBodyContains(input.heldBodyIds, record.targetBodyId)) {
@@ -357,7 +365,8 @@ namespace rock::shoulder_stash
                 candidate.source = EvidenceSource::BodyZoneContact;
                 candidate.shoulderBodyId = record.bodyId;
                 candidate.heldBodyId = record.targetBodyId;
-                candidate.nearestPointGame = record.hasContactPointGame ? record.contactPointGame : input.probe.pointGame;
+                candidate.nearestPointGame =
+                    record.hasContactPointGame ? record.contactPointGame : input.probe.pointGame;
                 candidate.distanceGameUnits = 0.0f;
                 candidate.radiusGameUnits = 0.0f;
                 candidate.confidence = isSameSideShoulder(input.isLeftHand, record.zone) ? 1.0f : 0.88f;
@@ -367,12 +376,11 @@ namespace rock::shoulder_stash
             return best;
         }
 
-        [[nodiscard]] Candidate findHmdBackVolumeCandidate(
-            const DetectorInput& input,
-            const RuntimeState& runtime)
+        [[nodiscard]] Candidate findHmdBackVolumeCandidate(const DetectorInput& input, const RuntimeState& runtime)
         {
             Candidate best{};
-            if (!input.config.useHmdBackVolume || !input.hasHmdFrame || !finitePoint(input.hmdPositionWorld) || !finitePoint(input.hmdForwardWorld)) {
+            if (!input.config.useHmdBackVolume || !input.hasHmdFrame || !finitePoint(input.hmdPositionWorld) ||
+                !finitePoint(input.hmdForwardWorld)) {
                 return best;
             }
 
@@ -393,13 +401,17 @@ namespace rock::shoulder_stash
             }
 
             auto considerHmdBackSide = [&](bool leftSide) {
-                const auto offset = leftSide ? input.config.hmdBackLeftOffsetGameUnits : input.config.hmdBackRightOffsetGameUnits;
-                const auto center =
-                    add(add(add(input.hmdPositionWorld, mul(right, offset.x)), mul(forward, offset.y)), mul(kWorldUp, offset.z));
+                const auto offset =
+                    leftSide ? input.config.hmdBackLeftOffsetGameUnits : input.config.hmdBackRightOffsetGameUnits;
+                const auto center = add(add(add(input.hmdPositionWorld, mul(right, offset.x)), mul(forward, offset.y)),
+                    mul(kWorldUp, offset.z));
                 const float radius = (std::max)(input.config.hmdBackRadiusGameUnits, 0.1f);
-                const body_zone::BodyZoneKind zone = leftSide ? body_zone::BodyZoneKind::LeftShoulder : body_zone::BodyZoneKind::RightShoulder;
-                const bool continuing = runtime.candidate && runtime.zone == zone && runtime.source == EvidenceSource::HmdBackVolume;
-                const float padding = continuing ? input.config.hmdBackExitPaddingGameUnits : input.config.hmdBackEnterPaddingGameUnits;
+                const body_zone::BodyZoneKind zone =
+                    leftSide ? body_zone::BodyZoneKind::LeftShoulder : body_zone::BodyZoneKind::RightShoulder;
+                const bool continuing =
+                    runtime.candidate && runtime.zone == zone && runtime.source == EvidenceSource::HmdBackVolume;
+                const float padding =
+                    continuing ? input.config.hmdBackExitPaddingGameUnits : input.config.hmdBackEnterPaddingGameUnits;
                 const float threshold = radius + (std::max)(0.0f, padding);
                 const float distance = length(sub(hmdProbe.pointGame, center));
                 if (!std::isfinite(distance) || distance > threshold) {
@@ -414,7 +426,8 @@ namespace rock::shoulder_stash
                 candidate.nearestPointGame = center;
                 candidate.distanceGameUnits = distance;
                 candidate.radiusGameUnits = radius;
-                candidate.confidence = candidateConfidence(distance, radius, threshold, isSameSideShoulder(input.isLeftHand, zone));
+                candidate.confidence =
+                    candidateConfidence(distance, radius, threshold, isSameSideShoulder(input.isLeftHand, zone));
                 considerCandidate(best, candidate);
             };
 
@@ -431,18 +444,14 @@ namespace rock::shoulder_stash
                 return probeSpeed(probe);
             }
             if (!runtime.hasLastKinematicProbePoint ||
-                runtime.lastKinematicProbePointWasHmdRelative != point.hmdRelative ||
-                input.deltaSeconds <= 0.000001f) {
+                runtime.lastKinematicProbePointWasHmdRelative != point.hmdRelative || input.deltaSeconds <= 0.000001f) {
                 return 0.0f;
             }
             return length(sub(point.pointGame, runtime.lastKinematicProbePointGame)) / input.deltaSeconds;
         }
     }
 
-    void resetRuntime(RuntimeState& state) noexcept
-    {
-        state = {};
-    }
+    void resetRuntime(RuntimeState& state) noexcept { state = {}; }
 
     Decision evaluate(const DetectorInput& input, RuntimeState& runtime)
     {
@@ -494,10 +503,7 @@ namespace rock::shoulder_stash
             return decision;
         }
 
-        const bool sameCandidate =
-            runtime.candidate &&
-            runtime.zone == best.zone &&
-            runtime.source == best.source &&
+        const bool sameCandidate = runtime.candidate && runtime.zone == best.zone && runtime.source == best.source &&
             runtime.shoulderBodyId == best.shoulderBodyId;
         const bool wasCandidate = runtime.candidate;
 

@@ -40,43 +40,40 @@ namespace rock::grab_authority_proxy
 
     inline RE::hknpShape* buildProxyShape()
     {
-        return havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(makeProxyHullPoints(), kProxyConvexRadiusHavok);
+        return havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(makeProxyHullPoints(),
+            kProxyConvexRadiusHavok);
     }
 
     inline std::uint32_t noContactFilterInfo()
     {
         return (kProxyCollisionGroup << 16) |
-               (collision_layer_policy::FO4_LAYER_NONCOLLIDABLE & collision_layer_policy::FO4_LAYER_FILTER_MASK) |
-               collision_suppression_registry::kSuppressionNoCollideBit;
+            (collision_layer_policy::FO4_LAYER_NONCOLLIDABLE & collision_layer_policy::FO4_LAYER_FILTER_MASK) |
+            collision_suppression_registry::kSuppressionNoCollideBit;
     }
 
     inline bool hasNoContactFilterInfo(std::uint32_t filterInfo)
     {
         const std::uint32_t layer = filterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
         return layer == collision_layer_policy::FO4_LAYER_NONCOLLIDABLE &&
-               (filterInfo & collision_suppression_registry::kSuppressionNoCollideBit) != 0;
+            (filterInfo & collision_suppression_registry::kSuppressionNoCollideBit) != 0;
     }
 
-    inline const char* filterPolicyName()
-    {
-        return "nonCollidable+bit14";
-    }
+    inline const char* filterPolicyName() { return "nonCollidable+bit14"; }
 
     inline RE::hkTransformf makeHavokTransform(const RE::NiTransform& target)
     {
         RE::hkTransformf transform{};
         transform.rotation = niRotToHkTransformRotation(target.rotate);
-        transform.translation = RE::NiPoint4(
-            target.translate.x * gameToHavokScale(),
-            target.translate.y * gameToHavokScale(),
-            target.translate.z * gameToHavokScale(),
-            0.0f);
+        transform.translation = RE::NiPoint4(target.translate.x * gameToHavokScale(),
+            target.translate.y * gameToHavokScale(), target.translate.z * gameToHavokScale(), 0.0f);
         return transform;
     }
 
-    inline void computeLinearVelocityHavok(const RE::NiTransform& previous, const RE::NiTransform& current, float deltaSeconds, float outVelocity[4])
+    inline void computeLinearVelocityHavok(const RE::NiTransform& previous, const RE::NiTransform& current,
+        float deltaSeconds, float outVelocity[4])
     {
-        grab_authority_proxy_motion::computeLinearVelocityHavok(previous, current, deltaSeconds, gameToHavokScale(), outVelocity);
+        grab_authority_proxy_motion::computeLinearVelocityHavok(previous, current, deltaSeconds, gameToHavokScale(),
+            outVelocity);
     }
 
 }

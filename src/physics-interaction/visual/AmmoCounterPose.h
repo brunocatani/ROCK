@@ -102,15 +102,14 @@ namespace rock::ammo_counter_pose
         inline bool normalize(Point& value) noexcept
         {
             const float length = std::hypot(value[0], value[1], value[2]);
-            if (!std::isfinite(length) || length < 0.0001f) return false;
-            for (auto& component : value) component /= length;
+            if (!std::isfinite(length) || length < 0.0001f)
+                return false;
+            for (auto& component : value)
+                component /= length;
             return true;
         }
 
-        inline float dot(const Point& a, const Point& b) noexcept
-        {
-            return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-        }
+        inline float dot(const Point& a, const Point& b) noexcept { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 
         inline Point cross(const Point& a, const Point& b) noexcept
         {
@@ -159,7 +158,8 @@ namespace rock::ammo_counter_pose
         {
             const Point relative{ world[0] - frame.origin[0], world[1] - frame.origin[1], world[2] - frame.origin[2] };
             auto local = toLocalVector(frame, relative);
-            for (auto& component : local) component /= frame.scale;
+            for (auto& component : local)
+                component /= frame.scale;
             return local;
         }
 
@@ -184,17 +184,22 @@ namespace rock::ammo_counter_pose
         inline bool weaponInside(const Point& palm, const Point& weaponRight, const Point& weaponUp,
             const bool firingHandIsLeft, const Point& head, WeaponInside& out) noexcept
         {
-            if (!finite(palm) || !finite(head)) return false;
+            if (!finite(palm) || !finite(head))
+                return false;
             const float inside = firingHandIsLeft ? 1.0f : -1.0f;
             out.front = { weaponRight[0] * inside, weaponRight[1] * inside, weaponRight[2] * inside };
-            if (!normalize(out.front)) return false;
+            if (!normalize(out.front))
+                return false;
             out.right = cross(weaponUp, out.front);
-            if (!normalize(out.right)) return false;
+            if (!normalize(out.right))
+                return false;
             out.up = cross(out.front, out.right);
-            if (!normalize(out.up)) return false;
+            if (!normalize(out.up))
+                return false;
             out.anchor = offset(palm, out.front, kOutward, out.up, 0.0f);
             Point toHead{ head[0] - out.anchor[0], head[1] - out.anchor[1], head[2] - out.anchor[2] };
-            if (!normalize(toHead)) return false;
+            if (!normalize(toHead))
+                return false;
             out.facing = std::clamp((dot(out.front, toHead) - 0.5f) / (0.70710678f - 0.5f), 0.0f, 1.0f);
             return true;
         }
@@ -207,12 +212,14 @@ namespace rock::ammo_counter_pose
     {
         using namespace detail;
         WeaponInside plane{};
-        if (!weaponInside(palm, weaponRight, weaponUp, firingHandIsLeft, head, plane)) return {};
+        if (!weaponInside(palm, weaponRight, weaponUp, firingHandIsLeft, head, plane))
+            return {};
         Pose pose{};
         pose.right = plane.right;
         pose.up = plane.up;
         pose.front = plane.front;
-        pose.loaded = { offset(plane.anchor, pose.right, kLoadedRight, pose.up, 0.0f), kLoadedWidth, kLoadedWidth / kNumberAspect };
+        pose.loaded = { offset(plane.anchor, pose.right, kLoadedRight, pose.up, 0.0f), kLoadedWidth,
+            kLoadedWidth / kNumberAspect };
         const float reserveDrop = (pose.loaded.height - kReserveWidth / kNumberAspect) * kDigitHeightFraction * 0.5f;
         pose.reserve = { offset(plane.anchor, pose.right, kReserveRight, pose.up, -reserveDrop), kReserveWidth,
             kReserveWidth / kNumberAspect };
@@ -227,7 +234,8 @@ namespace rock::ammo_counter_pose
     {
         using namespace detail;
         WeaponInside plane{};
-        if (!weaponInside(palm, weaponRight, weaponUp, firingHandIsLeft, head, plane)) return {};
+        if (!weaponInside(palm, weaponRight, weaponUp, firingHandIsLeft, head, plane))
+            return {};
         Pose pose{};
         pose.right = plane.right;
         pose.up = plane.up;
@@ -246,33 +254,39 @@ namespace rock::ammo_counter_pose
         const Frame& leftHandBone, const Point& head, const float opacity) noexcept
     {
         using namespace detail;
-        if (!finite(quadNode) || !finite(head) || !std::isfinite(opacity)) return {};
+        if (!finite(quadNode) || !finite(head) || !std::isfinite(opacity))
+            return {};
         Point center = toWorldPoint(quadNode, kVanillaQuadCenter);
         Point up = toWorldVector(quadNode, kVanillaQuadUp);
         const Point right = toWorldVector(quadNode, kVanillaQuadRight);
         const float quadHeight = std::hypot(kVanillaQuadUp[0], kVanillaQuadUp[1], kVanillaQuadUp[2]) * quadNode.scale;
         Point front = cross(right, up);
         if (onLeftHand) {
-            if (!finite(rightHandBone) || !finite(leftHandBone)) return {};
+            if (!finite(rightHandBone) || !finite(leftHandBone))
+                return {};
             center = toWorldPoint(leftHandBone, mirrorAcrossHands(toLocalPoint(rightHandBone, center)));
             up = toWorldVector(leftHandBone, mirrorAcrossHands(toLocalVector(rightHandBone, up)));
             front = toWorldVector(leftHandBone, mirrorAcrossHands(toLocalVector(rightHandBone, front)));
         }
         Pose pose{};
         pose.front = front;
-        if (!normalize(pose.front)) return {};
+        if (!normalize(pose.front))
+            return {};
         pose.right = cross(up, pose.front);
-        if (!normalize(pose.right)) return {};
+        if (!normalize(pose.right))
+            return {};
         pose.up = cross(pose.front, pose.right);
-        if (!normalize(pose.up)) return {};
-        if (!finite(center) || !std::isfinite(quadHeight) || quadHeight <= 0.0001f) return {};
+        if (!normalize(pose.up))
+            return {};
+        if (!finite(center) || !std::isfinite(quadHeight) || quadHeight <= 0.0001f)
+            return {};
         const float height = quadHeight * kVanillaPanelHeightOfQuad;
         pose.counter = { center, height * kNumberAspect, height };
         Point toHead{ head[0] - center[0], head[1] - center[1], head[2] - center[2] };
-        if (!normalize(toHead)) return {};
-        const float facing = std::clamp((dot(pose.front, toHead) - kVanillaFacingHidden) /
-                                            (kVanillaFacingFull - kVanillaFacingHidden),
-            0.0f, 1.0f);
+        if (!normalize(toHead))
+            return {};
+        const float facing = std::clamp(
+            (dot(pose.front, toHead) - kVanillaFacingHidden) / (kVanillaFacingFull - kVanillaFacingHidden), 0.0f, 1.0f);
         pose.opacity = std::clamp(opacity, 0.0f, 1.0f) * facing;
         pose.valid = true;
         return pose;

@@ -1,14 +1,14 @@
 #pragma once
 
-#include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
+#include "physics-interaction/TransformMath.h"
+#include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/HavokPhysicsTiming.h"
 #include "physics-interaction/native/PhysicsScale.h"
-#include "physics-interaction/TransformMath.h"
 
+#include "RE/Havok/hknpWorld.h"
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
-#include "RE/Havok/hknpWorld.h"
 
 #include <algorithm>
 #include <cmath>
@@ -34,7 +34,8 @@ namespace rock
             return havok_physics_timing::isUsableDelta(value) ? value : 0.0f;
         }
 
-        inline float predictionLeadSeconds(float secondsSinceSourceSample, float sourceDeltaSeconds, float driveDeltaSeconds)
+        inline float predictionLeadSeconds(float secondsSinceSourceSample, float sourceDeltaSeconds,
+            float driveDeltaSeconds)
         {
             if constexpr (!kPredictionEnabled) {
                 (void)secondsSinceSourceSample;
@@ -65,25 +66,21 @@ namespace rock
         }
 
         template <class Point>
-        inline bool clampContactPressVelocity(
-            Point& velocityHavok,
-            const Point& direction,
-            const Point& referenceVelocityHavok,
-            float pressMaximumHavok,
-            float maximumLinearVelocityHavok)
+        inline bool clampContactPressVelocity(Point& velocityHavok, const Point& direction,
+            const Point& referenceVelocityHavok, float pressMaximumHavok, float maximumLinearVelocityHavok)
         {
             const float directionLengthSquared =
                 direction.x * direction.x + direction.y * direction.y + direction.z * direction.z;
             if (!std::isfinite(pressMaximumHavok) || pressMaximumHavok <= 0.0f ||
-                !std::isfinite(directionLengthSquared) ||
-                directionLengthSquared <= 0.5f || directionLengthSquared >= 2.0f) {
+                !std::isfinite(directionLengthSquared) || directionLengthSquared <= 0.5f ||
+                directionLengthSquared >= 2.0f) {
                 return false;
             }
             const float inverseLength = 1.0f / std::sqrt(directionLengthSquared);
             const Point normal{ direction.x * inverseLength, direction.y * inverseLength, direction.z * inverseLength };
             const float along = velocityHavok.x * normal.x + velocityHavok.y * normal.y + velocityHavok.z * normal.z;
-            const float referenceAlong = referenceVelocityHavok.x * normal.x +
-                referenceVelocityHavok.y * normal.y + referenceVelocityHavok.z * normal.z;
+            const float referenceAlong = referenceVelocityHavok.x * normal.x + referenceVelocityHavok.y * normal.y +
+                referenceVelocityHavok.z * normal.z;
             const float excess = along - (std::isfinite(referenceAlong) ? referenceAlong : 0.0f) - pressMaximumHavok;
             if (!std::isfinite(excess) || excess <= 0.0f) {
                 return false;
@@ -94,8 +91,8 @@ namespace rock
 
             // A moving reference can require retreat in world space. Preserve
             // the absolute drive safety limit even in that case.
-            const float speed = std::sqrt(velocityHavok.x * velocityHavok.x +
-                velocityHavok.y * velocityHavok.y + velocityHavok.z * velocityHavok.z);
+            const float speed = std::sqrt(velocityHavok.x * velocityHavok.x + velocityHavok.y * velocityHavok.y +
+                velocityHavok.z * velocityHavok.z);
             if (std::isfinite(maximumLinearVelocityHavok) && maximumLinearVelocityHavok > 0.0f &&
                 speed > maximumLinearVelocityHavok) {
                 const float scale = maximumLinearVelocityHavok / speed;
@@ -107,17 +104,14 @@ namespace rock
         }
 
         template <class Point>
-        inline bool tryComputeSampledLinearVelocityHavok(
-            const Point& previousTargetGame,
-            const Point& currentTargetGame,
-            float sourceDeltaSeconds,
-            float gameToHavokScale,
-            Point& outVelocityHavok)
+        inline bool tryComputeSampledLinearVelocityHavok(const Point& previousTargetGame,
+            const Point& currentTargetGame, float sourceDeltaSeconds, float gameToHavokScale, Point& outVelocityHavok)
         {
             outVelocityHavok = {};
-            if (!std::isfinite(gameToHavokScale) || gameToHavokScale <= 0.0f ||
-                !std::isfinite(previousTargetGame.x) || !std::isfinite(previousTargetGame.y) || !std::isfinite(previousTargetGame.z) ||
-                !std::isfinite(currentTargetGame.x) || !std::isfinite(currentTargetGame.y) || !std::isfinite(currentTargetGame.z)) {
+            if (!std::isfinite(gameToHavokScale) || gameToHavokScale <= 0.0f || !std::isfinite(previousTargetGame.x) ||
+                !std::isfinite(previousTargetGame.y) || !std::isfinite(previousTargetGame.z) ||
+                !std::isfinite(currentTargetGame.x) || !std::isfinite(currentTargetGame.y) ||
+                !std::isfinite(currentTargetGame.z)) {
                 return false;
             }
 
@@ -130,19 +124,19 @@ namespace rock
             outVelocityHavok.x = (currentTargetGame.x - previousTargetGame.x) * gameToHavokScale * invDelta;
             outVelocityHavok.y = (currentTargetGame.y - previousTargetGame.y) * gameToHavokScale * invDelta;
             outVelocityHavok.z = (currentTargetGame.z - previousTargetGame.z) * gameToHavokScale * invDelta;
-            return std::isfinite(outVelocityHavok.x) && std::isfinite(outVelocityHavok.y) && std::isfinite(outVelocityHavok.z);
+            return std::isfinite(outVelocityHavok.x) && std::isfinite(outVelocityHavok.y) &&
+                std::isfinite(outVelocityHavok.z);
         }
 
-        inline bool shouldUseSubstepInterpolatedTarget(
-            const havok_physics_timing::PhysicsTimingSample& timing,
-            bool hasPendingTarget,
-            bool hasPreviousTarget,
-            bool immediatePlacement)
+        inline bool shouldUseSubstepInterpolatedTarget(const havok_physics_timing::PhysicsTimingSample& timing,
+            bool hasPendingTarget, bool hasPreviousTarget, bool immediatePlacement)
         {
-            return !immediatePlacement && timing.phase == havok_physics_timing::PhysicsStepPhase::SubstepPreCollide && hasPendingTarget && hasPreviousTarget;
+            return !immediatePlacement && timing.phase == havok_physics_timing::PhysicsStepPhase::SubstepPreCollide &&
+                hasPendingTarget && hasPreviousTarget;
         }
 
-        inline bool shouldFinalizePlacedTargetForNextSource(const havok_physics_timing::PhysicsTimingSample& timing, bool immediatePlacement)
+        inline bool shouldFinalizePlacedTargetForNextSource(const havok_physics_timing::PhysicsTimingSample& timing,
+            bool immediatePlacement)
         {
             if (immediatePlacement || timing.phase != havok_physics_timing::PhysicsStepPhase::SubstepPreCollide) {
                 return true;
@@ -160,7 +154,8 @@ namespace rock
             const float dy = rhs.y - lhs.y;
             const float dz = rhs.z - lhs.z;
             const float squared = dx * dx + dy * dy + dz * dz;
-            return std::isfinite(squared) && squared >= 0.0f ? std::sqrt(squared) : (std::numeric_limits<float>::infinity)();
+            return std::isfinite(squared) && squared >= 0.0f ? std::sqrt(squared)
+                                                             : (std::numeric_limits<float>::infinity)();
         }
 
         template <class Point>
@@ -256,12 +251,14 @@ namespace rock
             });
         }
 
-        inline RE::NiTransform interpolateTargetTransform(const RE::NiTransform& from, const RE::NiTransform& to, float alpha)
+        inline RE::NiTransform interpolateTargetTransform(const RE::NiTransform& from, const RE::NiTransform& to,
+            float alpha)
         {
             RE::NiTransform result = to;
             alpha = std::clamp(std::isfinite(alpha) ? alpha : 1.0f, 0.0f, 1.0f);
             result.translate = lerpPoint(from.translate, to.translate, alpha);
-            result.rotate = quaternionToMatrix(slerp(matrixToQuaternion(from.rotate), matrixToQuaternion(to.rotate), alpha));
+            result.rotate =
+                quaternionToMatrix(slerp(matrixToQuaternion(from.rotate), matrixToQuaternion(to.rotate), alpha));
             result.scale = from.scale + (to.scale - from.scale) * alpha;
             return result;
         }
@@ -269,8 +266,8 @@ namespace rock
         inline float matrixDot(const RE::NiMatrix3& a, const RE::NiMatrix3& b)
         {
             return a.entry[0][0] * b.entry[0][0] + a.entry[0][1] * b.entry[0][1] + a.entry[0][2] * b.entry[0][2] +
-                   a.entry[1][0] * b.entry[1][0] + a.entry[1][1] * b.entry[1][1] + a.entry[1][2] * b.entry[1][2] +
-                   a.entry[2][0] * b.entry[2][0] + a.entry[2][1] * b.entry[2][1] + a.entry[2][2] * b.entry[2][2];
+                a.entry[1][0] * b.entry[1][0] + a.entry[1][1] * b.entry[1][1] + a.entry[1][2] * b.entry[1][2] +
+                a.entry[2][0] * b.entry[2][0] + a.entry[2][1] * b.entry[2][1] + a.entry[2][2] * b.entry[2][2];
         }
 
         inline float rotationAngleRadians(const RE::NiMatrix3& previous, const RE::NiMatrix3& current)
@@ -287,12 +284,8 @@ namespace rock
             bool angularLimitExceeded = false;
         };
 
-        inline TargetVelocityLimit computeTargetVelocityLimit(
-            float linearDistanceGameUnits,
-            float angularDistanceRadians,
-            float driveDeltaSeconds,
-            float gameToHavokScale,
-            float maxLinearVelocityHavok,
+        inline TargetVelocityLimit computeTargetVelocityLimit(float linearDistanceGameUnits,
+            float angularDistanceRadians, float driveDeltaSeconds, float gameToHavokScale, float maxLinearVelocityHavok,
             float maxAngularVelocityRadians)
         {
             TargetVelocityLimit limit{};
@@ -305,12 +298,14 @@ namespace rock
                 return limit;
             }
             const float driveDelta = driveDeltaSeconds;
-            const float scale = physics_scale::isUsableScale(gameToHavokScale) ? gameToHavokScale : physics_scale::kFallbackGameToHavok;
+            const float scale =
+                physics_scale::isUsableScale(gameToHavokScale) ? gameToHavokScale : physics_scale::kFallbackGameToHavok;
 
             if (std::isfinite(maxLinearVelocityHavok) && maxLinearVelocityHavok > 0.0f &&
                 std::isfinite(linearDistanceGameUnits) && linearDistanceGameUnits > kTinyDistanceGameUnits) {
                 const float requiredLinearVelocityHavok = linearDistanceGameUnits * scale / driveDelta;
-                if (std::isfinite(requiredLinearVelocityHavok) && requiredLinearVelocityHavok > maxLinearVelocityHavok) {
+                if (std::isfinite(requiredLinearVelocityHavok) &&
+                    requiredLinearVelocityHavok > maxLinearVelocityHavok) {
                     limit.linearLimitExceeded = true;
                     limit.alpha = (std::min)(limit.alpha, maxLinearVelocityHavok / requiredLinearVelocityHavok);
                 }
@@ -319,7 +314,8 @@ namespace rock
             if (std::isfinite(maxAngularVelocityRadians) && maxAngularVelocityRadians > 0.0f &&
                 std::isfinite(angularDistanceRadians) && angularDistanceRadians > kTinyRotationRadians) {
                 const float requiredAngularVelocityRadians = angularDistanceRadians / driveDelta;
-                if (std::isfinite(requiredAngularVelocityRadians) && requiredAngularVelocityRadians > maxAngularVelocityRadians) {
+                if (std::isfinite(requiredAngularVelocityRadians) &&
+                    requiredAngularVelocityRadians > maxAngularVelocityRadians) {
                     limit.angularLimitExceeded = true;
                     limit.alpha = (std::min)(limit.alpha, maxAngularVelocityRadians / requiredAngularVelocityRadians);
                 }
@@ -329,21 +325,13 @@ namespace rock
             return limit;
         }
 
-        inline TargetVelocityLimit computeTargetVelocityLimit(
-            const RE::NiTransform& from,
-            const RE::NiTransform& requestedTarget,
-            float driveDeltaSeconds,
-            float gameToHavokScale,
-            float maxLinearVelocityHavok,
-            float maxAngularVelocityRadians)
+        inline TargetVelocityLimit computeTargetVelocityLimit(const RE::NiTransform& from,
+            const RE::NiTransform& requestedTarget, float driveDeltaSeconds, float gameToHavokScale,
+            float maxLinearVelocityHavok, float maxAngularVelocityRadians)
         {
-            return computeTargetVelocityLimit(
-                pointDistance(from.translate, requestedTarget.translate),
-                rotationAngleRadians(from.rotate, requestedTarget.rotate),
-                driveDeltaSeconds,
-                gameToHavokScale,
-                maxLinearVelocityHavok,
-                maxAngularVelocityRadians);
+            return computeTargetVelocityLimit(pointDistance(from.translate, requestedTarget.translate),
+                rotationAngleRadians(from.rotate, requestedTarget.rotate), driveDeltaSeconds, gameToHavokScale,
+                maxLinearVelocityHavok, maxAngularVelocityRadians);
         }
 
         struct LimitedTarget
@@ -352,26 +340,16 @@ namespace rock
             TargetVelocityLimit limit{};
         };
 
-        inline LimitedTarget limitGeneratedDriveTarget(
-            const RE::NiTransform& from,
-            const RE::NiTransform& requestedTarget,
-            float driveDeltaSeconds,
-            float gameToHavokScale,
-            float maxLinearVelocityHavok,
-            float maxAngularVelocityRadians)
+        inline LimitedTarget limitGeneratedDriveTarget(const RE::NiTransform& from,
+            const RE::NiTransform& requestedTarget, float driveDeltaSeconds, float gameToHavokScale,
+            float maxLinearVelocityHavok, float maxAngularVelocityRadians)
         {
             LimitedTarget limited{};
-            limited.limit = computeTargetVelocityLimit(
-                from,
-                requestedTarget,
-                driveDeltaSeconds,
-                gameToHavokScale,
-                maxLinearVelocityHavok,
-                maxAngularVelocityRadians);
-            limited.target =
-                (limited.limit.linearLimitExceeded || limited.limit.angularLimitExceeded) ?
-                    interpolateTargetTransform(from, requestedTarget, limited.limit.alpha) :
-                    requestedTarget;
+            limited.limit = computeTargetVelocityLimit(from, requestedTarget, driveDeltaSeconds, gameToHavokScale,
+                maxLinearVelocityHavok, maxAngularVelocityRadians);
+            limited.target = (limited.limit.linearLimitExceeded || limited.limit.angularLimitExceeded)
+                ? interpolateTargetTransform(from, requestedTarget, limited.limit.alpha)
+                : requestedTarget;
             return limited;
         }
     }
@@ -413,17 +391,20 @@ namespace rock
         bool finalPoseSuppressed = false;
     };
 
-    [[nodiscard]] inline bool hasGeneratedKeyframedBodyDriveTargetUnlocked(const GeneratedKeyframedBodyDriveState& state)
+    [[nodiscard]] inline bool hasGeneratedKeyframedBodyDriveTargetUnlocked(
+        const GeneratedKeyframedBodyDriveState& state)
     {
         return state.hasPendingTarget || state.hasPreviousTarget;
     }
 
-    [[nodiscard]] inline bool generatedKeyframedBodyDriveHasFreshSourceUnlocked(const GeneratedKeyframedBodyDriveState& state)
+    [[nodiscard]] inline bool generatedKeyframedBodyDriveHasFreshSourceUnlocked(
+        const GeneratedKeyframedBodyDriveState& state)
     {
         return state.queuedSequence != state.consumedSequence;
     }
 
-    inline void refreshGeneratedKeyframedBodySourceClockForDriveUnlocked(GeneratedKeyframedBodyDriveState& state, float driveDeltaSeconds)
+    inline void refreshGeneratedKeyframedBodySourceClockForDriveUnlocked(GeneratedKeyframedBodyDriveState& state,
+        float driveDeltaSeconds)
     {
         if (generatedKeyframedBodyDriveHasFreshSourceUnlocked(state)) {
             state.secondsSinceSourceSample = 0.0f;
@@ -437,7 +418,9 @@ namespace rock
             return;
         }
         const float currentAge =
-            (std::isfinite(state.secondsSinceSourceSample) && state.secondsSinceSourceSample >= 0.0f) ? state.secondsSinceSourceSample : 0.0f;
+            (std::isfinite(state.secondsSinceSourceSample) && state.secondsSinceSourceSample >= 0.0f)
+            ? state.secondsSinceSourceSample
+            : 0.0f;
         state.secondsSinceSourceSample = currentAge + driveDeltaSeconds;
         if (state.stepsWithoutSource < (std::numeric_limits<std::uint32_t>::max)()) {
             ++state.stepsWithoutSource;
@@ -520,7 +503,8 @@ namespace rock
 
         [[nodiscard]] bool shouldRequestRebuild() const
         {
-            return attempted && !driven && (missingBody || bodyCollisionObjectMismatch || placementFailed || nativeDriveFailed);
+            return attempted && !driven &&
+                (missingBody || bodyCollisionObjectMismatch || placementFailed || nativeDriveFailed);
         }
     };
 
@@ -539,22 +523,22 @@ namespace rock
     void clearGeneratedKeyframedBodyDriveState(GeneratedKeyframedBodyDriveState& state);
     // Game thread under the callback mutation gate. Missing poses retain
     // bodies/constraints, but suppress collision and discard all old targets.
-    void invalidateGeneratedColliderPose(RE::hknpWorld* world, BethesdaPhysicsBody& body, GeneratedKeyframedBodyDriveState& state);
-    void restoreGeneratedColliderPoseAfterDrive(RE::hknpWorld* world, BethesdaPhysicsBody& body, GeneratedKeyframedBodyDriveState& state);
+    void invalidateGeneratedColliderPose(RE::hknpWorld* world, BethesdaPhysicsBody& body,
+        GeneratedKeyframedBodyDriveState& state);
+    void restoreGeneratedColliderPoseAfterDrive(RE::hknpWorld* world, BethesdaPhysicsBody& body,
+        GeneratedKeyframedBodyDriveState& state);
     bool releaseGeneratedColliderPoseSuppression(RE::hknpWorld* world, BethesdaPhysicsBody& body);
-    void initializeGeneratedKeyframedBodyDriveState(GeneratedKeyframedBodyDriveState& state, const RE::NiTransform& target);
-    GeneratedKeyframedBodyDriveQueueResult queueGeneratedKeyframedBodyTarget(
-        GeneratedKeyframedBodyDriveState& state,
-        const RE::NiTransform& target,
-        float sourceDeltaSeconds,
-        float teleportDistanceGameUnits,
+    void initializeGeneratedKeyframedBodyDriveState(GeneratedKeyframedBodyDriveState& state,
+        const RE::NiTransform& target);
+    GeneratedKeyframedBodyDriveQueueResult queueGeneratedKeyframedBodyTarget(GeneratedKeyframedBodyDriveState& state,
+        const RE::NiTransform& target, float sourceDeltaSeconds, float teleportDistanceGameUnits,
         const RE::NiPoint3& sourceTransportDeltaGame = {});
-    GeneratedKeyframedBodyDriveSampledVelocity snapshotGeneratedKeyframedBodyDriveSampledVelocity(const GeneratedKeyframedBodyDriveState& state);
+    GeneratedKeyframedBodyDriveSampledVelocity snapshotGeneratedKeyframedBodyDriveSampledVelocity(
+        const GeneratedKeyframedBodyDriveState& state);
     bool placeGeneratedKeyframedBodyImmediately(BethesdaPhysicsBody& body, const RE::NiTransform& target);
-    inline void markGeneratedKeyframedBodyDrivePlacedUnlocked(
-        GeneratedKeyframedBodyDriveState& state,
-        float driveDeltaSeconds = 0.0f,
-        bool finalizeTargetForNextSource = true)
+
+    inline void markGeneratedKeyframedBodyDrivePlacedUnlocked(GeneratedKeyframedBodyDriveState& state,
+        float driveDeltaSeconds = 0.0f, bool finalizeTargetForNextSource = true)
     {
         (void)driveDeltaSeconds;
         if (!hasGeneratedKeyframedBodyDriveTargetUnlocked(state)) {
@@ -574,6 +558,7 @@ namespace rock
         state.hasPendingTarget = true;
         state.pendingTeleport = false;
     }
+
     struct GeneratedBodyDriveMode
     {
         /*
@@ -607,14 +592,8 @@ namespace rock
         bool contactPressUsesSourceTransport = false;
     };
 
-    GeneratedKeyframedBodyDriveResult driveGeneratedKeyframedBody(
-        RE::hknpWorld* world,
-        BethesdaPhysicsBody& body,
-        GeneratedKeyframedBodyDriveState& state,
-        const havok_physics_timing::PhysicsTimingSample& timing,
-        const char* ownerName,
-        std::uint32_t bodyIndex,
-        float maxLinearVelocityHavok = 0.0f,
-        float maxAngularVelocityRadians = 0.0f,
-        const GeneratedBodyDriveMode& mode = {});
+    GeneratedKeyframedBodyDriveResult driveGeneratedKeyframedBody(RE::hknpWorld* world, BethesdaPhysicsBody& body,
+        GeneratedKeyframedBodyDriveState& state, const havok_physics_timing::PhysicsTimingSample& timing,
+        const char* ownerName, std::uint32_t bodyIndex, float maxLinearVelocityHavok = 0.0f,
+        float maxAngularVelocityRadians = 0.0f, const GeneratedBodyDriveMode& mode = {});
 }

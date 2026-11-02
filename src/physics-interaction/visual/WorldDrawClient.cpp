@@ -4,8 +4,8 @@
 #include <cstdio>
 #include <mutex>
 
-#include "physics-interaction/PhysicsLog.h"
 #include "RPSUIWorldDrawApi.h"
+#include "physics-interaction/PhysicsLog.h"
 
 namespace rock::world_draw_client
 {
@@ -21,28 +21,32 @@ namespace rock::world_draw_client
         std::atomic<std::uint64_t> g_owner{ 0 };
         std::atomic<FrameHandler> g_handler{ nullptr };
         std::uint32_t g_retryCountdown{ 0 }; // Guarded by g_bindMutex.
-        bool g_absentReported{ false };      // Guarded by g_bindMutex.
-        bool g_refusalReported{ false };     // Guarded by g_bindMutex.
+        bool g_absentReported{ false }; // Guarded by g_bindMutex.
+        bool g_refusalReported{ false }; // Guarded by g_bindMutex.
 
         void RPSUI_CALL onFrame(void*, std::uint64_t) noexcept
         {
-            if (const auto handler = g_handler.load(std::memory_order_acquire)) handler();
+            if (const auto handler = g_handler.load(std::memory_order_acquire))
+                handler();
         }
 
         void reportRefusal(const char* step, ResultV1 result) noexcept
         {
-            if (g_refusalReported) return;
+            if (g_refusalReported)
+                return;
             g_refusalReported = true;
-            ROCK_LOG_WARN(Hand, "RPS UI world drawing: {} refused ({}); ROCK draws nothing until it succeeds",
-                step, static_cast<std::uint32_t>(result));
+            ROCK_LOG_WARN(Hand, "RPS UI world drawing: {} refused ({}); ROCK draws nothing until it succeeds", step,
+                static_cast<std::uint32_t>(result));
         }
     }
 
     bool ensureBound(const FrameHandler handler) noexcept
     {
-        if (g_api.load(std::memory_order_acquire)) return true;
+        if (g_api.load(std::memory_order_acquire))
+            return true;
         std::scoped_lock lock(g_bindMutex);
-        if (g_api.load(std::memory_order_acquire)) return true;
+        if (g_api.load(std::memory_order_acquire))
+            return true;
         if (g_retryCountdown > 0) {
             --g_retryCountdown;
             return false;
@@ -55,9 +59,12 @@ namespace rock::world_draw_client
             if (!g_absentReported) {
                 g_absentReported = true;
                 if (registry) {
-                    ROCK_LOG_WARN(Hand, "RPS UI Framework does not offer world drawing v1; ROCK indicators and debug drawing stay hidden");
+                    ROCK_LOG_WARN(Hand,
+                        "RPS UI Framework does not offer world drawing v1; ROCK indicators and debug drawing stay "
+                        "hidden");
                 } else {
-                    ROCK_LOG_INFO(Hand, "RPS UI Framework is not loaded; ROCK indicators and debug drawing stay hidden until it is");
+                    ROCK_LOG_INFO(Hand,
+                        "RPS UI Framework is not loaded; ROCK indicators and debug drawing stay hidden until it is");
                 }
             }
             return false;
@@ -100,7 +107,8 @@ namespace rock::world_draw_client
         const std::uint32_t* indices, const std::uint32_t indexCount) noexcept
     {
         const auto* api = g_api.load(std::memory_order_acquire);
-        if (!api) return false;
+        if (!api)
+            return false;
         rpsui::sdk::WorldMeshV1 mesh{};
         mesh.positions = positions;
         mesh.vertexCount = vertexCount;

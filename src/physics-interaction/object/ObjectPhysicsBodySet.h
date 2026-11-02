@@ -36,6 +36,7 @@ namespace rock::object_physics_body_set
         float z = 0.0f;
 
         constexpr PurePoint3() = default;
+
         constexpr PurePoint3(float xIn, float yIn, float zIn) : x(xIn), y(yIn), z(zIn) {}
 
         template <class Vec3>
@@ -100,13 +101,15 @@ namespace rock::object_physics_body_set
 
         bool containsAcceptedBody(std::uint32_t bodyId) const
         {
-            return std::any_of(records.begin(), records.end(), [&](const PureBodyRecord& record) { return record.accepted && record.bodyId == bodyId; });
+            return std::any_of(records.begin(), records.end(),
+                [&](const PureBodyRecord& record) { return record.accepted && record.bodyId == bodyId; });
         }
 
         PrimaryBodyChoice choosePrimaryBody(std::uint32_t preferredBodyId, PurePoint3 targetPoint) const
         {
             if (containsAcceptedBody(preferredBodyId)) {
-                return PrimaryBodyChoice{ .bodyId = preferredBodyId, .reason = PrimaryBodyChoiceReason::PreferredHitAccepted };
+                return PrimaryBodyChoice{ .bodyId = preferredBodyId,
+                    .reason = PrimaryBodyChoiceReason::PreferredHitAccepted };
             }
 
             float bestDistance = (std::numeric_limits<float>::max)();
@@ -126,12 +129,15 @@ namespace rock::object_physics_body_set
             }
 
             if (bestBodyId == INVALID_BODY_ID) {
-                return PrimaryBodyChoice{ .bodyId = INVALID_BODY_ID, .reason = PrimaryBodyChoiceReason::NoAcceptedBody };
+                return PrimaryBodyChoice{ .bodyId = INVALID_BODY_ID,
+                    .reason = PrimaryBodyChoiceReason::NoAcceptedBody };
             }
-            return PrimaryBodyChoice{ .bodyId = bestBodyId, .reason = PrimaryBodyChoiceReason::NearestAcceptedFallback };
+            return PrimaryBodyChoice{ .bodyId = bestBodyId,
+                .reason = PrimaryBodyChoiceReason::NearestAcceptedFallback };
         }
 
-        PrimaryBodyChoice choosePrimaryBodyWithSurfaceOwner(std::uint32_t preferredBodyId, std::uintptr_t ownerKey, PurePoint3 targetPoint) const
+        PrimaryBodyChoice choosePrimaryBodyWithSurfaceOwner(std::uint32_t preferredBodyId, std::uintptr_t ownerKey,
+            PurePoint3 targetPoint) const
         {
             std::uint32_t ownerBodyId = INVALID_BODY_ID;
             if (ownerKey != 0) {
@@ -144,23 +150,28 @@ namespace rock::object_physics_body_set
             }
 
             const auto nearestChoice = choosePrimaryBody(INVALID_BODY_ID, targetPoint);
-            const auto resolution = geometry_body_resolver::resolveGeometryBody(geometry_body_resolver::GeometryBodyResolutionInput{
-                .triangleOwnerBodyId = ownerBodyId,
-                .selectedBodyId = preferredBodyId,
-                .nearestBodyId = nearestChoice.bodyId,
-                .triangleOwnerUsable = containsAcceptedBody(ownerBodyId),
-                .selectedUsable = containsAcceptedBody(preferredBodyId),
-                .nearestUsable = nearestChoice.bodyId != INVALID_BODY_ID,
-            });
+            const auto resolution =
+                geometry_body_resolver::resolveGeometryBody(geometry_body_resolver::GeometryBodyResolutionInput{
+                    .triangleOwnerBodyId = ownerBodyId,
+                    .selectedBodyId = preferredBodyId,
+                    .nearestBodyId = nearestChoice.bodyId,
+                    .triangleOwnerUsable = containsAcceptedBody(ownerBodyId),
+                    .selectedUsable = containsAcceptedBody(preferredBodyId),
+                    .nearestUsable = nearestChoice.bodyId != INVALID_BODY_ID,
+                });
             switch (resolution.source) {
             case geometry_body_resolver::GeometryBodyResolutionSource::TriangleOwner:
-                return PrimaryBodyChoice{ .bodyId = resolution.bodyId, .reason = PrimaryBodyChoiceReason::SurfaceOwnerAccepted };
+                return PrimaryBodyChoice{ .bodyId = resolution.bodyId,
+                    .reason = PrimaryBodyChoiceReason::SurfaceOwnerAccepted };
             case geometry_body_resolver::GeometryBodyResolutionSource::SelectedBody:
-                return PrimaryBodyChoice{ .bodyId = resolution.bodyId, .reason = PrimaryBodyChoiceReason::PreferredHitAccepted };
+                return PrimaryBodyChoice{ .bodyId = resolution.bodyId,
+                    .reason = PrimaryBodyChoiceReason::PreferredHitAccepted };
             case geometry_body_resolver::GeometryBodyResolutionSource::NearestAccepted:
-                return PrimaryBodyChoice{ .bodyId = resolution.bodyId, .reason = PrimaryBodyChoiceReason::NearestAcceptedFallback };
+                return PrimaryBodyChoice{ .bodyId = resolution.bodyId,
+                    .reason = PrimaryBodyChoiceReason::NearestAcceptedFallback };
             default:
-                return PrimaryBodyChoice{ .bodyId = INVALID_BODY_ID, .reason = PrimaryBodyChoiceReason::NoAcceptedBody };
+                return PrimaryBodyChoice{ .bodyId = INVALID_BODY_ID,
+                    .reason = PrimaryBodyChoiceReason::NoAcceptedBody };
             }
         }
     };
@@ -168,7 +179,6 @@ namespace rock::object_physics_body_set
     class BodySetBuilder
     {
     public:
-
         PureBodySet build() const { return _set; }
 
     private:
@@ -304,6 +314,7 @@ namespace rock::object_physics_body_set
         std::size_t acceptedCount() const;
         std::size_t rejectedCount() const;
         std::vector<std::uint32_t> acceptedBodyIds() const;
+
         template <class Visitor>
         std::size_t forEachUniqueAcceptedMotion(Visitor&& visitor) const
         {
@@ -313,43 +324,37 @@ namespace rock::object_physics_body_set
             diagnostics.duplicateMotionSkips = 0;
             std::size_t count = 0;
             for (const auto& record : records) {
-                if (!record.accepted) continue;
-                if (seen.insert(record.motionId).second) { visitor(record); ++count; }
-                else ++diagnostics.duplicateMotionSkips;
+                if (!record.accepted)
+                    continue;
+                if (seen.insert(record.motionId).second) {
+                    visitor(record);
+                    ++count;
+                } else
+                    ++diagnostics.duplicateMotionSkips;
             }
             return count;
         }
+
         bool containsAcceptedBody(std::uint32_t bodyId) const;
         const ObjectPhysicsBodyRecord* findRecord(std::uint32_t bodyId) const;
         const ObjectPhysicsBodyRecord* findAcceptedRecordByOwnerNode(RE::NiAVObject* ownerNode) const;
         const ObjectPhysicsBodyRecord* findAcceptedRagdollOwner(RE::NiAVObject* bone) const;
         PrimaryBodyChoice choosePrimaryBody(std::uint32_t preferredBodyId, PurePoint3 targetPointGame) const;
-        PrimaryBodyChoice choosePrimaryBodyWithSurfaceOwner(std::uint32_t preferredBodyId, RE::NiAVObject* ownerNode, PurePoint3 targetPointGame) const;
+        PrimaryBodyChoice choosePrimaryBodyWithSurfaceOwner(std::uint32_t preferredBodyId, RE::NiAVObject* ownerNode,
+            PurePoint3 targetPointGame) const;
     };
 
     bool hasCollisionObjectInSubtree(RE::NiAVObject* root, int maxDepth);
 
-    bool beginObjectPhysicsBodyScanCache(
-        RE::TESObjectREFR* ref,
-        const BodySetScanOptions& options,
-        ObjectPhysicsBodyScanCursor& cursor,
-        ObjectPhysicsBodyScanCache& outCache);
-    ObjectPhysicsBodyScanStepResult advanceObjectPhysicsBodyScanCache(
-        RE::hknpWorld* hknpWorld,
-        const BodySetScanOptions& options,
-        const ObjectPhysicsBodyScanBudget& budget,
-        ObjectPhysicsBodyScanCursor& cursor,
-        ObjectPhysicsBodyScanCache& outCache);
-    ObjectPhysicsBodyScanCache captureObjectPhysicsBodyScanCache(
-        RE::bhkWorld* bhkWorld,
-        RE::hknpWorld* hknpWorld,
-        RE::TESObjectREFR* ref,
-        const BodySetScanOptions& options);
-    ObjectPhysicsBodySet buildObjectPhysicsBodySetFromScanCache(
-        RE::bhkWorld* bhkWorld,
-        RE::hknpWorld* hknpWorld,
-        RE::TESObjectREFR* ref,
-        const BodySetScanOptions& options,
-        const ObjectPhysicsBodyScanCache& cache);
-    ObjectPhysicsBodySet scanObjectPhysicsBodySet(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, RE::TESObjectREFR* ref, const BodySetScanOptions& options);
+    bool beginObjectPhysicsBodyScanCache(RE::TESObjectREFR* ref, const BodySetScanOptions& options,
+        ObjectPhysicsBodyScanCursor& cursor, ObjectPhysicsBodyScanCache& outCache);
+    ObjectPhysicsBodyScanStepResult advanceObjectPhysicsBodyScanCache(RE::hknpWorld* hknpWorld,
+        const BodySetScanOptions& options, const ObjectPhysicsBodyScanBudget& budget,
+        ObjectPhysicsBodyScanCursor& cursor, ObjectPhysicsBodyScanCache& outCache);
+    ObjectPhysicsBodyScanCache captureObjectPhysicsBodyScanCache(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
+        RE::TESObjectREFR* ref, const BodySetScanOptions& options);
+    ObjectPhysicsBodySet buildObjectPhysicsBodySetFromScanCache(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
+        RE::TESObjectREFR* ref, const BodySetScanOptions& options, const ObjectPhysicsBodyScanCache& cache);
+    ObjectPhysicsBodySet scanObjectPhysicsBodySet(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
+        RE::TESObjectREFR* ref, const BodySetScanOptions& options);
 }

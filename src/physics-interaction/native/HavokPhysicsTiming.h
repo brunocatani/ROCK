@@ -68,17 +68,10 @@ namespace rock::havok_physics_timing
         return sample.valid && !sample.usedFallback;
     }
 
-    inline bool isUsableDelta(float value)
-    {
-        return std::isfinite(value) && value > 0.000001f && value <= 0.25f;
-    }
+    inline bool isUsableDelta(float value) { return std::isfinite(value) && value > 0.000001f && value <= 0.25f; }
 
-    inline PhysicsTimingSample makeTimingSample(
-        float rawDeltaSeconds,
-        float substepDeltaSeconds,
-        float remainderDeltaSeconds,
-        float accumulatedDeltaSeconds,
-        std::uint32_t substepCount,
+    inline PhysicsTimingSample makeTimingSample(float rawDeltaSeconds, float substepDeltaSeconds,
+        float remainderDeltaSeconds, float accumulatedDeltaSeconds, std::uint32_t substepCount,
         float timeMultiplier = 1.0f)
     {
         PhysicsTimingSample sample{};
@@ -86,7 +79,8 @@ namespace rock::havok_physics_timing
         sample.rawDeltaSeconds = isUsableDelta(rawDeltaSeconds) ? rawDeltaSeconds : 0.0f;
         sample.substepDeltaSeconds = isUsableDelta(substepDeltaSeconds) ? substepDeltaSeconds : sample.rawDeltaSeconds;
         sample.remainderDeltaSeconds = std::isfinite(remainderDeltaSeconds) ? remainderDeltaSeconds : 0.0f;
-        sample.accumulatedDeltaSeconds = isUsableDelta(accumulatedDeltaSeconds) ? accumulatedDeltaSeconds : sample.rawDeltaSeconds;
+        sample.accumulatedDeltaSeconds =
+            isUsableDelta(accumulatedDeltaSeconds) ? accumulatedDeltaSeconds : sample.rawDeltaSeconds;
         sample.substepCount = (std::min)(substepCount, 6u);
         if (sample.substepCount == 0) {
             sample.substepCount = 1;
@@ -95,20 +89,19 @@ namespace rock::havok_physics_timing
         const float simulated = sample.substepDeltaSeconds * static_cast<float>(sample.substepCount);
         sample.simulatedDeltaSeconds = isUsableDelta(simulated) ? simulated : sample.rawDeltaSeconds;
         sample.valid = isUsableDelta(sample.simulatedDeltaSeconds);
-        sample.usedFallback = !isUsableDelta(rawDeltaSeconds) || !isUsableDelta(substepDeltaSeconds) || substepCount == 0;
+        sample.usedFallback =
+            !isUsableDelta(rawDeltaSeconds) || !isUsableDelta(substepDeltaSeconds) || substepCount == 0;
         return sample;
     }
 
-    inline PhysicsTimingSample makeSubstepTimingSample(
-        const PhysicsTimingSample& wholeStep,
-        float substepProgress,
-        float substepDeltaSeconds,
-        std::uint32_t substepIndex)
+    inline PhysicsTimingSample makeSubstepTimingSample(const PhysicsTimingSample& wholeStep, float substepProgress,
+        float substepDeltaSeconds, std::uint32_t substepIndex)
     {
         PhysicsTimingSample sample = wholeStep;
         sample.phase = PhysicsStepPhase::SubstepPreCollide;
         sample.substepProgress = std::isfinite(substepProgress) ? std::clamp(substepProgress, 0.0f, 1.0f) : 0.0f;
-        sample.substepDeltaSeconds = isUsableDelta(substepDeltaSeconds) ? substepDeltaSeconds : wholeStep.substepDeltaSeconds;
+        sample.substepDeltaSeconds =
+            isUsableDelta(substepDeltaSeconds) ? substepDeltaSeconds : wholeStep.substepDeltaSeconds;
         sample.substepIndex = substepIndex;
         sample.usedFallback = sample.usedFallback || !isUsableDelta(substepDeltaSeconds);
         sample.valid = isUsableDelta(sample.substepDeltaSeconds);

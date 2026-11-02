@@ -96,9 +96,15 @@ namespace rock::physics_body_classifier
         return "unknown";
     }
 
-    inline constexpr BodyClassificationResult reject(BodyRejectReason reason) { return BodyClassificationResult{ .accepted = false, .reason = reason }; }
+    inline constexpr BodyClassificationResult reject(BodyRejectReason reason)
+    {
+        return BodyClassificationResult{ .accepted = false, .reason = reason };
+    }
 
-    inline constexpr BodyClassificationResult accept() { return BodyClassificationResult{ .accepted = true, .reason = BodyRejectReason::None }; }
+    inline constexpr BodyClassificationResult accept()
+    {
+        return BodyClassificationResult{ .accepted = true, .reason = BodyRejectReason::None };
+    }
 
     /*
      * FO4VR's hknpBody flags are the authoritative runtime motion-state bits.
@@ -165,10 +171,8 @@ namespace rock::physics_body_classifier
             return reject(BodyRejectReason::CharacterController);
         }
         const bool activeDetachedGoreLayer =
-            input.targetKind == grab_target::Kind::DetachedBody &&
-            grab_target::isNativeDetachedBodyLayer(input.layer);
-        const bool activeDynamicMovableStatic =
-            input.targetKind == grab_target::Kind::DynamicMovableStatic;
+            input.targetKind == grab_target::Kind::DetachedBody && grab_target::isNativeDetachedBodyLayer(input.layer);
+        const bool activeDynamicMovableStatic = input.targetKind == grab_target::Kind::DynamicMovableStatic;
         /*
          * Some pickup refs, including consumables, keep the native PROPS layer
          * on their hknp body even after active-prep converts the body motion.
@@ -176,25 +180,22 @@ namespace rock::physics_body_classifier
          * ref, so the layer gate allows it through and the motion checks below
          * still fail closed unless prep produced a dynamic body.
          */
-        const bool activeLoosePickupLayer =
-            input.targetKind == grab_target::Kind::LooseObject &&
+        const bool activeLoosePickupLayer = input.targetKind == grab_target::Kind::LooseObject &&
             input.layer == collision_layer_policy::FO4_LAYER_PROPS;
-        const bool activeExactThrowableProjectileLayer =
-            input.targetKind == grab_target::Kind::LooseObject &&
-            input.allowProjectileLayerForExactTarget &&
-            input.layer == collision_layer_policy::FO4_LAYER_PROJECTILE;
-        const bool activeDeadActorBody =
-            input.targetKind == grab_target::Kind::ConnectedBody &&
+        const bool activeExactThrowableProjectileLayer = input.targetKind == grab_target::Kind::LooseObject &&
+            input.allowProjectileLayerForExactTarget && input.layer == collision_layer_policy::FO4_LAYER_PROJECTILE;
+        const bool activeDeadActorBody = input.targetKind == grab_target::Kind::ConnectedBody &&
             collision_layer_policy::isActorOrBipedLayer(input.layer);
-        if (collision_layer_policy::isActorOrBipedLayer(input.layer) && !activeDetachedGoreLayer && !activeDynamicMovableStatic && !activeDeadActorBody) {
+        if (collision_layer_policy::isActorOrBipedLayer(input.layer) && !activeDetachedGoreLayer &&
+            !activeDynamicMovableStatic && !activeDeadActorBody) {
             return reject(BodyRejectReason::ActorLayer);
         }
         if (input.layer == collision_layer_policy::FO4_LAYER_NONCOLLIDABLE) {
             return reject(BodyRejectReason::NonCollidableLayer);
         }
-        const bool interactionLayer =
-            collision_layer_policy::isDynamicPropInteractionLayer(input.layer) || activeDetachedGoreLayer || activeDynamicMovableStatic ||
-            activeLoosePickupLayer || activeExactThrowableProjectileLayer || activeDeadActorBody;
+        const bool interactionLayer = collision_layer_policy::isDynamicPropInteractionLayer(input.layer) ||
+            activeDetachedGoreLayer || activeDynamicMovableStatic || activeLoosePickupLayer ||
+            activeExactThrowableProjectileLayer || activeDeadActorBody;
         if (!interactionLayer) {
             return reject(BodyRejectReason::UnsupportedLayer);
         }

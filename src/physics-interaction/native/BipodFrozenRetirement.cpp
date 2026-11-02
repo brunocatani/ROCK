@@ -1,29 +1,38 @@
 #include "physics-interaction/native/BipodFrozenRetirement.h"
-#include "physics-interaction/native/LooseWeaponLayerRepair.h"
-#include "physics-interaction/native/NativeObjectPlacement.h"
-#include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/native/HavokRuntime.h"
-#include "physics-interaction/native/HavokWorldLock.h"
-#include "physics-interaction/object/ObjectPhysicsBodySet.h"
-#include "physics-interaction/grab/HeldPlacementPolicy.h"
-#include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
-#include "physics-interaction/PhysicsLog.h"
-#include "rock_support/Fo4VrRuntime.h"
-#include "RE/Bethesda/PlayerCharacter.h"
-#include "RE/Bethesda/TESObjectREFRs.h"
-#include "RE/Havok/hknpBody.h"
 #include <F4SE/Trampoline.h>
 #include <Windows.h>
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <cstring>
+#include "RE/Bethesda/PlayerCharacter.h"
+#include "RE/Bethesda/TESObjectREFRs.h"
+#include "RE/Havok/hknpBody.h"
+#include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/grab/HeldPlacementPolicy.h"
+#include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/HavokWorldLock.h"
+#include "physics-interaction/native/LooseWeaponLayerRepair.h"
+#include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/NativeObjectPlacement.h"
+#include "physics-interaction/object/ObjectPhysicsBodySet.h"
+#include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 namespace rock::bipod_frozen_retirement
 {
     namespace
     {
-        enum class Stage : std::uint8_t { Empty, Armed, Bound, Initializing, Frozen, Quarantined, Finishing };
+        enum class Stage : std::uint8_t
+        {
+            Empty,
+            Armed,
+            Bound,
+            Initializing,
+            Frozen,
+            Quarantined,
+            Finishing
+        };
         using Factory = std::uint32_t* (*)(void*, std::uint32_t*, void*);
         using Position = void (*)(RE::TESObjectREFR*, const RE::NiPoint3&);
         using Initialize = void (*)(RE::TESObjectREFR*);
@@ -50,11 +59,12 @@ namespace rock::bipod_frozen_retirement
         thread_local bool s_removing{};
         thread_local bool s_creating{};
 
-        struct FreezeTrace {
+        struct FreezeTrace
+        {
             const char* stage{ "native-initialization" };
             object_physics_body_set::BodySetDiagnostics scan{};
             std::size_t bodies{}, validated{};
-            std::uint32_t body{0x7FFF'FFFFu};
+            std::uint32_t body{ 0x7FFF'FFFFu };
             physics_body_classifier::BodyRejectReason rejection{};
             bool scanFinished{}, budgetExhausted{};
         };
@@ -67,7 +77,8 @@ namespace rock::bipod_frozen_retirement
             ObjectPhysicsBodyScanCursor cursor;
             ObjectPhysicsBodyScanCache cache;
             trace.stage = "scan-start";
-            if (!beginObjectPhysicsBodyScanCache(ref, options, cursor, cache)) return false;
+            if (!beginObjectPhysicsBodyScanCache(ref, options, cursor, cache))
+                return false;
             const auto step = advanceObjectPhysicsBodyScanCache(world, options,
                 { 256, 64, held_placement_policy::kMaxBodies }, cursor, cache);
             const auto bodies = buildObjectPhysicsBodySetFromScanCache(bhk, world, ref, options, cache);
@@ -77,11 +88,11 @@ namespace rock::bipod_frozen_retirement
             trace.budgetExhausted = step.budgetExhausted;
             trace.bodies = bodies.records.size();
             trace.stage = "scan-completion";
-            if (!trace.scanFinished) return false;
+            if (!trace.scanFinished)
+                return false;
             trace.scan = d;
-            const auto issues = d.scanFailures + d.invalidPhysicsSystems + d.benignScanSkips +
-                d.foreignRefBodySkips + d.unresolvedRefBodySkips + d.weaponExpansionSkips +
-                d.depthLimitSkips + d.staleCacheEntrySkips;
+            const auto issues = d.scanFailures + d.invalidPhysicsSystems + d.benignScanSkips + d.foreignRefBodySkips +
+                d.unresolvedRefBodySkips + d.weaponExpansionSkips + d.depthLimitSkips + d.staleCacheEntrySkips;
             std::array<std::uint32_t, held_placement_policy::kMaxBodies> ids{};
             std::size_t count = 0;
             for (const auto& body : bodies.records) {
@@ -91,43 +102,56 @@ namespace rock::bipod_frozen_retirement
                 const bool preservedStatic = held_placement_policy::preserveStaticBody(body.rejectReason,
                     physics_body_classifier::motionTypeFromBodyFlags(body.bodyFlags), body.motionId,
                     body.refResolutionKnown && body.resolvedRef == ref);
-                const bool alreadyFrozen = body.rejectReason == physics_body_classifier::BodyRejectReason::NotDynamicAfterActivePrep &&
-                    physics_body_classifier::motionTypeFromBodyFlags(body.bodyFlags) == physics_body_classifier::BodyMotionType::Keyframed &&
+                const bool alreadyFrozen =
+                    body.rejectReason == physics_body_classifier::BodyRejectReason::NotDynamicAfterActivePrep &&
+                    physics_body_classifier::motionTypeFromBodyFlags(body.bodyFlags) ==
+                        physics_body_classifier::BodyMotionType::Keyframed &&
                     body.motionId != 0 && body.refResolutionKnown && body.resolvedRef == ref;
-                if ((!body.accepted && !preservedStatic && !alreadyFrozen) || count == ids.size()) return false;
+                if ((!body.accepted && !preservedStatic && !alreadyFrozen) || count == ids.size())
+                    return false;
                 ids[count++] = body.bodyId;
                 trace.validated = count;
             }
             trace.stage = "scan-coverage";
-            if (!held_placement_policy::completeBodyScan(step.finished && !step.invalidated,
-                    bodies.records.size(), count, issues, d.emptyScanSkips)) {
-                ROCK_LOG_WARN(Weapon, "Retired weapon scan incomplete ref={:08X} bodies={} validated={} issues={} verifiedEmpty={} unverifiedSkip={}",
+            if (!held_placement_policy::completeBodyScan(step.finished && !step.invalidated, bodies.records.size(),
+                    count, issues, d.emptyScanSkips)) {
+                ROCK_LOG_WARN(Weapon,
+                    "Retired weapon scan incomplete ref={:08X} bodies={} validated={} issues={} verifiedEmpty={} "
+                    "unverifiedSkip={}",
                     ref->GetFormID(), bodies.records.size(), count, issues, d.emptyScanSkips,
-                    havok_runtime::physicsSystemBodyScanStatusName(static_cast<havok_runtime::PhysicsSystemBodyScanStatus>(d.unverifiedScanSkipStatus)));
+                    havok_runtime::physicsSystemBodyScanStatusName(
+                        static_cast<havok_runtime::PhysicsSystemBodyScanStatus>(d.unverifiedScanSkipStatus)));
                 return false;
             }
             trace.stage = "root-pose";
             auto* root = ref->Get3D();
             if (!root || !dynamic_weapon_collision_policy::isFiniteTransform(root->world) ||
-                std::abs(root->world.scale) < 0.0001f) return false;
+                std::abs(root->world.scale) < 0.0001f)
+                return false;
             const auto rootInverse = transform_math::invertTransform(root->world);
             std::array<std::uint32_t, held_placement_policy::kMaxBodies> motions{};
             std::size_t motionCount = 0;
             for (const auto& body : bodies.records) {
-                if (!body.motionId || std::find(motions.begin(), motions.begin() + motionCount, body.motionId) != motions.begin() + motionCount) continue;
+                if (!body.motionId ||
+                    std::find(motions.begin(), motions.begin() + motionCount, body.motionId) !=
+                        motions.begin() + motionCount)
+                    continue;
                 trace.body = body.bodyId;
                 trace.stage = "body-pose-read";
                 RE::NiTransform current{};
-                if (!havok_runtime::tryResolveLiveBodyWorldTransform(world, RE::hknpBodyId{body.bodyId}, current)) return false;
-                const auto target = transform_math::composeTransforms(s_pose,
-                    transform_math::composeTransforms(rootInverse, current));
+                if (!havok_runtime::tryResolveLiveBodyWorldTransform(world, RE::hknpBodyId{ body.bodyId }, current))
+                    return false;
+                const auto target =
+                    transform_math::composeTransforms(s_pose, transform_math::composeTransforms(rootInverse, current));
                 trace.stage = "body-pose-write";
                 if (!dynamic_weapon_collision_policy::isFiniteTransform(target) ||
-                    !havok_runtime::setBodyTransformDeferred(world, body.bodyId, target, 1)) return false;
+                    !havok_runtime::setBodyTransformDeferred(world, body.bodyId, target, 1))
+                    return false;
                 motions[motionCount++] = body.motionId;
             }
             trace.stage = "native-anchor";
-            if (!native_object_placement::anchorRetiredWeapon(ref, world, s_pose, std::span(ids).first(count))) return false;
+            if (!native_object_placement::anchorRetiredWeapon(ref, world, s_pose, std::span(ids).first(count)))
+                return false;
             trace.stage = "frozen";
             return true;
         }
@@ -140,7 +164,8 @@ namespace rock::bipod_frozen_retirement
                 return;
             }
             auto stage = s_stage.load(std::memory_order_acquire);
-            if (stage == Stage::Initializing || stage == Stage::Quarantined || stage == Stage::Finishing) return;
+            if (stage == Stage::Initializing || stage == Stage::Quarantined || stage == Stage::Finishing)
+                return;
             if ((stage != Stage::Bound && stage != Stage::Frozen) ||
                 !s_stage.compare_exchange_strong(stage, Stage::Initializing, std::memory_order_acq_rel)) {
                 loose_weapon_layer_repair::initialize(ref, s_initialize);
@@ -156,8 +181,11 @@ namespace rock::bipod_frozen_retirement
             auto* world = bhk ? havok_runtime::getHknpWorldFromBhk(bhk) : nullptr;
             if (!world || reinterpret_cast<std::uintptr_t>(bhk) != s_world) {
                 // Do not attach a pending item into an unqualified world.
-                ROCK_LOG_WARN(Weapon, "Bipod native retirement rejected ref={:08X} stage=world-qualification cell={} bhk={} world={} expectedBhk={:X} actualBhk={:X}",
-                    ref->GetFormID(), cell != nullptr, bhk != nullptr, world != nullptr, s_world, reinterpret_cast<std::uintptr_t>(bhk));
+                ROCK_LOG_WARN(Weapon,
+                    "Bipod native retirement rejected ref={:08X} stage=world-qualification cell={} bhk={} world={} "
+                    "expectedBhk={:X} actualBhk={:X}",
+                    ref->GetFormID(), cell != nullptr, bhk != nullptr, world != nullptr, s_world,
+                    reinterpret_cast<std::uintptr_t>(bhk));
                 s_stage.store(Stage::Quarantined, std::memory_order_release);
                 return;
             }
@@ -166,7 +194,8 @@ namespace rock::bipod_frozen_retirement
             // Physics-step callers already own the world and skip locking.
             const bool locked = !havok_world_lock::detail::currentThreadInsidePhysicsStep();
             const auto started = std::chrono::steady_clock::now();
-            if (locked) s_lock(world);
+            if (locked)
+                s_lock(world);
             const auto lockAcquired = std::chrono::steady_clock::now();
             auto initialized = lockAcquired;
             FreezeTrace trace{};
@@ -185,19 +214,25 @@ namespace rock::bipod_frozen_retirement
                 // writer. The game thread recovers this exact item to inventory.
                 (void)s_detach(ref, ref->Get3D());
             }
-            if (locked) s_unlock(world);
+            if (locked)
+                s_unlock(world);
             const auto finished = std::chrono::steady_clock::now();
             // One record per initializer, outside the native world writer.
             // Distinguish scan/identity/anchor rejection from an actual hitch.
-            ROCK_LOG_INFO(Weapon, "Bipod native retirement ref={:08X} frozen={} stage={} before-first-unlocked-solve=true lockMs={:.3f} nativeMs={:.3f} freezeMs={:.3f} nodes={} collisionObjects={} bodies={} validated={} complete={} budget={} scanFailures={} invalidSystems={} benignSkips={} foreign={} unresolved={} depth={} stale={} body={} rejection={}",
+            ROCK_LOG_INFO(Weapon,
+                "Bipod native retirement ref={:08X} frozen={} stage={} before-first-unlocked-solve=true lockMs={:.3f} "
+                "nativeMs={:.3f} freezeMs={:.3f} nodes={} collisionObjects={} bodies={} validated={} complete={} "
+                "budget={} scanFailures={} invalidSystems={} benignSkips={} foreign={} unresolved={} depth={} stale={} "
+                "body={} rejection={}",
                 ref->GetFormID(), frozen, trace.stage,
                 std::chrono::duration<double, std::milli>(lockAcquired - started).count(),
                 std::chrono::duration<double, std::milli>(initialized - lockAcquired).count(),
-                std::chrono::duration<double, std::milli>(finished - initialized).count(),
-                trace.scan.visitedNodes, trace.scan.collisionObjects, trace.bodies, trace.validated, trace.scanFinished, trace.budgetExhausted,
-                trace.scan.scanFailures, trace.scan.invalidPhysicsSystems, trace.scan.benignScanSkips, trace.scan.foreignRefBodySkips,
-                trace.scan.unresolvedRefBodySkips, trace.scan.depthLimitSkips, trace.scan.staleCacheEntrySkips,
-                trace.body, physics_body_classifier::rejectReasonName(trace.rejection));
+                std::chrono::duration<double, std::milli>(finished - initialized).count(), trace.scan.visitedNodes,
+                trace.scan.collisionObjects, trace.bodies, trace.validated, trace.scanFinished, trace.budgetExhausted,
+                trace.scan.scanFailures, trace.scan.invalidPhysicsSystems, trace.scan.benignScanSkips,
+                trace.scan.foreignRefBodySkips, trace.scan.unresolvedRefBodySkips, trace.scan.depthLimitSkips,
+                trace.scan.staleCacheEntrySkips, trace.body,
+                physics_body_classifier::rejectReasonName(trace.rejection));
             if (s_cancelled.exchange(false, std::memory_order_acq_rel)) {
                 s_reference.store(0, std::memory_order_release);
                 s_stage.store(Stage::Empty, std::memory_order_release);
@@ -210,8 +245,8 @@ namespace rock::bipod_frozen_retirement
         {
             // 14011C23D is in the exact drop factory, before its cell/3D
             // publication. The factory scope excludes unrelated position writes.
-            if (s_creating && s_stage.load(std::memory_order_acquire) == Stage::Armed &&
-                ref && ref->GetObjectReference() && ref->GetObjectReference()->GetFormID() == s_weapon) {
+            if (s_creating && s_stage.load(std::memory_order_acquire) == Stage::Armed && ref &&
+                ref->GetObjectReference() && ref->GetObjectReference()->GetFormID() == s_weapon) {
                 s_reference.store(ref->GetFormID(), std::memory_order_release);
                 s_stage.store(Stage::Bound, std::memory_order_release);
             }
@@ -227,17 +262,22 @@ namespace rock::bipod_frozen_retirement
             return result;
         }
 
-        template<std::size_t N>
+        template <std::size_t N>
         bool matches(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected)
         {
             std::array<std::uint8_t, N> actual{};
             return native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(REL::Offset(rva).address()),
-                actual.data(), actual.size()) && actual == expected;
+                       actual.data(), actual.size()) &&
+                actual == expected;
         }
+
         bool callMatches(std::uintptr_t rva, std::uintptr_t target)
         {
             std::array<std::uint8_t, 5> bytes{};
-            if (!native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(REL::Offset(rva).address()), bytes.data(), bytes.size()) || bytes[0] != 0xE8) return false;
+            if (!native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(REL::Offset(rva).address()), bytes.data(),
+                    bytes.size()) ||
+                bytes[0] != 0xE8)
+                return false;
             std::int32_t displacement{};
             std::memcpy(&displacement, bytes.data() + 1, sizeof(displacement));
             return static_cast<std::intptr_t>(rva + 5) + displacement == static_cast<std::intptr_t>(target);
@@ -246,17 +286,18 @@ namespace rock::bipod_frozen_retirement
 
     bool install()
     {
-        if (s_attempted) return s_installed;
+        if (s_attempted)
+            return s_installed;
         s_attempted = true;
         // These three call paths were checked in raw FO4VR disassembly:
         // drop factory 3E2AC1 -> 11BD80, factory pose 11C23D -> 3F4370,
         // and reference initialization 3EA980 (locked attachment at 3EAB75).
-        constexpr std::array<std::uint8_t, 9> prefix{ 0x40,0x53,0x48,0x81,0xEC,0xD0,0,0,0 };
-        if (!REL::Module::IsVR() || !native_object_placement::available() ||
-            !callMatches(0x3E2AC1, 0x11BD80) || !callMatches(0x11C23D, 0x3F4370) ||
-            !matches(0x3EA980, prefix) ||
-            !matches(0x3EA820, std::array<std::uint8_t, 9>{0x40,0x55,0x48,0x83,0xEC,0x20,0x48,0x8B,0x01})) {
-            ROCK_LOG_ERROR(Init, "Bipod frozen retirement unavailable: native creation/initialization qualification failed");
+        constexpr std::array<std::uint8_t, 9> prefix{ 0x40, 0x53, 0x48, 0x81, 0xEC, 0xD0, 0, 0, 0 };
+        if (!REL::Module::IsVR() || !native_object_placement::available() || !callMatches(0x3E2AC1, 0x11BD80) ||
+            !callMatches(0x11C23D, 0x3F4370) || !matches(0x3EA980, prefix) ||
+            !matches(0x3EA820, std::array<std::uint8_t, 9>{ 0x40, 0x55, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0x01 })) {
+            ROCK_LOG_ERROR(Init,
+                "Bipod frozen retirement unavailable: native creation/initialization qualification failed");
             return false;
         }
         try {
@@ -269,7 +310,7 @@ namespace rock::bipod_frozen_retirement
             // beginning at +12 is deliberately left in its original location.
             auto* original = static_cast<std::uint8_t*>(trampoline.allocate(prefix.size() + 14));
             std::memcpy(original, prefix.data(), prefix.size());
-            const std::array<std::uint8_t, 6> jump{0xFF,0x25,0,0,0,0};
+            const std::array<std::uint8_t, 6> jump{ 0xFF, 0x25, 0, 0, 0, 0 };
             std::memcpy(original + prefix.size(), jump.data(), jump.size());
             const auto resume = REL::Offset(0x3EA980).address() + prefix.size();
             std::memcpy(original + prefix.size() + jump.size(), &resume, sizeof(resume));
@@ -295,17 +336,23 @@ namespace rock::bipod_frozen_retirement
     }
 
     bool available() { return s_installed; }
+
     bool pending() { return s_stage.load(std::memory_order_acquire) != Stage::Empty; }
-    bool frozen(const std::uint32_t reference) {
+
+    bool frozen(const std::uint32_t reference)
+    {
         return reference && s_stage.load(std::memory_order_acquire) == Stage::Frozen &&
             s_reference.load(std::memory_order_acquire) == reference;
     }
+
     void cancelForWorldLoss()
     {
         s_cancelled.store(true, std::memory_order_release);
         auto stage = s_stage.load(std::memory_order_acquire);
-        if (stage == Stage::Initializing) return;
-        if (!s_stage.compare_exchange_strong(stage, Stage::Finishing, std::memory_order_acq_rel)) return;
+        if (stage == Stage::Initializing)
+            return;
+        if (!s_stage.compare_exchange_strong(stage, Stage::Finishing, std::memory_order_acq_rel))
+            return;
         s_reference.store(0, std::memory_order_release);
         s_cancelled.store(false, std::memory_order_release);
         s_stage.store(Stage::Empty, std::memory_order_release);
@@ -313,8 +360,8 @@ namespace rock::bipod_frozen_retirement
 
     bool arm(std::uint32_t weapon, RE::bhkWorld* world, const RE::NiTransform& pose)
     {
-        if (!available() || pending() || !weapon || !world ||
-            !dynamic_weapon_collision_policy::isFiniteTransform(pose)) return false;
+        if (!available() || pending() || !weapon || !world || !dynamic_weapon_collision_policy::isFiniteTransform(pose))
+            return false;
         s_weapon = weapon;
         s_world = reinterpret_cast<std::uintptr_t>(world);
         s_pose = pose;
@@ -338,10 +385,13 @@ namespace rock::bipod_frozen_retirement
 
     void service()
     {
-        if (s_cancelled.load(std::memory_order_acquire)) cancelForWorldLoss();
+        if (s_cancelled.load(std::memory_order_acquire))
+            cancelForWorldLoss();
         auto stage = s_stage.load(std::memory_order_acquire);
-        if (stage != Stage::Frozen && stage != Stage::Quarantined) return;
-        if (!s_stage.compare_exchange_strong(stage, Stage::Finishing, std::memory_order_acq_rel)) return;
+        if (stage != Stage::Frozen && stage != Stage::Quarantined)
+            return;
+        if (!s_stage.compare_exchange_strong(stage, Stage::Finishing, std::memory_order_acq_rel))
+            return;
         const auto form = s_reference.load(std::memory_order_acquire);
         auto* ref = RE::TESForm::GetFormByID<RE::TESObjectREFR>(form);
         if (!ref || ref->IsDeleted()) {
@@ -350,19 +400,29 @@ namespace rock::bipod_frozen_retirement
             return;
         }
         if (stage == Stage::Quarantined) {
-            if (s_recoveryAttempted) { s_stage.store(stage, std::memory_order_release); return; }
+            if (s_recoveryAttempted) {
+                s_stage.store(stage, std::memory_order_release);
+                return;
+            }
             s_recoveryAttempted = true;
             auto* player = RE::PlayerCharacter::GetSingleton();
             const bool recovered = player && ref->ActivateRef(player, nullptr, 1, false, false, false);
-            ROCK_LOG_ERROR(Weapon, "Bipod retirement rejected ref={:08X} exact-item-inventory-recovery={} physics=guarded", form, recovered);
-            f4vr::showNotification(recovered ? "ROCK: Bipod placement failed; weapon returned to inventory." :
-                "ROCK: Bipod placement failed; the weapon remains at its placement position.");
-            if (!recovered) { s_stage.store(stage, std::memory_order_release); return; }
+            ROCK_LOG_ERROR(Weapon,
+                "Bipod retirement rejected ref={:08X} exact-item-inventory-recovery={} physics=guarded", form,
+                recovered);
+            f4vr::showNotification(recovered
+                    ? "ROCK: Bipod placement failed; weapon returned to inventory."
+                    : "ROCK: Bipod placement failed; the weapon remains at its placement position.");
+            if (!recovered) {
+                s_stage.store(stage, std::memory_order_release);
+                return;
+            }
         } else {
             const auto script = native_object_placement::prepareLoadScript(ref, !s_scriptStarted);
             s_scriptStarted = true;
             if (script != native_object_placement::ScriptPreparation::Ready) {
-                s_stage.store(script == native_object_placement::ScriptPreparation::Rejected ? Stage::Quarantined : stage,
+                s_stage.store(script == native_object_placement::ScriptPreparation::Rejected ? Stage::Quarantined
+                                                                                             : stage,
                     std::memory_order_release);
                 return;
             }

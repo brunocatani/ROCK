@@ -3,15 +3,15 @@
 #include <ROCK/Grab.h>
 
 #include "physics-interaction/hand/DynamicHandCollisionFeedbackPolicy.h"
-#include "physics-interaction/hand/DynamicHandSurfaceContactState.h"
 #include "physics-interaction/hand/DynamicHandCollisionTelemetry.h"
+#include "physics-interaction/hand/DynamicHandSurfaceContactState.h"
 #include "physics-interaction/hand/DynamicHandTwinTargets.h"
 #include "physics-interaction/hand/SurfaceFingerCollisionPolicy.h"
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/native/HavokCompoundShapeBuilder.h"
-#include "physics-interaction/native/HavokPhysicsTiming.h"
 #include "physics-interaction/native/HavokPairCollisionFilter.h"
+#include "physics-interaction/native/HavokPhysicsTiming.h"
 #include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
 
 #include "RE/Havok/hknpShape.h"
@@ -63,7 +63,9 @@ namespace rock
     class DynamicHandCollisionRuntime
     {
     public:
-        explicit DynamicHandCollisionRuntime(const contact_clock::ContactClock& contactClock) noexcept : _surfaceContacts(contactClock) {}
+        explicit DynamicHandCollisionRuntime(const contact_clock::ContactClock& contactClock) noexcept :
+            _surfaceContacts(contactClock)
+        {}
 
         static constexpr std::size_t kPalmSlot = dynamic_hand_collision_telemetry::kPalmSlot;
         static constexpr std::size_t kFirstForearmSlot = dynamic_hand_collision_telemetry::kFirstForearmSlot;
@@ -71,19 +73,13 @@ namespace rock
 
         void setPhysicsCallbackGate(PhysicsCallbackQuiescenceGate* gate) { _physicsCallbackGate = gate; }
 
-        void updateFrame(const PhysicsFrameContext& frame,
-            bool physicsWritesAllowed,
-            const Hand& rightHand,
-            const Hand& leftHand,
-            const BodyBoneColliderSet& bodyBoneColliders,
-            bool rightHandWeaponOwned,
-            bool leftHandWeaponOwned,
-            std::uint32_t dynamicWeaponBodyId,
-            bool rightVisualReturnActive,
+        void updateFrame(const PhysicsFrameContext& frame, bool physicsWritesAllowed, const Hand& rightHand,
+            const Hand& leftHand, const BodyBoneColliderSet& bodyBoneColliders, bool rightHandWeaponOwned,
+            bool leftHandWeaponOwned, std::uint32_t dynamicWeaponBodyId, bool rightVisualReturnActive,
             bool leftVisualReturnActive);
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
-        void finalizePose(const PhysicsFrameContext& frame, const Hand& rightHand,
-            const Hand& leftHand, const BodyBoneColliderSet& bodyBoneColliders);
+        void finalizePose(const PhysicsFrameContext& frame, const Hand& rightHand, const Hand& leftHand,
+            const BodyBoneColliderSet& bodyBoneColliders);
         /*
          * Post-solve deviation sampling (physics step thread, after-solve
          * phase). Two-stage measurement against the SAME substep's targets:
@@ -97,20 +93,19 @@ namespace rock
          * saturates at the dt-dependent limiter distance (sessions 3-5
          * milli-punch pulsing).
          */
-        void samplePostSolveDeviations(
-            RE::hknpWorld* world,
-            const havok_physics_timing::PhysicsTimingSample& timing);
+        void samplePostSolveDeviations(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         void retireAll(void* bhkWorld);
         void refreshCollisionFilters(RE::hknpWorld* world);
         void reset();
         // Main-thread snapshot/event access. Future provider adapters must copy
         // from here on the main thread rather than retain runtime-owned state.
         [[nodiscard]] bool getTelemetrySnapshot(dynamic_hand_collision_telemetry::Snapshot& outSnapshot) const;
+
         [[nodiscard]] bool isTransitionCollisionSuppressedAtomic() const
         {
-            return _transitionCollisionSuppressedAtomic.load(
-                std::memory_order_acquire);
+            return _transitionCollisionSuppressedAtomic.load(std::memory_order_acquire);
         }
+
         [[nodiscard]] dynamic_hand_collision_telemetry::HapticEvents consumeHapticEvents();
 
         struct DynamicBodyContactSource
@@ -118,37 +113,24 @@ namespace rock
             bool valid{ false };
             bool isLeft{ false };
             std::uint8_t slot{ 0 };
-            std::uint32_t bodyId{
-                hand_semantic_contact_state::kInvalidBodyId
-            };
+            std::uint32_t bodyId{ hand_semantic_contact_state::kInvalidBodyId };
         };
 
-        [[nodiscard]] bool tryClassifyDynamicBodyContactSourceAtomic(
-            std::uint32_t bodyId,
-            std::uint32_t shapeKey,
+        [[nodiscard]] bool tryClassifyDynamicBodyContactSourceAtomic(std::uint32_t bodyId, std::uint32_t shapeKey,
             DynamicBodyContactSource& outSource) const noexcept;
-        void recordDynamicBodyContactCallback(
-            const DynamicBodyContactSource& source,
-            bool otherIsHand,
+        void recordDynamicBodyContactCallback(const DynamicBodyContactSource& source, bool otherIsHand,
             bool otherIsWeapon) noexcept;
 
-        [[nodiscard]] static bool classifySurfaceContactSource(
-            const DynamicBodyContactSource& bodySource,
+        [[nodiscard]] static bool classifySurfaceContactSource(const DynamicBodyContactSource& bodySource,
             dynamic_hand_surface_contact_state::ContactSource& outSource) noexcept;
-        void recordSurfaceContactCallback(
-            const dynamic_hand_surface_contact_state::ContactSource& source,
-            std::uint32_t otherBodyId,
-            const hand_semantic_contact_state::SemanticContactVector* contactPointGame,
+        void recordSurfaceContactCallback(const dynamic_hand_surface_contact_state::ContactSource& source,
+            std::uint32_t otherBodyId, const hand_semantic_contact_state::SemanticContactVector* contactPointGame,
             const hand_semantic_contact_state::SemanticContactVector* contactNormalGame) noexcept;
-        void recordSurfaceManifoldProcessedCallback(
-            const dynamic_hand_surface_contact_state::ContactSource& source,
-            std::uint32_t otherBodyId,
-            bool otherLayerRead,
-            std::uint32_t otherLayer,
+        void recordSurfaceManifoldProcessedCallback(const dynamic_hand_surface_contact_state::ContactSource& source,
+            std::uint32_t otherBodyId, bool otherLayerRead, std::uint32_t otherLayer,
             const hand_semantic_contact_state::SemanticContactVector* contactPointGame = nullptr,
             const hand_semantic_contact_state::SemanticContactVector* contactNormalGame = nullptr) noexcept;
-        [[nodiscard]] hand_semantic_contact_state::SemanticContactCollection collectFreshSurfaceContacts(
-            bool isLeft,
+        [[nodiscard]] hand_semantic_contact_state::SemanticContactCollection collectFreshSurfaceContacts(bool isLeft,
             float maximumAgeSeconds) const noexcept;
 
         enum class SurfaceLatchFailure : std::uint8_t
@@ -178,19 +160,13 @@ namespace rock
          * Instead the hand and all live dynamic twins retain their transforms
          * relative to that target until TouchGrabRuntime ends the latch.
          */
-        [[nodiscard]] bool beginSurfaceLatch(
-            const dynamic_hand_surface_contact_state::ContactSource& source,
-            std::uint32_t targetBodyId,
-            RE::hknpWorld* world,
-            const SurfaceLatchPresentation* presentation = nullptr,
+        [[nodiscard]] bool beginSurfaceLatch(const dynamic_hand_surface_contact_state::ContactSource& source,
+            std::uint32_t targetBodyId, RE::hknpWorld* world, const SurfaceLatchPresentation* presentation = nullptr,
             SurfaceLatchFailure* outFailure = nullptr);
         void endSurfaceLatch(bool isLeft) noexcept;
         [[nodiscard]] bool isSurfaceLatchActive(bool isLeft) const noexcept;
-        [[nodiscard]] bool isSurfaceLatchMeshAuthoritative(
-            bool isLeft) const noexcept;
-        [[nodiscard]] bool getLastPresentedHandWorld(
-            bool isLeft,
-            RE::NiTransform& outHandWorld) const noexcept;
+        [[nodiscard]] bool isSurfaceLatchMeshAuthoritative(bool isLeft) const noexcept;
+        [[nodiscard]] bool getLastPresentedHandWorld(bool isLeft, RE::NiTransform& outHandWorld) const noexcept;
 
         /*
          * Debug-overlay accessor; main thread only (creation/retire happen on
@@ -204,6 +180,7 @@ namespace rock
             const auto& slot = _hands[isLeft ? 1u : 0u].bodies[0];
             return slot.created ? slot.body.getBodyId() : RE::hknpBodyId{ 0x7FFF'FFFF };
         }
+
         // Main-thread debug publication only. Returns the current compound-root
         // target queued for the next generated-body physics callback.
 
@@ -219,6 +196,7 @@ namespace rock
             bool contactActive = false;
             bool worldContactActive = false;
         };
+
         /*
          * Physics writes and the main thread reads these fields. Components
          * stay atomic to avoid a C++ data race; the odd/even sequence is a
@@ -237,6 +215,7 @@ namespace rock
             std::atomic<bool> contactActive{ false };
             std::atomic<bool> worldContactActive{ false };
         };
+
         struct ProxySlot
         {
             BethesdaPhysicsBody body{};
@@ -246,9 +225,7 @@ namespace rock
             void* createdBhkWorld = nullptr;
             std::uint64_t createdGeometryGeneration = 0;
             bool created = false;
-            std::atomic<std::uint32_t> bodyIdAtomic{
-                hand_semantic_contact_state::kInvalidBodyId
-            };
+            std::atomic<std::uint32_t> bodyIdAtomic{ hand_semantic_contact_state::kInvalidBodyId };
             /*
              * Physics-thread-only handshake between the pre-collide drive and
              * the after-solve deviation sample of the same substep. Contact
@@ -288,22 +265,14 @@ namespace rock
         {
             struct SurfaceFingerResponse
             {
-                std::array<RE::NiPoint3,
-                    hand_collider_semantics::kHandFingerRoleCount>
-                    baselineCentersInHand{};
-                std::array<RE::NiPoint3,
-                    hand_collider_semantics::kHandFingerRoleCount>
-                    closingProbeTravelInHand{};
-                std::array<RE::NiPoint3,
-                    hand_collider_semantics::kHandFingerRoleCount>
-                    openingProbeTravelInHand{};
-                std::array<float, hand_collider_semantics::kHandFingerCount>
-                    baselineOpenValues{ 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
-                std::array<float, hand_collider_semantics::kHandFingerCount>
-                    currentOpenValues{ 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
-                std::array<std::int8_t,
-                    hand_collider_semantics::kHandFingerCount>
-                    lastDirections{};
+                std::array<RE::NiPoint3, hand_collider_semantics::kHandFingerRoleCount> baselineCentersInHand{};
+                std::array<RE::NiPoint3, hand_collider_semantics::kHandFingerRoleCount> closingProbeTravelInHand{};
+                std::array<RE::NiPoint3, hand_collider_semantics::kHandFingerRoleCount> openingProbeTravelInHand{};
+                std::array<float, hand_collider_semantics::kHandFingerCount> baselineOpenValues{ 1.0f, 1.0f, 1.0f, 1.0f,
+                    1.0f };
+                std::array<float, hand_collider_semantics::kHandFingerCount> currentOpenValues{ 1.0f, 1.0f, 1.0f, 1.0f,
+                    1.0f };
+                std::array<std::int8_t, hand_collider_semantics::kHandFingerCount> lastDirections{};
                 std::uint32_t lastHelpfulDynamicSlotMask = 0;
                 float noContactSeconds = 0.0f;
                 bool active = false;
@@ -317,8 +286,7 @@ namespace rock
                 std::uint32_t animatedReferenceNativeHandle = 0;
                 api::PowerArmorPoint animatedPoint{};
                 RE::NiAVObject* animatedRootIdentity = nullptr;
-                std::uint32_t targetBodyId =
-                    hand_semantic_contact_state::kInvalidBodyId;
+                std::uint32_t targetBodyId = hand_semantic_contact_state::kInvalidBodyId;
                 RE::hknpBody* targetBodyIdentity = nullptr;
                 RE::NiCollisionObject* targetCollisionIdentity = nullptr;
                 RE::NiTransform handInTargetBody{};
@@ -338,12 +306,9 @@ namespace rock
             std::array<ProxySlot, kBodiesPerHand> bodies{};
             havok_compound_shape_builder::DynamicCompoundShape compoundShape{};
             std::mutex compoundPoseMutex{};
-            std::array<havok_compound_shape_builder::ChildTransform,
-                kBodiesPerHand> pendingCompoundChildTransforms{};
-            std::array<RE::NiTransform, kBodiesPerHand>
-                childInCompound{};
-            std::array<RE::NiTransform, kBodiesPerHand>
-                consumedChildInCompound{};
+            std::array<havok_compound_shape_builder::ChildTransform, kBodiesPerHand> pendingCompoundChildTransforms{};
+            std::array<RE::NiTransform, kBodiesPerHand> childInCompound{};
+            std::array<RE::NiTransform, kBodiesPerHand> consumedChildInCompound{};
             std::uint64_t queuedCompoundPoseSequence = 0;
             std::uint64_t consumedCompoundPoseSequence = 0;
             std::uint64_t compoundGeometryGeneration = 0;
@@ -372,10 +337,8 @@ namespace rock
             std::atomic<std::uint32_t> pendingWorldContactMaskAtomic{ 0 };
             std::uint32_t retainedSolverContactMask = 0;
             std::uint32_t retainedWorldContactMask = 0;
-            std::array<float, kBodiesPerHand>
-                solverContactRetentionSeconds{};
-            std::array<float, kBodiesPerHand>
-                worldContactRetentionSeconds{};
+            std::array<float, kBodiesPerHand> solverContactRetentionSeconds{};
+            std::array<float, kBodiesPerHand> worldContactRetentionSeconds{};
             std::uint32_t otherHandContactMask{ 0 };
             std::uint32_t weaponContactMask{ 0 };
             std::uint8_t otherHandContactGraceFrames{ 0 };
@@ -383,19 +346,12 @@ namespace rock
             dynamic_hand_collision_feedback::ContactPulseState hapticState{};
         };
 
-        bool ensureHandCreated(HandSlots& handSlots,
-            bool isLeft,
-            const PhysicsFrameContext& frame,
-            const Hand& hand,
+        bool ensureHandCreated(HandSlots& handSlots, bool isLeft, const PhysicsFrameContext& frame, const Hand& hand,
             const BodyBoneColliderSet& bodyBoneColliders,
-            const std::array<const dynamic_hand_twin::TwinSlotFrame*,
-                kBodiesPerHand>& twinFrames,
-            const RE::NiTransform& compoundRootTarget,
-            const std::array<RE::NiTransform, kBodiesPerHand>& driveTargets,
+            const std::array<const dynamic_hand_twin::TwinSlotFrame*, kBodiesPerHand>& twinFrames,
+            const RE::NiTransform& compoundRootTarget, const std::array<RE::NiTransform, kBodiesPerHand>& driveTargets,
             std::uint64_t geometryGeneration);
-        [[nodiscard]] bool queueCompoundPose(
-            HandSlots& handSlots,
-            const RE::NiTransform& compoundRootTarget,
+        [[nodiscard]] bool queueCompoundPose(HandSlots& handSlots, const RE::NiTransform& compoundRootTarget,
             const std::array<RE::NiTransform, kBodiesPerHand>& driveTargets);
         void retireSlot(ProxySlot& slot, void* bhkWorld);
         void retireHand(HandSlots& handSlots, void* bhkWorld, bool isLeft);
@@ -403,33 +359,19 @@ namespace rock
         void clearSurfaceFingerResponse(HandSlots& handSlots, bool isLeft);
         void applySurfaceLatchPose(HandSlots& handSlots, bool isLeft);
         void clearSurfaceLatchPose(HandSlots& handSlots, bool isLeft);
-        [[nodiscard]] bool captureSurfaceFingerResponse(
-            HandSlots& handSlots,
-            bool isLeft,
-            HandState handState,
-            const RE::NiTransform& rawHandWorld,
-            const dynamic_hand_twin::TwinTargets& handTwins);
-        [[nodiscard]] std::uint32_t updateSurfaceFingerResponse(
-            HandSlots& handSlots,
-            bool isLeft,
-            HandState handState,
-            const RE::NiTransform& rawHandWorld,
-            const dynamic_hand_twin::TwinTargets& handTwins,
-            const dynamic_hand_collision_telemetry::HandSample& handTelemetry,
-            float deltaSeconds);
-        void applyWeaponOwnershipCollisionSuppression(
-            RE::hknpWorld* world,
-            bool rightHandWeaponOwned,
+        [[nodiscard]] bool captureSurfaceFingerResponse(HandSlots& handSlots, bool isLeft, HandState handState,
+            const RE::NiTransform& rawHandWorld, const dynamic_hand_twin::TwinTargets& handTwins);
+        [[nodiscard]] std::uint32_t updateSurfaceFingerResponse(HandSlots& handSlots, bool isLeft, HandState handState,
+            const RE::NiTransform& rawHandWorld, const dynamic_hand_twin::TwinTargets& handTwins,
+            const dynamic_hand_collision_telemetry::HandSample& handTelemetry, float deltaSeconds);
+        void applyWeaponOwnershipCollisionSuppression(RE::hknpWorld* world, bool rightHandWeaponOwned,
             bool leftHandWeaponOwned);
         void applyTransitionCollisionSuppression(RE::hknpWorld* world, bool suppressCollision);
         static void publishPhysicsTelemetry(ProxySlot& slot, const PhysicsTelemetrySample& sample);
         [[nodiscard]] static bool readPhysicsTelemetry(const ProxySlot& slot, PhysicsTelemetrySample& outSample);
         static void clearPhysicsContactState(ProxySlot& slot);
-        void updateHandHaptic(
-            HandSlots& handSlots,
-            dynamic_hand_collision_telemetry::HandSample& handTelemetry,
-            bool authorityAllowsFeedback,
-            float deltaSeconds);
+        void updateHandHaptic(HandSlots& handSlots, dynamic_hand_collision_telemetry::HandSample& handTelemetry,
+            bool authorityAllowsFeedback, float deltaSeconds);
 
         std::array<HandSlots, 2> _hands{};
         dynamic_hand_surface_contact_state::State _surfaceContacts;
@@ -445,13 +387,10 @@ namespace rock
         bool _transitionCollisionSuppressed = false;
         std::atomic<bool> _transitionCollisionSuppressedAtomic{ false };
         std::array<bool, 2> _weaponOwnershipCollisionSuppressed{};
-        std::atomic<std::uint32_t> _desiredWeaponBodyIdAtomic{
-            hand_semantic_contact_state::kInvalidBodyId
-        };
+        std::atomic<std::uint32_t> _desiredWeaponBodyIdAtomic{ hand_semantic_contact_state::kInvalidBodyId };
         std::array<std::atomic<bool>, 2> _weaponOwnedAtomic{};
         std::atomic<bool> _pairFilterReadyAtomic{ false };
-        std::array<std::atomic<std::uint32_t>, 2>
-            _suppressedWeaponPairCountAtomic{};
+        std::array<std::atomic<std::uint32_t>, 2> _suppressedWeaponPairCountAtomic{};
         HavokPairCollisionLeaseSet _weaponPairLeases{};
     };
 }

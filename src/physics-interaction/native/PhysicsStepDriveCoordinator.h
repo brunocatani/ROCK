@@ -21,16 +21,13 @@ namespace rock
     public:
         struct NativeStepListener;
 
-        using DriveCallback = void (*)(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
+        using DriveCallback = void (*)(void* userData, RE::hknpWorld* world,
+            const havok_physics_timing::PhysicsTimingSample& timing);
 
         PhysicsStepDriveCoordinator();
 
-        void setDriveCallbacks(
-            DriveCallback wholePreStepCallback,
-            DriveCallback substepPreCollideCallback,
-            DriveCallback betweenCollideAndSolveCallback,
-            DriveCallback substepPostSolveCallback,
-            void* userData);
+        void setDriveCallbacks(DriveCallback wholePreStepCallback, DriveCallback substepPreCollideCallback,
+            DriveCallback betweenCollideAndSolveCallback, DriveCallback substepPostSolveCallback, void* userData);
         void registerForNextStep(void* bhkWorld, RE::hknpWorld* hknpWorld);
         void reset();
 
@@ -49,7 +46,9 @@ namespace rock
         };
 
         const havok_physics_timing::PhysicsTimingSample& lastTimingSample() const { return _lastTimingSample; }
+
         std::uint64_t stepSequence() const { return _stepSequence; }
+
         /*
          * Cross-thread telemetry snapshot: the physics callbacks publish an
          * atomic mirror so the game thread can report the active physics
@@ -68,6 +67,7 @@ namespace rock
                 .lastSampleUsedFallback = _lastSampleUsedFallbackAtomic.load(std::memory_order_acquire),
             };
         }
+
         void onBeforeWholePhysicsUpdate();
         void onBeforeAnyPhysicsStep(float substepProgress, float substepDeltaSeconds);
         void onBetweenCollideAndSolve(float substepProgress, float substepDeltaSeconds);

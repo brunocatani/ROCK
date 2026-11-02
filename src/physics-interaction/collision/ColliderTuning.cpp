@@ -13,6 +13,7 @@ namespace rock::collider_tuning
     namespace hand_detail
     {
         using hand_collider_semantics::HandColliderRole;
+
         float sanitizeHandColliderScale(float value)
         {
             if (!std::isfinite(value)) {
@@ -32,10 +33,7 @@ namespace rock::collider_tuning
             return value;
         }
 
-        char lowerAscii(char ch)
-        {
-            return static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-        }
+        char lowerAscii(char ch) { return static_cast<char>(std::tolower(static_cast<unsigned char>(ch))); }
 
         bool equalsAsciiInsensitive(std::string_view lhs, std::string_view rhs)
         {
@@ -109,9 +107,9 @@ namespace rock::collider_tuning
                 profileSpecific = true;
             }
 
-            return equalsAsciiInsensitive(roleNameToken, hand_collider_semantics::roleName(role)) ?
-                       (profileSpecific ? HandOverrideMatch::ProfileSpecific : HandOverrideMatch::Generic) :
-                       HandOverrideMatch::None;
+            return equalsAsciiInsensitive(roleNameToken, hand_collider_semantics::roleName(role))
+                ? (profileSpecific ? HandOverrideMatch::ProfileSpecific : HandOverrideMatch::Generic)
+                : HandOverrideMatch::None;
         }
 
         float handRoleRadiusScaleOverride(const RockConfigValues& config, HandColliderRole role, bool powerArmor)
@@ -128,9 +126,11 @@ namespace rock::collider_tuning
                 const auto entry = trimOverrideToken(overrides.substr(0, semicolon));
                 if (!entry.empty()) {
                     const auto equals = entry.find('=');
-                    const auto matchType = equals != std::string_view::npos ? handRoleOverrideKeyMatch(entry.substr(0, equals), role, powerArmor) :
-                                                                              HandOverrideMatch::None;
-                    if (matchType != HandOverrideMatch::None && static_cast<int>(matchType) >= static_cast<int>(bestMatch)) {
+                    const auto matchType = equals != std::string_view::npos
+                        ? handRoleOverrideKeyMatch(entry.substr(0, equals), role, powerArmor)
+                        : HandOverrideMatch::None;
+                    if (matchType != HandOverrideMatch::None &&
+                        static_cast<int>(matchType) >= static_cast<int>(bestMatch)) {
                         float parsed = 1.0f;
                         if (parseOverrideFloat(entry.substr(equals + 1), parsed)) {
                             bestMatch = matchType;
@@ -185,10 +185,12 @@ namespace rock::collider_tuning
             return true;
         }
 
-        PalmDimensionScale palmDimensionScaleOverride(const RockConfigValues& config, HandColliderRole role, bool powerArmor)
+        PalmDimensionScale palmDimensionScaleOverride(const RockConfigValues& config, HandColliderRole role,
+            bool powerArmor)
         {
             PalmDimensionScale result{};
-            if (!hand_collider_semantics::isPalmRole(role) || config.rockHandPalmColliderDimensionScaleOverrides.empty()) {
+            if (!hand_collider_semantics::isPalmRole(role) ||
+                config.rockHandPalmColliderDimensionScaleOverrides.empty()) {
                 return result;
             }
 
@@ -199,9 +201,11 @@ namespace rock::collider_tuning
                 const auto entry = trimOverrideToken(overrides.substr(0, semicolon));
                 if (!entry.empty()) {
                     const auto equals = entry.find('=');
-                    const auto matchType = equals != std::string_view::npos ? handRoleOverrideKeyMatch(entry.substr(0, equals), role, powerArmor) :
-                                                                              HandOverrideMatch::None;
-                    if (matchType != HandOverrideMatch::None && static_cast<int>(matchType) >= static_cast<int>(bestMatch)) {
+                    const auto matchType = equals != std::string_view::npos
+                        ? handRoleOverrideKeyMatch(entry.substr(0, equals), role, powerArmor)
+                        : HandOverrideMatch::None;
+                    if (matchType != HandOverrideMatch::None &&
+                        static_cast<int>(matchType) >= static_cast<int>(bestMatch)) {
                         PalmDimensionScale parsed{};
                         if (parsePalmDimensionScale(entry.substr(equals + 1), parsed)) {
                             bestMatch = matchType;
@@ -220,7 +224,8 @@ namespace rock::collider_tuning
         void mixHandColliderSignatureString(std::uint64_t& signature, const std::string& value)
         {
             for (unsigned char ch : value) {
-                signature ^= static_cast<std::uint64_t>(ch) + 0x9E37'79B9'7F4A'7C15ull + (signature << 6) + (signature >> 2);
+                signature ^=
+                    static_cast<std::uint64_t>(ch) + 0x9E37'79B9'7F4A'7C15ull + (signature << 6) + (signature >> 2);
             }
         }
 
@@ -233,6 +238,7 @@ namespace rock::collider_tuning
         }
 
     }
+
     HandProfile prepareHand(const RockConfigValues& config, bool powerArmor)
     {
         HandProfile result{};

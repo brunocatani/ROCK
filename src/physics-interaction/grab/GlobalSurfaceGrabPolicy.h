@@ -20,19 +20,13 @@ namespace rock::global_surface_grab_policy
         std::uint32_t collisionLayer = 0xFFFF'FFFFu;
     };
 
-    [[nodiscard]] inline constexpr bool shouldUseFallback(
-        const FallbackContext& context) noexcept
+    [[nodiscard]] inline constexpr bool shouldUseFallback(const FallbackContext& context) noexcept
     {
-        return context.enabled &&
-               !context.providerMatched &&
-               context.wildcardPass &&
-               context.dynamicSurfaceContact &&
-               collision_layer_policy::isDynamicHandProxySurfaceLayer(
-                   context.collisionLayer);
+        return context.enabled && !context.providerMatched && context.wildcardPass && context.dynamicSurfaceContact &&
+            collision_layer_policy::isDynamicHandProxySurfaceLayer(context.collisionLayer);
     }
 
-    [[nodiscard]] inline constexpr bool shouldYieldToCloseObject(
-        const bool wildcardTarget,
+    [[nodiscard]] inline constexpr bool shouldYieldToCloseObject(const bool wildcardTarget,
         const bool closeObjectCandidate) noexcept
     {
         return wildcardTarget && closeObjectCandidate;
@@ -45,8 +39,7 @@ namespace rock::global_surface_grab_policy
      * for this one path. Provider mechanisms still require a classified motion
      * type because their creation and restoration mutate target state.
      */
-    [[nodiscard]] inline constexpr bool canFollowUnclassifiedMotion(
-        const bool globalSurfaceFallback,
+    [[nodiscard]] inline constexpr bool canFollowUnclassifiedMotion(const bool globalSurfaceFallback,
         const bool fixedAnchor) noexcept
     {
         return globalSurfaceFallback && fixedAnchor;
@@ -54,8 +47,7 @@ namespace rock::global_surface_grab_policy
 
     // Either hand may leave a shared target and grab a different body while
     // its peer retains the original. Target identity therefore belongs to the body.
-    [[nodiscard]] inline constexpr std::uint64_t targetIdForBody(
-        const std::uint32_t bodyId) noexcept
+    [[nodiscard]] inline constexpr std::uint64_t targetIdForBody(const std::uint32_t bodyId) noexcept
     {
         return kTargetIdPrefix | bodyId;
     }

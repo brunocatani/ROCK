@@ -80,7 +80,8 @@ namespace rock::game_frame_timing_policy
         bool menuPaused = false;
     };
 
-    [[nodiscard]] inline GameFrameTiming advanceGameFrameClock(GameFrameClockState& state, const GameFrameSampleInput& input)
+    [[nodiscard]] inline GameFrameTiming advanceGameFrameClock(GameFrameClockState& state,
+        const GameFrameSampleInput& input)
     {
         GameFrameTiming timing{};
         timing.sequence = ++state.sequence;

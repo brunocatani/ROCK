@@ -6,12 +6,15 @@
 #include <cstdint>
 #include <optional>
 
-namespace RE { class TESObjectREFR; }
+namespace RE
+{
+    class TESObjectREFR;
+}
 
 namespace rock::loose_weapon_layer_repair
 {
-    inline constexpr std::optional<std::uint32_t> correctedFilter(
-        std::uint32_t filter, std::uint32_t flags, std::uint32_t motion, bool exactLooseOwner)
+    inline constexpr std::optional<std::uint32_t> correctedFilter(std::uint32_t filter, std::uint32_t flags,
+        std::uint32_t motion, bool exactLooseOwner)
     {
         using namespace collision_layer_policy;
         using namespace physics_body_classifier;
@@ -19,7 +22,8 @@ namespace rock::loose_weapon_layer_repair
         // A native save may park a movable weapon as keyframed. Repair only
         // its category; leave its motion, shape, group and suppression bits alone.
         if (!exactLooseOwner || !motion || (filter & FO4_LAYER_FILTER_MASK) != FO4_LAYER_STATIC ||
-            (type != BodyMotionType::Dynamic && type != BodyMotionType::Keyframed)) return std::nullopt;
+            (type != BodyMotionType::Dynamic && type != BodyMotionType::Keyframed))
+            return std::nullopt;
         return (filter & ~FO4_LAYER_FILTER_MASK) | FO4_LAYER_WEAPON;
     }
 

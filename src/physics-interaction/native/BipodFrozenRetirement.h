@@ -1,9 +1,14 @@
 #pragma once
 
-#include "RE/NetImmerse/NiTransform.h"
 #include <cstdint>
+#include "RE/NetImmerse/NiTransform.h"
 
-namespace RE { class bhkWorld; class hknpWorld; class TESObjectREFR; }
+namespace RE
+{
+    class bhkWorld;
+    class hknpWorld;
+    class TESObjectREFR;
+}
 
 namespace rock::bipod_frozen_retirement
 {

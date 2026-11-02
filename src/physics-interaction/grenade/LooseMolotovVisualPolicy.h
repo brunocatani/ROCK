@@ -19,12 +19,11 @@ namespace rock::loose_molotov_visual_policy
     // Matching topology and bounds admits that geometry without guessing the tip
     // of an unrelated replacement mesh from its name alone.
     template <class Bound>
-    [[nodiscard]] bool compatibleWick(std::uint32_t vertices, std::uint32_t triangles,
-        const Bound& candidate, const Bound& authored) noexcept
+    [[nodiscard]] bool compatibleWick(std::uint32_t vertices, std::uint32_t triangles, const Bound& candidate,
+        const Bound& authored) noexcept
     {
         constexpr float tolerance = 0.01f;
-        return vertices == 126 && triangles == 172 &&
-            std::isfinite(candidate.fRadius) && candidate.fRadius > 0.0f &&
+        return vertices == 126 && triangles == 172 && std::isfinite(candidate.fRadius) && candidate.fRadius > 0.0f &&
             std::abs(candidate.fRadius - authored.fRadius) <= tolerance &&
             std::abs(candidate.center.x - authored.center.x) <= tolerance &&
             std::abs(candidate.center.y - authored.center.y) <= tolerance &&
@@ -32,8 +31,8 @@ namespace rock::loose_molotov_visual_policy
     }
 
     template <class Transform>
-    [[nodiscard]] Transform atWick(const Transform& destinationWick,
-        const Transform& sourceWick, const Transform& sourceFlame) noexcept
+    [[nodiscard]] Transform atWick(const Transform& destinationWick, const Transform& sourceWick,
+        const Transform& sourceFlame) noexcept
     {
         return transform_math::composeTransforms(destinationWick,
             transform_math::composeTransforms(transform_math::invertTransform(sourceWick), sourceFlame));

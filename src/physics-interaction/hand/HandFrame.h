@@ -7,7 +7,6 @@
  * Hand frame helpers are grouped here because handspace convention, palm transform, and pointing direction define the same coordinate authority.
  */
 
-
 // ---- HandspaceConvention.h ----
 
 namespace rock::handspace_convention
@@ -48,23 +47,17 @@ namespace rock::handspace_convention
 
 #include <cmath>
 
+#include "RE/NetImmerse/NiPoint.h"
+#include "RE/NetImmerse/NiTransform.h"
 #include "RockConfig.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
 #include "physics-interaction/hand/HandSelection.h"
-#include "RE/NetImmerse/NiPoint.h"
-#include "RE/NetImmerse/NiTransform.h"
 
 namespace rock
 {
-    inline RE::NiPoint3 palmNormalHandspace() noexcept
-    {
-        return RE::NiPoint3{ 0.0f, -1.0f, 0.0f };
-    }
+    inline RE::NiPoint3 palmNormalHandspace() noexcept { return RE::NiPoint3{ 0.0f, -1.0f, 0.0f }; }
 
-    inline RE::NiPoint3 legacyPointingVectorHandspace() noexcept
-    {
-        return RE::NiPoint3{ 0.0f, -1.0f, 0.0f };
-    }
+    inline RE::NiPoint3 legacyPointingVectorHandspace() noexcept { return RE::NiPoint3{ 0.0f, -1.0f, 0.0f }; }
 
     inline RE::NiPoint3 authoredHandspaceToRawHandspaceForHand(RE::NiPoint3 value, bool isLeft)
     {
@@ -85,7 +78,8 @@ namespace rock
         return value;
     }
 
-    inline RE::NiPoint3 transformHandspaceLocalToWorld(const RE::NiTransform& handTransform, const RE::NiPoint3& localVector)
+    inline RE::NiPoint3 transformHandspaceLocalToWorld(const RE::NiTransform& handTransform,
+        const RE::NiPoint3& localVector)
     {
         // FO4VR binary verification: NiAVObject world updates call the Bethesda transform
         // compose helper at 0x1401A8D60, which applies child-local vectors through the
@@ -95,14 +89,19 @@ namespace rock
         return handTransform.rotate.Transpose() * localVector;
     }
 
-    inline RE::NiPoint3 transformHandspacePosition(const RE::NiTransform& handTransform, const RE::NiPoint3& localPosition, bool isLeft)
+    inline RE::NiPoint3 transformHandspacePosition(const RE::NiTransform& handTransform,
+        const RE::NiPoint3& localPosition, bool isLeft)
     {
-        return handTransform.translate + transformHandspaceLocalToWorld(handTransform, authoredHandspaceToRawHandspaceForHand(localPosition, isLeft) * handTransform.scale);
+        return handTransform.translate +
+            transformHandspaceLocalToWorld(handTransform,
+                authoredHandspaceToRawHandspaceForHand(localPosition, isLeft) * handTransform.scale);
     }
 
-    inline RE::NiPoint3 transformHandspaceDirection(const RE::NiTransform& handTransform, const RE::NiPoint3& localDirection, bool isLeft)
+    inline RE::NiPoint3 transformHandspaceDirection(const RE::NiTransform& handTransform,
+        const RE::NiPoint3& localDirection, bool isLeft)
     {
-        return normalizeDirection(transformHandspaceLocalToWorld(handTransform, authoredHandspaceToRawHandspaceForHand(localDirection, isLeft)));
+        return normalizeDirection(transformHandspaceLocalToWorld(handTransform,
+            authoredHandspaceToRawHandspaceForHand(localDirection, isLeft)));
     }
 
     /*
@@ -124,6 +123,7 @@ namespace rock
             std::atomic<float> y{ 0.0f };
             std::atomic<float> z{ 0.0f };
         };
+
         inline std::array<HandLocal, 2> g_handLocal{};
 
         inline void publishHandLocal(bool isLeft, const RE::NiPoint3& point)
@@ -144,7 +144,8 @@ namespace rock
 
     inline RE::NiPoint3 computeGrabPalmPointWorldFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
     {
-        return handTransform.translate + transformHandspaceLocalToWorld(handTransform, palm_point::handLocal(isLeft) * handTransform.scale);
+        return handTransform.translate +
+            transformHandspaceLocalToWorld(handTransform, palm_point::handLocal(isLeft) * handTransform.scale);
     }
 
     inline RE::NiPoint3 computePalmNormalFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
@@ -163,40 +164,45 @@ namespace rock
         return transformHandspaceDirection(handTransform, legacyPointingVectorHandspace(), isLeft);
     }
 
-    inline RE::NiPoint3 computeSelectionDirectionFromHandBasis(const RE::NiTransform& handTransform, int angleDegrees, bool isLeft)
+    inline RE::NiPoint3 computeSelectionDirectionFromHandBasis(const RE::NiTransform& handTransform, int angleDegrees,
+        bool isLeft)
     {
-        return transformHandspaceDirection(
-            handTransform,
-            selection_query_policy::selectionAimHandspaceVectorFromAngleDegrees<RE::NiPoint3>(angleDegrees),
-            isLeft);
+        return transformHandspaceDirection(handTransform,
+            selection_query_policy::selectionAimHandspaceVectorFromAngleDegrees<RE::NiPoint3>(angleDegrees), isLeft);
     }
 
     inline RE::NiPoint3 computeCloseSelectionDirectionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
     {
-        return computeSelectionDirectionFromHandBasis(handTransform, selection_query_policy::kCloseSelectionAimAngleDegrees, isLeft);
+        return computeSelectionDirectionFromHandBasis(handTransform,
+            selection_query_policy::kCloseSelectionAimAngleDegrees, isLeft);
     }
 
     inline RE::NiPoint3 computeFarSelectionDirectionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
     {
-        return computeSelectionDirectionFromHandBasis(handTransform, selection_query_policy::kFarSelectionAimAngleDegrees, isLeft);
+        return computeSelectionDirectionFromHandBasis(handTransform,
+            selection_query_policy::kFarSelectionAimAngleDegrees, isLeft);
     }
 
     inline RE::NiPoint3 computePinchDetectionDirectionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
     {
-        return transformHandspaceDirection(handTransform, g_rockConfig.rockGrabPinchDetectionDirectionHandspace, isLeft);
+        return transformHandspaceDirection(handTransform, g_rockConfig.rockGrabPinchDetectionDirectionHandspace,
+            isLeft);
     }
 
     inline RE::NiPoint3 computeGrabAuthorityProxyOffsetLocalGame(bool isLeft)
     {
-        return isLeft ? g_rockConfig.rockLeftGrabAuthorityProxyOffsetGameUnits : g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits;
+        return isLeft ? g_rockConfig.rockLeftGrabAuthorityProxyOffsetGameUnits
+                      : g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits;
     }
 
-    inline RE::NiPoint3 generatedProxyLocalVectorToWorld(const RE::NiTransform& proxyFrameWorld, const RE::NiPoint3& localVector)
+    inline RE::NiPoint3 generatedProxyLocalVectorToWorld(const RE::NiTransform& proxyFrameWorld,
+        const RE::NiPoint3& localVector)
     {
         return hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(proxyFrameWorld, localVector);
     }
 
-    inline RE::NiPoint3 generatedProxyLocalPointToWorld(const RE::NiTransform& proxyFrameWorld, const RE::NiPoint3& localPoint)
+    inline RE::NiPoint3 generatedProxyLocalPointToWorld(const RE::NiTransform& proxyFrameWorld,
+        const RE::NiPoint3& localPoint)
     {
         return proxyFrameWorld.translate + generatedProxyLocalVectorToWorld(proxyFrameWorld, localPoint);
     }
@@ -216,7 +222,8 @@ namespace rock
         return result;
     }
 
-    inline RE::NiTransform applyGrabAuthorityProxyLocalOffsetToFrame(const RE::NiTransform& proxyFrameWorld, bool isLeft)
+    inline RE::NiTransform applyGrabAuthorityProxyLocalOffsetToFrame(const RE::NiTransform& proxyFrameWorld,
+        bool isLeft)
     {
         /*
          * This moves only the hidden grab authority proxy/seat point. The real

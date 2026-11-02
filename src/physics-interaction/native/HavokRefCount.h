@@ -20,7 +20,8 @@ namespace rock::havok_ref_count
             return;
         }
 
-        auto* refCountDword = reinterpret_cast<volatile long*>(const_cast<char*>(reinterpret_cast<const char*>(object)) + 0x08);
+        auto* refCountDword =
+            reinterpret_cast<volatile long*>(const_cast<char*>(reinterpret_cast<const char*>(object)) + 0x08);
         for (;;) {
             const long oldValue = *refCountDword;
             const auto flags = static_cast<std::uint16_t>((static_cast<std::uint32_t>(oldValue) >> 16) & 0xFFFFu);
@@ -29,7 +30,8 @@ namespace rock::havok_ref_count
                 return;
             }
 
-            const long newValue = (oldValue & static_cast<long>(0xFFFF0000u)) | static_cast<long>(static_cast<std::uint16_t>(refCount + 1));
+            const long newValue = (oldValue & static_cast<long>(0xFFFF0000u)) |
+                static_cast<long>(static_cast<std::uint16_t>(refCount + 1));
             if (_InterlockedCompareExchange(refCountDword, newValue, oldValue) == oldValue) {
                 return;
             }
@@ -52,7 +54,8 @@ namespace rock::havok_ref_count
                 return;
             }
 
-            const long newValue = (oldValue & static_cast<long>(0xFFFF0000u)) | static_cast<long>(static_cast<std::uint16_t>(refCount - 1));
+            const long newValue = (oldValue & static_cast<long>(0xFFFF0000u)) |
+                static_cast<long>(static_cast<std::uint16_t>(refCount - 1));
             if (_InterlockedCompareExchange(refCountDword, newValue, oldValue) != oldValue) {
                 continue;
             }

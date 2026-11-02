@@ -6,23 +6,26 @@
 
 namespace rock::input_remap_policy
 {
-    [[nodiscard]] constexpr bool isHeldLooseWeaponTarget(std::uint32_t target,
-        std::uint32_t left, std::uint32_t right) noexcept
+    [[nodiscard]] constexpr bool isHeldLooseWeaponTarget(std::uint32_t target, std::uint32_t left,
+        std::uint32_t right) noexcept
     {
         return target != 0 && (target == left || target == right);
     }
+
     // ROCK's grab is the logical OpenVR grip bit. The [Controls] button layout
     // chooses the physical input behind it before any ROCK read.
     inline constexpr int kGrabButtonId = 2;
 
-    [[nodiscard]] constexpr bool buttonChordHeld(bool available, std::uint64_t pressed, std::uint64_t rearm, std::uint64_t chord) noexcept
+    [[nodiscard]] constexpr bool buttonChordHeld(bool available, std::uint64_t pressed, std::uint64_t rearm,
+        std::uint64_t chord) noexcept
     {
         return available && chord != 0 && (rearm & chord) == 0 && (pressed & chord) == chord;
     }
 
-    [[nodiscard]] constexpr bool triggerGripChordHeld(bool available, std::uint64_t pressed, std::uint64_t rearm) noexcept
+    [[nodiscard]] constexpr bool triggerGripChordHeld(bool available, std::uint64_t pressed,
+        std::uint64_t rearm) noexcept
     {
-        constexpr auto chord = (std::uint64_t{1} << kGrabButtonId) | (std::uint64_t{1} << 33);
+        constexpr auto chord = (std::uint64_t{ 1 } << kGrabButtonId) | (std::uint64_t{ 1 } << 33);
         return buttonChordHeld(available, pressed, rearm, chord);
     }
 
@@ -47,8 +50,7 @@ namespace rock::input_remap_policy
     {
         // Only this wand's target can own use input. The other wand's fallback
         // remains evidence for take protection, never for stealing reload/scope.
-        return target == ActivateTarget::NativeActivation ||
-               (target == ActivateTarget::TakeEquip && !handEngaged);
+        return target == ActivateTarget::NativeActivation || (target == ActivateTarget::TakeEquip && !handEngaged);
     }
 
     [[nodiscard]] constexpr bool providerSuppressionApplies(bool menuActive, bool requested) noexcept
@@ -85,15 +87,18 @@ namespace rock::input_remap_policy
         bool grabReleased{ false };
     };
 
-    [[nodiscard]] constexpr Decision suppressGrabInput(Decision input, bool suppressPress, bool suppressRelease, bool holding) noexcept
+    [[nodiscard]] constexpr Decision suppressGrabInput(Decision input, bool suppressPress, bool suppressRelease,
+        bool holding) noexcept
     {
         if (suppressPress) {
             input.grabPressed = false;
-            if (!holding) input.grabHeld = false;
+            if (!holding)
+                input.grabHeld = false;
         }
         if (suppressRelease) {
             input.grabReleased = false;
-            if (holding) input.grabHeld = true;
+            if (holding)
+                input.grabHeld = true;
         }
         return input;
     }
@@ -189,10 +194,7 @@ namespace rock::input_remap_policy
         std::uint64_t releasedEdges{ 0 };
     };
 
-    [[nodiscard]] constexpr bool isValidButtonId(int buttonId)
-    {
-        return buttonId >= 0 && buttonId < 64;
-    }
+    [[nodiscard]] constexpr bool isValidButtonId(int buttonId) { return buttonId >= 0 && buttonId < 64; }
 
     /*
      * Fallout VR consumes trigger as both an OpenVR button bit and analog Axis1.x.
@@ -224,9 +226,7 @@ namespace rock::input_remap_policy
 
     [[nodiscard]] constexpr bool shouldAllowNativeRealMeleeInput(const NativeActionSuppressionInput& input)
     {
-        return input.realMeleeWeaponEquipped &&
-               !input.nativeMeleeSuppressionActive &&
-               input.weaponDrawn;
+        return input.realMeleeWeaponEquipped && !input.nativeMeleeSuppressionActive && input.weaponDrawn;
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeGripReadyAction(const NativeActionSuppressionInput& input)
@@ -234,19 +234,21 @@ namespace rock::input_remap_policy
         if (shouldAllowNativeRealMeleeInput(input)) {
             return false;
         }
-        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
-               (!input.weaponDrawn || input.equippedWeaponFiringGripInputActive);
+        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive &&
+            input.eventMatched && (!input.weaponDrawn || input.equippedWeaponFiringGripInputActive);
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeTriggerAction(const NativeActionSuppressionInput& input)
     {
         if (input.eventMatched && input.gameplayInputAllowed && !input.menuInputActive &&
-            (input.weaponTransferPending || input.triggerAwaitingRelease)) return true;
+            (input.weaponTransferPending || input.triggerAwaitingRelease))
+            return true;
         if (shouldAllowNativeRealMeleeInput(input)) {
             return false;
         }
-        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
-               (!input.weaponDrawn || input.eventHandHeldWeapon || input.equippedWeaponPrimaryDetached);
+        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive &&
+            input.eventMatched &&
+            (!input.weaponDrawn || input.eventHandHeldWeapon || input.equippedWeaponPrimaryDetached);
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeGripReloadAction(const NativeActionSuppressionInput& input)
@@ -254,8 +256,8 @@ namespace rock::input_remap_policy
         if (shouldAllowNativeRealMeleeInput(input)) {
             return false;
         }
-        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
-               input.weaponDrawn && input.primaryHandEvent;
+        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive &&
+            input.eventMatched && input.weaponDrawn && input.primaryHandEvent;
     }
 
     /*
@@ -275,8 +277,7 @@ namespace rock::input_remap_policy
     [[nodiscard]] constexpr bool shouldRouteFiringHandActivateReload(const NativeActivateReloadInput& input)
     {
         return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.weaponDrawn &&
-               input.primaryHandEvent && input.firingHandIsPrimaryHand &&
-               input.buttonJustPressed && input.eventMatched;
+            input.primaryHandEvent && input.firingHandIsPrimaryHand && input.buttonJustPressed && input.eventMatched;
     }
 
     /*
@@ -286,12 +287,12 @@ namespace rock::input_remap_policy
      */
     [[nodiscard]] constexpr bool shouldDeferFiringHandActivateForManualScope(const ManualScopeActivateInput& input)
     {
-        return input.rawInputCaptureAvailable && input.gameplayInputAllowed &&
-               !input.menuInputActive && input.weaponDrawn && input.primaryHandEvent &&
-               input.firingHandIsPrimaryHand && input.eventMatched;
+        return input.rawInputCaptureAvailable && input.gameplayInputAllowed && !input.menuInputActive &&
+            input.weaponDrawn && input.primaryHandEvent && input.firingHandIsPrimaryHand && input.eventMatched;
     }
 
-    [[nodiscard]] constexpr bool shouldConsumeEquippedWeaponFiringGripInput(const EquippedWeaponFiringGripInputGate& input)
+    [[nodiscard]] constexpr bool shouldConsumeEquippedWeaponFiringGripInput(
+        const EquippedWeaponFiringGripInputGate& input)
     {
         return input.featureAvailable;
     }
@@ -308,9 +309,10 @@ namespace rock::input_remap_policy
      */
     [[nodiscard]] constexpr bool shouldRequestHeldWeaponEquip(const HeldWeaponEquipInput& input)
     {
-        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.heldWeaponAtFrameStart && input.heldWeaponNow &&
-               ((input.triggerPressedEdge && input.triggerInputHand == input.heldWeaponHand) ||
-                   (input.gripZoneEquipEnabled && input.gripZoneEquipSettled));
+        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive &&
+            input.heldWeaponAtFrameStart && input.heldWeaponNow &&
+            ((input.triggerPressedEdge && input.triggerInputHand == input.heldWeaponHand) ||
+                (input.gripZoneEquipEnabled && input.gripZoneEquipSettled));
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeFavoritesAction(const NativeActionSuppressionInput& input)
@@ -324,7 +326,8 @@ namespace rock::input_remap_policy
     {
         // The logical OpenVR grip is ROCK's grab button. It never belongs to the
         // native grenade/throw handler, including for a real melee weapon.
-        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched;
+        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive &&
+            input.eventMatched;
     }
 
     /*
@@ -337,8 +340,7 @@ namespace rock::input_remap_policy
      */
     [[nodiscard]] constexpr bool shouldSuppressLegacyPipboyTriggerOpen(const LegacyPipboyTriggerOpenInput& input)
     {
-        return input.remapEnabled && !input.pipboyMenuOpen &&
-               input.eventMatched && input.secondaryWandEvent;
+        return input.remapEnabled && !input.pipboyMenuOpen && input.eventMatched && input.secondaryWandEvent;
     }
 
     /*
@@ -355,8 +357,8 @@ namespace rock::input_remap_policy
      */
     [[nodiscard]] constexpr bool shouldSuppressNativeTakeEquipAction(const NativeActionSuppressionInput& input)
     {
-        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive &&
-               input.eventMatched && input.takeEquipHandEngaged && input.takeEquipTargetEligible;
+        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
+            input.takeEquipHandEngaged && input.takeEquipTargetEligible;
     }
 
     [[nodiscard]] constexpr bool shouldInstallPipboyPauseArbitrationHooks(const bool remapEnabled)
@@ -364,7 +366,8 @@ namespace rock::input_remap_policy
         return remapEnabled;
     }
 
-    [[nodiscard]] constexpr EdgeTransition evaluateEdgeTransition(bool hadPrevious, std::uint64_t previousPressed, std::uint64_t currentPressed)
+    [[nodiscard]] constexpr EdgeTransition evaluateEdgeTransition(bool hadPrevious, std::uint64_t previousPressed,
+        std::uint64_t currentPressed)
     {
         if (!hadPrevious) {
             return EdgeTransition{ .previousPressedForEvaluation = currentPressed };
@@ -384,8 +387,10 @@ namespace rock::input_remap_policy
         const auto grabMask = isAllowedGrabButtonId(settings.grabButtonId) ? buttonMask(settings.grabButtonId) : 0;
 
         decision.grabHeld = grabMask != 0 && (input.rawPressed & grabMask) != 0;
-        decision.grabPressed = grabMask != 0 && (input.rawPressed & grabMask) != 0 && (input.previousRawPressed & grabMask) == 0;
-        decision.grabReleased = grabMask != 0 && (input.rawPressed & grabMask) == 0 && (input.previousRawPressed & grabMask) != 0;
+        decision.grabPressed =
+            grabMask != 0 && (input.rawPressed & grabMask) != 0 && (input.previousRawPressed & grabMask) == 0;
+        decision.grabReleased =
+            grabMask != 0 && (input.rawPressed & grabMask) == 0 && (input.previousRawPressed & grabMask) != 0;
         return decision;
     }
 }

@@ -35,42 +35,26 @@ namespace rock::hand_grab_internal
     [[nodiscard]] RE::NiTransform makeIdentityTransform();
     [[nodiscard]] RE::NiTransform invertTransform(const RE::NiTransform& transform);
     [[nodiscard]] RE::NiTransform multiplyTransforms(const RE::NiTransform& parent, const RE::NiTransform& child);
-    [[nodiscard]] RE::NiTransform deriveNodeWorldFromBodyWorld(
-        const RE::NiTransform& bodyWorld,
+    [[nodiscard]] RE::NiTransform deriveNodeWorldFromBodyWorld(const RE::NiTransform& bodyWorld,
         const RE::NiTransform& bodyLocalTransform);
-    [[nodiscard]] RE::NiTransform reconstructBodyWorldFromProxyInBody(
-        const RE::NiTransform& proxyWorld,
-        const RE::NiMatrix3& proxyInBodyRotation,
-        const RE::NiPoint3& transformBLocalGame,
+    [[nodiscard]] RE::NiTransform reconstructBodyWorldFromProxyInBody(const RE::NiTransform& proxyWorld,
+        const RE::NiMatrix3& proxyInBodyRotation, const RE::NiPoint3& transformBLocalGame,
         const RE::NiPoint3& pivotAProxyLocalGame);
-    [[nodiscard]] RE::NiTransform reconstructSolverEffectiveBodyWorld(
-        const RE::NiTransform& proxyWorld,
-        const RE::NiMatrix3& transformARotation,
-        const RE::NiMatrix3& transformBRotation,
-        const RE::NiMatrix3& targetBRcaRotation,
-        const RE::NiPoint3& transformBLocalGame,
-        const RE::NiPoint3& anchorAWorld,
-        float bodyScale);
+    [[nodiscard]] RE::NiTransform reconstructSolverEffectiveBodyWorld(const RE::NiTransform& proxyWorld,
+        const RE::NiMatrix3& transformARotation, const RE::NiMatrix3& transformBRotation,
+        const RE::NiMatrix3& targetBRcaRotation, const RE::NiPoint3& transformBLocalGame,
+        const RE::NiPoint3& anchorAWorld, float bodyScale);
 
-    [[nodiscard]] bool tryGetGrabAuthorityBodyWorldTransform(
-        RE::hknpWorld* world,
-        RE::hknpBodyId bodyId,
+    [[nodiscard]] bool tryGetGrabAuthorityBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId,
         RE::NiTransform& outTransform);
-    [[nodiscard]] RE::NiTransform gripEvidenceWorldFrame(
-        const CanonicalGrabFrame& frame,
+    [[nodiscard]] RE::NiTransform gripEvidenceWorldFrame(const CanonicalGrabFrame& frame,
         const RE::NiTransform& fallbackWorld);
-    [[nodiscard]] RE::NiTransform gripEvidenceWorldFrame(
-        const ImmutableGrabCaptureTelemetry& capture,
+    [[nodiscard]] RE::NiTransform gripEvidenceWorldFrame(const ImmutableGrabCaptureTelemetry& capture,
         const RE::NiTransform& fallbackWorld);
-    [[nodiscard]] RE::NiPoint3 gripEvidencePointWorld(
-        const CanonicalGrabFrame& frame,
+    [[nodiscard]] RE::NiPoint3 gripEvidencePointWorld(const CanonicalGrabFrame& frame,
         const RE::NiTransform& fallbackWorld);
-    [[nodiscard]] RE::NiPoint3 gripEvidenceNormalWorld(
-        const CanonicalGrabFrame& frame,
+    [[nodiscard]] RE::NiPoint3 gripEvidenceNormalWorld(const CanonicalGrabFrame& frame,
         const RE::NiTransform& fallbackWorld);
-    [[nodiscard]] HeldBodyMassSummary readHeldBodyMassSummary(
-        RE::hknpWorld* world,
-        RE::hknpBodyId primaryBodyId,
-        const std::vector<std::uint32_t>& heldBodyIds,
-        bool includeConnectedBodies = true);
+    [[nodiscard]] HeldBodyMassSummary readHeldBodyMassSummary(RE::hknpWorld* world, RE::hknpBodyId primaryBodyId,
+        const std::vector<std::uint32_t>& heldBodyIds, bool includeConnectedBodies = true);
 }

@@ -1,7 +1,8 @@
 #pragma once
 #include <ROCK/Input.h>
 
-namespace rock::support_trigger_input {
+namespace rock::support_trigger_input
+{
     api::Status set(api::OwnerToken, const api::input::SupportTriggerRequest&);
     api::Status clear(api::OwnerToken);
     api::Status read(api::input::SupportTriggerState&);

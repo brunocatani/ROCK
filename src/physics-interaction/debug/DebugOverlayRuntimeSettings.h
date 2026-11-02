@@ -76,8 +76,10 @@ namespace rock::debug_overlay_runtime
     constexpr Limits sanitize(const RequestedLimits& requested) noexcept
     {
         Limits limits{};
-        limits.maxShapeCapturesPerFrame = clampNonNegative(requested.maxShapeCapturesPerFrame, kMaxShapeCapturesPerFrame);
-        limits.maxConvexSupportVertices = debug_overlay_policy::clampMaxConvexSupportVertices(requested.maxConvexSupportVertices);
+        limits.maxShapeCapturesPerFrame =
+            clampNonNegative(requested.maxShapeCapturesPerFrame, kMaxShapeCapturesPerFrame);
+        limits.maxConvexSupportVertices =
+            debug_overlay_policy::clampMaxConvexSupportVertices(requested.maxConvexSupportVertices);
         limits.maxCompoundChildren = debug_overlay_policy::clampMaxCompoundChildren(requested.maxCompoundChildren);
         limits.maxCompoundDepth = debug_overlay_policy::clampMaxCompoundDepth(requested.maxCompoundDepth);
         limits.maxShapeQueuedJobs = clampNonNegative(requested.maxShapeQueuedJobs, kMaxShapeQueuedJobs);

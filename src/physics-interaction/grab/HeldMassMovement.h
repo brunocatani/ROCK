@@ -14,10 +14,7 @@ namespace rock::held_mass_movement
         float fadeOutSeconds = 5.0f;
     };
 
-    inline float sanitizeReduction(float value)
-    {
-        return std::clamp(std::isfinite(value) ? value : 0.0f, 0.0f, 99.0f);
-    }
+    inline float sanitizeReduction(float value) { return std::clamp(std::isfinite(value) ? value : 0.0f, 0.0f, 99.0f); }
 
     inline float computeHeldMassReduction(float heldMass, const Config& config)
     {
@@ -25,8 +22,10 @@ namespace rock::held_mass_movement
             return 0.0f;
         }
 
-        const float massProportion = (std::max)(0.0f, std::isfinite(config.massProportion) ? config.massProportion : 0.675f);
-        const float massExponent = std::clamp(std::isfinite(config.massExponent) ? config.massExponent : 1.0f, 0.0f, 4.0f);
+        const float massProportion =
+            (std::max)(0.0f, std::isfinite(config.massProportion) ? config.massProportion : 0.675f);
+        const float massExponent =
+            std::clamp(std::isfinite(config.massExponent) ? config.massExponent : 1.0f, 0.0f, 4.0f);
         const float maxReduction = sanitizeReduction(config.maxReduction);
         return std::clamp(std::pow(heldMass, massExponent) * massProportion, 0.0f, maxReduction);
     }

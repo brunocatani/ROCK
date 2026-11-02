@@ -24,29 +24,41 @@ namespace rock::button_layout_policy
 
     [[nodiscard]] inline Source classifyPadRegion(float x, float y) noexcept
     {
-        if (!std::isfinite(x) || !std::isfinite(y)) return Source::PadCenter;
-        if (std::sqrt(x * x + y * y) < kPadCenterRadius) return Source::PadCenter;
-        if (std::fabs(y) >= std::fabs(x)) return y >= 0.0f ? Source::PadUp : Source::PadDown;
+        if (!std::isfinite(x) || !std::isfinite(y))
+            return Source::PadCenter;
+        if (std::sqrt(x * x + y * y) < kPadCenterRadius)
+            return Source::PadCenter;
+        if (std::fabs(y) >= std::fabs(x))
+            return y >= 0.0f ? Source::PadUp : Source::PadDown;
         return x >= 0.0f ? Source::PadRight : Source::PadLeft;
     }
 
     [[nodiscard]] constexpr PadLatch latchFor(Source region) noexcept
     {
         switch (region) {
-        case Source::PadUp: return PadLatch::PadUp;
-        case Source::PadDown: return PadLatch::PadDown;
-        case Source::PadLeft: return PadLatch::PadLeft;
-        case Source::PadRight: return PadLatch::PadRight;
-        case Source::PadCenter: return PadLatch::PadCenter;
-        default: return PadLatch::Stick;
+        case Source::PadUp:
+            return PadLatch::PadUp;
+        case Source::PadDown:
+            return PadLatch::PadDown;
+        case Source::PadLeft:
+            return PadLatch::PadLeft;
+        case Source::PadRight:
+            return PadLatch::PadRight;
+        case Source::PadCenter:
+            return PadLatch::PadCenter;
+        default:
+            return PadLatch::Stick;
         }
     }
 
     // The latch a new Axis0 press takes; Released when Axis0 is up.
-    [[nodiscard]] inline PadLatch resolvePressLatch(const HandLayout& layout, const vr::VRControllerState_t& physical) noexcept
+    [[nodiscard]] inline PadLatch resolvePressLatch(const HandLayout& layout,
+        const vr::VRControllerState_t& physical) noexcept
     {
-        if ((physical.ulButtonPressed & bit(kStickBit)) == 0) return PadLatch::Released;
-        if (!layout.usesPadRegions()) return PadLatch::Stick;
+        if ((physical.ulButtonPressed & bit(kStickBit)) == 0)
+            return PadLatch::Released;
+        if (!layout.usesPadRegions())
+            return PadLatch::Stick;
         const auto region = classifyPadRegion(physical.rAxis[kStickAxis].x, physical.rAxis[kStickAxis].y);
         return layout.uses(region) ? latchFor(region) : PadLatch::Stick;
     }
@@ -58,7 +70,8 @@ namespace rock::button_layout_policy
         float value{ 0.0f };
     };
 
-    [[nodiscard]] inline SourceSample sampleSource(Source source, const vr::VRControllerState_t& physical, PadLatch latch) noexcept
+    [[nodiscard]] inline SourceSample sampleSource(Source source, const vr::VRControllerState_t& physical,
+        PadLatch latch) noexcept
     {
         const auto pressedBit = [&](int index) { return (physical.ulButtonPressed & bit(index)) != 0; };
         const auto touchedBit = [&](int index) { return (physical.ulButtonTouched & bit(index)) != 0; };
@@ -71,30 +84,43 @@ namespace rock::button_layout_policy
             return SourceSample{ pressed, touchedBit(kStickBit), pressed ? 1.0f : 0.0f };
         };
         switch (source) {
-        case Source::None: return {};
+        case Source::None:
+            return {};
         case Source::Trigger:
-            return { pressedBit(kTriggerBit), touchedBit(kTriggerBit) || pressedBit(kTriggerBit), physical.rAxis[kTriggerAxis].x };
+            return { pressedBit(kTriggerBit), touchedBit(kTriggerBit) || pressedBit(kTriggerBit),
+                physical.rAxis[kTriggerAxis].x };
         case Source::Grip: {
             const bool pressed = pressedBit(kGripBit);
             // Touch-style grips report an analog pull; button grips (Vive, WMR) do not.
             const float analog = physical.rAxis[kGripAxis].x;
             return { pressed, pressed || touchedBit(kGripBit), analog > 0.0f ? analog : (pressed ? 1.0f : 0.0f) };
         }
-        case Source::LowerFace: return digital(kLowerFaceBit);
-        case Source::UpperFace: return digital(kUpperFaceBit);
+        case Source::LowerFace:
+            return digital(kLowerFaceBit);
+        case Source::UpperFace:
+            return digital(kUpperFaceBit);
         case Source::Stick: {
             const bool pressed = pressedBit(kStickBit) && latch == PadLatch::Stick;
             return { pressed, touchedBit(kStickBit), pressed ? 1.0f : 0.0f };
         }
-        case Source::GripClick: return digital(kGripClickBit);
-        case Source::Axis3Click: return digital(kAxis3ClickBit);
-        case Source::Axis4Click: return digital(kAxis4ClickBit);
-        case Source::PadUp: return padRegion(PadLatch::PadUp);
-        case Source::PadDown: return padRegion(PadLatch::PadDown);
-        case Source::PadLeft: return padRegion(PadLatch::PadLeft);
-        case Source::PadRight: return padRegion(PadLatch::PadRight);
-        case Source::PadCenter: return padRegion(PadLatch::PadCenter);
-        case Source::Count: break;
+        case Source::GripClick:
+            return digital(kGripClickBit);
+        case Source::Axis3Click:
+            return digital(kAxis3ClickBit);
+        case Source::Axis4Click:
+            return digital(kAxis4ClickBit);
+        case Source::PadUp:
+            return padRegion(PadLatch::PadUp);
+        case Source::PadDown:
+            return padRegion(PadLatch::PadDown);
+        case Source::PadLeft:
+            return padRegion(PadLatch::PadLeft);
+        case Source::PadRight:
+            return padRegion(PadLatch::PadRight);
+        case Source::PadCenter:
+            return padRegion(PadLatch::PadCenter);
+        case Source::Count:
+            break;
         }
         return {};
     }

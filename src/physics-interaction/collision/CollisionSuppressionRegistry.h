@@ -1,6 +1,6 @@
 #pragma once
 
-    /*
+/*
      * Hand/weapon collision suppression is a shared ownership problem, not a local
      * toggle. Grab, dominant-weapon handling, and support grip can all suppress the
      * same hand body in the same frame. This registry models suppression as leases:
@@ -40,7 +40,10 @@ namespace rock::collision_suppression_registry
         ConsumerWeaponPart = 10,
     };
 
-    inline constexpr std::uint32_t ownerBit(CollisionSuppressionOwner owner) { return 1u << static_cast<std::uint32_t>(owner); }
+    inline constexpr std::uint32_t ownerBit(CollisionSuppressionOwner owner)
+    {
+        return 1u << static_cast<std::uint32_t>(owner);
+    }
 
     struct RuntimeSuppressionResult
     {
@@ -60,9 +63,12 @@ namespace rock::collision_suppression_registry
     class CollisionSuppressionRegistry
     {
     public:
-        RuntimeSuppressionResult acquire(RE::hknpWorld* world, std::uint32_t bodyId, CollisionSuppressionOwner owner, const char* context);
-        RuntimeSuppressionResult refresh(RE::hknpWorld* world, std::uint32_t bodyId, CollisionSuppressionOwner owner, const char* context);
-        RuntimeSuppressionResult release(RE::hknpWorld* world, std::uint32_t bodyId, CollisionSuppressionOwner owner, const char* context);
+        RuntimeSuppressionResult acquire(RE::hknpWorld* world, std::uint32_t bodyId, CollisionSuppressionOwner owner,
+            const char* context);
+        RuntimeSuppressionResult refresh(RE::hknpWorld* world, std::uint32_t bodyId, CollisionSuppressionOwner owner,
+            const char* context);
+        RuntimeSuppressionResult release(RE::hknpWorld* world, std::uint32_t bodyId, CollisionSuppressionOwner owner,
+            const char* context);
         bool hasLease(RE::hknpWorld* world, std::uint32_t bodyId, CollisionSuppressionOwner owner) const;
         void clear();
 
@@ -81,16 +87,10 @@ namespace rock::collision_suppression_registry
         RuntimeEntry* find(RE::hknpWorld* world, std::uint32_t bodyId);
         const RuntimeEntry* find(RE::hknpWorld* world, std::uint32_t bodyId) const;
         void erase(RE::hknpWorld* world, std::uint32_t bodyId);
-        static bool bodyIdentityMatches(const RuntimeEntry& entry,
-            std::uint32_t motionIndex,
-            RE::NiCollisionObject* collisionObject,
-            RE::NiAVObject* ownerNode);
-        static void captureBodyIdentity(RuntimeEntry& entry,
-            RE::hknpWorld* world,
-            std::uint32_t bodyId,
-            std::uint32_t motionIndex,
-            RE::NiCollisionObject* collisionObject,
-            RE::NiAVObject* ownerNode);
+        static bool bodyIdentityMatches(const RuntimeEntry& entry, std::uint32_t motionIndex,
+            RE::NiCollisionObject* collisionObject, RE::NiAVObject* ownerNode);
+        static void captureBodyIdentity(RuntimeEntry& entry, RE::hknpWorld* world, std::uint32_t bodyId,
+            std::uint32_t motionIndex, RE::NiCollisionObject* collisionObject, RE::NiAVObject* ownerNode);
 
         std::vector<RuntimeEntry> _entries;
     };
@@ -104,14 +104,9 @@ namespace rock::collision_suppression_registry
         std::uint32_t firstBodyId = kInvalidBodyId;
         std::uint32_t bodyCount = 0;
 
-        bool begin(
-            std::uint32_t bodyId,
-            std::size_t activeBodyCount,
-            float delaySeconds) noexcept
+        bool begin(std::uint32_t bodyId, std::size_t activeBodyCount, float delaySeconds) noexcept
         {
-            const float delay =
-                std::isfinite(delaySeconds) && delaySeconds > 0.0f ?
-                    delaySeconds : 0.0f;
+            const float delay = std::isfinite(delaySeconds) && delaySeconds > 0.0f ? delaySeconds : 0.0f;
             if (bodyId == kInvalidBodyId || activeBodyCount == 0 || delay <= 0.0f) {
                 clear();
                 return false;
@@ -132,9 +127,7 @@ namespace rock::collision_suppression_registry
                 clear();
                 return false;
             }
-            const float delta =
-                std::isfinite(deltaSeconds) && deltaSeconds > 0.0f ?
-                    deltaSeconds : 0.0f;
+            const float delta = std::isfinite(deltaSeconds) && deltaSeconds > 0.0f ? deltaSeconds : 0.0f;
             remainingSeconds = (std::max)(0.0f, remainingSeconds - delta);
             return remainingSeconds <= 0.0f;
         }
@@ -152,25 +145,19 @@ namespace rock::collision_suppression_registry
     class SuppressionLeaseSet
     {
     public:
-        explicit constexpr SuppressionLeaseSet(CollisionSuppressionOwner owner) noexcept :
-            _owner(owner)
-        {}
+        explicit constexpr SuppressionLeaseSet(CollisionSuppressionOwner owner) noexcept : _owner(owner) {}
 
         [[nodiscard]] bool empty() const noexcept { return _count == 0; }
+
         [[nodiscard]] bool full() const noexcept { return _count >= Capacity; }
+
         [[nodiscard]] std::size_t size() const noexcept { return _count; }
-        [[nodiscard]] std::uint32_t firstBodyId() const noexcept
-        {
-            return _count > 0 ? _bodyIds[0] : kInvalidBodyId;
-        }
-        [[nodiscard]] bool delayedRestorePending() const noexcept
-        {
-            return _delayedRestore.pending;
-        }
-        [[nodiscard]] float delayedRestoreRemainingSeconds() const noexcept
-        {
-            return _delayedRestore.remainingSeconds;
-        }
+
+        [[nodiscard]] std::uint32_t firstBodyId() const noexcept { return _count > 0 ? _bodyIds[0] : kInvalidBodyId; }
+
+        [[nodiscard]] bool delayedRestorePending() const noexcept { return _delayedRestore.pending; }
+
+        [[nodiscard]] float delayedRestoreRemainingSeconds() const noexcept { return _delayedRestore.remainingSeconds; }
 
         [[nodiscard]] bool contains(std::uint32_t bodyId) const noexcept
         {
@@ -182,10 +169,7 @@ namespace rock::collision_suppression_registry
             return false;
         }
 
-        RuntimeSuppressionResult acquire(
-            RE::hknpWorld* world,
-            std::uint32_t bodyId,
-            const char* context)
+        RuntimeSuppressionResult acquire(RE::hknpWorld* world, std::uint32_t bodyId, const char* context)
         {
             RuntimeSuppressionResult result{};
             result.bodyId = bodyId;
@@ -194,11 +178,7 @@ namespace rock::collision_suppression_registry
                 return result;
             }
 
-            result = globalCollisionSuppressionRegistry().acquire(
-                world,
-                bodyId,
-                _owner,
-                context);
+            result = globalCollisionSuppressionRegistry().acquire(world, bodyId, _owner, context);
             if (result.valid && !alreadyTracked) {
                 _bodyIds[_count++] = bodyId;
             }
@@ -206,21 +186,13 @@ namespace rock::collision_suppression_registry
         }
 
         template <class OnRelease>
-        bool releaseAll(
-            RE::hknpWorld* world,
-            const char* context,
-            OnRelease&& onRelease)
+        bool releaseAll(RE::hknpWorld* world, const char* context, OnRelease&& onRelease)
         {
             std::array<std::uint32_t, Capacity> pending{};
             std::size_t pendingCount = 0;
             for (std::size_t index = 0; index < _count; ++index) {
                 const auto bodyId = _bodyIds[index];
-                const auto result =
-                    globalCollisionSuppressionRegistry().release(
-                        world,
-                        bodyId,
-                        _owner,
-                        context);
+                const auto result = globalCollisionSuppressionRegistry().release(world, bodyId, _owner, context);
                 std::invoke(onRelease, bodyId, result);
                 // A failed read keeps the lease; keep tracking it.
                 if (result.readFailed) {
@@ -236,10 +208,7 @@ namespace rock::collision_suppression_registry
         }
 
         template <class ShouldRelease, class OnRelease>
-        void releaseWhere(
-            RE::hknpWorld* world,
-            const char* context,
-            ShouldRelease&& shouldRelease,
+        void releaseWhere(RE::hknpWorld* world, const char* context, ShouldRelease&& shouldRelease,
             OnRelease&& onRelease)
         {
             std::array<std::uint32_t, Capacity> retained{};
@@ -250,12 +219,7 @@ namespace rock::collision_suppression_registry
                     retained[retainedCount++] = bodyId;
                     continue;
                 }
-                const auto result =
-                    globalCollisionSuppressionRegistry().release(
-                        world,
-                        bodyId,
-                        _owner,
-                        context);
+                const auto result = globalCollisionSuppressionRegistry().release(world, bodyId, _owner, context);
                 std::invoke(onRelease, bodyId, result);
                 // A failed read keeps the lease; keep tracking it.
                 if (result.readFailed) {
@@ -279,10 +243,7 @@ namespace rock::collision_suppression_registry
             return _delayedRestore.advance(!empty(), deltaSeconds);
         }
 
-        void cancelDelayedRestore() noexcept
-        {
-            _delayedRestore.clear();
-        }
+        void cancelDelayedRestore() noexcept { _delayedRestore.clear(); }
 
         void clearTracking() noexcept
         {

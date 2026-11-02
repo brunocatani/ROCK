@@ -21,8 +21,7 @@ namespace rock::provider
         {
         public:
             explicit Read(const ProviderInstanceAccess& access) :
-                _lock(access._mutex, std::try_to_lock),
-                _instance(_lock.owns_lock() ? access._instance : nullptr)
+                _lock(access._mutex, std::try_to_lock), _instance(_lock.owns_lock() ? access._instance : nullptr)
             {}
 
             [[nodiscard]] PhysicsInteraction* get() const noexcept { return _instance; }

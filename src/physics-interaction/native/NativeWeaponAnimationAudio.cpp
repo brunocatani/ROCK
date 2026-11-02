@@ -1,8 +1,8 @@
 #include "physics-interaction/native/NativeWeaponAnimationAudio.h"
 
+#include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/PhysicsLog.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include <REL/Relocation.h>
@@ -26,41 +26,63 @@ namespace rock::native_weapon_animation_audio
         // Borrowed only during the native call, on its calling thread. Nested
         // processing replaces this scope and restores it before returning.
         thread_local const void* t_playerGraph{};
+
         struct GraphScope
         {
             const void* previous;
+
             explicit GraphScope(const void* graph) : previous(std::exchange(t_playerGraph, graph)) {}
+
             ~GraphScope() { t_playerGraph = previous; }
         };
 
         // 190DC60 copies a ring of 24-byte events without transferring payload
         // ownership. 16A5F40 and the independent graph dump 16A9DF0 consume the
         // same layout. Only the external notification copy is changed below.
-        struct Event { std::uint32_t id, padding; const void* payload; const void* sender; };
-        struct Queue { Event* events; std::int32_t capacity, read, write, count; };
+        struct Event
+        {
+            std::uint32_t id, padding;
+            const void* payload;
+            const void* sender;
+        };
+
+        struct Queue
+        {
+            Event* events;
+            std::int32_t capacity, read, write, count;
+        };
+
         static_assert(sizeof(Event) == 0x18 && sizeof(Queue) == 0x18);
 
         constexpr std::uintptr_t kProcessEvents = 0x16A5F40;
-        constexpr std::array<std::uint8_t, 20> kProcessEntry{
-            0x40,0x55,0x56,0x57,0x41,0x55,0x41,0x57,0x48,0x8D,0x6C,0x24,0xC9,0x48,0x81,0xEC,0x90,0,0,0};
-        struct Callsite { std::uintptr_t rva; std::array<std::uint8_t, 5> bytes; };
-        constexpr std::array<Callsite, 2> kCopyCalls{{
-            {0x16A5FFB, {0xE8,0x60,0x7C,0x26,0x00}},
-            {0x16A6058, {0xE8,0x03,0x7C,0x26,0x00}},
-        }};
+        constexpr std::array<std::uint8_t, 20> kProcessEntry{ 0x40, 0x55, 0x56, 0x57, 0x41, 0x55, 0x41, 0x57, 0x48,
+            0x8D, 0x6C, 0x24, 0xC9, 0x48, 0x81, 0xEC, 0x90, 0, 0, 0 };
+
+        struct Callsite
+        {
+            std::uintptr_t rva;
+            std::array<std::uint8_t, 5> bytes;
+        };
+
+        constexpr std::array<Callsite, 2> kCopyCalls{ {
+            { 0x16A5FFB, { 0xE8, 0x60, 0x7C, 0x26, 0x00 } },
+            { 0x16A6058, { 0xE8, 0x03, 0x7C, 0x26, 0x00 } },
+        } };
 
         template <std::size_t N>
         bool matches(std::uintptr_t rva, const std::array<std::uint8_t, N>& bytes)
         {
             std::array<std::uint8_t, N> actual{};
             return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(rva).address()),
-                actual.data(), actual.size()) && actual == bytes;
+                       actual.data(), actual.size()) &&
+                actual == bytes;
         }
 
         template <std::size_t N>
         bool copyText(const char* text, std::array<char, N>& out)
         {
-            if (!native_memory::guardedCopyFromMemory(text, out.data(), out.size())) return false;
+            if (!native_memory::guardedCopyFromMemory(text, out.data(), out.size()))
+                return false;
             return std::memchr(out.data(), '\0', out.size()) != nullptr;
         }
 
@@ -76,18 +98,20 @@ namespace rock::native_weapon_animation_audio
             }
         }
 
-        std::atomic<std::uint32_t> s_cullEventLogs{0};
+        std::atomic<std::uint32_t> s_cullEventLogs{ 0 };
 
         void filterCopiedEvents(void* destination)
         {
-            if (!t_playerGraph) return;
+            if (!t_playerGraph)
+                return;
             Queue queue{};
-            if (!native_memory::tryReadValue(static_cast<const Queue*>(destination), queue) || !queue.count) return;
+            if (!native_memory::tryReadValue(static_cast<const Queue*>(destination), queue) || !queue.count)
+                return;
             // This cap limits work on corrupt/abnormal native queues, never a
             // mute duration. Reject the whole copy if its bounds are unknown.
             if (!queue.events || queue.capacity <= 0 || queue.capacity > 4096 || queue.count < 0 ||
-                queue.count > queue.capacity || queue.read < 0 || queue.read >= queue.capacity ||
-                queue.write < 0 || queue.write > queue.capacity) {
+                queue.count > queue.capacity || queue.read < 0 || queue.read >= queue.capacity || queue.write < 0 ||
+                queue.write > queue.capacity) {
                 ROCK_LOG_SAMPLE_WARN(Weapon, 5000, "Equip animation audio filter rejected notification queue bounds");
                 return;
             }
@@ -104,23 +128,27 @@ namespace rock::native_weapon_animation_audio
             }
             for (std::int32_t i = 0, index = queue.read; i < queue.count; ++i, index = (index + 1) % queue.capacity) {
                 Event event{};
-                if (!native_memory::tryReadValue(queue.events + index, event) || event.id >= nameCount) continue;
+                if (!native_memory::tryReadValue(queue.events + index, event) || event.id >= nameCount)
+                    continue;
                 const auto* nameSlot = static_cast<const char*>(names) + event.id * sizeof(std::uintptr_t);
                 std::array<char, 32> tag{};
-                if (!copyText(fixedStringText(nameSlot), tag)) continue;
+                if (!copyText(fixedStringText(nameSlot), tag))
+                    continue;
                 // Diagnostic: which player clip culls/unculls the weapons
                 // (first gun hidden ~500 ms after a menu exit, 14 Oct 20:56).
-                if (std::strstr(tag.data(), "ullWeapons") && s_cullEventLogs.fetch_add(1, std::memory_order_relaxed) < 256) {
+                if (std::strstr(tag.data(), "ullWeapons") &&
+                    s_cullEventLogs.fetch_add(1, std::memory_order_relaxed) < 256) {
                     std::uintptr_t senderVtable{}, senderPath{};
                     std::array<char, 260> senderClip{};
                     const bool named = event.sender && native_memory::tryReadField(event.sender, 0, senderVtable) &&
                         senderVtable == REL::Offset(0x2E0FB38).address() &&
                         native_memory::tryReadField(event.sender, 0x90, senderPath) &&
-                        copyText(reinterpret_cast<const char*>(senderPath & ~std::uintptr_t{1}), senderClip);
+                        copyText(reinterpret_cast<const char*>(senderPath & ~std::uintptr_t{ 1 }), senderClip);
                     ROCK_LOG_INFO(Weapon, "Player weapon cull event tag={} clip={} nativeState={}", tag.data(),
                         named ? senderClip.data() : "<unnamed>", f4vr::getNativeWeaponState(f4vr::getPlayer()));
                 }
-                if (!isSoundStart(tag.data())) continue;
+                if (!isSoundStart(tag.data()))
+                    continue;
 
                 std::uintptr_t vtable{}, path{};
                 std::array<char, 260> clip{};
@@ -131,8 +159,9 @@ namespace rock::native_weapon_animation_audio
                 const bool knownClip = event.sender && native_memory::tryReadField(event.sender, 0, vtable) &&
                     vtable == REL::Offset(0x2E0FB38).address() &&
                     native_memory::tryReadField(event.sender, 0x90, path) &&
-                    copyText(reinterpret_cast<const char*>(path & ~std::uintptr_t{1}), clip);
-                if (!knownClip || !isEquipClip(clip.data())) continue;
+                    copyText(reinterpret_cast<const char*>(path & ~std::uintptr_t{ 1 }), clip);
+                if (!knownClip || !isEquipClip(clip.data()))
+                    continue;
                 // 16A60C2 skips out-of-range IDs before accessing the payload.
                 // The original queue still drives the behavior graph; native
                 // payload cleanup, weapon events, and animation time are intact.
@@ -142,7 +171,8 @@ namespace rock::native_weapon_animation_audio
                     ROCK_LOG_SAMPLE_WARN(Weapon, 5000, "Equip animation audio filter could not suppress notification");
                     continue;
                 }
-                ROCK_LOG_SAMPLE_INFO(Weapon, 1000, "Player weapon animation sound suppressed clip={} tag={}", clip.data(), tag.data());
+                ROCK_LOG_SAMPLE_INFO(Weapon, 1000, "Player weapon animation sound suppressed clip={} tag={}",
+                    clip.data(), tag.data());
             }
         }
 
@@ -174,13 +204,18 @@ namespace rock::native_weapon_animation_audio
         bool verifyCopyCall(std::uintptr_t address)
         {
             std::array<std::uint8_t, 5> call{};
-            if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), call.data(), call.size()) || call[0] != 0xE8) return false;
+            if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), call.data(),
+                    call.size()) ||
+                call[0] != 0xE8)
+                return false;
             std::int32_t displacement{};
             std::memcpy(&displacement, call.data() + 1, sizeof(displacement));
             const auto stubAddress = address + 5 + displacement;
             std::array<std::uint8_t, 14> stub{};
-            if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(stubAddress), stub.data(), stub.size())) return false;
-            const std::array<std::uint8_t, 6> jump{0xFF,0x25,0,0,0,0};
+            if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(stubAddress), stub.data(),
+                    stub.size()))
+                return false;
+            const std::array<std::uint8_t, 6> jump{ 0xFF, 0x25, 0, 0, 0, 0 };
             std::uintptr_t target{};
             std::memcpy(&target, stub.data() + 6, sizeof(target));
             return std::memcmp(stub.data(), jump.data(), jump.size()) == 0 &&
@@ -191,21 +226,32 @@ namespace rock::native_weapon_animation_audio
 
     bool install() noexcept
     {
-        if (s_installed) return true;
-        if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) return false;
+        if (s_installed)
+            return true;
+        if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72)
+            return false;
         if (!matches(kProcessEvents, kProcessEntry) ||
-            !matches(0x190DC60, std::array<std::uint8_t, 16>{0x40,0x53,0x57,0x48,0x83,0xEC,0x48,0x8B,0x42,0x14,0x48,0x8B,0xDA,0x48,0x8B,0xF9}) ||
-            !matches(0x16A3429, std::array<std::uint8_t, 7>{0x49,0x89,0xBE,0x80,0x03,0,0}) ||
-            !matches(0x16A60B8, std::array<std::uint8_t, 16>{0x49,0x8B,0x85,0x70,0x03,0,0,0x89,0x55,0x13,0x3B,0x98,0xE8,0,0,0}) ||
-            !matches(0x16A60F6, std::array<std::uint8_t, 7>{0x48,0x8B,0x88,0xD8,0,0,0}) ||
-            !matches(0x192CC15, std::array<std::uint8_t, 7>{0x48,0x8B,0x87,0x90,0,0,0}) ||
-            !matches(0x1BC18F0, std::array<std::uint8_t, 16>{0x48,0x8B,0x11,0x48,0x85,0xD2,0x74,0x18,0x8B,0x42,0x08,0xC1,0xE8,0x0E,0xA8,0x01})) {
+            !matches(0x190DC60,
+                std::array<std::uint8_t, 16>{ 0x40, 0x53, 0x57, 0x48, 0x83, 0xEC, 0x48, 0x8B, 0x42, 0x14, 0x48, 0x8B,
+                    0xDA, 0x48, 0x8B, 0xF9 }) ||
+            !matches(0x16A3429, std::array<std::uint8_t, 7>{ 0x49, 0x89, 0xBE, 0x80, 0x03, 0, 0 }) ||
+            !matches(0x16A60B8,
+                std::array<std::uint8_t, 16>{ 0x49, 0x8B, 0x85, 0x70, 0x03, 0, 0, 0x89, 0x55, 0x13, 0x3B, 0x98, 0xE8, 0,
+                    0, 0 }) ||
+            !matches(0x16A60F6, std::array<std::uint8_t, 7>{ 0x48, 0x8B, 0x88, 0xD8, 0, 0, 0 }) ||
+            !matches(0x192CC15, std::array<std::uint8_t, 7>{ 0x48, 0x8B, 0x87, 0x90, 0, 0, 0 }) ||
+            !matches(0x1BC18F0,
+                std::array<std::uint8_t, 16>{ 0x48, 0x8B, 0x11, 0x48, 0x85, 0xD2, 0x74, 0x18, 0x8B, 0x42, 0x08, 0xC1,
+                    0xE8, 0x0E, 0xA8, 0x01 })) {
             ROCK_LOG_ERROR(Init, "Equip animation audio filter rejected native function bytes");
             return false;
         }
-        for (const auto& site : kCopyCalls) if (!matches(site.rva, site.bytes)) return false;
+        for (const auto& site : kCopyCalls)
+            if (!matches(site.rva, site.bytes))
+                return false;
         auto& trampoline = F4SE::GetTrampoline();
-        if (trampoline.free_size() < 14) return false;
+        if (trampoline.free_size() < 14)
+            return false;
         s_copyEvents = reinterpret_cast<CopyEvents>(REL::Offset(0x190DC60).address());
         std::size_t patched{};
         try {
@@ -213,7 +259,8 @@ namespace rock::native_weapon_animation_audio
                 ++patched;
                 const auto address = REL::Offset(site.rva).address();
                 (void)trampoline.write_call<5>(address, &copyEvents);
-                if (!verifyCopyCall(address) || !FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<const void*>(address), 5))
+                if (!verifyCopyCall(address) ||
+                    !FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<const void*>(address), 5))
                     throw std::runtime_error("animation audio copy redirect verification failed");
             }
             void* original{};
@@ -222,7 +269,9 @@ namespace rock::native_weapon_animation_audio
                 throw std::runtime_error("animation audio context installation failed");
             s_processEvents = reinterpret_cast<ProcessEvents>(original);
             s_installed = true;
-            ROCK_LOG_INFO(Init, "Player equip animation audio filter installed: source clip qualification, original behavior queue preserved");
+            ROCK_LOG_INFO(Init,
+                "Player equip animation audio filter installed: source clip qualification, original behavior queue "
+                "preserved");
             return true;
         } catch (...) {
             for (std::size_t i = 0; i < patched; ++i) {

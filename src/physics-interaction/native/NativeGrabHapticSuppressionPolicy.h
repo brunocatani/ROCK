@@ -30,7 +30,8 @@ namespace rock::native_grab_haptic_suppression
         return input.rockEnabled && input.suppressionEnabled;
     }
 
-    [[nodiscard]] constexpr bool shouldRestoreNativeGrabHoverHaptics(bool previouslyApplied, RuntimeInput input) noexcept
+    [[nodiscard]] constexpr bool shouldRestoreNativeGrabHoverHaptics(bool previouslyApplied,
+        RuntimeInput input) noexcept
     {
         return previouslyApplied && !shouldSuppressNativeGrabHoverHaptics(input);
     }

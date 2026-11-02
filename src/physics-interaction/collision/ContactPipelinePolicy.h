@@ -87,47 +87,33 @@ namespace rock::contact_pipeline_policy
 
     inline constexpr bool shouldSkipContactSignalBeforeLayerRead(const ContactSignalPrefilter& prefilter)
     {
-        if (!isValidBodyId(prefilter.bodyIdA) || !isValidBodyId(prefilter.bodyIdB) || prefilter.bodyIdA == prefilter.bodyIdB) {
+        if (!isValidBodyId(prefilter.bodyIdA) || !isValidBodyId(prefilter.bodyIdB) ||
+            prefilter.bodyIdA == prefilter.bodyIdB) {
             return true;
         }
 
         return !prefilter.bodyAIsRockSource && !prefilter.bodyBIsRockSource;
     }
 
-    inline constexpr bool isRightHand(ContactEndpointKind kind)
-    {
-        return kind == ContactEndpointKind::RightHand;
-    }
+    inline constexpr bool isRightHand(ContactEndpointKind kind) { return kind == ContactEndpointKind::RightHand; }
 
-    inline constexpr bool isLeftHand(ContactEndpointKind kind)
-    {
-        return kind == ContactEndpointKind::LeftHand;
-    }
+    inline constexpr bool isLeftHand(ContactEndpointKind kind) { return kind == ContactEndpointKind::LeftHand; }
 
-    inline constexpr bool isHand(ContactEndpointKind kind)
-    {
-        return isRightHand(kind) || isLeftHand(kind);
-    }
+    inline constexpr bool isHand(ContactEndpointKind kind) { return isRightHand(kind) || isLeftHand(kind); }
 
     inline constexpr bool isHeldObject(ContactEndpointKind kind)
     {
         return kind == ContactEndpointKind::RightHeldObject || kind == ContactEndpointKind::LeftHeldObject;
     }
 
-    inline constexpr bool isBody(ContactEndpointKind kind)
-    {
-        return kind == ContactEndpointKind::Body;
-    }
+    inline constexpr bool isBody(ContactEndpointKind kind) { return kind == ContactEndpointKind::Body; }
 
     inline constexpr bool isRockSource(ContactEndpointKind kind)
     {
         return isHand(kind) || kind == ContactEndpointKind::Weapon || isHeldObject(kind) || isBody(kind);
     }
 
-    inline constexpr bool isWorldSurface(ContactEndpointKind kind)
-    {
-        return kind == ContactEndpointKind::WorldSurface;
-    }
+    inline constexpr bool isWorldSurface(ContactEndpointKind kind) { return kind == ContactEndpointKind::WorldSurface; }
 
     inline constexpr bool isRightOwned(ContactEndpointKind kind)
     {
@@ -141,8 +127,8 @@ namespace rock::contact_pipeline_policy
 
     inline constexpr bool isTouchTarget(ContactEndpointKind targetKind)
     {
-        return targetKind != ContactEndpointKind::Unknown && targetKind != ContactEndpointKind::WorldSurface && targetKind != ContactEndpointKind::QueryOnly &&
-               !isRockSource(targetKind);
+        return targetKind != ContactEndpointKind::Unknown && targetKind != ContactEndpointKind::WorldSurface &&
+            targetKind != ContactEndpointKind::QueryOnly && !isRockSource(targetKind);
     }
 
     inline constexpr ContactEndpointKind classifyNonRockLayer(std::uint32_t layer)
@@ -193,7 +179,8 @@ namespace rock::contact_pipeline_policy
         }
     }
 
-    inline constexpr ContactClassification makeClassification(ContactRoute route, ContactEndpoint source, ContactEndpoint target)
+    inline constexpr ContactClassification makeClassification(ContactRoute route, ContactEndpoint source,
+        ContactEndpoint target)
     {
         ContactClassification result{};
         result.route = route;
@@ -218,7 +205,8 @@ namespace rock::contact_pipeline_policy
 
         if (aRock && bRock) {
             if (isBody(a.kind) || isBody(b.kind)) {
-                auto result = makeClassification(ContactRoute::BodyContact, isBody(a.kind) ? a : b, isBody(a.kind) ? b : a);
+                auto result =
+                    makeClassification(ContactRoute::BodyContact, isBody(a.kind) ? a : b, isBody(a.kind) ? b : a);
                 result.recordBodyContact = true;
                 return result;
             }
@@ -245,7 +233,8 @@ namespace rock::contact_pipeline_policy
                 return result;
             }
             if (isHeldObject(a.kind) != isHeldObject(b.kind)) {
-                return makeClassification(ContactRoute::HeldObjectOther, isHeldObject(a.kind) ? a : b, isHeldObject(a.kind) ? b : a);
+                return makeClassification(ContactRoute::HeldObjectOther, isHeldObject(a.kind) ? a : b,
+                    isHeldObject(a.kind) ? b : a);
             }
             return makeClassification(ContactRoute::RockInternal, a, b);
         }

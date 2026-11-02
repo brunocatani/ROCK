@@ -6,7 +6,6 @@
  * Hand lifecycle helpers are grouped here so lifecycle state, semantic contact state, and collision suppression share one hand-state policy surface.
  */
 
-
 // ---- HandLifecyclePolicy.h ----
 
 #include <cstddef>
@@ -19,14 +18,11 @@ namespace rock::hand_lifecycle_policy
      * filters are not plain cache data; dropping them loses the only state ROCK
      * has for restoring the world.
      */
-    inline constexpr bool requiresHavokCleanupBeforeReset(
-        bool activeConstraintValid,
-        bool handCollisionSuppressed,
-        std::size_t heldBodyCount,
-        bool savedObjectStateValid,
-        bool handCollisionBodyValid)
+    inline constexpr bool requiresHavokCleanupBeforeReset(bool activeConstraintValid, bool handCollisionSuppressed,
+        std::size_t heldBodyCount, bool savedObjectStateValid, bool handCollisionBodyValid)
     {
-        return activeConstraintValid || handCollisionSuppressed || heldBodyCount > 0 || savedObjectStateValid || handCollisionBodyValid;
+        return activeConstraintValid || handCollisionSuppressed || heldBodyCount > 0 || savedObjectStateValid ||
+            handCollisionBodyValid;
     }
 }
 
@@ -63,9 +59,9 @@ namespace rock
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cmath>
 
 namespace rock::hand_semantic_contact_state
 {
@@ -159,22 +155,14 @@ namespace rock::hand_semantic_contact_state
         return currentFrame - contactFrame;
     }
 
-    inline constexpr bool semanticContactContinuesRun(
-        const bool previousValid,
-        const std::uint32_t previousOtherBodyId,
-        const std::uint32_t currentOtherBodyId,
-        const std::uint32_t currentFrame,
+    inline constexpr bool semanticContactContinuesRun(const bool previousValid, const std::uint32_t previousOtherBodyId,
+        const std::uint32_t currentOtherBodyId, const std::uint32_t currentFrame,
         const std::uint32_t previousContactFrame)
     {
-        return previousValid &&
-               previousOtherBodyId == currentOtherBodyId &&
-               currentFrame - previousContactFrame <= 1;
+        return previousValid && previousOtherBodyId == currentOtherBodyId && currentFrame - previousContactFrame <= 1;
     }
 
-    inline bool isFiniteVector(const SemanticContactVector& value)
-    {
-        return vector_math::hasFiniteComponents(value);
-    }
+    inline bool isFiniteVector(const SemanticContactVector& value) { return vector_math::hasFiniteComponents(value); }
 
     inline bool hasUsableContactPoint(const SemanticContactRecord& record)
     {
@@ -198,9 +186,9 @@ namespace rock::hand_semantic_contact_state
     inline constexpr bool isOpposingFingerContactRole(hand_collider_semantics::HandColliderRole role)
     {
         return role == hand_collider_semantics::HandColliderRole::IndexTip ||
-               role == hand_collider_semantics::HandColliderRole::MiddleTip ||
-               role == hand_collider_semantics::HandColliderRole::IndexMiddle ||
-               role == hand_collider_semantics::HandColliderRole::MiddleMiddle;
+            role == hand_collider_semantics::HandColliderRole::MiddleTip ||
+            role == hand_collider_semantics::HandColliderRole::IndexMiddle ||
+            role == hand_collider_semantics::HandColliderRole::MiddleMiddle;
     }
 
     inline constexpr int oppositionRolePriority(hand_collider_semantics::HandColliderRole role)
@@ -223,7 +211,8 @@ namespace rock::hand_semantic_contact_state
         }
     }
 
-    inline bool isBetterOppositionCandidate(const SemanticContactRecord& candidate, const SemanticContactRecord* current)
+    inline bool isBetterOppositionCandidate(const SemanticContactRecord& candidate,
+        const SemanticContactRecord* current)
     {
         if (!candidate.valid) {
             return false;
@@ -279,11 +268,8 @@ namespace rock::hand_semantic_contact_state
         const char* reason = "disabled";
     };
 
-    inline SemanticPivotCandidateDecision evaluateSemanticPivotCandidate(
-        bool enabled,
-        const SemanticContactRecord& record,
-        std::uint32_t targetBodyId,
-        float maxAgeSeconds)
+    inline SemanticPivotCandidateDecision evaluateSemanticPivotCandidate(bool enabled,
+        const SemanticContactRecord& record, std::uint32_t targetBodyId, float maxAgeSeconds)
     {
         if (!enabled) {
             return { false, "disabled" };
@@ -309,8 +295,8 @@ namespace rock::hand_semantic_contact_state
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 
 namespace rock::hand_collision_suppression_math
 {

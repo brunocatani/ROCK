@@ -8,7 +8,10 @@
 #include <array>
 #include <memory>
 
-namespace RE { class TESObjectREFR; }
+namespace RE
+{
+    class TESObjectREFR;
+}
 
 namespace rock
 {
@@ -30,6 +33,7 @@ namespace rock
 
     private:
         static constexpr std::size_t kShapeCount = 5;
+
         struct Part
         {
             RE::NiPointer<RE::NiAVObject> shape;

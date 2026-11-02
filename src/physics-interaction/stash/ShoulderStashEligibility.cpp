@@ -47,7 +47,8 @@ namespace rock::shoulder_stash
 
     bool isUntakeableBook(RE::TESBoundObject* baseForm) noexcept
     {
-        auto* book = baseForm && baseForm->Is(RE::ENUM_FORM_ID::kBOOK) ? static_cast<RE::TESObjectBOOK*>(baseForm) : nullptr;
+        auto* book =
+            baseForm && baseForm->Is(RE::ENUM_FORM_ID::kBOOK) ? static_cast<RE::TESObjectBOOK*>(baseForm) : nullptr;
         return book && ((static_cast<std::uint8_t>(book->data.flags) & kFo4BookCantBeTakenFlag) != 0);
     }
 

@@ -1,9 +1,9 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cmath>
 #include <functional>
 #include <limits>
 #include <tuple>
@@ -49,6 +49,7 @@ namespace rock::debug_overlay_line_batch
         std::int64_t z = 0;
 
         bool operator==(const QuantizedVec3&) const = default;
+
         bool operator<(const QuantizedVec3& rhs) const { return std::tie(x, y, z) < std::tie(rhs.x, rhs.y, rhs.z); }
     };
 
@@ -211,9 +212,12 @@ namespace rock::debug_overlay_line_batch
                 return false;
             }
 
-            const bool xAdded = addLine(Vec3{ center.x - size, center.y, center.z }, Vec3{ center.x + size, center.y, center.z }, color, maxVertices);
-            const bool yAdded = addLine(Vec3{ center.x, center.y - size, center.z }, Vec3{ center.x, center.y + size, center.z }, color, maxVertices);
-            const bool zAdded = addLine(Vec3{ center.x, center.y, center.z - size }, Vec3{ center.x, center.y, center.z + size }, color, maxVertices);
+            const bool xAdded = addLine(Vec3{ center.x - size, center.y, center.z },
+                Vec3{ center.x + size, center.y, center.z }, color, maxVertices);
+            const bool yAdded = addLine(Vec3{ center.x, center.y - size, center.z },
+                Vec3{ center.x, center.y + size, center.z }, color, maxVertices);
+            const bool zAdded = addLine(Vec3{ center.x, center.y, center.z - size },
+                Vec3{ center.x, center.y, center.z + size }, color, maxVertices);
             return xAdded || yAdded || zAdded;
         }
 
@@ -223,10 +227,15 @@ namespace rock::debug_overlay_line_batch
         }
 
         [[nodiscard]] std::size_t vertexCount() const { return _segments.size() * 2; }
+
         [[nodiscard]] std::size_t lineCount() const { return _segments.size(); }
+
         [[nodiscard]] std::size_t rejectedLineCount() const { return _rejectedLines; }
+
         [[nodiscard]] bool empty() const { return _segments.empty(); }
+
         [[nodiscard]] const std::vector<LineSegment>& segments() const { return _segments; }
+
         [[nodiscard]] std::size_t preparedMaxVertices() const { return _preparedMaxVertices; }
 
     private:
@@ -253,7 +262,7 @@ namespace rock::debug_overlay_line_batch
             }
 
             const std::size_t mask = _slots.size() - 1;
-            std::size_t index = LineKeyHash{}(key) & mask;
+            std::size_t index = LineKeyHash{}(key)&mask;
             for (std::size_t probe = 0; probe < _slots.size(); ++probe) {
                 auto& slot = _slots[index];
                 if (slot.generation != _generation) {

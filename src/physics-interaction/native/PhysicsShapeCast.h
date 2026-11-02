@@ -33,5 +33,6 @@ namespace rock::physics_shape_cast
         std::uint32_t collisionFilterInfo = 0;
     };
 
-    bool castSelectionSphere(RE::hknpWorld* world, const SphereCastInput& input, RE::hknpAllHitsCollector& collector, SphereCastDiagnostics* diagnostics = nullptr);
+    bool castSelectionSphere(RE::hknpWorld* world, const SphereCastInput& input, RE::hknpAllHitsCollector& collector,
+        SphereCastDiagnostics* diagnostics = nullptr);
 }

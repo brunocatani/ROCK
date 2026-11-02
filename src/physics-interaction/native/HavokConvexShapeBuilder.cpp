@@ -1,8 +1,8 @@
 #include "physics-interaction/native/HavokConvexShapeBuilder.h"
 
+#include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/PhysicsLog.h"
 
 #include <algorithm>
 #include <array>
@@ -44,19 +44,17 @@ namespace rock::havok_convex_shape_builder
             // Verify the native constructor and the consumer of config +0x08
             // before overriding this otherwise opaque, native-owned layout.
             static const bool verified = [] {
-                constexpr std::array<std::uint8_t, 13> initBytes{
-                    0xC7, 0x01, 0x0A, 0xD7, 0x23, 0x3C, 0xC6, 0x41, 0x04, 0x01, 0x89, 0x51, 0x08
-                };
-                constexpr std::array<std::uint8_t, 7> shrinkBytes{
-                    0xF3, 0x41, 0x0F, 0x10, 0x44, 0x24, 0x08
-                };
+                constexpr std::array<std::uint8_t, 13> initBytes{ 0xC7, 0x01, 0x0A, 0xD7, 0x23, 0x3C, 0xC6, 0x41, 0x04,
+                    0x01, 0x89, 0x51, 0x08 };
+                constexpr std::array<std::uint8_t, 7> shrinkBytes{ 0xF3, 0x41, 0x0F, 0x10, 0x44, 0x24, 0x08 };
                 const REL::Relocation<std::uintptr_t> init{ REL::Offset(offsets::kFunc_ConvexBuildConfig_Init + 0x2B) };
                 const REL::Relocation<std::uintptr_t> shrink{ REL::Offset(0x16DDFE4) };
                 std::array<std::uint8_t, initBytes.size()> liveInit{};
                 std::array<std::uint8_t, shrinkBytes.size()> liveShrink{};
-                const bool matches =
-                    native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(init.address()), liveInit.data(), liveInit.size()) &&
-                    native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(shrink.address()), liveShrink.data(), liveShrink.size()) &&
+                const bool matches = native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(init.address()),
+                                         liveInit.data(), liveInit.size()) &&
+                    native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(shrink.address()),
+                        liveShrink.data(), liveShrink.size()) &&
                     liveInit == initBytes && liveShrink == shrinkBytes;
                 if (!matches) {
                     ROCK_LOG_ERROR(Weapon, "Sharp-feature convex build rejected: native config signature mismatch");
@@ -67,7 +65,8 @@ namespace rock::havok_convex_shape_builder
         }
     }
 
-    RE::hknpShape* buildConvexShapeFromLocalHavokPoints(const std::vector<RE::NiPoint3>& points, float convexRadius, ConvexFit fit)
+    RE::hknpShape* buildConvexShapeFromLocalHavokPoints(const std::vector<RE::NiPoint3>& points, float convexRadius,
+        ConvexFit fit)
     {
         if (points.size() < 4) {
             ROCK_LOG_WARN(Weapon, "Convex shape build skipped: point count {} is below hull minimum", points.size());
@@ -109,7 +108,8 @@ namespace rock::havok_convex_shape_builder
             std::memcpy(config.data() + 0x08, &relativeShrink, sizeof(relativeShrink));
         }
 
-        HkStridedPointArray array{ hkPoints.data(), static_cast<std::int32_t>(hkPoints.size()), static_cast<std::int32_t>(sizeof(HkPoint)) };
+        HkStridedPointArray array{ hkPoints.data(), static_cast<std::int32_t>(hkPoints.size()),
+            static_cast<std::int32_t>(sizeof(HkPoint)) };
 
         static REL::Relocation<BuildShapeFromPoints_t> buildShape{ REL::Offset(offsets::kFunc_ConvexShape_FromPoints) };
         auto* shape = buildShape(&array, (std::max)(0.0f, convexRadius), config.data());

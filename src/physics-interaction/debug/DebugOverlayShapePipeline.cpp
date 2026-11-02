@@ -84,8 +84,7 @@ namespace rock::debug_overlay_shape
         {
             auto victim = cache.end();
             for (auto iterator = cache.begin(); iterator != cache.end(); ++iterator) {
-                if (iterator->second.state == CacheState::Pending ||
-                    (excluded && iterator->first == *excluded)) {
+                if (iterator->second.state == CacheState::Pending || (excluded && iterator->first == *excluded)) {
                     continue;
                 }
                 if (victim == cache.end() || iterator->second.lastUseSerial < victim->second.lastUseSerial) {
@@ -117,10 +116,7 @@ namespace rock::debug_overlay_shape
             return true;
         }
 
-        bool ensureByteCapacityUnlocked(
-            std::size_t incomingBytes,
-            std::size_t maxBytes,
-            const ShapeKey& excluded)
+        bool ensureByteCapacityUnlocked(std::size_t incomingBytes, std::size_t maxBytes, const ShapeKey& excluded)
         {
             if (incomingBytes > maxBytes) {
                 return false;
@@ -163,9 +159,8 @@ namespace rock::debug_overlay_shape
                     std::scoped_lock lock(mutex);
                     --activeJobs;
                     const auto entry = cache.find(job.key);
-                    if (!running || stopRequested || job.generation != generation ||
-                        entry == cache.end() || entry->second.state != CacheState::Pending ||
-                        entry->second.generation != job.generation) {
+                    if (!running || stopRequested || job.generation != generation || entry == cache.end() ||
+                        entry->second.state != CacheState::Pending || entry->second.generation != job.generation) {
                         ++staleResultDrops;
                         continue;
                     }
@@ -198,10 +193,7 @@ namespace rock::debug_overlay_shape
 
     ShapePipeline::ShapePipeline() : _impl(std::make_unique<Impl>()) {}
 
-    ShapePipeline::~ShapePipeline()
-    {
-        shutdown();
-    }
+    ShapePipeline::~ShapePipeline() { shutdown(); }
 
     bool ShapePipeline::initialize()
     {
@@ -260,10 +252,8 @@ namespace rock::debug_overlay_shape
     void ShapePipeline::trim(const PipelineLimits& limits) noexcept
     {
         std::scoped_lock lock(_impl->mutex);
-        while (_impl->cache.size() > limits.maxCacheEntries && _impl->evictOneUnlocked(nullptr)) {
-        }
-        while (_impl->approximateBytes > limits.maxBytes && _impl->evictOneUnlocked(nullptr)) {
-        }
+        while (_impl->cache.size() > limits.maxCacheEntries && _impl->evictOneUnlocked(nullptr)) {}
+        while (_impl->approximateBytes > limits.maxBytes && _impl->evictOneUnlocked(nullptr)) {}
     }
 
     ReserveResult ShapePipeline::reserve(const ShapeKey& key, const PipelineLimits& limits)
@@ -296,8 +286,8 @@ namespace rock::debug_overlay_shape
                 return result;
             }
 
-            const std::size_t backlog = _impl->reservedJobs + _impl->pendingJobs.size() +
-                                        _impl->activeJobs + _impl->completedJobs.size();
+            const std::size_t backlog =
+                _impl->reservedJobs + _impl->pendingJobs.size() + _impl->activeJobs + _impl->completedJobs.size();
             if (limits.maxQueuedJobs == 0 || backlog >= limits.maxQueuedJobs || limits.maxCompletedJobs == 0) {
                 result.status = ReserveStatus::QueueFull;
                 return result;
@@ -344,12 +334,8 @@ namespace rock::debug_overlay_shape
             }
 
             try {
-                _impl->pendingJobs.push_back(MeshJob{
-                    reservation.key,
-                    std::move(recipe),
-                    reservation.generation,
-                    reservation.maxCompletedJobs
-                });
+                _impl->pendingJobs.push_back(MeshJob{ reservation.key, std::move(recipe), reservation.generation,
+                    reservation.maxCompletedJobs });
             } catch (...) {
                 if (_impl->reservedJobs > 0) {
                     --_impl->reservedJobs;
@@ -397,8 +383,8 @@ namespace rock::debug_overlay_shape
         return LookupResult{ entry->second.state, entry->second.shape };
     }
 
-    UploadResult ShapePipeline::processCompletedUploads(
-        const MeshSink& sink, std::uint32_t maxUploads, const PipelineLimits& limits)
+    UploadResult ShapePipeline::processCompletedUploads(const MeshSink& sink, std::uint32_t maxUploads,
+        const PipelineLimits& limits)
     {
         UploadResult result{};
         if (!sink.registerMesh || !sink.releaseMesh || maxUploads == 0) {
@@ -423,14 +409,15 @@ namespace rock::debug_overlay_shape
                 {
                     std::scoped_lock lock(_impl->mutex);
                     const auto entry = _impl->cache.find(completed.key);
-                    if (!_impl->running || completed.generation != _impl->generation ||
-                        entry == _impl->cache.end() || entry->second.state != CacheState::Pending ||
+                    if (!_impl->running || completed.generation != _impl->generation || entry == _impl->cache.end() ||
+                        entry->second.state != CacheState::Pending ||
                         entry->second.generation != completed.generation) {
                         ++_impl->staleResultDrops;
                         ++result.stale;
                         continue;
                     }
-                    if (!completed.built.mesh.valid || completed.built.decodeMode == debug_overlay_policy::ShapeDecodeMode::Unsupported) {
+                    if (!completed.built.mesh.valid ||
+                        completed.built.decodeMode == debug_overlay_policy::ShapeDecodeMode::Unsupported) {
                         entry->second.state = CacheState::Unsupported;
                         entry->second.lastUseSerial = ++_impl->useSerial;
                         ++result.unsupported;
@@ -450,7 +437,8 @@ namespace rock::debug_overlay_shape
                     std::scoped_lock lock(_impl->mutex);
                     const auto entry = _impl->cache.find(completed.key);
                     if (completed.generation == _impl->generation && entry != _impl->cache.end() &&
-                        entry->second.state == CacheState::Pending && entry->second.generation == completed.generation) {
+                        entry->second.state == CacheState::Pending &&
+                        entry->second.generation == completed.generation) {
                         entry->second.state = CacheState::Unsupported;
                         entry->second.lastUseSerial = ++_impl->useSerial;
                     }
@@ -461,8 +449,8 @@ namespace rock::debug_overlay_shape
                 {
                     std::scoped_lock lock(_impl->mutex);
                     const auto entry = _impl->cache.find(completed.key);
-                    if (!_impl->running || completed.generation != _impl->generation ||
-                        entry == _impl->cache.end() || entry->second.state != CacheState::Pending ||
+                    if (!_impl->running || completed.generation != _impl->generation || entry == _impl->cache.end() ||
+                        entry->second.state != CacheState::Pending ||
                         entry->second.generation != completed.generation) {
                         ++_impl->staleResultDrops;
                         ++result.stale;

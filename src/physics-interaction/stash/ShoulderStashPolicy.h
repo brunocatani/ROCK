@@ -79,7 +79,8 @@ namespace rock::shoulder_stash_notification_policy
         return name;
     }
 
-    [[nodiscard]] inline std::string formatCollectedNotification(std::string_view itemName, int count, std::uint32_t formID)
+    [[nodiscard]] inline std::string formatCollectedNotification(std::string_view itemName, int count,
+        std::uint32_t formID)
     {
         std::string message = "Collected ";
         message += itemName.empty() ? fallbackItemName(formID) : std::string(itemName);

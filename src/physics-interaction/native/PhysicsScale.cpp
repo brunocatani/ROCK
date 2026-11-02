@@ -1,7 +1,7 @@
 #include "physics-interaction/native/PhysicsScale.h"
 
-#include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/HavokOffsets.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include <REL/Relocation.h>
@@ -57,13 +57,14 @@ namespace rock::physics_scale
 
         Snapshot readRuntimeSnapshot(std::uint32_t revision)
         {
-            return makeSnapshot(readGameToHavokScale(), readHavokToGameScale(), readVrScaleSetting(), revision, readVrGlobalScale(), readRaycastScale());
+            return makeSnapshot(readGameToHavokScale(), readHavokToGameScale(), readVrScaleSetting(), revision,
+                readVrGlobalScale(), readRaycastScale());
         }
 
         bool vrDiagnosticsChanged(const Snapshot& a, const Snapshot& b)
         {
             return std::fabs(a.vrScale - b.vrScale) > 0.001f || std::fabs(a.vrGlobalScale - b.vrGlobalScale) > 0.001f ||
-                   std::fabs(a.raycastScale - b.raycastScale) > 0.001f;
+                std::fabs(a.raycastScale - b.raycastScale) > 0.001f;
         }
 
         Snapshot loadCurrentSnapshot()
@@ -90,25 +91,13 @@ namespace rock::physics_scale
         }
     }
 
-    Snapshot current()
-    {
-        return loadCurrentSnapshot();
-    }
+    Snapshot current() { return loadCurrentSnapshot(); }
 
-    float gameToHavok()
-    {
-        return s_gameToHavok.load(std::memory_order_relaxed);
-    }
+    float gameToHavok() { return s_gameToHavok.load(std::memory_order_relaxed); }
 
-    float havokToGame()
-    {
-        return s_havokToGame.load(std::memory_order_relaxed);
-    }
+    float havokToGame() { return s_havokToGame.load(std::memory_order_relaxed); }
 
-    std::uint32_t revision()
-    {
-        return s_revision.load(std::memory_order_acquire);
-    }
+    std::uint32_t revision() { return s_revision.load(std::memory_order_acquire); }
 
     bool refreshAndLogIfChanged()
     {
@@ -132,30 +121,21 @@ namespace rock::physics_scale
             const float reciprocal = isUsableScale(next.gameToHavok) ? (1.0f / next.gameToHavok) : 0.0f;
             const float reciprocalDrift = reciprocalDriftGameUnits(next);
             ROCK_LOG_INFO(Config,
-                "Physics scale {}: gameToHavok={:.8f} havokToGame={:.5f} reciprocal={:.5f} reciprocalDrift={:.6f} fVrScale={:.3f} vrGlobal={:.3f} raycastScale={:.3f} revision={}",
-                hadSnapshot ? "changed" : "initialized",
-                next.gameToHavok,
-                next.havokToGame,
-                reciprocal,
-                reciprocalDrift,
-                next.vrScale,
-                next.vrGlobalScale,
-                next.raycastScale,
-                next.revision);
+                "Physics scale {}: gameToHavok={:.8f} havokToGame={:.5f} reciprocal={:.5f} reciprocalDrift={:.6f} "
+                "fVrScale={:.3f} vrGlobal={:.3f} raycastScale={:.3f} revision={}",
+                hadSnapshot ? "changed" : "initialized", next.gameToHavok, next.havokToGame, reciprocal,
+                reciprocalDrift, next.vrScale, next.vrGlobalScale, next.raycastScale, next.revision);
             if (hasReciprocalMismatch(next, 0.001f)) {
                 ROCK_LOG_WARN(Config,
-                    "Physics scale globals disagree: gameToHavok reciprocal={:.6f}, havokToGame={:.6f}, drift={:.6f}. Check FO4VR scale offsets before trusting world-space collision diagnostics.",
-                    reciprocal,
-                    next.havokToGame,
-                    reciprocalDrift);
+                    "Physics scale globals disagree: gameToHavok reciprocal={:.6f}, havokToGame={:.6f}, drift={:.6f}. "
+                    "Check FO4VR scale offsets before trusting world-space collision diagnostics.",
+                    reciprocal, next.havokToGame, reciprocalDrift);
             }
         } else if (diagnosticsChanged) {
             ROCK_LOG_DEBUG(Config,
-                "Physics scale diagnostics changed without Havok conversion change: fVrScale={:.3f} vrGlobal={:.3f} raycastScale={:.3f} revision={}",
-                next.vrScale,
-                next.vrGlobalScale,
-                next.raycastScale,
-                next.revision);
+                "Physics scale diagnostics changed without Havok conversion change: fVrScale={:.3f} vrGlobal={:.3f} "
+                "raycastScale={:.3f} revision={}",
+                next.vrScale, next.vrGlobalScale, next.raycastScale, next.revision);
         }
 
         return hadSnapshot && conversionChanged;

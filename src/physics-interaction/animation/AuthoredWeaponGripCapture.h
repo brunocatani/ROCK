@@ -58,24 +58,17 @@ namespace rock::authored_weapon_grip_capture
     void setEnabled(bool enabled);
     void resetTransientState();
 
-    [[nodiscard]] PrimaryFiringGripCaptureStatus
-        queryPrimaryFiringGripCaptureStatus();
-    [[nodiscard]] AuthoredSupportGripCaptureStatus
-        queryAuthoredSupportGripCaptureStatus();
+    [[nodiscard]] PrimaryFiringGripCaptureStatus queryPrimaryFiringGripCaptureStatus();
+    [[nodiscard]] AuthoredSupportGripCaptureStatus queryAuthoredSupportGripCaptureStatus();
     [[nodiscard]] const char* authoredSupportGripCaptureFailureReasonName(
         AuthoredSupportGripCaptureFailureReason reason);
-    [[nodiscard]] bool tryGetPrimaryFiringGripRelation(
-        const RE::NiNode* expectedWeaponNode,
-        RE::NiTransform& outAuthoredPrimaryHandInWeapon,
-        std::uint64_t& outCaptureSequence);
+    [[nodiscard]] bool tryGetPrimaryFiringGripRelation(const RE::NiNode* expectedWeaponNode,
+        RE::NiTransform& outAuthoredPrimaryHandInWeapon, std::uint64_t& outCaptureSequence);
     // Pre-presentation graph-local Weapon scale; never reads the final visible
     // weapon scale or a persisted pose. Borrowed node identity is checked now.
-    [[nodiscard]] bool tryGetAnimationWeaponScale(const RE::NiNode* expectedWeaponNode,
-        std::uint32_t expectedFormId, float& outScale);
-    [[nodiscard]] bool tryResolveAuthoredSupportGrip(
-        const RE::NiNode* expectedWeaponNode,
-        RE::NiTransform& outSupportHandInWeapon,
-        std::array<RE::NiTransform, 15>& outFingerLocalTransforms,
-        std::uint16_t& outFingerLocalTransformMask,
-        std::uint64_t& outCaptureSequence);
+    [[nodiscard]] bool tryGetAnimationWeaponScale(const RE::NiNode* expectedWeaponNode, std::uint32_t expectedFormId,
+        float& outScale);
+    [[nodiscard]] bool tryResolveAuthoredSupportGrip(const RE::NiNode* expectedWeaponNode,
+        RE::NiTransform& outSupportHandInWeapon, std::array<RE::NiTransform, 15>& outFingerLocalTransforms,
+        std::uint16_t& outFingerLocalTransformMask, std::uint64_t& outCaptureSequence);
 }

@@ -87,7 +87,8 @@ namespace rock::far_selection_blacklist_policy
         return false;
     }
 
-    [[nodiscard]] inline bool parseUnsignedToken(std::string_view token, std::uint32_t& outValue, bool preferHex) noexcept
+    [[nodiscard]] inline bool parseUnsignedToken(std::string_view token, std::uint32_t& outValue,
+        bool preferHex) noexcept
     {
         token = trimToken(token);
         if (token.empty()) {
@@ -188,7 +189,8 @@ namespace rock::far_selection_blacklist_policy
         return false;
     }
 
-    [[nodiscard]] inline FarSelectionBlacklistDecision evaluateFarSelectionBlacklist(const FarSelectionBlacklistInput& input) noexcept
+    [[nodiscard]] inline FarSelectionBlacklistDecision evaluateFarSelectionBlacklist(
+        const FarSelectionBlacklistInput& input) noexcept
     {
         if (!input.isFarSelection) {
             return {};

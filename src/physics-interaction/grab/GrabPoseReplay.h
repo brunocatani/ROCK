@@ -68,11 +68,11 @@ namespace rock::grab_pose_replay
     struct Record
     {
         std::uint32_t formatVersion = kFormatVersion;
-        std::string object;      // "0xFF000FA3"
+        std::string object; // "0xFF000FA3"
         std::string objectName;
         bool isLeft = false;
         std::string acquisition; // "pullCatch" | "close"
-        std::string gripSource;  // grab point mode that seated the object
+        std::string gripSource; // grab point mode that seated the object
         std::string capturedLocal;
 
         // Mesh the finger solve indexed, object-node local, 9 floats per triangle.

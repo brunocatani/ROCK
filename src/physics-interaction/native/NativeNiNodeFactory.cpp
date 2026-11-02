@@ -1,8 +1,8 @@
 #include "physics-interaction/native/NativeNiNodeFactory.h"
 
+#include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/PhysicsLog.h"
 
 #include <array>
 #include <cstring>
@@ -21,15 +21,14 @@ namespace rock::native_scene
         }
 
         template <std::size_t N>
-        [[nodiscard]] bool validateNativeEntry(
-            const char* label,
-            const std::uintptr_t offset,
+        [[nodiscard]] bool validateNativeEntry(const char* label, const std::uintptr_t offset,
             const std::array<std::uint8_t, N>& expected) noexcept
         {
             const auto address = REL::Offset(offset).address();
             std::array<std::uint8_t, N> actual{};
             if (!addressIsInGameText(address) ||
-                !native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), actual.data(), actual.size()) ||
+                !native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), actual.data(),
+                    actual.size()) ||
                 actual != expected) {
                 ROCK_LOG_ERROR(Init, "Native NiNode factory validation failed for {} at 0x{:X}: inGameText={} bytes={}",
                     label, address, addressIsInGameText(address), fmt::join(actual, ","));
@@ -54,10 +53,8 @@ namespace rock::native_scene
                  * points, exactly as the rest of the engine does. Requiring
                  * their original bytes rejects a valid replacement heap.
                  */
-                const bool entriesMatch = validateNativeEntry(
-                        "NiNode constructor",
-                        offsets::kFunc_NiNode_Ctor,
-                        std::array<std::uint8_t, 10>{ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10 });
+                const bool entriesMatch = validateNativeEntry("NiNode constructor", offsets::kFunc_NiNode_Ctor,
+                    std::array<std::uint8_t, 10>{ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10 });
                 if (!entriesMatch) {
                     return nullptr;
                 }

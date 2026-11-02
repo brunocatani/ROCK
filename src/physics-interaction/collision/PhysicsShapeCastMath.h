@@ -17,6 +17,7 @@ namespace rock::physics_shape_cast_math
         float z = 0.0f;
         float w = 0.0f;
     };
+
     static_assert(sizeof(ShapeCastVec4) == 0x10);
 
     struct alignas(16) RuntimeShapeCastQuery
@@ -80,8 +81,8 @@ namespace rock::physics_shape_cast_math
         };
     }
 
-    inline RuntimeShapeCastQuery buildRuntimeShapeCastQuery(void* filterRef, void* shape, std::uint32_t collisionFilterInfo, const ShapeCastVec4& start,
-        const ShapeCastVec4& displacement)
+    inline RuntimeShapeCastQuery buildRuntimeShapeCastQuery(void* filterRef, void* shape,
+        std::uint32_t collisionFilterInfo, const ShapeCastVec4& start, const ShapeCastVec4& displacement)
     {
         RuntimeShapeCastQuery query{};
         query.filterRef = filterRef;

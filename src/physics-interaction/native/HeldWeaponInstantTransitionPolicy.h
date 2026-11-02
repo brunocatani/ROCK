@@ -33,12 +33,8 @@ namespace rock::held_weapon_instant_transition_policy
         bool overflow{ false };
     };
 
-    [[nodiscard]] inline constexpr HookDecision classifyHookCall(
-        const bool scopeActive,
-        const bool playerMatches,
-        const bool draw,
-        const std::uintptr_t returnAddress,
-        const std::uintptr_t drawReturnAddress,
+    [[nodiscard]] inline constexpr HookDecision classifyHookCall(const bool scopeActive, const bool playerMatches,
+        const bool draw, const std::uintptr_t returnAddress, const std::uintptr_t drawReturnAddress,
         const std::uintptr_t sheatheReturnAddress) noexcept
     {
         if (!scopeActive) {
@@ -65,8 +61,7 @@ namespace rock::held_weapon_instant_transition_policy
         trace.actions[trace.count++] = action;
     }
 
-    [[nodiscard]] inline constexpr std::uint8_t actionCount(
-        const ActionTrace& trace,
+    [[nodiscard]] inline constexpr std::uint8_t actionCount(const ActionTrace& trace,
         const NativeAction action) noexcept
     {
         std::uint8_t count = 0;
@@ -88,14 +83,12 @@ namespace rock::held_weapon_instant_transition_policy
 
     [[nodiscard]] inline constexpr bool isValidEquipActionTrace(const ActionTrace& trace) noexcept
     {
-        if (trace.playerMismatch || trace.unexpectedCaller || trace.nestedScope ||
-            trace.overflow || trace.count == 0 ||
+        if (trace.playerMismatch || trace.unexpectedCaller || trace.nestedScope || trace.overflow || trace.count == 0 ||
             trace.count > trace.actions.size()) {
             return false;
         }
 
-        if (trace.actions[trace.count - 1] != NativeAction::Draw ||
-            actionCount(trace, NativeAction::Draw) != 1) {
+        if (trace.actions[trace.count - 1] != NativeAction::Draw || actionCount(trace, NativeAction::Draw) != 1) {
             return false;
         }
 

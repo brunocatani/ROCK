@@ -9,7 +9,6 @@
  * Grab core policy is grouped here to keep object preparation, lifecycle, canonical frames, frame math, interaction decisions, and pull motion together.
  */
 
-
 // ---- ActiveObjectPrepPolicy.h ----
 
 #include <cstdint>
@@ -25,12 +24,12 @@ namespace rock::active_object_prep_policy
      */
     inline constexpr std::uint16_t kMotionPresetDynamic = 1;
 
-    inline constexpr bool shouldRestoreMotionAfterFailedActivePrep(bool recursiveMotionWasConverted, std::uint16_t originalMotionPropsId)
+    inline constexpr bool shouldRestoreMotionAfterFailedActivePrep(bool recursiveMotionWasConverted,
+        std::uint16_t originalMotionPropsId)
     {
         return recursiveMotionWasConverted && originalMotionPropsId != kMotionPresetDynamic;
     }
 }
-
 
 // ---- ActiveGrabBodyLifecycle.h ----
 
@@ -109,8 +108,8 @@ namespace rock::active_grab_body_lifecycle
          * selected body is already dynamic. Return every touched actor body and
          * filter to its captured state before the engine later detaches the cell.
          */
-        return targetKind == grab_target::Kind::ConnectedBody ? BodyRestorePolicy::RestoreAllChanged :
-                                                               BodyRestorePolicy::ProtectComplexSystemOwned;
+        return targetKind == grab_target::Kind::ConnectedBody ? BodyRestorePolicy::RestoreAllChanged
+                                                              : BodyRestorePolicy::ProtectComplexSystemOwned;
     }
 
     struct BodyLifecycleRecord
@@ -160,7 +159,6 @@ namespace rock::active_grab_body_lifecycle
         std::uint32_t filterRestoreCount = 0;
         std::uint32_t preservedConvertedMotionCount = 0;
         std::uint32_t preservedConvertedFilterCount = 0;
-
     };
 
     struct BodyLifecycleAudit
@@ -184,7 +182,8 @@ namespace rock::active_grab_body_lifecycle
 
     inline MotionRole motionRoleFromBodyMotionType(physics_body_classifier::BodyMotionType motionType)
     {
-        return motionType == physics_body_classifier::BodyMotionType::Dynamic ? MotionRole::LooseDynamic : MotionRole::SystemOwnedNonDynamic;
+        return motionType == physics_body_classifier::BodyMotionType::Dynamic ? MotionRole::LooseDynamic
+                                                                              : MotionRole::SystemOwnedNonDynamic;
     }
 
     inline BodyLifecycleRecord makeLifecycleRecord(const object_physics_body_set::ObjectPhysicsBodyRecord& record)
@@ -223,15 +222,11 @@ namespace rock::active_grab_body_lifecycle
             (intent == BodyReleaseIntent::PhysicalDrop || intent == BodyReleaseIntent::PendingTransfer);
     }
 
-    inline bool shouldPreserveConvertedMotionOnRelease(
-        const BodyLifecycleRecord& record,
-        grab_target::Kind targetKind,
+    inline bool shouldPreserveConvertedMotionOnRelease(const BodyLifecycleRecord& record, grab_target::Kind targetKind,
         BodyReleaseIntent intent) noexcept
     {
-        return keepsLooseObjectInWorld(targetKind, intent) &&
-               record.originalStateKnown &&
-               record.motionChangedByRock &&
-               record.originalMotionType == physics_body_classifier::BodyMotionType::Keyframed;
+        return keepsLooseObjectInWorld(targetKind, intent) && record.originalStateKnown && record.motionChangedByRock &&
+            record.originalMotionType == physics_body_classifier::BodyMotionType::Keyframed;
     }
 
     class BodyLifecycleSnapshot
@@ -267,17 +262,15 @@ namespace rock::active_grab_body_lifecycle
 
         BodyLifecycleRecord* find(std::uint32_t bodyId)
         {
-            const auto it = std::find_if(_records.begin(), _records.end(), [&](const BodyLifecycleRecord& record) {
-                return record.bodyId == bodyId;
-            });
+            const auto it = std::find_if(_records.begin(), _records.end(),
+                [&](const BodyLifecycleRecord& record) { return record.bodyId == bodyId; });
             return it != _records.end() ? &*it : nullptr;
         }
 
         const BodyLifecycleRecord* find(std::uint32_t bodyId) const
         {
-            const auto it = std::find_if(_records.begin(), _records.end(), [&](const BodyLifecycleRecord& record) {
-                return record.bodyId == bodyId;
-            });
+            const auto it = std::find_if(_records.begin(), _records.end(),
+                [&](const BodyLifecycleRecord& record) { return record.bodyId == bodyId; });
             return it != _records.end() ? &*it : nullptr;
         }
 
@@ -304,16 +297,25 @@ namespace rock::active_grab_body_lifecycle
             }
         }
 
-        void markIncompleteNativeScan()
+        void markIncompleteNativeScan() { _incompleteNativeScan = true; }
+
+        BodyRestorePlan restorePlanForFailure() const
         {
-            _incompleteNativeScan = true;
+            return makeRestorePlan(BodyRestoreReason::FailedGrabSetup, BodyRestorePolicy::RestoreAllChanged,
+                grab_target::Kind::None, BodyReleaseIntent::FailedSetup);
         }
 
-        BodyRestorePlan restorePlanForFailure() const { return makeRestorePlan(BodyRestoreReason::FailedGrabSetup, BodyRestorePolicy::RestoreAllChanged, grab_target::Kind::None, BodyReleaseIntent::FailedSetup); }
+        BodyRestorePlan restorePlanForRelease(BodyRestorePolicy policy) const
+        {
+            return makeRestorePlan(BodyRestoreReason::Release, policy, grab_target::Kind::None,
+                BodyReleaseIntent::NonPhysicalTransfer);
+        }
 
-        BodyRestorePlan restorePlanForRelease(BodyRestorePolicy policy) const { return makeRestorePlan(BodyRestoreReason::Release, policy, grab_target::Kind::None, BodyReleaseIntent::NonPhysicalTransfer); }
-
-        BodyRestorePlan restorePlanForRelease(BodyRestorePolicy policy, grab_target::Kind targetKind, BodyReleaseIntent intent) const { return makeRestorePlan(BodyRestoreReason::Release, policy, targetKind, intent); }
+        BodyRestorePlan restorePlanForRelease(BodyRestorePolicy policy, grab_target::Kind targetKind,
+            BodyReleaseIntent intent) const
+        {
+            return makeRestorePlan(BodyRestoreReason::Release, policy, targetKind, intent);
+        }
 
         std::vector<MotionRestoreCommand> makeMotionRestoreCommands(const BodyRestorePlan& plan) const
         {
@@ -327,9 +329,9 @@ namespace rock::active_grab_body_lifecycle
                     .ownerKey = entry.record.ownerKey,
                     .bodyId = entry.record.bodyId,
                     .motionPropertiesId = entry.record.motionPropertiesId,
-                    .motionType = entry.record.originalMotionType == physics_body_classifier::BodyMotionType::Unknown ?
-                                       physics_body_classifier::motionTypeFromMotionPropertiesId(entry.record.motionPropertiesId) :
-                                       entry.record.originalMotionType,
+                    .motionType = entry.record.originalMotionType == physics_body_classifier::BodyMotionType::Unknown
+                        ? physics_body_classifier::motionTypeFromMotionPropertiesId(entry.record.motionPropertiesId)
+                        : entry.record.originalMotionType,
                     .recursive = false,
                     .force = true,
                     .activate = false,
@@ -342,23 +344,20 @@ namespace rock::active_grab_body_lifecycle
 
         std::uint32_t convertedCount() const
         {
-            return static_cast<std::uint32_t>(std::count_if(_records.begin(), _records.end(), [](const BodyLifecycleRecord& record) {
-                return record.motionChangedByRock;
-            }));
+            return static_cast<std::uint32_t>(std::count_if(_records.begin(), _records.end(),
+                [](const BodyLifecycleRecord& record) { return record.motionChangedByRock; }));
         }
 
         std::uint32_t dampingSnapshotCount() const
         {
-            return static_cast<std::uint32_t>(std::count_if(_records.begin(), _records.end(), [](const BodyLifecycleRecord& record) {
-                return record.hasDampingSnapshot;
-            }));
+            return static_cast<std::uint32_t>(std::count_if(_records.begin(), _records.end(),
+                [](const BodyLifecycleRecord& record) { return record.hasDampingSnapshot; }));
         }
 
         std::uint32_t inertiaSnapshotCount() const
         {
-            return static_cast<std::uint32_t>(std::count_if(_records.begin(), _records.end(), [](const BodyLifecycleRecord& record) {
-                return record.hasInertiaSnapshot;
-            }));
+            return static_cast<std::uint32_t>(std::count_if(_records.begin(), _records.end(),
+                [](const BodyLifecycleRecord& record) { return record.hasInertiaSnapshot; }));
         }
 
         std::uint32_t latePreparedBodyCount() const { return _latePreparedBodyCount; }
@@ -370,14 +369,14 @@ namespace rock::active_grab_body_lifecycle
     private:
         void observeScanDiagnostics(const object_physics_body_set::ObjectPhysicsBodySet& bodySet)
         {
-            if (bodySet.diagnostics.scanFailures > 0 ||
-                bodySet.diagnostics.invalidPhysicsSystems > 0 ||
+            if (bodySet.diagnostics.scanFailures > 0 || bodySet.diagnostics.invalidPhysicsSystems > 0 ||
                 bodySet.diagnostics.depthLimitSkips > 0) {
                 _incompleteNativeScan = true;
             }
         }
 
-        BodyRestorePlan makeRestorePlan(BodyRestoreReason reason, BodyRestorePolicy policy, grab_target::Kind targetKind, BodyReleaseIntent intent) const
+        BodyRestorePlan makeRestorePlan(BodyRestoreReason reason, BodyRestorePolicy policy,
+            grab_target::Kind targetKind, BodyReleaseIntent intent) const
         {
             /*
              * Release restore must keep one coherent body contract. If ROCK keeps
@@ -401,8 +400,7 @@ namespace rock::active_grab_body_lifecycle
             for (const auto& record : _records) {
                 BodyRestorePlanEntry entry{};
                 entry.record = record;
-                const bool preserveConvertedMotion =
-                    reason == BodyRestoreReason::Release &&
+                const bool preserveConvertedMotion = reason == BodyRestoreReason::Release &&
                     policy == BodyRestorePolicy::ProtectComplexSystemOwned &&
                     shouldPreserveConvertedMotionOnRelease(record, targetKind, intent);
 
@@ -414,8 +412,8 @@ namespace rock::active_grab_body_lifecycle
                     entry.restoreMotion = false;
                     ++plan.preservedConvertedMotionCount;
                 } else {
-                    entry.restoreMotion =
-                        record.originalStateKnown && record.motionChangedByRock && record.motionRole == MotionRole::SystemOwnedNonDynamic;
+                    entry.restoreMotion = record.originalStateKnown && record.motionChangedByRock &&
+                        record.motionRole == MotionRole::SystemOwnedNonDynamic;
                 }
 
                 if (reason == BodyRestoreReason::FailedGrabSetup || policy == BodyRestorePolicy::RestoreAllChanged) {
@@ -424,7 +422,8 @@ namespace rock::active_grab_body_lifecycle
                     entry.restoreFilter = false;
                     ++plan.preservedConvertedFilterCount;
                 } else {
-                    entry.restoreFilter = record.originalStateKnown && record.motionRole == MotionRole::SystemOwnedNonDynamic;
+                    entry.restoreFilter =
+                        record.originalStateKnown && record.motionRole == MotionRole::SystemOwnedNonDynamic;
                 }
 
                 if (entry.restoreMotion) {
@@ -444,7 +443,8 @@ namespace rock::active_grab_body_lifecycle
         bool _incompleteNativeScan = false;
     };
 
-    inline BodyLifecycleAudit makeLifecycleAudit(const BodyLifecycleSnapshot& snapshot, const BodyRestorePlan& plan, std::uint32_t primaryBodyId)
+    inline BodyLifecycleAudit makeLifecycleAudit(const BodyLifecycleSnapshot& snapshot, const BodyRestorePlan& plan,
+        std::uint32_t primaryBodyId)
     {
         return BodyLifecycleAudit{
             .bodyCount = static_cast<std::uint32_t>(snapshot.size()),
@@ -465,7 +465,8 @@ namespace rock::active_grab_body_lifecycle
         };
     }
 
-    inline bool shouldSkipIncompleteScanRootRestore(const BodyRestorePlan& plan, std::uint16_t originalMotionPropsId) noexcept
+    inline bool shouldSkipIncompleteScanRootRestore(const BodyRestorePlan& plan,
+        std::uint16_t originalMotionPropsId) noexcept
     {
         if (plan.reason != BodyRestoreReason::Release || !keepsLooseObjectInWorld(plan.targetKind, plan.intent)) {
             return false;
@@ -482,7 +483,8 @@ namespace rock::active_grab_body_lifecycle
             return true;
         }
 
-        return physics_body_classifier::motionTypeFromMotionPropertiesId(originalMotionPropsId) == physics_body_classifier::BodyMotionType::Keyframed;
+        return physics_body_classifier::motionTypeFromMotionPropertiesId(originalMotionPropsId) ==
+            physics_body_classifier::BodyMotionType::Keyframed;
     }
 }
 
@@ -497,7 +499,8 @@ namespace rock
         OwnershipHandoff,
     };
 
-    inline constexpr active_grab_body_lifecycle::BodyReleaseIntent releaseIntentFromDisposition(GrabReleaseDisposition disposition) noexcept
+    inline constexpr active_grab_body_lifecycle::BodyReleaseIntent releaseIntentFromDisposition(
+        GrabReleaseDisposition disposition) noexcept
     {
         using active_grab_body_lifecycle::BodyReleaseIntent;
         switch (disposition) {
@@ -710,10 +713,7 @@ namespace rock
         bool valid = false;
         bool hasMeshPoseData = false;
 
-        void clear()
-        {
-            *this = ImmutableGrabCaptureTelemetry{};
-        }
+        void clear() { *this = ImmutableGrabCaptureTelemetry{}; }
     };
 
     struct CanonicalGrabFrame
@@ -753,7 +753,9 @@ namespace rock
         bool syntheticLooseWeaponPrimaryAttach = false;
         bool authoredLooseWeaponSupportGrip = false;
         AuthoredWeaponGripPose authoredWeaponPose{};
-        loose_weapon_authored_grab_policy::Arrangement authoredWeaponArrangement{ loose_weapon_authored_grab_policy::Arrangement::Pending };
+        loose_weapon_authored_grab_policy::Arrangement authoredWeaponArrangement{
+            loose_weapon_authored_grab_policy::Arrangement::Pending
+        };
         // Game-frame-only carry corrections. Frozen constraint/visual seats
         // remain immutable; both proxies receive the same two-hand root target.
         RE::NiTransform looseObjectSoloProxyCorrection{};
@@ -820,7 +822,11 @@ namespace rock
             fadeInGrabConstraint = false;
         }
 
-        bool isValid() const { return heldNode != nullptr || hasMeshPoseData || !localMeshTriangles.empty() || !fingerPoseLocalMeshTriangles.empty(); }
+        bool isValid() const
+        {
+            return heldNode != nullptr || hasMeshPoseData || !localMeshTriangles.empty() ||
+                !fingerPoseLocalMeshTriangles.empty();
+        }
     };
 }
 
@@ -859,7 +865,8 @@ namespace rock::grab_frame_math
     };
 
     template <class Transform, class Vector>
-    inline Transform shiftObjectToAlignGripWithPocket(Transform objectWorld, const Vector& grabPocketWorld, const Vector& gripPointWorld)
+    inline Transform shiftObjectToAlignGripWithPocket(Transform objectWorld, const Vector& grabPocketWorld,
+        const Vector& gripPointWorld)
     {
         objectWorld.translate.x += grabPocketWorld.x - gripPointWorld.x;
         objectWorld.translate.y += grabPocketWorld.y - gripPointWorld.y;
@@ -879,13 +886,17 @@ namespace rock::grab_frame_math
         using Vector = decltype(std::declval<Transform>().translate);
 
         Transform result = transform_math::makeIdentityTransform<Transform>();
-        result.translate = hand_bone_collider_geometry_math::generatedColliderWorldPointToLocal(proxyWorld, objectWorld.translate);
+        result.translate =
+            hand_bone_collider_geometry_math::generatedColliderWorldPointToLocal(proxyWorld, objectWorld.translate);
         Transform proxyRotationWorld = proxyWorld;
         proxyRotationWorld.scale = 1.0f;
 
-        const Vector objectAxisXWorld{ objectWorld.rotate.entry[0][0], objectWorld.rotate.entry[0][1], objectWorld.rotate.entry[0][2] };
-        const Vector objectAxisYWorld{ objectWorld.rotate.entry[1][0], objectWorld.rotate.entry[1][1], objectWorld.rotate.entry[1][2] };
-        const Vector objectAxisZWorld{ objectWorld.rotate.entry[2][0], objectWorld.rotate.entry[2][1], objectWorld.rotate.entry[2][2] };
+        const Vector objectAxisXWorld{ objectWorld.rotate.entry[0][0], objectWorld.rotate.entry[0][1],
+            objectWorld.rotate.entry[0][2] };
+        const Vector objectAxisYWorld{ objectWorld.rotate.entry[1][0], objectWorld.rotate.entry[1][1],
+            objectWorld.rotate.entry[1][2] };
+        const Vector objectAxisZWorld{ objectWorld.rotate.entry[2][0], objectWorld.rotate.entry[2][1],
+            objectWorld.rotate.entry[2][2] };
         const Vector objectAxisXProxyLocal =
             hand_bone_collider_geometry_math::generatedColliderWorldVectorToLocal(proxyRotationWorld, objectAxisXWorld);
         const Vector objectAxisYProxyLocal =
@@ -913,9 +924,9 @@ namespace rock::grab_frame_math
         using Vector = decltype(std::declval<Transform>().translate);
 
         Transform result = transform_math::makeIdentityTransform<Transform>();
-        result.translate =
-            proxyWorld.translate +
-            hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(proxyWorld, objectProxyLocal.translate);
+        result.translate = proxyWorld.translate +
+            hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(proxyWorld,
+                objectProxyLocal.translate);
         Transform proxyRotationWorld = proxyWorld;
         proxyRotationWorld.scale = 1.0f;
 
@@ -934,12 +945,12 @@ namespace rock::grab_frame_math
             objectProxyLocal.rotate.entry[2][1],
             objectProxyLocal.rotate.entry[2][2],
         };
-        const Vector objectAxisXWorld =
-            hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(proxyRotationWorld, objectAxisXProxyLocal);
-        const Vector objectAxisYWorld =
-            hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(proxyRotationWorld, objectAxisYProxyLocal);
-        const Vector objectAxisZWorld =
-            hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(proxyRotationWorld, objectAxisZProxyLocal);
+        const Vector objectAxisXWorld = hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(
+            proxyRotationWorld, objectAxisXProxyLocal);
+        const Vector objectAxisYWorld = hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(
+            proxyRotationWorld, objectAxisYProxyLocal);
+        const Vector objectAxisZWorld = hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(
+            proxyRotationWorld, objectAxisZProxyLocal);
 
         result.rotate.entry[0][0] = objectAxisXWorld.x;
         result.rotate.entry[0][1] = objectAxisXWorld.y;
@@ -960,7 +971,8 @@ namespace rock::grab_frame_math
     template <class Transform>
     inline Transform generatedProxyFromObjectWorld(const Transform& objectWorld, const Transform& objectProxyLocal)
     {
-        Transform proxy = transform_math::composeTransforms(objectWorld, transform_math::invertTransform(objectProxyLocal));
+        Transform proxy =
+            transform_math::composeTransforms(objectWorld, transform_math::invertTransform(objectProxyLocal));
         proxy.rotate = transform_math::transposeRotation(proxy.rotate);
         return proxy;
     }
@@ -977,9 +989,7 @@ namespace rock::grab_frame_math
 
     template <class Transform, class Vector>
     inline SplitGrabFrame<Transform> buildSplitGrabFrameFromDesiredObject(const Transform& rawHandWorld,
-        const Transform& handBodyWorld,
-        const Transform& desiredObjectWorld,
-        const Vector& grabPivotWorld)
+        const Transform& handBodyWorld, const Transform& desiredObjectWorld, const Vector& grabPivotWorld)
     {
         SplitGrabFrame<Transform> result{};
         result.shiftedObjectWorld = desiredObjectWorld;
@@ -1054,7 +1064,8 @@ namespace rock::grab_authority_frame_math
     }
 
     template <class Transform, class Vector>
-    inline bool alignLocalPointInTransformToLocalTarget(Transform& transform, const Vector& localPoint, const Vector& targetPoint)
+    inline bool alignLocalPointInTransformToLocalTarget(Transform& transform, const Vector& localPoint,
+        const Vector& targetPoint)
     {
         if (!isFiniteTransform(transform) || !isFiniteVector(localPoint) || !isFiniteVector(targetPoint)) {
             return false;
@@ -1140,22 +1151,17 @@ namespace rock::grab_authority_frame_math
         frozen.visualNormalWorld = input.visualNormalWorld;
         frozen.visualNormalValid = input.visualNormalValid && isFiniteVector(input.visualNormalWorld);
 
-        if (!isFiniteTransform(input.rawHandWorld) ||
-            !isFiniteTransform(input.proxyWorld) ||
-            !isFiniteTransform(input.proxyAuthorityFrameWorld) ||
-            !isFiniteTransform(input.objectWorld) ||
-            !isFiniteTransform(input.bodyWorld) ||
-            !isFiniteTransform(input.constraintBodyWorld) ||
-            (input.hasVisualHandObjectLocal && (!isFiniteTransform(input.visualHandObjectLocal) ||
-                input.visualHandObjectLocal.scale <= 0.0001f)) ||
-            !isFiniteVector(input.pivotAWorld) ||
-            !isFiniteVector(input.gripPointWorld)) {
+        if (!isFiniteTransform(input.rawHandWorld) || !isFiniteTransform(input.proxyWorld) ||
+            !isFiniteTransform(input.proxyAuthorityFrameWorld) || !isFiniteTransform(input.objectWorld) ||
+            !isFiniteTransform(input.bodyWorld) || !isFiniteTransform(input.constraintBodyWorld) ||
+            (input.hasVisualHandObjectLocal &&
+                (!isFiniteTransform(input.visualHandObjectLocal) || input.visualHandObjectLocal.scale <= 0.0001f)) ||
+            !isFiniteVector(input.pivotAWorld) || !isFiniteVector(input.gripPointWorld)) {
             return frozen;
         }
 
-        frozen.bodyLocal = transform_math::composeTransforms(
-            transform_math::invertTransform(input.objectWorld),
-            input.bodyWorld);
+        frozen.bodyLocal =
+            transform_math::composeTransforms(transform_math::invertTransform(input.objectWorld), input.bodyWorld);
         if (!isFiniteTransform(frozen.bodyLocal)) {
             return frozen;
         }
@@ -1163,24 +1169,22 @@ namespace rock::grab_authority_frame_math
          * The solver target is BODY authority. Visual object space may describe
          * mesh evidence, but it must not define body-B's frozen motor frame.
          */
-        frozen.desiredBodyWorld = input.hasDesiredBodyWorld ?
-            input.desiredBodyWorld :
-            grab_frame_math::shiftObjectToAlignGripWithPocket(
-                input.bodyWorld,
-                input.pivotAWorld,
-                input.gripPointWorld);
+        frozen.desiredBodyWorld = input.hasDesiredBodyWorld
+            ? input.desiredBodyWorld
+            : grab_frame_math::shiftObjectToAlignGripWithPocket(input.bodyWorld, input.pivotAWorld,
+                  input.gripPointWorld);
         if (!isFiniteTransform(frozen.desiredBodyWorld)) {
             return frozen;
         }
 
         frozen.gripPointLocal = transform_math::worldPointToLocal(input.objectWorld, input.gripPointWorld);
         frozen.pivotBBodyLocalGame = transform_math::worldPointToLocal(input.bodyWorld, input.gripPointWorld);
-        frozen.pivotBConstraintLocalGame = transform_math::worldPointToLocal(input.constraintBodyWorld, input.gripPointWorld);
-        frozen.pivotAHandBodyLocalGame = grab_frame_math::computePivotAHandBodyLocal(input.proxyWorld, input.pivotAWorld);
-        if (!isFiniteVector(frozen.gripPointLocal) ||
-            !isFiniteVector(frozen.pivotBBodyLocalGame) ||
-            !isFiniteVector(frozen.pivotBConstraintLocalGame) ||
-            !isFiniteVector(frozen.pivotAHandBodyLocalGame)) {
+        frozen.pivotBConstraintLocalGame =
+            transform_math::worldPointToLocal(input.constraintBodyWorld, input.gripPointWorld);
+        frozen.pivotAHandBodyLocalGame =
+            grab_frame_math::computePivotAHandBodyLocal(input.proxyWorld, input.pivotAWorld);
+        if (!isFiniteVector(frozen.gripPointLocal) || !isFiniteVector(frozen.pivotBBodyLocalGame) ||
+            !isFiniteVector(frozen.pivotBConstraintLocalGame) || !isFiniteVector(frozen.pivotAHandBodyLocalGame)) {
             return frozen;
         }
 
@@ -1195,10 +1199,8 @@ namespace rock::grab_authority_frame_math
          */
         frozen.proxyAuthorityBodyHandSpace =
             grab_frame_math::objectInGeneratedProxyLocalSpace(input.proxyWorld, frozen.desiredBodyWorld);
-        if (!alignLocalPointInTransformToLocalTarget(
-                frozen.proxyAuthorityBodyHandSpace,
-                frozen.pivotBConstraintLocalGame,
-                frozen.pivotAHandBodyLocalGame)) {
+        if (!alignLocalPointInTransformToLocalTarget(frozen.proxyAuthorityBodyHandSpace,
+                frozen.pivotBConstraintLocalGame, frozen.pivotAHandBodyLocalGame)) {
             return frozen;
         }
 
@@ -1208,35 +1210,27 @@ namespace rock::grab_authority_frame_math
             return frozen;
         }
 
-        frozen.desiredObjectWorld = transform_math::composeTransforms(
-            frozen.desiredBodyWorld,
+        frozen.desiredObjectWorld = transform_math::composeTransforms(frozen.desiredBodyWorld,
             transform_math::invertTransform(frozen.bodyLocal));
         if (!isFiniteTransform(frozen.desiredObjectWorld)) {
             return frozen;
         }
 
-        const auto splitFrame = grab_frame_math::buildSplitGrabFrameFromDesiredObject(
-            input.rawHandWorld,
-            input.proxyWorld,
-            frozen.desiredObjectWorld,
-            input.pivotAWorld);
+        const auto splitFrame = grab_frame_math::buildSplitGrabFrameFromDesiredObject(input.rawHandWorld,
+            input.proxyWorld, frozen.desiredObjectWorld, input.pivotAWorld);
         // Authored seats define the visual wrist in object space. Keep the
         // physical proxy and its motor relation independent of that pose.
-        frozen.rawHandSpace = input.hasVisualHandObjectLocal ?
-            transform_math::invertTransform(input.visualHandObjectLocal) : splitFrame.rawHandSpace;
+        frozen.rawHandSpace = input.hasVisualHandObjectLocal
+            ? transform_math::invertTransform(input.visualHandObjectLocal)
+            : splitFrame.rawHandSpace;
         frozen.handBodyToRawHandAtGrab = splitFrame.handBodyToRawHandAtGrab;
         frozen.pivotAHandBodyLocalGame = splitFrame.pivotAHandBodyLocal;
         frozen.proxyAuthorityHandSpace =
             grab_frame_math::objectInGeneratedProxyLocalSpace(input.proxyWorld, frozen.desiredObjectWorld);
-        frozen.valid =
-            isFiniteVector(frozen.pivotBBodyLocalGame) &&
-            isFiniteVector(frozen.pivotBConstraintLocalGame) &&
-            isFiniteVector(frozen.pivotAHandBodyLocalGame) &&
-            isFiniteTransform(frozen.bodyLocal) &&
-            isFiniteTransform(frozen.desiredBodyWorld) &&
-            isFiniteTransform(frozen.rawHandSpace) &&
-            isFiniteTransform(frozen.proxyAuthorityHandSpace) &&
-            isFiniteTransform(frozen.proxyAuthorityBodyHandSpace);
+        frozen.valid = isFiniteVector(frozen.pivotBBodyLocalGame) && isFiniteVector(frozen.pivotBConstraintLocalGame) &&
+            isFiniteVector(frozen.pivotAHandBodyLocalGame) && isFiniteTransform(frozen.bodyLocal) &&
+            isFiniteTransform(frozen.desiredBodyWorld) && isFiniteTransform(frozen.rawHandSpace) &&
+            isFiniteTransform(frozen.proxyAuthorityHandSpace) && isFiniteTransform(frozen.proxyAuthorityBodyHandSpace);
         return frozen;
     }
 }
@@ -1320,9 +1314,13 @@ namespace rock::pull_motion_math
     {
         const Vec3 segment{ end.x - start.x, end.y - start.y, end.z - start.z };
         const float lengthSquared = segment.x * segment.x + segment.y * segment.y + segment.z * segment.z;
-        if (!std::isfinite(lengthSquared) || lengthSquared <= 1.0e-12f) return end;
-        const float t = ((point.x - start.x) * segment.x + (point.y - start.y) * segment.y + (point.z - start.z) * segment.z) / lengthSquared;
-        if (!std::isfinite(t)) return end;
+        if (!std::isfinite(lengthSquared) || lengthSquared <= 1.0e-12f)
+            return end;
+        const float t =
+            ((point.x - start.x) * segment.x + (point.y - start.y) * segment.y + (point.z - start.z) * segment.z) /
+            lengthSquared;
+        if (!std::isfinite(t))
+            return end;
         const float clamped = (std::clamp)(t, 0.0f, 1.0f);
         return Vec3{ start.x + segment.x * clamped, start.y + segment.y * clamped, start.z + segment.z * clamped };
     }
@@ -1355,8 +1353,10 @@ namespace rock::pull_motion_math
          * heavy or cluttered objects can still be reacquired by the close catch
          * path after the impulse phase ends.
          */
-        const float elapsedSeconds = std::isfinite(input.elapsedSeconds) ? (std::max)(0.0f, input.elapsedSeconds) : 0.0f;
-        const float durationSeconds = std::isfinite(input.durationSeconds) ? (std::max)(0.0f, input.durationSeconds) : 0.0f;
+        const float elapsedSeconds =
+            std::isfinite(input.elapsedSeconds) ? (std::max)(0.0f, input.elapsedSeconds) : 0.0f;
+        const float durationSeconds =
+            std::isfinite(input.durationSeconds) ? (std::max)(0.0f, input.durationSeconds) : 0.0f;
 
         PullMotionResult<Vec3> result{};
         result.refreshTarget = !input.hasPreviousTarget || elapsedSeconds <= kTrackHandSeconds;
@@ -1385,7 +1385,8 @@ namespace rock::pull_motion_math
         const float verticalDelta = result.targetHavok.z - input.objectPointHavok.z;
         result.velocityHavok.x = horizontalDelta.x / result.durationRemainingSeconds;
         result.velocityHavok.y = horizontalDelta.y / result.durationRemainingSeconds;
-        result.velocityHavok.z = 0.5f * 9.81f * result.durationRemainingSeconds + verticalDelta / result.durationRemainingSeconds;
+        result.velocityHavok.z =
+            0.5f * 9.81f * result.durationRemainingSeconds + verticalDelta / result.durationRemainingSeconds;
         result.velocityHavok = clampLength(result.velocityHavok, kMaximumVelocityHavok);
         result.applyVelocity = true;
         return result;

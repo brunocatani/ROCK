@@ -66,8 +66,9 @@ namespace rock
         BethesdaPhysicsBody(BethesdaPhysicsBody&&) = delete;
         BethesdaPhysicsBody& operator=(BethesdaPhysicsBody&&) = delete;
 
-        bool create(RE::hknpWorld* world, void* bhkWorld, RE::hknpShape* shape, std::uint32_t filterInfo, RE::hknpMaterialId materialId, BethesdaMotionType motionType,
-            const char* name = "ROCK_Body", const BethesdaPhysicsBodyCreationOptions& options = {});
+        bool create(RE::hknpWorld* world, void* bhkWorld, RE::hknpShape* shape, std::uint32_t filterInfo,
+            RE::hknpMaterialId materialId, BethesdaMotionType motionType, const char* name = "ROCK_Body",
+            const BethesdaPhysicsBodyCreationOptions& options = {});
 
         void destroy(void* bhkWorld);
 
@@ -85,7 +86,8 @@ namespace rock
         // Advances the shared deferred-retirement queue only for the exact world
         // that removed each body. Must run in the physics post-solve phase so the
         // grace window is measured in completed broadphase rebuilds.
-        static void serviceRetiredDeferredPayloads(RE::hknpWorld* currentWorld, std::uint32_t completedPhysicsSteps = 1);
+        static void serviceRetiredDeferredPayloads(RE::hknpWorld* currentWorld,
+            std::uint32_t completedPhysicsSteps = 1);
 
         // Strips a world-removed payload to an inert collision-object tombstone
         // and transfers that address to the fixed process-lifetime quarantine.
@@ -94,10 +96,8 @@ namespace rock
 
         // Queue exhaustion cannot authorize a native free. Transfer ownership to
         // an intentional process-lifetime hold and fail closed for future creates.
-        static void retainRetiredPayloadForProcessLifetime(
-            RetiredBethesdaPhysicsBodyPayload& payload,
-            const char* owner,
-            std::size_t capacity);
+        static void retainRetiredPayloadForProcessLifetime(RetiredBethesdaPhysicsBodyPayload& payload,
+            const char* owner, std::size_t capacity);
 
         void reset();
 
@@ -106,8 +106,11 @@ namespace rock
         void destroyNiNode();
 
         bool isValid() const { return _created && _collisionObject != nullptr; }
+
         RE::hknpBodyId getBodyId() const { return _bodyId; }
+
         void* getCollisionObject() const { return _collisionObject; }
+
         void* getPhysicsSystem() const { return _physicsSystem; }
 
         bool driveToKeyFrame(const RE::hkTransformf& target, float dt);

@@ -66,16 +66,26 @@ namespace rock
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
 
         bool hasBodies() const { return _created; }
+
         std::uint32_t getBodyCount() const { return _bodyCountAtomic.load(std::memory_order_acquire); }
+
         std::uint32_t getBodyIdAtomic(std::size_t index) const;
-        std::uint32_t copyGrabSuppressionArmBodyIdsAtomic(bool isLeft, std::uint32_t* outBodyIds, std::size_t maxBodyIds) const;
+        std::uint32_t copyGrabSuppressionArmBodyIdsAtomic(bool isLeft, std::uint32_t* outBodyIds,
+            std::size_t maxBodyIds) const;
         bool isColliderBodyIdAtomic(std::uint32_t bodyId) const;
         bool tryGetBodyMetadataAtomic(std::uint32_t bodyId, BodyBoneColliderMetadata& outMetadata) const;
-        bool tryGetBodyMetadataAtIndexAtomic(std::uint32_t index, std::uint32_t bodyId, BodyBoneColliderMetadata& outMetadata) const;
+        bool tryGetBodyMetadataAtIndexAtomic(std::uint32_t index, std::uint32_t bodyId,
+            BodyBoneColliderMetadata& outMetadata) const;
+
         // Main-thread debug publication only. Returns the exact pending target
         // that the next generated-body physics callback will consume.
         bool isRebuildPendingAtomic() const { return _driveRebuildRequested.load(std::memory_order_acquire); }
-        const dynamic_hand_twin::ForearmTwinTargets& dynamicForearmTwinTargets() const { return _dynamicForearmTwinTargets; }
+
+        const dynamic_hand_twin::ForearmTwinTargets& dynamicForearmTwinTargets() const
+        {
+            return _dynamicForearmTwinTargets;
+        }
+
         RE::hknpShape* buildDynamicForearmTwinShape(const dynamic_hand_twin::TwinSlotFrame& slotFrame) const;
 
     private:
@@ -96,15 +106,12 @@ namespace rock
         bool captureBoneSnapshot(DirectSkeletonBoneSnapshot& outSnapshot);
         bool updatePose(const DirectSkeletonBoneSnapshot& snapshot, float deltaTime, bool publishTargets);
         RE::hknpShape* buildShapeForFrame(const DescriptorFrameResult& frame) const;
-        bool createBodyForDescriptor(
-            RE::hknpWorld* world,
-            void* bhkWorld,
-            const body_collider::Descriptor& descriptor,
-            std::uint32_t descriptorIndex,
-            const DescriptorFrameResult& frame,
-            BodyInstance& instance);
-        void queueBodyTarget(BethesdaPhysicsBody& body, const RE::NiTransform& target, float sourceDeltaSeconds, GeneratedKeyframedBodyDriveState& driveState);
-        void handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex);
+        bool createBodyForDescriptor(RE::hknpWorld* world, void* bhkWorld, const body_collider::Descriptor& descriptor,
+            std::uint32_t descriptorIndex, const DescriptorFrameResult& frame, BodyInstance& instance);
+        void queueBodyTarget(BethesdaPhysicsBody& body, const RE::NiTransform& target, float sourceDeltaSeconds,
+            GeneratedKeyframedBodyDriveState& driveState);
+        void handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName,
+            std::uint32_t bodyIndex);
         void clearInstance(BodyInstance& instance, bool releaseShapeRef);
         void publishAtomicBodyIds(bool inPowerArmor);
         void clearAtomicBodyIds();

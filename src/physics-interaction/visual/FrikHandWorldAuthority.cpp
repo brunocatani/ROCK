@@ -12,11 +12,11 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/core/RockRuntimeState.h"
+#include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/hand/TrackedHandIsolationPolicy.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/visual/ScopeHandInputContinuityPolicy.h"
 #include "physics-interaction/weapon/WeaponInputFilter.h"
-#include "physics-interaction/hand/HandFrame.h"
 
 namespace rock::frik_hand_world_authority
 {
@@ -40,18 +40,19 @@ namespace rock::frik_hand_world_authority
 
         [[nodiscard]] weapon_input_filter::Tuning activeFilterTuning()
         {
-            if (!scopedFilteringNow()) return weapon_input_filter::tuning(g_rockConfig.rockWeaponFilteringPreset);
+            if (!scopedFilteringNow())
+                return weapon_input_filter::tuning(g_rockConfig.rockWeaponFilteringPreset);
             return { g_rockConfig.rockScopedFilterRotationSeconds, g_rockConfig.rockScopedFilterTranslationSeconds,
                 g_rockConfig.rockScopedFilterReleaseDegreesPerSecond };
         }
         namespace isolation_policy = tracked_hand_isolation_policy;
         namespace scope_policy = scope_hand_input_continuity_policy;
 
+        using frik_visual_authority::HandSolveState;
+        using frik_visual_authority::TrackedHandKind;
         using registry_policy::DriverFrame;
         using registry_policy::DriverSample;
         using registry_policy::handIndex;
-        using frik_visual_authority::HandSolveState;
-        using frik_visual_authority::TrackedHandKind;
 
         constexpr const char* kScopeRecoveryTag = "ROCK_ScopeInputRecovery";
         // The API rejects negative priorities. Zero is the lowest accepted
@@ -131,21 +132,20 @@ namespace rock::frik_hand_world_authority
 
         Service g_service{};
 
-        [[nodiscard]] const char* handName(const bool isLeft)
-        {
-            return isLeft ? "left" : "right";
-        }
+        [[nodiscard]] const char* handName(const bool isLeft) { return isLeft ? "left" : "right"; }
 
         [[nodiscard]] DriverSample sampleTrackedHand(const bool isLeft, const TrackedHandKind kind,
             const char** failure = nullptr)
         {
             DriverSample sample{};
             RE::NiTransform world{};
-            if (!frik_visual_authority::tryGetTrackedHandTransform(frik_visual_authority::handFromBool(isLeft), kind, world, failure)) {
+            if (!frik_visual_authority::tryGetTrackedHandTransform(frik_visual_authority::handFromBool(isLeft), kind,
+                    world, failure)) {
                 return sample;
             }
             if (!registry_policy::isFiniteTransform(world)) {
-                if (failure) *failure = "driver-sample-invalid-transform";
+                if (failure)
+                    *failure = "driver-sample-invalid-transform";
                 return sample;
             }
             sample.world = world;
@@ -160,23 +160,30 @@ namespace rock::frik_hand_world_authority
         {
             const auto* nodes = f4vr::getPlayerNodes();
             const auto* mode = f4vr::getIniSetting("bLeftHandedMode:VR");
-            if (!nodes || !mode) return {};
+            if (!nodes || !mode)
+                return {};
             const bool offhand = mode->GetBinary() != isLeft;
             const RE::NiAVObject* wand = offhand ? nodes->SecondaryWandNode : nodes->primaryWandNode;
-            const RE::NiAVObject* node = offhand ? nodes->SecondaryMeleeWeaponOffsetNode2 : nodes->primaryWeaponOffsetNOde;
+            const RE::NiAVObject* node =
+                offhand ? nodes->SecondaryMeleeWeaponOffsetNode2 : nodes->primaryWeaponOffsetNOde;
             const auto trackedWand = sampleTrackedHand(isLeft, TrackedHandKind::Wand);
-            if (!wand || !node || !trackedWand.valid) return {};
+            if (!wand || !node || !trackedWand.valid)
+                return {};
             std::array<RE::NiTransform, 16> locals{};
             std::size_t depth = 0;
             while (node && node != wand && depth < locals.size()) {
-                locals[depth++] = g_service.nativeRecoilControlled && node == nodes->primaryWeaponKickbackRecoilNode ?
-                    transform_math::makeIdentityTransform<RE::NiTransform>() : node->local;
-                if (!scope_policy::usable(locals[depth - 1])) return {};
+                locals[depth++] = g_service.nativeRecoilControlled && node == nodes->primaryWeaponKickbackRecoilNode
+                    ? transform_math::makeIdentityTransform<RE::NiTransform>()
+                    : node->local;
+                if (!scope_policy::usable(locals[depth - 1]))
+                    return {};
                 node = node->parent;
             }
-            if (node != wand) return {};
+            if (node != wand)
+                return {};
             auto world = transform_math::orthonormalizedTransform(trackedWand.world);
-            while (depth > 0) world = transform_math::composeTransforms(world, locals[--depth]);
+            while (depth > 0)
+                world = transform_math::composeTransforms(world, locals[--depth]);
             return { world, scope_policy::usable(world) };
         }
 
@@ -190,8 +197,8 @@ namespace rock::frik_hand_world_authority
             const auto* camera = f4vr::getPlayerCamera();
             const auto* cameraRoot = camera ? camera->cameraRoot.get() : nullptr;
             const auto cameraPosition = cameraRoot ? cameraRoot->world.translate : RE::NiPoint3{};
-            const bool cameraValid = cameraRoot && std::isfinite(cameraPosition.x) &&
-                std::isfinite(cameraPosition.y) && std::isfinite(cameraPosition.z);
+            const bool cameraValid = cameraRoot && std::isfinite(cameraPosition.x) && std::isfinite(cameraPosition.y) &&
+                std::isfinite(cameraPosition.z);
             for (std::size_t hand = 0; hand < 2; ++hand) {
                 const bool isLeft = hand == handIndex(true);
                 const char* driverFailure = "none";
@@ -199,8 +206,8 @@ namespace rock::frik_hand_world_authority
                 const auto nativeDriver = sampleTrackedHand(isLeft, TrackedHandKind::WeaponOffset, &driverFailure);
                 const auto nativeHand = sampleTrackedHand(isLeft, TrackedHandKind::FirstPersonHand, &handFailure);
                 g_service.weaponFilteredWands[hand] = {};
-                g_service.weaponWands[hand] = filteringConfigured() ?
-                    sampleTrackedHand(isLeft, TrackedHandKind::Wand) : DriverSample{};
+                g_service.weaponWands[hand] =
+                    filteringConfigured() ? sampleTrackedHand(isLeft, TrackedHandKind::Wand) : DriverSample{};
                 // Compare the live (restored) graph with the neutral driver
                 // only for diagnostics. It must never select filtered input.
                 const auto* nodes = f4vr::getPlayerNodes();
@@ -208,38 +215,49 @@ namespace rock::frik_hand_world_authority
                 if (logger::isInfoEnabled() && kick && scope_policy::usable(kick->local) &&
                     registry_policy::rotationDeltaDegrees(kick->local,
                         transform_math::makeIdentityTransform<RE::NiTransform>()) > 0.1f &&
-                    logger::internal::shouldEmitSample(isLeft ? "filter-recoil-input-left" : "filter-recoil-input-right", 100)) {
+                    logger::internal::shouldEmitSample(
+                        isLeft ? "filter-recoil-input-left" : "filter-recoil-input-right", 100)) {
                     const auto neutralDriver = sampleRawDriver(isLeft);
                     ROCK_LOG_INFO(Weapon,
-                        "FILTER_RECOIL_INPUT seq={} preset={} hand={} controlled={} immersive={} scoped={} kick={:.4f}deg restoredVsNeutral={:.4f}gu/{:.4f}deg valid={}/{}",
+                        "FILTER_RECOIL_INPUT seq={} preset={} hand={} controlled={} immersive={} scoped={} "
+                        "kick={:.4f}deg restoredVsNeutral={:.4f}gu/{:.4f}deg valid={}/{}",
                         sequence, g_rockConfig.rockWeaponFilteringPreset, handName(isLeft),
                         g_service.nativeRecoilControlled, g_rockConfig.rockImmersiveRecoil, scoped,
-                        registry_policy::rotationDeltaDegrees(kick->local, transform_math::makeIdentityTransform<RE::NiTransform>()),
-                        neutralDriver.valid && nativeDriver.valid ? registry_policy::translationDeltaGameUnits(nativeDriver.world, neutralDriver.world) : -1.0f,
-                        neutralDriver.valid && nativeDriver.valid ? registry_policy::rotationDeltaDegrees(nativeDriver.world, neutralDriver.world) : -1.0f,
+                        registry_policy::rotationDeltaDegrees(kick->local,
+                            transform_math::makeIdentityTransform<RE::NiTransform>()),
+                        neutralDriver.valid && nativeDriver.valid
+                            ? registry_policy::translationDeltaGameUnits(nativeDriver.world, neutralDriver.world)
+                            : -1.0f,
+                        neutralDriver.valid && nativeDriver.valid
+                            ? registry_policy::rotationDeltaDegrees(nativeDriver.world, neutralDriver.world)
+                            : -1.0f,
                         nativeDriver.valid, neutralDriver.valid);
                 }
                 auto& state = g_service.scopeInputs[hand];
                 const bool wasRecovering = state.recovering;
-                const bool needsRaw = (scoped && g_service.scopeDamping.valid &&
-                    g_service.scopeDamping.enabled && !g_service.scopeDamping.inScope) || state.suspended || state.recovering;
+                const bool needsRaw = (scoped && g_service.scopeDamping.valid && g_service.scopeDamping.enabled &&
+                                          !g_service.scopeDamping.inScope) ||
+                    state.suspended || state.recovering;
                 const auto raw = needsRaw ? sampleRawDriver(isLeft) : DriverSample{};
                 auto& result = g_service.scopeResults[hand];
-                result = scope_policy::resolve(state, g_service.scopeDamping, scoped, sequence,
-                    raw, nativeDriver, nativeHand, cameraPosition, cameraValid);
+                result = scope_policy::resolve(state, g_service.scopeDamping, scoped, sequence, raw, nativeDriver,
+                    nativeHand, cameraPosition, cameraValid);
                 frame.hands[hand] = result.driver;
                 g_service.firstPersonInput[hand] = result.hand;
                 if ((!nativeDriver.valid || !nativeHand.valid) && logger::isWarnEnabled() &&
-                    logger::internal::shouldEmitSample(isLeft ? "hand-input-native-left" : "hand-input-native-right", 2000)) {
+                    logger::internal::shouldEmitSample(isLeft ? "hand-input-native-left" : "hand-input-native-right",
+                        2000)) {
                     ROCK_LOG_WARN(Hand,
-                        "HAND_INPUT_NATIVE seq={} hand={} driver={} firstPerson={} resolvedDriver={} resolvedHand={} scoped={} corrected={} recovering={}",
+                        "HAND_INPUT_NATIVE seq={} hand={} driver={} firstPerson={} resolvedDriver={} resolvedHand={} "
+                        "scoped={} corrected={} recovering={}",
                         sequence, handName(isLeft), driverFailure, handFailure, result.driver.valid, result.hand.valid,
                         scoped, result.corrected, state.recovering);
                 }
                 g_service.scopeRecoveryWrists[hand] = {};
                 if (wasRecovering != state.recovering) {
                     ROCK_LOG_INFO(Hand,
-                        "Scope input recovery hand={} state={} sequence={} valid={} residual={:.3f}gu/{:.3f}deg native=({:.2f},{:.2f},{:.2f}) input=({:.2f},{:.2f},{:.2f})",
+                        "Scope input recovery hand={} state={} sequence={} valid={} residual={:.3f}gu/{:.3f}deg "
+                        "native=({:.2f},{:.2f},{:.2f}) input=({:.2f},{:.2f},{:.2f})",
                         handName(isLeft), state.recovering ? "started" : "finished", sequence, result.hand.valid,
                         result.residualGameUnits, result.residualDegrees, nativeHand.world.translate.x,
                         nativeHand.world.translate.y, nativeHand.world.translate.z, result.hand.world.translate.x,
@@ -247,7 +265,8 @@ namespace rock::frik_hand_world_authority
                 }
                 if (result.corrected && !result.hand.valid) {
                     ROCK_LOG_SAMPLE_WARN(Hand, 2000,
-                        "Scope input recovery unavailable hand={} raw={} nativeHand={} relation={} camera={}; interaction input disabled",
+                        "Scope input recovery unavailable hand={} raw={} nativeHand={} relation={} camera={}; "
+                        "interaction input disabled",
                         handName(isLeft), raw.valid, nativeHand.valid, state.relationValid, cameraValid);
                 }
             }
@@ -283,12 +302,11 @@ namespace rock::frik_hand_world_authority
                 case HandSolveState::Unreachable:
                     if (!top->fallbackReported) {
                         top->fallbackReported = true;
-                        ROCK_LOG_SAMPLE_WARN(Hand,
-                            2000,
-                            "FRIK solved the tracked {} hand instead of ROCK claim '{}' (priority {}): the target is unreachable for this arm; the owner's publishes report failure until FRIK follows the claim again.",
-                            handName(isLeft),
-                            top->tag.data(),
-                            top->priority);
+                        ROCK_LOG_SAMPLE_WARN(Hand, 2000,
+                            "FRIK solved the tracked {} hand instead of ROCK claim '{}' (priority {}): the target is "
+                            "unreachable for this arm; the owner's publishes report failure until FRIK follows the "
+                            "claim again.",
+                            handName(isLeft), top->tag.data(), top->priority);
                     }
                     break;
                 default:
@@ -301,7 +319,7 @@ namespace rock::frik_hand_world_authority
         {
             const auto* frikApi = frik_visual_authority::api();
             return frikApi && frikApi->clearHandWorldTransform &&
-                   frikApi->clearHandWorldTransform(tag, frik_visual_authority::handFromBool(isLeft));
+                frikApi->clearHandWorldTransform(tag, frik_visual_authority::handFromBool(isLeft));
         }
 
     }
@@ -326,22 +344,20 @@ namespace rock::frik_hand_world_authority
             };
             config.valid = readFlag("DampenHands", config.enabled) &&
                 readFlag("DampenHandsInVanillaScope", config.inScope) &&
-                readFactor("DampenHandsTranslation", config.translation) && readFactor("DampenHandsRotation", config.rotation);
+                readFactor("DampenHandsTranslation", config.translation) &&
+                readFactor("DampenHandsRotation", config.rotation);
         }
         g_service.scopeDamping = config;
         ROCK_LOG_INFO(Hand, "Scope input continuity: FRIK damping valid={} enabled={} scoped={} factors={:.3f}/{:.3f}",
             config.valid, config.enabled, config.inScope, config.translation, config.rotation);
     }
 
-    void noteNativeRecoilControlled(const bool controlled) noexcept
-    {
-        g_service.nativeRecoilControlled = controlled;
-    }
+    void noteNativeRecoilControlled(const bool controlled) noexcept { g_service.nativeRecoilControlled = controlled; }
 
     std::uint8_t scopeInputRecoveryMask() noexcept
     {
-        return static_cast<std::uint8_t>((g_service.scopeResults[0].corrected ? 1 : 0) |
-            (g_service.scopeResults[1].corrected ? 2 : 0));
+        return static_cast<std::uint8_t>(
+            (g_service.scopeResults[0].corrected ? 1 : 0) | (g_service.scopeResults[1].corrected ? 2 : 0));
     }
 
     void captureRenderedFrame(const FrameHandSamples& samples)
@@ -351,9 +367,11 @@ namespace rock::frik_hand_world_authority
             const RawHandSample& sample = isLeft ? samples.left : samples.right;
             RenderedHand& rendered = g_service.rendered[hand];
             rendered.flattenedWorld = sample.flattenedHandWorld;
-            rendered.flattenedValid = sample.flattenedHandValid && registry_policy::isFiniteTransform(sample.flattenedHandWorld);
+            rendered.flattenedValid =
+                sample.flattenedHandValid && registry_policy::isFiniteTransform(sample.flattenedHandWorld);
             rendered.nodeWorld = sample.bodyHandNodeWorld;
-            rendered.nodeValid = sample.bodyHandNodeValid && registry_policy::isFiniteTransform(sample.bodyHandNodeWorld);
+            rendered.nodeValid =
+                sample.bodyHandNodeValid && registry_policy::isFiniteTransform(sample.bodyHandNodeWorld);
             // Keep finite local calibration across an invalid arm solve. The
             // skeleton-release path clears it with the rest of the service.
             if (rendered.flattenedValid && rendered.nodeValid) {
@@ -365,8 +383,8 @@ namespace rock::frik_hand_world_authority
                     rendered.palmBlendValid = true;
                 }
             }
-            rendered.solveState = frik_visual_authority::getHandSolveResult(
-                frik_visual_authority::handFromBool(isLeft), rendered.solvedWrist);
+            rendered.solveState = frik_visual_authority::getHandSolveResult(frik_visual_authority::handFromBool(isLeft),
+                rendered.solvedWrist);
             rendered.frameIndex = g_service.rockFrameIndex;
         }
     }
@@ -394,10 +412,7 @@ namespace rock::frik_hand_world_authority
         }
     }
 
-    void noteScopeEdge()
-    {
-        g_service.scopeEdgeFramesRemaining = kScopeEdgeGuardFrames;
-    }
+    void noteScopeEdge() { g_service.scopeEdgeFramesRemaining = kScopeEdgeGuardFrames; }
 
     bool tryGetInputDriverWorld(const bool isLeft, RE::NiTransform& outWorld)
     {
@@ -421,9 +436,9 @@ namespace rock::frik_hand_world_authority
     void prepareWeaponInputs(std::uint64_t ownership, std::uint64_t generation, bool enabled)
     {
         const auto& frame = runtime_state::currentFrame();
-        enabled = enabled && ownership && generation && filteringConfigured() &&
-            frame.weaponDrawn && frame.localSkeletonReady && !frame.localMenuBlocking &&
-            !frame.compatibilityConfigBlocking && frame.playerSpace.valid;
+        enabled = enabled && ownership && generation && filteringConfigured() && frame.weaponDrawn &&
+            frame.localSkeletonReady && !frame.localMenuBlocking && !frame.compatibilityConfigBlocking &&
+            frame.playerSpace.valid;
         // Controller history belongs to the physical hand. Native equipment
         // ownership changes must not discard the incoming loose-hand filter.
         g_service.weaponFilteringEnabled = enabled;
@@ -451,8 +466,7 @@ namespace rock::frik_hand_world_authority
     {
         outWorld = {};
         const auto& frame = runtime_state::currentFrame();
-        const bool enabled = filteringConfigured() &&
-            frame.localSkeletonReady && !frame.localMenuBlocking &&
+        const bool enabled = filteringConfigured() && frame.localSkeletonReady && !frame.localMenuBlocking &&
             !frame.compatibilityConfigBlocking && frame.playerSpace.valid;
         if (!enabled || frame.playerSpace.source != g_service.weaponRoomSource) {
             g_service.weaponFilters = {};
@@ -466,11 +480,14 @@ namespace rock::frik_hand_world_authority
         }
         const auto index = handIndex(isLeft);
         auto& cached = g_service.weaponFilteredWands[index];
-        if (cached.valid) { outWorld = cached.world; return true; }
+        if (cached.valid) {
+            outWorld = cached.world;
+            return true;
+        }
         const auto& wand = g_service.weaponWands[index];
         RE::NiTransform hand{};
-        if (!wand.valid || !hasCalibratedRawHandFrame(isLeft) ||
-            !tryGetRawHandWorld(isLeft, hand) || !weapon_input_filter::usable(hand)) {
+        if (!wand.valid || !hasCalibratedRawHandFrame(isLeft) || !tryGetRawHandWorld(isLeft, hand) ||
+            !weapon_input_filter::usable(hand)) {
             g_service.weaponFilters[index] = {};
             ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Weapon filtering input unavailable hand={}", handName(isLeft));
             return false;
@@ -479,16 +496,17 @@ namespace rock::frik_hand_world_authority
         // only the wand, never an animated offset or an inverse native kick.
         const auto palmWorld = computeGrabPalmPointWorldFromHandBasis(hand, isLeft);
         const auto pivot = transform_math::worldPointToLocal(wand.world, palmWorld);
-        cached.valid = weapon_input_filter::update(g_service.weaponFilters[index], wand.world,
-            frame.playerSpace.world, pivot, frame.frameIndex, frame.deltaSeconds, frame.timing.discontinuity,
-            activeFilterTuning(), cached.world);
+        cached.valid =
+            weapon_input_filter::update(g_service.weaponFilters[index], wand.world, frame.playerSpace.world, pivot,
+                frame.frameIndex, frame.deltaSeconds, frame.timing.discontinuity, activeFilterTuning(), cached.world);
         outWorld = cached.world;
         return cached.valid;
     }
 
     bool filterHeldProxyWorld(bool isLeft, RE::NiTransform& proxyWorld)
     {
-        if (!filteringConfigured()) return true;
+        if (!filteringConfigured())
+            return true;
         // Filtering is optional smoothing. A frame without filter input (lost
         // controller tracking, uncalibrated hand) holds the unfiltered target;
         // failing here released the held object.
@@ -498,8 +516,8 @@ namespace rock::frik_hand_world_authority
             return weapon_input_filter::usable(proxyWorld);
         }
         proxyWorld = weapon_input_filter::applyProxyTrackingCorrection(proxyWorld, tracked.world, filteredWand);
-        if (logger::isDebugEnabled() && logger::internal::shouldEmitSample(
-                isLeft ? "held-input-filter-left" : "held-input-filter-right", 1000)) {
+        if (logger::isDebugEnabled() &&
+            logger::internal::shouldEmitSample(isLeft ? "held-input-filter-left" : "held-input-filter-right", 1000)) {
             ROCK_LOG_DEBUG(Hand, "Held input filtering hand={} preset={} frame={} correction={:.4f}gu/{:.3f}deg",
                 handName(isLeft), g_rockConfig.rockWeaponFilteringPreset, runtime_state::currentFrame().frameIndex,
                 registry_policy::translationDeltaGameUnits(tracked.world, filteredWand),
@@ -510,25 +528,30 @@ namespace rock::frik_hand_world_authority
 
     bool tryGetWeaponDriverWorld(bool isLeft, RE::NiTransform& outWorld)
     {
-        if (!weaponFilteringActive()) return tryGetInputDriverWorld(isLeft, outWorld);
+        if (!weaponFilteringActive())
+            return tryGetInputDriverWorld(isLeft, outWorld);
         RE::NiTransform filteredWand{};
         outWorld = {};
-        if (!tryGetWeaponWandWorld(isLeft, filteredWand)) return false;
+        if (!tryGetWeaponWandWorld(isLeft, filteredWand))
+            return false;
         RE::NiTransform driver{};
-        if (!tryGetInputDriverWorld(isLeft, driver)) return false;
-        outWorld = weapon_input_filter::applyTrackingCorrection(driver,
-            g_service.weaponWands[handIndex(isLeft)].world, filteredWand);
+        if (!tryGetInputDriverWorld(isLeft, driver))
+            return false;
+        outWorld = weapon_input_filter::applyTrackingCorrection(driver, g_service.weaponWands[handIndex(isLeft)].world,
+            filteredWand);
         return weapon_input_filter::usable(outWorld);
     }
 
     bool tryGetWeaponHandWorld(bool isLeft, RE::NiTransform& outWorld)
     {
-        if (!weaponFilteringActive()) return tryGetRawHandWorld(isLeft, outWorld);
+        if (!weaponFilteringActive())
+            return tryGetRawHandWorld(isLeft, outWorld);
         RE::NiTransform filteredWand{}, hand{};
         outWorld = {};
-        if (!tryGetWeaponWandWorld(isLeft, filteredWand) || !tryGetRawHandWorld(isLeft, hand)) return false;
-        outWorld = weapon_input_filter::applyTrackingCorrection(hand,
-            g_service.weaponWands[handIndex(isLeft)].world, filteredWand);
+        if (!tryGetWeaponWandWorld(isLeft, filteredWand) || !tryGetRawHandWorld(isLeft, hand))
+            return false;
+        outWorld = weapon_input_filter::applyTrackingCorrection(hand, g_service.weaponWands[handIndex(isLeft)].world,
+            filteredWand);
         return weapon_input_filter::usable(outWorld);
     }
 
@@ -544,12 +567,10 @@ namespace rock::frik_hand_world_authority
          * larger is a broken owner and fails closed.
          */
         if (!registry_policy::isUsableTargetRotation(requestedTarget)) {
-            ROCK_LOG_SAMPLE_WARN(Hand,
-                2000,
-                "HandWorldAuthority refused claim '{}' hand={}: target rotation is not a rotation (orthonormality error {:.4f}); the owner runs its failure path",
-                tag,
-                handName(isLeft),
-                transform_math::storedRotationOrthonormalityError(requestedTarget.rotate));
+            ROCK_LOG_SAMPLE_WARN(Hand, 2000,
+                "HandWorldAuthority refused claim '{}' hand={}: target rotation is not a rotation (orthonormality "
+                "error {:.4f}); the owner runs its failure path",
+                tag, handName(isLeft), transform_math::storedRotationOrthonormalityError(requestedTarget.rotate));
             return false;
         }
         const RE::NiTransform worldTarget = transform_math::orthonormalizedTransform(requestedTarget);
@@ -578,11 +599,8 @@ namespace rock::frik_hand_world_authority
             // FRIK holds the claim but ROCK cannot follow it: undo so ROCK's
             // readers never disagree with FRIK about who owns the hand.
             (void)frikClearHandWorld(tag, isLeft);
-            ROCK_LOG_ERROR(Hand,
-                "HandWorldAuthority registry is full ({} claims); claim '{}' hand={} was withdrawn",
-                registry_policy::kMaxClaims,
-                tag,
-                handName(isLeft));
+            ROCK_LOG_ERROR(Hand, "HandWorldAuthority registry is full ({} claims); claim '{}' hand={} was withdrawn",
+                registry_policy::kMaxClaims, tag, handName(isLeft));
             return false;
         default:
             (void)frikClearHandWorld(tag, isLeft);
@@ -600,18 +618,12 @@ namespace rock::frik_hand_world_authority
         return removed || cleared;
     }
 
-    bool hasActiveClaim(const bool isLeft)
-    {
-        return registry_policy::hasClaim(g_service.registry, isLeft);
-    }
+    bool hasActiveClaim(const bool isLeft) { return registry_policy::hasClaim(g_service.registry, isLeft); }
 
-    bool wasClaimConsumedThisFrame(const bool isLeft)
-    {
-        return g_service.claimConsumedThisFrame[handIndex(isLeft)];
-    }
+    bool wasClaimConsumedThisFrame(const bool isLeft) { return g_service.claimConsumedThisFrame[handIndex(isLeft)]; }
 
-    bool tryGetPublishedHandWorld(const bool isLeft, RE::NiTransform& outWorld,
-        const char* excludedTag, const int maximumPriority)
+    bool tryGetPublishedHandWorld(const bool isLeft, RE::NiTransform& outWorld, const char* excludedTag,
+        const int maximumPriority)
     {
         outWorld = {};
         const std::string_view excluded = excludedTag ? std::string_view(excludedTag) : std::string_view{};
@@ -627,7 +639,8 @@ namespace rock::frik_hand_world_authority
     {
         outClaim = {};
         const auto* best = registry_policy::winner(g_service.registry, isLeft);
-        if (!best) return false;
+        if (!best)
+            return false;
         outClaim = *best;
         return true;
     }
@@ -669,7 +682,8 @@ namespace rock::frik_hand_world_authority
             RE::NiTransform flattenedNow = sample.bodyHandNodeWorld;
             bool flattenedNowValid = sample.bodyHandNodeValid;
             if (sample.bodyHandNodeValid && rendered.palmBlendValid) {
-                const RE::NiTransform synthesized = transform_math::composeTransforms(sample.bodyHandNodeWorld, rendered.palmBlend);
+                const RE::NiTransform synthesized =
+                    transform_math::composeTransforms(sample.bodyHandNodeWorld, rendered.palmBlend);
                 if (registry_policy::isFiniteTransform(synthesized)) {
                     flattenedNow = synthesized;
                     flattenedNowValid = true;
@@ -682,8 +696,8 @@ namespace rock::frik_hand_world_authority
             // Around a scope edge the first-person tree carries the native
             // scope reset: reconstruct through the last sound relation and
             // never calibrate on it.
-            input.firstPersonInputCorrected = g_service.scopeEdgeFramesRemaining > 0 ||
-                g_service.scopeResults[hand].corrected;
+            input.firstPersonInputCorrected =
+                g_service.scopeEdgeFramesRemaining > 0 || g_service.scopeResults[hand].corrected;
             input.bodyHandNodeWorld = sample.bodyHandNodeWorld;
             input.bodyHandNodeValid = sample.bodyHandNodeValid;
             input.flattenedHandWorld = flattenedNow;
@@ -693,31 +707,39 @@ namespace rock::frik_hand_world_authority
             input.claimConsumed = g_service.claimConsumedThisFrame[hand];
             input.calibrationAllowed = !recoilKickThisFrame && !input.firstPersonInputCorrected;
             state.result = isolation_policy::resolveFrame(state.relation, input);
-            if (state.result.valid && (!input.bodyHandNodeValid ||
-                    !isolation_policy::isFiniteTransform(input.bodyHandNodeWorld))) {
+            if (state.result.valid &&
+                (!input.bodyHandNodeValid || !isolation_policy::isFiniteTransform(input.bodyHandNodeWorld))) {
                 ROCK_LOG_SAMPLE_WARN(Hand, 2000,
-                    "HAND_INPUT_RECOVERY frame={} hand={} source=current-input-retained-palm bodyValid={} bodyFinite={} claimConsumed={}",
+                    "HAND_INPUT_RECOVERY frame={} hand={} source=current-input-retained-palm bodyValid={} "
+                    "bodyFinite={} claimConsumed={}",
                     g_service.rockFrameSequence, handName(isLeft), input.bodyHandNodeValid,
                     isolation_policy::isFiniteTransform(input.bodyHandNodeWorld), input.claimConsumed);
             }
             // Include later resolves: the body tree can fail after the first
             // sample of the frame, before the weapon consumes this result.
             if (!state.result.valid && logger::isWarnEnabled() &&
-                logger::internal::shouldEmitSample(isLeft ? "hand-input-isolation-left" : "hand-input-isolation-right", 2000)) {
+                logger::internal::shouldEmitSample(isLeft ? "hand-input-isolation-left" : "hand-input-isolation-right",
+                    2000)) {
                 ROCK_LOG_WARN(Hand,
-                    "HAND_INPUT_ISOLATION seq={} hand={} firstResolve={} source={} driverSeq={} driverValid={} firstPerson(valid/finite/scale)={}/{}/{:.8f} body(valid/finite/scale)={}/{}/{:.8f} flattened(valid/finite/scale)={}/{}/{:.8f} sampledArrayValid={} palmBlendValid={} relation(valid/accepted/rejected)={}/{}/{} claimConsumed={} calibrationAllowed={} corrected={} recoil={}",
+                    "HAND_INPUT_ISOLATION seq={} hand={} firstResolve={} source={} driverSeq={} driverValid={} "
+                    "firstPerson(valid/finite/scale)={}/{}/{:.8f} body(valid/finite/scale)={}/{}/{:.8f} "
+                    "flattened(valid/finite/scale)={}/{}/{:.8f} sampledArrayValid={} palmBlendValid={} "
+                    "relation(valid/accepted/rejected)={}/{}/{} claimConsumed={} calibrationAllowed={} corrected={} "
+                    "recoil={}",
                     g_service.rockFrameSequence, handName(isLeft), firstResolveThisFrame, rawHandSourceName(isLeft),
-                    g_service.driverFrame.sequence, g_service.driverFrame.hands[hand].valid,
-                    input.firstPersonHandValid, isolation_policy::isFiniteTransform(input.firstPersonHandWorld), input.firstPersonHandWorld.scale,
-                    input.bodyHandNodeValid, isolation_policy::isFiniteTransform(input.bodyHandNodeWorld), input.bodyHandNodeWorld.scale,
-                    input.flattenedHandValid, isolation_policy::isFiniteTransform(input.flattenedHandWorld), input.flattenedHandWorld.scale,
+                    g_service.driverFrame.sequence, g_service.driverFrame.hands[hand].valid, input.firstPersonHandValid,
+                    isolation_policy::isFiniteTransform(input.firstPersonHandWorld), input.firstPersonHandWorld.scale,
+                    input.bodyHandNodeValid, isolation_policy::isFiniteTransform(input.bodyHandNodeWorld),
+                    input.bodyHandNodeWorld.scale, input.flattenedHandValid,
+                    isolation_policy::isFiniteTransform(input.flattenedHandWorld), input.flattenedHandWorld.scale,
                     sample.flattenedHandValid, rendered.palmBlendValid, state.relation.valid,
                     state.relation.acceptedSamples, state.relation.rejectedSamples, input.claimConsumed,
                     input.calibrationAllowed, input.firstPersonInputCorrected, recoilKickThisFrame);
             }
             g_service.scopeRecoveryWrists[hand] = {};
             if (g_service.scopeResults[hand].corrected && state.result.valid && state.relation.valid) {
-                const auto wrist = transform_math::composeTransforms(input.firstPersonHandWorld, state.relation.firstPersonToBodyHand);
+                const auto wrist =
+                    transform_math::composeTransforms(input.firstPersonHandWorld, state.relation.firstPersonToBodyHand);
                 g_service.scopeRecoveryWrists[hand] = { wrist, scope_policy::usable(wrist) };
             }
             if (!firstResolveThisFrame) {
@@ -729,13 +751,10 @@ namespace rock::frik_hand_world_authority
             if (input.firstPersonInputCorrected && !input.claimConsumed &&
                 state.result.source == isolation_policy::RawHandSource::Reconstructed &&
                 g_service.scopeEdgeFramesRemaining == kScopeEdgeGuardFrames) {
-                ROCK_LOG_DEBUG(Hand,
-                    "HandWorldAuthority scope-edge guard reconstructed the {} hand for {} frames",
-                    handName(isLeft),
-                    kScopeEdgeGuardFrames);
+                ROCK_LOG_DEBUG(Hand, "HandWorldAuthority scope-edge guard reconstructed the {} hand for {} frames",
+                    handName(isLeft), kScopeEdgeGuardFrames);
             }
         }
-
     }
 
     bool tryGetRawHandWorld(const bool isLeft, RE::NiTransform& outWorld)
@@ -788,13 +807,15 @@ namespace rock::frik_hand_world_authority
             const auto* otherClaim = registry_policy::winner(g_service.registry, isLeft, kScopeRecoveryTag);
             RE::NiTransform solved{};
             const bool externalClaim = !g_service.claimConsumedThisFrame[hand] &&
-                frik_visual_authority::getHandSolveResult(frik_visual_authority::handFromBool(isLeft), solved) != HandSolveState::NoClaim;
+                frik_visual_authority::getHandSolveResult(frik_visual_authority::handFromBool(isLeft), solved) !=
+                    HandSolveState::NoClaim;
             if (g_service.scopeResults[hand].corrected && wrist.valid && !otherClaim && !externalClaim) {
                 // A free hand needs the same correction as the weapon inputs.
                 // End-of-ROCK publication is still inside AfterArmSolve; FRIK
                 // re-solves it this frame. Grip/collision claims remain owners.
                 if (!publish(kScopeRecoveryTag, isLeft, wrist.world, kScopeRecoveryPriority)) {
-                    ROCK_LOG_SAMPLE_WARN(Hand, 2000, "Scope input recovery hand={} could not publish the corrected wrist", handName(isLeft));
+                    ROCK_LOG_SAMPLE_WARN(Hand, 2000,
+                        "Scope input recovery hand={} could not publish the corrected wrist", handName(isLeft));
                 }
             } else if (registry_policy::find(g_service.registry, kScopeRecoveryTag, isLeft)) {
                 (void)clear(kScopeRecoveryTag, isLeft);

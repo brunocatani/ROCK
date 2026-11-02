@@ -10,11 +10,21 @@ namespace rock::performance_profiler
 {
     enum class ContactStage : std::uint8_t
     {
-        SimulationInput, SimulationNative, SimulationKept, Manifold, Impulse,
-        PlayerMeleeDropped, OtherMeleeDropped, PlayerMeleeForwarded, OtherMeleeForwarded, NativeWeaponSelfRejected, Count
+        SimulationInput,
+        SimulationNative,
+        SimulationKept,
+        Manifold,
+        Impulse,
+        PlayerMeleeDropped,
+        OtherMeleeDropped,
+        PlayerMeleeForwarded,
+        OtherMeleeForwarded,
+        NativeWeaponSelfRejected,
+        Count
     };
 
     inline constexpr std::uint32_t kUnknownContactDetail = 0xFFFF'FFFFu;
+
     struct ContactPair
     {
         // Opaque log identity only. Never converted back to an engine pointer.
@@ -51,6 +61,7 @@ namespace rock::performance_profiler
     {
         static constexpr std::size_t kWays = 4;
         static_assert(Capacity >= kWays && Capacity % kWays == 0);
+
         struct Bucket
         {
             std::atomic_flag busy = ATOMIC_FLAG_INIT;
@@ -70,14 +81,17 @@ namespace rock::performance_profiler
         bool record(ContactPair pair, ContactStage stage, std::uint64_t frame, std::uint64_t generation) noexcept
         {
             const auto stageIndex = static_cast<std::size_t>(stage);
-            if (!pair.world || pair.bodyA == pair.bodyB || pair.bodyA >= 0x7FFF'FFFFu ||
-                pair.bodyB >= 0x7FFF'FFFFu || stageIndex >= static_cast<std::size_t>(ContactStage::Count)) return false;
+            if (!pair.world || pair.bodyA == pair.bodyB || pair.bodyA >= 0x7FFF'FFFFu || pair.bodyB >= 0x7FFF'FFFFu ||
+                stageIndex >= static_cast<std::size_t>(ContactStage::Count))
+                return false;
             pair.canonicalize();
             std::uint64_t hash = (static_cast<std::uint64_t>(pair.bodyA) << 32) | pair.bodyB;
             hash ^= pair.world;
             hash ^= (static_cast<std::uint64_t>(pair.shapeA) << 32) | pair.shapeB;
-            hash ^= hash >> 30; hash *= 0xBF58476D1CE4E5B9ull;
-            hash ^= hash >> 27; hash *= 0x94D049BB133111EBull;
+            hash ^= hash >> 30;
+            hash *= 0xBF58476D1CE4E5B9ull;
+            hash ^= hash >> 27;
+            hash *= 0x94D049BB133111EBull;
             hash ^= hash >> 31;
             auto& bucket = _buckets[hash % _buckets.size()];
             if (bucket.busy.test_and_set(std::memory_order_acquire)) {
@@ -95,27 +109,43 @@ namespace rock::performance_profiler
             ContactPairCounts* found = nullptr;
             ContactPairCounts* empty = nullptr;
             for (auto& slot : bucket.slots) {
-                if (!slot.events) { if (!empty) empty = &slot; continue; }
+                if (!slot.events) {
+                    if (!empty)
+                        empty = &slot;
+                    continue;
+                }
                 if (slot.pair.world == pair.world && slot.pair.bodyA == pair.bodyA && slot.pair.bodyB == pair.bodyB &&
-                    slot.pair.shapeA == pair.shapeA && slot.pair.shapeB == pair.shapeB) { found = &slot; break; }
+                    slot.pair.shapeA == pair.shapeA && slot.pair.shapeB == pair.shapeB) {
+                    found = &slot;
+                    break;
+                }
             }
-            if (!found) found = empty;
+            if (!found)
+                found = empty;
             if (found) {
-                if (!found->events) { found->pair = pair; found->firstFrame = frame; found->lastFrame = frame; }
+                if (!found->events) {
+                    found->pair = pair;
+                    found->firstFrame = frame;
+                    found->lastFrame = frame;
+                }
                 const auto mergeLayer = [&](std::uint32_t& previous, std::uint32_t current) {
-                    if (current == kUnknownContactDetail) return;
+                    if (current == kUnknownContactDetail)
+                        return;
                     found->layerChanged |= previous != kUnknownContactDetail && previous != current;
                     previous = current;
                 };
                 mergeLayer(found->pair.layerA, pair.layerA);
                 mergeLayer(found->pair.layerB, pair.layerB);
-                if (frame < found->firstFrame) found->firstFrame = frame;
-                if (frame > found->lastFrame) found->lastFrame = frame;
+                if (frame < found->firstFrame)
+                    found->firstFrame = frame;
+                if (frame > found->lastFrame)
+                    found->lastFrame = frame;
                 ++found->counts[stageIndex];
                 ++found->events;
             }
             bucket.busy.clear(std::memory_order_release);
-            if (!found) _dropped.fetch_add(1, std::memory_order_relaxed);
+            if (!found)
+                _dropped.fetch_add(1, std::memory_order_relaxed);
             return found != nullptr;
         }
 
@@ -123,11 +153,19 @@ namespace rock::performance_profiler
         {
             Snapshot result;
             for (auto& bucket : _buckets) {
-                if (bucket.busy.test_and_set(std::memory_order_acquire)) { ++result.carriedBuckets; continue; }
-                if (bucket.generation == generation) {
-                    for (const auto& slot : bucket.slots) if (slot.events) result.entries[result.size++] = slot;
+                if (bucket.busy.test_and_set(std::memory_order_acquire)) {
+                    ++result.carriedBuckets;
+                    continue;
                 }
-                if (bucket.generation <= generation) { bucket.slots = {}; bucket.generation = generation; }
+                if (bucket.generation == generation) {
+                    for (const auto& slot : bucket.slots)
+                        if (slot.events)
+                            result.entries[result.size++] = slot;
+                }
+                if (bucket.generation <= generation) {
+                    bucket.slots = {};
+                    bucket.generation = generation;
+                }
                 bucket.busy.clear(std::memory_order_release);
             }
             result.dropped = _dropped.exchange(0, std::memory_order_relaxed);
@@ -136,6 +174,6 @@ namespace rock::performance_profiler
 
     private:
         std::array<Bucket, Capacity / kWays> _buckets{};
-        std::atomic<std::uint64_t> _dropped{0};
+        std::atomic<std::uint64_t> _dropped{ 0 };
     };
 }

@@ -4,10 +4,10 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "physics-interaction/weapon/WeaponTypes.h"
 #include "physics-interaction/body/BodyColliderDescriptors.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
+#include "physics-interaction/weapon/WeaponTypes.h"
 
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/NetImmerse/NiPoint.h"
@@ -311,8 +311,7 @@ namespace rock::debug
         RE::hknpWorld* world{ nullptr };
         std::uint64_t gameFrameIndex{ 0 };
         std::array<BodyOverlayEntry,
-            MAX_WEAPON_COLLISION_BODIES +
-                (hand_collider_semantics::kHandColliderBodyCountPerHand * 2) +
+            MAX_WEAPON_COLLISION_BODIES + (hand_collider_semantics::kHandColliderBodyCountPerHand * 2) +
                 body_collider::kStandardDescriptors.size() + 8>
             entries{};
         std::array<AxisOverlayEntry, 96> axisEntries{};
@@ -338,11 +337,8 @@ namespace rock::debug
     // Physics-step-thread callback. Captures only bounded body matrices for the
     // final substep. The implementation is non-blocking and does no allocation,
     // logging, shape inspection, or rendering work.
-    void CapturePostSolveBodyPhases(
-        RE::hknpWorld* world,
-        const havok_physics_timing::PhysicsTimingSample& timing,
-        std::uint64_t gameFrameIndex,
-        std::uint64_t solveSequence) noexcept;
+    void CapturePostSolveBodyPhases(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing,
+        std::uint64_t gameFrameIndex, std::uint64_t solveSequence) noexcept;
     // Clears diagnostics only. Gameplay marker lifetime is owned separately.
     void ClearFrame();
     void ClearShapeCache();

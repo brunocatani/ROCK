@@ -47,20 +47,12 @@ namespace rock::held_scene_presentation
     [[nodiscard]] bool install() noexcept;
     void publishHeldBodies(bool isLeft, const Registration& registration) noexcept;
     void clearHeldBodies(bool isLeft) noexcept;
-    TargetTransportPublication publishTargetTransport(
-        bool isLeft,
-        RE::hknpWorld* world,
-        std::uint32_t bodyId,
-        std::uint64_t traceId,
-        const RE::NiTransform& targetBodyWorld,
-        const RE::NiTransform& solvedBodyWorld,
-        RE::NiAVObject* referenceRoot,
-        const RE::NiTransform& bodyInRoot,
-        float frameSeconds) noexcept;
+    TargetTransportPublication publishTargetTransport(bool isLeft, RE::hknpWorld* world, std::uint32_t bodyId,
+        std::uint64_t traceId, const RE::NiTransform& targetBodyWorld, const RE::NiTransform& solvedBodyWorld,
+        RE::NiAVObject* referenceRoot, const RE::NiTransform& bodyInRoot, float frameSeconds) noexcept;
     // Copies the selected hand's immutable pose only for this exact frame.
     // No scene pointer crosses into the overlay render thread.
-    [[nodiscard]] bool tryGetPresentedBodyWorld(
-        RE::hknpWorld* world, std::uint32_t bodyId, std::uint64_t frameIndex,
+    [[nodiscard]] bool tryGetPresentedBodyWorld(RE::hknpWorld* world, std::uint32_t bodyId, std::uint64_t frameIndex,
         RE::NiTransform& outWorld) noexcept;
     // Update the existing owner first so the second hand reads this frame's
     // assembly publication, even when the two hands selected different bodies.

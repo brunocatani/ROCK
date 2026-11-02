@@ -20,7 +20,8 @@ namespace rock::native_memory
         bool userRange(const void* ptr, std::size_t byteCount, std::uintptr_t& start, std::uintptr_t& last)
         {
             start = reinterpret_cast<std::uintptr_t>(ptr);
-            if (!pointerLooksReadable(ptr) || byteCount == 0 || start >= kUserSpaceEnd || byteCount > kUserSpaceEnd - start) {
+            if (!pointerLooksReadable(ptr) || byteCount == 0 || start >= kUserSpaceEnd ||
+                byteCount > kUserSpaceEnd - start) {
                 return false;
             }
             last = start + byteCount - 1;
@@ -34,7 +35,8 @@ namespace rock::native_memory
         void restoreGuard(const void* address) noexcept
         {
             MEMORY_BASIC_INFORMATION info{};
-            if (VirtualQuery(address, &info, sizeof(info)) == 0 || info.State != MEM_COMMIT || (info.Protect & PAGE_GUARD) != 0) {
+            if (VirtualQuery(address, &info, sizeof(info)) == 0 || info.State != MEM_COMMIT ||
+                (info.Protect & PAGE_GUARD) != 0) {
                 return;
             }
             DWORD previous = 0;
@@ -116,26 +118,26 @@ namespace rock::native_memory
         }
     }
 
-    bool pointerLooksReadable(const void* ptr)
-    {
-        return reinterpret_cast<std::uintptr_t>(ptr) > 0x10000;
-    }
+    bool pointerLooksReadable(const void* ptr) { return reinterpret_cast<std::uintptr_t>(ptr) > 0x10000; }
 
     bool pointerRangeLooksReadable(const void* ptr, std::size_t byteCount)
     {
         const bool readable = rangeAccessible(ptr, byteCount, performance_profiler::MemoryQueryKind::Read);
-        if (!readable) performance_profiler::addCounter(performance_profiler::Counter::NativeReadRangeRejected);
+        if (!readable)
+            performance_profiler::addCounter(performance_profiler::Counter::NativeReadRangeRejected);
         return readable;
     }
 
     bool pointerRangeLooksWritable(void* ptr, std::size_t byteCount)
     {
         const bool writable = rangeAccessible(ptr, byteCount, performance_profiler::MemoryQueryKind::Write);
-        if (!writable) performance_profiler::addCounter(performance_profiler::Counter::NativeWriteRangeRejected);
+        if (!writable)
+            performance_profiler::addCounter(performance_profiler::Counter::NativeWriteRangeRejected);
         return writable;
     }
 
-    bool guardedCopyFromMemory(const void* source, void* target, std::size_t byteCount, const std::source_location& site)
+    bool guardedCopyFromMemory(const void* source, void* target, std::size_t byteCount,
+        const std::source_location& site)
     {
         performance_profiler::countGuardedRead(site);
         const auto start = reinterpret_cast<std::uintptr_t>(source);

@@ -18,8 +18,7 @@ namespace rock
 // code. Consumers reach the runtime only through the provider tables.
 namespace rock::provider
 {
-    [[nodiscard]] inline constexpr bool hasHandInputSuppressionFlag(
-        std::uint32_t flags,
+    [[nodiscard]] inline constexpr bool hasHandInputSuppressionFlag(std::uint32_t flags,
         ::rock::api::input::HandInputSuppressionFlag flag)
     {
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
@@ -38,11 +37,8 @@ namespace rock::provider
     // The reservation on hand, or Normal when that hand is not reserved.
     api::grab::HandReservationKind currentHandReservation(api::Hand hand);
     void setEquippedWeaponFiringHandIsLeft(bool isLeft);
-    bool getHandlingAuthorityRequest(
-        api::weapon::HandlingRequest& outRequest);
-    bool ownsHandlingAuthority(
-        std::uint64_t ownerToken,
-        std::uint32_t requiredFlags);
+    bool getHandlingAuthorityRequest(api::weapon::HandlingRequest& outRequest);
+    bool ownsHandlingAuthority(std::uint64_t ownerToken, std::uint32_t requiredFlags);
     std::uint32_t currentHandInputSuppressionFlags(api::Hand hand);
     std::uint32_t currentNativeAnimationAuthorityFlags();
     void refreshNativeAnimationAuthorityLeases();
@@ -52,48 +48,23 @@ namespace rock::provider
      * publishes zero, never a fabricated nominal-rate value. Every workspace
      * consumer guards for non-positive deltas before integrating.
      */
-    void dispatchAnimationPhaseCallbacks(
-        ::rock::api::animation::AnimationPhase phase,
+    void dispatchAnimationPhaseCallbacks(::rock::api::animation::AnimationPhase phase,
         const game_frame_timing_policy::GameFrameTiming& timing);
-    bool resolveWeaponPartTarget(
-        const provider::PartQuery& query,
-        weapon_part_runtime::Resolution& outResolution);
+    bool resolveWeaponPartTarget(const provider::PartQuery& query, weapon_part_runtime::Resolution& outResolution);
     bool hasWeaponPartTargetsForGeneration(std::uint64_t weaponGenerationKey);
     // Value snapshot for main-thread grip markers; never retains provider pointers.
     std::size_t copyWeaponPartTargets(std::span<weapon_part_runtime::Target> outTargets);
-    std::uint32_t copyWeaponPartDrives(
-        PartDrive* outTargets,
-        std::uint32_t maxTargets,
-        std::uint64_t* outOwnerTokens = nullptr,bool pruneExpired = true);
-    bool resolveTouchGrabTarget(
-        std::uint32_t bodyId,
-        std::uint32_t collisionLayer,
-        TouchGrabMotionClass motionClass,
-        api::Hand hand,
-        std::uint32_t worldGeneration,
-        std::uint32_t skeletonGeneration,
-        std::uint32_t providerGeneration,
-        TouchGrabTargetMatch& outMatch);
-    bool currentTouchGrabTarget(
-        std::uint64_t ownerToken,
-        std::uint64_t scopeToken,
-        std::uint64_t targetId,
-        std::uint32_t targetGeneration,
-        std::uint32_t worldGeneration,
-        std::uint32_t skeletonGeneration,
-        std::uint32_t providerGeneration,
-        TouchGrabTargetMatch& outMatch);
-    bool publishTouchGrabState(
-        std::uint64_t ownerToken,
-        std::uint64_t scopeToken,
+    std::uint32_t copyWeaponPartDrives(PartDrive* outTargets, std::uint32_t maxTargets,
+        std::uint64_t* outOwnerTokens = nullptr, bool pruneExpired = true);
+    bool resolveTouchGrabTarget(std::uint32_t bodyId, std::uint32_t collisionLayer, TouchGrabMotionClass motionClass,
+        api::Hand hand, std::uint32_t worldGeneration, std::uint32_t skeletonGeneration,
+        std::uint32_t providerGeneration, TouchGrabTargetMatch& outMatch);
+    bool currentTouchGrabTarget(std::uint64_t ownerToken, std::uint64_t scopeToken, std::uint64_t targetId,
+        std::uint32_t targetGeneration, std::uint32_t worldGeneration, std::uint32_t skeletonGeneration,
+        std::uint32_t providerGeneration, TouchGrabTargetMatch& outMatch);
+    bool publishTouchGrabState(std::uint64_t ownerToken, std::uint64_t scopeToken,
         const ::rock::api::touch::TouchGrabState& state);
-    void acknowledgeTouchGrabYield(
-        std::uint64_t ownerToken,
-        std::uint64_t scopeToken,
-        std::uint64_t targetId,
+    void acknowledgeTouchGrabYield(std::uint64_t ownerToken, std::uint64_t scopeToken, std::uint64_t targetId,
         std::uint32_t targetGeneration);
-    void markInteractionCommandStage(
-        std::uint64_t ownerToken,
-        std::uint64_t commandId,
-        api::grab::CommandStage stage);
+    void markInteractionCommandStage(std::uint64_t ownerToken, std::uint64_t commandId, api::grab::CommandStage stage);
 }

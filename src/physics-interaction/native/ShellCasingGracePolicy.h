@@ -25,8 +25,7 @@ namespace rock::shell_casing_grace
 
     [[nodiscard]] inline float sanitizeMilliseconds(float value) noexcept
     {
-        return std::isfinite(value) && value >= 0.0f && value <= kMaximumMilliseconds ?
-            value : kDefaultMilliseconds;
+        return std::isfinite(value) && value >= 0.0f && value <= kMaximumMilliseconds ? value : kDefaultMilliseconds;
     }
 
     [[nodiscard]] inline GraceWindow makeWindow(double seconds, std::uint64_t solve, float milliseconds) noexcept
@@ -42,8 +41,8 @@ namespace rock::shell_casing_grace
 
         [[nodiscard]] bool matches(const BodyIdentity& live) const noexcept
         {
-            return id != kInvalidBody && motion != 0 && collisionObject != 0 &&
-                id == live.id && motion == live.motion && collisionObject == live.collisionObject;
+            return id != kInvalidBody && motion != 0 && collisionObject != 0 && id == live.id &&
+                motion == live.motion && collisionObject == live.collisionObject;
         }
     };
 }

@@ -28,6 +28,7 @@ namespace rock::saved_grab_offset
     {
         std::string plugin;
         std::uint32_t localFormId{ 0 };
+
         [[nodiscard]] bool empty() const { return plugin.empty() && localFormId == 0; }
     };
 

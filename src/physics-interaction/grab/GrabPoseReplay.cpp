@@ -6,7 +6,11 @@ namespace rock::grab_pose_replay
 {
     using nlohmann::json;
 
-    void to_json(json& j, const Transform& t) { j = json{ { "rotate", t.rotate }, { "translate", t.translate }, { "scale", t.scale } }; }
+    void to_json(json& j, const Transform& t)
+    {
+        j = json{ { "rotate", t.rotate }, { "translate", t.translate }, { "scale", t.scale } };
+    }
+
     void from_json(const json& j, Transform& t)
     {
         j.at("rotate").get_to(t.rotate);
@@ -16,9 +20,10 @@ namespace rock::grab_pose_replay
 
     void to_json(json& j, const FingerChain& c)
     {
-        j = json{ { "points", c.points }, { "tipSegmentCenter", c.tipSegmentCenter }, { "tipDirection", c.tipDirection },
-            { "tipGeometryValid", c.tipGeometryValid }, { "valid", c.valid } };
+        j = json{ { "points", c.points }, { "tipSegmentCenter", c.tipSegmentCenter },
+            { "tipDirection", c.tipDirection }, { "tipGeometryValid", c.tipGeometryValid }, { "valid", c.valid } };
     }
+
     void from_json(const json& j, FingerChain& c)
     {
         j.at("points").get_to(c.points);
@@ -33,6 +38,7 @@ namespace rock::grab_pose_replay
         j = json{ { "fingers", s.fingers }, { "palmNormal", s.palmNormal }, { "palmNormalValid", s.palmNormalValid },
             { "inPowerArmor", s.inPowerArmor }, { "valid", s.valid } };
     }
+
     void from_json(const json& j, FingerSkeleton& s)
     {
         j.at("fingers").get_to(s.fingers);
@@ -44,9 +50,10 @@ namespace rock::grab_pose_replay
 
     void to_json(json& j, const CapsuleOptions& o)
     {
-        j = json{ { "minValue", o.minValue }, { "fingerMaxOpenValue", o.fingerMaxOpenValue }, { "thumbMaxOpenValue", o.thumbMaxOpenValue },
-            { "step", o.step } };
+        j = json{ { "minValue", o.minValue }, { "fingerMaxOpenValue", o.fingerMaxOpenValue },
+            { "thumbMaxOpenValue", o.thumbMaxOpenValue }, { "step", o.step } };
     }
+
     void from_json(const json& j, CapsuleOptions& o)
     {
         j.at("minValue").get_to(o.minValue);
@@ -98,7 +105,8 @@ namespace rock::grab_pose_replay
             Record r{};
             j.at("formatVersion").get_to(r.formatVersion);
             if (r.formatVersion != kFormatVersion) {
-                if (outError) *outError = "unsupported formatVersion " + std::to_string(r.formatVersion);
+                if (outError)
+                    *outError = "unsupported formatVersion " + std::to_string(r.formatVersion);
                 return std::nullopt;
             }
             j.at("object").get_to(r.object);
@@ -131,7 +139,8 @@ namespace rock::grab_pose_replay
             j.at("presentedHandValid").get_to(r.presentedHandValid);
             return r;
         } catch (const std::exception& error) {
-            if (outError) *outError = error.what();
+            if (outError)
+                *outError = error.what();
             return std::nullopt;
         }
     }

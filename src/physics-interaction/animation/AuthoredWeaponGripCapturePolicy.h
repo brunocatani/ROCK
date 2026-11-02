@@ -1,7 +1,7 @@
 #pragma once
 
-#include <cstdint>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <string_view>
 
@@ -13,8 +13,7 @@ namespace rock::authored_weapon_grip_capture_policy
     inline constexpr std::uint32_t kArms = 1u << 0;
     inline constexpr std::uint32_t kHands = 1u << 1;
     inline constexpr std::uint32_t kWeapon = 1u << 2;
-    inline constexpr std::uint16_t
-        kCompleteAuthoredSupportFingerLocalTransformMask = 0x7FFFu;
+    inline constexpr std::uint16_t kCompleteAuthoredSupportFingerLocalTransformMask = 0x7FFFu;
 
     struct AuthoredPrimaryFiringGripEligibility
     {
@@ -67,9 +66,7 @@ namespace rock::authored_weapon_grip_capture_policy
     struct AuthoredPrimaryDecision
     {
         AuthoredPrimaryAction action{ AuthoredPrimaryAction::Clear };
-        AuthoredPrimaryDecisionReason reason{
-            AuthoredPrimaryDecisionReason::RuntimeUnavailable
-        };
+        AuthoredPrimaryDecisionReason reason{ AuthoredPrimaryDecisionReason::RuntimeUnavailable };
     };
 
     struct AuthoredSupportGripCandidateInput
@@ -169,20 +166,17 @@ namespace rock::authored_weapon_grip_capture_policy
      */
     inline constexpr std::uint32_t kStableAuthoredSupportCaptureFrames = 3;
 
-    [[nodiscard]] constexpr std::uint32_t advanceStableAuthoredSupportCaptureWitness(
-        const std::uint32_t agreeingFrames,
+    [[nodiscard]] constexpr std::uint32_t advanceStableAuthoredSupportCaptureWitness(const std::uint32_t agreeingFrames,
         const bool valueMatchesAnchor) noexcept
     {
         if (!valueMatchesAnchor) {
             return 1;
         }
-        return agreeingFrames >= kStableAuthoredSupportCaptureFrames ?
-                   kStableAuthoredSupportCaptureFrames :
-                   agreeingFrames + 1;
+        return agreeingFrames >= kStableAuthoredSupportCaptureFrames ? kStableAuthoredSupportCaptureFrames
+                                                                     : agreeingFrames + 1;
     }
 
-    [[nodiscard]] constexpr bool stableAuthoredSupportCaptureConverged(
-        const std::uint32_t agreeingFrames) noexcept
+    [[nodiscard]] constexpr bool stableAuthoredSupportCaptureConverged(const std::uint32_t agreeingFrames) noexcept
     {
         return agreeingFrames >= kStableAuthoredSupportCaptureFrames;
     }
@@ -190,43 +184,24 @@ namespace rock::authored_weapon_grip_capture_policy
     [[nodiscard]] constexpr bool shouldAdoptStableAuthoredSupportGrip(
         const StableAuthoredSupportGripAdoptInput& input) noexcept
     {
-        return input.snapshotValid &&
-               input.weaponNodeValid &&
-               input.currentWeaponOwnershipKey != 0 &&
-               input.currentWeaponGenerationKey != 0 &&
-               input.currentWeaponInstanceContentKnown &&
-               input.snapshotWeaponInstanceContentKnown &&
-               input.currentWeaponInstanceContentKey ==
-                   input.snapshotWeaponInstanceContentKey &&
-               input.canonicalRelationMatches &&
-               input.powerArmorMatches &&
-               input.snapshotSupportGripCaptureSequence != 0 &&
-               input.snapshotFingerLocalTransformMask ==
-                   kCompleteAuthoredSupportFingerLocalTransformMask;
+        return input.snapshotValid && input.weaponNodeValid && input.currentWeaponOwnershipKey != 0 &&
+            input.currentWeaponGenerationKey != 0 && input.currentWeaponInstanceContentKnown &&
+            input.snapshotWeaponInstanceContentKnown &&
+            input.currentWeaponInstanceContentKey == input.snapshotWeaponInstanceContentKey &&
+            input.canonicalRelationMatches && input.powerArmorMatches &&
+            input.snapshotSupportGripCaptureSequence != 0 &&
+            input.snapshotFingerLocalTransformMask == kCompleteAuthoredSupportFingerLocalTransformMask;
     }
 
-    [[nodiscard]] constexpr AuthoredPrimaryDecision
-        evaluateAuthoredPrimaryFiringGrip(
-            const AuthoredPrimaryFiringGripEligibility& input)
+    [[nodiscard]] constexpr AuthoredPrimaryDecision evaluateAuthoredPrimaryFiringGrip(
+        const AuthoredPrimaryFiringGripEligibility& input)
     {
-        const bool commonReady =
-            input.runtimeInitialized &&
-            input.visualAuthorityAvailable &&
-            input.localSkeletonReady &&
-            !input.menuBlocking &&
-            !input.compatibilityBlocking &&
-            input.weaponKeyValid &&
-            !input.nativeReloadAuthorityActive &&
-            !input.primaryHandHoldingObject &&
-            !input.rockFiringHandIsLeft;
-        const bool apply =
-            commonReady &&
-            input.weaponDrawn &&
-            (input.weaponVisible ||
-                input.equippedWeaponTransitionActive) &&
-            input.captureValid &&
-            input.captureNewerThanWeaponBoundary &&
-            !input.conflictingWeaponTransformAuthorityActive &&
+        const bool commonReady = input.runtimeInitialized && input.visualAuthorityAvailable &&
+            input.localSkeletonReady && !input.menuBlocking && !input.compatibilityBlocking && input.weaponKeyValid &&
+            !input.nativeReloadAuthorityActive && !input.primaryHandHoldingObject && !input.rockFiringHandIsLeft;
+        const bool apply = commonReady && input.weaponDrawn &&
+            (input.weaponVisible || input.equippedWeaponTransitionActive) && input.captureValid &&
+            input.captureNewerThanWeaponBoundary && !input.conflictingWeaponTransformAuthorityActive &&
             !input.weaponVisualReturnActive;
         if (apply) {
             return {
@@ -235,14 +210,11 @@ namespace rock::authored_weapon_grip_capture_policy
             };
         }
 
-        if (commonReady &&
-            (input.weaponVisualReturnActive ||
-                input.equippedWeaponTransitionActive)) {
+        if (commonReady && (input.weaponVisualReturnActive || input.equippedWeaponTransitionActive)) {
             return {
                 .action = AuthoredPrimaryAction::RetainPoseOnly,
-                .reason = input.weaponVisualReturnActive ?
-                    AuthoredPrimaryDecisionReason::WeaponVisualReturn :
-                    AuthoredPrimaryDecisionReason::EquipTransitionContinuity,
+                .reason = input.weaponVisualReturnActive ? AuthoredPrimaryDecisionReason::WeaponVisualReturn
+                                                         : AuthoredPrimaryDecisionReason::EquipTransitionContinuity,
             };
         }
 
@@ -299,14 +271,12 @@ namespace rock::authored_weapon_grip_capture_policy
             return { .reason = AuthoredPrimaryDecisionReason::CaptureNotFresh };
         }
         return {
-            .reason =
-                AuthoredPrimaryDecisionReason::ConflictingWeaponAuthority,
+            .reason = AuthoredPrimaryDecisionReason::ConflictingWeaponAuthority,
         };
     }
 
-    [[nodiscard]] constexpr const char*
-        authoredPrimaryDecisionReasonName(
-            const AuthoredPrimaryDecisionReason reason) noexcept
+    [[nodiscard]] constexpr const char* authoredPrimaryDecisionReasonName(
+        const AuthoredPrimaryDecisionReason reason) noexcept
     {
         switch (reason) {
         case AuthoredPrimaryDecisionReason::Apply:
@@ -357,33 +327,23 @@ namespace rock::authored_weapon_grip_capture_policy
      * hand re-takes the grip; the physical-left canonical path republishes
      * every frame and would otherwise keep the detached hand curled.
      */
-    [[nodiscard]] constexpr bool shouldPublishAuthoredFiringFingerPose(
-        const bool targetHandHoldingObject,
+    [[nodiscard]] constexpr bool shouldPublishAuthoredFiringFingerPose(const bool targetHandHoldingObject,
         const bool firingHandDetached) noexcept
     {
         return !targetHandHoldingObject && !firingHandDetached;
     }
 
-    [[nodiscard]] constexpr bool shouldUseAuthoredSupportGrip(
-        const AuthoredSupportGripCandidateInput& input)
+    [[nodiscard]] constexpr bool shouldUseAuthoredSupportGrip(const AuthoredSupportGripCandidateInput& input)
     {
-        return input.interactionAcquisitionValid &&
-               input.activationZoneValid &&
-               !input.providerAuthorityActive &&
-               !input.attachOnly &&
-               input.captureValid &&
-               input.weaponIdentityMatches &&
-               input.generationMatches &&
-               input.completeFingerPose;
+        return input.interactionAcquisitionValid && input.activationZoneValid && !input.providerAuthorityActive &&
+            !input.attachOnly && input.captureValid && input.weaponIdentityMatches && input.generationMatches &&
+            input.completeFingerPose;
     }
 
-    [[nodiscard]] constexpr bool shouldUseAuthoredFiringGripProbe(
-        const AuthoredFiringGripProbeInput& input)
+    [[nodiscard]] constexpr bool shouldUseAuthoredFiringGripProbe(const AuthoredFiringGripProbeInput& input)
     {
-        return input.proximityProbeAcquisition &&
-               !input.providerAuthorityActive &&
-               !input.attachOnly &&
-               input.authoredCanonicalAvailable;
+        return input.proximityProbeAcquisition && !input.providerAuthorityActive && !input.attachOnly &&
+            input.authoredCanonicalAvailable;
     }
 
     /*
@@ -395,20 +355,13 @@ namespace rock::authored_weapon_grip_capture_policy
     [[nodiscard]] constexpr bool shouldReuseStableAuthoredSupportGrip(
         const StableAuthoredSupportGripReuseInput& input) noexcept
     {
-        return input.snapshotValid &&
-               input.weaponNodeValid &&
-               input.weaponNodeMatches &&
-               input.currentWeaponOwnershipKey != 0 &&
-               input.currentWeaponOwnershipKey ==
-                   input.snapshotWeaponOwnershipKey &&
-               input.currentWeaponGenerationKey != 0 &&
-               input.currentWeaponGenerationKey ==
-                   input.snapshotWeaponGenerationKey &&
-               input.canonicalRelationMatches &&
-               input.powerArmorMatches &&
-               input.snapshotSupportGripCaptureSequence != 0 &&
-               input.snapshotFingerLocalTransformMask ==
-                   kCompleteAuthoredSupportFingerLocalTransformMask;
+        return input.snapshotValid && input.weaponNodeValid && input.weaponNodeMatches &&
+            input.currentWeaponOwnershipKey != 0 &&
+            input.currentWeaponOwnershipKey == input.snapshotWeaponOwnershipKey &&
+            input.currentWeaponGenerationKey != 0 &&
+            input.currentWeaponGenerationKey == input.snapshotWeaponGenerationKey && input.canonicalRelationMatches &&
+            input.powerArmorMatches && input.snapshotSupportGripCaptureSequence != 0 &&
+            input.snapshotFingerLocalTransformMask == kCompleteAuthoredSupportFingerLocalTransformMask;
     }
 
     /*
@@ -423,25 +376,16 @@ namespace rock::authored_weapon_grip_capture_policy
     [[nodiscard]] constexpr bool shouldRebindStableAuthoredSupportGrip(
         const StableAuthoredSupportGripRebindInput& input) noexcept
     {
-        return input.snapshotValid &&
-               input.weaponNodeValid &&
-               input.weaponNodeMatches &&
-               input.currentWeaponOwnershipKey != 0 &&
-               input.currentWeaponOwnershipKey ==
-                   input.snapshotWeaponOwnershipKey &&
-               input.currentWeaponGenerationKey != 0 &&
-               input.snapshotWeaponGenerationKey != 0 &&
-               input.currentWeaponGenerationKey !=
-                   input.snapshotWeaponGenerationKey &&
-               input.currentWeaponInstanceContentKnown &&
-               input.snapshotWeaponInstanceContentKnown &&
-               input.currentWeaponInstanceContentKey ==
-                   input.snapshotWeaponInstanceContentKey &&
-               input.canonicalRelationMatches &&
-               input.powerArmorMatches &&
-               input.snapshotSupportGripCaptureSequence != 0 &&
-               input.snapshotFingerLocalTransformMask ==
-                   kCompleteAuthoredSupportFingerLocalTransformMask;
+        return input.snapshotValid && input.weaponNodeValid && input.weaponNodeMatches &&
+            input.currentWeaponOwnershipKey != 0 &&
+            input.currentWeaponOwnershipKey == input.snapshotWeaponOwnershipKey &&
+            input.currentWeaponGenerationKey != 0 && input.snapshotWeaponGenerationKey != 0 &&
+            input.currentWeaponGenerationKey != input.snapshotWeaponGenerationKey &&
+            input.currentWeaponInstanceContentKnown && input.snapshotWeaponInstanceContentKnown &&
+            input.currentWeaponInstanceContentKey == input.snapshotWeaponInstanceContentKey &&
+            input.canonicalRelationMatches && input.powerArmorMatches &&
+            input.snapshotSupportGripCaptureSequence != 0 &&
+            input.snapshotFingerLocalTransformMask == kCompleteAuthoredSupportFingerLocalTransformMask;
     }
 
     // Presentation starts at unit scale. A fresh animation graph value is
@@ -467,61 +411,42 @@ namespace rock::authored_weapon_grip_capture_policy
     {
         const float magnitude = maxAbsWorldCoordinate < 0.0f ? -maxAbsWorldCoordinate : maxAbsWorldCoordinate;
         const float rounding = kPositionOnlyHoldGripErrorUlps * std::numeric_limits<float>::epsilon() * magnitude;
-        return rounding > kPositionOnlyHoldGripErrorFloorGameUnits ? rounding : kPositionOnlyHoldGripErrorFloorGameUnits;
+        return rounding > kPositionOnlyHoldGripErrorFloorGameUnits ? rounding
+                                                                   : kPositionOnlyHoldGripErrorFloorGameUnits;
     }
 
     template <class Transform, class Point, class LocalPointToWorld>
-    [[nodiscard]] constexpr Transform
-        resolveAuthoredPrimaryWeaponWorldPositionOnly(
-            const Transform& nativeWeaponWorld,
-            const Point& authoredGripWeaponLocal,
-            const Point& trackedPalmWorld,
-            LocalPointToWorld&& localPointToWorld)
+    [[nodiscard]] constexpr Transform resolveAuthoredPrimaryWeaponWorldPositionOnly(const Transform& nativeWeaponWorld,
+        const Point& authoredGripWeaponLocal, const Point& trackedPalmWorld, LocalPointToWorld&& localPointToWorld)
     {
-        const Point currentAuthoredGripWorld = localPointToWorld(
-            nativeWeaponWorld,
-            authoredGripWeaponLocal);
+        const Point currentAuthoredGripWorld = localPointToWorld(nativeWeaponWorld, authoredGripWeaponLocal);
         Transform solvedWeaponWorld = nativeWeaponWorld;
-        solvedWeaponWorld.translate.x +=
-            trackedPalmWorld.x - currentAuthoredGripWorld.x;
-        solvedWeaponWorld.translate.y +=
-            trackedPalmWorld.y - currentAuthoredGripWorld.y;
-        solvedWeaponWorld.translate.z +=
-            trackedPalmWorld.z - currentAuthoredGripWorld.z;
+        solvedWeaponWorld.translate.x += trackedPalmWorld.x - currentAuthoredGripWorld.x;
+        solvedWeaponWorld.translate.y += trackedPalmWorld.y - currentAuthoredGripWorld.y;
+        solvedWeaponWorld.translate.z += trackedPalmWorld.z - currentAuthoredGripWorld.z;
         return solvedWeaponWorld;
     }
 
     template <class Transform, class Compose, class Invert>
-    [[nodiscard]] constexpr Transform resolveAuthoredSupportHandInPrimaryHand(
-        const Transform& authoredPrimaryHandModel,
-        const Transform& authoredSupportHandModel,
-        Compose&& compose,
-        Invert&& invert)
+    [[nodiscard]] constexpr Transform resolveAuthoredSupportHandInPrimaryHand(const Transform& authoredPrimaryHandModel,
+        const Transform& authoredSupportHandModel, Compose&& compose, Invert&& invert)
     {
-        return compose(
-            invert(authoredPrimaryHandModel),
-            authoredSupportHandModel);
+        return compose(invert(authoredPrimaryHandModel), authoredSupportHandModel);
     }
 
     template <class Transform, class Compose>
-    [[nodiscard]] constexpr Transform resolveAuthoredSupportHandInWeapon(
-        const Transform& primaryHandInWeapon,
-        const Transform& supportHandInPrimaryHand,
-        Compose&& compose)
+    [[nodiscard]] constexpr Transform resolveAuthoredSupportHandInWeapon(const Transform& primaryHandInWeapon,
+        const Transform& supportHandInPrimaryHand, Compose&& compose)
     {
         return compose(primaryHandInWeapon, supportHandInPrimaryHand);
     }
 
     [[nodiscard]] constexpr char asciiLower(const char value)
     {
-        return value >= 'A' && value <= 'Z' ?
-            static_cast<char>(value - 'A' + 'a') :
-            value;
+        return value >= 'A' && value <= 'Z' ? static_cast<char>(value - 'A' + 'a') : value;
     }
 
-    [[nodiscard]] constexpr bool equalsIgnoreCase(
-        const std::string_view lhs,
-        const std::string_view rhs)
+    [[nodiscard]] constexpr bool equalsIgnoreCase(const std::string_view lhs, const std::string_view rhs)
     {
         if (lhs.size() != rhs.size()) {
             return false;

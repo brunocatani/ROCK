@@ -19,7 +19,8 @@ namespace rock::havok_material_registry
                 return nullptr;
             }
 
-            auto* materialLibrarySlot = reinterpret_cast<void**>(reinterpret_cast<char*>(world) + kHknpWorldMaterialLibraryOffset);
+            auto* materialLibrarySlot =
+                reinterpret_cast<void**>(reinterpret_cast<char*>(world) + kHknpWorldMaterialLibraryOffset);
             return materialLibrarySlot ? *materialLibrarySlot : nullptr;
         }
     }

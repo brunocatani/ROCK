@@ -45,34 +45,23 @@ namespace rock::skeleton_bone_debug_math
         Vector zEnd{};
     };
 
-    inline constexpr std::array<std::string_view, 30> kRequiredFingerBoneNames{
-        "LArm_Finger11", "LArm_Finger12", "LArm_Finger13",
-        "LArm_Finger21", "LArm_Finger22", "LArm_Finger23",
-        "LArm_Finger31", "LArm_Finger32", "LArm_Finger33",
-        "LArm_Finger41", "LArm_Finger42", "LArm_Finger43",
-        "LArm_Finger51", "LArm_Finger52", "LArm_Finger53",
-        "RArm_Finger11", "RArm_Finger12", "RArm_Finger13",
-        "RArm_Finger21", "RArm_Finger22", "RArm_Finger23",
-        "RArm_Finger31", "RArm_Finger32", "RArm_Finger33",
-        "RArm_Finger41", "RArm_Finger42", "RArm_Finger43",
-        "RArm_Finger51", "RArm_Finger52", "RArm_Finger53"
-    };
+    inline constexpr std::array<std::string_view, 30> kRequiredFingerBoneNames{ "LArm_Finger11", "LArm_Finger12",
+        "LArm_Finger13", "LArm_Finger21", "LArm_Finger22", "LArm_Finger23", "LArm_Finger31", "LArm_Finger32",
+        "LArm_Finger33", "LArm_Finger41", "LArm_Finger42", "LArm_Finger43", "LArm_Finger51", "LArm_Finger52",
+        "LArm_Finger53", "RArm_Finger11", "RArm_Finger12", "RArm_Finger13", "RArm_Finger21", "RArm_Finger22",
+        "RArm_Finger23", "RArm_Finger31", "RArm_Finger32", "RArm_Finger33", "RArm_Finger41", "RArm_Finger42",
+        "RArm_Finger43", "RArm_Finger51", "RArm_Finger52", "RArm_Finger53" };
 
-    inline constexpr std::array<std::string_view, 31> kRequiredCoreBoneNames{
-        "COM", "Pelvis", "SPINE1", "SPINE2", "Chest", "Neck", "Head",
-        "LArm_Collarbone", "LArm_UpperArm", "LArm_ForeArm1", "LArm_ForeArm2", "LArm_ForeArm3", "LArm_Hand",
-        "RArm_Collarbone", "RArm_UpperArm", "RArm_ForeArm1", "RArm_ForeArm2", "RArm_ForeArm3", "RArm_Hand",
-        "LLeg_Thigh", "LLeg_Calf", "LLeg_Foot", "LLeg_Toe1",
-        "RLeg_Thigh", "RLeg_Calf", "RLeg_Foot", "RLeg_Toe1",
-        "LArm_UpperTwist1", "LArm_UpperTwist2", "RArm_UpperTwist1", "RArm_UpperTwist2"
-    };
+    inline constexpr std::array<std::string_view, 31> kRequiredCoreBoneNames{ "COM", "Pelvis", "SPINE1", "SPINE2",
+        "Chest", "Neck", "Head", "LArm_Collarbone", "LArm_UpperArm", "LArm_ForeArm1", "LArm_ForeArm2", "LArm_ForeArm3",
+        "LArm_Hand", "RArm_Collarbone", "RArm_UpperArm", "RArm_ForeArm1", "RArm_ForeArm2", "RArm_ForeArm3", "RArm_Hand",
+        "LLeg_Thigh", "LLeg_Calf", "LLeg_Foot", "LLeg_Toe1", "RLeg_Thigh", "RLeg_Calf", "RLeg_Foot", "RLeg_Toe1",
+        "LArm_UpperTwist1", "LArm_UpperTwist2", "RArm_UpperTwist1", "RArm_UpperTwist2" };
 
-    inline constexpr std::array<std::string_view, 16> kHandsAndForearmsBoneNames{
-        "LArm_ForeArm1", "LArm_ForeArm2", "LArm_ForeArm3", "LArm_Hand",
-        "RArm_ForeArm1", "RArm_ForeArm2", "RArm_ForeArm3", "RArm_Hand",
-        "LArm_UpperArm", "RArm_UpperArm", "LArm_Collarbone", "RArm_Collarbone",
-        "LArm_UpperTwist1", "LArm_UpperTwist2", "RArm_UpperTwist1", "RArm_UpperTwist2"
-    };
+    inline constexpr std::array<std::string_view, 16> kHandsAndForearmsBoneNames{ "LArm_ForeArm1", "LArm_ForeArm2",
+        "LArm_ForeArm3", "LArm_Hand", "RArm_ForeArm1", "RArm_ForeArm2", "RArm_ForeArm3", "RArm_Hand", "LArm_UpperArm",
+        "RArm_UpperArm", "LArm_Collarbone", "RArm_Collarbone", "LArm_UpperTwist1", "LArm_UpperTwist2",
+        "RArm_UpperTwist1", "RArm_UpperTwist2" };
 
     template <std::size_t Count>
     inline constexpr bool allBoneNamesNonEmpty(const std::array<std::string_view, Count>& names)
@@ -87,11 +76,21 @@ namespace rock::skeleton_bone_debug_math
 
     static_assert(allBoneNamesNonEmpty(kRequiredFingerBoneNames), "Required finger bone table contains an empty name.");
     static_assert(allBoneNamesNonEmpty(kRequiredCoreBoneNames), "Required core bone table contains an empty name.");
-    static_assert(allBoneNamesNonEmpty(kHandsAndForearmsBoneNames), "Hands/forearms bone table contains an empty name.");
+    static_assert(allBoneNamesNonEmpty(kHandsAndForearmsBoneNames),
+        "Hands/forearms bone table contains an empty name.");
 
-    inline constexpr const std::array<std::string_view, 30>& requiredFingerBoneNames() { return kRequiredFingerBoneNames; }
+    inline constexpr const std::array<std::string_view, 30>& requiredFingerBoneNames()
+    {
+        return kRequiredFingerBoneNames;
+    }
+
     inline constexpr const std::array<std::string_view, 31>& requiredCoreBoneNames() { return kRequiredCoreBoneNames; }
-    inline constexpr const std::array<std::string_view, 16>& handsAndForearmsBoneNames() { return kHandsAndForearmsBoneNames; }
+
+    inline constexpr const std::array<std::string_view, 16>& handsAndForearmsBoneNames()
+    {
+        return kHandsAndForearmsBoneNames;
+    }
+
     inline constexpr std::size_t skeletonOverlayBudget() { return 768; }
 
     inline int sanitizeMaxSkeletonBonesDrawn(int value)
@@ -178,7 +177,8 @@ namespace rock::skeleton_bone_debug_math
         return false;
     }
 
-    inline bool shouldDrawSkeletonAxis(std::string_view axisFilter, std::string_view boneName, std::size_t axesAlreadyDrawn, std::size_t axisCap)
+    inline bool shouldDrawSkeletonAxis(std::string_view axisFilter, std::string_view boneName,
+        std::size_t axesAlreadyDrawn, std::size_t axisCap)
     {
         if (axisCap == 0 || axesAlreadyDrawn >= axisCap) {
             return false;
@@ -200,19 +200,11 @@ namespace rock::skeleton_bone_debug_math
 
     inline bool isExcludedDefaultBone(std::string_view name)
     {
-        return containsName(name, "_skin") ||
-               containsName(name, "_armor") ||
-               containsName(name, "weapon") ||
-               containsName(name, "camera") ||
-               containsName(name, "projectile") ||
-               containsName(name, "animobject") ||
-               containsName(name, "pipboy") ||
-               containsName(name, "helper") ||
-               containsName(name, "ui") ||
-               containsName(name, "hud") ||
-               containsName(name, "scope") ||
-               containsName(name, "light") ||
-               containsName(name, "pauldron");
+        return containsName(name, "_skin") || containsName(name, "_armor") || containsName(name, "weapon") ||
+            containsName(name, "camera") || containsName(name, "projectile") || containsName(name, "animobject") ||
+            containsName(name, "pipboy") || containsName(name, "helper") || containsName(name, "ui") ||
+            containsName(name, "hud") || containsName(name, "scope") || containsName(name, "light") ||
+            containsName(name, "pauldron");
     }
 
     inline DebugSkeletonBoneMode sanitizeDebugSkeletonBoneMode(int mode)
@@ -311,7 +303,8 @@ namespace rock::skeleton_bone_debug_math
         return containsExact(kRequiredCoreBoneNames, name);
     }
 
-    inline int resolveDrawableParentIndex(std::size_t boneIndex, const std::vector<int>& parentIndices, const std::vector<bool>& included)
+    inline int resolveDrawableParentIndex(std::size_t boneIndex, const std::vector<int>& parentIndices,
+        const std::vector<bool>& included)
     {
         if (boneIndex >= parentIndices.size() || boneIndex >= included.size()) {
             return -1;
@@ -351,17 +344,24 @@ namespace rock::skeleton_bone_debug_math
     }
 
     template <class Transform>
-    inline AxisEndpoints<decltype(Transform{}.translate)> computeAxisEndpoints(const Transform& transform, float axisLength)
+    inline AxisEndpoints<decltype(Transform{}.translate)> computeAxisEndpoints(const Transform& transform,
+        float axisLength)
     {
         using Vector = decltype(transform.translate);
-        const Vector xAxis = normalized(debug_axis_math::rotateNiLocalToWorld(transform.rotate, makeVector<Vector>(1.0f, 0.0f, 0.0f)));
-        const Vector yAxis = normalized(debug_axis_math::rotateNiLocalToWorld(transform.rotate, makeVector<Vector>(0.0f, 1.0f, 0.0f)));
-        const Vector zAxis = normalized(debug_axis_math::rotateNiLocalToWorld(transform.rotate, makeVector<Vector>(0.0f, 0.0f, 1.0f)));
+        const Vector xAxis =
+            normalized(debug_axis_math::rotateNiLocalToWorld(transform.rotate, makeVector<Vector>(1.0f, 0.0f, 0.0f)));
+        const Vector yAxis =
+            normalized(debug_axis_math::rotateNiLocalToWorld(transform.rotate, makeVector<Vector>(0.0f, 1.0f, 0.0f)));
+        const Vector zAxis =
+            normalized(debug_axis_math::rotateNiLocalToWorld(transform.rotate, makeVector<Vector>(0.0f, 0.0f, 1.0f)));
 
         return AxisEndpoints<Vector>{
-            .xEnd = makeVector<Vector>(transform.translate.x + xAxis.x * axisLength, transform.translate.y + xAxis.y * axisLength, transform.translate.z + xAxis.z * axisLength),
-            .yEnd = makeVector<Vector>(transform.translate.x + yAxis.x * axisLength, transform.translate.y + yAxis.y * axisLength, transform.translate.z + yAxis.z * axisLength),
-            .zEnd = makeVector<Vector>(transform.translate.x + zAxis.x * axisLength, transform.translate.y + zAxis.y * axisLength, transform.translate.z + zAxis.z * axisLength),
+            .xEnd = makeVector<Vector>(transform.translate.x + xAxis.x * axisLength,
+                transform.translate.y + xAxis.y * axisLength, transform.translate.z + xAxis.z * axisLength),
+            .yEnd = makeVector<Vector>(transform.translate.x + yAxis.x * axisLength,
+                transform.translate.y + yAxis.y * axisLength, transform.translate.z + yAxis.z * axisLength),
+            .zEnd = makeVector<Vector>(transform.translate.x + zAxis.x * axisLength,
+                transform.translate.y + zAxis.y * axisLength, transform.translate.z + zAxis.z * axisLength),
         };
     }
 
