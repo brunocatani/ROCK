@@ -410,16 +410,34 @@ namespace rock::native_secondary_presentation
          * it was first hidden kept it invisible (runtime 14 Oct 21:17:44).
          * A model that left the equipment belongs to native teardown and is
          * never touched.
+         * The scope view draws no weapon: FO4VR hides its own first-person
+         * weapon while ScopeMenu is open, but not this model, so ROCK culls it
+         * for the whole menu, whichever slot is scoped. Placement continues
+         * meanwhile; index 1's scope camera follows this model's world.
          */
         std::uintptr_t s_unplacedRoot = 0;
+        std::uintptr_t s_scopeHiddenRoot = 0;
 
         void syncUnplacedVisibility() noexcept
         {
             const auto view = native_hand_equipment::equippedViews()[1];
             const auto identity = reinterpret_cast<std::uintptr_t>(view.root);
             if (s_unplacedRoot && s_unplacedRoot != identity) s_unplacedRoot = 0;
+            if (s_scopeHiddenRoot && s_scopeHiddenRoot != identity) s_scopeHiddenRoot = 0;
             if (!view.weapon || !view.root) return;
-            const bool placed = s_state.ready && s_state.frame == runtime_state::currentFrame().frameIndex;
+            const auto& frame = runtime_state::currentFrame();
+            const bool placed = s_state.ready && s_state.frame == frame.frameIndex;
+            if (placed && frame.localScopeMenuOpen) {
+                if (equipped_weapon_visual_state::isLocallyVisible(view.root))
+                    equipped_weapon_visual_state::setLocallyVisible(view.root, false);
+                if (s_scopeHiddenRoot != identity) {
+                    s_scopeHiddenRoot = identity;
+                    ROCK_LOG_INFO(Weapon, "AKIMBO second weapon hidden for the scope view weapon={:08X}", view.weapon->formID);
+                }
+                s_unplacedRoot = 0;
+                return;
+            }
+            s_scopeHiddenRoot = 0;
             if (placed) {
                 if (!equipped_weapon_visual_state::isLocallyVisible(view.root) &&
                     native_equipped_model_lifetime::playerWeaponHideOwnerFlags() == 0) {
