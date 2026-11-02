@@ -351,6 +351,21 @@ namespace rock::frik_visual_authority
         return frik::api::FRIKApiV2::inst;
     }
 
+    /*
+     * The FRIK API v2 version ROCK requires. The header is FRIK's own copy at
+     * a newer version; every entry or capability newer than this minimum is
+     * used only when the loaded FRIK reports it (supportsApiVersion).
+     */
+    inline constexpr std::uint32_t kRequiredApiVersion = 3;
+    // ScopeCapability::PlacesScopeWidget.
+    inline constexpr std::uint32_t kPlacesScopeWidgetApiVersion = 4;
+
+    [[nodiscard]] inline bool supportsApiVersion(std::uint32_t version)
+    {
+        auto* frikApi = api();
+        return frikApi && frikApi->getVersion && frikApi->getVersion() >= version;
+    }
+
     [[nodiscard]] inline Hand handFromBool(bool isLeft)
     {
         return isLeft ? Hand::Left : Hand::Right;

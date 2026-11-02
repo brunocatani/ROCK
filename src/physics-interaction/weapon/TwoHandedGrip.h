@@ -1907,6 +1907,10 @@ namespace rock
         bool rebuildNativeScopeRigidFrameTarget();
         bool capturePostFrikNativeScopeRigidFrame(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, RE::NiNode* scopeCamera, const RE::NiTransform& nativeCameraWorld);
         bool captureNativeScopeOverlayCalibration(const RE::NiTransform& nativeCameraWorld, std::uint64_t currentWeaponGenerationKey);
+        // Every skeleton frame, before any scope write: see nativeRigRest
+        // and frikWidgetProvider.
+        void observeNativeScopeRigRest();
+        void synchronizeFrikScopeWidgetProvider();
         bool applyNativeScopeOverlayTarget(const RE::NiTransform& correctedCameraWorld, std::uint64_t currentWeaponGenerationKey);
         void refreshNativeScopeAnchor(
             RE::NiNode* weaponNode,
@@ -2332,15 +2336,31 @@ namespace rock
             NativeScopeRigidFrameState rigidFrame{};
             std::uint64_t rejectedRigidFrameGeneration{ 0 };
             NativeScopeOverlayCalibrationState overlayCalibration{};
-            // The overlay rotation last calibrated with the rig on the wand
-            // chain. While FRIK carries the rig with a left-held weapon there
-            // is no native camera basis to calibrate against.
+            /*
+             * The scope rig's native rest on the wand chain: ScopeParent's
+             * local under primaryUIAttachNode and the camera's local scale
+             * under primaryWeaponOffsetNOde. Observed once per rig, before
+             * ROCK writes either node, so the overlay calibrates against the
+             * live wand chain wherever FRIK hangs the rig (a left-held weapon
+             * carries it), without needing an earlier right-hand scope.
+             */
             struct
             {
-                RE::NiTransform scopeModelRootLocal{};
-                RE::NiTransform calibrationInCameraLocal{};
+                const RE::NiNode* scopeParentIdentity{ nullptr };
+                const RE::NiNode* scopeCameraIdentity{ nullptr };
+                RE::NiTransform scopeParentLocal{};
+                float cameraScale{ 1.0f };
                 bool valid{ false };
-            } wandChainOverlay{};
+            } nativeRigRest{};
+            /*
+             * ROCK's registration as a FRIK scope provider declaring
+             * PlacesScopeWidget (FRIK API v2.4), held while immersive scopes
+             * place the widget. FRIK then hangs ScopeParent under the holding
+             * hand's wand during a left-hand carry: under the first-person
+             * skeleton the widget is not drawn and the scope view is black.
+             */
+            enum class FrikWidgetProvider : std::uint8_t { Unregistered, Registered, Unavailable };
+            FrikWidgetProvider frikWidgetProvider{ FrikWidgetProvider::Unregistered };
             // Equipment index 1's held scope owns the camera and overlay;
             // index 0's presentation stands down meanwhile.
             NativeScopeRigidFrameState secondaryCamera{};

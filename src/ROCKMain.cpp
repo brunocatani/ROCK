@@ -1255,11 +1255,12 @@ namespace
 
             /*
              * FRIK API v2 is append-only since v2.2: initialize() checks the
-             * loaded version and table size against the version this build
-             * compiled with, so success proves every entry this build calls
-             * exists. The error codes are the header's own contract.
+             * loaded version and table size against ROCK's required version,
+             * so success proves every entry of that version exists; newer
+             * capabilities are gated on frik_visual_authority::supportsApiVersion.
+             * The error codes are the header's own contract.
              */
-            const int frikErr = frik::api::FRIKApiV2::initialize(frik::api::FRIK_API_V2_VERSION);
+            const int frikErr = frik::api::FRIKApiV2::initialize(frik_visual_authority::kRequiredApiVersion);
             if (frikErr != 0) {
                 switch (frikErr) {
                 case 1:
@@ -1277,13 +1278,13 @@ namespace
                     logger::critical(
                         "ROCK: FRIK API v2 initialization FAILED (error 4). "
                         "Loaded FRIK API v2 is older than required v{}. Deploy the matching rebuilt FRIK.dll. ROCK is now DISABLED.",
-                        frik::api::FRIK_API_V2_VERSION);
+                        frik_visual_authority::kRequiredApiVersion);
                     break;
                 case 5:
                     logger::critical(
                         "ROCK: FRIK API v2 initialization FAILED (error 5). "
                         "Loaded FRIK API v2 table is smaller than API v{} requires. Deploy the matching rebuilt FRIK.dll. ROCK is now DISABLED.",
-                        frik::api::FRIK_API_V2_VERSION);
+                        frik_visual_authority::kRequiredApiVersion);
                     break;
                 default:
                     logger::critical("ROCK: FRIK API v2 initialization FAILED (error {}). ROCK is now DISABLED.", frikErr);

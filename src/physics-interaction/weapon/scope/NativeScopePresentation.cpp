@@ -159,8 +159,66 @@ namespace rock
         return true;
     }
 
+    void TwoHandedGrip::observeNativeScopeRigRest()
+    {
+        auto& rest = _scope.nativeRigRest;
+        const auto* playerNodes = f4vr::getPlayerNodes();
+        const RE::NiNode* scopeParent = playerNodes ? playerNodes->ScopeParentNode : nullptr;
+        const RE::NiNode* scopeCamera = playerNodes ? playerNodes->primaryWeaponScopeCamera : nullptr;
+        if (!scopeParent || !scopeCamera) return;
+        if (rest.valid && rest.scopeParentIdentity == scopeParent && rest.scopeCameraIdentity == scopeCamera) return;
+
+        // A rebuilt rig has a new rest. ROCK's own overlay local is never one,
+        // and a carried rig shows no rest until it returns to the wand chain.
+        rest = {};
+        const bool onWandChain = scopeParent->parent && scopeParent->parent == playerNodes->primaryUIAttachNode &&
+            scopeCamera->parent && scopeCamera->parent == playerNodes->primaryWeaponOffsetNOde;
+        const bool rockOwnsLocal = _scope.overlayCalibration.valid && _scope.overlayCalibration.hasAppliedLocal &&
+            _scope.overlayCalibration.scopeParentIdentity == scopeParent;
+        if (!onWandChain || rockOwnsLocal || !isFiniteTransform(scopeParent->local) || std::abs(scopeParent->local.scale) <= 0.0001f ||
+            !std::isfinite(scopeCamera->local.scale) || std::abs(scopeCamera->local.scale) <= 0.0001f) {
+            return;
+        }
+        rest = { .scopeParentIdentity = scopeParent, .scopeCameraIdentity = scopeCamera, .scopeParentLocal = scopeParent->local,
+            .cameraScale = scopeCamera->local.scale, .valid = true };
+        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: native scope rig rest observed scopeParentLocal=({:.2f},{:.2f},{:.2f}) scale={:.3f} cameraScale={:.3f}",
+            rest.scopeParentLocal.translate.x, rest.scopeParentLocal.translate.y, rest.scopeParentLocal.translate.z, rest.scopeParentLocal.scale,
+            rest.cameraScale);
+    }
+
+    void TwoHandedGrip::synchronizeFrikScopeWidgetProvider()
+    {
+        using Provider = ScopePresentationState::FrikWidgetProvider;
+        constexpr const char* kTag = "ROCK_ImmersiveScopes";
+        auto& state = _scope.frikWidgetProvider;
+        const bool wanted = g_rockConfig.rockEnableImmersiveScopes;
+        if (wanted == (state != Provider::Unregistered)) return;
+        if (!wanted) {
+            if (state == Provider::Registered && !frik_visual_authority::clearScopeProvider(kTag))
+                ROCK_LOG_WARN(Weapon, "TwoHandedGrip: FRIK refused to clear scope provider '{}'", kTag);
+            state = Provider::Unregistered;
+            return;
+        }
+        if (!frik_visual_authority::supportsApiVersion(frik_visual_authority::kPlacesScopeWidgetApiVersion)) {
+            ROCK_LOG_WARN(Weapon,
+                "TwoHandedGrip: FRIK API v2 is older than v{}; the scope view of a weapon held in the left hand stays black (FRIK hangs the scope widget under the first-person skeleton)",
+                frik_visual_authority::kPlacesScopeWidgetApiVersion);
+            state = Provider::Unavailable;
+            return;
+        }
+        if (!frik_visual_authority::setScopeProvider(kTag, static_cast<std::uint32_t>(frik_visual_authority::ScopeCapability::PlacesScopeWidget))) {
+            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: FRIK refused scope provider '{}' with PlacesScopeWidget", kTag);
+            state = Provider::Unavailable;
+            return;
+        }
+        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: registered FRIK scope provider '{}' (PlacesScopeWidget)", kTag);
+        state = Provider::Registered;
+    }
+
     void TwoHandedGrip::synchronizeNativeScopePresentationAfterFrikUpdate(RE::NiNode* weaponNode, const std::uint64_t currentWeaponGenerationKey)
     {
+        observeNativeScopeRigRest();
+        synchronizeFrikScopeWidgetProvider();
         if (!g_rockConfig.rockEnableImmersiveScopes) {
             clearImmersiveScopePresentation();
             return;
@@ -329,48 +387,51 @@ namespace rock
         }
 
         /*
-         * The calibration is the rig's native camera-to-overlay rotation, so it
-         * is captured only with the rig on the wand chain. With a left-held
-         * weapon FRIK hangs the rig under the weapon, keeping the world it
-         * had at the carry start: a capture there bakes the right hand's pose
-         * at that moment into the overlay (runtime 22 Oct 16:56:18,
-         * excludedAim 171deg). The carry reuses the wand-chain calibration.
+         * The calibration is the rig's native camera-to-overlay rotation on
+         * the wand chain: the unsteered camera under primaryWeaponOffsetNOde
+         * against world_scope.nif under ScopeParent at its rest local under
+         * primaryUIAttachNode. Both wand-chain nodes stay live while FRIK
+         * carries the rig for a left-held weapon, so the calibration is
+         * composed from them and the observed rest, never from the carried
+         * nodes: those keep the world they had at the carry start, which
+         * would bake the right hand's pose into the overlay (runtime 22 Oct
+         * 16:56:18, excludedAim 171deg).
          */
-        const bool rigOnWandChain = scopeCamera->parent == playerNodes->primaryWeaponOffsetNOde &&
-            scopeParent->parent == playerNodes->primaryUIAttachNode;
-        auto& wandChain = _scope.wandChainOverlay;
-        RE::NiTransform modelRootCalibrationInCameraLocal{};
-        float excludedAimDegrees = -1.0f;
-        if (rigOnWandChain) {
-            RE::NiTransform nativeScopeModelRootWorld{};
-            if (!tryGetComposedNodeWorld(scopeModelRoot, nativeScopeModelRootWorld)) {
-                return false;
-            }
-            RE::NiTransform cameraParentWorld{};
-            if (!tryGetComposedNodeWorld(scopeCamera->parent, cameraParentWorld)) return false;
-            const auto unsteeredCameraWorld = native_scope_overlay_follow_math::resolveUnsteeredCameraWorld(
-                cameraParentWorld, scopeCamera->local);
-            if (!isFiniteTransform(unsteeredCameraWorld) || std::abs(unsteeredCameraWorld.scale) <= 0.0001f) return false;
-            modelRootCalibrationInCameraLocal =
-                native_scope_overlay_follow_math::captureModelRootCalibrationInCameraLocal(
-                    unsteeredCameraWorld,
-                    nativeScopeModelRootWorld);
-            if (!isFiniteTransform(modelRootCalibrationInCameraLocal) ||
-                std::abs(modelRootCalibrationInCameraLocal.scale) <= 0.0001f) {
-                return false;
-            }
-            wandChain = { .scopeModelRootLocal = scopeModelRoot->local,
-                .calibrationInCameraLocal = modelRootCalibrationInCameraLocal, .valid = true };
-            excludedAimDegrees = weapon_support_acquisition_math::rotationDistanceRadians(
-                unsteeredCameraWorld.rotate, nativeCameraWorld.rotate) * RADIANS_TO_DEGREES;
-        } else if (wandChain.valid && areTransformsNearlyEqual(scopeModelRoot->local, wandChain.scopeModelRootLocal)) {
-            modelRootCalibrationInCameraLocal = wandChain.calibrationInCameraLocal;
-        } else {
+        const auto& rest = _scope.nativeRigRest;
+        if (!rest.valid || rest.scopeParentIdentity != scopeParent || rest.scopeCameraIdentity != scopeCamera) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 2000,
-                "TwoHandedGrip: native scope overlay left native generation={:016X}: FRIK carries the scope rig and no wand-chain calibration exists",
+                "TwoHandedGrip: native scope overlay left native generation={:016X}: the scope rig's wand-chain rest was not observed",
                 currentWeaponGenerationKey);
             return false;
         }
+        RE::NiTransform cameraParentWorld{};
+        RE::NiTransform scopeParentParentWorld{};
+        if (!playerNodes->primaryWeaponOffsetNOde || !playerNodes->primaryUIAttachNode ||
+            !tryGetComposedNodeWorld(playerNodes->primaryWeaponOffsetNOde, cameraParentWorld) ||
+            !tryGetComposedNodeWorld(playerNodes->primaryUIAttachNode, scopeParentParentWorld)) {
+            return false;
+        }
+        RE::NiTransform cameraRestLocal{};
+        cameraRestLocal.scale = rest.cameraScale;
+        const auto unsteeredCameraWorld = native_scope_overlay_follow_math::resolveUnsteeredCameraWorld(cameraParentWorld, cameraRestLocal);
+        const auto nativeScopeModelRootWorld = transform_math::composeTransforms(
+            transform_math::composeTransforms(scopeParentParentWorld, rest.scopeParentLocal), scopeModelRoot->local);
+        if (!isFiniteTransform(unsteeredCameraWorld) || std::abs(unsteeredCameraWorld.scale) <= 0.0001f ||
+            !isFiniteTransform(nativeScopeModelRootWorld)) {
+            return false;
+        }
+        const RE::NiTransform modelRootCalibrationInCameraLocal =
+            native_scope_overlay_follow_math::captureModelRootCalibrationInCameraLocal(unsteeredCameraWorld, nativeScopeModelRootWorld);
+        if (!isFiniteTransform(modelRootCalibrationInCameraLocal) || std::abs(modelRootCalibrationInCameraLocal.scale) <= 0.0001f) {
+            return false;
+        }
+        const bool rigOnWandChain = scopeCamera->parent == playerNodes->primaryWeaponOffsetNOde &&
+            scopeParent->parent == playerNodes->primaryUIAttachNode;
+        // How far FRIK's aim steering turned the native camera; a carried
+        // camera aims with the other hand, so the angle means nothing there.
+        const float excludedAimDegrees = rigOnWandChain ?
+            weapon_support_acquisition_math::rotationDistanceRadians(unsteeredCameraWorld.rotate, nativeCameraWorld.rotate) * RADIANS_TO_DEGREES :
+            -1.0f;
 
         _scope.overlayCalibration = NativeScopeOverlayCalibrationState{
             .weaponGenerationKey = currentWeaponGenerationKey,
@@ -394,7 +455,7 @@ namespace rock
             scopeParent->local.translate.x,
             scopeParent->local.translate.y,
             scopeParent->local.translate.z,
-            rigOnWandChain ? "unsteered-camera" : "wand-chain-reused",
+            rigOnWandChain ? "wand-chain" : "carried-rig",
             excludedAimDegrees);
         return true;
     }
