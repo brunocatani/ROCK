@@ -1,6 +1,6 @@
-#include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "api/ProviderRuntimeServices.h"
 #include "api/ProviderStatePolicy.h"
+#include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/native/NativeAmmoCounterVisibility.h"
 #include "physics-interaction/visual/AmmoCounters.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
@@ -24,10 +24,7 @@ namespace rock
 {
     namespace
     {
-        ammo_counter_pose::Point toPoint(const RE::NiPoint3& value) noexcept
-        {
-            return { value.x, value.y, value.z };
-        }
+        ammo_counter_pose::Point toPoint(const RE::NiPoint3& value) noexcept { return { value.x, value.y, value.z }; }
 
         ammo_counter_pose::Frame toFrame(const RE::NiTransform& world) noexcept
         {
@@ -70,7 +67,8 @@ namespace rock
                     look.color[i] = static_cast<float>(std::clamp(colors[i]->GetInt(), 0, 255)) / 255.0f;
                 }
             }
-            if (opacity && opacity->GetType() == RE::Setting::SETTING_TYPE::kFloat && std::isfinite(opacity->GetFloat())) {
+            if (opacity && opacity->GetType() == RE::Setting::SETTING_TYPE::kFloat &&
+                std::isfinite(opacity->GetFloat())) {
                 look.opacity = std::clamp(opacity->GetFloat(), 0.0f, 1.0f);
             }
             return look;
@@ -91,25 +89,31 @@ namespace rock
 
         RE::NiAVObject* findNamed(RE::NiAVObject* object, const std::uint32_t remainingDepth) noexcept
         {
-            if (!object) return nullptr;
-            if (const char* name = object->name.c_str(); name && std::strcmp(name, kVanillaAmmoQuadName) == 0) return object;
+            if (!object)
+                return nullptr;
+            if (const char* name = object->name.c_str(); name && std::strcmp(name, kVanillaAmmoQuadName) == 0)
+                return object;
             auto* node = remainingDepth > 0 ? object->IsNode() : nullptr;
-            if (!node) return nullptr;
+            if (!node)
+                return nullptr;
             for (const auto& child : node->children) {
-                if (auto* found = findNamed(child.get(), remainingDepth - 1)) return found;
+                if (auto* found = findNamed(child.get(), remainingDepth - 1))
+                    return found;
             }
             return nullptr;
         }
 
         RE::NiAVObject* vanillaAmmoQuad(RE::NiNode* wand) noexcept
         {
-            if (!wand) return nullptr;
+            if (!wand)
+                return nullptr;
             if (s_vanillaAmmoQuad) {
                 const RE::NiAVObject* ancestor = s_vanillaAmmoQuad->parent;
                 for (std::uint32_t hop = 0; ancestor && ancestor != wand && hop < kVanillaQuadSearchDepth; ++hop) {
                     ancestor = ancestor->parent;
                 }
-                if (ancestor == wand) return s_vanillaAmmoQuad.get();
+                if (ancestor == wand)
+                    return s_vanillaAmmoQuad.get();
                 s_vanillaAmmoQuad.reset();
             }
             static std::uint32_t framesUntilSearch = 0;
@@ -148,16 +152,18 @@ namespace rock
             provider::runtime::copyPublication(publication) && publication.frameIndex == runtime.frameIndex) {
             const auto head = toPoint(nodes->HmdNode->world.translate);
             using WeaponFlag = api::weapon::WeaponStateFlag;
-            constexpr auto required = static_cast<std::uint32_t>(WeaponFlag::AmmoKnown) |
-                static_cast<std::uint32_t>(WeaponFlag::WeaponDrawn);
+            constexpr auto required =
+                static_cast<std::uint32_t>(WeaponFlag::AmmoKnown) | static_cast<std::uint32_t>(WeaponFlag::WeaponDrawn);
             for (std::uint32_t slot = 0; slot < api::kMaxWeaponSlots; ++slot) {
                 api::weapon::WeaponState state{};
-                if (provider::runtime::copyPublishedWeaponState(state, slot) != api::Status::Ok) continue;
+                if (provider::runtime::copyPublishedWeaponState(state, slot) != api::Status::Ok)
+                    continue;
                 // Slot 0's hands are applied at read time, as getWeaponState
                 // does; slot 1 carries its own in the record.
                 if (slot == 0) {
                     provider_state_policy::WeaponHandling handling{};
-                    if (queryProviderWeaponHandling(handling)) provider_state_policy::applyHandling(state, handling);
+                    if (queryProviderWeaponHandling(handling))
+                        provider_state_policy::applyHandling(state, handling);
                 }
                 if ((state.flags & required) != required ||
                     (state.firingHand != api::Hand::Right && state.firingHand != api::Hand::Left)) {
@@ -167,9 +173,11 @@ namespace rock
                 const auto holds = [&](std::size_t hand, bool firingOnly) {
                     const auto& role = publication.handRoles[hand];
                     return role.weaponSlot == slot &&
-                        (firingOnly ? role.role == api::hands::HandRole::Firing : role.role != api::hands::HandRole::None);
+                        (firingOnly ? role.role == api::hands::HandRole::Firing
+                                    : role.role != api::hands::HandRole::None);
                 };
-                if (!holds(0, false) && !holds(1, false)) continue;
+                if (!holds(0, false) && !holds(1, false))
+                    continue;
                 // The counter sits at the weapon's firing grip on the palm side
                 // of the hand that holds it: the firing-grip hand, else the only
                 // hand still on the weapon. A detached firing grip keeps its
@@ -211,12 +219,13 @@ namespace rock
                         leftBone = toFrame(leftHand);
                     }
                     auto& counter = hands[index];
-                    counter.pose = ammo_counter_pose::resolveVanilla(toFrame(quad->world), isLeft, rightBone, leftBone, head,
-                        hudLook.opacity);
+                    counter.pose = ammo_counter_pose::resolveVanilla(toFrame(quad->world), isLeft, rightBone, leftBone,
+                        head, hudLook.opacity);
                     counter.shown = counter.pose.valid;
                     counter.loaded = state.loadedRounds;
                     counter.reserve = state.reserveRounds;
-                    if (!counter.shown) hidden("vanilla-pose");
+                    if (!counter.shown)
+                        hidden("vanilla-pose");
                     continue;
                 }
                 if (slot == 0) {
@@ -232,8 +241,8 @@ namespace rock
                         .weapon = weaponForm,
                         .weaponRoot = node,
                         .variant = authored_weapon_grip_library::identifyWeaponVariant(node),
-                        .keywordFlags = weapon_instance_classification::computeWeaponKeywordFlags(
-                            weaponForm, currentEquippedWeaponInstanceData(weaponForm)),
+                        .keywordFlags = weapon_instance_classification::computeWeaponKeywordFlags(weaponForm,
+                            currentEquippedWeaponInstanceData(weaponForm)),
                         .inPowerArmor = powerArmor,
                     });
                     weapon_grip_seat::FiringSeat firing{};
@@ -255,19 +264,23 @@ namespace rock
                 }
                 const auto palmInWeapon = computeGrabPalmPointWorldFromHandBasis(seat, isLeft);
                 const auto palm = transform_math::localPointToWorld(weaponWorld, palmInWeapon);
-                const auto weaponRight = transform_math::rotateLocalVectorToWorld(weaponWorld.rotate, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
-                const auto weaponUp = transform_math::rotateLocalVectorToWorld(weaponWorld.rotate, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+                const auto weaponRight =
+                    transform_math::rotateLocalVectorToWorld(weaponWorld.rotate, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+                const auto weaponUp =
+                    transform_math::rotateLocalVectorToWorld(weaponWorld.rotate, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
                 auto& counter = hands[index];
-                counter.pose = style == ammo_counters::Style::Immersive ?
-                    ammo_counter_pose::resolveImmersive(toPoint(palm), toPoint(weaponRight), toPoint(weaponUp), isLeft, head) :
-                    ammo_counter_pose::resolve(toPoint(palm), toPoint(weaponRight), toPoint(weaponUp), isLeft, head);
+                counter.pose = style == ammo_counters::Style::Immersive
+                    ? ammo_counter_pose::resolveImmersive(toPoint(palm), toPoint(weaponRight), toPoint(weaponUp),
+                          isLeft, head)
+                    : ammo_counter_pose::resolve(toPoint(palm), toPoint(weaponRight), toPoint(weaponUp), isLeft, head);
                 counter.shown = counter.pose.valid;
                 counter.loaded = state.loadedRounds;
                 counter.reserve = state.reserveRounds;
             }
         }
         // The counters replace the vanilla one only while RPS UI shows them.
-        const bool replacing = ammo_counters::update(hands, style, hudLook.color) && native_ammo_counter_visibility::install();
+        const bool replacing =
+            ammo_counters::update(hands, style, hudLook.color) && native_ammo_counter_visibility::install();
         native_ammo_counter_visibility::replace(replacing);
     }
 }

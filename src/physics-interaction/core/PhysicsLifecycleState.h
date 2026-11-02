@@ -46,7 +46,8 @@ namespace rock::physics_lifecycle
         }
     }
 
-    inline void noteGeneration(std::uint32_t& current, std::uint32_t generation, RuntimeState& state, api::core::LifecycleReason reason)
+    inline void noteGeneration(std::uint32_t& current, std::uint32_t generation, RuntimeState& state,
+        api::core::LifecycleReason reason)
     {
         generation = generation == 0 ? 1 : generation;
         if (current != generation) {
@@ -68,8 +69,11 @@ namespace rock::physics_lifecycle
             state.hknpWorld = input.hknpWorld;
             state.stableFrameCount = 0;
             using Reason = api::core::LifecycleReason;
-            noteReason(state, input.reasonHint != Reason::None ? input.reasonHint :
-                !worldAvailable ? Reason::WorldUnavailable : hadWorld ? Reason::WorldChanged : Reason::WorldAvailable);
+            noteReason(state,
+                input.reasonHint != Reason::None ? input.reasonHint
+                    : !worldAvailable            ? Reason::WorldUnavailable
+                    : hadWorld                   ? Reason::WorldChanged
+                                                 : Reason::WorldAvailable);
         }
 
         const bool bodiesValid = worldAvailable && input.skeletonReady && input.generatedBodiesValid;
@@ -92,7 +96,8 @@ namespace rock::physics_lifecycle
         using Flag = api::core::LifecycleFlag;
         std::uint32_t flags = 0;
         const auto add = [&flags](Flag flag, bool on) {
-            if (on) flags |= static_cast<std::uint32_t>(flag);
+            if (on)
+                flags |= static_cast<std::uint32_t>(flag);
         };
         add(Flag::WorldAvailable, worldAvailable);
         add(Flag::SkeletonReady, input.skeletonReady);

@@ -1,10 +1,10 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
+#include "physics-interaction/weapon/NativeEquippedModelLifetime.h"
 #include "physics-interaction/weapon/NativeHandEquipment.h"
 #include "physics-interaction/weapon/NativeSecondaryPresentation.h"
-#include "physics-interaction/weapon/NativeEquippedModelLifetime.h"
-#include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
-#include "physics-interaction/native/NativeMemory.h"
 
 #include <array>
 #include <cmath>
@@ -33,16 +33,29 @@ namespace rock
      */
     namespace
     {
-        enum class SeamSource : std::uint8_t { None, EquipBridge, IncomingBridge, Slot0, Slot1 };
+        enum class SeamSource : std::uint8_t
+        {
+            None,
+            EquipBridge,
+            IncomingBridge,
+            Slot0,
+            Slot1
+        };
 
         const char* seamSourceName(SeamSource source)
         {
             switch (source) {
-            case SeamSource::EquipBridge: return "equip-bridge";
-            case SeamSource::IncomingBridge: return "incoming-bridge";
-            case SeamSource::Slot0: return "slot0";
-            case SeamSource::Slot1: return "slot1";
-            case SeamSource::None: default: return "none";
+            case SeamSource::EquipBridge:
+                return "equip-bridge";
+            case SeamSource::IncomingBridge:
+                return "incoming-bridge";
+            case SeamSource::Slot0:
+                return "slot0";
+            case SeamSource::Slot1:
+                return "slot1";
+            case SeamSource::None:
+            default:
+                return "none";
             }
         }
 
@@ -72,10 +85,14 @@ namespace rock
         const char* solveName(frik_visual_authority::HandSolveState state)
         {
             switch (state) {
-            case frik_visual_authority::HandSolveState::NoClaim: return "tracked";
-            case frik_visual_authority::HandSolveState::Consumed: return "claim";
-            case frik_visual_authority::HandSolveState::Unreachable: return "unreachable";
-            default: return "not-ready";
+            case frik_visual_authority::HandSolveState::NoClaim:
+                return "tracked";
+            case frik_visual_authority::HandSolveState::Consumed:
+                return "claim";
+            case frik_visual_authority::HandSolveState::Unreachable:
+                return "unreachable";
+            default:
+                return "not-ready";
             }
         }
         SeamTrace s_seam{};
@@ -84,18 +101,24 @@ namespace rock
         bool renderedPath(const RE::NiAVObject* node)
         {
             for (std::uint32_t depth = 0; node && depth < 48; ++depth, node = node->parent) {
-                if (node->GetAppCulled()) return false;
+                if (node->GetAppCulled())
+                    return false;
             }
             return node == nullptr;
         }
 
         // Diagnostic: the nearest culled node at or above `node`, with its
         // depth above it; "none" when the whole path renders.
-        struct CulledAt { const char* name = "none"; int depth = -1; };
+        struct CulledAt
+        {
+            const char* name = "none";
+            int depth = -1;
+        };
         CulledAt firstCulled(const RE::NiAVObject* node)
         {
             for (int depth = 0; node && depth < 48; ++depth, node = node->parent) {
-                if (node->GetAppCulled()) return { node->name.c_str() ? node->name.c_str() : "<unnamed>", depth };
+                if (node->GetAppCulled())
+                    return { node->name.c_str() ? node->name.c_str() : "<unnamed>", depth };
             }
             return {};
         }
@@ -114,10 +137,12 @@ namespace rock
             std::size_t count = 1, shapes = 0;
             for (std::size_t i = 0; i < count && shapes < centers.size(); ++i) {
                 const auto* object = pending[i];
-                if (object->GetAppCulled()) continue;
+                if (object->GetAppCulled())
+                    continue;
                 if (const auto* node = const_cast<RE::NiAVObject*>(object)->IsNode()) {
                     for (const auto& child : node->children) {
-                        if (child && count < pending.size()) pending[count++] = child.get();
+                        if (child && count < pending.size())
+                            pending[count++] = child.get();
                     }
                     continue;
                 }
@@ -125,7 +150,8 @@ namespace rock
                 // can belong to another skeleton; its world bound need not
                 // follow them. Use the mean of those bones.
                 auto* geometry = const_cast<RE::NiAVObject*>(object)->IsGeometry();
-                if (!geometry) geometry = const_cast<RE::NiAVObject*>(object)->IsTriShape();
+                if (!geometry)
+                    geometry = const_cast<RE::NiAVObject*>(object)->IsTriShape();
                 const auto* skin = geometry ? geometry->GetRuntimeData().skinInstance.get() : nullptr;
                 const RE::NiTransform** boneWorlds = nullptr;
                 std::uint32_t boneCount = 0;
@@ -135,32 +161,44 @@ namespace rock
                     std::uint32_t used = 0;
                     for (std::uint32_t b = 0; b < boneCount; ++b) {
                         const RE::NiTransform* world = nullptr;
-                        if (!native_memory::tryReadField(boneWorlds, static_cast<std::ptrdiff_t>(b * sizeof(void*)), world) || !world) continue;
+                        if (!native_memory::tryReadField(boneWorlds, static_cast<std::ptrdiff_t>(b * sizeof(void*)),
+                                world) ||
+                            !world)
+                            continue;
                         RE::NiPoint3 point{};
                         if (!native_memory::tryReadField(world, offsetof(RE::NiTransform, translate), point) ||
-                            !std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) continue;
+                            !std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z))
+                            continue;
                         sum += point;
                         ++used;
                     }
-                    if (used) centers[shapes++] = sum * (1.0f / static_cast<float>(used));
+                    if (used)
+                        centers[shapes++] = sum * (1.0f / static_cast<float>(used));
                     continue;
                 }
                 // A rigid shape is drawn at its world transform; its world
                 // bound is refreshed later in the frame and can lag.
                 if (geometry) {
-                    const auto point = transform_math::localPointToWorld(object->world, geometry->GetRuntimeData().modelBound.center);
-                    if (std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z)) centers[shapes++] = point;
+                    const auto point =
+                        transform_math::localPointToWorld(object->world, geometry->GetRuntimeData().modelBound.center);
+                    if (std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z))
+                        centers[shapes++] = point;
                 }
             }
-            if (!shapes) return false;
+            if (!shapes)
+                return false;
             center = {};
-            for (std::size_t i = 0; i < shapes; ++i) center += centers[i];
+            for (std::size_t i = 0; i < shapes; ++i)
+                center += centers[i];
             center = center * (1.0f / static_cast<float>(shapes));
             tip = center;
             float best = -1.0f;
             for (std::size_t i = 0; i < shapes; ++i) {
                 const float d = distance(centers[i], center);
-                if (d > best) { best = d; tip = centers[i]; }
+                if (d > best) {
+                    best = d;
+                    tip = centers[i];
+                }
             }
             return true;
         }
@@ -172,9 +210,15 @@ namespace rock
             bool incomingLeft = false;
             const auto* incoming = native_secondary_presentation::incomingModelForTrace(incomingLeft);
             const bool slot1Left = views[1].weapon && native_hand_equipment::secondaryHandIsLeft();
-            struct Candidate { const RE::NiAVObject* node; bool left; SeamSource source; };
+            struct Candidate
+            {
+                const RE::NiAVObject* node;
+                bool left;
+                SeamSource source;
+            };
             const std::array<Candidate, 4> candidates{ {
-                { bridge.isModelPresented() ? bridge.traceModel() : nullptr, bridge.isLeftHandForTrace(), SeamSource::EquipBridge },
+                { bridge.isModelPresented() ? bridge.traceModel() : nullptr, bridge.isLeftHandForTrace(),
+                    SeamSource::EquipBridge },
                 { incoming, incomingLeft, SeamSource::IncomingBridge },
                 { views[0].root, slot0Left, SeamSource::Slot0 },
                 { views[1].root, slot1Left, SeamSource::Slot1 },
@@ -184,7 +228,8 @@ namespace rock
                 auto& hand = hands[h];
                 hand.handValid = frik_visual_authority::tryGetPresentedHandWorldTransform(left, hand.handWorld);
                 for (const auto& candidate : candidates) {
-                    if (!candidate.node || candidate.left != left || !renderedPath(candidate.node)) continue;
+                    if (!candidate.node || candidate.left != left || !renderedPath(candidate.node))
+                        continue;
                     if (++hand.visibleCount == 1) {
                         hand.weapon = candidate.node;
                         hand.source = candidate.source;
@@ -209,7 +254,8 @@ namespace rock
 
     void PhysicsInteraction::armTransitionSeamTrace(const char* event) noexcept
     {
-        if (!logger::isDebugEnabled()) return;
+        if (!logger::isDebugEnabled())
+            return;
         try {
             // A transition inside an open window keeps its baseline.
             if (!s_seam.framesLeft) {
@@ -230,19 +276,23 @@ namespace rock
     {
         if (!logger::isDebugEnabled()) {
             // Drop the window and baseline so re-enabling starts clean.
-            if (s_seam.framesLeft || s_seam.hands[0].weapon || s_seam.hands[1].weapon) s_seam = {};
+            if (s_seam.framesLeft || s_seam.hands[0].weapon || s_seam.hands[1].weapon)
+                s_seam = {};
             return;
         }
         try {
-            const auto hands = observeSeamHands(_equipped.transition.bridgeForTrace(), _twoHandedGrip.isFiringHandLeft());
+            const auto hands =
+                observeSeamHands(_equipped.transition.bridgeForTrace(), _twoHandedGrip.isFiringHandLeft());
             std::array<RE::NiTransform, 2> handInWand{};
             std::array<bool, 2> handInWandValid{};
             for (std::size_t h = 0; h < hands.size(); ++h) {
                 RE::NiTransform wand{};
-                handInWandValid[h] = hands[h].handValid && frik_visual_authority::tryGetTrackedHandTransform(
-                    frik_visual_authority::handFromBool(h == 1), frik_visual_authority::TrackedHandKind::Wand, wand);
+                handInWandValid[h] = hands[h].handValid &&
+                    frik_visual_authority::tryGetTrackedHandTransform(frik_visual_authority::handFromBool(h == 1),
+                        frik_visual_authority::TrackedHandKind::Wand, wand);
                 if (handInWandValid[h])
-                    handInWand[h] = transform_math::composeTransforms(transform_math::invertTransform(wand), hands[h].handWorld);
+                    handInWand[h] =
+                        transform_math::composeTransforms(transform_math::invertTransform(wand), hands[h].handWorld);
             }
             if (!s_seam.framesLeft) {
                 s_seam.hands = hands;
@@ -260,31 +310,43 @@ namespace rock
                     const bool left = h == 1;
                     float move = -1.0f, turn = -1.0f;
                     if (handInWandValid[h] && s_seam.handInWandValid[h]) {
-                        move = dynamic_weapon_collision_policy::translationDeltaGameUnits(s_seam.handInWand[h], handInWand[h]);
-                        turn = dynamic_weapon_collision_policy::rotationDeltaDegrees(s_seam.handInWand[h], handInWand[h]);
+                        move = dynamic_weapon_collision_policy::translationDeltaGameUnits(s_seam.handInWand[h],
+                            handInWand[h]);
+                        turn =
+                            dynamic_weapon_collision_policy::rotationDeltaDegrees(s_seam.handInWand[h], handInWand[h]);
                     }
                     RE::NiTransform wrist{}, published{};
-                    const auto solve = frik_visual_authority::getHandSolveResult(frik_visual_authority::handFromBool(left), wrist);
-                    const bool claimed = frik_visual_authority::tryGetPublishedHandWorld(frik_visual_authority::handFromBool(left), published);
+                    const auto solve =
+                        frik_visual_authority::getHandSolveResult(frik_visual_authority::handFromBool(left), wrist);
+                    const bool claimed = frik_visual_authority::tryGetPublishedHandWorld(
+                        frik_visual_authority::handFromBool(left), published);
                     const auto& p = handInWand[h].translate;
                     hand_world_claim_registry_policy::Claim claim{};
                     const bool hasClaim = frik_hand_world_authority::tryGetPublishedHandClaim(left, claim);
                     const auto& part = _twoHandedGrip.partGripVisualTrace(left);
                     const bool partCurrent = part.frameIndex == runtime_state::currentFrame().frameIndex;
                     ROCK_LOG_INFO(Weapon,
-                        "SEAM ik-owner frame={} hand={} claim={} priority={} partGrip={} seq={} branch={} lerpStarted={} lerpAlpha={:.2f} "
+                        "SEAM ik-owner frame={} hand={} claim={} priority={} partGrip={} seq={} branch={} "
+                        "lerpStarted={} lerpAlpha={:.2f} "
                         "appliedVsSeat={:.2f}gu/{:.2f}deg seatLocalStep={:.2f}gu/{:.2f}deg",
-                        s_seam.frame + 1, left ? "left" : "right", hasClaim ? hand_world_claim_registry_policy::tagView(claim) : std::string_view{},
-                        hasClaim ? claim.priority : 0, partCurrent, part.gripSequence, part.branch, part.lerpStarted, part.lerpAlpha,
-                        part.appliedVsSeatGameUnits, part.appliedVsSeatDegrees, part.seatLocalStepGameUnits, part.seatLocalStepDegrees);
+                        s_seam.frame + 1, left ? "left" : "right",
+                        hasClaim ? hand_world_claim_registry_policy::tagView(claim) : std::string_view{},
+                        hasClaim ? claim.priority : 0, partCurrent, part.gripSequence, part.branch, part.lerpStarted,
+                        part.lerpAlpha, part.appliedVsSeatGameUnits, part.appliedVsSeatDegrees,
+                        part.seatLocalStepGameUnits, part.seatLocalStepDegrees);
                     ROCK_LOG_INFO(Weapon,
-                        "SEAM ik frame={} hand={} inWandStep={:.2f}gu/{:.2f}deg inWand=({:.2f},{:.2f},{:.2f}) solve={} published={} "
-                        "firingLeft={} manual={} gripping={} primaryOnly={} partCarry={} firingOccupied={} pending={}/{} handoff={}/{} paired={} supportOnly={}",
+                        "SEAM ik frame={} hand={} inWandStep={:.2f}gu/{:.2f}deg inWand=({:.2f},{:.2f},{:.2f}) solve={} "
+                        "published={} "
+                        "firingLeft={} manual={} gripping={} primaryOnly={} partCarry={} firingOccupied={} "
+                        "pending={}/{} handoff={}/{} paired={} supportOnly={}",
                         s_seam.frame + 1, left ? "left" : "right", move, turn, p.x, p.y, p.z, solveName(solve), claimed,
-                        _twoHandedGrip.isFiringHandLeft(), _twoHandedGrip.isManualOwnershipActive(), _twoHandedGrip.isGripping(),
-                        _twoHandedGrip.isPrimaryOnlyActive(), _twoHandedGrip.isPartCarryActive(), _twoHandedGrip.isFiringGripOccupied(),
-                        pending.pending, pending.pending ? (pending.isLeft ? "left" : "right") : "-",
-                        bridge.isHandPoseHandoffActive(), bridge.isHandPoseHandoffActive() ? (_equipped.transition.handPoseHandoffIsLeft() ? "left" : "right") : "-",
+                        _twoHandedGrip.isFiringHandLeft(), _twoHandedGrip.isManualOwnershipActive(),
+                        _twoHandedGrip.isGripping(), _twoHandedGrip.isPrimaryOnlyActive(),
+                        _twoHandedGrip.isPartCarryActive(), _twoHandedGrip.isFiringGripOccupied(), pending.pending,
+                        pending.pending ? (pending.isLeft ? "left" : "right") : "-", bridge.isHandPoseHandoffActive(),
+                        bridge.isHandPoseHandoffActive()
+                            ? (_equipped.transition.handPoseHandoffIsLeft() ? "left" : "right")
+                            : "-",
                         bridge.hasPairedHandPoseHandoff(), bridge.hasSupportOnlyHandPoseHandoff());
                 }
             }
@@ -293,7 +355,12 @@ namespace rock
             --s_seam.framesLeft;
             ++s_seam.frame;
             s_seam.elapsedMs += runtime_state::currentFrame().deltaSeconds * 1000.0f;
-            struct Metrics { float worldC = -1, worldF = -1, handC = -1, handF = -1, baseC = -1, baseF = -1, handMove = -1, handTurn = -1; bool switched = false; };
+            struct Metrics
+            {
+                float worldC = -1, worldF = -1, handC = -1, handF = -1, baseC = -1, baseF = -1, handMove = -1,
+                      handTurn = -1;
+                bool switched = false;
+            };
             std::array<Metrics, 2> m{};
             for (std::size_t h = 0; h < hands.size(); ++h) {
                 const auto& previous = s_seam.hands[h];
@@ -314,27 +381,32 @@ namespace rock
                     out.baseF = distance(inHand(base, base.tip), inHand(now, now.tip));
                 }
                 if (previous.handValid && now.handValid) {
-                    out.handMove = dynamic_weapon_collision_policy::translationDeltaGameUnits(previous.handWorld, now.handWorld);
-                    out.handTurn = dynamic_weapon_collision_policy::rotationDeltaDegrees(previous.handWorld, now.handWorld);
+                    out.handMove =
+                        dynamic_weapon_collision_policy::translationDeltaGameUnits(previous.handWorld, now.handWorld);
+                    out.handTurn =
+                        dynamic_weapon_collision_policy::rotationDeltaDegrees(previous.handWorld, now.handWorld);
                 }
             }
             ROCK_LOG_INFO(Weapon,
                 "SEAM frame={} event={} ms={:.1f} "
-                "R[{} n={} switch={} geomWorldStep={:.2f}/{:.2f}gu geomInHandStep={:.2f}/{:.2f}gu geomInHandVsBefore={:.2f}/{:.2f}gu hand={:.2f}gu/{:.2f}deg] "
-                "L[{} n={} switch={} geomWorldStep={:.2f}/{:.2f}gu geomInHandStep={:.2f}/{:.2f}gu geomInHandVsBefore={:.2f}/{:.2f}gu hand={:.2f}gu/{:.2f}deg] nativeState={}",
-                s_seam.frame, s_seam.event ? s_seam.event : "?", s_seam.elapsedMs,
-                seamSourceName(hands[0].source), hands[0].visibleCount, m[0].switched, m[0].worldC, m[0].worldF,
-                m[0].handC, m[0].handF, m[0].baseC, m[0].baseF, m[0].handMove, m[0].handTurn,
-                seamSourceName(hands[1].source), hands[1].visibleCount, m[1].switched, m[1].worldC, m[1].worldF,
-                m[1].handC, m[1].handF, m[1].baseC, m[1].baseF, m[1].handMove, m[1].handTurn,
-                f4vr::getNativeWeaponState(f4vr::getPlayer()));
+                "R[{} n={} switch={} geomWorldStep={:.2f}/{:.2f}gu geomInHandStep={:.2f}/{:.2f}gu "
+                "geomInHandVsBefore={:.2f}/{:.2f}gu hand={:.2f}gu/{:.2f}deg] "
+                "L[{} n={} switch={} geomWorldStep={:.2f}/{:.2f}gu geomInHandStep={:.2f}/{:.2f}gu "
+                "geomInHandVsBefore={:.2f}/{:.2f}gu hand={:.2f}gu/{:.2f}deg] nativeState={}",
+                s_seam.frame, s_seam.event ? s_seam.event : "?", s_seam.elapsedMs, seamSourceName(hands[0].source),
+                hands[0].visibleCount, m[0].switched, m[0].worldC, m[0].worldF, m[0].handC, m[0].handF, m[0].baseC,
+                m[0].baseF, m[0].handMove, m[0].handTurn, seamSourceName(hands[1].source), hands[1].visibleCount,
+                m[1].switched, m[1].worldC, m[1].worldF, m[1].handC, m[1].handF, m[1].baseC, m[1].baseF, m[1].handMove,
+                m[1].handTurn, f4vr::getNativeWeaponState(f4vr::getPlayer()));
             for (std::size_t h = 0; h < hands.size(); ++h) {
                 const auto& base = s_seam.baseline[h];
-                if (!m[h].switched || !comparable(base, hands[h])) continue;
+                if (!m[h].switched || !comparable(base, hands[h]))
+                    continue;
                 const auto bc = inHand(base, base.center), bt = inHand(base, base.tip);
                 const auto nc = inHand(hands[h], hands[h].center), nt = inHand(hands[h], hands[h].tip);
                 ROCK_LOG_INFO(Weapon,
-                    "SEAM switch frame={} hand={} {}->{} inHand before C=({:.2f},{:.2f},{:.2f}) F=({:.2f},{:.2f},{:.2f}) now C=({:.2f},{:.2f},{:.2f}) F=({:.2f},{:.2f},{:.2f})",
+                    "SEAM switch frame={} hand={} {}->{} inHand before C=({:.2f},{:.2f},{:.2f}) "
+                    "F=({:.2f},{:.2f},{:.2f}) now C=({:.2f},{:.2f},{:.2f}) F=({:.2f},{:.2f},{:.2f})",
                     s_seam.frame, h ? "left" : "right", seamSourceName(base.source), seamSourceName(hands[h].source),
                     bc.x, bc.y, bc.z, bt.x, bt.y, bt.z, nc.x, nc.y, nc.z, nt.x, nt.y, nt.z);
             }
@@ -348,7 +420,9 @@ namespace rock
                 const auto* weaponNode = f4vr::getWeaponNode();
                 const auto* pending = _equipped.transition.pendingNativeCullForTrace();
                 ROCK_LOG_INFO(Weapon,
-                    "SEAM cull frame={} slot0Root={:#x} slot0Culled='{}'@{} slot1Root={:#x} slot1Culled='{}'@{} frikWeaponNodeCulled={} rockPendingCull={:#x} pendingIsSlot0={} heldPhase={} nativeCullFlags={:#x}",
+                    "SEAM cull frame={} slot0Root={:#x} slot0Culled='{}'@{} slot1Root={:#x} slot1Culled='{}'@{} "
+                    "frikWeaponNodeCulled={} rockPendingCull={:#x} pendingIsSlot0={} heldPhase={} "
+                    "nativeCullFlags={:#x}",
                     s_seam.frame, reinterpret_cast<std::uintptr_t>(views[0].root), c0.name, c0.depth,
                     reinterpret_cast<std::uintptr_t>(views[1].root), c1.name, c1.depth,
                     weaponNode ? (weaponNode->GetAppCulled() ? "yes" : "no") : "missing",

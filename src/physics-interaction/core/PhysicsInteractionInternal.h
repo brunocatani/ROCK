@@ -5,17 +5,16 @@
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/native/NativeImpactAudio.h"
 
-
-#include "api/ProviderStatePolicy.h"
 #include "api/ProviderRuntime.h"
+#include "api/ProviderStatePolicy.h"
 
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
-#include <cstdio>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <ctime>
 #include <filesystem>
@@ -26,9 +25,8 @@
 #include <string_view>
 #include <utility>
 
-#include "physics-interaction/native/BethesdaPhysicsBody.h"
-#include "physics-interaction/native/BodyCollisionControl.h"
-#include "physics-interaction/native/SceneRelation.h"
+#include "physics-interaction/PhysicsBodyFrame.h"
+#include "physics-interaction/TransformMath.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/api/InteractionCommandQueue.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
@@ -38,62 +36,63 @@
 #include "physics-interaction/consume/MouthConsumeDetector.h"
 #include "physics-interaction/consume/MouthConsumePolicy.h"
 #include "physics-interaction/consume/MouthConsumeTransfer.h"
-#include "physics-interaction/feedback/FeedbackHaptics.h"
-#include "physics-interaction/hand/HandSkeleton.h"
-#include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/core/PhysicsHooks.h"
+#include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/debug/DebugBodyOverlay.h"
 #include "physics-interaction/debug/DebugVisualizationPolicy.h"
+#include "physics-interaction/feedback/FeedbackHaptics.h"
 #include "physics-interaction/feedback/HapticPolicy.h"
-#include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/grab/GrabConstraint.h"
+#include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/grab/GrabEvent.h"
-#include "physics-interaction/grab/GrabTelemetry.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
 #include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"
+#include "physics-interaction/grab/GrabTelemetry.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/grab/HeldMassMovement.h"
 #include "physics-interaction/hand/DynamicHandCollisionPolicy.h"
+#include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/hand/HandLifecycle.h"
-#include "physics-interaction/native/HavokRuntime.h"
-#include "physics-interaction/native/ReferenceInteraction.h"
-#include "physics-interaction/native/CharacterControllerRuntime.h"
-#include "physics-interaction/native/HeldScenePresentation.h"
-#include "physics-interaction/native/HeldWeaponInstantTransition.h"
+#include "physics-interaction/hand/HandSelection.h"
+#include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/input/GrabInputIntentPolicy.h"
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
-#include "physics-interaction/input/GrabInputIntentPolicy.h"
-#include "physics-interaction/object/ObjectDetection.h"
+#include "physics-interaction/native/BethesdaPhysicsBody.h"
+#include "physics-interaction/native/BodyCollisionControl.h"
+#include "physics-interaction/native/CharacterControllerRuntime.h"
+#include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/HeldScenePresentation.h"
+#include "physics-interaction/native/HeldWeaponInstantTransition.h"
+#include "physics-interaction/native/PhysicsRayCast.h"
+#include "physics-interaction/native/PhysicsRecursiveWrappers.h"
+#include "physics-interaction/native/PhysicsScale.h"
+#include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/native/ReferenceInteraction.h"
+#include "physics-interaction/native/SceneRelation.h"
 #include "physics-interaction/object/CarInteractionPolicy.h"
+#include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/stash/ShoulderStashDetector.h"
 #include "physics-interaction/stash/ShoulderStashPolicy.h"
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
-#include "physics-interaction/weapon/LooseWeaponGripZone.h"
+#include "physics-interaction/timing/RockGameTiming.h"
+#include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingRuntime.h"
-#include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
-#include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
-#include "physics-interaction/weapon/NativeEquippedWeaponDraw.h"
-#include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
 #include "physics-interaction/weapon/HeldWeaponEquipStatePolicy.h"
+#include "physics-interaction/weapon/LooseWeaponGripZone.h"
+#include "physics-interaction/weapon/NativeEquippedWeaponDraw.h"
+#include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
+#include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
+#include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponEquipTransfer.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
-#include "physics-interaction/hand/HandFrame.h"
-#include "physics-interaction/core/PhysicsHooks.h"
-#include "physics-interaction/core/RockRuntimeState.h"
-#include "physics-interaction/timing/RockGameTiming.h"
-#include "physics-interaction/native/PhysicsRecursiveWrappers.h"
-#include "physics-interaction/native/PhysicsRayCast.h"
-#include "physics-interaction/native/PhysicsScale.h"
-#include "physics-interaction/native/PhysicsUtils.h"
-#include "physics-interaction/performance/PerformanceProfiler.h"
-#include "physics-interaction/hand/HandSelection.h"
-#include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
-#include "physics-interaction/weapon/WeaponAuthority.h"
-#include "physics-interaction/PhysicsBodyFrame.h"
-#include "physics-interaction/TransformMath.h"
+#include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
 
 #include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/ActorValueInfo.h"
@@ -107,13 +106,13 @@
 #include "RE/Havok/hknpMotion.h"
 #include "RE/Havok/hknpWorld.h"
 
+#include <windows.h>
 #include "ROCKMain.h"
 #include "RockConfig.h"
 #include "RockUtils.h"
-#include "rock_support/Fo4VrRuntime.h"
 #include "rock_support/Fo4VrActorStatePolicy.h"
+#include "rock_support/Fo4VrRuntime.h"
 #include "rock_support/VRControllers.h"
-#include <windows.h>
 
 /*
  * Shared internals of the PhysicsInteraction implementation, split across
@@ -154,7 +153,8 @@ namespace rock
         class WeaponCollisionWorkbenchExitMenuSink final : public RE::BSTEventSink<RE::MenuOpenCloseEvent>
         {
         public:
-            RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent& event, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override
+            RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent& event,
+                RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override
             {
                 if (event.opening || !event.menuName.c_str() || !isWeaponCollisionWorkbenchExitMenu(event.menuName)) {
                     return RE::BSEventNotifyControl::kContinue;
@@ -175,8 +175,10 @@ namespace rock
         {
             performance_profiler::ScopedTimer gripStageTimer(performance_profiler::Scope::EquippedNativeScopeRead);
             using GetScopeRequestState = bool (*)(const void*);
-            static REL::Relocation<GetScopeRequestState> getScopeRequestState{ REL::Offset(offsets::kFunc_NativeScopeRequestStateGet) };
-            static REL::Relocation<std::uintptr_t> rendererState{ REL::Offset(offsets::kData_NativeScopeRendererState) };
+            static REL::Relocation<GetScopeRequestState> getScopeRequestState{ REL::Offset(
+                offsets::kFunc_NativeScopeRequestStateGet) };
+            static REL::Relocation<std::uintptr_t> rendererState{ REL::Offset(
+                offsets::kData_NativeScopeRendererState) };
             if (!getScopeRequestState.address() || !rendererState.address()) {
                 return false;
             }
@@ -187,11 +189,8 @@ namespace rock
         inline bool ensureWeaponCollisionWorkbenchExitMenuSinkRegistered()
         {
             bool expected = false;
-            if (!s_weaponCollisionWorkbenchExitMenuSinkRegistered.compare_exchange_strong(
-                    expected,
-                    true,
-                    std::memory_order_acq_rel,
-                    std::memory_order_acquire)) {
+            if (!s_weaponCollisionWorkbenchExitMenuSinkRegistered.compare_exchange_strong(expected, true,
+                    std::memory_order_acq_rel, std::memory_order_acquire)) {
                 return true;
             }
 
@@ -199,15 +198,15 @@ namespace rock
             if (!ui) {
                 s_weaponCollisionWorkbenchExitMenuSinkRegistered.store(false, std::memory_order_release);
                 if (!s_weaponCollisionWorkbenchExitMenuSinkMissingUILogged.exchange(true, std::memory_order_acq_rel)) {
-                    ROCK_LOG_WARN(Weapon, "UI singleton unavailable; weapon collision workbench-exit menu sink will retry");
+                    ROCK_LOG_WARN(Weapon,
+                        "UI singleton unavailable; weapon collision workbench-exit menu sink will retry");
                 }
                 return false;
             }
 
             ui->RegisterSink<RE::MenuOpenCloseEvent>(&s_weaponCollisionWorkbenchExitMenuSink);
             s_weaponCollisionWorkbenchExitMenuSinkMissingUILogged.store(false, std::memory_order_release);
-            ROCK_LOG_INFO(Weapon,
-                "Registered weapon collision workbench-exit menu sink for {} menu names",
+            ROCK_LOG_INFO(Weapon, "Registered weapon collision workbench-exit menu sink for {} menu names",
                 kWeaponCollisionWorkbenchExitMenuNames.size());
             return true;
         }
@@ -241,7 +240,8 @@ namespace rock
             gate.hasHmdFrame = frame.hasHmdFrame;
             gate.hmdPositionWorld = frame.hmdPositionWorld;
             gate.hmdForwardWorld = frame.hmdForwardWorld;
-            gate.minDot = selection_query_policy::farSelectionHmdConeMinDot(selection_query_policy::kFarSelectionHmdConeHalfAngleDegrees);
+            gate.minDot = selection_query_policy::farSelectionHmdConeMinDot(
+                selection_query_policy::kFarSelectionHmdConeHalfAngleDegrees);
             return gate;
         }
 
@@ -280,7 +280,8 @@ namespace rock
             return config;
         }
 
-        inline shoulder_stash::Probe makeShoulderStashObjectProbe(RE::hknpWorld* world, const Hand& hand, const HandFrameInput& handInput)
+        inline shoulder_stash::Probe makeShoulderStashObjectProbe(RE::hknpWorld* world, const Hand& hand,
+            const HandFrameInput& handInput)
         {
             shoulder_stash::Probe probe{};
             if (hand.tryGetHeldObjectGrabPivotWorld(world, probe.pointGame)) {
@@ -317,7 +318,8 @@ namespace rock
             return config;
         }
 
-        inline mouth_consume::Probe makeMouthConsumeObjectProbe(RE::hknpWorld* world, const Hand& hand, const HandFrameInput& handInput)
+        inline mouth_consume::Probe makeMouthConsumeObjectProbe(RE::hknpWorld* world, const Hand& hand,
+            const HandFrameInput& handInput)
         {
             mouth_consume::Probe probe{};
             if (hand.tryGetHeldObjectGrabPivotWorld(world, probe.pointGame)) {
@@ -350,15 +352,15 @@ namespace rock
             return RE::TESFullName::GetFullName(*baseForm, false);
         }
 
-        inline void showShoulderStashCollectedNotification(const shoulder_stash::TransferResult& transferResult, std::uint32_t fallbackFormID)
+        inline void showShoulderStashCollectedNotification(const shoulder_stash::TransferResult& transferResult,
+            std::uint32_t fallbackFormID)
         {
             if (!g_rockConfig.rockShoulderStashShowCollectedNotifications) {
                 return;
             }
 
             f4vr::showNotification(shoulder_stash_notification_policy::formatCollectedNotification(
-                shoulderStashItemName(transferResult.baseForm),
-                transferResult.count,
+                shoulderStashItemName(transferResult.baseForm), transferResult.count,
                 transferResult.formID != 0 ? transferResult.formID : fallbackFormID));
         }
 
@@ -377,9 +379,8 @@ namespace rock
 
         inline bool isInvalidGrabBodyId(std::uint32_t bodyId)
         {
-            return bodyId == kInvalidAtomicBodyId ||
-                   bodyId == ROCK_GRAB_EVENT_INVALID_BODY_ID ||
-                   bodyId == object_physics_body_set::INVALID_BODY_ID;
+            return bodyId == kInvalidAtomicBodyId || bodyId == ROCK_GRAB_EVENT_INVALID_BODY_ID ||
+                bodyId == object_physics_body_set::INVALID_BODY_ID;
         }
 
         inline std::uint64_t packHeldImpactPair(std::uint32_t heldBodyId, std::uint32_t otherBodyId)
@@ -390,7 +391,8 @@ namespace rock
             return (static_cast<std::uint64_t>(heldBodyId) << 32) | static_cast<std::uint64_t>(otherBodyId);
         }
 
-        inline bool unpackHeldImpactPair(std::uint64_t packedPair, std::uint32_t& heldBodyId, std::uint32_t& otherBodyId)
+        inline bool unpackHeldImpactPair(std::uint64_t packedPair, std::uint32_t& heldBodyId,
+            std::uint32_t& otherBodyId)
         {
             if (packedPair == kInvalidHeldImpactPair) {
                 return false;
@@ -445,7 +447,8 @@ namespace rock
             return true;
         }
 
-        inline std::uint32_t fillGrabEventBodyKinematics(RE::hknpWorld* world, std::uint32_t bodyId, GrabEventData& eventData)
+        inline std::uint32_t fillGrabEventBodyKinematics(RE::hknpWorld* world, std::uint32_t bodyId,
+            GrabEventData& eventData)
         {
             if (!world || isInvalidGrabBodyId(bodyId)) {
                 return 0;
@@ -468,8 +471,7 @@ namespace rock
             eventData.velocityGame[2] = motion->linearVelocity.z * scale;
             flags |= ROCK_GRAB_EVENT_FLAG_VELOCITY_VALID;
 
-            const float speedHavok = std::sqrt(
-                motion->linearVelocity.x * motion->linearVelocity.x +
+            const float speedHavok = std::sqrt(motion->linearVelocity.x * motion->linearVelocity.x +
                 motion->linearVelocity.y * motion->linearVelocity.y +
                 motion->linearVelocity.z * motion->linearVelocity.z);
             if (std::isfinite(speedHavok)) {
@@ -575,7 +577,9 @@ namespace rock
 
             const auto rawState = input_remap_runtime::consumeRawButtonState(isLeft, buttonId);
             if (rawState.available) {
-                return GrabButtonState{ .held = rawState.held, .pressed = rawState.pressed, .released = rawState.released };
+                return GrabButtonState{ .held = rawState.held,
+                    .pressed = rawState.pressed,
+                    .released = rawState.released };
             }
 
             const auto vrHand = isLeft ? vrcf::Hand::Left : vrcf::Hand::Right;
@@ -609,13 +613,10 @@ namespace rock
             };
         }
 
-        [[nodiscard]] constexpr
-            equipped_weapon_shoulder::NativePresentation
-            shoulderNativePresentation(
-                const std::uint32_t nativeWeaponState) noexcept
+        [[nodiscard]] constexpr equipped_weapon_shoulder::NativePresentation shoulderNativePresentation(
+            const std::uint32_t nativeWeaponState) noexcept
         {
-            using Presentation =
-                equipped_weapon_shoulder::NativePresentation;
+            using Presentation = equipped_weapon_shoulder::NativePresentation;
             switch (nativeWeaponState) {
             case 0:
                 return Presentation::StableSheathed;
@@ -676,7 +677,8 @@ namespace rock
             const float dot = std::clamp(std::fabs(qa.x * qb.x + qa.y * qb.y + qa.z * qb.z + qa.w * qb.w), 0.0f, 1.0f);
             const float angleRadians = 2.0f * std::acos(dot);
 
-            return TransformDelta{ .position = std::sqrt(dx * dx + dy * dy + dz * dz), .rotationDegrees = angleRadians * (180.0f / std::numbers::pi_v<float>)};
+            return TransformDelta{ .position = std::sqrt(dx * dx + dy * dy + dz * dz),
+                .rotationDegrees = angleRadians * (180.0f / std::numbers::pi_v<float>)};
         }
 
         inline const char* physicsStepPhaseName(havok_physics_timing::PhysicsStepPhase phase)
@@ -699,13 +701,8 @@ namespace rock
          * the live palm body at each authority boundary. This keeps rate-mismatch
          * evidence in one log row without changing grab authority.
          */
-        inline void logPalmClockSampleForHand(
-            const char* stage,
-            const Hand& hand,
-            RE::hknpWorld* world,
-            const RE::NiTransform* rawHandWorld,
-            std::uint64_t gameFrameIndex,
-            float gameDeltaSeconds,
+        inline void logPalmClockSampleForHand(const char* stage, const Hand& hand, RE::hknpWorld* world,
+            const RE::NiTransform* rawHandWorld, std::uint64_t gameFrameIndex, float gameDeltaSeconds,
             const havok_physics_timing::PhysicsTimingSample* timing)
         {
             if (!g_rockConfig.rockDebugVerboseLogging) {
@@ -721,9 +718,14 @@ namespace rock
             }
 
             const bool rawOk = rawHandWorld != nullptr;
-            const TransformDelta rawToTarget = (rawOk && targetOk) ? measureTransformDelta(*rawHandWorld, palmTargetWorld) : TransformDelta{ -1.0f, -1.0f };
-            const TransformDelta rawToLive = (rawOk && liveOk) ? measureTransformDelta(*rawHandWorld, livePalm.world) : TransformDelta{ -1.0f, -1.0f };
-            const TransformDelta targetToLive = (targetOk && liveOk) ? measureTransformDelta(palmTargetWorld, livePalm.world) : TransformDelta{ -1.0f, -1.0f };
+            const TransformDelta rawToTarget = (rawOk && targetOk)
+                ? measureTransformDelta(*rawHandWorld, palmTargetWorld)
+                : TransformDelta{ -1.0f, -1.0f };
+            const TransformDelta rawToLive = (rawOk && liveOk) ? measureTransformDelta(*rawHandWorld, livePalm.world)
+                                                               : TransformDelta{ -1.0f, -1.0f };
+            const TransformDelta targetToLive = (targetOk && liveOk)
+                ? measureTransformDelta(palmTargetWorld, livePalm.world)
+                : TransformDelta{ -1.0f, -1.0f };
 
             const float rawDt = timing ? timing->rawDeltaSeconds : -1.0f;
             const float subDt = timing ? timing->substepDeltaSeconds : -1.0f;
@@ -746,43 +748,19 @@ namespace rock
                 const RE::NiPoint3 targetPosition = targetOk ? palmTargetWorld.translate : RE::NiPoint3{};
                 const RE::NiPoint3 livePosition = liveOk ? livePalm.world.translate : RE::NiPoint3{};
 
-                ROCK_LOG_SAMPLE_DEBUG(Hand,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "PALM_CLOCK stage={} hand={} frame={} holding={} raw={} target={} live={} body={} proxyBody={} gameDt={:.6f} physicsPhase={} rawDt={:.6f} subDt={:.6f} driveDt={:.6f} substep={}/{} progress={:.3f} rawToTarget={:.3f}gu/{:.3f}deg rawToLive={:.3f}gu/{:.3f}deg targetToLive={:.3f}gu/{:.3f}deg rawPos=({:.2f},{:.2f},{:.2f}) targetPos=({:.2f},{:.2f},{:.2f}) livePos=({:.2f},{:.2f},{:.2f}) liveSource={} liveMotion={}",
-                    stage ? stage : "unknown",
-                    hand.handName(),
-                    gameFrameIndex,
-                    hand.isHoldingAtomic() ? "yes" : "no",
-                    rawState,
-                    targetState,
-                    liveState,
-                    hand.getCollisionBodyId().value,
-                    hand.getGrabAuthorityProxyBodyId().value,
-                    gameDeltaSeconds,
-                    physicsPhase,
-                    rawDt,
-                    subDt,
-                    driveDt,
-                    substepIndex,
-                    substepCount,
-                    progress,
-                    rawToTarget.position,
-                    rawToTarget.rotationDegrees,
-                    rawToLive.position,
-                    rawToLive.rotationDegrees,
-                    targetToLive.position,
-                    targetToLive.rotationDegrees,
-                    rawPosition.x,
-                    rawPosition.y,
-                    rawPosition.z,
-                    targetPosition.x,
-                    targetPosition.y,
-                    targetPosition.z,
-                    livePosition.x,
-                    livePosition.y,
-                    livePosition.z,
-                    palmSource,
-                    palmMotion);
+                ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
+                    "PALM_CLOCK stage={} hand={} frame={} holding={} raw={} target={} live={} body={} proxyBody={} "
+                    "gameDt={:.6f} physicsPhase={} rawDt={:.6f} subDt={:.6f} driveDt={:.6f} substep={}/{} "
+                    "progress={:.3f} rawToTarget={:.3f}gu/{:.3f}deg rawToLive={:.3f}gu/{:.3f}deg "
+                    "targetToLive={:.3f}gu/{:.3f}deg rawPos=({:.2f},{:.2f},{:.2f}) targetPos=({:.2f},{:.2f},{:.2f}) "
+                    "livePos=({:.2f},{:.2f},{:.2f}) liveSource={} liveMotion={}",
+                    stage ? stage : "unknown", hand.handName(), gameFrameIndex, hand.isHoldingAtomic() ? "yes" : "no",
+                    rawState, targetState, liveState, hand.getCollisionBodyId().value,
+                    hand.getGrabAuthorityProxyBodyId().value, gameDeltaSeconds, physicsPhase, rawDt, subDt, driveDt,
+                    substepIndex, substepCount, progress, rawToTarget.position, rawToTarget.rotationDegrees,
+                    rawToLive.position, rawToLive.rotationDegrees, targetToLive.position, targetToLive.rotationDegrees,
+                    rawPosition.x, rawPosition.y, rawPosition.z, targetPosition.x, targetPosition.y, targetPosition.z,
+                    livePosition.x, livePosition.y, livePosition.z, palmSource, palmMotion);
             };
 
             emit();
@@ -882,8 +860,7 @@ namespace rock
 
         inline bool currentEquippedWeaponOccupiesHand()
         {
-            return fo4vr_actor_state_policy::equippedWeaponOccupiesHand(
-                currentEquippedWeaponFormId() != 0,
+            return fo4vr_actor_state_policy::equippedWeaponOccupiesHand(currentEquippedWeaponFormId() != 0,
                 f4vr::getNativeWeaponState(f4vr::getPlayer()));
         }
 
@@ -944,7 +921,8 @@ namespace rock
             return nodeName && std::string_view(nodeName) == name;
         }
 
-        inline RE::NiAVObject* findWeaponNodeBySourceName(RE::NiAVObject* root, std::string_view sourceName, int maxDepth = 32)
+        inline RE::NiAVObject* findWeaponNodeBySourceName(RE::NiAVObject* root, std::string_view sourceName,
+            int maxDepth = 32)
         {
             if (!root || sourceName.empty() || maxDepth < 0) {
                 return nullptr;
@@ -965,12 +943,12 @@ namespace rock
             return nullptr;
         }
 
-        inline std::uint32_t providerColliderFlags(RE::hknpWorld* world,
-            std::uint32_t bodyId, bool bodiesCurrent, bool lifecycleAllowed)
+        inline std::uint32_t providerColliderFlags(RE::hknpWorld* world, std::uint32_t bodyId, bool bodiesCurrent,
+            bool lifecycleAllowed)
         {
             std::uint32_t filter = 0;
-            const bool known = bodiesCurrent && world &&
-                body_collision::tryReadFilterInfo(world, RE::hknpBodyId{bodyId}, filter);
+            const bool known =
+                bodiesCurrent && world && body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ bodyId }, filter);
             return provider_state_policy::colliderFlags(lifecycleAllowed, known,
                 (filter & collision_suppression_registry::kSuppressionNoCollideBit) != 0);
         }
@@ -994,8 +972,7 @@ namespace rock
             target[targetSize - 1] = '\0';
         }
 
-        inline provider::PartQuery makeProviderWeaponPartTargetQuery(
-            const WeaponInteractionContact& contact,
+        inline provider::PartQuery makeProviderWeaponPartTargetQuery(const WeaponInteractionContact& contact,
             const WeaponCollision& weaponCollision)
         {
             provider::PartQuery query{};
@@ -1009,16 +986,14 @@ namespace rock
             query.sourceRoot = reinterpret_cast<std::uintptr_t>(contact.sourceRoot);
             const auto evidence = weaponCollision.getProfileEvidenceDescriptors();
             const auto* descriptor = evidence.find(contact.bodyId);
-            if (descriptor &&
-                descriptor->weaponGenerationKey == contact.weaponGenerationKey) {
+            if (descriptor && descriptor->weaponGenerationKey == contact.weaponGenerationKey) {
                 query.sourceRoot = descriptor->sourceRootAddress;
                 copyProviderString(query.sourceName, sizeof(query.sourceName), descriptor->sourceName);
             }
             return query;
         }
 
-        inline WeaponProviderPartAuthority makeWeaponProviderPartAuthority(
-            const provider::PartQuery& query,
+        inline WeaponProviderPartAuthority makeWeaponProviderPartAuthority(const provider::PartQuery& query,
             const weapon_part_runtime::Resolution& resolution)
         {
             WeaponProviderPartAuthority authority{};
@@ -1050,10 +1025,11 @@ namespace rock
             return api::Point3{ .x = point.x, .y = point.y, .z = point.z };
         }
 
-        inline api::collision::BodyContactTargetKind providerBodyContactTargetKind(contact_pipeline_policy::ContactEndpointKind kind)
+        inline api::collision::BodyContactTargetKind providerBodyContactTargetKind(
+            contact_pipeline_policy::ContactEndpointKind kind)
         {
-            using contact_pipeline_policy::ContactEndpointKind;
             using api::collision::BodyContactTargetKind;
+            using contact_pipeline_policy::ContactEndpointKind;
             // Body colliders never touch hands or each other (layer 47).
             switch (kind) {
             case ContactEndpointKind::Weapon:
@@ -1083,11 +1059,8 @@ namespace rock
                 return nullptr;
             }
 
-            const auto vtable =
-                *reinterpret_cast<const std::uintptr_t*>(
-                    equipWeaponData);
-            if (vtable !=
-                f4vr::EquippedWeaponData_vtable.address()) {
+            const auto vtable = *reinterpret_cast<const std::uintptr_t*>(equipWeaponData);
+            if (vtable != f4vr::EquippedWeaponData_vtable.address()) {
                 return nullptr;
             }
             return equipWeaponData;
@@ -1103,11 +1076,8 @@ namespace rock
              * may remain null until the weapon has fired, so provider data
              * must never depend on it.
              */
-            auto* equipWeaponData =
-                getValidatedEquippedWeaponData();
-            return equipWeaponData ?
-                equipWeaponData->fireNode :
-                nullptr;
+            auto* equipWeaponData = getValidatedEquippedWeaponData();
+            return equipWeaponData ? equipWeaponData->fireNode : nullptr;
         }
 
         inline f4vr::MuzzleFlash* getEquippedMuzzleFlashNodes()
@@ -1118,8 +1088,7 @@ namespace rock
              * must re-own the fire node from the current projectile node so the
              * muzzle origin remains at the barrel tip.
              */
-            const auto equipWeaponData =
-                getValidatedEquippedWeaponData();
+            const auto equipWeaponData = getValidatedEquippedWeaponData();
             if (!equipWeaponData) {
                 return nullptr;
             }
@@ -1139,14 +1108,12 @@ namespace rock
                 return;
             }
 
-            muzzle->fireNode->local = weapon_muzzle_authority_math::fireNodeLocalFromProjectileWorld(muzzle->projectileNode->world);
+            muzzle->fireNode->local =
+                weapon_muzzle_authority_math::fireNodeLocalFromProjectileWorld(muzzle->projectileNode->world);
             f4vr::updateTransformsDown(muzzle->fireNode, true);
         }
 
-        inline RE::NiNode* resolveEquippedWeaponInteractionNodeDirect()
-        {
-            return f4vr::getWeaponNode();
-        }
+        inline RE::NiNode* resolveEquippedWeaponInteractionNodeDirect() { return f4vr::getWeaponNode(); }
 
         inline RE::NiNode* resolveEquippedWeaponInteractionNode()
         {

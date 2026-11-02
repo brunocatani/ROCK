@@ -90,11 +90,8 @@ namespace rock::force_grab_policy
         GrenadeSelectionFailure failure{ GrenadeSelectionFailure::None };
     };
 
-    [[nodiscard]] inline constexpr GrenadeHandSelection selectGrenadeHand(
-        bool grenadeAlreadyHeld,
-        bool rightAvailable,
-        bool leftAvailable,
-        bool preferLeft) noexcept
+    [[nodiscard]] inline constexpr GrenadeHandSelection selectGrenadeHand(bool grenadeAlreadyHeld, bool rightAvailable,
+        bool leftAvailable, bool preferLeft) noexcept
     {
         if (grenadeAlreadyHeld) {
             return { .failure = GrenadeSelectionFailure::GrenadeAlreadyHeld };
@@ -108,11 +105,8 @@ namespace rock::force_grab_policy
         return { .failure = GrenadeSelectionFailure::HandsBlocked };
     }
 
-    [[nodiscard]] inline constexpr GrenadeHandSelection selectGrenadeHand(
-        bool grenadeAlreadyHeld,
-        const HandAvailabilityInput& right,
-        const HandAvailabilityInput& left,
-        bool preferLeft) noexcept
+    [[nodiscard]] inline constexpr GrenadeHandSelection selectGrenadeHand(bool grenadeAlreadyHeld,
+        const HandAvailabilityInput& right, const HandAvailabilityInput& left, bool preferLeft) noexcept
     {
         return selectGrenadeHand(grenadeAlreadyHeld, isAvailable(right), isAvailable(left), preferLeft);
     }

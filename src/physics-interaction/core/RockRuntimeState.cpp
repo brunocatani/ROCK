@@ -68,15 +68,9 @@ namespace rock::runtime_state
         };
         VerifiedSkeleton s_verifiedSkeleton{};
 
-        [[nodiscard]] bool hasPlayer()
-        {
-            return RE::PlayerCharacter::GetSingleton() != nullptr;
-        }
+        [[nodiscard]] bool hasPlayer() { return RE::PlayerCharacter::GetSingleton() != nullptr; }
 
-        [[nodiscard]] RE::NiNode* safeWorldRootNode()
-        {
-            return f4vr::getWorldRootNode();
-        }
+        [[nodiscard]] RE::NiNode* safeWorldRootNode() { return f4vr::getWorldRootNode(); }
 
         [[nodiscard]] RE::NiNode* safeRootNode(RE::NiNode* worldRoot)
         {
@@ -98,7 +92,8 @@ namespace rock::runtime_state
 
         [[nodiscard]] bool flattenedTreeValid(const f4vr::BSFlattenedBoneTree* tree)
         {
-            return tree && tree->transforms && tree->numTransforms > 0 && tree->numTransforms <= kMaxFlattenedBoneTransforms;
+            return tree && tree->transforms && tree->numTransforms > 0 &&
+                tree->numTransforms <= kMaxFlattenedBoneTransforms;
         }
 
         [[nodiscard]] bool snapshotHasBone(const DirectSkeletonBoneSnapshot& snapshot, std::string_view name)
@@ -181,11 +176,10 @@ namespace rock::runtime_state
                 return true;
             }
 
-            const bool captured = s_skeletonReader.capture(
-                skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
-                skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
-                SkeletonBoneCaptureSpace::Rendered,
-                s_readinessBones);
+            const bool captured =
+                s_skeletonReader.capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
+                    skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                    SkeletonBoneCaptureSpace::Rendered, s_readinessBones);
             const bool handBonesReady = captured && snapshotHasBone(s_readinessBones, "RArm_Hand") &&
                 snapshotHasBone(s_readinessBones, "LArm_Hand") && snapshotHasRequiredFingerBones(s_readinessBones);
             snapshot.localSkeletonRequiredHandBonesReady = handBonesReady;
@@ -262,28 +256,13 @@ namespace rock::runtime_state
         s_snapshot = next;
     }
 
-    const RuntimeFrameSnapshot& currentFrame()
-    {
-        return s_snapshot;
-    }
+    const RuntimeFrameSnapshot& currentFrame() { return s_snapshot; }
 
-    bool isScopeMenuOpenNow()
-    {
-        return s_menuHandlerInitialized && s_gameMenus.isInScopeMenu();
-    }
+    bool isScopeMenuOpenNow() { return s_menuHandlerInitialized && s_gameMenus.isInScopeMenu(); }
 
-    bool isLocalSkeletonReady()
-    {
-        return s_snapshot.localSkeletonReady;
-    }
+    bool isLocalSkeletonReady() { return s_snapshot.localSkeletonReady; }
 
-    bool isPhysicsMenuBlocked()
-    {
-        return s_snapshot.localMenuBlocking;
-    }
+    bool isPhysicsMenuBlocked() { return s_snapshot.localMenuBlocking; }
 
-    bool isCompatibilityConfigBlocked()
-    {
-        return s_snapshot.compatibilityConfigBlocking;
-    }
+    bool isCompatibilityConfigBlocked() { return s_snapshot.compatibilityConfigBlocking; }
 }
