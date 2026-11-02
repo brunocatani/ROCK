@@ -1,3 +1,16 @@
+// ROCK's native hooks (declared in PhysicsHooks.h):
+//   Havok timing fix         substeps the physics step at a minimum rate
+//   native grab              patches VR Grab Initiate to return at once, so the
+//                            game's own grab never starts
+//   native melee suppression animation-event, swing, attack and VR melee impact
+//                            hooks that keep the player's native melee off
+//                            while ROCK owns it; runtime setting enforcement
+//   grab haptic suppression  keeps the native hover and rollover rumble
+//                            settings off; ROCK sends its own haptics
+//   refresh manifold         bhkCharProxyController::processConstraintsCallback,
+//                            where ROCK compacts the player character proxy's
+//                            contact rows against its own generated bodies
+// The file-local section holds the hook state and the per-hook handlers.
 #include "physics-interaction/core/PhysicsHooks.h"
 
 #include "physics-interaction/NativeMeleeSuppressionPolicy.h"

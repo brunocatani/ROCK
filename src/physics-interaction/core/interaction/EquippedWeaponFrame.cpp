@@ -1,3 +1,5 @@
+// Equipped-weapon frame: transitions, the per-frame equipped weapon update,
+// authored primary grip runtime, handling settings, and the shoulder stash.
 #include "api/AuthoredInteractionService.h"
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
@@ -19,8 +21,6 @@
 #include "physics-interaction/weapon/WeaponInstanceClassification.h"
 #include "physics-interaction/weapon/WeaponScenePresentation.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
-
-// Equipped-weapon frame: transitions, the per-frame equipped weapon update, authored primary grip runtime, handling settings, and the shoulder stash.
 
 namespace rock
 {

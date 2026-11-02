@@ -1,7 +1,6 @@
+// Provider force-grab commits, fuse service, and held-grenade arming.
 #include "api/StorageService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
-
-// Provider force-grab commits, fuse service, and held-grenade arming.
 
 namespace rock
 {

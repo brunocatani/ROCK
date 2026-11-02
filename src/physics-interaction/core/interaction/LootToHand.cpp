@@ -1,23 +1,24 @@
+// Loot to Hand: an item taken one at a time through the quick-loot view (a wand
+// pointing at a container, no menu open) lands in that hand. The full
+// ContainerMenu is for bulk looting and keeps the game behaviour: items go to
+// inventory.
+//
+// Admission: container -> player, a wand's pick target is that container, and
+// neither ContainerMenu nor BarterMenu is open. Script transfers from
+// containers have no wand pointing at the source, so they stay in inventory.
+//
+// Thread model: TESContainerChangedEvent is dispatched on the game thread; the
+// queue is drained on ROCK's frame thread by
+// PhysicsInteraction::serviceLootToHand on the next frame. The mutex guards
+// only the fixed queue below (no allocation, no engine calls under the lock).
+// The drop goes through the same inventory-transfer commit as grenade
+// quick-draw: on failure the item returns to inventory.
 #include "physics-interaction/core/interaction/LootToHand.h"
 
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
 
 #include <mutex>
-
-// Loot to Hand: an item taken one at a time through the quick-loot view (a wand pointing at a
-// container, no menu open) lands in that hand. The full ContainerMenu is for bulk looting and
-// keeps the game behaviour: items go to inventory.
-//
-// Admission: container -> player, a wand's pick target is that container, and neither
-// ContainerMenu nor BarterMenu is open. Script transfers from containers have no wand pointing
-// at the source, so they stay in inventory.
-//
-// Thread model: TESContainerChangedEvent is dispatched on the game thread; the queue is drained
-// on ROCK's frame thread by PhysicsInteraction::serviceLootToHand on the next frame. The mutex
-// guards only the fixed queue below (no allocation, no engine calls under the lock). The drop
-// goes through the same inventory-transfer commit as grenade quick-draw: on failure the item
-// returns to inventory.
 
 namespace rock::loot_to_hand
 {

@@ -1,3 +1,5 @@
+// Grab input pipeline: hand preludes, touch grab, grab intent and commit, and
+// per-frame grab input update.
 #include "api/AuthoredInteractionService.h"
 #include "api/StorageService.h"
 #include "physics-interaction/consume/ImmersiveAid.h"
@@ -10,8 +12,6 @@
 #include "physics-interaction/weapon/NativeSecondaryPresentation.h"
 #include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
-
-// Grab input pipeline: hand preludes, touch grab, grab intent and commit, and per-frame grab input update.
 
 namespace rock
 {

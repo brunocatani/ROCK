@@ -1,3 +1,22 @@
+// PhysicsInteraction's frame. update() runs once per frame from FRIK's
+// AfterArmSolve phase:
+//
+//   1. Stop early when FRIK, the skeleton or the Havok world is unavailable, a
+//      menu blocks play, or physics writes are closed; a changed world shuts
+//      down and re-initializes.
+//   2. Sample the controllers and the native equipped weapons, then build the
+//      frame context (buildFrameContext, FrameContext.cpp).
+//   3. Lease the hands that own the equipped weapon, update the hand and body
+//      colliders and the native player collision filter, then run the
+//      equipped-weapon frame (EquippedWeaponFrame.cpp).
+//   4. finalizeInteractionFrame: selection, grab input, object rest, held
+//      placement, dynamic hand collision, haptics, contacts, grenade and
+//      ejection collision, weapon continuity and test-bench capture.
+//
+// Later FRIK phases call finalizeFramePose, which publishes the final collider
+// pose and registers the physics-step callbacks. Those callbacks run inside the
+// Havok step and drive the generated colliders and the custom grab authority
+// between substeps.
 #include "api/AuthoredInteractionService.h"
 #include "api/GrabEventCallbacks.h"
 #include "api/ProviderRuntimeServices.h"
@@ -12,8 +31,6 @@
 #include "rock_support/TestbenchTelemetry.h"
 
 #include <openvr.h>
-
-// Per-frame orchestration: update(), interaction frame finalization, hand transform sampling, physics substep callbacks and held-mass slowdown.
 
 namespace rock
 {
