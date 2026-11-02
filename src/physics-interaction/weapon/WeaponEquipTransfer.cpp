@@ -923,6 +923,27 @@ namespace rock::weapon_equip_transfer
         // equipment list, so it would blank only the one that stays.
         std::optional<native_equipped_model_lifetime::SurvivorVisibleScope> survivor;
         if (keepsOther) survivor.emplace();
+        /*
+         * With nothing left the native put-away is the correct end state, but
+         * its UnEquip clip runs about a second and every equip waits for a
+         * settled state (held_weapon_equip_state_policy::canBeginEquip): a
+         * draw right after a holster sat that second out. Its clip runs at
+         * the same accelerated rate as ROCK's draws, so the state settles
+         * within a frame or two and the native transition stays intact. The
+         * native sheathe starts the clip inside the unequip, so the lease is
+         * armed first, as ROCK's draws arm before the native draw (armed
+         * after, it saw no clip: runtime 2 Nov 12:01:17, registeredClips=0).
+         */
+        using AccelerationResult = weapon_transition_animation_acceleration::RequestResult;
+        auto putAway = AccelerationResult::MissingInput;
+        if (!keepsOther &&
+            stateBefore == static_cast<std::uint32_t>(held_weapon_equip_state_policy::NativeWeaponState::Drawn)) {
+            putAway = weapon_transition_animation_acceleration::request({
+                .player = player,
+                .identity = { .formID = formID, .instanceData = instanceData, .equipIndex = index },
+                .direction = weapon_transition_animation_acceleration_policy::Direction::Sheathe,
+            });
+        }
         held_weapon_instant_transition::KeptDrawnUnequipResult kept{};
         if (keepsOther) kept = held_weapon_instant_transition::unequipKeepingDrawn(player, run, &call);
         // Without the startup capability (or inside another ROCK equip
@@ -937,23 +958,10 @@ namespace rock::weapon_equip_transfer
         const auto sheathesSuppressed = held_weapon_instant_transition_policy::actionCount(
             kept.actionTrace, held_weapon_instant_transition_policy::NativeAction::Sheathe);
         const auto stateAfter = f4vr::getNativeWeaponState(player);
-        /*
-         * With nothing left the native put-away is the correct end state, but
-         * its UnEquip clip runs about a second and every equip waits for a
-         * settled state (held_weapon_equip_state_policy::canBeginEquip): a
-         * draw right after a holster sat that second out. Its clip runs at
-         * the same accelerated rate as ROCK's draws, so the state settles
-         * within a frame or two and the native transition stays intact.
-         */
-        using AccelerationResult = weapon_transition_animation_acceleration::RequestResult;
-        auto putAway = AccelerationResult::MissingInput;
-        if (!remaining.weapon && !readEquippedWeaponSnapshot(index <= 1 ? 1 - index : 0).weapon &&
-            stateAfter == static_cast<std::uint32_t>(held_weapon_equip_state_policy::NativeWeaponState::Sheathing)) {
-            putAway = weapon_transition_animation_acceleration::request({
-                .player = player,
-                .identity = { .formID = formID, .instanceData = instanceData, .equipIndex = index },
-                .direction = weapon_transition_animation_acceleration_policy::Direction::Sheathe,
-            });
+        // An unequip that started no put-away leaves no lease behind.
+        if (putAway == AccelerationResult::Armed &&
+            stateAfter != static_cast<std::uint32_t>(held_weapon_equip_state_policy::NativeWeaponState::Sheathing)) {
+            weapon_transition_animation_acceleration::cancel("unequip-started-no-put-away");
         }
         ROCK_LOG_INFO(Weapon,
             "Equipped index unequip index={} form={:08X} instance={:#x} slot={:08X} accepted={} remaining={:08X} keepsOther={} keptDrawn={} sheatheSuppressed={} nativeState={}->{} putAwayAcceleration={}",
