@@ -1,60 +1,90 @@
-# AGENTS.md — ROCK
+# AGENTS.md - ROCK
 
-ROCK is the FO4VR F4SE plugin for physics-based hand interaction: object grabbing, hand collision, equipped-weapon interaction and the provider APIs other mods consume. Suite ownership and the 1.0 provider API reset come from the ROCK suite workspace instructions.
+Orientation for any agent working on ROCK or building a mod on top of it.
 
-## Identity and paths
+ROCK is a Fallout 4 VR F4SE plugin (`ROCK.dll`) that gives the player physical hands: grabbing, hand, body and weapon collision, equipped-weapon handling, and a provider API other F4SE plugins consume. It runs inside FRIK's frame phases (FRIK 0.79.1 or newer, FRIK API 2.3) and links CommonLibF4VR directly. It targets Fallout 4 VR 1.2.72.0 only.
 
-- Remote: `origin` at `https://github.com/brunocatani/ROCK.git` (public, the active development source). A private legacy repository exists but receives no development or pushes unless the user asks.
-- Build output: `build-fast/Release/ROCK.dll` and `ROCK.pdb`, auto-deployed to `F4SE\Plugins` under the mod folder set by `COPY_PLUGIN_BASE_PATH` in `CMakeUserPresets.json`.
-- Config: `Documents\My Games\Fallout4VR\Mods_Config\ROCK\ROCK.ini` and optional `ROCK_Developer.ini`. `SavedGrabOffsets\` and `AuthoredWeaponGripCache\` live in the same folder.
-- Verify the deployed DLL's VersionInfo and timestamp rather than trusting a recorded version.
-- Save game: F4SE co-save unique ID `ROCK`, record `HNDS` (version 1): which hand holds each equipped weapon and each hand's one-handed melee reverse grip (`src/physics-interaction/weapon/equip/WeaponHandSave.cpp`). A layout change needs a new record version.
+## Building a mod on ROCK
 
-## Build
+- ROCK publishes provider API 2.0: 13 interfaces whose headers are in `include/ROCK/`. They include only the C++ standard library; nothing links against ROCK.
+- Add ROCK's `include/` directory through a CMake cache variable such as `ROCK_INCLUDE_DIR`, include `<ROCK/...>`, resolve `ROCKAPI_QueryInterfaceV1` from the loaded `ROCK.dll`, and connect with `rock::api::Client`. Never include headers from `src/` or copy ROCK's headers into the consumer.
+- Read `docs/api/Overview.md` first, then the page of each interface you use. The pages state each function's thread, permission and limits.
+- When ROCK is absent or refuses discovery, the consumer turns its ROCK features off and keeps running.
+
+## Repository map
+
+| Path | Contents |
+| --- | --- |
+| `src/ROCKMain.cpp` | F4SE Query/Load, version guard, FRIK registration, lifecycle |
+| `src/physics-interaction/` | Physics, grabbing, collision, weapons, input, animation and the rest of the runtime, one folder per subsystem |
+| `src/api/` | Provider API: discovery, owner registry, the per-interface tables (`providers/`) and their services |
+| `src/config/`, `src/RockConfig*.cpp` | Settings catalog (`SettingMetadata.h`) and INI loading, organizing and saving |
+| `src/rock_support/` | Logging, runtime helpers, menu tracking and controller input |
+| `include/ROCK/` | Public provider API headers, the only copy |
+| `docs/api/` | One page per provider interface |
+| `data/config/` | Example INIs, generated from the catalog |
+| `data/mod/` | Files shipped in the mod package |
+| `steamvr_bindings/` | SteamVR binding templates for non-Quest controllers, shipped only in release packages |
+| `third_party/openvr/` | Vendored OpenVR ABI for raw controller input and haptics |
+| `tests/`, `tools/Invoke-RockTests.ps1` | Tests and the affected-test selector |
+| `cmake/` | Version resource, test registration and release packaging |
+
+## Build and test
+
+Requirements: Windows x64, Visual Studio 2022 (v143), CMake 4.2 or newer, PowerShell 7, vcpkg with `VCPKG_ROOT` set, and a CommonLibF4VR checkout. ROCK uses C++23.
+
+Copy `CMakeUserPresets.json.template` to `CMakeUserPresets.json` and set `COMMON_LIB_F4VR_PATH` and `COPY_PLUGIN_BASE_PATH` (the mod folder the build copies `ROCK.dll` and `ROCK.pdb` into, under `F4SE/Plugins`). Then:
 
 ```powershell
 cmake --preset custom-fast
 cmake --build build-fast --config Release --target ROCK
 ```
 
-## Tests
-
-When a change touches tested behaviour, run the affected-test selector before committing:
+Tests live in `build-fast` but outside the default build. Every test target name contains `Tests`. Run the tests a change affects with:
 
 ```powershell
 pwsh -NoProfile -File tools/Invoke-RockTests.ps1
 ```
 
-It selects from staged, unstaged and untracked files (or the latest commit on a clean tree), configures `custom-fast` (tests share `build-fast` but stay out of the plugin's default build), builds the selected tests in `Release`, runs CTest, and escalates to broader coverage when mapping is unsafe. Do not narrow its selection or bypass escalation. `-BaseRef <ref>` validates a committed range plus the worktree, `-PlanOnly` shows the selection, and `-All` is used only when requested or when a cross-repository change cannot be inferred from ROCK's diff.
+The selector picks tests from staged, unstaged and untracked files (or the latest commit on a clean tree) and widens the selection when the mapping is unsafe. `-PlanOnly` shows the selection, `-BaseRef <ref>` covers a committed range plus the working tree, and `-All` runs everything. To build and run every test directly: `cmake --build build-fast --config Release --target build_tests`, then `ctest --test-dir build-fast -C Release --output-on-failure`.
 
-Policy tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp`; never re-implement engine math in test stubs.
+Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp`; never re-implement engine math in test stubs. `ROCKPublicHeaderTests` compiles every public header on its own and checks the ABI layout of published records and tables.
 
-## Architecture
+`custom-release` builds into `build-release` and packages a `.7z` with the DLL and PDB, `data/mod`, the license, `include/ROCK/` and `steamvr_bindings/`.
 
-- ROCK links `libraries_and_tools/CommonLibF4VR` directly and does not consume F4VR-CommonFramework.
-- ROCK-owned logging, runtime helpers, menu tracking, resource helpers and controller input live under `src/rock_support/`.
-- The OpenVR ABI used for raw controller input and haptics is vendored under `third_party/openvr/`; do not add a separate workspace dependency for it.
-- Controller buttons: every IVRSystem controller-state read passes through the `[Controls]` button layout (`src/physics-interaction/input/ButtonLayoutPolicy.h`) before ROCK's capture, so ROCK, its consumers and the game all read one logical Quest-layout button set. Features read those logical bits; none keeps its own physical button table.
-- `steamvr_bindings/` holds SteamVR legacy binding templates for non-Quest controllers. They ship only in release packages, never in a normal build or deployment.
-- Skeleton and provider integration reference: RR's upstream `dependancies_and_dependant_mods/Fallout-4-VR-Body` (FRIK 0.79, API 2.3). ROCK's provider interfaces are negotiated independently of the FRIK API.
-- Provider API major 2 is published from `include/ROCK/` (self-contained headers, compiled by ROCK itself), with one page per interface in `docs/api/` and standalone-compile and ABI layout tests in `tests/`. ROCK does not build against RPS_SDK.
-- NPC behaviour belongs to SCISSORS_Redux. ROCK keeps only shared mechanisms: native allocation and quarantine, callback lifetime, hand and weapon authority, connected-body grab execution, native safety and grenade lifecycle. For contact-only blade damage, ROCK publishes the contact point and the optional NativeInteraction manifold normal and count; it never owns blade profiles, native melee damage hooks, actor-limb policy or their experiment flags. For 1.0, Redux creates and reads its own NPC bodies and constraints and reads Havok directly; ROCK stops proxying NPC body work (`Docs/ROCK/docs/ProviderApiV2Plan.md`).
-- All world drawing, gameplay indicators and debug shapes moves to RPS UI Framework, and ROCK keeps no renderer (`Docs/ROCK/docs/DebugRenderingMigrationPlan.md`). ROCK keeps its own hand and weapon visualization master setting.
+## Runtime files
 
-## Behaviour invariants
+- Plugin: `Data/F4SE/Plugins/ROCK.dll`. Log: `ROCK.log` in `Documents/My Games/Fallout4VR/F4SE/`.
+- Settings: `ROCK.ini` and the optional `ROCK_Developer.ini` in `Documents/My Games/Fallout4VR/Mods_Config/ROCK/`, with `SavedGrabOffsets/` and `AuthoredWeaponGripCache/` beside them. Runtime code resolves the Documents known folder.
+- Co-save: unique ID `ROCK`, record `HNDS` version 1, written by `src/physics-interaction/weapon/equip/WeaponHandSave.cpp`: which hand holds each equipped weapon and each hand's one-handed melee reverse grip. A layout change needs a new record version.
 
-- A grab always places the object. Never answer a poor grab pose by rejecting the grab; improve the seat and the finger posing. A held object always ends in the palm, locked to the hand (`placeHeldBodiesOnHandTarget`): a grab is never marked held while the object is still away from the hand.
-- Players on weak PCs never send logs, so their bugs are found from code. Per-frame limits (distance per frame, frame-time gates, sample ages, retention windows) scale with frame length (`frameMotionScale`, `ContactClock::freshnessWindowSeconds`), never with 90 Hz frame counts.
+## What ROCK does not own
 
-## Configuration contract
+- **NPC interactions** belong to SCISSORS Redux, which builds on the NativeInteraction interface and creates, reads and retires its own NPC bodies and constraints. ROCK keeps only shared mechanisms: native allocation and quarantine, callback lifetime, hand and weapon authority, connected-body grab execution, native safety and the grenade lifecycle. For blade contact, ROCK publishes the contact point and the optional manifold normal and count; blade profiles, melee damage hooks and actor-limb policy are not ROCK's. ROCK has no NPC settings.
+- **World drawing** belongs to RPS UI Framework. ROCK's indicators and debug shapes go through its world drawing (`src/physics-interaction/visual/WorldDrawClient.cpp`) and the ammo counters through its number overlays (`src/physics-interaction/visual/AmmoCounters.cpp`); ROCK has no renderer. It keeps only its own hand and weapon visualization setting.
+- **Reload and manual-cycle animation** belong to PAPER.
+- **Settings screens** (RobCo PALM) read ROCK's catalog and write through the Configuration interface. Nothing else writes ROCK's INIs.
 
-- Runtime authority belongs only to `ROCK.ini` (consumer) and `ROCK_Developer.ini` (developer overrides). Each supported key has exactly one owning file, set by the `Group` of its entry in `src/config/SettingMetadata.h`, including advanced options without a Debug prefix. The catalog is the single source of each option's help text.
-- `data/config/ROCK_example.ini` documents every consumer option and `ROCK_Developer_example.ini` every developer option. They are human references only: never read, embedded, packaged, deployed, copied or used to create runtime files. Runtime INIs never ship, deploy or embed. Regenerate them with `ROCKConfigurationStoreTests --write-examples data/config` after any catalog change; the test fails when they differ from the catalog.
-- At startup and on every configuration API write, each existing file is organized the same way: every recognized key once, with its effective (last) value, under its catalog section and category, preceded by the catalog's help as `;` lines. `#` lines above a recognized key are the player's notes and stay. `ROCK.ini` also gains every missing consumer option at its default. Entries ROCK does not read from that file (retired options, options owned by the other file, foreign keys) become comment lines in the trailing `[Unused]` block and never apply. Startup writes a file only when its organized text differs; hot reload only reads.
-- If `ROCK.ini` is missing, create it with every consumer default directly from the compiled defaults and loader catalog; no templates, resources or fallback paths.
-- Never create `ROCK_Developer.ini` during loading. Create it only when a developer setting differs from its compiled default; persist only overrides, remove a key restored to default, and remove the file when no read entries remain. Entries a supplied developer file sets to defaults are kept.
-- Both files hot-reload, including developer-file creation and removal. PALM reads the compiled catalog and routes writes through ROCK's configuration API; it never duplicates defaults or writes ROCK's INIs itself.
-- A configuration addition, removal, default change, comment change or value change updates the active production file first (in place), then the owning example and compiled defaults.
-- Configuration tests check that both examples have complete, disjoint key coverage agreeing with compiled defaults and the catalog's text, that packaging rejects shipped or embedded INIs, that first-run creation uses compiled defaults only, and that organizing keeps effective values and is stable across restarts.
-- Mandatory production behaviour is never configurable through either INI: weapon collision enablement and generation mode (generated weapon collision uses only the optimized per-TriShape path); dynamic hand collision, interaction and haptics; body collider enablement; native character-controller filtering; the far-selection HMD cone; grab on the logical OpenVR grip bit (the `[Controls]` button layout chooses its physical source); native V.A.N.S. suppression; native right-stick Favorites suppression; and grab, surface, impact, shoulder-stash and mouth-consume haptic enablement. Existing ROCK APIs may control only behaviour they already own.
-- NPC settings belong exclusively to SCISSORS_Redux; ROCK keeps no NPC keys, aliases, forwarding setters or old-file fallbacks.
+## Invariants
+
+### Interaction
+
+- A grab always places the object. Never answer a poor grab pose by rejecting the grab; improve the seat and the finger posing. A held object always ends in the palm, locked to the hand (`placeHeldBodiesOnHandTarget`); a grab is never marked held while the object is still away from the hand.
+- Per-frame limits (distance per frame, frame-time gates, sample ages, retention windows) scale with frame length (`frameMotionScale`, `ContactClock::freshnessWindowSeconds`), never with 90 Hz frame counts. Players on slow PCs rarely send logs, so their bugs have to be prevented in code.
+- Every IVRSystem controller-state read passes through the `[Controls]` button layout (`src/physics-interaction/input/ButtonLayoutPolicy.h`) before ROCK's capture, so ROCK, its consumers and the game read one logical Quest-layout button set. Features read those logical bits; none keeps its own physical button table.
+
+### Provider API
+
+- Public headers include only the C++ standard library and other `include/ROCK/` headers: never CommonLibF4VR, Havok, engine or F4SE types.
+- Every entry point validates the caller's record `size` and `version` before reading it. Records use fixed-width types.
+- A released interface version is frozen. A compatible addition goes at the end of a table; an incompatible change needs a new major. Retired interface IDs, slots, enum values and flag bits are marked in the headers and never reused.
+- A header change updates its `docs/api/` page in the same commit and passes `ROCKPublicHeaderTests`.
+
+### Configuration
+
+- `src/config/SettingMetadata.h` is the single source of every option: section, key, default, owning file (its `Group`) and help text. Each key belongs to exactly one of `ROCK.ini` (players) and `ROCK_Developer.ini` (developer overrides).
+- `data/config/ROCK_example.ini` and `ROCK_Developer_example.ini` document every option. Regenerate them with `ROCKConfigurationStoreTests --write-examples data/config` after any catalog change; the test fails when they differ. They are references only: never read, embedded, packaged, deployed or used to create runtime files. INIs never ship in the mod package.
+- At startup and on every configuration API write, each existing file is organized the same way: every recognized key once, with its effective (last) value, under its catalog section and category, preceded by the catalog's help as `;` lines. `#` lines above a recognized key are the player's notes and stay. `ROCK.ini` also gains every missing player option at its default. Entries ROCK does not read from that file (retired options, options owned by the other file, foreign keys) become comment lines in the trailing `[Unused]` block and never apply. Startup writes a file only when its organized text differs; hot reload only reads.
+- A missing `ROCK.ini` is created from the compiled defaults and the catalog, with no templates, resources or fallback paths. `ROCK_Developer.ini` is never created by loading: it appears only when a developer setting differs from its default, holds only overrides, loses a key restored to its default, and is removed when no read entries remain. Entries a supplied developer file sets to defaults are kept.
+- Both files reload while the game runs, including the developer file appearing and disappearing.
+- Mandatory behaviour has no INI switch: weapon collision and its generation mode (only the per-TriShape path), dynamic hand collision, interaction and haptics, body colliders, native character-controller filtering, the far-selection HMD cone, grabbing on the logical OpenVR grip bit, native V.A.N.S. suppression, native right-stick Favorites suppression, and grab, surface, impact, shoulder-stash and mouth-consume haptics. ROCK's APIs control only behaviour ROCK already owns.
