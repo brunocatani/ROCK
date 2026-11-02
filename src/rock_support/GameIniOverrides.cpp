@@ -1,3 +1,9 @@
+// Enforces the VR game INI settings ROCK depends on (kickback, recoil, cone of
+// fire, left-handed mode; table below). install() detours the native
+// setting-change notifier, so a write from the INI reader, the settings menu or
+// Papyrus is corrected before any observer sees it. update() runs every frame:
+// it follows the recoil emergency switch and re-applies values written without
+// a notification.
 #include "rock_support/GameIniOverrides.h"
 
 #include "RockConfig.h"

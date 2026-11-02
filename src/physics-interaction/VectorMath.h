@@ -1,3 +1,4 @@
+// Dot, cross and length helpers for any type with x, y and z members.
 #pragma once
 
 #include <cmath>

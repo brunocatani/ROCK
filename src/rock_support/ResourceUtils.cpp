@@ -1,3 +1,4 @@
+// Documents-folder path resolution and directory creation (see ResourceUtils.h).
 #include "rock_support/ResourceUtils.h"
 
 #include "rock_support/Logger.h"

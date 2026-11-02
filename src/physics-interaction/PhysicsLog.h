@@ -1,3 +1,7 @@
+// ROCK_LOG_* macros: logging by category (Hand, Weapon, Input, ...) with a
+// level check before any formatting, and ROCK_LOG_SAMPLE_* for rate-limited
+// diagnostics. Policy tests define ROCK_POLICY_TEST_NO_RUNTIME_LOGGER to
+// compile every macro to nothing.
 #pragma once
 
 #if defined(ROCK_POLICY_TEST_NO_RUNTIME_LOGGER)

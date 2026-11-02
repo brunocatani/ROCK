@@ -1,3 +1,7 @@
+// FO4VR runtime access ROCK needs beyond CommonLibF4VR: the player's VR scene
+// nodes (PlayerNodes layout), skeleton bone trees, equipped weapon and its node,
+// hand nodes, power-armor state, game INI settings and scene-graph helpers
+// (node search, visibility, transform updates).
 #pragma once
 
 #include <cstddef>

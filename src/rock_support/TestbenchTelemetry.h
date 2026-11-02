@@ -1,10 +1,3 @@
-#pragma once
-
-#include <cstdint>
-#include <optional>
-#include <span>
-#include <string_view>
-
 /*
  * Developer telemetry for the external FO4VR test bench (devbench `rps` tools).
  *
@@ -25,6 +18,13 @@
  * next frame drains. All of them return after one relaxed load while the
  * setting is off.
  */
+#pragma once
+
+#include <cstdint>
+#include <optional>
+#include <span>
+#include <string_view>
+
 namespace rock::testbench_telemetry
 {
     // Why ROCK changed the controller state handed to the game (bit per edit).

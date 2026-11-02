@@ -1,3 +1,5 @@
+// Havok body frames: which frame (body/shape or motion center of mass) a body
+// transform comes from, body-id sentinels, and readability limits for body ids.
 #pragma once
 
 #include <cmath>

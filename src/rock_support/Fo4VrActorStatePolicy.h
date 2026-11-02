@@ -1,3 +1,5 @@
+// Decoding of the player's native weapon and gun state bits, read from their
+// verified storage because CommonLibF4VR's bitfields are one bit off in VR.
 #pragma once
 
 #include <cstddef>

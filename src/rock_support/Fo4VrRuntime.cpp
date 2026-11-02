@@ -1,3 +1,5 @@
+// FO4VR runtime accessors (see Fo4VrRuntime.h). Node lookups are cached per
+// game frame; beginNodeLookupFrame() starts a new frame.
 #include "rock_support/Fo4VrRuntime.h"
 
 #include "physics-interaction/object/CarInteractionPolicy.h"

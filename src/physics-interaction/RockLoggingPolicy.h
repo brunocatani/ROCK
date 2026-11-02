@@ -1,3 +1,5 @@
+// Log level numbering, names and clamping shared by config parsing, the log
+// macros and tests (same numbering as FRIK).
 #pragma once
 
 #include <algorithm>

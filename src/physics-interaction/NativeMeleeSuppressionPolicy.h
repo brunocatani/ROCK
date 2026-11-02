@@ -1,3 +1,6 @@
+// Native player melee gate: the VRInput velocity settings ROCK owns, the values
+// it sets when vanilla melee is enabled or suppressed, and the master switch
+// that hands everything back to native behaviour.
 #pragma once
 
 #include <bit>

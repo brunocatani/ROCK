@@ -1,3 +1,7 @@
+// ROCK's logger: ROCK.log through spdlog, the logger:: functions used across the
+// plugin (each records its call site), level and pattern control, and
+// allocation-free sampling for diagnostics that would otherwise log every frame.
+// Category macros (ROCK_LOG_*) are in physics-interaction/PhysicsLog.h.
 #pragma once
 
 #include <algorithm>

@@ -1,3 +1,4 @@
+// OpenVR pose validation and controller velocity in headset axes.
 #pragma once
 
 #include <array>
@@ -6,6 +7,7 @@
 
 namespace rock::vr_input
 {
+    // A pose ROCK can use: connected, tracked, and every value finite.
     [[nodiscard]] inline bool usableMotionPose(const vr::TrackedDevicePose_t& pose) noexcept
     {
         if (!pose.bDeviceIsConnected || !pose.bPoseIsValid || pose.eTrackingResult != vr::TrackingResult_Running_OK)

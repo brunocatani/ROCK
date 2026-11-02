@@ -1,3 +1,5 @@
+// Menu open/close tracking: whether a game-stopping menu, the scope menu or the
+// Pip-Boy is open, kept from the UI's MenuOpenCloseEvent stream.
 #pragma once
 
 #include "rock_support/Logger.h"

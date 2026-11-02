@@ -1,3 +1,5 @@
+// Per-frame OpenVR controller state for ROCK's own button edges, holds,
+// haptics and controller velocity, with Primary/Offhand mapped to Right/Left.
 #pragma once
 
 #include <array>

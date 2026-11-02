@@ -1,3 +1,5 @@
+// VRControllersManager: samples both controllers from OpenVR once per frame and
+// derives press, hold and release edges with debounce and hold timing.
 #include "rock_support/VRControllers.h"
 #include "rock_support/VRMotion.h"
 

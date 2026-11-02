@@ -1,3 +1,4 @@
+// Game INI settings ROCK requires: forced to ROCK's values and kept there.
 #pragma once
 
 namespace rock::game_ini_overrides

@@ -1,3 +1,4 @@
+// Test-bench telemetry ring writer (contract and thread model in TestbenchTelemetry.h).
 #include "rock_support/TestbenchTelemetry.h"
 
 #include "physics-interaction/PhysicsLog.h"
