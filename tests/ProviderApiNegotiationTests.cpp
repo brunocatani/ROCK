@@ -1,8 +1,40 @@
 #include <array>
 #include <cassert>
+#include <vector>
 #include "ModularTestTables.h"
 #include "api/InterfaceNegotiation.h"
+#include "api/OutdatedConsumers.h"
 #include "api/OwnerBindingPolicy.h"
+
+namespace
+{
+    struct NotedRefusal
+    {
+        rock::api::Status status;
+        rock::api::InterfaceId id;
+        std::uint32_t major;
+        const void* caller;
+    };
+    std::vector<NotedRefusal> s_noted;
+
+    // A refusal from the export reached the required-update stop with its
+    // status, interface, requested major and the caller's address.
+    void assertNoted(rock::api::Status status, rock::api::InterfaceId id, std::uint32_t major)
+    {
+        assert(!s_noted.empty());
+        const auto& noted = s_noted.back();
+        assert(noted.status == status && noted.id == id && noted.major == major && noted.caller);
+        s_noted.clear();
+    }
+}
+
+// The plugin links the required-update stop here (OutdatedConsumers.cpp, which
+// needs the game's UI); the test records what discovery hands it.
+void rock::api::discovery::noteRefusal(Status status, InterfaceId id, std::uint32_t requestedMajor,
+    const void* callerAddress) noexcept
+{
+    s_noted.push_back({ status, id, requestedMajor, callerAddress });
+}
 
 int main()
 {
@@ -41,6 +73,7 @@ int main()
         const InterfaceDescriptorV1* descriptor{};
         assert(ROCKAPI_QueryInterfaceV1(Table::interfaceId, Table::majorVersion, Table::minorVersion, sizeof(Table),
                    &descriptor) == Status::Ok);
+        assert(s_noted.empty());
         assert(descriptor && descriptor->table == &table && descriptor->tableByteSize == sizeof(Table));
         assert(descriptor->major == Table::majorVersion && descriptor->minor == Table::minorVersion);
         assert(descriptor->requiredCoreMajor == core::kMajor && descriptor->requiredCoreMinor == core::kMinor);
@@ -50,14 +83,17 @@ int main()
         assert(ROCKAPI_QueryInterfaceV1(Table::interfaceId, Table::majorVersion, Table::minorVersion + 1, sizeof(Table),
                    &descriptor) == Status::UnsupportedMinor);
         assert(!descriptor);
+        assertNoted(Status::UnsupportedMinor, Table::interfaceId, Table::majorVersion);
         assert(ROCKAPI_QueryInterfaceV1(Table::interfaceId, Table::majorVersion, 0, sizeof(Table) + 1, &descriptor) ==
             Status::TableTooSmall);
         assert(!descriptor);
+        assertNoted(Status::TableTooSmall, Table::interfaceId, Table::majorVersion);
         if constexpr (Table::majorVersion > 1) {
             // A major-1 consumer is refused cleanly, never handed the major-2 table.
             descriptor = reinterpret_cast<const InterfaceDescriptorV1*>(&table);
             assert(ROCKAPI_QueryInterfaceV1(Table::interfaceId, 1, 0, 8, &descriptor) == Status::UnsupportedMajor);
             assert(!descriptor);
+            assertNoted(Status::UnsupportedMajor, Table::interfaceId, 1);
         }
     };
     verify(core::table(), core::kSupportedPermissions);
@@ -78,6 +114,7 @@ int main()
         // References (10) is retired; its queries are part of Grab.
         const InterfaceDescriptorV1* retired{};
         assert(ROCKAPI_QueryInterfaceV1(InterfaceId::References, 1, 0, 8, &retired) != Status::Ok && !retired);
+        assertNoted(Status::UnknownInterface, InterfaceId::References, 1);
     }
     verify(touch::table(), touch::kSupportedPermissions);
     {
@@ -103,12 +140,14 @@ int main()
         // Diagnostics (12) is retired: other mods draw through RPS UI Framework.
         const InterfaceDescriptorV1* retired{};
         assert(ROCKAPI_QueryInterfaceV1(InterfaceId::Diagnostics, 1, 0, 8, &retired) != Status::Ok && !retired);
+        assertNoted(Status::UnknownInterface, InterfaceId::Diagnostics, 1);
     }
     verify(configuration::table(), configuration::kSupportedPermissions);
     // Weapon major 1 and its 1.1 minor are refused.
     const InterfaceDescriptorV1* oldWeapon{};
     assert(
         ROCKAPI_QueryInterfaceV1(InterfaceId::Weapon, 1, 0, 8, &oldWeapon) == Status::UnsupportedMajor && !oldWeapon);
+    assertNoted(Status::UnsupportedMajor, InterfaceId::Weapon, 1);
     rock::provider::InterfaceBinding collision{}, grabbing{};
     assert(rock::provider::bindInterface(collision, 2, 1, 3) == Status::Ok);
     assert(rock::provider::bindInterface(grabbing, 1, 3, 3) == Status::Ok);

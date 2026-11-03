@@ -205,6 +205,13 @@ if(NOT EXISTS "${PALM_INCLUDE_DIR}/PALMDeveloperApi.h")
   message(FATAL_ERROR ">> RobCo PALM headers not found at '${PALM_INCLUDE_DIR}'; set PALM_INCLUDE_DIR.")
 endif()
 target_include_directories(${PROJECT_NAME} PRIVATE "${PALM_INCLUDE_DIR}")
+# RPS Framework's header-only required-update stop (RPS/Runtime/RequiredUpdate.h).
+set(RPS_FRAMEWORK_INCLUDE_DIR "${WORKSPACE_ROOT}/my_frameworks_and_sdks/RPS_Framework/include" CACHE PATH
+  "RPS Framework public header directory.")
+if(NOT EXISTS "${RPS_FRAMEWORK_INCLUDE_DIR}/RPS/Runtime/RequiredUpdate.h")
+  message(FATAL_ERROR ">> RPS Framework headers not found at '${RPS_FRAMEWORK_INCLUDE_DIR}'; set RPS_FRAMEWORK_INCLUDE_DIR.")
+endif()
+target_include_directories(${PROJECT_NAME} PRIVATE "${RPS_FRAMEWORK_INCLUDE_DIR}")
 
 include("${ROOT_DIR}/cmake/VerifyDistributionInputs.cmake")
 get_target_property(ROCK_BUILD_INPUTS ${PROJECT_NAME} SOURCES)

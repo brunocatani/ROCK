@@ -27,6 +27,7 @@
 #include "RockConfig.h"
 #include "api/FRIKApiV2.h"
 #include "api/LooseWeaponStateService.h"
+#include "api/OutdatedConsumers.h"
 #include "api/ProviderRuntime.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/core/PhysicsHooks.h"
@@ -1240,6 +1241,9 @@ namespace
         }
 
         if (msg->type == F4SE::MessagingInterface::kGameLoaded) {
+            // Before anything below can disable ROCK: an outdated consumer still
+            // stops the game when ROCK itself cannot run.
+            api::discovery::watchForOutdatedConsumers();
             s_messaging->RegisterListener(onExternalWeaponVisualChanged, "VRVanillaFixes");
             logger::info("ROCK: GameLoaded -- initializing FRIKApi and loading config...");
             const auto providerGeneration = bumpGeneration(s_providerGeneration);

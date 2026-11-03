@@ -9,7 +9,8 @@ ROCK is a Fallout 4 VR F4SE plugin (`ROCK.dll`) that gives the player physical h
 - ROCK publishes provider API 2.0: 13 interfaces whose headers are in `include/ROCK/`. They include only the C++ standard library; nothing links against ROCK.
 - Add ROCK's `include/` directory through a CMake cache variable such as `ROCK_INCLUDE_DIR`, include `<ROCK/...>`, resolve `ROCKAPI_QueryInterfaceV1` from the loaded `ROCK.dll`, and connect with `rock::api::Client`. Never include headers from `src/` or copy ROCK's headers into the consumer.
 - Read `docs/api/Overview.md` first, then the page of each interface you use. The pages state each function's thread, permission and limits.
-- When ROCK is absent or refuses discovery, the consumer turns its ROCK features off and keeps running.
+- When ROCK is absent, the consumer turns its ROCK features off and keeps running. A version mismatch never runs silently: ROCK names a consumer built for another provider API in an error box at the main menu and closes the game when the box is closed. A consumer that finds a loaded ROCK without the API it was built for does the same; RPS Framework's `RPS/Runtime/RequiredUpdate.h` provides the box.
+- Request exactly the major, minor and table size your headers declare (`rock::api::Client` does). Never probe for optional versions with trial queries: every version refusal stops the game.
 
 ## Repository map
 
@@ -31,7 +32,7 @@ ROCK is a Fallout 4 VR F4SE plugin (`ROCK.dll`) that gives the player physical h
 
 ## Build and test
 
-Requirements: Windows x64, Visual Studio 2022 (v143), CMake 4.2 or newer, PowerShell 7, vcpkg with `VCPKG_ROOT` set, and a CommonLibF4VR checkout. ROCK uses C++23.
+Requirements: Windows x64, Visual Studio 2022 (v143), CMake 4.2 or newer, PowerShell 7, vcpkg with `VCPKG_ROOT` set, and checkouts of CommonLibF4VR, RPS UI Framework and RobCo PALM (their `SDK/include/` headers) and RPS Framework (its `include/` headers). Set `RPSUI_INCLUDE_DIR`, `PALM_INCLUDE_DIR` and `RPS_FRAMEWORK_INCLUDE_DIR` when they are not where `CMakeLists.txt` looks by default. ROCK uses C++23.
 
 Copy `CMakeUserPresets.json.template` to `CMakeUserPresets.json` and set `COMMON_LIB_F4VR_PATH` and `COPY_PLUGIN_BASE_PATH` (the mod folder the build copies `ROCK.dll` and `ROCK.pdb` into, under `F4SE/Plugins`). Then:
 
@@ -77,6 +78,7 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp`; never re-implemen
 
 - Public headers include only the C++ standard library and other `include/ROCK/` headers: never CommonLibF4VR, Havok, engine or F4SE types.
 - Every entry point validates the caller's record `size` and `version` before reading it. Records use fixed-width types.
+- Every version refusal from `ROCKAPI_QueryInterfaceV1` (unknown interface, other major, newer minor, larger table) is logged with the calling DLL and stops the game at the main menu (`src/api/OutdatedConsumers.cpp`).
 - A released interface version is frozen. A compatible addition goes at the end of a table; an incompatible change needs a new major. Retired interface IDs, slots, enum values and flag bits are marked in the headers and never reused.
 - A header change updates its `docs/api/` page in the same commit and passes `ROCKPublicHeaderTests`.
 
