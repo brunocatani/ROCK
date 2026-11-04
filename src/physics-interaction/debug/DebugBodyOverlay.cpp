@@ -16,7 +16,7 @@
 #include <utility>
 #include <vector>
 
-#include "RPSUIWorldDrawApi.h"
+#include <RPS_UI_Framework/WorldDraw.h>
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -77,9 +77,9 @@ namespace rock::debug
         constexpr std::size_t kBodySourceCapacity = std::tuple_size_v<decltype(BodyOverlayFrame{}.entries)>;
         constexpr std::size_t kBodyInstanceCapacity = kBodySourceCapacity;
         static_assert(kBodySourceCapacity == debug_overlay_runtime::kMaxBodyInstances);
-        static_assert(grip_zone_indicators::Frame::kCapacity <= rpsui::sdk::RPSUI_WORLD_DRAW_MAX_SPHERES);
-        static_assert(kBodyInstanceCapacity <= rpsui::sdk::RPSUI_WORLD_DRAW_MAX_MESH_INSTANCES);
-        static_assert(debug_overlay_policy::kMaxLineVertexBudget / 2 <= rpsui::sdk::RPSUI_WORLD_DRAW_MAX_LINES);
+        static_assert(grip_zone_indicators::Frame::kCapacity <= rpsui::api::world_draw::kMaxSpheres);
+        static_assert(kBodyInstanceCapacity <= rpsui::api::world_draw::kMaxMeshInstances);
+        static_assert(debug_overlay_policy::kMaxLineVertexBudget / 2 <= rpsui::api::world_draw::kMaxLines);
         constexpr std::uint64_t kCanonicalSphereGeometryFingerprint = 0x5350'4845'5245'0001ull;
         // Host mesh ids below the shape pipeline's range belong to the overlay.
         constexpr std::uint64_t kAabbProxyMeshId = 1;
@@ -95,10 +95,10 @@ namespace rock::debug
         struct WorldDrawScratch
         {
             debug_overlay_line_batch::LineBatch lines;
-            std::vector<rpsui::sdk::WorldSphereV1> spheres;
-            std::vector<rpsui::sdk::WorldLineV1> worldLines;
-            std::vector<rpsui::sdk::WorldTextV1> texts;
-            std::vector<rpsui::sdk::WorldMeshInstanceV1> instances;
+            std::vector<rpsui::api::world_draw::Sphere> spheres;
+            std::vector<rpsui::api::world_draw::Line> worldLines;
+            std::vector<rpsui::api::world_draw::Text> texts;
+            std::vector<rpsui::api::world_draw::MeshInstance> instances;
             // Keeps each drawn cache entry, and so its host mesh, alive until
             // the publication naming it has been submitted.
             std::vector<std::shared_ptr<const RegisteredShape>> heldShapes;
@@ -115,9 +115,9 @@ namespace rock::debug
                     if (!lines.prepare(debug_overlay_policy::kMaxLineVertexBudget)) {
                         return false;
                     }
-                    spheres.reserve(rpsui::sdk::RPSUI_WORLD_DRAW_MAX_SPHERES);
-                    worldLines.reserve(rpsui::sdk::RPSUI_WORLD_DRAW_MAX_LINES);
-                    texts.reserve(rpsui::sdk::RPSUI_WORLD_DRAW_MAX_TEXTS);
+                    spheres.reserve(rpsui::api::world_draw::kMaxSpheres);
+                    worldLines.reserve(rpsui::api::world_draw::kMaxLines);
+                    texts.reserve(rpsui::api::world_draw::kMaxTexts);
                     instances.reserve(kBodyInstanceCapacity);
                     heldShapes.reserve(kBodyInstanceCapacity);
                 } catch (...) {
@@ -2201,7 +2201,7 @@ namespace rock::debug
             stats.lineLogicalLines += static_cast<std::uint32_t>(batch.lineCount());
             stats.lineBudgetRejects += static_cast<std::uint32_t>(batch.rejectedLineCount());
             for (const auto& segment : batch.segments()) {
-                rpsui::sdk::WorldLineV1 line{};
+                rpsui::api::world_draw::Line line{};
                 line.start[0] = segment.start.x;
                 line.start[1] = segment.start.y;
                 line.start[2] = segment.start.z;
@@ -2216,7 +2216,7 @@ namespace rock::debug
                     ++stats.lineInvalidRejects;
                     continue;
                 }
-                if (out.worldLines.size() >= rpsui::sdk::RPSUI_WORLD_DRAW_MAX_LINES) {
+                if (out.worldLines.size() >= rpsui::api::world_draw::kMaxLines) {
                     ++stats.lineBudgetRejects;
                     continue;
                 }
@@ -2369,7 +2369,7 @@ namespace rock::debug
                     ++stats.screenTextSkips;
                     continue;
                 }
-                rpsui::sdk::WorldTextV1 text{};
+                rpsui::api::world_draw::Text text{};
                 static_assert(sizeof(text.text) == sizeof(entry.text));
                 std::memcpy(text.text, entry.text, sizeof(text.text));
                 text.text[sizeof(text.text) - 1] = '\0';
@@ -2385,7 +2385,7 @@ namespace rock::debug
                     ++stats.textInvalidRejects;
                     continue;
                 }
-                if (out.texts.size() >= rpsui::sdk::RPSUI_WORLD_DRAW_MAX_TEXTS) {
+                if (out.texts.size() >= rpsui::api::world_draw::kMaxTexts) {
                     ++stats.textTruncations;
                     continue;
                 }
@@ -2403,13 +2403,13 @@ namespace rock::debug
             const float radius = frame.diameterGameUnits * 0.5f;
             for (std::uint32_t index = 0; index < count; ++index) {
                 const auto& position = frame.positions[index];
-                rpsui::sdk::WorldSphereV1 sphere{};
+                rpsui::api::world_draw::Sphere sphere{};
                 sphere.center[0] = position.x;
                 sphere.center[1] = position.y;
                 sphere.center[2] = position.z;
                 sphere.radius = radius;
                 std::fill_n(sphere.color, 4, 1.0f);
-                sphere.fill = rpsui::sdk::WorldFillV1::Solid;
+                sphere.fill = rpsui::api::world_draw::Fill::Solid;
                 if (finiteValues(sphere.center, 3)) {
                     out.spheres.push_back(sphere);
                 }
@@ -2520,7 +2520,7 @@ namespace rock::debug
                         model = worldAabbMatrix(entry) * inversePhysics * model;
                     }
 
-                    rpsui::sdk::WorldMeshInstanceV1 instance{};
+                    rpsui::api::world_draw::MeshInstance instance{};
                     instance.meshId = shapeReady ? shape->meshId : kAabbProxyMeshId;
                     DirectX::XMFLOAT4X4 stored{};
                     DirectX::XMStoreFloat4x4(&stored, model);
@@ -2529,7 +2529,7 @@ namespace rock::debug
                     const auto drawnMode =
                         shapeReady ? shape->decodeMode : debug_overlay_policy::ShapeDecodeMode::Proxy;
                     bodyColor(entry.role, drawnMode, instance.color);
-                    instance.fill = rpsui::sdk::WorldFillV1::Wire;
+                    instance.fill = rpsui::api::world_draw::Fill::Wire;
                     if (!finiteValues(instance.transform, 16) || !finiteValues(instance.color, 4)) {
                         ++stats.bodyInvalidRejects;
                         return;
@@ -2626,7 +2626,7 @@ namespace rock::debug
 
             // One frame: the next drawn frame either receives a fresh
             // composition or shows nothing, as when ROCK drew directly.
-            rpsui::sdk::WorldDrawPublicationV1 publication{};
+            rpsui::api::world_draw::Publication publication{};
             publication.leaseFrames = 1;
             publication.sphereCount = static_cast<std::uint32_t>(scratch.spheres.size());
             publication.lineCount = static_cast<std::uint32_t>(scratch.worldLines.size());

@@ -4,20 +4,21 @@
 #include <cstdio>
 #include <mutex>
 
-#include "RPSUIWorldDrawApi.h"
+#include <RPS_UI_Framework/WorldDraw.h>
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/visual/RpsUiQuery.h"
 
 namespace rock::world_draw_client
 {
     namespace
     {
-        using rpsui::sdk::ResultV1;
+        using rpsui::api::Result;
 
         // About one attempt per second at 90 Hz while RPS UI is absent.
         constexpr std::uint32_t kBindRetryCalls = 90;
 
         std::mutex g_bindMutex;
-        std::atomic<const rpsui::sdk::WorldDrawApiV1*> g_api{ nullptr };
+        std::atomic<const rpsui::api::world_draw::Api*> g_api{ nullptr };
         std::atomic<std::uint64_t> g_owner{ 0 };
         std::atomic<FrameHandler> g_handler{ nullptr };
         std::uint32_t g_retryCountdown{ 0 }; // Guarded by g_bindMutex.
@@ -30,7 +31,7 @@ namespace rock::world_draw_client
                 handler();
         }
 
-        void reportRefusal(const char* step, ResultV1 result) noexcept
+        void reportRefusal(const char* step, Result result) noexcept
         {
             if (g_refusalReported)
                 return;
@@ -53,14 +54,15 @@ namespace rock::world_draw_client
         }
         g_retryCountdown = kBindRetryCalls;
 
-        const auto* registry = rpsui::sdk::RequestApiV1();
-        const auto* draw = registry ? rpsui::sdk::RequestWorldDrawApiV1() : nullptr;
-        if (!draw) {
+        const auto query = rps_ui::query();
+        const rpsui::api::framework::Api* registry{};
+        const rpsui::api::world_draw::Api* draw{};
+        if (rpsui::api::acquire(query, registry) != Result::Ok || rpsui::api::acquire(query, draw) != Result::Ok) {
             if (!g_absentReported) {
                 g_absentReported = true;
-                if (registry) {
+                if (query) {
                     ROCK_LOG_WARN(Hand,
-                        "RPS UI Framework does not offer world drawing v1; ROCK indicators and debug drawing stay "
+                        "RPS UI Framework does not offer world drawing 2.0; ROCK indicators and debug drawing stay "
                         "hidden");
                 } else {
                     ROCK_LOG_INFO(Hand,
@@ -72,12 +74,12 @@ namespace rock::world_draw_client
 
         auto owner = g_owner.load(std::memory_order_acquire);
         if (owner == 0) {
-            rpsui::sdk::ConsumerRegistrationV1 registration{};
+            rpsui::api::framework::ConsumerRegistration registration{};
             std::snprintf(registration.consumerId, sizeof(registration.consumerId), "%s", "rock.world-draw");
             std::snprintf(registration.displayName, sizeof(registration.displayName), "%s", "ROCK world drawing");
-            rpsui::sdk::ConsumerHandleV1 handle{};
+            rpsui::api::framework::ConsumerHandle handle{};
             if (const auto result = registry->registerConsumer(&registration, &handle);
-                result != ResultV1::Ok || handle.ownerToken == 0) {
+                result != Result::Ok || handle.ownerToken == 0) {
                 reportRefusal("consumer registration", result);
                 return false;
             }
@@ -88,7 +90,7 @@ namespace rock::world_draw_client
         // The owner stays registered for the process lifetime: the callback and
         // its handler are static, so RPS UI never calls into released state.
         g_handler.store(handler, std::memory_order_release);
-        if (const auto result = draw->setFrameCallback(owner, &onFrame, nullptr); result != ResultV1::Ok) {
+        if (const auto result = draw->setFrameCallback(owner, &onFrame, nullptr); result != Result::Ok) {
             reportRefusal("frame callback registration", result);
             return false;
         }
@@ -97,10 +99,10 @@ namespace rock::world_draw_client
         return true;
     }
 
-    bool submit(const rpsui::sdk::WorldDrawPublicationV1& publication) noexcept
+    bool submit(const rpsui::api::world_draw::Publication& publication) noexcept
     {
         const auto* api = g_api.load(std::memory_order_acquire);
-        return api && api->submit(g_owner.load(std::memory_order_acquire), &publication) == ResultV1::Ok;
+        return api && api->submit(g_owner.load(std::memory_order_acquire), &publication) == Result::Ok;
     }
 
     bool registerMesh(const std::uint64_t meshId, const float* positions, const std::uint32_t vertexCount,
@@ -109,12 +111,12 @@ namespace rock::world_draw_client
         const auto* api = g_api.load(std::memory_order_acquire);
         if (!api)
             return false;
-        rpsui::sdk::WorldMeshV1 mesh{};
+        rpsui::api::world_draw::Mesh mesh{};
         mesh.positions = positions;
         mesh.vertexCount = vertexCount;
         mesh.indices = indices;
         mesh.indexCount = indexCount;
-        return api->registerMesh(g_owner.load(std::memory_order_acquire), meshId, &mesh) == ResultV1::Ok;
+        return api->registerMesh(g_owner.load(std::memory_order_acquire), meshId, &mesh) == Result::Ok;
     }
 
     void releaseMesh(const std::uint64_t meshId) noexcept

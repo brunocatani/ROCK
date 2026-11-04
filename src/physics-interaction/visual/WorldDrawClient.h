@@ -2,9 +2,9 @@
 
 #include <cstdint>
 
-namespace rpsui::sdk
+namespace rpsui::api::world_draw
 {
-    struct WorldDrawPublicationV1;
+    struct Publication;
 }
 
 /*
@@ -24,7 +24,7 @@ namespace rock::world_draw_client
     bool ensureBound(FrameHandler handler) noexcept;
 
     // Frame-handler thread.
-    bool submit(const rpsui::sdk::WorldDrawPublicationV1& publication) noexcept;
+    bool submit(const rpsui::api::world_draw::Publication& publication) noexcept;
     bool registerMesh(std::uint64_t meshId, const float* positions, std::uint32_t vertexCount,
         const std::uint32_t* indices, std::uint32_t indexCount) noexcept;
     // Any thread.

@@ -1,5 +1,6 @@
 #include "physics-interaction/input/InputRemapRuntime.h"
-#include "RPSUIInputApi.h"
+#include <RPS_UI_Framework/Input.h>
+#include "physics-interaction/visual/RpsUiQuery.h"
 #include "physics-interaction/input/PhysicalReloadInput.h"
 #include "physics-interaction/input/SupportTriggerInput.h"
 #include "physics-interaction/input/WeaponTriggerRouting.h"
@@ -353,7 +354,7 @@ namespace rock::input_remap_runtime
         void** s_vrSystemVTable = nullptr;
         // Published once at game-loaded hook installation; the DLL/API table
         // lives for the process. Polling threads read only this atomic pointer.
-        std::atomic<const rpsui::sdk::InputApiV1*> s_uiInputApi{ nullptr };
+        std::atomic<const rpsui::api::input::Api*> s_uiInputApi{ nullptr };
 
         GetControllerState_t s_originalGetControllerState = nullptr;
         GetControllerStateWithPose_t s_originalGetControllerStateWithPose = nullptr;
@@ -2740,8 +2741,8 @@ namespace rock::input_remap_runtime
 
     bool installInputRemapHooks()
     {
-        const auto* ui = rpsui::sdk::RequestInputApiV1();
-        if (ui && ui->rawInputReadActive && ui->capturedButtons &&
+        const rpsui::api::input::Api* ui{};
+        if (rpsui::api::acquire(rock::rps_ui::query(), ui) == rpsui::api::Result::Ok &&
             s_uiInputApi.exchange(ui, std::memory_order_acq_rel) != ui) {
             ROCK_LOG_INFO(Input, "Independent UI input cooperation connected; UI owns tracking and capture");
         }

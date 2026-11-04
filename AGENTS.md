@@ -32,7 +32,7 @@ ROCK is a Fallout 4 VR F4SE plugin (`ROCK.dll`) that gives the player physical h
 
 ## Build and test
 
-Requirements: Windows x64, Visual Studio 2022 (v143), CMake 4.2 or newer, PowerShell 7, vcpkg with `VCPKG_ROOT` set, and checkouts of CommonLibF4VR, RPS UI Framework and RobCo PALM (their `SDK/include/` headers) and RPS Framework (its `include/` headers). Set `RPSUI_INCLUDE_DIR`, `PALM_INCLUDE_DIR` and `RPS_FRAMEWORK_INCLUDE_DIR` when they are not where `CMakeLists.txt` looks by default. ROCK uses C++23.
+Requirements: Windows x64, Visual Studio 2022 (v143), CMake 4.2 or newer, PowerShell 7, vcpkg with `VCPKG_ROOT` set, and checkouts of CommonLibF4VR, RPS UI Framework, RobCo PALM and RPS Framework (their `include/` headers). Set `RPSUI_INCLUDE_DIR`, `PALM_INCLUDE_DIR` and `RPS_FRAMEWORK_INCLUDE_DIR` when they are not where `CMakeLists.txt` looks by default. ROCK uses C++23.
 
 Copy `CMakeUserPresets.json.template` to `CMakeUserPresets.json` and set `COMMON_LIB_F4VR_PATH` and `COPY_PLUGIN_BASE_PATH` (the mod folder the build copies `ROCK.dll` and `ROCK.pdb` into, under `F4SE/Plugins`). Then:
 

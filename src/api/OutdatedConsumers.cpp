@@ -6,6 +6,7 @@
 
 #include <RPS/Runtime/RequiredUpdate.h>
 
+#include <atomic>
 #include <string>
 
 namespace rock::api::discovery
@@ -90,6 +91,19 @@ namespace rock::api::discovery
                 paragraph = dll + L" needs a newer ROCK than " + rockVersion + L". Update ROCK.";
             }
             required_update::report(std::move(paragraph));
+        } catch (...) {}
+    }
+
+    void noteRpsUiWithoutDiscovery() noexcept
+    {
+        static std::atomic_flag reported = ATOMIC_FLAG_INIT;
+        if (reported.test_and_set())
+            return;
+        try {
+            ROCK_LOG_CRITICAL(Api,
+                "RPS_UI_Framework.dll does not export its 2.0 discovery: it is older than ROCK supports. The game stops "
+                "at the main menu until they match.");
+            required_update::report(L"ROCK does not work with the installed RPS UI Framework: it is too old. Update RPS UI Framework.");
         } catch (...) {}
     }
 

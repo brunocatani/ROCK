@@ -104,7 +104,7 @@ add_library(${PROJECT_NAME} SHARED
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
 target_compile_definitions(${PROJECT_NAME} PRIVATE _UNICODE F4VR_WITH_OPENVR=1)
 
-# Optimize across ROCK translation units in Release without changing the SDK,
+# Optimize across ROCK translation units in Release without changing the Windows SDK,
 # floating-point model or minimum CPU ISA. The toolchain must support this path.
 include(CheckIPOSupported)
 check_ipo_supported(RESULT ROCK_IPO_SUPPORTED OUTPUT ROCK_IPO_ERROR LANGUAGES CXX)
@@ -191,17 +191,17 @@ set(ROCK_PUBLIC_INCLUDE_DIR "${ROOT_DIR}/include")
 include_directories("${ROCK_PUBLIC_INCLUDE_DIR}")
 # RPS UI Framework publishes its own headers; ROCK binds it at runtime and works
 # without it (world drawing and UI input cooperation are then unavailable).
-set(RPSUI_INCLUDE_DIR "${WORKSPACE_ROOT}/../ui_mods/RPS_UI_Framework/SDK/include" CACHE PATH
+set(RPSUI_INCLUDE_DIR "${WORKSPACE_ROOT}/../ui_mods/RPS_UI_Framework/include" CACHE PATH
   "RPS UI Framework public header directory.")
-if(NOT EXISTS "${RPSUI_INCLUDE_DIR}/RPSUIWorldDrawApi.h")
+if(NOT EXISTS "${RPSUI_INCLUDE_DIR}/RPS_UI_Framework/WorldDraw.h")
   message(FATAL_ERROR ">> RPS UI Framework headers not found at '${RPSUI_INCLUDE_DIR}'; set RPSUI_INCLUDE_DIR.")
 endif()
 target_include_directories(${PROJECT_NAME} PRIVATE "${RPSUI_INCLUDE_DIR}")
 # RobCo PALM's Developer wheel API; ROCK binds it at runtime for its capture switch and
 # works without PALM.
-set(PALM_INCLUDE_DIR "${WORKSPACE_ROOT}/../ui_mods/ROCK_Whell_Menu/SDK/include" CACHE PATH
+set(PALM_INCLUDE_DIR "${WORKSPACE_ROOT}/../ui_mods/ROCK_Whell_Menu/include" CACHE PATH
   "RobCo PALM public header directory.")
-if(NOT EXISTS "${PALM_INCLUDE_DIR}/PALMDeveloperApi.h")
+if(NOT EXISTS "${PALM_INCLUDE_DIR}/RobCoPALM/Developer.h")
   message(FATAL_ERROR ">> RobCo PALM headers not found at '${PALM_INCLUDE_DIR}'; set PALM_INCLUDE_DIR.")
 endif()
 target_include_directories(${PROJECT_NAME} PRIVATE "${PALM_INCLUDE_DIR}")

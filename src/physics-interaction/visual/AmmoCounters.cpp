@@ -2,14 +2,15 @@
 
 #include <cstdio>
 
-#include "RPSUINumberOverlayApi.h"
+#include <RPS_UI_Framework/NumberOverlay.h>
+#include "physics-interaction/visual/RpsUiQuery.h"
 #include "physics-interaction/PhysicsLog.h"
 
 namespace rock::ammo_counters
 {
     namespace
     {
-        using rpsui::sdk::ResultV1;
+        using rpsui::api::Result;
 
         // About one attempt per second at 90 Hz while RPS UI is absent or not ready.
         constexpr std::uint32_t kBindRetryCalls = 90;
@@ -31,15 +32,15 @@ namespace rock::ammo_counters
             { "rock.ammo.left.loaded", "Left hand ammo counter" },
             { "rock.ammo.left.reserve", "Left hand reserve rounds" },
         } };
-        const rpsui::sdk::ApiV1* g_base{ nullptr };
-        const rpsui::sdk::NumberOverlayApiV1* g_numbers{ nullptr };
+        const rpsui::api::framework::Api* g_base{ nullptr };
+        const rpsui::api::number_overlay::Api* g_numbers{ nullptr };
         std::uint64_t g_owner{ 0 };
         bool g_bound{ false };
         std::uint32_t g_retryCountdown{ 0 };
         bool g_absentReported{ false };
-        ResultV1 g_reported{ ResultV1::Ok };
+        Result g_reported{ Result::Ok };
 
-        void report(const char* step, ResultV1 result) noexcept
+        void report(const char* step, Result result) noexcept
         {
             if (result == g_reported)
                 return;
@@ -57,10 +58,11 @@ namespace rock::ammo_counters
                 return false;
             }
             g_retryCountdown = kBindRetryCalls;
+            const auto query = rps_ui::query();
             if (!g_base)
-                g_base = rpsui::sdk::RequestApiV1();
+                (void)rpsui::api::acquire(query, g_base);
             if (!g_numbers && g_base)
-                g_numbers = rpsui::sdk::RequestNumberOverlayApiV1();
+                (void)rpsui::api::acquire(query, g_numbers);
             if (!g_base || !g_numbers) {
                 if (!g_absentReported) {
                     g_absentReported = true;
@@ -69,15 +71,15 @@ namespace rock::ammo_counters
                 }
                 return false;
             }
-            if (!g_base->isFrameworkReady || !g_base->isFrameworkReady())
+            if (!g_base->isFrameworkReady())
                 return false;
             if (g_owner == 0) {
-                rpsui::sdk::ConsumerRegistrationV1 registration{};
+                rpsui::api::framework::ConsumerRegistration registration{};
                 std::snprintf(registration.consumerId, sizeof(registration.consumerId), "%s", "rock.ammo-counters");
                 std::snprintf(registration.displayName, sizeof(registration.displayName), "%s", "ROCK ammo counters");
-                rpsui::sdk::ConsumerHandleV1 handle{};
+                rpsui::api::framework::ConsumerHandle handle{};
                 if (const auto result = g_base->registerConsumer(&registration, &handle);
-                    result != ResultV1::Ok || handle.ownerToken == 0) {
+                    result != Result::Ok || handle.ownerToken == 0) {
                     report("consumer registration", result);
                     return false;
                 }
@@ -86,11 +88,11 @@ namespace rock::ammo_counters
             for (auto& overlay : g_overlays) {
                 if (overlay.handle)
                     continue;
-                rpsui::sdk::NumberOverlayRegistrationV1 registration{};
+                rpsui::api::number_overlay::Registration registration{};
                 std::snprintf(registration.overlayId, sizeof(registration.overlayId), "%s", overlay.id);
                 std::snprintf(registration.displayName, sizeof(registration.displayName), "%s", overlay.name);
                 if (const auto result = g_numbers->registerOverlay(g_owner, &registration, &overlay.handle);
-                    result != ResultV1::Ok || overlay.handle == 0) {
+                    result != Result::Ok || overlay.handle == 0) {
                     overlay.handle = 0;
                     report("overlay registration", result);
                     return false;
@@ -105,10 +107,10 @@ namespace rock::ammo_counters
         {
             if (!overlay.open)
                 return true;
-            rpsui::sdk::NumberOverlayPresentationV1 presentation{};
+            rpsui::api::number_overlay::Presentation presentation{};
             presentation.sequence = ++overlay.sequence;
             const auto result = g_numbers->submit(g_owner, overlay.handle, &presentation);
-            if (result == ResultV1::Ok || result == ResultV1::PanelNotRegistered) {
+            if (result == Result::Ok || result == Result::PanelNotRegistered) {
                 overlay.open = false;
                 return true;
             }
@@ -118,7 +120,7 @@ namespace rock::ammo_counters
 
         struct Look
         {
-            rpsui::sdk::NumberOverlayStyleV1 style{ rpsui::sdk::NumberOverlayStyleV1::Plain };
+            rpsui::api::number_overlay::Style style{ rpsui::api::number_overlay::Style::Plain };
             std::array<float, 3> color{ 1.0f, 1.0f, 1.0f };
             std::uint32_t secondaryValue{ 0 };
         };
@@ -126,7 +128,7 @@ namespace rock::ammo_counters
         bool show(Overlay& overlay, const ammo_counter_pose::Pose& pose, const ammo_counter_pose::Panel& panel,
             std::uint32_t value, const Look& look) noexcept
         {
-            rpsui::sdk::NumberOverlayPresentationV1 presentation{};
+            rpsui::api::number_overlay::Presentation presentation{};
             presentation.sequence = ++overlay.sequence;
             presentation.open = 1;
             presentation.value = value;
@@ -144,7 +146,7 @@ namespace rock::ammo_counters
             presentation.pose.physicalWidth = panel.width;
             presentation.pose.physicalHeight = panel.height;
             const auto result = g_numbers->submit(g_owner, overlay.handle, &presentation);
-            if (result != ResultV1::Ok) {
+            if (result != Result::Ok) {
                 report("presentation", result);
                 return false;
             }
@@ -169,8 +171,8 @@ namespace rock::ammo_counters
                     healthy &= show(reserve, counter.pose, counter.pose.reserve, counter.reserve, {});
                 } else {
                     const Look look{
-                        .style = style == Style::Immersive ? rpsui::sdk::NumberOverlayStyleV1::HudBracketed
-                                                           : rpsui::sdk::NumberOverlayStyleV1::Hud,
+                        .style = style == Style::Immersive ? rpsui::api::number_overlay::Style::HudBracketed
+                                                           : rpsui::api::number_overlay::Style::Hud,
                         .color = hudColor,
                         .secondaryValue = counter.reserve,
                     };
@@ -183,7 +185,7 @@ namespace rock::ammo_counters
             }
         }
         if (healthy)
-            g_reported = ResultV1::Ok;
+            g_reported = Result::Ok;
         return healthy;
     }
 

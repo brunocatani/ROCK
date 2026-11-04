@@ -1,6 +1,6 @@
 #pragma once
 // The production catalog is linked below. Empty tables avoid native runtime
-// startup; discovery tests inspect their addresses and real SDK table extents.
+// startup; discovery tests inspect their addresses and real public table extents.
 #include <ROCK/Animation.h>
 #include <ROCK/Collision.h>
 #include <ROCK/Configuration.h>

@@ -3,7 +3,8 @@
 
 #include "physics-interaction/PhysicsLog.h"
 
-#include <PALMDeveloperApi.h>
+#include <RobCoPALM/Client.h>
+#include <RobCoPALM/Developer.h>
 #include <Windows.h>
 
 #include <algorithm>
@@ -32,7 +33,7 @@ namespace rock::testbench_telemetry
         // PALM's game task sets the press; the frame thread applies it and owns s_captureActive.
         std::atomic<bool> s_capturePressPending{ false };
         bool s_captureActive = false;
-        palm::developer::Handle s_wheelCaptureAction{};
+        palm::api::developer::Handle s_wheelCaptureAction{};
 
         enum class RecordType : std::uint16_t
         {
@@ -364,13 +365,12 @@ namespace rock::testbench_telemetry
         if (s_wheelCaptureAction) {
             return;
         }
-        const auto module = GetModuleHandleW(palm::developer::kModuleName);
-        const auto getApi = module
-            ? reinterpret_cast<palm::developer::GetApi>(GetProcAddress(module, palm::developer::kExportName))
+        const auto module = GetModuleHandleW(palm::api::kModuleName);
+        const auto query = module
+            ? reinterpret_cast<palm::api::QueryInterfaceV1>(GetProcAddress(module, palm::api::kQueryExportName))
             : nullptr;
-        const auto* api = getApi ? getApi(palm::developer::kVersion) : nullptr;
-        if (!api || api->version != palm::developer::kVersion || api->byteSize < sizeof(*api) || !api->enabled ||
-            !api->registerAction) {
+        const palm::api::developer::Api* api{};
+        if (palm::api::acquire(query, api) != palm::api::Result::Ok) {
             return;
         }
         if (!api->enabled()) {
@@ -379,12 +379,12 @@ namespace rock::testbench_telemetry
                 "bEnabled)");
             return;
         }
-        palm::developer::ActionV1 action;
+        palm::api::developer::Action action;
         strcpy_s(action.id, kWheelCaptureId);
         strcpy_s(action.label, kWheelCaptureLabel);
         action.invoke = [](void*) noexcept { s_capturePressPending.store(true, std::memory_order_release); };
         const auto result = api->registerAction(&action, &s_wheelCaptureAction);
-        if (result == palm::developer::Result::Ok) {
+        if (result == palm::api::Result::Ok) {
             ROCK_LOG_INFO(Init, "Testbench capture switch registered in PALM's Developer wheel");
         } else {
             ROCK_LOG_WARN(Init,
