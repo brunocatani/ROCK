@@ -1034,7 +1034,10 @@ namespace rock::native_secondary_actions
             }
             const bool conditional = dispatch(s, RE::DEFAULT_OBJECT::kActionFireEmpty, true);
             const auto* data = weaponData(s.item);
-            auto* sound = data ? data->attackFailSound : nullptr;
+            // Rounds remain, so this click stands in for the blocked reload. It is
+            // Fallout4.esm WPNRifleFireDry on every weapon, as PAPER plays on slot 0.
+            auto* sound = ammo ? RE::TESForm::GetFormByID<RE::BGSSoundDescriptorForm>(0x1DACD) :
+                                 (data ? data->attackFailSound : nullptr);
             if (sound)
                 native<void (*)(RE::BGSSoundDescriptorForm*, std::uint32_t, const RE::NiPoint3*, RE::NiAVObject*)>(
                     0x81FBF0)(sound, 0, nullptr, nullptr);
