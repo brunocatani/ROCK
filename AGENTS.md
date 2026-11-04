@@ -51,7 +51,7 @@ The selector picks tests from staged, unstaged and untracked files (or the lates
 
 Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp`; never re-implement engine math in test stubs. `ROCKPublicHeaderTests` compiles every public header on its own and checks the ABI layout of published records and tables.
 
-`custom-release` builds into `build-release` and packages a `.7z` with the DLL and PDB, any `data/mod` game data, the license and `steamvr_bindings/`. Headers and every other development file stay in the repository.
+`custom-release` builds into `build-release` and writes a release's two files to `build-release/package`: a `.zip` that installs as it is, holding the DLL, any `data/mod` game data and `steamvr_bindings/`, and `README.md` beside it. The PDB, the license, headers and every other development file stay out of the zip.
 
 ## Runtime files
 

@@ -183,7 +183,7 @@ string(REPLACE "/Ob2" "/Ob3" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}
 # while fast local builds can still copy the plugin into the configured mod root.
 option(POST_BUILD_COPY_PLUGIN "Copy ROCK.dll and ROCK.pdb to configured mod root after building." OFF)
 set(COPY_PLUGIN_BASE_PATH "" CACHE STRING "Semicolon-separated mod roots that contain F4SE/Plugins.")
-option(ROCK_PACKAGE_RELEASE "Package Release builds into a .7z archive after ROCK is built." ON)
+option(ROCK_PACKAGE_RELEASE "Package Release builds into a .zip archive after ROCK is built." ON)
 option(BUILD_ROCK_TESTS "Build ROCK focused regression tests" OFF)
 # ROCK publishes its provider API from include/ROCK, the only copy of those
 # headers. Consumers add this include directory; there is no SDK copy.
@@ -267,7 +267,6 @@ if(ROCK_PACKAGE_RELEASE)
             -DROOT_DIR=${ROOT_DIR}
             -DBUILD_DIR=${BUILD_DIR}
             -DTARGET_FILE="$<TARGET_FILE:${PROJECT_NAME}>"
-            -DTARGET_PDB_FILE="$<TARGET_PDB_FILE:${PROJECT_NAME}>"
             -DCONFIG=$(Configuration)
             -P "${ROOT_DIR}/cmake/package.cmake"
   )
