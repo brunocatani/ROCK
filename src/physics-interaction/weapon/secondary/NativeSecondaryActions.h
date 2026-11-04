@@ -1,9 +1,11 @@
 // Native actions for the second equipped weapon (see NativeSecondaryActions.cpp).
 #pragma once
 
+#include <ROCK/Abi.h>
 #include "physics-interaction/weapon/equip/EquippedAmmoPolicy.h"
 
 #include <cstdint>
+#include <span>
 
 namespace RE
 {
@@ -37,4 +39,24 @@ namespace rock::native_secondary_actions
     // The native ammo facts of equipment index 0 or 1 (EquippedAmmoPolicy.h),
     // read with the HUD producer's helpers. Game thread; false before install.
     bool readAmmo(std::uint32_t index, equipped_ammo::Facts& out) noexcept;
+    // The private graph is in this weapon's reload.
+    [[nodiscard]] bool reloading() noexcept;
+    // WeaponParts slot 1, frame owner thread: the model's nodes, their poses and
+    // drives of the bones the private graph writes. Keys hold for one binding.
+    [[nodiscard]] std::uint32_t partSourceCount() noexcept;
+    [[nodiscard]] bool partSource(std::uint32_t index, std::uint64_t& key, std::uint64_t& parentKey,
+        RE::NiTransform& local, const char*& name) noexcept;
+    [[nodiscard]] std::uint64_t partSourceKey(std::uintptr_t node) noexcept;
+    [[nodiscard]] bool queryPartPose(std::uint64_t key, RE::NiTransform& parentLocal, RE::NiTransform& rootLocal,
+        RE::NiTransform& world) noexcept;
+
+    struct PartDriveRequest
+    {
+        std::uint64_t key;
+        const RE::NiTransform* local;
+        std::uint32_t leaseFrames;
+    };
+
+    api::Status setPartDrives(std::uint64_t owner, std::span<const PartDriveRequest> drives) noexcept;
+    void clearPartDrives(std::uint64_t owner) noexcept;
 }

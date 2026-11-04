@@ -56,6 +56,8 @@ namespace rock::provider
     std::size_t copyWeaponPartTargets(std::span<weapon_part_runtime::Target> outTargets);
     std::uint32_t copyWeaponPartDrives(PartDrive* outTargets, std::uint32_t maxTargets,
         std::uint64_t* outOwnerTokens = nullptr, bool pruneExpired = true);
+    // An owner asked that an empty slot-1 weapon dry-fire instead of reloading.
+    [[nodiscard]] bool automaticReloadBlocked() noexcept;
     bool resolveTouchGrabTarget(std::uint32_t bodyId, std::uint32_t collisionLayer, TouchGrabMotionClass motionClass,
         api::Hand hand, std::uint32_t worldGeneration, std::uint32_t skeletonGeneration,
         std::uint32_t providerGeneration, TouchGrabTargetMatch& outMatch);

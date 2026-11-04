@@ -16,8 +16,8 @@ the first equipped weapon, 1 the second. A slot never implies a hand: which
 hand fires or supports a weapon is in its `WeaponState`. Per-weapon calls
 return `InvalidArgument` for a slot at or above `kMaxWeaponSlots`, and
 `TargetUnavailable` for a read ROCK does not publish for that slot yet. Both
-slots publish `getWeaponState`, `getGrip` and `copyEmitters`; the other
-per-weapon reads currently serve slot 0 only.
+slots publish `getWeaponState`, `getGrip`, `getClassification` and
+`copyEmitters`; the other per-weapon reads currently serve slot 0 only.
 
 ## State (Read)
 
@@ -33,6 +33,8 @@ per-weapon reads currently serve slot 0 only.
   file (FRIK's compiled defaults never count): ROCK seats and scales it from
   that file and gives it dynamic support grabs only, so animation authored
   for ROCK's grip of the weapon does not fit its hands.
+  `SecondaryReloadActive` (slot 1 only) says ROCK's private graph of that
+  weapon is in its reload; slot 0's reload is the player's own graph.
 - `getGrip(owner, slot, grip)`: the solved weapon world transform, each
   hand's grip in weapon space and the projectile origin and direction. Slot
   1 publishes its placed weapon's world transform and its own projectile
@@ -128,6 +130,15 @@ unregisters or physics shuts down: send it again when the Sample's world,
 skeleton or provider generation changes. `TargetUnavailable` (nothing changed)
 when an item no longer matches its stack; `CapacityFull` above the limit.
 
+## Automatic reload (Write)
+
+`setAutomaticReloadBlocked(owner, blocked)`: while an owner holds the block, an
+empty slot-1 weapon dry-fires on its trigger instead of starting a reload; its
+reload button still reloads. One owner at a time (`OwnerConflict` otherwise); it
+ends with `blocked` 0 or when the owner goes away. ROCK starts that reload
+itself, so hooks on the game's own automatic-reload call sites never see it;
+those call sites, which serve slot 0, are not ROCK's and stay untouched.
+
 ## Draw (Write)
 
 `requestInventoryDraw(owner, request, outCommandId)` is `requestInventoryEquip`
@@ -157,7 +168,7 @@ those of `requestInventoryEquip`.
 
 | Enum | Values |
 | --- | --- |
-| `WeaponStateFlag` | `Valid`, `IdentityPending`, `DrawPending`, `BridgePresented`, `NativeRenderable`, `HandPoseHandoffComplete`, `RecoveryExhausted`, `TransitionActive`, `WeaponPresent`, `WeaponDrawn`, `PresentationKnown`, `WeaponEquipped`, `BipodInputReserved`, `AmmoKnown`, `UserWeaponOffset` |
+| `WeaponStateFlag` | `Valid`, `IdentityPending`, `DrawPending`, `BridgePresented`, `NativeRenderable`, `HandPoseHandoffComplete`, `RecoveryExhausted`, `TransitionActive`, `WeaponPresent`, `WeaponDrawn`, `PresentationKnown`, `WeaponEquipped`, `BipodInputReserved`, `AmmoKnown`, `UserWeaponOffset`, `SecondaryReloadActive` |
 | `HandlingStateFlag` | `FiringGripHeld`, `ManualOwnership`, `PartCarry`, `LeftFiringAvailable` |
 | `TransitionSource` | `Unknown`, `ObservedEquip`, `HeldTriggerEquip`, `HeldGripZoneEquip`, `MenuExit`, `WorkbenchExit` |
 | `TransitionResult` | `None`, `Completed`, `WeaponUnequipped`, `IdentityLost`, `ExpectedIdentityTimeout`, `NativeAnimationHandoff`, `WeaponNoLongerDrawn`, `RecoveryExhausted`, `ProviderLost`, `Shutdown` |

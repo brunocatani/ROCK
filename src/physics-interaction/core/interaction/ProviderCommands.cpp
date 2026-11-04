@@ -655,6 +655,11 @@ namespace rock
             }
             for (auto& state : _providerDrives.nodeStates) {
                 if (state.node == node) {
+                    // A bone its graph wrote again since the last drive has a
+                    // newer baseline: restoring an older one would show that
+                    // stale pose for the frame the drive ends.
+                    if (std::memcmp(&node->local, &state.drivenLocal, sizeof(RE::NiTransform)) != 0)
+                        state.baselineLocal = node->local;
                     state.activeThisFrame = true;
                     state.ownerToken = result.owner;
                     state.bodyId = result.bodyId;
@@ -743,6 +748,9 @@ namespace rock
                 continue;
             }
             sourceNode->local = requestedNodeLocal;
+            for (auto& state : _providerDrives.nodeStates)
+                if (state.node == sourceNode)
+                    state.drivenLocal = requestedNodeLocal;
             f4vr::updateTransformsDown(sourceNode, true);
             applicationResult.result = api::weaponparts::DriveApplication::Applied;
             fillProviderTransform(requestedNodeLocal, applicationResult.appliedSourceParentLocal);

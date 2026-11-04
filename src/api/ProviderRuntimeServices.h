@@ -90,7 +90,8 @@ namespace rock::provider::runtime
     bool queryWeaponHandling(provider_state_policy::WeaponHandling& outHandling);
     // Grip and emitters are read for either slot; the caller has checked it.
     api::Status getWeaponGrip(api::weapon::Grip& outGrip, std::uint32_t weaponSlot);
-    api::Status getWeaponClassification(api::weapon::Classification& outClassification);
+    api::Status getWeaponClassification(api::weapon::Classification& outClassification, std::uint32_t weaponSlot);
+    api::Status setAutomaticReloadBlocked(std::uint64_t ownerToken, bool blocked);
     std::uint32_t weaponEmitterCount(std::uint32_t weaponSlot);
     std::uint32_t copyWeaponEmitters(std::uint32_t weaponSlot, api::weapon::Emitter* outEmitters,
         std::uint32_t capacity);
@@ -186,7 +187,15 @@ namespace rock::provider::runtime
     // Weapon slot 0's parts. Records carry opaque source keys; targets and
     // drives arrive with their keys already resolved to live nodes.
     bool queryWeaponContact(const api::weaponparts::ContactQuery& query, api::weaponparts::ContactResult& outResult);
-    std::uint32_t copyWeaponEvidenceDetails(api::weaponparts::EvidenceDetail* outDetails, std::uint32_t capacity);
+    std::uint32_t copyWeaponEvidenceDetails(api::weaponparts::EvidenceDetail* outDetails, std::uint32_t capacity,
+        std::uint32_t weaponSlot);
+    // Weapon slot 1's sources and bone drives, by key.
+    api::Status copySecondarySources(std::uint64_t generation, api::weaponparts::Source* outSources,
+        std::uint32_t capacity, std::uint32_t& outCount);
+    api::Status querySecondarySourcePose(std::uint64_t generation, std::uint64_t key, WeaponSourcePose& outPose);
+    api::Status setSecondaryWeaponDrives(std::uint64_t ownerToken, const api::weaponparts::DriveTarget* targets,
+        std::uint32_t count);
+    void clearSecondaryWeaponDrives(std::uint64_t ownerToken);
     std::uint32_t copyWeaponEvidencePoints(std::uint32_t bodyId, api::Point3* outPoints, std::uint32_t capacity);
     api::Status setWeaponPartTargets(std::uint64_t ownerToken, std::span<const PartTarget> targets);
     api::Status clearWeaponPartTargets(std::uint64_t ownerToken);

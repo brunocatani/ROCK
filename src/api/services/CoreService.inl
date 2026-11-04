@@ -85,6 +85,7 @@
             // Registration can run concurrently. Retire the Grab event callback
             // before this owner slot becomes available to another registration.
             grab_callbacks::clear(ownerToken);
+            clearAutomaticReloadBlockForOwner(ownerToken);
             *slot = {};
             clearInteractionCommandsForOwnerLocked(ownerToken, api::grab::InteractionFailure::OwnerNotRegistered);
             clearHandInputSuppressionsForOwnerLocked(

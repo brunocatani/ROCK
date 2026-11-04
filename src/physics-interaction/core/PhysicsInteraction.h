@@ -315,7 +315,15 @@ namespace rock
         bool queryProviderWeaponContactAtPoint(const api::weaponparts::ContactQuery& query,
             api::weaponparts::ContactResult& outResult) const;
         std::uint32_t copyProviderWeaponEvidenceDetails(api::weaponparts::EvidenceDetail* outDetails,
-            std::uint32_t maxDetails) const;
+            std::uint32_t maxDetails, std::uint32_t weaponSlot) const;
+        // Slot 1's sources and bone drives, for its current generation.
+        api::Status copyProviderSecondaryWeaponSources(std::uint64_t generation, api::weaponparts::Source* outSources,
+            std::uint32_t capacity, std::uint32_t& outCount) const;
+        api::Status queryProviderSecondaryWeaponSourcePose(std::uint64_t generation, std::uint64_t key,
+            provider::WeaponSourcePose& outPose) const;
+        api::Status setProviderSecondaryWeaponDrives(std::uint64_t ownerToken,
+            const api::weaponparts::DriveTarget* targets, std::uint32_t count) const;
+        void clearProviderSecondaryWeaponDrives(std::uint64_t ownerToken) const;
         std::uint32_t copyProviderWeaponEvidencePoints(std::uint32_t bodyId, api::Point3* outPoints,
             std::uint32_t maxPoints) const;
         // Slot 0 reads the primary weapon's collision, slot 1 the second's.
@@ -331,7 +339,7 @@ namespace rock
             api::grab::HandTargetDetails& outDetails) const;
         std::uint32_t copyProviderBodyContacts(api::collision::BodyContact* outContacts,
             std::uint32_t maxContacts) const;
-        bool queryProviderWeaponClassification(api::weapon::Classification& outResult) const;
+        bool queryProviderWeaponClassification(api::weapon::Classification& outResult, std::uint32_t weaponSlot) const;
         bool queryProviderWeaponGrip(api::weapon::Grip& outState) const;
         // Slot 1: the presented second weapon and its own projectile node.
         // Frame thread, after that weapon's placement.
@@ -806,6 +814,7 @@ namespace rock
             std::uint32_t groupId{ 0 };
             std::uint32_t priority{ 0 };
             std::array<char, weapon_part_runtime::kMaxSourceName> sourceName{};
+            RE::NiTransform drivenLocal{};
             bool activeThisFrame{ false };
         };
 

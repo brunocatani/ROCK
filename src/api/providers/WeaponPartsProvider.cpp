@@ -86,11 +86,10 @@ namespace rock::api::weaponparts
             if (const auto s = checkWeaponSlot(slot); s != Status::Ok)
                 return s;
             return invoke(owner, kInterfaceId, 1, true, [&] {
-                if (!weaponSlotPublished(slot))
-                    return Status::TargetUnavailable;
-                p::runtime::refreshSources();
+                if (slot == 0)
+                    p::runtime::refreshSources();
                 std::array<EvidenceDetail, kMaxEvidenceDetails> all{};
-                *outCount = p::runtime::copyWeaponEvidenceDetails(all.data(), kMaxEvidenceDetails);
+                *outCount = p::runtime::copyWeaponEvidenceDetails(all.data(), kMaxEvidenceDetails, slot);
                 std::copy_n(all.begin(), (std::min)(capacity, *outCount), outDetails);
                 return Status::Ok;
             });
@@ -160,6 +159,8 @@ namespace rock::api::weaponparts
             if (const auto s = checkWeaponSlot(slot); s != Status::Ok)
                 return s;
             return invoke(owner, kInterfaceId, 2, true, [&] {
+                if (slot == 1)
+                    return p::runtime::setSecondaryWeaponDrives(owner, targets, count);
                 if (!weaponSlotPublished(slot))
                     return Status::TargetUnavailable;
                 p::runtime::refreshSources();
@@ -177,8 +178,13 @@ namespace rock::api::weaponparts
         {
             if (const auto s = checkWeaponSlot(slot); s != Status::Ok)
                 return s;
-            return invoke(owner, kInterfaceId, 2, true,
-                [&] { return weaponSlotPublished(slot) ? p::runtime::clearWeaponPartDrives(owner) : Status::Ok; });
+            return invoke(owner, kInterfaceId, 2, true, [&] {
+                if (slot == 1) {
+                    p::runtime::clearSecondaryWeaponDrives(owner);
+                    return Status::Ok;
+                }
+                return weaponSlotPublished(slot) ? p::runtime::clearWeaponPartDrives(owner) : Status::Ok;
+            });
         }
 
         Status ROCK_CALL queryTargetResolution(OwnerToken owner, std::uint32_t slot, const ResolutionQuery* query,
@@ -253,6 +259,8 @@ namespace rock::api::weaponparts
             if (const auto s = checkWeaponSlot(slot); s != Status::Ok)
                 return s;
             return invoke(owner, kInterfaceId, 1, true, [&] {
+                if (slot == 1)
+                    return p::runtime::copySecondarySources(generation, outSources, capacity, *outCount);
                 if (!weaponSlotPublished(slot))
                     return Status::TargetUnavailable;
                 p::runtime::refreshSources();
@@ -297,10 +305,11 @@ namespace rock::api::weaponparts
                 return s;
             outPose->weaponSlot = slot;
             return invoke(owner, kInterfaceId, 1, true, [&] {
-                if (!weaponSlotPublished(slot))
+                if (slot != 1 && !weaponSlotPublished(slot))
                     return Status::TargetUnavailable;
                 p::WeaponSourcePose pose{};
-                const auto status = p::runtime::querySourcePose(generation, key, pose);
+                const auto status = slot == 1 ? p::runtime::querySecondarySourcePose(generation, key, pose) :
+                                                p::runtime::querySourcePose(generation, key, pose);
                 if (status != Status::Ok)
                     return status;
                 outPose->valid = 1;

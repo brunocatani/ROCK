@@ -72,12 +72,14 @@ namespace rock::provider::runtime
         return api::Status::Ok;
     }
 
-    api::Status getWeaponClassification(api::weapon::Classification& out)
+    api::Status getWeaponClassification(api::weapon::Classification& out, std::uint32_t slot)
     {
         out.valid = 1;
-        out.weaponFormId = 123;
+        out.weaponFormId = slot == 1 ? 789 : 123;
         return api::Status::Ok;
     }
+
+    api::Status setAutomaticReloadBlocked(std::uint64_t, bool) { return api::Status::Ok; }
 
     std::uint32_t weaponEmitterCount(std::uint32_t slot) { return slot == 1 ? 1 : emitterCount; }
 

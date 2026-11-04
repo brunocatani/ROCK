@@ -11,7 +11,8 @@
 
     std::uint32_t copyWeaponEvidenceDetails(
         api::weaponparts::EvidenceDetail* outDetails,
-        std::uint32_t capacity)
+        std::uint32_t capacity,
+        std::uint32_t weaponSlot)
     {
         const auto instanceAccess = s_physicsInteraction.borrow();
         auto* pi = instanceAccess.get();
@@ -19,7 +20,49 @@
             return 0;
         }
 
-        return pi->copyProviderWeaponEvidenceDetails(outDetails, capacity);
+        return pi->copyProviderWeaponEvidenceDetails(outDetails, capacity, weaponSlot);
+    }
+
+    api::Status copySecondarySources(
+        std::uint64_t generation,
+        api::weaponparts::Source* outSources,
+        std::uint32_t capacity,
+        std::uint32_t& outCount)
+    {
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
+        return pi && pi->isInitialized() ?
+            pi->copyProviderSecondaryWeaponSources(generation, outSources, capacity, outCount) :
+            api::Status::NotReady;
+    }
+
+    api::Status querySecondarySourcePose(std::uint64_t generation, std::uint64_t key, WeaponSourcePose& outPose)
+    {
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
+        return pi && pi->isInitialized() ?
+            pi->queryProviderSecondaryWeaponSourcePose(generation, key, outPose) :
+            api::Status::NotReady;
+    }
+
+    api::Status setSecondaryWeaponDrives(
+        std::uint64_t ownerToken,
+        const api::weaponparts::DriveTarget* targets,
+        std::uint32_t count)
+    {
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
+        return pi && pi->isInitialized() ?
+            pi->setProviderSecondaryWeaponDrives(ownerToken, targets, count) :
+            api::Status::NotReady;
+    }
+
+    void clearSecondaryWeaponDrives(std::uint64_t ownerToken)
+    {
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
+        if (pi && pi->isInitialized())
+            pi->clearProviderSecondaryWeaponDrives(ownerToken);
     }
 
     std::uint32_t copyWeaponEvidencePoints(

@@ -40,6 +40,9 @@ namespace rock::api::weapon {
         // offset file, with dynamic support grabs only. Animation authored
         // for ROCK's grip of this weapon does not fit its hands.
         UserWeaponOffset = 1u << 14,
+        // Slot 1 only: ROCK's private graph of this weapon is in its reload.
+        // Slot 0's reload is the player's own graph.
+        SecondaryReloadActive = 1u << 15,
     };
 
     enum class HandlingStateFlag : std::uint32_t
@@ -556,6 +559,7 @@ namespace rock::api::weapon {
     /*
      * Per-weapon calls take weaponSlot < kMaxWeaponSlots (InvalidArgument
      * otherwise). A slot ROCK does not publish yet returns TargetUnavailable.
+     * Slot 1 serves weapon state, grip, classification and emitters.
      * Game thread unless noted.
      */
     struct Api
@@ -631,6 +635,12 @@ namespace rock::api::weapon {
         // both ease into the grip instead of snapping. Results as
         // requestInventoryEquip.
         Status(ROCK_CALL* requestInventoryDraw)(OwnerToken owner, const EquipRequest* request, std::uint64_t* outCommandId) noexcept;
+        // Write. While an owner holds the block (blocked nonzero), an empty
+        // slot-1 weapon dry-fires on its trigger instead of starting a reload;
+        // its reload button still reloads. One owner at a time (OwnerConflict
+        // otherwise); it ends with 0 or the owner's loss. The game's own
+        // automatic reload call sites are not ROCK's and stay untouched.
+        Status(ROCK_CALL* setAutomaticReloadBlocked)(OwnerToken owner, std::uint32_t blocked) noexcept;
     };
 }
 #pragma pack(pop)

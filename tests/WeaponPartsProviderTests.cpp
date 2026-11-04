@@ -16,7 +16,7 @@ namespace
     constexpr api::OwnerToken testOwner = 42;
     std::uint32_t permissions = 3;
     std::uint32_t evidenceCount = 5;
-    unsigned targetWrites = 0, grabPointWrites = 0, suppressionWrites = 0, itemWrites = 0;
+    unsigned targetWrites = 0, grabPointWrites = 0, suppressionWrites = 0, itemWrites = 0, secondaryDriveWrites = 0;
     std::uint32_t lastTargetCount = 0;
 }
 
@@ -60,7 +60,24 @@ namespace rock::provider::runtime
         return true;
     }
 
-    std::uint32_t copyWeaponEvidenceDetails(api::weaponparts::EvidenceDetail* out, std::uint32_t capacity)
+    api::Status copySecondarySources(std::uint64_t, api::weaponparts::Source*, std::uint32_t, std::uint32_t& outCount)
+    {
+        outCount = 60;
+        return api::Status::Ok;
+    }
+
+    api::Status querySecondarySourcePose(std::uint64_t, std::uint64_t, WeaponSourcePose&) { return api::Status::Ok; }
+
+    api::Status setSecondaryWeaponDrives(std::uint64_t, const api::weaponparts::DriveTarget*, std::uint32_t)
+    {
+        ++secondaryDriveWrites;
+        return api::Status::Ok;
+    }
+
+    void clearSecondaryWeaponDrives(std::uint64_t) { ++secondaryDriveWrites; }
+
+    std::uint32_t copyWeaponEvidenceDetails(api::weaponparts::EvidenceDetail* out, std::uint32_t capacity,
+        std::uint32_t)
     {
         const auto copied = (std::min)(capacity, evidenceCount);
         for (std::uint32_t i = 0; i < copied; ++i) {
@@ -206,7 +223,7 @@ int main()
     assert(api.copyEvidenceDetails(testOwner, 0, nullptr, 0, &count) == Status::Ok && count == 5);
     assert(api.copyEvidenceDetails(testOwner, 0, details, kMaxEvidenceDetails + 1, &count) == Status::CapacityFull &&
         count == 0);
-    assert(api.copyEvidenceDetails(testOwner, 1, details, 2, &count) == Status::TargetUnavailable);
+    assert(api.copyEvidenceDetails(testOwner, 1, details, 2, &count) == Status::Ok && count == 5);
     Point3 points[1];
     assert(api.copyEvidencePoints(testOwner, 0, 10, points, 1, &count) == Status::Ok && count == 3);
 
@@ -221,6 +238,11 @@ int main()
     assert(api.setPartTargets(testOwner, 1, &target, 1) == Status::TargetUnavailable && targetWrites == 1);
     assert(api.clearPartTargets(testOwner, 1) == Status::Ok && targetWrites == 1);
     assert(api.clearPartTargets(testOwner, 0) == Status::Ok && targetWrites == 2);
+
+    // Slot 1's drives go to its own graph's bones.
+    assert(api.setDriveTargets(testOwner, 1, nullptr, 0) == Status::Ok && secondaryDriveWrites == 1);
+    assert(api.clearDriveTargets(testOwner, 1) == Status::Ok && secondaryDriveWrites == 2);
+
     std::strcpy(target.sourceName, "Missing");
     assert(api.setPartTargets(testOwner, 0, &target, 1) == Status::Ambiguous);
     assert(api.setPartTargets(testOwner, 0, &target, kMaxTargets + 1) == Status::CapacityFull);

@@ -458,8 +458,11 @@ namespace rock::api::weaponparts {
     /*
      * Per-weapon calls take weaponSlot < kMaxWeaponSlots (InvalidArgument
      * otherwise). A slot ROCK does not publish yet returns TargetUnavailable;
-     * clearing it is a no-op. Copy calls report the total in outCount and copy
-     * min(capacity, total). Game thread unless noted.
+     * clearing it is a no-op. Slot 1 serves copyEvidenceDetails, copySources,
+     * querySourcePose and source-parent-local drives by source key of the bones
+     * its animation graph writes; a source pose of a driven bone reports what
+     * the graph evaluated, before the drive. Copy calls report the total in
+     * outCount and copy min(capacity, total). Game thread unless noted.
      */
     struct Api
     {

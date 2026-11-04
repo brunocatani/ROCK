@@ -323,16 +323,18 @@ namespace rock
         return contact.valid;
     }
 
-    bool PhysicsInteraction::queryProviderWeaponClassification(api::weapon::Classification& outResult) const
+    bool PhysicsInteraction::queryProviderWeaponClassification(api::weapon::Classification& outResult,
+        std::uint32_t weaponSlot) const
     {
         outResult = {};
-        const auto identity = _weaponCollision.getEquippedWeaponClassification();
+        const auto& collision = weaponSlot == 1 ? _secondaryWeaponCollision : _weaponCollision;
+        const auto identity = collision.getEquippedWeaponClassification();
         outResult.valid = identity.hasEquippedWeapon && identity.classificationResolved ? 1u : 0u;
         outResult.weaponFormId = identity.formID;
         outResult.keywordFlags = identity.keywordFlags;
         outResult.sizeClass = static_cast<api::weapon::SizeClass>(identity.sizeClass);
         outResult.source = static_cast<api::weapon::ClassificationSource>(identity.classificationSource);
-        outResult.weaponGenerationKey = _weaponCollision.getCurrentWeaponGenerationKey();
+        outResult.weaponGenerationKey = collision.getCurrentWeaponGenerationKey();
         using Source = WeaponClassificationSource;
         using Provenance = api::weapon::ClassificationProvenanceFlag;
         if (identity.keywordFlags != 0) {
@@ -499,13 +501,18 @@ namespace rock
     }
 
     std::uint32_t PhysicsInteraction::copyProviderWeaponEvidenceDetails(api::weaponparts::EvidenceDetail* outDetails,
-        std::uint32_t maxDetails) const
+        std::uint32_t maxDetails, std::uint32_t weaponSlot) const
     {
         if (!outDetails || maxDetails == 0) {
             return 0;
         }
 
-        const auto descriptors = _weaponCollision.getProfileEvidenceDescriptors();
+        const bool second = weaponSlot == 1;
+        const auto descriptors =
+            (second ? _secondaryWeaponCollision : _weaponCollision).getProfileEvidenceDescriptors();
+        const auto keyOf = [&](std::uint64_t generation, std::uintptr_t node) {
+            return second ? native_secondary_actions::partSourceKey(node) : providerWeaponSourceKey(generation, node);
+        };
         const std::uint32_t count = (std::min)((std::min)(maxDetails, api::weaponparts::kMaxEvidenceDetails),
             static_cast<std::uint32_t>(descriptors.size()));
         for (std::uint32_t i = 0; i < count; ++i) {
@@ -519,9 +526,8 @@ namespace rock
             out.socketRole = static_cast<std::uint32_t>(descriptor.semantic.socketRole);
             out.actionRole = static_cast<std::uint32_t>(descriptor.semantic.actionRole);
             out.fallbackGripPose = static_cast<std::uint32_t>(descriptor.semantic.fallbackGripPose);
-            out.interactionKey =
-                providerWeaponSourceKey(descriptor.weaponGenerationKey, descriptor.geometryRootAddress);
-            out.sourceKey = providerWeaponSourceKey(descriptor.weaponGenerationKey, descriptor.sourceRootAddress);
+            out.interactionKey = keyOf(descriptor.weaponGenerationKey, descriptor.geometryRootAddress);
+            out.sourceKey = keyOf(descriptor.weaponGenerationKey, descriptor.sourceRootAddress);
             out.weaponGenerationKey = descriptor.weaponGenerationKey;
             out.localBoundsGame.min = makeProviderPoint(descriptor.localBoundsGame.min);
             out.localBoundsGame.max = makeProviderPoint(descriptor.localBoundsGame.max);
@@ -1040,6 +1046,7 @@ namespace rock
         setFlag(Flag::WeaponDrawn, slotOne.equipped && frame.weaponDrawn);
         setFlag(Flag::WeaponPresent, slotOne.equipped && native_secondary_presentation::presentedModel() != nullptr);
         setFlag(Flag::UserWeaponOffset, slotOne.equipped && native_secondary_presentation::usesUserWeaponOffset());
+        setFlag(Flag::SecondaryReloadActive, slotOne.equipped && native_secondary_actions::reloading());
         if (slotOne.equipped) {
             outState.firingHand =
                 slotOne.hand == equipped_weapon_roster::Hand::Left ? api::Hand::Left : api::Hand::Right;
@@ -1052,6 +1059,80 @@ namespace rock
         outState.sample.skeletonGeneration = _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
         outState.sample.providerGeneration = _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
         fillProviderWeaponAmmo(outState);
+    }
+
+    api::Status PhysicsInteraction::copyProviderSecondaryWeaponSources(std::uint64_t generation,
+        api::weaponparts::Source* outSources, std::uint32_t capacity, std::uint32_t& outCount) const
+    {
+        outCount = 0;
+        if (!generation || generation != _secondaryWeaponCollision.getCurrentWeaponGenerationKey())
+            return api::Status::GenerationMismatch;
+        const auto total = native_secondary_actions::partSourceCount();
+        if (!total)
+            return api::Status::TargetUnavailable;
+        const auto copied = (std::min)(capacity, total);
+        for (std::uint32_t i = 0; i < copied; ++i) {
+            auto& out = outSources[i];
+            RE::NiTransform local{};
+            const char* name{};
+            if (!native_secondary_actions::partSource(i, out.sourceKey, out.parentKey, local, name))
+                return api::Status::TargetUnavailable;
+            out.bodyId = api::weaponparts::kNoBody;
+            out.weaponGenerationKey = generation;
+            fillProviderTransform(local, out.sourceParentLocal);
+            if (name)
+                strncpy_s(out.name, name, _TRUNCATE);
+        }
+        outCount = total;
+        return api::Status::Ok;
+    }
+
+    api::Status PhysicsInteraction::queryProviderSecondaryWeaponSourcePose(std::uint64_t generation, std::uint64_t key,
+        provider::WeaponSourcePose& output) const
+    {
+        output = {};
+        if (!generation || generation != _secondaryWeaponCollision.getCurrentWeaponGenerationKey())
+            return api::Status::GenerationMismatch;
+        RE::NiTransform parentLocal{}, rootLocal{}, world{};
+        if (!native_secondary_actions::queryPartPose(key, parentLocal, rootLocal, world))
+            return api::Status::GenerationMismatch;
+        if (!finiteNiTransform(parentLocal) || !finiteNiTransform(rootLocal) || !finiteNiTransform(world))
+            return api::Status::NotReady;
+        output.weaponGenerationKey = generation;
+        output.sourceKey = key;
+        fillProviderTransform(parentLocal, output.sourceParentLocal);
+        fillProviderTransform(rootLocal, output.weaponRootLocal);
+        fillProviderTransform(world, output.world);
+        return api::Status::Ok;
+    }
+
+    api::Status PhysicsInteraction::setProviderSecondaryWeaponDrives(std::uint64_t ownerToken,
+        const api::weaponparts::DriveTarget* targets, std::uint32_t count) const
+    {
+        std::array<RE::NiTransform, api::weaponparts::kMaxDrives> locals{};
+        std::array<native_secondary_actions::PartDriveRequest, api::weaponparts::kMaxDrives> requests{};
+        const auto generation = _secondaryWeaponCollision.getCurrentWeaponGenerationKey();
+        for (std::uint32_t i = 0; i < count; ++i) {
+            const auto& target = targets[i];
+            if (target.weaponGenerationKey != 0 && target.weaponGenerationKey != generation)
+                return api::Status::GenerationMismatch;
+            if (target.driveSpace != api::weaponparts::DriveSpace::SourceParentLocal ||
+                !(target.flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceKey)) ||
+                !target.sourceKey || target.leaseFrames == 0)
+                return api::Status::InvalidArgument;
+            locals[i] = providerTransformToNi(target.targetTransform);
+            if (!finiteNiTransform(locals[i]))
+                return api::Status::InvalidArgument;
+            requests[i] = { target.sourceKey, &locals[i],
+                (std::min)(target.leaseFrames, api::weaponparts::kMaxDriveLeaseFrames) };
+        }
+        return native_secondary_actions::setPartDrives(ownerToken,
+            std::span<const native_secondary_actions::PartDriveRequest>(requests).first(count));
+    }
+
+    void PhysicsInteraction::clearProviderSecondaryWeaponDrives(std::uint64_t ownerToken) const
+    {
+        native_secondary_actions::clearPartDrives(ownerToken);
     }
 
     std::uint32_t PhysicsInteraction::copyProviderWeaponPartPoses(api::weaponparts::PartPose* outParts,

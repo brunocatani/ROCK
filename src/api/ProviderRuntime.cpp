@@ -415,6 +415,15 @@ namespace rock::provider::runtime
     std::mutex s_equippedWeaponHandlingAuthorityMutex;
     EquippedWeaponHandlingAuthoritySlot s_equippedWeaponHandlingAuthority{};
 
+    // Owner asking that an empty slot-1 weapon dry-fire instead of reloading.
+    // API writers and the frame owner's reader share only this atomic.
+    std::atomic<std::uint64_t> s_automaticReloadBlockOwner{ 0 };
+
+    void clearAutomaticReloadBlockForOwner(std::uint64_t ownerToken) noexcept
+    {
+        s_automaticReloadBlockOwner.compare_exchange_strong(ownerToken, 0, std::memory_order_acq_rel);
+    }
+
     struct WeaponPartTargetSlot
     {
         bool active{ false };
@@ -1315,6 +1324,7 @@ namespace rock::provider::runtime
         }
         saved_grab_offset::clearDefaultGrabPosesForOwner(ownerToken);
         grab_callbacks::clear(ownerToken);
+        clearAutomaticReloadBlockForOwner(ownerToken);
         {
             std::scoped_lock lock(s_interactionCommandMutex, s_handInputSuppressionMutex, s_weaponPartMutex,
                 s_nativeAnimationAuthorityMutex, s_equippedWeaponHandlingAuthorityMutex);
@@ -2382,6 +2392,11 @@ namespace rock::provider
         // Non-exclusive targets can match without raising whitelistActive, so
         // a resolution is meaningful whenever either signal is set.
         return outResolution.whitelistActive || outResolution.matched;
+    }
+
+    bool automaticReloadBlocked() noexcept
+    {
+        return s_automaticReloadBlockOwner.load(std::memory_order_acquire) != 0;
     }
 
     std::uint32_t copyWeaponPartDrives(PartDrive* outTargets, std::uint32_t maxTargets, std::uint64_t* outOwnerTokens,

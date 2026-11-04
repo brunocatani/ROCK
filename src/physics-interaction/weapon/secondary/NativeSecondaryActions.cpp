@@ -15,6 +15,7 @@
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "RockConfig.h"
+#include "api/ProviderRuntime.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/input/InputRemapPolicy.h"
@@ -119,6 +120,8 @@ namespace rock::native_secondary_actions
             weapon_recoil_policy::Family recoilFamily{ weapon_recoil_policy::Family::Default };
             std::uint32_t recoilShots{}, recoilSamples{};
             bool rootsTraced{};
+            // The owner of the part drives on this weapon's bones.
+            std::uint64_t driveOwner{}, driveOwnerExpiresAfterFrame{};
 
             struct TraceWindow
             {
@@ -1016,8 +1019,11 @@ namespace rock::native_secondary_actions
             // indexed ammo selection requests reload. With no ammo, attempt
             // the optional FireEmpty action (e.g. a minigun shredder), then
             // play this exact instance's attack-fail sound independently.
+            // An automatic-reload block makes the empty magazine dry-fire too:
+            // this request is ROCK's own copy of the native one, which the
+            // blocker's hooks on the game's call sites never see.
             auto* ammo = native<RE::TESAmmo* (*)(RE::Actor*, std::uint32_t)>(0xE05BA0)(context.player, 1);
-            if (ammo) {
+            if (ammo && !provider::automaticReloadBlocked()) {
                 const bool accepted = dispatch(s, RE::DEFAULT_OBJECT::kActionReload);
                 if (accepted)
                     s.reloading = true;
@@ -1815,6 +1821,7 @@ namespace rock::native_secondary_actions
                 }
             }
             s.graph->update(s.drawing ? dt * kDrawAcceleration : dt);
+            s.bindings.applyDrives(s.frame);
             if (!s.graph->place(attachment->world) || s.graph->eventOverflow()) {
                 cancel(s, "graph-stopped");
                 s.bindings.restore();
@@ -1912,6 +1919,98 @@ namespace rock::native_secondary_actions
             return false;
         s.reload = true;
         return true;
+    }
+
+    bool reloading() noexcept
+    {
+        if (!s_installed)
+            return false;
+        const auto& s = state();
+        return s.ready && s.reloading;
+    }
+
+    namespace
+    {
+        // Validates the caller's thread and the live binding for part access.
+        [[nodiscard]] State* partState() noexcept
+        {
+            if (!s_installed)
+                return nullptr;
+            auto& s = state();
+            return s.thread == GetCurrentThreadId() && s.ready && same(s, native_hand_equipment::equippedViews()[1])
+                ? &s
+                : nullptr;
+        }
+    }
+
+    std::uint32_t partSourceCount() noexcept
+    {
+        const auto* s = partState();
+        return s ? s->bindings.partSourceCount() : 0;
+    }
+
+    bool partSource(std::uint32_t index, std::uint64_t& key, std::uint64_t& parentKey, RE::NiTransform& local,
+        const char*& name) noexcept
+    {
+        const auto* s = partState();
+        if (!s || index >= s->bindings.partSourceCount())
+            return false;
+        const auto source = s->bindings.partSource(index);
+        key = source.key;
+        parentKey = source.parentKey;
+        local = source.local;
+        name = source.name;
+        return true;
+    }
+
+    std::uint64_t partSourceKey(std::uintptr_t node) noexcept
+    {
+        const auto* s = partState();
+        return s ? s->bindings.partSourceKey(reinterpret_cast<const RE::NiAVObject*>(node)) : 0;
+    }
+
+    bool queryPartPose(std::uint64_t key, RE::NiTransform& parentLocal, RE::NiTransform& rootLocal,
+        RE::NiTransform& world) noexcept
+    {
+        const auto* s = partState();
+        return s && s->bindings.partPose(key, parentLocal, rootLocal, world);
+    }
+
+    api::Status setPartDrives(std::uint64_t owner, std::span<const PartDriveRequest> drives) noexcept
+    {
+        auto* s = partState();
+        if (!s)
+            return api::Status::TargetUnavailable;
+        const auto frame = runtime_state::currentFrame().frameIndex;
+        if (s->driveOwner && s->driveOwner != owner && frame <= s->driveOwnerExpiresAfterFrame)
+            return api::Status::OwnerConflict;
+        for (const auto& drive : drives)
+            if (!s->bindings.partIsAnimated(drive.key))
+                return api::Status::TargetInvalid;
+        std::uint64_t expires = 0;
+        try {
+            s->bindings.endDrives();
+            for (const auto& drive : drives) {
+                const auto expiresAfterFrame = frame + drive.leaseFrames;
+                expires = (std::max)(expires, expiresAfterFrame);
+                s->bindings.addDrive(drive.key, *drive.local, expiresAfterFrame);
+            }
+        } catch (...) {
+            s->bindings.endDrives();
+            return api::Status::InternalError;
+        }
+        s->driveOwner = drives.empty() ? 0 : owner;
+        s->driveOwnerExpiresAfterFrame = expires;
+        return api::Status::Ok;
+    }
+
+    void clearPartDrives(std::uint64_t owner) noexcept
+    {
+        auto* s = partState();
+        if (s && s->driveOwner == owner) {
+            s->driveOwner = 0;
+            s->bindings.endDrives();
+        }
     }
 
     void applyRecoil(RE::NiTransform& weapon, RE::NiTransform& hand, const RE::NiTransform& controller) noexcept

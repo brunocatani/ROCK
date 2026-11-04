@@ -167,6 +167,7 @@ namespace rock::provider::runtime
     void clearWeaponPartTargetsForOwnerLocked(std::uint64_t) {}
 
     void clearWeaponPartDrivesForOwnerLocked(std::uint64_t) {}
+    void clearAutomaticReloadBlockForOwner(std::uint64_t) noexcept {}
 
     void clearNativeAnimationAuthorityForOwnerLocked(std::uint64_t) {}
 

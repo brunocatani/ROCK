@@ -14,16 +14,29 @@
         return primaryHand() == api::Hand::Left ? api::Hand::Right : api::Hand::Left;
     }
 
-    api::Status getWeaponClassification(api::weapon::Classification& outClassification)
+    api::Status getWeaponClassification(api::weapon::Classification& outClassification, std::uint32_t weaponSlot)
     {
         const auto instanceAccess = s_physicsInteraction.borrow();
         auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
             return api::Status::NotReady;
         }
-        return pi->queryProviderWeaponClassification(outClassification) ?
+        return pi->queryProviderWeaponClassification(outClassification, weaponSlot) ?
             api::Status::Ok :
             api::Status::NotReady;
+    }
+
+    api::Status setAutomaticReloadBlocked(std::uint64_t ownerToken, bool blocked)
+    {
+        if (blocked) {
+            std::uint64_t expected = 0;
+            if (!s_automaticReloadBlockOwner.compare_exchange_strong(expected, ownerToken,
+                    std::memory_order_acq_rel) && expected != ownerToken)
+                return api::Status::OwnerConflict;
+            return api::Status::Ok;
+        }
+        clearAutomaticReloadBlockForOwner(ownerToken);
+        return api::Status::Ok;
     }
 
     std::uint32_t weaponEmitterCount(const std::uint32_t weaponSlot)

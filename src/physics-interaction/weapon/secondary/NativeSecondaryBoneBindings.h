@@ -4,6 +4,8 @@
 
 #include <Windows.h>
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
 #include <vector>
 #include "RE/Bethesda/BSGeometry.h"
 #include "RE/Bethesda/BSSkin.h"
@@ -54,12 +56,31 @@ namespace rock::native_secondary_actions
             native_secondary_pose_transport::EvaluatedPose transport;
             native_secondary_pose_transport::PresentedHistory history;
             RE::NiTransform lastNativeLocal{};
+            RE::NiTransform evaluatedLocal{}; // What the graph wrote, while driven.
+            RE::NiTransform writtenLocal{}; // What the drive wrote over it.
             bool sampledNative{};
             bool duplicate{}; // Same name as an earlier bone owner; diagnostic only.
+            bool driven{};
         };
+
+        // A provider's pose for one animated bone, in place of the graph's
+        // output, until its frame lease ends.
+        struct Drive
+        {
+            std::size_t node{};
+            RE::NiTransform local{};
+            std::uint64_t expiresAfterFrame{};
+        };
+
+        // Part keys name a node of one binding: a later bind retires them.
+        static constexpr std::uint64_t kKeyIndexBits = 16;
+        static constexpr std::uint64_t kKeyIndexMask = (std::uint64_t{ 1 } << kKeyIndexBits) - 1;
+        static constexpr std::size_t kNoNode = SIZE_MAX;
 
         std::vector<Skin> _skins;
         std::vector<Node> _nodes;
+        std::vector<Drive> _drives;
+        std::uint64_t _bindSequence{}, _lastBindSequence{};
         std::uint64_t _sampleFrame{ UINT64_MAX }, _nextReport{}, _nextBoneReport{};
         std::uint32_t _sampleFrames{}, _movingSamples{};
         float _nativeTravel{}, _nativeRotation{}, _nativeScale{}, _overwrite{};
@@ -147,12 +168,132 @@ namespace rock::native_secondary_actions
                 native_memory::tryReadField(skin, 0x38, count) && count <= 768;
         }
 
+        [[nodiscard]] std::uint64_t keyOf(std::size_t index) const noexcept
+        {
+            return (_bindSequence << kKeyIndexBits) | static_cast<std::uint64_t>(index + 1);
+        }
+
+        [[nodiscard]] std::size_t indexOf(std::uint64_t key) const noexcept
+        {
+            const auto index = key & kKeyIndexMask;
+            return _bindSequence != 0 && (key >> kKeyIndexBits) == _bindSequence && index >= 1 && index <= _nodes.size()
+                ? static_cast<std::size_t>(index - 1)
+                : kNoNode;
+        }
+
+        [[nodiscard]] static bool sameLocal(const RE::NiTransform& left, const RE::NiTransform& right) noexcept
+        {
+            return std::memcmp(&left.rotate, &right.rotate, sizeof(left.rotate)) == 0 &&
+                left.translate == right.translate && left.scale == right.scale;
+        }
+
     public:
         ~BoneBindings() { restore(); }
 
         BoneBindings() = default;
         BoneBindings(const BoneBindings&) = delete;
         BoneBindings& operator=(const BoneBindings&) = delete;
+
+        struct PartSource
+        {
+            std::uint64_t key{}, parentKey{};
+            RE::NiTransform local{};
+            const char* name{};
+        };
+
+        [[nodiscard]] std::uint32_t partSourceCount() const noexcept
+        {
+            return static_cast<std::uint32_t>(_nodes.size());
+        }
+
+        [[nodiscard]] PartSource partSource(std::uint32_t index) const noexcept
+        {
+            const auto& node = _nodes[index];
+            PartSource source{};
+            source.key = keyOf(index);
+            source.parentKey = index ? keyOf(node.parentIndex) : 0;
+            source.local = node.actual->local;
+            source.name = node.actual->name.c_str();
+            return source;
+        }
+
+        [[nodiscard]] std::uint64_t partSourceKey(const RE::NiAVObject* object) const noexcept
+        {
+            for (std::size_t i = 0; i < _nodes.size(); ++i)
+                if (_nodes[i].actual.get() == object)
+                    return keyOf(i);
+            return 0;
+        }
+
+        // A driven bone reports what its graph evaluated, before the drive.
+        [[nodiscard]] bool partPose(std::uint64_t key, RE::NiTransform& parentLocal, RE::NiTransform& rootLocal,
+            RE::NiTransform& world) const noexcept
+        {
+            const auto index = indexOf(key);
+            if (index == kNoNode)
+                return false;
+            const auto& node = _nodes[index];
+            parentLocal = node.driven ? node.evaluatedLocal : node.target ? node.target->local : node.actual->local;
+            world = node.actual->world;
+            rootLocal = transform_math::composeTransforms(
+                weapon_visual_authority_math::invertSceneTransform(_nodes[0].actual->world), world);
+            return true;
+        }
+
+        [[nodiscard]] bool partIsAnimated(std::uint64_t key) const noexcept
+        {
+            const auto index = indexOf(key);
+            return index != kNoNode && _nodes[index].target;
+        }
+
+        // Ends every drive at the next apply, which restores what they wrote.
+        void endDrives() noexcept
+        {
+            for (auto& drive : _drives)
+                drive.expiresAfterFrame = 0;
+        }
+
+        // The caller checked that the key is animated. Replaces that bone's
+        // drive, keeping what the graph last evaluated under it.
+        void addDrive(std::uint64_t key, const RE::NiTransform& local, std::uint64_t expiresAfterFrame)
+        {
+            const auto node = indexOf(key);
+            for (auto& drive : _drives) {
+                if (drive.node == node) {
+                    drive.local = local;
+                    drive.expiresAfterFrame = expiresAfterFrame;
+                    return;
+                }
+            }
+            _drives.push_back({ node, local, expiresAfterFrame });
+        }
+
+        /*
+         * Runs after the graph's update and before its placement, so the bone's
+         * world and every skin bound to it follow the drive. A local still equal
+         * to the last drive means the graph left this bone alone: its evaluated
+         * pose is still the older one, and that is what an ending drive restores.
+         */
+        void applyDrives(std::uint64_t frame) noexcept
+        {
+            for (auto drive = _drives.begin(); drive != _drives.end();) {
+                auto& node = _nodes[drive->node];
+                const bool graphWrote = !node.driven || !sameLocal(node.target->local, node.writtenLocal);
+                if (graphWrote)
+                    node.evaluatedLocal = node.target->local;
+                if (frame > drive->expiresAfterFrame) {
+                    if (!graphWrote)
+                        node.target->local = node.evaluatedLocal;
+                    node.driven = false;
+                    drive = _drives.erase(drive);
+                    continue;
+                }
+                node.driven = true;
+                node.writtenLocal = drive->local;
+                node.target->local = drive->local;
+                ++drive;
+            }
+        }
 
         void restore() noexcept
         {
@@ -166,6 +307,8 @@ namespace rock::native_secondary_actions
                     node.actual->local = node.originalLocal;
             _skins.clear();
             _nodes.clear();
+            _drives.clear();
+            _bindSequence = 0;
             _sampleFrame = UINT64_MAX;
             _nextReport = 0;
             _nextBoneReport = 0;
@@ -247,6 +390,8 @@ namespace rock::native_secondary_actions
                 kept, returned, _nodes.size());
             _skins.clear();
             _nodes.clear();
+            _drives.clear();
+            _bindSequence = 0;
             _sampleFrame = UINT64_MAX;
             _nextReport = 0;
             _nextBoneReport = 0;
@@ -411,6 +556,7 @@ namespace rock::native_secondary_actions
                 objects.size(), _skins.size(), boundNodes);
             // First pose sample after the graph has evaluated, not the bind pose.
             _nextBoneReport = GetTickCount64() + 1000;
+            _bindSequence = ++_lastBindSequence;
             return true;
         }
 

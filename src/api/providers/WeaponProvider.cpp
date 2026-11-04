@@ -83,8 +83,22 @@ namespace rock::api::weapon
         Status ROCK_CALL getClassification(OwnerToken owner, std::uint32_t slot,
             Classification* outClassification) noexcept
         {
-            return readSlot(owner, slot, outClassification,
-                [](Classification& value) { return p::runtime::getWeaponClassification(value); });
+            if (const auto s = checkOutput(outClassification); s != Status::Ok)
+                return s;
+            if (const auto s = checkWeaponSlot(slot); s != Status::Ok)
+                return s;
+            outClassification->weaponSlot = slot;
+            return invoke(owner, kInterfaceId, 1, true, [&] {
+                const auto status = p::runtime::getWeaponClassification(*outClassification, slot);
+                outClassification->weaponSlot = slot;
+                return status;
+            });
+        }
+
+        Status ROCK_CALL setAutomaticReloadBlocked(OwnerToken owner, std::uint32_t blocked) noexcept
+        {
+            return invoke(owner, kInterfaceId, 2, true,
+                [&] { return p::runtime::setAutomaticReloadBlocked(owner, blocked != 0); });
         }
 
         Status ROCK_CALL getCompositionState(OwnerToken owner, std::uint32_t slot, CompositionState* outState) noexcept
@@ -289,6 +303,7 @@ namespace rock::api::weapon
             &getFiringAimWorld,
             &setWarmInventoryWeapons,
             &requestInventoryDraw,
+            &setAutomaticReloadBlocked,
         };
         return value;
     }

@@ -14,7 +14,14 @@ unless noted.
 Per-weapon calls take a weapon slot, the native equipment index
 (`kMaxWeaponSlots` = 2; see `Weapon.md`). A slot at or above
 `kMaxWeaponSlots` returns `InvalidArgument`; a slot ROCK does not publish yet
-(currently slot 1) returns `TargetUnavailable`, and clearing it is a no-op.
+returns `TargetUnavailable`, and clearing it is a no-op.
+
+Slot 1 serves `copyEvidenceDetails`, `copySources`, `querySourcePose` and
+`setDriveTargets`/`clearDriveTargets` by source key in `SourceParentLocal` space,
+for the bones its animation graph writes (`TargetInvalid` for any other node).
+It has one drive owner at a time (`OwnerConflict` otherwise). `querySourcePose`
+of a driven bone reports what the graph evaluated, before the drive, so an owner
+can blend from the live clip. Its other calls return `TargetUnavailable`.
 
 ## Keys
 
