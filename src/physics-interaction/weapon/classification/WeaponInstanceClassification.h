@@ -110,8 +110,8 @@ namespace rock::weapon_instance_classification
      * TBO_InstanceData::GetKeywordData() when available. This reads the
      * engine-assembled keyword set after installed OMOD property changes.
      * Native instance weapon data resolves melee weapons. The effective
-     * equip slot only disambiguates conflicting pistol and rifle tags.
-     * Inconclusive weapons remain unclassified.
+     * equip slot decides when the pistol and rifle tags conflict or are both
+     * absent. A weapon in no recognized slot remains unclassified.
      */
     inline WeaponClassificationResult classifyEquippedWeapon(const RE::TESObjectWEAP* weapon,
         const RE::TBO_InstanceData* instanceData, const std::uint32_t effectiveEquipSlotFormID)

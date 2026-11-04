@@ -76,40 +76,27 @@ namespace rock::weapon_classification_policy
             has(WeaponKeywordFlag::GaussRifle) || has(WeaponKeywordFlag::LaserMusket) ||
             has(WeaponKeywordFlag::RailwayRifle) || has(WeaponKeywordFlag::Syringer);
 
-        if (pistolKeyword && rifleKeyword) {
-            if (isOneHandGunBehaviorSlot(input.effectiveEquipSlotFormID)) {
-                return {
-                    .sizeClass = WeaponSizeClass::Pistol,
-                    .source = WeaponClassificationSource::EquipSlot,
-                    .resolved = true,
-                };
-            }
-            if (isTwoHandGunBehaviorSlot(input.effectiveEquipSlotFormID)) {
-                return {
-                    .sizeClass = WeaponSizeClass::Rifle,
-                    .source = WeaponClassificationSource::EquipSlot,
-                    .resolved = true,
-                };
-            }
-
-            // Conflicting authored families require a recognized effective
-            // equip slot. Falling through to the pistol-only branch would turn
-            // inconclusive evidence into a false resolved classification.
-            return {};
-        }
-
-        if (pistolKeyword) {
+        if (pistolKeyword != rifleKeyword) {
             return {
-                .sizeClass = WeaponSizeClass::Pistol,
+                .sizeClass = pistolKeyword ? WeaponSizeClass::Pistol : WeaponSizeClass::Rifle,
                 .source = WeaponClassificationSource::Keyword,
                 .resolved = true,
             };
         }
 
-        if (rifleKeyword) {
+        // Both keywords conflict, and a mod can ship neither (the SIG pack's P320
+        // Ardent): how the gun is held still says which it is.
+        if (isOneHandGunBehaviorSlot(input.effectiveEquipSlotFormID)) {
+            return {
+                .sizeClass = WeaponSizeClass::Pistol,
+                .source = WeaponClassificationSource::EquipSlot,
+                .resolved = true,
+            };
+        }
+        if (isTwoHandGunBehaviorSlot(input.effectiveEquipSlotFormID)) {
             return {
                 .sizeClass = WeaponSizeClass::Rifle,
-                .source = WeaponClassificationSource::Keyword,
+                .source = WeaponClassificationSource::EquipSlot,
                 .resolved = true,
             };
         }
