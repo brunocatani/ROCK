@@ -210,7 +210,7 @@ cmake --preset custom-release
 cmake --build build-release --config Release --target ROCK
 ```
 
-This creates a `.7z` in `build-release/package` with `F4SE/Plugins/ROCK.dll` and its `.pdb`, any game data under `data/mod`, the license and `steamvr_bindings/`: only what players install, never headers or other development files. It publishes nothing.
+This writes a release's two files to `build-release/package`: a `.zip` that installs as it is, holding `F4SE/Plugins/ROCK.dll`, any game data under `data/mod` and `steamvr_bindings/`, and this readme beside it. It publishes nothing.
 
 ### Source layout
 
