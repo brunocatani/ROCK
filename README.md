@@ -4,7 +4,7 @@
 
 > A Fallout 4 VR F4SE plugin that gives the player physical hands: grabbing, hand and weapon collision, weapon handling, and a provider API other mods build on.
 
-[Download on Nexus Mods](https://www.nexusmods.com/fallout4/mods/108881) · [API reference](docs/api/Overview.md) · [Developer guide](https://devartificial.pro/docs/rps-sdk/rock) · [Changelog](CHANGELOG.md)
+[Download on Nexus Mods](https://www.nexusmods.com/fallout4/mods/108881) · [API reference](docs/api/Overview.md) · [Developer guide](https://devartificial.pro/docs/apis/rock) · [Changelog](CHANGELOG.md)
 
 <p align="center">
   <a href="https://www.youtube.com/watch?v=tPaIzmZ9P0o&t=113s">
@@ -73,7 +73,7 @@ Menu names can differ between SteamVR versions. After that, the `[Controls]` sec
 ### Compatibility
 
 - **SCISSORS Redux** owns NPC interactions: NPC collision, physical melee, blades, held NPCs and active ragdoll. ROCK 1.0 has no NPC features of its own. The older SCISSORS mod is replaced by Redux; disable it.
-- **Mods built for ROCK 0.92 or earlier through the RPS SDK** use provider API 1, which ROCK 1.0 refuses. They work again once rebuilt against ROCK 1.0's headers.
+- **Mods built for ROCK 0.92 or earlier** use provider API 1, which ROCK 1.0 does not serve. They stop the game: at the main menu an error box names each one, and the game closes when the box is closed. Update or remove them; they work again once rebuilt against ROCK 1.0's headers.
 - **Upgrading from ROCK 0.92** keeps your `ROCK.ini`. Settings ROCK no longer reads are ignored. `npcDynamicCollisions` and `bBladePenetrationEnabled` moved to `SCISSORS_Redux.ini`.
 
 ## Configuration
@@ -156,7 +156,7 @@ Call `client.close()` on the game thread before your plugin's callback data goes
 - `RequestQueued` means accepted, not done: poll the result.
 - Weapons are addressed by weapon slot: 0 is the first equipped weapon, 1 the second. Which hand holds a weapon is data, never implied by the slot.
 
-Start with the [API overview](docs/api/Overview.md), then the page of each interface you use. The [developer guide](https://devartificial.pro/docs/rps-sdk/rock) adds a complete first consumer, recipes and a [migration guide](https://devartificial.pro/docs/rps-sdk/rock/guides/migration) for mods built on provider API 1.
+Start with the [API overview](docs/api/Overview.md), then the page of each interface you use. The [developer guide](https://devartificial.pro/docs/apis/rock) adds a complete first consumer, recipes and a [migration guide](https://devartificial.pro/docs/apis/rock/guides/migration) for mods built on provider API 1.
 
 ## Building ROCK from source
 

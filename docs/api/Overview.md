@@ -58,10 +58,23 @@ reorder them.
 | --- | --- |
 | `Ok` | `*outDescriptor` points to ROCK's descriptor (valid for the process lifetime). |
 | `UnknownInterface` | No such interface, including the retired ids 10 and 12. |
-| `UnsupportedMajor` | The interface exists at another major. A mod built against provider API 1 (RPS SDK) gets this; ROCK logs it once per interface and major. |
+| `UnsupportedMajor` | The interface exists at another major. A mod built against provider API 1 (pre-1.0 ROCK) gets this. |
 | `UnsupportedMinor` | ROCK's minor is below `minimumMinor`. |
 | `TableTooSmall` | ROCK's table is smaller than `minimumTableBytes`. |
 | `InvalidArgument` | Null output, or a zero major or table size. |
+
+A version mismatch stops the game. After `UnknownInterface`,
+`UnsupportedMajor`, `UnsupportedMinor` or `TableTooSmall`, ROCK logs the
+calling DLL and, when the main menu opens (or at once, if it is already open),
+shows an error box naming that DLL and what to update; the game closes when the
+box is closed. Request exactly the major, minor and table size your headers
+declare, as `Client` does, and read optional additions from the descriptor's
+`minor`. Never probe for versions with trial queries.
+
+Your mod should do the same when a loaded ROCK refuses it, so a player with an
+older ROCK sees which mod needs which update. RPS Framework's
+`RPS/Runtime/RequiredUpdate.h` provides the box. When `ROCK.dll` is not loaded
+at all, turn your ROCK features off and keep running.
 
 Discovery grants no permissions. Bind each interface to your owner with the
 permissions you need (Core `bindInterface`, or `Client::acquire`).
