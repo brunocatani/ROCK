@@ -944,9 +944,12 @@ namespace rock
     void WeaponCollision::updateWeaponEmitterSnapshot(RE::NiAVObject* weaponNode, std::uint64_t equippedWeaponKey)
     {
         performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponEmitterRefresh);
-        const std::uint64_t weaponGenerationKey = getCurrentWeaponGenerationKey();
-        if (!weaponNode || equippedWeaponKey == 0 || weaponGenerationKey == 0 ||
-            _identity.cachedWeaponKey != equippedWeaponKey) {
+        // Emitters describe the weapon, not its colliders, so they publish from
+        // the moment it is drawn, under its interaction key. The colliders
+        // arriving change that key, which collects them again from the tree ROCK
+        // has by then seen stay stable.
+        const std::uint64_t weaponGenerationKey = getCurrentWeaponInteractionKey();
+        if (!weaponNode || equippedWeaponKey == 0 || weaponGenerationKey == 0) {
             clearWeaponEmitterSnapshot();
             return;
         }

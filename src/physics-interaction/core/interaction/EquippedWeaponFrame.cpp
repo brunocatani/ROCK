@@ -4,6 +4,7 @@
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/input/SupportTriggerInput.h"
 #include "physics-interaction/visual/GripZoneIndicators.h"
 #include "physics-interaction/weapon/authored/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/authored/HoldingGripRecords.h"
@@ -1165,6 +1166,8 @@ namespace rock
             if (_equipped.weaponInteractionKey != 0 && w.currentWeaponGenerationKey != 0 &&
                 _equipped.weaponInteractionKey == w.currentEquippedWeaponOwnershipKey) {
                 ::rock::provider::adoptWeaponPartGeneration(_equipped.weaponInteractionKey,
+                    w.currentAuthoredGripGenerationKey);
+                support_trigger_input::adoptWeaponKey(_equipped.weaponInteractionKey,
                     w.currentAuthoredGripGenerationKey);
                 if (_providerDrives.generationKey == _equipped.weaponInteractionKey) {
                     _providerDrives.generationKey = w.currentAuthoredGripGenerationKey;

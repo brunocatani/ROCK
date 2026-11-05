@@ -46,8 +46,7 @@ namespace rock::support_trigger_input
             provider_state_policy::applyHandling(equipped, handling);
             return (grip.flags & static_cast<std::uint32_t>(api::weapon::GripFlag::Valid)) != 0 &&
                 equipped.supportHand == value.hand && equipped.weaponFormId == value.weaponFormId &&
-                equipped.weaponGenerationKey == value.weaponGenerationKey &&
-                grip.weaponGenerationKey == value.weaponGenerationKey &&
+                provider::runtime::weaponInteractionKey() == value.weaponGenerationKey &&
                 sample.worldGeneration == value.sample.worldGeneration &&
                 sample.skeletonGeneration == value.sample.skeletonGeneration &&
                 sample.providerGeneration == value.sample.providerGeneration;
@@ -137,6 +136,13 @@ namespace rock::support_trigger_input
         } else if (raw.held && !state.held)
             ++state.pressSequence;
         state.held = raw.held;
+    }
+
+    void adoptWeaponKey(std::uint64_t from, std::uint64_t to)
+    {
+        std::scoped_lock lock(mutex);
+        if (state.active && request.weaponGenerationKey == from)
+            request.weaponGenerationKey = to;
     }
 
     bool blocked(bool left) noexcept

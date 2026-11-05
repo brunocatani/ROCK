@@ -34,6 +34,7 @@ namespace rock
         _drive.workbenchExitRebuildRequested.store(false, std::memory_order_release);
         _drive.failureCount.store(0, std::memory_order_release);
         clearAtomicBodyIds();
+        clearWeaponEmitterSnapshot();
 
         ROCK_LOG_INFO(Weapon, "WeaponCollision initialized");
     }
@@ -81,6 +82,7 @@ namespace rock
                                                        : PhysicsCallbackQuiescenceGate::MutationLease{};
 
         clearAtomicBodyIds();
+        clearWeaponEmitterSnapshot();
         resetWeaponBodySetGeneration();
         for (auto& instance : _bodies.bank) {
             clearWeaponBodyInstance(instance, true);

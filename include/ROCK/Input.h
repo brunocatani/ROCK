@@ -198,7 +198,9 @@ namespace rock::api::input {
      * before a fresh press; pressSequence is monotonic across leases, so read
      * a baseline after acquiring. Clearing, expiry, hand changes and owner
      * loss drain a held trigger before returning it to gameplay. UI capture
-     * wins and cancels pending input.
+     * wins and cancels pending input. weaponGenerationKey is the weapon's
+     * interaction key (Weapon getInteractionKey); the lease stays held when
+     * the colliders arrive and that key changes.
      */
     struct SupportTriggerRequest
     {

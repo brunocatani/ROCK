@@ -44,7 +44,11 @@ slots publish `getWeaponState`, `getGrip`, `getClassification` and
 - `getClassification`: size class, keyword flags and their provenance.
 - `copyEmitters(owner, slot, emitters, capacity, count)`: flashlights,
   lasers and reticles; `count` is the total and `min(capacity, count)`
-  records are copied (capacity 0 just counts).
+  records are copied (capacity 0 just counts). Records exist from the moment
+  the weapon is drawn, with no colliders needed: each record's
+  `weaponGenerationKey` is the key it was collected under, and ROCK collects
+  them again when the colliders arrive, so treat the key as a witness, not a
+  filter.
 - `getCompositionState` and `copyCompositionEntries`: installed mods and
   their attach points.
 - `getAuthoredGripPose`: the authored hand and finger poses ROCK selected.
@@ -145,7 +149,8 @@ those call sites, which serve slot 0, are not ROCK's and stay untouched.
 they are built, about a second after an equip. `getInteractionKey(owner, slot,
 key)` works from the moment the weapon is drawn, 0 with no weapon, and is what a
 mod that needs the weapon rather than its colliders passes as the generation to
-WeaponParts sources, drives, targets and grab points and to `setReloadGesture`.
+WeaponParts sources, drives, targets and grab points, to `setReloadGesture` and
+to `setSupportTrigger`.
 When the colliders arrive it changes to the generation key, once: source keys
 stay valid and what you registered follows, and new records name the new key.
 On slot 1 it is the generation key.

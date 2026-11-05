@@ -8,6 +8,7 @@ namespace
     rock::api::Sample sample{ 10, 1, 1, 2, 3, 4 };
     rock::api::weapon::WeaponState weapon;
     rock::api::weapon::Grip grip;
+    std::uint64_t interactionKey{ 456 };
     bool firingLeft{};
     rock::input_remap_runtime::RawButtonState raw{ true };
 }
@@ -23,6 +24,8 @@ namespace rock::provider::runtime
         out = ::weapon;
         return api::Status::Ok;
     }
+
+    std::uint64_t weaponInteractionKey(std::uint32_t) { return ::interactionKey; }
 
     api::Status getWeaponGrip(api::weapon::Grip& out, std::uint32_t)
     {
@@ -52,10 +55,9 @@ int main()
     namespace control = support_trigger_input;
     constexpr auto trigger = 1ull << 33, gripButton = 1ull << 2;
     ::weapon.weaponFormId = 123;
-    ::weapon.weaponGenerationKey = 456;
     ::weapon.flags = 1 | 512;
-    ::grip.weaponGenerationKey = 456;
     for (bool left : { true, false }) {
+        ::interactionKey = 456;
         control::reset();
         control::gameMask(true, 0);
         control::gameMask(false, 0);
@@ -127,5 +129,24 @@ int main()
         assert(!state.active);
         request.hand = left ? Hand::Right : Hand::Left;
         assert(control::set(1, request) == Status::GenerationMismatch);
+
+        // The colliders arriving change the key, not the lease: a press on that
+        // very frame still counts and the renewed claim continues.
+        request.hand = left ? Hand::Left : Hand::Right;
+        raw = { true, false };
+        assert(control::set(1, request) == Status::Ok);
+        control::read(state);
+        before = state.pressSequence;
+        control::adoptWeaponKey(456, 789);
+        ::interactionKey = 789;
+        raw = { true, true };
+        control::beginFrame(sample.frameIndex);
+        control::read(state);
+        assert(state.active && state.pressSequence == before + 1);
+        assert(control::set(1, request) == Status::GenerationMismatch); // the old key
+        request.weaponGenerationKey = 789;
+        assert(control::set(1, request) == Status::Ok);
+        control::read(state);
+        assert(state.active && state.held && state.pressSequence == before + 1);
     }
 }

@@ -88,6 +88,7 @@ namespace rock
          * Native body payloads still use the normal delayed reclamation path.
          */
         clearAtomicBodyIds();
+        clearWeaponEmitterSnapshot();
         resetWeaponBodySetGeneration();
         destroyWeaponBodyBank(activeWeaponBodies(), true);
         clearGeneratedSourceCompletenessTracking();
@@ -416,7 +417,6 @@ namespace rock
         {
             std::scoped_lock lock(_evidence.mutex);
             _evidence.profileDescriptors.reset();
-            _evidence.emitters = {};
             _evidence.sightAnchor = {};
             _evidence.composition = {};
         }

@@ -80,8 +80,10 @@ returns `TargetUnavailable`, as for the reload gesture). It suppresses only that
 button, axis and native action. `pressSequence` is monotonic across leases;
 read a baseline after acquiring. A new claim or unavailable input needs a
 release before a fresh press; clearing, expiry, hand changes and owner loss
-drain a held trigger. `clearSupportTrigger` releases it; `getSupportTrigger`
-(Read) reads it.
+drain a held trigger. `weaponGenerationKey` is the weapon's interaction key
+(Weapon `getInteractionKey`), so the lease works without colliders and stays
+held when they arrive and that key changes. `clearSupportTrigger` releases it;
+`getSupportTrigger` (Read) reads it.
 
 ## Sample
 
