@@ -271,9 +271,11 @@ namespace rock
      * support it. Only those pairs are removed; the body keeps colliding with
      * everything else. After release the forearm and wrist exclusion lasts as
      * long as the hand colliders' delayed restore, against the last held
-     * bodies.
+     * bodies. A weapon the hand just threw starts inside the thrower: a rifle's
+     * rear sits in the chest during a forend carry, and those colliders would
+     * stop it dead. For a moment it passes through every body collider.
      */
-    void PhysicsInteraction::publishHeldBodyExclusion(RE::hknpWorld* world)
+    void PhysicsInteraction::publishHeldBodyExclusion(RE::hknpWorld* world, float deltaSeconds)
     {
         using native_player_collision::HeldExclusionBody;
         std::array<HeldExclusionBody, native_player_collision::kMaximumHeldExclusionColliders> colliders{};
@@ -300,6 +302,11 @@ namespace rock
                 state.heldCount = (std::min)(ids.size(), state.heldBodies.size());
                 std::copy_n(ids.begin(), state.heldCount, state.heldBodies.begin());
                 state.looseWeapon = hand.isHoldingLooseWeapon();
+                state.thrownSeconds = 0.0f;
+            } else if (state.thrownSeconds > 0.0f) {
+                state.thrownSeconds -= deltaSeconds;
+                if (state.thrownSeconds <= 0.0f)
+                    state = {};
             } else if (hand.isGrabHandCollisionRestorePending()) {
                 state.looseWeapon = false;
             } else {
@@ -322,7 +329,7 @@ namespace rock
                     metadata.role == body_collider::Role::HandSegment;
                 const bool holdingArm = armSegment && metadata.side == ownSide;
                 const bool supportArm = armSegment && !holdingArm && metadata.side != body_zone::BodyZoneSide::Center;
-                if (holdingArm || (state.looseWeapon && !supportArm)) {
+                if (state.thrownSeconds > 0.0f || holdingArm || (state.looseWeapon && !supportArm)) {
                     add(colliders, colliderCount, bodyId, bit);
                 }
             }

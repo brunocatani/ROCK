@@ -521,6 +521,21 @@ namespace rock
         void captureHeldReleaseMotion(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform,
             const game_frame_timing_policy::GameFrameTiming& timing);
 
+        // An equipped weapon rides the hand without being a held object, so the
+        // equipped-weapon frame samples the throw history while the hand carries it.
+        void captureCarriedWeaponMotion(const RE::NiTransform& handWorldTransform,
+            const game_frame_timing_policy::GameFrameTiming& timing);
+
+        // How a weapon the hand carried leaves it, composed like a held
+        // object's release. Not available before the history has two samples.
+        struct CarriedWeaponThrow
+        {
+            bool available{ false };
+            RE::NiPoint3 linearVelocityHavok{};
+            RE::NiPoint3 angularVelocityRadiansPerSecond{};
+        };
+        [[nodiscard]] CarriedWeaponThrow composeCarriedWeaponThrow(float leverGameUnits) const;
+
         bool finalizeCollisionPose(RE::hknpWorld* world, const RE::NiTransform& rawHand, float deltaTime,
             const DirectSkeletonBoneSnapshot& bones)
         {

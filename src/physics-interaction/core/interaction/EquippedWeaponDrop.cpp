@@ -1,6 +1,7 @@
 // Equipped weapons leaving the hand: Weapon Drop Mode (Toggle Drop and Auto
 // Drop) places the weapon in the world as a loose reference through one native
-// placement transaction and hands it to a force grab; the second weapon drops
+// placement transaction, then Toggle Drop hands it to a force grab and Auto Drop
+// lets it leave with the hand's motion; the second weapon drops
 // from the hand that carries it; the second weapon takes the primary's place
 // when the primary leaves; and provider storage extracts an equipped weapon.
 // The bipod's hands-free weapon is retired here too.
@@ -101,7 +102,8 @@ namespace rock
             return api::Status::NotReady;
         const auto request = _twoHandedGrip.consumeEquippedWeaponDropRequest();
         RE::NiPointer<RE::NiNode> sourceNode(resolveEquippedWeaponInteractionNode());
-        const bool dropped = dropEquippedWeaponToWorld(frame, request, equipped_weapon_drop_policy::Mode::AutoDrop);
+        const bool dropped =
+            dropEquippedWeaponToWorld(frame, request, equipped_weapon_drop_policy::Mode::AutoDrop, false);
         _twoHandedGrip.completeEquippedWeaponDrop(request, dropped);
         if (!dropped)
             return api::Status::TargetUnavailable;
@@ -139,7 +141,8 @@ namespace rock
     }
 
     bool PhysicsInteraction::dropEquippedWeaponToWorld(const PhysicsFrameContext& frame,
-        const EquippedWeaponManualDropRequest& request, equipped_weapon_drop_policy::Mode mode)
+        const EquippedWeaponManualDropRequest& request, equipped_weapon_drop_policy::Mode mode,
+        bool leavesWithHandMotion)
     {
         if (!frame.worldReady || !frame.hknpWorld || frame.menuBlocked ||
             mode == equipped_weapon_drop_policy::Mode::Off || mode != request.mode)
@@ -214,6 +217,10 @@ namespace rock
                 auto droppedCollision = _weaponCollision.captureDroppedCollision(toggleDrop
                         ? sourceVisual.exactInstance
                         : equipped_weapon_visual_state::observe(observedEquippedWeaponFormID).exactInstance);
+                // Toggle Drop stays in the hand, whose held-object release owns its throw.
+                const auto thrown = leavesWithHandMotion && mode == equipped_weapon_drop_policy::Mode::AutoDrop
+                    ? transferHand.composeCarriedWeaponThrow(releaseGeometry.leverGameUnits)
+                    : Hand::CarriedWeaponThrow{};
                 _twoHandedGrip.prepareEquippedWeaponDropCommit();
                 armTransitionSeamTrace("first-drop");
                 const auto dropResult =
@@ -271,7 +278,7 @@ namespace rock
                                 request.pose, dropResult.droppedFormID);
                         }
                         armEquippedWeaponNativeHandoff(dropResult.handle, dropResult.droppedFormID, sourceHand,
-                            releaseGeometry, std::move(droppedCollision));
+                            releaseGeometry, std::move(droppedCollision), thrown);
                     }
                 }
                 if (dropCommitted) {
@@ -295,11 +302,16 @@ namespace rock
                     (sourceHand == equipped_weapon_drop_policy::SourceHand::Right ||
                         sourceHand == equipped_weapon_drop_policy::SourceHand::Left)) {
                     // The releasing hand and arm stop colliding briefly so they
-                    // do not knock the weapon they just let go of.
+                    // do not knock the weapon they just let go of. A throw from
+                    // both hands leaves through the other hand as well.
                     const bool dropIsLeft = equipped_weapon_drop_policy::isLeft(sourceHand);
-                    setWeaponHandSuppression(hknp, dropIsLeft, WeaponHandReason::Drop, true);
-                    setWeaponHandSuppression(hknp, dropIsLeft, WeaponHandReason::Drop, false,
-                        g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds);
+                    for (const bool isLeft : { dropIsLeft, !dropIsLeft }) {
+                        if (isLeft != dropIsLeft && !thrown.available)
+                            continue;
+                        setWeaponHandSuppression(hknp, isLeft, WeaponHandReason::Drop, true);
+                        setWeaponHandSuppression(hknp, isLeft, WeaponHandReason::Drop, false,
+                            g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds);
+                    }
                 }
             }
         }
@@ -414,6 +426,11 @@ namespace rock
                   dropVisualModel->world)
             : RE::NiTransform{};
         auto droppedCollision = _secondaryWeaponCollision.captureDroppedCollision(drop.model);
+        const auto thrown = mode == Mode::AutoDrop
+            ? hand.composeCarriedWeaponThrow(
+                  _secondaryWeaponCollision.getCurrentWeaponReleaseGeometry(handInput.grabAnchorWorld, drop.weaponWorld)
+                      .leverGameUnits)
+            : Hand::CarriedWeaponThrow{};
         // The second graph retires with its model; stop its actions first.
         armTransitionSeamTrace("second-drop");
         native_secondary_actions::suspend();
@@ -464,7 +481,7 @@ namespace rock
                 armEquippedWeaponNativeHandoff(dropResult.handle, dropResult.droppedFormID, sourceHand,
                     WeaponCollision::ReleaseGeometrySnapshot{ .hasCapturedWeaponWorld = true,
                         .capturedWeaponWorld = drop.weaponWorld },
-                    std::move(droppedCollision));
+                    std::move(droppedCollision), thrown);
             }
             // The releasing hand stops colliding briefly with what it let go of.
             setWeaponHandSuppression(frame.hknpWorld, left, WeaponHandReason::Drop, true);
@@ -508,7 +525,8 @@ namespace rock
 
     void PhysicsInteraction::armEquippedWeaponNativeHandoff(const RE::ObjectRefHandle& handle,
         std::uint32_t droppedFormId, equipped_weapon_drop_policy::SourceHand sourceHand,
-        const WeaponCollision::ReleaseGeometrySnapshot& releaseGeometry, DroppedWeaponCollision collision)
+        const WeaponCollision::ReleaseGeometrySnapshot& releaseGeometry, DroppedWeaponCollision collision,
+        const Hand::CarriedWeaponThrow& thrown)
     {
         if (!handle) {
             return;
@@ -539,11 +557,18 @@ namespace rock
             .droppedFormId = droppedFormId,
             .hasReleaseWeaponWorld = releaseGeometry.hasCapturedWeaponWorld,
             .releaseWeaponWorld = releaseGeometry.capturedWeaponWorld,
+            .thrown = thrown,
+            .thrownByLeft = equipped_weapon_drop_policy::isLeft(sourceHand),
             .progressSolveSequence = _frame.completedPhysicsSolveSequence.load(std::memory_order_acquire),
             .collision = std::move(collision),
         };
-        ROCK_LOG_INFO(Weapon, "Equipped weapon native drop placement armed: ref={:08X} hand={} equippedHulls={}",
-            droppedFormId, equipped_weapon_drop_policy::sourceHandName(sourceHand), handoff->collision.parts.size());
+        ROCK_LOG_INFO(Weapon,
+            "Equipped weapon native drop placement armed: ref={:08X} hand={} equippedHulls={} thrown={} "
+            "linear=({:.2f},{:.2f},{:.2f}) angular=({:.2f},{:.2f},{:.2f})",
+            droppedFormId, equipped_weapon_drop_policy::sourceHandName(sourceHand), handoff->collision.parts.size(),
+            thrown.available, thrown.linearVelocityHavok.x, thrown.linearVelocityHavok.y, thrown.linearVelocityHavok.z,
+            thrown.angularVelocityRadiansPerSecond.x, thrown.angularVelocityRadiansPerSecond.y,
+            thrown.angularVelocityRadiansPerSecond.z);
     }
 
     void PhysicsInteraction::serviceEquippedWeaponNativeHandoff(const PhysicsFrameContext& frame)
@@ -976,13 +1001,17 @@ namespace rock
             }
 
             const RE::hkVector4f zeroVelocity{};
+            const auto& thrownLinear = handoff.thrown.linearVelocityHavok;
+            const auto& thrownAngular = handoff.thrown.angularVelocityRadiansPerSecond;
+            const RE::hkVector4f placedLinear{ thrownLinear.x, thrownLinear.y, thrownLinear.z, 0.0f };
+            const RE::hkVector4f placedAngular{ thrownAngular.x, thrownAngular.y, thrownAngular.z, 0.0f };
             std::size_t queuedMotions = 0;
             for (std::size_t motionIndex = 0; motionIndex < uniqueMotionRecordCount; ++motionIndex) {
                 const bool transformQueued = havok_runtime::setBodyTransformDeferred(frame.hknpWorld,
                     motionBodyIds[motionIndex], releaseMotionTargets[motionIndex], 1);
                 const bool velocityQueued = transformQueued &&
-                    havok_runtime::setBodyVelocityDeferred(frame.hknpWorld, motionBodyIds[motionIndex], zeroVelocity,
-                        zeroVelocity);
+                    havok_runtime::setBodyVelocityDeferred(frame.hknpWorld, motionBodyIds[motionIndex], placedLinear,
+                        placedAngular);
                 const bool activated =
                     velocityQueued && havok_runtime::activateBody(frame.hknpWorld, motionBodyIds[motionIndex]);
                 handoff.waitReason = !transformQueued ? "release-transform-write"
@@ -1015,6 +1044,14 @@ namespace rock
             handoff.progressSolveSequence = completedSolveSequence;
             handoff.stage = EquippedWeaponDropHandoffStage::WaitingForSettleStep;
             handoff.waitReason = "completed-physics-solve";
+            if (handoff.thrown.available) {
+                auto& exclusion = _suppression.heldBodyExclusions[handoff.thrownByLeft ? 1 : 0];
+                exclusion.heldCount = (std::min)(acceptedRecordCount, exclusion.heldBodies.size());
+                for (std::size_t i = 0; i < exclusion.heldCount; ++i)
+                    exclusion.heldBodies[i] = acceptedRecords[i]->bodyId;
+                exclusion.looseWeapon = false;
+                exclusion.thrownSeconds = g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds;
+            }
             ROCK_LOG_INFO(Weapon,
                 "Equipped weapon drop native bodies placed at handoff pose; waiting one solve: dropped={:08X} "
                 "scanned={} bodies={} motions={} collisionEnabled=yes solveSeq={} restarts={} sharedSystemOwners={}",
@@ -1045,13 +1082,16 @@ namespace rock
         }
 
         handoff.waitReason = "settled-velocity-clear";
-        // Both drop modes share native placement and clear spawn/contact
-        // velocity. Toggle Drop continues into the retained grab afterward.
+        // Native placement clears spawn/contact velocity. Toggle Drop continues
+        // into the retained grab afterward. A throw left at placement and is
+        // already flying: what that solve did to it is real, so it is kept.
         const RE::hkVector4f zeroVelocity{};
         for (std::size_t i = 0; i < uniqueMotionRecordCount; ++i) {
             const auto* record = uniqueMotionRecords[i];
             if (!record ||
-                !havok_runtime::setBodyVelocityDeferred(frame.hknpWorld, record->bodyId, zeroVelocity, zeroVelocity) ||
+                (!handoff.thrown.available &&
+                    !havok_runtime::setBodyVelocityDeferred(frame.hknpWorld, record->bodyId, zeroVelocity,
+                        zeroVelocity)) ||
                 !havok_runtime::activateBody(frame.hknpWorld, record->bodyId)) {
                 if (publicationStalled()) {
                     endHandoff("native-velocity-clear-stalled", true);

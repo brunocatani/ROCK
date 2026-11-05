@@ -228,6 +228,14 @@ namespace rock
         recordHeldObjectVelocitySample(world);
     }
 
+    void Hand::captureCarriedWeaponMotion(const RE::NiTransform& handWorldTransform,
+        const game_frame_timing_policy::GameFrameTiming& timing)
+    {
+        // A held object's update owns the history while the hand holds one.
+        if (!isHolding())
+            recordHeldControllerMotionSample(handWorldTransform, timing);
+    }
+
     void Hand::applyReleaseVelocitySnapshot(RE::hknpWorld* world,
         const GrabReleaseOutcome::VelocitySnapshot& snapshot) const
     {

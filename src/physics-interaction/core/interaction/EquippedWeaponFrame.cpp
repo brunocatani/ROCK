@@ -1064,6 +1064,16 @@ namespace rock
         // A part-gripping free hand is a transform driver like the support hand
         // and must not also solve contacts against the weapon package.
         setWeaponHandSuppression(hknp, false, WeaponHandReason::Grip, prepared.rightPartGripActive);
+
+        // Sampled before this frame's grip update, whose release may throw the
+        // weapon with this frame's movement in the history.
+        const auto roster = equippedWeaponRoster();
+        for (const bool isLeft : { false, true }) {
+            const auto& input = isLeft ? frame.left : frame.right;
+            if (!input.disabled && (roster.slotZeroHolds(isLeft) || roster.slotOneHolds(isLeft))) {
+                (isLeft ? _leftHand : _rightHand).captureCarriedWeaponMotion(input.rawHandWorld, frame.timing);
+            }
+        }
         return prepared;
     }
 
@@ -2255,7 +2265,7 @@ namespace rock
             const bool stashCommitSelected = shoulderStashSelected || shoulderDecision.suppressEquippedDrop;
             if (equipped_weapon_drop_policy::shouldAttemptPhysicalDrop(stashCommitSelected)) {
                 transferCommitted =
-                    dropEquippedWeaponToWorld(frame, equippedWeaponDropRequest, equippedWeaponDropRequest.mode);
+                    dropEquippedWeaponToWorld(frame, equippedWeaponDropRequest, equippedWeaponDropRequest.mode, true);
             }
             transferCommitted = transferCommitted || stashCommitSelected;
         }

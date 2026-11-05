@@ -1,5 +1,6 @@
 // Native body identity and solve progress for the equipped-to-loose handoff.
-// Throw momentum is owned by the ordinary held-object release path.
+// An Auto Drop's throw comes from Hand::composeCarriedWeaponThrow; a Toggle Drop
+// is thrown later by the ordinary held-object release path.
 #pragma once
 
 #include <cstdint>

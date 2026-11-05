@@ -571,11 +571,14 @@ namespace rock
         bool saveGrabOffsetForHand(Hand& hand, bool isLeft, RE::hknpWorld* hknpWorld);
         void armEquippedWeaponNativeHandoff(const RE::ObjectRefHandle& handle, std::uint32_t droppedFormId,
             equipped_weapon_drop_policy::SourceHand sourceHand,
-            const WeaponCollision::ReleaseGeometrySnapshot& releaseGeometry, DroppedWeaponCollision collision);
+            const WeaponCollision::ReleaseGeometrySnapshot& releaseGeometry, DroppedWeaponCollision collision,
+            const Hand::CarriedWeaponThrow& thrown);
         bool hasAvailableEquippedWeaponDropHandoff() const;
         void serviceEquippedWeaponNativeHandoff(const PhysicsFrameContext& frame);
+        // leavesWithHandMotion: an Auto Drop is thrown by the hand's motion. A
+        // provider extracting the weapon for storage places it still.
         bool dropEquippedWeaponToWorld(const PhysicsFrameContext& frame, const EquippedWeaponManualDropRequest& request,
-            equipped_weapon_drop_policy::Mode mode);
+            equipped_weapon_drop_policy::Mode mode, bool leavesWithHandMotion);
         bool retireHandsFreeWeapon(const PhysicsFrameContext& frame, RE::NiNode* weaponNode);
         bool retireEquippedWeaponInPlace(const PhysicsFrameContext& frame, RE::NiNode* weaponNode, const char* reason);
         void updateEquippedWeaponDropVisuals(const PhysicsFrameContext& frame);
@@ -646,7 +649,7 @@ namespace rock
         void abandonWeaponHandSuppression();
         void publishWeaponHandExclusion(RE::hknpWorld* world);
         void publishHeldProxyExclusion(RE::hknpWorld* world);
-        void publishHeldBodyExclusion(RE::hknpWorld* world);
+        void publishHeldBodyExclusion(RE::hknpWorld* world, float deltaSeconds);
         void updateWeaponHandSuppression(RE::hknpWorld* world, float deltaSeconds);
         void refreshWeaponHandSuppression(RE::hknpWorld* world, bool isLeft);
 
@@ -773,6 +776,10 @@ namespace rock
             std::uint32_t identityRestartCount{ 0 };
             bool hasReleaseWeaponWorld{ false };
             RE::NiTransform releaseWeaponWorld{};
+            // The motion the loose bodies leave with; not available means they
+            // are placed still.
+            Hand::CarriedWeaponThrow thrown{};
+            bool thrownByLeft{ false };
             EquippedWeaponDropHandoffStage stage{ EquippedWeaponDropHandoffStage::ResolvingBodies };
             std::uint64_t progressSolveSequence{ 0 };
             std::uint64_t bodyDiscoverySolveSequence{ 0 };
@@ -1109,6 +1116,8 @@ namespace rock
                 std::array<std::uint32_t, 64> heldBodies{};
                 std::size_t heldCount = 0;
                 bool looseWeapon = false;
+                // heldBodies are a weapon this hand just threw, for this long.
+                float thrownSeconds = 0.0f;
             };
 
             std::array<HeldBodyExclusion, 2> heldBodyExclusions{};

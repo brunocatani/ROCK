@@ -43,6 +43,70 @@ namespace rock
             const float scale = maxRadiansPerSecond / magnitude;
             return RE::NiPoint3{ value.x * scale, value.y * scale, value.z * scale };
         }
+
+        struct ReleaseMotion
+        {
+            RE::NiPoint3 linearVelocityHavok{};
+            RE::NiPoint3 angularVelocityRadiansPerSecond{};
+            bool overrideAngularVelocity{ false };
+            grab_motion_controller::HeldAuthorityState authority{};
+            float longObjectAngularScale{ 1.0f };
+            float angularVelocityCap{ 0.0f };
+        };
+
+        // The one throw composition: a held object's release and a carried
+        // weapon's release differ only in the histories they pass.
+        ReleaseMotion composeReleaseMotion(const release_velocity::History<RE::NiPoint3>::Peaks& hand,
+            const release_velocity::History<RE::NiPoint3>::Peaks& object, bool contactSoftening, float leverGameUnits)
+        {
+            ReleaseMotion motion{};
+            // Both histories contain world-space movement, including player
+            // translation. Do not rotate the velocity by the hand's facing.
+            motion.linearVelocityHavok = grab_held_response::composeControllerReleaseVelocity(
+                grab_held_response::ReleaseVelocityInput<RE::NiPoint3>{
+                    .controllerDerivedEnabled = g_rockConfig.rockGrabControllerDerivedThrowVelocityEnabled,
+                    .hasHandLocalVelocity = hand.count > 0,
+                    .hasObjectLocalVelocity = object.count > 0,
+                    .handLocalVelocityHavok = hand.linear,
+                    .objectLocalVelocityHavok = object.linear,
+                    .throwMultiplier = g_rockConfig.rockThrowVelocityMultiplier,
+                    .maxVelocityHavok = g_rockConfig.rockGrabThrowMaxVelocityHavok,
+                });
+            const RE::NiPoint3 rawAngularVelocity = grab_held_response::composeControllerReleaseAngularVelocity(
+                grab_held_response::ReleaseAngularVelocityInput<RE::NiPoint3>{
+                    .controllerDerivedEnabled = g_rockConfig.rockGrabControllerDerivedThrowVelocityEnabled,
+                    .hasHandAngularVelocity = hand.count > 0,
+                    .handAngularVelocityRadiansPerSecond = hand.angular,
+                    .angularVelocityScale = g_rockConfig.rockGrabThrowAngularVelocityScale,
+                    .maxAngularVelocityRadiansPerSecond = g_rockConfig.rockGrabThrowMaxAngularVelocityRadiansPerSecond,
+                });
+            motion.authority = grab_motion_controller::evaluateHeldAuthority(contactSoftening);
+            motion.longObjectAngularScale = grab_motion_controller::computeLongObjectAngularSpeedScale(
+                g_rockConfig.rockGrabLongObjectAngularScalingEnabled, leverGameUnits,
+                g_rockConfig.rockGrabLongObjectReferenceLeverGameUnits, g_rockConfig.rockGrabLongObjectMinAngularScale);
+            motion.angularVelocityCap = grab_motion_controller::computeAuthorityScaledAngularVelocityCap(
+                g_rockConfig.rockGrabThrowMaxAngularVelocityRadiansPerSecond,
+                motion.authority.releaseAngularVelocityScale, motion.longObjectAngularScale);
+            motion.angularVelocityRadiansPerSecond =
+                clampAngularVelocityVector(rawAngularVelocity, motion.angularVelocityCap);
+            motion.overrideAngularVelocity = g_rockConfig.rockGrabControllerDerivedThrowVelocityEnabled &&
+                lengthSquared(motion.angularVelocityRadiansPerSecond) > 0.000001f;
+            return motion;
+        }
+    }
+
+    Hand::CarriedWeaponThrow Hand::composeCarriedWeaponThrow(float leverGameUnits) const
+    {
+        // The weapon rode the hand, so the hand's motion is also the weapon's;
+        // there is no held body with a solved velocity of its own.
+        const auto handHistory = _controllerReleaseHistory.peaks(runtime_state::currentFrame().timing.elapsedGameSeconds);
+        if (handHistory.count == 0)
+            return {};
+        const auto motion = composeReleaseMotion(handHistory, handHistory, false, leverGameUnits);
+        return { .available = true,
+            .linearVelocityHavok = motion.linearVelocityHavok,
+            .angularVelocityRadiansPerSecond = motion.overrideAngularVelocity ? motion.angularVelocityRadiansPerSecond
+                                                                              : RE::NiPoint3{} };
     }
 
     GrabReleaseOutcome Hand::releaseGrabbedObject(RE::hknpWorld* world,
@@ -107,41 +171,18 @@ namespace rock
                     transform_math::localPointToWorld(releaseBodyWorld, activeProxyConstraintPivotBLocalGame()));
             }
 
-            // Both histories contain world-space movement, including player
-            // translation. Do not rotate the velocity by the hand's facing.
-            const RE::NiPoint3 releaseVelocity = grab_held_response::composeControllerReleaseVelocity(
-                grab_held_response::ReleaseVelocityInput<RE::NiPoint3>{
-                    .controllerDerivedEnabled = g_rockConfig.rockGrabControllerDerivedThrowVelocityEnabled,
-                    .hasHandLocalVelocity = handHistory.count > 0,
-                    .hasObjectLocalVelocity = objectHistory.count > 0,
-                    .handLocalVelocityHavok = handLocalReleaseVelocity,
-                    .objectLocalVelocityHavok = objectLocalReleaseVelocity,
-                    .throwMultiplier = g_rockConfig.rockThrowVelocityMultiplier,
-                    .maxVelocityHavok = g_rockConfig.rockGrabThrowMaxVelocityHavok,
-                });
-            const RE::NiPoint3 rawReleaseAngularVelocity = grab_held_response::composeControllerReleaseAngularVelocity(
-                grab_held_response::ReleaseAngularVelocityInput<RE::NiPoint3>{
-                    .controllerDerivedEnabled = g_rockConfig.rockGrabControllerDerivedThrowVelocityEnabled,
-                    .hasHandAngularVelocity = handHistory.count > 0,
-                    .handAngularVelocityRadiansPerSecond = handAngularVelocity,
-                    .angularVelocityScale = g_rockConfig.rockGrabThrowAngularVelocityScale,
-                    .maxAngularVelocityRadiansPerSecond = g_rockConfig.rockGrabThrowMaxAngularVelocityRadiansPerSecond,
-                });
-            RE::NiPoint3 releaseAngularVelocity = rawReleaseAngularVelocity;
             const auto releaseContactSnapshot = readHeldBodyContactSnapshot();
             const bool releaseContactSoftening = releaseContactSnapshot.recent &&
                 classifyHeldContactOtherMotion(world, releaseContactSnapshot.otherBodyId) !=
                     held_object_contact_policy::HeldContactOtherMotion::Dynamic;
-            const auto releaseAuthority = grab_motion_controller::evaluateHeldAuthority(releaseContactSoftening);
-            const float releaseLongObjectAngularScale = grab_motion_controller::computeLongObjectAngularSpeedScale(
-                g_rockConfig.rockGrabLongObjectAngularScalingEnabled, _grabFrame.pivotAuthority.longLeverGameUnits,
-                g_rockConfig.rockGrabLongObjectReferenceLeverGameUnits, g_rockConfig.rockGrabLongObjectMinAngularScale);
-            const float releaseAngularVelocityCap = grab_motion_controller::computeAuthorityScaledAngularVelocityCap(
-                g_rockConfig.rockGrabThrowMaxAngularVelocityRadiansPerSecond,
-                releaseAuthority.releaseAngularVelocityScale, releaseLongObjectAngularScale);
-            releaseAngularVelocity = clampAngularVelocityVector(releaseAngularVelocity, releaseAngularVelocityCap);
-            const bool overrideAngularVelocity = g_rockConfig.rockGrabControllerDerivedThrowVelocityEnabled &&
-                lengthSquared(releaseAngularVelocity) > 0.000001f;
+            const auto releaseMotion = composeReleaseMotion(handHistory, objectHistory, releaseContactSoftening,
+                _grabFrame.pivotAuthority.longLeverGameUnits);
+            const RE::NiPoint3 releaseVelocity = releaseMotion.linearVelocityHavok;
+            const RE::NiPoint3 releaseAngularVelocity = releaseMotion.angularVelocityRadiansPerSecond;
+            const bool overrideAngularVelocity = releaseMotion.overrideAngularVelocity;
+            const auto& releaseAuthority = releaseMotion.authority;
+            const float releaseLongObjectAngularScale = releaseMotion.longObjectAngularScale;
+            const float releaseAngularVelocityCap = releaseMotion.angularVelocityCap;
             outcome.velocity.available = true;
             outcome.velocity.primaryBodyId = _savedObjectState.bodyId;
             outcome.velocity.linearVelocityHavok = releaseVelocity;
