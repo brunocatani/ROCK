@@ -770,10 +770,8 @@ namespace rock::native_secondary_actions
                 !native_memory::tryReadField(launch, 0x48, index) || index != 1)
                 return result;
             auto* muzzle = native<RE::NiAVObject* (*)(RE::Actor*, std::uint32_t)>(0xDE85F0)(actor, 1);
-            auto* primary = native<RE::NiAVObject* (*)(RE::Actor*, std::uint32_t)>(0xDE85F0)(actor, 0);
-            if (!muzzle || muzzle == primary) {
-                ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
-                    "AKIMBO second weapon shot rejected: independent native muzzle unavailable");
+            if (!muzzle) {
+                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "AKIMBO second weapon shot rejected: native muzzle unavailable");
                 return false;
             }
             // Native 104F661/104F70F read muzzle+80: stored ROW one.
@@ -1648,6 +1646,12 @@ namespace rock::native_secondary_actions
             if (!attachment || !view.weapon || !view.root || frame.localMenuBlocking || !frame.weaponDrawn ||
                 !frame.visualAuthorityAvailable) {
                 cancel(s, frame.localMenuBlocking ? "menu" : !frame.weaponDrawn ? "holstered" : "unpresented");
+                // A failed graph starts fresh on the next draw instead of leaving
+                // this gun dead until it is re-equipped.
+                if (s.failed && s.graph) {
+                    s.ready = false;
+                    s.retiring = true;
+                }
                 return;
             }
             const auto trigger =
