@@ -22,5 +22,7 @@ namespace rock::bipod_frozen_retirement
     void service();
     bool pending();
     bool frozen(std::uint32_t reference);
+    // Whether the last armed transfer ended frozen and ready to save. Game thread.
+    bool completed();
     void cancelForWorldLoss();
 }

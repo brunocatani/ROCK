@@ -758,6 +758,9 @@ namespace rock
             transitionToInactive(false);
         }
 
+        // A weapon leaving a native carry ends no grip session to report it.
+        void recordWeaponPlacedHaptic() noexcept { recordFiringGripDetachedHaptic(); }
+
         bool isPrimaryOnlyActive() const { return _session.state == TwoHandedState::PrimaryOnly; }
 
         bool isHandPartGripping(bool isLeft) const { return partGrip(isLeft).active; }

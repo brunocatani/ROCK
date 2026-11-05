@@ -136,7 +136,9 @@ namespace rock
             RE::NiTransform& resolved) const;
 
         // Game frame only, before early returns, so clicks cannot replay later.
-        void updateSurfaceSupportInput(bool placementOwnsClick = false);
+        // placementTimesHold: an add-on times this press to place the weapon, so a
+        // latched weapon keeps its latch until the button comes up.
+        void updateSurfaceSupportInput(bool placementOwnsClick = false, bool placementTimesHold = false);
 
         bool tryGetLatchedSurfacePose(RE::NiNode* weapon, std::uint64_t generation, RE::NiTransform& pose) const;
 
@@ -144,7 +146,9 @@ namespace rock
 
         bool tryGetSurfaceAnchor(RE::NiPoint3& anchor) const;
 
-        // Game-frame observation, published through the provider snapshot.
+        // Game-frame observation, published through the provider snapshot: the
+        // weapon is latched or touching the fixed world, so a press acts on it.
+        // This does not depend on the bipod setting; callers apply it themselves.
         [[nodiscard]] bool surfaceSupportReservesInput(std::uintptr_t weaponNode,
             std::uint64_t generation) const noexcept
         {
@@ -352,6 +356,7 @@ namespace rock
         weapon_surface_support::Toggle _surfaceToggle{};
         weapon_surface_support::State _surfaceSupport{};
         bool _surfaceClickRequested{ false };
+        bool _surfaceReleaseAwaitsButtonUp{ false };
         bool _surfaceInputReserved{ false };
         DebugSnapshot _debugSnapshot{};
 

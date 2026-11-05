@@ -543,7 +543,7 @@ static_assert(offsetof(rock::api::grab::HandReservationState, worldGeneration) =
 static_assert(offsetof(rock::api::grab::HandReservationState, skeletonGeneration) == 44);
 static_assert(offsetof(rock::api::grab::HandReservationState, providerGeneration) == 48);
 static_assert(offsetof(rock::api::grab::HandReservationState, weaponSlot) == 52);
-static_assert(sizeof(rock::api::grab::HeldPlacementState) == 96);
+static_assert(sizeof(rock::api::grab::HeldPlacementState) == 104);
 static_assert(alignof(rock::api::grab::HeldPlacementState) == 8);
 static_assert(offsetof(rock::api::grab::HeldPlacementState, size) == 0);
 static_assert(offsetof(rock::api::grab::HeldPlacementState, version) == 4);
@@ -558,6 +558,7 @@ static_assert(offsetof(rock::api::grab::HeldPlacementState, buttonAgeMillisecond
 static_assert(offsetof(rock::api::grab::HeldPlacementState, lastRequestToken) == 80);
 static_assert(offsetof(rock::api::grab::HeldPlacementState, lastResult) == 88);
 static_assert(offsetof(rock::api::grab::HeldPlacementState, lastRequestFormId) == 92);
+static_assert(offsetof(rock::api::grab::HeldPlacementState, equippedWeapon) == 96);
 static_assert(sizeof(rock::api::grab::HeldPlacementIntent) == 56);
 static_assert(alignof(rock::api::grab::HeldPlacementIntent) == 8);
 static_assert(offsetof(rock::api::grab::HeldPlacementIntent, size) == 0);

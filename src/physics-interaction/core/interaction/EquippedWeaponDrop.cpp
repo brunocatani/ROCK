@@ -29,6 +29,12 @@ namespace rock
             reinterpret_cast<std::uintptr_t>(weaponNode), _weaponCollision.getCurrentWeaponGenerationKey());
         if (!outside && !_dynamicWeaponCollision.surfaceRetirementRequested() && !supportLost)
             return false;
+        return retireEquippedWeaponInPlace(frame, weaponNode, outside ? "outside-radius" : "support-released");
+    }
+
+    bool PhysicsInteraction::retireEquippedWeaponInPlace(const PhysicsFrameContext& frame, RE::NiNode* weaponNode,
+        const char* reason)
+    {
         const auto pose = weaponNode->world;
         const auto form = currentEquippedWeaponFormId();
         if (!bipod_frozen_retirement::arm(form, frame.bhkWorld, pose)) {
@@ -68,9 +74,8 @@ namespace rock
         clearEquippedWeaponFiringGripInputState();
         enforceNoBareFistState(true);
         ROCK_LOG_INFO(Weapon,
-            "Bipod hands-free retirement committed form={:08X} ref={:08X} reason={} position=({:.3f},{:.3f},{:.3f})",
-            form, drop.droppedFormID, outside ? "outside-radius" : "support-released", pose.translate.x,
-            pose.translate.y, pose.translate.z);
+            "Weapon in-place retirement committed form={:08X} ref={:08X} reason={} position=({:.3f},{:.3f},{:.3f})",
+            form, drop.droppedFormID, reason, pose.translate.x, pose.translate.y, pose.translate.z);
         return true;
     }
 
@@ -552,6 +557,14 @@ namespace rock
             } else {
                 _bipodRetirementVisual.update({}, ref ? ref->Get3D() : nullptr);
             }
+        }
+        if (_placementEquippedRetiring && !bipod_frozen_retirement::pending()) {
+            _placementEquippedRetiring = false;
+            const bool anchored = bipod_frozen_retirement::completed();
+            _placementLastResult =
+                anchored ? api::grab::PlacementResult::Anchored : api::grab::PlacementResult::Rejected;
+            ROCK_LOG_INFO(Weapon, "Equipped weapon placement finished form={:08X} anchored={}",
+                _placementLastRequestForm, anchored);
         }
         for (auto& handoff : _drop.nativeHandoffs) {
             if (handoff.active) {

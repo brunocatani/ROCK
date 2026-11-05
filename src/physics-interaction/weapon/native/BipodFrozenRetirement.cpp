@@ -55,7 +55,7 @@ namespace rock::bipod_frozen_retirement
         std::uint32_t s_weapon{};
         std::uintptr_t s_world{};
         RE::NiTransform s_pose{};
-        bool s_scriptStarted{}, s_recoveryAttempted{}; // Game thread only.
+        bool s_scriptStarted{}, s_recoveryAttempted{}, s_completed{}; // Game thread only.
         thread_local bool s_removing{};
         thread_local bool s_creating{};
 
@@ -345,6 +345,8 @@ namespace rock::bipod_frozen_retirement
             s_reference.load(std::memory_order_acquire) == reference;
     }
 
+    bool completed() { return s_completed; }
+
     void cancelForWorldLoss()
     {
         s_cancelled.store(true, std::memory_order_release);
@@ -367,6 +369,7 @@ namespace rock::bipod_frozen_retirement
         s_pose = pose;
         s_scriptStarted = false;
         s_recoveryAttempted = false;
+        s_completed = false;
         s_cancelled.store(false, std::memory_order_relaxed);
         s_reference.store(0, std::memory_order_relaxed);
         s_stage.store(Stage::Armed, std::memory_order_release);
@@ -426,6 +429,7 @@ namespace rock::bipod_frozen_retirement
                     std::memory_order_release);
                 return;
             }
+            s_completed = true;
             ROCK_LOG_INFO(Weapon, "Bipod frozen retirement completed ref={:08X} save=native", form);
         }
         s_reference.store(0, std::memory_order_release);

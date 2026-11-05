@@ -11,6 +11,7 @@
 #include "physics-interaction/native/havok/HavokRuntime.h"
 
 #include <chrono>
+#include <utility>
 
 namespace rock
 {
@@ -46,9 +47,10 @@ namespace rock
         }
     }
 
-    void DynamicWeaponCollisionRuntime::updateSurfaceSupportInput(bool placementOwnsClick)
+    void DynamicWeaponCollisionRuntime::updateSurfaceSupportInput(bool placementOwnsClick, bool placementTimesHold)
     {
         _surfaceInputReserved = false; // Also clears before interrupted-frame returns.
+        const bool releaseAwaitedButtonUp = std::exchange(_surfaceReleaseAwaitsButtonUp, false);
         if (!g_rockConfig.rockBipodMode) {
             _surfaceClickRequested = false;
             _surfaceToggle = {};
@@ -72,12 +74,24 @@ namespace rock
             return; // The provider owns its raw click edge until it yields input.
         }
         const auto raw = input_remap_runtime::consumeRawButtonState(false, weapon_surface_support::kButtonId);
-        _surfaceClickRequested = _surfaceToggle.consume({
-            .available = raw.available && !input_remap_runtime::isMenuInputActive(),
+        const bool available = raw.available && !input_remap_runtime::isMenuInputActive();
+        const bool click = _surfaceToggle.consume({
+            .available = available,
             .held = raw.held,
             .pressed = raw.pressed,
             .sampleAgeMilliseconds = raw.sampleAgeMilliseconds,
         });
+        // A hold must be able to place the pose the weapon rests in, so only a
+        // tap that came back up unlatches it. The press still latches a free
+        // weapon at once, and a hands-free weapon keeps its immediate click.
+        // Losing the input or the add-on drops the unlatch: the weapon stays put.
+        if (!placementTimesHold || !available || !_surfaceSupport.latched() || _surfaceSupport.handsFree) {
+            _surfaceClickRequested = click;
+            return;
+        }
+        const bool releasePending = releaseAwaitedButtonUp || click;
+        _surfaceReleaseAwaitsButtonUp = releasePending && raw.held;
+        _surfaceClickRequested = releasePending && !raw.held;
     }
 
     void DynamicWeaponCollisionRuntime::recordSurfaceSupportContact(RE::hknpWorld* world,
@@ -161,8 +175,7 @@ namespace rock
         // Sample even without a click so consumers can defer before pressing.
         Contact contact{};
         RE::NiTransform liveProxyWorld{};
-        const bool contactRead =
-            g_rockConfig.rockBipodMode && !_surfaceSupport.latched() && _surfaceContacts.read(contact);
+        const bool contactRead = !_surfaceSupport.latched() && _surfaceContacts.read(contact);
         const bool fresh = contactRead &&
             isFresh(contact, reinterpret_cast<std::uintptr_t>(frame.hknpWorld), _createdGenerationKey,
                 _body.getBodyId().value, surfaceContactTimeMilliseconds());
@@ -176,8 +189,7 @@ namespace rock
         const bool touching = currentContact && contactStillTouches(contact, contact.weaponWorld, surfaceWorld);
         // Keep the unlatch click reserved across later presentation passes in
         // this frame, even after release(). The next input update clears it.
-        _surfaceInputReserved =
-            g_rockConfig.rockBipodMode && (_surfaceInputReserved || _surfaceSupport.latched() || touching);
+        _surfaceInputReserved = _surfaceInputReserved || _surfaceSupport.latched() || touching;
 
         if (_surfaceClickRequested) {
             _surfaceClickRequested = false;

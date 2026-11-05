@@ -538,6 +538,10 @@ namespace rock
         void beginHeldPlacementFrame();
         void resetHeldPlacement();
         void commitHeldPlacement(const PhysicsFrameContext& frame);
+        api::grab::HeldPlacementHand queryEquippedWeaponPlacement() const;
+        // Lets go of a weapon whose placement was requested. True when it must
+        // now retire in place, at the end of this frame's weapon update.
+        bool beginEquippedWeaponPlacement(const PhysicsFrameContext& frame, RE::NiNode* weaponNode);
         void processProviderInteractionCommands(const PhysicsFrameContext& frame);
         void processProviderInventoryEquip(const PhysicsFrameContext& frame);
         void clearProviderInventoryEquip();
@@ -573,6 +577,7 @@ namespace rock
         bool dropEquippedWeaponToWorld(const PhysicsFrameContext& frame, const EquippedWeaponManualDropRequest& request,
             equipped_weapon_drop_policy::Mode mode);
         bool retireHandsFreeWeapon(const PhysicsFrameContext& frame, RE::NiNode* weaponNode);
+        bool retireEquippedWeaponInPlace(const PhysicsFrameContext& frame, RE::NiNode* weaponNode, const char* reason);
         void updateEquippedWeaponDropVisuals(const PhysicsFrameContext& frame);
         void finishEquippedWeaponHandPoseHandoff();
         void serviceEquippedWeaponNativeTransaction(EquippedWeaponNativeHandoff& handoff,
@@ -1208,8 +1213,8 @@ namespace rock
         std::uint64_t _placementLastRequestToken{};
         api::grab::PlacementResult _placementLastResult{};
         std::uint32_t _placementCandidate{}, _placementRequestedForm{}, _placementPendingForm{},
-            _placementLastRequestForm{};
-        bool _placementClickReserved{};
+            _placementLastRequestForm{}, _placementEquippedRequestedForm{};
+        bool _placementClickReserved{}, _placementEquippedHold{}, _placementEquippedRetiring{};
         float _placementScriptWait{};
         // Slot 1's native equipment, sampled by the frame owner
         // (sampleEquippedSlotOne) for every roster query this frame.

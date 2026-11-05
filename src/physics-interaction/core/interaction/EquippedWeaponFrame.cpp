@@ -1099,9 +1099,11 @@ namespace rock
             StageTimer stage(Scope::EquippedGripStart);
             startEquippedWeaponGrips(w);
         }
+        bool placingWeapon = false;
         {
             StageTimer stage(Scope::EquippedGripUpdate);
             updateEquippedWeaponGrips(w);
+            placingWeapon = beginEquippedWeaponPlacement(frame, prepared.weaponNode);
             queueEquippedWeaponGripHaptics();
         }
         {
@@ -1113,7 +1115,16 @@ namespace rock
         finishDynamicWeaponCollision(w);
 
         // Final source transforms are queued after all animation/FRIK writers.
-        if (retireHandsFreeWeapon(frame, prepared.weaponNode)) {
+        const bool retired = placingWeapon ? retireEquippedWeaponInPlace(frame, prepared.weaponNode, "held-placement")
+                                           : retireHandsFreeWeapon(frame, prepared.weaponNode);
+        if (placingWeapon) {
+            // The native side reports the end of a retirement that did start
+            // (serviceEquippedWeaponNativeHandoff).
+            _placementEquippedRetiring = retired;
+            _placementLastResult =
+                retired ? api::grab::PlacementResult::Pending : api::grab::PlacementResult::Rejected;
+        }
+        if (retired) {
             return {};
         }
         if (f4vr::isNodeVisible(prepared.weaponNode)) {

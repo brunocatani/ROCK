@@ -14,6 +14,7 @@
 #include "physics-interaction/native/havok/HavokWorldLock.h"
 #include "physics-interaction/native/scene/NativeObjectPlacement.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
+#include "physics-interaction/weapon/native/BipodFrozenRetirement.h"
 
 namespace rock
 {
@@ -128,6 +129,8 @@ namespace rock
                     hand.getHeldBodyIds().size() > held_placement_policy::kMaxBodies)
                     continue;
                 state.flags = static_cast<std::uint32_t>(Flag::LooseObject);
+                if (const auto* base = saved.refr->GetObjectReference(); base && base->Is(RE::ENUM_FORM_ID::kWEAP))
+                    state.flags |= static_cast<std::uint32_t>(Flag::Weapon);
                 const auto contact = hand.readHeldSurfaceContact();
                 if (!contact.recent || !hand.isHeldBodyId(contact.heldBodyId) ||
                     _rightHand.isHeldBodyId(contact.otherBodyId) || _leftHand.isHeldBodyId(contact.otherBodyId))
@@ -146,7 +149,70 @@ namespace rock
         out.buttonHeld = raw.held;
         out.buttonPressed = raw.pressed;
         out.buttonAgeMilliseconds = raw.sampleAgeMilliseconds;
+        out.equippedWeapon = queryEquippedWeaponPlacement();
         return api::Status::Ok;
+    }
+
+    api::grab::HeldPlacementHand PhysicsInteraction::queryEquippedWeaponPlacement() const
+    {
+        using Flag = api::grab::HeldPlacementFlag;
+        api::grab::HeldPlacementHand out;
+        const auto form = currentEquippedWeaponFormId();
+        // A hands-free weapon already retires on its own click, and only one
+        // native retirement runs at a time.
+        if (!form || _twoHandedGrip.isHandsFreeRetained() || _equipped.transition.getPublicSnapshot().active ||
+            !bipod_frozen_retirement::available() || bipod_frozen_retirement::pending())
+            return out;
+        out.formId = form;
+        out.flags = static_cast<std::uint32_t>(Flag::Weapon);
+        if (_dynamicWeaponCollision.surfaceSupportReservesInput(
+                reinterpret_cast<std::uintptr_t>(resolveEquippedWeaponInteractionNode()),
+                _weaponCollision.getCurrentWeaponGenerationKey()))
+            out.flags |= static_cast<std::uint32_t>(Flag::FixedSurfaceContact);
+        return out;
+    }
+
+    bool PhysicsInteraction::beginEquippedWeaponPlacement(const PhysicsFrameContext& frame, RE::NiNode* weaponNode)
+    {
+        const auto requested = std::exchange(_placementEquippedRequestedForm, 0u);
+        if (!requested)
+            return false;
+        const auto reject = [&](const char* stage) {
+            ROCK_LOG_INFO(Weapon, "Equipped weapon placement rejected form={:08X} stage={}", requested, stage);
+            return false;
+        };
+        if (!_placementActiveOwner ||
+            provider::runtime::authorize(_placementActiveOwner, api::grab::kInterfaceId, 2, true) != api::Status::Ok)
+            return reject("owner");
+        if (!weaponNode || frame.menuBlocked || !frame.worldReady || !physicsWritesAllowedForWorld(frame.hknpWorld) ||
+            currentEquippedWeaponFormId() != requested)
+            return reject("eligibility");
+        // A grip session lets go through the hands-free path, so hand returns,
+        // part grips and native ownership need no second release; the grip update
+        // may already have let go this frame. A weapon without a latch (bipod off)
+        // keeps its presented pose. Native carry has no session to end.
+        const auto occupancy = equippedWeaponRoster().slotZeroGrips();
+        const bool nativeCarry = !_twoHandedGrip.isManualOwnershipActive();
+        if (nativeCarry) {
+            _twoHandedGrip.recordWeaponPlacedHaptic();
+        } else if (!_twoHandedGrip.isHandsFreeRetained()) {
+            auto pose = weaponNode->world;
+            (void)_dynamicWeaponCollision.tryGetLatchedSurfacePose(weaponNode,
+                _weaponCollision.getCurrentWeaponGenerationKey(), pose);
+            if (!_twoHandedGrip.retainHandsFree(pose, true))
+                return reject("let-go");
+        }
+        // The hands were inside the weapon that now freezes in place. As after a
+        // drop, they stop colliding with it briefly instead of being thrown out.
+        for (const bool left : { false, true }) {
+            if (!(left ? occupancy.left.carriesWeapon() : occupancy.right.carriesWeapon() || nativeCarry))
+                continue;
+            setWeaponHandSuppression(frame.hknpWorld, left, WeaponHandReason::Drop, true);
+            setWeaponHandSuppression(frame.hknpWorld, left, WeaponHandReason::Drop, false,
+                g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds);
+        }
+        ROCK_LOG_INFO(Weapon, "Equipped weapon placement started form={:08X} nativeCarry={}", requested, nativeCarry);
+        return true;
     }
 
     std::uint32_t PhysicsInteraction::heldPlacementCandidate(RE::hknpWorld* world) const
@@ -172,9 +238,14 @@ namespace rock
     {
         using Flag = api::grab::PlacementIntentFlag;
         const auto sample = provider::runtime::sample();
-        if ((intent.flags & ~3u) ||
-            ((intent.flags & static_cast<std::uint32_t>(Flag::Anchor)) &&
-                (!(intent.flags & static_cast<std::uint32_t>(Flag::ReserveClick)) || !intent.formId)))
+        const auto reserve = static_cast<std::uint32_t>(Flag::ReserveClick);
+        const auto anchor = static_cast<std::uint32_t>(Flag::Anchor);
+        const auto hold = static_cast<std::uint32_t>(Flag::TimeEquippedWeaponHold);
+        const auto anchorWeapon = static_cast<std::uint32_t>(Flag::AnchorEquippedWeapon);
+        if ((intent.flags & ~(reserve | anchor | hold | anchorWeapon)) ||
+            ((intent.flags & anchor) && (!(intent.flags & reserve) || !intent.formId)) ||
+            ((intent.flags & anchorWeapon) &&
+                (!(intent.flags & hold) || (intent.flags & (reserve | anchor)) || !intent.formId)))
             return api::Status::InvalidArgument;
         if (intent.sample.frameIndex != sample.frameIndex || intent.sample.worldGeneration != sample.worldGeneration ||
             intent.sample.skeletonGeneration != sample.skeletonGeneration ||
@@ -205,8 +276,10 @@ namespace rock
         if (_placementActiveOwner == owner) {
             _placementActiveOwner = 0;
             _placementClickReserved = false;
+            _placementEquippedHold = false;
             _placementCandidate = 0;
             _placementRequestedForm = 0;
+            _placementEquippedRequestedForm = 0;
         }
         if (_placementPendingForm && _placementPendingOwner == owner) {
             _placementPendingOwner = 0;
@@ -223,8 +296,11 @@ namespace rock
         _placementPendingOwner = 0;
         _placementPendingForm = 0;
         _placementRequestedForm = 0;
+        _placementEquippedRequestedForm = 0;
         _placementCandidate = 0;
         _placementClickReserved = false;
+        _placementEquippedHold = false;
+        _placementEquippedRetiring = false;
         _placementLastRequestToken = 0;
         _placementLastRequestForm = 0;
         _placementScriptWait = 0.0f;
@@ -238,8 +314,10 @@ namespace rock
         const auto sample = provider::runtime::sample();
         _placementActiveOwner = 0;
         _placementClickReserved = false;
+        _placementEquippedHold = false;
         _placementCandidate = 0;
         _placementRequestedForm = 0;
+        _placementEquippedRequestedForm = 0;
         const auto& frame = runtime_state::currentFrame();
         const bool usable = isInitialized() && frame.visualAuthorityAvailable && frame.localSkeletonReady &&
             !frame.localMenuBlocking && !frame.compatibilityConfigBlocking &&
@@ -262,8 +340,25 @@ namespace rock
             _placementPendingOwner = 0;
         }
         _placementActiveOwner = owner;
-        _placementCandidate = intent.formId;
+        const bool anchorsWeapon = (intent.flags & static_cast<std::uint32_t>(Flag::AnchorEquippedWeapon)) != 0;
+        _placementCandidate = anchorsWeapon ? 0 : intent.formId;
         _placementClickReserved = (intent.flags & static_cast<std::uint32_t>(Flag::ReserveClick)) != 0;
+        _placementEquippedHold = (intent.flags & static_cast<std::uint32_t>(Flag::TimeEquippedWeaponHold)) != 0;
+        if (anchorsWeapon && !_placementPendingForm) {
+            _placementLastRequestToken = intent.frameToken;
+            _placementLastRequestForm = intent.formId;
+            _placementLastResult = api::grab::PlacementResult::Rejected;
+            // Read before this frame's surface input clears the observation the
+            // add-on's state came from.
+            const auto weapon = queryEquippedWeaponPlacement();
+            using HandFlag = api::grab::HeldPlacementFlag;
+            if (weapon.formId == intent.formId &&
+                (weapon.flags & static_cast<std::uint32_t>(HandFlag::FixedSurfaceContact)))
+                _placementEquippedRequestedForm = intent.formId;
+            else
+                ROCK_LOG_INFO(Weapon, "Equipped weapon placement rejected form={:08X} stage=surface observed={:08X}",
+                    intent.formId, weapon.formId);
+        }
         if (intent.flags & static_cast<std::uint32_t>(Flag::Anchor)) {
             _placementRequestedForm = intent.formId;
             if (!_placementPendingForm) {

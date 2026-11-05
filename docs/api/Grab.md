@@ -48,14 +48,25 @@ that (`active` 0). `releaseHandReservation` (Write) ends it.
 
 ## Held placement (game thread)
 
-`getHeldPlacementState` (Read) reports both hands' held loose objects and the
-physical right-stick click. Submit the state's unchanged `frameToken` and
+`getHeldPlacementState` (Read) reports both hands' held loose objects, the
+equipped weapon and the physical right-stick click. Submit the state's unchanged `frameToken` and
 `sample` with `submitHeldPlacementIntent` (Write) in the same phase (Animation
 `BeforeRock` preferred). `ReserveClick` covers the whole press and release;
 `Anchor` (with `ReserveClick` and a `formId`) asks ROCK to place the object as
 a native fixed placement. Acceptance is not completion: `lastRequestToken` and
 `lastResult` report it. `clearHeldPlacementIntent` withdraws the intent; it
 never thaws a completed placement.
+
+`equippedWeapon` reports the primary equipped weapon while it can be placed.
+Its press stays with the bipod, so never reserve it for that weapon. Set
+`TimeEquippedWeaponHold` while you time a hold on it: a press still latches the
+bipod at once, but a latched weapon unlatches when the button comes up instead
+of when it goes down, so a hold can place the pose it rests in.
+`AnchorEquippedWeapon` (with `TimeEquippedWeaponHold`, `equippedWeapon.formId`
+and `FixedSurfaceContact`, without `ReserveClick` or `Anchor`) has ROCK let go
+of the weapon and move it from the player to a native fixed placement at its
+current pose. `lastResult` reports it; once the weapon has left the player the
+placement no longer cancels.
 
 ## Default grab poses (game thread, Write)
 
@@ -106,8 +117,8 @@ publication identity.
 | `HandTargetDetails` | `getHandTargetDetails` | `handState`, `referenceFormId`, `referenceNativeHandle`, `flags` (`TargetDetailFlag`), `collisionLayer`, `anchorGame`, `normalGame`, `powerArmorPoint`, `sourceTriangleIndex`, `collisionNodeName[64]`, `meshPartName[64]` |
 | `HandReservationRequest` | acquire, renew | `weaponSlot`, `hand`, `reservation` (`HandReservationKind`: `Normal`, `ReloadReserved`, `ReloadPoseOverride`), `leaseFrames`, the three guard generations |
 | `HandReservationState` | `getHandReservationState` | `hand`, `reservation`, `ownerToken`, `expiresAfterFrame`, `active`, `remainingFrames`, the three generations, `weaponSlot` |
-| `HeldPlacementState` | `getHeldPlacementState` | `frameToken`, `sample`, `right` and `left` (`HeldPlacementHand`: `formId`, `flags` `LooseObject`/`FixedSurfaceContact`), `buttonAvailable`, `buttonHeld`, `buttonPressed`, `buttonAgeMilliseconds`, `lastRequestToken`, `lastResult` (`PlacementResult`: `None`, `Pending`, `Anchored`, `Rejected`), `lastRequestFormId` |
-| `HeldPlacementIntent` | `submitHeldPlacementIntent` | `frameToken`, `sample`, `formId`, `flags` (`PlacementIntentFlag`: `ReserveClick`, `Anchor`) |
+| `HeldPlacementState` | `getHeldPlacementState` | `frameToken`, `sample`, `right` and `left` (`HeldPlacementHand`: `formId`, `flags` `LooseObject`/`FixedSurfaceContact`/`Weapon`), `buttonAvailable`, `buttonHeld`, `buttonPressed`, `buttonAgeMilliseconds`, `lastRequestToken`, `lastResult` (`PlacementResult`: `None`, `Pending`, `Anchored`, `Rejected`), `lastRequestFormId`, `equippedWeapon` (`HeldPlacementHand`) |
+| `HeldPlacementIntent` | `submitHeldPlacementIntent` | `frameToken`, `sample`, `formId`, `flags` (`PlacementIntentFlag`: `ReserveClick`, `Anchor`, `TimeEquippedWeaponHold`, `AnchorEquippedWeapon`) |
 | `DefaultGrabPoses` | `setDefaultGrabPoses` | `baseFormId`, `right`, `left` (`DefaultHandPose`: `flags` `Present`/`FingerValues`/`FingerJoints`, `translateGame[3]`, `rotate[9]`, `fingerValues[5]`, `fingerJointValues[15]`) |
 | `HeldObjectTarget` | `setHeldObjectTarget` | `hand`, `referenceFormId`, `leaseFrames`, `connectedWeaponSlot`, `connectedWeaponFormId`, `rootWorld`, `sample`, `gripSequence`, `connectedWeaponGeneration` |
 | `HeldObjectPose` | `getHeldObjectPose` | `hand`, `referenceFormId`, `bodyId`, `sample`, `gripSequence`, `rootWorld` |

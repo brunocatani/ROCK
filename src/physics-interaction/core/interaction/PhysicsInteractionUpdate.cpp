@@ -747,7 +747,7 @@ namespace rock
                 updateNativeGrenadeCollisionSuppression(world, runtime.deltaSeconds);
         }
         beginHeldPlacementFrame();
-        _dynamicWeaponCollision.updateSurfaceSupportInput(_placementClickReserved);
+        _dynamicWeaponCollision.updateSurfaceSupportInput(_placementClickReserved, _placementEquippedHold);
         const auto retireDynamicWeaponForInterruptedFrame = [this](bool preserveSurfaceSupport = false) {
             if (!_lifecycle.initialized.load(std::memory_order_acquire)) {
                 return;
