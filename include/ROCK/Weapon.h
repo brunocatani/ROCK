@@ -552,6 +552,18 @@ namespace rock::api::weapon {
         std::uint32_t providerGeneration{ 0 };
     };
 
+    // What a consumer that tracks a weapon's chamber says it holds. ROCK draws
+    // it as a cartridge beside that weapon's ammo counter, in every counter style.
+    enum class ChamberMarker : std::uint32_t
+    {
+        None = 0,
+        // Hollow and dim: no round in the chamber.
+        Empty = 1,
+        // Solid: a round in the chamber.
+        Chambered = 2,
+    };
+    inline constexpr std::uint32_t kMaxChamberMarkerLeaseFrames = 4;
+
     // Permission bits are local to this interface major. Discovery grants none.
     enum class Permission : std::uint32_t { Read = 1, Write = 2 };
     inline constexpr std::uint32_t kSupportedPermissions = 3;
@@ -641,6 +653,12 @@ namespace rock::api::weapon {
         // otherwise); it ends with 0 or the owner's loss. The game's own
         // automatic reload call sites are not ROCK's and stay untouched.
         Status(ROCK_CALL* setAutomaticReloadBlocked)(OwnerToken owner, std::uint32_t blocked) noexcept;
+        // Write. Shows marker beside the ammo counter of the weapon in
+        // weaponSlot for 1 to kMaxChamberMarkerLeaseFrames frames; renew it
+        // each frame. It ends with the lease, so it goes away by itself when
+        // the owner stops. None clears it. One owner per slot (OwnerConflict
+        // otherwise, until the holder clears it or its lease runs out).
+        Status(ROCK_CALL* setChamberMarker)(OwnerToken owner, std::uint32_t weaponSlot, ChamberMarker marker, std::uint32_t leaseFrames) noexcept;
     };
 }
 #pragma pack(pop)

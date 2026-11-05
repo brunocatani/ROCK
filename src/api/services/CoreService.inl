@@ -86,6 +86,7 @@
             // before this owner slot becomes available to another registration.
             grab_callbacks::clear(ownerToken);
             clearAutomaticReloadBlockForOwner(ownerToken);
+            clearChamberMarkersForOwner(ownerToken);
             *slot = {};
             clearInteractionCommandsForOwnerLocked(ownerToken, api::grab::InteractionFailure::OwnerNotRegistered);
             clearHandInputSuppressionsForOwnerLocked(

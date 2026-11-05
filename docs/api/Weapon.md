@@ -139,6 +139,15 @@ ends with `blocked` 0 or when the owner goes away. ROCK starts that reload
 itself, so hooks on the game's own automatic-reload call sites never see it;
 those call sites, which serve slot 0, are not ROCK's and stay untouched.
 
+## Chamber marker (Write)
+
+`setChamberMarker(owner, slot, marker, leaseFrames)` draws a cartridge beside the
+slot's ammo counter, in every counter style: `Empty` hollow and dim, `Chambered`
+solid. ROCK does not track chambers; the marker says what the owner says. Lease 1
+to `kMaxChamberMarkerLeaseFrames` frames, renewed each frame, so the marker goes
+away by itself when the owner stops; `None` clears it. One owner per slot
+(`OwnerConflict` until the holder clears it or its lease runs out).
+
 ## Draw (Write)
 
 `requestInventoryDraw(owner, request, outCommandId)` is `requestInventoryEquip`

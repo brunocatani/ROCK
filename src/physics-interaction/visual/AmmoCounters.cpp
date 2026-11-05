@@ -123,7 +123,21 @@ namespace rock::ammo_counters
             rpsui::api::number_overlay::Style style{ rpsui::api::number_overlay::Style::Plain };
             std::array<float, 3> color{ 1.0f, 1.0f, 1.0f };
             std::uint32_t secondaryValue{ 0 };
+            rpsui::api::number_overlay::ChamberMarker chamber{ rpsui::api::number_overlay::ChamberMarker::None };
         };
+
+        [[nodiscard]] rpsui::api::number_overlay::ChamberMarker overlayMarker(const api::weapon::ChamberMarker marker) noexcept
+        {
+            using Overlay = rpsui::api::number_overlay::ChamberMarker;
+            switch (marker) {
+            case api::weapon::ChamberMarker::Empty:
+                return Overlay::Empty;
+            case api::weapon::ChamberMarker::Chambered:
+                return Overlay::Chambered;
+            default:
+                return Overlay::None;
+            }
+        }
 
         bool show(Overlay& overlay, const ammo_counter_pose::Pose& pose, const ammo_counter_pose::Panel& panel,
             std::uint32_t value, const Look& look) noexcept
@@ -135,6 +149,7 @@ namespace rock::ammo_counters
             presentation.opacity = pose.opacity;
             presentation.style = look.style;
             presentation.secondaryValue = look.secondaryValue;
+            presentation.chamber = look.chamber;
             for (unsigned i = 0; i < 3; ++i)
                 presentation.color[i] = look.color[i];
             for (unsigned i = 0; i < 3; ++i) {
@@ -166,8 +181,9 @@ namespace rock::ammo_counters
             auto& loaded = g_overlays[hand * 2];
             auto& reserve = g_overlays[hand * 2 + 1];
             if (counter.shown && counter.pose.valid && counter.pose.opacity > 0.0f) {
+                const auto chamber = overlayMarker(counter.chamber);
                 if (style == Style::Minimal) {
-                    healthy &= show(loaded, counter.pose, counter.pose.loaded, counter.loaded, {});
+                    healthy &= show(loaded, counter.pose, counter.pose.loaded, counter.loaded, Look{ .chamber = chamber });
                     healthy &= show(reserve, counter.pose, counter.pose.reserve, counter.reserve, {});
                 } else {
                     const Look look{
@@ -175,6 +191,7 @@ namespace rock::ammo_counters
                                                            : rpsui::api::number_overlay::Style::Hud,
                         .color = hudColor,
                         .secondaryValue = counter.reserve,
+                        .chamber = chamber,
                     };
                     healthy &= show(loaded, counter.pose, counter.pose.counter, counter.loaded, look);
                     healthy &= close(reserve);

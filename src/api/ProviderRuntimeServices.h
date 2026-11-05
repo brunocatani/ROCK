@@ -92,6 +92,8 @@ namespace rock::provider::runtime
     api::Status getWeaponGrip(api::weapon::Grip& outGrip, std::uint32_t weaponSlot);
     api::Status getWeaponClassification(api::weapon::Classification& outClassification, std::uint32_t weaponSlot);
     api::Status setAutomaticReloadBlocked(std::uint64_t ownerToken, bool blocked);
+    api::Status setChamberMarker(std::uint64_t ownerToken, std::uint32_t weaponSlot, api::weapon::ChamberMarker marker,
+        std::uint32_t leaseFrames);
     std::uint32_t weaponEmitterCount(std::uint32_t weaponSlot);
     std::uint32_t copyWeaponEmitters(std::uint32_t weaponSlot, api::weapon::Emitter* outEmitters,
         std::uint32_t capacity);

@@ -223,6 +223,7 @@ namespace rock
                     counter.shown = counter.pose.valid;
                     counter.loaded = state.loadedRounds;
                     counter.reserve = state.reserveRounds;
+                    counter.chamber = provider::chamberMarker(slot);
                     if (!counter.shown)
                         hidden("vanilla-pose");
                     continue;
@@ -275,6 +276,7 @@ namespace rock
                 counter.shown = counter.pose.valid;
                 counter.loaded = state.loadedRounds;
                 counter.reserve = state.reserveRounds;
+                counter.chamber = provider::chamberMarker(slot);
             }
         }
         // The counters replace the vanilla one only while RPS UI shows them.

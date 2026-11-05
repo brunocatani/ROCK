@@ -2,6 +2,8 @@
 
 #include "physics-interaction/visual/AmmoCounterPose.h"
 
+#include <ROCK/Weapon.h>
+
 #include <array>
 #include <cstdint>
 
@@ -31,6 +33,7 @@ namespace rock::ammo_counters
         bool shown{ false };
         std::uint32_t loaded{ 0 };
         std::uint32_t reserve{ 0 };
+        api::weapon::ChamberMarker chamber{ api::weapon::ChamberMarker::None };
         ammo_counter_pose::Pose pose{};
     };
 

@@ -424,6 +424,26 @@ namespace rock::provider::runtime
         s_automaticReloadBlockOwner.compare_exchange_strong(ownerToken, 0, std::memory_order_acq_rel);
     }
 
+    // What each slot's chamber holds, by the owner that tracks it. A lease and
+    // not a state: the marker must go away by itself when its owner stops.
+    struct ChamberMarkerLease
+    {
+        std::uint64_t ownerToken{ 0 };
+        std::uint64_t expiresAfterFrame{ 0 };
+        api::weapon::ChamberMarker marker{ api::weapon::ChamberMarker::None };
+    };
+    std::mutex s_chamberMarkerMutex;
+    std::array<ChamberMarkerLease, api::kMaxWeaponSlots> s_chamberMarkers{};
+
+    void clearChamberMarkersForOwner(const std::uint64_t ownerToken)
+    {
+        std::scoped_lock lock(s_chamberMarkerMutex);
+        for (auto& lease : s_chamberMarkers) {
+            if (lease.ownerToken == ownerToken)
+                lease = {};
+        }
+    }
+
     struct WeaponPartTargetSlot
     {
         bool active{ false };
@@ -1325,6 +1345,7 @@ namespace rock::provider::runtime
         saved_grab_offset::clearDefaultGrabPosesForOwner(ownerToken);
         grab_callbacks::clear(ownerToken);
         clearAutomaticReloadBlockForOwner(ownerToken);
+        clearChamberMarkersForOwner(ownerToken);
         {
             std::scoped_lock lock(s_interactionCommandMutex, s_handInputSuppressionMutex, s_weaponPartMutex,
                 s_nativeAnimationAuthorityMutex, s_equippedWeaponHandlingAuthorityMutex);
@@ -2397,6 +2418,16 @@ namespace rock::provider
     bool automaticReloadBlocked() noexcept
     {
         return s_automaticReloadBlockOwner.load(std::memory_order_acquire) != 0;
+    }
+
+    api::weapon::ChamberMarker chamberMarker(const std::uint32_t weaponSlot)
+    {
+        if (weaponSlot >= s_chamberMarkers.size())
+            return api::weapon::ChamberMarker::None;
+        const auto frame = currentGameFrameIndex();
+        std::scoped_lock lock(s_chamberMarkerMutex);
+        const auto& lease = s_chamberMarkers[weaponSlot];
+        return lease.ownerToken && frame <= lease.expiresAfterFrame ? lease.marker : api::weapon::ChamberMarker::None;
     }
 
     std::uint32_t copyWeaponPartDrives(PartDrive* outTargets, std::uint32_t maxTargets, std::uint64_t* outOwnerTokens,

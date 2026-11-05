@@ -39,6 +39,26 @@
         return api::Status::Ok;
     }
 
+    api::Status setChamberMarker(const std::uint64_t ownerToken, const std::uint32_t weaponSlot,
+        const api::weapon::ChamberMarker marker, const std::uint32_t leaseFrames)
+    {
+        using Marker = api::weapon::ChamberMarker;
+        if (weaponSlot >= s_chamberMarkers.size() ||
+            (marker != Marker::None && marker != Marker::Empty && marker != Marker::Chambered) ||
+            (marker != Marker::None && (leaseFrames == 0 || leaseFrames > api::weapon::kMaxChamberMarkerLeaseFrames))) {
+            return api::Status::InvalidArgument;
+        }
+        const auto frame = currentGameFrameIndex();
+        std::scoped_lock lock(s_chamberMarkerMutex);
+        auto& lease = s_chamberMarkers[weaponSlot];
+        if (lease.ownerToken && lease.ownerToken != ownerToken && frame <= lease.expiresAfterFrame) {
+            return api::Status::OwnerConflict;
+        }
+        lease = marker == Marker::None ? ChamberMarkerLease{} :
+                                         ChamberMarkerLease{ ownerToken, frame + leaseFrames, marker };
+        return api::Status::Ok;
+    }
+
     std::uint32_t weaponEmitterCount(const std::uint32_t weaponSlot)
     {
         const auto instanceAccess = s_physicsInteraction.borrow();

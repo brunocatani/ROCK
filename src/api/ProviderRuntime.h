@@ -58,6 +58,8 @@ namespace rock::provider
         std::uint64_t* outOwnerTokens = nullptr, bool pruneExpired = true);
     // An owner asked that an empty slot-1 weapon dry-fire instead of reloading.
     [[nodiscard]] bool automaticReloadBlocked() noexcept;
+    // None once no owner holds a live marker lease for this slot.
+    [[nodiscard]] api::weapon::ChamberMarker chamberMarker(std::uint32_t weaponSlot);
     bool resolveTouchGrabTarget(std::uint32_t bodyId, std::uint32_t collisionLayer, TouchGrabMotionClass motionClass,
         api::Hand hand, std::uint32_t worldGeneration, std::uint32_t skeletonGeneration,
         std::uint32_t providerGeneration, TouchGrabTargetMatch& outMatch);

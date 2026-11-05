@@ -80,6 +80,10 @@ namespace rock::provider::runtime
     }
 
     api::Status setAutomaticReloadBlocked(std::uint64_t, bool) { return api::Status::Ok; }
+    api::Status setChamberMarker(std::uint64_t, std::uint32_t, api::weapon::ChamberMarker, std::uint32_t)
+    {
+        return api::Status::Ok;
+    }
 
     std::uint32_t weaponEmitterCount(std::uint32_t slot) { return slot == 1 ? 1 : emitterCount; }
 

@@ -101,6 +101,13 @@ namespace rock::api::weapon
                 [&] { return p::runtime::setAutomaticReloadBlocked(owner, blocked != 0); });
         }
 
+        Status ROCK_CALL setChamberMarker(OwnerToken owner, std::uint32_t slot, ChamberMarker marker,
+            std::uint32_t leaseFrames) noexcept
+        {
+            return invoke(owner, kInterfaceId, 2, true,
+                [&] { return p::runtime::setChamberMarker(owner, slot, marker, leaseFrames); });
+        }
+
         Status ROCK_CALL getCompositionState(OwnerToken owner, std::uint32_t slot, CompositionState* outState) noexcept
         {
             return readSlot(owner, slot, outState,
@@ -304,6 +311,7 @@ namespace rock::api::weapon
             &setWarmInventoryWeapons,
             &requestInventoryDraw,
             &setAutomaticReloadBlocked,
+            &setChamberMarker,
         };
         return value;
     }
