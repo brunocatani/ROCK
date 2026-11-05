@@ -117,6 +117,28 @@ namespace rock
         refreshWeaponHandSuppression(world, isLeft);
     }
 
+    /*
+     * The right hand owns the weapon through its firing grip. When it lets go
+     * it is still inside the weapon, so its dynamic proxy would wake against
+     * the weapon's proxy and hold the rendered hand back while it reaches for
+     * the bolt (12 gu behind the controller on a bolt rifle). For a moment only
+     * that pair is removed: the hand colliders, whose contacts grabbing reads,
+     * and the proxy's pairs with the world and the other hand are untouched.
+     */
+    void PhysicsInteraction::setRightFiringWeaponOwnership(RE::hknpWorld* world, bool active, bool weaponEquipped)
+    {
+        constexpr float kFiringDetachLeaseSeconds = 0.5f;
+        const bool wasActive =
+            (_suppression.weaponHands[0].active & static_cast<std::uint8_t>(WeaponHandReason::Dominant)) != 0;
+        setWeaponHandSuppression(world, false, WeaponHandReason::Dominant, active);
+        if (!wasActive || active || !weaponEquipped)
+            return;
+        setWeaponHandSuppression(world, false, WeaponHandReason::FiringDetach, true);
+        setWeaponHandSuppression(world, false, WeaponHandReason::FiringDetach, false, kFiringDetachLeaseSeconds);
+        ROCK_LOG_INFO(Hand, "Firing grip let go: right hand proxy ignores the weapon's collision for {:.2f}s",
+            kFiringDetachLeaseSeconds);
+    }
+
     void PhysicsInteraction::clearWeaponHandSuppression(RE::hknpWorld* world, bool isLeft)
     {
         auto& state = _suppression.weaponHands[isLeft ? 1 : 0];
@@ -161,11 +183,12 @@ namespace rock
 
         // Recreated hand bodies get new IDs, so the set is rebuilt each time.
         state.bodyCount = 0;
-        if (reasons != 0) {
+        constexpr auto secondWeaponBit = static_cast<std::uint8_t>(WeaponHandReason::SecondWeapon);
+        constexpr auto firingDetachBit = static_cast<std::uint8_t>(WeaponHandReason::FiringDetach);
+        const bool secondWeapon = (reasons & secondWeaponBit) != 0;
+        const bool firstWeapon = (reasons & static_cast<std::uint8_t>(~(secondWeaponBit | firingDetachBit))) != 0;
+        if (firstWeapon || secondWeapon) {
             const bool dropped = (reasons & static_cast<std::uint8_t>(WeaponHandReason::Drop)) != 0;
-            constexpr auto secondWeaponBit = static_cast<std::uint8_t>(WeaponHandReason::SecondWeapon);
-            const bool secondWeapon = (reasons & secondWeaponBit) != 0;
-            const bool firstWeapon = (reasons & static_cast<std::uint8_t>(~secondWeaponBit)) != 0;
             Hand& hand = isLeft ? _leftHand : _rightHand;
             std::array<std::uint32_t, kGrabCollisionSuppressionBodyCountPerHand> bodies{};
             std::size_t count = 0;
@@ -191,6 +214,11 @@ namespace rock
                     };
                 }
             }
+        }
+        if ((reasons & firingDetachBit) != 0 && state.bodyCount < state.bodies.size()) {
+            const auto proxyBodyId = _dynamicHandCollision.proxyBodyIdAtomic(isLeft);
+            if (proxyBodyId != INVALID_CONTACT_BODY_ID)
+                state.bodies[state.bodyCount++] = { .bodyId = proxyBodyId, .firstWeapon = true };
         }
         publishWeaponHandExclusion(world);
     }

@@ -1058,7 +1058,7 @@ namespace rock
         const auto occupancy = equippedWeaponRoster().slotZeroGrips();
         prepared.leftSupportGripActive = occupancy.left.partGripActive;
         prepared.rightPartGripActive = occupancy.right.partGripActive;
-        setWeaponHandSuppression(hknp, false, WeaponHandReason::Dominant, prepared.rightHandWeaponAuthorityActive);
+        setRightFiringWeaponOwnership(hknp, prepared.rightHandWeaponAuthorityActive, prepared.rightHandWeaponEquipped);
         // A part-gripping free hand is a transform driver like the support hand
         // and must not also solve contacts against the weapon package.
         setWeaponHandSuppression(hknp, false, WeaponHandReason::Grip, prepared.rightPartGripActive);
@@ -2321,7 +2321,7 @@ namespace rock
             rightHandWeaponAuthorityActive = false;
         }
         if (rightHandWeaponAuthorityActive != prepared.rightHandWeaponAuthorityActive) {
-            setWeaponHandSuppression(w.hknp, false, WeaponHandReason::Dominant, rightHandWeaponAuthorityActive);
+            setRightFiringWeaponOwnership(w.hknp, rightHandWeaponAuthorityActive, prepared.rightHandWeaponEquipped);
         }
         const bool rightPartGripActive = gripUpdateResult.after.right.partGripActive;
         if (rightPartGripActive != gripUpdateResult.before.right.partGripActive) {

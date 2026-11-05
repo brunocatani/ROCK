@@ -631,9 +631,11 @@ namespace rock
             Grip = 1u << 1, // support, part or left firing grip
             Drop = 1u << 2, // hand (and arm) just released the weapon
             SecondWeapon = 1u << 3, // hand holds the second weapon (equip slot 1)
+            FiringDetach = 1u << 4, // right hand just let go of the firing grip: its dynamic proxy only
         };
         void setWeaponHandSuppression(RE::hknpWorld* world, bool isLeft, WeaponHandReason reason, bool active,
             float restoreDelaySeconds = 0.0f);
+        void setRightFiringWeaponOwnership(RE::hknpWorld* world, bool active, bool weaponEquipped);
         void clearWeaponHandSuppression(RE::hknpWorld* world, bool isLeft);
         void abandonWeaponHandSuppression();
         void publishWeaponHandExclusion(RE::hknpWorld* world);

@@ -106,6 +106,12 @@ namespace rock
             return _transitionCollisionSuppressedAtomic.load(std::memory_order_acquire);
         }
 
+        // The hand's dynamic compound body, or the invalid body ID.
+        [[nodiscard]] std::uint32_t proxyBodyIdAtomic(bool isLeft) const
+        {
+            return _hands[isLeft ? 1 : 0].bodies[0].bodyIdAtomic.load(std::memory_order_acquire);
+        }
+
         [[nodiscard]] dynamic_hand_collision_telemetry::HapticEvents consumeHapticEvents();
 
         struct DynamicBodyContactSource
