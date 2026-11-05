@@ -5,10 +5,13 @@
 #include "physics-interaction/core/RockRuntimeState.h"
 
 #include "RockConfig.h"
+#include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/timing/RockGameTiming.h"
+#include "physics-interaction/weapon/equip/HeldWeaponEquipStatePolicy.h"
 
+#include <atomic>
 #include <string_view>
 
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -41,6 +44,37 @@ namespace rock::runtime_state
         };
 
         FrameMenuSample s_frameMenuSample{};
+
+        // Frame owner writes, native equip callbacks on other threads read.
+        std::atomic<bool> s_menuHoldsWeapons{ false };
+
+        // Backstop for a native draw that never ends after a menu. The draw
+        // measures three frames (23 ms).
+        constexpr float kMenuExitSettleMaxSeconds = 1.0f;
+        float s_menuExitSettleSeconds = 0.0f;
+
+        [[nodiscard]] bool sampleMenuExitSettling(const RuntimeFrameSnapshot& next)
+        {
+            const bool heldLastFrame = s_snapshot.menuHoldsWeapons();
+            if (next.localMenuBlocking || !heldLastFrame || !next.playerAvailable) {
+                s_menuExitSettleSeconds = 0.0f;
+                return false;
+            }
+            using NativeWeaponState = held_weapon_equip_state_policy::NativeWeaponState;
+            const auto state = f4vr::getNativeWeaponState(f4vr::getPlayer());
+            if (state != static_cast<std::uint32_t>(NativeWeaponState::WantToDraw) &&
+                state != static_cast<std::uint32_t>(NativeWeaponState::Drawing)) {
+                s_menuExitSettleSeconds = 0.0f;
+                return false;
+            }
+            s_menuExitSettleSeconds += next.deltaSeconds;
+            if (s_menuExitSettleSeconds <= kMenuExitSettleMaxSeconds)
+                return true;
+            ROCK_LOG_WARN(Weapon, "Menu exit draw still running after {:.2f}s state={}; weapons return to native",
+                s_menuExitSettleSeconds, held_weapon_equip_state_policy::nativeWeaponStateName(state));
+            s_menuExitSettleSeconds = 0.0f;
+            return false;
+        }
 
         /*
          * UI::menuMode at UI+0x1E0 counts the open menus that pause the game.
@@ -214,6 +248,8 @@ namespace rock::runtime_state
         s_readinessBones = {};
         s_snapshot = {};
         s_frameMenuSample = {};
+        s_menuExitSettleSeconds = 0.0f;
+        s_menuHoldsWeapons.store(false, std::memory_order_release);
     }
 
     const game_frame_timing_policy::GameFrameTiming& beginFrameTiming(const bool menuInputBlocking)
@@ -255,10 +291,13 @@ namespace rock::runtime_state
          */
         next.deltaSeconds = next.timing.valid ? next.timing.deltaSeconds : 0.0f;
         next.compatibilityConfigBlocking = input.compatibilityConfigBlocking;
+        next.wristPipboyOpen = input.wristPipboyOpen;
         next.visualAuthorityAvailable = input.visualAuthorityAvailable;
         next.visualSkeletonReadyHint = input.visualSkeletonReadyHint;
         next.playerSpace = samplePlayerSpace();
         next.localSkeletonReady = sampleLocalSkeletonReady(next);
+        next.localMenuExitSettling = sampleMenuExitSettling(next);
+        s_menuHoldsWeapons.store(next.menuHoldsWeapons(), std::memory_order_release);
         s_frameMenuSample.valid = false;
         s_snapshot = next;
     }
@@ -272,4 +311,6 @@ namespace rock::runtime_state
     bool isPhysicsMenuBlocked() { return s_snapshot.localMenuBlocking; }
 
     bool isCompatibilityConfigBlocked() { return s_snapshot.compatibilityConfigBlocking; }
+
+    bool menuHoldsWeaponsAnyThread() noexcept { return s_menuHoldsWeapons.load(std::memory_order_acquire); }
 }

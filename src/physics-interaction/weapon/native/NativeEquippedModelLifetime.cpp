@@ -292,6 +292,15 @@ namespace rock::native_equipped_model_lifetime
         // keeps weapons in hand inside menus, so that hide is skipped.
         constexpr std::uintptr_t kPipboyHideReturn = 0xC34826;
         constexpr std::uint32_t kPipboyHideReason = 0;
+        // 140DBE6D0 (a drawn actor starts putting its weapon away; an equip
+        // that changes a worn weapon goes through it) hides with reason 2 as
+        // well. Both hides last until the next draw's cleanup 140DBE590, which
+        // a paused menu holds off until it closes. Applied inside a menu they
+        // kept the second weapon hidden for the whole menu and blanked both
+        // weapons for two frames at its exit. ROCK presents the weapons in
+        // menus and through that draw, so neither runs then; a weapon still
+        // awaiting its pose is hidden by the menu hold.
+        constexpr std::uintptr_t kPutAwayHideReturn = 0xDBE710;
         std::atomic<std::uint32_t> s_skippedHides{ 0 };
         thread_local std::uint32_t t_survivorScopes = 0;
 
@@ -302,6 +311,15 @@ namespace rock::native_equipped_model_lifetime
                 caller == REL::Offset(kPipboyHideReturn).address()) {
                 if (s_skippedHides.fetch_add(1, std::memory_order_relaxed) < 8)
                     ROCK_LOG_INFO(Weapon, "Pip-Boy weapon hide skipped; weapons stay in hand inside menus");
+                return false;
+            }
+            if (s_installed && hidden && reason == kEquipHideReason && actor && actor == f4vr::getPlayer() &&
+                (caller == REL::Offset(kEquipHideReturn).address() ||
+                    caller == REL::Offset(kPutAwayHideReturn).address()) &&
+                runtime_state::menuHoldsWeaponsAnyThread()) {
+                if (s_skippedHides.fetch_add(1, std::memory_order_relaxed) < 8)
+                    ROCK_LOG_INFO(Weapon, "Native equip hide skipped caller={:#x}; the menu holds the weapons",
+                        caller - REL::Module::get().base());
                 return false;
             }
             if (s_installed && hidden && reason == kEquipHideReason && actor && actor == f4vr::getPlayer() &&

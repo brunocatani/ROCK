@@ -108,8 +108,9 @@ namespace rock::native_secondary_presentation
      * holding it then move together by that correction.
      */
     // The second weapon's geometry mirror plane, from its generated
-    // collision (0 until generated). The left seat mirrors across it.
-    void setMirrorOffsets(holding_grip_math::MirrorOffsets offsets) noexcept;
+    // collision (0 until generated), and the form it was measured on. The left
+    // seat mirrors across it.
+    void setMirrorOffsets(holding_grip_math::MirrorOffsets offsets, std::uint32_t formID) noexcept;
 
     using CollisionResolver = bool (*)(void* context, const RE::NiTransform& modelIntentWorld,
         RE::NiTransform& resolvedModelWorld);

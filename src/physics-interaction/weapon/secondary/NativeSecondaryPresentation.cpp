@@ -79,7 +79,10 @@ namespace rock::native_secondary_presentation
         // Registered by the physics module's init/shutdown on the game thread.
         void* s_resolverContext = nullptr;
         CollisionResolver s_resolver = nullptr;
+        // Published outside menus only, so an equip in a menu finds the previous
+        // weapon's plane here; the form keeps it off any other weapon.
         holding_grip_math::MirrorOffsets s_mirrorOffsets{};
+        std::uint32_t s_mirrorFormID = 0;
 
         bool onFrameThread() noexcept
         {
@@ -451,7 +454,8 @@ namespace rock::native_secondary_presentation
          * frame ROCK does not place it (a menu, the weapon put away, an
          * unavailable provider or placement) its model is culled, as the
          * primary is natively in those states. On a frame ROCK places it, it
-         * renders whenever no native hide owner is active. A Pip-Boy equip
+         * renders whenever no native hide owner is active; a menu's hold shows
+         * it regardless, as it does the first weapon. A Pip-Boy equip
          * builds the index-1 model culled; restoring the visibility seen when
          * it was first hidden kept it invisible (runtime 14 Oct 21:17:44).
          * A model that left the equipment belongs to native teardown and is
@@ -490,7 +494,8 @@ namespace rock::native_secondary_presentation
             s_scopeHiddenRoot = 0;
             if (placed) {
                 if (!equipped_weapon_visual_state::isLocallyVisible(view.root) &&
-                    native_equipped_model_lifetime::playerWeaponHideOwnerFlags() == 0) {
+                    (frame.menuHoldsWeapons() || frame.wristPipboyOpen ||
+                        native_equipped_model_lifetime::playerWeaponHideOwnerFlags() == 0)) {
                     equipped_weapon_visual_state::setLocallyVisible(view.root, true);
                     ROCK_LOG_INFO(Weapon,
                         "AKIMBO second weapon shown at placement weapon={:08X} hiddenWhileUnplaced={}",
@@ -644,10 +649,12 @@ namespace rock::native_secondary_presentation
             const auto view = native_hand_equipment::equippedViews()[1];
             // Menus keep the weapon and hand exactly as the live solve places
             // them, without recoil, collision or actions; the native drawn
-            // state may drop meanwhile.
-            const bool menu = frame.localMenuBlocking;
+            // state may drop meanwhile. FRIK's wrist Pip-Boy counts as a menu
+            // here (its compatibility block would release the weapon); only
+            // FRIK's own configuration modes outside a menu still do.
+            const bool menu = frame.menuHoldsWeapons() || frame.wristPipboyOpen;
             if (!view.weapon || !frame.visualAuthorityAvailable || !frame.localSkeletonReady ||
-                frame.compatibilityConfigBlocking || (!frame.weaponDrawn && !menu)) {
+                (frame.compatibilityConfigBlocking && !menu) || (!frame.weaponDrawn && !menu)) {
                 release();
                 return;
             }
@@ -718,14 +725,16 @@ namespace rock::native_secondary_presentation
                 s_state.modelScale * (nativeSeat.userOffset ? nativeSeat.userOffset->weaponScale() : 1.0f);
             const auto* handOverride = holding_grips::find(view.weapon, attachment, left, view.data, powerArmor);
             weapon_grip_seat::FiringSeat firingSeat{};
-            if (!weapon_grip_seat::firingSeat(nativeSeat, handOverride, left, s_mirrorOffsets.plane(!view.firearm),
+            const auto mirrorOffsets =
+                view.weapon->formID == s_mirrorFormID ? s_mirrorOffsets : holding_grip_math::MirrorOffsets{};
+            if (!weapon_grip_seat::firingSeat(nativeSeat, handOverride, left, mirrorOffsets.plane(!view.firearm),
                     firingSeat)) {
                 waitFor(view, nativeSeat.modelRegistered ? "own-authored-firing-grip" : "native-model-frame");
                 return;
             }
             const RE::NiTransform seat = view.firearm ? firingSeat.handWeaponLocal
                                                       : knife_reverse_grip::presentedSeat(firingSeat.handWeaponLocal,
-                                                            left, view.weapon->formID, s_mirrorOffsets.z);
+                                                            left, view.weapon->formID, mirrorOffsets.z);
             const auto& fingers = firingSeat.fingers;
             // The first weapon's firing inputs and aim: ROCK's equipped-weapon
             // wand and hand (filtered when weapon filtering is active), its
@@ -1094,7 +1103,11 @@ namespace rock::native_secondary_presentation
         return true;
     }
 
-    void setMirrorOffsets(holding_grip_math::MirrorOffsets offsets) noexcept { s_mirrorOffsets = offsets; }
+    void setMirrorOffsets(holding_grip_math::MirrorOffsets offsets, std::uint32_t formID) noexcept
+    {
+        s_mirrorOffsets = offsets;
+        s_mirrorFormID = formID;
+    }
 
     void setCollisionResolver(void* context, CollisionResolver resolver) noexcept
     {

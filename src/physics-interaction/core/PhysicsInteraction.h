@@ -941,6 +941,22 @@ namespace rock
 
             // The menu hold blocks FRIK's primary weapon hand pose and node ownership.
             bool menuHoldPoseBlocked{ false };
+            // The hold presents the first weapon this frame, decided once per
+            // frame: a menu, its exit draw, then until the live grip takes over.
+            bool menuHolding{ false };
+            std::uint64_t menuHoldDecidedFrame{ 0 };
+            float menuHoldHandoffSeconds{ 0.0f };
+
+            // The first weapon's part bones as last shown in the menu, restored
+            // during the exit draw. Strong references, cleared with the hold.
+            struct MenuHoldPart
+            {
+                RE::NiPointer<RE::NiAVObject> node;
+                RE::NiTransform local{};
+            };
+
+            std::vector<MenuHoldPart> menuHoldParts;
+            std::uintptr_t menuHoldPartsRoot{ 0 };
 
             // A weapon equipped inside a menu while the game runs, kept hidden
             // by the menu hold until its draw has posed its parts.

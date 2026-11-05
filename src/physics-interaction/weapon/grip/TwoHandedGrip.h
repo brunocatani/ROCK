@@ -713,6 +713,10 @@ namespace rock
                 _session.state == TwoHandedState::PrimaryOnly || isHandsFreeRetained();
         }
 
+        // A live grip holds the hand and places the weapon: the right hand's
+        // authored firing alignment or a manual session.
+        bool isLiveGripPresenting() const { return _firing.authoredHandWorldActive || isManualOwnershipActive(); }
+
         bool isWeaponVisualReturnActive() const;
 
         bool isPartCarryActive() const { return _session.state == TwoHandedState::PartCarry; }

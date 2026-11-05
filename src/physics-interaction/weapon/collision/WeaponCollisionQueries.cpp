@@ -120,6 +120,11 @@ namespace rock
         const auto generation = getCurrentWeaponGenerationKey();
         if (!generation)
             return {};
+        // No collision update runs in a menu, so after an equip there these
+        // bodies are still the previous weapon's. A seat then takes no plane,
+        // as it does while the new weapon's collision is being built.
+        if (getEquippedWeaponClassification().formID != _identity.cachedFormID)
+            return {};
         if (_holdingPlaneGeneration == generation)
             return _holdingOffsets;
         std::array<holding_grip_math::PlaneEvidence, MAX_WEAPON_BODIES> evidence{}, evidenceZ{};

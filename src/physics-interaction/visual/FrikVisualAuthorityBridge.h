@@ -380,6 +380,12 @@ namespace rock::frik_visual_authority
         return frikApi && (frikApi->isConfigOpen() || frikApi->isWristPipboyOpen());
     }
 
+    [[nodiscard]] inline bool isWristPipboyOpen()
+    {
+        auto* frikApi = api();
+        return frikApi && frikApi->isWristPipboyOpen();
+    }
+
     [[nodiscard]] inline bool clearHandPose(const char* tag, Hand hand)
     {
         detail::invalidateCachedHandPosePublication(tag, hand);

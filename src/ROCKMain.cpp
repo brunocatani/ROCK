@@ -405,6 +405,7 @@ namespace
             .visualAuthorityAvailable = frik_visual_authority::isAvailable(),
             .visualSkeletonReadyHint = frik_visual_authority::isSkeletonReadyHint(),
             .compatibilityConfigBlocking = frik_visual_authority::isCompatibilityConfigBlocking(),
+            .wristPipboyOpen = frik_visual_authority::isWristPipboyOpen(),
         });
         stateTimer.stop();
         performance_profiler::ScopedTimer gatesTimer(performance_profiler::Scope::PrepGates);

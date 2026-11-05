@@ -12,6 +12,7 @@
 #include "physics-interaction/weapon/classification/WeaponInstanceClassification.h"
 #include "physics-interaction/weapon/classification/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/equip/EquipVisualBridgePolicy.h"
+#include "physics-interaction/weapon/grip/KnifeReverseGrip.h"
 #include "physics-interaction/weapon/grip/WeaponGripSeat.h"
 #include "physics-interaction/weapon/handling/WeaponInputFilter.h"
 #include "physics-interaction/weapon/native/NativeEquippedModelLifetime.h"
@@ -41,6 +42,23 @@ namespace rock
             // The UI reads raw levels. Drain gameplay edges so opening the
             // wheel cannot become a delayed detach after its lease is cleared.
             static_cast<void>(input_remap_runtime::consumeRawButtonState(isLeft, input_remap_policy::kGrabButtonId));
+        }
+
+        // The nodes below `object` with their locals, bounded for a modded model.
+        template <class Parts>
+        void captureMenuHoldParts(RE::NiAVObject* object, Parts& parts, std::uint32_t depth = 0)
+        {
+            constexpr std::uint32_t kMaxDepth = 32;
+            constexpr std::size_t kMaxParts = 256;
+            auto* node = object ? object->IsNode() : nullptr;
+            if (!node || depth >= kMaxDepth)
+                return;
+            for (const auto& child : node->children) {
+                if (!child || !child->IsNode() || parts.size() >= kMaxParts)
+                    continue;
+                parts.push_back({ RE::NiPointer<RE::NiAVObject>(child.get()), child->local });
+                captureMenuHoldParts(child.get(), parts, depth + 1);
+            }
         }
     }
 
@@ -305,15 +323,47 @@ namespace rock
             reveal = {};
         };
         const auto& frame = runtime_state::currentFrame();
-        auto view = native_hand_equipment::equippedViews()[0];
-        // The hold aims by the firearm controller basis; a melee primary
-        // keeps FRIK's own menu pose.
-        if (!view.firearm)
-            view = {};
-        if (!frame.localMenuBlocking) {
+        const auto view = native_hand_equipment::equippedViews()[0];
+        // A firearm aims by the controller basis; a melee weapon follows the
+        // wrist, as each does in the live carry.
+        const bool melee = view.weapon && !view.firearm;
+        /*
+         * After a menu the hold lets go only once the weapon is drawn and its
+         * live grip has the hand. A weapon first equipped in the menu has no
+         * grip for the first drawn frames (its capture needs the identified
+         * instance); without a claim the hand and weapon stepped 17 degrees for
+         * those frames. The hold and the live grip seat the hand identically,
+         * so the handoff shows nothing.
+         */
+        constexpr float kLiveGripHandoffMaxSeconds = 0.5f;
+        const bool firstHoldThisFrame = _equipped.menuHoldDecidedFrame != frame.frameIndex;
+        if (firstHoldThisFrame) {
+            _equipped.menuHoldDecidedFrame = frame.frameIndex;
+            bool holding = frame.menuHoldsWeapons();
+            if (holding) {
+                _equipped.menuHoldHandoffSeconds = 0.0f;
+            } else if (_equipped.menuHolding && view.weapon && frame.weaponDrawn &&
+                !frame.compatibilityConfigBlocking && !_twoHandedGrip.isLiveGripPresenting() &&
+                // A native reload or an object in the hand keeps the live grip away.
+                !(provider::currentNativeAnimationAuthorityFlags() & authored_weapon_grip_capture_policy::kWeapon) &&
+                !(_equipped.menuHoldHandClaim == 1 ? _leftHand : _rightHand).isHolding()) {
+                _equipped.menuHoldHandoffSeconds += frame.deltaSeconds;
+                holding = _equipped.menuHoldHandoffSeconds <= kLiveGripHandoffMaxSeconds;
+                if (!holding)
+                    ROCK_LOG_WARN(Weapon, "MENU_WEAPON_HOLD weapon={:08X} live grip absent after {:.2f}s; hold released",
+                        view.weapon->formID, _equipped.menuHoldHandoffSeconds);
+            }
+            if (_equipped.menuHolding && !holding && _equipped.menuHoldHandoffSeconds > 0.0f)
+                ROCK_LOG_INFO(Weapon, "MENU_WEAPON_HOLD weapon={:08X} handed to the live grip after {:.3f}s",
+                    view.weapon ? view.weapon->formID : 0u, _equipped.menuHoldHandoffSeconds);
+            _equipped.menuHolding = holding;
+        }
+        if (!_equipped.menuHolding) {
             endReveal();
             release();
             setPoseBlocked(false);
+            _equipped.menuHoldParts.clear();
+            _equipped.menuHoldPartsRoot = 0;
             return;
         }
         setPoseBlocked(view.weapon != nullptr);
@@ -331,10 +381,14 @@ namespace rock
          * when one of two worn weapons changes, so the hold hides the node
          * itself if needed. A paused game (the projected Pip-Boy) never
          * evaluates that graph and shows the model's assembled parts at once,
-         * as does a weapon carried into the menu.
+         * as does a weapon carried into the menu. A melee model has no parts
+         * to assemble. The exit's settling keeps a reveal still running; it
+         * starts none.
          */
         bool awaitingPose = false;
-        if (node && !carried && !frame.localGamePaused) {
+        const bool revealApplies =
+            frame.localMenuBlocking ? !frame.localGamePaused : reveal.formID != 0 && !reveal.revealed;
+        if (node && !carried && !melee && revealApplies) {
             const auto instance = reinterpret_cast<std::uintptr_t>(view.instance);
             if (reveal.formID != view.weapon->formID || reveal.instance != instance) {
                 endReveal();
@@ -394,16 +448,20 @@ namespace rock
             fingers.enabledMask = carry.supportGrip.grip.fingerMask;
             std::copy(carry.supportGrip.grip.fingerLocals.begin(), carry.supportGrip.grip.fingerLocals.end(),
                 fingers.localTransforms);
-        } else if (!stage && carried && firingGrip.valid()) {
+        } else if (!stage && carried && firingGrip.valid() && (!melee || paired)) {
             gripLocal = firingGrip.gripWeaponLocal;
             firingHandWeaponLocal = firingGrip.handWeaponLocal;
             fingers.enabledMask = firingGrip.fingerMask;
             std::copy(firingGrip.fingerLocals.begin(), firingGrip.fingerLocals.end(), fingers.localTransforms);
         } else if (!stage) {
-            // Equipped inside this menu: its own firing seat in the hand it went to.
-            bool firing = true, supported = false;
-            isLeft = native_hand_equipment::wornRowHand(view.weapon->formID, 0, firing, supported) ==
-                native_hand_equipment::WornHand::Left;
+            // Equipped inside this menu: its own firing seat in the hand it
+            // went to. A one-handed melee carry takes the same seat: the capture
+            // holds the authored seat, not the reverse grip the player sees.
+            if (!carried) {
+                bool firing = true, supported = false;
+                isLeft = native_hand_equipment::wornRowHand(view.weapon->formID, 0, firing, supported) ==
+                    native_hand_equipment::WornHand::Left;
+            }
             const bool powerArmor = f4vr::isInPowerArmor();
             // Starts the off-screen idle harvest a never-drawn weapon needs.
             native_idle_grip_preharvest::observeInventoryDisplay(view.weapon, node, view.instance);
@@ -422,8 +480,10 @@ namespace rock
                     seat)) {
                 stage = native.modelRegistered ? "authored-seat" : "model-frame";
             } else {
-                gripLocal = computeGrabPalmPointWorldFromHandBasis(seat.handWeaponLocal, isLeft);
-                firingHandWeaponLocal = seat.handWeaponLocal;
+                firingHandWeaponLocal = melee ? knife_reverse_grip::presentedSeat(seat.handWeaponLocal, isLeft,
+                                                    view.weapon->formID, _weaponCollision.holdingMirrorOffsets().z)
+                                              : seat.handWeaponLocal;
+                gripLocal = computeGrabPalmPointWorldFromHandBasis(firingHandWeaponLocal, isLeft);
                 fingers.enabledMask = seat.fingers.enabledMask;
                 std::copy(std::begin(seat.fingers.localTransforms), std::end(seat.fingers.localTransforms),
                     fingers.localTransforms);
@@ -438,8 +498,10 @@ namespace rock
                 !weapon_input_filter::usable(handWorld)))
             stage = "hand";
         if (!stage && !supportCarry &&
-            !(isLeft ? TwoHandedGrip::tryGetLeftWeaponAimWorld(node->world.scale, weaponWorld)
-                     : TwoHandedGrip::tryGetRightWeaponAimWorld(node->world.scale, weaponWorld)))
+            !(melee ? TwoHandedGrip::tryGetMeleeWeaponAimWorld(isLeft, handWorld, firingHandWeaponLocal,
+                          node->world.scale, weaponWorld)
+                    : isLeft ? TwoHandedGrip::tryGetLeftWeaponAimWorld(node->world.scale, weaponWorld)
+                             : TwoHandedGrip::tryGetRightWeaponAimWorld(node->world.scale, weaponWorld)))
             stage = "controller-aim";
         // Offhand-only carry: the weapon keeps the placement in the controller
         // hand captured when the menu opened. Not the live carry's input
@@ -465,14 +527,14 @@ namespace rock
             driverDeltaDegrees = dynamic_weapon_collision_policy::rotationDeltaDegrees(byDriver, byHand);
         }
         ROCK_LOG_SAMPLE_INFO(Weapon, 1000,
-            "MENU_WEAPON_HOLD weapon=first stage={} source={} hand={} paired={} visible={} "
+            "MENU_WEAPON_HOLD weapon=first stage={} source={} hand={} melee={} paired={} settling={} visible={} "
             "driverVsHand={:.2f}gu/{:.2f}deg",
             stage ? stage : "placed",
             supportCarry  ? "support-carry"
                 : carried ? "menu-carry"
                           : "native-seat",
-            isLeft ? "left" : "right", paired, node ? equipped_weapon_visual_state::isLocallyVisible(node) : false,
-            driverDeltaUnits, driverDeltaDegrees);
+            isLeft ? "left" : "right", melee, paired, frame.localMenuExitSettling,
+            node ? equipped_weapon_visual_state::isLocallyVisible(node) : false, driverDeltaUnits, driverDeltaDegrees);
         if (stage) {
             release();
             return;
@@ -560,6 +622,27 @@ namespace rock
         // matches. A weapon still awaiting its posed draw stays hidden.
         if (!awaitingPose && !equipped_weapon_visual_state::isLocallyVisible(node))
             equipped_weapon_visual_state::setLocallyVisible(node, true);
+        /*
+         * The exit's draw starts on a clip of the outgoing subgraph, whose
+         * first pose throws the parts of a weapon equipped in the menu off for
+         * one frame (bolt 8 gu on the AK-74). The parts keep the pose last
+         * shown until the draw ends. Captured each menu frame: this node stays
+         * while an equip replaces the model below it. A weapon still awaiting
+         * its pose has shown none.
+         */
+        const auto partsRoot = reinterpret_cast<std::uintptr_t>(node);
+        if (frame.localMenuBlocking) {
+            if (firstHoldThisFrame) {
+                _equipped.menuHoldParts.clear();
+                if (!awaitingPose)
+                    captureMenuHoldParts(node, _equipped.menuHoldParts);
+                _equipped.menuHoldPartsRoot = partsRoot;
+            }
+        } else if (frame.localMenuExitSettling && _equipped.menuHoldPartsRoot == partsRoot) {
+            for (const auto& part : _equipped.menuHoldParts)
+                part.node->local = part.local;
+            f4vr::updateTransformsDown(node, false);
+        }
         (void)weapon_scene_presentation::moveWeaponPresentationRigidly(node, weaponWorld);
     }
 
@@ -2582,27 +2665,39 @@ namespace rock
                 weaponClassification.formID == equippedWeapon->formID
             ? weaponClassification.keywordFlags
             : 0;
+        const bool classificationCurrent = equippedWeapon && weaponClassification.hasEquippedWeapon &&
+            weaponClassification.formID == equippedWeapon->formID;
         std::uint64_t weaponOwnershipKey = weaponNode ? _weaponCollision.getCurrentEquippedWeaponOwnershipKey() : 0;
         if (weaponNode && weaponOwnershipKey == 0) {
-            // Keep authored grip alignment independent of generated weapon
-            // collision.
-            // The richer stack/instance key wins when available; the equipped
-            // form remains a stable freshness boundary when collision is off.
-            weaponOwnershipKey = currentEquippedWeaponFormId();
+            /*
+             * The collision update publishes the key later in this frame, and
+             * clears it while the weapon is not drawn. This frame's
+             * classification gives the same key now. A session started on a
+             * stand-in key met the real one a frame later as a false weapon
+             * boundary, which dropped the grip for a frame on the first drawn
+             * frames after every menu draw. The equipped form is left for an
+             * item with no instance witness.
+             */
+            if (classificationCurrent)
+                weaponOwnershipKey = weapon_generation_identity_policy::makeEquippedWeaponOwnershipKey(weaponClassification);
+            if (weaponOwnershipKey == 0)
+                weaponOwnershipKey = currentEquippedWeaponFormId();
         }
         const std::uint64_t collisionGenerationKey = weaponNode ? _weaponCollision.getCurrentWeaponGenerationKey() : 0;
         const std::uint64_t weaponGenerationKey =
             authored_support_grab_policy::resolveAuthoredGenerationKey(collisionGenerationKey, weaponOwnershipKey);
 
-        const bool equippedGenerationMatchesForm = weaponNode && equippedWeapon && weaponGenerationKey != 0 &&
-            weaponOwnershipKey != 0 &&
-            _weaponCollision.getCurrentObservedEquippedWeaponFormID() == equippedWeapon->formID;
+        // Drawn frames only: the collision's observed identity is cleared otherwise.
+        const bool equippedGenerationMatchesForm = weaponNode && classificationCurrent && runtime.weaponDrawn &&
+            weaponGenerationKey != 0 && weaponOwnershipKey != 0;
+        const std::uint64_t weaponInstanceContentKey =
+            equippedGenerationMatchesForm ? weaponClassification.instanceContentKey : 0;
         const bool equippedWeaponTransitionActive = _equipped.transition.getPublicSnapshot().active;
 
         native_idle_grip_preharvest::observeEquippedWeapon(equippedGenerationMatchesForm ? equippedWeapon : nullptr,
             equippedGenerationMatchesForm ? weaponNode : nullptr,
             equippedGenerationMatchesForm ? currentEquippedWeaponInstanceData(equippedWeapon) : nullptr,
-            equippedGenerationMatchesForm ? _weaponCollision.getCurrentEquippedWeaponInstanceContentKey() : 0);
+            weaponInstanceContentKey);
         // After the equipped weapon's own harvest, which keeps priority.
         native_idle_grip_preharvest::observeConsumerWarmups();
 
@@ -2636,8 +2731,7 @@ namespace rock
                 .weapon = equippedWeapon,
                 .weaponOwnershipKey = weaponOwnershipKey,
                 .weaponGenerationKey = weaponGenerationKey,
-                .weaponInstanceContentKey =
-                    equippedGenerationMatchesForm ? _weaponCollision.getCurrentEquippedWeaponInstanceContentKey() : 0,
+                .weaponInstanceContentKey = weaponInstanceContentKey,
                 .weaponKeywordFlags = weaponKeywordFlags,
                 .weaponInstanceContentKnown = equippedGenerationMatchesForm,
                 .meleeWeapon =
