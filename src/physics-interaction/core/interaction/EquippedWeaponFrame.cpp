@@ -1075,6 +1075,21 @@ namespace rock
         w.currentEquippedWeaponOwnershipKey = _weaponCollision.getCurrentEquippedWeaponOwnershipKey();
         w.currentAuthoredGripGenerationKey = authored_support_grab_policy::resolveAuthoredGenerationKey(
             w.currentWeaponGenerationKey, w.currentEquippedWeaponOwnershipKey);
+        // The colliders arriving change the key, not the weapon: what consumers hold on
+        // it follows, this frame, before the grips below read it. A grip already on a
+        // grab point stays through it (tryRebindPartGripToCurrentGeneration).
+        if (_equipped.weaponInteractionKey != w.currentAuthoredGripGenerationKey) {
+            if (_equipped.weaponInteractionKey != 0 && w.currentWeaponGenerationKey != 0 &&
+                _equipped.weaponInteractionKey == w.currentEquippedWeaponOwnershipKey) {
+                ::rock::provider::adoptWeaponPartGeneration(_equipped.weaponInteractionKey,
+                    w.currentAuthoredGripGenerationKey);
+                if (_providerDrives.generationKey == _equipped.weaponInteractionKey) {
+                    _providerDrives.generationKey = w.currentAuthoredGripGenerationKey;
+                }
+                refreshProviderWeaponSources();
+            }
+            _equipped.weaponInteractionKey = w.currentAuthoredGripGenerationKey;
+        }
         _dynamicWeaponCollision.beginFrame(runtime.frameIndex, w.hknp, w.bhk, weaponNode, w.currentWeaponGenerationKey,
             dynamic_weapon_collision_policy::kDynamicCompoundEnabled && runtime.weaponDrawn && !frame.menuBlocked &&
                 physicsWritesAllowedForWorld(frame.hknpWorld));
@@ -1267,10 +1282,10 @@ namespace rock
          */
         (void)_twoHandedGrip.publishLeftFiringFeedForwardWeaponPose(weaponNode);
 
-        const bool weaponContactQueriesRequired = weaponNode && w.currentWeaponGenerationKey != 0 &&
+        const bool weaponContactQueriesRequired = weaponNode && w.currentAuthoredGripGenerationKey != 0 &&
             _twoHandedGrip.requiresWeaponContactQueries(weaponNode, w.currentAuthoredGripGenerationKey,
                 _equipped.handlingSettings.authoredOnlySupportGrabsEnabled,
-                provider::hasWeaponPartTargetsForGeneration(w.currentWeaponGenerationKey));
+                provider::hasWeaponPartTargetsForGeneration(w.currentAuthoredGripGenerationKey));
         if (!weaponContactQueriesRequired) {
             performance_profiler::addCounter(performance_profiler::Counter::WeaponProbeFramesSkipped);
             // Drain contact notifications and reset acquisition provenance
@@ -1284,8 +1299,8 @@ namespace rock
         performance_profiler::addCounter(performance_profiler::Counter::WeaponProbeFramesEnabled);
         WeaponCollision::InteractionQueryBatch interactionQueries;
         std::optional<weapon_drive_pose::NativeFrame> operatingPose;
-        if (provider::runtime::hasGrabPoints(w.currentWeaponGenerationKey)) {
-            operatingPose.emplace(captureProviderPartQueryPose(weaponNode, w.currentWeaponGenerationKey));
+        if (provider::runtime::hasGrabPoints(w.currentAuthoredGripGenerationKey)) {
+            operatingPose.emplace(captureProviderPartQueryPose(weaponNode, w.currentAuthoredGripGenerationKey));
         }
         const auto* operatingPosePointer = operatingPose ? &*operatingPose : nullptr;
         consumeWeaponContactForHand(weaponNode, true, w.frame.left, true, w.leftWeaponContact, interactionQueries,
@@ -1477,24 +1492,23 @@ namespace rock
             (w.supportHandIsLeft ? w.leftHandInteractionState : w.rightHandInteractionState).supportGripAllowed = false;
         }
 
-        const auto indicatorBodyId = [&](const WeaponInteractionContact& contact,
-                                         const WeaponInteractionRuntimeState& state) {
+        const auto indicatorCandidate = [&](const WeaponInteractionContact& contact,
+                                            const WeaponInteractionRuntimeState& state) {
             return contact.valid && state.supportGripAllowed &&
-                    contact.weaponGenerationKey == w.currentWeaponGenerationKey
-                ? contact.bodyId
-                : weapon_part_runtime::kInvalidBodyId;
+                contact.weaponGenerationKey == w.currentAuthoredGripGenerationKey;
         };
+        const bool leftIndicator = w.prepared.leftHandAvailableForAcquisition &&
+            indicatorCandidate(w.leftWeaponContact, w.leftHandInteractionState);
+        const bool rightIndicator = w.prepared.rightHandAvailableForAcquisition &&
+            indicatorCandidate(w.rightWeaponContact, w.rightHandInteractionState);
         _equipped.partIndicatorBodyIds = {
-            !w.prepared.leftHandAvailableForAcquisition
-                ? weapon_part_runtime::kInvalidBodyId
-                : indicatorBodyId(w.leftWeaponContact, w.leftHandInteractionState),
-            !w.prepared.rightHandAvailableForAcquisition
-                ? weapon_part_runtime::kInvalidBodyId
-                : indicatorBodyId(w.rightWeaponContact, w.rightHandInteractionState),
+            leftIndicator ? w.leftWeaponContact.bodyId : weapon_part_runtime::kInvalidBodyId,
+            rightIndicator ? w.rightWeaponContact.bodyId : weapon_part_runtime::kInvalidBodyId,
         };
         _equipped.partIndicatorPoints = { w.leftWeaponContact.grabPoint, w.rightWeaponContact.grabPoint };
+        _equipped.partIndicatorPointCandidates = { leftIndicator, rightIndicator };
         _equipped.partIndicatorFrame = runtime_state::currentFrame().frameIndex;
-        _equipped.partIndicatorGeneration = w.currentWeaponGenerationKey;
+        _equipped.partIndicatorGeneration = w.currentAuthoredGripGenerationKey;
 
         w.leftHandHoldingObject = _leftHand.isHolding();
         // The grab-mode override follows the SUPPORT-ROLE hand's provider
@@ -1803,7 +1817,8 @@ namespace rock
 
         std::array<const RE::NiAVObject*, api::weaponparts::kMaxDrives> drivenSourceNodes{};
         if (weaponNode) {
-            (void)applyProviderWeaponPartDrives(weaponNode, w.currentWeaponGenerationKey, frame, drivenSourceNodes);
+            (void)applyProviderWeaponPartDrives(weaponNode, w.currentAuthoredGripGenerationKey, frame,
+                drivenSourceNodes);
         } else {
             _providerDrives.resultCount = 0;
         }
@@ -1971,6 +1986,21 @@ namespace rock
         effectiveHandlingSettings.weaponGripHapticDurationSeconds = firingGripDecision.gripHapticDurationSeconds;
         effectiveHandlingSettings.firingGripAttachHapticIntensity = firingGripDecision.gripAttachHapticIntensity;
         effectiveHandlingSettings.firingGripDetachHapticIntensity = firingGripDecision.gripDetachHapticIntensity;
+        // What a squeeze of the detached firing hand found, one line per press.
+        if (_grabInput.firingHandButtonFrame.valid && _grabInput.firingHandButtonFrame.pressed &&
+            _twoHandedGrip.isFiringGripDetached()) {
+            const auto& contact = firingHandIsLeft ? w.leftWeaponContact : w.rightWeaponContact;
+            const auto& state = firingHandIsLeft ? w.leftHandInteractionState : w.rightHandInteractionState;
+            ROCK_LOG_INFO(Weapon,
+                "FREE_HAND_PRESS hand={} logical(held={} pressed={}) available={} holding={} contact(valid={} body={} "
+                "point={} distance={:.2f} generation={:016X}) allowed={} provider={} key={:016X}",
+                firingHandIsLeft ? "left" : "right", w.primaryGripInput.held, w.primaryGripInput.pressed,
+                firingHandIsLeft ? w.prepared.leftHandAvailableForAcquisition
+                                 : w.prepared.rightHandAvailableForAcquisition,
+                (firingHandIsLeft ? _leftHand : _rightHand).isHolding(), contact.valid, contact.bodyId,
+                contact.grabPoint.pointId, contact.probeDistanceGame, contact.weaponGenerationKey,
+                state.supportGripAllowed, state.providerPartAuthority.active, w.currentAuthoredGripGenerationKey);
+        }
         w.gripUpdateResult = _twoHandedGrip.update(weaponNode, w.leftWeaponContact, w.rightWeaponContact,
             gripFrameInput, frame.deltaSeconds, w.currentAuthoredGripGenerationKey, currentEquippedWeaponOwnershipKey,
             _weaponCollision, w.leftHandInteractionState, w.rightHandInteractionState, w.supportAuthorityMode,
@@ -2376,7 +2406,9 @@ namespace rock
         }
 
         auto* weaponNode = resolveEquippedWeaponInteractionNode();
-        const std::uint64_t currentWeaponGenerationKey = _weaponCollision.getCurrentWeaponGenerationKey();
+        // The key the grips run on, so an authored seat or a grab point can be shown
+        // from the moment the weapon is drawn, as it can be taken.
+        const std::uint64_t currentWeaponGenerationKey = _weaponCollision.getCurrentWeaponInteractionKey();
         if (!weaponNode || !f4vr::isNodeVisible(weaponNode) || currentWeaponGenerationKey == 0 ||
             !dynamic_weapon_collision_policy::isFiniteTransform(weaponNode->world) ||
             std::abs(weaponNode->world.scale) <= 0.0001f) {
@@ -2410,6 +2442,7 @@ namespace rock
         if (_equipped.partIndicatorFrame == gameFrameIndex &&
             _equipped.partIndicatorGeneration == currentWeaponGenerationKey) {
             auto candidateBodyIds = _equipped.partIndicatorBodyIds;
+            auto pointCandidates = _equipped.partIndicatorPointCandidates;
             const auto roster = equippedWeaponRoster();
             const auto& slotZero = roster.facts().slot0;
             for (const bool isLeft : { true, false }) {
@@ -2419,15 +2452,16 @@ namespace rock
                     (slotZero.sessionFiringHand == equipped_weapon_roster::handFor(isLeft) &&
                         !slotZero.firingGripDetached)) {
                     candidateBodyIds[isLeft ? 0u : 1u] = weapon_part_runtime::kInvalidBodyId;
+                    pointCandidates[isLeft ? 0u : 1u] = false;
                 }
             }
-            if (candidateBodyIds[0] != weapon_part_runtime::kInvalidBodyId ||
-                candidateBodyIds[1] != weapon_part_runtime::kInvalidBodyId) {
+            if (pointCandidates[0] || pointCandidates[1]) {
                 std::array<weapon_part_runtime::Target, api::weaponparts::kMaxTargets> partTargets{};
                 const auto targetCount = provider::copyWeaponPartTargets(partTargets);
                 overlayFrame.count += static_cast<std::uint32_t>(_weaponCollision.collectAttachOnlyGripIndicators(
                     weaponNode, std::span(partTargets).first(targetCount), candidateBodyIds,
-                    std::span(overlayFrame.positions).subspan(overlayFrame.count), _equipped.partIndicatorPoints));
+                    std::span(overlayFrame.positions).subspan(overlayFrame.count), _equipped.partIndicatorPoints,
+                    pointCandidates));
             }
         }
 

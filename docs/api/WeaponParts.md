@@ -27,7 +27,12 @@ can blend from the live clip. Its other calls return `TargetUnavailable`.
 
 Sources are the weapon model's nodes. ROCK names them with opaque
 `sourceKey` values that hold only for one `weaponGenerationKey`; a key of
-another generation returns `GenerationMismatch`. Keys come from
+another generation returns `GenerationMismatch`. Sources, drives, targets and
+grab points also accept the Weapon interface's `getInteractionKey` as the
+generation, which works from the moment the weapon is drawn, before its colliders
+exist. When they arrive it changes to the generation key: source keys stay valid
+and ROCK moves what you registered to it, and new records name the new key.
+Evidence, contacts and body queries are empty until then. Keys come from
 `copySources`, contacts, evidence and poses. `copySources` reports each
 node's `parentKey` (0 is the weapon root); `querySourcePath` reports the
 parent and child index of one key; `querySourcePose` reports its parent-local,
@@ -89,9 +94,13 @@ targets first (`TargetUnavailable` otherwise). Ids are unique within a group;
 finger or the pinky probe reaches the nearest point within both its radius
 and the hand-probe radius. The hand seats on the nearest collider surface of
 the group's parts within the radius, in the currently driven pose, keeping
-its approach rotation, and follows the moving part. No surface means no
-grab. The groups' parts are never grabbed through ordinary surfaces. A
-replaced set affects new grabs only. `clearGrabPoints` removes the set.
+its approach rotation, and follows the moving part. With no surface there, the
+point can still be held when its own source is an `AttachOnly` target of its
+group: the grip has no `bodyId` and follows that source. That needs no collider,
+so it works from the moment the weapon is drawn. For the hands in `handMask` the
+groups' parts are never grabbed through ordinary surfaces; any other hand grabs
+them as usual. A replaced set affects new grabs only. `clearGrabPoints` removes
+the set.
 
 ## Loose item state (Write, any thread)
 

@@ -898,6 +898,14 @@ namespace rock
         }
     }
 
+    std::uint64_t PhysicsInteraction::queryProviderWeaponInteractionKey() const
+    {
+        const auto form = currentEquippedWeaponFormId();
+        return form != 0 && form == _weaponCollision.getCurrentObservedEquippedWeaponFormID()
+            ? _weaponCollision.getCurrentWeaponInteractionKey()
+            : 0;
+    }
+
     bool PhysicsInteraction::queryProviderWeaponState(api::weapon::WeaponState& outState) const
     {
         using Flag = api::weapon::WeaponStateFlag;

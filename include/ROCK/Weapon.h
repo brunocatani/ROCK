@@ -659,6 +659,13 @@ namespace rock::api::weapon {
         // the owner stops. None clears it. One owner per slot (OwnerConflict
         // otherwise, until the holder clears it or its lease runs out).
         Status(ROCK_CALL* setChamberMarker)(OwnerToken owner, std::uint32_t weaponSlot, ChamberMarker marker, std::uint32_t leaseFrames) noexcept;
+        // Read. The key for the weapon's sources, drives, part targets, grab points
+        // and input gestures, 0 with no weapon. WeaponState's generation key names the
+        // weapon's colliders, so it is 0 until they are built, about a second after an
+        // equip; this one works from the moment the weapon is drawn, and it changes to
+        // the generation key when they arrive. On that change source keys stay valid
+        // and what you registered follows; name the new key from then on.
+        Status(ROCK_CALL* getInteractionKey)(OwnerToken owner, std::uint32_t weaponSlot, std::uint64_t* outKey) noexcept;
     };
 }
 #pragma pack(pop)

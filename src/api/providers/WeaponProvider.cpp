@@ -108,6 +108,19 @@ namespace rock::api::weapon
                 [&] { return p::runtime::setChamberMarker(owner, slot, marker, leaseFrames); });
         }
 
+        Status ROCK_CALL getInteractionKey(OwnerToken owner, std::uint32_t slot, std::uint64_t* outKey) noexcept
+        {
+            if (!outKey)
+                return Status::InvalidArgument;
+            *outKey = 0;
+            if (const auto s = checkWeaponSlot(slot); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 1, true, [&] {
+                *outKey = p::runtime::weaponInteractionKey(slot);
+                return Status::Ok;
+            });
+        }
+
         Status ROCK_CALL getCompositionState(OwnerToken owner, std::uint32_t slot, CompositionState* outState) noexcept
         {
             return readSlot(owner, slot, outState,
@@ -312,6 +325,7 @@ namespace rock::api::weapon
             &requestInventoryDraw,
             &setAutomaticReloadBlocked,
             &setChamberMarker,
+            &getInteractionKey,
         };
         return value;
     }

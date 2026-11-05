@@ -30,9 +30,13 @@ namespace rock
     void PhysicsInteraction::refreshProviderWeaponSources()
     {
         auto* root = resolveEquippedWeaponInteractionNode();
-        const auto generation = _weaponCollision.getCurrentWeaponGenerationKey();
+        const auto generation = _weaponCollision.getCurrentWeaponInteractionKey();
         auto& catalog = _providerSources;
-        if (root != catalog.root || generation != catalog.generation)
+        // The colliders arriving re-key the same nodes, so their source keys stay and
+        // no consumer's hold on the weapon lapses on that frame. A rebuild starts over.
+        const bool collidersArrived = root == catalog.root && catalog.generation != 0 &&
+            catalog.generation == _weaponCollision.getCurrentEquippedWeaponOwnershipKey();
+        if (root != catalog.root || (generation != catalog.generation && !collidersArrived))
             catalog.clear();
         if (!root || !generation) {
             catalog.clear();
@@ -107,6 +111,7 @@ namespace rock
         for (std::uint32_t i = 0; i < catalog.count; ++i) {
             auto& entry = catalog.entries[i];
             auto* node = entry.node.get();
+            entry.value.weaponGenerationKey = generation;
             const auto parent = findNode(node->parent, catalog.count);
             const auto parentKey = node == root ? 0 : parent->value.sourceKey;
             if (entry.value.parentKey != parentKey)
@@ -131,7 +136,7 @@ namespace rock
         const auto& catalog = _providerSources;
         auto* root = resolveEquippedWeaponInteractionNode();
         if (!key || !generation || generation != catalog.generation ||
-            generation != _weaponCollision.getCurrentWeaponGenerationKey() || root != catalog.root || catalog.overflow)
+            generation != _weaponCollision.getCurrentWeaponInteractionKey() || root != catalog.root || catalog.overflow)
             return 0;
         for (std::uint32_t i = 0; i < catalog.count; ++i)
             if (catalog.entries[i].value.sourceKey == key) {
@@ -144,7 +149,7 @@ namespace rock
         std::span<const std::uint64_t> sources, std::span<std::uint32_t> bodies, std::uint32_t& count) const
     {
         count = 0;
-        if (generation != _weaponCollision.getCurrentWeaponGenerationKey())
+        if (generation != _weaponCollision.getCurrentWeaponInteractionKey())
             return api::Status::GenerationMismatch;
         // Resolve and pin-check the live catalog first. No request retains a native
         // node pointer; only body IDs qualified by this weapon generation survive.
@@ -177,7 +182,7 @@ namespace rock
     {
         const auto& catalog = _providerSources;
         if (!node || !generation || generation != catalog.generation ||
-            generation != _weaponCollision.getCurrentWeaponGenerationKey() ||
+            generation != _weaponCollision.getCurrentWeaponInteractionKey() ||
             resolveEquippedWeaponInteractionNode() != catalog.root || catalog.overflow)
             return 0;
         for (std::uint32_t i = 0; i < catalog.count; ++i)
@@ -215,7 +220,7 @@ namespace rock
         copied = 0;
         total = 0;
         if (!generation || generation != _providerSources.generation ||
-            generation != _weaponCollision.getCurrentWeaponGenerationKey() ||
+            generation != _weaponCollision.getCurrentWeaponInteractionKey() ||
             resolveEquippedWeaponInteractionNode() != _providerSources.root)
             return api::Status::GenerationMismatch;
         if (_providerSources.overflow)

@@ -200,6 +200,15 @@
         return api::Status::Ok;
     }
 
+    std::uint64_t weaponInteractionKey(std::uint32_t weaponSlot)
+    {
+        std::scoped_lock lock(s_snapshotMutex);
+        if (!s_hasSnapshot) {
+            return 0;
+        }
+        return weaponSlot == 1 ? s_lastSlotOneWeaponState.weaponGenerationKey : s_lastWeaponInteractionKey;
+    }
+
     api::Status getScopeSightState(api::weapon::ScopeSightState& outState)
     {
         const auto published = sample();

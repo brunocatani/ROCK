@@ -52,6 +52,9 @@ namespace rock::provider
         const game_frame_timing_policy::GameFrameTiming& timing);
     bool resolveWeaponPartTarget(const provider::PartQuery& query, weapon_part_runtime::Resolution& outResolution);
     bool hasWeaponPartTargetsForGeneration(std::uint64_t weaponGenerationKey);
+    // The weapon's colliders arrived: every owner's targets, drives and grab points
+    // on its pre-collider key move to the new key, on the frame the key changes.
+    void adoptWeaponPartGeneration(std::uint64_t from, std::uint64_t to);
     // Value snapshot for main-thread grip markers; never retains provider pointers.
     std::size_t copyWeaponPartTargets(std::span<weapon_part_runtime::Target> outTargets);
     std::uint32_t copyWeaponPartDrives(PartDrive* outTargets, std::uint32_t maxTargets,

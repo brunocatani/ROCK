@@ -84,7 +84,13 @@ int main()
     assert(anchored.part == 4); // deterministic tie
     c[0].part = ~std::size_t{ 0 };
     assert(p::nearest(c, api::Hand::Right, { 20, 0, 0 }, 12).point == c.size()); // no surface, no acquisition
+    c[0].seatsOnSource = true;
+    assert(p::nearest(c, api::Hand::Right, { 20, 0, 0 }, 12).point == 0); // its own source holds it instead
     assert(registry.replace(101, std::span(&a, 1), group) == Status::Ok && registry.copy(snapshot) == 3);
+    // Colliders arriving re-key the weapon; no owner's points are lost to that.
+    registry.adoptGeneration(10, 77);
+    assert(registry.any(77) && !registry.any(10));
+    registry.adoptGeneration(77, 10);
     registry.clear(101);
     registry.clear(100);
     assert(registry.copy(snapshot) == 0 && !registry.any(10));

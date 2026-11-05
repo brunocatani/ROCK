@@ -196,6 +196,7 @@ namespace rock::provider::runtime
     std::array<provider::HandInteractionPublication, 2> s_lastHandInteractionStates{};
     api::weapon::WeaponState s_lastEquippedWeaponState{};
     api::weapon::WeaponState s_lastSlotOneWeaponState{};
+    std::uint64_t s_lastWeaponInteractionKey{ 0 };
 
     std::mutex s_touchGrabMutex;
     TouchGrabRegistry s_touchGrabTargets{};
@@ -1864,6 +1865,7 @@ namespace rock::provider
         api::weapon::WeaponState equippedWeaponState{};
         (void)pi.queryProviderWeaponState(equippedWeaponState);
         equippedWeaponState.sample.frameIndex = snapshot.frameIndex;
+        const auto weaponInteractionKey = pi.queryProviderWeaponInteractionKey();
         api::weapon::WeaponState slotOneWeaponState{};
         pi.queryProviderSlotOneWeaponState(slotOneWeaponState);
         slotOneWeaponState.sample.frameIndex = snapshot.frameIndex;
@@ -1938,6 +1940,7 @@ namespace rock::provider
             s_lastPartGripStates = partGripStates;
             s_lastHandInteractionStates = handInteractionStates;
             s_lastEquippedWeaponState = equippedWeaponState;
+            s_lastWeaponInteractionKey = weaponInteractionKey;
             slotOneWeaponState.sample.publicationSequence = snapshot.stateSequence;
             slotOneWeaponState.sample.collisionGeneration = snapshot.collisionGeneration;
             s_lastSlotOneWeaponState = slotOneWeaponState;
@@ -2131,6 +2134,7 @@ namespace rock::provider
             s_lastPartGripStates = {};
             s_lastEquippedWeaponState.flags = 0;
             s_lastSlotOneWeaponState.flags = 0;
+            s_lastWeaponInteractionKey = 0;
         }
         {
             std::scoped_lock lock(s_touchGrabMutex);
@@ -2375,6 +2379,22 @@ namespace rock::provider
             }
         }
         return false;
+    }
+
+    void adoptWeaponPartGeneration(const std::uint64_t from, const std::uint64_t to)
+    {
+        std::scoped_lock lock(s_weaponPartMutex);
+        for (auto& slot : s_weaponPartTargets) {
+            if (slot.active && slot.target.weaponGenerationKey == from) {
+                slot.target.weaponGenerationKey = to;
+            }
+        }
+        for (auto& slot : s_weaponPartDrives) {
+            if (slot.active && slot.target.weaponGenerationKey == from) {
+                slot.target.weaponGenerationKey = to;
+            }
+        }
+        s_weaponPartGrabPoints.adoptGeneration(from, to);
     }
 
     std::size_t copyWeaponPartTargets(std::span<weapon_part_runtime::Target> outTargets)

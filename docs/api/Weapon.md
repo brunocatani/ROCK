@@ -139,6 +139,17 @@ ends with `blocked` 0 or when the owner goes away. ROCK starts that reload
 itself, so hooks on the game's own automatic-reload call sites never see it;
 those call sites, which serve slot 0, are not ROCK's and stay untouched.
 
+## Interaction key (Read)
+
+`WeaponState.weaponGenerationKey` names the weapon's colliders, so it is 0 until
+they are built, about a second after an equip. `getInteractionKey(owner, slot,
+key)` works from the moment the weapon is drawn, 0 with no weapon, and is what a
+mod that needs the weapon rather than its colliders passes as the generation to
+WeaponParts sources, drives, targets and grab points and to `setReloadGesture`.
+When the colliders arrive it changes to the generation key, once: source keys
+stay valid and what you registered follows, and new records name the new key.
+On slot 1 it is the generation key.
+
 ## Chamber marker (Write)
 
 `setChamberMarker(owner, slot, marker, leaseFrames)` draws a cartridge beside the

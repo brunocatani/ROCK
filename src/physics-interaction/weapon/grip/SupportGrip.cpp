@@ -1388,21 +1388,40 @@ namespace rock
         if (grip.authoredSupportGrip || grip.transferredLooseGrip) {
             // Authored and transferred grips are weapon-root-local data. A generated-body
             // rebuild changes only the collision generation; it cannot revoke
-            // or relocate the seat that is already being held.
-            const bool preserveTransferredCarry = grip.transferredLooseGrip && grip.supportInputBaseline.active &&
+            // or relocate the seat that is already being held. The carry calibration
+            // stays too: without it the weapon snaps from where the hand holds it to
+            // the authored seat's relation, as it did when the colliders arrived
+            // under a hand that had taken the weapon before them.
+            const bool carryBaseline = grip.supportInputBaseline.active &&
                 grip.supportInputBaseline.kind == SupportInputBaselineKind::PartCarry;
-            if (preserveTransferredCarry &&
-                (grip.attachmentRoot != _session.weaponNode ||
-                    !isPartCarryInputBaselineActive(grip.supportInputBaseline.supportHandIsLeft, grip)))
+            const bool carryBaselineLive = carryBaseline && grip.attachmentRoot == _session.weaponNode &&
+                isPartCarryInputBaselineActive(grip.supportInputBaseline.supportHandIsLeft, grip);
+            if (grip.transferredLooseGrip && carryBaseline && !carryBaselineLive)
                 return false;
             grip.weaponGenerationKey = currentWeaponGenerationKey;
             grip.contactBodyId = 0x7FFF'FFFFu;
             grip.attachmentRoot = _session.weaponNode;
-            if (preserveTransferredCarry) {
+            if (carryBaselineLive) {
                 grip.supportInputBaseline.weaponGenerationKey = currentWeaponGenerationKey;
             } else {
                 clearSupportInputBaseline(grip, "rebind-authored-generation");
             }
+            return true;
+        }
+
+        if (grip.attachOnly && grip.contactBodyId == weapon_part_runtime::kInvalidBodyId) {
+            // A grab point held with no collider, in its source node's frame. The key
+            // changing leaves it be, as long as that node is still in the weapon.
+            if (!scene_relation::nodeContainsNode(_session.weaponNode, grip.attachmentRoot, 64)) {
+                ROCK_LOG_WARN(Weapon,
+                    "TwoHandedGrip: grab point grip rebind failed closed hand={} generation={:016X} source='{}'",
+                    (&grip == &_support.partGrips[0]) ? "left" : "right", currentWeaponGenerationKey,
+                    std::string_view{ grip.sourceName.data() });
+                return false;
+            }
+            grip.weaponGenerationKey = currentWeaponGenerationKey;
+            grip.providerPartAuthority.weaponGenerationKey = currentWeaponGenerationKey;
+            clearSupportInputBaseline(grip, "rebind-grab-point-generation");
             return true;
         }
 

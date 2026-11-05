@@ -31,6 +31,9 @@ namespace rock::weapon_part_points
         std::array<float, 3> world{};
         std::size_t part{ ~std::size_t{ 0 } };
         bool validWorld{};
+        // Its own source is an AttachOnly target of its group, so the hand can hold
+        // the point itself with no collider there, as before the colliders exist.
+        bool seatsOnSource{};
         float surfaceDistanceSquared{ std::numeric_limits<float>::infinity() };
         std::uint64_t surfaceKey{ ~std::uint64_t{ 0 } };
     };
@@ -80,7 +83,7 @@ namespace rock::weapon_part_points
         for (std::size_t i = 0; i < points.size(); ++i) {
             const auto& c = points[i];
             const auto& p = c.rule.point;
-            if (!c.validWorld || c.part == ~std::size_t{ 0 } || !(p.handMask & mask))
+            if (!c.validWorld || (c.part == ~std::size_t{ 0 } && !c.seatsOnSource) || !(p.handMask & mask))
                 continue;
             float distance = 0;
             for (int k = 0; k < 3; ++k) {
@@ -141,6 +144,13 @@ namespace rock::weapon_part_points
             for (auto& slot : slots_)
                 if (slot.owner == owner)
                     slot = {};
+        }
+
+        void adoptGeneration(std::uint64_t from, std::uint64_t to) noexcept
+        {
+            for (auto& slot : slots_)
+                if (slot.owner && slot.point.weaponGenerationKey == from)
+                    slot.point.weaponGenerationKey = to;
         }
 
         bool any(std::uint64_t generation) const noexcept

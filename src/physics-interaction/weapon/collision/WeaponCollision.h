@@ -303,9 +303,12 @@ namespace rock
         // Copies one coherent publication; callers consume it immediately.
         std::size_t copyWeaponContactsAtomic(std::span<WeaponInteractionContact> outContacts) const;
         // Main-thread presentation query; the output contains current positions only.
+        // pointCandidates: for each grabPoints entry, whether its hand may show it.
+        // A point has no body to name until the colliders exist, if it ever does.
         std::size_t collectAttachOnlyGripIndicators(const RE::NiAVObject* currentWeaponRoot,
             std::span<const weapon_part_runtime::Target> targets, std::span<const std::uint32_t> candidateBodyIds,
-            std::span<RE::NiPoint3> outPositions, std::span<const WeaponGrabPointLocation> grabPoints = {}) const;
+            std::span<RE::NiPoint3> outPositions, std::span<const WeaponGrabPointLocation> grabPoints,
+            std::span<const bool> pointCandidates) const;
         // Main-thread debug publication only. Returns the exact pending target
         // for one generated weapon body in the active bank.
 
@@ -343,6 +346,11 @@ namespace rock
             return _published.setKey.load(std::memory_order_acquire);
         }
 
+        // What the weapon's grips and providers key it by: its ownership key from the
+        // moment it is drawn, then its body set's generation. The nodes, authored grips,
+        // drives and grab points need the weapon, not its colliders.
+        std::uint64_t getCurrentWeaponInteractionKey() const;
+
         // Main-thread scratch for consecutive queries with no intervening
         // weapon update. Capture is lazy, after the caller publishes its pose.
         // Never retain this batch across frames, callbacks, or model changes.
@@ -362,8 +370,11 @@ namespace rock
             std::size_t count = 0;
             std::array<weapon_interaction_query::Part, MAX_WEAPON_COLLISION_BODIES> parts{};
             std::array<const WeaponBodyInstance*, MAX_WEAPON_COLLISION_BODIES> instances{};
-            std::array<bool, MAX_WEAPON_COLLISION_BODIES> pointRestricted{};
+            // Left, right: a point keeps its parts from ordinary grabs only for the
+            // hands it serves, so another hand can still take the part itself.
+            std::array<std::array<bool, MAX_WEAPON_COLLISION_BODIES>, 2> pointRestricted{};
             std::array<weapon_part_points::Candidate, weapon_part_points::kCapacity> points{};
+            std::array<RE::NiAVObject*, weapon_part_points::kCapacity> pointSources{};
             std::size_t pointCount{};
         };
 

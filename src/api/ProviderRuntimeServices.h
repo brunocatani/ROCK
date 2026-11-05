@@ -87,6 +87,8 @@ namespace rock::provider::runtime
     // Weapon slot 0. The publication's state, then the live reads (game thread).
     // Slot 0 unless weaponSlot names slot 1.
     api::Status copyPublishedWeaponState(api::weapon::WeaponState& outState, std::uint32_t weaponSlot = 0);
+    // The key of the publication's weapon before and after its colliders exist.
+    std::uint64_t weaponInteractionKey(std::uint32_t weaponSlot = 0);
     bool queryWeaponHandling(provider_state_policy::WeaponHandling& outHandling);
     // Grip and emitters are read for either slot; the caller has checked it.
     api::Status getWeaponGrip(api::weapon::Grip& outGrip, std::uint32_t weaponSlot);

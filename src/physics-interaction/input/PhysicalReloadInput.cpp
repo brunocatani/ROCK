@@ -60,7 +60,7 @@ namespace rock::physical_reload_input
             constexpr auto valid = static_cast<std::uint32_t>(api::weapon::WeaponStateFlag::Valid);
             return result == api::Status::Ok && (weapon.flags & (drawn | valid)) == (drawn | valid) &&
                 weapon.weaponFormId == request.weaponFormId &&
-                weapon.weaponGenerationKey == request.weaponGenerationKey &&
+                provider::runtime::weaponInteractionKey() == request.weaponGenerationKey &&
                 sample.worldGeneration == request.sample.worldGeneration &&
                 sample.skeletonGeneration == request.sample.skeletonGeneration &&
                 sample.providerGeneration == request.sample.providerGeneration;
