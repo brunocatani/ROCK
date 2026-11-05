@@ -2350,13 +2350,17 @@ namespace rock
          * A LEFT hand occupying the firing grip is weapon-engaged exactly
          * like a support hand from the collision standpoint: its generated
          * colliders must not become a second physical owner while the
-         * weapon rides the hand. Reuses the per-hand support lease.
+         * weapon rides the hand. Reuses the per-hand support lease. Letting go
+         * of the firing grip ends like the right hand's: colliders and contact
+         * evidence return at once and only the dynamic proxy keeps a lease.
          */
         const bool weaponSupportGripActive = gripUpdateResult.after.left.partGripActive;
         const bool leftWeaponGripActiveAfterUpdate = weaponSupportGripActive || leftHandFiringActiveAfterGrip;
         setWeaponHandSuppression(w.hknp, true, WeaponHandReason::Grip, leftWeaponGripActiveAfterUpdate,
-            gripUpdateResult.before.left.weaponEngaged() ? g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds
-                                                         : 0.0f);
+            gripUpdateResult.before.left.partGripActive ? g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds : 0.0f);
+        if (gripUpdateResult.before.left.firingGripActive && !leftWeaponGripActiveAfterUpdate) {
+            leaseHandProxyOffWeapon(w.hknp, true);
+        }
 
         return EquippedWeaponFrameResult{
             .rightHandWeaponAuthorityActive = rightHandWeaponAuthorityActive,

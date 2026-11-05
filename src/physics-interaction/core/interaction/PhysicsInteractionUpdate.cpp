@@ -373,16 +373,18 @@ namespace rock
          * grab, pull, support-grip, or weapon owner for this frame can gate its
          * lower-priority visual authority without delaying proxy tracking.
          * A hand that holds either equipped weapon owns it: its dynamic proxy
-         * stops colliding, so it never pushes the weapon's proxy.
+         * stops colliding, so it never pushes the weapon's proxy. Ownership
+         * ends with the grip; the delay after a release keeps the proxy off
+         * the weapon only, never off the world.
          */
         _dynamicHandCollision.updateFrame(frame, physicsWritesAllowedForWorld(frame.hknpWorld), _rightHand, _leftHand,
             _bodyBoneColliders,
             rightHandWeaponAuthorityActive || rightPartGripActive ||
-                weaponHandSuppressedFor(false, WeaponHandReason::Grip) ||
-                weaponHandSuppressedFor(false, WeaponHandReason::SecondWeapon),
+                weaponHandActiveFor(false, WeaponHandReason::Grip) ||
+                weaponHandActiveFor(false, WeaponHandReason::SecondWeapon),
             leftSupportGripActive || equippedWeaponRoster().slotZeroGrips(true).firingGripActive ||
-                weaponHandSuppressedFor(true, WeaponHandReason::Grip) ||
-                weaponHandSuppressedFor(true, WeaponHandReason::SecondWeapon),
+                weaponHandActiveFor(true, WeaponHandReason::Grip) ||
+                weaponHandActiveFor(true, WeaponHandReason::SecondWeapon),
             _dynamicWeaponCollision.proxyBodyIdForDebug().value,
             _rightHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(false),
             _leftHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(true));

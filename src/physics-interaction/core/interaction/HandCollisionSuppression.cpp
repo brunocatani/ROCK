@@ -97,7 +97,9 @@ namespace rock
      * other weapon, keeps colliding. The native simulation pair
      * filter removes those pairs (suppressWeaponHandContact); contact evidence
      * from the owning hand is gated separately. The exclusion ends when no
-     * reason remains and any requested restore delay has elapsed.
+     * reason remains and any requested restore delay has elapsed. During that
+     * delay the hand's dynamic proxy is back on the world and the other hand
+     * and is only kept off the weapon it let go of (refreshWeaponHandSuppression).
      */
     void PhysicsInteraction::setWeaponHandSuppression(RE::hknpWorld* world, bool isLeft, WeaponHandReason reason,
         bool active, float restoreDelaySeconds)
@@ -118,25 +120,29 @@ namespace rock
     }
 
     /*
-     * The right hand owns the weapon through its firing grip. When it lets go
-     * it is still inside the weapon, so its dynamic proxy would wake against
-     * the weapon's proxy and hold the rendered hand back while it reaches for
-     * the bolt (12 gu behind the controller on a bolt rifle). For a moment only
+     * A hand owns the weapon through its firing grip. When it lets go it is
+     * still inside the weapon, so its dynamic proxy would wake against the
+     * weapon's proxy and hold the rendered hand back while it reaches for the
+     * bolt (12 gu behind the controller on a bolt rifle). For a moment only
      * that pair is removed: the hand colliders, whose contacts grabbing reads,
      * and the proxy's pairs with the world and the other hand are untouched.
      */
-    void PhysicsInteraction::setRightFiringWeaponOwnership(RE::hknpWorld* world, bool active, bool weaponEquipped)
+    void PhysicsInteraction::leaseHandProxyOffWeapon(RE::hknpWorld* world, bool isLeft)
     {
         constexpr float kFiringDetachLeaseSeconds = 0.5f;
+        setWeaponHandSuppression(world, isLeft, WeaponHandReason::FiringDetach, true);
+        setWeaponHandSuppression(world, isLeft, WeaponHandReason::FiringDetach, false, kFiringDetachLeaseSeconds);
+        ROCK_LOG_INFO(Hand, "Firing grip let go: {} hand proxy ignores the weapon's collision for {:.2f}s",
+            isLeft ? "left" : "right", kFiringDetachLeaseSeconds);
+    }
+
+    void PhysicsInteraction::setRightFiringWeaponOwnership(RE::hknpWorld* world, bool active, bool weaponEquipped)
+    {
         const bool wasActive =
             (_suppression.weaponHands[0].active & static_cast<std::uint8_t>(WeaponHandReason::Dominant)) != 0;
         setWeaponHandSuppression(world, false, WeaponHandReason::Dominant, active);
-        if (!wasActive || active || !weaponEquipped)
-            return;
-        setWeaponHandSuppression(world, false, WeaponHandReason::FiringDetach, true);
-        setWeaponHandSuppression(world, false, WeaponHandReason::FiringDetach, false, kFiringDetachLeaseSeconds);
-        ROCK_LOG_INFO(Hand, "Firing grip let go: right hand proxy ignores the weapon's collision for {:.2f}s",
-            kFiringDetachLeaseSeconds);
+        if (wasActive && !active && weaponEquipped)
+            leaseHandProxyOffWeapon(world, false);
     }
 
     void PhysicsInteraction::clearWeaponHandSuppression(RE::hknpWorld* world, bool isLeft)
@@ -215,10 +221,21 @@ namespace rock
                 }
             }
         }
-        if ((reasons & firingDetachBit) != 0 && state.bodyCount < state.bodies.size()) {
+        // While a grip is held the dynamic proxy does not collide at all. In the
+        // delay after a grip lets go it collides with everything except the
+        // weapon it was holding.
+        constexpr auto gripBit = static_cast<std::uint8_t>(WeaponHandReason::Grip);
+        const bool proxyOffFirstWeapon = (state.lingering & (gripBit | firingDetachBit)) != 0;
+        const bool proxyOffSecondWeapon = (state.lingering & secondWeaponBit) != 0;
+        if ((proxyOffFirstWeapon || proxyOffSecondWeapon) && state.bodyCount < state.bodies.size()) {
             const auto proxyBodyId = _dynamicHandCollision.proxyBodyIdAtomic(isLeft);
-            if (proxyBodyId != INVALID_CONTACT_BODY_ID)
-                state.bodies[state.bodyCount++] = { .bodyId = proxyBodyId, .firstWeapon = true };
+            if (proxyBodyId != INVALID_CONTACT_BODY_ID) {
+                state.bodies[state.bodyCount++] = {
+                    .bodyId = proxyBodyId,
+                    .firstWeapon = proxyOffFirstWeapon,
+                    .secondWeapon = proxyOffSecondWeapon,
+                };
+            }
         }
         publishWeaponHandExclusion(world);
     }

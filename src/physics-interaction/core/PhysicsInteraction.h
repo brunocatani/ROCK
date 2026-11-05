@@ -636,10 +636,11 @@ namespace rock
             Grip = 1u << 1, // support, part or left firing grip
             Drop = 1u << 2, // hand (and arm) just released the weapon
             SecondWeapon = 1u << 3, // hand holds the second weapon (equip slot 1)
-            FiringDetach = 1u << 4, // right hand just let go of the firing grip: its dynamic proxy only
+            FiringDetach = 1u << 4, // hand just let go of a firing grip: its dynamic proxy only
         };
         void setWeaponHandSuppression(RE::hknpWorld* world, bool isLeft, WeaponHandReason reason, bool active,
             float restoreDelaySeconds = 0.0f);
+        void leaseHandProxyOffWeapon(RE::hknpWorld* world, bool isLeft);
         void setRightFiringWeaponOwnership(RE::hknpWorld* world, bool active, bool weaponEquipped);
         void clearWeaponHandSuppression(RE::hknpWorld* world, bool isLeft);
         void abandonWeaponHandSuppression();
@@ -653,6 +654,12 @@ namespace rock
         {
             return (_suppression.weaponHands[isLeft ? 1 : 0].published.load(std::memory_order_acquire) &
                        static_cast<std::uint8_t>(reason)) != 0;
+        }
+
+        // The reason holds now, not in its delay after letting go. Frame owner only.
+        [[nodiscard]] bool weaponHandActiveFor(bool isLeft, WeaponHandReason reason) const
+        {
+            return (_suppression.weaponHands[isLeft ? 1 : 0].active & static_cast<std::uint8_t>(reason)) != 0;
         }
 
         bool refreshNativeGrenadeCollisionSuppression(RE::hknpWorld* world);
