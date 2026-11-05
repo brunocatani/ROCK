@@ -1,6 +1,6 @@
-// Ammo counters: one per held weapon on the hand that holds it, from this
-// frame's publication (hand roles, per-slot rounds). Minimal and Immersive sit
-// at the weapon's firing grip on its palm side; Vanilla on the back of the hand.
+// Ammo counters: one per drawn weapon, from this frame's publication (hand roles,
+// per-slot rounds). Minimal and Immersive stay at the weapon's firing grip on its
+// palm side whichever hands hold it; Vanilla sits on the back of a hand holding it.
 #include "api/ProviderRuntimeServices.h"
 #include "api/ProviderStatePolicy.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
@@ -175,18 +175,23 @@ namespace rock
                         (firingOnly ? role.role == api::hands::HandRole::Firing
                                     : role.role != api::hands::HandRole::None);
                 };
-                if (!holds(0, false) && !holds(1, false))
-                    continue;
-                // The counter sits at the weapon's firing grip on the palm side
-                // of the hand that holds it: the firing-grip hand, else the only
-                // hand still on the weapon. A detached firing grip keeps its
-                // firingHand record, so with akimbo both weapons could name the
-                // same hand and one counter would overwrite the other.
+                // The Vanilla screen rides the back of a hand, so it needs one on the
+                // weapon and moves to whichever is left. The other styles stay at the
+                // weapon's firing grip on its firing hand's palm side, whichever hands
+                // hold it or none: a detached firing grip keeps its firingHand record.
                 bool isLeft = state.firingHand == api::Hand::Left;
                 if (holds(1, true) || holds(0, true)) {
                     isLeft = holds(1, true);
-                } else if (holds(1, false) != holds(0, false)) {
-                    isLeft = holds(1, false);
+                } else if (style == ammo_counters::Style::Vanilla) {
+                    if (!holds(0, false) && !holds(1, false))
+                        continue;
+                    if (holds(1, false) != holds(0, false))
+                        isLeft = holds(1, false);
+                } else if (const auto& onHand = publication.handRoles[isLeft ? 1 : 0];
+                    onHand.role != api::hands::HandRole::None && onHand.weaponSlot != slot) {
+                    // With akimbo another weapon can hold that hand now, and each hand
+                    // has one counter.
+                    isLeft = !isLeft;
                 }
                 const auto index = isLeft ? 1u : 0u;
                 // The slot's firing seat in its weapon's frame, final after
