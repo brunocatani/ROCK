@@ -29,6 +29,8 @@ namespace rock::api::weapon {
         HandPoseHandoffComplete = 1u << 5,
         RecoveryExhausted = 1u << 6,
         TransitionActive = 1u << 7,
+        // The weapon is in the hand. On slot 1, ROCK has placed it: this frame or,
+        // for a reader before this frame's placement (frame callbacks), the last.
         WeaponPresent = 1u << 8,
         WeaponDrawn = 1u << 9,
         PresentationKnown = 1u << 10,

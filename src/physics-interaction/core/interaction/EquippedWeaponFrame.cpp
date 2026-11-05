@@ -4,6 +4,7 @@
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/input/PhysicalReloadInput.h"
 #include "physics-interaction/input/SupportTriggerInput.h"
 #include "physics-interaction/visual/GripZoneIndicators.h"
 #include "physics-interaction/weapon/authored/AuthoredWeaponGripLibrary.h"
@@ -1179,6 +1180,8 @@ namespace rock
                 ::rock::provider::adoptWeaponPartGeneration(_equipped.weaponInteractionKey,
                     w.currentAuthoredGripGenerationKey);
                 support_trigger_input::adoptWeaponKey(_equipped.weaponInteractionKey,
+                    w.currentAuthoredGripGenerationKey);
+                physical_reload_input::adoptWeaponKey(_equipped.weaponInteractionKey,
                     w.currentAuthoredGripGenerationKey);
                 if (_providerDrives.generationKey == _equipped.weaponInteractionKey) {
                     _providerDrives.generationKey = w.currentAuthoredGripGenerationKey;

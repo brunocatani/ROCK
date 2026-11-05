@@ -161,7 +161,9 @@ namespace rock::api::input {
      * to tapSequence; a hold stays ROCK scope input and never becomes a tap.
      * Menus, input loss, hand changes and changing the lease (including its
      * flags) cancel an unfinished gesture and require a release before
-     * rearming. UI suppression wins.
+     * rearming. UI suppression wins. weaponGenerationKey is the weapon's
+     * interaction key (Weapon getInteractionKey); the lease stays held when
+     * the colliders arrive and that key changes.
      */
     struct ReloadGestureRequest
     {

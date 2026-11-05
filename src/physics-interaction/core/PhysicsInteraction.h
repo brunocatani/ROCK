@@ -348,7 +348,7 @@ namespace rock
         void fillProviderWeaponPartGripStates(std::array<api::weaponparts::GripState, 2>& outStates) const;
         void fillProviderHandInteractionStates(std::array<provider::HandInteractionPublication, 2>& outStates) const;
         bool queryProviderWeaponState(api::weapon::WeaponState& outState) const;
-        std::uint64_t queryProviderWeaponInteractionKey() const;
+        std::uint64_t queryProviderWeaponInteractionKey(std::uint32_t weaponSlot) const;
         void queryProviderSlotOneWeaponState(api::weapon::WeaponState& outState) const;
         static void fillProviderWeaponAmmo(api::weapon::WeaponState& state);
         api::Status captureProviderInventoryWeapon(std::uint32_t form, std::uint32_t stack,

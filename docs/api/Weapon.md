@@ -33,7 +33,9 @@ slots publish `getWeaponState`, `getGrip`, `getClassification` and
   file (FRIK's compiled defaults never count): ROCK seats and scales it from
   that file and gives it dynamic support grabs only, so animation authored
   for ROCK's grip of the weapon does not fit its hands.
-  `SecondaryReloadActive` (slot 1 only) says ROCK's private graph of that
+  `WeaponPresent` on slot 1 says ROCK has placed that weapon in its hand: this
+  frame or, for a reader before this frame's placement such as a frame callback,
+  the last. `SecondaryReloadActive` (slot 1 only) says ROCK's private graph of that
   weapon is in its reload; slot 0's reload is the player's own graph.
 - `getGrip(owner, slot, grip)`: the solved weapon world transform, each
   hand's grip in weapon space and the projectile origin and direction. Slot
@@ -153,7 +155,7 @@ WeaponParts sources, drives, targets and grab points, to `setReloadGesture` and
 to `setSupportTrigger`.
 When the colliders arrive it changes to the generation key, once: source keys
 stay valid and what you registered follows, and new records name the new key.
-On slot 1 it is the generation key.
+Both slots work this way; on slot 1 the key goes to WeaponParts sources and drives.
 
 ## Chamber marker (Write)
 

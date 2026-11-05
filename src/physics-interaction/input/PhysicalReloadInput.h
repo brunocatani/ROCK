@@ -16,6 +16,9 @@ namespace rock::physical_reload_input
     void clearOwner(api::OwnerToken);
     void reset();
     void beginFrame(std::uint64_t frame);
+    // The colliders arriving change the weapon's interaction key, not the weapon:
+    // the lease follows it, so a gesture in progress is neither lost nor cancelled.
+    void adoptWeaponKey(std::uint64_t from, std::uint64_t to);
     // Tracks the leased hand's physical Accept level; returns true while that
     // hand's normal reload/scope gesture must yield (unavailable, rearming or
     // draining).

@@ -212,6 +212,13 @@ namespace rock::physical_reload_input
             retire();
     }
 
+    void adoptWeaponKey(std::uint64_t from, std::uint64_t to)
+    {
+        std::scoped_lock lock(mutex);
+        if (state.active && request.weaponGenerationKey == from)
+            request.weaponGenerationKey = to;
+    }
+
     bool observe(bool left, const input_remap_runtime::RawButtonState& raw)
     {
         std::scoped_lock lock(mutex);

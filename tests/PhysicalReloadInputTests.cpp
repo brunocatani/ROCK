@@ -10,6 +10,7 @@ namespace
     rock::api::weapon::WeaponState weapon;
     rock::input_remap_runtime::RawButtonState raw{ true };
     rock::api::Hand primary = rock::api::Hand::Left;
+    std::uint64_t interactionKey{ 456 };
 }
 
 namespace rock::provider::runtime
@@ -25,6 +26,8 @@ namespace rock::provider::runtime
         out = ::weapon;
         return rock::api::Status::Ok;
     }
+
+    std::uint64_t weaponInteractionKey(std::uint32_t) { return ::interactionKey; }
 }
 
 namespace rock::input_remap_runtime
@@ -284,6 +287,42 @@ int main()
         control::read(observed);
         assert(!observed.active);
         assert(control::set(1, gesture) == Status::GenerationMismatch);
+        control::reset();
+        control::gameMask(true, 0);
+    }
+    // The colliders arriving change the key, not the lease: a tap on that very
+    // frame still counts and the renewal continues the same gesture. Any other
+    // key change is a rebuild, which ends it.
+    {
+        control::reset();
+        raw = { true };
+        ::primary = rock::api::Hand::Left;
+        input::ReloadGestureRequest gesture;
+        gesture.hand = Hand::Left;
+        gesture.weaponFormId = 123;
+        gesture.weaponGenerationKey = 456;
+        gesture.sample = sample;
+        assert(control::set(1, gesture) == Status::Ok);
+        (void)control::takeGestureChange();
+        control::adoptWeaponKey(456, 789);
+        ::interactionKey = 789;
+        control::beginFrame(sample.frameIndex);
+        input::ReloadGestureState observed;
+        control::read(observed);
+        assert(observed.active && !control::takeGestureChange());
+        const auto before = observed.tapSequence;
+        assert(control::routeGesture(true, true, false));
+        control::read(observed);
+        assert(observed.tapSequence == before + 1);
+        assert(control::set(1, gesture) == Status::GenerationMismatch); // the old key
+        gesture.weaponGenerationKey = 789;
+        assert(control::set(1, gesture) == Status::Ok);
+        assert(!control::takeGestureChange());
+        ::interactionKey = 999;
+        control::beginFrame(sample.frameIndex);
+        control::read(observed);
+        assert(!observed.active && control::takeGestureChange());
+        ::interactionKey = 456;
         control::reset();
         control::gameMask(true, 0);
     }

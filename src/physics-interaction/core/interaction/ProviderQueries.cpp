@@ -898,11 +898,12 @@ namespace rock
         }
     }
 
-    std::uint64_t PhysicsInteraction::queryProviderWeaponInteractionKey() const
+    std::uint64_t PhysicsInteraction::queryProviderWeaponInteractionKey(const std::uint32_t weaponSlot) const
     {
-        const auto form = currentEquippedWeaponFormId();
-        return form != 0 && form == _weaponCollision.getCurrentObservedEquippedWeaponFormID()
-            ? _weaponCollision.getCurrentWeaponInteractionKey()
+        const auto form = weaponSlot == 1 ? _equippedSlotOne.formId : currentEquippedWeaponFormId();
+        const auto& collision = weaponSlot == 1 ? _secondaryWeaponCollision : _weaponCollision;
+        return form != 0 && form == collision.getCurrentObservedEquippedWeaponFormID()
+            ? collision.getCurrentWeaponInteractionKey()
             : 0;
     }
 
@@ -1034,7 +1035,8 @@ namespace rock
     }
 
     // Slot 1 (ROCK's private graph): identity, drawn state and the hand that
-    // holds its firing grip. Frame thread, after its presentation.
+    // holds its firing grip. Frame thread, in the frame dispatch, which runs
+    // before this frame places that weapon: every reader gets this record.
     void PhysicsInteraction::queryProviderSlotOneWeaponState(api::weapon::WeaponState& outState) const
     {
         using Flag = api::weapon::WeaponStateFlag;
@@ -1052,8 +1054,9 @@ namespace rock
         outState.weaponFormId = slotOne.formId;
         setFlag(Flag::WeaponEquipped, slotOne.equipped);
         setFlag(Flag::WeaponDrawn, slotOne.equipped && frame.weaponDrawn);
-        setFlag(Flag::WeaponPresent, slotOne.equipped && native_secondary_presentation::presentedModel() != nullptr);
-        setFlag(Flag::UserWeaponOffset, slotOne.equipped && native_secondary_presentation::usesUserWeaponOffset());
+        const bool placed = slotOne.equipped && native_secondary_presentation::isPlaced();
+        setFlag(Flag::WeaponPresent, placed);
+        setFlag(Flag::UserWeaponOffset, placed && native_secondary_presentation::usesUserWeaponOffset());
         setFlag(Flag::SecondaryReloadActive, slotOne.equipped && native_secondary_actions::reloading());
         if (slotOne.equipped) {
             outState.firingHand =
@@ -1073,7 +1076,7 @@ namespace rock
         api::weaponparts::Source* outSources, std::uint32_t capacity, std::uint32_t& outCount) const
     {
         outCount = 0;
-        if (!generation || generation != _secondaryWeaponCollision.getCurrentWeaponGenerationKey())
+        if (!generation || generation != _secondaryWeaponCollision.getCurrentWeaponInteractionKey())
             return api::Status::GenerationMismatch;
         const auto total = native_secondary_actions::partSourceCount();
         if (!total)
@@ -1099,7 +1102,7 @@ namespace rock
         provider::WeaponSourcePose& output) const
     {
         output = {};
-        if (!generation || generation != _secondaryWeaponCollision.getCurrentWeaponGenerationKey())
+        if (!generation || generation != _secondaryWeaponCollision.getCurrentWeaponInteractionKey())
             return api::Status::GenerationMismatch;
         RE::NiTransform parentLocal{}, rootLocal{}, world{};
         if (!native_secondary_actions::queryPartPose(key, parentLocal, rootLocal, world))
@@ -1119,7 +1122,7 @@ namespace rock
     {
         std::array<RE::NiTransform, api::weaponparts::kMaxDrives> locals{};
         std::array<native_secondary_actions::PartDriveRequest, api::weaponparts::kMaxDrives> requests{};
-        const auto generation = _secondaryWeaponCollision.getCurrentWeaponGenerationKey();
+        const auto generation = _secondaryWeaponCollision.getCurrentWeaponInteractionKey();
         for (std::uint32_t i = 0; i < count; ++i) {
             const auto& target = targets[i];
             if (target.weaponGenerationKey != 0 && target.weaponGenerationKey != generation)

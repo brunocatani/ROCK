@@ -51,7 +51,9 @@ A right) of the firing hand of the weapon in `weaponSlot` for 1 to
 and a sample from the current or previous frame. A weapon slot is the native equipment index (see `Weapon.md`); a slot at
 or above `kMaxWeaponSlots` returns `InvalidArgument`, and slot 1 returns
 `TargetUnavailable`. One owner holds it at a time (`Busy` otherwise); the wrong
-hand returns `HandUnavailable`.
+hand returns `HandUnavailable`. `weaponGenerationKey` is the weapon's interaction
+key (Weapon `getInteractionKey`), so the lease works without colliders and stays
+held when they arrive and that key changes: name the new key from then on.
 
 ROCK classifies the press with `fManualScopeHoldSeconds`: a short release adds
 one to `tapSequence`; a hold stays ROCK scope input (`scopeHeld`) and never

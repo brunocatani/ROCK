@@ -197,6 +197,7 @@ namespace rock::provider::runtime
     api::weapon::WeaponState s_lastEquippedWeaponState{};
     api::weapon::WeaponState s_lastSlotOneWeaponState{};
     std::uint64_t s_lastWeaponInteractionKey{ 0 };
+    std::uint64_t s_lastSlotOneWeaponInteractionKey{ 0 };
 
     std::mutex s_touchGrabMutex;
     TouchGrabRegistry s_touchGrabTargets{};
@@ -1865,7 +1866,8 @@ namespace rock::provider
         api::weapon::WeaponState equippedWeaponState{};
         (void)pi.queryProviderWeaponState(equippedWeaponState);
         equippedWeaponState.sample.frameIndex = snapshot.frameIndex;
-        const auto weaponInteractionKey = pi.queryProviderWeaponInteractionKey();
+        const auto weaponInteractionKey = pi.queryProviderWeaponInteractionKey(0);
+        const auto slotOneWeaponInteractionKey = pi.queryProviderWeaponInteractionKey(1);
         api::weapon::WeaponState slotOneWeaponState{};
         pi.queryProviderSlotOneWeaponState(slotOneWeaponState);
         slotOneWeaponState.sample.frameIndex = snapshot.frameIndex;
@@ -1941,6 +1943,7 @@ namespace rock::provider
             s_lastHandInteractionStates = handInteractionStates;
             s_lastEquippedWeaponState = equippedWeaponState;
             s_lastWeaponInteractionKey = weaponInteractionKey;
+            s_lastSlotOneWeaponInteractionKey = slotOneWeaponInteractionKey;
             slotOneWeaponState.sample.publicationSequence = snapshot.stateSequence;
             slotOneWeaponState.sample.collisionGeneration = snapshot.collisionGeneration;
             s_lastSlotOneWeaponState = slotOneWeaponState;
@@ -2135,6 +2138,7 @@ namespace rock::provider
             s_lastEquippedWeaponState.flags = 0;
             s_lastSlotOneWeaponState.flags = 0;
             s_lastWeaponInteractionKey = 0;
+            s_lastSlotOneWeaponInteractionKey = 0;
         }
         {
             std::scoped_lock lock(s_touchGrabMutex);

@@ -1038,7 +1038,26 @@ namespace rock::native_secondary_presentation
         return matches(view) ? view.root : nullptr;
     }
 
-    bool usesUserWeaponOffset() noexcept { return presentedModel() && s_state.userWeaponOffset; }
+    namespace
+    {
+        // The last placement still stands. waitFor and release clear the grip;
+        // frame callbacks run after beginFrame clears `ready` and before this
+        // frame's update sets it, so `ready` cannot answer for them.
+        [[nodiscard]] bool lastPlacementStands() noexcept
+        {
+            if (!onFrameThread() || s_state.dropGrip.role == loose_weapon_authored_grab_policy::Role::None)
+                return false;
+            const auto frame = runtime_state::currentFrame().frameIndex;
+            return frame >= s_state.frame && frame - s_state.frame <= 1;
+        }
+    }
+
+    bool isPlaced() noexcept
+    {
+        return lastPlacementStands() && currentAttachment(native_hand_equipment::equippedViews()[1]);
+    }
+
+    bool usesUserWeaponOffset() noexcept { return onFrameThread() && s_state.userWeaponOffset; }
 
     bool tryGetFiringSeat(RE::NiTransform& outHandWeaponLocal, RE::NiTransform& outWeaponWorld) noexcept
     {
@@ -1069,12 +1088,7 @@ namespace rock::native_secondary_presentation
         bool& outProjectileValid) noexcept
     {
         outProjectileValid = false;
-        // waitFor and release clear the grip; frame callbacks run after
-        // beginFrame clears `ready` and before this frame's update sets it.
-        if (!onFrameThread() || s_state.dropGrip.role == loose_weapon_authored_grab_policy::Role::None)
-            return false;
-        const auto frame = runtime_state::currentFrame().frameIndex;
-        if (frame < s_state.frame || frame - s_state.frame > 1)
+        if (!lastPlacementStands())
             return false;
         const auto view = native_hand_equipment::equippedViews()[1];
         auto* attachment = matches(view) ? currentAttachment(view) : nullptr;

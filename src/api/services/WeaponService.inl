@@ -206,7 +206,7 @@
         if (!s_hasSnapshot) {
             return 0;
         }
-        return weaponSlot == 1 ? s_lastSlotOneWeaponState.weaponGenerationKey : s_lastWeaponInteractionKey;
+        return weaponSlot == 1 ? s_lastSlotOneWeaponInteractionKey : s_lastWeaponInteractionKey;
     }
 
     api::Status getScopeSightState(api::weapon::ScopeSightState& outState)
