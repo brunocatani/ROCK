@@ -62,6 +62,9 @@ becomes a tap. Flags:
 - `GameplayPriority`: a workbench, use or take target of the primary wand
   owns the whole press and release. Without it, Accept is masked from the
   game for the lease.
+- `KeepAcceptNative`: Accept stays entirely with the game: no mask, tap or
+  scope hold, so its native reload and activation keep working and the lease
+  only carries `BlockFire`. Not valid with `GameplayPriority`.
 
 Menus, input loss, hand changes and lease changes (including flags) cancel an
 unfinished gesture and need a release before rearming. Expiry, clearing and

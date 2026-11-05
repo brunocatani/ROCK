@@ -232,6 +232,41 @@ int main()
             control::gameMask(left, 0);
             control::observe(left, { true });
         }
+    // KeepAcceptNative blocks the trigger and leaves Accept with the game: the
+    // reload dispatch is not routed, nothing is masked and its end drains no Accept.
+    {
+        control::reset();
+        raw = { true, true };
+        ::primary = rock::api::Hand::Right;
+        input::ReloadGestureRequest gesture;
+        gesture.hand = Hand::Right;
+        gesture.weaponFormId = 123;
+        gesture.weaponGenerationKey = 456;
+        gesture.sample = sample;
+        gesture.flags = static_cast<std::uint32_t>(input::ReloadGestureFlag::BlockFire) |
+            static_cast<std::uint32_t>(input::ReloadGestureFlag::KeepAcceptNative);
+        (void)control::takeGestureChange();
+        assert(control::set(1, gesture) == Status::Ok);
+        assert(!control::takeGestureChange());
+        assert(control::fireBlocked(false) && !control::gestureActive(false));
+        assert(control::gameMask(false, x | (1ull << 33)) == (1ull << 33));
+        assert(!control::observe(false, { true, true }));
+        assert(!control::routeGesture(false, true, false));
+        input::ReloadGestureState observed;
+        control::read(observed);
+        const auto before = observed.tapSequence;
+        assert(observed.active && !observed.held);
+        // A release lets the trigger go; Accept was never taken.
+        assert(control::clear(1) == Status::Ok);
+        assert(!control::takeGestureChange());
+        assert(control::gameMask(false, x | (1ull << 33)) == (1ull << 33));
+        assert(control::gameMask(false, x) == 0 && !control::fireBlocked(false));
+        control::read(observed);
+        assert(!observed.active && observed.tapSequence == before);
+        // It cannot be combined with gameplay priority.
+        gesture.flags |= static_cast<std::uint32_t>(input::ReloadGestureFlag::GameplayPriority);
+        assert(control::set(1, gesture) == Status::InvalidArgument);
+    }
     // A world change ends a live lease, and a request on the stale sample is refused.
     {
         control::reset();

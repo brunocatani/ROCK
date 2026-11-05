@@ -147,6 +147,10 @@ namespace rock::api::input {
         // tap or scope hold is published for it. Without this flag, Accept is
         // masked from the game for the lease.
         GameplayPriority = 1u << 1,
+        // Accept stays entirely with the game: no mask, tap or scope hold, so
+        // its native reload and activation keep working and the lease only
+        // carries BlockFire. Not valid with GameplayPriority.
+        KeepAcceptNative = 1u << 2,
     };
 
     /*

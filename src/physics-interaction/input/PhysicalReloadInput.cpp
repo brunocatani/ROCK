@@ -21,7 +21,7 @@ namespace rock::physical_reload_input
         } state;
 
         bool armed{};
-        bool scopeHeld{}, gestureChanged{}, nativePriority{};
+        bool scopeHeld{}, gestureChanged{}, nativePriority{}, acceptNative{};
         std::uint64_t tapSequence{};
         std::uint32_t drainingHands{};
         std::atomic<std::uint32_t> activeMask{}, drainMask{};
@@ -31,11 +31,13 @@ namespace rock::physical_reload_input
 
         void retire()
         {
-            if (state.active)
+            // A KeepAcceptNative lease never took Accept, so it has nothing to
+            // hand back: its end must not disturb a scope hold or a reload press.
+            if (state.active && !acceptNative)
                 gestureChanged = true;
             // Unavailable input also needs drainage: menu/UI capture hides the
             // physical held level, and must not expose that hold when a lease ends.
-            if (state.active && (state.held || !armed)) {
+            if (state.active && !acceptNative && (state.held || !armed)) {
                 drainingHands |= handMask(state.hand);
                 drainMask.fetch_or(handMask(state.hand), std::memory_order_release);
             }
@@ -46,6 +48,7 @@ namespace rock::physical_reload_input
             state.held = false;
             armed = false;
             scopeHeld = false;
+            acceptNative = false;
         }
 
         bool current()
@@ -70,10 +73,13 @@ namespace rock::physical_reload_input
         using api::Status;
         using Flag = api::input::ReloadGestureFlag;
         constexpr auto blockFireFlag = static_cast<std::uint32_t>(Flag::BlockFire),
-                       priorityFlag = static_cast<std::uint32_t>(Flag::GameplayPriority);
+                       priorityFlag = static_cast<std::uint32_t>(Flag::GameplayPriority),
+                       keepAcceptFlag = static_cast<std::uint32_t>(Flag::KeepAcceptNative);
         if (!owner || !value.weaponFormId || !value.weaponGenerationKey || !value.leaseFrames ||
             value.leaseFrames > api::input::kMaxWeaponInputLeaseFrames ||
-            (value.hand != Hand::Left && value.hand != Hand::Right) || (value.flags & ~(blockFireFlag | priorityFlag)))
+            (value.hand != Hand::Left && value.hand != Hand::Right) ||
+            (value.flags & ~(blockFireFlag | priorityFlag | keepAcceptFlag)) ||
+            ((value.flags & priorityFlag) && (value.flags & keepAcceptFlag)))
             return Status::InvalidArgument;
         if (static_cast<Hand>(provider::runtime::primaryHand()) != value.hand)
             return Status::HandUnavailable;
@@ -81,13 +87,14 @@ namespace rock::physical_reload_input
         if (value.sample.frameIndex > now || now - value.sample.frameIndex > 1)
             return Status::GenerationMismatch;
         const bool gameplayPriority = (value.flags & priorityFlag) != 0;
+        const bool keepAccept = (value.flags & keepAcceptFlag) != 0;
         std::scoped_lock lock(mutex);
         if (state.active && state.owner != owner)
             return Status::Busy;
         // Changing the hand, weapon or priority mode starts a new gesture.
         const bool continuing = state.active && state.owner == owner &&
             request.weaponGenerationKey == value.weaponGenerationKey && state.hand == value.hand &&
-            nativePriority == gameplayPriority;
+            nativePriority == gameplayPriority && acceptNative == keepAccept;
         const auto oldRequest = request;
         const auto oldState = state;
         request = value;
@@ -101,10 +108,13 @@ namespace rock::physical_reload_input
             retire();
             state.owner = owner;
             state.hand = value.hand;
-            gestureChanged = true;
-            const auto raw = input_remap_runtime::peekRawButtonState(value.hand == Hand::Left, 7);
-            armed = raw.available && !raw.held;
-            state.held = raw.held;
+            acceptNative = keepAccept;
+            if (!keepAccept) {
+                gestureChanged = true;
+                const auto raw = input_remap_runtime::peekRawButtonState(value.hand == Hand::Left, 7);
+                armed = raw.available && !raw.held;
+                state.held = raw.held;
+            }
         }
         nativePriority = gameplayPriority;
         state.active = true;
@@ -114,7 +124,7 @@ namespace rock::physical_reload_input
         fireDrainMask.fetch_or(oldFire & ~nextFire, std::memory_order_release);
         // Gameplay-priority leases arbitrate Accept at the existing native event
         // hook. Masking it here would prevent workbenches/use/take from seeing it.
-        activeMask.store(gameplayPriority ? 0u : handMask(value.hand), std::memory_order_release);
+        activeMask.store(gameplayPriority || keepAccept ? 0u : handMask(value.hand), std::memory_order_release);
         return Status::Ok;
     }
 
@@ -139,7 +149,7 @@ namespace rock::physical_reload_input
     bool gestureActive(bool left)
     {
         std::scoped_lock lock(mutex);
-        return state.active && state.hand == (left ? api::Hand::Left : api::Hand::Right);
+        return state.active && !acceptNative && state.hand == (left ? api::Hand::Left : api::Hand::Right);
     }
 
     bool nativeActivationPriority(bool left)
@@ -157,7 +167,7 @@ namespace rock::physical_reload_input
     bool routeGesture(bool left, bool tap, bool scope)
     {
         std::scoped_lock lock(mutex);
-        if (!state.active || state.hand != (left ? api::Hand::Left : api::Hand::Right))
+        if (!state.active || acceptNative || state.hand != (left ? api::Hand::Left : api::Hand::Right))
             return false;
         scopeHeld = armed && scope;
         if (armed && tap)
@@ -212,7 +222,7 @@ namespace rock::physical_reload_input
         // Keep separate frame-side drainage so expiry cannot replay a scope/reload.
         if (draining && raw.available && !raw.held)
             drainingHands &= ~bit;
-        if (!state.active || state.hand != hand)
+        if (!state.active || acceptNative || state.hand != hand)
             return draining;
         state.held = raw.held;
         if (!raw.available) {
