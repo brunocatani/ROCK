@@ -1051,6 +1051,8 @@ namespace rock
                     exclusion.heldBodies[i] = acceptedRecords[i]->bodyId;
                 exclusion.looseWeapon = false;
                 exclusion.thrownSeconds = g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds;
+                dispatchSimpleGrabEvent(GrabEventType::Released, handoff.thrownByLeft, droppedRef,
+                    acceptedRecords[0]->bodyId);
             }
             ROCK_LOG_INFO(Weapon,
                 "Equipped weapon drop native bodies placed at handoff pose; waiting one solve: dropped={:08X} "

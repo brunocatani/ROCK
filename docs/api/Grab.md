@@ -137,6 +137,11 @@ publication identity.
 
 `kNoBody` (`0x7FFFFFFF`) marks a missing body id.
 
+`Released` means a reference has left that hand for the world. Besides a held object being let go, it fires when an
+equipped weapon is thrown: `formId` is then the dropped reference and `primaryBodyId` its first body, once its bodies
+carry the throw's velocity. An equipped weapon that leaves a still hand sends no event. With two hands on one
+reference, each hand reports its own `GrabCommitted` and `Released`, so the object is free only when both have let go.
+
 ## Retired values
 
 `EventKind` 100-104 (the removed event streams' `HandStateChanged`,
