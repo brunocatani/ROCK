@@ -157,7 +157,8 @@ namespace rock
                 const auto& request = entry.request;
                 const auto& key = request.reference;
                 if (entry.cancelled ||
-                    provider::runtime::authorize(entry.owner, api::InterfaceId::Grab, 3, true) != api::Status::Ok ||
+                    provider::runtime::authorize(entry.owner, api::InterfaceId::Collision,
+                        static_cast<std::uint32_t>(api::collision::Permission::Write), true) != api::Status::Ok ||
                     key.worldGeneration != sample.worldGeneration ||
                     key.skeletonGeneration != sample.skeletonGeneration ||
                     key.providerGeneration != sample.providerGeneration ||
