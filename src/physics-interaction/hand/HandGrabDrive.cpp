@@ -70,6 +70,12 @@ namespace rock
          * visible tear in his skin, and lifted his feet off the ground.
          */
         constexpr float LIVE_LIMB_AUTHORITY_SCALE = 0.2f;
+        /*
+         * The hand holds a point on a live limb, not its orientation: the
+         * angular motor turned a grabbed head 40 degrees to match the palm
+         * before any pull, past what the neck's skin allows.
+         */
+        constexpr float LIVE_LIMB_ANGULAR_SHARE = 0.1f;
 
         float looseWeaponMultiplier(bool looseWeaponGrab, float multiplier)
         {
@@ -365,9 +371,11 @@ namespace rock
         const auto massSummaryAtCreation =
             readHeldBodyMassSummary(world, objectBodyId, _heldBodyIds, _heldDriveDecision.includeConnectedMass);
         const float effectiveMassAtCreation = effectiveGrabMotorMass(massSummaryAtCreation.motorMass());
-        const GrabConstraintMotorTuning motorTuning =
+        GrabConstraintMotorTuning motorTuning =
             buildProxyConstraintMotorTuning(tau, damping, maxForce, sanitizedAuthorityForceScale, proportionalRecovery,
                 constantRecovery, looseWeaponGrab, effectiveMassAtCreation, g_rockConfig.rockGrabMaxForceToMassRatio);
+        if (_savedObjectState.liveLimb)
+            motorTuning.angularMaxForce *= LIVE_LIMB_ANGULAR_SHARE;
 
         _activeConstraint = createGrabConstraint(world, _grabAuthorityProxy.getBodyId(), objectBodyId,
             proxyWorldTransform, constraintPivotAWorld, desiredBodyTransformProxySpace, motorTuning);
@@ -613,7 +621,9 @@ namespace rock
             .fadeElapsed = _grabStartTime,
             .fadeDuration = forceFadeInTime,
         };
-        const auto output = grab_motion_controller::solveMotorTargetsWithAuthority(motorInput, heldAuthority);
+        auto output = grab_motion_controller::solveMotorTargetsWithAuthority(motorInput, heldAuthority);
+        if (_savedObjectState.liveLimb)
+            output.angularMaxForce *= LIVE_LIMB_ANGULAR_SHARE;
         if (!output.valid) {
             _activeConstraint.linearMotor->minForce = _activeConstraint.linearMotor->maxForce = 0.0f;
             _activeConstraint.angularMotor->minForce = _activeConstraint.angularMotor->maxForce = 0.0f;
