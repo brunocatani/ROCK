@@ -10,6 +10,7 @@
 #include "physics-interaction/native/havok/PhysicsScale.h"
 #include "physics-interaction/weapon/handling/BipodRetentionPolicy.h"
 #include "physics-interaction/weapon/native/BipodFrozenRetirement.h"
+#include "physics-interaction/weapon/native/HeldWeaponInstantTransition.h"
 #include "physics-interaction/weapon/native/NativeHandEquipment.h"
 #include "physics-interaction/weapon/secondary/NativeSecondaryActions.h"
 #include "physics-interaction/weapon/secondary/NativeSecondaryPresentation.h"
@@ -351,11 +352,13 @@ namespace rock
         native_secondary_actions::handOffModelPose();
         native_secondary_actions::suspend();
         const auto formID = weapon->GetFormID();
-        const auto equipped = weapon_equip_transfer::promoteSecondaryToPrimary(formID, instance);
+        const auto equipped = weapon_equip_transfer::promoteSecondaryToPrimary(formID, instance, left);
         ROCK_LOG_INFO(Weapon,
-            "AKIMBO second weapon promoted to primary form={:08X} hand={} success={} reason={} observed={:08X}", formID,
-            left ? "left" : "right", equipped.success, weapon_equip_transfer::equipReasonName(equipped.reason),
-            equipped.observedEquippedFormID);
+            "AKIMBO second weapon promoted to primary form={:08X} hand={} success={} reason={} readiness={} thread={} "
+            "observed={:08X}",
+            formID, left ? "left" : "right", equipped.success, weapon_equip_transfer::equipReasonName(equipped.reason),
+            held_weapon_instant_transition::readinessReasonName(equipped.instantTransition.readinessReason),
+            GetCurrentThreadId(), equipped.observedEquippedFormID);
         if (!equipped.success) {
             _failedPromotion = { formID, instance };
             return false;

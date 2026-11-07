@@ -27,7 +27,7 @@ namespace rock::held_weapon_instant_transition
         Ready,
         NotInstalled,
         UnsupportedRuntime,
-        WrongThread,
+        TransactionOnOtherThread,
         MissingPlayer,
         PlayerVtableUnreadable,
         PlayerDrawSlotChanged,
@@ -89,15 +89,28 @@ namespace rock::held_weapon_instant_transition
     // cooldown and makes the presentation deadline due now.
     void removeAddedPresentationGates(RE::PlayerCharacter* player, float priorCooldown, const char* source) noexcept;
 
-    // Main-thread-only transaction. The scope surrounds exactly one immediate
-    // EquipObject call and suppresses only its verified player draw/sheathe
-    // virtual callsites. Exact equipped identity/stack validation belongs to
-    // WeaponEquipTransfer; normal native draw presentation belongs to the
-    // equipped-weapon transition coordinator.
+    /*
+     * Thread model for both transactions below: each runs synchronously on the
+     * thread that calls it, and its scope is thread-local, so the draw/sheathe
+     * hook only ever sees the calling thread's own transaction. Two threads
+     * call them: the game's main thread (ROCK's frame: grab equips, inventory
+     * commands, second-weapon promotion) and the Pip-Boy menu's item thread
+     * (Pip-Boy equips, where the game runs its own equips too). Only one
+     * transaction runs at a time; another thread is refused while one is open
+     * (TransactionOnOtherThread), never for its identity. Pinning the first
+     * caller's thread refused the other path for the rest of the session: a
+     * Pip-Boy equip first left every later promotion and grab equip unable to
+     * equip, and a picked-up second weapon vanished from both hands.
+     */
+
+    // The scope surrounds exactly one immediate EquipObject call and suppresses
+    // only its verified player draw/sheathe virtual callsites. Exact equipped
+    // identity/stack validation belongs to WeaponEquipTransfer; normal native
+    // draw presentation belongs to the equipped-weapon transition coordinator.
     [[nodiscard]] ImmediateEquipResult equipImmediatelyWithoutActions(const ImmediateEquipInput& input) noexcept;
 
     /*
-     * Main-thread-only transaction around exactly one immediate unequip that
+     * Transaction around exactly one immediate unequip that
      * leaves the other index's weapon equipped. FO4VR's unequip (140E10820)
      * sheathes the drawn player for every weapon but grenades and mines
      * (140E1094E..140E10988, the verified sheathe callsite; its drawn test

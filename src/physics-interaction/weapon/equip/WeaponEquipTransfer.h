@@ -176,6 +176,9 @@ namespace rock::weapon_equip_transfer
         std::uintptr_t instanceData) noexcept;
     // Moves the exact weapon worn at index 1 to the empty index 0 with the
     // same action-free immediate equip as a held trigger equip. Frame thread.
-    [[nodiscard]] EquipResult promoteSecondaryToPrimary(std::uint32_t formID, std::uintptr_t instanceData) noexcept;
+    // The move unequips index 1 first; when index 0 then refuses the weapon it
+    // goes back to index 1 in `secondaryLeft`'s hand instead of leaving both empty.
+    [[nodiscard]] EquipResult promoteSecondaryToPrimary(std::uint32_t formID, std::uintptr_t instanceData,
+        bool secondaryLeft) noexcept;
     [[nodiscard]] bool canRecoverHeldEquip() noexcept;
 }

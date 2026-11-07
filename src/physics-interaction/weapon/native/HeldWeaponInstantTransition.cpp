@@ -83,7 +83,8 @@ namespace rock::held_weapon_instant_transition
 
         DrawWeaponMagicHands s_originalDrawWeaponMagicHands = nullptr;
         std::atomic<bool> s_installed{ false };
-        std::atomic<DWORD> s_ownerThreadId{ 0 };
+        // The thread whose transaction is open, or zero. See the thread model in the header.
+        std::atomic<DWORD> s_transactionThread{ 0 };
         thread_local TransactionScope* t_activeScope = nullptr;
 
         __declspec(noinline) void onDrawWeaponMagicHands(RE::PlayerCharacter* player, bool draw);
@@ -247,15 +248,34 @@ namespace rock::held_weapon_instant_transition
                 actual == expected;
         }
 
+        // Opens the calling thread's transaction, unless another thread has one open.
         class ScopeLease
         {
         public:
-            explicit ScopeLease(TransactionScope& scope) noexcept { t_activeScope = &scope; }
+            explicit ScopeLease(TransactionScope& scope) noexcept
+            {
+                DWORD expected = 0;
+                _owned = s_transactionThread.compare_exchange_strong(expected, GetCurrentThreadId(),
+                    std::memory_order_acq_rel, std::memory_order_acquire);
+                if (_owned)
+                    t_activeScope = &scope;
+            }
 
-            ~ScopeLease() noexcept { t_activeScope = nullptr; }
+            ~ScopeLease() noexcept
+            {
+                if (!_owned)
+                    return;
+                t_activeScope = nullptr;
+                s_transactionThread.store(0, std::memory_order_release);
+            }
 
             ScopeLease(const ScopeLease&) = delete;
             ScopeLease& operator=(const ScopeLease&) = delete;
+
+            [[nodiscard]] bool owned() const noexcept { return _owned; }
+
+        private:
+            bool _owned{ false };
         };
 
         __declspec(noinline) void onDrawWeaponMagicHands(RE::PlayerCharacter* player, const bool draw)
@@ -316,7 +336,6 @@ namespace rock::held_weapon_instant_transition
                 reinterpret_cast<void*>(&onDrawWeaponMagicHands), original);
         s_originalDrawWeaponMagicHands = reinterpret_cast<DrawWeaponMagicHands>(original);
         const bool ready = installed && s_originalDrawWeaponMagicHands != nullptr;
-        s_ownerThreadId.store(0, std::memory_order_release);
         s_installed.store(ready, std::memory_order_release);
         if (ready) {
             installTriggerEquipPreparation();
@@ -337,12 +356,9 @@ namespace rock::held_weapon_instant_transition
         if (!player) {
             return { .reason = ReadinessReason::MissingPlayer };
         }
-        const auto currentThreadId = GetCurrentThreadId();
-        DWORD expectedOwnerThreadId = 0;
-        (void)s_ownerThreadId.compare_exchange_strong(expectedOwnerThreadId, currentThreadId, std::memory_order_acq_rel,
-            std::memory_order_acquire);
-        if (currentThreadId != s_ownerThreadId.load(std::memory_order_acquire)) {
-            return { .reason = ReadinessReason::WrongThread };
+        const auto openTransaction = s_transactionThread.load(std::memory_order_acquire);
+        if (openTransaction != 0 && openTransaction != GetCurrentThreadId()) {
+            return { .reason = ReadinessReason::TransactionOnOtherThread };
         }
 
         std::uintptr_t vtable = 0;
@@ -396,10 +412,15 @@ namespace rock::held_weapon_instant_transition
             .player = input.player,
             .reason = input.reason,
         };
-        result.attempted = true;
-        trigger_equip_readiness_trace::stage("before-equip-manager");
         {
             const ScopeLease scopeLease{ scope };
+            if (!scopeLease.owned()) {
+                result.readinessReason = ReadinessReason::TransactionOnOtherThread;
+                result.code = ImmediateEquipCode::CapabilityUnavailable;
+                return result;
+            }
+            result.attempted = true;
+            trigger_equip_readiness_trace::stage("before-equip-manager");
             result.managerAccepted = input.manager->EquipObject(input.player, *input.object, input.stackID, 1,
                 input.equipSlot, false, false, false, true, false);
         }
@@ -445,6 +466,11 @@ namespace rock::held_weapon_instant_transition
         };
         {
             const ScopeLease scopeLease{ scope };
+            if (!scopeLease.owned()) {
+                result.readinessReason = ReadinessReason::TransactionOnOtherThread;
+                result.code = ImmediateEquipCode::CapabilityUnavailable;
+                return result;
+            }
             call(context);
         }
         result.actionTrace = scope.trace;
@@ -538,8 +564,8 @@ namespace rock::held_weapon_instant_transition
             return "not-installed";
         case ReadinessReason::UnsupportedRuntime:
             return "unsupported-runtime";
-        case ReadinessReason::WrongThread:
-            return "wrong-thread";
+        case ReadinessReason::TransactionOnOtherThread:
+            return "transaction-on-other-thread";
         case ReadinessReason::MissingPlayer:
             return "missing-player";
         case ReadinessReason::PlayerVtableUnreadable:

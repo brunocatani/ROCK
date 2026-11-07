@@ -990,7 +990,8 @@ namespace rock::weapon_equip_transfer
         return !remaining.weapon;
     }
 
-    EquipResult promoteSecondaryToPrimary(const std::uint32_t formID, const std::uintptr_t instanceData) noexcept
+    EquipResult promoteSecondaryToPrimary(const std::uint32_t formID, const std::uintptr_t instanceData,
+        const bool secondaryLeft) noexcept
     {
         EquipResult result{};
         result.formID = formID;
@@ -1040,7 +1041,16 @@ namespace rock::weapon_equip_transfer
                 instanceData);
             return result;
         }
-        return equipInventoryWeapon(selection);
+        auto promoted = equipInventoryWeapon(selection);
+        if (!promoted.success && !readEquippedWeaponSnapshot(0).weapon && !readEquippedWeaponSnapshot(1).weapon) {
+            const auto restored = equipInventoryWeapon(selection, true, secondaryLeft);
+            ROCK_LOG_WARN(Weapon,
+                "AKIMBO promotion refused by index 0 ({}); weapon {:08X} returned to index 1 hand={} restored={} "
+                "reason={}",
+                equipReasonName(promoted.reason), formID, secondaryLeft ? "left" : "right", restored.success,
+                equipReasonName(restored.reason));
+        }
+        return promoted;
     }
 
     EquippedDropResult dropEquippedWeaponFromPlayer(const EquippedDropInput& input) noexcept
