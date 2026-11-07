@@ -125,7 +125,8 @@ namespace rock::native_quick_loot_panel
         // Game thread only. The ROCK node under the room node that carries the
         // panel at its container; it outlives player node rebuilds and is
         // re-parented to the current room node when the old one is gone.
-        RE::NiPointer<RE::NiNode> g_carrier;
+        // Never destroyed: an engine object released in DLL detach raises R6025 during ExitProcess.
+        RE::NiPointer<RE::NiNode>& g_carrier = *new RE::NiPointer<RE::NiNode>;
         bool g_carrierFailed{ false };
         bool g_onContainerLogged{ false };
 

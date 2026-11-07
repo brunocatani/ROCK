@@ -1259,7 +1259,9 @@ namespace rock::native_secondary_actions
             std::size_t maxNode{};
         };
 
-        PrimaryReloadWindow s_primaryReload{}; // Frame thread only.
+        // Frame thread only. Never destroyed: an engine object released in DLL detach raises R6025
+        // during ExitProcess.
+        PrimaryReloadWindow& s_primaryReload = *new PrimaryReloadWindow{};
 
         // Which models a player graph's bones are bound to. FO4VR 1.2.72 raw
         // disassembly of 1416A9570 (graph root setter): the bound root is a

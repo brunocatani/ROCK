@@ -85,7 +85,8 @@ namespace rock::native_secondary_melee
          * before every detach, so a reused id is never routed afterwards.
          */
         std::atomic<DWORD> s_owner{ 0 }; // Claimed by the first present().
-        RE::NiPointer<RE::NiAVObject> s_model;
+        // Never destroyed: an engine object released in DLL detach raises R6025 during ExitProcess.
+        RE::NiPointer<RE::NiAVObject>& s_model = *new RE::NiPointer<RE::NiAVObject>;
         void* s_world = nullptr;
         std::array<std::atomic<std::uint32_t>, 16> s_bodies{};
         std::atomic<std::uint32_t> s_bodyCount{ 0 };

@@ -349,7 +349,8 @@ namespace rock::native_secondary_presentation
             bool left = false;
         };
 
-        Incoming s_incoming{};
+        // Never destroyed: an engine object released in DLL detach raises R6025 during ExitProcess.
+        Incoming& s_incoming = *new Incoming{};
         // Backstop only: a weapon that is never placed must not keep a
         // visual-only model. Logged whenever it ends a bridge.
         constexpr float kIncomingMaxSeconds = 3.0f;

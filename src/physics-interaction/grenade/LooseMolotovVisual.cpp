@@ -39,7 +39,9 @@ namespace rock
 
         // Explicitly replaced on GameLoaded/NewGame/PostLoadGame, after the old
         // PhysicsInteraction has released its armed slots. No initialization I/O.
-        std::unique_ptr<Resources> resources;
+        // Never destroyed: releasing engine objects in DLL detach, after the engine has shut
+        // down, raises R6025 during ExitProcess and the game never closes.
+        std::unique_ptr<Resources>& resources = *new std::unique_ptr<Resources>;
         Clone cloneObject = nullptr;
         StartController startController = nullptr;
         UpdateController updateController = nullptr;
