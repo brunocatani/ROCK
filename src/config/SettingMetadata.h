@@ -168,6 +168,18 @@ namespace rock::config
             "toward yourself, then keep holding to pull the object in and catch it.\nRelease before the flick or "
             "during the pull to cancel. Applies to the next far grab.",
             api::configuration::Group::Consumer },
+        // PALM builds its dropdown from the "N = label" pairs; labels may not contain , ; or a full stop.
+        { "Grabbing", "iCloseGrabDirection", "06. Grabbing",
+            "Which way your hand reaches for nearby objects.\n0 = Out of the palm. 20 = Mostly out of the palm. "
+            "45 = Between palm and fingers. 75 = Mostly along the fingers. 90 = Along the fingers.\nThe number is the "
+            "angle in degrees from the palm toward the fingers. Applies at once, on each hand.",
+            api::configuration::Group::Consumer },
+        { "Grabbing", "iFarGrabDirection", "06. Grabbing",
+            "Which way your hand points to aim far grabs.\n0 = Out of the palm. 20 = Mostly out of the palm. "
+            "45 = Between palm and fingers. 75 = Mostly along the fingers. 90 = Along the fingers.\nThe number is the "
+            "angle in degrees from the palm toward the fingers. The object must also be in your view. Applies at "
+            "once, on each hand.",
+            api::configuration::Group::Consumer },
         { "Grabbing", "bLootToHand", "06. Grabbing",
             "Loot to Hand\nTrue: an item taken with the quick-loot view (pointing at a container) lands in that "
             "hand.\nThe full container menu keeps sending items to inventory. A busy hand passes the item to the "
@@ -435,16 +447,6 @@ namespace rock::config
         { "PhysicsInteraction", "fHandBoneColliderMaxLinearVelocity", "05. Hand and Body Collision",
             "Speed clamps for bone-driven hand colliders.", api::configuration::Group::Developer },
         { "PhysicsInteraction", "fHandBoneColliderMaxAngularVelocity", "05. Hand and Body Collision", "",
-            api::configuration::Group::Developer },
-        { "PhysicsInteraction", "iCloseSelectionAngleDegrees", "06. Selection and Pulling",
-            "Direction the close grab looks for objects, from the palm toward the fingers.\n0 = Straight out of the "
-            "palm, 20 = 20 degrees toward the fingers, 45 = Halfway, 75 = 75 degrees toward the fingers, 90 = Straight "
-            "along the fingers.",
-            api::configuration::Group::Developer },
-        { "PhysicsInteraction", "iFarSelectionAngleDegrees", "06. Selection and Pulling",
-            "Direction the far grab looks for objects, from the palm toward the fingers. The target must also be "
-            "inside the view cone.\n0 = Straight out of the palm, 20 = 20 degrees toward the fingers, 45 = Halfway, "
-            "75 = 75 degrees toward the fingers, 90 = Straight along the fingers.",
             api::configuration::Group::Developer },
         { "PhysicsInteraction", "bPullToObjectCenterEnabled", "06. Selection and Pulling",
             "Far grabs pull the object's CENTER to the hand instead of the ray-hit point\n(a hit at selection range is "

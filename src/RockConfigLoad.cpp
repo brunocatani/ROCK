@@ -329,6 +329,10 @@ namespace rock
         rockButtonLayouts[1] = readButtonLayout(ini, CONTROLS_SECTION, false, rockButtonLayouts[1]);
         rockFarGrabMode = far_pull_gesture::sanitizeMode(
             static_cast<int>(ini.GetLongValue(GRABBING_SECTION, "iFarGrabMode", rockFarGrabMode)));
+        rockCloseSelectionAngleDegrees =
+            readSelectionAimAngleDegrees(ini, GRABBING_SECTION, "iCloseGrabDirection", rockCloseSelectionAngleDegrees);
+        rockFarSelectionAngleDegrees =
+            readSelectionAimAngleDegrees(ini, GRABBING_SECTION, "iFarGrabDirection", rockFarSelectionAngleDegrees);
         rockGrabInputIntentStateEnabled =
             ini.GetBoolValue(SECTION, "bGrabInputIntentStateEnabled", rockGrabInputIntentStateEnabled);
         rockLootToHand = ini.GetBoolValue(GRABBING_SECTION, "bLootToHand", rockLootToHand);
@@ -1225,10 +1229,6 @@ namespace rock
             rockSelectedCloseFingerAnimValue = 0.9f;
         }
         rockSelectedCloseFingerAnimValue = std::clamp(rockSelectedCloseFingerAnimValue, 0.0f, 1.0f);
-        rockCloseSelectionAngleDegrees =
-            readSelectionAimAngleDegrees(ini, SECTION, "iCloseSelectionAngleDegrees", rockCloseSelectionAngleDegrees);
-        rockFarSelectionAngleDegrees =
-            readSelectionAimAngleDegrees(ini, SECTION, "iFarSelectionAngleDegrees", rockFarSelectionAngleDegrees);
         rockPullToObjectCenterEnabled =
             ini.GetBoolValue(SECTION, "bPullToObjectCenterEnabled", rockPullToObjectCenterEnabled);
         rockPullLongAxisPresentationEnabled =
