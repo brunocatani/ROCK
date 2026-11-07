@@ -1166,6 +1166,24 @@ namespace rock::input_remap_runtime
             }
         }
 
+        // A separate function: SEH cannot share a frame with objects that unwind.
+        [[nodiscard]] bool tryExchangeSlot(void** slot, void* expected, void* hook) noexcept
+        {
+            __try {
+                return InterlockedCompareExchangePointer(slot, hook, expected) == expected;
+            } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
+                return false;
+            }
+        }
+
+        /*
+         * FRIK, RPS UI and other plugins patch the same OpenVR table with the same
+         * protect, write, restore steps, and protection is per page: another
+         * thread's restore can make the page read-only between our protect and
+         * our write. Each attempt therefore tolerates a refused write and a slot
+         * that changed underneath it. A failed install returns false instead of
+         * crashing, because installInputRemapHooks is called again every frame.
+         */
         bool patchPointerSlot(void** slot, void* hook, void*& original, const char* label)
         {
             if (!slot) {
@@ -1177,21 +1195,39 @@ namespace rock::input_remap_runtime
                 return original != nullptr;
             }
 
-            DWORD oldProtect = 0;
-            if (!VirtualProtect(slot, sizeof(void*), kPageExecuteReadWrite, &oldProtect)) {
-                ROCK_LOG_ERROR(Input, "{} hook install failed: VirtualProtect failed", label);
-                return false;
+            constexpr int kAttempts = 8;
+            for (int attempt = 1; attempt <= kAttempts; ++attempt) {
+                DWORD oldProtect = 0;
+                if (!VirtualProtect(slot, sizeof(void*), kPageExecuteReadWrite, &oldProtect)) {
+                    ROCK_LOG_ERROR(Input, "{} hook install failed: VirtualProtect failed", label);
+                    return false;
+                }
+
+                void* const current = *slot;
+                const bool written = tryExchangeSlot(slot, current, hook);
+                FlushInstructionCache(GetCurrentProcess(), slot, sizeof(void*));
+                VirtualProtect(slot, sizeof(void*), oldProtect, &oldProtect);
+
+                if (written) {
+                    original = current;
+                    if (attempt > 1) {
+                        ROCK_LOG_WARN(Input, "{} hook needed {} attempts: another thread was patching the same page", label, attempt);
+                    }
+                    ROCK_LOG_INFO(Input, "Installed {} hook at slot=0x{:X}, original=0x{:X}, hook=0x{:X}", label,
+                        reinterpret_cast<std::uintptr_t>(slot), reinterpret_cast<std::uintptr_t>(original),
+                        reinterpret_cast<std::uintptr_t>(hook));
+                    return original != nullptr;
+                }
+                SwitchToThread();
             }
 
-            original = *slot;
-            *slot = hook;
-            FlushInstructionCache(GetCurrentProcess(), slot, sizeof(void*));
-            VirtualProtect(slot, sizeof(void*), oldProtect, &oldProtect);
-
-            ROCK_LOG_INFO(Input, "Installed {} hook at slot=0x{:X}, original=0x{:X}, hook=0x{:X}", label,
-                reinterpret_cast<std::uintptr_t>(slot), reinterpret_cast<std::uintptr_t>(original),
-                reinterpret_cast<std::uintptr_t>(hook));
-            return original != nullptr;
+            // Retried by the caller each frame, so this logs at a controlled rate.
+            static std::atomic<std::uint32_t> s_refusedInstalls{};
+            if ((s_refusedInstalls.fetch_add(1, std::memory_order_relaxed) & 0xFF) == 0) {
+                ROCK_LOG_ERROR(Input, "{} hook not installed after {} attempts: slot=0x{:X} stayed unwritable; retrying", label, kAttempts,
+                    reinterpret_cast<std::uintptr_t>(slot));
+            }
+            return false;
         }
 
         bool patchVTableSlot(void** vtable, std::size_t index, void* hook, void*& original, const char* label)
