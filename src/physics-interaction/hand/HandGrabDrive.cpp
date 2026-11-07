@@ -63,20 +63,6 @@ namespace rock
                 havok_runtime::isFinite3(outAngularVelocityRadians);
         }
 
-        /*
-         * A live NPC limb is one link of a jointed body anchored by his legs. At
-         * an object's force the hold beat the ragdoll's joint solver: a pull
-         * opened his neck joints 4.4 cm and forced them past their limits, a
-         * visible tear in his skin, and lifted his feet off the ground.
-         */
-        constexpr float LIVE_LIMB_AUTHORITY_SCALE = 0.2f;
-        /*
-         * The hand holds a point on a live limb, not its orientation: the
-         * angular motor turned a grabbed head 40 degrees to match the palm
-         * before any pull, past what the neck's skin allows.
-         */
-        constexpr float LIVE_LIMB_ANGULAR_SHARE = 0.1f;
-
         float looseWeaponMultiplier(bool looseWeaponGrab, float multiplier)
         {
             return looseWeaponGrab ? (std::isfinite(multiplier) ? multiplier : 1.0f) : 1.0f;
@@ -366,16 +352,13 @@ namespace rock
             pointDistanceGameUnits(solverPivotBConstraintLocalGame, relationPivotBConstraintLocalGame);
 
         const float sanitizedAuthorityForceScale = std::clamp(
-            std::isfinite(authorityForceScale) && authorityForceScale > 0.0f ? authorityForceScale : 1.0f, 0.05f, 1.0f) *
-            (_savedObjectState.liveLimb ? LIVE_LIMB_AUTHORITY_SCALE : 1.0f);
+            std::isfinite(authorityForceScale) && authorityForceScale > 0.0f ? authorityForceScale : 1.0f, 0.05f, 1.0f);
         const auto massSummaryAtCreation =
             readHeldBodyMassSummary(world, objectBodyId, _heldBodyIds, _heldDriveDecision.includeConnectedMass);
         const float effectiveMassAtCreation = effectiveGrabMotorMass(massSummaryAtCreation.motorMass());
-        GrabConstraintMotorTuning motorTuning =
+        const GrabConstraintMotorTuning motorTuning =
             buildProxyConstraintMotorTuning(tau, damping, maxForce, sanitizedAuthorityForceScale, proportionalRecovery,
                 constantRecovery, looseWeaponGrab, effectiveMassAtCreation, g_rockConfig.rockGrabMaxForceToMassRatio);
-        if (_savedObjectState.liveLimb)
-            motorTuning.angularMaxForce *= LIVE_LIMB_ANGULAR_SHARE;
 
         _activeConstraint = createGrabConstraint(world, _grabAuthorityProxy.getBodyId(), objectBodyId,
             proxyWorldTransform, constraintPivotAWorld, desiredBodyTransformProxySpace, motorTuning);
@@ -607,7 +590,7 @@ namespace rock
             .deltaTime = deltaTime,
             .physicsDeltaSeconds = deltaTime,
             .baseMaxForce = sharedBaseMaxForce,
-            .authorityForceScale = authorityForceScale * (_savedObjectState.liveLimb ? LIVE_LIMB_AUTHORITY_SCALE : 1.0f),
+            .authorityForceScale = authorityForceScale,
             .angularForceMultiplier = looseAngularForceMultiplier,
             .mass = massSummary.motorMass(),
             .maximumInertia = properties.valid ? properties.maximumInertia : 0.0f,
@@ -621,9 +604,7 @@ namespace rock
             .fadeElapsed = _grabStartTime,
             .fadeDuration = forceFadeInTime,
         };
-        auto output = grab_motion_controller::solveMotorTargetsWithAuthority(motorInput, heldAuthority);
-        if (_savedObjectState.liveLimb)
-            output.angularMaxForce *= LIVE_LIMB_ANGULAR_SHARE;
+        const auto output = grab_motion_controller::solveMotorTargetsWithAuthority(motorInput, heldAuthority);
         if (!output.valid) {
             _activeConstraint.linearMotor->minForce = _activeConstraint.linearMotor->maxForce = 0.0f;
             _activeConstraint.angularMotor->minForce = _activeConstraint.angularMotor->maxForce = 0.0f;
