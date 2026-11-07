@@ -69,7 +69,7 @@ namespace rock
          * opened his neck joints 4.4 cm and forced them past their limits, a
          * visible tear in his skin, and lifted his feet off the ground.
          */
-        constexpr float LIVE_LIMB_AUTHORITY_SCALE = 0.1f;
+        constexpr float LIVE_LIMB_AUTHORITY_SCALE = 0.2f;
 
         float looseWeaponMultiplier(bool looseWeaponGrab, float multiplier)
         {
