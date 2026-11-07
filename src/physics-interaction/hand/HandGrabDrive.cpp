@@ -63,6 +63,14 @@ namespace rock
                 havok_runtime::isFinite3(outAngularVelocityRadians);
         }
 
+        /*
+         * A live NPC limb is one link of a jointed body anchored by his legs. At
+         * an object's force the hold beat the ragdoll's joint solver: a pull
+         * opened his neck joints 4.4 cm and forced them past their limits, a
+         * visible tear in his skin, and lifted his feet off the ground.
+         */
+        constexpr float LIVE_LIMB_AUTHORITY_SCALE = 0.1f;
+
         float looseWeaponMultiplier(bool looseWeaponGrab, float multiplier)
         {
             return looseWeaponGrab ? (std::isfinite(multiplier) ? multiplier : 1.0f) : 1.0f;
@@ -352,7 +360,8 @@ namespace rock
             pointDistanceGameUnits(solverPivotBConstraintLocalGame, relationPivotBConstraintLocalGame);
 
         const float sanitizedAuthorityForceScale = std::clamp(
-            std::isfinite(authorityForceScale) && authorityForceScale > 0.0f ? authorityForceScale : 1.0f, 0.05f, 1.0f);
+            std::isfinite(authorityForceScale) && authorityForceScale > 0.0f ? authorityForceScale : 1.0f, 0.05f, 1.0f) *
+            (_savedObjectState.liveLimb ? LIVE_LIMB_AUTHORITY_SCALE : 1.0f);
         const auto massSummaryAtCreation =
             readHeldBodyMassSummary(world, objectBodyId, _heldBodyIds, _heldDriveDecision.includeConnectedMass);
         const float effectiveMassAtCreation = effectiveGrabMotorMass(massSummaryAtCreation.motorMass());
@@ -590,7 +599,7 @@ namespace rock
             .deltaTime = deltaTime,
             .physicsDeltaSeconds = deltaTime,
             .baseMaxForce = sharedBaseMaxForce,
-            .authorityForceScale = authorityForceScale,
+            .authorityForceScale = authorityForceScale * (_savedObjectState.liveLimb ? LIVE_LIMB_AUTHORITY_SCALE : 1.0f),
             .angularForceMultiplier = looseAngularForceMultiplier,
             .mass = massSummary.motorMass(),
             .maximumInertia = properties.valid ? properties.maximumInertia : 0.0f,
