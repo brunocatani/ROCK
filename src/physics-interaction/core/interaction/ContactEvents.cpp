@@ -453,10 +453,37 @@ namespace rock
                 // The manifold normal at +0x40 points B -> A; orient it target -> hand.
                 const auto* manifoldNormal = reinterpret_cast<const float*>(data + 0x40);
                 const float sign = bodyAIsDynamicHand ? 1.0f : -1.0f;
+                const auto otherLayer = otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
                 native_interaction_service::handContact(world, source.isLeft, part, source.bodyId, otherBodyId,
-                    otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK, pointGame,
-                    { manifoldNormal[0] * sign, manifoldNormal[1] * sign, manifoldNormal[2] * sign },
+                    otherLayer, pointGame, { manifoldNormal[0] * sign, manifoldNormal[1] * sign, manifoldNormal[2] * sign },
                     static_cast<std::uint32_t>(manifoldPointCount));
+                // An admitted corpse no longer touches the keyframed hand rows,
+                // whose contacts were its touch evidence; its dynamic hand contact
+                // takes their place, so a closed hand still grabs it.
+                if (otherLayer == collision_layer_policy::FO4_LAYER_DEADBIP && part != HandPart::Forearm &&
+                    (native_interaction_service::dynamicObstacleLayers() &
+                        collision_layer_policy::layerBitOrZero(collision_layer_policy::FO4_LAYER_DEADBIP))) {
+                    using namespace hand_collider_semantics;
+                    HandColliderBodyMetadata metadata{};
+                    metadata.valid = true;
+                    metadata.isLeft = source.isLeft;
+                    metadata.bodyId = source.bodyId;
+                    if (part == HandPart::Palm) {
+                        metadata.primaryPalmAnchor = true;
+                    } else {
+                        metadata.finger = static_cast<HandFinger>(
+                            dynamic_hand_collision_telemetry::fingerIndexForBodyIndex(source.slot));
+                        metadata.segment = static_cast<HandFingerSegment>(
+                            dynamic_hand_collision_telemetry::fingerSegmentIndexForBodyIndex(source.slot));
+                        metadata.role = roleForFingerSegment(metadata.finger, metadata.segment);
+                    }
+                    const hand_semantic_contact_state::SemanticContactVector touchPoint{ pointGame.x, pointGame.y,
+                        pointGame.z };
+                    const hand_semantic_contact_state::SemanticContactVector touchNormal{ manifoldNormal[0] * sign,
+                        manifoldNormal[1] * sign, manifoldNormal[2] * sign };
+                    (source.isLeft ? _leftHand : _rightHand)
+                        .recordSemanticContact(metadata, otherBodyId, &touchPoint, &touchNormal, true);
+                }
             }
         }
 

@@ -275,16 +275,14 @@ int main()
             rockDynamicExtensionPairsMatch(matrix.data(), extensionMask));
         for (const auto layer : { ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY,
                  ROCK_LAYER_DYNAMIC_WEAPON_PROXY }) {
-            for (const auto actorLayer : { FO4_LAYER_BIPED, FO4_LAYER_BIPED_NO_CC }) {
+            for (const auto actorLayer : { FO4_LAYER_BIPED, FO4_LAYER_DEADBIP, FO4_LAYER_BIPED_NO_CC }) {
                 ok &= expect("native player remains excluded from experimental dynamic contacts",
                     suppressPhysicalPair(true, false, actorLayer, layer));
                 ok &= expect("NPC dynamic contacts remain admitted by the player filter",
                     !suppressPhysicalPair(false, false, actorLayer, layer));
             }
-            for (const auto excluded : { FO4_LAYER_DEADBIP, FO4_LAYER_CHARCONTROLLER }) {
-                ok &= expect("experiment does not admit other native actor layers",
-                    layerPairSymmetricMatches(matrix.data(), layer, excluded, false));
-            }
+            ok &= expect("experiment does not admit the character controller layer",
+                layerPairSymmetricMatches(matrix.data(), layer, FO4_LAYER_CHARCONTROLLER, false));
         }
         for (std::uint32_t a = 0; a < FO4_LAYER_VANILLA_CONFIGURED_COUNT; ++a) {
             for (std::uint32_t b = 0; b < FO4_LAYER_VANILLA_CONFIGURED_COUNT; ++b) {

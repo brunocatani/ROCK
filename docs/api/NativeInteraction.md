@@ -69,8 +69,14 @@ holding hand on that weapon. A slot without a weapon body returns
 
 `setDynamicObstacleLayers(owner, mask)` (Update or WeaponUpdate): which actor
 layers ROCK's dynamic hand and weapon bodies collide with, as a layer bit mask:
-8 (Biped), 33 (BipedNoCC) and `kPassiveObstacleLayer` (55). Any other bit
-returns `InvalidArgument`. The masks of all extensions combine.
+8 (Biped), 32 (DeadBip), 33 (BipedNoCC) and `kPassiveObstacleLayer` (55). Any
+other bit returns `InvalidArgument`. The masks of all extensions combine.
+
+Bodies on 8 and 32 are dynamic (active ragdolls and corpses). Once one of those
+layers is admitted, ROCK's keyframed hand and weapon bodies stop touching it, so
+those limbs are pushed only by the dynamic bodies, with real mass, and never
+shoved with a keyframed body's infinite mass. A dynamic hand's contact with a
+corpse also counts as a touch for touch grabs, as the keyframed hand's did.
 
 Extension bodies on `kPassiveObstacleLayer` should use collision group
 `kPassiveObstacleGroup` (`0x0010`): ROCK's dynamic proxies never use it, and the

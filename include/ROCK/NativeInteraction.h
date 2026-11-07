@@ -363,9 +363,11 @@ namespace rock::api::native_interaction {
         static constexpr std::uint32_t minorVersion = kMinor;
         Status(ROCK_CALL* registerExtension)(OwnerToken owner, const Callbacks* callbacks) noexcept;
         Status(ROCK_CALL* unregisterExtension)(OwnerToken owner) noexcept;
-        // Which actor layers (8 Biped, 33 BipedNoCC and kPassiveObstacleLayer)
-        // ROCK's dynamic hand and weapon bodies collide with, as a layer bit
-        // mask; any other bit returns InvalidArgument.
+        // Which actor layers (8 Biped, 32 DeadBip, 33 BipedNoCC and
+        // kPassiveObstacleLayer) ROCK's dynamic hand and weapon bodies collide
+        // with, as a layer bit mask; any other bit returns InvalidArgument.
+        // An admitted 8 or 32 stops touching ROCK's keyframed hand and weapon
+        // bodies, so those dynamic limbs are pushed only with real mass.
         Status(ROCK_CALL* setDynamicObstacleLayers)(OwnerToken owner, std::uint64_t layerMask) noexcept;
         Status(ROCK_CALL* activateWeapon)(OwnerToken owner, std::uint32_t weaponSlot) noexcept;
         // One target body the slot's weapon body stops colliding with.

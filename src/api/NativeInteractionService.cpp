@@ -7,6 +7,7 @@
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/core/PhysicsFrameContext.h"
 #include "physics-interaction/native/havok/HavokRuntime.h"
 #include "physics-interaction/native/havok/PhysicsUtils.h"
@@ -245,11 +246,9 @@ namespace rock::native_interaction_service
             return guarded(owner, [&] {
                 if (auto s = access(owner, true, true); s != Status::Ok)
                     return s;
-                // Only optional passive-object pairs are delegated. Native
+                // Only optional obstacle pairs are delegated. Native
                 // actor/controller and generated self-collision policy stays core.
-                constexpr auto allowed = (std::uint64_t{ 1 } << 8) | (std::uint64_t{ 1 } << 33) |
-                    (std::uint64_t{ 1 } << ni::kPassiveObstacleLayer);
-                if (mask & ~allowed)
+                if (mask & ~collision_layer_policy::kOptionalObstacleLayers)
                     return Status::InvalidArgument;
                 extension(owner)->obstacleLayers = mask;
                 combineMasks(reinterpret_cast<RE::hknpWorld*>(current->frame.world));

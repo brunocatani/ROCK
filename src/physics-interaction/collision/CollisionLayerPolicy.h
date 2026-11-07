@@ -115,10 +115,17 @@ namespace rock::collision_layer_policy
     inline constexpr std::uint32_t ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY = 56;
     // Optional solver targets available to negotiated interaction extensions.
     // Biped (8) carries actor ragdolls in the world: an extension's active
-    // ragdoll and native knockdowns. The player's own biped bodies stay
-    // excluded by the native player pair filter.
+    // ragdoll and native knockdowns. DeadBip (32) carries corpses. The player's
+    // own biped bodies stay excluded by the native player pair filter.
     inline constexpr std::uint64_t kOptionalObstacleLayers = (std::uint64_t{ 1 } << FO4_LAYER_BIPED) |
-        (std::uint64_t{ 1 } << FO4_LAYER_BIPED_NO_CC) | (std::uint64_t{ 1 } << ROCK_LAYER_PASSIVE_OBSTACLE);
+        (std::uint64_t{ 1 } << FO4_LAYER_DEADBIP) | (std::uint64_t{ 1 } << FO4_LAYER_BIPED_NO_CC) |
+        (std::uint64_t{ 1 } << ROCK_LAYER_PASSIVE_OBSTACLE);
+    // The obstacle layers whose bodies are dynamic: once an extension admits
+    // one, only the dynamic hand and weapon proxies touch it, with real mass.
+    // The keyframed hand and weapon rows drop it, because a keyframed body
+    // shoves a dynamic limb with infinite mass and throws a corpse.
+    inline constexpr std::uint64_t kDynamicOnlyObstacleLayers =
+        (std::uint64_t{ 1 } << FO4_LAYER_BIPED) | (std::uint64_t{ 1 } << FO4_LAYER_DEADBIP);
 
     inline constexpr std::uint32_t FO4_LAYER_VANILLA_CONFIGURED_COUNT = 47;
     inline constexpr std::uint32_t FO4_LAYER_MATRIX_ADDRESSABLE_COUNT = 64;
@@ -246,11 +253,12 @@ namespace rock::collision_layer_policy
         // surface-grab and weapon-bracing eligibility separate. The other
         // held weapon's proxy is an obstacle like a wall: a proxy never
         // contacts its own row, so this only ever matches the peer. Biped (8)
-        // reaches the proxy only while an extension admits it (actor ragdolls,
-        // kOptionalObstacleLayers); its contacts then count and publish like
-        // BipedNoCC's.
+        // and DeadBip (32) reach the proxy only while an extension admits them
+        // (actor ragdolls and corpses, kOptionalObstacleLayers); their contacts
+        // then count and publish like BipedNoCC's.
         return isWorldSurfaceLayer(layer) || isProxyPropRowLayer(layer) || layer == FO4_LAYER_BIPED ||
-            layer == FO4_LAYER_BIPED_NO_CC || layer == ROCK_LAYER_PASSIVE_OBSTACLE || isDynamicWeaponProxyLayer(layer);
+            layer == FO4_LAYER_DEADBIP || layer == FO4_LAYER_BIPED_NO_CC || layer == ROCK_LAYER_PASSIVE_OBSTACLE ||
+            isDynamicWeaponProxyLayer(layer);
     }
 
     inline constexpr bool isDynamicWeaponProxySolverObstacleLayer(std::uint32_t layer)
@@ -643,11 +651,11 @@ namespace rock::collision_layer_policy
          * row and body row to be normalized together instead of depending on a
          * later standalone body-policy call to repair symmetry.
          */
-        // A Biped obstacle means dynamic actor limbs (active ragdolls): only the
-        // dynamic proxies may touch them, with real mass. The keyframed hand
-        // and weapon rows drop Biped then, since a keyframed body would shove
-        // the limbs with infinite mass.
-        const auto keyframedExclusions = extensionObstacleLayers & layerBitOrZero(FO4_LAYER_BIPED);
+        // A Biped or DeadBip obstacle means dynamic actor limbs (active ragdolls,
+        // corpses): only the dynamic proxies may touch them, with real mass.
+        // The keyframed hand and weapon rows drop those layers then, since a
+        // keyframed body would shove the limbs with infinite mass.
+        const auto keyframedExclusions = extensionObstacleLayers & kDynamicOnlyObstacleLayers;
         applyLayerExpectedMask(matrix, ROCK_LAYER_HAND,
             buildRockHandExpectedMask(handStaticWorld) & ~keyframedExclusions);
         applyLayerExpectedMask(matrix, ROCK_LAYER_WEAPON,
