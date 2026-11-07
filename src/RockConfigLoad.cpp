@@ -146,6 +146,16 @@ namespace
         return kDefaultHighlightIntensityMode;
     }
 
+    int readSelectionAimAngleDegrees(RockIniReader& ini, const char* section, const char* key, int currentValue)
+    {
+        const int configuredValue = static_cast<int>(ini.GetLongValue(section, key, currentValue));
+        const int sanitizedValue = rock::selection_query_policy::sanitizeSelectionAimAngleDegrees(configuredValue);
+        if (configuredValue != sanitizedValue) {
+            ROCK_LOG_WARN(Config, "Invalid {}={} -- using {}", key, configuredValue, sanitizedValue);
+        }
+        return sanitizedValue;
+    }
+
     struct ButtonLayoutKey
     {
         const char* key;
@@ -1215,6 +1225,10 @@ namespace rock
             rockSelectedCloseFingerAnimValue = 0.9f;
         }
         rockSelectedCloseFingerAnimValue = std::clamp(rockSelectedCloseFingerAnimValue, 0.0f, 1.0f);
+        rockCloseSelectionAngleDegrees =
+            readSelectionAimAngleDegrees(ini, SECTION, "iCloseSelectionAngleDegrees", rockCloseSelectionAngleDegrees);
+        rockFarSelectionAngleDegrees =
+            readSelectionAimAngleDegrees(ini, SECTION, "iFarSelectionAngleDegrees", rockFarSelectionAngleDegrees);
         rockPullToObjectCenterEnabled =
             ini.GetBoolValue(SECTION, "bPullToObjectCenterEnabled", rockPullToObjectCenterEnabled);
         rockPullLongAxisPresentationEnabled =

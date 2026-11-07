@@ -28,6 +28,7 @@
 
 #include "config/ConfigurationStore.h"
 #include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
+#include "physics-interaction/hand/HandSelection.h"
 #include "physics-interaction/input/ButtonLayoutPolicy.h"
 #include "physics-interaction/input/FarPullGesturePolicy.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
@@ -434,6 +435,8 @@ namespace rock
         bool rockSelectedCloseFingerCurlEnabled = true;
         float rockSelectedCloseFingerAnimMaxHandSpeed = 0.9f;
         float rockSelectedCloseFingerAnimValue = 0.9f;
+        int rockCloseSelectionAngleDegrees = selection_query_policy::kDefaultSelectionAimAngleDegrees;
+        int rockFarSelectionAngleDegrees = selection_query_policy::kDefaultSelectionAimAngleDegrees;
         bool rockPullToObjectCenterEnabled = true;
         bool rockPullLongAxisPresentationEnabled = true;
         bool rockForceGrabSeatAlignmentEnabled = true;

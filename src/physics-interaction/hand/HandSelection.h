@@ -51,8 +51,7 @@ namespace rock::selection_query_policy
     constexpr float kNearCastRadiusGameUnits = 3.5f;
     constexpr float kNearCastDistanceGameUnits = 7.0f;
     constexpr float kFarCastRadiusGameUnits = 21.0f;
-    constexpr int kCloseSelectionAimAngleDegrees = 0;
-    constexpr int kFarSelectionAimAngleDegrees = 0;
+    constexpr int kDefaultSelectionAimAngleDegrees = 0;
     constexpr bool kFarSelectionHmdConeEnabled = true;
     constexpr float kFarSelectionHmdConeHalfAngleDegrees = 50.0f;
     constexpr std::string_view kFarSelectionBlockedReferenceFormIds{};
@@ -97,7 +96,7 @@ namespace rock::selection_query_policy
 
     inline int sanitizeSelectionAimAngleDegrees(int angleDegrees)
     {
-        return isAllowedSelectionAimAngleDegrees(angleDegrees) ? angleDegrees : kCloseSelectionAimAngleDegrees;
+        return isAllowedSelectionAimAngleDegrees(angleDegrees) ? angleDegrees : kDefaultSelectionAimAngleDegrees;
     }
 
     template <class Vector>

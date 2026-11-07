@@ -214,10 +214,6 @@ int main()
             RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
         ok &= expectVectorNear("fixed legacy pointing vector includes final reversal",
             rock::legacyPointingVectorHandspace(), RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
-        ok &= expectNear("fixed close selection angle is -Y",
-            static_cast<float>(rock::selection_query_policy::kCloseSelectionAimAngleDegrees), 0.0f);
-        ok &= expectNear("fixed far selection angle is -Y",
-            static_cast<float>(rock::selection_query_policy::kFarSelectionAimAngleDegrees), 0.0f);
     }
 
     {
@@ -235,14 +231,19 @@ int main()
             RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
 
         const auto identity = identityTransform();
-        ok &= expectVectorNear("close selection uses fixed compiled angle",
-            rock::computeCloseSelectionDirectionFromHandBasis(identity, false),
-            rock::selection_query_policy::selectionAimHandspaceVectorFromAngleDegrees<RE::NiPoint3>(
-                rock::selection_query_policy::kCloseSelectionAimAngleDegrees));
-        ok &= expectVectorNear("far selection uses fixed compiled angle",
-            rock::computeFarSelectionDirectionFromHandBasis(identity, false),
-            rock::selection_query_policy::selectionAimHandspaceVectorFromAngleDegrees<RE::NiPoint3>(
-                rock::selection_query_policy::kFarSelectionAimAngleDegrees));
+        rock::g_rockConfig.rockCloseSelectionAngleDegrees = 90;
+        rock::g_rockConfig.rockFarSelectionAngleDegrees = 0;
+        ok &= expectVectorNear("close selection follows its own angle",
+            rock::computeCloseSelectionDirectionFromHandBasis(identity, false), RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+        ok &= expectVectorNear("far selection follows its own angle",
+            rock::computeFarSelectionDirectionFromHandBasis(identity, false), RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
+        rock::g_rockConfig.rockCloseSelectionAngleDegrees = 0;
+        rock::g_rockConfig.rockFarSelectionAngleDegrees = 90;
+        ok &= expectVectorNear("close selection angle is independent of far",
+            rock::computeCloseSelectionDirectionFromHandBasis(identity, true), RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
+        ok &= expectVectorNear("far selection angle is independent of close",
+            rock::computeFarSelectionDirectionFromHandBasis(identity, true), RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+        rock::g_rockConfig.rockFarSelectionAngleDegrees = rock::selection_query_policy::kDefaultSelectionAimAngleDegrees;
     }
 
     {

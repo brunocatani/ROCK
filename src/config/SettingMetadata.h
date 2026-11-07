@@ -436,6 +436,16 @@ namespace rock::config
             "Speed clamps for bone-driven hand colliders.", api::configuration::Group::Developer },
         { "PhysicsInteraction", "fHandBoneColliderMaxAngularVelocity", "05. Hand and Body Collision", "",
             api::configuration::Group::Developer },
+        { "PhysicsInteraction", "iCloseSelectionAngleDegrees", "06. Selection and Pulling",
+            "Direction the close grab looks for objects, from the palm toward the fingers.\n0 = Straight out of the "
+            "palm, 20 = 20 degrees toward the fingers, 45 = Halfway, 75 = 75 degrees toward the fingers, 90 = Straight "
+            "along the fingers.",
+            api::configuration::Group::Developer },
+        { "PhysicsInteraction", "iFarSelectionAngleDegrees", "06. Selection and Pulling",
+            "Direction the far grab looks for objects, from the palm toward the fingers. The target must also be "
+            "inside the view cone.\n0 = Straight out of the palm, 20 = 20 degrees toward the fingers, 45 = Halfway, "
+            "75 = 75 degrees toward the fingers, 90 = Straight along the fingers.",
+            api::configuration::Group::Developer },
         { "PhysicsInteraction", "bPullToObjectCenterEnabled", "06. Selection and Pulling",
             "Far grabs pull the object's CENTER to the hand instead of the ray-hit point\n(a hit at selection range is "
             "aim noise, not grip intent). The arrival seat\nthen settles the surface onto the palm via the seat "
