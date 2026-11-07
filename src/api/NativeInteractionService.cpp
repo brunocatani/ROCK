@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <span>
 #include "NativeInteractionState.h"
 #include "ProviderRuntimeServices.h"
 #include "RockConfig.h"
@@ -148,6 +149,20 @@ namespace rock::native_interaction_service
                 state().refreshLayers(state().retireContext, world);
         }
 
+        // Publishes the bodies every extension lets pass static bodies. The
+        // filter rebuilds the caches of those that changed; a null world clears.
+        void combineStaticPass(RE::hknpWorld* world)
+        {
+            std::array<std::uint32_t, ni::kMaxStaticContactPassBodies> bodies{};
+            std::size_t count = 0;
+            if (world)
+                for (const auto& slot : state().extensions)
+                    if (slot.owner)
+                        for (std::uint32_t i = 0; i < slot.staticPassCount && count < bodies.size(); ++i)
+                            bodies[count++] = slot.staticPass[i];
+            native_player_collision::publishStaticPass(world, std::span(bodies).first(count));
+        }
+
         // The slot's proxy must be retired before its driver goes when the
         // driver controls it or owns a contact exclusion on it.
         bool needsWeaponRetire(std::uint32_t slot)
@@ -238,6 +253,29 @@ namespace rock::native_interaction_service
                     return Status::InvalidArgument;
                 extension(owner)->obstacleLayers = mask;
                 combineMasks(reinterpret_cast<RE::hknpWorld*>(current->frame.world));
+                return Status::Ok;
+            });
+        }
+
+        Status setStaticContactPass(Owner owner, const std::uint32_t* bodies, std::uint32_t count) noexcept
+        {
+            return guarded(owner, [&] {
+                if (auto s = access(owner, true, true); s != Status::Ok)
+                    return s;
+                if (current->frame.phase != ni::Phase::Update)
+                    return Status::WrongThread;
+                if (count && !bodies)
+                    return Status::InvalidArgument;
+                auto* self = extension(owner);
+                std::uint64_t others = 0;
+                for (const auto& slot : state().extensions)
+                    if (slot.owner && &slot != self)
+                        others += slot.staticPassCount;
+                if (others + count > ni::kMaxStaticContactPassBodies)
+                    return Status::CapacityFull;
+                std::copy_n(bodies, count, self->staticPass.begin());
+                self->staticPassCount = count;
+                combineStaticPass(reinterpret_cast<RE::hknpWorld*>(current->frame.world));
                 return Status::Ok;
             });
         }
@@ -440,9 +478,11 @@ namespace rock::native_interaction_service
                     invoke(slot, frame, [&] { slot.callbacks.retire(&frame, slot.callbacks.context); });
                 releaseWeaponResources(slot.owner, world);
                 slot.obstacleLayers = 0;
+                slot.staticPassCount = 0;
             }
         service.resetWeapons();
         combineMasks(world);
+        combineStaticPass(world);
         service.frame = {};
     }
 
@@ -481,11 +521,13 @@ namespace rock::native_interaction_service
             slot->owner = 0;
             slot->callbacks = {};
             slot->obstacleLayers = 0;
+            slot->staticPassCount = 0;
             if (service.driver == owner) {
                 service.driver = 0;
                 service.resetWeapons();
             }
             combineMasks();
+            combineStaticPass(nullptr);
             return;
         }
         auto rock = service.rockGate->pauseForMutation();
@@ -511,11 +553,13 @@ namespace rock::native_interaction_service
         slot->owner = 0;
         slot->callbacks = {};
         slot->obstacleLayers = 0;
+        slot->staticPassCount = 0;
         if (service.driver == owner) {
             service.driver = 0;
             service.resetWeapons();
         }
         combineMasks(world);
+        combineStaticPass(world);
     }
 
     bool updateWeapon(std::uint32_t index, const PhysicsFrameContext& context, const WeaponCollision& collision,
@@ -802,7 +846,7 @@ namespace rock::native_interaction_service
     {
         static const ni::Api api{ &registerExtension, &unregisterExtension, &setDynamicObstacleLayers, &activateWeapon,
             &setWeaponContactExclusion, &clearWeaponContactExclusion, &hasWeaponContactExclusion, &copyWeaponSources,
-            &getSourceGeometry };
+            &getSourceGeometry, &setStaticContactPass };
         return api;
     }
 }

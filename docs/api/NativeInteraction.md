@@ -77,6 +77,15 @@ Extension bodies on `kPassiveObstacleLayer` should use collision group
 engine filter drops pairs within one group, so those bodies do not collide with
 each other.
 
+`setStaticContactPass(owner, bodies, count)` (Update): these bodies stop
+contacting static bodies (walls, fixed furniture, terrain) and keep every other
+contact, moving and keyframed bodies, hands and weapons included. The call
+replaces the owner's list; zero bodies clears it and Retire drops it. ROCK
+rebuilds the contact caches of every body that joins or leaves the list, so a
+body that leaves collides again at once. The lists of all extensions combine, up
+to `kMaxStaticContactPassBodies` bodies (`CapacityFull` beyond that). An owner
+keeps its list current: a stale id applies to whichever body takes that id.
+
 ## Selection and gameplay
 
 ROCK asks extensions in registration order; the first that handles a

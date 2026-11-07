@@ -165,7 +165,7 @@ static_assert(offsetof(ni::Callbacks, validateSelection) == 88);
 static_assert(offsetof(ni::Callbacks, proximityTarget) == 96);
 static_assert(offsetof(ni::Callbacks, impactEffect) == 104);
 static_assert(offsetof(ni::Callbacks, handContact) == 112);
-static_assert(sizeof(ni::Api) == 72 && alignof(ni::Api) == 8);
+static_assert(sizeof(ni::Api) == 80 && alignof(ni::Api) == 8);
 static_assert(offsetof(ni::Api, registerExtension) == 0);
 static_assert(offsetof(ni::Api, unregisterExtension) == 8);
 static_assert(offsetof(ni::Api, setDynamicObstacleLayers) == 16);
@@ -175,6 +175,7 @@ static_assert(offsetof(ni::Api, clearWeaponContactExclusion) == 40);
 static_assert(offsetof(ni::Api, hasWeaponContactExclusion) == 48);
 static_assert(offsetof(ni::Api, copyWeaponSources) == 56);
 static_assert(offsetof(ni::Api, getSourceGeometry) == 64);
+static_assert(offsetof(ni::Api, setStaticContactPass) == 72);
 static_assert(std::is_standard_layout_v<ni::Callbacks> && std::is_trivially_copyable_v<ni::SelectionReply>);
 
 int main() {}

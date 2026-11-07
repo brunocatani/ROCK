@@ -87,6 +87,12 @@ namespace rock::native_player_collision
     inline constexpr std::size_t kMaximumHeldBodies = 128;
     void publishHeldBodies(RE::hknpWorld* world, std::span<const std::uint32_t> bodies);
 
+    // Bodies that pass static bodies (NativeInteraction setStaticContactPass).
+    // Publication changes rebuild the affected bodies' caches, so a body that
+    // leaves the set collides again at once. A null world clears the set.
+    inline constexpr std::size_t kMaximumStaticPassBodies = 128;
+    void publishStaticPass(RE::hknpWorld* world, std::span<const std::uint32_t> bodies);
+
     // EjectionContacts owns these exact magazine/equipped-weapon sets. Single
     // game-thread publisher under the world write lock; empty sets restore pairs.
     bool publishMagazineEjection(RE::hknpWorld* world, std::span<const std::uint32_t> magazines,

@@ -20,6 +20,8 @@ namespace rock::api::native_interaction {
     // Collision group for extension bodies on kPassiveObstacleLayer. ROCK's
     // dynamic proxies never use it: the engine filter drops same-group pairs.
     inline constexpr std::uint32_t kPassiveObstacleGroup = 0x0010;
+    // Most bodies setStaticContactPass takes, over all extensions.
+    inline constexpr std::uint32_t kMaxStaticContactPassBodies = 128;
 
     // Value-only marshalling: real NiMatrix3 rows contain a fourth padding lane.
     // Never memcpy nine floats from/to that native matrix storage.
@@ -373,8 +375,13 @@ namespace rock::api::native_interaction {
         // Reports the total in outCount and copies min(capacity, total).
         Status(ROCK_CALL* copyWeaponSources)(OwnerToken owner, std::uint32_t weaponSlot, WeaponSource* outSources, std::uint32_t capacity, std::uint32_t* outCount) noexcept;
         Status(ROCK_CALL* getSourceGeometry)(OwnerToken owner, std::uint32_t weaponSlot, std::uint32_t body, const Point3* direction, SourceGeometry* outGeometry) noexcept;
+        // Update only: these bodies stop contacting static bodies (walls, fixed
+        // furniture, terrain) and keep every other contact. Replaces the owner's
+        // list; zero bodies clears it, as does Retire. A list that would take the
+        // extensions past kMaxStaticContactPassBodies returns CapacityFull.
+        Status(ROCK_CALL* setStaticContactPass)(OwnerToken owner, const std::uint32_t* bodies, std::uint32_t count) noexcept;
     };
-    static_assert(std::is_standard_layout_v<Api> && sizeof(Api) == 9 * sizeof(void*));
+    static_assert(std::is_standard_layout_v<Api> && sizeof(Api) == 10 * sizeof(void*));
     static_assert(std::is_trivially_copyable_v<Callbacks> && std::is_trivially_copyable_v<BodyIdentity>);
 }
 #pragma pack(pop)

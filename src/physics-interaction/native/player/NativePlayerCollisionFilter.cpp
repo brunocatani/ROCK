@@ -72,6 +72,15 @@ namespace rock::native_player_collision
         };
 
         HeldExclusionSnapshot s_heldExclusions; // Same game publisher and callback gate.
+
+        struct StaticPassSnapshot
+        {
+            RE::hknpWorld* world{ nullptr };
+            std::array<std::uint32_t, kMaximumStaticPassBodies> bodies{}; // sorted
+            std::size_t count{ 0 };
+        };
+
+        StaticPassSnapshot s_staticPass; // Same game publisher and callback gate.
         std::atomic<std::uint64_t> s_weaponHandRejectedPairs{ 0 };
         // Independent game-thread publisher and physics-worker read gate.
         // Player-body refresh must never bypass an active blade exception;
@@ -496,6 +505,20 @@ namespace rock::native_player_collision
                 colliderB, heldExclusionMask(set.held, set.heldCount, pair.bodyB));
         }
 
+        // hknpBody flag 1: static. The bodies are read only for a listed body's pairs.
+        bool suppressStaticPassPair(const BodyPair& pair, PairReads& reads) noexcept
+        {
+            const auto end = s_staticPass.bodies.begin() + s_staticPass.count;
+            const bool passA = std::binary_search(s_staticPass.bodies.begin(), end, pair.bodyA);
+            const bool passB = std::binary_search(s_staticPass.bodies.begin(), end, pair.bodyB);
+            if (passA == passB)
+                return false;
+            const auto& other = passA ? reads.b() : reads.a();
+            return other.valid && other.body && (other.body->flags & 1u) != 0;
+        }
+
+        std::atomic<std::uint64_t> s_staticPassRejected{ 0 };
+
         bool isHeldBody(std::uint32_t id) noexcept
         {
             const auto end = s_heldBodies.bodies.begin() + s_heldBodies.count;
@@ -601,6 +624,7 @@ namespace rock::native_player_collision
             const bool heldBodies = lease && world == s_heldBodies.world && s_heldBodies.count != 0;
             const bool heldExclusions = lease && world == s_heldExclusions.world &&
                 s_heldExclusions.colliderCount != 0 && s_heldExclusions.heldCount != 0;
+            const bool staticPass = lease && world == s_staticPass.world && s_staticPass.count != 0;
             const bool playerBodies = lease && world == s_snapshot.world && s_snapshot.count != 0;
 
             // The prop-row rule is always armed: it decides every pair of
@@ -640,6 +664,10 @@ namespace rock::native_player_collision
                 }
                 if (heldExclusions && suppressHeldExclusionPair(pair))
                     return true;
+                if (staticPass && suppressStaticPassPair(pair, reads)) {
+                    s_staticPassRejected.fetch_add(1, std::memory_order_relaxed);
+                    return true;
+                }
                 if (playerBodies && suppressPlayerPair(world, pair, reads, weaponOwners, playerCounts)) {
                     ++playerRemoved;
                     return true;
@@ -855,6 +883,7 @@ namespace rock::native_player_collision
         s_weaponHands = {};
         s_heldBodies = {};
         s_heldExclusions = {};
+        s_staticPass = {};
         s_toolContactGate.pauseAndWait();
         s_toolContactPairs = {};
         s_toolContactRejectedPairs.store(0, std::memory_order_relaxed);
@@ -1003,6 +1032,32 @@ namespace rock::native_player_collision
             std::span(previous.held).first(previous.heldCount), std::span(next.held).first(next.heldCount), idOf);
         ROCK_LOG_DEBUG(Hand, "Held object arm exclusion: colliders={} heldBodies={} world={:p}", next.colliderCount,
             next.heldCount, static_cast<void*>(next.world));
+    }
+
+    void publishStaticPass(RE::hknpWorld* world, std::span<const std::uint32_t> bodies)
+    {
+        StaticPassSnapshot next{};
+        if (s_installed && world) {
+            next.world = world;
+            next.count = (std::min)(bodies.size(), next.bodies.size());
+            std::copy_n(bodies.begin(), next.count, next.bodies.begin());
+            std::sort(next.bodies.begin(), next.bodies.begin() + next.count);
+        }
+        const auto previous = s_staticPass; // Only this game thread writes it.
+        if (previous.world == next.world &&
+            std::equal(previous.bodies.begin(), previous.bodies.begin() + previous.count, next.bodies.begin(),
+                next.bodies.begin() + next.count))
+            return;
+        {
+            auto mutation = s_gate.pauseForMutation();
+            s_staticPass = next;
+        }
+        s_gate.resumeCallbacks();
+        const auto idOf = [](std::uint32_t body) { return body; };
+        rebuildChangedBodies<std::uint32_t>(world, previous.world,
+            std::span(previous.bodies).first(previous.count), std::span(next.bodies).first(next.count), idOf);
+        ROCK_LOG_DEBUG(Hand, "Static contact pass: bodies={} previousRejectedPairs={}", next.count,
+            s_staticPassRejected.exchange(0, std::memory_order_relaxed));
     }
 
     void publishHeldBodies(RE::hknpWorld* world, std::span<const std::uint32_t> bodies)

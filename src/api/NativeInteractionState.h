@@ -14,6 +14,8 @@ namespace rock::native_interaction_service::detail
         Owner owner{};
         ni::Callbacks callbacks{};
         std::uint64_t obstacleLayers{};
+        std::array<std::uint32_t, ni::kMaxStaticContactPassBodies> staticPass{};
+        std::uint32_t staticPassCount{};
     };
 
     struct State
