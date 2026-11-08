@@ -82,19 +82,35 @@ namespace rock
          * surface instead of closing through it onto each other. The free
          * fingers tuck to the pinch curl unless the mesh stops them first.
          */
+        /*
+         * Pinch grab: the object sits between the thumb and index pads, so those
+         * two fingers end at the pinch closure (tips as far apart as the object
+         * is thick at the pinch point) unless the sweep met the object on their
+         * own arc, which is the better stop. Without this a thin object (a
+         * lens, a cartridge) slipped between the sweep's samples and the two
+         * fingers closed into a fist beside the held object. The other fingers
+         * stay at least as open as the tucked pose.
+         */
         void applyPinchFingerPosePolicy(grab_finger_pose_runtime::SolvedGrabFingerPose& pose,
             const CanonicalGrabFrame& frame)
         {
-            const auto& tucked = frame.seat.pinchFingerPose;
-            for (std::size_t finger = 2; finger < pose.values.size(); ++finger) {
-                if (tucked.values[finger] <= pose.values[finger]) {
-                    continue;
-                }
-                pose.values[finger] = tucked.values[finger];
+            const auto& pinch = frame.seat.pinchFingerPose;
+            auto take = [&](std::size_t finger) {
+                pose.values[finger] = pinch.values[finger];
                 if (pose.hasJointValues) {
                     for (std::size_t segment = 0; segment < 3; ++segment) {
-                        pose.jointValues[finger * 3 + segment] = tucked.jointValues[finger * 3 + segment];
+                        pose.jointValues[finger * 3 + segment] = pinch.jointValues[finger * 3 + segment];
                     }
+                }
+            };
+            for (std::size_t finger = 0; finger < 2; ++finger) {
+                if ((pose.contactValidMask & (1u << finger)) == 0) {
+                    take(finger);
+                }
+            }
+            for (std::size_t finger = 2; finger < pose.values.size(); ++finger) {
+                if (pinch.values[finger] > pose.values[finger]) {
+                    take(finger);
                 }
             }
         }

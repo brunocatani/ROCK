@@ -121,6 +121,15 @@ namespace rock
                 }
             }
 
+            // Count-based loose ammo is one rigid object: its root body is carried
+            // on the visible body (restoreCountBasedAmmoAssembly), so it does not
+            // make the round a multi-body object for the pinch.
+            const std::uint32_t carriedAnchorBodyId = hand.countBasedAmmoAnchorBodyId();
+            const std::size_t movingBodyCount = bodySet.acceptedCount() -
+                ((carriedAnchorBodyId != object_physics_body_set::INVALID_BODY_ID &&
+                     bodySet.containsAcceptedBody(carriedAnchorBodyId))
+                        ? 1u
+                        : 0u);
             candidate.decision = grab_pinch_pocket_policy::evaluateObject(grab_pinch_pocket_policy::ObjectDecisionInput{
                 .config = config,
                 .mesh = candidate.meshExtents,
@@ -130,7 +139,7 @@ namespace rock
                 .ownerMatchesResolvedBody = ownerMatchesResolvedBody,
                 .hasFingerSnapshot = hasFingerSnapshot,
                 .hasPinchSurface = hasPinchSurface,
-                .multipleAcceptedBodies = bodySet.acceptedCount() > 1,
+                .multipleAcceptedBodies = movingBodyCount > 1,
                 .thumbIndexGapGameUnits = candidate.thumbIndexGapGameUnits,
                 .pocketToSurfaceDistanceGameUnits = candidate.pocketToSurfaceDistanceGameUnits,
                 .pinchSpanGameUnits = candidate.pinchSpanGameUnits,
@@ -308,8 +317,10 @@ namespace rock
                 return measure(sample);
             };
             if (g_rockConfig.rockGrabMeshFingerPoseEnabled) {
-                candidate.closure =
-                    pinch::solveClosure(g_rockConfig.rockGrabFingerMinValue, config.thumbIndexMaxOpenValue, evaluate);
+                // Thumb and index open as far as the object is thick, up to the
+                // fully open pose; a cap here left a 0.7 gu gap at most, so the
+                // pads closed through anything thicker than paper.
+                candidate.closure = pinch::solveClosure(g_rockConfig.rockGrabFingerMinValue, 1.0f, evaluate);
             } else {
                 // With automatic finger posing disabled, only the live tips
                 // can define the seat; no uncommanded closing pose is predicted.
@@ -335,11 +346,10 @@ namespace rock
                 config.detectionAxisBlend);
             if (!candidate.closure.bracketed) {
                 ROCK_LOG_SAMPLE_WARN(Hand, g_rockConfig.rockLogSampleMilliseconds,
-                    "{} pinch closure reached curl limit: opening={:.3f} range={:.3f}/{:.3f} gap={:.3f} "
+                    "{} pinch closure reached curl limit: opening={:.3f} range={:.3f}/1.000 gap={:.3f} "
                     "thickness={:.3f} error={:.3f}",
                     isLeft ? "Left" : "Right", solved.opening, g_rockConfig.rockGrabFingerMinValue,
-                    config.thumbIndexMaxOpenValue, solved.fingers.gapGameUnits, solved.thicknessGameUnits,
-                    candidate.closure.gapErrorGameUnits);
+                    solved.fingers.gapGameUnits, solved.thicknessGameUnits, candidate.closure.gapErrorGameUnits);
             }
             return true;
         }

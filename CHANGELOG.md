@@ -73,7 +73,9 @@
 - **Pinch grab:** the object stays where thumb and finger found it and only the
   fingers close onto it. Any object that sits between thumb and index when you
   close your hand is pinched, whatever its size: plants, handles and rims no
-  longer get pulled into the palm.
+  longer get pulled into the palm. Thumb and index open as far as the object is
+  thick and stop on it instead of closing into a fist beside it, and a loose
+  round or shell can be pinched.
 - **Grab direction** (`Grabbing.CloseGrabDirection`, `Grabbing.FarGrabDirection`): which way
   your hand points to aim close and far grabs, from out of the palm to along
   the fingers.

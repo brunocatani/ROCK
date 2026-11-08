@@ -21,6 +21,11 @@
  * since along the axis the mesh runs far wider than the gap. An earlier
  * whole-object volume limit made the pinch depend on the object instead of
  * on where the fingers were, so a plant was seated into the palm.
+ *
+ * The pinch pose (solveClosure) opens thumb and index until the gap between
+ * their tips equals the object's thickness at the pinch point, anywhere from
+ * closed to fully open. thumbIndexMaxOpenValue is the fixed opposition pose of
+ * weapon support grips only; it no longer caps the pinch.
  */
 namespace rock::grab_pinch_pocket_policy
 {

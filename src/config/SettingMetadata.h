@@ -705,7 +705,9 @@ namespace rock::config
             api::configuration::Group::Developer },
         { "GrabContactEvidence", "GrabPinchMaxFingerGapGameUnits", "10. Grab Contact Evidence", "",
             api::configuration::Group::Developer },
-        { "GrabContactEvidence", "GrabPinchThumbIndexMaxOpenValue", "10. Grab Contact Evidence", "",
+        { "GrabContactEvidence", "GrabPinchThumbIndexMaxOpenValue", "10. Grab Contact Evidence",
+            "Thumb and opposed finger curl of the weapon support hand's opposition pose\n(1 open, 0 closed). A "
+            "loose-object pinch opens to the object's thickness instead.",
             api::configuration::Group::Developer },
         { "GrabContactEvidence", "GrabPinchOtherFingerCurlValue", "10. Grab Contact Evidence", "",
             api::configuration::Group::Developer },

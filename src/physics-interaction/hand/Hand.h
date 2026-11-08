@@ -533,6 +533,11 @@ namespace rock
             const object_physics_body_set::ObjectPhysicsBodySet& bodySet, const char* context);
         void carryCountBasedAmmoAnchor(RE::hknpWorld* world);
         void clearCountBasedAmmoCarry() noexcept { _ammoCarry = {}; }
+        // The carried root body of count-based loose ammo, INVALID_BODY_ID when none is carried.
+        [[nodiscard]] std::uint32_t countBasedAmmoAnchorBodyId() const noexcept
+        {
+            return _ammoCarry.active() ? _ammoCarry.anchorBodyId : object_physics_body_set::INVALID_BODY_ID;
+        }
 
         void captureHeldReleaseMotion(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform,
             const game_frame_timing_policy::GameFrameTiming& timing);

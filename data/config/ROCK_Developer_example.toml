@@ -444,6 +444,8 @@ GrabPinchMinFingerGapGameUnits = 1.0
 
 GrabPinchMaxFingerGapGameUnits = 12.0
 
+## Thumb and opposed finger curl of the weapon support hand's opposition pose
+## (1 open, 0 closed). A loose-object pinch opens to the object's thickness instead.
 GrabPinchThumbIndexMaxOpenValue = 0.45
 
 GrabPinchOtherFingerCurlValue = 0.2
