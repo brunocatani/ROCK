@@ -1266,6 +1266,54 @@ namespace rock
         return false;
     }
 
+    bool Hand::tryResolvePalmTargetGrabProxy(RE::NiTransform& outProxyWorld, RE::NiTransform& outRawHandWorld) const
+    {
+        outProxyWorld = {};
+        outRawHandWorld = {};
+        RE::NiTransform palmTarget{};
+        if (!_boneColliders.tryGetPalmAnchorTargetWithRawHand(palmTarget, outRawHandWorld) ||
+            !grab_three_phase::isFinite(palmTarget) || !grab_three_phase::isFinite(outRawHandWorld) ||
+            !(outRawHandWorld.scale > 0.0001f)) {
+            return false;
+        }
+        // Same palm-to-proxy derivation as the queued held-drive target
+        // (resolveGrabAuthorityProxyFrame), so existing saved files keep their meaning.
+        outProxyWorld = applyGrabAuthorityProxyLocalOffsetToFrame(
+            hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmTarget), _isLeft);
+        return grab_three_phase::isFinite(outProxyWorld) && outProxyWorld.scale > 0.0001f;
+    }
+
+    bool Hand::tryComputeGrabProxyFrameForRawHand(const RE::NiTransform& rawHandWorld,
+        RE::NiTransform& outProxyWorld) const
+    {
+        outProxyWorld = {};
+        RE::NiTransform referenceProxy{};
+        RE::NiTransform referenceRawHand{};
+        if (!grab_three_phase::isFinite(rawHandWorld) || !tryResolvePalmTargetGrabProxy(referenceProxy, referenceRawHand)) {
+            return false;
+        }
+        // The hand scale belongs to the wrist relation; a presented wrist
+        // derived through object relations must not rescale the proxy offset.
+        RE::NiTransform wrist = rawHandWorld;
+        wrist.scale = referenceRawHand.scale;
+        outProxyWorld = grab_frame_math::generatedProxyForWrist(referenceProxy, referenceRawHand, wrist);
+        return grab_three_phase::isFinite(outProxyWorld) && outProxyWorld.scale > 0.0001f;
+    }
+
+    bool Hand::tryComputePresentedHeldGrabProxyFrame(RE::NiTransform& outProxyWorld) const
+    {
+        outProxyWorld = {};
+        auto* heldNode = _grabFrame.heldNode;
+        if (!isHolding() || !_grabFrame.hasTelemetryCapture || !heldNode || !grab_three_phase::isFinite(heldNode->world)) {
+            return false;
+        }
+
+        // The wrist updateHeldVisualPresentation renders on the held object.
+        const RE::NiTransform presentedHandWorld =
+            hand_visual_lerp_math::buildHeldObjectRelativeHandWorld(heldNode->world, _grabFrame.rawHandSpace);
+        return tryComputeGrabProxyFrameForRawHand(presentedHandWorld, outProxyWorld);
+    }
+
     bool Hand::tryComputeGrabProxyLocalPalmPocketPivotAWorld(RE::hknpWorld* world, RE::NiPoint3& outPivotWorld) const
     {
         outPivotWorld = {};
@@ -1325,13 +1373,16 @@ namespace rock
         return true;
     }
 
-    bool Hand::tryBuildSavedGrabCapture(RE::hknpWorld* world, const RE::NiTransform& proxyWorld,
+    bool Hand::tryBuildSavedGrabCapture(RE::hknpWorld* world, const RE::NiTransform& savedObjectProxyLocal,
         saved_grab_capture::HandCapture& outCapture) const
     {
         outCapture = {};
         auto* refr = getHeldRef();
         auto* rootNode = refr ? refr->Get3D() : nullptr;
-        if (!rootNode || !grab_three_phase::isFinite(proxyWorld) || !grab_three_phase::isFinite(rootNode->world)) {
+        RE::NiTransform proxyWorld{};
+        RE::NiTransform proxyRawHandWorld{};
+        if (!rootNode || !grab_three_phase::isFinite(rootNode->world) ||
+            !tryResolvePalmTargetGrabProxy(proxyWorld, proxyRawHandWorld)) {
             return false;
         }
 
@@ -1349,8 +1400,8 @@ namespace rock
             frame.scale = transform.scale;
             return frame;
         };
-        // Same helper the saved offset itself uses, so every frame in the
-        // capture lands in exactly the space the label is expressed in.
+        // Same palm convention the saved offset uses. The collider frames come
+        // from the same pose update as this palm target.
         auto inProxyLocal = [&](const RE::NiTransform& world) {
             return storeFrame(grab_frame_math::objectInGeneratedProxyLocalSpace(proxyWorld, world));
         };
@@ -1363,7 +1414,7 @@ namespace rock
 
         outCapture.present = true;
         outCapture.acquisition = _grabFrame.seat.diagnostics.acquisitionMode;
-        outCapture.objectProxyLocal = inProxyLocal(rootNode->world);
+        outCapture.objectProxyLocal = storeFrame(savedObjectProxyLocal);
         outCapture.objectScale =
             std::isfinite(rootNode->world.scale) && rootNode->world.scale > 0.0f ? rootNode->world.scale : 1.0f;
 

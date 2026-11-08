@@ -36,10 +36,13 @@ namespace rock::saved_grab_offset
         [[nodiscard]] bool empty() const { return plugin.empty() && localFormId == 0; }
     };
 
-    // Position + orientation relative to the live GrabAuthorityProxy frame
+    // Position + orientation relative to the hand's palm proxy frame
     // (proxy-local space, same convention as GrabCore.h's
     // objectInGeneratedProxyLocalSpace / objectFromGeneratedProxyLocalSpace),
     // plus an optional finger pose snapshot, both captured at button-save time.
+    // The palm frame is rigidly attached to the wrist (generatedProxyForWrist):
+    // a save measures it on the hand rendered on the object, a grab applies it
+    // on the grabbing hand.
     struct HandOffset
     {
         bool present{ false };

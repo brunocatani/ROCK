@@ -389,5 +389,66 @@ int main()
             }
         }
     }
+    {
+        // Saved grab offsets: measured on the wrist rendered on the object,
+        // applied on the grabbing wrist. The grip seen at save time must be
+        // the grip shown after the re-grab, and saving that again must not
+        // drift.
+        namespace frames = rock::grab_frame_math;
+        namespace math = rock::transform_math;
+        const auto rotationDegrees = [](const RE::NiTransform& a, const RE::NiTransform& b) {
+            return rock::grab_offset_acquisition::rotationAngleRadians(a.rotate, b.rotate) * 57.295779513f;
+        };
+        const auto frame = [](float x, float y, float z, float w, RE::NiPoint3 translate, float scale) {
+            auto result = identityTransform();
+            const float length = std::sqrt(x * x + y * y + z * z + w * w);
+            const float q[4]{ x / length, y / length, z / length, w / length };
+            result.rotate = math::havokQuaternionToNiRows<RE::NiMatrix3>(q);
+            result.translate = translate;
+            result.scale = scale;
+            return result;
+        };
+        const float handScale = 1.1f;
+        // Palm target in the generated proxy's column convention, built from
+        // the reference wrist in the same pose update.
+        const auto referenceWrist = frame(0.2f, -0.4f, 0.1f, 0.9f, { 310.0f, -120.0f, 95.0f }, handScale);
+        auto referenceProxy = frame(-0.3f, 0.5f, 0.2f, 0.8f, { 314.0f, -117.0f, 92.0f }, 1.0f);
+        referenceProxy.rotate = math::transposeRotation(referenceProxy.rotate);
+
+        const auto sameWrist = frames::generatedProxyForWrist(referenceProxy, referenceWrist, referenceWrist);
+        ok &= expectPointNear("palm proxy on its own wrist is unchanged", sameWrist.translate,
+            referenceProxy.translate, 0.001f);
+        ok &= expectNear("palm proxy on its own wrist keeps rotation", rotationDegrees(sameWrist, referenceProxy),
+            0.0f, 0.01f);
+        ok &= expectNear("palm proxy on its own wrist keeps scale", sameWrist.scale, referenceProxy.scale, 0.0001f);
+
+        // The rendered wrist sits on the object, away from the controller
+        // (two-hand shared solve or motor lag); only its grip is visible.
+        const auto root = frame(0.6f, 0.1f, -0.3f, 0.7f, { 330.0f, -100.0f, 110.0f }, 1.3f);
+        const auto presentedWrist = frame(-0.1f, 0.7f, 0.4f, 0.5f, { 322.0f, -108.0f, 101.0f }, handScale);
+        const auto savedProxy = frames::generatedProxyForWrist(referenceProxy, referenceWrist, presentedWrist);
+        const auto saved = frames::objectInGeneratedProxyLocalSpace(savedProxy, root);
+
+        const auto grabbingWrist = frame(0.5f, -0.2f, 0.6f, 0.4f, { -45.0f, 210.0f, 70.0f }, handScale);
+        const auto applied = frames::objectFromGeneratedProxyLocalSpace(
+            frames::generatedProxyForWrist(referenceProxy, referenceWrist, grabbingWrist), saved);
+        const auto gripSeen = frames::objectInFrameSpace(presentedWrist, root);
+        const auto gripApplied = frames::objectInFrameSpace(grabbingWrist, applied);
+        ok &= expectPointNear("re-grab shows the saved grip position", gripApplied.translate, gripSeen.translate,
+            0.01f);
+        ok &= expectNear("re-grab shows the saved grip rotation", rotationDegrees(gripApplied, gripSeen), 0.0f,
+            0.02f);
+        ok &= expectNear("re-grab keeps object scale", applied.scale, root.scale, 0.0001f);
+
+        // The commit freezes rawHandSpace on the grabbing wrist; the rendered
+        // wrist is the object times its inverse. Saving again is a no-op.
+        const auto rawHandSpace = frames::objectInFrameSpace(grabbingWrist, applied);
+        const auto rendered = math::composeTransforms(applied, math::invertTransform(rawHandSpace));
+        const auto resaved = frames::objectInGeneratedProxyLocalSpace(
+            frames::generatedProxyForWrist(referenceProxy, referenceWrist, rendered), applied);
+        ok &= expectPointNear("re-saving a re-grabbed hold does not drift", resaved.translate, saved.translate,
+            0.01f);
+        ok &= expectNear("re-saving a re-grabbed hold keeps rotation", rotationDegrees(resaved, saved), 0.0f, 0.02f);
+    }
     return ok ? 0 : 1;
 }

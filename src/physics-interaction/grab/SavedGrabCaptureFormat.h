@@ -25,9 +25,11 @@
  *
  * SPACES. Every frame, point and normal is in one of exactly three spaces, and
  * the field name says which:
- *   - *ProxyLocal    : the live GrabAuthorityProxy palm frame, the SAME space
- *                      the saved offset's pose uses (grab_frame_math::
- *                      objectInGeneratedProxyLocalSpace). The proxy frame is
+ *   - *ProxyLocal    : the hand's palm proxy frame, the SAME convention the
+ *                      saved offset's pose uses (grab_frame_math::
+ *                      objectInGeneratedProxyLocalSpace). Hand geometry is
+ *                      posed in the palm target it was driven from; the
+ *                      object pose is the saved pose. The proxy frame is
  *                      the palm pocket frame, so pocket geometry needs no
  *                      separate transform - see TuningCapture for its depth
  *                      and radius.

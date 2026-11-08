@@ -931,6 +931,7 @@ namespace rock
                     },
             };
             GrabSeatCaptureInput seatCaptureInput{
+                .handWorldTransform = &handWorldTransform,
                 .proxy = &proxyPreparation,
                 .meshCapture = &meshCaptureSetup,
                 .mesh = &meshExtraction,
@@ -952,7 +953,7 @@ namespace rock
                 .rollback = seatRollback,
             };
             GrabSeatCaptureResult seatCapture{};
-            if (!resolveGrabSeatCapture(world, seatCaptureInput, seatCapture)) {
+            if (!resolveGrabSeatCapture(seatCaptureInput, seatCapture)) {
                 return GrabAttemptResult::Rejected;
             }
 

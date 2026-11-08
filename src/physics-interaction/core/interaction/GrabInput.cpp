@@ -146,9 +146,17 @@ namespace rock
         formRef.variant = std::string(count_based_ammo::variantKey(ammoAssembly.variant));
         const RE::NiAVObject* offsetFrameNode = ammoAssembly.valid() ? ammoAssembly.variantNode : rootNode;
 
+        /*
+         * Measure against the hand ROCK renders on the object, not the physics
+         * palm: the palm body lags its target, the held body trails the motor
+         * target, and with both hands on one object the shared solve moves the
+         * object away from each physical palm. Those differences are invisible
+         * (the rendered hand follows the object) but were written into the
+         * offset, and a re-grab applied them on top of the motor error again.
+         */
         RE::NiTransform proxyWorld{};
-        if (!hand.tryComputeGrabProxyLocalPalmPocketFrameWorld(hknpWorld, proxyWorld)) {
-            ROCK_LOG_WARN(Hand, "Saved grab offset: could not resolve live proxy frame for {} hand",
+        if (!hand.tryComputePresentedHeldGrabProxyFrame(proxyWorld)) {
+            ROCK_LOG_WARN(Hand, "Saved grab offset: could not resolve the presented palm frame for {} hand",
                 isLeft ? "left" : "right");
             return false;
         }
@@ -219,7 +227,7 @@ namespace rock
          * owns the body-mass reader and the form identity.
          */
         saved_grab_capture::SavedGrabCaptureFile capture{};
-        if (hand.tryBuildSavedGrabCapture(hknpWorld, proxyWorld, capture.capture)) {
+        if (hand.tryBuildSavedGrabCapture(hknpWorld, objectProxyLocal, capture.capture)) {
             capture.object = formRef;
             capture.objectName = file.objectName;
             capture.hand = isLeft ? "left" : "right";

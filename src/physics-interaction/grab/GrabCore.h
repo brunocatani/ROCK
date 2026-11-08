@@ -966,6 +966,23 @@ namespace rock::grab_frame_math
         return proxy;
     }
 
+    /*
+     * The palm proxy frame carried onto another wrist pose: the result keeps
+     * exactly the relation to wristWorld that referenceProxy has to the
+     * referenceWrist it was built from. Saved grab offsets are measured and
+     * applied in this frame. The live palm body cannot serve: it lags its
+     * target, and while two hands share an object the shared solve moves the
+     * object away from each physical palm, so the measured relation differed
+     * from the grip the player saw.
+     */
+    template <class Transform>
+    inline Transform generatedProxyForWrist(const Transform& referenceProxy, const Transform& referenceWrist,
+        const Transform& wristWorld)
+    {
+        return generatedProxyFromObjectWorld(wristWorld,
+            objectInGeneratedProxyLocalSpace(referenceProxy, referenceWrist));
+    }
+
     template <class Transform, class Vector>
     inline Vector computePivotAHandBodyLocal(const Transform& handBodyWorld, const Vector& grabPivotWorld)
     {

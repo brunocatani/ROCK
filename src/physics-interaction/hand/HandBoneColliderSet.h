@@ -62,6 +62,10 @@ namespace rock
             HandColliderBodyMetadata& outMetadata) const;
         bool tryGetBodyRoleAtomic(std::uint32_t bodyId, hand_collider_semantics::HandColliderRole& outRole) const;
         bool tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const;
+        // The latest palm target together with the raw hand frame it was built
+        // from in the same pose update, so callers can carry the palm's exact
+        // wrist relation onto another wrist pose.
+        bool tryGetPalmAnchorTargetWithRawHand(RE::NiTransform& outTarget, RE::NiTransform& outRawHand) const;
 
         // Main-thread debug publication only. Returns the exact pending target
         // that the next generated-body physics callback will consume.
@@ -167,6 +171,7 @@ namespace rock
         void* _cachedBhkWorld = nullptr;
         GeneratedKeyframedBodyDriveState _palmAnchorDriveState{};
         RE::NiTransform _latestPalmAnchorTarget{};
+        RE::NiTransform _latestPalmAnchorRawHand{};
         bool _hasLatestPalmAnchorTarget = false;
         dynamic_hand_twin::TwinTargets _dynamicTwinTargets{};
         PublishedSegmentFrames _segmentFrames{};

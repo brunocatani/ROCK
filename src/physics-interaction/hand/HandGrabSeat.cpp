@@ -55,8 +55,8 @@ namespace rock
         }
 
         /*
-         * proxyWorld/proxyWorldValid are resolved by the caller (a live
-         * GrabAuthorityProxy read, Hand::tryComputeGrabProxyLocalPalmPocketFrameWorld)
+         * proxyWorld/proxyWorldValid are resolved by the caller
+         * (Hand::tryComputeGrabProxyFrameForRawHand on the grabbing raw hand)
          * since this file's helpers are free functions with no Hand access.
          */
         bool tryResolveSavedGrabOffsetAttach(const RE::NiTransform& proxyWorld, bool proxyWorldValid,
@@ -541,8 +541,7 @@ namespace rock
         return true;
     }
 
-    bool Hand::resolveGrabSeatCapture(RE::hknpWorld* world, const GrabSeatCaptureInput& input,
-        GrabSeatCaptureResult& outCapture)
+    bool Hand::resolveGrabSeatCapture(const GrabSeatCaptureInput& input, GrabSeatCaptureResult& outCapture)
     {
         performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabSeatCapture);
         outCapture = {};
@@ -922,9 +921,13 @@ namespace rock
                         isThrowableLooseWeapon(selectedLooseWeaponForm(sel)))) {
                     hasSavedGrabOffset = tryLoadSavedGrabOffsetHandOffset(sel.refr, _isLeft, savedGrabOffset);
                 }
+                // The palm of the grabbing raw hand, the same wrist the commit
+                // freezes rawHandSpace against: the rendered grip then equals
+                // the saved one (see saveGrabOffsetForHand).
                 RE::NiTransform grabProxyWorldForOffset{};
                 const bool grabProxyWorldValidForOffset = (programmaticArrival || fixedAidPose) &&
-                    tryComputeGrabProxyLocalPalmPocketFrameWorld(world, grabProxyWorldForOffset);
+                    input.handWorldTransform &&
+                    tryComputeGrabProxyFrameForRawHand(*input.handWorldTransform, grabProxyWorldForOffset);
                 RE::NiTransform savedGrabOffsetRootWorld{};
                 const bool savedGrabOffsetAttachValid = hasSavedGrabOffset &&
                     tryResolveSavedGrabOffsetAttach(grabProxyWorldForOffset, grabProxyWorldValidForOffset,

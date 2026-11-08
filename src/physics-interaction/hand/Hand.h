@@ -645,6 +645,22 @@ namespace rock
         bool tryComputeGrabProxyLocalPalmPocketFrameWorld(RE::hknpWorld* world, RE::NiTransform& outFrameWorld) const;
         bool tryComputeGrabProxyLocalPalmPocketPivotAWorld(RE::hknpWorld* world, RE::NiPoint3& outPivotWorld) const;
 
+        /*
+         * Saved grab offset frames, both rigidly attached to a wrist through
+         * the latest palm target (grab_frame_math::generatedProxyForWrist).
+         * ForRawHand: the palm proxy of the given raw hand frame; a saved
+         * offset is applied here against the grabbing hand.
+         * PresentedHeld: the palm proxy of the hand ROCK presents on the held
+         * object, heldNode * inverse(rawHandSpace); a save is measured here, so
+         * it records the grip the player sees. Frame thread only.
+         */
+        bool tryComputeGrabProxyFrameForRawHand(const RE::NiTransform& rawHandWorld,
+            RE::NiTransform& outProxyWorld) const;
+        bool tryComputePresentedHeldGrabProxyFrame(RE::NiTransform& outProxyWorld) const;
+        // The latest palm target's own proxy frame and the raw hand it was
+        // built from (the reference both functions above carry onto a wrist).
+        bool tryResolvePalmTargetGrabProxy(RE::NiTransform& outProxyWorld, RE::NiTransform& outRawHandWorld) const;
+
         struct GrabFingerPoseSnapshot
         {
             std::array<float, 5> values{ 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
@@ -670,12 +686,14 @@ namespace rock
          * this hold was scored against, the driven hand collider geometry, the
          * fingertip contacts the saved pose actually makes, and the seat ROCK
          * itself committed - everything an offline pose solver needs to replay
-         * and score the user's verified pose without the game running. All
-         * frames are expressed in proxyWorld's local space, the same space the
-         * saved offset uses. Physics and identity are filled by the caller,
-         * which owns them. Frame thread only; one-shot on the save press.
+         * and score the user's verified pose without the game running. Hand
+         * geometry is expressed in the palm proxy of the latest palm target,
+         * built in the same pose update as the collider frames;
+         * savedObjectProxyLocal is the saved pose in the same palm convention.
+         * Physics and identity are filled by the caller, which owns them.
+         * Frame thread only; one-shot on the save press.
          */
-        bool tryBuildSavedGrabCapture(RE::hknpWorld* world, const RE::NiTransform& proxyWorld,
+        bool tryBuildSavedGrabCapture(RE::hknpWorld* world, const RE::NiTransform& savedObjectProxyLocal,
             saved_grab_capture::HandCapture& outCapture) const;
 
         std::uint32_t getHandColliderBodyCount() const { return _boneColliders.getBodyCount(); }
@@ -845,8 +863,7 @@ namespace rock
         void beginResolvedGrabCommit(const GrabCommitPreparationInput& input);
         bool captureGrabBodyFrame(RE::hknpWorld* world, const GrabBodyFrameCaptureInput& input,
             GrabBodyFrameCapture& outCapture);
-        bool resolveGrabSeatCapture(RE::hknpWorld* world, const GrabSeatCaptureInput& input,
-            GrabSeatCaptureResult& outCapture);
+        bool resolveGrabSeatCapture(const GrabSeatCaptureInput& input, GrabSeatCaptureResult& outCapture);
         bool commitFrozenGrabAuthority(const GrabFrozenCommitInput& input);
         void initializePostFreezeGrab(RE::hknpWorld* world, const GrabPostFreezeInput& input);
         bool commitGrabConstraintAndPose(RE::hknpWorld* world, const GrabConstraintCommitInput& input);

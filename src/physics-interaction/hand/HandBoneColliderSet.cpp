@@ -565,6 +565,7 @@ namespace rock
         }
         initializeGeneratedKeyframedBodyDriveState(_palmAnchorDriveState, anchorFrame.transform);
         _latestPalmAnchorTarget = anchorFrame.transform;
+        _latestPalmAnchorRawHand = lookup.rollAuthorityWorld;
         publishPalmPoint(lookup, isLeft, anchorFrame);
         _hasLatestPalmAnchorTarget = true;
 
@@ -780,6 +781,7 @@ namespace rock
         RoleFrameResult anchorFrame{};
         if (makeRoleFrame(lookup, isLeft, HandColliderRole::PalmAnchor, anchorFrame)) {
             _latestPalmAnchorTarget = anchorFrame.transform;
+            _latestPalmAnchorRawHand = lookup.rollAuthorityWorld;
             _hasLatestPalmAnchorTarget = true;
             publishTwinSlot(twinTargets.palm, anchorFrame);
             if (publishTargets)
@@ -881,6 +883,17 @@ namespace rock
             return false;
         }
         outTarget = _latestPalmAnchorTarget;
+        return true;
+    }
+
+    bool HandBoneColliderSet::tryGetPalmAnchorTargetWithRawHand(RE::NiTransform& outTarget,
+        RE::NiTransform& outRawHand) const
+    {
+        if (!_hasLatestPalmAnchorTarget) {
+            return false;
+        }
+        outTarget = _latestPalmAnchorTarget;
+        outRawHand = _latestPalmAnchorRawHand;
         return true;
     }
 

@@ -1618,6 +1618,8 @@ namespace rock
 
     struct Hand::GrabSeatCaptureInput
     {
+        // The raw hand frame the commit freezes rawHandSpace against.
+        const RE::NiTransform* handWorldTransform = nullptr;
         const GrabProxyPreparation* proxy = nullptr;
         const GrabMeshCaptureSetup* meshCapture = nullptr;
         const GrabMeshExtraction* mesh = nullptr;
