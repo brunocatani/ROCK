@@ -72,7 +72,8 @@ placement no longer cancels.
 
 `setDefaultGrabPoses` stores right and left hand poses for a base form (one
 owner per form, 64 forms in all); they fill missing saved offsets for loose
-non-weapons and throwables on later grabs. `clearDefaultGrabPoses` removes
+non-weapons and throwables on later grabs, ahead of ROCK's own built-in poses.
+`clearDefaultGrabPoses` removes
 them; clearing an absent entry is `Ok`, another owner's is `OwnerConflict`.
 
 ## Held object target (game thread)

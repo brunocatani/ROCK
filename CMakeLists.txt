@@ -351,6 +351,17 @@ if(BUILD_ROCK_TESTS)
   target_link_libraries(ROCKSavedGrabOffsetFormatTests PRIVATE nlohmann_json::nlohmann_json)
   add_rock_test(ROCKSavedGrabOffsetFormatTests)
 
+  add_executable(ROCKBuiltInGrabOffsetsTests
+    "${ROOT_DIR}/tests/BuiltInGrabOffsetsTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/grab/BuiltInGrabOffsets.cpp"
+    "${SOURCE_DIR}/physics-interaction/grab/BuiltInGrabOffsetData.cpp"
+    "${SOURCE_DIR}/physics-interaction/grab/SavedGrabOffsetFormat.cpp"
+  )
+  target_compile_features(ROCKBuiltInGrabOffsetsTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKBuiltInGrabOffsetsTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKBuiltInGrabOffsetsTests PRIVATE nlohmann_json::nlohmann_json)
+  add_rock_test(ROCKBuiltInGrabOffsetsTests)
+
   add_executable(ROCKGrabInputIntentPolicyTests
     "${ROOT_DIR}/tests/GrabInputIntentPolicyTests.cpp"
   )

@@ -86,6 +86,12 @@
   game. `NativeGameplay.VanillaMeleeSwingSpeed` and `NativeGameplay.VanillaGunBashSpeed` set the hand speeds
   that start a vanilla swing and a gun bash; wrist rotation alone never swings.
 - Saved grab offsets report which hands were saved.
+- Built-in grab poses for about 3,000 objects: a pulled or force-grabbed object
+  without a saved offset is held in its authored pose instead of the dynamic
+  seat. Your own saved offsets still take priority, hand by hand.
+- Saved grab offsets record the grip you see: a save no longer includes the
+  physics drive's lag or the two-hand shared solve, so a later pull reproduces
+  it exactly.
 - The game's weapon equip, unequip and inventory animation sounds are silenced.
 - **Provider API 2.0**: 13 interfaces whose headers are in `include/ROCK/`, with
   one page per interface in `docs/api/`. New for holster, equipment and reload

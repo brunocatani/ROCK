@@ -3,6 +3,8 @@
 // and finger pose are built from.
 #include "physics-interaction/hand/HandGrabInternal.h"
 
+#include "physics-interaction/grab/BuiltInGrabOffsets.h"
+
 namespace rock
 {
 
@@ -21,8 +23,23 @@ namespace rock
             const char* reason = "notEvaluated";
         };
 
-        // Cache-only disk lookup; false when this object+hand has no saved
-        // offset (normal - most objects never had one saved).
+        // Exact finger rotations are authored on the normal FRIK hand rig.
+        bool exactPoseFitsRig(const saved_grab_offset::HandOffset& offset, bool isLeft, const char* source)
+        {
+            if (offset.hasExactFingerRotations && fo4vr::isInPowerArmor()) {
+                ROCK_LOG_WARN(Hand, "{} {} exact grab pose skipped: normal-hand rig does not match power armor",
+                    isLeft ? "Left" : "Right", source);
+                return false;
+            }
+            return true;
+        }
+
+        /*
+         * The authored pose for one hand, in priority order: the player's saved
+         * offset, a provider default pose, then ROCK's built-in pose. False when
+         * none exists; the grab then seats dynamically. Cache and table lookups
+         * only, no file I/O.
+         */
         bool tryLoadSavedGrabOffsetHandOffset(RE::TESObjectREFR* refr, bool isLeft, saved_grab_offset::HandOffset& out)
         {
             if (!refr) {
@@ -41,17 +58,26 @@ namespace rock
             if (!formRef.empty() && saved_grab_offset::load(formRef, file, nullptr)) {
                 const auto& handOffset = isLeft ? file.left : file.right;
                 if (handOffset.present) {
-                    if (handOffset.hasExactFingerRotations && fo4vr::isInPowerArmor()) {
-                        ROCK_LOG_WARN(Hand,
-                            "{} saved exact grab pose skipped: normal-hand rig does not match power armor",
-                            isLeft ? "Left" : "Right");
+                    if (!exactPoseFitsRig(handOffset, isLeft, "saved")) {
                         return false;
                     }
                     out = handOffset;
                     return true;
                 }
             }
-            return saved_grab_offset::loadDefaultGrabPose(baseForm->GetFormID(), isLeft, out);
+            if (saved_grab_offset::loadDefaultGrabPose(baseForm->GetFormID(), isLeft, out)) {
+                return true;
+            }
+            if (saved_grab_offset::built_in::find(formRef, isLeft, out)) {
+                if (!exactPoseFitsRig(out, isLeft, "built-in")) {
+                    return false;
+                }
+                ROCK_LOG_INFO(Hand, "{} hand grab uses ROCK's built-in offset for {} {:08X}{}{}",
+                    isLeft ? "Left" : "Right", formRef.plugin, formRef.localFormId,
+                    formRef.variant.empty() ? "" : " variant=", formRef.variant);
+                return true;
+            }
+            return false;
         }
 
         /*
