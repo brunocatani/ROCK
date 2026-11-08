@@ -415,8 +415,6 @@ namespace rock
             ROCK_LOG_WARN(Config, "Invalid iWeaponFilteringPreset={} -- using Off", rockWeaponFilteringPreset);
             rockWeaponFilteringPreset = 0;
         }
-        rockShakeFilterFollowsHead =
-            ini.GetBoolValue(IMMERSIVE_WEAPONS_SECTION, "bShakeFilterFollowsHead", rockShakeFilterFollowsHead);
         rockScopedFilterRotationSeconds = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION,
             "fScopedFilterRotationSeconds", rockScopedFilterRotationSeconds, 0.15f, 0.0f, 1.0f);
         rockScopedFilterTranslationSeconds = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION,

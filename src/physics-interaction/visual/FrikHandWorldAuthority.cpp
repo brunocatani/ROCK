@@ -97,8 +97,6 @@ namespace rock::frik_hand_world_authority
             std::uint64_t weaponPreparedFrame = 0;
             bool weaponFilteringEnabled = false;
             const char* weaponRoomSource = nullptr;
-            // The filter frame tracked the HMD position (Follow Head) last frame.
-            bool weaponFilterFollowsHead = false;
             registry_policy::Registry registry{};
             // This frame's controller driver per hand (FRIK's dampened weapon offset node).
             DriverFrame driverFrame{};
@@ -498,30 +496,9 @@ namespace rock::frik_hand_world_authority
         // only the wand, never an animated offset or an inverse native kick.
         const auto palmWorld = computeGrabPalmPointWorldFromHandBasis(hand, isLeft);
         const auto pivot = transform_math::worldPointToLocal(wand.world, palmWorld);
-        // Follow Head keeps the room's rotation but moves the filter frame with
-        // the HMD position: head and controllers moving together (the body
-        // stepping or swaying) carry the filtered pose like locomotion does,
-        // and only controller motion relative to the head is smoothed.
-        auto filterFrame = frame.playerSpace.world;
-        bool followsHead = false;
-        if (g_rockConfig.rockShakeFilterFollowsHead) {
-            const auto* nodes = f4vr::getPlayerNodes();
-            const auto* hmd = nodes ? nodes->HmdNode : nullptr;
-            if (hmd && std::isfinite(hmd->world.translate.x) && std::isfinite(hmd->world.translate.y) &&
-                std::isfinite(hmd->world.translate.z)) {
-                filterFrame.translate = hmd->world.translate;
-                followsHead = true;
-            } else {
-                ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Shake Filtering Follow Head: HMD node unavailable, using room");
-            }
-        }
-        if (followsHead != g_service.weaponFilterFollowsHead) {
-            // A frame change is a discontinuity for both hands' histories.
-            g_service.weaponFilters = {};
-            g_service.weaponFilterFollowsHead = followsHead;
-        }
-        cached.valid = weapon_input_filter::update(g_service.weaponFilters[index], wand.world, filterFrame, pivot,
-            frame.frameIndex, frame.deltaSeconds, frame.timing.discontinuity, activeFilterTuning(), cached.world);
+        cached.valid =
+            weapon_input_filter::update(g_service.weaponFilters[index], wand.world, frame.playerSpace.world, pivot,
+                frame.frameIndex, frame.deltaSeconds, frame.timing.discontinuity, activeFilterTuning(), cached.world);
         outWorld = cached.world;
         return cached.valid;
     }

@@ -98,12 +98,6 @@ namespace rock::config
             "slowly.\nRotation and position smoothing: Responsive 12 and 6 ms, Balanced 25 and 12 ms, Steady 45 and "
             "22 ms, Heavy 70 and 35 ms.\nFree hands, FRIK and recoil are not affected. Applies at once.",
             api::configuration::Group::Consumer },
-        { "ImmersiveWeapons", "bShakeFilterFollowsHead", "04. Weapon Handling",
-            "Shake Filtering: Follow Head\nOn: Shake Filtering smooths the controllers' motion relative to your "
-            "head's position, so moving your body passes through unsmoothed, like stick movement.\nMoving only your "
-            "head briefly carries the weapon a little with it. Rotation smoothing is unchanged.\nOff: smoothing "
-            "relative to the play space. Applies at once.",
-            api::configuration::Group::Consumer },
         { "ImmersiveWeapons", "fScopedFilterRotationSeconds", "04. Weapon Handling",
             "Scoped Filtering: Rotation\nExtra rotation smoothing, in seconds, while you look through a scope, with "
             "or without Shake Filtering.\n0 here and in Scoped Filtering: Position turns scoped filtering off. "

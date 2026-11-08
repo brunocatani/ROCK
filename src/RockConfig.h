@@ -114,9 +114,6 @@ namespace rock
         bool rockGrabAnywhereOnWeapon = false;
         float rockMeleeGripPitchDegrees = 0.0f;
         int rockWeaponFilteringPreset = 0;
-        // Shake Filtering smooths controller motion relative to the HMD's
-        // position instead of the room, so body movement passes unfiltered.
-        bool rockShakeFilterFollowsHead = false;
         // Scoped filtering: smoothing time constants while looking through a
         // scope (0 and 0 = off) and the rotation speed at which they halve.
         float rockScopedFilterRotationSeconds = 0.15f;
