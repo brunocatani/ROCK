@@ -305,6 +305,7 @@ namespace rock
         _grabPoseQualityUpdatesRemaining = -1;
         _grabPoseReplay.reset();
         _grabFingerProbePreview.clear();
+        _meshReachLease = {};
         _hasGrabFingerPose = false;
         clearSelectedCloseFingerPose();
         _lastSelectedCloseOrigin = {};
@@ -325,6 +326,7 @@ namespace rock
     void Hand::abandonHavokStateAfterWorldLoss()
     {
         held_scene_presentation::clearHeldBodies(_isLeft);
+        _meshReachLease = {};
 
         /*
          * World-loss teardown cannot safely restore old body flags, filters, or

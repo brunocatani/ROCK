@@ -403,6 +403,11 @@ namespace rock
                 }
             };
             if (!probeContact.touching) {
+                // The hand may be stopped by collision that sits off the mesh;
+                // let it through this object until it reaches the mesh.
+                if (probeContact.triangleCount > 0) {
+                    beginMeshReachLease(validatedSelection.bhkWorld, world);
+                }
                 ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
                     "{} hand GRAB refused: no finger probe touches the mesh ref={:08X} reason={} "
                     "fingers=T{}I{}M{}R{}P{} triangles={} peerJoin={}",

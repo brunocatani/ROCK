@@ -2529,6 +2529,8 @@ namespace rock
     void PhysicsInteraction::processGrabInputHand(const PhysicsFrameContext& frame, Hand& hand, bool isLeft,
         const GrabInputHandContext& context)
     {
+        hand.updateMeshReachLease(frame.hknpWorld, readGrabButtonHeld(isLeft, input_remap_policy::kGrabButtonId),
+            (isLeft ? frame.left : frame.right).rawHandWorld.translate);
         GrabInputHandPrelude prelude{};
         if (!prepareGrabInputHand(frame, hand, isLeft, context, prelude)) {
             return;

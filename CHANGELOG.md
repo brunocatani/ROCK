@@ -7,7 +7,10 @@
 - No more phantom grabs. A close grab happens only when one of your fingers
   touches the object's visible mesh; inside an object's collision but off its
   mesh, nothing is grabbed, and keeping the grip held grabs the moment a finger
-  reaches the mesh. Grabs never hold the collision instead of the mesh, and a
+  reaches the mesh. A grab refused that way lets that hand pass through the
+  object's collision, so you can reach in and grab the exact part you want;
+  the object collides with the hand again once you let go of the grip and pull
+  the hand out. Grabs never hold the collision instead of the mesh, and a
   far pull flies the visible mesh to your palm rather than the collision's
   centre.
 - Held objects stay steady on slow frames: per-frame motion limits scale with

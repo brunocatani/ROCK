@@ -515,6 +515,16 @@ namespace rock
         // Runs the probe solve against the selected object with the hand where
         // it is drawn; the close grab check. Re-reads a deforming mesh.
         [[nodiscard]] GrabProbeContact evaluateGrabProbeContact();
+
+        // Mesh-reach lease: after a grab refused for no probe contact, this
+        // hand passes through that object's collision so the fingers can reach
+        // the mesh inside it (HandGrabProbePreview.cpp). Game thread only.
+        void updateMeshReachLease(RE::hknpWorld* world, bool gripHeld, const RE::NiPoint3& handWorldPoint);
+        void endMeshReachLease(const char* reason);
+        [[nodiscard]] std::span<const std::uint32_t> meshReachLeaseBodies() const noexcept
+        {
+            return std::span(_meshReachLease.bodies).first(_meshReachLease.count);
+        }
         GrabAttemptResult grabSelectedObject(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float tau,
             float damping, float maxForce, float proportionalRecovery, float constantRecovery,
             const GrabSharedObjectContext& sharedContext = {}, const AuthoredWeaponGripPose* transferPose = nullptr);
@@ -1381,7 +1391,18 @@ namespace rock
             }
         };
         bool solveSelectedObjectProbes(grab_finger_probe_preview::Snapshot& out, bool refreshDeformingMesh);
+        void beginMeshReachLease(RE::bhkWorld* bhkWorld, RE::hknpWorld* world);
         GrabFingerProbePreviewCache _grabFingerProbePreview{};
+
+        struct MeshReachLease
+        {
+            static constexpr std::size_t kMaxBodies = 32;
+            RE::NiPointer<RE::TESObjectREFR> ref{};
+            RE::hknpWorld* world = nullptr;
+            std::array<std::uint32_t, kMaxBodies> bodies{};
+            std::size_t count = 0;
+        };
+        MeshReachLease _meshReachLease{};
         bool _hasGrabFingerPose = false;
         bool _selectedCloseFingerPoseActive = false;
         RE::NiPoint3 _lastSelectedCloseOrigin{};

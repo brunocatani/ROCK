@@ -252,6 +252,13 @@ namespace rock
         std::array<std::uint32_t, native_player_collision::kMaximumHeldBodies> bodies{};
         std::size_t count = 0;
         for (const Hand* hand : { &_rightHand, &_leftHand }) {
+            // A mesh-reach lease passes the proxies through the leased object
+            // like a held one (Hand::updateMeshReachLease).
+            for (const auto bodyId : hand->meshReachLeaseBodies()) {
+                if (count < bodies.size()) {
+                    bodies[count++] = bodyId;
+                }
+            }
             if (!hand->isHolding()) {
                 continue;
             }
@@ -337,6 +344,33 @@ namespace rock
                 if (state.heldBodies[i] != INVALID_BODY_ID) {
                     add(held, heldCount, state.heldBodies[i], bit);
                 }
+            }
+        }
+        /*
+         * Mesh-reach lease: a grab refused because no finger touched the mesh
+         * lets that hand's colliders through the object's collision, which
+         * often sits well off the visible surface, so the fingers can reach
+         * the mesh. Only the leasing hand's pairs with that object drop.
+         */
+        for (const bool isLeft : { false, true }) {
+            const Hand& hand = isLeft ? _leftHand : _rightHand;
+            const auto leased = hand.meshReachLeaseBodies();
+            if (leased.empty()) {
+                continue;
+            }
+            const std::uint8_t bit = isLeft ? 2 : 1;
+            const std::uint32_t handColliderCount = hand.getHandColliderBodyCount();
+            for (std::uint32_t i = 0; i < handColliderCount; ++i) {
+                const auto bodyId = hand.getHandColliderBodyIdAtomic(i);
+                if (bodyId != INVALID_BODY_ID) {
+                    add(colliders, colliderCount, bodyId, bit);
+                }
+            }
+            if (handColliderCount == 0 && hand.hasCollisionBody()) {
+                add(colliders, colliderCount, hand.getCollisionBodyId().value, bit);
+            }
+            for (const auto bodyId : leased) {
+                add(held, heldCount, bodyId, bit);
             }
         }
         native_player_collision::publishHeldExclusions(world, std::span(colliders).first(colliderCount),

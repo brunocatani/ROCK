@@ -336,4 +336,102 @@ namespace rock
         result.reason = result.touching ? "meshContact" : "noProbeTouchesMesh";
         return result;
     }
+
+    /*
+     * Mesh-reach lease. Object collision often sits well off the visible mesh,
+     * so a hand reaching for the mesh is stopped by the collision first (the
+     * keyframed hand colliders shove a loose object, the dynamic proxy stops at
+     * a fixed one) and the probe check refuses the grab. A grab refused that
+     * way leases the object: PhysicsInteraction::publishHeldBodyExclusion drops
+     * this hand's collider pairs with its bodies and publishHeldProxyExclusion
+     * lets the proxies through it, so the hand reaches into the collision and
+     * the held grip retries until a finger touches the mesh where the player
+     * wants it. The lease ends when the hand holds something, or once the grip
+     * is released and the hand is outside the object's bound, so collision
+     * never comes back with the hand inside it. Game thread only.
+     */
+    void Hand::beginMeshReachLease(RE::bhkWorld* bhkWorld, RE::hknpWorld* world)
+    {
+        const auto& selection = _currentSelection;
+        if (!bhkWorld || !world || !selection.refr) {
+            return;
+        }
+        if (_meshReachLease.count != 0 && _meshReachLease.ref.get() == selection.refr &&
+            _meshReachLease.world == world) {
+            return;
+        }
+        const auto bodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhkWorld, world, selection.refr,
+            makeActiveGrabBodyScanOptions(selection));
+        MeshReachLease lease{};
+        lease.ref.reset(selection.refr);
+        lease.world = world;
+        for (const auto& record : bodySet.records) {
+            if (lease.count >= lease.bodies.size()) {
+                break;
+            }
+            if (record.bodyId != INVALID_BODY_ID && (record.accepted || record.resolvedRef == selection.refr)) {
+                lease.bodies[lease.count++] = record.bodyId;
+            }
+        }
+        if (selection.bodyId.value != INVALID_BODY_ID && lease.count < lease.bodies.size() &&
+            std::find(lease.bodies.begin(), lease.bodies.begin() + lease.count, selection.bodyId.value) ==
+                lease.bodies.begin() + lease.count) {
+            lease.bodies[lease.count++] = selection.bodyId.value;
+        }
+        if (lease.count == 0) {
+            return;
+        }
+        if (_meshReachLease.count != 0) {
+            endMeshReachLease("replaced");
+        }
+        _meshReachLease = std::move(lease);
+        ROCK_LOG_DEBUG(Hand, "{} hand MESH REACH lease begun: ref={:08X} bodies={} records={}", handName(),
+            selection.refr->GetFormID(), _meshReachLease.count, bodySet.records.size());
+    }
+
+    void Hand::updateMeshReachLease(RE::hknpWorld* world, bool gripHeld, const RE::NiPoint3& handWorldPoint)
+    {
+        if (_meshReachLease.count == 0) {
+            return;
+        }
+        auto* ref = _meshReachLease.ref.get();
+        if (!ref || ref->IsDeleted() || ref->IsDisabled() || world != _meshReachLease.world) {
+            endMeshReachLease("objectOrWorldGone");
+            return;
+        }
+        if (isHolding()) {
+            // A held object's collision belongs to the grab's own exclusions.
+            endMeshReachLease("holding");
+            return;
+        }
+        if (gripHeld) {
+            return;
+        }
+        auto* root = ref->Get3D();
+        if (!root) {
+            endMeshReachLease("no3D");
+            return;
+        }
+        // The hand must be clear of the object before collision returns, or the
+        // returning pairs would shove the object off the hand.
+        constexpr float kClearanceGameUnits = 6.0f;
+        const auto& bound = root->worldBound;
+        const RE::NiPoint3 offset = handWorldPoint - bound.center;
+        const float distanceSquared = offset.x * offset.x + offset.y * offset.y + offset.z * offset.z;
+        const float clearRadius = (std::max)(0.0f, bound.fRadius) + kClearanceGameUnits;
+        if (!std::isfinite(distanceSquared) || distanceSquared > clearRadius * clearRadius) {
+            endMeshReachLease("handClear");
+        }
+    }
+
+    void Hand::endMeshReachLease(const char* reason)
+    {
+        if (_meshReachLease.count == 0) {
+            return;
+        }
+        auto* ref = _meshReachLease.ref.get();
+        ROCK_LOG_DEBUG(Hand, "{} hand MESH REACH lease ended: ref={:08X} bodies={} reason={}", handName(),
+            ref ? ref->GetFormID() : 0, _meshReachLease.count, reason ? reason : "unknown");
+        _meshReachLease = {};
+    }
 }
