@@ -303,10 +303,14 @@ namespace rock::grab_finger_capsule_sweep
         return { joints[finger * 3], joints[finger * 3 + 1], joints[finger * 3 + 2] };
     }
 
-    template <class Index>
-    bool fingerIntersects(const FingerChainPose& pose, const Index& index, const RE::NiTransform& objectWorld,
-        const CapsuleRadii& radii, grab_finger_pose_runtime::FingerPoseSpatialQueryStats& stats,
-        std::uint32_t& sphereQueries)
+    /*
+     * The spheres that stand for one finger's capsules. The solve and the probe
+     * visualizer both walk this, so what is drawn is exactly what is tested.
+     * visit(center, radius, segment) returns true to stop; the result says
+     * whether a visit stopped the walk.
+     */
+    template <class Visit>
+    bool forEachCapsuleSphere(const FingerChainPose& pose, const CapsuleRadii& radii, Visit&& visit)
     {
         for (std::size_t segment = 0; segment < 3; ++segment) {
             const RE::NiPoint3 a = pose.joints[segment];
@@ -318,13 +322,23 @@ namespace rock::grab_finger_capsule_sweep
             const int samples = (std::max)(2, static_cast<int>(std::ceil(length / radius)) + 1);
             for (int i = 0; i < samples; ++i) {
                 const RE::NiPoint3 center = a + ab * (static_cast<float>(i) / static_cast<float>(samples - 1));
-                ++sphereQueries;
-                if (index.querySphereWorld(objectWorld, center, radius, nullptr, nullptr, &stats)) {
+                if (visit(center, radius, segment)) {
                     return true;
                 }
             }
         }
         return false;
+    }
+
+    template <class Index>
+    bool fingerIntersects(const FingerChainPose& pose, const Index& index, const RE::NiTransform& objectWorld,
+        const CapsuleRadii& radii, grab_finger_pose_runtime::FingerPoseSpatialQueryStats& stats,
+        std::uint32_t& sphereQueries)
+    {
+        return forEachCapsuleSphere(pose, radii, [&](const RE::NiPoint3& center, float radius, std::size_t) {
+            ++sphereQueries;
+            return index.querySphereWorld(objectWorld, center, radius, nullptr, nullptr, &stats);
+        });
     }
 
     template <class Index>

@@ -13,6 +13,7 @@
 #include "physics-interaction/grab/GrabConstraint.h"
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/grab/GrabFingerCapsuleSweep.h"
+#include "physics-interaction/grab/GrabFingerProbePreview.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
 #include "physics-interaction/grab/GrabMotionController.h"
 #include "physics-interaction/grab/GrabOffsetAcquisition.h"
@@ -495,6 +496,10 @@ namespace rock
         bool getGrabPresentationNodeDebugSnapshot(GrabPresentationNodeDebugSnapshot& out) const;
         bool getGrabSupportFrameDebugSnapshot(RE::hknpWorld* world, GrabSupportFrameDebugSnapshot& out) const;
         bool getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, GrabForceTorqueDebugSnapshot& out) const;
+        // Debug only (bDebugDrawGrabFingerProbes). Non-const: keeps the selected object's mesh cached between
+        // frames. Main thread, after the frame's final hand pose.
+        bool buildGrabFingerProbePreview(grab_finger_probe_preview::Snapshot& out);
+        void clearGrabFingerProbePreview() { _grabFingerProbePreview.clear(); }
         GrabAttemptResult grabSelectedObject(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float tau,
             float damping, float maxForce, float proportionalRecovery, float constantRecovery,
             const GrabSharedObjectContext& sharedContext = {}, const AuthoredWeaponGripPose* transferPose = nullptr);
@@ -1275,6 +1280,43 @@ namespace rock
         int _grabPoseQualityUpdatesRemaining = -1;
         // Bench-only replay record: solve half filled at the finger solve, completed and written with the metric.
         std::optional<grab_pose_replay::Record> _grabPoseReplay;
+
+        /*
+         * Probe visualizer cache: the selected object's whole mesh in its
+         * collision node's local space, extracted once per selection, and the
+         * solve index over it (the 2048 triangles nearest the palm when the
+         * mesh is larger, rebuilt as the palm moves). The node keys are
+         * identities only and are never dereferenced; nodes are re-read from
+         * this frame's selection.
+         */
+        struct GrabFingerProbePreviewCache
+        {
+            std::vector<GrabLocalTriangle> localTriangles;
+            std::vector<std::pair<float, std::uint32_t>> nearestScratch;
+            grab_finger_pose_runtime::FingerPoseTriangleSpatialIndex index{};
+            RE::NiPoint3 indexCenterLocal{};
+            std::uintptr_t objectNodeKey = 0;
+            std::uintptr_t meshNodeKey = 0;
+            std::uint32_t refFormId = 0;
+            bool extracted = false;
+            bool indexCoversAll = false;
+
+            void clear()
+            {
+                localTriangles.clear();
+                localTriangles.shrink_to_fit();
+                nearestScratch.clear();
+                nearestScratch.shrink_to_fit();
+                index.clear();
+                indexCenterLocal = {};
+                objectNodeKey = 0;
+                meshNodeKey = 0;
+                refFormId = 0;
+                extracted = false;
+                indexCoversAll = false;
+            }
+        };
+        GrabFingerProbePreviewCache _grabFingerProbePreview{};
         bool _hasGrabFingerPose = false;
         bool _selectedCloseFingerPoseActive = false;
         RE::NiPoint3 _lastSelectedCloseOrigin{};

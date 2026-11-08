@@ -303,6 +303,7 @@ namespace rock
         _grabFingerSweptArc = false;
         _grabPoseQualityUpdatesRemaining = -1;
         _grabPoseReplay.reset();
+        _grabFingerProbePreview.clear();
         _hasGrabFingerPose = false;
         clearSelectedCloseFingerPose();
         _lastSelectedCloseOrigin = {};
@@ -392,6 +393,7 @@ namespace rock
         _grabFingerSweptArc = false;
         _grabPoseQualityUpdatesRemaining = -1;
         _grabPoseReplay.reset();
+        _grabFingerProbePreview.clear();
         _hasGrabFingerPose = false;
         _previousHeldRawHandWorld = {};
         _previousHeldHandPositionHavok = {};

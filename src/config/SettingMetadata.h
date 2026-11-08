@@ -967,6 +967,12 @@ namespace rock::config
         { "PhysicsInteraction", "bDebugDrawGrabPockets", "15. Debug Overlay",
             "Draws the live palm pocket and thumb/index pinch pocket for each hand.",
             api::configuration::Group::Developer },
+        { "PhysicsInteraction", "bDebugDrawGrabFingerProbes", "15. Debug Overlay",
+            "Draws the grab finger solve live: while a hand has an object selected, the finger spheres the solve "
+            "tests at the curl it would choose (grey wire = closed without touching, green = closed onto the "
+            "surface, yellow = opened to clear, red = blocked; bright spheres touch the mesh) and each fingertip's "
+            "sweep path. While holding, the spheres follow the drawn fingers.",
+            api::configuration::Group::Developer },
         { "PhysicsInteraction", "bDebugShowPalmVectors", "15. Debug Overlay",
             "Draws palm center plus close/far selection aim rays.", api::configuration::Group::Developer },
         { "PhysicsInteraction", "bDebugDrawHandColliders", "15. Debug Overlay",

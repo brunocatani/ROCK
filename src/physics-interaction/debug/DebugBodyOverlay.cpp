@@ -256,6 +256,8 @@ namespace rock::debug
             std::vector<MarkerOverlayEntry> markers;
             std::vector<SkeletonOverlayEntry> skeleton;
             std::vector<TextOverlayEntry> text;
+            std::vector<ProbeSphereOverlayEntry> probeSpheres;
+            std::vector<ProbeLineOverlayEntry> probeLines;
             std::vector<CapturedShapeIdentity> capturedShapeIdentities;
             OverlayRenderSettings settings{};
             std::uintptr_t worldIdentity{ 0 };
@@ -269,6 +271,7 @@ namespace rock::debug
             bool drawMarkers{ false };
             bool drawSkeleton{ false };
             bool drawText{ false };
+            bool drawProbes{ false };
         };
 
         enum class BodyOverlayFrameSource : std::uint8_t
@@ -1112,6 +1115,8 @@ namespace rock::debug
             frame.markers.clear();
             frame.skeleton.clear();
             frame.text.clear();
+            frame.probeSpheres.clear();
+            frame.probeLines.clear();
             frame.capturedShapeIdentities.clear();
             frame.settings = {};
             frame.worldIdentity = 0;
@@ -1125,6 +1130,7 @@ namespace rock::debug
             frame.drawMarkers = false;
             frame.drawSkeleton = false;
             frame.drawText = false;
+            frame.drawProbes = false;
         }
 
         CapturedShapeIdentity captureShapeIdentityForFrame(PublishedOverlayFrame& frame, std::uintptr_t shapeAddress)
@@ -1223,6 +1229,7 @@ namespace rock::debug
             destination.drawMarkers = source.drawMarkers;
             destination.drawSkeleton = source.drawSkeleton;
             destination.drawText = source.drawText;
+            destination.drawProbes = source.drawProbes;
 
             const auto bodyCount = (std::min)(source.count, static_cast<std::uint32_t>(source.entries.size()));
             if (source.drawText) {
@@ -1342,8 +1349,19 @@ namespace rock::debug
                     (std::min)(source.skeletonCount, static_cast<std::uint32_t>(source.skeletonEntries.size()));
                 destination.skeleton.assign(source.skeletonEntries.begin(), source.skeletonEntries.begin() + count);
             }
+            if (source.drawProbes) {
+                const auto sphereCount =
+                    (std::min)(source.probeSphereCount, static_cast<std::uint32_t>(source.probeSphereEntries.size()));
+                destination.probeSpheres.assign(source.probeSphereEntries.begin(),
+                    source.probeSphereEntries.begin() + sphereCount);
+                const auto lineCount =
+                    (std::min)(source.probeLineCount, static_cast<std::uint32_t>(source.probeLineEntries.size()));
+                destination.probeLines.assign(source.probeLineEntries.begin(),
+                    source.probeLineEntries.begin() + lineCount);
+            }
             return !destination.bodies.empty() || !destination.axes.empty() || !destination.markers.empty() ||
-                !destination.skeleton.empty() || !destination.text.empty();
+                !destination.skeleton.empty() || !destination.text.empty() || !destination.probeSpheres.empty() ||
+                !destination.probeLines.empty();
         }
 
         void bodyColor(BodyOverlayRole role, debug_overlay_policy::ShapeDecodeMode decodeMode, float color[4])
@@ -2357,6 +2375,40 @@ namespace rock::debug
             }
         }
 
+        void collectProbeLines(debug_overlay_line_batch::LineBatch& batch, const PublishedOverlayFrame& frame)
+        {
+            if (!frame.drawProbes) {
+                return;
+            }
+            for (const auto& entry : frame.probeLines) {
+                appendDebugLine(batch, toVertex(entry.start), toVertex(entry.end), entry.color);
+            }
+        }
+
+        // Probe spheres share RPS UI's sphere budget after the gameplay grip-zone markers.
+        void appendProbeSpheres(const PublishedOverlayFrame& frame, WorldDrawScratch& out)
+        {
+            if (!frame.drawProbes) {
+                return;
+            }
+            for (const auto& entry : frame.probeSpheres) {
+                if (out.spheres.size() >= rpsui::api::world_draw::kMaxSpheres) {
+                    return;
+                }
+                rpsui::api::world_draw::Sphere sphere{};
+                sphere.center[0] = entry.center.x;
+                sphere.center[1] = entry.center.y;
+                sphere.center[2] = entry.center.z;
+                sphere.radius = entry.radius;
+                std::copy_n(entry.color, 4, sphere.color);
+                sphere.fill = entry.wire ? rpsui::api::world_draw::Fill::Wire : rpsui::api::world_draw::Fill::Solid;
+                if (finiteValues(sphere.center, 3) && std::isfinite(sphere.radius) && sphere.radius > 0.0f &&
+                    finiteValues(sphere.color, 4)) {
+                    out.spheres.push_back(sphere);
+                }
+            }
+        }
+
         // Text is drawn by RPS UI next to its world anchor in both eyes.
         // Screen-positioned text has no VR placement and is not drawn.
         void appendTexts(const PublishedOverlayFrame& frame, WorldDrawScratch& out, OverlayRuntimeStats& stats)
@@ -2577,8 +2629,10 @@ namespace rock::debug
             const bool hasMarkersToDraw = frame && frame->drawMarkers && !frame->markers.empty();
             const bool hasSkeletonToDraw = frame && frame->drawSkeleton && !frame->skeleton.empty();
             const bool hasTextToDraw = frame && frame->drawText && !frame->text.empty();
-            const bool hasStandardOverlayToDraw =
-                hasBodiesToDraw || hasAxesToDraw || hasMarkersToDraw || hasSkeletonToDraw || hasTextToDraw;
+            const bool hasProbesToDraw =
+                frame && frame->drawProbes && (!frame->probeSpheres.empty() || !frame->probeLines.empty());
+            const bool hasStandardOverlayToDraw = hasBodiesToDraw || hasAxesToDraw || hasMarkersToDraw ||
+                hasSkeletonToDraw || hasTextToDraw || hasProbesToDraw;
             if (!hasStandardOverlayToDraw && !hasGripZoneIndicatorsToDraw) {
                 return;
             }
@@ -2613,6 +2667,9 @@ namespace rock::debug
             if (hasGripZoneIndicatorsToDraw) {
                 appendGripZoneIndicators(*gripZoneIndicatorFrame, scratch);
             }
+            if (hasProbesToDraw) {
+                appendProbeSpheres(*frame, scratch);
+            }
 
             if (frame) {
                 auto& lineBatch = scratch.lines;
@@ -2620,6 +2677,7 @@ namespace rock::debug
                 collectAxisOverlays(lineBatch, *frame, hasCompletedPhaseFrame ? &completedPhaseFrame : nullptr);
                 collectMarkerOverlays(lineBatch, *frame);
                 collectSkeletonOverlays(lineBatch, *frame);
+                collectProbeLines(lineBatch, *frame);
                 emitLineBatch(lineBatch, scratch, stats);
                 appendTexts(*frame, scratch, stats);
             }

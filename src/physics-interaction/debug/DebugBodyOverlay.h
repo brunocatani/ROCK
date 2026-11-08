@@ -293,6 +293,25 @@ namespace rock::debug
         bool inPowerArmor{ false };
     };
 
+    /*
+     * Primitives drawn in their own colour (the grab finger probe view): a
+     * sphere at its true radius, solid or wire, and a plain line.
+     */
+    struct ProbeSphereOverlayEntry
+    {
+        RE::NiPoint3 center{};
+        float radius{ 0.5f };
+        float color[4]{ 1.0f, 1.0f, 1.0f, 1.0f };
+        bool wire{ false };
+    };
+
+    struct ProbeLineOverlayEntry
+    {
+        RE::NiPoint3 start{};
+        RE::NiPoint3 end{};
+        float color[4]{ 1.0f, 1.0f, 1.0f, 1.0f };
+    };
+
     struct TextOverlayEntry
     {
         char text[128]{};
@@ -318,17 +337,23 @@ namespace rock::debug
         std::array<MarkerOverlayEntry, 512> markerEntries{};
         std::array<SkeletonOverlayEntry, skeleton_bone_debug_math::skeletonOverlayBudget()> skeletonEntries{};
         std::array<TextOverlayEntry, 96> textEntries{};
+        // Both hands' probe spheres; RPS UI draws at most 256 spheres per frame in total.
+        std::array<ProbeSphereOverlayEntry, 240> probeSphereEntries{};
+        std::array<ProbeLineOverlayEntry, 160> probeLineEntries{};
         std::uint32_t count{ 0 };
         std::uint32_t axisCount{ 0 };
         std::uint32_t markerCount{ 0 };
         std::uint32_t skeletonCount{ 0 };
         std::uint32_t textCount{ 0 };
+        std::uint32_t probeSphereCount{ 0 };
+        std::uint32_t probeLineCount{ 0 };
         bool drawRockBodies{ false };
         bool drawTargetBodies{ false };
         bool drawAxes{ false };
         bool drawMarkers{ false };
         bool drawSkeleton{ false };
         bool drawText{ false };
+        bool drawProbes{ false };
     };
 
     // Binds RPS UI world drawing when it is loaded; ROCK draws nothing without it.

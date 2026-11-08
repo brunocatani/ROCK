@@ -220,6 +220,7 @@ namespace rock
         bool rockDebugDrawGrabPivotSourceEvidence = false;
         bool rockDebugDrawGrabSupportFrame = false;
         bool rockDebugDrawGrabPockets = false;
+        bool rockDebugDrawGrabFingerProbes = false;
         bool rockDebugShowPalmVectors = false;
         bool rockDebugDrawHandColliders = false;
         bool rockDebugDrawHandBoneColliders = false;

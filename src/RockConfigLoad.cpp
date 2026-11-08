@@ -583,6 +583,8 @@ namespace rock
         rockDebugDrawGrabSupportFrame =
             ini.GetBoolValue(SECTION, "bDebugDrawGrabSupportFrame", rockDebugDrawGrabSupportFrame);
         rockDebugDrawGrabPockets = ini.GetBoolValue(SECTION, "bDebugDrawGrabPockets", rockDebugDrawGrabPockets);
+        rockDebugDrawGrabFingerProbes =
+            ini.GetBoolValue(SECTION, "bDebugDrawGrabFingerProbes", rockDebugDrawGrabFingerProbes);
         rockDebugShowPalmVectors = ini.GetBoolValue(SECTION, "bDebugShowPalmVectors", rockDebugShowPalmVectors);
         rockDebugDrawHandColliders = ini.GetBoolValue(SECTION, "bDebugDrawHandColliders", rockDebugDrawHandColliders);
         rockDebugDrawHandBoneColliders =

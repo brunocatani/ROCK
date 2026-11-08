@@ -79,6 +79,12 @@ namespace rock
         const bool drawAuthoredGripActivationZones = visualization.authoredGripActivationZones;
         const bool drawAuthoredSupportGripDebug = drawAuthoredGripActivationZones;
         const bool drawNativeScopeActivation = visualization.nativeScopeActivation;
+        const bool drawGrabFingerProbes = g_rockConfig.rockDebugDrawGrabFingerProbes;
+        if (!drawGrabFingerProbes) {
+            // Drops the selected object's cached mesh as soon as the view is off.
+            _rightHand.clearGrabFingerProbePreview();
+            _leftHand.clearGrabFingerProbePreview();
+        }
 
         std::array<std::uint32_t, 2> grabbedWeaponPartColliderBodyIds{
             INVALID_BODY_ID,
@@ -116,7 +122,7 @@ namespace rock
             !drawGrabPocketNormal && !drawHandBoneContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque &&
             !drawWeaponAuthorityDebug && !drawLooseWeaponGripZones && !drawNativeScopeActivation &&
             !drawGrabSupportFrame && !drawDynamicHandColliders && !drawDynamicWeaponColliders &&
-            !drawAuthoredSupportGripDebug && !drawGunstock && !drawControllerAim) {
+            !drawAuthoredSupportGripDebug && !drawGunstock && !drawControllerAim && !drawGrabFingerProbes) {
             debug::ClearFrame();
             return;
         }
@@ -137,7 +143,8 @@ namespace rock
         frame.drawSkeleton = drawSkeletonBones;
         frame.drawText = drawGrabForceTorqueText || drawDynamicHandColliders || drawDynamicWeaponColliders ||
             drawNativeScopeActivation || drawAuthoredSupportGripDebug || drawGrabAuthorityProxy || drawGunstock ||
-            drawControllerAim;
+            drawControllerAim || drawGrabFingerProbes;
+        frame.drawProbes = drawGrabFingerProbes;
         const bool rightDisabled = context.right.disabled;
         const bool leftDisabled = context.left.disabled;
 
@@ -961,6 +968,93 @@ namespace rock
 
             addRootFlattenedFingerSkeletonDebug(false);
             addRootFlattenedFingerSkeletonDebug(true);
+        }
+
+        if (drawGrabFingerProbes) {
+            /*
+             * The grab's capsule finger solve, run live against the object the
+             * hand has selected (or the drawn fingers while holding). Spheres
+             * are the solve's own spheres at its chosen curl; solid bright ones
+             * are within reach of the mesh. Lines trace each fingertip over the
+             * whole sweep, from the open cap down to the minimum curl.
+             */
+            namespace probes = grab_finger_probe_preview;
+            struct ProbeStyle
+            {
+                float body[4];
+                float touching[4];
+                float path[4];
+                char code;
+                bool wire;
+            };
+            const auto styleFor = [](probes::FingerState state) -> ProbeStyle {
+                switch (state) {
+                case probes::FingerState::Contact:
+                    return { { 0.10f, 0.85f, 0.30f, 0.45f }, { 0.45f, 1.0f, 0.55f, 0.90f },
+                        { 0.30f, 1.0f, 0.45f, 0.85f }, 'C', false };
+                case probes::FingerState::OpenedToClear:
+                    return { { 1.0f, 0.75f, 0.10f, 0.50f }, { 1.0f, 0.90f, 0.40f, 0.90f },
+                        { 1.0f, 0.80f, 0.20f, 0.85f }, 'O', false };
+                case probes::FingerState::Blocked:
+                    return { { 1.0f, 0.15f, 0.10f, 0.55f }, { 1.0f, 0.50f, 0.40f, 0.95f },
+                        { 1.0f, 0.25f, 0.20f, 0.85f }, 'X', false };
+                case probes::FingerState::Free:
+                default:
+                    return { { 0.70f, 0.75f, 0.85f, 0.45f }, { 0.20f, 0.90f, 1.0f, 0.90f },
+                        { 0.80f, 0.82f, 0.90f, 0.70f }, '-', true };
+                }
+            };
+            const auto addProbeSphere = [&](const probes::Sphere& sphere, const ProbeStyle& style) {
+                if (frame.probeSphereCount >= frame.probeSphereEntries.size()) {
+                    return;
+                }
+                auto& entry = frame.probeSphereEntries[frame.probeSphereCount++];
+                entry.center = sphere.center;
+                entry.radius = sphere.radius;
+                std::copy_n(sphere.touching ? style.touching : style.body, 4, entry.color);
+                entry.wire = style.wire && !sphere.touching;
+            };
+            const auto addProbeLine = [&](const RE::NiPoint3& start, const RE::NiPoint3& end, const float color[4]) {
+                if (frame.probeLineCount >= frame.probeLineEntries.size()) {
+                    return;
+                }
+                auto& entry = frame.probeLineEntries[frame.probeLineCount++];
+                entry.start = start;
+                entry.end = end;
+                std::copy_n(color, 4, entry.color);
+            };
+            const auto addHandProbes = [&](bool isLeft) {
+                Hand& hand = isLeft ? _leftHand : _rightHand;
+                if ((isLeft && leftDisabled) || (!isLeft && rightDisabled)) {
+                    hand.clearGrabFingerProbePreview();
+                    return;
+                }
+                probes::Snapshot snapshot{};
+                if (!hand.buildGrabFingerProbePreview(snapshot)) {
+                    return;
+                }
+                std::array<ProbeStyle, 5> styles{};
+                for (std::size_t finger = 0; finger < styles.size(); ++finger) {
+                    styles[finger] = styleFor(snapshot.fingers[finger].state);
+                    const auto& state = snapshot.fingers[finger];
+                    for (std::size_t point = 1; point < state.tipPathCount; ++point) {
+                        addProbeLine(state.tipPath[point - 1], state.tipPath[point], styles[finger].path);
+                    }
+                }
+                for (std::uint32_t index = 0; index < snapshot.sphereCount; ++index) {
+                    const auto& sphere = snapshot.spheres[index];
+                    addProbeSphere(sphere, styles[sphere.finger < styles.size() ? sphere.finger : 0]);
+                }
+                const auto& f = snapshot.fingers;
+                const float labelColor[4]{ 0.92f, 0.96f, 1.0f, 0.95f };
+                addTextLine(snapshot.labelAnchor, labelColor,
+                    "%s%s T%.2f%c I%.2f%c M%.2f%c R%.2f%c P%.2f%c tris=%u%s", isLeft ? "L" : "R",
+                    snapshot.holding ? " held" : "", f[0].curl, styles[0].code, f[1].curl, styles[1].code, f[2].curl,
+                    styles[2].code, f[3].curl, styles[3].code, f[4].curl, styles[4].code, snapshot.triangleCount,
+                    snapshot.meshCoversWholeObject ? "" : " (nearest)");
+            };
+            addHandProbes(false);
+            addHandProbes(true);
         }
 
         if (drawGrabPivots) {
