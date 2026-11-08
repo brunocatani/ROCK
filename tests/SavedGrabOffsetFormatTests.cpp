@@ -55,6 +55,16 @@ int main()
                 check(loaded.right.exactFingerRotations[i][c] == file.right.exactFingerRotations[i][c]);
         }
         auto valid = nlohmann::json::parse(serialize(file));
+        // Count-based ammo variants are separate saved objects; files of
+        // every other object keep the identity they always had.
+        check(!valid["object"].contains("variant") && loaded.object.variant.empty());
+        auto single = file;
+        single.object.variant = "single";
+        check(parse(serialize(single), loaded, &error) && error.empty() && loaded.object.variant == "single" &&
+            loaded.object.localFormId == file.object.localFormId);
+        auto badVariant = nlohmann::json::parse(serialize(single));
+        badVariant["object"]["variant"] = 1;
+        check(!parse(badVariant.dump(), loaded, &error));
         for (int version : { 1, 2 }) {
             auto old = valid;
             old["format"] = version;
@@ -90,7 +100,8 @@ int main()
         valid["format"] = 3;
         valid["objectName"] = nlohmann::json::array();
         check(!parse(valid.dump(), loaded, &error));
-        std::cout << "PASS: exact rotation round trip, over-open scalars, legacy formats, opposite hand, rejection\n";
+        std::cout << "PASS: exact rotation round trip, over-open scalars, legacy formats, opposite hand, variant "
+                     "identity, rejection\n";
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';
         return 1;

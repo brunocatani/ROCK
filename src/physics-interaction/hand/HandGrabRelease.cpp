@@ -130,6 +130,10 @@ namespace rock
         }
 
         held_scene_presentation::clearHeldBodies(_isLeft);
+        // Last carry before the release velocity reaches the held body set,
+        // so the root body leaves the hand with the visible branch.
+        carryCountBasedAmmoAnchor(world);
+        clearCountBasedAmmoCarry();
 
         outcome.released = true;
         outcome.retainedRef = _savedObjectState.retainedRef;

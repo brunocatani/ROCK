@@ -563,18 +563,15 @@ namespace rock::object_physics_body_set
             return nullptr;
         }
 
-        for (const auto& record : records) {
-            if (record.accepted && record.owningNode == ownerNode) {
-                return &record;
-            }
-        }
-
-        for (const auto& record : records) {
-            if (!record.accepted || !record.owningNode) {
-                continue;
-            }
-            if (nodeIsOrContains(record.owningNode, ownerNode)) {
-                return &record;
+        // The nearest owning ancestor wins. A model whose root carries its own
+        // body (count-based ammo, weapon receivers) also contains every child
+        // body's geometry; taking the first containing record in scan order
+        // would hand the surface to the root body instead of the part touched.
+        for (auto* ancestor = ownerNode; ancestor; ancestor = ancestor->parent) {
+            for (const auto& record : records) {
+                if (record.accepted && record.owningNode == ancestor) {
+                    return &record;
+                }
             }
         }
 

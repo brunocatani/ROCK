@@ -425,6 +425,10 @@ namespace rock
 
         GrabBodyPreparation bodyPreparation{};
         prepareSelectedGrabBodies(world, sharedContext, validatedSelection, bodyPreparation);
+        // Only the unconstrained root body moves, so this is also safe when the
+        // peer hand already holds the object; both hands then carry it.
+        (void)restoreCountBasedAmmoAssembly(world, count_based_ammo::resolve(sel.refr),
+            bodyPreparation.preparedBodySet, "grab");
         auto& activeLifecycle = bodyPreparation.activeLifecycle;
         const bool consumedPullPrepLifecycle = bodyPreparation.consumedPullPrepLifecycle;
         const auto& beforePrepBodySet = bodyPreparation.beforePrepBodySet;

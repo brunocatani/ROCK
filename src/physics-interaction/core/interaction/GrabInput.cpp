@@ -132,13 +132,19 @@ namespace rock
             return false;
         }
 
-        const auto formRef = saved_grab_offset::formRefFromRuntimeId(baseForm->GetFormID());
+        auto formRef = saved_grab_offset::formRefFromRuntimeId(baseForm->GetFormID());
         if (formRef.empty()) {
             ROCK_LOG_WARN(Hand,
                 "Saved grab offset: aborted, could not resolve load-order-independent identity for base form {:08X}",
                 baseForm->GetFormID());
             return false;
         }
+        // A single round and a box of the same ammo are different objects in
+        // the hand: each variant keeps its own offset, measured against its
+        // visible branch, which is the root's rest frame (CountBasedAmmo.h).
+        const auto ammoAssembly = count_based_ammo::resolve(heldRef);
+        formRef.variant = std::string(count_based_ammo::variantKey(ammoAssembly.variant));
+        const RE::NiAVObject* offsetFrameNode = ammoAssembly.valid() ? ammoAssembly.variantNode : rootNode;
 
         RE::NiTransform proxyWorld{};
         if (!hand.tryComputeGrabProxyLocalPalmPocketFrameWorld(hknpWorld, proxyWorld)) {
@@ -148,7 +154,7 @@ namespace rock
         }
 
         const RE::NiTransform objectProxyLocal =
-            grab_frame_math::objectInGeneratedProxyLocalSpace(proxyWorld, rootNode->world);
+            grab_frame_math::objectInGeneratedProxyLocalSpace(proxyWorld, offsetFrameNode->world);
 
         saved_grab_offset::SavedGrabOffsetFile file{};
         std::string loadError;
@@ -254,8 +260,9 @@ namespace rock
                 isLeft ? "left" : "right", baseForm->GetFormID());
         }
 
-        ROCK_LOG_INFO(Hand, "Saved grab offset for {:08X} ({} hand, finger pose {})", baseForm->GetFormID(),
-            isLeft ? "left" : "right", handOffset.hasFingerPose ? "captured" : "unchanged");
+        ROCK_LOG_INFO(Hand, "Saved grab offset for {:08X}{}{} ({} hand, finger pose {})", baseForm->GetFormID(),
+            formRef.variant.empty() ? "" : " variant=", formRef.variant, isLeft ? "left" : "right",
+            handOffset.hasFingerPose ? "captured" : "unchanged");
 
         return true;
     }

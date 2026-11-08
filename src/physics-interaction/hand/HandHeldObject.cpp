@@ -1550,6 +1550,7 @@ namespace rock
                 peerHand, peerHandWorld)) {
             return;
         }
+        carryCountBasedAmmoAnchor(world);
         bool convergingAcquisitionPhase = false;
         if (!updateHeldVisualPresentation(world, handWorldTransform, deltaTime, driveUpdate, releaseContext,
                 convergingAcquisitionPhase)) {

@@ -63,11 +63,22 @@ namespace rock::saved_grab_offset
 
             ~Store() { shutdown(); }
 
-            std::string filePathForObject(const FormRef& object) const
+            // "<plugin>_<id>" plus "_<variant>" when the base form has
+            // differently shaped models; shared by offsets and captures.
+            static std::string objectFileStem(const FormRef& object)
             {
                 char idText[16]{};
                 std::snprintf(idText, sizeof(idText), "%08X", object.localFormId);
-                return _directory + "\\" + sanitizeForFileName(object.plugin) + "_" + idText + ".json";
+                std::string stem = sanitizeForFileName(object.plugin) + "_" + idText;
+                if (!object.variant.empty()) {
+                    stem += "_" + sanitizeForFileName(object.variant);
+                }
+                return stem;
+            }
+
+            std::string filePathForObject(const FormRef& object) const
+            {
+                return _directory + "\\" + objectFileStem(object) + ".json";
             }
 
             void preload()
@@ -162,11 +173,8 @@ namespace rock::saved_grab_offset
              */
             std::string capturePathForObject(const FormRef& object, const std::string& hand) const
             {
-                char idText[16]{};
-                std::snprintf(idText, sizeof(idText), "%08X", object.localFormId);
                 const std::string handSuffix = hand.empty() ? std::string("hand") : sanitizeForFileName(hand);
-                return _directory + "\\captures\\" + sanitizeForFileName(object.plugin) + "_" + idText + "_" +
-                    handSuffix + ".capture.json";
+                return _directory + "\\captures\\" + objectFileStem(object) + "_" + handSuffix + ".capture.json";
             }
 
             void saveCapture(const saved_grab_capture::SavedGrabCaptureFile& capture)

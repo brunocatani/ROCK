@@ -102,7 +102,7 @@ namespace rock::mechanical_connected_body_set
     [[nodiscard]] inline MechanicalScope buildFromPreparedBodySet(
         const object_physics_body_set::ObjectPhysicsBodySet& beforePrepBodySet,
         const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet, std::uint32_t primaryBodyId,
-        grab_target::Kind targetKind, bool lifecycleIncompleteNativeScan)
+        grab_target::Kind targetKind, bool lifecycleIncompleteNativeScan, bool carriedRigidAssembly)
     {
         MechanicalScope result{};
         result.primaryBodyId = primaryBodyId;
@@ -133,6 +133,7 @@ namespace rock::mechanical_connected_body_set
                 .scanFailureCount = result.scanFailureCount,
                 .invalidPhysicsSystemCount = result.invalidPhysicsSystemCount,
                 .incompleteNativeScan = result.incompleteDiscovery,
+                .carriedRigidAssembly = carriedRigidAssembly,
             });
 
         if (result.driveDecision.mode == held_object_drive_policy::HeldBodySetDriveMode::IncompleteNativeScan) {

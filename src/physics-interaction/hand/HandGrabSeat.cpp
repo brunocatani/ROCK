@@ -32,7 +32,11 @@ namespace rock
             if (!baseForm) {
                 return false;
             }
-            const auto formRef = saved_grab_offset::formRefFromRuntimeId(baseForm->GetFormID());
+            auto formRef = saved_grab_offset::formRefFromRuntimeId(baseForm->GetFormID());
+            // Count-based ammo keys each visible variant separately. The grab
+            // restored the root onto that branch, so the root-relative offset
+            // lands on the branch it was saved against.
+            formRef.variant = std::string(count_based_ammo::variantKey(count_based_ammo::resolve(refr).variant));
             saved_grab_offset::SavedGrabOffsetFile file{};
             if (!formRef.empty() && saved_grab_offset::load(formRef, file, nullptr)) {
                 const auto& handOffset = isLeft ? file.left : file.right;

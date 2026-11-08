@@ -795,13 +795,31 @@ namespace rock
                                 ? object_physics_body_set::PrimaryBodyChoiceReason::NearestAcceptedFallback
                                 : object_physics_body_set::PrimaryBodyChoiceReason::NoAcceptedBody));
 
+        // Count-based loose ammo is held by its visible branch body. The root
+        // body is a geometry-less cube the selection ray often hits first; it
+        // is carried with the branch instead (restoreCountBasedAmmoAssembly).
+        bool carriedAmmoAssembly = false;
+        if (!ragdollGrab && _ammoCarry.active() && preparedBodySet.containsAcceptedBody(_ammoCarry.primaryBodyId) &&
+            preparedBodySet.containsAcceptedBody(_ammoCarry.anchorBodyId)) {
+            carriedAmmoAssembly = true;
+            if (outResolution.primaryChoice.bodyId != _ammoCarry.primaryBodyId) {
+                ROCK_LOG_DEBUG(Hand, "{} hand GRAB count-based ammo: primary body {} -> visible branch body {}",
+                    handName(), outResolution.primaryChoice.bodyId, _ammoCarry.primaryBodyId);
+                outResolution.primaryChoice.bodyId = _ammoCarry.primaryBodyId;
+                outResolution.primaryChoice.reason =
+                    object_physics_body_set::PrimaryBodyChoiceReason::SurfaceOwnerAccepted;
+            }
+        }
+
         if (surface.surfaceHit.valid) {
             const bool handPocketPositionOnlySkinnedSurface = selection.handPocketOnlyGrab &&
                 surface.surfaceHit.sourceKind == GrabSurfaceSourceKind::Skinned &&
                 !surface.surfaceHit.hasSkinInfluences;
             if (surface.surfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery) {
+                // A hit on the carried root body is a hit on the held branch.
                 outResolution.surfaceOwnerMatchesResolvedBody =
-                    outResolution.primaryChoice.bodyId == selectedObject.bodyId.value;
+                    outResolution.primaryChoice.bodyId == selectedObject.bodyId.value ||
+                    (carriedAmmoAssembly && selectedObject.bodyId.value == _ammoCarry.anchorBodyId);
             } else if (handPocketPositionOnlySkinnedSurface) {
                 outResolution.surfaceOwnerMatchesResolvedBody =
                     outResolution.primaryChoice.bodyId == selectedObject.bodyId.value &&
@@ -846,7 +864,7 @@ namespace rock
             if (!ragdollGrab) {
                 outResolution.mechanicalScope = mechanical_connected_body_set::buildFromPreparedBodySet(
                     beforePrepBodySet, preparedBodySet, outResolution.primaryChoice.bodyId, selectedObject.targetKind,
-                    activeLifecycle.hasIncompleteNativeScan());
+                    activeLifecycle.hasIncompleteNativeScan(), carriedAmmoAssembly);
                 outResolution.relaxedArticulatedAuthority = outResolution.mechanicalScope.strictPocketAuthorityRelaxed;
             }
             if (ragdollGrab) {

@@ -172,6 +172,9 @@ namespace rock::saved_grab_capture
             { "rockVersion", file.rockVersion },
             { "capturedUtc", file.capturedUtc },
         };
+        if (!file.object.variant.empty()) {
+            document["object"]["variant"] = file.object.variant;
+        }
         if (file.capture.present) {
             document["capture"] = handToJson(file.capture);
         }

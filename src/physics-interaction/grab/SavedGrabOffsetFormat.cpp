@@ -32,7 +32,11 @@ namespace rock::saved_grab_offset
 
         json formRefToJson(const FormRef& ref)
         {
-            return json{ { "plugin", ref.plugin }, { "id", formIdToHex(ref.localFormId) } };
+            json j{ { "plugin", ref.plugin }, { "id", formIdToHex(ref.localFormId) } };
+            if (!ref.variant.empty()) {
+                j["variant"] = ref.variant;
+            }
+            return j;
         }
 
         bool formRefFromJson(const json& j, FormRef& out)
@@ -41,7 +45,11 @@ namespace rock::saved_grab_offset
                 !j["id"].is_string()) {
                 return false;
             }
+            if (j.contains("variant") && !j["variant"].is_string()) {
+                return false;
+            }
             out.plugin = j["plugin"].get<std::string>();
+            out.variant = j.value("variant", std::string{});
             const auto idText = j["id"].get<std::string>();
             return hexToFormId(idText, out.localFormId);
         }

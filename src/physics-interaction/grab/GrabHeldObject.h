@@ -100,6 +100,10 @@ namespace rock::held_object_drive_policy
         std::uint32_t scanFailureCount = 0;
         std::uint32_t invalidPhysicsSystemCount = 0;
         bool incompleteNativeScan = false;
+        // Unconstrained bodies of one rigid object that ROCK keeps at their
+        // rest relation for the whole hold (count-based loose ammo). Their
+        // separate motions are not joints.
+        bool carriedRigidAssembly = false;
     };
 
     struct HeldBodySetDriveDecision
@@ -139,6 +143,13 @@ namespace rock::held_object_drive_policy
                 .includeConnectedAngularVelocity = false,
                 .includeConnectedMass = false,
                 .reason = "fixed-or-nondynamic-body",
+            };
+        }
+
+        if (input.carriedRigidAssembly && acceptedBodies > 1) {
+            return HeldBodySetDriveDecision{
+                .mode = HeldBodySetDriveMode::ConnectedDynamic,
+                .reason = "carried-rigid-assembly",
             };
         }
 

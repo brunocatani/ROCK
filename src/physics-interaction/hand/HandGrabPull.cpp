@@ -21,7 +21,8 @@ namespace rock
 
         held_object_drive_policy::HeldBodySetDriveDecision classifyHeldBodySetDrive(
             const object_physics_body_set::ObjectPhysicsBodySet& beforePrepBodySet,
-            const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet, bool incompleteNativeScan)
+            const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet, bool incompleteNativeScan,
+            bool carriedRigidAssembly)
         {
             const auto uniqueMotionCount = preparedBodySet.forEachUniqueAcceptedMotion([](const auto&) {});
             return held_object_drive_policy::evaluateHeldBodySetDrive(held_object_drive_policy::HeldBodySetDriveInput{
@@ -36,6 +37,7 @@ namespace rock
                 .invalidPhysicsSystemCount = beforePrepBodySet.diagnostics.invalidPhysicsSystems +
                     preparedBodySet.diagnostics.invalidPhysicsSystems,
                 .incompleteNativeScan = incompleteNativeScan,
+                .carriedRigidAssembly = carriedRigidAssembly,
             });
         }
 
@@ -249,8 +251,12 @@ namespace rock
         if (preparedScanCacheHit && !preparedBodySetPostPrepComplete) {
             pullLifecycle.markIncompleteNativeScan();
         }
-        _pullDriveDecision =
-            classifyHeldBodySetDrive(beforePrepBodySet, preparedBodySet, pullLifecycle.hasIncompleteNativeScan());
+        // Count-based loose ammo flies as one rigid object led by its visible
+        // branch body; the arrival grab restores the relation again.
+        const bool carriedAmmoAssembly = restoreCountBasedAmmoAssembly(world, count_based_ammo::resolve(selectedRef),
+            preparedBodySet, "pull");
+        _pullDriveDecision = classifyHeldBodySetDrive(beforePrepBodySet, preparedBodySet,
+            pullLifecycle.hasIncompleteNativeScan(), carriedAmmoAssembly);
         ROCK_LOG_DEBUG(Hand,
             "{} hand PULL scan: type={} weapon={} name='{}' formID={:08X} seedBody={} beforeBodies={} afterBodies={} "
             "accepted={} rejected={} "
@@ -273,8 +279,11 @@ namespace rock
         const RE::NiPoint3 grabPivotAForPrimaryChoice = computeGrabPivotAWorld(world, handWorldTransform);
         const RE::NiPoint3 primaryChoiceTarget =
             _currentSelection.hasHitPoint ? _currentSelection.hitPointWorld : grabPivotAForPrimaryChoice;
-        const auto primaryChoice = preparedBodySet.choosePrimaryBody(_currentSelection.bodyId.value,
-            object_physics_body_set::PurePoint3{ primaryChoiceTarget });
+        const auto primaryChoice = carriedAmmoAssembly
+            ? object_physics_body_set::PrimaryBodyChoice{ .bodyId = _ammoCarry.primaryBodyId,
+                  .reason = object_physics_body_set::PrimaryBodyChoiceReason::SurfaceOwnerAccepted }
+            : preparedBodySet.choosePrimaryBody(_currentSelection.bodyId.value,
+                  object_physics_body_set::PurePoint3{ primaryChoiceTarget });
 
         if (primaryChoice.bodyId == INVALID_BODY_ID) {
             const auto* rejectedBody = diagnosticRejectedBodyRecord(preparedBodySet, _currentSelection.bodyId.value);

@@ -23,11 +23,15 @@ namespace rock::saved_grab_offset
     inline constexpr std::uint32_t kFormatVersion = 3;
     inline constexpr std::string_view kExactFingerRig = "frik-normal-authored-v1";
 
-    // Load-order-independent form identity; empty = none.
+    // Load-order-independent form identity; empty = none. `variant` names a
+    // differently shaped model of the same base form ("single" or "multiple"
+    // for count-based loose ammo) and is empty for every other object; each
+    // variant is a separate saved object with its own file.
     struct FormRef
     {
         std::string plugin;
         std::uint32_t localFormId{ 0 };
+        std::string variant;
 
         [[nodiscard]] bool empty() const { return plugin.empty() && localFormId == 0; }
     };

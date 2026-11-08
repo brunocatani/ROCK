@@ -31,6 +31,7 @@
 #include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/native/havok/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/havok/PhysicsUtils.h"
+#include "physics-interaction/object/CountBasedAmmo.h"
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/object/RagdollBodyScope.h"
@@ -523,6 +524,16 @@ namespace rock
         static std::size_t moveBodySetRigidly(RE::hknpWorld* world, std::uint32_t primaryBodyId,
             const std::vector<std::uint32_t>& bodyIds, const RE::NiTransform& worldDelta);
         bool validateHeldObjectUpdate(RE::hknpWorld* world, const GrabReleaseContext& releaseContext);
+
+        // Count-based loose ammo (object/CountBasedAmmo.h): restores the rest
+        // relation between the root body and the visible branch body before a
+        // pull or grab captures any root-relative frame, then carries the root
+        // body with the held branch body every held frame and once more at release.
+        bool restoreCountBasedAmmoAssembly(RE::hknpWorld* world, const count_based_ammo::Assembly& assembly,
+            const object_physics_body_set::ObjectPhysicsBodySet& bodySet, const char* context);
+        void carryCountBasedAmmoAnchor(RE::hknpWorld* world);
+        void clearCountBasedAmmoCarry() noexcept { _ammoCarry = {}; }
+
         void captureHeldReleaseMotion(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform,
             const game_frame_timing_policy::GameFrameTiming& timing);
 
@@ -1248,6 +1259,20 @@ namespace rock
         RE::NiPointer<RE::BSTriShape> _ragdollGrabSurface;
         std::uint32_t _ragdollGrabTriangle = 0;
         held_object_drive_policy::HeldBodySetDriveDecision _pullDriveDecision{};
+        // Root body of count-based loose ammo, carried rigidly with the held
+        // visible branch body. Body IDs only; cleared at every grab start and release.
+        struct CountBasedAmmoCarry
+        {
+            std::uint32_t anchorBodyId = INVALID_BODY_ID;
+            std::uint32_t primaryBodyId = INVALID_BODY_ID;
+            RE::NiTransform anchorFromPrimary{};
+
+            [[nodiscard]] bool active() const noexcept
+            {
+                return anchorBodyId != INVALID_BODY_ID && primaryBodyId != INVALID_BODY_ID;
+            }
+        };
+        CountBasedAmmoCarry _ammoCarry{};
         bool _heldObjectIsLooseWeapon = false;
         bool _grabFingerPosePublished = false;
         // iLooseGrabFingerPoseMode captured at grab start: true runs the pre-capsule swept arc for this grab.
