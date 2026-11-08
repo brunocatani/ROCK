@@ -49,6 +49,8 @@ ROCK is the base of the RPS suite: [SCISSORS Redux](https://github.com/brunocata
 - [VR Address Library for F4SEVR](https://www.nexusmods.com/fallout4/mods/64879).
 - [FRIK](https://www.nexusmods.com/fallout4/mods/53464) 0.79.1 or newer, with FRIK API 2.3. ROCK runs inside FRIK's frame phases and refuses an older FRIK API.
 - Recommended: [RPS UI Framework](https://www.nexusmods.com/fallout4/mods/108951). ROCK's grab indicators and ammo counters draw through it; without it they are not shown.
+- Optional: RobCo PALM, for ROCK's in-game settings pages.
+- Every mod that builds on ROCK must be a version made for ROCK 1.0. ROCK, RPS UI Framework, RobCo PALM, PAPER and the ROCK add-ons are released together; install them together.
 
 ### Recommended install
 
@@ -129,6 +131,13 @@ if (hands && hands->getHandFrame(client.owner(), rock::api::Hand::Right, &frame)
 
 Call `client.close()` on the game thread before your plugin's callback data goes away.
 
+### Versions
+
+- `Client` asks for exactly the major, minor and table size your headers declare. Do the same if you call `ROCKAPI_QueryInterfaceV1` yourself, and read optional additions from the descriptor's `minor`; never try versions one after another.
+- A version mismatch stops the game. When ROCK refuses a request (`UnknownInterface`, `UnsupportedMajor`, `UnsupportedMinor`, `TableTooSmall`), it logs your DLL, shows an error box naming it at the main menu, and closes the game when the box is closed. A mod built for provider API 1 gets this.
+- When `ROCK.dll` is not loaded, turn your ROCK features off and keep running.
+- When a loaded ROCK refuses your mod, stop the game the same way so the player knows which mod to update. [RPS Framework](https://github.com/brunocatani/RPS_Framework)'s header-only `RPS/Runtime/RequiredUpdate.h` shows the box and closes the game.
+
 ### Interfaces
 
 | Interface | Use it to |
@@ -170,7 +179,16 @@ Start with the [API overview](docs/api/Overview.md), then the page of each inter
   - `winget install -e --id Microsoft.PowerShell`
 - [vcpkg](https://github.com/microsoft/vcpkg), with the `VCPKG_ROOT` environment variable pointing to it
   - `git clone https://github.com/microsoft/vcpkg.git`, run `bootstrap-vcpkg.bat`, then `setx VCPKG_ROOT "<path to vcpkg>"`
-- A [CommonLibF4VR](https://github.com/ArthurHub/CommonLibF4VR) checkout. ROCK links it directly.
+- Checkouts of these repositories:
+
+| Repository | What ROCK uses | Setting |
+| --- | --- | --- |
+| [CommonLibF4VR](https://github.com/brunocatani/CommonLibF4VR) (`master`) | Linked directly: engine types, Havok, F4SE, relocation | `COMMON_LIB_F4VR_PATH` |
+| [RPS UI Framework](https://github.com/brunocatani/RPS_UI_Framework) | Headers in `include/RPS_UI_Framework/`: world drawing and number overlays, bound at runtime | `RPSUI_INCLUDE_DIR` (its `include` folder) |
+| [RobCo PALM](https://github.com/brunocatani/RobCo_PALM) | Header `include/RobCoPALM/Developer.h`: the Developer wheel capture switch, bound at runtime | `PALM_INCLUDE_DIR` (its `include` folder) |
+| [RPS Framework](https://github.com/brunocatani/RPS_Framework) | Header-only `include/RPS/Runtime/RequiredUpdate.h`: the version-mismatch error box | `RPS_FRAMEWORK_INCLUDE_DIR` (its `include` folder) |
+
+ROCK is built and tested against that CommonLibF4VR fork: ArthurHub's [CommonLibF4VR](https://github.com/ArthurHub/CommonLibF4VR) with Fallout 4 VR additions. It links nothing from RPS UI Framework, RobCo PALM or RPS Framework, and ROCK runs without the first two installed. F4VR-CommonFramework is not needed.
 
 ROCK uses C++23. vcpkg installs the other libraries from `vcpkg.json`. The OpenVR ABI ROCK needs is vendored in [third_party/openvr](third_party/openvr/).
 
@@ -179,7 +197,10 @@ ROCK uses C++23. vcpkg installs the other libraries from `vcpkg.json`. The OpenV
 Copy [CMakeUserPresets.json.template](CMakeUserPresets.json.template) to `CMakeUserPresets.json`, remove its comment block, and set:
 
 - `COMMON_LIB_F4VR_PATH` to your CommonLibF4VR checkout;
+- `RPSUI_INCLUDE_DIR`, `PALM_INCLUDE_DIR` and `RPS_FRAMEWORK_INCLUDE_DIR` to the `include` folders of those checkouts;
 - `COPY_PLUGIN_BASE_PATH` to the mod folder the build copies `ROCK.dll` and `ROCK.pdb` into (an MO2 mod folder or the game's `Data` folder).
+
+Configuring stops with an error naming any of these that is not found.
 
 Then, from the repository root:
 
