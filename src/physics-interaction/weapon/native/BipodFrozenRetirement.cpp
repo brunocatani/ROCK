@@ -18,6 +18,7 @@
 #include "physics-interaction/weapon/collision/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/native/LooseWeaponLayerRepair.h"
 #include "rock_support/Fo4VrRuntime.h"
+#include <RPS/Runtime/HookChain.h>
 
 namespace rock::bipod_frozen_retirement
 {
@@ -262,25 +263,17 @@ namespace rock::bipod_frozen_retirement
             return result;
         }
 
-        template <std::size_t N>
-        bool matches(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected)
-        {
-            std::array<std::uint8_t, N> actual{};
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(REL::Offset(rva).address()),
-                       actual.data(), actual.size()) &&
-                actual == expected;
-        }
 
-        bool callMatches(std::uintptr_t rva, std::uintptr_t target)
+        // What the call reaches: the native function, or another plugin's detour
+        // the hook then calls through. Zero when neither.
+        std::uintptr_t callee(std::uintptr_t rva, std::uintptr_t target)
         {
-            std::array<std::uint8_t, 5> bytes{};
-            if (!native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(REL::Offset(rva).address()), bytes.data(),
-                    bytes.size()) ||
-                bytes[0] != 0xE8)
-                return false;
-            std::int32_t displacement{};
-            std::memcpy(&displacement, bytes.data() + 1, sizeof(displacement));
-            return static_cast<std::intptr_t>(rva + 5) + displacement == static_cast<std::intptr_t>(target);
+            const auto resolved =
+                RPS::Runtime::HookChain::resolveCall(REL::Offset(rva).address(), REL::Offset(target).address());
+            if (resolved.foreign())
+                ROCK_LOG_INFO(Init, "Bipod retirement call at {:#x} already hooked by {}; ROCK calls through it", rva,
+                    resolved.owner);
+            return resolved.callee;
         }
     }
 
@@ -293,9 +286,14 @@ namespace rock::bipod_frozen_retirement
         // drop factory 3E2AC1 -> 11BD80, factory pose 11C23D -> 3F4370,
         // and reference initialization 3EA980 (locked attachment at 3EAB75).
         constexpr std::array<std::uint8_t, 9> prefix{ 0x40, 0x53, 0x48, 0x81, 0xEC, 0xD0, 0, 0, 0 };
-        if (!REL::Module::IsVR() || !native_object_placement::available() || !callMatches(0x3E2AC1, 0x11BD80) ||
-            !callMatches(0x11C23D, 0x3F4370) || !matches(0x3EA980, prefix) ||
-            !matches(0x3EA820, std::array<std::uint8_t, 9>{ 0x40, 0x55, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0x01 })) {
+        constexpr std::array<std::uint8_t, 9> detachPrefix{ 0x40, 0x55, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0x01 };
+        const auto factory = callee(0x3E2AC1, 0x11BD80);
+        const auto position = callee(0x11C23D, 0x3F4370);
+        // The initializer entry: its prologue, or another plugin's jump there,
+        // which the hook then chains behind.
+        const auto initialize = RPS::Runtime::HookChain::resolveEntry(REL::Offset(0x3EA980).address(), prefix);
+        if (!REL::Module::IsVR() || !native_object_placement::available() || !factory || !position || !initialize ||
+            !RPS::Runtime::HookChain::resolveEntry(REL::Offset(0x3EA820).address(), detachPrefix)) {
             ROCK_LOG_ERROR(Init,
                 "Bipod frozen retirement unavailable: native creation/initialization qualification failed");
             return false;
@@ -306,23 +304,28 @@ namespace rock::bipod_frozen_retirement
                 ROCK_LOG_ERROR(Init, "Bipod frozen retirement unavailable: trampoline capacity");
                 return false;
             }
-            // Nine complete position-independent prologue bytes; the relative call
-            // beginning at +12 is deliberately left in its original location.
-            auto* original = static_cast<std::uint8_t*>(trampoline.allocate(prefix.size() + 14));
-            std::memcpy(original, prefix.data(), prefix.size());
-            const std::array<std::uint8_t, 6> jump{ 0xFF, 0x25, 0, 0, 0, 0 };
-            std::memcpy(original + prefix.size(), jump.data(), jump.size());
-            const auto resume = REL::Offset(0x3EA980).address() + prefix.size();
-            std::memcpy(original + prefix.size() + jump.size(), &resume, sizeof(resume));
-            s_initialize = reinterpret_cast<Initialize>(original);
+            if (initialize.foreign()) {
+                ROCK_LOG_INFO(Init, "Bipod reference initialization chains behind {}", initialize.owner);
+                s_initialize = reinterpret_cast<Initialize>(initialize.callee);
+            } else {
+                // Nine complete position-independent prologue bytes; the relative call
+                // beginning at +12 is deliberately left in its original location.
+                auto* original = static_cast<std::uint8_t*>(trampoline.allocate(prefix.size() + 14));
+                std::memcpy(original, prefix.data(), prefix.size());
+                const std::array<std::uint8_t, 6> jump{ 0xFF, 0x25, 0, 0, 0, 0 };
+                std::memcpy(original + prefix.size(), jump.data(), jump.size());
+                const auto resume = REL::Offset(0x3EA980).address() + prefix.size();
+                std::memcpy(original + prefix.size() + jump.size(), &resume, sizeof(resume));
+                FlushInstructionCache(GetCurrentProcess(), original, prefix.size() + 14);
+                s_initialize = reinterpret_cast<Initialize>(original);
+            }
             s_detach = reinterpret_cast<Detach>(REL::Offset(0x3EA820).address());
             s_lock = reinterpret_cast<Lock>(REL::Offset(0x1DF5FB0).address());
             s_unlock = reinterpret_cast<Lock>(REL::Offset(0x1DF5FD0).address());
-            s_factory = reinterpret_cast<Factory>(REL::Offset(0x11BD80).address());
-            s_position = reinterpret_cast<Position>(REL::Offset(0x3F4370).address());
+            s_factory = reinterpret_cast<Factory>(factory);
+            s_position = reinterpret_cast<Position>(position);
             (void)trampoline.write_call<5>(REL::Offset(0x3E2AC1).address(), &factoryHook);
             (void)trampoline.write_call<5>(REL::Offset(0x11C23D).address(), &positionHook);
-            FlushInstructionCache(GetCurrentProcess(), original, prefix.size() + 14);
             (void)trampoline.write_branch<5>(REL::Offset(0x3EA980).address(), &initializeHook);
             s_installed = true;
             ROCK_LOG_INFO(Init, "Bipod frozen retirement native creation guard installed");

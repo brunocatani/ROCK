@@ -21,6 +21,7 @@
 #include "physics-interaction/weapon/equip/EquippedWeaponVisualState.h"
 #include "physics-interaction/weapon/scene/WeaponScenePath.h"
 #include "rock_support/Fo4VrRuntime.h"
+#include <RPS/Runtime/HookChain.h>
 
 namespace rock::trigger_equip_readiness_trace
 {
@@ -218,15 +219,20 @@ namespace rock::trigger_equip_readiness_trace
                 prefix.size(), reinterpret_cast<void*>(&attackRequest), original))
             return;
         s_request = reinterpret_cast<AttackRequest>(original);
-        constexpr std::array<std::uint8_t, 5> expected{ 0xE8, 0xF7, 0x8B, 0xFF, 0xFF };
-        std::array<std::uint8_t, 5> actual{};
+        // The dispatch call reaches the native function or another plugin's
+        // detour, which the observer calls through.
         const auto call = REL::Offset(0xFC7BE4).address();
-        if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(call), actual.data(), actual.size()) ||
-            actual != expected || F4SE::GetTrampoline().free_size() < 14) {
+        const auto dispatch = RPS::Runtime::HookChain::resolveCall(call, REL::Offset(0xFC07E0).address());
+        if (!dispatch || F4SE::GetTrampoline().free_size() < 14) {
             ROCK_LOG_WARN(Init, "Trigger equip action-result observation unavailable; request observation retained");
             return;
         }
-        s_dispatch = reinterpret_cast<DispatchAction>(REL::Offset(0xFC07E0).address());
+        if (dispatch.foreign())
+            ROCK_LOG_INFO(Init, "Trigger equip action dispatch already hooked by {}; ROCK calls through it",
+                dispatch.owner);
+        std::array<std::uint8_t, 5> before{};
+        std::memcpy(before.data(), reinterpret_cast<const void*>(call), before.size());
+        s_dispatch = reinterpret_cast<DispatchAction>(dispatch.callee);
         try {
             (void)F4SE::GetTrampoline().write_call<5>(call, &dispatchAction);
             FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<const void*>(call), 5);
@@ -235,7 +241,7 @@ namespace rock::trigger_equip_readiness_trace
                 "Trigger equip native request and action-result observation installed; no attack behavior changed");
         } catch (...) {
             s_actionHookInstalled = false;
-            REL::safe_write(call, expected.data(), expected.size());
+            REL::safe_write(call, before.data(), before.size());
             FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<const void*>(call), 5);
             ROCK_LOG_WARN(Init, "Trigger equip action-result observation failed; native action call retained");
         }

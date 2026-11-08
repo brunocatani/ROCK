@@ -29,13 +29,6 @@ namespace rock::held_weapon_instant_transition
         constexpr std::uintptr_t kPrepareDrawEntry = 0xEF8E60;
         constexpr std::uintptr_t kEquipManagerPrepareCallsite = 0xE10794;
         constexpr std::ptrdiff_t kAttackCooldownOffset = 0x908;
-        constexpr std::array<std::uint8_t, 5> kPrepareCall{
-            0xE8,
-            0xC7,
-            0x86,
-            0x0E,
-            0x00,
-        };
         // Startup-only installation. Every player equip that EquipManager draws
         // (trigger equip, Pip-Boy, favorites, other mods' equips) is prepared
         // for instant presentation and fire; bashing and other actors never
@@ -103,12 +96,17 @@ namespace rock::held_weapon_instant_transition
                 actual == expected;
         }
 
+        // What the EquipManager preparation call reached before ROCK patched it:
+        // the native preparation or another plugin's detour. Load owner.
+        std::uintptr_t s_prepareCallee = 0;
+        std::array<std::uint8_t, 5> s_prepareCallBefore{};
+
         void onPrepareEquippedWeaponDraw(RE::PlayerCharacter* player)
         {
             if (player && player == RE::PlayerCharacter::GetSingleton()) {
                 prepareInstantDraw(player);
             } else {
-                reinterpret_cast<PrepareEquippedWeaponDraw>(REL::Offset(kPrepareDrawEntry).address())(player);
+                reinterpret_cast<PrepareEquippedWeaponDraw>(s_prepareCallee)(player);
             }
         }
 
@@ -183,8 +181,15 @@ namespace rock::held_weapon_instant_transition
             // before its draw virtual call. Preparation writes +908; the
             // trigger attack gate at FCD90E rejects positive values there.
             // Leave the native entry intact for other mods and direct callers.
-            if (!bytesMatch(kEquipManagerPrepareCallsite, kPrepareCall) ||
-                !bytesMatch(kPrepareDrawEntry,
+            // The preparation call reaches the native function or another plugin's
+            // detour, which other actors keep calling through.
+            const auto prepare = RPS::Runtime::HookChain::resolveCall(
+                REL::Offset(kEquipManagerPrepareCallsite).address(), REL::Offset(kPrepareDrawEntry).address());
+            if (prepare.foreign())
+                ROCK_LOG_INFO(Init, "Equip preparation call already hooked by {}; ROCK calls through it for NPCs",
+                    prepare.owner);
+            if (!prepare ||
+                !RPS::Runtime::HookChain::resolveEntry(REL::Offset(kPrepareDrawEntry).address(),
                     std::array<std::uint8_t, 7>{ 0x80, 0x89, 0xA3, 0x12, 0x00, 0x00, 0x80 }) ||
                 !bytesMatch(0xEF8EA3,
                     std::array<std::uint8_t, 9>{ 0xF3, 0x0F, 0x11, 0x81, 0x08, 0x09, 0x00, 0x00, 0xC3 }) ||
@@ -199,6 +204,8 @@ namespace rock::held_weapon_instant_transition
                 return;
             }
             const auto address = REL::Offset(kEquipManagerPrepareCallsite).address();
+            s_prepareCallee = prepare.callee;
+            std::memcpy(s_prepareCallBefore.data(), reinterpret_cast<const void*>(address), s_prepareCallBefore.size());
             try {
                 (void)trampoline.write_call<5>(address, &onPrepareEquippedWeaponDraw);
                 std::array<std::uint8_t, 5> call{};
@@ -229,8 +236,9 @@ namespace rock::held_weapon_instant_transition
                     "preparation");
             } catch (...) {
                 s_attackDelayRemovalInstalled = false;
-                REL::safe_write(address, kPrepareCall.data(), kPrepareCall.size());
-                FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<const void*>(address), kPrepareCall.size());
+                REL::safe_write(address, s_prepareCallBefore.data(), s_prepareCallBefore.size());
+                FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<const void*>(address),
+                    s_prepareCallBefore.size());
                 ROCK_LOG_ERROR(Init,
                     "Trigger equip attack delay removal installation failed; native preparation retained");
             }

@@ -30,6 +30,7 @@
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/weapon/native/NativeMeleeWand.h"
 #include "rock_support/Fo4VrRuntime.h"
+#include <RPS/Runtime/HookChain.h>
 
 namespace rock::native_hand_equipment
 {
@@ -698,6 +699,14 @@ namespace rock::native_hand_equipment
                 actual == expected;
         }
 
+        // A function ROCK calls or resumes inside: its prologue, or another plugin's
+        // detour at the entry.
+        template <std::size_t N>
+        bool callable(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected) noexcept
+        {
+            return static_cast<bool>(RPS::Runtime::HookChain::resolveEntry(REL::Offset(rva).address(), expected));
+        }
+
         bool callRedirectMatches(std::uintptr_t rva, std::uintptr_t destination, std::uint8_t opcode = 0xE8) noexcept
         {
             const auto address = REL::Offset(rva).address();
@@ -1109,41 +1118,55 @@ namespace rock::native_hand_equipment
             return true;
         if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72)
             return false;
-        constexpr std::array<std::uint8_t, 5> useBytes{ 0xE8, 0x17, 0x50, 0x2D, 0 };
-        constexpr std::array<std::uint8_t, 5> slotBytes{ 0xE8, 0x24, 0x58, 0x2D, 0xFF };
+        // The four patched calls reach the native function or another plugin's
+        // detour; the hooks call through whichever is there.
+        const auto callAt = [](std::uintptr_t site, std::uintptr_t target) {
+            const auto resolved =
+                RPS::Runtime::HookChain::resolveCall(REL::Offset(site).address(), REL::Offset(target).address());
+            if (resolved.foreign())
+                ROCK_LOG_INFO(Init, "Hand equipment call at {:#x} already hooked by {}; ROCK calls through it", site,
+                    resolved.owner);
+            return resolved.callee;
+        };
+        const auto useCallee = callAt(0xB9B904, 0xE70920);
+        const auto slotCallee = callAt(0xE70A37, 0x146260);
+        const auto triggerMeleeCallee = callAt(0xFC833B, 0x1133BB0);
+        const auto queueCallee = callAt(0xE70A79, 0xDF5050);
+        // Each call's bytes before ROCK patched it, for rollback.
+        constexpr std::array<std::uintptr_t, 4> kCallSites{ 0xE70A37, 0xB9B904, 0xFC833B, 0xE70A79 };
+        std::array<std::array<std::uint8_t, 5>, kCallSites.size()> callsBefore{};
+        for (std::size_t i = 0; i < kCallSites.size(); ++i)
+            std::memcpy(callsBefore[i].data(), reinterpret_cast<const void*>(REL::Offset(kCallSites[i]).address()), 5);
         constexpr std::array<std::uint8_t, 12> executionBytes{ 0x49, 0x8B, 0x06, 0x48, 0x8B, 0xD3, 0x49, 0x8B, 0xCE,
             0xFF, 0x50, 0x38 };
-        constexpr std::array<std::uint8_t, 5> triggerMeleeBytes{ 0xE8, 0x70, 0xB8, 0x16, 0x00 };
-        constexpr std::array<std::uint8_t, 5> queueBytes{ 0xE8, 0xD2, 0x45, 0xF8, 0xFF };
         constexpr std::array<std::uint8_t, 44> executionFrame{ 0x4C, 0x89, 0x4C, 0x24, 0x20, 0x4C, 0x89, 0x44, 0x24,
             0x18, 0x48, 0x89, 0x54, 0x24, 0x10, 0x48, 0x89, 0x4C, 0x24, 0x08, 0x55, 0x53, 0x56, 0x57, 0x41, 0x54, 0x41,
             0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8D, 0x6C, 0x24, 0xE1, 0x48, 0x81, 0xEC, 0xE8, 0, 0, 0 };
-        if (!bytesMatch(0xB9B904, useBytes) || !bytesMatch(0xE70A37, slotBytes) ||
-            !bytesMatch(0xE72E19, executionBytes) || !bytesMatch(0xFC833B, triggerMeleeBytes) ||
-            !bytesMatch(0xE70A79, queueBytes) ||
-            !bytesMatch(0xDF5050,
+        if (!useCallee || !slotCallee || !bytesMatch(0xE72E19, executionBytes) || !triggerMeleeCallee ||
+            !queueCallee ||
+            !callable(0xDF5050,
                 std::array<std::uint8_t, 14>{ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x0F, 0xB6,
                     0x42, 0x1A }) ||
-            !bytesMatch(0x1133BB0, std::array<std::uint8_t, 8>{ 0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B }) ||
-            !bytesMatch(0x1133AE0, std::array<std::uint8_t, 8>{ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74 }) ||
-            !bytesMatch(0xEC5230,
+            !callable(0x1133BB0, std::array<std::uint8_t, 8>{ 0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B }) ||
+            !callable(0x1133AE0, std::array<std::uint8_t, 8>{ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74 }) ||
+            !callable(0xEC5230,
                 std::array<std::uint8_t, 19>{ 0x44, 0x89, 0x4C, 0x24, 0x20, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B,
                     0x02, 0x48, 0x8B, 0xCA, 0x49, 0x8B, 0xD8 }) ||
-            !bytesMatch(0x1ABBD0,
+            !callable(0x1ABBD0,
                 std::array<std::uint8_t, 15>{ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48,
                     0x83, 0xEC, 0x30 }) ||
-            !bytesMatch(0xE72DA0, executionFrame) ||
-            !bytesMatch(0x1AB7A0,
+            !callable(0xE72DA0, executionFrame) ||
+            !callable(0x1AB7A0,
                 std::array<std::uint8_t, 9>{ 0x48, 0x83, 0xEC, 0x28, 0xE8, 0x07, 0xFF, 0xFF, 0xFF }) ||
-            !bytesMatch(0x146260,
+            !callable(0x146260,
                 std::array<std::uint8_t, 14>{ 0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xDA, 0xE8, 0x82, 0xFE,
                     0xFF, 0xFF }) ||
-            !bytesMatch(0x3E6840,
+            !callable(0x3E6840,
                 std::array<std::uint8_t, 10>{ 0x48, 0x89, 0x5C, 0x24, 0x18, 0x56, 0x48, 0x83, 0xEC, 0x20 }) ||
-            !bytesMatch(0x1CAFC0,
+            !callable(0x1CAFC0,
                 std::array<std::uint8_t, 13>{ 0x48, 0x83, 0xEC, 0x28, 0x48, 0x85, 0xD2, 0x74, 0x2C, 0x80, 0x7A, 0x1A,
                     0x2B }) ||
-            !bytesMatch(0xE70920,
+            !callable(0xE70920,
                 std::array<std::uint8_t, 16>{ 0x48, 0x8B, 0xC4, 0x48, 0x89, 0x50, 0x10, 0x55, 0x41, 0x54, 0x41, 0x56,
                     0x48, 0x8D, 0x68, 0xB9 })) {
             ROCK_LOG_ERROR(Init, "Native hand equipment hook validation failed; Pip-Boy unchanged");
@@ -1152,16 +1175,16 @@ namespace rock::native_hand_equipment
         auto& trampoline = F4SE::GetTrampoline();
         if (trampoline.free_size() < 256)
             return false;
-        s_useItem = reinterpret_cast<UseItem>(REL::Offset(0xE70920).address());
-        s_getSlot = reinterpret_cast<GetSlot>(REL::Offset(0x146260).address());
+        s_useItem = reinterpret_cast<UseItem>(useCallee);
+        s_getSlot = reinterpret_cast<GetSlot>(slotCallee);
         s_resolveForm = reinterpret_cast<ResolveForm>(REL::Offset(0x1AB7A0).address());
         s_resolveIndex = reinterpret_cast<ResolveIndex>(REL::Offset(0x3E6840).address());
         s_modelIndex = reinterpret_cast<ModelIndex>(REL::Offset(0x1CAFC0).address());
         s_getAttachment = reinterpret_cast<GetAttachment>(REL::Offset(0xEC5230).address());
         s_readSelection = reinterpret_cast<ReadSelection>(REL::Offset(0x1ABBD0).address());
-        s_meleeEquipped = reinterpret_cast<ActorTest>(REL::Offset(0x1133BB0).address());
+        s_meleeEquipped = reinterpret_cast<ActorTest>(triggerMeleeCallee);
         s_defaultSlotEmpty = reinterpret_cast<ActorTest>(REL::Offset(0x1133AE0).address());
-        s_queuesEquip = reinterpret_cast<QueuesEquip>(REL::Offset(0xDF5050).address());
+        s_queuesEquip = reinterpret_cast<QueuesEquip>(queueCallee);
         // A left inventory slot without its complete native first-person gun
         // model is not a usable hand-directed equipment capability.
         if (!native_inventory_hand_slots::install() || !native_secondary_model::install() ||
@@ -1203,10 +1226,8 @@ namespace rock::native_hand_equipment
             return true;
         } catch (...) {
             REL::safe_write(REL::Offset(0xE72E19).address(), executionBytes.data(), executionBytes.size());
-            REL::safe_write(REL::Offset(0xE70A37).address(), slotBytes.data(), slotBytes.size());
-            REL::safe_write(REL::Offset(0xB9B904).address(), useBytes.data(), useBytes.size());
-            REL::safe_write(REL::Offset(0xFC833B).address(), triggerMeleeBytes.data(), triggerMeleeBytes.size());
-            REL::safe_write(REL::Offset(0xE70A79).address(), queueBytes.data(), queueBytes.size());
+            for (std::size_t i = 0; i < kCallSites.size(); ++i)
+                REL::safe_write(REL::Offset(kCallSites[i]).address(), callsBefore[i].data(), callsBefore[i].size());
             FlushInstructionCache(GetCurrentProcess(), nullptr, 0);
             ROCK_LOG_ERROR(Init, "Native hand equipment installation failed; original hooks restored");
             return false;

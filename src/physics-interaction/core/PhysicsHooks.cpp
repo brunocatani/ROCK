@@ -51,6 +51,8 @@
 #include <cstring>
 #include <mutex>
 #include <string_view>
+#include <RPS/Runtime/HookChain.h>
+#include "physics-interaction/native/EntryTrampolineHook.h"
 
 namespace rock
 {
@@ -134,9 +136,7 @@ namespace rock
         constexpr std::uint64_t kNativeGrabHapticRuntimeSettingCheckIntervalFrames = 90;
         constexpr std::array<std::uint8_t, 14> kVrMeleeImpactExpectedPrefix{ 0x48, 0x8B, 0xC4, 0x4C, 0x89, 0x40, 0x18,
             0x48, 0x89, 0x50, 0x10, 0x55, 0x53, 0x56 };
-        constexpr DWORD kVirtualMemoryCommitReserve = 0x00001000u | 0x00002000u;
         constexpr DWORD kVirtualMemoryRelease = 0x00008000u;
-        constexpr DWORD kPageExecuteRead = 0x00000020u;
         constexpr DWORD kPageExecuteReadWrite = 0x00000040u;
 
         struct NativeBinaryRuntimeSettingState
@@ -325,10 +325,16 @@ namespace rock
                 return false;
             }
 
+            // SetDeltaTime, or another plugin's detour, which the hook calls through
+            // (write_call returns whichever is there).
             const auto relativeTarget = *reinterpret_cast<const std::int32_t*>(callBytes + 1);
             const auto decodedTarget = callSiteAddress + 5u + relativeTarget;
             const auto expectedTarget = REL::Offset(kFunc_BhkWorldSetDeltaTime).address();
-            if (decodedTarget != expectedTarget) {
+            const auto resolved = RPS::Runtime::HookChain::resolveCall(callSiteAddress, expectedTarget);
+            if (resolved.foreign()) {
+                ROCK_LOG_INFO(Init, "HAVOK_TIMING_FIX call already hooked by {}; ROCK calls through it", resolved.owner);
+            }
+            if (!resolved) {
                 ROCK_LOG_ERROR(Init,
                     "HAVOK_TIMING_FIX call-site validation failed at 0x{:X}: decoded target 0x{:X}, expected 0x{:X}",
                     callSiteAddress, decodedTarget, expectedTarget);
@@ -1432,81 +1438,26 @@ namespace rock
             native_grab_haptic_suppression::kHoverRumbleDurationSetting, "hover duration");
     }
 
-    static void writeAbsoluteJump(std::uint8_t* target, std::uintptr_t destination)
-    {
-        target[0] = 0xFF;
-        target[1] = 0x25;
-        target[2] = 0x00;
-        target[3] = 0x00;
-        target[4] = 0x00;
-        target[5] = 0x00;
-        *reinterpret_cast<std::uintptr_t*>(target + 6) = destination;
-    }
+    // The bytes at a hooked entry before ROCK patched it: the native prologue,
+    // or another plugin's jump when the hook chained behind it.
+    using EntryBytes = std::array<std::uint8_t, 14>;
+
+    // Load owner: written once before the melee impact entry is patched.
+    EntryBytes g_vrMeleeImpactEntryBefore{};
 
     static bool installEntryTrampolineHook(const char* label, std::uintptr_t targetOffset,
-        const std::uint8_t* expectedPrefix, std::size_t stolenBytes, void* hook, void*& original)
+        const std::uint8_t* expectedPrefix, std::size_t stolenBytes, void* hook, void*& original,
+        EntryBytes* before = nullptr)
     {
-        if (stolenBytes < 14) {
-            ROCK_LOG_ERROR(Init, "{} hook install failed: stolen byte count {} cannot hold an absolute jump", label,
-                stolenBytes);
-            return false;
+        if (before && stolenBytes == before->size()) {
+            std::memcpy(before->data(), reinterpret_cast<const void*>(REL::Offset(targetOffset).address()),
+                before->size());
         }
-
-        REL::Relocation<std::uintptr_t> target{ REL::Offset(targetOffset) };
-        auto* targetAddr = reinterpret_cast<std::uint8_t*>(target.address());
-        if (!targetAddr || !expectedPrefix) {
-            ROCK_LOG_ERROR(Init, "{} hook install failed: target or validation bytes are null", label);
-            return false;
-        }
-
-        if (std::memcmp(targetAddr, expectedPrefix, stolenBytes) != 0) {
-            ROCK_LOG_ERROR(Init, "{} hook validation failed at 0x{:X}; native bytes changed, hook not installed", label,
-                target.address());
-            return false;
-        }
-
-        constexpr std::size_t kJumpBytes = 14;
-        const std::size_t trampolineBytes = stolenBytes + kJumpBytes;
-        auto* trampolineMem = reinterpret_cast<std::uint8_t*>(
-            VirtualAlloc(nullptr, trampolineBytes, kVirtualMemoryCommitReserve, kPageExecuteReadWrite));
-        if (!trampolineMem) {
-            ROCK_LOG_ERROR(Init, "{} hook install failed: trampoline allocation failed", label);
-            return false;
-        }
-
-        std::memcpy(trampolineMem, targetAddr, stolenBytes);
-        writeAbsoluteJump(trampolineMem + stolenBytes, target.address() + stolenBytes);
-
-        DWORD oldTrampolineProtect = 0;
-        if (!VirtualProtect(trampolineMem, trampolineBytes, kPageExecuteRead, &oldTrampolineProtect)) {
-            ROCK_LOG_ERROR(Init, "{} hook install failed: trampoline protection failed", label);
-            VirtualFree(trampolineMem, 0, kVirtualMemoryRelease);
-            return false;
-        }
-
-        DWORD oldProtect = 0;
-        if (!VirtualProtect(targetAddr, stolenBytes, kPageExecuteReadWrite, &oldProtect)) {
-            ROCK_LOG_ERROR(Init, "{} hook install failed at 0x{:X}: target protection failed", label, target.address());
-            VirtualFree(trampolineMem, 0, kVirtualMemoryRelease);
-            return false;
-        }
-
-        writeAbsoluteJump(targetAddr, reinterpret_cast<std::uintptr_t>(hook));
-        for (std::size_t i = kJumpBytes; i < stolenBytes; ++i) {
-            targetAddr[i] = 0x90;
-        }
-
-        FlushInstructionCache(GetCurrentProcess(), targetAddr, stolenBytes);
-        VirtualProtect(targetAddr, stolenBytes, oldProtect, &oldProtect);
-
-        original = trampolineMem;
-        ROCK_LOG_INFO(Init, "Installed {} hook at 0x{:X}, original trampoline=0x{:X}", label, target.address(),
-            reinterpret_cast<std::uintptr_t>(trampolineMem));
-        return true;
+        return entry_trampoline_hook::install(label, targetOffset, expectedPrefix, stolenBytes, hook, original);
     }
 
     static bool restoreEntryTrampolineHook(const char* label, std::uintptr_t targetOffset,
-        const std::uint8_t* originalPrefix, std::size_t stolenBytes, void* hook, void*& original, bool& installed)
+        const std::uint8_t* nativePrefix, const EntryBytes& before, void* hook, void*& original, bool& installed)
     {
         if (!installed) {
             return true;
@@ -1514,16 +1465,15 @@ namespace rock
 
         REL::Relocation<std::uintptr_t> target{ REL::Offset(targetOffset) };
         auto* targetAddr = reinterpret_cast<std::uint8_t*>(target.address());
-        if (!targetAddr || !originalPrefix || !original) {
+        if (!targetAddr || !nativePrefix || !original) {
             ROCK_LOG_ERROR(Init, "{} rollback failed: target, original bytes, or trampoline is null", label);
             return false;
         }
 
-        const auto hookAddress = reinterpret_cast<std::uintptr_t>(hook);
-        const bool hasRockJump = targetAddr[0] == 0xFF && targetAddr[1] == 0x25 && targetAddr[2] == 0x00 &&
-            targetAddr[3] == 0x00 && targetAddr[4] == 0x00 && targetAddr[5] == 0x00 &&
-            *reinterpret_cast<std::uintptr_t*>(targetAddr + 6) == hookAddress;
-        if (!hasRockJump) {
+        // ROCK's jump, or its 5-byte branch chained behind another plugin.
+        const std::size_t stolenBytes = before.size();
+        const bool chained = std::memcmp(before.data(), nativePrefix, stolenBytes) != 0;
+        if (!RPS::Runtime::HookChain::reaches(target.address(), reinterpret_cast<std::uintptr_t>(hook))) {
             ROCK_LOG_WARN(Init, "Skipped {} rollback: target 0x{:X} no longer points to ROCK hook", label,
                 target.address());
             installed = false;
@@ -1537,11 +1487,14 @@ namespace rock
             return false;
         }
 
-        std::memcpy(targetAddr, originalPrefix, stolenBytes);
+        std::memcpy(targetAddr, before.data(), stolenBytes);
         FlushInstructionCache(GetCurrentProcess(), targetAddr, stolenBytes);
         VirtualProtect(targetAddr, stolenBytes, oldProtect, &oldProtect);
 
-        VirtualFree(original, 0, kVirtualMemoryRelease);
+        // A chained hook's original is the other plugin's detour, not ROCK's trampoline.
+        if (!chained) {
+            VirtualFree(original, 0, kVirtualMemoryRelease);
+        }
         original = nullptr;
         installed = false;
         ROCK_LOG_WARN(Init, "Rolled back {} entry hook at 0x{:X}", label, target.address());
@@ -1752,7 +1705,7 @@ namespace rock
 
             void* impactOriginal = reinterpret_cast<void*>(g_originalVrMeleeImpactCallback);
             rollbackOk = restoreEntryTrampolineHook("VRMeleeImpact", offsets::kFunc_VRMeleeImpactCallback,
-                             kVrMeleeImpactExpectedPrefix.data(), kVrMeleeImpactExpectedPrefix.size(),
+                             kVrMeleeImpactExpectedPrefix.data(), g_vrMeleeImpactEntryBefore,
                              &hookedVrMeleeImpactCallback, impactOriginal, vrMeleeImpactInstalled) &&
                 rollbackOk;
             g_originalVrMeleeImpactCallback = reinterpret_cast<NativeVrMeleeImpactCallback_t>(impactOriginal);
@@ -1792,7 +1745,7 @@ namespace rock
             void* impactOriginal = reinterpret_cast<void*>(g_originalVrMeleeImpactCallback);
             vrMeleeImpactInstalled = installEntryTrampolineHook("VRMeleeImpact", offsets::kFunc_VRMeleeImpactCallback,
                 kVrMeleeImpactExpectedPrefix.data(), kVrMeleeImpactExpectedPrefix.size(), &hookedVrMeleeImpactCallback,
-                impactOriginal);
+                impactOriginal, &g_vrMeleeImpactEntryBefore);
             g_originalVrMeleeImpactCallback = reinterpret_cast<NativeVrMeleeImpactCallback_t>(impactOriginal);
         }
         if (!weaponSwingInstalled) {

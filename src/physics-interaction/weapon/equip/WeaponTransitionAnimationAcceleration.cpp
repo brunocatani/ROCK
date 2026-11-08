@@ -23,6 +23,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <RPS/Runtime/HookChain.h>
 
 namespace rock::weapon_transition_animation_acceleration
 {
@@ -227,10 +228,13 @@ namespace rock::weapon_transition_animation_acceleration
                         reinterpret_cast<const std::uintptr_t*>(holderVtable + kGetGraphManagerVtableSlotOffset),
                         getManagerAddress) ||
                     (!pointerInModuleImage(getManagerAddress) &&
-                        !native_secondary_actions::ownsPlayerGraphManagerSlot(getManagerAddress))) {
-                    // The second weapon's actions replace this slot with a
-                    // forwarder; refusing it kept the draw unaccelerated and
-                    // every equip bridge waiting out its lease.
+                        !native_secondary_actions::ownsPlayerGraphManagerSlot(getManagerAddress) &&
+                        !RPS::Runtime::HookChain::resolveSlot(holderVtable + kGetGraphManagerVtableSlotOffset, 0)
+                             .foreign())) {
+                    // The second weapon's actions, or another plugin, replace this
+                    // slot with a forwarder that is called like the native getter;
+                    // refusing it kept the draw unaccelerated and every equip bridge
+                    // waiting out its lease.
                     return;
                 }
 

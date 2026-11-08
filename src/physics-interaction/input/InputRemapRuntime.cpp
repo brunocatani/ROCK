@@ -49,6 +49,7 @@
 #include <optional>
 #include <string_view>
 #include <utility>
+#include <RPS/Runtime/HookChain.h>
 
 namespace rock::input_remap_runtime
 {
@@ -2482,15 +2483,10 @@ namespace rock::input_remap_runtime
             }
             attempted = true;
 
-            // Exact CALL, TEST AL,AL and conditional branch from the verified
+            // TEST AL,AL and the conditional branch after the call, from the verified
             // unpacked VR image. Also verify the read-only query body before
             // allowing ROCK to reinterpret its result.
-            constexpr std::array<std::uint8_t, 13> expectedCall{
-                0xE8,
-                0xBE,
-                0xAB,
-                0xC9,
-                0xFF,
+            constexpr std::array<std::uint8_t, 8> expectedAfterCall{
                 0x84,
                 0xC0,
                 0x0F,
@@ -2521,14 +2517,19 @@ namespace rock::input_remap_runtime
             };
             const auto callSite = REL::Offset(kPipboyLightHoldQueryCallSiteOffset).address();
             const auto query = REL::Offset(kPipboyLightHoldQueryFunctionOffset).address();
-            std::array<std::uint8_t, expectedCall.size()> actualCall{};
-            std::array<std::uint8_t, expectedQuery.size()> actualQuery{};
-            if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(callSite), actualCall.data(),
-                    actualCall.size()) ||
-                actualCall != expectedCall ||
-                !native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(query), actualQuery.data(),
-                    actualQuery.size()) ||
-                actualQuery != expectedQuery) {
+            // The call reaches the query or another plugin's detour (write_call
+            // returns whichever, and the hook calls through it); the query entry
+            // may carry another plugin's jump.
+            const auto resolvedCall = RPS::Runtime::HookChain::resolveCall(callSite, query);
+            if (resolvedCall.foreign()) {
+                ROCK_LOG_INFO(Input, "Pip-Boy flashlight query call already hooked by {}; ROCK calls through it",
+                    resolvedCall.owner);
+            }
+            std::array<std::uint8_t, expectedAfterCall.size()> actualAfterCall{};
+            if (!resolvedCall || !RPS::Runtime::HookChain::resolveEntry(query, expectedQuery) ||
+                !native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(callSite + 5), actualAfterCall.data(),
+                    actualAfterCall.size()) ||
+                actualAfterCall != expectedAfterCall) {
                 ROCK_LOG_ERROR(Input,
                     "Pip-Boy flashlight-veto hook validation failed: callsite=0x{:X} query=0x{:X}; Y native dispatch "
                     "disabled",
@@ -2634,10 +2635,16 @@ namespace rock::input_remap_runtime
                 return false;
             }
 
+            // The decision function, or another plugin's detour the hook calls through.
             const auto relativeTarget = *reinterpret_cast<const std::int32_t*>(callBytes + 1);
             const auto decodedTarget = callSiteAddress + 5u + relativeTarget;
             const auto expectedTarget = REL::Offset(kNativeVatsVansDecisionFunctionOffset).address();
-            if (decodedTarget != expectedTarget) {
+            const auto resolvedDecision = RPS::Runtime::HookChain::resolveCall(callSiteAddress, expectedTarget);
+            if (resolvedDecision.foreign()) {
+                ROCK_LOG_INFO(Input, "Native VATS/V.A.N.S. decision call already hooked by {}; ROCK calls through it",
+                    resolvedDecision.owner);
+            }
+            if (!resolvedDecision) {
                 ROCK_LOG_ERROR(Input,
                     "Native VATS/V.A.N.S. suppression hook validation failed at 0x{:X}: target 0x{:X}, expected 0x{:X}",
                     callSiteAddress, decodedTarget, expectedTarget);

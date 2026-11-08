@@ -13,6 +13,7 @@
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/scene/NativeNiNodeFactory.h"
 #include "rock_support/Fo4VrRuntime.h"
+#include <RPS/Runtime/HookChain.h>
 
 namespace rock::native_quick_loot_panel
 {
@@ -389,7 +390,6 @@ namespace rock::native_quick_loot_panel
         }
         const auto callAddress = REL::Offset(kPicksCopiedLockCall).address();
         std::array<std::uint8_t, 5> call{};
-        std::int32_t displacement{};
         if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(callAddress), call.data(),
                 call.size()) ||
             call[0] != 0xE8) {
@@ -397,14 +397,18 @@ namespace rock::native_quick_loot_panel
                 kPicksCopiedLockCall);
             return false;
         }
-        std::memcpy(&displacement, call.data() + 1, sizeof(displacement));
-        if (callAddress + call.size() + displacement != REL::Offset(kSpinLockAcquire).address()) {
+        // The model lock, or another plugin's detour, which the hook calls through
+        // (write_call returns whichever is there).
+        const auto lock = RPS::Runtime::HookChain::resolveCall(callAddress, REL::Offset(kSpinLockAcquire).address());
+        if (!lock) {
             ROCK_LOG_WARN(Init,
-                "Quick loot panel: call 0x{:X} no longer reaches the model lock "
-                "(another mod may own it); the panel stays on the right hand",
+                "Quick loot panel: call 0x{:X} reaches neither the model lock nor another plugin's detour; "
+                "the panel stays on the right hand",
                 kPicksCopiedLockCall);
             return false;
         }
+        if (lock.foreign())
+            ROCK_LOG_INFO(Init, "Quick loot model lock call already hooked by {}; ROCK calls through it", lock.owner);
 
         try {
             g_lockAcquire =

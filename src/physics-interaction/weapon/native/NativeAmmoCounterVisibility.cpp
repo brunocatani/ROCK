@@ -7,6 +7,7 @@
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include <RPS/Runtime/HookChain.h>
 
 namespace rock::native_ammo_counter_visibility
 {
@@ -46,18 +47,21 @@ namespace rock::native_ammo_counter_visibility
         if (g_attempted)
             return false;
         g_attempted = true;
+        // The slot holds the native visibility function or another plugin's; the
+        // lease calls through whichever is there.
         const auto slot = REL::Offset(kVisibleSlot).address();
-        std::uintptr_t current{};
-        std::array<std::uint8_t, kVisiblePrefix.size()> prefix{};
-        if (!native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(slot), current) ||
-            current != REL::Offset(kVisible).address() ||
-            !native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(current), prefix.data(), prefix.size()) ||
-            prefix != kVisiblePrefix) {
+        const auto resolved = RPS::Runtime::HookChain::resolveSlot(slot, REL::Offset(kVisible).address());
+        const std::uintptr_t current = resolved.callee;
+        if (!resolved || (!resolved.foreign() &&
+                             !RPS::Runtime::HookChain::resolveEntry(current, kVisiblePrefix))) {
             ROCK_LOG_WARN(Weapon,
-                "Ammo counters: the vanilla ammo widget's visibility slot is not the expected one "
-                "(another mod may own it); the vanilla counter stays visible");
+                "Ammo counters: the vanilla ammo widget's visibility slot holds unrecognised code; "
+                "the vanilla counter stays visible");
             return false;
         }
+        if (resolved.foreign())
+            ROCK_LOG_INFO(Weapon, "Ammo widget visibility slot already replaced by {}; ROCK calls through it",
+                resolved.owner);
         g_original = reinterpret_cast<Visible>(current);
         REL::safe_write(slot, reinterpret_cast<std::uintptr_t>(&visible));
         ROCK_LOG_INFO(Weapon, "Ammo counters: vanilla ammo widget visibility lease installed");

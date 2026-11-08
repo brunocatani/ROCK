@@ -33,6 +33,8 @@
 #include "physics-interaction/weapon/recoil/RecoilMath.h"
 #include "physics-interaction/weapon/secondary/NativeSecondaryBoneBindings.h"
 #include "rock_support/Fo4VrRuntime.h"
+#include <RPS/Runtime/HookChain.h>
+#include <intrin.h>
 
 namespace rock::native_secondary_actions
 {
@@ -83,14 +85,58 @@ namespace rock::native_secondary_actions
             return reinterpret_cast<F>(REL::Offset(rva).address());
         }
 
+        // A function ROCK calls: its prologue, or another plugin's detour at the entry.
         template <std::size_t N>
         bool matches(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected)
         {
-            std::array<std::uint8_t, N> actual{};
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(REL::Offset(rva).address()),
-                       actual.data(), N) &&
-                actual == expected;
+            return static_cast<bool>(RPS::Runtime::HookChain::resolveEntry(REL::Offset(rva).address(), expected));
         }
+
+        // A patched call and what it reached: the native function or another
+        // plugin's detour. Filled before the call is patched, then read-only.
+        struct CallSite
+        {
+            std::uintptr_t address{};
+            std::uintptr_t callee{};
+        };
+
+        // The callee of the patched call that entered the hook; the native
+        // function for a direct call from ROCK.
+        template <class F, std::size_t N>
+        F calleeAt(const std::array<CallSite, N>& sites, void* returnAddress, std::uintptr_t nativeRva) noexcept
+        {
+            const auto at = reinterpret_cast<std::uintptr_t>(returnAddress) - 5;
+            for (const auto& site : sites)
+                if (site.address == at && site.callee)
+                    return reinterpret_cast<F>(site.callee);
+            return reinterpret_cast<F>(REL::Offset(nativeRva).address());
+        }
+
+        // Resolves each call against its native target and records what it reached.
+        template <std::size_t N>
+        bool resolveCalls(const std::array<std::uintptr_t, N>& calls, const std::array<std::uintptr_t, N>& targets,
+            std::array<CallSite, N>& sites, std::array<std::array<std::uint8_t, 5>, N>& before) noexcept
+        {
+            for (std::size_t i = 0; i < N; ++i) {
+                const auto address = REL::Offset(calls[i]).address();
+                const auto resolved =
+                    RPS::Runtime::HookChain::resolveCall(address, REL::Offset(targets[i]).address());
+                if (!resolved)
+                    return false;
+                if (resolved.foreign())
+                    ROCK_LOG_INFO(Init, "AKIMBO call at {:#x} already hooked by {}; ROCK calls through it", calls[i],
+                        resolved.owner);
+                sites[i] = { address, resolved.callee };
+                std::memcpy(before[i].data(), reinterpret_cast<const void*>(address), 5);
+            }
+            return true;
+        }
+
+        std::array<CallSite, 4> s_recoilSites{};
+        std::array<CallSite, 6> s_cacheSites{};
+        // What each variable getter slot held: the native getter or another plugin's.
+        template <std::uintptr_t Rva>
+        std::uintptr_t s_queryCallee = 0;
 
         struct State
         {
@@ -399,13 +445,16 @@ namespace rock::native_secondary_actions
                     return nullptr;
                 index = 1;
             }
-            return native<void* (*)(RE::Actor*, std::uint32_t)>(0xE526A0)(actor, index);
+            return calleeAt<void* (*)(RE::Actor*, std::uint32_t)>(s_recoilSites, _ReturnAddress(), 0xE526A0)(
+                actor, index);
         }
 
         void startRecoil(RE::PlayerCharacter* player)
         {
+            const auto original =
+                calleeAt<void (*)(RE::PlayerCharacter*)>(s_recoilSites, _ReturnAddress(), 0xEF96B0);
             if (!t_context || !t_context->shot || player != t_context->player) {
-                native<void (*)(RE::PlayerCharacter*)>(0xEF96B0)(player);
+                original(player);
                 return;
             }
             if (!validContext())
@@ -421,7 +470,7 @@ namespace rock::native_secondary_actions
                     ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "AKIMBO secondary recoil record unavailable");
                     return;
                 }
-                native<void (*)(RE::PlayerCharacter*)>(0xEF96B0)(player);
+                original(player);
             }
             const bool primaryPreserved = before && native_memory::tryReadField(player, 0x8FC, primaryAfter) &&
                 native_memory::tryReadField(player, 0x12A4, flagsAfter) &&
@@ -444,13 +493,8 @@ namespace rock::native_secondary_actions
             constexpr std::array<std::uintptr_t, 4> calls{ 0x333E26, 0xEF96DC, 0xEFD0D0, 0xEFD1E7 };
             constexpr std::array<std::uintptr_t, 4> targets{ 0xEF96B0, 0xE526A0, 0xE526A0, 0xE526A0 };
             std::array<std::array<std::uint8_t, 5>, 4> originals{};
-            for (std::size_t i = 0; i < calls.size(); ++i) {
-                originals[i][0] = 0xE8;
-                const auto displacement = static_cast<std::int32_t>(targets[i] - calls[i] - 5);
-                std::memcpy(originals[i].data() + 1, &displacement, 4);
-                if (!matches(calls[i], originals[i]))
-                    return false;
-            }
+            if (!resolveCalls(calls, targets, s_recoilSites, originals))
+                return false;
             const std::array<std::uintptr_t, 4> hooks{ reinterpret_cast<std::uintptr_t>(&startRecoil),
                 reinterpret_cast<std::uintptr_t>(&recoilAim), reinterpret_cast<std::uintptr_t>(&recoilAim),
                 reinterpret_cast<std::uintptr_t>(&recoilAim) };
@@ -515,13 +559,16 @@ namespace rock::native_secondary_actions
                 ++t_context->cacheReads;
                 return &manager->variableCache;
             }
-            return native<RE::BSAnimationGraphVariableCache* (*)(void*)>(0xEC5590)(process);
+            return calleeAt<RE::BSAnimationGraphVariableCache* (*)(void*)>(s_cacheSites, _ReturnAddress(), 0xEC5590)(
+                process);
         }
 
         template <std::uintptr_t Rva, class Key, class Value>
         bool variableQuery(void* holder, Key key, Value* output)
         {
-            bool accepted = native<bool (*)(void*, Key, Value*)>(Rva)(holder, key, output);
+            const auto original = reinterpret_cast<bool (*)(void*, Key, Value*)>(
+                s_queryCallee<Rva> ? s_queryCallee<Rva> : REL::Offset(Rva).address());
+            bool accepted = original(holder, key, output);
             const bool player =
                 t_context && holder == static_cast<RE::IAnimationGraphManagerHolder*>(t_context->player);
             bool actorState = false;
@@ -545,7 +592,7 @@ namespace rock::native_secondary_actions
                 }
                 if (!accepted) {
                     t_actorVariableLookup = true;
-                    accepted = native<bool (*)(void*, Key, Value*)>(Rva)(holder, key, output);
+                    accepted = original(holder, key, output);
                     t_actorVariableLookup = false;
                 }
                 actorState = accepted;
@@ -600,20 +647,33 @@ namespace rock::native_secondary_actions
                 reinterpret_cast<std::uintptr_t>(&variableQuery<0xE15230, const RE::BSFixedString*, float>),
                 reinterpret_cast<std::uintptr_t>(&variableQuery<0xE151D0, const RE::BSFixedString*, std::int32_t>),
                 reinterpret_cast<std::uintptr_t>(&variableQuery<0xE15170, const RE::BSFixedString*, bool>) };
+            // Each slot holds the native getter or another plugin's; the trace
+            // calls through whichever is there.
             const auto table = REL::Offset(0x2D819C8).address() + 0x80;
+            std::array<std::uintptr_t, originals.size()> previous{};
             for (std::size_t i = 0; i < originals.size(); ++i) {
-                std::uintptr_t value{};
-                if (!native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(table + i * 8), value) ||
-                    value != REL::Offset(originals[i]).address())
+                const auto resolved =
+                    RPS::Runtime::HookChain::resolveSlot(table + i * 8, REL::Offset(originals[i]).address());
+                if (!resolved)
                     return false;
+                if (resolved.foreign())
+                    ROCK_LOG_INFO(Init, "AKIMBO variable getter slot {} already replaced by {}; ROCK calls through it",
+                        i, resolved.owner);
+                previous[i] = resolved.callee;
             }
+            s_queryCallee<0xE15290> = previous[0];
+            s_queryCallee<0xE152F0> = previous[1];
+            s_queryCallee<0xE15350> = previous[2];
+            s_queryCallee<0xE15230> = previous[3];
+            s_queryCallee<0xE151D0> = previous[4];
+            s_queryCallee<0xE15170> = previous[5];
             for (std::size_t i = 0; i < hooks.size(); ++i) {
                 REL::safe_write(table + i * 8, hooks[i]);
                 std::uintptr_t value{};
                 if (!native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(table + i * 8), value) ||
                     value != hooks[i]) {
                     for (std::size_t j = 0; j <= i; ++j)
-                        REL::safe_write(table + j * 8, REL::Offset(originals[j]).address());
+                        REL::safe_write(table + j * 8, previous[j]);
                     return false;
                 }
             }
@@ -627,13 +687,10 @@ namespace rock::native_secondary_actions
             // builds the SAME named/fixed-ID cache on our private manager.
             constexpr std::array<std::uintptr_t, 6> calls{ 0xE1518C, 0xE151EC, 0xE1524C, 0xE152AB, 0xE1530B, 0xE1536B };
             std::array<std::array<std::uint8_t, 5>, calls.size()> originals{};
-            for (std::size_t i = 0; i < calls.size(); ++i) {
-                const auto displacement = static_cast<std::int32_t>(0xEC5590 - calls[i] - 5);
-                originals[i][0] = 0xE8;
-                std::memcpy(originals[i].data() + 1, &displacement, 4);
-                if (!matches(calls[i], originals[i]))
-                    return false;
-            }
+            std::array<std::uintptr_t, calls.size()> targets{};
+            targets.fill(0xEC5590);
+            if (!resolveCalls(calls, targets, s_cacheSites, originals))
+                return false;
             std::size_t patched = 0;
             try {
                 auto& trampoline = F4SE::GetTrampoline();
@@ -1466,10 +1523,15 @@ namespace rock::native_secondary_actions
             ROCK_LOG_ERROR(Init, "AKIMBO native graph/audio dependency validation failed");
             return false;
         }
-        std::uintptr_t getter{};
+        // The getter slot holds the native getter or another plugin's; ROCK
+        // forwards to whichever is there.
         const auto slot = REL::Offset(0x2D819E8).address();
-        if (!native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(slot), getter) ||
-            getter != REL::Offset(0xE14FD0).address() ||
+        const auto getterSlot = RPS::Runtime::HookChain::resolveSlot(slot, REL::Offset(0xE14FD0).address());
+        const std::uintptr_t getter = getterSlot.callee;
+        if (getterSlot.foreign())
+            ROCK_LOG_INFO(Init, "Player graph manager getter already replaced by {}; ROCK calls through it",
+                getterSlot.owner);
+        if (!getterSlot ||
             !matches(0xE50DA0, std::to_array<std::uint8_t>({ 0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xDA })) ||
             !matches(0xFF2A40, std::to_array<std::uint8_t>({ 0x48, 0x89, 0x5C, 0x24, 0x08 })) ||
             !matches(0xFF2C10, std::to_array<std::uint8_t>({ 0x48, 0x89, 0x5C, 0x24, 0x08 })) ||

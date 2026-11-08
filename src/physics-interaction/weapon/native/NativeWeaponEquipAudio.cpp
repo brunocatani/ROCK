@@ -11,6 +11,8 @@
 #include <array>
 #include <cstring>
 #include <stdexcept>
+#include <RPS/Runtime/HookChain.h>
+#include <intrin.h>
 
 namespace rock::native_weapon_equip_audio
 {
@@ -26,7 +28,6 @@ namespace rock::native_weapon_equip_audio
         struct Callsite
         {
             std::uintptr_t call;
-            std::array<std::uint8_t, 5> original;
             std::uintptr_t positionLoad;
             std::array<std::uint8_t, 7> positionBytes;
             bool inventory{ false };
@@ -39,16 +40,16 @@ namespace rock::native_weapon_equip_audio
         // 81FBF0 forwards descriptor, flags, position and scene node to
         // 81FCD0 with a temporary sound handle; it returns void.
         constexpr std::array<Callsite, 6> kCalls{ {
-            { 0xFF48D1, { 0xE8, 0x1A, 0xB3, 0x82, 0xFF }, 0xFF48A4, { 0x48, 0x8D, 0xB9, 0xD0, 0, 0, 0 } },
-            { 0xFF4961, { 0xE8, 0x8A, 0xB2, 0x82, 0xFF }, 0xFF4934, { 0x48, 0x8D, 0xB9, 0xD0, 0, 0, 0 } },
-            { 0xFF6046, { 0xE8, 0xA5, 0x9B, 0x82, 0xFF }, 0xFF6019, { 0x4C, 0x8D, 0xB1, 0xD0, 0, 0, 0 } },
-            { 0xFF5EE6, { 0xE8, 0x05, 0x9D, 0x82, 0xFF }, 0xFF5EB9, { 0x4C, 0x8D, 0xB1, 0xD0, 0, 0, 0 } },
-            { 0xFF4572, { 0xE8, 0x79, 0xB6, 0x82, 0xFF }, 0xFF4563, { 0x4C, 0x8D, 0x87, 0xD0, 0, 0, 0 } },
+            { 0xFF48D1, 0xFF48A4, { 0x48, 0x8D, 0xB9, 0xD0, 0, 0, 0 } },
+            { 0xFF4961, 0xFF4934, { 0x48, 0x8D, 0xB9, 0xD0, 0, 0, 0 } },
+            { 0xFF6046, 0xFF6019, { 0x4C, 0x8D, 0xB1, 0xD0, 0, 0, 0 } },
+            { 0xFF5EE6, 0xFF5EB9, { 0x4C, 0x8D, 0xB1, 0xD0, 0, 0, 0 } },
+            { 0xFF4572, 0xFF4563, { 0x4C, 0x8D, 0x87, 0xD0, 0, 0, 0 } },
             // Player pickup/putdown uses a separate descriptor selector.
             // F20720 and DC13D0 preserve RCX actor, RDX item, R8B pickup,
             // R9B use; F11950 independently supplies actor/item/pickup.
             // A null selector result skips ONLY this sound at F2073F.
-            { 0xF2073A, { 0xE8, 0x91, 0x0C, 0xEA, 0xFF }, 0xDC13D0, { 0x48, 0x8B, 0xC2, 0x48, 0x85, 0xD2, 0x74 },
+            { 0xF2073A, 0xDC13D0, { 0x48, 0x8B, 0xC2, 0x48, 0x85, 0xD2, 0x74 },
                 true },
         } };
 
@@ -61,9 +62,25 @@ namespace rock::native_weapon_equip_audio
                 actual == expected;
         }
 
+        // What each sound call reached: the native function or another plugin's
+        // detour. Written before the calls are patched, then read-only.
+        std::array<std::uintptr_t, kCalls.size()> s_callSites{};
+        std::array<std::uintptr_t, kCalls.size()> s_callCallees{};
+
+        template <class F>
+        F calleeAt(void* returnAddress, F native) noexcept
+        {
+            const auto site = reinterpret_cast<std::uintptr_t>(returnAddress) - 5;
+            for (std::size_t i = 0; i < s_callSites.size(); ++i)
+                if (s_callSites[i] == site && s_callCallees[i])
+                    return reinterpret_cast<F>(s_callCallees[i]);
+            return native;
+        }
+
         void playEquipSound(RE::BGSSoundDescriptorForm* sound, std::uint32_t flags, const RE::NiPoint3* position,
             RE::NiAVObject* node)
         {
+            const auto play = calleeAt(_ReturnAddress(), s_playSound);
             // Native-caller thread, reentrant: no retained scene pointers,
             // actor mutation, shared per-event state or frame scheduling.
             const bool playerSource = isPlayerSource(reinterpret_cast<std::uintptr_t>(f4vr::getPlayer()),
@@ -73,12 +90,12 @@ namespace rock::native_weapon_equip_audio
                     reinterpret_cast<std::uintptr_t>(sound));
                 return;
             }
-            s_playSound(sound, flags, position, node);
+            play(sound, flags, position, node);
         }
 
         RE::BGSSoundDescriptorForm* selectItemSound(RE::Actor* actor, RE::TESBoundObject* item, bool pickup, bool use)
         {
-            auto* sound = s_selectItemSound(actor, item, pickup, use);
+            auto* sound = calleeAt(_ReturnAddress(), s_selectItemSound)(actor, item, pickup, use);
             // Both native item-sound resolvers (14DB70/14DC80) classify
             // WEAP from form+1A == 2B. Keep every other item and actor intact.
             const bool muted = isPlayerWeaponItem(reinterpret_cast<std::uintptr_t>(f4vr::getPlayer()),
@@ -128,18 +145,38 @@ namespace rock::native_weapon_equip_audio
         // Keep the shared descriptor builder native. DIAMOND qualifies that
         // entry before playing authored reload cues; even an observational
         // detour disables its audio. Redirect only the equipment callsites below.
-        if (!bytesMatch(kPlaySound,
+        // ROCK only calls the descriptor builder: its prologue, or another
+        // plugin's detour at the entry, is accepted.
+        if (!RPS::Runtime::HookChain::resolveEntry(REL::Offset(kPlaySound).address(),
                 std::array<std::uint8_t, 15>{ 0x48, 0x83, 0xEC, 0x48, 0x4C, 0x89, 0x4C, 0x24, 0x20, 0x4D, 0x8B, 0xC8,
                     0x44, 0x8B, 0xC2 }))
             return false;
         if (!bytesMatch(0xF2073F, std::array<std::uint8_t, 5>{ 0x48, 0x85, 0xC0, 0x74, 0x69 }))
             return false;
-        for (const auto& site : kCalls) {
-            if (!bytesMatch(site.call, site.original) || !bytesMatch(site.positionLoad, site.positionBytes)) {
+        // Each call reaches its native function or another plugin's detour, which
+        // the hooks call through. The selector's witness is its entry, which may
+        // carry another plugin's jump; the other witnesses are position loads.
+        std::array<std::array<std::uint8_t, 5>, kCalls.size()> before{};
+        for (std::size_t i = 0; i < kCalls.size(); ++i) {
+            const auto& site = kCalls[i];
+            const auto address = REL::Offset(site.call).address();
+            const auto target = site.inventory ? REL::Offset(0xDC13D0).address() : REL::Offset(kPlaySound).address();
+            const auto resolved = RPS::Runtime::HookChain::resolveCall(address, target);
+            const bool witness = site.inventory ?
+                static_cast<bool>(
+                    RPS::Runtime::HookChain::resolveEntry(REL::Offset(site.positionLoad).address(), site.positionBytes)) :
+                bytesMatch(site.positionLoad, site.positionBytes);
+            if (!resolved || !witness) {
                 ROCK_LOG_ERROR(Init, "Weapon equip/unequip audio suppression rejected native callsite {:#x}",
                     site.call);
                 return false;
             }
+            if (resolved.foreign())
+                ROCK_LOG_INFO(Init, "Equip sound call at {:#x} already hooked by {}; ROCK calls through it", site.call,
+                    resolved.owner);
+            s_callSites[i] = address;
+            s_callCallees[i] = resolved.callee;
+            std::memcpy(before[i].data(), reinterpret_cast<const void*>(address), 5);
         }
         auto& trampoline = F4SE::GetTrampoline();
         // Five equipment calls share one stub; the item selector uses another.
@@ -169,11 +206,9 @@ namespace rock::native_weapon_equip_audio
             // A failed startup installation must not leave a subset of the
             // native audio routes redirected. No game events run during Load.
             for (std::size_t i = 0; i < patched; ++i) {
-                const auto& site = kCalls[i];
-                const auto address = REL::Offset(site.call).address();
-                REL::safe_write(address, site.original.data(), site.original.size());
-                FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<const void*>(address),
-                    site.original.size());
+                const auto address = REL::Offset(kCalls[i].call).address();
+                REL::safe_write(address, before[i].data(), before[i].size());
+                FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<const void*>(address), before[i].size());
             }
             ROCK_LOG_ERROR(Init, "Weapon equip/unequip audio suppression installation failed");
             return false;

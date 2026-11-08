@@ -12,6 +12,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/weapon/native/NativeHandEquipment.h"
+#include <RPS/Runtime/HookChain.h>
 
 namespace rock::native_pipboy_hand_markers
 {
@@ -42,15 +43,6 @@ namespace rock::native_pipboy_hand_markers
         using Value = RE::Scaleform::GFx::Value;
 
         bool s_installed = false;
-
-        template <std::size_t N>
-        bool matches(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected) noexcept
-        {
-            std::array<std::uint8_t, N> actual{};
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(rva).address()),
-                       actual.data(), actual.size()) &&
-                actual == expected;
-        }
 
         // ---- Inventory list presentation (Pip-Boy movie thread) ----------
         //
@@ -391,11 +383,17 @@ namespace rock::native_pipboy_hand_markers
 
     bool install() noexcept
     {
-        std::uintptr_t current = 0;
+        // The advance slot holds the native function or another plugin's (Backpack
+        // replaces it too); the markers call through whichever is there. The
+        // native advance's movie call is the layout witness.
         const auto slot = REL::Offset(kAdvanceSlot).address();
-        if (!native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(slot), current) ||
-            current != REL::Offset(kAdvanceOriginal).address() ||
-            !matches(0xBA0A95, std::to_array<std::uint8_t>({ 0xE8, 0xA6, 0x82, 0x5F, 0x01 }))) {
+        const auto resolved = RPS::Runtime::HookChain::resolveSlot(slot, REL::Offset(kAdvanceOriginal).address());
+        const std::uintptr_t current = resolved.callee;
+        if (resolved.foreign())
+            ROCK_LOG_INFO(Weapon, "PipboyMenu advance slot already replaced by {}; ROCK calls through it",
+                resolved.owner);
+        if (!resolved ||
+            !RPS::Runtime::HookChain::resolveCall(REL::Offset(0xBA0A95).address(), REL::Offset(0x2198D40).address())) {
             ROCK_LOG_WARN(Weapon, "Pip-Boy hand letters unavailable: PipboyMenu advance slot differs");
             return false;
         }

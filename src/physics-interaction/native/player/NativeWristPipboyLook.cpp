@@ -13,6 +13,7 @@
 #include <array>
 #include <cstdint>
 #include <string_view>
+#include <RPS/Runtime/HookChain.h>
 
 namespace rock::native_wrist_pipboy_look
 {
@@ -243,7 +244,15 @@ namespace rock::native_wrist_pipboy_look
                 return false;
             }
         }
-        if (!bytesMatch(kLookUpdateCallSite, kExpectedCallSite) || !bytesMatch(kLookUpdateEntry, kExpectedEntry)) {
+        // `mov rcx,rdi` before the call; the call reaches the look update or another
+        // plugin's detour (the gate calls through it); the entry may carry a jump.
+        const auto look = RPS::Runtime::HookChain::resolveCall(REL::Offset(kLookUpdateCall).address(),
+            REL::Offset(kLookUpdateEntry).address());
+        if (look.foreign())
+            ROCK_LOG_INFO(Init, "Look update call already hooked by {}; ROCK calls through it", look.owner);
+        if (!bytesMatch(kLookUpdateCallSite, std::array<std::uint8_t, 3>{ kExpectedCallSite[0], kExpectedCallSite[1],
+                                                 kExpectedCallSite[2] }) ||
+            !look || !RPS::Runtime::HookChain::resolveEntry(REL::Offset(kLookUpdateEntry).address(), kExpectedEntry)) {
             ROCK_LOG_ERROR(Init,
                 "Native wrist Pip-Boy look gate unavailable: look update call {:#x} or entry {:#x} changed",
                 kLookUpdateCall, kLookUpdateEntry);
@@ -256,7 +265,7 @@ namespace rock::native_wrist_pipboy_look
         }
         // Plugin load: PlayerCharacter::Update cannot run before these are set.
         s_settings = settings;
-        s_originalLookUpdate = reinterpret_cast<LookUpdate>(REL::Offset(kLookUpdateEntry).address());
+        s_originalLookUpdate = reinterpret_cast<LookUpdate>(look.callee);
         const auto address = REL::Offset(kLookUpdateCall).address();
         try {
             (void)trampoline.write_call<5>(address, &updateLook);

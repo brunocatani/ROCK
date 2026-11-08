@@ -17,6 +17,8 @@
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/weapon/native/NativePipboyHandMarkers.h"
+#include <RPS/Runtime/HookChain.h>
+#include <intrin.h>
 
 namespace rock::native_pipboy_hand_input
 {
@@ -157,16 +159,32 @@ namespace rock::native_pipboy_hand_input
         static_assert(sizeof(RE::UIMessage) == 0x18);
         static_assert(sizeof(RE::BSUIScaleformData) == 0x20);
 
+        // What each patched call reached: the native function or another plugin's
+        // detour. Written before the calls are patched, then read-only.
+        std::array<std::uintptr_t, 10> s_callSites{};
+        std::array<std::uintptr_t, 10> s_callCallees{};
+
+        template <class F>
+        F calleeAt(void* returnAddress, F native) noexcept
+        {
+            const auto site = reinterpret_cast<std::uintptr_t>(returnAddress) - 5;
+            for (std::size_t i = 0; i < s_callSites.size(); ++i)
+                if (s_callSites[i] == site && s_callCallees[i])
+                    return reinterpret_cast<F>(s_callCallees[i]);
+            return native;
+        }
+
         void sendEvent(const RE::BSFixedString* menu, RE::Scaleform::GFx::Event* event) noexcept
         {
+            const auto send = calleeAt(_ReturnAddress(), s_sendEvent);
             if (s_origin.hand == Hand::None || !event) {
-                s_sendEvent(menu, event);
+                send(menu, event);
                 return;
             }
             void* queue = nullptr;
             if (!native_memory::tryReadValue(reinterpret_cast<void**>(REL::Offset(0x5932558).address()), queue) ||
                 !queue) {
-                s_sendEvent(menu, event);
+                send(menu, event);
                 return;
             }
             std::unique_ptr<HandMessage> owned;
@@ -177,7 +195,7 @@ namespace rock::native_pipboy_hand_input
                 owned.reset(new HandMessage(event, s_origin));
             } catch (...) {
                 trace("message-allocation-failed", s_origin, event);
-                s_sendEvent(menu, event);
+                send(menu, event);
                 return;
             }
             s_messageVtable.store(*reinterpret_cast<const std::uintptr_t*>(owned.get()), std::memory_order_release);
@@ -212,9 +230,9 @@ namespace rock::native_pipboy_hand_input
             return s_processMessage(menu, message);
         }
 
-        void* allocateEntry(void* queue, bool keyboard) noexcept
+        void* allocateEntry(void* queue, bool keyboard, void* returnAddress) noexcept
         {
-            auto* entry = s_allocateEntry(queue);
+            auto* entry = calleeAt(returnAddress, s_allocateEntry)(queue);
             bool captured = false;
             const bool tagged = keyboard && s_origin.hand != Hand::None && s_dispatchMovie &&
                 reinterpret_cast<std::uintptr_t>(queue) ==
@@ -246,12 +264,13 @@ namespace rock::native_pipboy_hand_input
             return entry;
         }
 
-        void* allocateKey(void* queue) noexcept { return allocateEntry(queue, true); }
+        void* allocateKey(void* queue) noexcept { return allocateEntry(queue, true, _ReturnAddress()); }
 
-        void* allocateOther(void* queue) noexcept { return allocateEntry(queue, false); }
+        void* allocateOther(void* queue) noexcept { return allocateEntry(queue, false, _ReturnAddress()); }
 
         void dispatchKey(void* movie, void* entry, void* focus) noexcept
         {
+            const auto dispatch = calleeAt(_ReturnAddress(), s_dispatchKey);
             Origin origin{};
             {
                 const RecordsLock lock;
@@ -261,7 +280,7 @@ namespace rock::native_pipboy_hand_input
             const Scope scope{ origin };
             if (origin.hand != Hand::None)
                 trace("key-dispatch", origin, entry);
-            s_dispatchKey(movie, entry, focus);
+            dispatch(movie, entry, focus);
         }
 
         void* destroyMovie(void* movie, std::uint32_t flags) noexcept
@@ -410,12 +429,34 @@ namespace rock::native_pipboy_hand_input
             { 0x2D58420, 0xBA0F30, reinterpret_cast<std::uintptr_t>(&flashCall) },
             { 0x2EFA690, 0x2185540, reinterpret_cast<std::uintptr_t>(&destroyMovie) },
         } };
-        for (const auto& call : calls)
-            if (!bytesMatch(call.rva, call.bytes))
+        // Each call and slot reaches the native function or another plugin's
+        // (Backpack replaces the Pip-Boy call slot too); the hooks call through it.
+        std::array<std::array<std::uint8_t, 5>, calls.size()> before{};
+        for (std::size_t i = 0; i < calls.size(); ++i) {
+            const auto address = REL::Offset(calls[i].rva).address();
+            std::int32_t displacement = 0;
+            std::memcpy(&displacement, calls[i].bytes.data() + 1, sizeof(displacement));
+            const auto resolved = RPS::Runtime::HookChain::resolveCall(address, address + 5 + displacement);
+            if (!resolved)
                 return false;
-        for (const auto& table : vtables)
-            if (!pointerMatches(REL::Offset(table.slot).address(), REL::Offset(table.original).address()))
+            if (resolved.foreign())
+                ROCK_LOG_INFO(Init, "Pip-Boy input call at {:#x} already hooked by {}; ROCK calls through it",
+                    calls[i].rva, resolved.owner);
+            s_callSites[i] = address;
+            s_callCallees[i] = resolved.callee;
+            std::memcpy(before[i].data(), reinterpret_cast<const void*>(address), 5);
+        }
+        std::array<std::uintptr_t, vtables.size()> previous{};
+        for (std::size_t i = 0; i < vtables.size(); ++i) {
+            const auto resolved = RPS::Runtime::HookChain::resolveSlot(REL::Offset(vtables[i].slot).address(),
+                REL::Offset(vtables[i].original).address());
+            if (!resolved)
                 return false;
+            if (resolved.foreign())
+                ROCK_LOG_INFO(Init, "Pip-Boy vtable slot {:#x} already replaced by {}; ROCK calls through it",
+                    vtables[i].slot, resolved.owner);
+            previous[i] = resolved.callee;
+        }
         // Couple each offset used by the reader to the actual instruction
         // operand. A future wrong constant cannot pass an independent stale
         // prefix check and silently discard all hand provenance again.
@@ -462,14 +503,14 @@ namespace rock::native_pipboy_hand_input
         auto& trampoline = F4SE::GetTrampoline();
         if (trampoline.free_size() < 56)
             return false;
-        s_button = reinterpret_cast<Button>(REL::Offset(0xBA2550).address());
+        s_button = reinterpret_cast<Button>(previous[0]);
         s_sendEvent = reinterpret_cast<SendEvent>(REL::Offset(0x20D9BF0).address());
         s_enqueue = reinterpret_cast<Enqueue>(REL::Offset(0x20D9D40).address());
-        s_processMessage = reinterpret_cast<ProcessMessage>(REL::Offset(0xB9FF00).address());
-        s_flashCall = reinterpret_cast<FlashCall>(REL::Offset(0xBA0F30).address());
+        s_processMessage = reinterpret_cast<ProcessMessage>(previous[1]);
+        s_flashCall = reinterpret_cast<FlashCall>(previous[2]);
         s_allocateEntry = reinterpret_cast<AllocateEntry>(REL::Offset(0x2294E00).address());
         s_dispatchKey = reinterpret_cast<DispatchKey>(REL::Offset(0x218FD80).address());
-        s_destroyMovie = reinterpret_cast<DestroyMovie>(REL::Offset(0x2185540).address());
+        s_destroyMovie = reinterpret_cast<DestroyMovie>(previous[3]);
         try {
             for (const auto& call : calls) {
                 (void)trampoline.write_call<5>(REL::Offset(call.rva).address(), call.hook);
@@ -489,10 +530,10 @@ namespace rock::native_pipboy_hand_input
             return true;
         } catch (...) {
             // Startup only: all sites prevalidated, no runtime events yet.
-            for (const auto& call : calls)
-                REL::safe_write(REL::Offset(call.rva).address(), call.bytes.data(), call.bytes.size());
-            for (const auto& table : vtables)
-                REL::safe_write(REL::Offset(table.slot).address(), REL::Offset(table.original).address());
+            for (std::size_t i = 0; i < calls.size(); ++i)
+                REL::safe_write(REL::Offset(calls[i].rva).address(), before[i].data(), before[i].size());
+            for (std::size_t i = 0; i < vtables.size(); ++i)
+                REL::safe_write(REL::Offset(vtables[i].slot).address(), previous[i]);
             FlushInstructionCache(GetCurrentProcess(), nullptr, 0);
             ROCK_LOG_ERROR(Init, "Pip-Boy queued input hook installation failed; native sites restored");
             return false;

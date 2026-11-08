@@ -22,6 +22,7 @@
 #include <atomic>
 #include <cstring>
 #include <utility>
+#include <RPS/Runtime/HookChain.h>
 
 namespace rock::shell_casing_grace
 {
@@ -342,15 +343,6 @@ namespace rock::shell_casing_grace
             }
             return false;
         }
-
-        template <std::size_t N>
-        bool bytesMatch(std::uintptr_t offset, const std::array<std::uint8_t, N>& expected)
-        {
-            std::array<std::uint8_t, N> actual{};
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(offset).address()),
-                       actual.data(), N) &&
-                actual == expected;
-        }
     }
 
     bool install() noexcept
@@ -359,11 +351,20 @@ namespace rock::shell_casing_grace
             return true;
         constexpr std::array<std::uint8_t, 22> ejectPrefix{ 0x4C, 0x8B, 0xDC, 0x45, 0x89, 0x43, 0x18, 0x55, 0x41, 0x56,
             0x48, 0x8D, 0x6C, 0x24, 0x88, 0x48, 0x81, 0xEC, 0x78, 0x01, 0x00, 0x00 };
-        constexpr std::array<std::uint8_t, 5> attachCall{ 0xE8, 0x59, 0xB7, 0x6D, 0x01 };
+        // The attach call reaches the native function or another plugin's detour,
+        // which the observer calls through (write_call returns it). Both entries
+        // may carry another plugin's jump; the eject hook then chains behind it.
+        const auto attach = RPS::Runtime::HookChain::resolveCall(REL::Offset(0x71DAF2).address(),
+            REL::Offset(0x1DF9250).address());
+        std::array<std::uint8_t, 5> attachCall{};
+        std::memcpy(attachCall.data(), reinterpret_cast<const void*>(REL::Offset(0x71DAF2).address()),
+            attachCall.size());
+        if (attach.foreign())
+            ROCK_LOG_INFO(Init, "Shell casing attach call already hooked by {}; ROCK calls through it", attach.owner);
         constexpr std::array<std::uint8_t, 26> initializerPrefix{ 0x40, 0x56, 0x57, 0x41, 0x54, 0x41, 0x56, 0x48, 0x83,
             0xEC, 0x28, 0x48, 0x8B, 0x01, 0x4C, 0x8B, 0xE2, 0x4C, 0x8B, 0xF1, 0xFF, 0x90, 0x70, 0x01, 0x00, 0x00 };
-        if (!bytesMatch(0x330C80, ejectPrefix) || !bytesMatch(0x71DAF2, attachCall) ||
-            !bytesMatch(0x71D9B0, initializerPrefix)) {
+        if (!RPS::Runtime::HookChain::resolveEntry(REL::Offset(0x330C80).address(), ejectPrefix) || !attach ||
+            !RPS::Runtime::HookChain::resolveEntry(REL::Offset(0x71D9B0).address(), initializerPrefix)) {
             ROCK_LOG_ERROR(Init,
                 "Shell casing grace unavailable: native ejection/locked attachment bytes differ from FO4VR");
             return false;

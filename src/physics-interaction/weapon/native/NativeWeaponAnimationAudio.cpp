@@ -12,6 +12,8 @@
 #include <cstring>
 #include <stdexcept>
 #include <utility>
+#include <RPS/Runtime/HookChain.h>
+#include <intrin.h>
 
 namespace rock::native_weapon_animation_audio
 {
@@ -176,9 +178,19 @@ namespace rock::native_weapon_animation_audio
             }
         }
 
+        // What each copy call reached: the native copy or another plugin's detour.
+        // Written before the calls are patched, then read-only.
+        std::array<std::uintptr_t, 2> s_copySites{};
+        std::array<std::uintptr_t, 2> s_copyCallees{};
+
         void copyEvents(void* destination, void* source)
         {
-            s_copyEvents(destination, source);
+            const auto site = reinterpret_cast<std::uintptr_t>(_ReturnAddress()) - 5;
+            auto copy = s_copyEvents;
+            for (std::size_t i = 0; i < s_copySites.size(); ++i)
+                if (s_copySites[i] == site && s_copyCallees[i])
+                    copy = reinterpret_cast<CopyEvents>(s_copyCallees[i]);
+            copy(destination, source);
             try {
                 filterCopiedEvents(destination);
             } catch (...) {
@@ -230,8 +242,13 @@ namespace rock::native_weapon_animation_audio
             return true;
         if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72)
             return false;
-        if (!matches(kProcessEvents, kProcessEntry) ||
-            !matches(0x190DC60,
+        // Entries: the prologue or another plugin's jump (the context hook then
+        // chains behind it). Copy calls: the native copy or another plugin's detour.
+        const auto callable = [](std::uintptr_t rva, const auto& bytes) {
+            return static_cast<bool>(RPS::Runtime::HookChain::resolveEntry(REL::Offset(rva).address(), bytes));
+        };
+        if (!callable(kProcessEvents, kProcessEntry) ||
+            !callable(0x190DC60,
                 std::array<std::uint8_t, 16>{ 0x40, 0x53, 0x57, 0x48, 0x83, 0xEC, 0x48, 0x8B, 0x42, 0x14, 0x48, 0x8B,
                     0xDA, 0x48, 0x8B, 0xF9 }) ||
             !matches(0x16A3429, std::array<std::uint8_t, 7>{ 0x49, 0x89, 0xBE, 0x80, 0x03, 0, 0 }) ||
@@ -240,15 +257,25 @@ namespace rock::native_weapon_animation_audio
                     0, 0 }) ||
             !matches(0x16A60F6, std::array<std::uint8_t, 7>{ 0x48, 0x8B, 0x88, 0xD8, 0, 0, 0 }) ||
             !matches(0x192CC15, std::array<std::uint8_t, 7>{ 0x48, 0x8B, 0x87, 0x90, 0, 0, 0 }) ||
-            !matches(0x1BC18F0,
+            !callable(0x1BC18F0,
                 std::array<std::uint8_t, 16>{ 0x48, 0x8B, 0x11, 0x48, 0x85, 0xD2, 0x74, 0x18, 0x8B, 0x42, 0x08, 0xC1,
                     0xE8, 0x0E, 0xA8, 0x01 })) {
             ROCK_LOG_ERROR(Init, "Equip animation audio filter rejected native function bytes");
             return false;
         }
-        for (const auto& site : kCopyCalls)
-            if (!matches(site.rva, site.bytes))
+        std::array<std::array<std::uint8_t, 5>, kCopyCalls.size()> before{};
+        for (std::size_t i = 0; i < kCopyCalls.size(); ++i) {
+            const auto address = REL::Offset(kCopyCalls[i].rva).address();
+            const auto resolved = RPS::Runtime::HookChain::resolveCall(address, REL::Offset(0x190DC60).address());
+            if (!resolved)
                 return false;
+            if (resolved.foreign())
+                ROCK_LOG_INFO(Init, "Animation event copy at {:#x} already hooked by {}; ROCK calls through it",
+                    kCopyCalls[i].rva, resolved.owner);
+            s_copySites[i] = address;
+            s_copyCallees[i] = resolved.callee;
+            std::memcpy(before[i].data(), reinterpret_cast<const void*>(address), 5);
+        }
         auto& trampoline = F4SE::GetTrampoline();
         if (trampoline.free_size() < 14)
             return false;
@@ -275,10 +302,9 @@ namespace rock::native_weapon_animation_audio
             return true;
         } catch (...) {
             for (std::size_t i = 0; i < patched; ++i) {
-                const auto& site = kCopyCalls[i];
-                const auto address = REL::Offset(site.rva).address();
-                REL::safe_write(address, site.bytes.data(), site.bytes.size());
-                FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<const void*>(address), site.bytes.size());
+                const auto address = REL::Offset(kCopyCalls[i].rva).address();
+                REL::safe_write(address, before[i].data(), before[i].size());
+                FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<const void*>(address), before[i].size());
             }
             ROCK_LOG_ERROR(Init, "Player equip animation audio filter installation failed");
             return false;

@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <RPS/Runtime/HookChain.h>
 
 namespace rock::native_scope_data
 {
@@ -227,18 +228,17 @@ namespace rock::native_scope_data
             return renderedFov;
         }
 
+        // The call reaches the native function or another plugin's detour; the
+        // hooks call through whichever is there (write_call returns it).
         [[nodiscard]] bool callMatches(std::uintptr_t site, std::uintptr_t target)
         {
-            std::array<std::uint8_t, 5> bytes{};
-            const auto address = REL::Offset(site).address();
-            std::int32_t relative = 0;
-            if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), bytes.data(),
-                    bytes.size()) ||
-                bytes[0] != 0xE8) {
-                return false;
+            const auto resolved =
+                RPS::Runtime::HookChain::resolveCall(REL::Offset(site).address(), REL::Offset(target).address());
+            if (resolved.foreign()) {
+                ROCK_LOG_INFO(Init, "Native scope call at {:#x} already hooked by {}; ROCK calls through it", site,
+                    resolved.owner);
             }
-            std::memcpy(&relative, bytes.data() + 1, sizeof(relative));
-            return address + 5 + relative == REL::Offset(target).address();
+            return static_cast<bool>(resolved);
         }
 
         template <std::size_t N>
@@ -278,21 +278,24 @@ namespace rock::native_scope_data
         // to 0x140332CB0, which implements 2*atan(tan(FOV/2)/zoom).
         constexpr std::array<std::uint8_t, 10> visibilityPrefix{ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC,
             0x20 };
-        std::array<std::uint8_t, visibilityPrefix.size()> actualVisibilityPrefix{};
+        // The ScopeMenu message slot holds the native handler or another plugin's,
+        // which ROCK's handler calls through.
+        const auto messageSlot = RPS::Runtime::HookChain::resolveSlot(REL::Offset(0x2D5AC30).address(),
+            REL::Offset(0xBC7F00).address());
+        if (messageSlot.foreign()) {
+            ROCK_LOG_INFO(Init, "ScopeMenu message handler already replaced by {}; ROCK calls through it",
+                messageSlot.owner);
+        }
         // Independent native readers of the HasScope bit: geometry keeps
         // the scope active; the player aiming transition admits ScopeMenu.
         constexpr std::array<std::uint8_t, 6> geometryExtract{ 0xC1, 0xEB, 0x15, 0x80, 0xE3, 0x01 };
         constexpr std::array<std::uint8_t, 5> menuExtract{ 0xC1, 0xE8, 0x15, 0x24, 0x01 };
-        std::uintptr_t processMessage = 0;
+        const std::uintptr_t processMessage = messageSlot.callee;
         if (!query || !REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72 ||
-            !bytesMatch(0xEF838E, geometryExtract) || !bytesMatch(0xF300CA, menuExtract) ||
-            !native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(REL::Offset(0x2D5AC30).address()),
-                processMessage) ||
-            processMessage != REL::Offset(0xBC7F00).address() || !callMatches(0xF0AAD9, 0xC8DC60) ||
-            !callMatches(0xBC8073, 0x213BB80) || !callMatches(0xD835AF, 0x332CB0) || !callMatches(0xEFAAF2, 0xC8E340) ||
-            !native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(0xC8E340).address()),
-                actualVisibilityPrefix.data(), actualVisibilityPrefix.size()) ||
-            actualVisibilityPrefix != visibilityPrefix) {
+            !bytesMatch(0xEF838E, geometryExtract) || !bytesMatch(0xF300CA, menuExtract) || !messageSlot ||
+            !callMatches(0xF0AAD9, 0xC8DC60) || !callMatches(0xBC8073, 0x213BB80) || !callMatches(0xD835AF, 0x332CB0) ||
+            !callMatches(0xEFAAF2, 0xC8E340) ||
+            !RPS::Runtime::HookChain::resolveEntry(REL::Offset(0xC8E340).address(), visibilityPrefix)) {
             ROCK_LOG_ERROR(Init,
                 "Native scope data hooks rejected: admission, message, housing, visibility, SetOverlay, or mono FOV "
                 "bytes differ");

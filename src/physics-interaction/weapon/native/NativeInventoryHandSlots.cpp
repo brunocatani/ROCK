@@ -202,21 +202,33 @@ namespace rock::native_inventory_hand_slots
             original<void (*)(void*, RE::Actor*, const Item*, const Slot*), 0xE806B0>()(process, actor, item, selected);
         }
 
+        // Another plugin's detour on the indexed-unequip call, or 0 when the call
+        // was native. Load owner; written before the call is patched.
+        std::uintptr_t s_indexedUnequipForeign = 0;
+
         Slot* indexedUnequip(const Item* item, int index, const void* callback)
         {
             const Scope scope(owner(Owner::DoubleFirst, callback, nullptr));
+            if (s_indexedUnequipForeign)
+                return reinterpret_cast<Slot* (*)(const Item*, int)>(s_indexedUnequipForeign)(item, index);
             return ordinal(item, index);
         }
 
         bool installIndexedUnequip()
         {
+            // The call reaches the ordinal resolver or another plugin's detour; the
+            // scoped hook calls through that detour (which reaches ROCK's ordinal).
             constexpr std::uintptr_t rva = 0xE202ED;
-            constexpr std::array<std::uint8_t, 5> expected{ 0xE8, 0xEE, 0x5F, 0x32, 0xFF };
             const auto address = REL::Offset(rva).address();
-            std::array<std::uint8_t, 5> live{};
-            if (!native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(address), live.data(), live.size()) ||
-                live != expected)
+            const auto resolved = RPS::Runtime::HookChain::resolveCall(address, REL::Offset(0x1462E0).address());
+            if (!resolved)
                 return false;
+            if (resolved.foreign())
+                ROCK_LOG_INFO(Init, "Indexed unequip call already hooked by {}; ROCK calls through it", resolved.owner);
+            std::array<std::uint8_t, 5> expected{};
+            std::memcpy(expected.data(), reinterpret_cast<const void*>(address), expected.size());
+            s_indexedUnequipForeign = resolved.foreign() ? resolved.callee : 0;
+            std::array<std::uint8_t, 5> live{};
             try {
                 OrdinalStub stub(reinterpret_cast<std::uintptr_t>(&indexedUnequip));
                 auto& trampoline = F4SE::GetTrampoline();

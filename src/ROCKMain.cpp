@@ -77,6 +77,8 @@
 #include "RE/Bethesda/TESForms.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
 
+#include <RPS/Runtime/HookChain.h>
+
 namespace
 {
     using namespace rock;
@@ -792,10 +794,15 @@ namespace
             return false;
         }
 
+        // The native transition, or another plugin's detour, which the hook calls through.
         const auto relativeTarget = *reinterpret_cast<const std::int32_t*>(callBytes + 1);
         const auto decodedTarget = callSiteAddress + 5u + relativeTarget;
         const auto expectedTarget = REL::Offset(rock::offsets::kFunc_NativeScopeStateTransition).address();
-        if (decodedTarget != expectedTarget) {
+        const auto resolved = RPS::Runtime::HookChain::resolveCall(callSiteAddress, expectedTarget);
+        if (resolved.foreign()) {
+            logger::info("ROCK: Native scope geometry call already hooked by {}; ROCK calls through it", resolved.owner);
+        }
+        if (!resolved) {
             const auto holder = moduleNameAtAddress(decodedTarget);
             logger::critical(
                 "ROCK: Native scope geometry hook validation failed at 0x{:X}: target 0x{:X}, expected 0x{:X}{}{}.",

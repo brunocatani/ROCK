@@ -15,6 +15,7 @@
 #include <atomic>
 #include <cstring>
 #include <limits>
+#include <RPS/Runtime/HookChain.h>
 
 namespace rock::game_ini_overrides
 {
@@ -85,6 +86,19 @@ namespace rock::game_ini_overrides
             constexpr std::array<std::uint8_t, 10> kPrefix{ 0x48, 0x89, 0x5C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC,
                 0x20 };
             const auto target = REL::Module::get().base() + kNotifyRva;
+            const auto entry = RPS::Runtime::HookChain::resolveEntry(target, kPrefix);
+            if (entry.foreign()) {
+                // Another plugin's jump replaces the prologue: its detour is the
+                // original, and a 5-byte branch replaces only that jump.
+                if (F4SE::GetTrampoline().free_size() < 14) {
+                    ROCK_LOG_ERROR(Init, "VR INI override notifier has insufficient trampoline space to chain");
+                    return false;
+                }
+                s_originalNotify = reinterpret_cast<Notify>(entry.callee);
+                (void)F4SE::GetTrampoline().write_branch<5>(target, reinterpret_cast<std::uintptr_t>(&onSettingChanged));
+                ROCK_LOG_INFO(Init, "VR INI override notifier chained behind {}", entry.owner);
+                return true;
+            }
             if (std::memcmp(reinterpret_cast<const void*>(target), kPrefix.data(), kPrefix.size()) != 0) {
                 ROCK_LOG_ERROR(Init, "VR INI override notifier bytes differ at RVA 0x{:X}; enforcement not installed",
                     kNotifyRva);

@@ -16,6 +16,7 @@
 #include "physics-interaction/native/havok/BodyCollisionControl.h"
 #include "physics-interaction/native/havok/HavokRuntime.h"
 #include "rock_support/Fo4VrRuntime.h"
+#include <RPS/Runtime/HookChain.h>
 
 namespace rock::native_secondary_melee
 {
@@ -69,9 +70,9 @@ namespace rock::native_secondary_melee
         using DetachAll = void (*)(RE::PlayerCharacter*, void*, std::uint32_t, std::uint8_t, std::uint8_t);
 
         bool s_installed = false; // Load owner; immutable after install.
-        ReadItem s_readItem = nullptr;
-        ObjectImpact s_objectImpact = nullptr;
-        ActorHit s_actorHit = nullptr;
+        // What each relay call reached: the native function or another plugin's
+        // detour. Written before the calls are patched, then read-only.
+        std::array<std::uintptr_t, 4> s_relayCallees{};
         WorldChange s_worldChange = nullptr;
         DetachAll s_detachAll = nullptr;
 
@@ -93,19 +94,20 @@ namespace rock::native_secondary_melee
         // Weapon-collision switch last applied to the bodies; unknown after attach.
         std::optional<bool> s_appliedLive;
 
+        template <std::size_t Relay>
         void* readItem(void* actor, void* out, std::uint32_t index)
         {
-            return s_readItem(actor, out, t_routed ? 1u : index);
+            return reinterpret_cast<ReadItem>(s_relayCallees[Relay])(actor, out, t_routed ? 1u : index);
         }
 
         void objectImpact(void* actor, std::uint32_t index, void* a, void* b, void* c, void* d, void* e)
         {
-            s_objectImpact(actor, t_routed ? 1u : index, a, b, c, d, e);
+            reinterpret_cast<ObjectImpact>(s_relayCallees[2])(actor, t_routed ? 1u : index, a, b, c, d, e);
         }
 
         void actorHit(void* actor, std::uint32_t index, void* target, void* d)
         {
-            s_actorHit(actor, t_routed ? 1u : index, target, d);
+            reinterpret_cast<ActorHit>(s_relayCallees[3])(actor, t_routed ? 1u : index, target, d);
         }
 
         bool onOwner() noexcept
@@ -239,25 +241,25 @@ namespace rock::native_secondary_melee
             s_detachAll(player, a, b, c, d);
         }
 
-        bool callMatches(std::uintptr_t site, std::uintptr_t target) noexcept
+        // The native function, or another plugin's detour, which the hook calls through.
+        RPS::Runtime::HookChain::Resolved callAt(std::uintptr_t site, std::uintptr_t target) noexcept
         {
-            std::array<std::uint8_t, 5> live{};
-            const auto address = REL::Offset(site).address();
-            std::int32_t displacement = 0;
-            if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), live.data(),
-                    live.size()) ||
-                live[0] != 0xE8)
-                return false;
-            std::memcpy(&displacement, live.data() + 1, sizeof(displacement));
-            return address + 5 + displacement == REL::Offset(target).address();
+            const auto resolved =
+                RPS::Runtime::HookChain::resolveCall(REL::Offset(site).address(), REL::Offset(target).address());
+            if (resolved.foreign())
+                ROCK_LOG_INFO(Init, "Second melee call at {:#x} already hooked by {}; ROCK calls through it", site,
+                    resolved.owner);
+            return resolved;
         }
 
-        bool entryMatches(std::uintptr_t entry, std::uintptr_t function) noexcept
+        RPS::Runtime::HookChain::Resolved slotAt(std::uintptr_t entry, std::uintptr_t function) noexcept
         {
-            std::uintptr_t live = 0;
-            return native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(REL::Offset(entry).address()),
-                       live) &&
-                live == REL::Offset(function).address();
+            const auto resolved =
+                RPS::Runtime::HookChain::resolveSlot(REL::Offset(entry).address(), REL::Offset(function).address());
+            if (resolved.foreign())
+                ROCK_LOG_INFO(Init, "Player vtable slot {:#x} already replaced by {}; ROCK calls through it", entry,
+                    resolved.owner);
+            return resolved;
         }
     }
 
@@ -267,15 +269,19 @@ namespace rock::native_secondary_melee
             return true;
         if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72)
             return false;
-        for (const auto& relay : kRelays) {
-            if (!callMatches(relay.site, relay.target)) {
-                ROCK_LOG_ERROR(Init, "Second melee routing refused: call at {:#x} is not to {:#x}", relay.site,
-                    relay.target);
+        std::array<std::uintptr_t, kRelays.size()> callees{};
+        for (std::size_t i = 0; i < kRelays.size(); ++i) {
+            const auto resolved = callAt(kRelays[i].site, kRelays[i].target);
+            if (!resolved) {
+                ROCK_LOG_ERROR(Init, "Second melee routing refused: call at {:#x} is not to {:#x}", kRelays[i].site,
+                    kRelays[i].target);
                 return false;
             }
+            callees[i] = resolved.callee;
         }
-        if (!entryMatches(kWorldChangeEntry, kWorldChangeFunction) ||
-            !entryMatches(kDetachAllEntry, kDetachAllFunction)) {
+        const auto worldSlot = slotAt(kWorldChangeEntry, kWorldChangeFunction);
+        const auto detachSlot = slotAt(kDetachAllEntry, kDetachAllFunction);
+        if (!worldSlot || !detachSlot) {
             ROCK_LOG_ERROR(Init, "Second melee routing refused: PlayerCharacter world/detach vtable entries differ");
             return false;
         }
@@ -285,16 +291,14 @@ namespace rock::native_secondary_melee
                 reinterpret_cast<const void*>(REL::Offset(kRelays[i].site).address()), originals[i].data(),
                 originals[i].size());
         }
-        const std::array<std::uintptr_t, kRelays.size()> hooks{ reinterpret_cast<std::uintptr_t>(&readItem),
-            reinterpret_cast<std::uintptr_t>(&readItem), reinterpret_cast<std::uintptr_t>(&objectImpact),
+        const std::array<std::uintptr_t, kRelays.size()> hooks{ reinterpret_cast<std::uintptr_t>(&readItem<0>),
+            reinterpret_cast<std::uintptr_t>(&readItem<1>), reinterpret_cast<std::uintptr_t>(&objectImpact),
             reinterpret_cast<std::uintptr_t>(&actorHit) };
         try {
             auto& trampoline = F4SE::GetTrampoline();
             if (trampoline.free_size() < kRelays.size() * 14)
                 throw std::runtime_error("trampoline space");
-            s_readItem = reinterpret_cast<ReadItem>(REL::Offset(0xE50DA0).address());
-            s_objectImpact = reinterpret_cast<ObjectImpact>(REL::Offset(0xE56FA0).address());
-            s_actorHit = reinterpret_cast<ActorHit>(REL::Offset(0xE56B10).address());
+            s_relayCallees = callees;
             for (std::size_t i = 0; i < kRelays.size(); ++i)
                 (void)trampoline.write_call<5>(REL::Offset(kRelays[i].site).address(), hooks[i]);
             if (!FlushInstructionCache(GetCurrentProcess(), nullptr, 0))
@@ -306,8 +310,8 @@ namespace rock::native_secondary_melee
             ROCK_LOG_ERROR(Init, "Second melee routing install failed; original calls restored");
             return false;
         }
-        s_worldChange = reinterpret_cast<WorldChange>(REL::Offset(kWorldChangeFunction).address());
-        s_detachAll = reinterpret_cast<DetachAll>(REL::Offset(kDetachAllFunction).address());
+        s_worldChange = reinterpret_cast<WorldChange>(worldSlot.callee);
+        s_detachAll = reinterpret_cast<DetachAll>(detachSlot.callee);
         const auto worldHook = reinterpret_cast<std::uintptr_t>(&worldChange);
         const auto detachHook = reinterpret_cast<std::uintptr_t>(&detachAll);
         REL::safe_write(REL::Offset(kWorldChangeEntry).address(), &worldHook, sizeof(worldHook));

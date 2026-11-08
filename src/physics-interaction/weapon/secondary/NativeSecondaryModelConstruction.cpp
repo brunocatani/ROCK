@@ -16,6 +16,7 @@
 #include "physics-interaction/weapon/native/NativeWeaponModelGeometry.h"
 #include "physics-interaction/weapon/secondary/NativeSecondaryModelBranch.h"
 #include "rock_support/Fo4VrRuntime.h"
+#include <RPS/Runtime/HookChain.h>
 
 namespace rock::native_secondary_model
 {
@@ -240,14 +241,15 @@ namespace rock::native_secondary_model
             { 0x1CCFB8, { 0xE8, 0xE3, 0x18, 0, 0 }, 5 }, { 0x1CA323, { 0xE8, 0x98, 0x2B, 0, 0 }, 5 },
             { 0x1C831A, { 0xE8, 0x51, 0x1C, 0, 0 }, 5 }, { 0x1CAD30, { 0xE8, 0x8B, 0xEA, 0xC2, 0x01 }, 5 } } };
 
+        // A function ROCK calls: its prologue, or another plugin's detour at the entry.
         template <std::size_t N>
         bool bytesMatch(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected) noexcept
         {
-            std::array<std::uint8_t, N> actual{};
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(rva).address()),
-                       actual.data(), N) &&
-                actual == expected;
+            return static_cast<bool>(RPS::Runtime::HookChain::resolveEntry(REL::Offset(rva).address(), expected));
         }
+
+        // The native function each call patch (index 3..6) reaches.
+        constexpr std::array<std::uintptr_t, 4> kCallTargets{ 0x1CE8A0, 0x1CCEC0, 0x1C9F70, 0x1DF97C0 };
 
         bool redirectMatches(const Patch& patch, std::uintptr_t target, bool branch) noexcept
         {
@@ -279,11 +281,29 @@ namespace rock::native_secondary_model
             return true;
         if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72)
             return false;
-        for (const auto& patch : kPatches) {
-            std::array<std::uint8_t, 8> actual{};
-            if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(patch.rva).address()),
-                    actual.data(), patch.length) ||
-                std::memcmp(actual.data(), patch.bytes.data(), patch.length) != 0) {
+        // The three branch patches rewrite instructions and need the native bytes.
+        // The four calls reach the native function or another plugin's detour,
+        // which the hooks then call through.
+        std::array<std::uintptr_t, kCallTargets.size()> callees{};
+        for (std::size_t i = 0; i < kPatches.size(); ++i) {
+            const auto& patch = kPatches[i];
+            const auto address = REL::Offset(patch.rva).address();
+            bool valid = false;
+            if (i < 3) {
+                std::array<std::uint8_t, 8> actual{};
+                valid = native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), actual.data(),
+                            patch.length) &&
+                    std::memcmp(actual.data(), patch.bytes.data(), patch.length) == 0;
+            } else {
+                const auto resolved =
+                    RPS::Runtime::HookChain::resolveCall(address, REL::Offset(kCallTargets[i - 3]).address());
+                valid = static_cast<bool>(resolved);
+                callees[i - 3] = resolved.callee;
+                if (resolved.foreign())
+                    ROCK_LOG_INFO(Init, "Secondary native model call {:#x} already hooked by {}; ROCK calls through it",
+                        patch.rva, resolved.owner);
+            }
+            if (!valid) {
                 ROCK_LOG_ERROR(Init, "Secondary native model validation failed at {:#x}; builder unchanged", patch.rva);
                 return false;
             }
@@ -306,12 +326,12 @@ namespace rock::native_secondary_model
         auto& trampoline = F4SE::GetTrampoline();
         if (trampoline.free_size() < 2048)
             return false;
-        s_build = reinterpret_cast<Build>(REL::Offset(0x1C9F70).address());
-        s_assemble = reinterpret_cast<Assemble>(REL::Offset(0x1CCEC0).address());
-        s_selectExtra = reinterpret_cast<SelectExtra>(REL::Offset(0x1CE8A0).address());
+        s_build = reinterpret_cast<Build>(callees[2]);
+        s_assemble = reinterpret_cast<Assemble>(callees[1]);
+        s_selectExtra = reinterpret_cast<SelectExtra>(callees[0]);
         s_modelIndex = reinterpret_cast<ModelIndex>(REL::Offset(0x1CAFC0).address());
         s_instance = reinterpret_cast<Instance>(REL::Offset(0x08B040).address());
-        s_stripCollision = reinterpret_cast<StripCollision>(REL::Offset(0x1DF97C0).address());
+        s_stripCollision = reinterpret_cast<StripCollision>(callees[3]);
         try {
             constexpr std::array<std::array<std::uintptr_t, 3>, 3> destinations{ { { 0x1CA1B7, 0x1CA1BF, 0x1CA1A5 },
                 { 0x1CA285, 0x1CA285, 0x1CA27F }, { 0x1CA2C9, 0x1CA2C1, 0x1CA2AF } } };
