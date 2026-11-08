@@ -11,6 +11,7 @@
 #include <REL/Relocation.h>
 #include <Windows.h>
 #include <intrin.h>
+#include <RPS/Runtime/HookChain.h>
 
 #include <array>
 #include <atomic>
@@ -85,6 +86,8 @@ namespace rock::held_weapon_instant_transition
         std::atomic<bool> s_installed{ false };
         // The thread whose transaction is open, or zero. See the thread model in the header.
         std::atomic<DWORD> s_transactionThread{ 0 };
+        // Another plugin's function verified in the player's draw slot, or zero.
+        std::atomic<std::uintptr_t> s_acceptedForeignDrawSlot{ 0 };
         thread_local TransactionScope* t_activeScope = nullptr;
 
         __declspec(noinline) void onDrawWeaponMagicHands(RE::PlayerCharacter* player, bool draw);
@@ -233,19 +236,12 @@ namespace rock::held_weapon_instant_transition
             }
         }
 
+        // ROCK's own absolute jump at the entry, or its chained jump through an
+        // F4SE stub when another plugin detoured the function first.
         [[nodiscard]] bool entryHookMatches() noexcept
         {
-            std::array<std::uint8_t, kExpectedPlayerDrawEntry.size()> expected{};
-            expected[0] = 0xFF;
-            expected[1] = 0x25;
-            const auto hookAddress = reinterpret_cast<std::uintptr_t>(&onDrawWeaponMagicHands);
-            std::memcpy(expected.data() + 6, &hookAddress, sizeof(hookAddress));
-
-            std::array<std::uint8_t, kExpectedPlayerDrawEntry.size()> actual{};
-            const auto entryAddress = REL::Offset(kPlayerDrawWeaponEntry).address();
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(entryAddress), actual.data(),
-                       actual.size()) &&
-                actual == expected;
+            return RPS::Runtime::HookChain::reaches(REL::Offset(kPlayerDrawWeaponEntry).address(),
+                reinterpret_cast<std::uintptr_t>(&onDrawWeaponMagicHands));
         }
 
         // Opens the calling thread's transaction, unless another thread has one open.
@@ -368,8 +364,20 @@ namespace rock::held_weapon_instant_transition
                 drawSlot)) {
             return { .reason = ReadinessReason::PlayerVtableUnreadable };
         }
-        if (drawSlot != REL::Offset(kPlayerDrawWeaponEntry).address()) {
-            return { .reason = ReadinessReason::PlayerDrawSlotChanged };
+        // Another plugin's function in the slot calls on into the native entry,
+        // where this hook sits; if it does not, the transaction's action trace
+        // shows the unsuppressed draw and the equip fails there. The slot is
+        // resolved only when its value changes.
+        const auto nativeDraw = REL::Offset(kPlayerDrawWeaponEntry).address();
+        if (drawSlot != nativeDraw && drawSlot != s_acceptedForeignDrawSlot.load(std::memory_order_acquire)) {
+            const auto resolved =
+                RPS::Runtime::HookChain::resolveSlot(vtable + kDrawWeaponVtableOffset, nativeDraw);
+            if (!resolved.foreign() || resolved.callee != drawSlot) {
+                return { .reason = ReadinessReason::PlayerDrawSlotChanged };
+            }
+            s_acceptedForeignDrawSlot.store(drawSlot, std::memory_order_release);
+            ROCK_LOG_INFO(Weapon, "Player draw slot is chained through {}; held weapon equips call through it",
+                resolved.owner);
         }
         if (!entryHookMatches()) {
             return { .reason = ReadinessReason::EntryHookChanged };

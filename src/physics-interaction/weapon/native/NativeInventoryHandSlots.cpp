@@ -17,6 +17,7 @@
 #include "physics-interaction/weapon/classification/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/native/NativeInventorySlotStub.h"
 #include "rock_support/Fo4VrRuntime.h"
+#include <RPS/Runtime/HookChain.h>
 
 namespace rock::native_inventory_hand_slots
 {
@@ -265,16 +266,10 @@ namespace rock::native_inventory_hand_slots
     {
         if (!Entry<0xE70280>::original)
             return false;
-        std::array<std::uint8_t, 14> bytes{};
-        if (!native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(REL::Offset(0xE70280).address()),
-                bytes.data(), bytes.size()))
-            return false;
-        constexpr std::array<std::uint8_t, 6> jump{ 0xFF, 0x25, 0, 0, 0, 0 };
-        std::uintptr_t destination{};
-        std::memcpy(&destination, bytes.data() + 6, 8);
         const auto expected = reinterpret_cast<std::uintptr_t>(&scoped<0xE70280, Owner::ActorSecond, bool, void*,
             RE::Actor*, const Item*, std::int32_t, const Slot*, std::uint32_t, bool, bool, bool, bool, void*>);
-        return std::memcmp(bytes.data(), jump.data(), jump.size()) == 0 && destination == expected;
+        // ROCK's own absolute jump, or its chained jump through an F4SE stub.
+        return RPS::Runtime::HookChain::reaches(REL::Offset(0xE70280).address(), expected);
     }
 
     bool heldOnRightLeaf(const RE::BGSEquipSlot* slot) noexcept

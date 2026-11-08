@@ -1454,8 +1454,10 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
         logger::warn("ROCK: Save-game weapon hands unavailable; a load returns weapons to their default hands.");
     }
 
-    logger::info("ROCK: Allocate trampoline (4624 bytes)...");
-    F4SE::AllocTrampoline(4624);
+    // 4624 for ROCK's own call patches, plus a 14-byte stub for each of its 32
+    // entry hooks that may chain behind another plugin's detour.
+    logger::info("ROCK: Allocate trampoline (5072 bytes)...");
+    F4SE::AllocTrampoline(5072);
     if (!rock::loose_weapon_state::install()) {
         spdlog::error("Loose weapon state model installation unavailable");
     }
