@@ -214,6 +214,14 @@ FarGrabDirection = 0
 ## False: taken items go to inventory (game default).
 LootToHand = true
 
+## Quick Loot Panel Placement
+## 1 = Right Hand. 2 = Closer Hand. 3 = At Container.
+## Right Hand: the game's own panel on the right hand; it lists only what the right hand points at.
+## Closer Hand: the panel rides the hand pointing at the container, mirrored on the left hand; when both hands point at containers the closer one takes it.
+## At Container: the panel stands at the container it lists, facing you; either hand can point at it.
+## The panel's buttons stay on the right controller in every mode. Applies at once.
+QuickLootPanelPlacement = 3
+
 ## === 07. Firing Hand ===
 [FiringHand]
 ## Default Hand

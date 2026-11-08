@@ -64,6 +64,9 @@ namespace rock
         int rockFarGrabMode = static_cast<int>(far_pull_gesture::Mode::Immediate);
         bool rockGrabInputIntentStateEnabled = true;
         bool rockLootToHand = true;
+        // Where the quick loot panel appears; see native_quick_loot_panel::Placement.
+        // 1: right hand (game default); 2: closer hand; 3: at the container.
+        int rockQuickLootPanelPlacement = 3;
         float rockGrabInputLeewaySeconds = 0.12f;
         float rockGrabInputForceSeconds = 0.08f;
         // ControllerInput.Left/Right: physical source of each logical button, per hand (left, right).

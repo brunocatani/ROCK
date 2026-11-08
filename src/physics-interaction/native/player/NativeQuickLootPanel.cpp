@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <optional>
 
 #include "physics-interaction/PhysicsLog.h"
@@ -32,11 +33,11 @@ namespace rock::native_quick_loot_panel
          * a pick by the left wand alone chose the container but left the
          * panel blank.
          *
-         * The lock call is redirected. Before it runs, when only the left pick
-         * is lootable the two slots are swapped, so the model treats it as the
-         * primary pick for the rest of this update and until the next update
-         * copies the real picks again. 0xF0A130, which gates the copy, returns
-         * true on VR.
+         * The lock call is redirected. Before it runs, when the left wand owns
+         * the listing the two slots are swapped, so the model treats its pick
+         * as the primary one for the rest of this update and until the next
+         * update copies the real picks again. 0xF0A130, which gates the copy,
+         * returns true on VR.
          */
         constexpr std::uintptr_t kPicksCopiedLockCall = 0xA92417;
         constexpr std::uintptr_t kSpinLockAcquire = 0x24E10;
@@ -69,8 +70,10 @@ namespace rock::native_quick_loot_panel
          * 0xAC7E10, 0xAC7F60, 0xAD8930) pair it with the quick container
          * state's primary-lootable flag (0xAC5C30 reads state +0xC0) to hide
          * the hosting wand's prompt while the panel lists, and with dead-actor
-         * picks. Both slots are replaced so a wand hosts the panel exactly when
-         * it points at the listed container.
+         * picks. Both slots are replaced: at the container a wand hosts the
+         * panel exactly when it points at the listed container, on a hand the
+         * hand that carries it hosts it, and with nothing listed or in
+         * RightHand mode both return their native answers.
          */
         struct RolloverHostSlot
         {
@@ -106,34 +109,77 @@ namespace rock::native_quick_loot_panel
         // into the player's face.
         constexpr float kMaxApproachFraction = 0.5f;
 
+        /*
+         * CloserHand: when both wands pick lootable containers (often the same
+         * one, with both hands on a two-handed weapon), a hand takes the panel
+         * only when it is this much closer to its container than the owning
+         * hand is to its own. Without the margin the panel flipped hands every
+         * few frames on near-equal distances. Game units; about 7 cm.
+         */
+        constexpr float kOwnerSwitchMargin = 5.0f;
+        constexpr float kNoPick = (std::numeric_limits<float>::max)();
+
         using SpinLockAcquire = void* (*)(void*, std::uintptr_t);
         using IsLootableTarget = bool (*)(void*, std::uint32_t*);
 
-        // Which wands point at the container the panel lists.
+        // Which wands host the container the panel lists.
         enum ListedFlags : std::uint8_t
         {
             kListed = 1 << 0,
-            kRightPicksListed = 1 << 1,
-            kLeftPicksListed = 1 << 2,
+            kRightHostsListed = 1 << 1,
+            kLeftHostsListed = 1 << 2,
+            // The left wand's pick is listed (the picks were swapped).
+            kLeftOwnsListed = 1 << 3,
         };
 
         SpinLockAcquire g_lockAcquire{ nullptr };
         bool g_attempted{ false };
+        // Written by the game thread, read by the HUD data model update.
+        std::atomic<Placement> g_placement{ Placement::AtContainer };
+        std::atomic<bool> g_preferLeft{ false };
         // Written by the HUD data model update; read by the rollover models
         // and the game thread.
         std::atomic<std::uint8_t> g_listedFlags{ 0 };
         std::atomic<std::uint32_t> g_listedPick{ 0 };
-        // Game thread only. The ROCK node under the room node that carries the
-        // panel at its container; it outlives player node rebuilds and is
-        // re-parented to the current room node when the old one is gone.
+        std::atomic<std::uint32_t> g_rightPick{ 0 };
+        std::atomic<std::uint32_t> g_leftPick{ 0 };
+        // Game thread only. ROCK's carrier nodes: one under the room node that
+        // holds the panel at its container, one under the left wand that holds
+        // it on the left hand. They outlive player node rebuilds and are
+        // re-parented when their old parent is gone.
         // Never destroyed: an engine object released in DLL detach raises R6025 during ExitProcess.
-        RE::NiPointer<RE::NiNode>& g_carrier = *new RE::NiPointer<RE::NiNode>;
-        bool g_carrierFailed{ false };
-        bool g_onContainerLogged{ false };
+        RE::NiPointer<RE::NiNode>& g_containerCarrier = *new RE::NiPointer<RE::NiNode>;
+        RE::NiPointer<RE::NiNode>& g_leftCarrier = *new RE::NiPointer<RE::NiNode>;
+        bool g_containerCarrierFailed{ false };
+        bool g_leftCarrierFailed{ false };
+        std::optional<Placement> g_appliedPlacement;
+
+        const char* placementName(const Placement placement)
+        {
+            switch (placement) {
+            case Placement::RightHand:
+                return "on the right hand (game default)";
+            case Placement::CloserHand:
+                return "on the hand closer to its container";
+            case Placement::AtContainer:
+                return "at its container";
+            }
+            return "unknown";
+        }
 
         // Runs once per model update, right after the real picks are copied.
         void chooseListedPick(std::byte* model)
         {
+            const Placement placement = g_placement.load(std::memory_order_relaxed);
+            if (placement == Placement::RightHand) {
+                // The native listing, prompts and picks, untouched.
+                g_listedFlags.store(0, std::memory_order_relaxed);
+                g_rightPick.store(0, std::memory_order_relaxed);
+                g_leftPick.store(0, std::memory_order_relaxed);
+                g_listedPick.store(0, std::memory_order_release);
+                return;
+            }
+
             static REL::Relocation<IsLootableTarget> isLootable{ REL::Offset(kIsLootableTarget) };
             const std::uint32_t invalid = *REL::Relocation<const std::uint32_t*>{ REL::Offset(kInvalidHandle) };
             auto* const rightSlot = reinterpret_cast<std::uint32_t*>(model + kRightPickOffset);
@@ -146,21 +192,33 @@ namespace rock::native_quick_loot_panel
             const bool rightLootable = right != invalid && isLootable(model, &candidate);
             candidate = left;
             const bool leftLootable = left != invalid && isLootable(model, &candidate);
+            g_rightPick.store(rightLootable ? right : 0, std::memory_order_relaxed);
+            g_leftPick.store(leftLootable ? left : 0, std::memory_order_relaxed);
             if (!rightLootable && !leftLootable) {
                 g_listedFlags.store(0, std::memory_order_relaxed);
                 g_listedPick.store(0, std::memory_order_release);
                 return;
             }
 
-            // The native choice: the right pick when lootable, else the left one.
-            const std::uint32_t listed = rightLootable ? right : left;
-            if (!rightLootable) {
+            // At the container the native choice stands (the right pick when
+            // lootable); on a hand, the closer hand when both wands pick.
+            const bool leftOwns = leftLootable &&
+                (!rightLootable ||
+                    (placement == Placement::CloserHand && g_preferLeft.load(std::memory_order_relaxed)));
+            const std::uint32_t listed = leftOwns ? left : right;
+            if (leftOwns && left != right) {
                 *rightSlot = left;
                 *leftSlot = right;
             }
-            g_listedFlags.store(static_cast<std::uint8_t>(kListed | (right == listed ? kRightPicksListed : 0) |
-                                    (left == listed ? kLeftPicksListed : 0)),
-                std::memory_order_relaxed);
+            std::uint8_t flags = kListed | (leftOwns ? kLeftOwnsListed : 0);
+            if (placement == Placement::CloserHand) {
+                // Only the hand that carries the panel hosts it; the other
+                // wand keeps its own prompt.
+                flags |= leftOwns ? kLeftHostsListed : kRightHostsListed;
+            } else {
+                flags |= (right == listed ? kRightHostsListed : 0) | (left == listed ? kLeftHostsListed : 0);
+            }
+            g_listedFlags.store(flags, std::memory_order_relaxed);
             g_listedPick.store(listed, std::memory_order_release);
         }
 
@@ -175,14 +233,14 @@ namespace rock::native_quick_loot_panel
         bool primaryRolloverHostsPanel(void*)
         {
             const auto flags = g_listedFlags.load(std::memory_order_relaxed);
-            return !(flags & kListed) || (flags & kRightPicksListed);
+            return !(flags & kListed) || (flags & kRightHostsListed);
         }
 
         // Native answer (false) whenever nothing is listed.
         bool secondaryRolloverHostsPanel(void*)
         {
             const auto flags = g_listedFlags.load(std::memory_order_relaxed);
-            return (flags & kListed) && (flags & kLeftPicksListed);
+            return (flags & kListed) && (flags & kLeftHostsListed);
         }
 
         std::uintptr_t rolloverHostSlotAddress(const RolloverHostSlot& host)
@@ -283,8 +341,68 @@ namespace rock::native_quick_loot_panel
             return pose;
         }
 
-        void move(RE::NiAVObject* root, RE::NiNode* from, RE::NiNode* to)
+        float pickDistance(const std::uint32_t handleValue, const RE::NiNode* wand)
         {
+            if (!handleValue || !wand) {
+                return kNoPick;
+            }
+            RE::ObjectRefHandle handle{};
+            static_assert(sizeof(handle) == sizeof(handleValue));
+            std::memcpy(&handle, &handleValue, sizeof(handle));
+            const auto ref = handle.get();
+            if (!ref) {
+                return kNoPick;
+            }
+            // The bound centre stands for large containers better than their origin.
+            const auto* root = ref->Get3D();
+            const RE::NiPoint3 target =
+                root && root->worldBound.fRadius > 0.0f ? root->worldBound.center : ref->data.location;
+            const float dx = target.x - wand->world.translate.x;
+            const float dy = target.y - wand->world.translate.y;
+            const float dz = target.z - wand->world.translate.z;
+            return std::sqrt(dx * dx + dy * dy + dz * dz);
+        }
+
+        // CloserHand: publishes which hand the next model update gives the
+        // panel when both wands pick lootable containers.
+        void updatePreference(const float right, const float left)
+        {
+            const bool onLeft = (g_listedFlags.load(std::memory_order_relaxed) & kLeftOwnsListed) != 0;
+            if (right == kNoPick || left == kNoPick) {
+                g_preferLeft.store(onLeft, std::memory_order_relaxed);
+                return;
+            }
+            const float otherCloserBy = onLeft ? left - right : right - left;
+            bool preferLeft = onLeft;
+            if (otherCloserBy > kOwnerSwitchMargin) {
+                preferLeft = !onLeft;
+            } else if (otherCloserBy > 0.0f) {
+                ROCK_LOG_SAMPLE_DEBUG(Hand, 1000,
+                    "Quick loot panel held on the {} hand: the other hand is {:.1f} units closer, under the {:.1f}-unit "
+                    "switch margin",
+                    onLeft ? "left" : "right", otherCloserBy, kOwnerSwitchMargin);
+            }
+            g_preferLeft.store(preferLeft, std::memory_order_relaxed);
+        }
+
+        // Reflection across the wand's X axis; it stays a proper rotation.
+        RE::NiTransform mirroredAcrossX(RE::NiTransform transform)
+        {
+            transform.translate.x = -transform.translate.x;
+            transform.rotate.entry[0][1] = -transform.rotate.entry[0][1];
+            transform.rotate.entry[0][2] = -transform.rotate.entry[0][2];
+            transform.rotate.entry[1][0] = -transform.rotate.entry[1][0];
+            transform.rotate.entry[2][0] = -transform.rotate.entry[2][0];
+            return transform;
+        }
+
+        // Re-parents the panel root; the caller has checked its current parent.
+        void moveTo(RE::NiAVObject* root, RE::NiNode* to)
+        {
+            auto* const from = root->parent;
+            if (!from || from == to) {
+                return;
+            }
             RE::NiPointer<RE::NiAVObject> held;
             from->DetachChild(root, held);
             if (held) {
@@ -292,49 +410,67 @@ namespace rock::native_quick_loot_panel
             }
         }
 
-        bool attachCarrier(RE::NiNode* room)
+        bool attachCarrier(RE::NiPointer<RE::NiNode>& carrier, bool& failed, RE::NiNode* parent, const char* name)
         {
-            if (!g_carrier) {
-                if (g_carrierFailed) {
+            if (!carrier) {
+                if (failed) {
                     return false;
                 }
-                g_carrier = native_scene::createEngineNiNode(1);
-                if (!g_carrier) {
-                    g_carrierFailed = true;
-                    ROCK_LOG_ERROR(Hand,
-                        "Quick loot: the container panel node could not be created; the panel stays on the right hand");
+                carrier = native_scene::createEngineNiNode(1);
+                if (!carrier) {
+                    failed = true;
+                    ROCK_LOG_ERROR(Hand, "Quick loot: the {} panel node could not be created; the panel stays on the "
+                                         "right hand",
+                        name);
                     return false;
                 }
             }
-            if (g_carrier->parent != room) {
-                if (auto* oldParent = g_carrier->parent) {
+            if (carrier->parent != parent) {
+                if (auto* oldParent = carrier->parent) {
                     RE::NiPointer<RE::NiAVObject> detached;
-                    oldParent->DetachChild(g_carrier.get(), detached);
+                    oldParent->DetachChild(carrier.get(), detached);
                 }
-                room->AttachChild(g_carrier.get(), true);
+                parent->AttachChild(carrier.get(), true);
             }
             return true;
         }
 
-        void place(const f4vr::PlayerNodes& nodes)
+        // CloserHand: the panel rides the hand that owns the listing.
+        void placeOnHand(RE::NiAVObject* root, RE::NiNode* handAttach, RE::NiNode* leftWand)
         {
-            auto* const model = *REL::Relocation<std::byte**>{ REL::Offset(kLootModel) };
-            auto* const root = model ? *reinterpret_cast<RE::NiAVObject**>(model + kLootModelRootOffset) : nullptr;
-            auto* const handAttach = nodes.primaryUIAttachNode;
-            auto* const room = nodes.roomnode;
-            auto* const eye = nodes.HmdNode;
-            if (!root || !handAttach || !room || !eye) {
-                return;
-            }
-            const bool onCarrier = g_carrier && root->parent == g_carrier.get();
-            // Any other parent is a native rebuild or another owner; leave it.
-            if (!onCarrier && root->parent != handAttach) {
-                return;
-            }
-
             const std::uint32_t listed = g_listedPick.load(std::memory_order_acquire);
+            const auto flags = g_listedFlags.load(std::memory_order_relaxed);
+            const bool onContainer = g_containerCarrier && root->parent == g_containerCarrier.get();
+            if (!listed) {
+                // Nothing lists, so the panel is hidden; it stays on the hand it was on.
+                if (onContainer) {
+                    moveTo(root, handAttach);
+                }
+                return;
+            }
+            if (!(flags & kLeftOwnsListed) || !leftWand ||
+                !attachCarrier(g_leftCarrier, g_leftCarrierFailed, leftWand, "left-hand")) {
+                moveTo(root, handAttach);
+                return;
+            }
+            // The panel's pose under the left wand mirrors the one it has
+            // under the right wand: carrier = mirror(attach * root) * root^-1.
+            const auto rightPanel = transform_math::composeTransforms(handAttach->local, root->local);
+            g_leftCarrier->local =
+                transform_math::composeTransforms(mirroredAcrossX(rightPanel), transform_math::invertTransform(root->local));
+            moveTo(root, g_leftCarrier.get());
+        }
+
+        // AtContainer: the panel stands at the container it lists.
+        void placeAtContainer(RE::NiAVObject* root, RE::NiNode* handAttach, RE::NiNode* room, const RE::NiNode* eye)
+        {
+            const std::uint32_t listed = g_listedPick.load(std::memory_order_acquire);
+            const bool onLeft = g_leftCarrier && root->parent == g_leftCarrier.get();
             if (!listed) {
                 // Nothing lists, so the panel is hidden; it stays where it was.
+                if (onLeft) {
+                    moveTo(root, handAttach);
+                }
                 return;
             }
             const RE::NiPoint3 eyeRight{ eye->world.rotate.entry[0][0], eye->world.rotate.entry[0][1],
@@ -342,25 +478,51 @@ namespace rock::native_quick_loot_panel
             const auto pose =
                 panelAtContainer(listed, eye->world.translate, eyeRight, handAttach->world.scale * root->local.scale);
             if (!pose) {
-                if (onCarrier) {
-                    move(root, g_carrier.get(), handAttach);
-                }
+                moveTo(root, handAttach);
                 ROCK_LOG_SAMPLE_DEBUG(Hand, 1000,
                     "Quick loot panel: the listed container has no reference; the panel is on the right hand");
                 return;
             }
-            if (!attachCarrier(room)) {
+            if (!attachCarrier(g_containerCarrier, g_containerCarrierFailed, room, "container")) {
+                moveTo(root, handAttach);
                 return;
             }
             // carrier world = pose * root^-1; carrier local = room^-1 * carrier world.
-            g_carrier->local = transform_math::composeTransforms(transform_math::invertTransform(room->world),
+            g_containerCarrier->local = transform_math::composeTransforms(transform_math::invertTransform(room->world),
                 transform_math::composeTransforms(*pose, transform_math::invertTransform(root->local)));
-            if (!onCarrier) {
-                move(root, handAttach, g_carrier.get());
-                if (!g_onContainerLogged) {
-                    g_onContainerLogged = true;
-                    ROCK_LOG_INFO(Hand, "Quick loot panel moved from the hand to its container");
+            moveTo(root, g_containerCarrier.get());
+        }
+
+        void place(const f4vr::PlayerNodes& nodes, const Placement placement)
+        {
+            auto* const model = *REL::Relocation<std::byte**>{ REL::Offset(kLootModel) };
+            auto* const root = model ? *reinterpret_cast<RE::NiAVObject**>(model + kLootModelRootOffset) : nullptr;
+            auto* const handAttach = nodes.primaryUIAttachNode;
+            if (!root || !handAttach) {
+                return;
+            }
+            const auto* parent = root->parent;
+            const bool onCarrier = (g_containerCarrier && parent == g_containerCarrier.get()) ||
+                (g_leftCarrier && parent == g_leftCarrier.get());
+            // Any other parent is a native rebuild or another owner; leave it.
+            if (!onCarrier && parent != handAttach) {
+                return;
+            }
+
+            switch (placement) {
+            case Placement::RightHand:
+                moveTo(root, handAttach);
+                return;
+            case Placement::CloserHand:
+                placeOnHand(root, handAttach, nodes.SecondaryWandNode);
+                return;
+            case Placement::AtContainer:
+                if (!nodes.roomnode || !nodes.HmdNode) {
+                    moveTo(root, handAttach);
+                    return;
                 }
+                placeAtContainer(root, handAttach, nodes.roomnode, nodes.HmdNode);
+                return;
             }
         }
     }
@@ -420,17 +582,28 @@ namespace rock::native_quick_loot_panel
             return false;
         }
         installRolloverHosts();
-        ROCK_LOG_INFO(Init, "Quick loot panel installed: the loot panel stands at the container it lists");
+        ROCK_LOG_INFO(Init, "Quick loot panel installed; Grabbing.QuickLootPanelPlacement chooses where it appears");
         return true;
     }
 
-    void update() noexcept
+    void update(const Placement placement) noexcept
     {
         if (!g_lockAcquire) {
             return;
         }
-        if (const auto* nodes = f4vr::getPlayerNodes()) {
-            place(*nodes);
+        if (g_appliedPlacement != placement) {
+            g_appliedPlacement = placement;
+            ROCK_LOG_INFO(Hand, "Quick loot panel placement: {}", placementName(placement));
         }
+        g_placement.store(placement, std::memory_order_relaxed);
+        const auto* nodes = f4vr::getPlayerNodes();
+        if (!nodes) {
+            return;
+        }
+        if (placement == Placement::CloserHand) {
+            updatePreference(pickDistance(g_rightPick.load(std::memory_order_relaxed), nodes->primaryWandNode),
+                pickDistance(g_leftPick.load(std::memory_order_relaxed), nodes->SecondaryWandNode));
+        }
+        place(*nodes, placement);
     }
 }

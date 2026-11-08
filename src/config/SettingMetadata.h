@@ -186,6 +186,13 @@ namespace rock::config
             "other free hand; with no free hand it stays in inventory.\nFalse: taken items go to inventory (game "
             "default).",
             api::configuration::Group::Consumer },
+        { "Grabbing", "QuickLootPanelPlacement", "06. Grabbing",
+            "Quick Loot Panel Placement\n1 = Right Hand. 2 = Closer Hand. 3 = At Container.\nRight Hand: the game's "
+            "own panel on the right hand; it lists only what the right hand points at.\nCloser Hand: the panel rides "
+            "the hand pointing at the container, mirrored on the left hand; when both hands point at containers the "
+            "closer one takes it.\nAt Container: the panel stands at the container it lists, facing you; either hand "
+            "can point at it.\nThe panel's buttons stay on the right controller in every mode. Applies at once.",
+            api::configuration::Group::Consumer },
         { "FiringHand", "DefaultHand", "07. Firing Hand",
             "Default Hand\nright or left: the firing hand for equips that come without a hand (favorites, PALM, "
             "scripts and other mods).\nGrenade draws prefer this hand and use the other one when it is busy.\nPip-Boy "

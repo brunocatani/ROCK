@@ -374,6 +374,13 @@ namespace rock
         rockGrabInputIntentStateEnabled =
             ini.boolean("GrabAcquisition", "GrabInputIntentStateEnabled", rockGrabInputIntentStateEnabled);
         rockLootToHand = ini.boolean("Grabbing", "LootToHand", rockLootToHand);
+        rockQuickLootPanelPlacement =
+            static_cast<int>(ini.integer("Grabbing", "QuickLootPanelPlacement", rockQuickLootPanelPlacement));
+        if (rockQuickLootPanelPlacement < 1 || rockQuickLootPanelPlacement > 3) {
+            ROCK_LOG_WARN(Config, "Invalid Grabbing.QuickLootPanelPlacement={} -- using At Container",
+                rockQuickLootPanelPlacement);
+            rockQuickLootPanelPlacement = 3;
+        }
         rockGrabInputLeewaySeconds =
             static_cast<float>(ini.number("GrabAcquisition", "GrabInputLeewaySeconds", rockGrabInputLeewaySeconds));
         if (!std::isfinite(rockGrabInputLeewaySeconds) || rockGrabInputLeewaySeconds < 0.0f) {

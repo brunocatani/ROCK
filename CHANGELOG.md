@@ -51,8 +51,11 @@
   (game HUD style), 3 Vanilla (back of the hand). A reload mod can show a
   chambered-round marker beside the number.
 - **Loot to Hand** (`Grabbing.LootToHand`, on by default): an item taken from the
-  quick-loot view lands in the hand pointing at the container. The quick-loot
-  panel works with either hand and stands at its container.
+  quick-loot view lands in the hand pointing at the container.
+- **Quick Loot Panel Placement** (`Grabbing.QuickLootPanelPlacement`): 1 on the
+  right hand (game default), 2 on the hand pointing at the container (the
+  closer hand when both point), 3 at the container it lists (default). Modes 2
+  and 3 list containers picked by either hand.
 - **Pinch grab:** the object stays where thumb and finger found it and only the
   fingers close onto it.
 - **Grab direction** (`Grabbing.CloseGrabDirection`, `Grabbing.FarGrabDirection`): which way

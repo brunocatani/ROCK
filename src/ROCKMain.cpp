@@ -941,7 +941,8 @@ namespace
         runPendingLifecycle();
         // FrameBegin precedes FRIK's scope-rig carry (WeaponPositionAdjuster::onFrameStart).
         scope_rig_parent_repair::reattachOrphanedScopeRig();
-        native_quick_loot_panel::update();
+        native_quick_loot_panel::update(
+            static_cast<native_quick_loot_panel::Placement>(g_rockConfig.rockQuickLootPanelPlacement));
         native_secondary_presentation::beginFrame();
         frik_hand_world_authority::noteNativeRecoilControlled(false);
         performance_profiler::refreshSettings(g_rockConfig.rockPerformanceProfilerEnabled,
