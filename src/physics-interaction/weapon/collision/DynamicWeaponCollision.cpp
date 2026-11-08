@@ -297,33 +297,6 @@ namespace rock
             return body.setVelocity(linearWorld, angularWorld);
         }
 
-        // Adds world linear (Havok units) and world angular velocity to the body.
-        bool addWeaponVelocity(RE::hknpWorld* world, BethesdaPhysicsBody& body, const RE::NiPoint3& linearDelta,
-            const RE::NiPoint3& angularDelta)
-        {
-            const auto snapshot = havok_runtime::snapshotBody(world, body.getBodyId());
-            if (!snapshot.valid || !snapshot.motion || snapshot.collisionObject != body.getCollisionObject()) {
-                return false;
-            }
-            const auto q = snapshot.motion->orientation;
-            const float quaternion[4]{ q.x, q.y, q.z, q.w };
-            const auto linear = snapshot.motion->linearVelocity;
-            const auto angular = snapshot.motion->angularVelocity;
-            // The motion stores angular velocity in its local frame; the
-            // native setter takes world angular velocity (see rebaseWeaponVelocity).
-            RE::NiPoint3 worldAngular{};
-            if (!weapon_physics_time_scale::rebaseWorldAngularVelocity(quaternion,
-                    RE::NiPoint3{ angular.x, angular.y, angular.z }, 1.0f, worldAngular))
-                return false;
-            alignas(16) const float linearWorld[4]{ linear.x + linearDelta.x, linear.y + linearDelta.y,
-                linear.z + linearDelta.z, 0.0f };
-            alignas(16) const float angularWorld[4]{ worldAngular.x + angularDelta.x, worldAngular.y + angularDelta.y,
-                worldAngular.z + angularDelta.z, 0.0f };
-            if (!havok_runtime::isFinite3(linearWorld) || !havok_runtime::isFinite3(angularWorld))
-                return false;
-            return body.setVelocity(linearWorld, angularWorld);
-        }
-
         bool applyWeaponEnvelopeMassProperties(RE::hknpWorld* world, RE::hknpBodyId bodyId,
             const dynamic_weapon_collision_policy::BoundingBoxGeometry& geometry, const float weaponScale,
             const float paddingGameUnits, const float bodyMass)
@@ -496,6 +469,8 @@ namespace rock
             return false;
         _authorityPivotWeaponLocal = pivotWeaponLocal;
         initializeGeneratedKeyframedBodyDriveState(_authorityDriveState, target);
+        // The authority target jumps to the new pivot: start the motion history again.
+        rigid_target_feed_forward::reset(_feedForward);
         _physicsRequestedTargetValid = false;
         _droveThisSubstep = false;
         _divergenceDwellSeconds = 0.0f;
@@ -527,6 +502,7 @@ namespace rock
         result.proxyActive = true;
         if (!_secondary)
             updateSurfaceSupport(frame, primaryGripWeaponLocal, handsFree);
+        _surfaceSupportOwnsPoseAtomic.store(_surfaceSupport.ownsPose(), std::memory_order_release);
         if (!_authorityConstraint.isValid() || _rebuildRequestedAtomic.load(std::memory_order_acquire))
             return result;
         if (!native_interaction_service::updateWeapon(weaponSlot(), frame, weaponCollision, weaponNode, _body,
@@ -742,129 +718,6 @@ namespace rock
                 game_frame_timing_policy::frameMotionScale(frame.deltaSeconds));
         if (!queued.queued)
             _rebuildRequestedAtomic.store(true, std::memory_order_release);
-        queueTransport(frame, queued.queued, queued.queuedSequence);
-    }
-
-    void DynamicWeaponCollisionRuntime::queueTransport(const PhysicsFrameContext& frame, const bool targetQueued,
-        const std::uint64_t sourceSequence)
-    {
-        // The room's rigid motion between this target and the previous one,
-        // sampled where the target was built (FRIK FrameBegin). A hitch, a
-        // missing room or a changed room source leaves it unknown.
-        const auto& runtime = runtime_state::currentFrame();
-        const bool roomValid = runtime.playerSpace.valid && runtime.frameIndex == frame.timing.sequence;
-        RE::NiTransform transport = transform_math::makeIdentityTransform<RE::NiTransform>();
-        bool known = targetQueued && roomValid && _transportRoomAtQueueValid && frame.timing.valid &&
-            !frame.timing.discontinuity && runtime.playerSpace.source == _transportRoomSource;
-        if (known) {
-            transport = transform_math::composeTransforms(runtime.playerSpace.world,
-                transform_math::invertTransform(_transportRoomAtQueue));
-            known = dynamic_weapon_collision_policy::isFiniteTransform(transport);
-        }
-        if (targetQueued) {
-            _transportRoomAtQueue = runtime.playerSpace.world;
-            _transportRoomSource = runtime.playerSpace.source;
-            _transportRoomAtQueueValid = roomValid;
-        }
-        std::scoped_lock lock(_transportMutex);
-        _queuedTransport = transport;
-        _queuedTransportSequence = targetQueued ? sourceSequence : 0;
-        _queuedTransportKnown = known;
-    }
-
-    void DynamicWeaponCollisionRuntime::resetTransportFeedForward()
-    {
-        _transportSourceSequence = 0;
-        _transportSourceProgress = 0.0f;
-        _transportPreviousLinearHavok = {};
-        _transportPreviousAngular = {};
-    }
-
-    /*
-     * The grip constraint holds the weapon at its root while the body's mass
-     * sits forward along the barrel. Every change of the player's locomotion
-     * velocity reached the body as an impulse at that root: along the barrel
-     * it passes through the centre of mass, across it (strafing) it is a
-     * torque, so the muzzle swung back and recovered on every uneven frame
-     * while the hand end stayed put. The room's motion is shared by the target
-     * and everything around the player, so it is given to the free body
-     * directly: each substep adds the change of the room's velocity at the
-     * body, which is the same per-substep share of the target's motion the
-     * authority proxy is keyframed through. The constraint then carries only
-     * the hand's own motion and the contact response. In contact, under an
-     * extension, past the drive's velocity limits or after a placement the
-     * body is left to the constraint as before; the room's velocity history
-     * still advances so feeding resumes with changes only.
-     */
-    void DynamicWeaponCollisionRuntime::applyTransportFeedForward(RE::hknpWorld* world,
-        const havok_physics_timing::PhysicsTimingSample& timing, const GeneratedKeyframedBodyDriveResult& drive,
-        const float maxLinearVelocityHavok, const float maxAngularVelocityRadians, const bool feedAllowed)
-    {
-        if (!drive.driven || drive.teleported || !drive.hasRequestedTargetGameTransform)
-            return;
-        RE::NiTransform transport{};
-        std::uint64_t transportSequence = 0;
-        bool known = false;
-        {
-            std::scoped_lock lock(_transportMutex);
-            transport = _queuedTransport;
-            transportSequence = _queuedTransportSequence;
-            known = _queuedTransportKnown;
-        }
-        // The authority consumed another source than the one this motion
-        // belongs to: keep the history, feed nothing.
-        if (transportSequence == 0 || transportSequence != drive.sourceSequence)
-            return;
-        if (transportSequence != _transportSourceSequence) {
-            _transportSourceSequence = transportSequence;
-            _transportSourceProgress = 0.0f;
-        }
-        // Mirror the authority's target selection: substeps of one physics
-        // step interpolate the previous target to this one by progress; a
-        // single step takes it whole; a step without a new target holds it.
-        const bool interpolated = timing.phase == havok_physics_timing::PhysicsStepPhase::SubstepPreCollide &&
-            timing.substepCount > 1;
-        const float reached = interpolated ? std::clamp(timing.substepProgress, 0.0f, 1.0f) : 1.0f;
-        const float fraction = (std::max)(0.0f, reached - _transportSourceProgress);
-        _transportSourceProgress = (std::max)(_transportSourceProgress, reached);
-        if (!known)
-            return;
-        float driveDeltaSeconds = 0.0f;
-        if (!havok_physics_timing::tryGetDriveDeltaSeconds(timing, driveDeltaSeconds))
-            return;
-
-        RE::NiPoint3 linear{}, angular{};
-        if (fraction > 0.0f) {
-            RE::NiTransform body{};
-            if (!havok_runtime::tryResolveLiveBodyWorldTransform(world, _body.getBodyId(), body) ||
-                !dynamic_weapon_collision_policy::isFiniteTransform(body))
-                return;
-            // Generated bodies store column axes; move the body in Ni's row
-            // convention, then restore the generated storage for the native call.
-            body.rotate = transform_math::transposeRotation(body.rotate);
-            auto moved = transform_math::composeTransforms(
-                generated_keyframed_body_drive_math::interpolateTargetTransform(
-                    transform_math::makeIdentityTransform<RE::NiTransform>(), transport, fraction),
-                body);
-            moved.rotate = transform_math::transposeRotation(moved.rotate);
-            alignas(16) float linearHavok[4]{};
-            alignas(16) float angularWorld[4]{};
-            if (!computeHardKeyFrameVelocity(world, _body, moved, driveDeltaSeconds, linearHavok, angularWorld))
-                return;
-            linear = { linearHavok[0], linearHavok[1], linearHavok[2] };
-            angular = { angularWorld[0], angularWorld[1], angularWorld[2] };
-        }
-        const RE::NiPoint3 linearDelta = linear - _transportPreviousLinearHavok;
-        const RE::NiPoint3 angularDelta = angular - _transportPreviousAngular;
-        _transportPreviousLinearHavok = linear;
-        _transportPreviousAngular = angular;
-        if (!feedAllowed || !(linear.Length() <= maxLinearVelocityHavok) ||
-            !(angular.Length() <= maxAngularVelocityRadians))
-            return;
-        if (!addWeaponVelocity(world, _body, linearDelta, angularDelta)) {
-            ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Dynamic weapon transport feed-forward skipped: body={} stage=velocity",
-                _body.getBodyId().value);
-        }
     }
 
     bool DynamicWeaponCollisionRuntime::queueCompoundChildTransforms(const WeaponCollision& weaponCollision,
@@ -1083,7 +936,7 @@ namespace rock
         }
         _rebuildRequestedAtomic.store(false, std::memory_order_release);
         // Callbacks are quiescent: the new body is placed at rest below.
-        resetTransportFeedForward();
+        rigid_target_feed_forward::reset(_feedForward);
         const float bodyMass = dynamic_weapon_collision_policy::sanitizeWeaponMass(weaponIdentity.weightGame);
         _createdMass = bodyMass;
         _body.setMass(bodyMass);
@@ -1316,13 +1169,30 @@ namespace rock
         } else {
             _divergenceDwellSeconds = 0.0f;
         }
-        // A placed contact body starts at rest: its whole transport is new.
+        // The free body moves with its authority's commanded motion; a placed
+        // body starts at rest, so its whole motion is new.
         if (contactBodyRecovered)
-            resetTransportFeedForward();
-        applyTransportFeedForward(world, timing, driveResult,
-            dynamic_weapon_collision_policy::kMaximumLinearVelocityHavok * timeScale.velocity,
-            dynamic_weapon_collision_policy::kMaximumAngularVelocityRadiansPerSecond * timeScale.velocity,
-            _contactRetentionSeconds <= 0.0f && !externallyControlled());
+            rigid_target_feed_forward::reset(_feedForward);
+        if (driveResult.driven && driveResult.hasRequestedTargetGameTransform) {
+            const auto& commanded = driveResult.hasCommandedTargetGameTransform
+                ? driveResult.commandedTargetGameTransform
+                : driveResult.requestedTargetGameTransform;
+            auto outcome = rigid_target_feed_forward::Outcome::Withheld;
+            if (driveResult.teleported) {
+                rigid_target_feed_forward::reseed(_feedForward, commanded);
+            } else {
+                outcome = rigid_target_feed_forward::advance(world, _body.getBodyId(), _feedForward, commanded,
+                    driveResult.driveDeltaSeconds,
+                    _contactRetentionSeconds <= 0.0f && !externallyControlled() &&
+                        !_surfaceSupportOwnsPoseAtomic.load(std::memory_order_acquire),
+                    dynamic_weapon_collision_policy::kMaximumLinearVelocityHavok * timeScale.velocity,
+                    dynamic_weapon_collision_policy::kMaximumAngularVelocityRadiansPerSecond * timeScale.velocity);
+            }
+            if (outcome == rigid_target_feed_forward::Outcome::Failed) {
+                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Dynamic weapon feed-forward failed: body={}",
+                    _body.getBodyId().value);
+            }
+        }
         _physicsDriveTeleported = driveResult.teleported || contactBodyRecovered;
         if (_physicsDriveTeleported) {
             _contactRetentionSeconds = 0.0f;

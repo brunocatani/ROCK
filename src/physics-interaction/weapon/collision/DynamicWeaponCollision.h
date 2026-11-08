@@ -11,6 +11,7 @@
 #include "physics-interaction/native/havok/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/havok/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/native/havok/HavokCompoundShapeBuilder.h"
+#include "physics-interaction/native/havok/RigidTargetFeedForward.h"
 #include "physics-interaction/weapon/collision/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/collision/WeaponCollision.h"
 #include "physics-interaction/weapon/collision/WeaponSurfaceSupport.h"
@@ -272,11 +273,6 @@ namespace rock
         bool queueCompoundChildTransforms(const WeaponCollision& weaponCollision, const RE::NiAVObject* weaponNode,
             float weaponScale);
         bool flushCompoundChildTransforms();
-        void queueTransport(const PhysicsFrameContext& frame, bool targetQueued, std::uint64_t sourceSequence);
-        void applyTransportFeedForward(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing,
-            const GeneratedKeyframedBodyDriveResult& drive, float maxLinearVelocityHavok,
-            float maxAngularVelocityRadians, bool feedAllowed);
-        void resetTransportFeedForward();
         void retireProxyLocked(void* bhkWorld);
         void clearLocalProxyStateLocked();
         void clearPublishedPhysicsSnapshot();
@@ -310,25 +306,12 @@ namespace rock
         std::uint64_t _queuedCompoundPoseSequence{ 0 };
         std::uint64_t _consumedCompoundPoseSequence{ 0 };
         GeneratedKeyframedBodyDriveState _authorityDriveState{};
-        /*
-         * Locomotion transport feed-forward (applyTransportFeedForward). The
-         * game thread queues, with each drive target, the room's rigid motion
-         * since the previous target; the physics step gives that motion to the
-         * free weapon body as velocity so the grip constraint carries only the
-         * hand's own motion.
-         */
-        RE::NiTransform _transportRoomAtQueue{};
-        const char* _transportRoomSource{ nullptr };
-        bool _transportRoomAtQueueValid{ false };
-        mutable std::mutex _transportMutex;
-        RE::NiTransform _queuedTransport{};
-        std::uint64_t _queuedTransportSequence{ 0 };
-        bool _queuedTransportKnown{ false };
-        // Physics thread only.
-        std::uint64_t _transportSourceSequence{ 0 };
-        float _transportSourceProgress{ 0.0f };
-        RE::NiPoint3 _transportPreviousLinearHavok{};
-        RE::NiPoint3 _transportPreviousAngular{};
+        // The free body follows its grip authority rigidly (RigidTargetFeedForward.h).
+        // Physics callbacks own it; structural mutations reset it under quiescence.
+        rigid_target_feed_forward::State _feedForward{};
+        // Game thread: a latched surface support moves the pivot onto the
+        // surface and owns the pose; the body is then left to the constraint.
+        std::atomic<bool> _surfaceSupportOwnsPoseAtomic{ false };
         RE::hknpWorld* _createdWorld{ nullptr };
         void* _createdBhkWorld{ nullptr };
         std::uint64_t _createdGenerationKey{ 0 };

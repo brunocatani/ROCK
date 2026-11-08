@@ -159,4 +159,9 @@ namespace rock
         bool _created = false;
     };
 
+    // The native collision-object velocity setter (world linear velocity in
+    // Havok units, world angular velocity) for any bhkNPCollisionObject,
+    // ROCK-created or the game's. Physics-step and game-thread callers.
+    bool setCollisionObjectVelocity(void* collisionObject, const float* linVel, const float* angVel);
+
 }

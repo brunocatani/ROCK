@@ -1069,15 +1069,20 @@ namespace rock
         return setXform(_collisionObject, &transform) != 0;
     }
 
-    bool BethesdaPhysicsBody::setVelocity(const float* linVel, const float* angVel)
+    bool setCollisionObjectVelocity(void* collisionObject, const float* linVel, const float* angVel)
     {
-        if (!isValid())
+        if (!collisionObject || !linVel || !angVel)
             return false;
         // The native setter uses aligned SIMD loads; callers only promise floats.
         alignas(16) const float linear[4] = { linVel[0], linVel[1], linVel[2], linVel[3] };
         alignas(16) const float angular[4] = { angVel[0], angVel[1], angVel[2], angVel[3] };
         static REL::Relocation<SetVelocity_t> setVel{ REL::Offset(offsets::kFunc_CollisionObject_SetVelocity) };
-        return setVel(_collisionObject, linear, angular) != 0;
+        return setVel(collisionObject, linear, angular) != 0;
+    }
+
+    bool BethesdaPhysicsBody::setVelocity(const float* linVel, const float* angVel)
+    {
+        return isValid() && setCollisionObjectVelocity(_collisionObject, linVel, angVel);
     }
 
     void BethesdaPhysicsBody::setMotionType(BethesdaMotionType type)
