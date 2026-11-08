@@ -253,16 +253,6 @@ static bool testInputRouting()
     favorites.weaponDrawn = true;
     ok &= expectTrue("WandThumbClick suppresses native favorites even with weapon drawn",
         shouldSuppressNativeFavoritesAction(favorites));
-    auto mandatoryFavorites = favorites;
-    mandatoryFavorites.remapEnabled = false;
-    mandatoryFavorites.suppressionEnabled = false;
-    mandatoryFavorites.gameplayInputAllowed = false;
-    mandatoryFavorites.menuInputActive = true;
-    ok &= expectTrue("native favorites suppression cannot be disabled by optional input gates",
-        shouldSuppressNativeFavoritesAction(mandatoryFavorites));
-    mandatoryFavorites.eventMatched = false;
-    ok &= expectFalse("mandatory favorites suppression leaves unrelated events untouched",
-        shouldSuppressNativeFavoritesAction(mandatoryFavorites));
 
     auto meleeThrow = base;
     meleeThrow.weaponDrawn = true;

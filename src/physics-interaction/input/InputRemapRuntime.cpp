@@ -1444,8 +1444,8 @@ namespace rock::input_remap_runtime
 
         [[nodiscard]] bool shouldSuppressNativeFavoritesAction(const RE::InputEvent* event)
         {
-            return input_remap_policy::shouldSuppressNativeFavoritesAction(
-                makeNativeActionSuppressionInput(true, eventNameMatches(event, kNativeEventWandThumbClick)));
+            return input_remap_policy::shouldSuppressNativeFavoritesAction(makeNativeActionSuppressionInput(
+                !g_rockConfig.rockVanillaFavoritesMenu, eventNameMatches(event, kNativeEventWandThumbClick)));
         }
 
         [[nodiscard]] bool shouldSuppressNativeTriggerActionEvent(const RE::InputEvent* event, const char* gate)
@@ -1953,12 +1953,19 @@ namespace rock::input_remap_runtime
             }
         }
 
-        void hookedFavoritesWandPadHandler(void*, RE::InputEvent*)
+        void hookedFavoritesWandPadHandler(void* handler, RE::InputEvent* inputEvent)
         {
             // The native handler's only effect is opening Favorites from the
-            // pad/stick click, which belongs to PALM while ROCK is installed.
-            // The event is not stopped: later pad consumers (movement, menus)
-            // still receive it.
+            // pad/stick click, which belongs to bipod latching and PALM unless
+            // the player turns the vanilla Favorites menu back on. The event is
+            // never stopped: later pad consumers (movement, menus) still
+            // receive it either way.
+            if (g_rockConfig.rockVanillaFavoritesMenu && !isAnyProviderOpenVrGameInputSuppressed()) {
+                if (s_originalFavoritesWandPadHandler) {
+                    s_originalFavoritesWandPadHandler(handler, inputEvent);
+                }
+                return;
+            }
             ROCK_LOG_SAMPLE_DEBUG(Input, g_rockConfig.rockLogSampleMilliseconds,
                 "Suppressed native wand-pad Favorites opener");
         }

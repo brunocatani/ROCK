@@ -280,6 +280,12 @@ namespace rock::config
             "Block VATS\nStops the game's VATS from opening on the VATS button (right B by default).\nThe button "
             "still works for ROCK and other mods.",
             api::configuration::Group::Consumer },
+        { "Controls", "bVanillaFavoritesMenu", "09. Controller Input",
+            "Vanilla Favorites Menu\nTrue: the game's Favorites menu opens on its usual button, the right stick "
+            "click.\nWARNING: while this is on, Bipod Mode and the PALM wheel menu do not work on the right stick "
+            "click.\nTurn Bipod Mode off and rebind PALM's opener in PALM's controls to keep using PALM.\nFalse: ROCK "
+            "blocks the Favorites menu and the stick click belongs to Bipod Mode and PALM (default).",
+            api::configuration::Group::Consumer },
         { "Controls", "fPipboyPauseHoldSeconds", "09. Controller Input",
             "Pip-Boy and Pause Hold Time\nTap left Y to open the Pip-Boy; hold it this many seconds to open the Pause "
             "menu instead. Range: 0.15 to 2.",
