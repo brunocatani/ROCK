@@ -2,6 +2,14 @@
 ## Reference only: ROCK never reads this file. ROCK_Developer.toml in Documents\My Games\Fallout4VR\
 ## Mods_Config\ROCK holds only the developer options changed from these defaults.
 
+## === 06. Grabbing ===
+[Grabbing]
+## Experimental. True: a grabbed loose object made of one rigid body gets collision built from its visible mesh, like a picked-up weapon.
+## The native collision keeps working until the new shape is ready. The new shape stays while the object is held, thrown or dropped, and the native collision returns after the object has rested on a surface for two seconds. The object is never frozen.
+## Weapons, ammunition, actors and multi-body objects keep their native collision.
+## False: grabbed objects keep their native collision. Turning it off restores every native shape at once.
+GeneratedObjectCollision = false
+
 ## === 01. Developer Controls ===
 [DeveloperControls]
 ## Gates advanced/tuning-only features not meant for normal play. Currently:

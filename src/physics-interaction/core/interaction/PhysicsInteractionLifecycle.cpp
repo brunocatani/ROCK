@@ -178,6 +178,7 @@ namespace rock
             generatedWorldStillLive ? currentBhkWorld : nullptr);
         _looseWeaponCollision.clear(generatedWorldStillLive ? currentHknpWorld : nullptr);
         _objectRestCollision.clear(generatedWorldStillLive ? currentHknpWorld : nullptr);
+        _looseObjectCollision.clear(generatedWorldStillLive ? currentHknpWorld : nullptr);
         _objectRestRequests = {};
         _countBasedAmmoRootSync.clear();
         clearEjectionContacts(generatedWorldStillLive ? currentHknpWorld : nullptr);
@@ -541,6 +542,7 @@ namespace rock
 
         _looseWeaponCollision.clear(worldValid ? currentHknp : nullptr);
         _objectRestCollision.clear(worldValid ? currentHknp : nullptr);
+        _looseObjectCollision.clear(worldValid ? currentHknp : nullptr);
         _objectRestRequests = {};
         _countBasedAmmoRootSync.clear();
         clearEjectionContacts(worldValid ? currentHknp : nullptr);

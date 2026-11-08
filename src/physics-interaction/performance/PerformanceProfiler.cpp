@@ -164,6 +164,8 @@ namespace rock::performance_profiler
             switch (scope) {
             case Scope::LooseWeaponCollision:
                 return "LooseWeaponCollision";
+            case Scope::LooseObjectCollision:
+                return "LooseObjectCollision";
             case Scope::FrameUpdate:
                 return "frame";
             case Scope::RuntimePreparation:

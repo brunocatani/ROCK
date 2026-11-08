@@ -539,7 +539,8 @@ namespace rock
         }
         const bool collisionRestored = allReleased &&
             _looseWeaponCollision.releaseReference(ref, frame.hknpWorld, _generatedBodyStepDrive.callbackGate()) &&
-            _objectRestCollision.releaseReference(ref, frame.hknpWorld, _generatedBodyStepDrive.callbackGate());
+            _objectRestCollision.releaseReference(ref, frame.hknpWorld, _generatedBodyStepDrive.callbackGate()) &&
+            _looseObjectCollision.releaseReference(ref, frame.hknpWorld, _generatedBodyStepDrive.callbackGate());
         const bool anchored = collisionRestored &&
             native_object_placement::anchor(ref, frame.hknpWorld, pose,
                 std::span<const std::uint32_t>{ bodies.data(), count });

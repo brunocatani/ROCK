@@ -1,5 +1,7 @@
-// LooseWeaponCollision: generated collision for loose weapon references in
-// the world, kept in a small bounded pool (see LooseWeaponCollision.cpp).
+// LooseWeaponCollision: generated collision for loose references in the
+// world, kept in a small bounded pool (see LooseWeaponCollision.cpp). One
+// class serves three pools: loose weapons, object rest watches and the
+// experimental generated collision for held loose objects.
 #pragma once
 
 #include <array>
@@ -27,10 +29,27 @@ namespace rock
     class LooseWeaponCollision
     {
     public:
-        LooseWeaponCollision();
+        enum class Pool
+        {
+            // Held loose weapons get generated hulls; at rest they are frozen
+            // in place and their native collision is restored.
+            Weapons,
+            // Native rest watches only (Collision API watchObjectRest).
+            ObjectRest,
+            // Held single-body loose objects get generated hulls, keep them
+            // while thrown or dropped, and get their native collision back
+            // after two seconds of supported rest. They are never frozen.
+            Objects
+        };
+
+        explicit LooseWeaponCollision(Pool pool);
         ~LooseWeaponCollision();
+        // right/left: each hand's held reference, or null. The Objects pool's
+        // caller passes only held loose objects it may admit.
         void update(const PhysicsFrameContext& frame, RE::TESObjectREFR* right, RE::TESObjectREFR* left,
-            PhysicsCallbackQuiescenceGate& gate, bool admitWeapons = true);
+            PhysicsCallbackQuiescenceGate& gate);
+        bool empty() const noexcept;
+        bool tracks(const RE::TESObjectREFR* reference) const noexcept;
         enum class NativeRest
         {
             Watching,
@@ -67,7 +86,7 @@ namespace rock
         {
             Slot();
             ~Slot();
-            void admit(RE::TESObjectREFR* reference, const PhysicsFrameContext& frame);
+            void admit(RE::TESObjectREFR* reference, const PhysicsFrameContext& frame, Pool pool);
             void update(const PhysicsFrameContext& frame, RE::TESObjectREFR* right, RE::TESObjectREFR* left,
                 PhysicsCallbackQuiescenceGate& gate, bool prepare);
             void clear(RE::hknpWorld* liveWorld);
@@ -98,6 +117,7 @@ namespace rock
         };
 
         void publishWatchMask() noexcept;
+        const Pool _pool;
         std::array<Slot, loose_weapon_collision_policy::kMaxWeapons> _slots;
         // Settled stateful weapons retain their exact generated shapes outside
         // the active preparation/contact pool. Released on pickup, model/world

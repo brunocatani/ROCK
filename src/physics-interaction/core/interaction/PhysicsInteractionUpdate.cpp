@@ -372,6 +372,9 @@ namespace rock
             _looseWeaponCollision.update(frame, _rightHand.isHolding() ? _rightHand.getHeldRef() : nullptr,
                 _leftHand.isHolding() ? _leftHand.getHeldRef() : nullptr, _generatedBodyStepDrive.callbackGate());
             looseTimer.stop();
+            // Before object rest: a rest watch requested for a released object
+            // takes it over from the object pool in the same frame.
+            updateLooseObjectCollision(frame);
             performance_profiler::ScopedTimer restTimer(Scope::HeldObjectRest);
             updateObjectRest(frame);
             updateCountBasedAmmoRootSync(frame);

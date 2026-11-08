@@ -388,6 +388,8 @@ namespace rock
                 rockActivatePromptPlacement);
             rockActivatePromptPlacement = 3;
         }
+        rockGeneratedObjectCollision =
+            ini.boolean("Grabbing", "GeneratedObjectCollision", rockGeneratedObjectCollision);
         rockGrabInputLeewaySeconds =
             static_cast<float>(ini.number("GrabAcquisition", "GrabInputLeewaySeconds", rockGrabInputLeewaySeconds));
         if (!std::isfinite(rockGrabInputLeewaySeconds) || rockGrabInputLeewaySeconds < 0.0f) {

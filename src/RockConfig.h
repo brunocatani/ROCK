@@ -70,6 +70,9 @@ namespace rock
         // Where the wand activate prompts appear; see native_activate_prompts::Placement.
         // 1: both hands (game default); 2: closer hand; 3: at the object.
         int rockActivatePromptPlacement = 3;
+        // Experimental: generated mesh collision for grabbed single-body loose
+        // objects until they rest (LooseWeaponCollision::Pool::Objects).
+        bool rockGeneratedObjectCollision = false;
         float rockGrabInputLeewaySeconds = 0.12f;
         float rockGrabInputForceSeconds = 0.08f;
         // ControllerInput.Left/Right: physical source of each logical button, per hand (left, right).

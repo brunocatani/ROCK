@@ -56,7 +56,7 @@ namespace rock
             }
         // Reuse precisely the weapon support witness, anchored rest interval,
         // native saved placement and lease cleanup, in a separate bounded pool.
-        _objectRestCollision.update(frame, right, left, gate, false);
+        _objectRestCollision.update(frame, right, left, gate);
         // Drain every completion before any waiting request can reuse a freed body
         // slot. Otherwise admission can overwrite that slot's _rested receipt.
         for (auto& entry : _objectRestRequests.entries)
@@ -75,6 +75,12 @@ namespace rock
                     continue;
                 if (entry.state == api::collision::ObjectRestState::Resting ||
                     (entry.status != api::Status::Ok && entry.status != api::Status::RequestQueued))
+                    continue;
+                // A requested rest watch owns the object's rest and freezes it.
+                // Its native shape comes back first, so the watch never records
+                // ROCK's generated compound as the original shape.
+                if (_looseObjectCollision.tracks(ref) &&
+                    !_looseObjectCollision.releaseReference(ref, frame.hknpWorld, gate))
                     continue;
                 using Result = LooseWeaponCollision::NativeRest;
                 Result result;
