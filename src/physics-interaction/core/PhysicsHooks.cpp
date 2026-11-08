@@ -462,7 +462,7 @@ namespace rock
         // ROCK holsters the player's unarmed fallback (enforceNoBareFistState),
         // but a script or delayed native draw can reach melee before that
         // lands. A player without a real equipped weapon never deals native
-        // melee damage; SCISSORS_Redux owns free-hand strikes.
+        // melee damage; SCISSORS owns free-hand strikes.
         [[nodiscard]] bool playerUnarmedMeleeSuppressed(bool player)
         {
             return player && !f4vr::getEquippedWeaponItem();
@@ -1179,7 +1179,7 @@ namespace rock
              * The native object hit (140E56FA0) pushes any non-actor body the
              * player's swing touches with up to 5000 units per axis. Movable
              * objects already take the real push of ROCK's weapon and hand
-             * bodies, so the player's native melee keeps only actors (Redux
+             * bodies, so the player's native melee keeps only actors (SCISSORS
              * decides those hits) and the static world (impact effects).
              */
             if (input.actorIsPlayer && decodeStage == MeleeContactDecodeStage::Complete) {

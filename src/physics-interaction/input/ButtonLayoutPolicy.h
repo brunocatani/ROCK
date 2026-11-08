@@ -8,7 +8,7 @@
 /*
  * Per-hand controller button layout.
  *
- * ROCK's features, its API consumers (PALM, PAPER, SCISSORS_Redux) and the
+ * ROCK's features, its API consumers (PALM, PAPER, SCISSORS) and the
  * game all read the five legacy OpenVR buttons in Quest/Touch layout:
  * trigger (Axis1, bit 33), grab (Grip, bit 2), lower face A/X (bit 7), upper
  * face B/Y (ApplicationMenu, bit 1) and stick click (Axis0, bit 32). The

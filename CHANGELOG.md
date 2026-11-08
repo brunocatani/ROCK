@@ -96,9 +96,10 @@
   the ROCK add-ons are released together; install them together.
 - **NPC interactions left ROCK.** NPC collision, blade penetration, NPC pushing,
   corpse interaction, grenade NPC effects and NPC visualization belong to
-  **SCISSORS Redux**, with its own INI and PALM pages. Rocky bare-fist mode is
-  removed; free-hand strikes come with SCISSORS Redux's physical melee. The
-  older SCISSORS mod does not work with ROCK 1.0.
+  **SCISSORS**, with its own INI and PALM pages. Rocky bare-fist mode is
+  removed; free-hand strikes come with SCISSORS' physical melee. The original
+  SCISSORS mod, a different mod the new SCISSORS replaces under the same name,
+  does not work with ROCK 1.0.
 - **Mods built for ROCK 0.92 or earlier** use provider API 1, which ROCK 1.0
   does not serve. They stop the game: at the main menu an error box names each
   one, and the game closes when the box is closed. The RPS SDK is no longer
@@ -118,7 +119,7 @@
   `bNativeScopeForceFiringGripFallback`, `bEnableVanillaMelee` (vanilla melee is
   always on), `bNativeCharacterControllerObjectContactFilterEnabled` (always
   on), `bRockyModeEnabled`, `fRockyModeHoldSeconds`, and `npcDynamicCollisions`
-  and `bBladePenetrationEnabled` (now in `SCISSORS_Redux.ini`).
+  and `bBladePenetrationEnabled` (now in `SCISSORS.ini`).
 
 ### Validation
 

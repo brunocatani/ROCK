@@ -1,6 +1,6 @@
 // Native player melee gate: the VRInput velocity settings ROCK owns and the
 // player-only cases where native melee callbacks are skipped. Vanilla melee is
-// always on; SCISSORS_Redux builds its physical melee on the native hit path.
+// always on; SCISSORS builds its physical melee on the native hit path.
 #pragma once
 
 #include <bit>
@@ -51,7 +51,7 @@ namespace rock::native_melee_suppression
      * ROCK skips player native melee at the verified FO4VR swing and impact
      * boundaries (the animation-event handlers, the PlayerCharacter weapon
      * swing callback and the VRMeleeImpact collision callback) only while the
-     * player holds no real weapon: SCISSORS_Redux owns free-hand strikes.
+     * player holds no real weapon: SCISSORS owns free-hand strikes.
      * Returning "handled" matters for animation events because the dispatcher
      * should not keep treating a skipped event as unresolved.
      */

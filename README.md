@@ -39,7 +39,7 @@ What it provides:
 - **Configuration** - INI settings that reload while the game runs, with in-game pages in RobCo PALM.
 - **Provider API** - 13 interfaces that other mods use to read hands and weapons and to request grabs, equips and input.
 
-ROCK is the base of the RPS suite: [SCISSORS Redux](https://github.com/brunocatani/SCISSORS_Redux) adds NPC interactions, [PAPER](https://github.com/brunocatani/PAPER) adds reload animations, and RobCo PALM, RPS UI Framework and ROCK Wall Climbing build on it.
+ROCK is the base of the RPS suite: [SCISSORS](https://github.com/brunocatani/SCISSORS) adds NPC interactions, [PAPER](https://github.com/brunocatani/PAPER) adds reload animations, and RobCo PALM, RPS UI Framework and ROCK Wall Climbing build on it.
 
 ## Install
 
@@ -74,9 +74,9 @@ Menu names can differ between SteamVR versions. After that, the `[Controls]` sec
 
 ### Compatibility
 
-- **SCISSORS Redux** owns NPC interactions: NPC collision, physical melee, blades, held NPCs and active ragdoll. ROCK 1.0 has no NPC features of its own. The older SCISSORS mod is replaced by Redux; disable it.
+- **SCISSORS** owns NPC interactions: NPC collision, physical melee, blades, held NPCs and active ragdoll. ROCK 1.0 has no NPC features of its own. The original SCISSORS mod is a different, retired mod that the new SCISSORS replaces under the same name; remove it.
 - **Mods built for ROCK 0.92 or earlier** use provider API 1, which ROCK 1.0 does not serve. They stop the game: at the main menu an error box names each one, and the game closes when the box is closed. Update or remove them; they work again once rebuilt against ROCK 1.0's headers.
-- **Upgrading from ROCK 0.92** keeps your `ROCK.ini`. Settings ROCK no longer reads are ignored. `npcDynamicCollisions` and `bBladePenetrationEnabled` moved to `SCISSORS_Redux.ini`.
+- **Upgrading from ROCK 0.92** keeps your `ROCK.ini`. Settings ROCK no longer reads are ignored. `npcDynamicCollisions` and `bBladePenetrationEnabled` moved to `SCISSORS.ini`.
 
 ## Configuration
 
