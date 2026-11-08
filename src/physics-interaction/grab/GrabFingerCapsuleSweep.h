@@ -31,7 +31,12 @@
  * close in fixed steps and keep the last clear curl before any capsule
  * touches the mesh (closing fully to minValue on a miss). If the open pose
  * already intersects, open past 1 only as far as needed to clear, up to the
- * cap; a finger that cannot clear stays at the cap and is reported.
+ * cap. A finger that cannot clear anywhere in that range keeps its authored
+ * open pose and is reported blocked: FRIK moves a finger only along its
+ * closed-open arc, and when the object fills that arc (a thumb on a large or
+ * deep object) the cap is still inside the mesh while bent back far past
+ * open. A finger clipping the surface in its natural pose reads as holding;
+ * one bent backwards reads as broken.
  */
 namespace rock::grab_finger_capsule_sweep
 {
@@ -365,7 +370,7 @@ namespace rock::grab_finger_capsule_sweep
                     }
                 }
             } else {
-                out.value = cap;
+                out.value = 1.0f;
                 out.blocked = true;
                 for (float curl = 1.0f + step; curl <= cap + 0.0001f; curl += step) {
                     if (!intersects(curl)) {
