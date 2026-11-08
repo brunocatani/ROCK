@@ -438,11 +438,6 @@ GrabPinchPocketEnabled = true
 ## Allows a fallback close-selection cast along the pinch direction when the palm close cast misses.
 GrabPinchCloseSelectionEnabled = true
 
-## Maximum whole-object bounding volume for pinch grabs, in cubic game units.
-## Uses mesh width x height x depth with object scale; empty space inside the
-## bounds counts. Length and thickness do not impose separate size limits.
-GrabPinchMaxVolumeCubicGameUnits = 100.0
-
 GrabPinchMaxPocketDistanceGameUnits = 8.0
 
 GrabPinchMinFingerGapGameUnits = 1.0

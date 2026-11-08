@@ -68,7 +68,9 @@
   hands (game default), 2 on the closer hand only when both point at the same
   object, 3 at the object itself, shown once (default). Activation is unchanged.
 - **Pinch grab:** the object stays where thumb and finger found it and only the
-  fingers close onto it.
+  fingers close onto it. Any object that sits between thumb and index when you
+  close your hand is pinched, whatever its size: plants, handles and rims no
+  longer get pulled into the palm.
 - **Grab direction** (`Grabbing.CloseGrabDirection`, `Grabbing.FarGrabDirection`): which way
   your hand points to aim close and far grabs, from out of the palm to along
   the fingers.

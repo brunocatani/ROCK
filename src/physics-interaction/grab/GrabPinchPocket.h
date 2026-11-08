@@ -9,10 +9,24 @@
 #include <cstddef>
 #include <limits>
 
+/*
+ * Pinch pocket decision for a close grab. A close grab of an object that sits
+ * between the thumb and the index finger is a pinch: the object stays where
+ * the fingers found it and the pinch point is the hold's authority, whatever
+ * the object's size. "Between" is measured on the mesh: the object's span
+ * along the live thumb-index axis, through the surface the pocket faces, has
+ * to be more than nothing and fit the live gap (plus the pads' own radii,
+ * since the pads may already press into it). A plant stem, a handle or a
+ * plate rim between the fingers passes; a face the hand lies on does not,
+ * since along the axis the mesh runs far wider than the gap. An earlier
+ * whole-object volume limit made the pinch depend on the object instead of
+ * on where the fingers were, so a plant was seated into the palm.
+ */
 namespace rock::grab_pinch_pocket_policy
 {
-    inline constexpr float kDefaultMaxVolumeCubicGameUnits = 100.0f;
-    inline constexpr float kMaxVolumeCubicGameUnits = 1000000.0f;
+    // Two pad collider radii plus a little: how much wider than the live
+    // thumb-index gap an object may span and still count as between the pads.
+    inline constexpr float kPinchSpanAllowanceGameUnits = 1.5f;
     inline constexpr float kDefaultMaxPocketDistanceGameUnits = 8.0f;
     inline constexpr float kDefaultMinFingerGapGameUnits = 1.0f;
     inline constexpr float kDefaultMaxFingerGapGameUnits = 12.0f;
@@ -26,7 +40,6 @@ namespace rock::grab_pinch_pocket_policy
     struct Config
     {
         bool enabled = true;
-        float maxVolumeCubicGameUnits = kDefaultMaxVolumeCubicGameUnits;
         float maxPocketDistanceGameUnits = kDefaultMaxPocketDistanceGameUnits;
         float minFingerGapGameUnits = kDefaultMinFingerGapGameUnits;
         float maxFingerGapGameUnits = kDefaultMaxFingerGapGameUnits;
@@ -61,6 +74,8 @@ namespace rock::grab_pinch_pocket_policy
         bool multipleAcceptedBodies = false;
         float thumbIndexGapGameUnits = 0.0f;
         float pocketToSurfaceDistanceGameUnits = std::numeric_limits<float>::infinity();
+        // Mesh span along the live thumb-index axis through the pinch surface.
+        float pinchSpanGameUnits = std::numeric_limits<float>::infinity();
     };
 
     struct ObjectDecision
@@ -80,9 +95,6 @@ namespace rock::grab_pinch_pocket_policy
 
     [[nodiscard]] inline Config sanitizeConfig(Config config)
     {
-        config.maxVolumeCubicGameUnits =
-            std::clamp(finiteOr(config.maxVolumeCubicGameUnits, kDefaultMaxVolumeCubicGameUnits), 0.001f,
-                kMaxVolumeCubicGameUnits);
         config.maxPocketDistanceGameUnits =
             std::clamp(finiteOr(config.maxPocketDistanceGameUnits, kDefaultMaxPocketDistanceGameUnits), 0.1f, 80.0f);
         config.minFingerGapGameUnits =
@@ -282,15 +294,6 @@ namespace rock::grab_pinch_pocket_policy
             return decision;
         }
 
-        if (!std::isfinite(input.mesh.boundsVolumeCubicGameUnits) || input.mesh.boundsVolumeCubicGameUnits < 0.0f) {
-            decision.reason = "invalidObjectVolume";
-            return decision;
-        }
-        if (input.mesh.boundsVolumeCubicGameUnits > config.maxVolumeCubicGameUnits) {
-            decision.reason = "objectVolumeTooLarge";
-            return decision;
-        }
-
         if (!std::isfinite(input.thumbIndexGapGameUnits) ||
             input.thumbIndexGapGameUnits < config.minFingerGapGameUnits ||
             input.thumbIndexGapGameUnits > config.maxFingerGapGameUnits) {
@@ -309,9 +312,19 @@ namespace rock::grab_pinch_pocket_policy
             decision.retryable = true;
             return decision;
         }
+        if (!std::isfinite(input.pinchSpanGameUnits) || input.pinchSpanGameUnits <= 0.0f) {
+            decision.reason = "noMeshBetweenPads";
+            decision.retryable = true;
+            return decision;
+        }
+        if (input.pinchSpanGameUnits > input.thumbIndexGapGameUnits + kPinchSpanAllowanceGameUnits) {
+            decision.reason = "objectWiderThanPinch";
+            decision.retryable = true;
+            return decision;
+        }
 
         decision.accept = true;
-        decision.reason = "pinchObjectVolume";
+        decision.reason = "objectBetweenThumbAndIndex";
         return decision;
     }
 

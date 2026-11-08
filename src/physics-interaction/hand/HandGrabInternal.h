@@ -489,6 +489,7 @@ namespace rock::hand_grab_internal
         RE::NiPoint3 pinchDetectionDirectionWorld{ 1.0f, 0.0f, 0.0f };
         float thumbIndexGapGameUnits = 0.0f;
         float pocketToSurfaceDistanceGameUnits = std::numeric_limits<float>::infinity();
+        float pinchSpanGameUnits = std::numeric_limits<float>::infinity();
         grab_pinch_pocket_policy::ClosureSolution closure{};
         bool valid = false;
     };

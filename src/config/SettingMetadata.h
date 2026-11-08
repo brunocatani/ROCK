@@ -699,11 +699,6 @@ namespace rock::config
         { "GrabContactEvidence", "GrabPinchCloseSelectionEnabled", "10. Grab Contact Evidence",
             "Allows a fallback close-selection cast along the pinch direction when the palm close cast misses.",
             api::configuration::Group::Developer },
-        { "GrabContactEvidence", "GrabPinchMaxVolumeCubicGameUnits", "10. Grab Contact Evidence",
-            "Maximum whole-object bounding volume for pinch grabs, in cubic game units.\nUses mesh width x height x "
-            "depth with object scale; empty space inside the\nbounds counts. Length and thickness do not impose "
-            "separate size limits.",
-            api::configuration::Group::Developer },
         { "GrabContactEvidence", "GrabPinchMaxPocketDistanceGameUnits", "10. Grab Contact Evidence", "",
             api::configuration::Group::Developer },
         { "GrabContactEvidence", "GrabPinchMinFingerGapGameUnits", "10. Grab Contact Evidence", "",

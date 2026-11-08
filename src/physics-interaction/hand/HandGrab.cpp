@@ -48,7 +48,6 @@ namespace rock
         {
             return grab_pinch_pocket_policy::sanitizeConfig(grab_pinch_pocket_policy::Config{
                 .enabled = g_rockConfig.rockGrabPinchPocketEnabled,
-                .maxVolumeCubicGameUnits = g_rockConfig.rockGrabPinchMaxVolumeCubicGameUnits,
                 .maxPocketDistanceGameUnits = g_rockConfig.rockGrabPinchMaxPocketDistanceGameUnits,
                 .minFingerGapGameUnits = g_rockConfig.rockGrabPinchMinFingerGapGameUnits,
                 .maxFingerGapGameUnits = g_rockConfig.rockGrabPinchMaxFingerGapGameUnits,
@@ -62,6 +61,12 @@ namespace rock
         bool solveRuntimePinchClosure(RuntimePinchPocketCandidate& candidate,
             const std::vector<GrabLocalTriangle>& localTriangles, const RE::NiTransform& objectWorld,
             const RE::NiTransform& handWorld, bool isLeft, const Hand& hand);
+
+        // The object's span along the pinch axis through the pinch surface: the
+        // mesh between the two pads. False when no span can be measured.
+        bool measurePinchSpanGameUnits(const std::vector<GrabLocalTriangle>& localTriangles,
+            const RE::NiTransform& objectWorld, const RE::NiPoint3& surfacePointWorld, const RE::NiPoint3& axisWorld,
+            float maxDepthGameUnits, float& outSpanGameUnits);
 
         RuntimePinchPocketCandidate buildRuntimePinchPocketCandidate(const SelectedObject& selection,
             const object_physics_body_set::ObjectPhysicsBodySet& bodySet, std::uint32_t resolvedBodyId,
@@ -106,6 +111,13 @@ namespace rock
                             acceptsSelectedOwnerlessVisualMesh(selection, bodySet, resolvedBodyId,
                                 surfaceHit.sourceNode, ownerRecord);
                     }
+                    // Is the object between the live pads: its span along the live pinch axis.
+                    float spanGameUnits = 0.0f;
+                    if (candidate.meshExtents.valid &&
+                        measurePinchSpanGameUnits(localMeshTriangles, objectWorldTransform, surfaceHit.position,
+                            pinchFrame.axis, candidate.meshExtents.maxExtentGameUnits * 1.73205081f, spanGameUnits)) {
+                        candidate.pinchSpanGameUnits = spanGameUnits;
+                    }
                 }
             }
 
@@ -121,6 +133,7 @@ namespace rock
                 .multipleAcceptedBodies = bodySet.acceptedCount() > 1,
                 .thumbIndexGapGameUnits = candidate.thumbIndexGapGameUnits,
                 .pocketToSurfaceDistanceGameUnits = candidate.pocketToSurfaceDistanceGameUnits,
+                .pinchSpanGameUnits = candidate.pinchSpanGameUnits,
             });
             candidate.valid = candidate.decision.accept;
             if (candidate.valid &&
@@ -213,6 +226,23 @@ namespace rock
             return result;
         }
 
+        bool measurePinchSpanGameUnits(const std::vector<GrabLocalTriangle>& localTriangles,
+            const RE::NiTransform& objectWorld, const RE::NiPoint3& surfacePointWorld, const RE::NiPoint3& axisWorld,
+            float maxDepthGameUnits, float& outSpanGameUnits)
+        {
+            // The pad footprint on both sides of the axis, as the pinch closure measures thickness.
+            constexpr float footprintRadius = 2.5f;
+            const auto towardIndex = computeGrabSeatDepthStop(localTriangles, objectWorld, surfacePointWorld,
+                axisWorld * -1.0f, footprintRadius, maxDepthGameUnits);
+            const auto towardThumb = computeGrabSeatDepthStop(localTriangles, objectWorld, surfacePointWorld,
+                axisWorld, footprintRadius, maxDepthGameUnits);
+            if (!towardIndex.valid || !towardThumb.valid) {
+                return false;
+            }
+            outSpanGameUnits = towardIndex.depthGameUnits + towardThumb.depthGameUnits;
+            return std::isfinite(outSpanGameUnits);
+        }
+
         bool solveRuntimePinchClosure(RuntimePinchPocketCandidate& candidate,
             const std::vector<GrabLocalTriangle>& localTriangles, const RE::NiTransform& objectWorld,
             const RE::NiTransform& handWorld, bool isLeft, const Hand& hand)
@@ -226,16 +256,11 @@ namespace rock
             auto measure = [&](pinch::ClosureSample sample) {
                 if (!sample.fingers.valid)
                     return pinch::ClosureSample{};
-                constexpr float footprintRadius = 2.5f;
-                const auto towardIndex = computeGrabSeatDepthStop(localTriangles, objectWorld,
-                    candidate.surfaceHit.position, sample.fingers.axis * -1.0f, footprintRadius, maxDepth);
-                const auto towardThumb = computeGrabSeatDepthStop(localTriangles, objectWorld,
-                    candidate.surfaceHit.position, sample.fingers.axis, footprintRadius, maxDepth);
-                if (!towardIndex.valid || !towardThumb.valid) {
+                if (!measurePinchSpanGameUnits(localTriangles, objectWorld, candidate.surfaceHit.position,
+                        sample.fingers.axis, maxDepth, sample.thicknessGameUnits)) {
                     failureStage = "mesh-span";
                     return pinch::ClosureSample{};
                 }
-                sample.thicknessGameUnits = towardIndex.depthGameUnits + towardThumb.depthGameUnits;
                 return sample;
             };
             auto evaluate = [&](float opening) {
@@ -869,20 +894,24 @@ namespace rock
         if (pinchPocketCandidate.valid) {
             ROCK_LOG_DEBUG(Hand,
                 "{} hand PINCH POCKET candidate accepted: reason={} pocket=({:.1f},{:.1f},{:.1f}) "
-                "point=({:.1f},{:.1f},{:.1f}) dir=({:.2f},{:.2f},{:.2f}) gap={:.2f}gu dist={:.2f}gu "
-                "extents=({:.2f},{:.2f},{:.2f}) boundsVolume={:.2f}/{:.2f}gu^3",
+                "point=({:.1f},{:.1f},{:.1f}) dir=({:.2f},{:.2f},{:.2f}) gap={:.2f}gu span={:.2f}gu dist={:.2f}gu "
+                "extents=({:.2f},{:.2f},{:.2f})",
                 handName(), pinchPocketCandidate.decision.reason, pinchPocketCandidate.pinchPocketWorld.x,
                 pinchPocketCandidate.pinchPocketWorld.y, pinchPocketCandidate.pinchPocketWorld.z,
                 pinchPocketCandidate.surfaceHit.position.x, pinchPocketCandidate.surfaceHit.position.y,
                 pinchPocketCandidate.surfaceHit.position.z, pinchPocketCandidate.pinchDetectionDirectionWorld.x,
                 pinchPocketCandidate.pinchDetectionDirectionWorld.y,
                 pinchPocketCandidate.pinchDetectionDirectionWorld.z, pinchPocketCandidate.thumbIndexGapGameUnits,
-                pinchPocketCandidate.pocketToSurfaceDistanceGameUnits,
+                pinchPocketCandidate.pinchSpanGameUnits, pinchPocketCandidate.pocketToSurfaceDistanceGameUnits,
                 pinchPocketCandidate.meshExtents.minExtentGameUnits,
                 pinchPocketCandidate.meshExtents.middleExtentGameUnits,
-                pinchPocketCandidate.meshExtents.maxExtentGameUnits,
-                pinchPocketCandidate.meshExtents.boundsVolumeCubicGameUnits,
-                g_rockConfig.rockGrabPinchMaxVolumeCubicGameUnits);
+                pinchPocketCandidate.meshExtents.maxExtentGameUnits);
+        } else if (!authoredSeatPrepared && !sel.isFarSelection && !grabbedFromPullCatch) {
+            // Why this close grab seats in the palm instead; the span against the
+            // gap is the between-the-fingers test (grab_pinch_pocket_policy).
+            ROCK_LOG_DEBUG(Hand, "{} hand PINCH POCKET candidate rejected: reason={} gap={:.2f}gu span={:.2f}gu dist={:.2f}gu",
+                handName(), pinchPocketCandidate.decision.reason, pinchPocketCandidate.thumbIndexGapGameUnits,
+                pinchPocketCandidate.pinchSpanGameUnits, pinchPocketCandidate.pocketToSurfaceDistanceGameUnits);
         }
 
         const GrabCommitPreparationInput commitPreparationInput{

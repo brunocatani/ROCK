@@ -1058,9 +1058,6 @@ namespace rock
         rockGrabPinchPocketEnabled = ini.boolean("GrabContactEvidence", "GrabPinchPocketEnabled", rockGrabPinchPocketEnabled);
         rockGrabPinchCloseSelectionEnabled =
             ini.boolean("GrabContactEvidence", "GrabPinchCloseSelectionEnabled", rockGrabPinchCloseSelectionEnabled);
-        rockGrabPinchMaxVolumeCubicGameUnits = readClampedFloat(ini, "GrabContactEvidence", "GrabPinchMaxVolumeCubicGameUnits",
-            rockGrabPinchMaxVolumeCubicGameUnits, grab_pinch_pocket_policy::kDefaultMaxVolumeCubicGameUnits, 0.001f,
-            grab_pinch_pocket_policy::kMaxVolumeCubicGameUnits);
         rockGrabPinchMaxPocketDistanceGameUnits = readClampedFloat(ini, "GrabContactEvidence", "GrabPinchMaxPocketDistanceGameUnits",
             rockGrabPinchMaxPocketDistanceGameUnits, grab_pinch_pocket_policy::kDefaultMaxPocketDistanceGameUnits, 0.1f,
             80.0f);
