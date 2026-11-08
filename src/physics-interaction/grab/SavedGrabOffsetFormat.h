@@ -51,8 +51,8 @@ namespace rock::saved_grab_offset
         float rotate[9]{ 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f };
 
         // Same convention as grab_finger_pose_runtime::SolvedGrabFingerPose:
-        // thumb/index/middle/ring/pinky, 0 = closed, 1 = authored open.
-        // All fingers support over-open values through 2.0.
+        // thumb/index/middle/ring/pinky, 0 = closed, 1 = authored open. Files
+        // from earlier solves hold values up to 2.0; a grab shows those as 1.
         bool hasFingerPose{ false };
         float fingerValues[5]{ 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
         // Optional per-joint (3 per finger: proximal/mid/distal) shaping; when

@@ -27,16 +27,21 @@
  * collider radius for its segment, so solve and physical hand agree on
  * thickness.
  *
- * Decision per finger. From the authored open pose (curl 1): if it is clear,
- * close in fixed steps and keep the last clear curl before any capsule
- * touches the mesh (closing fully to minValue on a miss). If the open pose
- * already intersects, open past 1 only as far as needed to clear, up to the
- * cap. A finger that cannot clear anywhere in that range keeps its authored
- * open pose and is reported blocked: FRIK moves a finger only along its
- * closed-open arc, and when the object fills that arc (a thumb on a large or
- * deep object) the cap is still inside the mesh while bent back far past
- * open. A finger clipping the surface in its natural pose reads as holding;
- * one bent backwards reads as broken.
+ * Decision per finger. A finger never bends past its authored open pose
+ * (curl 1): a hand bent backwards reads as broken, a finger clipping the
+ * surface in its natural pose reads as holding (bench sessions: a quarter of
+ * the grabs had a finger opened past 1 to clear, a tenth past 1.3). From the
+ * open pose: if it is clear, close in fixed steps and keep the last clear
+ * curl before any capsule touches the mesh (closing fully to minValue on a
+ * miss). If the open pose already intersects, the object is across the open
+ * finger (a handle the hand reached into, a bar along the finger backs):
+ * close inward until the finger clears what it was inside, then on until it
+ * touches again, and keep that last clear curl, the finger closed onto the
+ * inner surface. A finger that never clears inward, or clears and then closes
+ * to minValue without touching anything, keeps the open pose and is reported
+ * blocked: FRIK moves a finger only along its closed-open arc, and when the
+ * object fills that arc (a palm on a large or deep object) there is no clear
+ * pose on it.
  */
 namespace rock::grab_finger_capsule_sweep
 {
@@ -277,8 +282,6 @@ namespace rock::grab_finger_capsule_sweep
     struct Options
     {
         float minValue = 0.2f;
-        float fingerMaxOpenValue = 2.0f;
-        float thumbMaxOpenValue = 1.5f;
         float step = 0.05f;
         CapsuleRadii radii{};
     };
@@ -286,9 +289,9 @@ namespace rock::grab_finger_capsule_sweep
     struct FingerResult
     {
         float value = 1.0f;
-        bool contact = false; // closed onto the surface (or opened to clear it)
-        bool openedToClear = false;
-        bool blocked = false; // could not clear even at the cap
+        bool contact = false; // closed onto the surface
+        bool closedPastIntersection = false; // the open pose intersected; closed inward past it onto the surface
+        bool blocked = false; // the open pose intersected and no inward pose clears and touches; kept open
     };
 
     struct Result
@@ -354,7 +357,6 @@ namespace rock::grab_finger_capsule_sweep
         const float step = (std::max)(0.01f, options.step);
         for (std::size_t finger = 0; finger < 5; ++finger) {
             auto& out = result.fingers[finger];
-            const float cap = finger == 0 ? options.thumbMaxOpenValue : options.fingerMaxOpenValue;
             const auto intersects = [&](float curl) {
                 return fingerIntersects(
                     poseFinger(rig, handBoneWorld, finger, jointValuesForCurl(finger, curl), tipLengths[finger]), index,
@@ -372,11 +374,17 @@ namespace rock::grab_finger_capsule_sweep
             } else {
                 out.value = 1.0f;
                 out.blocked = true;
-                for (float curl = 1.0f + step; curl <= cap + 0.0001f; curl += step) {
-                    if (!intersects(curl)) {
-                        out.value = curl;
+                bool cleared = false;
+                for (float curl = 1.0f - step; curl >= options.minValue - 0.0001f; curl -= step) {
+                    const bool hit = intersects(curl);
+                    if (!cleared) {
+                        cleared = !hit;
+                        continue;
+                    }
+                    if (hit) {
+                        out.value = curl + step;
                         out.contact = true;
-                        out.openedToClear = true;
+                        out.closedPastIntersection = true;
                         out.blocked = false;
                         break;
                     }

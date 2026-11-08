@@ -51,13 +51,17 @@ namespace rock
                 return false;
             }
 
+            // Offsets saved by earlier solves hold fingers bent past the
+            // authored open pose; a finger never shows past open (see
+            // GrabFingerCapsuleSweep.h), so those read as the open pose.
             pose.solved = true;
-            pose.values = { handOffset.fingerValues[0], handOffset.fingerValues[1], handOffset.fingerValues[2],
-                handOffset.fingerValues[3], handOffset.fingerValues[4] };
+            for (std::size_t finger = 0; finger < pose.values.size(); ++finger) {
+                pose.values[finger] = (std::min)(handOffset.fingerValues[finger], 1.0f);
+            }
             pose.hasJointValues = handOffset.hasFingerJointValues;
             if (handOffset.hasFingerJointValues) {
                 for (std::size_t i = 0; i < pose.jointValues.size(); ++i) {
-                    pose.jointValues[i] = handOffset.fingerJointValues[i];
+                    pose.jointValues[i] = (std::min)(handOffset.fingerJointValues[i], 1.0f);
                 }
             }
             return true;
@@ -591,8 +595,6 @@ namespace rock
         const bool indexBuilt = _grabFingerTriangleIndex.buildFromLocalTriangles(localFingerPoseTriangles);
         const grab_finger_capsule_sweep::Options options{
             .minValue = g_rockConfig.rockGrabFingerMinValue,
-            .fingerMaxOpenValue = g_rockConfig.rockGrabFingerSweepMaxOpenValue,
-            .thumbMaxOpenValue = g_rockConfig.rockGrabThumbSweepMaxOpenValue,
         };
         grab_finger_capsule_sweep::Result capsule{};
         if (rigValid && indexBuilt) {
@@ -628,14 +630,14 @@ namespace rock
             Hand,
             "{} THREE-PHASE GRAB POSE SOLVED: stage={} phase={} pinch={} solved={} contacts=0x{:02X} "
             "curls=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) "
-            "openedToClear=0x{:02X} blocked=0x{:02X} triangles={} sphereQueries={} tests={}",
+            "closedPastIntersection=0x{:02X} blocked=0x{:02X} triangles={} sphereQueries={} tests={}",
             handName(), frame.stage, grab_three_phase::phaseName(_grabAcquisitionPhase), pinchFingerPose ? "yes" : "no",
             _grabFingerPose.solved ? "yes" : "no", _grabFingerPose.contactValidMask, _grabFingerPose.values[0],
             _grabFingerPose.values[1], _grabFingerPose.values[2], _grabFingerPose.values[3], _grabFingerPose.values[4],
             [&] {
                 std::uint32_t m = 0;
                 for (std::size_t f = 0; f < 5; ++f)
-                    m |= capsule.fingers[f].openedToClear ? (1u << f) : 0u;
+                    m |= capsule.fingers[f].closedPastIntersection ? (1u << f) : 0u;
                 return m;
             }(),
             [&] {

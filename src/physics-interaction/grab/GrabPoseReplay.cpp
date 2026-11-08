@@ -50,15 +50,12 @@ namespace rock::grab_pose_replay
 
     void to_json(json& j, const CapsuleOptions& o)
     {
-        j = json{ { "minValue", o.minValue }, { "fingerMaxOpenValue", o.fingerMaxOpenValue },
-            { "thumbMaxOpenValue", o.thumbMaxOpenValue }, { "step", o.step } };
+        j = json{ { "minValue", o.minValue }, { "step", o.step } };
     }
 
     void from_json(const json& j, CapsuleOptions& o)
     {
         j.at("minValue").get_to(o.minValue);
-        j.at("fingerMaxOpenValue").get_to(o.fingerMaxOpenValue);
-        j.at("thumbMaxOpenValue").get_to(o.thumbMaxOpenValue);
         j.at("step").get_to(o.step);
     }
 
@@ -81,7 +78,7 @@ namespace rock::grab_pose_replay
             { "options", r.options },
             { "solvedValues", r.solvedValues },
             { "solvedContact", r.solvedContact },
-            { "solvedOpenedToClear", r.solvedOpenedToClear },
+            { "solvedClosedPastIntersection", r.solvedClosedPastIntersection },
             { "solvedBlocked", r.solvedBlocked },
             { "finalValues", r.finalValues },
             { "finalJointValues", r.finalJointValues },
@@ -104,7 +101,7 @@ namespace rock::grab_pose_replay
             const json j = json::parse(text);
             Record r{};
             j.at("formatVersion").get_to(r.formatVersion);
-            if (r.formatVersion != kFormatVersion) {
+            if (r.formatVersion != kFormatVersion && r.formatVersion != 2) {
                 if (outError)
                     *outError = "unsupported formatVersion " + std::to_string(r.formatVersion);
                 return std::nullopt;
@@ -124,7 +121,8 @@ namespace rock::grab_pose_replay
             j.at("options").get_to(r.options);
             j.at("solvedValues").get_to(r.solvedValues);
             j.at("solvedContact").get_to(r.solvedContact);
-            j.at("solvedOpenedToClear").get_to(r.solvedOpenedToClear);
+            j.at(r.formatVersion == 2 ? "solvedOpenedToClear" : "solvedClosedPastIntersection")
+                .get_to(r.solvedClosedPastIntersection);
             j.at("solvedBlocked").get_to(r.solvedBlocked);
             j.at("finalValues").get_to(r.finalValues);
             j.at("finalJointValues").get_to(r.finalJointValues);

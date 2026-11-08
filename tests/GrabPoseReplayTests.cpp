@@ -206,8 +206,6 @@ namespace
         const auto solveSkeleton = toSnapshot(r.solveSkeleton);
         const capsule::Options options{
             .minValue = r.options.minValue,
-            .fingerMaxOpenValue = r.options.fingerMaxOpenValue,
-            .thumbMaxOpenValue = r.options.thumbMaxOpenValue,
             .step = r.options.step,
         };
         const auto solve =
@@ -216,7 +214,7 @@ namespace
         for (std::size_t f = 0; f < 5; ++f) {
             solverParity = solverParity && std::fabs(solve.values[f] - r.solvedValues[f]) <= 1e-4f &&
                 solve.fingers[f].contact == (r.solvedContact[f] != 0) &&
-                solve.fingers[f].openedToClear == (r.solvedOpenedToClear[f] != 0) &&
+                solve.fingers[f].closedPastIntersection == (r.solvedClosedPastIntersection[f] != 0) &&
                 solve.fingers[f].blocked == (r.solvedBlocked[f] != 0);
         }
         std::printf("  solver parity: %s  recorded [%s]  replayed [%s]\n", solverParity ? "OK" : "MISMATCH",
@@ -243,7 +241,7 @@ namespace
         std::array<float, 5> flags{};
         for (std::size_t f = 0; f < 5; ++f) {
             const auto& fr = solve.fingers[f];
-            flags[f] = fr.blocked ? -1.0f : (fr.openedToClear ? 2.0f : (fr.contact ? 1.0f : 0.0f));
+            flags[f] = fr.blocked ? -1.0f : (fr.closedPastIntersection ? 2.0f : (fr.contact ? 1.0f : 0.0f));
         }
         constexpr int kRuns = 40;
         const auto t0 = std::chrono::steady_clock::now();
@@ -260,7 +258,7 @@ namespace
         std::printf("    drawn pose                                    [%s]\n",
             row(clearance(drawn, index, toNi(r.renderedObjectWorld))).c_str());
         std::printf("    curl                                          [%s]\n", row(r.finalValues).c_str());
-        std::printf("    1 contact, 2 opened to clear, 0 miss, -1 blocked [%s]\n", row(flags).c_str());
+        std::printf("    1 contact, 2 closed past intersection, 0 miss, -1 blocked [%s]\n", row(flags).c_str());
         std::printf("  cost per solve incl. index build: %.3f ms (%u sphere queries, %u triangle tests)\n", ms,
             solve.sphereQueries, solve.stats.triangleTests);
         return solverParity;

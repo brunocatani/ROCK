@@ -606,14 +606,12 @@ namespace rock
         r.solveSkeleton = toReplay(solveSkeleton);
         r.options = grab_pose_replay::CapsuleOptions{
             .minValue = options.minValue,
-            .fingerMaxOpenValue = options.fingerMaxOpenValue,
-            .thumbMaxOpenValue = options.thumbMaxOpenValue,
             .step = options.step,
         };
         for (std::size_t f = 0; f < grab_pose_replay::kFingerCount; ++f) {
             r.solvedValues[f] = solve.values[f];
             r.solvedContact[f] = solve.fingers[f].contact ? 1 : 0;
-            r.solvedOpenedToClear[f] = solve.fingers[f].openedToClear ? 1 : 0;
+            r.solvedClosedPastIntersection[f] = solve.fingers[f].closedPastIntersection ? 1 : 0;
             r.solvedBlocked[f] = solve.fingers[f].blocked ? 1 : 0;
         }
 
@@ -712,12 +710,9 @@ namespace rock
                     }
                 }
             }
-            const float openCap = finger == 0 ? g_rockConfig.rockGrabThumbSweepMaxOpenValue
-                                              : g_rockConfig.rockGrabFingerSweepMaxOpenValue;
             const float curl = _grabFingerPose.values[finger];
-            fingers += std::format(" f{}=[min={:.2f}@{} insideShell={}/12 curl={:.2f}{} contact={}]", finger, worst,
-                kSegment[worstSegment], insideSamples, curl, curl >= openCap - 0.01f ? "(openCap)" : "",
-                (_grabFingerPose.contactValidMask >> finger) & 1u);
+            fingers += std::format(" f{}=[min={:.2f}@{} insideShell={}/12 curl={:.2f} contact={}]", finger, worst,
+                kSegment[worstSegment], insideSamples, curl, (_grabFingerPose.contactValidMask >> finger) & 1u);
         }
 
         // Palm centreline: wrist (visual hand origin) toward the knuckle midpoint.

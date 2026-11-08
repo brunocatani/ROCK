@@ -20,8 +20,12 @@
 - A gun with no pistol or rifle keyword is sized from its equip slot.
 - Native player melee no longer launches movable objects: the game's object hit
   pushed any non-actor body very hard.
-- A finger that cannot clear the mesh keeps its open pose instead of bending
-  back. Count-based loose ammo is held by its visible body.
+- Fingers never bend back past the open pose. A finger whose open pose sits
+  inside the object keeps the open pose, or closes inward onto a handle or hole
+  the hand reached into; saved grab poses with bent-back fingers show the open
+  pose. Count-based loose ammo is held by its visible body.
+- The second hand joins an object the other hand holds from where it touches
+  it, so long objects no longer refuse the second grip.
 - A closed wrist Pip-Boy no longer opens or hums when you look at it. On
   lighthouse controllers the Y tap opens the Pip-Boy and the wand-pad Favorites
   menu no longer opens by accident.

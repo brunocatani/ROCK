@@ -19,10 +19,10 @@ namespace rock::grab_finger_probe_preview
 {
     enum class FingerState : std::uint8_t
     {
-        Free,          // closed to the minimum curl without touching
-        Contact,       // closed onto the surface
-        OpenedToClear, // the open pose intersected; opened past 1 to clear
-        Blocked,       // could not clear even at the open cap
+        Free,                   // closed to the minimum curl without touching
+        Contact,                // closed onto the surface
+        ClosedPastIntersection, // the open pose intersected; closed inward past it onto the surface
+        Blocked,                // the open pose intersected and nothing inward clears and touches; kept open
     };
 
     // A finger is 15-20 spheres at the hand collider radii; 5 fingers fit with room.

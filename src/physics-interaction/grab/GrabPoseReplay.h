@@ -24,7 +24,11 @@
  */
 namespace rock::grab_pose_replay
 {
-    inline constexpr std::uint32_t kFormatVersion = 2;
+    // 3: the capsule sweep stays within the open pose; solvedClosedPastIntersection
+    // replaces solvedOpenedToClear and the over-open caps left the options.
+    // Format 2 records still parse (the old flag is read into the new field) so
+    // bench corpora recorded before the change can be replayed.
+    inline constexpr std::uint32_t kFormatVersion = 3;
     inline constexpr std::size_t kFingerCount = 5;
     inline constexpr std::size_t kFingerBoneCount = 15;
 
@@ -60,8 +64,6 @@ namespace rock::grab_pose_replay
     struct CapsuleOptions
     {
         float minValue = 0.0f;
-        float fingerMaxOpenValue = 0.0f;
-        float thumbMaxOpenValue = 0.0f;
         float step = 0.0f;
     };
 
@@ -89,7 +91,7 @@ namespace rock::grab_pose_replay
         // Capsule solve outputs, then after ROCK's pinch policy (what was published).
         std::array<float, kFingerCount> solvedValues{};
         std::array<std::uint8_t, kFingerCount> solvedContact{};
-        std::array<std::uint8_t, kFingerCount> solvedOpenedToClear{};
+        std::array<std::uint8_t, kFingerCount> solvedClosedPastIntersection{};
         std::array<std::uint8_t, kFingerCount> solvedBlocked{};
         std::array<float, kFingerCount> finalValues{};
         std::array<float, kFingerBoneCount> finalJointValues{};

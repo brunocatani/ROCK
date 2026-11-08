@@ -38,8 +38,6 @@ namespace rock
         {
             return sweep::Options{
                 .minValue = g_rockConfig.rockGrabFingerMinValue,
-                .fingerMaxOpenValue = g_rockConfig.rockGrabFingerSweepMaxOpenValue,
-                .thumbMaxOpenValue = g_rockConfig.rockGrabThumbSweepMaxOpenValue,
             };
         }
 
@@ -48,8 +46,8 @@ namespace rock
             if (result.blocked) {
                 return preview::FingerState::Blocked;
             }
-            if (result.openedToClear) {
-                return preview::FingerState::OpenedToClear;
+            if (result.closedPastIntersection) {
+                return preview::FingerState::ClosedPastIntersection;
             }
             return result.contact ? preview::FingerState::Contact : preview::FingerState::Free;
         }
@@ -159,16 +157,15 @@ namespace rock
                 appendFingerSpheres(out, pose, finger, options.radii, index, objectWorld);
 
                 // The capsule result is not kept after publication; contact and
-                // curl recover its outcome (opened fingers sit above 1, blocked
-                // ones at the open cap without contact).
+                // curl recover its outcome (a blocked finger sits at the open
+                // pose without contact, a free one at the minimum curl). A
+                // finger closed past an intersection is shown as a contact.
                 auto& state = out.fingers[finger];
                 const bool contact = ((_grabFingerPose.contactValidMask >> finger) & 1u) != 0;
-                const float cap = finger == 0 ? options.thumbMaxOpenValue : options.fingerMaxOpenValue;
                 state.curl = _grabFingerPose.values[finger];
-                state.state = contact ? (state.curl > 1.0001f ? preview::FingerState::OpenedToClear
-                                                              : preview::FingerState::Contact)
-                                      : (state.curl >= cap - 0.001f ? preview::FingerState::Blocked
-                                                                    : preview::FingerState::Free);
+                state.state = contact ? preview::FingerState::Contact
+                                      : (state.curl >= 0.999f ? preview::FingerState::Blocked
+                                                              : preview::FingerState::Free);
                 state.valid = true;
             }
             out.triangleCount = index ? static_cast<std::uint32_t>(index->triangleCount()) : 0;
@@ -279,11 +276,10 @@ namespace rock
             auto& state = out.fingers[finger];
             state.curl = result.values[finger];
             state.state = stateOf(result.fingers[finger]);
-            // The tip's path over the whole sweep: open cap down to the minimum curl.
-            const float cap = finger == 0 ? options.thumbMaxOpenValue : options.fingerMaxOpenValue;
+            // The tip's path over the whole sweep: open pose down to the minimum curl.
             for (std::size_t i = 0; i < preview::kTipPathPoints; ++i) {
                 const float t = static_cast<float>(i) / static_cast<float>(preview::kTipPathPoints - 1);
-                const float curl = cap + (options.minValue - cap) * t;
+                const float curl = 1.0f + (options.minValue - 1.0f) * t;
                 state.tipPath[i] =
                     sweep::poseFinger(rig, handBone, finger, sweep::jointValuesForCurl(finger, curl), tips[finger])
                         .joints[3];
