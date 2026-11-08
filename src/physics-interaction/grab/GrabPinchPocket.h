@@ -362,7 +362,6 @@ namespace rock::grab_pinch_pocket_policy
         StablePinchFingerPose pose{};
         float opening = 0.0f;
         float thicknessGameUnits = 0.0f;
-        float centerOffsetGameUnits = 0.0f;
     };
 
     struct ClosureSolution
@@ -385,7 +384,7 @@ namespace rock::grab_pinch_pocket_policy
         auto consider = [&](float opening, ClosureSample& sample, float& error) {
             sample = evaluate(opening);
             if (!sample.fingers.valid || !std::isfinite(sample.thicknessGameUnits) ||
-                sample.thicknessGameUnits < 0.0f || !std::isfinite(sample.centerOffsetGameUnits))
+                sample.thicknessGameUnits < 0.0f)
                 return false;
             sample.opening = opening;
             error = sample.fingers.gapGameUnits - sample.thicknessGameUnits;

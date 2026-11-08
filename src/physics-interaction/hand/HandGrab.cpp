@@ -236,7 +236,6 @@ namespace rock
                     return pinch::ClosureSample{};
                 }
                 sample.thicknessGameUnits = towardIndex.depthGameUnits + towardThumb.depthGameUnits;
-                sample.centerOffsetGameUnits = (towardIndex.depthGameUnits - towardThumb.depthGameUnits) * 0.5f;
                 return sample;
             };
             auto evaluate = [&](float opening) {

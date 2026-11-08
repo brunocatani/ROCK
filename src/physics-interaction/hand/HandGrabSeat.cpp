@@ -763,12 +763,15 @@ namespace rock
                 const char* captureReason =
                     usingPinchPocket ? pinchPocketCandidate.decision.reason : phaseDecision.reason;
 
-                if (usingPinchPocket) {
-                    grabPivotAWorld = pinchPocketCandidate.pinchPocketWorld;
-                } else {
-                    grabPivotAWorld = pocket.palmCenterWorld;
-                }
                 grabGripPoint = gripArea.contactSeedWorld;
+                /*
+                 * A pinch keeps the object where the hand found it: pivot A is
+                 * the mesh point itself, so the frozen relation is the current
+                 * one and only the fingers move, closing onto the surface. The
+                 * player places the object between thumb and finger precisely;
+                 * pulling it onto a predicted fingertip midpoint undid that.
+                 */
+                grabPivotAWorld = usingPinchPocket ? grabGripPoint : pocket.palmCenterWorld;
                 grabPointMode = relationMode;
                 grabPointAuthoritySource = usingPinchPocket ? GrabPivotAuthoritySource::PinchPocketMeshPoint
                                                             : GrabPivotAuthoritySource::PalmPocketMeshPoint;
@@ -1472,19 +1475,6 @@ namespace rock
                     }
                 }
 
-                // The object and the commanded finger pose converge to the
-                // same solved fingertip midpoint. Keep the source mesh hit
-                // as pivot B and compensate its measured mid-thickness offset.
-                float pinchCenterOffsetGameUnits = 0.0f;
-                if (usingPinchPocket && !looseWeaponPrimaryAttachApplied) {
-                    pinchCenterOffsetGameUnits = pinchPocketCandidate.closure.sample.centerOffsetGameUnits;
-                    grabPivotAWorld = pinchPocketCandidate.pinchPocketWorld -
-                        pinchPocketCandidate.pinchAxisWorld * pinchCenterOffsetGameUnits;
-                    desiredBodyWorld = grab_frame_math::shiftObjectToAlignGripWithPocket(grabBodyWorldAtGrab,
-                        grabPivotAWorld, grabGripPoint);
-                    desiredObjectWorld = deriveNodeWorldFromBodyWorld(desiredBodyWorld, objectToBodyAtGrab);
-                }
-
                 selectedGripPointLocal = transform_math::worldPointToLocal(objectWorldTransform, grabGripPoint);
                 selectedPivotBBodyLocalGame = transform_math::worldPointToLocal(grabBodyWorldAtGrab, grabGripPoint);
                 const bool effectivePinchPocket = usingPinchPocket && !looseWeaponPrimaryAttachApplied;
@@ -1550,7 +1540,7 @@ namespace rock
                 _grabFrame.seat.pinchAxisWorldAtGrab =
                     effectivePinchPocket ? pinchPocketCandidate.pinchAxisWorld : RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
                 _grabFrame.seat.palmSeatPointWorldAtGrab =
-                    effectivePinchPocket ? pinchPocketCandidate.pinchPocketWorld : pocket.palmCenterWorld;
+                    effectivePinchPocket ? grabGripPoint : pocket.palmCenterWorld;
                 _grabFrame.seat.hasPalmSeatPoint = true;
                 _grabFrame.seat.palmSeatPointMode = effectivePinchPocket ? "pinchPocket" : "threePhasePocket";
                 _grabFrame.pivotAuthority.source = pivotAuthoritySource;
@@ -1592,7 +1582,7 @@ namespace rock
                     "settledVisualRequired={} arrivalSeatSafety={} arrivalSeatDot={:.3f} arrivalSeatSigned={:.1f} "
                     "arrivalSeatDist={:.1f} seatDepth={:.2f} seatDepthOffset={:.2f} seatDepthSamples={} "
                     "seatDepthReason={} seatAlignDeg={:.1f} seatAlignReason={} seatRollDeg={:.1f} seatRollReason={} "
-                    "seatShape={} seatRatio12={:.2f} seatRatio23={:.2f} pinchCenter={:.2f} inset={:.2f} insetSource={} "
+                    "seatShape={} seatRatio12={:.2f} seatRatio23={:.2f} inset={:.2f} insetSource={} "
                     "looseWeaponPrimaryAttach={} attachReason={} attachVisible={}",
                     handName(), relationMode, grabSeatModeName(_grabFrame.seat.mode),
                     looseWeaponPrimaryAttachApplied ? "primaryWeaponAttach"
@@ -1617,8 +1607,8 @@ namespace rock
                     seatDepthStop.reason, seatAlignmentAngleDegrees, seatAlignmentReason, seatRollAngleDegrees,
                     seatRollReason,
                     seatPlateShape ? "plate" : (seatRodShape ? "rod" : (seatLongAxis.valid ? "compact" : "none")),
-                    seatLongAxis.elongationRatio, seatLongAxis.secondElongationRatio, pinchCenterOffsetGameUnits,
-                    gripArea.seedInsetGameUnits, gripArea.fallbackReason,
+                    seatLongAxis.elongationRatio, seatLongAxis.secondElongationRatio, gripArea.seedInsetGameUnits,
+                    gripArea.fallbackReason,
                     looseWeaponPrimaryAttachApplied ? "yes" : "no", looseWeaponPrimaryAttachReason,
                     looseWeaponPrimaryAttachSourceVisible ? "yes" : "no");
             } else {
