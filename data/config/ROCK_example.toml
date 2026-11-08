@@ -218,7 +218,7 @@ LootToHand = true
 ## 1 = Right Hand. 2 = Closer Hand. 3 = At Container.
 ## Right Hand: the game's own panel on the right hand; it lists only what the right hand points at.
 ## Closer Hand: the panel rides the hand pointing at the container, mirrored on the left hand; when both hands point at containers the closer one takes it.
-## At Container: the panel stands at the container it lists, facing you; either hand can point at it.
+## At Container: the panel stands upright at the container it lists, turned toward you, at a fixed size; either hand can point at it.
 ## The panel's buttons stay on the right controller in every mode. Applies at once.
 QuickLootPanelPlacement = 3
 
@@ -227,7 +227,7 @@ QuickLootPanelPlacement = 3
 ## The prompts each hand shows for what it points at (Open, Talk, Take and the rest).
 ## Both Hands: the game's own prompts on each hand; two hands on one door show it twice.
 ## Closer Hand: when both hands point at the same object only the closer hand shows its prompt.
-## At Object: the prompt stands at the object it names, facing you, and shows once when both hands point at it.
+## At Object: the prompt stands upright at the object it names, turned toward you, at a fixed size, and shows once when both hands point at it.
 ## Activation itself is unchanged. Applies at once.
 ActivatePromptPlacement = 3
 

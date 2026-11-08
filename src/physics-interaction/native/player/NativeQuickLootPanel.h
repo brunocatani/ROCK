@@ -14,8 +14,8 @@
  *   mirrored on the left hand as the native left-handed layout does. When
  *   both wands pick containers, the hand closer to its own container takes the
  *   panel past a switch margin.
- * - AtContainer: the panel stands at the container it lists, facing the
- *   player, scaled with distance so it reads at the size it has on the hand.
+ * - AtContainer: the panel stands upright at the container it lists, turned
+ *   toward the player about the vertical, at one fixed world size.
  *
  * The native controls (the primary wand's buttons and stick) and their hints
  * are unchanged in every mode.

@@ -41,6 +41,16 @@ namespace rock::native_activate_prompts
         // The engine's invalid reference handle, compared at 0xA96186.
         constexpr std::uintptr_t kInvalidHandle = 0x392E884;
 
+        /*
+         * Meshes\world_rollover.nif (Fallout4_VR - Main.ba2): the rollover:0
+         * quad is tilted 60 degrees back from upright, every vertex normal
+         * (0, -0.49, 0.87). U grows along +X; V shrinks toward +Y/+Z (0.606 at
+         * Y 8.5 Z 5.6, 0.354 at Y 25.2 Z 15.0), so the text reads along +X
+         * with (0, 0.87, 0.49) up.
+         */
+        constexpr native_world_ui_anchor::FaceFrame kPromptFace{ { 1.0f, 0.0f, 0.0f }, { 0.0f, 0.866f, 0.5f },
+            { 0.0f, -0.5f, 0.866f } };
+
         struct ExpectedBytes
         {
             std::uintptr_t address;
@@ -173,8 +183,8 @@ namespace rock::native_activate_prompts
             }
             const RE::NiPoint3 eyeRight{ eye->world.rotate.entry[0][0], eye->world.rotate.entry[0][1],
                 eye->world.rotate.entry[0][2] };
-            const auto pose = native_world_ui_anchor::poseFacingEye(
-                pick, eye->world.translate, eyeRight, wand->world.scale * root->local.scale);
+            const auto pose = native_world_ui_anchor::uprightPoseAt(pick, eye->world.translate, eyeRight, kPromptFace,
+                wand->world.scale * root->local.scale, native_world_ui_anchor::boundCenterInRootSpace(*root));
             auto& carrier = g_objectCarriers[index];
             if (!pose || !attachCarrier(carrier, g_objectCarrierFailed[index], room, kObjectCarrierNames[index])) {
                 moveTo(root, wand);

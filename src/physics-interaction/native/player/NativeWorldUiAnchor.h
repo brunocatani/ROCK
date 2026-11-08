@@ -2,6 +2,7 @@
 
 #include "RE/NetImmerse/NiNode.h"
 
+#include <array>
 #include <cstdint>
 #include <optional>
 
@@ -14,17 +15,29 @@
  */
 namespace rock::native_world_ui_anchor
 {
+    // A model's visible face in its root's local space, read from its mesh:
+    // unit vectors along the text's right and up and out of the face toward
+    // the viewer.
+    struct FaceFrame
+    {
+        std::array<float, 3> right;
+        std::array<float, 3> up;
+        std::array<float, 3> toViewer;
+    };
+
     /*
      * World pose for a model root at the reference behind an ObjectRefHandle
-     * value: on the reference's near side at its bound centre height, facing
-     * the eye, scaled with distance so it keeps the apparent size it has at
-     * hand reading distance. The rows are the root's local axes in world
-     * space: X right, Y away from the viewer, Z up, the frame the wand attach
-     * nodes give it. Empty when the handle no longer resolves or the eye is
-     * inside the anchor.
+     * value. The face's centre (`faceCenter`, root-local) stands on the
+     * reference's near side at its bound centre height; the face is upright,
+     * its text level, turned about the vertical toward the eye; its size is a
+     * fixed multiple of `handScale`, the root's world scale on the hand,
+     * whatever the distance. Empty when the handle no longer resolves.
      */
-    [[nodiscard]] std::optional<RE::NiTransform> poseFacingEye(std::uint32_t handleValue, const RE::NiPoint3& eye,
-        const RE::NiPoint3& eyeRight, float handScale);
+    [[nodiscard]] std::optional<RE::NiTransform> uprightPoseAt(std::uint32_t handleValue, const RE::NiPoint3& eye,
+        const RE::NiPoint3& eyeRight, const FaceFrame& face, float handScale, const RE::NiPoint3& faceCenter);
+
+    // The root's world bound centre in its own local space; zero without a bound.
+    [[nodiscard]] RE::NiPoint3 boundCenterInRootSpace(const RE::NiAVObject& root);
 
     // Distance from a node to the reference's bound centre (its origin when it
     // has no bound); empty when the handle no longer resolves.

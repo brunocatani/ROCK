@@ -98,6 +98,14 @@ namespace rock::native_quick_loot_panel
         constexpr std::ptrdiff_t kLootModelRootOffset = 0x10;
 
         /*
+         * Meshes\world_Loot.nif (Fallout4_VR - Main.ba2): the quickLoot:0 quad
+         * lies in its XZ plane (Y = 0); U grows along +X and V shrinks along
+         * +Z, so the text reads along +X with +Z up and faces -Y.
+         */
+        constexpr native_world_ui_anchor::FaceFrame kLootFace{ { 1.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0f },
+            { 0.0f, -1.0f, 0.0f } };
+
+        /*
          * CloserHand: when both wands pick lootable containers (often the same
          * one, with both hands on a two-handed weapon), a hand takes the panel
          * only when it is this much closer to its container than the owning
@@ -342,8 +350,8 @@ namespace rock::native_quick_loot_panel
             }
             const RE::NiPoint3 eyeRight{ eye->world.rotate.entry[0][0], eye->world.rotate.entry[0][1],
                 eye->world.rotate.entry[0][2] };
-            const auto pose = native_world_ui_anchor::poseFacingEye(
-                listed, eye->world.translate, eyeRight, handAttach->world.scale * root->local.scale);
+            const auto pose = native_world_ui_anchor::uprightPoseAt(listed, eye->world.translate, eyeRight, kLootFace,
+                handAttach->world.scale * root->local.scale, native_world_ui_anchor::boundCenterInRootSpace(*root));
             if (!pose) {
                 moveTo(root, handAttach);
                 ROCK_LOG_SAMPLE_DEBUG(Hand, 1000,

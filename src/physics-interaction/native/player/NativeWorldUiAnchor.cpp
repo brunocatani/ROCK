@@ -12,14 +12,9 @@ namespace rock::native_world_ui_anchor
 {
     namespace
     {
-        /*
-         * A model reads at its hand size when the eye is this far from it
-         * (about 60 cm, a hand held up to read). Further away it is scaled up
-         * with distance so it keeps that apparent size, up to kMaxViewScale.
-         * Game units.
-         */
-        constexpr float kHandReadingDistance = 45.0f;
-        constexpr float kMaxViewScale = 4.0f;
+        // At an object a model keeps one world size: this multiple of the
+        // size it has on the hand, whatever the player's distance.
+        constexpr float kObjectScale = 2.0f;
         // The model stands at most this fraction of the way from the
         // reference's centre to the player, so a large bound cannot bring it
         // into the player's face.
@@ -56,8 +51,8 @@ namespace rock::native_world_ui_anchor
         }
     }
 
-    std::optional<RE::NiTransform> poseFacingEye(const std::uint32_t handleValue, const RE::NiPoint3& eye,
-        const RE::NiPoint3& eyeRight, const float handScale)
+    std::optional<RE::NiTransform> uprightPoseAt(const std::uint32_t handleValue, const RE::NiPoint3& eye,
+        const RE::NiPoint3& eyeRight, const FaceFrame& face, const float handScale, const RE::NiPoint3& faceCenter)
     {
         const auto ref = resolve(handleValue);
         if (!ref) {
@@ -68,34 +63,59 @@ namespace rock::native_world_ui_anchor
 
         RE::NiPoint3 toEye{ eye.x - center.x, eye.y - center.y, 0.0f };
         const float horizontal = std::sqrt(toEye.x * toEye.x + toEye.y * toEye.y);
-        toEye = normalized(toEye);
+        const RE::NiPoint3 kWorldUp{ 0.0f, 0.0f, 1.0f };
+        if (horizontal > 0.01f) {
+            toEye = { toEye.x / horizontal, toEye.y / horizontal, 0.0f };
+        } else {
+            // Eye straight above the anchor: face the way the eye looks.
+            toEye = normalized(cross(RE::NiPoint3{ eyeRight.x, eyeRight.y, 0.0f }, kWorldUp));
+            if (toEye.x == 0.0f && toEye.y == 0.0f) {
+                return std::nullopt;
+            }
+        }
         const float approach = (std::min)(radius, horizontal * kMaxApproachFraction);
         const RE::NiPoint3 position{ center.x + toEye.x * approach, center.y + toEye.y * approach, center.z };
+        // Upright: the face turns about the vertical only; right is as the viewer sees it.
+        const RE::NiPoint3 right = cross(kWorldUp, toEye);
 
-        const RE::NiPoint3 view{ position.x - eye.x, position.y - eye.y, position.z - eye.z };
-        const float distance = std::sqrt(view.x * view.x + view.y * view.y + view.z * view.z);
-        if (distance < 1.0f) {
-            return std::nullopt;
-        }
-        const RE::NiPoint3 forward = normalized(view);
-        const RE::NiPoint3 kWorldUp{ 0.0f, 0.0f, 1.0f };
-        RE::NiPoint3 right = cross(forward, kWorldUp);
-        right = right.x * right.x + right.y * right.y + right.z * right.z > 0.0001f ? normalized(right) : eyeRight;
-        const RE::NiPoint3 up = cross(right, forward);
-
+        // Each root-local axis maps to the world through the face frame:
+        // row i = right_i * worldRight + up_i * worldUp + toViewer_i * worldToEye.
         RE::NiTransform pose = transform_math::makeIdentityTransform<RE::NiTransform>();
-        pose.rotate.entry[0][0] = right.x;
-        pose.rotate.entry[0][1] = right.y;
-        pose.rotate.entry[0][2] = right.z;
-        pose.rotate.entry[1][0] = forward.x;
-        pose.rotate.entry[1][1] = forward.y;
-        pose.rotate.entry[1][2] = forward.z;
-        pose.rotate.entry[2][0] = up.x;
-        pose.rotate.entry[2][1] = up.y;
-        pose.rotate.entry[2][2] = up.z;
-        pose.translate = position;
-        pose.scale = handScale * std::clamp(distance / kHandReadingDistance, 1.0f, kMaxViewScale);
+        for (std::size_t row = 0; row < 3; ++row) {
+            const float r = face.right[row];
+            const float u = face.up[row];
+            const float v = face.toViewer[row];
+            pose.rotate.entry[row][0] = r * right.x + u * kWorldUp.x + v * toEye.x;
+            pose.rotate.entry[row][1] = r * right.y + u * kWorldUp.y + v * toEye.y;
+            pose.rotate.entry[row][2] = r * right.z + u * kWorldUp.z + v * toEye.z;
+        }
+        pose.scale = handScale * kObjectScale;
+        // The face's centre, not the root's origin, stands at the anchor.
+        const float centerLocal[3]{ faceCenter.x, faceCenter.y, faceCenter.z };
+        RE::NiPoint3 offset{};
+        for (int row = 0; row < 3; ++row) {
+            offset.x += centerLocal[row] * pose.rotate.entry[row][0];
+            offset.y += centerLocal[row] * pose.rotate.entry[row][1];
+            offset.z += centerLocal[row] * pose.rotate.entry[row][2];
+        }
+        pose.translate = { position.x - offset.x * pose.scale, position.y - offset.y * pose.scale,
+            position.z - offset.z * pose.scale };
         return pose;
+    }
+
+    RE::NiPoint3 boundCenterInRootSpace(const RE::NiAVObject& root)
+    {
+        const float scale = root.world.scale;
+        if (!(root.worldBound.fRadius > 0.0f) || !(scale > 0.0001f)) {
+            return {};
+        }
+        const RE::NiPoint3 d{ root.worldBound.center.x - root.world.translate.x,
+            root.worldBound.center.y - root.world.translate.y, root.worldBound.center.z - root.world.translate.z };
+        // Rows are the root's local axes in world space.
+        const auto& r = root.world.rotate.entry;
+        return { (r[0][0] * d.x + r[0][1] * d.y + r[0][2] * d.z) / scale,
+            (r[1][0] * d.x + r[1][1] * d.y + r[1][2] * d.z) / scale,
+            (r[2][0] * d.x + r[2][1] * d.y + r[2][2] * d.z) / scale };
     }
 
     std::optional<float> distanceToReference(const std::uint32_t handleValue, const RE::NiNode* from)

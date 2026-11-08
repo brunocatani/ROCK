@@ -190,15 +190,17 @@ namespace rock::config
             "Quick Loot Panel Placement\n1 = Right Hand. 2 = Closer Hand. 3 = At Container.\nRight Hand: the game's "
             "own panel on the right hand; it lists only what the right hand points at.\nCloser Hand: the panel rides "
             "the hand pointing at the container, mirrored on the left hand; when both hands point at containers the "
-            "closer one takes it.\nAt Container: the panel stands at the container it lists, facing you; either hand "
-            "can point at it.\nThe panel's buttons stay on the right controller in every mode. Applies at once.",
+            "closer one takes it.\nAt Container: the panel stands upright at the container it lists, turned toward "
+            "you, at a fixed size; either hand can point at it.\nThe panel's buttons stay on the right controller in "
+            "every mode. Applies at once.",
             api::configuration::Group::Consumer },
         { "Grabbing", "ActivatePromptPlacement", "06. Grabbing",
             "Activate Prompt Placement\n1 = Both Hands. 2 = Closer Hand. 3 = At Object.\nThe prompts each hand shows "
             "for what it points at (Open, Talk, Take and the rest).\nBoth Hands: the game's own prompts on each hand; "
             "two hands on one door show it twice.\nCloser Hand: when both hands point at the same object only the "
-            "closer hand shows its prompt.\nAt Object: the prompt stands at the object it names, facing you, and shows "
-            "once when both hands point at it.\nActivation itself is unchanged. Applies at once.",
+            "closer hand shows its prompt.\nAt Object: the prompt stands upright at the object it names, turned "
+            "toward you, at a fixed size, and shows once when both hands point at it.\nActivation itself is "
+            "unchanged. Applies at once.",
             api::configuration::Group::Consumer },
         { "FiringHand", "DefaultHand", "07. Firing Hand",
             "Default Hand\nright or left: the firing hand for equips that come without a hand (favorites, PALM, "

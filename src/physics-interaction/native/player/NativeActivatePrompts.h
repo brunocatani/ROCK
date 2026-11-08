@@ -11,8 +11,9 @@
  *   two wands pointing at the same object show two identical prompts.
  * - CloserHand: each wand keeps its prompt, but when both point at the same
  *   object only the hand closer to it shows one; the other is hidden.
- * - AtObject: each prompt stands at the object its wand points at, facing the
- *   player; when both wands point at the same object it shows once.
+ * - AtObject: each prompt stands upright at the object its wand points at,
+ *   turned toward the player about the vertical, at one fixed world size;
+ *   when both wands point at the same object it shows once.
  *
  * Only the prompts' placement and visibility change. Which object each wand
  * picks, what the prompts say and how activation works stay native.
