@@ -65,6 +65,9 @@ namespace rock::saved_grab_offset
                 rotate.push_back(value);
             }
             json j{ { "translate", std::move(translate) }, { "rotate", std::move(rotate) } };
+            if (!offset.bodyNode.empty()) {
+                j["bodyNode"] = offset.bodyNode;
+            }
 
             if (offset.hasFingerPose) {
                 json fingerValues = json::array();
@@ -150,6 +153,13 @@ namespace rock::saved_grab_offset
                 out.rotate[i] = j["rotate"][i].get<float>();
             }
             out.present = true;
+            out.bodyNode.clear();
+            if (j.contains("bodyNode")) {
+                if (!j["bodyNode"].is_string()) {
+                    return false;
+                }
+                out.bodyNode = j["bodyNode"].get<std::string>();
+            }
 
             out.hasFingerPose = false;
             out.hasFingerJointValues = false;

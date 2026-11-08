@@ -144,7 +144,27 @@ namespace rock
         // visible branch, which is the root's rest frame (CountBasedAmmo.h).
         const auto ammoAssembly = count_based_ammo::resolve(heldRef);
         formRef.variant = std::string(count_based_ammo::variantKey(ammoAssembly.variant));
-        const RE::NiAVObject* offsetFrameNode = ammoAssembly.valid() ? ammoAssembly.variantNode : rootNode;
+        /*
+         * An object whose bodies move against each other (a ragdoll toy, a
+         * skinned hide, tongs) is measured against the node that owns the
+         * held body: its root sits wherever the root bone ended up, so a root
+         * offset re-applied to another bone, or to the same bone in another
+         * pose, lands the object far from the hand (bench: 15-45 gu).
+         */
+        const std::uint32_t heldBodyId = hand.getSavedObjectState().bodyId.value;
+        const RE::NiAVObject* heldBodyNode = nullptr;
+        if (auto* cell = heldRef->GetParentCell(); cell && heldBodyId != INVALID_BODY_ID) {
+            if (auto* bhkWorld = cell->GetbhkWorld()) {
+                RE::hknpBodyId heldBodyHandle{ heldBodyId };
+                if (auto* collisionObject = RE::bhkNPCollisionObject::Getbhk(bhkWorld, heldBodyHandle)) {
+                    heldBodyNode = collisionObject->sceneObject;
+                }
+            }
+        }
+        const bool bodyRelative = !ammoAssembly.valid() && hand.getHeldBodyIds().size() > 1 && heldBodyNode &&
+            heldBodyNode != rootNode && heldBodyNode->name.c_str() && *heldBodyNode->name.c_str() != '\0';
+        const RE::NiAVObject* offsetFrameNode =
+            ammoAssembly.valid() ? ammoAssembly.variantNode : (bodyRelative ? heldBodyNode : rootNode);
 
         /*
          * Measure against the hand ROCK renders on the object, not the physics
@@ -176,6 +196,7 @@ namespace rock
 
         auto& handOffset = isLeft ? file.left : file.right;
         handOffset.present = true;
+        handOffset.bodyNode = bodyRelative ? std::string(heldBodyNode->name.c_str()) : std::string{};
         handOffset.translateGame[0] = objectProxyLocal.translate.x;
         handOffset.translateGame[1] = objectProxyLocal.translate.y;
         handOffset.translateGame[2] = objectProxyLocal.translate.z;
@@ -242,7 +263,6 @@ namespace rock
                 }
             }
 
-            const std::uint32_t heldBodyId = hand.getSavedObjectState().bodyId.value;
             capture.capture.physics.bodyId = heldBodyId;
             const float heldMass = readGrabEventBodyMass(hknpWorld, heldBodyId);
             if (std::isfinite(heldMass) && heldMass > 0.0f) {
@@ -268,8 +288,9 @@ namespace rock
                 isLeft ? "left" : "right", baseForm->GetFormID());
         }
 
-        ROCK_LOG_INFO(Hand, "Saved grab offset for {:08X}{}{} ({} hand, finger pose {})", baseForm->GetFormID(),
-            formRef.variant.empty() ? "" : " variant=", formRef.variant, isLeft ? "left" : "right",
+        ROCK_LOG_INFO(Hand, "Saved grab offset for {:08X}{}{} ({} hand, frame={}, finger pose {})",
+            baseForm->GetFormID(), formRef.variant.empty() ? "" : " variant=", formRef.variant,
+            isLeft ? "left" : "right", handOffset.bodyNode.empty() ? "root" : handOffset.bodyNode,
             handOffset.hasFingerPose ? "captured" : "unchanged");
 
         return true;

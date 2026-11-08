@@ -19,8 +19,11 @@ namespace rock::saved_grab_offset
     // per-hand finger pose alongside the transform; a v1 file still parses
     // fine under newer formats, it simply has no "finger" section.
     // v3: optional exact parent-local finger rotations on the normal FRIK rig.
-    // This private disk record does not change any published provider record.
-    inline constexpr std::uint32_t kFormatVersion = 3;
+    // v4: optional per-hand `bodyNode`, the node of the grabbed body the
+    // offset is measured against on objects whose bodies move against each
+    // other. This private disk record does not change any published provider
+    // record.
+    inline constexpr std::uint32_t kFormatVersion = 4;
     inline constexpr std::string_view kExactFingerRig = "frik-normal-authored-v1";
 
     // Load-order-independent form identity; empty = none. `variant` names a
@@ -49,6 +52,14 @@ namespace rock::saved_grab_offset
         float translateGame[3]{ 0.0f, 0.0f, 0.0f };
         // Row-major 3x3: rotate[row * 3 + column], row = object axis (X/Y/Z).
         float rotate[9]{ 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f };
+        // The object frame the transform places. Empty: the object's root (or
+        // the visible branch of count-based ammo), right for a rigid object.
+        // Otherwise the name of the node that owns the grabbed body: on an
+        // object whose bodies move against each other (ragdoll and skinned
+        // clutter, tongs) the root tells nothing about where the grabbed
+        // bone is, so the offset is measured against that bone and applies
+        // only to a grab of that body.
+        std::string bodyNode;
 
         // Same convention as grab_finger_pose_runtime::SolvedGrabFingerPose:
         // thumb/index/middle/ring/pinky, 0 = closed, 1 = authored open. Files

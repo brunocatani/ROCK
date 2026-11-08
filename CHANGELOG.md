@@ -26,6 +26,10 @@
   pose. Count-based loose ammo is held by its visible body.
 - The second hand joins an object the other hand holds from where it touches
   it, so long objects no longer refuse the second grip.
+- Saved grab offsets of objects whose parts move against each other (ragdoll
+  toys, hides, tongs) are measured against the grabbed part and apply only to
+  a grab of that part; older root-based offsets of such objects are not
+  applied. Save them again while holding the part.
 - A closed wrist Pip-Boy no longer opens or hums when you look at it. On
   lighthouse controllers the Y tap opens the Pip-Boy and the wand-pad Favorites
   menu no longer opens by accident.

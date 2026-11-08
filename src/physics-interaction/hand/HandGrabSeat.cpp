@@ -86,7 +86,7 @@ namespace rock
          * since this file's helpers are free functions with no Hand access.
          */
         bool tryResolveSavedGrabOffsetAttach(const RE::NiTransform& proxyWorld, bool proxyWorldValid,
-            const saved_grab_offset::HandOffset& handOffset, RE::NiTransform& desiredRootWorld)
+            const saved_grab_offset::HandOffset& handOffset, RE::NiTransform& desiredFrameWorld)
         {
             if (!proxyWorldValid) {
                 return false;
@@ -101,15 +101,22 @@ namespace rock
                 }
             }
 
-            desiredRootWorld = grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorld, objectProxyLocal);
-            return isFiniteNiTransform(desiredRootWorld);
+            desiredFrameWorld = grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorld, objectProxyLocal);
+            return isFiniteNiTransform(desiredFrameWorld);
         }
 
+        /*
+         * savedGrabOffsetFrameNode / savedGrabOffsetFrameBodyLocal: the node a
+         * saved offset places and the grabbed body's transform in that node's
+         * frame. The object root for a rigid object; the node of the grabbed
+         * body when the offset was saved against it (HandOffset::bodyNode).
+         */
         LooseWeaponPrimaryAttachFrame resolveLooseWeaponPrimaryAttachFrame(bool looseWeaponGrab,
             bool grabbedFromPullCatch, bool isLeft, const SelectedObject& selection, const RE::NiAVObject* rootNode,
             const RE::NiTransform& rootBodyLocalAtGrab, const RE::NiTransform& objectToBodyAtGrab,
             const RE::NiTransform& grabBodyWorldAtGrab, const RE::NiPoint3& grabPivotAWorld,
-            bool savedGrabOffsetAttachValid, const RE::NiTransform& savedGrabOffsetRootWorld,
+            bool savedGrabOffsetAttachValid, const RE::NiTransform& savedGrabOffsetFrameWorld,
+            const RE::NiAVObject* savedGrabOffsetFrameNode, const RE::NiTransform& savedGrabOffsetFrameBodyLocal,
             const loose_weapon_grip_zone::NearGrab* nearGrip)
         {
             LooseWeaponPrimaryAttachFrame frame{};
@@ -121,13 +128,18 @@ namespace rock
                 return frame;
             }
 
+            // The frame the placement below drives, and the grabbed body in it.
+            const RE::NiAVObject* placedNode = rootNode;
+            const RE::NiTransform* placedBodyLocal = &rootBodyLocalAtGrab;
             if (savedGrabOffsetAttachValid) {
                 /*
                  * A per-object saved offset is explicit hand-placement
                  * authority, so it overrides both the generic FRIK weapon
                  * offset and the throwable live-pose default.
                  */
-                frame.desiredRootWorld = savedGrabOffsetRootWorld;
+                frame.desiredRootWorld = savedGrabOffsetFrameWorld;
+                placedNode = savedGrabOffsetFrameNode;
+                placedBodyLocal = &savedGrabOffsetFrameBodyLocal;
                 frame.sourceVisible = false;
                 frame.reason = "savedGrabOffset";
             } else {
@@ -161,8 +173,8 @@ namespace rock
             }
 
             frame.desiredRootWorld.scale =
-                rootNode && std::isfinite(rootNode->world.scale) && rootNode->world.scale > 0.0001f
-                ? rootNode->world.scale
+                placedNode && std::isfinite(placedNode->world.scale) && placedNode->world.scale > 0.0001f
+                ? placedNode->world.scale
                 : 1.0f;
             if (nearAuthored) {
                 const auto palmInHand = palm_point::handLocal(isLeft);
@@ -179,7 +191,11 @@ namespace rock
                 return frame;
             }
 
-            frame.desiredBodyWorld = multiplyTransforms(frame.desiredRootWorld, rootBodyLocalAtGrab);
+            frame.desiredBodyWorld = multiplyTransforms(frame.desiredRootWorld, *placedBodyLocal);
+            if (placedBodyLocal != &rootBodyLocalAtGrab) {
+                // The offset placed the grabbed body's node; the root follows it.
+                frame.desiredRootWorld = deriveNodeWorldFromBodyWorld(frame.desiredBodyWorld, rootBodyLocalAtGrab);
+            }
             frame.desiredObjectWorld = deriveNodeWorldFromBodyWorld(frame.desiredBodyWorld, objectToBodyAtGrab);
             // Preserve the generated proxy's physical pivot. Its weapon/body
             // anchor is derived AFTER placement, so it cannot offset the hand
@@ -605,6 +621,8 @@ namespace rock
         auto& selectedPivotBBodyLocalGame = bodyFrame.selectedPivotBBodyLocalGame;
         const auto& objectToBodyAtGrab = bodyFrame.objectToBody;
         const auto& rootBodyLocalAtGrab = bodyFrame.rootBodyLocal;
+        const RE::NiAVObject* ownerNodeAtGrab = bodyFrame.ownerNode;
+        const auto& ownerBodyLocalAtGrab = bodyFrame.ownerBodyLocal;
         const auto objectBodyId = input.objectBodyId;
         auto* rootNode = input.rootNode;
         auto* collidableNode = input.collidableNode;
@@ -946,6 +964,28 @@ namespace rock
                     saved_grab_offset::participatesInSavedGrabOffsets(looseWeaponGrab,
                         isThrowableLooseWeapon(selectedLooseWeaponForm(sel)))) {
                     hasSavedGrabOffset = tryLoadSavedGrabOffsetHandOffset(sel.refr, _isLeft, savedGrabOffset);
+                    /*
+                     * An offset measured against a body node applies to a grab
+                     * of that body only; a root offset tells nothing about a
+                     * bone of an object whose bodies move against each other
+                     * (saveGrabOffsetForHand), so it is left unused there.
+                     */
+                    const bool bodiesMoveApart = _heldBodyIds.size() > 1 &&
+                        count_based_ammo::resolve(sel.refr).variant == count_based_ammo::Variant::None;
+                    const char* grabbedBodyNode = nodeDebugName(ownerNodeAtGrab);
+                    if (hasSavedGrabOffset && !savedGrabOffset.bodyNode.empty() &&
+                        savedGrabOffset.bodyNode != grabbedBodyNode) {
+                        ROCK_LOG_INFO(Hand,
+                            "{} hand saved grab offset not applied: saved against body node '{}', grabbed '{}'",
+                            handName(), savedGrabOffset.bodyNode, grabbedBodyNode);
+                        hasSavedGrabOffset = false;
+                    } else if (hasSavedGrabOffset && savedGrabOffset.bodyNode.empty() && bodiesMoveApart) {
+                        ROCK_LOG_INFO(Hand,
+                            "{} hand saved grab offset not applied: measured against the root of an object whose "
+                            "{} bodies move apart; save it again while holding body node '{}'",
+                            handName(), _heldBodyIds.size(), grabbedBodyNode);
+                        hasSavedGrabOffset = false;
+                    }
                 }
                 // The palm of the grabbing raw hand, the same wrist the commit
                 // freezes rawHandSpace against: the rendered grip then equals
@@ -954,10 +994,11 @@ namespace rock
                 const bool grabProxyWorldValidForOffset = (programmaticArrival || fixedAidPose) &&
                     input.handWorldTransform &&
                     tryComputeGrabProxyFrameForRawHand(*input.handWorldTransform, grabProxyWorldForOffset);
-                RE::NiTransform savedGrabOffsetRootWorld{};
+                RE::NiTransform savedGrabOffsetFrameWorld{};
                 const bool savedGrabOffsetAttachValid = hasSavedGrabOffset &&
                     tryResolveSavedGrabOffsetAttach(grabProxyWorldForOffset, grabProxyWorldValidForOffset,
-                        savedGrabOffset, savedGrabOffsetRootWorld);
+                        savedGrabOffset, savedGrabOffsetFrameWorld);
+                const bool savedGrabOffsetOnBodyNode = savedGrabOffsetAttachValid && !savedGrabOffset.bodyNode.empty();
                 if (fixedAidPose && !savedGrabOffsetAttachValid) {
                     // Without the authored proxy frame the aid is held like any loose item.
                     ROCK_LOG_SAMPLE_INFO(Hand, 1000, "{} hand immersive aid pose unavailable; dynamic grab",
@@ -968,7 +1009,10 @@ namespace rock
                 const auto looseWeaponPrimaryAttachFrame =
                     resolveLooseWeaponPrimaryAttachFrame(looseWeaponGrab, grabbedFromPullCatch, _isLeft, sel, rootNode,
                         rootBodyLocalAtGrab, objectToBodyAtGrab, grabBodyWorldAtGrab, grabPivotAWorld,
-                        savedGrabOffsetAttachValid, savedGrabOffsetRootWorld, nearAuthored ? &nearGrip : nullptr);
+                        savedGrabOffsetAttachValid, savedGrabOffsetFrameWorld,
+                        savedGrabOffsetOnBodyNode ? ownerNodeAtGrab : rootNode,
+                        savedGrabOffsetOnBodyNode ? ownerBodyLocalAtGrab : rootBodyLocalAtGrab,
+                        nearAuthored ? &nearGrip : nullptr);
                 looseWeaponPrimaryAttachReason = looseWeaponPrimaryAttachFrame.reason;
                 if (nearAuthored && !looseWeaponPrimaryAttachFrame.valid) {
                     // The authored seat cannot be resolved; hold the weapon dynamically.

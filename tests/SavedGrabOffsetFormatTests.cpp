@@ -36,6 +36,7 @@ namespace
         }
         file.left.present = true;
         file.left.translateGame[1] = 3.25f;
+        file.left.bodyNode = "c_Torso";
         return file;
     }
 }
@@ -49,6 +50,8 @@ int main()
         check(parse(serialize(file), loaded, &error) && error.empty());
         check(loaded.right.hasExactFingerRotations && !loaded.left.hasExactFingerRotations);
         check(loaded.left.translateGame[1] == 3.25f);
+        // The body node names the frame of a saved offset; a rigid object's offset has none.
+        check(loaded.left.bodyNode == "c_Torso" && loaded.right.bodyNode.empty());
         for (int i = 0; i < 15; ++i) {
             check(loaded.right.fingerJointValues[i] == file.right.fingerJointValues[i]);
             for (int c = 0; c < 9; ++c)
@@ -75,10 +78,12 @@ int main()
             check(loaded.right.present && !loaded.right.hasExactFingerRotations);
             check(loaded.right.hasFingerPose == (version == 2));
         }
-        for (int badCase = 0; badCase < 5; ++badCase) {
+        for (int badCase = 0; badCase < 6; ++badCase) {
             auto bad = valid;
             if (badCase == 0)
                 bad["right"]["exactFinger"]["rig"] = "unmatched";
+            if (badCase == 5)
+                bad["right"]["bodyNode"] = 7;
             if (badCase == 1)
                 bad["right"]["exactFinger"]["rotations"].erase(14);
             if (badCase == 2)
@@ -93,15 +98,15 @@ int main()
         auto oldWithUnknown = valid;
         oldWithUnknown["format"] = 2;
         check(parse(oldWithUnknown.dump(), loaded, &error) && !loaded.right.hasExactFingerRotations);
-        valid["format"] = 4;
+        valid["format"] = 5;
         check(!parse(valid.dump(), loaded, &error));
         valid["format"] = "not a number";
         check(!parse(valid.dump(), loaded, &error));
-        valid["format"] = 3;
+        valid["format"] = 4;
         valid["objectName"] = nlohmann::json::array();
         check(!parse(valid.dump(), loaded, &error));
-        std::cout << "PASS: exact rotation round trip, over-open scalars, legacy formats, opposite hand, variant "
-                     "identity, rejection\n";
+        std::cout << "PASS: exact rotation round trip, over-open scalars, body node frame, legacy formats, opposite "
+                     "hand, variant identity, rejection\n";
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';
         return 1;
