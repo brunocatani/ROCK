@@ -559,7 +559,6 @@ namespace rock::grab_authority_frame_math
         GripSupportModel,
         LooseWeaponPrimaryAttach,
         PalmRayMeshPoint,
-        CollisionFallback,
 
         // Generic policy sources remain distinct values because their
         // established diagnostic labels omit capture-time detail.
@@ -1043,8 +1042,6 @@ namespace rock::grab_authority_frame_math
             return "palmPocketMesh";
         case GrabAuthorityPivotSource::SelectionMeshSnap:
             return "selectionMeshSnap";
-        case GrabAuthorityPivotSource::CollisionFallback:
-            return "collisionFallback";
         case GrabAuthorityPivotSource::None:
         default:
             return "none";

@@ -9,11 +9,17 @@
 /*
  * Debug view of the capsule finger solve (GrabFingerCapsuleSweep.h).
  *
- * Before a grab, the hand runs the same solve every frame against the object
- * it has selected, with the hand where it is drawn, and reports the spheres
- * of each finger at the curl the solve chose plus the fingertip's path over
- * the whole sweep. While holding, it reports the spheres along the drawn
- * fingers. Diagnostic only: nothing here feeds the real grab.
+ * Before a grab, the hand runs the same solve against the object it has
+ * selected, with the hand where it is drawn, and reports the spheres of each
+ * finger at the curl the solve chose plus the fingertip's path over the whole
+ * sweep. While holding, it reports the spheres along the drawn fingers.
+ *
+ * The same snapshot is the probe contact check of a close grab
+ * (Hand::evaluateGrabProbeContact): the grab commits only when a finger
+ * touches the visual mesh, either by its state (Contact, ClosedPastIntersection,
+ * Blocked) or by a sphere within kTouchMarginGameUnits of the mesh. Native
+ * collision never stands in for that contact: object collision often sits
+ * well off the visible surface, which made grabs where no finger touched it.
  */
 namespace rock::grab_finger_probe_preview
 {

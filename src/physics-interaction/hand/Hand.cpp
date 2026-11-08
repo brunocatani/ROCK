@@ -473,7 +473,7 @@ namespace rock
         _pulledBodyIds.clear();
         _pullDriveDecision = {};
         _pulledPrimaryBodyId = INVALID_BODY_ID;
-        _pullPointOffsetHavok = {};
+        _pullMeshPointBodyLocal = {};
         _pullTargetHavok = {};
         _pullElapsedSeconds = 0.0f;
         _pullDurationSeconds = 0.0f;

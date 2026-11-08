@@ -533,7 +533,7 @@ namespace rock
     }
 
     void Hand::resolveGrabSurfaceEvidence(const ValidatedGrabSelection& selection, const GrabProxyPreparation& proxy,
-        const GrabMeshCaptureSetup& capture, const GrabMeshExtraction& mesh, bool meshContactOnly,
+        const GrabMeshCaptureSetup& capture, const GrabMeshExtraction& mesh,
         GrabSurfaceEvidence& outEvidence)
     {
         performance_profiler::ScopedTimer timer(performance_profiler::Scope::GrabSurfaceResolution);
@@ -556,50 +556,36 @@ namespace rock
         auto& grabPointAuthoritySource = outEvidence.pointAuthoritySource;
         auto& grabFallbackReason = outEvidence.fallbackReason;
         grabGripPoint = sel.hasHitPoint ? sel.hitPointWorld : proxy.grabPivotAForPrimaryChoice;
-        grabPointMode = sel.hasHitPoint ? "selectionHitPointFallback" : "palmPivotFallback";
-        grabPointAuthoritySource =
-            sel.hasHitPoint ? GrabPivotAuthoritySource::CollisionFallback : GrabPivotAuthoritySource::None;
+        grabPointMode = "none";
+        grabPointAuthoritySource = GrabPivotAuthoritySource::None;
         grabFallbackReason = meshSourceNode ? "noTriangles" : "noMeshSourceNode";
         /*
-             * hknp selection identifies the object/body. In mesh-authoritative mode
-             * the rendered mesh supplies the grabbed point when it is found; the
-             * physics collision point is the fallback below, never a refusal.
-             */
-        GrabSurfaceHit collisionSurfaceHit{};
+         * hknp selection identifies the object and body only. The grabbed point
+         * is always on the rendered mesh: object collision often sits well off
+         * the visible surface, and holding a collision point made grabs no
+         * finger touched. No mesh point, no grab (the caller refuses).
+         */
         if (sel.hasHitPoint && sel.hasHitNormal) {
-            collisionSurfaceHit = makeCollisionQueryGrabSurfaceHit(sel, collidableNode);
+            const GrabSurfaceHit collisionSurfaceHit = makeCollisionQueryGrabSurfaceHit(sel, collidableNode);
             if (collisionSurfaceHit.valid) {
-                if (!meshContactOnly && !handPocketOnlyGrab) {
-                    grabSurfaceHit = collisionSurfaceHit;
-                    grabGripPoint = grabSurfaceHit.position;
-                    surfaceOwnerNode = grabSurfaceHit.sourceNode;
-                    meshGrabFound = true;
-                    grabPointMode = "collisionSurface";
-                    grabPointAuthoritySource = GrabPivotAuthoritySource::CollisionFallback;
-                    grabFallbackReason = "none";
-                }
                 ROCK_LOG_DEBUG(Hand,
-                    "{} hand COLLISION SELECTION HIT: body={} activeGrabPoint={} point=({:.1f},{:.1f},{:.1f}) "
-                    "normal=({:.3f},{:.3f},{:.3f}) "
-                    "fraction={:.4f} shapeKey=0x{:08X} filter=0x{:08X} owner='{}'",
-                    handName(), sel.bodyId.value, meshContactOnly ? "no" : "yes", collisionSurfaceHit.position.x,
-                    collisionSurfaceHit.position.y, collisionSurfaceHit.position.z, collisionSurfaceHit.normal.x,
-                    collisionSurfaceHit.normal.y, collisionSurfaceHit.normal.z, collisionSurfaceHit.hitFraction,
-                    collisionSurfaceHit.shapeKey, collisionSurfaceHit.shapeCollisionFilterInfo,
-                    nodeDebugName(collisionSurfaceHit.sourceNode));
+                    "{} hand COLLISION SELECTION HIT: body={} point=({:.1f},{:.1f},{:.1f}) "
+                    "normal=({:.3f},{:.3f},{:.3f}) fraction={:.4f} shapeKey=0x{:08X} filter=0x{:08X} owner='{}'",
+                    handName(), sel.bodyId.value, collisionSurfaceHit.position.x, collisionSurfaceHit.position.y,
+                    collisionSurfaceHit.position.z, collisionSurfaceHit.normal.x, collisionSurfaceHit.normal.y,
+                    collisionSurfaceHit.normal.z, collisionSurfaceHit.hitFraction, collisionSurfaceHit.shapeKey,
+                    collisionSurfaceHit.shapeCollisionFilterInfo, nodeDebugName(collisionSurfaceHit.sourceNode));
             }
         }
 
         if (meshSourceNode) {
-            const bool closeGrabNeedsPalmPocketMeshAuthority = !grabSurfaceTriangles.empty() &&
-                (handPocketOnlyGrab ||
-                    (!sel.isFarSelection &&
-                        (!meshGrabFound || grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery)));
+            const bool closeGrabNeedsPalmPocketMeshAuthority =
+                !grabSurfaceTriangles.empty() && (handPocketOnlyGrab || !sel.isFarSelection);
             if (closeGrabNeedsPalmPocketMeshAuthority) {
                 /*
                      * One grab point, chosen in order: the mesh point nearest
-                     * the palm centre (close grabs), the mesh point at the
-                     * selection hit, the physics collision point, the palm.
+                     * the palm centre (close grabs), the mesh point the palm
+                     * faces at a pull catch, the mesh point at the selection hit.
                      */
                 const RE::NiPoint3 grabPivotAWorld = palmPocketPivotAWorld;
                 const RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(proxyAuthorityFrameWorldAtGrab, _isLeft);
@@ -728,26 +714,15 @@ namespace rock
                 grabFallbackReason = grabSurfaceTriangles.empty() ? "noTriangles" : "noMeshNearPalmOrSelection";
             }
         }
-        if (!meshGrabFound && collisionSurfaceHit.valid) {
-            // Object collision can sit off the visible surface; it is still the
-            // object's own physical surface and a valid place to hold it.
-            grabSurfaceHit = collisionSurfaceHit;
-            grabGripPoint = grabSurfaceHit.position;
-            surfaceOwnerNode = grabSurfaceHit.sourceNode;
-            meshGrabFound = true;
-            grabPointMode = "collisionSurfaceFallback";
-            grabPointAuthoritySource = GrabPivotAuthoritySource::CollisionFallback;
-        }
         if (!meshGrabFound) {
-            ROCK_LOG_WARN(Hand,
-                "{} hand GRAB POINT FALLBACK: mode={} reason={} meshNode='{}' ownerNode='{}' rootNode='{}' "
-                "shapes={} static={}/{} dynamic={}/{} skinned={}/{} dynamicSkinnedSkipped={} emptyShapes={} "
-                "fallbackPoint=({:.1f},{:.1f},{:.1f})",
-                handName(), grabPointMode, grabFallbackReason, nodeDebugName(meshSourceNode),
-                nodeDebugName(collidableNode), nodeDebugName(rootNode), meshStats.visitedShapes, meshStats.staticShapes,
-                meshStats.staticTriangles, meshStats.dynamicShapes, meshStats.dynamicTriangles, meshStats.skinnedShapes,
-                meshStats.skinnedTriangles, meshStats.dynamicSkinnedSkipped, meshStats.emptyShapes, grabGripPoint.x,
-                grabGripPoint.y, grabGripPoint.z);
+            ROCK_LOG_SAMPLE_WARN(Hand, g_rockConfig.rockLogSampleMilliseconds,
+                "{} hand GRAB POINT unavailable: no mesh surface near the palm reason={} meshNode='{}' ownerNode='{}' "
+                "rootNode='{}' shapes={} static={}/{} dynamic={}/{} skinned={}/{} dynamicSkinnedSkipped={} "
+                "emptyShapes={}",
+                handName(), grabFallbackReason, nodeDebugName(meshSourceNode), nodeDebugName(collidableNode),
+                nodeDebugName(rootNode), meshStats.visitedShapes, meshStats.staticShapes, meshStats.staticTriangles,
+                meshStats.dynamicShapes, meshStats.dynamicTriangles, meshStats.skinnedShapes,
+                meshStats.skinnedTriangles, meshStats.dynamicSkinnedSkipped, meshStats.emptyShapes);
         }
     }
 
@@ -815,12 +790,7 @@ namespace rock
             const bool handPocketPositionOnlySkinnedSurface = selection.handPocketOnlyGrab &&
                 surface.surfaceHit.sourceKind == GrabSurfaceSourceKind::Skinned &&
                 !surface.surfaceHit.hasSkinInfluences;
-            if (surface.surfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery) {
-                // A hit on the carried root body is a hit on the held branch.
-                outResolution.surfaceOwnerMatchesResolvedBody =
-                    outResolution.primaryChoice.bodyId == selectedObject.bodyId.value ||
-                    (carriedAmmoAssembly && selectedObject.bodyId.value == _ammoCarry.anchorBodyId);
-            } else if (handPocketPositionOnlySkinnedSurface) {
+            if (handPocketPositionOnlySkinnedSurface) {
                 outResolution.surfaceOwnerMatchesResolvedBody =
                     outResolution.primaryChoice.bodyId == selectedObject.bodyId.value &&
                     preparedBodySet.containsAcceptedBody(selectedObject.bodyId.value);

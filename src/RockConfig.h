@@ -446,7 +446,6 @@ namespace rock
         float rockGrabLateralWeight = 0.6f;
         float rockGrabDirectionalWeight = 0.4f;
         float rockGrabMaxTriangleDistance = 100.0f;
-        bool rockGrabMeshContactOnly = true;
         float rockGrabContactPatchMaxNormalAngleDegrees = 35.0f;
         float rockGrabAlignmentMaxSelectionToMeshDistance = 8.0f;
         bool rockSelectedCloseFingerCurlEnabled = true;

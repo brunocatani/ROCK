@@ -41,6 +41,54 @@ namespace rock
             });
         }
 
+        // The pulled mesh point in Havok units, carried by the primary body's live motion.
+        bool resolvePulledMeshPointHavok(RE::hknpWorld* world, std::uint32_t primaryBodyId,
+            const RE::NiPoint3& meshPointBodyLocal, RE::NiPoint3& outHavok)
+        {
+            auto* body = havok_runtime::getBody(world, RE::hknpBodyId{ primaryBodyId });
+            RE::NiTransform motionWorld{};
+            if (!body || !havok_runtime::tryGetMotionWorldTransform(world, *body, motionWorld)) {
+                return false;
+            }
+            const auto pointHavok =
+                niPointToHkVector(transform_math::localPointToWorld(motionWorld, meshPointBodyLocal));
+            outHavok = RE::NiPoint3{ pointHavok.x, pointHavok.y, pointHavok.z };
+            return std::isfinite(outHavok.x) && std::isfinite(outHavok.y) && std::isfinite(outHavok.z);
+        }
+
+        // The visual mesh point a pull brings to the palm: the surface point
+        // nearest the mesh's bounds centre, or nearest the aimed hit.
+        bool choosePulledMeshPoint(const std::vector<TriangleData>& triangles, bool useAimedPoint,
+            const RE::NiPoint3& aimedPointWorld, RE::NiPoint3& outPointWorld)
+        {
+            if (triangles.empty()) {
+                return false;
+            }
+            RE::NiPoint3 minimum = triangles.front().v0;
+            RE::NiPoint3 maximum = minimum;
+            for (const auto& triangle : triangles) {
+                for (const auto* vertex : { &triangle.v0, &triangle.v1, &triangle.v2 }) {
+                    minimum.x = (std::min)(minimum.x, vertex->x);
+                    minimum.y = (std::min)(minimum.y, vertex->y);
+                    minimum.z = (std::min)(minimum.z, vertex->z);
+                    maximum.x = (std::max)(maximum.x, vertex->x);
+                    maximum.y = (std::max)(maximum.y, vertex->y);
+                    maximum.z = (std::max)(maximum.z, vertex->z);
+                }
+            }
+            const RE::NiPoint3 target = useAimedPoint ? aimedPointWorld : (minimum + maximum) * 0.5f;
+            float bestDistanceSquared = (std::numeric_limits<float>::max)();
+            for (const auto& triangle : triangles) {
+                float distanceSquared = 0.0f;
+                const RE::NiPoint3 candidate = closestPointOnTriangleToPoint(target, triangle, distanceSquared);
+                if (distanceSquared < bestDistanceSquared) {
+                    bestDistanceSquared = distanceSquared;
+                    outPointWorld = candidate;
+                }
+            }
+            return bestDistanceSquared < (std::numeric_limits<float>::max)();
+        }
+
         void setHeldLinearVelocity(RE::hknpWorld* world, RE::hknpBodyId primaryBodyId,
             const std::vector<std::uint32_t>& heldBodyIds, const RE::NiPoint3& linearVelocity,
             float angularVelocityKeep = 1.0f, bool includeConnectedBodies = true)
@@ -345,37 +393,45 @@ namespace rock
         RE::NiTransform primaryBodyWorld{};
         const bool hasPrimaryBodyWorld =
             tryGetBodyWorldTransform(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, primaryBodyWorld);
-        RE::NiPoint3 ownerNodePosition{};
-        bool hasOwnerNode = false;
-        if (auto* ownerNode = getOwnerNodeFromBody(world, RE::hknpBodyId{ _pulledPrimaryBodyId })) {
-            ownerNodePosition = ownerNode->world.translate;
-            hasOwnerNode = true;
-        }
-        const auto selectedPointAnchor = body_frame::chooseSelectionDistanceAnchor(_currentSelection.hasHitPoint,
-            _currentSelection.hitPointWorld, hasPrimaryBodyWorld, primaryBodyWorld.translate, hasOwnerNode,
-            ownerNodePosition, true, hkVectorToNiPoint(motion->position), grabPivotWorld);
-        const auto selectedPointWorld = selectedPointAnchor.position;
-        const auto selectedPointHavok = niPointToHkVector(selectedPointWorld);
-        _pullPointOffsetHavok = RE::NiPoint3{
-            selectedPointHavok.x - motion->position.x,
-            selectedPointHavok.y - motion->position.y,
-            selectedPointHavok.z - motion->position.z,
-        };
-        /*
-         * Far grabs pull the object CENTER: a ray hit at selection range is aim
-         * noise, not grip intent, and a fixed world offset cannot rotate with
-         * the presentation servo anyway. Tracking the COM (zero offset) drifts
-         * with nothing. Arrival then overwrites the selection hit point with
-         * the tracked center, so capture seeds from the middle of the object
-         * and the seat (mesh point nearest the palm, seat depth stop) settles
-         * the surface onto the palm.
-         */
-        if (g_rockConfig.rockPullToObjectCenterEnabled) {
-            _pullPointOffsetHavok = {};
-        }
 
         /*
-         * Long-object presentation capture: one mesh extraction + PCA at pull
+         * The pull brings the visual mesh to the palm, never the collision:
+         * object collision often sits well off the visible surface, so flying
+         * its centre of mass to the hand left the mesh short of the fingers.
+         * The pulled point is the mesh surface point nearest the mesh's bounds
+         * centre (PullToObjectCenterEnabled; a ray hit at selection range is aim
+         * noise) or nearest the aimed hit, stored in the primary body's motion
+         * frame so it turns with the object. Arrival hands that point to the
+         * catch as its selection hit, and the catch seats a mesh point on the
+         * palm. An object without a visual mesh is not pulled.
+         */
+        RE::NiAVObject* pulledMeshNode = _currentSelection.visualNode ? _currentSelection.visualNode : rootNode;
+        std::vector<TriangleData> pulledMeshTriangles;
+        if (pulledMeshNode) {
+            std::vector<GrabSurfaceTriangleData> pulledSurfaceTriangles;
+            MeshExtractionStats pulledMeshStats;
+            extractAllSurfaceTriangles(pulledMeshNode, pulledMeshTriangles, pulledSurfaceTriangles,
+                (std::max)(1, g_rockConfig.rockObjectPhysicsTreeMaxDepth), &pulledMeshStats, false);
+        }
+        RE::NiPoint3 pulledMeshPointWorld{};
+        RE::NiTransform pulledMotionWorld{};
+        auto* pulledPrimaryBody = havok_runtime::getBody(world, RE::hknpBodyId{ _pulledPrimaryBodyId });
+        if (!choosePulledMeshPoint(pulledMeshTriangles,
+                !g_rockConfig.rockPullToObjectCenterEnabled && _currentSelection.hasHitPoint,
+                _currentSelection.hitPointWorld, pulledMeshPointWorld) ||
+            !pulledPrimaryBody ||
+            !havok_runtime::tryGetMotionWorldTransform(world, *pulledPrimaryBody, pulledMotionWorld)) {
+            ROCK_LOG_WARN(Hand, "{} hand PULL refused: no visual mesh to pull formID={:08X} meshNode='{}' triangles={}",
+                handName(), selectedRef->GetFormID(), nodeDebugName(pulledMeshNode), pulledMeshTriangles.size());
+            restoreFailedPullPrep();
+            clearPullRuntimeState();
+            clearSelectionState(true);
+            return false;
+        }
+        _pullMeshPointBodyLocal = transform_math::worldPointToLocal(pulledMotionWorld, pulledMeshPointWorld);
+
+        /*
+         * Long-object presentation capture: PCA of the same mesh at pull
          * start. The axis is frozen in primary-body local space so the flight
          * servo in updateDynamicPull can re-derive it from the live body pose
          * without touching nodes per frame.
@@ -384,38 +440,29 @@ namespace rock
         _pullPresentationElongationRatio = 0.0f;
         _pullPresentationValid = false;
         if (g_rockConfig.rockPullLongAxisPresentationEnabled && hasPrimaryBodyWorld) {
-            RE::NiAVObject* presentationMeshNode =
-                _currentSelection.visualNode ? _currentSelection.visualNode : rootNode;
-            if (presentationMeshNode) {
-                std::vector<TriangleData> presentationTriangles;
-                std::vector<GrabSurfaceTriangleData> presentationSurfaceTriangles;
-                MeshExtractionStats presentationMeshStats;
-                extractAllSurfaceTriangles(presentationMeshNode, presentationTriangles, presentationSurfaceTriangles,
-                    (std::max)(1, g_rockConfig.rockObjectPhysicsTreeMaxDepth), &presentationMeshStats, false);
-                const auto longAxis = computeGrabMeshLongAxis(presentationTriangles);
-                if (longAxis.valid && longAxis.elongationRatio >= g_rockConfig.rockPullPresentationMinElongationRatio) {
-                    const RE::NiPoint3 axisBodyLocal =
-                        normalizeOrZero(transform_math::worldVectorToLocal(primaryBodyWorld, longAxis.axisWorld));
-                    if (lengthSquared(axisBodyLocal) > 0.000001f) {
-                        _pullPresentationAxisBodyLocal = axisBodyLocal;
-                        _pullPresentationElongationRatio = longAxis.elongationRatio;
-                        _pullPresentationValid = true;
-                    }
+            const auto longAxis = computeGrabMeshLongAxis(pulledMeshTriangles);
+            if (longAxis.valid && longAxis.elongationRatio >= g_rockConfig.rockPullPresentationMinElongationRatio) {
+                const RE::NiPoint3 axisBodyLocal =
+                    normalizeOrZero(transform_math::worldVectorToLocal(primaryBodyWorld, longAxis.axisWorld));
+                if (lengthSquared(axisBodyLocal) > 0.000001f) {
+                    _pullPresentationAxisBodyLocal = axisBodyLocal;
+                    _pullPresentationElongationRatio = longAxis.elongationRatio;
+                    _pullPresentationValid = true;
                 }
-                ROCK_LOG_DEBUG(Hand,
-                    "{} hand PULL presentation axis: valid={} elongation={:.2f} tris={} reason={} "
-                    "axisLocal=({:.3f},{:.3f},{:.3f})",
-                    handName(), _pullPresentationValid ? "yes" : "no", longAxis.elongationRatio, longAxis.triangleCount,
-                    longAxis.reason, _pullPresentationAxisBodyLocal.x, _pullPresentationAxisBodyLocal.y,
-                    _pullPresentationAxisBodyLocal.z);
             }
+            ROCK_LOG_DEBUG(Hand,
+                "{} hand PULL presentation axis: valid={} elongation={:.2f} tris={} reason={} "
+                "axisLocal=({:.3f},{:.3f},{:.3f})",
+                handName(), _pullPresentationValid ? "yes" : "no", longAxis.elongationRatio, longAxis.triangleCount,
+                longAxis.reason, _pullPresentationAxisBodyLocal.x, _pullPresentationAxisBodyLocal.y,
+                _pullPresentationAxisBodyLocal.z);
         }
 
-        const RE::NiPoint3 objectPointHavok{
-            motion->position.x + _pullPointOffsetHavok.x,
-            motion->position.y + _pullPointOffsetHavok.y,
-            motion->position.z + _pullPointOffsetHavok.z,
-        };
+        RE::NiPoint3 objectPointHavok{};
+        if (!resolvePulledMeshPointHavok(world, _pulledPrimaryBodyId, _pullMeshPointBodyLocal, objectPointHavok)) {
+            const auto pointHavok = niPointToHkVector(pulledMeshPointWorld);
+            objectPointHavok = RE::NiPoint3{ pointHavok.x, pointHavok.y, pointHavok.z };
+        }
         const RE::NiPoint3 grabPivotPointHavok{ grabPivotHavok.x, grabPivotHavok.y, grabPivotHavok.z };
         const float pullDistance = (grabPivotPointHavok - objectPointHavok).Length();
 
@@ -480,11 +527,13 @@ namespace rock
         const auto grabPivotWorld = computeGrabPivotAWorld(world, handWorldTransform);
         const auto grabPivotHavokVector = niPointToHkVector(grabPivotWorld);
         const RE::NiPoint3 grabPivotHavok{ grabPivotHavokVector.x, grabPivotHavokVector.y, grabPivotHavokVector.z };
-        const RE::NiPoint3 objectPointHavok{
-            motion->position.x + _pullPointOffsetHavok.x,
-            motion->position.y + _pullPointOffsetHavok.y,
-            motion->position.z + _pullPointOffsetHavok.z,
-        };
+        RE::NiPoint3 objectPointHavok{};
+        if (!resolvePulledMeshPointHavok(world, _pulledPrimaryBodyId, _pullMeshPointBodyLocal, objectPointHavok)) {
+            ROCK_LOG_DEBUG(Hand, "{} hand PULL invalidated before arrival: pulled mesh point unreadable bodyId={}",
+                handName(), _pulledPrimaryBodyId);
+            clearSelectionState(true);
+            return false;
+        }
 
         const float distanceGameUnits = (grabPivotHavok - objectPointHavok).Length() * havokToGameScale();
         _currentSelection.distance = distanceGameUnits;

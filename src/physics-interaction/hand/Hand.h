@@ -67,6 +67,17 @@ namespace rock
         Grabbed,
     };
 
+    // Whether the hand's finger probes touch the selected object's visual mesh
+    // (Hand::evaluateGrabProbeContact). A close grab commits only when they do.
+    struct GrabProbeContact
+    {
+        std::array<grab_finger_probe_preview::FingerState, 5> states{};
+        const char* reason = "notEvaluated";
+        std::uint32_t triangleCount = 0;
+        std::uint8_t fingerMask = 0;
+        bool touching = false;
+    };
+
     constexpr std::uint32_t ROCK_HAND_LAYER = 43;
 
     constexpr std::uint32_t INVALID_BODY_ID = 0x7FFF'FFFF;
@@ -501,6 +512,9 @@ namespace rock
         // frames. Main thread, after the frame's final hand pose.
         bool buildGrabFingerProbePreview(grab_finger_probe_preview::Snapshot& out);
         void clearGrabFingerProbePreview() { _grabFingerProbePreview.clear(); }
+        // Runs the probe solve against the selected object with the hand where
+        // it is drawn; the close grab check. Re-reads a deforming mesh.
+        [[nodiscard]] GrabProbeContact evaluateGrabProbeContact();
         GrabAttemptResult grabSelectedObject(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float tau,
             float damping, float maxForce, float proportionalRecovery, float constantRecovery,
             const GrabSharedObjectContext& sharedContext = {}, const AuthoredWeaponGripPose* transferPose = nullptr);
@@ -850,7 +864,7 @@ namespace rock
             RE::NiAVObject* collidableNode, RE::NiAVObject* meshSourceNode, bool handPocketOnlyGrab,
             bool surfaceEvidenceRequired, GrabMeshExtraction& outExtraction);
         void resolveGrabSurfaceEvidence(const ValidatedGrabSelection& selection, const GrabProxyPreparation& proxy,
-            const GrabMeshCaptureSetup& capture, const GrabMeshExtraction& mesh, bool meshContactOnly,
+            const GrabMeshCaptureSetup& capture, const GrabMeshExtraction& mesh,
             GrabSurfaceEvidence& outEvidence);
         void resolveGrabBodyAndContactPolicy(const ValidatedGrabSelection& selection,
             const object_physics_body_set::ObjectPhysicsBodySet& beforePrepBodySet,
@@ -1347,6 +1361,8 @@ namespace rock
             std::uint32_t refFormId = 0;
             bool extracted = false;
             bool indexCoversAll = false;
+            // No skinned or dynamic shape: the stored node-local copy stays exact.
+            bool rigid = true;
 
             void clear()
             {
@@ -1361,8 +1377,10 @@ namespace rock
                 refFormId = 0;
                 extracted = false;
                 indexCoversAll = false;
+                rigid = true;
             }
         };
+        bool solveSelectedObjectProbes(grab_finger_probe_preview::Snapshot& out, bool refreshDeformingMesh);
         GrabFingerProbePreviewCache _grabFingerProbePreview{};
         bool _hasGrabFingerPose = false;
         bool _selectedCloseFingerPoseActive = false;
@@ -1403,7 +1421,8 @@ namespace rock
         std::uint16_t _pullPrepOriginalMotionPropsId = 1;
         bool _pullPrepRestoreArmed = false;
         std::uint32_t _pulledPrimaryBodyId = INVALID_BODY_ID;
-        RE::NiPoint3 _pullPointOffsetHavok{};
+        // The visual mesh point a pull flies to the palm, in the primary body's motion frame (game units).
+        RE::NiPoint3 _pullMeshPointBodyLocal{};
         RE::NiPoint3 _pullTargetHavok{};
         float _pullElapsedSeconds = 0.0f;
         float _pullDurationSeconds = 0.0f;

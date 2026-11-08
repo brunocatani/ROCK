@@ -1218,7 +1218,6 @@ namespace rock
             static_cast<float>(ini.number("MeshContact", "GrabDirectionalWeight", rockGrabDirectionalWeight));
         rockGrabMaxTriangleDistance =
             static_cast<float>(ini.number("MeshContact", "GrabMaxTriangleDistance", rockGrabMaxTriangleDistance));
-        rockGrabMeshContactOnly = ini.boolean("MeshContact", "GrabMeshContactOnly", rockGrabMeshContactOnly);
         rockGrabContactPatchMaxNormalAngleDegrees = static_cast<float>(ini.number("MeshContact", "GrabContactPatchMaxNormalAngleDegrees", rockGrabContactPatchMaxNormalAngleDegrees));
         rockGrabContactPatchMaxNormalAngleDegrees = std::clamp(rockGrabContactPatchMaxNormalAngleDegrees, 0.0f, 179.0f);
         rockGrabAlignmentMaxSelectionToMeshDistance = static_cast<float>(ini.number("MeshContact", "GrabAlignmentMaxSelectionToMeshDistance", rockGrabAlignmentMaxSelectionToMeshDistance));

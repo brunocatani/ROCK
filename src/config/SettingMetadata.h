@@ -437,9 +437,9 @@ namespace rock::config
         { "HandAndBodyCollision", "HandBoneColliderMaxAngularVelocity", "05. Hand and Body Collision", "",
             api::configuration::Group::Developer },
         { "SelectionAndPulling", "PullToObjectCenterEnabled", "06. Selection and Pulling",
-            "Far grabs pull the object's CENTER to the hand instead of the ray-hit point\n(a hit at selection range is "
-            "aim noise, not grip intent). The arrival seat\nthen settles the surface onto the palm via the seat "
-            "machinery.",
+            "Far grabs pull the visual mesh point nearest the mesh's centre to the hand\ninstead of the mesh point "
+            "nearest the ray hit (a hit at selection range is aim\nnoise, not grip intent). The arrival seat then "
+            "settles the mesh onto the palm.",
             api::configuration::Group::Developer },
         { "SelectionAndPulling", "PullLongAxisPresentationEnabled", "06. Selection and Pulling",
             "Long-object presentation during pull flight: rotates elongated props (brooms,\nbottles) so their mesh "
@@ -811,10 +811,6 @@ namespace rock::config
         { "MeshContact", "GrabDirectionalWeight", "12. Mesh Contact", "",
             api::configuration::Group::Developer },
         { "MeshContact", "GrabMaxTriangleDistance", "12. Mesh Contact", "",
-            api::configuration::Group::Developer },
-        { "MeshContact", "GrabMeshContactOnly", "12. Mesh Contact",
-            "Prefers the visual mesh as the grab point; the object collision point is the fallback when no mesh "
-            "surface is found.",
             api::configuration::Group::Developer },
         { "MeshContact", "GrabContactPatchMaxNormalAngleDegrees", "12. Mesh Contact", "",
             api::configuration::Group::Developer },

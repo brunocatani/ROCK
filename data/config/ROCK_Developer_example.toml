@@ -164,9 +164,9 @@ HandBoneColliderMaxAngularVelocity = 800.0
 
 ## === 06. Selection and Pulling ===
 [SelectionAndPulling]
-## Far grabs pull the object's CENTER to the hand instead of the ray-hit point
-## (a hit at selection range is aim noise, not grip intent). The arrival seat
-## then settles the surface onto the palm via the seat machinery.
+## Far grabs pull the visual mesh point nearest the mesh's centre to the hand
+## instead of the mesh point nearest the ray hit (a hit at selection range is aim
+## noise, not grip intent). The arrival seat then settles the mesh onto the palm.
 PullToObjectCenterEnabled = true
 
 ## Long-object presentation during pull flight: rotates elongated props (brooms,
@@ -561,9 +561,6 @@ GrabLateralWeight = 0.6
 GrabDirectionalWeight = 0.4
 
 GrabMaxTriangleDistance = 100.0
-
-## Prefers the visual mesh as the grab point; the object collision point is the fallback when no mesh surface is found.
-GrabMeshContactOnly = true
 
 GrabContactPatchMaxNormalAngleDegrees = 35.0
 

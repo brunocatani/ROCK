@@ -1,6 +1,7 @@
-// Probe visualizer for the capsule finger solve (DebugOverlay.DebugDrawGrabFingerProbes).
-// Debug only: it runs the grab's finger solve against the selected object and
-// reports what it decided; nothing here changes interaction state.
+// The capsule finger solve run against the selected object before a grab: the
+// probe contact check every close grab passes (evaluateGrabProbeContact) and
+// the probe visualizer (DebugOverlay.DebugDrawGrabFingerProbes) share it, so
+// the drawn probes are exactly what the check saw.
 #include "physics-interaction/hand/Hand.h"
 #include "physics-interaction/hand/HandGrabInternal.h"
 
@@ -175,12 +176,22 @@ namespace rock
             return out.valid;
         }
 
+        if (!hasSelection() || !_currentSelection.refr || _currentSelection.isFarSelection) {
+            if (_grabFingerProbePreview.extracted) {
+                _grabFingerProbePreview.clear();
+            }
+            return false;
+        }
+        return solveSelectedObjectProbes(out, false);
+    }
+
+    bool Hand::solveSelectedObjectProbes(preview::Snapshot& out, bool refreshDeformingMesh)
+    {
+        out = {};
+        const sweep::Options options = solveOptions();
         auto& cache = _grabFingerProbePreview;
         const auto& selection = _currentSelection;
         if (!hasSelection() || !selection.refr || selection.isFarSelection) {
-            if (cache.extracted) {
-                cache.clear();
-            }
             return false;
         }
         auto* root = selection.refr->Get3D();
@@ -194,8 +205,10 @@ namespace rock
         const std::uint32_t formId = selection.refr->GetFormID();
         const auto objectKey = reinterpret_cast<std::uintptr_t>(objectNode);
         const auto meshKey = reinterpret_cast<std::uintptr_t>(meshNode);
+        // A skinned or dynamic mesh deforms against the node it is stored under,
+        // so the grab check re-reads it; the overlay keeps its copy.
         if (!cache.extracted || cache.refFormId != formId || cache.objectNodeKey != objectKey ||
-            cache.meshNodeKey != meshKey) {
+            cache.meshNodeKey != meshKey || (refreshDeformingMesh && !cache.rigid)) {
             // Same sources the grab tries: the visual node, then the collision owner, then the root.
             std::vector<TriangleData> worldTriangles;
             MeshExtractionStats stats{};
@@ -226,6 +239,7 @@ namespace rock
             cache.refFormId = formId;
             cache.objectNodeKey = objectKey;
             cache.meshNodeKey = meshKey;
+            cache.rigid = stats.skinnedShapes == 0 && stats.dynamicShapes == 0;
             cache.extracted = true;
             ROCK_LOG_DEBUG(Hand, "{} GRAB FINGER PROBES: ref={:08X} mesh='{}' owner='{}' triangles={} shapes={}",
                 handName(), formId, nodeDebugName(meshNode), nodeDebugName(objectNode), cache.localTriangles.size(),
@@ -292,5 +306,34 @@ namespace rock
         out.labelAnchor = labelAnchorFor(skeleton, handWorld);
         out.valid = out.sphereCount > 0;
         return out.valid;
+    }
+
+    GrabProbeContact Hand::evaluateGrabProbeContact()
+    {
+        GrabProbeContact result{};
+        preview::Snapshot probes{};
+        if (!solveSelectedObjectProbes(probes, true)) {
+            result.reason = _grabFingerProbePreview.extracted && _grabFingerProbePreview.localTriangles.empty()
+                ? "noMesh"
+                : "probesUnavailable";
+            return result;
+        }
+        result.triangleCount = probes.triangleCount;
+        for (std::size_t finger = 0; finger < probes.fingers.size(); ++finger) {
+            const auto& state = probes.fingers[finger];
+            result.states[finger] = state.valid ? state.state : preview::FingerState::Free;
+            if (state.valid && state.state != preview::FingerState::Free) {
+                result.fingerMask |= static_cast<std::uint8_t>(1u << finger);
+            }
+        }
+        for (std::uint32_t index = 0; index < probes.sphereCount; ++index) {
+            const auto& sphere = probes.spheres[index];
+            if (sphere.touching && sphere.finger < 5) {
+                result.fingerMask |= static_cast<std::uint8_t>(1u << sphere.finger);
+            }
+        }
+        result.touching = result.fingerMask != 0;
+        result.reason = result.touching ? "meshContact" : "noProbeTouchesMesh";
+        return result;
     }
 }

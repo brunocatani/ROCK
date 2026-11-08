@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- No more phantom grabs. A close grab happens only when one of your fingers
+  touches the object's visible mesh; inside an object's collision but off its
+  mesh, nothing is grabbed, and keeping the grip held grabs the moment a finger
+  reaches the mesh. Grabs never hold the collision instead of the mesh, and a
+  far pull flies the visible mesh to your palm rather than the collision's
+  centre.
 - Held objects stay steady on slow frames: per-frame motion limits scale with
   frame time, so a low frame rate no longer drops or lags what you hold.
 - Pulled objects are caught even when they cross the hand between frames, and
@@ -146,8 +152,9 @@
   `bKeepPreviousWeaponInHandOnEquip`, `bFiringGripDetachPosePreservationEnabled`,
   `bNativeScopeForceFiringGripFallback`, `bEnableVanillaMelee` (vanilla melee is
   always on), `bNativeCharacterControllerObjectContactFilterEnabled` (always
-  on), `bRockyModeEnabled`, `fRockyModeHoldSeconds`, and `npcDynamicCollisions`
-  and `bBladePenetrationEnabled` (now in `SCISSORS.ini`).
+  on), `bRockyModeEnabled`, `fRockyModeHoldSeconds`, `MeshContact.GrabMeshContactOnly`
+  (grabs always hold the mesh), and `npcDynamicCollisions` and
+  `bBladePenetrationEnabled` (now in `SCISSORS.ini`).
 
 ### Validation
 

@@ -762,8 +762,7 @@ namespace rock
                 (std::max)(g_rockConfig.rockGrabTouchAcquireDistanceGameUnits, pocket.pocketRadiusGameUnits);
             const bool hasStablePocketTouchContact =
                 oppositionContacts.valid && gripToPocketDistance <= stableTouchEnvelope;
-            const bool meshSurfaceAuthorityEvidence =
-                grabSurfaceHit.valid && grabSurfaceHit.sourceKind != GrabSurfaceSourceKind::CollisionQuery;
+            const bool meshSurfaceAuthorityEvidence = grabSurfaceHit.valid;
             const bool programmaticArrival = grabbedFromPullCatch || sel.forcedArrival;
             const bool pullArrivalTouchHeldAuthorityEvidence =
                 hasStablePocketTouchContact || meshSurfaceAuthorityEvidence;

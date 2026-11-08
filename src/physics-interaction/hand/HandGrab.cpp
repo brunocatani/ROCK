@@ -375,6 +375,46 @@ namespace rock
         const bool grabbedFromPullCatch = validatedSelection.grabbedFromPullCatch;
         const bool looseWeaponGrab = validatedSelection.looseWeaponGrab;
         const bool handPocketOnlyGrab = validatedSelection.handPocketOnlyGrab;
+
+        /*
+         * A close grab commits only when a finger probe touches the visual
+         * mesh (GrabFingerProbePreview.h). Object collision often sits well off
+         * the visible surface, and grabbing from it held objects no finger was
+         * touching. ROCK-placed arrivals (pull catch, loot-to-hand and force
+         * grab, weapon transfers) move the mesh onto the palm themselves and
+         * are exempt. A refusal keeps retrying while the grip is held, so the
+         * grab lands the moment a finger reaches the mesh.
+         */
+        const bool probeContactRequired = !sel.isFarSelection && !grabbedFromPullCatch && !sel.forcedArrival &&
+            !sel.equippedWeaponTransfer && transferPose == nullptr;
+        if (probeContactRequired) {
+            const auto probeContact = evaluateGrabProbeContact();
+            const auto stateCode = [&](std::size_t finger) {
+                switch (probeContact.states[finger]) {
+                case grab_finger_probe_preview::FingerState::Contact:
+                    return 'C';
+                case grab_finger_probe_preview::FingerState::ClosedPastIntersection:
+                    return 'P';
+                case grab_finger_probe_preview::FingerState::Blocked:
+                    return 'X';
+                case grab_finger_probe_preview::FingerState::Free:
+                default:
+                    return '-';
+                }
+            };
+            if (!probeContact.touching) {
+                ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
+                    "{} hand GRAB refused: no finger probe touches the mesh ref={:08X} reason={} "
+                    "fingers=T{}I{}M{}R{}P{} triangles={} peerJoin={}",
+                    handName(), sel.refr ? sel.refr->GetFormID() : 0, probeContact.reason, stateCode(0), stateCode(1),
+                    stateCode(2), stateCode(3), stateCode(4), probeContact.triangleCount,
+                    joiningPeerHeldObject ? "yes" : "no");
+                return GrabAttemptResult::ContactUnavailable;
+            }
+            ROCK_LOG_DEBUG(Hand, "{} hand GRAB probe contact: ref={:08X} touching=0x{:02X} fingers=T{}I{}M{}R{}P{}",
+                handName(), sel.refr ? sel.refr->GetFormID() : 0, probeContact.fingerMask, stateCode(0),
+                stateCode(1), stateCode(2), stateCode(3), stateCode(4));
+        }
         saved_grab_offset::HandOffset savedGrabOffset{};
         bool hasSavedGrabOffset = false;
 
@@ -669,7 +709,6 @@ namespace rock
         auto& grabSurfaceTriangles = meshExtraction.surfaceTriangles;
         auto& grabLocalMeshTriangles = meshExtraction.objectLocalTriangles;
         std::vector<GrabLocalTriangle> grabFingerPoseLocalMeshTriangles;
-        const bool meshContactOnly = g_rockConfig.rockGrabMeshContactOnly;
         extractGrabMeshEvidence(world, objectBodyId, rootNode, collidableNode, meshSourceNode, handPocketOnlyGrab,
             !authoredBodyOwnerVerified, meshExtraction);
         meshSourceNode = meshExtraction.meshSourceNode;
@@ -760,15 +799,25 @@ namespace rock
         } else {
             meshExtraction.queryIndex.build(grabSurfaceTriangles);
             resolveGrabSurfaceEvidence(validatedSelection, proxyPreparation, meshCaptureSetup, meshExtraction,
-                meshContactOnly, surfaceEvidence);
+                surfaceEvidence);
             if (authoredSeatPrepared && !surfaceEvidence.meshGrabFound)
                 seedAuthoredPoint(surfaceEvidence);
+        }
+        // The held point is a mesh point or an authored weapon seat, never the
+        // object's collision (resolveGrabSurfaceEvidence).
+        if (!surfaceEvidence.meshGrabFound && !authoredBodyOwnerVerified && !authoredSeatPrepared) {
+            ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
+                "{} hand GRAB refused: no mesh point to hold ref={:08X} reason={} pullCatch={} forced={}", handName(),
+                sel.refr ? sel.refr->GetFormID() : 0, surfaceEvidence.fallbackReason ? surfaceEvidence.fallbackReason : "none",
+                grabbedFromPullCatch ? "yes" : "no", sel.forcedArrival ? "yes" : "no");
+            grabPreparationTransaction.rollback();
+            clearGrabExternalHandWorldTransform(_isLeft);
+            return probeContactRequired ? GrabAttemptResult::ContactUnavailable : GrabAttemptResult::Rejected;
         }
         auto& meshGrabFound = surfaceEvidence.meshGrabFound;
         auto& grabSurfaceHit = surfaceEvidence.surfaceHit;
         auto*& surfaceOwnerNode = surfaceEvidence.surfaceOwnerNode;
-        const bool hasMeshSurfaceContact =
-            meshGrabFound && grabSurfaceHit.valid && grabSurfaceHit.sourceKind != GrabSurfaceSourceKind::CollisionQuery;
+        const bool hasMeshSurfaceContact = meshGrabFound && grabSurfaceHit.valid;
         GrabBodyResolution bodyResolution{};
         resolveGrabBodyAndContactPolicy(validatedSelection, beforePrepBodySet, preparedBodySet, activeLifecycle,
             proxyPreparation, surfaceEvidence, bodyResolution);
