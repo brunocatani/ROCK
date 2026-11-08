@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <format>
 #include <limits>
 #include <string>
 #include <utility>
@@ -1065,11 +1066,25 @@ namespace rock
         const auto primaryChoice =
             bodySet.choosePrimaryBody(preferred, object_physics_body_set::PurePoint3{ sourcePointWorld });
         if (primaryChoice.bodyId == object_physics_body_set::INVALID_BODY_ID) {
+            // Which classification refused the bodies: an item just dropped
+            // from the inventory is refused for a while after it appears, and
+            // the reason names what it is waiting for.
+            std::string rejects;
+            for (std::size_t reason = 0; reason < bodySet.diagnostics.rejectCounts.size(); ++reason) {
+                if (bodySet.diagnostics.rejectCounts[reason] == 0) {
+                    continue;
+                }
+                rejects += std::format("{}{}:{}", rejects.empty() ? "" : ",",
+                    physics_body_classifier::rejectReasonName(
+                        static_cast<physics_body_classifier::BodyRejectReason>(reason)),
+                    bodySet.diagnostics.rejectCounts[reason]);
+            }
             ROCK_LOG_WARN(Hand,
                 "{} hand force-grab could not resolve a loose-object body: target={:08X} scanned={} accepted={} "
-                "rejected={} collisions={} visited={}",
+                "rejected={} rejects=[{}] collisions={} visited={}",
                 handName(), targetRef->GetFormID(), bodySet.records.size(), bodySet.acceptedCount(),
-                bodySet.rejectedCount(), bodySet.diagnostics.collisionObjects, bodySet.diagnostics.visitedNodes);
+                bodySet.rejectedCount(), rejects, bodySet.diagnostics.collisionObjects,
+                bodySet.diagnostics.visitedNodes);
             return false;
         }
 
@@ -2535,6 +2550,32 @@ namespace rock
         auto toNiPoint = [](const hand_semantic_contact_state::SemanticContactVector& value) {
             return RE::NiPoint3{ value.x, value.y, value.z };
         };
+        auto considerHitPoint = [&](std::uint32_t bodyId, RE::NiAVObject* hitNode, const RE::NiPoint3& hitPointWorld,
+                                    const RE::NiPoint3& hitNormalWorld, const char* source) {
+            const float distance = pointDistanceGameUnits(selectionOrigin, hitPointWorld);
+            if (distance > closeReach || distance >= bestDistance) {
+                lastMissReason = distance > closeReach ? "outside-close-reach" : lastMissReason;
+                return;
+            }
+
+            bestDistance = distance;
+            bestSource = source;
+            best.setReference(peerRef);
+            best.bodyId = RE::hknpBodyId{ bodyId };
+            best.hitPointWorld = hitPointWorld;
+            best.hitNormalWorld =
+                normalizeOrFallback(hitNormalWorld, normalizeOrFallback(selectionOrigin - hitPointWorld, palmNormal));
+            best.distance = distance;
+            best.signedAlongDistance = distance;
+            best.lateralDistance = 0.0f;
+            best.hitFraction = 0.0f;
+            best.targetKind = peerSavedObjectState.targetKind;
+            best.isFarSelection = false;
+            best.hasHitPoint = true;
+            best.hasHitNormal = true;
+            best.visualNode = peerRef->Get3D();
+            best.hitNode = hitNode ? hitNode : best.visualNode;
+        };
         for (std::size_t candidateIndex = 0; candidateIndex <= peerHeldBodyIds.size(); ++candidateIndex) {
             const auto bodyId = candidateIndex == 0 ? primaryBodyId : peerHeldBodyIds[candidateIndex - 1];
             if (bodyId == INVALID_BODY_ID)
@@ -2559,33 +2600,6 @@ namespace rock
                 }
             }
 
-            auto considerHitPoint = [&](const RE::NiPoint3& hitPointWorld, const RE::NiPoint3& hitNormalWorld,
-                                        const char* source) {
-                const float distance = pointDistanceGameUnits(selectionOrigin, hitPointWorld);
-                if (distance > closeReach || distance >= bestDistance) {
-                    lastMissReason = distance > closeReach ? "outside-close-reach" : lastMissReason;
-                    return;
-                }
-
-                bestDistance = distance;
-                bestSource = source;
-                best.setReference(peerRef);
-                best.bodyId = RE::hknpBodyId{ bodyId };
-                best.hitPointWorld = hitPointWorld;
-                best.hitNormalWorld = normalizeOrFallback(hitNormalWorld,
-                    normalizeOrFallback(selectionOrigin - hitPointWorld, palmNormal));
-                best.distance = distance;
-                best.signedAlongDistance = distance;
-                best.lateralDistance = 0.0f;
-                best.hitFraction = 0.0f;
-                best.targetKind = peerSavedObjectState.targetKind;
-                best.isFarSelection = false;
-                best.hasHitPoint = true;
-                best.hasHitNormal = true;
-                best.visualNode = peerRef->Get3D();
-                best.hitNode = hitNode ? hitNode : best.visualNode;
-            };
-
             const float oppositionMaxAgeSeconds = (std::max)(0.0f, g_rockConfig.rockGrabOppositionContactMaxAgeSeconds);
             const auto semanticContacts =
                 collectFreshSemanticContactsForBodyWithinSeconds(bodyId, oppositionMaxAgeSeconds);
@@ -2603,14 +2617,14 @@ namespace rock
                     const RE::NiPoint3 contactNormalWorld = hand_semantic_contact_state::hasUsableContactNormal(contact)
                         ? toNiPoint(contact.contactNormalGame)
                         : normalizeOrFallback(selectionOrigin - contactPointWorld, palmNormal);
-                    considerHitPoint(contactPointWorld, contactNormalWorld, "semanticContactPoint");
+                    considerHitPoint(bodyId, hitNode, contactPointWorld, contactNormalWorld, "semanticContactPoint");
                     continue;
                 }
 
                 RE::NiTransform handContactWorld{};
                 if (tryResolveLiveBodyWorldTransform(hknpWorld, RE::hknpBodyId{ contact.handBodyId },
                         handContactWorld)) {
-                    considerHitPoint(handContactWorld.translate,
+                    considerHitPoint(bodyId, hitNode, handContactWorld.translate,
                         normalizeOrFallback(selectionOrigin - handContactWorld.translate, palmNormal),
                         "semanticHandBodyOriginFallback");
                 } else {
@@ -2618,8 +2632,32 @@ namespace rock
                 }
             }
 
-            considerHitPoint(bodyWorld.translate,
+            considerHitPoint(bodyId, hitNode, bodyWorld.translate,
                 normalizeOrFallback(selectionOrigin - bodyWorld.translate, palmNormal), "peerHeldBodyOriginFallback");
+        }
+
+        /*
+         * The hand's own near selection of this object is close evidence too:
+         * the swept selection already hit the surface the hand is touching.
+         * Without it a hand on a long object far from its body origin, with
+         * no fresh semantic contact on that body, timed out its join while
+         * its selection sat 2 gu from the surface (bench: Mr. Handy Fuel,
+         * umbrella stand, stew pot).
+         */
+        if (_currentSelection.isValid() && _currentSelection.refr == peerRef && !_currentSelection.isFarSelection &&
+            _currentSelection.hasHitPoint) {
+            const auto selectedBodyId = _currentSelection.bodyId.value;
+            const bool selectedBodyHeld = selectedBodyId != INVALID_BODY_ID &&
+                (selectedBodyId == primaryBodyId ||
+                    std::find(peerHeldBodyIds.begin(), peerHeldBodyIds.end(), selectedBodyId) != peerHeldBodyIds.end());
+            const auto bodyId = selectedBodyHeld ? selectedBodyId : primaryBodyId;
+            if (bodyId != INVALID_BODY_ID) {
+                considerHitPoint(bodyId, _currentSelection.hitNode, _currentSelection.hitPointWorld,
+                    _currentSelection.hasHitNormal
+                        ? _currentSelection.hitNormalWorld
+                        : normalizeOrFallback(selectionOrigin - _currentSelection.hitPointWorld, palmNormal),
+                    "nearSelectionHit");
+            }
         }
 
         if (!best.isValid()) {
