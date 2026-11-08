@@ -9,6 +9,7 @@
 #include "physics-interaction/weapon/native/NativeEquippedModelLifetime.h"
 #include "physics-interaction/weapon/native/NativeExecutionSlotStub.h"
 #include "physics-interaction/weapon/native/NativeInventoryHandSlots.h"
+#include "physics-interaction/weapon/native/NativePipboyWornRows.h"
 #include "physics-interaction/weapon/native/NativePrimaryWeaponGraph.h"
 #include "physics-interaction/weapon/secondary/NativeSecondaryActions.h"
 #include "physics-interaction/weapon/secondary/NativeSecondaryMelee.h"
@@ -560,7 +561,20 @@ namespace rock::native_hand_equipment
                 const auto primary = resolvePrimaryHand(worn[0].form, worn[0].instance);
                 namespace allocation = equip_slot_allocation;
                 const auto handOf = [](bool left) { return left ? allocation::Hand::Left : allocation::Hand::Right; };
+                /*
+                 * The pressed row is the item a slot wears when that slot's
+                 * worn stack is on the row. A worn copy has its own row
+                 * (native_pipboy_worn_rows), and identical copies share one
+                 * TBO_InstanceData, so form and instance would name the worn
+                 * copy for a press on the spare copies' row too.
+                 */
+                auto* weapon = static_cast<RE::TESObjectWEAP*>(object);
+                const auto row = weapon_equip_transfer::pipboyRowCopies(weapon, static_cast<std::uint32_t>(stack));
                 const auto wears = [&](std::uint32_t index) {
+                    if (!worn[index].form)
+                        return false;
+                    if (row.valid)
+                        return row.wornStack[index] >= 0;
                     return sameItem(worn[index].form, worn[index].instance, formID, instance);
                 };
                 const auto decision = allocation::decide(handOf(actingLeft),
@@ -600,8 +614,8 @@ namespace rock::native_hand_equipment
                     publishSupportRequest(worn[target].form, target == 0 ? worn[target].instance : 0u, attach);
                     ROCK_LOG_INFO(Weapon,
                         "AKIMBO Pip-Boy support request inputToken={} hand={} weapon={:08X} index={} displacedIndex={} "
-                        "attach={}",
-                        origin.sequence, handName(hand), formID, target, displacedIndex, attach);
+                        "attach={} rowCopies={}",
+                        origin.sequence, handName(hand), formID, target, displacedIndex, attach, row.copies);
                     return true;
                 }
                 if (decision.action == allocation::Action::MoveFiringGrip) {
@@ -639,9 +653,24 @@ namespace rock::native_hand_equipment
                 const ScopedValue executionScope{ s_execution, &execution };
                 const ScopedValue context{ s_toggle, ToggleContext{ object, slots.either } };
                 const bool affectsPair = index == 1 || worn[1].form != 0;
-                accepted = s_useItem(manager, actor, handle, stack, selected, toggle, force);
+                /*
+                 * The native toggle mistakes a copy of the same base form in
+                 * the other hand for this one (bench: the left toggle-off
+                 * re-equipped the left copy, or emptied the right hand), so
+                 * that toggle-off unequips the exact copy on its own leaf.
+                 */
+                const bool sameFormOther = toggles && worn[1 - index].form == formID;
+                if (sameFormOther)
+                    accepted = weapon_equip_transfer::unequipEquippedIndex(index, worn[index].form, worn[index].instance);
+                else
+                    accepted = s_useItem(manager, actor, handle, stack, selected, toggle, force);
                 if (accepted && affectsPair)
                     native_equipped_model_lifetime::noteEquipmentChange();
+                // The equip completed inside this transaction (unqueued) and
+                // the merge pass put the other copies on the worn stack: give
+                // the equipped copy its own stack and Pip-Boy row.
+                if (accepted && !toggles)
+                    weapon_equip_transfer::separateSpareCopiesFromWornStacks();
                 if (accepted && !toggles) {
                     if (index == 0)
                         publishDirectedPrimary(formID, instance, actingLeft);
@@ -654,11 +683,11 @@ namespace rock::native_hand_equipment
                 // Native return means request accepted, not model/graph ready.
                 const auto sequence = s_transaction.fetch_add(1, std::memory_order_release) + 1;
                 ROCK_LOG_INFO(Weapon,
-                    "AKIMBO equip request={} inputToken={} hand={} weapon={:08X} handle={:08X} stack={} index={} "
-                    "toggleOff={} requestedSlot={:08X} accepted={} executionSelected={} nativeQueued={} "
-                    "nativeInventory=true",
-                    sequence, origin.sequence, handName(hand), formID, inventoryHandle, stack, index, toggles,
-                    selected->formID, accepted, execution.consumed, execution.nativeQueued);
+                    "AKIMBO equip request={} inputToken={} hand={} weapon={:08X} handle={:08X} stack={} rowCopies={} "
+                    "index={} toggleOff={} exactUnequip={} requestedSlot={:08X} accepted={} executionSelected={} "
+                    "nativeQueued={} nativeInventory=true",
+                    sequence, origin.sequence, handName(hand), formID, inventoryHandle, stack, row.copies, index,
+                    toggles, sameFormOther, selected->formID, accepted, execution.consumed, execution.nativeQueued);
                 return accepted;
             } catch (...) {
                 // Never retry an inventory mutation after an exception: it
@@ -1219,6 +1248,10 @@ namespace rock::native_hand_equipment
                 throw std::runtime_error("hand equipment redirect verification failed");
             if (!native_pipboy_hand_input::install())
                 throw std::runtime_error("queued Pip-Boy provenance installation failed");
+            // Without it identical copies share a Pip-Boy row as in vanilla;
+            // hand-directed equips still work.
+            if (!native_pipboy_worn_rows::install())
+                ROCK_LOG_WARN(Init, "Pip-Boy worn weapon rows unavailable: identical copies share one row");
             s_installed = true;
             ROCK_LOG_INFO(Init,
                 "Native hand-directed Pip-Boy equipment installed; scoped execution-slot resolver, unqueued directed "

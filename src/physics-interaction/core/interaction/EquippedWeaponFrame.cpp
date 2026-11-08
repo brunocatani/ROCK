@@ -14,6 +14,7 @@
 #include "physics-interaction/weapon/classification/WeaponInstanceClassification.h"
 #include "physics-interaction/weapon/classification/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/equip/EquipVisualBridgePolicy.h"
+#include "physics-interaction/weapon/equip/SpareWeaponCopyRows.h"
 #include "physics-interaction/weapon/grip/KnifeReverseGrip.h"
 #include "physics-interaction/weapon/grip/WeaponGripSeat.h"
 #include "physics-interaction/weapon/handling/WeaponInputFilter.h"
@@ -765,6 +766,9 @@ namespace rock
             cancelEquippedWeaponTransfersForMenu();
         }
         applyPipboySupportRequest();
+        // A copy picked up later merges into the worn stack (and row).
+        spare_weapon_copy_rows::ensureRegistered();
+        spare_weapon_copy_rows::service(runtime.localMenuBlocking, runtime.localSkeletonReady);
         const auto& transfer = _equipped.transition.heldTransfer();
         const auto& incomingHand = transfer.request.isLeft ? _leftHand : _rightHand;
         auto* incomingReference = incomingHand.getHeldRef();

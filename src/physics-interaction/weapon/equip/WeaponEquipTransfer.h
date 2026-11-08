@@ -12,6 +12,7 @@
 #include "physics-interaction/weapon/equip/WeaponInventoryStackSelectionPolicy.h"
 #include "physics-interaction/weapon/native/HeldWeaponInstantTransition.h"
 
+#include <array>
 #include <cstdint>
 
 namespace RE
@@ -181,4 +182,33 @@ namespace rock::weapon_equip_transfer
     [[nodiscard]] EquipResult promoteSecondaryToPrimary(std::uint32_t formID, std::uintptr_t instanceData,
         bool secondaryLeft) noexcept;
     [[nodiscard]] bool canRecoverHeldEquip() noexcept;
+
+    /*
+     * The stacks one Pip-Boy row stands for, grouped as the Pip-Boy groups
+     * them: identical copies share a row except that a worn hand weapon copy
+     * has its own (native_pipboy_worn_rows). Identical copies also share one
+     * TBO_InstanceData, so form and instance cannot tell a worn copy's row
+     * from the spare copies' row; the row's stacks can.
+     */
+    struct PipboyRowCopies
+    {
+        bool valid{ false };
+        std::uint32_t copies{ 0 };
+        // Stack index (in the item's stack chain) worn at equipment index 0
+        // and 1 when that stack is on this row, else -1.
+        std::array<std::int32_t, 2> wornStack{ -1, -1 };
+    };
+
+    // The row of the item's stack `stackIndex`. Takes the inventory read lock.
+    [[nodiscard]] PipboyRowCopies pipboyRowCopies(RE::TESObjectWEAP* weapon, std::uint32_t stackIndex) noexcept;
+    /*
+     * The merge pass joins identical copies to the worn stack (worn bits are
+     * ignored), so the worn copy would share its stack and row with the
+     * spares. Splits every unworn copy off the stacks worn at indices 0 and 1
+     * into one stack tagged with a new unique ID and refreshes the Pip-Boy
+     * rows. Writes the player's inventory: the frame thread or a native equip
+     * transaction's thread after the equip returns, never under the
+     * inventory lock.
+     */
+    void separateSpareCopiesFromWornStacks() noexcept;
 }

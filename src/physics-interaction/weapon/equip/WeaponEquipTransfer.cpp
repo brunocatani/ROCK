@@ -7,6 +7,7 @@
 #include "physics-interaction/weapon/native/NativeEquippedModelLifetime.h"
 #include "physics-interaction/weapon/native/NativeHandEquipment.h"
 #include "physics-interaction/weapon/native/NativeInventoryHandSlots.h"
+#include "physics-interaction/weapon/native/NativePipboyWornRows.h"
 #include "physics-interaction/weapon/native/TriggerEquipReadinessTrace.h"
 
 #include "physics-interaction/PhysicsLog.h"
@@ -117,7 +118,8 @@ namespace rock::weapon_equip_transfer
          * one item the way used here: GetNextUniqueID (1403E3A10), then a
          * splitting stack write (1403E3700 -> 1401B0510 -> 1401B0690) that tags
          * the split copy (SetUniqueID 140098880, base = container form). The
-         * tag is saved, so the copies stay two Pip-Boy rows after a reload.
+         * tag is saved, so the copies stay two stacks after a reload. The
+         * Pip-Boy ignores the tag; its rows follow native_pipboy_worn_rows.
          */
         using NextUniqueID = std::uint16_t (*)(RE::TESObjectREFR*);
         using SetUniqueID = void (*)(RE::ExtraDataList*, std::uint16_t, std::uint32_t);
@@ -183,11 +185,33 @@ namespace rock::weapon_equip_transfer
             std::uint32_t _base;
         };
 
-        // Splits one unworn copy, tagged with its own unique ID, off a worn
-        // stack and returns it re-resolved: the merge pass reorders the chain.
-        // Frame thread; the player's inventory lock must not be held.
+        /*
+         * The stack write (1401B4850 -> 1401B0510) sends no
+         * BGSInventoryListEvent, and the Pip-Boy rebuilds an item's rows only
+         * on one: PipboyInventoryData's sink (140C20410, registered on the
+         * player's list by 1403E3650) rebuilds every row of the event's item
+         * for kAddStack/kChangedStack (140C24040). It drops events whose owner
+         * is not the player's handle, the list's own owner (+74).
+         */
+        void notifyStackChanged(RE::PlayerCharacter* player, RE::TESObjectWEAP* weapon, const std::uint32_t stackID,
+            const std::uint32_t count) noexcept
+        {
+            RE::BGSInventoryListEvent::Event event{};
+            event.changeType = RE::BGSInventoryListEvent::Type::kChangedStack;
+            event.owner = player->inventoryList->owner;
+            event.objAffected = weapon;
+            event.count = count;
+            event.stackID = stackID;
+            player->inventoryList->Notify(event);
+        }
+
+        // Splits one unworn copy, tagged with `id` (0 takes a new unique ID),
+        // off a worn stack and returns it re-resolved: the merge pass reorders
+        // the chain and joins copies split with one id into one stack. Then
+        // refreshes the item's Pip-Boy rows. A thread that may write the
+        // player's inventory; the inventory lock must not be held.
         [[nodiscard]] InventoryWeaponStack separateWornCopy(RE::PlayerCharacter* player, RE::TESObjectWEAP* weapon,
-            const InventoryWeaponStack& worn) noexcept
+            const InventoryWeaponStack& worn, std::uint16_t id = 0) noexcept
         {
             struct Entries
             {
@@ -211,7 +235,8 @@ namespace rock::weapon_equip_transfer
                 ROCK_LOG_WARN(Weapon, "Identical copy separation unavailable: stack write entry validation failed");
                 return {};
             }
-            const std::uint16_t id = entries.next(player);
+            if (!id)
+                id = entries.next(player);
             if (!id)
                 return {};
             const auto base = player->GetFormID();
@@ -223,32 +248,40 @@ namespace rock::weapon_equip_transfer
             if (!write.written)
                 return {};
 
-            const RE::BSAutoReadLock inventoryLock{ player->inventoryList->rwLock };
-            for (auto& inventoryItem : player->inventoryList->data) {
-                if (inventoryItem.object != weapon)
-                    continue;
-                std::uint32_t stackID = 0;
-                for (auto* stack = inventoryItem.stackData.get(); stack; stack = stack->nextStack.get(), ++stackID) {
-                    const auto* tag = stack->extra ? stack->extra->GetByType<RE::ExtraUniqueID>() : nullptr;
-                    if (!tag || tag->uniqueID != id || tag->baseID != base)
+            const auto split = [&]() -> InventoryWeaponStack {
+                const RE::BSAutoReadLock inventoryLock{ player->inventoryList->rwLock };
+                for (auto& inventoryItem : player->inventoryList->data) {
+                    if (inventoryItem.object != weapon)
                         continue;
-                    RE::BSTSmartPointer<RE::TBO_InstanceData> instanceData{};
-                    if (const auto* instanceExtra = stack->extra->GetByType<RE::ExtraInstanceData>()) {
-                        instanceData = instanceExtra->data;
+                    std::uint32_t stackID = 0;
+                    for (auto* stack = inventoryItem.stackData.get(); stack;
+                        stack = stack->nextStack.get(), ++stackID) {
+                        const auto* tag = stack->extra ? stack->extra->GetByType<RE::ExtraUniqueID>() : nullptr;
+                        if (!tag || tag->uniqueID != id || tag->baseID != base)
+                            continue;
+                        RE::BSTSmartPointer<RE::TBO_InstanceData> instanceData{};
+                        if (const auto* instanceExtra = stack->extra->GetByType<RE::ExtraInstanceData>()) {
+                            instanceData = instanceExtra->data;
+                        }
+                        return InventoryWeaponStack{
+                            .found = true,
+                            .matchedInstanceData = instanceData.get() == worn.instanceData.get(),
+                            .stackID = stackID,
+                            .count = stack->GetCount(),
+                            .stackAddress = reinterpret_cast<std::uintptr_t>(stack),
+                            .instanceData = std::move(instanceData),
+                            .equipSlot = worn.equipSlot,
+                            .wornCopies = wornCopies(*stack),
+                            .uniqueID = id,
+                        };
                     }
-                    return InventoryWeaponStack{
-                        .found = true,
-                        .matchedInstanceData = instanceData.get() == worn.instanceData.get(),
-                        .stackID = stackID,
-                        .count = stack->GetCount(),
-                        .stackAddress = reinterpret_cast<std::uintptr_t>(stack),
-                        .instanceData = std::move(instanceData),
-                        .equipSlot = worn.equipSlot,
-                        .wornCopies = wornCopies(*stack),
-                    };
                 }
-            }
-            return {};
+                return {};
+            }();
+            // Outside the inventory lock: the Pip-Boy sink reads the list.
+            if (split.found)
+                notifyStackChanged(player, weapon, split.stackID, split.count);
+            return split;
         }
 
         struct EquippedWeaponSnapshot
@@ -444,6 +477,43 @@ namespace rock::weapon_equip_transfer
             return std::nullopt;
         }
 
+        // The row of the stack at `reference`, grouped exactly as the Pip-Boy
+        // groups it (native_pipboy_worn_rows). Takes the inventory read lock.
+        [[nodiscard]] PipboyRowCopies rowCopiesAt(RE::PlayerCharacter* player, RE::TESObjectWEAP* weapon,
+            const std::uintptr_t reference) noexcept
+        {
+            PipboyRowCopies row{};
+            std::array<std::uintptr_t, 2> worn{};
+            for (std::uint32_t index = 0; index < worn.size(); ++index) {
+                const auto equipped = readEquippedWeaponSnapshot(index);
+                if (equipped.weapon == weapon)
+                    worn[index] = findEquippedWeaponStack(player, weapon, equipped.instanceData, index).stackAddress;
+            }
+            const RE::BSAutoReadLock inventoryLock{ player->inventoryList->rwLock };
+            for (auto& inventoryItem : player->inventoryList->data) {
+                if (inventoryItem.object != weapon)
+                    continue;
+                const RE::BGSInventoryItem::Stack* pressed = nullptr;
+                for (auto* stack = inventoryItem.stackData.get(); stack; stack = stack->nextStack.get())
+                    if (reinterpret_cast<std::uintptr_t>(stack) == reference)
+                        pressed = stack;
+                if (!pressed)
+                    return {};
+                row.valid = true;
+                std::int32_t stackID = 0;
+                for (auto* stack = inventoryItem.stackData.get(); stack; stack = stack->nextStack.get(), ++stackID) {
+                    if (!native_pipboy_worn_rows::sameWeaponRow(*pressed, *stack))
+                        continue;
+                    row.copies += stack->GetCount();
+                    for (std::uint32_t index = 0; index < worn.size(); ++index)
+                        if (worn[index] == reinterpret_cast<std::uintptr_t>(stack))
+                            row.wornStack[index] = stackID;
+                }
+                return row;
+            }
+            return {};
+        }
+
         EquipResult equipSelectedStack(RE::PlayerCharacter* player, RE::ActorEquipManager* equipManager,
             const InventoryWeaponStack& selected, held_weapon_instant_transition::RequestReason reason,
             EquipResult result, const bool secondary = false, const bool secondaryLeft = false) noexcept
@@ -552,6 +622,8 @@ namespace rock::weapon_equip_transfer
                 result.reason = EquipReason::EquippedStackMismatch;
                 return result;
             }
+            // The equipped copy keeps its own stack and Pip-Boy row.
+            separateSpareCopiesFromWornStacks();
             result.success = true;
             result.reason = EquipReason::ActivateRefThenInstantEquip;
             return result;
@@ -1051,6 +1123,62 @@ namespace rock::weapon_equip_transfer
                 equipReasonName(restored.reason));
         }
         return promoted;
+    }
+
+    PipboyRowCopies pipboyRowCopies(RE::TESObjectWEAP* weapon, const std::uint32_t stackIndex) noexcept
+    {
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        if (!player || !weapon || !player->inventoryList)
+            return {};
+        std::uintptr_t reference = 0;
+        {
+            const RE::BSAutoReadLock inventoryLock{ player->inventoryList->rwLock };
+            for (auto& inventoryItem : player->inventoryList->data) {
+                if (inventoryItem.object != weapon)
+                    continue;
+                std::uint32_t stackID = 0;
+                for (auto* stack = inventoryItem.stackData.get(); stack; stack = stack->nextStack.get(), ++stackID)
+                    if (stackID == stackIndex)
+                        reference = reinterpret_cast<std::uintptr_t>(stack);
+                break;
+            }
+        }
+        return reference ? rowCopiesAt(player, weapon, reference) : PipboyRowCopies{};
+    }
+
+    void separateSpareCopiesFromWornStacks() noexcept
+    {
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        if (!player || !player->inventoryList)
+            return;
+        // Each split moves one copy (1401B0690); the bound only guards a
+        // corrupt count, no real stack reaches it.
+        constexpr std::uint32_t kMaximumSplits = 256;
+        for (std::uint32_t index = 0; index < 2; ++index) {
+            const auto equipped = readEquippedWeaponSnapshot(index);
+            if (!equipped.weapon)
+                continue;
+            auto worn = findEquippedWeaponStack(player, equipped.weapon, equipped.instanceData, index);
+            if (!worn.found || worn.count <= worn.wornCopies)
+                continue;
+            const auto countBefore = worn.count;
+            std::uint16_t id = 0;
+            std::uint32_t splits = 0;
+            InventoryWeaponStack spare{};
+            while (worn.found && worn.count > worn.wornCopies && splits < kMaximumSplits) {
+                spare = separateWornCopy(player, equipped.weapon, worn, id);
+                if (!spare.found)
+                    break;
+                id = spare.uniqueID;
+                ++splits;
+                worn = findEquippedWeaponStack(player, equipped.weapon, equipped.instanceData, index);
+            }
+            ROCK_LOG_INFO(Weapon,
+                "Spare copies separated from the worn stack weapon={:08X} index={} countBefore={} wornCountAfter={} "
+                "worn={} splits={} spareStack={} spareCount={} tag={}",
+                equipped.weapon->GetFormID(), index, countBefore, worn.found ? worn.count : 0, worn.wornCopies, splits,
+                spare.found ? static_cast<int>(spare.stackID) : -1, spare.found ? spare.count : 0, id);
+        }
     }
 
     EquippedDropResult dropEquippedWeaponFromPlayer(const EquippedDropInput& input) noexcept
