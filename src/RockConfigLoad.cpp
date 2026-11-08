@@ -554,8 +554,6 @@ namespace rock
         rockNativeScopeOverlayRollDegrees = readClampedFloat(ini, SECTION, "fNativeScopeOverlayRollDegrees",
             rockNativeScopeOverlayRollDegrees, 0.0f, -180.0f, 180.0f);
 
-        rockEnableVanillaMelee =
-            ini.GetBoolValue(NATIVE_GAMEPLAY_SECTION, "bEnableVanillaMelee", rockEnableVanillaMelee);
         rockVanillaMeleeSwingSpeed = readClampedFloat(ini, NATIVE_GAMEPLAY_SECTION, "fVanillaMeleeSwingSpeed",
             rockVanillaMeleeSwingSpeed, 300.0f, 50.0f, 2000.0f);
         rockVanillaGunBashSpeed = readClampedFloat(ini, NATIVE_GAMEPLAY_SECTION, "fVanillaGunBashSpeed",

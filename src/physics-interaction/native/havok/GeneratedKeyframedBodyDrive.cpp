@@ -383,34 +383,51 @@ namespace rock
         return snapshot;
     }
 
+    bool computeHardKeyFrameVelocity(RE::hknpWorld* world, const BethesdaPhysicsBody& body,
+        const RE::NiTransform& target, float driveDeltaSeconds, float (&linearVelocityHavok)[4],
+        float (&angularVelocityRadians)[4])
+    {
+        linearVelocityHavok[0] = linearVelocityHavok[1] = linearVelocityHavok[2] = linearVelocityHavok[3] = 0.0f;
+        angularVelocityRadians[0] = angularVelocityRadians[1] = angularVelocityRadians[2] =
+            angularVelocityRadians[3] = 0.0f;
+        if (!world || !body.isValid() || !havok_physics_timing::isUsableDelta(driveDeltaSeconds)) {
+            return false;
+        }
+
+        alignas(16) float targetPositionHavok[4]{
+            target.translate.x * gameToHavokScale(),
+            target.translate.y * gameToHavokScale(),
+            target.translate.z * gameToHavokScale(),
+            0.0f,
+        };
+        alignas(16) float targetRotationHavok[4]{};
+        transform_math::niRowsToHavokQuaternion(target.rotate, targetRotationHavok);
+
+        alignas(16) float linear[4]{};
+        alignas(16) float angular[4]{};
+        using ComputeHardKeyFrame_t = void (*)(RE::hknpWorld*, RE::hknpBodyId, float*, float*, float, float*, float*);
+        static REL::Relocation<ComputeHardKeyFrame_t> compute{ REL::Offset(offsets::kFunc_ComputeHardKeyFrame) };
+        compute(world, body.getBodyId(), targetPositionHavok, targetRotationHavok, driveDeltaSeconds, linear, angular);
+        if (!havok_runtime::isFinite3(linear) || !havok_runtime::isFinite3(angular)) {
+            return false;
+        }
+        for (int i = 0; i < 3; ++i) {
+            linearVelocityHavok[i] = linear[i];
+            angularVelocityRadians[i] = angular[i];
+        }
+        return true;
+    }
+
     namespace
     {
         bool driveDynamicBodyVelocityTowardTarget(RE::hknpWorld* world, BethesdaPhysicsBody& body,
             const RE::NiTransform& target, float driveDeltaSeconds, float maximumLinearVelocityHavok,
             const GeneratedBodyDriveMode& mode, GeneratedKeyframedBodyDriveResult& result)
         {
-            if (!world || !body.isValid() || !havok_physics_timing::isUsableDelta(driveDeltaSeconds)) {
-                return false;
-            }
-
-            alignas(16) float targetPositionHavok[4]{
-                target.translate.x * gameToHavokScale(),
-                target.translate.y * gameToHavokScale(),
-                target.translate.z * gameToHavokScale(),
-                0.0f,
-            };
-            alignas(16) float targetRotationHavok[4]{};
-            transform_math::niRowsToHavokQuaternion(target.rotate, targetRotationHavok);
-
             alignas(16) float linearVelocityHavok[4]{};
             alignas(16) float angularVelocityRadians[4]{};
-            using ComputeHardKeyFrame_t =
-                void (*)(RE::hknpWorld*, RE::hknpBodyId, float*, float*, float, float*, float*);
-            static REL::Relocation<ComputeHardKeyFrame_t> compute{ REL::Offset(offsets::kFunc_ComputeHardKeyFrame) };
-            compute(world, body.getBodyId(), targetPositionHavok, targetRotationHavok, driveDeltaSeconds,
-                linearVelocityHavok, angularVelocityRadians);
-
-            if (!havok_runtime::isFinite3(linearVelocityHavok) || !havok_runtime::isFinite3(angularVelocityRadians)) {
+            if (!computeHardKeyFrameVelocity(world, body, target, driveDeltaSeconds, linearVelocityHavok,
+                    angularVelocityRadians)) {
                 return false;
             }
 

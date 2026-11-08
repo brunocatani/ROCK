@@ -287,18 +287,6 @@ static bool testInputRouting()
     ok &= expectTrue("ROCK grab always blocks native grip grenade handling",
         shouldSuppressNativeMeleeThrowAction(nativeDrawnMelee));
 
-    auto suppressedHolsteredMelee = nativeHolsteredMelee;
-    suppressedHolsteredMelee.nativeMeleeSuppressionActive = true;
-    ok &= expectTrue("suppressed real melee claims holstered grip ready handling",
-        shouldSuppressNativeGripReadyAction(suppressedHolsteredMelee));
-
-    auto suppressedDrawnMelee = nativeDrawnMelee;
-    suppressedDrawnMelee.nativeMeleeSuppressionActive = true;
-    ok &= expectTrue("suppressed real melee claims drawn grip reload handling",
-        shouldSuppressNativeGripReloadAction(suppressedDrawnMelee));
-    ok &= expectTrue("suppressed real melee claims melee throw handling",
-        shouldSuppressNativeMeleeThrowAction(suppressedDrawnMelee));
-
     auto menuFavorites = favorites;
     menuFavorites.menuInputActive = true;
     ok &= expectTrue("menu input still suppresses native favorites handling",

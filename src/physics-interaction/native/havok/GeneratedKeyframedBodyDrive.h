@@ -536,6 +536,12 @@ namespace rock
     GeneratedKeyframedBodyDriveSampledVelocity snapshotGeneratedKeyframedBodyDriveSampledVelocity(
         const GeneratedKeyframedBodyDriveState& state);
     bool placeGeneratedKeyframedBodyImmediately(BethesdaPhysicsBody& body, const RE::NiTransform& target);
+    // The engine's hard-keyframe velocity pair (world linear velocity in Havok
+    // units, world angular velocity) that moves the body to `target` in dt.
+    // Reads only; physics-step callers. Zero velocities and false on failure.
+    bool computeHardKeyFrameVelocity(RE::hknpWorld* world, const BethesdaPhysicsBody& body,
+        const RE::NiTransform& target, float driveDeltaSeconds, float (&linearVelocityHavok)[4],
+        float (&angularVelocityRadians)[4]);
 
     inline void markGeneratedKeyframedBodyDrivePlacedUnlocked(GeneratedKeyframedBodyDriveState& state,
         float driveDeltaSeconds = 0.0f, bool finalizeTargetForNextSource = true)

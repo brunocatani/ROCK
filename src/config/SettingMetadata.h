@@ -284,10 +284,6 @@ namespace rock::config
             "Pip-Boy and Pause Hold Time\nTap left Y to open the Pip-Boy; hold it this many seconds to open the Pause "
             "menu instead. Range: 0.15 to 2.",
             api::configuration::Group::Consumer },
-        { "NativeGameplay", "bEnableVanillaMelee", "10. Native Gameplay",
-            "Vanilla Melee\nThe game's own player melee: swings, gun bashes, their hits and their damage.\nFalse "
-            "turns all of it off for the player. NPC melee is not affected.",
-            api::configuration::Group::Consumer },
         { "NativeGameplay", "fVanillaMeleeSwingSpeed", "10. Native Gameplay",
             "Melee Swing Speed\nHand speed that starts a vanilla melee swing, in game units per second (70 = 1 metre "
             "per second). The game uses 200.\nTurning the wrist alone never swings. Range: 50 to 2000.",

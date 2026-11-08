@@ -379,13 +379,8 @@ namespace rock
             return;
         }
 
-        const bool nativeMeleeSuppressionHooksInstalled = installNativeMeleeSuppressionHooks();
-        if (!nativeMeleeSuppressionHooksInstalled && !g_rockConfig.rockEnableVanillaMelee) {
-            ROCK_LOG_CRITICAL(Init,
-                "Native melee suppression requested but hook installation failed; ROCK will continue without melee "
-                "suppression");
-        } else if (nativeMeleeSuppressionHooksInstalled) {
-            enforceNativeMeleeRuntimeSuppression(true);
+        if (installNativeMeleeSuppressionHooks()) {
+            enforceNativeMeleeVelocityGate(true);
         }
 
         ROCK_LOG_INFO(Init, "Initializing ROCK physics module...");

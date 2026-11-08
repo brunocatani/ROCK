@@ -1,6 +1,6 @@
-// Native player melee gate: the VRInput velocity settings ROCK owns, the values
-// it sets when vanilla melee is enabled or suppressed, and the master switch
-// that hands everything back to native behaviour.
+// Native player melee gate: the VRInput velocity settings ROCK owns and the
+// player-only cases where native melee callbacks are skipped. Vanilla melee is
+// always on; SCISSORS_Redux builds its physical melee on the native hit path.
 #pragma once
 
 #include <bit>
@@ -8,18 +8,11 @@
 
 namespace rock::native_melee_suppression
 {
-    /*
-     * This master switch is a permanent recovery contract, not a temporary
-     * compatibility path. Every current and future ROCK melee-hit suppression
-     * boundary must call native behavior when it is disabled, and every owned
-     * runtime override must be restored or safely relinquished.
-     */
     inline constexpr char kVelocityCheckSetting[] = "bMeleeVelocityCheck:VRInput";
     inline constexpr char kLinearVelocityThresholdSetting[] = "fMeleeLinearVelocityThreshold:VRInput";
     inline constexpr char kAngularVelocityThresholdSetting[] = "fMeleeAngularVelocityThreshold:VRInput";
     inline constexpr char kGunBashLinearVelocityThresholdSetting[] = "fGunBashLinearVelocityThreshold:VRInput";
     inline constexpr char kGunBashAngularVelocityThresholdSetting[] = "fGunBashAngularVelocityThreshold:VRInput";
-    inline constexpr float kSuppressedVelocityThreshold = 1.0e9f;
 
     /*
      * FO4VR's velocity gate (140EFE880) starts a melee swing (melee weapon) or
@@ -29,26 +22,23 @@ namespace rock::native_melee_suppression
      * angular speed saturates at sqrt(3) from a 57 deg/s wrist turn and the
      * vanilla threshold of 1.0 fires on ordinary hand movement. ROCK owns the
      * gate while its hooks are installed: linear speed decides, angular never
-     * does (2.0 is above sqrt(3)); suppression puts every threshold out of
-     * reach. Linear speeds are in game units per second (70 = 1 m/s).
+     * does (2.0 is above sqrt(3)). Linear speeds are in game units per second
+     * (70 = 1 m/s).
      */
     inline constexpr float kAngularGateDisabled = 2.0f;
 
     struct NativeMeleeVelocityGate
     {
-        float meleeLinear = kSuppressedVelocityThreshold;
-        float meleeAngular = kSuppressedVelocityThreshold;
-        float gunBashLinear = kSuppressedVelocityThreshold;
-        float gunBashAngular = kSuppressedVelocityThreshold;
+        float meleeLinear = 0.0f;
+        float meleeAngular = 0.0f;
+        float gunBashLinear = 0.0f;
+        float gunBashAngular = 0.0f;
 
         friend constexpr bool operator==(const NativeMeleeVelocityGate&, const NativeMeleeVelocityGate&) = default;
     };
 
-    [[nodiscard]] constexpr NativeMeleeVelocityGate velocityGate(bool suppressed, float meleeSwingSpeed,
-        float gunBashSpeed) noexcept
+    [[nodiscard]] constexpr NativeMeleeVelocityGate velocityGate(float meleeSwingSpeed, float gunBashSpeed) noexcept
     {
-        if (suppressed)
-            return {};
         return { meleeSwingSpeed, kAngularGateDisabled, gunBashSpeed, kAngularGateDisabled };
     }
 
@@ -58,13 +48,12 @@ namespace rock::native_melee_suppression
     }
 
     /*
-     * ROCK suppresses player native melee at the verified FO4VR swing and
-     * impact boundaries: the animation-event handlers, the PlayerCharacter
-     * weapon swing callback, and the VRMeleeImpact collision callback. Returning
-     * "handled" matters for animation events because the dispatcher should not
-     * keep treating a suppressed event as unresolved, while native hit/damage
-     * side effects remain skipped. Void callbacks use the same policy only to
-     * decide whether native side effects should run.
+     * ROCK skips player native melee at the verified FO4VR swing and impact
+     * boundaries (the animation-event handlers, the PlayerCharacter weapon
+     * swing callback and the VRMeleeImpact collision callback) only while the
+     * player holds no real weapon: SCISSORS_Redux owns free-hand strikes.
+     * Returning "handled" matters for animation events because the dispatcher
+     * should not keep treating a skipped event as unresolved.
      */
     enum class NativeMeleeEvent
     {
@@ -78,24 +67,26 @@ namespace rock::native_melee_suppression
         ReturnHandled
     };
 
-    enum class NativeMeleeInputEvent
-    {
-        Unknown,
-        RightStick,
-        PrimaryAttack,
-        SecondaryAttack
-    };
-
-    enum class NativeMeleeInputGateAction
-    {
-        CallNative,
-        ReturnFalse
-    };
-
     enum class NativeMeleeImpactAction
     {
         CallNative,
         Suppress
+    };
+
+    /*
+     * What the player's native melee contact touched. VRMeleeImpact
+     * (140EFF000) sends every partner whose reference is not an Actor (ACHR)
+     * to the object hit (140E56FA0), which pushes the body with a point
+     * impulse of up to 5000 per axis. Movable objects take their push from the
+     * weapon's real collision body instead, so only actor and static-world
+     * contacts reach native. Unknown partners (unreadable body) stay native.
+     */
+    enum class NativeMeleePartner
+    {
+        Unknown,
+        Actor,
+        StaticWorld,
+        MovableObject
     };
 
     struct NativeMeleePolicyInput
@@ -114,23 +105,12 @@ namespace rock::native_melee_suppression
     {
         bool suppressionActive = false;
         bool actorIsPlayer = false;
+        NativeMeleePartner partner = NativeMeleePartner::Unknown;
     };
 
     struct NativeMeleeImpactPolicyDecision
     {
         NativeMeleeImpactAction action = NativeMeleeImpactAction::CallNative;
-        const char* reason = "native";
-    };
-
-    struct NativeMeleeInputGatePolicyInput
-    {
-        bool suppressionActive = false;
-        NativeMeleeInputEvent inputEvent = NativeMeleeInputEvent::Unknown;
-    };
-
-    struct NativeMeleeInputGatePolicyDecision
-    {
-        NativeMeleeInputGateAction action = NativeMeleeInputGateAction::CallNative;
         const char* reason = "native";
     };
 
@@ -157,31 +137,21 @@ namespace rock::native_melee_suppression
         return { .action = NativeMeleeSuppressionAction::CallNative, .reason = "unknown-event" };
     }
 
-    inline NativeMeleeInputGatePolicyDecision evaluateNativeMeleeInputGate(const NativeMeleeInputGatePolicyInput& input)
-    {
-        if (!input.suppressionActive) {
-            return { .action = NativeMeleeInputGateAction::CallNative, .reason = "suppression-disabled" };
-        }
-
-        if (input.inputEvent != NativeMeleeInputEvent::RightStick) {
-            return { .action = NativeMeleeInputGateAction::CallNative, .reason = "non-right-stick" };
-        }
-
-        return { .action = NativeMeleeInputGateAction::ReturnFalse,
-            .reason = "right-stick-native-melee-gate-suppressed" };
-    }
-
     inline NativeMeleeImpactPolicyDecision evaluateNativeMeleeImpactSuppression(
         const NativeMeleeImpactPolicyInput& input)
     {
-        if (!input.suppressionActive) {
-            return { .action = NativeMeleeImpactAction::CallNative, .reason = "suppression-disabled" };
-        }
-
         if (!input.actorIsPlayer) {
             return { .action = NativeMeleeImpactAction::CallNative, .reason = "non-player" };
         }
 
-        return { .action = NativeMeleeImpactAction::Suppress, .reason = "player-vr-melee-impact-suppressed" };
+        if (input.suppressionActive) {
+            return { .action = NativeMeleeImpactAction::Suppress, .reason = "player-vr-melee-impact-suppressed" };
+        }
+
+        if (input.partner == NativeMeleePartner::MovableObject) {
+            return { .action = NativeMeleeImpactAction::Suppress, .reason = "player-movable-object-contact" };
+        }
+
+        return { .action = NativeMeleeImpactAction::CallNative, .reason = "native" };
     }
 }

@@ -9,7 +9,6 @@
 
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/input/ButtonLayoutApply.h"
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/ManualScopeInputPolicy.h"
@@ -1360,7 +1359,6 @@ namespace rock::input_remap_runtime
                     s_equippedWeaponFiringGripInputActive.load(std::memory_order_acquire),
                 .equippedWeaponPrimaryDetached = weaponRouting().detached,
                 .realMeleeWeaponEquipped = s_realMeleeWeaponEquipped.load(std::memory_order_acquire),
-                .nativeMeleeSuppressionActive = isNativeMeleeSuppressionActive(),
                 .eventMatched = eventMatched,
             };
         }
@@ -1417,11 +1415,11 @@ namespace rock::input_remap_runtime
             ROCK_LOG_DEBUG(Input,
                 "NATIVE-WEAPON-INPUT gate={} suppressed={} provider={} primary={} sourceLeft={} transfer={} "
                 "awaitRelease={} pressed={} drawn={} heldWeapon={} firingGrip={} detached={} realMelee={} "
-                "meleeSuppression={} gameplay={} menu={}",
+                "gameplay={} menu={}",
                 gate, suppressed, providerSuppressed, input.primaryHandEvent, input.triggerSourceIsLeft,
                 input.weaponTransferPending, input.triggerAwaitingRelease, button->QJustPressed(), input.weaponDrawn,
                 input.eventHandHeldWeapon, input.equippedWeaponFiringGripInputActive,
-                input.equippedWeaponPrimaryDetached, input.realMeleeWeaponEquipped, input.nativeMeleeSuppressionActive,
+                input.equippedWeaponPrimaryDetached, input.realMeleeWeaponEquipped,
                 input.gameplayInputAllowed, input.menuInputActive);
         }
 

@@ -115,7 +115,6 @@ namespace rock::input_remap_policy
         bool equippedWeaponFiringGripInputActive{ false };
         bool equippedWeaponPrimaryDetached{ false };
         bool realMeleeWeaponEquipped{ false };
-        bool nativeMeleeSuppressionActive{ false };
         bool takeEquipHandEngaged{ false };
         bool takeEquipTargetEligible{ false };
         bool eventMatched{ false };
@@ -226,7 +225,7 @@ namespace rock::input_remap_policy
 
     [[nodiscard]] constexpr bool shouldAllowNativeRealMeleeInput(const NativeActionSuppressionInput& input)
     {
-        return input.realMeleeWeaponEquipped && !input.nativeMeleeSuppressionActive && input.weaponDrawn;
+        return input.realMeleeWeaponEquipped && input.weaponDrawn;
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeGripReadyAction(const NativeActionSuppressionInput& input)

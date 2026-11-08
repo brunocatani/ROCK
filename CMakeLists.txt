@@ -631,13 +631,6 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKNativePlayerCollisionSuppressionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKNativePlayerCollisionSuppressionPolicyTests)
 
-  add_executable(ROCKNativeMeleeSuppressionPolicyTests
-    "${ROOT_DIR}/tests/NativeMeleeSuppressionPolicyTests.cpp"
-  )
-  target_compile_features(ROCKNativeMeleeSuppressionPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKNativeMeleeSuppressionPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKNativeMeleeSuppressionPolicyTests)
-
   add_executable(ROCKNativeGrabHapticSuppressionPolicyTests
     "${ROOT_DIR}/tests/NativeGrabHapticSuppressionPolicyTests.cpp"
   )
@@ -779,7 +772,6 @@ if(BUILD_ROCK_TESTS)
     ROCKHknpBodyFramePolicyTests
     ROCKImmersiveAidPolicyTests
     ROCKNativePlayerCollisionSuppressionPolicyTests
-    ROCKNativeMeleeSuppressionPolicyTests
     ROCKNativeGrabHapticSuppressionPolicyTests
     ROCKHeldWeaponInstantTransitionPolicyTests
     ROCKWeaponInventoryStackSelectionPolicyTests

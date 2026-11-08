@@ -2,9 +2,10 @@
 //   Havok timing fix         substeps the physics step at a minimum rate
 //   native grab              patches VR Grab Initiate to return at once, so the
 //                            game's own grab never starts
-//   native melee suppression animation-event, swing, attack and VR melee impact
-//                            hooks that keep the player's native melee off
-//                            while ROCK owns it; runtime setting enforcement
+//   native melee gate        animation-event, swing, attack and VR melee impact
+//                            hooks: skip native melee for an unarmed player and
+//                            player contacts with movable objects; enforce the
+//                            VRInput velocity gate settings
 //   grab haptic suppression  keeps the native hover and rollover rumble
 //                            settings off; ROCK sends its own haptics
 //   refresh manifold         bhkCharProxyController::processConstraintsCallback,
@@ -29,6 +30,7 @@
 #include "physics-interaction/native/player/NativeGrabHapticSuppressionPolicy.h"
 #include "physics-interaction/native/player/NativePlayerCollisionFilter.h"
 #include "physics-interaction/object/ObjectDetection.h"
+#include "physics-interaction/object/PhysicsBodyClassifier.h"
 #include "physics-interaction/performance/ContactPairProfile.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/weapon/native/TriggerEquipReadinessTrace.h"
@@ -128,7 +130,6 @@ namespace rock
         }
 
         static std::atomic<bool> g_nativeMeleeSuppressionHooksInstalled{ false };
-        static std::atomic<bool> g_nativeMeleeSuppressionActive{ false };
         constexpr std::uint64_t kNativeMeleeRuntimeSettingCheckIntervalFrames = 90;
         constexpr std::uint64_t kNativeGrabHapticRuntimeSettingCheckIntervalFrames = 90;
         constexpr std::array<std::uint8_t, 14> kVrMeleeImpactExpectedPrefix{ 0x48, 0x8B, 0xC4, 0x4C, 0x89, 0x40, 0x18,
@@ -452,53 +453,6 @@ namespace rock
             return matchesCommonLib || matchesNative;
         }
 
-        native_melee_suppression::NativeMeleeInputEvent classifyNativeMeleeInputEvent(const RE::InputEvent* event)
-        {
-            if (!event) {
-                return native_melee_suppression::NativeMeleeInputEvent::Unknown;
-            }
-
-            const auto& userEvent = event->QUserEvent();
-            const auto* userEventText = userEvent.c_str();
-            const std::string_view userEventName{ userEventText ? userEventText : "", userEvent.length() };
-
-            if (userEventName == "RightStick") {
-                return native_melee_suppression::NativeMeleeInputEvent::RightStick;
-            }
-            if (userEventName == "PrimaryAttack") {
-                return native_melee_suppression::NativeMeleeInputEvent::PrimaryAttack;
-            }
-            if (userEventName == "SecondaryAttack") {
-                return native_melee_suppression::NativeMeleeInputEvent::SecondaryAttack;
-            }
-
-            return native_melee_suppression::NativeMeleeInputEvent::Unknown;
-        }
-
-        const char* nativeMeleeInputEventName(native_melee_suppression::NativeMeleeInputEvent event)
-        {
-            switch (event) {
-            case native_melee_suppression::NativeMeleeInputEvent::RightStick:
-                return "RightStick";
-            case native_melee_suppression::NativeMeleeInputEvent::PrimaryAttack:
-                return "PrimaryAttack";
-            case native_melee_suppression::NativeMeleeInputEvent::SecondaryAttack:
-                return "SecondaryAttack";
-            case native_melee_suppression::NativeMeleeInputEvent::Unknown:
-            default:
-                return "Unknown";
-            }
-        }
-
-        native_melee_suppression::NativeMeleeInputGatePolicyInput makeNativeMeleeInputGatePolicyInput(
-            native_melee_suppression::NativeMeleeInputEvent event)
-        {
-            return native_melee_suppression::NativeMeleeInputGatePolicyInput{
-                .suppressionActive = g_nativeMeleeSuppressionActive.load(std::memory_order_acquire),
-                .inputEvent = event
-            };
-        }
-
         // ROCK holsters the player's unarmed fallback (enforceNoBareFistState),
         // but a script or delayed native draw can reach melee before that
         // lands. A player without a real equipped weapon never deals native
@@ -512,8 +466,7 @@ namespace rock
         {
             const bool player = isPlayerActor(actor);
             return native_melee_suppression::NativeMeleeImpactPolicyInput{
-                .suppressionActive = g_nativeMeleeSuppressionActive.load(std::memory_order_acquire) ||
-                    playerUnarmedMeleeSuppressed(player),
+                .suppressionActive = playerUnarmedMeleeSuppressed(player),
                 .actorIsPlayer = player
             };
         }
@@ -927,8 +880,7 @@ namespace rock
         {
             const bool player = isPlayerActor(actor);
             return native_melee_suppression::NativeMeleePolicyInput{
-                .suppressionActive = g_nativeMeleeSuppressionActive.load(std::memory_order_acquire) ||
-                    playerUnarmedMeleeSuppressed(player),
+                .suppressionActive = playerUnarmedMeleeSuppressed(player),
                 .actorIsPlayer = player
             };
         }
@@ -1002,10 +954,17 @@ namespace rock
         // instead of querying page protection for each scalar. Body lookup still
         // validates the allocation bound, body identity, and live motion slot.
         // Never cache an event, world, or body pointer between callbacks.
-        MeleeContactDecodeStage readMeleeContactPartner(const void* contactEvent, const void* collisionEvent,
-            std::uint32_t& filterInfo, performance_profiler::ContactPair* profilePair) noexcept
+        struct MeleeContactPartner
         {
-            filterInfo = 0;
+            RE::hknpWorld* world = nullptr;
+            std::uint32_t bodyId = 0;
+            std::uint32_t filterInfo = 0;
+        };
+
+        MeleeContactDecodeStage readMeleeContactPartner(const void* contactEvent, const void* collisionEvent,
+            MeleeContactPartner& partner, performance_profiler::ContactPair* profilePair) noexcept
+        {
+            partner = {};
             auto stage = MeleeContactDecodeStage::EventBuffers;
             if (!native_memory::pointerLooksReadable(contactEvent) ||
                 !native_memory::pointerLooksReadable(collisionEvent)) {
@@ -1029,15 +988,17 @@ namespace rock
                     return stage;
                 }
                 stage = MeleeContactDecodeStage::PartnerBody;
-                if (!readMeleeBodyFilter(world, otherId, filterInfo)) {
+                if (!readMeleeBodyFilter(world, otherId, partner.filterInfo)) {
                     return stage;
                 }
+                partner.world = world;
+                partner.bodyId = otherId;
                 stage = MeleeContactDecodeStage::Complete;
                 // Optional evidence must never change native forwarding on a read fault.
                 if (profilePair) {
                     profilePair->world = reinterpret_cast<std::uintptr_t>(world);
                     profilePair->bodyB = otherId;
-                    profilePair->layerB = filterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+                    profilePair->layerB = partner.filterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
                     std::memcpy(&profilePair->bodyA,
                         static_cast<const char*>(collisionEvent) + 0x08 + ourIndex * sizeof(otherId), sizeof(otherId));
                     std::uint32_t sourceFilter = 0;
@@ -1049,6 +1010,31 @@ namespace rock
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 return stage;
             }
+        }
+
+        /*
+         * Tells an actor from an object the way VRMeleeImpact (140EFF000) does:
+         * body userData (+0x88) -> collision object -> scene object -> owning
+         * reference (FindReferenceFor3D, 1403F0890), an actor when that
+         * reference is an ACHR. It runs on the native callback's thread and
+         * reads only what the native callback reads next.
+         */
+        native_melee_suppression::NativeMeleePartner classifyMeleeContactPartner(const MeleeContactPartner& partner)
+        {
+            using native_melee_suppression::NativeMeleePartner;
+            const auto body = havok_runtime::snapshotBodyIdentity(partner.world, RE::hknpBodyId{ partner.bodyId });
+            if (!body.valid || !body.body) {
+                return NativeMeleePartner::Unknown;
+            }
+            auto* ownerNode = havok_runtime::getOwnerNodeFromCollisionObject(body.collisionObject);
+            auto* ref = ownerNode ? RE::TESObjectREFR::FindReferenceFor3D(ownerNode) : nullptr;
+            if (ref && ref->As<RE::Actor>()) {
+                return NativeMeleePartner::Actor;
+            }
+            return physics_body_classifier::motionTypeFromBodyFlags(body.body->flags) ==
+                    physics_body_classifier::BodyMotionType::Static
+                ? NativeMeleePartner::StaticWorld
+                : NativeMeleePartner::MovableObject;
         }
 
         // Counts cross the physics/main-thread boundary without retaining engine
@@ -1145,14 +1131,12 @@ namespace rock
              * FO4VR registers this callback while attaching native VR melee
              * collision to the first-person weapon nodes. It owns the native
              * contact-to-hit path, including target filtering, action dispatch,
-             * impulse direction, and melee cooldown writes. When complete ROCK
-             * suppression is active, skip the player callback here so no native
-             * impact or damage side effect survives the master switch.
+             * impulse direction, and melee cooldown writes. An unarmed player's
+             * contacts never reach it.
              */
-            const auto input = makeNativeMeleeImpactPolicyInput(actor);
-            const auto decision = native_melee_suppression::evaluateNativeMeleeImpactSuppression(input);
-
-            if (applyNativeMeleeImpactDecision(input, decision)) {
+            auto input = makeNativeMeleeImpactPolicyInput(actor);
+            if (applyNativeMeleeImpactDecision(input,
+                    native_melee_suppression::evaluateNativeMeleeImpactSuppression(input))) {
                 ROCK_LOG_SAMPLE_DEBUG(Combat, g_rockConfig.rockLogSampleMilliseconds,
                     "Suppressed FO4VR native VRMeleeImpact callback actor={:p} contactEvent={:p} collisionEvent={:p}",
                     static_cast<void*>(actor), contactEvent, collisionEvent);
@@ -1166,23 +1150,41 @@ namespace rock
              * co-located colliders from consuming the melee hit and arming
              * the cooldown. Undecodable events pass through unchanged.
              */
-            std::uint32_t partnerFilter = 0;
+            MeleeContactPartner partner{};
             performance_profiler::ContactPair profilePair{};
             const bool profiling = performance_profiler::enabled();
-            const auto decodeStage = readMeleeContactPartner(contactEvent, collisionEvent, partnerFilter,
+            const auto decodeStage = readMeleeContactPartner(contactEvent, collisionEvent, partner,
                 profiling ? &profilePair : nullptr);
             if (decodeStage != MeleeContactDecodeStage::Complete) {
                 g_meleeDecodeFailureStage.store(decodeStage, std::memory_order_relaxed);
                 g_meleeDecodeFailures.fetch_add(1, std::memory_order_relaxed);
                 performance_profiler::addCounter(performance_profiler::Counter::NativeMeleeDecodeFailed);
             } else if (collision_layer_policy::isRockOwnedMatrixLayer(
-                           partnerFilter & collision_layer_policy::FO4_LAYER_FILTER_MASK)) {
+                           partner.filterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK)) {
                 performance_profiler::addCounter(performance_profiler::Counter::NativeMeleeRockPartnerDropped);
                 if (profiling)
                     performance_profiler::observeContactPair(profilePair,
                         input.actorIsPlayer ? performance_profiler::ContactStage::PlayerMeleeDropped
                                             : performance_profiler::ContactStage::OtherMeleeDropped);
                 return;
+            }
+
+            /*
+             * The native object hit (140E56FA0) pushes any non-actor body the
+             * player's swing touches with up to 5000 units per axis. Movable
+             * objects already take the real push of ROCK's weapon and hand
+             * bodies, so the player's native melee keeps only actors (Redux
+             * decides those hits) and the static world (impact effects).
+             */
+            if (input.actorIsPlayer && decodeStage == MeleeContactDecodeStage::Complete) {
+                input.partner = classifyMeleeContactPartner(partner);
+                if (applyNativeMeleeImpactDecision(input,
+                        native_melee_suppression::evaluateNativeMeleeImpactSuppression(input))) {
+                    if (profiling)
+                        performance_profiler::observeContactPair(profilePair,
+                            performance_profiler::ContactStage::PlayerMeleeDropped);
+                    return;
+                }
             }
 
             if (g_originalVrMeleeImpactCallback) {
@@ -1205,36 +1207,6 @@ namespace rock
                 ROCK_LOG_SAMPLE_DEBUG(Input, g_rockConfig.rockLogSampleMilliseconds,
                     "Suppressed native WandTrigger AttackBlock gate while ROCK owns holstered or held-weapon trigger "
                     "input");
-                return false;
-            }
-
-            /*
-             * FO4VR has a third native melee path before the animation events:
-             * AttackBlockHandler::ShouldHandleEvent accepts the VR RightStick
-             * input and can classify fast rotation as melee. The hook is kept
-             * at this input gate and only returns false for RightStick during
-             * full ROCK suppression; PrimaryAttack and SecondaryAttack remain
-             * native so normal weapon inputs are not segregated or broken.
-             */
-            const auto inputEvent = classifyNativeMeleeInputEvent(event);
-            const auto policyInput = makeNativeMeleeInputGatePolicyInput(inputEvent);
-            const auto decision = native_melee_suppression::evaluateNativeMeleeInputGate(policyInput);
-
-            if (decision.action != native_melee_suppression::NativeMeleeInputGateAction::CallNative) {
-                static std::atomic<std::uint32_t> inputGateLogCounter{ 0 };
-                const auto count = inputGateLogCounter.fetch_add(1, std::memory_order_relaxed) + 1;
-                if (count == 1 || count % 180 == 0) {
-                    ROCK_LOG_DEBUG(Combat,
-                        "Native melee AttackBlock input gate event={} decision={} reason={} count={}",
-                        nativeMeleeInputEventName(inputEvent),
-                        decision.action == native_melee_suppression::NativeMeleeInputGateAction::CallNative ? "native"
-                                                                                                            : "false",
-                        decision.reason, count);
-                }
-            }
-
-            if (decision.action == native_melee_suppression::NativeMeleeInputGateAction::ReturnFalse) {
-                trigger_equip_readiness_trace::input(event, true, false, false, handler);
                 return false;
             }
 
@@ -1354,24 +1326,20 @@ namespace rock
         reportMeleeContactFrame();
     }
 
-    bool isNativeMeleeSuppressionActive() { return g_nativeMeleeSuppressionActive.load(std::memory_order_acquire); }
-
-    void enforceNativeMeleeRuntimeSuppression(bool forceCheck)
+    void enforceNativeMeleeVelocityGate(bool forceCheck)
     {
         /*
          * FO4VR owns two native player melee paths: animation events
          * (WeaponSwing/HitFrame) and a VRInput velocity gate that can classify
          * controller or HMD motion as melee. ROCK owns that gate while its
-         * hooks are installed (native_melee_suppression::velocityGate): vanilla
-         * melee gets ROCK's speed thresholds, suppression pushes them out of
-         * reach. The gate boolean stays enabled; disabling it bypasses the gate
-         * on some builds and causes cooldown-paced false melee swings.
+         * hooks are installed (native_melee_suppression::velocityGate) and
+         * gives it ROCK's speed thresholds. The gate boolean stays enabled;
+         * disabling it bypasses the gate on some builds and causes
+         * cooldown-paced false melee swings.
          */
         const bool hooksInstalled = g_nativeMeleeSuppressionHooksInstalled.load(std::memory_order_acquire);
-        const bool shouldSuppress = hooksInstalled && !g_rockConfig.rockEnableVanillaMelee;
-        g_nativeMeleeSuppressionActive.store(shouldSuppress, std::memory_order_release);
-        const auto gate = native_melee_suppression::velocityGate(shouldSuppress,
-            g_rockConfig.rockVanillaMeleeSwingSpeed, g_rockConfig.rockVanillaGunBashSpeed);
+        const auto gate = native_melee_suppression::velocityGate(g_rockConfig.rockVanillaMeleeSwingSpeed,
+            g_rockConfig.rockVanillaGunBashSpeed);
         const bool requestChanged =
             g_nativeMeleeVelocityGateOwned != hooksInstalled || !(g_nativeMeleeVelocityGateRequested == gate);
         g_nativeMeleeVelocityGateOwned = hooksInstalled;
@@ -1795,7 +1763,6 @@ namespace rock
             }
 
             g_nativeMeleeSuppressionHooksInstalled.store(false, std::memory_order_release);
-            g_nativeMeleeSuppressionActive.store(false, std::memory_order_release);
             return rollbackOk;
         };
 
@@ -1818,7 +1785,6 @@ namespace rock
         if (!validateNativeMeleeSuppressionHookTargets()) {
             ROCK_LOG_ERROR(Init, "Native melee suppression hook validation failed; install deferred");
             g_nativeMeleeSuppressionHooksInstalled.store(false, std::memory_order_release);
-            g_nativeMeleeSuppressionActive.store(false, std::memory_order_release);
             return false;
         }
 
@@ -1858,17 +1824,15 @@ namespace rock
                 vrMeleeImpactInstalled ? "yes" : "no");
             rollbackNativeMeleeSuppressionHooks();
             g_nativeMeleeSuppressionHooksInstalled.store(false, std::memory_order_release);
-            g_nativeMeleeSuppressionActive.store(false, std::memory_order_release);
             return false;
         }
 
         g_nativeMeleeSuppressionHooksInstalled.store(true, std::memory_order_release);
         ROCK_LOG_INFO(Init,
             "Native melee suppression hooks installed: weaponSwing={} hitFrame={} attackBlock={} "
-            "playerSwingCallback={} vrMeleeImpact={} requested={}",
+            "playerSwingCallback={} vrMeleeImpact={}",
             weaponSwingInstalled ? "yes" : "no", hitFrameInstalled ? "yes" : "no", attackBlockInstalled ? "yes" : "no",
-            playerWeaponSwingCallbackInstalled ? "yes" : "no", vrMeleeImpactInstalled ? "yes" : "no",
-            g_rockConfig.rockEnableVanillaMelee ? "no" : "yes");
+            playerWeaponSwingCallbackInstalled ? "yes" : "no", vrMeleeImpactInstalled ? "yes" : "no");
         return weaponSwingInstalled && hitFrameInstalled && attackBlockInstalled &&
             playerWeaponSwingCallbackInstalled && vrMeleeImpactInstalled;
     }

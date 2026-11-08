@@ -201,7 +201,6 @@ namespace rock
          * bodies are solver-clipped by static world surfaces and drive the
          * rendered hand through one-way visual authority.
          */
-        bool rockEnableVanillaMelee = true;
         float rockVanillaMeleeSwingSpeed = 300.0f;
         float rockVanillaGunBashSpeed = 400.0f;
 

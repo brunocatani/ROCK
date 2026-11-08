@@ -390,7 +390,7 @@ namespace
         }
         game_ini_overrides::update();
         advanceNativeRuntimeSettingFrameClock();
-        enforceNativeMeleeRuntimeSuppression();
+        enforceNativeMeleeVelocityGate();
         settingsTimer.stop();
 
         if (!s_frikAvailable) {
