@@ -1,4 +1,5 @@
 #include "physics-interaction/object/ObjectDetection.h"
+#include "physics-interaction/object/CountBasedAmmo.h"
 #include "RockConfig.h"
 #include "physics-interaction/grab/GrabInteractionPolicy.h"
 #include "physics-interaction/hand/HandFrame.h"
@@ -542,6 +543,16 @@ namespace rock
                 readMetadata();
                 auto* hitNode = metadata.hitNode;
                 auto* baseForm = metadata.baseForm;
+                // Count-based loose ammo: the root body owns no geometry. The
+                // visible round is found through its own branch body.
+                if (count_based_ammo::isRootBodyNode(ref, hitNode)) {
+                    ++outRejectedNotGrabbable;
+                    if (logRejectTelemetry) {
+                        logSelectionRejectTelemetry(queryName, "ammo-root-body", i, ref, hitNode, hknpWorld, hitBodyId,
+                            nullptr, "ammo-root-body", isFarSelection, 0.0f, 0.0f, -1.0f, loggedRejectTelemetry);
+                    }
+                    continue;
+                }
                 const auto classification = classifySelectionGrabTarget(ref, hknpWorld, hitBodyId, otherHandContext,
                     isFarSelection, hitNode, hitPoint, true, baseForm);
                 if (!classification.grabbable) {

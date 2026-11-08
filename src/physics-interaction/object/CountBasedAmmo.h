@@ -5,6 +5,7 @@
 
 namespace RE
 {
+    class hknpWorld;
     class NiAVObject;
     class TESObjectREFR;
 }
@@ -29,6 +30,13 @@ namespace RE
  *
  * The visible branch sits at the identity under the root in every model this
  * targets, so the rigid rest relation is "root node frame == branch node frame".
+ *
+ * Both bodies come from one physics system, so enumerating the system from the
+ * root's collision object returns the branch body too. Which node owns a body
+ * is therefore read from each node's own collision object (resolveBodies),
+ * never from body-scan order. The root body is never a selection target; the
+ * selection finds the visible branch body instead. Outside a grab the root body
+ * is kept on the branch by RootBodySync (CountBasedAmmoRootSync.h).
  */
 namespace rock::count_based_ammo
 {
@@ -69,7 +77,28 @@ namespace rock::count_based_ammo
         }
     };
 
+    struct AssemblyBodies
+    {
+        std::uint32_t root = kNoBody;
+        std::uint32_t branch = kNoBody;
+
+        static constexpr std::uint32_t kNoBody = 0x7FFF'FFFF;
+
+        [[nodiscard]] bool valid() const noexcept { return root != kNoBody && branch != kNoBody && root != branch; }
+    };
+
     // Frame thread only. Returns an invalid assembly for anything that is not
     // count-based loose ammo with exactly one visible branch attached.
     [[nodiscard]] Assembly resolve(RE::TESObjectREFR* refr);
+
+    // True only for references whose base is count-based ammo; a cheap gate
+    // before resolve().
+    [[nodiscard]] bool isCountBasedAmmo(RE::TESObjectREFR* refr);
+
+    // The root body and the visible branch body of the assembly in this world,
+    // each read from its own node's collision object.
+    [[nodiscard]] AssemblyBodies resolveBodies(RE::hknpWorld* world, const Assembly& assembly);
+
+    // True when hitNode is the geometry-less root of a resolved assembly.
+    [[nodiscard]] bool isRootBodyNode(RE::TESObjectREFR* refr, const RE::NiAVObject* hitNode);
 }

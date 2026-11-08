@@ -2599,6 +2599,11 @@ namespace rock
                     hitNode = collisionObject->sceneObject ? collisionObject->sceneObject : hitNode;
                 }
             }
+            // The geometry-less root body of count-based ammo is carried with
+            // the held round; the second hand joins on the round's own body.
+            if (count_based_ammo::isRootBodyNode(peerRef, hitNode)) {
+                continue;
+            }
 
             const float oppositionMaxAgeSeconds = (std::max)(0.0f, g_rockConfig.rockGrabOppositionContactMaxAgeSeconds);
             const auto semanticContacts =

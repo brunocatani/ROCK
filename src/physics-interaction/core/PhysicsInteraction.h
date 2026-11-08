@@ -90,6 +90,7 @@
 #include "physics-interaction/input/TransferredWeaponGrabPolicy.h"
 #include "physics-interaction/native/havok/PhysicsStepDriveCoordinator.h"
 #include "physics-interaction/native/player/NativePlayerCollisionFilter.h"
+#include "physics-interaction/object/CountBasedAmmoRootSync.h"
 #include "physics-interaction/stash/ShoulderStashDetector.h"
 #include "physics-interaction/visual/AmmoCounterPose.h"
 #include "physics-interaction/weapon/authored/AuthoredPrimaryFiringGrip.h"
@@ -430,6 +431,7 @@ namespace rock
         void observeLifecycleFrame(RE::bhkWorld* bhk, RE::hknpWorld* hknp, api::core::LifecycleReason reasonHint);
         bool physicsWritesAllowedForWorld(RE::hknpWorld* world) const;
         void interruptInteractionFrame(const char* reason);
+        void updateCountBasedAmmoRootSync(const PhysicsFrameContext& frame);
 
         void registerCollisionLayer(RE::hknpWorld* world);
 
@@ -1221,6 +1223,7 @@ namespace rock
         PhysicsStepDriveCoordinator _generatedBodyStepDrive;
         LooseWeaponCollision _looseWeaponCollision;
         LooseWeaponCollision _objectRestCollision; // independent capacity; native magazine shapes stay intact
+        count_based_ammo::RootBodySync _countBasedAmmoRootSync;
         object_rest_service::Requests _objectRestRequests;
         EjectionContactRequests _ejectionContacts;
         api::grab::HeldPlacementIntent _placementIntent{};

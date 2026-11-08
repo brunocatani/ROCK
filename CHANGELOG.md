@@ -24,6 +24,9 @@
   inside the object keeps the open pose, or closes inward onto a handle or hole
   the hand reached into; saved grab poses with bent-back fingers show the open
   pose. Count-based loose ammo is held by its visible body.
+- Loose rounds and ammo boxes: the hand no longer grabs or bumps the invisible
+  box a pushed or dropped round left behind. It stays with the visible round,
+  so both hands grab the round and it reloads where it lies.
 - The second hand joins an object the other hand holds from where it touches
   it, so long objects no longer refuse the second grip.
 - Saved grab offsets of objects whose parts move against each other (ragdoll

@@ -322,6 +322,23 @@ namespace rock
         publishDebugBodyOverlay(context);
     }
 
+    void PhysicsInteraction::updateCountBasedAmmoRootSync(const PhysicsFrameContext& frame)
+    {
+        // Runs after grab input, so this frame's selections, pulls and holds
+        // are final. A hand that holds or pulls the round carries its root body.
+        for (const auto* hand : { &_rightHand, &_leftHand }) {
+            if (hand->isHolding()) {
+                _countBasedAmmoRootSync.track(hand->getHeldRef(), true);
+            } else if (hand->hasSelection()) {
+                _countBasedAmmoRootSync.track(hand->getSelection().refr, hand->getState() == HandState::Pulled);
+            }
+        }
+        if (frame.menuBlocked || !physicsWritesAllowedForWorld(frame.hknpWorld)) {
+            return;
+        }
+        _countBasedAmmoRootSync.update(frame.hknpWorld, frame.deltaSeconds);
+    }
+
     void PhysicsInteraction::finalizeInteractionFrame(const PhysicsFrameContext& frame, RE::hknpWorld* hknp,
         const EquippedWeaponFrameResult& equippedWeaponFrame)
     {
@@ -357,6 +374,7 @@ namespace rock
             looseTimer.stop();
             performance_profiler::ScopedTimer restTimer(Scope::HeldObjectRest);
             updateObjectRest(frame);
+            updateCountBasedAmmoRootSync(frame);
             restTimer.stop();
             performance_profiler::ScopedTimer exclusionTimer(Scope::HeldExclusions);
             commitHeldPlacement(frame);

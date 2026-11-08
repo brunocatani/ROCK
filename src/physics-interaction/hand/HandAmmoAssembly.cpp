@@ -5,23 +5,6 @@
 
 namespace rock
 {
-    namespace
-    {
-        const object_physics_body_set::ObjectPhysicsBodyRecord* acceptedRecordOwnedBy(
-            const object_physics_body_set::ObjectPhysicsBodySet& bodySet, const RE::NiAVObject* node)
-        {
-            if (!node) {
-                return nullptr;
-            }
-            for (const auto& record : bodySet.records) {
-                if (record.accepted && record.owningNode == node) {
-                    return &record;
-                }
-            }
-            return nullptr;
-        }
-    }
-
     bool Hand::restoreCountBasedAmmoAssembly(RE::hknpWorld* world, const count_based_ammo::Assembly& assembly,
         const object_physics_body_set::ObjectPhysicsBodySet& bodySet, const char* context)
     {
@@ -30,23 +13,26 @@ namespace rock
             return false;
         }
 
-        const auto* anchor = acceptedRecordOwnedBy(bodySet, assembly.root);
-        const auto* branch = acceptedRecordOwnedBy(bodySet, assembly.variantNode);
-        if (!anchor || !branch || anchor->bodyId == branch->bodyId) {
+        // Body ownership comes from each node's own collision object: the
+        // body set records whichever node enumerated the shared system first.
+        const auto bodies = count_based_ammo::resolveBodies(world, assembly);
+        if (!bodies.valid() || !bodySet.containsAcceptedBody(bodies.root) ||
+            !bodySet.containsAcceptedBody(bodies.branch)) {
             ROCK_LOG_SAMPLE_WARN(Hand, g_rockConfig.rockLogSampleMilliseconds,
-                "{} hand AMMO ASSEMBLY unavailable: context={} variant={} anchorBody={} branchBody={}", handName(),
-                context ? context : "unknown", count_based_ammo::variantKey(assembly.variant),
-                anchor ? anchor->bodyId : INVALID_BODY_ID, branch ? branch->bodyId : INVALID_BODY_ID);
+                "{} hand AMMO ASSEMBLY unavailable: context={} variant={} anchorBody={} branchBody={} inBodySet={}/{}",
+                handName(), context ? context : "unknown", count_based_ammo::variantKey(assembly.variant), bodies.root,
+                bodies.branch, bodySet.containsAcceptedBody(bodies.root) ? "yes" : "no",
+                bodySet.containsAcceptedBody(bodies.branch) ? "yes" : "no");
             return false;
         }
 
         RE::NiTransform anchorBodyWorld{};
         RE::NiTransform branchBodyWorld{};
-        if (!havok_runtime::tryGetBodyArrayWorldTransform(world, RE::hknpBodyId{ anchor->bodyId }, anchorBodyWorld) ||
-            !havok_runtime::tryGetBodyArrayWorldTransform(world, RE::hknpBodyId{ branch->bodyId }, branchBodyWorld)) {
+        if (!havok_runtime::tryGetBodyArrayWorldTransform(world, RE::hknpBodyId{ bodies.root }, anchorBodyWorld) ||
+            !havok_runtime::tryGetBodyArrayWorldTransform(world, RE::hknpBodyId{ bodies.branch }, branchBodyWorld)) {
             ROCK_LOG_SAMPLE_WARN(Hand, g_rockConfig.rockLogSampleMilliseconds,
                 "{} hand AMMO ASSEMBLY unavailable: context={} body transforms unreadable anchorBody={} branchBody={}",
-                handName(), context ? context : "unknown", anchor->bodyId, branch->bodyId);
+                handName(), context ? context : "unknown", bodies.root, bodies.branch);
             return false;
         }
 
@@ -63,11 +49,11 @@ namespace rock
         const float separationGameUnits = pointDistanceGameUnits(root->world.translate, restRootWorld.translate);
 
         const RE::hkVector4f zero{};
-        if (!havok_runtime::setBodyTransformDeferred(world, anchor->bodyId, anchorTarget, 1) ||
-            !havok_runtime::setBodyVelocityDeferred(world, anchor->bodyId, zero, zero)) {
+        if (!havok_runtime::setBodyTransformDeferred(world, bodies.root, anchorTarget, 1) ||
+            !havok_runtime::setBodyVelocityDeferred(world, bodies.root, zero, zero)) {
             return false;
         }
-        (void)havok_runtime::activateBody(world, anchor->bodyId);
+        (void)havok_runtime::activateBody(world, bodies.root);
 
         // The body write lands on the next physics step; the scene graph moves
         // now so every root-relative capture this frame sees one object.
@@ -81,15 +67,15 @@ namespace rock
             sceneRestored = isFiniteNiTransform(root->world);
         }
 
-        _ammoCarry.anchorBodyId = anchor->bodyId;
-        _ammoCarry.primaryBodyId = branch->bodyId;
+        _ammoCarry.anchorBodyId = bodies.root;
+        _ammoCarry.primaryBodyId = bodies.branch;
         _ammoCarry.anchorFromPrimary = multiplyTransforms(invertTransform(branchBodyWorld), anchorTarget);
 
         ROCK_LOG_DEBUG(Hand,
             "{} hand AMMO ASSEMBLY restored: context={} variant={} anchorBody={} branchBody={} separation={:.1f}gu "
             "sceneRestored={}",
-            handName(), context ? context : "unknown", count_based_ammo::variantKey(assembly.variant), anchor->bodyId,
-            branch->bodyId, separationGameUnits, sceneRestored ? "yes" : "no");
+            handName(), context ? context : "unknown", count_based_ammo::variantKey(assembly.variant), bodies.root,
+            bodies.branch, separationGameUnits, sceneRestored ? "yes" : "no");
         return true;
     }
 
