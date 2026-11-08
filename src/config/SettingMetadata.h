@@ -193,6 +193,13 @@ namespace rock::config
             "closer one takes it.\nAt Container: the panel stands at the container it lists, facing you; either hand "
             "can point at it.\nThe panel's buttons stay on the right controller in every mode. Applies at once.",
             api::configuration::Group::Consumer },
+        { "Grabbing", "ActivatePromptPlacement", "06. Grabbing",
+            "Activate Prompt Placement\n1 = Both Hands. 2 = Closer Hand. 3 = At Object.\nThe prompts each hand shows "
+            "for what it points at (Open, Talk, Take and the rest).\nBoth Hands: the game's own prompts on each hand; "
+            "two hands on one door show it twice.\nCloser Hand: when both hands point at the same object only the "
+            "closer hand shows its prompt.\nAt Object: the prompt stands at the object it names, facing you, and shows "
+            "once when both hands point at it.\nActivation itself is unchanged. Applies at once.",
+            api::configuration::Group::Consumer },
         { "FiringHand", "DefaultHand", "07. Firing Hand",
             "Default Hand\nright or left: the firing hand for equips that come without a hand (favorites, PALM, "
             "scripts and other mods).\nGrenade draws prefer this hand and use the other one when it is busy.\nPip-Boy "

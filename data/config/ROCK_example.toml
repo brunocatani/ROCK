@@ -222,6 +222,15 @@ LootToHand = true
 ## The panel's buttons stay on the right controller in every mode. Applies at once.
 QuickLootPanelPlacement = 3
 
+## Activate Prompt Placement
+## 1 = Both Hands. 2 = Closer Hand. 3 = At Object.
+## The prompts each hand shows for what it points at (Open, Talk, Take and the rest).
+## Both Hands: the game's own prompts on each hand; two hands on one door show it twice.
+## Closer Hand: when both hands point at the same object only the closer hand shows its prompt.
+## At Object: the prompt stands at the object it names, facing you, and shows once when both hands point at it.
+## Activation itself is unchanged. Applies at once.
+ActivatePromptPlacement = 3
+
 ## === 07. Firing Hand ===
 [FiringHand]
 ## Default Hand

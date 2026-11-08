@@ -1,9 +1,7 @@
 #include "physics-interaction/native/player/NativeQuickLootPanel.h"
 
-#include <algorithm>
 #include <array>
 #include <atomic>
-#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -12,7 +10,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/native/scene/NativeNiNodeFactory.h"
+#include "physics-interaction/native/player/NativeWorldUiAnchor.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include <RPS/Runtime/HookChain.h>
 
@@ -20,6 +18,9 @@ namespace rock::native_quick_loot_panel
 {
     namespace
     {
+        using native_world_ui_anchor::attachCarrier;
+        using native_world_ui_anchor::moveTo;
+
         /*
          * FO4VR 1.2.72, raw disassembly of the HUDQuickContainerDataModel
          * update 0xA92290. It copies the right and left wand picks from the
@@ -95,19 +96,6 @@ namespace rock::native_quick_loot_panel
          */
         constexpr std::uintptr_t kLootModel = 0x5ACBC98;
         constexpr std::ptrdiff_t kLootModelRootOffset = 0x10;
-
-        /*
-         * The panel reads at its hand size when the eye is this far from it
-         * (about 60 cm, a hand held up to read). Further away it is scaled up
-         * with distance so it keeps that apparent size, up to kMaxViewScale.
-         * Game units.
-         */
-        constexpr float kHandReadingDistance = 45.0f;
-        constexpr float kMaxViewScale = 4.0f;
-        // The panel stands at most this fraction of the way from the
-        // container's centre to the player, so a large bound cannot bring it
-        // into the player's face.
-        constexpr float kMaxApproachFraction = 0.5f;
 
         /*
          * CloserHand: when both wands pick lootable containers (often the same
@@ -276,91 +264,9 @@ namespace rock::native_quick_loot_panel
                 reinterpret_cast<std::uintptr_t>(&secondaryRolloverHostsPanel));
         }
 
-        RE::NiPoint3 normalized(const RE::NiPoint3& v)
-        {
-            const float length = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-            return length > 0.0001f ? RE::NiPoint3{ v.x / length, v.y / length, v.z / length } : RE::NiPoint3{};
-        }
-
-        RE::NiPoint3 cross(const RE::NiPoint3& a, const RE::NiPoint3& b)
-        {
-            return { a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x };
-        }
-
-        /*
-         * World pose of the panel's root at the listed container: on the
-         * container's near side at its bound centre height, facing the eye.
-         * The rows are the root's local axes in world space: X right, Y away
-         * from the viewer, Z up, the frame PrimaryUIAttachNode gives it on the
-         * hand.
-         */
-        std::optional<RE::NiTransform> panelAtContainer(const std::uint32_t handleValue, const RE::NiPoint3& eye,
-            const RE::NiPoint3& eyeRight, const float handScale)
-        {
-            RE::ObjectRefHandle handle{};
-            static_assert(sizeof(handle) == sizeof(handleValue));
-            std::memcpy(&handle, &handleValue, sizeof(handle));
-            const auto ref = handle.get();
-            if (!ref) {
-                return std::nullopt;
-            }
-            const auto* root = ref->Get3D();
-            const bool bounded = root && root->worldBound.fRadius > 0.0f;
-            const RE::NiPoint3 center = bounded ? root->worldBound.center : ref->data.location;
-            const float radius = bounded ? root->worldBound.fRadius : 0.0f;
-
-            RE::NiPoint3 toEye{ eye.x - center.x, eye.y - center.y, 0.0f };
-            const float horizontal = std::sqrt(toEye.x * toEye.x + toEye.y * toEye.y);
-            toEye = normalized(toEye);
-            const float approach = (std::min)(radius, horizontal * kMaxApproachFraction);
-            const RE::NiPoint3 position{ center.x + toEye.x * approach, center.y + toEye.y * approach, center.z };
-
-            const RE::NiPoint3 view{ position.x - eye.x, position.y - eye.y, position.z - eye.z };
-            const float distance = std::sqrt(view.x * view.x + view.y * view.y + view.z * view.z);
-            if (distance < 1.0f) {
-                return std::nullopt;
-            }
-            const RE::NiPoint3 forward = normalized(view);
-            const RE::NiPoint3 kWorldUp{ 0.0f, 0.0f, 1.0f };
-            RE::NiPoint3 right = cross(forward, kWorldUp);
-            right = right.x * right.x + right.y * right.y + right.z * right.z > 0.0001f ? normalized(right) : eyeRight;
-            const RE::NiPoint3 up = cross(right, forward);
-
-            RE::NiTransform pose = transform_math::makeIdentityTransform<RE::NiTransform>();
-            pose.rotate.entry[0][0] = right.x;
-            pose.rotate.entry[0][1] = right.y;
-            pose.rotate.entry[0][2] = right.z;
-            pose.rotate.entry[1][0] = forward.x;
-            pose.rotate.entry[1][1] = forward.y;
-            pose.rotate.entry[1][2] = forward.z;
-            pose.rotate.entry[2][0] = up.x;
-            pose.rotate.entry[2][1] = up.y;
-            pose.rotate.entry[2][2] = up.z;
-            pose.translate = position;
-            pose.scale = handScale * std::clamp(distance / kHandReadingDistance, 1.0f, kMaxViewScale);
-            return pose;
-        }
-
         float pickDistance(const std::uint32_t handleValue, const RE::NiNode* wand)
         {
-            if (!handleValue || !wand) {
-                return kNoPick;
-            }
-            RE::ObjectRefHandle handle{};
-            static_assert(sizeof(handle) == sizeof(handleValue));
-            std::memcpy(&handle, &handleValue, sizeof(handle));
-            const auto ref = handle.get();
-            if (!ref) {
-                return kNoPick;
-            }
-            // The bound centre stands for large containers better than their origin.
-            const auto* root = ref->Get3D();
-            const RE::NiPoint3 target =
-                root && root->worldBound.fRadius > 0.0f ? root->worldBound.center : ref->data.location;
-            const float dx = target.x - wand->world.translate.x;
-            const float dy = target.y - wand->world.translate.y;
-            const float dz = target.z - wand->world.translate.z;
-            return std::sqrt(dx * dx + dy * dy + dz * dz);
+            return native_world_ui_anchor::distanceToReference(handleValue, wand).value_or(kNoPick);
         }
 
         // CloserHand: publishes which hand the next model update gives the
@@ -394,45 +300,6 @@ namespace rock::native_quick_loot_panel
             transform.rotate.entry[1][0] = -transform.rotate.entry[1][0];
             transform.rotate.entry[2][0] = -transform.rotate.entry[2][0];
             return transform;
-        }
-
-        // Re-parents the panel root; the caller has checked its current parent.
-        void moveTo(RE::NiAVObject* root, RE::NiNode* to)
-        {
-            auto* const from = root->parent;
-            if (!from || from == to) {
-                return;
-            }
-            RE::NiPointer<RE::NiAVObject> held;
-            from->DetachChild(root, held);
-            if (held) {
-                to->AttachChild(held.get(), true);
-            }
-        }
-
-        bool attachCarrier(RE::NiPointer<RE::NiNode>& carrier, bool& failed, RE::NiNode* parent, const char* name)
-        {
-            if (!carrier) {
-                if (failed) {
-                    return false;
-                }
-                carrier = native_scene::createEngineNiNode(1);
-                if (!carrier) {
-                    failed = true;
-                    ROCK_LOG_ERROR(Hand, "Quick loot: the {} panel node could not be created; the panel stays on the "
-                                         "right hand",
-                        name);
-                    return false;
-                }
-            }
-            if (carrier->parent != parent) {
-                if (auto* oldParent = carrier->parent) {
-                    RE::NiPointer<RE::NiAVObject> detached;
-                    oldParent->DetachChild(carrier.get(), detached);
-                }
-                parent->AttachChild(carrier.get(), true);
-            }
-            return true;
         }
 
         // CloserHand: the panel rides the hand that owns the listing.
@@ -475,8 +342,8 @@ namespace rock::native_quick_loot_panel
             }
             const RE::NiPoint3 eyeRight{ eye->world.rotate.entry[0][0], eye->world.rotate.entry[0][1],
                 eye->world.rotate.entry[0][2] };
-            const auto pose =
-                panelAtContainer(listed, eye->world.translate, eyeRight, handAttach->world.scale * root->local.scale);
+            const auto pose = native_world_ui_anchor::poseFacingEye(
+                listed, eye->world.translate, eyeRight, handAttach->world.scale * root->local.scale);
             if (!pose) {
                 moveTo(root, handAttach);
                 ROCK_LOG_SAMPLE_DEBUG(Hand, 1000,
@@ -487,9 +354,7 @@ namespace rock::native_quick_loot_panel
                 moveTo(root, handAttach);
                 return;
             }
-            // carrier world = pose * root^-1; carrier local = room^-1 * carrier world.
-            g_containerCarrier->local = transform_math::composeTransforms(transform_math::invertTransform(room->world),
-                transform_math::composeTransforms(*pose, transform_math::invertTransform(root->local)));
+            g_containerCarrier->local = native_world_ui_anchor::carrierLocalFor(*pose, root->local, room->world);
             moveTo(root, g_containerCarrier.get());
         }
 

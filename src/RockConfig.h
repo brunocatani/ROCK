@@ -67,6 +67,9 @@ namespace rock
         // Where the quick loot panel appears; see native_quick_loot_panel::Placement.
         // 1: right hand (game default); 2: closer hand; 3: at the container.
         int rockQuickLootPanelPlacement = 3;
+        // Where the wand activate prompts appear; see native_activate_prompts::Placement.
+        // 1: both hands (game default); 2: closer hand; 3: at the object.
+        int rockActivatePromptPlacement = 3;
         float rockGrabInputLeewaySeconds = 0.12f;
         float rockGrabInputForceSeconds = 0.08f;
         // ControllerInput.Left/Right: physical source of each logical button, per hand (left, right).

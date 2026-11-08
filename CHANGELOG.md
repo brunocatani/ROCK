@@ -56,6 +56,9 @@
   right hand (game default), 2 on the hand pointing at the container (the
   closer hand when both point), 3 at the container it lists (default). Modes 2
   and 3 list containers picked by either hand.
+- **Activate Prompt Placement** (`Grabbing.ActivatePromptPlacement`): 1 on both
+  hands (game default), 2 on the closer hand only when both point at the same
+  object, 3 at the object itself, shown once (default). Activation is unchanged.
 - **Pinch grab:** the object stays where thumb and finger found it and only the
   fingers close onto it.
 - **Grab direction** (`Grabbing.CloseGrabDirection`, `Grabbing.FarGrabDirection`): which way

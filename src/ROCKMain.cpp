@@ -41,6 +41,7 @@
 #include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/native/havok/HavokRuntime.h"
 #include "physics-interaction/native/havok/NativeImpactAudio.h"
+#include "physics-interaction/native/player/NativeActivatePrompts.h"
 #include "physics-interaction/native/player/NativeQuickLootPanel.h"
 #include "physics-interaction/native/player/NativeWristPipboyLook.h"
 #include "physics-interaction/native/safety/NativeCharacterProxySafety.h"
@@ -943,6 +944,8 @@ namespace
         scope_rig_parent_repair::reattachOrphanedScopeRig();
         native_quick_loot_panel::update(
             static_cast<native_quick_loot_panel::Placement>(g_rockConfig.rockQuickLootPanelPlacement));
+        native_activate_prompts::update(
+            static_cast<native_activate_prompts::Placement>(g_rockConfig.rockActivatePromptPlacement));
         native_secondary_presentation::beginFrame();
         frik_hand_world_authority::noteNativeRecoilControlled(false);
         performance_profiler::refreshSettings(g_rockConfig.rockPerformanceProfilerEnabled,
@@ -1475,6 +1478,7 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
         logger::error("ROCK: Impact audio filtering is unavailable; native audio remains unchanged.");
     }
     (void)rock::native_quick_loot_panel::install();
+    (void)rock::native_activate_prompts::install();
 
     logger::info("ROCK: Install native shape-cast safety...");
     if (!rock::native_shape_cast_safety::install()) {

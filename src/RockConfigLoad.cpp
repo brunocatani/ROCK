@@ -381,6 +381,13 @@ namespace rock
                 rockQuickLootPanelPlacement);
             rockQuickLootPanelPlacement = 3;
         }
+        rockActivatePromptPlacement =
+            static_cast<int>(ini.integer("Grabbing", "ActivatePromptPlacement", rockActivatePromptPlacement));
+        if (rockActivatePromptPlacement < 1 || rockActivatePromptPlacement > 3) {
+            ROCK_LOG_WARN(Config, "Invalid Grabbing.ActivatePromptPlacement={} -- using At Object",
+                rockActivatePromptPlacement);
+            rockActivatePromptPlacement = 3;
+        }
         rockGrabInputLeewaySeconds =
             static_cast<float>(ini.number("GrabAcquisition", "GrabInputLeewaySeconds", rockGrabInputLeewaySeconds));
         if (!std::isfinite(rockGrabInputLeewaySeconds) || rockGrabInputLeewaySeconds < 0.0f) {
