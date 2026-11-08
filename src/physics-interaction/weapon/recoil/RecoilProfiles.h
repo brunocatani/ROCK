@@ -136,7 +136,7 @@ namespace rock::weapon_recoil_policy
         return oneHanded ? oneHandPercent : twoHandPercent;
     }
 
-    // Percent has already been validated by ROCK's central INI loader.
+    // Percent has already been validated by ROCK's central settings loader.
     // A latched bipod is always 10% of the native kick. Armor retains its
     // fixed profile for non-lasers; lasers use their own strength in armor.
     [[nodiscard]] inline constexpr ProfileGains effectiveGains(const Family family, const Profile profile,

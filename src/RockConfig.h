@@ -7,6 +7,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "RE/NetImmerse/NiPoint.h"
 #include "physics-interaction/weapon/native/ShellCasingGracePolicy.h"
@@ -14,7 +15,9 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <SimpleIni.h>
+// FileWatch needs the Windows API; RockConfig.h is where ROCK has always
+// brought it in, so translation units that include it may use MAX_PATH.
+#include <Windows.h>
 
 #ifndef MAX_PATH
 #define ROCK_DEFINED_MAX_PATH_FOR_FILEWATCH 1
@@ -34,6 +37,11 @@
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 #include "physics-interaction/native/havok/HavokTimingFixPolicy.h"
 #include "physics-interaction/weapon/grip/GripZoneIndicatorPolicy.h"
+
+namespace rock::config
+{
+    class SettingReader;
+}
 
 namespace rock
 {
@@ -58,7 +66,7 @@ namespace rock
         bool rockLootToHand = true;
         float rockGrabInputLeewaySeconds = 0.12f;
         float rockGrabInputForceSeconds = 0.08f;
-        // [Controls] physical source of each logical button, per hand (left, right).
+        // ControllerInput.Left/Right: physical source of each logical button, per hand (left, right).
         std::array<button_layout_policy::HandLayout, 2> rockButtonLayouts{};
 
         bool rockDeveloperModeEnabled = false;
@@ -133,7 +141,7 @@ namespace rock
         // 1: Minimal; 2: Immersive; 3: Vanilla.
         int rockAmmoCounterStyle = 1;
 
-        // sDefaultHand: the firing hand for equips that carry no physical
+        // FiringHand.DefaultHand: the firing hand for equips that carry no physical
         // hand (favorites, PALM, scripts) and the grenade preference. Physical
         // Pip-Boy/trigger equips, grip handoffs and shoulder retrieval keep
         // the acting hand. Several weapons may always be equipped; firing
@@ -500,8 +508,9 @@ namespace rock
 
         void reload();
 
-        static void buildCompiledDefaults(CSimpleIniA& target);
-        [[nodiscard]] static RockConfigValues parseValues(CSimpleIniA& source);
+        // Every option the loader reads, with its compiled default and type.
+        [[nodiscard]] static std::vector<config::SettingDefault> compiledDefaults();
+        [[nodiscard]] static RockConfigValues parseValues(const config::LoadedValues& source);
 
         [[nodiscard]] std::uint64_t configRevision() const noexcept
         {
@@ -526,7 +535,7 @@ namespace rock
     private:
         void resetToDefaults();
 
-        void readValuesFromIni(CSimpleIniA& ini, bool materializeMissingDefaults = false);
+        void readValues(config::SettingReader& ini);
 
         [[nodiscard]] bool loadStore(bool createConsumer);
 

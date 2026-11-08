@@ -199,7 +199,7 @@ namespace rock
             }
         }
 
-        // iLooseGrabFingerPoseMode = 1 (swept arc): finger targets and skeleton rebase, as before the capsule sweep.
+        // FingerPoses.LooseGrabFingerPoseMode = 1 (swept arc): finger targets and skeleton rebase, as before the capsule sweep.
         grab_finger_pose_runtime::GrabFingerPoseTargetSet buildRuntimeFingerPoseTargets(
             const RE::NiPoint3& seatPointWorld, const RE::NiPoint3& seatNormalWorld)
         {
@@ -1184,7 +1184,7 @@ namespace rock
                 }
 
                 /*
-                         * Close-grab seat mode 1 (iGrabCloseSeatMode): local grasp
+                         * Close-grab seat mode 1 (GrabAcquisition.GrabCloseSeatMode): local grasp
                          * solve. The current seat keeps the object's rotation and
                          * slides the mesh point nearest the palm onto it, so a mug
                          * handle held in front of the palm is seated like any other

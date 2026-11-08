@@ -9,7 +9,10 @@ namespace rock::api::configuration {
     enum class Permission : std::uint32_t { Read=1, Write=2 };
     inline constexpr std::uint32_t kSupportedPermissions = 3;
     enum class Group : std::uint32_t { Consumer, Developer };
-    enum class ValueType : std::uint32_t { Boolean, Integer, Float, String };
+    // Float3 values are three numbers written "[x, y, z]".
+    enum class ValueType : std::uint32_t { Boolean, Integer, Float, String, Float3 };
+    // section is the TOML table path that holds the key, for example
+    // "ControllerInput.Left"; section and key are case-sensitive.
     struct Setting {
         const char* section;
         const char* key;

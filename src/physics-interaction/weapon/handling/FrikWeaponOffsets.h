@@ -16,7 +16,7 @@ namespace RE
 
 /*
  * Player-made FRIK weapon offset files (see FrikWeaponOffsetPolicy.h), used
- * only while [ImmersiveWeapons] bFrikUserWeaponOffsets is on. A weapon with
+ * only while WeaponHandling.FrikUserWeaponOffsets is on. A weapon with
  * one is seated and scaled from it instead of ROCK's authored
  * grip, takes only dynamic support grabs, and is published with
  * WeaponStateFlag::UserWeaponOffset so PAPER skips its authored reload and

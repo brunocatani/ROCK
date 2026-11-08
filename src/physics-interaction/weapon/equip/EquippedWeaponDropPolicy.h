@@ -1,4 +1,4 @@
-// Weapon equip mode (iWeaponEquipMode): how a loose weapon equips and what the
+// Weapon equip mode (WeaponHandling.WeaponEquipMode): how a loose weapon equips and what the
 // last grip release does, plus the drop and shoulder-stash decisions it implies.
 #pragma once
 
@@ -14,7 +14,7 @@ namespace rock::equipped_weapon_drop_policy
     };
 
     /*
-     * iWeaponEquipMode joins how a loose weapon equips with what the last
+     * WeaponHandling.WeaponEquipMode joins how a loose weapon equips with what the last
      * grip release does, so no contradictory pair can be configured. Auto
      * Equip re-equips any weapon held at its firing grip: a Toggle Drop would
      * undo itself and a retained grip could never be released, so mode 4

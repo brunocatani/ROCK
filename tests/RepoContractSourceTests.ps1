@@ -2,9 +2,9 @@ param(
     [string]$Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 )
 
-# Repository contract check: runtime INIs must never ship, deploy or embed
-# (ROCK configuration contract). Catalog/default parity belongs to
-# ConfigurationStoreTests.
+# Repository contract check: runtime settings files (TOML, and INI) must never
+# ship, deploy or embed (ROCK configuration contract). Catalog/default parity
+# belongs to ConfigurationStoreTests.
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -15,7 +15,7 @@ $failures = [System.Collections.Generic.List[string]]::new()
 # parity belongs to ConfigurationStoreTests; input ownership to adapter tests.
 $guard = Join-Path $Root 'cmake/VerifyDistributionInputs.cmake'
 & cmake "-DINPUT_TREES=$Root/data/mod" -P $guard
-if ($LASTEXITCODE -ne 0) { $failures.Add('The deployment input tree contains an INI.') }
+if ($LASTEXITCODE -ne 0) { $failures.Add('The deployment input tree contains a settings file.') }
 
 $fixture = Join-Path ([System.IO.Path]::GetTempPath()) ('rock-distribution-' + [guid]::NewGuid())
 try {
@@ -29,9 +29,14 @@ try {
     & cmake "-DINPUT_TREES=$fixture" -P $guard *> $null
     if ($LASTEXITCODE -eq 0) { $failures.Add('Nested INIs must fail the distribution preflight.') }
     Remove-Item -LiteralPath $ini
-    Set-Content -LiteralPath $resource -Value '101 RCDATA "outside/ROCK_example.ini"'
+    $toml = Join-Path $fixture 'nested/ROCK.toml'
+    Set-Content -LiteralPath $toml -Value '[Logging]'
+    & cmake "-DINPUT_TREES=$fixture" -P $guard *> $null
+    if ($LASTEXITCODE -eq 0) { $failures.Add('Nested TOML settings must fail the distribution preflight.') }
+    Remove-Item -LiteralPath $toml
+    Set-Content -LiteralPath $resource -Value '101 RCDATA "outside/ROCK_example.toml"'
     & cmake "-DINPUT_FILES=$resource" -P $guard *> $null
-    if ($LASTEXITCODE -eq 0) { $failures.Add('Embedded reference INIs must fail the resource preflight.') }
+    if ($LASTEXITCODE -eq 0) { $failures.Add('Embedded reference settings files must fail the resource preflight.') }
 } finally {
     $resolvedFixture = [System.IO.Path]::GetFullPath($fixture)
     $tempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath()).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar

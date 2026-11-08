@@ -1,7 +1,8 @@
 # Configuration (interface 13, major 2)
 
-Header: `include/ROCK/Configuration.h`. Reads and changes ROCK's INI settings
-through ROCK's own catalog, the same way PALM's ROCK pages do.
+Header: `include/ROCK/Configuration.h`. Reads and changes ROCK's TOML settings
+(`ROCK.toml` and `ROCK_Developer.toml`) through ROCK's own catalog, the same
+way PALM's ROCK pages do.
 
 ## Discover and bind
 
@@ -22,15 +23,30 @@ Permissions: `Read` (1) for `revision` and `visit`; `Write` (2) for
 | Function | Thread | Result |
 | --- | --- | --- |
 | `revision(owner, uint64* out)` | any | A number that increases whenever any setting changes, including hot reloads. |
-| `visit(owner, group, visitor, user)` | any | Calls `visitor(setting, user)` once per setting of `Group::Consumer` (`ROCK.ini`) or `Group::Developer` (`ROCK_Developer.ini`). `NotReady` before the catalog loads. |
-| `setValue(owner, group, section, key, value, error, errorCapacity)` | any | Validates, applies and saves one setting to its owning INI. `InvalidArgument` when rejected; `error` then holds the reason (truncated to `errorCapacity`). |
+| `visit(owner, group, visitor, user)` | any | Calls `visitor(setting, user)` once per setting of `Group::Consumer` (`ROCK.toml`) or `Group::Developer` (`ROCK_Developer.toml`), in catalog order. `NotReady` before the catalog loads. |
+| `setValue(owner, group, section, key, value, error, errorCapacity)` | any | Validates, applies and saves one setting to its owning file. `InvalidArgument` when rejected; `error` then holds the reason (truncated to `errorCapacity`). A file with a syntax error is not overwritten: the write is rejected until the file is fixed. |
 
 ## Records
 
 `Setting` (borrowed for the duration of one visitor call only): `section`,
 `key`, `value`, `defaultValue`, `category`, `description` (UTF-8 strings),
-`type` (`ValueType`: `Boolean`, `Integer`, `Float`, `String`), and `overridden` (nonzero
-when the value differs from ROCK's compiled default).
+`type` (`ValueType`), and `overridden` (nonzero when the value differs from
+ROCK's compiled default).
+
+`section` is the TOML table path that holds the key, for example `Grabbing` or
+`ControllerInput.Left`. `section` and `key` are case-sensitive and identify the
+setting exactly; pass them to `setValue` as `visit` reports them.
+
+| `ValueType` | `value` text | `setValue` accepts |
+| --- | --- | --- |
+| `Boolean` | `true` or `false` | also `1`/`0`, `yes`/`no`, `on`/`off` |
+| `Integer` | decimal whole number | a whole number |
+| `Float` | decimal number, always with `.` or an exponent (`4.0`) | any finite number |
+| `String` | the text itself, unquoted | one line of text |
+| `Float3` | `[x, y, z]`, for example `[0.5, -1.0, 0.0]` | three finite numbers, with or without brackets |
+
+Rotations stored as `Float3` are `[pitch, yaw, roll]`; the setting's
+`description` says which form it uses.
 
 ## Callback rules
 
@@ -47,4 +63,7 @@ if (config->revision(client.owner(), &seen) == rock::api::Status::Ok) {
         [](const rock::api::configuration::Setting* setting, void*) { /* copy what you need */ },
         nullptr);
 }
+char error[256]{};
+config->setValue(client.owner(), rock::api::configuration::Group::Consumer, "Grabbing", "LootToHand", "false",
+    error, sizeof(error));
 ```

@@ -1,4 +1,4 @@
-// Probe visualizer for the capsule finger solve (bDebugDrawGrabFingerProbes).
+// Probe visualizer for the capsule finger solve (DebugOverlay.DebugDrawGrabFingerProbes).
 // Debug only: it runs the grab's finger solve against the selected object and
 // reports what it decided; nothing here changes interaction state.
 #include "physics-interaction/hand/Hand.h"

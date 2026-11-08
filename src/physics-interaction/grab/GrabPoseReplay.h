@@ -11,7 +11,7 @@
  * Bench replay record for one dynamic grab: the mesh finger solve's exact
  * inputs, its outputs, what ROCK published to FRIK, FRIK's own forward model,
  * and the bones as rendered once the pose settled. Written only with
- * bDebugTestbenchTelemetry on, one file per grab.
+ * LogsAndTelemetry.DebugTestbenchTelemetry on, one file per grab.
  *
  * Offline tooling replays the solve through the same ROCK headers (solver
  * parity) and rebuilds the rendered fingers from the published values with

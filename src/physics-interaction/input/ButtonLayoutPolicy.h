@@ -191,7 +191,7 @@ namespace rock::button_layout_policy
         return std::nullopt;
     }
 
-    // Canonical INI spelling. The face buttons use the labels of the hand they belong to.
+    // Canonical settings spelling. The face buttons use the labels of the hand they belong to.
     [[nodiscard]] constexpr std::string_view sourceName(Source source, bool isLeft) noexcept
     {
         switch (source) {

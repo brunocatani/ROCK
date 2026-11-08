@@ -3,7 +3,7 @@
 namespace rock::dynamic_hand_collision_policy
 {
     // These values define mandatory production behavior. They are not runtime
-    // tuning controls and must not be loaded from ROCK.ini.
+    // tuning controls and must not be loaded from ROCK.toml.
     inline constexpr float kMaximumLinearVelocityHavok = 15.0f;
     inline constexpr float kContactPressMaximumVelocityHavok = 1.0f;
     inline constexpr float kDivergenceTeleportDistanceGameUnits = 40.0f;

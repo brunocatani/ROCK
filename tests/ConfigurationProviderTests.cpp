@@ -24,11 +24,12 @@ namespace
     std::filesystem::path directory;
     rock::provider::InterfaceBinding binding{ 1, 3 };
     bool revoked{};
+    // Keyed "table.key".
     using Catalog = std::map<std::string, std::string>;
 
     void ROCK_CALL collect(const config::Setting* setting, void* context)
     {
-        static_cast<Catalog*>(context)->emplace(setting->key, setting->value);
+        static_cast<Catalog*>(context)->emplace(std::string(setting->section) + "." + setting->key, setting->value);
     }
 
     Catalog catalog(config::Group group)
@@ -48,7 +49,7 @@ namespace
 
 // Replace only engine-independent owner authorization and the Documents root.
 // The provider, configuration owner, catalog, reload, watcher and file writes
-// are production code; no test operation can reach production INIs.
+// are production code; no test operation can reach production settings files.
 namespace rock::resources
 {
     std::string getPathInDocuments(const std::string&)
@@ -105,46 +106,53 @@ int main()
         }
     } cleanup;
 
+    const auto consumerFile = directory / "ROCK.toml";
+    const auto developerFile = directory / "ROCK_Developer.toml";
     const auto& api = config::table();
     Catalog missing;
     assert(api.visit(42, config::Group::Consumer, collect, &missing) == Status::NotReady);
     assert(api.visit(99, config::Group::Consumer, collect, &missing) == Status::OwnerNotRegistered);
     g_rockConfig.load();
     g_rockConfig.stopFileWatch(); // Keep reload timing deterministic; writes still request it.
+    assert(fs::exists(consumerFile));
     assert(g_rockConfig.rockFarGrabMode == 1);
-    assert(catalog(config::Group::Consumer).at("iFarGrabMode") == "1");
-    assert(!catalog(config::Group::Developer).contains("iFarGrabMode"));
-    assert(set(config::Group::Consumer, "PhysicsInteraction", "iFarGrabMode", "2") == Status::Ok);
+    assert(catalog(config::Group::Consumer).at("Grabbing.FarGrabMode") == "1");
+    assert(!catalog(config::Group::Developer).contains("Grabbing.FarGrabMode"));
+    assert(set(config::Group::Consumer, "Grabbing", "FarGrabMode", "2") == Status::Ok);
     g_rockConfig.reload();
     assert(g_rockConfig.rockFarGrabMode == 2);
-    assert(set(config::Group::Consumer, "PhysicsInteraction", "iFarGrabMode", "99") == Status::Ok);
+    assert(set(config::Group::Consumer, "Grabbing", "FarGrabMode", "99") == Status::Ok);
     g_rockConfig.reload();
     assert(g_rockConfig.rockFarGrabMode == 1);
-    assert(set(config::Group::Consumer, "PhysicsInteraction", "iFarGrabMode", "1") == Status::Ok);
+    assert(set(config::Group::Consumer, "Grabbing", "FarGrabMode", "1") == Status::Ok);
     g_rockConfig.reload();
-    for (const auto* key : { "npcDynamicCollisions", "bBladePenetrationEnabled", "bDebugDrawNpcNativeColliders",
-             "bDebugDrawNpcSupplementColliders", "bDebugDrawNpcColliderLabels" }) {
-        assert(!catalog(config::Group::Consumer).contains(key));
-        assert(!catalog(config::Group::Developer).contains(key));
-        assert(set(config::Group::Consumer, "PhysicsInteraction", key, "true") != Status::Ok);
-        assert(set(config::Group::Developer, "PhysicsInteraction", key, "true") != Status::Ok);
+    // Identity is the exact table and key; the old INI spellings are not aliases.
+    assert(set(config::Group::Consumer, "PhysicsInteraction", "iFarGrabMode", "2") != Status::Ok);
+    assert(set(config::Group::Consumer, "grabbing", "FarGrabMode", "2") != Status::Ok);
+    for (const auto* key : { "NpcDynamicCollisions", "BladePenetrationEnabled", "DebugDrawNpcNativeColliders",
+             "DebugDrawNpcSupplementColliders", "DebugDrawNpcColliderLabels" }) {
+        for (const auto group : { config::Group::Consumer, config::Group::Developer }) {
+            for (const auto& [path, value] : catalog(group))
+                assert(!path.ends_with(std::string(".") + key));
+            assert(set(group, "DebugOverlay", key, "true") != Status::Ok);
+        }
     }
     const auto initialRevision = g_rockConfig.configRevision();
-    assert(initialRevision && !fs::exists(directory / "ROCK_Developer.ini"));
+    assert(initialRevision && !fs::exists(developerFile));
     const auto originalLogLevel = g_rockConfig.rockLogLevel;
 
     auto task = std::async(std::launch::async, [&] {
         assert(std::this_thread::get_id() != runtimeThread);
-        assert(catalog(config::Group::Consumer).contains("iLogLevel"));
-        assert(catalog(config::Group::Developer).at("bDeveloperModeEnabled") == "false");
-        assert(set(config::Group::Consumer, "Logging", "iLogLevel", "3") == Status::Ok);
-        assert(set(config::Group::Developer, "Debug", "bDeveloperModeEnabled", "true") == Status::Ok);
+        assert(catalog(config::Group::Consumer).contains("Logging.LogLevel"));
+        assert(catalog(config::Group::Developer).at("DeveloperControls.DeveloperModeEnabled") == "false");
+        assert(set(config::Group::Consumer, "Logging", "LogLevel", "3") == Status::Ok);
+        assert(set(config::Group::Developer, "DeveloperControls", "DeveloperModeEnabled", "true") == Status::Ok);
         std::uint64_t revision{};
         assert(api.revision(42, &revision) == Status::Ok && revision == initialRevision);
     });
     task.get();
     assert(g_rockConfig.rockLogLevel == originalLogLevel && !g_rockConfig.rockDeveloperModeEnabled);
-    assert(fs::exists(directory / "ROCK_Developer.ini"));
+    assert(fs::exists(developerFile));
     g_rockConfig.reload();
     assert(g_rockConfig.rockLogLevel == 3 && g_rockConfig.rockDeveloperModeEnabled);
     assert(g_rockConfig.configRevision() > initialRevision);
@@ -153,17 +161,18 @@ int main()
     std::barrier start(3);
     auto first = std::async(std::launch::async, [&] {
         start.arrive_and_wait();
-        return set(config::Group::Developer, "Debug", "bDeveloperModeEnabled", "false");
+        return set(config::Group::Developer, "DeveloperControls", "DeveloperModeEnabled", "false");
     });
     auto second = std::async(std::launch::async, [&] {
         start.arrive_and_wait();
-        return set(config::Group::Developer, "PhysicsInteraction", "fDebugSkeletonBoneAxisLength", "8");
+        return set(config::Group::Developer, "SkeletonDebug", "DebugSkeletonBoneAxisLength", "8");
     });
     start.arrive_and_wait();
     assert(first.get() == Status::Ok && second.get() == Status::Ok);
     g_rockConfig.reload();
     const auto developer = catalog(config::Group::Developer);
-    assert(developer.at("bDeveloperModeEnabled") == "false" && developer.at("fDebugSkeletonBoneAxisLength") == "8");
+    assert(developer.at("DeveloperControls.DeveloperModeEnabled") == "false" &&
+        developer.at("SkeletonDebug.DebugSkeletonBoneAxisLength") == "8.0");
 
     // Hold a borrowed catalog entry while a runtime reload becomes pending.
     // Reload must return without waiting and apply after the visitor finishes.
@@ -192,8 +201,8 @@ int main()
     });
     borrow.entered.wait();
     {
-        std::ofstream file(directory / "ROCK.ini");
-        file << "[Logging]\niLogLevel=4\n";
+        std::ofstream file(consumerFile);
+        file << "[Logging]\nLogLevel = 4\n";
     }
     g_rockConfig.reload();
     assert(g_rockConfig.rockLogLevel == 3);
@@ -203,22 +212,38 @@ int main()
     g_rockConfig.processPendingConfigReload();
     assert(g_rockConfig.rockLogLevel == 4);
 
+    // A file that stops parsing keeps the last applied values, refuses writes
+    // that would overwrite it, and applies again once it is fixed.
+    {
+        std::ofstream file(consumerFile);
+        file << "[Logging]\nLogLevel = 2\n[Grabbing\n";
+    }
+    g_rockConfig.reload();
+    assert(g_rockConfig.rockLogLevel == 4);
+    assert(set(config::Group::Consumer, "Logging", "LogLevel", "1") == Status::InvalidArgument);
+    {
+        std::ofstream file(consumerFile);
+        file << "[Logging]\nLogLevel = 2\n";
+    }
+    g_rockConfig.reload();
+    assert(g_rockConfig.rockLogLevel == 2);
+
     // Reentrant subscribers run after releasing catalog ownership.
     bool notified = false;
     g_rockConfig.subscribeForConfigChanged("test", [&](const std::string&) {
         notified = true;
-        assert(catalog(config::Group::Consumer).at("iLogLevel") == "4");
+        assert(catalog(config::Group::Consumer).at("Logging.LogLevel") == "2");
     });
-    assert(set(config::Group::Developer, "PhysicsInteraction", "fDebugSkeletonBoneAxisLength", "4") == Status::Ok);
-    assert(!fs::exists(directory / "ROCK_Developer.ini"));
+    assert(set(config::Group::Developer, "SkeletonDebug", "DebugSkeletonBoneAxisLength", "4") == Status::Ok);
+    assert(!fs::exists(developerFile));
     g_rockConfig.reload();
     assert(notified);
     g_rockConfig.unsubscribeFromConfigChanged("test");
     binding.permissions = 1;
-    assert(set(config::Group::Consumer, "Logging", "iLogLevel", "2") == Status::PermissionDenied);
+    assert(set(config::Group::Consumer, "Logging", "LogLevel", "2") == Status::PermissionDenied);
     binding.permissions = 3;
     assert(api.visit(
                42, config::Group::Consumer, +[](const config::Setting*, void*) { throw 1; }, nullptr) ==
         Status::OwnerRevoked);
-    assert(revoked && set(config::Group::Consumer, "Logging", "iLogLevel", "2") == Status::OwnerRevoked);
+    assert(revoked && set(config::Group::Consumer, "Logging", "LogLevel", "2") == Status::OwnerRevoked);
 }

@@ -19,11 +19,11 @@ ROCK is a Fallout 4 VR F4SE plugin (`ROCK.dll`) that gives the player physical h
 | `src/ROCKMain.cpp` | F4SE Query/Load, version guard, FRIK registration, lifecycle |
 | `src/physics-interaction/` | Physics, grabbing, collision, weapons, input, animation and the rest of the runtime, one folder per subsystem |
 | `src/api/` | Provider API: discovery, owner registry, the per-interface tables (`providers/`) and their services |
-| `src/config/`, `src/RockConfig*.cpp` | Settings catalog (`SettingMetadata.h`) and INI loading, organizing and saving |
+| `src/config/`, `src/RockConfig*.cpp` | Settings catalog (`SettingMetadata.h`) and TOML loading, organizing and saving |
 | `src/rock_support/` | Logging, runtime helpers, menu tracking and controller input |
 | `include/ROCK/` | Public provider API headers, the only copy |
 | `docs/api/` | One page per provider interface |
-| `data/config/` | Example INIs, generated from the catalog |
+| `data/config/` | Example TOML settings files, generated from the catalog |
 | `data/mod/` | Game data shipped in the mod package, when there is any (absent today) |
 | `steamvr_bindings/` | SteamVR binding templates for non-Quest controllers, shipped only in release packages |
 | `third_party/openvr/` | Vendored OpenVR ABI for raw controller input and haptics |
@@ -56,7 +56,7 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp`; never re-implemen
 ## Runtime files
 
 - Plugin: `Data/F4SE/Plugins/ROCK.dll`. Log: `ROCK.log` in `Documents/My Games/Fallout4VR/F4SE/`.
-- Settings: `ROCK.ini` and the optional `ROCK_Developer.ini` in `Documents/My Games/Fallout4VR/Mods_Config/ROCK/`, with `SavedGrabOffsets/` and `AuthoredWeaponGripCache/` beside them. Runtime code resolves the Documents known folder.
+- Settings: `ROCK.toml` and the optional `ROCK_Developer.toml` in `Documents/My Games/Fallout4VR/Mods_Config/ROCK/`, with `SavedGrabOffsets/` and `AuthoredWeaponGripCache/` beside them. Runtime code resolves the Documents known folder.
 - Co-save: unique ID `ROCK`, record `HNDS` version 1, written by `src/physics-interaction/weapon/equip/WeaponHandSave.cpp`: which hand holds each equipped weapon and each hand's one-handed melee reverse grip. A layout change needs a new record version.
 
 ## What ROCK does not own
@@ -64,7 +64,7 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp`; never re-implemen
 - **NPC interactions** belong to SCISSORS, which builds on the NativeInteraction interface and creates, reads and retires its own NPC bodies and constraints. ROCK keeps only shared mechanisms: native allocation and quarantine, callback lifetime, hand and weapon authority, connected-body grab execution, native safety and the grenade lifecycle. For blade contact, ROCK publishes the contact point and the optional manifold normal and count; blade profiles, melee damage hooks and actor-limb policy are not ROCK's. ROCK has no NPC settings.
 - **World drawing** belongs to RPS UI Framework. ROCK's indicators and debug shapes go through its world drawing (`src/physics-interaction/visual/WorldDrawClient.cpp`) and the ammo counters through its number overlays (`src/physics-interaction/visual/AmmoCounters.cpp`); ROCK has no renderer. It keeps only its own hand and weapon visualization setting.
 - **Reload and manual-cycle animation** belong to PAPER.
-- **Settings screens** (RobCo PALM) read ROCK's catalog and write through the Configuration interface. Nothing else writes ROCK's INIs.
+- **Settings screens** (RobCo PALM) read ROCK's catalog and write through the Configuration interface. Nothing else writes ROCK's settings files.
 
 ## Invariants
 
@@ -84,9 +84,11 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp`; never re-implemen
 
 ### Configuration
 
-- `src/config/SettingMetadata.h` is the single source of every option: section, key, default, owning file (its `Group`) and help text. Each key belongs to exactly one of `ROCK.ini` (players) and `ROCK_Developer.ini` (developer overrides).
-- `data/config/ROCK_example.ini` and `ROCK_Developer_example.ini` document every option. Regenerate them with `ROCKConfigurationStoreTests --write-examples data/config` after any catalog change; the test fails when they differ. They are references only: never read, embedded, packaged, deployed or used to create runtime files. INIs never ship in the mod package.
-- At startup and on every configuration API write, each existing file is organized the same way: every recognized key once, with its effective (last) value, under its catalog section and category, preceded by the catalog's help as `;` lines. `#` lines above a recognized key are the player's notes and stay. `ROCK.ini` also gains every missing player option at its default. Entries ROCK does not read from that file (retired options, options owned by the other file, foreign keys) become comment lines in the trailing `[Unused]` block and never apply. Startup writes a file only when its organized text differs; hot reload only reads.
-- A missing `ROCK.ini` is created from the compiled defaults and the catalog, with no templates, resources or fallback paths. `ROCK_Developer.ini` is never created by loading: it appears only when a developer setting differs from its default, holds only overrides, loses a key restored to its default, and is removed when no read entries remain. Entries a supplied developer file sets to defaults are kept.
+- `src/config/SettingMetadata.h` is the single source of every option: TOML table path, key, owning file (its `Group`), category and help text; `RockConfigLoad.cpp` declares each option's type and default through the read it makes. An option is identified by its exact, case-sensitive table and key, and belongs to exactly one of `ROCK.toml` (players) and `ROCK_Developer.toml` (developer overrides). Construction fails when the catalog and the loader disagree.
+- Values are typed: booleans, whole numbers, decimal numbers (a whole number is accepted), one-line strings, and `Float3` lists of exactly three numbers for vectors and `[pitch, yaw, roll]` rotations.
+- `data/config/ROCK_example.toml` and `ROCK_Developer_example.toml` document every option. Regenerate them with `ROCKConfigurationStoreTests --write-examples data/config` after any catalog change; the test fails when they differ. They are references only: never read, embedded, packaged, deployed or used to create runtime files. Settings files (TOML or INI) never ship in the mod package.
+- toml++ only parses; ROCK writes the text. At startup and on every configuration API write, each file that parses is organized the same way: every recognized key once, grouped by table in catalog order under its category heading, preceded by the catalog's help as `##` lines. Single-`#` lines above a key are the player's notes and stay with it. `ROCK.toml` also gains every missing player option at its default. Entries ROCK does not read from that file (retired options, options owned by the other file, foreign keys) become `#` comment lines in the trailing "Not read by this version of ROCK" block and never apply. A recognized value of the wrong type is kept as written, logged with its line, and the option keeps its last value. Startup writes a file only when its organized text differs; hot reload only reads.
+- A file that does not parse is never rewritten: the error is logged with file, line and column, that file's options keep the last values read from it, the other file still applies, and API writes to it are refused until it is fixed.
+- A missing `ROCK.toml` is created from the compiled defaults and the catalog, with no templates, resources or fallback paths. `ROCK.ini` and `ROCK_Developer.ini` are not read or migrated. `ROCK_Developer.toml` is never created by loading: it appears only when a developer setting differs from its default, holds only overrides, loses a key restored to its default, and is removed when no read entries remain. Entries a supplied developer file sets to defaults are kept.
 - Both files reload while the game runs, including the developer file appearing and disappearing.
-- Mandatory behaviour has no INI switch: weapon collision and its generation mode (only the per-TriShape path), dynamic hand collision, interaction and haptics, body colliders, native character-controller filtering, the far-selection HMD cone, grabbing on the logical OpenVR grip bit, native V.A.N.S. suppression, and grab, surface, impact, shoulder-stash and mouth-consume haptics. ROCK's APIs control only behaviour ROCK already owns.
+- Mandatory behaviour has no settings switch: weapon collision and its generation mode (only the per-TriShape path), dynamic hand collision, interaction and haptics, body colliders, native character-controller filtering, the far-selection HMD cone, grabbing on the logical OpenVR grip bit, native V.A.N.S. suppression, and grab, surface, impact, shoulder-stash and mouth-consume haptics. ROCK's APIs control only behaviour ROCK already owns.

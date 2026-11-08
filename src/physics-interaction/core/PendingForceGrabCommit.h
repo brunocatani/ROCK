@@ -30,7 +30,7 @@ namespace rock
      * target to the hand. Freezing the grab-authority relation on the same
      * tick reads whatever hand transform
      * happens to exist that instant. This carries the request across the
-     * settle delay (fForceGrabAttachSettleSeconds) so the eventual commit
+     * settle delay (GrabDrive.ForceGrabAttachSettleSeconds) so the eventual commit
      * reads a genuinely live hand pose. A saved grab offset, if any exists
      * for the target object+hand, is applied by grabSelectedObject itself at
      * commit time (SelectedObject::forcedArrival already makes it eligible,

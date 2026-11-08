@@ -1,7 +1,7 @@
 /*
  * Developer telemetry for the external FO4VR test bench (devbench `rps` tools).
  *
- * When `bDebugTestbenchTelemetry` is on, ROCK publishes one Frame record per
+ * When `LogsAndTelemetry.DebugTestbenchTelemetry` is on, ROCK publishes one Frame record per
  * finalized interaction frame and Event records (haptics, native input gates)
  * into the shared-memory ring `Local\RPS_Telemetry_ROCK`, and after the presented
  * skeleton is final, Skeleton records with every bone of the rendered root skeleton. The bench reads it

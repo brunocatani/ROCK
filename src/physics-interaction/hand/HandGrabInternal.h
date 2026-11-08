@@ -1293,7 +1293,7 @@ namespace rock::hand_grab_internal
     }
 
     /*
-         * iLooseGrabFingerPoseMode = 1: the pre-capsule publication for a swept-arc
+         * FingerPoses.LooseGrabFingerPoseMode = 1: the pre-capsule publication for a swept-arc
          * mesh pose (contact splay, then the surface-aim local-transform layer when
          * publishLocalTransforms is set), unchanged.
          */

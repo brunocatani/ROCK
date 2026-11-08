@@ -8,7 +8,7 @@ namespace rock::logging_policy
 {
     /*
      * ROCK shares FRIK's spdlog-backed level numbering so both DLLs can be
-     * diagnosed from the same mental model and the same INI shape. The policy
+     * diagnosed from the same mental model and the same settings shape. The policy
      * stays pure so config parsing, macro gating, and tests agree without
      * pulling the runtime logger into focused regression tests.
      */

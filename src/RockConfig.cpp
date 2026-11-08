@@ -33,9 +33,7 @@ namespace rock
             {
                 std::scoped_lock lock(_storeMutex);
                 if (!_store) {
-                    CSimpleIniA defaults;
-                    buildCompiledDefaults(defaults);
-                    _store = std::make_unique<config::ConfigurationStore>(resolveConfigDirectory(), defaults);
+                    _store = std::make_unique<config::ConfigurationStore>(resolveConfigDirectory(), compiledDefaults());
                     resetToDefaults();
                 }
             }
@@ -49,27 +47,24 @@ namespace rock
 
     bool RockConfig::loadStore(bool createConsumer)
     {
-        // Do not stall the runtime frame behind an API visitor or INI edit.
+        // Do not stall the runtime frame behind an API visitor or file edit.
         // Keep the existing pending reload until the configuration task finishes.
         std::unique_lock lock(_storeMutex, std::try_to_lock);
         if (!lock.owns_lock()) {
             _reloadPending.store(true, std::memory_order_release);
             return false;
         }
-        if (!_store || !_store->load(createConsumer)) {
-            ROCK_LOG_WARN(Config, "Configuration reload failed; retaining current values: {}",
-                _store ? _store->error() : "configuration is not initialized");
+        if (!_store) {
+            ROCK_LOG_WARN(Config, "Configuration reload failed; configuration is not initialized");
             return false;
         }
-        if (!_store->error().empty()) {
-            ROCK_LOG_WARN(Config, "Configuration loaded, but the INI files could not be updated: {}", _store->error());
-        }
+        _store->load(createConsumer);
+        for (const auto& message : _store->messages())
+            ROCK_LOG_WARN(Config, "{}", message);
         if (_store->revision() == configRevision())
             return true;
 
-        CSimpleIniA combined;
-        _store->appendLoadedValues(combined);
-        static_cast<RockConfigValues&>(*this) = parseValues(combined);
+        static_cast<RockConfigValues&>(*this) = parseValues(_store->loadedValues());
         logger::setLogLevelAndPattern(rockLogLevel, rockLogPattern);
         logger::setFlushImmediate(rockLogFlushImmediate);
         _configRevision.store(_store->revision(), std::memory_order_release);
@@ -115,7 +110,7 @@ namespace rock
             if (setting.group != group)
                 continue;
             const api::configuration::Setting record{
-                setting.section.c_str(),
+                setting.table.c_str(),
                 setting.key.c_str(),
                 setting.value.c_str(),
                 setting.defaultValue.c_str(),
@@ -166,7 +161,9 @@ namespace rock
         // optional developer file are observed even when it did not exist.
         _fileWatch = std::make_unique<filewatch::FileWatch<std::string>>(_store->directory().string(),
             [this](const std::string& name, filewatch::Event) {
-                if (_stricmp(name.c_str(), "ROCK.ini") != 0 && _stricmp(name.c_str(), "ROCK_Developer.ini") != 0)
+                // Windows file names are case-insensitive.
+                if (_stricmp(name.c_str(), config::ConfigurationStore::kConsumerFileName.data()) != 0 &&
+                    _stricmp(name.c_str(), config::ConfigurationStore::kDeveloperFileName.data()) != 0)
                     return;
                 _lastFileEventTicks.store(eventTicks(), std::memory_order_release);
                 _reloadPending.store(true, std::memory_order_release);

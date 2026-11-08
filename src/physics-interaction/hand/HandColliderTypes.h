@@ -305,7 +305,7 @@ namespace rock::hand_bone_collider_geometry_math
     {
         // Generated colliders are fed by live root-flattened skeleton data, so
         // dimensions are treated as a runtime trust boundary. Bad single-frame
-        // skeleton samples and compounded INI scale mistakes must be rejected
+        // skeleton samples and compounded settings scale mistakes must be rejected
         // before Havok shape creation instead of producing oversized bodies.
         float minLength = 0.05f;
         float maxLength = 80.0f;

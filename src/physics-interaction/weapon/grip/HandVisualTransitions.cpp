@@ -933,7 +933,7 @@ namespace rock
             const RE::NiTransform startWorld =
                 (liveHandWorld && isFiniteTransform(*liveHandWorld)) ? *liveHandWorld : targetWorld;
             /*
-             * The INI keys map the seat distance. The angle mapping shares the
+             * The settings map the seat distance. The angle mapping shares the
              * equipped-weapon return bounds so a hand that is already at the
              * grip point but twisted (a firing-grip reattach with the palm on
              * the grip) still slerps into the seat instead of snapping.

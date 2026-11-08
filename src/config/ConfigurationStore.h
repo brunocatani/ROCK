@@ -1,8 +1,11 @@
 #pragma once
 
 #include <ROCK/Configuration.h>
-#include <SimpleIni.h>
+#include <array>
 #include <filesystem>
+#include <functional>
+#include <map>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -13,11 +16,19 @@ namespace rock::config
     using api::configuration::Group;
     using api::configuration::ValueType;
 
-    [[nodiscard]] Group settingGroup(std::string_view section, std::string_view key) noexcept;
+    // A compiled default as the loader declares it: TOML table path, key,
+    // canonical value text and type.
+    struct SettingDefault
+    {
+        std::string table;
+        std::string key;
+        std::string value;
+        ValueType type;
+    };
 
     struct Setting
     {
-        std::string section;
+        std::string table; // TOML table path, for example "ControllerInput.Left".
         std::string key;
         std::string defaultValue;
         std::string value;
@@ -31,30 +42,50 @@ namespace rock::config
 
     struct Change
     {
-        std::string_view section, key, value;
+        std::string_view table, key, value;
     };
+
+    // Canonical values of the settings the files specify, keyed by settingPath().
+    using LoadedValues = std::map<std::string, std::string, std::less<>>;
+
+    [[nodiscard]] std::string settingPath(std::string_view table, std::string_view key);
+
+    // Canonical text of a value: true/false, a decimal integer, a float that
+    // always carries a '.' or exponent, raw text, or "[x, y, z]". Accepts the
+    // looser forms an API caller may send (1/0, yes/no, "x, y, z"). Returns
+    // nullopt for a value the type cannot hold.
+    [[nodiscard]] std::optional<std::string> normalizeValue(ValueType type, std::string_view value);
+    [[nodiscard]] std::optional<std::array<float, 3>> parseFloat3(std::string_view value);
 
     // Owned and serialized by RockConfig. Configuration tasks save/visit through
     // that owner; only its runtime reload applies the catalog to live settings.
-    // INI sections are labels. Case-insensitive keys identify settings within
-    // their owning file; the last physical occurrence wins. Startup and explicit
-    // writes organize each existing file the same way: effective values under the
-    // catalog's labels and help, missing player options added, entries ROCK does
-    // not read kept only as comments. Startup writes only when that text differs;
-    // hot reload only reads.
+    // A setting is identified by its TOML table path and key inside its owning
+    // file. Startup and explicit writes organize each file the same way:
+    // effective values under the catalog's tables and help, missing player
+    // options added, entries ROCK does not read kept only as comments. A file
+    // that does not parse is never rewritten and its settings keep the last
+    // values read from it. Startup writes only when the text differs; hot
+    // reload only reads.
     class ConfigurationStore
     {
     public:
-        ConfigurationStore(std::filesystem::path directory, const CSimpleIniA& defaults);
-        [[nodiscard]] bool load(bool createConsumer);
-        [[nodiscard]] bool setValue(Group group, std::string_view section, std::string_view key,
-            std::string_view value);
+        ConfigurationStore(std::filesystem::path directory, std::span<const SettingDefault> defaults);
+
+        // Per-file problems are reported through messages(); the other file
+        // still applies and the failed file's settings keep their last values.
+        void load(bool organizeFiles);
+        [[nodiscard]] bool setValue(Group group, std::string_view table, std::string_view key, std::string_view value);
         [[nodiscard]] bool setValues(Group group, std::span<const Change> changes);
-        void appendLoadedValues(CSimpleIniA& target) const;
+        [[nodiscard]] LoadedValues loadedValues() const;
 
         [[nodiscard]] const std::vector<Setting>& settings() const noexcept { return _settings; }
 
+        // Why the last setValue/setValues failed.
         [[nodiscard]] const std::string& error() const noexcept { return _error; }
+
+        // Problems found by the last load: syntax errors, values of the wrong
+        // type, files that could not be updated. Each names the file and line.
+        [[nodiscard]] const std::vector<std::string>& messages() const noexcept { return _messages; }
 
         [[nodiscard]] const std::filesystem::path& directory() const noexcept { return _directory; }
 
@@ -64,16 +95,16 @@ namespace rock::config
 
         [[nodiscard]] static bool isDefault(const Setting& setting, std::string_view value);
 
+        static constexpr std::string_view kConsumerFileName = "ROCK.toml";
+        static constexpr std::string_view kDeveloperFileName = "ROCK_Developer.toml";
+
     private:
-        bool readFile(Group group, CSimpleIniA& ini);
-        bool refreshFile(Group group);
-        bool organizeFile(Group group, const CSimpleIniA& source, CSimpleIniA& output);
-        bool writeFile(Group group, const CSimpleIniA& ini, bool replace);
         bool removeDeveloperFile();
         bool publish(Group group, std::string_view contents, bool replace);
         std::filesystem::path _directory;
         std::vector<Setting> _settings;
         std::string _error;
+        std::vector<std::string> _messages;
         std::uint64_t _revision = 0;
     };
 }

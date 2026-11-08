@@ -497,7 +497,7 @@ namespace rock
         bool getGrabPresentationNodeDebugSnapshot(GrabPresentationNodeDebugSnapshot& out) const;
         bool getGrabSupportFrameDebugSnapshot(RE::hknpWorld* world, GrabSupportFrameDebugSnapshot& out) const;
         bool getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, GrabForceTorqueDebugSnapshot& out) const;
-        // Debug only (bDebugDrawGrabFingerProbes). Non-const: keeps the selected object's mesh cached between
+        // Debug only (DebugOverlay.DebugDrawGrabFingerProbes). Non-const: keeps the selected object's mesh cached between
         // frames. Main thread, after the frame's final hand pose.
         bool buildGrabFingerProbePreview(grab_finger_probe_preview::Snapshot& out);
         void clearGrabFingerProbePreview() { _grabFingerProbePreview.clear(); }
@@ -1275,7 +1275,7 @@ namespace rock
         CountBasedAmmoCarry _ammoCarry{};
         bool _heldObjectIsLooseWeapon = false;
         bool _grabFingerPosePublished = false;
-        // iLooseGrabFingerPoseMode captured at grab start: true runs the pre-capsule swept arc for this grab.
+        // FingerPoses.LooseGrabFingerPoseMode captured at grab start: true runs the pre-capsule swept arc for this grab.
         bool _grabFingerSweptArc = false;
         // Swept arc only: publish the surface-aim local-transform layer on the next TouchHeld update.
         bool _grabFingerLocalTransformFinalizePending = false;

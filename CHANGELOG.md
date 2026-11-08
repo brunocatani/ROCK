@@ -42,42 +42,42 @@
   the Pip-Boy or a holster mod goes into the hand that chose it and keeps the
   other hand's weapon. Which hand holds each weapon is saved with your game.
   Every equip is ready to fire at once.
-- **Weapon Equip Mode** (`iWeaponEquipMode`): 1 trigger equip, no drop;
+- **Weapon Equip Mode** (`WeaponHandling.WeaponEquipMode`): 1 trigger equip, no drop;
   2 trigger equip, toggle drop (default); 3 trigger equip, auto drop; 4 auto
-  equip once the palm settles on the firing grip (`fAutoEquipSettleSeconds`).
+  equip once the palm settles on the firing grip (`WeaponHandling.AutoEquipSettleSeconds`).
   An auto drop leaves with the hand's motion, thrown like a loose object.
 - **Ammo counters.** One counter per held weapon at that weapon's hand,
-  replacing the game's counter. `iAmmoCounterStyle`: 1 Minimal, 2 Immersive
+  replacing the game's counter. `WeaponHandling.AmmoCounterStyle`: 1 Minimal, 2 Immersive
   (game HUD style), 3 Vanilla (back of the hand). A reload mod can show a
   chambered-round marker beside the number.
-- **Loot to Hand** (`bLootToHand`, on by default): an item taken from the
+- **Loot to Hand** (`Grabbing.LootToHand`, on by default): an item taken from the
   quick-loot view lands in the hand pointing at the container. The quick-loot
   panel works with either hand and stands at its container.
 - **Pinch grab:** the object stays where thumb and finger found it and only the
   fingers close onto it.
-- **Grab direction** (`iCloseGrabDirection`, `iFarGrabDirection`): which way
+- **Grab direction** (`Grabbing.CloseGrabDirection`, `Grabbing.FarGrabDirection`): which way
   your hand points to aim close and far grabs, from out of the palm to along
   the fingers.
-- **Button layout** (`[Controls]`): reassign each hand's grip, trigger, A/B,
+- **Button layout** (`[ControllerInput.Left]`, `[ControllerInput.Right]`): reassign each hand's grip, trigger, A/B,
   X/Y and stick click. ROCK, its add-ons and the game all follow it. SteamVR
   binding templates for Index, Vive wands and Steam Frame controllers ship in
   `steamvr_bindings`.
-- **Vanilla Favorites menu** (`bVanillaFavoritesMenu`, off by default): lets the
+- **Vanilla Favorites menu** (`ControllerInput.VanillaFavoritesMenu`, off by default): lets the
   stick click open the game's Favorites menu again.
-- **Recoil** (`[Recoil]`): recoil is applied to the firing hand, per weapon type
+- **Recoil** (`[WeaponRecoil]`): recoil is applied to the firing hand, per weapon type
   and one- or two-handed hold. Native kickback no longer fights ROCK's hands.
 - Far weapon grabs take the firing grip; close grabs take the nearest authored
   grip.
 - Scoped filtering: heavier, speed-adaptive smoothing while you look through a
-  scope (`fScopedFilterRotationSeconds`, `fScopedFilterTranslationSeconds`,
-  `fScopedFilterReleaseDegreesPerSecond`). Gunstock mode (`bGunstockMode`) and
-  filtering presets (`iWeaponFilteringPreset`) are player settings.
+  scope (`WeaponHandling.ScopedFilterRotationSeconds`, `WeaponHandling.ScopedFilterTranslationSeconds`,
+  `WeaponHandling.ScopedFilterReleaseDegreesPerSecond`). Gunstock mode (`WeaponHandling.GunstockMode`) and
+  filtering presets (`WeaponHandling.WeaponFilteringPreset`) are player settings.
 - Bipod: a latched weapon stays equipped hands-free within
-  `fBipodHandsFreeRadiusMeters`.
+  `WeaponHandling.BipodHandsFreeRadiusMeters`.
 - Optional: use the weapon offsets you saved in FRIK instead of ROCK's grip
-  (`bFrikUserWeaponOffsets`, off by default).
+  (`WeaponHandling.FrikUserWeaponOffsets`, off by default).
 - One-handed melee weapons: the trigger toggles a reverse grip, saved with your
-  game. `fVanillaMeleeSwingSpeed` and `fVanillaGunBashSpeed` set the hand speeds
+  game. `NativeGameplay.VanillaMeleeSwingSpeed` and `NativeGameplay.VanillaGunBashSpeed` set the hand speeds
   that start a vanilla swing and a gun bash; wrist rotation alone never swings.
 - Saved grab offsets report which hands were saved.
 - The game's weapon equip, unequip and inventory animation sounds are silenced.
@@ -104,15 +104,16 @@
   does not serve. They stop the game: at the main menu an error box names each
   one, and the game closes when the box is closed. The RPS SDK is no longer
   used; mods build against the headers in `include/ROCK/`.
-- **Settings were reorganized.** `ROCK.ini` is grouped into sections
-  (`[FiringHand]`, `[Grabbing]`, `[Grenades]`, `[Highlight]`, `[Recoil]`,
-  `[NativeGameplay]`, `[Controls]` and others) with help text above each key.
-  Your values move with their keys into the new sections. Keys ROCK no longer
-  reads from that file go to an `[Unused]` comment block at the end, where they
-  never apply. `sDefaultHand` replaces `bLeftHandedMode`. Developer-only keys
-  (grab input timing, firing-grip haptics, native scope fallback offsets) moved
-  to `ROCK_Developer.ini`; a value you had set for one of them, or for
-  `bLeftHandedMode`, lands in `[Unused]` and has to be set again.
+- **Settings moved to TOML.** ROCK reads `ROCK.toml` and `ROCK_Developer.toml`
+  in `Mods_Config\ROCK` and no longer reads `ROCK.ini` or `ROCK_Developer.ini`.
+  Settings start from their defaults; set them again in PALM or in the file and
+  delete the old INIs. Options are grouped into tables matching the PALM pages
+  (`[Grabbing]`, `[FiringHand]`, `[ControllerInput.Left]` and others), keys lose
+  their type letter (`iWeaponEquipMode` is now `WeaponEquipMode` in
+  `[WeaponHandling]`), values are typed, and each X/Y/Z offset is one list such
+  as `AimOffsetGameUnits = [0.0, 0.0, 0.0]`. A syntax error is logged with its
+  line and the file keeps its last values until it is fixed. `DefaultHand` in
+  `[FiringHand]` replaces `bLeftHandedMode`.
 - **Removed settings:** `bAmbidextrousFiringGripEnabled` (two weapons are always
   allowed), `iWeaponDropMode` (use `iWeaponEquipMode`),
   `bKeepPreviousWeaponInHandOnEquip`, `bFiringGripDetachPosePreservationEnabled`,

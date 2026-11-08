@@ -14,7 +14,7 @@
  */
 namespace rock::ammo_counters
 {
-    // iAmmoCounterStyle in ROCK.ini.
+    // WeaponHandling.AmmoCounterStyle in ROCK.toml.
     enum class Style : int
     {
         // White loaded and reserve rounds on the weapon's palm side, shown

@@ -1,271 +1,624 @@
 #include "config/ConfigurationStore.h"
 #include "config/SettingMetadata.h"
 
+#include <toml++/toml.hpp>
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <Windows.h>
+
 #include <algorithm>
 #include <charconv>
+#include <climits>
 #include <cmath>
-#include <cstring>
 #include <format>
 #include <fstream>
-#include <map>
-#include <optional>
+#include <iterator>
 #include <set>
+#include <sstream>
+#include <stdexcept>
+#include <utility>
 
 namespace rock::config
 {
     namespace
     {
-        std::optional<std::string> normalize(ValueType type, std::string_view value)
+        constexpr std::string_view kUnusedHeading = "## === Not read by this version of ROCK ===";
+        constexpr std::string_view kUnusedPreamble =
+            "## ROCK ignores the lines below. They keep your old values for reference; delete them whenever you "
+            "like.";
+
+        constexpr std::string_view kConsumerHeader =
+            "## ROCK.toml - player options\n"
+            "## Change these in game in the RobCo PALM wheel menu, or edit this file. Changes are picked up while the "
+            "game runs.\n"
+            "## Each option has its help above it. Options missing from this file use their defaults.\n"
+            "## Values are typed: true or false, whole numbers, decimal numbers, \"text in quotes\" and lists such as "
+            "[0.0, 1.0, 2.0].\n"
+            "## If this file cannot be read, ROCK.log names the line and ROCK keeps the last values it read.\n"
+            "## When ROCK starts it adds new options with their defaults, rewrites its help lines (the lines starting "
+            "with ##),\n"
+            "## and moves options it no longer reads into the block at the end, as comments.\n"
+            "## Your own notes are kept when they start with a single # on the lines above an option.\n"
+            "## Developer options live in ROCK_Developer.toml, which exists only while a developer option is "
+            "changed.\n";
+        constexpr std::string_view kDeveloperHeader =
+            "## ROCK_Developer.toml - developer options\n"
+            "## PALM saves only developer options that differ from their defaults. Resetting an option removes it,\n"
+            "## and this file is removed when no options remain. Changes are picked up while the game runs.\n"
+            "## If this file cannot be read, ROCK.log names the line and ROCK keeps the last values it read.\n"
+            "## When ROCK starts it rewrites its help lines (the lines starting with ##) and moves options it no "
+            "longer\n"
+            "## reads into the block at the end, as comments. Your own notes are kept when they start with a single "
+            "#\n"
+            "## on the lines above an option.\n";
+
+        std::string_view trim(std::string_view text) noexcept
         {
-            if (type == ValueType::String) {
-                if (value.find_first_of("\r\n") != std::string_view::npos)
-                    return std::nullopt;
-                return std::string(value);
-            }
-            const auto first = value.find_first_not_of(" \t");
+            const auto first = text.find_first_not_of(" \t");
             if (first == std::string_view::npos)
-                return std::nullopt;
-            value = value.substr(first, value.find_last_not_of(" \t") - first + 1);
-            if (type == ValueType::Boolean) {
-                std::string lower(value);
-                for (auto& c : lower)
-                    if (c >= 'A' && c <= 'Z')
-                        c += 'a' - 'A';
-                if (lower == "true" || lower == "1" || lower == "yes" || lower == "on")
-                    return "true";
-                if (lower == "false" || lower == "0" || lower == "no" || lower == "off")
-                    return "false";
-                return std::nullopt;
-            }
-            if (type == ValueType::Integer) {
-                int number{};
-                const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), number);
-                if (error != std::errc{} || end != value.data() + value.size())
-                    return std::nullopt;
-                return std::to_string(number);
-            }
-            float number{};
-            const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), number);
-            if (error != std::errc{} || end != value.data() + value.size() || !std::isfinite(number))
-                return std::nullopt;
+                return {};
+            return text.substr(first, text.find_last_not_of(" \t") - first + 1);
+        }
+
+        std::string formatFloat(float value)
+        {
             std::array<char, 64> text{};
-            const auto [last, formatted] =
-                std::to_chars(text.data(), text.data() + text.size(), number == 0.0f ? 0.0f : number);
-            if (formatted != std::errc{})
-                return std::nullopt;
-            return std::string(text.data(), last);
-        }
-
-        ValueType typeOf(std::string_view key)
-        {
-            switch (key.empty() ? '\0' : key.front()) {
-            case 'b':
-                return ValueType::Boolean;
-            case 'i':
-                return ValueType::Integer;
-            case 'f':
-                return ValueType::Float;
-            default:
-                return ValueType::String;
-            }
-        }
-
-        bool sameKey(std::string_view lhs, std::string_view rhs) noexcept
-        {
-            return lhs.size() == rhs.size() && (lhs.empty() || _strnicmp(lhs.data(), rhs.data(), lhs.size()) == 0);
-        }
-
-        struct IniValue
-        {
-            const char* value;
-            const char* comment;
-            int order;
-        };
-
-        using KeyIndex = std::map<CSimpleIniA::Entry, IniValue, CSimpleIniA::Entry::KeyOrder>;
-
-        // Borrowed only while the source INI is unchanged. Multi-key parsing
-        // retains physical load order, including repeated section headers.
-        KeyIndex indexKeys(const CSimpleIniA& ini)
-        {
-            KeyIndex result;
-            CSimpleIniA::TNamesDepend sections;
-            ini.GetAllSections(sections);
-            for (const auto& section : sections) {
-                for (const auto& [key, value] : *ini.GetSection(section.pItem)) {
-                    auto [found, inserted] = result.try_emplace(key, IniValue{ value, key.pComment, key.nOrder });
-                    if (!inserted && key.nOrder > found->second.order)
-                        found->second = { value, key.pComment, key.nOrder };
-                }
-            }
+            const auto [end, error] =
+                std::to_chars(text.data(), text.data() + text.size(), value == 0.0f ? 0.0f : value);
+            if (error != std::errc{})
+                return "0.0";
+            std::string result(text.data(), end);
+            if (result.find_first_of(".eE") == std::string::npos)
+                result += ".0";
             return result;
         }
 
-        void removeKey(CSimpleIniA& ini, const char* key)
+        std::optional<float> parseFloat(std::string_view text)
         {
-            CSimpleIniA::TNamesDepend sections;
-            ini.GetAllSections(sections);
-            for (const auto& section : sections)
-                ini.Delete(section.pItem, key, true);
+            text = trim(text);
+            float number{};
+            const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), number);
+            if (text.empty() || error != std::errc{} || end != text.data() + text.size() || !std::isfinite(number))
+                return std::nullopt;
+            return number;
         }
 
-        bool hasKeys(const CSimpleIniA& ini)
+        std::string formatFloat3(const std::array<float, 3>& value)
         {
-            CSimpleIniA::TNamesDepend sections;
-            ini.GetAllSections(sections);
-            for (const auto& section : sections) {
-                if (ini.GetSectionSize(section.pItem) > 0)
-                    return true;
+            return std::format("[{}, {}, {}]", formatFloat(value[0]), formatFloat(value[1]), formatFloat(value[2]));
+        }
+
+        std::string quoteString(std::string_view text)
+        {
+            std::string result = "\"";
+            for (const char c : text) {
+                switch (c) {
+                case '"':
+                    result += "\\\"";
+                    break;
+                case '\\':
+                    result += "\\\\";
+                    break;
+                case '\t':
+                    result += "\\t";
+                    break;
+                default:
+                    if (static_cast<unsigned char>(c) < 0x20 || c == 0x7F)
+                        result += std::format("\\u{:04X}", static_cast<unsigned char>(c));
+                    else
+                        result += c;
+                }
             }
-            return false;
+            return result + "\"";
         }
 
-        template <class Visitor>
-        void forEachLine(std::string_view text, Visitor&& visit)
+        // TOML text of a canonical value.
+        std::string tomlText(ValueType type, std::string_view canonical)
         {
+            return type == ValueType::String ? quoteString(canonical) : std::string(canonical);
+        }
+
+        std::optional<float> numberOf(const toml::node& node)
+        {
+            double number{};
+            if (const auto* floating = node.as_floating_point())
+                number = floating->get();
+            else if (const auto* integer = node.as_integer())
+                number = static_cast<double>(integer->get());
+            else
+                return std::nullopt;
+            const auto narrowed = static_cast<float>(number);
+            if (!std::isfinite(narrowed))
+                return std::nullopt;
+            return narrowed;
+        }
+
+        std::optional<std::string> canonicalFromNode(ValueType type, const toml::node& node)
+        {
+            switch (type) {
+            case ValueType::Boolean:
+                if (const auto* value = node.as_boolean())
+                    return value->get() ? "true" : "false";
+                return std::nullopt;
+            case ValueType::Integer:
+                if (const auto* value = node.as_integer()) {
+                    const auto number = value->get();
+                    if (number < INT_MIN || number > INT_MAX)
+                        return std::nullopt;
+                    return std::to_string(number);
+                }
+                return std::nullopt;
+            case ValueType::Float:
+                if (const auto number = numberOf(node))
+                    return formatFloat(*number);
+                return std::nullopt;
+            case ValueType::String:
+                if (const auto* value = node.as_string()) {
+                    if (value->get().find_first_of("\r\n") != std::string::npos)
+                        return std::nullopt;
+                    return value->get();
+                }
+                return std::nullopt;
+            case ValueType::Float3:
+                if (const auto* array = node.as_array(); array && array->size() == 3) {
+                    std::array<float, 3> components{};
+                    for (std::size_t index = 0; index < 3; ++index) {
+                        const auto component = numberOf(*array->get(index));
+                        if (!component)
+                            return std::nullopt;
+                        components[index] = *component;
+                    }
+                    return formatFloat3(components);
+                }
+                return std::nullopt;
+            }
+            return std::nullopt;
+        }
+
+        std::string_view typeDescription(ValueType type) noexcept
+        {
+            switch (type) {
+            case ValueType::Boolean:
+                return "true or false";
+            case ValueType::Integer:
+                return "a whole number";
+            case ValueType::Float:
+                return "a number";
+            case ValueType::String:
+                return "one line of text in quotes";
+            case ValueType::Float3:
+                return "a list of three numbers such as [0.0, 0.0, 0.0]";
+            }
+            return "a valid value";
+        }
+
+        // The node as TOML text on one line, for values ROCK keeps but cannot use.
+        std::string rawText(const toml::node& node)
+        {
+            std::ostringstream stream;
+            stream << toml::toml_formatter{ node, toml::format_flags::none };
+            auto text = stream.str();
+            std::replace(text.begin(), text.end(), '\n', ' ');
+            return text;
+        }
+
+        // Splits a TOML key or table name on dots outside quotes and removes the quotes.
+        std::string joinedKeyPath(std::string_view prefix, std::string_view text)
+        {
+            std::string result(prefix);
+            std::string part;
+            char quote = 0;
+            const auto flush = [&]() {
+                const auto trimmed = trim(part);
+                if (!result.empty())
+                    result += '.';
+                result += trimmed;
+                part.clear();
+            };
+            for (const char c : text) {
+                if (quote) {
+                    if (c == quote)
+                        quote = 0;
+                    else
+                        part += c;
+                } else if (c == '"' || c == '\'') {
+                    quote = c;
+                } else if (c == '.') {
+                    flush();
+                } else {
+                    part += c;
+                }
+            }
+            flush();
+            return result;
+        }
+
+        std::size_t findOutsideQuotes(std::string_view text, char wanted) noexcept
+        {
+            char quote = 0;
+            for (std::size_t index = 0; index < text.size(); ++index) {
+                const char c = text[index];
+                if (quote) {
+                    if (c == '\\' && quote == '"')
+                        ++index;
+                    else if (c == quote)
+                        quote = 0;
+                } else if (c == '"' || c == '\'') {
+                    quote = c;
+                } else if (c == wanted) {
+                    return index;
+                }
+            }
+            return std::string_view::npos;
+        }
+
+        std::size_t occurrences(std::string_view text, std::string_view token) noexcept
+        {
+            std::size_t count = 0;
+            for (auto at = text.find(token); at != std::string_view::npos; at = text.find(token, at + token.size()))
+                ++count;
+            return count;
+        }
+
+        // Comments toml++ does not keep: the player's notes (single '#'), each
+        // attached to the key below it, and the lines of the unused block.
+        // Lines starting with "##" belong to ROCK and are regenerated.
+        struct Comments
+        {
+            std::map<std::string, std::vector<std::string>, std::less<>> notes;
+            std::vector<std::string> unused;
+        };
+
+        Comments scanComments(std::string_view text)
+        {
+            Comments result;
+            std::string table;
+            std::vector<std::string> pending;
+            std::string_view multiLineDelimiter;
+            bool inUnused = false;
             while (!text.empty()) {
                 const auto end = text.find('\n');
                 auto line = text.substr(0, end);
+                text = end == std::string_view::npos ? std::string_view{} : text.substr(end + 1);
                 if (!line.empty() && line.back() == '\r')
                     line.remove_suffix(1);
-                if (!line.empty())
-                    visit(line);
-                if (end == std::string_view::npos)
-                    break;
-                text.remove_prefix(end + 1);
+                const auto trimmed = trim(line);
+                if (!multiLineDelimiter.empty()) {
+                    if (occurrences(trimmed, multiLineDelimiter) % 2 == 1)
+                        multiLineDelimiter = {};
+                    continue;
+                }
+                if (trimmed.empty())
+                    continue;
+                if (trimmed.front() == '#') {
+                    if (trimmed.starts_with("##")) {
+                        inUnused |= trimmed == kUnusedHeading;
+                        continue;
+                    }
+                    (inUnused ? result.unused : pending).emplace_back(trimmed);
+                    continue;
+                }
+                if (trimmed.front() == '[') {
+                    const bool arrayOfTables = trimmed.starts_with("[[");
+                    const auto open = arrayOfTables ? 2u : 1u;
+                    const auto close = trimmed.find(arrayOfTables ? "]]" : "]", open);
+                    if (close != std::string_view::npos)
+                        table = joinedKeyPath({}, trimmed.substr(open, close - open));
+                    continue;
+                }
+                const auto equals = findOutsideQuotes(trimmed, '=');
+                if (equals == std::string_view::npos)
+                    continue; // Continuation of a multi-line array or inline table.
+                const auto path = joinedKeyPath(table, trimmed.substr(0, equals));
+                if (!pending.empty()) {
+                    auto& notes = result.notes[path];
+                    notes.insert(notes.end(), pending.begin(), pending.end());
+                    pending.clear();
+                }
+                const auto value = trim(trimmed.substr(equals + 1));
+                for (const std::string_view delimiter : { std::string_view("\"\"\""), std::string_view("'''") }) {
+                    if (value.starts_with(delimiter) && occurrences(value, delimiter) % 2 == 1)
+                        multiLineDelimiter = delimiter;
+                }
             }
+            // Notes no key follows stay visible in the unused block.
+            result.unused.insert(result.unused.end(), pending.begin(), pending.end());
+            return result;
         }
 
-        // SimpleIni prints every '\n' of a comment as a line break, so a trailing
-        // one would leave a blank line between an option's help and its key.
-        void appendCommentLine(std::string& comment, std::string_view line)
+        enum class FileState
         {
-            if (!comment.empty())
-                comment += '\n';
-            comment.append(line);
-        }
-
-        constexpr std::string_view kConsumerHeader =
-            "; ROCK.ini - player options\n"
-            "; Change these in game in the RobCo PALM wheel menu, or edit this file. Changes are picked up while "
-            "the game runs.\n"
-            "; Each option has its help above it. Options missing from this file use their defaults.\n"
-            "; When ROCK starts it adds new options with their defaults, rewrites its help lines (the lines "
-            "starting with ;),\n"
-            "; and moves options it no longer reads into the [Unused] block at the end, as comments.\n"
-            "; Your own notes are kept when they start with #.\n"
-            "; Section headers are labels only. If an option appears twice, the last one wins.\n"
-            "; Developer options live in ROCK_Developer.ini, which exists only while a developer option is "
-            "changed.\n"
-            "; README.txt in the ROCK download explains both files.\n\n";
-        constexpr std::string_view kDeveloperHeader =
-            "; ROCK_Developer.ini - developer options\n"
-            "; PALM saves only developer options that differ from their defaults. Resetting an option removes it,\n"
-            "; and this file is removed when no options remain. Changes are picked up while the game runs.\n"
-            "; When ROCK starts it rewrites its help lines (the lines starting with ;) and moves options it no "
-            "longer\n"
-            "; reads into the [Unused] block at the end, as comments. Your own notes are kept when they start "
-            "with #.\n"
-            "; Section headers are labels only. If an option appears twice, the last one wins.\n"
-            "; README.txt in the ROCK download explains both files.\n\n";
-
-        // SimpleIni drops comments that end a file, so retired entries live in
-        // the comment of an empty section that every rewrite carries forward.
-        constexpr const char* kUnusedSection = "Unused";
-        constexpr std::string_view kUnusedPreamble[] = {
-            "; === Not read by this version of ROCK ===",
-            "; ROCK ignores the lines below. They keep your old values for reference; delete them whenever you "
-            "like.",
+            Missing,
+            Parsed,
+            Failed,
         };
 
-        bool isUnusedPreamble(std::string_view line)
+        struct Document
         {
-            return std::find(std::begin(kUnusedPreamble), std::end(kUnusedPreamble), line) != std::end(kUnusedPreamble);
-        }
-    }
+            FileState state = FileState::Missing;
+            std::string text;
+            toml::table table;
+            Comments comments;
+            std::string problem;
+        };
 
-    Group settingGroup(std::string_view, std::string_view key) noexcept
-    {
-        for (const auto& setting : kSettingMetadata) {
-            if (sameKey(setting.key, key))
-                return setting.group;
-        }
-        return Group::Consumer;
-    }
-
-    ConfigurationStore::ConfigurationStore(std::filesystem::path directory, const CSimpleIniA& defaults) :
-        _directory(std::move(directory))
-    {
-        CSimpleIniA::TNamesDepend sections;
-        defaults.GetAllSections(sections);
-        for (const auto& section : sections) {
-            CSimpleIniA::TNamesDepend keys;
-            defaults.GetAllKeys(section.pItem, keys);
-            for (const auto& key : keys) {
-                Setting setting{
-                    .section = section.pItem,
-                    .key = key.pItem,
-                    .defaultValue = defaults.GetValue(section.pItem, key.pItem, ""),
-                    .category = section.pItem,
-                    .group = settingGroup(section.pItem, key.pItem),
-                    .type = typeOf(key.pItem),
-                };
-                setting.value = setting.defaultValue;
-                for (std::size_t index = 0; index < std::size(kSettingMetadata); ++index) {
-                    const auto& metadata = kSettingMetadata[index];
-                    if (metadata.key == setting.key && metadata.section == setting.section) {
-                        setting.category = metadata.category;
-                        setting.description = metadata.description;
-                        setting.displayOrder = index;
-                        break;
-                    }
+        Document readDocument(const std::filesystem::path& file)
+        {
+            Document document;
+            const auto name = file.filename().string();
+            std::error_code ec;
+            const bool exists = std::filesystem::exists(file, ec);
+            if (ec) {
+                document.state = FileState::Failed;
+                document.problem = std::format("Cannot inspect {}: {}", file.string(), ec.message());
+                return document;
+            }
+            if (!exists)
+                return document;
+            {
+                std::ifstream input(file, std::ios::binary);
+                if (input)
+                    document.text.assign(std::istreambuf_iterator<char>(input), {});
+                if (!input || input.bad()) {
+                    document.state = FileState::Failed;
+                    document.problem = std::format("Cannot read {}", file.string());
+                    return document;
                 }
-                _settings.push_back(std::move(setting));
+            }
+            try {
+                document.table = toml::parse(document.text, name);
+            } catch (const toml::parse_error& error) {
+                document.state = FileState::Failed;
+                document.problem = std::format(
+                    "{} line {}, column {}: {}. ROCK keeps the last values it read from this file and does not "
+                    "rewrite it until the error is fixed.",
+                    name, error.source().begin.line, error.source().begin.column, error.description());
+                return document;
+            }
+            document.comments = scanComments(document.text);
+            document.state = FileState::Parsed;
+            return document;
+        }
+
+        template <class Visitor>
+        void forEachLeaf(const toml::table& table, const std::string& prefix, Visitor&& visit)
+        {
+            for (const auto& [key, node] : table) {
+                auto path = prefix.empty() ? std::string(key.str()) : std::format("{}.{}", prefix, key.str());
+                if (const auto* child = node.as_table())
+                    forEachLeaf(*child, path, visit);
+                else
+                    visit(path, node);
             }
         }
-        std::stable_sort(_settings.begin(), _settings.end(),
-            [](const Setting& a, const Setting& b) { return a.displayOrder < b.displayOrder; });
+
+        using Overrides = std::map<std::string, std::optional<std::string>, std::less<>>;
+
+        // Writes every recognized entry of the group once, grouped by table in
+        // catalog order with the catalog's help above it. Consumer files gain
+        // every missing option at its default; developer files hold only the
+        // entries they already have or an override adds. Overrides map a
+        // setting path to its new canonical value, or to nullopt to drop it.
+        std::string organize(Group group, std::span<const Setting> settings, const Document* document,
+            const Overrides& overrides, bool& hasEntries)
+        {
+            struct Entry
+            {
+                const Setting* setting;
+                std::string path;
+                std::string value;
+            };
+            std::vector<Entry> entries;
+            std::set<std::string, std::less<>> recognized;
+            for (const auto& setting : settings) {
+                if (setting.group != group)
+                    continue;
+                auto path = settingPath(setting.table, setting.key);
+                recognized.insert(path);
+                std::string value;
+                const toml::node* node = document ? document->table.at_path(path).node() : nullptr;
+                if (const auto found = overrides.find(path); found != overrides.end()) {
+                    if (!found->second)
+                        continue;
+                    value = tomlText(setting.type, *found->second);
+                } else if (node) {
+                    if (const auto canonical = canonicalFromNode(setting.type, *node))
+                        value = tomlText(setting.type, *canonical);
+                    else if (!node->is_table())
+                        value = rawText(*node); // Kept as the player wrote it; load reported it.
+                    else
+                        value = tomlText(setting.type, setting.value);
+                } else if (group == Group::Consumer) {
+                    value = tomlText(setting.type, setting.defaultValue);
+                } else {
+                    continue;
+                }
+                entries.push_back({ &setting, std::move(path), std::move(value) });
+            }
+            hasEntries = !entries.empty();
+
+            std::vector<std::string_view> tables;
+            for (const auto& entry : entries) {
+                if (std::find(tables.begin(), tables.end(), entry.setting->table) == tables.end())
+                    tables.push_back(entry.setting->table);
+            }
+            std::string text(group == Group::Consumer ? kConsumerHeader : kDeveloperHeader);
+            std::string_view previousCategory;
+            for (const auto table : tables) {
+                bool firstInTable = true;
+                for (const auto& entry : entries) {
+                    if (entry.setting->table != table)
+                        continue;
+                    if (firstInTable) {
+                        if (entry.setting->category != previousCategory)
+                            text += std::format("\n## === {} ===\n", entry.setting->category);
+                        else
+                            text += '\n';
+                        previousCategory = entry.setting->category;
+                        text += std::format("[{}]\n", table);
+                        firstInTable = false;
+                    } else {
+                        text += '\n';
+                    }
+                    std::string_view description = entry.setting->description;
+                    while (!description.empty()) {
+                        const auto end = description.find('\n');
+                        text += std::format("## {}\n", description.substr(0, end));
+                        description =
+                            end == std::string_view::npos ? std::string_view{} : description.substr(end + 1);
+                    }
+                    if (document) {
+                        if (const auto notes = document->comments.notes.find(entry.path);
+                            notes != document->comments.notes.end()) {
+                            for (const auto& note : notes->second)
+                                text += note + '\n';
+                        }
+                    }
+                    text += std::format("{} = {}\n", entry.setting->key, entry.value);
+                }
+            }
+
+            // Every other entry is one ROCK does not read from this file: a
+            // retired option, an option owned by the other file, or a foreign
+            // key. Keep it as a comment so the value stays visible but can
+            // never apply.
+            std::vector<std::string> unused;
+            const auto addUnused = [&](std::string line) {
+                if (std::find(unused.begin(), unused.end(), line) == unused.end())
+                    unused.push_back(std::move(line));
+            };
+            if (document) {
+                for (const auto& line : document->comments.unused)
+                    addUnused(line);
+                std::vector<std::pair<std::uint32_t, std::string>> leaves;
+                forEachLeaf(document->table, {}, [&](const std::string& path, const toml::node& node) {
+                    if (recognized.contains(path))
+                        return;
+                    std::string lines;
+                    if (const auto notes = document->comments.notes.find(path);
+                        notes != document->comments.notes.end()) {
+                        for (const auto& note : notes->second)
+                            lines += note + '\n';
+                    }
+                    lines += std::format("# {} = {}", path, rawText(node));
+                    leaves.emplace_back(node.source().begin.line, std::move(lines));
+                });
+                std::stable_sort(leaves.begin(), leaves.end(),
+                    [](const auto& a, const auto& b) { return a.first < b.first; });
+                for (auto& [line, lines] : leaves)
+                    addUnused(std::move(lines));
+            }
+            if (!unused.empty()) {
+                text += std::format("\n{}\n{}\n", kUnusedHeading, kUnusedPreamble);
+                for (const auto& line : unused)
+                    text += line + '\n';
+            }
+            return text;
+        }
+    }
+
+    std::string settingPath(std::string_view table, std::string_view key)
+    {
+        return table.empty() ? std::string(key) : std::format("{}.{}", table, key);
+    }
+
+    std::optional<std::array<float, 3>> parseFloat3(std::string_view value)
+    {
+        value = trim(value);
+        if (value.size() >= 2 && value.front() == '[' && value.back() == ']')
+            value = value.substr(1, value.size() - 2);
+        std::array<float, 3> result{};
+        for (std::size_t index = 0; index < 3; ++index) {
+            const auto comma = value.find(',');
+            if ((comma == std::string_view::npos) != (index == 2))
+                return std::nullopt;
+            const auto component = parseFloat(value.substr(0, comma));
+            if (!component)
+                return std::nullopt;
+            result[index] = *component;
+            value = comma == std::string_view::npos ? std::string_view{} : value.substr(comma + 1);
+        }
+        return result;
+    }
+
+    std::optional<std::string> normalizeValue(ValueType type, std::string_view value)
+    {
+        switch (type) {
+        case ValueType::String:
+            if (value.find_first_of("\r\n") != std::string_view::npos)
+                return std::nullopt;
+            return std::string(value);
+        case ValueType::Boolean: {
+            std::string lower(trim(value));
+            for (auto& c : lower)
+                if (c >= 'A' && c <= 'Z')
+                    c += 'a' - 'A';
+            if (lower == "true" || lower == "1" || lower == "yes" || lower == "on")
+                return "true";
+            if (lower == "false" || lower == "0" || lower == "no" || lower == "off")
+                return "false";
+            return std::nullopt;
+        }
+        case ValueType::Integer: {
+            value = trim(value);
+            int number{};
+            const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), number);
+            if (value.empty() || error != std::errc{} || end != value.data() + value.size())
+                return std::nullopt;
+            return std::to_string(number);
+        }
+        case ValueType::Float:
+            if (const auto number = parseFloat(value))
+                return formatFloat(*number);
+            return std::nullopt;
+        case ValueType::Float3:
+            if (const auto vector = parseFloat3(value))
+                return formatFloat3(*vector);
+            return std::nullopt;
+        }
+        return std::nullopt;
+    }
+
+    ConfigurationStore::ConfigurationStore(std::filesystem::path directory, std::span<const SettingDefault> defaults) :
+        _directory(std::move(directory))
+    {
+        for (std::size_t index = 0; index < std::size(kSettingMetadata); ++index) {
+            const auto& metadata = kSettingMetadata[index];
+            const auto path = settingPath(metadata.table, metadata.key);
+            const auto found = std::find_if(defaults.begin(), defaults.end(),
+                [&](const SettingDefault& entry) { return entry.table == metadata.table && entry.key == metadata.key; });
+            if (found == defaults.end())
+                throw std::runtime_error(std::format("Catalog option {} has no compiled default", path));
+            if (normalizeValue(found->type, found->value) != found->value)
+                throw std::runtime_error(std::format("Compiled default of {} is not canonical", path));
+            if (std::any_of(_settings.begin(), _settings.end(),
+                    [&](const Setting& setting) { return setting.table == metadata.table && setting.key == metadata.key; }))
+                throw std::runtime_error(std::format("Catalog lists {} twice", path));
+            _settings.push_back(Setting{
+                .table = std::string(metadata.table),
+                .key = std::string(metadata.key),
+                .defaultValue = found->value,
+                .value = found->value,
+                .category = std::string(metadata.category),
+                .description = std::string(metadata.description),
+                .group = metadata.group,
+                .type = found->type,
+                .displayOrder = index,
+            });
+        }
+        for (const auto& entry : defaults) {
+            if (std::none_of(_settings.begin(), _settings.end(),
+                    [&](const Setting& setting) { return setting.table == entry.table && setting.key == entry.key; }))
+                throw std::runtime_error(
+                    std::format("Compiled option {} has no catalog entry", settingPath(entry.table, entry.key)));
+        }
     }
 
     std::filesystem::path ConfigurationStore::path(Group group) const
     {
-        return _directory / (group == Group::Developer ? "ROCK_Developer.ini" : "ROCK.ini");
-    }
-
-    bool ConfigurationStore::readFile(Group group, CSimpleIniA& ini)
-    {
-        std::error_code ec;
-        const auto source = path(group);
-        const bool exists = std::filesystem::exists(source, ec);
-        if (ec) {
-            _error = std::format("Cannot inspect {}: {}", source.string(), ec.message());
-            return false;
-        }
-        if (!exists)
-            return true;
-        ini.SetUnicode(false);
-        ini.SetMultiKey(true);
-        if (ini.LoadFile(source.c_str()) < 0) {
-            _error = std::format("Cannot read {}", source.string());
-            return false;
-        }
-        return true;
-    }
-
-    bool ConfigurationStore::writeFile(Group group, const CSimpleIniA& ini, bool replace)
-    {
-        CSimpleIniA organized;
-        if (!organizeFile(group, ini, organized))
-            return false;
-        if (group == Group::Developer && !hasKeys(organized))
-            return removeDeveloperFile();
-        std::string contents;
-        if (organized.Save(contents, false) < 0) {
-            _error = "Cannot serialize configuration";
-            return false;
-        }
-        return publish(group, contents, replace);
+        return _directory / (group == Group::Developer ? kDeveloperFileName : kConsumerFileName);
     }
 
     bool ConfigurationStore::removeDeveloperFile()
@@ -309,247 +662,127 @@ namespace rock::config
         return true;
     }
 
-    bool ConfigurationStore::refreshFile(Group group)
-    {
-        const auto source = path(group);
-        std::string contents;
-        {
-            std::ifstream input(source, std::ios::binary);
-            if (!input) {
-                _error = std::format("Cannot read {}", source.string());
-                return false;
-            }
-            contents.assign(std::istreambuf_iterator<char>(input), {});
-            if (input.bad()) {
-                _error = std::format("Cannot read {}", source.string());
-                return false;
-            }
-        }
-        CSimpleIniA existing;
-        existing.SetUnicode(false);
-        existing.SetMultiKey(true);
-        if (existing.LoadData(contents) < 0) {
-            _error = std::format("Cannot parse {}", source.string());
-            return false;
-        }
-        // Organizing writes each recognized key once with its effective (last)
-        // value, so the rewrite cannot change what the loader reads.
-        CSimpleIniA organized;
-        if (!organizeFile(group, existing, organized))
-            return false;
-        if (group == Group::Developer && !hasKeys(organized))
-            return removeDeveloperFile();
-        std::string updated;
-        if (organized.Save(updated, false) < 0) {
-            _error = "Cannot serialize configuration";
-            return false;
-        }
-        return updated == contents || publish(group, updated, true);
-    }
-
-    bool ConfigurationStore::load(bool createConsumer)
+    void ConfigurationStore::load(bool organizeFiles)
     {
         _error.clear();
-        if (createConsumer) {
-            std::error_code ec;
-            const bool exists = std::filesystem::exists(path(Group::Consumer), ec);
-            if (ec) {
-                _error = std::format("Cannot inspect ROCK.ini: {}", ec.message());
-                return false;
-            }
-            if (!exists) {
-                // Organizing an empty file writes every player option at its default.
-                const CSimpleIniA empty;
-                if (!writeFile(Group::Consumer, empty, false))
-                    return false;
-            } else {
-                // An unwritable INI can still be read. Keep the refresh error
-                // for the owner to report, then load the user's existing values.
-                (void)refreshFile(Group::Consumer);
-            }
-            const bool developerExists = std::filesystem::exists(path(Group::Developer), ec);
-            if (!ec && developerExists) {
-                const auto consumerError = _error;
-                if (!refreshFile(Group::Developer) && !consumerError.empty())
-                    _error = consumerError + "; " + _error;
-            }
-        }
-        CSimpleIniA consumer;
-        CSimpleIniA developer;
-        if (!readFile(Group::Consumer, consumer) || !readFile(Group::Developer, developer))
-            return false;
-        const auto consumerKeys = indexKeys(consumer);
-        const auto developerKeys = indexKeys(developer);
+        _messages.clear();
         auto updated = _settings;
         bool changed = _revision == 0;
-        for (auto& setting : updated) {
-            const auto& keys = setting.group == Group::Consumer ? consumerKeys : developerKeys;
-            const auto found = keys.find(CSimpleIniA::Entry(setting.key.c_str()));
-            const char* value = found != keys.end() ? found->second.value : nullptr;
-            const bool specified = value != nullptr;
-            const std::string next = specified ? normalize(setting.type, value).value_or(value) : setting.defaultValue;
-            changed |= setting.value != next || setting.specified != specified;
-            setting.value = next;
-            setting.specified = specified;
+        for (const auto group : { Group::Consumer, Group::Developer }) {
+            const auto file = path(group);
+            const auto document = readDocument(file);
+            if (document.state == FileState::Failed) {
+                _messages.push_back(document.problem);
+                continue;
+            }
+            std::vector<Setting*> missing;
+            for (auto& setting : updated) {
+                if (setting.group != group)
+                    continue;
+                std::string next = setting.defaultValue;
+                bool specified = false;
+                if (const auto node = document.table.at_path(settingPath(setting.table, setting.key))) {
+                    const auto canonical = canonicalFromNode(setting.type, *node.node());
+                    if (!canonical) {
+                        _messages.push_back(std::format("{} line {}: {}.{} must be {}; keeping {}",
+                            file.filename().string(), node.node()->source().begin.line, setting.table, setting.key,
+                            typeDescription(setting.type), setting.value));
+                        continue;
+                    }
+                    next = *canonical;
+                    specified = true;
+                } else {
+                    missing.push_back(&setting);
+                }
+                changed |= setting.value != next || setting.specified != specified;
+                setting.value = std::move(next);
+                setting.specified = specified;
+            }
+            if (!organizeFiles || (document.state == FileState::Missing && group == Group::Developer))
+                continue;
+            // Organizing writes each recognized key once with the value it
+            // holds, so the rewrite cannot change what the loader reads. An
+            // unwritable file can still be read; report and keep going.
+            bool hasEntries = false;
+            const auto* source = document.state == FileState::Parsed ? &document : nullptr;
+            const auto text = organize(group, updated, source, {}, hasEntries);
+            bool written = true;
+            if (group == Group::Developer && !hasEntries)
+                written = removeDeveloperFile();
+            else if (text != document.text)
+                written = publish(group, text, document.state == FileState::Parsed);
+            if (!written) {
+                _messages.push_back(std::exchange(_error, {}));
+            } else if (group == Group::Consumer) {
+                // The organized player file now holds these at their defaults,
+                // so the next reload reads them as set without a revision change.
+                for (auto* setting : missing)
+                    setting->specified = true;
+            }
         }
         _settings = std::move(updated);
         if (changed)
             ++_revision;
-        return true;
     }
 
     bool ConfigurationStore::isDefault(const Setting& setting, std::string_view value)
     {
-        const auto normalized = normalize(setting.type, value);
-        const auto defaultValue = normalize(setting.type, setting.defaultValue);
-        return normalized && defaultValue && *normalized == *defaultValue;
+        const auto normalized = normalizeValue(setting.type, value);
+        return normalized && *normalized == setting.defaultValue;
     }
 
-    bool ConfigurationStore::setValue(Group group, std::string_view section, std::string_view key,
+    bool ConfigurationStore::setValue(Group group, std::string_view table, std::string_view key,
         std::string_view value)
     {
-        const Change change{ section, key, value };
+        const Change change{ table, key, value };
         return setValues(group, std::span(&change, 1));
     }
 
     bool ConfigurationStore::setValues(Group group, std::span<const Change> changes)
     {
         _error.clear();
-        CSimpleIniA current;
-        if (!readFile(group, current))
+        // Read the current file before each edit, preserving external edits.
+        const auto document = readDocument(path(group));
+        if (document.state == FileState::Failed) {
+            _error = document.problem;
             return false;
+        }
+        Overrides overrides;
         for (const auto& change : changes) {
-            const auto found = std::find_if(_settings.begin(), _settings.end(),
-                [&](const Setting& setting) { return setting.group == group && sameKey(setting.key, change.key); });
+            const auto found = std::find_if(_settings.begin(), _settings.end(), [&](const Setting& setting) {
+                return setting.group == group && setting.table == change.table && setting.key == change.key;
+            });
             if (found == _settings.end()) {
                 _error = "Unknown setting or incorrect configuration file";
                 return false;
             }
-            const auto normalized = normalize(found->type, change.value);
+            auto normalized = normalizeValue(found->type, change.value);
             if (!normalized) {
-                _error = "Invalid setting value";
+                _error = std::format("Invalid setting value: {} must be {}", settingPath(found->table, found->key),
+                    typeDescription(found->type));
                 return false;
             }
-            std::string comment;
-            {
-                const auto keys = indexKeys(current);
-                const auto existing = keys.find(CSimpleIniA::Entry(found->key.c_str()));
-                if (existing != keys.end() && existing->second.comment)
-                    comment = existing->second.comment;
-            }
-            // Remove every copy before saving/resetting. An old value under a
-            // different decorative heading must never resurrect an override.
-            removeKey(current, found->key.c_str());
-            if (!(group == Group::Developer && isDefault(*found, *normalized)) &&
-                current.SetValue(found->section.c_str(), found->key.c_str(), normalized->c_str(),
-                    comment.empty() ? nullptr : comment.c_str(), true) < 0) {
-                _error = "Cannot update setting";
-                return false;
-            }
+            auto& override = overrides[settingPath(found->table, found->key)];
+            if (group == Group::Developer && *normalized == found->defaultValue)
+                override.reset();
+            else
+                override = std::move(normalized);
         }
-        // Read the current file before each edit, preserving external edits;
-        // a multi-axis control publishes all components in one replacement.
-        return writeFile(group, current, true);
+        bool hasEntries = false;
+        const auto text = organize(
+            group, _settings, document.state == FileState::Parsed ? &document : nullptr, overrides, hasEntries);
+        if (group == Group::Developer && !hasEntries)
+            return removeDeveloperFile();
+        return publish(group, text, true);
     }
 
-    void ConfigurationStore::appendLoadedValues(CSimpleIniA& target) const
+    LoadedValues ConfigurationStore::loadedValues() const
     {
+        LoadedValues values;
         for (const auto& setting : _settings) {
-            if (setting.specified &&
-                target.SetValue(setting.section.c_str(), setting.key.c_str(), setting.value.c_str()) < 0) {
-                throw std::runtime_error("Cannot compose ROCK configuration");
-            }
+            if (setting.specified)
+                values.emplace(settingPath(setting.table, setting.key), setting.value);
         }
-    }
-
-    // Lines starting with ';' belong to ROCK and are rebuilt from the catalog
-    // on every write; lines starting with '#' are the player's notes and stay
-    // with their option. ROCK.ini also gains every missing player option.
-    bool ConfigurationStore::organizeFile(Group group, const CSimpleIniA& source, CSimpleIniA& output)
-    {
-        if (output.LoadData(std::string(group == Group::Consumer ? kConsumerHeader : kDeveloperHeader)) < 0) {
-            _error = "Cannot prepare configuration header";
-            return false;
-        }
-        const auto keys = indexKeys(source);
-        std::set<CSimpleIniA::Entry, CSimpleIniA::Entry::KeyOrder> writtenKeys;
-        output.SetMultiKey(true);
-        std::string_view previousCategory;
-        for (const auto& setting : _settings) {
-            if (setting.group != group)
-                continue;
-            const auto found = keys.find(CSimpleIniA::Entry(setting.key.c_str()));
-            if (found == keys.end() && group != Group::Consumer)
-                continue;
-            const char* value = found != keys.end() ? found->second.value : setting.defaultValue.c_str();
-
-            std::string comment;
-            if (setting.category != previousCategory) {
-                appendCommentLine(comment, std::format("; === {} ===", setting.category));
-                previousCategory = setting.category;
-            }
-            forEachLine(setting.description,
-                [&](std::string_view line) { appendCommentLine(comment, std::format("; {}", line)); });
-            if (found != keys.end() && found->second.comment) {
-                forEachLine(found->second.comment, [&](std::string_view line) {
-                    if (line.front() == '#')
-                        appendCommentLine(comment, line);
-                });
-            }
-            if (output.SetValue(setting.section.c_str(), setting.key.c_str(), value,
-                    comment.empty() ? nullptr : comment.c_str()) < 0) {
-                _error = "Cannot organize configuration option";
-                return false;
-            }
-            writtenKeys.emplace(setting.key.c_str());
-        }
-
-        // Every other entry is one ROCK does not read from this file: a retired
-        // option, an option owned by the other file, or a foreign key. Keep it
-        // as a comment so the value stays visible but can never apply. Shadowed
-        // copies of recognized keys are dropped; they never applied either.
-        std::vector<std::string> unused;
-        const auto addUnused = [&](std::string line) {
-            // Trailing blanks would not survive a reload and would break deduplication.
-            line.erase(line.find_last_not_of(" \t") + 1);
-            if (std::find(unused.begin(), unused.end(), line) == unused.end())
-                unused.push_back(std::move(line));
-        };
-        CSimpleIniA::TNamesDepend sections;
-        source.GetAllSections(sections);
-        sections.sort(CSimpleIniA::Entry::LoadOrder());
-        for (const auto& section : sections) {
-            if (section.pComment && sameKey(section.pItem, kUnusedSection)) {
-                forEachLine(section.pComment, [&](std::string_view line) {
-                    if (!isUnusedPreamble(line))
-                        addUnused(std::string(line));
-                });
-            }
-        }
-        for (const auto& section : sections) {
-            CSimpleIniA::TNamesDepend entries;
-            source.GetAllKeys(section.pItem, entries);
-            entries.sort(CSimpleIniA::Entry::LoadOrder());
-            for (const auto& key : entries) {
-                if (writtenKeys.contains(key))
-                    continue;
-                CSimpleIniA::TNamesDepend values;
-                source.GetAllValues(section.pItem, key.pItem, values);
-                for (const auto& value : values)
-                    addUnused(std::format("; {} = {}", key.pItem, value.pItem));
-            }
-        }
-        if (unused.empty())
-            return true;
-        std::string comment;
-        for (const auto line : kUnusedPreamble)
-            appendCommentLine(comment, line);
-        for (const auto& line : unused)
-            appendCommentLine(comment, line);
-        if (output.SetValue(kUnusedSection, nullptr, nullptr, comment.c_str()) < 0) {
-            _error = "Cannot keep unused configuration entries";
-            return false;
-        }
-        return true;
+        return values;
     }
 }

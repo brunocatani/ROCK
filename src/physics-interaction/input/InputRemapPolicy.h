@@ -317,7 +317,7 @@ namespace rock::input_remap_policy
     [[nodiscard]] constexpr bool shouldSuppressNativeFavoritesAction(const NativeActionSuppressionInput& input)
     {
         // Native Favorites owns WandThumbClick only when the player turns the
-        // vanilla menu back on ([Controls] bVanillaFavoritesMenu, carried as
+        // vanilla menu back on (ControllerInput.VanillaFavoritesMenu, carried as
         // !suppressionEnabled). Gameplay and menu gates never restore it.
         // Raw OpenVR input remains available to ROCK and its API consumers.
         return input.suppressionEnabled && input.eventMatched;

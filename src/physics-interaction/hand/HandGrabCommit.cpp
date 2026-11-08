@@ -512,7 +512,7 @@ namespace rock
 
         if (_grabFingerSweptArc) {
             /*
-             * iLooseGrabFingerPoseMode = 1: the pre-capsule solve (finger pose
+             * FingerPoses.LooseGrabFingerPoseMode = 1: the pre-capsule solve (finger pose
              * mode 1, Current), unchanged: frozen-mesh swept arc, pad-probe
              * refinement, surface-aim capture, joint publication now and the
              * local-transform layer on the next TouchHeld update. Not recorded

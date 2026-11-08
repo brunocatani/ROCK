@@ -59,7 +59,7 @@ namespace rock
 {
     /*
      * Policy executables exercise header-only math and state decisions without
-     * loading the runtime INI watcher. Refactored grouped headers can still
+     * loading the runtime settings watcher. Refactored grouped headers can still
      * instantiate the inline global config for default values, so tests provide
      * only the file-watch shutdown hook needed by RockConfig's destructor.
      */

@@ -157,7 +157,7 @@ namespace rock::api::input {
      * Reload gesture lease on the firing hand of the weapon in weaponSlot. One
      * owner at a time; the request names that weapon (slot, form, generation
      * key) and the sample (current or previous frame). ROCK classifies the Accept button
-     * (X left, A right) with fManualScopeHoldSeconds: a short release adds one
+     * (X left, A right) with Scopes.ManualScopeHoldSeconds: a short release adds one
      * to tapSequence; a hold stays ROCK scope input and never becomes a tap.
      * Menus, input loss, hand changes and changing the lease (including its
      * flags) cancel an unfinished gesture and require a release before

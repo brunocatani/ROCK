@@ -35,8 +35,8 @@ What it provides:
 - **Two weapons at once** - equip a weapon in each hand, each with its own trigger, reload, scope and collision. An equip goes into the hand that chose it and keeps the other hand's weapon.
 - **Weapon handling** - firing and support grips taken from each weapon's animation, hand switching, recoil applied to the firing hand, scopes, bipods, a reverse grip for one-handed melee weapons, and one ammo counter per held weapon.
 - **Physical items** - grenades, aid items, eating and drinking at your mouth, grabbing to equip, and stashing a weapon at your shoulder.
-- **Controls** - a `[Controls]` button layout that ROCK, its add-ons and the game all follow, plus SteamVR binding templates for Index, Vive wands and Steam Frame controllers.
-- **Configuration** - INI settings that reload while the game runs, with in-game pages in RobCo PALM.
+- **Controls** - a button layout (`[ControllerInput.Left]` and `[ControllerInput.Right]`) that ROCK, its add-ons and the game all follow, plus SteamVR binding templates for Index, Vive wands and Steam Frame controllers.
+- **Configuration** - typed TOML settings that reload while the game runs, with in-game pages in RobCo PALM.
 - **Provider API** - 13 interfaces that other mods use to read hands and weapons and to request grabs, equips and input.
 
 ROCK is the base of the RPS suite: [SCISSORS](https://github.com/brunocatani/SCISSORS) adds NPC interactions, [PAPER](https://github.com/brunocatani/PAPER) adds reload animations, and RobCo PALM, RPS UI Framework and ROCK Wall Climbing build on it.
@@ -70,26 +70,30 @@ ROCK expects the Oculus Touch (Quest) button layout. For these controllers the a
 2. In SteamVR, open the controller bindings for Fallout 4 VR: Settings, Controllers, Manage Controller Bindings, then Fallout 4 VR.
 3. Choose a custom binding and select the ROCK binding from the bindings in your documents folder.
 
-Menu names can differ between SteamVR versions. After that, the `[Controls]` section of `ROCK.ini` can move any button further.
+Menu names can differ between SteamVR versions. After that, the `[ControllerInput.Left]` and `[ControllerInput.Right]` tables of `ROCK.toml` can move any button further.
 
 ### Compatibility
 
 - **SCISSORS** owns NPC interactions: NPC collision, physical melee, blades, held NPCs and active ragdoll. ROCK 1.0 has no NPC features of its own. The original SCISSORS mod is a different, retired mod that the new SCISSORS replaces under the same name; remove it.
 - **Mods built for ROCK 0.92 or earlier** use provider API 1, which ROCK 1.0 does not serve. They stop the game: at the main menu an error box names each one, and the game closes when the box is closed. Update or remove them; they work again once rebuilt against ROCK 1.0's headers.
-- **Upgrading from ROCK 0.92** keeps your `ROCK.ini`. Settings ROCK no longer reads are ignored. `npcDynamicCollisions` and `bBladePenetrationEnabled` moved to `SCISSORS.ini`.
+- **Upgrading from ROCK 0.92** starts from default settings: ROCK 1.0 reads `ROCK.toml` and no longer reads `ROCK.ini`. Set your options again in PALM or in `ROCK.toml`; the old `ROCK.ini` can be deleted. NPC settings moved to SCISSORS.
 
 ## Configuration
 
 ROCK reads two files under your Windows Documents folder:
 
 ```text
-My Games/Fallout4VR/Mods_Config/ROCK/ROCK.ini
-My Games/Fallout4VR/Mods_Config/ROCK/ROCK_Developer.ini
+My Games/Fallout4VR/Mods_Config/ROCK/ROCK.toml
+My Games/Fallout4VR/Mods_Config/ROCK/ROCK_Developer.toml
 ```
 
-`ROCK.ini` is created from the compiled defaults only when it is missing. Loading never rewrites an existing file: keys it does not have use their defaults. `ROCK_Developer.ini` is optional and holds only developer overrides. Both files reload while the game runs. RobCo PALM's ROCK pages edit them through ROCK's configuration API.
+Both are [TOML](https://toml.io) files. Options are grouped into tables such as `[Grabbing]` or `[ControllerInput.Left]`, and values are typed: `true`/`false`, whole numbers, decimal numbers, `"text"` and lists of three numbers such as `[0.0, 7.0, -7.0]` for offsets. Help for each option sits above it on lines starting with `##`.
 
-[ROCK_example.ini](data/config/ROCK_example.ini) and [ROCK_Developer_example.ini](data/config/ROCK_Developer_example.ini) document every option. They are references only, never files to install.
+`ROCK.toml` is created from the compiled defaults when it is missing. When ROCK starts it adds options the file lacks, refreshes the `##` help lines and moves options it no longer reads to a commented block at the end. Your own notes on lines starting with a single `#` above an option are kept. `ROCK_Developer.toml` is optional and holds only developer overrides. Both files reload while the game runs. RobCo PALM's ROCK pages edit them through ROCK's configuration API.
+
+If a file has a syntax error, ROCK writes the file name, line and column to `ROCK.log`, keeps the values it last read from that file and leaves the file untouched until it is fixed. A value of the wrong type (text for a number, for example) is logged with its line, and that option keeps its last value.
+
+[ROCK_example.toml](data/config/ROCK_example.toml) and [ROCK_Developer_example.toml](data/config/ROCK_Developer_example.toml) document every option. They are references only, never files to install.
 
 ## Building mods with ROCK
 
