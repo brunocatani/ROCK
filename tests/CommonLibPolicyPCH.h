@@ -46,3 +46,8 @@
 #ifdef MAX_PATH
 #undef MAX_PATH
 #endif
+// winnt.h maps it to the _InterlockedCompareExchange intrinsic, which breaks
+// hkReferencedObject's REX::W32::InterlockedCompareExchange calls.
+#ifdef InterlockedCompareExchange
+#undef InterlockedCompareExchange
+#endif
