@@ -205,13 +205,13 @@ if(NOT EXISTS "${PALM_INCLUDE_DIR}/RobCoPALM/Developer.h")
   message(FATAL_ERROR ">> RobCo PALM headers not found at '${PALM_INCLUDE_DIR}'; set PALM_INCLUDE_DIR.")
 endif()
 target_include_directories(${PROJECT_NAME} PRIVATE "${PALM_INCLUDE_DIR}")
-# RPS Framework's header-only required-update stop (RPS/Runtime/RequiredUpdate.h).
-set(RPS_FRAMEWORK_INCLUDE_DIR "${WORKSPACE_ROOT}/my_frameworks_and_sdks/RPS_Framework/include" CACHE PATH
-  "RPS Framework public header directory.")
-if(NOT EXISTS "${RPS_FRAMEWORK_INCLUDE_DIR}/RPS/Runtime/RequiredUpdate.h")
-  message(FATAL_ERROR ">> RPS Framework headers not found at '${RPS_FRAMEWORK_INCLUDE_DIR}'; set RPS_FRAMEWORK_INCLUDE_DIR.")
-endif()
-target_include_directories(${PROJECT_NAME} PRIVATE "${RPS_FRAMEWORK_INCLUDE_DIR}")
+# RPS Framework's staged package: the settings files (RPS::Settings) and the
+# header-only required-update stop (RPS/Runtime/RequiredUpdate.h). The
+# framework's custom-fast build stages it; rebuild it there after framework changes.
+set(RPSFramework_DIR "${WORKSPACE_ROOT}/my_frameworks_and_sdks/RPS_Framework/build-fast/stage/lib/cmake/RPSFramework"
+  CACHE PATH "RPS Framework staged package.")
+find_package(RPSFramework CONFIG REQUIRED)
+target_link_libraries(${PROJECT_NAME} PRIVATE RPS::Settings)
 
 include("${ROOT_DIR}/cmake/VerifyDistributionInputs.cmake")
 get_target_property(ROCK_BUILD_INPUTS ${PROJECT_NAME} SOURCES)
@@ -827,7 +827,7 @@ if(BUILD_ROCK_TESTS)
   # Match the assertion policy of every consumer reusing this PCH.
   target_compile_options(ROCKPolicyTestSupport PRIVATE /UNDEBUG)
   target_precompile_headers(ROCKPolicyTestSupport PRIVATE "${ROOT_DIR}/tests/CommonLibPolicyPCH.h")
-  target_link_libraries(ROCKPolicyTestSupport PUBLIC spdlog::spdlog mmio::mmio)
+  target_link_libraries(ROCKPolicyTestSupport PUBLIC spdlog::spdlog mmio::mmio RPS::Settings)
   if(TARGET xbyak::xbyak)
     target_link_libraries(ROCKPolicyTestSupport PUBLIC xbyak::xbyak)
   endif()
@@ -861,12 +861,12 @@ if(BUILD_ROCK_TESTS)
 
   add_executable(ROCKConfigurationStoreTests
     "${ROOT_DIR}/tests/ConfigurationStoreTests.cpp"
-    "${SOURCE_DIR}/config/ConfigurationStore.cpp"
-    "${SOURCE_DIR}/config/LegacyIniMigration.cpp"
+    "${SOURCE_DIR}/config/RockSettings.cpp"
     "${SOURCE_DIR}/RockConfigLoad.cpp"
   )
   target_compile_features(ROCKConfigurationStoreTests PRIVATE cxx_std_23)
-  target_compile_definitions(ROCKConfigurationStoreTests PRIVATE ROCK_CONFIG_REFERENCE_DIR="${ROOT_DIR}/data/config")
+  target_compile_definitions(ROCKConfigurationStoreTests PRIVATE ROCK_CONFIG_REFERENCE_DIR="${ROOT_DIR}/data/config"
+    ROCK_CONFIG_TEST_DIR="${CMAKE_CURRENT_BINARY_DIR}/config-test")
   list(APPEND ROCK_COMMONLIB_TEST_TARGETS ROCKConfigurationStoreTests)
   add_rock_test(ROCKConfigurationStoreTests)
 
@@ -875,13 +875,12 @@ if(BUILD_ROCK_TESTS)
     "${SOURCE_DIR}/api/providers/ConfigurationProvider.cpp"
     "${SOURCE_DIR}/RockConfig.cpp"
     "${SOURCE_DIR}/RockConfigLoad.cpp"
-    "${SOURCE_DIR}/config/ConfigurationStore.cpp"
-    "${SOURCE_DIR}/config/LegacyIniMigration.cpp"
+    "${SOURCE_DIR}/config/RockSettings.cpp"
   )
   target_compile_features(ROCKConfigurationProviderTests PRIVATE cxx_std_23)
   target_include_directories(ROCKConfigurationProviderTests PRIVATE ${SOURCE_DIR})
   target_precompile_headers(ROCKConfigurationProviderTests PRIVATE "${ROOT_DIR}/tests/CommonLibPolicyPCH.h" <F4SE/Logger.h>)
-  target_link_libraries(ROCKConfigurationProviderTests PRIVATE CommonLibF4::CommonLibF4 spdlog::spdlog)
+  target_link_libraries(ROCKConfigurationProviderTests PRIVATE CommonLibF4::CommonLibF4 spdlog::spdlog RPS::Settings)
   add_rock_test(ROCKConfigurationProviderTests)
 
   foreach(ROCK_COMMONLIB_TEST_TARGET IN LISTS ROCK_COMMONLIB_TEST_TARGETS)

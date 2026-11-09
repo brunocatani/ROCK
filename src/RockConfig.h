@@ -29,7 +29,7 @@
 #undef ROCK_DEFINED_MAX_PATH_FOR_FILEWATCH
 #endif
 
-#include "config/ConfigurationStore.h"
+#include "config/RockSettings.h"
 #include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
 #include "physics-interaction/hand/HandSelection.h"
 #include "physics-interaction/input/ButtonLayoutPolicy.h"
@@ -552,7 +552,7 @@ namespace rock
         // Only load/reload applies live values on the runtime owner. API writes
         // persist under this lock and request that owner's normal reload.
         mutable std::mutex _storeMutex;
-        std::unique_ptr<config::ConfigurationStore> _store;
+        std::unique_ptr<config::Store> _store;
         std::unique_ptr<filewatch::FileWatch<std::string>> _fileWatch;
         std::unordered_map<std::string, std::function<void(const std::string&)>> _onConfigChangedSubscribers;
         std::atomic<std::uint64_t> _configRevision{ 0 };

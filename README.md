@@ -190,9 +190,9 @@ Start with the [API overview](docs/api/Overview.md), then the page of each inter
 | [CommonLibF4VR](https://github.com/brunocatani/CommonLibF4VR) (`master`) | Linked directly: engine types, Havok, F4SE, relocation | `COMMON_LIB_F4VR_PATH` |
 | [RPS UI Framework](https://github.com/brunocatani/RPS_UI_Framework) | Headers in `include/RPS_UI_Framework/`: world drawing and number overlays, bound at runtime | `RPSUI_INCLUDE_DIR` (its `include` folder) |
 | [RobCo PALM](https://github.com/brunocatani/RobCo_PALM) | Header `include/RobCoPALM/Developer.h`: the Developer wheel capture switch, bound at runtime | `PALM_INCLUDE_DIR` (its `include` folder) |
-| [RPS Framework](https://github.com/brunocatani/RPS_Framework) | Header-only `include/RPS/Runtime/RequiredUpdate.h`: the version-mismatch error box | `RPS_FRAMEWORK_INCLUDE_DIR` (its `include` folder) |
+| [RPS Framework](https://github.com/brunocatani/RPS_Framework) | Linked statically: the settings files (`RPS::Settings`); header `RPS/Runtime/RequiredUpdate.h`: the version-mismatch error box | `RPSFramework_DIR` (the package its `custom-fast` build stages, `build-fast/stage/lib/cmake/RPSFramework`) |
 
-ROCK is built and tested against that CommonLibF4VR fork: ArthurHub's [CommonLibF4VR](https://github.com/ArthurHub/CommonLibF4VR) with Fallout 4 VR additions. It links nothing from RPS UI Framework, RobCo PALM or RPS Framework, and ROCK runs without the first two installed. F4VR-CommonFramework is not needed.
+ROCK is built and tested against that CommonLibF4VR fork: ArthurHub's [CommonLibF4VR](https://github.com/ArthurHub/CommonLibF4VR) with Fallout 4 VR additions. It links nothing from RPS UI Framework or RobCo PALM, and runs without them installed; RPS Framework is linked into `ROCK.dll`. F4VR-CommonFramework is not needed.
 
 ROCK uses C++23. vcpkg installs the other libraries from `vcpkg.json`. The OpenVR ABI ROCK needs is vendored in [third_party/openvr](third_party/openvr/).
 
@@ -201,7 +201,7 @@ ROCK uses C++23. vcpkg installs the other libraries from `vcpkg.json`. The OpenV
 Copy [CMakeUserPresets.json.template](CMakeUserPresets.json.template) to `CMakeUserPresets.json`, remove its comment block, and set:
 
 - `COMMON_LIB_F4VR_PATH` to your CommonLibF4VR checkout;
-- `RPSUI_INCLUDE_DIR`, `PALM_INCLUDE_DIR` and `RPS_FRAMEWORK_INCLUDE_DIR` to the `include` folders of those checkouts;
+- `RPSUI_INCLUDE_DIR` and `PALM_INCLUDE_DIR` to the `include` folders of those checkouts, and `RPSFramework_DIR` to RPS Framework's staged package;
 - `COPY_PLUGIN_BASE_PATH` to the mod folder the build copies `ROCK.dll` and `ROCK.pdb` into (an MO2 mod folder or the game's `Data` folder).
 
 Configuring stops with an error naming any of these that is not found.

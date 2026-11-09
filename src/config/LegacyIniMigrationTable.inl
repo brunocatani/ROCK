@@ -75,7 +75,7 @@
 { "bHighlightEnabled", "SelectionFeedback", "HighlightEnabled", LegacyKind::Value, 0, "true", "true" },
 { "bImmersiveGrenades", "Grenades", "ImmersiveGrenades", LegacyKind::Value, 0, "true", "true" },
 { "bImmersiveRecoil", "WeaponRecoil", "ImmersiveRecoil", LegacyKind::Value, 0, "true", "true" },
-{ "bLeftHandedMode", "FiringHand", "DefaultHand", LegacyKind::LeftHandedMode, 0, "false", {} },
+{ "bLeftHandedMode", "FiringHand", "DefaultHand", LegacyKind::BooleanToString, 0, "false", {}, "left", "right" },
 { "bLogFlushImmediate", "LoggingAndProfiling", "LogFlushImmediate", LegacyKind::Value, 0, "false", "false" },
 { "bMouthConsumeAllowPoison", "GrabSafetyAndRelease", "MouthConsumeAllowPoison", LegacyKind::Value, 0, "false", "false" },
 { "bMouthConsumeEnabled", "GrabSafetyAndRelease", "MouthConsumeEnabled", LegacyKind::Value, 0, "true", "true" },

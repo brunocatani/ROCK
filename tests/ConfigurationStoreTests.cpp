@@ -1,8 +1,11 @@
+// ROCK's settings contracts on RPS::Settings (whose own tests cover
+// organizing, faults and the developer file): the catalog and the loader
+// agree, the example files are what ROCK writes, documented defaults are the
+// runtime defaults, and ROCK's old INI keys migrate to the right options.
 #include "RockConfig.h"
-#include "config/ConfigurationStore.h"
+#include "config/RockSettings.h"
 
 #include <array>
-#include <chrono>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -13,6 +16,7 @@
 namespace
 {
     using namespace rock::config;
+    using RPS::Settings::Group;
     namespace fs = std::filesystem;
 
     void require(bool condition, const char* message)
@@ -35,172 +39,34 @@ namespace
         require(output.good(), "cannot write a test file");
     }
 
-    const Setting& find(const ConfigurationStore& store, std::string_view table, std::string_view key)
+    const Setting& find(const Store& store, std::string_view table, std::string_view key)
     {
-        for (const auto& setting : store.settings()) {
-            if (setting.table == table && setting.key == key)
-                return setting;
-        }
+        if (const auto* setting = store.find(table, key))
+            return *setting;
         throw std::runtime_error(std::format("missing setting {}.{}", table, key));
     }
 
-    bool hasMessage(const ConfigurationStore& store, std::string_view text)
+    bool hasLine(const std::vector<std::string>& lines, std::string_view text)
     {
-        for (const auto& message : store.messages()) {
-            if (message.find(text) != std::string::npos)
+        for (const auto& line : lines) {
+            if (line.find(text) != std::string::npos)
                 return true;
         }
         return false;
     }
 
-    rock::RockConfigValues runtime(const ConfigurationStore& store)
-    {
-        return rock::RockConfig::parseValues(store.loadedValues());
-    }
+    rock::RockConfigValues runtime(const Store& store) { return rock::RockConfig::parseValues(store.loadedValues()); }
 
-    void valueChecks()
-    {
-        require(normalizeValue(ValueType::Float3, "[1, 2, 3]") == "[1.0, 2.0, 3.0]", "float3 brackets");
-        require(normalizeValue(ValueType::Float3, " 0.5,-1 , 0 ") == "[0.5, -1.0, 0.0]", "float3 without brackets");
-        require(!normalizeValue(ValueType::Float3, "[1, 2]") && !normalizeValue(ValueType::Float3, "1, 2, 3, 4") &&
-                !normalizeValue(ValueType::Float3, "[1, nan, 3]"),
-            "malformed float3 accepted");
-        require(normalizeValue(ValueType::Float, "4") == "4.0" && normalizeValue(ValueType::Float, "-0") == "0.0" &&
-                normalizeValue(ValueType::Float, "1e-05") == "1e-05",
-            "float canonical form");
-        require(!normalizeValue(ValueType::Float, "inf") && !normalizeValue(ValueType::Integer, "2.5"),
-            "non-finite float or fractional integer accepted");
-        require(normalizeValue(ValueType::Boolean, "On") == "true" && !normalizeValue(ValueType::Boolean, "maybe"),
-            "boolean API forms");
-        require(!normalizeValue(ValueType::String, "two\nlines"), "multi-line string accepted");
-    }
-
-    // Startup organizes a hand-edited file without changing what it means:
-    // player notes stay, stale help is regenerated, unknown entries become
-    // comments that never apply, and a second start leaves the file alone.
-    void organizeChecks(const fs::path& directory, std::span<const SettingDefault> defaults)
-    {
-        fs::create_directories(directory);
-        ConfigurationStore store(directory, defaults);
-        write(store.path(Group::Consumer),
-            "## stale help from an older ROCK\n"
-            "[Logging]\n"
-            "# my note about logging\n"
-            "LogLevel = 3\n"
-            "RetiredOption = 7\n"
-            "[WeaponHandling]\n"
-            "WeaponEquipMode = 3 # inline comments are not kept\n"
-            "[RetiredTable]\n"
-            "Value = \"kept\"\n"
-            "[DeveloperControls]\n"
-            "DeveloperModeEnabled = true\n"
-            "# a note no key follows\n");
-        store.load(true);
-        require(store.messages().empty(), "a valid file reported problems");
-        const auto organized = bytes(store.path(Group::Consumer));
-        require(organized.find("# my note about logging\nLogLevel = 3\n") != std::string::npos,
-            "player note did not stay above its option");
-        require(organized.find("stale help") == std::string::npos, "ROCK help was not regenerated");
-        require(organized.find("# Logging.RetiredOption = 7") != std::string::npos &&
-                organized.find("# RetiredTable.Value = \"kept\"") != std::string::npos &&
-                organized.find("# DeveloperControls.DeveloperModeEnabled = true") != std::string::npos &&
-                organized.find("# a note no key follows") != std::string::npos,
-            "unread entries were not kept as comments");
-        require(organized.find("[ImmersiveAid]\n") != std::string::npos, "missing player options were not added");
-        const auto values = runtime(store);
-        require(values.rockLogLevel == 3 && values.rockWeaponEquipMode == 3, "organized values did not apply");
-        require(!values.rockDeveloperModeEnabled, "a developer option applied from the player file");
-        require(!fs::exists(store.path(Group::Developer)), "loading created the developer file");
-        const auto revision = store.revision();
-        store.load(true);
-        require(bytes(store.path(Group::Consumer)) == organized, "a second start rewrote the organized file");
-        require(store.revision() == revision, "an unchanged reload advanced the revision");
-        require(store.setValue(Group::Consumer, "Logging", "LogLevel", "2"), "API write failed");
-        const auto edited = bytes(store.path(Group::Consumer));
-        require(edited.find("# my note about logging\nLogLevel = 2\n") != std::string::npos,
-            "API write lost the player note");
-        require(edited.find("# Logging.RetiredOption = 7") == edited.rfind("# Logging.RetiredOption = 7"),
-            "unused entries were duplicated");
-    }
-
-    // A file that does not parse is never rewritten and its options keep the
-    // last values read; a value of the wrong type keeps its last value alone.
-    void faultChecks(const fs::path& directory, std::span<const SettingDefault> defaults)
-    {
-        fs::create_directories(directory);
-        ConfigurationStore store(directory, defaults);
-        write(store.path(Group::Consumer), "[Logging]\nLogLevel = 4\n[Grenades]\nRealisticGrenadeFuseSeconds = 5\n");
-        store.load(true);
-        require(runtime(store).rockLogLevel == 4, "valid value did not load");
-        require(find(store, "Grenades", "RealisticGrenadeFuseSeconds").value == "5.0",
-            "a whole number was not accepted for a decimal option");
-
-        const std::string broken = "[Logging]\nLogLevel = 1\n[Grenades\n";
-        write(store.path(Group::Consumer), broken);
-        const auto revision = store.revision();
-        store.load(true);
-        require(bytes(store.path(Group::Consumer)) == broken, "a file with a syntax error was rewritten");
-        require(store.revision() == revision && runtime(store).rockLogLevel == 4,
-            "a syntax error did not keep the last values");
-        require(hasMessage(store, "ROCK.toml line 3"), "the syntax error was not reported with its line");
-        require(!store.setValue(Group::Consumer, "Logging", "LogLevel", "2") &&
-                bytes(store.path(Group::Consumer)) == broken,
-            "an API write replaced a file with a syntax error");
-
-        write(store.path(Group::Consumer), "[Logging]\nLogLevel = \"high\"\n[Grenades]\nImmersiveGrenades = false\n");
-        store.load(true);
-        require(runtime(store).rockLogLevel == 4 && !runtime(store).rockImmersiveGrenades,
-            "a wrong-type value did not keep its last value while the rest applied");
-        require(hasMessage(store, "ROCK.toml line 2: Logging.LogLevel must be a whole number"),
-            "the wrong-type value was not reported");
-        require(bytes(store.path(Group::Consumer)).find("LogLevel = \"high\"") != std::string::npos,
-            "organizing replaced the player's wrong-type value");
-        write(store.path(Group::Consumer), "[Logging]\nLogLevel = 2.5\n");
-        store.load(false);
-        require(runtime(store).rockLogLevel == 4, "a fractional value was accepted for a whole-number option");
-    }
-
-    void developerChecks(const fs::path& directory, std::span<const SettingDefault> defaults)
-    {
-        fs::create_directories(directory);
-        ConfigurationStore store(directory, defaults);
-        store.load(true);
-        require(store.setValue(Group::Developer, "PalmAndGrabOffsets", "RightGrabAuthorityProxyOffsetGameUnits",
-                    "[1, 2.5, -3]"),
-            "float3 write failed");
-        require(bytes(store.path(Group::Developer)).find("RightGrabAuthorityProxyOffsetGameUnits = [1.0, 2.5, -3.0]") !=
-                std::string::npos,
-            "float3 was not written as a TOML array");
-        const std::string pattern = R"(a "quoted" \ pattern %v)";
-        require(store.setValue(Group::Developer, "LoggingAndProfiling", "LogPattern", pattern), "string write failed");
-        store.load(false);
-        const auto values = runtime(store);
-        require(values.rockRightGrabAuthorityProxyOffsetGameUnits.x == 1.0f &&
-                values.rockRightGrabAuthorityProxyOffsetGameUnits.y == 2.5f &&
-                values.rockRightGrabAuthorityProxyOffsetGameUnits.z == -3.0f,
-            "float3 did not reach runtime");
-        require(values.rockLogPattern == pattern, "string escaping did not round-trip");
-        require(!store.setValue(Group::Developer, "Logging", "LogLevel", "2"), "a write to the wrong file was accepted");
-        require(!store.setValue(Group::Developer, "LoggingAndProfiling", "LogFlushImmediate", "maybe"),
-            "an invalid value was accepted");
-        const auto& offset = find(store, "PalmAndGrabOffsets", "RightGrabAuthorityProxyOffsetGameUnits");
-        require(store.setValue(Group::Developer, offset.table, offset.key, offset.defaultValue) &&
-                    store.setValue(Group::Developer, "LoggingAndProfiling", "LogPattern",
-                        find(store, "LoggingAndProfiling", "LogPattern").defaultValue),
-            "developer reset failed");
-        require(!fs::exists(store.path(Group::Developer)), "resetting every developer option kept the file");
-    }
-
-    // A player upgrading from the INI versions keeps the settings they
-    // changed: renamed keys, X/Y/Z triplets and options that changed files
-    // land in the right TOML file; old defaults, retired keys and values that
-    // do not fit stay behind; the INIs are deleted once the TOML files exist.
+    // A player upgrading from ROCK 0.92 or the last INI version keeps the
+    // settings they changed: renamed keys, X/Y/Z triplets, bLeftHandedMode and
+    // options that changed files land in the right TOML file; old defaults,
+    // retired keys and values that do not fit stay behind.
     void migrationChecks(const fs::path& directory, std::span<const SettingDefault> defaults)
     {
         fs::create_directories(directory);
-        const auto consumerIni = directory / "ROCK.ini";
+        const auto playerIni = directory / "ROCK.ini";
         const auto developerIni = directory / "ROCK_Developer.ini";
-        write(consumerIni,
+        write(playerIni,
             "; ROCK.ini - player options\r\n"
             "[ImmersiveWeapons]\r\n"
             "bGunstockMode = true\r\n"
@@ -218,39 +84,28 @@ namespace
             "fNativeScopeOverlayOffsetYGameUnits = 12\r\n");
         write(developerIni, "[PhysicsInteraction]\r\niDebugMaxBodyInstances = 100\r\n");
 
-        ConfigurationStore store(directory, defaults);
-        store.load(true);
-        require(!fs::exists(consumerIni) && !fs::exists(developerIni), "migrated INI files were not deleted");
-        require(find(store, "WeaponHandling", "GunstockMode").value == "true", "a changed option was not carried");
-        require(!find(store, "Logging", "LogLevel").specified ||
-                    find(store, "Logging", "LogLevel").value == find(store, "Logging", "LogLevel").defaultValue,
+        const auto store = makeStore(directory, defaults);
+        store->load(true);
+        require(!fs::exists(playerIni) && !fs::exists(developerIni), "migrated INI files were not deleted");
+        require(find(*store, "WeaponHandling", "GunstockMode").value == "true", "a changed option was not carried");
+        require(find(*store, "Logging", "LogLevel").value == find(*store, "Logging", "LogLevel").defaultValue,
             "an old default was carried");
-        require(find(store, "WeaponHandling", "WeaponFilteringPreset").value ==
-                find(store, "WeaponHandling", "WeaponFilteringPreset").defaultValue,
+        require(find(*store, "WeaponHandling", "WeaponFilteringPreset").value ==
+                find(*store, "WeaponHandling", "WeaponFilteringPreset").defaultValue,
             "an old default replaced the current default");
-        require(find(store, "FiringHand", "DefaultHand").value == "left", "bLeftHandedMode was not carried");
-        require(find(store, "FiringHand.Left", "AimOffsetGameUnits").value == "[0.0, 2.5, 0.0]",
+        require(find(*store, "FiringHand", "DefaultHand").value == "left", "bLeftHandedMode was not carried");
+        require(find(*store, "FiringHand.Left", "AimOffsetGameUnits").value == "[0.0, 2.5, 0.0]",
             "an X/Y/Z triplet was not carried as one list");
-        require(find(store, "ControllerInput.Right", "A").value == "b", "a button layout key was not carried");
-        require(find(store, "ScopePlacement", "NativeScopeOverlayOffsetGameUnits").value == "[0.0, 12.0, 0.0]" &&
-                    find(store, "DebugOverlay", "DebugMaxBodyInstances").value == "100",
+        require(find(*store, "ControllerInput.Right", "A").value == "b", "a button layout key was not carried");
+        require(find(*store, "ScopePlacement", "NativeScopeOverlayOffsetGameUnits").value == "[0.0, 12.0, 0.0]" &&
+                    find(*store, "DebugOverlay", "DebugMaxBodyInstances").value == "100",
             "developer options were not carried");
-        require(bytes(store.path(Group::Developer)).find("NativeScopeOverlayOffsetGameUnits = [0.0, 12.0, 0.0]") !=
+        require(bytes(store->path(Group::Developer)).find("NativeScopeOverlayOffsetGameUnits = [0.0, 12.0, 0.0]") !=
                 std::string::npos,
             "an option that moved to the developer file was not written there");
-        require(hasMessage(store, "does not fit: fRealisticGrenadeFuseSeconds = soon"),
+        require(hasLine(store->messages(), "does not fit: fRealisticGrenadeFuseSeconds = soon"),
             "a value that does not fit was not reported");
-        bool retiredNamed = false;
-        for (const auto& notice : store.notices())
-            retiredNamed |= notice.find("bRockyModeEnabled") != std::string::npos;
-        require(retiredNamed, "a retired key was not named");
-
-        // With ROCK.toml present the TOML files win and a leftover INI goes.
-        write(consumerIni, "[Logging]\r\niLogLevel = 0\r\n");
-        const auto organized = bytes(store.path(Group::Consumer));
-        store.load(true);
-        require(!fs::exists(consumerIni), "a leftover INI was not deleted");
-        require(bytes(store.path(Group::Consumer)) == organized, "a leftover INI changed ROCK.toml");
+        require(hasLine(store->notices(), "bRockyModeEnabled"), "a retired key was not named");
     }
 
     // The examples are exactly what ROCK writes for files holding every option
@@ -283,10 +138,10 @@ namespace
         std::span<const SettingDefault> defaults)
     {
         fs::create_directories(directory);
-        ConfigurationStore store(directory, defaults);
+        const auto store = makeStore(directory, defaults);
         std::string developer;
         std::string_view table;
-        for (const auto& setting : store.settings()) {
+        for (const auto& setting : store->settings()) {
             if (setting.group != Group::Developer)
                 continue;
             if (setting.table != table)
@@ -295,52 +150,42 @@ namespace
             developer += std::format("{} = {}\n", setting.key,
                 setting.type == ValueType::String ? std::format("'{}'", setting.defaultValue) : setting.defaultValue);
         }
-        write(store.path(Group::Developer), developer);
-        store.load(true);
-        require(store.messages().empty(), "cannot organize the default files");
-        return { bodyAfterHeader(withoutCarriageReturns(bytes(store.path(Group::Consumer)))),
-            bodyAfterHeader(withoutCarriageReturns(bytes(store.path(Group::Developer)))) };
+        write(store->path(Group::Developer), developer);
+        store->load(true);
+        require(store->messages().empty(), "cannot organize the default files");
+        return { bodyAfterHeader(withoutCarriageReturns(bytes(store->path(Group::Player)))),
+            bodyAfterHeader(withoutCarriageReturns(bytes(store->path(Group::Developer)))) };
     }
 
     // Both organized default files hold every option once at its default, and
     // reading them gives the same runtime values as reading nothing.
     void defaultChecks(const fs::path& directory, std::span<const SettingDefault> defaults)
     {
-        ConfigurationStore store(directory, defaults);
-        store.load(false);
-        for (const auto& setting : store.settings()) {
+        const auto store = makeStore(directory, defaults);
+        store->load(false);
+        for (const auto& setting : store->settings()) {
             require(setting.specified, "an organized default file is missing an option");
             require(setting.value == setting.defaultValue, "an organized default differs from the compiled default");
         }
-        require(runtime(store) == rock::RockConfig::parseValues({}),
+        require(runtime(*store) == rock::RockConfig::parseValues({}),
             "omitting options does not give the same runtime values as all documented defaults");
     }
 }
 
 int main(int argc, char** argv)
 {
+    const fs::path directory = fs::path(ROCK_CONFIG_TEST_DIR);
     try {
+        std::error_code ec;
+        fs::remove_all(directory, ec);
         const auto defaults = rock::RockConfig::compiledDefaults();
-        const auto directory = fs::temp_directory_path() /
-            ("ROCK-configuration-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-
-        struct Cleanup
-        {
-            fs::path path;
-
-            ~Cleanup()
-            {
-                std::error_code ec;
-                fs::remove_all(path, ec);
-            }
-        } cleanup{ directory };
-
         // Construction checks the catalog against the loader in both directions.
         const auto exampleBodies = organizedDefaultBodies(directory / "examples", defaults);
         if (argc == 3 && std::string_view(argv[1]) == "--write-examples") {
             for (std::size_t index = 0; index < kExampleNames.size(); ++index)
                 write(fs::path(argv[2]) / kExampleNames[index],
                     std::string(kExampleHeaders[index]) + exampleBodies[index]);
+            fs::remove_all(directory, ec);
             return 0;
         }
         for (std::size_t index = 0; index < kExampleNames.size(); ++index) {
@@ -352,11 +197,8 @@ int main(int argc, char** argv)
                         kExampleNames[index]));
         }
         defaultChecks(directory / "examples", defaults);
-        valueChecks();
-        organizeChecks(directory / "organize", defaults);
-        faultChecks(directory / "faults", defaults);
-        developerChecks(directory / "developer", defaults);
         migrationChecks(directory / "migration", defaults);
+        fs::remove_all(directory, ec);
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

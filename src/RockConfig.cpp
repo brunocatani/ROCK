@@ -33,7 +33,7 @@ namespace rock
             {
                 std::scoped_lock lock(_storeMutex);
                 if (!_store) {
-                    _store = std::make_unique<config::ConfigurationStore>(resolveConfigDirectory(), compiledDefaults());
+                    _store = config::makeStore(resolveConfigDirectory(), compiledDefaults());
                     resetToDefaults();
                 }
             }
@@ -109,7 +109,7 @@ namespace rock
         if (group != Group::Consumer && group != Group::Developer)
             return false;
         for (const auto& setting : _store->settings()) {
-            if (setting.group != group)
+            if (setting.group != config::storeGroup(group))
                 continue;
             const api::configuration::Setting record{
                 setting.table.c_str(),
@@ -118,8 +118,8 @@ namespace rock
                 setting.defaultValue.c_str(),
                 setting.category.c_str(),
                 setting.description.c_str(),
-                setting.type,
-                config::ConfigurationStore::isDefault(setting, setting.value) ? 0u : 1u,
+                static_cast<api::configuration::ValueType>(setting.type),
+                config::Store::isDefault(setting, setting.value) ? 0u : 1u,
             };
             visitor(record, context);
         }
@@ -134,7 +134,7 @@ namespace rock
             error = "ROCK configuration is unavailable";
             return false;
         }
-        if (!_store->setValue(group, section, key, value)) {
+        if (!_store->setValue(config::storeGroup(group), section, key, value)) {
             error = _store->error();
             ROCK_LOG_WARN(Config, "Cannot persist [{}] {}: {}", section, key, error);
             return false;
@@ -164,8 +164,8 @@ namespace rock
         _fileWatch = std::make_unique<filewatch::FileWatch<std::string>>(_store->directory().string(),
             [this](const std::string& name, filewatch::Event) {
                 // Windows file names are case-insensitive.
-                if (_stricmp(name.c_str(), config::ConfigurationStore::kConsumerFileName.data()) != 0 &&
-                    _stricmp(name.c_str(), config::ConfigurationStore::kDeveloperFileName.data()) != 0)
+                if (_stricmp(name.c_str(), config::kPlayerFileName.data()) != 0 &&
+                    _stricmp(name.c_str(), config::kDeveloperFileName.data()) != 0)
                     return;
                 _lastFileEventTicks.store(eventTicks(), std::memory_order_release);
                 _reloadPending.store(true, std::memory_order_release);
