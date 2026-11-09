@@ -375,8 +375,8 @@ namespace rock::testbench_telemetry
         }
         if (!api->enabled()) {
             ROCK_LOG_INFO(Init,
-                "Testbench capture switch not registered: PALM's Developer wheel is off (PALM.ini [Developer] "
-                "bEnabled)");
+                "Testbench capture switch not registered: PALM's Developer wheel is off (PALM.toml [Developer] "
+                "Enabled)");
             return;
         }
         palm::api::developer::Action action;

@@ -164,7 +164,7 @@ namespace rock::testbench_telemetry
     void publishSkeleton(std::uint64_t frameIndex, std::uint64_t topologyRevision,
         std::span<const SkeletonBone> bones) noexcept;
 
-    // The capture switch in RobCo PALM's Developer wheel (PALM.ini [Developer] bEnabled): each
+    // The capture switch in RobCo PALM's Developer wheel (PALM.toml [Developer] Enabled): each
     // press starts or stops a capture. While a capture runs the section is open whatever the
     // setting says, and its header flags bit 1 tells the external recorder to record.
     // Registered once after every plugin has loaded; ROCK runs without PALM.
