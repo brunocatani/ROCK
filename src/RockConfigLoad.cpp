@@ -376,16 +376,16 @@ namespace rock
         rockQuickLootPanelPlacement =
             static_cast<int>(ini.integer("Grabbing", "QuickLootPanelPlacement", rockQuickLootPanelPlacement));
         if (rockQuickLootPanelPlacement < 1 || rockQuickLootPanelPlacement > 3) {
-            ROCK_LOG_WARN(Config, "Invalid Grabbing.QuickLootPanelPlacement={} -- using At Container",
+            ROCK_LOG_WARN(Config, "Invalid Grabbing.QuickLootPanelPlacement={} -- using Closer Hand",
                 rockQuickLootPanelPlacement);
-            rockQuickLootPanelPlacement = 3;
+            rockQuickLootPanelPlacement = 2;
         }
         rockActivatePromptPlacement =
             static_cast<int>(ini.integer("Grabbing", "ActivatePromptPlacement", rockActivatePromptPlacement));
         if (rockActivatePromptPlacement < 1 || rockActivatePromptPlacement > 3) {
-            ROCK_LOG_WARN(Config, "Invalid Grabbing.ActivatePromptPlacement={} -- using At Object",
+            ROCK_LOG_WARN(Config, "Invalid Grabbing.ActivatePromptPlacement={} -- using Closer Hand",
                 rockActivatePromptPlacement);
-            rockActivatePromptPlacement = 3;
+            rockActivatePromptPlacement = 2;
         }
         rockGeneratedObjectCollision =
             ini.boolean("Grabbing", "GeneratedObjectCollision", rockGeneratedObjectCollision);
@@ -446,8 +446,8 @@ namespace rock
             static_cast<int>(ini.integer("WeaponHandling", "WeaponEquipMode", rockWeaponEquipMode));
         if (rockWeaponEquipMode < equipped_weapon_drop_policy::kFirstEquipMode ||
             rockWeaponEquipMode > equipped_weapon_drop_policy::kAutoEquipMode) {
-            ROCK_LOG_WARN(Config, "Invalid WeaponHandling.WeaponEquipMode={} -- using 2", rockWeaponEquipMode);
-            rockWeaponEquipMode = 2;
+            ROCK_LOG_WARN(Config, "Invalid WeaponHandling.WeaponEquipMode={} -- using 4", rockWeaponEquipMode);
+            rockWeaponEquipMode = 4;
         }
         rockWeaponGrabMode =
             static_cast<int>(ini.integer("WeaponHandling", "WeaponGrabMode", rockWeaponGrabMode));
@@ -464,8 +464,8 @@ namespace rock
         rockWeaponFilteringPreset = static_cast<int>(
             ini.integer("WeaponHandling", "WeaponFilteringPreset", rockWeaponFilteringPreset));
         if (rockWeaponFilteringPreset < 0 || rockWeaponFilteringPreset > 4) {
-            ROCK_LOG_WARN(Config, "Invalid WeaponHandling.WeaponFilteringPreset={} -- using Off", rockWeaponFilteringPreset);
-            rockWeaponFilteringPreset = 0;
+            ROCK_LOG_WARN(Config, "Invalid WeaponHandling.WeaponFilteringPreset={} -- using Steady", rockWeaponFilteringPreset);
+            rockWeaponFilteringPreset = 3;
         }
         rockScopedFilterRotationSeconds = readClampedFloat(ini, "WeaponHandling", "ScopedFilterRotationSeconds", rockScopedFilterRotationSeconds, 0.15f, 0.0f, 1.0f);
         rockScopedFilterTranslationSeconds = readClampedFloat(ini, "WeaponHandling", "ScopedFilterTranslationSeconds", rockScopedFilterTranslationSeconds, 0.08f, 0.0f, 1.0f);
@@ -473,7 +473,7 @@ namespace rock
         rockFiringGripReattachRadiusGameUnits = readClampedFloat(ini, "WeaponHandling", "FiringGripReattachRadiusGameUnits", rockFiringGripReattachRadiusGameUnits, 10.0f, 0.25f, 30.0f);
         rockFiringGripReattachCylinderRadiusGameUnits =
             readClampedFloat(ini, "WeaponCollisionAndSupport", "FiringGripReattachCylinderRadiusGameUnits",
-                rockFiringGripReattachCylinderRadiusGameUnits, 3.0f, 0.1f, 30.0f);
+                rockFiringGripReattachCylinderRadiusGameUnits, 4.0f, 0.1f, 30.0f);
         rockGripZoneIndicatorDiameterGameUnits =
             readClampedFloat(ini, "WeaponHandling", "GripZoneIndicatorDiameterGameUnits",
                 rockGripZoneIndicatorDiameterGameUnits, grip_zone_indicator_policy::kDefaultDiameterGameUnits,
@@ -488,8 +488,8 @@ namespace rock
         rockAmmoCounterStyle =
             static_cast<int>(ini.integer("WeaponHandling", "AmmoCounterStyle", rockAmmoCounterStyle));
         if (rockAmmoCounterStyle < 1 || rockAmmoCounterStyle > 3) {
-            ROCK_LOG_WARN(Config, "Invalid WeaponHandling.AmmoCounterStyle={} -- using Minimal", rockAmmoCounterStyle);
-            rockAmmoCounterStyle = 1;
+            ROCK_LOG_WARN(Config, "Invalid WeaponHandling.AmmoCounterStyle={} -- using Immersive", rockAmmoCounterStyle);
+            rockAmmoCounterStyle = 2;
         }
 
         rockDefaultHandLeft =

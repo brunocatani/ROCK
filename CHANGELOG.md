@@ -63,20 +63,20 @@
   other hand's weapon. Which hand holds each weapon is saved with your game.
   Every equip is ready to fire at once.
 - **Weapon Equip Mode** (`WeaponHandling.WeaponEquipMode`): 1 trigger equip, no drop;
-  2 trigger equip, toggle drop (default); 3 trigger equip, auto drop; 4 auto
-  equip once the palm settles on the firing grip (`WeaponHandling.AutoEquipSettleSeconds`).
+  2 trigger equip, toggle drop; 3 trigger equip, auto drop; 4 auto equip once
+  the palm settles on the firing grip (default; `WeaponHandling.AutoEquipSettleSeconds`).
   An auto drop leaves with the hand's motion, thrown like a loose object.
 - **Ammo counters.** One counter per held weapon at that weapon's hand,
   replacing the game's counter. `WeaponHandling.AmmoCounterStyle`: 1 Minimal, 2 Immersive
-  (game HUD style), 3 Vanilla (back of the hand). A reload mod can show a
+  (game HUD style, default), 3 Vanilla (back of the hand). A reload mod can show a
   chambered-round marker beside the number.
 - **Quick Loot Panel Placement** (`Grabbing.QuickLootPanelPlacement`): 1 on the
   right hand (game default), 2 on the hand pointing at the container (the
-  closer hand when both point), 3 at the container it lists (default). Modes 2
+  closer hand when both point, default), 3 at the container it lists. Modes 2
   and 3 list containers picked by either hand.
 - **Activate Prompt Placement** (`Grabbing.ActivatePromptPlacement`): 1 on both
   hands (game default), 2 on the closer hand only when both point at the same
-  object, 3 at the object itself, shown once (default). Activation is unchanged.
+  object (default), 3 at the object itself, shown once. Activation is unchanged.
 - **Pinch grab:** the object stays where thumb and finger found it and only the
   fingers close onto it. Any object that sits between thumb and index when you
   close your hand is pinched, whatever its size: plants, handles and rims no
@@ -99,7 +99,8 @@
 - Scoped filtering: heavier, speed-adaptive smoothing while you look through a
   scope (`WeaponHandling.ScopedFilterRotationSeconds`, `WeaponHandling.ScopedFilterTranslationSeconds`,
   `WeaponHandling.ScopedFilterReleaseDegreesPerSecond`). Gunstock mode (`WeaponHandling.GunstockMode`) and
-  filtering presets (`WeaponHandling.WeaponFilteringPreset`) are player settings.
+  filtering presets (`WeaponHandling.WeaponFilteringPreset`, Steady by default) are
+  player settings.
 - Bipod: a latched weapon stays equipped hands-free within
   `WeaponHandling.BipodHandsFreeRadiusMeters`.
 - Optional: use the weapon offsets you saved in FRIK instead of ROCK's grip

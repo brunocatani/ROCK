@@ -75,7 +75,7 @@ DetachEitherHand = true
 ## Far grabs seat a loose weapon at its firing grip and close grabs at its nearest grip; touch grabs equip only inside a grip zone.
 ## With a weapon already in the other hand, the new one becomes the second weapon.
 ## Applies per weapon. Weapon Grab Mode sets the release gesture in every mode.
-WeaponEquipMode = 2
+WeaponEquipMode = 4
 
 ## Weapon Grab Mode
 ## 1 = Toggle both grips. 2 = Toggle firing grip only. 3 = Hold both grips.
@@ -107,7 +107,7 @@ MeleeGripPitchDegrees = 0.0
 ## Smooths controller shake on equipped firearms, loose weapons and held objects. Higher steadies more but responds more slowly.
 ## Rotation and position smoothing: Responsive 12 and 6 ms, Balanced 25 and 12 ms, Steady 45 and 22 ms, Heavy 70 and 35 ms.
 ## Free hands, FRIK and recoil are not affected. Applies at once.
-WeaponFilteringPreset = 0
+WeaponFilteringPreset = 3
 
 ## Scoped Filtering: Rotation
 ## Extra rotation smoothing, in seconds, while you look through a scope, with or without Shake Filtering.
@@ -140,7 +140,7 @@ GripZoneIndicatorDiameterGameUnits = 0.7
 ## Immersive: the same place and look to show, in the game's HUD color and bracket frame, loaded over reserve.
 ## Vanilla: the game's counter on the back of the hand holding the weapon, in HUD color, always shown (mirrored on the left hand).
 ## Every style replaces the game's counter with one counter per drawn weapon. The counters are drawn through RPS UI Framework.
-AmmoCounterStyle = 1
+AmmoCounterStyle = 2
 
 ## === 05. Weapon Recoil ===
 [WeaponRecoil]
@@ -214,7 +214,7 @@ FarGrabDirection = 0
 ## Closer Hand: the panel rides the hand pointing at the container, mirrored on the left hand; when both hands point at containers the closer one takes it.
 ## At Container: the panel stands upright at the container it lists, turned toward you, at a fixed size; either hand can point at it.
 ## The panel's buttons stay on the right controller in every mode. Applies at once.
-QuickLootPanelPlacement = 3
+QuickLootPanelPlacement = 2
 
 ## Activate Prompt Placement
 ## 1 = Both Hands. 2 = Closer Hand. 3 = At Object.
@@ -223,7 +223,7 @@ QuickLootPanelPlacement = 3
 ## Closer Hand: when both hands point at the same object only the closer hand shows its prompt.
 ## At Object: the prompt stands upright at the object it names, turned toward you, at a fixed size, and shows once when both hands point at it.
 ## Activation itself is unchanged. Applies at once.
-ActivatePromptPlacement = 3
+ActivatePromptPlacement = 2
 
 ## === 07. Firing Hand ===
 [FiringHand]

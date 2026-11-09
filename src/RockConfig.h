@@ -65,10 +65,10 @@ namespace rock
         bool rockGrabInputIntentStateEnabled = true;
         // Where the quick loot panel appears; see native_quick_loot_panel::Placement.
         // 1: right hand (game default); 2: closer hand; 3: at the container.
-        int rockQuickLootPanelPlacement = 3;
+        int rockQuickLootPanelPlacement = 2;
         // Where the wand activate prompts appear; see native_activate_prompts::Placement.
         // 1: both hands (game default); 2: closer hand; 3: at the object.
-        int rockActivatePromptPlacement = 3;
+        int rockActivatePromptPlacement = 2;
         // Experimental: generated mesh collision for grabbed single-body loose
         // objects until they rest (LooseWeaponCollision::Pool::Objects).
         bool rockGeneratedObjectCollision = false;
@@ -124,7 +124,7 @@ namespace rock
         bool rockDetachEitherHand = true;
         // Equip and last-release drop together; see equipped_weapon_drop_policy.
         // 1: trigger equip, no drop; 2: Toggle Drop; 3: Auto Drop; 4: Auto Equip.
-        int rockWeaponEquipMode = 2;
+        int rockWeaponEquipMode = 4;
         // 1: toggle both grips; 2: toggle firing only; 3: hold both grips.
         int rockWeaponGrabMode = 1;
         // Auto Equip (mode 4): seconds the palm settles at the firing grip.
@@ -133,21 +133,21 @@ namespace rock
         // authored-grip preference and the existing missing-pose fallback.
         bool rockGrabAnywhereOnWeapon = false;
         float rockMeleeGripPitchDegrees = 0.0f;
-        int rockWeaponFilteringPreset = 0;
+        int rockWeaponFilteringPreset = 3;
         // Scoped filtering: smoothing time constants while looking through a
         // scope (0 and 0 = off) and the rotation speed at which they halve.
         float rockScopedFilterRotationSeconds = 0.15f;
         float rockScopedFilterTranslationSeconds = 0.08f;
         float rockScopedFilterReleaseDegreesPerSecond = 45.0f;
         float rockFiringGripReattachRadiusGameUnits = 10.0f;
-        float rockFiringGripReattachCylinderRadiusGameUnits = 3.0f;
+        float rockFiringGripReattachCylinderRadiusGameUnits = 4.0f;
         float rockGripZoneIndicatorDiameterGameUnits = grip_zone_indicator_policy::kDefaultDiameterGameUnits;
         float rockFiringGripHapticDurationSeconds = 0.10f;
         float rockFiringGripAttachHapticIntensity = 0.85f;
         float rockFiringGripDetachHapticIntensity = 0.30f;
         // Ammo counter look and placement; see ammo_counters::Style.
         // 1: Minimal; 2: Immersive; 3: Vanilla.
-        int rockAmmoCounterStyle = 1;
+        int rockAmmoCounterStyle = 2;
 
         // FiringHand.DefaultHand: the firing hand for equips that carry no physical
         // hand (favorites, PALM, scripts) and the grenade preference. Physical

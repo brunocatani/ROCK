@@ -133,7 +133,7 @@ WeaponSupportSurfaceSeatMaxDegrees = 35.0
 
 ## Thickness of the firing-grip reattach zone in game units (70 = 1 metre): how far above the grip point and how far forward or back along the barrel the palm may sit.
 ## A handling mod that selects the cylinder zone uses it as the cylinder radius. Range: 0.1 to 30.
-FiringGripReattachCylinderRadiusGameUnits = 3.0
+FiringGripReattachCylinderRadiusGameUnits = 4.0
 
 ## === 05. Hand and Body Collision ===
 [HandAndBodyCollision]
