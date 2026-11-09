@@ -29,6 +29,9 @@ namespace rock::api::configuration {
     // visit: any thread; calls the visitor once per setting of the group.
     // setValue: any thread; validates, applies and saves one setting. On
     // failure, error receives a message when errorCapacity is nonzero.
+    // openSetupWizard: any thread; opens ROCK's setup wizard in front of the
+    // player on the next frame. NotReady without RPS UI Framework or outside
+    // gameplay; Ok when the wizard is open or opening.
     struct Api {
         static constexpr InterfaceId interfaceId=kInterfaceId;
         static constexpr std::uint32_t majorVersion=kMajor;
@@ -37,6 +40,7 @@ namespace rock::api::configuration {
         Status(ROCK_CALL* visit)(OwnerToken, Group, Visitor, void*) noexcept;
         Status(ROCK_CALL* setValue)(OwnerToken, Group, const char* section, const char* key,
             const char* value, char* error, std::uint32_t errorCapacity) noexcept;
+        Status(ROCK_CALL* openSetupWizard)(OwnerToken) noexcept;
     };
     static_assert(sizeof(Setting)==56);
 }

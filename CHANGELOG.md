@@ -58,6 +58,16 @@
 
 ### Added
 
+- **Function bindings** (`[Bindings]`): each action (grab, fire, use, reload,
+  scope, VATS, grenade, Pip-Boy, Pause, bipod and Favorites, PALM) takes any
+  button with a press, tap, hold or double tap, optionally while another button
+  is held. A moved action reaches the game and other mods as its usual button,
+  so they keep working. The defaults change nothing.
+- **Setup wizard.** Pick each action's button by pressing it, choose tap, hold
+  or double tap, then go through ROCK's main options one page each; nothing is
+  saved until the review page. It opens from PALM's Config (ROCK page) and from
+  the ROCK section of the PALM wheel; mods open it with
+  `Configuration::openSetupWizard`.
 - **Two weapons at once.** Equip a weapon in each hand, any combination,
   including a melee weapon as the second weapon. The second weapon has its own
   trigger, reload, scope, dry-fire click and generated collision. The Pip-Boy

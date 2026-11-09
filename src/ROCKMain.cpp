@@ -37,6 +37,7 @@
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/hand/NativeWandVisualSuppression.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
+#include "setup-wizard/SetupWizard.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/native/havok/HavokRuntime.h"
@@ -318,6 +319,7 @@ namespace
 
     void resetForNewGameSession()
     {
+        setup_wizard::onSessionLoaded();
         s_equippedWeaponContinuity = {};
         const auto providerGeneration = bumpGeneration(s_providerGeneration);
         s_physicsCreationRequested = false;
@@ -383,6 +385,7 @@ namespace
         const bool immersiveScopesWereEnabled = g_rockConfig.rockEnableImmersiveScopes;
         g_rockConfig.processPendingConfigReload();
         frik_weapon_offsets::processPendingReload();
+        setup_wizard::update();
         reconcileNativeScopeGeometryOwnership();
         if (immersiveScopesWereEnabled != g_rockConfig.rockEnableImmersiveScopes) {
             if (!g_rockConfig.rockEnableImmersiveScopes && s_physicsInteraction) {

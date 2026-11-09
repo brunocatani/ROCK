@@ -197,6 +197,17 @@ if(NOT EXISTS "${RPSUI_INCLUDE_DIR}/RPS_UI_Framework/WorldDraw.h")
   message(FATAL_ERROR ">> RPS UI Framework headers not found at '${RPSUI_INCLUDE_DIR}'; set RPSUI_INCLUDE_DIR.")
 endif()
 target_include_directories(${PROJECT_NAME} PRIVATE "${RPSUI_INCLUDE_DIR}")
+# The setup wizard draws an RPS UI panel. RPS UI owns the panel's Dear ImGui context
+# and renders it; ROCK's copy only issues calls into that context, so it is built
+# with RPS UI's shared configuration and no renderer backend.
+set(ROCK_IMGUI_DIR "${WORKSPACE_ROOT}/../devtools/imgui" CACHE PATH "Dear ImGui sources, the revision RPS UI Framework names.")
+get_filename_component(RPSUI_SUPPORT_DIR "${RPSUI_INCLUDE_DIR}/../support" ABSOLUTE)
+add_library(rock_imgui STATIC "${ROCK_IMGUI_DIR}/imgui.cpp" "${ROCK_IMGUI_DIR}/imgui_draw.cpp"
+  "${ROCK_IMGUI_DIR}/imgui_tables.cpp" "${ROCK_IMGUI_DIR}/imgui_widgets.cpp")
+target_include_directories(rock_imgui PUBLIC "${ROCK_IMGUI_DIR}" "${RPSUI_INCLUDE_DIR}" "${RPSUI_SUPPORT_DIR}")
+target_compile_features(rock_imgui PUBLIC cxx_std_23)
+target_compile_definitions(rock_imgui PUBLIC IMGUI_USER_CONFIG="RPS_UI_Framework/ImGuiBuild.h")
+target_link_libraries(${PROJECT_NAME} PRIVATE rock_imgui)
 # RobCo PALM's Developer wheel API; ROCK binds it at runtime for its capture switch and
 # works without PALM.
 set(PALM_INCLUDE_DIR "${WORKSPACE_ROOT}/../ui_mods/ROCK_Whell_Menu/include" CACHE PATH
@@ -384,6 +395,10 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKFunctionBindingTests PRIVATE cxx_std_23)
   target_include_directories(ROCKFunctionBindingTests PRIVATE ${SOURCE_DIR} "${ROCK_OPENVR_ROOT}")
   add_rock_test(ROCKFunctionBindingTests)
+  add_executable(ROCKSetupWizardTests "${ROOT_DIR}/tests/SetupWizardTests.cpp")
+  target_compile_features(ROCKSetupWizardTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKSetupWizardTests PRIVATE ${SOURCE_DIR} "${ROCK_PUBLIC_INCLUDE_DIR}" "${ROCK_OPENVR_ROOT}")
+  add_rock_test(ROCKSetupWizardTests)
 
   add_executable(ROCKInputRemapPolicyTests
     "${ROOT_DIR}/tests/InputRemapPolicyTests.cpp"
@@ -877,6 +892,7 @@ if(BUILD_ROCK_TESTS)
   add_executable(ROCKConfigurationProviderTests
     "${ROOT_DIR}/tests/ConfigurationProviderTests.cpp"
     "${SOURCE_DIR}/api/providers/ConfigurationProvider.cpp"
+    "${ROOT_DIR}/tests/SetupWizardStub.cpp"
     "${SOURCE_DIR}/RockConfig.cpp"
     "${SOURCE_DIR}/RockConfigLoad.cpp"
     "${SOURCE_DIR}/config/RockSettings.cpp"

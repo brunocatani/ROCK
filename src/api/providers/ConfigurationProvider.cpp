@@ -3,6 +3,7 @@
 #include "Boundary.h"
 #include "RockConfig.h"
 #include "api/BorrowedCallbackContext.h"
+#include "setup-wizard/SetupWizard.h"
 
 namespace rock::api::configuration
 {
@@ -89,11 +90,17 @@ namespace rock::api::configuration
                 return saved ? Status::Ok : Status::InvalidArgument;
             });
         }
+
+        Status ROCK_CALL openSetupWizard(OwnerToken owner) noexcept
+        {
+            return boundary::invoke(owner, kInterfaceId, 2, false,
+                [&]() { return setup_wizard::requestOpen() ? Status::Ok : Status::NotReady; });
+        }
     }
 
     const Api& table() noexcept
     {
-        static const Api value{ revision, visit, setValue };
+        static const Api value{ revision, visit, setValue, openSetupWizard };
         return value;
     }
 }

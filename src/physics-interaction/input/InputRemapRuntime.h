@@ -127,6 +127,17 @@ namespace rock::input_remap_runtime
     // The primary stick click while it is PALM's under the player's bindings.
     LogicalJumpState readLogicalPalmWheelState();
 
+    /*
+     * The setup wizard's input. While active, the function bindings stand aside
+     * (every button passes through as the controller layout presents it) and
+     * every controller read records the controls held after the layout, before
+     * the bindings. takeBindingCaptureSample returns, per hand (left, right), a
+     * bit per button_layout_policy::Source held in any read since the last call.
+     * Game thread.
+     */
+    void setSetupWizardInput(bool active) noexcept;
+    [[nodiscard]] std::array<std::uint32_t, 2> takeBindingCaptureSample() noexcept;
+
     // Test-and-clear: true once for the frame after an Activate/WandAccept
     // (A button) press fired on this hand while it was holding a ROCK
     // object and developer mode is enabled. See saved_grab_offset feature.

@@ -72,6 +72,10 @@ ROCK expects the Oculus Touch (Quest) button layout. For these controllers the a
 
 Menu names can differ between SteamVR versions. After that, the `[ControllerInput.Left]` and `[ControllerInput.Right]` tables of `ROCK.toml` can move any button further.
 
+### Choosing your controls
+
+ROCK's setup wizard sets the button and gesture of each action: open it from PALM's Config (the ROCK page's Setup wizard button) or from the ROCK section of the PALM wheel, choose an action, press the button you want, then pick press, tap, hold or double tap. The wizard also walks through ROCK's main options one page each and saves on its last page. The same choices are the `[Bindings]` table of `ROCK.toml`.
+
 ### Compatibility
 
 - **SCISSORS** owns NPC interactions: NPC collision, physical melee, blades, held NPCs and active ragdoll. ROCK 1.0 has no NPC features of its own. The original SCISSORS mod is a different, retired mod that the new SCISSORS replaces under the same name; remove it.

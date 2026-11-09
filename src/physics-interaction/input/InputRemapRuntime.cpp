@@ -293,6 +293,9 @@ namespace rock::input_remap_runtime
         std::atomic<float> s_grenadeHoldSeconds{ 0.25f }; // Frame thread -> readers.
         std::array<std::array<std::atomic<std::uint8_t>, button_layout_policy::kSlotCount>, 2> s_functionTags{};
         std::array<std::atomic<std::uint32_t>, 2> s_functionsPresented{};
+        // The setup wizard is open: bindings stand aside and reads record the held controls.
+        std::atomic<bool> s_setupWizardInput{ false };
+        std::array<std::atomic<std::uint32_t>, 2> s_bindingCaptureBits{};
         // A primary Activate press stopped for a bound Reload or Scope: its release is stopped too.
         std::atomic<bool> s_stopPrimaryActivateUntilRelease{ false };
         std::atomic<bool> s_gameplayInputAllowed{ false };
@@ -937,7 +940,8 @@ namespace rock::input_remap_runtime
             fb::Context context{};
             context.firingIsLeft = weaponRouting().leftFiring;
             context.primaryIsLeft = false; // ROCK's primary wand is the right one.
-            context.bypass = !s_gameplayInputAllowed.load(std::memory_order_acquire) || isInputBlockingMenuActive();
+            context.bypass = !s_gameplayInputAllowed.load(std::memory_order_acquire) || isInputBlockingMenuActive() ||
+                s_setupWizardInput.load(std::memory_order_acquire);
             if (!s_useTargetAvailable.load(std::memory_order_acquire)) {
                 context.eligible &= ~fb::functionBit(fb::Function::Use);
             }
@@ -1203,18 +1207,51 @@ namespace rock::input_remap_runtime
             }
         }
 
+        // The controls held after the layout, for the setup wizard's capture: the five
+        // layout buttons as the layout presents them, every other control as it is.
+        void recordBindingCapture(vr::TrackedDeviceIndex_t deviceIndex, const vr::VRControllerState_t& physical,
+            const vr::VRControllerState_t& state)
+        {
+            input_remap_policy::Hand hand{};
+            if (!resolveControllerHand(deviceIndex, hand)) {
+                return;
+            }
+            namespace layout = button_layout_policy;
+            const bool stickDown = (physical.ulButtonPressed & layout::bit(layout::kStickBit)) != 0;
+            const auto latch = stickDown ? layout::latchFor(layout::classifyPadRegion(physical.rAxis[layout::kStickAxis].x,
+                                               physical.rAxis[layout::kStickAxis].y))
+                                         : layout::PadLatch::Released;
+            std::uint32_t bits = 0;
+            for (std::size_t index = 1; index < function_binding_policy::kSourceCount; ++index) {
+                const auto source = static_cast<layout::Source>(index);
+                const bool pressed = function_binding_policy::slotOf(source) != layout::Slot::Count
+                    ? layout::sampleSource(source, state, layout::PadLatch::Stick).pressed
+                    : layout::sampleSource(source, physical, latch).pressed;
+                if (pressed) {
+                    bits |= 1u << index;
+                }
+            }
+            s_bindingCaptureBits[hand == input_remap_policy::Hand::Left ? 0 : 1].fetch_or(bits, std::memory_order_acq_rel);
+        }
+
         // The controller layout, then the function bindings on what it presents.
         void applyLayoutAndBindings(vr::TrackedDeviceIndex_t deviceIndex, vr::VRControllerState_t* state,
             std::uint32_t stateSize)
         {
-            if (s_functionBindingsIdentity.load(std::memory_order_acquire) || !state ||
+            const bool capture = s_setupWizardInput.load(std::memory_order_acquire);
+            if ((s_functionBindingsIdentity.load(std::memory_order_acquire) && !capture) || !state ||
                 stateSize < sizeof(vr::VRControllerState_t)) {
                 applyButtonLayout(deviceIndex, state, stateSize);
                 return;
             }
             const vr::VRControllerState_t physical = *state;
             applyButtonLayout(deviceIndex, state, stateSize);
-            applyFunctionBindings(deviceIndex, physical, state, stateSize);
+            if (capture) {
+                recordBindingCapture(deviceIndex, physical, *state);
+            }
+            if (!s_functionBindingsIdentity.load(std::memory_order_acquire)) {
+                applyFunctionBindings(deviceIndex, physical, state, stateSize);
+            }
         }
 
         bool hookedGetControllerState(vr::IVRSystem* system, vr::TrackedDeviceIndex_t controllerDeviceIndex,
@@ -3503,6 +3540,21 @@ namespace rock::input_remap_runtime
         state.held = held;
         state.availabilityReason = RawButtonAvailabilityReason::Available;
         return state;
+    }
+
+    void setSetupWizardInput(bool active) noexcept
+    {
+        if (s_setupWizardInput.exchange(active, std::memory_order_acq_rel) != active) {
+            for (auto& bits : s_bindingCaptureBits) {
+                bits.store(0, std::memory_order_release);
+            }
+        }
+    }
+
+    std::array<std::uint32_t, 2> takeBindingCaptureSample() noexcept
+    {
+        return { s_bindingCaptureBits[0].exchange(0, std::memory_order_acq_rel),
+            s_bindingCaptureBits[1].exchange(0, std::memory_order_acq_rel) };
     }
 
     LogicalJumpState readLogicalPalmWheelState()
