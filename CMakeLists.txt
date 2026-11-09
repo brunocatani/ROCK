@@ -862,6 +862,7 @@ if(BUILD_ROCK_TESTS)
   add_executable(ROCKConfigurationStoreTests
     "${ROOT_DIR}/tests/ConfigurationStoreTests.cpp"
     "${SOURCE_DIR}/config/ConfigurationStore.cpp"
+    "${SOURCE_DIR}/config/LegacyIniMigration.cpp"
     "${SOURCE_DIR}/RockConfigLoad.cpp"
   )
   target_compile_features(ROCKConfigurationStoreTests PRIVATE cxx_std_23)
@@ -875,6 +876,7 @@ if(BUILD_ROCK_TESTS)
     "${SOURCE_DIR}/RockConfig.cpp"
     "${SOURCE_DIR}/RockConfigLoad.cpp"
     "${SOURCE_DIR}/config/ConfigurationStore.cpp"
+    "${SOURCE_DIR}/config/LegacyIniMigration.cpp"
   )
   target_compile_features(ROCKConfigurationProviderTests PRIVATE cxx_std_23)
   target_include_directories(ROCKConfigurationProviderTests PRIVATE ${SOURCE_DIR})

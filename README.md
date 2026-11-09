@@ -76,7 +76,7 @@ Menu names can differ between SteamVR versions. After that, the `[ControllerInpu
 
 - **SCISSORS** owns NPC interactions: NPC collision, physical melee, blades, held NPCs and active ragdoll. ROCK 1.0 has no NPC features of its own. The original SCISSORS mod is a different, retired mod that the new SCISSORS replaces under the same name; remove it.
 - **Mods built for ROCK 0.92 or earlier** use provider API 1, which ROCK 1.0 does not serve. They stop the game: at the main menu an error box names each one, and the game closes when the box is closed. Update or remove them; they work again once rebuilt against ROCK 1.0's headers.
-- **Upgrading from ROCK 0.92** starts from default settings: ROCK 1.0 reads `ROCK.toml` and no longer reads `ROCK.ini`. Set your options again in PALM or in `ROCK.toml`; the old `ROCK.ini` can be deleted. NPC settings moved to SCISSORS.
+- **Upgrading from ROCK 0.92** keeps your settings: on its first start ROCK 1.0 carries every option you changed in `ROCK.ini` and `ROCK_Developer.ini` into `ROCK.toml` and `ROCK_Developer.toml`, then deletes the old INI files. Options you left at their old defaults take ROCK 1.0's defaults. ROCK.log lists the settings that no longer exist. NPC settings moved to SCISSORS.
 
 ## Configuration
 

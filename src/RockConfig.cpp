@@ -59,6 +59,8 @@ namespace rock
             return false;
         }
         _store->load(createConsumer);
+        for (const auto& notice : _store->notices())
+            ROCK_LOG_INFO(Config, "{}", notice);
         for (const auto& message : _store->messages())
             ROCK_LOG_WARN(Config, "{}", message);
         if (_store->revision() == configRevision())

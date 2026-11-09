@@ -147,9 +147,11 @@
   one, and the game closes when the box is closed. The RPS SDK is no longer
   used; mods build against the headers in `include/ROCK/`.
 - **Settings moved to TOML.** ROCK reads `ROCK.toml` and `ROCK_Developer.toml`
-  in `Mods_Config\ROCK` and no longer reads `ROCK.ini` or `ROCK_Developer.ini`.
-  Settings start from their defaults; set them again in PALM or in the file and
-  delete the old INIs. Options are grouped into tables matching the PALM pages
+  in `Mods_Config\ROCK`. On the first start, every option you changed in
+  `ROCK.ini` and `ROCK_Developer.ini` is carried into the TOML files and the
+  INIs are deleted; options left at their old defaults take the new defaults,
+  and ROCK.log lists settings that no longer exist. Options are grouped into
+  tables matching the PALM pages
   (`[Grabbing]`, `[FiringHand]`, `[ControllerInput.Left]` and others), keys lose
   their type letter (`iWeaponEquipMode` is now `WeaponEquipMode` in
   `[WeaponHandling]`), values are typed, and each X/Y/Z offset is one list such

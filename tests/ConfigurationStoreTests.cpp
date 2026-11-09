@@ -191,6 +191,68 @@ namespace
         require(!fs::exists(store.path(Group::Developer)), "resetting every developer option kept the file");
     }
 
+    // A player upgrading from the INI versions keeps the settings they
+    // changed: renamed keys, X/Y/Z triplets and options that changed files
+    // land in the right TOML file; old defaults, retired keys and values that
+    // do not fit stay behind; the INIs are deleted once the TOML files exist.
+    void migrationChecks(const fs::path& directory, std::span<const SettingDefault> defaults)
+    {
+        fs::create_directories(directory);
+        const auto consumerIni = directory / "ROCK.ini";
+        const auto developerIni = directory / "ROCK_Developer.ini";
+        write(consumerIni,
+            "; ROCK.ini - player options\r\n"
+            "[ImmersiveWeapons]\r\n"
+            "bGunstockMode = true\r\n"
+            "iLogLevel = 2\r\n"
+            "iWeaponFilteringPreset = 0\r\n"
+            "[AmbidextrousFiring]\r\n"
+            "bLeftHandedMode = true\r\n"
+            "fLeftFiringAimOffsetXGameUnits = 0.0\r\n"
+            "fLeftFiringAimOffsetYGameUnits = 2.5\r\n"
+            "[Controls]\r\n"
+            "sRightAButton = b\r\n"
+            "bRockyModeEnabled = true\r\n"
+            "fRealisticGrenadeFuseSeconds = soon\r\n"
+            "[NativeScopes]\r\n"
+            "fNativeScopeOverlayOffsetYGameUnits = 12\r\n");
+        write(developerIni, "[PhysicsInteraction]\r\niDebugMaxBodyInstances = 100\r\n");
+
+        ConfigurationStore store(directory, defaults);
+        store.load(true);
+        require(!fs::exists(consumerIni) && !fs::exists(developerIni), "migrated INI files were not deleted");
+        require(find(store, "WeaponHandling", "GunstockMode").value == "true", "a changed option was not carried");
+        require(!find(store, "Logging", "LogLevel").specified ||
+                    find(store, "Logging", "LogLevel").value == find(store, "Logging", "LogLevel").defaultValue,
+            "an old default was carried");
+        require(find(store, "WeaponHandling", "WeaponFilteringPreset").value ==
+                find(store, "WeaponHandling", "WeaponFilteringPreset").defaultValue,
+            "an old default replaced the current default");
+        require(find(store, "FiringHand", "DefaultHand").value == "left", "bLeftHandedMode was not carried");
+        require(find(store, "FiringHand.Left", "AimOffsetGameUnits").value == "[0.0, 2.5, 0.0]",
+            "an X/Y/Z triplet was not carried as one list");
+        require(find(store, "ControllerInput.Right", "A").value == "b", "a button layout key was not carried");
+        require(find(store, "ScopePlacement", "NativeScopeOverlayOffsetGameUnits").value == "[0.0, 12.0, 0.0]" &&
+                    find(store, "DebugOverlay", "DebugMaxBodyInstances").value == "100",
+            "developer options were not carried");
+        require(bytes(store.path(Group::Developer)).find("NativeScopeOverlayOffsetGameUnits = [0.0, 12.0, 0.0]") !=
+                std::string::npos,
+            "an option that moved to the developer file was not written there");
+        require(hasMessage(store, "does not fit: fRealisticGrenadeFuseSeconds = soon"),
+            "a value that does not fit was not reported");
+        bool retiredNamed = false;
+        for (const auto& notice : store.notices())
+            retiredNamed |= notice.find("bRockyModeEnabled") != std::string::npos;
+        require(retiredNamed, "a retired key was not named");
+
+        // With ROCK.toml present the TOML files win and a leftover INI goes.
+        write(consumerIni, "[Logging]\r\niLogLevel = 0\r\n");
+        const auto organized = bytes(store.path(Group::Consumer));
+        store.load(true);
+        require(!fs::exists(consumerIni), "a leftover INI was not deleted");
+        require(bytes(store.path(Group::Consumer)) == organized, "a leftover INI changed ROCK.toml");
+    }
+
     // The examples are exactly what ROCK writes for files holding every option
     // at its default, under a reference-only header, so their help is the catalog's.
     constexpr std::array<const char*, 2> kExampleNames{ "ROCK_example.toml", "ROCK_Developer_example.toml" };
@@ -294,6 +356,7 @@ int main(int argc, char** argv)
         organizeChecks(directory / "organize", defaults);
         faultChecks(directory / "faults", defaults);
         developerChecks(directory / "developer", defaults);
+        migrationChecks(directory / "migration", defaults);
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

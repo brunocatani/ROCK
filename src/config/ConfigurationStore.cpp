@@ -1,4 +1,5 @@
 #include "config/ConfigurationStore.h"
+#include "config/LegacyIniMigration.h"
 #include "config/SettingMetadata.h"
 
 #include <toml++/toml.hpp>
@@ -614,6 +615,8 @@ namespace rock::config
                 throw std::runtime_error(
                     std::format("Compiled option {} has no catalog entry", settingPath(entry.table, entry.key)));
         }
+        if (const auto problem = legacy_ini::findInvalidRow(_settings))
+            throw std::runtime_error(*problem);
     }
 
     std::filesystem::path ConfigurationStore::path(Group group) const
@@ -662,10 +665,119 @@ namespace rock::config
         return true;
     }
 
+    void ConfigurationStore::migrateLegacyFiles()
+    {
+        const std::array legacyFiles{ _directory / legacy_ini::kConsumerFileName,
+            _directory / legacy_ini::kDeveloperFileName };
+        std::vector<std::filesystem::path> present;
+        for (const auto& file : legacyFiles) {
+            std::error_code ec;
+            if (std::filesystem::exists(file, ec)) {
+                present.push_back(file);
+            } else if (ec) {
+                _messages.push_back(std::format("Cannot inspect {}: {}", file.string(), ec.message()));
+                return;
+            }
+        }
+        if (present.empty())
+            return;
+
+        std::error_code ec;
+        const bool consumerExists = std::filesystem::exists(path(Group::Consumer), ec);
+        if (ec) {
+            _messages.push_back(std::format("Cannot inspect {}: {}", path(Group::Consumer).string(), ec.message()));
+            return;
+        }
+        if (consumerExists) {
+            // The TOML files already hold this player's settings.
+            _notices.push_back(std::format("{} exists, so the old INI files are not read", kConsumerFileName));
+        } else {
+            std::vector<std::string> texts;
+            for (const auto& file : present) {
+                std::ifstream input(file, std::ios::binary);
+                std::string text(std::istreambuf_iterator<char>(input), {});
+                if (!input && !input.eof()) {
+                    _messages.push_back(std::format(
+                        "Cannot read {}; it is kept and migrated at the next start", file.string()));
+                    return;
+                }
+                texts.push_back(std::move(text));
+            }
+            const std::vector<std::string_view> views(texts.begin(), texts.end());
+            const auto translation = legacy_ini::translate(views, _settings);
+            const auto overridesOf = [](const auto& values) {
+                Overrides overrides;
+                for (const auto& [entryPath, value] : values)
+                    overrides.emplace(entryPath, value);
+                return overrides;
+            };
+
+            // The developer file first: ROCK.toml is written last, so it exists
+            // only once everything is carried over, and an interrupted
+            // migration runs again at the next start.
+            bool developerWritten = false;
+            if (!translation.developer.empty() && !std::filesystem::exists(path(Group::Developer), ec)) {
+                bool hasEntries = false;
+                const auto text =
+                    organize(Group::Developer, _settings, nullptr, overridesOf(translation.developer), hasEntries);
+                if (hasEntries) {
+                    if (!publish(Group::Developer, text, false)) {
+                        _messages.push_back(std::exchange(_error, {}) + "; the old INI files are kept");
+                        return;
+                    }
+                    developerWritten = true;
+                }
+            }
+            bool hasEntries = false;
+            const auto text =
+                organize(Group::Consumer, _settings, nullptr, overridesOf(translation.consumer), hasEntries);
+            if (!publish(Group::Consumer, text, false)) {
+                _messages.push_back(std::exchange(_error, {}) + "; the old INI files are kept");
+                return;
+            }
+            // Delete the INIs only once the new files read back.
+            for (const auto group : { Group::Consumer, Group::Developer }) {
+                if (group == Group::Developer && !developerWritten)
+                    continue;
+                if (const auto document = readDocument(path(group)); document.state != FileState::Parsed) {
+                    _messages.push_back(std::format("{} could not be read back after migration; the old INI files "
+                                                    "are kept",
+                        path(group).filename().string()));
+                    return;
+                }
+            }
+
+            _notices.push_back(std::format("Carried {} changed settings from the old INI files into {}{}",
+                translation.consumer.size() + (developerWritten ? translation.developer.size() : 0),
+                kConsumerFileName, developerWritten ? std::format(" and {}", kDeveloperFileName) : std::string{}));
+            if (!translation.retired.empty()) {
+                std::string names;
+                for (const auto& name : translation.retired)
+                    names += (names.empty() ? "" : ", ") + name;
+                _notices.push_back(std::format(
+                    "{} old settings ROCK no longer has were not carried over: {}", translation.retired.size(), names));
+            }
+            for (const auto& line : translation.invalid)
+                _messages.push_back(std::format("Old INI setting not carried over, its value does not fit: {}", line));
+        }
+
+        for (const auto& file : present) {
+            std::filesystem::remove(file, ec);
+            if (ec)
+                _messages.push_back(std::format(
+                    "Cannot delete {}: {}; ROCK tries again at the next start", file.string(), ec.message()));
+            else
+                _notices.push_back(std::format("Deleted {}", file.string()));
+        }
+    }
+
     void ConfigurationStore::load(bool organizeFiles)
     {
         _error.clear();
         _messages.clear();
+        _notices.clear();
+        if (organizeFiles)
+            migrateLegacyFiles();
         auto updated = _settings;
         bool changed = _revision == 0;
         for (const auto group : { Group::Consumer, Group::Developer }) {

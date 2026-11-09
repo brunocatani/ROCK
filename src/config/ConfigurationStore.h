@@ -87,6 +87,10 @@ namespace rock::config
         // type, files that could not be updated. Each names the file and line.
         [[nodiscard]] const std::vector<std::string>& messages() const noexcept { return _messages; }
 
+        // What the last startup load did besides reading: the migration of
+        // the old INI files and their deletion.
+        [[nodiscard]] const std::vector<std::string>& notices() const noexcept { return _notices; }
+
         [[nodiscard]] const std::filesystem::path& directory() const noexcept { return _directory; }
 
         [[nodiscard]] std::filesystem::path path(Group group) const;
@@ -99,12 +103,16 @@ namespace rock::config
         static constexpr std::string_view kDeveloperFileName = "ROCK_Developer.toml";
 
     private:
+        // Startup only: carries the old ROCK.ini and ROCK_Developer.ini into
+        // the TOML files when ROCK.toml does not exist yet, then deletes them.
+        void migrateLegacyFiles();
         bool removeDeveloperFile();
         bool publish(Group group, std::string_view contents, bool replace);
         std::filesystem::path _directory;
         std::vector<Setting> _settings;
         std::string _error;
         std::vector<std::string> _messages;
+        std::vector<std::string> _notices;
         std::uint64_t _revision = 0;
     };
 }
