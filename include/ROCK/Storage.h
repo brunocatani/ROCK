@@ -83,6 +83,36 @@ namespace rock::api::storage
         char nodeName[64]{};
     };
 
+    enum class HighlightFlag : std::uint32_t
+    {
+        // Glows a copy of the reference's model placed at ghostWorld instead
+        // of the reference itself: where a carried object belongs, for
+        // example. The copy is visual only (no collision, no activation).
+        Ghost = 1u << 0,
+        // A slow blink instead of a steady glow.
+        Pulse = 1u << 1,
+    };
+    inline constexpr std::uint32_t kSupportedHighlightFlags = 3;
+    inline constexpr std::uint32_t kMaxHighlights = 8;
+
+    /*
+     * A glow on a loaded reference, or with Ghost on a copy of its model at
+     * ghostWorld (world units; scale applies to the copy). highlightId is the
+     * caller's nonzero name for it. Refresh 1..kMaxLeaseFrames frames every
+     * frame; owner, generation, reference or base loss ends it.
+     */
+    struct Highlight
+    {
+        std::uint32_t size{ sizeof(Highlight) };
+        std::uint32_t version{ 1 };
+        std::uint64_t highlightId{ 0 };
+        ReferenceKey reference{};
+        std::uint32_t expectedBase{ 0 };
+        std::uint32_t leaseFrames{ 3 };
+        std::uint32_t flags{ 0 };
+        Transform ghostWorld{};
+    };
+
     // ------------------------------------------------------------------
     // Inventory-item displays
     // ------------------------------------------------------------------
@@ -273,6 +303,13 @@ namespace rock::api::storage
         // Callbacks. One converter per owner, kMaxConverters in total; null
         // unregisters. userData must outlive the registration.
         Status(ROCK_CALL* registerStashConverter)(OwnerToken owner, StashConverter converter, void* userData) noexcept;
+        // Write to set, owner only to clear. Ok once the glow shows; NotReady
+        // while nothing of the model can glow (ROCK retries after 90 frames).
+        // CapacityFull never evicts another owner's highlight. Highlights
+        // share one glow (ROCK's highlight color; a candidate's green wins)
+        // and blink together while any of them pulses.
+        Status(ROCK_CALL* setHighlight)(OwnerToken owner, const Highlight* highlight) noexcept;
+        Status(ROCK_CALL* clearHighlight)(OwnerToken owner, std::uint64_t highlightId) noexcept;
     };
 }
 #pragma pack(pop)

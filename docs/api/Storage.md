@@ -46,6 +46,18 @@ are three-frame leases per hand; `Busy` yields to other native selection
 owners, and a candidate pulse wins over a selection. `clearCandidate` and
 `clearSelection` end them.
 
+`setHighlight(owner, highlight)` glows a loaded reference, or with
+`HighlightFlag::Ghost` a visual-only copy of its model (no collision, no
+activation) at `ghostWorld`, for example where a carried object belongs.
+`HighlightFlag::Pulse` blinks it. Name each highlight with a nonzero
+`highlightId` and refresh it every frame within `leaseFrames` (1 to
+`kMaxLeaseFrames`); losing the owner, a generation, the reference or its base
+ends it, and `clearHighlight(owner, highlightId)` ends it early. At most
+`kMaxHighlights`; `CapacityFull` never evicts another owner's highlight.
+`NotReady` means nothing of the model can glow yet; ROCK retries 90 frames
+later. All highlights share one glow in ROCK's highlight color (a candidate's
+green wins) and blink together while any of them pulses.
+
 ## Displays (Write to set, Read to query)
 
 `setDisplay(owner, display)` registers a caller-owned visual of an inventory
@@ -90,6 +102,7 @@ ROCK.
 | `EquippedExtraction` | `extractEquipped` | `hand`, `weaponFormId`, the three guard generations |
 | `Candidate` | `setCandidate` | `hand`, `reference`, `expectedBase`, the three guard generations, `gripSequence` |
 | `Selection` | `setSelection` | `hand`, `parentReference`, `storedReference`, the three guard generations, `nodeName[64]` |
+| `Highlight` | `setHighlight` | `highlightId`, `reference` (`ReferenceKey`), `expectedBase`, `leaseFrames`, `flags` (`HighlightFlag`: `Ghost`, `Pulse`), `ghostWorld` |
 | `Display` | `setDisplay` | `displayId`, `item` (`weapon::InventoryWeapon`), `parentReference`, `leaseFrames`, `flags` (`DisplayFlag::NoCollision`), `nodeName[64]` |
 | `Contact` | `getDisplayContact` | `sample`, `displayId`, `contactFrame`, `item`, `hand`, `valid` |
 | `GripRequest` | `getAuthoredGrip` | `sample`, `displayId`, `hand`, `role` (`GripRole`: `Nearest`, `Firing`, `Support`) |

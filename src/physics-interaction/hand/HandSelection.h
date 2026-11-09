@@ -503,8 +503,11 @@ namespace rock
         VatsSelectionHighlight& operator=(VatsSelectionHighlight&&) = delete;
 
         bool play(RE::TESObjectREFR* refr, RE::NiAVObject* targetNode, bool enabled, const char* handName,
-            const char* targetSourceName, bool stash = false);
+            const char* targetSourceName, bool stash = false, bool world = false);
         bool refreshStash(RE::TESObjectREFR* refr, RE::NiAVObject* node, float intensity);
+        // Storage highlights: the configured color, at the shared world
+        // intensity (a stash candidate's green still wins the shared color).
+        bool refreshWorld(RE::TESObjectREFR* refr, RE::NiAVObject* node, float intensity);
         static bool stashAvailable() noexcept;
         bool refresh(RE::TESObjectREFR* refr, RE::NiAVObject* targetNode, bool enabled, const char* handName,
             const char* targetSourceName);
@@ -526,6 +529,7 @@ namespace rock
     private:
         detail::VatsEffectTarget* _target = nullptr;
         bool _stash{};
+        bool _world{};
         RE::TESObjectREFR* _highlightedRef = nullptr;
         RE::NiAVObject* _highlightedNode = nullptr;
     };

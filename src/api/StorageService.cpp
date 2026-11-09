@@ -8,6 +8,7 @@
 #include "RE/Bethesda/TESObjectREFRs.h"
 #include "api/ProviderRuntimeServices.h"
 #include "api/StashConversionService.h"
+#include "api/StorageHighlightService.h"
 #include "api/StorageInteractionService.h"
 #include "api/StorageSceneLookup.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -677,6 +678,7 @@ namespace rock::storage_service
                 (!entry.handle.get() || authorize(entry.owner) != api::Status::Ok ||
                     (!entry.stored && entry.deadline < sample.frameIndex)))
                 entry = {};
+        storage_highlight::update(physics, frame);
     }
 
     void shutdown(RE::hknpWorld* validWorld)
@@ -685,6 +687,7 @@ namespace rock::storage_service
             stopFeedback(value);
         for (auto& value : displays)
             stopDisplay(value);
+        storage_highlight::shutdown();
         contacts = {};
         if (validWorld)
             (void)bodies.releaseAll(validWorld, "consumer-storage-shutdown", [](auto, const auto&) {});
@@ -724,6 +727,8 @@ namespace rock::api::storage
             &displays::setShoulderRouting,
             &displays::clearDisplaysAndRouting,
             &::rock::stash_conversion::registerConverter,
+            &::rock::storage_highlight::setHighlight,
+            &::rock::storage_highlight::clearHighlight,
         };
         return value;
     }

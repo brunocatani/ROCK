@@ -1,6 +1,6 @@
 #pragma pack(push, 1)
 #include <ROCK/Storage.h>
-static_assert(sizeof(rock::api::storage::Api) == 152 && sizeof(rock::api::storage::Display) == 160);
+static_assert(sizeof(rock::api::storage::Api) == 168 && sizeof(rock::api::storage::Display) == 160);
 #include <ROCK/Weapon.h>
 static_assert(sizeof(rock::api::weapon::Api) == 192 && sizeof(rock::api::weapon::WeaponState) == 120);
 
