@@ -88,6 +88,18 @@ per hand; two-handed, fixed and loose-firearm holds are refused.
 `clearHeldObjectTarget` (Write) ends it; `getHeldObjectPose` (Read) returns
 the solved body pose at the reference root.
 
+## Released object drive (game thread, Write)
+
+`driveReleasedObject(owner, drive, progress)` glides a loose reference that
+no ROCK hand holds onto `drive.rootWorld` (game units, Ni basis rows, the
+reference's own scale). Each call sets this step's velocities of its dynamic
+bodies so the root closes the remaining gap with time constant
+`approachSeconds` (0.05 to 2); the object stays dynamic and collidable. Call
+it every frame while gliding and stop calling to let the object go.
+`progress` (optional) reports the root's remaining `distanceGame` and
+`angleRadians`. `Busy` while a hand holds the reference; `TargetInvalid` when
+it has no dynamic body.
+
 ## Reference queries (game thread, Read)
 
 `queryReferenceInteraction(owner, query, interaction)` describes a
@@ -114,6 +126,7 @@ publication identity.
 | `PowerArmorGrabRequest` | `requestPowerArmorGrab` | `target` (`ReferenceKey`), `hand`, `point` (`PowerArmorPoint`), `maxDistanceGame` |
 | `InventoryGrabRequest` | `requestInventoryGrab` | `hand`, `baseFormId`, the three guard generations |
 | `InteractionCommandResult` | `getInteractionCommandResult` | `ownerToken`, `commandId`, `kind` (`InteractionCommandKind`), `state` (`InteractionCommandState`: `Queued`, `Succeeded`, `Rejected`, `Cancelled`), `failure` and `failureStage` (`InteractionFailure`), `hand`, `targetFormId`, `targetBodyId`, `frameIndex`, the three generations, `stage` (`CommandStage`: `Accepted`, `Queued`, `Committed`, `Applied`, `Terminal`), `acceptedFrame`, `committedFrame`, `appliedFrame` |
+| `ReleasedObjectDrive`, `ReleasedObjectProgress` | `driveReleasedObject` | `reference` (`ReferenceKey`), `expectedBase`, `approachSeconds`, `rootWorld`; `distanceGame`, `angleRadians` |
 | `HandInteractionState` | `getHandInteractionState` | `frameIndex`, `hand`, `phase` (`HandInteractionPhase`), `targetKind` (`BodyContactTargetKind`), `flags` (`HandInteractionFlag`), `reservedTargetIdentity`, `targetFormId`, `primaryBodyId`, `heldBodyCount`, `heldBodyIds[8]`, `stateSequence`, `targetSequence`, `gripSequence`, `releaseSequence`, the four generations, `surfaceAnchorGame`, `surfaceGripMode` |
 | `HandTargetDetails` | `getHandTargetDetails` | `handState`, `referenceFormId`, `referenceNativeHandle`, `flags` (`TargetDetailFlag`), `collisionLayer`, `anchorGame`, `normalGame`, `powerArmorPoint`, `sourceTriangleIndex`, `collisionNodeName[64]`, `meshPartName[64]` |
 | `HandReservationRequest` | acquire, renew | `weaponSlot`, `hand`, `reservation` (`HandReservationKind`: `Normal`, `ReloadReserved`, `ReloadPoseOverride`), `leaseFrames`, the three guard generations |

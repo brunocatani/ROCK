@@ -7,6 +7,10 @@
         const auto access=s_physicsInteraction.borrow();
         auto* pi=access.get();return pi?pi->setHeldObjectTarget(owner,request):api::Status::NotReady;
     }
+    api::Status driveReleasedObject(const api::grab::ReleasedObjectDrive& request,api::grab::ReleasedObjectProgress& output) {
+        const auto access=s_physicsInteraction.borrow();
+        auto* pi=access.get();return pi?pi->driveReleasedObject(request,output):api::Status::NotReady;
+    }
     api::Status clearHeldObjectTarget(api::OwnerToken owner,api::Hand hand) {
         const auto access=s_physicsInteraction.borrow();
         auto* pi=access.get();return pi?pi->clearHeldObjectTarget(owner,hand):api::Status::Ok;

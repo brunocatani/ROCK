@@ -50,6 +50,7 @@ namespace rock::provider::runtime
     api::Status setHeldObjectTarget(api::OwnerToken, const api::grab::HeldObjectTarget&);
     api::Status clearHeldObjectTarget(api::OwnerToken, api::Hand);
     api::Status getHeldObjectPose(api::OwnerToken, api::Hand, api::grab::HeldObjectPose&);
+    api::Status driveReleasedObject(const api::grab::ReleasedObjectDrive&, api::grab::ReleasedObjectProgress&);
     api::Status getHeldPlacementState(api::grab::HeldPlacementState& output);
     api::Status submitHeldPlacementIntent(api::OwnerToken owner, const api::grab::HeldPlacementIntent& request);
     api::Status clearHeldPlacementIntent(api::OwnerToken owner);

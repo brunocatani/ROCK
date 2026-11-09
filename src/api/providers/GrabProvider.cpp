@@ -260,6 +260,22 @@ namespace rock::api::grab
         {
             return readSample(owner, kInterfaceId, outSample);
         }
+
+        Status ROCK_CALL driveReleasedObject(OwnerToken owner, const ReleasedObjectDrive* drive,
+            ReleasedObjectProgress* outProgress) noexcept
+        {
+            if (const auto s = checkInput(drive); s != Status::Ok)
+                return s;
+            if (outProgress && (outProgress->size != sizeof(*outProgress) || outProgress->version != 1))
+                return outProgress->size != sizeof(*outProgress) ? Status::InvalidSize : Status::UnsupportedVersion;
+            return invoke(owner, kInterfaceId, 2, true, [&] {
+                ReleasedObjectProgress progress{};
+                const auto status = p::runtime::driveReleasedObject(*drive, progress);
+                if (outProgress)
+                    *outProgress = progress;
+                return status;
+            });
+        }
     }
 
     const Api& table() noexcept
@@ -291,6 +307,7 @@ namespace rock::api::grab
             &setEventCallback,
             &clearEventCallback,
             &getSample,
+            &driveReleasedObject,
         };
         return value;
     }

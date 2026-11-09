@@ -517,6 +517,33 @@ namespace rock::api::grab {
         Transform rootWorld{};
     };
 
+    /*
+     * Glides a loose reference no hand holds onto rootWorld (game units, Ni
+     * basis rows, the reference's own scale): each call sets this step's
+     * velocities of its dynamic bodies so the root closes the remaining gap
+     * with time constant approachSeconds (0.05 to 2). It stays dynamic and
+     * collidable; call every frame while gliding, stop calling to let it go.
+     * Progress reports the root's remaining distance and angle. Busy while a
+     * ROCK hand holds it; TargetInvalid when it has no dynamic body.
+     */
+    struct ReleasedObjectDrive
+    {
+        std::uint32_t size{ sizeof(ReleasedObjectDrive) };
+        std::uint32_t version{ 1 };
+        ReferenceKey reference{};
+        std::uint32_t expectedBase{ 0 };
+        float approachSeconds{ 0.15f };
+        Transform rootWorld{};
+    };
+
+    struct ReleasedObjectProgress
+    {
+        std::uint32_t size{ sizeof(ReleasedObjectProgress) };
+        std::uint32_t version{ 1 };
+        float distanceGame{ 0.0f };
+        float angleRadians{ 0.0f };
+    };
+
     // ------------------------------------------------------------------
     // Reference queries
     // ------------------------------------------------------------------
@@ -669,6 +696,8 @@ namespace rock::api::grab {
         Status(ROCK_CALL* clearEventCallback)(OwnerToken owner) noexcept;
         // Any thread. Identity of the current publication.
         Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
+        // Game thread (Write). outProgress may be null.
+        Status(ROCK_CALL* driveReleasedObject)(OwnerToken owner, const ReleasedObjectDrive* drive, ReleasedObjectProgress* outProgress) noexcept;
     };
 }
 
