@@ -368,6 +368,13 @@ namespace rock
             using performance_profiler::Scope;
             performance_profiler::ScopedTimer stageTimer(Scope::FinalizeHeldObjects);
             performance_profiler::ScopedTimer looseTimer(Scope::HeldLooseWeapons);
+            {
+                // Before the loose pool admits a weapon a hand just took: the
+                // lodge gives its bodies their own filters back first.
+                const auto taken = lodgedWeaponHandReferences();
+                auto mutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
+                _lodgedWeapons.update(frame.hknpWorld, taken);
+            }
             _looseWeaponCollision.update(frame, _rightHand.isHolding() ? _rightHand.getHeldRef() : nullptr,
                 _leftHand.isHolding() ? _leftHand.getHeldRef() : nullptr, _generatedBodyStepDrive.callbackGate());
             looseTimer.stop();
@@ -1074,6 +1081,7 @@ namespace rock
             storage_interaction::flush(world, timing);
             _rightHand.flushConsumerObjectPairs(world);
             _leftHand.flushConsumerObjectPairs(world);
+            _lodgedWeapons.step(world, timing);
         }
         if (performance_profiler::enabled()) {
             performance_profiler::observeValue(performance_profiler::ValueMetric::GeneratedHandBodies,

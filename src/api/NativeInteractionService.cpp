@@ -604,8 +604,24 @@ namespace rock::native_interaction_service
                 (!finite(command.requestedWeapon) || !finite(command.presentation))))
             return false;
         weapon.command = command;
+        weapon.commandFrame = frame.frame.sample.frameIndex;
         if (command.result == ni::DriveResult::Controlled)
             requested = fromApi(command.requestedWeapon);
+        return true;
+    }
+
+    bool weaponLodge(std::uint32_t slot, ni::BodyIdentity& target)
+    {
+        target = {};
+        if (slot >= api::kMaxWeaponSlots)
+            return false;
+        const auto& weapon = state().weapons[slot];
+        const auto now = provider::runtime::currentGameFrameIndex();
+        if (weapon.command.result != ni::DriveResult::Controlled || !weapon.command.lodged ||
+            weapon.command.lodgeTarget.body == ni::kInvalidBody || now < weapon.commandFrame ||
+            now - weapon.commandFrame > 1)
+            return false;
+        target = weapon.command.lodgeTarget;
         return true;
     }
 

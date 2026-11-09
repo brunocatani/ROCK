@@ -45,6 +45,21 @@ dynamic body, the generation, the pose ROCK is about to drive to and the
 primary grip. Returning `Controlled` in `WeaponCommand` replaces the drive
 target and the visual weapon pose for that frame.
 
+A `Controlled` command may also set `lodged` with `lodgeTarget`, the body
+that holds the weapon (a blade stuck in a limb). When the last hand lets go
+while that mark is from the current or previous frame, and Weapon Equip Mode
+drops the weapon in place (Auto Drop), ROCK places the loose weapon without
+the hand's throw and keeps it lodged: it rides that body every physics step
+and takes the body's collision group, so it never collides with that actor
+while hands, grab selection and the world still meet it. If the body goes
+away, the lodge follows the same bone's new body (an actor's limb changes
+bodies when his ragdoll enters or leaves the world). It ends, and the weapon
+is an ordinary loose weapon again, when a hand takes or pulls it, when its
+reference or bodies go away, when it is pushed 8 game units off its seat for
+eight physics steps, or when the bone has no body. Nothing is constrained to
+the target body. A save keeps only the loose weapon, so after a load it is
+an ordinary loose weapon.
+
 Weapon calls take `weaponSlot` below `kMaxWeaponSlots`. Slot 0 is the primary
 weapon and slot 1 the second equipped (akimbo) weapon; each slot has its own
 weapon body, callbacks (`weaponSlot` in the frame, contact and retire),
@@ -121,7 +136,7 @@ asks before its own object types and `AfterCoreTypes` after them.
 | `Frame` | every callback | `phase` (`Phase`), `sample`, `world`, `bhkWorld`, `hmdPosition`, `deltaSeconds`, `gameToHavok`, `havokToGame`, `substepSeconds`, `worldReady`, `menuBlocked`, `hmdValid`, `timingValid`, `timingFallback` |
 | `BodyIdentity` | contact exclusion | `body`, `motion`, `collisionObject`, `ownerNode`, `shape`, `group` (filter >> 16); compared field for field with the live body |
 | `WeaponFrame` | `weaponUpdate` | `weaponSlot`, `body`, `frame`, `generation`, `form`, `supportOwnsPose`, `requestedWeapon`, `centerWeaponLocal`, `primaryGripLocal`, `primaryGripValid`, `recoveryDistanceGame` |
-| `WeaponCommand` | `weaponUpdate` output | `result` (`DriveResult`: `Unchanged`, `Controlled`), `requestedWeapon`, `presentation` |
+| `WeaponCommand` | `weaponUpdate` output | `result` (`DriveResult`: `Unchanged`, `Controlled`), `requestedWeapon`, `presentation`, `lodged`, `lodgeTarget` (`BodyIdentity`) |
 | `Contact` | `weaponContact` | `weaponSlot`, `weapon`, `frame`, `target`, `targetLayer`, `pointWorld`, `normalValid`, `normalWorld` (unit, target surface toward the weapon), `pointCount`, `separationValid`, `separationGame` |
 | `HandContact` | `handContact` | `hand` (0 right, 1 left), `part` (`HandPart`: `Palm`, `Finger`, `Forearm`), `frame`, `handBody`, `target`, `targetLayer`, `pointWorld`, `normalValid`, `normalWorld` (toward the hand), `pointCount`, `separationValid`, `separationGame` |
 

@@ -176,6 +176,10 @@ namespace rock
         native_interaction_service::clear(generatedWorldStillLive ? currentHknpWorld : nullptr,
             generatedWorldStillLive ? currentBhkWorld : nullptr);
         _looseWeaponCollision.clear(generatedWorldStillLive ? currentHknpWorld : nullptr);
+        {
+            auto mutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
+            _lodgedWeapons.clear(generatedWorldStillLive ? currentHknpWorld : nullptr);
+        }
         _objectRestCollision.clear(generatedWorldStillLive ? currentHknpWorld : nullptr);
         _looseObjectCollision.clear(generatedWorldStillLive ? currentHknpWorld : nullptr);
         _objectRestRequests = {};
@@ -539,6 +543,7 @@ namespace rock
         native_interaction_service::clear(worldValid ? currentHknp : nullptr, worldValid ? currentBhk : nullptr);
 
         _looseWeaponCollision.clear(worldValid ? currentHknp : nullptr);
+        _lodgedWeapons.clear(worldValid ? currentHknp : nullptr);
         _objectRestCollision.clear(worldValid ? currentHknp : nullptr);
         _looseObjectCollision.clear(worldValid ? currentHknp : nullptr);
         _objectRestRequests = {};

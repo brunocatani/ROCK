@@ -151,6 +151,12 @@ namespace rock
         auto* hknp = frame.hknpWorld;
         const auto observedEquippedWeaponFormID = currentEquippedWeaponFormId();
         const auto sourceHand = request.sourceHand;
+        // Read before the weapon body retires: its driver's lodge mark. Only a
+        // hand letting go in Auto Drop leaves the weapon where it is; storage
+        // extraction takes it.
+        LodgedWeapons::Capture lodge{};
+        if (mode == equipped_weapon_drop_policy::Mode::AutoDrop && leavesWithHandMotion)
+            (void)LodgedWeapons::capture(hknp, 0, lodge);
         const bool sourceHandKnown = sourceHand == equipped_weapon_drop_policy::SourceHand::Right ||
             sourceHand == equipped_weapon_drop_policy::SourceHand::Left;
         const auto dropLoc =
@@ -219,7 +225,9 @@ namespace rock
                         ? sourceVisual.exactInstance
                         : equipped_weapon_visual_state::observe(observedEquippedWeaponFormID).exactInstance);
                 // Toggle Drop stays in the hand, whose held-object release owns its throw.
-                const auto thrown = leavesWithHandMotion && mode == equipped_weapon_drop_policy::Mode::AutoDrop
+                // A lodged weapon stays where it is held.
+                const auto thrown =
+                    leavesWithHandMotion && mode == equipped_weapon_drop_policy::Mode::AutoDrop && !lodge.valid
                     ? transferHand.composeCarriedWeaponThrow(releaseGeometry.leverGameUnits)
                     : Hand::CarriedWeaponThrow{};
                 _twoHandedGrip.prepareEquippedWeaponDropCommit();
@@ -279,7 +287,7 @@ namespace rock
                                 request.pose, dropResult.droppedFormID);
                         }
                         armEquippedWeaponNativeHandoff(dropResult.handle, dropResult.droppedFormID, sourceHand,
-                            releaseGeometry, std::move(droppedCollision), thrown);
+                            releaseGeometry, std::move(droppedCollision), thrown, lodge);
                     }
                 }
                 if (dropCommitted) {
@@ -429,7 +437,10 @@ namespace rock
                   dropVisualModel->world)
             : RE::NiTransform{};
         auto droppedCollision = _secondaryWeaponCollision.captureDroppedCollision(drop.model);
-        const auto thrown = mode == Mode::AutoDrop
+        LodgedWeapons::Capture lodge{};
+        if (mode == Mode::AutoDrop)
+            (void)LodgedWeapons::capture(frame.hknpWorld, 1, lodge);
+        const auto thrown = mode == Mode::AutoDrop && !lodge.valid
             ? hand.composeCarriedWeaponThrow(
                   _secondaryWeaponCollision.getCurrentWeaponReleaseGeometry(handInput.grabAnchorWorld, drop.weaponWorld)
                       .leverGameUnits)
@@ -484,7 +495,7 @@ namespace rock
                 armEquippedWeaponNativeHandoff(dropResult.handle, dropResult.droppedFormID, sourceHand,
                     WeaponCollision::ReleaseGeometrySnapshot{ .hasCapturedWeaponWorld = true,
                         .capturedWeaponWorld = drop.weaponWorld },
-                    std::move(droppedCollision), thrown);
+                    std::move(droppedCollision), thrown, lodge);
             }
             // The releasing hand stops colliding briefly with what it let go of.
             setWeaponHandSuppression(frame.hknpWorld, left, WeaponHandReason::Drop, true);
@@ -526,10 +537,29 @@ namespace rock
             [](const EquippedWeaponNativeHandoff& handoff) { return !handoff.active; });
     }
 
+    std::array<const RE::TESObjectREFR*, 2> PhysicsInteraction::lodgedWeaponHandReferences() const
+    {
+        const auto taken = [](const Hand& hand) -> const RE::TESObjectREFR* {
+            if (hand.isHolding())
+                return hand.getHeldRef();
+            switch (hand.getState()) {
+            case HandState::PreGrabItem:
+            case HandState::PrePullItem:
+            case HandState::Pulled:
+            case HandState::GrabFromOtherHand:
+            case HandState::GrabExternal:
+                return hand.getSelection().refr;
+            default:
+                return nullptr;
+            }
+        };
+        return { taken(_rightHand), taken(_leftHand) };
+    }
+
     void PhysicsInteraction::armEquippedWeaponNativeHandoff(const RE::ObjectRefHandle& handle,
         std::uint32_t droppedFormId, equipped_weapon_drop_policy::SourceHand sourceHand,
         const WeaponCollision::ReleaseGeometrySnapshot& releaseGeometry, DroppedWeaponCollision collision,
-        const Hand::CarriedWeaponThrow& thrown)
+        const Hand::CarriedWeaponThrow& thrown, const LodgedWeapons::Capture& lodge)
     {
         if (!handle) {
             return;
@@ -564,6 +594,7 @@ namespace rock
             .thrownByLeft = equipped_weapon_drop_policy::isLeft(sourceHand),
             .progressSolveSequence = _frame.completedPhysicsSolveSequence.load(std::memory_order_acquire),
             .collision = std::move(collision),
+            .lodge = lodge,
         };
         ROCK_LOG_INFO(Weapon,
             "Equipped weapon native drop placement armed: ref={:08X} hand={} equippedHulls={} thrown={} "
@@ -907,6 +938,12 @@ namespace rock
         };
 
         if (handoff.stage == EquippedWeaponDropHandoffStage::ResolvingBodies) {
+            if (handoff.lodge.valid && !handoff.collisionAdopted) {
+                // A lodged weapon keeps its native collision under the lodge;
+                // the loose pool would park and freeze it once it rests.
+                handoff.collisionAdopted = true;
+                handoff.collision = {};
+            }
             if (!handoff.collisionAdopted) {
                 // Install the equipped hulls before identities capture shapes
                 // and before the placement solve: vanilla collision never acts.
@@ -1041,6 +1078,26 @@ namespace rock
                 ++queuedMotions;
             }
 
+            if (handoff.lodge.valid) {
+                // Before the placement solve: the bodies leave his collision
+                // and ride his body from their first step.
+                std::array<LodgedWeapons::PlacedBody, LodgedWeapons::kMaxBodies> placed{};
+                std::size_t placedCount = 0;
+                for (std::size_t i = 0; i < acceptedRecordCount && placedCount < placed.size(); ++i) {
+                    auto& body = placed[placedCount++];
+                    body.id = acceptedRecords[i]->bodyId;
+                    for (std::size_t m = 0; m < uniqueMotionRecordCount; ++m)
+                        if (motionBodyIds[m] == body.id) {
+                            body.drive = true;
+                            body.placed = releaseMotionTargets[m];
+                        }
+                }
+                auto mutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
+                if (acceptedRecordCount > placed.size() ||
+                    !_lodgedWeapons.begin(frame.hknpWorld, handoff.handle, handoff.droppedFormId, handoff.lodge,
+                        std::span(placed).first(placedCount)))
+                    handoff.lodge = {};
+            }
             handoff.bodySnapshots = capturedIdentities;
             handoff.bodySnapshotCount = acceptedRecordCount;
             handoff.bodyDiscoverySolveSequence = completedSolveSequence;

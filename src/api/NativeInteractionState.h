@@ -43,6 +43,7 @@ namespace rock::native_interaction_service::detail
             std::uint32_t body{ ni::kInvalidBody };
             std::uint32_t excludedTarget{ ni::kInvalidBody };
             ni::WeaponCommand command{};
+            std::uint64_t commandFrame{}; // game frame of the accepted command
             const WeaponCollision* collision{}; // only during this slot's WeaponUpdate
             RE::NiNode* weaponNode{}; // only during this slot's WeaponUpdate
             std::uint64_t generation{};

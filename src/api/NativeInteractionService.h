@@ -42,6 +42,9 @@ namespace rock::native_interaction_service
         BethesdaPhysicsBody&, const RE::NiPoint3& center, std::uint64_t generation, RE::NiTransform& requested,
         bool supportOwnsPose, const RE::NiPoint3* primaryGrip);
     bool weaponControlled(std::uint32_t slot);
+    // The driver's lodge mark for the slot (WeaponCommand.lodged) from this
+    // game frame or the last; false otherwise. Frame thread.
+    bool weaponLodge(std::uint32_t slot, api::native_interaction::BodyIdentity& target);
     RE::NiTransform weaponPresentation(std::uint32_t slot);
     bool preCollideWeapon(std::uint32_t slot, RE::hknpWorld*, const havok_physics_timing::PhysicsTimingSample&);
     // separationGame: the manifold's closest point distance (game units,

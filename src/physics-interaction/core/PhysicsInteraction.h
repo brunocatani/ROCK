@@ -96,6 +96,7 @@
 #include "physics-interaction/weapon/authored/AuthoredPrimaryFiringGrip.h"
 #include "physics-interaction/weapon/collision/DynamicWeaponCollision.h"
 #include "physics-interaction/weapon/collision/LooseWeaponCollision.h"
+#include "physics-interaction/weapon/equip/LodgedWeapons.h"
 #include "physics-interaction/weapon/collision/WeaponCollision.h"
 #include "physics-interaction/weapon/equip/BareFistGuardPolicy.h"
 #include "physics-interaction/weapon/equip/EquippedWeaponDropMomentum.h"
@@ -575,7 +576,9 @@ namespace rock
         void armEquippedWeaponNativeHandoff(const RE::ObjectRefHandle& handle, std::uint32_t droppedFormId,
             equipped_weapon_drop_policy::SourceHand sourceHand,
             const WeaponCollision::ReleaseGeometrySnapshot& releaseGeometry, DroppedWeaponCollision collision,
-            const Hand::CarriedWeaponThrow& thrown);
+            const Hand::CarriedWeaponThrow& thrown, const LodgedWeapons::Capture& lodge = {});
+        // What each hand has taken, is taking or pulls, for the lodged weapons.
+        std::array<const RE::TESObjectREFR*, 2> lodgedWeaponHandReferences() const;
         bool hasAvailableEquippedWeaponDropHandoff() const;
         void serviceEquippedWeaponNativeHandoff(const PhysicsFrameContext& frame);
         // leavesWithHandMotion: an Auto Drop is thrown by the hand's motion. A
@@ -793,6 +796,10 @@ namespace rock
             // never happens while those identities await the settle step.
             DroppedWeaponCollision collision{};
             bool collisionAdopted{ false };
+            // The body the driver held the weapon in (WeaponCommand lodged):
+            // placed without a throw, keeps native collision, and the lodge
+            // takes its bodies over at placement.
+            LodgedWeapons::Capture lodge{};
             // Value-only terminal evidence. waitReason points only to literals;
             // no scene/body pointers survive the service callback.
             const char* waitReason{ "not-serviced" };
@@ -1223,6 +1230,7 @@ namespace rock
         DynamicWeaponCollisionRuntime _secondaryDynamicWeaponCollision;
         PhysicsStepDriveCoordinator _generatedBodyStepDrive;
         LooseWeaponCollision _looseWeaponCollision{ LooseWeaponCollision::Pool::Weapons };
+        LodgedWeapons _lodgedWeapons;
         // Independent capacity; native magazine shapes stay intact.
         LooseWeaponCollision _objectRestCollision{ LooseWeaponCollision::Pool::ObjectRest };
         // Independent capacity, so thrown objects never take a weapon's slot.

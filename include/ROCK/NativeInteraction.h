@@ -149,6 +149,15 @@ namespace rock::api::native_interaction {
 
     // Controlled replaces the drive target and the visual weapon pose for
     // this frame; Unchanged leaves ROCK's.
+    //
+    // lodged (with Controlled): the weapon is held by lodgeTarget's body, as a
+    // blade stuck in a limb. If the last hand lets go while the mark is from
+    // this frame or the last, and Weapon Equip Mode drops the weapon, ROCK
+    // places it without the hand's throw and keeps it lodged: the loose
+    // weapon follows that body, takes the body's collision group so it never
+    // touches that actor, and stays until a hand takes it, the body goes away
+    // (it follows the same bone's new body when there is one), or it is
+    // pushed off. Then it falls as an ordinary loose weapon.
     struct WeaponCommand
     {
         std::uint32_t size{ sizeof(WeaponCommand) };
@@ -156,6 +165,8 @@ namespace rock::api::native_interaction {
         DriveResult result{ DriveResult::Unchanged };
         Transform requestedWeapon{};
         Transform presentation{};
+        std::uint32_t lodged{ 0 };
+        BodyIdentity lodgeTarget{};
     };
 
     // One contact of the slot's weapon body. normalWorld is the unit normal of
