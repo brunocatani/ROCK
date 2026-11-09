@@ -47,8 +47,6 @@ namespace rock
         bool inventoryTransfer{ false };
         // Internal B-hold draws share transfer/rollback, without an API owner.
         bool grenadeQuickDraw{ false };
-        // Loot to Hand: an item taken from a container, owned by ROCK like grenadeQuickDraw.
-        bool lootToHand{ false };
         // Capture the mode at release so a hot reload cannot change an in-flight drop.
         equipped_weapon_drop_policy::Mode equippedWeaponDropMode{ equipped_weapon_drop_policy::Mode::Off };
         AuthoredWeaponGripPose weaponGripPose{};
@@ -71,7 +69,7 @@ namespace rock
 
         [[nodiscard]] bool internallyOwned() const noexcept
         {
-            return grenadeQuickDraw || lootToHand || isEquippedWeaponTransfer();
+            return grenadeQuickDraw || isEquippedWeaponTransfer();
         }
     };
 }

@@ -111,8 +111,6 @@ namespace rock::input_remap_runtime
     bool isMenuInputActive();
     // Frame-thread query using the same ViewCaster classification as Activate.
     bool hasNativeActivationTarget(bool primaryHand);
-    // Game thread: form ID of the reference the primary or secondary wand points at (0 = none).
-    std::uint32_t wandPickRefFormId(bool primaryWand);
     bool shouldSuppressNativeTriggerAction(const RE::InputEvent* event);
     bool isNativePipboyInputSuppressionActive();
     bool isPipboyMenuOpen();

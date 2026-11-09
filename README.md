@@ -31,7 +31,7 @@ Fallout 4 VR gives the player hands that pass through everything. ROCK makes the
 What it provides:
 
 - **Physical hands** - hand, finger, body and weapon collision with the world and physical objects.
-- **Grabbing** - pick up objects, hold them with two hands, pull them from a distance and catch them. A held object sits in your palm with your fingers posed around it. Items from the quick-loot view can land straight in your hand.
+- **Grabbing** - pick up objects, hold them with two hands, pull them from a distance and catch them. A held object sits in your palm with your fingers posed around it.
 - **Two weapons at once** - equip a weapon in each hand, each with its own trigger, reload, scope and collision. An equip goes into the hand that chose it and keeps the other hand's weapon.
 - **Weapon handling** - firing and support grips taken from each weapon's animation, hand switching, recoil applied to the firing hand, scopes, bipods, a reverse grip for one-handed melee weapons, and one ammo counter per held weapon.
 - **Physical items** - grenades, aid items, eating and drinking at your mouth, grabbing to equip, and stashing a weapon at your shoulder.

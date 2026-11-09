@@ -208,12 +208,6 @@ CloseGrabDirection = 0
 ## The number is the angle in degrees from the palm toward the fingers. The object must also be in your view. Applies at once, on each hand.
 FarGrabDirection = 0
 
-## Loot to Hand
-## True: an item taken with the quick-loot view (pointing at a container) lands in that hand.
-## The full container menu keeps sending items to inventory. A busy hand passes the item to the other free hand; with no free hand it stays in inventory.
-## False: taken items go to inventory (game default).
-LootToHand = true
-
 ## Quick Loot Panel Placement
 ## 1 = Right Hand. 2 = Closer Hand. 3 = At Container.
 ## Right Hand: the game's own panel on the right hand; it lists only what the right hand points at.

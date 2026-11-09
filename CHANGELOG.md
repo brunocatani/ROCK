@@ -70,8 +70,6 @@
   replacing the game's counter. `WeaponHandling.AmmoCounterStyle`: 1 Minimal, 2 Immersive
   (game HUD style), 3 Vanilla (back of the hand). A reload mod can show a
   chambered-round marker beside the number.
-- **Loot to Hand** (`Grabbing.LootToHand`, on by default): an item taken from the
-  quick-loot view lands in the hand pointing at the container.
 - **Quick Loot Panel Placement** (`Grabbing.QuickLootPanelPlacement`): 1 on the
   right hand (game default), 2 on the hand pointing at the container (the
   closer hand when both point), 3 at the container it lists (default). Modes 2

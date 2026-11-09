@@ -373,7 +373,6 @@ namespace rock
             readSelectionAimAngleDegrees(ini, "Grabbing", "FarGrabDirection", rockFarSelectionAngleDegrees);
         rockGrabInputIntentStateEnabled =
             ini.boolean("GrabAcquisition", "GrabInputIntentStateEnabled", rockGrabInputIntentStateEnabled);
-        rockLootToHand = ini.boolean("Grabbing", "LootToHand", rockLootToHand);
         rockQuickLootPanelPlacement =
             static_cast<int>(ini.integer("Grabbing", "QuickLootPanelPlacement", rockQuickLootPanelPlacement));
         if (rockQuickLootPanelPlacement < 1 || rockQuickLootPanelPlacement > 3) {

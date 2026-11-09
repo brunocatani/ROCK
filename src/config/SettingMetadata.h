@@ -180,12 +180,6 @@ namespace rock::config
             "angle in degrees from the palm toward the fingers. The object must also be in your view. Applies at "
             "once, on each hand.",
             api::configuration::Group::Consumer },
-        { "Grabbing", "LootToHand", "06. Grabbing",
-            "Loot to Hand\nTrue: an item taken with the quick-loot view (pointing at a container) lands in that "
-            "hand.\nThe full container menu keeps sending items to inventory. A busy hand passes the item to the "
-            "other free hand; with no free hand it stays in inventory.\nFalse: taken items go to inventory (game "
-            "default).",
-            api::configuration::Group::Consumer },
         { "Grabbing", "QuickLootPanelPlacement", "06. Grabbing",
             "Quick Loot Panel Placement\n1 = Right Hand. 2 = Closer Hand. 3 = At Container.\nRight Hand: the game's "
             "own panel on the right hand; it lists only what the right hand points at.\nCloser Hand: the panel rides "

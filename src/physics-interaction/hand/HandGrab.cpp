@@ -380,8 +380,8 @@ namespace rock
          * A close grab commits only when a finger probe touches the visual
          * mesh (GrabFingerProbePreview.h). Object collision often sits well off
          * the visible surface, and grabbing from it held objects no finger was
-         * touching. ROCK-placed arrivals (pull catch, loot-to-hand and force
-         * grab, weapon transfers) move the mesh onto the palm themselves and
+         * touching. ROCK-placed arrivals (pull catch, force grab, weapon
+         * transfers) move the mesh onto the palm themselves and
          * are exempt. A refusal keeps retrying while the grip is held, so the
          * grab lands the moment a finger reaches the mesh.
          */

@@ -8,7 +8,6 @@
 #include "api/StorageService.h"
 #include "api/WeaponPartCollisionService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
-#include "physics-interaction/core/interaction/LootToHand.h"
 #include "physics-interaction/native/player/NativePlayerCollisionFilter.h"
 #include "physics-interaction/native/query/PhysicsShapeCast.h"
 #include "physics-interaction/visual/GripZoneIndicators.h"
@@ -438,7 +437,6 @@ namespace rock
         _weaponCollision.init(hknp, bhk);
         _secondaryWeaponCollision.init(hknp, bhk);
         ensureWeaponCollisionWorkbenchExitMenuSinkRegistered();
-        loot_to_hand::ensureRegistered();
 
         ROCK_LOG_INFO(Init, "hFRIK off-hand weapon gripping disabled; ROCK is the sole off-hand weapon authority");
 

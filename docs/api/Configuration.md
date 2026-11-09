@@ -64,6 +64,6 @@ if (config->revision(client.owner(), &seen) == rock::api::Status::Ok) {
         nullptr);
 }
 char error[256]{};
-config->setValue(client.owner(), rock::api::configuration::Group::Consumer, "Grabbing", "LootToHand", "false",
+config->setValue(client.owner(), rock::api::configuration::Group::Consumer, "Grabbing", "QuickLootPanelPlacement", "2",
     error, sizeof(error));
 ```

@@ -16,7 +16,6 @@
 //   GrabEventsAndHaptics         grab events and controller haptics
 //   HeldPlacement                provider-driven placement of held objects
 //   ForceGrabAndGrenades         deferred force grabs, grenade quick draw and fuses
-//   LootToHand                   items taken from the quick-loot view into a hand
 //   ObjectClaims                 which objects ROCK or a provider client holds
 //   ObjectRestFrame              provider object-rest watches
 //   EjectionContactsFrame        provider shell-ejection contact requests
@@ -567,7 +566,6 @@ namespace rock
         bool isPendingForceGrabTarget(RE::TESObjectREFR* ref) const;
         void pruneInactiveProviderForceGrabCommits();
         void serviceLooseGrenadeQuickDraw(const PhysicsFrameContext& frame);
-        void serviceLootToHand(const PhysicsFrameContext& frame);
         void servicePendingForceGrabCommits(const PhysicsFrameContext& frame);
         void clearPendingForceGrabCommits();
         void cancelEquippedWeaponTransfersForMenu();

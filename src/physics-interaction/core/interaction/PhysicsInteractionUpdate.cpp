@@ -23,7 +23,6 @@
 #include "api/StorageService.h"
 #include "api/WeaponPartCollisionService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
-#include "physics-interaction/core/interaction/LootToHand.h"
 #include "physics-interaction/native/player/NativePlayerCollisionFilter.h"
 #include "physics-interaction/weapon/native/NativeHandEquipment.h"
 #include "physics-interaction/weapon/native/NativeMeleeWand.h"
@@ -753,7 +752,6 @@ namespace rock
         _frame.gripZoneIndicatorFrameIndex = 0;
         _frame.poseFrameIndex = 0;
         ensureWeaponCollisionWorkbenchExitMenuSinkRegistered();
-        loot_to_hand::ensureRegistered();
 
         _equipped.shoulderGestureConsumedThisFrame = {};
         _equipped.toggleGrabReleasePressConsumedThisFrame = {};
