@@ -251,7 +251,7 @@ namespace rock
         saved_grab_offset::HandOffset offset{};
         bool fixedAidPose = false;
         if (!resolveAuthoredGrabOffset(_currentSelection, selectedLooseWeaponForm(_currentSelection) != nullptr, true,
-                offset, fixedAidPose)) {
+                false, offset, fixedAidPose)) {
             return;
         }
 

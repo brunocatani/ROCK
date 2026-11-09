@@ -694,13 +694,15 @@ namespace rock
         // built from (the reference both functions above carry onto a wrist).
         bool tryResolvePalmTargetGrabProxy(RE::NiTransform& outProxyWorld, RE::NiTransform& outRawHandWorld) const;
         /*
-         * The authored pose a grab of this selection seats for this hand: the
-         * immersive aid pose (every grab), otherwise on a programmatic arrival
-         * the saved offset, a provider default pose or ROCK's built-in pose.
-         * The pull aligns to it in flight and the catch seats it.
+         * The authored pose a grab of this selection seats for this hand. A
+         * fixed pose (outFixedPose) seats every grab, close ones included: the
+         * immersive aid pose, and a grenade's pose unless this hand joins a
+         * grenade the other hand holds. Otherwise, on a programmatic arrival
+         * only: the saved offset, a provider default pose or ROCK's built-in
+         * pose. The pull aligns to it in flight and the catch seats it.
          */
         bool resolveAuthoredGrabOffset(const SelectedObject& sel, bool looseWeaponGrab, bool programmaticArrival,
-            saved_grab_offset::HandOffset& out, bool& outFixedAidPose) const;
+            bool joiningPeerHeldObject, saved_grab_offset::HandOffset& out, bool& outFixedPose) const;
 
         struct GrabFingerPoseSnapshot
         {

@@ -80,4 +80,16 @@ namespace rock::saved_grab_offset::built_in
         }
         return match && copyHand(left ? match->left : match->right, out);
     }
+
+    bool findNamed(std::string_view name, bool left, HandOffset& out)
+    {
+        const auto table = offsets();
+        for (const auto& named : namedOffsets()) {
+            if (named.name == name && named.offset < table.size()) {
+                const auto& entry = table[named.offset];
+                return copyHand(left ? entry.left : entry.right, out);
+            }
+        }
+        return false;
+    }
 }

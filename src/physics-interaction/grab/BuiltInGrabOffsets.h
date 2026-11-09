@@ -64,13 +64,28 @@ namespace rock::saved_grab_offset::built_in
         std::uint32_t offset;
     };
 
+    // A pose ROCK uses by role rather than by form ("grenade").
+    struct NamedOffset
+    {
+        std::string_view name;
+        // Index into offsets().
+        std::uint32_t offset;
+    };
+
+    inline constexpr std::string_view kGrenadePose = "grenade";
+    inline constexpr std::string_view kMolotovPose = "molotov";
+
     // Generated tables.
     [[nodiscard]] std::span<const HandPose> handPoses() noexcept;
     [[nodiscard]] std::span<const ExactFingerRotations> exactFingerRotations() noexcept;
     [[nodiscard]] std::span<const Offset> offsets() noexcept;
     [[nodiscard]] std::span<const Alias> aliases() noexcept;
+    [[nodiscard]] std::span<const NamedOffset> namedOffsets() noexcept;
 
     // The built-in pose for one hand: the form's own offset, otherwise the
     // offset that serves it. Variants (count-based ammo) never use aliases.
     [[nodiscard]] bool find(const FormRef& object, bool left, HandOffset& out);
+
+    // The built-in pose for one hand of a role (kGrenadePose).
+    [[nodiscard]] bool findNamed(std::string_view name, bool left, HandOffset& out);
 }

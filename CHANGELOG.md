@@ -115,6 +115,8 @@
   seat. Your own saved offsets still take priority, hand by hand.
 - A pulled object with a saved or built-in pose turns into that pose while it flies
   and arrives already in it, instead of turning at the last moment in your hand.
+- Grenades and Molotovs are always held in their grenade or Molotov pose, on every grab,
+  close or pulled. A second hand grabbing a grenade you already hold grabs it freely.
 - Saved grab offsets record the grip you see: a save no longer includes the
   physics drive's lag or the two-hand shared solve, so a later pull reproduces
   it exactly.

@@ -667,6 +667,9 @@ namespace rock
         bool hasPalmSeatPoint = false;
         bool hasPinchPocket = false;
         bool programmaticArrival = false;
+        // The seat placed a fixed authored pose (aid, grenade): its finger
+        // pose is published whatever the mesh finger pose setting.
+        bool fixedAuthoredPose = false;
         bool requiresSettledVisualHandRelation = false;
         bool hasSettledVisualHandRelation = false;
         // Close-grab seat mode 1 turned or re-pivoted the object at capture.

@@ -411,13 +411,36 @@ namespace rock
     }
 
     bool Hand::resolveAuthoredGrabOffset(const SelectedObject& sel, bool looseWeaponGrab, bool programmaticArrival,
-        saved_grab_offset::HandOffset& out, bool& outFixedAidPose) const
+        bool joiningPeerHeldObject, saved_grab_offset::HandOffset& out, bool& outFixedPose) const
     {
-        outFixedAidPose = g_rockConfig.rockImmersiveAidEnabled &&
+        outFixedPose = g_rockConfig.rockImmersiveAidEnabled &&
             immersive_aid::usesStimpakPose(immersive_aid::classify(sel.refr ? sel.refr->GetObjectReference() : nullptr));
-        if (outFixedAidPose) {
+        if (outFixedPose) {
             out = immersive_aid::stimpakPose(_isLeft);
             return true;
+        }
+        /*
+         * Grenades are always held in their authored pose, on every grab, close
+         * or pulled: the grenade's own pose (saved, provider or built-in),
+         * otherwise ROCK's grenade pose, or its Molotov pose for a Molotov
+         * (classified like the detonation, by the reference's records). The
+         * one exception is a second hand joining a grenade the other hand
+         * already holds: that hand grabs dynamically, to manipulate it freely.
+         */
+        const auto* weapon = selectedLooseWeaponForm(sel);
+        if (weapon && weapon->weaponData.type == RE::WEAPON_TYPE::kGrenade) {
+            if (joiningPeerHeldObject) {
+                return false;
+            }
+            loose_grenade_runtime::GrenadeRuntimeData grenade{};
+            const bool molotov =
+                loose_grenade_runtime::resolveGrenadeRuntimeDataForReference(sel.refr, grenade) && grenade.molotov;
+            outFixedPose = tryLoadSavedGrabOffsetHandOffset(sel.refr, _isLeft, out) ||
+                (saved_grab_offset::built_in::findNamed(
+                     molotov ? saved_grab_offset::built_in::kMolotovPose : saved_grab_offset::built_in::kGrenadePose,
+                     _isLeft, out) &&
+                    exactPoseFitsRig(out, _isLeft, molotov ? "Molotov" : "grenade"));
+            return outFixedPose;
         }
         /*
          * Authored poses apply only when the object arrives by a far pull or a
@@ -815,12 +838,24 @@ namespace rock
                     .behindPalmToleranceGameUnits = g_rockConfig.rockGrabSurfaceBehindPalmToleranceGameUnits,
                 });
 
-            const bool usingPinchPocket = !nearAuthored && pinchPocketCandidate.valid && gripArea.valid;
-            const bool captureAccepted =
-                usingPinchPocket || (pocket.valid && gripArea.valid && (nearAuthored || phaseDecision.accepted));
+            /*
+             * The authored pose is resolved before the seat mode: a fixed pose
+             * (aid, grenade) seats every grab, so like an authored weapon seat
+             * it replaces the pinch and the touch classification and converges
+             * the object onto the pose.
+             */
+            saved_grab_offset::HandOffset resolvedAuthoredOffset{};
+            bool resolvedFixedPose = false;
+            const bool resolvedAuthored = resolveAuthoredGrabOffset(sel, looseWeaponGrab, programmaticArrival,
+                input.joiningPeerHeldObject, resolvedAuthoredOffset, resolvedFixedPose);
+            const bool fixedPoseGrab = resolvedAuthored && resolvedFixedPose;
+            const bool usingPinchPocket =
+                !nearAuthored && !fixedPoseGrab && pinchPocketCandidate.valid && gripArea.valid;
+            const bool captureAccepted = usingPinchPocket ||
+                (pocket.valid && gripArea.valid && (nearAuthored || fixedPoseGrab || phaseDecision.accepted));
             if (captureAccepted) {
                 _grabObjectGripAtGrab = gripArea;
-                _grabAcquisitionPhase = nearAuthored
+                _grabAcquisitionPhase = (nearAuthored || fixedPoseGrab)
                     ? grab_three_phase::AcquisitionPhase::NearConverging
                     : (usingPinchPocket ? grab_three_phase::AcquisitionPhase::TouchHeld : phaseDecision.phase);
                 if (usingPinchPocket) {
@@ -970,9 +1005,9 @@ namespace rock
                          * Leaving the source empty here also keeps a saved finger
                          * pose from overriding the FRIK weapon hand pose.
                          */
-                bool fixedAidPose = false;
-                hasSavedGrabOffset =
-                    resolveAuthoredGrabOffset(sel, looseWeaponGrab, programmaticArrival, savedGrabOffset, fixedAidPose);
+                bool fixedAidPose = fixedPoseGrab;
+                hasSavedGrabOffset = resolvedAuthored;
+                savedGrabOffset = resolvedAuthoredOffset;
                 if (hasSavedGrabOffset && !fixedAidPose) {
                     /*
                      * An offset measured against a body node applies to a grab
@@ -1009,8 +1044,8 @@ namespace rock
                         savedGrabOffset, savedGrabOffsetFrameWorld);
                 const bool savedGrabOffsetOnBodyNode = savedGrabOffsetAttachValid && !savedGrabOffset.bodyNode.empty();
                 if (fixedAidPose && !savedGrabOffsetAttachValid) {
-                    // Without the authored proxy frame the aid is held like any loose item.
-                    ROCK_LOG_SAMPLE_INFO(Hand, 1000, "{} hand immersive aid pose unavailable; dynamic grab",
+                    // Without the authored proxy frame the object is held like any loose item.
+                    ROCK_LOG_SAMPLE_INFO(Hand, 1000, "{} hand fixed grab pose (aid or grenade) unavailable; dynamic grab",
                         handName());
                     fixedAidPose = false;
                     hasSavedGrabOffset = false;
@@ -1615,6 +1650,7 @@ namespace rock
                 _grabFrame.seat.activeGrabPointMode = grabPointMode;
                 _grabFrame.seat.mode = usingPinchPocket ? GrabSeatMode::PinchPocket : GrabSeatMode::SupportGroup;
                 _grabFrame.seat.programmaticArrival = programmaticArrival;
+                _grabFrame.seat.fixedAuthoredPose = fixedAidPose && hasSavedGrabOffset;
                 _grabFrame.seat.localGraspSeat = localGraspApplied;
                 if (looseWeaponPrimaryAttachApplied) {
                     _grabFrame.seat.mode = GrabSeatMode::SupportGroup;

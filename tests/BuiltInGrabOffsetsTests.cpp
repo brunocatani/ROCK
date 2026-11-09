@@ -110,6 +110,18 @@ int main()
         check(!built_in::find(FormRef{ std::string(alias.plugin), alias.localFormId, "single" }, false, variant),
             "a variant borrowed an alias");
     }
+    // Role poses the grab code asks for by name resolve for both hands.
+    for (const auto name : { built_in::kGrenadePose, built_in::kMolotovPose }) {
+        for (const bool left : { false, true }) {
+            HandOffset named{};
+            check(built_in::findNamed(name, left, named) && named.present,
+                std::string(name) + ": named pose missing a hand");
+        }
+    }
+    for (const auto& named : built_in::namedOffsets()) {
+        check(named.offset < offsets.size(), std::string(named.name) + ": named pose index out of range");
+    }
+
     HandOffset missing{};
     check(!built_in::find(FormRef{ "NotAPlugin.esp", 0x00ABCDEF, {} }, false, missing), "unknown form found a pose");
 

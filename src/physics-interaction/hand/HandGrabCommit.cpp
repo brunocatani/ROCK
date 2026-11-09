@@ -910,10 +910,8 @@ namespace rock
         _grabFingerPosePublished = false;
         if (useLooseWeaponPrimaryAttachHandPose) {
             grab_finger_pose_runtime::SolvedGrabFingerPose savedGrabFingerPose{};
-            const bool fixedAidPose = g_rockConfig.rockImmersiveAidEnabled &&
-                immersive_aid::usesStimpakPose(
-                    immersive_aid::classify(sel.refr ? sel.refr->GetObjectReference() : nullptr));
-            const bool hasSavedGrabFingerPose = (fixedAidPose || g_rockConfig.rockGrabMeshFingerPoseEnabled) &&
+            const bool fixedAuthoredPose = _grabFrame.seat.fixedAuthoredPose;
+            const bool hasSavedGrabFingerPose = (fixedAuthoredPose || g_rockConfig.rockGrabMeshFingerPoseEnabled) &&
                 hasSavedGrabOffset && tryBuildSavedGrabOffsetFingerPose(savedGrabOffset, savedGrabFingerPose);
             if (_grabFrame.authoredWeaponPose.valid()) {
                 _grabFingerPosePublished = authoredPoseReady;
