@@ -6,6 +6,7 @@
 #include <iterator>
 #include <string_view>
 #include <system_error>
+#include <utility>
 
 #include <openvr.h>
 
@@ -109,6 +110,30 @@ namespace rock::steamvr_binding
             return true;
         }
 
+        /*
+         * Once per game start: rewrites an installed template that differs from the one in this
+         * ROCK.dll, so a ROCK update reaches players who already use ROCK's binding. Checked by
+         * file, not by SteamVR's report: while ROCK's binding is active SteamVR reports the
+         * simulated controller type (oculus_touch, bench: Index with the template), so the
+         * inspection never sees the knuckles setting then.
+         */
+        void refreshInstalledTemplates()
+        {
+            static bool done = false;
+            if (std::exchange(done, true)) return;
+            for (const auto type : { std::string_view{ "knuckles" }, std::string_view{ "vive_controller" } }) {
+                const auto controller = policy::controllerFor(type);
+                if (!controller) continue;
+                const auto path = installedPath(*controller);
+                std::error_code ec;
+                if (!std::filesystem::exists(path, ec)) continue;
+                const auto content = embeddedTemplate(controller->controller);
+                std::string error;
+                if (!content.empty() && !writeTemplate(path, content, error))
+                    ROCK_LOG_WARN(Config, "SteamVR binding: could not refresh {}: {}", controller->fileName, error);
+            }
+        }
+
         // Logs an inspection when it differs from the last one logged.
         void report(const Inspection& inspection, std::string_view note)
         {
@@ -131,6 +156,7 @@ namespace rock::steamvr_binding
     {
         Inspection result{};
         try {
+            refreshInstalledTemplates();
             auto* system = vr::VRSystem();
             auto* settings = vr::VRSettings();
             auto* applications = vr::VRApplications();
@@ -162,14 +188,6 @@ namespace rock::steamvr_binding
             }
             result.currentUrl = url.data();
             result.status = policy::classify(true, result.controller, result.currentUrl);
-            if (result.status == policy::Status::RockActive) {
-                // Keep the installed copy current after a ROCK update.
-                const auto path = installedPath(*result.controller);
-                const auto content = embeddedTemplate(result.controller->controller);
-                std::string writeError;
-                if (result.currentUrl == policy::fileUrl(utf8(path)) && !content.empty() && !writeTemplate(path, content, writeError))
-                    ROCK_LOG_WARN(Config, "SteamVR binding: could not refresh ROCK's template: {}", writeError);
-            }
             report(result, result.status == policy::Status::Offer ? "SteamVR's default binding; ROCK offers its own"
                     : result.status == policy::Status::RockActive ? "ROCK's binding is set"
                                                                    : "the player's own binding is set; left alone");
