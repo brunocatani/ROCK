@@ -721,12 +721,12 @@ namespace rock
 
         bool isPartCarryActive() const { return _session.state == TwoHandedState::PartCarry; }
 
-        // Diagnostic (support-hand twitch on firing-grip reattach, 14 Oct):
+        // Diagnostic (support-hand twitch on firing-grip reattach):
         // how applyPartGripLockedVisual placed a hand's part grip last time.
         struct PartGripVisualTrace
         {
             std::uint64_t frameIndex = 0;
-            std::uint32_t gripSequence = 0;
+            std::uint64_t gripSequence = 0;
             const char* branch = "none";
             bool lerpStarted = false;
             float lerpAlpha = 1.0f;
@@ -1496,7 +1496,7 @@ namespace rock
         bool _holdingMirrorMelee{};
         std::array<PartGripVisualTrace, 2> _partGripVisualTrace{};
         std::array<RE::NiTransform, 2> _partGripVisualTraceLastLocal{};
-        std::array<std::uint32_t, 2> _partGripVisualTraceLastSequence{};
+        std::array<std::uint64_t, 2> _partGripVisualTraceLastSequence{};
         RE::NiTransform _holdingNativeRight{}, _holdingLeft{};
         bool _holdingHasNative{ false }, _holdingHasLeft{ false };
         bool tryComputeMirroredLeftFiringHandWeaponLocal(RE::NiTransform& outHandWeaponLocal,

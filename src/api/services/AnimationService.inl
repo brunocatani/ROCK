@@ -221,7 +221,8 @@
         bool published = true;
         if ((request.flags & fingerFlag) != 0) {
             frik_visual_authority::FingerLocalTransformOverride fingerLocals{};
-            fingerLocals.enabledMask = request.fingerLocalTransformMask;
+            // Validated above: only the 15 finger-joint bits can be set.
+            fingerLocals.enabledMask = static_cast<std::uint16_t>(request.fingerLocalTransformMask);
             for (std::size_t index = 0; index < 15; ++index) {
                 const auto bit = 1u << index;
                 if ((fingerLocals.enabledMask & bit) != 0) {

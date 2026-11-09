@@ -2550,7 +2550,6 @@ namespace rock
             auto& hand = isLeft ? _leftHand : _rightHand;
             if (hand.getState() != HandState::SelectionLocked)
                 continue;
-            const auto& input = isLeft ? frame.left : frame.right;
             const bool releaseSuppressed = provider::hasHandInputSuppressionFlag(
                 provider::currentHandInputSuppressionFlags(isLeft ? api::Hand::Left : api::Hand::Right),
                 ::rock::api::input::HandInputSuppressionFlag::SuppressGrabRelease);

@@ -29,7 +29,7 @@ namespace rock::support_trigger_input
             armed = false;
         }
 
-        bool current(api::OwnerToken owner, const api::input::SupportTriggerRequest& value)
+        bool current(const api::input::SupportTriggerRequest& value)
         {
             api::weapon::WeaponState equipped;
             api::weapon::Grip grip;
@@ -66,7 +66,7 @@ namespace rock::support_trigger_input
         std::scoped_lock lock(mutex);
         if (state.active && state.owner != owner)
             return Status::Busy;
-        if (!current(owner, value))
+        if (!current(value))
             return Status::GenerationMismatch;
         if (!state.active || state.hand != value.hand || request.weaponGenerationKey != value.weaponGenerationKey) {
             retire();
@@ -120,7 +120,7 @@ namespace rock::support_trigger_input
         std::scoped_lock lock(mutex);
         if (!state.active)
             return;
-        if (frame > state.expiresAfterFrame || !current(state.owner, request)) {
+        if (frame > state.expiresAfterFrame || !current(request)) {
             retire();
             return;
         }
