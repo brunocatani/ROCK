@@ -194,6 +194,12 @@ namespace rock::provider::runtime
         assert(false);
         return api::Status::NotReady;
     }
+
+    api::Status driveReleasedObject(const api::grab::ReleasedObjectDrive&, api::grab::ReleasedObjectProgress&)
+    {
+        assert(false);
+        return api::Status::NotReady;
+    }
 }
 
 namespace rock::saved_grab_offset

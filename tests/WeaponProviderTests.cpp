@@ -172,6 +172,8 @@ namespace rock::provider::runtime
         output.translate[0] = hand == api::Hand::Left ? -1.0f : 1.0f;
         return api::Status::Ok;
     }
+
+    std::uint64_t weaponInteractionKey(std::uint32_t slot) { return slot == 1 ? 790 : 456; }
 }
 
 int main()
@@ -189,6 +191,11 @@ int main()
     Grip grip;
     assert(api.getGrip(testOwner, 1, &grip) == Status::Ok && grip.weaponSlot == 1 && grip.weaponFormId == 789);
     assert(api.getGrip(testOwner, kMaxWeaponSlots, &grip) == Status::InvalidArgument);
+    // Each slot's interaction key is its own weapon's.
+    std::uint64_t key = 1;
+    assert(api.getInteractionKey(testOwner, 1, &key) == Status::Ok && key == 790);
+    assert(api.getInteractionKey(testOwner, 0, &key) == Status::Ok && key == 456);
+    assert(api.getInteractionKey(testOwner, kMaxWeaponSlots, &key) == Status::InvalidArgument && key == 0);
 
     // Slot 0: hand assignment is data. Left fires; the two-hand grip puts the
     // right hand on the support grip.

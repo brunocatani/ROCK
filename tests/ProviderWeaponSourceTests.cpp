@@ -88,10 +88,18 @@ namespace
         pi->refreshProviderWeaponSources();
         assert(retired.expired());
         assert(pi->queryProviderWeaponSourcePose(17, slideKey, pose) == Status::GenerationMismatch);
+        // The colliders arriving re-key the same weapon: its source keys stay.
+        const auto beforeColliders = key(*pi, root.get());
+        pi->_weaponCollision.ownership = pi->_weaponCollision.generation;
+        ++pi->_weaponCollision.generation;
+        pi->refreshProviderWeaponSources();
+        assert(key(*pi, root.get()) == beforeColliders);
+        pi->_weaponCollision.ownership = 0;
+        // A rebuild starts over.
         const auto previousRootKey = key(*pi, root.get());
         ++pi->_weaponCollision.generation;
         pi->refreshProviderWeaponSources();
-        assert(key(*pi, root.get()) != previousRootKey && !pi->resolveProviderWeaponSource(17, previousRootKey));
+        assert(key(*pi, root.get()) != previousRootKey && !pi->resolveProviderWeaponSource(pi->_weaponCollision.generation, previousRootKey));
         pi->_providerSources.clear();
         assert(pi->_providerSources.count == 0);
     }

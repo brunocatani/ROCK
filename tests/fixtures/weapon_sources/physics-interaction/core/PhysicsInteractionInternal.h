@@ -36,10 +36,14 @@ namespace rock
 
         struct Weapon
         {
+            // generation is the interaction key; ownership is the key the colliders
+            // replace once they arrive (0 while none have).
             std::uint64_t generation{ 17 };
+            std::uint64_t ownership{ 0 };
             SourceTestEvidence evidence;
 
-            std::uint64_t getCurrentWeaponGenerationKey() const { return generation; }
+            std::uint64_t getCurrentWeaponInteractionKey() const { return generation; }
+            std::uint64_t getCurrentEquippedWeaponOwnershipKey() const { return ownership; }
 
             const SourceTestEvidence& getProfileEvidenceDescriptors() const { return evidence; }
         } _weaponCollision;
