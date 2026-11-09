@@ -1388,7 +1388,7 @@ namespace rock
     void DynamicWeaponCollisionRuntime::recordObstacleManifoldProcessedCallback(RE::hknpWorld* world,
         const std::uint32_t proxyBodyId, const std::uint32_t otherBodyId, const bool otherLayerRead,
         const std::uint32_t otherLayer, const RE::NiPoint3* contactPointGame, const RE::NiPoint3& targetNormalGame,
-        std::uint32_t pointCount)
+        std::uint32_t pointCount, float separationGame)
     {
         if (!world || !isProxyBodyIdAtomic(proxyBodyId)) {
             return;
@@ -1404,7 +1404,7 @@ namespace rock
         }
         if (contactPointGame && !collision_layer_policy::isDynamicWeaponProxyLayer(otherLayer)) {
             native_interaction_service::weaponContact(weaponSlot(), world, proxyBodyId, otherBodyId, otherLayer,
-                *contactPointGame, targetNormalGame, pointCount);
+                *contactPointGame, targetNormalGame, pointCount, separationGame);
         }
         _contactWorldAtomic.store(reinterpret_cast<std::uintptr_t>(world), std::memory_order_relaxed);
         _contactProxyBodyIdAtomic.store(proxyBodyId, std::memory_order_relaxed);

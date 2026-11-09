@@ -159,7 +159,11 @@ namespace rock::api::native_interaction {
     };
 
     // One contact of the slot's weapon body. normalWorld is the unit normal of
-    // the target surface toward the weapon, when normalValid.
+    // the target surface toward the weapon, when normalValid. Havok builds
+    // contacts before the shapes meet (speculative points ahead of fast
+    // motion): separationGame is the signed distance of the manifold's
+    // closest point, game units, negative while the shapes overlap, when
+    // separationValid.
     struct Contact
     {
         std::uint32_t size{ sizeof(Contact) };
@@ -173,6 +177,8 @@ namespace rock::api::native_interaction {
         std::uint32_t normalValid{ 0 };
         Point3 normalWorld{};
         std::uint32_t pointCount{ 0 };
+        std::uint32_t separationValid{ 0 };
+        float separationGame{ 0.0f };
     };
 
     // The part of a dynamic hand body that touched: the palm, a finger or
@@ -188,7 +194,7 @@ namespace rock::api::native_interaction {
     // extensions enabled through setDynamicObstacleLayers, whether or not that
     // hand holds anything. hand is 0 for the right hand, 1 for the left.
     // normalWorld is the unit normal of the target surface toward the hand,
-    // when normalValid.
+    // when normalValid; separationGame as Contact's.
     struct HandContact
     {
         std::uint32_t size{ sizeof(HandContact) };
@@ -203,6 +209,8 @@ namespace rock::api::native_interaction {
         std::uint32_t normalValid{ 0 };
         Point3 normalWorld{};
         std::uint32_t pointCount{ 0 };
+        std::uint32_t separationValid{ 0 };
+        float separationGame{ 0.0f };
     };
 
     // ------------------------------------------------------------------

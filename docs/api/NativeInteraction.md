@@ -122,8 +122,14 @@ asks before its own object types and `AfterCoreTypes` after them.
 | `BodyIdentity` | contact exclusion | `body`, `motion`, `collisionObject`, `ownerNode`, `shape`, `group` (filter >> 16); compared field for field with the live body |
 | `WeaponFrame` | `weaponUpdate` | `weaponSlot`, `body`, `frame`, `generation`, `form`, `supportOwnsPose`, `requestedWeapon`, `centerWeaponLocal`, `primaryGripLocal`, `primaryGripValid`, `recoveryDistanceGame` |
 | `WeaponCommand` | `weaponUpdate` output | `result` (`DriveResult`: `Unchanged`, `Controlled`), `requestedWeapon`, `presentation` |
-| `Contact` | `weaponContact` | `weaponSlot`, `weapon`, `frame`, `target`, `targetLayer`, `pointWorld`, `normalValid`, `normalWorld` (unit, target surface toward the weapon), `pointCount` |
-| `HandContact` | `handContact` | `hand` (0 right, 1 left), `part` (`HandPart`: `Palm`, `Finger`, `Forearm`), `frame`, `handBody`, `target`, `targetLayer`, `pointWorld`, `normalValid`, `normalWorld` (toward the hand), `pointCount` |
+| `Contact` | `weaponContact` | `weaponSlot`, `weapon`, `frame`, `target`, `targetLayer`, `pointWorld`, `normalValid`, `normalWorld` (unit, target surface toward the weapon), `pointCount`, `separationValid`, `separationGame` |
+| `HandContact` | `handContact` | `hand` (0 right, 1 left), `part` (`HandPart`: `Palm`, `Finger`, `Forearm`), `frame`, `handBody`, `target`, `targetLayer`, `pointWorld`, `normalValid`, `normalWorld` (toward the hand), `pointCount`, `separationValid`, `separationGame` |
+
+Havok creates a contact manifold before the shapes meet, ahead of fast
+motion, so a published contact does not mean the bodies touch.
+`separationGame` is the signed distance of the manifold's closest point in
+game units: positive while the shapes are still apart, negative while they
+overlap. Judge touch by it, never by the contact's existence alone.
 | `WeaponSource` | `copyWeaponSources` | `body`, `generation`, `name[64]`; up to `kMaxWeaponSources` (128) |
 | `SourceGeometry` | `getSourceGeometry` | `valid`, `triangleCount`, `generation`, `sourceInWeapon`, `boundsLocal`, `supportPointLocal` |
 | `SelectionQuery` | selection callbacks | `body`, `reference`, `world`, `hitNode`, `hitPoint`, `hasHitPoint`, `farSelection`, `stage` |

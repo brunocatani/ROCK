@@ -331,6 +331,22 @@ namespace rock
             return;
         }
         const bool solvedChildContact = manifoldPointCount > 0 && manifoldPointCount <= 4;
+        /*
+         * 0x1418028B0 copies the manifold's per-point signed distances
+         * (manifold +0x30, which the contact builder 0x14173C940 reads per
+         * point against its velocity terms) to record +0x60. Havok makes
+         * manifolds before the shapes meet, so consumers judging touch need
+         * the closest point's distance, not only that a manifold exists.
+         */
+        float separationGame = std::numeric_limits<float>::quiet_NaN();
+        if (solvedChildContact) {
+            const auto* distances = reinterpret_cast<const float*>(data + 0x60);
+            float closest = distances[0];
+            for (std::int32_t i = 1; i < manifoldPointCount; ++i)
+                closest = (std::min)(closest, distances[i]);
+            if (std::isfinite(closest))
+                separationGame = closest * havokToGameScale();
+        }
         if (solvedChildContact && looseCollisionContact && !heldContact) {
             RE::NiPoint3 point{};
             const float scale = havokToGameScale() / static_cast<float>(manifoldPointCount);
@@ -458,7 +474,7 @@ namespace rock
                 const auto otherLayer = otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
                 native_interaction_service::handContact(world, source.isLeft, part, source.bodyId, otherBodyId,
                     otherLayer, pointGame, { manifoldNormal[0] * sign, manifoldNormal[1] * sign, manifoldNormal[2] * sign },
-                    static_cast<std::uint32_t>(manifoldPointCount));
+                    static_cast<std::uint32_t>(manifoldPointCount), separationGame);
                 // An admitted corpse no longer touches the keyframed hand rows,
                 // whose contacts were its touch evidence; its dynamic hand contact
                 // takes their place, so a closed hand still grabs it.
@@ -524,7 +540,7 @@ namespace rock
                 }
                 proxyRuntime->recordObstacleManifoldProcessedCallback(world, proxyBodyId, otherBodyId, otherLayerRead,
                     otherLayer, solvedChildContact ? &supportPointGame : nullptr, targetNormal,
-                    solvedChildContact ? static_cast<std::uint32_t>(manifoldPointCount) : 0);
+                    solvedChildContact ? static_cast<std::uint32_t>(manifoldPointCount) : 0, separationGame);
             }
         }
     }

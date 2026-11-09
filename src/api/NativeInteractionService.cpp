@@ -640,7 +640,8 @@ namespace rock::native_interaction_service
     }
 
     void weaponContact(std::uint32_t index, RE::hknpWorld* world, std::uint32_t weapon, std::uint32_t target,
-        std::uint32_t layer, const RE::NiPoint3& point, const RE::NiPoint3& normal, std::uint32_t pointCount)
+        std::uint32_t layer, const RE::NiPoint3& point, const RE::NiPoint3& normal, std::uint32_t pointCount,
+        float separationGame)
     {
         if (index >= api::kMaxWeaponSlots)
             return;
@@ -666,6 +667,10 @@ namespace rock::native_interaction_service
             contact.normalValid = 1;
             contact.normalWorld = { normal.x * inverse, normal.y * inverse, normal.z * inverse };
         }
+        if (std::isfinite(separationGame)) {
+            contact.separationValid = 1;
+            contact.separationGame = separationGame;
+        }
         invoke(*slot, contact.frame, [&] { slot->callbacks.weaponContact(&contact, slot->callbacks.context); });
     }
 
@@ -690,7 +695,8 @@ namespace rock::native_interaction_service
     }
 
     void handContact(RE::hknpWorld* world, bool left, ni::HandPart part, std::uint32_t handBody, std::uint32_t target,
-        std::uint32_t layer, const RE::NiPoint3& point, const RE::NiPoint3& normal, std::uint32_t pointCount)
+        std::uint32_t layer, const RE::NiPoint3& point, const RE::NiPoint3& normal, std::uint32_t pointCount,
+        float separationGame)
     {
         // Only layers some extension opted into; the rest of the hand's
         // contacts (world, clutter, its own weapon) never leave ROCK.
@@ -716,6 +722,10 @@ namespace rock::native_interaction_service
             const float inverse = 1.0f / std::sqrt(length);
             contact.normalValid = 1;
             contact.normalWorld = { normal.x * inverse, normal.y * inverse, normal.z * inverse };
+        }
+        if (std::isfinite(separationGame)) {
+            contact.separationValid = 1;
+            contact.separationGame = separationGame;
         }
         for (auto& slot : state().extensions)
             if (slot.owner && slot.callbacks.handContact)

@@ -192,7 +192,8 @@ namespace rock
             const havok_runtime::ContactSignalPointResult* rawContactPoint);
         void recordObstacleManifoldProcessedCallback(RE::hknpWorld* world, std::uint32_t proxyBodyId,
             std::uint32_t otherBodyId, bool otherLayerRead, std::uint32_t otherLayer,
-            const RE::NiPoint3* contactPointGame, const RE::NiPoint3& targetNormalGame, std::uint32_t pointCount);
+            const RE::NiPoint3* contactPointGame, const RE::NiPoint3& targetNormalGame, std::uint32_t pointCount,
+            float separationGame);
 
         void retireAll(void* bhkWorld, bool preserveSurfaceSupport = false);
         void refreshCollisionFilter(RE::hknpWorld* world);
