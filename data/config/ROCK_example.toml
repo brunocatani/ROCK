@@ -333,7 +333,7 @@ StickClick = "thumbstick"
 ## Hands: firing (the hand on the weapon's firing grip), support, primary, offhand, left, right, each.
 ## Gestures: press (acts while held), tap, hold, double (double tap).
 ## Controls: as in the button layout above. Add "+<hand> <control>" for a button that must be held at the same time.
-## The ROCK setup wizard, opened from the PALM wheel, sets these by pressing the control.
+## The ROCK setup wizard, opened from PALM's Config, sets these by pressing the control.
 ## This key: grab with each hand.
 Grab = "each press grip"
 

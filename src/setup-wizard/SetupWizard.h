@@ -7,8 +7,8 @@
  * goes through ROCK's settings store like any other change, so the bindings
  * and options apply at once.
  *
- * It opens from RobCo PALM's wheel (ROCK's "ROCK" section), from PALM's
- * Config, and from Configuration::openSetupWizard. While open it captures the
+ * It opens from PALM's Config (the ROCK page) and from
+ * Configuration::openSetupWizard. While open it captures the
  * controllers through RPS UI, so the game and ROCK's gameplay ignore them, and
  * the function bindings stand aside so a captured button is the button pressed.
  *
@@ -21,10 +21,10 @@ namespace rock::setup_wizard
     // Asks for the wizard on the next frame. False when RPS UI Framework is not loaded.
     bool requestOpen() noexcept;
 
-    // Every frame: connects to RPS UI and PALM when needed, opens a requested
+    // Every frame: connects to RPS UI when needed, opens a requested
     // wizard, saves or closes it.
     void update() noexcept;
 
-    // A game load or new game: closes the wizard and republishes the wheel entry.
+    // A game load or new game: closes the wizard.
     void onSessionLoaded() noexcept;
 }

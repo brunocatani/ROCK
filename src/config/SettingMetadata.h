@@ -290,7 +290,7 @@ namespace rock::config
             "Hands: firing (the hand on the weapon's firing grip), support, primary, offhand, left, right, each.\n"
             "Gestures: press (acts while held), tap, hold, double (double tap).\nControls: as in the button layout "
             "above. Add \"+<hand> <control>\" for a button that must be held at the same time.\nThe ROCK setup "
-            "wizard, opened from the PALM wheel, sets these by pressing the control.\nThis key: grab with each hand.",
+            "wizard, opened from PALM's Config, sets these by pressing the control.\nThis key: grab with each hand.",
             api::configuration::Group::Consumer },
         { "Bindings", "Fire", "09. Controller Input", "Fire the equipped weapon.", api::configuration::Group::Consumer },
         { "Bindings", "SupportTrigger", "09. Controller Input",

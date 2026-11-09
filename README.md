@@ -74,7 +74,7 @@ Menu names can differ between SteamVR versions. After that, the `[ControllerInpu
 
 ### Choosing your controls
 
-ROCK's setup wizard sets the button and gesture of each action: open it from PALM's Config (the ROCK page's Setup wizard button) or from the ROCK section of the PALM wheel, choose an action, press the button you want, then pick press, tap, hold or double tap. The wizard also walks through ROCK's main options one page each and saves on its last page. The same choices are the `[Bindings]` table of `ROCK.toml`.
+ROCK's setup wizard sets the button and gesture of each action: open it from PALM's Config (the ROCK page's Setup wizard button), choose an action, press the button you want, then pick press, tap, hold or double tap. The wizard also walks through ROCK's main options one page each and saves on its last page. The same choices are the `[Bindings]` table of `ROCK.toml`.
 
 ### Compatibility
 

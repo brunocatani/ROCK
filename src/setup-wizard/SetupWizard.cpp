@@ -14,8 +14,6 @@
 #include <RPS_UI_Framework/Framework.h>
 #include <RPS_UI_Framework/ImGuiBuild.h>
 #include <RPS_UI_Framework/Input.h>
-#include <RobCoPALM/Client.h>
-#include <RobCoPALM/Menu.h>
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -44,11 +42,10 @@ namespace rock::setup_wizard
         constexpr float kPhysicalWidth = 96.0f;
         constexpr float kOpenDistance = 85.0f;
         constexpr float kOpenDrop = 12.0f;
-        // About one attempt per second at 90 Hz while RPS UI or PALM is absent.
+        // About one attempt per second at 90 Hz while RPS UI is absent.
         constexpr std::uint32_t kBindRetryCalls = 90;
         // The five buttons RPS UI can capture: B/Y, grip, A/X, stick click, trigger.
         constexpr std::uint64_t kCaptureButtons = (1ull << 1) | (1ull << 2) | (1ull << 7) | (1ull << 32) | (1ull << 33);
-        constexpr std::uint32_t kWheelItemId = 1;
 
         struct FunctionText
         {
@@ -244,11 +241,6 @@ namespace rock::setup_wizard
             bool backPending{ false };
             Session session;
 
-            // Frame thread.
-            const palm::api::menu::Api* menu{ nullptr };
-            palm::api::menu::SectionHandle section{ 0 };
-            std::uint32_t menuRetry{ 0 };
-            bool menuDone{ false };
         };
 
         State& state() noexcept
@@ -258,7 +250,6 @@ namespace rock::setup_wizard
         }
 
         std::atomic<bool> g_openRequested{ false };
-        std::atomic<bool> g_republishWheel{ false };
 
         [[nodiscard]] fb::Context displayContext(const Session& session) noexcept
         {
@@ -521,7 +512,7 @@ namespace rock::setup_wizard
                 d.session.page = Page::Review;
             }
             ImGui::Dummy({ 0.0f, d.theme.spacing * 2.0f });
-            d.prose("Open this again any time from the ROCK section of the PALM wheel or from PALM's Config.");
+            d.prose("Open this again any time from the Setup wizard button on the ROCK page of PALM's Config.");
             d.endBody();
             if (d.button("Close")) d.state.closeRequested = true;
         }
@@ -982,57 +973,6 @@ namespace rock::setup_wizard
             return true;
         }
 
-        void PALM_CALL onWheelSelect(std::uint32_t itemId, std::uint64_t, void*) noexcept
-        {
-            if (itemId == kWheelItemId) (void)requestOpen();
-        }
-
-        void publishWheel(State& s)
-        {
-            if (!s.menu || !s.section) return;
-            palm::api::menu::Item item{};
-            item.id = kWheelItemId;
-            item.icon = palm::api::Icon::Config;
-            std::snprintf(item.name, sizeof(item.name), "%s", "Setup wizard");
-            (void)s.menu->setItems(s.section, &item, 1);
-        }
-
-        void bindWheel(State& s)
-        {
-            if (s.menuDone) return;
-            if (s.menuRetry > 0) {
-                --s.menuRetry;
-                return;
-            }
-            s.menuRetry = kBindRetryCalls;
-            const auto module = GetModuleHandleW(palm::api::kModuleName);
-            const auto query = module
-                ? reinterpret_cast<palm::api::QueryInterfaceV1>(GetProcAddress(module, palm::api::kQueryExportName))
-                : nullptr;
-            if (!query) return;
-            const palm::api::menu::Api* menu{};
-            if (palm::api::acquire(query, menu) != palm::api::Result::Ok) {
-                s.menuDone = true;
-                ROCK_LOG_INFO(Config, "Setup wizard: RobCo PALM offers no wheel sections; open it from PALM's Config");
-                return;
-            }
-            palm::api::menu::Section section{};
-            section.icon = palm::api::Icon::Config;
-            std::snprintf(section.id, sizeof(section.id), "%s", "rock.setup");
-            std::snprintf(section.name, sizeof(section.name), "%s", "ROCK");
-            std::snprintf(section.modName, sizeof(section.modName), "%s", "ROCK");
-            section.onSelect = &onWheelSelect;
-            const auto result = menu->registerSection(&section, &s.section);
-            s.menuDone = true;
-            if (result != palm::api::Result::Ok) {
-                ROCK_LOG_WARN(Config, "Setup wizard wheel section refused by RobCo PALM ({})", static_cast<unsigned>(result));
-                return;
-            }
-            s.menu = menu;
-            publishWheel(s);
-            ROCK_LOG_INFO(Config, "Setup wizard listed in RobCo PALM's wheel (section ROCK, shown once enabled in PALM)");
-        }
-
         [[nodiscard]] bool present(State& s, bool open)
         {
             fw::PanelPresentation presentation{};
@@ -1097,9 +1037,6 @@ namespace rock::setup_wizard
     {
         auto& s = state();
         try {
-            bindWheel(s);
-            if (g_republishWheel.exchange(false, std::memory_order_acq_rel)) publishWheel(s);
-
             if (g_openRequested.load(std::memory_order_acquire)) {
                 if (!bind(s)) {
                     if (!rps_ui::query()) g_openRequested.store(false, std::memory_order_release);
@@ -1154,6 +1091,5 @@ namespace rock::setup_wizard
     void onSessionLoaded() noexcept
     {
         close(state(), "game loaded");
-        g_republishWheel.store(true, std::memory_order_release);
     }
 }
