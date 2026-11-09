@@ -37,11 +37,13 @@ namespace rock
         }
 
         /*
-         * The game's HUD color and opacity (Fallout4Prefs.ini [Interface]),
-         * which the HUD styles follow like the vanilla counter. The settings
-         * live in the game's static INI collections for the whole process, so
-         * their pointers are looked up once; the values are read every frame
-         * because the game's settings menu changes them live.
+         * The game's HUD color (Fallout4Prefs.ini [Interface]), which the HUD
+         * styles follow like the vanilla counter. FO4VR has no HUD opacity
+         * setting (no fHUDOpacity:Interface in its INI collections), so the
+         * counters are fully opaque. The settings live in the game's static
+         * INI collections for the whole process, so their pointers are looked
+         * up once; the values are read every frame because the game's
+         * settings menu changes them live.
          */
         struct HudLook
         {
@@ -53,22 +55,16 @@ namespace rock
         {
             static bool looked = false;
             static std::array<RE::Setting*, 3> colors{};
-            static RE::Setting* opacity = nullptr;
             if (!looked) {
                 looked = true;
                 colors = { f4vr::getIniSetting("iHUDColorR:Interface"), f4vr::getIniSetting("iHUDColorG:Interface"),
                     f4vr::getIniSetting("iHUDColorB:Interface") };
-                opacity = f4vr::getIniSetting("fHUDOpacity:Interface");
             }
             HudLook look{};
             for (std::size_t i = 0; i < colors.size(); ++i) {
                 if (colors[i] && colors[i]->GetType() == RE::Setting::SETTING_TYPE::kInt) {
                     look.color[i] = static_cast<float>(std::clamp(colors[i]->GetInt(), 0, 255)) / 255.0f;
                 }
-            }
-            if (opacity && opacity->GetType() == RE::Setting::SETTING_TYPE::kFloat &&
-                std::isfinite(opacity->GetFloat())) {
-                look.opacity = std::clamp(opacity->GetFloat(), 0.0f, 1.0f);
             }
             return look;
         }
