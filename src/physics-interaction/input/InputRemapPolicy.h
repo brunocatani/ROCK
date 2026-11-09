@@ -314,11 +314,20 @@ namespace rock::input_remap_policy
                 (input.gripZoneEquipEnabled && input.gripZoneEquipSettled));
     }
 
+    /*
+     * The vanilla Favorites menu shares the right stick click with RobCo PALM's
+     * default opener, so a loaded PALM takes the click whatever the setting says.
+     */
+    [[nodiscard]] constexpr bool vanillaFavoritesMenuAllowed(bool settingEnabled, bool robcoPalmLoaded)
+    {
+        return settingEnabled && !robcoPalmLoaded;
+    }
+
     [[nodiscard]] constexpr bool shouldSuppressNativeFavoritesAction(const NativeActionSuppressionInput& input)
     {
-        // Native Favorites owns WandThumbClick only when the player turns the
-        // vanilla menu back on (ControllerInput.VanillaFavoritesMenu, carried as
-        // !suppressionEnabled). Gameplay and menu gates never restore it.
+        // Native Favorites owns WandThumbClick only while the vanilla menu is
+        // allowed (vanillaFavoritesMenuAllowed, carried as !suppressionEnabled).
+        // Gameplay and menu gates never restore it.
         // Raw OpenVR input remains available to ROCK and its API consumers.
         return input.suppressionEnabled && input.eventMatched;
     }

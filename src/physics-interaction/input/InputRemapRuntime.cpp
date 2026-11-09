@@ -1,5 +1,6 @@
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include <RPS_UI_Framework/Input.h>
+#include <RobCoPALM/Discovery.h>
 #include "physics-interaction/visual/RpsUiQuery.h"
 #include "physics-interaction/input/PhysicalReloadInput.h"
 #include "physics-interaction/input/SupportTriggerInput.h"
@@ -338,6 +339,10 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_activateEventHookInstalled{ false };
         std::atomic<bool> s_favoritesEventHookInstalled{ false };
         std::atomic<bool> s_favoritesWandPadHookInstalled{ false };
+        // Written once by detectRobCoPalm at kGameLoaded, after every F4SE
+        // plugin has loaded; read by the Favorites hooks on the input thread.
+        std::atomic<bool> s_robcoPalmLoaded{ false };
+        std::atomic<bool> s_robcoPalmDetected{ false };
         std::atomic<bool> s_meleeThrowEventHookInstalled{ false };
         std::atomic<bool> s_pipboyEventHookInstalled{ false };
         std::atomic<bool> s_pipboyLightEventHookInstalled{ false };
@@ -1442,10 +1447,16 @@ namespace rock::input_remap_runtime
             return suppressed;
         }
 
+        [[nodiscard]] bool vanillaFavoritesMenuAllowed()
+        {
+            return input_remap_policy::vanillaFavoritesMenuAllowed(
+                g_rockConfig.rockVanillaFavoritesMenu, s_robcoPalmLoaded.load(std::memory_order_acquire));
+        }
+
         [[nodiscard]] bool shouldSuppressNativeFavoritesAction(const RE::InputEvent* event)
         {
             return input_remap_policy::shouldSuppressNativeFavoritesAction(makeNativeActionSuppressionInput(
-                !g_rockConfig.rockVanillaFavoritesMenu, eventNameMatches(event, kNativeEventWandThumbClick)));
+                !vanillaFavoritesMenuAllowed(), eventNameMatches(event, kNativeEventWandThumbClick)));
         }
 
         [[nodiscard]] bool shouldSuppressNativeTriggerActionEvent(const RE::InputEvent* event, const char* gate)
@@ -1956,11 +1967,10 @@ namespace rock::input_remap_runtime
         void hookedFavoritesWandPadHandler(void* handler, RE::InputEvent* inputEvent)
         {
             // The native handler's only effect is opening Favorites from the
-            // pad/stick click, which belongs to bipod latching and PALM unless
-            // the player turns the vanilla Favorites menu back on. The event is
-            // never stopped: later pad consumers (movement, menus) still
-            // receive it either way.
-            if (g_rockConfig.rockVanillaFavoritesMenu && !isAnyProviderOpenVrGameInputSuppressed()) {
+            // pad/stick click, which runs only while the vanilla Favorites menu
+            // is allowed. The event is never stopped: later pad consumers
+            // (movement, menus) still receive it either way.
+            if (vanillaFavoritesMenuAllowed() && !isAnyProviderOpenVrGameInputSuppressed()) {
                 if (s_originalFavoritesWandPadHandler) {
                     s_originalFavoritesWandPadHandler(handler, inputEvent);
                 }
@@ -2694,6 +2704,28 @@ namespace rock::input_remap_runtime
                 index == 0 ? "secondary wand held weapon filter" : "primary wand held weapon filter");
         }
 
+        void detectRobCoPalm()
+        {
+            // installInputRemapHooks runs every frame; only its first call, at
+            // kGameLoaded, looks for the module.
+            if (s_robcoPalmDetected.load(std::memory_order_acquire)) {
+                return;
+            }
+            s_robcoPalmDetected.store(true, std::memory_order_release);
+            const bool loaded = GetModuleHandleW(palm::api::kModuleName) != nullptr;
+            s_robcoPalmLoaded.store(loaded, std::memory_order_release);
+            if (loaded) {
+                ROCK_LOG_INFO(Input,
+                    "RobCo PALM is loaded: the native Favorites menu stays blocked and the right stick click opens "
+                    "PALM (ControllerInput.VanillaFavoritesMenu={} ignored)",
+                    g_rockConfig.rockVanillaFavoritesMenu);
+            } else {
+                ROCK_LOG_INFO(Input, "RobCo PALM is not loaded: ControllerInput.VanillaFavoritesMenu={} decides "
+                                     "whether the right stick click opens Favorites",
+                    g_rockConfig.rockVanillaFavoritesMenu);
+            }
+        }
+
         bool updateNativeActionSuppressionHooks()
         {
             bool ready = installNativeVatsVansInputSuppressionHook();
@@ -2795,6 +2827,7 @@ namespace rock::input_remap_runtime
             ROCK_LOG_INFO(Input, "Independent UI input cooperation connected; UI owns tracking and capture");
         }
         ensureMenuInputGateRegistered();
+        detectRobCoPalm();
 
         const bool nativeActionSuppressionReady = updateNativeActionSuppressionHooks();
 

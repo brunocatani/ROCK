@@ -93,8 +93,9 @@
   X/Y and stick click. ROCK, its add-ons and the game all follow it. SteamVR
   binding templates for Index, Vive wands and Steam Frame controllers ship in
   `steamvr_bindings`.
-- **Vanilla Favorites menu** (`ControllerInput.VanillaFavoritesMenu`, off by default): lets the
-  stick click open the game's Favorites menu again.
+- **Vanilla Favorites menu** (`ControllerInput.VanillaFavoritesMenu`, on by default): the
+  stick click opens the game's Favorites menu. While RobCo PALM is installed,
+  ROCK blocks the Favorites menu and the stick click opens PALM.
 - **Recoil** (`[WeaponRecoil]`): recoil is applied to the firing hand, per weapon type
   and one- or two-handed hold. Native kickback no longer fights ROCK's hands.
 - Far weapon grabs take the firing grip; close grabs take the nearest authored

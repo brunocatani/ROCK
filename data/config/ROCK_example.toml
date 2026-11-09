@@ -279,11 +279,11 @@ ManualScopeHoldSeconds = 0.3
 SuppressNativeVats = false
 
 ## Vanilla Favorites Menu
-## True: the game's Favorites menu opens on its usual button, the right stick click.
-## WARNING: while this is on, Bipod Mode and the PALM wheel menu do not work on the right stick click.
-## Turn Bipod Mode off and rebind PALM's opener in PALM's controls to keep using PALM.
-## False: ROCK blocks the Favorites menu and the stick click belongs to Bipod Mode and PALM (default).
-VanillaFavoritesMenu = false
+## True: the game's Favorites menu opens on its usual button, the right stick click (default).
+## While RobCo PALM is installed, ROCK always blocks the Favorites menu and the stick click opens PALM.
+## Bipod Mode uses the same click; turn this off if the Favorites menu gets in the way of latching.
+## False: ROCK blocks the Favorites menu and the stick click belongs to Bipod Mode.
+VanillaFavoritesMenu = true
 
 ## Pip-Boy and Pause Hold Time
 ## Tap left Y to open the Pip-Boy; hold it this many seconds to open the Pause menu instead. Range: 0.15 to 2.
