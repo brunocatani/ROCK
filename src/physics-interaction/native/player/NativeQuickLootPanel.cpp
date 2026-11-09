@@ -52,9 +52,18 @@ namespace rock::native_quick_loot_panel
         struct ExpectedBytes
         {
             std::uintptr_t address;
-            std::array<std::uint8_t, 7> bytes;
+            std::array<std::uint8_t, 14> bytes;
             std::size_t size;
         };
+
+        bool matches(const ExpectedBytes& expected)
+        {
+            std::array<std::uint8_t, 14> live{};
+            return native_memory::guardedCopyFromMemory(
+                       reinterpret_cast<const void*>(REL::Offset(expected.address).address()), live.data(),
+                       expected.size) &&
+                std::memcmp(live.data(), expected.bytes.data(), expected.size) == 0;
+        }
 
         constexpr std::array<ExpectedBytes, 4> kExpectedPickCopy{ {
             { 0xA923E4, { 0x89, 0x86, 0x64, 0x03, 0x00, 0x00 }, 6 }, // mov [rsi+0x364], eax
@@ -95,7 +104,28 @@ namespace rock::native_quick_loot_panel
          * offset, pitch and scale into that same root's local transform.
          */
         constexpr std::uintptr_t kLootModel = 0x5ACBC98;
-        constexpr std::ptrdiff_t kLootModelRootOffset = 0x10;
+        constexpr std::ptrdiff_t kModelRootOffset = 0x10;
+
+        /*
+         * The panel's button hints are a second model. WSPrimaryWandHUDModel's
+         * constructor 0xC8D140 builds it on Data\Meshes\world_primaryWand.nif
+         * and stores itself at 0x5ACBC80 (0xC8D18E); the WSPrimaryWandHUD menu
+         * renders the ws_primaryWand movie, whose ButtonHintBar_mc holds the
+         * hints, onto it. The player VR node builder attaches it to
+         * PrimaryUIAttachNode beside the panel (0xEF39DF..0xEF39F0, through
+         * 0xC90220), and its placements 0xC8D280 and 0xC8D3F0 write the local
+         * transform of its root, model +0x10 (mov rbx, [rcx+0x10] at 0xC8D2B5).
+         */
+        constexpr std::uintptr_t kHintModel = 0x5ACBC80;
+
+        constexpr std::array<ExpectedBytes, 3> kExpectedHintModel{ {
+            // mov [rip -> 0x5ACBC80], rax
+            { 0xC8D18E, { 0x48, 0x89, 0x05, 0xEB, 0xEA, 0xE3, 0x04 }, 7 },
+            // mov rdx, [r14+0x700]; mov rcx, [rip -> 0x5ACBC80]
+            { 0xEF39DF, { 0x49, 0x8B, 0x96, 0x00, 0x07, 0x00, 0x00, 0x48, 0x8B, 0x0D, 0x93, 0x82, 0xBD, 0x04 }, 14 },
+            // mov rbx, [rcx+0x10]
+            { 0xC8D2B5, { 0x48, 0x8B, 0x59, 0x10 }, 4 },
+        } };
 
         /*
          * Meshes\world_Loot.nif (Fallout4_VR - Main.ba2): the quickLoot:0 quad
@@ -140,14 +170,19 @@ namespace rock::native_quick_loot_panel
         std::atomic<std::uint32_t> g_rightPick{ 0 };
         std::atomic<std::uint32_t> g_leftPick{ 0 };
         // Game thread only. ROCK's carrier nodes: one under the room node that
-        // holds the panel at its container, one under the left wand that holds
-        // it on the left hand. They outlive player node rebuilds and are
-        // re-parented when their old parent is gone.
+        // holds the panel and its button hints at its container, and under the
+        // left wand one each for the panel and the hints on the left hand. They
+        // outlive player node rebuilds and are re-parented when their old
+        // parent is gone.
         // Never destroyed: an engine object released in DLL detach raises R6025 during ExitProcess.
         RE::NiPointer<RE::NiNode>& g_containerCarrier = *new RE::NiPointer<RE::NiNode>;
         RE::NiPointer<RE::NiNode>& g_leftCarrier = *new RE::NiPointer<RE::NiNode>;
+        RE::NiPointer<RE::NiNode>& g_leftHintCarrier = *new RE::NiPointer<RE::NiNode>;
         bool g_containerCarrierFailed{ false };
         bool g_leftCarrierFailed{ false };
+        bool g_leftHintCarrierFailed{ false };
+        // The hint model matched at install; otherwise the hints stay native.
+        bool g_hintsFollow{ false };
         std::optional<Placement> g_appliedPlacement;
 
         const char* placementName(const Placement placement)
@@ -310,6 +345,28 @@ namespace rock::native_quick_loot_panel
             return transform;
         }
 
+        RE::NiAVObject* modelRoot(const std::uintptr_t modelGlobal)
+        {
+            auto* const model = *REL::Relocation<std::byte**>{ REL::Offset(modelGlobal) };
+            return model ? *reinterpret_cast<RE::NiAVObject**>(model + kModelRootOffset) : nullptr;
+        }
+
+        // The root's pose under the left wand mirrors the one it has under the
+        // right wand: carrier = mirror(attach * root) * root^-1. False when the
+        // carrier cannot be created; the root is then not moved.
+        bool placeMirroredOnLeft(RE::NiAVObject* root, const RE::NiNode* handAttach, RE::NiNode* leftWand,
+            RE::NiPointer<RE::NiNode>& carrier, bool& carrierFailed, const char* carrierName)
+        {
+            if (!attachCarrier(carrier, carrierFailed, leftWand, carrierName)) {
+                return false;
+            }
+            const auto onRight = transform_math::composeTransforms(handAttach->local, root->local);
+            carrier->local =
+                transform_math::composeTransforms(mirroredAcrossX(onRight), transform_math::invertTransform(root->local));
+            moveTo(root, carrier.get());
+            return true;
+        }
+
         // CloserHand: the panel rides the hand that owns the listing.
         void placeOnHand(RE::NiAVObject* root, RE::NiNode* handAttach, RE::NiNode* leftWand)
         {
@@ -324,16 +381,9 @@ namespace rock::native_quick_loot_panel
                 return;
             }
             if (!(flags & kLeftOwnsListed) || !leftWand ||
-                !attachCarrier(g_leftCarrier, g_leftCarrierFailed, leftWand, "left-hand")) {
+                !placeMirroredOnLeft(root, handAttach, leftWand, g_leftCarrier, g_leftCarrierFailed, "left-hand")) {
                 moveTo(root, handAttach);
-                return;
             }
-            // The panel's pose under the left wand mirrors the one it has
-            // under the right wand: carrier = mirror(attach * root) * root^-1.
-            const auto rightPanel = transform_math::composeTransforms(handAttach->local, root->local);
-            g_leftCarrier->local =
-                transform_math::composeTransforms(mirroredAcrossX(rightPanel), transform_math::invertTransform(root->local));
-            moveTo(root, g_leftCarrier.get());
         }
 
         // AtContainer: the panel stands at the container it lists.
@@ -366,22 +416,38 @@ namespace rock::native_quick_loot_panel
             moveTo(root, g_containerCarrier.get());
         }
 
-        void place(const f4vr::PlayerNodes& nodes, const Placement placement)
+        bool isUnder(const RE::NiAVObject* root, const RE::NiPointer<RE::NiNode>& carrier)
         {
-            auto* const model = *REL::Relocation<std::byte**>{ REL::Offset(kLootModel) };
-            auto* const root = model ? *reinterpret_cast<RE::NiAVObject**>(model + kLootModelRootOffset) : nullptr;
-            auto* const handAttach = nodes.primaryUIAttachNode;
-            if (!root || !handAttach) {
-                return;
-            }
-            const auto* parent = root->parent;
-            const bool onCarrier = (g_containerCarrier && parent == g_containerCarrier.get()) ||
-                (g_leftCarrier && parent == g_leftCarrier.get());
-            // Any other parent is a native rebuild or another owner; leave it.
-            if (!onCarrier && parent != handAttach) {
-                return;
-            }
+            return carrier && root->parent == carrier.get();
+        }
 
+        /*
+         * The button hints go wherever the panel lists, so the hints for the
+         * container stay beside it. At the container they share the panel's
+         * carrier, which keeps them at the offset from the panel they have on
+         * the hand; on the left hand they are mirrored like the panel. While
+         * nothing lists they are on the right hand, where the game shows its
+         * other hints.
+         */
+        void placeHints(RE::NiAVObject* hints, const RE::NiAVObject* panel, RE::NiNode* handAttach,
+            RE::NiNode* leftWand)
+        {
+            const bool listed = g_listedPick.load(std::memory_order_acquire) != 0;
+            if (listed && panel && isUnder(panel, g_containerCarrier)) {
+                moveTo(hints, g_containerCarrier.get());
+                return;
+            }
+            if (listed && panel && isUnder(panel, g_leftCarrier) && leftWand &&
+                placeMirroredOnLeft(hints, handAttach, leftWand, g_leftHintCarrier, g_leftHintCarrierFailed,
+                    "left-hand hints")) {
+                return;
+            }
+            moveTo(hints, handAttach);
+        }
+
+        void placePanel(RE::NiAVObject* root, const f4vr::PlayerNodes& nodes, const Placement placement)
+        {
+            auto* const handAttach = nodes.primaryUIAttachNode;
             switch (placement) {
             case Placement::RightHand:
                 moveTo(root, handAttach);
@@ -398,6 +464,31 @@ namespace rock::native_quick_loot_panel
                 return;
             }
         }
+
+        void place(const f4vr::PlayerNodes& nodes, const Placement placement)
+        {
+            auto* const handAttach = nodes.primaryUIAttachNode;
+            if (!handAttach) {
+                return;
+            }
+            // A root on any other parent belongs to a native rebuild or another
+            // owner; it is left alone.
+            auto* const panel = modelRoot(kLootModel);
+            const bool panelOwned = panel &&
+                (panel->parent == handAttach || isUnder(panel, g_containerCarrier) || isUnder(panel, g_leftCarrier));
+            if (panelOwned) {
+                placePanel(panel, nodes, placement);
+            }
+            if (!g_hintsFollow) {
+                return;
+            }
+            auto* const hints = modelRoot(kHintModel);
+            if (hints &&
+                (hints->parent == handAttach || isUnder(hints, g_containerCarrier) ||
+                    isUnder(hints, g_leftHintCarrier))) {
+                placeHints(hints, panelOwned ? panel : nullptr, handAttach, nodes.SecondaryWandNode);
+            }
+        }
     }
 
     bool install() noexcept
@@ -411,11 +502,7 @@ namespace rock::native_quick_loot_panel
         g_attempted = true;
 
         for (const auto& expected : kExpectedPickCopy) {
-            std::array<std::uint8_t, 7> live{};
-            if (!native_memory::guardedCopyFromMemory(
-                    reinterpret_cast<const void*>(REL::Offset(expected.address).address()), live.data(),
-                    expected.size) ||
-                std::memcmp(live.data(), expected.bytes.data(), expected.size) != 0) {
+            if (!matches(expected)) {
                 ROCK_LOG_WARN(Init,
                     "Quick loot panel: the quick container pick copy at 0x{:X} does not match; "
                     "the panel stays on the right hand",
@@ -455,6 +542,17 @@ namespace rock::native_quick_loot_panel
             return false;
         }
         installRolloverHosts();
+        g_hintsFollow = true;
+        for (const auto& expected : kExpectedHintModel) {
+            if (!matches(expected)) {
+                g_hintsFollow = false;
+                ROCK_LOG_WARN(Init,
+                    "Quick loot panel: the button hint model code at 0x{:X} does not match; "
+                    "the hints stay on the right hand",
+                    expected.address);
+                break;
+            }
+        }
         ROCK_LOG_INFO(Init, "Quick loot panel installed; Grabbing.QuickLootPanelPlacement chooses where it appears");
         return true;
     }

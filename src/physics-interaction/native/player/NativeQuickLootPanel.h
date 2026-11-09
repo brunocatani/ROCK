@@ -17,8 +17,11 @@
  * - AtContainer: the panel stands upright at the container it lists, turned
  *   toward the player about the vertical, at one fixed world size.
  *
- * The native controls (the primary wand's buttons and stick) and their hints
- * are unchanged in every mode.
+ * The panel's button hints (the primary wand HUD's hint bar, a model of its
+ * own) go with the panel while it lists a container: mirrored on the left hand
+ * like the panel, and at the container at the offset from the panel they have
+ * on the hand. While nothing lists they stay on the right hand. The native
+ * controls (the primary wand's buttons and stick) are unchanged in every mode.
  *
  * FO4VR fills the panel only from the primary (right) wand's pick. For
  * CloserHand and AtContainer, the quick container data model update is
@@ -29,9 +32,10 @@
  * panel lists it. In RightHand mode the redirect passes the picks through
  * untouched and the prompts keep their native answers.
  *
- * The game thread moves the panel's root between the right wand's attach node
- * and ROCK's own carrier nodes (one under the left wand, one under the room
- * node) and returns it to the right wand when the mode changes.
+ * The game thread moves the panel's and the hints' roots between the right
+ * wand's attach node and ROCK's own carrier nodes (under the left wand and
+ * under the room node) and returns them to the right wand when the mode
+ * changes.
  */
 namespace rock::native_quick_loot_panel
 {
