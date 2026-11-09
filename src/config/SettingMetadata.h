@@ -256,7 +256,8 @@ namespace rock::config
             api::configuration::Group::Consumer },
         { "ControllerInput", "OfferSteamVRBinding", "09. Controller Input",
             "Offer ROCK's SteamVR Binding\nTrue: when Index controllers or Vive wands use SteamVR's default binding "
-            "for Fallout 4 VR, the setup wizard opens after the game loads and offers ROCK's binding (the default "
+            "for Fallout 4 VR, the setup wizard opens by itself once per game start, when no menu or scene is in "
+            "the way, and offers ROCK's binding (the default "
             "binding turns A and X into grip). It never replaces a binding you chose in SteamVR.\nFalse: the wizard "
             "opens only when you open it; it still offers the binding then.",
             api::configuration::Group::Consumer },
@@ -290,6 +291,12 @@ namespace rock::config
         { "ControllerInput.Left", "Y", "09. Controller Input", "Left Y: Pip-Boy tap, Pause hold.",
             api::configuration::Group::Consumer },
         { "ControllerInput.Left", "StickClick", "09. Controller Input", "Left stick click.",
+            api::configuration::Group::Consumer },
+        { "SetupWizard", "ShownEdition", "09. Controller Input",
+            "Setup Wizard Shown\nThe setup wizard opens by itself once, 10 seconds after you are in the game with no "
+            "menu or scene in the way, whenever this ROCK brings a newer edition of it (new controls or options to "
+            "show). On a new game it waits until you leave the mirror. ROCK writes the edition here when the wizard "
+            "opens.\n0 = show it at the next game start. 999 = never open it by itself.",
             api::configuration::Group::Consumer },
         { "Bindings", "Grab", "09. Controller Input",
             "Bindings\nThe control and gesture of each function: \"<hand> <gesture> <control>\", or \"none\".\n"

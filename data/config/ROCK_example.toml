@@ -286,7 +286,7 @@ SuppressNativeVats = false
 VanillaFavoritesMenu = true
 
 ## Offer ROCK's SteamVR Binding
-## True: when Index controllers or Vive wands use SteamVR's default binding for Fallout 4 VR, the setup wizard opens after the game loads and offers ROCK's binding (the default binding turns A and X into grip). It never replaces a binding you chose in SteamVR.
+## True: when Index controllers or Vive wands use SteamVR's default binding for Fallout 4 VR, the setup wizard opens by itself once per game start, when no menu or scene is in the way, and offers ROCK's binding (the default binding turns A and X into grip). It never replaces a binding you chose in SteamVR.
 ## False: the wizard opens only when you open it; it still offers the binding then.
 OfferSteamVRBinding = true
 
@@ -331,6 +331,12 @@ Y = "y"
 
 ## Left stick click.
 StickClick = "thumbstick"
+
+[SetupWizard]
+## Setup Wizard Shown
+## The setup wizard opens by itself once, 10 seconds after you are in the game with no menu or scene in the way, whenever this ROCK brings a newer edition of it (new controls or options to show). On a new game it waits until you leave the mirror. ROCK writes the edition here when the wizard opens.
+## 0 = show it at the next game start. 999 = never open it by itself.
+ShownEdition = 0
 
 [Bindings]
 ## Bindings

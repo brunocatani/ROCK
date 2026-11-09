@@ -62,6 +62,7 @@ namespace rock
         // loaded or the bipod would act on the click. Off: ROCK blocks both.
         bool rockVanillaFavoritesMenu = true;
         bool rockOfferSteamVRBinding = true;
+        int rockSetupWizardShownEdition = 0;
         float rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::kDefaultHoldSeconds;
         int rockFarGrabMode = static_cast<int>(far_pull_gesture::Mode::Immediate);
         bool rockGrabInputIntentStateEnabled = true;

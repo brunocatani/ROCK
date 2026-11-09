@@ -1382,6 +1382,7 @@ namespace
         }
 
         if (msg->type == F4SE::MessagingInterface::kPostLoadGame || msg->type == F4SE::MessagingInterface::kNewGame) {
+            setup_wizard::noteSessionStart(msg->type == F4SE::MessagingInterface::kNewGame);
             const auto thread = messageThread();
             // Without FRIK no frame runs ROCK, so there is no frame thread to wait for.
             if (!s_frikAvailable || thread.onFrameThread()) {

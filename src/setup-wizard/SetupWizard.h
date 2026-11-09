@@ -8,7 +8,9 @@
  * and options apply at once.
  *
  * It opens from PALM's Config (the ROCK page) and from
- * Configuration::openSetupWizard. While open it captures the
+ * Configuration::openSetupWizard, and by itself once per game start when this ROCK
+ * brings a newer edition of it ([SetupWizard] ShownEdition) or a SteamVR binding to
+ * offer, 10 seconds after the game is free (AutoOpenGate.h). While open it captures the
  * controllers through RPS UI, so the game and ROCK's gameplay ignore them, and
  * the function bindings stand aside so a captured button is the button pressed.
  *
@@ -25,6 +27,10 @@ namespace rock::setup_wizard
     // wizard, saves or closes it.
     void update() noexcept;
 
-    // A game load or new game: closes the wizard.
+    // Any thread, from the game's load message: whether the session starting is a new game.
+    void noteSessionStart(bool newGame) noexcept;
+
+    // A game load or new game: closes the wizard and, once per game start, arms its
+    // automatic opening (after the mirror on a new game).
     void onSessionLoaded() noexcept;
 }

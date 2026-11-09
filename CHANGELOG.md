@@ -66,10 +66,13 @@
 - **Setup wizard.** Pick each action's button by pressing it, choose tap, hold
   or double tap, then go through ROCK's main options one page each; nothing is
   saved until the review page. It opens from PALM's Config (ROCK page); mods
-  open it with `Configuration::openSetupWizard`.
+  open it with `Configuration::openSetupWizard`. It also opens by itself on the
+  first game start with this ROCK and whenever an update has something new to
+  show, 10 seconds after the game is free of menus, message boxes and scenes
+  (on a new game, after the mirror).
 - **SteamVR binding offer.** On SteamVR, when Index controllers or Vive wands
   use SteamVR's default binding for Fallout 4 VR (A and X arrive as grip, or
-  are missing), the setup wizard opens after the game loads and offers ROCK's
+  are missing), the setup wizard opens by itself and offers ROCK's
   binding; one choice sets it for Fallout 4 VR. A binding chosen in SteamVR is
   never replaced. `OfferSteamVRBinding` turns the automatic offer off.
 - **Two weapons at once.** Equip a weapon in each hand, any combination,

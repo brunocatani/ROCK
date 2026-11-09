@@ -24,6 +24,7 @@
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/visual/RpsUiQuery.h"
 #include "rock_support/Fo4VrRuntime.h"
+#include "setup-wizard/AutoOpenGate.h"
 #include "setup-wizard/SetupWizardPolicy.h"
 #include "setup-wizard/SteamVrBinding.h"
 
@@ -226,6 +227,20 @@ namespace rock::setup_wizard
             KeepSteamVr,
         };
 
+        enum class AutoOpen : std::uint8_t
+        {
+            Off,
+            AfterMirror,
+            WhenFree,
+        };
+
+        // Raise when the wizard gains something every player should see once (a new page, new
+        // controls or options): players whose [SetupWizard] ShownEdition is lower see it again.
+        constexpr int kEdition = 1;
+        // How long the game has to stay free before the wizard opens by itself.
+        constexpr auto kFreeTime = std::chrono::seconds(10);
+        std::atomic<bool> g_newGameStarting{ false };
+
         /*
          * The connection fields belong to the frame thread (update, onSessionLoaded)
          * and are never touched under `mutex`: RPS UI may hold its own locks while it
@@ -245,11 +260,18 @@ namespace rock::setup_wizard
             std::atomic<const rpsui::api::input::Api*> input{ nullptr };
             std::atomic<std::uint64_t> inputToken{ 0 };
             std::atomic<bool> open{ false };
-            // The once-per-game-start offer of ROCK's SteamVR binding: armed by the first
-            // game load, it inspects SteamVR once no menu has had the controllers for a while.
-            bool offerArmed{ false };
-            bool offerDone{ false };
+            // The automatic opening: armed by each game load until the wizard has opened in
+            // this game start; on a new game it first waits for the mirror to close.
+            AutoOpen autoOpen{ AutoOpen::Off };
+            bool mirrorSeen{ false };
+            bool openedThisRun{ false };
+            // The pending open is the automatic one, and the open wizard was opened that way.
+            bool autoOpenRequested{ false };
+            bool autoOpened{ false };
+            // A game menu interrupted the automatically opened wizard: it comes back with its pages as they were.
+            bool resume{ false };
             std::chrono::steady_clock::time_point quietSince{};
+            auto_open_gate::Reading lastReading{};
 
             // Guarded by mutex.
             std::mutex mutex;
@@ -1117,15 +1139,30 @@ namespace rock::setup_wizard
             if (applied) session.steamVr = std::move(after);
         }
 
-        // Frame thread, while the wizard is closed: after the first game load, once no menu has
-        // had the controllers for a few seconds, opens the wizard when ROCK has a SteamVR
-        // binding to offer and the player has not turned the offer off.
-        void offerSteamVrBinding(State& s)
+        // Frame thread, while the wizard is closed. Once the game has been free for kFreeTime
+        // (on a new game: after the mirror), opens the wizard when this ROCK brings a newer
+        // edition of it, ROCK has a SteamVR binding to offer, or it is coming back from a game
+        // menu that interrupted it. Logs each change of the gate's reading while armed.
+        void autoOpenWhenFree(State& s)
         {
-            constexpr auto kQuietTime = std::chrono::seconds(3);
-            if (!s.offerArmed) return;
+            if (s.autoOpen == AutoOpen::Off) return;
+            const auto reading = auto_open_gate::read();
+            if (!(reading == s.lastReading)) {
+                s.lastReading = reading;
+                ROCK_LOG_INFO(Config, "Setup wizard waits: {}", auto_open_gate::describe(reading));
+            }
+            if (s.autoOpen == AutoOpen::AfterMirror) {
+                s.quietSince = {};
+                if (reading.mirrorOpen) {
+                    s.mirrorSeen = true;
+                } else if (s.mirrorSeen) {
+                    s.autoOpen = AutoOpen::WhenFree;
+                    ROCK_LOG_INFO(Config, "Setup wizard: character creation finished");
+                }
+                return;
+            }
             const auto now = std::chrono::steady_clock::now();
-            if (input_remap_runtime::isMenuInputActive() || !f4vr::getPlayerNodes()) {
+            if (!reading.ready()) {
                 s.quietSince = {};
                 return;
             }
@@ -1133,22 +1170,40 @@ namespace rock::setup_wizard
                 s.quietSince = now;
                 return;
             }
-            if (now - s.quietSince < kQuietTime) return;
-            s.offerArmed = false;
-            if (!g_rockConfig.rockOfferSteamVRBinding) return;
-            if (steamvr_binding::inspect().status != steamvr_binding_policy::Status::Offer) return;
+            if (now - s.quietSince < kFreeTime) return;
+            s.autoOpen = AutoOpen::Off;
+            const char* reason = nullptr;
+            if (s.resume) reason = "coming back after a game menu";
+            else if (g_rockConfig.rockSetupWizardShownEdition < kEdition) reason = "a new edition to show";
+            else if (g_rockConfig.rockOfferSteamVRBinding &&
+                     steamvr_binding::inspect().status == steamvr_binding_policy::Status::Offer)
+                reason = "a SteamVR binding to offer";
+            if (!reason) return;
             if (!rps_ui::query()) {
-                ROCK_LOG_INFO(Config, "SteamVR binding offer skipped: RPS UI Framework is not loaded");
+                ROCK_LOG_INFO(Config, "Setup wizard does not open by itself: RPS UI Framework is not loaded");
                 return;
             }
-            ROCK_LOG_INFO(Config, "Setup wizard opens to offer ROCK's SteamVR binding");
+            ROCK_LOG_INFO(Config, "Setup wizard opens by itself: {}", reason);
+            s.autoOpenRequested = true;
             g_openRequested.store(true, std::memory_order_release);
+        }
+
+        // Frame thread: the wizard opened by itself. Records the edition shown so it opens
+        // that way once per edition.
+        void recordShownEdition()
+        {
+            if (g_rockConfig.rockSetupWizardShownEdition >= kEdition) return;
+            std::string error;
+            if (!g_rockConfig.persistSetting(api::configuration::Group::Consumer, "SetupWizard", "ShownEdition",
+                    std::to_string(kEdition).c_str(), error))
+                ROCK_LOG_WARN(Config, "Setup wizard could not save SetupWizard.ShownEdition: {}", error);
         }
 
         // Frame thread, without the mutex.
         void close(State& s, const char* reason)
         {
             if (!s.open.exchange(false, std::memory_order_acq_rel)) return;
+            s.autoOpened = false;
             {
                 std::scoped_lock lock(s.mutex);
                 s.saveRequested = false;
@@ -1176,18 +1231,26 @@ namespace rock::setup_wizard
                     if (!rps_ui::query()) g_openRequested.store(false, std::memory_order_release);
                 } else {
                     g_openRequested.store(false, std::memory_order_release);
+                    const bool automatic = std::exchange(s.autoOpenRequested, false);
+                    const bool resume = automatic && std::exchange(s.resume, false);
                     if (s.open.load(std::memory_order_acquire)) {
                         // Already open.
                     } else if (input_remap_runtime::isMenuInputActive()) {
                         ROCK_LOG_INFO(Config, "Setup wizard not opened: a game menu has the controllers");
+                        if (automatic) {
+                            s.resume = resume;
+                            s.autoOpen = AutoOpen::WhenFree;
+                        }
                     } else {
-                        auto steamVr = steamvr_binding::inspect();
+                        auto steamVr = resume ? steamvr_binding::Inspection{} : steamvr_binding::inspect();
                         {
                             std::scoped_lock lock(s.mutex);
-                            loadSession(s.session);
-                            s.session.controllerPage = steamVr.status == steamvr_binding_policy::Status::Offer;
-                            s.session.steamVr = std::move(steamVr);
-                            if (s.session.controllerPage) s.session.page = Page::Controller;
+                            if (!resume) {
+                                loadSession(s.session);
+                                s.session.controllerPage = steamVr.status == steamvr_binding_policy::Status::Offer;
+                                s.session.steamVr = std::move(steamVr);
+                                if (s.session.controllerPage) s.session.page = Page::Controller;
+                            }
                             s.bindingChoice = BindingChoice::None;
                             s.saveRequested = false;
                             s.closeRequested = false;
@@ -1195,13 +1258,17 @@ namespace rock::setup_wizard
                         if (present(s, true)) {
                             input_remap_runtime::setSetupWizardInput(true);
                             s.open.store(true, std::memory_order_release);
-                            ROCK_LOG_INFO(Config, "Setup wizard opened");
+                            s.autoOpened = automatic;
+                            s.openedThisRun = true;
+                            s.autoOpen = AutoOpen::Off;
+                            recordShownEdition();
+                            ROCK_LOG_INFO(Config, "Setup wizard opened{}", automatic ? " by itself" : "");
                         }
                     }
                 }
             }
             if (!s.open.load(std::memory_order_acquire)) {
-                offerSteamVrBinding(s);
+                autoOpenWhenFree(s);
                 return;
             }
             bool closeRequested = false;
@@ -1226,23 +1293,51 @@ namespace rock::setup_wizard
                 return;
             }
             fw::PanelState panel{};
-            if (s.framework->getPanelState && s.framework->getPanelState(s.owner, s.panel, &panel) == Result::Ok && !panel.open)
+            if (s.framework->getPanelState && s.framework->getPanelState(s.owner, s.panel, &panel) == Result::Ok && !panel.open) {
                 close(s, "panel closed");
-            else if (input_remap_runtime::isMenuInputActive())
+            } else if (input_remap_runtime::isMenuInputActive()) {
+                const bool wasAutomatic = s.autoOpened;
                 close(s, "a game menu opened");
+                // A message box or scene menu took over the wizard that opened by itself: it
+                // comes back where the player was once the game is free again.
+                if (wasAutomatic) {
+                    s.resume = true;
+                    s.autoOpen = AutoOpen::WhenFree;
+                    s.quietSince = {};
+                }
+            }
         } catch (...) {
             ROCK_LOG_SAMPLE_WARN(Config, 5000, "Setup wizard update failed");
         }
+    }
+
+    void noteSessionStart(bool newGame) noexcept
+    {
+        g_newGameStarting.store(newGame, std::memory_order_release);
     }
 
     void onSessionLoaded() noexcept
     {
         auto& s = state();
         close(s, "game loaded");
-        if (!s.offerDone) {
-            s.offerDone = true;
-            s.offerArmed = true;
-            s.quietSince = {};
+        s.resume = false;
+        s.autoOpenRequested = false;
+        if (s.openedThisRun) {
+            s.autoOpen = AutoOpen::Off;
+            return;
         }
+        const bool newGame = g_newGameStarting.exchange(false, std::memory_order_acq_rel);
+        const bool newEdition = g_rockConfig.rockSetupWizardShownEdition < kEdition;
+        if (!newEdition && !(g_rockConfig.rockOfferSteamVRBinding &&
+                               steamvr_binding::inspect().status == steamvr_binding_policy::Status::Offer)) {
+            s.autoOpen = AutoOpen::Off;
+            return;
+        }
+        s.autoOpen = newGame ? AutoOpen::AfterMirror : AutoOpen::WhenFree;
+        s.mirrorSeen = false;
+        s.quietSince = {};
+        s.lastReading = {};
+        ROCK_LOG_INFO(Config, "Setup wizard armed to open by itself {}",
+            newGame ? "after the mirror" : "once the game is free");
     }
 }
