@@ -281,7 +281,7 @@ SuppressNativeVats = false
 ## Vanilla Favorites Menu
 ## True: the game's Favorites menu opens on its usual button, the right stick click (default).
 ## While RobCo PALM is installed, ROCK always blocks the Favorites menu and the stick click opens PALM.
-## Bipod Mode uses the same click; turn this off if the Favorites menu gets in the way of latching.
+## With Bipod Mode on, a click while the weapon touches a surface or is latched works the bipod instead of opening Favorites.
 ## False: ROCK blocks the Favorites menu and the stick click belongs to Bipod Mode.
 VanillaFavoritesMenu = true
 

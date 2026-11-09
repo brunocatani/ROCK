@@ -277,6 +277,7 @@ namespace rock::input_remap_runtime
         std::array<std::atomic<std::uint8_t>, 2> s_padLatches{};
         std::atomic<bool> s_gameplayInputAllowed{ false };
         std::atomic<bool> s_bothHandsHoldWeapons{ false }; // Frame thread -> input dispatch.
+        std::atomic<bool> s_bipodClickReserved{ false };   // Frame thread -> input dispatch.
         std::atomic<bool> s_weaponDrawn{ false };
         std::atomic<bool> s_realMeleeWeaponEquipped{ false };
         weapon_trigger_routing::Snapshot s_pendingWeaponRouting{}; // Interaction thread only.
@@ -1449,8 +1450,9 @@ namespace rock::input_remap_runtime
 
         [[nodiscard]] bool vanillaFavoritesMenuAllowed()
         {
-            return input_remap_policy::vanillaFavoritesMenuAllowed(
-                g_rockConfig.rockVanillaFavoritesMenu, s_robcoPalmLoaded.load(std::memory_order_acquire));
+            return input_remap_policy::vanillaFavoritesMenuAllowed(g_rockConfig.rockVanillaFavoritesMenu,
+                s_robcoPalmLoaded.load(std::memory_order_acquire),
+                s_bipodClickReserved.load(std::memory_order_acquire));
         }
 
         [[nodiscard]] bool shouldSuppressNativeFavoritesAction(const RE::InputEvent* event)
@@ -3013,6 +3015,11 @@ namespace rock::input_remap_runtime
     void setBothHandsHoldWeapons(bool occupied) noexcept
     {
         s_bothHandsHoldWeapons.store(occupied, std::memory_order_release);
+    }
+
+    void setBipodClickReserved(bool reserved) noexcept
+    {
+        s_bipodClickReserved.store(reserved, std::memory_order_release);
     }
 
     bool isProviderOpenVrGameInputSuppressedForHand(bool isLeft)

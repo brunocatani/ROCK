@@ -251,8 +251,8 @@ namespace rock::config
         { "ControllerInput", "VanillaFavoritesMenu", "09. Controller Input",
             "Vanilla Favorites Menu\nTrue: the game's Favorites menu opens on its usual button, the right stick "
             "click (default).\nWhile RobCo PALM is installed, ROCK always blocks the Favorites menu and the stick "
-            "click opens PALM.\nBipod Mode uses the same click; turn this off if the Favorites menu gets in the "
-            "way of latching.\nFalse: ROCK blocks the Favorites menu and the stick click belongs to Bipod Mode.",
+            "click opens PALM.\nWith Bipod Mode on, a click while the weapon touches a surface or is latched works "
+            "the bipod instead of opening Favorites.\nFalse: ROCK blocks the Favorites menu and the stick click belongs to Bipod Mode.",
             api::configuration::Group::Consumer },
         { "ControllerInput", "PipboyPauseHoldSeconds", "09. Controller Input",
             "Pip-Boy and Pause Hold Time\nTap left Y to open the Pip-Boy; hold it this many seconds to open the Pause "

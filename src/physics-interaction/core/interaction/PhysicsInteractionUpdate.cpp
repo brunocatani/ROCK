@@ -727,6 +727,12 @@ namespace rock
     void PhysicsInteraction::update()
     {
         auto authoredCollision = F4SE::stl::scope_exit([this] {
+            // The frame's final surface reservation, after every presentation
+            // pass and on interrupted frames too (retireAll clears it).
+            input_remap_runtime::setBipodClickReserved(g_rockConfig.rockBipodMode &&
+                _dynamicWeaponCollision.surfaceSupportReservesInput(
+                    reinterpret_cast<std::uintptr_t>(resolveEquippedWeaponInteractionNode()),
+                    _weaponCollision.getCurrentWeaponGenerationKey()));
             const auto& runtime = runtime_state::currentFrame();
             auto* bhk = getPlayerBhkWorld();
             auto* world = bhk ? getHknpWorld(bhk) : nullptr;
