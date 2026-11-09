@@ -1441,7 +1441,10 @@ namespace rock
 
         double _releaseObjectNotBefore = 0.0; // Game thread rebase boundary.
         RE::NiTransform _previousHeldRawHandWorld{};
-        RE::NiPoint3 _previousHeldHandPositionHavok{};
+        // Player space (room node) of the same sample, valid with
+        // _hasPreviousHeldRawHandWorld; it splits arm motion from locomotion.
+        RE::NiTransform _previousHeldRoomWorld{};
+        const char* _previousHeldRoomSource = nullptr;
         RE::NiPoint3 _lastHeldHandPositionHavok{};
         bool _hasPreviousHeldRawHandWorld = false;
         bool _hasLastHeldHandPositionHavok = false;

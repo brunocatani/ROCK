@@ -180,22 +180,39 @@ namespace rock
         _lastHeldHandPositionHavok = currentHandPositionHavok;
         _hasLastHeldHandPositionHavok = true;
 
-        if (_hasPreviousHeldRawHandWorld && usableDeltaTime) {
-            handMotion.localLinearVelocityHavok =
-                scalePoint(currentHandPositionHavok - _previousHeldHandPositionHavok, 1.0f / deltaTime);
+        // The hand's world motion is the arm's motion in player space plus the
+        // player's locomotion. A throw scales only the arm; the released object
+        // carries locomotion at exactly the player's speed. The previous hand
+        // pose is re-based into this frame's room, so the difference is the
+        // arm alone; the room's turning (snap or smooth) is neither and is not
+        // passed to the object.
+        const auto& playerSpace = runtime_state::currentFrame().playerSpace;
+        const bool samePlayerSpace = playerSpace.valid && _previousHeldRoomSource == playerSpace.source;
+        if (_hasPreviousHeldRawHandWorld && samePlayerSpace && usableDeltaTime) {
+            const RE::NiTransform previousHandInCurrentRoom = multiplyTransforms(playerSpace.world,
+                multiplyTransforms(invertTransform(_previousHeldRoomWorld), _previousHeldRawHandWorld));
+            handMotion.localLinearVelocityHavok = scalePoint(
+                currentHandPositionHavok - gamePointToHavokPoint(previousHandInCurrentRoom.translate), 1.0f / deltaTime);
             handMotion.hasLocalLinearVelocity = true;
 
             handMotion.angularVelocityRadiansPerSecond = angularVelocityFromRotationDelta(
-                _previousHeldRawHandWorld.rotate, handWorldTransform.rotate, deltaTime);
+                previousHandInCurrentRoom.rotate, handWorldTransform.rotate, deltaTime);
             handMotion.hasAngularVelocity = lengthSquared(handMotion.angularVelocityRadiansPerSecond) > 0.000001f;
 
+            const RE::NiPoint3 locomotionVelocityHavok = scalePoint(
+                gamePointToHavokPoint(playerSpace.world.translate - _previousHeldRoomWorld.translate),
+                1.0f / deltaTime);
             _controllerReleaseHistory.append(timing.sequence, timing.elapsedGameSeconds,
-                handMotion.localLinearVelocityHavok, handMotion.angularVelocityRadiansPerSecond);
+                handMotion.localLinearVelocityHavok, handMotion.angularVelocityRadiansPerSecond,
+                locomotionVelocityHavok);
         }
 
+        // Without player space there is no frame to measure the arm in; the
+        // next sample with one starts a new pair.
         _previousHeldRawHandWorld = handWorldTransform;
-        _previousHeldHandPositionHavok = currentHandPositionHavok;
-        _hasPreviousHeldRawHandWorld = true;
+        _previousHeldRoomWorld = playerSpace.world;
+        _previousHeldRoomSource = playerSpace.valid ? playerSpace.source : nullptr;
+        _hasPreviousHeldRawHandWorld = playerSpace.valid;
         return handMotion;
     }
 

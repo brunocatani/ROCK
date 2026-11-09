@@ -17,6 +17,9 @@
   frame time, so a low frame rate no longer drops or lags what you hold.
 - Pulled objects are caught even when they cross the hand between frames, and
   objects stuck in transit are placed on the hand.
+- Objects let go of while walking or running leave at your own speed plus your
+  arm's throw, instead of flying far ahead of you: the throw strength scales
+  only the arm's motion, and turning no longer flings what you release.
 - Dynamic hands and held weapons stop against fixed props. Dropped weapons keep
   their equipped collision until they come to rest. Ejected casings and
   magazines are kept clear of the hand and weapon bodies.

@@ -67,4 +67,11 @@ int main()
     for (std::uint64_t i = 1; i <= 1000; ++i)
         history.append(i, double(i) / 10000, { 1, 0, 0 });
     assert(history.peaks(0.1).count <= 32);
+    // Locomotion advancing in uneven frame steps (0, 8, 0, 8 m/s) is carried
+    // at its mean, the player's real 4 m/s, never at the 8 m/s step.
+    history.clear();
+    for (std::uint64_t i = 1; i <= 4; ++i)
+        history.append(i, double(i) / 90.0, { 1, 0, 0 }, {}, { (i % 2) ? 0.0f : 8.0f, 0, 0 });
+    const auto carried = history.peaks(4.0 / 90.0);
+    assert(carried.count == 4 && std::abs(carried.carrier.x - 4.0f) < 0.0001f && carried.linear.x == 1);
 }

@@ -316,7 +316,8 @@ namespace rock
         _releaseObjectNotBefore = release_velocity::sampleTimeSeconds();
         _releaseControllerFrame = 0;
         _previousHeldRawHandWorld = {};
-        _previousHeldHandPositionHavok = {};
+        _previousHeldRoomWorld = {};
+        _previousHeldRoomSource = nullptr;
         _lastHeldHandPositionHavok = {};
         _hasPreviousHeldRawHandWorld = false;
         _hasLastHeldHandPositionHavok = false;
@@ -399,7 +400,8 @@ namespace rock
         _grabFingerProbePreview.clear();
         _hasGrabFingerPose = false;
         _previousHeldRawHandWorld = {};
-        _previousHeldHandPositionHavok = {};
+        _previousHeldRoomWorld = {};
+        _previousHeldRoomSource = nullptr;
         _lastHeldHandPositionHavok = {};
         _hasPreviousHeldRawHandWorld = false;
         _hasLastHeldHandPositionHavok = false;

@@ -52,12 +52,15 @@ namespace rock::release_velocity
 
         [[nodiscard]] bool needsSource(std::uint64_t source) const noexcept { return source && source > _lastSource; }
 
-        void append(std::uint64_t source, double time, Point linear, Point angular = {}) noexcept
+        // carrier: velocity of the frame the hand moves in (the player's
+        // locomotion), kept beside the hand's own motion in that frame.
+        void append(std::uint64_t source, double time, Point linear, Point angular = {}, Point carrier = {}) noexcept
         {
-            if (!source || source <= _lastSource || !std::isfinite(time) || !finite(linear) || !finite(angular))
+            if (!source || source <= _lastSource || !std::isfinite(time) || !finite(linear) || !finite(angular) ||
+                !finite(carrier))
                 return;
             _lastSource = source;
-            _samples[_next] = { time, linear, angular, true };
+            _samples[_next] = { time, linear, angular, carrier, true };
             _next = (_next + 1) % _samples.size();
         }
 
@@ -65,6 +68,9 @@ namespace rock::release_velocity
         {
             Point linear{};
             Point angular{};
+            // Mean, not peak: locomotion advances in uneven per-frame steps,
+            // and a peak of those steps overstates the player's speed.
+            Point carrier{};
             std::size_t count{};
         };
 
@@ -126,6 +132,16 @@ namespace rock::release_velocity
             };
             result.linear = smoothPeak(linearPeak, false);
             result.angular = smoothPeak(angularPeak, true);
+            if (result.count) {
+                Point sum{};
+                for (std::size_t i = 0; i < result.count; ++i) {
+                    sum.x += ordered[i]->carrier.x;
+                    sum.y += ordered[i]->carrier.y;
+                    sum.z += ordered[i]->carrier.z;
+                }
+                const float inverse = 1.0f / static_cast<float>(result.count);
+                result.carrier = Point{ sum.x * inverse, sum.y * inverse, sum.z * inverse };
+            }
             return result;
         }
 
@@ -139,6 +155,7 @@ namespace rock::release_velocity
             double time{};
             Point linear{};
             Point angular{};
+            Point carrier{};
             bool valid{};
         };
 

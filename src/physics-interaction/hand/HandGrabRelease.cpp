@@ -60,15 +60,19 @@ namespace rock
             const release_velocity::History<RE::NiPoint3>::Peaks& object, bool contactSoftening, float leverGameUnits)
         {
             ReleaseMotion motion{};
-            // Both histories contain world-space movement, including player
-            // translation. Do not rotate the velocity by the hand's facing.
+            // The hand history holds the arm's motion in player space, world
+            // axes; hand.carrier is the player's locomotion. The throw
+            // multiplier scales only the arm: the object leaves with the
+            // player's own speed plus the scaled throw. The object history is
+            // world velocity, so locomotion comes off it the same way.
             motion.linearVelocityHavok = grab_held_response::composeControllerReleaseVelocity(
                 grab_held_response::ReleaseVelocityInput<RE::NiPoint3>{
                     .controllerDerivedEnabled = g_rockConfig.rockGrabControllerDerivedThrowVelocityEnabled,
                     .hasHandLocalVelocity = hand.count > 0,
                     .hasObjectLocalVelocity = object.count > 0,
                     .handLocalVelocityHavok = hand.linear,
-                    .objectLocalVelocityHavok = object.linear,
+                    .objectLocalVelocityHavok = object.linear - hand.carrier,
+                    .playerVelocityHavok = hand.carrier,
                     .throwMultiplier = g_rockConfig.rockThrowVelocityMultiplier,
                     .maxVelocityHavok = g_rockConfig.rockGrabThrowMaxVelocityHavok,
                 });
@@ -162,7 +166,7 @@ namespace rock
             releaseContext.applyCapturedReleaseVelocity && releaseContext.finalObjectRelease && world &&
             (objectHistory.count > 0 || handHistory.count > 0);
         if (captureReleaseVelocity) {
-            const RE::NiPoint3 objectLocalReleaseVelocity = objectHistory.linear;
+            const RE::NiPoint3 objectWorldReleaseVelocity = objectHistory.linear;
             const RE::NiPoint3 handLocalReleaseVelocity = handHistory.linear;
             const RE::NiPoint3 handAngularVelocity = handHistory.angular;
 
@@ -211,7 +215,7 @@ namespace rock
             ROCK_LOG_DEBUG(Hand,
                 "{} hand RELEASE VELOCITY: applied={} driveMode={} linearScope={} angularScope={} authority={} "
                 "angularScale={:.2f} angularCap={:.3f} longScale={:.2f} handLocal=({:.3f},{:.3f},{:.3f}) "
-                "objectLocal=({:.3f},{:.3f},{:.3f}) angularRaw=({:.3f},{:.3f},{:.3f}) "
+                "player=({:.3f},{:.3f},{:.3f}) objectWorld=({:.3f},{:.3f},{:.3f}) angularRaw=({:.3f},{:.3f},{:.3f}) "
                 "angularFinal=({:.3f},{:.3f},{:.3f}) final=({:.3f},{:.3f},{:.3f}) lever=({:.3f},{:.3f},{:.3f}) "
                 "objectHistory={} handHistory={} multiplier={:.2f}",
                 handName(), applyReleaseVelocity ? "yes" : "no",
@@ -220,7 +224,8 @@ namespace rock
                 _heldDriveDecision.includeConnectedAngularVelocity ? "bodySet" : "primaryOnly", releaseAuthority.reason,
                 releaseAuthority.releaseAngularVelocityScale, releaseAngularVelocityCap, releaseLongObjectAngularScale,
                 handLocalReleaseVelocity.x, handLocalReleaseVelocity.y, handLocalReleaseVelocity.z,
-                objectLocalReleaseVelocity.x, objectLocalReleaseVelocity.y, objectLocalReleaseVelocity.z,
+                handHistory.carrier.x, handHistory.carrier.y, handHistory.carrier.z, objectWorldReleaseVelocity.x,
+                objectWorldReleaseVelocity.y, objectWorldReleaseVelocity.z,
                 handAngularVelocity.x, handAngularVelocity.y, handAngularVelocity.z, releaseAngularVelocity.x,
                 releaseAngularVelocity.y, releaseAngularVelocity.z, releaseVelocity.x, releaseVelocity.y,
                 releaseVelocity.z, releaseLeverOriginHavok.x, releaseLeverOriginHavok.y, releaseLeverOriginHavok.z,
@@ -366,7 +371,8 @@ namespace rock
         _releaseObjectNotBefore = release_velocity::sampleTimeSeconds();
         _releaseControllerFrame = 0;
         _previousHeldRawHandWorld = {};
-        _previousHeldHandPositionHavok = {};
+        _previousHeldRoomWorld = {};
+        _previousHeldRoomSource = nullptr;
         _lastHeldHandPositionHavok = {};
         _hasPreviousHeldRawHandWorld = false;
         _hasLastHeldHandPositionHavok = false;
