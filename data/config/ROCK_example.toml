@@ -327,6 +327,57 @@ Y = "y"
 ## Left stick click.
 StickClick = "thumbstick"
 
+[Bindings]
+## Bindings
+## The control and gesture of each function: "<hand> <gesture> <control>", or "none".
+## Hands: firing (the hand on the weapon's firing grip), support, primary, offhand, left, right, each.
+## Gestures: press (acts while held), tap, hold, double (double tap).
+## Controls: as in the button layout above. Add "+<hand> <control>" for a button that must be held at the same time.
+## The ROCK setup wizard, opened from the PALM wheel, sets these by pressing the control.
+## This key: grab with each hand.
+Grab = "each press grip"
+
+## Fire the equipped weapon.
+Fire = "firing press trigger"
+
+## The support hand's trigger: a second weapon, or the support action of what that hand holds.
+SupportTrigger = "support press trigger"
+
+## Use what the primary hand points at (take, open, talk). It owns the whole press while there is something to use.
+Use = "primary press a"
+
+## Reload the equipped weapon.
+Reload = "firing tap a"
+
+## Look through the weapon's scope while active.
+Scope = "firing hold a"
+
+## Open VATS.
+Vats = "primary tap b"
+
+## Draw a grenade into the hand.
+Grenade = "primary hold b"
+
+## Open the Pip-Boy.
+Pipboy = "offhand tap y"
+
+## Open the Pause menu.
+Pause = "offhand hold y"
+
+## Bipod latch and held placement while the weapon touches a surface, and the game's Favorites menu.
+StickActions = "primary press thumbstick"
+
+## Open RobCo PALM's wheel.
+Palm = "primary press thumbstick"
+
+## Hold Time
+## Seconds a hold binding needs before it acts, for functions without their own hold time (Scope and Pause have theirs; Grenade uses the game's). Range: 0.1 to 2.
+HoldSeconds = 0.35
+
+## Double Tap Time
+## Longest gap between the two presses of a double tap. A tap on the same control waits this long before it acts. Range: 0.15 to 0.6.
+DoubleTapSeconds = 0.3
+
 ## === 10. Native Gameplay ===
 [NativeGameplay]
 ## Melee Swing Speed

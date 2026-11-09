@@ -380,6 +380,10 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKButtonLayoutTests PRIVATE cxx_std_23)
   target_include_directories(ROCKButtonLayoutTests PRIVATE ${SOURCE_DIR} "${ROCK_OPENVR_ROOT}")
   add_rock_test(ROCKButtonLayoutTests)
+  add_executable(ROCKFunctionBindingTests "${ROOT_DIR}/tests/FunctionBindingTests.cpp")
+  target_compile_features(ROCKFunctionBindingTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKFunctionBindingTests PRIVATE ${SOURCE_DIR} "${ROCK_OPENVR_ROOT}")
+  add_rock_test(ROCKFunctionBindingTests)
 
   add_executable(ROCKInputRemapPolicyTests
     "${ROOT_DIR}/tests/InputRemapPolicyTests.cpp"

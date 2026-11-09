@@ -285,6 +285,41 @@ namespace rock::config
             api::configuration::Group::Consumer },
         { "ControllerInput.Left", "StickClick", "09. Controller Input", "Left stick click.",
             api::configuration::Group::Consumer },
+        { "Bindings", "Grab", "09. Controller Input",
+            "Bindings\nThe control and gesture of each function: \"<hand> <gesture> <control>\", or \"none\".\n"
+            "Hands: firing (the hand on the weapon's firing grip), support, primary, offhand, left, right, each.\n"
+            "Gestures: press (acts while held), tap, hold, double (double tap).\nControls: as in the button layout "
+            "above. Add \"+<hand> <control>\" for a button that must be held at the same time.\nThe ROCK setup "
+            "wizard, opened from the PALM wheel, sets these by pressing the control.\nThis key: grab with each hand.",
+            api::configuration::Group::Consumer },
+        { "Bindings", "Fire", "09. Controller Input", "Fire the equipped weapon.", api::configuration::Group::Consumer },
+        { "Bindings", "SupportTrigger", "09. Controller Input",
+            "The support hand's trigger: a second weapon, or the support action of what that hand holds.",
+            api::configuration::Group::Consumer },
+        { "Bindings", "Use", "09. Controller Input",
+            "Use what the primary hand points at (take, open, talk). It owns the whole press while there is something "
+            "to use.", api::configuration::Group::Consumer },
+        { "Bindings", "Reload", "09. Controller Input", "Reload the equipped weapon.",
+            api::configuration::Group::Consumer },
+        { "Bindings", "Scope", "09. Controller Input", "Look through the weapon's scope while active.",
+            api::configuration::Group::Consumer },
+        { "Bindings", "Vats", "09. Controller Input", "Open VATS.", api::configuration::Group::Consumer },
+        { "Bindings", "Grenade", "09. Controller Input", "Draw a grenade into the hand.",
+            api::configuration::Group::Consumer },
+        { "Bindings", "Pipboy", "09. Controller Input", "Open the Pip-Boy.", api::configuration::Group::Consumer },
+        { "Bindings", "Pause", "09. Controller Input", "Open the Pause menu.", api::configuration::Group::Consumer },
+        { "Bindings", "StickActions", "09. Controller Input",
+            "Bipod latch and held placement while the weapon touches a surface, and the game's Favorites menu.",
+            api::configuration::Group::Consumer },
+        { "Bindings", "Palm", "09. Controller Input", "Open RobCo PALM's wheel.", api::configuration::Group::Consumer },
+        { "Bindings", "HoldSeconds", "09. Controller Input",
+            "Hold Time\nSeconds a hold binding needs before it acts, for functions without their own hold time "
+            "(Scope and Pause have theirs; Grenade uses the game's). Range: 0.1 to 2.",
+            api::configuration::Group::Consumer },
+        { "Bindings", "DoubleTapSeconds", "09. Controller Input",
+            "Double Tap Time\nLongest gap between the two presses of a double tap. A tap on the same control waits "
+            "this long before it acts. Range: 0.15 to 0.6.",
+            api::configuration::Group::Consumer },
         { "NativeGameplay", "VanillaMeleeSwingSpeed", "10. Native Gameplay",
             "Melee Swing Speed\nHand speed that starts a vanilla melee swing, in game units per second (70 = 1 metre "
             "per second). The game uses 200.\nTurning the wrist alone never swings. Range: 50 to 2000.",

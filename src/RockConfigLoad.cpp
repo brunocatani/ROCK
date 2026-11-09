@@ -247,6 +247,25 @@ namespace
         return layout;
     }
 
+    rock::function_binding_policy::Bindings readFunctionBindings(SettingReader& ini,
+        const rock::function_binding_policy::Bindings& current)
+    {
+        namespace fb = rock::function_binding_policy;
+        auto bindings = current;
+        for (std::size_t f = 0; f < fb::kFunctionCount; ++f) {
+            const auto function = static_cast<fb::Function>(f);
+            const std::string key{ fb::functionKey(function) };
+            const std::string configured = ini.text("Bindings", key.c_str(), fb::formatBinding(bindings[f]));
+            if (const auto parsed = fb::parseBinding(configured)) {
+                bindings[f] = *parsed;
+                continue;
+            }
+            bindings[f] = fb::homeBinding(function);
+            ROCK_LOG_WARN(Config, "Invalid Bindings.{}='{}' -- using {}", key, configured, fb::formatBinding(bindings[f]));
+        }
+        return bindings;
+    }
+
     std::string readHighlightColor(SettingReader& ini, const char* table, const char* key,
         const std::string& currentValue)
     {
@@ -365,6 +384,11 @@ namespace rock
             ini.number("ControllerInput", "PipboyPauseHoldSeconds", rockPipboyPauseHoldSeconds)));
         rockButtonLayouts[0] = readButtonLayout(ini, true, rockButtonLayouts[0]);
         rockButtonLayouts[1] = readButtonLayout(ini, false, rockButtonLayouts[1]);
+        rockFunctionBindings = readFunctionBindings(ini, rockFunctionBindings);
+        rockBindingHoldSeconds =
+            std::clamp(static_cast<float>(ini.number("Bindings", "HoldSeconds", rockBindingHoldSeconds)), 0.1f, 2.0f);
+        rockBindingDoubleTapSeconds = std::clamp(
+            static_cast<float>(ini.number("Bindings", "DoubleTapSeconds", rockBindingDoubleTapSeconds)), 0.15f, 0.6f);
         rockFarGrabMode = far_pull_gesture::sanitizeMode(
             static_cast<int>(ini.integer("Grabbing", "FarGrabMode", rockFarGrabMode)));
         rockCloseSelectionAngleDegrees =
