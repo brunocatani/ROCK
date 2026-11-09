@@ -410,6 +410,29 @@ namespace rock
         }
     }
 
+    bool Hand::resolveAuthoredGrabOffset(const SelectedObject& sel, bool looseWeaponGrab, bool programmaticArrival,
+        saved_grab_offset::HandOffset& out, bool& outFixedAidPose) const
+    {
+        outFixedAidPose = g_rockConfig.rockImmersiveAidEnabled &&
+            immersive_aid::usesStimpakPose(immersive_aid::classify(sel.refr ? sel.refr->GetObjectReference() : nullptr));
+        if (outFixedAidPose) {
+            out = immersive_aid::stimpakPose(_isLeft);
+            return true;
+        }
+        /*
+         * Authored poses apply only when the object arrives by a far pull or a
+         * forced arrival; every close grab, pinch pocket included, stays
+         * dynamic. Guns and melee never seat from saved offsets: the FRIK
+         * weapon-offset attach is their only authority.
+         */
+        if (!programmaticArrival ||
+            !saved_grab_offset::participatesInSavedGrabOffsets(looseWeaponGrab,
+                isThrowableLooseWeapon(selectedLooseWeaponForm(sel)))) {
+            return false;
+        }
+        return tryLoadSavedGrabOffsetHandOffset(sel.refr, _isLeft, out);
+    }
+
     bool Hand::captureGrabBodyFrame(RE::hknpWorld* world, const GrabBodyFrameCaptureInput& input,
         GrabBodyFrameCapture& outCapture)
     {
@@ -947,22 +970,10 @@ namespace rock
                          * Leaving the source empty here also keeps a saved finger
                          * pose from overriding the FRIK weapon hand pose.
                          */
-                bool fixedAidPose = g_rockConfig.rockImmersiveAidEnabled &&
-                    immersive_aid::usesStimpakPose(
-                        immersive_aid::classify(sel.refr ? sel.refr->GetObjectReference() : nullptr));
-                /*
-                         * Owner rule (2026-09-30, behavior library "Vanilla grip templates"):
-                         * saved offsets apply only when the object arrives by a far pull
-                         * (or a forced arrival); every close grab, pinch pocket included,
-                         * stays dynamic.
-                         */
-                if (fixedAidPose) {
-                    savedGrabOffset = immersive_aid::stimpakPose(_isLeft);
-                    hasSavedGrabOffset = true;
-                } else if (programmaticArrival && !authoredWeapon &&
-                    saved_grab_offset::participatesInSavedGrabOffsets(looseWeaponGrab,
-                        isThrowableLooseWeapon(selectedLooseWeaponForm(sel)))) {
-                    hasSavedGrabOffset = tryLoadSavedGrabOffsetHandOffset(sel.refr, _isLeft, savedGrabOffset);
+                bool fixedAidPose = false;
+                hasSavedGrabOffset =
+                    resolveAuthoredGrabOffset(sel, looseWeaponGrab, programmaticArrival, savedGrabOffset, fixedAidPose);
+                if (hasSavedGrabOffset && !fixedAidPose) {
                     /*
                      * An offset measured against a body node applies to a grab
                      * of that body only; a root offset tells nothing about a
@@ -972,13 +983,12 @@ namespace rock
                     const bool bodiesMoveApart = _heldBodyIds.size() > 1 &&
                         count_based_ammo::resolve(sel.refr).variant == count_based_ammo::Variant::None;
                     const char* grabbedBodyNode = nodeDebugName(ownerNodeAtGrab);
-                    if (hasSavedGrabOffset && !savedGrabOffset.bodyNode.empty() &&
-                        savedGrabOffset.bodyNode != grabbedBodyNode) {
+                    if (!savedGrabOffset.bodyNode.empty() && savedGrabOffset.bodyNode != grabbedBodyNode) {
                         ROCK_LOG_INFO(Hand,
                             "{} hand saved grab offset not applied: saved against body node '{}', grabbed '{}'",
                             handName(), savedGrabOffset.bodyNode, grabbedBodyNode);
                         hasSavedGrabOffset = false;
-                    } else if (hasSavedGrabOffset && savedGrabOffset.bodyNode.empty() && bodiesMoveApart) {
+                    } else if (savedGrabOffset.bodyNode.empty() && bodiesMoveApart) {
                         ROCK_LOG_INFO(Hand,
                             "{} hand saved grab offset not applied: measured against the root of an object whose "
                             "{} bodies move apart; save it again while holding body node '{}'",

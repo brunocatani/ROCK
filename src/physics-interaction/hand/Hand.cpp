@@ -484,6 +484,11 @@ namespace rock
         _pullPresentationAxisBodyLocal = {};
         _pullPresentationElongationRatio = 0.0f;
         _pullPresentationValid = false;
+        _pullSeatValid = false;
+        _pullSeatObjectProxyLocal = {};
+        _pullSeatBodyInFrame = {};
+        _pullSeatFrameScale = 1.0f;
+        _pullSeatMeshPointBody = {};
     }
 
     object_physics_body_set::BodySetScanOptions Hand::makeActiveGrabBodyScanOptions(

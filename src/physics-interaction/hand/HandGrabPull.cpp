@@ -89,6 +89,64 @@ namespace rock
             return bestDistanceSquared < (std::numeric_limits<float>::max)();
         }
 
+        // Below this remaining flight time the seat turn runs at 1/this rate.
+        constexpr float kPullSeatMinTurnSeconds = 0.1f;
+
+        /*
+         * Shortest rotation turning current into target, in world space. Built
+         * from the world images of each frame's local axes (world = M * local),
+         * so it assumes no row/column storage convention: R = D * C^T maps the
+         * current axes onto the target axes. False when already aligned.
+         */
+        bool shortestRotationWorld(const RE::NiTransform& current, const RE::NiTransform& target,
+            RE::NiPoint3& outAxis, float& outAngle)
+        {
+            const RE::NiPoint3 units[3]{ { 1.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f } };
+            RE::NiPoint3 c[3];
+            RE::NiPoint3 d[3];
+            for (int i = 0; i < 3; ++i) {
+                c[i] = normalizeOrZero(transform_math::localVectorToWorld(current, units[i]));
+                d[i] = normalizeOrZero(transform_math::localVectorToWorld(target, units[i]));
+                if (lengthSquared(c[i]) < 0.5f || lengthSquared(d[i]) < 0.5f) {
+                    return false;
+                }
+            }
+            const auto component = [](const RE::NiPoint3& v, int index) {
+                return index == 0 ? v.x : (index == 1 ? v.y : v.z);
+            };
+            float r[3][3]{};
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    for (int i = 0; i < 3; ++i) {
+                        r[row][column] += component(d[i], row) * component(c[i], column);
+                    }
+                }
+            }
+            const float cosine = std::clamp((r[0][0] + r[1][1] + r[2][2] - 1.0f) * 0.5f, -1.0f, 1.0f);
+            outAngle = std::acos(cosine);
+            if (!std::isfinite(outAngle) || outAngle < 0.005f) {
+                return false;
+            }
+            RE::NiPoint3 axis{ r[2][1] - r[1][2], r[0][2] - r[2][0], r[1][0] - r[0][1] };
+            if (lengthSquared(axis) < 1.0e-8f) {
+                // Half turn: R + I = 2 a a^T, so its largest column is the axis.
+                int best = 0;
+                float bestLength = -1.0f;
+                for (int column = 0; column < 3; ++column) {
+                    const RE::NiPoint3 candidate{ r[0][column] + (column == 0 ? 1.0f : 0.0f),
+                        r[1][column] + (column == 1 ? 1.0f : 0.0f), r[2][column] + (column == 2 ? 1.0f : 0.0f) };
+                    if (lengthSquared(candidate) > bestLength) {
+                        bestLength = lengthSquared(candidate);
+                        best = column;
+                    }
+                }
+                axis = RE::NiPoint3{ r[0][best] + (best == 0 ? 1.0f : 0.0f), r[1][best] + (best == 1 ? 1.0f : 0.0f),
+                    r[2][best] + (best == 2 ? 1.0f : 0.0f) };
+            }
+            outAxis = normalizeOrZero(axis);
+            return lengthSquared(outAxis) > 0.5f;
+        }
+
         void setHeldLinearVelocity(RE::hknpWorld* world, RE::hknpBodyId primaryBodyId,
             const std::vector<std::uint32_t>& heldBodyIds, const RE::NiPoint3& linearVelocity,
             float angularVelocityKeep = 1.0f, bool includeConnectedBodies = true)
@@ -185,6 +243,70 @@ namespace rock
             refr->GetFormID(), outLifecycle.size(), outLifecycle.hasIncompleteNativeScan() ? "yes" : "no");
         clearPullPrepTracking();
         return true;
+    }
+
+    void Hand::capturePullSeat(RE::hknpWorld* world, RE::NiAVObject* rootNode, const RE::NiPoint3& pulledMeshPointWorld)
+    {
+        _pullSeatValid = false;
+        saved_grab_offset::HandOffset offset{};
+        bool fixedAidPose = false;
+        if (!resolveAuthoredGrabOffset(_currentSelection, selectedLooseWeaponForm(_currentSelection) != nullptr, true,
+                offset, fixedAidPose)) {
+            return;
+        }
+
+        // The node the catch will place, by the same rule as the seat: the
+        // root, or the grabbed body's node for an offset saved against it.
+        // An object whose bodies move apart has no root seat to fly to.
+        const RE::NiAVObject* frameNode = rootNode;
+        const bool bodiesMoveApart = _pulledBodyIds.size() > 1 &&
+            count_based_ammo::resolve(_currentSelection.refr).variant == count_based_ammo::Variant::None;
+        if (!fixedAidPose && !offset.bodyNode.empty()) {
+            const auto* ownerNode = getOwnerNodeFromBody(world, RE::hknpBodyId{ _pulledPrimaryBodyId });
+            frameNode = ownerNode && offset.bodyNode == nodeDebugName(ownerNode) ? ownerNode : nullptr;
+        } else if (!fixedAidPose && bodiesMoveApart) {
+            frameNode = nullptr;
+        }
+
+        RE::NiTransform bodyWorld{};
+        if (!frameNode || !isFiniteNiTransform(frameNode->world) ||
+            !tryGetGrabAuthorityBodyWorldTransform(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, bodyWorld)) {
+            ROCK_LOG_DEBUG(Hand, "{} hand PULL flies without in-flight alignment: authored seat has no frame "
+                                 "(bodyNode='{}' bodies={})",
+                handName(), offset.bodyNode, _pulledBodyIds.size());
+            return;
+        }
+
+        _pullSeatObjectProxyLocal = makeIdentityTransform();
+        _pullSeatObjectProxyLocal.translate = { offset.translateGame[0], offset.translateGame[1],
+            offset.translateGame[2] };
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                _pullSeatObjectProxyLocal.rotate.entry[row][column] = offset.rotate[row * 3 + column];
+            }
+        }
+        _pullSeatBodyInFrame = multiplyTransforms(invertTransform(frameNode->world), bodyWorld);
+        _pullSeatFrameScale = std::isfinite(frameNode->world.scale) && frameNode->world.scale > 0.0001f
+            ? frameNode->world.scale
+            : 1.0f;
+        _pullSeatMeshPointBody = transform_math::worldPointToLocal(bodyWorld, pulledMeshPointWorld);
+        _pullSeatValid = isFiniteNiTransform(_pullSeatBodyInFrame);
+        ROCK_LOG_DEBUG(Hand, "{} hand PULL aligns in flight to the {} seat (frame '{}')", handName(),
+            fixedAidPose ? "aid" : "authored", nodeDebugName(frameNode));
+    }
+
+    bool Hand::tryComputePullSeatBodyWorld(const RE::NiTransform& rawHandWorld, RE::NiTransform& outBodyWorld) const
+    {
+        RE::NiTransform proxyWorld{};
+        if (!_pullSeatValid || !tryComputeGrabProxyFrameForRawHand(rawHandWorld, proxyWorld)) {
+            return false;
+        }
+        // The same placement the catch makes (tryResolveSavedGrabOffsetAttach,
+        // resolveLooseWeaponPrimaryAttachFrame), on the live palm.
+        auto frameWorld = grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorld, _pullSeatObjectProxyLocal);
+        frameWorld.scale = _pullSeatFrameScale;
+        outBodyWorld = multiplyTransforms(frameWorld, _pullSeatBodyInFrame);
+        return isFiniteNiTransform(outBodyWorld);
     }
 
     bool Hand::startDynamicPull(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform)
@@ -457,6 +579,7 @@ namespace rock
                 longAxis.reason, _pullPresentationAxisBodyLocal.x, _pullPresentationAxisBodyLocal.y,
                 _pullPresentationAxisBodyLocal.z);
         }
+        capturePullSeat(world, rootNode, pulledMeshPointWorld);
 
         RE::NiPoint3 objectPointHavok{};
         if (!resolvePulledMeshPointHavok(world, _pulledPrimaryBodyId, _pullMeshPointBodyLocal, objectPointHavok)) {
@@ -535,7 +658,28 @@ namespace rock
             return false;
         }
 
-        const float distanceGameUnits = (grabPivotHavok - objectPointHavok).Length() * havokToGameScale();
+        /*
+         * With an authored seat the pulled mesh point flies to where the catch
+         * will seat it on the live palm, and the body turns toward its seated
+         * orientation for the whole flight. Without one it flies to the palm
+         * pivot and the catch seats it dynamically.
+         */
+        RE::NiTransform seatBodyWorld{};
+        const bool seatTracked = tryComputePullSeatBodyWorld(handWorldTransform, seatBodyWorld);
+        RE::NiPoint3 flightTargetHavok = grabPivotHavok;
+        RE::NiPoint3 seatTurnAxisWorld{};
+        float seatTurnAngle = 0.0f;
+        bool seatTurnNeeded = false;
+        if (seatTracked) {
+            const auto seatedPointHavok =
+                niPointToHkVector(transform_math::localPointToWorld(seatBodyWorld, _pullSeatMeshPointBody));
+            flightTargetHavok = RE::NiPoint3{ seatedPointHavok.x, seatedPointHavok.y, seatedPointHavok.z };
+            RE::NiTransform bodyWorld{};
+            seatTurnNeeded = tryGetGrabAuthorityBodyWorldTransform(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, bodyWorld) &&
+                shortestRotationWorld(bodyWorld, seatBodyWorld, seatTurnAxisWorld, seatTurnAngle);
+        }
+
+        const float distanceGameUnits = (flightTargetHavok - objectPointHavok).Length() * havokToGameScale();
         _currentSelection.distance = distanceGameUnits;
         const float configuredAutoGrabDistance = pull_motion_math::kAutoGrabDistanceGameUnits;
         const float nearConvergeDistance =
@@ -544,9 +688,10 @@ namespace rock
         const float arrivalDistance = (std::max)(configuredAutoGrabDistance,
             (std::min)(nearConvergeDistance, configuredAutoGrabDistance + pocketBand));
         const RE::NiPoint3 closestApproachHavok = _pullHasPreviousObjectPoint
-            ? pull_motion_math::closestPointOnSegment(_pullPreviousObjectPointHavok, objectPointHavok, grabPivotHavok)
+            ? pull_motion_math::closestPointOnSegment(_pullPreviousObjectPointHavok, objectPointHavok, flightTargetHavok)
             : objectPointHavok;
-        const float closestApproachGameUnits = (grabPivotHavok - closestApproachHavok).Length() * havokToGameScale();
+        const float closestApproachGameUnits =
+            (flightTargetHavok - closestApproachHavok).Length() * havokToGameScale();
         _pullPreviousObjectPointHavok = objectPointHavok;
         _pullHasPreviousObjectPoint = true;
         RE::NiPoint3 arrivalPointHavok = objectPointHavok;
@@ -579,15 +724,16 @@ namespace rock
             applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::PullArrivedClose });
             ROCK_LOG_DEBUG(Hand,
                 "{} hand PULL arrived -> close grab window dist={:.1f} arrival={:.1f} configuredAuto={:.1f} "
-                "near={:.1f} pocketBand={:.1f}",
+                "near={:.1f} pocketBand={:.1f} seat={} seatAngleDeg={:.1f}",
                 handName(), distanceGameUnits, arrivalDistance, configuredAutoGrabDistance, nearConvergeDistance,
-                pocketBand);
+                pocketBand, seatTracked ? "tracked" : (_pullSeatValid ? "lost" : "none"),
+                seatTurnNeeded ? seatTurnAngle * 57.29578f : 0.0f);
             return true;
         }
 
         const auto motionResult =
             pull_motion_math::computePullMotion<RE::NiPoint3>(pull_motion_math::PullMotionInput<RE::NiPoint3>{
-                .handHavok = grabPivotHavok,
+                .handHavok = flightTargetHavok,
                 .objectPointHavok = objectPointHavok,
                 .previousTargetHavok = _pullTargetHavok,
                 .elapsedSeconds = _pullElapsedSeconds,
@@ -612,7 +758,34 @@ namespace rock
             return false;
         }
 
+        /*
+         * Seat turn: the angular velocity is SET each frame to cover the
+         * remaining angle in the remaining predicted flight time, never slower
+         * than the presentation gain and capped by the presentation speed
+         * limit. Recomputed from the live body and the live palm each frame,
+         * so it follows the hand and cannot overshoot (rate * frame < 1).
+         */
+        RE::NiPoint3 seatAngularVelocity{};
+        if (seatTurnNeeded) {
+            const float timeToGo = _pullDurationSeconds - _pullElapsedSeconds;
+            const float rate = (std::max)((std::max)(0.0f, g_rockConfig.rockPullPresentationAngularGainPerSecond),
+                1.0f / (std::max)(timeToGo, kPullSeatMinTurnSeconds));
+            const float angularSpeed = (std::min)(seatTurnAngle * rate,
+                (std::max)(0.0f, g_rockConfig.rockPullPresentationMaxAngularSpeedRadiansPerSecond));
+            seatAngularVelocity = seatTurnAxisWorld * angularSpeed;
+            ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
+                "{} hand PULL seat turn angleDeg={:.1f} speed={:.2f}rad/s timeToGo={:.3f}s dist={:.1f}", handName(),
+                seatTurnAngle * 57.29578f, angularSpeed, timeToGo, distanceGameUnits);
+        }
+
         if (!motionResult.applyVelocity) {
+            if (seatTurnNeeded) {
+                // Coasting: keep the flight's own linear velocity, keep turning.
+                const RE::NiPoint3 coastVelocity{ motion->linearVelocity.x, motion->linearVelocity.y,
+                    motion->linearVelocity.z };
+                setHeldVelocity(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, _pulledBodyIds, coastVelocity,
+                    seatAngularVelocity, true, 1.0f, false, _pullDriveDecision.includeConnectedAngularVelocity);
+            }
             ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
                 "{} hand PULL holding owner after velocity window dist={:.1f} arrival={:.1f} elapsed={:.3f}s "
                 "duration={:.3f}s ownerGrace={:.3f}s",
@@ -633,9 +806,11 @@ namespace rock
          * This path ends at pull arrival, before capture freezes the relation;
          * held objects keep the no-rotate rule.
          */
-        RE::NiPoint3 presentationAngularVelocity{};
-        bool presentationActive = false;
-        if (_pullPresentationValid && g_rockConfig.rockPullLongAxisPresentationEnabled) {
+        RE::NiPoint3 presentationAngularVelocity = seatAngularVelocity;
+        bool presentationActive = seatTurnNeeded;
+        // An authored seat owns the orientation; the long-axis presentation is
+        // for objects the catch will seat dynamically.
+        if (!_pullSeatValid && _pullPresentationValid && g_rockConfig.rockPullLongAxisPresentationEnabled) {
             RE::NiTransform pulledBodyWorld{};
             if (tryGetBodyWorldTransform(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, pulledBodyWorld)) {
                 const RE::NiPoint3 currentAxisWorld = normalizeOrZero(

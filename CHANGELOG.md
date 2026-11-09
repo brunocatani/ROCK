@@ -113,6 +113,8 @@
 - Built-in grab poses for about 3,000 objects: a pulled or force-grabbed object
   without a saved offset is held in its authored pose instead of the dynamic
   seat. Your own saved offsets still take priority, hand by hand.
+- A pulled object with a saved or built-in pose turns into that pose while it flies
+  and arrives already in it, instead of turning at the last moment in your hand.
 - Saved grab offsets record the grip you see: a save no longer includes the
   physics drive's lag or the two-hand shared solve, so a later pull reproduces
   it exactly.

@@ -611,6 +611,10 @@ namespace rock
         bool unlockFarSelection();
         bool startDynamicPull(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform);
         bool updateDynamicPull(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float deltaTime);
+        // Captures the authored seat the pull flies to (the _pullSeat* fields).
+        void capturePullSeat(RE::hknpWorld* world, RE::NiAVObject* rootNode, const RE::NiPoint3& pulledMeshPointWorld);
+        // The primary body's seated pose on the palm of the given raw hand.
+        bool tryComputePullSeatBodyWorld(const RE::NiTransform& rawHandWorld, RE::NiTransform& outBodyWorld) const;
         void finishPullPrepAsPhysicalDropIfActive(const char* context);
         bool hasActivePullCatchIntent() const;
         bool hasArrivedPullCatchIntent() const;
@@ -689,6 +693,14 @@ namespace rock
         // The latest palm target's own proxy frame and the raw hand it was
         // built from (the reference both functions above carry onto a wrist).
         bool tryResolvePalmTargetGrabProxy(RE::NiTransform& outProxyWorld, RE::NiTransform& outRawHandWorld) const;
+        /*
+         * The authored pose a grab of this selection seats for this hand: the
+         * immersive aid pose (every grab), otherwise on a programmatic arrival
+         * the saved offset, a provider default pose or ROCK's built-in pose.
+         * The pull aligns to it in flight and the catch seats it.
+         */
+        bool resolveAuthoredGrabOffset(const SelectedObject& sel, bool looseWeaponGrab, bool programmaticArrival,
+            saved_grab_offset::HandOffset& out, bool& outFixedAidPose) const;
 
         struct GrabFingerPoseSnapshot
         {
@@ -1457,6 +1469,20 @@ namespace rock
         RE::NiPoint3 _pullPresentationAxisBodyLocal{};
         float _pullPresentationElongationRatio = 0.0f;
         bool _pullPresentationValid = false;
+        /*
+         * Authored seat the pull flies to (resolveAuthoredGrabOffset), captured
+         * at pull start: the offset's object frame in the palm proxy, the
+         * primary body in that frame's node, the node's scale, and the pulled
+         * mesh point in the body frame. Each flight frame the seat is placed on
+         * the live palm, the mesh point flies to its seated position and the
+         * body turns toward its seated orientation, so it arrives already
+         * posed and the catch only completes the last few units.
+         */
+        bool _pullSeatValid = false;
+        RE::NiTransform _pullSeatObjectProxyLocal{};
+        RE::NiTransform _pullSeatBodyInFrame{};
+        float _pullSeatFrameScale = 1.0f;
+        RE::NiPoint3 _pullSeatMeshPointBody{};
         PullCatchIntent _pullCatchIntent{};
         ExtractedItemHandoff _extractedItemHandoff{};
 
