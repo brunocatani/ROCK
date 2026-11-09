@@ -996,12 +996,17 @@ namespace rock::config
         { "DebugOverlay", "DebugDrawDynamicWeaponColliders", "15. Debug Overlay",
             "Draws the layer-51 dynamic weapon compound proxy and contact/correction telemetry.",
             api::configuration::Group::Developer },
+        { "DebugOverlay", "DebugDrawLooseObjectColliders", "15. Debug Overlay",
+            "Draws the collision of every object in the experimental generated object collision pool "
+            "(Grabbing.GeneratedObjectCollision): green is the generated collision once installed, violet is the "
+            "object's native collision.\nNeeds DebugShowColliders.",
+            api::configuration::Group::Developer },
         { "DebugOverlay", "DebugMaxWeaponBodiesDrawn", "15. Debug Overlay", "",
             api::configuration::Group::Developer },
         { "DebugOverlay", "DebugMaxShapeCapturesPerFrame", "15. Debug Overlay",
             "Bounded overlay work and memory budgets. Zero disables the corresponding capture/upload/draw stream where "
             "noted.\nRanges: captures 0..32, compound slots 1..1024, depth 1..8, queued/completed 0..256,\nuploads "
-            "0..16, cache entries 16..4096, cache bytes 1048576..536870912,\nbody instances 0..163, line vertices "
+            "0..16, cache entries 16..4096, cache bytes 1048576..536870912,\nbody instances 0..195, line vertices "
             "0..65536, text vertices 0..131072.",
             api::configuration::Group::Developer },
         { "DebugOverlay", "DebugMaxConvexSupportVertices", "15. Debug Overlay", "",

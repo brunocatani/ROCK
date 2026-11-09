@@ -606,15 +606,22 @@ namespace rock::debug
                 DirectX::XMMatrixTranslation(centerX, centerY, centerZ));
         }
 
-        BodyOverlayFrameSource targetBodyOverlayFrameSource(BodyOverlayRole role)
+        bool usesBodyArrayFrame(BodyOverlayRole role)
         {
             /*
              * Target colliders are grab diagnostics. Draw them from the hknp
              * BODY array transform, matching body-B authority, instead of the
              * generic live MOTION/COM frame used by non-target body readback.
+             * Loose-object shapes are authored in that same BODY frame.
              */
-            return role == BodyOverlayRole::Target ? BodyOverlayFrameSource::BodyArrayTransform
-                                                   : BodyOverlayFrameSource::LiveMotionWhenAvailable;
+            return role == BodyOverlayRole::Target || role == BodyOverlayRole::LooseObjectGenerated ||
+                role == BodyOverlayRole::LooseObjectNative;
+        }
+
+        BodyOverlayFrameSource targetBodyOverlayFrameSource(BodyOverlayRole role)
+        {
+            return usesBodyArrayFrame(role) ? BodyOverlayFrameSource::BodyArrayTransform
+                                            : BodyOverlayFrameSource::LiveMotionWhenAvailable;
         }
 
         BodyOverlayFrameSource targetAxisOverlayFrameSource(AxisOverlayRole role)
@@ -704,7 +711,7 @@ namespace rock::debug
                 auto& destination = s_physicsPhaseCaptureRequest.entries[s_physicsPhaseCaptureRequest.count++];
                 destination.bodyId = RE::hknpBodyId{ source.bodyId };
                 destination.role = source.role;
-                destination.useBodyArrayTransform = source.role == BodyOverlayRole::Target;
+                destination.useBodyArrayTransform = usesBodyArrayFrame(source.role);
             }
             // Body axes can be enabled without collider shells. Capture their
             // physical frame too, sharing a request when the shell is present.
@@ -1076,7 +1083,8 @@ namespace rock::debug
                 role == BodyOverlayRole::FocusedWeaponPart || role == BodyOverlayRole::RightGrabAuthorityProxy ||
                 role == BodyOverlayRole::LeftGrabAuthorityProxy ||
                 role == BodyOverlayRole::RightGrabPivotSourceCollider ||
-                role == BodyOverlayRole::LeftGrabPivotSourceCollider;
+                role == BodyOverlayRole::LeftGrabPivotSourceCollider || role == BodyOverlayRole::LooseObjectGenerated ||
+                role == BodyOverlayRole::LooseObjectNative;
         }
 
         OverlayRenderSettings captureOverlayRenderSettings()
@@ -1251,6 +1259,8 @@ namespace rock::debug
                     ++destination.bodyExtractFailures;
                     continue;
                 }
+                if (entry.shapeOverride)
+                    body.shapeAddress = entry.shapeOverride;
 
                 // Held-object presentation advances the complete solved pose.
                 // Use that same immutable frame for the ordinary collider shell,
@@ -1450,6 +1460,18 @@ namespace rock::debug
                 color[0] = 1.0f;
                 color[1] = 0.85f;
                 color[2] = 0.05f;
+                break;
+            case BodyOverlayRole::LooseObjectGenerated:
+                color[0] = 0.10f;
+                color[1] = 1.0f;
+                color[2] = 0.55f;
+                color[3] = 0.90f;
+                break;
+            case BodyOverlayRole::LooseObjectNative:
+                color[0] = 0.70f;
+                color[1] = 0.45f;
+                color[2] = 1.0f;
+                color[3] = 0.60f;
                 break;
             }
 

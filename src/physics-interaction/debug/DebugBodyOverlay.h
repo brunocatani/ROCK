@@ -25,6 +25,9 @@ namespace rock::havok_physics_timing
 
 namespace rock::debug
 {
+    // Loose-object pool slots, each drawn twice (generated and native).
+    inline constexpr std::size_t kLooseObjectOverlayEntries = 2 * 16;
+
     enum class BodyOverlayRole : std::uint8_t
     {
         RightHand,
@@ -40,7 +43,11 @@ namespace rock::debug
         LeftGrabAuthorityProxy,
         RightGrabPivotSourceCollider,
         LeftGrabPivotSourceCollider,
-        Target
+        Target,
+        // Experimental loose-object collision: the installed generated
+        // compound, and the retained native shape drawn on the same body.
+        LooseObjectGenerated,
+        LooseObjectNative
     };
 
     enum class AxisOverlayRole : std::uint8_t
@@ -257,6 +264,10 @@ namespace rock::debug
     {
         RE::hknpBodyId bodyId{ 0x7FFF'FFFF };
         BodyOverlayRole role{ BodyOverlayRole::Target };
+        // Non-zero: draw this hknpShape at the body's frame instead of the
+        // body's current shape. Non-owning; the publisher keeps the shape
+        // alive until PublishFrame returns, which copies its geometry.
+        std::uintptr_t shapeOverride{ 0 };
     };
 
     struct AxisOverlayEntry
@@ -331,7 +342,7 @@ namespace rock::debug
         std::uint64_t gameFrameIndex{ 0 };
         std::array<BodyOverlayEntry,
             MAX_WEAPON_COLLISION_BODIES + (hand_collider_semantics::kHandColliderBodyCountPerHand * 2) +
-                body_collider::kStandardDescriptors.size() + 8>
+                body_collider::kStandardDescriptors.size() + 8 + kLooseObjectOverlayEntries>
             entries{};
         std::array<AxisOverlayEntry, 96> axisEntries{};
         std::array<MarkerOverlayEntry, 512> markerEntries{};

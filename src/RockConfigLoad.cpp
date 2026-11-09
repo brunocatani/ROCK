@@ -670,6 +670,8 @@ namespace rock
             ini.boolean("DebugOverlay", "DebugDrawLooseWeaponGripZones", rockDebugDrawLooseWeaponGripZones);
         rockDebugDrawDynamicWeaponColliders =
             ini.boolean("DebugOverlay", "DebugDrawDynamicWeaponColliders", rockDebugDrawDynamicWeaponColliders);
+        rockDebugDrawLooseObjectColliders =
+            ini.boolean("DebugOverlay", "DebugDrawLooseObjectColliders", rockDebugDrawLooseObjectColliders);
         rockDebugMaxWeaponBodiesDrawn =
             static_cast<int>(ini.integer("DebugOverlay", "DebugMaxWeaponBodiesDrawn", rockDebugMaxWeaponBodiesDrawn));
         rockDebugMaxShapeCapturesPerFrame = static_cast<int>(

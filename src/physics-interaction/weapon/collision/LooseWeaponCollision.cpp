@@ -788,6 +788,8 @@ namespace rock
                     auto mutation = gate.pauseForMutation();
                     slot.clear(frame.hknpWorld);
                 }
+                if (slot._state && (slot._state->ref.get() == right || slot._state->ref.get() == left))
+                    slot._lastHeld = ++_heldSequence;
                 slot.update(frame, right, left, gate, i == preparing);
                 if (slot._state && slot._state->parked) {
                     if (loose_weapon_state::owns(slot._state->ref->formID) && !slot._state->nativeOnly) {
@@ -847,6 +849,11 @@ namespace rock
                     return (slot._state && slot._state->ref.get() == ref) || slot._declined == ref->formID;
                 }))
                 continue;
+            // A newly held object always gets a slot: the object let go of
+            // longest ago returns to native collision, resting or not.
+            if (_pool == Pool::Objects &&
+                std::none_of(_slots.begin(), _slots.end(), [](const Slot& slot) { return !slot._state; }))
+                evictLeastRecentlyHeldObject(frame.hknpWorld, right, left, gate);
             std::array<loose_weapon_collision_policy::Slot, loose_weapon_collision_policy::kMaxWeapons> identities{};
             for (std::size_t i = 0; i < _slots.size(); ++i)
                 if (_slots[i]._state)
@@ -864,6 +871,7 @@ namespace rock
                 if (loose_weapon_state::owns(ref->formID) && !loose_weapon_state::apply(ref, ref->Get3D()))
                     continue;
                 free->admit(ref, frame, _pool);
+                free->_lastHeld = ++_heldSequence;
             } catch (...) {
                 free->_declined = ref->formID;
                 free->clear(frame.hknpWorld);
@@ -872,6 +880,48 @@ namespace rock
             }
         }
         publishWatchMask();
+    }
+
+    bool LooseWeaponCollision::evictLeastRecentlyHeldObject(RE::hknpWorld* world, const RE::TESObjectREFR* right,
+        const RE::TESObjectREFR* left, PhysicsCallbackQuiescenceGate& gate)
+    {
+        Slot* oldest = nullptr;
+        for (auto& slot : _slots) {
+            const auto* ref = slot._state ? slot._state->ref.get() : nullptr;
+            if (ref && ref != right && ref != left && (!oldest || slot._lastHeld < oldest->_lastHeld))
+                oldest = &slot;
+        }
+        if (!oldest)
+            return false;
+        const auto id = oldest->_state->ref->formID;
+        const bool installed = oldest->_state->installed;
+        const char* phase = oldest->_state->phase;
+        {
+            auto mutation = gate.pauseForMutation();
+            oldest->clear(world);
+        }
+        if (oldest->_state)
+            return false; // Restore pending; the slot's own update retries it.
+        ROCK_LOG_INFO(Weapon,
+            "Loose object collision evicted ref={:08X} reason=capacity installed={} phase='{}'; native collision "
+            "restored",
+            id, installed, phase);
+        return true;
+    }
+
+    std::size_t LooseWeaponCollision::debugBodies(const RE::hknpWorld* world, std::span<DebugBody> out) const
+    {
+        std::size_t count = 0;
+        for (const auto& slot : _slots) {
+            if (!slot._state || slot._state->world != world)
+                continue;
+            for (const auto& body : slot._state->bodies) {
+                if (count >= out.size())
+                    return count;
+                out[count++] = { body.id, body.original.get(), body.changed };
+            }
+        }
+        return count;
     }
 
     bool LooseWeaponCollision::takeNativeRestCompletion(std::uint32_t reference) noexcept

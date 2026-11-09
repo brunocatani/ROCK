@@ -259,6 +259,7 @@ namespace rock
         bool rockDebugDrawControllerAim = false;
         bool rockDebugDrawLooseWeaponGripZones = false;
         bool rockDebugDrawDynamicWeaponColliders = false;
+        bool rockDebugDrawLooseObjectColliders = false;
         int rockDebugMaxWeaponBodiesDrawn = 100;
         int rockDebugMaxShapeCapturesPerFrame =
             static_cast<int>(debug_overlay_runtime::kDefaultMaxShapeCapturesPerFrame);
