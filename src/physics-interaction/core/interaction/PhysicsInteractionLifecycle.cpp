@@ -146,12 +146,24 @@ namespace rock
         refreshGeneratedBodyContactRegistry();
     }
 
+    PhysicsInteraction::OwnedWorld PhysicsInteraction::ownedLiveWorld() const
+    {
+        auto* bhk = _lifecycle.heldBhkWorld.get();
+        auto* hknp = bhk ? getHknpWorld(bhk) : nullptr;
+        if (!bhk || bhk != _lifecycle.cachedBhkWorld || !hknp || hknp != _lifecycle.cachedHknpWorld) {
+            return {};
+        }
+        return { bhk, hknp };
+    }
+
     void PhysicsInteraction::markGeneratedBodiesInvalidated()
     {
         const auto collisionGeneration =
             _lifecycle.collisionGenerationAtomic.fetch_add(1, std::memory_order_acq_rel) + 1;
-        auto* currentBhkWorld = getPlayerBhkWorld();
-        auto* currentHknpWorld = currentBhkWorld ? getHknpWorld(currentBhkWorld) : nullptr;
+        // ROCK's own world, not the player's: see shutdown().
+        const auto owned = ownedLiveWorld();
+        auto* currentBhkWorld = owned.bhk;
+        auto* currentHknpWorld = owned.hknp;
         /*
          * Touch constraints reference ROCK's generated hand bodies. Retire
          * them while the matching world is still authoritative; if the world
@@ -411,6 +423,7 @@ namespace rock
         physics_scale::refreshAndLogIfChanged();
         _lifecycle.cachedBhkWorld = bhk;
         _lifecycle.cachedHknpWorld = hknp;
+        _lifecycle.heldBhkWorld.reset(bhk);
         if (!refreshHandBoneCache()) {
             ROCK_LOG_WARN(Init, "HandBoneCache not ready during init; runtime remains on pre-00 transform paths");
         }
@@ -421,6 +434,7 @@ namespace rock
             (void)frik_visual_authority::blockOffHandWeaponGripping("ROCK_Physics", false);
             _lifecycle.cachedBhkWorld = nullptr;
             _lifecycle.cachedHknpWorld = nullptr;
+            _lifecycle.heldBhkWorld.reset();
             return;
         }
 
@@ -429,6 +443,7 @@ namespace rock
             (void)frik_visual_authority::blockOffHandWeaponGripping("ROCK_Physics", false);
             _lifecycle.cachedBhkWorld = nullptr;
             _lifecycle.cachedHknpWorld = nullptr;
+            _lifecycle.heldBhkWorld.reset();
             return;
         }
 
@@ -536,10 +551,20 @@ namespace rock
         ROCK_LOG_INFO(Init, "Shutting down ROCK physics module...");
         restoreHeldMassMovementSlowdown("shutdown");
 
-        auto* currentBhk = getPlayerBhkWorld();
-        auto* currentHknp = currentBhk ? getHknpWorld(currentBhk) : nullptr;
-        const bool worldValid = _lifecycle.cachedBhkWorld && currentBhk == _lifecycle.cachedBhkWorld &&
-            _lifecycle.cachedHknpWorld && currentHknp == _lifecycle.cachedHknpWorld;
+        // ROCK's bodies are removed from the world they were made in, wherever the player is now.
+        // A teardown can run after the player has left it (a load defers FRIK's skeleton teardown
+        // past the load; a cell transition is seen a frame late), and a worldspace's world lives
+        // on: bodies abandoned there were stepped again on the return with their wrappers freed,
+        // and the contact solver spun forever on the freed data. heldBhkWorld keeps that world's
+        // memory alive, so it is only abandoned when it no longer holds the hknpWorld ROCK used.
+        const auto owned = ownedLiveWorld();
+        auto* currentBhk = owned.bhk;
+        auto* currentHknp = owned.hknp;
+        const bool worldValid = currentBhk != nullptr;
+        if (worldValid && currentBhk != getPlayerBhkWorld()) {
+            ROCK_LOG_INFO(Init, "Removing ROCK bodies from the world the player has left: bhkWorld={}, hknpWorld={}",
+                static_cast<const void*>(currentBhk), static_cast<const void*>(currentHknp));
+        }
         native_interaction_service::clear(worldValid ? currentHknp : nullptr, worldValid ? currentBhk : nullptr);
 
         _looseWeaponCollision.clear(worldValid ? currentHknp : nullptr);
@@ -634,6 +659,7 @@ namespace rock
 
         _lifecycle.cachedBhkWorld = nullptr;
         _lifecycle.cachedHknpWorld = nullptr;
+        _lifecycle.heldBhkWorld.reset();
         _layers = {};
         _lifecycle.initialized = false;
         observeLifecycleFrame(nullptr, nullptr, reason);

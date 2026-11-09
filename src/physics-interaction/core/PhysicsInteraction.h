@@ -421,6 +421,14 @@ namespace rock
         RE::bhkWorld* getPlayerBhkWorld() const;
 
         static RE::hknpWorld* getHknpWorld(RE::bhkWorld* bhk);
+        // The world ROCK's bodies were made in (heldBhkWorld) while it still holds the hknpWorld
+        // ROCK used, whether or not the player is in it; both null otherwise.
+        struct OwnedWorld
+        {
+            RE::bhkWorld* bhk = nullptr;
+            RE::hknpWorld* hknp = nullptr;
+        };
+        OwnedWorld ownedLiveWorld() const;
 
         PhysicsFrameContext buildFrameContext(RE::bhkWorld* bhk, RE::hknpWorld* hknp);
 
@@ -891,6 +899,12 @@ namespace rock
             std::atomic<std::uint32_t> stableFrameCountAtomic{ 0 };
             std::atomic<RE::hknpWorld*> hknpWorldAtomic{ nullptr };
             RE::bhkWorld* cachedBhkWorld = nullptr;
+            // The world ROCK's bodies were created in, held from init() to the end of shutdown():
+            // a worldspace's world outlives the player's visit (Diamond City keeps one address across
+            // cell changes and save loads), so its bodies must be removed there even when the
+            // teardown runs after the player has moved on. The reference keeps its memory alive;
+            // the bhkWorld destructor (141DF6AD0) is what releases its hknpWorld at +0x60.
+            RE::NiPointer<RE::bhkWorld> heldBhkWorld;
             RE::hknpWorld* cachedHknpWorld = nullptr;
             RE::bhkWorld* generatedBodiesBhkWorld = nullptr;
             RE::hknpWorld* generatedBodiesHknpWorld = nullptr;

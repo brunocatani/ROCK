@@ -786,11 +786,12 @@ namespace rock
             if (!_lifecycle.initialized.load(std::memory_order_acquire)) {
                 return;
             }
-            auto* currentBhk = getPlayerBhkWorld();
-            auto* currentHknp = currentBhk ? getHknpWorld(currentBhk) : nullptr;
+            // ROCK's own world, not the player's: see shutdown().
+            const auto owned = ownedLiveWorld();
+            auto* currentBhk = owned.bhk;
+            auto* currentHknp = owned.hknp;
             native_interaction_service::clear(currentHknp, currentBhk);
-            if (currentBhk && currentBhk == _lifecycle.cachedBhkWorld && currentHknp &&
-                currentHknp == _lifecycle.cachedHknpWorld) {
+            if (currentBhk) {
                 _dynamicWeaponCollision.retireAll(currentBhk, preserveSurfaceSupport);
                 _secondaryDynamicWeaponCollision.retireAll(currentBhk);
             } else {
