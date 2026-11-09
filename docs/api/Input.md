@@ -38,6 +38,12 @@ expiry counts against; `sample` identifies the publication.
   hook is unavailable.
 - `getLogicalInputActionState(owner, LogicalInputAction::Jump, state)`: the
   jump action's level, press sequence and availability.
+- `getLogicalInputActionState(owner, LogicalInputAction::PalmWheel, state)`:
+  whether the primary (right) stick click is RobCo PALM's. The player binds
+  PALM and the stick actions (bipod, placement, Favorites) in ROCK's
+  `[Bindings]`; ROCK presents a moved PALM binding as a right stick click.
+  `held` is 1 while that click is PALM's and 0 while it is another function's,
+  so PALM opens only on its own. `pressSequence` is 0.
 - `getPlacementClickState(owner, state)`: `PlacementClickFlag::InputReserved`
   while an add-on's held placement action owns the right-stick click,
   including its release; `objectFormId` is the submitted candidate.
@@ -111,7 +117,7 @@ a failed renew and in the state's `lastInvalidationReason`.
 | `HandInputSuppressionFlag` | `SuppressNormalGrabPress`, `SuppressGrabRelease`, `SuppressHeldWeaponTriggerEquip`, `SuppressGameplayCandidates`, `SuppressOpenVrGameInput`, `SuppressNativeVats`, `SuppressNativeVans`, `SuppressGrenadeQuickDraw`, `ReserveTriggerGripChord`, `ReserveButtonChord`; `SuppressConfigModeChord` is the first four together |
 | `InputAvailabilityReason` | `Available`, `HookNotSampled`, `BlockingMenu`, `ReleaseToRearm`, `InvalidButton` |
 | `SuppressionInvalidationReason` | `None`, `Expired`, `GenerationChanged`, `OwnerUnregistered`, `ProviderLost`, `ExplicitClear`, `CallbackFault` |
-| `LogicalInputAction` | `Jump` |
+| `LogicalInputAction` | `Jump`, `PalmWheel` |
 
 Up to `kMaxSuppressions` (32) suppression leases are held across owners.
 

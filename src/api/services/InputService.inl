@@ -206,7 +206,8 @@
         if (ownerToken == 0) {
             return api::Status::InvalidArgument;
         }
-        if (action != ::rock::api::input::LogicalInputAction::Jump) {
+        if (action != ::rock::api::input::LogicalInputAction::Jump &&
+            action != ::rock::api::input::LogicalInputAction::PalmWheel) {
             return api::Status::InvalidArgument;
         }
         if (!onAnimationOwnerThread()) {
@@ -226,7 +227,9 @@
             snapshot = s_lastSnapshot;
         }
 
-        const auto input = rock::input_remap_runtime::readLogicalJumpState();
+        const auto input = action == ::rock::api::input::LogicalInputAction::Jump
+            ? rock::input_remap_runtime::readLogicalJumpState()
+            : rock::input_remap_runtime::readLogicalPalmWheelState();
         outState.action = action;
         outState.available = input.available ? 1u : 0u;
         outState.held = input.held ? 1u : 0u;

@@ -74,7 +74,10 @@ namespace rock
             return; // The provider owns its raw click edge until it yields input.
         }
         const auto raw = input_remap_runtime::consumeRawButtonState(false, weapon_surface_support::kButtonId);
-        const bool available = raw.available && !input_remap_runtime::isMenuInputActive();
+        // A stick click a binding made for PALM's wheel is not a bipod or placement click.
+        const bool boundToPalm = input_remap_runtime::functionTag(false, button_layout_policy::Slot::StickClick) ==
+            function_binding_policy::Function::Palm;
+        const bool available = raw.available && !input_remap_runtime::isMenuInputActive() && !boundToPalm;
         const bool click = _surfaceToggle.consume({
             .available = available,
             .held = raw.held,

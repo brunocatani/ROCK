@@ -333,6 +333,9 @@ namespace rock::function_binding_policy
         std::array<bool, button_layout_policy::kSlotCount> pressed{};
         // The function behind a synthesized press; Function::Count for none.
         std::array<Function, button_layout_policy::kSlotCount> tag{};
+        // Every function presented on this hand's buttons (functionBit), including
+        // ones that share a button with the tagged one.
+        std::uint32_t functions{ 0 };
         float triggerAnalog{ 0.0f };
         float gripAnalog{ 0.0f };
     };
@@ -395,6 +398,7 @@ namespace rock::function_binding_policy
                         if (slotOf(home.source) != static_cast<Slot>(slot) || !sideMatches(home.hand, isLeft, context)) continue;
                         if (!presenting(function, isLeft, context.seconds)) continue;
                         hand.pressed[slot] = true;
+                        hand.functions |= functionBit(function);
                         if (hand.tag[slot] == Function::Count) hand.tag[slot] = function;
                         analog(function, isLeft, static_cast<Slot>(slot), context, samples, hand);
                     }

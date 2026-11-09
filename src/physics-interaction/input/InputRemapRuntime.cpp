@@ -275,6 +275,26 @@ namespace rock::input_remap_runtime
         std::array<std::atomic<std::uint64_t>, 2> s_buttonLayouts{ button_layout_policy::pack({}),
             button_layout_policy::pack({}) };
         std::array<std::atomic<std::uint8_t>, 2> s_padLatches{};
+        /*
+         * Function bindings ([Bindings]). One composer for both hands: any OpenVR
+         * reader thread submits its hand's sample and takes the result under this
+         * lock (a short, allocation-free update). What the composer needs but a
+         * reader thread cannot read safely is published by the frame thread.
+         * Tags name the function behind each synthesized logical button,
+         * Function::Count for one that passes through; they are read only while
+         * the bindings differ from the defaults.
+         */
+        std::mutex s_functionBindingMutex;
+        function_binding_policy::Composer s_functionBindings;                  // Guarded.
+        std::array<function_binding_policy::HandSample, 2> s_functionSamples{}; // Guarded.
+        std::array<button_layout_policy::PadLatch, 2> s_functionPadLatches{};   // Guarded.
+        std::atomic<bool> s_functionBindingsIdentity{ true };
+        std::atomic<bool> s_useTargetAvailable{ false };  // Frame thread -> readers.
+        std::atomic<float> s_grenadeHoldSeconds{ 0.25f }; // Frame thread -> readers.
+        std::array<std::array<std::atomic<std::uint8_t>, button_layout_policy::kSlotCount>, 2> s_functionTags{};
+        std::array<std::atomic<std::uint32_t>, 2> s_functionsPresented{};
+        // A primary Activate press stopped for a bound Reload or Scope: its release is stopped too.
+        std::atomic<bool> s_stopPrimaryActivateUntilRelease{ false };
         std::atomic<bool> s_gameplayInputAllowed{ false };
         std::atomic<bool> s_bothHandsHoldWeapons{ false }; // Frame thread -> input dispatch.
         std::atomic<bool> s_bipodClickReserved{ false };   // Frame thread -> input dispatch.
@@ -883,6 +903,110 @@ namespace rock::input_remap_runtime
             button_layout_policy::apply(layout, *state, latch);
         }
 
+        [[nodiscard]] double steadySeconds() noexcept
+        {
+            return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        }
+
+        /*
+         * After the controller layout, before ROCK's capture: presents the
+         * player's function bindings on each function's home button (see
+         * FunctionBindingPolicy.h). The five layout slots are read as the layout
+         * presents them; every other control as it physically is. Default
+         * bindings return before touching anything.
+         */
+        void applyFunctionBindings(vr::TrackedDeviceIndex_t deviceIndex, const vr::VRControllerState_t& physical,
+            vr::VRControllerState_t* state, std::uint32_t stateSize)
+        {
+            if (s_functionBindingsIdentity.load(std::memory_order_acquire) || !state ||
+                stateSize < sizeof(vr::VRControllerState_t)) {
+                return;
+            }
+            input_remap_policy::Hand hand{};
+            if (!resolveControllerHand(deviceIndex, hand)) {
+                return;
+            }
+            namespace fb = function_binding_policy;
+            namespace layout = button_layout_policy;
+            using layout::PadLatch;
+            using layout::Slot;
+            using layout::Source;
+            const bool isLeft = hand == input_remap_policy::Hand::Left;
+            const std::size_t side = isLeft ? 0 : 1;
+
+            fb::Context context{};
+            context.firingIsLeft = weaponRouting().leftFiring;
+            context.primaryIsLeft = false; // ROCK's primary wand is the right one.
+            context.bypass = !s_gameplayInputAllowed.load(std::memory_order_acquire) || isInputBlockingMenuActive();
+            if (!s_useTargetAvailable.load(std::memory_order_acquire)) {
+                context.eligible &= ~fb::functionBit(fb::Function::Use);
+            }
+            if (!g_rockConfig.rockEnableImmersiveScopes || !s_weaponDrawn.load(std::memory_order_acquire)) {
+                context.eligible &= ~fb::functionBit(fb::Function::Scope);
+            }
+            context.seconds = steadySeconds();
+            context.holdSeconds.fill(g_rockConfig.rockBindingHoldSeconds);
+            context.holdSeconds[static_cast<std::size_t>(fb::Function::Scope)] = g_rockConfig.rockManualScopeHoldSeconds;
+            context.holdSeconds[static_cast<std::size_t>(fb::Function::Pause)] = g_rockConfig.rockPipboyPauseHoldSeconds;
+            context.holdSeconds[static_cast<std::size_t>(fb::Function::Grenade)] =
+                s_grenadeHoldSeconds.load(std::memory_order_acquire);
+            context.doubleTapSeconds = g_rockConfig.rockBindingDoubleTapSeconds;
+
+            std::array<fb::HandOutput, 2> output{};
+            {
+                std::scoped_lock lock(s_functionBindingMutex);
+                // Trackpad regions latch at the press, as the layout's do.
+                auto& latch = s_functionPadLatches[side];
+                if ((physical.ulButtonPressed & layout::bit(layout::kStickBit)) == 0) {
+                    latch = PadLatch::Released;
+                } else if (latch == PadLatch::Released) {
+                    latch = layout::latchFor(layout::classifyPadRegion(physical.rAxis[layout::kStickAxis].x,
+                        physical.rAxis[layout::kStickAxis].y));
+                }
+                auto& sample = s_functionSamples[side];
+                for (std::size_t index = 0; index < fb::kSourceCount; ++index) {
+                    const auto source = static_cast<Source>(index);
+                    sample.pressed[index] = fb::slotOf(source) != Slot::Count
+                        ? layout::sampleSource(source, *state, PadLatch::Stick).pressed
+                        : layout::sampleSource(source, physical, latch).pressed;
+                }
+                sample.triggerAnalog = state->rAxis[layout::kTriggerAxis].x;
+                sample.gripAnalog = state->rAxis[layout::kGripAxis].x;
+                output = s_functionBindings.update(context, s_functionSamples);
+            }
+            for (std::size_t handIndex = 0; handIndex < 2; ++handIndex) {
+                for (std::size_t slot = 0; slot < layout::kSlotCount; ++slot) {
+                    const auto tag = output[handIndex].synthesized[slot] ? output[handIndex].tag[slot] : fb::Function::Count;
+                    s_functionTags[handIndex][slot].store(static_cast<std::uint8_t>(tag), std::memory_order_release);
+                }
+                s_functionsPresented[handIndex].store(output[handIndex].functions, std::memory_order_release);
+            }
+
+            const auto& mine = output[side];
+            constexpr int kSlotBits[layout::kSlotCount] = { layout::kTriggerBit, layout::kGripBit, layout::kLowerFaceBit,
+                layout::kUpperFaceBit, layout::kStickBit };
+            for (std::size_t slot = 0; slot < layout::kSlotCount; ++slot) {
+                if (!mine.synthesized[slot]) {
+                    continue;
+                }
+                const auto mask = layout::bit(kSlotBits[slot]);
+                const bool pressed = mine.pressed[slot];
+                state->ulButtonPressed = pressed ? (state->ulButtonPressed | mask) : (state->ulButtonPressed & ~mask);
+                // The stick's touch stays physical with the stick axes it describes.
+                if (static_cast<Slot>(slot) != Slot::StickClick) {
+                    state->ulButtonTouched = pressed ? (state->ulButtonTouched | mask) : (state->ulButtonTouched & ~mask);
+                }
+                if (static_cast<Slot>(slot) == Slot::Trigger) {
+                    state->rAxis[layout::kTriggerAxis] = { pressed ? mine.triggerAnalog : 0.0f, 0.0f };
+                } else if (static_cast<Slot>(slot) == Slot::Grab) {
+                    state->rAxis[layout::kGripAxis] = { pressed ? mine.gripAnalog : 0.0f, 0.0f };
+                    // The Touch grip's companion click belongs to the physical grip only.
+                    state->ulButtonPressed &= ~layout::bit(layout::kGripClickBit);
+                    state->ulButtonTouched &= ~layout::bit(layout::kGripClickBit);
+                }
+            }
+        }
+
         bool ensureMenuInputGateRegistered()
         {
             auto* ui = RE::UI::GetSingleton();
@@ -1079,6 +1203,20 @@ namespace rock::input_remap_runtime
             }
         }
 
+        // The controller layout, then the function bindings on what it presents.
+        void applyLayoutAndBindings(vr::TrackedDeviceIndex_t deviceIndex, vr::VRControllerState_t* state,
+            std::uint32_t stateSize)
+        {
+            if (s_functionBindingsIdentity.load(std::memory_order_acquire) || !state ||
+                stateSize < sizeof(vr::VRControllerState_t)) {
+                applyButtonLayout(deviceIndex, state, stateSize);
+                return;
+            }
+            const vr::VRControllerState_t physical = *state;
+            applyButtonLayout(deviceIndex, state, stateSize);
+            applyFunctionBindings(deviceIndex, physical, state, stateSize);
+        }
+
         bool hookedGetControllerState(vr::IVRSystem* system, vr::TrackedDeviceIndex_t controllerDeviceIndex,
             vr::VRControllerState_t* controllerState, std::uint32_t controllerStateSize)
         {
@@ -1091,7 +1229,7 @@ namespace rock::input_remap_runtime
             }
             if (result) {
                 const auto physical = telemetryRawState(controllerState, controllerStateSize);
-                applyButtonLayout(controllerDeviceIndex, controllerState, controllerStateSize);
+                applyLayoutAndBindings(controllerDeviceIndex, controllerState, controllerStateSize);
                 captureControllerState(controllerDeviceIndex, controllerState, controllerStateSize);
                 input_remap_policy::Hand hand{};
                 if (resolveControllerHand(controllerDeviceIndex, hand)) {
@@ -1117,7 +1255,7 @@ namespace rock::input_remap_runtime
             }
             if (result) {
                 const auto physical = telemetryRawState(controllerState, controllerStateSize);
-                applyButtonLayout(controllerDeviceIndex, controllerState, controllerStateSize);
+                applyLayoutAndBindings(controllerDeviceIndex, controllerState, controllerStateSize);
                 captureControllerState(controllerDeviceIndex, controllerState, controllerStateSize);
                 input_remap_policy::Hand hand{};
                 if (resolveControllerHand(controllerDeviceIndex, hand)) {
@@ -1884,9 +2022,31 @@ namespace rock::input_remap_runtime
                 return;
             }
 
+            const bool primaryHandEvent = isPrimaryWandInputEvent(inputEvent);
+            // A primary A press a binding made for Reload or Scope is ROCK's, press to
+            // release; one made for Use is the game's activation, past manual scope.
+            const auto boundTag = isActivateReloadEvent(inputEvent) && primaryHandEvent
+                ? functionTag(false, button_layout_policy::Slot::LowerFace)
+                : function_binding_policy::Function::Count;
+            if (s_stopPrimaryActivateUntilRelease.load(std::memory_order_acquire) && isActivateReloadEvent(inputEvent) &&
+                primaryHandEvent) {
+                const auto* button = inputEvent->As<RE::ButtonEvent>();
+                if (button && !button->QPressed()) {
+                    s_stopPrimaryActivateUntilRelease.store(false, std::memory_order_release);
+                }
+                markInputEventStopped(inputEvent);
+                return;
+            }
+            if (boundTag == function_binding_policy::Function::Reload || boundTag == function_binding_policy::Function::Scope) {
+                const auto* button = inputEvent->As<RE::ButtonEvent>();
+                s_stopPrimaryActivateUntilRelease.store(button && button->QPressed(), std::memory_order_release);
+                markInputEventStopped(inputEvent);
+                return;
+            }
+            const bool boundUse = boundTag == function_binding_policy::Function::Use;
+
             const bool gameplayActivation = isActivateReloadEvent(inputEvent) &&
                 s_gameplayInputAllowed.load(std::memory_order_acquire) && !isInputBlockingMenuActive();
-            const bool primaryHandEvent = isPrimaryWandInputEvent(inputEvent);
             const bool weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire);
             const auto target = gameplayActivation &&
                     (weaponDrawn || s_heldLooseWeaponFormId[0].load(std::memory_order_acquire) ||
@@ -1894,9 +2054,10 @@ namespace rock::input_remap_runtime
                         isTakeEquipHandEngaged(primaryHandEvent))
                 ? classifyActivateTarget(primaryHandEvent)
                 : ActivateTarget::Unavailable;
-            bool nativeActivation =
+            bool nativeActivation = boundUse ||
                 input_remap_policy::shouldPrioritizeNativeActivation(target, isTakeEquipHandEngaged(primaryHandEvent));
-            if ((g_rockConfig.rockEnableImmersiveScopes || physical_reload_input::nativeActivationPriority(false)) &&
+            if (!boundUse &&
+                (g_rockConfig.rockEnableImmersiveScopes || physical_reload_input::nativeActivationPriority(false)) &&
                 gameplayActivation && primaryHandEvent && weaponDrawn && !weaponRouting().leftFiring &&
                 s_hooksInstalled.load(std::memory_order_acquire)) {
                 const auto* button = inputEvent->As<RE::ButtonEvent>();
@@ -1954,7 +2115,8 @@ namespace rock::input_remap_runtime
                 return;
             }
 
-            if (shouldSuppressNativeFavoritesAction(inputEvent)) {
+            if (shouldSuppressNativeFavoritesAction(inputEvent) ||
+                functionTag(false, button_layout_policy::Slot::StickClick) == function_binding_policy::Function::Palm) {
                 markInputEventStopped(inputEvent);
                 ROCK_LOG_SAMPLE_DEBUG(Input, g_rockConfig.rockLogSampleMilliseconds,
                     "Suppressed native WandThumbClick Favorites event");
@@ -1972,7 +2134,8 @@ namespace rock::input_remap_runtime
             // pad/stick click, which runs only while the vanilla Favorites menu
             // is allowed. The event is never stopped: later pad consumers
             // (movement, menus) still receive it either way.
-            if (vanillaFavoritesMenuAllowed() && !isAnyProviderOpenVrGameInputSuppressed()) {
+            if (vanillaFavoritesMenuAllowed() && !isAnyProviderOpenVrGameInputSuppressed() &&
+                functionTag(false, button_layout_policy::Slot::StickClick) != function_binding_policy::Function::Palm) {
                 if (s_originalFavoritesWandPadHandler) {
                     s_originalFavoritesWandPadHandler(handler, inputEvent);
                 }
@@ -2192,7 +2355,9 @@ namespace rock::input_remap_runtime
                     .holdSeconds = holdSeconds,
                     .suppressVats = g_rockConfig.rockSuppressNativeVats ||
                         provider::hasHandInputSuppressionFlag(flags,
-                            ::rock::api::input::HandInputSuppressionFlag::SuppressNativeVats),
+                            ::rock::api::input::HandInputSuppressionFlag::SuppressNativeVats) ||
+                        functionTag(false, button_layout_policy::Slot::UpperFace) ==
+                            function_binding_policy::Function::Grenade,
                     .suppressVans = true,
                     .reserveHoldGesture = true,
                     .suppressAll = suppressAll,
@@ -2233,6 +2398,12 @@ namespace rock::input_remap_runtime
         {
             const auto raw = peekRawButtonState(false, 1);
             const auto previous = s_vatsGrenadeGestureState.state;
+            const float grenadeHoldSeconds = g_rockConfig.rockImmersiveGrenades
+                ? readNativeVansHoldThresholdSeconds()
+                : (std::max)(readNativeVansHoldThresholdSeconds(), native_grenade_throw_runtime::holdSeconds());
+            // A B press a binding made for Grenade is a grenade from its first frame.
+            const bool boundGrenade =
+                functionTag(false, button_layout_policy::Slot::UpperFace) == function_binding_policy::Function::Grenade;
             const auto decision = vats_grenade_gesture_policy::update(s_vatsGrenadeGestureState,
                 vats_grenade_gesture_policy::Input{
                     .eligible = grenadeQuickDrawAllowed() && raw.available &&
@@ -2241,10 +2412,9 @@ namespace rock::input_remap_runtime
                     .pressed = button.QJustPressed(),
                     .held = button.QPressed(),
                     .released = !button.QPressed() && button.QHeldDownSecs() >= 0.0f,
-                    .heldSeconds = button.QHeldDownSecs(),
-                    .holdSeconds = g_rockConfig.rockImmersiveGrenades
-                        ? readNativeVansHoldThresholdSeconds()
-                        : (std::max)(readNativeVansHoldThresholdSeconds(), native_grenade_throw_runtime::holdSeconds()),
+                    .heldSeconds = boundGrenade && button.QPressed() ? (std::max)(button.QHeldDownSecs(), grenadeHoldSeconds)
+                                                                     : button.QHeldDownSecs(),
+                    .holdSeconds = grenadeHoldSeconds,
                     .immersiveGrenades = g_rockConfig.rockImmersiveGrenades,
                 });
             if (decision.cancelNativeThrow)
@@ -2306,6 +2476,8 @@ namespace rock::input_remap_runtime
                 s_pipboyGestureRoute = route;
             }
             const auto previousState = s_pipboyPauseGestureState.state;
+            const bool boundPause =
+                functionTag(true, button_layout_policy::Slot::UpperFace) == function_binding_policy::Function::Pause;
             const auto decision = pipboy_pause_gesture_policy::update(s_pipboyPauseGestureState,
                 pipboy_pause_gesture_policy::Input{
                     .enabled = true,
@@ -2314,7 +2486,10 @@ namespace rock::input_remap_runtime
                     .held = button->QPressed(),
                     .released = !button->QPressed(),
                     .pipboyDispatchAllowed = !providerSuppressed,
-                    .heldSeconds = button->QHeldDownSecs(),
+                    // A Y press a binding made for Pause is a Pause from its first held frame.
+                    .heldSeconds = boundPause && button->QPressed()
+                        ? (std::max)(button->QHeldDownSecs(), g_rockConfig.rockPipboyPauseHoldSeconds)
+                        : button->QHeldDownSecs(),
                     .holdSeconds = g_rockConfig.rockPipboyPauseHoldSeconds,
                 });
 
@@ -2935,6 +3110,48 @@ namespace rock::input_remap_runtime
                 sourceName(layout.source(Slot::UpperFace), isLeft), sourceName(layout.source(Slot::StickClick), isLeft),
                 layout.identity() ? " (default)" : "");
         }
+
+        namespace fb = function_binding_policy;
+        {
+            std::scoped_lock lock(s_functionBindingMutex);
+            s_functionBindings.configure(g_rockConfig.rockFunctionBindings);
+            s_functionSamples = {};
+            s_functionPadLatches = {};
+            for (auto& hand : s_functionTags) {
+                for (auto& tag : hand) {
+                    tag.store(static_cast<std::uint8_t>(fb::Function::Count), std::memory_order_release);
+                }
+            }
+            for (auto& presented : s_functionsPresented) {
+                presented.store(0, std::memory_order_release);
+            }
+            s_functionBindingsIdentity.store(s_functionBindings.identity(), std::memory_order_release);
+        }
+        bool moved = false;
+        for (std::size_t index = 0; index < fb::kFunctionCount; ++index) {
+            const auto function = static_cast<fb::Function>(index);
+            const auto& binding = g_rockConfig.rockFunctionBindings[index];
+            if (binding == fb::homeBinding(function)) {
+                continue;
+            }
+            moved = true;
+            ROCK_LOG_INFO(Input, "Binding {}: {} (default {})", fb::functionKey(function), fb::formatBinding(binding),
+                fb::formatBinding(fb::homeBinding(function)));
+        }
+        if (!moved && firstPublication) {
+            ROCK_LOG_INFO(Input, "Bindings: every function on its default control");
+        }
+    }
+
+    function_binding_policy::Function functionTag(bool isLeft, button_layout_policy::Slot slot) noexcept
+    {
+        const auto index = static_cast<std::size_t>(slot);
+        if (s_functionBindingsIdentity.load(std::memory_order_acquire) || index >= button_layout_policy::kSlotCount) {
+            return function_binding_policy::Function::Count;
+        }
+        const auto value = s_functionTags[isLeft ? 0 : 1][index].load(std::memory_order_acquire);
+        return value < function_binding_policy::kFunctionCount ? static_cast<function_binding_policy::Function>(value)
+                                                                : function_binding_policy::Function::Count;
     }
 
     void setGameplayInputAllowed(bool allowed)
@@ -3083,6 +3300,15 @@ namespace rock::input_remap_runtime
          * Provider API consumers are unaffected: getRawWandButtonState
          * exposes level state only, by design. Frame-thread only.
          */
+        if (!s_functionBindingsIdentity.load(std::memory_order_acquire)) {
+            // Frame thread: what the bindings' readers cannot evaluate on their own threads.
+            s_useTargetAvailable.store(s_gameplayInputAllowed.load(std::memory_order_acquire) &&
+                    !isInputBlockingMenuActive() &&
+                    input_remap_policy::shouldPrioritizeNativeActivation(classifyActivateTarget(true),
+                        isTakeEquipHandEngaged(true)),
+                std::memory_order_release);
+            s_grenadeHoldSeconds.store(readNativeVansHoldThresholdSeconds(), std::memory_order_release);
+        }
         auto leftAcceptState = consumeRawButtonState(true, input_remap_policy::kOpenVrAcceptButtonId);
         auto rightAcceptState = consumeRawButtonState(false, input_remap_policy::kOpenVrAcceptButtonId);
         if (physical_reload_input::takeGestureChange())
@@ -3146,6 +3372,8 @@ namespace rock::input_remap_runtime
                 .immersiveScopesEnabled = g_rockConfig.rockEnableImmersiveScopes || physicalGesture,
                 .leftButton = toManualButtonState(leftAcceptState),
                 .rightButton = toManualButtonState(rightAcceptState),
+                .leftTag = functionTag(true, button_layout_policy::Slot::LowerFace),
+                .rightTag = functionTag(false, button_layout_policy::Slot::LowerFace),
                 .deltaSeconds = deltaSeconds,
                 .holdSeconds = g_rockConfig.rockManualScopeHoldSeconds,
             });
@@ -3274,6 +3502,26 @@ namespace rock::input_remap_runtime
         state.available = true;
         state.held = held;
         state.availabilityReason = RawButtonAvailabilityReason::Available;
+        return state;
+    }
+
+    LogicalJumpState readLogicalPalmWheelState()
+    {
+        namespace fb = function_binding_policy;
+        const auto raw = peekRawButtonState(false, button_layout_policy::kStickBit);
+        LogicalJumpState state{};
+        state.available = raw.available;
+        state.sampleSequence = raw.sampleSequence;
+        state.sampleAgeMilliseconds = raw.sampleAgeMilliseconds;
+        state.availabilityReason = raw.availabilityReason;
+        if (!raw.available || !raw.held) {
+            return state;
+        }
+        // A click that passes through as pressed (default bindings, or no moved binding
+        // touches the stick) is PALM's as it always was; a presented one is PALM's only
+        // while the Palm function is among those presenting it.
+        state.held = functionTag(false, button_layout_policy::Slot::StickClick) == fb::Function::Count ||
+            (s_functionsPresented[1].load(std::memory_order_acquire) & fb::functionBit(fb::Function::Palm)) != 0;
         return state;
     }
 

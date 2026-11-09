@@ -42,6 +42,10 @@ namespace rock::api::input {
     enum class LogicalInputAction : std::uint32_t
     {
         Jump = 1,
+        // RobCo PALM's wheel: held while the primary stick click ROCK presents
+        // is PALM's under the player's [Bindings] (Palm), never while it is a
+        // bipod, placement or Favorites click bound elsewhere.
+        PalmWheel = 2,
     };
 
     enum class SuppressionInvalidationReason : std::uint32_t

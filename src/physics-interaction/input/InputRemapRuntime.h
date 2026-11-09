@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "physics-interaction/input/FunctionBindingPolicy.h"
 #include "physics-interaction/input/WeaponTriggerRouting.h"
 
 namespace RE
@@ -51,6 +52,10 @@ namespace rock::input_remap_runtime
     // Diagnostic-only atomic loads. Unlike peekRawButtonState, this never
     // drains edges or rearms buttons when a menu/UI owns input.
     PhysicalTraceSnapshot readPhysicalTraceSnapshot(bool isLeft) noexcept;
+
+    // The function behind the current synthesized press of a logical button, or
+    // Function::Count while the button passes through as sampled (default bindings).
+    [[nodiscard]] function_binding_policy::Function functionTag(bool isLeft, button_layout_policy::Slot slot) noexcept;
 
     bool installInputRemapHooks();
     bool isInputRemapHookInstalled();
@@ -119,6 +124,8 @@ namespace rock::input_remap_runtime
     bool isNativePipboyInputSuppressionActive();
     bool isPipboyMenuOpen();
     LogicalJumpState readLogicalJumpState();
+    // The primary stick click while it is PALM's under the player's bindings.
+    LogicalJumpState readLogicalPalmWheelState();
 
     // Test-and-clear: true once for the frame after an Activate/WandAccept
     // (A button) press fired on this hand while it was holding a ROCK

@@ -174,6 +174,26 @@ namespace
         expect("a fresh press acts", pressedWithTag(out[kRight], Slot::UpperFace, Function::Vats));
     }
 
+    // PALM's wheel and the stick actions share the stick click: moving the stick
+    // actions away leaves PALM on it, and both stay readable when both act.
+    void sharedStickKeepsEveryFunction()
+    {
+        auto bindings = fb::homeBindings();
+        bindings[static_cast<std::size_t>(Function::StickActions)] = *fb::parseBinding("primary double thumbstick");
+        Rig rig(bindings);
+        rig.set(kRight, Source::Stick, true);
+        auto out = rig.step(0.0);
+        expect("the stick press is PALM's", (out[kRight].functions & fb::functionBit(Function::Palm)) != 0 &&
+            (out[kRight].functions & fb::functionBit(Function::StickActions)) == 0);
+        rig.set(kRight, Source::Stick, false);
+        (void)rig.step(0.1);
+        rig.set(kRight, Source::Stick, true);
+        out = rig.step(0.2);
+        expect("the second click of a double is the stick actions'",
+            (out[kRight].functions & fb::functionBit(Function::Palm)) == 0 &&
+                (out[kRight].functions & fb::functionBit(Function::StickActions)) != 0);
+    }
+
     // Grab is per hand: moving the right grip's functions leaves the left grip alone.
     void eachHandStaysIndependent()
     {
@@ -195,6 +215,7 @@ int main()
     soleTapActsOnPress();
     bypassBlocksUntilRelease();
     eachHandStaysIndependent();
+    sharedStickKeepsEveryFunction();
     if (g_failures == 0) std::printf("ROCK function binding tests passed\n");
     return g_failures == 0 ? 0 : 1;
 }
