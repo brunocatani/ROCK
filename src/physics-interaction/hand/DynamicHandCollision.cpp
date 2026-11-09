@@ -515,7 +515,7 @@ namespace rock
         const hand_semantic_contact_state::SemanticContactVector* contactNormalGame) noexcept
     {
         _surfaceProcessedPairSequenceAtomic.fetch_add(1, std::memory_order_release);
-        if (!otherLayerRead || !collision_layer_policy::isDynamicHandProxySurfaceLayer(otherLayer)) {
+        if (!otherLayerRead || !collision_layer_policy::isDynamicHandSurfaceContactLayer(otherLayer)) {
             return;
         }
         _surfaceEligiblePairSequenceAtomic.fetch_add(1, std::memory_order_release);
