@@ -11,6 +11,7 @@
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/native/havok/HavokRuntime.h"
 #include "physics-interaction/native/havok/PhysicsScale.h"
+#include "physics-interaction/object/PhysicsBodyClassifier.h"
 
 #include <array>
 #include <cmath>
@@ -72,6 +73,17 @@ namespace rock
                     collectBodies(child.get(), depth - 1, ids, count);
         }
 
+        // Only dynamic bodies are driven: a keyframed or static body would be
+        // moved against its owner's own placement.
+        bool dynamicBody(const RE::hknpBody& body)
+        {
+            auto type = physics_body_classifier::motionTypeFromBodyFlags(body.flags);
+            if (type == physics_body_classifier::BodyMotionType::Unknown)
+                type = physics_body_classifier::motionTypeFromMotionPropertiesId(
+                    static_cast<std::uint16_t>(body.motionPropertiesId));
+            return type == physics_body_classifier::BodyMotionType::Dynamic;
+        }
+
         // Axis * angle of a rotation matrix in the column-vector convention
         // (world = m * v); ROCK's stored Ni rows are its transpose.
         RE::NiPoint3 rotationVector(const RE::NiMatrix3& m, float& angle)
@@ -103,6 +115,9 @@ namespace rock
             request.reference.providerGeneration != sample.providerGeneration)
             return api::Status::GenerationMismatch;
         auto* ref = RE::TESForm::GetFormByID<RE::TESObjectREFR>(request.reference.referenceFormId);
+        // Loose objects only: actors (the player included) keep their own bodies.
+        if (ref && ref->GetFormType() != RE::ENUM_FORM_ID::kREFR)
+            return api::Status::TargetInvalid;
         auto* root = ref && !ref->IsDeleted() && !ref->IsDisabled() ? ref->Get3D() : nullptr;
         if (!root)
             return api::Status::TargetUnavailable;
@@ -136,7 +151,7 @@ namespace rock
         std::size_t motionCount = 0, driven = 0;
         for (std::size_t i = 0; i < count; ++i) {
             const auto* body = havok_runtime::getBody(world, RE::hknpBodyId{ ids[i] });
-            if (!body || !body_frame::hasUsableMotionIndex(body->motionIndex))
+            if (!body || !body_frame::hasUsableMotionIndex(body->motionIndex) || !dynamicBody(*body))
                 continue;
             bool seen = false;
             for (std::size_t m = 0; m < motionCount; ++m)

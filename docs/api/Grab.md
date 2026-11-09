@@ -97,8 +97,8 @@ bodies so the root closes the remaining gap with time constant
 `approachSeconds` (0.05 to 2); the object stays dynamic and collidable. Call
 it every frame while gliding and stop calling to let the object go.
 `progress` (optional) reports the root's remaining `distanceGame` and
-`angleRadians`. `Busy` while a hand holds the reference; `TargetInvalid` when
-it has no dynamic body.
+`angleRadians`. `Busy` while a hand holds the reference; `TargetInvalid` for an actor or
+when it has no dynamic body.
 
 ## Reference queries (game thread, Read)
 
