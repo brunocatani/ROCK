@@ -168,10 +168,13 @@ namespace rock::storage_highlight
             return ghost;
         }
 
-        // Keeps the ghost attached beneath the world root at ghostWorld.
+        // Keeps the ghost at ghostWorld beneath the node that holds the
+        // reference's model in the scene (its cell's object node), which the
+        // renderer draws. The player's 3D root would carry it with the player.
         bool placeGhost(Slot& slot)
         {
-            auto* parent = fo4vr::getWorldRootNode();
+            auto* source = slot.reference->Get3D();
+            auto* parent = slot.ghostParent ? slot.ghostParent.get() : (source ? source->parent : nullptr);
             if (!parent)
                 return false;
             if (!slot.ghost) {
