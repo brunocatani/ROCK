@@ -284,14 +284,15 @@ namespace rock::collision_layer_policy
 
     /*
      * Surface contacts the dynamic hand records for touch grabs: the surfaces
-     * above, plus extension bodies on the passive obstacle layer. Built-in
-     * surface grabs still take only isDynamicHandProxySurfaceLayer, so a body
-     * on layer 55 latches only for a provider target that names it (an NPC
-     * limb an extension makes holdable without moving it).
+     * above, plus the actor layers an extension can admit (ragdolls, corpses,
+     * native limbs and its own bodies, kOptionalObstacleLayers). Built-in
+     * surface grabs still take only isDynamicHandProxySurfaceLayer, so an actor
+     * body latches only for a provider target that names it (a limb or corpse
+     * an extension makes holdable without moving it).
      */
     inline constexpr bool isDynamicHandSurfaceContactLayer(std::uint32_t layer)
     {
-        return isDynamicHandProxySurfaceLayer(layer) || layer == ROCK_LAYER_PASSIVE_OBSTACLE;
+        return isDynamicHandProxySurfaceLayer(layer) || (layer < 64 && ((kOptionalObstacleLayers >> layer) & 1u) != 0);
     }
 
     /*

@@ -30,9 +30,10 @@ Interface `Touch`, major 2, minor 0; major 1 is refused with
   is enabled by the `Match...Motion` flags.
 - A `FixedAnchor` latch follows its body's live transform and never moves the
   body. Besides world surfaces and fixed props, the dynamic hand latches onto
-  NativeInteraction extension bodies on `kPassiveObstacleLayer` (55), but only
-  for a target that names the body; ROCK's built-in surface grab never takes
-  that layer.
+  bodies on the actor layers NativeInteraction extensions admit (8, 32, 33 and
+  `kPassiveObstacleLayer` 55: ragdolls, corpses, native limbs and extension
+  bodies), but only for a target that names the body; ROCK's built-in surface
+  grab never takes those layers.
 - `flags` (`TouchGrabTargetFlag`): allowed hands, two-hand use,
   `LatchOnRelease`, `FallbackOnly` (wildcard surfaces considered last),
   `ExcludePowerArmor`.
