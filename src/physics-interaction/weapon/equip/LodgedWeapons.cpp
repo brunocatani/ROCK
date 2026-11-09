@@ -100,7 +100,7 @@ namespace rock
         Entry* entry = nullptr;
         for (auto& candidate : _entries)
             if (candidate.state.load(std::memory_order_acquire) != State::Free && candidate.form == form) {
-                end(candidate, candidate.world == world ? world : nullptr, "placement-restarted");
+                end(candidate, candidate.world == world ? world : nullptr, "placement-restarted", false);
             }
         for (auto& candidate : _entries)
             if (candidate.state.load(std::memory_order_acquire) == State::Free) {
@@ -129,6 +129,7 @@ namespace rock
             body.collisionObject = reinterpret_cast<std::uintptr_t>(live.collisionObject);
             body.filter = live.collisionFilterInfo;
             body.drive = placed.drive;
+            body.lastSeat = placed.placed;
             drives = drives || placed.drive;
         }
         if (!drives || !anchor(*entry, world, bodies, true)) {
@@ -147,28 +148,33 @@ namespace rock
         return true;
     }
 
-    bool LodgedWeapons::follow(Entry& entry, RE::hknpWorld* world)
+    const char* LodgedWeapons::follow(Entry& entry, RE::hknpWorld* world)
     {
         // The bone's current body: an actor's limb changes bodies when his
-        // ragdoll is added, removed or replaced by the engine's.
+        // ragdoll is added, removed or replaced by the engine's. Returns the
+        // stage that failed, or nullptr.
         auto* bone = entry.target.bone.get();
         auto* collisionObject = bone ? bone->collisionObject.get() : nullptr;
+        if (!collisionObject)
+            return bone ? "bone-without-collision" : "bone-gone";
         RE::hknpWorld* bodyWorldPtr = nullptr;
         RE::hknpBodyId id{ kInvalidBody };
-        if (!collisionObject || !havok_runtime::tryResolveCollisionObjectBody(collisionObject, bodyWorldPtr, id) ||
-            bodyWorldPtr != world)
-            return false;
+        if (!havok_runtime::tryResolveCollisionObjectBody(collisionObject, bodyWorldPtr, id))
+            return "bone-body-unresolved";
+        if (bodyWorldPtr != world)
+            return "bone-body-other-world";
         const auto live = havok_runtime::snapshotBody(world, id);
         const auto group = live.collisionFilterInfo & kGroupMask;
-        if (!live.valid || !live.body || reinterpret_cast<RE::NiCollisionObject*>(live.collisionObject) != collisionObject ||
-            !group)
-            return false;
+        if (!live.valid || !live.body || reinterpret_cast<RE::NiCollisionObject*>(live.collisionObject) != collisionObject)
+            return "bone-body-unreadable";
+        if (!group)
+            return "bone-body-without-group";
         const auto previous = entry.target.body;
         entry.target.body = id.value;
         entry.target.collisionObject = reinterpret_cast<std::uintptr_t>(collisionObject);
         // Re-seat where the weapon is now on the new body.
         if (!anchor(entry, world, {}, false))
-            return false;
+            return "re-seat-pose";
         if (group != entry.target.group) {
             entry.target.group = group;
             for (std::uint32_t i = 0; i < entry.count; ++i) {
@@ -178,19 +184,32 @@ namespace rock
         }
         ROCK_LOG_INFO(Weapon, "Lodged weapon followed its bone: ref={:08X} bone={} body {}->{} group={:04X}",
             entry.form, bone->name.c_str() ? bone->name.c_str() : "", previous, id.value, group >> 16);
-        return true;
+        return nullptr;
     }
 
-    void LodgedWeapons::end(Entry& entry, RE::hknpWorld* liveWorld, const char* reason)
+    void LodgedWeapons::end(Entry& entry, RE::hknpWorld* liveWorld, const char* reason, bool dropsLoose)
     {
         entry.state.store(State::Free, std::memory_order_release);
         std::uint32_t restored = 0;
         if (liveWorld && entry.world == liveWorld) {
+            // A weapon that falls loose leaves with the body it was in, never
+            // with the drive's last catch-up velocity (which can be large when
+            // that body was knocked away).
+            RE::hkVector4f carried{};
+            if (dropsLoose && sameBody(liveWorld, entry.target.body, entry.target.collisionObject)) {
+                const auto target = havok_runtime::snapshotBody(liveWorld, RE::hknpBodyId{ entry.target.body });
+                if (target.motion && std::isfinite(target.motion->linearVelocity.x) &&
+                    std::isfinite(target.motion->linearVelocity.y) && std::isfinite(target.motion->linearVelocity.z))
+                    carried = RE::hkVector4f{ target.motion->linearVelocity.x, target.motion->linearVelocity.y,
+                        target.motion->linearVelocity.z, 0.0f };
+            }
             for (std::uint32_t i = 0; i < entry.count; ++i) {
                 const auto& body = entry.bodies[i];
                 // Only the same body gets its filter back; a reused id is not ours.
                 if (sameBody(liveWorld, body.id, body.collisionObject) &&
                     havok_runtime::setFilterInfo(liveWorld, RE::hknpBodyId{ body.id }, body.filter)) {
+                    if (dropsLoose && body.drive)
+                        havok_runtime::setBodyVelocityDeferred(liveWorld, body.id, carried, RE::hkVector4f{});
                     havok_runtime::activateBody(liveWorld, body.id);
                     ++restored;
                 }
@@ -205,6 +224,7 @@ namespace rock
         entry.count = 0;
         entry.failure.store(Failure::None, std::memory_order_relaxed);
         entry.offSeat.store(0, std::memory_order_relaxed);
+        entry.lostPending = false;
     }
 
     void LodgedWeapons::update(RE::hknpWorld* world, std::span<const RE::TESObjectREFR* const> handReferences)
@@ -214,13 +234,13 @@ namespace rock
             if (state == State::Free)
                 continue;
             if (entry.world != world) {
-                end(entry, nullptr, "world-changed");
+                end(entry, nullptr, "world-changed", false);
                 continue;
             }
             const auto reference = entry.reference.get();
             if (!reference || reference->IsDeleted() || reference->IsDisabled() || !reference->Get3D()) {
                 // Picked up, equipped, unloaded: its bodies are not ours to touch.
-                end(entry, nullptr, "reference-gone");
+                end(entry, nullptr, "reference-gone", false);
                 continue;
             }
             bool inHand = false;
@@ -228,26 +248,56 @@ namespace rock
                 inHand = inHand || held == reference.get();
             if (inHand) {
                 // The hand drives it now, with the weapon's own collision.
-                end(entry, world, "taken-by-hand");
+                end(entry, world, "taken-by-hand", false);
                 continue;
             }
             switch (entry.failure.load(std::memory_order_acquire)) {
             case Failure::None:
                 break;
-            case Failure::TargetLost:
-                if (follow(entry, world)) {
-                    entry.failure.store(Failure::None, std::memory_order_release);
-                    entry.offSeat.store(0, std::memory_order_relaxed);
+            case Failure::TargetLost: {
+                // The engine swaps a limb's body when his ragdoll changes and
+                // adds the new one a few frames later; the step holds the
+                // weapon where it was meanwhile.
+                const auto now = std::chrono::steady_clock::now();
+                if (!entry.lostPending) {
+                    entry.lostPending = true;
+                    entry.lostSince = now;
+                }
+                if (const char* stage = follow(entry, world)) {
+                    if (now - entry.lostSince < kFollowGrace)
+                        break;
+                    const auto* bone = entry.target.bone.get();
+                    ROCK_LOG_INFO(Weapon, "Lodged weapon target gone: ref={:08X} body={} bone={} lost={} follow={}",
+                        entry.form, entry.target.body, bone && bone->name.c_str() ? bone->name.c_str() : "",
+                        entry.lost.load(std::memory_order_relaxed) == 1 ? "identity" : "pose", stage);
+                    end(entry, world, "target-gone", true);
                 } else {
-                    end(entry, world, "target-gone");
+                    entry.lostPending = false;
+                    entry.offSeat.store(0, std::memory_order_relaxed);
+                    entry.failure.store(Failure::None, std::memory_order_release);
                 }
                 break;
+            }
             case Failure::BodyLost:
-                end(entry, world, "weapon-body-changed");
+                end(entry, world, "weapon-body-changed", true);
                 break;
-            case Failure::PushedOff:
-                end(entry, world, "pushed-off");
+            case Failure::PushedOff: {
+                // Off by how far, and how fast his body moved: a push, or a
+                // body the drive could not keep up with.
+                float targetSpeed = -1.0f;
+                if (sameBody(world, entry.target.body, entry.target.collisionObject)) {
+                    const auto target = havok_runtime::snapshotBody(world, RE::hknpBodyId{ entry.target.body });
+                    if (target.motion) {
+                        const auto& v = target.motion->linearVelocity;
+                        targetSpeed = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+                    }
+                }
+                ROCK_LOG_INFO(Weapon, "Lodged weapon pushed off: ref={:08X} off={:.1f}gu for {:.3f}s targetSpeed={:.2f}m/s",
+                    entry.form, entry.offSeatGame.load(std::memory_order_relaxed),
+                    entry.offSeat.load(std::memory_order_relaxed), targetSpeed);
+                end(entry, world, "pushed-off", true);
                 break;
+            }
             }
         }
     }
@@ -257,19 +307,39 @@ namespace rock
         float delta = 0.0f;
         if (!world || !havok_physics_timing::tryGetDriveDeltaSeconds(timing, delta))
             return;
+        // Drives one weapon body to a world pose for this substep.
+        const auto drive = [&](const Body& body, const RE::NiTransform& seat) {
+            alignas(16) float linear[4]{};
+            alignas(16) float angular[4]{};
+            const auto live = havok_runtime::snapshotBody(world, RE::hknpBodyId{ body.id });
+            if (live.collisionObject &&
+                computeHardKeyFrameVelocity(world, RE::hknpBodyId{ body.id }, seat, delta, linear, angular))
+                setCollisionObjectVelocity(live.collisionObject, linear, angular);
+        };
         for (auto& entry : _entries) {
-            if (entry.state.load(std::memory_order_acquire) != State::Driving || entry.world != world ||
-                entry.failure.load(std::memory_order_relaxed) != Failure::None)
+            if (entry.state.load(std::memory_order_acquire) != State::Driving || entry.world != world)
+                continue;
+            const auto failure = entry.failure.load(std::memory_order_acquire);
+            if (failure == Failure::TargetLost) {
+                // Hold it where it last sat while the frame thread looks for
+                // the bone's new body.
+                for (std::uint32_t i = 0; i < entry.count; ++i)
+                    if (entry.bodies[i].drive && sameBody(world, entry.bodies[i].id, entry.bodies[i].collisionObject))
+                        drive(entry.bodies[i], entry.bodies[i].lastSeat);
+                continue;
+            }
+            if (failure != Failure::None)
                 continue;
             RE::NiTransform target{};
-            if (!sameBody(world, entry.target.body, entry.target.collisionObject) ||
-                !bodyWorld(world, entry.target.body, target)) {
+            const bool same = sameBody(world, entry.target.body, entry.target.collisionObject);
+            if (!same || !bodyWorld(world, entry.target.body, target)) {
+                entry.lost.store(same ? 2 : 1, std::memory_order_relaxed);
                 entry.failure.store(Failure::TargetLost, std::memory_order_release);
                 continue;
             }
             float worst = 0.0f;
             for (std::uint32_t i = 0; i < entry.count; ++i) {
-                const auto& body = entry.bodies[i];
+                auto& body = entry.bodies[i];
                 if (!sameBody(world, body.id, body.collisionObject)) {
                     entry.failure.store(Failure::BodyLost, std::memory_order_release);
                     break;
@@ -282,20 +352,20 @@ namespace rock
                 const auto seat = transform_math::composeTransforms(target, body.inTarget);
                 const auto error = seat.translate - current.translate;
                 worst = (std::max)(worst, error.Length());
-                alignas(16) float linear[4]{};
-                alignas(16) float angular[4]{};
-                const auto live = havok_runtime::snapshotBody(world, RE::hknpBodyId{ body.id });
-                if (live.collisionObject &&
-                    computeHardKeyFrameVelocity(world, RE::hknpBodyId{ body.id }, seat, delta, linear, angular))
-                    setCollisionObjectVelocity(live.collisionObject, linear, angular);
+                body.lastSeat = seat;
+                drive(body, seat);
             }
             // Pushed off its seat (a wall, a floor under a corpse, a hit) for
-            // long enough: it comes out instead of fighting the push.
+            // long enough: it comes out instead of fighting the push. Only
+            // this thread writes the off-seat clock.
             if (worst > kBreakGame) {
-                if (entry.offSeat.fetch_add(1, std::memory_order_relaxed) + 1 >= kBreakSubsteps)
+                const float off = entry.offSeat.load(std::memory_order_relaxed) + delta;
+                entry.offSeat.store(off, std::memory_order_relaxed);
+                entry.offSeatGame.store(worst, std::memory_order_relaxed);
+                if (off >= kBreakSeconds)
                     entry.failure.store(Failure::PushedOff, std::memory_order_release);
             } else {
-                entry.offSeat.store(0, std::memory_order_relaxed);
+                entry.offSeat.store(0.0f, std::memory_order_relaxed);
             }
         }
     }
@@ -304,7 +374,7 @@ namespace rock
     {
         for (auto& entry : _entries)
             if (entry.state.load(std::memory_order_acquire) != State::Free)
-                end(entry, liveWorld, "cleared");
+                end(entry, liveWorld, "cleared", false);
     }
 
     bool LodgedWeapons::lodged(std::uint32_t form) const noexcept

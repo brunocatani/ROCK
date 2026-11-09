@@ -56,7 +56,9 @@ away, the lodge follows the same bone's new body (an actor's limb changes
 bodies when his ragdoll enters or leaves the world). It ends, and the weapon
 is an ordinary loose weapon again, when a hand takes or pulls it, when its
 reference or bodies go away, when it is pushed 8 game units off its seat for
-eight physics steps, or when the bone has no body. Nothing is constrained to
+0.1 seconds, or when the bone has no body within half a second (the weapon is
+held where it was meanwhile). A weapon that comes out on its own
+leaves with that body's linear velocity. Nothing is constrained to
 the target body. A save keeps only the loose weapon, so after a load it is
 an ordinary loose weapon.
 

@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <span>
 
@@ -30,8 +31,9 @@ namespace rock
      * A lodge ends when a hand starts to take, pull or holds the weapon (its
      * update runs before the loose weapon pool admits a held weapon, which
      * records the filter it finds), when its reference or bodies go away, when
-     * it is pushed kBreakGame off its seat for kBreakSubsteps, or when the
-     * target body goes and its bone has no new body to follow. Ending restores
+     * it is pushed kBreakGame off its seat for kBreakSeconds, or when the
+     * target body goes and its bone has no new body to follow within
+     * kFollowGrace (the weapon is held where it was meanwhile). Ending restores
      * each body's original filter: the weapon is an ordinary loose weapon
      * again. Saves keep only the native state, so a reloaded weapon is loose.
      *
@@ -46,7 +48,10 @@ namespace rock
         static constexpr std::size_t kMaxLodges = 8;
         static constexpr std::size_t kMaxBodies = 8;
         static constexpr float kBreakGame = 8.0f;
-        static constexpr std::uint32_t kBreakSubsteps = 8;
+        static constexpr float kBreakSeconds = 0.1f;
+        // How long the weapon waits, held still, for a lost limb's bone to
+        // get its new body.
+        static constexpr std::chrono::milliseconds kFollowGrace{ 500 };
 
         // The target as the driver named it, checked live at the drop.
         struct Capture
@@ -112,13 +117,24 @@ namespace rock
             std::uint32_t filter{ 0 };
             bool drive{ false };
             RE::NiTransform inTarget{};
+            // Where the last good substep put it, world; held there while the
+            // target is lost (physics thread only).
+            RE::NiTransform lastSeat{};
         };
 
         struct Entry
         {
             std::atomic<State> state{ State::Free };
             std::atomic<Failure> failure{ Failure::None };
-            std::atomic<std::uint32_t> offSeat{ 0 };
+            // Seconds the weapon has been kBreakGame off its seat, and by how far.
+            std::atomic<float> offSeat{ 0.0f };
+            std::atomic<float> offSeatGame{ 0.0f };
+            // Why the step lost the target: 1 another body, 2 no pose. Since
+            // when the frame thread has been looking for the bone's new body
+            // (frame thread only).
+            std::atomic<std::uint8_t> lost{ 0 };
+            bool lostPending{ false };
+            std::chrono::steady_clock::time_point lostSince{};
             RE::hknpWorld* world{ nullptr };
             RE::ObjectRefHandle reference{};
             std::uint32_t form{ 0 };
@@ -128,8 +144,10 @@ namespace rock
         };
 
         bool anchor(Entry& entry, RE::hknpWorld* world, std::span<const PlacedBody> placed, bool usePlaced);
-        bool follow(Entry& entry, RE::hknpWorld* world);
-        void end(Entry& entry, RE::hknpWorld* liveWorld, const char* reason);
+        // The stage that failed, or nullptr when the lodge rides the bone's body.
+        const char* follow(Entry& entry, RE::hknpWorld* world);
+        // dropsLoose: the weapon falls on its own afterwards (not taken by a hand).
+        void end(Entry& entry, RE::hknpWorld* liveWorld, const char* reason, bool dropsLoose);
 
         std::array<Entry, kMaxLodges> _entries{};
     };
