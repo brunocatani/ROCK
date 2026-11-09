@@ -213,7 +213,7 @@ FarGrabDirection = 0
 ## Right Hand: the game's own panel on the right hand; it lists only what the right hand points at.
 ## Closer Hand: the panel rides the hand pointing at the container, mirrored on the left hand; when both hands point at containers the closer one takes it.
 ## At Container: the panel stands upright at the container it lists, turned toward you, at a fixed size; either hand can point at it.
-## The panel's buttons stay on the right controller in every mode. Applies at once.
+## The button hints go with the panel; the buttons themselves stay on the right controller in every mode. Applies at once.
 QuickLootPanelPlacement = 2
 
 ## Activate Prompt Placement
@@ -284,6 +284,11 @@ SuppressNativeVats = false
 ## With Bipod Mode on, a click while the weapon touches a surface or is latched works the bipod instead of opening Favorites.
 ## False: ROCK blocks the Favorites menu and the stick click belongs to Bipod Mode.
 VanillaFavoritesMenu = true
+
+## Offer ROCK's SteamVR Binding
+## True: when Index controllers or Vive wands use SteamVR's default binding for Fallout 4 VR, the setup wizard opens after the game loads and offers ROCK's binding (the default binding turns A and X into grip). It never replaces a binding you chose in SteamVR.
+## False: the wizard opens only when you open it; it still offers the binding then.
+OfferSteamVRBinding = true
 
 ## Pip-Boy and Pause Hold Time
 ## Tap left Y to open the Pip-Boy; hold it this many seconds to open the Pause menu instead. Range: 0.15 to 2.

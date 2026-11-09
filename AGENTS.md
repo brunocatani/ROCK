@@ -26,7 +26,7 @@ ROCK is a Fallout 4 VR F4SE plugin (`ROCK.dll`) that gives the player physical h
 | `docs/api/` | One page per provider interface |
 | `data/config/` | Example TOML settings files, generated from the catalog |
 | `data/mod/` | Game data shipped in the mod package, when there is any (absent today) |
-| `steamvr_bindings/` | SteamVR binding templates for non-Quest controllers, shipped only in release packages |
+| `steamvr_bindings/` | SteamVR binding templates for non-Quest controllers, shipped in release packages; the Index and Vive ones are also embedded in `ROCK.dll` (`cmake/steamvr_bindings.rc.in`) for the setup wizard |
 | `third_party/openvr/` | Vendored OpenVR ABI for raw controller input and haptics |
 | `tests/`, `tools/Invoke-RockTests.ps1` | Tests and the affected-test selector |
 | `cmake/` | Version resource, test registration and release packaging |
@@ -57,7 +57,8 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp`; never re-implemen
 ## Runtime files
 
 - Plugin: `Data/F4SE/Plugins/ROCK.dll`. Log: `ROCK.log` in `Documents/My Games/Fallout4VR/F4SE/`.
-- Settings: `ROCK.toml` and the optional `ROCK_Developer.toml` in `Documents/My Games/Fallout4VR/Mods_Config/ROCK/`, with `SavedGrabOffsets/` and `AuthoredWeaponGripCache/` beside them. Runtime code resolves the Documents known folder.
+- Settings: `ROCK.toml` and the optional `ROCK_Developer.toml` in `Documents/My Games/Fallout4VR/Mods_Config/ROCK/`, with `SavedGrabOffsets/`, `AuthoredWeaponGripCache/` and `SteamVR/` (the binding templates the setup wizard installs) beside them. Runtime code resolves the Documents known folder.
+- SteamVR: on the player's choice in the setup wizard, ROCK sets Fallout 4 VR's legacy binding for Index controllers or Vive wands through OpenVR's `IVRSettings` (`src/setup-wizard/SteamVrBinding.cpp`), only over SteamVR's default binding and only when that interface is SteamVR's own (not OpenComposite's). A binding the player chose in SteamVR is never replaced, and ROCK never edits SteamVR's files.
 - Co-save: unique ID `ROCK`, record `HNDS` version 1, written by `src/physics-interaction/weapon/equip/WeaponHandSave.cpp`: which hand holds each equipped weapon and each hand's one-handed melee reverse grip. A layout change needs a new record version.
 
 ## What ROCK does not own

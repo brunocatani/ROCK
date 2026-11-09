@@ -380,6 +380,7 @@ namespace rock
         rockSuppressNativeVats = ini.boolean("ControllerInput", "SuppressNativeVats", rockSuppressNativeVats);
         rockVanillaFavoritesMenu =
             ini.boolean("ControllerInput", "VanillaFavoritesMenu", rockVanillaFavoritesMenu);
+        rockOfferSteamVRBinding = ini.boolean("ControllerInput", "OfferSteamVRBinding", rockOfferSteamVRBinding);
         rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::sanitizedHoldSeconds(static_cast<float>(
             ini.number("ControllerInput", "PipboyPauseHoldSeconds", rockPipboyPauseHoldSeconds)));
         rockButtonLayouts[0] = readButtonLayout(ini, true, rockButtonLayouts[0]);

@@ -83,6 +83,8 @@ add_library(ROCK::OpenVR ALIAS ROCKOpenVR)
 
 
 configure_file(${ROOT_DIR}/cmake/version.rc.in  ${BUILD_DIR}/version.rc  @ONLY)
+# The SteamVR binding templates the setup wizard installs, embedded as RCDATA.
+configure_file(${ROOT_DIR}/cmake/steamvr_bindings.rc.in  ${BUILD_DIR}/steamvr_bindings.rc  @ONLY)
 configure_file(${ROOT_DIR}/cmake/Version.h.in   ${BUILD_DIR}/include/Version.h @ONLY)
 source_group(TREE ${BUILD_DIR} FILES ${BUILD_DIR}/include/Version.h)
 
@@ -97,6 +99,7 @@ add_library(${PROJECT_NAME} SHARED
   ${inls}
   ${BUILD_DIR}/include/Version.h
   ${BUILD_DIR}/version.rc
+  ${BUILD_DIR}/steamvr_bindings.rc
   "${ROOT_DIR}/.clang-format"
   "${ROOT_DIR}/.editorconfig"
 )

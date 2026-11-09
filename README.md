@@ -66,6 +66,10 @@ ROCK expects the Oculus Touch (Quest) button layout. For these controllers the a
 | HTC Vive wands | `legacy_bindings_vive_controller_rock.json` | ROCK - Vive wands as Touch |
 | Steam Frame | `legacy_bindings_frame_controller_rock.json` | ROCK - Steam Frame as Touch |
 
+On SteamVR, ROCK sets the Index and Vive binding for you. When your controllers use SteamVR's default binding for Fallout 4 VR, the setup wizard opens after the game loads and offers ROCK's binding: choose "Use ROCK's binding", then restart the game. ROCK saves the binding in `Mods_Config\ROCK\SteamVR\` and sets it for Fallout 4 VR only; it never replaces a binding you chose in SteamVR. `OfferSteamVRBinding` in `[ControllerInput]` turns the automatic offer off.
+
+To set a binding by hand instead:
+
 1. Copy the file for your controller into `Documents\steamvr\input\imports`. Create the folder if it does not exist.
 2. In SteamVR, open the controller bindings for Fallout 4 VR: Settings, Controllers, Manage Controller Bindings, then Fallout 4 VR.
 3. Choose a custom binding and select the ROCK binding from the bindings in your documents folder.

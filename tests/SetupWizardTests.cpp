@@ -1,5 +1,6 @@
 #include "config/SettingMetadata.h"
 #include "setup-wizard/SetupWizardPolicy.h"
+#include "setup-wizard/SteamVrBindingPolicy.h"
 
 #include <cstdio>
 
@@ -120,6 +121,33 @@ namespace
         expect("modes over two lines", equip.count == 4 && equip.items[3].value == "4" &&
             equip.items[3].label == "Auto Equip (always Auto Drop)");
     }
+
+    // ROCK offers its SteamVR binding only over SteamVR's default and never replaces the player's choice.
+    void steamVrBindingOffer()
+    {
+        namespace sv = rock::steamvr_binding_policy;
+        const auto index = sv::controllerFor("knuckles");
+        const auto vive = sv::controllerFor("vive_controller");
+        expect("Index and Vive wands have a binding", index && vive);
+        expect("Touch and Frame need none", !sv::controllerFor("oculus_touch") && !sv::controllerFor("frame_controller"));
+        expect("default binding is offered", sv::classify(true, index, "") == sv::Status::Offer);
+        expect("not offered outside SteamVR", sv::classify(false, index, "") == sv::Status::NotApplicable);
+        expect("not offered for other controllers", sv::classify(true, std::nullopt, "") == sv::Status::NotApplicable);
+        expect("a workshop binding is the player's",
+            sv::classify(true, index, "vr-input-workshop://3174776330") == sv::Status::PlayersOwn);
+        expect("a personal binding is the player's",
+            sv::classify(true, index, "file:///C:/Users/a/Documents/steamvr/input/steam.app.611660_knuckles.json") ==
+                sv::Status::PlayersOwn);
+        expect("ROCK's file in any folder is ROCK's",
+            sv::classify(true, index, "file:///D:/Games/My Games/ROCK/SteamVR/Legacy_Bindings_Knuckles_Rock.json") ==
+                sv::Status::RockActive);
+        expect("the Vive file is not the Index binding",
+            sv::classify(true, index, "file:///C:/x/legacy_bindings_vive_controller_rock.json") == sv::Status::PlayersOwn);
+        expect("a name that only ends like ROCK's is not ROCK's",
+            sv::classify(true, index, "file:///C:/x/mylegacy_bindings_knuckles_rock.json") == sv::Status::PlayersOwn);
+        expect("SteamVR's key for the Index binding", sv::settingKey("knuckles") == "knuckles_250820_CurrentURL_legacy");
+        expect("file URL with forward slashes", sv::fileUrl("C:\\Users\\a b\\x.json") == "file:///C:/Users/a b/x.json");
+    }
 }
 
 int main()
@@ -130,6 +158,7 @@ int main()
     capturePhysicalCompanions();
     captureChord();
     optionPagesComeFromTheCatalog();
+    steamVrBindingOffer();
     if (g_failures == 0) std::printf("ROCK setup wizard tests passed\n");
     return g_failures == 0 ? 0 : 1;
 }

@@ -185,8 +185,8 @@ namespace rock::config
             "own panel on the right hand; it lists only what the right hand points at.\nCloser Hand: the panel rides "
             "the hand pointing at the container, mirrored on the left hand; when both hands point at containers the "
             "closer one takes it.\nAt Container: the panel stands upright at the container it lists, turned toward "
-            "you, at a fixed size; either hand can point at it.\nThe panel's buttons stay on the right controller in "
-            "every mode. Applies at once.",
+            "you, at a fixed size; either hand can point at it.\nThe button hints go with the panel; the buttons "
+            "themselves stay on the right controller in every mode. Applies at once.",
             api::configuration::Group::Consumer },
         { "Grabbing", "ActivatePromptPlacement", "06. Grabbing",
             "Activate Prompt Placement\n1 = Both Hands. 2 = Closer Hand. 3 = At Object.\nThe prompts each hand shows "
@@ -253,6 +253,12 @@ namespace rock::config
             "click (default).\nWhile RobCo PALM is installed, ROCK always blocks the Favorites menu and the stick "
             "click opens PALM.\nWith Bipod Mode on, a click while the weapon touches a surface or is latched works "
             "the bipod instead of opening Favorites.\nFalse: ROCK blocks the Favorites menu and the stick click belongs to Bipod Mode.",
+            api::configuration::Group::Consumer },
+        { "ControllerInput", "OfferSteamVRBinding", "09. Controller Input",
+            "Offer ROCK's SteamVR Binding\nTrue: when Index controllers or Vive wands use SteamVR's default binding "
+            "for Fallout 4 VR, the setup wizard opens after the game loads and offers ROCK's binding (the default "
+            "binding turns A and X into grip). It never replaces a binding you chose in SteamVR.\nFalse: the wizard "
+            "opens only when you open it; it still offers the binding then.",
             api::configuration::Group::Consumer },
         { "ControllerInput", "PipboyPauseHoldSeconds", "09. Controller Input",
             "Pip-Boy and Pause Hold Time\nTap left Y to open the Pip-Boy; hold it this many seconds to open the Pause "

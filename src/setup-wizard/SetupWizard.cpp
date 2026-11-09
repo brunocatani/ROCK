@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <mutex>
@@ -24,6 +25,7 @@
 #include "physics-interaction/visual/RpsUiQuery.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include "setup-wizard/SetupWizardPolicy.h"
+#include "setup-wizard/SteamVrBinding.h"
 
 namespace rock::setup_wizard
 {
@@ -175,6 +177,8 @@ namespace rock::setup_wizard
 
         enum class Page : std::uint8_t
         {
+            // Offers ROCK's SteamVR binding; first, and only when SteamVR's default binding is in use.
+            Controller,
             Welcome,
             Controls,
             Capture,
@@ -208,6 +212,18 @@ namespace rock::setup_wizard
             std::size_t hand{ 0 };
             fb::Gesture gesture{ fb::Gesture::Tap };
             std::vector<std::string> saveErrors;
+            // What SteamVR uses for Fallout 4 VR, read when the wizard opened.
+            steamvr_binding::Inspection steamVr;
+            bool controllerPage{ false };
+            bool bindingApplied{ false };
+            std::string bindingError;
+        };
+
+        enum class BindingChoice : std::uint8_t
+        {
+            None,
+            UseRock,
+            KeepSteamVr,
         };
 
         /*
@@ -229,9 +245,15 @@ namespace rock::setup_wizard
             std::atomic<const rpsui::api::input::Api*> input{ nullptr };
             std::atomic<std::uint64_t> inputToken{ 0 };
             std::atomic<bool> open{ false };
+            // The once-per-game-start offer of ROCK's SteamVR binding: armed by the first
+            // game load, it inspects SteamVR once no menu has had the controllers for a while.
+            bool offerArmed{ false };
+            bool offerDone{ false };
+            std::chrono::steady_clock::time_point quietSince{};
 
             // Guarded by mutex.
             std::mutex mutex;
+            BindingChoice bindingChoice{ BindingChoice::None };
             bool saveRequested{ false };
             bool closeRequested{ false };
             // The pointer's hand while it is on the panel: its trigger is a click, not a capture.
@@ -469,6 +491,7 @@ namespace rock::setup_wizard
             const char* step = "";
             char buffer[64]{};
             switch (d.session.page) {
+            case Page::Controller: step = "Controller"; break;
             case Page::Welcome: step = "Start"; break;
             case Page::Controls:
             case Page::Capture: step = "Controls"; break;
@@ -487,6 +510,56 @@ namespace rock::setup_wizard
             ImGui::SameLine(contentRight() - closeWidth);
             if (ImGui::Button("Close##header", { closeWidth, 0.0f })) d.state.closeRequested = true;
             ImGui::Dummy({ 0.0f, d.theme.spacing });
+        }
+
+        void drawController(const Draw& d)
+        {
+            auto& session = d.session;
+            const auto& controller = session.steamVr.controller;
+            const std::string name{ controller ? controller->displayName : "controllers" };
+            const bool index = controller && controller->controller == steamvr_binding_policy::Controller::Index;
+            const bool pending = d.state.bindingChoice != BindingChoice::None;
+            d.beginBody(d.footerHeight());
+            if (session.bindingApplied) {
+                d.heading("ROCK's binding is set");
+                ImGui::Dummy({ 0.0f, d.theme.spacing });
+                d.prose("SteamVR uses ROCK's binding for Fallout 4 VR on your " + name +
+                        " from the next start of the game. Quit and start Fallout 4 VR again before you play.",
+                    false);
+                ImGui::Dummy({ 0.0f, d.theme.spacing });
+                d.prose("To go back, choose another binding for Fallout 4 VR in SteamVR's Controller Settings.");
+            } else {
+                d.heading("Your controllers");
+                ImGui::Dummy({ 0.0f, d.theme.spacing });
+                d.prose("Your " + name + " use SteamVR's default binding for Fallout 4 VR. " +
+                        (index ? "It turns A and X into grip and makes the game treat the controllers as wands, so "
+                                 "reload and scope do not work."
+                               : "It makes the game treat the wands as controllers without A and X, so reload and "
+                                 "scope cannot be reached.") +
+                        " ROCK has a binding that gives the game the button layout ROCK is made for.",
+                    false);
+                ImGui::Dummy({ 0.0f, d.theme.spacing * 2.0f });
+                if (d.card("use-rock", "Use ROCK's binding",
+                        "ROCK saves its binding beside its settings and sets it for Fallout 4 VR in SteamVR. Other games "
+                        "keep their bindings.",
+                        false, !pending)) {
+                    d.state.bindingChoice = BindingChoice::UseRock;
+                    session.bindingError.clear();
+                }
+                if (d.card("keep-steamvr", "Keep SteamVR's binding",
+                        "Nothing changes in SteamVR. ROCK stops opening this page by itself; it is still here when you "
+                        "open the setup wizard.",
+                        false, !pending)) {
+                    d.state.bindingChoice = BindingChoice::KeepSteamVr;
+                }
+                if (!session.bindingError.empty()) {
+                    ImGui::Dummy({ 0.0f, d.theme.spacing });
+                    d.prose("ROCK could not set its binding: " + session.bindingError + ".", false);
+                }
+            }
+            d.endBody();
+            if (d.button(session.bindingApplied ? "Continue" : "Not now", session.bindingApplied, !pending))
+                session.page = Page::Welcome;
         }
 
         void drawWelcome(const Draw& d)
@@ -813,6 +886,9 @@ namespace rock::setup_wizard
         void goBack(Session& session)
         {
             switch (session.page) {
+            case Page::Welcome:
+                if (session.controllerPage) session.page = Page::Controller;
+                break;
             case Page::Controls: session.page = Page::Welcome; break;
             case Page::Capture:
                 if (!session.listening) session.page = Page::Controls;
@@ -866,6 +942,7 @@ namespace rock::setup_wizard
                 ImGui::PopStyleVar();
                 drawHeader(d);
                 switch (s.session.page) {
+                case Page::Controller: drawController(d); break;
                 case Page::Welcome: drawWelcome(d); break;
                 case Page::Controls: drawControls(d); break;
                 case Page::Capture: drawCapture(d); break;
@@ -1011,6 +1088,63 @@ namespace rock::setup_wizard
             return true;
         }
 
+        // Frame thread, without the mutex: SteamVR and the settings store are called here,
+        // then the result is handed to the panel.
+        void applyBindingChoice(State& s, BindingChoice choice, const steamvr_binding::Inspection& inspection)
+        {
+            std::string error;
+            bool applied = false;
+            steamvr_binding::Inspection after;
+            if (choice == BindingChoice::UseRock) {
+                applied = steamvr_binding::apply(inspection, error);
+                if (applied) after = steamvr_binding::inspect();
+                else ROCK_LOG_WARN(Config, "Setup wizard could not set ROCK's SteamVR binding: {}", error);
+            } else if (!g_rockConfig.persistSetting(api::configuration::Group::Consumer, "ControllerInput", "OfferSteamVRBinding",
+                           "false", error)) {
+                ROCK_LOG_WARN(Config, "Setup wizard could not save ControllerInput.OfferSteamVRBinding: {}", error);
+            } else {
+                ROCK_LOG_INFO(Config, "Setup wizard: the player keeps SteamVR's binding; no automatic offer from now on");
+            }
+            std::scoped_lock lock(s.mutex);
+            s.bindingChoice = BindingChoice::None;
+            auto& session = s.session;
+            if (choice == BindingChoice::KeepSteamVr) {
+                session.page = Page::Welcome;
+                return;
+            }
+            session.bindingApplied = applied;
+            session.bindingError = applied ? std::string{} : error;
+            if (applied) session.steamVr = std::move(after);
+        }
+
+        // Frame thread, while the wizard is closed: after the first game load, once no menu has
+        // had the controllers for a few seconds, opens the wizard when ROCK has a SteamVR
+        // binding to offer and the player has not turned the offer off.
+        void offerSteamVrBinding(State& s)
+        {
+            constexpr auto kQuietTime = std::chrono::seconds(3);
+            if (!s.offerArmed) return;
+            const auto now = std::chrono::steady_clock::now();
+            if (input_remap_runtime::isMenuInputActive() || !f4vr::getPlayerNodes()) {
+                s.quietSince = {};
+                return;
+            }
+            if (s.quietSince == std::chrono::steady_clock::time_point{}) {
+                s.quietSince = now;
+                return;
+            }
+            if (now - s.quietSince < kQuietTime) return;
+            s.offerArmed = false;
+            if (!g_rockConfig.rockOfferSteamVRBinding) return;
+            if (steamvr_binding::inspect().status != steamvr_binding_policy::Status::Offer) return;
+            if (!rps_ui::query()) {
+                ROCK_LOG_INFO(Config, "SteamVR binding offer skipped: RPS UI Framework is not loaded");
+                return;
+            }
+            ROCK_LOG_INFO(Config, "Setup wizard opens to offer ROCK's SteamVR binding");
+            g_openRequested.store(true, std::memory_order_release);
+        }
+
         // Frame thread, without the mutex.
         void close(State& s, const char* reason)
         {
@@ -1047,9 +1181,14 @@ namespace rock::setup_wizard
                     } else if (input_remap_runtime::isMenuInputActive()) {
                         ROCK_LOG_INFO(Config, "Setup wizard not opened: a game menu has the controllers");
                     } else {
+                        auto steamVr = steamvr_binding::inspect();
                         {
                             std::scoped_lock lock(s.mutex);
                             loadSession(s.session);
+                            s.session.controllerPage = steamVr.status == steamvr_binding_policy::Status::Offer;
+                            s.session.steamVr = std::move(steamVr);
+                            if (s.session.controllerPage) s.session.page = Page::Controller;
+                            s.bindingChoice = BindingChoice::None;
                             s.saveRequested = false;
                             s.closeRequested = false;
                         }
@@ -1061,10 +1200,17 @@ namespace rock::setup_wizard
                     }
                 }
             }
-            if (!s.open.load(std::memory_order_acquire)) return;
+            if (!s.open.load(std::memory_order_acquire)) {
+                offerSteamVrBinding(s);
+                return;
+            }
             bool closeRequested = false;
+            BindingChoice choice = BindingChoice::None;
+            steamvr_binding::Inspection inspection;
             {
                 std::scoped_lock lock(s.mutex);
+                choice = s.bindingChoice;
+                if (choice == BindingChoice::UseRock) inspection = s.session.steamVr;
                 if (s.saveRequested) {
                     s.saveRequested = false;
                     saveSession(s.session);
@@ -1074,6 +1220,7 @@ namespace rock::setup_wizard
                 }
                 closeRequested = std::exchange(s.closeRequested, false);
             }
+            if (choice != BindingChoice::None) applyBindingChoice(s, choice, inspection);
             if (closeRequested) {
                 close(s, "closed by the player");
                 return;
@@ -1090,6 +1237,12 @@ namespace rock::setup_wizard
 
     void onSessionLoaded() noexcept
     {
-        close(state(), "game loaded");
+        auto& s = state();
+        close(s, "game loaded");
+        if (!s.offerDone) {
+            s.offerDone = true;
+            s.offerArmed = true;
+            s.quietSince = {};
+        }
     }
 }

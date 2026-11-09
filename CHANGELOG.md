@@ -67,6 +67,11 @@
   or double tap, then go through ROCK's main options one page each; nothing is
   saved until the review page. It opens from PALM's Config (ROCK page); mods
   open it with `Configuration::openSetupWizard`.
+- **SteamVR binding offer.** On SteamVR, when Index controllers or Vive wands
+  use SteamVR's default binding for Fallout 4 VR (A and X arrive as grip, or
+  are missing), the setup wizard opens after the game loads and offers ROCK's
+  binding; one choice sets it for Fallout 4 VR. A binding chosen in SteamVR is
+  never replaced. `OfferSteamVRBinding` turns the automatic offer off.
 - **Two weapons at once.** Equip a weapon in each hand, any combination,
   including a melee weapon as the second weapon. The second weapon has its own
   trigger, reload, scope, dry-fire click and generated collision. The Pip-Boy
@@ -85,7 +90,8 @@
 - **Quick Loot Panel Placement** (`Grabbing.QuickLootPanelPlacement`): 1 on the
   right hand (game default), 2 on the hand pointing at the container (the
   closer hand when both point, default), 3 at the container it lists. Modes 2
-  and 3 list containers picked by either hand.
+  and 3 list containers picked by either hand, and the panel's button hints
+  go with it.
 - **Activate Prompt Placement** (`Grabbing.ActivatePromptPlacement`): 1 on both
   hands (game default), 2 on the closer hand only when both point at the same
   object (default), 3 at the object itself, shown once. Activation is unchanged.
