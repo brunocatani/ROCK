@@ -30,7 +30,8 @@ namespace rock::loose_weapon_state
 
         // Value-only descriptions; native model callbacks never retain engine
         // pointers or call back into a consumer. Registry mutations are bounded.
-        std::array<Entry, 256> entries;
+        // Never destroyed: entries hold engine models, which DLL detach must not release.
+        std::array<Entry, 256>& entries = *new std::array<Entry, 256>{};
         std::mutex mutex;
         using Set3D = void (*)(RE::TESObjectREFR*, RE::NiAVObject*, bool);
         Set3D original{};

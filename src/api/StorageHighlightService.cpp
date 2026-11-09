@@ -48,7 +48,9 @@ namespace rock::storage_highlight
             VatsSelectionHighlight highlight;
         };
 
-        std::array<Slot, contract::kMaxHighlights> slots;
+        // Game thread only. Never destroyed: a slot holds engine references and its
+        // VATS highlight stops through the engine, which DLL detach must not reach.
+        std::array<Slot, contract::kMaxHighlights>& slots = *new std::array<Slot, contract::kMaxHighlights>{};
         float pulseClock{};
         int cloneVerified{};  // 0 unknown, 1 verified, -1 refused
 

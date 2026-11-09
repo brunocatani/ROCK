@@ -52,7 +52,10 @@ namespace rock::storage_service
             VatsSelectionHighlight highlight;
         };
 
-        std::array<Feedback, 2> feedback;
+        // Game thread only. Never destroyed (with displays below): entries hold engine
+        // references and VATS highlights that stop through the engine, which DLL
+        // detach must not reach.
+        std::array<Feedback, 2>& feedback = *new std::array<Feedback, 2>{};
         float pulseClock{};
 
         float feedbackIntensity() { return .25f + .75f * (.5f + .5f * std::sin(pulseClock * 31.41592654f)); }
@@ -75,7 +78,7 @@ namespace rock::storage_service
             VatsSelectionHighlight highlight;
         };
 
-        std::array<Display, 2> displays;
+        std::array<Display, 2>& displays = *new std::array<Display, 2>{};
 
         void stopDisplay(Display& value)
         {

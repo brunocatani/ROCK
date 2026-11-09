@@ -81,7 +81,9 @@ namespace rock::storage_interaction
             std::atomic_bool active{};
         };
 
-        Service service;
+        // Never destroyed: displays hold engine references, generated bodies and
+        // preparation coroutines, none of which DLL detach may release.
+        Service& service = *new Service;
 
         api::Status authorize(api::OwnerToken owner, unsigned permissions = 2)
         {
