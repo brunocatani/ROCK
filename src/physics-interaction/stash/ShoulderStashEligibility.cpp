@@ -41,6 +41,8 @@ namespace rock::shoulder_stash
             return "non-playable-base";
         case EligibilityReason::UntakeableBook:
             return "untakeable-book";
+        case EligibilityReason::ActivatorBaseForm:
+            return "activator-base-form";
         }
         return "unknown";
     }
@@ -100,6 +102,11 @@ namespace rock::shoulder_stash
 
         if (baseForm->Is(RE::ENUM_FORM_ID::kNPC_)) {
             result.reason = EligibilityReason::ActorBaseForm;
+            return result;
+        }
+
+        if (baseForm->Is(RE::ENUM_FORM_ID::kACTI)) {
+            result.reason = EligibilityReason::ActivatorBaseForm;
             return result;
         }
 

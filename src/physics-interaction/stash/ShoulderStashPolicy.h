@@ -42,6 +42,9 @@ namespace rock::shoulder_stash
         ActorBaseForm,
         NonPlayableBase,
         UntakeableBook,
+        // Activators are never inventory items; activating one runs its
+        // script instead of taking it (a movable prop such as a pre-war mug).
+        ActivatorBaseForm,
     };
 
     struct EligibilityInput
