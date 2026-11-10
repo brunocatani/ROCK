@@ -7,6 +7,7 @@
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/player/NativeQuickLootPanel.h"
 #include "physics-interaction/native/player/NativeWorldUiAnchor.h"
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -194,6 +195,22 @@ namespace rock::native_activate_prompts
             moveTo(root, carrier.get());
         }
 
+        // Puts the primary prompt beside the quick loot panel while the panel
+        // lists away from the right hand. False when it stays under this
+        // module's own placement.
+        bool followListing(RE::NiAVObject* root)
+        {
+            const auto anchor = native_quick_loot_panel::listingPromptAnchor(*root);
+            auto& carrier = g_objectCarriers[kRight];
+            if (!anchor ||
+                !attachCarrier(carrier, g_objectCarrierFailed[kRight], anchor->parent, kObjectCarrierNames[kRight])) {
+                return false;
+            }
+            carrier->local = anchor->carrierLocal;
+            moveTo(root, carrier.get());
+            return true;
+        }
+
         // Only roots on their wand or on ROCK's carriers are ROCK's to move;
         // any other parent is a native rebuild or another owner.
         bool ownsPlacement(const std::size_t index, const RE::NiAVObject* root, const RE::NiNode* wand)
@@ -256,6 +273,12 @@ namespace rock::native_activate_prompts
             auto* const root = modelRoot(kModels[index]);
             auto* const wand = wands[index];
             if (!root || !wand || !ownsPlacement(index, root, wand)) {
+                continue;
+            }
+            // The primary prompt shows the quick loot panel's TAKE and TRANSFER
+            // buttons while the panel lists, so it goes with the panel ahead of
+            // this setting.
+            if (index == kRight && followListing(root)) {
                 continue;
             }
             const bool duplicate = g_sharedOwner && *g_sharedOwner != index;
