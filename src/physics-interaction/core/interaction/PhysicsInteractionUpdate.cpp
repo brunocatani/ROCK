@@ -741,7 +741,7 @@ namespace rock
                 _dynamicWeaponCollision.surfaceSupportReservesInput(
                     reinterpret_cast<std::uintptr_t>(resolveEquippedWeaponInteractionNode()),
                     _weaponCollision.getCurrentWeaponGenerationKey());
-            const bool bipodLeft = _twoHandedGrip.isFiringHandLeft();
+            const bool bipodLeft = bipodInputIsLeft();
             input_remap_runtime::setStickClickReserved((bipod && bipodLeft) || placementReservesClick(true),
                 (bipod && !bipodLeft) || placementReservesClick(false));
             const auto& runtime = runtime_state::currentFrame();
@@ -784,12 +784,10 @@ namespace rock
             if (bhk == _lifecycle.cachedBhkWorld && world == _lifecycle.cachedHknpWorld)
                 updateNativeGrenadeCollisionSuppression(world, runtime.deltaSeconds);
         }
+        updateBipodInputHand();
         beginHeldPlacementFrame();
-        {
-            const bool bipodLeft = _twoHandedGrip.isFiringHandLeft();
-            _dynamicWeaponCollision.updateSurfaceSupportInput(bipodLeft, placementReservesClick(bipodLeft),
-                _placementEquippedHold);
-        }
+        _dynamicWeaponCollision.updateSurfaceSupportInput(bipodInputIsLeft(), placementReservesClick(bipodInputIsLeft()),
+            _placementEquippedHold);
         const auto retireDynamicWeaponForInterruptedFrame = [this](bool preserveSurfaceSupport = false) {
             if (!_lifecycle.initialized.load(std::memory_order_acquire)) {
                 return;

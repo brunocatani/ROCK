@@ -32,9 +32,12 @@ slots publish `getWeaponState`, `getGrip`, `getClassification` and
   weapon the player resized or re-gripped with their own FRIK weapon offset
   file (FRIK's compiled defaults never count): ROCK seats and scales it from
   that file and gives it dynamic support grabs only, so animation authored
-  for ROCK's grip of the weapon does not fit its hands. `BipodInputReserved`
-  (slot 0) says the bipod takes `firingHand`'s stick click: the weapon touches
-  a fixed surface or rests latched on one. The other hand's click stays free.
+  for ROCK's grip of the weapon does not fit its hands.
+  `BipodRightInputReserved` and `BipodLeftInputReserved` (slot 0) say the bipod
+  takes that hand's stick click: the weapon touches a fixed surface or rests
+  latched on one. Its hand is the firing hand while both hands hold the weapon,
+  the hand holding it otherwise, and the last such hand while it stands
+  hands-free. The other hand's click stays free.
   `WeaponPresent` on slot 1 says ROCK has placed that weapon in its hand: this
   frame or, for a reader before this frame's placement such as a frame callback,
   the last. `SecondaryReloadActive` (slot 1 only) says ROCK's private graph of that
@@ -197,7 +200,7 @@ those of `requestInventoryEquip`.
 
 | Enum | Values |
 | --- | --- |
-| `WeaponStateFlag` | `Valid`, `IdentityPending`, `DrawPending`, `BridgePresented`, `NativeRenderable`, `HandPoseHandoffComplete`, `RecoveryExhausted`, `TransitionActive`, `WeaponPresent`, `WeaponDrawn`, `PresentationKnown`, `WeaponEquipped`, `BipodInputReserved`, `AmmoKnown`, `UserWeaponOffset`, `SecondaryReloadActive` |
+| `WeaponStateFlag` | `Valid`, `IdentityPending`, `DrawPending`, `BridgePresented`, `NativeRenderable`, `HandPoseHandoffComplete`, `RecoveryExhausted`, `TransitionActive`, `WeaponPresent`, `WeaponDrawn`, `PresentationKnown`, `WeaponEquipped`, `AmmoKnown`, `UserWeaponOffset`, `SecondaryReloadActive`, `BipodRightInputReserved`, `BipodLeftInputReserved` |
 | `HandlingStateFlag` | `FiringGripHeld`, `ManualOwnership`, `PartCarry`, `LeftFiringAvailable` |
 | `TransitionSource` | `Unknown`, `ObservedEquip`, `HeldTriggerEquip`, `HeldGripZoneEquip`, `MenuExit`, `WorkbenchExit` |
 | `TransitionResult` | `None`, `Completed`, `WeaponUnequipped`, `IdentityLost`, `ExpectedIdentityTimeout`, `NativeAnimationHandoff`, `WeaponNoLongerDrawn`, `RecoveryExhausted`, `ProviderLost`, `Shutdown` |
@@ -209,5 +212,6 @@ those of `requestInventoryEquip`.
 
 `TransitionResult` 10 (shoulder sheath), `GripFlag` bits 1 and 2 (two-hand grip
 and left firing hand; the hands are in `WeaponState`), `EquipFailure` 7
-(`OutgoingTransferFailed`) and `EquipResultFlag` bits 0 and 1 are retired and
-never reused.
+(`OutgoingTransferFailed`), `EquipResultFlag` bits 0 and 1 and
+`WeaponStateFlag` bit 12 (one bipod reservation without its hand) are retired
+and never reused.

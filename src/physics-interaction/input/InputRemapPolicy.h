@@ -320,7 +320,7 @@ namespace rock::input_remap_policy
      * placement of a right-hand object. A loaded PALM takes the click whatever
      * the setting says. The bipod or placement takes it while it would act on
      * the press, the same rule PALM follows through
-     * WeaponStateFlag::BipodInputReserved and PlacementClickFlag.
+     * WeaponStateFlag::BipodRightInputReserved and PlacementClickFlag.
      */
     [[nodiscard]] constexpr bool vanillaFavoritesMenuAllowed(
         bool settingEnabled, bool robcoPalmLoaded, bool rightStickClickReserved)

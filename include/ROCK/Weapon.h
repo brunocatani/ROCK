@@ -35,9 +35,7 @@ namespace rock::api::weapon {
         WeaponDrawn = 1u << 9,
         PresentationKnown = 1u << 10,
         WeaponEquipped = 1u << 11,
-        // The bipod takes firingHand's stick click: the weapon touches a fixed
-        // surface or rests latched on one. The other hand's click stays free.
-        BipodInputReserved = 1u << 12,
+        // 12 retired (one bipod reservation without its hand); never reuse.
         // loadedRounds and reserveRounds hold the weapon's ammo counter.
         AmmoKnown = 1u << 13,
         // The weapon is seated and scaled from the player's own FRIK weapon
@@ -47,6 +45,13 @@ namespace rock::api::weapon {
         // Slot 1 only: ROCK's private graph of this weapon is in its reload.
         // Slot 0's reload is the player's own graph.
         SecondaryReloadActive = 1u << 15,
+        // Slot 0: the bipod takes that hand's stick click while the weapon
+        // touches a fixed surface or rests latched on one. Its hand is the
+        // firing hand while both hands hold the weapon, the hand holding it
+        // otherwise, and the last such hand while it stands hands-free. The
+        // other hand's click stays free.
+        BipodRightInputReserved = 1u << 16,
+        BipodLeftInputReserved = 1u << 17,
     };
 
     enum class HandlingStateFlag : std::uint32_t

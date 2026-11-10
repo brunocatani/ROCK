@@ -154,8 +154,30 @@ namespace rock
         }
         out.equippedWeapon = queryEquippedWeaponPlacement();
         if (out.equippedWeapon.formId)
-            out.equippedWeaponHand = _twoHandedGrip.isFiringHandLeft() ? api::Hand::Left : api::Hand::Right;
+            out.equippedWeaponHand = bipodInputIsLeft() ? api::Hand::Left : api::Hand::Right;
         return api::Status::Ok;
+    }
+
+    void PhysicsInteraction::updateBipodInputHand()
+    {
+        // The bipod answers the hand on the weapon: the firing hand while both
+        // hands hold it, the only hand holding it otherwise (a detached firing
+        // grip leaves it to the support hand, a support release to the firing
+        // hand), and the last such hand while none does, so a weapon standing
+        // hands-free retires on the click of the hand that let it go.
+        const auto roster = equippedWeaponRoster();
+        const bool firingLeft = _twoHandedGrip.isFiringHandLeft();
+        if (!roster.facts().slot0.holdsHand) {
+            _bipodInputLeft = firingLeft;
+            return;
+        }
+        const bool supportGripping = _twoHandedGrip.getState() == TwoHandedState::Gripping;
+        const auto on = [&](bool left) { return roster.slotZeroHolds(left) || (supportGripping && left != firingLeft); };
+        const bool left = on(true), right = on(false);
+        if (left && right)
+            _bipodInputLeft = firingLeft;
+        else if (left != right)
+            _bipodInputLeft = left;
     }
 
     api::grab::HeldPlacementHand PhysicsInteraction::queryEquippedWeaponPlacement() const
@@ -352,7 +374,7 @@ namespace rock
                 _placementReservedHands |= held_placement_policy::handBit(left);
         }
         _placementEquippedHold = (intent.flags & static_cast<std::uint32_t>(Flag::TimeEquippedWeaponHold)) != 0;
-        const bool weaponLeft = _twoHandedGrip.isFiringHandLeft();
+        const bool weaponLeft = bipodInputIsLeft();
         if (anchorsWeapon && !_placementPendingForm) {
             _placementLastRequestToken = intent.frameToken;
             _placementLastRequestForm = intent.formId;

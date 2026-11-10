@@ -1005,11 +1005,12 @@ namespace rock
                 frik_weapon_offsets::find(currentEquippedWeaponForm(), resolveEquippedWeaponInteractionNode(),
                     f4vr::isInPowerArmor())
                     .has_value());
-        setFlag(Flag::BipodInputReserved,
-            g_rockConfig.rockBipodMode && (outState.flags & static_cast<std::uint32_t>(Flag::Valid)) &&
-                _dynamicWeaponCollision.surfaceSupportReservesInput(
-                    reinterpret_cast<std::uintptr_t>(resolveEquippedWeaponInteractionNode()),
-                    outState.weaponGenerationKey));
+        const bool bipodReserved = g_rockConfig.rockBipodMode &&
+            (outState.flags & static_cast<std::uint32_t>(Flag::Valid)) &&
+            _dynamicWeaponCollision.surfaceSupportReservesInput(
+                reinterpret_cast<std::uintptr_t>(resolveEquippedWeaponInteractionNode()), outState.weaponGenerationKey);
+        setFlag(Flag::BipodRightInputReserved, bipodReserved && !bipodInputIsLeft());
+        setFlag(Flag::BipodLeftInputReserved, bipodReserved && bipodInputIsLeft());
         outState.sample.worldGeneration = _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
         outState.sample.skeletonGeneration = _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
         outState.sample.providerGeneration = _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);

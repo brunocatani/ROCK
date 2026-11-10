@@ -381,7 +381,9 @@ namespace rock::api::grab {
     // hands' clicks. A hand's click acts only for that hand. equippedWeapon is
     // the primary equipped weapon's base form while it can be placed, with
     // Weapon, and FixedSurfaceContact while it rests on or touches the fixed
-    // world; equippedWeaponHand is its firing hand, whose click is the bipod's.
+    // world; equippedWeaponHand is the hand whose click is the bipod's: the
+    // firing hand while both hands hold it, the hand holding it otherwise, and
+    // the last such hand while no hand does.
     // It is empty, with Hand::None, with no such weapon, during an equip
     // transition, while a weapon placement finishes, and while the bipod holds
     // the weapon hands-free (ROCK's own click retires that one).

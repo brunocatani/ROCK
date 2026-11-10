@@ -64,8 +64,9 @@ Acceptance is not completion: `lastRequestToken` and `lastResult` report it.
 placement. ROCK hides a press that begins on a reserved click from the game.
 
 `equippedWeapon` reports the primary equipped weapon while it can be placed,
-and `equippedWeaponHand` its firing hand, whose click is the bipod's. Never
-reserve that click for the weapon. Set `TimeEquippedWeaponHold` while you time
+and `equippedWeaponHand` the hand whose click is the bipod's: the firing hand
+while both hands hold the weapon, the hand holding it otherwise, and the last
+such hand while none does. Never reserve that click for the weapon. Set `TimeEquippedWeaponHold` while you time
 a hold on it: a press still latches the bipod at once, but a latched weapon
 unlatches when the button comes up instead of when it goes down, so a hold can
 place the pose it rests in. `AnchorEquippedWeapon` (with

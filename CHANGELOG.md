@@ -130,9 +130,10 @@
   filtering presets (`WeaponHandling.WeaponFilteringPreset`, Steady by default) are
   player settings.
 - Bipod: a latched weapon stays equipped hands-free within
-  `WeaponHandling.BipodHandsFreeRadiusMeters`. The bipod follows the weapon's
-  firing hand: a left-hand weapon latches on the left stick click, and the
-  other stick keeps its own actions.
+  `WeaponHandling.BipodHandsFreeRadiusMeters`. The bipod listens to the stick
+  of the hand on the weapon: the firing hand while both hands hold it, the hand
+  still holding it otherwise, and the hand that let go last while it stands
+  hands-free. The other stick keeps its own actions.
 - Each stick click acts only for its own hand. An add-on placing held objects
   (such as Pimp my House) places the object in the hand whose stick you click,
   and the other hand's click keeps the Favorites menu, PALM or the game's own

@@ -553,6 +553,10 @@ namespace rock
         {
             return (_placementReservedHands & held_placement_policy::handBit(left)) != 0;
         }
+        // The hand whose stick click is the bipod's, chosen once per update
+        // before any input reads it (updateBipodInputHand).
+        void updateBipodInputHand();
+        [[nodiscard]] bool bipodInputIsLeft() const noexcept { return _bipodInputLeft; }
         void beginHeldPlacementFrame();
         void resetHeldPlacement();
         void commitHeldPlacement(const PhysicsFrameContext& frame);
@@ -1268,6 +1272,7 @@ namespace rock
         // held_placement_policy::handBit).
         std::uint32_t _placementReservedHands{};
         bool _placementEquippedHold{}, _placementEquippedRetiring{};
+        bool _bipodInputLeft{}; // Game frame owner: updateBipodInputHand.
         float _placementScriptWait{};
         // Slot 1's native equipment, sampled by the frame owner
         // (sampleEquippedSlotOne) for every roster query this frame.
