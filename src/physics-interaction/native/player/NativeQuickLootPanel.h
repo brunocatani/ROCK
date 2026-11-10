@@ -1,9 +1,6 @@
 #pragma once
 
-#include "RE/NetImmerse/NiNode.h"
-
 #include <cstdint>
-#include <optional>
 
 /*
  * Where the vanilla quick loot menu (the world_Loot panel) appears, chosen by
@@ -20,9 +17,10 @@
  * - AtContainer: the panel stands upright at the container it lists, turned
  *   toward the player about the vertical, at one fixed world size.
  *
- * The panel's TAKE and TRANSFER buttons are the primary wand's activate
- * prompt; native_activate_prompts places it beside the panel through
- * listingPromptAnchor while the panel is off the right hand. The native
+ * The panel's TAKE and TRANSFER hints (the right touchpad's HUD glass, a model
+ * of its own) go with the panel while it lists a container: mirrored on the
+ * left hand like the panel, and at the container at their native offset from
+ * the panel. While nothing lists they stay on the right touchpad. The native
  * controls (the primary wand's buttons and stick) are unchanged in every mode.
  *
  * FO4VR fills the panel only from the primary (right) wand's pick. For
@@ -35,8 +33,9 @@
  * untouched and the prompts keep their native answers.
  *
  * The game thread moves the panel's root between the right wand's attach node
- * and ROCK's own carrier nodes (under the left wand and under the room node)
- * and returns it to the right wand when the mode changes.
+ * and ROCK's own carrier nodes (under the left wand and under the room node),
+ * the hints' root between the right touchpad and a ROCK carrier under the room
+ * node, and returns both to the right wand when the mode changes.
  */
 namespace rock::native_quick_loot_panel
 {
@@ -48,14 +47,6 @@ namespace rock::native_quick_loot_panel
         AtContainer = 3,
     };
 
-    // A parent node and the local of a carrier under it that puts a prompt
-    // root, with its own local, where it belongs.
-    struct PromptAnchor
-    {
-        RE::NiNode* parent;
-        RE::NiTransform carrierLocal;
-    };
-
     // Plugin load, before the HUD runs. False when the native code does not
     // match: the panel then stays on the right hand and lists right picks only,
     // whatever the setting says.
@@ -65,10 +56,4 @@ namespace rock::native_quick_loot_panel
     // panel for the container the last model update listed. The next model
     // update lists by the same placement.
     void update(Placement placement) noexcept;
-
-    // Game thread, after update() in the same frame: where the primary wand's
-    // activate prompt (`prompt`, its root on the primary wand node) goes so its
-    // TAKE and TRANSFER buttons stay beside the panel. Empty while nothing
-    // lists or the panel is on the right hand: the prompt then stays native.
-    [[nodiscard]] std::optional<PromptAnchor> listingPromptAnchor(const RE::NiAVObject& prompt) noexcept;
 }

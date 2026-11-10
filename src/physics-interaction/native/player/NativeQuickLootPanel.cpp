@@ -52,13 +52,13 @@ namespace rock::native_quick_loot_panel
         struct ExpectedBytes
         {
             std::uintptr_t address;
-            std::array<std::uint8_t, 7> bytes;
+            std::array<std::uint8_t, 14> bytes;
             std::size_t size;
         };
 
         bool matches(const ExpectedBytes& expected)
         {
-            std::array<std::uint8_t, 7> live{};
+            std::array<std::uint8_t, 14> live{};
             return native_memory::guardedCopyFromMemory(
                        reinterpret_cast<const void*>(REL::Offset(expected.address).address()), live.data(),
                        expected.size) &&
@@ -105,6 +105,29 @@ namespace rock::native_quick_loot_panel
          */
         constexpr std::uintptr_t kLootModel = 0x5ACBC98;
         constexpr std::ptrdiff_t kModelRootOffset = 0x10;
+
+        /*
+         * The panel's TAKE and TRANSFER buttons are the primary touchpad's
+         * world-space menu, WSPrimaryTouchpadInputModel: its constructor
+         * 0xC8CA90 stores the model at 0x5ACBCB8 (0xC8CADE), the player VR node
+         * builder attaches it to PrimaryWandTouchpad, player +0x6F8
+         * (0xEF51D9..0xEF51EA, through 0xC90220), and its placement 0xC8CBE0
+         * writes the local transform of its root, model +0x10 (mov rbx,
+         * [rcx+0x10] at 0xC8CBF2). Measured on the bench: that root is the
+         * "Point002" HUD glass under PrimaryWandTouchpad, and app-culling it
+         * removes exactly the TAKE and TRANSFER buttons. The game culls and
+         * shows it itself.
+         */
+        constexpr std::uintptr_t kHintModel = 0x5ACBCB8;
+
+        constexpr std::array<ExpectedBytes, 3> kExpectedHintModel{ {
+            // mov [rip -> 0x5ACBCB8], rax
+            { 0xC8CADE, { 0x48, 0x89, 0x05, 0xD3, 0xF1, 0xE3, 0x04 }, 7 },
+            // mov rdx, [r14+0x6F8]; mov rcx, [rip -> 0x5ACBCB8]
+            { 0xEF51D9, { 0x49, 0x8B, 0x96, 0xF8, 0x06, 0x00, 0x00, 0x48, 0x8B, 0x0D, 0xD1, 0x6A, 0xBD, 0x04 }, 14 },
+            // mov rbx, [rcx+0x10]
+            { 0xC8CBF2, { 0x48, 0x8B, 0x59, 0x10 }, 4 },
+        } };
 
         /*
          * Meshes\world_Loot.nif (Fallout4_VR - Main.ba2): the quickLoot:0 quad
@@ -155,8 +178,16 @@ namespace rock::native_quick_loot_panel
         // Never destroyed: an engine object released in DLL detach raises R6025 during ExitProcess.
         RE::NiPointer<RE::NiNode>& g_containerCarrier = *new RE::NiPointer<RE::NiNode>;
         RE::NiPointer<RE::NiNode>& g_leftCarrier = *new RE::NiPointer<RE::NiNode>;
+        // Holds the TAKE and TRANSFER hints off the right hand. It hangs under
+        // the room node, never under the left wand: FRIK scales to zero the
+        // first node named "Point002" it finds under the left wand every frame
+        // (Skeleton::hideFistHelpers), and the hints' root carries that name.
+        RE::NiPointer<RE::NiNode>& g_hintCarrier = *new RE::NiPointer<RE::NiNode>;
         bool g_containerCarrierFailed{ false };
         bool g_leftCarrierFailed{ false };
+        bool g_hintCarrierFailed{ false };
+        // The hint model matched at install; otherwise the hints stay native.
+        bool g_hintsFollow{ false };
         std::optional<Placement> g_appliedPlacement;
 
         const char* placementName(const Placement placement)
@@ -393,6 +424,47 @@ namespace rock::native_quick_loot_panel
             return carrier && root->parent == carrier.get();
         }
 
+        /*
+         * The TAKE and TRANSFER hints (root H, native under the right touchpad
+         * T) go wherever the panel lists, posed by the hint carrier K under
+         * the room node:
+         * - left hand, mirrored like the panel: K = leftWand * mirror(T * H) * H^-1,
+         *   with leftWand the left wand's local under the room node;
+         * - at the container they keep the offset from the panel they have on
+         *   the hand: the panel stands at room * C * P with P its local under
+         *   the attach node A, so K = C * A^-1 * T.
+         * While nothing lists, or the panel is on the right hand, they are on
+         * the touchpad, where the game shows its other hints.
+         */
+        void placeHints(const f4vr::PlayerNodes& nodes, const RE::NiAVObject* panel)
+        {
+            auto* const hints = modelRoot(kHintModel);
+            auto* const touchpad = nodes.primaryWandandTouchPad;
+            auto* const room = nodes.roomnode;
+            if (!hints || !touchpad || !room ||
+                !(hints->parent == touchpad || isUnder(hints, g_hintCarrier))) {
+                return;
+            }
+            const bool listed = g_listedPick.load(std::memory_order_acquire) != 0;
+            const auto* leftWand = nodes.SecondaryWandNode;
+            std::optional<RE::NiTransform> carrierLocal;
+            if (listed && isUnder(panel, g_leftCarrier) && leftWand && leftWand->parent == room) {
+                carrierLocal = transform_math::composeTransforms(leftWand->local,
+                    mirroredOnLeftLocal(transform_math::composeTransforms(touchpad->local, hints->local), hints->local));
+            } else if (listed && isUnder(panel, g_containerCarrier) && g_containerCarrier->parent == room) {
+                carrierLocal = transform_math::composeTransforms(
+                    transform_math::composeTransforms(g_containerCarrier->local,
+                        transform_math::invertTransform(nodes.primaryUIAttachNode->local)),
+                    touchpad->local);
+            }
+            if (!carrierLocal || !attachCarrier(g_hintCarrier, g_hintCarrierFailed, room, "hints")) {
+                moveTo(hints, touchpad);
+                return;
+            }
+            g_hintCarrier->local = *carrierLocal;
+            moveTo(hints, g_hintCarrier.get());
+        }
+
         void placePanel(RE::NiAVObject* root, const f4vr::PlayerNodes& nodes, const Placement placement)
         {
             auto* const handAttach = nodes.primaryUIAttachNode;
@@ -422,48 +494,17 @@ namespace rock::native_quick_loot_panel
             // A root on any other parent belongs to a native rebuild or another
             // owner; it is left alone.
             auto* const panel = modelRoot(kLootModel);
-            if (panel &&
-                (panel->parent == handAttach || isUnder(panel, g_containerCarrier) || isUnder(panel, g_leftCarrier))) {
-                placePanel(panel, nodes, placement);
+            if (!panel ||
+                !(panel->parent == handAttach || isUnder(panel, g_containerCarrier) || isUnder(panel, g_leftCarrier))) {
+                return;
+            }
+            placePanel(panel, nodes, placement);
+            if (g_hintsFollow) {
+                placeHints(nodes, panel);
             }
         }
     }
 
-    /*
-     * The panel's TAKE and TRANSFER buttons are the primary wand's activate
-     * prompt (world_Rollover), which the game attaches to the primary wand
-     * node and fills from the quick container data, so it shows them for the
-     * listed container whichever wand picked it. Measured on the bench: with
-     * the panel listed from the left hand, the rollover root stayed 4 units
-     * above the right wand. While the panel is off the right hand the prompt
-     * keeps the pose it has relative to the panel there:
-     * - on the left hand, mirrored like the panel: carrier = mirror(prompt) * prompt^-1
-     *   under the left wand, as the prompt hangs straight from its wand;
-     * - at the container, the panel's carrier composed with the inverse of the
-     *   attach node's local, so prompt and panel keep their wand-relative
-     *   offset and the panel's size: carrier = container * attach^-1 under the
-     *   room node.
-     */
-    std::optional<PromptAnchor> listingPromptAnchor(const RE::NiAVObject& prompt) noexcept
-    {
-        if (!g_lockAcquire || g_listedPick.load(std::memory_order_acquire) == 0) {
-            return std::nullopt;
-        }
-        const auto* panel = modelRoot(kLootModel);
-        const auto* nodes = f4vr::getPlayerNodes();
-        if (!panel || !nodes || !nodes->primaryUIAttachNode) {
-            return std::nullopt;
-        }
-        if (isUnder(panel, g_leftCarrier) && g_leftCarrier->parent) {
-            return PromptAnchor{ g_leftCarrier->parent, mirroredOnLeftLocal(prompt.local, prompt.local) };
-        }
-        if (isUnder(panel, g_containerCarrier) && g_containerCarrier->parent) {
-            return PromptAnchor{ g_containerCarrier->parent,
-                transform_math::composeTransforms(g_containerCarrier->local,
-                    transform_math::invertTransform(nodes->primaryUIAttachNode->local)) };
-        }
-        return std::nullopt;
-    }
 
     bool install() noexcept
     {
@@ -516,6 +557,17 @@ namespace rock::native_quick_loot_panel
             return false;
         }
         installRolloverHosts();
+        g_hintsFollow = true;
+        for (const auto& expected : kExpectedHintModel) {
+            if (!matches(expected)) {
+                g_hintsFollow = false;
+                ROCK_LOG_WARN(Init,
+                    "Quick loot panel: the button hint model code at 0x{:X} does not match; "
+                    "the TAKE and TRANSFER hints stay on the right hand",
+                    expected.address);
+                break;
+            }
+        }
         ROCK_LOG_INFO(Init, "Quick loot panel installed; Grabbing.QuickLootPanelPlacement chooses where it appears");
         return true;
     }

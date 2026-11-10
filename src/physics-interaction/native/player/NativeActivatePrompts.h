@@ -18,11 +18,6 @@
  * Only the prompts' placement and visibility change. Which object each wand
  * picks, what the prompts say and how activation works stay native.
  *
- * One exception in every mode: while the quick loot panel lists a container
- * away from the right hand, the primary prompt, which then shows the panel's
- * TAKE and TRANSFER buttons, goes beside the panel
- * (native_quick_loot_panel::listingPromptAnchor).
- *
  * The game builds one world-space model per wand (WSInteractRolloverPrimary
  * and WSInteractRolloverSecondaryModel) and attaches each root to its wand
  * node. The game thread moves those roots between the wand, a ROCK carrier
