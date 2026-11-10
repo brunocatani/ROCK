@@ -172,6 +172,10 @@ namespace rock::performance_profiler
         PrepSettings,
         PrepRuntimeState,
         PrepGates,
+        // Sub-steps of nativeIdleGripHarvest, which runs native animation code.
+        HarvestGraphHolderStart,
+        HarvestSubgraphRequest,
+        HarvestClipSample,
         Count
     };
 

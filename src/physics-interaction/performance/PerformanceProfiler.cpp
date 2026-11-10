@@ -460,6 +460,12 @@ namespace rock::performance_profiler
                 return "prepRuntimeState";
             case Scope::PrepGates:
                 return "prepGates";
+            case Scope::HarvestGraphHolderStart:
+                return "harvestGraphHolderStart";
+            case Scope::HarvestSubgraphRequest:
+                return "harvestSubgraphRequest";
+            case Scope::HarvestClipSample:
+                return "harvestClipSample";
             case Scope::Count:
                 break;
             }

@@ -1979,6 +1979,7 @@ namespace rock::native_idle_grip_preharvest
                     return true;
                 }
 
+                performance_profiler::ScopedTimer requestTimer(performance_profiler::Scope::HarvestSubgraphRequest);
                 RE::BGSObjectInstance objectInstance(job.weapon, job.instanceData.get());
                 RE::BSScrapArray<RE::IKeywordFormBase*> targetKeywords{};
                 state.native.addItemToTargetKeywords(&objectInstance, &targetKeywords);
@@ -2041,6 +2042,7 @@ namespace rock::native_idle_grip_preharvest
             std::uint64_t subgraphIdentifier = 0;
             IdleGripExtractionDiagnostics extractionDiagnostics{};
             ExtractionResult extractionResult = ExtractionResult::Failed;
+            performance_profiler::ScopedTimer sampleTimer(performance_profiler::Scope::HarvestClipSample);
             if (job.phase == Phase::IdleClipLoading) {
                 // The clip and its subgraph are already chosen; only the
                 // direct resource is still loading.
@@ -2062,6 +2064,7 @@ namespace rock::native_idle_grip_preharvest
                 extractionResult = tryExtractIdleGrip(state, *manager, handInWeapon, rightFiringFingerPose,
                     supportSample, clipPath, subgraphIdentifier, extractionDiagnostics);
             }
+            sampleTimer.stop();
             if (extractionResult == ExtractionResult::Pending) {
                 // The idle clip now loads on its own: stop the full subgraph
                 // load unless this weapon's subgraph is kept warm.
@@ -2285,6 +2288,8 @@ namespace rock::native_idle_grip_preharvest
                 return;
             }
 
+            // The holder, the player's graph projects and the background manager: native work on this frame.
+            performance_profiler::ScopedTimer holderTimer(performance_profiler::Scope::HarvestGraphHolderStart);
             void* constructed = state.native.graphHolderCtor(state.job.graphHolderStorage.data());
             if (constructed != state.job.graphHolderStorage.data()) {
                 state.job.graphHolderConstructed = false;
