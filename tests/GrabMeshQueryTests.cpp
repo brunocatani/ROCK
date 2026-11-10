@@ -1,3 +1,4 @@
+#include "physics-interaction/grab/GrabPinchSpan.h"
 #include "physics-interaction/grab/MeshGrab.h"
 
 #include <cassert>
@@ -255,6 +256,92 @@ namespace
         }
     }
 
+    // A closed-ish cloud of small faces, in strip-like source order.
+    std::vector<TriangleData> makeSolid(std::size_t count, std::mt19937& random, float translation)
+    {
+        std::uniform_real_distribution<float> jitter(-0.6f, 0.6f);
+        std::vector<TriangleData> mesh(count);
+        for (std::size_t i = 0; i < count; ++i) {
+            const float turn = static_cast<float>(i) * 0.031f, rise = static_cast<float>(i % 97) * 0.21f;
+            const RE::NiPoint3 p{ translation + std::cos(turn) * (6.0f + jitter(random)),
+                std::sin(turn) * (4.0f + jitter(random)), rise - 10.0f };
+            mesh[i] = { p, p + RE::NiPoint3{ 0.5f + jitter(random), jitter(random), 0.2f },
+                p + RE::NiPoint3{ jitter(random), 0.5f + jitter(random), jitter(random) } };
+        }
+        return mesh;
+    }
+
+    // The culled pinch-span measurement must return what measuring every triangle returns.
+    void pinchSpanParity(std::vector<TriangleData> mesh, std::mt19937& random, float translation)
+    {
+        namespace span = grab_pinch_span;
+        span::TriangleCull cull;
+        cull.build(mesh);
+        assert(cull.size() == mesh.size());
+        std::uniform_real_distribution<float> unit(-1.0f, 1.0f), near(-3.0f, 3.0f);
+        std::size_t visited = 0, queries = 0;
+        for (int i = 0; i < 400; ++i) {
+            RE::NiPoint3 axis{ unit(random), unit(random), unit(random) };
+            const float length = std::sqrt(vector_math::lengthSquared(axis));
+            if (length < 0.1f)
+                continue;
+            axis = axis * (1.0f / length);
+            const RE::NiPoint3 origin = !mesh.empty() && i % 3 != 0
+                ? mesh[static_cast<std::size_t>(i) * 131 % mesh.size()].v0
+                : RE::NiPoint3{ translation + near(random) * 3, near(random) * 2, near(random) * 4 };
+            for (const float radius : { 0.05f, 2.5f, 7.0f }) {
+                for (const float maxDepth : { 0.5f, 40.0f }) {
+                    const span::Query query{ origin, axis, radius, maxDepth };
+                    const auto full = span::measureDepth(mesh, query);
+                    const auto culled = span::measureDepth(mesh, query, &cull);
+                    assert(full.depthLocal == culled.depthLocal);
+                    assert(full.footprintSampleCount == culled.footprintSampleCount);
+                    cull.forEachCandidate(query, [&](std::size_t) { ++visited; });
+                    ++queries;
+                }
+            }
+        }
+        // A cull built for another mesh is ignored, never misapplied.
+        if (mesh.size() > 1) {
+            const span::Query query{ mesh.front().v0, { 0, 0, 1 }, 2.5f, 40.0f };
+            mesh.pop_back();
+            const auto expected = span::measureDepth(mesh, query);
+            const auto actual = span::measureDepth(mesh, query, &cull);
+            assert(expected.depthLocal == actual.depthLocal);
+            assert(expected.footprintSampleCount == actual.footprintSampleCount);
+        }
+        if (translation == 0.0f && mesh.size() >= 2048)
+            assert(visited * 4 < queries * mesh.size());
+    }
+
+    void measurePinchSpan()
+    {
+        std::mt19937 random(9917);
+        const auto mesh = makeSolid(7756, random, 0);
+        const auto ms = [](auto duration) { return std::chrono::duration<double, std::milli>(duration).count(); };
+        // One pinch grab: both sides of the axis for the decision and for each of 17 openings.
+        const auto run = [&](const grab_pinch_span::TriangleCull* cull) {
+            float sum = 0;
+            for (int pass = 0; pass < 36; ++pass) {
+                const float tilt = static_cast<float>(pass / 2) * 0.01f;
+                const float side = pass % 2 ? -1.0f : 1.0f;
+                RE::NiPoint3 axis{ side * std::cos(tilt), side * std::sin(tilt), 0 };
+                sum += grab_pinch_span::measureDepth(mesh, { mesh[100].v0, axis, 2.5f, 40.0f }, cull).depthLocal;
+            }
+            return sum;
+        };
+        const auto start = std::chrono::steady_clock::now();
+        const float full = run(nullptr);
+        const auto scanned = std::chrono::steady_clock::now();
+        grab_pinch_span::TriangleCull cull;
+        cull.build(mesh);
+        const float culled = run(&cull);
+        const auto done = std::chrono::steady_clock::now();
+        assert(full == culled);
+        std::printf("7756-triangle pinch span, 36 measurements: full scan %.3f ms / culled including build %.3f ms\n",
+            ms(scanned - start), ms(done - scanned));
+    }
+
     void measurePatchQueries()
     {
         const auto mesh = makeMesh(2048);
@@ -367,6 +454,17 @@ int main()
     extractionParity(false);
     extractionParity(true);
     visibleSkinWorkParity();
+    for (const std::size_t count : { 0u, 1u, 15u, 16u, 17u, 600u, 7756u }) {
+        pinchSpanParity(makeSolid(count, random, 0), random, 0);
+    }
+    auto scattered = makeSolid(3000, random, 0);
+    std::shuffle(scattered.begin(), scattered.end(), random);
+    scattered[11] = {}; // Degenerate face.
+    scattered[12].v1.x = std::numeric_limits<float>::quiet_NaN();
+    scattered[13].v2.z = std::numeric_limits<float>::infinity();
+    pinchSpanParity(scattered, random, 0);
+    pinchSpanParity(makeSolid(3000, random, 120000), random, 120000);
+    measurePinchSpan();
     measurePatchQueries();
     measureQueries();
 }

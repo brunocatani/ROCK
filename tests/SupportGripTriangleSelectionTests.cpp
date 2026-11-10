@@ -5,6 +5,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -77,10 +78,46 @@ namespace
     {
         std::vector<TriangleData> selected;
         selection::Stats stats;
+        double mergeMilliseconds = 0.0;
+        double referenceMergeMilliseconds = 0.0;
     };
 
+    // The merge as it was first written: every candidate searched for in the merged list.
+    void referenceMerge(selection::Rankings& rankings, std::size_t limit, std::vector<TriangleData>& outTriangles)
+    {
+        for (auto& ranking : rankings)
+            std::sort(ranking.begin(), ranking.end(), selection::rankedTriangleLess);
+        std::vector<std::uint64_t> selectedOrdinals;
+        const auto appendUnique = [&](const selection::RankedTriangle& ranked) {
+            if (outTriangles.size() >= limit ||
+                std::find(selectedOrdinals.begin(), selectedOrdinals.end(), ranked.deterministicOrdinal) !=
+                    selectedOrdinals.end())
+                return false;
+            selectedOrdinals.push_back(ranked.deterministicOrdinal);
+            outTriangles.push_back(ranked.weaponLocalTriangle);
+            return true;
+        };
+        std::array<std::size_t, selection::kLaneCount> cursors{};
+        bool remaining = true;
+        while (outTriangles.size() < limit && remaining) {
+            remaining = false;
+            for (std::size_t lane = 0; lane < selection::kLaneCount && outTriangles.size() < limit; ++lane) {
+                while (cursors[lane] < rankings[lane].size()) {
+                    remaining = true;
+                    if (appendUnique(rankings[lane][cursors[lane]++]))
+                        break;
+                }
+            }
+        }
+        for (const auto& ranked : rankings[selection::kGlobalRankingIndex]) {
+            if (outTriangles.size() >= limit)
+                break;
+            (void)appendUnique(ranked);
+        }
+    }
+
     Run select(std::vector<selection::Part> parts, bool useIndex, const selection::References& references,
-        std::size_t laneLimit, std::size_t globalLimit)
+        std::size_t laneLimit, std::size_t globalLimit, int trial)
     {
         if (!useIndex) {
             for (auto& part : parts)
@@ -89,7 +126,19 @@ namespace
         selection::Rankings rankings{};
         Run run{};
         selection::rankParts(parts, references, laneLimit, globalLimit, rankings, &run.stats);
+        auto referenceRankings = rankings;
+        const auto start = std::chrono::steady_clock::now();
         selection::mergeRankings(rankings, globalLimit, run.selected);
+        const auto merged = std::chrono::steady_clock::now();
+        std::vector<TriangleData> expected;
+        referenceMerge(referenceRankings, globalLimit, expected);
+        const auto referenced = std::chrono::steady_clock::now();
+        run.mergeMilliseconds = std::chrono::duration<double, std::milli>(merged - start).count();
+        run.referenceMergeMilliseconds = std::chrono::duration<double, std::milli>(referenced - merged).count();
+        bool same = expected.size() == run.selected.size();
+        for (std::size_t i = 0; same && i < expected.size(); ++i)
+            same = sameTriangle(expected[i], run.selected[i]);
+        check(same, "merge equals the searched merge", trial);
         return run;
     }
 }
@@ -124,6 +173,8 @@ int main()
     const std::pair<std::size_t, int> phases[] = { { 3, 60 }, { 12, 10 } };
     for (const auto& [partCount, repeats] : phases) {
         std::uint64_t indexedMeasured = 0, scanMeasured = 0, indexedDistances = 0, scanDistances = 0;
+        double mergeMilliseconds = 0.0, referenceMergeMilliseconds = 0.0;
+        int mergesTimed = 0;
         std::size_t totalTriangles = 0, finiteTriangles = 0;
         for (std::size_t i = 0; i < partCount; ++i) {
             totalTriangles += meshes[i % meshes.size()].size();
@@ -177,8 +228,13 @@ int main()
 
             for (const auto& limit : limits) {
                 ++trial;
-                const Run indexed = select(parts, true, references, limit[0], limit[1]);
-                const Run scanned = select(parts, false, references, limit[0], limit[1]);
+                const Run indexed = select(parts, true, references, limit[0], limit[1], trial);
+                const Run scanned = select(parts, false, references, limit[0], limit[1], trial);
+                if (limit[1] == 2048) {
+                    mergeMilliseconds += indexed.mergeMilliseconds;
+                    referenceMergeMilliseconds += indexed.referenceMergeMilliseconds;
+                    ++mergesTimed;
+                }
                 check(indexed.selected.size() == scanned.selected.size(), "selection size", trial);
                 bool same = indexed.selected.size() == scanned.selected.size();
                 for (std::size_t i = 0; same && i < indexed.selected.size(); ++i)
@@ -201,6 +257,8 @@ int main()
             100.0 * static_cast<double>(indexedMeasured) / static_cast<double>(scanMeasured),
             100.0 * static_cast<double>(indexedDistances) / static_cast<double>(scanDistances));
         check(indexedDistances < scanDistances, "the index skips work", 0);
+        std::printf("merge at the 2048-triangle limit, mean of %d: %.3f ms / searched merge %.3f ms\n", mergesTimed,
+            mergeMilliseconds / mergesTimed, referenceMergeMilliseconds / mergesTimed);
     }
     std::printf("repeated-vertex triangles with a NaN seat distance: %llu\n",
         static_cast<unsigned long long>(nanSeatDistances));

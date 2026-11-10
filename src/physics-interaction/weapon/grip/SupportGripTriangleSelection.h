@@ -228,12 +228,8 @@ namespace rock::support_grip_triangle_selection
                 const float skipAbove =
                     bounded ? (std::max)(ranking.front().distanceSquared, global.front().distanceSquared) : 0.0f;
                 float laneMinimumDistanceSquared = (std::numeric_limits<float>::infinity)();
-                for (std::size_t referenceIndex = 0; referenceIndex < references.laneCounts[lane]; ++referenceIndex) {
-                    if (bounded &&
-                        detail::boxDistanceSquared(references.lanePoints[lane][referenceIndex], *boxMinimum,
-                            *boxMaximum) > skipAbove) {
-                        continue;
-                    }
+                const std::size_t referenceCount = references.laneCounts[lane];
+                const auto measureReference = [&](std::size_t referenceIndex) {
                     if (stats)
                         ++stats->exactDistances;
                     float distanceSquared = 0.0f;
@@ -241,6 +237,37 @@ namespace rock::support_grip_triangle_selection
                         weaponLocalTriangle, distanceSquared);
                     if (std::isfinite(distanceSquared)) {
                         laneMinimumDistanceSquared = (std::min)(laneMinimumDistanceSquared, distanceSquared);
+                    }
+                };
+                if (boxMinimum && boxMaximum) {
+                    /*
+                     * Only the lane's smallest distance is kept, and a point's
+                     * exact distance is never below its box distance. The point
+                     * with the nearest box is measured first; a later point
+                     * whose box is already farther than the minimum found
+                     * cannot lower it. A finger's points lie along one line, so
+                     * most triangles need one or two exact distances, not ten.
+                     */
+                    std::array<float, kLaneReferenceCapacity> boxDistances{};
+                    std::size_t nearestBox = 0;
+                    for (std::size_t referenceIndex = 0; referenceIndex < referenceCount; ++referenceIndex) {
+                        boxDistances[referenceIndex] = detail::boxDistanceSquared(
+                            references.lanePoints[lane][referenceIndex], *boxMinimum, *boxMaximum);
+                        if (boxDistances[referenceIndex] < boxDistances[nearestBox]) {
+                            nearestBox = referenceIndex;
+                        }
+                    }
+                    for (std::size_t step = 0; step < referenceCount; ++step) {
+                        const std::size_t referenceIndex = step == 0 ? nearestBox : (step <= nearestBox ? step - 1 : step);
+                        const float boxDistance = boxDistances[referenceIndex];
+                        if ((bounded && boxDistance > skipAbove) || boxDistance > laneMinimumDistanceSquared) {
+                            continue;
+                        }
+                        measureReference(referenceIndex);
+                    }
+                } else {
+                    for (std::size_t referenceIndex = 0; referenceIndex < referenceCount; ++referenceIndex) {
+                        measureReference(referenceIndex);
                     }
                 }
                 if (std::isfinite(laneMinimumDistanceSquared)) {
@@ -352,16 +379,42 @@ namespace rock::support_grip_triangle_selection
         for (auto& ranking : rankings) {
             std::sort(ranking.begin(), ranking.end(), rankedTriangleLess);
         }
-        std::vector<std::uint64_t> selectedOrdinals{};
-        selectedOrdinals.reserve(limit);
+        /*
+         * Ordinals already merged, as an open-addressing set: a triangle near
+         * several fingers sits in several rankings, and a linear search of the
+         * merged list for each candidate cost about 2 million comparisons per
+         * grip start at the 2,048-triangle limit. At most `limit` ordinals are
+         * stored in at least twice as many slots. A scan ordinal counts
+         * triangles, so it never reaches the empty marker.
+         */
+        constexpr std::uint64_t kEmptySlot = (std::numeric_limits<std::uint64_t>::max)();
+        std::size_t rankedCount = 0;
+        for (const auto& ranking : rankings) {
+            rankedCount += ranking.size();
+        }
+        const std::size_t storedAtMost = (std::min)(limit, rankedCount);
+        std::size_t slotCount = 16;
+        while (slotCount / 2 < storedAtMost) {
+            slotCount *= 2;
+        }
+        std::vector<std::uint64_t> selectedOrdinals(slotCount, kEmptySlot);
+        // True when the ordinal was not in the set and is now.
+        const auto insertOrdinal = [&](std::uint64_t ordinal) {
+            std::size_t slot = static_cast<std::size_t>((ordinal * 0x9E3779B97F4A7C15ull) >> 32) & (slotCount - 1);
+            while (selectedOrdinals[slot] != kEmptySlot) {
+                if (selectedOrdinals[slot] == ordinal) {
+                    return false;
+                }
+                slot = (slot + 1) & (slotCount - 1);
+            }
+            selectedOrdinals[slot] = ordinal;
+            return true;
+        };
         outTriangles.reserve(limit);
         const auto appendUnique = [&](const RankedTriangle& ranked) {
-            if (outTriangles.size() >= limit ||
-                std::find(selectedOrdinals.begin(), selectedOrdinals.end(), ranked.deterministicOrdinal) !=
-                    selectedOrdinals.end()) {
+            if (outTriangles.size() >= limit || !insertOrdinal(ranked.deterministicOrdinal)) {
                 return false;
             }
-            selectedOrdinals.push_back(ranked.deterministicOrdinal);
             outTriangles.push_back(ranked.weaponLocalTriangle);
             return true;
         };

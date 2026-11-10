@@ -53,6 +53,10 @@
   function instead of refusing to install.
 - Weapon support grabs on detailed rifles no longer stall the frame: the finger
   solve walks an index built at equip instead of scanning every triangle.
+- Pinch grabs of detailed objects no longer stall the frame: measuring the
+  object's thickness between thumb and index skips the triangles that cannot
+  lie between them. Starting a weapon support grab also measures fewer finger
+  distances and merges its candidates without a repeated search.
 - Fewer per-frame scans for weapon bones and controller fallbacks; native
   memory reads no longer use `VirtualQuery`.
 
