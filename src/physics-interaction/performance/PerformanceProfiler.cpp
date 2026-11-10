@@ -466,6 +466,12 @@ namespace rock::performance_profiler
                 return "harvestSubgraphRequest";
             case Scope::HarvestClipSample:
                 return "harvestClipSample";
+            case Scope::HarvestLoadPoll:
+                return "harvestLoadPoll";
+            case Scope::HarvestJobRelease:
+                return "harvestJobRelease";
+            case Scope::HarvestWarmRelease:
+                return "harvestWarmRelease";
             case Scope::Count:
                 break;
             }

@@ -176,6 +176,9 @@ namespace rock::performance_profiler
         HarvestGraphHolderStart,
         HarvestSubgraphRequest,
         HarvestClipSample,
+        HarvestLoadPoll,
+        HarvestJobRelease,
+        HarvestWarmRelease,
         Count
     };
 

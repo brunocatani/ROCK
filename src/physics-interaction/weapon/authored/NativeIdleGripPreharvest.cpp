@@ -787,6 +787,7 @@ namespace rock::native_idle_grip_preharvest
         void releaseJob(Runtime& state)
         {
             auto& job = state.job;
+            performance_profiler::ScopedTimer releaseTimer(performance_profiler::Scope::HarvestJobRelease);
             if (job.idleClipResource.entry) {
                 // Bethesda's own RHandleType move assignment releases the old
                 // BShkbHkxDB entry through the correct deferred-release queue.
@@ -809,6 +810,7 @@ namespace rock::native_idle_grip_preharvest
         void releaseWarmResources(Runtime& state, WarmResources& warm)
         {
             if (warm.manager && !warm.handles.empty()) {
+                performance_profiler::ScopedTimer releaseTimer(performance_profiler::Scope::HarvestWarmRelease);
                 state.native.releaseAnimationSubGraph(&warm.manager, &warm.handles);
             }
             warm.handles.clear();
@@ -1965,9 +1967,11 @@ namespace rock::native_idle_grip_preharvest
                     failJob(state, "backgroundGraphHolderUnavailable");
                     return true;
                 }
+                performance_profiler::ScopedTimer pollTimer(performance_profiler::Scope::HarvestLoadPoll);
                 if (!state.native.isAnimationLoadingComplete(holder)) {
                     return false;
                 }
+                pollTimer.stop();
 
                 if (player->race != job.race || f4vr::isInPowerArmor() != job.inPowerArmor) {
                     failJob(state, "playerRaceOrPowerArmorChanged");
@@ -2024,12 +2028,14 @@ namespace rock::native_idle_grip_preharvest
             // whole weapon subgraph (all of 1HM for a knife) can take seconds,
             // and the index-1 weapon stays hidden until its grip is learned.
             // Warming exists to load the subgraph, so it still waits for it.
+            performance_profiler::ScopedTimer pollTimer(performance_profiler::Scope::HarvestLoadPoll);
             if (!job.subgraphReleased &&
                 !state.native.isAnimationSubGraphLoaded(&holder->animationGraphManager, &job.subgraphHandles,
                     &priority) &&
                 (job.warmOnly || !idleClipPathsKnown(state, *manager))) {
                 return false;
             }
+            pollTimer.stop();
             if (job.warmOnly) {
                 retainHeldResources(state);
                 releaseJob(state);
