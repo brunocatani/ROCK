@@ -171,6 +171,9 @@ namespace rock::native_quick_loot_panel
         std::atomic<std::uint32_t> g_listedPick{ 0 };
         std::atomic<std::uint32_t> g_rightPick{ 0 };
         std::atomic<std::uint32_t> g_leftPick{ 0 };
+        // Written by the HUD data model update in every placement; read by the
+        // input handlers (inputTarget).
+        std::atomic<std::uint32_t> g_inputTarget{ 0 };
         // Game thread only. ROCK's carrier nodes: one under the room node that
         // holds the panel at its container, one under the left wand that holds
         // it on the left hand. They outlive player node rebuilds and are
@@ -206,16 +209,6 @@ namespace rock::native_quick_loot_panel
         // Runs once per model update, right after the real picks are copied.
         void chooseListedPick(std::byte* model)
         {
-            const Placement placement = g_placement.load(std::memory_order_relaxed);
-            if (placement == Placement::RightHand) {
-                // The native listing, prompts and picks, untouched.
-                g_listedFlags.store(0, std::memory_order_relaxed);
-                g_rightPick.store(0, std::memory_order_relaxed);
-                g_leftPick.store(0, std::memory_order_relaxed);
-                g_listedPick.store(0, std::memory_order_release);
-                return;
-            }
-
             static REL::Relocation<IsLootableTarget> isLootable{ REL::Offset(kIsLootableTarget) };
             const std::uint32_t invalid = *REL::Relocation<const std::uint32_t*>{ REL::Offset(kInvalidHandle) };
             auto* const rightSlot = reinterpret_cast<std::uint32_t*>(model + kRightPickOffset);
@@ -228,9 +221,24 @@ namespace rock::native_quick_loot_panel
             const bool rightLootable = right != invalid && isLootable(model, &candidate);
             candidate = left;
             const bool leftLootable = left != invalid && isLootable(model, &candidate);
+
+            const Placement placement = g_placement.load(std::memory_order_relaxed);
+            if (placement == Placement::RightHand) {
+                // The native listing, prompts and picks, untouched. The input
+                // target is the native choice (0xA96150): the right pick when
+                // lootable, else the left one.
+                g_inputTarget.store(rightLootable ? right : (leftLootable ? left : 0), std::memory_order_release);
+                g_listedFlags.store(0, std::memory_order_relaxed);
+                g_rightPick.store(0, std::memory_order_relaxed);
+                g_leftPick.store(0, std::memory_order_relaxed);
+                g_listedPick.store(0, std::memory_order_release);
+                return;
+            }
+
             g_rightPick.store(rightLootable ? right : 0, std::memory_order_relaxed);
             g_leftPick.store(leftLootable ? left : 0, std::memory_order_relaxed);
             if (!rightLootable && !leftLootable) {
+                g_inputTarget.store(0, std::memory_order_release);
                 g_listedFlags.store(0, std::memory_order_relaxed);
                 g_listedPick.store(0, std::memory_order_release);
                 return;
@@ -256,6 +264,7 @@ namespace rock::native_quick_loot_panel
             }
             g_listedFlags.store(flags, std::memory_order_relaxed);
             g_listedPick.store(listed, std::memory_order_release);
+            g_inputTarget.store(listed, std::memory_order_release);
         }
 
         void* afterPicksCopied(void* lock, const std::uintptr_t argument)
@@ -591,5 +600,13 @@ namespace rock::native_quick_loot_panel
                 pickDistance(g_leftPick.load(std::memory_order_relaxed), nodes->SecondaryWandNode));
         }
         place(*nodes, placement);
+    }
+
+    std::optional<std::uint32_t> inputTarget() noexcept
+    {
+        if (!g_lockAcquire) {
+            return std::nullopt;
+        }
+        return g_inputTarget.load(std::memory_order_acquire);
     }
 }

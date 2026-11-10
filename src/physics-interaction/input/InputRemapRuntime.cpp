@@ -18,6 +18,7 @@
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 #include "physics-interaction/input/VatsGrenadeGesturePolicy.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/player/NativeQuickLootPanel.h"
 #include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
 
 #include "api/ProviderRuntime.h"
@@ -67,6 +68,22 @@ namespace rock::input_remap_runtime
         constexpr std::uintptr_t kReadyWeaponHandlerHandleEventVTableSlotOffset = 0x2D8A4D0;
         constexpr std::uintptr_t kActivateHandlerHandleEventFunctionOffset = 0x0FC7F00;
         constexpr std::uintptr_t kActivateHandlerHandleEventVTableSlotOffset = 0x2D8A640;
+        /*
+         * FO4VR 1.2.72, raw disassembly. The quick container's input user
+         * (vtable 0x2D4DA88, ButtonEvent slot 0x2D4DAE0 -> 0xA93690) handles
+         * "WandAccept" from both wands with the Oculus controller kind
+         * ([0x59429C0]+0x260 == 1, 0xA93A79). It tells the wands apart by the
+         * event's device, an OpenVR tracked device index that 0x1BA6ED0 turns
+         * into the controller id the player keeps at +0x8CC (primary) and
+         * +0x8D0 (secondary). A secondary press (0xA93AB9..0xA93BBA) acts on the
+         * quick container's target with the transfer branch: it opens the
+         * container instead of taking the selected item. A primary press
+         * (0xA93BEE..0xA93CC9) latches on press and takes the selected item on
+         * release (0xA94BD0), dead and living actors keeping their own paths.
+         * The other controller kinds never act on a secondary "WandAccept" here.
+         */
+        constexpr std::uintptr_t kQuickContainerHandleEventFunctionOffset = 0x0A93690;
+        constexpr std::uintptr_t kQuickContainerHandleEventVTableSlotOffset = 0x2D4DAE0;
         constexpr std::uintptr_t kFavoritesManagerHandleEventFunctionOffset = 0x12F19D0;
         constexpr std::uintptr_t kFavoritesManagerHandleEventVTableSlotOffset = 0x2DC8520;
         /*
@@ -241,6 +258,7 @@ namespace rock::input_remap_runtime
         using MenuOpenInputEventHandler_t = void (*)(void*, RE::InputEvent*);
         using NativeVatsVansDecision_t = void (*)(RE::ButtonEvent*);
         using NativeJumpShouldHandleEvent_t = bool (*)(void*, const RE::InputEvent*);
+        using QuickContainerInputEventHandler_t = void (*)(void*, RE::InputEvent*);
 
         struct ControllerTracker
         {
@@ -368,6 +386,14 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_hooksInstalled{ false };
         std::atomic<bool> s_readyWeaponEventHookInstalled{ false };
         std::atomic<bool> s_activateEventHookInstalled{ false };
+        std::atomic<bool> s_quickContainerEventHookInstalled{ false };
+        /*
+         * Left X quick loot take (hookedQuickContainerEventHandler). Input
+         * thread only. Decided on each fresh left accept press and kept for
+         * its repeats and release: the device the quick container sees for
+         * this press, the primary wand's when the press takes, else none.
+         */
+        std::optional<std::int32_t> s_leftTakeDevice;
         std::atomic<bool> s_favoritesEventHookInstalled{ false };
         std::atomic<bool> s_favoritesWandPadHookInstalled{ false };
         // Written once by detectRobCoPalm at kGameLoaded, after every F4SE
@@ -397,6 +423,7 @@ namespace rock::input_remap_runtime
         TriggerHapticPulse_t s_originalTriggerHapticPulse = nullptr;
         NativeInputEventHandler_t s_originalReadyWeaponEventHandler = nullptr;
         NativeInputEventHandler_t s_originalActivateEventHandler = nullptr;
+        QuickContainerInputEventHandler_t s_originalQuickContainerEventHandler = nullptr;
         NativeInputEventHandler_t s_originalMeleeThrowEventHandler = nullptr;
         FavoritesInputEventHandler_t s_originalFavoritesEventHandler = nullptr;
         FavoritesInputEventHandler_t s_originalFavoritesWandPadHandler = nullptr;
@@ -2176,6 +2203,125 @@ namespace rock::input_remap_runtime
             }
         }
 
+        /*
+         * Left X takes from the quick loot panel as A does. While the left
+         * wand points at the container the quick container acts on (the panel
+         * on the left hand, or both hands on one container), a left X press is
+         * shown to the quick container handler as the primary wand's, so the
+         * native primary branch takes the selected item instead of opening the
+         * transfer menu. Pointing anywhere else, the press stays the native
+         * secondary one. The event's device is restored as soon as the handler
+         * returns; every other handler sees the left wand's press.
+         */
+        [[nodiscard]] bool isSecondaryWandAcceptPress(const RE::InputEvent* event)
+        {
+            static REL::Relocation<std::uintptr_t*> deviceManagerSingleton{ REL::Offset(
+                kVrDeviceManagerSingletonOffset) };
+            const auto deviceManager = *deviceManagerSingleton;
+            if (!deviceManager || !event || !event->As<RE::ButtonEvent>()) {
+                return false;
+            }
+            const auto kind =
+                *reinterpret_cast<const std::int32_t*>(deviceManager + kVrDeviceManagerControllerKindOffset);
+            return kind == kVrControllerKindOculus && eventNameMatches(event, kNativeEventWandAccept) &&
+                isSecondaryWandInputEvent(event);
+        }
+
+        // Left X belongs to ROCK's reload, scope or physical gesture, or to a
+        // binding, before it can take.
+        [[nodiscard]] const char* leftAcceptClaim()
+        {
+            const auto routing = weaponRouting();
+            if (s_weaponDrawn.load(std::memory_order_acquire) && routing.leftFiring && !routing.detached) {
+                return "left firing hand reloads and scopes on X";
+            }
+            if (routing.slotOneEquipped && routing.slotOneLeft) {
+                return "the left hand's second weapon reloads on X";
+            }
+            if (physical_reload_input::gestureActive(true)) {
+                return "a physical reload gesture holds the left X";
+            }
+            const auto tag = functionTag(true, button_layout_policy::Slot::LowerFace);
+            if (tag != function_binding_policy::Function::Count) {
+                return "a binding presents another function on the left X";
+            }
+            return nullptr;
+        }
+
+        // The OpenVR device index 0x1BA6ED0 maps to the primary wand's
+        // controller id: the device a primary wand press carries.
+        [[nodiscard]] std::optional<std::int32_t> primaryWandDevice()
+        {
+            static REL::Relocation<NativeInputDeviceToControllerId_t> nativeDeviceToControllerId{ REL::Offset(
+                kNativeInputDeviceToControllerIdFunctionOffset) };
+            static REL::Relocation<void**> nativePlayer{ REL::Offset(kNativePlayerDataOffset) };
+            auto* player = *nativePlayer;
+            if (!player) {
+                return std::nullopt;
+            }
+            const auto primary = *reinterpret_cast<const std::int32_t*>(
+                reinterpret_cast<std::uintptr_t>(player) + kNativePrimaryWandDeviceIdOffset);
+            // 0x1BA6ED0 returns 0 or 1 for the hands and 3 for anything else.
+            if (primary != 0 && primary != 1) {
+                return std::nullopt;
+            }
+            for (std::int32_t device = 0; device < static_cast<std::int32_t>(vr::k_unMaxTrackedDeviceCount); ++device) {
+                if (nativeDeviceToControllerId(device) == primary) {
+                    return device;
+                }
+            }
+            return std::nullopt;
+        }
+
+        void decideLeftTake()
+        {
+            s_leftTakeDevice.reset();
+            if (isAnyProviderOpenVrGameInputSuppressed() || !s_gameplayInputAllowed.load(std::memory_order_acquire) ||
+                isInputBlockingMenuActive()) {
+                return;
+            }
+            const char* refused = leftAcceptClaim();
+            const auto pick = readWandPickRefHandle(kActivateSecondaryWandPickRefGlobalOffset);
+            const auto quickContainer = native_quick_loot_panel::inputTarget();
+            if (!refused && (pick == 0 || !quickContainer || *quickContainer != pick)) {
+                // Not the left hand's quick loot: the native secondary press.
+                return;
+            }
+            const auto device = refused ? std::nullopt : primaryWandDevice();
+            if (!refused && !device) {
+                refused = "no OpenVR device maps to the primary wand";
+            }
+            if (refused) {
+                ROCK_LOG_DEBUG(Input, "Left X on the quick loot panel stays native: {}", refused);
+                return;
+            }
+            s_leftTakeDevice = device;
+            ROCK_LOG_DEBUG(Input, "Left X takes from the quick loot panel container=0x{:X} as primary device {}", pick,
+                *device);
+        }
+
+        void hookedQuickContainerEventHandler(void* handler, RE::InputEvent* inputEvent)
+        {
+            if (!s_originalQuickContainerEventHandler) {
+                return;
+            }
+            if (!isSecondaryWandAcceptPress(inputEvent)) {
+                s_originalQuickContainerEventHandler(handler, inputEvent);
+                return;
+            }
+            if (inputEvent->As<RE::ButtonEvent>()->QJustPressed()) {
+                decideLeftTake();
+            }
+            if (!s_leftTakeDevice) {
+                s_originalQuickContainerEventHandler(handler, inputEvent);
+                return;
+            }
+            const auto device = inputEvent->deviceID;
+            inputEvent->deviceID = *s_leftTakeDevice;
+            s_originalQuickContainerEventHandler(handler, inputEvent);
+            inputEvent->deviceID = device;
+        }
+
         void hookedFavoritesEventHandler(void* handler, RE::InputEvent* inputEvent)
         {
             if (isAnyProviderOpenVrGameInputSuppressed()) {
@@ -2712,6 +2858,14 @@ namespace rock::input_remap_runtime
                 s_activateEventHookInstalled, "ActivateHandler::HandleEvent reload remap");
         }
 
+        bool installQuickContainerLeftTakeHook()
+        {
+            return installNativeActionVTableHook(kQuickContainerHandleEventVTableSlotOffset,
+                kQuickContainerHandleEventFunctionOffset, &hookedQuickContainerEventHandler,
+                s_originalQuickContainerEventHandler, s_quickContainerEventHookInstalled,
+                "quick container HandleEvent left X take");
+        }
+
         bool installFavoritesEventSuppressionHook()
         {
             return installNativeActionVTableHook(kFavoritesManagerHandleEventVTableSlotOffset,
@@ -2979,6 +3133,7 @@ namespace rock::input_remap_runtime
             ready = installLogicalJumpObservationHook() && ready;
             ready = installReadyWeaponEventSuppressionHook() && ready;
             ready = installActivateEventReloadHook() && ready;
+            ready = installQuickContainerLeftTakeHook() && ready;
             ready = installFavoritesEventSuppressionHook() && ready;
             ready = installFavoritesWandPadSuppressionHook() && ready;
             ready = installMeleeThrowEventSuppressionHook() && ready;

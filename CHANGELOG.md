@@ -98,7 +98,8 @@
   right hand (game default), 2 on the hand pointing at the container (the
   closer hand when both point, default), 3 at the container it lists. Modes 2
   and 3 list containers picked by either hand, and the panel's button hints
-  go with it.
+  go with it. Left X on the container the panel lists takes the selected item,
+  as A does, instead of opening the container (Oculus/Quest controllers).
 - **Activate Prompt Placement** (`Grabbing.ActivatePromptPlacement`): 1 on both
   hands (game default), 2 on the closer hand only when both point at the same
   object (default), 3 at the object itself, shown once. Activation is unchanged.

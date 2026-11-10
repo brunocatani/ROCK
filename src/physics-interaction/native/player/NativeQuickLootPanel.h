@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 
 /*
  * Where the vanilla quick loot menu (the world_Loot panel) appears, chosen by
@@ -21,7 +22,9 @@
  * of its own) go with the panel while it lists a container: mirrored on the
  * left hand like the panel, and at the container at their native offset from
  * the panel. While nothing lists they stay on the right touchpad. The native
- * controls (the primary wand's buttons and stick) are unchanged in every mode.
+ * controls (the primary wand's buttons and stick) are unchanged in every mode;
+ * the input runtime makes left X on the target container take as A does
+ * (inputTarget).
  *
  * FO4VR fills the panel only from the primary (right) wand's pick. For
  * CloserHand and AtContainer, the quick container data model update is
@@ -56,4 +59,11 @@ namespace rock::native_quick_loot_panel
     // panel for the container the last model update listed. The next model
     // update lists by the same placement.
     void update(Placement placement) noexcept;
+
+    // Any thread. The reference handle of the container the quick container's
+    // input acts on as of the last model update (the native target choice
+    // after ROCK's pick swap, in every placement), 0 when no wand picks a
+    // lootable container. Empty when install() failed and the target is not
+    // known.
+    [[nodiscard]] std::optional<std::uint32_t> inputTarget() noexcept;
 }
