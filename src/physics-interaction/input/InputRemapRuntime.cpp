@@ -1308,9 +1308,12 @@ namespace rock::input_remap_runtime
          * While the LEFT hand fires, the game believes the RIGHT wand fired
          * and sends its haptic pulses (weapon fire rumble) there. Retarget
          * game-originated pulses aimed at the RIGHT wand to the LEFT wand so
-         * the rumble lands in the hand actually holding the weapon. ROCK,
-         * FRIK, Immersive Flashlight and the configurator address PHYSICAL
-         * hands with their own pulses and pass through untouched.
+         * the rumble lands in the hand actually holding the weapon. Only
+         * pulses called from the game executable are retargeted: every
+         * plugin (ROCK, FRIK, VirtualHolsters' zone pulses, the configurator)
+         * addresses a PHYSICAL hand and passes through untouched. A list of
+         * exempt plugins sent every other mod's right-hand pulses to the
+         * left wand while the left hand fired.
          */
         void hookedTriggerHapticPulse(vr::IVRSystem* system, vr::TrackedDeviceIndex_t controllerDeviceIndex,
             std::uint32_t axisId, unsigned short durationMicroSec)
@@ -1321,10 +1324,9 @@ namespace rock::input_remap_runtime
             // pulses are already sent to their physical hands when queued
             // (native_secondary_actions); a right-to-left retarget here would
             // move the second weapon's own rumble.
+            const auto caller = hapticCaller(callerAddress);
             if (shouldRemapLeftHandFireTriggerForGame() && !secondaryOwnsTrigger(input_remap_policy::Hand::Right) &&
-                !isCallerModule(callerAddress, L"ROCK.dll") && !isCallerModule(callerAddress, L"FRIK.dll") &&
-                !isCallerModule(callerAddress, L"ImmersiveFlashlightVR.dll") &&
-                !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
+                caller == testbench_telemetry::HapticCaller::Game) {
                 input_remap_policy::Hand hand{};
                 if (resolveControllerHand(controllerDeviceIndex, hand) && hand == input_remap_policy::Hand::Right) {
                     const auto leftIndex = system
@@ -1339,7 +1341,7 @@ namespace rock::input_remap_runtime
                 input_remap_policy::Hand pulseHand{};
                 if (resolveControllerHand(targetDeviceIndex, pulseHand)) {
                     testbench_telemetry::recordHaptic(pulseHand == input_remap_policy::Hand::Left, durationMicroSec,
-                        hapticCaller(callerAddress), targetDeviceIndex != controllerDeviceIndex);
+                        caller, targetDeviceIndex != controllerDeviceIndex);
                 }
             }
             if (s_originalTriggerHapticPulse) {
