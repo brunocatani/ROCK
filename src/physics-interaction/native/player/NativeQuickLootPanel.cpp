@@ -170,17 +170,17 @@ namespace rock::native_quick_loot_panel
         std::atomic<std::uint32_t> g_rightPick{ 0 };
         std::atomic<std::uint32_t> g_leftPick{ 0 };
         // Game thread only. ROCK's carrier nodes: one under the room node that
-        // holds the panel and its button hints at its container, and under the
-        // left wand one each for the panel and the hints on the left hand. They
-        // outlive player node rebuilds and are re-parented when their old
-        // parent is gone.
+        // holds the panel at its container, one under the left wand that holds
+        // it on the left hand, and one under PrimaryUIAttachNode that poses the
+        // button hints beside the panel (placeHints). They outlive player node
+        // rebuilds and are re-parented when their old parent is gone.
         // Never destroyed: an engine object released in DLL detach raises R6025 during ExitProcess.
         RE::NiPointer<RE::NiNode>& g_containerCarrier = *new RE::NiPointer<RE::NiNode>;
         RE::NiPointer<RE::NiNode>& g_leftCarrier = *new RE::NiPointer<RE::NiNode>;
-        RE::NiPointer<RE::NiNode>& g_leftHintCarrier = *new RE::NiPointer<RE::NiNode>;
+        RE::NiPointer<RE::NiNode>& g_hintCarrier = *new RE::NiPointer<RE::NiNode>;
         bool g_containerCarrierFailed{ false };
         bool g_leftCarrierFailed{ false };
-        bool g_leftHintCarrierFailed{ false };
+        bool g_hintCarrierFailed{ false };
         // The hint model matched at install; otherwise the hints stay native.
         bool g_hintsFollow{ false };
         std::optional<Placement> g_appliedPlacement;
@@ -351,18 +351,23 @@ namespace rock::native_quick_loot_panel
             return model ? *reinterpret_cast<RE::NiAVObject**>(model + kModelRootOffset) : nullptr;
         }
 
-        // The root's pose under the left wand mirrors the one it has under the
-        // right wand: carrier = mirror(attach * root) * root^-1. False when the
-        // carrier cannot be created; the root is then not moved.
+        // The carrier local under the left wand that mirrors the root's pose
+        // under the right wand: carrier = mirror(attach * root) * root^-1.
+        RE::NiTransform mirroredOnLeftLocal(const RE::NiAVObject* root, const RE::NiNode* handAttach)
+        {
+            const auto onRight = transform_math::composeTransforms(handAttach->local, root->local);
+            return transform_math::composeTransforms(mirroredAcrossX(onRight), transform_math::invertTransform(root->local));
+        }
+
+        // Puts the root under the left wand at the mirror of its right-hand
+        // pose. False when the carrier cannot be created; the root is then not moved.
         bool placeMirroredOnLeft(RE::NiAVObject* root, const RE::NiNode* handAttach, RE::NiNode* leftWand,
             RE::NiPointer<RE::NiNode>& carrier, bool& carrierFailed, const char* carrierName)
         {
             if (!attachCarrier(carrier, carrierFailed, leftWand, carrierName)) {
                 return false;
             }
-            const auto onRight = transform_math::composeTransforms(handAttach->local, root->local);
-            carrier->local =
-                transform_math::composeTransforms(mirroredAcrossX(onRight), transform_math::invertTransform(root->local));
+            carrier->local = mirroredOnLeftLocal(root, handAttach);
             moveTo(root, carrier.get());
             return true;
         }
@@ -423,26 +428,38 @@ namespace rock::native_quick_loot_panel
 
         /*
          * The button hints go wherever the panel lists, so the hints for the
-         * container stay beside it. At the container they share the panel's
-         * carrier, which keeps them at the offset from the panel they have on
-         * the hand; on the left hand they are mirrored like the panel. While
-         * nothing lists they are on the right hand, where the game shows its
-         * other hints.
+         * container stay beside it. At the container they stand where the
+         * panel's carrier would hold them, at the offset from the panel they
+         * have on the hand; on the left hand they are mirrored like the panel.
+         * While nothing lists they are on the right hand, where the game shows
+         * its other hints.
+         *
+         * The hint root never leaves PrimaryUIAttachNode's subtree: it is the
+         * back-of-hand HUD root (world_primaryWand.nif) that FRIK finds by name
+         * under that node and writes every frame without a null check, so a
+         * root moved elsewhere crashes the game the frame the panel lists from
+         * the left hand or at a container. Its carrier hangs under
+         * PrimaryUIAttachNode and takes, each frame, the local that puts it at
+         * the world pose the panel's carrier gives.
          */
         void placeHints(RE::NiAVObject* hints, const RE::NiAVObject* panel, RE::NiNode* handAttach,
             RE::NiNode* leftWand)
         {
             const bool listed = g_listedPick.load(std::memory_order_acquire) != 0;
-            if (listed && panel && isUnder(panel, g_containerCarrier)) {
-                moveTo(hints, g_containerCarrier.get());
+            std::optional<RE::NiTransform> carrierWorld;
+            if (listed && panel && isUnder(panel, g_containerCarrier) && g_containerCarrier->parent) {
+                carrierWorld =
+                    transform_math::composeTransforms(g_containerCarrier->parent->world, g_containerCarrier->local);
+            } else if (listed && panel && isUnder(panel, g_leftCarrier) && leftWand) {
+                carrierWorld = transform_math::composeTransforms(leftWand->world, mirroredOnLeftLocal(hints, handAttach));
+            }
+            if (!carrierWorld || !attachCarrier(g_hintCarrier, g_hintCarrierFailed, handAttach, "hints")) {
+                moveTo(hints, handAttach);
                 return;
             }
-            if (listed && panel && isUnder(panel, g_leftCarrier) && leftWand &&
-                placeMirroredOnLeft(hints, handAttach, leftWand, g_leftHintCarrier, g_leftHintCarrierFailed,
-                    "left-hand hints")) {
-                return;
-            }
-            moveTo(hints, handAttach);
+            g_hintCarrier->local =
+                transform_math::composeTransforms(transform_math::invertTransform(handAttach->world), *carrierWorld);
+            moveTo(hints, g_hintCarrier.get());
         }
 
         void placePanel(RE::NiAVObject* root, const f4vr::PlayerNodes& nodes, const Placement placement)
@@ -483,9 +500,7 @@ namespace rock::native_quick_loot_panel
                 return;
             }
             auto* const hints = modelRoot(kHintModel);
-            if (hints &&
-                (hints->parent == handAttach || isUnder(hints, g_containerCarrier) ||
-                    isUnder(hints, g_leftHintCarrier))) {
+            if (hints && (hints->parent == handAttach || isUnder(hints, g_hintCarrier))) {
                 placeHints(hints, panelOwned ? panel : nullptr, handAttach, nodes.SecondaryWandNode);
             }
         }

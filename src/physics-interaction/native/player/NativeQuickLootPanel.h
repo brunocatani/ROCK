@@ -32,10 +32,12 @@
  * panel lists it. In RightHand mode the redirect passes the picks through
  * untouched and the prompts keep their native answers.
  *
- * The game thread moves the panel's and the hints' roots between the right
- * wand's attach node and ROCK's own carrier nodes (under the left wand and
- * under the room node) and returns them to the right wand when the mode
- * changes.
+ * The game thread moves the panel's root between the right wand's attach node
+ * and ROCK's own carrier nodes (under the left wand and under the room node)
+ * and returns it to the right wand when the mode changes. The hints' root is
+ * the back-of-hand HUD root other mods (FRIK) find by name under the attach
+ * node, so it never leaves that node's subtree: its carrier hangs under the
+ * attach node and is posed each frame where the panel's carrier would hold it.
  */
 namespace rock::native_quick_loot_panel
 {
