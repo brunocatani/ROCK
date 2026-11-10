@@ -24,10 +24,11 @@ int main()
     lease.invalidate();
     assert(lease.consume() == 0);
     assert(lease.submit(17, beforeWorldLoss) == Admission::Stale);
-    assert(singleObject(0, 0) == 0);
-    assert(singleObject(17, 0) == 17 && singleObject(0, 17) == 17);
-    assert(singleObject(17, 17) == 17);
-    assert(singleObject(17, 18) == 0);
+    // One object in each hand: each click offers only its own hand's object.
+    assert(handCandidate({ 17, true, true }, { 18, true, false }) == 17);
+    assert(handCandidate({ 18, true, false }, { 17, true, true }) == 0);
+    // A two-handed hold touches through either hand and is offered to both.
+    assert(handCandidate({ 17, true, false }, { 17, true, true }) == 17);
     // A full live scan accepts the single-body bottle and a multipart object
     // independently of the old grab cache. Partial/stale discovery still fails.
     assert(completeBodyScan(true, 1, 1, 0));

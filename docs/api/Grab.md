@@ -48,23 +48,30 @@ that (`active` 0). `releaseHandReservation` (Write) ends it.
 
 ## Held placement (game thread)
 
-`getHeldPlacementState` (Read) reports both hands' held loose objects, the
-equipped weapon and the physical right-stick click. Submit the state's unchanged `frameToken` and
+`getHeldPlacementState` (Read) reports what each hand holds, the equipped
+weapon and each hand's physical stick click (`rightButton`, `leftButton`). A
+hand's click acts only for that hand: with an object in each hand, the right
+click places the right one and the left click the left one; an object held in
+both hands answers either click. Submit the state's unchanged `frameToken` and
 `sample` with `submitHeldPlacementIntent` (Write) in the same phase (Animation
-`BeforeRock` preferred). `ReserveClick` covers the whole press and release;
-`Anchor` (with `ReserveClick` and a `formId`) asks ROCK to place the object as
-a native fixed placement. Acceptance is not completion: `lastRequestToken` and
-`lastResult` report it. `clearHeldPlacementIntent` withdraws the intent; it
-never thaws a completed placement.
+`BeforeRock` preferred). `ReserveRightClick` and `ReserveLeftClick` each cover
+that hand's whole press and release while it holds an eligible object; leave
+the other hand's click unreserved so it keeps its own actions. `Anchor` (with a
+`formId` and the reservation of a hand holding it) asks ROCK to place the
+object as a native fixed placement; only the hands holding it let go.
+Acceptance is not completion: `lastRequestToken` and `lastResult` report it.
+`clearHeldPlacementIntent` withdraws the intent; it never thaws a completed
+placement. ROCK hides a press that begins on a reserved click from the game.
 
-`equippedWeapon` reports the primary equipped weapon while it can be placed.
-Its press stays with the bipod, so never reserve it for that weapon. Set
-`TimeEquippedWeaponHold` while you time a hold on it: a press still latches the
-bipod at once, but a latched weapon unlatches when the button comes up instead
-of when it goes down, so a hold can place the pose it rests in.
-`AnchorEquippedWeapon` (with `TimeEquippedWeaponHold`, `equippedWeapon.formId`
-and `FixedSurfaceContact`, without `ReserveClick` or `Anchor`) has ROCK let go
-of the weapon and move it from the player to a native fixed placement at its
+`equippedWeapon` reports the primary equipped weapon while it can be placed,
+and `equippedWeaponHand` its firing hand, whose click is the bipod's. Never
+reserve that click for the weapon. Set `TimeEquippedWeaponHold` while you time
+a hold on it: a press still latches the bipod at once, but a latched weapon
+unlatches when the button comes up instead of when it goes down, so a hold can
+place the pose it rests in. `AnchorEquippedWeapon` (with
+`TimeEquippedWeaponHold`, `equippedWeapon.formId` and `FixedSurfaceContact`,
+without `Anchor` or a reservation of `equippedWeaponHand`'s click) has ROCK let
+go of the weapon and move it from the player to a native fixed placement at its
 current pose. `lastResult` reports it; once the weapon has left the player the
 placement no longer cancels.
 
@@ -131,8 +138,8 @@ publication identity.
 | `HandTargetDetails` | `getHandTargetDetails` | `handState`, `referenceFormId`, `referenceNativeHandle`, `flags` (`TargetDetailFlag`), `collisionLayer`, `anchorGame`, `normalGame`, `powerArmorPoint`, `sourceTriangleIndex`, `collisionNodeName[64]`, `meshPartName[64]` |
 | `HandReservationRequest` | acquire, renew | `weaponSlot`, `hand`, `reservation` (`HandReservationKind`: `Normal`, `ReloadReserved`, `ReloadPoseOverride`), `leaseFrames`, the three guard generations |
 | `HandReservationState` | `getHandReservationState` | `hand`, `reservation`, `ownerToken`, `expiresAfterFrame`, `active`, `remainingFrames`, the three generations, `weaponSlot` |
-| `HeldPlacementState` | `getHeldPlacementState` | `frameToken`, `sample`, `right` and `left` (`HeldPlacementHand`: `formId`, `flags` `LooseObject`/`FixedSurfaceContact`/`Weapon`), `buttonAvailable`, `buttonHeld`, `buttonPressed`, `buttonAgeMilliseconds`, `lastRequestToken`, `lastResult` (`PlacementResult`: `None`, `Pending`, `Anchored`, `Rejected`), `lastRequestFormId`, `equippedWeapon` (`HeldPlacementHand`) |
-| `HeldPlacementIntent` | `submitHeldPlacementIntent` | `frameToken`, `sample`, `formId`, `flags` (`PlacementIntentFlag`: `ReserveClick`, `Anchor`, `TimeEquippedWeaponHold`, `AnchorEquippedWeapon`) |
+| `HeldPlacementState` | `getHeldPlacementState` | `frameToken`, `sample`, `right` and `left` (`HeldPlacementHand`: `formId`, `flags` `LooseObject`/`FixedSurfaceContact`/`Weapon`), `rightButton` and `leftButton` (`HeldPlacementButton`: `available`, `held`, `pressed`, `ageMilliseconds`), `lastRequestToken`, `lastResult` (`PlacementResult`: `None`, `Pending`, `Anchored`, `Rejected`), `lastRequestFormId`, `equippedWeapon` (`HeldPlacementHand`), `equippedWeaponHand` |
+| `HeldPlacementIntent` | `submitHeldPlacementIntent` | `frameToken`, `sample`, `formId`, `flags` (`PlacementIntentFlag`: `Anchor`, `TimeEquippedWeaponHold`, `AnchorEquippedWeapon`, `ReserveRightClick`, `ReserveLeftClick`) |
 | `DefaultGrabPoses` | `setDefaultGrabPoses` | `baseFormId`, `right`, `left` (`DefaultHandPose`: `flags` `Present`/`FingerValues`/`FingerJoints`, `translateGame[3]`, `rotate[9]`, `fingerValues[5]`, `fingerJointValues[15]`) |
 | `HeldObjectTarget` | `setHeldObjectTarget` | `hand`, `referenceFormId`, `leaseFrames`, `connectedWeaponSlot`, `connectedWeaponFormId`, `rootWorld`, `sample`, `gripSequence`, `connectedWeaponGeneration` |
 | `HeldObjectPose` | `getHeldObjectPose` | `hand`, `referenceFormId`, `bodyId`, `sample`, `gripSequence`, `rootWorld` |
@@ -160,5 +167,6 @@ reference, each hand reports its own `GrabCommitted` and `Released`, so the obje
 
 `EventKind` 100-104 (the removed event streams' `HandStateChanged`,
 `CommandCompleted`, `GrabNotification`, `ReleaseNotification`,
-`ReservationLost`) and `BodyContactTargetKind` 5 (`External`) are retired and
-never reused.
+`ReservationLost`), `BodyContactTargetKind` 5 (`External`) and
+`PlacementIntentFlag` 1 (one shared click reservation) are retired and never
+reused.

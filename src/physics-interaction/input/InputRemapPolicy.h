@@ -316,15 +316,16 @@ namespace rock::input_remap_policy
 
     /*
      * The vanilla Favorites menu shares the right stick click with RobCo PALM's
-     * default opener and with Bipod Mode. A loaded PALM takes the click whatever
-     * the setting says. The bipod takes it while it would act on the press (the
-     * equipped weapon touches a fixed surface or is latched), the same rule PALM
-     * follows through WeaponStateFlag::BipodInputReserved.
+     * default opener, with Bipod Mode on a right-hand weapon and with held
+     * placement of a right-hand object. A loaded PALM takes the click whatever
+     * the setting says. The bipod or placement takes it while it would act on
+     * the press, the same rule PALM follows through
+     * WeaponStateFlag::BipodInputReserved and PlacementClickFlag.
      */
     [[nodiscard]] constexpr bool vanillaFavoritesMenuAllowed(
-        bool settingEnabled, bool robcoPalmLoaded, bool bipodClickReserved)
+        bool settingEnabled, bool robcoPalmLoaded, bool rightStickClickReserved)
     {
-        return settingEnabled && !robcoPalmLoaded && !bipodClickReserved;
+        return settingEnabled && !robcoPalmLoaded && !rightStickClickReserved;
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeFavoritesAction(const NativeActionSuppressionInput& input)

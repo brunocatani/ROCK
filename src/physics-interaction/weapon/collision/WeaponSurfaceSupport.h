@@ -11,7 +11,7 @@
 
 namespace rock::weapon_surface_support
 {
-    inline constexpr int kButtonId = 32; // Physical right OpenVR Axis0 click.
+    inline constexpr int kButtonId = 32; // The firing hand's OpenVR Axis0 click.
     inline constexpr std::uint64_t kMaximumSampleAgeMilliseconds = 100;
     inline constexpr float kReturnSeconds = 0.20f;
     inline constexpr float kMinimumAimSeparationGameUnits = 0.25f;

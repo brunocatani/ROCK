@@ -32,7 +32,9 @@ slots publish `getWeaponState`, `getGrip`, `getClassification` and
   weapon the player resized or re-gripped with their own FRIK weapon offset
   file (FRIK's compiled defaults never count): ROCK seats and scales it from
   that file and gives it dynamic support grabs only, so animation authored
-  for ROCK's grip of the weapon does not fit its hands.
+  for ROCK's grip of the weapon does not fit its hands. `BipodInputReserved`
+  (slot 0) says the bipod takes `firingHand`'s stick click: the weapon touches
+  a fixed surface or rests latched on one. The other hand's click stays free.
   `WeaponPresent` on slot 1 says ROCK has placed that weapon in its hand: this
   frame or, for a reader before this frame's placement such as a frame callback,
   the last. `SecondaryReloadActive` (slot 1 only) says ROCK's private graph of that

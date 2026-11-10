@@ -47,9 +47,16 @@ namespace rock
         }
     }
 
-    void DynamicWeaponCollisionRuntime::updateSurfaceSupportInput(bool placementOwnsClick, bool placementTimesHold)
+    void DynamicWeaponCollisionRuntime::updateSurfaceSupportInput(bool inputLeft, bool placementOwnsClick,
+        bool placementTimesHold)
     {
         _surfaceInputReserved = false; // Also clears before interrupted-frame returns.
+        if (inputLeft != std::exchange(_surfaceInputLeft, inputLeft)) {
+            // A firing-hand transfer moves the bipod to the other stick. A press
+            // in flight on either stick never acts: the new one rearms first.
+            _surfaceToggle = {};
+            _surfaceReleaseAwaitsButtonUp = false;
+        }
         const bool releaseAwaitedButtonUp = std::exchange(_surfaceReleaseAwaitsButtonUp, false);
         if (!g_rockConfig.rockBipodMode) {
             _surfaceClickRequested = false;
@@ -68,14 +75,14 @@ namespace rock
             _surfaceToggle = {};
             return;
         }
-        if (input_remap_runtime::isProviderOpenVrGameInputSuppressedForHand(false)) {
+        if (input_remap_runtime::isProviderOpenVrGameInputSuppressedForHand(inputLeft)) {
             _surfaceClickRequested = false;
             _surfaceToggle = {};
             return; // The provider owns its raw click edge until it yields input.
         }
-        const auto raw = input_remap_runtime::consumeRawButtonState(false, weapon_surface_support::kButtonId);
+        const auto raw = input_remap_runtime::consumeRawButtonState(inputLeft, weapon_surface_support::kButtonId);
         // A stick click a binding made for PALM's wheel is not a bipod or placement click.
-        const bool boundToPalm = input_remap_runtime::functionTag(false, button_layout_policy::Slot::StickClick) ==
+        const bool boundToPalm = input_remap_runtime::functionTag(inputLeft, button_layout_policy::Slot::StickClick) ==
             function_binding_policy::Function::Palm;
         const bool available = raw.available && !input_remap_runtime::isMenuInputActive() && !boundToPalm;
         const bool click = _surfaceToggle.consume({
@@ -201,7 +208,8 @@ namespace rock
                     _surfaceSupport.retirementRequested = true;
                 else
                     release(_surfaceSupport);
-                ROCK_LOG_INFO(Weapon, "Weapon surface support released: reason=right-stick-click");
+                ROCK_LOG_INFO(Weapon, "Weapon surface support released: reason=stick-click hand={}",
+                    _surfaceInputLeft ? "left" : "right");
             } else {
                 RE::NiPoint3 primaryLocal{};
                 bool primaryValid = primaryGripWeaponLocal && isFinitePoint(*primaryGripWeaponLocal);

@@ -36,6 +36,8 @@ namespace rock::testbench_telemetry
         kBlankProviderSuppressed = 1u << 3,
         kLeftFireRemapApplied = 1u << 4,
         kInputBlockingMenu = 1u << 5,
+        // The stick click belongs to the bipod or a held placement.
+        kBlankStickClickReserved = 1u << 6,
     };
 
     enum class HapticCaller : std::uint8_t

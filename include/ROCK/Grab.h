@@ -355,8 +355,8 @@ namespace rock::api::grab {
     };
 
     // ------------------------------------------------------------------
-    // Held placement (the right-stick click places a held loose object or the
-    // equipped weapon)
+    // Held placement (each hand's stick click places what that hand holds; the
+    // equipped weapon's is its firing hand's click)
     // ------------------------------------------------------------------
 
     enum class HeldPlacementFlag : std::uint32_t { LooseObject = 1, FixedSurfaceContact = 2, Weapon = 4 };
@@ -367,11 +367,22 @@ namespace rock::api::grab {
     };
     enum class PlacementResult : std::uint32_t { None, Pending, Anchored, Rejected };
 
-    // The physical right Axis0 click (32), sampled without consuming it.
-    // right and left carry Weapon when the held reference's base form is a
-    // weapon. equippedWeapon is the primary equipped weapon's base form while it
-    // can be placed, with Weapon, and FixedSurfaceContact while it rests on or
-    // touches the fixed world. It is empty with no such weapon, during an equip
+    // One hand's physical Axis0 click (32), sampled without consuming it.
+    struct HeldPlacementButton
+    {
+        std::uint32_t available{ 0 };
+        std::uint32_t held{ 0 };
+        std::uint32_t pressed{ 0 };
+        std::uint32_t ageMilliseconds{ 0 };
+    };
+
+    // right and left are what each hand holds, with Weapon when the held
+    // reference's base form is a weapon; rightButton and leftButton are those
+    // hands' clicks. A hand's click acts only for that hand. equippedWeapon is
+    // the primary equipped weapon's base form while it can be placed, with
+    // Weapon, and FixedSurfaceContact while it rests on or touches the fixed
+    // world; equippedWeaponHand is its firing hand, whose click is the bipod's.
+    // It is empty, with Hand::None, with no such weapon, during an equip
     // transition, while a weapon placement finishes, and while the bipod holds
     // the weapon hands-free (ROCK's own click retires that one).
     struct HeldPlacementState
@@ -382,46 +393,52 @@ namespace rock::api::grab {
         Sample sample{};
         HeldPlacementHand right{};
         HeldPlacementHand left{};
-        std::uint32_t buttonAvailable{ 0 };
-        std::uint32_t buttonHeld{ 0 };
-        std::uint32_t buttonPressed{ 0 };
-        std::uint32_t buttonAgeMilliseconds{ 0 };
+        HeldPlacementButton rightButton{};
+        HeldPlacementButton leftButton{};
         std::uint64_t lastRequestToken{ 0 };
         PlacementResult lastResult{ PlacementResult::None };
         std::uint32_t lastRequestFormId{ 0 };
         HeldPlacementHand equippedWeapon{};
+        Hand equippedWeaponHand{ Hand::None };
     };
 
+    // Bit 1 (one shared click reservation) is retired; never reuse it.
     enum class PlacementIntentFlag : std::uint32_t {
-        ReserveClick = 1,
         Anchor = 2,
         TimeEquippedWeaponHold = 4,
         AnchorEquippedWeapon = 8,
+        ReserveRightClick = 16,
+        ReserveLeftClick = 32,
     };
 
     /*
      * Read the state and submit its unchanged frameToken and sample in the
      * same phase (Animation BeforeRock preferred). The intent expires on the
      * next ROCK update; one owner per update (Busy for a competing owner).
-     * formId is the add-on's eligible held reference, or zero. ReserveClick
-     * covers the whole press and release; Anchor needs ReserveClick and a
-     * nonzero formId. Acceptance is not completion: lastRequestToken and
-     * lastResult report the native placement. ROCK validates both hands, the
-     * reference's lifetime and its whole body set, releases the constraints
-     * and saves a native fixed placement; static parts stay static. Pending
-     * work cancels on lost intent, owner or world. Clearing or unregistering
-     * never thaws a completed placement.
+     * ReserveRightClick and ReserveLeftClick each cover that hand's whole press
+     * and release while the hand holds an eligible object; the other hand's
+     * click stays free. Anchor names a held reference in formId and needs the
+     * click of a hand holding it reserved: ROCK places it only while that
+     * reservation continues and it still touches a fixed surface. Acceptance
+     * is not completion: lastRequestToken and lastResult report the native
+     * placement. ROCK validates the hands that hold the reference, its
+     * lifetime and its whole body set, releases those hands' constraints and
+     * saves a native fixed placement; static parts stay static, and the other
+     * hand keeps what it holds. Pending work cancels on lost intent, owner or
+     * world. Clearing or unregistering never thaws a completed placement.
      *
-     * The equipped weapon's press stays with its bipod, so never reserve it for
-     * that weapon. TimeEquippedWeaponHold says the add-on is timing the press:
-     * a press still latches the bipod at once, but a latched weapon unlatches
-     * when the button comes up instead of when it goes down, so a hold can place
-     * the pose it rests in. AnchorEquippedWeapon names equippedWeapon.formId and
-     * needs TimeEquippedWeaponHold and FixedSurfaceContact, without ReserveClick
-     * or Anchor. ROCK lets go of the weapon and moves it from the player to a
-     * native fixed placement at its current pose, reported through the same
-     * lastRequestToken and lastResult; lastRequestFormId stays the base form.
-     * Once the weapon has left the player the placement no longer cancels.
+     * The equipped weapon's press stays with its bipod, so never reserve
+     * equippedWeaponHand's click for that weapon. TimeEquippedWeaponHold says
+     * the add-on is timing the press: a press still latches the bipod at once,
+     * but a latched weapon unlatches when the button comes up instead of when
+     * it goes down, so a hold can place the pose it rests in.
+     * AnchorEquippedWeapon names equippedWeapon.formId in formId and needs
+     * TimeEquippedWeaponHold and FixedSurfaceContact, without Anchor or a
+     * reservation of equippedWeaponHand's click. ROCK lets go of the weapon and
+     * moves it from the player to a native fixed placement at its current pose,
+     * reported through the same lastRequestToken and lastResult;
+     * lastRequestFormId stays the base form. Once the weapon has left the
+     * player the placement no longer cancels.
      */
     struct HeldPlacementIntent
     {

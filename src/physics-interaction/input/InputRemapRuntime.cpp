@@ -300,7 +300,14 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_stopPrimaryActivateUntilRelease{ false };
         std::atomic<bool> s_gameplayInputAllowed{ false };
         std::atomic<bool> s_bothHandsHoldWeapons{ false }; // Frame thread -> input dispatch.
-        std::atomic<bool> s_bipodClickReserved{ false };   // Frame thread -> input dispatch.
+        // Stick clicks the bipod or a held placement owns this frame (bit 1 left,
+        // bit 2 right). Frame thread -> input dispatch and game-facing reads.
+        std::atomic<std::uint32_t> s_stickClickReserved{ 0 };
+        // Game-facing latch over every controller-state read, whichever thread
+        // polls: the stick was down at the last read, and a press that began
+        // while reserved stays hidden from the game until it comes up.
+        std::atomic<std::uint32_t> s_stickClickGameDown{ 0 };
+        std::atomic<std::uint32_t> s_stickClickGameHidden{ 0 };
         std::atomic<bool> s_weaponDrawn{ false };
         std::atomic<bool> s_realMeleeWeaponEquipped{ false };
         weapon_trigger_routing::Snapshot s_pendingWeaponRouting{}; // Interaction thread only.
@@ -1192,7 +1199,8 @@ namespace rock::input_remap_runtime
                 }
                 reasons |= (reloadMask ? testbench_telemetry::kBlankPhysicalReload : 0u) |
                     (supportMask ? testbench_telemetry::kBlankSupportTrigger : 0u) |
-                    (secondaryMask ? testbench_telemetry::kBlankSecondaryOwnsTrigger : 0u);
+                    (secondaryMask ? testbench_telemetry::kBlankSecondaryOwnsTrigger : 0u) |
+                    (stickMask ? testbench_telemetry::kBlankStickClickReserved : 0u);
             }
             if (isProviderOpenVrGameInputSuppressed(hand) && !bypassed()) {
                 clearOpenVrControllerStateForGame(state, stateSize);
@@ -1206,6 +1214,25 @@ namespace rock::input_remap_runtime
                     reasons, bypassCache.value_or(false));
             }
         }
+        // A stick press that begins while its hand's click is reserved is the
+        // bipod's or the placement's whole press: the game never sees it, so it
+        // cannot also run the game's own stick-click action. A press already
+        // down when the reservation starts stays the game's.
+        [[nodiscard]] std::uint64_t reservedStickClickGameMask(bool isLeft, std::uint64_t pressed) noexcept
+        {
+            constexpr auto stick = 1ull << 32;
+            const auto bit = isLeft ? 1u : 2u;
+            if (!(pressed & stick)) {
+                s_stickClickGameDown.fetch_and(~bit, std::memory_order_acq_rel);
+                s_stickClickGameHidden.fetch_and(~bit, std::memory_order_acq_rel);
+                return 0;
+            }
+            const bool wasDown = (s_stickClickGameDown.fetch_or(bit, std::memory_order_acq_rel) & bit) != 0;
+            if (!wasDown && (s_stickClickReserved.load(std::memory_order_acquire) & bit))
+                s_stickClickGameHidden.fetch_or(bit, std::memory_order_acq_rel);
+            return (s_stickClickGameHidden.load(std::memory_order_acquire) & bit) ? stick : 0;
+        }
+
 
         // The controls held after the layout, for the setup wizard's capture: the five
         // layout buttons as the layout presents them, every other control as it is.
@@ -1222,6 +1249,8 @@ namespace rock::input_remap_runtime
                                                physical.rAxis[layout::kStickAxis].y))
                                          : layout::PadLatch::Released;
             std::uint32_t bits = 0;
+            // Tracked on every read so a press is judged from its start.
+            const auto stickMask = stateValid ? reservedStickClickGameMask(isLeft, state->ulButtonPressed) : 0ull;
             for (std::size_t index = 1; index < function_binding_policy::kSourceCount; ++index) {
                 const auto source = static_cast<layout::Source>(index);
                 const bool pressed = function_binding_policy::slotOf(source) != layout::Slot::Count
@@ -1232,6 +1261,8 @@ namespace rock::input_remap_runtime
                 }
             }
             s_bindingCaptureBits[hand == input_remap_policy::Hand::Left ? 0 : 1].fetch_or(bits, std::memory_order_acq_rel);
+                // The click only: the stick's touch and axes stay the game's.
+                state->ulButtonPressed &= ~stickMask;
         }
 
         // The controller layout, then the function bindings on what it presents.
@@ -1629,7 +1660,7 @@ namespace rock::input_remap_runtime
         {
             return input_remap_policy::vanillaFavoritesMenuAllowed(g_rockConfig.rockVanillaFavoritesMenu,
                 s_robcoPalmLoaded.load(std::memory_order_acquire),
-                s_bipodClickReserved.load(std::memory_order_acquire));
+                (s_stickClickReserved.load(std::memory_order_acquire) & 2u) != 0);
         }
 
         [[nodiscard]] bool shouldSuppressNativeFavoritesAction(const RE::InputEvent* event)
@@ -3273,9 +3304,9 @@ namespace rock::input_remap_runtime
         s_bothHandsHoldWeapons.store(occupied, std::memory_order_release);
     }
 
-    void setBipodClickReserved(bool reserved) noexcept
+    void setStickClickReserved(bool leftReserved, bool rightReserved) noexcept
     {
-        s_bipodClickReserved.store(reserved, std::memory_order_release);
+        s_stickClickReserved.store((leftReserved ? 1u : 0u) | (rightReserved ? 2u : 0u), std::memory_order_release);
     }
 
     bool isProviderOpenVrGameInputSuppressedForHand(bool isLeft)

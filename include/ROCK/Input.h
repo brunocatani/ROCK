@@ -126,18 +126,17 @@ namespace rock::api::input {
         std::uint32_t sampleAgeMilliseconds{ 0 };
     };
 
-    // Bit 0 is retired; never reuse it.
-    enum class PlacementClickFlag : std::uint32_t { InputReserved = 2 };
+    // Bits 0 and 1 (one shared stick click) are retired; never reuse them.
+    enum class PlacementClickFlag : std::uint32_t { RightInputReserved = 4, LeftInputReserved = 8 };
 
-    // A reserved right-stick click belongs to an add-on's held placement
-    // action, including its release; other users yield. objectFormId is the
-    // submitted candidate, zero while a spent click drains.
+    // A reserved stick click belongs to an add-on's held placement action for
+    // the object in that hand, including its release; other users of that
+    // hand's click yield. The other hand's click stays free.
     struct PlacementClickState
     {
         std::uint32_t size{ sizeof(PlacementClickState) };
         std::uint32_t version{ 1 };
         std::uint32_t flags{ 0 };
-        std::uint32_t objectFormId{ 0 };
         Sample sample{};
     };
 

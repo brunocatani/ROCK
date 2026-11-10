@@ -734,12 +734,16 @@ namespace rock
     void PhysicsInteraction::update()
     {
         auto authoredCollision = F4SE::stl::scope_exit([this] {
-            // The frame's final surface reservation, after every presentation
-            // pass and on interrupted frames too (retireAll clears it).
-            input_remap_runtime::setBipodClickReserved(g_rockConfig.rockBipodMode &&
+            // The frame's final stick reservations, after every presentation
+            // pass and on interrupted frames too (retireAll clears the bipod's):
+            // the bipod on the firing hand's click, placement on each hand's.
+            const bool bipod = g_rockConfig.rockBipodMode &&
                 _dynamicWeaponCollision.surfaceSupportReservesInput(
                     reinterpret_cast<std::uintptr_t>(resolveEquippedWeaponInteractionNode()),
-                    _weaponCollision.getCurrentWeaponGenerationKey()));
+                    _weaponCollision.getCurrentWeaponGenerationKey());
+            const bool bipodLeft = _twoHandedGrip.isFiringHandLeft();
+            input_remap_runtime::setStickClickReserved((bipod && bipodLeft) || placementReservesClick(true),
+                (bipod && !bipodLeft) || placementReservesClick(false));
             const auto& runtime = runtime_state::currentFrame();
             auto* bhk = getPlayerBhkWorld();
             auto* world = bhk ? getHknpWorld(bhk) : nullptr;
@@ -781,7 +785,11 @@ namespace rock
                 updateNativeGrenadeCollisionSuppression(world, runtime.deltaSeconds);
         }
         beginHeldPlacementFrame();
-        _dynamicWeaponCollision.updateSurfaceSupportInput(_placementClickReserved, _placementEquippedHold);
+        {
+            const bool bipodLeft = _twoHandedGrip.isFiringHandLeft();
+            _dynamicWeaponCollision.updateSurfaceSupportInput(bipodLeft, placementReservesClick(bipodLeft),
+                _placementEquippedHold);
+        }
         const auto retireDynamicWeaponForInterruptedFrame = [this](bool preserveSurfaceSupport = false) {
             if (!_lifecycle.initialized.load(std::memory_order_acquire)) {
                 return;

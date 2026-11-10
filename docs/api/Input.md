@@ -44,9 +44,10 @@ expiry counts against; `sample` identifies the publication.
   `[Bindings]`; ROCK presents a moved PALM binding as a right stick click.
   `held` is 1 while that click is PALM's and 0 while it is another function's,
   so PALM opens only on its own. `pressSequence` is 0.
-- `getPlacementClickState(owner, state)`: `PlacementClickFlag::InputReserved`
-  while an add-on's held placement action owns the right-stick click,
-  including its release; `objectFormId` is the submitted candidate.
+- `getPlacementClickState(owner, state)`: `PlacementClickFlag::RightInputReserved`
+  and `LeftInputReserved` while an add-on's held placement action owns that
+  hand's stick click for the object in that hand, including its release. The
+  other hand's click stays free.
 
 ## Reload gesture
 
@@ -106,7 +107,7 @@ a failed renew and in the state's `lastInvalidationReason`.
 | `HandInputSuppressionState` | `getHandInputSuppressionState` | `sample`, `leaseFrameIndex`, `callerExpiresAfterFrame`, `hand`, `callerFlags`, `effectiveFlags`, `callerLeaseActive`, `callerRemainingFrames`, `lastInvalidationReason` |
 | `RawWandButtonState` | `getRawWandButtonState` | `available`, `held`, `sampleSequence`, `sampleAgeMilliseconds`, `availabilityReason` |
 | `LogicalInputActionState` | `getLogicalInputActionState` | `sample`, `sampleSequence`, `pressSequence`, `action`, `available`, `held`, `availabilityReason`, `sampleAgeMilliseconds` |
-| `PlacementClickState` | `getPlacementClickState` | `flags`, `objectFormId`, `sample` |
+| `PlacementClickState` | `getPlacementClickState` | `flags` (`PlacementClickFlag`: `RightInputReserved`, `LeftInputReserved`), `sample` |
 | `ReloadGestureRequest` | `setReloadGesture` | `weaponSlot`, `weaponFormId`, `weaponGenerationKey`, `sample`, `hand`, `leaseFrames`, `flags` (`ReloadGestureFlag`) |
 | `ReloadGestureState` | `getReloadGesture` | `owner`, `tapSequence`, `expiresAfterFrame`, `sample`, `active`, `hand`, `held`, `scopeHeld`, `weaponSlot` |
 | `SupportTriggerRequest` | `setSupportTrigger` | `weaponSlot`, `weaponFormId`, `weaponGenerationKey`, `sample`, `hand`, `leaseFrames` |
@@ -123,4 +124,5 @@ Up to `kMaxSuppressions` (32) suppression leases are held across owners.
 
 ## Retired values
 
-`PlacementClickFlag` bit 0 is retired and never reused.
+`PlacementClickFlag` bits 0 and 1 (one shared stick click) are retired and
+never reused.

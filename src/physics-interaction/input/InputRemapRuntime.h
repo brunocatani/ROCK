@@ -91,10 +91,12 @@ namespace rock::input_remap_runtime
     // Frame thread publication: a weapon is drawn in each hand, so grenade
     // use (native throw and ROCK quick-draw) has no free hand.
     void setBothHandsHoldWeapons(bool occupied) noexcept;
-    // Frame thread publication: Bipod Mode would act on a right stick click
-    // (the equipped weapon touches a fixed surface or is latched), so the
-    // vanilla Favorites menu leaves that click to it.
-    void setBipodClickReserved(bool reserved) noexcept;
+    // Frame thread publication: which hands' stick clicks Bipod Mode (on the
+    // weapon's firing hand, while it touches a fixed surface or is latched) or
+    // an add-on's held placement would act on. The game never sees a press that
+    // begins on a reserved click, and the vanilla Favorites menu leaves a
+    // reserved right click to its owner.
+    void setStickClickReserved(bool leftReserved, bool rightReserved) noexcept;
     // Frame-thread staging and one coherent publication to controller hooks.
     void setWeaponTransferPending(bool pending);
     void publishWeaponTriggerRouting();

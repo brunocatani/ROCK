@@ -129,10 +129,27 @@ namespace rock::held_placement_policy
             skippedOrFailed == verifiedEmpty;
     }
 
-    // A two-handed hold is one reference. Two different objects are ambiguous.
-    [[nodiscard]] constexpr std::uint32_t singleObject(std::uint32_t right, std::uint32_t left) noexcept
+    // Reserved stick clicks, one bit per hand.
+    [[nodiscard]] constexpr std::uint32_t handBit(bool left) noexcept { return left ? 2u : 1u; }
+
+    struct HandHold
     {
-        return right && left && right != left ? 0 : (right ? right : left);
+        std::uint32_t formId{ 0 };
+        bool looseObject{ false };
+        bool fixedContact{ false };
+    };
+
+    // A hand's click places the reference that hand holds. A two-handed hold
+    // is one reference, offered to both clicks, and touches through either
+    // hand; two different objects stay independent, one per click.
+    [[nodiscard]] constexpr std::uint32_t handCandidate(const HandHold& hand, const HandHold& other) noexcept
+    {
+        if (!hand.formId || !hand.looseObject)
+            return 0;
+        const bool shared = other.formId == hand.formId;
+        if (shared && !other.looseObject)
+            return 0;
+        return hand.fixedContact || (shared && other.fixedContact) ? hand.formId : 0;
     }
 
 }

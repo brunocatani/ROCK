@@ -35,6 +35,8 @@ namespace rock::api::weapon {
         WeaponDrawn = 1u << 9,
         PresentationKnown = 1u << 10,
         WeaponEquipped = 1u << 11,
+        // The bipod takes firingHand's stick click: the weapon touches a fixed
+        // surface or rests latched on one. The other hand's click stays free.
         BipodInputReserved = 1u << 12,
         // loadedRounds and reserveRounds hold the weapon's ammo counter.
         AmmoKnown = 1u << 13,

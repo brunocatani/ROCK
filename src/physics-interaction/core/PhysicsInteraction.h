@@ -547,7 +547,12 @@ namespace rock
         void clearEjectionContacts(RE::hknpWorld* world);
         void updateObjectRest(const PhysicsFrameContext& frame);
         void updateLooseObjectCollision(const PhysicsFrameContext& frame);
-        std::uint32_t heldPlacementCandidate(RE::hknpWorld* world) const;
+        // A hand holding formId has its click reserved and offers it for placement.
+        bool heldPlacementEligible(RE::hknpWorld* world, std::uint32_t formId) const;
+        [[nodiscard]] bool placementReservesClick(bool left) const noexcept
+        {
+            return (_placementReservedHands & held_placement_policy::handBit(left)) != 0;
+        }
         void beginHeldPlacementFrame();
         void resetHeldPlacement();
         void commitHeldPlacement(const PhysicsFrameContext& frame);
@@ -1257,9 +1262,12 @@ namespace rock
         api::OwnerToken _placementActiveOwner{}, _placementPendingOwner{};
         std::uint64_t _placementLastRequestToken{};
         api::grab::PlacementResult _placementLastResult{};
-        std::uint32_t _placementCandidate{}, _placementRequestedForm{}, _placementPendingForm{},
-            _placementLastRequestForm{}, _placementEquippedRequestedForm{};
-        bool _placementClickReserved{}, _placementEquippedHold{}, _placementEquippedRetiring{};
+        std::uint32_t _placementRequestedForm{}, _placementPendingForm{}, _placementLastRequestForm{},
+            _placementEquippedRequestedForm{};
+        // Stick clicks the placement owner reserved this update (bit per hand,
+        // held_placement_policy::handBit).
+        std::uint32_t _placementReservedHands{};
+        bool _placementEquippedHold{}, _placementEquippedRetiring{};
         float _placementScriptWait{};
         // Slot 1's native equipment, sampled by the frame owner
         // (sampleEquippedSlotOne) for every roster query this frame.

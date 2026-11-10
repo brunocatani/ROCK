@@ -126,7 +126,13 @@
   filtering presets (`WeaponHandling.WeaponFilteringPreset`, Steady by default) are
   player settings.
 - Bipod: a latched weapon stays equipped hands-free within
-  `WeaponHandling.BipodHandsFreeRadiusMeters`.
+  `WeaponHandling.BipodHandsFreeRadiusMeters`. The bipod follows the weapon's
+  firing hand: a left-hand weapon latches on the left stick click, and the
+  other stick keeps its own actions.
+- Each stick click acts only for its own hand. An add-on placing held objects
+  (such as Pimp my House) places the object in the hand whose stick you click,
+  and the other hand's click keeps the Favorites menu, PALM or the game's own
+  action. A click the bipod or a placement takes never also reaches the game.
 - Optional: use the weapon offsets you saved in FRIK instead of ROCK's grip
   (`WeaponHandling.FrikUserWeaponOffsets`, off by default).
 - One-handed melee weapons: the trigger toggles a reverse grip, saved with your
