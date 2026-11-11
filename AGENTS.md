@@ -24,7 +24,7 @@ To change ROCK: read [Architecture](#architecture), find the task in [Where to s
 | `data/mod/` | Game data for the mod package, if any |
 | `steamvr_bindings/` | SteamVR binding templates; shipped in the package and embedded in `ROCK.dll` for the setup wizard |
 | `third_party/openvr/` | Vendored OpenVR ABI |
-| `cmake/` | Version resource, test registration, release packaging |
+| `cmake/` | Version resource, test registration, packaging |
 
 ## Architecture
 
@@ -112,7 +112,7 @@ Under `src/physics-interaction/` unless the path says otherwise.
 | `src/api/` | Provider API and FRIK API binding |
 | `src/config/`, `src/RockConfig*.cpp` | Settings catalog and loader |
 | `src/setup-wizard/` | Setup wizard and SteamVR binding |
-| `src/rock_support/` | Logger, OpenVR controller state, menus, game INI overrides, test bench telemetry |
+| `src/rock_support/` | Logger, OpenVR controller state, menus, game INI overrides, developer telemetry |
 
 ## Where to start
 
@@ -170,9 +170,7 @@ pwsh -NoProfile -File tools/Invoke-RockTests.ps1
 
 It selects from the working tree (or the latest commit when clean) and widens the selection when unsure; `-PlanOnly`, `-BaseRef <ref>` and `-All` adjust it. Everything: `cmake --build build-fast --config Release --target build_tests`, then `ctest --test-dir build-fast -C Release --output-on-failure`.
 
-Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp`; never re-implement engine math in stubs. `ROCKPublicHeaderTests` compiles each public header alone and checks the published ABI layouts.
-
-`custom-release` writes `build-release/package`: a `.zip` that installs as it is (the DLL, `data/mod` and `steamvr_bindings/`) and `README.md` beside it.
+Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp` for engine math. `ROCKPublicHeaderTests` compiles each public header alone and checks the published ABI layouts.
 
 ## Runtime files
 
@@ -200,7 +198,7 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp`; never re-implemen
 - The held point is always a mesh point or an authored weapon seat, never native collision's centre of mass.
 - Two hands on one loose object aim it along the line between their grips, except under 6 game units apart on a non-weapon, where tremor exceeds the distance.
 - A live NPC's limb keeps its own body: the hold is a reduced-force point and the limb may lag the hand.
-- Per-frame limits scale with frame length, never with 90 Hz frame counts; slow-PC bugs rarely come with logs.
+- Per-frame limits scale with frame length, never with 90 Hz frame counts.
 - Every controller-state read passes through the `[Controls]` button layout before ROCK sees it, so everything reads one logical button set; features never keep their own physical button tables. `[Bindings]` then presents a moved function as a tagged press of its home button.
 
 ### Provider API
@@ -208,13 +206,10 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp`; never re-implemen
 - Public headers include only the standard library and other `include/ROCK/` headers.
 - Every entry point validates the caller's `size` and `version` before reading. Records use fixed-width types.
 - Every version refusal is logged with the calling DLL and stops the game at the main menu.
-- A released interface is frozen: additions go at the end of a table, incompatible changes take a new major, retired IDs, slots, values and bits are marked in the headers and never reused.
-- A header change updates its `docs/api/` page in the same commit and passes `ROCKPublicHeaderTests`.
 
 ### Configuration
 
 - `src/config/SettingMetadata.h` is the single source of every option (table, key, owning file, category, help); `RockConfigLoad.cpp` gives its type and default. Each option belongs to exactly one of `ROCK.toml` (players) and `ROCK_Developer.toml` (developer overrides only). Startup fails when catalog and loader disagree.
-- After any catalog change, regenerate `data/config/*_example.toml` with `ROCKConfigurationStoreTests --write-examples data/config`. The examples are references only and are never read, packaged or deployed; no settings file ships in the package.
+- After any catalog change, regenerate `data/config/*_example.toml` with `ROCKConfigurationStoreTests --write-examples data/config`; the test fails when they differ. ROCK never reads the examples.
 - RPS Framework's settings store reads, organizes and writes the files (`src/config/RockSettings.cpp`). A file that does not parse is never rewritten, keeps its last values and refuses API writes until fixed. Both files reload while the game runs.
 - Old `ROCK.ini` files migrate once, only when `ROCK.toml` is missing, through the frozen table `src/config/LegacyIniMigrationTable.inl` (never regenerated), and are deleted only after the TOML files read back.
-- Mandatory behaviour has no settings switch: weapon collision, hand and body collision, interaction and its haptics, native character-controller filtering, the far-selection cone, grabbing on the grip bit and native V.A.N.S. suppression. ROCK's APIs control only behaviour ROCK owns.
