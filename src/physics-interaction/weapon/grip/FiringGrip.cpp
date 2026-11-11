@@ -1192,7 +1192,8 @@ namespace rock
             *outUsedAuthoredCanonical = usedAuthoredCanonical;
         }
         if (logDiagnostic) {
-            ROCK_LOG_INFO(Weapon,
+            // Resolved on every frame of a left firing grip start, so it is debug detail.
+            ROCK_LOG_DEBUG(Weapon,
                 "TwoHandedGrip: authored left firing seat resolved source={} generation={:016X} ownership={:016X} "
                 "capture={} handWeaponT=({:.3f},{:.3f},{:.3f}) nativeAim=ready",
                 usedAuthoredCanonical ? "authored-animation" : "native-carry", _firing.rightCanonicalGenerationKey,
