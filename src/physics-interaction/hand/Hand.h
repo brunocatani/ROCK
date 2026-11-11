@@ -405,6 +405,9 @@ namespace rock
         const SelectedObject& getSelection() const { return _currentSelection; }
 
         bool hasSelection() const { return _currentSelection.isValid(); }
+        // The last grab attempt took an object too short for two hands from
+        // the other hand (grabSelectedObject); the caller lets that hand go.
+        bool takesObjectFromPeer() const { return _peerHandoffGrab; }
 
         // Grab clock telemetry for the game-thread timing report (all fields
         // are atomically mirrored from the physics-side flush).
@@ -635,6 +638,7 @@ namespace rock
         bool startLibraryGrabPoseJob(RE::TESObjectREFR* refr, const RE::NiTransform& objectFrameWorld,
             std::uint8_t ammoVariant, const std::vector<TriangleData>& worldTriangles);
         void finishLibraryGrabPoseJob(float grabFrameMilliseconds);
+        float selectedObjectSpanGameUnits() const;
         // Whether a saved, provider or built-in pose exists for this hand.
         bool hasOwnAuthoredGrabOffset(RE::TESObjectREFR* refr) const;
         void finishPullPrepAsPhysicalDropIfActive(const char* context);
@@ -1559,6 +1563,7 @@ namespace rock
         std::shared_ptr<LibraryGrabPoseJob> _libraryGrabPoseJob;
         // The selected reference the prewarm last looked at; compared, never dereferenced.
         const RE::TESObjectREFR* _libraryPrewarmRef = nullptr;
+        bool _peerHandoffGrab = false;
         PullCatchIntent _pullCatchIntent{};
         ExtractedItemHandoff _extractedItemHandoff{};
 

@@ -1235,7 +1235,10 @@ namespace rock
             }
 
             if (grabbed) {
-                if (sharedContext.joiningPeerHeldObject) {
+                // An object too short for two hands changes hands instead of
+                // being shared (Hand::grabSelectedObject, peerHandoff).
+                const bool peerHandoff = sharedContext.joiningPeerHeldObject && hand.takesObjectFromPeer();
+                if (sharedContext.joiningPeerHeldObject && !peerHandoff) {
                     Hand& peer = isLeft ? _rightHand : _leftHand;
                     const auto& peerInput = isLeft ? frame.right : frame.left;
                     if (!peer.promoteHeldObjectToConstraintDrive(frame.bhkWorld, hknp, peerInput.rawHandWorld,
@@ -1258,6 +1261,28 @@ namespace rock
                 if (grabbedFromPullCatchCommit) {
                     dispatchSimpleGrabEvent(GrabEventType::PullCatchSucceeded, isLeft, heldRef,
                         hand.getSavedObjectState().bodyId.value);
+                }
+                if (peerHandoff) {
+                    // After this hand's claim, so the object is never unowned.
+                    // The giving hand's grip is still pressed: its intent is
+                    // cleared so the held grip does not take the object back.
+                    const bool peerIsLeft = !isLeft;
+                    Hand& peer = peerIsLeft ? _leftHand : _rightHand;
+                    if (peer.isHolding() && peer.getHeldRef() == heldRef) {
+                        auto context = makeGrabReleaseContext(peer, peerIsLeft);
+                        context.applyCapturedReleaseVelocity = false;
+                        context.reason = "handed-to-other-hand";
+                        peer.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Delayed, context);
+                        if (!peer.isHolding()) {
+                            releaseObject(heldRef, claimOwnerForHand(peerIsLeft));
+                            dispatchSimpleGrabEvent(GrabEventType::Released, peerIsLeft, heldRef);
+                            clearGameplayCandidatesForHand(peer, peerIsLeft);
+                            grab_input_intent_policy::reset(_grabInput.intentStates[peerIsLeft ? 1u : 0u]);
+                            publishHandInputOwnership(peer, peerIsLeft);
+                        }
+                        ROCK_LOG_INFO(Hand, "{} hand took '{:08X}' from the {} hand: too short for two hands",
+                            hand.handName(), heldRef ? heldRef->GetFormID() : 0, peer.handName());
+                    }
                 }
             }
             return grabbed;
