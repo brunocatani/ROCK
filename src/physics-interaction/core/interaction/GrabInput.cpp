@@ -830,7 +830,18 @@ namespace rock
          */
         const bool closeObjectCandidate =
             handState == HandState::SelectedClose && hand.hasSelection() && !hand.getSelection().isFarSelection;
-        const bool canTryTouchGrab = rawGrabInput.pressed && rawGrabInput.held && frame.worldReady &&
+        /*
+         * A grip already held takes a surface only for a provider target that
+         * asked for it (AcquireWhileGripHeld, used by climbing to catch a wall
+         * in the air and to forgive a press made just before the hand lands).
+         * It tries wildcard targets alone, so explicit targets, power armor
+         * and ROCK's built-in surface grab still need the press.
+         */
+        const bool heldGripLatch = !rawGrabInput.pressed && rawGrabInput.held && touchGrabStateAvailable &&
+            !hand.isHolding() &&
+            provider::hasHeldGripTouchGrabTarget(isLeft ? api::Hand::Left : api::Hand::Right, worldGeneration,
+                skeletonGeneration, providerGeneration);
+        const bool canTryTouchGrab = (rawGrabInput.pressed || heldGripLatch) && rawGrabInput.held && frame.worldReady &&
             !frame.menuBlocked && !input_remap_runtime::isMenuInputActive() && !hand.isHolding() &&
             touchGrabStateAvailable && !hand.hasActivePullCatchIntent() && !hand.hasPendingExtractedItemHandoff() &&
             !_forceGrab.pendingCommits[handIndex].active && touchGrabPhysicsWritesAllowed;
@@ -860,7 +871,7 @@ namespace rock
                     for (std::size_t index = 0; index < candidates.count; ++index) {
                         if (_touchGrabRuntime.tryAcquire(isLeft, candidates.records[index], frame.bhkWorld,
                                 frame.hknpWorld, worldGeneration, skeletonGeneration, providerGeneration,
-                                collisionGeneration, targetClass, source, closeObjectCandidate)) {
+                                collisionGeneration, targetClass, source, closeObjectCandidate, {}, heldGripLatch)) {
                             return true;
                         }
                     }
@@ -873,11 +884,15 @@ namespace rock
                 }
                 return tryContacts(contacts, TouchGrabRuntime::ContactSource::SemanticHand);
             };
-            const bool touchGrabAcquired = tryTargetClass(TouchGrabRuntime::TargetClass::Explicit) ||
-                _touchGrabRuntime.tryAcquirePowerArmor(isLeft, _powerArmorCandidates[handIndex], frame.bhkWorld,
-                    frame.hknpWorld, worldGeneration, skeletonGeneration, providerGeneration, collisionGeneration) ||
-                tryTargetClass(TouchGrabRuntime::TargetClass::Wildcard) ||
-                tryTargetClass(TouchGrabRuntime::TargetClass::Fallback);
+            const bool touchGrabAcquired = heldGripLatch
+                ? tryTargetClass(TouchGrabRuntime::TargetClass::Wildcard) ||
+                      tryTargetClass(TouchGrabRuntime::TargetClass::Fallback)
+                : tryTargetClass(TouchGrabRuntime::TargetClass::Explicit) ||
+                      _touchGrabRuntime.tryAcquirePowerArmor(isLeft, _powerArmorCandidates[handIndex], frame.bhkWorld,
+                          frame.hknpWorld, worldGeneration, skeletonGeneration, providerGeneration,
+                          collisionGeneration) ||
+                      tryTargetClass(TouchGrabRuntime::TargetClass::Wildcard) ||
+                      tryTargetClass(TouchGrabRuntime::TargetClass::Fallback);
             if (touchGrabAcquired) {
                 TouchGrabRuntime::HandReport touchGrabReport{};
                 if (g_rockConfig.rockSurfaceGrabHapticsEnabled &&
@@ -896,6 +911,10 @@ namespace rock
                 _twoHandedGrip.cancelHandVisualReturn(isLeft, "touch-grab-acquired");
                 hand.cancelGrabVisualReturn("touch-grab-acquired");
                 return false;
+            }
+            // A held grip retries every frame; only a press is worth a line.
+            if (heldGripLatch) {
+                return true;
             }
             const auto attempt = _touchGrabRuntime.getAttemptReport();
             ROCK_LOG_INFO(Hand,

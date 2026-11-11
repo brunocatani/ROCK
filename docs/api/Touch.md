@@ -36,7 +36,9 @@ Interface `Touch`, major 2, minor 0; major 1 is refused with
   grab never takes those layers.
 - `flags` (`TouchGrabTargetFlag`): allowed hands, two-hand use,
   `LatchOnRelease`, `FallbackOnly` (wildcard surfaces considered last),
-  `ExcludePowerArmor`.
+  `ExcludePowerArmor`, `AcquireWhileGripHeld` (wildcard `FixedAnchor` only: a
+  grip that is already held latches the moment that hand touches a matching
+  surface; every other target is taken only on the grip press).
 - `leaseFrames` (1..`kMaxLeaseFrames`): the target expires unless set again.
 - World, skeleton and provider generations from the current publication.
 

@@ -2493,6 +2493,14 @@ namespace rock::provider
         return outMatch.matched;
     }
 
+    bool hasHeldGripTouchGrabTarget(const api::Hand hand, const std::uint32_t worldGeneration,
+        const std::uint32_t skeletonGeneration, const std::uint32_t providerGeneration)
+    {
+        std::scoped_lock lock(s_touchGrabMutex);
+        return s_touchGrabTargets.hasHeldGripTarget(hand, worldGeneration, skeletonGeneration, providerGeneration,
+            currentProviderFrameIndex());
+    }
+
     bool currentTouchGrabTarget(const std::uint64_t ownerToken, const std::uint64_t scopeToken,
         const std::uint64_t targetId, const std::uint32_t targetGeneration, const std::uint32_t worldGeneration,
         const std::uint32_t skeletonGeneration, const std::uint32_t providerGeneration, TouchGrabTargetMatch& outMatch)

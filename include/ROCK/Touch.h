@@ -40,6 +40,10 @@ namespace rock::api::touch {
         FallbackOnly = 1u << 8,
         // Exclude native power-armor furniture and power-armor actors.
         ExcludePowerArmor = 1u << 9,
+        // Wildcard FixedAnchor only. A grip that is already held latches the
+        // moment that hand touches a matching surface; without this flag a
+        // target is taken only on the grip press.
+        AcquireWhileGripHeld = 1u << 10,
     };
 
     enum class TouchGrabPhase : std::uint32_t

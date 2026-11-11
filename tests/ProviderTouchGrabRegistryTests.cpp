@@ -246,8 +246,38 @@ void testFallbackPriority()
     assert(registry->setScope(3, 3, &exact, 1, 40) != TouchGrabRegistry::RegistrationResult::Ok);
 }
 
+void testHeldGripTargets()
+{
+    using namespace rock::provider;
+    using Flag = ::rock::api::touch::TouchGrabTargetFlag;
+    auto registry = std::make_unique<TouchGrabRegistry>();
+    const auto heldGrip = [&](const rock::api::Hand hand, const std::uint64_t frame) {
+        return registry->hasHeldGripTarget(hand, 11, 12, 13, frame);
+    };
+
+    auto pressOnly = wildcardAnchor(60, 1ull << 2);
+    assert(registry->setScope(1, 1, &pressOnly, 1, 40) == TouchGrabRegistry::RegistrationResult::Ok);
+    assert(!heldGrip(rock::api::Hand::Right, 40));
+
+    auto rightOnly = wildcardAnchor(61, 1ull << 2);
+    rightOnly.flags &= ~flag(Flag::AllowLeftHand);
+    rightOnly.flags |= flag(Flag::AcquireWhileGripHeld);
+    assert(registry->setScope(1, 1, &rightOnly, 1, 40) == TouchGrabRegistry::RegistrationResult::Ok);
+    assert(heldGrip(rock::api::Hand::Right, 40));
+    assert(!heldGrip(rock::api::Hand::Left, 40));
+    assert(!registry->hasHeldGripTarget(rock::api::Hand::Right, 99, 12, 13, 40));
+    // The lease ends the held-grip latch with the target.
+    assert(!heldGrip(rock::api::Hand::Right, 40 + rightOnly.leaseFrames + 1));
+
+    // Only a wildcard surface target may latch without a press.
+    auto exact = hinge(62, 100);
+    exact.flags |= flag(Flag::AcquireWhileGripHeld);
+    assert(registry->setScope(2, 2, &exact, 1, 40) != TouchGrabRegistry::RegistrationResult::Ok);
+}
+
 int main()
 {
+    testHeldGripTargets();
     testValidationAndExplicitPriority();
     testLeaseRefreshStateAndYield();
     testScopeReplacementIsTransactional();

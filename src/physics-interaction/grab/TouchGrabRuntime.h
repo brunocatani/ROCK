@@ -150,7 +150,7 @@ namespace rock
             RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, std::uint32_t worldGeneration,
             std::uint32_t skeletonGeneration, std::uint32_t providerGeneration, std::uint32_t collisionGeneration,
             TargetClass targetClass, ContactSource contactSource, bool closeObjectCandidate,
-            api::PowerArmorPoint powerArmorPoint = {});
+            api::PowerArmorPoint powerArmorPoint = {}, bool heldGrip = false);
 
         void service(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, float deltaSeconds,
             std::uint32_t worldGeneration, std::uint32_t skeletonGeneration, std::uint32_t providerGeneration,

@@ -66,6 +66,9 @@ namespace rock::provider
     bool resolveTouchGrabTarget(std::uint32_t bodyId, std::uint32_t collisionLayer, TouchGrabMotionClass motionClass,
         api::Hand hand, std::uint32_t worldGeneration, std::uint32_t skeletonGeneration,
         std::uint32_t providerGeneration, TouchGrabTargetMatch& outMatch);
+    // A live touch target lets this hand latch with its grip already held.
+    [[nodiscard]] bool hasHeldGripTouchGrabTarget(api::Hand hand, std::uint32_t worldGeneration,
+        std::uint32_t skeletonGeneration, std::uint32_t providerGeneration);
     bool currentTouchGrabTarget(std::uint64_t ownerToken, std::uint64_t scopeToken, std::uint64_t targetId,
         std::uint32_t targetGeneration, std::uint32_t worldGeneration, std::uint32_t skeletonGeneration,
         std::uint32_t providerGeneration, TouchGrabTargetMatch& outMatch);

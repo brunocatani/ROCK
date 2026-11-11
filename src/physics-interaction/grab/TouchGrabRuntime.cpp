@@ -615,7 +615,8 @@ namespace rock
         const hand_semantic_contact_state::SemanticContactRecord& contact, RE::bhkWorld* bhkWorld,
         RE::hknpWorld* hknpWorld, const std::uint32_t worldGeneration, const std::uint32_t skeletonGeneration,
         const std::uint32_t providerGeneration, const std::uint32_t collisionGeneration, const TargetClass targetClass,
-        const ContactSource contactSource, const bool closeObjectCandidate, const api::PowerArmorPoint powerArmorPoint)
+        const ContactSource contactSource, const bool closeObjectCandidate, const api::PowerArmorPoint powerArmorPoint,
+        const bool heldGrip)
     {
         _lastAttemptReport = {
             .failure = AttemptFailure::InvalidInput,
@@ -665,6 +666,15 @@ namespace rock
         }
         if (authoredPowerArmor && providerMatched)
             return false;
+        // Without a press, only a target that asked for it is taken: ROCK's
+        // built-in surface grab and every other target wait for the press.
+        if (heldGrip &&
+            (!providerMatched ||
+                !provider::hasTouchGrabTargetFlag(match.target.flags,
+                    ::rock::api::touch::TouchGrabTargetFlag::AcquireWhileGripHeld))) {
+            _lastAttemptReport.failure = AttemptFailure::TargetUnavailable;
+            return false;
+        }
         if (!providerMatched) {
             if (!authoredPowerArmor &&
                 !global_surface_grab_policy::shouldUseFallback(global_surface_grab_policy::FallbackContext{

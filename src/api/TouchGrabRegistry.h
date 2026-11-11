@@ -184,6 +184,25 @@ namespace rock::provider
             return wildcardMatch;
         }
 
+        // Whether a live target lets this hand latch with a grip already held
+        // (AcquireWhileGripHeld). Asked every frame a grip is held, before any
+        // contact is collected.
+        [[nodiscard]] bool hasHeldGripTarget(const api::Hand hand, const std::uint32_t worldGeneration,
+            const std::uint32_t skeletonGeneration, const std::uint32_t providerGeneration,
+            const std::uint64_t frameIndex)
+        {
+            pruneExpired(frameIndex);
+            return std::any_of(_slots.begin(), _slots.end(), [&](const Slot& slot) {
+                return slot.active && !slot.yieldRequested &&
+                    slot.state.phase != ::rock::api::touch::TouchGrabPhase::Yielded &&
+                    slot.state.phase != ::rock::api::touch::TouchGrabPhase::Invalidated &&
+                    hasTouchGrabTargetFlag(slot.target.flags,
+                        ::rock::api::touch::TouchGrabTargetFlag::AcquireWhileGripHeld) &&
+                    generationsMatch(slot.target, worldGeneration, skeletonGeneration, providerGeneration) &&
+                    handMatches(slot.target, hand);
+            });
+        }
+
         [[nodiscard]] bool currentTarget(const std::uint64_t ownerToken, const std::uint64_t scopeToken,
             const std::uint64_t targetId, const std::uint32_t targetGeneration, const std::uint32_t worldGeneration,
             const std::uint32_t skeletonGeneration, const std::uint32_t providerGeneration,
@@ -305,6 +324,7 @@ namespace rock::provider
         static constexpr std::uint32_t kKnownFlags = kHandFlags | kMotionFlags |
             static_cast<std::uint32_t>(::rock::api::touch::TouchGrabTargetFlag::FallbackOnly) |
             static_cast<std::uint32_t>(::rock::api::touch::TouchGrabTargetFlag::ExcludePowerArmor) |
+            static_cast<std::uint32_t>(::rock::api::touch::TouchGrabTargetFlag::AcquireWhileGripHeld) |
             static_cast<std::uint32_t>(::rock::api::touch::TouchGrabTargetFlag::AllowTwoHands) |
             static_cast<std::uint32_t>(::rock::api::touch::TouchGrabTargetFlag::LatchOnRelease) |
             static_cast<std::uint32_t>(::rock::api::touch::TouchGrabTargetFlag::MatchAnyBody);
@@ -326,6 +346,10 @@ namespace rock::provider
             const bool wildcard =
                 hasTouchGrabTargetFlag(target.flags, ::rock::api::touch::TouchGrabTargetFlag::MatchAnyBody);
             if (hasTouchGrabTargetFlag(target.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly) &&
+                (!wildcard || target.kind != ::rock::api::touch::TouchGrabKind::FixedAnchor))
+                return false;
+            if (hasTouchGrabTargetFlag(target.flags,
+                    ::rock::api::touch::TouchGrabTargetFlag::AcquireWhileGripHeld) &&
                 (!wildcard || target.kind != ::rock::api::touch::TouchGrabKind::FixedAnchor))
                 return false;
             if (target.kind == ::rock::api::touch::TouchGrabKind::FixedAnchor) {
