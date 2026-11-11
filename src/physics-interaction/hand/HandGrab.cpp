@@ -1155,6 +1155,7 @@ namespace rock
 
         ROCK_LOG_INFO(Hand, "{} hand grab success -> HeldInit: bodyId={}", handName(), objectBodyId.value);
         _grabFrame.equippedWeaponTransfer = sel.equippedWeaponTransfer;
+        _grabFrame.handReach = handReach;
         if (sel.equippedWeaponTransfer && rootNode) {
             // Seed presentation from the constraint's initial physical target.
             // The same-frame held update can then carry the measured body pose

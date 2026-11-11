@@ -1134,12 +1134,15 @@ namespace rock
                 targetVisualHandWorld.scale = handWorldTransform.scale;
 
                 RE::NiTransform nextVisualHandWorld = targetVisualHandWorld;
+                // A hand reach starts away from the mesh point it holds: the
+                // drawn hand glides there in every phase instead of jumping.
                 const bool smoothVisualHand = !preserveTransferredHand &&
-                    hand_visual_lerp_math::shouldSmoothHeldObjectRelativeHand(isHoldingLooseWeapon()
-                            ? g_rockConfig.rockWeaponSupportGripHandLerpEnabled
-                            : g_rockConfig.rockGrabHandLerpEnabled,
-                        _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld,
-                        visualPublishDecision.acquisition, weaponVisual);
+                    (hand_visual_lerp_math::shouldSmoothHeldObjectRelativeHand(isHoldingLooseWeapon()
+                             ? g_rockConfig.rockWeaponSupportGripHandLerpEnabled
+                             : g_rockConfig.rockGrabHandLerpEnabled,
+                         _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld,
+                         visualPublishDecision.acquisition, weaponVisual) ||
+                        (_grabFrame.handReach && g_rockConfig.rockGrabHandLerpEnabled));
                 if (!_hasGrabVisualHandTransform) {
                     RE::NiTransform acquisitionStart =
                         _grabVisualReturn.active && isUsableGrabVisualTransform(_grabVisualReturn.lastApplied)

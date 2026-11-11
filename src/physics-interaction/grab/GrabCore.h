@@ -765,6 +765,9 @@ namespace rock
         // (Hand::coordinateLooseObjectProxy): it follows the primary hand.
         bool looseObjectSharedWithoutPivot = false;
         bool equippedWeaponTransfer = false;
+        // The grab took a body's mesh point away from the fingers
+        // (Hand::grabSelectedObject): the drawn hand glides to it.
+        bool handReach = false;
         bool hasLooseObjectSoloProxyCorrection = false;
         bool hasTelemetryCapture = false;
         bool fingerPoseAimValid = false;
@@ -819,6 +822,7 @@ namespace rock
             looseObjectSharedPrimaryIsLeft = false;
             looseObjectSharedWithoutPivot = false;
             equippedWeaponTransfer = false;
+            handReach = false;
             hasLooseObjectSoloProxyCorrection = false;
             hasTelemetryCapture = false;
             fingerPoseAimValid = false;
