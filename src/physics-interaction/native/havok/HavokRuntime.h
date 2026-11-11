@@ -35,7 +35,6 @@ namespace rock::havok_runtime
      */
     inline constexpr std::uintptr_t kHknpWorldBodyHighWaterMarkOffset = 0x70;
     inline constexpr std::uint32_t kMaxContactSignalPoints = 4;
-    inline constexpr std::uint32_t kMaxMotionPropertiesSnapshotRecords = 16;
 
     // Non-owning view for the current native call only. Pair identity and
     // surface filtering need no motion or scene-owner traversal.
@@ -95,20 +94,6 @@ namespace rock::havok_runtime
         std::uint16_t maxAngularVelocityPacked = 0;
         float maxLinearVelocity = 0.0f;
         float maxAngularVelocity = 0.0f;
-    };
-
-    struct MotionPropertiesSnapshotRecord
-    {
-        float values[16]{};
-        std::uint32_t words[16]{};
-    };
-
-    struct MotionPropertiesLibrarySnapshot
-    {
-        bool valid = false;
-        std::uint32_t count = 0;
-        std::uint32_t copiedCount = 0;
-        MotionPropertiesSnapshotRecord records[kMaxMotionPropertiesSnapshotRecords]{};
     };
 
     enum class PhysicsSystemBodyScanStatus : std::uint8_t
@@ -194,7 +179,6 @@ namespace rock::havok_runtime
     bool tryReadBodyMotionPropertiesId(RE::hknpWorld* world, RE::hknpBodyId bodyId,
         std::uint16_t& outMotionPropertiesId);
     bool tryReadMotionVelocityCaps(const RE::hknpMotion* motion, MotionVelocityCaps& outCaps);
-    bool snapshotMotionPropertiesLibrary(RE::hknpWorld* world, MotionPropertiesLibrarySnapshot& outSnapshot);
     bool tryReadFilterInfo(RE::hknpWorld* world, RE::hknpBodyId bodyId, std::uint32_t& outFilterInfo);
     bool setFilterInfo(RE::hknpWorld* world, RE::hknpBodyId bodyId, std::uint32_t filterInfo,
         std::uint32_t rebuildMode = 0);

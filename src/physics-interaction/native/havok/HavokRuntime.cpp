@@ -814,44 +814,6 @@ namespace rock::havok_runtime
         return true;
     }
 
-    bool snapshotMotionPropertiesLibrary(RE::hknpWorld* world, MotionPropertiesLibrarySnapshot& outSnapshot)
-    {
-        outSnapshot = {};
-        if (!world) {
-            return false;
-        }
-
-        char* library = nullptr;
-        if (!tryReadField(world, offsets::kHknpWorld_MotionPropertiesLibraryPtr, library) || !library) {
-            return false;
-        }
-
-        char* entries = nullptr;
-        std::int32_t count = 0;
-        if (!tryReadField(library, offsets::kMotionPropertiesLibrary_Entries, entries) ||
-            !tryReadField(library, offsets::kMotionPropertiesLibrary_Count, count) || count < 0) {
-            return false;
-        }
-
-        outSnapshot.valid = true;
-        outSnapshot.count = static_cast<std::uint32_t>(count);
-        if (!entries || count == 0) {
-            return true;
-        }
-
-        outSnapshot.copiedCount = (std::min)(outSnapshot.count, kMaxMotionPropertiesSnapshotRecords);
-        for (std::uint32_t i = 0; i < outSnapshot.copiedCount; ++i) {
-            const auto* entry = entries + (static_cast<std::uintptr_t>(i) * offsets::kMotionProperties_RecordSize);
-            for (std::uint32_t wordIndex = 0; wordIndex < 16; ++wordIndex) {
-                const auto fieldOffset = static_cast<std::uintptr_t>(wordIndex) * sizeof(std::uint32_t);
-                (void)tryReadField(entry, fieldOffset, outSnapshot.records[i].values[wordIndex]);
-                (void)tryReadField(entry, fieldOffset, outSnapshot.records[i].words[wordIndex]);
-            }
-        }
-
-        return true;
-    }
-
     bool tryReadFilterInfo(RE::hknpWorld* world, RE::hknpBodyId bodyId, std::uint32_t& outFilterInfo)
     {
         auto* body = getBody(world, bodyId);

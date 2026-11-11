@@ -810,7 +810,7 @@ namespace rock
         if (rawGrabInput.pressed) {
             const auto& probe = _powerArmorProbeDiagnostics[handIndex];
             const auto& candidate = _powerArmorCandidates[handIndex];
-            ROCK_LOG_INFO(Hand,
+            ROCK_LOG_DEBUG(Hand,
                 "PA proximity probe: hand={} frame={} stage={} hits={} refs={} paRefs={} bones={} nearest={:.2f}gu "
                 "candidate={} form={:08X} point={} heldInput={} visualAuthority={}",
                 isLeft ? "left" : "right", _powerArmorCandidateFrame, probe.stage, probe.hits, probe.references,
@@ -846,7 +846,7 @@ namespace rock
             touchGrabStateAvailable && !hand.hasActivePullCatchIntent() && !hand.hasPendingExtractedItemHandoff() &&
             !_forceGrab.pendingCommits[handIndex].active && touchGrabPhysicsWritesAllowed;
         if (rawGrabInput.pressed && !canTryTouchGrab) {
-            ROCK_LOG_INFO(Hand,
+            ROCK_LOG_DEBUG(Hand,
                 "Touch grab edge gated: hand={} held={} worldReady={} menuBlocked={} menuInput={} holding={} "
                 "handState={} stateAvailable={} pullCatch={} actorDrop={} forceCommit={} physicsWrites={}",
                 isLeft ? "left" : "right", rawGrabInput.held, frame.worldReady, frame.menuBlocked,
@@ -917,7 +917,7 @@ namespace rock
                 return true;
             }
             const auto attempt = _touchGrabRuntime.getAttemptReport();
-            ROCK_LOG_INFO(Hand,
+            ROCK_LOG_DEBUG(Hand,
                 "Touch grab attempt rejected: hand={} semanticContacts={} surfaceContacts={} failure={} targetClass={} "
                 "source={} body={} layer={} motionClass={} motionProperties={} motionIndex={} latchFailure={} "
                 "meshFailure={}",

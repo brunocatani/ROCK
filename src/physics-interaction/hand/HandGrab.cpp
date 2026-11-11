@@ -502,34 +502,6 @@ namespace rock
                     "maxLinVel={:.1f} maxAngVel={:.1f}",
                     handName(), objectBodyId.value, motionPropsId, motionTypeStr, bodyFlags, isDynamicInit, isKeyframed,
                     bodyMotionPropsId, maxLinVel, maxAngVel);
-
-                {
-                    static bool libraryDumped = false;
-                    if (!libraryDumped) {
-                        libraryDumped = true;
-                        havok_runtime::MotionPropertiesLibrarySnapshot motionProperties{};
-                        if (havok_runtime::snapshotMotionPropertiesLibrary(world, motionProperties)) {
-                            ROCK_LOG_TRACE(Hand, "Motion properties library: {} entries, stride=0x40",
-                                motionProperties.count);
-                            for (std::uint32_t i = 0; i < motionProperties.copiedCount; i++) {
-                                const auto& record = motionProperties.records[i];
-                                const auto* f = record.values;
-                                const auto* u = record.words;
-                                ROCK_LOG_TRACE(Hand,
-                                    "  [{}] +00: {:.4f} {:.4f} {:.4f} {:.4f} | "
-                                    "+10: {:.4f} {:.4f} {:.4f} {:.4f} | "
-                                    "+20: {:.4f} {:.4f} {:.4f} {:.4f} | "
-                                    "+30: {:.4f} {:.4f} {:.4f} {:.4f}",
-                                    i, f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8], f[9], f[10], f[11], f[12],
-                                    f[13], f[14], f[15]);
-                                ROCK_LOG_TRACE(Hand,
-                                    "  [{}] hex: {:08X} {:08X} {:08X} {:08X} | "
-                                    "{:08X} {:08X} {:08X} {:08X}",
-                                    i, u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7]);
-                            }
-                        }
-                    }
-                }
             }
         }
 
