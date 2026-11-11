@@ -15,6 +15,7 @@
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <vector>
@@ -100,6 +101,75 @@ namespace rock
             constexpr float kLabelLiftGameUnits = 7.0f;
             return skeleton.palmNormalValid ? handWorld.translate - skeleton.palmNormalWorld * kLabelLiftGameUnits
                                             : handWorld.translate;
+        }
+
+        // How long a mesh copy outlives the hand's close selection on its object.
+        constexpr float kUnusedKeepSeconds = 0.5f;
+        constexpr std::size_t kMaxShapePlacements = 2048;
+
+        // The shapes extractAllTriangles reads under node, in the same order,
+        // each placed in the object node's space. False when the list overflows.
+        template <class ShapePlacement>
+        bool collectShapePlacements(RE::NiAVObject* node, const RE::NiTransform& worldToObject, int maxDepth,
+            std::vector<ShapePlacement>& out)
+        {
+            if (!node || maxDepth <= 0 || (node->flags.flags & 1)) {
+                return true;
+            }
+            if (auto* triShape = node->IsTriShape()) {
+                if (out.size() >= kMaxShapePlacements) {
+                    return false;
+                }
+                out.push_back(ShapePlacement{ reinterpret_cast<std::uintptr_t>(triShape),
+                    transform_math::composeTransforms(worldToObject, triShape->world) });
+                return true;
+            }
+            if (auto* niNode = node->IsNode()) {
+                auto& kids = niNode->GetRuntimeData().children;
+                for (auto i = decltype(kids.size()){ 0 }; i < kids.size(); i++) {
+                    if (!collectShapePlacements(kids[i].get(), worldToObject, maxDepth - 1, out)) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        // Rounding of a rigidly moving object's world transforms stays far inside
+        // these; a part that moves against the object node does not.
+        bool samePlacement(const RE::NiTransform& a, const RE::NiTransform& b)
+        {
+            constexpr float kTranslation = 0.02f;
+            constexpr float kRotation = 0.001f;
+            constexpr float kScale = 0.0005f;
+            if (!(std::abs(a.translate.x - b.translate.x) <= kTranslation) ||
+                !(std::abs(a.translate.y - b.translate.y) <= kTranslation) ||
+                !(std::abs(a.translate.z - b.translate.z) <= kTranslation) ||
+                !(std::abs(a.scale - b.scale) <= kScale)) {
+                return false;
+            }
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    if (!(std::abs(a.rotate.entry[row][column] - b.rotate.entry[row][column]) <= kRotation)) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        template <class ShapePlacement>
+        bool samePlacements(const std::vector<ShapePlacement>& a, const std::vector<ShapePlacement>& b)
+        {
+            if (a.size() != b.size()) {
+                return false;
+            }
+            for (std::size_t i = 0; i < a.size(); ++i) {
+                if (a[i].shape != b[i].shape || !samePlacement(a[i].inObject, b[i].inObject)) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         bool rebuildNearestIndex(std::vector<GrabLocalTriangle>& triangles,
@@ -205,25 +275,48 @@ namespace rock
         const std::uint32_t formId = selection.refr->GetFormID();
         const auto objectKey = reinterpret_cast<std::uintptr_t>(objectNode);
         const auto meshKey = reinterpret_cast<std::uintptr_t>(meshNode);
-        // A skinned or dynamic mesh deforms against the node it is stored under,
-        // so the grab check re-reads it; the overlay keeps its copy.
-        if (!cache.extracted || cache.refFormId != formId || cache.objectNodeKey != objectKey ||
-            cache.meshNodeKey != meshKey || (refreshDeformingMesh && !cache.rigid)) {
+        const int depth = (std::max)(1, g_rockConfig.rockObjectPhysicsTreeMaxDepth);
+        const std::array<RE::NiAVObject*, 3> sourceNodes{ meshNode, objectNode, root };
+        cache.unusedSeconds = 0.0f;
+        /*
+         * The copy is reused across the retries of a held grip: reading an
+         * 85,156-triangle rifle again for every retry cost 8.5 ms each. It is
+         * read again when the object or its nodes change, when a skinned or
+         * dynamic mesh deforms against its node (the grab check; the overlay
+         * keeps its copy), and when a rigid model's shapes no longer sit
+         * where they sat in the object node's space.
+         */
+        bool reuse = cache.extracted && cache.refFormId == formId && cache.objectNodeKey == objectKey &&
+            cache.meshNodeKey == meshKey && !(refreshDeformingMesh && !cache.rigid);
+        if (reuse && cache.rigid) {
+            cache.placementScratch.clear();
+            reuse = cache.placementsComplete &&
+                collectShapePlacements(sourceNodes[cache.sourceNode],
+                    transform_math::invertTransform(objectNode->world), depth, cache.placementScratch) &&
+                samePlacements(cache.placementScratch, cache.shapePlacements);
+        }
+        if (!reuse) {
             // Same sources the grab tries: the visual node, then the collision owner, then the root.
             std::vector<TriangleData> worldTriangles;
             MeshExtractionStats stats{};
-            const int depth = (std::max)(1, g_rockConfig.rockObjectPhysicsTreeMaxDepth);
+            std::uint8_t sourceNode = 0;
             extractAllTriangles(meshNode, worldTriangles, depth, &stats);
             if (worldTriangles.empty() && objectNode != meshNode) {
                 extractAllTriangles(objectNode, worldTriangles, depth, &stats);
+                sourceNode = 1;
             }
             if (worldTriangles.empty() && root != meshNode && root != objectNode) {
                 extractAllTriangles(root, worldTriangles, depth, &stats);
+                sourceNode = 2;
             }
             if (worldTriangles.size() > kMaxPreviewTriangles) {
                 worldTriangles.resize(kMaxPreviewTriangles);
             }
             const RE::NiTransform objectWorldAtExtraction = objectNode->world;
+            cache.sourceNode = sourceNode;
+            cache.shapePlacements.clear();
+            cache.placementsComplete = collectShapePlacements(sourceNodes[sourceNode],
+                transform_math::invertTransform(objectWorldAtExtraction), depth, cache.shapePlacements);
             cache.localTriangles.clear();
             cache.localTriangles.reserve(worldTriangles.size());
             for (const auto& triangle : worldTriangles) {
@@ -306,6 +399,29 @@ namespace rock
         out.labelAnchor = labelAnchorFor(skeleton, handWorld);
         out.valid = out.sphereCount > 0;
         return out.valid;
+    }
+
+    void Hand::trimGrabFingerProbePreview(float deltaSeconds)
+    {
+        auto& cache = _grabFingerProbePreview;
+        if (!cache.extracted) {
+            return;
+        }
+        if (isHolding()) {
+            cache.clear();
+            return;
+        }
+        const auto& selection = _currentSelection;
+        if (hasSelection() && selection.refr && !selection.isFarSelection &&
+            selection.refr->GetFormID() == cache.refFormId) {
+            cache.unusedSeconds = 0.0f;
+            return;
+        }
+        // A selection can drop for a frame between two retries of a held grip.
+        cache.unusedSeconds += std::isfinite(deltaSeconds) && deltaSeconds > 0.0f ? deltaSeconds : 0.0f;
+        if (cache.unusedSeconds > kUnusedKeepSeconds) {
+            cache.clear();
+        }
     }
 
     GrabProbeContact Hand::evaluateGrabProbeContact()

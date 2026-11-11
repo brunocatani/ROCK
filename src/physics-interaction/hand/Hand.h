@@ -512,6 +512,9 @@ namespace rock
         // frames. Main thread, after the frame's final hand pose.
         bool buildGrabFingerProbePreview(grab_finger_probe_preview::Snapshot& out);
         void clearGrabFingerProbePreview() { _grabFingerProbePreview.clear(); }
+        // Once per frame: frees the selected object's mesh copy when the hand
+        // holds something or has had no close selection on it for a moment.
+        void trimGrabFingerProbePreview(float deltaSeconds);
         // Runs the probe solve against the selected object with the hand where
         // it is drawn; the close grab check. Re-reads a deforming mesh.
         [[nodiscard]] GrabProbeContact evaluateGrabProbeContact();
@@ -1398,8 +1401,28 @@ namespace rock
             std::uint32_t refFormId = 0;
             bool extracted = false;
             bool indexCoversAll = false;
-            // No skinned or dynamic shape: the stored node-local copy stays exact.
+            // No skinned or dynamic shape: the stored node-local copy stays exact
+            // while every shape keeps its placement under the object node.
             bool rigid = true;
+
+            // A visible shape and where it sat in the object node's space when
+            // the triangles were copied. A part that moves against the object
+            // node, a shape hidden or shown, or a rebuilt model changes this
+            // list, and the copy is read again.
+            struct ShapePlacement
+            {
+                std::uintptr_t shape = 0;
+                RE::NiTransform inObject{};
+            };
+
+            std::vector<ShapePlacement> shapePlacements;
+            std::vector<ShapePlacement> placementScratch;
+            // Which node the triangles came from: 0 visual node, 1 collision owner, 2 root.
+            std::uint8_t sourceNode = 0;
+            // False when the model has more shapes than the list holds: such a copy is never reused.
+            bool placementsComplete = false;
+            // Seconds since the hand last had a close selection on this reference.
+            float unusedSeconds = 0.0f;
 
             void clear()
             {
@@ -1407,6 +1430,13 @@ namespace rock
                 localTriangles.shrink_to_fit();
                 nearestScratch.clear();
                 nearestScratch.shrink_to_fit();
+                shapePlacements.clear();
+                shapePlacements.shrink_to_fit();
+                placementScratch.clear();
+                placementScratch.shrink_to_fit();
+                sourceNode = 0;
+                placementsComplete = false;
+                unusedSeconds = 0.0f;
                 index.clear();
                 indexCenterLocal = {};
                 objectNodeKey = 0;

@@ -82,11 +82,10 @@ namespace rock
         const bool drawAuthoredSupportGripDebug = drawAuthoredGripActivationZones;
         const bool drawNativeScopeActivation = visualization.nativeScopeActivation;
         const bool drawGrabFingerProbes = g_rockConfig.rockDebugDrawGrabFingerProbes;
-        if (!drawGrabFingerProbes) {
-            // Drops the selected object's cached mesh as soon as the view is off.
-            _rightHand.clearGrabFingerProbePreview();
-            _leftHand.clearGrabFingerProbePreview();
-        }
+        // The grab's probe check uses the selected object's mesh copy with the
+        // view off too, so the copy is freed by use, never by this setting.
+        _rightHand.trimGrabFingerProbePreview(context.deltaSeconds);
+        _leftHand.trimGrabFingerProbePreview(context.deltaSeconds);
 
         std::array<std::uint32_t, 2> grabbedWeaponPartColliderBodyIds{
             INVALID_BODY_ID,
