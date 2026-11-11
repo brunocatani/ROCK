@@ -37,10 +37,12 @@ namespace rock
         /*
          * The authored pose for one hand, in priority order: the player's saved
          * offset, a provider default pose, then ROCK's built-in pose. False when
-         * none exists; the grab then seats dynamically. Cache and table lookups
-         * only, no file I/O.
+         * none exists; the caller then tries the library pose, and the grab
+         * seats dynamically without one. Cache and table lookups only, no file
+         * I/O.
          */
-        bool tryLoadSavedGrabOffsetHandOffset(RE::TESObjectREFR* refr, bool isLeft, saved_grab_offset::HandOffset& out)
+        bool tryLoadSavedGrabOffsetHandOffset(RE::TESObjectREFR* refr, bool isLeft, saved_grab_offset::HandOffset& out,
+            bool announce = true)
         {
             if (!refr) {
                 return false;
@@ -72,9 +74,11 @@ namespace rock
                 if (!exactPoseFitsRig(out, isLeft, "built-in")) {
                     return false;
                 }
-                ROCK_LOG_INFO(Hand, "{} hand grab uses ROCK's built-in offset for {} {:08X}{}{}",
-                    isLeft ? "Left" : "Right", formRef.plugin, formRef.localFormId,
-                    formRef.variant.empty() ? "" : " variant=", formRef.variant);
+                if (announce) {
+                    ROCK_LOG_INFO(Hand, "{} hand grab uses ROCK's built-in offset for {} {:08X}{}{}",
+                        isLeft ? "Left" : "Right", formRef.plugin, formRef.localFormId,
+                        formRef.variant.empty() ? "" : " variant=", formRef.variant);
+                }
                 return true;
             }
             return false;
@@ -453,7 +457,15 @@ namespace rock
                 isThrowableLooseWeapon(selectedLooseWeaponForm(sel)))) {
             return false;
         }
-        return tryLoadSavedGrabOffsetHandOffset(sel.refr, _isLeft, out);
+        // An object without a pose of its own borrows one from the authored
+        // objects shaped like it (prepareLibraryGrabPose), when one was solved.
+        return tryLoadSavedGrabOffsetHandOffset(sel.refr, _isLeft, out) || findLibraryGrabPose(sel.refr, out);
+    }
+
+    bool Hand::hasOwnAuthoredGrabOffset(RE::TESObjectREFR* refr) const
+    {
+        saved_grab_offset::HandOffset unused{};
+        return tryLoadSavedGrabOffsetHandOffset(refr, _isLeft, unused, false);
     }
 
     bool Hand::captureGrabBodyFrame(RE::hknpWorld* world, const GrabBodyFrameCaptureInput& input,

@@ -1488,6 +1488,9 @@ namespace rock
         std::string objectName{ "(unnamed)" };
         bool joiningPeerHeldObject = false;
         bool grabbedFromPullCatch = false;
+        // A close grab no finger probe touches: the object comes to the hand
+        // and seats like a pull that has just arrived (grabSelectedObject).
+        bool reachArrival = false;
         bool looseWeaponGrab = false;
         bool handPocketOnlyGrab = false;
     };

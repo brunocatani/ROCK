@@ -615,6 +615,19 @@ namespace rock
         void capturePullSeat(RE::hknpWorld* world, RE::NiAVObject* rootNode, const RE::NiPoint3& pulledMeshPointWorld);
         // The primary body's seated pose on the palm of the given raw hand.
         bool tryComputePullSeatBodyWorld(const RE::NiTransform& rawHandWorld, RE::NiTransform& outBodyWorld) const;
+        /*
+         * Library grab pose (GrabPoseLibrary.h): solves the pose an object
+         * without an authored offset borrows from the authored objects shaped
+         * like it, once per base form and scale, from the object's mesh in
+         * world space, and keeps it for resolveAuthoredGrabOffset. Called where
+         * a seated arrival first reads the mesh (pull start, grab). No-op for
+         * an object with its own authored pose or already solved.
+         */
+        void prepareLibraryGrabPose(RE::TESObjectREFR* refr, RE::NiAVObject* rootNode,
+            const std::vector<TriangleData>& worldTriangles, bool rigidObject);
+        bool findLibraryGrabPose(RE::TESObjectREFR* refr, saved_grab_offset::HandOffset& out) const;
+        // Whether a saved, provider or built-in pose exists for this hand.
+        bool hasOwnAuthoredGrabOffset(RE::TESObjectREFR* refr) const;
         void finishPullPrepAsPhysicalDropIfActive(const char* context);
         bool hasActivePullCatchIntent() const;
         bool hasArrivedPullCatchIntent() const;
@@ -1488,6 +1501,19 @@ namespace rock
         RE::NiTransform _pullSeatBodyInFrame{};
         float _pullSeatFrameScale = 1.0f;
         RE::NiPoint3 _pullSeatMeshPointBody{};
+        // Solved library grab poses of this hand (prepareLibraryGrabPose),
+        // oldest replaced first. found is false for an object no authored
+        // object resembles, so it is not solved again. Frame thread only.
+        struct LibraryGrabPose
+        {
+            std::uint32_t baseFormId = 0;
+            float scale = 1.0f;
+            bool found = false;
+            saved_grab_offset::HandOffset offset{};
+        };
+        static constexpr std::size_t kMaxLibraryGrabPoses = 48;
+        std::vector<LibraryGrabPose> _libraryGrabPoses;
+        std::size_t _libraryGrabPoseNext = 0;
         PullCatchIntent _pullCatchIntent{};
         ExtractedItemHandoff _extractedItemHandoff{};
 

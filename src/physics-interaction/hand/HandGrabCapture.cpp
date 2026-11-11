@@ -644,7 +644,8 @@ namespace rock
                  * the catch instead: the nearest front-facing mesh point to the
                  * palm line, on the object as it arrived.
                  */
-            if (!meshGrabFound && selection.grabbedFromPullCatch && !grabSurfaceTriangles.empty()) {
+            if (!meshGrabFound && (selection.grabbedFromPullCatch || selection.reachArrival) &&
+                !grabSurfaceTriangles.empty()) {
                 const RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(proxyAuthorityFrameWorldAtGrab, _isLeft);
                 if (findClosestGrabSurfaceHit(grabSurfaceTriangles, palmPocketPivotAWorld, palmDir,
                         g_rockConfig.rockGrabLateralWeight, g_rockConfig.rockGrabDirectionalWeight, grabSurfaceHit,

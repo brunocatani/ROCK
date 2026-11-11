@@ -4,15 +4,15 @@
 
 ### Fixed
 
-- No more phantom grabs. A close grab happens only when one of your fingers
-  touches the object's visible mesh; inside an object's collision but off its
-  mesh, nothing is grabbed, and keeping the grip held grabs the moment a finger
-  reaches the mesh. A grab refused that way lets that hand pass through the
-  object's collision, so you can reach in and grab the exact part you want;
-  the object collides with the hand again once you let go of the grip and pull
-  the hand out. Grabs never hold the collision instead of the mesh, and a
-  far pull flies the visible mesh to your palm rather than the collision's
-  centre.
+- No more phantom grabs. A close grab holds an object where your hand found it
+  only when one of your fingers touches its visible mesh. For guns, melee
+  weapons and an object your other hand holds, a grab inside the collision but
+  off the mesh waits: keeping the grip held grabs the moment a finger reaches
+  the mesh, and meanwhile that hand passes through the object's collision, so
+  you can reach in and grab the exact part you want; the object collides with
+  the hand again once you let go of the grip and pull the hand out. Grabs never
+  hold the collision instead of the mesh, and a far pull flies the visible mesh
+  to your palm rather than the collision's centre.
 - Held objects stay steady on slow frames: per-frame motion limits scale with
   frame time, so a low frame rate no longer drops or lags what you hold.
 - Pulled objects are caught even when they cross the hand between frames, and
@@ -150,6 +150,14 @@
   seat. Your own saved offsets still take priority, hand by hand.
 - A pulled object with a saved or built-in pose turns into that pose while it flies
   and arrives already in it, instead of turning at the last moment in your hand.
+- Objects without a pose of their own, such as items added by other mods, borrow
+  one: ROCK compares the object's shape with the objects that have an authored
+  pose and holds it the way the most similar ones are held, with the fingers
+  closed on its own mesh. Pulls of such objects fly into that pose too.
+- A close grab that touches nothing no longer does nothing: an ordinary object
+  near your hand comes the last bit to the hand and settles in its pose, like a
+  short pull. Touching an object first still holds it exactly where your hand
+  found it.
 - Grenades and Molotovs are always held in their grenade or Molotov pose, on every grab,
   close or pulled. A second hand grabbing a grenade you already hold grabs it freely.
 - Saved grab offsets record the grip you see: a save no longer includes the

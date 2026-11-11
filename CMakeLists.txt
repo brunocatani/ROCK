@@ -376,6 +376,16 @@ if(BUILD_ROCK_TESTS)
   target_link_libraries(ROCKBuiltInGrabOffsetsTests PRIVATE nlohmann_json::nlohmann_json)
   add_rock_test(ROCKBuiltInGrabOffsetsTests)
 
+  add_executable(ROCKGrabPoseLibraryTests
+    "${ROOT_DIR}/tests/GrabPoseLibraryTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/grab/GrabPoseLibraryData.cpp"
+  )
+  target_compile_features(ROCKGrabPoseLibraryTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKGrabPoseLibraryTests PRIVATE ${SOURCE_DIR})
+  target_compile_definitions(ROCKGrabPoseLibraryTests PRIVATE ROCK_TEST_FIXTURE_DIR="${ROOT_DIR}/tests/fixtures")
+  target_link_libraries(ROCKGrabPoseLibraryTests PRIVATE nlohmann_json::nlohmann_json)
+  add_rock_test(ROCKGrabPoseLibraryTests)
+
   add_executable(ROCKGrabInputIntentPolicyTests
     "${ROOT_DIR}/tests/GrabInputIntentPolicyTests.cpp"
   )

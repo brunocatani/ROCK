@@ -579,6 +579,10 @@ namespace rock
                 longAxis.reason, _pullPresentationAxisBodyLocal.x, _pullPresentationAxisBodyLocal.y,
                 _pullPresentationAxisBodyLocal.z);
         }
+        // An object without a pose of its own borrows one from the library, so
+        // it flies to a seat like an authored object.
+        prepareLibraryGrabPose(selectedRef, rootNode, pulledMeshTriangles,
+            _pulledBodyIds.size() <= 1 || carriedAmmoAssembly);
         capturePullSeat(world, rootNode, pulledMeshPointWorld);
 
         RE::NiPoint3 objectPointHavok{};

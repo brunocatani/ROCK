@@ -365,16 +365,24 @@ namespace rock
         const bool handPocketOnlyGrab = validatedSelection.handPocketOnlyGrab;
 
         /*
-         * A close grab commits only when a finger probe touches the visual
-         * mesh (GrabFingerProbePreview.h). Object collision often sits well off
-         * the visible surface, and grabbing from it held objects no finger was
-         * touching. ROCK-placed arrivals (pull catch, force grab, weapon
-         * transfers) move the mesh onto the palm themselves and
-         * are exempt. A refusal keeps retrying while the grip is held, so the
-         * grab lands the moment a finger reaches the mesh.
+         * A close grab holds the object where the hand found it only when a
+         * finger probe touches the visual mesh (GrabFingerProbePreview.h).
+         * Object collision often sits well off the visible surface, and
+         * grabbing from it held objects no finger was touching. ROCK-placed
+         * arrivals (pull catch, force grab, weapon transfers) move the mesh
+         * onto the palm themselves and are exempt.
+         *
+         * Without that contact an ordinary loose object is not refused: it
+         * comes the last units to the hand and seats like a pull that has just
+         * arrived (reachArrival), in its authored or library pose when it has
+         * one. Guns and melee keep their own grip zones, and an object the
+         * other hand holds is not pulled out of that hand: those are refused
+         * and retried while the grip is held, landing when a finger reaches
+         * the mesh.
          */
         const bool probeContactRequired = !sel.isFarSelection && !grabbedFromPullCatch && !sel.forcedArrival &&
             !sel.equippedWeaponTransfer && transferPose == nullptr;
+        bool reachArrival = false;
         if (probeContactRequired) {
             const auto probeContact = evaluateGrabProbeContact();
             const auto stateCode = [&](std::size_t finger) {
@@ -390,7 +398,17 @@ namespace rock
                     return '-';
                 }
             };
-            if (!probeContact.touching) {
+            reachArrival = !probeContact.touching && probeContact.triangleCount > 0 && !joiningPeerHeldObject &&
+                sel.targetKind == grab_target::Kind::LooseObject &&
+                saved_grab_offset::participatesInSavedGrabOffsets(looseWeaponGrab,
+                    isThrowableLooseWeapon(selectedLooseWeaponForm(sel)));
+            if (reachArrival) {
+                ROCK_LOG_DEBUG(Hand,
+                    "{} hand GRAB reach arrival: no finger probe touches the mesh, the object comes to the hand "
+                    "ref={:08X} fingers=T{}I{}M{}R{}P{} triangles={}",
+                    handName(), sel.refr ? sel.refr->GetFormID() : 0, stateCode(0), stateCode(1), stateCode(2),
+                    stateCode(3), stateCode(4), probeContact.triangleCount);
+            } else if (!probeContact.touching) {
                 // The hand may be stopped by collision that sits off the mesh;
                 // let it through this object until it reaches the mesh.
                 if (probeContact.triangleCount > 0) {
@@ -404,10 +422,16 @@ namespace rock
                     joiningPeerHeldObject ? "yes" : "no");
                 return GrabAttemptResult::ContactUnavailable;
             }
-            ROCK_LOG_DEBUG(Hand, "{} hand GRAB probe contact: ref={:08X} touching=0x{:02X} fingers=T{}I{}M{}R{}P{}",
-                handName(), sel.refr ? sel.refr->GetFormID() : 0, probeContact.fingerMask, stateCode(0),
-                stateCode(1), stateCode(2), stateCode(3), stateCode(4));
+            if (probeContact.touching) {
+                ROCK_LOG_DEBUG(Hand,
+                    "{} hand GRAB probe contact: ref={:08X} touching=0x{:02X} fingers=T{}I{}M{}R{}P{}", handName(),
+                    sel.refr ? sel.refr->GetFormID() : 0, probeContact.fingerMask, stateCode(0), stateCode(1),
+                    stateCode(2), stateCode(3), stateCode(4));
+            }
         }
+        validatedSelection.reachArrival = reachArrival;
+        // The seat treats a reach arrival as a pull that has just arrived.
+        const bool seatedArrival = grabbedFromPullCatch || reachArrival;
         saved_grab_offset::HandOffset savedGrabOffset{};
         bool hasSavedGrabOffset = false;
 
@@ -705,6 +729,14 @@ namespace rock
         extractGrabMeshEvidence(world, objectBodyId, rootNode, collidableNode, meshSourceNode, handPocketOnlyGrab,
             !authoredBodyOwnerVerified, meshExtraction);
         meshSourceNode = meshExtraction.meshSourceNode;
+        // A seated arrival of an object without a pose of its own borrows one
+        // from the library (a pull already solved it at its start).
+        if ((seatedArrival || sel.forcedArrival) && sel.targetKind == grab_target::Kind::LooseObject &&
+            !joiningPeerHeldObject) {
+            prepareLibraryGrabPose(sel.refr, rootNode, grabMeshTriangles,
+                preparedBodySet.acceptedCount() <= 1 ||
+                    count_based_ammo::resolve(sel.refr).variant != count_based_ammo::Variant::None);
+        }
         if (grab_target::requiresNativeBodyOwnership(sel.targetKind)) {
             const auto selectedComponent = ragdoll::readComponent(world, sel.bodyId.value);
             if (!selectedComponent.valid) {
@@ -942,7 +974,7 @@ namespace rock
             ? RuntimePinchPocketCandidate{}
             : buildRuntimePinchPocketCandidate(sel, preparedBodySet, objectBodyId.value, objectWorldTransform,
                   grabSurfaceTriangles, meshExtraction.queryIndex, grabLocalMeshTriangles, handWorldTransform, _isLeft,
-                  *this, !sel.isFarSelection && !grabbedFromPullCatch, handPocketOnlyGrab, looseWeaponGrab);
+                  *this, !sel.isFarSelection && !seatedArrival, handPocketOnlyGrab, looseWeaponGrab);
         if (pinchPocketCandidate.valid) {
             ROCK_LOG_DEBUG(Hand,
                 "{} hand PINCH POCKET candidate accepted: reason={} pocket=({:.1f},{:.1f},{:.1f}) "
@@ -958,7 +990,7 @@ namespace rock
                 pinchPocketCandidate.meshExtents.minExtentGameUnits,
                 pinchPocketCandidate.meshExtents.middleExtentGameUnits,
                 pinchPocketCandidate.meshExtents.maxExtentGameUnits);
-        } else if (!authoredSeatPrepared && !sel.isFarSelection && !grabbedFromPullCatch) {
+        } else if (!authoredSeatPrepared && !sel.isFarSelection && !seatedArrival) {
             // Why this close grab seats in the palm instead; the span against the
             // gap is the between-the-fingers test (grab_pinch_pocket_policy).
             ROCK_LOG_DEBUG(Hand, "{} hand PINCH POCKET candidate rejected: reason={} gap={:.2f}gu span={:.2f}gu dist={:.2f}gu",
@@ -1025,7 +1057,7 @@ namespace rock
                 .rootNode = rootNode,
                 .collidableNode = collidableNode,
                 .objectBodyId = objectBodyId,
-                .grabbedFromPullCatch = grabbedFromPullCatch,
+                .grabbedFromPullCatch = seatedArrival,
                 .looseWeaponGrab = looseWeaponGrab,
                 .joiningPeerHeldObject = joiningPeerHeldObject,
                 .transferPose = transferPose,
