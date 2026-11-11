@@ -158,6 +158,10 @@
   near your hand comes the last bit to the hand and settles in its pose, like a
   short pull. Touching an object first still holds it exactly where your hand
   found it.
+- Small objects such as a single cartridge can be pinched: an object between
+  your thumb and index finger counts as touched even when neither finger's
+  closing path meets it, and the two fingers bend onto it instead of closing
+  beside it.
 - Grenades and Molotovs are always held in their grenade or Molotov pose, on every grab,
   close or pulled. A second hand grabbing a grenade you already hold grabs it freely.
 - Saved grab offsets record the grip you see: a save no longer includes the

@@ -115,6 +115,129 @@ namespace rock
             }
         }
 
+        /*
+         * Pinch reach. A pinch leaves the object where the hand found it, so
+         * the fingers have to come to the object. The sweep and the pinch
+         * closure both move a finger along one arc (all three joints from one
+         * curl value); an object smaller than the fingers, such as a single
+         * cartridge, rarely lies on both arcs, and thumb and index closed on
+         * empty space beside it while it hung off the fingertip (log of a
+         * .38 round: thumb 1.6 gu and index 1.0 gu from the mesh).
+         *
+         * Thumb and index here bend their three joints separately: the pose
+         * whose tip end is nearest the mesh while no capsule of the finger
+         * enters it. The spread term keeps the joints near one another so the
+         * finger still reads as one curl. The result replaces the arc pose only
+         * when the tip ends up measurably nearer the mesh, or when the arc pose
+         * was inside it. Capture-time only.
+         */
+        struct PinchReach
+        {
+            float beforeGameUnits = -1.0f;
+            float afterGameUnits = -1.0f;
+            bool applied = false;
+        };
+
+        PinchReach reachPinchFinger(grab_finger_pose_runtime::SolvedGrabFingerPose& pose, std::size_t finger,
+            const grab_finger_capsule_sweep::FrikFingerRig& rig, const RE::NiTransform& handBone, float tipLength,
+            const grab_finger_pose_runtime::FingerPoseTriangleSpatialIndex& index, const RE::NiTransform& objectWorld,
+            const grab_finger_capsule_sweep::Options& options)
+        {
+            namespace sweep = grab_finger_capsule_sweep;
+            // A tip farther than this from the mesh is not pinching this object.
+            constexpr float kReachGameUnits = 8.0f;
+            constexpr float kSpreadCostGameUnits = 0.3f;
+            constexpr float kMinimumGainGameUnits = 0.15f;
+            constexpr int kSteps = 8;
+
+            PinchReach reach{};
+            grab_finger_pose_runtime::FingerPoseSpatialQueryStats stats{};
+            std::uint32_t sphereQueries = 0;
+            const float minimum = std::clamp(options.minValue, 0.0f, 1.0f);
+
+            const auto tipDistance = [&](const sweep::FingerChainPose& chain, float within, float& distance) {
+                RE::NiPoint3 nearest{};
+                if (!(within > 0.0f) ||
+                    !index.querySphereWorld(objectWorld, chain.joints[3], within, &nearest, nullptr, &stats)) {
+                    return false;
+                }
+                const RE::NiPoint3 delta = nearest - chain.joints[3];
+                distance = std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
+                return std::isfinite(distance);
+            };
+            const auto spread = [](const std::array<float, 3>& joints) {
+                return (std::max)({ joints[0], joints[1], joints[2] }) - (std::min)({ joints[0], joints[1], joints[2] });
+            };
+            const auto intersects = [&](const sweep::FingerChainPose& chain) {
+                return sweep::fingerIntersects(chain, index, objectWorld, options.radii, stats, sphereQueries);
+            };
+
+            std::array<float, 3> best = pose.hasJointValues
+                ? std::array<float, 3>{ pose.jointValues[finger * 3], pose.jointValues[finger * 3 + 1],
+                      pose.jointValues[finger * 3 + 2] }
+                : sweep::jointValuesForCurl(finger, pose.values[finger]);
+            const auto current = sweep::poseFinger(rig, handBone, finger, best, tipLength);
+            if (!tipDistance(current, kReachGameUnits, reach.beforeGameUnits)) {
+                return reach;
+            }
+            const bool currentInside = intersects(current);
+            float bestDistance = reach.beforeGameUnits;
+            float bestCost = currentInside ? kReachGameUnits * 2.0f
+                                           : reach.beforeGameUnits + kSpreadCostGameUnits * spread(best);
+            bool found = false;
+
+            const auto consider = [&](const std::array<float, 3>& joints) {
+                const float spreadCost = kSpreadCostGameUnits * spread(joints);
+                const auto chain = sweep::poseFinger(rig, handBone, finger, joints, tipLength);
+                float distance = 0.0f;
+                if (!tipDistance(chain, bestCost - spreadCost, distance) || distance + spreadCost >= bestCost ||
+                    intersects(chain)) {
+                    return;
+                }
+                best = joints;
+                bestDistance = distance;
+                bestCost = distance + spreadCost;
+                found = true;
+            };
+            const auto search = [&](const std::array<float, 3>& center, float halfRange) {
+                std::array<float, 3> joints{};
+                for (int a = 0; a <= kSteps; ++a) {
+                    joints[0] = std::clamp(center[0] + halfRange * (2.0f * a / kSteps - 1.0f), minimum, 1.0f);
+                    for (int b = 0; b <= kSteps; ++b) {
+                        joints[1] = std::clamp(center[1] + halfRange * (2.0f * b / kSteps - 1.0f), minimum, 1.0f);
+                        for (int c = 0; c <= kSteps; ++c) {
+                            joints[2] = std::clamp(center[2] + halfRange * (2.0f * c / kSteps - 1.0f), minimum, 1.0f);
+                            consider(joints);
+                        }
+                    }
+                }
+            };
+            const float middle = (1.0f + minimum) * 0.5f;
+            const float half = (1.0f - minimum) * 0.5f;
+            search({ middle, middle, middle }, half);
+            if (found) {
+                search(best, half / kSteps);
+            }
+
+            reach.afterGameUnits = bestDistance;
+            if (!found || (!currentInside && bestDistance > reach.beforeGameUnits - kMinimumGainGameUnits)) {
+                reach.afterGameUnits = reach.beforeGameUnits;
+                return reach;
+            }
+            for (std::size_t segment = 0; segment < 3; ++segment) {
+                pose.jointValues[finger * 3 + segment] = best[segment];
+            }
+            pose.hasJointValues = true;
+            pose.values[finger] = (best[0] + best[1] + best[2]) / 3.0f;
+            // On the surface: the tip capsule's own radius plus a sweep step's slack.
+            if (bestDistance <= options.radii.segment[2] + 0.35f && (pose.contactValidMask & (1u << finger)) == 0) {
+                pose.contactValidMask |= static_cast<std::uint8_t>(1u << finger);
+                ++pose.hitCount;
+            }
+            reach.applied = true;
+            return reach;
+        }
+
         bool rebaseFingerSkeletonSnapshot(root_flattened_finger_skeleton_runtime::Snapshot& snapshot,
             const RE::NiTransform& sourceHandWorld, const RE::NiTransform& targetHandWorld)
         {
@@ -630,6 +753,20 @@ namespace rock
         }
         if (pinchFingerPose && _grabFingerPose.solved) {
             applyPinchFingerPosePolicy(_grabFingerPose, _grabFrame);
+            const RE::NiTransform handBone =
+                grab_finger_capsule_sweep::resolveHandBoneWorld(frame.solveHandWorld, liveFingerSnapshot, rig);
+            const auto tipLengths = grab_finger_capsule_sweep::tipLengths(liveFingerSnapshot);
+            const auto thumb = reachPinchFinger(_grabFingerPose, 0, rig, handBone, tipLengths[0],
+                _grabFingerTriangleIndex, frame.objectWorld, options);
+            const auto index = reachPinchFinger(_grabFingerPose, 1, rig, handBone, tipLengths[1],
+                _grabFingerTriangleIndex, frame.objectWorld, options);
+            ROCK_LOG_INFO(Hand,
+                "{} PINCH REACH: thumb tip to mesh {:.2f} -> {:.2f}gu ({}) index {:.2f} -> {:.2f}gu ({}) "
+                "joints T=({:.2f},{:.2f},{:.2f}) I=({:.2f},{:.2f},{:.2f})",
+                handName(), thumb.beforeGameUnits, thumb.afterGameUnits, thumb.applied ? "reached" : "kept",
+                index.beforeGameUnits, index.afterGameUnits, index.applied ? "reached" : "kept",
+                _grabFingerPose.jointValues[0], _grabFingerPose.jointValues[1], _grabFingerPose.jointValues[2],
+                _grabFingerPose.jointValues[3], _grabFingerPose.jointValues[4], _grabFingerPose.jointValues[5]);
         }
 
         auto publishFingerPose = _grabFingerPose;

@@ -62,6 +62,10 @@ namespace rock::grab_finger_probe_preview
         std::uint32_t sphereCount = 0;
         std::uint32_t triangleCount = 0;
         bool meshCoversWholeObject = true;
+        // The mesh crosses the straight line between the live thumb and index
+        // tips: the object is between the pads even when neither finger's
+        // closing arc meets it (a cartridge, a coin).
+        bool meshBetweenThumbAndIndex = false;
         bool holding = false;
         bool valid = false;
     };

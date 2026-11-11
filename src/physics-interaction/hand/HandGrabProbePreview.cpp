@@ -394,6 +394,28 @@ namespace rock
             state.tipPathCount = static_cast<std::uint8_t>(preview::kTipPathPoints);
             state.valid = true;
         }
+        // The pinch line: spheres of the tip capsule's radius along the straight
+        // line between the live thumb and index tips, within the pinch's gap.
+        const auto& thumbChain = skeleton.fingers[0];
+        const auto& indexChain = skeleton.fingers[1];
+        if (thumbChain.valid && indexChain.valid) {
+            const auto tipEnd = [](const auto& chain) {
+                return chain.tipGeometryValid ? chain.points[2] + (chain.tipSegmentCenterWorld - chain.points[2]) * 2.0f
+                                              : chain.points[2];
+            };
+            const RE::NiPoint3 from = tipEnd(thumbChain);
+            const RE::NiPoint3 span = tipEnd(indexChain) - from;
+            const float gap = std::sqrt(span.x * span.x + span.y * span.y + span.z * span.z);
+            const float radius = options.radii.segment[2];
+            if (std::isfinite(gap) && gap > 0.0001f && gap <= g_rockConfig.rockGrabPinchMaxFingerGapGameUnits) {
+                const int samples = (std::max)(2, static_cast<int>(std::ceil(gap / radius)) + 1);
+                for (int i = 0; i < samples && !out.meshBetweenThumbAndIndex; ++i) {
+                    const RE::NiPoint3 center = from + span * (static_cast<float>(i) / static_cast<float>(samples - 1));
+                    out.meshBetweenThumbAndIndex =
+                        cache.index.querySphereWorld(objectWorld, center, radius, nullptr, nullptr);
+                }
+            }
+        }
         out.triangleCount = static_cast<std::uint32_t>(cache.index.triangleCount());
         out.meshCoversWholeObject = wholeMesh;
         out.labelAnchor = labelAnchorFor(skeleton, handWorld);
@@ -448,8 +470,16 @@ namespace rock
                 result.fingerMask |= static_cast<std::uint8_t>(1u << sphere.finger);
             }
         }
+        if (result.fingerMask != 0) {
+            result.reason = "meshContact";
+        } else if (probes.meshBetweenThumbAndIndex) {
+            // Thumb and index hold it between them without either arc meeting it.
+            result.fingerMask = 0x03;
+            result.reason = "meshBetweenThumbAndIndex";
+        } else {
+            result.reason = "noProbeTouchesMesh";
+        }
         result.touching = result.fingerMask != 0;
-        result.reason = result.touching ? "meshContact" : "noProbeTouchesMesh";
         return result;
     }
 
