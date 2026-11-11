@@ -715,6 +715,7 @@ namespace rock
         // from the library (a pull already solved it at its start).
         if ((seatedArrival || sel.forcedArrival) && sel.targetKind == grab_target::Kind::LooseObject &&
             !joiningPeerHeldObject) {
+            performance_profiler::ScopedTimer libraryTimer(performance_profiler::Scope::GrabLibraryPose);
             prepareLibraryGrabPose(sel.refr, rootNode, grabMeshTriangles,
                 preparedBodySet.acceptedCount() <= 1 ||
                     count_based_ammo::resolve(sel.refr).variant != count_based_ammo::Variant::None);

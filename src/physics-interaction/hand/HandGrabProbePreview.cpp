@@ -299,6 +299,7 @@ namespace rock
                 samePlacements(cache.placementScratch, cache.shapePlacements);
         }
         if (!reuse) {
+            performance_profiler::ScopedTimer meshReadTimer(performance_profiler::Scope::GrabProbeMeshRead);
             // Same sources the grab tries: the visual node, then the collision owner, then the root.
             std::vector<TriangleData> worldTriangles;
             MeshExtractionStats stats{};
@@ -377,6 +378,7 @@ namespace rock
 
         const bool wholeMesh =
             cache.localTriangles.size() <= grab_finger_pose_runtime::kMaxFingerPoseCandidateTriangles;
+        performance_profiler::ScopedTimer indexTimer(performance_profiler::Scope::GrabProbeIndex);
         if (wholeMesh) {
             if (!cache.indexCoversAll) {
                 cache.indexCoversAll = cache.index.buildFromLocalTriangles(cache.localTriangles);
@@ -391,10 +393,12 @@ namespace rock
                 cache.indexCenterLocal = handLocal;
             }
         }
+        indexTimer.stop();
         if (cache.index.empty()) {
             return false;
         }
 
+        performance_profiler::ScopedTimer solveTimer(performance_profiler::Scope::GrabProbeSolve);
         // The grab's own solve, with the hand where it is drawn and the object where it is.
         const auto tips = sweep::tipLengths(skeleton);
         const auto result = sweep::solve(rig, handBone, tips, cache.index, objectWorld, options);
@@ -472,6 +476,7 @@ namespace rock
 
     GrabProbeContact Hand::evaluateGrabProbeContact(const bool commitShare, const bool handPocketOnlyGrab)
     {
+        performance_profiler::ScopedTimer contactTimer(performance_profiler::Scope::GrabProbeContact);
         GrabProbeContact result{};
         preview::Snapshot probes{};
         if (!solveSelectedObjectProbes(probes, true, commitShare, handPocketOnlyGrab)) {

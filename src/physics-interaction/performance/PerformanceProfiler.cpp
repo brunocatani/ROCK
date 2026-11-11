@@ -376,6 +376,16 @@ namespace rock::performance_profiler
                 return "ragdollBodyRefresh";
             case Scope::GrabAuthoredPreparation:
                 return "grabAuthoredPreparation";
+            case Scope::GrabProbeContact:
+                return "grabProbeContact";
+            case Scope::GrabProbeMeshRead:
+                return "grabProbeMeshRead";
+            case Scope::GrabProbeIndex:
+                return "grabProbeIndex";
+            case Scope::GrabProbeSolve:
+                return "grabProbeSolve";
+            case Scope::GrabLibraryPose:
+                return "grabLibraryPose";
             case Scope::EquippedGripController:
                 return "equippedGripController";
             case Scope::EquippedGripScopeFrames:
