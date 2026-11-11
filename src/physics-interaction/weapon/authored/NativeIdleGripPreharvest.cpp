@@ -797,11 +797,15 @@ namespace rock::native_idle_grip_preharvest
             if (job.graphHolderConstructed) {
                 auto* holder = graphHolder(job);
                 if (holder && holder->animationGraphManager && !job.subgraphHandles.empty() && !job.subgraphReleased) {
+                    performance_profiler::ScopedTimer subgraphTimer(
+                        performance_profiler::Scope::HarvestSubgraphRelease);
                     state.native.releaseAnimationSubGraph(&holder->animationGraphManager, &job.subgraphHandles);
                 }
                 job.subgraphHandles.clear();
                 job.subgraphIdentifiers.clear();
+                performance_profiler::ScopedTimer destroyTimer(performance_profiler::Scope::HarvestHolderDestroy);
                 state.native.graphHolderDtor(job.graphHolderStorage.data());
+                destroyTimer.stop();
                 job.graphHolderConstructed = false;
             }
             job = {};
@@ -829,6 +833,25 @@ namespace rock::native_idle_grip_preharvest
                 return false;
             return (job.origin == CandidateOrigin::LooseReference && job.referenceFormId) ||
                 job.origin == CandidateOrigin::ConsumerWarm;
+        }
+
+        /*
+         * Whether the full subgraph load should keep running once the idle
+         * clip loads on its own. A loose gun's subgraph is only kept while a
+         * hand holds it. Left loading for a gun the player merely pointed at,
+         * it was released at the end of the job with the load in flight, and
+         * that native release held the frame 8 to 32 ms (the larger the
+         * weapon's animation set, the longer). A gun grabbed later gets its
+         * own warm-only load, as it always did.
+         */
+        [[nodiscard]] bool subgraphLoadStillWanted(const Runtime& state, const Job& job) noexcept
+        {
+            if (!keepsSubgraphWarm(job))
+                return false;
+            if (job.origin != CandidateOrigin::LooseReference)
+                return true;
+            return std::find(state.heldReferences.begin(), state.heldReferences.end(), job.referenceFormId) !=
+                state.heldReferences.end();
         }
 
         void retainHeldResources(Runtime& state)
@@ -2075,7 +2098,9 @@ namespace rock::native_idle_grip_preharvest
                 // The idle clip now loads on its own: stop the full subgraph
                 // load unless this weapon's subgraph is kept warm.
                 if (job.phase == Phase::IdleClipLoading && !job.subgraphReleased && !job.subgraphHandles.empty() &&
-                    !keepsSubgraphWarm(job)) {
+                    !subgraphLoadStillWanted(state, job)) {
+                    performance_profiler::ScopedTimer releaseTimer(
+                        performance_profiler::Scope::HarvestSubgraphRelease);
                     state.native.releaseAnimationSubGraph(&holder->animationGraphManager, &job.subgraphHandles);
                     job.subgraphReleased = true;
                 }

@@ -179,6 +179,8 @@ namespace rock::performance_profiler
         HarvestLoadPoll,
         HarvestJobRelease,
         HarvestWarmRelease,
+        HarvestSubgraphRelease,
+        HarvestHolderDestroy,
         Count
     };
 

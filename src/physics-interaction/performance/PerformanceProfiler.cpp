@@ -472,6 +472,10 @@ namespace rock::performance_profiler
                 return "harvestJobRelease";
             case Scope::HarvestWarmRelease:
                 return "harvestWarmRelease";
+            case Scope::HarvestSubgraphRelease:
+                return "harvestSubgraphRelease";
+            case Scope::HarvestHolderDestroy:
+                return "harvestHolderDestroy";
             case Scope::Count:
                 break;
             }
