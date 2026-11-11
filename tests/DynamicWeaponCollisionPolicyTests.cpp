@@ -259,10 +259,10 @@ int main()
             }
             ok &= matrix[ROCK_LAYER_DYNAMIC_WEAPON_PROXY] == buildRockDynamicWeaponProxyExpectedMask(npc, true);
             // Second weapon: weapon-on-weapon and world, never hands, body or itself.
-            // An admitted Biped or DeadBip obstacle belongs to the dynamic proxies alone.
+            // An admitted actor limb layer belongs to the dynamic proxies alone.
             ok &= matrix[ROCK_LAYER_SECONDARY_WEAPON] ==
                 (buildRockSecondaryWeaponExpectedMask(false, false) & ~(npc & kDynamicOnlyObstacleLayers));
-            for (const auto dynamicLayer : { FO4_LAYER_BIPED, FO4_LAYER_DEADBIP }) {
+            for (const auto dynamicLayer : { FO4_LAYER_BIPED, FO4_LAYER_DEADBIP, FO4_LAYER_BIPED_NO_CC }) {
                 const bool admitted = maskEnablesLayer(npc, dynamicLayer);
                 for (const auto keyframed : { ROCK_LAYER_HAND, ROCK_LAYER_WEAPON, ROCK_LAYER_SECONDARY_WEAPON })
                     ok &= layerPairSymmetricMatches(matrix.data(), keyframed, dynamicLayer, !admitted);

@@ -120,12 +120,16 @@ namespace rock::collision_layer_policy
     inline constexpr std::uint64_t kOptionalObstacleLayers = (std::uint64_t{ 1 } << FO4_LAYER_BIPED) |
         (std::uint64_t{ 1 } << FO4_LAYER_DEADBIP) | (std::uint64_t{ 1 } << FO4_LAYER_BIPED_NO_CC) |
         (std::uint64_t{ 1 } << ROCK_LAYER_PASSIVE_OBSTACLE);
-    // The obstacle layers whose bodies are dynamic: once an extension admits
-    // one, only the dynamic hand and weapon proxies touch it, with real mass.
-    // The keyframed hand and weapon rows drop it, because a keyframed body
-    // shoves a dynamic limb with infinite mass and throws a corpse.
-    inline constexpr std::uint64_t kDynamicOnlyObstacleLayers =
-        (std::uint64_t{ 1 } << FO4_LAYER_BIPED) | (std::uint64_t{ 1 } << FO4_LAYER_DEADBIP);
+    // The obstacle layers that carry dynamic actor limbs: once an extension
+    // admits one, only the dynamic hand and weapon proxies touch it, with real
+    // mass. The keyframed hand and weapon rows drop it, because a keyframed
+    // body shoves a dynamic limb with infinite mass and throws a corpse.
+    // BipedNoCC (33) is among them: the engine puts some ragdolls an extension
+    // drives there (all 18 limbs of a driven actor, seen in game), beside the
+    // keyframed native limbs, which lose nothing: a keyframed limb is not
+    // moved by a keyframed tool, and the proxies still stop against it.
+    inline constexpr std::uint64_t kDynamicOnlyObstacleLayers = (std::uint64_t{ 1 } << FO4_LAYER_BIPED) |
+        (std::uint64_t{ 1 } << FO4_LAYER_DEADBIP) | (std::uint64_t{ 1 } << FO4_LAYER_BIPED_NO_CC);
 
     inline constexpr std::uint32_t FO4_LAYER_VANILLA_CONFIGURED_COUNT = 47;
     inline constexpr std::uint32_t FO4_LAYER_MATRIX_ADDRESSABLE_COUNT = 64;
@@ -664,8 +668,8 @@ namespace rock::collision_layer_policy
          * row and body row to be normalized together instead of depending on a
          * later standalone body-policy call to repair symmetry.
          */
-        // A Biped or DeadBip obstacle means dynamic actor limbs (active ragdolls,
-        // corpses): only the dynamic proxies may touch them, with real mass.
+        // A Biped, DeadBip or BipedNoCC obstacle means dynamic actor limbs (active
+        // ragdolls, corpses): only the dynamic proxies may touch them, with real mass.
         // The keyframed hand and weapon rows drop those layers then, since a
         // keyframed body would shove the limbs with infinite mass.
         const auto keyframedExclusions = extensionObstacleLayers & kDynamicOnlyObstacleLayers;

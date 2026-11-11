@@ -89,10 +89,12 @@ layers ROCK's dynamic hand and weapon bodies collide with, as a layer bit mask:
 8 (Biped), 32 (DeadBip), 33 (BipedNoCC) and `kPassiveObstacleLayer` (55). Any
 other bit returns `InvalidArgument`. The masks of all extensions combine.
 
-Bodies on 8 and 32 are dynamic (active ragdolls and corpses). Once one of those
-layers is admitted, ROCK's keyframed hand and weapon bodies stop touching it, so
-those limbs are pushed only by the dynamic bodies, with real mass, and never
-shoved with a keyframed body's infinite mass. A dynamic hand's contact with a
+Bodies on 8 and 32 are dynamic (active ragdolls and corpses), and the engine
+also puts some driven ragdolls on 33, beside an actor's keyframed native limbs.
+Once one of these three layers is admitted, ROCK's keyframed hand and weapon
+bodies stop touching it, so dynamic limbs are pushed only by the dynamic bodies,
+with real mass, and never shoved with a keyframed body's infinite mass. A
+keyframed limb on 33 still stops the dynamic bodies. A dynamic hand's contact with a
 corpse also counts as a touch for touch grabs, as the keyframed hand's did.
 
 Extension bodies on `kPassiveObstacleLayer` should use collision group
