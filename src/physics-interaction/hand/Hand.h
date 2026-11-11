@@ -629,6 +629,12 @@ namespace rock
         void prepareLibraryGrabPose(RE::TESObjectREFR* refr, RE::NiAVObject* rootNode,
             const std::vector<TriangleData>& worldTriangles, bool rigidObject);
         bool findLibraryGrabPose(RE::TESObjectREFR* refr, saved_grab_offset::HandOffset& out) const;
+        // Runs the selected object's solve ahead of the grab, a little per frame.
+        void prewarmLibraryGrabPose();
+        bool libraryGrabPoseKnown(std::uint32_t baseFormId, float scale, std::uint8_t ammoVariant) const;
+        bool startLibraryGrabPoseJob(RE::TESObjectREFR* refr, const RE::NiTransform& objectFrameWorld,
+            std::uint8_t ammoVariant, const std::vector<TriangleData>& worldTriangles);
+        void finishLibraryGrabPoseJob(float grabFrameMilliseconds);
         // Whether a saved, provider or built-in pose exists for this hand.
         bool hasOwnAuthoredGrabOffset(RE::TESObjectREFR* refr) const;
         void finishPullPrepAsPhysicalDropIfActive(const char* context);
@@ -1547,6 +1553,12 @@ namespace rock
         static constexpr std::size_t kMaxLibraryGrabPoses = 48;
         std::vector<LibraryGrabPose> _libraryGrabPoses;
         std::size_t _libraryGrabPoseNext = 0;
+        // The solve in progress or finished and waiting for its grab
+        // (HandGrabPoseLibrary.cpp). Holds no engine pointers.
+        struct LibraryGrabPoseJob;
+        std::shared_ptr<LibraryGrabPoseJob> _libraryGrabPoseJob;
+        // The selected reference the prewarm last looked at; compared, never dereferenced.
+        const RE::TESObjectREFR* _libraryPrewarmRef = nullptr;
         PullCatchIntent _pullCatchIntent{};
         ExtractedItemHandoff _extractedItemHandoff{};
 

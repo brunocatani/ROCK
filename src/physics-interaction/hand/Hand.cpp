@@ -558,6 +558,7 @@ namespace rock
             clearGrabAcquisitionCache("selection-invalid");
             return;
         }
+        prewarmLibraryGrabPose();
         if (!grab_target::canUseRockActiveGrab(_currentSelection.targetKind) &&
             !grab_target::canUseRockDynamicPull(_currentSelection.targetKind)) {
             clearGrabAcquisitionCache("target-kind-not-physical");
