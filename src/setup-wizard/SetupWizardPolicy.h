@@ -88,6 +88,13 @@ namespace rock::setup_wizard_policy
                     "Hold grab to lock on, flick your hand toward you, and keep holding while it flies in. Let go "
                     "before it arrives to cancel." },
             } } },
+        Option{ 0, "Grabbing", "FarGrabDirection", "Aiming a far grab",
+            { {
+                { "0", "Palm (HIGGS style)",
+                    "Aim with your open palm: the object your palm faces is the one you pull." },
+                { "90", "Fingers (Alyx style)",
+                    "Aim with your fingers: the object your fingers point at is the one you pull." },
+            } } },
         Option{ 0, "SelectionFeedback", "HighlightEnabled", "Highlight what you can grab",
             { {
                 { "true", "On", "The object your hand would grab gets an outline." },
