@@ -109,6 +109,8 @@ If a file has a syntax error, ROCK writes the file name, line and column to `ROC
 
 ROCK 1.0 publishes **provider API 2.0**: 13 interfaces your F4SE plugin discovers at runtime from `ROCK.dll`. The headers are in [include/ROCK/](include/ROCK/); take them from the release tag you ship against. They need only the C++20 standard library, and there is nothing to link.
 
+**Updating a mod built for ROCK 0.92?** [docs/api/Migration.md](docs/api/Migration.md) maps every provider API 1 call, record and flag to its replacement. Coding agents can follow the [rock-1.0-migration skill](skills/rock-1.0-migration/SKILL.md), which also covers PAPER, RPS UI Framework and RobCo PALM.
+
 ### Set up
 
 Point a CMake cache variable at ROCK's `include` directory:

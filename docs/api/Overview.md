@@ -5,7 +5,8 @@ self-contained (C++ standard library only) and are the only copy: there is no
 SDK, and the release archive does not carry them. Take them from the release
 tag you ship against. This page covers what every
 interface shares: discovery, the `Client` helper, records, statuses, threads,
-generations and weapon slots. Each interface has its own page.
+generations and weapon slots. Each interface has its own page. A mod built for
+ROCK 0.92 (provider API 1) is updated with [Migration](Migration.md).
 
 ## Interfaces
 

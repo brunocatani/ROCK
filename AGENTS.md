@@ -9,6 +9,7 @@ ROCK is a Fallout 4 VR F4SE plugin (`ROCK.dll`) that gives the player physical h
 - ROCK publishes provider API 2.0: 13 interfaces whose headers are in `include/ROCK/`. They include only the C++ standard library; nothing links against ROCK.
 - Add ROCK's `include/` directory through a CMake cache variable such as `ROCK_INCLUDE_DIR`, include `<ROCK/...>`, resolve `ROCKAPI_QueryInterfaceV1` from the loaded `ROCK.dll`, and connect with `rock::api::Client`. Never include headers from `src/` or copy ROCK's headers into the consumer.
 - Read `docs/api/Overview.md` first, then the page of each interface you use. The pages state each function's thread, permission and limits.
+- Updating a mod built for ROCK 0.92 (provider API 1, the RPS SDK): follow `skills/rock-1.0-migration/SKILL.md`, which covers ROCK, PAPER, RPS UI Framework and RobCo PALM together. `docs/api/Migration.md` maps every provider API 1 call, record and flag to its replacement.
 - When ROCK is absent, the consumer turns its ROCK features off and keeps running. A version mismatch never runs silently: ROCK names a consumer built for another provider API in an error box at the main menu and closes the game when the box is closed. A consumer that finds a loaded ROCK without the API it was built for does the same; RPS Framework's `RPS/Runtime/RequiredUpdate.h` provides the box.
 - Request exactly the major, minor and table size your headers declare (`rock::api::Client` does). Never probe for optional versions with trial queries: every version refusal stops the game.
 
@@ -23,7 +24,8 @@ ROCK is a Fallout 4 VR F4SE plugin (`ROCK.dll`) that gives the player physical h
 | `src/rock_support/` | Logging, runtime helpers, menu tracking and controller input |
 | `src/setup-wizard/` | The setup wizard: an RPS UI panel for the function bindings and the main options |
 | `include/ROCK/` | Public provider API headers, the only copy |
-| `docs/api/` | One page per provider interface |
+| `docs/api/` | One page per provider interface, and `Migration.md` for mods built for ROCK 0.92 |
+| `skills/rock-1.0-migration/` | Agent skill for updating a mod built for ROCK 0.92 and its providers |
 | `data/config/` | Example TOML settings files, generated from the catalog |
 | `data/mod/` | Game data shipped in the mod package, when there is any (absent today) |
 | `steamvr_bindings/` | SteamVR binding templates for non-Quest controllers, shipped in release packages; the Index and Vive ones are also embedded in `ROCK.dll` (`cmake/steamvr_bindings.rc.in`) for the setup wizard |
