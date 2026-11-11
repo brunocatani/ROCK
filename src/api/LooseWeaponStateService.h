@@ -18,5 +18,13 @@ namespace rock::loose_weapon_state
     std::size_t references(std::span<std::uint32_t> output);
     bool owns(std::uint32_t reference);
     bool apply(RE::TESObjectREFR*, RE::NiAVObject*);
+    /*
+     * A weapon ROCK drops keeps the part poses consumers were driving in the
+     * hand (an open bolt, a locked slide). Frame thread. Visual only: such a
+     * state never claims the reference's collision (owns and references skip
+     * it), is bound to that exact reference, and gives way to a consumer's
+     * setItemState for the same item. It lasts until the reference is gone.
+     */
+    void carry(RE::TESObjectREFR* reference, const contract::ItemState& state);
     void restoreWithdrawn(); // interaction thread, before collision restoration
 }

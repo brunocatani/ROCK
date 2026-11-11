@@ -186,7 +186,7 @@ names it in `EquipResult.outgoingFormId`; it never drops the other hand's
 weapon. ROCK's firing-grip handoff zone is a quarter sector beside and below
 the grip; set `HandlingFeature::FiringGripCylinderZone` in your handling
 request to keep the 0.92 cylinders. New: `unequipWeapon`, `getFiringAimWorld`,
-`setWarmInventoryWeapons`, `requestInventoryDraw`, `setAutomaticReloadBlocked`,
+`setWarmInventoryWeapons`, `requestInventoryDraw`, `setInventoryDrawPose`, `setAutomaticReloadBlocked`,
 `setChamberMarker`, `getInteractionKey`, `isEquipPickup`.
 
 ### WeaponParts (7)

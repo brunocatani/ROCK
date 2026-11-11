@@ -665,8 +665,23 @@ namespace rock
          * the aim pose (weapon) and the tracked hand, and both ease into the
          * seat with one alpha over the equipped-weapon return timing, instead
          * of snapping. Expires unused after kDrawPresentationArmFrames.
+         *
+         * A consumer whose stand-in is not at the aim yet (still on its way
+         * from a holster) reports where it shows it each frame (Weapon
+         * setInventoryDrawPose). The blend then starts from the latest fresh
+         * report, kept as an offset from the hand's aim so it travels with the
+         * hand, and lasts long enough for that distance.
          */
-        void armDrawPresentationBlend(std::uint32_t weaponFormId, bool isLeft);
+        enum class DrawPoseReport : std::uint8_t
+        {
+            Accepted,
+            NotPending,
+            AimUnavailable,
+        };
+        void armDrawPresentationBlend(std::uint32_t weaponFormId, bool isLeft, std::uint64_t owner,
+            std::uint64_t commandId);
+        DrawPoseReport reportDrawPresentationPose(std::uint64_t owner, std::uint64_t commandId,
+            const RE::NiTransform& weaponWorld);
         bool resolveDrawPresentationBlend(std::uint32_t weaponFormId, bool isLeft,
             const RE::NiTransform& aimWeaponWorld, const RE::NiTransform& trackedHandWorld,
             RE::NiTransform& inOutWeaponWorld, RE::NiTransform& inOutHandWorld);
@@ -2239,6 +2254,15 @@ namespace rock
             bool isLeft{ false };
             bool armed{ false };
             bool active{ false };
+            // The consumer's pending draw, and where it last showed the
+            // weapon: an offset from the hand's firing aim (scale 1).
+            std::uint64_t owner{ 0 };
+            std::uint64_t commandId{ 0 };
+            std::uint64_t reportedFrame{ 0 };
+            RE::NiTransform reportedInAim{};
+            bool reported{ false };
+            // Latched when the blend starts: it starts from the report.
+            bool fromReport{ false };
         };
 
         DrawPresentationBlend _drawPresentation{};

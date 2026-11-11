@@ -358,6 +358,10 @@ namespace rock
         // presentedAtFiringAim: Weapon requestInventoryDraw.
         api::Status requestProviderInventoryEquip(api::OwnerToken owner, const api::weapon::EquipRequest& request,
             std::uint64_t& command, bool presentedAtFiringAim = false);
+        // Weapon setInventoryDrawPose: where the consumer shows the weapon of
+        // its pending draw this frame.
+        api::Status setProviderInventoryDrawPose(api::OwnerToken owner, std::uint64_t command,
+            const api::Transform& weaponWorld);
         api::Status getProviderInventoryEquipResult(api::OwnerToken owner, std::uint64_t command,
             api::weapon::EquipResult& output) const;
         api::Status cancelProviderInventoryEquip(api::OwnerToken owner, std::uint64_t command);
@@ -600,6 +604,11 @@ namespace rock
         // provider extracting the weapon for storage places it still.
         bool dropEquippedWeaponToWorld(const PhysicsFrameContext& frame, const EquippedWeaponManualDropRequest& request,
             equipped_weapon_drop_policy::Mode mode, bool leavesWithHandMotion);
+        // The slot-0 parts consumers drive this frame (an open bolt), by their
+        // path below the weapon node, for the reference the weapon becomes
+        // when it is dropped (loose_weapon_state::carry). Null with none.
+        std::unique_ptr<api::weaponparts::ItemState> captureDrivenWeaponPartState(
+            const RE::NiNode* weaponNode) const;
         bool retireHandsFreeWeapon(const PhysicsFrameContext& frame, RE::NiNode* weaponNode);
         bool retireEquippedWeaponInPlace(const PhysicsFrameContext& frame, RE::NiNode* weaponNode, const char* reason);
         void updateEquippedWeaponDropVisuals(const PhysicsFrameContext& frame);

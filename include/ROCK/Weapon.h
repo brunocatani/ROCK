@@ -572,6 +572,9 @@ namespace rock::api::weapon {
         Chambered = 2,
     };
     inline constexpr std::uint32_t kMaxChamberMarkerLeaseFrames = 4;
+    // setInventoryDrawPose: how old a reported pose may be when ROCK reveals
+    // the weapon.
+    inline constexpr std::uint32_t kMaxDrawPoseAgeFrames = 3;
 
     // Permission bits are local to this interface major. Discovery grants none.
     enum class Permission : std::uint32_t { Read = 1, Write = 2 };
@@ -653,8 +656,9 @@ namespace rock::api::weapon {
         // the hand at getFiringAimWorld until ROCK reveals it (a holster
         // draw): when ROCK seats the firearm in that hand, the weapon
         // continues from that pose and the hand from its tracked pose, and
-        // both ease into the grip instead of snapping. Results as
-        // requestInventoryEquip.
+        // both ease into the grip instead of snapping. A consumer whose
+        // stand-in is elsewhere reports it with setInventoryDrawPose. Results
+        // as requestInventoryEquip.
         Status(ROCK_CALL* requestInventoryDraw)(OwnerToken owner, const EquipRequest* request, std::uint64_t* outCommandId) noexcept;
         // Write. While an owner holds the block (blocked nonzero), an empty
         // slot-1 weapon dry-fires on its trigger instead of starting a reload;
@@ -675,6 +679,16 @@ namespace rock::api::weapon {
         // the generation key when they arrive. On that change source keys stay valid
         // and what you registered follows; name the new key from then on.
         Status(ROCK_CALL* getInteractionKey)(OwnerToken owner, std::uint32_t weaponSlot, std::uint64_t* outKey) noexcept;
+        // Write. For the owner's requestInventoryDraw command whose firearm
+        // ROCK has not revealed yet: where the consumer shows the weapon this
+        // frame (world units; scale is ignored). Send it every frame while the
+        // stand-in is shown. The reveal then continues from the latest pose
+        // sent within the last kMaxDrawPoseAgeFrames frames, carried with the
+        // hand, instead of from the firing aim, so a stand-in still on its way
+        // from a holster hands over without a jump. RequestNotFound once ROCK
+        // has revealed the weapon, for melee and for any other command;
+        // TargetUnavailable while the hand's controller frame is unknown.
+        Status(ROCK_CALL* setInventoryDrawPose)(OwnerToken owner, std::uint64_t commandId, const Transform* weaponWorld) noexcept;
     };
 }
 #pragma pack(pop)

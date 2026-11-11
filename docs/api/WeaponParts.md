@@ -113,6 +113,15 @@ removes it. `clearItemStates` removes the owner's states. States persist
 until removed or the owner is lost; serialize your own and republish after a
 load. Calls may come from native serialization callbacks.
 
+Without any item state, a slot-0 weapon ROCK drops (a hand letting go, Toggle
+Drop, Storage `extractEquipped`) keeps the poses its drives held that frame: the
+dropped reference's model shows each driven source where the drive had it, so a
+bolt a consumer holds open stays open on the ground. This is visual only and
+needs nothing from the consumer: the reference keeps its native collision, the
+poses last until the reference is picked up or deleted, are not saved with the
+game, and your own `setItemState` for that reference replaces them. A bone the
+weapon's own animation is moving is not kept, only driven sources.
+
 ## Sample (any thread)
 
 `getSample` returns the publication identity. Withdrawn part targets or

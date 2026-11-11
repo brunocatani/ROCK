@@ -180,6 +180,18 @@ weapon continues from that aim pose and the hand from its tracked pose, and
 both ease into the grip together instead of snapping. Results and polling are
 those of `requestInventoryEquip`.
 
+`setInventoryDrawPose(owner, commandId, weaponWorld)` is for a stand-in that is
+not at the aim yet, for example one still easing out of a holster. Send where
+you show the weapon (world units; scale is ignored) every frame while the
+stand-in is visible. When ROCK reveals the firearm it continues from the latest
+pose sent within the last `kMaxDrawPoseAgeFrames` frames instead of from the
+aim. The pose is kept as an offset from the hand's firing aim, so it travels
+with the hand, and the ease lasts long enough for that distance. Without a
+fresh pose the reveal starts from the aim as before. It returns
+`RequestNotFound` once ROCK has revealed the weapon (stop sending and hide the
+stand-in), for a melee weapon and for a command that is not the owner's pending
+draw, and `TargetUnavailable` while the hand's controller frame is unknown.
+
 ## Records
 
 | Record | Used by | Fields |

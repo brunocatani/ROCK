@@ -5,6 +5,7 @@
 // from the hand that carries it; the second weapon takes the primary's place
 // when the primary leaves; and provider storage extracts an equipped weapon.
 // The bipod's hands-free weapon is retired here too.
+#include "api/LooseWeaponStateService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/native/havok/PhysicsScale.h"
@@ -141,6 +142,55 @@ namespace rock
         return false;
     }
 
+    std::unique_ptr<api::weaponparts::ItemState> PhysicsInteraction::captureDrivenWeaponPartState(
+        const RE::NiNode* weaponNode) const
+    {
+        if (!weaponNode)
+            return nullptr;
+        // Only what a consumer holds on purpose: a bone its graph is animating
+        // would freeze the dropped weapon in the middle of a clip.
+        std::unique_ptr<api::weaponparts::ItemState> result;
+        for (const auto& driven : _providerDrives.nodeStates) {
+            if (!driven.node || !driven.activeThisFrame)
+                continue;
+            if (result && result->count >= api::weaponparts::kMaxItemParts)
+                break;
+            std::array<const RE::NiAVObject*, 64> chain{};
+            std::size_t depth = 0;
+            const RE::NiAVObject* current = driven.node;
+            while (current && current != weaponNode && depth < chain.size()) {
+                chain[depth++] = current;
+                current = current->parent;
+            }
+            if (current != weaponNode || depth == 0)
+                continue;
+            api::weaponparts::ItemPart part{};
+            std::size_t length = 0;
+            bool named = true;
+            for (std::size_t i = depth; i-- > 0;) {
+                const char* name = chain[i]->name.c_str();
+                const std::size_t nameLength = name ? std::strlen(name) : 0;
+                if (!nameLength || std::memchr(name, '/', nameLength) ||
+                    length + nameLength + 2 > sizeof(part.path)) {
+                    named = false;
+                    break;
+                }
+                if (length)
+                    part.path[length++] = '/';
+                std::memcpy(part.path + length, name, nameLength);
+                length += nameLength;
+            }
+            if (!named || !finiteNiTransform(driven.drivenLocal))
+                continue;
+            fillProviderTransform(driven.drivenLocal, part.local);
+            part.hidden = driven.node->GetAppCulled() ? 1u : 0u;
+            if (!result)
+                result = std::make_unique<api::weaponparts::ItemState>();
+            result->parts[result->count++] = part;
+        }
+        return result;
+    }
+
     bool PhysicsInteraction::dropEquippedWeaponToWorld(const PhysicsFrameContext& frame,
         const EquippedWeaponManualDropRequest& request, equipped_weapon_drop_policy::Mode mode,
         bool leavesWithHandMotion)
@@ -230,6 +280,8 @@ namespace rock
                     leavesWithHandMotion && mode == equipped_weapon_drop_policy::Mode::AutoDrop && !lodge.valid
                     ? transferHand.composeCarriedWeaponThrow(releaseGeometry.leverGameUnits)
                     : Hand::CarriedWeaponThrow{};
+                // Read while the weapon is still equipped: the drop retires its nodes.
+                const auto drivenParts = captureDrivenWeaponPartState(resolveEquippedWeaponInteractionNode());
                 _twoHandedGrip.prepareEquippedWeaponDropCommit();
                 armTransitionSeamTrace("first-drop");
                 const auto dropResult =
@@ -261,6 +313,11 @@ namespace rock
                      * handoff takes ownership.
                      */
                     _weaponCollision.destroyWeaponBody(hknp);
+                }
+                if (dropCommitted && dropResult.handle && drivenParts) {
+                    // The loose weapon shows the action as it was in the hand.
+                    if (const auto dropped = dropResult.handle.get())
+                        loose_weapon_state::carry(dropped.get(), *drivenParts);
                 }
                 if (dropCommitted && dropResult.handle) {
                     _forceGrab.pendingCommits[transferHandIndex] = PendingForceGrabCommit{

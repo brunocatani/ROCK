@@ -68,6 +68,11 @@
 
 ### Added
 
+- **A dropped gun keeps its action.** A bolt or slide another mod holds open
+  (PAPER's empty-gun hold) stays open on the weapon after you drop it.
+- **Holster draws travel into the hand.** A mod that shows a stand-in weapon
+  during a draw (VirtualHolsters) can tell ROCK where it is, and the real
+  weapon continues from there into the grip (`Weapon::setInventoryDrawPose`).
 - **Function bindings** (`[Bindings]`): each action (grab, fire, use, reload,
   scope, VATS, grenade, Pip-Boy, Pause, bipod and Favorites, PALM) takes any
   button with a press, tap, hold or double tap, optionally while another button

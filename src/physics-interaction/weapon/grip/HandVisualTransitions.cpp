@@ -3,6 +3,8 @@
 // application, and FRIK primary pose blocking.
 #include "physics-interaction/weapon/grip/TwoHandedGripInternal.h"
 
+#include <ROCK/Weapon.h>
+
 namespace rock
 {
     void TwoHandedGrip::publishPhysicalRightNativeWeaponIntent(RE::NiNode* weaponNode,
@@ -469,7 +471,8 @@ namespace rock
         constexpr std::uint64_t kDrawPresentationArmFrames = 120;
     }
 
-    void TwoHandedGrip::armDrawPresentationBlend(const std::uint32_t weaponFormId, const bool isLeft)
+    void TwoHandedGrip::armDrawPresentationBlend(const std::uint32_t weaponFormId, const bool isLeft,
+        const std::uint64_t owner, const std::uint64_t commandId)
     {
         _drawPresentation = {};
         if (!weaponFormId)
@@ -477,7 +480,35 @@ namespace rock
         _drawPresentation.weaponFormId = weaponFormId;
         _drawPresentation.isLeft = isLeft;
         _drawPresentation.armedFrame = runtime_state::currentFrame().frameIndex;
+        _drawPresentation.owner = owner;
+        _drawPresentation.commandId = commandId;
         _drawPresentation.armed = true;
+    }
+
+    TwoHandedGrip::DrawPoseReport TwoHandedGrip::reportDrawPresentationPose(const std::uint64_t owner,
+        const std::uint64_t commandId, const RE::NiTransform& weaponWorld)
+    {
+        auto& state = _drawPresentation;
+        // Only until the reveal: from then on the weapon on screen is ROCK's.
+        if (!state.armed || !commandId || state.owner != owner || state.commandId != commandId)
+            return DrawPoseReport::NotPending;
+        RE::NiTransform aim{};
+        const bool aimKnown =
+            state.isLeft ? tryGetLeftWeaponAimWorld(1.0f, aim) : tryGetRightWeaponAimWorld(1.0f, aim);
+        if (!aimKnown || !isFiniteTransform(aim))
+            return DrawPoseReport::AimUnavailable;
+        // Rigid on both sides: the aim carries no model scale and the
+        // revealed weapon keeps its own.
+        RE::NiTransform shown = weaponWorld;
+        shown.scale = 1.0f;
+        aim.scale = 1.0f;
+        const auto inAim = transform_math::composeTransforms(transform_math::invertTransform(aim), shown);
+        if (!isFiniteTransform(inAim))
+            return DrawPoseReport::AimUnavailable;
+        state.reportedInAim = inAim;
+        state.reportedFrame = runtime_state::currentFrame().frameIndex;
+        state.reported = true;
+        return DrawPoseReport::Accepted;
     }
 
     bool TwoHandedGrip::resolveDrawPresentationBlend(const std::uint32_t weaponFormId, const bool isLeft,
@@ -498,20 +529,39 @@ namespace rock
             state = {};
             return false;
         }
+        // Where the weapon was on screen before the reveal: the consumer's
+        // reported pose carried with the hand's aim, otherwise the aim itself.
+        const auto startWeaponWorld = [&]() {
+            if (!state.fromReport)
+                return aimWeaponWorld;
+            RE::NiTransform aim = aimWeaponWorld;
+            aim.scale = 1.0f;
+            auto start = transform_math::composeTransforms(aim, state.reportedInAim);
+            start.scale = inOutWeaponWorld.scale;
+            return isFiniteTransform(start) ? start : aimWeaponWorld;
+        };
         if (state.armed) {
             state.armed = false;
             state.active = true;
             state.elapsedSeconds = 0.0f;
+            state.fromReport = state.reported &&
+                frame.frameIndex <= state.reportedFrame + api::weapon::kMaxDrawPoseAgeFrames;
+            const auto start = startWeaponWorld();
             state.durationSeconds = hand_visual_lerp_math::computeVisualReturnDuration(trackedHandWorld, inOutHandWorld,
                 hand_visual_lerp_math::kEquippedWeaponReturnConfig);
-            ROCK_LOG_DEBUG(Weapon,
-                "Draw presentation blend started form={:08X} side={} hand={:.2f}gu/{:.1f}deg weapon={:.2f}gu "
-                "duration={:.3f}s",
-                weaponFormId, isLeft ? "left" : "right",
+            if (state.fromReport) {
+                state.durationSeconds = (std::max)(state.durationSeconds,
+                    hand_visual_lerp_math::computeVisualReturnDuration(start, inOutWeaponWorld,
+                        hand_visual_lerp_math::kEquippedWeaponReturnConfig));
+            }
+            ROCK_LOG_INFO(Weapon,
+                "Draw presentation blend started form={:08X} side={} from={} hand={:.2f}gu/{:.1f}deg "
+                "weapon={:.2f}gu/{:.1f}deg duration={:.3f}s",
+                weaponFormId, isLeft ? "left" : "right", state.fromReport ? "consumer-pose" : "aim",
                 hand_visual_lerp_math::distanceGameUnits(trackedHandWorld.translate, inOutHandWorld.translate),
                 hand_visual_lerp_math::rotationDistanceDegrees(trackedHandWorld, inOutHandWorld),
-                hand_visual_lerp_math::distanceGameUnits(aimWeaponWorld.translate, inOutWeaponWorld.translate),
-                state.durationSeconds);
+                hand_visual_lerp_math::distanceGameUnits(start.translate, inOutWeaponWorld.translate),
+                hand_visual_lerp_math::rotationDistanceDegrees(start, inOutWeaponWorld), state.durationSeconds);
             if (state.durationSeconds <= 0.0f) {
                 state = {};
                 return false;
@@ -522,7 +572,7 @@ namespace rock
         }
         const float linear = hand_visual_lerp_math::timedBlendAlpha(state.elapsedSeconds, state.durationSeconds);
         const float eased = linear * linear * (3.0f - 2.0f * linear);
-        inOutWeaponWorld = hand_visual_lerp_math::interpolateTransform(aimWeaponWorld, inOutWeaponWorld, eased);
+        inOutWeaponWorld = hand_visual_lerp_math::interpolateTransform(startWeaponWorld(), inOutWeaponWorld, eased);
         inOutHandWorld = hand_visual_lerp_math::interpolateTransform(trackedHandWorld, inOutHandWorld, eased);
         if (linear >= 1.0f) {
             ROCK_LOG_DEBUG(Weapon, "Draw presentation blend completed form={:08X}", weaponFormId);

@@ -159,6 +159,14 @@ namespace rock::provider::runtime
         return api::Status::RequestQueued;
     }
 
+    unsigned drawPoses = 0;
+
+    api::Status setInventoryDrawPose(std::uint64_t, std::uint64_t command, const api::Transform&)
+    {
+        ++drawPoses;
+        return command == 11 ? api::Status::Ok : api::Status::RequestNotFound;
+    }
+
     unsigned warmSets = 0;
 
     api::Status setWarmInventoryWeapons(std::uint64_t, const api::weapon::InventoryWeapon*, std::uint32_t count)
@@ -281,6 +289,14 @@ int main()
     draw.version = 1;
     assert(api.requestInventoryDraw(testOwner, &draw, &drawCommand) == Status::RequestQueued && drawCommand == 11 &&
         rock::provider::runtime::drawRequests == 1);
+    // The stand-in's pose names the owner's pending draw.
+    const rock::api::Transform drawPose{};
+    assert(api.setInventoryDrawPose(testOwner, 0, &drawPose) == Status::InvalidArgument);
+    assert(api.setInventoryDrawPose(testOwner, drawCommand, nullptr) == Status::InvalidArgument &&
+        rock::provider::runtime::drawPoses == 0);
+    assert(api.setInventoryDrawPose(testOwner, drawCommand, &drawPose) == Status::Ok);
+    assert(api.setInventoryDrawPose(testOwner, drawCommand + 1, &drawPose) == Status::RequestNotFound &&
+        rock::provider::runtime::drawPoses == 2);
 
     // Permissions are Weapon's own.
     permissions = 1;

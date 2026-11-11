@@ -111,7 +111,8 @@ namespace rock
         // for the consumer to show.
         auto* incoming = RE::TESForm::GetFormByID<RE::TESObjectWEAP>(current.baseFormId);
         if (presentedAtFiringAim && incoming && incoming->weaponData.type == RE::WEAPON_TYPE::kGun) {
-            _twoHandedGrip.armDrawPresentationBlend(current.baseFormId, request.hand == api::Hand::Left);
+            _twoHandedGrip.armDrawPresentationBlend(current.baseFormId, request.hand == api::Hand::Left, owner,
+                command);
         }
         pending.result = { .commandId = command,
             .state = State::Queued,
@@ -121,6 +122,22 @@ namespace rock
             .skeletonGeneration = current.skeletonGeneration,
             .providerGeneration = current.providerGeneration };
         return api::Status::RequestQueued;
+    }
+
+    api::Status PhysicsInteraction::setProviderInventoryDrawPose(api::OwnerToken owner, std::uint64_t command,
+        const api::Transform& weaponWorld)
+    {
+        const auto world = providerTransformToNi(weaponWorld);
+        if (!command || !finiteNiTransform(world))
+            return api::Status::InvalidArgument;
+        switch (_twoHandedGrip.reportDrawPresentationPose(owner, command, world)) {
+        case TwoHandedGrip::DrawPoseReport::Accepted:
+            return api::Status::Ok;
+        case TwoHandedGrip::DrawPoseReport::AimUnavailable:
+            return api::Status::TargetUnavailable;
+        default:
+            return api::Status::RequestNotFound;
+        }
     }
 
     api::Status PhysicsInteraction::getProviderInventoryEquipResult(api::OwnerToken owner, std::uint64_t command,

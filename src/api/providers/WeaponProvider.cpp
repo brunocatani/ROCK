@@ -283,6 +283,17 @@ namespace rock::api::weapon
                 p::OwnerAccess::Active);
         }
 
+        Status ROCK_CALL setInventoryDrawPose(OwnerToken owner, std::uint64_t commandId,
+            const Transform* weaponWorld) noexcept
+        {
+            if (!commandId || !weaponWorld)
+                return Status::InvalidArgument;
+            return invoke(
+                owner, kInterfaceId, 2, true,
+                [&] { return p::runtime::setInventoryDrawPose(owner, commandId, *weaponWorld); },
+                p::OwnerAccess::Active);
+        }
+
         Status ROCK_CALL setWarmInventoryWeapons(OwnerToken owner, const InventoryWeapon* items,
             std::uint32_t count) noexcept
         {
@@ -326,6 +337,7 @@ namespace rock::api::weapon
             &setAutomaticReloadBlocked,
             &setChamberMarker,
             &getInteractionKey,
+            &setInventoryDrawPose,
         };
         return value;
     }

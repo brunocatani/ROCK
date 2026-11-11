@@ -76,6 +76,7 @@ namespace rock::provider::runtime
         std::uint32_t count);
     api::Status requestInventoryDraw(std::uint64_t owner, const api::weapon::EquipRequest& request,
         std::uint64_t& command);
+    api::Status setInventoryDrawPose(std::uint64_t owner, std::uint64_t command, const api::Transform& weaponWorld);
     std::uint64_t currentGameFrameIndex(); // Atomic game clock, including pre-publication lifecycle events.
     const char* getModVersion();
     bool isProviderReady();

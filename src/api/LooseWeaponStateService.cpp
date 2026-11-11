@@ -26,7 +26,16 @@ namespace rock::loose_weapon_state
             RE::NiPointer<RE::NiAVObject> model;
             bool retiring{}, pending{ true };
             std::uintptr_t failedModel{};
+            // ROCK's own carried state (see carry): bound to one reference by
+            // its handle, since a dropped reference's form ID is reused.
+            bool carried{};
+            RE::ObjectRefHandle handle{};
+            std::uint64_t sequence{};
         };
+
+        // No consumer holds this token: discovery never issues it.
+        constexpr api::OwnerToken kCarriedOwner = ~api::OwnerToken{ 0 };
+        std::uint64_t carriedSequence{};
 
         // Value-only descriptions; native model callbacks never retain engine
         // pointers or call back into a consumer. Registry mutations are bounded.
@@ -195,12 +204,15 @@ namespace rock::loose_weapon_state
         std::scoped_lock lock(mutex);
         auto found =
             std::find_if(entries.begin(), entries.end(), [&](const auto& e) { return e.owner && e.key == key; });
-        if (found != entries.end() && found->owner != owner)
+        if (found != entries.end() && found->owner != owner && !found->carried)
             return api::Status::NotReady;
         if (found == entries.end())
             found = std::find_if(entries.begin(), entries.end(), [](const auto& e) { return !e.owner && !e.retiring; });
         if (found == entries.end())
             return api::Status::CapacityFull;
+        // A consumer's state replaces ROCK's carried one for the same item.
+        found->carried = false;
+        found->handle = {};
         found->owner = owner;
         found->key = key;
         found->state = state;
@@ -251,16 +263,62 @@ namespace rock::loose_weapon_state
         // A native dummy root can precede its attachment assembly. A missing path
         // is a diagnostic witness, not a permanent rejection of that root pointer.
         for (const auto& e : entries)
-            if (e.owner && !e.key.unique && count < output.size())
+            if (e.owner && !e.carried && !e.key.unique && count < output.size())
                 output[count++] = e.key.owner;
         return count;
+    }
+
+    void carry(RE::TESObjectREFR* reference, const contract::ItemState& state)
+    {
+        if (!original || !reference || !reference->GetObjectReference() || !valid(state))
+            return;
+        const contract::ItemKey key{ reference->GetObjectReference()->GetFormID(), reference->GetFormID(), 0 };
+        {
+            std::scoped_lock lock(mutex);
+            // Dropped weapons that were picked up or deleted since.
+            for (auto& e : entries)
+                if (e.carried && !e.handle.get())
+                    e = {};
+            auto found =
+                std::find_if(entries.begin(), entries.end(), [&](const auto& e) { return e.owner && e.key == key; });
+            if (found != entries.end() && !found->carried)
+                return;
+            if (found == entries.end())
+                found = std::find_if(entries.begin(), entries.end(),
+                    [](const auto& e) { return !e.owner && !e.retiring; });
+            if (found == entries.end()) {
+                // Full of consumer and carried states: the oldest carried one gives way.
+                for (auto candidate = entries.begin(); candidate != entries.end(); ++candidate)
+                    if (candidate->carried && (found == entries.end() || candidate->sequence < found->sequence))
+                        found = candidate;
+            }
+            if (found == entries.end()) {
+                ROCK_LOG_WARN(Weapon, "Dropped weapon part poses not carried ref={:08X}: the item state table is full",
+                    reference->GetFormID());
+                return;
+            }
+            *found = {};
+            found->owner = kCarriedOwner;
+            found->key = key;
+            found->state = state;
+            found->carried = true;
+            found->handle = reference->GetHandle();
+            found->sequence = ++carriedSequence;
+        }
+        ROCK_LOG_INFO(Weapon, "Dropped weapon carries driven part poses ref={:08X} weapon={:08X} parts={} first='{}'",
+            reference->GetFormID(), key.weapon, state.count, state.parts[0].path);
+        // A model that already exists never passes through Set3D again.
+        if (auto* model = reference->Get3D())
+            apply(reference, model);
     }
 
     bool owns(std::uint32_t reference)
     {
         std::scoped_lock lock(mutex);
         return std::any_of(entries.begin(), entries.end(),
-            [&](const auto& e) { return e.owner && !e.failedModel && !e.key.unique && e.key.owner == reference; });
+            [&](const auto& e) {
+                return e.owner && !e.carried && !e.failedModel && !e.key.unique && e.key.owner == reference;
+            });
     }
 
     bool apply(RE::TESObjectREFR* ref, RE::NiAVObject* model)
@@ -273,6 +331,11 @@ namespace rock::loose_weapon_state
             std::find_if(entries.begin(), entries.end(), [&](const auto& e) { return e.owner && e.key == key; });
         if (found == entries.end())
             return false;
+        // Another reference now has the dropped weapon's form ID.
+        if (found->carried && found->handle != ref->GetHandle()) {
+            *found = {};
+            return false;
+        }
         if (found->model.get() == model && !found->pending && !found->failedModel)
             return true;
         auto* root = weaponRoot(model);
