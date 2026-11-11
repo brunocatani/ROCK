@@ -12,9 +12,6 @@ namespace rock::ammo_counters
     {
         using rpsui::api::Result;
 
-        // About one attempt per second at 90 Hz while RPS UI is absent or not ready.
-        constexpr std::uint32_t kBindRetryCalls = 90;
-
         struct Overlay
         {
             const char* id;
@@ -36,12 +33,13 @@ namespace rock::ammo_counters
         const rpsui::api::number_overlay::Api* g_numbers{ nullptr };
         std::uint64_t g_owner{ 0 };
         bool g_bound{ false };
-        std::uint32_t g_retryCountdown{ 0 };
+        rps_ui::BindGate g_bindGate;
         bool g_absentReported{ false };
         Result g_reported{ Result::Ok };
 
         void report(const char* step, Result result) noexcept
         {
+            g_bindGate.refused();
             if (result == g_reported)
                 return;
             g_reported = result;
@@ -53,22 +51,26 @@ namespace rock::ammo_counters
         {
             if (g_bound)
                 return true;
-            if (g_retryCountdown > 0) {
-                --g_retryCountdown;
-                return false;
-            }
-            g_retryCountdown = kBindRetryCalls;
-            const auto query = rps_ui::query();
-            if (!g_base)
-                (void)rpsui::api::acquire(query, g_base);
-            if (!g_numbers && g_base)
-                (void)rpsui::api::acquire(query, g_numbers);
-            if (!g_base || !g_numbers) {
+            const auto reportUnavailable = []() noexcept {
                 if (!g_absentReported) {
                     g_absentReported = true;
                     ROCK_LOG_INFO(Weapon,
                         "Ammo counters: RPS UI number overlays unavailable; the vanilla counter stays");
                 }
+            };
+            const auto query = g_bindGate.due();
+            if (!query) {
+                if (g_bindGate.absent())
+                    reportUnavailable();
+                return false;
+            }
+            if (!g_base)
+                (void)rpsui::api::acquire(query, g_base);
+            if (!g_numbers && g_base)
+                (void)rpsui::api::acquire(query, g_numbers);
+            if (!g_base || !g_numbers) {
+                g_bindGate.refused();
+                reportUnavailable();
                 return false;
             }
             if (!g_base->isFrameworkReady())

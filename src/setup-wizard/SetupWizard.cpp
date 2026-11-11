@@ -45,8 +45,6 @@ namespace rock::setup_wizard
         constexpr float kPhysicalWidth = 96.0f;
         constexpr float kOpenDistance = 85.0f;
         constexpr float kOpenDrop = 12.0f;
-        // About one attempt per second at 90 Hz while RPS UI is absent.
-        constexpr std::uint32_t kBindRetryCalls = 90;
         // The five buttons RPS UI can capture: B/Y, grip, A/X, stick click, trigger.
         constexpr std::uint64_t kCaptureButtons = (1ull << 1) | (1ull << 2) | (1ull << 7) | (1ull << 32) | (1ull << 33);
 
@@ -255,7 +253,7 @@ namespace rock::setup_wizard
             std::uint64_t owner{ 0 };
             std::uint64_t panel{ 0 };
             std::uint64_t presentationSequence{ 1 };
-            std::uint32_t retry{ 0 };
+            rps_ui::BindGate bindGate;
             bool absentReported{ false };
             std::atomic<const rpsui::api::input::Api*> input{ nullptr };
             std::atomic<std::uint64_t> inputToken{ 0 };
@@ -1021,15 +1019,12 @@ namespace rock::setup_wizard
         bool bind(State& s)
         {
             if (s.framework && s.panel) return true;
-            if (s.retry > 0) {
-                --s.retry;
-                return false;
-            }
-            s.retry = kBindRetryCalls;
-            const auto query = rps_ui::query();
+            const auto query = s.bindGate.due();
+            if (!query && !s.bindGate.absent()) return false;
             const fw::Api* framework{};
             const rpsui::api::input::Api* input{};
             if (rpsui::api::acquire(query, framework) != Result::Ok || rpsui::api::acquire(query, input) != Result::Ok) {
+                if (query) s.bindGate.refused();
                 if (!s.absentReported) {
                     s.absentReported = true;
                     ROCK_LOG_INFO(Config, "Setup wizard unavailable: RPS UI Framework 2.0 is not loaded");
@@ -1041,7 +1036,10 @@ namespace rock::setup_wizard
                 std::snprintf(consumer.consumerId, sizeof(consumer.consumerId), "%s", "rock.setup");
                 std::snprintf(consumer.displayName, sizeof(consumer.displayName), "%s", "ROCK Setup");
                 fw::ConsumerHandle handle{};
-                if (framework->registerConsumer(&consumer, &handle) != Result::Ok || !handle.ownerToken) return false;
+                if (framework->registerConsumer(&consumer, &handle) != Result::Ok || !handle.ownerToken) {
+                    s.bindGate.refused();
+                    return false;
+                }
                 s.owner = handle.ownerToken;
             }
             fw::PanelRegistration panel{};
@@ -1062,6 +1060,7 @@ namespace rock::setup_wizard
             if (registered != Result::Ok || !s.panel) {
                 ROCK_LOG_WARN(Config, "Setup wizard panel refused by RPS UI ({})", static_cast<std::uint32_t>(registered));
                 s.panel = 0;
+                s.bindGate.refused();
                 return false;
             }
             s.input.store(input, std::memory_order_release);

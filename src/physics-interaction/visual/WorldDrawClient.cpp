@@ -14,14 +14,11 @@ namespace rock::world_draw_client
     {
         using rpsui::api::Result;
 
-        // About one attempt per second at 90 Hz while RPS UI is absent.
-        constexpr std::uint32_t kBindRetryCalls = 90;
-
         std::mutex g_bindMutex;
         std::atomic<const rpsui::api::world_draw::Api*> g_api{ nullptr };
         std::atomic<std::uint64_t> g_owner{ 0 };
         std::atomic<FrameHandler> g_handler{ nullptr };
-        std::uint32_t g_retryCountdown{ 0 }; // Guarded by g_bindMutex.
+        rps_ui::BindGate g_bindGate; // Guarded by g_bindMutex.
         bool g_absentReported{ false }; // Guarded by g_bindMutex.
         bool g_refusalReported{ false }; // Guarded by g_bindMutex.
 
@@ -33,6 +30,7 @@ namespace rock::world_draw_client
 
         void reportRefusal(const char* step, Result result) noexcept
         {
+            g_bindGate.refused();
             if (g_refusalReported)
                 return;
             g_refusalReported = true;
@@ -48,26 +46,23 @@ namespace rock::world_draw_client
         std::scoped_lock lock(g_bindMutex);
         if (g_api.load(std::memory_order_acquire))
             return true;
-        if (g_retryCountdown > 0) {
-            --g_retryCountdown;
+        const auto query = g_bindGate.due();
+        if (!query) {
+            if (g_bindGate.absent() && !g_absentReported) {
+                g_absentReported = true;
+                ROCK_LOG_INFO(Hand, "RPS UI Framework is not loaded; ROCK indicators and debug drawing stay hidden");
+            }
             return false;
         }
-        g_retryCountdown = kBindRetryCalls;
-
-        const auto query = rps_ui::query();
         const rpsui::api::framework::Api* registry{};
         const rpsui::api::world_draw::Api* draw{};
         if (rpsui::api::acquire(query, registry) != Result::Ok || rpsui::api::acquire(query, draw) != Result::Ok) {
+            g_bindGate.refused();
             if (!g_absentReported) {
                 g_absentReported = true;
-                if (query) {
-                    ROCK_LOG_WARN(Hand,
-                        "RPS UI Framework does not offer world drawing 2.0; ROCK indicators and debug drawing stay "
-                        "hidden");
-                } else {
-                    ROCK_LOG_INFO(Hand,
-                        "RPS UI Framework is not loaded; ROCK indicators and debug drawing stay hidden until it is");
-                }
+                ROCK_LOG_WARN(Hand,
+                    "RPS UI Framework does not offer world drawing 2.0; ROCK indicators and debug drawing stay "
+                    "hidden");
             }
             return false;
         }
