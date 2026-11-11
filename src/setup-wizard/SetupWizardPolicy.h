@@ -128,11 +128,12 @@ namespace rock::setup_wizard_policy
                 { "3", "Steady", "Steadier aim; follows your hands a little later." },
                 { "4", "Heavy", "The steadiest aim; follows your hands the slowest." },
             } } },
-        Option{ 2, "WeaponHandling", "GunstockMode", "Aiming with two hands",
+        Option{ 2, "WeaponHandling", "GunstockMode", "Gunstock mode",
             { {
-                { "true", "Like a rifle stock",
-                    "Two-handed guns aim along the line from your shooting hand to your support hand." },
-                { "false", "Normal", "ROCK's normal two-handed aiming." },
+                { "true", "VR gunstock",
+                    "For controllers in a VR gunstock: two-handed guns aim along the line from your shooting hand to "
+                    "your support hand." },
+                { "false", "Regular controllers", "For controllers in your hands: ROCK's normal two-handed aiming." },
             } } },
         Option{ 2, "WeaponRecoil", "ImmersiveRecoil", "Recoil",
             { {
