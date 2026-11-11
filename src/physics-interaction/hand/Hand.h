@@ -1538,6 +1538,9 @@ namespace rock
         {
             std::uint32_t baseFormId = 0;
             float scale = 1.0f;
+            // Count-based ammo shows a single round or a pile for the same
+            // form (count_based_ammo::Variant): different meshes, different poses.
+            std::uint8_t ammoVariant = 0;
             bool found = false;
             saved_grab_offset::HandOffset offset{};
         };

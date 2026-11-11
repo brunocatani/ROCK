@@ -137,10 +137,6 @@ int main()
         check(found.size() >= 4 && found.front().signatureDistance < 1e-6 && found.front().rank == 0 &&
                 found[3].heading == 3,
             "candidates do not start with the nearest exemplar's four headings");
-        for (auto& feature : shape.features) {
-            feature = 1000.0;
-        }
-        check(candidates(shape, {}, false).empty(), "a mesh unlike every exemplar still got candidates");
     }
 
     if (failures) {

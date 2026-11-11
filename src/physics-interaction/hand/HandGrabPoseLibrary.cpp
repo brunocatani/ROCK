@@ -11,6 +11,7 @@
 #include "physics-interaction/grab/GrabPoseLibrary.h"
 #include "physics-interaction/grab/MeshGrab.h"
 #include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/object/CountBasedAmmo.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 
 #include <algorithm>
@@ -93,8 +94,10 @@ namespace rock
         if (!baseForm || !root) {
             return false;
         }
+        const auto ammoVariant = static_cast<std::uint8_t>(count_based_ammo::resolve(refr).variant);
         for (const auto& entry : _libraryGrabPoses) {
-            if (entry.baseFormId == baseForm->GetFormID() && std::abs(entry.scale - root->world.scale) < 0.001f) {
+            if (entry.baseFormId == baseForm->GetFormID() && entry.ammoVariant == ammoVariant &&
+                std::abs(entry.scale - root->world.scale) < 0.001f) {
                 if (entry.found) {
                     out = entry.offset;
                 }
@@ -121,8 +124,10 @@ namespace rock
         }
         const std::uint32_t baseFormId = baseForm->GetFormID();
         const float rootScale = rootNode->world.scale;
+        const auto ammoVariant = static_cast<std::uint8_t>(count_based_ammo::resolve(refr).variant);
         for (const auto& entry : _libraryGrabPoses) {
-            if (entry.baseFormId == baseFormId && std::abs(entry.scale - rootScale) < 0.001f) {
+            if (entry.baseFormId == baseFormId && entry.ammoVariant == ammoVariant &&
+                std::abs(entry.scale - rootScale) < 0.001f) {
                 return;
             }
         }
@@ -147,6 +152,7 @@ namespace rock
         LibraryGrabPose solved{};
         solved.baseFormId = baseFormId;
         solved.scale = rootScale;
+        solved.ammoVariant = ammoVariant;
         const auto remember = [&]() {
             if (_libraryGrabPoses.size() < kMaxLibraryGrabPoses) {
                 _libraryGrabPoses.push_back(solved);
@@ -186,8 +192,9 @@ namespace rock
         const auto samples = library::sampleSurface(gameTriangles, 1.0);
         const auto candidates = library::candidates(shape, samples, _isLeft);
         if (candidates.empty()) {
-            ROCK_LOG_INFO(Hand, "{} hand library grab pose: none for '{}' {:08X}, no authored object is shaped like it",
-                handName(), objectName, baseFormId);
+            ROCK_LOG_INFO(Hand, "{} hand library grab pose: none for '{}' {:08X}, its mesh has no measurable shape "
+                                "(triangles={})",
+                handName(), objectName, baseFormId, worldTriangles.size());
             remember();
             return;
         }

@@ -52,8 +52,6 @@ namespace rock::grab_pose_library
     inline constexpr double kMaxRestShiftGameUnits = 6.0;
     // Fraction of an extent within which a vertex counts as lying on a dividing plane.
     inline constexpr double kEdgeMargin = 1e-4;
-    // Beyond this signature distance no authored object is like the mesh.
-    inline constexpr double kMaxSignatureDistance = 2.0;
 
     struct Exemplar
     {
@@ -361,8 +359,10 @@ namespace rock::grab_pose_library
 
     /*
      * The poses to try for a mesh, best signature match first: the nearest
-     * exemplars of that hand, each at its four headings. Empty when no authored
-     * object is like the mesh.
+     * exemplars of that hand, each at its four headings. There is no distance
+     * cutoff: the signature distance did not predict how well a pose transfers
+     * (leave-one-out over the authored set), and a cutoff left objects smaller
+     * than anything authored, such as a single cartridge, without a pose.
      */
     inline std::vector<Candidate> candidates(const Shape& shape, std::span<const Vec3> samples, bool left,
         std::size_t nearestCount = 8)
@@ -385,9 +385,6 @@ namespace rock::grab_pose_library
         const std::size_t keep = (std::min)(nearestCount, order.size());
         std::partial_sort(order.begin(), order.begin() + static_cast<std::ptrdiff_t>(keep), order.end());
         for (std::size_t rank = 0; rank < keep; ++rank) {
-            if (order[rank].first > kMaxSignatureDistance) {
-                break;
-            }
             const auto& exemplar = table[order[rank].second];
             for (std::uint32_t heading = 0; heading < 4; ++heading) {
                 out.push_back(Candidate{ &exemplar, static_cast<std::uint32_t>(rank), heading, order[rank].first,
