@@ -203,7 +203,12 @@ slot at or above `kMaxWeaponSlots` returns `InvalidArgument`.
 
 | Serves both slots | Slot 0 only (slot 1 returns `TargetUnavailable`) |
 | --- | --- |
-| Weapon `getWeaponState`, `getGrip`, `copyEmitters`, `unequipWeapon`; Hands `getRoles`; Grab hand state flags; Collision `getEnvironment`; NativeInteraction weapon driving | Weapon classification, composition, authored grip and scope sight; every WeaponParts call; Input reload gesture and support trigger; Grab hand reservation and a held object's connected weapon; Collision ejection clearance; Animation `Weapon` authority |
+| Weapon `getWeaponState`, `getGrip`, `getClassification`, `copyEmitters`, `getInteractionKey`, `setChamberMarker`, `unequipWeapon`; WeaponParts `copyEvidenceDetails`, `copySources`, `querySourcePose`, `setDriveTargets`, `clearDriveTargets`; Hands `getRoles`; Grab hand state flags; Collision `getEnvironment`; NativeInteraction weapon driving | Weapon composition, authored grip and scope sight; every other WeaponParts call; Input reload gesture and support trigger; Grab hand reservation and a held object's connected weapon; Collision ejection clearance; Animation `Weapon` authority |
+
+Weapon `setAutomaticReloadBlocked` takes no slot: it stops the automatic
+reload ROCK starts for slot 1 (see [Weapon](Weapon.md)). On slot 1, WeaponParts
+drives act only on bones the weapon's own graph writes (`TargetInvalid`
+otherwise).
 
 ## Transform helpers (`TransformMath.h`)
 
