@@ -2,6 +2,7 @@
 #include "setup-wizard/SetupWizardPolicy.h"
 #include "setup-wizard/SteamVrBindingPolicy.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <fstream>
 #include <map>
@@ -66,6 +67,21 @@ namespace
             if (shipped == defaults.end() || !option.find(shipped->second))
                 std::printf("default of %s is not a choice\n", name.c_str());
             expect("the default is a choice", shipped != defaults.end() && option.find(shipped->second));
+
+            // A fixing option comes earlier on the same page (the page applies the rule while
+            // drawing), both values are choices, and the defaults already obey the rule.
+            const auto& fixed = option.fixedWhen;
+            if (fixed.key.empty()) continue;
+            const auto fixingAt = std::ranges::find_if(wizard::kOptions, [&](const auto& o) { return o.key == fixed.key; });
+            expect("the fixing option is in the wizard", fixingAt != wizard::kOptions.end());
+            if (fixingAt == wizard::kOptions.end()) continue;
+            const auto* fixing = &*fixingAt;
+            expect("the fixing option comes first on the same page", fixing < &option && fixing->page == option.page);
+            expect("the fixing value is a choice", fixing->find(fixed.value) != nullptr);
+            expect("the fixed value is a choice", option.find(fixed.fixed) != nullptr);
+            const auto fixingDefault = defaults.find(std::string(fixing->section) + "." + std::string(fixing->key));
+            expect("the defaults obey the rule", fixingDefault != defaults.end() &&
+                (fixingDefault->second != fixed.value || (shipped != defaults.end() && shipped->second == fixed.fixed)));
         }
         for (std::size_t page = 0; page < wizard::kPages.size(); ++page) {
             bool used = false;

@@ -1,11 +1,13 @@
-// Weapon equip mode (WeaponHandling.WeaponEquipMode): how a loose weapon equips and what the
-// last grip release does, plus the drop and shoulder-stash decisions it implies.
+// How a loose weapon equips (WeaponHandling.AutoEquip) and what the last grip release does
+// (WeaponHandling.WeaponReleaseMode), plus the drop and shoulder-stash decisions they imply.
 #pragma once
 
 #include <cstdint>
 
 namespace rock::equipped_weapon_drop_policy
 {
+    // WeaponHandling.WeaponReleaseMode takes these values: 1 keeps the weapon equipped,
+    // 2 leaves it loose in the hand, 3 drops it.
     enum class Mode : std::uint8_t
     {
         Off = 1,
@@ -13,32 +15,26 @@ namespace rock::equipped_weapon_drop_policy
         AutoDrop = 3,
     };
 
-    /*
-     * WeaponHandling.WeaponEquipMode joins how a loose weapon equips with what the last
-     * grip release does, so no contradictory pair can be configured. Auto
-     * Equip re-equips any weapon held at its firing grip: a Toggle Drop would
-     * undo itself and a retained grip could never be released, so mode 4
-     * always drops and replaces trigger equip.
-     *   1 = trigger equip, no drop    2 = trigger equip, Toggle Drop
-     *   3 = trigger equip, Auto Drop  4 = Auto Equip (Auto Drop)
-     */
-    inline constexpr int kFirstEquipMode = 1;
-    inline constexpr int kAutoEquipMode = 4;
+    inline constexpr int kFirstReleaseMode = 1;
+    inline constexpr int kLastReleaseMode = 3;
 
-    [[nodiscard]] inline constexpr Mode fromEquipMode(int value) noexcept
+    /*
+     * What the last release does. Auto Equip re-equips any weapon held at its firing grip:
+     * a Toggle Drop would undo itself and a kept grip could never be released, so with Auto
+     * Equip on the release always drops, whatever WeaponReleaseMode says.
+     */
+    [[nodiscard]] inline constexpr Mode releaseMode(bool autoEquip, int release) noexcept
     {
-        switch (value) {
+        if (autoEquip) return Mode::AutoDrop;
+        switch (release) {
         case 2:
             return Mode::ToggleDrop;
         case 3:
-        case kAutoEquipMode:
             return Mode::AutoDrop;
         default:
             return Mode::Off;
         }
     }
-
-    [[nodiscard]] inline constexpr bool autoEquipFromEquipMode(int value) noexcept { return value == kAutoEquipMode; }
 
     enum class SourceHand : std::uint8_t
     {

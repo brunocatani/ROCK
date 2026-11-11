@@ -463,13 +463,18 @@ namespace rock
             rockDefaultTwoHandRecoilPercent, 80.0f, 0.0f, 300.0f);
 
         rockDetachEitherHand = ini.boolean("WeaponHandling", "DetachEitherHand", rockDetachEitherHand);
-        rockWeaponEquipMode =
-            static_cast<int>(ini.integer("WeaponHandling", "WeaponEquipMode", rockWeaponEquipMode));
-        if (rockWeaponEquipMode < equipped_weapon_drop_policy::kFirstEquipMode ||
-            rockWeaponEquipMode > equipped_weapon_drop_policy::kAutoEquipMode) {
-            ROCK_LOG_WARN(Config, "Invalid WeaponHandling.WeaponEquipMode={} -- using 4", rockWeaponEquipMode);
-            rockWeaponEquipMode = 4;
+        rockAutoEquip = ini.boolean("WeaponHandling", "AutoEquip", rockAutoEquip);
+        rockWeaponReleaseMode =
+            static_cast<int>(ini.integer("WeaponHandling", "WeaponReleaseMode", rockWeaponReleaseMode));
+        if (rockWeaponReleaseMode < equipped_weapon_drop_policy::kFirstReleaseMode ||
+            rockWeaponReleaseMode > equipped_weapon_drop_policy::kLastReleaseMode) {
+            ROCK_LOG_WARN(Config, "Invalid WeaponHandling.WeaponReleaseMode={} -- using 3", rockWeaponReleaseMode);
+            rockWeaponReleaseMode = 3;
         }
+        if (rockAutoEquip && rockWeaponReleaseMode != equipped_weapon_drop_policy::kLastReleaseMode)
+            ROCK_LOG_INFO(Config, "WeaponHandling.WeaponReleaseMode={} applies only with AutoEquip off; Auto Equip "
+                                  "always drops on the last release",
+                rockWeaponReleaseMode);
         rockWeaponGrabMode =
             static_cast<int>(ini.integer("WeaponHandling", "WeaponGrabMode", rockWeaponGrabMode));
         if (rockWeaponGrabMode < 1 || rockWeaponGrabMode > 3) {

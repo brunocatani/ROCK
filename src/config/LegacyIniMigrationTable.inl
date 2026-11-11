@@ -357,7 +357,6 @@
 { "iPerformanceProfilerLogIntervalFrames", "LoggingAndProfiling", "PerformanceProfilerLogIntervalFrames", LegacyKind::Value, 0, "300", "300" },
 { "iPerformanceProfilerWarmupFrames", "LoggingAndProfiling", "PerformanceProfilerWarmupFrames", LegacyKind::Value, 0, "120", "120" },
 { "iSurfaceMeshGrabMaxTriangles", "HandAndBodyCollision", "SurfaceMeshGrabMaxTriangles", LegacyKind::Value, 0, "20000", "20000" },
-{ "iWeaponEquipMode", "WeaponHandling", "WeaponEquipMode", LegacyKind::Value, 0, {}, "2" },
 { "iWeaponFilteringPreset", "WeaponHandling", "WeaponFilteringPreset", LegacyKind::Value, 0, {}, "0" },
 { "iWeaponGrabMode", "WeaponHandling", "WeaponGrabMode", LegacyKind::Value, 0, "1", "1" },
 { "iWeaponGrabPoseMode", "FingerPoses", "WeaponGrabPoseMode", LegacyKind::Value, 0, {}, "0" },

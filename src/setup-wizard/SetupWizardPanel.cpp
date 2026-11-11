@@ -116,6 +116,23 @@ namespace rock::setup_wizard
             return wp::planControllers(session.chosen, steamVr.detected(), steamVr.index.status, steamVr.vive.status,
                 session.start.offeringBinding);
         }
+
+        // The rule fixing an option to one choice while another option's value demands it.
+        [[nodiscard]] const wp::FixedWhen* activeFixed(const std::vector<OptionState>& options, const OptionState& state)
+        {
+            const auto& fixed = state.option->fixedWhen;
+            if (fixed.key.empty()) return nullptr;
+            const auto other =
+                std::ranges::find_if(options, [&](const OptionState& o) { return o.option->key == fixed.key; });
+            return other != options.end() && other->value == fixed.value ? &fixed : nullptr;
+        }
+
+        // Puts every fixed option on its one choice, so what the page shows is what is saved.
+        void applyFixed(std::vector<OptionState>& options)
+        {
+            for (auto& state : options)
+                if (const auto* fixed = activeFixed(options, state)) state.value = std::string(fixed->fixed);
+        }
     }
 
     struct WizardPanel::Guarded
@@ -250,8 +267,9 @@ namespace rock::setup_wizard
                 return clicked;
             }
 
-            // One option: its title, a button per choice, and what the chosen one does.
-            void option(OptionState& state) const
+            // One option: its title, a button per choice, and what the chosen one does. While
+            // another option fixes it (`fixed`), only that choice can be picked and the reason shows.
+            void option(OptionState& state, const wp::FixedWhen* fixed) const
             {
                 const auto& option = *state.option;
                 ImGui::PushID(option.key.data(), option.key.data() + option.key.size());
@@ -264,15 +282,19 @@ namespace rock::setup_wizard
                     const auto& choice = option.choices[i];
                     if (i) ImGui::SameLine(0.0f, theme.spacing);
                     const bool selected = state.value == choice.value;
+                    const bool unavailable = fixed && choice.value != fixed->fixed;
                     if (selected) pushAccent();
+                    ImGui::BeginDisabled(unavailable);
                     ImGui::PushID(static_cast<int>(i));
                     if (ImGui::Button(std::string(choice.label).c_str(), { width, theme.targetHeight }))
                         state.value = std::string(choice.value);
                     ImGui::PopID();
+                    ImGui::EndDisabled();
                     if (selected) ImGui::PopStyleColor(4);
                 }
                 if (const auto* chosen = option.find(state.value)) prose(chosen->detail, true, theme.smallFontSize);
-                if (state.value != state.defaultValue)
+                if (fixed) prose(fixed->reason, true, theme.smallFontSize);
+                else if (state.value != state.defaultValue)
                     if (const auto* recommended = option.find(state.defaultValue))
                         prose("ROCK recommends: " + std::string(recommended->label) + ".", true, theme.smallFontSize);
                 ImGui::PopID();
@@ -424,8 +446,13 @@ namespace rock::setup_wizard
             d.heading(page.title);
             d.prose(page.intro);
             d.gap(1.5f);
-            for (auto& option : session.start.options)
-                if (option.option->page == pageIndex) d.option(option);
+            // In page order, so a choice fixes the options below it in the same frame.
+            for (auto& option : session.start.options) {
+                if (option.option->page != pageIndex) continue;
+                const auto* fixed = activeFixed(session.start.options, option);
+                if (fixed) option.value = std::string(fixed->fixed);
+                d.option(option, fixed);
+            }
             d.endBody();
             if (d.button("Back")) {
                 if (session.topic == 0) session.page = Page::Controllers;
@@ -588,6 +615,7 @@ namespace rock::setup_wizard
         if (!requests.finish) return requests;
         if (*requests.finish == wp::Finish::Recommended)
             for (auto& option : session.start.options) option.value = option.defaultValue;
+        applyFixed(session.start.options);
         if (*requests.finish != wp::Finish::Close)
             for (const auto& option : session.start.options)
                 if (option.value != option.original)

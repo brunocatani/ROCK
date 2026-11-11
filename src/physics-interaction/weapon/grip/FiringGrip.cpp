@@ -364,7 +364,7 @@ namespace rock
             requestEquippedWeaponDrop("primary-only-grip-released",
                 isFiringHandLeft() ? equipped_weapon_drop_policy::SourceHand::Left
                                    : equipped_weapon_drop_policy::SourceHand::Right,
-                equipped_weapon_drop_policy::fromEquipMode(g_rockConfig.rockWeaponEquipMode), dt, false, true);
+                equipped_weapon_drop_policy::releaseMode(g_rockConfig.rockAutoEquip, g_rockConfig.rockWeaponReleaseMode), dt, false, true);
             return;
         }
 

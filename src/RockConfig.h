@@ -121,12 +121,14 @@ namespace rock
         // release, part-carry, reattach and haptic contract follows whichever
         // physical hand currently occupies the firing grip.
         bool rockDetachEitherHand = true;
-        // Equip and last-release drop together; see equipped_weapon_drop_policy.
-        // 1: trigger equip, no drop; 2: Toggle Drop; 3: Auto Drop; 4: Auto Equip.
-        int rockWeaponEquipMode = 4;
+        // True: a loose weapon equips when the palm settles at its firing grip; false: trigger equip.
+        bool rockAutoEquip = true;
+        // The last release: 1 keep, 2 Toggle Drop, 3 Auto Drop. Auto Equip always drops;
+        // read it through equipped_weapon_drop_policy::releaseMode.
+        int rockWeaponReleaseMode = 3;
         // 1: toggle both grips; 2: toggle firing only; 3: hold both grips.
         int rockWeaponGrabMode = 1;
-        // Auto Equip (mode 4): seconds the palm settles at the firing grip.
+        // Auto Equip: seconds the palm settles at the firing grip.
         float rockAutoEquipSettleSeconds = 0.15f;
         // Allow dynamic support grabs beyond authored grips. False preserves
         // authored-grip preference and the existing missing-pose fallback.

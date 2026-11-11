@@ -46,6 +46,15 @@ namespace rock::setup_wizard_policy
 
     inline constexpr std::size_t kMaxChoices = 5;
 
+    // While another option (`key`) is at `value`, this option has only `fixed`, for `reason`.
+    struct FixedWhen
+    {
+        std::string_view key;
+        std::string_view value;
+        std::string_view fixed;
+        std::string_view reason;
+    };
+
     struct Option
     {
         std::size_t page;
@@ -53,6 +62,7 @@ namespace rock::setup_wizard_policy
         std::string_view key;
         std::string_view title;
         std::array<Choice, kMaxChoices> choices;
+        FixedWhen fixedWhen{};
 
         [[nodiscard]] constexpr std::size_t choiceCount() const noexcept
         {
@@ -94,6 +104,13 @@ namespace rock::setup_wizard_policy
                     "Weapons equipped from favorites, PALM or other mods go to your left hand. A weapon you grab "
                     "goes to the hand that grabs it." },
             } } },
+        Option{ 1, "WeaponHandling", "AutoEquip", "Picking up a weapon",
+            { {
+                { "true", "Equip it when your hand takes the grip",
+                    "A weapon you pick up is equipped as soon as your hand settles on its grip, no trigger needed." },
+                { "false", "Pull the trigger to equip it",
+                    "Hold a weapon you picked up and pull the trigger to equip it." },
+            } } },
         Option{ 1, "WeaponHandling", "WeaponGrabMode", "Holding a weapon",
             { {
                 { "1", "Toggle", "Press grab to take a grip and press it again to let go, with either hand." },
@@ -101,23 +118,22 @@ namespace rock::setup_wizard_policy
                     "Your shooting hand toggles its grip; your support hand holds on while you hold grab." },
                 { "3", "Hold", "Each hand holds the weapon while you hold grab." },
             } } },
-        Option{ 1, "WeaponHandling", "WeaponEquipMode", "Letting go of a weapon",
-            { {
-                { "1", "Keep it", "The weapon stays in your hand when you let go, as in the game. Pull the trigger on "
-                               "a weapon you picked up to equip it." },
-                { "2", "Drop on a second press",
-                    "Letting go leaves the weapon loose in your hand: press grab again to drop or stash it, or pull "
-                    "the trigger to equip it again." },
-                { "3", "Drop it", "Letting go drops the weapon where it is. Pull the trigger on a weapon you picked "
-                                  "up to equip it." },
-                { "4", "Grab to equip", "A weapon you pick up is equipped as soon as your hand settles on its grip, "
-                                        "no trigger needed. Letting go drops it." },
-            } } },
-        Option{ 1, "WeaponHandling", "DetachEitherHand", "Letting go with your shooting hand",
+        Option{ 1, "WeaponHandling", "DetachEitherHand", "Which hand can let go",
             { {
                 { "true", "Either hand", "Either hand can let go of the weapon; the other hand keeps holding it." },
-                { "false", "Support hand only", "Only your support hand lets go; your shooting hand stays on the weapon." },
+                { "false", "Only the support hand",
+                    "Only your support hand lets go; your shooting hand stays on the weapon." },
             } } },
+        Option{ 1, "WeaponHandling", "WeaponReleaseMode", "When you let go",
+            { {
+                { "1", "It stays equipped", "The weapon stays in your hand, as in the game." },
+                { "2", "It stays loose in your hand",
+                    "Press grab again to drop or stash it, or pull the trigger to equip it again." },
+                { "3", "It drops", "The weapon drops where it is, leaving with your hand's motion." },
+            } },
+            { "AutoEquip", "true", "3",
+                "Equipping when your hand takes the grip always drops: a weapon kept in your hand would equip again "
+                "at once." } },
 
         // ---- Aiming and shooting ----
         Option{ 2, "WeaponHandling", "WeaponFilteringPreset", "Steadying your aim",

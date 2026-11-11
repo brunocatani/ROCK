@@ -60,33 +60,37 @@ BipodHandsFreeRadiusMeters = 2.0
 ## Detach Either Hand
 ## Either hand may let go of the weapon, including the hand on the firing grip; the other hand keeps holding it.
 ## Grips release as Weapon Grab Mode sets. Parts you only attach to release when you let go of the button.
-## What happens when the last hand lets go is set by Weapon Equip Mode.
+## What happens when the last hand lets go is set by Weapon Release Mode.
 DetachEitherHand = true
 
-## Weapon Equip Mode
-## 1 = Trigger Equip with no drop (game default). 2 = Trigger Equip with Toggle Drop.
-## 3 = Trigger Equip with Auto Drop. 4 = Auto Equip (always Auto Drop).
-## Trigger Equip: pull the trigger while holding a loose weapon to equip it in that hand.
-## When the last hand lets go of an equipped weapon:
-## mode 1 keeps it equipped and held;
-## mode 2 unequips it into a loose weapon held in that hand: press grab again and release to drop or stash it, or pull the trigger to equip it again;
-## mode 3 drops it in place, with the same release rules but no forced grab.
-## Mode 4 equips a loose weapon once your palm settles on its firing grip (see Auto Equip Settle Time), without the trigger.
+## Auto Equip
+## How a loose weapon you hold gets equipped.
+## True: once your palm settles on its firing grip (see Auto Equip Settle Time), no trigger needed (default).
+## False: pull the trigger while holding it to equip it in that hand.
 ## Far grabs seat a loose weapon at its firing grip and close grabs at its nearest grip; touch grabs equip only inside a grip zone.
 ## With a weapon already in the other hand, the new one becomes the second weapon.
-## Applies per weapon. Weapon Grab Mode sets the release gesture in every mode.
-WeaponEquipMode = 4
+## With Auto Equip on, letting go always drops the weapon: kept in your hand, it would equip again at once.
+AutoEquip = true
+
+## Weapon Release Mode
+## What happens when the last hand lets go of an equipped weapon.
+## 1 = It stays equipped and held (game default).
+## 2 = It stays loose in your hand: press grab again and release to drop or stash it, or pull the trigger to equip it again.
+## 3 = It drops where it is, leaving with your hand's motion (default).
+## Applies only with Auto Equip off; Auto Equip always drops.
+## Applies per weapon. Weapon Grab Mode sets the release gesture.
+WeaponReleaseMode = 3
 
 ## Weapon Grab Mode
 ## 1 = Toggle both grips. 2 = Toggle firing grip only. 3 = Hold both grips.
 ## Toggle: press grab to take the grip and press again to let go. Hold: the grip lasts while you hold grab.
 ## Mode 2 toggles whichever hand holds the firing grip; support grips must be held.
 ## Parts you only attach to always need grab held. Ordinary objects and surfaces always use hold to grab.
-## Weapon Equip Mode decides whether the last release keeps a loose grab or drops the weapon.
+## Weapon Release Mode decides whether the last release keeps a loose grab or drops the weapon.
 WeaponGrabMode = 1
 
 ## Auto Equip Settle Time
-## Seconds your palm must stay on the firing grip before Auto Equip (Weapon Equip Mode 4) equips. Range: 0 to 2.
+## Seconds your palm must stay on the firing grip before Auto Equip equips. Range: 0 to 2.
 AutoEquipSettleSeconds = 0.15
 
 ## Grab Anywhere on Weapon

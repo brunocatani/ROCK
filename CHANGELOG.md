@@ -99,10 +99,13 @@
   the Pip-Boy or a holster mod goes into the hand that chose it and keeps the
   other hand's weapon. Which hand holds each weapon is saved with your game.
   Every equip is ready to fire at once.
-- **Weapon Equip Mode** (`WeaponHandling.WeaponEquipMode`): 1 trigger equip, no drop;
-  2 trigger equip, toggle drop; 3 trigger equip, auto drop; 4 auto equip once
-  the palm settles on the firing grip (default; `WeaponHandling.AutoEquipSettleSeconds`).
-  An auto drop leaves with the hand's motion, thrown like a loose object.
+- **Auto Equip** (`WeaponHandling.AutoEquip`, on by default): a loose weapon
+  equips once the palm settles on its firing grip
+  (`WeaponHandling.AutoEquipSettleSeconds`); off, the trigger equips it.
+- **Weapon Release Mode** (`WeaponHandling.WeaponReleaseMode`): what the last
+  hand letting go does: 1 the weapon stays equipped, 2 it stays loose in the
+  hand (grab again to drop or stash it), 3 it drops (default), leaving with the
+  hand's motion like a thrown loose object. Auto Equip always drops.
 - **Ammo counters.** One counter per held weapon at that weapon's hand,
   replacing the game's counter. `WeaponHandling.AmmoCounterStyle`: 1 Minimal, 2 Immersive
   (game HUD style, default), 3 Vanilla (back of the hand). A reload mod can show a

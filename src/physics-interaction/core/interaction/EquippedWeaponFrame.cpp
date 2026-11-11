@@ -2856,8 +2856,8 @@ namespace rock
             .equippedWeaponShoulderStashEnabled =
                 g_rockConfig.rockEquippedWeaponShoulderStashEnabled,
             .lastGripReleaseDropEnabled =
-                equipped_weapon_drop_policy::fromEquipMode(g_rockConfig.rockWeaponEquipMode) != equipped_weapon_drop_policy::Mode::Off,
-            .autoEquipEnabled = equipped_weapon_drop_policy::autoEquipFromEquipMode(g_rockConfig.rockWeaponEquipMode),
+                equipped_weapon_drop_policy::releaseMode(g_rockConfig.rockAutoEquip, g_rockConfig.rockWeaponReleaseMode) != equipped_weapon_drop_policy::Mode::Off,
+            .autoEquipEnabled = g_rockConfig.rockAutoEquip,
             .autoEquipSettleSeconds = g_rockConfig.rockAutoEquipSettleSeconds,
             .immersiveWeapon = {
                 .firingGripDetachEnabled =

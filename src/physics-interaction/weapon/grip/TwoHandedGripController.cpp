@@ -487,7 +487,7 @@ namespace rock
             if (_session.state == TwoHandedState::Gripping)
                 updateGripping(_session.weaponNode, dt);
             (void)requestEquippedWeaponDrop("simultaneous-carrier-release", simultaneousSource,
-                equipped_weapon_drop_policy::fromEquipMode(g_rockConfig.rockWeaponEquipMode), dt, true, true);
+                equipped_weapon_drop_policy::releaseMode(g_rockConfig.rockAutoEquip, g_rockConfig.rockWeaponReleaseMode), dt, true, true);
             return finishUpdate();
         }
         const auto primaryReleaseDecision = equipped_weapon_manual_ownership_policy::debouncePrimaryGripRelease(

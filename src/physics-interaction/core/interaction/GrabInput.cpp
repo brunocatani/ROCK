@@ -1409,7 +1409,7 @@ namespace rock
             // Auto Equip replaces trigger equip for weapons. Grenades still arm
             // on the trigger, and an accepted hand-to-hand transfer still equips.
             const bool weaponTriggerEquipPressed = acceptedTransfer ||
-                (!equipped_weapon_drop_policy::autoEquipFromEquipMode(g_rockConfig.rockWeaponEquipMode) &&
+                (!g_rockConfig.rockAutoEquip &&
                     (heldWeaponEquipTriggerPressedEdge || replayedSameHandTrigger));
             if (replayedSameHandTrigger && triggerEquipIntent.grabIdentity == 0)
                 triggerEquipIntent.grabIdentity = hand.heldGrabIdentity();

@@ -57,30 +57,33 @@ namespace rock::config
         { "WeaponHandling", "DetachEitherHand", "04. Weapon Handling",
             "Detach Either Hand\nEither hand may let go of the weapon, including the hand on the firing grip; the "
             "other hand keeps holding it.\nGrips release as Weapon Grab Mode sets. Parts you only attach to release "
-            "when you let go of the button.\nWhat happens when the last hand lets go is set by Weapon Equip Mode.",
+            "when you let go of the button.\nWhat happens when the last hand lets go is set by Weapon Release Mode.",
             api::configuration::Group::Consumer },
-        { "WeaponHandling", "WeaponEquipMode", "04. Weapon Handling",
-            "Weapon Equip Mode\n1 = Trigger Equip with no drop (game default). 2 = Trigger Equip with Toggle Drop.\n"
-            "3 = Trigger Equip with Auto Drop. 4 = Auto Equip (always Auto Drop).\nTrigger Equip: pull the trigger "
-            "while holding a loose weapon to equip it in that hand.\nWhen the last hand lets go of an equipped "
-            "weapon:\nmode 1 keeps it equipped and held;\nmode 2 unequips it into a loose weapon held in that hand: "
-            "press grab again and release to drop or stash it, or pull the trigger to equip it again;\nmode 3 drops "
-            "it in place, with the same release rules but no forced grab.\nMode 4 equips a loose weapon once your "
-            "palm settles on its firing grip (see Auto Equip Settle Time), without the trigger.\nFar grabs seat a "
-            "loose weapon at its firing grip and close grabs at its nearest grip; touch grabs equip only inside a "
-            "grip zone.\nWith a weapon already in the other hand, the new one becomes the second weapon.\nApplies "
-            "per weapon. Weapon Grab Mode sets the release gesture in every mode.",
+        { "WeaponHandling", "AutoEquip", "04. Weapon Handling",
+            "Auto Equip\nHow a loose weapon you hold gets equipped.\nTrue: once your palm settles on its firing grip "
+            "(see Auto Equip Settle Time), no trigger needed (default).\nFalse: pull the trigger while holding it to "
+            "equip it in that hand.\nFar grabs seat a loose weapon at its firing grip and close grabs at its nearest "
+            "grip; touch grabs equip only inside a grip zone.\nWith a weapon already in the other hand, the new one "
+            "becomes the second weapon.\nWith Auto Equip on, letting go always drops the weapon: kept in your hand, "
+            "it would equip again at once.",
+            api::configuration::Group::Consumer },
+        { "WeaponHandling", "WeaponReleaseMode", "04. Weapon Handling",
+            "Weapon Release Mode\nWhat happens when the last hand lets go of an equipped weapon.\n1 = It stays "
+            "equipped and held (game default).\n2 = It stays loose in your hand: press grab again and release to "
+            "drop or stash it, or pull the trigger to equip it again.\n3 = It drops where it is, leaving with your "
+            "hand's motion (default).\nApplies only with Auto Equip off; Auto Equip always drops.\nApplies per "
+            "weapon. Weapon Grab Mode sets the release gesture.",
             api::configuration::Group::Consumer },
         { "WeaponHandling", "WeaponGrabMode", "04. Weapon Handling",
             "Weapon Grab Mode\n1 = Toggle both grips. 2 = Toggle firing grip only. 3 = Hold both grips.\nToggle: "
             "press grab to take the grip and press again to let go. Hold: the grip lasts while you hold grab.\nMode "
             "2 toggles whichever hand holds the firing grip; support grips must be held.\nParts you only attach to "
-            "always need grab held. Ordinary objects and surfaces always use hold to grab.\nWeapon Equip Mode "
+            "always need grab held. Ordinary objects and surfaces always use hold to grab.\nWeapon Release Mode "
             "decides whether the last release keeps a loose grab or drops the weapon.",
             api::configuration::Group::Consumer },
         { "WeaponHandling", "AutoEquipSettleSeconds", "04. Weapon Handling",
-            "Auto Equip Settle Time\nSeconds your palm must stay on the firing grip before Auto Equip (Weapon Equip "
-            "Mode 4) equips. Range: 0 to 2.",
+            "Auto Equip Settle Time\nSeconds your palm must stay on the firing grip before Auto Equip equips. "
+            "Range: 0 to 2.",
             api::configuration::Group::Consumer },
         { "WeaponHandling", "GrabAnywhereOnWeapon", "04. Weapon Handling",
             "Grab Anywhere on Weapon\nTrue: your support hand can hold a firearm anywhere.\nFalse: firearms with "
