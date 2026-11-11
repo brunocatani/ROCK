@@ -229,8 +229,13 @@ target_link_libraries(${PROJECT_NAME} PRIVATE RPS::Settings)
 
 # ROCKSetupWizardPreview: the setup wizard on the desktop, without the game (preview/).
 # It runs the wizard's own panel and ROCK's settings store over a sandbox folder, hosted
-# by RPS UI's LocalPanelHost as RPS UI hosts it in the headset. Outside the default build
-# so plugin builds never wait on it: build it by name, or run tools/Run-SetupWizardPreview.ps1.
+# by RPS UI's LocalPanelHost as RPS UI hosts it in the headset. With
+# ROCK_SETUP_WIZARD_PREVIEW it builds with ROCK, so it always shows the wizard ROCK.dll
+# ships, and ROCK_SETUP_WIZARD_PREVIEW_COPY_PATH gets a copy to open it from. It needs
+# only Windows' own DLLs, so the copy runs anywhere.
+option(ROCK_SETUP_WIZARD_PREVIEW "Build the setup wizard preview with ROCK." ON)
+set(ROCK_SETUP_WIZARD_PREVIEW_COPY_PATH "" CACHE PATH
+  "Folder the setup wizard preview is copied to after each build; empty for none.")
 add_library(ROCKSetupWizardPreviewCore STATIC
   "${SOURCE_DIR}/RockConfig.cpp"
   "${SOURCE_DIR}/RockConfigLoad.cpp"
@@ -252,11 +257,25 @@ add_executable(ROCKSetupWizardPreview WIN32
   "${ROCK_IMGUI_DIR}/backends/imgui_impl_win32.cpp"
 )
 target_include_directories(ROCKSetupWizardPreview PRIVATE "${ROCK_IMGUI_DIR}/backends")
-target_compile_definitions(ROCKSetupWizardPreview PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE
-  ROCK_PREVIEW_SETTINGS_DIR="${BUILD_DIR}/setup-wizard-preview")
+target_compile_definitions(ROCKSetupWizardPreview PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
 target_compile_options(ROCKSetupWizardPreview PRIVATE /utf-8 /permissive-)
 target_link_libraries(ROCKSetupWizardPreview PRIVATE ROCKSetupWizardPreviewCore d3d11 dxgi d3dcompiler shell32 ole32 windowscodecs)
-set_target_properties(ROCKSetupWizardPreviewCore ROCKSetupWizardPreview PROPERTIES EXCLUDE_FROM_ALL TRUE)
+if(ROCK_SETUP_WIZARD_PREVIEW)
+  add_dependencies(${PROJECT_NAME} ROCKSetupWizardPreview)
+  if(NOT ROCK_SETUP_WIZARD_PREVIEW_COPY_PATH STREQUAL "")
+    # Its own step, checked on every build: a copy skipped because the preview was open
+    # there is made by the next build even when nothing relinked.
+    add_custom_target(ROCKSetupWizardPreviewCopy
+      COMMAND ${CMAKE_COMMAND} "-DSOURCE=$<TARGET_FILE:ROCKSetupWizardPreview>"
+        "-DDESTINATION=${ROCK_SETUP_WIZARD_PREVIEW_COPY_PATH}" -P "${ROOT_DIR}/cmake/CopySetupWizardPreview.cmake"
+      COMMENT "Setup wizard preview in '${ROCK_SETUP_WIZARD_PREVIEW_COPY_PATH}'"
+      VERBATIM)
+    add_dependencies(ROCKSetupWizardPreviewCopy ROCKSetupWizardPreview)
+    add_dependencies(${PROJECT_NAME} ROCKSetupWizardPreviewCopy)
+  endif()
+else()
+  set_target_properties(ROCKSetupWizardPreviewCore ROCKSetupWizardPreview PROPERTIES EXCLUDE_FROM_ALL TRUE)
+endif()
 
 include("${ROOT_DIR}/cmake/VerifyDistributionInputs.cmake")
 get_target_property(ROCK_BUILD_INPUTS ${PROJECT_NAME} SOURCES)

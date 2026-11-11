@@ -371,14 +371,12 @@ namespace
         return value;
     }
 
-    // --settings <folder> picks the sandbox; otherwise the build's own folder.
+    // --settings <folder> picks the sandbox; otherwise "Settings sandbox" beside the exe,
+    // so a copy of the preview keeps its own.
     [[nodiscard]] fs::path sandboxFolder()
     {
         auto folder = argument(L"--settings");
-#ifdef ROCK_PREVIEW_SETTINGS_DIR
-        if (folder.empty()) folder = fs::path(ROCK_PREVIEW_SETTINGS_DIR);
-#endif
-        if (folder.empty()) folder = executableFolder() / "setup-wizard-preview";
+        if (folder.empty()) folder = executableFolder() / "Settings sandbox";
         return fs::absolute(folder);
     }
 

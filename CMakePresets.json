@@ -56,6 +56,7 @@
       "binaryDir": "${sourceDir}/build-release",
       "cacheVariables": {
         "BUILD_ROCK_TESTS": false,
+        "ROCK_SETUP_WIZARD_PREVIEW": false,
         "POST_BUILD_COPY_PLUGIN": false,
         "ROCK_PACKAGE_RELEASE": true
       },

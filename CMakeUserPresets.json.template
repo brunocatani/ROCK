@@ -6,6 +6,8 @@
 // Rename the file to 'CMakeUserPresets.json' (it is in .gitignore to keep it local to you).
 // Remove this comment block.
 // Fast plugin iteration copies ROCK.dll/ROCK.pdb to COPY_PLUGIN_BASE_PATH/F4SE/Plugins.
+// Set ROCK_SETUP_WIZARD_PREVIEW_COPY_PATH to a folder to get a copy of the setup wizard
+// preview (ROCKSetupWizardPreview.exe) there after each build; leave it empty for none.
 // Tests share build-fast but are built only on request.
 // Run:
 // cmake --preset custom-fast
@@ -21,6 +23,7 @@
       "cacheVariables": {
         "POST_BUILD_COPY_PLUGIN": true,
         "COPY_PLUGIN_BASE_PATH": "[MO2 modlist folder]/mods/[my mod] OR [Fallout 4 VR game path]/Data",
+        "ROCK_SETUP_WIZARD_PREVIEW_COPY_PATH": "",
         "COMMON_LIB_F4VR_PATH": ""
       },
       "inherits": "fast"
