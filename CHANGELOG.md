@@ -14,7 +14,11 @@
   to your palm rather than the collision's centre.
 - Grabbing an NPC's limb or a corpse lands on the first press: when the body's
   collision keeps your fingers off the visible mesh, the grab takes the nearest
-  point of the mesh instead of waiting.
+  point of the mesh instead of waiting, and the drawn hand glides onto it
+  instead of jumping.
+- The limbs of NPCs a mod drives as active ragdolls are pushed only by the
+  physical hands and weapon, with real weight; the tracked hands no longer
+  fling them.
 - Held objects stay steady on slow frames: per-frame motion limits scale with
   frame time, so a low frame rate no longer drops or lags what you hold.
 - Pulled objects are caught even when they cross the hand between frames, and
@@ -184,11 +188,11 @@
 
 - Requires FRIK 0.79.1 or newer with FRIK API 2.3. RPS UI Framework is
   recommended (grab indicators and ammo counters draw through it) and RobCo PALM
-  is optional (settings pages). ROCK, RPS UI Framework, RobCo PALM, PAPER and
-  the ROCK add-ons are released together; install them together.
+  is optional (settings pages). ROCK, RPS UI Framework, RobCo PALM, PAPER,
+  SCISSORS and the ROCK add-ons are released together; install them together.
 - **NPC interactions left ROCK.** NPC collision, blade penetration, NPC pushing,
   corpse interaction, grenade NPC effects and NPC visualization belong to
-  **SCISSORS**, with its own INI and PALM pages. Rocky bare-fist mode is
+  **SCISSORS**, with its own settings file and PALM pages. Rocky bare-fist mode is
   removed; free-hand strikes come with SCISSORS' physical melee. The original
   SCISSORS mod, a different mod the new SCISSORS replaces under the same name,
   does not work with ROCK 1.0.
@@ -215,15 +219,8 @@
   always on), `bNativeCharacterControllerObjectContactFilterEnabled` (always
   on), `bRockyModeEnabled`, `fRockyModeHoldSeconds`, `MeshContact.GrabMeshContactOnly`
   (grabs always hold the mesh), and `npcDynamicCollisions` and
-  `bBladePenetrationEnabled` (now in `SCISSORS.ini`).
-
-### Validation
-
-- The full test suite passed during release preparation, including the public
-  header, ABI layout and discovery negotiation tests.
-- Test bench sessions loaded ROCK with RPS UI Framework, RobCo PALM, PAPER, ROCK
-  Wall Climbing and ROCK Pimp my House all bound to provider API 2.0 and no
-  version refusal.
+  `bBladePenetrationEnabled` (now `NpcDynamicCollisions` and
+  `BladePenetrationEnabled` in `SCISSORS.toml`).
 
 ## v0.92.2
 
