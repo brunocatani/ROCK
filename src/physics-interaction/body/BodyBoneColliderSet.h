@@ -67,6 +67,10 @@ namespace rock
 
         bool hasBodies() const { return _created; }
 
+        // True when the last create() stopped because the skeleton pose could
+        // not be read yet (see HandBoneColliderSet::createWaitedOnPose).
+        bool createWaitedOnPose() const { return _createWaitedOnPose; }
+
         std::uint32_t getBodyCount() const { return _bodyCountAtomic.load(std::memory_order_acquire); }
 
         std::uint32_t getBodyIdAtomic(std::size_t index) const;
@@ -135,6 +139,7 @@ namespace rock
         std::atomic<bool> _driveRebuildRequested{ false };
         std::atomic<std::uint32_t> _driveFailureCount{ 0 };
         bool _created = false;
+        bool _createWaitedOnPose = false;
         std::uint64_t _dynamicForearmGeometryGeneration = 0;
         int _updateLogCounter = 0;
 

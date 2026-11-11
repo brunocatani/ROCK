@@ -915,8 +915,11 @@ namespace rock
             RE::hknpWorld* cachedHknpWorld = nullptr;
             RE::bhkWorld* generatedBodiesBhkWorld = nullptr;
             RE::hknpWorld* generatedBodiesHknpWorld = nullptr;
-            int handColliderCreateRetryFrames = 0;
-            int bodyBoneColliderCreateRetryFrames = 0;
+            // Pause after a native creation failure only. A skeleton pose that
+            // is not readable yet is retried on the next frame.
+            static constexpr float kColliderCreateRetryPauseSeconds = 1.0f;
+            float handColliderCreateRetrySeconds = 0.0f;
+            float bodyBoneColliderCreateRetrySeconds = 0.0f;
         };
 
         // Collision-layer registration and the config inputs it was built

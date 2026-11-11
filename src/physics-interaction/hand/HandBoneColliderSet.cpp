@@ -148,9 +148,13 @@ namespace rock
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::HandBoneCapture);
         outLookup = {};
         DirectSkeletonBoneSnapshot snapshot{};
-        if (!_reader.capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
-                skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
-                SkeletonBoneCaptureSpace::Controller, snapshot)) {
+        // A pose that cannot be read yet is the one create() failure that
+        // resolves by itself; a missing bone or a native failure does not.
+        _createWaitedOnPose = !_reader.capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
+                                  skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                                  SkeletonBoneCaptureSpace::Controller, snapshot) ||
+            !snapshot.valid || !snapshot.controllerHandsValid[isLeft ? 1u : 0u];
+        if (_createWaitedOnPose) {
             return false;
         }
 
@@ -512,6 +516,7 @@ namespace rock
         auto structuralMutation = _physicsCallbackGate ? _physicsCallbackGate->pauseForMutation()
                                                        : PhysicsCallbackQuiescenceGate::MutationLease{};
         destroy(bhkWorld, palmAnchorBody);
+        _createWaitedOnPose = false;
         if (!world || !bhkWorld) {
             return false;
         }

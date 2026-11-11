@@ -686,6 +686,7 @@ namespace rock
         // i.e. how fast A's keyframe target itself moves. Localizes the held-object shake -- target jitter
         // (=> smooth the sampled hand/room target) vs motor jitter (=> motor tuning). -1 when unavailable.
         bool hasCollisionBody() const { return _handBody.isValid(); }
+        bool collisionCreateWaitedOnPose() const { return _boneColliders.createWaitedOnPose(); }
 
         BethesdaPhysicsBody& getHandBody() { return _handBody; }
 

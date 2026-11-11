@@ -411,18 +411,19 @@ namespace rock
             if (frame.reloadBoundaryActive) {
                 return;
             }
-            if (_lifecycle.handColliderCreateRetryFrames > 0) {
-                --_lifecycle.handColliderCreateRetryFrames;
+            if (_lifecycle.handColliderCreateRetrySeconds > 0.0f) {
+                _lifecycle.handColliderCreateRetrySeconds -= (std::max)(0.0f, frame.deltaSeconds);
                 return;
             }
 
-            ROCK_LOG_WARN(Hand, "Hand collider runtime missing generated bodies; recreating rightBody={} leftBody={}",
+            ROCK_LOG_SAMPLE_WARN(Hand, 2000,
+                "Hand collider runtime missing generated bodies; recreating rightBody={} leftBody={}",
                 _rightHand.hasCollisionBody() ? "yes" : "no", _leftHand.hasCollisionBody() ? "yes" : "no");
             destroyHandCollisions(frame.bhkWorld);
+            // createHandCollisions sets the pause itself: none while the
+            // skeleton pose is unreadable, so the hands return the frame it is.
             if (createHandCollisions(frame.hknpWorld, frame.bhkWorld)) {
                 markGeneratedBodiesRebuilt(frame.bhkWorld, frame.hknpWorld);
-            } else {
-                _lifecycle.handColliderCreateRetryFrames = 120;
             }
             return;
         }
@@ -461,14 +462,12 @@ namespace rock
             if (frame.reloadBoundaryActive) {
                 return;
             }
-            if (_lifecycle.bodyBoneColliderCreateRetryFrames > 0) {
-                --_lifecycle.bodyBoneColliderCreateRetryFrames;
+            if (_lifecycle.bodyBoneColliderCreateRetrySeconds > 0.0f) {
+                _lifecycle.bodyBoneColliderCreateRetrySeconds -= (std::max)(0.0f, frame.deltaSeconds);
                 return;
             }
 
-            if (!createBodyBoneCollisions(frame.hknpWorld, frame.bhkWorld)) {
-                _lifecycle.bodyBoneColliderCreateRetryFrames = 120;
-            }
+            (void)createBodyBoneCollisions(frame.hknpWorld, frame.bhkWorld);
             return;
         }
 

@@ -2741,7 +2741,9 @@ namespace rock
         }
 
         if (!_boneColliders.create(world, bhkWorld, _isLeft, rollAuthorityWorld, _handBody)) {
-            ROCK_LOG_ERROR(Hand, "{} bone-derived hand collision create failed", handName());
+            if (!_boneColliders.createWaitedOnPose()) {
+                ROCK_LOG_ERROR(Hand, "{} bone-derived hand collision create failed", handName());
+            }
             return false;
         }
 

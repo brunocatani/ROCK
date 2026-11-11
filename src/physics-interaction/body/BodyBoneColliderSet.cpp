@@ -342,13 +342,16 @@ namespace rock
         auto structuralMutation = _physicsCallbackGate ? _physicsCallbackGate->pauseForMutation()
                                                        : PhysicsCallbackQuiescenceGate::MutationLease{};
         destroy(bhkWorld);
+        _createWaitedOnPose = false;
         if (!world || !bhkWorld) {
             return false;
         }
 
         auto& snapshot = _snapshot;
         if (!captureBoneSnapshot(snapshot)) {
-            ROCK_LOG_WARN(Body, "Body bone colliders not created: root flattened skeleton snapshot unavailable");
+            _createWaitedOnPose = true;
+            ROCK_LOG_SAMPLE_WARN(Body, 2000,
+                "Body bone colliders not created: root flattened skeleton snapshot unavailable");
             return false;
         }
 

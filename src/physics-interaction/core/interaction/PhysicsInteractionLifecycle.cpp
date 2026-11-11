@@ -681,8 +681,8 @@ namespace rock
         equipped_weapon_shoulder::reset(_equipped.shoulderCoordinator);
         _equipped.shoulderGestureConsumedThisFrame = {};
         _grabInput.bareFistGuardState = {};
-        _lifecycle.bodyBoneColliderCreateRetryFrames = 0;
-        _lifecycle.handColliderCreateRetryFrames = 0;
+        _lifecycle.bodyBoneColliderCreateRetrySeconds = 0.0f;
+        _lifecycle.handColliderCreateRetrySeconds = 0.0f;
         _rightHand.clearTouch();
         _leftHand.clearTouch();
         _contacts.lastHeldImpactPairRight.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
@@ -785,7 +785,17 @@ namespace rock
         const bool leftOk = _leftHand.createCollision(world, bhkWorld, leftRollAuthorityWorld);
 
         if (!rightOk || !leftOk) {
-            ROCK_LOG_ERROR(Hand, "Hand collision creation failed (rightOk={}, leftOk={})", rightOk, leftOk);
+            const bool nativeFailure = (!rightOk && !_rightHand.collisionCreateWaitedOnPose()) ||
+                (!leftOk && !_leftHand.collisionCreateWaitedOnPose());
+            if (nativeFailure) {
+                ROCK_LOG_ERROR(Hand, "Hand collision creation failed (rightOk={}, leftOk={})", rightOk, leftOk);
+            } else {
+                ROCK_LOG_SAMPLE_WARN(Hand, 2000,
+                    "Hand collision waiting for a readable hand skeleton pose (rightOk={}, leftOk={})", rightOk,
+                    leftOk);
+            }
+            _lifecycle.handColliderCreateRetrySeconds =
+                nativeFailure ? LifecycleState::kColliderCreateRetryPauseSeconds : 0.0f;
             if (rightOk)
                 _rightHand.destroyCollision(bhkWorld);
             if (leftOk)
@@ -799,7 +809,7 @@ namespace rock
             _rightHand.getHandColliderBodyCount(), _leftHand.getHandColliderBodyCount(),
             g_rockConfig.rockHandBoneCollidersRequirePalmAnchor ? "true" : "false");
 
-        _lifecycle.handColliderCreateRetryFrames = 0;
+        _lifecycle.handColliderCreateRetrySeconds = 0.0f;
         return true;
     }
 
@@ -817,7 +827,7 @@ namespace rock
         _handColliderBoneSnapshot = {};
         _finalPoseBoneReader.resetCache();
         _finalPoseBoneSnapshot = {};
-        _lifecycle.handColliderCreateRetryFrames = 0;
+        _lifecycle.handColliderCreateRetrySeconds = 0.0f;
     }
 
     bool PhysicsInteraction::createBodyBoneCollisions(RE::hknpWorld* world, void* bhkWorld)
@@ -828,10 +838,12 @@ namespace rock
         }
 
         if (!_bodyBoneColliders.create(world, bhkWorld)) {
+            _lifecycle.bodyBoneColliderCreateRetrySeconds =
+                _bodyBoneColliders.createWaitedOnPose() ? 0.0f : LifecycleState::kColliderCreateRetryPauseSeconds;
             return false;
         }
 
-        _lifecycle.bodyBoneColliderCreateRetryFrames = 0;
+        _lifecycle.bodyBoneColliderCreateRetrySeconds = 0.0f;
         _contacts.bodyRuntime.reset();
         ROCK_LOG_INFO(Body, "Body bone collider set created: bodies={}", _bodyBoneColliders.getBodyCount());
         return true;
@@ -842,7 +854,7 @@ namespace rock
         clearGeneratedBodyContactRegistry();
         _bodyBoneColliders.destroy(bhkWorld);
         _contacts.bodyRuntime.reset();
-        _lifecycle.bodyBoneColliderCreateRetryFrames = 0;
+        _lifecycle.bodyBoneColliderCreateRetrySeconds = 0.0f;
     }
 
     RE::bhkWorld* PhysicsInteraction::getPlayerBhkWorld() const
