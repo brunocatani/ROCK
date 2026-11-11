@@ -12,6 +12,9 @@
   the hand again once you let go of the grip and pull the hand out. Grabs never
   hold the collision instead of the mesh, and a far pull flies the visible mesh
   to your palm rather than the collision's centre.
+- Grabbing an NPC's limb or a corpse lands on the first press: when the body's
+  collision keeps your fingers off the visible mesh, the grab takes the nearest
+  point of the mesh instead of waiting.
 - Held objects stay steady on slow frames: per-frame motion limits scale with
   frame time, so a low frame rate no longer drops or lags what you hold.
 - Pulled objects are caught even when they cross the hand between frames, and

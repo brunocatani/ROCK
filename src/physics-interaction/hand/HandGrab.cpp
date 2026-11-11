@@ -380,12 +380,17 @@ namespace rock
          * player pressing the grip beside a gun with nothing happening until
          * a finger found the mesh.
          *
-         * An object the other hand holds is not pulled out of that hand: that
-         * grab waits and retries while the grip is held.
+         * A body (an actor's limb, a corpse, a severed part) cannot be brought
+         * by a pull: the grab takes its mesh point nearest the palm within
+         * close reach, and the hold closes the gap (handReach).
+         *
+         * Any other object the other hand holds is not pulled out of that
+         * hand: that grab waits and retries while the grip is held.
          */
         const bool probeContactRequired = !sel.isFarSelection && !grabbedFromPullCatch && !sel.forcedArrival &&
             !sel.equippedWeaponTransfer && transferPose == nullptr;
         bool reachArrival = false;
+        bool handReach = false;
         if (probeContactRequired) {
             const auto probeContact = evaluateGrabProbeContact();
             const auto stateCode = [&](std::size_t finger) {
@@ -410,6 +415,18 @@ namespace rock
                     handName(), sel.refr ? sel.refr->GetFormID() : 0, grab_target::name(sel.targetKind),
                     looseWeaponGrab ? "yes" : "no", stateCode(0), stateCode(1), stateCode(2), stateCode(3),
                     stateCode(4), probeContact.triangleCount);
+            } else if (!probeContact.touching && probeContact.triangleCount > 0 &&
+                grab_target::requiresNativeBodyOwnership(sel.targetKind)) {
+                // Bodies only (an actor's limb, a corpse, a severed part): one
+                // cannot come to the hand, and its collision stops the hand
+                // short of the mesh. Refusing made those grabs land late or
+                // not at all.
+                handReach = true;
+                ROCK_LOG_DEBUG(Hand,
+                    "{} hand GRAB hand reach: no finger probe touches the mesh, the grab takes the nearest mesh point "
+                    "ref={:08X} kind={} triangles={}",
+                    handName(), sel.refr ? sel.refr->GetFormID() : 0, grab_target::name(sel.targetKind),
+                    probeContact.triangleCount);
             } else if (!probeContact.touching) {
                 // The hand may be stopped by collision that sits off the mesh;
                 // let it through this object until it reaches the mesh.
@@ -432,6 +449,7 @@ namespace rock
             }
         }
         validatedSelection.reachArrival = reachArrival;
+        validatedSelection.handReach = handReach;
         // The seat treats a reach arrival as a pull that has just arrived.
         const bool seatedArrival = grabbedFromPullCatch || reachArrival;
         saved_grab_offset::HandOffset savedGrabOffset{};

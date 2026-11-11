@@ -1491,6 +1491,10 @@ namespace rock
         // A close grab no finger probe touches: the object comes to the hand
         // and seats like a pull that has just arrived (grabSelectedObject).
         bool reachArrival = false;
+        // A close grab no finger probe touches, of an actor's limb, a corpse
+        // or a severed part (never another object): the grab takes the mesh point
+        // nearest the palm within close reach and the hold closes the gap.
+        bool handReach = false;
         bool looseWeaponGrab = false;
         bool handPocketOnlyGrab = false;
     };

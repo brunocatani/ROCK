@@ -595,10 +595,13 @@ namespace rock
                 const RE::NiPoint3 pocketAuthorityPoint =
                     closePocket.valid ? closePocket.palmCenterWorld : grabPivotAWorld;
                 const RE::NiPoint3 pocketAuthorityNormal = closePocket.valid ? closePocket.palmNormalWorld : palmDir;
-                const float palmPocketSnapDistance =
+                // A hand reach (grabSelectedObject) searches the whole close reach.
+                const float palmPocketSnapDistance = (std::max)(
                     (std::max)(finitePositiveOr(g_rockConfig.rockGrabPocketRadiusGameUnits, 6.0f),
                         (std::max)(finitePositiveOr(g_rockConfig.rockGrabAlignmentMaxSelectionToMeshDistance, 8.0f),
-                            finitePositiveOr(g_rockConfig.rockGrabTouchAcquireDistanceGameUnits, 10.0f)));
+                            finitePositiveOr(g_rockConfig.rockGrabTouchAcquireDistanceGameUnits, 10.0f))),
+                    selection.handReach ? finitePositiveOr(g_rockConfig.rockGrabNearConvergeDistanceGameUnits, 28.0f)
+                                        : 0.0f);
 
                 if (findClosestGrabSurfaceHitToPointPositionOnly(grabSurfaceTriangles, pocketAuthorityPoint,
                         pocketAuthorityNormal, palmPocketSnapDistance, grabSurfaceHit, &mesh.queryIndex)) {
