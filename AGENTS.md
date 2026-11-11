@@ -1,6 +1,6 @@
 # AGENTS.md - ROCK
 
-Orientation for any agent working on ROCK or building a mod on top of it.
+Orientation for any agent working on ROCK or building a mod on top of it. To change ROCK, read [Architecture](#architecture) once, then find your task in [Where to start](#where-to-start) and read the leading comment of each file it names: almost every file opens with a comment saying what it owns. [Invariants](#invariants) lists what a change must keep true.
 
 ROCK is a Fallout 4 VR F4SE plugin (`ROCK.dll`) that gives the player physical hands: grabbing, hand, body and weapon collision, equipped-weapon handling, and a provider API other F4SE plugins consume. It runs inside FRIK's frame phases (FRIK 0.79.1 or newer, FRIK API 2.3) and links CommonLibF4VR directly. It targets Fallout 4 VR 1.2.72.0 only.
 
@@ -32,6 +32,138 @@ ROCK is a Fallout 4 VR F4SE plugin (`ROCK.dll`) that gives the player physical h
 | `third_party/openvr/` | Vendored OpenVR ABI for raw controller input and haptics |
 | `tests/`, `tools/Invoke-RockTests.ps1` | Tests and the affected-test selector |
 | `cmake/` | Version resource, test registration and release packaging |
+
+## Architecture
+
+### Lifecycle
+
+`src/ROCKMain.cpp` is the entry point and frame scheduler; its opening comment is the summary.
+
+1. `F4SEPlugin_Query` checks the editor, VR and `Fallout4VR.exe` 1.2.72.0. `F4SEPlugin_Load` installs the process-lifetime hooks: native safety boundaries, the co-save, audio and HUD hooks.
+2. On F4SE's `kGameLoaded`, ROCK binds FRIK's API v2 (`src/api/FRIKApiV2.h`), loads its settings, installs the hooks that need loaded game data, and registers one FRIK frame callback per phase (`registerFrikFrameCallbacks`).
+3. One `PhysicsInteraction` (`src/physics-interaction/core/PhysicsInteraction.h`) exists per FRIK skeleton. It is created after FRIK's `kSkeletonReady` and destroyed on `kSkeletonDestroying` or a new game session. Those messages can arrive off the frame thread; teardown then waits for the next `FrameBegin`.
+
+### One frame
+
+ROCK runs inside FRIK's frame, one handler per phase:
+
+| FRIK phase | ROCK work |
+| --- | --- |
+| `FrameBegin` | Pending teardown, settings reload, `PhysicsInteraction` creation, native HUD placement |
+| `NativeGraphOutput` | Authored weapon grip capture from the native animation graph |
+| `AfterArmSolve` | The tick (`runFrameTick`): provider `BeforeRock` callbacks, `PhysicsInteraction::update`, then `AfterRock` and `Complete` |
+| `AfterWeaponPosition` | Weapon presentation after FRIK's weapon pass |
+| `AfterWorldFinal` | Rendered-pose capture, `finalizeFramePose`, provider publication and `Presented` callbacks |
+| `FrameEnd` | A tick without physics when the skeleton phases did not run, so leases still expire across loads |
+
+`PhysicsInteraction::update` (`core/interaction/PhysicsInteractionUpdate.cpp`, whose opening comment lists the steps) stops early when FRIK, the skeleton or the Havok world is unavailable or a menu blocks play, samples controllers and equipped weapons into one `PhysicsFrameContext` (`core/interaction/FrameContext.cpp`), updates hand and body colliders, runs the equipped-weapon frame, then finishes the interaction frame: selection, grab input, held placement, dynamic hand collision, haptics, contacts, grenades. `finalizeFramePose` later publishes the final collider pose and registers the next physics-step callbacks.
+
+### Threads
+
+- **Frame thread**: FRIK's frame callbacks, the game thread. It owns `PhysicsInteraction`, both `Hand`s and every structural change to ROCK's Havok bodies. Provider calls marked "Game" must come from here (`WrongThread` otherwise).
+- **Physics threads**: Havok contact signals (`core/interaction/ContactEvents.cpp`, under SEH) and the physics-step drive (`native/havok/PhysicsStepDriveCoordinator.h`), which moves ROCK's generated bodies and the grab authority between substeps. Several may run at once. They read body banks under callback leases and never change structure: the frame thread changes structure only inside `PhysicsCallbackQuiescenceGate::pauseForMutation()`. FO4VR clears step listeners after each world update, so ROCK re-registers every frame.
+- **Any thread**: provider reads marked "Any" copy published snapshots and never touch engine state.
+
+Gameplay runs only on those threads. ROCK's own background threads do file and diagnostic work on data copied to them and never touch the engine: the saved-grab-offset writer (`grab/SavedGrabOffsetStore.cpp`), the profiler's report writer (`performance/PerformanceProfiler.cpp`) and the debug overlay shape builder (`debug/DebugOverlayShapePipeline.cpp`). Heavy weapon geometry work runs in bounded resumable slices on the frame thread (`weapon/collision/WeaponGeometryTask.h`).
+
+### Ownership
+
+`PhysicsInteraction` is the composition root: both `Hand`s (`hand/Hand.h`), the body bone colliders, the equipped and second weapon's collision (`WeaponCollision`, `DynamicWeaponCollisionRuntime`), loose and lodged weapon collision, the two-handed grip controller (`weapon/grip/TwoHandedGrip.h`), dynamic hand collision, haptics and the provider state it publishes. Its implementation is split by topic across `core/interaction/`; `PhysicsInteraction.h` opens with the file list.
+
+`Hand` owns one hand's interaction state machine (`hand/HandInteractionStateMachine.h`), selection, grab, held object, finger pose and colliders. Its implementation is split into `hand/Hand*.cpp` by stage: `HandGrabPull`, `HandGrabCapture`, `HandGrabSeat`, `HandGrabCommit`, `HandGrabDrive`, `HandHeldObject` and `HandGrabRelease`.
+
+Subsystems read one per-frame snapshot, `core/RockRuntimeState.h` (frame index, timing, menus, weapon drawn, skeleton readiness), rather than polling the engine.
+
+### Provider API path
+
+A consumer call travels:
+
+1. `include/ROCK/<Interface>.h`: the published table.
+2. `src/api/providers/<Interface>Provider.cpp`: the boundary. `Boundary.h`'s `invoke` checks the owner, permission and thread; each entry point checks record `size` and `version` before reading caller data.
+3. `src/api/ProviderRuntime.cpp` and `src/api/services/*.inl`: owners, leases and the published state.
+4. `PhysicsInteraction`: queries are answered in `core/interaction/ProviderQueries.cpp`, commands executed in `core/interaction/ProviderCommands.cpp` and the topic files.
+
+NativeInteraction and Storage keep their table and service together (`src/api/NativeInteractionService.cpp`, `src/api/StorageService.cpp`). Discovery is `src/api/Discovery.cpp` with `InterfaceNegotiation.h`; refusals and the error box are `src/api/OutdatedConsumers.cpp`. Leases expire on one game-frame clock (`ProviderLeasePolicy.h`, `ProviderFrameClock.h`).
+
+### Code conventions
+
+- `*Policy.h` headers hold decisions and math. Most use no engine types, so tests compile them directly. Runtime files apply them to the engine. A new rule goes into a policy with a test when it can be expressed without the engine.
+- Native addresses and layouts are named constants in one place per subsystem (`native/havok/HavokOffsets.h` for Havok). A hook verifies the live bytes at its site before patching; copy an existing `install()`, for example `native/safety/NativeShapeCastSafety.cpp`.
+- Game units and Havok units differ. Convert only through `physics_scale` (`native/havok/PhysicsScale.h`, wrapped as `gameToHavokScale()` and `havokToGameScale()` in `PhysicsUtils.h`), never with a literal factor or FRIK's player scale.
+- Logging goes through `physics-interaction/PhysicsLog.h`: `ROCK_LOG_*` by category with the level checked before formatting, and `ROCK_LOG_SAMPLE_*` for rate-limited logging in per-frame paths.
+- Settings are read from the global `g_rockConfig` (`src/RockConfig.h`), reloaded at `FrameBegin`.
+- Sources are globbed: a new `.cpp`, `.h` or `.inl` under `src/` needs no CMake change. A new test is an executable whose name contains `Tests`, registered with `add_rock_test` in `CMakeLists.txt`.
+
+## Source map
+
+Folders under `src/physics-interaction/` unless the path says otherwise.
+
+| Folder | Owns |
+| --- | --- |
+| `core/`, `core/interaction/` | `PhysicsInteraction`, the frame pipeline, lifecycle, runtime snapshot, native grab hooks (`PhysicsHooks.cpp`), and the per-topic frame files |
+| `hand/` | `Hand`, the grab stages, hand bone colliders, dynamic hand collision, skeleton and finger reads, VATS selection highlight |
+| `grab/` | Grab mechanics shared by both hands: authority proxy, constraint and motion controller, finger solve, pinch, seats, built-in, saved and library grab poses, touch grab, held placement |
+| `body/` | Generated body bone colliders and body zones |
+| `object/` | What a world reference is to a grab: detection, body sets, ragdolls, skinned bodies, count-based ammo |
+| `collision/` | Collision layers, suppression ownership, contact classification, impact audio policy |
+| `contact/` | The one contact clock and the generated-body contact registry |
+| `weapon/equip/` | Equip, drop, transitions, the equipped weapon roster, shoulder stash gesture, co-save, lodged weapons |
+| `weapon/grip/` | The two-handed grip controller, firing seats, grip zones, reattach, reverse grip |
+| `weapon/authored/` | Authored grips from animations and holding-grip records |
+| `weapon/collision/` | Generated weapon collision: geometry, decomposition, equipped, dynamic, loose and dropped bodies |
+| `weapon/handling/` | Handling settings and leases, gunstock mode, aim basis, input filtering, FRIK weapon offsets, bipod |
+| `weapon/secondary/` | The second equipped weapon: model, bones, pose, presentation, actions and melee |
+| `weapon/native/` | Native weapon hooks: equipment by hand, private action graphs, model lifetime, ammo counter visibility |
+| `weapon/scope/`, `weapon/recoil/`, `weapon/parts/`, `weapon/classification/`, `weapon/scene/` | Manual scope, recoil, provider part targets and drives, weapon classification, weapon scene traversal |
+| `input/` | Button layout, function bindings, input remap hooks, grab intent, reload gesture and support trigger leases |
+| `stash/`, `consume/`, `grenade/` | Shoulder stash, mouth consume and immersive aid, loose grenades and Molotovs |
+| `animation/` | Authored weapon grip capture from the native graph |
+| `visual/` | FRIK hand world authority, ammo counters, grip zone indicators, RPS UI world drawing client |
+| `debug/` | Collider and grab debug overlays (drawn through RPS UI) |
+| `native/havok/` | Havok bodies, shapes, materials, world lock, step drive, timing fix, offsets |
+| `native/player/`, `native/scene/`, `native/query/`, `native/safety/` | Character controller and native player collision, native HUD placement, reference interaction and placement, ray and shape casts, native fault boundaries |
+| `performance/`, `timing/` | Profiler and the game-frame clock |
+| `src/api/` | The provider API (see [Provider API path](#provider-api-path)) and the FRIK API binding |
+| `src/config/`, `src/RockConfig*.cpp` | The settings catalog and loader |
+| `src/setup-wizard/` | The setup wizard panel and SteamVR binding |
+| `src/rock_support/` | Logger, OpenVR controller state, menus, game INI overrides, test bench telemetry |
+
+## Where to start
+
+| To work on | Start in |
+| --- | --- |
+| Grab input, selection, what a press grabs | `core/interaction/GrabInput.cpp`, `hand/HandSelection.h`, `input/GrabInputIntentPolicy.h` |
+| A grab's stages: pull, catch, seat, hold, release | `hand/HandGrabPull.cpp`, `HandGrabCapture.cpp`, `HandGrabSeat.cpp`, `HandGrabCommit.cpp`, `HandHeldObject.cpp`, `HandGrabRelease.cpp` |
+| Held object feel and force | `grab/GrabMotionController.h`, `grab/GrabAuthorityProxy.h`, `grab/GrabConstraint.h`, `hand/HandGrabDrive.cpp` |
+| Finger posing on objects | `grab/GrabFingerCapsuleSweep.h`, `grab/GrabPinchPocket.h`, `grab/GrabLocalGraspSolve.h` |
+| Grab poses: built-in, saved, library | `grab/BuiltInGrabOffsets.h` (data generated, never hand-edited), `grab/SavedGrabOffsetStore.cpp`, `grab/GrabPoseLibrary.h`, `hand/HandGrabPoseLibrary.cpp` |
+| Surface grabs and climbing latches | `grab/GlobalSurfaceGrabPolicy.h`, `grab/SurfaceMeshGrabPolicy.h` |
+| Touch grabs | `grab/TouchGrabRuntime.cpp`, `src/api/TouchGrabRegistry.h` |
+| Hand collision with the world | `hand/DynamicHandCollision.cpp`, `hand/HandBoneColliderSet.cpp`, `core/interaction/HandCollisionSuppression.cpp` |
+| Body colliders | `body/BodyBoneColliderSet.cpp` |
+| Collision layers and filtering | `collision/CollisionLayerPolicy.h`, `collision/CollisionSuppressionRegistry.h`, `native/havok/HavokPairCollisionFilter.h` |
+| Contacts and impact sounds | `core/interaction/ContactEvents.cpp`, `contact/`, `native/havok/NativeImpactAudio.h` |
+| Equip, draw, holster, drop | `core/interaction/EquippedWeaponFrame.cpp`, `core/interaction/EquippedWeaponDrop.cpp`, `weapon/equip/EquippedWeaponTransitionCoordinator.cpp`, `weapon/native/NativeHandEquipment.cpp` |
+| Holding a gun: firing seat, support hand, two-handed aim | `weapon/grip/TwoHandedGrip.h` and `TwoHandedGripController.cpp`, `weapon/grip/WeaponGripSeat.cpp`, `weapon/handling/GunstockMode.h` |
+| Authored grips | `weapon/authored/`, `animation/AuthoredWeaponGripCapture.cpp` |
+| Weapon collision | `weapon/collision/WeaponCollision.h` (`WeaponCollisionBodies.cpp`, `WeaponCollisionUpdate.cpp`), `weapon/collision/DynamicWeaponCollision.cpp` |
+| The second weapon (akimbo) | `weapon/secondary/NativeSecondaryPresentation.cpp` and its folder, `weapon/equip/EquippedWeaponRoster.h` |
+| Scopes | `weapon/scope/NativeScopeData.cpp`, `input/ManualScopeInputPolicy.h`, the manual scope code in `src/ROCKMain.cpp` |
+| Recoil | `weapon/recoil/RecoilController.cpp` |
+| Shoulder stash | `stash/ShoulderStashDetector.cpp`, `weapon/equip/EquippedWeaponShoulderCoordinator.h` |
+| Eating, drinking, stimpaks | `consume/MouthConsumeDetector.cpp`, `consume/ImmersiveAid.cpp` |
+| Grenades | `grenade/LooseGrenadeRuntime.cpp`, `core/interaction/ForceGrabAndGrenades.cpp`, `core/interaction/NativeGrenadeCollision.cpp` |
+| Loose objects and ammo | `object/ObjectDetection.cpp`, `object/CountBasedAmmo.cpp` |
+| Buttons and bindings | `input/ButtonLayoutPolicy.h`, `input/FunctionBindingPolicy.h`, `input/InputRemapRuntime.cpp`, `src/rock_support/VRControllers.h` |
+| Ammo counters | `visual/AmmoCounters.cpp`, `core/interaction/AmmoCounterFrame.cpp` |
+| Indicators and debug drawing | `visual/WorldDrawClient.cpp`, `debug/`, `core/interaction/DebugOverlayPublish.cpp` |
+| Native HUD placement (quick loot, prompts, wrist Pip-Boy) | `native/player/` |
+| Player movement and the character controller | `native/player/CharacterControllerRuntime.cpp` |
+| Native crashes in Havok or ragdolls | `native/safety/` |
+| A setting | `src/config/SettingMetadata.h` (catalog and help), `src/RockConfigLoad.cpp` (type and default), `src/RockConfig.h` (field); regenerate the examples (see [Configuration](#configuration)) |
+| The setup wizard | `src/setup-wizard/` |
+| A provider API call | Its header in `include/ROCK/`, its page in `docs/api/`, then the path in [Provider API path](#provider-api-path) |
+| Frame-time cost | `performance/PerformanceProfiler.cpp` |
 
 ## Build and test
 
