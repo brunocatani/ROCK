@@ -485,6 +485,7 @@ GrabHandReturnMaxAngleDegrees = 90.0
 ## === 11. Finger Poses ===
 [FingerPoses]
 ## 0 = Follow grab finger mode. 1 = Current swept arc. 2 = July 9 calibrated slice.
+## 3 = Capsule probes (testing): the loose-object finger sweep, with thumb and index reaching onto small parts such as bolts and slides.
 ## Applies on the next dynamic equipped weapon or part grip, on either hand.
 ## July 9 uses the contacted part, translation-only palm seating and captured finger directions.
 ## Uses current skeleton calibration and transform safety checks. Authored poses retain priority.

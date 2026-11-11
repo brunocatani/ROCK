@@ -1141,7 +1141,7 @@ namespace rock
         }
         rockWeaponGrabPoseMode =
             static_cast<int>(ini.integer("FingerPoses", "WeaponGrabPoseMode", rockWeaponGrabPoseMode));
-        if (rockWeaponGrabPoseMode < 0 || rockWeaponGrabPoseMode > 2) {
+        if (rockWeaponGrabPoseMode < 0 || rockWeaponGrabPoseMode > 3) {
             ROCK_LOG_WARN(Config, "Invalid FingerPoses.WeaponGrabPoseMode={} -- using 0", rockWeaponGrabPoseMode);
             rockWeaponGrabPoseMode = 0;
         }

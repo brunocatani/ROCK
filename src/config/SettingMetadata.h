@@ -786,7 +786,9 @@ namespace rock::config
         { "GrabContactEvidence", "GrabHandReturnMaxAngleDegrees", "10. Grab Contact Evidence", "",
             api::configuration::Group::Developer },
         { "FingerPoses", "WeaponGrabPoseMode", "11. Finger Poses",
-            "0 = Follow grab finger mode. 1 = Current swept arc. 2 = July 9 calibrated slice.\nApplies on the next "
+            "0 = Follow grab finger mode. 1 = Current swept arc. 2 = July 9 calibrated slice.\n3 = Capsule probes "
+            "(testing): the loose-object finger sweep, with thumb and index reaching onto small parts such as bolts "
+            "and slides.\nApplies on the next "
             "dynamic equipped weapon or part grip, on either hand.\nJuly 9 uses the contacted part, translation-only "
             "palm seating and captured finger directions.\nUses current skeleton calibration and transform safety "
             "checks. Authored poses retain priority.",

@@ -168,7 +168,8 @@ namespace rock::grab_finger_pose_runtime
     {
         if (weaponMode == 2)
             return FingerPoseMode::July9;
-        if (weaponMode == 1)
+        // 3 (capsule probes) seats the hand and picks triangles like Current.
+        if (weaponMode == 1 || weaponMode == 3)
             return FingerPoseMode::Current;
         return fingerPoseMode(grabMode);
     }

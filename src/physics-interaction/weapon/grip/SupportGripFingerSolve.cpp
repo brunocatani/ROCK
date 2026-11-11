@@ -2,6 +2,10 @@
 // capturePartGrip (SupportGrip.cpp) after the hand is seated on the grip.
 #include "physics-interaction/weapon/grip/TwoHandedGripInternal.h"
 
+#include "physics-interaction/grab/GrabFingerCapsuleSweep.h"
+
+#include <chrono>
+
 namespace rock
 {
     void TwoHandedGrip::solveSupportGripFingerPose(const bool isLeft, RE::NiNode* weaponNode,
@@ -13,6 +17,7 @@ namespace rock
         const auto poseMode = grab_finger_pose_runtime::weaponGrabPoseMode(g_rockConfig.rockWeaponGrabPoseMode,
             g_rockConfig.rockGrabFingerPoseMode);
         const bool july9 = poseMode == grab_finger_pose_runtime::FingerPoseMode::July9;
+        const bool capsuleProbes = g_rockConfig.rockWeaponGrabPoseMode == 3;
         const bool legacyFingerPose = grab_finger_pose_runtime::usesCapturedFingerDirections(poseMode);
         auto& fingerScratch = _fingerPoseSolveScratch->hands[isLeft ? 0u : 1u];
         for (auto& ranking : fingerScratch.rankings) {
@@ -136,6 +141,67 @@ namespace rock
             static_cast<std::uint64_t>(sourceTriangleCount));
         performance_profiler::observeValue(performance_profiler::ValueMetric::EquippedWeaponFingerPoseSelectedTriangles,
             static_cast<std::uint64_t>(fingerScratch.localTriangles.size()));
+
+        if (capsuleProbes) {
+            /*
+             * Testing mode (FingerPoses.WeaponGrabPoseMode = 3): the fingers
+             * are posed by the loose-object probes. Each finger's capsules
+             * close until they meet the weapon mesh, then a thumb or index
+             * that met nothing on its arc bends its joints separately to
+             * bring its tip onto the mesh, so a bolt handle or slide smaller
+             * than the fingers is held between them. Only the finger pose
+             * differs: which part is grabbed and where the hand sits are
+             * unchanged.
+             */
+            namespace sweep = grab_finger_capsule_sweep;
+            const auto started = std::chrono::steady_clock::now();
+            grab_finger_pose_runtime::SolvedGrabFingerPose capsulePose{};
+            sweep::FrikFingerRig rig{};
+            const bool rigValid = capturedFingerSnapshotValid && sweep::resolveFrikFingerRig(isLeft, rig);
+            const bool indexBuilt = g_rockConfig.rockGrabMeshFingerPoseEnabled &&
+                fingerScratch.spatialIndex.buildFromLocalTriangles(fingerScratch.localTriangles);
+            sweep::PinchReach thumbReach{};
+            sweep::PinchReach indexReach{};
+            if (rigValid && indexBuilt) {
+                // The mesh stands where it will be once the hand is seated.
+                const RE::NiTransform meshWorld = weapon_two_handed_grip_math::virtualizeMeshForSeatedHand(
+                    weaponNode->world, handTransform, adjustedHandTransform);
+                const sweep::Options options{
+                    .minValue = g_rockConfig.rockGrabFingerMinValue,
+                };
+                const auto capsule = sweep::solveForHand(rig, handTransform, capturedFingerSnapshot,
+                    fingerScratch.spatialIndex, meshWorld, options);
+                capsulePose =
+                    sweep::toSolvedPose(capsule, static_cast<std::uint32_t>(fingerScratch.localTriangles.size()));
+                const RE::NiTransform handBone = sweep::resolveHandBoneWorld(handTransform, capturedFingerSnapshot, rig);
+                const auto tips = sweep::tipLengths(capturedFingerSnapshot);
+                if ((capsulePose.contactValidMask & 0x01) == 0) {
+                    thumbReach = sweep::reachPinchFinger(capsulePose, 0, rig, handBone, tips[0],
+                        fingerScratch.spatialIndex, meshWorld, options, 0.0f);
+                }
+                if ((capsulePose.contactValidMask & 0x02) == 0) {
+                    indexReach = sweep::reachPinchFinger(capsulePose, 1, rig, handBone, tips[1],
+                        fingerScratch.spatialIndex, meshWorld, options, options.minValue);
+                }
+            }
+            ROCK_LOG_INFO(Weapon,
+                "TwoHandedGrip: weapon grab pose applied=Capsule probes (testing mode) hand={} part={} solved={} "
+                "skeleton={} frikRig={} meshIndex={} contacts=0x{:02X} curls=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) "
+                "thumbReach={:.2f}->{:.2f}gu({}) indexReach={:.2f}->{:.2f}gu({}) sourceTriangles={} triangles={} "
+                "{:.2f}ms",
+                isLeft ? "left" : "right", static_cast<int>(grip.partKind), capsulePose.solved ? "yes" : "no",
+                capturedFingerSnapshotValid ? "yes" : "no", rigValid ? "yes" : "no", indexBuilt ? "yes" : "no",
+                static_cast<unsigned>(capsulePose.contactValidMask), capsulePose.values[0], capsulePose.values[1],
+                capsulePose.values[2], capsulePose.values[3], capsulePose.values[4], thumbReach.beforeGameUnits,
+                thumbReach.afterGameUnits, thumbReach.applied ? "reached" : "kept", indexReach.beforeGameUnits,
+                indexReach.afterGameUnits, indexReach.applied ? "reached" : "kept", sourceTriangleCount,
+                fingerScratch.localTriangles.size(),
+                std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - started).count());
+            // Fail closed: an unsolved pose takes the closed fallback like every other mode.
+            setSupportGripPose(isLeft, capsulePose.solved ? &capsulePose : nullptr, nullptr,
+                SupportGripPoseFallback::FullyClosed);
+            return;
+        }
 
         grab_finger_pose_runtime::SolvedGrabFingerPose meshFingerPose{};
         const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPosePtr = nullptr;
