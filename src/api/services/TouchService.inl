@@ -75,6 +75,11 @@
             (maxStates != 0 && !outStates)) {
             return api::Status::InvalidArgument;
         }
+        std::uint32_t collisionGeneration = 0;
+        {
+            std::scoped_lock snapshotLock(s_snapshotMutex);
+            collisionGeneration = s_lastSnapshot.collisionGeneration;
+        }
         std::scoped_lock lock(s_consumerMutex, s_touchGrabMutex);
         const auto ownerResult =
             validateRegisteredOwnerLocked(ownerToken);
@@ -86,7 +91,8 @@
             scopeToken,
             outStates,
             maxStates,
-            currentProviderFrameIndex());
+            currentProviderFrameIndex(),
+            collisionGeneration);
         return api::Status::Ok;
     }
 

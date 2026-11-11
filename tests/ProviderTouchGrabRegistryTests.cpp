@@ -122,8 +122,10 @@ namespace
         assert(registry->setScope(owner, scope, &target, 1, 100) == TouchGrabRegistry::RegistrationResult::Ok);
 
         std::array<::rock::api::touch::TouchGrabState, 1> states{};
-        assert(registry->copyStates(owner, scope, states.data(), static_cast<std::uint32_t>(states.size()), 100) == 1);
+        assert(registry->copyStates(owner, scope, states.data(), static_cast<std::uint32_t>(states.size()), 100, 21) == 1);
         assert(states[0].phase == ::rock::api::touch::TouchGrabPhase::Armed);
+        // An armed state no hand has acted on still reports the current collision generation.
+        assert(states[0].collisionGeneration == 21);
         assert(states[0].currentCoordinate == 0.25f);
 
         ::rock::api::touch::TouchGrabState held{};
@@ -150,8 +152,9 @@ namespace
         assert(current.yieldRequested);
 
         states = {};
-        assert(registry->copyStates(owner, scope, states.data(), static_cast<std::uint32_t>(states.size()), 102) == 1);
+        assert(registry->copyStates(owner, scope, states.data(), static_cast<std::uint32_t>(states.size()), 102, 22) == 1);
         assert(states[0].phase == ::rock::api::touch::TouchGrabPhase::Held);
+        assert(states[0].collisionGeneration == 22);
         assert(states[0].currentCoordinate == 0.5f);
         assert(states[0].sequence != 0);
 

@@ -47,7 +47,9 @@ Interface `Touch`, major 2, minor 0; major 1 is refused with
 `activeHandMask` (`TouchGrabHandMask`: `Right`, `Left`), `flags`, the current
 coordinate and its velocity, the contact point and normal, `surfaceGripMode`,
 `frameIndex`, the four generations, and a `sequence` that increases on every
-change of that target's state.
+change of that target's state. `collisionGeneration` is the collision
+generation of the current publication in every copied state, in every phase;
+compare it with `Sample::collisionGeneration` of the frame the copy was made in.
 
 | Enum | Values |
 | --- | --- |

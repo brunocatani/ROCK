@@ -269,7 +269,7 @@ namespace rock::provider
 
         std::uint32_t copyStates(const std::uint64_t ownerToken, const std::uint64_t scopeToken,
             ::rock::api::touch::TouchGrabState* outStates, const std::uint32_t maxStates,
-            const std::uint64_t frameIndex)
+            const std::uint64_t frameIndex, const std::uint32_t collisionGeneration)
         {
             pruneExpired(frameIndex);
             std::uint32_t copied = 0;
@@ -279,6 +279,9 @@ namespace rock::provider
                 }
                 if (outStates && copied < maxStates) {
                     outStates[copied] = slot.state;
+                    // Every copied state is live now, so it carries the current collision generation: a state no
+                    // hand has acted on would otherwise read 0, and one written earlier an older generation.
+                    outStates[copied].collisionGeneration = collisionGeneration;
                     ++copied;
                 } else if (outStates) {
                     break;
