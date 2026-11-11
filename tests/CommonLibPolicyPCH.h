@@ -5,7 +5,8 @@
  * the F4SE plugin loader. They still need CommonLib's compile-time prelude for
  * REL, REX, RTTI, VTABLE, and stl aliases, while avoiding leaked Windows macros
  * that corrupt later CommonLib declarations. This header is force-included only
- * for policy test targets; the production DLL continues to use src/PCH.h.
+ * for policy test targets and the setup wizard preview's settings library; the
+ * production DLL continues to use src/PCH.h.
  */
 
 #define NOMMNOSOUND

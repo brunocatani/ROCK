@@ -14,9 +14,13 @@
  * controllers through RPS UI, so the game and ROCK's gameplay ignore them, and
  * the function bindings stand aside so a captured button is the button pressed.
  *
+ * This file is the game's host: RPS UI binding, placement, the automatic
+ * opening and SteamVR. The pages themselves are SetupWizardPanel.h, which the
+ * desktop preview (preview/SetupWizardPreview.cpp) runs unchanged.
+ *
  * Threads: requestOpen from any thread; update and onSessionLoaded on the frame
  * thread; RPS UI calls the panel callbacks on its render thread and the input
- * callback on the game thread. One mutex guards the wizard's state.
+ * callback on the game thread. The panel guards its own state.
  */
 namespace rock::setup_wizard
 {

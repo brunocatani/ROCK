@@ -227,6 +227,37 @@ set(RPSFramework_DIR "${WORKSPACE_ROOT}/my_frameworks_and_sdks/RPS_Framework/bui
 find_package(RPSFramework CONFIG REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE RPS::Settings)
 
+# ROCKSetupWizardPreview: the setup wizard on the desktop, without the game (preview/).
+# It runs the wizard's own panel and ROCK's settings store over a sandbox folder, hosted
+# by RPS UI's LocalPanelHost as RPS UI hosts it in the headset. Outside the default build
+# so plugin builds never wait on it: build it by name, or run tools/Run-SetupWizardPreview.ps1.
+add_library(ROCKSetupWizardPreviewCore STATIC
+  "${SOURCE_DIR}/RockConfig.cpp"
+  "${SOURCE_DIR}/RockConfigLoad.cpp"
+  "${SOURCE_DIR}/config/RockSettings.cpp"
+  "${SOURCE_DIR}/setup-wizard/SetupWizardPanel.cpp"
+  "${SOURCE_DIR}/setup-wizard/SetupWizardSettings.cpp"
+  "${ROOT_DIR}/preview/PreviewBackend.cpp"
+)
+target_compile_features(ROCKSetupWizardPreviewCore PUBLIC cxx_std_23)
+target_include_directories(ROCKSetupWizardPreviewCore PUBLIC "${SOURCE_DIR}" "${BUILD_DIR}/include")
+# The settings sources need CommonLib's prelude, as in the configuration tests; the
+# preview's window code stays out of it and sees only standard-library headers.
+target_precompile_headers(ROCKSetupWizardPreviewCore PRIVATE "${ROOT_DIR}/tests/CommonLibPolicyPCH.h" <F4SE/Logger.h>)
+target_compile_options(ROCKSetupWizardPreviewCore PRIVATE /utf-8 /permissive-)
+target_link_libraries(ROCKSetupWizardPreviewCore PUBLIC CommonLibF4::CommonLibF4 spdlog::spdlog RPS::Settings rock_imgui)
+add_executable(ROCKSetupWizardPreview WIN32
+  "${ROOT_DIR}/preview/SetupWizardPreview.cpp"
+  "${ROCK_IMGUI_DIR}/backends/imgui_impl_dx11.cpp"
+  "${ROCK_IMGUI_DIR}/backends/imgui_impl_win32.cpp"
+)
+target_include_directories(ROCKSetupWizardPreview PRIVATE "${ROCK_IMGUI_DIR}/backends")
+target_compile_definitions(ROCKSetupWizardPreview PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE
+  ROCK_PREVIEW_SETTINGS_DIR="${BUILD_DIR}/setup-wizard-preview")
+target_compile_options(ROCKSetupWizardPreview PRIVATE /utf-8 /permissive-)
+target_link_libraries(ROCKSetupWizardPreview PRIVATE ROCKSetupWizardPreviewCore d3d11 dxgi d3dcompiler shell32 ole32 windowscodecs)
+set_target_properties(ROCKSetupWizardPreviewCore ROCKSetupWizardPreview PROPERTIES EXCLUDE_FROM_ALL TRUE)
+
 include("${ROOT_DIR}/cmake/VerifyDistributionInputs.cmake")
 get_target_property(ROCK_BUILD_INPUTS ${PROJECT_NAME} SOURCES)
 rock_verify_distribution_inputs(

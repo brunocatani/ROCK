@@ -20,6 +20,7 @@ To change ROCK: read [Architecture](#architecture), find the task in [Where to s
 | `docs/api/` | One page per interface, and `Migration.md` for mods built for ROCK 0.92 |
 | `skills/rock-1.0-migration/` | Agent skill for updating a mod built for ROCK 0.92 |
 | `tests/`, `tools/Invoke-RockTests.ps1` | Tests and the affected-test selector |
+| `preview/`, `tools/Run-SetupWizardPreview.ps1` | The setup wizard preview: the wizard on the desktop, without the game |
 | `data/config/` | Example settings files, generated from the catalog |
 | `data/mod/` | Game data for the mod package, if any |
 | `steamvr_bindings/` | SteamVR binding templates; shipped in the package and embedded in `ROCK.dll` for the setup wizard |
@@ -111,7 +112,7 @@ Under `src/physics-interaction/` unless the path says otherwise.
 | `performance/`, `timing/` | Profiler, game-frame clock |
 | `src/api/` | Provider API and FRIK API binding |
 | `src/config/`, `src/RockConfig*.cpp` | Settings catalog and loader |
-| `src/setup-wizard/` | Setup wizard and SteamVR binding |
+| `src/setup-wizard/` | Setup wizard: its panel (`SetupWizardPanel`, shared with the preview), the game's host and SteamVR binding |
 | `src/rock_support/` | Logger, OpenVR controller state, menus, game INI overrides, developer telemetry |
 
 ## Where to start
@@ -147,7 +148,7 @@ Under `src/physics-interaction/` unless the path says otherwise.
 | Character controller | `native/player/CharacterControllerRuntime.cpp` |
 | Native crashes in Havok or ragdolls | `native/safety/` |
 | A setting | `src/config/SettingMetadata.h`, `src/RockConfigLoad.cpp`, `src/RockConfig.h`, then regenerate the examples |
-| The setup wizard | `src/setup-wizard/` |
+| The setup wizard | `src/setup-wizard/SetupWizardPanel.cpp` (pages), `SetupWizard.cpp` (game host); try it with the preview |
 | A provider API call | Its header, its `docs/api/` page, then [Provider API path](#provider-api-path) |
 | Frame-time cost | `performance/PerformanceProfiler.cpp` |
 
@@ -169,6 +170,15 @@ pwsh -NoProfile -File tools/Invoke-RockTests.ps1
 ```
 
 It selects from the working tree (or the latest commit when clean) and widens the selection when unsure; `-PlanOnly`, `-BaseRef <ref>` and `-All` adjust it. Everything: `cmake --build build-fast --config Release --target build_tests`, then `ctest --test-dir build-fast -C Release --output-on-failure`.
+
+The setup wizard preview runs the wizard's own panel through RPS UI's `LocalPanelHost` and ROCK's settings store over a sandbox folder (`build-fast/setup-wizard-preview` unless `-Settings` names another), with stand-ins for the controllers, the pointer and SteamVR. It is outside the default build:
+
+```powershell
+pwsh -NoProfile -File tools/Run-SetupWizardPreview.ps1             # build and open the window
+pwsh -NoProfile -File tools/Run-SetupWizardPreview.ps1 -Capture <folder>   # every page to PNG
+```
+
+A wizard change goes in `SetupWizardPanel`, never in a preview-only copy; the preview only stands in for what the game supplies.
 
 Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp` for engine math. `ROCKPublicHeaderTests` compiles each public header alone and checks the published ABI layouts.
 
