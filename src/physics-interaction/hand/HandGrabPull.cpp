@@ -314,9 +314,10 @@ namespace rock
         /*
          * Long-range pull remains a dynamic-object operation. ROCK promotes the
          * selected object tree through FO4VR's recursive wrappers, scans the
-         * resulting dynamic body set, and then applies short-lived predicted
-         * velocity to the accepted motions. It avoids a keyframed object path
-         * that would conflict with the dynamic grab constraint used after arrival.
+         * resulting dynamic body set, and then sets a guided velocity on the
+         * accepted motions every frame until arrival (PullFlightPolicy.h). It
+         * avoids a keyframed object path that would conflict with the dynamic
+         * grab constraint used after arrival.
          */
         if (!world || _state != HandState::SelectionLocked || !_currentSelection.isValid() ||
             !_currentSelection.isFarSelection) {
@@ -595,8 +596,8 @@ namespace rock
 
         _pullElapsedSeconds = 0.0f;
         _pullDurationSeconds = pull_motion_math::computePullDurationSeconds(pullDistance);
-        _pullTargetHavok = {};
-        _pullHasTarget = false;
+        _pullTargetVelocity = {};
+        _pullProgress = {};
         _pullHasPreviousObjectPoint = false;
         const auto transition = applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::BeginPull });
         if (!transition.accepted) {
@@ -682,6 +683,8 @@ namespace rock
             seatTurnNeeded = tryGetGrabAuthorityBodyWorldTransform(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, bodyWorld) &&
                 shortestRotationWorld(bodyWorld, seatBodyWorld, seatTurnAxisWorld, seatTurnAngle);
         }
+        // The target's own motion: arm, walking, turning. The flight leads it.
+        pull_motion_math::updateTargetVelocity(_pullTargetVelocity, flightTargetHavok, deltaTime);
 
         const float distanceGameUnits = (flightTargetHavok - objectPointHavok).Length() * havokToGameScale();
         _currentSelection.distance = distanceGameUnits;
@@ -721,10 +724,8 @@ namespace rock
             };
             _currentSelection.hasHitPoint = true;
             markPullCatchIntentArrived();
-            _pullTargetHavok = {};
             _pullElapsedSeconds = 0.0f;
             _pullDurationSeconds = 0.0f;
-            _pullHasTarget = false;
             applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::PullArrivedClose });
             ROCK_LOG_DEBUG(Hand,
                 "{} hand PULL arrived -> close grab window dist={:.1f} arrival={:.1f} configuredAuto={:.1f} "
@@ -735,43 +736,54 @@ namespace rock
             return true;
         }
 
-        const auto motionResult =
-            pull_motion_math::computePullMotion<RE::NiPoint3>(pull_motion_math::PullMotionInput<RE::NiPoint3>{
-                .handHavok = flightTargetHavok,
-                .objectPointHavok = objectPointHavok,
-                .previousTargetHavok = _pullTargetHavok,
-                .elapsedSeconds = _pullElapsedSeconds,
-                .durationSeconds = _pullDurationSeconds,
-                .hasPreviousTarget = _pullHasTarget,
-            });
-
-        _pullElapsedSeconds += (std::max)(0.0f, deltaTime);
-        if (motionResult.refreshTarget) {
-            _pullTargetHavok = motionResult.targetHavok;
-            _pullHasTarget = true;
-        }
-
-        if (motionResult.expired) {
-            ROCK_LOG_DEBUG(Hand,
-                "{} hand PULL owner expired before arrival dist={:.1f} arrival={:.1f} elapsed={:.3f}s duration={:.3f}s "
-                "ownerGrace={:.3f}s",
-                handName(), distanceGameUnits, arrivalDistance, _pullElapsedSeconds, _pullDurationSeconds,
-                pull_motion_math::kOwnerGraceSeconds);
-            finishPullPrepAsPhysicalDropIfActive("pull-owner-expired");
+        // A flight that stops closing in on the hand is blocked by the world.
+        const float distanceHavok = (flightTargetHavok - objectPointHavok).Length();
+        if (pull_motion_math::updatePullProgress(_pullProgress, distanceHavok, deltaTime)) {
+            ROCK_LOG_INFO(Hand,
+                "{} hand PULL blocked: closed less than {:.1f} in {:.2f}s dist={:.1f} closest={:.1f} elapsed={:.3f}s "
+                "-> physical drop",
+                handName(), pull_motion_math::kStallProgressHavok * havokToGameScale(),
+                pull_motion_math::kStallSeconds, distanceGameUnits,
+                _pullProgress.closestDistanceHavok * havokToGameScale(), _pullElapsedSeconds);
+            finishPullPrepAsPhysicalDropIfActive("pull-blocked");
             clearSelectionState(true);
             return false;
         }
 
+        const auto flight = pull_motion_math::computePullFlight<RE::NiPoint3>(pull_motion_math::PullFlightInput<RE::NiPoint3>{
+            .targetHavok = flightTargetHavok,
+            .targetVelocityHavok = _pullTargetVelocity.velocityHavok,
+            .objectPointHavok = objectPointHavok,
+            .elapsedSeconds = _pullElapsedSeconds,
+            .durationSeconds = _pullDurationSeconds,
+        });
+        _pullElapsedSeconds += (std::max)(0.0f, std::isfinite(deltaTime) ? deltaTime : 0.0f);
+        if (!flight.valid) {
+            ROCK_LOG_SAMPLE_WARN(Hand, g_rockConfig.rockLogSampleMilliseconds,
+                "{} hand PULL flight solve not finite; body keeps its velocity this frame dist={:.1f}", handName(),
+                distanceGameUnits);
+            for (const auto bodyId : _pulledBodyIds) {
+                physics_recursive_wrappers::activateBody(world, bodyId);
+            }
+            return false;
+        }
+        ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
+            "{} hand PULL flight dist={:.1f} closest={:.1f} timeToGo={:.3f}s targetSpeed={:.2f} speed={:.2f} "
+            "elapsed={:.3f}s duration={:.3f}s",
+            handName(), distanceGameUnits, _pullProgress.closestDistanceHavok * havokToGameScale(),
+            flight.timeToGoSeconds, pull_motion_math::vectorLength(_pullTargetVelocity.velocityHavok),
+            pull_motion_math::vectorLength(flight.velocityHavok), _pullElapsedSeconds, _pullDurationSeconds);
+
         /*
          * Seat turn: the angular velocity is SET each frame to cover the
-         * remaining angle in the remaining predicted flight time, never slower
-         * than the presentation gain and capped by the presentation speed
-         * limit. Recomputed from the live body and the live palm each frame,
-         * so it follows the hand and cannot overshoot (rate * frame < 1).
+         * remaining angle in the flight's time to go, never slower than the
+         * presentation gain and capped by the presentation speed limit.
+         * Recomputed from the live body and the live palm each frame, so it
+         * follows the hand and cannot overshoot (rate * frame < 1).
          */
         RE::NiPoint3 seatAngularVelocity{};
         if (seatTurnNeeded) {
-            const float timeToGo = _pullDurationSeconds - _pullElapsedSeconds;
+            const float timeToGo = flight.timeToGoSeconds;
             const float rate = (std::max)((std::max)(0.0f, g_rockConfig.rockPullPresentationAngularGainPerSecond),
                 1.0f / (std::max)(timeToGo, kPullSeatMinTurnSeconds));
             const float angularSpeed = (std::min)(seatTurnAngle * rate,
@@ -780,25 +792,6 @@ namespace rock
             ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
                 "{} hand PULL seat turn angleDeg={:.1f} speed={:.2f}rad/s timeToGo={:.3f}s dist={:.1f}", handName(),
                 seatTurnAngle * 57.29578f, angularSpeed, timeToGo, distanceGameUnits);
-        }
-
-        if (!motionResult.applyVelocity) {
-            if (seatTurnNeeded) {
-                // Coasting: keep the flight's own linear velocity, keep turning.
-                const RE::NiPoint3 coastVelocity{ motion->linearVelocity.x, motion->linearVelocity.y,
-                    motion->linearVelocity.z };
-                setHeldVelocity(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, _pulledBodyIds, coastVelocity,
-                    seatAngularVelocity, true, 1.0f, false, _pullDriveDecision.includeConnectedAngularVelocity);
-            }
-            ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
-                "{} hand PULL holding owner after velocity window dist={:.1f} arrival={:.1f} elapsed={:.3f}s "
-                "duration={:.3f}s ownerGrace={:.3f}s",
-                handName(), distanceGameUnits, arrivalDistance, _pullElapsedSeconds, _pullDurationSeconds,
-                pull_motion_math::kOwnerGraceSeconds);
-            for (const auto bodyId : _pulledBodyIds) {
-                physics_recursive_wrappers::activateBody(world, bodyId);
-            }
-            return false;
         }
 
         /*
@@ -855,12 +848,12 @@ namespace rock
             }
         }
         if (presentationActive) {
-            setHeldVelocity(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, _pulledBodyIds, motionResult.velocityHavok,
+            setHeldVelocity(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, _pulledBodyIds, flight.velocityHavok,
                 presentationAngularVelocity, true, 1.0f, _pullDriveDecision.includeConnectedLinearVelocity,
                 _pullDriveDecision.includeConnectedAngularVelocity);
         } else {
             setHeldLinearVelocity(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, _pulledBodyIds,
-                motionResult.velocityHavok, pull_motion_math::angularVelocityKeepForDamping(deltaTime),
+                flight.velocityHavok, pull_motion_math::angularVelocityKeepForDamping(deltaTime),
                 _pullDriveDecision.includeConnectedLinearVelocity);
         }
         for (const auto bodyId : _pulledBodyIds) {
@@ -868,6 +861,28 @@ namespace rock
         }
 
         return false;
+    }
+
+    bool Hand::pullCatchPointWithin(RE::hknpWorld* world, const RE::NiPoint3& originWorld, float radiusGameUnits,
+        RE::NiPoint3* outPointWorld, float* outDistanceGameUnits) const
+    {
+        if (!world || !_pullCatchIntent.active || _pullCatchIntent.primaryBodyId == INVALID_BODY_ID ||
+            !std::isfinite(radiusGameUnits) || radiusGameUnits <= 0.0f) {
+            return false;
+        }
+        RE::NiPoint3 pointHavok{};
+        if (!resolvePulledMeshPointHavok(world, _pullCatchIntent.primaryBodyId, _pullMeshPointBodyLocal, pointHavok)) {
+            return false;
+        }
+        const RE::NiPoint3 pointWorld = pointHavok * havokToGameScale();
+        const float distance = pointDistanceGameUnits(originWorld, pointWorld);
+        if (outPointWorld) {
+            *outPointWorld = pointWorld;
+        }
+        if (outDistanceGameUnits) {
+            *outDistanceGameUnits = distance;
+        }
+        return std::isfinite(distance) && distance <= radiusGameUnits;
     }
 
 }

@@ -76,7 +76,7 @@ namespace rock::native_player_collision
         bool operator==(const HeldExclusionBody&) const = default;
     };
 
-    // Arm body colliders plus both hands' colliders during a mesh-reach lease.
+    // Body colliders plus both hands' colliders (mesh-reach lease, pull flight).
     inline constexpr std::size_t kMaximumHeldExclusionColliders = 96;
     inline constexpr std::size_t kMaximumHeldExclusionHeldBodies = 128;
     void publishHeldExclusions(RE::hknpWorld* world, std::span<const HeldExclusionBody> colliders,

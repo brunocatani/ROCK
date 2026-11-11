@@ -644,11 +644,17 @@ namespace rock
         bool hasArrivedPullCatchIntent() const;
         bool hasPendingPullCatchCommit() const;
         bool advancePullCatchCommit(float deltaTime, float maxCommitSeconds);
+        // Runs the catch window after arrival; false once it has run out.
+        bool advancePullCatchWindow(float deltaTime, float windowSeconds);
         void notePullCatchCommitAttemptFailed();
         RE::TESObjectREFR* getPullCatchIntentRef() const;
+        // The pulled mesh point (world) and whether it lies within radius of origin.
+        bool pullCatchPointWithin(RE::hknpWorld* world, const RE::NiPoint3& originWorld, float radiusGameUnits,
+            RE::NiPoint3* outPointWorld = nullptr, float* outDistanceGameUnits = nullptr) const;
+        // Bodies of an object in flight or awaiting its catch; empty otherwise.
+        [[nodiscard]] std::span<const std::uint32_t> pullFlightBodyIds() const noexcept;
         bool reacquirePullCatchCloseSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
-            const RE::NiPoint3& selectionOrigin, const RE::NiPoint3& palmNormal, float radiusGameUnits,
-            float maxBodyDistanceGameUnits);
+            const RE::NiPoint3& selectionOrigin, const RE::NiPoint3& palmNormal, float radiusGameUnits);
         bool beginExtractedItemHandoff(const api::native_interaction::ExtractedReference& dropResult,
             const RE::NiPoint3& sourceHitPointWorld);
         bool hasPendingExtractedItemHandoff() const;
@@ -992,9 +998,11 @@ namespace rock
 
         /*
          * Far-pull arrival needs explicit ownership separate from button edges.
-         * Both pull modes keep a held grab request alive through arrival and
-         * retry a refused close commit without a second press. Release cancels
-         * the pull or pending catch; a retry never restarts the dynamic pull.
+         * A flight continues whether grab is held or not. Grab held at arrival
+         * catches, retrying a refused close commit without a second press. An
+         * arrival without grab held opens the catch window: the object falls
+         * free and a press while its pulled point is in reach catches it, as
+         * in HIGGS. A retry never restarts the dynamic pull.
          */
         struct PullCatchIntent
         {
@@ -1005,6 +1013,7 @@ namespace rock
             std::uint32_t primaryBodyId = INVALID_BODY_ID;
             grab_target::Kind targetKind = grab_target::Kind::LooseObject;
             float commitElapsedSeconds = 0.0f;
+            float windowElapsedSeconds = 0.0f;
             std::uint32_t failedCommitAttempts = 0;
         };
 
@@ -1544,10 +1553,11 @@ namespace rock
         std::uint32_t _pulledPrimaryBodyId = INVALID_BODY_ID;
         // The visual mesh point a pull flies to the palm, in the primary body's motion frame (game units).
         RE::NiPoint3 _pullMeshPointBodyLocal{};
-        RE::NiPoint3 _pullTargetHavok{};
+        // The flight target's measured velocity (hand motion and locomotion) and the flight's progress.
+        pull_motion_math::TargetVelocityEstimate<RE::NiPoint3> _pullTargetVelocity{};
+        pull_motion_math::PullProgress _pullProgress{};
         float _pullElapsedSeconds = 0.0f;
         float _pullDurationSeconds = 0.0f;
-        bool _pullHasTarget = false;
         // Object pull point of the previous pull update, for the swept arrival test.
         RE::NiPoint3 _pullPreviousObjectPointHavok{};
         bool _pullHasPreviousObjectPoint = false;

@@ -23,6 +23,12 @@
   frame time, so a low frame rate no longer drops or lags what you hold.
 - Pulled objects are caught even when they cross the hand between frames, and
   objects stuck in transit are placed on the hand.
+- Pulled objects reach your hand while you walk, turn or move it: the flight
+  follows the hand all the way instead of flying to where it was at launch, and
+  passes your body and pulling hand instead of bouncing off them. Letting go of
+  grab no longer drops a pulled object: keep holding to catch it as it arrives,
+  or press grab again as it reaches you, as in HIGGS. Either way it lands in its
+  grab pose. Only an object the world blocks from reaching you falls.
 - Objects let go of while walking or running leave at your own speed plus your
   arm's throw, instead of flying far ahead of you: the throw strength scales
   only the arm's motion, and turning no longer flings what you release.

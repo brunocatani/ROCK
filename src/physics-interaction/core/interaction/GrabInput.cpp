@@ -998,10 +998,8 @@ namespace rock
 
         if (hand.hasArrivedPullCatchIntent() && !hand.hasPendingPullCatchCommit()) {
             auto* pullCatchRef = hand.getPullCatchIntentRef();
-            if (pull_motion_math::kCatchWideReacquireEnabled &&
-                hand.reacquirePullCatchCloseSelection(frame.bhkWorld, frame.hknpWorld, handInput.grabAnchorWorld,
-                    handInput.closeSelectionDirectionWorld, pull_motion_math::kCatchWideReacquireRadiusGameUnits,
-                    pull_motion_math::kCatchWideReacquireMaximumBodyDistanceGameUnits)) {
+            if (hand.reacquirePullCatchCloseSelection(frame.bhkWorld, frame.hknpWorld, handInput.grabAnchorWorld,
+                    handInput.closeSelectionDirectionWorld, pull_motion_math::kCatchRadiusGameUnits)) {
                 ROCK_LOG_DEBUG(Hand,
                     "{} hand restored stale pull catch commit with target-specific wide close reacquire",
                     hand.handName());
@@ -2259,12 +2257,28 @@ namespace rock
             auto* pullCatchRef = pullCatchCommitPending ? hand.getPullCatchIntentRef() : nullptr;
             bool extractedItemHandoffReady = false;
             if (pullCatchCommitPending) {
-                if (grabInput.released || !grabInput.held) {
-                    ROCK_LOG_DEBUG(Hand, "{} hand cancelled pull catch commit because grip was released",
-                        hand.handName());
-                    hand.finishPullPrepAsPhysicalDropIfActive("pull-catch-release");
-                    hand.clearSelectionState(true);
-                    releaseObject(pullCatchRef, claimOwnerForHand(isLeft));
+                /*
+                 * Catch window: an object that arrived without grab held falls
+                 * free, and grab held while its pulled point is within reach of
+                 * the palm catches it (seated like any pull catch). The window
+                 * runs from arrival whatever the button does.
+                 */
+                const bool windowOpen =
+                    hand.advancePullCatchWindow(frame.deltaSeconds, pull_motion_math::kCatchWindowSeconds);
+                float catchDistance = 0.0f;
+                const bool inReach = grabInput.held &&
+                    hand.pullCatchPointWithin(hknp, handInput.grabAnchorWorld, pull_motion_math::kCatchRadiusGameUnits,
+                        nullptr, &catchDistance);
+                if (!inReach) {
+                    if (!windowOpen) {
+                        ROCK_LOG_DEBUG(Hand,
+                            "{} hand pull catch window closed ({:.2f}s) without a catch: grabHeld={} dist={:.1f}",
+                            hand.handName(), pull_motion_math::kCatchWindowSeconds, grabInput.held ? "yes" : "no",
+                            catchDistance);
+                        hand.finishPullPrepAsPhysicalDropIfActive("pull-catch-window-closed");
+                        hand.clearSelectionState(true);
+                        releaseObject(pullCatchRef, claimOwnerForHand(isLeft));
+                    }
                     return;
                 }
                 if (!hand.advancePullCatchCommit(frame.deltaSeconds, pull_motion_math::kCatchRetryMaximumTimeSeconds)) {
@@ -2479,12 +2493,11 @@ namespace rock
         } else if (hand.getState() == HandState::Pulled) {
             // Keep the reference alive across selection cleanup and callbacks.
             const auto pulledRef = hand.getSelection().retainedRef;
+            // A flight continues when grab is let go: the object still comes
+            // to the hand and the catch window takes the next press (HIGGS).
             if (grabInput.released) {
-                ROCK_LOG_DEBUG(Hand, "{} hand released dynamic pull", hand.handName());
-                hand.finishPullPrepAsPhysicalDropIfActive("pull-release");
-                hand.clearSelectionState(true);
-                releaseObject(pulledRef.get(), claimOwnerForHand(isLeft));
-                return;
+                ROCK_LOG_DEBUG(Hand, "{} hand let go of grab during the pull; flight continues to the catch window",
+                    hand.handName());
             }
 
             const auto& transform = handInput.rawHandWorld;
@@ -2501,6 +2514,11 @@ namespace rock
                     hand.finishPullPrepAsPhysicalDropIfActive("pull-arrived-blocked");
                     hand.clearSelectionState(true);
                     releaseObject(pulledRef.get(), claimOwnerForHand(isLeft));
+                    return;
+                }
+                if (!grabInput.held) {
+                    ROCK_LOG_DEBUG(Hand, "{} hand pull arrived without grab held; catch window open for {:.2f}s",
+                        hand.handName(), pull_motion_math::kCatchWindowSeconds);
                     return;
                 }
 

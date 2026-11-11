@@ -7,6 +7,11 @@
 
 namespace rock
 {
+    // Pull flight excludes every body collider and both hands' colliders at once.
+    static_assert(kBodyBoneColliderBodyCount + 2 * hand_collider_semantics::kHandColliderBodyCountPerHand + 2 <=
+            native_player_collision::kMaximumHeldExclusionColliders,
+        "held exclusion collider capacity below body colliders plus both hands");
+
     void PhysicsInteraction::clearLeftWeaponContact()
     {
         _weaponContact.left.bodyId.store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
@@ -370,6 +375,42 @@ namespace rock
                 add(colliders, colliderCount, hand.getCollisionBodyId().value, bit);
             }
             for (const auto bodyId : leased) {
+                add(held, heldCount, bodyId, bit);
+            }
+        }
+        /*
+         * A pulled object flies to the hand through the player: from launch
+         * until it is caught or its catch window closes it passes every body
+         * collider and the pulling hand's colliders, so the chest or the
+         * fingers never knock it away before the catch seats it. HIGGS keeps
+         * a pulled object out of the player's own collision the same way.
+         */
+        for (const bool isLeft : { false, true }) {
+            const Hand& hand = isLeft ? _leftHand : _rightHand;
+            const auto pulled = hand.pullFlightBodyIds();
+            if (pulled.empty()) {
+                continue;
+            }
+            const std::uint8_t bit = isLeft ? 2 : 1;
+            const std::uint32_t bodyCount = _bodyBoneColliders.getBodyCount();
+            for (std::uint32_t i = 0; i < bodyCount; ++i) {
+                const auto bodyId = _bodyBoneColliders.getBodyIdAtomic(i);
+                BodyBoneColliderMetadata metadata{};
+                if (_bodyBoneColliders.tryGetBodyMetadataAtIndexAtomic(i, bodyId, metadata) && metadata.valid) {
+                    add(colliders, colliderCount, bodyId, bit);
+                }
+            }
+            const std::uint32_t handColliderCount = hand.getHandColliderBodyCount();
+            for (std::uint32_t i = 0; i < handColliderCount; ++i) {
+                const auto bodyId = hand.getHandColliderBodyIdAtomic(i);
+                if (bodyId != INVALID_BODY_ID) {
+                    add(colliders, colliderCount, bodyId, bit);
+                }
+            }
+            if (handColliderCount == 0 && hand.hasCollisionBody()) {
+                add(colliders, colliderCount, hand.getCollisionBodyId().value, bit);
+            }
+            for (const auto bodyId : pulled) {
                 add(held, heldCount, bodyId, bit);
             }
         }

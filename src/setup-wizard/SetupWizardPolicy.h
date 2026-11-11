@@ -93,8 +93,8 @@ namespace rock::setup_wizard_policy
             { {
                 { "1", "Instant pull", "Point at an object and press grab: it flies straight into your hand." },
                 { "2", "Flick to pull (HIGGS style)",
-                    "Hold grab to lock on, flick your hand toward you, and keep holding while it flies in. Let go "
-                    "before it arrives to cancel." },
+                    "Hold grab to lock on and flick your hand toward you. Keep holding to catch it, or let go and "
+                    "squeeze again as it reaches you." },
             } } },
         Option{ 0, "Grabbing", "FarGrabDirection", "Aiming a far grab",
             { {

@@ -196,6 +196,7 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp` for engine math. `
 ### Interaction
 
 - A pull or forced arrival of a loose object seats from, per hand: the player's saved offset, a provider default pose, ROCK's built-in pose, the library pose, then the dynamic seat. Fixed poses (immersive aids, grenades) seat every grab and replace the pinch, except a second hand joining a held grenade.
+- A pulled object flies to the live hand, leading its measured motion, until it arrives or stops closing in (`grab/PullFlightPolicy.h`); letting go of grab never ends a flight. Grab held at arrival, or held within the catch window while the pulled point is in reach, catches it as a pull catch, which seats.
 - `BuiltInGrabOffsetData.cpp` and `GrabPoseLibraryData.cpp` are generated from the grab-offset authoring data; regenerate them, never edit them.
 - A saved offset of an object whose bodies move against each other (ragdolls, tongs) is relative to the grabbed body and applies only to that body.
 - A close grab holds the object where the hand found it only when a finger probe touches the visual mesh or the mesh crosses the thumb-index line; otherwise the object comes to the hand like a pull. A body (limb, corpse) never comes to the hand; the hold closes the gap.

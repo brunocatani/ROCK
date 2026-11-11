@@ -13,6 +13,7 @@
 #include "physics-interaction/grab/GrabContact.h"
 #include "physics-interaction/grab/GrabInteractionPolicy.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"
+#include "physics-interaction/grab/PullFlightPolicy.h"
 #include "physics-interaction/grab/HeldContactMeshCache.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
@@ -20,7 +21,7 @@
 #include "physics-interaction/weapon/authored/AuthoredWeaponGripPose.h"
 
 /*
- * Grab core policy is grouped here to keep object preparation, lifecycle, canonical frames, frame math, interaction decisions, and pull motion together.
+ * Grab core policy is grouped here to keep object preparation, lifecycle, canonical frames, frame math and interaction decisions together. Pull flight lives in PullFlightPolicy.h.
  */
 
 // ---- Active object prep policy ----
@@ -1246,160 +1247,5 @@ namespace rock::grab_authority_frame_math
             isFiniteTransform(frozen.desiredBodyWorld) && isFiniteTransform(frozen.rawHandSpace) &&
             isFiniteTransform(frozen.proxyAuthorityHandSpace) && isFiniteTransform(frozen.proxyAuthorityBodyHandSpace);
         return frozen;
-    }
-}
-
-// ---- Pull motion math ----
-
-namespace rock::pull_motion_math
-{
-    inline constexpr float kApplyVelocitySeconds = 0.2f;
-    inline constexpr float kOwnerGraceSeconds = 1.0f;
-    inline constexpr float kTrackHandSeconds = 0.1f;
-    inline constexpr float kDestinationZOffsetHavok = 0.01f;
-    inline constexpr float kDurationA = 0.715619f;
-    inline constexpr float kDurationB = -0.415619f;
-    inline constexpr float kDurationC = 0.656256f;
-    inline constexpr float kMaximumVelocityHavok = 10.0f;
-    inline constexpr float kAutoGrabDistanceGameUnits = 18.0f;
-    inline constexpr float kCatchRetryMaximumTimeSeconds = 0.65f;
-    // Actor-equipment materialization is a separate lifecycle even though its
-    // current timeout matches pull-catch retry tuning.
-    inline constexpr float kExtractionHandoffMaximumTimeSeconds = 0.65f;
-    inline constexpr bool kCatchWideReacquireEnabled = true;
-    inline constexpr float kCatchWideReacquireRadiusGameUnits = 32.0f;
-    inline constexpr float kCatchWideReacquireMaximumBodyDistanceGameUnits = 42.0f;
-    inline constexpr float kAngularDamping = 8.0f;
-
-    template <class Vec3>
-    struct PullMotionInput
-    {
-        Vec3 handHavok{};
-        Vec3 objectPointHavok{};
-        Vec3 previousTargetHavok{};
-        float elapsedSeconds = 0.0f;
-        float durationSeconds = 0.0f;
-        bool hasPreviousTarget = false;
-    };
-
-    template <class Vec3>
-    struct PullMotionResult
-    {
-        Vec3 targetHavok{};
-        Vec3 velocityHavok{};
-        float durationRemainingSeconds = 0.0f;
-        bool applyVelocity = false;
-        bool refreshTarget = false;
-        bool expired = false;
-    };
-
-    inline float computePullDurationSeconds(float distanceHavok)
-    {
-        const float clampedDistance = (std::max)(0.0f, distanceHavok);
-        return (std::max)(0.001f, kDurationA + kDurationB * std::exp(-kDurationC * clampedDistance));
-    }
-
-    inline float angularVelocityKeepForDamping(float deltaTime)
-    {
-        if (!std::isfinite(deltaTime) || deltaTime <= 0.0f) {
-            // Unmeasured frame: no elapsed time, no damping decay.
-            return 1.0f;
-        }
-        return 1.0f / (1.0f + kAngularDamping * deltaTime);
-    }
-
-    template <class Vec3>
-    float vectorLength(const Vec3& value)
-    {
-        return std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
-    }
-
-    /*
-     * Point of the segment start->end closest to point. Pull arrival tests the
-     * path travelled since the previous frame, not only the current position:
-     * at pull speed a slow frame moves the object farther than the catch
-     * sphere is wide, so a per-frame point test lets it pass the hand unseen.
-     */
-    template <class Vec3>
-    Vec3 closestPointOnSegment(const Vec3& start, const Vec3& end, const Vec3& point)
-    {
-        const Vec3 segment{ end.x - start.x, end.y - start.y, end.z - start.z };
-        const float lengthSquared = segment.x * segment.x + segment.y * segment.y + segment.z * segment.z;
-        if (!std::isfinite(lengthSquared) || lengthSquared <= 1.0e-12f)
-            return end;
-        const float t =
-            ((point.x - start.x) * segment.x + (point.y - start.y) * segment.y + (point.z - start.z) * segment.z) /
-            lengthSquared;
-        if (!std::isfinite(t))
-            return end;
-        const float clamped = (std::clamp)(t, 0.0f, 1.0f);
-        return Vec3{ start.x + segment.x * clamped, start.y + segment.y * clamped, start.z + segment.z * clamped };
-    }
-
-    template <class Vec3>
-    Vec3 clampLength(Vec3 value, float maxLength)
-    {
-        if (maxLength <= 0.0f) {
-            return value;
-        }
-
-        const float length = vectorLength(value);
-        if (length <= maxLength || length <= 0.0001f) {
-            return value;
-        }
-
-        const float scale = maxLength / length;
-        value.x *= scale;
-        value.y *= scale;
-        value.z *= scale;
-        return value;
-    }
-
-    template <class Vec3>
-    PullMotionResult<Vec3> computePullMotion(const PullMotionInput<Vec3>& input)
-    {
-        /*
-         * ROCK drives the pulled body for a short predicted-velocity window,
-         * then keeps the pulled-object owner alive until pullDuration + grace so
-         * heavy or cluttered objects can still be reacquired by the close catch
-         * path after the impulse phase ends.
-         */
-        const float elapsedSeconds =
-            std::isfinite(input.elapsedSeconds) ? (std::max)(0.0f, input.elapsedSeconds) : 0.0f;
-        const float durationSeconds =
-            std::isfinite(input.durationSeconds) ? (std::max)(0.0f, input.durationSeconds) : 0.0f;
-
-        PullMotionResult<Vec3> result{};
-        result.refreshTarget = !input.hasPreviousTarget || elapsedSeconds <= kTrackHandSeconds;
-        result.targetHavok = result.refreshTarget ? input.handHavok : input.previousTargetHavok;
-        if (result.refreshTarget) {
-            result.targetHavok.z += kDestinationZOffsetHavok;
-        }
-
-        if (elapsedSeconds > durationSeconds + kOwnerGraceSeconds) {
-            result.expired = true;
-            return result;
-        }
-
-        const float rawDurationRemainingSeconds = durationSeconds - elapsedSeconds;
-        result.durationRemainingSeconds = (std::max)(0.0f, rawDurationRemainingSeconds);
-        if (elapsedSeconds > kApplyVelocitySeconds || rawDurationRemainingSeconds <= 0.001f) {
-            return result;
-        }
-
-        Vec3 horizontalDelta{
-            result.targetHavok.x - input.objectPointHavok.x,
-            result.targetHavok.y - input.objectPointHavok.y,
-            0.0f,
-        };
-
-        const float verticalDelta = result.targetHavok.z - input.objectPointHavok.z;
-        result.velocityHavok.x = horizontalDelta.x / result.durationRemainingSeconds;
-        result.velocityHavok.y = horizontalDelta.y / result.durationRemainingSeconds;
-        result.velocityHavok.z =
-            0.5f * 9.81f * result.durationRemainingSeconds + verticalDelta / result.durationRemainingSeconds;
-        result.velocityHavok = clampLength(result.velocityHavok, kMaximumVelocityHavok);
-        result.applyVelocity = true;
-        return result;
     }
 }

@@ -450,6 +450,11 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKFarPullGestureTests PRIVATE ${SOURCE_DIR} "${ROCK_OPENVR_ROOT}")
   add_rock_test(ROCKFarPullGestureTests)
 
+  add_executable(ROCKPullFlightPolicyTests "${ROOT_DIR}/tests/PullFlightPolicyTests.cpp")
+  target_compile_features(ROCKPullFlightPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKPullFlightPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKPullFlightPolicyTests)
+
   add_executable(ROCKButtonLayoutTests "${ROOT_DIR}/tests/ButtonLayoutTests.cpp")
   target_compile_features(ROCKButtonLayoutTests PRIVATE cxx_std_23)
   target_include_directories(ROCKButtonLayoutTests PRIVATE ${SOURCE_DIR} "${ROCK_OPENVR_ROOT}")

@@ -167,9 +167,10 @@ namespace rock::config
             "Any other firearm held with two hands. Range: 0 to 300.", api::configuration::Group::Consumer },
         { "Grabbing", "FarGrabMode", "06. Grabbing",
             "Far Grab Mode\n1 = Immediate Pull. 2 = Higgs Pull Mode.\nImmediate Pull: grabbing a far object pulls it "
-            "to your hand and catches it, with no flick.\nHiggs Pull Mode: hold grab to lock on, flick your hand "
-            "toward yourself, then keep holding to pull the object in and catch it.\nRelease before the flick or "
-            "during the pull to cancel. Applies to the next far grab.",
+            "to your hand, with no flick.\nHiggs Pull Mode: hold grab to lock on and flick your hand toward yourself; "
+            "release before the flick to cancel.\nA pulled object follows your hand while you move or turn. Keep "
+            "holding grab to catch it as it arrives, or let go and press grab again as it reaches you. Applies to "
+            "the next far grab.",
             api::configuration::Group::Consumer },
         // PALM builds its dropdown from the "N = label" pairs; labels may not contain , ; or a full stop.
         { "Grabbing", "CloseGrabDirection", "06. Grabbing",

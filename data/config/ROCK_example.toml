@@ -197,9 +197,9 @@ DefaultTwoHandRecoilPercent = 80.0
 [Grabbing]
 ## Far Grab Mode
 ## 1 = Immediate Pull. 2 = Higgs Pull Mode.
-## Immediate Pull: grabbing a far object pulls it to your hand and catches it, with no flick.
-## Higgs Pull Mode: hold grab to lock on, flick your hand toward yourself, then keep holding to pull the object in and catch it.
-## Release before the flick or during the pull to cancel. Applies to the next far grab.
+## Immediate Pull: grabbing a far object pulls it to your hand, with no flick.
+## Higgs Pull Mode: hold grab to lock on and flick your hand toward yourself; release before the flick to cancel.
+## A pulled object follows your hand while you move or turn. Keep holding grab to catch it as it arrives, or let go and press grab again as it reaches you. Applies to the next far grab.
 FarGrabMode = 1
 
 ## Which way your hand reaches for nearby objects.

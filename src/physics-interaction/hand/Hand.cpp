@@ -478,10 +478,10 @@ namespace rock
         _pullDriveDecision = {};
         _pulledPrimaryBodyId = INVALID_BODY_ID;
         _pullMeshPointBodyLocal = {};
-        _pullTargetHavok = {};
+        _pullTargetVelocity = {};
+        _pullProgress = {};
         _pullElapsedSeconds = 0.0f;
         _pullDurationSeconds = 0.0f;
-        _pullHasTarget = false;
         _pullHasPreviousObjectPoint = false;
         _pullPresentationAxisBodyLocal = {};
         _pullPresentationElongationRatio = 0.0f;
@@ -721,6 +721,7 @@ namespace rock
             .primaryBodyId = primaryBodyId,
             .targetKind = targetKind,
             .commitElapsedSeconds = 0.0f,
+            .windowElapsedSeconds = 0.0f,
             .failedCommitAttempts = 0,
         };
 
@@ -738,6 +739,7 @@ namespace rock
 
         _pullCatchIntent.commitPending = true;
         _pullCatchIntent.commitElapsedSeconds = 0.0f;
+        _pullCatchIntent.windowElapsedSeconds = 0.0f;
         _pullCatchIntent.failedCommitAttempts = 0;
         ROCK_LOG_DEBUG(Hand, "{} hand PULL catch intent arrived formID={:08X} primaryBody={}", handName(),
             _pullCatchIntent.formId, _pullCatchIntent.primaryBodyId);
@@ -773,6 +775,23 @@ namespace rock
         return retryWindow <= 0.0f || _pullCatchIntent.commitElapsedSeconds <= retryWindow;
     }
 
+    bool Hand::advancePullCatchWindow(float deltaTime, float windowSeconds)
+    {
+        if (!hasPendingPullCatchCommit()) {
+            return false;
+        }
+        _pullCatchIntent.windowElapsedSeconds += (std::max)(0.0f, std::isfinite(deltaTime) ? deltaTime : 0.0f);
+        return _pullCatchIntent.windowElapsedSeconds <= (std::max)(0.0f, windowSeconds);
+    }
+
+    std::span<const std::uint32_t> Hand::pullFlightBodyIds() const noexcept
+    {
+        if (_state == HandState::Pulled || hasArrivedPullCatchIntent()) {
+            return _pulledBodyIds;
+        }
+        return {};
+    }
+
     void Hand::notePullCatchCommitAttemptFailed()
     {
         if (!hasPendingPullCatchCommit()) {
@@ -785,15 +804,15 @@ namespace rock
     RE::TESObjectREFR* Hand::getPullCatchIntentRef() const { return _pullCatchIntent.refr; }
 
     bool Hand::reacquirePullCatchCloseSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
-        const RE::NiPoint3& selectionOrigin, const RE::NiPoint3& palmNormal, float radiusGameUnits,
-        float maxBodyDistanceGameUnits)
+        const RE::NiPoint3& selectionOrigin, const RE::NiPoint3& palmNormal, float radiusGameUnits)
     {
         /*
          * ROCK gives the pulled object a wider target-specific close grab query
          * after arrival instead of falling back to normal near/far selection.
          * This path can only restore the already-claimed ref/body stored in
          * PullCatchIntent, never switch hands to a fresh object or restart far
-         * selection.
+         * selection. Reach is measured to the pulled mesh point, the point the
+         * catch seats, so a large object is not refused for its body origin.
          */
         if (!_pullCatchIntent.active || !_pullCatchIntent.commitPending || !hknpWorld || !_pullCatchIntent.refr ||
             _pullCatchIntent.primaryBodyId == INVALID_BODY_ID) {
@@ -805,27 +824,18 @@ namespace rock
             return false;
         }
 
-        RE::NiTransform bodyWorld{};
         const auto bodyId = RE::hknpBodyId{ _pullCatchIntent.primaryBodyId };
-        if (!havok_runtime::tryGetBodyArrayWorldTransform(hknpWorld, bodyId, bodyWorld) &&
-            !tryResolveLiveBodyWorldTransform(hknpWorld, bodyId, bodyWorld)) {
-            return false;
-        }
-
-        const float distance = pointDistanceGameUnits(selectionOrigin, bodyWorld.translate);
-        const float radius = std::isfinite(radiusGameUnits) ? (std::max)(0.0f, radiusGameUnits) : 0.0f;
-        const float maxBodyDistance =
-            std::isfinite(maxBodyDistanceGameUnits) ? (std::max)(0.0f, maxBodyDistanceGameUnits) : radius;
-        const float acceptedDistance = (std::max)(radius, maxBodyDistance);
-        if (acceptedDistance <= 0.0f || distance > acceptedDistance) {
+        RE::NiPoint3 pulledPointWorld{};
+        float distance = 0.0f;
+        if (!pullCatchPointWithin(hknpWorld, selectionOrigin, radiusGameUnits, &pulledPointWorld, &distance)) {
             return false;
         }
 
         SelectedObject selection{};
         selection.setReference(refr);
         selection.bodyId = bodyId;
-        selection.hitPointWorld = bodyWorld.translate;
-        selection.hitNormalWorld = normalizeOrFallback(selectionOrigin - bodyWorld.translate, palmNormal);
+        selection.hitPointWorld = pulledPointWorld;
+        selection.hitNormalWorld = normalizeOrFallback(selectionOrigin - pulledPointWorld, palmNormal);
         selection.distance = distance;
         selection.signedAlongDistance = distance;
         selection.lateralDistance = 0.0f;
@@ -856,8 +866,8 @@ namespace rock
 
         ROCK_LOG_DEBUG(Hand,
             "{} hand pull-catch wide reacquired close selection: formID={:08X} body={} dist={:.1f} "
-            "acceptedDistance={:.1f}",
-            handName(), _pullCatchIntent.formId, _pullCatchIntent.primaryBodyId, distance, acceptedDistance);
+            "radius={:.1f}",
+            handName(), _pullCatchIntent.formId, _pullCatchIntent.primaryBodyId, distance, radiusGameUnits);
         return true;
     }
 
