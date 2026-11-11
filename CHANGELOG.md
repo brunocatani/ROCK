@@ -5,9 +5,8 @@
 ### Fixed
 
 - No more phantom grabs. A close grab holds an object where your hand found it
-  only when one of your fingers touches its visible mesh. For guns, melee
-  weapons and an object your other hand holds, a grab inside the collision but
-  off the mesh waits: keeping the grip held grabs the moment a finger reaches
+  only when one of your fingers touches its visible mesh. For an object
+  your other hand holds, a grab inside the collision but off the mesh waits: keeping the grip held grabs the moment a finger reaches
   the mesh, and meanwhile that hand passes through the object's collision, so
   you can reach in and grab the exact part you want; the object collides with
   the hand again once you let go of the grip and pull the hand out. Grabs never
@@ -154,10 +153,10 @@
   one: ROCK compares the object's shape with the objects that have an authored
   pose and holds it the way the most similar ones are held, with the fingers
   closed on its own mesh. Pulls of such objects fly into that pose too.
-- A close grab that touches nothing no longer does nothing: an ordinary object
-  near your hand comes the last bit to the hand and settles in its pose, like a
-  short pull. Touching an object first still holds it exactly where your hand
-  found it.
+- A close grab that touches nothing no longer does nothing: an object or a
+  weapon near your hand comes the last bit to the hand and settles in its pose
+  or grip, like a short pull. Touching it first still holds it exactly where
+  your hand found it.
 - Small objects such as a single cartridge can be pinched: an object between
   your thumb and index finger counts as touched even when neither finger's
   closing path meets it, and the two fingers bend onto it instead of closing

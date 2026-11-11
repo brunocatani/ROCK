@@ -372,13 +372,16 @@ namespace rock
          * arrivals (pull catch, force grab, weapon transfers) move the mesh
          * onto the palm themselves and are exempt.
          *
-         * Without that contact an ordinary loose object is not refused: it
-         * comes the last units to the hand and seats like a pull that has just
-         * arrived (reachArrival), in its authored or library pose when it has
-         * one. Guns and melee keep their own grip zones, and an object the
-         * other hand holds is not pulled out of that hand: those are refused
-         * and retried while the grip is held, landing when a finger reaches
-         * the mesh.
+         * Without that contact the grab is not refused: whatever a pull could
+         * bring comes the last units to the hand and seats like a pull that
+         * has just arrived (reachArrival). A loose object takes its authored
+         * or library pose, a gun or melee weapon its authored grip, anything
+         * else its nearest mesh point on the palm. Refusing these left the
+         * player pressing the grip beside a gun with nothing happening until
+         * a finger found the mesh.
+         *
+         * An object the other hand holds is not pulled out of that hand: that
+         * grab waits and retries while the grip is held.
          */
         const bool probeContactRequired = !sel.isFarSelection && !grabbedFromPullCatch && !sel.forcedArrival &&
             !sel.equippedWeaponTransfer && transferPose == nullptr;
@@ -399,15 +402,14 @@ namespace rock
                 }
             };
             reachArrival = !probeContact.touching && probeContact.triangleCount > 0 && !joiningPeerHeldObject &&
-                sel.targetKind == grab_target::Kind::LooseObject &&
-                saved_grab_offset::participatesInSavedGrabOffsets(looseWeaponGrab,
-                    isThrowableLooseWeapon(selectedLooseWeaponForm(sel)));
+                !handPocketOnlyGrab && grab_target::canUseRockDynamicPull(sel.targetKind);
             if (reachArrival) {
                 ROCK_LOG_DEBUG(Hand,
                     "{} hand GRAB reach arrival: no finger probe touches the mesh, the object comes to the hand "
-                    "ref={:08X} fingers=T{}I{}M{}R{}P{} triangles={}",
-                    handName(), sel.refr ? sel.refr->GetFormID() : 0, stateCode(0), stateCode(1), stateCode(2),
-                    stateCode(3), stateCode(4), probeContact.triangleCount);
+                    "ref={:08X} kind={} weapon={} fingers=T{}I{}M{}R{}P{} triangles={}",
+                    handName(), sel.refr ? sel.refr->GetFormID() : 0, grab_target::name(sel.targetKind),
+                    looseWeaponGrab ? "yes" : "no", stateCode(0), stateCode(1), stateCode(2), stateCode(3),
+                    stateCode(4), probeContact.triangleCount);
             } else if (!probeContact.touching) {
                 // The hand may be stopped by collision that sits off the mesh;
                 // let it through this object until it reaches the mesh.
@@ -658,7 +660,7 @@ namespace rock
 
         namespace authoredPolicy = loose_weapon_authored_grab_policy;
         const auto acquisitionSource =
-            authoredPolicy::acquisitionSource(grabbedFromPullCatch, sel.forcedArrival, transferPose != nullptr);
+            authoredPolicy::acquisitionSource(seatedArrival, sel.forcedArrival, transferPose != nullptr);
         const bool authoredWeapon = looseWeaponGrab && !isThrowableLooseWeapon(selectedLooseWeaponForm(sel));
         loose_weapon_grip_zone::NearGrab preparedAuthoredGrip{};
         const auto prepareAuthoredGrip = [&](bool arrival) {
@@ -832,9 +834,10 @@ namespace rock
         // object's collision (resolveGrabSurfaceEvidence).
         if (!surfaceEvidence.meshGrabFound && !authoredBodyOwnerVerified && !authoredSeatPrepared) {
             ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
-                "{} hand GRAB refused: no mesh point to hold ref={:08X} reason={} pullCatch={} forced={}", handName(),
-                sel.refr ? sel.refr->GetFormID() : 0, surfaceEvidence.fallbackReason ? surfaceEvidence.fallbackReason : "none",
-                grabbedFromPullCatch ? "yes" : "no", sel.forcedArrival ? "yes" : "no");
+                "{} hand GRAB refused: no mesh point to hold ref={:08X} reason={} pullCatch={} forced={} reach={}",
+                handName(), sel.refr ? sel.refr->GetFormID() : 0,
+                surfaceEvidence.fallbackReason ? surfaceEvidence.fallbackReason : "none",
+                grabbedFromPullCatch ? "yes" : "no", sel.forcedArrival ? "yes" : "no", reachArrival ? "yes" : "no");
             grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
             return probeContactRequired ? GrabAttemptResult::ContactUnavailable : GrabAttemptResult::Rejected;
