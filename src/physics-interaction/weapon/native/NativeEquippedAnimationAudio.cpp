@@ -7,6 +7,7 @@
 #include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/NetImmerse/NiNode.h"
+#include "api/StorageSceneLookup.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/NativeMemory.h"
 
@@ -103,7 +104,8 @@ namespace rock::native_equipped_animation_audio
             name.remove_prefix(separator + 1);
             const auto end = name.find('.');
             const RE::BSFixedString bone(std::string(name.substr(0, end)).c_str());
-            follow = model->GetObjectByName(bone);
+            // The FO4VR slot: CommonLib's declaration is the flat one.
+            follow = storage_scene_lookup::find(model, bone);
             if (!follow) {
                 ROCK_LOG_SAMPLE_WARN(Animation, 1000, "AKIMBO sound target absent payload='{}' model={:#x}",
                     payload.c_str(), reinterpret_cast<std::uintptr_t>(model));
