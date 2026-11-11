@@ -188,8 +188,8 @@
 
 - Requires FRIK 0.79.1 or newer with FRIK API 2.3. RPS UI Framework is
   recommended (grab indicators and ammo counters draw through it) and RobCo PALM
-  is optional (settings pages). ROCK, RPS UI Framework, RobCo PALM, PAPER,
-  SCISSORS and the ROCK add-ons are released together; install them together.
+  is optional (settings pages). ROCK, RPS UI Framework, RobCo PALM, PAPER and
+  the ROCK add-ons are released together; install them together.
 - **NPC interactions left ROCK.** NPC collision, blade penetration, NPC pushing,
   corpse interaction, grenade NPC effects and NPC visualization belong to
   **SCISSORS**, with its own settings file and PALM pages. Rocky bare-fist mode is

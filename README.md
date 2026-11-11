@@ -50,7 +50,7 @@ ROCK is the base of the RPS suite: [SCISSORS](https://github.com/brunocatani/SCI
 - [FRIK](https://www.nexusmods.com/fallout4/mods/53464) 0.79.1 or newer, with FRIK API 2.3. ROCK runs inside FRIK's frame phases and refuses an older FRIK API.
 - Recommended: [RPS UI Framework](https://www.nexusmods.com/fallout4/mods/108951). ROCK's grab indicators and ammo counters draw through it; without it they are not shown.
 - Optional: RobCo PALM, for ROCK's in-game settings pages.
-- Every mod that builds on ROCK must be a version made for ROCK 1.0. ROCK, RPS UI Framework, RobCo PALM, PAPER, SCISSORS and the ROCK add-ons are released together; install them together.
+- Every mod that builds on ROCK must be a version made for ROCK 1.0. ROCK, RPS UI Framework, RobCo PALM, PAPER and the ROCK add-ons are released together; install them together.
 
 ### Recommended install
 
