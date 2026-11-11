@@ -2152,7 +2152,7 @@ namespace rock::native_secondary_actions
                 ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "AKIMBO secondary native recoil pose invalid");
                 return;
             }
-            const auto* handed = f4vr::getIniSetting("bLeftHandedMode:VR");
+            const auto* handed = f4vr::leftHandedModeSetting();
             if (!handed)
                 return;
             const auto carrier = weapon_recoil_authority_math::resolveCarrierLocalDelta(controlled, parent->world,

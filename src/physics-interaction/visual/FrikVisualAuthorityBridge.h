@@ -353,7 +353,7 @@ namespace rock::frik_visual_authority
             return true;
         case Hand::Primary:
         case Hand::Offhand: {
-            const auto* leftHandedMode = f4vr::getIniSetting("bLeftHandedMode:VR");
+            const auto* leftHandedMode = f4vr::leftHandedModeSetting();
             if (!leftHandedMode) {
                 return false;
             }
@@ -374,10 +374,10 @@ namespace rock::frik_visual_authority
         return frikApi && frikApi->isSkeletonReady();
     }
 
-    [[nodiscard]] inline bool isCompatibilityConfigBlocking()
+    [[nodiscard]] inline bool isConfigOpen()
     {
         auto* frikApi = api();
-        return frikApi && (frikApi->isConfigOpen() || frikApi->isWristPipboyOpen());
+        return frikApi && frikApi->isConfigOpen();
     }
 
     [[nodiscard]] inline bool isWristPipboyOpen()
@@ -385,6 +385,8 @@ namespace rock::frik_visual_authority
         auto* frikApi = api();
         return frikApi && frikApi->isWristPipboyOpen();
     }
+
+    [[nodiscard]] inline bool isCompatibilityConfigBlocking() { return isConfigOpen() || isWristPipboyOpen(); }
 
     [[nodiscard]] inline bool clearHandPose(const char* tag, Hand hand)
     {

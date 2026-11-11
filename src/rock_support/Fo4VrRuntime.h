@@ -155,7 +155,15 @@ namespace rock::fo4vr
     using PowerArmorStateProvider = bool (*)() noexcept;
     void setPowerArmorStateProvider(PowerArmorStateProvider provider) noexcept;
     [[nodiscard]] bool isExplodableCar(const RE::TESBoundObject* baseForm) noexcept;
+    // Walks both INI collections by name: for one-time lookups, never per frame.
     [[nodiscard]] RE::Setting* getIniSetting(const char* name) noexcept;
+    /*
+     * bLeftHandedMode:VR and fVrScale:VR, looked up once. The game's INI
+     * settings are process-lifetime objects, so the pointer is kept; a lookup
+     * that fails (collections not built yet) is retried on the next call.
+     */
+    [[nodiscard]] RE::Setting* leftHandedModeSetting() noexcept;
+    [[nodiscard]] RE::Setting* vrScaleSetting() noexcept;
 
     void showNotification(const std::string& text);
 

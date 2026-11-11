@@ -170,7 +170,7 @@ namespace rock
 
             static std::array<RuntimeScaleLogState, 2> s_scaleStates{};
             auto& state = s_scaleStates[isLeft ? 1 : 0];
-            auto* vrScaleSetting = f4vr::getIniSetting("fVrScale:VR");
+            auto* vrScaleSetting = f4vr::vrScaleSetting();
             const float vrScale = vrScaleSetting ? vrScaleSetting->GetFloat() : -1.0f;
             const float collidableScale = collidableNode ? collidableNode->world.scale : -1.0f;
             auto changedEnough = [](float a, float b) { return std::fabs(a - b) > 0.01f; };

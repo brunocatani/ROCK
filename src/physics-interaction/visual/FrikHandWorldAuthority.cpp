@@ -159,7 +159,7 @@ namespace rock::frik_hand_world_authority
         [[nodiscard]] DriverSample sampleRawDriver(const bool isLeft)
         {
             const auto* nodes = f4vr::getPlayerNodes();
-            const auto* mode = f4vr::getIniSetting("bLeftHandedMode:VR");
+            const auto* mode = f4vr::leftHandedModeSetting();
             if (!nodes || !mode)
                 return {};
             const bool offhand = mode->GetBinary() != isLeft;

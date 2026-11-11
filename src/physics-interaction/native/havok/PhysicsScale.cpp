@@ -49,7 +49,7 @@ namespace rock::physics_scale
 
         float readVrScaleSetting()
         {
-            if (auto* setting = f4vr::getIniSetting("fVrScale:VR")) {
+            if (auto* setting = f4vr::vrScaleSetting()) {
                 return setting->GetFloat();
             }
             return 0.0f;

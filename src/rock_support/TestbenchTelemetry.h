@@ -133,7 +133,7 @@ namespace rock::testbench_telemetry
     };
 
     // Any thread. One call per controller-state read through ROCK's hook. `bypassed` reads
-    // (RPS UI and configurator raw reads) count separately and never update the game state.
+    // (RPS UI raw reads) count separately and never update the game state.
     void observeControllerState(bool isLeft, const RawControllerState& raw, std::uint64_t gamePressed,
         float gameTrigger, std::uint32_t blankReasons, bool bypassed) noexcept;
 

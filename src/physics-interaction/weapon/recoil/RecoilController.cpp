@@ -117,7 +117,7 @@ namespace rock
         // Native strength still needs ROCK's physical firing-hand routing.
         // Declining would leave the kick in the game's primary hand, including
         // when that hand is empty and ROCK carries the weapon in the other one.
-        const auto* const handedMode = f4vr::getIniSetting("bLeftHandedMode:VR");
+        const auto* const handedMode = f4vr::leftHandedModeSetting();
         if (!handedMode || !f4vr::IsWeaponDrawn()) {
             return false;
         }
@@ -216,7 +216,7 @@ namespace rock
     bool TwoHandedGrip::consumeOwnedWeaponRecoil(RE::NiTransform& outWorldDelta) noexcept
     {
         outWorldDelta = transform_math::makeIdentityTransform<RE::NiTransform>();
-        const auto* const handedMode = f4vr::getIniSetting("bLeftHandedMode:VR");
+        const auto* const handedMode = f4vr::leftHandedModeSetting();
         if (g_rockConfig.rockEmergencyDisableRecoil || !handedMode || !f4vr::IsWeaponDrawn()) {
             _recoil.ticket.invalidate();
             return false;

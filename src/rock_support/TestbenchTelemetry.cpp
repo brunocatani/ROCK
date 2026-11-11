@@ -112,7 +112,7 @@ namespace rock::testbench_telemetry
             float gameTrigger;
             std::uint32_t blankReasons; // OR since the previous frame
             std::uint32_t reads; // game-facing reads since the previous frame
-            std::uint32_t bypassedReads; // raw reads by RPS UI / configurator since the previous frame
+            std::uint32_t bypassedReads; // raw reads by RPS UI since the previous frame
             std::uint32_t pad;
         };
 

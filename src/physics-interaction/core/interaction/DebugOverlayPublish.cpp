@@ -886,7 +886,7 @@ namespace rock
                     if (++s_directSkeletonBoneLogCounter >= static_cast<std::uint32_t>(interval)) {
                         s_directSkeletonBoneLogCounter = 0;
                         float vrScale = 0.0f;
-                        if (auto* vrScaleSetting = f4vr::getIniSetting("fVrScale:VR")) {
+                        if (auto* vrScaleSetting = f4vr::vrScaleSetting()) {
                             vrScale = vrScaleSetting->GetFloat();
                         }
                         float rightHandScale = 0.0f;

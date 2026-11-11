@@ -408,11 +408,12 @@ namespace
         performance_profiler::ScopedTimer stateTimer(performance_profiler::Scope::PrepRuntimeState);
         input_remap_runtime::installInputRemapHooks();
 
+        const bool wristPipboyOpen = frik_visual_authority::isWristPipboyOpen();
         runtime_state::updateFrame(runtime_state::RuntimeFrameInput{
             .visualAuthorityAvailable = frik_visual_authority::isAvailable(),
             .visualSkeletonReadyHint = frik_visual_authority::isSkeletonReadyHint(),
-            .compatibilityConfigBlocking = frik_visual_authority::isCompatibilityConfigBlocking(),
-            .wristPipboyOpen = frik_visual_authority::isWristPipboyOpen(),
+            .compatibilityConfigBlocking = wristPipboyOpen || frik_visual_authority::isConfigOpen(),
+            .wristPipboyOpen = wristPipboyOpen,
         });
         stateTimer.stop();
         performance_profiler::ScopedTimer gatesTimer(performance_profiler::Scope::PrepGates);

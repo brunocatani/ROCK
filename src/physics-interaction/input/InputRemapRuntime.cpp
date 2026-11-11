@@ -711,67 +711,16 @@ namespace rock::input_remap_runtime
                 ::rock::api::input::HandInputSuppressionFlag::SuppressOpenVrGameInput);
         }
 
-        [[nodiscard]] bool isCallerModule(const void* address, const wchar_t* moduleName)
+        /*
+         * Only the UI's explicit physical sample bypasses remapping. A game
+         * poll chained through the same DLL still receives ROCK input, and
+         * FRIK keeps the left-wand trigger blanking: its Pip-Boy and gesture
+         * logic acts on that trigger, which fires the weapon while left-firing.
+         */
+        [[nodiscard]] bool shouldBypassProviderOpenVrGameInputSuppression()
         {
-            if (!address || !moduleName) {
-                return false;
-            }
-
-            HMODULE callerModule = nullptr;
-            if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                    reinterpret_cast<LPCWSTR>(address), &callerModule) ||
-                !callerModule) {
-                return false;
-            }
-
-            return callerModule == GetModuleHandleW(moduleName);
-        }
-
-        [[nodiscard]] bool isModuleOnCurrentStack(const wchar_t* moduleName)
-        {
-            auto* targetModule = GetModuleHandleW(moduleName);
-            if (!targetModule) {
-                return false;
-            }
-
-            void* frames[16]{};
-            const auto frameCount =
-                CaptureStackBackTrace(0, static_cast<DWORD>(sizeof(frames) / sizeof(frames[0])), frames, nullptr);
-            for (USHORT i = 0; i < frameCount; ++i) {
-                HMODULE frameModule = nullptr;
-                if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                            GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                        reinterpret_cast<LPCWSTR>(frames[i]), &frameModule) &&
-                    frameModule == targetModule) {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        [[nodiscard]] bool shouldBypassProviderOpenVrGameInputSuppression(const void* callerAddress)
-        {
-            // Only the UI's explicit physical sample bypasses remapping. A
-            // game poll chained through the same DLL still receives ROCK input.
             const auto* ui = s_uiInputApi.load(std::memory_order_acquire);
-            if (ui && ui->rawInputReadActive())
-                return true;
-
-            /*
-             * The configurator consumes raw controller input through ROCK while its lease masks game-facing state.
-             * Some helper paths call through framework/static-library frames before reaching OpenVR, so the immediate
-             * return address is not always enough to identify the configurator as the consumer.
-             *
-             * hFRIK is deliberately NOT in this list: it must keep seeing the
-             * left-wand trigger blanking (its own Pip-Boy/gesture logic acts
-             * on the left trigger, which fires the weapon while left-firing).
-             * hFRIK only gets the cross-map skipped - see the includeCrossMap
-             * flavor of applyLeftHandFireTriggerRemapForGame.
-             */
-            return isCallerModule(callerAddress, L"ROCKConfigurator.dll") ||
-                isModuleOnCurrentStack(L"ROCKConfigurator.dll");
+            return ui && ui->rawInputReadActive();
         }
 
         [[nodiscard]] testbench_telemetry::HapticCaller hapticCaller(const void* callerAddress)
@@ -784,11 +733,22 @@ namespace rock::input_remap_runtime
                 !callerModule) {
                 return testbench_telemetry::HapticCaller::Other;
             }
-            if (callerModule == GetModuleHandleW(nullptr))
+            // The game and ROCK never unload. FRIK is looked up until found:
+            // it is a hard requirement, loaded before any pulse matters.
+            static const HMODULE game = GetModuleHandleW(nullptr);
+            static const HMODULE rock = GetModuleHandleW(L"ROCK.dll");
+            static std::atomic<HMODULE> frikCache{ nullptr };
+            if (callerModule == game)
                 return testbench_telemetry::HapticCaller::Game;
-            if (callerModule == GetModuleHandleW(L"ROCK.dll"))
+            if (callerModule == rock)
                 return testbench_telemetry::HapticCaller::Rock;
-            if (callerModule == GetModuleHandleW(L"FRIK.dll"))
+            auto frik = frikCache.load(std::memory_order_acquire);
+            if (!frik) {
+                frik = GetModuleHandleW(L"FRIK.dll");
+                if (frik)
+                    frikCache.store(frik, std::memory_order_release);
+            }
+            if (frik && callerModule == frik)
                 return testbench_telemetry::HapticCaller::Frik;
             return testbench_telemetry::HapticCaller::Other;
         }
@@ -824,7 +784,7 @@ namespace rock::input_remap_runtime
         }
 
         /*
-         * Applied uniformly to every non-configurator caller: a caller-module
+         * Applied uniformly to every caller but the UI's raw read: a caller-module
          * split (skip the cross-map for FRIK.dll polls) broke firing in-game
          * - the game's effective fire input is fed through polls the
          * return-address heuristic attributed to FRIK, so input flow must
@@ -1217,15 +1177,14 @@ namespace rock::input_remap_runtime
             return (s_stickClickGameHidden.load(std::memory_order_acquire) & bit) ? stick : 0;
         }
 
-        void applyGameControllerStateRemap(const input_remap_policy::Hand hand, const void* callerAddress,
-            vr::VRControllerState_t* state, const std::uint32_t stateSize,
-            const testbench_telemetry::RawControllerState& raw)
+        void applyGameControllerStateRemap(const input_remap_policy::Hand hand, vr::VRControllerState_t* state,
+            const std::uint32_t stateSize, const testbench_telemetry::RawControllerState& raw)
         {
             const bool stateValid = state && stateSize >= sizeof(vr::VRControllerState_t);
             std::optional<bool> bypassCache;
             const auto bypassed = [&] {
                 if (!bypassCache) {
-                    bypassCache = shouldBypassProviderOpenVrGameInputSuppression(callerAddress);
+                    bypassCache = shouldBypassProviderOpenVrGameInputSuppression();
                 }
                 return *bypassCache;
             };
@@ -1315,7 +1274,6 @@ namespace rock::input_remap_runtime
         bool hookedGetControllerState(vr::IVRSystem* system, vr::TrackedDeviceIndex_t controllerDeviceIndex,
             vr::VRControllerState_t* controllerState, std::uint32_t controllerStateSize)
         {
-            const void* callerAddress = _ReturnAddress();
             const bool result = s_originalGetControllerState
                 ? s_originalGetControllerState(system, controllerDeviceIndex, controllerState, controllerStateSize)
                 : false;
@@ -1328,7 +1286,7 @@ namespace rock::input_remap_runtime
                 captureControllerState(controllerDeviceIndex, controllerState, controllerStateSize);
                 input_remap_policy::Hand hand{};
                 if (resolveControllerHand(controllerDeviceIndex, hand)) {
-                    applyGameControllerStateRemap(hand, callerAddress, controllerState, controllerStateSize, physical);
+                    applyGameControllerStateRemap(hand, controllerState, controllerStateSize, physical);
                 } else {
                     testbench_telemetry::observeUnobservedRead(testbench_telemetry::UnobservedRead::NoHandRole);
                 }
@@ -1340,7 +1298,6 @@ namespace rock::input_remap_runtime
             vr::TrackedDeviceIndex_t controllerDeviceIndex, vr::VRControllerState_t* controllerState,
             std::uint32_t controllerStateSize, vr::TrackedDevicePose_t* trackedDevicePose)
         {
-            const void* callerAddress = _ReturnAddress();
             const bool result = s_originalGetControllerStateWithPose
                 ? s_originalGetControllerStateWithPose(system, origin, controllerDeviceIndex, controllerState,
                       controllerStateSize, trackedDevicePose)
@@ -1354,7 +1311,7 @@ namespace rock::input_remap_runtime
                 captureControllerState(controllerDeviceIndex, controllerState, controllerStateSize);
                 input_remap_policy::Hand hand{};
                 if (resolveControllerHand(controllerDeviceIndex, hand)) {
-                    applyGameControllerStateRemap(hand, callerAddress, controllerState, controllerStateSize, physical);
+                    applyGameControllerStateRemap(hand, controllerState, controllerStateSize, physical);
                 } else {
                     testbench_telemetry::observeUnobservedRead(testbench_telemetry::UnobservedRead::NoHandRole);
                 }

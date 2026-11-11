@@ -288,6 +288,34 @@ namespace rock::fo4vr
         return nullptr;
     }
 
+    namespace
+    {
+        // Atomic because input and recoil hooks can ask off the frame thread.
+        RE::Setting* cachedIniSetting(std::atomic<RE::Setting*>& cache, const char* name) noexcept
+        {
+            auto* setting = cache.load(std::memory_order_acquire);
+            if (!setting) {
+                setting = getIniSetting(name);
+                if (setting) {
+                    cache.store(setting, std::memory_order_release);
+                }
+            }
+            return setting;
+        }
+    }
+
+    RE::Setting* leftHandedModeSetting() noexcept
+    {
+        static std::atomic<RE::Setting*> cache{ nullptr };
+        return cachedIniSetting(cache, "bLeftHandedMode:VR");
+    }
+
+    RE::Setting* vrScaleSetting() noexcept
+    {
+        static std::atomic<RE::Setting*> cache{ nullptr };
+        return cachedIniSetting(cache, "fVrScale:VR");
+    }
+
     void showNotification(const std::string& text)
     {
         logger::info("Show notification: '{}'", text);
