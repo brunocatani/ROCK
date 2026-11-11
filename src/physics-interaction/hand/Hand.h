@@ -517,7 +517,9 @@ namespace rock
         void trimGrabFingerProbePreview(float deltaSeconds);
         // Runs the probe solve against the selected object with the hand where
         // it is drawn; the close grab check. Re-reads a deforming mesh.
-        [[nodiscard]] GrabProbeContact evaluateGrabProbeContact();
+        // commitShare: the grab that follows reads surface evidence from the
+        // same mesh this frame, so one read serves both (GrabSharedExtraction).
+        [[nodiscard]] GrabProbeContact evaluateGrabProbeContact(bool commitShare, bool handPocketOnlyGrab);
 
         // Mesh-reach lease: after a grab refused for no probe contact, this
         // hand passes through that object's collision so the fingers can reach
@@ -1325,6 +1327,36 @@ namespace rock
 
         CanonicalGrabFrame _grabFrame;
         GrabMeshExtraction _grabMeshExtraction;
+        /*
+         * The probe check and the commit of one close grab read the same mesh
+         * in the same call. For a body (a corpse, a limb) that is the whole
+         * actor, skinned: read twice it cost 11 ms of a 19.5 ms grab. The
+         * probe's read also produces the commit's surface evidence and leaves
+         * it here; extractGrabMeshEvidence takes it only for the same frame,
+         * node, depth and flags, and it is dropped either way. Bodies only:
+         * their capture does not refresh the scene between the two reads.
+         */
+        struct GrabSharedExtraction
+        {
+            bool valid = false;
+            std::uint64_t frameIndex = 0;
+            RE::NiAVObject* meshNode = nullptr;
+            int depth = 0;
+            bool handPocketOnlyGrab = false;
+            MeshExtractionStats stats{};
+            std::vector<TriangleData> meshTriangles{};
+            std::vector<GrabSurfaceTriangleData> surfaceTriangles{};
+
+            void clear()
+            {
+                valid = false;
+                meshNode = nullptr;
+                stats = {};
+                meshTriangles.clear();
+                surfaceTriangles.clear();
+            }
+        };
+        GrabSharedExtraction _grabSharedExtraction;
         grab_offset_acquisition::Transition<RE::NiTransform> _grabOffsetAcquisition;
         grab_offset_acquisition::Transition<RE::NiTransform> _looseSharedAcquisition;
         std::uint64_t _looseSharedAcquisitionPeer{};
@@ -1454,7 +1486,8 @@ namespace rock
                 rigid = true;
             }
         };
-        bool solveSelectedObjectProbes(grab_finger_probe_preview::Snapshot& out, bool refreshDeformingMesh);
+        bool solveSelectedObjectProbes(grab_finger_probe_preview::Snapshot& out, bool refreshDeformingMesh,
+            bool commitShare = false, bool handPocketOnlyGrab = false);
         void beginMeshReachLease(RE::bhkWorld* bhkWorld, RE::hknpWorld* world);
         GrabFingerProbePreviewCache _grabFingerProbePreview{};
 

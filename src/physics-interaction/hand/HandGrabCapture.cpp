@@ -398,12 +398,18 @@ namespace rock
     {
         outExtraction.reset();
         outExtraction.meshSourceNode = meshSourceNode;
+        // Taken or not, the probe's read is never kept past this grab.
+        GrabSharedExtraction shared = std::move(_grabSharedExtraction);
+        _grabSharedExtraction.clear();
         if (!meshSourceNode) {
             return;
         }
 
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabMeshExtraction);
         const int meshExtractionDepth = (std::max)(1, g_rockConfig.rockObjectPhysicsTreeMaxDepth);
+        const bool sharedRead = shared.valid && surfaceEvidenceRequired && shared.meshNode == meshSourceNode &&
+            shared.depth == meshExtractionDepth && shared.handPocketOnlyGrab == handPocketOnlyGrab &&
+            shared.frameIndex == runtime_state::currentFrame().frameIndex;
         std::array<RE::NiAVObject*, 3> attemptedRoots{};
         std::uint32_t attemptCount = 0;
         const char* extractionSource = "visual";
@@ -427,7 +433,14 @@ namespace rock
                 });
             }
         };
-        extract(meshSourceNode);
+        if (sharedRead) {
+            outExtraction.meshTriangles = std::move(shared.meshTriangles);
+            outExtraction.surfaceTriangles = std::move(shared.surfaceTriangles);
+            outExtraction.stats = shared.stats;
+            extractionSource = "visual-shared";
+        } else {
+            extract(meshSourceNode);
+        }
 
         auto tryAlternateRoot = [&](RE::NiAVObject* candidateRoot, const char* sourceName) {
             if (!candidateRoot) {

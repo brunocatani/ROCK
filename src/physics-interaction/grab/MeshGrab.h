@@ -972,9 +972,17 @@ namespace rock
         return referenced;
     }
 
+    /*
+     * outPositionTriangles, when given, receives every triangle whose three
+     * vertices blended: exactly what a call without outSurfaceTriangles puts
+     * in outTriangles. A surface call drops triangles without complete skin
+     * owners from outTriangles, so one skinning pass can serve a reader of
+     * positions and a reader of surface evidence without either losing data.
+     */
     inline int extractTrianglesFromSkinnedTriShape(RE::BSTriShape* triShape, std::vector<TriangleData>& outTriangles,
         std::vector<GrabSurfaceTriangleData>* outSurfaceTriangles = nullptr,
-        bool allowPositionOnlySkinnedSurface = false, std::vector<TriangleData>* outLocalTriangles = nullptr)
+        bool allowPositionOnlySkinnedSurface = false, std::vector<TriangleData>* outLocalTriangles = nullptr,
+        std::vector<TriangleData>* outPositionTriangles = nullptr)
     {
         performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::MeshSkinnedExtraction);
         [[maybe_unused]] const char* shapeName = triShape->name.c_str() ? triShape->name.c_str() : "(null)";
@@ -1184,6 +1192,7 @@ namespace rock
             dynamicLocalVerts.resize(numVerts);
         }
         std::vector<std::uint8_t> worldVertexValid(numVerts, 0);
+        std::vector<std::uint8_t> positionValid(outPositionTriangles ? numVerts : 0, 0);
         std::vector<std::uint8_t> vertexSkinInfluencesValid(numVerts, 0);
         std::vector<std::array<GrabSurfaceVertexInfluence, 4>> vertexInfluences(numVerts);
         std::uint32_t invalidSkinnedVertices = 0;
@@ -1237,6 +1246,9 @@ namespace rock
                 ++invalidSkinnedVertices;
                 continue;
             }
+            if (outPositionTriangles) {
+                positionValid[vi] = 1;
+            }
             if (dynamicSkinned && outLocalTriangles) {
                 dynamicLocalVerts[vi] = transform_math::worldPointToLocal(triShape->world, worldVerts[vi]);
             }
@@ -1269,6 +1281,13 @@ namespace rock
 
             if (i0 >= numVerts || i1 >= numVerts || i2 >= numVerts)
                 continue;
+            if (outPositionTriangles && positionValid[i0] && positionValid[i1] && positionValid[i2]) {
+                TriangleData positionTriangle;
+                positionTriangle.v0 = worldVerts[i0];
+                positionTriangle.v1 = worldVerts[i1];
+                positionTriangle.v2 = worldVerts[i2];
+                outPositionTriangles->push_back(positionTriangle);
+            }
             if (!worldVertexValid[i0] || !worldVertexValid[i1] || !worldVertexValid[i2]) {
                 ++skippedInvalidVertexTriangles;
                 continue;
@@ -1373,7 +1392,7 @@ namespace rock
 
     inline void extractSurfaceTrianglesFromTriShape(RE::BSTriShape* triShape, std::vector<TriangleData>& outTriangles,
         std::vector<GrabSurfaceTriangleData>& outSurfaceTriangles, MeshExtractionStats* stats,
-        bool allowPositionOnlySkinnedSurface)
+        bool allowPositionOnlySkinnedSurface, std::vector<TriangleData>* outPositionTriangles = nullptr)
     {
         if (!triShape) {
             return;
@@ -1392,7 +1411,7 @@ namespace rock
                 stats->skinnedShapes++;
             }
             extractTrianglesFromSkinnedTriShape(triShape, outTriangles, &outSurfaceTriangles,
-                allowPositionOnlySkinnedSurface);
+                allowPositionOnlySkinnedSurface, nullptr, outPositionTriangles);
             const auto added = static_cast<std::uint32_t>(outTriangles.size() - before);
             if (stats) {
                 stats->skinnedTriangles += added;
@@ -1418,6 +1437,13 @@ namespace rock
             }
         }
 
+        // Only a skinned surface read drops triangles; the other kinds give
+        // the position reader the same triangles they appended.
+        if (outPositionTriangles && !skinned) {
+            outPositionTriangles->insert(outPositionTriangles->end(),
+                outTriangles.begin() + static_cast<std::ptrdiff_t>(before), outTriangles.end());
+        }
+
         if (stats && outTriangles.size() == before) {
             stats->emptyShapes++;
         }
@@ -1425,7 +1451,8 @@ namespace rock
 
     inline void extractAllSurfaceTrianglesRecursive(RE::NiAVObject* root, std::vector<TriangleData>& outTriangles,
         std::vector<GrabSurfaceTriangleData>& outSurfaceTriangles, int maxDepth = 10,
-        MeshExtractionStats* stats = nullptr, bool allowPositionOnlySkinnedSurface = false)
+        MeshExtractionStats* stats = nullptr, bool allowPositionOnlySkinnedSurface = false,
+        std::vector<TriangleData>* outPositionTriangles = nullptr)
     {
         if (!root || maxDepth <= 0)
             return;
@@ -1436,7 +1463,7 @@ namespace rock
         auto* triShape = root->IsTriShape();
         if (triShape) {
             extractSurfaceTrianglesFromTriShape(triShape, outTriangles, outSurfaceTriangles, stats,
-                allowPositionOnlySkinnedSurface);
+                allowPositionOnlySkinnedSurface, outPositionTriangles);
             return;
         }
 
@@ -1447,7 +1474,7 @@ namespace rock
                 auto* kid = kids[i].get();
                 if (kid)
                     extractAllSurfaceTrianglesRecursive(kid, outTriangles, outSurfaceTriangles, maxDepth - 1, stats,
-                        allowPositionOnlySkinnedSurface);
+                        allowPositionOnlySkinnedSurface, outPositionTriangles);
             }
         }
     }

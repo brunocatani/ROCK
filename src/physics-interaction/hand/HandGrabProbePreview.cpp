@@ -7,6 +7,7 @@
 
 #include "RockConfig.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/grab/GrabFingerCapsuleSweep.h"
 #include "physics-interaction/grab/GrabFingerProbePreview.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
@@ -255,9 +256,11 @@ namespace rock
         return solveSelectedObjectProbes(out, false);
     }
 
-    bool Hand::solveSelectedObjectProbes(preview::Snapshot& out, bool refreshDeformingMesh)
+    bool Hand::solveSelectedObjectProbes(preview::Snapshot& out, bool refreshDeformingMesh, bool commitShare,
+        bool handPocketOnlyGrab)
     {
         out = {};
+        _grabSharedExtraction.clear();
         const sweep::Options options = solveOptions();
         auto& cache = _grabFingerProbePreview;
         const auto& selection = _currentSelection;
@@ -300,7 +303,28 @@ namespace rock
             std::vector<TriangleData> worldTriangles;
             MeshExtractionStats stats{};
             std::uint8_t sourceNode = 0;
-            extractAllTriangles(meshNode, worldTriangles, depth, &stats);
+            if (commitShare) {
+                // One read for this check and the commit that follows it.
+                auto& shared = _grabSharedExtraction;
+                extractAllSurfaceTrianglesRecursive(meshNode, shared.meshTriangles, shared.surfaceTriangles, depth,
+                    &shared.stats, handPocketOnlyGrab, &worldTriangles);
+                // The commit's own recovery paths run when either reader got nothing.
+                shared.valid = !worldTriangles.empty() && !shared.meshTriangles.empty();
+                if (shared.valid) {
+                    shared.frameIndex = runtime_state::currentFrame().frameIndex;
+                    shared.meshNode = meshNode;
+                    shared.depth = depth;
+                    shared.handPocketOnlyGrab = handPocketOnlyGrab;
+                    stats = shared.stats;
+                } else {
+                    shared.clear();
+                    worldTriangles.clear();
+                }
+            }
+            if (worldTriangles.empty()) {
+                stats = {};
+                extractAllTriangles(meshNode, worldTriangles, depth, &stats);
+            }
             if (worldTriangles.empty() && objectNode != meshNode) {
                 extractAllTriangles(objectNode, worldTriangles, depth, &stats);
                 sourceNode = 1;
@@ -446,11 +470,11 @@ namespace rock
         }
     }
 
-    GrabProbeContact Hand::evaluateGrabProbeContact()
+    GrabProbeContact Hand::evaluateGrabProbeContact(const bool commitShare, const bool handPocketOnlyGrab)
     {
         GrabProbeContact result{};
         preview::Snapshot probes{};
-        if (!solveSelectedObjectProbes(probes, true)) {
+        if (!solveSelectedObjectProbes(probes, true, commitShare, handPocketOnlyGrab)) {
             result.reason = _grabFingerProbePreview.extracted && _grabFingerProbePreview.localTriangles.empty()
                 ? "noMesh"
                 : "probesUnavailable";

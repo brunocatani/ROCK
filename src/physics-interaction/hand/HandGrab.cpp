@@ -392,7 +392,8 @@ namespace rock
         bool reachArrival = false;
         bool handReach = false;
         if (probeContactRequired) {
-            const auto probeContact = evaluateGrabProbeContact();
+            const auto probeContact =
+                evaluateGrabProbeContact(grab_target::requiresNativeBodyOwnership(sel.targetKind), handPocketOnlyGrab);
             const auto stateCode = [&](std::size_t finger) {
                 switch (probeContact.states[finger]) {
                 case grab_finger_probe_preview::FingerState::Contact:
