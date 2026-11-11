@@ -1198,49 +1198,6 @@ namespace rock::input_remap_runtime
             return raw;
         }
 
-        void applyGameControllerStateRemap(const input_remap_policy::Hand hand, const void* callerAddress,
-            vr::VRControllerState_t* state, const std::uint32_t stateSize,
-            const testbench_telemetry::RawControllerState& raw)
-        {
-            const bool stateValid = state && stateSize >= sizeof(vr::VRControllerState_t);
-            std::optional<bool> bypassCache;
-            const auto bypassed = [&] {
-                if (!bypassCache) {
-                    bypassCache = shouldBypassProviderOpenVrGameInputSuppression(callerAddress);
-                }
-                return *bypassCache;
-            };
-            const bool isLeft = hand == input_remap_policy::Hand::Left;
-            const bool blockingMenu = isInputBlockingMenuActive();
-            std::uint32_t reasons = blockingMenu ? testbench_telemetry::kInputBlockingMenu : 0u;
-
-            if (stateValid && !blockingMenu && !bypassed()) {
-                const auto reloadMask = physical_reload_input::gameMask(isLeft, state->ulButtonPressed);
-                const auto supportMask = support_trigger_input::gameMask(isLeft, state->ulButtonPressed);
-                const auto secondaryMask = secondaryOwnsTrigger(hand) ? (1ull << 33) : 0ull;
-                const auto mask = reloadMask | supportMask | secondaryMask;
-                state->ulButtonPressed &= ~mask;
-                state->ulButtonTouched &= ~mask;
-                if (mask & (1ull << 33)) {
-                    state->rAxis[1] = {};
-                }
-                reasons |= (reloadMask ? testbench_telemetry::kBlankPhysicalReload : 0u) |
-                    (supportMask ? testbench_telemetry::kBlankSupportTrigger : 0u) |
-                    (secondaryMask ? testbench_telemetry::kBlankSecondaryOwnsTrigger : 0u) |
-                    (stickMask ? testbench_telemetry::kBlankStickClickReserved : 0u);
-            }
-            if (isProviderOpenVrGameInputSuppressed(hand) && !bypassed()) {
-                clearOpenVrControllerStateForGame(state, stateSize);
-                reasons |= testbench_telemetry::kBlankProviderSuppressed;
-            } else if (shouldRemapLeftHandFireTriggerForGame() && !bypassed()) {
-                applyLeftHandFireTriggerRemapForGame(hand, state, stateSize);
-                reasons |= testbench_telemetry::kLeftFireRemapApplied;
-            }
-            if (stateValid) {
-                testbench_telemetry::observeControllerState(isLeft, raw, state->ulButtonPressed, state->rAxis[1].x,
-                    reasons, bypassCache.value_or(false));
-            }
-        }
         // A stick press that begins while its hand's click is reserved is the
         // bipod's or the placement's whole press: the game never sees it, so it
         // cannot also run the game's own stick-click action. A press already
@@ -1260,6 +1217,53 @@ namespace rock::input_remap_runtime
             return (s_stickClickGameHidden.load(std::memory_order_acquire) & bit) ? stick : 0;
         }
 
+        void applyGameControllerStateRemap(const input_remap_policy::Hand hand, const void* callerAddress,
+            vr::VRControllerState_t* state, const std::uint32_t stateSize,
+            const testbench_telemetry::RawControllerState& raw)
+        {
+            const bool stateValid = state && stateSize >= sizeof(vr::VRControllerState_t);
+            std::optional<bool> bypassCache;
+            const auto bypassed = [&] {
+                if (!bypassCache) {
+                    bypassCache = shouldBypassProviderOpenVrGameInputSuppression(callerAddress);
+                }
+                return *bypassCache;
+            };
+            const bool isLeft = hand == input_remap_policy::Hand::Left;
+            const bool blockingMenu = isInputBlockingMenuActive();
+            std::uint32_t reasons = blockingMenu ? testbench_telemetry::kInputBlockingMenu : 0u;
+
+            // Tracked on every read so a press is judged from its start.
+            const auto stickMask = stateValid ? reservedStickClickGameMask(isLeft, state->ulButtonPressed) : 0ull;
+            if (stateValid && !blockingMenu && !bypassed()) {
+                const auto reloadMask = physical_reload_input::gameMask(isLeft, state->ulButtonPressed);
+                const auto supportMask = support_trigger_input::gameMask(isLeft, state->ulButtonPressed);
+                const auto secondaryMask = secondaryOwnsTrigger(hand) ? (1ull << 33) : 0ull;
+                const auto mask = reloadMask | supportMask | secondaryMask;
+                state->ulButtonPressed &= ~mask;
+                state->ulButtonTouched &= ~mask;
+                if (mask & (1ull << 33)) {
+                    state->rAxis[1] = {};
+                }
+                // The click only: the stick's touch and axes stay the game's.
+                state->ulButtonPressed &= ~stickMask;
+                reasons |= (reloadMask ? testbench_telemetry::kBlankPhysicalReload : 0u) |
+                    (supportMask ? testbench_telemetry::kBlankSupportTrigger : 0u) |
+                    (secondaryMask ? testbench_telemetry::kBlankSecondaryOwnsTrigger : 0u) |
+                    (stickMask ? testbench_telemetry::kBlankStickClickReserved : 0u);
+            }
+            if (isProviderOpenVrGameInputSuppressed(hand) && !bypassed()) {
+                clearOpenVrControllerStateForGame(state, stateSize);
+                reasons |= testbench_telemetry::kBlankProviderSuppressed;
+            } else if (shouldRemapLeftHandFireTriggerForGame() && !bypassed()) {
+                applyLeftHandFireTriggerRemapForGame(hand, state, stateSize);
+                reasons |= testbench_telemetry::kLeftFireRemapApplied;
+            }
+            if (stateValid) {
+                testbench_telemetry::observeControllerState(isLeft, raw, state->ulButtonPressed, state->rAxis[1].x,
+                    reasons, bypassCache.value_or(false));
+            }
+        }
 
         // The controls held after the layout, for the setup wizard's capture: the five
         // layout buttons as the layout presents them, every other control as it is.
@@ -1276,8 +1280,6 @@ namespace rock::input_remap_runtime
                                                physical.rAxis[layout::kStickAxis].y))
                                          : layout::PadLatch::Released;
             std::uint32_t bits = 0;
-            // Tracked on every read so a press is judged from its start.
-            const auto stickMask = stateValid ? reservedStickClickGameMask(isLeft, state->ulButtonPressed) : 0ull;
             for (std::size_t index = 1; index < function_binding_policy::kSourceCount; ++index) {
                 const auto source = static_cast<layout::Source>(index);
                 const bool pressed = function_binding_policy::slotOf(source) != layout::Slot::Count
@@ -1288,8 +1290,6 @@ namespace rock::input_remap_runtime
                 }
             }
             s_bindingCaptureBits[hand == input_remap_policy::Hand::Left ? 0 : 1].fetch_or(bits, std::memory_order_acq_rel);
-                // The click only: the stick's touch and axes stay the game's.
-                state->ulButtonPressed &= ~stickMask;
         }
 
         // The controller layout, then the function bindings on what it presents.
