@@ -472,19 +472,7 @@ namespace rock
             providerSuppresses(::rock::api::input::HandInputSuppressionFlag::SuppressOpenVrGameInput);
         input_remap_runtime::setProviderOpenVrGameInputSuppressed(isLeft, providerSuppressesOpenVrGameInput);
         auto cancelPeerHeldJoinRetry = [&](const char* reason, bool logCancellation) {
-            if (!peerHeldJoinRetryState.active) {
-                return;
-            }
-            const auto peerFormId = peerHeldJoinRetryState.peerFormId;
-            const auto attempts = peerHeldJoinRetryState.attempts;
-            const char* lastRefusal =
-                peerHeldJoinRetryState.lastRefusalReason ? peerHeldJoinRetryState.lastRefusalReason : "none";
-            peer_held_join_retry_policy::reset(peerHeldJoinRetryState);
-            if (logCancellation) {
-                ROCK_LOG_DEBUG(Hand,
-                    "{} hand peer-held join retry cancelled: reason={} peerFormID={:08X} attempts={} lastRefusal={}",
-                    hand.handName(), reason ? reason : "unknown", peerFormId, attempts, lastRefusal);
-            }
+            this->cancelPeerHeldJoinRetry(hand, peerHeldJoinRetryState, reason, logCancellation);
         };
 
         const auto handIndex = isLeft ? 1u : 0u;
