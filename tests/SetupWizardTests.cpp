@@ -68,6 +68,15 @@ namespace
                 std::printf("default of %s is not a choice\n", name.c_str());
             expect("the default is a choice", shipped != defaults.end() && option.find(shipped->second));
 
+            // An option shown only for another option's value follows that option on its page,
+            // and the value is one of its choices.
+            if (const auto& when = option.shownWhen; !when.key.empty()) {
+                const auto at = std::ranges::find_if(wizard::kOptions, [&](const auto& o) { return o.key == when.key; });
+                expect("the showing option is earlier on the same page",
+                    at != wizard::kOptions.end() && &*at < &option && at->page == option.page);
+                expect("the showing value is a choice", at != wizard::kOptions.end() && at->find(when.value) != nullptr);
+            }
+
             // A fixing option comes earlier on the same page (the page applies the rule while
             // drawing), both values are choices, and the defaults already obey the rule.
             const auto& fixed = option.fixedWhen;

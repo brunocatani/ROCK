@@ -55,6 +55,13 @@ namespace rock::setup_wizard_policy
         std::string_view reason;
     };
 
+    // The option shows only while another option (`key`) is at `value`.
+    struct ShownWhen
+    {
+        std::string_view key;
+        std::string_view value;
+    };
+
     struct Option
     {
         std::size_t page;
@@ -63,6 +70,7 @@ namespace rock::setup_wizard_policy
         std::string_view title;
         std::array<Choice, kMaxChoices> choices;
         FixedWhen fixedWhen{};
+        ShownWhen shownWhen{};
 
         [[nodiscard]] constexpr std::size_t choiceCount() const noexcept
         {
@@ -100,6 +108,14 @@ namespace rock::setup_wizard_policy
                 { "true", "On", "The object your hand would grab gets an outline." },
                 { "false", "Off", "No outline." },
             } } },
+        Option{ 0, "SelectionFeedback", "HighlightColor", "Highlight color",
+            { {
+                { "blue", "Blue", "A blue outline." },
+                { "red", "Red", "A red outline." },
+                { "orange", "Orange", "An orange outline." },
+                { "white", "White", "A white outline." },
+            } },
+            {}, { "HighlightEnabled", "true" } },
 
         // ---- Holding weapons ----
         Option{ 1, "FiringHand", "DefaultHand", "Your shooting hand",

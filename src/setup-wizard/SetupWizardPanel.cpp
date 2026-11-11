@@ -127,6 +127,16 @@ namespace rock::setup_wizard
             return other != options.end() && other->value == fixed.value ? &fixed : nullptr;
         }
 
+        // Whether an option shows now: always, or while another option has the value it needs.
+        [[nodiscard]] bool shown(const std::vector<OptionState>& options, const OptionState& state)
+        {
+            const auto& when = state.option->shownWhen;
+            if (when.key.empty()) return true;
+            const auto other =
+                std::ranges::find_if(options, [&](const OptionState& o) { return o.option->key == when.key; });
+            return other != options.end() && other->value == when.value;
+        }
+
         // Puts every fixed option on its one choice, so what the page shows is what is saved.
         void applyFixed(std::vector<OptionState>& options)
         {
@@ -448,7 +458,7 @@ namespace rock::setup_wizard
             d.gap(1.5f);
             // In page order, so a choice fixes the options below it in the same frame.
             for (auto& option : session.start.options) {
-                if (option.option->page != pageIndex) continue;
+                if (option.option->page != pageIndex || !shown(session.start.options, option)) continue;
                 const auto* fixed = activeFixed(session.start.options, option);
                 if (fixed) option.value = std::string(fixed->fixed);
                 d.option(option, fixed);
