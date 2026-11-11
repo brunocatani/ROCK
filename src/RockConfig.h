@@ -57,10 +57,6 @@ namespace rock
 
         // Function-level controls; raw OpenVR button state remains untouched.
         bool rockSuppressNativeVats = false;
-        // On: both native Favorites openers (the stick-click event and the
-        // lighthouse wand-pad centre click) stay native unless RobCo PALM is
-        // loaded or the bipod would act on the click. Off: ROCK blocks both.
-        bool rockVanillaFavoritesMenu = true;
         bool rockOfferSteamVRBinding = true;
         int rockSetupWizardShownEdition = 0;
         float rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::kDefaultHoldSeconds;

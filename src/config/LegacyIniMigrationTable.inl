@@ -86,7 +86,6 @@
 { "bSuppressNativeVats", "ControllerInput", "SuppressNativeVats", LegacyKind::Value, 0, "false", "false" },
 { "bSurfaceGrabHapticsEnabled", "Haptics", "SurfaceGrabHapticsEnabled", LegacyKind::Value, 0, "true", "true" },
 { "bSurfaceMeshGrabEnabled", "HandAndBodyCollision", "SurfaceMeshGrabEnabled", LegacyKind::Value, 0, "false", "false" },
-{ "bVanillaFavoritesMenu", "ControllerInput", "VanillaFavoritesMenu", LegacyKind::Value, 0, {}, "false" },
 { "bVatsPhysicsFixes", "PhysicsTiming", "VatsPhysicsFixes", LegacyKind::Value, 0, "true", "true" },
 { "bWeaponCollisionBlocksProjectiles", "WeaponCollisionAndSupport", "WeaponCollisionBlocksProjectiles", LegacyKind::Value, 0, "false", "false" },
 { "bWeaponCollisionBlocksSpells", "WeaponCollisionAndSupport", "WeaponCollisionBlocksSpells", LegacyKind::Value, 0, "false", "false" },

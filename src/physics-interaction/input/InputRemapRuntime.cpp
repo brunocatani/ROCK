@@ -1605,8 +1605,7 @@ namespace rock::input_remap_runtime
 
         [[nodiscard]] bool vanillaFavoritesMenuAllowed()
         {
-            return input_remap_policy::vanillaFavoritesMenuAllowed(g_rockConfig.rockVanillaFavoritesMenu,
-                s_robcoPalmLoaded.load(std::memory_order_acquire),
+            return input_remap_policy::vanillaFavoritesMenuAllowed(s_robcoPalmLoaded.load(std::memory_order_acquire),
                 (s_stickClickReserved.load(std::memory_order_acquire) & 2u) != 0);
         }
 
@@ -3077,13 +3076,9 @@ namespace rock::input_remap_runtime
             s_robcoPalmLoaded.store(loaded, std::memory_order_release);
             if (loaded) {
                 ROCK_LOG_INFO(Input,
-                    "RobCo PALM is loaded: the native Favorites menu stays blocked and the right stick click opens "
-                    "PALM (ControllerInput.VanillaFavoritesMenu={} ignored)",
-                    g_rockConfig.rockVanillaFavoritesMenu);
+                    "RobCo PALM is loaded: the native Favorites menu stays blocked and the right stick click opens PALM");
             } else {
-                ROCK_LOG_INFO(Input, "RobCo PALM is not loaded: ControllerInput.VanillaFavoritesMenu={} decides "
-                                     "whether the right stick click opens Favorites",
-                    g_rockConfig.rockVanillaFavoritesMenu);
+                ROCK_LOG_INFO(Input, "RobCo PALM is not loaded: the right stick click opens the native Favorites menu");
             }
         }
 

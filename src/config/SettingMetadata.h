@@ -240,12 +240,6 @@ namespace rock::config
             "Block VATS\nStops the game's VATS from opening on the VATS button (right B by default).\nThe button "
             "still works for ROCK and other mods.",
             api::configuration::Group::Consumer },
-        { "ControllerInput", "VanillaFavoritesMenu", "09. Controller Input",
-            "Vanilla Favorites Menu\nTrue: the game's Favorites menu opens on its usual button, the right stick "
-            "click (default).\nWhile RobCo PALM is installed, ROCK always blocks the Favorites menu and the stick "
-            "click opens PALM.\nWith Bipod Mode on, a click while the weapon touches a surface or is latched works "
-            "the bipod instead of opening Favorites.\nFalse: ROCK blocks the Favorites menu and the stick click belongs to Bipod Mode.",
-            api::configuration::Group::Consumer },
         { "ControllerInput", "OfferSteamVRBinding", "09. Controller Input",
             "Offer ROCK's SteamVR Binding\nTrue: when Index controllers or Vive wands use SteamVR's default binding "
             "for Fallout 4 VR, the setup wizard opens by itself once per game start, when no menu or scene is in "

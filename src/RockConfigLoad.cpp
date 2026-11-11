@@ -378,8 +378,6 @@ namespace rock
         rockHavokTimingFixMaxSubsteps = havok_timing_fix_policy::sanitizeMaxSubsteps(
             static_cast<int>(ini.integer("PhysicsTiming", "HavokTimingFixMaxSubsteps", rockHavokTimingFixMaxSubsteps)));
         rockSuppressNativeVats = ini.boolean("ControllerInput", "SuppressNativeVats", rockSuppressNativeVats);
-        rockVanillaFavoritesMenu =
-            ini.boolean("ControllerInput", "VanillaFavoritesMenu", rockVanillaFavoritesMenu);
         rockOfferSteamVRBinding = ini.boolean("ControllerInput", "OfferSteamVRBinding", rockOfferSteamVRBinding);
         rockSetupWizardShownEdition =
             static_cast<int>(ini.integer("SetupWizard", "ShownEdition", rockSetupWizardShownEdition));

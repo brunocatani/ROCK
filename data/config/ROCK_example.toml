@@ -278,13 +278,6 @@ ManualScopeHoldSeconds = 0.3
 ## The button still works for ROCK and other mods.
 SuppressNativeVats = false
 
-## Vanilla Favorites Menu
-## True: the game's Favorites menu opens on its usual button, the right stick click (default).
-## While RobCo PALM is installed, ROCK always blocks the Favorites menu and the stick click opens PALM.
-## With Bipod Mode on, a click while the weapon touches a surface or is latched works the bipod instead of opening Favorites.
-## False: ROCK blocks the Favorites menu and the stick click belongs to Bipod Mode.
-VanillaFavoritesMenu = true
-
 ## Offer ROCK's SteamVR Binding
 ## True: when Index controllers or Vive wands use SteamVR's default binding for Fallout 4 VR, the setup wizard opens by itself once per game start, when no menu or scene is in the way, and offers ROCK's binding (the default binding turns A and X into grip). It never replaces a binding you chose in SteamVR.
 ## False: the wizard opens only when you open it; it still offers the binding then. Choosing other controllers in the wizard sets this.

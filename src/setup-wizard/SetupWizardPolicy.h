@@ -34,7 +34,7 @@ namespace rock::setup_wizard_policy
         Page{ "Holding weapons", "How your hands take, hold and let go of weapons." },
         Page{ "Aiming and shooting", "How weapons feel in your hands when you aim and fire." },
         Page{ "Grenades and healing", "How you throw grenades and use stimpaks." },
-        Page{ "Stick click and menus", "What the right stick click and the VATS button do." },
+        Page{ "Bipod and VATS", "What the right stick click and the VATS button do." },
     };
 
     struct Choice
@@ -170,15 +170,9 @@ namespace rock::setup_wizard_policy
         // ---- Stick click and menus ----
         Option{ 4, "WeaponHandling", "BipodMode", "Bipod",
             { {
-                { "true", "On", "Click the right stick while your weapon touches a surface to rest it there." },
+                { "true", "On", "Click the right stick while your weapon touches a surface to rest it there. "
+                                "Otherwise the click opens RobCo PALM, or the game's Favorites menu without PALM." },
                 { "false", "Off", "The right stick click is left to other mods." },
-            } } },
-        Option{ 4, "ControllerInput", "VanillaFavoritesMenu", "Favorites menu",
-            { {
-                { "true", "Game's Favorites",
-                    "The right stick click opens the game's Favorites menu. With RobCo PALM installed it opens PALM "
-                    "instead." },
-                { "false", "No Favorites", "ROCK blocks the Favorites menu; the stick click is only for the bipod." },
             } } },
         Option{ 4, "ControllerInput", "SuppressNativeVats", "VATS",
             { {
