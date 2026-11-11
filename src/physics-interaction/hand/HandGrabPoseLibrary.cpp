@@ -31,8 +31,13 @@ namespace rock
 
         // A mesh this large is not a hand-held prop; describing it would stall the grab frame.
         constexpr std::size_t kMaxLibraryMeshTriangles = 120'000;
-        // Candidates tried with the finger solve, best signature match first (two exemplars, four headings each).
-        constexpr std::size_t kMaxTestedCandidates = 8;
+        // Candidates tried with the finger solve, best signature match first:
+        // eight exemplars at four headings each. Two exemplars left objects
+        // with a finger through them when a nearby exemplar held them cleanly.
+        // A mesh too large for one finger index rebuilds it per pose, so it
+        // tries four exemplars.
+        constexpr std::size_t kMaxTestedCandidates = 32;
+        constexpr std::size_t kMaxTestedCandidatesLargeMesh = 16;
 
         /*
          * How well the hand holds the object in a candidate pose, lower is
@@ -206,16 +211,36 @@ namespace rock
         if (wholeMesh && !index.buildFromLocalTriangles(localTriangles)) {
             return;
         }
+        // Nearness is each triangle's bounding sphere, computed once: an exact
+        // closest point per triangle per pose was most of a 9 ms solve on a
+        // 21,000-triangle mesh.
+        struct TriangleSphere
+        {
+            RE::NiPoint3 center{};
+            float radius = 0.0f;
+        };
+        std::vector<TriangleSphere> triangleSpheres;
+        if (!wholeMesh) {
+            triangleSpheres.reserve(localTriangles.size());
+            for (const auto& t : localTriangles) {
+                TriangleSphere sphere{};
+                sphere.center = (t.v0 + t.v1 + t.v2) * (1.0f / 3.0f);
+                for (const auto& vertex : { t.v0, t.v1, t.v2 }) {
+                    const RE::NiPoint3 d = vertex - sphere.center;
+                    sphere.radius = (std::max)(sphere.radius, std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z));
+                }
+                triangleSpheres.push_back(sphere);
+            }
+        }
         std::vector<std::pair<float, std::uint32_t>> nearestScratch;
         std::vector<GrabLocalTriangle> nearestTriangles;
         const auto indexNear = [&](const RE::NiPoint3& centerLocal) {
             nearestScratch.clear();
             nearestScratch.reserve(localTriangles.size());
-            for (std::uint32_t i = 0; i < localTriangles.size(); ++i) {
-                const auto& t = localTriangles[i];
-                float distanceSquared = 0.0f;
-                (void)closestPointOnTriangleToPoint(centerLocal, TriangleData{ t.v0, t.v1, t.v2 }, distanceSquared);
-                nearestScratch.emplace_back(distanceSquared, i);
+            for (std::uint32_t i = 0; i < triangleSpheres.size(); ++i) {
+                const RE::NiPoint3 d = triangleSpheres[i].center - centerLocal;
+                nearestScratch.emplace_back(
+                    std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z) - triangleSpheres[i].radius, i);
             }
             const std::size_t keep = grab_finger_pose_runtime::kMaxFingerPoseCandidateTriangles;
             std::nth_element(nearestScratch.begin(), nearestScratch.begin() + static_cast<std::ptrdiff_t>(keep),
@@ -235,7 +260,8 @@ namespace rock
         const library::Candidate* best = nullptr;
         sweep::Result bestFingers{};
         float bestScore = 0.0f;
-        const std::size_t tested = (std::min)(candidates.size(), kMaxTestedCandidates);
+        const std::size_t tested =
+            (std::min)(candidates.size(), wholeMesh ? kMaxTestedCandidates : kMaxTestedCandidatesLargeMesh);
         for (std::size_t i = 0; i < tested; ++i) {
             const auto& candidate = candidates[i];
             RE::NiTransform objectWorld = grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorld,

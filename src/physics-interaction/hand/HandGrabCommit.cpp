@@ -4,6 +4,8 @@
 // applies and restores.
 #include "physics-interaction/hand/HandGrabInternal.h"
 
+#include <chrono>
+
 namespace rock
 {
 
@@ -141,7 +143,7 @@ namespace rock
         PinchReach reachPinchFinger(grab_finger_pose_runtime::SolvedGrabFingerPose& pose, std::size_t finger,
             const grab_finger_capsule_sweep::FrikFingerRig& rig, const RE::NiTransform& handBone, float tipLength,
             const grab_finger_pose_runtime::FingerPoseTriangleSpatialIndex& index, const RE::NiTransform& objectWorld,
-            const grab_finger_capsule_sweep::Options& options)
+            const grab_finger_capsule_sweep::Options& options, float minimumJointValue)
         {
             namespace sweep = grab_finger_capsule_sweep;
             // A tip farther than this from the mesh is not pinching this object.
@@ -153,7 +155,7 @@ namespace rock
             PinchReach reach{};
             grab_finger_pose_runtime::FingerPoseSpatialQueryStats stats{};
             std::uint32_t sphereQueries = 0;
-            const float minimum = std::clamp(options.minValue, 0.0f, 1.0f);
+            const float minimum = std::clamp(minimumJointValue, 0.0f, 1.0f);
 
             const auto tipDistance = [&](const sweep::FingerChainPose& chain, float within, float& distance) {
                 RE::NiPoint3 nearest{};
@@ -756,17 +758,22 @@ namespace rock
             const RE::NiTransform handBone =
                 grab_finger_capsule_sweep::resolveHandBoneWorld(frame.solveHandWorld, liveFingerSnapshot, rig);
             const auto tipLengths = grab_finger_capsule_sweep::tipLengths(liveFingerSnapshot);
+            const auto reachStarted = std::chrono::steady_clock::now();
+            // The thumb's base joint may close all the way: at the sweep's
+            // minimum curl it stopped 1.0-1.45 gu short of a single cartridge
+            // with its base joint pinned at that minimum.
             const auto thumb = reachPinchFinger(_grabFingerPose, 0, rig, handBone, tipLengths[0],
-                _grabFingerTriangleIndex, frame.objectWorld, options);
+                _grabFingerTriangleIndex, frame.objectWorld, options, 0.0f);
             const auto index = reachPinchFinger(_grabFingerPose, 1, rig, handBone, tipLengths[1],
-                _grabFingerTriangleIndex, frame.objectWorld, options);
+                _grabFingerTriangleIndex, frame.objectWorld, options, options.minValue);
             ROCK_LOG_INFO(Hand,
                 "{} PINCH REACH: thumb tip to mesh {:.2f} -> {:.2f}gu ({}) index {:.2f} -> {:.2f}gu ({}) "
-                "joints T=({:.2f},{:.2f},{:.2f}) I=({:.2f},{:.2f},{:.2f})",
+                "joints T=({:.2f},{:.2f},{:.2f}) I=({:.2f},{:.2f},{:.2f}) {:.2f}ms",
                 handName(), thumb.beforeGameUnits, thumb.afterGameUnits, thumb.applied ? "reached" : "kept",
                 index.beforeGameUnits, index.afterGameUnits, index.applied ? "reached" : "kept",
                 _grabFingerPose.jointValues[0], _grabFingerPose.jointValues[1], _grabFingerPose.jointValues[2],
-                _grabFingerPose.jointValues[3], _grabFingerPose.jointValues[4], _grabFingerPose.jointValues[5]);
+                _grabFingerPose.jointValues[3], _grabFingerPose.jointValues[4], _grabFingerPose.jointValues[5],
+                std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - reachStarted).count());
         }
 
         auto publishFingerPose = _grabFingerPose;
