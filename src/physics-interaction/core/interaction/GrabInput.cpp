@@ -1141,19 +1141,11 @@ namespace rock
                 .config =
                     peer_held_join_retry_policy::Config{
                         .enabled = g_rockConfig.rockGrabInputIntentStateEnabled,
-                        .leewaySeconds = g_rockConfig.rockGrabInputLeewaySeconds,
-                        .forceSeconds = g_rockConfig.rockGrabInputForceSeconds,
                     },
             });
         if (peerHeldRetryDecision.started) {
-            ROCK_LOG_DEBUG(Hand,
-                "{} hand peer-held join retry started: peerFormID={:08X} window={:.3f}s interval={:.3f}s",
-                hand.handName(), peerHeldJoinRetryState.peerFormId, peerHeldJoinRetryState.windowSeconds,
-                peer_held_join_retry_policy::retryIntervalSeconds(peer_held_join_retry_policy::Config{
-                    .enabled = g_rockConfig.rockGrabInputIntentStateEnabled,
-                    .leewaySeconds = g_rockConfig.rockGrabInputLeewaySeconds,
-                    .forceSeconds = g_rockConfig.rockGrabInputForceSeconds,
-                }));
+            ROCK_LOG_DEBUG(Hand, "{} hand peer-held join retry started: peerFormID={:08X}", hand.handName(),
+                peerHeldJoinRetryState.peerFormId);
         }
         if (peerHeldRetryDecision.cancelled) {
             grab_input_intent_policy::reset(inputIntentState);

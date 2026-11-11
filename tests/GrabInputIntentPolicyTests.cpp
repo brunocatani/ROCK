@@ -134,8 +134,6 @@ int main()
         using namespace rock::peer_held_join_retry_policy;
         rock::peer_held_join_retry_policy::Config retryConfig{};
         retryConfig.enabled = true;
-        retryConfig.leewaySeconds = 0.12f;
-        retryConfig.forceSeconds = 0.08f;
         retryConfig.retryIntervalSeconds = 0.05f;
 
         rock::peer_held_join_retry_policy::RuntimeState retryState{};
@@ -214,8 +212,18 @@ int main()
                 .deltaSeconds = 1.0f / 90.0f,
                 .config = retryConfig,
             });
-        ok &= expectTrue("peer-held retry cancels when unrelated selection appears", retryDecision.cancelled);
-        ok &= expectFalse("peer-held retry inactive after unrelated selection", unrelatedSelectionState.active);
+        ok &= expectTrue("peer-held retry survives an unrelated selection", unrelatedSelectionState.active);
+        ok &= expectFalse("peer-held retry does not attempt past an unrelated selection", retryDecision.attempt);
+        retryDecision = rock::peer_held_join_retry_policy::update(unrelatedSelectionState,
+            Input{
+                .rawHeld = true,
+                .peerHoldingLooseObject = true,
+                .peerStillHoldingSameObject = true,
+                .peerFormId = 0x1234,
+                .deltaSeconds = 1.0f / 90.0f,
+                .config = retryConfig,
+            });
+        ok &= expectTrue("peer-held retry attempts once the unrelated selection is gone", retryDecision.attempt);
 
         retryDecision = rock::peer_held_join_retry_policy::update(retryState,
             Input{
@@ -227,18 +235,31 @@ int main()
                 .deltaSeconds = 1.0f / 90.0f,
                 .config = retryConfig,
             });
-        ok &= expectTrue("peer-held retry restarted for timeout case", retryState.active);
+        ok &= expectTrue("peer-held retry restarted for held-grip case", retryState.active);
+        for (int frame = 0; frame < 900; ++frame) {
+            retryDecision = rock::peer_held_join_retry_policy::update(retryState,
+                Input{
+                    .rawHeld = true,
+                    .peerHoldingLooseObject = true,
+                    .peerStillHoldingSameObject = true,
+                    .peerFormId = 0x1234,
+                    .deltaSeconds = 1.0f / 90.0f,
+                    .config = retryConfig,
+                });
+        }
+        ok &= expectTrue("peer-held retry stays active for as long as the grip is held", retryState.active);
+        ok &= expectFalse("peer-held retry is not cancelled by elapsed time", retryDecision.cancelled);
         retryDecision = rock::peer_held_join_retry_policy::update(retryState,
             Input{
-                .rawHeld = true,
+                .rawHeld = false,
+                .rawReleased = true,
                 .peerHoldingLooseObject = true,
                 .peerStillHoldingSameObject = true,
                 .peerFormId = 0x1234,
-                .deltaSeconds = 0.30f,
+                .deltaSeconds = 1.0f / 90.0f,
                 .config = retryConfig,
             });
-        ok &= expectTrue("peer-held retry times out inside bounded window", retryDecision.timeout);
-        ok &= expectFalse("peer-held retry inactive after timeout", retryState.active);
+        ok &= expectTrue("peer-held retry ends when the long-held grip is released", retryDecision.releaseCancel);
 
         retryDecision = rock::peer_held_join_retry_policy::update(retryState,
             Input{

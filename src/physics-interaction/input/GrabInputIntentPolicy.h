@@ -213,27 +213,23 @@ namespace rock::peer_held_join_retry_policy
     /*
      * Joining the object already held by the peer hand is not a normal free grab
      * edge: selection can be absent for the first frame because the peer hand has
-     * already converted the object to ROCK-held dynamic state. Keep a short,
-     * held-button retry window so the original press can become a close grab
-     * after fresh contact evidence arrives, while rate-limiting expensive mesh
-     * and contact validation attempts.
+     * already converted the object to ROCK-held dynamic state. The press stays
+     * a join intent for as long as the grip is held and the peer keeps that
+     * object, so it lands when the hand reaches the mesh, like a free object's
+     * contact retry. A time limit here left the grip dead until a second
+     * press. Only the mesh and contact validation attempts are rate-limited.
+     * Another selection on the way pauses the attempts and does not end them.
      */
     struct Config
     {
         bool enabled = true;
-        float leewaySeconds = 0.12f;
-        float forceSeconds = 0.08f;
-        float minWindowSeconds = 0.08f;
-        float maxWindowSeconds = 0.35f;
         float retryIntervalSeconds = 0.05f;
     };
 
     struct RuntimeState
     {
         bool active = false;
-        float elapsedSeconds = 0.0f;
         float retryElapsedSeconds = 0.0f;
-        float windowSeconds = 0.0f;
         std::uint32_t peerFormId = 0;
         std::uint32_t attempts = 0;
         const char* lastRefusalReason = "none";
@@ -261,7 +257,6 @@ namespace rock::peer_held_join_retry_policy
         bool started = false;
         bool attempt = false;
         bool cancelled = false;
-        bool timeout = false;
         bool releaseCancel = false;
         bool success = false;
         const char* reason = "idle";
@@ -270,15 +265,6 @@ namespace rock::peer_held_join_retry_policy
     [[nodiscard]] inline float finiteNonNegative(float value, float fallback)
     {
         return std::isfinite(value) && value >= 0.0f ? value : fallback;
-    }
-
-    [[nodiscard]] inline float retryWindowSeconds(const Config& config)
-    {
-        const float leeway = finiteNonNegative(config.leewaySeconds, 0.12f);
-        const float force = finiteNonNegative(config.forceSeconds, 0.08f);
-        const float minWindow = finiteNonNegative(config.minWindowSeconds, 0.08f);
-        const float maxWindow = (std::max)(minWindow, finiteNonNegative(config.maxWindowSeconds, 0.35f));
-        return std::clamp(leeway + force, minWindow, maxWindow);
     }
 
     [[nodiscard]] inline float retryIntervalSeconds(const Config& config)
@@ -347,18 +333,9 @@ namespace rock::peer_held_join_retry_policy
             return decision;
         }
 
-        if (state.active && input.unrelatedSelection) {
-            reset(state);
-            decision.cancelled = true;
-            decision.reason = "unrelated-selection";
-            return decision;
-        }
-
         if (!state.active && canStartRetry(input)) {
             state.active = true;
-            state.elapsedSeconds = 0.0f;
             state.retryElapsedSeconds = retryIntervalSeconds(input.config);
-            state.windowSeconds = retryWindowSeconds(input.config);
             state.peerFormId = input.peerFormId;
             state.attempts = 0;
             state.lastRefusalReason = "none";
@@ -371,17 +348,16 @@ namespace rock::peer_held_join_retry_policy
             return decision;
         }
 
-        const float dt = finiteNonNegative(input.deltaSeconds, 0.0f);
-        state.elapsedSeconds += dt;
-        state.retryElapsedSeconds += dt;
-
-        if (state.elapsedSeconds > state.windowSeconds) {
-            reset(state);
-            decision.cancelled = true;
-            decision.timeout = true;
-            decision.reason = "timeout";
+        decision.active = true;
+        if (input.unrelatedSelection) {
+            // The hand is passing another object; the next attempt is due as
+            // soon as that selection is gone.
+            state.retryElapsedSeconds = retryIntervalSeconds(input.config);
+            decision.reason = "unrelated-selection";
             return decision;
         }
+
+        state.retryElapsedSeconds += finiteNonNegative(input.deltaSeconds, 0.0f);
 
         const float retryInterval = retryIntervalSeconds(input.config);
         if (state.retryElapsedSeconds >= retryInterval) {
