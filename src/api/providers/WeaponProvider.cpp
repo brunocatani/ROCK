@@ -1,6 +1,7 @@
 #include <ROCK/Weapon.h>
 #include "Boundary.h"
 #include "physics-interaction/weapon/equip/EquipPickupScope.h"
+#include "physics-interaction/weapon/handling/EquippedWeaponHandlingSettings.h"
 
 namespace rock::api::weapon
 {
@@ -171,8 +172,7 @@ namespace rock::api::weapon
         {
             if (const auto s = checkInput(request); s != Status::Ok)
                 return s;
-            constexpr std::uint32_t knownFeatures = 0x3F;
-            if (request->features & ~knownFeatures)
+            if (request->features & ~::rock::kImplementedHandlingFeatures)
                 return Status::InvalidArgument;
             return invoke(owner, kInterfaceId, 2, true,
                 [&] { return p::runtime::setHandlingAuthority(owner, *request); });

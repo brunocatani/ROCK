@@ -105,14 +105,6 @@
         const api::weapon::HandlingRequest& request)
     {
         using Feature = api::weapon::HandlingFeature;
-        constexpr std::uint32_t implementedFeatures =
-            static_cast<std::uint32_t>(Feature::FiringGripOwnership) |
-            static_cast<std::uint32_t>(Feature::PrimaryDetach) |
-            static_cast<std::uint32_t>(Feature::AmbidextrousHandoff) |
-            static_cast<std::uint32_t>(Feature::GripZoneEquip) |
-            static_cast<std::uint32_t>(Feature::GripZoneHoverHaptics) |
-            static_cast<std::uint32_t>(Feature::FiringGripProximitySupport) |
-            static_cast<std::uint32_t>(Feature::FiringGripCylinderZone);
         // Detach, handoff and grip-zone equip act on the firing-grip owner.
         constexpr std::uint32_t ownershipDependentFeatures =
             static_cast<std::uint32_t>(Feature::PrimaryDetach) |
@@ -120,7 +112,7 @@
             static_cast<std::uint32_t>(Feature::GripZoneEquip);
         constexpr auto ownershipFeature = static_cast<std::uint32_t>(Feature::FiringGripOwnership);
         if (request.features == 0 ||
-            (request.features & ~implementedFeatures) != 0 ||
+            (request.features & ~kImplementedHandlingFeatures) != 0 ||
             request.leaseFrames == 0 ||
             ((request.features & ownershipDependentFeatures) != 0 &&
                 (request.features & ownershipFeature) == 0) ||

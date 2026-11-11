@@ -9,6 +9,18 @@
 
 namespace rock
 {
+    // Every HandlingFeature bit ROCK implements, the one list the Weapon
+    // provider and the handling service both check a request against. Two
+    // separate masks once fell out of step and refused FiringGripCylinderZone.
+    inline constexpr std::uint32_t kImplementedHandlingFeatures =
+        static_cast<std::uint32_t>(api::weapon::HandlingFeature::FiringGripOwnership) |
+        static_cast<std::uint32_t>(api::weapon::HandlingFeature::PrimaryDetach) |
+        static_cast<std::uint32_t>(api::weapon::HandlingFeature::AmbidextrousHandoff) |
+        static_cast<std::uint32_t>(api::weapon::HandlingFeature::GripZoneEquip) |
+        static_cast<std::uint32_t>(api::weapon::HandlingFeature::GripZoneHoverHaptics) |
+        static_cast<std::uint32_t>(api::weapon::HandlingFeature::FiringGripProximitySupport) |
+        static_cast<std::uint32_t>(api::weapon::HandlingFeature::FiringGripCylinderZone);
+
     struct RockEquippedWeaponHandlingBaseline
     {
         bool leftHandedModeEnabled{ false };

@@ -97,7 +97,7 @@ namespace rock::provider::runtime
 
     api::Status setHandlingAuthority(std::uint64_t, const api::weapon::HandlingRequest& request)
     {
-        assert(request.features == 3 && request.leaseFrames == 10 && request.leftFiringAimOffsetGameUnits[2] == 4);
+        assert((request.features & 3) == 3 && request.leaseFrames == 10 && request.leftFiringAimOffsetGameUnits[2] == 4);
         ++handlingRequests;
         return api::Status::Ok;
     }
@@ -232,14 +232,19 @@ int main()
     assert(api.copyEmitters(testOwner, 1, emitters, 2, &count) == Status::Ok && count == 1 &&
         emitters[0].omodFormId == 200);
 
-    // Handling authority: unknown features are refused before ROCK sees them.
+    // Handling authority: every published feature reaches ROCK, including
+    // FiringGripCylinderZone (bit 6), which a stale provider mask once refused;
+    // an unassigned bit is refused before ROCK sees it.
     HandlingRequest request;
     request.features = 3;
     request.leaseFrames = 10;
     request.leftFiringAimOffsetGameUnits[2] = 4;
     assert(api.setHandlingAuthority(testOwner, &request) == Status::Ok && handlingRequests == 1);
-    request.features = 1u << 6;
-    assert(api.setHandlingAuthority(testOwner, &request) == Status::InvalidArgument && handlingRequests == 1);
+    request.features = 3 | static_cast<std::uint32_t>(HandlingFeature::FiringGripCylinderZone);
+    assert(api.setHandlingAuthority(testOwner, &request) == Status::Ok && handlingRequests == 2);
+    request.features = 3 | (1u << 7);
+    assert(api.setHandlingAuthority(testOwner, &request) == Status::InvalidArgument && handlingRequests == 2);
+    request.features = 3;
     HandlingAuthority authority;
     assert(api.getHandlingAuthority(testOwner, &authority) == Status::Ok && authority.active == 1 &&
         authority.owner == testOwner);
