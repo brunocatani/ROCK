@@ -745,7 +745,12 @@ namespace rock
                 setting->SetBinary(desiredValue);
                 state.applied = true;
                 const auto reapplyCount = state.reapplyCount.fetch_add(1, std::memory_order_relaxed) + 1;
-                if (reapplyCount == 1 || reapplyCount % 30 == 0) {
+                // The first application is ROCK's own override; a repeat means
+                // something keeps putting the value back.
+                if (reapplyCount == 1) {
+                    ROCK_LOG_INFO(Haptics, "Set FO4VR native grab-hover {} setting '{}' to {} (original={})", label,
+                        settingName, desiredValue ? "true" : "false", state.originalValue ? "true" : "false");
+                } else if (reapplyCount % 30 == 0) {
                     ROCK_LOG_WARN(Haptics,
                         "Set FO4VR native grab-hover {} setting '{}' to {} (original={} reapplyCount={})", label,
                         settingName, desiredValue ? "true" : "false", state.originalValue ? "true" : "false",
@@ -793,7 +798,10 @@ namespace rock
                 setting->SetFloat(desiredValue);
                 state.applied = true;
                 const auto reapplyCount = state.reapplyCount.fetch_add(1, std::memory_order_relaxed) + 1;
-                if (reapplyCount == 1 || reapplyCount % 30 == 0) {
+                if (reapplyCount == 1) {
+                    ROCK_LOG_INFO(Haptics, "Set FO4VR native grab-hover {} setting '{}' to {:.3f} (original={:.3f})",
+                        label, settingName, desiredValue, state.originalValue);
+                } else if (reapplyCount % 30 == 0) {
                     ROCK_LOG_WARN(Haptics,
                         "Set FO4VR native grab-hover {} setting '{}' to {:.3f} (original={:.3f} reapplyCount={})",
                         label, settingName, desiredValue, state.originalValue, reapplyCount);

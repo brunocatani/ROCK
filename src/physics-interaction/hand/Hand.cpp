@@ -988,7 +988,9 @@ namespace rock
         const auto primaryChoice = bodySet.choosePrimaryBody(object_physics_body_set::INVALID_BODY_ID,
             object_physics_body_set::PurePoint3{ sourceHitPointWorld });
         if (primaryChoice.bodyId == object_physics_body_set::INVALID_BODY_ID) {
-            ROCK_LOG_WARN(Hand,
+            // Normal on the first attempts: the dropped item has no model yet.
+            // The handoff's caller warns when it finally fails.
+            ROCK_LOG_DEBUG(Hand,
                 "{} hand actor-equipment drop could not resolve a loose-object body: dropped={:08X} scanned={} "
                 "accepted={} rejected={} collisions={} visited={}",
                 handName(), droppedRef->GetFormID(), bodySet.records.size(), bodySet.acceptedCount(),

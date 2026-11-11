@@ -358,8 +358,13 @@ namespace rock
 
         const auto supportCaptureFailureReason = static_cast<std::uint32_t>(supportCaptureStatus.failureReason);
         if (!supportCaptureStatus.valid) {
-            if (!_supportCaptureFailureLogged || supportCaptureFailureReason != _supportCaptureFailureReasonLogged ||
-                supportCaptureStatus.invalidOrMissingFingerMask != _supportCaptureFailureMaskLogged) {
+            // No reason means nothing has been captured since the last reset,
+            // which is not a failure and is not reported as one.
+            const bool captureFailed = supportCaptureStatus.failureReason !=
+                authored_weapon_grip_capture::AuthoredSupportGripCaptureFailureReason::None;
+            if (captureFailed &&
+                (!_supportCaptureFailureLogged || supportCaptureFailureReason != _supportCaptureFailureReasonLogged ||
+                    supportCaptureStatus.invalidOrMissingFingerMask != _supportCaptureFailureMaskLogged)) {
                 ROCK_LOG_WARN(Animation,
                     "Live authored support grip capture unavailable weaponKey=0x{:X} reason={} secondaryPass={} "
                     "capture={} fingerMask=0x{:04X} libraryFound={} librarySupport={} stableSupportCurrent={}",
