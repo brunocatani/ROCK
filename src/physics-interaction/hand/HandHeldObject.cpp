@@ -294,6 +294,15 @@ namespace rock
 
         _heldBodyIdsSequence.fetch_add(1, std::memory_order_release);
 
+        // A living actor's limb lags the hand by design and his other bodies
+        // follow his animation. Presenting them would draw every body of his
+        // ragdoll shifted by the hand's lead over the held limb: his hands and
+        // feet shook with a shaken head. His nodes stay with his own bodies.
+        if (_savedObjectState.liveLimb) {
+            held_scene_presentation::clearHeldBodies(_isLeft);
+            return;
+        }
+
         held_scene_presentation::Registration sceneRegistration{};
         sceneRegistration.traceId = _grabFrame.traceId;
         for (const std::uint32_t heldBodyId : _heldBodyIds) {
@@ -962,10 +971,13 @@ namespace rock
             (_savedObjectState.targetKind == grab_target::Kind::LooseObject &&
                 _heldDriveDecision.mode != held_object_drive_policy::HeldBodySetDriveMode::FixedAttached &&
                 _heldDriveDecision.mode != held_object_drive_policy::HeldBodySetDriveMode::IncompleteNativeScan);
-        const auto presentation = held_scene_presentation::publishTargetTransport(_isLeft, world,
-            _savedObjectState.bodyId.value, _grabFrame.traceId, update.desiredBodyWorld, update.solvedBodyWorld,
-            presentReferenceRoot && _savedObjectState.refr ? _savedObjectState.refr->Get3D() : nullptr,
-            _grabFrame.rootBodyLocal, deltaTime);
+        // A live limb is never presented (publishHeldBodyScope).
+        const auto presentation = _savedObjectState.liveLimb
+            ? held_scene_presentation::TargetTransportPublication{}
+            : held_scene_presentation::publishTargetTransport(_isLeft, world,
+                _savedObjectState.bodyId.value, _grabFrame.traceId, update.desiredBodyWorld, update.solvedBodyWorld,
+                presentReferenceRoot && _savedObjectState.refr ? _savedObjectState.refr->Get3D() : nullptr,
+                _grabFrame.rootBodyLocal, deltaTime);
         update.hasPresentedBodyWorld = presentation.applied;
         update.presentedBodyWorld = presentation.presentedBodyWorld;
 
