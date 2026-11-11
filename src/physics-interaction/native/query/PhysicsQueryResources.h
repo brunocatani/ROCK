@@ -8,17 +8,8 @@ namespace rock::physics_query_resources
     // Validate the native ownership contract before a query can acquire resources.
     [[nodiscard]] bool nativeCleanupReady() noexcept;
 
-    // CommonLib's pick-data declaration has no destructor for its native world reference.
-    class PickData final : public RE::bhkPickData
-    {
-    public:
-        PickData() = default;
-        ~PickData() noexcept;
-        PickData(const PickData&) = delete;
-        PickData& operator=(const PickData&) = delete;
-        PickData(PickData&&) = delete;
-        PickData& operator=(PickData&&) = delete;
-    };
+    // RE::bhkPickData releases the world reference PickObject leaves in it.
+    using PickData = RE::bhkPickData;
 
     // Owns both the inline hit storage and any native-allocated overflow buffer.
     // Keep the native object in place: copying it would alias its inline buffer.

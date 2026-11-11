@@ -2,12 +2,10 @@
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/native/havok/HavokRefCount.h"
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <utility>
 
 namespace rock::physics_query_resources
 {
@@ -16,9 +14,8 @@ namespace rock::physics_query_resources
         using DestroyCollector = void* (*)(RE::hknpAllHitsCollector*, std::uint32_t);
 
         // FO4VR 1.2.72: PickObject (141DF8E76/141DF8ED6) retains the world at
-        // pick+0xC0; native caller 1407F89BD..1407F8A03 releases it at scope exit.
-        // CommonLib misnames this member and its comments omit alignment padding.
-        static_assert(offsetof(RE::bhkPickData, allHitsResult) == 0xC0);
+        // pick+0xC0; RE::bhkPickData's destructor releases it.
+        static_assert(offsetof(RE::bhkPickData, world) == 0xC0);
 
         template <std::size_t N>
         bool matches(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected)
@@ -62,28 +59,6 @@ namespace rock::physics_query_resources
     }
 
     bool nativeCleanupReady() noexcept { return collectorDestructor() != nullptr; }
-
-    PickData::~PickData() noexcept
-    {
-        auto* world = std::exchange(allHitsResult, nullptr);
-        if (!world) {
-            return;
-        }
-
-        // Per-thread diagnostic counters retain no engine pointers. Reference
-        // words are snapshots: other native queries may acquire/release in parallel.
-        static thread_local std::uint64_t cleanupCount = 0;
-        const auto sequence = ++cleanupCount;
-        const bool trace = logger::isDebugEnabled() && (sequence <= 4 || sequence % 4096 == 0);
-        std::uint32_t referenceWord = 0;
-        const bool readable = trace && native_memory::tryReadField(world, 0x08, referenceWord);
-        havok_ref_count::release(world);
-        if (trace) {
-            ROCK_LOG_DEBUG(PhysicsSafety,
-                "Raycast world cleanup: count={} world={:p} refBefore=0x{:08X} readable={} pickCleared=true", sequence,
-                static_cast<void*>(world), referenceWord, readable);
-        }
-    }
 
     AllHitsCollector::~AllHitsCollector() noexcept
     {
