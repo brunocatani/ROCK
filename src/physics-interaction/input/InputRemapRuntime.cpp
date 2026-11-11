@@ -2110,8 +2110,11 @@ namespace rock::input_remap_runtime
             }
         }
 
+        void traceAcceptEvent(const char* where, const RE::InputEvent* event);
+
         void hookedActivateEventHandler(void* handler, RE::InputEvent* inputEvent, void* cursor, void* unk)
         {
+            traceAcceptEvent("activate handler in", inputEvent);
             if (isAnyProviderOpenVrGameInputSuppressed()) {
                 markInputEventStopped(inputEvent);
                 ROCK_LOG_SAMPLE_DEBUG(Input, g_rockConfig.rockLogSampleMilliseconds,
@@ -2200,6 +2203,7 @@ namespace rock::input_remap_runtime
 
             if (s_originalActivateEventHandler) {
                 s_originalActivateEventHandler(handler, inputEvent, cursor, unk);
+                traceAcceptEvent("activate handler out", inputEvent);
             }
         }
 
@@ -2285,6 +2289,8 @@ namespace rock::input_remap_runtime
             const auto quickContainer = native_quick_loot_panel::inputTarget();
             if (!refused && (pick == 0 || !quickContainer || *quickContainer != pick)) {
                 // Not the left hand's quick loot: the native secondary press.
+                ROCK_LOG_DEBUG(Input, "LEFT_X_TAKE decide: native secondary leftPick=0x{:X} target={}", pick,
+                    quickContainer ? std::format("0x{:X}", *quickContainer) : std::string("unknown"));
                 return;
             }
             const auto device = refused ? std::nullopt : primaryWandDevice();
@@ -2300,13 +2306,45 @@ namespace rock::input_remap_runtime
                 *device);
         }
 
+        /*
+         * Diagnostic trace for left X on the quick loot panel (LEFT_X_TAKE):
+         * every accept press and release each handler sees, with the wand, the
+         * event's handled state and both picks. It tells apart a press that
+         * never reaches the quick container handler (another handler stopped
+         * it), a left pick that is not the target, and a redirected press the
+         * native primary branch did not take. Removed once the take works.
+         */
+        void traceAcceptEvent(const char* where, const RE::InputEvent* event)
+        {
+            const auto* button = event ? event->As<RE::ButtonEvent>() : nullptr;
+            if (!button || !(button->QJustPressed() || !button->QPressed()) ||
+                !(eventNameMatches(event, kNativeEventWandAccept) || eventNameMatches(event, kNativeEventActivate))) {
+                return;
+            }
+            const auto wand = resolveNativeWandIdentity(event);
+            const auto target = native_quick_loot_panel::inputTarget();
+            ROCK_LOG_DEBUG(Input,
+                "LEFT_X_TAKE {}: wand={} {} name={} device={} handled={} leftPick=0x{:X} rightPick=0x{:X} target={} "
+                "takeDevice={}",
+                where,
+                wand == NativeWandIdentity::Primary ? "primary" : wand == NativeWandIdentity::Secondary ? "secondary" : "unknown",
+                button->QJustPressed() ? "press" : "release", event->QUserEvent().c_str(), event->deviceID,
+                static_cast<std::int32_t>(event->handled.underlying()),
+                readWandPickRefHandle(kActivateSecondaryWandPickRefGlobalOffset),
+                readWandPickRefHandle(kActivatePrimaryWandPickRefGlobalOffset),
+                target ? std::format("0x{:X}", *target) : std::string("unknown"),
+                s_leftTakeDevice ? std::format("{}", *s_leftTakeDevice) : std::string("none"));
+        }
+
         void hookedQuickContainerEventHandler(void* handler, RE::InputEvent* inputEvent)
         {
             if (!s_originalQuickContainerEventHandler) {
                 return;
             }
+            traceAcceptEvent("quick container in", inputEvent);
             if (!isSecondaryWandAcceptPress(inputEvent)) {
                 s_originalQuickContainerEventHandler(handler, inputEvent);
+                traceAcceptEvent("quick container out", inputEvent);
                 return;
             }
             if (inputEvent->As<RE::ButtonEvent>()->QJustPressed()) {
@@ -2314,12 +2352,14 @@ namespace rock::input_remap_runtime
             }
             if (!s_leftTakeDevice) {
                 s_originalQuickContainerEventHandler(handler, inputEvent);
+                traceAcceptEvent("quick container out", inputEvent);
                 return;
             }
             const auto device = inputEvent->deviceID;
             inputEvent->deviceID = *s_leftTakeDevice;
             s_originalQuickContainerEventHandler(handler, inputEvent);
             inputEvent->deviceID = device;
+            traceAcceptEvent("quick container out (as primary)", inputEvent);
         }
 
         void hookedFavoritesEventHandler(void* handler, RE::InputEvent* inputEvent)
