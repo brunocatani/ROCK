@@ -24,7 +24,6 @@ namespace rock
             .weaponColliders = g_rockConfig.rockDebugDrawWeaponColliders,
             .grabbedWeaponPartCollider = g_rockConfig.rockDebugDrawGrabbedWeaponPartCollider,
             .dynamicWeaponColliders = g_rockConfig.rockDebugDrawDynamicWeaponColliders,
-            .looseObjectColliders = g_rockConfig.rockDebugDrawLooseObjectColliders,
             .handAxes = g_rockConfig.rockDebugShowHandAxes,
             .grabPivots = g_rockConfig.rockDebugShowGrabPivots,
             .palmVectors = g_rockConfig.rockDebugShowPalmVectors,
@@ -58,7 +57,6 @@ namespace rock
         const bool drawWeaponColliders = visualization.weaponColliders;
         const bool drawGrabbedWeaponPartCollider = visualization.grabbedWeaponPartCollider;
         const bool drawDynamicWeaponColliders = visualization.dynamicWeaponColliders;
-        const bool drawLooseObjectColliders = visualization.looseObjectColliders;
         const bool drawGrabAuthorityProxyCollider = visualization.grabAuthorityProxyCollider;
         const bool drawHandAxes = visualization.handAxes;
         const bool drawGrabPivots = visualization.grabPivots;
@@ -117,8 +115,7 @@ namespace rock
         const bool hasGrabbedWeaponPartCollider = grabbedWeaponPartColliderCount > 0;
         const bool drawAnyRockColliderBodies = drawHandColliders || drawHandBoneColliders || drawBodyBoneColliders ||
             drawDynamicHandColliders || drawWeaponColliders || hasGrabbedWeaponPartCollider ||
-            drawDynamicWeaponColliders || drawGrabAuthorityProxyCollider || drawGrabPivotSourceCollider ||
-            drawLooseObjectColliders;
+            drawDynamicWeaponColliders || drawGrabAuthorityProxyCollider || drawGrabPivotSourceCollider;
         if (!drawAnyRockColliderBodies && !drawTargetColliders && !drawHandAxes && !drawGrabPivots &&
             !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones &&
             !drawGrabPocketNormal && !drawHandBoneContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque &&
@@ -150,7 +147,7 @@ namespace rock
         const bool rightDisabled = context.right.disabled;
         const bool leftDisabled = context.left.disabled;
 
-        auto addBody = [&](RE::hknpBodyId bodyId, debug::BodyOverlayRole role, std::uintptr_t shapeOverride = 0) {
+        auto addBody = [&](RE::hknpBodyId bodyId, debug::BodyOverlayRole role) {
             if (bodyId.value == INVALID_BODY_ID) {
                 return;
             }
@@ -168,7 +165,6 @@ namespace rock
             auto& entry = frame.entries[frame.count++];
             entry.bodyId = bodyId;
             entry.role = role;
-            entry.shapeOverride = shapeOverride;
         };
 
         auto addAxisTransformWithBasis = [&](const RE::NiTransform& transform, debug::AxisOverlayRole role,
@@ -2196,20 +2192,6 @@ namespace rock
         }
 
         if (frame.drawRockBodies) {
-            if (drawLooseObjectColliders) {
-                // The pool's retained native shapes stay alive through this
-                // main-thread publish: PublishFrame copies them before return.
-                static_assert(debug::kLooseObjectOverlayEntries >= 2 * loose_weapon_collision_policy::kMaxWeapons);
-                std::array<LooseWeaponCollision::DebugBody, loose_weapon_collision_policy::kMaxWeapons> looseBodies{};
-                const auto looseCount = _looseObjectCollision.debugBodies(hknp, looseBodies);
-                for (std::size_t i = 0; i < looseCount; ++i) {
-                    const auto& body = looseBodies[i];
-                    if (body.generatedInstalled)
-                        addBody(RE::hknpBodyId{ body.bodyId }, debug::BodyOverlayRole::LooseObjectGenerated);
-                    addBody(RE::hknpBodyId{ body.bodyId }, debug::BodyOverlayRole::LooseObjectNative,
-                        reinterpret_cast<std::uintptr_t>(body.nativeShape));
-                }
-            }
             if (drawHandColliders) {
                 const auto addPalmBody = [&](const Hand& hand, debug::BodyOverlayRole role) {
                     const auto bodyId = hand.getCollisionBodyId();

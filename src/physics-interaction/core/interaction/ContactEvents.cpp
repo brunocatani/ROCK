@@ -321,8 +321,7 @@ namespace rock
             bodyAIsDynamicHand || bodyBIsDynamicHand || bodyAIsDynamicWeapon || bodyBIsDynamicWeapon;
         const bool looseCollisionContact = _looseWeaponCollision.watches(bodyIdA) ||
             _looseWeaponCollision.watches(bodyIdB) || _objectRestCollision.watches(bodyIdA) ||
-            _objectRestCollision.watches(bodyIdB) || _looseObjectCollision.watches(bodyIdA) ||
-            _looseObjectCollision.watches(bodyIdB);
+            _objectRestCollision.watches(bodyIdB);
         if (!generatedContact && !heldContact && !looseCollisionContact)
             return;
         // ID-only admission precedes native reads; accepted events retain all body checks.
@@ -359,7 +358,6 @@ namespace rock
             const auto* normal = reinterpret_cast<const float*>(data + 0x40);
             _looseWeaponCollision.contact(world, bodyIdA, bodyIdB, point, { normal[0], normal[1], normal[2] });
             _objectRestCollision.contact(world, bodyIdA, bodyIdB, point, { normal[0], normal[1], normal[2] });
-            _looseObjectCollision.contact(world, bodyIdA, bodyIdB, point, { normal[0], normal[1], normal[2] });
         }
         if (solvedChildContact && heldContact) {
             auto recordHeldPlacementContact = [&](Hand& hand, bool heldA, bool heldB) {

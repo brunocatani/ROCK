@@ -13,7 +13,6 @@ namespace rock::debug_visualization_policy
         bool weaponColliders{ false };
         bool grabbedWeaponPartCollider{ false };
         bool dynamicWeaponColliders{ false };
-        bool looseObjectColliders{ false };
 
         bool handAxes{ false };
         bool grabPivots{ false };
@@ -49,7 +48,6 @@ namespace rock::debug_visualization_policy
         bool weaponColliders{ false };
         bool grabbedWeaponPartCollider{ false };
         bool dynamicWeaponColliders{ false };
-        bool looseObjectColliders{ false };
         bool grabAuthorityProxyCollider{ false };
         bool grabPivotSourceCollider{ false };
 
@@ -91,7 +89,6 @@ namespace rock::debug_visualization_policy
             .weaponColliders = colliders && input.weaponColliders,
             .grabbedWeaponPartCollider = colliders && input.grabbedWeaponPartCollider,
             .dynamicWeaponColliders = colliders && input.dynamicWeaponColliders,
-            .looseObjectColliders = colliders && input.looseObjectColliders,
             .grabAuthorityProxyCollider = colliders && input.grabAuthorityProxy,
             .grabPivotSourceCollider = colliders && forceTorque && input.grabPivotSourceCollider,
 

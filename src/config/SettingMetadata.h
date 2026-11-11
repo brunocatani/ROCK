@@ -196,14 +196,6 @@ namespace rock::config
             "toward you, at a fixed size, and shows once when both hands point at it.\nActivation itself is "
             "unchanged. Applies at once.",
             api::configuration::Group::Consumer },
-        { "Grabbing", "GeneratedObjectCollision", "06. Grabbing",
-            "Experimental. True: a grabbed loose object made of one rigid body gets collision built from its visible "
-            "mesh, like a picked-up weapon.\nThe native collision keeps working until the new shape is ready. The new "
-            "shape stays while the object is held, thrown or dropped, and the native collision returns after the "
-            "object has rested on a surface for two seconds. The object is never frozen.\nWeapons, ammunition, "
-            "actors and multi-body objects keep their native collision.\nFalse: grabbed objects keep their native "
-            "collision. Turning it off restores every native shape at once.",
-            api::configuration::Group::Developer },
         { "FiringHand", "DefaultHand", "07. Firing Hand",
             "Default Hand\nright or left: the firing hand for equips that come without a hand (favorites, PALM, "
             "scripts and other mods).\nGrenade draws prefer this hand and use the other one when it is busy.\nPip-Boy "
@@ -1037,11 +1029,6 @@ namespace rock::config
             api::configuration::Group::Developer },
         { "DebugOverlay", "DebugDrawDynamicWeaponColliders", "15. Debug Overlay",
             "Draws the layer-51 dynamic weapon compound proxy and contact/correction telemetry.",
-            api::configuration::Group::Developer },
-        { "DebugOverlay", "DebugDrawLooseObjectColliders", "15. Debug Overlay",
-            "Draws the collision of every object in the experimental generated object collision pool "
-            "(Grabbing.GeneratedObjectCollision): green is the generated collision once installed, violet is the "
-            "object's native collision.\nNeeds DebugShowColliders.",
             api::configuration::Group::Developer },
         { "DebugOverlay", "DebugMaxWeaponBodiesDrawn", "15. Debug Overlay", "",
             api::configuration::Group::Developer },

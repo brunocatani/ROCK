@@ -136,7 +136,6 @@ namespace rock::performance_profiler
         WeaponKinematicDrive,
         WeaponDynamicDrive,
         LooseWeaponCollision,
-        LooseObjectCollision,
         LooseWeaponLayerRepair,
         // Sub-steps of interactionFinalize.
         FinalizeGrabInput,

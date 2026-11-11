@@ -1,7 +1,6 @@
 // LooseWeaponCollision: generated collision for loose references in the
 // world, kept in a small bounded pool (see LooseWeaponCollision.cpp). One
-// class serves three pools: loose weapons, object rest watches and the
-// experimental generated collision for held loose objects.
+// class serves two pools: loose weapons and object rest watches.
 #pragma once
 
 #include <array>
@@ -36,17 +35,12 @@ namespace rock
             // in place and their native collision is restored.
             Weapons,
             // Native rest watches only (Collision API watchObjectRest).
-            ObjectRest,
-            // Held single-body loose objects get generated hulls, keep them
-            // while thrown or dropped, and get their native collision back
-            // after two seconds of supported rest. They are never frozen.
-            Objects
+            ObjectRest
         };
 
         explicit LooseWeaponCollision(Pool pool);
         ~LooseWeaponCollision();
-        // right/left: each hand's held reference, or null. The Objects pool's
-        // caller passes only held loose objects it may admit.
+        // right/left: each hand's held reference, or null.
         void update(const PhysicsFrameContext& frame, RE::TESObjectREFR* right, RE::TESObjectREFR* left,
             PhysicsCallbackQuiescenceGate& gate);
         bool empty() const noexcept;
@@ -80,18 +74,6 @@ namespace rock
         void contact(RE::hknpWorld* world, std::uint32_t a, std::uint32_t b, const RE::NiPoint3& point,
             const RE::NiPoint3& normal) noexcept;
 
-        // Debug overlay: each owned native body in this world, its retained
-        // native shape and whether the generated compound is installed. The
-        // shape pointer stays valid until this pool's next update or clear;
-        // the overlay copies it within the same main-thread publish.
-        struct DebugBody
-        {
-            std::uint32_t bodyId{};
-            const RE::hknpShape* nativeShape{};
-            bool generatedInstalled{};
-        };
-        std::size_t debugBodies(const RE::hknpWorld* world, std::span<DebugBody> out) const;
-
     private:
         struct State;
 
@@ -99,7 +81,7 @@ namespace rock
         {
             Slot();
             ~Slot();
-            void admit(RE::TESObjectREFR* reference, const PhysicsFrameContext& frame, Pool pool);
+            void admit(RE::TESObjectREFR* reference, const PhysicsFrameContext& frame);
             void update(const PhysicsFrameContext& frame, RE::TESObjectREFR* right, RE::TESObjectREFR* left,
                 PhysicsCallbackQuiescenceGate& gate, bool prepare);
             void clear(RE::hknpWorld* liveWorld);
@@ -111,9 +93,6 @@ namespace rock
             std::unique_ptr<State> _state;
             std::uint32_t _declined{};
             std::uint32_t _rested{};
-            // Pool::Objects: sequence of the last frame this slot's object was
-            // admitted or held. A full pool evicts the lowest unheld one.
-            std::uint64_t _lastHeld{};
             std::atomic<RE::hknpWorld*> _world{};
             std::array<std::atomic<std::uint32_t>, loose_weapon_collision_policy::kMaxNativeBodies> _bodies{};
             std::atomic<unsigned> _count{};
@@ -133,10 +112,7 @@ namespace rock
         };
 
         void publishWatchMask() noexcept;
-        bool evictLeastRecentlyHeldObject(RE::hknpWorld* world, const RE::TESObjectREFR* right,
-            const RE::TESObjectREFR* left, PhysicsCallbackQuiescenceGate& gate);
         const Pool _pool;
-        std::uint64_t _heldSequence{};
         std::array<Slot, loose_weapon_collision_policy::kMaxWeapons> _slots;
         // Settled stateful weapons retain their exact generated shapes outside
         // the active preparation/contact pool. Released on pickup, model/world

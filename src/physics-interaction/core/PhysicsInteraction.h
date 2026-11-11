@@ -24,7 +24,6 @@
 //   EquippedWeaponDrop           dropping, storing and promoting equipped weapons
 //   InventoryWeaponEquip         provider inventory equip requests
 //   LooseWeaponCollisionFrame    release of a loose weapon's collision
-//   LooseObjectCollisionFrame    experimental generated collision for held loose objects
 //   HandCollisionSuppression     when hand colliders and native player collision
 //                                are switched off, and contact evidence ownership
 //   NativeGrenadeCollision       collision protection for native grenade throws
@@ -546,7 +545,6 @@ namespace rock
         void updateEjectionContacts(const PhysicsFrameContext& frame);
         void clearEjectionContacts(RE::hknpWorld* world);
         void updateObjectRest(const PhysicsFrameContext& frame);
-        void updateLooseObjectCollision(const PhysicsFrameContext& frame);
         // A hand holding formId has its click reserved and offers it for placement.
         bool heldPlacementEligible(RE::hknpWorld* world, std::uint32_t formId) const;
         [[nodiscard]] bool placementReservesClick(bool left) const noexcept
@@ -1256,8 +1254,6 @@ namespace rock
         LodgedWeapons _lodgedWeapons;
         // Independent capacity; native magazine shapes stay intact.
         LooseWeaponCollision _objectRestCollision{ LooseWeaponCollision::Pool::ObjectRest };
-        // Independent capacity, so thrown objects never take a weapon's slot.
-        LooseWeaponCollision _looseObjectCollision{ LooseWeaponCollision::Pool::Objects };
         count_based_ammo::RootBodySync _countBasedAmmoRootSync;
         object_rest_service::Requests _objectRestRequests;
         EjectionContactRequests _ejectionContacts;

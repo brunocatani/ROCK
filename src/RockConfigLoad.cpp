@@ -414,8 +414,6 @@ namespace rock
                 rockActivatePromptPlacement);
             rockActivatePromptPlacement = 2;
         }
-        rockGeneratedObjectCollision =
-            ini.boolean("Grabbing", "GeneratedObjectCollision", rockGeneratedObjectCollision);
         rockGrabInputLeewaySeconds =
             static_cast<float>(ini.number("GrabAcquisition", "GrabInputLeewaySeconds", rockGrabInputLeewaySeconds));
         if (!std::isfinite(rockGrabInputLeewaySeconds) || rockGrabInputLeewaySeconds < 0.0f) {
@@ -696,8 +694,6 @@ namespace rock
             ini.boolean("DebugOverlay", "DebugDrawLooseWeaponGripZones", rockDebugDrawLooseWeaponGripZones);
         rockDebugDrawDynamicWeaponColliders =
             ini.boolean("DebugOverlay", "DebugDrawDynamicWeaponColliders", rockDebugDrawDynamicWeaponColliders);
-        rockDebugDrawLooseObjectColliders =
-            ini.boolean("DebugOverlay", "DebugDrawLooseObjectColliders", rockDebugDrawLooseObjectColliders);
         rockDebugMaxWeaponBodiesDrawn =
             static_cast<int>(ini.integer("DebugOverlay", "DebugMaxWeaponBodiesDrawn", rockDebugMaxWeaponBodiesDrawn));
         rockDebugMaxShapeCapturesPerFrame = static_cast<int>(

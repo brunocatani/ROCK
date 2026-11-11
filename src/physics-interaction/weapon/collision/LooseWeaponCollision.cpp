@@ -1,9 +1,7 @@
 // LooseWeaponCollision: gives loose references in the world ROCK's generated
 // collision compound. Held or moving references use a small slot pool. A
 // weapon at rest is parked with its native state saved, and its native
-// collision is restored when the reference unloads or changes. A loose object
-// (Pool::Objects) is never frozen: after supported rest its native shape is
-// restored and its slot freed, so the object stays fully dynamic.
+// collision is restored when the reference unloads or changes.
 #include "physics-interaction/weapon/collision/LooseWeaponCollision.h"
 #include <bit>
 #include <chrono>
@@ -158,9 +156,6 @@ namespace rock
         loose_weapon_collision_policy::Parking parking;
         std::size_t nextSource{}, nextMapping{}, nextCompound{}, primaryBody{};
         bool scanned{}, installed{}, frozen{}, parked{}, scriptStarted{}, failed{}, nativeOnly{};
-        // Pool::Objects: one rigid dynamic body, native collision kept until
-        // the generated compound replaces it, no freeze at rest.
-        bool object{};
         bool held{}, supported{}, stationary{};
         unsigned parkingStage{};
         float unsettledSeconds{};
@@ -235,15 +230,6 @@ namespace rock
                 if (set.records.empty() || set.records.size() > loose_weapon_collision_policy::kMaxNativeBodies ||
                     d.scanFailures || d.invalidPhysicsSystems || d.foreignRefBodySkips || d.unresolvedRefBodySkips ||
                     d.depthLimitSkips || d.staleCacheEntrySkips) {
-                    failed = true;
-                    return false;
-                }
-                // Each compound child keeps the body frame captured here, which
-                // holds only while the meshes move rigidly with that one body.
-                // Bodies that move against each other (ragdoll or skinned
-                // clutter) keep their native collision.
-                if (object && (set.records.size() != 1 || set.records.front().motionType != Motion::Dynamic)) {
-                    phase = "Object is not one dynamic body; native collision kept";
                     failed = true;
                     return false;
                 }
@@ -707,12 +693,9 @@ namespace rock
     {
         if (!frame.worldReady || !frame.hknpWorld || frame.menuBlocked)
             return;
-        performance_profiler::ScopedTimer timer(_pool == Pool::Objects
-                ? performance_profiler::Scope::LooseObjectCollision
-                : performance_profiler::Scope::LooseWeaponCollision);
+        performance_profiler::ScopedTimer timer(performance_profiler::Scope::LooseWeaponCollision);
         const bool admitWeapons = _pool == Pool::Weapons;
-        if (_pool != Pool::Objects)
-            loose_weapon_state::restoreWithdrawn();
+        loose_weapon_state::restoreWithdrawn();
         // Drops whose native bodies published after placement adopt here, ahead
         // of held admission, so a regrab never extracts the mesh again.
         for (auto& dropped : _dropped)
@@ -788,8 +771,6 @@ namespace rock
                     auto mutation = gate.pauseForMutation();
                     slot.clear(frame.hknpWorld);
                 }
-                if (slot._state && (slot._state->ref.get() == right || slot._state->ref.get() == left))
-                    slot._lastHeld = ++_heldSequence;
                 slot.update(frame, right, left, gate, i == preparing);
                 if (slot._state && slot._state->parked) {
                     if (loose_weapon_state::owns(slot._state->ref->formID) && !slot._state->nativeOnly) {
@@ -825,9 +806,7 @@ namespace rock
                                        : RE::TESForm::GetFormByID<RE::TESObjectREFR>(requested[candidate - 2]);
             auto* form = ref ? ref->GetObjectReference() : nullptr;
             auto* weapon = form ? form->As<RE::TESObjectWEAP>() : nullptr;
-            const bool eligible = _pool == Pool::Objects
-                ? form && !weapon
-                : weapon && loose_weapon_collision_policy::eligibleType(weapon->weaponData.type.get());
+            const bool eligible = weapon && loose_weapon_collision_policy::eligibleType(weapon->weaponData.type.get());
             if (!eligible || ref->IsDeleted() || ref->IsDisabled() || !ref->Get3D())
                 continue;
             if (candidate >= 2) {
@@ -849,11 +828,6 @@ namespace rock
                     return (slot._state && slot._state->ref.get() == ref) || slot._declined == ref->formID;
                 }))
                 continue;
-            // A newly held object always gets a slot: the object let go of
-            // longest ago returns to native collision, resting or not.
-            if (_pool == Pool::Objects &&
-                std::none_of(_slots.begin(), _slots.end(), [](const Slot& slot) { return !slot._state; }))
-                evictLeastRecentlyHeldObject(frame.hknpWorld, right, left, gate);
             std::array<loose_weapon_collision_policy::Slot, loose_weapon_collision_policy::kMaxWeapons> identities{};
             for (std::size_t i = 0; i < _slots.size(); ++i)
                 if (_slots[i]._state)
@@ -870,8 +844,7 @@ namespace rock
             try {
                 if (loose_weapon_state::owns(ref->formID) && !loose_weapon_state::apply(ref, ref->Get3D()))
                     continue;
-                free->admit(ref, frame, _pool);
-                free->_lastHeld = ++_heldSequence;
+                free->admit(ref, frame);
             } catch (...) {
                 free->_declined = ref->formID;
                 free->clear(frame.hknpWorld);
@@ -880,48 +853,6 @@ namespace rock
             }
         }
         publishWatchMask();
-    }
-
-    bool LooseWeaponCollision::evictLeastRecentlyHeldObject(RE::hknpWorld* world, const RE::TESObjectREFR* right,
-        const RE::TESObjectREFR* left, PhysicsCallbackQuiescenceGate& gate)
-    {
-        Slot* oldest = nullptr;
-        for (auto& slot : _slots) {
-            const auto* ref = slot._state ? slot._state->ref.get() : nullptr;
-            if (ref && ref != right && ref != left && (!oldest || slot._lastHeld < oldest->_lastHeld))
-                oldest = &slot;
-        }
-        if (!oldest)
-            return false;
-        const auto id = oldest->_state->ref->formID;
-        const bool installed = oldest->_state->installed;
-        const char* phase = oldest->_state->phase;
-        {
-            auto mutation = gate.pauseForMutation();
-            oldest->clear(world);
-        }
-        if (oldest->_state)
-            return false; // Restore pending; the slot's own update retries it.
-        ROCK_LOG_INFO(Weapon,
-            "Loose object collision evicted ref={:08X} reason=capacity installed={} phase='{}'; native collision "
-            "restored",
-            id, installed, phase);
-        return true;
-    }
-
-    std::size_t LooseWeaponCollision::debugBodies(const RE::hknpWorld* world, std::span<DebugBody> out) const
-    {
-        std::size_t count = 0;
-        for (const auto& slot : _slots) {
-            if (!slot._state || slot._state->world != world)
-                continue;
-            for (const auto& body : slot._state->bodies) {
-                if (count >= out.size())
-                    return count;
-                out[count++] = { body.id, body.original.get(), body.changed };
-            }
-        }
-        return count;
     }
 
     bool LooseWeaponCollision::takeNativeRestCompletion(std::uint32_t reference) noexcept
@@ -1154,7 +1085,7 @@ namespace rock
         _count.store(static_cast<unsigned>(count), std::memory_order_release);
     }
 
-    void LooseWeaponCollision::Slot::admit(RE::TESObjectREFR* reference, const PhysicsFrameContext& frame, Pool pool)
+    void LooseWeaponCollision::Slot::admit(RE::TESObjectREFR* reference, const PhysicsFrameContext& frame)
     {
         const auto started = std::chrono::steady_clock::now();
         if (!shapeSetter()) {
@@ -1163,27 +1094,9 @@ namespace rock
             return;
         }
         _state = std::make_unique<State>(reference, frame.hknpWorld);
-        _state->object = pool == Pool::Objects;
         const bool captured = !_state->failed && _state->captureBodies(frame);
         if (!captured && !_state->failed) {
             _state.reset();
-            return;
-        }
-        if (_state->object) {
-            if (_state->failed || !captured) {
-                ROCK_LOG_INFO(Weapon, "Loose object collision declined ref={:08X} stage={}; native collision kept",
-                    reference->formID, _state->phase);
-                _state.reset();
-                _declined = reference->formID;
-                return;
-            }
-            // The native shape keeps colliding until install swaps in the
-            // finished compound, so a held object never loses collision.
-            _state->phase = "Held object: native collision kept, preparing generated shapes";
-            ROCK_LOG_INFO(Weapon,
-                "Loose object collision pickup ref={:08X} bodies={} geometryQueued=true acquisitionMs={:.3f}",
-                reference->formID, _state->bodies.size(),
-                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count());
             return;
         }
         if (_state->failed || !captured ||
@@ -1286,16 +1199,6 @@ namespace rock
             return;
         state.held = right == state.ref.get() || left == state.ref.get();
         if (!state.installed) {
-            if (state.object && !state.held) {
-                // Released before its compound was ready. Nothing native was
-                // changed, so the object simply keeps its native collision.
-                ROCK_LOG_INFO(Weapon,
-                    "Loose object released before generated collision was ready ref={:08X} preparationFrames={}; "
-                    "native collision kept",
-                    state.ref->formID, state.preparationFrames);
-                reset(frame.hknpWorld);
-                return;
-            }
             if (!state.held && !state.nativeOnly && !loose_weapon_state::owns(state.ref->formID)) {
                 // A quick release must regain collision before it can fall. Keep
                 // this exact reference's rest watcher even if geometry is unfinished.
@@ -1307,7 +1210,7 @@ namespace rock
                 state.nativeOnly = true;
                 state.builder.reset();
             }
-            if (!state.nativeOnly && !state.object) {
+            if (!state.nativeOnly) {
                 auto mutation = gate.pauseForMutation();
                 if (!state.refreshSuppression()) {
                     state.failed = true;
@@ -1328,9 +1231,7 @@ namespace rock
         }
         // Geometry preparation above yields within its existing work budget and
         // never pauses physics callbacks. Only live native mutations need the gate.
-        // A loose object is one rigid body with no suppressed auxiliaries, so
-        // after install it needs no per-frame native writes at all.
-        if (!state.installed || !state.object) {
+        {
             auto mutation = gate.pauseForMutation();
             if (!state.installed) {
                 if (!state.install()) {
@@ -1339,7 +1240,7 @@ namespace rock
                 }
                 publishBodies();
             }
-            if (!state.object && !state.animate()) {
+            if (!state.animate()) {
                 state.phase = "Animated shape or native identity changed";
                 state.failed = true;
                 return;
@@ -1425,19 +1326,6 @@ namespace rock
         }
         if (!park && !state.frozen)
             return;
-        if (state.object) {
-            // No freeze and no load-script change: the object stays dynamic.
-            // The native shape setter (153AC70) activates a sleeping dynamic
-            // body, so the object settles on its native collision from here.
-            const auto id = state.ref->formID;
-            const auto rest = state.parking.supportedRestSeconds;
-            reset(frame.hknpWorld);
-            if (!_state)
-                ROCK_LOG_INFO(Weapon,
-                    "Loose object collision retired ref={:08X} supportedRest={:.3f}; native collision restored", id,
-                    rest);
-            return;
-        }
         if (state.parkingStage == 0) {
             state.parkingStage = 1;
             ROCK_LOG_INFO(Weapon,
