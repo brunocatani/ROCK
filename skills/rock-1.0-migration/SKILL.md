@@ -85,7 +85,7 @@ Check the mod's logic against these even when the code compiles:
   hand's click (`ReserveRightClick`/`ReserveLeftClick`,
   `RightInputReserved`/`LeftInputReserved`).
 - **ROCK settings** are TOML tables and keys without type letters
-  (`Grabbing` / `FarGrabMode`), matched exactly. Read the catalog through
+  (`Grabbing` / `FarGrabStyle`), matched exactly. Read the catalog through
   Configuration `visit` instead of hard-coding old INI names.
 - **ROCK draws nothing for other mods.** Debug drawing moves to RPS UI's
   WorldDraw, and the mod must keep working without RPS UI.

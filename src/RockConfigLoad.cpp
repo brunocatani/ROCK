@@ -192,14 +192,14 @@ namespace
         return kDefaultHighlightIntensityMode;
     }
 
-    int readSelectionAimAngleDegrees(SettingReader& ini, const char* table, const char* key, int currentValue)
+    int readGrabDirection(SettingReader& ini, int currentValue)
     {
-        const int configuredValue = static_cast<int>(ini.integer(table, key, currentValue));
-        const int sanitizedValue = rock::selection_query_policy::sanitizeSelectionAimAngleDegrees(configuredValue);
-        if (configuredValue != sanitizedValue) {
-            ROCK_LOG_WARN(Config, "Invalid {}.{}={} -- using {}", table, key, configuredValue, sanitizedValue);
+        const int configuredValue = static_cast<int>(ini.integer("Grabbing", "GrabDirection", currentValue));
+        if (rock::selection_query_policy::isValidGrabDirection(configuredValue)) {
+            return configuredValue;
         }
-        return sanitizedValue;
+        ROCK_LOG_WARN(Config, "Invalid Grabbing.GrabDirection={} -- using Palm Down", configuredValue);
+        return rock::selection_query_policy::kDefaultGrabDirection;
     }
 
     // Keys of the ControllerInput.Left and ControllerInput.Right tables.
@@ -390,23 +390,22 @@ namespace rock
             std::clamp(static_cast<float>(ini.number("Bindings", "HoldSeconds", rockBindingHoldSeconds)), 0.1f, 2.0f);
         rockBindingDoubleTapSeconds = std::clamp(
             static_cast<float>(ini.number("Bindings", "DoubleTapSeconds", rockBindingDoubleTapSeconds)), 0.15f, 0.6f);
-        rockFarGrabMode = far_pull_gesture::sanitizeMode(
-            static_cast<int>(ini.integer("Grabbing", "FarGrabMode", rockFarGrabMode)));
-        rockCloseSelectionAngleDegrees =
-            readSelectionAimAngleDegrees(ini, "Grabbing", "CloseGrabDirection", rockCloseSelectionAngleDegrees);
-        rockFarSelectionAngleDegrees =
-            readSelectionAimAngleDegrees(ini, "Grabbing", "FarGrabDirection", rockFarSelectionAngleDegrees);
+        rockFarGrabStyle = far_pull_gesture::sanitizeMode(
+            static_cast<int>(ini.integer("Grabbing", "FarGrabStyle", rockFarGrabStyle)));
+        rockGrabDirection = readGrabDirection(ini, rockGrabDirection);
+        rockEnableDeveloperSettings =
+            ini.boolean("Developer", "EnableDeveloperSettings", rockEnableDeveloperSettings);
         rockQuickLootPanelPlacement =
-            static_cast<int>(ini.integer("Grabbing", "QuickLootPanelPlacement", rockQuickLootPanelPlacement));
+            static_cast<int>(ini.integer("Prompts", "QuickLootPanelPlacement", rockQuickLootPanelPlacement));
         if (rockQuickLootPanelPlacement < 1 || rockQuickLootPanelPlacement > 3) {
-            ROCK_LOG_WARN(Config, "Invalid Grabbing.QuickLootPanelPlacement={} -- using Closer Hand",
+            ROCK_LOG_WARN(Config, "Invalid Prompts.QuickLootPanelPlacement={} -- using Closer Hand",
                 rockQuickLootPanelPlacement);
             rockQuickLootPanelPlacement = 2;
         }
         rockActivatePromptPlacement =
-            static_cast<int>(ini.integer("Grabbing", "ActivatePromptPlacement", rockActivatePromptPlacement));
+            static_cast<int>(ini.integer("Prompts", "ActivatePromptPlacement", rockActivatePromptPlacement));
         if (rockActivatePromptPlacement < 1 || rockActivatePromptPlacement > 3) {
-            ROCK_LOG_WARN(Config, "Invalid Grabbing.ActivatePromptPlacement={} -- using Closer Hand",
+            ROCK_LOG_WARN(Config, "Invalid Prompts.ActivatePromptPlacement={} -- using Closer Hand",
                 rockActivatePromptPlacement);
             rockActivatePromptPlacement = 2;
         }

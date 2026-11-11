@@ -226,24 +226,18 @@ int main()
         ok &= expectVectorNear("selection angle 90 points +X",
             rock::selection_query_policy::selectionAimHandspaceVectorFromAngleDegrees<RE::NiPoint3>(90),
             RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
-        ok &= expectVectorNear("invalid selection angle falls back to -Y",
-            rock::selection_query_policy::selectionAimHandspaceVectorFromAngleDegrees<RE::NiPoint3>(30),
-            RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
-
         const auto identity = identityTransform();
-        rock::g_rockConfig.rockCloseSelectionAngleDegrees = 90;
-        rock::g_rockConfig.rockFarSelectionAngleDegrees = 0;
-        ok &= expectVectorNear("close selection follows its own angle",
+        rock::g_rockConfig.rockGrabDirection = static_cast<int>(rock::selection_query_policy::GrabDirection::Fingers);
+        ok &= expectVectorNear("fingers: close selection along the fingers",
             rock::computeCloseSelectionDirectionFromHandBasis(identity, false), RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
-        ok &= expectVectorNear("far selection follows its own angle",
-            rock::computeFarSelectionDirectionFromHandBasis(identity, false), RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
-        rock::g_rockConfig.rockCloseSelectionAngleDegrees = 0;
-        rock::g_rockConfig.rockFarSelectionAngleDegrees = 90;
-        ok &= expectVectorNear("close selection angle is independent of far",
-            rock::computeCloseSelectionDirectionFromHandBasis(identity, true), RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
-        ok &= expectVectorNear("far selection angle is independent of close",
+        ok &= expectVectorNear("fingers: far selection along the fingers",
             rock::computeFarSelectionDirectionFromHandBasis(identity, true), RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
-        rock::g_rockConfig.rockFarSelectionAngleDegrees = rock::selection_query_policy::kDefaultSelectionAimAngleDegrees;
+        rock::g_rockConfig.rockGrabDirection = static_cast<int>(rock::selection_query_policy::GrabDirection::PalmDown);
+        ok &= expectVectorNear("palm down: close selection out of the palm",
+            rock::computeCloseSelectionDirectionFromHandBasis(identity, true), RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
+        ok &= expectVectorNear("palm down: far selection out of the palm",
+            rock::computeFarSelectionDirectionFromHandBasis(identity, false), RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
+        rock::g_rockConfig.rockGrabDirection = rock::selection_query_policy::kDefaultGrabDirection;
     }
 
     {

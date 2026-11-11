@@ -2,34 +2,54 @@
 ## Reference only: ROCK never reads this file. The first time ROCK starts it writes this same text as
 ## ROCK.toml in Documents\My Games\Fallout4VR\Mods_Config\ROCK.
 
-## === 01. Logging ===
-[Logging]
-## How much ROCK writes to ROCK.log.
-## 0 = Trace. 1 = Debug. 2 = Info. 3 = Warn. 4 = Error. 5 = Critical. 6 = Off.
-## Trace and Debug write a lot and can cost frame time; keep Info for normal play.
-LogLevel = 2
+## === 01. Grabbing ===
+[Grabbing]
+## Grab Direction
+## 1 = Palm Down (HIGGS Style). 2 = Fingers (Alyx Style).
+## Palm Down (HIGGS Style): your hand reaches out of the palm, for objects near and far.
+## Fingers (Alyx Style): your hand reaches along your fingers, for objects near and far.
+## Far grabs also need the object in your view. Applies at once, on each hand.
+GrabDirection = 1
 
-## === 02. Grenades ===
-[Grenades]
-## Immersive Grenades
-## Hold the grenade button (right B by default) to draw a grenade into your hand and throw it by hand.
-## Selecting a grenade in PALM also puts it in your hand.
-## False: the game's own hold and release throw.
-## Release the grenade button before changing this; a grenade already drawn keeps its mode.
-ImmersiveGrenades = true
+## Far Grab Style
+## 1 = Immediate. 2 = Pull.
+## Immediate: grabbing a far object brings it to your hand at once, with no flick.
+## Pull: hold grab to lock on, then flick your hand toward yourself; release before the flick to cancel.
+## A pulled object follows your hand while you move or turn. Keep holding grab to catch it as it arrives, or let go and press grab again as it reaches you. Applies to the next far grab.
+FarGrabStyle = 1
 
-## Grenade Fuse
-## Seconds from pulling the pin to detonation for grenades drawn by hand.
-## 0 uses the grenade's own fuse time. Range: 0 to 30.
-RealisticGrenadeFuseSeconds = 4.0
+## === 02. Grab Highlight ===
+[SelectionFeedback]
+## Grab Highlight
+## Outlines the object your hand would grab.
+HighlightEnabled = true
 
-## === 03. Immersive Aid ===
-[ImmersiveAid]
-## Immersive Aid
-## Stimpaks and Med-X sit in a fixed syringe grip and inject after touching your body for 0.5 seconds.
-## False: they are grabbed like any object and used by bringing them to your mouth.
-## Release and grab again to see the change on an item already in your hand.
-Enabled = true
+## Grab Highlight Strength
+## 1 = 40%. 2 = 60%. 3 = 80%. 4 = 100%.
+HighlightIntensityMode = 2
+
+## Grab Highlight Color
+## red, blue, orange or white.
+HighlightColor = "blue"
+
+## === 03. Prompts and Quick Loot ===
+[Prompts]
+## Quick Loot Panel Placement
+## 1 = Right Hand. 2 = Closer Hand. 3 = At Container.
+## Right Hand: the game's own panel on the right hand; it lists only what the right hand points at.
+## Closer Hand: the panel rides the hand pointing at the container, mirrored on the left hand; when both hands point at containers the closer one takes it.
+## At Container: the panel stands upright at the container it lists, turned toward you, at a fixed size; either hand can point at it.
+## The button hints go with the panel; the buttons themselves stay on the right controller in every mode. Applies at once.
+QuickLootPanelPlacement = 2
+
+## Activate Prompt Placement
+## 1 = Both Hands. 2 = Closer Hand. 3 = At Object.
+## The prompts each hand shows for what it points at (Open, Talk, Take and the rest).
+## Both Hands: the game's own prompts on each hand; two hands on one door show it twice.
+## Closer Hand: when both hands point at the same object only the closer hand shows its prompt.
+## At Object: the prompt stands upright at the object it names, turned toward you, at a fixed size, and shows once when both hands point at it.
+## Activation itself is unchanged. Applies at once.
+ActivatePromptPlacement = 2
 
 ## === 04. Weapon Handling ===
 [WeaponHandling]
@@ -193,43 +213,7 @@ DefaultOneHandRecoilPercent = 300.0
 ## Any other firearm held with two hands. Range: 0 to 300.
 DefaultTwoHandRecoilPercent = 80.0
 
-## === 06. Grabbing ===
-[Grabbing]
-## Far Grab Mode
-## 1 = Immediate Pull. 2 = Higgs Pull Mode.
-## Immediate Pull: grabbing a far object pulls it to your hand, with no flick.
-## Higgs Pull Mode: hold grab to lock on and flick your hand toward yourself; release before the flick to cancel.
-## A pulled object follows your hand while you move or turn. Keep holding grab to catch it as it arrives, or let go and press grab again as it reaches you. Applies to the next far grab.
-FarGrabMode = 1
-
-## Which way your hand reaches for nearby objects.
-## 0 = Out of the palm. 20 = Mostly out of the palm. 45 = Between palm and fingers. 75 = Mostly along the fingers. 90 = Along the fingers.
-## The number is the angle in degrees from the palm toward the fingers. Applies at once, on each hand.
-CloseGrabDirection = 0
-
-## Which way your hand points to aim far grabs.
-## 0 = Out of the palm. 20 = Mostly out of the palm. 45 = Between palm and fingers. 75 = Mostly along the fingers. 90 = Along the fingers.
-## The number is the angle in degrees from the palm toward the fingers. The object must also be in your view. Applies at once, on each hand.
-FarGrabDirection = 0
-
-## Quick Loot Panel Placement
-## 1 = Right Hand. 2 = Closer Hand. 3 = At Container.
-## Right Hand: the game's own panel on the right hand; it lists only what the right hand points at.
-## Closer Hand: the panel rides the hand pointing at the container, mirrored on the left hand; when both hands point at containers the closer one takes it.
-## At Container: the panel stands upright at the container it lists, turned toward you, at a fixed size; either hand can point at it.
-## The button hints go with the panel; the buttons themselves stay on the right controller in every mode. Applies at once.
-QuickLootPanelPlacement = 2
-
-## Activate Prompt Placement
-## 1 = Both Hands. 2 = Closer Hand. 3 = At Object.
-## The prompts each hand shows for what it points at (Open, Talk, Take and the rest).
-## Both Hands: the game's own prompts on each hand; two hands on one door show it twice.
-## Closer Hand: when both hands point at the same object only the closer hand shows its prompt.
-## At Object: the prompt stands upright at the object it names, turned toward you, at a fixed size, and shows once when both hands point at it.
-## Activation itself is unchanged. Applies at once.
-ActivatePromptPlacement = 2
-
-## === 07. Firing Hand ===
+## === 06. Firing Hand ===
 [FiringHand]
 ## Default Hand
 ## right or left: the firing hand for equips that come without a hand (favorites, PALM, scripts and other mods).
@@ -262,7 +246,7 @@ GripOffsetGameUnits = [0.0, 0.0, 0.0]
 ## All 0 = the plain mirror of the left-hand support grip. Each value: -15 to 15. Regrab to apply.
 SupportGripOffsetGameUnits = [0.0, 0.0, 0.0]
 
-## === 08. Scopes ===
+## === 07. Scopes ===
 [Scopes]
 ## Immersive Scopes
 ## ROCK places the scope view on the weapon, raises it while you hold the scope button (right A by default), and corrects the overlay and zoom.
@@ -275,7 +259,29 @@ EnableImmersiveScopes = true
 ## Seconds to hold the scope button (right A, or left X for a left firing hand) before the scope view comes up; a shorter press reloads. Range: 0.05 to 2.
 ManualScopeHoldSeconds = 0.3
 
-## === 09. Controller Input ===
+## === 08. Grenades ===
+[Grenades]
+## Immersive Grenades
+## Hold the grenade button (right B by default) to draw a grenade into your hand and throw it by hand.
+## Selecting a grenade in PALM also puts it in your hand.
+## False: the game's own hold and release throw.
+## Release the grenade button before changing this; a grenade already drawn keeps its mode.
+ImmersiveGrenades = true
+
+## Grenade Fuse
+## Seconds from pulling the pin to detonation for grenades drawn by hand.
+## 0 uses the grenade's own fuse time. Range: 0 to 30.
+RealisticGrenadeFuseSeconds = 4.0
+
+## === 09. Immersive Aid ===
+[ImmersiveAid]
+## Immersive Aid
+## Stimpaks and Med-X sit in a fixed syringe grip and inject after touching your body for 0.5 seconds.
+## False: they are grabbed like any object and used by bringing them to your mouth.
+## Release and grab again to see the change on an item already in your hand.
+Enabled = true
+
+## === 10. Controller Input ===
 [ControllerInput]
 ## Block VATS
 ## Stops the game's VATS from opening on the VATS button (right B by default).
@@ -385,7 +391,7 @@ HoldSeconds = 0.35
 ## Longest gap between the two presses of a double tap. A tap on the same control waits this long before it acts. Range: 0.15 to 0.6.
 DoubleTapSeconds = 0.3
 
-## === 10. Native Gameplay ===
+## === 11. Native Gameplay ===
 [NativeGameplay]
 ## Melee Swing Speed
 ## Hand speed that starts a vanilla melee swing, in game units per second (70 = 1 metre per second). The game uses 200.
@@ -397,16 +403,17 @@ VanillaMeleeSwingSpeed = 300.0
 ## Turning the wrist alone never bashes. Range: 50 to 2000.
 VanillaGunBashSpeed = 400.0
 
-## === 11. Selection Feedback ===
-[SelectionFeedback]
-## Grab Highlight
-## Outlines the object your hand would grab.
-HighlightEnabled = true
+## === 12. Logging ===
+[Logging]
+## Log Level
+## How much ROCK writes to ROCK.log.
+## 0 = Trace. 1 = Debug. 2 = Info. 3 = Warn. 4 = Error. 5 = Critical. 6 = Off.
+## Trace and Debug write a lot and can cost frame time; keep Info for normal play.
+LogLevel = 2
 
-## Grab Highlight Strength
-## 1 = 40%. 2 = 60%. 3 = 80%. 4 = 100%.
-HighlightIntensityMode = 2
-
-## Grab Highlight Color
-## red, blue, orange or white.
-HighlightColor = "blue"
+## === 13. Developer Settings ===
+[Developer]
+## Developer Settings
+## Shows the ROCK Dev page in the settings menu, with the developer and tuning options of ROCK_Developer.toml.
+## False: the page stays hidden; values already set there still apply.
+EnableDeveloperSettings = false

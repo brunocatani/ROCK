@@ -225,7 +225,7 @@ namespace rock::native_activate_prompts
             }
         }
         g_installed = true;
-        ROCK_LOG_INFO(Init, "Activate prompts installed; Grabbing.ActivatePromptPlacement chooses where they appear");
+        ROCK_LOG_INFO(Init, "Activate prompts installed; Prompts.ActivatePromptPlacement chooses where they appear");
         return true;
     }
 

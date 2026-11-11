@@ -89,19 +89,21 @@ namespace rock::setup_wizard_policy
 
     inline constexpr std::array kOptions{
         // ---- Grabbing ----
-        Option{ 0, "Grabbing", "FarGrabMode", "Grabbing things far away",
+        Option{ 0, "Grabbing", "GrabDirection", "Which way your hand grabs",
             { {
-                { "1", "Instant pull", "Point at an object and press grab: it flies straight into your hand." },
-                { "2", "Flick to pull (HIGGS style)",
+                { "1", "Palm down (HIGGS style)",
+                    "Your hand reaches out of the open palm: the object your palm faces is the one you grab, near "
+                    "or far." },
+                { "2", "Fingers (Alyx style)",
+                    "Your hand reaches along your fingers: the object your fingers point at is the one you grab, "
+                    "near or far." },
+            } } },
+        Option{ 0, "Grabbing", "FarGrabStyle", "Grabbing things far away",
+            { {
+                { "1", "Immediate", "Point at an object and press grab: it flies straight into your hand." },
+                { "2", "Pull (flick)",
                     "Hold grab to lock on and flick your hand toward you. Keep holding to catch it, or let go and "
                     "squeeze again as it reaches you." },
-            } } },
-        Option{ 0, "Grabbing", "FarGrabDirection", "Aiming a far grab",
-            { {
-                { "0", "Palm (HIGGS style)",
-                    "Aim with your open palm: the object your palm faces is the one you pull." },
-                { "90", "Fingers (Alyx style)",
-                    "Aim with your fingers: the object your fingers point at is the one you pull." },
             } } },
         Option{ 0, "SelectionFeedback", "HighlightEnabled", "Highlight what you can grab",
             { {

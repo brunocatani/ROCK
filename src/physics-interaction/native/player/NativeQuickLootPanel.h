@@ -5,7 +5,7 @@
 
 /*
  * Where the vanilla quick loot menu (the world_Loot panel) appears, chosen by
- * Grabbing.QuickLootPanelPlacement in ROCK.toml and applied every frame:
+ * Prompts.QuickLootPanelPlacement in ROCK.toml and applied every frame:
  *
  * - RightHand: the game's own behaviour. The panel rides the right wand
  *   (PrimaryUIAttachNode) and lists only the right wand's pick; a container
@@ -42,7 +42,7 @@
  */
 namespace rock::native_quick_loot_panel
 {
-    // Grabbing.QuickLootPanelPlacement values.
+    // Prompts.QuickLootPanelPlacement values.
     enum class Placement : std::uint8_t
     {
         RightHand = 1,

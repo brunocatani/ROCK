@@ -14,24 +14,41 @@ namespace rock::config
     // TOML tables, presentation order, grouping, and help for the settings files and the wheel menu.
     // Setting types and defaults are declared by the compiled loader.
     inline constexpr SettingMetadata kSettingMetadata[] = {
-        { "Logging", "LogLevel", "01. Logging",
-            "How much ROCK writes to ROCK.log.\n0 = Trace. 1 = Debug. 2 = Info. 3 = Warn. 4 = Error. 5 = Critical. "
-            "6 = Off.\nTrace and Debug write a lot and can cost frame time; keep Info for normal play.",
+        // The settings menu builds its choices from the "N = label" pairs and the "label: line" that
+        // explains each; labels may not contain , ; : or a full stop.
+        { "Grabbing", "GrabDirection", "01. Grabbing",
+            "Grab Direction\n1 = Palm Down (HIGGS Style). 2 = Fingers (Alyx Style).\nPalm Down (HIGGS Style): your "
+            "hand reaches out of the palm, for objects near and far.\nFingers (Alyx Style): your hand reaches along "
+            "your fingers, for objects near and far.\nFar grabs also need the object in your view. Applies at once, "
+            "on each hand.",
             api::configuration::Group::Consumer },
-        { "Grenades", "ImmersiveGrenades", "02. Grenades",
-            "Immersive Grenades\nHold the grenade button (right B by default) to draw a grenade into your hand and "
-            "throw it by hand.\nSelecting a grenade in PALM also puts it in your hand.\nFalse: the game's own hold "
-            "and release throw.\nRelease the grenade button before changing this; a grenade already drawn keeps its "
-            "mode.",
+        { "Grabbing", "FarGrabStyle", "01. Grabbing",
+            "Far Grab Style\n1 = Immediate. 2 = Pull.\nImmediate: grabbing a far object brings it to your hand at "
+            "once, with no flick.\nPull: hold grab to lock on, then flick your hand toward yourself; release before "
+            "the flick to cancel.\nA pulled object follows your hand while you move or turn. Keep holding grab to "
+            "catch it as it arrives, or let go and press grab again as it reaches you. Applies to the next far grab.",
             api::configuration::Group::Consumer },
-        { "Grenades", "RealisticGrenadeFuseSeconds", "02. Grenades",
-            "Grenade Fuse\nSeconds from pulling the pin to detonation for grenades drawn by hand.\n0 uses the "
-            "grenade's own fuse time. Range: 0 to 30.",
+        { "SelectionFeedback", "HighlightEnabled", "02. Grab Highlight",
+            "Grab Highlight\nOutlines the object your hand would grab.", api::configuration::Group::Consumer },
+        { "SelectionFeedback", "HighlightIntensityMode", "02. Grab Highlight",
+            "Grab Highlight Strength\n1 = 40%. 2 = 60%. 3 = 80%. 4 = 100%.", api::configuration::Group::Consumer },
+        { "SelectionFeedback", "HighlightColor", "02. Grab Highlight", "Grab Highlight Color\nred, blue, orange or white.",
             api::configuration::Group::Consumer },
-        { "ImmersiveAid", "Enabled", "03. Immersive Aid",
-            "Immersive Aid\nStimpaks and Med-X sit in a fixed syringe grip and inject after touching your body for "
-            "0.5 seconds.\nFalse: they are grabbed like any object and used by bringing them to your mouth.\nRelease "
-            "and grab again to see the change on an item already in your hand.",
+        { "Prompts", "QuickLootPanelPlacement", "03. Prompts and Quick Loot",
+            "Quick Loot Panel Placement\n1 = Right Hand. 2 = Closer Hand. 3 = At Container.\nRight Hand: the game's "
+            "own panel on the right hand; it lists only what the right hand points at.\nCloser Hand: the panel rides "
+            "the hand pointing at the container, mirrored on the left hand; when both hands point at containers the "
+            "closer one takes it.\nAt Container: the panel stands upright at the container it lists, turned toward "
+            "you, at a fixed size; either hand can point at it.\nThe button hints go with the panel; the buttons "
+            "themselves stay on the right controller in every mode. Applies at once.",
+            api::configuration::Group::Consumer },
+        { "Prompts", "ActivatePromptPlacement", "03. Prompts and Quick Loot",
+            "Activate Prompt Placement\n1 = Both Hands. 2 = Closer Hand. 3 = At Object.\nThe prompts each hand shows "
+            "for what it points at (Open, Talk, Take and the rest).\nBoth Hands: the game's own prompts on each hand; "
+            "two hands on one door show it twice.\nCloser Hand: when both hands point at the same object only the "
+            "closer hand shows its prompt.\nAt Object: the prompt stands upright at the object it names, turned "
+            "toward you, at a fixed size, and shows once when both hands point at it.\nActivation itself is "
+            "unchanged. Applies at once.",
             api::configuration::Group::Consumer },
         { "WeaponHandling", "GunstockMode", "04. Weapon Handling",
             "Gunstock Mode\nTwo-handed firearms aim along the line from your firing hand to your support hand, like "
@@ -165,86 +182,66 @@ namespace rock::config
             "Any other firearm held with one hand. Range: 0 to 300.", api::configuration::Group::Consumer },
         { "WeaponRecoil", "DefaultTwoHandRecoilPercent", "05. Weapon Recoil",
             "Any other firearm held with two hands. Range: 0 to 300.", api::configuration::Group::Consumer },
-        { "Grabbing", "FarGrabMode", "06. Grabbing",
-            "Far Grab Mode\n1 = Immediate Pull. 2 = Higgs Pull Mode.\nImmediate Pull: grabbing a far object pulls it "
-            "to your hand, with no flick.\nHiggs Pull Mode: hold grab to lock on and flick your hand toward yourself; "
-            "release before the flick to cancel.\nA pulled object follows your hand while you move or turn. Keep "
-            "holding grab to catch it as it arrives, or let go and press grab again as it reaches you. Applies to "
-            "the next far grab.",
-            api::configuration::Group::Consumer },
-        // PALM builds its dropdown from the "N = label" pairs; labels may not contain , ; or a full stop.
-        { "Grabbing", "CloseGrabDirection", "06. Grabbing",
-            "Which way your hand reaches for nearby objects.\n0 = Out of the palm. 20 = Mostly out of the palm. "
-            "45 = Between palm and fingers. 75 = Mostly along the fingers. 90 = Along the fingers.\nThe number is the "
-            "angle in degrees from the palm toward the fingers. Applies at once, on each hand.",
-            api::configuration::Group::Consumer },
-        { "Grabbing", "FarGrabDirection", "06. Grabbing",
-            "Which way your hand points to aim far grabs.\n0 = Out of the palm. 20 = Mostly out of the palm. "
-            "45 = Between palm and fingers. 75 = Mostly along the fingers. 90 = Along the fingers.\nThe number is the "
-            "angle in degrees from the palm toward the fingers. The object must also be in your view. Applies at "
-            "once, on each hand.",
-            api::configuration::Group::Consumer },
-        { "Grabbing", "QuickLootPanelPlacement", "06. Grabbing",
-            "Quick Loot Panel Placement\n1 = Right Hand. 2 = Closer Hand. 3 = At Container.\nRight Hand: the game's "
-            "own panel on the right hand; it lists only what the right hand points at.\nCloser Hand: the panel rides "
-            "the hand pointing at the container, mirrored on the left hand; when both hands point at containers the "
-            "closer one takes it.\nAt Container: the panel stands upright at the container it lists, turned toward "
-            "you, at a fixed size; either hand can point at it.\nThe button hints go with the panel; the buttons "
-            "themselves stay on the right controller in every mode. Applies at once.",
-            api::configuration::Group::Consumer },
-        { "Grabbing", "ActivatePromptPlacement", "06. Grabbing",
-            "Activate Prompt Placement\n1 = Both Hands. 2 = Closer Hand. 3 = At Object.\nThe prompts each hand shows "
-            "for what it points at (Open, Talk, Take and the rest).\nBoth Hands: the game's own prompts on each hand; "
-            "two hands on one door show it twice.\nCloser Hand: when both hands point at the same object only the "
-            "closer hand shows its prompt.\nAt Object: the prompt stands upright at the object it names, turned "
-            "toward you, at a fixed size, and shows once when both hands point at it.\nActivation itself is "
-            "unchanged. Applies at once.",
-            api::configuration::Group::Consumer },
-        { "FiringHand", "DefaultHand", "07. Firing Hand",
+        { "FiringHand", "DefaultHand", "06. Firing Hand",
             "Default Hand\nright or left: the firing hand for equips that come without a hand (favorites, PALM, "
             "scripts and other mods).\nGrenade draws prefer this hand and use the other one when it is busy.\nPip-Boy "
             "and trigger equips and grip handoffs always use the hand that acts.\nApplies on the next equip or draw. "
             "The game's own left-handed mode is not supported and stays off.",
             api::configuration::Group::Consumer },
-        { "FiringHand.Left", "AimYawDegrees", "07. Firing Hand",
+        { "FiringHand.Left", "AimYawDegrees", "06. Firing Hand",
             "Left Firing Aim: Yaw\nTurns the aim of a weapon fired from the left hand, in degrees. 0 uses the plain "
             "mirror of the right-hand hold. Range: -30 to 30.",
             api::configuration::Group::Consumer },
-        { "FiringHand.Left", "AimPitchDegrees", "07. Firing Hand",
+        { "FiringHand.Left", "AimPitchDegrees", "06. Firing Hand",
             "Left Firing Aim: Pitch\nTilts the aim of a weapon fired from the left hand up or down, in degrees. "
             "Range: -30 to 30.",
             api::configuration::Group::Consumer },
-        { "FiringHand.Left", "AimOffsetGameUnits", "07. Firing Hand",
+        { "FiringHand.Left", "AimOffsetGameUnits", "06. Firing Hand",
             "Left Firing Aim: Offset\nShifts the aim of a weapon fired from the left hand, in game units (70 = 1 "
             "metre), as [x, y, z]. Each value: -15 to 15.",
             api::configuration::Group::Consumer },
-        { "FiringHand.Left", "GripOffsetGameUnits", "07. Firing Hand",
+        { "FiringHand.Left", "GripOffsetGameUnits", "06. Firing Hand",
             "Left Firing Grip\nMoves where the left hand holds the firing grip, in game units (70 = 1 metre), as "
             "[along the fingers, into or out of the palm, across the palm].\nAll 0 = the plain mirror of the "
             "right-hand grip. The hand stays put and the weapon moves the other way. Each value: -15 to 15. Regrab "
             "to apply.",
             api::configuration::Group::Consumer },
-        { "FiringHand.Right", "SupportGripOffsetGameUnits", "07. Firing Hand",
+        { "FiringHand.Right", "SupportGripOffsetGameUnits", "06. Firing Hand",
             "Right Support Grip\nMoves where the right hand holds a support grip when the left hand fires, in game "
             "units (70 = 1 metre), as [along the fingers, into or out of the palm, across the palm].\nAll 0 = the "
             "plain mirror of the left-hand support grip. Each value: -15 to 15. Regrab to apply.",
             api::configuration::Group::Consumer },
-        { "Scopes", "EnableImmersiveScopes", "08. Scopes",
+        { "Scopes", "EnableImmersiveScopes", "07. Scopes",
             "Immersive Scopes\nROCK places the scope view on the weapon, raises it while you hold the scope button "
             "(right A by default), and corrects the overlay and zoom.\nFalse: the game's own scopes.\nStarting with "
             "this off leaves the game's scope hook free for other scope mods. Turning it on takes the hook until you "
             "restart; if another mod owns it, ROCK's scopes stay off.\nRelease the scope button before changing "
             "this. Reload stays on a tap of the same button.",
             api::configuration::Group::Consumer },
-        { "Scopes", "ManualScopeHoldSeconds", "08. Scopes",
+        { "Scopes", "ManualScopeHoldSeconds", "07. Scopes",
             "Scope Hold Time\nSeconds to hold the scope button (right A, or left X for a left firing hand) before the "
             "scope view comes up; a shorter press reloads. Range: 0.05 to 2.",
             api::configuration::Group::Consumer },
-        { "ControllerInput", "SuppressNativeVats", "09. Controller Input",
+        { "Grenades", "ImmersiveGrenades", "08. Grenades",
+            "Immersive Grenades\nHold the grenade button (right B by default) to draw a grenade into your hand and "
+            "throw it by hand.\nSelecting a grenade in PALM also puts it in your hand.\nFalse: the game's own hold "
+            "and release throw.\nRelease the grenade button before changing this; a grenade already drawn keeps its "
+            "mode.",
+            api::configuration::Group::Consumer },
+        { "Grenades", "RealisticGrenadeFuseSeconds", "08. Grenades",
+            "Grenade Fuse\nSeconds from pulling the pin to detonation for grenades drawn by hand.\n0 uses the "
+            "grenade's own fuse time. Range: 0 to 30.",
+            api::configuration::Group::Consumer },
+        { "ImmersiveAid", "Enabled", "09. Immersive Aid",
+            "Immersive Aid\nStimpaks and Med-X sit in a fixed syringe grip and inject after touching your body for "
+            "0.5 seconds.\nFalse: they are grabbed like any object and used by bringing them to your mouth.\nRelease "
+            "and grab again to see the change on an item already in your hand.",
+            api::configuration::Group::Consumer },
+        { "ControllerInput", "SuppressNativeVats", "10. Controller Input",
             "Block VATS\nStops the game's VATS from opening on the VATS button (right B by default).\nThe button "
             "still works for ROCK and other mods.",
             api::configuration::Group::Consumer },
-        { "ControllerInput", "OfferSteamVRBinding", "09. Controller Input",
+        { "ControllerInput", "OfferSteamVRBinding", "10. Controller Input",
             "Offer ROCK's SteamVR Binding\nTrue: when Index controllers or Vive wands use SteamVR's default binding "
             "for Fallout 4 VR, the setup wizard opens by itself once per game start, when no menu or scene is in "
             "the way, and offers ROCK's binding (the default "
@@ -252,11 +249,11 @@ namespace rock::config
             "opens only when you open it; it still offers the binding then. Choosing other controllers in the "
             "wizard sets this.",
             api::configuration::Group::Consumer },
-        { "ControllerInput", "PipboyPauseHoldSeconds", "09. Controller Input",
+        { "ControllerInput", "PipboyPauseHoldSeconds", "10. Controller Input",
             "Pip-Boy and Pause Hold Time\nTap left Y to open the Pip-Boy; hold it this many seconds to open the Pause "
             "menu instead. Range: 0.15 to 2.",
             api::configuration::Group::Consumer },
-        { "ControllerInput.Right", "Trigger", "09. Controller Input",
+        { "ControllerInput.Right", "Trigger", "10. Controller Input",
             "Button Layout\nThe physical input that acts as each ROCK button, per hand. ROCK, PALM, PAPER, SCISSORS "
             "Redux, FRIK and the game all follow it.\nThe defaults are the Quest and Touch layout and change "
             "nothing.\nValues: trigger, grip, a, b (x, y on the left), thumbstick, grip_click, axis3, axis4, pad_up, "
@@ -265,78 +262,80 @@ namespace rock::config
             "buttons (Index A reports as grip) need the binding fixed in SteamVR first; ROCK only sees what SteamVR "
             "sends.\nThis key: the right trigger.",
             api::configuration::Group::Consumer },
-        { "ControllerInput.Right", "Grab", "09. Controller Input", "The right grab button (grip by default).",
+        { "ControllerInput.Right", "Grab", "10. Controller Input", "The right grab button (grip by default).",
             api::configuration::Group::Consumer },
-        { "ControllerInput.Right", "A", "09. Controller Input", "Right A: reload tap, scope hold.",
+        { "ControllerInput.Right", "A", "10. Controller Input", "Right A: reload tap, scope hold.",
             api::configuration::Group::Consumer },
-        { "ControllerInput.Right", "B", "09. Controller Input", "Right B: grenade draw hold, VATS.",
+        { "ControllerInput.Right", "B", "10. Controller Input", "Right B: grenade draw hold, VATS.",
             api::configuration::Group::Consumer },
-        { "ControllerInput.Right", "StickClick", "09. Controller Input",
+        { "ControllerInput.Right", "StickClick", "10. Controller Input",
             "Right stick click: bipod latch; opens PALM by default.", api::configuration::Group::Consumer },
-        { "ControllerInput.Left", "Trigger", "09. Controller Input", "The left trigger.",
+        { "ControllerInput.Left", "Trigger", "10. Controller Input", "The left trigger.",
             api::configuration::Group::Consumer },
-        { "ControllerInput.Left", "Grab", "09. Controller Input", "The left grab button (grip by default).",
+        { "ControllerInput.Left", "Grab", "10. Controller Input", "The left grab button (grip by default).",
             api::configuration::Group::Consumer },
-        { "ControllerInput.Left", "X", "09. Controller Input",
+        { "ControllerInput.Left", "X", "10. Controller Input",
             "Left X: reload tap and scope hold for a left firing hand.", api::configuration::Group::Consumer },
-        { "ControllerInput.Left", "Y", "09. Controller Input", "Left Y: Pip-Boy tap, Pause hold.",
+        { "ControllerInput.Left", "Y", "10. Controller Input", "Left Y: Pip-Boy tap, Pause hold.",
             api::configuration::Group::Consumer },
-        { "ControllerInput.Left", "StickClick", "09. Controller Input", "Left stick click.",
+        { "ControllerInput.Left", "StickClick", "10. Controller Input", "Left stick click.",
             api::configuration::Group::Consumer },
-        { "SetupWizard", "ShownEdition", "09. Controller Input",
+        { "SetupWizard", "ShownEdition", "10. Controller Input",
             "Setup Wizard Shown\nThe setup wizard opens by itself once, 10 seconds after you are in the game with no "
             "menu or scene in the way, whenever this ROCK brings a newer edition of it (new pages or options to "
             "show). On a new game it waits until you leave the mirror. ROCK writes the edition here when the wizard "
             "opens.\n0 = show it at the next game start. 999 = never open it by itself.",
             api::configuration::Group::Consumer },
-        { "Bindings", "Grab", "09. Controller Input",
+        { "Bindings", "Grab", "10. Controller Input",
             "Bindings\nThe control and gesture of each function: \"<hand> <gesture> <control>\", or \"none\".\n"
             "Hands: firing (the hand on the weapon's firing grip), support, primary, offhand, left, right, each.\n"
             "Gestures: press (acts while held), tap, hold, double (double tap).\nControls: as in the button layout "
             "above. Add \"+<hand> <control>\" for a button that must be held at the same time.\nThis key: grab "
             "with each hand.",
             api::configuration::Group::Consumer },
-        { "Bindings", "Fire", "09. Controller Input", "Fire the equipped weapon.", api::configuration::Group::Consumer },
-        { "Bindings", "SupportTrigger", "09. Controller Input",
+        { "Bindings", "Fire", "10. Controller Input", "Fire the equipped weapon.", api::configuration::Group::Consumer },
+        { "Bindings", "SupportTrigger", "10. Controller Input",
             "The support hand's trigger: a second weapon, or the support action of what that hand holds.",
             api::configuration::Group::Consumer },
-        { "Bindings", "Use", "09. Controller Input",
+        { "Bindings", "Use", "10. Controller Input",
             "Use what the primary hand points at (take, open, talk). It owns the whole press while there is something "
             "to use.", api::configuration::Group::Consumer },
-        { "Bindings", "Reload", "09. Controller Input", "Reload the equipped weapon.",
+        { "Bindings", "Reload", "10. Controller Input", "Reload the equipped weapon.",
             api::configuration::Group::Consumer },
-        { "Bindings", "Scope", "09. Controller Input", "Look through the weapon's scope while active.",
+        { "Bindings", "Scope", "10. Controller Input", "Look through the weapon's scope while active.",
             api::configuration::Group::Consumer },
-        { "Bindings", "Vats", "09. Controller Input", "Open VATS.", api::configuration::Group::Consumer },
-        { "Bindings", "Grenade", "09. Controller Input", "Draw a grenade into the hand.",
+        { "Bindings", "Vats", "10. Controller Input", "Open VATS.", api::configuration::Group::Consumer },
+        { "Bindings", "Grenade", "10. Controller Input", "Draw a grenade into the hand.",
             api::configuration::Group::Consumer },
-        { "Bindings", "Pipboy", "09. Controller Input", "Open the Pip-Boy.", api::configuration::Group::Consumer },
-        { "Bindings", "Pause", "09. Controller Input", "Open the Pause menu.", api::configuration::Group::Consumer },
-        { "Bindings", "StickActions", "09. Controller Input",
+        { "Bindings", "Pipboy", "10. Controller Input", "Open the Pip-Boy.", api::configuration::Group::Consumer },
+        { "Bindings", "Pause", "10. Controller Input", "Open the Pause menu.", api::configuration::Group::Consumer },
+        { "Bindings", "StickActions", "10. Controller Input",
             "Bipod latch and held placement while the weapon touches a surface, and the game's Favorites menu.",
             api::configuration::Group::Consumer },
-        { "Bindings", "Palm", "09. Controller Input", "Open RobCo PALM's wheel.", api::configuration::Group::Consumer },
-        { "Bindings", "HoldSeconds", "09. Controller Input",
+        { "Bindings", "Palm", "10. Controller Input", "Open RobCo PALM's wheel.", api::configuration::Group::Consumer },
+        { "Bindings", "HoldSeconds", "10. Controller Input",
             "Hold Time\nSeconds a hold binding needs before it acts, for functions without their own hold time "
             "(Scope and Pause have theirs; Grenade uses the game's). Range: 0.1 to 2.",
             api::configuration::Group::Consumer },
-        { "Bindings", "DoubleTapSeconds", "09. Controller Input",
+        { "Bindings", "DoubleTapSeconds", "10. Controller Input",
             "Double Tap Time\nLongest gap between the two presses of a double tap. A tap on the same control waits "
             "this long before it acts. Range: 0.15 to 0.6.",
             api::configuration::Group::Consumer },
-        { "NativeGameplay", "VanillaMeleeSwingSpeed", "10. Native Gameplay",
+        { "NativeGameplay", "VanillaMeleeSwingSpeed", "11. Native Gameplay",
             "Melee Swing Speed\nHand speed that starts a vanilla melee swing, in game units per second (70 = 1 metre "
             "per second). The game uses 200.\nTurning the wrist alone never swings. Range: 50 to 2000.",
             api::configuration::Group::Consumer },
-        { "NativeGameplay", "VanillaGunBashSpeed", "10. Native Gameplay",
+        { "NativeGameplay", "VanillaGunBashSpeed", "11. Native Gameplay",
             "Gun Bash Speed\nHand speed that starts a vanilla gun bash, in game units per second (70 = 1 metre per "
             "second). The game uses 200.\nTurning the wrist alone never bashes. Range: 50 to 2000.",
             api::configuration::Group::Consumer },
-        { "SelectionFeedback", "HighlightEnabled", "11. Selection Feedback",
-            "Grab Highlight\nOutlines the object your hand would grab.", api::configuration::Group::Consumer },
-        { "SelectionFeedback", "HighlightIntensityMode", "11. Selection Feedback",
-            "Grab Highlight Strength\n1 = 40%. 2 = 60%. 3 = 80%. 4 = 100%.", api::configuration::Group::Consumer },
-        { "SelectionFeedback", "HighlightColor", "11. Selection Feedback", "Grab Highlight Color\nred, blue, orange or white.",
+        { "Logging", "LogLevel", "12. Logging",
+            "Log Level\nHow much ROCK writes to ROCK.log.\n0 = Trace. 1 = Debug. 2 = Info. 3 = Warn. 4 = Error. "
+            "5 = Critical. 6 = Off.\nTrace and Debug write a lot and can cost frame time; keep Info for normal play.",
+            api::configuration::Group::Consumer },
+        { "Developer", "EnableDeveloperSettings", "13. Developer Settings",
+            "Developer Settings\nShows the ROCK Dev page in the settings menu, with the developer and tuning options "
+            "of ROCK_Developer.toml.\nFalse: the page stays hidden; values already set there still apply.",
             api::configuration::Group::Consumer },
         { "DeveloperControls", "DeveloperModeEnabled", "01. Developer Controls",
             "Gates advanced/tuning-only features not meant for normal play. Currently:\npressing A while holding an "

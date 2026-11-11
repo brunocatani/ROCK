@@ -60,7 +60,10 @@ namespace rock
         bool rockOfferSteamVRBinding = true;
         int rockSetupWizardShownEdition = 0;
         float rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::kDefaultHoldSeconds;
-        int rockFarGrabMode = static_cast<int>(far_pull_gesture::Mode::Immediate);
+        int rockFarGrabStyle = static_cast<int>(far_pull_gesture::Mode::Immediate);
+        // Developer.EnableDeveloperSettings: the settings menu shows the ROCK Dev page. ROCK itself
+        // reads nothing from it.
+        bool rockEnableDeveloperSettings = false;
         // Where the quick loot panel appears; see native_quick_loot_panel::Placement.
         // 1: right hand (game default); 2: closer hand; 3: at the container.
         int rockQuickLootPanelPlacement = 2;
@@ -451,8 +454,8 @@ namespace rock
         bool rockSelectedCloseFingerCurlEnabled = true;
         float rockSelectedCloseFingerAnimMaxHandSpeed = 0.9f;
         float rockSelectedCloseFingerAnimValue = 0.9f;
-        int rockCloseSelectionAngleDegrees = selection_query_policy::kDefaultSelectionAimAngleDegrees;
-        int rockFarSelectionAngleDegrees = selection_query_policy::kDefaultSelectionAimAngleDegrees;
+        // Grabbing.GrabDirection, for close and far grabs; see selection_query_policy::GrabDirection.
+        int rockGrabDirection = selection_query_policy::kDefaultGrabDirection;
         bool rockPullToObjectCenterEnabled = true;
         bool rockPullLongAxisPresentationEnabled = true;
         float rockPullPresentationMinElongationRatio = 2.0f;

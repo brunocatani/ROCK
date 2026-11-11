@@ -5,7 +5,7 @@
 /*
  * Where the native activate prompts (the world_Rollover "Open", "Talk",
  * "Take" prompts each wand shows for the object it points at) appear, chosen
- * by Grabbing.ActivatePromptPlacement in ROCK.toml and applied every frame:
+ * by Prompts.ActivatePromptPlacement in ROCK.toml and applied every frame:
  *
  * - BothHands: the game's own behaviour. Each wand carries its own prompt, so
  *   two wands pointing at the same object show two identical prompts.
@@ -27,7 +27,7 @@
  */
 namespace rock::native_activate_prompts
 {
-    // Grabbing.ActivatePromptPlacement values.
+    // Prompts.ActivatePromptPlacement values.
     enum class Placement : std::uint8_t
     {
         BothHands = 1,

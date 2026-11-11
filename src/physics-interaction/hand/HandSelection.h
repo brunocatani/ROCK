@@ -88,21 +88,30 @@ namespace rock::selection_query_policy
         bool valid = false;
     };
 
-    inline bool isAllowedSelectionAimAngleDegrees(int angleDegrees)
+    // Grabbing.GrabDirection: which way a hand reaches and aims, for close and far grabs alike.
+    enum class GrabDirection : int
     {
-        return angleDegrees == 0 || angleDegrees == 20 || angleDegrees == 45 || angleDegrees == 75 ||
-            angleDegrees == 90;
+        PalmDown = 1,  // out of the palm (HIGGS style)
+        Fingers = 2,   // along the fingers (Half-Life: Alyx style)
+    };
+    inline constexpr int kDefaultGrabDirection = static_cast<int>(GrabDirection::PalmDown);
+
+    [[nodiscard]] inline bool isValidGrabDirection(int direction) noexcept
+    {
+        return direction == static_cast<int>(GrabDirection::PalmDown) ||
+            direction == static_cast<int>(GrabDirection::Fingers);
     }
 
-    inline int sanitizeSelectionAimAngleDegrees(int angleDegrees)
+    // Degrees from the palm toward the fingers.
+    [[nodiscard]] inline int selectionAimAngleDegrees(int direction) noexcept
     {
-        return isAllowedSelectionAimAngleDegrees(angleDegrees) ? angleDegrees : kDefaultSelectionAimAngleDegrees;
+        return direction == static_cast<int>(GrabDirection::Fingers) ? 90 : kDefaultSelectionAimAngleDegrees;
     }
 
     template <class Vector>
     inline Vector selectionAimHandspaceVectorFromAngleDegrees(int angleDegrees)
     {
-        const float radians = static_cast<float>(sanitizeSelectionAimAngleDegrees(angleDegrees)) * kDegreesToRadians;
+        const float radians = static_cast<float>(angleDegrees) * kDegreesToRadians;
         Vector result{};
         result.x = std::sin(radians);
         result.y = -std::cos(radians);

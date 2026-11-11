@@ -577,7 +577,7 @@ namespace rock::native_quick_loot_panel
                 break;
             }
         }
-        ROCK_LOG_INFO(Init, "Quick loot panel installed; Grabbing.QuickLootPanelPlacement chooses where it appears");
+        ROCK_LOG_INFO(Init, "Quick loot panel installed; Prompts.QuickLootPanelPlacement chooses where it appears");
         return true;
     }
 

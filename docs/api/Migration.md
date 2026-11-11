@@ -263,7 +263,7 @@ RPS UI Framework's WorldDraw interface, and keep working when RPS UI is absent.
 - ROCK's settings files are `ROCK.toml` and `ROCK_Developer.toml`.
   `Setting::section` is now a TOML table path and keys lose their type letter:
   the 0.92 `[PhysicsInteraction] iFarGrabMode` is table `Grabbing`, key
-  `FarGrabMode`. Table and key match exactly and case-sensitively; the old INI
+  `FarGrabStyle`. Table and key match exactly and case-sensitively; the old INI
   spellings are not accepted. Read `visit` for the current catalog instead of
   hard-coding names.
 - `ValueType::Float3` is new: one setting holds `[x, y, z]` (or

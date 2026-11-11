@@ -115,20 +115,20 @@ int main()
     g_rockConfig.load();
     g_rockConfig.stopFileWatch(); // Keep reload timing deterministic; writes still request it.
     assert(fs::exists(consumerFile));
-    assert(g_rockConfig.rockFarGrabMode == 1);
-    assert(catalog(config::Group::Consumer).at("Grabbing.FarGrabMode") == "1");
-    assert(!catalog(config::Group::Developer).contains("Grabbing.FarGrabMode"));
-    assert(set(config::Group::Consumer, "Grabbing", "FarGrabMode", "2") == Status::Ok);
+    assert(g_rockConfig.rockFarGrabStyle == 1);
+    assert(catalog(config::Group::Consumer).at("Grabbing.FarGrabStyle") == "1");
+    assert(!catalog(config::Group::Developer).contains("Grabbing.FarGrabStyle"));
+    assert(set(config::Group::Consumer, "Grabbing", "FarGrabStyle", "2") == Status::Ok);
     g_rockConfig.reload();
-    assert(g_rockConfig.rockFarGrabMode == 2);
-    assert(set(config::Group::Consumer, "Grabbing", "FarGrabMode", "99") == Status::Ok);
+    assert(g_rockConfig.rockFarGrabStyle == 2);
+    assert(set(config::Group::Consumer, "Grabbing", "FarGrabStyle", "99") == Status::Ok);
     g_rockConfig.reload();
-    assert(g_rockConfig.rockFarGrabMode == 1);
-    assert(set(config::Group::Consumer, "Grabbing", "FarGrabMode", "1") == Status::Ok);
+    assert(g_rockConfig.rockFarGrabStyle == 1);
+    assert(set(config::Group::Consumer, "Grabbing", "FarGrabStyle", "1") == Status::Ok);
     g_rockConfig.reload();
     // Identity is the exact table and key; the old INI spellings are not aliases.
     assert(set(config::Group::Consumer, "PhysicsInteraction", "iFarGrabMode", "2") != Status::Ok);
-    assert(set(config::Group::Consumer, "grabbing", "FarGrabMode", "2") != Status::Ok);
+    assert(set(config::Group::Consumer, "grabbing", "FarGrabStyle", "2") != Status::Ok);
     for (const auto* key : { "NpcDynamicCollisions", "BladePenetrationEnabled", "DebugDrawNpcNativeColliders",
              "DebugDrawNpcSupplementColliders", "DebugDrawNpcColliderLabels" }) {
         for (const auto group : { config::Group::Consumer, config::Group::Developer }) {

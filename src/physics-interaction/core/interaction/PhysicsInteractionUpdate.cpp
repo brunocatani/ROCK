@@ -822,7 +822,7 @@ namespace rock
         // primary wand and left is the secondary wand. Weapon handedness is a
         // separate ROCK role and never remaps buttons/controllers.
         vrcf::VRControllers.update(false,
-            g_rockConfig.rockFarGrabMode == static_cast<int>(far_pull_gesture::Mode::Gesture) ||
+            g_rockConfig.rockFarGrabStyle == static_cast<int>(far_pull_gesture::Mode::Gesture) ||
                 _rightHand.getState() == HandState::SelectionLocked ||
                 _leftHand.getState() == HandState::SelectionLocked);
 

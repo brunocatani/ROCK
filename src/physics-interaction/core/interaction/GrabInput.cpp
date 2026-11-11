@@ -2348,7 +2348,7 @@ namespace rock
 
                 if (!pullCatchCommitPending && !extractedItemHandoffReady && !gesturePullConfirmed &&
                     hand.getSelection().isFarSelection &&
-                    g_rockConfig.rockFarGrabMode == static_cast<int>(far_pull_gesture::Mode::Gesture)) {
+                    g_rockConfig.rockFarGrabStyle == static_cast<int>(far_pull_gesture::Mode::Gesture)) {
                     const Hand& peer = isLeft ? _rightHand : _leftHand;
                     const bool peerOwnsTarget = hasExclusiveObjectSelection(peer.getState()) && peer.hasSelection() &&
                         peer.getSelection().refr == hand.getSelection().refr;

@@ -116,13 +116,13 @@
   replacing the game's counter. `WeaponHandling.AmmoCounterStyle`: 1 Minimal, 2 Immersive
   (game HUD style, default), 3 Vanilla (back of the hand). A reload mod can show a
   chambered-round marker beside the number.
-- **Quick Loot Panel Placement** (`Grabbing.QuickLootPanelPlacement`): 1 on the
+- **Quick Loot Panel Placement** (`Prompts.QuickLootPanelPlacement`): 1 on the
   right hand (game default), 2 on the hand pointing at the container (the
   closer hand when both point, default), 3 at the container it lists. Modes 2
   and 3 list containers picked by either hand, and the panel's button hints
   go with it. Left X on the container the panel lists takes the selected item,
   as A does, instead of opening the container (Oculus/Quest controllers).
-- **Activate Prompt Placement** (`Grabbing.ActivatePromptPlacement`): 1 on both
+- **Activate Prompt Placement** (`Prompts.ActivatePromptPlacement`): 1 on both
   hands (game default), 2 on the closer hand only when both point at the same
   object (default), 3 at the object itself, shown once. Activation is unchanged.
 - **Pinch grab:** the object stays where thumb and finger found it and only the
@@ -131,9 +131,13 @@
   longer get pulled into the palm. Thumb and index open as far as the object is
   thick and stop on it instead of closing into a fist beside it, and a loose
   round or shell can be pinched.
-- **Grab direction** (`Grabbing.CloseGrabDirection`, `Grabbing.FarGrabDirection`): which way
-  your hand points to aim close and far grabs, from out of the palm to along
-  the fingers.
+- **Grab Direction** (`Grabbing.GrabDirection`): Palm Down (HIGGS style, the
+  default) reaches out of the palm, Fingers (Alyx style) along the fingers, for
+  close and far grabs alike. **Far Grab Style** (`Grabbing.FarGrabStyle`):
+  Immediate brings a far object straight to your hand, Pull locks on and waits
+  for a flick.
+- **Developer Settings** (`Developer.EnableDeveloperSettings`): shows the
+  ROCK Dev page in the settings menu.
 - **Button layout** (`[ControllerInput.Left]`, `[ControllerInput.Right]`): reassign each hand's grip, trigger, A/B,
   X/Y and stick click. ROCK, its add-ons and the game all follow it. SteamVR
   binding templates for Index, Vive wands and Steam Frame controllers ship in
