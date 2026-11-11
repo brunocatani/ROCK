@@ -78,18 +78,20 @@
   button with a press, tap, hold or double tap, optionally while another button
   is held. A moved action reaches the game and other mods as its usual button,
   so they keep working. The defaults change nothing.
-- **Setup wizard.** Pick each action's button by pressing it, choose tap, hold
-  or double tap, then go through ROCK's main options one page each; nothing is
-  saved until the review page. It opens from PALM's Config (ROCK page); mods
-  open it with `Configuration::openSetupWizard`. It also opens by itself on the
-  first game start with this ROCK and whenever an update has something new to
-  show, 10 seconds after the game is free of menus, message boxes and scenes
-  (on a new game, after the mirror).
-- **SteamVR binding offer.** On SteamVR, when Index controllers or Vive wands
-  use SteamVR's default binding for Fallout 4 VR (A and X arrive as grip, or
-  are missing), the setup wizard opens by itself and offers ROCK's
-  binding; one choice sets it for Fallout 4 VR. A binding chosen in SteamVR is
-  never replaced. `OfferSteamVRBinding` turns the automatic offer off.
+- **Setup wizard.** The first page asks which controllers you play with and
+  says what ROCK does for them; topic pages then set the main choices
+  (grabbing, holding weapons, aiming and shooting, grenades and healing, stick
+  click and menus), and a review saves them. "Use recommended settings" does it
+  all at once. It opens from PALM's Config (ROCK page); mods open it with
+  `Configuration::openSetupWizard`. It also opens by itself on the first game
+  start with this ROCK and whenever an update has something new to show, 10
+  seconds after the game is free of menus, message boxes and scenes (on a new
+  game, after the mirror). Button bindings are set in `ROCK.toml`.
+- **SteamVR binding.** On SteamVR, Index controllers and Vive wands on
+  SteamVR's default binding for Fallout 4 VR (A and X arrive as grip, or are
+  missing) get ROCK's binding when the setup wizard finishes, which opens by
+  itself to offer it; the wizard says to restart the game. A binding chosen in
+  SteamVR is never replaced. `OfferSteamVRBinding` turns the automatic offer off.
 - **Two weapons at once.** Equip a weapon in each hand, any combination,
   including a melee weapon as the second weapon. The second weapon has its own
   trigger, reload, scope, dry-fire click and generated collision. The Pip-Boy

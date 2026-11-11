@@ -1,13 +1,13 @@
 #include "setup-wizard/SetupWizardPanel.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
-#include <optional>
 #include <string>
 #include <utility>
 
-#include <RPS_UI_Framework/BindingIcons.h>
 #include <RPS_UI_Framework/ImGuiBuild.h>
+#include <RPS_UI_Framework/ThemeStyle.h>
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -19,124 +19,64 @@ namespace rock::setup_wizard
     namespace
     {
         namespace fw = rpsui::api::framework;
-        namespace bt = rpsui::binding;
+        namespace sv = steamvr_binding_policy;
+        using sv::Headset;
 
-        struct FunctionText
+        [[nodiscard]] constexpr const char* actionName(fb::Function function) noexcept
         {
-            const char* name;
+            switch (function) {
+            case fb::Function::Grab: return "Grab";
+            case fb::Function::Fire: return "Fire";
+            case fb::Function::SupportTrigger: return "Support trigger";
+            case fb::Function::Use: return "Use";
+            case fb::Function::Reload: return "Reload";
+            case fb::Function::Scope: return "Scope";
+            case fb::Function::Vats: return "VATS";
+            case fb::Function::Grenade: return "Grenade";
+            case fb::Function::Pipboy: return "Pip-Boy";
+            case fb::Function::Pause: return "Pause menu";
+            case fb::Function::StickActions: return "Bipod and Favorites";
+            case fb::Function::Palm: return "RobCo PALM";
+            case fb::Function::Count: break;
+            }
+            return "";
+        }
+
+        struct HeadsetText
+        {
+            Headset headset;
+            const char* label;
             const char* detail;
         };
 
-        [[nodiscard]] constexpr FunctionText functionText(fb::Function function) noexcept
+        constexpr std::array kHeadsets{
+            HeadsetText{ Headset::Index, "Valve Index controllers", "ROCK installs its SteamVR binding for them." },
+            HeadsetText{ Headset::ViveWands, "HTC Vive wands", "ROCK installs its SteamVR binding for them." },
+            HeadsetText{ Headset::NoBindingNeeded, "Quest, Rift, Pico, Vive Focus 3 or Steam Frame",
+                "Every button works as it is. ROCK installs nothing." },
+            HeadsetText{ Headset::Other, "Other controllers", "ROCK has no binding for them. SteamVR's binding stays." },
+        };
+
+        [[nodiscard]] std::string controllerName(sv::Controller controller)
         {
-            switch (function) {
-            case fb::Function::Grab: return { "Grab", "Take hold of objects, surfaces and weapons." };
-            case fb::Function::Fire: return { "Fire", "Shoot the weapon in your firing hand." };
-            case fb::Function::SupportTrigger:
-                return { "Support trigger", "The other hand's trigger: a second weapon, or what that hand holds." };
-            case fb::Function::Use: return { "Use", "Take, open or talk to what you point at." };
-            case fb::Function::Reload: return { "Reload", "Reload the weapon." };
-            case fb::Function::Scope: return { "Scope", "Look through the scope while active." };
-            case fb::Function::Vats: return { "VATS", "Open VATS." };
-            case fb::Function::Grenade: return { "Grenade", "Draw a grenade into your hand." };
-            case fb::Function::Pipboy: return { "Pip-Boy", "Open the Pip-Boy." };
-            case fb::Function::Pause: return { "Pause menu", "Open the Pause menu." };
-            case fb::Function::StickActions:
-                return { "Bipod and Favorites", "Latch the weapon to a surface, hold to place, and the Favorites menu." };
-            case fb::Function::Palm: return { "RobCo PALM", "Open the PALM wheel." };
-            case fb::Function::Count: break;
+            const auto info = sv::controllerFor(controller == sv::Controller::Index ? "knuckles" : "vive_controller");
+            return info ? std::string(info->displayName) : std::string("controllers");
+        }
+
+        // The actions on A and X, which SteamVR's default binding takes from Index controllers and wands.
+        [[nodiscard]] std::string actionsOnAandX(const fb::Bindings& bindings)
+        {
+            std::vector<const char*> names;
+            for (std::size_t i = 0; i < fb::kFunctionCount; ++i) {
+                const auto& binding = bindings[i];
+                if (binding.control.source == fb::Source::LowerFace || binding.modifier.source == fb::Source::LowerFace)
+                    names.push_back(actionName(static_cast<fb::Function>(i)));
             }
-            return { "", "" };
-        }
-
-        // Grab, Fire and Use always need a button.
-        [[nodiscard]] constexpr bool mayClear(fb::Function function) noexcept
-        {
-            return function != fb::Function::Grab && function != fb::Function::Fire && function != fb::Function::Use;
-        }
-
-        [[nodiscard]] constexpr const char* gestureLabel(fb::Gesture gesture) noexcept
-        {
-            switch (gesture) {
-            case fb::Gesture::Press: return "Press";
-            case fb::Gesture::Tap: return "Tap";
-            case fb::Gesture::Hold: return "Hold";
-            case fb::Gesture::DoubleTap: return "Double tap";
+            std::string text;
+            for (std::size_t i = 0; i < names.size(); ++i) {
+                if (i) text += i + 1 == names.size() ? " and " : ", ";
+                text += names[i];
             }
-            return "";
-        }
-
-        [[nodiscard]] constexpr const char* gestureDetail(fb::Gesture gesture) noexcept
-        {
-            switch (gesture) {
-            case fb::Gesture::Press: return "Acts from the moment you press until you let go.";
-            case fb::Gesture::Tap: return "A short press. Waits for a hold or a second tap only when another action uses them.";
-            case fb::Gesture::Hold: return "Keep the button down; acts after the hold time until you let go.";
-            case fb::Gesture::DoubleTap: return "Two quick taps.";
-            }
-            return "";
-        }
-
-        [[nodiscard]] constexpr const char* handRole(fb::BindingHand hand) noexcept
-        {
-            switch (hand) {
-            case fb::BindingHand::Firing: return "your firing hand";
-            case fb::BindingHand::Support: return "your support hand";
-            case fb::BindingHand::Primary: return "your main hand";
-            case fb::BindingHand::Offhand: return "your off hand";
-            case fb::BindingHand::Left: return "the left hand";
-            case fb::BindingHand::Right: return "the right hand";
-            case fb::BindingHand::Each: return "either hand";
-            }
-            return "";
-        }
-
-        [[nodiscard]] constexpr bt::Control control(fb::Source source) noexcept
-        {
-            switch (source) {
-            case fb::Source::Trigger: return bt::Control::Trigger;
-            case fb::Source::Grip: return bt::Control::Grip;
-            case fb::Source::LowerFace: return bt::Control::LowerFace;
-            case fb::Source::UpperFace: return bt::Control::UpperFace;
-            case fb::Source::Stick: return bt::Control::StickClick;
-            case fb::Source::GripClick: return bt::Control::GripClick;
-            case fb::Source::Axis3Click: return bt::Control::Axis3Click;
-            case fb::Source::Axis4Click: return bt::Control::Axis4Click;
-            case fb::Source::PadUp: return bt::Control::PadUp;
-            case fb::Source::PadDown: return bt::Control::PadDown;
-            case fb::Source::PadLeft: return bt::Control::PadLeft;
-            case fb::Source::PadRight: return bt::Control::PadRight;
-            case fb::Source::PadCenter: return bt::Control::PadCenter;
-            default: return bt::Control::None;
-            }
-        }
-
-        // The hand a meaning names now; "each" is shown on the right.
-        [[nodiscard]] bool showsLeft(fb::BindingHand hand, const fb::Context& now) noexcept
-        {
-            return hand != fb::BindingHand::Each && fb::sideMatches(hand, true, now);
-        }
-
-        [[nodiscard]] bt::Binding display(const fb::Binding& binding, const fb::Context& now) noexcept
-        {
-            bt::Binding result{};
-            if (!binding.bound()) return result;
-            result.input = { showsLeft(binding.control.hand, now) ? bt::Hand::Left : bt::Hand::Right,
-                control(binding.control.source) };
-            result.gesture = static_cast<bt::Gesture>(binding.gesture);
-            if (binding.chord())
-                result.modifier = bt::Input{ showsLeft(binding.modifier.hand, now) ? bt::Hand::Left : bt::Hand::Right,
-                    control(binding.modifier.source) };
-            return result;
-        }
-
-        [[nodiscard]] std::string describe(const fb::Binding& binding, const fb::Context& now)
-        {
-            if (!binding.bound()) return "No button";
-            auto text = bt::sentence(display(binding, now));
-            text += " (";
-            text += handRole(binding.control.hand);
-            text += ')';
             return text;
         }
 
@@ -149,59 +89,39 @@ namespace rock::setup_wizard
 
         enum class Page : std::uint8_t
         {
-            // Offers ROCK's SteamVR binding; first, and only when SteamVR's default binding is in use.
-            Controller,
-            Welcome,
-            Controls,
-            Capture,
-            Option,
+            Controllers,
+            Topic,
             Review,
-            Saved,
+            Finished,
         };
-
-        [[nodiscard]] constexpr const char* pageLabel(Page page) noexcept
-        {
-            switch (page) {
-            case Page::Controller: return "Controller";
-            case Page::Welcome: return "Start";
-            case Page::Controls: return "Controls";
-            case Page::Capture: return "Capture";
-            case Page::Option: return "Option";
-            case Page::Review: return "Review";
-            case Page::Saved: return "Saved";
-            }
-            return "";
-        }
 
         struct Session
         {
-            Page page{ Page::Welcome };
-            std::size_t option{ 0 };
-            fb::Bindings bindings{ fb::homeBindings() };
-            fb::Bindings original{ fb::homeBindings() };
-            std::vector<OptionState> options;
-            fb::Function editing{ fb::Function::Count };
-            wp::Capture capture{};
-            bool listening{ false };
-            wp::HandChoices hands{};
-            std::size_t hand{ 0 };
-            fb::Gesture gesture{ fb::Gesture::Tap };
-            std::vector<std::string> saveErrors;
-            // What SteamVR uses for Fallout 4 VR, read when the wizard opened.
-            steamvr_binding::Inspection steamVr;
-            bool controllerPage{ false };
-            bool bindingApplied{ false };
-            std::string bindingError;
+            Page page{ Page::Controllers };
+            // Index into `topics`.
+            std::size_t topic{ 0 };
+            // The wp::kPages that have an option the store knows, in order.
+            std::vector<std::size_t> topics;
+            std::optional<Headset> chosen;
+            SessionStart start;
+            // The last page.
+            wp::Finish finish{ wp::Finish::Save };
+            wp::ControllerPlan plan;
+            FinishResult result;
         };
+
+        [[nodiscard]] wp::ControllerPlan plan(const Session& session)
+        {
+            const auto& steamVr = session.start.steamVr;
+            return wp::planControllers(session.chosen, steamVr.detected(), steamVr.index.status, steamVr.vive.status,
+                session.start.offeringBinding);
+        }
     }
 
     struct WizardPanel::Guarded
     {
-        BindingChoice bindingChoice{ BindingChoice::None };
-        bool saveRequested{ false };
+        std::optional<wp::Finish> finishRequested;
         bool closeRequested{ false };
-        // The pointer's hand while it is on the panel: its trigger is a click, not a capture.
-        fw::PhysicalHand pointerHand{ fw::PhysicalHand::None };
         std::uint64_t contextGeneration{ 0 };
         std::array<ImFont*, fw::kFontRoleCount> fonts{};
         Session session;
@@ -214,16 +134,6 @@ namespace rock::setup_wizard
     {
         using Guarded = WizardPanel::Guarded;
 
-        [[nodiscard]] fb::Context displayContext(const Session& session) noexcept
-        {
-            fb::Context context{};
-            for (const auto& option : session.options)
-                if (option.page.section == "FiringHand" && option.page.key == "DefaultHand")
-                    context.firingIsLeft = option.value == "left";
-            context.primaryIsLeft = false;
-            return context;
-        }
-
         // ---- drawing -----------------------------------------------------------------------
 
         struct Draw
@@ -231,7 +141,6 @@ namespace rock::setup_wizard
             const fw::Theme& theme;
             Guarded& g;
             Session& session;
-            fb::Context now;
 
             [[nodiscard]] ImU32 ink(const fw::ThemeColor& color, float alpha = 1.0f) const
             {
@@ -242,16 +151,23 @@ namespace rock::setup_wizard
 
             void font(fw::FontRole role, float size) const { ImGui::PushFont(face(role), size); }
 
-            void heading(const char* text) const
+            void heading(std::string_view text) const
             {
                 font(fw::FontRole::Strong, theme.titleFontSize);
-                ImGui::TextUnformatted(text);
+                ImGui::TextUnformatted(text.data(), text.data() + text.size());
                 ImGui::PopFont();
             }
 
-            void prose(const std::string_view text, bool muted = true) const
+            void strong(std::string_view text) const
             {
-                font(fw::FontRole::Prose, theme.fontSize);
+                font(fw::FontRole::Strong, theme.fontSize);
+                ImGui::TextUnformatted(text.data(), text.data() + text.size());
+                ImGui::PopFont();
+            }
+
+            void prose(const std::string_view text, bool muted = true, float size = 0.0f) const
+            {
+                font(fw::FontRole::Prose, size > 0.0f ? size : theme.fontSize);
                 ImGui::PushStyleColor(ImGuiCol_Text, rpsui::imgui_host::color(muted ? theme.textMuted : theme.text));
                 ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x);
                 ImGui::TextUnformatted(text.data(), text.data() + text.size());
@@ -260,16 +176,32 @@ namespace rock::setup_wizard
                 ImGui::PopFont();
             }
 
-            // A footer or page button; the accent one is the page's main action.
+            void warning(const std::string_view text) const
+            {
+                font(fw::FontRole::Prose, theme.fontSize);
+                ImGui::PushStyleColor(ImGuiCol_Text, rpsui::imgui_host::color(theme.pending));
+                ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x);
+                ImGui::TextUnformatted(text.data(), text.data() + text.size());
+                ImGui::PopTextWrapPos();
+                ImGui::PopStyleColor();
+                ImGui::PopFont();
+            }
+
+            void gap(float spacings = 1.0f) const { ImGui::Dummy({ 0.0f, theme.spacing * spacings }); }
+
+            void pushAccent() const
+            {
+                ImGui::PushStyleColor(ImGuiCol_Button, rpsui::imgui_host::color(theme.accent));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, rpsui::imgui_host::color(theme.accent, 0.85f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, rpsui::imgui_host::color(theme.pressed));
+                ImGui::PushStyleColor(ImGuiCol_Text, rpsui::imgui_host::color(theme.onAccent));
+            }
+
+            // A footer button; the accent one is the page's main action.
             [[nodiscard]] bool button(const char* label, bool accent = false, bool enabled = true, float width = 0.0f) const
             {
                 const float height = theme.targetHeight * 1.15f;
-                if (accent) {
-                    ImGui::PushStyleColor(ImGuiCol_Button, rpsui::imgui_host::color(theme.accent));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, rpsui::imgui_host::color(theme.accent, 0.85f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, rpsui::imgui_host::color(theme.pressed));
-                    ImGui::PushStyleColor(ImGuiCol_Text, rpsui::imgui_host::color(theme.onAccent));
-                }
+                if (accent) pushAccent();
                 ImGui::BeginDisabled(!enabled);
                 const bool pressed = ImGui::Button(label, { width > 0.0f ? width : 0.0f, height });
                 ImGui::EndDisabled();
@@ -279,7 +211,7 @@ namespace rock::setup_wizard
 
             // A large choice: label, detail, the selection shown by the accent edge.
             [[nodiscard]] bool card(const char* id, const std::string_view label, const std::string_view detail,
-                bool selected, bool enabled = true, std::string_view badge = {}) const
+                bool selected, std::string_view badge = {}) const
             {
                 const float width = ImGui::GetContentRegionAvail().x;
                 font(fw::FontRole::Prose, theme.smallFontSize);
@@ -290,10 +222,8 @@ namespace rock::setup_wizard
                     (detail.empty() ? 0.0f : detailHeight + theme.spacing * 0.5f));
                 const ImVec2 lo = ImGui::GetCursorScreenPos();
                 ImGui::PushID(id);
-                ImGui::BeginDisabled(!enabled);
                 const bool clicked = ImGui::InvisibleButton("card", { width, height });
-                ImGui::EndDisabled();
-                const bool hovered = ImGui::IsItemHovered() && enabled;
+                const bool hovered = ImGui::IsItemHovered();
                 ImGui::PopID();
                 const ImVec2 hi{ lo.x + width, lo.y + height };
                 auto* draw = ImGui::GetWindowDrawList();
@@ -301,24 +231,53 @@ namespace rock::setup_wizard
                     theme.rounding);
                 draw->AddRect(lo, hi, ink(selected ? theme.accent : theme.border), theme.rounding,
                     selected ? theme.borderWidth * 3.0f : theme.borderWidth);
-                const auto& textColor = enabled ? theme.text : theme.textDisabled;
-                auto* strong = face(fw::FontRole::Strong);
-                draw->AddText(strong, theme.fontSize, { lo.x + theme.padding * 1.5f, lo.y + theme.padding }, ink(textColor),
+                auto* strongFace = face(fw::FontRole::Strong);
+                draw->AddText(strongFace, theme.fontSize, { lo.x + theme.padding * 1.5f, lo.y + theme.padding }, ink(theme.text),
                     label.data(), label.data() + label.size());
                 if (!badge.empty()) {
-                    const float badgeWidth = strong->CalcTextSizeA(theme.smallFontSize, 10000.0f, 0.0f, badge.data(),
+                    const float badgeWidth = strongFace->CalcTextSizeA(theme.smallFontSize, 10000.0f, 0.0f, badge.data(),
                         badge.data() + badge.size()).x;
-                    draw->AddText(strong, theme.smallFontSize, { hi.x - theme.padding * 1.5f - badgeWidth, lo.y + theme.padding },
-                        ink(theme.textMuted), badge.data(), badge.data() + badge.size());
+                    draw->AddText(strongFace, theme.smallFontSize,
+                        { hi.x - theme.padding * 1.5f - badgeWidth, lo.y + theme.padding }, ink(theme.accent), badge.data(),
+                        badge.data() + badge.size());
                 }
                 if (!detail.empty()) {
                     draw->AddText(face(fw::FontRole::Prose), theme.smallFontSize,
                         { lo.x + theme.padding * 1.5f, lo.y + theme.padding + theme.fontSize * 1.3f + theme.spacing * 0.5f },
-                        ink(enabled ? theme.textMuted : theme.textDisabled), detail.data(), detail.data() + detail.size(),
-                        width - theme.padding * 3.0f);
+                        ink(theme.textMuted), detail.data(), detail.data() + detail.size(), width - theme.padding * 3.0f);
                 }
                 ImGui::Dummy({ 0.0f, theme.spacing * 0.5f });
-                return clicked && enabled;
+                return clicked;
+            }
+
+            // One option: its title, a button per choice, and what the chosen one does.
+            void option(OptionState& state) const
+            {
+                const auto& option = *state.option;
+                ImGui::PushID(option.key.data(), option.key.data() + option.key.size());
+                ImGui::PushID(option.section.data(), option.section.data() + option.section.size());
+                strong(option.title);
+                const std::size_t count = option.choiceCount();
+                const float width = (ImGui::GetContentRegionAvail().x - theme.spacing * static_cast<float>(count - 1)) /
+                    static_cast<float>(count);
+                for (std::size_t i = 0; i < count; ++i) {
+                    const auto& choice = option.choices[i];
+                    if (i) ImGui::SameLine(0.0f, theme.spacing);
+                    const bool selected = state.value == choice.value;
+                    if (selected) pushAccent();
+                    ImGui::PushID(static_cast<int>(i));
+                    if (ImGui::Button(std::string(choice.label).c_str(), { width, theme.targetHeight }))
+                        state.value = std::string(choice.value);
+                    ImGui::PopID();
+                    if (selected) ImGui::PopStyleColor(4);
+                }
+                if (const auto* chosen = option.find(state.value)) prose(chosen->detail, true, theme.smallFontSize);
+                if (state.value != state.defaultValue)
+                    if (const auto* recommended = option.find(state.defaultValue))
+                        prose("ROCK recommends: " + std::string(recommended->label) + ".", true, theme.smallFontSize);
+                ImGui::PopID();
+                ImGui::PopID();
+                gap(1.5f);
             }
 
             void beginBody(float footerHeight) const
@@ -333,368 +292,156 @@ namespace rock::setup_wizard
                 const ImVec2 at = ImGui::GetCursorScreenPos();
                 draw->AddLine({ at.x, at.y }, { at.x + ImGui::GetContentRegionAvail().x, at.y }, ink(theme.divider),
                     theme.borderWidth);
-                ImGui::Dummy({ 0.0f, theme.spacing });
+                gap();
             }
 
             [[nodiscard]] float footerHeight() const { return theme.targetHeight * 1.15f + theme.spacing * 3.0f; }
+
+            [[nodiscard]] float mainWidth() const { return theme.targetHeight * 4.0f; }
         };
 
-        void startEditing(Session& session, fb::Function function)
-        {
-            session.editing = function;
-            session.capture.start();
-            session.listening = true;
-            session.page = Page::Capture;
-        }
-
-        // The binding the capture page shows: the captured control with the chosen hand and gesture.
-        [[nodiscard]] std::optional<fb::Binding> candidate(const Session& session)
-        {
-            const auto& captured = session.capture.result();
-            if (session.listening || !captured || session.hand >= session.hands.count) return std::nullopt;
-            fb::Binding binding{};
-            binding.control = { session.hands.hands[session.hand], captured->control.source };
-            binding.gesture = session.gesture;
-            if (captured->modifier) {
-                const auto modifierLeft = captured->modifier->isLeft;
-                // The modifier keeps the control's meaning when it is on the same hand.
-                const auto hand = modifierLeft == captured->control.isLeft ? binding.control.hand
-                    : modifierLeft                                         ? fb::BindingHand::Left
-                                                                           : fb::BindingHand::Right;
-                binding.modifier = { hand, captured->modifier->source };
-            }
-            return binding;
-        }
+        [[nodiscard]] std::size_t stepCount(const Session& session) { return session.topics.size() + 2; }
 
         void drawHeader(const Draw& d)
         {
+            const auto& session = d.session;
             d.font(fw::FontRole::Strong, d.theme.fontSize);
             ImGui::PushStyleColor(ImGuiCol_Text, rpsui::imgui_host::color(d.theme.textMuted));
             ImGui::TextUnformatted("ROCK SETUP");
             ImGui::PopStyleColor();
             ImGui::PopFont();
-            const char* step = "";
-            char buffer[64]{};
-            switch (d.session.page) {
-            case Page::Controller: step = "Controller"; break;
-            case Page::Welcome: step = "Start"; break;
-            case Page::Controls:
-            case Page::Capture: step = "Controls"; break;
-            case Page::Option:
-                std::snprintf(buffer, sizeof(buffer), "Option %zu of %zu", d.session.option + 1, d.session.options.size());
-                step = buffer;
+            std::string step;
+            switch (session.page) {
+            case Page::Controllers: step = "Step 1 of " + std::to_string(stepCount(session)); break;
+            case Page::Topic:
+                step = "Step " + std::to_string(session.topic + 2) + " of " + std::to_string(stepCount(session));
                 break;
-            case Page::Review: step = "Review"; break;
-            case Page::Saved: step = "Saved"; break;
+            case Page::Review: step = "Step " + std::to_string(stepCount(session)) + " of " + std::to_string(stepCount(session)); break;
+            case Page::Finished: step = "Done"; break;
             }
             const float closeWidth = d.theme.targetHeight * 2.4f;
             ImGui::SameLine(ImGui::GetContentRegionAvail().x * 0.5f);
             ImGui::PushStyleColor(ImGuiCol_Text, rpsui::imgui_host::color(d.theme.textMuted));
-            ImGui::TextUnformatted(step);
+            ImGui::TextUnformatted(step.c_str());
             ImGui::PopStyleColor();
             ImGui::SameLine(contentRight() - closeWidth);
-            if (ImGui::Button("Close##header", { closeWidth, 0.0f })) d.g.closeRequested = true;
-            ImGui::Dummy({ 0.0f, d.theme.spacing });
+            if (ImGui::Button("Close##header", { closeWidth, 0.0f })) {
+                // Closing before the end is a finish too: ROCK still installs the binding it would.
+                if (session.page == Page::Finished) d.g.closeRequested = true;
+                else d.g.finishRequested = wp::Finish::Close;
+            }
+            d.gap();
         }
 
-        void drawController(const Draw& d)
+        // What the chosen controllers get, in words.
+        void drawControllerOutcome(const Draw& d, Headset headset)
         {
-            auto& session = d.session;
-            const auto& controller = session.steamVr.controller;
-            const std::string name{ controller ? controller->displayName : "controllers" };
-            const bool index = controller && controller->controller == steamvr_binding_policy::Controller::Index;
-            const bool pending = d.g.bindingChoice != BindingChoice::None;
-            d.beginBody(d.footerHeight());
-            if (session.bindingApplied) {
-                d.heading("ROCK's binding is set");
-                ImGui::Dummy({ 0.0f, d.theme.spacing });
-                d.prose("SteamVR uses ROCK's binding for Fallout 4 VR on your " + name +
-                        " from the next start of the game. Quit and start Fallout 4 VR again before you play.",
+            const auto& start = d.session.start;
+            const auto controller = sv::controllerOf(headset);
+            if (!controller) {
+                d.prose(headset == Headset::NoBindingNeeded
+                        ? "Every action works with these controllers as they are. ROCK installs nothing."
+                        : "ROCK has no binding for these controllers. Fallout 4 VR keeps the binding SteamVR gives it.",
                     false);
-                ImGui::Dummy({ 0.0f, d.theme.spacing });
-                d.prose("To go back, choose another binding for Fallout 4 VR in SteamVR's Controller Settings.");
-            } else {
-                d.heading("Your controllers");
-                ImGui::Dummy({ 0.0f, d.theme.spacing });
-                d.prose("Your " + name + " use SteamVR's default binding for Fallout 4 VR. " +
-                        (index ? "It turns A and X into grip and makes the game treat the controllers as wands, so "
-                                 "reload and scope do not work."
-                               : "It makes the game treat the wands as controllers without A and X, so reload and "
-                                 "scope cannot be reached.") +
-                        " ROCK has a binding that gives the game the button layout ROCK is made for.",
-                    false);
-                ImGui::Dummy({ 0.0f, d.theme.spacing * 2.0f });
-                if (d.card("use-rock", "Use ROCK's binding",
-                        "ROCK saves its binding beside its settings and sets it for Fallout 4 VR in SteamVR. Other games "
-                        "keep their bindings.",
-                        false, !pending)) {
-                    d.g.bindingChoice = BindingChoice::UseRock;
-                    session.bindingError.clear();
-                }
-                if (d.card("keep-steamvr", "Keep SteamVR's binding",
-                        "Nothing changes in SteamVR. ROCK stops opening this page by itself; it is still here when you "
-                        "open the setup wizard.",
-                        false, !pending)) {
-                    d.g.bindingChoice = BindingChoice::KeepSteamVr;
-                }
-                if (!session.bindingError.empty()) {
-                    ImGui::Dummy({ 0.0f, d.theme.spacing });
-                    d.prose("ROCK could not set its binding: " + session.bindingError + ".", false);
-                }
-            }
-            d.endBody();
-            if (d.button(session.bindingApplied ? "Continue" : "Not now", session.bindingApplied, !pending))
-                session.page = Page::Welcome;
-        }
-
-        void drawWelcome(const Draw& d)
-        {
-            d.beginBody(d.footerHeight());
-            d.heading("Set up ROCK");
-            ImGui::Dummy({ 0.0f, d.theme.spacing });
-            d.prose("Choose the button and gesture for each action, then go through ROCK's main options one page at a "
-                    "time. Nothing changes until you save on the last page.",
-                false);
-            ImGui::Dummy({ 0.0f, d.theme.spacing * 3.0f });
-            if (d.card("customize", "Choose my controls and options",
-                    "Start with the controls: pick an action, press the button you want and choose tap, hold or double tap.",
-                    false)) {
-                d.session.page = Page::Controls;
-            }
-            if (d.card("defaults", "Use ROCK's defaults",
-                    "Every action on its usual button and every main option at ROCK's default. You see the changes "
-                    "before anything is saved.",
-                    false)) {
-                d.session.bindings = fb::homeBindings();
-                for (auto& option : d.session.options) option.value = option.defaultValue;
-                d.session.page = Page::Review;
-            }
-            ImGui::Dummy({ 0.0f, d.theme.spacing * 2.0f });
-            d.prose("Open this again any time from the Setup wizard button on the ROCK page of PALM's Config.");
-            d.endBody();
-            if (d.button("Close")) d.g.closeRequested = true;
-        }
-
-        void drawControls(const Draw& d)
-        {
-            d.beginBody(d.footerHeight());
-            d.heading("Controls");
-            d.prose("Select an action to change its button. A moved action reaches the game and other mods as its usual "
-                    "button, so they keep working.");
-            ImGui::Dummy({ 0.0f, d.theme.spacing });
-            const auto found = wp::conflicts(d.session.bindings);
-            const float chipWidth = ImGui::GetContentRegionAvail().x * 0.52f;
-            for (std::size_t i = 0; i < fb::kFunctionCount; ++i) {
-                const auto function = static_cast<fb::Function>(i);
-                const auto text = functionText(function);
-                bool conflicted = false;
-                for (std::size_t c = 0; c < found.count; ++c)
-                    conflicted |= found.items[c].a == function || found.items[c].b == function;
-                const bool changed = d.session.bindings[i] != d.session.original[i];
-                ImGui::PushID(static_cast<int>(i));
-                const ImVec2 lo = ImGui::GetCursorScreenPos();
-                const float width = ImGui::GetContentRegionAvail().x;
-                const float height = d.theme.targetHeight * 1.5f;
-                const bool clicked = ImGui::InvisibleButton("row", { width, height });
-                const bool hovered = ImGui::IsItemHovered();
-                auto* draw = ImGui::GetWindowDrawList();
-                draw->AddRectFilled(lo, { lo.x + width, lo.y + height }, d.ink(hovered ? d.theme.hover : d.theme.surface),
-                    d.theme.rounding);
-                if (conflicted || changed)
-                    draw->AddRectFilled(lo, { lo.x + d.theme.borderWidth * 4.0f, lo.y + height },
-                        d.ink(conflicted ? d.theme.invalid : d.theme.pending));
-                draw->AddText(d.face(fw::FontRole::Strong), d.theme.fontSize,
-                    { lo.x + d.theme.padding * 1.5f, lo.y + d.theme.padding * 0.6f }, d.ink(d.theme.text), text.name);
-                std::string note = conflicted ? std::string("Shares its button and gesture with another action")
-                                              : std::string(text.detail);
-                if (!conflicted && d.session.bindings[i].bound()) {
-                    note += "  On ";
-                    note += handRole(d.session.bindings[i].control.hand);
-                    note += '.';
-                }
-                draw->AddText(d.face(fw::FontRole::Prose), d.theme.smallFontSize,
-                    { lo.x + d.theme.padding * 1.5f, lo.y + d.theme.padding * 0.6f + d.theme.fontSize * 1.15f },
-                    d.ink(conflicted ? d.theme.invalid : d.theme.textMuted), note.c_str());
-                ImGui::SetCursorScreenPos({ lo.x + width - chipWidth - d.theme.padding, lo.y + (height - d.theme.targetHeight) * 0.5f });
-                bt::chip(display(d.session.bindings[i], d.now), d.theme, d.theme.targetHeight, chipWidth);
-                ImGui::SetCursorScreenPos({ lo.x, lo.y + height + d.theme.spacing * 0.5f });
-                ImGui::Dummy({ 0.0f, 0.0f });
-                ImGui::PopID();
-                if (clicked) startEditing(d.session, function);
-            }
-            d.endBody();
-            if (d.button("Back")) d.session.page = Page::Welcome;
-            ImGui::SameLine();
-            if (d.button("Default controls")) d.session.bindings = fb::homeBindings();
-            ImGui::SameLine(contentRight() - d.theme.targetHeight * 3.0f);
-            if (d.button("Next", true, true, d.theme.targetHeight * 3.0f)) {
-                d.session.page = d.session.options.empty() ? Page::Review : Page::Option;
-                d.session.option = 0;
-            }
-        }
-
-        void drawCapture(const Draw& d)
-        {
-            auto& session = d.session;
-            const auto function = session.editing;
-            const auto index = static_cast<std::size_t>(function);
-            const auto text = functionText(function);
-            d.beginBody(d.footerHeight());
-            d.heading(text.name);
-            d.prose(text.detail);
-            ImGui::Dummy({ 0.0f, d.theme.spacing * 2.0f });
-            ImGui::PushStyleColor(ImGuiCol_Text, rpsui::imgui_host::color(d.theme.textMuted));
-            ImGui::TextUnformatted("Now");
-            ImGui::PopStyleColor();
-            bt::chip(display(session.bindings[index], d.now), d.theme, d.theme.targetHeight * 1.2f);
-            ImGui::Dummy({ 0.0f, d.theme.spacing * 2.0f });
-
-            if (session.listening) {
-                const auto phase = session.capture.phase();
-                d.font(fw::FontRole::Strong, d.theme.titleFontSize);
-                ImGui::TextUnformatted(phase == wp::Capture::Phase::WaitingForRelease ? "Let go of every button"
-                                                                                       : "Press the button you want");
-                ImGui::PopFont();
-                d.prose("Point away from this panel, then press and release the button. For two buttons together, hold "
-                        "the first and press the second. Aimed at the panel, the trigger clicks instead.");
-                ImGui::Dummy({ 0.0f, d.theme.spacing * 2.0f });
-                if (const auto& pending = session.capture.pending()) {
-                    fb::Binding shown{};
-                    shown.control = { pending->control.isLeft ? fb::BindingHand::Left : fb::BindingHand::Right,
-                        pending->control.source };
-                    shown.gesture = fb::Gesture::Press;
-                    if (pending->modifier)
-                        shown.modifier = { pending->modifier->isLeft ? fb::BindingHand::Left : fb::BindingHand::Right,
-                            pending->modifier->source };
-                    bt::chip(display(shown, d.now), d.theme, d.theme.targetHeight * 1.5f);
-                }
-                d.endBody();
-                if (d.button("Cancel")) session.page = Page::Controls;
-                if (mayClear(function)) {
-                    ImGui::SameLine();
-                    if (d.button("No button")) {
-                        session.bindings[index] = {};
-                        session.page = Page::Controls;
-                    }
-                }
                 return;
             }
+            const auto name = controllerName(*controller);
+            if (!start.steamVr.steamVr) {
+                d.prose("Fallout 4 VR runs through OpenComposite here, which does not use SteamVR bindings. ROCK installs "
+                        "nothing.",
+                    false);
+                return;
+            }
+            const auto& inspection = start.steamVr.of(*controller);
+            switch (inspection.status) {
+            case sv::Status::RockActive:
+                d.prose("ROCK's binding for your " + name + " is already set. Every action works.", false);
+                return;
+            case sv::Status::PlayersOwn:
+                d.prose("You chose your own binding for Fallout 4 VR in SteamVR. ROCK leaves it as it is.", false);
+                return;
+            case sv::Status::Offer: {
+                const auto broken = actionsOnAandX(start.bindings);
+                d.prose(std::string(*controller == sv::Controller::Index
+                                ? "SteamVR's own binding makes Fallout 4 VR treat Index controllers as Vive wands, and A "
+                                  "and X act as grip."
+                                : "SteamVR's own binding gives Fallout 4 VR wands without A and X.") +
+                        (broken.empty() ? std::string{} : " These actions do not work: " + broken + ".") +
+                        " ROCK's binding gives the game every button.",
+                    false);
+                d.gap(0.5f);
+                d.warning("ROCK installs its binding for your " + name +
+                          " when you finish, for Fallout 4 VR only. Restart the game afterwards.");
+                return;
+            }
+            case sv::Status::NotApplicable:
+                d.prose("SteamVR does not tell ROCK this game's binding now, so ROCK installs nothing. Open the wizard "
+                        "again from PALM's Config once SteamVR runs the game.",
+                    false);
+                return;
+            }
+        }
 
-            // Hand meaning.
-            ImGui::PushStyleColor(ImGuiCol_Text, rpsui::imgui_host::color(d.theme.textMuted));
-            ImGui::TextUnformatted("Which hand");
-            ImGui::PopStyleColor();
-            for (std::size_t i = 0; i < session.hands.count; ++i) {
-                const auto hand = session.hands.hands[i];
-                const bool literal = hand == fb::BindingHand::Left || hand == fb::BindingHand::Right;
-                std::string label = literal ? std::string("Only ") + handRole(hand) : bt::capitalized(handRole(hand));
-                const char* detail = literal ? "Stays on this hand whichever hand holds the weapon."
-                                             : "Follows the hand when you switch firing hands.";
-                if (d.card(("hand" + std::to_string(i)).c_str(), label, detail, session.hand == i)) session.hand = i;
+        void drawControllers(const Draw& d)
+        {
+            auto& session = d.session;
+            const auto detected = session.start.steamVr.detected();
+            d.beginBody(d.footerHeight());
+            d.heading("Which controllers do you play with?");
+            d.gap(0.5f);
+            d.prose("Some controllers need ROCK's SteamVR binding for every button to reach the game. Choose yours and "
+                    "ROCK tells you what it does.",
+                false);
+            d.gap(1.5f);
+            for (const auto& headset : kHeadsets) {
+                const bool selected = session.chosen == headset.headset;
+                if (d.card(headset.label, headset.label, headset.detail, selected,
+                        detected == headset.headset ? "Detected" : ""))
+                    session.chosen = headset.headset;
             }
-            ImGui::Dummy({ 0.0f, d.theme.spacing });
-            ImGui::PushStyleColor(ImGuiCol_Text, rpsui::imgui_host::color(d.theme.textMuted));
-            ImGui::TextUnformatted("How");
-            ImGui::PopStyleColor();
-            const float columnWidth = (ImGui::GetContentRegionAvail().x - d.theme.spacing * 3.0f) / 4.0f;
-            for (const auto gesture : { fb::Gesture::Press, fb::Gesture::Tap, fb::Gesture::Hold, fb::Gesture::DoubleTap }) {
-                if (gesture != fb::Gesture::Press) ImGui::SameLine();
-                const bool allowed = wp::gestureAllowed(function, gesture);
-                const bool selected = session.gesture == gesture;
-                if (selected) {
-                    ImGui::PushStyleColor(ImGuiCol_Button, rpsui::imgui_host::color(d.theme.accent));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, rpsui::imgui_host::color(d.theme.accent, 0.85f));
-                    ImGui::PushStyleColor(ImGuiCol_Text, rpsui::imgui_host::color(d.theme.onAccent));
-                }
-                ImGui::BeginDisabled(!allowed);
-                if (ImGui::Button(gestureLabel(gesture), { columnWidth, d.theme.targetHeight * 1.15f })) session.gesture = gesture;
-                ImGui::EndDisabled();
-                if (selected) ImGui::PopStyleColor(3);
-            }
-            d.prose(gestureDetail(session.gesture));
-            ImGui::Dummy({ 0.0f, d.theme.spacing * 2.0f });
-
-            const auto chosen = candidate(session);
-            if (chosen) {
-                bt::chip(display(*chosen, d.now), d.theme, d.theme.targetHeight * 1.5f);
-                const auto clashes = wp::clashesWith(session.bindings, function, *chosen);
-                if (clashes) {
-                    std::string names;
-                    for (std::size_t i = 0; i < fb::kFunctionCount; ++i)
-                        if (clashes & fb::functionBit(static_cast<fb::Function>(i))) {
-                            if (!names.empty()) names += ", ";
-                            names += functionText(static_cast<fb::Function>(i)).name;
-                        }
-                    ImGui::PushStyleColor(ImGuiCol_Text, rpsui::imgui_host::color(d.theme.invalid));
-                    ImGui::PushTextWrapPos(0.0f);
-                    ImGui::Text("Also on this button and gesture: %s. Choose another gesture or button, or change those "
-                                "actions too.",
-                        names.c_str());
-                    ImGui::PopTextWrapPos();
-                    ImGui::PopStyleColor();
-                }
-            }
+            d.gap();
+            if (session.chosen) drawControllerOutcome(d, *session.chosen);
+            else d.prose("\"Detected\" marks the controllers SteamVR reports now.");
+            d.gap(1.5f);
+            d.prose("Use recommended settings finishes now: ROCK's binding where your controllers need it and ROCK's "
+                    "recommendation for every option, saved at once.",
+                true, d.theme.smallFontSize);
             d.endBody();
-            if (d.button("Try again")) {
-                session.capture.start();
-                session.listening = true;
+            if (d.button("Use recommended settings")) d.g.finishRequested = wp::Finish::Recommended;
+            ImGui::SameLine(contentRight() - d.mainWidth());
+            if (d.button("Next", true, session.chosen.has_value(), d.mainWidth())) {
+                session.topic = 0;
+                session.page = session.topics.empty() ? Page::Review : Page::Topic;
             }
-            ImGui::SameLine();
-            if (d.button("Cancel")) session.page = Page::Controls;
-            ImGui::SameLine(contentRight() - d.theme.targetHeight * 3.0f);
-            if (d.button("Keep", true, chosen.has_value(), d.theme.targetHeight * 3.0f) && chosen) {
-                session.bindings[index] = *chosen;
-                session.page = Page::Controls;
+        }
+
+        void drawTopic(const Draw& d)
+        {
+            auto& session = d.session;
+            const auto pageIndex = session.topics[session.topic];
+            const auto& page = wp::kPages[pageIndex];
+            d.beginBody(d.footerHeight());
+            d.heading(page.title);
+            d.prose(page.intro);
+            d.gap(1.5f);
+            for (auto& option : session.start.options)
+                if (option.option->page == pageIndex) d.option(option);
+            d.endBody();
+            if (d.button("Back")) {
+                if (session.topic == 0) session.page = Page::Controllers;
+                else --session.topic;
+            }
+            ImGui::SameLine(contentRight() - d.mainWidth());
+            if (d.button("Next", true, true, d.mainWidth())) {
+                if (session.topic + 1 < session.topics.size()) ++session.topic;
+                else session.page = Page::Review;
             }
         }
 
         [[nodiscard]] std::string choiceLabel(const OptionState& option, std::string_view value)
         {
-            const auto choices = wp::choicesFor(option.page, option.kind, option.help);
-            for (std::size_t i = 0; i < choices.count; ++i)
-                if (choices.items[i].value == value) return std::string(choices.items[i].label);
-            return std::string(value);
-        }
-
-        void drawOption(const Draw& d)
-        {
-            auto& session = d.session;
-            auto& option = session.options[session.option];
-            const auto help = wp::splitHelp(option.help);
-            const auto choices = wp::choicesFor(option.page, option.kind, option.help);
-            d.beginBody(d.footerHeight());
-            d.heading(std::string(help.title).c_str());
-            ImGui::Dummy({ 0.0f, d.theme.spacing * 2.0f });
-            for (std::size_t i = 0; i < choices.count; ++i) {
-                const auto& choice = choices.items[i];
-                const bool isDefault = choice.value == option.defaultValue;
-                if (d.card(std::string(choice.value).c_str(), choice.label, choice.detail, option.value == choice.value, true,
-                        isDefault ? "Default" : ""))
-                    option.value = std::string(choice.value);
-            }
-            ImGui::Dummy({ 0.0f, d.theme.spacing * 2.0f });
-            // Booleans show their two halves in the cards; modes keep the whole explanation below.
-            if (option.kind != wp::ValueKind::Boolean) {
-                auto body = help.body;
-                if (option.kind == wp::ValueKind::Integer) {
-                    // The first line(s) hold the numbered labels the cards already show.
-                    while (!body.empty() && body.front() >= '1' && body.front() <= '9') {
-                        const auto newline = body.find('\n');
-                        body = newline == std::string_view::npos ? std::string_view{} : body.substr(newline + 1);
-                    }
-                }
-                d.prose(body);
-            }
-            d.endBody();
-            if (d.button("Back")) {
-                if (session.option == 0) session.page = Page::Controls;
-                else --session.option;
-            }
-            ImGui::SameLine(contentRight() - d.theme.targetHeight * 3.0f);
-            if (d.button("Next", true, true, d.theme.targetHeight * 3.0f)) {
-                if (session.option + 1 < session.options.size()) ++session.option;
-                else session.page = Page::Review;
-            }
+            const auto* choice = option.option->find(value);
+            return choice ? std::string(choice->label) : std::string(value);
         }
 
         void drawReview(const Draw& d)
@@ -702,141 +449,108 @@ namespace rock::setup_wizard
             auto& session = d.session;
             d.beginBody(d.footerHeight());
             d.heading("Review");
+            d.gap();
+            d.strong("Controllers");
+            const auto controllers = plan(session);
+            if (controllers.action == wp::BindingAction::Install)
+                d.warning("ROCK installs its SteamVR binding for your " + controllerName(*controllers.controller) +
+                          ". Restart the game afterwards.");
+            else d.prose("Nothing to install.", false);
+            d.gap();
+            d.strong("Options");
             bool any = false;
-            const auto found = wp::conflicts(session.bindings);
-            for (std::size_t i = 0; i < fb::kFunctionCount; ++i) {
-                if (session.bindings[i] == session.original[i]) continue;
-                if (!any) {
-                    ImGui::Dummy({ 0.0f, d.theme.spacing });
-                    d.font(fw::FontRole::Strong, d.theme.fontSize);
-                    ImGui::TextUnformatted("Controls");
-                    ImGui::PopFont();
-                }
-                any = true;
-                const auto name = functionText(static_cast<fb::Function>(i)).name;
-                d.prose(std::string(name) + ": " + describe(session.original[i], d.now) + "  >  " +
-                        describe(session.bindings[i], d.now),
-                    false);
-            }
-            bool anyOption = false;
-            for (const auto& option : session.options) {
+            for (const auto& option : session.start.options) {
                 if (option.value == option.original) continue;
-                if (!anyOption) {
-                    ImGui::Dummy({ 0.0f, d.theme.spacing });
-                    d.font(fw::FontRole::Strong, d.theme.fontSize);
-                    ImGui::TextUnformatted("Options");
-                    ImGui::PopFont();
-                }
-                anyOption = true;
-                d.prose(std::string(wp::splitHelp(option.help).title) + ": " + choiceLabel(option, option.original) +
-                        "  >  " + choiceLabel(option, option.value),
+                any = true;
+                d.prose(std::string(option.option->title) + ": " + choiceLabel(option, option.original) + "  >  " +
+                        choiceLabel(option, option.value),
                     false);
             }
-            if (!any && !anyOption) {
-                ImGui::Dummy({ 0.0f, d.theme.spacing });
-                d.prose("Nothing changed.");
-            }
-            if (found.count) {
-                ImGui::Dummy({ 0.0f, d.theme.spacing });
-                ImGui::PushStyleColor(ImGuiCol_Text, rpsui::imgui_host::color(d.theme.invalid));
-                for (std::size_t c = 0; c < found.count; ++c)
-                    ImGui::Text("%s and %s share a button and gesture.", functionText(found.items[c].a).name,
-                        functionText(found.items[c].b).name);
-                ImGui::PopStyleColor();
-            }
+            if (!any) d.prose("No option changed.");
             d.endBody();
             if (d.button("Back")) {
-                if (session.options.empty()) session.page = Page::Controls;
+                if (session.topics.empty()) session.page = Page::Controllers;
                 else {
-                    session.page = Page::Option;
-                    session.option = session.options.size() - 1;
+                    session.page = Page::Topic;
+                    session.topic = session.topics.size() - 1;
                 }
             }
-            ImGui::SameLine(contentRight() - d.theme.targetHeight * 3.0f);
-            if (d.button("Save", true, any || anyOption, d.theme.targetHeight * 3.0f)) d.g.saveRequested = true;
+            ImGui::SameLine(contentRight() - d.mainWidth());
+            if (d.button("Save", true, true, d.mainWidth())) d.g.finishRequested = wp::Finish::Save;
         }
 
-        void drawSaved(const Draw& d)
+        void drawFinished(const Draw& d)
         {
+            const auto& session = d.session;
+            const auto& result = session.result;
             d.beginBody(d.footerHeight());
-            d.heading(d.session.saveErrors.empty() ? "Saved" : "Some settings were not saved");
-            ImGui::Dummy({ 0.0f, d.theme.spacing });
-            if (d.session.saveErrors.empty()) d.prose("ROCK uses the new controls and options now.", false);
-            for (const auto& error : d.session.saveErrors) d.prose(error, false);
+            const bool failed = !result.errors.empty() || !result.bindingError.empty();
+            d.heading(failed ? "Not everything was set" : session.finish == wp::Finish::Close ? "Before you play" : "ROCK is set up");
+            d.gap();
+            if (result.bindingInstalled) {
+                d.prose("ROCK installed its SteamVR binding for your " + controllerName(*session.plan.controller) + ".", false);
+                d.gap(0.5f);
+                d.warning("Quit and start Fallout 4 VR again before you play: SteamVR loads the game's binding when the "
+                          "game starts.");
+                d.gap();
+            }
+            if (!result.bindingError.empty()) {
+                d.prose("ROCK could not install its SteamVR binding: " + result.bindingError +
+                            ". Your controllers keep SteamVR's binding.",
+                    false);
+                d.gap();
+            }
+            if (session.finish == wp::Finish::Recommended) d.prose("Every option is at ROCK's recommendation.", false);
+            else if (!result.written.empty() && result.errors.empty())
+                d.prose("ROCK uses your options now.", false);
+            for (const auto& error : result.errors) d.prose(error, false);
+            d.gap();
+            d.prose("To change anything later, open this wizard again from PALM's Config, on the ROCK page.");
             d.endBody();
-            if (d.button("Close", true)) d.g.closeRequested = true;
+            ImGui::SetCursorPosX(contentRight() - d.mainWidth());
+            if (d.button("Close", true, true, d.mainWidth())) d.g.closeRequested = true;
         }
 
         void goBack(Session& session)
         {
             switch (session.page) {
-            case Page::Welcome:
-                if (session.controllerPage) session.page = Page::Controller;
-                break;
-            case Page::Controls: session.page = Page::Welcome; break;
-            case Page::Capture:
-                if (!session.listening) session.page = Page::Controls;
-                break;
-            case Page::Option:
-                if (session.option == 0) session.page = Page::Controls;
-                else --session.option;
+            case Page::Topic:
+                if (session.topic == 0) session.page = Page::Controllers;
+                else --session.topic;
                 break;
             case Page::Review:
-                if (session.options.empty()) session.page = Page::Controls;
+                if (session.topics.empty()) session.page = Page::Controllers;
                 else {
-                    session.page = Page::Option;
-                    session.option = session.options.size() - 1;
+                    session.page = Page::Topic;
+                    session.topic = session.topics.size() - 1;
                 }
                 break;
             default: break;
             }
         }
-
-        // Every changed value of the session, bindings first, in save order.
-        [[nodiscard]] std::vector<SettingWrite> changes(const Session& session)
-        {
-            std::vector<SettingWrite> writes;
-            for (std::size_t i = 0; i < fb::kFunctionCount; ++i) {
-                if (session.bindings[i] == session.original[i]) continue;
-                writes.push_back({ "Bindings", std::string(fb::functionKey(static_cast<fb::Function>(i))),
-                    fb::formatBinding(session.bindings[i]) });
-            }
-            for (const auto& option : session.options) {
-                if (option.value == option.original) continue;
-                writes.push_back({ std::string(option.page.section), std::string(option.page.key), option.value });
-            }
-            return writes;
-        }
     }
 
     // ---- settings ------------------------------------------------------------------------------
 
-    std::vector<OptionState> optionPages()
+    void collectSettings(const api::configuration::Setting& setting, void* opaque) noexcept
     {
-        std::vector<OptionState> options;
-        options.reserve(wp::kOptionPages.size());
-        for (const auto& page : wp::kOptionPages) options.push_back({ .page = page });
-        return options;
-    }
-
-    void collectOption(const api::configuration::Setting& setting, void* opaque) noexcept
-    {
-        auto& options = *static_cast<std::vector<OptionState>*>(opaque);
+        auto& start = *static_cast<SessionStart*>(opaque);
         if (!setting.section || !setting.key) return;
+        const std::string_view section{ setting.section }, key{ setting.key };
         try {
-            for (auto& option : options) {
-                if (option.page.section != setting.section || option.page.key != setting.key) continue;
-                option.found = true;
-                option.help = setting.description ? setting.description : "";
-                option.value = setting.value ? setting.value : "";
-                option.original = option.value;
-                option.defaultValue = setting.defaultValue ? setting.defaultValue : "";
-                option.kind = setting.type == api::configuration::ValueType::Boolean ? wp::ValueKind::Boolean
-                    : setting.type == api::configuration::ValueType::Integer       ? wp::ValueKind::Integer
-                                                                                   : wp::ValueKind::Text;
+            if (section == "ControllerInput" && key == "OfferSteamVRBinding") {
+                start.offeringBinding = setting.value && std::string_view{ setting.value } == "true";
+                return;
+            }
+            for (const auto& option : wp::kOptions) {
+                if (option.section != section || option.key != key) continue;
+                OptionState state{ &option, setting.value ? setting.value : "", {},
+                    setting.defaultValue ? setting.defaultValue : "" };
+                state.original = state.value;
+                start.options.push_back(std::move(state));
             }
         } catch (...) {
-            // An allocation failure leaves the page unfound; the wizard skips it.
+            // An allocation failure leaves the option out; the wizard skips it.
         }
     }
 
@@ -844,22 +558,22 @@ namespace rock::setup_wizard
 
     void WizardPanel::begin(SessionStart start)
     {
+        // Page order, whatever order the store visits in.
+        std::ranges::stable_sort(start.options,
+            [](const OptionState& a, const OptionState& b) { return a.option < b.option; });
         std::scoped_lock lock(_mutex);
         auto& session = _guarded->session;
         session = {};
-        session.bindings = start.bindings;
-        session.original = start.bindings;
-        session.options = std::move(start.options);
-        session.controllerPage = start.steamVr.status == steamvr_binding_policy::Status::Offer;
-        session.steamVr = std::move(start.steamVr);
-        if (session.controllerPage) session.page = Page::Controller;
+        session.start = std::move(start);
+        for (std::size_t page = 0; page < wp::kPages.size(); ++page)
+            if (std::ranges::any_of(session.start.options, [&](const OptionState& o) { return o.option->page == page; }))
+                session.topics.push_back(page);
     }
 
     void WizardPanel::clearRequests()
     {
         std::scoped_lock lock(_mutex);
-        _guarded->bindingChoice = BindingChoice::None;
-        _guarded->saveRequested = false;
+        _guarded->finishRequested.reset();
         _guarded->closeRequested = false;
     }
 
@@ -867,91 +581,54 @@ namespace rock::setup_wizard
     {
         std::scoped_lock lock(_mutex);
         auto& g = *_guarded;
+        auto& session = g.session;
         Requests requests{};
-        requests.bindingChoice = g.bindingChoice;
-        if (g.bindingChoice == BindingChoice::UseRock) requests.steamVr = g.session.steamVr;
-        requests.save = std::exchange(g.saveRequested, false);
-        if (requests.save) requests.writes = changes(g.session);
         requests.close = std::exchange(g.closeRequested, false);
+        requests.finish = std::exchange(g.finishRequested, std::nullopt);
+        if (!requests.finish) return requests;
+        if (*requests.finish == wp::Finish::Recommended)
+            for (auto& option : session.start.options) option.value = option.defaultValue;
+        if (*requests.finish != wp::Finish::Close)
+            for (const auto& option : session.start.options)
+                if (option.value != option.original)
+                    requests.writes.push_back(
+                        { std::string(option.option->section), std::string(option.option->key), option.value });
+        requests.binding = plan(session);
+        if (requests.binding.action == wp::BindingAction::StopOffering)
+            requests.writes.push_back({ "ControllerInput", "OfferSteamVRBinding", "false" });
+        if (requests.binding.controller) requests.inspection = session.start.steamVr.of(*requests.binding.controller);
         return requests;
     }
 
-    void WizardPanel::finishSave(const SaveResult& result)
+    bool WizardPanel::finished(wp::Finish finish, const FinishResult& result)
     {
         std::scoped_lock lock(_mutex);
         auto& session = _guarded->session;
-        session.saveErrors = result.errors;
-        // Only what was written becomes the saved state: a value changed while the host
-        // wrote, or one that failed, stays a change.
-        for (const auto& write : result.written) {
-            if (write.section == "Bindings") {
-                for (std::size_t i = 0; i < fb::kFunctionCount; ++i) {
-                    const auto function = static_cast<fb::Function>(i);
-                    if (fb::functionKey(function) != write.key) continue;
-                    if (fb::formatBinding(session.bindings[i]) == write.value) session.original[i] = session.bindings[i];
-                    else if (const auto parsed = fb::parseBinding(write.value)) session.original[i] = *parsed;
-                }
-                continue;
-            }
-            for (auto& option : session.options)
-                if (option.page.section == write.section && option.page.key == write.key) option.original = write.value;
-        }
-        session.page = Page::Saved;
-    }
-
-    void WizardPanel::finishBindingChoice(BindingChoice choice, bool applied, std::string error,
-        steamvr_binding::Inspection after)
-    {
-        std::scoped_lock lock(_mutex);
-        _guarded->bindingChoice = BindingChoice::None;
-        auto& session = _guarded->session;
-        if (choice == BindingChoice::KeepSteamVr) {
-            session.page = Page::Welcome;
-            return;
-        }
-        session.bindingApplied = applied;
-        session.bindingError = applied ? std::string{} : std::move(error);
-        if (applied) session.steamVr = std::move(after);
+        for (const auto& write : result.written)
+            for (auto& option : session.start.options)
+                if (option.option->section == write.section && option.option->key == write.key) option.original = write.value;
+        session.finish = finish;
+        session.plan = plan(session);
+        session.result = result;
+        const bool show = finish != wp::Finish::Close || result.bindingInstalled || !result.bindingError.empty() ||
+            !result.errors.empty();
+        if (show) session.page = Page::Finished;
+        return show;
     }
 
     std::string WizardPanel::pageName()
     {
         std::scoped_lock lock(_mutex);
         const auto& session = _guarded->session;
-        std::string name = pageLabel(session.page);
-        if (session.page == Page::Option)
-            name += " " + std::to_string(session.option + 1) + " of " + std::to_string(session.options.size());
-        if (session.page == Page::Capture) {
-            name += ": ";
-            name += functionText(session.editing).name;
-            name += session.listening ? " (listening)" : " (choosing hand and gesture)";
+        switch (session.page) {
+        case Page::Controllers: return "Controllers";
+        case Page::Topic:
+            return std::string(wp::kPages[session.topics[session.topic]].title) + " (" + std::to_string(session.topic + 1) +
+                " of " + std::to_string(session.topics.size()) + ")";
+        case Page::Review: return "Review";
+        case Page::Finished: return "Done";
         }
-        return name;
-    }
-
-    void WizardPanel::feedCapture(std::array<std::uint32_t, 2> sample)
-    {
-        if (!isOpen()) return;
-        std::scoped_lock lock(_mutex);
-        auto& g = *_guarded;
-        auto& session = g.session;
-        if (session.page != Page::Capture || !session.listening) return;
-        // A trigger pulled at the panel clicks it.
-        const auto triggerBit = 1u << static_cast<unsigned>(fb::Source::Trigger);
-        if (g.pointerHand == fw::PhysicalHand::Left) sample[0] &= ~triggerBit;
-        if (g.pointerHand == fw::PhysicalHand::Right) sample[1] &= ~triggerBit;
-        session.capture.update(wp::CaptureSample{ sample });
-        if (session.capture.phase() != wp::Capture::Phase::Done || !session.capture.result()) return;
-        session.listening = false;
-        const auto& captured = *session.capture.result();
-        const auto now = displayContext(session);
-        session.hands = wp::handChoices(session.editing, captured.control.isLeft, now);
-        session.hand = session.hands.suggested;
-        // Keep the function's gesture when it may stay; a press otherwise.
-        const auto current = session.bindings[static_cast<std::size_t>(session.editing)];
-        const auto home = fb::homeBinding(session.editing);
-        session.gesture = current.bound() ? current.gesture : home.gesture;
-        if (!wp::gestureAllowed(session.editing, session.gesture)) session.gesture = fb::Gesture::Press;
+        return "";
     }
 
     // ---- RPS UI callbacks ----------------------------------------------------------------------
@@ -991,12 +668,11 @@ namespace rock::setup_wizard
         if (frame.contextGeneration != g.contextGeneration || !isOpen()) return;
         RPSUI_IMGUI_BIND(frame.imgui);
         for (std::size_t i = 0; i < g.fonts.size(); ++i) g.fonts[i] = static_cast<ImFont*>(frame.fonts[i]);
-        g.pointerHand = frame.pointerValid ? frame.pointerHand : fw::PhysicalHand::None;
-        // A grip tap on the panel is Back, except while a button is being captured.
-        if (frame.backPressed && !(g.session.page == Page::Capture && g.session.listening)) goBack(g.session);
+        // A grip tap on the panel is Back.
+        if (frame.backPressed) goBack(g.session);
 
         const auto& theme = *frame.theme;
-        const Draw d{ theme, g, g.session, displayContext(g.session) };
+        const Draw d{ theme, g, g.session };
         ImGui::SetNextWindowPos({ 0.0f, 0.0f });
         ImGui::SetNextWindowSize({ frame.layoutWidth, frame.layoutHeight });
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { theme.padding * 3.0f, theme.padding * 2.0f });
@@ -1006,16 +682,13 @@ namespace rock::setup_wizard
         ImGui::PopStyleVar();
         drawHeader(d);
         switch (g.session.page) {
-        case Page::Controller: drawController(d); break;
-        case Page::Welcome: drawWelcome(d); break;
-        case Page::Controls: drawControls(d); break;
-        case Page::Capture: drawCapture(d); break;
-        case Page::Option:
-            if (g.session.option < g.session.options.size()) drawOption(d);
+        case Page::Controllers: drawControllers(d); break;
+        case Page::Topic:
+            if (g.session.topic < g.session.topics.size()) drawTopic(d);
             else g.session.page = Page::Review;
             break;
         case Page::Review: drawReview(d); break;
-        case Page::Saved: drawSaved(d); break;
+        case Page::Finished: drawFinished(d); break;
         }
         ImGui::End();
     }

@@ -24,7 +24,7 @@ Permissions: `Read` (1) for `revision` and `visit`; `Write` (2) for
 | --- | --- | --- |
 | `revision(owner, uint64* out)` | any | A number that increases whenever any setting changes, including hot reloads. |
 | `visit(owner, group, visitor, user)` | any | Calls `visitor(setting, user)` once per setting of `Group::Consumer` (`ROCK.toml`) or `Group::Developer` (`ROCK_Developer.toml`), in catalog order. `NotReady` before the catalog loads. |
-| `openSetupWizard(owner)` | any | Opens ROCK's setup wizard (controls and main options) in front of the player on the next frame. `NotReady` when RPS UI Framework is unavailable or the game is not in play; `Ok` when the wizard is open or opening. |
+| `openSetupWizard(owner)` | any | Opens ROCK's setup wizard (controllers and main options) in front of the player on the next frame. `NotReady` when RPS UI Framework is unavailable or the game is not in play; `Ok` when the wizard is open or opening. |
 | `setValue(owner, group, section, key, value, error, errorCapacity)` | any | Validates, applies and saves one setting to its owning file. `InvalidArgument` when rejected; `error` then holds the reason (truncated to `errorCapacity`). A file with a syntax error is not overwritten: the write is rejected until the file is fixed. |
 
 ## Records

@@ -5,8 +5,8 @@
  * LocalPanelHost exactly as RPS UI runs it in the headset, with RPS UI's default
  * theme and faces. Settings go through ROCK's real settings store over a sandbox
  * folder, so saving writes a real ROCK.toml there and never the game's. What only
- * the game has is stood in for on the right: the controllers (buttons held with the
- * mouse or keys), the pointer's hand and its grip Back, and what SteamVR reports.
+ * the game has is stood in for on the right: what SteamVR reports and installs, and
+ * the grip tap that goes Back.
  */
 
 #include <Windows.h>
@@ -17,7 +17,6 @@
 #include <wincodec.h>
 #include <wrl/client.h>
 
-#include <RPS_UI_Framework/BindingText.h>
 #include <RPS_UI_Framework/ImGuiPanelHost.h>
 
 #include <imgui.h>
@@ -48,11 +47,10 @@ namespace
     using Microsoft::WRL::ComPtr;
     namespace fs = std::filesystem;
     namespace fw = rpsui::api::framework;
-    namespace bt = rpsui::binding;
     namespace sv = rock::steamvr_binding_policy;
     namespace wizard = rock::setup_wizard;
     namespace preview = rock::setup_wizard::preview;
-    using Source = rock::button_layout_policy::Source;
+    namespace wp = rock::setup_wizard_policy;
 
     // ---- window and device ---------------------------------------------------------------------
 
@@ -114,7 +112,7 @@ namespace
             desc.Height = h;
             desc.MipLevels = 1;
             desc.ArraySize = 1;
-            desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+            desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
             desc.SampleDesc.Count = 1;
             desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
             if (FAILED(g_device->CreateTexture2D(&desc, nullptr, &texture)) ||
@@ -178,145 +176,66 @@ namespace
             (void)ShellExecuteW(nullptr, L"open", L"notepad.exe", path.c_str(), nullptr, SW_SHOWNORMAL);
     }
 
-    // ---- what the game would report --------------------------------------------------------------
+    // ---- what SteamVR would report ---------------------------------------------------------------
 
-    enum class Headset : int
-    {
-        Index,
-        Vive,
-        NoBindingNeeded,
-        OpenComposite,
-    };
-
-    enum class SteamVrBinding : int
+    enum class Binding : int
     {
         Default,
         Rock,
         PlayersOwn,
     };
 
+    // The controller types SteamVR may report, as Prop_ControllerType_String.
+    struct Reported
+    {
+        const char* label;
+        const char* type;
+    };
+
+    constexpr std::array kReported{
+        Reported{ "Index controllers", "knuckles" },
+        Reported{ "Vive wands", "vive_controller" },
+        Reported{ "Touch (Index or wands too, under ROCK's binding)", "oculus_touch" },
+        Reported{ "Steam Frame", "frame_controller" },
+        Reported{ "Other (Windows Mixed Reality)", "holographic_controller" },
+        Reported{ "None turned on", "" },
+    };
+
     struct SteamVrScenario
     {
-        Headset headset{ Headset::Index };
-        SteamVrBinding binding{ SteamVrBinding::Default };
+        bool openComposite{ false };
+        int reported{ 0 };
+        Binding index{ Binding::Default };
+        Binding vive{ Binding::Default };
         bool applySucceeds{ true };
         std::array<char, 160> applyError{};
 
-        [[nodiscard]] std::optional<sv::ControllerInfo> controller() const
+        [[nodiscard]] rock::steamvr_binding::Inspection inspection(std::string_view type, Binding binding,
+            const fs::path& settings) const
         {
-            switch (headset) {
-            case Headset::Index: return sv::controllerFor("knuckles");
-            case Headset::Vive: return sv::controllerFor("vive_controller");
-            default: return std::nullopt;
-            }
+            rock::steamvr_binding::Inspection result{};
+            result.controller = sv::controllerFor(type);
+            result.appKey = "preview";
+            if (binding == Binding::Rock)
+                result.currentUrl = sv::fileUrl((settings / "SteamVR" / std::string(result.controller->fileName)).string());
+            else if (binding == Binding::PlayersOwn)
+                result.currentUrl = "file:///C:/Users/Player/Documents/steamvr/my_fallout4vr_binding.json";
+            result.status = sv::classify(true, result.controller, result.currentUrl);
+            return result;
         }
 
-        // The setting SteamVR would hold for the controller now.
-        [[nodiscard]] std::string currentUrl(const fs::path& settings) const
+        // What steamvr_binding::read() would return.
+        [[nodiscard]] rock::steamvr_binding::State read(const fs::path& settings) const
         {
-            const auto info = controller();
-            if (!info) return {};
-            switch (binding) {
-            case SteamVrBinding::Default: return {};
-            case SteamVrBinding::Rock: return sv::fileUrl((settings / "SteamVR" / std::string(info->fileName)).string());
-            case SteamVrBinding::PlayersOwn: return "file:///C:/Users/Player/Documents/steamvr/my_fallout4vr_binding.json";
-            }
-            return {};
-        }
-
-        // What steamvr_binding::inspect() would return.
-        [[nodiscard]] rock::steamvr_binding::Inspection inspect(const fs::path& settings) const
-        {
-            rock::steamvr_binding::Inspection inspection{};
-            inspection.controller = controller();
-            inspection.currentUrl = currentUrl(settings);
-            inspection.status = sv::classify(headset != Headset::OpenComposite, inspection.controller, inspection.currentUrl);
-            return inspection;
+            rock::steamvr_binding::State state{};
+            if (openComposite) return state;
+            state.steamVr = true;
+            state.reportedType = kReported[static_cast<std::size_t>(reported)].type;
+            state.index = inspection("knuckles", index, settings);
+            state.vive = inspection("vive_controller", vive, settings);
+            return state;
         }
     };
-
-    // ---- the virtual controllers ---------------------------------------------------------------
-
-    struct ControlButton
-    {
-        Source source;
-        bt::Control control;
-        // Keys for the left and right hand; ImGuiKey_None for mouse only.
-        ImGuiKey leftKey;
-        ImGuiKey rightKey;
-    };
-
-    constexpr std::array kTouchControls{
-        ControlButton{ Source::Trigger, bt::Control::Trigger, ImGuiKey_1, ImGuiKey_6 },
-        ControlButton{ Source::Grip, bt::Control::Grip, ImGuiKey_2, ImGuiKey_7 },
-        ControlButton{ Source::LowerFace, bt::Control::LowerFace, ImGuiKey_3, ImGuiKey_8 },
-        ControlButton{ Source::UpperFace, bt::Control::UpperFace, ImGuiKey_4, ImGuiKey_9 },
-        ControlButton{ Source::Stick, bt::Control::StickClick, ImGuiKey_5, ImGuiKey_0 },
-    };
-
-    constexpr std::array kOtherControls{
-        ControlButton{ Source::GripClick, bt::Control::GripClick, ImGuiKey_None, ImGuiKey_None },
-        ControlButton{ Source::Axis3Click, bt::Control::Axis3Click, ImGuiKey_None, ImGuiKey_None },
-        ControlButton{ Source::Axis4Click, bt::Control::Axis4Click, ImGuiKey_None, ImGuiKey_None },
-        ControlButton{ Source::PadUp, bt::Control::PadUp, ImGuiKey_None, ImGuiKey_None },
-        ControlButton{ Source::PadDown, bt::Control::PadDown, ImGuiKey_None, ImGuiKey_None },
-        ControlButton{ Source::PadLeft, bt::Control::PadLeft, ImGuiKey_None, ImGuiKey_None },
-        ControlButton{ Source::PadRight, bt::Control::PadRight, ImGuiKey_None, ImGuiKey_None },
-        ControlButton{ Source::PadCenter, bt::Control::PadCenter, ImGuiKey_None, ImGuiKey_None },
-    };
-
-    struct Controllers
-    {
-        // Per hand (left, right), a bit per Source.
-        std::array<std::uint32_t, 2> latched{};
-        // Held this frame, and last frame for the buttons' highlight.
-        std::array<std::uint32_t, 2> held{};
-        std::array<std::uint32_t, 2> shown{};
-
-        [[nodiscard]] static std::uint32_t bit(Source source) { return 1u << static_cast<unsigned>(source); }
-
-        // A new frame: what latches and keys hold, before the buttons add the mouse.
-        void beginFrame(bool keysAllowed)
-        {
-            shown = held;
-            held = latched;
-            if (!keysAllowed) return;
-            for (std::size_t hand = 0; hand < 2; ++hand)
-                for (const auto& button : kTouchControls) {
-                    const auto key = hand == 0 ? button.leftKey : button.rightKey;
-                    if (key != ImGuiKey_None && ImGui::IsKeyDown(key)) held[hand] |= bit(button.source);
-                }
-        }
-    };
-
-    // One hold button: held while pressed with the mouse or its key, or latched by a right click.
-    void controlButton(Controllers& controllers, const fw::Theme& theme, std::size_t hand, const ControlButton& button,
-        float width)
-    {
-        const auto handValue = hand == 0 ? bt::Hand::Left : bt::Hand::Right;
-        const auto key = hand == 0 ? button.leftKey : button.rightKey;
-        const auto bit = Controllers::bit(button.source);
-        const bool latched = (controllers.latched[hand] & bit) != 0;
-        const bool wasHeld = (controllers.shown[hand] & bit) != 0;
-        std::string label = bt::capitalized(std::string(bt::controlName(button.control, handValue)));
-        if (key != ImGuiKey_None) label += std::string("  [") + ImGui::GetKeyName(key) + "]";
-        if (latched) label += "  (latched)";
-        label += "##" + std::to_string(hand) + "-" + std::to_string(static_cast<int>(button.source));
-        if (wasHeld) {
-            ImGui::PushStyleColor(ImGuiCol_Button, rpsui::imgui_host::color(theme.accent));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, rpsui::imgui_host::color(theme.accent, 0.85f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, rpsui::imgui_host::color(theme.accent));
-            ImGui::PushStyleColor(ImGuiCol_Text, rpsui::imgui_host::color(theme.onAccent));
-        }
-        ImGui::Button(label.c_str(), { width, 0.0f });
-        if (wasHeld) ImGui::PopStyleColor(4);
-        if (ImGui::IsItemActive()) controllers.held[hand] |= bit;
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
-            controllers.latched[hand] ^= bit;
-            controllers.held[hand] = (controllers.held[hand] & ~bit) | (controllers.latched[hand] & bit);
-        }
-    }
-
     // ---- the preview's own look -----------------------------------------------------------------
 
     [[nodiscard]] fw::Theme harnessTheme(float scale)
@@ -329,19 +248,6 @@ namespace
         theme.padding = 6.0f * scale;
         theme.spacing = 6.0f * scale;
         return theme;
-    }
-
-    // A button that shows whether its choice is the current one.
-    [[nodiscard]] bool toggle(const fw::Theme& theme, const char* label, bool selected)
-    {
-        if (selected) {
-            ImGui::PushStyleColor(ImGuiCol_Button, rpsui::imgui_host::color(theme.accent));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, rpsui::imgui_host::color(theme.accent, 0.85f));
-            ImGui::PushStyleColor(ImGuiCol_Text, rpsui::imgui_host::color(theme.onAccent));
-        }
-        const bool pressed = ImGui::Button(label);
-        if (selected) ImGui::PopStyleColor(3);
-        return pressed;
     }
 
     void muted(const fw::Theme& theme, const char* text)
@@ -395,13 +301,13 @@ namespace
         return value;
     }
 
-    // The game's side of the wizard, in the game's order: opening it, the settings store,
-    // SteamVR and the controllers.
+    // The game's side of the wizard, in the game's order: opening it, the settings store and
+    // SteamVR.
     struct GameSide
     {
         wizard::WizardPanel panel;
         SteamVrScenario steamVr;
-        std::optional<wizard::SaveResult> lastSave;
+        std::optional<wizard::FinishResult> lastFinish;
 
         GameSide()
         {
@@ -414,7 +320,7 @@ namespace
         {
             preview::reloadSettings();
             auto start = wizard::settings::read();
-            start.steamVr = steamVr.inspect(preview::settingsDirectory());
+            start.steamVr = steamVr.read(preview::settingsDirectory());
             panel.begin(std::move(start));
             panel.clearRequests();
             panel.setOpen(true);
@@ -426,36 +332,29 @@ namespace
             panel.clearRequests();
         }
 
-        // One frame before the panel draws: the controls held, then what the player asked for.
-        void service(const std::array<std::uint32_t, 2>& held)
+        // One frame before the panel draws: what the player asked for, done as the game's host does.
+        void service()
         {
             if (!panel.isOpen()) return;
-            panel.feedCapture(held);
-            auto requests = panel.takeRequests();
-            if (requests.save) {
-                lastSave = wizard::settings::write(requests.writes);
-                panel.finishSave(*lastSave);
-            }
-            if (requests.bindingChoice == wizard::BindingChoice::UseRock) {
-                std::string error;
-                rock::steamvr_binding::Inspection after;
-                const bool applied = steamVr.applySucceeds;
-                if (applied) {
-                    steamVr.binding = SteamVrBinding::Rock;
-                    after = steamVr.inspect(preview::settingsDirectory());
-                } else {
-                    error = steamVr.applyError.data();
+            const auto requests = panel.takeRequests();
+            bool keepOpen = !requests.close;
+            if (requests.finish) {
+                wizard::FinishResult result{};
+                wizard::settings::write(requests.writes, result);
+                if (requests.binding.action == wp::BindingAction::Install) {
+                    if (steamVr.applySucceeds) {
+                        result.bindingInstalled = true;
+                        (*requests.binding.controller == sv::Controller::Index ? steamVr.index : steamVr.vive) = Binding::Rock;
+                    } else {
+                        result.bindingError = steamVr.applyError.data();
+                    }
                 }
-                panel.finishBindingChoice(requests.bindingChoice, applied, std::move(error), std::move(after));
-            } else if (requests.bindingChoice == wizard::BindingChoice::KeepSteamVr) {
-                std::string error;
-                (void)wizard::settings::keepSteamVrBinding(error);
-                panel.finishBindingChoice(requests.bindingChoice, false, std::move(error), {});
+                lastFinish = result;
+                keepOpen = keepOpen && panel.finished(*requests.finish, result);
             }
-            if (requests.close) close();
+            if (!keepOpen) close();
         }
     };
-
     // ---- --capture: every page to PNG, offscreen -------------------------------------------------
 
     void check(HRESULT result, const char* what)
@@ -487,7 +386,7 @@ namespace
         check(encoder->CreateNewFrame(&frame, nullptr), "PNG frame");
         check(frame->Initialize(nullptr), "PNG frame");
         check(frame->SetSize(width, height), "PNG size");
-        WICPixelFormatGUID format = GUID_WICPixelFormat32bppRGBA;
+        WICPixelFormatGUID format = GUID_WICPixelFormat32bppBGRA;
         check(frame->SetPixelFormat(&format), "PNG format");
         check(frame->WritePixels(height, mapped.RowPitch, mapped.RowPitch * height, static_cast<BYTE*>(mapped.pData)), "PNG pixels");
         check(frame->Commit(), "PNG frame");
@@ -497,8 +396,7 @@ namespace
 
     /*
      * Walks the wizard the way a player does, clicking where its buttons are at RPS UI's
-     * default theme and pressing the virtual controllers, and saves each page. The walk
-     * saves into the sandbox like any other run.
+     * default theme, and saves each page. The walk saves into the sandbox like any other run.
      */
     int capture(const fs::path& folder, const Faces& faces)
     {
@@ -508,15 +406,14 @@ namespace
         if (!target.ensure(static_cast<UINT>(wizard::kLayoutWidth), static_cast<UINT>(wizard::kLayoutHeight))) return 1;
         rpsui::imgui_host::LocalPanelHost host(g_device.Get(), g_context.Get(), registration(game.panel), faces.set());
 
-        std::array<std::uint32_t, 2> held{};
         int index = 0;
-        const auto frame = [&](rpsui::imgui_host::PanelInput input, bool back = false) {
-            game.service(held);
+        const auto frame = [&](rpsui::imgui_host::PanelInput input) {
+            game.service();
             const float clear[4]{ 0.0f, 0.0f, 0.0f, 0.0f };
             g_context->ClearRenderTargetView(target.target.Get(), clear);
             input.pixelWidth = target.width;
             input.pixelHeight = target.height;
-            host.frame(target.target.Get(), input, fw::PhysicalHand::Right, back);
+            host.frame(target.target.Get(), input);
         };
         const auto away = [&](int frames = 1) {
             for (int i = 0; i < frames; ++i) frame({});
@@ -535,66 +432,76 @@ namespace
             at(x, y, false);
             away(3);
         };
-        const auto hold = [&](std::uint32_t left, std::uint32_t right) {
-            held = { left, right };
-            away(2);
-        };
         const auto shot = [&](const char* name) {
             away(2);
             char file[96]{};
             std::snprintf(file, sizeof(file), "%02d-%s.png", ++index, name);
             writePng(target.texture.Get(), target.width, target.height, folder / file);
         };
-        const auto bit = [](Source source) { return Controllers::bit(source); };
-        // Footer buttons at the default theme: Back on the left, the main action on the right.
+        const auto open = [&] {
+            game.open();
+            away(3);
+        };
+        // Where things are at the default theme.
         constexpr float kFooterY = 768.0f;
-        constexpr float kBackX = 60.0f;
-        constexpr float kNextX = 1190.0f;
+        constexpr float kRecommendedX = 160.0f;
+        constexpr float kNextX = 1170.0f;
+        constexpr float kCloseX = 1202.0f;
+        constexpr float kCloseY = 40.0f;
+        constexpr std::array kCardY{ 210.0f, 288.0f, 366.0f, 444.0f };
 
-        game.steamVr.headset = Headset::Index;
-        game.open();
-        away(3);
-        shot("controller-offer-index");
-        game.steamVr.applySucceeds = false;
-        click(640.0f, 216.0f);
-        shot("controller-binding-failed");
-        game.steamVr.applySucceeds = true;
-        click(640.0f, 216.0f);
-        shot("controller-binding-set");
-        click(kBackX, kFooterY);
-        shot("welcome");
-        click(640.0f, 204.0f);
-        shot("controls");
-        click(400.0f, 160.0f);
-        shot("capture-listening");
-        hold(bit(Source::Grip), 0);
-        hold(bit(Source::Grip) | bit(Source::LowerFace), 0);
-        shot("capture-chord-held");
-        hold(0, 0);
-        shot("capture-choose-hand-and-gesture");
+        // Index controllers on SteamVR's default binding: every page, then save.
+        open();
+        shot("controllers");
+        click(640.0f, kCardY[0]);
+        shot("controllers-index");
         click(kNextX, kFooterY);
-        shot("controls-changed");
-        click(kNextX, kFooterY);
-        for (int page = 0; page < 20; ++page) {
-            const auto name = game.panel.pageName();
-            if (!name.starts_with("Option")) break;
+        for (int page = 0; page < 10 && game.panel.pageName() != "Review"; ++page) {
             char label[32]{};
-            std::snprintf(label, sizeof(label), "option-%02d", page + 1);
+            std::snprintf(label, sizeof(label), "topic-%02d", page + 1);
             shot(label);
             click(kNextX, kFooterY);
         }
         shot("review");
         click(kNextX, kFooterY);
-        shot("saved");
-        game.steamVr.headset = Headset::Vive;
-        game.steamVr.binding = SteamVrBinding::Default;
-        game.open();
-        away(3);
-        shot("controller-offer-vive");
+        shot("finished");
+        // Vive wands, recommended settings, SteamVR refusing the binding.
+        game.steamVr.reported = 1;
+        game.steamVr.applySucceeds = false;
+        open();
+        click(640.0f, kCardY[1]);
+        shot("controllers-vive");
+        click(kRecommendedX, kFooterY);
+        shot("recommended-binding-failed");
+        game.steamVr.applySucceeds = true;
+        // Touch: nothing to install.
+        game.steamVr.reported = 2;
+        open();
+        click(640.0f, kCardY[2]);
+        shot("controllers-touch");
+        click(640.0f, kCardY[3]);
+        shot("controllers-other");
+        // OpenComposite with Index chosen.
+        game.steamVr.openComposite = true;
+        game.steamVr.index = Binding::Default;
+        open();
+        click(640.0f, kCardY[0]);
+        shot("controllers-opencomposite");
+        game.steamVr.openComposite = false;
+        // The player's own binding.
+        game.steamVr.reported = 0;
+        game.steamVr.index = Binding::PlayersOwn;
+        open();
+        click(640.0f, kCardY[0]);
+        shot("controllers-players-own");
+        // Closing at once with Index detected: ROCK still installs its binding.
+        game.steamVr.index = Binding::Default;
+        open();
+        click(kCloseX, kCloseY);
+        shot("closed-installs-binding");
         return 0;
     }
 }
-
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 {
     ImGui_ImplWin32_EnableDpiAwareness();
@@ -673,7 +580,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
     GameSide game;
     auto& panel = game.panel;
     auto& steamVr = game.steamVr;
-    auto& lastSave = game.lastSave;
+    auto& lastFinish = game.lastFinish;
     std::optional<rpsui::imgui_host::LocalPanelHost> host;
     try {
         host.emplace(g_device.Get(), g_context.Get(), registration(panel), faces.set());
@@ -683,8 +590,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
     ImGui::SetCurrentContext(g_harness);
 
     PanelTarget panelTarget;
-    Controllers controllers;
-    auto pointerHand = fw::PhysicalHand::Right;
     std::string sandboxMessage;
     bool followLog = true;
     const auto openWizard = [&] { game.open(); };
@@ -721,7 +626,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
         auto& io = ImGui::GetIO();
         const bool keysAllowed = !io.WantTextInput;
         bool backPressed = keysAllowed && ImGui::IsKeyPressed(ImGuiKey_Backspace, false);
-        controllers.beginFrame(keysAllowed);
 
         rpsui::imgui_host::PanelInput panelInput{};
         panelInput.deltaSeconds = io.DeltaTime;
@@ -778,8 +682,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
         ImGui::TextUnformatted("ROCK Setup Wizard Preview");
         ImGui::PopFont();
         muted(theme, "The panel on the left is ROCK's setup wizard, drawn by the same code the game runs. "
-                     "Point and click it with the mouse; scroll with the wheel. Right click on it is the grip "
-                     "Back of the pointing hand.");
+                     "Point and click it with the mouse; scroll with the wheel. Right click on it, or "
+                     "Backspace, is the grip tap that goes Back.");
 
         if (ImGui::CollapsingHeader("Wizard", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::Text("%s", panel.isOpen() ? ("Open: " + panel.pageName()).c_str() : "Closed");
@@ -792,68 +696,32 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
         }
 
         if (ImGui::CollapsingHeader("SteamVR", ImGuiTreeNodeFlags_DefaultOpen)) {
-            const char* headsets[] = { "Index controllers", "Vive wands", "Touch, Pico, Focus 3 (no binding needed)",
-                "OpenComposite (no SteamVR bindings)" };
-            int headset = static_cast<int>(steamVr.headset);
+            muted(theme, "What the game would find when the wizard opens. Changes show the next time it opens.");
+            ImGui::Checkbox("The game runs through OpenComposite", &steamVr.openComposite);
+            ImGui::BeginDisabled(steamVr.openComposite);
+            std::array<const char*, kReported.size()> reported{};
+            for (std::size_t i = 0; i < kReported.size(); ++i) reported[i] = kReported[i].label;
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.62f);
-            if (ImGui::Combo("Controllers", &headset, headsets, IM_ARRAYSIZE(headsets)))
-                steamVr.headset = static_cast<Headset>(headset);
+            ImGui::Combo("Controllers on", &steamVr.reported, reported.data(), static_cast<int>(reported.size()));
             const char* bindings[] = { "SteamVR's default binding", "ROCK's binding", "A binding the player chose" };
-            int binding = static_cast<int>(steamVr.binding);
-            ImGui::BeginDisabled(!steamVr.controller());
-            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.62f);
-            if (ImGui::Combo("Fallout 4 VR binding", &binding, bindings, IM_ARRAYSIZE(bindings)))
-                steamVr.binding = static_cast<SteamVrBinding>(binding);
+            for (auto* binding : { &steamVr.index, &steamVr.vive }) {
+                int value = static_cast<int>(*binding);
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.62f);
+                if (ImGui::Combo(binding == &steamVr.index ? "Index binding" : "Vive wand binding", &value, bindings,
+                        IM_ARRAYSIZE(bindings)))
+                    *binding = static_cast<Binding>(value);
+            }
             ImGui::EndDisabled();
-            const auto inspection = steamVr.inspect(preview::settingsDirectory());
-            const char* status = inspection.status == sv::Status::Offer ? "ROCK offers its binding: the wizard opens on the Controller page"
-                : inspection.status == sv::Status::RockActive          ? "ROCK's binding is set: no Controller page"
-                : inspection.status == sv::Status::PlayersOwn          ? "The player's own binding: never replaced, no Controller page"
-                                                                       : "Nothing to offer: no Controller page";
-            muted(theme, status);
-            ImGui::Checkbox("Setting ROCK's binding succeeds", &steamVr.applySucceeds);
+            ImGui::Checkbox("Installing ROCK's binding succeeds", &steamVr.applySucceeds);
             if (!steamVr.applySucceeds) ImGui::InputText("Error", steamVr.applyError.data(), steamVr.applyError.size());
-            muted(theme, "Takes effect the next time the wizard opens. Setting the binding here only changes this "
-                         "preview's SteamVR state; SteamVR itself is never touched.");
+            muted(theme, "Installing here only changes this preview's SteamVR state; SteamVR itself is never touched.");
         }
 
-        if (ImGui::CollapsingHeader("Pointer", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::TextUnformatted("The mouse points with");
-            for (const auto hand : { fw::PhysicalHand::Left, fw::PhysicalHand::Right }) {
-                ImGui::SameLine();
-                if (toggle(theme, hand == fw::PhysicalHand::Left ? "Left hand" : "Right hand", pointerHand == hand))
-                    pointerHand = hand;
-            }
+        if (ImGui::CollapsingHeader("Headset input", ImGuiTreeNodeFlags_DefaultOpen)) {
             if (ImGui::Button("Back (grip tap at the panel)")) backPressed = true;
             ImGui::SameLine();
             muted(theme, "Backspace or a right click on the panel");
-            muted(theme, "While the mouse is on the panel, that hand's trigger clicks the panel instead of being "
-                         "captured, as in the headset.");
         }
-
-        if (ImGui::CollapsingHeader("Controllers", ImGuiTreeNodeFlags_DefaultOpen)) {
-            muted(theme, "Hold a button with the mouse or its key; right click latches it, for two-button chords. "
-                         "The capture page records these as the controls held after ROCK's button layout.");
-            const float column = (ImGui::GetContentRegionAvail().x - theme.spacing) * 0.5f;
-            for (std::size_t hand = 0; hand < 2; ++hand) {
-                if (hand) ImGui::SameLine();
-                ImGui::BeginGroup();
-                ImGui::TextUnformatted(hand == 0 ? "Left controller" : "Right controller");
-                for (const auto& button : kTouchControls) controlButton(controllers, theme, hand, button, column);
-                ImGui::EndGroup();
-            }
-            if (ImGui::TreeNode("Other controls (Index, Vive, Windows Mixed Reality)")) {
-                for (std::size_t hand = 0; hand < 2; ++hand) {
-                    if (hand) ImGui::SameLine();
-                    ImGui::BeginGroup();
-                    for (const auto& button : kOtherControls) controlButton(controllers, theme, hand, button, column);
-                    ImGui::EndGroup();
-                }
-                ImGui::TreePop();
-            }
-            if (ImGui::Button("Release all")) controllers.latched = {};
-        }
-
         if (ImGui::CollapsingHeader("Settings sandbox", ImGuiTreeNodeFlags_DefaultOpen)) {
             const auto folder = preview::settingsDirectory();
             muted(theme, "ROCK's settings store reads and writes here. The game's settings are never written.");
@@ -878,18 +746,19 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
             if (!sandboxMessage.empty()) muted(theme, sandboxMessage.c_str());
         }
 
-        if (ImGui::CollapsingHeader("Last save", ImGuiTreeNodeFlags_DefaultOpen)) {
-            if (!lastSave) muted(theme, "Nothing saved in this run.");
+        if (ImGui::CollapsingHeader("Last finish", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (!lastFinish) muted(theme, "Not finished in this run.");
             else {
-                if (lastSave->written.empty() && lastSave->errors.empty()) muted(theme, "Nothing to write.");
-                for (const auto& write : lastSave->written)
+                if (lastFinish->written.empty() && lastFinish->errors.empty()) muted(theme, "No setting written.");
+                for (const auto& write : lastFinish->written)
                     ImGui::BulletText("[%s] %s = %s", write.section.c_str(), write.key.c_str(), write.value.c_str());
+                if (lastFinish->bindingInstalled) ImGui::BulletText("ROCK's SteamVR binding installed");
                 ImGui::PushStyleColor(ImGuiCol_Text, rpsui::imgui_host::color(theme.invalid));
-                for (const auto& error : lastSave->errors) ImGui::BulletText("%s", error.c_str());
+                for (const auto& error : lastFinish->errors) ImGui::BulletText("%s", error.c_str());
+                if (!lastFinish->bindingError.empty()) ImGui::BulletText("Binding: %s", lastFinish->bindingError.c_str());
                 ImGui::PopStyleColor();
             }
         }
-
         if (ImGui::CollapsingHeader("ROCK log", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::Checkbox("Follow", &followLog);
             ImGui::SameLine();
@@ -904,11 +773,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
         ImGui::EndChild();
         ImGui::End();
 
-        game.service(controllers.held);
+        game.service();
         if (panel.isOpen() && panelTarget.target) {
             const float clear[4]{ 0.0f, 0.0f, 0.0f, 0.0f };
             g_context->ClearRenderTargetView(panelTarget.target.Get(), clear);
-            host->frame(panelTarget.target.Get(), panelInput, pointerHand, backPressed);
+            host->frame(panelTarget.target.Get(), panelInput, fw::PhysicalHand::Right, backPressed);
             ImGui::SetCurrentContext(g_harness);
         }
 

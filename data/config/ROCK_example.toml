@@ -287,7 +287,7 @@ VanillaFavoritesMenu = true
 
 ## Offer ROCK's SteamVR Binding
 ## True: when Index controllers or Vive wands use SteamVR's default binding for Fallout 4 VR, the setup wizard opens by itself once per game start, when no menu or scene is in the way, and offers ROCK's binding (the default binding turns A and X into grip). It never replaces a binding you chose in SteamVR.
-## False: the wizard opens only when you open it; it still offers the binding then.
+## False: the wizard opens only when you open it; it still offers the binding then. Choosing other controllers in the wizard sets this.
 OfferSteamVRBinding = true
 
 ## Pip-Boy and Pause Hold Time
@@ -334,7 +334,7 @@ StickClick = "thumbstick"
 
 [SetupWizard]
 ## Setup Wizard Shown
-## The setup wizard opens by itself once, 10 seconds after you are in the game with no menu or scene in the way, whenever this ROCK brings a newer edition of it (new controls or options to show). On a new game it waits until you leave the mirror. ROCK writes the edition here when the wizard opens.
+## The setup wizard opens by itself once, 10 seconds after you are in the game with no menu or scene in the way, whenever this ROCK brings a newer edition of it (new pages or options to show). On a new game it waits until you leave the mirror. ROCK writes the edition here when the wizard opens.
 ## 0 = show it at the next game start. 999 = never open it by itself.
 ShownEdition = 0
 
@@ -344,7 +344,6 @@ ShownEdition = 0
 ## Hands: firing (the hand on the weapon's firing grip), support, primary, offhand, left, right, each.
 ## Gestures: press (acts while held), tap, hold, double (double tap).
 ## Controls: as in the button layout above. Add "+<hand> <control>" for a button that must be held at the same time.
-## The ROCK setup wizard, opened from PALM's Config, sets these by pressing the control.
 ## This key: grab with each hand.
 Grab = "each press grip"
 

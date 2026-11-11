@@ -91,6 +91,45 @@ namespace rock::steamvr_binding_policy
         return Status::PlayersOwn;
     }
 
+    // The controllers a player can name in the setup wizard.
+    enum class Headset : std::uint8_t
+    {
+        Index,
+        ViveWands,
+        // Touch, Pico, Focus 3, Steam Frame: every button reaches the game without a binding.
+        NoBindingNeeded,
+        // Controllers ROCK has no binding for.
+        Other,
+    };
+
+    [[nodiscard]] constexpr std::optional<Controller> controllerOf(Headset headset) noexcept
+    {
+        if (headset == Headset::Index) return Controller::Index;
+        if (headset == Headset::ViveWands) return Controller::ViveWand;
+        return std::nullopt;
+    }
+
+    /*
+     * The controllers SteamVR reports, from Prop_ControllerType_String and Fallout 4 VR's
+     * setting for each controller ROCK has a binding for. ROCK's binding presents Index
+     * controllers and wands as Touch, so SteamVR then reports oculus_touch: the controller
+     * whose setting names ROCK's file is the one in the player's hands.
+     */
+    [[nodiscard]] constexpr std::optional<Headset> detectHeadset(bool steamVr, std::string_view reportedType, Status index,
+        Status vive) noexcept
+    {
+        if (!steamVr || reportedType.empty()) return std::nullopt;
+        if (reportedType == "knuckles") return Headset::Index;
+        if (reportedType == "vive_controller") return Headset::ViveWands;
+        if (reportedType == "oculus_touch") {
+            if (index == Status::RockActive) return Headset::Index;
+            if (vive == Status::RockActive) return Headset::ViveWands;
+            return Headset::NoBindingNeeded;
+        }
+        if (reportedType == "frame_controller") return Headset::NoBindingNeeded;
+        return Headset::Other;
+    }
+
     // The file:/// URL SteamVR accepts for a Windows path: forward slashes only.
     [[nodiscard]] inline std::string fileUrl(std::string_view windowsPath)
     {

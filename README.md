@@ -66,7 +66,7 @@ ROCK expects the Oculus Touch (Quest) button layout. For these controllers the a
 | HTC Vive wands | `legacy_bindings_vive_controller_rock.json` | ROCK - Vive wands as Touch |
 | Steam Frame | `legacy_bindings_frame_controller_rock.json` | ROCK - Steam Frame as Touch |
 
-On SteamVR, ROCK sets the Index and Vive binding for you. When your controllers use SteamVR's default binding for Fallout 4 VR, the setup wizard opens by itself (see below) and offers ROCK's binding: choose "Use ROCK's binding", then restart the game. ROCK saves the binding in `Mods_Config\ROCK\SteamVR\` and sets it for Fallout 4 VR only; it never replaces a binding you chose in SteamVR. `OfferSteamVRBinding` in `[ControllerInput]` turns the automatic offer off.
+On SteamVR, ROCK sets the Index and Vive binding for you. When your controllers use SteamVR's default binding for Fallout 4 VR, the setup wizard opens by itself (see below): choose your controllers on its first page, finish the wizard, then restart the game. ROCK saves the binding in `Mods_Config\ROCK\SteamVR\` and sets it for Fallout 4 VR only; it never replaces a binding you chose in SteamVR. `OfferSteamVRBinding` in `[ControllerInput]` turns the automatic offer off.
 
 To set a binding by hand instead:
 
@@ -76,9 +76,11 @@ To set a binding by hand instead:
 
 Menu names can differ between SteamVR versions. After that, the `[ControllerInput.Left]` and `[ControllerInput.Right]` tables of `ROCK.toml` can move any button further.
 
-### Choosing your controls
+### The setup wizard
 
-ROCK's setup wizard sets the button and gesture of each action: open it from PALM's Config (the ROCK page's Setup wizard button), choose an action, press the button you want, then pick press, tap, hold or double tap. The wizard also walks through ROCK's main options one page each and saves on its last page. The same choices are the `[Bindings]` table of `ROCK.toml`.
+ROCK's setup wizard asks what matters on your first start. Its first page asks which controllers you play with and says what ROCK does for them: Index controllers and Vive wands get ROCK's SteamVR binding. The next pages set the main choices by topic (grabbing, holding weapons, aiming and shooting, grenades and healing, the stick click and menus), then a review saves them. "Use recommended settings" sets the binding and ROCK's recommendation for every option at once. Closing the wizard saves no option, but still sets ROCK's binding for the controllers SteamVR reports unless you chose others. Open it again any time from PALM's Config (the ROCK page's Setup wizard button).
+
+Everything else, including which button does what (the `[Bindings]` table), is in `ROCK.toml` and PALM's Config.
 
 The wizard opens by itself the first time you play with this ROCK, and again when an update brings something new to show: 10 seconds after you are in the game with no menu, message box, loading screen or scene in the way. On a new game it waits until you have left the mirror. If a message box or menu interrupts it, it comes back where you were once the game is free again. `ShownEdition` in `[SetupWizard]` records what you have seen; set it to 0 to see the wizard again at the next game start.
 

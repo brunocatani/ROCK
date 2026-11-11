@@ -48,7 +48,7 @@ namespace rock::setup_wizard
 
         // Raise when the wizard gains something every player should see once (a new page, new
         // controls or options): players whose [SetupWizard] ShownEdition is lower see it again.
-        constexpr int kEdition = 1;
+        constexpr int kEdition = 2;
         // How long the game has to stay free before the wizard opens by itself.
         constexpr auto kFreeTime = std::chrono::seconds(10);
         std::atomic<bool> g_newGameStarting{ false };
@@ -92,8 +92,8 @@ namespace rock::setup_wizard
 
         std::atomic<bool> g_openRequested{ false };
 
-        // Game thread, every input frame: keeps the controllers captured while open and
-        // feeds the capture page.
+        // Game thread, every input frame: keeps the controllers captured while open, so the
+        // game and ROCK's gameplay ignore the buttons that work the panel.
         void RPSUI_CALL onInput(const rpsui::api::input::Frame* frame, void*) noexcept
         {
             auto& s = state();
@@ -104,11 +104,6 @@ namespace rock::setup_wizard
             capture.buttons[0] = kCaptureButtons;
             capture.buttons[1] = kCaptureButtons;
             (void)input->capture(s.inputToken.load(std::memory_order_acquire), &capture);
-            try {
-                s.wizard.feedCapture(input_remap_runtime::takeBindingCaptureSample());
-            } catch (...) {
-                ROCK_LOG_SAMPLE_WARN(Config, 5000, "Setup wizard input failed");
-            }
         }
 
         // ---- binding -----------------------------------------------------------------------
@@ -207,21 +202,18 @@ namespace rock::setup_wizard
             return true;
         }
 
-        // Frame thread, outside the panel: SteamVR and the settings store are called here,
-        // then the result is handed to the panel.
-        void applyBindingChoice(State& s, BindingChoice choice, const steamvr_binding::Inspection& inspection)
+        // Frame thread, outside the panel: the player's finish. The settings store and SteamVR
+        // are called here, then the result goes back to the panel. False: close the wizard.
+        [[nodiscard]] bool finish(State& s, const Requests& requests)
         {
-            std::string error;
-            bool applied = false;
-            steamvr_binding::Inspection after;
-            if (choice == BindingChoice::UseRock) {
-                applied = steamvr_binding::apply(inspection, error);
-                if (applied) after = steamvr_binding::inspect();
-                else ROCK_LOG_WARN(Config, "Setup wizard could not set ROCK's SteamVR binding: {}", error);
-            } else {
-                (void)settings::keepSteamVrBinding(error);
+            FinishResult result{};
+            settings::write(requests.writes, result);
+            if (requests.binding.action == setup_wizard_policy::BindingAction::Install) {
+                result.bindingInstalled = steamvr_binding::apply(requests.inspection, result.bindingError);
+                if (!result.bindingInstalled)
+                    ROCK_LOG_WARN(Config, "Setup wizard could not set ROCK's SteamVR binding: {}", result.bindingError);
             }
-            s.wizard.finishBindingChoice(choice, applied, std::move(error), std::move(after));
+            return s.wizard.finished(*requests.finish, result);
         }
 
         // Frame thread, while the wizard is closed. Once the game has been free for kFreeTime
@@ -291,7 +283,6 @@ namespace rock::setup_wizard
             s.wizard.setOpen(false);
             s.autoOpened = false;
             s.wizard.clearRequests();
-            input_remap_runtime::setSetupWizardInput(false);
             if (s.framework && s.panel) (void)present(s, false);
             ROCK_LOG_INFO(Config, "Setup wizard closed ({})", reason);
         }
@@ -326,12 +317,11 @@ namespace rock::setup_wizard
                     } else {
                         if (!resume) {
                             auto start = settings::read();
-                            start.steamVr = steamvr_binding::inspect();
+                            start.steamVr = steamvr_binding::read();
                             s.wizard.begin(std::move(start));
                         }
                         s.wizard.clearRequests();
                         if (present(s, true)) {
-                            input_remap_runtime::setSetupWizardInput(true);
                             s.wizard.setOpen(true);
                             s.autoOpened = automatic;
                             s.openedThisRun = true;
@@ -346,11 +336,8 @@ namespace rock::setup_wizard
                 autoOpenWhenFree(s);
                 return;
             }
-            auto requests = s.wizard.takeRequests();
-            if (requests.save) s.wizard.finishSave(settings::write(requests.writes));
-            if (requests.bindingChoice != BindingChoice::None)
-                applyBindingChoice(s, requests.bindingChoice, requests.steamVr);
-            if (requests.close) {
+            const auto requests = s.wizard.takeRequests();
+            if (requests.close || (requests.finish && !finish(s, requests))) {
                 close(s, "closed by the player");
                 return;
             }

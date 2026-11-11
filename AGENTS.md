@@ -181,7 +181,7 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp` for engine math. `
 
 - `Data/F4SE/Plugins/ROCK.dll`; log `Documents/My Games/Fallout4VR/F4SE/ROCK.log`.
 - `Documents/My Games/Fallout4VR/Mods_Config/ROCK/`: `ROCK.toml`, the optional `ROCK_Developer.toml`, `SavedGrabOffsets/`, `AuthoredWeaponGripCache/` and `SteamVR/`. Runtime code resolves the Documents known folder.
-- SteamVR: at the player's choice in the setup wizard, ROCK sets Fallout 4 VR's binding for Index or Vive controllers through `IVRSettings`, only over SteamVR's default binding and never under OpenComposite. It never replaces a binding the player chose or edits SteamVR's files.
+- SteamVR: when the setup wizard finishes (for the controllers the player chose there, otherwise the detected ones while `OfferSteamVRBinding` is on), ROCK sets Fallout 4 VR's binding for Index or Vive controllers through `IVRSettings`, only over SteamVR's default binding and never under OpenComposite. It never replaces a binding the player chose or edits SteamVR's files.
 - Co-save `ROCK`, record `HNDS` version 1 (`weapon/equip/WeaponHandSave.cpp`): each equipped weapon's hand and each hand's melee reverse grip. A layout change needs a new record version.
 
 ## What ROCK does not own

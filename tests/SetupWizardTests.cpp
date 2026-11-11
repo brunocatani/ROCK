@@ -3,13 +3,14 @@
 #include "setup-wizard/SteamVrBindingPolicy.h"
 
 #include <cstdio>
+#include <fstream>
+#include <map>
+#include <string>
 
 namespace
 {
     namespace wizard = rock::setup_wizard_policy;
-    namespace fb = rock::function_binding_policy;
-    using fb::Function;
-    using fb::Source;
+    namespace sv = rock::steamvr_binding_policy;
 
     int g_failures = 0;
 
@@ -21,111 +22,105 @@ namespace
         }
     }
 
-    // The defaults are what every player starts from: the wizard must not warn about them.
-    void defaultsHaveNoConflict()
+    // "Table.Key" -> value, from the shipped example file (every key at its default).
+    [[nodiscard]] std::map<std::string, std::string> exampleDefaults()
     {
-        const auto found = wizard::conflicts(fb::homeBindings());
-        for (std::size_t i = 0; i < found.count; ++i)
-            std::printf("default conflict: %s / %s\n", fb::functionKey(found.items[i].a).data(),
-                fb::functionKey(found.items[i].b).data());
-        expect("default bindings conflict", found.count == 0);
+        std::map<std::string, std::string> values;
+        std::ifstream file(std::string(ROCK_CONFIG_REFERENCE_DIR) + "/ROCK_example.toml");
+        std::string line, table;
+        while (std::getline(file, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            if (line.size() > 2 && line.front() == '[') {
+                table = line.substr(1, line.find(']') - 1);
+                continue;
+            }
+            const auto equals = line.find(" = ");
+            if (line.empty() || line.front() == '#' || equals == std::string::npos) continue;
+            auto value = line.substr(equals + 3);
+            if (value.size() >= 2 && value.front() == '"' && value.back() == '"') value = value.substr(1, value.size() - 2);
+            values[table + "." + line.substr(0, equals)] = value;
+        }
+        return values;
     }
 
-    void movedBindingsConflict()
+    // Each option is a player setting the catalog knows, with distinct choices that
+    // include the value ROCK ships, on a page that exists.
+    void optionsComeFromTheCatalog()
     {
-        auto bindings = fb::homeBindings();
-        bindings[static_cast<std::size_t>(Function::Vats)] = *fb::parseBinding("primary tap a");
-        const auto clashes = wizard::clashesWith(bindings, Function::Vats, bindings[static_cast<std::size_t>(Function::Vats)]);
-        expect("a tap of A clashes with Reload's tap", (clashes & fb::functionBit(Function::Reload)) != 0);
-        expect("Scope's hold does not clash with a tap", (clashes & fb::functionBit(Function::Scope)) == 0);
-        const auto chord = *fb::parseBinding("primary tap a +primary grip");
-        expect("a chord does not clash with the plain button",
-            wizard::clashesWith(bindings, Function::Vats, chord) == 0);
-        const auto left = *fb::parseBinding("left tap a");
-        expect("firing and left can meet", wizard::clashesWith(bindings, Function::Vats, left) != 0);
-        const auto offhand = *fb::parseBinding("offhand tap trigger");
-        expect("support and offhand can meet",
-            (wizard::clashesWith(bindings, Function::Vats, offhand) & fb::functionBit(Function::SupportTrigger)) != 0);
-    }
-
-    [[nodiscard]] wizard::CaptureSample sample(std::uint32_t left, std::uint32_t right)
-    {
-        return wizard::CaptureSample{ { left, right } };
-    }
-
-    [[nodiscard]] constexpr std::uint32_t bit(Source source) { return 1u << static_cast<unsigned>(source); }
-
-    void captureNeedsAFreshPress()
-    {
-        wizard::Capture capture;
-        capture.update(sample(0, bit(Source::Trigger)));
-        capture.update(sample(0, 0));
-        expect("a held button from the click that started the capture is ignored", !capture.result());
-        capture.update(sample(bit(Source::Grip), 0));
-        capture.update(sample(0, 0));
-        expect("captured the left grip", capture.result() && capture.result()->control.isLeft &&
-            capture.result()->control.source == Source::Grip && !capture.result()->modifier);
-    }
-
-    // A Touch grip press also reports the grip click; a stick click also lights its pad region.
-    void capturePhysicalCompanions()
-    {
-        wizard::Capture capture;
-        capture.update(sample(0, 0));
-        capture.update(sample(bit(Source::Grip) | bit(Source::GripClick), 0));
-        capture.update(sample(0, 0));
-        expect("grip with its click is the grip", capture.result() && capture.result()->control.source == Source::Grip &&
-            !capture.result()->modifier);
-        capture.start();
-        capture.update(sample(0, 0));
-        capture.update(sample(0, bit(Source::Stick) | bit(Source::PadCenter)));
-        capture.update(sample(0, 0));
-        expect("stick click with its region is the stick click",
-            capture.result() && capture.result()->control.source == Source::Stick && !capture.result()->modifier);
-    }
-
-    void captureChord()
-    {
-        wizard::Capture capture;
-        capture.update(sample(0, 0));
-        capture.update(sample(0, bit(Source::Grip)));
-        capture.update(sample(0, bit(Source::Grip) | bit(Source::UpperFace)));
-        capture.update(sample(0, bit(Source::UpperFace)));
-        capture.update(sample(0, 0));
-        const auto& result = capture.result();
-        expect("chord captured", result && result->control.source == Source::UpperFace && result->modifier &&
-            result->modifier->source == Source::Grip);
-    }
-
-    // Every option page names a real setting whose help yields its choices.
-    void optionPagesComeFromTheCatalog()
-    {
-        for (const auto& page : wizard::kOptionPages) {
+        const auto defaults = exampleDefaults();
+        expect("example file read", !defaults.empty());
+        for (const auto& option : wizard::kOptions) {
             const rock::config::SettingMetadata* found = nullptr;
             for (const auto& setting : rock::config::kSettingMetadata)
-                if (setting.table == page.section && setting.key == page.key) found = &setting;
-            expect("option page names a setting", found != nullptr);
-            if (!found) continue;
-            // The store knows each type; here a numbered mode shows in its help.
-            const bool integer = found->description.find("\n1 = ") != std::string_view::npos;
-            const auto kind = integer ? wizard::ValueKind::Integer
-                : page.key == "DefaultHand" ? wizard::ValueKind::Text
-                                            : wizard::ValueKind::Boolean;
-            const auto choices = wizard::choicesFor(page, kind, found->description);
-            if (choices.count < 2) std::printf("page %s.%s: %zu choices\n", page.section.data(), page.key.data(), choices.count);
-            expect("option page has choices", choices.count >= 2);
+                if (setting.table == option.section && setting.key == option.key) found = &setting;
+            const std::string name = std::string(option.section) + "." + std::string(option.key);
+            if (!found) std::printf("not in the catalog: %s\n", name.c_str());
+            expect("option names a setting", found != nullptr);
+            expect("option is a player setting", found && found->group == rock::api::configuration::Group::Consumer);
+            expect("option is on a page", option.page < wizard::kPages.size());
+            expect("option has two choices or more", option.choiceCount() >= 2);
+            for (std::size_t i = 0; i < option.choiceCount(); ++i)
+                for (std::size_t j = i + 1; j < option.choiceCount(); ++j)
+                    expect("choices differ", option.choices[i].value != option.choices[j].value);
+            const auto shipped = defaults.find(name);
+            if (shipped == defaults.end() || !option.find(shipped->second))
+                std::printf("default of %s is not a choice\n", name.c_str());
+            expect("the default is a choice", shipped != defaults.end() && option.find(shipped->second));
         }
-        const auto equip = wizard::numberedChoices(
-            "1 = Trigger Equip with no drop (game default). 2 = Trigger Equip with Toggle Drop.\n"
-            "3 = Trigger Equip with Auto Drop. 4 = Auto Equip (always Auto Drop).\nTrigger Equip: pull");
-        expect("modes over two lines", equip.count == 4 && equip.items[3].value == "4" &&
-            equip.items[3].label == "Auto Equip (always Auto Drop)");
+        for (std::size_t page = 0; page < wizard::kPages.size(); ++page) {
+            bool used = false;
+            for (const auto& option : wizard::kOptions) used |= option.page == page;
+            expect("every page has an option", used);
+        }
+    }
+
+    // ROCK's binding presents Index controllers and wands as Touch: the setting tells them apart.
+    void detection()
+    {
+        using sv::Headset;
+        using sv::Status;
+        const auto offer = Status::Offer, rock = Status::RockActive;
+        expect("Index", sv::detectHeadset(true, "knuckles", offer, offer) == Headset::Index);
+        expect("wands", sv::detectHeadset(true, "vive_controller", offer, offer) == Headset::ViveWands);
+        expect("Touch", sv::detectHeadset(true, "oculus_touch", offer, offer) == Headset::NoBindingNeeded);
+        expect("Index under ROCK's binding", sv::detectHeadset(true, "oculus_touch", rock, offer) == Headset::Index);
+        expect("wands under ROCK's binding", sv::detectHeadset(true, "oculus_touch", offer, rock) == Headset::ViveWands);
+        expect("Steam Frame", sv::detectHeadset(true, "frame_controller", offer, offer) == Headset::NoBindingNeeded);
+        expect("something else", sv::detectHeadset(true, "holographic_controller", offer, offer) == Headset::Other);
+        expect("nothing on", !sv::detectHeadset(true, "", offer, offer));
+        expect("OpenComposite", !sv::detectHeadset(false, "knuckles", offer, offer));
+    }
+
+    // Finishing installs for the player's choice, or the detected controllers while ROCK
+    // still offers its binding, and only over SteamVR's default.
+    void finishingPlansTheControllers()
+    {
+        using sv::Headset;
+        using sv::Status;
+        using wizard::BindingAction;
+        const auto offer = Status::Offer;
+        auto plan = wizard::planControllers(Headset::Index, Headset::Index, offer, offer, true);
+        expect("chosen Index installs", plan.action == BindingAction::Install && plan.controller == sv::Controller::Index);
+        plan = wizard::planControllers(std::nullopt, Headset::ViveWands, offer, offer, true);
+        expect("no choice installs for the detected wands",
+            plan.action == BindingAction::Install && plan.controller == sv::Controller::ViveWand);
+        plan = wizard::planControllers(std::nullopt, Headset::Index, offer, offer, false);
+        expect("no choice and the offer off installs nothing", plan.action == BindingAction::None);
+        plan = wizard::planControllers(Headset::Index, std::nullopt, offer, offer, false);
+        expect("a choice installs even with the offer off", plan.action == BindingAction::Install);
+        plan = wizard::planControllers(Headset::Index, Headset::Index, Status::PlayersOwn, offer, true);
+        expect("the player's own binding stays", plan.action == BindingAction::None);
+        plan = wizard::planControllers(Headset::Index, Headset::Index, Status::RockActive, offer, true);
+        expect("ROCK's binding already set", plan.action == BindingAction::None);
+        plan = wizard::planControllers(Headset::NoBindingNeeded, Headset::Index, offer, offer, true);
+        expect("choosing other controllers over offered ones stops the offer", plan.action == BindingAction::StopOffering);
+        plan = wizard::planControllers(Headset::NoBindingNeeded, Headset::NoBindingNeeded, offer, offer, true);
+        expect("nothing to stop", plan.action == BindingAction::None);
     }
 
     // ROCK offers its SteamVR binding only over SteamVR's default and never replaces the player's choice.
     void steamVrBindingOffer()
     {
-        namespace sv = rock::steamvr_binding_policy;
         const auto index = sv::controllerFor("knuckles");
         const auto vive = sv::controllerFor("vive_controller");
         expect("Index and Vive wands have a binding", index && vive);
@@ -152,12 +147,9 @@ namespace
 
 int main()
 {
-    defaultsHaveNoConflict();
-    movedBindingsConflict();
-    captureNeedsAFreshPress();
-    capturePhysicalCompanions();
-    captureChord();
-    optionPagesComeFromTheCatalog();
+    optionsComeFromTheCatalog();
+    detection();
+    finishingPlansTheControllers();
     steamVrBindingOffer();
     if (g_failures == 0) std::printf("ROCK setup wizard tests passed\n");
     return g_failures == 0 ? 0 : 1;

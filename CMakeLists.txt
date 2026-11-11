@@ -461,6 +461,7 @@ if(BUILD_ROCK_TESTS)
   add_executable(ROCKSetupWizardTests "${ROOT_DIR}/tests/SetupWizardTests.cpp")
   target_compile_features(ROCKSetupWizardTests PRIVATE cxx_std_23)
   target_include_directories(ROCKSetupWizardTests PRIVATE ${SOURCE_DIR} "${ROCK_PUBLIC_INCLUDE_DIR}" "${ROCK_OPENVR_ROOT}")
+  target_compile_definitions(ROCKSetupWizardTests PRIVATE ROCK_CONFIG_REFERENCE_DIR="${ROOT_DIR}/data/config")
   add_rock_test(ROCKSetupWizardTests)
 
   add_executable(ROCKInputRemapPolicyTests

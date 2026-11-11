@@ -23,6 +23,31 @@ namespace rock::steamvr_binding
         std::string currentUrl;
     };
 
+    // What SteamVR uses for Fallout 4 VR: the controllers it reports and the binding set for
+    // each controller ROCK has a binding for.
+    struct State
+    {
+        // False under OpenComposite or without OpenVR: ROCK can set nothing.
+        bool steamVr{ false };
+        // Prop_ControllerType_String of the controllers on now; empty when none is on.
+        std::string reportedType;
+        Inspection index;
+        Inspection vive;
+
+        [[nodiscard]] const Inspection& of(steamvr_binding_policy::Controller controller) const noexcept
+        {
+            return controller == steamvr_binding_policy::Controller::Index ? index : vive;
+        }
+
+        [[nodiscard]] std::optional<steamvr_binding_policy::Headset> detected() const noexcept
+        {
+            return steamvr_binding_policy::detectHeadset(steamVr, reportedType, index.status, vive.status);
+        }
+    };
+
+    [[nodiscard]] State read() noexcept;
+
+    // The detected controllers' inspection (State::detected); NotApplicable when they need none.
     [[nodiscard]] Inspection inspect() noexcept;
 
     // Installs the template and sets it for the inspected controller, then reads the

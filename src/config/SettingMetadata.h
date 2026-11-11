@@ -251,7 +251,8 @@ namespace rock::config
             "for Fallout 4 VR, the setup wizard opens by itself once per game start, when no menu or scene is in "
             "the way, and offers ROCK's binding (the default "
             "binding turns A and X into grip). It never replaces a binding you chose in SteamVR.\nFalse: the wizard "
-            "opens only when you open it; it still offers the binding then.",
+            "opens only when you open it; it still offers the binding then. Choosing other controllers in the "
+            "wizard sets this.",
             api::configuration::Group::Consumer },
         { "ControllerInput", "PipboyPauseHoldSeconds", "09. Controller Input",
             "Pip-Boy and Pause Hold Time\nTap left Y to open the Pip-Boy; hold it this many seconds to open the Pause "
@@ -286,7 +287,7 @@ namespace rock::config
             api::configuration::Group::Consumer },
         { "SetupWizard", "ShownEdition", "09. Controller Input",
             "Setup Wizard Shown\nThe setup wizard opens by itself once, 10 seconds after you are in the game with no "
-            "menu or scene in the way, whenever this ROCK brings a newer edition of it (new controls or options to "
+            "menu or scene in the way, whenever this ROCK brings a newer edition of it (new pages or options to "
             "show). On a new game it waits until you leave the mirror. ROCK writes the edition here when the wizard "
             "opens.\n0 = show it at the next game start. 999 = never open it by itself.",
             api::configuration::Group::Consumer },
@@ -294,8 +295,8 @@ namespace rock::config
             "Bindings\nThe control and gesture of each function: \"<hand> <gesture> <control>\", or \"none\".\n"
             "Hands: firing (the hand on the weapon's firing grip), support, primary, offhand, left, right, each.\n"
             "Gestures: press (acts while held), tap, hold, double (double tap).\nControls: as in the button layout "
-            "above. Add \"+<hand> <control>\" for a button that must be held at the same time.\nThe ROCK setup "
-            "wizard, opened from PALM's Config, sets these by pressing the control.\nThis key: grab with each hand.",
+            "above. Add \"+<hand> <control>\" for a button that must be held at the same time.\nThis key: grab "
+            "with each hand.",
             api::configuration::Group::Consumer },
         { "Bindings", "Fire", "09. Controller Input", "Fire the equipped weapon.", api::configuration::Group::Consumer },
         { "Bindings", "SupportTrigger", "09. Controller Input",

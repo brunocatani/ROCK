@@ -152,50 +152,70 @@ namespace rock::steamvr_binding
         }
     }
 
-    Inspection inspect() noexcept
+    State read() noexcept
     {
-        Inspection result{};
+        State state{};
         try {
             refreshInstalledTemplates();
             auto* system = vr::VRSystem();
             auto* settings = vr::VRSettings();
             auto* applications = vr::VRApplications();
             if (!system || !settings || !applications || !servedBySteamVr(settings)) {
-                report(result, "not SteamVR's settings (OpenComposite or no OpenVR); nothing to offer");
-                return result;
+                report({}, "not SteamVR's settings (OpenComposite or no OpenVR); nothing to set");
+                return state;
             }
-            const auto type = controllerType(*system);
-            result.controller = policy::controllerFor(type);
-            if (!result.controller) {
-                report(result, "controller \"" + type + "\" needs no binding");
-                return result;
-            }
+            state.steamVr = true;
+            state.reportedType = controllerType(*system);
             std::array<char, vr::k_unMaxApplicationKeyLength> key{};
             if (applications->GetApplicationKeyByProcessId(GetCurrentProcessId(), key.data(),
                     static_cast<std::uint32_t>(key.size())) != vr::VRApplicationError_None ||
                 !key[0]) {
-                report(result, "SteamVR did not name this game's app key; nothing offered");
-                return result;
+                report({}, "SteamVR did not name this game's app key; nothing to set");
+                return state;
             }
-            result.appKey = key.data();
-            std::array<char, 1024> url{};
-            vr::EVRSettingsError error{ vr::VRSettingsError_None };
-            settings->GetString(result.appKey.c_str(), policy::settingKey(result.controller->controllerType).c_str(), url.data(),
-                static_cast<std::uint32_t>(url.size()), &error);
-            if (error != vr::VRSettingsError_None && error != vr::VRSettingsError_UnsetSettingHasNoDefault) {
-                report(result, std::string("SteamVR setting unreadable (") + settings->GetSettingsErrorNameFromEnum(error) + ")");
+            // Fallout 4 VR's setting for one controller ROCK has a binding for.
+            const auto inspectType = [&](std::string_view type) {
+                Inspection result{};
+                result.controller = policy::controllerFor(type);
+                result.appKey = key.data();
+                std::array<char, 1024> url{};
+                vr::EVRSettingsError error{ vr::VRSettingsError_None };
+                settings->GetString(result.appKey.c_str(), policy::settingKey(type).c_str(), url.data(),
+                    static_cast<std::uint32_t>(url.size()), &error);
+                if (error != vr::VRSettingsError_None && error != vr::VRSettingsError_UnsetSettingHasNoDefault) {
+                    report(result, std::string("SteamVR setting unreadable (") + settings->GetSettingsErrorNameFromEnum(error) + ")");
+                    return result;
+                }
+                result.currentUrl = url.data();
+                result.status = policy::classify(true, result.controller, result.currentUrl);
                 return result;
+            };
+            state.index = inspectType("knuckles");
+            state.vive = inspectType("vive_controller");
+            std::string note = "controllers \"" + state.reportedType + "\"";
+            const auto detected = state.detected();
+            if (const auto controller = detected ? policy::controllerOf(*detected) : std::nullopt) {
+                const auto& inspection = state.of(*controller);
+                note += inspection.status == policy::Status::Offer ? ": SteamVR's default binding; ROCK offers its own"
+                    : inspection.status == policy::Status::RockActive ? ": ROCK's binding is set"
+                                                                       : ": the player's own binding is set; left alone";
+                report(inspection, note);
+            } else {
+                report({}, note + " need no binding from ROCK");
             }
-            result.currentUrl = url.data();
-            result.status = policy::classify(true, result.controller, result.currentUrl);
-            report(result, result.status == policy::Status::Offer ? "SteamVR's default binding; ROCK offers its own"
-                    : result.status == policy::Status::RockActive ? "ROCK's binding is set"
-                                                                   : "the player's own binding is set; left alone");
         } catch (...) {
             ROCK_LOG_WARN(Config, "SteamVR binding: inspection failed");
             return {};
         }
-        return result;
+        return state;
+    }
+
+    Inspection inspect() noexcept
+    {
+        const auto state = read();
+        const auto detected = state.detected();
+        const auto controller = detected ? policy::controllerOf(*detected) : std::nullopt;
+        return controller ? state.of(*controller) : Inspection{};
     }
 
     bool apply(const Inspection& inspection, std::string& error) noexcept

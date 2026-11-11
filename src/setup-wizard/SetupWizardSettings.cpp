@@ -9,15 +9,12 @@ namespace rock::setup_wizard::settings
     {
         SessionStart start{};
         start.bindings = g_rockConfig.rockFunctionBindings;
-        start.options = optionPages();
-        (void)g_rockConfig.visitSettings(api::configuration::Group::Consumer, collectOption, &start.options);
-        std::erase_if(start.options, [](const OptionState& option) { return !option.found; });
+        (void)g_rockConfig.visitSettings(api::configuration::Group::Consumer, collectSettings, &start);
         return start;
     }
 
-    SaveResult write(const std::vector<SettingWrite>& writes)
+    void write(const std::vector<SettingWrite>& writes, FinishResult& result)
     {
-        SaveResult result{};
         for (const auto& value : writes) {
             std::string error;
             if (g_rockConfig.persistSetting(api::configuration::Group::Consumer, value.section.c_str(), value.key.c_str(),
@@ -28,18 +25,6 @@ namespace rock::setup_wizard::settings
             result.errors.push_back(value.section + "." + value.key + ": " + error);
             ROCK_LOG_WARN(Config, "Setup wizard could not save {}.{}: {}", value.section, value.key, error);
         }
-        ROCK_LOG_INFO(Config, "Setup wizard saved ({} errors)", result.errors.size());
-        return result;
-    }
-
-    bool keepSteamVrBinding(std::string& error)
-    {
-        if (!g_rockConfig.persistSetting(api::configuration::Group::Consumer, "ControllerInput", "OfferSteamVRBinding",
-                "false", error)) {
-            ROCK_LOG_WARN(Config, "Setup wizard could not save ControllerInput.OfferSteamVRBinding: {}", error);
-            return false;
-        }
-        ROCK_LOG_INFO(Config, "Setup wizard: the player keeps SteamVR's binding; no automatic offer from now on");
-        return true;
+        if (!writes.empty()) ROCK_LOG_INFO(Config, "Setup wizard saved {} values ({} errors)", writes.size(), result.errors.size());
     }
 }
