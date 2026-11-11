@@ -761,6 +761,9 @@ namespace rock
         RE::NiTransform looseObjectSharedProxyCorrection{};
         std::uint64_t looseObjectSharedPeerTrace = 0;
         bool looseObjectSharedPrimaryIsLeft = false;
+        // The pair's grip points are too close to aim the object by
+        // (Hand::coordinateLooseObjectProxy): it follows the primary hand.
+        bool looseObjectSharedWithoutPivot = false;
         bool equippedWeaponTransfer = false;
         bool hasLooseObjectSoloProxyCorrection = false;
         bool hasTelemetryCapture = false;
@@ -814,6 +817,7 @@ namespace rock
             looseObjectSharedProxyCorrection = {};
             looseObjectSharedPeerTrace = 0;
             looseObjectSharedPrimaryIsLeft = false;
+            looseObjectSharedWithoutPivot = false;
             equippedWeaponTransfer = false;
             hasLooseObjectSoloProxyCorrection = false;
             hasTelemetryCapture = false;

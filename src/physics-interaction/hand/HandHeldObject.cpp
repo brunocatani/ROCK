@@ -578,6 +578,15 @@ namespace rock
                 sameBody, isHoldingLooseWeapon() && peer->isHoldingLooseWeapon());
         const auto finishOldPair = [](Hand& hand, std::uint64_t peerTrace) {
             auto& frame = hand._grabFrame;
+            if (frame.looseObjectSharedPeerTrace && frame.looseObjectSharedPeerTrace != peerTrace &&
+                frame.looseObjectSharedWithoutPivot) {
+                // The object was never turned by the pair, so there is no
+                // shared pose to keep: the remaining hand holds it the way it
+                // grabbed it.
+                frame.looseObjectSharedWithoutPivot = false;
+                frame.looseObjectSharedPeerTrace = 0;
+                ROCK_LOG_INFO(Hand, "{} hand close two-hand hold ended; holding as grabbed", hand.handName());
+            }
             if (frame.looseObjectSharedPeerTrace && frame.looseObjectSharedPeerTrace != peerTrace) {
                 // A remaining firing grip returns to its solo aim. A support
                 // carry or prop retains its acquired orientation.
@@ -702,6 +711,20 @@ namespace rock
         const auto supportBase = transform_math::localPointToWorld(root, supportLocal);
         const float separation =
             pointDistanceGameUnits(transform_math::localPointToWorld(root, primaryLocal), supportBase);
+        /*
+         * The pivot aims the object along the line between the two hands. With
+         * the grip points closer together than the hands can be (two pinches
+         * on one cartridge are about a unit apart, the hands' own tremor is
+         * larger), that line swings with every tremor: the hands fought over
+         * the object, and the hand left holding it kept whatever angle the
+         * fight ended on. Such an object is not aimed: it stays as the first
+         * hand holds it, the second hand holds on to it, and when either lets
+         * go the other holds it the way it grabbed it. The grip points are
+         * fixed on the object, so a pair never changes kind while it lasts.
+         */
+        constexpr float kMinimumPivotSeparationGameUnits = 6.0f;
+        const bool withoutPivot = !isHoldingLooseWeapon() && !peer->isHoldingLooseWeapon() &&
+            separation < kMinimumPivotSeparationGameUnits;
         const auto lockedSupport =
             makeLockedSupportGripTarget(primaryTarget, supportTarget, supportBase, separation, 0.001f);
         const WeaponTwoHandedSolverInput<RE::NiTransform, RE::NiPoint3> solverInput{
@@ -733,12 +756,12 @@ namespace rock
                     handName());
                 return isFiniteNiTransform(proxyWorld);
             }
-        } else if (!sharedFiringStation) {
+        } else if (!sharedFiringStation && !withoutPivot) {
             solved = solveTwoHandedWeaponTransformFrikPivot(solverInput);
         }
         // Coincident seats cannot define an aim axis. Both constraints then
         // share the primary carry target until separation defines that axis.
-        if (!sharedFiringStation && !solved.solved) {
+        if (!sharedFiringStation && !withoutPivot && !solved.solved) {
             ROCK_LOG_SAMPLE_WARN(Hand, 1000,
                 "Loose two-hand pivot degenerate axis: separation={:.4f}; sharing primary target", separation);
         }
@@ -827,9 +850,11 @@ namespace rock
         _grabFrame.looseObjectSharedProxyCorrection =
             transform_math::composeTransforms(transform_math::invertTransform(physicalNi), targetNi);
         if (!_grabFrame.looseObjectSharedPeerTrace) {
-            ROCK_LOG_INFO(Hand, "{} hand loose two-hand pivot started ref={:08X} primary={} separation={:.3f}",
-                handName(), getHeldRef()->GetFormID(), primary.handName(), separation);
+            ROCK_LOG_INFO(Hand, "{} hand loose two-hand {} started ref={:08X} primary={} separation={:.3f}",
+                handName(), withoutPivot ? "close hold (no pivot, follows the primary hand)" : "pivot",
+                getHeldRef()->GetFormID(), primary.handName(), separation);
         }
+        _grabFrame.looseObjectSharedWithoutPivot = withoutPivot;
         _grabFrame.looseObjectSharedPeerTrace = peer->_grabFrame.traceId;
         _grabFrame.looseObjectSharedPrimaryIsLeft = primary._isLeft;
         proxyWorld = targetProxy;

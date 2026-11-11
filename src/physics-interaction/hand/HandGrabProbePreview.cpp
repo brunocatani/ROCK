@@ -446,36 +446,6 @@ namespace rock
         }
     }
 
-    // The selected object's size: the diameter of its mesh's bounding sphere
-    // about the vertex centroid, whatever way it lies. Infinite when the probe
-    // mesh is not read (evaluateGrabProbeContact reads it).
-    float Hand::selectedObjectSpanGameUnits() const
-    {
-        const auto& cache = _grabFingerProbePreview;
-        const auto& selection = _currentSelection;
-        auto* root = selection.refr ? selection.refr->Get3D() : nullptr;
-        auto* objectNode = selection.hitNode ? selection.hitNode : root;
-        if (!cache.extracted || cache.localTriangles.empty() || !objectNode ||
-            cache.objectNodeKey != reinterpret_cast<std::uintptr_t>(objectNode) ||
-            !(objectNode->world.scale > 0.0001f)) {
-            return (std::numeric_limits<float>::infinity)();
-        }
-        RE::NiPoint3 sum{};
-        for (const auto& triangle : cache.localTriangles) {
-            sum = sum + triangle.v0 + triangle.v1 + triangle.v2;
-        }
-        const RE::NiPoint3 centroid = sum * (1.0f / (3.0f * static_cast<float>(cache.localTriangles.size())));
-        float farthestSquared = 0.0f;
-        for (const auto& triangle : cache.localTriangles) {
-            for (const auto& vertex : { triangle.v0, triangle.v1, triangle.v2 }) {
-                const RE::NiPoint3 d = vertex - centroid;
-                farthestSquared = (std::max)(farthestSquared, d.x * d.x + d.y * d.y + d.z * d.z);
-            }
-        }
-        const float span = 2.0f * std::sqrt(farthestSquared) * objectNode->world.scale;
-        return std::isfinite(span) ? span : (std::numeric_limits<float>::infinity)();
-    }
-
     GrabProbeContact Hand::evaluateGrabProbeContact()
     {
         GrabProbeContact result{};

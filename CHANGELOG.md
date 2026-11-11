@@ -164,9 +164,9 @@
   your thumb and index finger counts as touched even when neither finger's
   closing path meets it, and the two fingers bend onto it instead of closing
   beside it.
-- Small objects pass from hand to hand: grabbing something too small for two
-  hands, such as a cartridge, with your other hand takes it, and the first hand
-  lets go. Both hands no longer hold it at once and turn it against each other.
+- Two hands on a small object, such as a cartridge, no longer fight over it:
+  it stays steady in the hand that held it first, and when one hand lets go
+  the other holds it the way it grabbed it instead of at a twisted angle.
 - Grenades and Molotovs are always held in their grenade or Molotov pose, on every grab,
   close or pulled. A second hand grabbing a grenade you already hold grabs it freely.
 - Saved grab offsets record the grip you see: a save no longer includes the

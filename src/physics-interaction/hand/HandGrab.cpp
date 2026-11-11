@@ -385,16 +385,10 @@ namespace rock
          * close reach, and the hold closes the gap (handReach).
          *
          * Any other object the other hand holds is not pulled out of that
-         * hand: that grab waits and retries while the grip is held. The
-         * exception is an object too short for two hands (peerHandoff): this
-         * hand takes it, touching or not, and the caller lets the other hand
-         * go. Two hands on a cartridge had their grip points a unit apart, so
-         * the two-hand pivot turned it with every tremor and the remaining
-         * hand kept whatever angle that left.
+         * hand: that grab waits and retries while the grip is held.
          */
         const bool probeContactRequired = !sel.isFarSelection && !grabbedFromPullCatch && !sel.forcedArrival &&
             !sel.equippedWeaponTransfer && transferPose == nullptr;
-        _peerHandoffGrab = false;
         bool reachArrival = false;
         bool handReach = false;
         if (probeContactRequired) {
@@ -412,15 +406,8 @@ namespace rock
                     return '-';
                 }
             };
-            // Two hands each need about a palm's width of object.
-            constexpr float kTwoHandMinimumSpanGameUnits = 14.0f;
-            const bool peerHandoff = joiningPeerHeldObject && !looseWeaponGrab &&
-                sel.targetKind == grab_target::Kind::LooseObject && probeContact.triangleCount > 0 &&
-                selectedObjectSpanGameUnits() < kTwoHandMinimumSpanGameUnits;
-            _peerHandoffGrab = peerHandoff;
-            reachArrival = !probeContact.touching && probeContact.triangleCount > 0 &&
-                (!joiningPeerHeldObject || peerHandoff) && !handPocketOnlyGrab &&
-                grab_target::canUseRockDynamicPull(sel.targetKind);
+            reachArrival = !probeContact.touching && probeContact.triangleCount > 0 && !joiningPeerHeldObject &&
+                !handPocketOnlyGrab && grab_target::canUseRockDynamicPull(sel.targetKind);
             if (reachArrival) {
                 ROCK_LOG_DEBUG(Hand,
                     "{} hand GRAB reach arrival: no finger probe touches the mesh, the object comes to the hand "
