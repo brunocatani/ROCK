@@ -48,18 +48,19 @@ namespace rock
              */
             _frikWeaponNode.ownershipKey = equippedWeaponOwnershipKey;
             _frikWeaponNode.framesSinceWrite = write_block_policy::kNeverWritten;
-            _frikWeaponNode.framesSinceRecoilWrite = write_block_policy::kNeverWritten;
+            _frikWeaponNode.secondsSinceRecoilWrite = write_block_policy::kNeverWrittenSeconds;
         }
         _frikWeaponNode.framesSinceWrite = write_block_policy::advanceFramesSinceWrite(_frikWeaponNode.framesSinceWrite,
             _frikWeaponNode.writtenThisFrame);
         _frikWeaponNode.writtenThisFrame = false;
-        _frikWeaponNode.framesSinceRecoilWrite = write_block_policy::advanceFramesSinceWrite(
-            _frikWeaponNode.framesSinceRecoilWrite, _frikWeaponNode.recoilWrittenThisFrame);
+        _frikWeaponNode.secondsSinceRecoilWrite =
+            write_block_policy::advanceSecondsSinceWrite(_frikWeaponNode.secondsSinceRecoilWrite,
+                _frikWeaponNode.recoilWrittenThisFrame, runtime_state::currentFrame().deltaSeconds);
         _frikWeaponNode.recoilWrittenThisFrame = false;
         // Right-firing PrimaryOnly is lifecycle/input ownership only and stays with FRIK.
         const write_block_policy::OwnershipInput input{
             .framesSinceWrite = _frikWeaponNode.framesSinceWrite,
-            .framesSinceRecoilWrite = _frikWeaponNode.framesSinceRecoilWrite,
+            .secondsSinceRecoilWrite = _frikWeaponNode.secondsSinceRecoilWrite,
             .ownsWeaponTransform = ownsWeaponTransform(),
             .weaponReturnActive = isWeaponVisualReturnActive(),
             .leftCarryActive = usesLeftFiringCarry() && isManualOwnershipActive(),
@@ -74,8 +75,8 @@ namespace rock
             // ownership predicate explains is visible in the log.
             ROCK_LOG_DEBUG(Weapon,
                 "TwoHandedGrip: FRIK weapon-node write block held by {} tail (framesSinceWrite={} "
-                "framesSinceRecoilWrite={})",
-                write_block_policy::holdReasonName(reason), input.framesSinceWrite, input.framesSinceRecoilWrite);
+                "secondsSinceRecoilWrite={:.3f})",
+                write_block_policy::holdReasonName(reason), input.framesSinceWrite, input.secondsSinceRecoilWrite);
         }
         _frikWeaponNode.lastHoldReason = reason;
         if (reason != write_block_policy::HoldReason::None) {

@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 
 /*
  * When ROCK holds FRIK's primary weapon-node write block (FRIK API v2.3,
@@ -24,10 +25,25 @@
  */
 namespace rock::weapon_node_write_block_policy
 {
+    // Bridges a missed write, which is one frame whatever the frame rate.
     inline constexpr std::uint32_t kHoldFramesAfterWrite = 4;
-    // Bridges the gap between rounds of semi-automatic fire.
-    inline constexpr std::uint32_t kHoldFramesAfterRecoilWrite = 30;
+    // Bridges the gap between rounds of semi-automatic fire. A cadence is
+    // time, so this tail is seconds: counted in frames it shrank to 0.25 s at
+    // 120 Hz and grew to 0.67 s at 45 fps.
+    inline constexpr float kHoldSecondsAfterRecoilWrite = 30.0f / 90.0f;
     inline constexpr std::uint32_t kNeverWritten = 0xFFFFFFFFu;
+    inline constexpr float kNeverWrittenSeconds = std::numeric_limits<float>::infinity();
+
+    [[nodiscard]] constexpr float advanceSecondsSinceWrite(const float secondsSinceWrite, const bool wroteThisFrame,
+        const float deltaSeconds) noexcept
+    {
+        if (wroteThisFrame) {
+            return 0.0f;
+        }
+        // A non-finite or negative delta adds nothing; infinity stays never-written.
+        return deltaSeconds > 0.0f && deltaSeconds < kNeverWrittenSeconds ? secondsSinceWrite + deltaSeconds
+                                                                           : secondsSinceWrite;
+    }
 
     [[nodiscard]] constexpr std::uint32_t advanceFramesSinceWrite(const std::uint32_t framesSinceWrite,
         const bool wroteThisFrame) noexcept
@@ -41,8 +57,8 @@ namespace rock::weapon_node_write_block_policy
     struct OwnershipInput
     {
         std::uint32_t framesSinceWrite = kNeverWritten;
-        // Frames since the last one-hand recoil write.
-        std::uint32_t framesSinceRecoilWrite = kNeverWritten;
+        // Seconds since the last one-hand recoil write.
+        float secondsSinceRecoilWrite = kNeverWrittenSeconds;
         // Full two-hand authority or part carry.
         bool ownsWeaponTransform = false;
         bool weaponReturnActive = false;
@@ -85,7 +101,7 @@ namespace rock::weapon_node_write_block_policy
             input.oneHandRecoilActive || input.authoredPrimaryAlignmentActive) {
             return HoldReason::Predicate;
         }
-        if (input.framesSinceRecoilWrite < kHoldFramesAfterRecoilWrite) {
+        if (input.secondsSinceRecoilWrite < kHoldSecondsAfterRecoilWrite) {
             return HoldReason::RecoilTail;
         }
         if (input.framesSinceWrite < kHoldFramesAfterWrite) {

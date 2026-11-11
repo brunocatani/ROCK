@@ -2033,9 +2033,9 @@ namespace rock
             // and every release edge lets FRIK re-apply its offset local, so
             // it is held for a window after the last write.
             std::uint32_t framesSinceWrite{ 0xFFFFFFFFu };
-            // The one-hand recoil pose was written this frame, and frames since its last write.
+            // The one-hand recoil pose was written this frame, and seconds since its last write.
             bool recoilWrittenThisFrame{ false };
-            std::uint32_t framesSinceRecoilWrite{ 0xFFFFFFFFu };
+            float secondsSinceRecoilWrite{ weapon_node_write_block_policy::kNeverWrittenSeconds };
             // Why the block was held at the end of the last ROCK frame; a tail
             // is logged once per episode when it holds without a predicate.
             weapon_node_write_block_policy::HoldReason lastHoldReason{
