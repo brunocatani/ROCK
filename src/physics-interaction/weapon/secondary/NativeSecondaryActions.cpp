@@ -740,6 +740,10 @@ namespace rock::native_secondary_actions
         {
             if (!t_context && out && s_installed && actor == f4vr::getPlayer()) {
                 const bool result = s_idleRoots(database, actor, out);
+                // The weapon lookup below only feeds the trace; skip it on
+                // every idle query unless debug logging is on.
+                if (!logger::isDebugEnabled())
+                    return result;
                 RE::BGSObjectInstance right{ nullptr, nullptr };
                 native<RE::BGSObjectInstance* (*)(RE::Actor*, RE::BGSObjectInstance*, std::uint32_t)>(
                     0xE50DA0)(actor, &right, 0);
@@ -1467,6 +1471,9 @@ namespace rock::native_secondary_actions
 
     void tracePrimaryReload() noexcept
     {
+        // Diagnostic only: never armed, so never sampled, without debug logging.
+        if (!logger::isDebugEnabled())
+            return;
         s_primaryReloadTraceLines.store(0, std::memory_order_relaxed);
         s_primaryReloadTraceUntil.store(GetTickCount64() + kPrimaryReloadTraceMs, std::memory_order_release);
     }
