@@ -192,12 +192,6 @@ PullPresentationMaxAngularSpeedRadiansPerSecond = 8.0
 ## toward its own +X, so one value has the same meaning for both hands.
 PullPresentationGripAxisTiltDegrees = 15.0
 
-## Applies long-axis presentation alignment to force-grab arrival seats.
-ForceGrabSeatAlignmentEnabled = true
-
-## Applies face-to-palm roll alignment to programmatic arrival seats.
-GrabSeatRollAlignmentEnabled = true
-
 ## Shape-classification gate shared by the flight presentation servo and the
 ## grab pose solver: sqrt(lambda2/lambda3) of the mesh PCA at or above this
 ## ratio marks a distinct flat face (plate class). The solver uses the class
@@ -233,8 +227,6 @@ GrabAngularConstantRecovery = 1.0
 GrabConstraintMaxForce = 2000.0
 
 ## Keeps the motor's effective mass finite for very light or unstable bodies.
-GrabEffectiveMotorMassFloorEnabled = true
-
 GrabEffectiveMotorMassFloor = 2.0
 
 ## Contact force per unit effective mass. This caps the contact ceiling for light objects.
@@ -375,11 +367,6 @@ GrabHeldMassMovementFadeOutSeconds = 5.0
 
 ## === 09. Grab Acquisition ===
 [GrabAcquisition]
-## Grab Press Leeway
-## Keeps a held grab press alive while the hand becomes ready to grab (after a selection change, a pull catch or input suppression), so a press made a moment early still grabs.
-## Releasing grab always cancels at once.
-GrabInputIntentStateEnabled = true
-
 ## Seconds a held grab press waits for the hand to become ready to grab. Range: 0 to 0.5.
 GrabInputLeewaySeconds = 0.12
 
@@ -436,9 +423,6 @@ GrabSurfaceBehindPalmToleranceGameUnits = 1.5
 
 ## Maximum age in seconds for semantic contacts used as touch evidence.
 GrabOppositionContactMaxAgeSeconds = 0.0556
-
-## Small-object pinch pocket. Chosen only at close-grab commit, then frozen for the hold.
-GrabPinchPocketEnabled = true
 
 ## Allows a fallback close-selection cast along the pinch direction when the palm close cast misses.
 GrabPinchCloseSelectionEnabled = true
@@ -509,9 +493,6 @@ GrabFingerPoseMode = 1
 ## Applies on the next loose-object grab. Weapon grips use WeaponGrabPoseMode.
 LooseGrabFingerPoseMode = 0
 
-## Computes custom finger curl from the held object's visible mesh.
-GrabMeshFingerPoseEnabled = true
-
 ## Sends per-joint finger values to FRIK when available instead of one curl per finger.
 GrabMeshJointPoseEnabled = true
 
@@ -554,8 +535,6 @@ GrabThumbSweepMaxOpenValue = 1.5
 GrabThumbOppositionStrength = 1.0
 
 GrabThumbAlternateCurveStrength = 0.65
-
-GrabThumbSurfaceSafetyEnabled = true
 
 GrabThumbSurfaceSafetyMarginGameUnits = 1.0
 

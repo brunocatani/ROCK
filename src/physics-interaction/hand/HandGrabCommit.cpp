@@ -563,7 +563,7 @@ namespace rock
                 .sweepContactRadiusGameUnits = g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits,
                 .thumbSweepMaxOpenValue = g_rockConfig.rockGrabThumbSweepMaxOpenValue,
                 .fingerSweepMaxOpenValue = g_rockConfig.rockGrabFingerSweepMaxOpenValue,
-                .meshFingerPoseEnabled = g_rockConfig.rockGrabMeshFingerPoseEnabled,
+                .meshFingerPoseEnabled = true,
                 .captureSweepDebug = false,
                 .mode = mode,
             };
@@ -579,8 +579,7 @@ namespace rock
             const auto* padIndex = frozenSolve.spatialIndexBuilt ? &_grabFingerTriangleIndex : nullptr;
             std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padCaptureEvidence{};
             (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(_grabFingerPose, worldTriangles,
-                fingerPoseTargets, liveFingerSnapshot, frame.objectWorld, g_rockConfig.rockGrabMeshFingerPoseEnabled,
-                true, padCaptureEvidence, true, {}, padIndex);
+                fingerPoseTargets, liveFingerSnapshot, frame.objectWorld, true, true, padCaptureEvidence, true, {}, padIndex);
             grab_finger_pose_runtime::captureSurfaceAimObjectLocal(_grabFingerPose, frame.objectWorld);
 
             auto publishFingerPose =
@@ -928,12 +927,11 @@ namespace rock
         _grabFingerSweptArc = g_rockConfig.rockLooseGrabFingerPoseMode == 1;
         _grabFingerLocalTransformFinalizePending = false;
         const bool useLooseWeaponPrimaryAttachHandPose = _grabFrame.syntheticLooseWeaponPrimaryAttach;
-        _hasGrabFingerPose = g_rockConfig.rockGrabMeshFingerPoseEnabled && !useLooseWeaponPrimaryAttachHandPose;
+        _hasGrabFingerPose = !useLooseWeaponPrimaryAttachHandPose;
         _grabFingerPosePublished = false;
         if (useLooseWeaponPrimaryAttachHandPose) {
             grab_finger_pose_runtime::SolvedGrabFingerPose savedGrabFingerPose{};
-            const bool fixedAuthoredPose = _grabFrame.seat.fixedAuthoredPose;
-            const bool hasSavedGrabFingerPose = (fixedAuthoredPose || g_rockConfig.rockGrabMeshFingerPoseEnabled) &&
+            const bool hasSavedGrabFingerPose =
                 hasSavedGrabOffset && tryBuildSavedGrabOffsetFingerPose(savedGrabOffset, savedGrabFingerPose);
             if (_grabFrame.authoredWeaponPose.valid()) {
                 _grabFingerPosePublished = authoredPoseReady;

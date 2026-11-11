@@ -141,7 +141,6 @@ namespace rock
         inline grab_pinch_pocket_policy::Config currentWeaponOppositionPocketConfig()
         {
             return grab_pinch_pocket_policy::sanitizeConfig(grab_pinch_pocket_policy::Config{
-                .enabled = g_rockConfig.rockGrabPinchPocketEnabled,
                 .maxPocketDistanceGameUnits = g_rockConfig.rockGrabPinchMaxPocketDistanceGameUnits,
                 .minFingerGapGameUnits = g_rockConfig.rockGrabPinchMinFingerGapGameUnits,
                 .maxFingerGapGameUnits = g_rockConfig.rockGrabPinchMaxFingerGapGameUnits,
@@ -726,7 +725,6 @@ namespace rock
                         .surfaceAimStrength = g_rockConfig.rockGrabFingerSurfaceAimStrength,
                         .thumbOppositionStrength = g_rockConfig.rockGrabThumbOppositionStrength,
                         .thumbAlternateCurveStrength = g_rockConfig.rockGrabThumbAlternateCurveStrength,
-                        .thumbSurfaceSafetyEnabled = g_rockConfig.rockGrabThumbSurfaceSafetyEnabled,
                         .thumbSurfaceSafetyMarginGameUnits = g_rockConfig.rockGrabThumbSurfaceSafetyMarginGameUnits,
                     },
                     corrected, &failureReason, capturedFingerSnapshot)) {

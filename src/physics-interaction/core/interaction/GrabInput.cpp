@@ -1047,7 +1047,6 @@ namespace rock
             selectedPressCandidate || pullCatchPressCandidate || peerHeldCloseSelectionReady, hand.isHolding(),
             frame.deltaSeconds,
             grab_input_intent_policy::Config{
-                .enabled = g_rockConfig.rockGrabInputIntentStateEnabled,
                 .leewaySeconds = g_rockConfig.rockGrabInputLeewaySeconds,
                 .forceSeconds = g_rockConfig.rockGrabInputForceSeconds,
             },
@@ -1126,10 +1125,6 @@ namespace rock
                 .grabSucceeded = false,
                 .peerFormId = peerHeldFormIdForRetry,
                 .deltaSeconds = frame.deltaSeconds,
-                .config =
-                    peer_held_join_retry_policy::Config{
-                        .enabled = g_rockConfig.rockGrabInputIntentStateEnabled,
-                    },
             });
         if (peerHeldRetryDecision.started) {
             ROCK_LOG_DEBUG(Hand, "{} hand peer-held join retry started: peerFormID={:08X}", hand.handName(),
@@ -1225,8 +1220,7 @@ namespace rock
                 sharedContext);
 
             const bool grabbed = grabResult == GrabAttemptResult::Grabbed;
-            if (grabResult == GrabAttemptResult::ContactUnavailable && g_rockConfig.rockGrabInputIntentStateEnabled &&
-                rawGrabInput.held && !rawGrabInput.released && closeRetryTarget.valid()) {
+            if (grabResult == GrabAttemptResult::ContactUnavailable && rawGrabInput.held && !rawGrabInput.released && closeRetryTarget.valid()) {
                 grab_input_intent_policy::retainContactRetry(inputIntentState, closeRetryTarget);
                 ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
                     "{} hand retained close grab intent after contact refusal: formID={:08X} body={}", hand.handName(),

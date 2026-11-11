@@ -109,7 +109,7 @@ namespace rock
         std::array<WeaponCollision::SupportGripEvidenceView, MAX_WEAPON_COLLISION_BODIES> compositeEvidenceViews{};
         std::size_t compositeEvidenceViewCount = 0;
         std::size_t sourceTriangleCount = 0;
-        if (g_rockConfig.rockGrabMeshFingerPoseEnabled) {
+        {
             // July 9 fitted only the contacted part. Retain today's bounded,
             // generation-checked evidence cache rather than walking the scene.
             const std::size_t discoveredViewCount =
@@ -158,8 +158,7 @@ namespace rock
             grab_finger_pose_runtime::SolvedGrabFingerPose capsulePose{};
             sweep::FrikFingerRig rig{};
             const bool rigValid = capturedFingerSnapshotValid && sweep::resolveFrikFingerRig(isLeft, rig);
-            const bool indexBuilt = g_rockConfig.rockGrabMeshFingerPoseEnabled &&
-                fingerScratch.spatialIndex.buildFromLocalTriangles(fingerScratch.localTriangles);
+            const bool indexBuilt = fingerScratch.spatialIndex.buildFromLocalTriangles(fingerScratch.localTriangles);
             sweep::PinchReach thumbReach{};
             sweep::PinchReach indexReach{};
             if (rigValid && indexBuilt) {
@@ -209,7 +208,7 @@ namespace rock
         const std::array<float, 5>* capturedFingerSplayRadiansPtr = nullptr;
         bool spatialIndexBuilt = false;
         bool commandedOpenDirectionsValid = false;
-        if (g_rockConfig.rockGrabMeshFingerPoseEnabled && !fingerScratch.localTriangles.empty()) {
+        if (!fingerScratch.localTriangles.empty()) {
             const RE::NiTransform seatedToRawWorld = transform_math::composeTransforms(handTransform,
                 transform_math::invertTransform(adjustedHandTransform));
             const RE::NiTransform frozenMeshWorld = july9
@@ -245,7 +244,7 @@ namespace rock
                     .sweepContactRadiusGameUnits = g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits,
                     .thumbSweepMaxOpenValue = g_rockConfig.rockGrabThumbSweepMaxOpenValue,
                     .fingerSweepMaxOpenValue = g_rockConfig.rockGrabFingerSweepMaxOpenValue,
-                    .meshFingerPoseEnabled = g_rockConfig.rockGrabMeshFingerPoseEnabled,
+                    .meshFingerPoseEnabled = true,
                     .captureSweepDebug = false,
                     .meshRelation = july9
                         ? grab_finger_pose_runtime::FingerPoseMeshRelation::CurrentMeshRequiresVirtualSeat

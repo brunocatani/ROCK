@@ -65,7 +65,6 @@ namespace rock
         int rockSetupWizardShownEdition = 0;
         float rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::kDefaultHoldSeconds;
         int rockFarGrabMode = static_cast<int>(far_pull_gesture::Mode::Immediate);
-        bool rockGrabInputIntentStateEnabled = true;
         // Where the quick loot panel appears; see native_quick_loot_panel::Placement.
         // 1: right hand (game default); 2: closer hand; 3: at the container.
         int rockQuickLootPanelPlacement = 2;
@@ -322,7 +321,6 @@ namespace rock
         float rockGrabFreeLinearAcceleration = 1000.0f;
         float rockGrabFreeAngularAcceleration = 6000.0f;
         float rockForceGrabAttachSettleSeconds = 0.10f;
-        bool rockGrabEffectiveMotorMassFloorEnabled = true;
         float rockGrabEffectiveMotorMassFloor = 2.0f;
         float rockGrabForceFadeInTime = 0.1f;
         RE::NiPoint3 rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.5f, -1.0f, 0.0f);
@@ -409,7 +407,6 @@ namespace rock
         // Elapsed opposition/patch contact freshness (historical 5-frame
         // tuning at 90 Hz).
         float rockGrabOppositionContactMaxAgeSeconds = 0.0556f;
-        bool rockGrabPinchPocketEnabled = true;
         bool rockGrabPinchCloseSelectionEnabled = true;
         float rockGrabPinchMaxPocketDistanceGameUnits = 8.0f;
         float rockGrabPinchMinFingerGapGameUnits = 1.0f;
@@ -433,7 +430,6 @@ namespace rock
         int rockGrabFingerPoseMode = 1; // 1=current, 2=June 2; captured per grip.
         int rockWeaponGrabPoseMode = 0; // 0=follow grab mode, 1=current, 2=July 9, 3=capsule probes (testing); next dynamic weapon grip.
         int rockLooseGrabFingerPoseMode = 0; // 0=capsule sweep, 1=pre-capsule swept arc; next loose-object grab.
-        bool rockGrabMeshFingerPoseEnabled = true;
         bool rockGrabMeshJointPoseEnabled = true;
         float rockGrabFingerMinValue = 0.2f;
         float rockGrabFingerPoseSmoothingSpeed = 14.0f;
@@ -448,7 +444,6 @@ namespace rock
         float rockGrabThumbSweepMaxOpenValue = 1.5f;
         float rockGrabThumbOppositionStrength = 1.0f;
         float rockGrabThumbAlternateCurveStrength = 0.65f;
-        bool rockGrabThumbSurfaceSafetyEnabled = true;
         float rockGrabThumbSurfaceSafetyMarginGameUnits = 1.0f;
         float rockGrabLateralWeight = 0.6f;
         float rockGrabDirectionalWeight = 0.4f;
@@ -462,8 +457,6 @@ namespace rock
         int rockFarSelectionAngleDegrees = selection_query_policy::kDefaultSelectionAimAngleDegrees;
         bool rockPullToObjectCenterEnabled = true;
         bool rockPullLongAxisPresentationEnabled = true;
-        bool rockForceGrabSeatAlignmentEnabled = true;
-        bool rockGrabSeatRollAlignmentEnabled = true;
         float rockPullPresentationMinElongationRatio = 2.0f;
         float rockGrabSeatRollMinSecondElongationRatio = 1.25f;
         float rockPullPresentationAngularGainPerSecond = 6.0f;

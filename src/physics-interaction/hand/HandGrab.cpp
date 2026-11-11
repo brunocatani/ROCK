@@ -48,7 +48,6 @@ namespace rock
         grab_pinch_pocket_policy::Config currentPinchPocketConfig()
         {
             return grab_pinch_pocket_policy::sanitizeConfig(grab_pinch_pocket_policy::Config{
-                .enabled = g_rockConfig.rockGrabPinchPocketEnabled,
                 .maxPocketDistanceGameUnits = g_rockConfig.rockGrabPinchMaxPocketDistanceGameUnits,
                 .minFingerGapGameUnits = g_rockConfig.rockGrabPinchMinFingerGapGameUnits,
                 .maxFingerGapGameUnits = g_rockConfig.rockGrabPinchMaxFingerGapGameUnits,
@@ -304,20 +303,10 @@ namespace rock
                 sample.fingers = pinch::makeFingerFrame(tips[0], tips[1]);
                 return measure(sample);
             };
-            if (g_rockConfig.rockGrabMeshFingerPoseEnabled) {
-                // Thumb and index open as far as the object is thick, up to the
-                // fully open pose; a cap here left a 0.7 gu gap at most, so the
-                // pads closed through anything thicker than paper.
-                candidate.closure = pinch::solveClosure(g_rockConfig.rockGrabFingerMinValue, 1.0f, evaluate);
-            } else {
-                // With automatic finger posing disabled, only the live tips
-                // can define the seat; no uncommanded closing pose is predicted.
-                pinch::ClosureSample live{};
-                live.fingers = pinch::makeFingerFrame(candidate.thumbPadWorld, candidate.indexPadWorld);
-                candidate.closure.sample = measure(live);
-                candidate.closure.valid = candidate.closure.sample.fingers.valid;
-                candidate.closure.bracketed = true;
-            }
+            // Thumb and index open as far as the object is thick, up to the
+            // fully open pose; a cap here left a 0.7 gu gap at most, so the
+            // pads closed through anything thicker than paper.
+            candidate.closure = pinch::solveClosure(g_rockConfig.rockGrabFingerMinValue, 1.0f, evaluate);
             if (!candidate.closure.valid) {
                 ROCK_LOG_SAMPLE_WARN(Hand, g_rockConfig.rockLogSampleMilliseconds,
                     "{} pinch closure unavailable: stage={}", isLeft ? "Left" : "Right", failureStage);

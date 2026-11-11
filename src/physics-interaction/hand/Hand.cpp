@@ -2274,8 +2274,8 @@ namespace rock
 
         auto nearCandidate =
             findCloseObject(bhkWorld, hknpWorld, selectionOrigin, closeSelectionDirection, _isLeft, otherHandContext);
-        if (!nearCandidate.isValid() && g_rockConfig.rockGrabPinchPocketEnabled &&
-            g_rockConfig.rockGrabPinchCloseSelectionEnabled && resolvePinchOriginIfNeeded()) {
+        if (!nearCandidate.isValid() && g_rockConfig.rockGrabPinchCloseSelectionEnabled &&
+            resolvePinchOriginIfNeeded()) {
             nearCandidate = findCloseObject(bhkWorld, hknpWorld, resolvedPinchOrigin, resolvedPinchDirection, _isLeft,
                 otherHandContext, _isLeft ? "pinch-near-L" : "pinch-near-R");
             if (nearCandidate.isValid()) {

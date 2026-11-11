@@ -503,12 +503,6 @@ namespace rock::config
             "but +X points toward the fingertips\non both. ROCK resolves the live axes first, then tilts each signed Z "
             "axis\ntoward its own +X, so one value has the same meaning for both hands.",
             api::configuration::Group::Developer },
-        { "SelectionAndPulling", "ForceGrabSeatAlignmentEnabled", "06. Selection and Pulling",
-            "Applies long-axis presentation alignment to force-grab arrival seats.",
-            api::configuration::Group::Developer },
-        { "SelectionAndPulling", "GrabSeatRollAlignmentEnabled", "06. Selection and Pulling",
-            "Applies face-to-palm roll alignment to programmatic arrival seats.",
-            api::configuration::Group::Developer },
         { "SelectionAndPulling", "GrabSeatRollMinSecondElongationRatio", "06. Selection and Pulling",
             "Shape-classification gate shared by the flight presentation servo and the\ngrab pose solver: "
             "sqrt(lambda2/lambda3) of the mesh PCA at or above this\nratio marks a distinct flat face (plate class). "
@@ -540,10 +534,8 @@ namespace rock::config
             "Contact and initial-attachment linear force ceiling. Free motion uses actual mass and Free Linear "
             "Acceleration.",
             api::configuration::Group::Developer },
-        { "GrabDrive", "GrabEffectiveMotorMassFloorEnabled", "07. Grab Drive",
+        { "GrabDrive", "GrabEffectiveMotorMassFloor", "07. Grab Drive",
             "Keeps the motor's effective mass finite for very light or unstable bodies.",
-            api::configuration::Group::Developer },
-        { "GrabDrive", "GrabEffectiveMotorMassFloor", "07. Grab Drive", "",
             api::configuration::Group::Developer },
         { "GrabDrive", "GrabMaxForceToMassRatio", "07. Grab Drive",
             "Contact force per unit effective mass. This caps the contact ceiling for light objects.",
@@ -679,11 +671,6 @@ namespace rock::config
             api::configuration::Group::Developer },
         { "GrabSafetyAndRelease", "GrabHeldMassMovementFadeOutSeconds", "08. Grab Safety and Release", "",
             api::configuration::Group::Developer },
-        { "GrabAcquisition", "GrabInputIntentStateEnabled", "09. Grab Acquisition",
-            "Grab Press Leeway\nKeeps a held grab press alive while the hand becomes ready to grab (after a selection "
-            "change, a pull catch or input suppression), so a press made a moment early still grabs.\nReleasing grab "
-            "always cancels at once.",
-            api::configuration::Group::Developer },
         { "GrabAcquisition", "GrabInputLeewaySeconds", "09. Grab Acquisition",
             "Seconds a held grab press waits for the hand to become ready to grab. Range: 0 to 0.5.",
             api::configuration::Group::Developer },
@@ -740,9 +727,6 @@ namespace rock::config
             api::configuration::Group::Developer },
         { "GrabContactEvidence", "GrabOppositionContactMaxAgeSeconds", "10. Grab Contact Evidence",
             "Maximum age in seconds for semantic contacts used as touch evidence.",
-            api::configuration::Group::Developer },
-        { "GrabContactEvidence", "GrabPinchPocketEnabled", "10. Grab Contact Evidence",
-            "Small-object pinch pocket. Chosen only at close-grab commit, then frozen for the hold.",
             api::configuration::Group::Developer },
         { "GrabContactEvidence", "GrabPinchCloseSelectionEnabled", "10. Grab Contact Evidence",
             "Allows a fallback close-selection cast along the pinch direction when the palm close cast misses.",
@@ -810,8 +794,6 @@ namespace rock::config
             "refinement, contact splay, surface-aim local transforms).\nApplies on the next loose-object grab. Weapon "
             "grips use WeaponGrabPoseMode.",
             api::configuration::Group::Developer },
-        { "FingerPoses", "GrabMeshFingerPoseEnabled", "11. Finger Poses",
-            "Computes custom finger curl from the held object's visible mesh.", api::configuration::Group::Developer },
         { "FingerPoses", "GrabMeshJointPoseEnabled", "11. Finger Poses",
             "Sends per-joint finger values to FRIK when available instead of one curl per finger.",
             api::configuration::Group::Developer },
@@ -850,8 +832,6 @@ namespace rock::config
         { "FingerPoses", "GrabThumbOppositionStrength", "11. Finger Poses", "",
             api::configuration::Group::Developer },
         { "FingerPoses", "GrabThumbAlternateCurveStrength", "11. Finger Poses", "",
-            api::configuration::Group::Developer },
-        { "FingerPoses", "GrabThumbSurfaceSafetyEnabled", "11. Finger Poses", "",
             api::configuration::Group::Developer },
         { "FingerPoses", "GrabThumbSurfaceSafetyMarginGameUnits", "11. Finger Poses", "",
             api::configuration::Group::Developer },

@@ -1,7 +1,8 @@
 // Generated from ROCK's v0.92.2 and last pre-TOML settings catalogs and
 // example INIs. Frozen: these are the INI keys ROCK ever shipped, so the
 // table never changes when the TOML catalog does; a test checks every
-// target still exists. Old defaults use the old INI text.
+// target still exists. Old defaults use the old INI text. A row leaves
+// only with its option: an old INI value for a removed option is dropped.
 
 { "bBipodMode", "WeaponHandling", "BipodMode", LegacyKind::Value, 0, "true", "true" },
 { "bDebugDrawAuthoredGripActivationZones", "DebugOverlay", "DebugDrawAuthoredGripActivationZones", LegacyKind::Value, 0, "false", "false" },
@@ -47,26 +48,19 @@
 { "bEnableImmersiveScopes", "Scopes", "EnableImmersiveScopes", LegacyKind::Value, 0, "true", "true" },
 { "bEnabled", "ImmersiveAid", "Enabled", LegacyKind::Value, 0, "true", "true" },
 { "bEquippedWeaponShoulderStashEnabled", "GrabSafetyAndRelease", "EquippedWeaponShoulderStashEnabled", LegacyKind::Value, 0, "true", "true" },
-{ "bForceGrabSeatAlignmentEnabled", "SelectionAndPulling", "ForceGrabSeatAlignmentEnabled", LegacyKind::Value, 0, "true", "true" },
 { "bFrikUserWeaponOffsets", "WeaponHandling", "FrikUserWeaponOffsets", LegacyKind::Value, 0, {}, "false" },
 { "bGlobalSurfaceGrabEnabled", "HandAndBodyCollision", "GlobalSurfaceGrabEnabled", LegacyKind::Value, 0, "true", "true" },
 { "bGrabAnywhereOnWeapon", "WeaponHandling", "GrabAnywhereOnWeapon", LegacyKind::Value, 0, "false", "false" },
 { "bGrabControllerDerivedThrowVelocityEnabled", "GrabSafetyAndRelease", "GrabControllerDerivedThrowVelocityEnabled", LegacyKind::Value, 0, "true", "true" },
-{ "bGrabEffectiveMotorMassFloorEnabled", "GrabDrive", "GrabEffectiveMotorMassFloorEnabled", LegacyKind::Value, 0, "true", "true" },
 { "bGrabFingerRejectBacksideHits", "FingerPoses", "GrabFingerRejectBacksideHits", LegacyKind::Value, 0, "true", "true" },
 { "bGrabHandLerpEnabled", "GrabContactEvidence", "GrabHandLerpEnabled", LegacyKind::Value, 0, "true", "true" },
 { "bGrabHandReturnEnabled", "GrabContactEvidence", "GrabHandReturnEnabled", LegacyKind::Value, 0, "true", "true" },
 { "bGrabHapticsEnabled", "Haptics", "GrabHapticsEnabled", LegacyKind::Value, 0, "true", "true" },
 { "bGrabHeldMassMovementSlowdownEnabled", "GrabSafetyAndRelease", "GrabHeldMassMovementSlowdownEnabled", LegacyKind::Value, 0, "true", "true" },
-{ "bGrabInputIntentStateEnabled", "GrabAcquisition", "GrabInputIntentStateEnabled", LegacyKind::Value, 0, "true", "true" },
 { "bGrabLongObjectAngularScalingEnabled", "GrabDrive", "GrabLongObjectAngularScalingEnabled", LegacyKind::Value, 0, "true", "true" },
-{ "bGrabMeshFingerPoseEnabled", "FingerPoses", "GrabMeshFingerPoseEnabled", LegacyKind::Value, 0, "true", "true" },
 { "bGrabMeshJointPoseEnabled", "FingerPoses", "GrabMeshJointPoseEnabled", LegacyKind::Value, 0, "true", "true" },
 { "bGrabMeshLocalTransformPoseEnabled", "FingerPoses", "GrabMeshLocalTransformPoseEnabled", LegacyKind::Value, 0, "true", "true" },
 { "bGrabPinchCloseSelectionEnabled", "GrabContactEvidence", "GrabPinchCloseSelectionEnabled", LegacyKind::Value, 0, "true", "true" },
-{ "bGrabPinchPocketEnabled", "GrabContactEvidence", "GrabPinchPocketEnabled", LegacyKind::Value, 0, "true", "true" },
-{ "bGrabSeatRollAlignmentEnabled", "SelectionAndPulling", "GrabSeatRollAlignmentEnabled", LegacyKind::Value, 0, "true", "true" },
-{ "bGrabThumbSurfaceSafetyEnabled", "FingerPoses", "GrabThumbSurfaceSafetyEnabled", LegacyKind::Value, 0, "true", "true" },
 { "bGunstockMode", "WeaponHandling", "GunstockMode", LegacyKind::Value, 0, {}, "false" },
 { "bHandBoneCollidersRequirePalmAnchor", "HandAndBodyCollision", "HandBoneCollidersRequirePalmAnchor", LegacyKind::Value, 0, "true", "true" },
 { "bHandCollisionStaticWorldEnabled", "HandAndBodyCollision", "HandCollisionStaticWorldEnabled", LegacyKind::Value, 0, "true", "true" },

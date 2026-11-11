@@ -1172,10 +1172,8 @@ namespace rock
                 float seatRollAngleDegrees = 0.0f;
                 const char* seatRollReason = "inactive";
                 bool seatPoseChanged = false;
-                const bool seatSwingAlignmentWanted =
-                    sel.forcedArrival && g_rockConfig.rockForceGrabSeatAlignmentEnabled;
-                const bool seatRollAlignmentWanted =
-                    programmaticArrival && g_rockConfig.rockGrabSeatRollAlignmentEnabled;
+                const bool seatSwingAlignmentWanted = sel.forcedArrival;
+                const bool seatRollAlignmentWanted = programmaticArrival;
                 /*
                          * The shape class also selects the penetration backstop
                          * footprint below, and that backstop runs on EVERY arrival

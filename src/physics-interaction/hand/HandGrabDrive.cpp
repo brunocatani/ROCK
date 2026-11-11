@@ -615,7 +615,6 @@ namespace rock
             .freeLinearAcceleration = g_rockConfig.rockGrabFreeLinearAcceleration,
             .freeAngularAcceleration = g_rockConfig.rockGrabFreeAngularAcceleration,
             .forceToMassRatio = g_rockConfig.rockGrabMaxForceToMassRatio,
-            .effectiveMotorMassFloorEnabled = g_rockConfig.rockGrabEffectiveMotorMassFloorEnabled,
             .effectiveMotorMassFloor = g_rockConfig.rockGrabEffectiveMotorMassFloor,
             .fadeInEnabled = _grabFrame.fadeInGrabConstraint,
             .fadeElapsed = _grabStartTime,

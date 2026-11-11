@@ -256,8 +256,7 @@ namespace rock::hand_grab_internal
 
     inline float effectiveGrabMotorMass(float mass)
     {
-        return grab_motion_controller::effectiveMotorMass(mass, g_rockConfig.rockGrabEffectiveMotorMassFloorEnabled,
-            g_rockConfig.rockGrabEffectiveMotorMassFloor);
+        return grab_motion_controller::effectiveMotorMass(mass, true, g_rockConfig.rockGrabEffectiveMotorMassFloor);
     }
 
     inline bool isFiniteNiTransform(const RE::NiTransform& value)
@@ -1249,12 +1248,6 @@ namespace rock::hand_grab_internal
         currentLocalTransformMask = localTransformState.currentMask;
         hasCurrentLocalTransforms = localTransformState.hasCurrentTransforms;
 
-        if (!g_rockConfig.rockGrabMeshFingerPoseEnabled) {
-            hasCurrentJointPose = false;
-            (void)frik_visual_authority::clearHandPose("ROCK_Grab", hand);
-            return;
-        }
-
         if (g_rockConfig.rockGrabMeshJointPoseEnabled && fingerPose.solved) {
             const auto targetJointPose = fingerPose.hasJointValues
                 ? fingerPose.jointValues
@@ -1320,15 +1313,6 @@ namespace rock::hand_grab_internal
             hasCurrentLocalTransforms = localTransformState.hasCurrentTransforms;
         };
 
-        if (!g_rockConfig.rockGrabMeshFingerPoseEnabled) {
-            hasCurrentJointPose = false;
-            grab_finger_local_transform_runtime::clearLocalTransformOverride("ROCK_Grab", hand, 100,
-                localTransformState);
-            syncLocalTransformState();
-            (void)frik_visual_authority::clearHandPose("ROCK_Grab", hand);
-            return;
-        }
-
         if (g_rockConfig.rockGrabMeshJointPoseEnabled && fingerPose.solved) {
             const auto targetJointPose = fingerPose.hasJointValues
                 ? fingerPose.jointValues
@@ -1361,7 +1345,6 @@ namespace rock::hand_grab_internal
                     .surfaceAimStrength = g_rockConfig.rockGrabFingerSurfaceAimStrength,
                     .thumbOppositionStrength = g_rockConfig.rockGrabThumbOppositionStrength,
                     .thumbAlternateCurveStrength = g_rockConfig.rockGrabThumbAlternateCurveStrength,
-                    .thumbSurfaceSafetyEnabled = g_rockConfig.rockGrabThumbSurfaceSafetyEnabled,
                     .thumbSurfaceSafetyMarginGameUnits = g_rockConfig.rockGrabThumbSurfaceSafetyMarginGameUnits,
                 },
                 deltaTime, 100, localTransformState);

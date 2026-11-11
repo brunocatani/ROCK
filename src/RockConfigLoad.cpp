@@ -398,8 +398,6 @@ namespace rock
             readSelectionAimAngleDegrees(ini, "Grabbing", "CloseGrabDirection", rockCloseSelectionAngleDegrees);
         rockFarSelectionAngleDegrees =
             readSelectionAimAngleDegrees(ini, "Grabbing", "FarGrabDirection", rockFarSelectionAngleDegrees);
-        rockGrabInputIntentStateEnabled =
-            ini.boolean("GrabAcquisition", "GrabInputIntentStateEnabled", rockGrabInputIntentStateEnabled);
         rockQuickLootPanelPlacement =
             static_cast<int>(ini.integer("Grabbing", "QuickLootPanelPlacement", rockQuickLootPanelPlacement));
         if (rockQuickLootPanelPlacement < 1 || rockQuickLootPanelPlacement > 3) {
@@ -864,8 +862,6 @@ namespace rock
             rockGrabFreeAngularAcceleration, 6000.0f, 1.0f, 60000.0f);
         rockForceGrabAttachSettleSeconds = readClampedFloat(ini, "GrabDrive", "ForceGrabAttachSettleSeconds",
             rockForceGrabAttachSettleSeconds, 0.10f, 0.0f, 1.0f);
-        rockGrabEffectiveMotorMassFloorEnabled =
-            ini.boolean("GrabDrive", "GrabEffectiveMotorMassFloorEnabled", rockGrabEffectiveMotorMassFloorEnabled);
         rockGrabEffectiveMotorMassFloor = readClampedFloat(ini, "GrabDrive", "GrabEffectiveMotorMassFloor",
             rockGrabEffectiveMotorMassFloor, kDefaultGrabEffectiveMotorMassFloor, 0.0f, 100.0f);
         rockGrabForceFadeInTime =
@@ -1089,7 +1085,6 @@ namespace rock
         rockGrabOppositionContactMaxAgeSeconds = std::isfinite(rockGrabOppositionContactMaxAgeSeconds)
             ? std::clamp(rockGrabOppositionContactMaxAgeSeconds, 0.0f, 60.0f / 90.0f)
             : 0.0556f;
-        rockGrabPinchPocketEnabled = ini.boolean("GrabContactEvidence", "GrabPinchPocketEnabled", rockGrabPinchPocketEnabled);
         rockGrabPinchCloseSelectionEnabled =
             ini.boolean("GrabContactEvidence", "GrabPinchCloseSelectionEnabled", rockGrabPinchCloseSelectionEnabled);
         rockGrabPinchMaxPocketDistanceGameUnits = readClampedFloat(ini, "GrabContactEvidence", "GrabPinchMaxPocketDistanceGameUnits",
@@ -1159,8 +1154,6 @@ namespace rock
             ROCK_LOG_WARN(Config, "Invalid FingerPoses.LooseGrabFingerPoseMode={} -- using 0", rockLooseGrabFingerPoseMode);
             rockLooseGrabFingerPoseMode = 0;
         }
-        rockGrabMeshFingerPoseEnabled =
-            ini.boolean("FingerPoses", "GrabMeshFingerPoseEnabled", rockGrabMeshFingerPoseEnabled);
         rockGrabMeshJointPoseEnabled =
             ini.boolean("FingerPoses", "GrabMeshJointPoseEnabled", rockGrabMeshJointPoseEnabled);
         rockGrabFingerMinValue =
@@ -1239,8 +1232,6 @@ namespace rock
         rockGrabThumbAlternateCurveStrength =
             std::clamp(std::isfinite(rockGrabThumbAlternateCurveStrength) ? rockGrabThumbAlternateCurveStrength : 0.65f,
                 0.0f, 1.0f);
-        rockGrabThumbSurfaceSafetyEnabled =
-            ini.boolean("FingerPoses", "GrabThumbSurfaceSafetyEnabled", rockGrabThumbSurfaceSafetyEnabled);
         rockGrabThumbSurfaceSafetyMarginGameUnits = static_cast<float>(ini.number("FingerPoses", "GrabThumbSurfaceSafetyMarginGameUnits", rockGrabThumbSurfaceSafetyMarginGameUnits));
         rockGrabThumbSurfaceSafetyMarginGameUnits = std::clamp(std::isfinite(rockGrabThumbSurfaceSafetyMarginGameUnits)
                 ? rockGrabThumbSurfaceSafetyMarginGameUnits
@@ -1278,10 +1269,6 @@ namespace rock
             ini.boolean("SelectionAndPulling", "PullToObjectCenterEnabled", rockPullToObjectCenterEnabled);
         rockPullLongAxisPresentationEnabled =
             ini.boolean("SelectionAndPulling", "PullLongAxisPresentationEnabled", rockPullLongAxisPresentationEnabled);
-        rockForceGrabSeatAlignmentEnabled =
-            ini.boolean("SelectionAndPulling", "ForceGrabSeatAlignmentEnabled", rockForceGrabSeatAlignmentEnabled);
-        rockGrabSeatRollAlignmentEnabled =
-            ini.boolean("SelectionAndPulling", "GrabSeatRollAlignmentEnabled", rockGrabSeatRollAlignmentEnabled);
         rockPullPresentationMinElongationRatio = static_cast<float>(
             ini.number("SelectionAndPulling", "PullPresentationMinElongationRatio", rockPullPresentationMinElongationRatio));
         if (!std::isfinite(rockPullPresentationMinElongationRatio) || rockPullPresentationMinElongationRatio < 1.0f) {

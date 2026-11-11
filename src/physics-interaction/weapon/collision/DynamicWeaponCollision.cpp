@@ -152,8 +152,8 @@ namespace rock
 
         GrabConstraintMotorTuning buildWeaponGripConstraintTuning(const float bodyMass)
         {
-            const float effectiveMotorMass = grab_motion_controller::effectiveMotorMass(bodyMass,
-                g_rockConfig.rockGrabEffectiveMotorMassFloorEnabled, g_rockConfig.rockGrabEffectiveMotorMassFloor);
+            const float effectiveMotorMass =
+                grab_motion_controller::effectiveMotorMass(bodyMass, true, g_rockConfig.rockGrabEffectiveMotorMassFloor);
             const float linearBudget = (std::max)(0.0f,
                 scaleFiniteValue(g_rockConfig.rockGrabConstraintMaxForce,
                     g_rockConfig.rockGrabLooseWeaponSharedConstraintMaxForceMultiplier));
@@ -217,7 +217,6 @@ namespace rock
                 .freeLinearAcceleration = g_rockConfig.rockGrabFreeLinearAcceleration,
                 .freeAngularAcceleration = g_rockConfig.rockGrabFreeAngularAcceleration,
                 .forceToMassRatio = g_rockConfig.rockGrabMaxForceToMassRatio,
-                .effectiveMotorMassFloorEnabled = g_rockConfig.rockGrabEffectiveMotorMassFloorEnabled,
                 .effectiveMotorMassFloor = g_rockConfig.rockGrabEffectiveMotorMassFloor,
                 .fadeInEnabled = false,
             };

@@ -1364,8 +1364,7 @@ namespace rock
             }
 
             if (hasGrabBody && !reachedTouchRange && !convergenceTimedOutInsidePocket &&
-                !_grabFrame.syntheticLooseWeaponPrimaryAttach && g_rockConfig.rockGrabMeshFingerPoseEnabled &&
-                _hasGrabFingerPose && _grabFingerPosePublished) {
+                !_grabFrame.syntheticLooseWeaponPrimaryAttach && _hasGrabFingerPose && _grabFingerPosePublished) {
                 const float nearDistance =
                     (std::max)(touchDistance, g_rockConfig.rockGrabNearConvergeDistanceGameUnits);
                 const float progressDenominator = (std::max)(0.001f, nearDistance - touchDistance);
@@ -1409,8 +1408,7 @@ namespace rock
                     gripErrorGameUnits, _grabStartTime, heldBodyColliding ? "yes" : "no",
                     _grabFingerPosePublished ? "yes" : "no");
 
-                if (!_grabFrame.syntheticLooseWeaponPrimaryAttach && g_rockConfig.rockGrabMeshFingerPoseEnabled &&
-                    _hasGrabFingerPose) {
+                if (!_grabFrame.syntheticLooseWeaponPrimaryAttach && _hasGrabFingerPose) {
                     if (!_grabFingerPosePublished) {
                         const RE::NiTransform currentNodeWorld =
                             deriveNodeWorldFromBodyWorld(grabBodyWorld, _grabFrame.authority.bodyLocal);
