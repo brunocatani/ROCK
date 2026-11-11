@@ -2317,7 +2317,10 @@ namespace rock
                     return;
                 }
 
-                if (hand.getSelection().isFarSelection && !gesturePullConfirmed) {
+                // An extracted item has already left its actor: the press was
+                // accepted on the actor, and re-checking the dropped item
+                // against the cone left it on the floor with no pull.
+                if (hand.getSelection().isFarSelection && !gesturePullConfirmed && !extractedItemHandoffReady) {
                     float hmdConeDot = -1.0f;
                     if (!selectedObjectPassesFarHmdCone(hknp, hand.getSelection(), farHmdConeGate, &hmdConeDot)) {
                         ROCK_LOG_DEBUG(Hand,
