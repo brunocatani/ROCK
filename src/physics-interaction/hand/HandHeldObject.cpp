@@ -722,9 +722,12 @@ namespace rock
          * go the other holds it the way it grabbed it. The grip points are
          * fixed on the object, so a pair never changes kind while it lasts.
          */
-        constexpr float kMinimumPivotSeparationGameUnits = 6.0f;
-        const bool withoutPivot = !isHoldingLooseWeapon() && !peer->isHoldingLooseWeapon() &&
-            separation < kMinimumPivotSeparationGameUnits;
+        // A setting change applies to the next pair, never to one in progress.
+        const bool pairInProgress = _grabFrame.looseObjectSharedPeerTrace == peer->_grabFrame.traceId;
+        const bool withoutPivot = pairInProgress
+            ? _grabFrame.looseObjectSharedWithoutPivot
+            : !isHoldingLooseWeapon() && !peer->isHoldingLooseWeapon() &&
+                  separation < g_rockConfig.rockGrabTwoHandPivotMinSeparationGameUnits;
         const auto lockedSupport =
             makeLockedSupportGripTarget(primaryTarget, supportTarget, supportBase, separation, 0.001f);
         const WeaponTwoHandedSolverInput<RE::NiTransform, RE::NiPoint3> solverInput{

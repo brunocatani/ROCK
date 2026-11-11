@@ -386,6 +386,7 @@ namespace rock
         float rockGrabHeldMassMovementFadeOutSeconds = 5.0f;
         float rockGrabTouchAcquireDistanceGameUnits = 4.0f;
         float rockGrabNearConvergeDistanceGameUnits = 28.0f;
+        float rockGrabTwoHandPivotMinSeparationGameUnits = 6.0f;
         float rockGrabPocketDepthGameUnits = 7.0f;
         float rockGrabPocketRadiusGameUnits = 9.0f;
         float rockGrabSeatDepthMaxGameUnits = 30.0f;

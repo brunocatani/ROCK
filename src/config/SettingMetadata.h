@@ -697,6 +697,12 @@ namespace rock::config
         { "GrabAcquisition", "GrabNearConvergeDistanceGameUnits", "09. Grab Acquisition",
             "Distance where the object should converge into the palm pocket instead of finalizing immediately.",
             api::configuration::Group::Developer },
+        { "GrabAcquisition", "GrabTwoHandPivotMinSeparationGameUnits", "09. Grab Acquisition",
+            "Two hands on one loose non-weapon object turn it along the line between their grip points only when "
+            "those points are at least this far apart.\nCloser than this (two pinches on a cartridge), the object "
+            "stays as the first hand holds it, and the hand left holding it keeps its own grip.\n0 = always pivot. "
+            "Applies to the next two-hand hold.",
+            api::configuration::Group::Developer },
         { "GrabAcquisition", "GrabPocketDepthGameUnits", "09. Grab Acquisition",
             "Hand-pocket offset and radius, in game units, from the root-flattened palm frame.",
             api::configuration::Group::Developer },

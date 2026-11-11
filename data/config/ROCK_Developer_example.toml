@@ -392,6 +392,11 @@ GrabTouchAcquireDistanceGameUnits = 4.0
 ## Distance where the object should converge into the palm pocket instead of finalizing immediately.
 GrabNearConvergeDistanceGameUnits = 28.0
 
+## Two hands on one loose non-weapon object turn it along the line between their grip points only when those points are at least this far apart.
+## Closer than this (two pinches on a cartridge), the object stays as the first hand holds it, and the hand left holding it keeps its own grip.
+## 0 = always pivot. Applies to the next two-hand hold.
+GrabTwoHandPivotMinSeparationGameUnits = 6.0
+
 ## Hand-pocket offset and radius, in game units, from the root-flattened palm frame.
 GrabPocketDepthGameUnits = 7.0
 

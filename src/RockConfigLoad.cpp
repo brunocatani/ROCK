@@ -979,6 +979,14 @@ namespace rock
                 rockGrabNearConvergeDistanceGameUnits, rockGrabTouchAcquireDistanceGameUnits);
             rockGrabNearConvergeDistanceGameUnits = rockGrabTouchAcquireDistanceGameUnits;
         }
+        rockGrabTwoHandPivotMinSeparationGameUnits = static_cast<float>(ini.number("GrabAcquisition",
+            "GrabTwoHandPivotMinSeparationGameUnits", rockGrabTwoHandPivotMinSeparationGameUnits));
+        if (!std::isfinite(rockGrabTwoHandPivotMinSeparationGameUnits) ||
+            rockGrabTwoHandPivotMinSeparationGameUnits < 0.0f) {
+            ROCK_LOG_WARN(Config, "Invalid GrabAcquisition.GrabTwoHandPivotMinSeparationGameUnits={} -- using 6",
+                rockGrabTwoHandPivotMinSeparationGameUnits);
+            rockGrabTwoHandPivotMinSeparationGameUnits = 6.0f;
+        }
         rockGrabPocketDepthGameUnits =
             static_cast<float>(ini.number("GrabAcquisition", "GrabPocketDepthGameUnits", rockGrabPocketDepthGameUnits));
         if (!std::isfinite(rockGrabPocketDepthGameUnits) || rockGrabPocketDepthGameUnits < 0.0f) {
