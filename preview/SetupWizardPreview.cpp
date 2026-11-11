@@ -240,7 +240,7 @@ namespace
 
     [[nodiscard]] fw::Theme harnessTheme(float scale)
     {
-        auto theme = rpsui::theme_defaults::robco();
+        auto theme = rpsui::theme_defaults::defaultTheme();
         theme.fontSize = 15.0f * scale;
         theme.titleFontSize = 18.0f * scale;
         theme.smallFontSize = 13.0f * scale;

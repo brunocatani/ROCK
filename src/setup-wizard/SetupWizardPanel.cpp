@@ -293,14 +293,14 @@ namespace rock::setup_wizard
                     if (i) ImGui::SameLine(0.0f, theme.spacing);
                     const bool selected = state.value == choice.value;
                     const bool unavailable = fixed && choice.value != fixed->fixed;
-                    if (selected) pushAccent();
+                    if (selected) rpsui::imgui_host::pushChosen(theme);
                     ImGui::BeginDisabled(unavailable);
                     ImGui::PushID(static_cast<int>(i));
                     if (ImGui::Button(std::string(choice.label).c_str(), { width, theme.targetHeight }))
                         state.value = std::string(choice.value);
                     ImGui::PopID();
                     ImGui::EndDisabled();
-                    if (selected) ImGui::PopStyleColor(4);
+                    if (selected) rpsui::imgui_host::popChosen();
                 }
                 if (const auto* chosen = option.find(state.value)) prose(chosen->detail, true, theme.smallFontSize);
                 if (fixed) prose(fixed->reason, true, theme.smallFontSize);
