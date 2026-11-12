@@ -1122,6 +1122,7 @@ namespace rock
                 instanceData && instanceData->flags.all(RE::WEAPON_FLAGS::kHasScope),
                 weapon->weaponData.flags.all(RE::WEAPON_FLAGS::kHasScope));
             bool explicitScopeModelInstalled = false;
+            std::string installedMods;
             manual_scope_target_policy::StructuralMarkerEvidence structuralEvidence{};
             std::size_t structuralVisited = 0;
             collectManualScopeStructuralMarkers(assembledWeaponRoot, structuralEvidence, structuralVisited);
@@ -1134,6 +1135,10 @@ namespace rock
                     auto* omod = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(modIndex.objectID);
                     if (!omod) {
                         continue;
+                    }
+                    if (installedMods.size() < 1024) {
+                        installedMods += std::format("{}{:08X}'{}'", installedMods.empty() ? "" : " ", omod->formID,
+                            omod->fullName.c_str() ? omod->fullName.c_str() : "");
                     }
                     explicitScopeModelInstalled = explicitScopeModelInstalled ||
                         manual_scope_target_policy::hasExplicitScopeIdentity(
@@ -1177,12 +1182,12 @@ namespace rock
             // scope ROCK misses is as visible as one it admits.
             ROCK_LOG_DEBUG(Weapon,
                 "Scope census weapon={:08X} name='{}' eligible={} nativeHasScope={} named={} structure={} "
-                "zoomForm={:08X} authoredOverlay={} selectedOverlay={} authoredZoom={:.2f} direct={}",
+                "zoomForm={:08X} authoredOverlay={} selectedOverlay={} authoredZoom={:.2f} direct={} mods=[{}]",
                 weapon->formID, weapon->fullName.c_str() ? weapon->fullName.c_str() : "", target.scopeEligible,
                 nativeScopeMetadataAuthored, explicitScopeModelInstalled,
                 manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence),
                 zoomData ? zoomData->formID : 0u, zoomData ? zoomData->zoomData.overlay : 0u, target.overlayIndex,
-                zoomData ? zoomData->zoomData.fovMult : 0.0f, target.directTransitionRequired);
+                zoomData ? zoomData->zoomData.fovMult : 0.0f, target.directTransitionRequired, installedMods);
             return target;
         }
 
