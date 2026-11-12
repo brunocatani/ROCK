@@ -71,8 +71,8 @@ replaces the provider API.
 
 ### Compatibility
 
-- Requires FRIK 0.79.1 or newer with FRIK API 2.3. RPS UI Framework draws the setup
-  wizard, grab indicators and ammo counters. ROCK, RPS UI Framework, RobCo PALM, PAPER
+- Requires FRIK 0.79.1 or newer with FRIK API 2.3, and RPS UI Framework, which draws
+  the setup wizard, grab indicators and ammo counters. ROCK, RPS UI Framework, RobCo PALM, PAPER
   and the ROCK add-ons are released together; install them together.
 - **NPC interactions moved to SCISSORS** (NPC collision, blade penetration, NPC pushing,
   corpses). Rocky mode is removed. The original SCISSORS mod does not work with ROCK 1.0.
