@@ -15,8 +15,11 @@ namespace rock::manual_scope_target_policy
     // Fallout4.esm:000AF2A9, ZM_Standard_Scope_x4.
     inline constexpr std::uint32_t kDefaultOverlayIndex = 6;
     inline constexpr float kDefaultMagnification = 4.0f;
-    // Authored ZOOM magnification below 2 is iron-sight aim zoom (bench
-    // census: 1.0 to 1.5); the scope view then shows kDefaultMagnification.
+    // A weapon without native HasScope is a scope only from this authored
+    // ZOOM magnification, whatever its names or structure say: below it are
+    // iron sights and red dots, including red dots whose record says "scope"
+    // ("[Scope] Aimpoint PRO" at 1.5). Native scopes below it render at
+    // kDefaultMagnification.
     inline constexpr float kMinimumScopeMagnification = 2.0f;
     // ZOOM alone admits a weapon without HasScope, a scope name or ScopeAiming
     // structure only from 3. Bench census of 197 guns: red dot, laser and
@@ -106,11 +109,18 @@ namespace rock::manual_scope_target_policy
         return std::isfinite(authoredMagnification) && authoredMagnification >= kMinimumZoomOnlyScopeMagnification;
     }
 
-    [[nodiscard]] inline constexpr bool isScopeEligible(bool nativeHasScope, bool explicitScopeModelInstalled,
-        bool magnifiedScopeStructurePresent, bool scopeMagnificationAuthored) noexcept
+    // ROCK's own scope evidence for a weapon without native HasScope.
+    [[nodiscard]] inline bool hasManualScopeEvidence(bool explicitScopeModelInstalled,
+        bool magnifiedScopeStructurePresent, float authoredMagnification) noexcept
     {
-        return nativeHasScope || explicitScopeModelInstalled || magnifiedScopeStructurePresent ||
-            scopeMagnificationAuthored;
+        return hasScopeMagnification(authoredMagnification) ||
+            ((explicitScopeModelInstalled || magnifiedScopeStructurePresent) &&
+                isValidMagnification(authoredMagnification));
+    }
+
+    [[nodiscard]] inline constexpr bool isScopeEligible(bool nativeHasScope, bool manualScopeEvidence) noexcept
+    {
+        return nativeHasScope || manualScopeEvidence;
     }
 
     [[nodiscard]] inline constexpr bool nativeHasScope(bool hasInstance, bool instanceHasScope,
@@ -136,10 +146,8 @@ namespace rock::manual_scope_target_policy
     }
 
     [[nodiscard]] inline constexpr bool requiresDirectNativeTransition(bool nativeScopeMetadataAuthored,
-        bool explicitScopeModelInstalled, bool magnifiedScopeStructurePresent, bool scopeMagnificationAuthored,
-        bool validNativeOverlay) noexcept
+        bool manualScopeEvidence, bool validNativeOverlay) noexcept
     {
-        return !nativeScopeMetadataAuthored && validNativeOverlay &&
-            (explicitScopeModelInstalled || magnifiedScopeStructurePresent || scopeMagnificationAuthored);
+        return !nativeScopeMetadataAuthored && validNativeOverlay && manualScopeEvidence;
     }
 }

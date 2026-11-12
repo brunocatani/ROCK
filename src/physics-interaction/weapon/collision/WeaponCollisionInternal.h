@@ -1117,7 +1117,8 @@ namespace rock
 
         /*
          * The installed optic is the OMOD that sets the HasScope flag (property
-         * target 48), whose record name says scope, that sets the ZOOM
+         * target 48), whose record name says scope on a weapon zoomed at least
+         * kMinimumScopeMagnification, that sets the ZOOM
          * magnification float (target 49) to a scope value (EBR-14
          * mod_Mike14_Hybrid06 sets 4.0; the vanilla reflex sight sets 1.5), or
          * that sets the instance ZOOM form (target 67, e.g. Fallout4.esm
@@ -1128,7 +1129,7 @@ namespace rock
          * optic evidence.
          */
         [[nodiscard]] inline bool attachmentModIsInstalledOptic(RE::BGSMod::Attachment::Mod& omod,
-            bool weaponZoomIsScopeMagnification)
+            float weaponZoomMagnification)
         {
             constexpr std::uint8_t kBgsModPropertyBlockId = 1;
             constexpr std::uint32_t kHasScopeTarget = 48;
@@ -1141,12 +1142,14 @@ namespace rock
                     return true;
                 }
                 if (property.target == kHasScopeTarget ||
-                    (property.target == kZoomDataTarget && weaponZoomIsScopeMagnification)) {
+                    (property.target == kZoomDataTarget &&
+                        manual_scope_target_policy::hasScopeMagnification(weaponZoomMagnification))) {
                     return true;
                 }
             }
-            return manual_scope_target_policy::hasExplicitScopeIdentity(
-                omod.fullName.c_str() ? omod.fullName.c_str() : "", omod.model.c_str() ? omod.model.c_str() : "");
+            return manual_scope_target_policy::isValidMagnification(weaponZoomMagnification) &&
+                manual_scope_target_policy::hasExplicitScopeIdentity(
+                    omod.fullName.c_str() ? omod.fullName.c_str() : "", omod.model.c_str() ? omod.model.c_str() : "");
         }
 
         /*
@@ -1174,8 +1177,7 @@ namespace rock
             if (!objectInstanceExtra || !objectInstanceExtra->values) {
                 return optics;
             }
-            const bool weaponZoomIsScopeMagnification =
-                manual_scope_target_policy::hasScopeMagnification(equippedWeaponZoomMagnification(equipIndex));
+            const float weaponZoomMagnification = equippedWeaponZoomMagnification(equipIndex);
             for (const auto& modIndex : objectInstanceExtra->GetIndexData()) {
                 if (modIndex.disabled) {
                     continue;
@@ -1183,7 +1185,7 @@ namespace rock
                 const std::uint32_t omodFormId = modIndex.objectID;
                 auto* omod = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(omodFormId);
                 if (!omod || !omod->model.c_str() || !*omod->model.c_str() ||
-                    !attachmentModIsInstalledOptic(*omod, weaponZoomIsScopeMagnification)) {
+                    !attachmentModIsInstalledOptic(*omod, weaponZoomMagnification)) {
                     continue;
                 }
                 const auto templateRoot = loadCompleteOmodModelTemplate(omod->model.c_str());
@@ -1331,15 +1333,16 @@ namespace rock
             const bool scopeStructure = manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence);
             const float authoredZoom = zoomData ? zoomData->zoomData.fovMult : 0.0f;
             const bool scopeMagnification = manual_scope_target_policy::hasScopeMagnification(authoredZoom);
-            target.scopeEligible = manual_scope_target_policy::isScopeEligible(nativeScopeMetadataAuthored,
-                explicitScopeModelInstalled, scopeStructure, scopeMagnification);
+            const bool manualScopeEvidence = manual_scope_target_policy::hasManualScopeEvidence(
+                explicitScopeModelInstalled, scopeStructure, authoredZoom);
+            target.scopeEligible =
+                manual_scope_target_policy::isScopeEligible(nativeScopeMetadataAuthored, manualScopeEvidence);
             target.overlayValid = target.scopeEligible;
             if (target.scopeEligible) {
                 target.overlayIndex = manual_scope_target_policy::resolveOverlay(target.overlayIndex);
             }
             target.directTransitionRequired = manual_scope_target_policy::requiresDirectNativeTransition(
-                nativeScopeMetadataAuthored, explicitScopeModelInstalled, scopeStructure, scopeMagnification,
-                target.overlayValid);
+                nativeScopeMetadataAuthored, manualScopeEvidence, target.overlayValid);
             // One census line per weapon publication, eligible or not, so a
             // scope ROCK misses is as visible as one it admits.
             ROCK_LOG_INFO(Weapon,
