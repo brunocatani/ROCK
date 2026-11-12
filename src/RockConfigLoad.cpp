@@ -1109,12 +1109,14 @@ namespace rock
         rockGrabPinchDetectionAxisBlend = readClampedFloat(ini, "GrabContactEvidence", "GrabPinchDetectionAxisBlend",
             rockGrabPinchDetectionAxisBlend, grab_pinch_pocket_policy::kDefaultDetectionAxisBlend, 0.0f, 1.0f);
         {
-            auto pinchDetectionConfig = grab_pinch_pocket_policy::Config{};
-            pinchDetectionConfig.detectionDirectionHandspace = rockGrabPinchDetectionDirectionHandspace;
-            pinchDetectionConfig.detectionAxisBlend = rockGrabPinchDetectionAxisBlend;
-            const auto sanitizedPinchDetectionConfig = grab_pinch_pocket_policy::sanitizeConfig(pinchDetectionConfig);
-            rockGrabPinchDetectionDirectionHandspace = sanitizedPinchDetectionConfig.detectionDirectionHandspace;
-            rockGrabPinchDetectionAxisBlend = sanitizedPinchDetectionConfig.detectionAxisBlend;
+            const auto& direction = rockGrabPinchDetectionDirectionHandspace;
+            const float lengthSquared = direction.x * direction.x + direction.y * direction.y + direction.z * direction.z;
+            if (lengthSquared > 0.000001f) {
+                rockGrabPinchDetectionDirectionHandspace = direction * (1.0f / std::sqrt(lengthSquared));
+            } else {
+                ROCK_LOG_WARN(Config, "Invalid GrabContactEvidence.GrabPinchDetectionDirectionHandspace -- using +X");
+                rockGrabPinchDetectionDirectionHandspace = RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
+            }
         }
         rockGrabHandLerpEnabled = ini.boolean("GrabContactEvidence", "GrabHandLerpEnabled", rockGrabHandLerpEnabled);
         rockGrabHandLerpTimeMin =
