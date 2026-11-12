@@ -185,7 +185,7 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp` for engine math. `
 - **NPC interactions**: SCISSORS, through the NativeInteraction interface, owns its NPC bodies, constraints, blade and limb policy. ROCK keeps the shared mechanisms (native allocation, callback lifetime, hand and weapon authority, grab execution, native safety) and has no NPC settings.
 - **World drawing**: RPS UI Framework. ROCK draws through it (`visual/WorldDrawClient.cpp`, `visual/AmmoCounters.cpp`) and has no renderer.
 - **Reload and manual-cycle animation**: PAPER.
-- **Settings screens**: RobCo PALM, through the Configuration interface. Nothing else writes ROCK's settings files.
+- **Settings screens**: RPS UI Framework's settings menu (opened from its holotape or RobCo PALM's Config), through the Configuration interface. ROCK owns only the setup wizard. Nothing else writes ROCK's settings files.
 
 ## Invariants
 
