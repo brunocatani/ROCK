@@ -333,7 +333,7 @@ namespace rock::native_scope_data
         s_installed = true;
         ROCK_LOG_INFO(Init,
             "Native scope data hooks installed: native geometry/menu admission, authored overlay/zoom preferred, "
-            "defaults overlay=6 zoom=4x");
+            "defaults overlay={} zoom={}x", policy::kDefaultOverlayIndex, policy::kDefaultMagnification);
         return true;
     }
 

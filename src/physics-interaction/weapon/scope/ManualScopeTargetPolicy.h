@@ -12,8 +12,10 @@
 namespace rock::manual_scope_target_policy
 {
     inline constexpr std::uint32_t kMaximumNativeOverlayIndex = 16;
-    // Fallout4.esm:000AF2A9, ZM_Standard_Scope_x4.
-    inline constexpr std::uint32_t kDefaultOverlayIndex = 6;
+    // Reticle for a scope whose ZOOM authors no overlay: the long-scope
+    // reticle of Fallout4.esm ZM_Standard_Scope_x10 (overlay 8), chosen over
+    // the x4 crosshair (overlay 6). The overlay is independent of magnification.
+    inline constexpr std::uint32_t kDefaultOverlayIndex = 8;
     inline constexpr float kDefaultMagnification = 4.0f;
     // A weapon without native HasScope is a scope only from this authored
     // ZOOM magnification, whatever its names or structure say: below it are
