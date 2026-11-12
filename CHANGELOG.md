@@ -2,244 +2,83 @@
 
 ## v1.0.0
 
-### Fixed
-
-- No more phantom grabs. A close grab holds an object where your hand found it
-  only when one of your fingers touches its visible mesh. For an object
-  your other hand holds, a grab inside the collision but off the mesh waits: keeping the grip held grabs the moment a finger reaches
-  the mesh, and meanwhile that hand passes through the object's collision, so
-  you can reach in and grab the exact part you want; the object collides with
-  the hand again once you let go of the grip and pull the hand out. Grabs never
-  hold the collision instead of the mesh, and a far pull flies the visible mesh
-  to your palm rather than the collision's centre.
-- Grabbing an NPC's limb or a corpse lands on the first press: when the body's
-  collision keeps your fingers off the visible mesh, the grab takes the nearest
-  point of the mesh instead of waiting, and the drawn hand glides onto it
-  instead of jumping.
-- The limbs of NPCs a mod drives as active ragdolls are pushed only by the
-  physical hands and weapon, with real weight; the tracked hands no longer
-  fling them.
-- Held objects stay steady on slow frames: per-frame motion limits scale with
-  frame time, so a low frame rate no longer drops or lags what you hold.
-- Pulled objects are caught even when they cross the hand between frames, and
-  objects stuck in transit are placed on the hand.
-- Pulled objects reach your hand while you walk, turn or move it: the flight
-  follows the hand all the way instead of flying to where it was at launch, and
-  passes your body and pulling hand instead of bouncing off them. Letting go of
-  grab no longer drops a pulled object: keep holding to catch it as it arrives,
-  or press grab again as it reaches you, as in HIGGS. Either way it lands in its
-  grab pose. Only an object the world blocks from reaching you falls.
-- Objects let go of while walking or running leave at your own speed plus your
-  arm's throw, instead of flying far ahead of you: the throw strength scales
-  only the arm's motion, and turning no longer flings what you release.
-- Dynamic hands and held weapons stop against fixed props. Dropped weapons keep
-  their equipped collision until they come to rest. Ejected casings and
-  magazines are kept clear of the hand and weapon bodies.
-- After the firing grip lets go, the hand no longer snaps up to 12 units behind
-  the controller while it is still inside the weapon.
-- Weapons stay in your hands inside menus and when leaving them, the support
-  hand stays on two-handed weapons, and both weapons and melee weapons stay
-  visible through menus.
-- The ammo counter stays at the firing grip when the grip detaches.
-- A gun with no pistol or rifle keyword is sized from its equip slot.
-- Native player melee no longer launches movable objects: the game's object hit
-  pushed any non-actor body very hard.
-- Fingers never bend back past the open pose. A finger whose open pose sits
-  inside the object keeps the open pose, or closes inward onto a handle or hole
-  the hand reached into; saved grab poses with bent-back fingers show the open
-  pose. Count-based loose ammo is held by its visible body.
-- Loose rounds and ammo boxes: the hand no longer grabs or bumps the invisible
-  box a pushed or dropped round left behind. It stays with the visible round,
-  so both hands grab the round and it reloads where it lies.
-- The second hand joins an object the other hand holds from where it touches
-  it, so long objects no longer refuse the second grip.
-- Saved grab offsets of objects whose parts move against each other (ragdoll
-  toys, hides, tongs) are measured against the grabbed part and apply only to
-  a grab of that part; older root-based offsets of such objects are not
-  applied. Save them again while holding the part.
-- A closed wrist Pip-Boy no longer opens or hums when you look at it. On
-  lighthouse controllers the Y tap opens the Pip-Boy and the wand-pad Favorites
-  menu no longer opens by accident.
-- The game closes normally on exit; ROCK no longer raises R6025 during shutdown.
-- ROCK's hooks chain behind another plugin's patch or detour of the same game
-  function instead of refusing to install.
-- Weapon support grabs on detailed rifles no longer stall the frame: the finger
-  solve walks an index built at equip instead of scanning every triangle.
-- Pinch grabs of detailed objects no longer stall the frame: measuring the
-  object's thickness between thumb and index skips the triangles that cannot
-  lie between them. Starting a weapon support grab also measures fewer finger
-  distances and merges its candidates without a repeated search.
-- Fewer per-frame scans for weapon bones and controller fallbacks; native
-  memory reads no longer use `VirtualQuery`.
+ROCK 1.0 reworks controls, grabbing, weapon handling, settings and performance, and
+replaces the provider API.
 
 ### Added
 
-- **A dropped gun keeps its action.** A bolt or slide another mod holds open
-  (PAPER's empty-gun hold) stays open on the weapon after you drop it.
-- **Holster draws travel into the hand.** A mod that shows a stand-in weapon
-  during a draw (VirtualHolsters) can tell ROCK where it is, and the real
-  weapon continues from there into the grip (`Weapon::setInventoryDrawPose`).
-- **Function bindings** (`[Bindings]`): each action (grab, fire, use, reload,
-  scope, VATS, grenade, Pip-Boy, Pause, bipod and Favorites, PALM) takes any
-  button with a press, tap, hold or double tap, optionally while another button
-  is held. A moved action reaches the game and other mods as its usual button,
-  so they keep working. The defaults change nothing.
-- **Setup wizard.** The first page asks which controllers you play with and
-  says what ROCK does for them; topic pages then set the main choices
-  (grabbing, holding weapons, aiming and shooting, grenades and healing, stick
-  click and menus), and a review saves them. "Use recommended settings" does it
-  all at once. It opens from PALM's Config (ROCK page); mods open it with
-  `Configuration::openSetupWizard`. It also opens by itself on the first game
-  start with this ROCK and whenever an update has something new to show, 10
-  seconds after the game is free of menus, message boxes and scenes (on a new
-  game, after the mirror). Button bindings are set in `ROCK.toml`.
-- **SteamVR binding.** On SteamVR, Index controllers and Vive wands on
-  SteamVR's default binding for Fallout 4 VR (A and X arrive as grip, or are
-  missing) get ROCK's binding when the setup wizard finishes, which opens by
-  itself to offer it; the wizard says to restart the game. A binding chosen in
-  SteamVR is never replaced. `OfferSteamVRBinding` turns the automatic offer off.
-- **Two weapons at once.** Equip a weapon in each hand, any combination,
-  including a melee weapon as the second weapon. The second weapon has its own
-  trigger, reload, scope, dry-fire click and generated collision. The Pip-Boy
-  marks each equipped weapon with its hand (R / L). An equip from the inventory,
-  the Pip-Boy or a holster mod goes into the hand that chose it and keeps the
-  other hand's weapon. Which hand holds each weapon is saved with your game.
-  Every equip is ready to fire at once.
-- **Auto Equip** (`WeaponHandling.AutoEquip`, on by default): a loose weapon
-  equips once the palm settles on its firing grip
-  (`WeaponHandling.AutoEquipSettleSeconds`); off, the trigger equips it.
-- **Weapon Release Mode** (`WeaponHandling.WeaponReleaseMode`): what the last
-  hand letting go does: 1 the weapon stays equipped, 2 it stays loose in the
-  hand (grab again to drop or stash it), 3 it drops (default), leaving with the
-  hand's motion like a thrown loose object. Auto Equip always drops.
-- **Ammo counters.** One counter per held weapon at that weapon's hand,
-  replacing the game's counter. `WeaponHandling.AmmoCounterStyle`: 1 Minimal, 2 Immersive
-  (game HUD style, default), 3 Vanilla (back of the hand). A reload mod can show a
-  chambered-round marker beside the number.
-- **Quick Loot Panel Placement** (`Prompts.QuickLootPanelPlacement`): 1 on the
-  right hand (game default), 2 on the hand pointing at the container (the
-  closer hand when both point, default), 3 at the container it lists. Modes 2
-  and 3 list containers picked by either hand, and the panel's button hints
-  go with it. Left X on the container the panel lists takes the selected item,
-  as A does, instead of opening the container (Oculus/Quest controllers).
-- **Activate Prompt Placement** (`Prompts.ActivatePromptPlacement`): 1 on both
-  hands (game default), 2 on the closer hand only when both point at the same
-  object (default), 3 at the object itself, shown once. Activation is unchanged.
-- **Pinch grab:** the object stays where thumb and finger found it and only the
-  fingers close onto it. Any object that sits between thumb and index when you
-  close your hand is pinched, whatever its size: plants, handles and rims no
-  longer get pulled into the palm. Thumb and index open as far as the object is
-  thick and stop on it instead of closing into a fist beside it, and a loose
-  round or shell can be pinched.
-- **Grab Direction** (`Grabbing.GrabDirection`): Palm Down (HIGGS style, the
-  default) reaches out of the palm, Fingers (Alyx style) along the fingers, for
-  close and far grabs alike. **Far Grab Style** (`Grabbing.FarGrabStyle`):
-  Immediate brings a far object straight to your hand, Pull locks on and waits
-  for a flick.
-- **Developer Settings** (`Developer.EnableDeveloperSettings`): shows the
-  ROCK Dev page in the settings menu.
-- **Button layout** (`[ControllerInput.Left]`, `[ControllerInput.Right]`): reassign each hand's grip, trigger, A/B,
-  X/Y and stick click. ROCK, its add-ons and the game all follow it. SteamVR
-  binding templates for Index, Vive wands and Steam Frame controllers ship in
-  `steamvr_bindings`.
-- **Favorites menu**: the stick click opens the game's Favorites menu, or
-  RobCo PALM's wheel while PALM is installed (ROCK then blocks the Favorites
-  menu). With Bipod Mode on, a click while the weapon touches a surface or is
-  latched works the bipod instead.
-- **Recoil** (`[WeaponRecoil]`): recoil is applied to the firing hand, per weapon type
-  and one- or two-handed hold. Native kickback no longer fights ROCK's hands.
-- Far weapon grabs take the firing grip; close grabs take the nearest authored
-  grip.
-- Scoped filtering: heavier, speed-adaptive smoothing while you look through a
-  scope (`WeaponHandling.ScopedFilterRotationSeconds`, `WeaponHandling.ScopedFilterTranslationSeconds`,
-  `WeaponHandling.ScopedFilterReleaseDegreesPerSecond`). Gunstock mode (`WeaponHandling.GunstockMode`) and
-  filtering presets (`WeaponHandling.WeaponFilteringPreset`, Steady by default) are
-  player settings.
-- Bipod: a latched weapon stays equipped hands-free within
-  `WeaponHandling.BipodHandsFreeRadiusMeters`. The bipod listens to the stick
-  of the hand on the weapon: the firing hand while both hands hold it, the hand
-  still holding it otherwise, and the hand that let go last while it stands
-  hands-free. The other stick keeps its own actions.
-- Each stick click acts only for its own hand. An add-on placing held objects
-  (such as Pimp my House) places the object in the hand whose stick you click,
-  and the other hand's click keeps the Favorites menu, PALM or the game's own
-  action. A click the bipod or a placement takes never also reaches the game.
-- Optional: use the weapon offsets you saved in FRIK instead of ROCK's grip
-  (`WeaponHandling.FrikUserWeaponOffsets`, off by default).
-- One-handed melee weapons: the trigger toggles a reverse grip, saved with your
-  game. `NativeGameplay.VanillaMeleeSwingSpeed` and `NativeGameplay.VanillaGunBashSpeed` set the hand speeds
-  that start a vanilla swing and a gun bash; wrist rotation alone never swings.
-- Saved grab offsets report which hands were saved.
-- Built-in grab poses for about 3,000 objects: a pulled or force-grabbed object
-  without a saved offset is held in its authored pose instead of the dynamic
-  seat. Your own saved offsets still take priority, hand by hand.
-- A pulled object with a saved or built-in pose turns into that pose while it flies
-  and arrives already in it, instead of turning at the last moment in your hand.
-- Objects without a pose of their own, such as items added by other mods, borrow
-  one: ROCK compares the object's shape with the objects that have an authored
-  pose and holds it the way the most similar ones are held, with the fingers
-  closed on its own mesh. Pulls of such objects fly into that pose too.
-- A close grab that touches nothing no longer does nothing: an object or a
-  weapon near your hand comes the last bit to the hand and settles in its pose
-  or grip, like a short pull. Touching it first still holds it exactly where
-  your hand found it.
-- Small objects such as a single cartridge can be pinched: an object between
-  your thumb and index finger counts as touched even when neither finger's
-  closing path meets it, and the two fingers bend onto it instead of closing
-  beside it.
-- Two hands on a small object, such as a cartridge, no longer fight over it:
-  it stays steady in the hand that held it first, and when one hand lets go
-  the other holds it the way it grabbed it instead of at a twisted angle.
-- Grenades and Molotovs are always held in their grenade or Molotov pose, on every grab,
-  close or pulled. A second hand grabbing a grenade you already hold grabs it freely.
-- Saved grab offsets record the grip you see: a save no longer includes the
-  physics drive's lag or the two-hand shared solve, so a later pull reproduces
-  it exactly.
-- The game's weapon equip, unequip and inventory animation sounds are silenced.
-- **Provider API 2.0**: 13 interfaces whose headers are in `include/ROCK/`, with
-  one page per interface in `docs/api/`. New for holster, equipment and reload
-  mods: unequip and inventory draw, warm inventory weapons, the firing aim, the
-  second weapon's parts and reload state, a fire block that leaves Accept
-  native, the chambered-round marker, placing the equipped weapon through held
-  placement, and bodies that pass static bodies.
+- **Setup wizard.** Opens by itself the first time you play with this ROCK, 10 seconds
+  after you are in the game with no menu, loading screen or scene in the way (on a new
+  game, after the mirror), and again when an update has something new to show. It asks
+  which controllers you use, sets the main choices by topic (grabbing, holding weapons,
+  aiming and shooting, grenades and healing, bipod and VATS) and saves them after a
+  review; "Use recommended settings" does it in one click. Open it again from the
+  settings menu (RobCo PALM's Config or the RPS UI Settings holotape), ROCK page.
+- **SteamVR bindings.** ROCK uses the Quest/Touch layout. On SteamVR, Index controllers
+  and Vive wands on SteamVR's default binding get ROCK's binding through the wizard; a
+  binding you chose in SteamVR is never replaced. Templates for Index, Vive wands and
+  Steam Frame ship in `steamvr_bindings/`.
+- **Remap every control.** `[ControllerInput.Left]` and `[ControllerInput.Right]` move
+  each hand's buttons; `[Bindings]` gives every action (grab, fire, use, reload, scope,
+  VATS, grenade, Pip-Boy, Pause, bipod, PALM) any button with a press, tap, hold or
+  double tap, optionally with a second button held. A moved action still reaches the
+  game and other mods as its usual button.
+- **Two weapons at once.** A weapon in each hand, any combination including melee, each
+  with its own trigger, reload, scope and collision. Equips go into the hand that chose
+  them; the Pip-Boy marks each weapon's hand.
+- **Auto Equip and Weapon Release Mode.** A loose weapon equips as your palm settles on
+  its grip (or on the trigger, if you prefer); letting go keeps it equipped, keeps it
+  loose in your hand, or drops it with your hand's motion (default).
+- **Grabbing.** Grab Direction (palm down, HIGGS style, or along the fingers, Alyx
+  style) and Far Grab Style (immediate, or lock on and flick). Pinch grabs for small
+  objects. Built-in grab poses for 3,383 objects; objects without one borrow the pose
+  of the most similar ones. Pulled objects follow your hand while you move.
+- **Weapon handling.** Reverse grip on one-handed melee weapons (trigger), Gunstock
+  mode, shake filtering presets with extra smoothing while scoped, optional use of your
+  saved FRIK weapon offsets (with their scale), recoil per weapon type on the firing
+  hand, and a bipod-latched weapon that stays equipped hands-free nearby.
+- **Ammo counters.** One per held weapon: Minimal, Immersive or Vanilla.
+- **Prompt placement.** The quick loot panel and activate prompts can follow the hand
+  pointing at them or stand at the object.
+- **Provider API 2.0.** 13 interfaces with headers in `include/ROCK/` and one page per
+  interface in `docs/api/`, plus a migration guide for mods built on API 1.
 
-### Feature ownership and compatibility
+### Changed
 
-- Requires FRIK 0.79.1 or newer with FRIK API 2.3. RPS UI Framework is
-  recommended (grab indicators and ammo counters draw through it) and RobCo PALM
-  is optional (settings pages). ROCK, RPS UI Framework, RobCo PALM, PAPER and
-  the ROCK add-ons are released together; install them together.
-- **NPC interactions left ROCK.** NPC collision, blade penetration, NPC pushing,
-  corpse interaction, grenade NPC effects and NPC visualization belong to
-  **SCISSORS**, with its own settings file and PALM pages. Rocky bare-fist mode is
-  removed; free-hand strikes come with SCISSORS' physical melee. The original
-  SCISSORS mod, a different mod the new SCISSORS replaces under the same name,
-  does not work with ROCK 1.0.
-- **Mods built for ROCK 0.92 or earlier** use provider API 1, which ROCK 1.0
-  does not serve. They stop the game: at the main menu an error box names each
-  one, and the game closes when the box is closed. The RPS SDK is no longer
-  used; mods build against the headers in `include/ROCK/`.
-- **Settings moved to TOML.** ROCK reads `ROCK.toml` and `ROCK_Developer.toml`
-  in `Mods_Config\ROCK`. On the first start, every option you changed in
-  `ROCK.ini` and `ROCK_Developer.ini` is carried into the TOML files and the
-  INIs are deleted; options left at their old defaults take the new defaults,
-  and ROCK.log lists settings that no longer exist. Options are grouped into
-  tables matching the PALM pages
-  (`[Grabbing]`, `[FiringHand]`, `[ControllerInput.Left]` and others), keys lose
-  their type letter (`iWeaponEquipMode` is now `WeaponEquipMode` in
-  `[WeaponHandling]`), values are typed, and each X/Y/Z offset is one list such
-  as `AimOffsetGameUnits = [0.0, 0.0, 0.0]`. A syntax error is logged with its
-  line and the file keeps its last values until it is fixed. `DefaultHand` in
-  `[FiringHand]` replaces `bLeftHandedMode`.
-- **Removed settings:** `bAmbidextrousFiringGripEnabled` (two weapons are always
-  allowed), `iWeaponDropMode` (use `iWeaponEquipMode`),
-  `bKeepPreviousWeaponInHandOnEquip`, `bFiringGripDetachPosePreservationEnabled`,
-  `bNativeScopeForceFiringGripFallback`, `bEnableVanillaMelee` (vanilla melee is
-  always on), `bNativeCharacterControllerObjectContactFilterEnabled` (always
-  on), `bRockyModeEnabled`, `fRockyModeHoldSeconds`, `MeshContact.GrabMeshContactOnly`
-  (grabs always hold the mesh), and `npcDynamicCollisions` and
-  `bBladePenetrationEnabled` (now `NpcDynamicCollisions` and
-  `BladePenetrationEnabled` in `SCISSORS.toml`).
+- **Settings moved to TOML.** `ROCK.toml` and `ROCK_Developer.toml` in
+  `Mods_Config\ROCK` reload while the game runs and match the settings menu pages. On
+  the first start, every option you changed in `ROCK.ini` and `ROCK_Developer.ini` is
+  carried over and the INI files are deleted; options left at their old defaults take
+  the new defaults.
+- The right stick click opens RobCo PALM, or the game's Favorites menu when PALM is not
+  installed; with Bipod Mode on, it works the bipod while the weapon touches a surface.
+- `DefaultHand` in `[FiringHand]` replaces left-handed mode.
+
+### Fixed
+
+- No more phantom grabs: you hold the object your fingers touched, where they touched it.
+- Held and pulled objects stay steady and are caught at low frame rates; released
+  objects leave at your own speed plus the throw.
+- Dynamic hands and held weapons stop against fixed props; dropped weapons keep their
+  collision until they come to rest.
+- Weapons and the support hand stay put through menus.
+- Grabs on detailed weapons and objects no longer stall the frame, with fewer per-frame
+  scans overall.
+- The wrist Pip-Boy no longer opens when you look at it.
+- The shoulder stash takes caps stashes and other loot containers.
+- The game closes normally on exit, and ROCK's hooks work alongside other plugins'
+  patches of the same game functions.
+
+### Compatibility
+
+- Requires FRIK 0.79.1 or newer with FRIK API 2.3. RPS UI Framework draws the setup
+  wizard, grab indicators and ammo counters. ROCK, RPS UI Framework, RobCo PALM, PAPER
+  and the ROCK add-ons are released together; install them together.
+- **NPC interactions moved to SCISSORS** (NPC collision, blade penetration, NPC pushing,
+  corpses). Rocky mode is removed. The original SCISSORS mod does not work with ROCK 1.0.
+- **Mods built for ROCK 0.92 or earlier** use provider API 1, which ROCK 1.0 does not
+  serve: an error box at the main menu names each one and the game closes. Update or
+  remove them. The RPS SDK is no longer used.
 
 ## v0.92.2
 
