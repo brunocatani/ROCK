@@ -1120,8 +1120,9 @@ namespace rock
          * target 48), whose record name says scope, or that sets the instance
          * ZOOM form (target 67, e.g. Fallout4.esm mod_PipeGun_Scope_ScopeShort
          * -> ZM_Standard_Scope_x4) while the equipped weapon's resolved ZOOM is
-         * a scope magnification. Iron sights also set ZOOM, at 1.0 to 1.5, so a
-         * ZOOM property alone is not optic evidence.
+         * a magnification that admits a scope on its own. Iron, red-dot and laser
+         * sights also set ZOOM (1.0 to 2.4), so a ZOOM property alone is not
+         * optic evidence.
          */
         [[nodiscard]] inline bool attachmentModIsInstalledOptic(RE::BGSMod::Attachment::Mod& omod,
             bool weaponZoomIsScopeMagnification)
@@ -1165,7 +1166,7 @@ namespace rock
                 return optics;
             }
             const bool weaponZoomIsScopeMagnification =
-                manual_scope_target_policy::isValidMagnification(equippedWeaponZoomMagnification(equipIndex));
+                manual_scope_target_policy::hasScopeMagnification(equippedWeaponZoomMagnification(equipIndex));
             for (const auto& modIndex : objectInstanceExtra->GetIndexData()) {
                 if (modIndex.disabled) {
                     continue;

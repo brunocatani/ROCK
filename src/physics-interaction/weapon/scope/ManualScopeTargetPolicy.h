@@ -15,11 +15,14 @@ namespace rock::manual_scope_target_policy
     // Fallout4.esm:000AF2A9, ZM_Standard_Scope_x4.
     inline constexpr std::uint32_t kDefaultOverlayIndex = 6;
     inline constexpr float kDefaultMagnification = 4.0f;
-    // Authored ZOOM magnification below 2 is iron-sight or red-dot aim zoom
-    // (bench census: 1.0 to 1.5), never a scope's own value. From 2 up it is
-    // a scope's magnification, which also admits a weapon that lacks the
-    // native HasScope flag; below it the scope view shows kDefaultMagnification.
+    // Authored ZOOM magnification below 2 is iron-sight aim zoom (bench
+    // census: 1.0 to 1.5); the scope view then shows kDefaultMagnification.
     inline constexpr float kMinimumScopeMagnification = 2.0f;
+    // ZOOM alone admits a weapon without HasScope, a scope name or ScopeAiming
+    // structure only from 3. Bench census of 197 guns: red dot, laser and
+    // holo sights author 2.0 to 2.4; the magnified optics found by ZOOM
+    // alone author 4.0 to 4.5 (hybrid, ACOG, revolver scope).
+    inline constexpr float kMinimumZoomOnlyScopeMagnification = 3.0f;
 
     [[nodiscard]] inline constexpr bool matchesNativeIdentity(std::uintptr_t publishedWeapon,
         std::uintptr_t publishedInstance, std::uintptr_t nativeWeapon, std::uintptr_t nativeInstance) noexcept
@@ -100,7 +103,7 @@ namespace rock::manual_scope_target_policy
 
     [[nodiscard]] inline bool hasScopeMagnification(float authoredMagnification) noexcept
     {
-        return std::isfinite(authoredMagnification) && authoredMagnification >= kMinimumScopeMagnification;
+        return std::isfinite(authoredMagnification) && authoredMagnification >= kMinimumZoomOnlyScopeMagnification;
     }
 
     [[nodiscard]] inline constexpr bool isScopeEligible(bool nativeHasScope, bool explicitScopeModelInstalled,
