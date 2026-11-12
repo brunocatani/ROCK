@@ -229,13 +229,7 @@ cmake --build build-fast --config Release --target ROCK
 
 ### Tests
 
-Tests share `build-fast` but are built only on request. The test selector builds and runs the tests your changes affect:
-
-```powershell
-pwsh -NoProfile -File tools/Invoke-RockTests.ps1
-```
-
-`-PlanOnly` shows the selection, `-BaseRef <commit>` covers a committed range, and `-All` runs everything. To build and run every test directly:
+Tests share `build-fast` but are built only on request:
 
 ```powershell
 cmake --build build-fast --config Release --target build_tests
