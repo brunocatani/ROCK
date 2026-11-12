@@ -15,6 +15,11 @@ namespace rock::manual_scope_target_policy
     // Fallout4.esm:000AF2A9, ZM_Standard_Scope_x4.
     inline constexpr std::uint32_t kDefaultOverlayIndex = 6;
     inline constexpr float kDefaultMagnification = 4.0f;
+    // Authored ZOOM magnification below 2 is iron-sight or red-dot aim zoom
+    // (bench census: 1.0 to 1.5), never a scope's own value. From 2 up it is
+    // a scope's magnification, which also admits a weapon that lacks the
+    // native HasScope flag; below it the scope view shows kDefaultMagnification.
+    inline constexpr float kMinimumScopeMagnification = 2.0f;
 
     [[nodiscard]] inline constexpr bool matchesNativeIdentity(std::uintptr_t publishedWeapon,
         std::uintptr_t publishedInstance, std::uintptr_t nativeWeapon, std::uintptr_t nativeInstance) noexcept
@@ -74,7 +79,7 @@ namespace rock::manual_scope_target_policy
 
     [[nodiscard]] inline bool isValidMagnification(float magnification) noexcept
     {
-        return std::isfinite(magnification) && magnification > 1.0f;
+        return std::isfinite(magnification) && magnification >= kMinimumScopeMagnification;
     }
 
     [[nodiscard]] inline float resolveMagnification(float authoredMagnification) noexcept
@@ -93,10 +98,16 @@ namespace rock::manual_scope_target_policy
             radiansPerDegree;
     }
 
-    [[nodiscard]] inline constexpr bool isScopeEligible(bool nativeHasScope, bool explicitScopeModelInstalled,
-        bool magnifiedScopeStructurePresent) noexcept
+    [[nodiscard]] inline bool hasScopeMagnification(float authoredMagnification) noexcept
     {
-        return nativeHasScope || explicitScopeModelInstalled || magnifiedScopeStructurePresent;
+        return std::isfinite(authoredMagnification) && authoredMagnification >= kMinimumScopeMagnification;
+    }
+
+    [[nodiscard]] inline constexpr bool isScopeEligible(bool nativeHasScope, bool explicitScopeModelInstalled,
+        bool magnifiedScopeStructurePresent, bool scopeMagnificationAuthored) noexcept
+    {
+        return nativeHasScope || explicitScopeModelInstalled || magnifiedScopeStructurePresent ||
+            scopeMagnificationAuthored;
     }
 
     [[nodiscard]] inline constexpr bool nativeHasScope(bool hasInstance, bool instanceHasScope,
@@ -108,47 +119,24 @@ namespace rock::manual_scope_target_policy
     /*
      * Some weapon authors ship a magnified optic model but omit Fallout's
      * native HasScope flag. The resolved instance flag remains the authority
-     * for native activation. Explicit scope naming is the cheap path; the
-     * structural fallback above recognizes the native ScopeAiming plus
-     * ScopeViewParts/ScopeFade contract used by generically named magnified
-     * optics. Generic sights and red dots satisfy neither contract.
+     * for native activation. An installed attachment with a model whose record
+     * name says "scope" is the cheap path; the structural check above
+     * recognizes the native ScopeAiming plus ScopeViewParts/ScopeFade contract
+     * of generically named magnified optics. Model paths are not evidence:
+     * Fallout keeps iron and reflex sights in "Scopes" folders, and the vanilla
+     * reflex sight model is HandmadeScope.nif.
      */
     [[nodiscard]] inline constexpr bool hasExplicitScopeIdentity(std::string_view recordName,
         std::string_view modelPath) noexcept
     {
-        if (modelPath.empty()) {
-            return false;
-        }
-
-        using weapon_effect_geometry_policy::containsAsciiInsensitive;
-        if (containsAsciiInsensitive(recordName, "scope")) {
-            return true;
-        }
-        // A weapon-folder name containing "scope" is not evidence that every
-        // receiver/barrel/stock underneath it is an installed optic.
-        const auto lastSeparator = modelPath.find_last_of("/\\");
-        const auto fileName = lastSeparator == std::string_view::npos ? modelPath : modelPath.substr(lastSeparator + 1);
-        if (containsAsciiInsensitive(fileName, "scope")) {
-            return true;
-        }
-        while (lastSeparator != std::string_view::npos && !modelPath.empty()) {
-            const auto separator = modelPath.find_first_of("/\\");
-            const auto component = modelPath.substr(0, separator);
-            if (nodeBaseNameEquals(component, "scope") || nodeBaseNameEquals(component, "scopes")) {
-                return true;
-            }
-            if (separator == std::string_view::npos) {
-                break;
-            }
-            modelPath.remove_prefix(separator + 1);
-        }
-        return false;
+        return !modelPath.empty() && weapon_effect_geometry_policy::containsAsciiInsensitive(recordName, "scope");
     }
 
     [[nodiscard]] inline constexpr bool requiresDirectNativeTransition(bool nativeScopeMetadataAuthored,
-        bool explicitScopeModelInstalled, bool magnifiedScopeStructurePresent, bool validNativeOverlay) noexcept
+        bool explicitScopeModelInstalled, bool magnifiedScopeStructurePresent, bool scopeMagnificationAuthored,
+        bool validNativeOverlay) noexcept
     {
         return !nativeScopeMetadataAuthored && validNativeOverlay &&
-            (explicitScopeModelInstalled || magnifiedScopeStructurePresent);
+            (explicitScopeModelInstalled || magnifiedScopeStructurePresent || scopeMagnificationAuthored);
     }
 }

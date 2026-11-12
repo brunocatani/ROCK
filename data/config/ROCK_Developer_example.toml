@@ -822,15 +822,15 @@ HavokTimingFixMaxSubsteps = 3
 
 ## === 19. Scope Placement ===
 [ScopePlacement]
-## Scope Firing-Grip Anchor
-## When a weapon has no usable generated Scope or Sight geometry, the scope anchors at the firing grip, moved by these values.
+## Scope Anchor Without Optic Geometry
+## Used only when a scoped weapon has no separate Scope or Sight part ROCK can measure, such as an optic modelled into the receiver. The scope view then starts at the firing hand's grip, moved by these values. Weapons with a measurable optic anchor on the optic and ignore these keys.
 ## Offsets are game units (70 = 1 metre) in the weapon's axes: X sideways, +Y toward the muzzle, Z up; all zero puts the anchor on the firing grip.
 ## Rotations are degrees added after the game's camera calibration: pitch about X, yaw about Z, roll about the muzzle axis.
 ## Position moves the activation point, camera and overlay together; rotation corrects the camera and overlay only.
 ## This key: offset [x, y, z]. Each value: -100 to 100.
 NativeScopeFiringGripFallbackOffsetGameUnits = [0.0, 0.0, 10.0]
 
-## Firing-grip scope anchor rotation [pitch, yaw, roll], in degrees. Each value: -180 to 180.
+## Rotation of the scope anchor used without optic geometry (see the offset above) [pitch, yaw, roll], in degrees. Each value: -180 to 180.
 NativeScopeFiringGripFallbackRotationDegrees = [0.0, 0.0, 0.0]
 
 ## Scope Overlay

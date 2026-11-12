@@ -1136,9 +1136,16 @@ namespace rock
                     if (!omod) {
                         continue;
                     }
-                    if (installedMods.size() < 1024) {
-                        installedMods += std::format("{}{:08X}'{}'", installedMods.empty() ? "" : " ", omod->formID,
-                            omod->fullName.c_str() ? omod->fullName.c_str() : "");
+                    if (installedMods.size() < 4096) {
+                        const RE::BGSKeyword* censusAttachPoint = RE::BGSKeyword::GetTypedKeywordByIndex(
+                            RE::KeywordType::kAttachPoint, omod->attachPoint.keywordIndex);
+                        const std::string_view censusModel = omod->model.c_str() ? omod->model.c_str() : "";
+                        const auto censusSeparator = censusModel.find_last_of("/\\");
+                        installedMods += std::format("{}{:08X}'{}'@{:08X}:{}", installedMods.empty() ? "" : " ",
+                            omod->formID, omod->fullName.c_str() ? omod->fullName.c_str() : "",
+                            censusAttachPoint ? censusAttachPoint->formID : 0u,
+                            censusSeparator == std::string_view::npos ? censusModel
+                                                                      : censusModel.substr(censusSeparator + 1));
                     }
                     explicitScopeModelInstalled = explicitScopeModelInstalled ||
                         manual_scope_target_policy::hasExplicitScopeIdentity(
@@ -1168,26 +1175,27 @@ namespace rock
                     }
                 }
             }
-            target.scopeEligible =
-                manual_scope_target_policy::isScopeEligible(nativeScopeMetadataAuthored, explicitScopeModelInstalled,
-                    manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence));
+            const bool scopeStructure = manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence);
+            const float authoredZoom = zoomData ? zoomData->zoomData.fovMult : 0.0f;
+            const bool scopeMagnification = manual_scope_target_policy::hasScopeMagnification(authoredZoom);
+            target.scopeEligible = manual_scope_target_policy::isScopeEligible(nativeScopeMetadataAuthored,
+                explicitScopeModelInstalled, scopeStructure, scopeMagnification);
             target.overlayValid = target.scopeEligible;
             if (target.scopeEligible) {
                 target.overlayIndex = manual_scope_target_policy::resolveOverlay(target.overlayIndex);
             }
             target.directTransitionRequired = manual_scope_target_policy::requiresDirectNativeTransition(
-                nativeScopeMetadataAuthored, explicitScopeModelInstalled,
-                manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence), target.overlayValid);
+                nativeScopeMetadataAuthored, explicitScopeModelInstalled, scopeStructure, scopeMagnification,
+                target.overlayValid);
             // One census line per weapon publication, eligible or not, so a
             // scope ROCK misses is as visible as one it admits.
             ROCK_LOG_DEBUG(Weapon,
-                "Scope census weapon={:08X} name='{}' eligible={} nativeHasScope={} named={} structure={} "
+                "Scope census weapon={:08X} name='{}' eligible={} nativeHasScope={} named={} structure={} zoomScope={} "
                 "zoomForm={:08X} authoredOverlay={} selectedOverlay={} authoredZoom={:.2f} direct={} mods=[{}]",
                 weapon->formID, weapon->fullName.c_str() ? weapon->fullName.c_str() : "", target.scopeEligible,
-                nativeScopeMetadataAuthored, explicitScopeModelInstalled,
-                manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence),
+                nativeScopeMetadataAuthored, explicitScopeModelInstalled, scopeStructure, scopeMagnification,
                 zoomData ? zoomData->formID : 0u, zoomData ? zoomData->zoomData.overlay : 0u, target.overlayIndex,
-                zoomData ? zoomData->zoomData.fovMult : 0.0f, target.directTransitionRequired, installedMods);
+                authoredZoom, target.directTransitionRequired, installedMods);
             return target;
         }
 
