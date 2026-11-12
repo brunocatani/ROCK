@@ -1238,7 +1238,10 @@ namespace rock
         rockGrabContactPatchMaxNormalAngleDegrees = static_cast<float>(ini.number("MeshContact", "GrabContactPatchMaxNormalAngleDegrees", rockGrabContactPatchMaxNormalAngleDegrees));
         rockGrabContactPatchMaxNormalAngleDegrees = std::clamp(rockGrabContactPatchMaxNormalAngleDegrees, 0.0f, 179.0f);
         rockGrabAlignmentMaxSelectionToMeshDistance = static_cast<float>(ini.number("MeshContact", "GrabAlignmentMaxSelectionToMeshDistance", rockGrabAlignmentMaxSelectionToMeshDistance));
-        if (!std::isfinite(rockGrabAlignmentMaxSelectionToMeshDistance)) {
+        if (!std::isfinite(rockGrabAlignmentMaxSelectionToMeshDistance) ||
+            rockGrabAlignmentMaxSelectionToMeshDistance < 0.0f) {
+            ROCK_LOG_WARN(Config, "Invalid MeshContact.GrabAlignmentMaxSelectionToMeshDistance={} -- using 8.0",
+                rockGrabAlignmentMaxSelectionToMeshDistance);
             rockGrabAlignmentMaxSelectionToMeshDistance = 8.0f;
         }
         rockSelectedCloseFingerCurlEnabled =

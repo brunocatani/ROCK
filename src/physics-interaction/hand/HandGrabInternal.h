@@ -1274,16 +1274,11 @@ namespace rock::hand_grab_internal
             return;
         }
 
-        const float fallbackMin =
-            std::clamp(std::isfinite(g_rockConfig.rockGrabFingerMinValue) ? g_rockConfig.rockGrabFingerMinValue : 0.2f,
-                0.0f, 1.0f);
-        const float configuredFallback = std::isfinite(g_rockConfig.rockSelectedCloseFingerAnimValue)
-            ? g_rockConfig.rockSelectedCloseFingerAnimValue
-            : 0.9f;
-        const float fallbackValue = std::clamp(configuredFallback, fallbackMin, 1.0f);
-        const auto fallbackPose = frik_visual_authority::makeUniformHandPoseData(fallbackValue, fallbackValue,
-            fallbackValue, fallbackValue, fallbackValue);
-        (void)frik_visual_authority::setHandPoseCustom("ROCK_Grab", hand, fallbackPose, 100);
+        const float closedValue =
+            std::clamp(g_rockConfig.rockSelectedCloseFingerAnimValue, g_rockConfig.rockGrabFingerMinValue, 1.0f);
+        const auto closedPose = frik_visual_authority::makeUniformHandPoseData(closedValue, closedValue, closedValue,
+            closedValue, closedValue);
+        (void)frik_visual_authority::setHandPoseCustom("ROCK_Grab", hand, closedPose, 100);
     }
 
     /*
@@ -1369,16 +1364,11 @@ namespace rock::hand_grab_internal
         hasCurrentJointPose = false;
         grab_finger_local_transform_runtime::clearLocalTransformOverride("ROCK_Grab", hand, 100, localTransformState);
         syncLocalTransformState();
-        const float fallbackMin =
-            std::clamp(std::isfinite(g_rockConfig.rockGrabFingerMinValue) ? g_rockConfig.rockGrabFingerMinValue : 0.2f,
-                0.0f, 1.0f);
-        const float configuredFallback = std::isfinite(g_rockConfig.rockSelectedCloseFingerAnimValue)
-            ? g_rockConfig.rockSelectedCloseFingerAnimValue
-            : 0.9f;
-        const float fallbackValue = std::clamp(configuredFallback, fallbackMin, 1.0f);
-        const auto fallbackPose = frik_visual_authority::makeUniformHandPoseData(fallbackValue, fallbackValue,
-            fallbackValue, fallbackValue, fallbackValue);
-        (void)frik_visual_authority::setHandPoseCustom("ROCK_Grab", hand, fallbackPose, 100);
+        const float closedValue =
+            std::clamp(g_rockConfig.rockSelectedCloseFingerAnimValue, g_rockConfig.rockGrabFingerMinValue, 1.0f);
+        const auto closedPose = frik_visual_authority::makeUniformHandPoseData(closedValue, closedValue, closedValue,
+            closedValue, closedValue);
+        (void)frik_visual_authority::setHandPoseCustom("ROCK_Grab", hand, closedPose, 100);
     }
 
     inline grab_finger_pose_runtime::SolvedGrabFingerPose buildAcquisitionFingerPose(
@@ -1386,10 +1376,7 @@ namespace rock::hand_grab_internal
     {
         auto pose = targetPose;
         const float t = std::clamp(std::isfinite(progress) ? progress : 0.0f, 0.0f, 1.0f);
-        const float precloseValue = std::clamp(std::isfinite(g_rockConfig.rockSelectedCloseFingerAnimValue)
-                ? g_rockConfig.rockSelectedCloseFingerAnimValue
-                : 0.9f,
-            0.0f, 1.0f);
+        const float precloseValue = g_rockConfig.rockSelectedCloseFingerAnimValue;
 
         for (std::size_t finger = 0; finger < pose.values.size(); ++finger) {
             const float solvedValue =

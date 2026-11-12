@@ -2223,13 +2223,8 @@ namespace rock
 
         float fallbackValue = 0.0f;
         if (fallback == SupportGripPoseFallback::SelectedClose) {
-            const float fallbackMin = std::clamp(
-                std::isfinite(g_rockConfig.rockGrabFingerMinValue) ? g_rockConfig.rockGrabFingerMinValue : 0.2f, 0.0f,
-                1.0f);
-            const float configuredFallback = std::isfinite(g_rockConfig.rockSelectedCloseFingerAnimValue)
-                ? g_rockConfig.rockSelectedCloseFingerAnimValue
-                : 0.9f;
-            fallbackValue = std::clamp(configuredFallback, fallbackMin, 1.0f);
+            fallbackValue =
+                std::clamp(g_rockConfig.rockSelectedCloseFingerAnimValue, g_rockConfig.rockGrabFingerMinValue, 1.0f);
         }
         const std::array<float, 5> fallbackCurls{
             fallbackValue,
