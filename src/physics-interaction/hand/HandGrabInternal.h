@@ -190,8 +190,8 @@ namespace rock::hand_grab_internal
             return "preferredHitAccepted";
         case PrimaryBodyChoiceReason::SurfaceOwnerAccepted:
             return "surfaceOwnerAccepted";
-        case PrimaryBodyChoiceReason::NearestAcceptedFallback:
-            return "nearestAcceptedFallback";
+        case PrimaryBodyChoiceReason::NearestAccepted:
+            return "nearestAccepted";
         case PrimaryBodyChoiceReason::NoAcceptedBody:
             return "noAcceptedBody";
         case PrimaryBodyChoiceReason::None:
@@ -1513,7 +1513,7 @@ namespace rock
         RE::NiAVObject* surfaceOwnerNode = nullptr;
         const char* pointMode = "noContactPointPending";
         GrabPivotAuthoritySource pointAuthoritySource = GrabPivotAuthoritySource::None;
-        const char* fallbackReason = "noMeshSourceNode";
+        const char* gripReason = "noMeshSourceNode";
     };
 
     struct Hand::GrabBodyResolution
@@ -1578,7 +1578,7 @@ namespace rock
         RE::NiPoint3 palmPosition{};
         RE::NiTransform grabBodyWorld{};
         RE::NiTransform motionBodyWorld{};
-        body_frame::BodyFrameSource motionBodySource = body_frame::BodyFrameSource::Fallback;
+        body_frame::BodyFrameSource motionBodySource = body_frame::BodyFrameSource::None;
         bool hasMotionBodyWorld = false;
         bool constraintUsesMotionBody = false;
         RE::NiTransform constraintBodyWorld{};

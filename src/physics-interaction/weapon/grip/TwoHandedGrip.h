@@ -2185,7 +2185,7 @@ namespace rock
                 native_scope_sight_anchor_policy::AnchorSource::None
             };
             bool anchorValid{ false };
-            RE::NiPoint3 fallbackRotationDegrees{};
+            RE::NiPoint3 firingGripRotationDegrees{};
             NativeScopeCameraDebugSnapshot cameraDebugSnapshot{};
             NativeScopeActivationDebugSnapshot activationDebugSnapshot{};
             NativeScopeRigidFrameState rigidFrame{};

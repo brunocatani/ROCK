@@ -1088,7 +1088,7 @@ namespace rock::config
         { "PhysicsTiming", "HavokTimingFixMaxSubsteps", "18. Physics Timing", "",
             api::configuration::Group::Developer },
         { "ScopePlacement", "NativeScopeFiringGripFallbackOffsetGameUnits", "19. Scope Placement",
-            "Scope Fallback Anchor\nWhen a weapon has no usable generated Scope or Sight geometry, the scope anchors "
+            "Scope Firing-Grip Anchor\nWhen a weapon has no usable generated Scope or Sight geometry, the scope anchors "
             "at the firing grip, moved by these values.\nOffsets are game units (70 = 1 metre) in the weapon's axes: "
             "X sideways, +Y toward the muzzle, Z up; all zero puts the anchor on the firing grip.\nRotations are "
             "degrees added after the game's camera calibration: pitch about X, yaw about Z, roll about the muzzle "
@@ -1096,7 +1096,7 @@ namespace rock::config
             "and overlay only.\nThis key: offset [x, y, z]. Each value: -100 to 100.",
             api::configuration::Group::Developer },
         { "ScopePlacement", "NativeScopeFiringGripFallbackRotationDegrees", "19. Scope Placement",
-            "Scope fallback rotation [pitch, yaw, roll], in degrees. Each value: -180 to 180.",
+            "Firing-grip scope anchor rotation [pitch, yaw, roll], in degrees. Each value: -180 to 180.",
             api::configuration::Group::Developer },
         { "ScopePlacement", "NativeScopeOverlayOffsetGameUnits", "19. Scope Placement",
             "Scope Overlay\nFine-tunes only the game's own world_scope.nif overlay. The activation camera stays on "

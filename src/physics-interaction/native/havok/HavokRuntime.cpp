@@ -736,7 +736,7 @@ namespace rock::havok_runtime
         result.transform = result.source == body_frame::BodyFrameSource::MotionCenterOfMass
             ? motionTransform
             : bodyArrayWorldTransform(body);
-        result.valid = result.source != body_frame::BodyFrameSource::Fallback;
+        result.valid = result.source != body_frame::BodyFrameSource::None;
         return result;
     }
 

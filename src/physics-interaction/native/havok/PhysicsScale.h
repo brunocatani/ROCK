@@ -12,13 +12,14 @@ namespace rock::physics_scale
      * that distinction centralized prevents distance-from-origin drift while
      * still letting diagnostics report FRIK's live scale separately.
      */
-    constexpr float kFallbackHavokToGame = 70.0f;
-    constexpr float kFallbackGameToHavok = 1.0f / kFallbackHavokToGame;
+    // Value before the first native read; the engine scale replaces it.
+    constexpr float kNominalHavokToGame = 70.0f;
+    constexpr float kNominalGameToHavok = 1.0f / kNominalHavokToGame;
 
     struct Snapshot
     {
-        float gameToHavok = kFallbackGameToHavok;
-        float havokToGame = kFallbackHavokToGame;
+        float gameToHavok = kNominalGameToHavok;
+        float havokToGame = kNominalHavokToGame;
         float vrScale = 0.0f;
         float vrGlobalScale = 0.0f;
         float raycastScale = 0.0f;

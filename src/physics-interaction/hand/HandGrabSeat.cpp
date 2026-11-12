@@ -664,7 +664,7 @@ namespace rock
         auto& grabSurfaceHit = surface.surfaceHit;
         const char*& grabPointMode = surface.pointMode;
         auto& grabPointAuthoritySource = surface.pointAuthoritySource;
-        const char*& grabFallbackReason = surface.fallbackReason;
+        const char*& gripReason = surface.gripReason;
         auto& pivotAuthoritySource = pivotEvidence.authoritySource;
         auto& pivotAuthorityNormalTrusted = pivotEvidence.authorityNormalTrusted;
         auto& pivotAuthorityPositionOnly = pivotEvidence.authorityPositionOnly;
@@ -872,7 +872,7 @@ namespace rock
                     : (usingPinchPocket ? grab_three_phase::AcquisitionPhase::TouchHeld : phaseDecision.phase);
                 if (usingPinchPocket) {
                     _grabObjectGripAtGrab.source = "pinchPocket";
-                    _grabObjectGripAtGrab.fallbackReason = pinchPocketCandidate.decision.reason;
+                    _grabObjectGripAtGrab.gripReason = pinchPocketCandidate.decision.reason;
                     _grabObjectGripAtGrab.confidence = 0.95f;
                 }
                 const char* relationMode = usingPinchPocket ? "pinchPocket" : "rockPointToPalm";
@@ -891,7 +891,7 @@ namespace rock
                 grabPointMode = relationMode;
                 grabPointAuthoritySource = usingPinchPocket ? GrabPivotAuthoritySource::PinchPocketMeshPoint
                                                             : GrabPivotAuthoritySource::PalmPocketMeshPoint;
-                grabFallbackReason = captureReason;
+                gripReason = captureReason;
                 if (usingPinchPocket) {
                     grabSurfaceHit = pinchPocketCandidate.surfaceHit;
                     grabSurfaceHit.hasSelectionHit = sel.hasHitPoint;
@@ -955,7 +955,7 @@ namespace rock
                         pinchPocketCandidate.decision.reason ? pinchPocketCandidate.decision.reason : "none";
                 } else {
                     resolvedAuthorityPivotSourceForFreeze = pivotAuthoritySource;
-                    resolvedAuthorityPivotReasonForFreeze = grabFallbackReason ? grabFallbackReason : "none";
+                    resolvedAuthorityPivotReasonForFreeze = gripReason ? gripReason : "none";
                 }
                 pivotAuthorityPositionOnly = false;
                 pivotAuthorityNormalTrusted = lengthSquared(gripNormalWorld) > 0.000001f;
@@ -969,7 +969,7 @@ namespace rock
                 _grabObjectGripAtGrab.contactSeedWorld = grabGripPoint;
                 _grabObjectGripAtGrab.gripCenterWorld = grabGripPoint;
                 _grabObjectGripAtGrab.source = grabPointMode;
-                _grabObjectGripAtGrab.fallbackReason = grabFallbackReason;
+                _grabObjectGripAtGrab.gripReason = gripReason;
 
                 const RE::NiPoint3 finalGripToPocketVector =
                     pocket.valid ? (grabGripPoint - pocket.palmCenterWorld) : RE::NiPoint3{};
@@ -1003,8 +1003,8 @@ namespace rock
                     !arrivalSeatSafety.allowImmediateTouchHeld) {
                     _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::NearConverging;
                     captureReason = arrivalSeatSafety.reason;
-                    grabFallbackReason = captureReason;
-                    _grabObjectGripAtGrab.fallbackReason = captureReason;
+                    gripReason = captureReason;
+                    _grabObjectGripAtGrab.gripReason = captureReason;
                 }
 
                 desiredBodyWorld = grab_frame_math::shiftObjectToAlignGripWithPocket(grabBodyWorldAtGrab,
@@ -1093,9 +1093,9 @@ namespace rock
                     grabPointMode = "looseWeaponPrimaryAttach";
                     grabPointAuthoritySource = GrabPivotAuthoritySource::LooseWeaponPrimaryAttach;
                     relationMode = grabPointMode;
-                    grabFallbackReason = looseWeaponPrimaryAttachFrame.reason;
+                    gripReason = looseWeaponPrimaryAttachFrame.reason;
                     _grabObjectGripAtGrab.source = grabPointMode;
-                    _grabObjectGripAtGrab.fallbackReason = grabFallbackReason;
+                    _grabObjectGripAtGrab.gripReason = gripReason;
                     if (_grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld) {
                         _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::NearConverging;
                         captureReason = "looseWeaponPrimaryAttachSettle";
@@ -1740,7 +1740,7 @@ namespace rock
                     seatRollReason,
                     seatPlateShape ? "plate" : (seatRodShape ? "rod" : (seatLongAxis.valid ? "compact" : "none")),
                     seatLongAxis.elongationRatio, seatLongAxis.secondElongationRatio, gripArea.seedInsetGameUnits,
-                    gripArea.fallbackReason,
+                    gripArea.gripReason,
                     looseWeaponPrimaryAttachApplied ? "yes" : "no", looseWeaponPrimaryAttachReason,
                     looseWeaponPrimaryAttachSourceVisible ? "yes" : "no");
             } else {

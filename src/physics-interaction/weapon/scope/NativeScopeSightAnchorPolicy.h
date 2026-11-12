@@ -13,7 +13,7 @@ namespace rock::native_scope_sight_anchor_policy
     {
         None,
         GeneratedSight,
-        FiringGripFallback,
+        FiringGrip,
     };
 
     struct PublicationIdentity
@@ -53,10 +53,10 @@ namespace rock::native_scope_sight_anchor_policy
     }
 
     /*
-     * Some FO4 weapon attachments do not expose trustworthy generated optic
-     * geometry. Keep the exact equipped firing-grip seat as a permanent
-     * compatibility origin for those assets, with a weapon-local offset that
-     * can be tuned without changing the stable hand/weapon relation.
+     * Generated Scope or Sight geometry places the anchor when the weapon has
+     * it. Without it (unscoped weapons, and scope parts whose geometry is not
+     * published) the anchor sits at the exact equipped firing-grip seat,
+     * moved by a weapon-local offset that leaves the hand/weapon relation alone.
      *
      * Generated geometry remains authoritative whenever it is valid.
      */
@@ -77,18 +77,18 @@ namespace rock::native_scope_sight_anchor_policy
             return {};
         }
 
-        const Point fallbackWeaponLocal{
+        const Point firingGripAnchorWeaponLocal{
             firingGripWeaponLocal.x + firingGripOffsetWeaponLocal.x,
             firingGripWeaponLocal.y + firingGripOffsetWeaponLocal.y,
             firingGripWeaponLocal.z + firingGripOffsetWeaponLocal.z,
         };
-        if (!isFinitePoint(fallbackWeaponLocal)) {
+        if (!isFinitePoint(firingGripAnchorWeaponLocal)) {
             return {};
         }
 
         return ResolvedAnchor<Point>{
-            .weaponLocal = fallbackWeaponLocal,
-            .source = AnchorSource::FiringGripFallback,
+            .weaponLocal = firingGripAnchorWeaponLocal,
+            .source = AnchorSource::FiringGrip,
             .valid = true,
         };
     }

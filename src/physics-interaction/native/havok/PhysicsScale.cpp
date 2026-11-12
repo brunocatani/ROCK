@@ -15,8 +15,8 @@ namespace rock::physics_scale
     namespace
     {
         std::mutex s_scaleMutex;
-        std::atomic<float> s_gameToHavok{ kFallbackGameToHavok };
-        std::atomic<float> s_havokToGame{ kFallbackHavokToGame };
+        std::atomic<float> s_gameToHavok{ kNominalGameToHavok };
+        std::atomic<float> s_havokToGame{ kNominalHavokToGame };
         std::atomic<float> s_vrScale{ 0.0f };
         std::atomic<float> s_vrGlobalScale{ 0.0f };
         std::atomic<float> s_raycastScale{ 0.0f };
@@ -26,13 +26,13 @@ namespace rock::physics_scale
         float readGameToHavokScale()
         {
             static REL::Relocation<float*> scale{ REL::Offset(offsets::kData_HavokGameToHavokScale) };
-            return scale.address() ? *scale : kFallbackGameToHavok;
+            return *scale;
         }
 
         float readHavokToGameScale()
         {
             static REL::Relocation<float*> scale{ REL::Offset(offsets::kData_HavokToGameScale) };
-            return scale.address() ? *scale : kFallbackHavokToGame;
+            return *scale;
         }
 
         float readVrGlobalScale()

@@ -706,7 +706,7 @@ namespace rock
         const auto& grabGripPoint = surface.gripPoint;
         const bool meshGrabFound = surface.meshGrabFound;
         const char* grabPointMode = surface.pointMode;
-        const char* grabFallbackReason = surface.fallbackReason;
+        const char* gripReason = surface.gripReason;
         _grabOffsetAcquisition = {};
         _looseSharedAcquisition = {};
         _looseSharedAcquisitionPeer = 0;
@@ -760,13 +760,13 @@ namespace rock
                 ROCK_LOG_DEBUG(Hand,
                     "GRAB DIAG {}: handPos=({:.1f},{:.1f},{:.1f}) "
                     "pocket=({:.1f},{:.1f},{:.1f}) grip=({:.1f},{:.1f},{:.1f}) meshGrab={} grabPointMode={} "
-                    "fallbackReason={} "
+                    "gripReason={} "
                     "frozenPivotB=({:.2f},{:.2f},{:.2f}) activePoint={} palmSeatPoint={} "
                     "pivotAToGrab_hk={:.4f} ({:.1f} game units) pivotAToHandOrigin={:.1f} game units "
                     "selectionToGripEvidence={:.1f}",
                     handName(), handWorldTransform.translate.x, handWorldTransform.translate.y,
                     handWorldTransform.translate.z, grabPivotAWorld.x, grabPivotAWorld.y, grabPivotAWorld.z,
-                    grabGripPoint.x, grabGripPoint.y, grabGripPoint.z, meshGrabFound, grabPointMode, grabFallbackReason,
+                    grabGripPoint.x, grabGripPoint.y, grabGripPoint.z, meshGrabFound, grabPointMode, gripReason,
                     _grabFrame.authority.pivotBBodyLocalGame.x, _grabFrame.authority.pivotBBodyLocalGame.y,
                     _grabFrame.authority.pivotBBodyLocalGame.z, _grabFrame.seat.activeGrabPointMode,
                     _grabFrame.seat.palmSeatPointMode, pivotAToGrab, pivotAToGrab * havokToGameScale(),
@@ -806,7 +806,7 @@ namespace rock
                     ROCK_LOG_INFO(Hand,
                         "{} OFFSET_ACQUIRE begin trace={} ref={:08X} source={} gripCorrection={:.3f}gu "
                         "rotationCorrection={:.3f}deg duration={:.3f}s",
-                        handName(), _grabFrame.traceId, sel.refr ? sel.refr->GetFormID() : 0, grabFallbackReason,
+                        handName(), _grabFrame.traceId, sel.refr ? sel.refr->GetFormID() : 0, gripReason,
                         pointDistanceGameUnits(initialGrip, grabPivotAWorld),
                         grab_offset_acquisition::rotationAngleRadians(_grabFrame.authority.bodyWorldAtGrab.rotate,
                             initialDesiredBodyWorld.rotate) *

@@ -478,15 +478,15 @@ namespace rock
                 rockTargetValid = true;
                 targetFromRecordedWrite = true;
             } else if (resolvedAnchorValid &&
-                resolvedAnchorSnapshot.source != native_scope_sight_anchor_policy::AnchorSource::FiringGripFallback &&
+                resolvedAnchorSnapshot.source != native_scope_sight_anchor_policy::AnchorSource::FiringGrip &&
                 (liveCameraValid || parentComposedCameraValid)) {
                 rockTargetWorld = liveCameraValid ? liveCameraWorld : parentComposedCameraWorld;
                 rockTargetWorld.translate = resolvedAnchorWorld;
                 rockTargetValid = finiteNiTransform(rockTargetWorld);
             }
-            const bool targetIsFallbackPreview = targetFromResolvedPreview &&
+            const bool targetIsFiringGripPreview = targetFromResolvedPreview &&
                 targetPreviewSnapshot.anchorSource ==
-                    native_scope_sight_anchor_policy::AnchorSource::FiringGripFallback;
+                    native_scope_sight_anchor_policy::AnchorSource::FiringGrip;
 
             const float liveColor[4]{ 1.0f, 0.12f, 0.08f, 1.0f };
             const float targetColor[4]{ 0.18f, 1.0f, 0.28f, 1.0f };
@@ -525,15 +525,15 @@ namespace rock
                     targetUpWorld);
                 addMarkerPoint(debug::MarkerOverlayRole::NativeScopeRockTarget, targetUpWorld, 2.4f);
                 addTextLine(rockTargetWorld.translate, targetColor,
-                    targetIsFallbackPreview
+                    targetIsFiringGripPreview
                         ? "FALLBACK PREVIEW ORIGIN"
                         : (targetFromResolvedPreview
                                   ? "ROCK PRE-ACTIVATION TARGET"
                                   : (targetFromRecordedWrite ? "ROCK WRITE TARGET" : "ROCK GEOMETRY TARGET")));
                 addTextLine(targetAimWorld, targetColor,
-                    targetIsFallbackPreview ? "FALLBACK AIM (+X)" : "TARGET AIM (+X)");
+                    targetIsFiringGripPreview ? "FIRING-GRIP AIM (+X)" : "TARGET AIM (+X)");
                 addTextLine(targetUpWorld, targetColor,
-                    targetIsFallbackPreview ? "FALLBACK UP (+Z)" : "TARGET UP (+Z)");
+                    targetIsFiringGripPreview ? "FALLBACK UP (+Z)" : "TARGET UP (+Z)");
                 if (liveCameraValid) {
                     addMarkerLine(debug::MarkerOverlayRole::NativeScopeMismatch, liveCameraWorld.translate,
                         rockTargetWorld.translate);
@@ -552,8 +552,8 @@ namespace rock
                 addTextLine(sightAnchorWorld, anchorColor, "GENERATED SIGHT REAR-CENTER");
             }
             if (resolvedAnchorValid &&
-                resolvedAnchorSnapshot.source == native_scope_sight_anchor_policy::AnchorSource::FiringGripFallback &&
-                !targetIsFallbackPreview) {
+                resolvedAnchorSnapshot.source == native_scope_sight_anchor_policy::AnchorSource::FiringGrip &&
+                !targetIsFiringGripPreview) {
                 addMarkerPoint(debug::MarkerOverlayRole::NativeScopeSightBounds, resolvedAnchorWorld, 3.8f);
                 addTextLine(resolvedAnchorWorld, anchorColor, "FIRING GRIP FALLBACK ANCHOR");
             }
@@ -599,7 +599,7 @@ namespace rock
                     return "none";
                 case native_scope_sight_anchor_policy::AnchorSource::GeneratedSight:
                     return "generated-sight";
-                case native_scope_sight_anchor_policy::AnchorSource::FiringGripFallback:
+                case native_scope_sight_anchor_policy::AnchorSource::FiringGrip:
                     return "firing-grip-fallback";
                 }
                 return "unknown";
@@ -650,12 +650,12 @@ namespace rock
             panelY += 14.0f;
             std::snprintf(panelLine, sizeof(panelLine),
                 "fallback tune: offset=(%.2f,%.2f,%.2f) rotation[pitch,yaw,roll]=(%.2f,%.2f,%.2f)",
-                g_rockConfig.rockNativeScopeFiringGripFallbackOffsetXGameUnits,
-                g_rockConfig.rockNativeScopeFiringGripFallbackOffsetYGameUnits,
-                g_rockConfig.rockNativeScopeFiringGripFallbackOffsetZGameUnits,
-                g_rockConfig.rockNativeScopeFiringGripFallbackPitchDegrees,
-                g_rockConfig.rockNativeScopeFiringGripFallbackYawDegrees,
-                g_rockConfig.rockNativeScopeFiringGripFallbackRollDegrees);
+                g_rockConfig.rockNativeScopeFiringGripOffsetXGameUnits,
+                g_rockConfig.rockNativeScopeFiringGripOffsetYGameUnits,
+                g_rockConfig.rockNativeScopeFiringGripOffsetZGameUnits,
+                g_rockConfig.rockNativeScopeFiringGripPitchDegrees,
+                g_rockConfig.rockNativeScopeFiringGripYawDegrees,
+                g_rockConfig.rockNativeScopeFiringGripRollDegrees);
             addScopePanelLine(panelY, panelLine);
             panelY += 14.0f;
             std::snprintf(panelLine, sizeof(panelLine),

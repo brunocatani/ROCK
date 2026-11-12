@@ -590,23 +590,23 @@ namespace rock
         rockManualScopeHoldSeconds = readClampedFloat(ini, "Scopes", "ManualScopeHoldSeconds",
             rockManualScopeHoldSeconds, 0.30f, 0.05f, 2.0f);
         {
-            const auto fallbackOffset = readClampedFloat3(ini, "ScopePlacement",
+            const auto firingGripOffset = readClampedFloat3(ini, "ScopePlacement",
                 "NativeScopeFiringGripFallbackOffsetGameUnits",
-                RE::NiPoint3(rockNativeScopeFiringGripFallbackOffsetXGameUnits,
-                    rockNativeScopeFiringGripFallbackOffsetYGameUnits, rockNativeScopeFiringGripFallbackOffsetZGameUnits),
+                RE::NiPoint3(rockNativeScopeFiringGripOffsetXGameUnits,
+                    rockNativeScopeFiringGripOffsetYGameUnits, rockNativeScopeFiringGripOffsetZGameUnits),
                 -100.0f, 100.0f);
-            rockNativeScopeFiringGripFallbackOffsetXGameUnits = fallbackOffset.x;
-            rockNativeScopeFiringGripFallbackOffsetYGameUnits = fallbackOffset.y;
-            rockNativeScopeFiringGripFallbackOffsetZGameUnits = fallbackOffset.z;
+            rockNativeScopeFiringGripOffsetXGameUnits = firingGripOffset.x;
+            rockNativeScopeFiringGripOffsetYGameUnits = firingGripOffset.y;
+            rockNativeScopeFiringGripOffsetZGameUnits = firingGripOffset.z;
             // [pitch, yaw, roll]
-            const auto fallbackRotation = readClampedFloat3(ini, "ScopePlacement",
+            const auto firingGripRotation = readClampedFloat3(ini, "ScopePlacement",
                 "NativeScopeFiringGripFallbackRotationDegrees",
-                RE::NiPoint3(rockNativeScopeFiringGripFallbackPitchDegrees, rockNativeScopeFiringGripFallbackYawDegrees,
-                    rockNativeScopeFiringGripFallbackRollDegrees),
+                RE::NiPoint3(rockNativeScopeFiringGripPitchDegrees, rockNativeScopeFiringGripYawDegrees,
+                    rockNativeScopeFiringGripRollDegrees),
                 -180.0f, 180.0f);
-            rockNativeScopeFiringGripFallbackPitchDegrees = fallbackRotation.x;
-            rockNativeScopeFiringGripFallbackYawDegrees = fallbackRotation.y;
-            rockNativeScopeFiringGripFallbackRollDegrees = fallbackRotation.z;
+            rockNativeScopeFiringGripPitchDegrees = firingGripRotation.x;
+            rockNativeScopeFiringGripYawDegrees = firingGripRotation.y;
+            rockNativeScopeFiringGripRollDegrees = firingGripRotation.z;
             const auto overlayOffset = readClampedFloat3(ini, "ScopePlacement", "NativeScopeOverlayOffsetGameUnits",
                 RE::NiPoint3(rockNativeScopeOverlayOffsetXGameUnits, rockNativeScopeOverlayOffsetYGameUnits,
                     rockNativeScopeOverlayOffsetZGameUnits),

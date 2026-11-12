@@ -745,7 +745,7 @@ namespace rock
         float proxyAngularVelocityRadiansPerSecond = 0.0f;
         bool proxyVelocityTelemetryOk = false;
         RE::NiTransform proxyReadbackBetween{};
-        body_frame::BodyFrameSource proxyReadbackSourceBetween = body_frame::BodyFrameSource::Fallback;
+        body_frame::BodyFrameSource proxyReadbackSourceBetween = body_frame::BodyFrameSource::None;
         std::uint32_t proxyReadbackMotionIndexBetween = body_frame::kFreeMotionIndex;
         bool proxyReadbackBetweenOk = false;
         float proxyReadbackBetweenPositionErrorGameUnits = -1.0f;

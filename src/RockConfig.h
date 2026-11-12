@@ -202,12 +202,12 @@ namespace rock
         // explicitly forced for an incorrectly accepted optic collider.
         // Position and rotation are relative to the firing-grip palm seat in
         // equipped Weapon axes; rotation follows native camera calibration.
-        float rockNativeScopeFiringGripFallbackOffsetXGameUnits = 0.0f;
-        float rockNativeScopeFiringGripFallbackOffsetYGameUnits = 0.0f;
-        float rockNativeScopeFiringGripFallbackOffsetZGameUnits = 10.0f;
-        float rockNativeScopeFiringGripFallbackPitchDegrees = 0.0f;
-        float rockNativeScopeFiringGripFallbackYawDegrees = 0.0f;
-        float rockNativeScopeFiringGripFallbackRollDegrees = 0.0f;
+        float rockNativeScopeFiringGripOffsetXGameUnits = 0.0f;
+        float rockNativeScopeFiringGripOffsetYGameUnits = 0.0f;
+        float rockNativeScopeFiringGripOffsetZGameUnits = 10.0f;
+        float rockNativeScopeFiringGripPitchDegrees = 0.0f;
+        float rockNativeScopeFiringGripYawDegrees = 0.0f;
+        float rockNativeScopeFiringGripRollDegrees = 0.0f;
 
         // Fine tuning for FO4VR's game-native world_scope.nif overlay. These
         // offsets are applied in the calibrated model-root frame after ROCK
