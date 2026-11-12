@@ -1189,7 +1189,7 @@ namespace rock
                 target.overlayValid);
             // One census line per weapon publication, eligible or not, so a
             // scope ROCK misses is as visible as one it admits.
-            ROCK_LOG_DEBUG(Weapon,
+            ROCK_LOG_INFO(Weapon,
                 "Scope census weapon={:08X} name='{}' eligible={} nativeHasScope={} named={} structure={} zoomScope={} "
                 "zoomForm={:08X} authoredOverlay={} selectedOverlay={} authoredZoom={:.2f} direct={} mods=[{}]",
                 weapon->formID, weapon->fullName.c_str() ? weapon->fullName.c_str() : "", target.scopeEligible,
@@ -2159,7 +2159,7 @@ namespace rock
                     parts += std::format("{}{}:{}:{:08X}", parts.empty() ? "" : " ", descriptor.sourceName,
                         generatedWeaponPartKindName(descriptor.semantic.partKind), descriptor.omodFormId);
                 }
-                ROCK_LOG_DEBUG(Weapon, "Scope census weapon={:08X} generation={:016X} no Scope/Sight body parts=[{}]",
+                ROCK_LOG_INFO(Weapon, "Scope census weapon={:08X} generation={:016X} no Scope/Sight body parts=[{}]",
                     weaponFormID, weaponGenerationKey, parts);
                 return snapshot;
             }
