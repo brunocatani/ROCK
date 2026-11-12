@@ -9,13 +9,13 @@ namespace rock::weapon_accessory_part_kind_policy
 {
     /*
      * Record/emitter evidence refines an already-classified physical part.
-     * A native-overlay OMOD is always a Scope. Otherwise laser and flashlight
+     * A part of the installed optic OMOD is always a Scope. Otherwise laser and flashlight
      * capabilities describe the module, while reticle-only optics retain the
      * existing Sight classification.
      */
     struct Evidence
     {
-        bool nativeScopeOverlay{ false };
+        bool installedOptic{ false };
         bool laserEmitter{ false };
         bool flashlightEmitter{ false };
     };
@@ -23,7 +23,7 @@ namespace rock::weapon_accessory_part_kind_policy
     [[nodiscard]] inline constexpr WeaponPartKind resolvePartKind(WeaponPartKind baseKind,
         const Evidence& evidence) noexcept
     {
-        if (evidence.nativeScopeOverlay) {
+        if (evidence.installedOptic) {
             return WeaponPartKind::Scope;
         }
         if (evidence.laserEmitter && evidence.flashlightEmitter) {

@@ -1090,6 +1090,129 @@ namespace rock
             return false;
         }
 
+        [[nodiscard]] inline float equippedWeaponZoomMagnification(std::uint32_t equipIndex)
+        {
+            auto* equipData = f4vr::getEquippedWeaponItem(equipIndex);
+            auto* weapon = equipData && equipData->item.object ? equipData->item.object->As<RE::TESObjectWEAP>() : nullptr;
+            if (!weapon) {
+                return 0.0f;
+            }
+            auto* instanceData = static_cast<RE::TESObjectWEAP::InstanceData*>(equipData->item.instanceData.get());
+            RE::BGSZoomData* zoomData = instanceData ? instanceData->zoomData : nullptr;
+            if (!zoomData) {
+                zoomData = weapon->weaponData.zoomData;
+            }
+            return zoomData ? zoomData->zoomData.fovMult : 0.0f;
+        }
+
+        /*
+         * The installed optic is the OMOD that sets the HasScope flag (property
+         * target 48), whose record name says scope, or that sets the instance
+         * ZOOM form (target 67, e.g. Fallout4.esm mod_PipeGun_Scope_ScopeShort
+         * -> ZM_Standard_Scope_x4) while the equipped weapon's resolved ZOOM is
+         * a scope magnification. Iron sights also set ZOOM, at 1.0 to 1.5, so a
+         * ZOOM property alone is not optic evidence.
+         */
+        [[nodiscard]] inline bool attachmentModIsInstalledOptic(RE::BGSMod::Attachment::Mod& omod,
+            bool weaponZoomIsScopeMagnification)
+        {
+            constexpr std::uint8_t kBgsModPropertyBlockId = 1;
+            constexpr std::uint32_t kHasScopeTarget = 48;
+            constexpr std::uint32_t kZoomDataTarget = 67;
+            for (const auto& property : omod.GetBuffer<RE::BGSMod::Property::Mod>(kBgsModPropertyBlockId)) {
+                if (property.target == kHasScopeTarget ||
+                    (property.target == kZoomDataTarget && weaponZoomIsScopeMagnification)) {
+                    return true;
+                }
+            }
+            return manual_scope_target_policy::hasExplicitScopeIdentity(
+                omod.fullName.c_str() ? omod.fullName.c_str() : "", omod.model.c_str() ? omod.model.c_str() : "");
+        }
+
+        /*
+         * The game attaches an OMOD's model under a "P-<connect point>" node of
+         * its parent model, and the model's top-level nodes keep their NIF
+         * names there (EBR-14 SZ Oscar-9: P-Fourx holds the hybrid optic's
+         * shapes and _SightHelper). Matching those names against the optic
+         * OMOD's own model template finds its geometry under any slot name,
+         * including mod-added attach points absent from the vanilla table.
+         */
+        struct InstalledOpticModel
+        {
+            std::uint32_t omodFormId{ 0 };
+            std::vector<std::string> topLevelNodeNames;
+        };
+
+        [[nodiscard]] inline std::vector<InstalledOpticModel> collectInstalledOpticModels(
+            const std::unordered_map<std::uint32_t, std::uint32_t>& omodByAttachPointFormId, std::uint32_t equipIndex)
+        {
+            std::vector<InstalledOpticModel> optics;
+            const bool weaponZoomIsScopeMagnification =
+                manual_scope_target_policy::isValidMagnification(equippedWeaponZoomMagnification(equipIndex));
+            for (const auto& [attachPointFormId, omodFormId] : omodByAttachPointFormId) {
+                (void)attachPointFormId;
+                auto* omod = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(omodFormId);
+                if (!omod || !omod->model.c_str() || !*omod->model.c_str() ||
+                    !attachmentModIsInstalledOptic(*omod, weaponZoomIsScopeMagnification)) {
+                    continue;
+                }
+                const auto templateRoot = loadCompleteOmodModelTemplate(omod->model.c_str());
+                if (!templateRoot) {
+                    continue;
+                }
+                InstalledOpticModel optic{ .omodFormId = omodFormId };
+                const auto& children = templateRoot->GetRuntimeData().children;
+                for (std::uint16_t i = 0; i < children.capacity(); ++i) {
+                    const auto* child = children[i].get();
+                    if (child && child->name.c_str() && *child->name.c_str()) {
+                        optic.topLevelNodeNames.emplace_back(child->name.c_str());
+                    }
+                }
+                if (!optic.topLevelNodeNames.empty()) {
+                    optics.push_back(std::move(optic));
+                }
+            }
+            return optics;
+        }
+
+        // The optic OMOD owning the nearest "P-" slot above a part, or 0. A slot
+        // matches only when it holds every top-level node of the optic model.
+        [[nodiscard]] inline std::uint32_t installedOpticOwningPart(const RE::NiAVObject* sourceRoot,
+            const std::vector<InstalledOpticModel>& optics)
+        {
+            if (optics.empty()) {
+                return 0;
+            }
+            const RE::NiAVObject* slot = sourceRoot;
+            for (int hop = 0; slot && hop < 32; ++hop, slot = slot->parent) {
+                const char* name = slot->name.c_str();
+                if (name && name[0] == 'P' && name[1] == '-') {
+                    break;
+                }
+            }
+            const auto* slotNode = slot ? const_cast<RE::NiAVObject*>(slot)->IsNode() : nullptr;
+            if (!slotNode) {
+                return 0;
+            }
+            const auto& children = slotNode->GetRuntimeData().children;
+            for (const auto& optic : optics) {
+                const bool allPresent = std::all_of(optic.topLevelNodeNames.begin(), optic.topLevelNodeNames.end(),
+                    [&](const std::string& expected) {
+                        for (std::uint16_t i = 0; i < children.capacity(); ++i) {
+                            const auto* child = children[i].get();
+                            if (child && child->name.c_str() && expected == child->name.c_str()) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    });
+                if (allPresent) {
+                    return optic.omodFormId;
+                }
+            }
+            return 0;
+        }
+
         [[nodiscard]] inline EquippedManualScopeTarget resolveEquippedManualScopeTarget(
             RE::NiAVObject* assembledWeaponRoot, std::uint32_t equipIndex)
         {
