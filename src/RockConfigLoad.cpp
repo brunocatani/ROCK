@@ -1138,18 +1138,8 @@ namespace rock
             rockGrabHandReturnMinAngleDegrees, 5.0f, 0.0f, 180.0f);
         rockGrabHandReturnMaxAngleDegrees = readClampedFloat(ini, "GrabContactEvidence", "GrabHandReturnMaxAngleDegrees",
             rockGrabHandReturnMaxAngleDegrees, 90.0f, rockGrabHandReturnMinAngleDegrees, 180.0f);
-        rockGrabFingerPoseMode =
-            static_cast<int>(ini.integer("FingerPoses", "GrabFingerPoseMode", rockGrabFingerPoseMode));
-        if (rockGrabFingerPoseMode != 1 && rockGrabFingerPoseMode != 2) {
-            ROCK_LOG_WARN(Config, "Invalid FingerPoses.GrabFingerPoseMode={} -- using 1", rockGrabFingerPoseMode);
-            rockGrabFingerPoseMode = 1;
-        }
-        rockWeaponGrabPoseMode =
-            static_cast<int>(ini.integer("FingerPoses", "WeaponGrabPoseMode", rockWeaponGrabPoseMode));
-        if (rockWeaponGrabPoseMode < 0 || rockWeaponGrabPoseMode > 3) {
-            ROCK_LOG_WARN(Config, "Invalid FingerPoses.WeaponGrabPoseMode={} -- using 0", rockWeaponGrabPoseMode);
-            rockWeaponGrabPoseMode = 0;
-        }
+        rockWeaponGrabCapsuleProbes =
+            ini.boolean("FingerPoses", "WeaponGrabCapsuleProbes", rockWeaponGrabCapsuleProbes);
         rockLooseGrabFingerPoseMode =
             static_cast<int>(ini.integer("FingerPoses", "LooseGrabFingerPoseMode", rockLooseGrabFingerPoseMode));
         if (rockLooseGrabFingerPoseMode < 0 || rockLooseGrabFingerPoseMode > 1) {

@@ -3016,10 +3016,7 @@ namespace rock
             : useDynamicHandoffGrip                       ? firingGripWorld
                                                           : (meshFound ? grabPoint.position : palmPos);
         constexpr float kDegreesToRadians = 0.01745329251994329577f;
-        const float surfaceSeatMaxRadians =
-            grab_finger_pose_runtime::weaponGrabPoseMode(g_rockConfig.rockWeaponGrabPoseMode,
-                g_rockConfig.rockGrabFingerPoseMode) != grab_finger_pose_runtime::FingerPoseMode::CalibratedSlice &&
-                g_rockConfig.rockWeaponSupportSurfaceSeatEnabled && meshFound
+        const float surfaceSeatMaxRadians = g_rockConfig.rockWeaponSupportSurfaceSeatEnabled && meshFound
             ? g_rockConfig.rockWeaponSupportSurfaceSeatMaxDegrees * kDegreesToRadians
             : 0.0f;
         const auto surfaceSeat =

@@ -147,48 +147,8 @@ namespace rock::grab_finger_pose_runtime
 
     inline constexpr std::uint8_t kCompleteFingerContactMask = 0x1Fu;
 
-    enum class FingerPoseMode : std::uint8_t
-    {
-        Current = 1,
-        PlaneSlice = 2,
-        CalibratedSlice = 3
-    };
-
-    [[nodiscard]] constexpr bool usesCapturedFingerDirections(FingerPoseMode mode)
-    {
-        return mode == FingerPoseMode::PlaneSlice || mode == FingerPoseMode::CalibratedSlice;
-    }
-
-    [[nodiscard]] constexpr FingerPoseMode fingerPoseMode(int value)
-    {
-        return value == 2 ? FingerPoseMode::PlaneSlice : FingerPoseMode::Current;
-    }
-
-    [[nodiscard]] constexpr FingerPoseMode weaponGrabPoseMode(int weaponMode, int grabMode)
-    {
-        if (weaponMode == 2)
-            return FingerPoseMode::CalibratedSlice;
-        // 3 (capsule probes) seats the hand and picks triangles like Current.
-        if (weaponMode == 1 || weaponMode == 3)
-            return FingerPoseMode::Current;
-        return fingerPoseMode(grabMode);
-    }
-
-    [[nodiscard]] constexpr const char* fingerPoseModeName(FingerPoseMode mode)
-    {
-        switch (mode) {
-        case FingerPoseMode::PlaneSlice:
-            return "Plane slice";
-        case FingerPoseMode::CalibratedSlice:
-            return "Calibrated slice";
-        default:
-            return "Current swept arc";
-        }
-    }
-
     struct SolvedGrabFingerPose
     {
-        FingerPoseMode mode = FingerPoseMode::Current;
         std::array<float, 5> values{ 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
         std::array<float, 15> jointValues{};
         std::array<RE::NiPoint3, 5> probeStart{};
@@ -1477,11 +1437,6 @@ namespace rock::grab_finger_pose_runtime
         std::array<FingerPadSurfaceEvidence, 5>& outEvidence, bool allowSurfaceTargetRefinement = true,
         FingerPadProbeOptions options = {}, const FingerPoseTriangleSpatialIndex* spatialIndex = nullptr)
     {
-        if (pose.mode == FingerPoseMode::PlaneSlice) {
-            outEvidence = {};
-            return false;
-        }
-
         performance_profiler::ScopedTimer timer(performance_profiler::Scope::GrabFingerPadProbes);
         options = sanitizeFingerPadProbeOptions(options);
         outEvidence = {};
@@ -1597,7 +1552,7 @@ namespace rock::grab_finger_pose_runtime
         float maxSplayRadians = kDefaultSurfaceContactSplayMaxRadians)
     {
         outSplayRadians = {};
-        if (pose.mode == FingerPoseMode::PlaneSlice || !hasSurfaceContactSplayCandidates(pose)) {
+        if (!hasSurfaceContactSplayCandidates(pose)) {
             return false;
         }
 
@@ -1774,8 +1729,7 @@ namespace rock::grab_finger_pose_runtime
         const FingerPoseTriangleSpatialIndex* spatialIndex = nullptr,
         const RE::NiTransform* spatialObjectWorldTransform = nullptr,
         FingerSweepDebugCapture* outSweepDebugCapture = nullptr,
-        FingerPoseMeshRelation meshRelation = FingerPoseMeshRelation::CurrentMeshRequiresVirtualSeat,
-        FingerPoseMode mode = FingerPoseMode::Current)
+        FingerPoseMeshRelation meshRelation = FingerPoseMeshRelation::CurrentMeshRequiresVirtualSeat)
     {
         performance_profiler::ScopedTimer timer(performance_profiler::Scope::GrabFingerSolve);
         if (outSweepDebugCapture) {
@@ -1785,10 +1739,7 @@ namespace rock::grab_finger_pose_runtime
         const float clampedMin = std::clamp(minValue, 0.0f, 1.0f);
         result.values = { clampedMin, clampedMin, clampedMin, clampedMin, clampedMin };
         result.poseTargetCount = static_cast<int>(poseTargets.targetCount);
-        result.mode = mode;
-        const bool legacy = mode == FingerPoseMode::PlaneSlice;
-        const bool capturedDirections = usesCapturedFingerDirections(mode);
-        const bool useSpatialIndex = !capturedDirections && useCurveSolver && spatialIndex && !spatialIndex->empty() &&
+        const bool useSpatialIndex = useCurveSolver && spatialIndex && !spatialIndex->empty() &&
             spatialObjectWorldTransform && std::isfinite(spatialObjectWorldTransform->scale) &&
             std::abs(spatialObjectWorldTransform->scale) > 0.000001f;
         result.usedSpatialIndex = useSpatialIndex;
@@ -1827,10 +1778,8 @@ namespace rock::grab_finger_pose_runtime
 
         for (std::size_t finger = 0; finger < result.values.size(); ++finger) {
             const auto& live = liveLandmarks.fingers[finger];
-            constexpr std::array<float, 5> legacyMaxAngles{ 1.225f, 1.45f, 1.50f, 1.48f, 1.42f };
-            const float maxCurlAngle = legacy
-                ? legacyMaxAngles[finger]
-                : grab_finger_pose_math::bakedCalibratedFingerMaxAngleRadians(finger, isLeft, inPowerArmor);
+            const float maxCurlAngle =
+                grab_finger_pose_math::bakedCalibratedFingerMaxAngleRadians(finger, isLeft, inPowerArmor);
             /*
              * The indexed regular-grab path already queries triangles at the
              * frozen commanded seat, so its curve pivot must remain the live
@@ -1862,8 +1811,8 @@ namespace rock::grab_finger_pose_runtime
              *    data can influence it, so a static hand-object relation has
              *    one deterministic endpoint.
              * 2. Otherwise, estimate the current curl from the chord length
-             *    via the baked Tip reach table (deferred pinch and legacy
-             *    callers, where the inversion tracks the ACTUAL pose). THE
+             *    via the baked Tip reach table (deferred pinch callers, where
+             *    the inversion tracks the ACTUAL pose). THE
              *    THUMB IS EXCLUDED from the estimate: its chord
              *    shortens from opposition and twist - motion outside the arc
              *    plane - so the inversion reads a large spurious curl
@@ -1875,9 +1824,9 @@ namespace rock::grab_finger_pose_runtime
             const bool hasCommandedOpenDirection = commandedOpenDirectionsWorld &&
                 isFinitePoint((*commandedOpenDirectionsWorld)[finger]) &&
                 distanceSquared((*commandedOpenDirectionsWorld)[finger], RE::NiPoint3{}) > 0.25f;
-            if (!capturedDirections && hasCommandedOpenDirection) {
+            if (hasCommandedOpenDirection) {
                 openDirectionWorld = (*commandedOpenDirectionsWorld)[finger];
-            } else if (!capturedDirections && finger != 0) {
+            } else if (finger != 0) {
                 const auto& liveChain = liveFingerSnapshot->fingers[finger];
                 const float liveChordLength = std::sqrt(distanceSquared(liveChain.points[2], liveChain.points[0]));
                 const auto chordCurl = grab_finger_pose_math::estimateCalibratedChainCurlFromChord(finger, isLeft,
@@ -1928,24 +1877,7 @@ namespace rock::grab_finger_pose_runtime
                  * never select it.
                  */
                 grab_finger_pose_math::ThumbAwareFingerCurveCurlValue<RE::NiPoint3> curveSolved{};
-                if (legacy) {
-                    curveSolved = grab_finger_pose_math::solveLegacyThumbAwareFingerCurveCurlValue(candidateTriangles,
-                        baseWorld, curlNormalWorld, thumbAlternateCurlNormalWorld, openDirectionWorld, maxCurlAngle,
-                        fingerOpenLengthWorld, clampedMin, isThumb, fingerTargetWorld, fingerTargetNormalWorld,
-                        rejectBacksideHits && useTargetNormal, surfacePlaneToleranceGameUnits);
-                    curveSolved.selectedThumbCurve = curveSolved.value;
-                    curveSolved.selectedThumbLane = curveSolved.usedAlternateThumbCurve
-                        ? grab_finger_calibration_data::BakedGrabThumbLane::Opposition
-                        : grab_finger_calibration_data::BakedGrabThumbLane::Wrap;
-                    curveSolved.selectedThumbLaneNormal = thumbAlternateCurlNormalWorld;
-                    curveSolved.selectedThumbLaneMaxCurlAngleRadians = maxCurlAngle;
-                } else if (mode == FingerPoseMode::CalibratedSlice) {
-                    curveSolved = grab_finger_pose_math::solveThumbAwareCalibratedFingerCurveCurlValue(
-                        candidateTriangles, finger, isLeft, inPowerArmor, baseWorld, curlNormalWorld,
-                        thumbAlternateCurlNormalWorld, openDirectionWorld, fingerOpenLengthWorld, clampedMin, isThumb,
-                        fingerTargetWorld, fingerTargetNormalWorld, rejectBacksideHits && useTargetNormal,
-                        surfacePlaneToleranceGameUnits);
-                } else if (useSpatialIndex) {
+                if (useSpatialIndex) {
                     auto solveSpatialCurve =
                         [&](const grab_finger_pose_math::CalibratedFingerCurve<RE::NiPoint3>& curve,
                             float curveMinValue, float curveContactRadius, float curveMaxOpenValue) {
@@ -2015,8 +1947,7 @@ namespace rock::grab_finger_pose_runtime
                     }
                 }
             }
-            if (useTarget && !solved.hit &&
-                (!curveSolverRan || (capturedDirections && !(finger == 0 && result.usedAlternateThumbCurve)))) {
+            if (useTarget && !solved.hit && !curveSolverRan) {
                 solved = grab_finger_pose_math::solveFingerCurlValue(candidateTriangles, baseWorld, probeDirection,
                     probeDistance, clampedMin, kFingerProbeRadius, curlNormalWorld, openDirectionWorld, maxCurlAngle,
                     fingerTargetWorld, fingerTargetNormalWorld, rejectBacksideHits && useTargetNormal,
@@ -2063,7 +1994,7 @@ namespace rock::grab_finger_pose_runtime
              * invert, and a value floored by minValue no longer matches its
              * contact row.
              */
-            if (!capturedDirections && curveSolverRan && solved.hit &&
+            if (curveSolverRan && solved.hit &&
                 solved.hitKind == grab_finger_pose_math::FingerCurlValue::HitKind::FrontValid &&
                 solved.rawCurveValue >= clampedMin - 0.0001f && (finger != 0 || !result.usedAlternateThumbCurve)) {
                 const auto& bakedAnchorProfile =
@@ -2134,14 +2065,12 @@ namespace rock::grab_finger_pose_runtime
         const FingerPoseTriangleSpatialIndex* spatialIndex = nullptr,
         const RE::NiTransform* spatialObjectWorldTransform = nullptr,
         FingerSweepDebugCapture* outSweepDebugCapture = nullptr,
-        FingerPoseMeshRelation meshRelation = FingerPoseMeshRelation::CurrentMeshRequiresVirtualSeat,
-        FingerPoseMode mode = FingerPoseMode::Current)
+        FingerPoseMeshRelation meshRelation = FingerPoseMeshRelation::CurrentMeshRequiresVirtualSeat)
     {
         return solveGrabFingerPoseFromTriangles(triangles, handTransform, isLeft, grabAnchorWorld,
             makeSharedGripPoseTarget(grabGripPoint), minValue, maxTriangleDistanceSquared, useCurveSolver,
             liveFingerSnapshot, rejectBacksideHits, surfacePlaneToleranceGameUnits, allowSurfaceAimTargets,
             sweepContactRadiusGameUnits, unreachableFingerOpenValue, thumbSweepMaxOpenValue, fingerSweepMaxOpenValue,
-            commandedOpenDirectionsWorld, spatialIndex, spatialObjectWorldTransform, outSweepDebugCapture, meshRelation,
-            mode);
+            commandedOpenDirectionsWorld, spatialIndex, spatialObjectWorldTransform, outSweepDebugCapture, meshRelation);
     }
 }

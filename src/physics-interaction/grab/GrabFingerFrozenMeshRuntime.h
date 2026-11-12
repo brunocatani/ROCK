@@ -44,7 +44,6 @@ namespace rock::grab_finger_pose_runtime
         bool meshFingerPoseEnabled = true;
         bool captureSweepDebug = false;
         FingerPoseMeshRelation meshRelation = FingerPoseMeshRelation::AlreadyAtCommandedSeat;
-        FingerPoseMode mode = FingerPoseMode::Current;
     };
 
     struct FrozenMeshFingerPoseSolveResult
@@ -93,7 +92,7 @@ namespace rock::grab_finger_pose_runtime
         std::array<float, 5>& outSplayRadians, float maxSplayRadians)
     {
         outSplayRadians = {};
-        if (pose.mode == FingerPoseMode::PlaneSlice || !hasSurfaceContactSplayCandidates(pose)) {
+        if (!hasSurfaceContactSplayCandidates(pose)) {
             return false;
         }
 
@@ -147,8 +146,7 @@ namespace rock::grab_finger_pose_runtime
     {
         FrozenMeshFingerPoseSolveResult result{};
         rebuildBoundedWorldTriangles(boundedLocalTriangles, frozenMeshWorldTransform, worldTriangleScratch);
-        result.spatialIndexBuilt =
-            options.mode == FingerPoseMode::Current && spatialIndex.buildFromLocalTriangles(boundedLocalTriangles);
+        result.spatialIndexBuilt = spatialIndex.buildFromLocalTriangles(boundedLocalTriangles);
 
         if (capturedFingerSnapshot) {
             if (capturedFingerSnapshot->valid) {
@@ -164,9 +162,9 @@ namespace rock::grab_finger_pose_runtime
         // Captured directions (offline replay) stand in for the FRIK query, as the captured snapshot does for the scene.
         if (capturedOpenDirectionsWorld) {
             result.commandedOpenDirectionsWorld = *capturedOpenDirectionsWorld;
-            result.commandedOpenDirectionsValid = options.mode == FingerPoseMode::Current;
+            result.commandedOpenDirectionsValid = true;
         } else {
-            result.commandedOpenDirectionsValid = options.mode == FingerPoseMode::Current &&
+            result.commandedOpenDirectionsValid =
                 resolveCommandedOpenDirectionsWorld(isLeft, handWorldTransform, result.commandedOpenDirectionsWorld);
         }
         result.pose = solveGrabFingerPoseFromTriangles(worldTriangleScratch, handWorldTransform, isLeft,
@@ -177,7 +175,7 @@ namespace rock::grab_finger_pose_runtime
             result.commandedOpenDirectionsValid ? &result.commandedOpenDirectionsWorld : nullptr,
             result.spatialIndexBuilt ? &spatialIndex : nullptr,
             result.spatialIndexBuilt ? &frozenMeshWorldTransform : nullptr,
-            options.captureSweepDebug ? &result.sweepDebug : nullptr, options.meshRelation, options.mode);
+            options.captureSweepDebug ? &result.sweepDebug : nullptr, options.meshRelation);
 
         return result;
     }

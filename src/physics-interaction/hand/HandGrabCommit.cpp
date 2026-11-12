@@ -535,13 +535,12 @@ namespace rock
 
         if (_grabFingerSweptArc) {
             /*
-             * FingerPoses.LooseGrabFingerPoseMode = 1: the pre-capsule solve (finger pose
-             * mode 1, Current), unchanged: frozen-mesh swept arc, pad-probe
+             * FingerPoses.LooseGrabFingerPoseMode = 1: the pre-capsule solve,
+             * unchanged: frozen-mesh swept arc, pad-probe
              * refinement, surface-aim capture, joint publication now and the
              * local-transform layer on the next TouchHeld update. Not recorded
              * for bench replay (the replay record holds capsule solves).
              */
-            const auto mode = grab_finger_pose_runtime::FingerPoseMode::Current;
             const auto fingerPoseTargets = rebuildFingerPoseTargetsFromGrabFrame(_grabFrame, frame.objectWorld);
 
             root_flattened_finger_skeleton_runtime::Snapshot liveFingerSnapshot{};
@@ -565,13 +564,11 @@ namespace rock
                 .fingerSweepMaxOpenValue = g_rockConfig.rockGrabFingerSweepMaxOpenValue,
                 .meshFingerPoseEnabled = true,
                 .captureSweepDebug = false,
-                .mode = mode,
             };
             const auto frozenSolve = grab_finger_pose_runtime::solveFrozenMeshFingerPoseBase(localFingerPoseTriangles,
                 frame.objectWorld, frame.solveHandWorld, _isLeft, frame.pivotWorld, fingerPoseTargets,
                 _grabFingerTriangleIndex, worldTriangles, solveOptions, &liveFingerSnapshot);
             _grabFingerPose = frozenSolve.pose;
-            _grabFingerPose.mode = mode;
             if (pinchFingerPose) {
                 applyPinchFingerPosePolicy(_grabFingerPose, _grabFrame);
             }

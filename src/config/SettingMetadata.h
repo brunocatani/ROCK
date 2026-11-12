@@ -773,24 +773,15 @@ namespace rock::config
             api::configuration::Group::Developer },
         { "GrabContactEvidence", "GrabHandReturnMaxAngleDegrees", "10. Grab Contact Evidence", "",
             api::configuration::Group::Developer },
-        { "FingerPoses", "WeaponGrabPoseMode", "11. Finger Poses",
-            "0 = Follow grab finger mode. 1 = Current swept arc. 2 = Calibrated slice.\n3 = Capsule probes "
-            "(testing): the loose-object finger sweep, with thumb and index reaching onto small parts such as bolts "
-            "and slides.\nApplies on the next "
-            "dynamic equipped weapon or part grip, on either hand.\nCalibrated slice uses the contacted part, translation-only "
-            "palm seating and captured finger directions.\nUses current skeleton calibration and transform safety "
-            "checks. Authored poses retain priority.",
-            api::configuration::Group::Developer },
-        { "FingerPoses", "GrabFingerPoseMode", "11. Finger Poses",
-            "1 = Current swept arc. 2 = Legacy plane slice.\nApplies on the next dynamic weapon support grip "
-            "when WeaponGrabPoseMode = 0.\nLoose-object grabs use LooseGrabFingerPoseMode.\nLegacy captures at "
-            "contact and omits later pad refinement and splay.\nAuthored and saved finger poses keep their existing "
-            "priority.",
+        { "FingerPoses", "WeaponGrabCapsuleProbes", "11. Finger Poses",
+            "Testing: pose dynamic equipped weapon and part grips with the loose-object capsule probes, with thumb "
+            "and index reaching onto small parts such as bolts and slides, instead of the swept arc.\nApplies on the "
+            "next dynamic weapon grip, on either hand. Authored poses retain priority.",
             api::configuration::Group::Developer },
         { "FingerPoses", "LooseGrabFingerPoseMode", "11. Finger Poses",
             "0 = Capsule sweep.\n1 = Swept arc: the finger solve loose grabs used before the capsule sweep\n(pad-probe "
             "refinement, contact splay, surface-aim local transforms).\nApplies on the next loose-object grab. Weapon "
-            "grips use WeaponGrabPoseMode.",
+            "grips use WeaponGrabCapsuleProbes.",
             api::configuration::Group::Developer },
         { "FingerPoses", "GrabMeshJointPoseEnabled", "11. Finger Poses",
             "Sends per-joint finger values to FRIK when available instead of one curl per finger.",

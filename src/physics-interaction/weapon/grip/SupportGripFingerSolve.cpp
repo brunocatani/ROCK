@@ -14,11 +14,7 @@ namespace rock
         const RE::NiPoint3& gripWorldPoint, const bool cachedTrianglesFound,
         const WeaponCollision::SupportGripEvidenceView& evidenceView, WeaponPartGrip& grip)
     {
-        const auto poseMode = grab_finger_pose_runtime::weaponGrabPoseMode(g_rockConfig.rockWeaponGrabPoseMode,
-            g_rockConfig.rockGrabFingerPoseMode);
-        const bool calibratedSlice = poseMode == grab_finger_pose_runtime::FingerPoseMode::CalibratedSlice;
-        const bool capsuleProbes = g_rockConfig.rockWeaponGrabPoseMode == 3;
-        const bool legacyFingerPose = grab_finger_pose_runtime::usesCapturedFingerDirections(poseMode);
+        const bool capsuleProbes = g_rockConfig.rockWeaponGrabCapsuleProbes;
         auto& fingerScratch = _fingerPoseSolveScratch->hands[isLeft ? 0u : 1u];
         for (auto& ranking : fingerScratch.rankings) {
             ranking.clear();
@@ -45,7 +41,7 @@ namespace rock
         SupportGripFingerReferenceSet fingerReferenceSet{};
         fingerReferenceSet.seatPointWorld = gripWorldPoint;
         fingerReferenceSet.seatPointValid = grab_finger_pose_runtime::isFinitePoint(gripWorldPoint);
-        if (capturedFingerSnapshotValid && !calibratedSlice) {
+        if (capturedFingerSnapshotValid) {
             const RE::NiTransform rawToSeatedWorld = transform_math::composeTransforms(adjustedHandTransform,
                 transform_math::invertTransform(handTransform));
             const auto liveLandmarks = root_flattened_finger_skeleton_runtime::buildLandmarkSet(capturedFingerSnapshot);
@@ -110,10 +106,8 @@ namespace rock
         std::size_t compositeEvidenceViewCount = 0;
         std::size_t sourceTriangleCount = 0;
         {
-            // Calibrated slice fits only the contacted part. Retain the bounded,
-            // generation-checked evidence cache rather than walking the scene.
             const std::size_t discoveredViewCount =
-                calibratedSlice ? 0 : weaponCollision.findSupportGripEvidenceViews(weaponNode, compositeEvidenceViews);
+                weaponCollision.findSupportGripEvidenceViews(weaponNode, compositeEvidenceViews);
             for (std::size_t index = 0; index < discoveredViewCount; ++index) {
                 const auto& candidateView = compositeEvidenceViews[index];
                 if (candidateView.weaponGenerationKey != decision.weaponGenerationKey ||
@@ -144,7 +138,7 @@ namespace rock
 
         if (capsuleProbes) {
             /*
-             * Testing mode (FingerPoses.WeaponGrabPoseMode = 3): the fingers
+             * Testing mode (FingerPoses.WeaponGrabCapsuleProbes): the fingers
              * are posed by the loose-object probes. Each finger's capsules
              * close until they meet the weapon mesh, then a thumb or index
              * that met nothing on its arc bends its joints separately to
@@ -196,7 +190,7 @@ namespace rock
                 indexReach.afterGameUnits, indexReach.applied ? "reached" : "kept", sourceTriangleCount,
                 fingerScratch.localTriangles.size(),
                 std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - started).count());
-            // Fail closed: an unsolved pose takes the closed fallback like every other mode.
+            // Fail closed: an unsolved pose takes the closed fallback like the mesh solve.
             setSupportGripPose(isLeft, capsulePose.solved ? &capsulePose : nullptr, nullptr,
                 SupportGripPoseFallback::FullyClosed);
             return;
@@ -211,18 +205,13 @@ namespace rock
         if (!fingerScratch.localTriangles.empty()) {
             const RE::NiTransform seatedToRawWorld = transform_math::composeTransforms(handTransform,
                 transform_math::invertTransform(adjustedHandTransform));
-            const RE::NiTransform frozenMeshWorld = calibratedSlice
-                ? weaponNode->world
-                : weapon_two_handed_grip_math::virtualizeMeshForSeatedHand(weaponNode->world, handTransform,
-                      adjustedHandTransform);
-            const RE::NiPoint3 frozenGripPoint = calibratedSlice ? gripWorldPoint
-                                                       : weapon_two_handed_grip_math::virtualizeWorldPointForSeatedHand(
-                                                             gripWorldPoint, handTransform, adjustedHandTransform);
-            const RE::NiPoint3 solveAnchorWorld =
-                calibratedSlice ? computeGrabPalmPointWorldFromHandBasis(handTransform, isLeft) : frozenGripPoint;
-            const RE::NiPoint3 frozenGripNormal = calibratedSlice
-                ? grip.grabNormalWorld
-                : transform_math::localVectorToWorld(seatedToRawWorld, grip.grabNormalWorld);
+            const RE::NiTransform frozenMeshWorld = weapon_two_handed_grip_math::virtualizeMeshForSeatedHand(
+                weaponNode->world, handTransform, adjustedHandTransform);
+            const RE::NiPoint3 frozenGripPoint = weapon_two_handed_grip_math::virtualizeWorldPointForSeatedHand(
+                gripWorldPoint, handTransform, adjustedHandTransform);
+            const RE::NiPoint3 solveAnchorWorld = frozenGripPoint;
+            const RE::NiPoint3 frozenGripNormal =
+                transform_math::localVectorToWorld(seatedToRawWorld, grip.grabNormalWorld);
             auto fingerPoseTargets =
                 grab_finger_pose_runtime::makeSharedGripPoseTarget(frozenGripPoint, frozenGripNormal);
             fingerPoseTargets.useSeatPointForMissingTargets = false;
@@ -246,10 +235,7 @@ namespace rock
                     .fingerSweepMaxOpenValue = g_rockConfig.rockGrabFingerSweepMaxOpenValue,
                     .meshFingerPoseEnabled = true,
                     .captureSweepDebug = false,
-                    .meshRelation = calibratedSlice
-                        ? grab_finger_pose_runtime::FingerPoseMeshRelation::CurrentMeshRequiresVirtualSeat
-                        : grab_finger_pose_runtime::FingerPoseMeshRelation::AlreadyAtCommandedSeat,
-                    .mode = poseMode,
+                    .meshRelation = grab_finger_pose_runtime::FingerPoseMeshRelation::AlreadyAtCommandedSeat,
                 },
                 capturedFingerSnapshotValid ? &capturedFingerSnapshot : nullptr);
             grab_finger_pose_runtime::captureSurfaceAimObjectLocal(frozenSolve.pose, frozenMeshWorld);
@@ -265,7 +251,7 @@ namespace rock
                 const bool completeDirectFingerEvidence =
                     grab_finger_pose_runtime::hasCompleteFingerContactEvidence(meshFingerPose);
                 const auto oppositionConfig = currentWeaponOppositionPocketConfig();
-                const auto oppositionPocket = !legacyFingerPose && !completeDirectFingerEvidence &&
+                const auto oppositionPocket = !completeDirectFingerEvidence &&
                         oppositionConfig.enabled && frozenSolve.liveFingerSnapshotValid
                     ? grab_finger_pose_runtime::findLocalOppositionPocketEvidence(fingerScratch.worldTriangles,
                           frozenSolve.liveFingerSnapshot, frozenGripPoint, meshFingerPose.contactValidMask,
@@ -290,7 +276,7 @@ namespace rock
                         oppositionPocket.gripToSurfaceDistanceGameUnits);
                 }
                 const bool completeFingerEvidence = completeDirectFingerEvidence || oppositionPocket.valid;
-                if (legacyFingerPose || completeFingerEvidence) {
+                if (completeFingerEvidence) {
                     meshFingerPosePtr = &meshFingerPose;
                 } else {
                     ROCK_LOG_INFO(Weapon,
@@ -301,19 +287,7 @@ namespace rock
                         meshFingerPose.hitCount, compositeEvidenceViewCount, sourceTriangleCount,
                         meshFingerPose.candidateTriangleCount);
                 }
-                if (calibratedSlice && frozenSolve.liveFingerSnapshotValid) {
-                    const auto landmarks =
-                        root_flattened_finger_skeleton_runtime::buildLandmarkSet(frozenSolve.liveFingerSnapshot);
-                    std::array<RE::NiPoint3, 5> capturedDirections{};
-                    for (std::size_t finger = 0; finger < capturedDirections.size(); ++finger) {
-                        capturedDirections[finger] = landmarks.fingers[finger].openDirection;
-                    }
-                    if (grab_finger_pose_runtime::buildSurfaceContactSplayValues(meshFingerPose,
-                            frozenSolve.liveFingerSnapshot, capturedDirections, capturedFingerSplayRadians)) {
-                        capturedFingerSplayRadiansPtr = &capturedFingerSplayRadians;
-                    }
-                }
-                if (!legacyFingerPose && completeDirectFingerEvidence && frozenSolve.liveFingerSnapshotValid &&
+                if (completeDirectFingerEvidence && frozenSolve.liveFingerSnapshotValid &&
                     frozenSolve.commandedOpenDirectionsValid &&
                     grab_finger_pose_runtime::buildSurfaceContactSplayValues(meshFingerPose,
                         frozenSolve.liveFingerSnapshot, frozenSolve.commandedOpenDirectionsWorld,
@@ -348,10 +322,8 @@ namespace rock
         }
 
         ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: weapon grab pose applied={} selection={} hand={} source={} pose={} hits={} candidates={}",
-            grab_finger_pose_runtime::fingerPoseModeName(poseMode), g_rockConfig.rockWeaponGrabPoseMode,
-            isLeft ? "left" : "right", calibratedSlice ? "contacted-part" : "composite",
-            meshFingerPosePtr ? "mesh" : "closed-fallback", meshFingerPose.hitCount,
+            "TwoHandedGrip: weapon grab pose applied=Current swept arc hand={} pose={} hits={} candidates={}",
+            isLeft ? "left" : "right", meshFingerPosePtr ? "mesh" : "closed-fallback", meshFingerPose.hitCount,
             meshFingerPose.candidateTriangleCount);
 
         setSupportGripPose(isLeft, meshFingerPosePtr, capturedFingerSplayRadiansPtr,
@@ -374,9 +346,9 @@ namespace rock
                         (std::max)(maxBasisError, transform_math::storedRotationOrthonormalityError(local.rotate));
                 }
                 ROCK_LOG_INFO(Weapon,
-                    "TwoHandedGrip: dynamic finger pose prepared mode={} hand={} mask=0x{:04X} lane={} "
+                    "TwoHandedGrip: dynamic finger pose prepared hand={} mask=0x{:04X} lane={} "
                     "curls=({:.3f},{:.3f},{:.3f},{:.3f},{:.3f}) maxBasisError={:.8f}",
-                    static_cast<int>(poseMode), isLeft ? "left" : "right", grip.fingerLocalTransformMask,
+                    isLeft ? "left" : "right", grip.fingerLocalTransformMask,
                     grab_finger_pose_math::thumbLaneName(meshFingerPosePtr->selectedThumbLane),
                     meshFingerPosePtr->values[0], meshFingerPosePtr->values[1], meshFingerPosePtr->values[2],
                     meshFingerPosePtr->values[3], meshFingerPosePtr->values[4], maxBasisError);
