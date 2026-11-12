@@ -1117,9 +1117,12 @@ namespace rock
 
         /*
          * The installed optic is the OMOD that sets the HasScope flag (property
-         * target 48), whose record name says scope, or that sets the instance
-         * ZOOM form (target 67, e.g. Fallout4.esm mod_PipeGun_Scope_ScopeShort
-         * -> ZM_Standard_Scope_x4) while the equipped weapon's resolved ZOOM is
+         * target 48), whose record name says scope, that sets the ZOOM
+         * magnification float (target 49) to a scope value (EBR-14
+         * mod_Mike14_Hybrid06 sets 4.0; the vanilla reflex sight sets 1.5), or
+         * that sets the instance ZOOM form (target 67, e.g. Fallout4.esm
+         * mod_PipeGun_Scope_ScopeShort -> ZM_Standard_Scope_x4) while the
+         * equipped weapon's resolved ZOOM is
          * a magnification that admits a scope on its own. Iron, red-dot and laser
          * sights also set ZOOM (1.0 to 2.4), so a ZOOM property alone is not
          * optic evidence.
@@ -1129,8 +1132,14 @@ namespace rock
         {
             constexpr std::uint8_t kBgsModPropertyBlockId = 1;
             constexpr std::uint32_t kHasScopeTarget = 48;
+            constexpr std::uint32_t kZoomMagnificationTarget = 49;
             constexpr std::uint32_t kZoomDataTarget = 67;
             for (const auto& property : omod.GetBuffer<RE::BGSMod::Property::Mod>(kBgsModPropertyBlockId)) {
+                if (property.target == kZoomMagnificationTarget && property.type == RE::BGSMod::Property::TYPE::kFloat &&
+                    property.op == RE::BGSMod::Property::OP::kSet &&
+                    manual_scope_target_policy::hasScopeMagnification(property.data.mm.min.f)) {
+                    return true;
+                }
                 if (property.target == kHasScopeTarget ||
                     (property.target == kZoomDataTarget && weaponZoomIsScopeMagnification)) {
                     return true;
