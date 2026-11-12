@@ -27,7 +27,7 @@ namespace rock::weapon_aim_basis
     }
 
     // ROCK's firearm controller-to-weapon basis. The native pre-FRIK driver samples
-    // from 2026-09-17 agree on a 59-degree pitch across weapons and world
+    // agree on a 59-degree pitch across weapons and world
     // orientations. Grip translation and fingers come from the weapon's
     // authored animation, never from a provider offset or presented node.
     [[nodiscard]] inline RE::NiTransform weaponInController() noexcept

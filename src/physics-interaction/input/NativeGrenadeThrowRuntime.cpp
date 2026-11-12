@@ -19,7 +19,7 @@ namespace rock::native_grenade_throw_runtime
 {
     namespace
     {
-        // FO4VR 1.2.72 raw verification, 2026-09-11:
+        // FO4VR 1.2.72 raw verification:
         // FC2910 constructs/registers MeleeThrow at PlayerControls+300 with
         // vtable 2D8A998; FC1C00 independently resolves +300 and clears +2A.
         // FC8AE0 initializes on press, primes at 37D5B18, launches on release

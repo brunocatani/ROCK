@@ -4,7 +4,7 @@
 
 namespace rock::immersive_aid
 {
-    // Paired Stimpak capture from 2026-09-09: generated grab-proxy local
+    // Paired Stimpak capture: generated grab-proxy local
     // object transform and authored fingers. Med-X uses this same pair.
     // The capture's historical file key is not the runtime ALCH identity.
     inline constexpr saved_grab_offset::HandOffset kStimpakLeft{

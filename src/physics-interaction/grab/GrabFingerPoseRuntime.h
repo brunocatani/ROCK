@@ -150,24 +150,24 @@ namespace rock::grab_finger_pose_runtime
     enum class FingerPoseMode : std::uint8_t
     {
         Current = 1,
-        June2 = 2,
-        July9 = 3
+        PlaneSlice = 2,
+        CalibratedSlice = 3
     };
 
     [[nodiscard]] constexpr bool usesCapturedFingerDirections(FingerPoseMode mode)
     {
-        return mode == FingerPoseMode::June2 || mode == FingerPoseMode::July9;
+        return mode == FingerPoseMode::PlaneSlice || mode == FingerPoseMode::CalibratedSlice;
     }
 
     [[nodiscard]] constexpr FingerPoseMode fingerPoseMode(int value)
     {
-        return value == 2 ? FingerPoseMode::June2 : FingerPoseMode::Current;
+        return value == 2 ? FingerPoseMode::PlaneSlice : FingerPoseMode::Current;
     }
 
     [[nodiscard]] constexpr FingerPoseMode weaponGrabPoseMode(int weaponMode, int grabMode)
     {
         if (weaponMode == 2)
-            return FingerPoseMode::July9;
+            return FingerPoseMode::CalibratedSlice;
         // 3 (capsule probes) seats the hand and picks triangles like Current.
         if (weaponMode == 1 || weaponMode == 3)
             return FingerPoseMode::Current;
@@ -177,10 +177,10 @@ namespace rock::grab_finger_pose_runtime
     [[nodiscard]] constexpr const char* fingerPoseModeName(FingerPoseMode mode)
     {
         switch (mode) {
-        case FingerPoseMode::June2:
-            return "June 2";
-        case FingerPoseMode::July9:
-            return "July 9 calibrated slice";
+        case FingerPoseMode::PlaneSlice:
+            return "Plane slice";
+        case FingerPoseMode::CalibratedSlice:
+            return "Calibrated slice";
         default:
             return "Current swept arc";
         }
@@ -1477,7 +1477,7 @@ namespace rock::grab_finger_pose_runtime
         std::array<FingerPadSurfaceEvidence, 5>& outEvidence, bool allowSurfaceTargetRefinement = true,
         FingerPadProbeOptions options = {}, const FingerPoseTriangleSpatialIndex* spatialIndex = nullptr)
     {
-        if (pose.mode == FingerPoseMode::June2) {
+        if (pose.mode == FingerPoseMode::PlaneSlice) {
             outEvidence = {};
             return false;
         }
@@ -1597,7 +1597,7 @@ namespace rock::grab_finger_pose_runtime
         float maxSplayRadians = kDefaultSurfaceContactSplayMaxRadians)
     {
         outSplayRadians = {};
-        if (pose.mode == FingerPoseMode::June2 || !hasSurfaceContactSplayCandidates(pose)) {
+        if (pose.mode == FingerPoseMode::PlaneSlice || !hasSurfaceContactSplayCandidates(pose)) {
             return false;
         }
 
@@ -1786,7 +1786,7 @@ namespace rock::grab_finger_pose_runtime
         result.values = { clampedMin, clampedMin, clampedMin, clampedMin, clampedMin };
         result.poseTargetCount = static_cast<int>(poseTargets.targetCount);
         result.mode = mode;
-        const bool legacy = mode == FingerPoseMode::June2;
+        const bool legacy = mode == FingerPoseMode::PlaneSlice;
         const bool capturedDirections = usesCapturedFingerDirections(mode);
         const bool useSpatialIndex = !capturedDirections && useCurveSolver && spatialIndex && !spatialIndex->empty() &&
             spatialObjectWorldTransform && std::isfinite(spatialObjectWorldTransform->scale) &&
@@ -1867,7 +1867,7 @@ namespace rock::grab_finger_pose_runtime
              *    THUMB IS EXCLUDED from the estimate: its chord
              *    shortens from opposition and twist - motion outside the arc
              *    plane - so the inversion reads a large spurious curl
-             *    (session evidence 2026-07-13: thumb inside the mesh on
+             *    (session evidence: thumb inside the mesh on
              *    every grab). Without a commanded anchor the thumb uses its
              *    raw chord.
              */
@@ -1939,8 +1939,8 @@ namespace rock::grab_finger_pose_runtime
                         : grab_finger_calibration_data::BakedGrabThumbLane::Wrap;
                     curveSolved.selectedThumbLaneNormal = thumbAlternateCurlNormalWorld;
                     curveSolved.selectedThumbLaneMaxCurlAngleRadians = maxCurlAngle;
-                } else if (mode == FingerPoseMode::July9) {
-                    curveSolved = grab_finger_pose_math::solveJuly9ThumbAwareCalibratedFingerCurveCurlValue(
+                } else if (mode == FingerPoseMode::CalibratedSlice) {
+                    curveSolved = grab_finger_pose_math::solveThumbAwareCalibratedFingerCurveCurlValue(
                         candidateTriangles, finger, isLeft, inPowerArmor, baseWorld, curlNormalWorld,
                         thumbAlternateCurlNormalWorld, openDirectionWorld, fingerOpenLengthWorld, clampedMin, isThumb,
                         fingerTargetWorld, fingerTargetNormalWorld, rejectBacksideHits && useTargetNormal,

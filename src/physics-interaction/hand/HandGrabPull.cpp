@@ -815,7 +815,7 @@ namespace rock
                 /*
                  * The grip line is not pure cross-palm Z: the thumb sits in the
                  * way, so the natural long-object hold tilts a few degrees
-                 * toward the fingers-forward X axis (Bruno-tuned via settings).
+                 * toward the fingers-forward X axis (tuned via settings).
                  */
                 const RE::NiPoint3 crossPalmWorld =
                     transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 0.0f, 0.0f, 1.0f }, _isLeft);

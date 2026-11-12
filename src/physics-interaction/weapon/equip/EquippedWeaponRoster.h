@@ -101,7 +101,7 @@ namespace rock::equipped_weapon_roster
             }
             // Between a trigger equip's release and its firing grip the hand
             // is otherwise free: it selected and highlighted the weapon being
-            // moved to the inventory (runtime 14 Oct 21:47:52).
+            // moved to the inventory (observed at runtime).
             if (_facts.pending.firingHand == handFor(isLeft)) {
                 return true;
             }

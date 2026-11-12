@@ -13,7 +13,7 @@
  * discretion and misclassify modded parts (a "PMag" drum is not a "magazine"
  * token). Two structural signals in the assembled FO4VR weapon tree outrank
  * them, verified against in-game OMOD-DUMP evidence (AK-104, G18, MP7, M4A1,
- * Colt 605 - see docs/research/2026-07-03-omod-part-identity-plan.md):
+ * Colt 605):
  *
  *  - Slot anchors: connect-point nodes named "P-<slot>" host exactly the
  *    model subtree of the OMOD installed in that slot (P-Mag -> the magazine

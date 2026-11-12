@@ -93,7 +93,7 @@ namespace rock::grab_finger_pose_runtime
         std::array<float, 5>& outSplayRadians, float maxSplayRadians)
     {
         outSplayRadians = {};
-        if (pose.mode == FingerPoseMode::June2 || !hasSurfaceContactSplayCandidates(pose)) {
+        if (pose.mode == FingerPoseMode::PlaneSlice || !hasSurfaceContactSplayCandidates(pose)) {
             return false;
         }
 

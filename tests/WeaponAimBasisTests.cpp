@@ -133,7 +133,7 @@ namespace
     }
 
     /*
-     * Firing-grip takeover, sized from the 2026-11-01 20:50:37 handoff (hand
+     * Firing-grip takeover, sized from a captured handoff (hand
      * 7.75gu/28.2deg, weapon about 7gu in one frame): the support hand left
      * its seat and snapped onto the new carry. The presentation must start on
      * the rendered pair, keep the hand on the weapon, and land on the carry.
@@ -343,7 +343,7 @@ int main()
     RE::NiTransform controller{};
     controller.scale = 1.0f;
     controller.translate = { -335.86664f, -341.83038f, 107.02197f };
-    // Correlated pre-FRIK controller and native driver sample, 2026-09-17.
+    // Correlated pre-FRIK controller and native driver sample.
     const float controllerRows[3][3] = {
         { 0.9608731f, 0.2424956f, 0.1338615f },
         { -0.1981389f, 0.2640419f, 0.9439402f },
@@ -430,7 +430,7 @@ int main()
                 transform_math::localPointToWorld(physical, palm + offset)) < 0.001f);
     }
 
-    // Captured 2026-10-12 frame 3452: the primary native arm pass leaves the
+    // Captured frame 3452: the primary native arm pass leaves the
     // secondary attachment near the origin; its own pass moves it to the
     // controller. A world write between those passes creates a huge local.
     {

@@ -1295,7 +1295,7 @@ namespace rock
                                      * The intuition that a flat object should lie
                                      * face-down on the palm is simply wrong for
                                      * this hand: across 31 user-verified plate
-                                     * holds (2026-07-25 ground-truth captures) the
+                                     * holds (ground-truth captures) the
                                      * mesh face normal sits 63 degrees off the palm
                                      * normal, IQR 57..72 - plates are held by an
                                      * EDGE or CORNER, and that is the intended

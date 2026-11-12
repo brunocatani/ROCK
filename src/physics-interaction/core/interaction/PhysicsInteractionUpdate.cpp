@@ -941,8 +941,8 @@ namespace rock
              * other hand supersedes the carry saved when the menu opened.
              * Resumed, the carry pulled the weapon back to the old hand, which
              * may now hold the second weapon, and the directed move waited
-             * behind its pending grip with the weapon culled (bench 2 Nov
-             * 16:07:22). The directed move then applies as for any equip.
+             * behind its pending grip with the weapon culled (seen on the
+             * bench). The directed move then applies as for any equip.
              */
             const auto directed = native_hand_equipment::lastDirectedPrimaryEquip();
             auto& carry = _equipped.continuityGrip;

@@ -25,7 +25,7 @@ namespace rock::native_collision_filter_safety
         /*
          * Fallout4VR.exe 1.2.72,
          * bhkNPCollisionObject::GetCollisionFilterInfo. These are complete,
-         * position-independent entry instructions verified on 2026-08-30.
+         * position-independent entry instructions, verified.
          */
         constexpr std::array<std::uint8_t, 16> kExpectedFilterInfoEntry{
             0x48,

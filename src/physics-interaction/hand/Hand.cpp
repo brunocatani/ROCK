@@ -1524,7 +1524,7 @@ namespace rock
         /*
          * Centre of mass from the held body's Havok motion. Offset authority is
          * this binary's own reflection table: hknpMotion member
-         * 'centerOfMassAndMassFactor' at +0x00 (verified 2026-07-25). Mass
+         * 'centerOfMassAndMassFactor' at +0x00. Mass
          * distribution cannot be recovered from the render mesh, so this is
          * captured as a first-class field rather than inferred later from the
          * body frame.

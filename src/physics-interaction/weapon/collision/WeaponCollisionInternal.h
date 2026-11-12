@@ -1196,7 +1196,7 @@ namespace rock
 
         /*
          * Fallout4.esm's WeaponType* keyword records, verified directly against
-         * the ESM (2026-07-03) rather than assumed from general modding
+         * the ESM rather than assumed from general modding
          * knowledge. Stored directly on every sampled vanilla WEAP record's own
          * keyword array - no OMOD/template indirection - so a direct
          * HasKeyword() check against the equipped form is sufficient. FormIDs are
@@ -1267,7 +1267,7 @@ namespace rock
                 identity.instanceContentKey =
                     makeEquippedWeaponInstanceContentKey(weapon, instanceData, objectInstanceExtra);
                 /*
-                 * FO4VR binary verification (2026-08-05): the TESObjectWEAP
+                 * FO4VR binary verification: the TESObjectWEAP
                  * BGSEquipType-subobject override at 0x14033FD70 returns
                  * InstanceData::equipSlot (+0x70) whenever instanceData is
                  * non-null, otherwise BGSEquipType::equipSlot (+0x08). Keep

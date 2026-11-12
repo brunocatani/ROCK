@@ -62,8 +62,8 @@ namespace rock::native_equipped_model_lifetime
             // Ownership sets, built once before the native call. The native
             // connection search visits every node of the biped tree; walking
             // each node's parents with guarded page-checked reads per
-            // protected model cost ~190 ms per replacement equip (runtime
-            // 12 Oct 22:34:33 and 22:35:43). Sorted for binary search.
+            // protected model cost ~190 ms per replacement equip (observed at
+            // runtime). Sorted for binary search.
             // inside:    every node in a protected boundary's subtree.
             // ancestors: every protected root and each of its ancestors.
             std::vector<const void*> inside, ancestors;
@@ -278,17 +278,17 @@ namespace rock::native_equipped_model_lifetime
 
         // 140DCF5E0 (called by the equip executor 140E72DA0 at 140E73280 for
         // a hand slot) hides the actor's weapons with reason 2 until the
-        // native draw cleanup clears it (~190 ms, runtime 12 Oct 22:16:13).
+        // native draw cleanup clears it (~190 ms, observed at runtime).
         // For ROCK's equip into index 1 that hide only blanks the unchanged
         // primary for a frame and delays the second gun, which ROCK presents
         // itself once its model is complete; it is skipped for that equip.
         // With both weapons worn, the executor changes one of them and the
         // other stays: hiding blanked the survivor for 200 ms (dropping the
-        // second weapon, runtime 14 Oct 19:19:41). Skipped as well.
+        // second weapon, observed at runtime). Skipped as well.
         constexpr std::uintptr_t kEquipHideReturn = 0xDCF669;
         constexpr std::uint32_t kEquipHideReason = 2;
         // Opening the Pip-Boy hides the drawn weapon with reason 0 from this
-        // return address (runtime 22 Oct 12:55:50/12:56:01/12:56:14). ROCK
+        // return address (observed at runtime). ROCK
         // keeps weapons in hand inside menus, so that hide is skipped.
         constexpr std::uintptr_t kPipboyHideReturn = 0xC34826;
         constexpr std::uint32_t kPipboyHideReason = 0;

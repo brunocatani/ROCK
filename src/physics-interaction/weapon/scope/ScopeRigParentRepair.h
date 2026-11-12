@@ -8,8 +8,8 @@
  * A native unequip of that weapon tears the node's children down, leaving
  * both rig nodes without a parent; FRIK's per-frame carry then reads the
  * missing parent before ROCK releases the carry (crash at FRIK
- * WeaponPositionAdjuster::carryScopeRigWithWeapon, runtime 22 Oct 16:18:33
- * and 16:47:05). The unequip can land between frames (a game task), so the
+ * WeaponPositionAdjuster::carryScopeRigWithWeapon, observed twice at
+ * runtime). The unequip can land between frames (a game task), so the
  * repair runs at FRIK's FrameBegin, which precedes FRIK's carry in
  * onFrameStart: an orphaned rig node returns to its wand-chain parent with
  * its world kept, as FRIK's own restore does; FRIK then carries or restores

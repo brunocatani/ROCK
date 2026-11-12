@@ -1860,7 +1860,7 @@ namespace rock
              * swings with wrist/arm IK as the firing hand translates, and
              * the weapon-origin-to-support-seat lever converts that swing
              * into inverted, amplified weapon motion around the static
-             * offhand seat. Trace evidence 2026-08-27, Docs/ROCK/lessons.
+             * offhand seat (trace evidence).
              */
             solverInput.useSupportNormalTwist = false;
             solverInput.supportNormalTwistFactor = 0.0f;
@@ -3018,7 +3018,7 @@ namespace rock
         constexpr float kDegreesToRadians = 0.01745329251994329577f;
         const float surfaceSeatMaxRadians =
             grab_finger_pose_runtime::weaponGrabPoseMode(g_rockConfig.rockWeaponGrabPoseMode,
-                g_rockConfig.rockGrabFingerPoseMode) != grab_finger_pose_runtime::FingerPoseMode::July9 &&
+                g_rockConfig.rockGrabFingerPoseMode) != grab_finger_pose_runtime::FingerPoseMode::CalibratedSlice &&
                 g_rockConfig.rockWeaponSupportSurfaceSeatEnabled && meshFound
             ? g_rockConfig.rockWeaponSupportSurfaceSeatMaxDegrees * kDegreesToRadians
             : 0.0f;

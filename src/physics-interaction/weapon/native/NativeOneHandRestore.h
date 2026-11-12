@@ -13,7 +13,7 @@ namespace rock::native_one_hand_restore
      * ROCK places every weapon, so such a restore only puts back a weapon the
      * player replaced, over the one in hand: a second-weapon equip after two
      * holster swaps rebuilt the swapped-out rifle from 140E732AF and lost its
-     * own pistol (runtime 2 Nov 12:01:00). The four calls go to a no-op;
+     * own pistol (observed at runtime). The four calls go to a no-op;
      * the remembered list stays native and each site still clears it.
      */
     [[nodiscard]] bool install() noexcept;

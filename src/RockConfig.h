@@ -428,8 +428,8 @@ namespace rock
         float rockGrabHandReturnMaxDistance = 14.0f;
         float rockGrabHandReturnMinAngleDegrees = 5.0f;
         float rockGrabHandReturnMaxAngleDegrees = 90.0f;
-        int rockGrabFingerPoseMode = 1; // 1=current, 2=June 2; captured per grip.
-        int rockWeaponGrabPoseMode = 0; // 0=follow grab mode, 1=current, 2=July 9, 3=capsule probes (testing); next dynamic weapon grip.
+        int rockGrabFingerPoseMode = 1; // 1=current, 2=plane slice; captured per grip.
+        int rockWeaponGrabPoseMode = 0; // 0=follow grab mode, 1=current, 2=calibrated slice, 3=capsule probes (testing); next dynamic weapon grip.
         int rockLooseGrabFingerPoseMode = 0; // 0=capsule sweep, 1=pre-capsule swept arc; next loose-object grab.
         bool rockGrabMeshJointPoseEnabled = true;
         float rockGrabFingerMinValue = 0.2f;

@@ -28,8 +28,8 @@ namespace rock::offsets
     constexpr std::uintptr_t kHknpWorld_ModifierManager = 0x150;
 
     /*
-     * FO4VR 1.2.72 collision-query lifetime state. Raw disassembly verified
-     * 2026-08-29: hknpHybridBroadPhase::castShape loads the dispatcher from
+     * FO4VR 1.2.72 collision-query lifetime state. Raw disassembly verified:
+     * hknpHybridBroadPhase::castShape loads the dispatcher from
      * world+0x200; hknpWorld::~hknpWorld frees and then nulls that field while
      * the broadphase can still be present at +0x178. The destructor installs
      * the vtable at module+0x2DFC540 before beginning teardown.
@@ -62,7 +62,7 @@ namespace rock::offsets
 
     /*
      * FO4VR 1.2.72 hknpConstraintCollisionFilter ownership and counted-pair
-     * contract. Blind raw-disassembly verification on 2026-08-12 established:
+     * contract. Blind raw-disassembly verification established:
      * world+0x560/0x568 are the constraint-added/removed signal heads; each
      * 0x20-byte slot stores tagged-next, owner, and callback at +0x08/+0x10/
      * +0x18. The owner is the derived pair filter only when its vtable, type
@@ -92,7 +92,6 @@ namespace rock::offsets
      * Threads inside the physics step publish a nonzero TLS byte at
      * kTlsSlot_InPhysicsStepFlag (exe TLS index at kGlobal_ExeTlsIndex) and the
      * engine skips locking there; ROCK must do the same.
-     * See Docs/ROCK/lessons/2026-07-13-hknp-world-query-lock-discipline.md.
      */
     constexpr std::uintptr_t kHknpWorld_AccessLock = 0x6D8;
 
@@ -176,7 +175,7 @@ namespace rock::offsets
 
     /*
      * FO4VR held-body presentation boundary. Blind raw-disassembly
-     * verification on 2026-08-23 established the scene transform writer ABI,
+     * verification established the scene transform writer ABI,
      * its main/proxy return sites, and the native full-transform predictor.
      * The main caller predicts by the residual Havok time before writing a
      * 3x4 rotation/translation transform to the collision object's owner node.
@@ -349,7 +348,7 @@ namespace rock::offsets
 
     /*
      * Equipped-weapon 3D attach task submission. Blind raw-disassembly
-     * verification against Fallout4VR.exe 1.2.72 on 2026-07-22 confirmed
+     * verification against Fallout4VR.exe 1.2.72 confirmed
      * 0x140DAB8F0 submits task type 0x12 and retains both the actor and the
      * BGSObjectInstance payload. The task re-resolves and exact-compares the
      * actor's current form/instance before calling Actor::AttachWeapon, so a
@@ -368,7 +367,7 @@ namespace rock::offsets
 
     /*
      * Stock FO4VR constraint-data constructors and world-frame setters.
-     * Blind Ghidra verification on 2026-07-23 established the exact object
+     * Blind Ghidra verification established the exact object
      * sizes and setter ABIs used by TouchGrabRuntime:
      *   Ball-and-socket: 0x70
      *   Limited hinge:   0x130
@@ -407,7 +406,7 @@ namespace rock::offsets
 
     /*
      * FO4VR's recurring first-person node-chain alignment helper. Blind raw
-     * disassembly verification on 2026-07-17 confirmed the entry at
+     * disassembly verification confirmed the entry at
      * 0x140EF6280 and the paired calls at 0x140EF6108/0x140EF614B. In
      * right-handed mode the first call uses PlayerNodes +0x718 while the
      * second uses +0x790; module+0xEF610D is therefore the exact return site
@@ -423,8 +422,8 @@ namespace rock::offsets
     constexpr std::uintptr_t kCallsite_UpdateFirstPersonArmSecondaryReturn = 0xEF6150;
 
     /*
-     * FO4VR native-scope geometry boundary. Raw-disassembly verified
-     * 2026-07-15: CALL at 0x140EF851F targets 0x140EFAA60 with ABI
+     * FO4VR native-scope geometry boundary. Raw-disassembly verified:
+     * CALL at 0x140EF851F targets 0x140EFAA60 with ABI
      * (PlayerCharacter*, bool). The surrounding routine has already applied
      * the native menu/weapon/VATS gates; only its final cone decision is
      * replaced. The renderer accessor reads request byte +0x3 from the state
@@ -475,7 +474,7 @@ namespace rock::offsets
 
     /*
      * BSReadWriteLock read-side pair used with kHknpWorld_AccessLock. Raw-disasm
-     * verified 2026-07-13: LockForRead CAS-increments the reader count while no
+     * verified: LockForRead CAS-increments the reader count while no
      * writer bit (0x80000000) is set and is recursive for the writer-owning
      * thread; UnlockForRead decrements. 40+ engine callers share the pair.
      */

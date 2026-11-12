@@ -353,7 +353,7 @@ namespace rock
             _session.equippedWeaponOwnershipKey, _handlingSettings.firingGripReattachRadiusGameUnits, reattachInput);
         // Diagnostic: the first check that stops a squeezing hand from
         // re-taking the firing grip (left reattach refused after a menu,
-        // 14 Oct 21:48:12).
+        // observed at runtime).
         const auto traceReattachRefusal = [&](const FiringGripReattachCandidate& candidate, const char* stage,
                                               const firing_grip_reattach_zone_policy::ZoneResult* zone) {
             if (!candidate.gripHeld)

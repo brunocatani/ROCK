@@ -379,7 +379,7 @@ namespace rock
          * Pip-Boy) stays hidden until its draw has posed it. Its graph runs at
          * once and, before the equip clip's first firearm pose, outputs the
          * part bones at their origin; shown then, the parts assembled on
-         * screen (runtime 2 Nov 11:30:38: shown 20 ms before that pose). The
+         * screen (observed at runtime: shown 20 ms before that pose). The
          * native equip hide covers this only when native applies it, never
          * when one of two worn weapons changes, so the hold hides the node
          * itself if needed. A paused game (the projected Pip-Boy) never
@@ -957,8 +957,8 @@ namespace rock
          * Pip-Boy unequip or cross-hand move, a script), the second weapon
          * moves to index 0 in its own hand, as on a first-weapon drop.
          * Alone in index 1 the player is natively unarmed: the weapon state
-         * sheathes and the second weapon stays hidden (runtime 14 Oct
-         * 21:39:03). A held transfer or an equip awaiting its identity owns
+         * sheathes and the second weapon stays hidden (observed at
+         * runtime). A held transfer or an equip awaiting its identity owns
          * index 0 and is left to finish.
          */
         if (_equippedSlotOne.equipped && !frame.menuBlocked && !_equipped.transition.heldTransfer().active() &&
@@ -1864,7 +1864,7 @@ namespace rock
         // The left firing grip starts as soon as its own seat exists. It never
         // waits for the other hand's support candidate: that wait left the
         // weapon at the native right-hand pose for frames after a menu exit,
-        // overlapping the right hand's weapon (runtime 22 Oct 11:39:07).
+        // overlapping the right hand's weapon (observed at runtime).
         if (!primaryOnlyStartRequested) {
             return;
         }
@@ -1960,7 +1960,7 @@ namespace rock
             leftReattachEligible = reattachEligible(w.prepared.leftHandAvailableForAcquisition, _leftHand);
             rightReattachEligible = reattachEligible(w.prepared.rightHandAvailableForAcquisition, _rightHand);
             // Diagnostic: why a squeezing hand is not free to re-take the
-            // firing grip (left reattach refused after a menu, 14 Oct).
+            // firing grip (left reattach refused after a menu).
             for (const bool isLeft : { false, true }) {
                 const auto& hand = isLeft ? _leftHand : _rightHand;
                 if (!input_remap_runtime::isRawButtonPhysicallyHeld(isLeft, input_remap_policy::kGrabButtonId) ||

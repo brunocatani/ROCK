@@ -15,16 +15,15 @@ namespace rock::grab_constraint_math
      * the FO4VR byte-storage convention that was proven locally. Transform A is
      * the frozen proxy-local palm pivot with identity rotation.
      *
-     * FO4VR's ragdoll-motor atom solve was disassembled on 2026-07-13
-     * (Docs\ROCK\docs\2026-07-13-grab-ragdoll-motor-atom-binary-semantics.md).
+     * FO4VR's ragdoll-motor atom solve was disassembled.
      * The solver equilibrium is wRa*tA = wRb*target_bRca; transform-B rotation
      * cancels out of that fixed point and only places the reference frame the
      * per-axis angle decomposition (and linear motor axes) are measured from.
      * Both fields therefore receive the identical solver-row proxy-in-BODY
      * write: the reference frame coincides with the motor target frame by
      * construction (zero separation at any grab orientation). This replaced
-     * the retired empirical COL-90 mode selector after in-game validation on
-     * 2026-07-13; ROCK NiMatrix3 storage is row-axes, so the rows write is the
+     * the retired empirical COL-90 mode selector after in-game validation;
+     * ROCK NiMatrix3 storage is row-axes, so the rows write is the
      * correct transposition into Havok's column-major read.
      */
 
@@ -119,8 +118,8 @@ namespace rock::grab_constraint_math
          * Zero-separation write: transform-B carries the same solver-visible
          * rotation bytes as target_bRca, so the constraint-B reference frame
          * coincides with the motor target frame on every write regardless of
-         * grab orientation. See the file header note and the 2026-07-13
-         * binary-semantics doc for the disassembly this rests on.
+         * grab orientation. The file header note
+         * describes the disassembly this rests on.
          */
         writeHavokRotationRows(transformBRotation, proxyInBody.rotate);
         writeHavokRotationRows(targetBRca, proxyInBody.rotate);

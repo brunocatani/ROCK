@@ -207,7 +207,7 @@ namespace rock::input_remap_policy
     /*
      * OpenVR k_EButton_A: the lower face button on BOTH controllers (right A,
      * left X) sets bit 7 of its own controller's ulButtonPressed mask.
-     * Live-verified 2026-07-12 via the reload-gate trace: a right-A Activate
+     * Live-verified via the reload-gate trace: a right-A Activate
      * event reports idCode 7 while the right tracker holds bit 7, and a held
      * left X raises the same bit on the left tracker only.
      */
@@ -264,7 +264,7 @@ namespace rock::input_remap_policy
      * grip: right A for a right firing grip, left X for a left firing grip.
      *
      * A-side route. The hooked ActivateHandler only ever receives Activate/
-     * WandAccept from the PRIMARY wand — live-verified 2026-07-12: every gate
+     * WandAccept from the PRIMARY wand — live-verified: every gate
      * trace across sessions reports a primary-wand device and left-X presses
      * never produce an event here (an earlier raw-snapshot resolution built
      * on the opposite assumption also rejected legitimate presses whenever
@@ -359,7 +359,7 @@ namespace rock::input_remap_policy
 
     /*
      * FO4's Activate button ("Activate"/"WandAccept") is one native event regardless of
-     * on-screen prompt text (Take/Talk/Open/Search/Read) - verified 2026-07-05 via raw
+     * on-screen prompt text (Take/Talk/Open/Search/Read) - verified via raw
      * disassembly of ActivateHandler::HandleEvent's call chain: there is no separate "Take"
      * input action, the Take-vs-other outcome is decided deep inside the target ref's own
      * per-FormType virtual Activate dispatch, not reachable as a flat branch from the input

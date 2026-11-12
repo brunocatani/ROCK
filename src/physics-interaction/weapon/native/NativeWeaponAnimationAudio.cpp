@@ -137,7 +137,7 @@ namespace rock::native_weapon_animation_audio
                 if (!copyText(fixedStringText(nameSlot), tag))
                     continue;
                 // Diagnostic: which player clip culls/unculls the weapons
-                // (first gun hidden ~500 ms after a menu exit, 14 Oct 20:56).
+                // (first gun hidden ~500 ms after a menu exit).
                 if (std::strstr(tag.data(), "ullWeapons") &&
                     s_cullEventLogs.fetch_add(1, std::memory_order_relaxed) < 256) {
                     std::uintptr_t senderVtable{}, senderPath{};

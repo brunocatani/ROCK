@@ -334,7 +334,7 @@ namespace rock::equipped_weapon_transition_policy
          * A drawn, exactly equipped weapon whose instance path is culled is
          * shown on the first frame. Native never unculls it after a Pip-Boy,
          * pause or workbench exit; the timed first repair below did, 0.35 s
-         * later every time (runtime 14 Oct 20:37-20:38, eleven exits). Later
+         * later every time (observed at runtime, eleven exits). Later
          * attempts keep their settle timing.
          */
         if (input.mutationAllowed && input.nativeInstanceFound && state.localVisibilityAttempts == 0 &&

@@ -16,9 +16,7 @@ namespace rock::havok_world_lock
      * write, engine queries hold it for read. The broadphase shape cast
      * dereferences candidate body shapes with no null check, so a query issued
      * WITHOUT the read lock races body-slot reuse (streaming, teardown, step
-     * command buffers) and crashes on a half-mutated slot (six castShape CTDs
-     * 2026-07-12/13; see
-     * Docs/ROCK/lessons/2026-07-13-hknp-world-query-lock-discipline.md).
+     * command buffers) and crashes on a half-mutated slot (six castShape CTDs).
      *
      * Threading contract: threads inside the physics step publish a nonzero TLS
      * flag and already own the world; the engine skips locking there and so does

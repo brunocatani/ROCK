@@ -410,8 +410,8 @@ namespace rock
          * carries the rig for a left-held weapon, so the calibration is
          * composed from them and the observed rest, never from the carried
          * nodes: those keep the world they had at the carry start, which
-         * would bake the right hand's pose into the overlay (runtime 22 Oct
-         * 16:56:18, excludedAim 171deg).
+         * would bake the right hand's pose into the overlay (observed at runtime,
+         * excludedAim 171deg).
          */
         const auto& rest = _scope.nativeRigRest;
         if (!rest.valid || rest.scopeParentIdentity != scopeParent || rest.scopeCameraIdentity != scopeCamera) {

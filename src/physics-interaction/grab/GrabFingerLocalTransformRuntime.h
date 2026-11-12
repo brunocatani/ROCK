@@ -29,7 +29,7 @@
  * joints under the captured controller hand and adds bounded mesh-contact aim
  * corrections. The flattened tree supplies hand placement and chain identity;
  * displayed finger rotations never become a new pose baseline in Current mode.
- * June2 deliberately restores live-chain aiming, with the same validation.
+ * PlaneSlice deliberately restores live-chain aiming, with the same validation.
  */
 
 namespace rock::grab_finger_local_transform_runtime

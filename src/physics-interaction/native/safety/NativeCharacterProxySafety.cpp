@@ -27,13 +27,12 @@ namespace rock::native_character_proxy_safety
         /*
          * Fallout4VR.exe 1.2.72 character-proxy world accessor at
          * 0x141E4DEC0. These are complete, position-independent entry
-         * instructions verified from raw disassembly and Ghidra on
-         * 2026-08-30.
+         * instructions verified from raw disassembly and Ghidra.
          *
          * Only the verified destructor caller tolerates recovery to null.
          * Active callers at 0x1E4B8DE and 0x1E9E20D dereference the result
          * without a null check. Do not turn their original fault into a
-         * successful accessor return (the 2026-09-10 GetGravity crash).
+         * successful accessor return (the GetGravity crash).
          */
         constexpr std::array<std::uint8_t, 14> kExpectedWorldAccessorEntry{
             0x40,

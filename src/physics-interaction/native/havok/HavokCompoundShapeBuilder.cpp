@@ -121,8 +121,8 @@ namespace rock::havok_compound_shape_builder
                 }
 
                 /*
-                 * Blind-verified from raw Fallout4VR.exe 1.2.72 disassembly on
-                 * 2026-08-09. The dynamic update entry copies each full 0x80
+                 * Blind-verified from raw Fallout4VR.exe 1.2.72 disassembly.
+                 * The dynamic update entry copies each full 0x80
                  * instance, refreshes its dynamic-tree leaf and aggregate AABB,
                  * then signals registered shape owners about the mutation.
                  */

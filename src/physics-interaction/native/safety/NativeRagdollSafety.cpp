@@ -25,7 +25,7 @@ namespace rock::native_ragdoll_safety
         /*
          * Fallout4VR.exe 1.2.72, hkbnpRagdollInterface::updateConstraints.
          * Whole-instruction, position-independent entry bytes verified from
-         * raw disassembly and Ghidra on 2026-08-30.
+         * raw disassembly and Ghidra.
          */
         constexpr std::array<std::uint8_t, 15> kExpectedUpdateConstraintsEntry{
             0x48,

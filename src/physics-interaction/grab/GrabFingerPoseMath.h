@@ -476,7 +476,7 @@ namespace rock::grab_finger_pose_math
         return false;
     }
 
-    // June 2, 2026 (88f8737d): parametric plane contact, without baked reach tables.
+    // Plane slice: parametric plane contact, without baked reach tables.
     template <class Vector>
     inline FingerCurlValue solveLegacyFingerCurveCurlValue(const std::vector<Triangle<Vector>>& triangles,
         const Vector& center, const Vector& normal, const Vector& zeroAngleVector, float maxCurlAngleRadians,
@@ -956,10 +956,10 @@ namespace rock::grab_finger_pose_math
             fingerLength, lane.applyAuthoredNormalSign, lane.surfaceThicknessScale);
     }
 
-    // July 9, 2026 (94340942): calibrated plane slices, including thumb lanes.
+    // Calibrated slice: calibrated plane slices, including thumb lanes.
     // Use the current skeleton calibration and validated transform publication.
     template <class Vector>
-    inline bool lookupJuly9FingerCurveSample(const CalibratedFingerProbeCurve<Vector>& curve, float angleRadians,
+    inline bool lookupCalibratedFingerCurveSample(const CalibratedFingerProbeCurve<Vector>& curve, float angleRadians,
         CalibratedFingerCurveSample<Vector>& outSample)
     {
         if (curve.sampleCount == 0 || curve.sampleCount > curve.samples.size() || !std::isfinite(angleRadians)) {
@@ -997,7 +997,7 @@ namespace rock::grab_finger_pose_math
     }
 
     template <class Vector>
-    inline FingerCurlValue solveJuly9CalibratedFingerCurveCurlValue(const std::vector<Triangle<Vector>>& triangles,
+    inline FingerCurlValue solveCalibratedFingerCurveCurlValue(const std::vector<Triangle<Vector>>& triangles,
         const CalibratedFingerCurve<Vector>& curve, float minValue, const Vector& surfacePoint = Vector{},
         const Vector& surfaceNormal = Vector{}, bool rejectBacksideHits = false,
         float surfacePlaneToleranceGameUnits = 0.0f)
@@ -1065,7 +1065,7 @@ namespace rock::grab_finger_pose_math
             for (std::size_t probeIndex = 0; probeIndex < curve.probeCount && probeIndex < curve.probes.size();
                 ++probeIndex) {
                 CalibratedFingerCurveSample<Vector> sample{};
-                if (!lookupJuly9FingerCurveSample(curve.probes[probeIndex], angle, sample)) {
+                if (!lookupCalibratedFingerCurveSample(curve.probes[probeIndex], angle, sample)) {
                     continue;
                 }
                 if (!std::isfinite(sample.reachLength) || radius > sample.reachLength + thickness) {
@@ -1148,7 +1148,7 @@ namespace rock::grab_finger_pose_math
     }
 
     template <class Vector>
-    inline ThumbAwareFingerCurveCurlValue<Vector> solveJuly9ThumbAwareCalibratedFingerCurveCurlValue(
+    inline ThumbAwareFingerCurveCurlValue<Vector> solveThumbAwareCalibratedFingerCurveCurlValue(
         const std::vector<Triangle<Vector>>& triangles, std::size_t fingerIndex, bool isLeft, bool inPowerArmor,
         const Vector& center, const Vector& primaryNormal, const Vector& alternateThumbNormal,
         const Vector& zeroAngleVector, float fingerLength, float minValue, bool allowAlternateThumbCurve,
@@ -1158,7 +1158,7 @@ namespace rock::grab_finger_pose_math
         ThumbAwareFingerCurveCurlValue<Vector> result{};
         const auto primaryCurve = makeBakedCalibratedFingerCurve(fingerIndex, isLeft, inPowerArmor, center,
             primaryNormal, zeroAngleVector, fingerLength);
-        result.primary = solveJuly9CalibratedFingerCurveCurlValue(triangles, primaryCurve, minValue, surfacePoint,
+        result.primary = solveCalibratedFingerCurveCurlValue(triangles, primaryCurve, minValue, surfacePoint,
             surfaceNormal, rejectBacksideHits, surfacePlaneToleranceGameUnits);
         result.value = result.primary;
         result.selectedThumbCurve = result.primary;
@@ -1202,7 +1202,7 @@ namespace rock::grab_finger_pose_math
             const Vector laneNormal = blendedThumbLaneNormal(primaryNormal, alternateThumbNormal, lane.normalBlend);
             const auto laneCurve = makeBakedCalibratedThumbLaneCurve<Vector>(lane, bakedLaneCurve, center, laneNormal,
                 zeroAngleVector, fingerLength);
-            const FingerCurlValue laneSolved = solveJuly9CalibratedFingerCurveCurlValue(triangles, laneCurve, minValue,
+            const FingerCurlValue laneSolved = solveCalibratedFingerCurveCurlValue(triangles, laneCurve, minValue,
                 surfacePoint, surfaceNormal, rejectBacksideHits, surfacePlaneToleranceGameUnits);
 
             if (lane.lane == grab_finger_calibration_data::BakedGrabThumbLane::Opposition) {

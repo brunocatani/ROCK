@@ -305,8 +305,8 @@ namespace rock
         // native placement solve, bounded by its commit limit. It finishes
         // first and the command stays queued, as for another weapon transfer:
         // a holster draw on the let-go that dropped a support-carried weapon
-        // failed HandBusy 10 ms before that drop completed (runtime 2 Nov
-        // 12:44:25).
+        // failed HandBusy 10 ms before that drop completed
+        // (observed at runtime).
         const auto& handCommit = _forceGrab.pendingCommits[left ? 1u : 0u];
         if (blockers == static_cast<std::uint32_t>(force_grab_policy::HandBlocker::PendingForceGrab) &&
             handCommit.active && handCommit.equippedWeaponDropMode == equipped_weapon_drop_policy::Mode::AutoDrop) {

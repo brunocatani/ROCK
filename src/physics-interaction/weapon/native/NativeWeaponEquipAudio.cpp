@@ -33,7 +33,7 @@ namespace rock::native_weapon_equip_audio
             bool inventory{ false };
         };
 
-        // Raw FO4VR witnesses, 2026-10-04: FF4870/FF5FA0 select instance+38
+        // Raw FO4VR witnesses: FF4870/FF5FA0 select instance+38
         // (base+1D0) for equip; FF4900/FF5E40 select +40/+1D8 for unequip.
         // PlayerFastEquipSoundHandler FF4510 selects +48/+1E0. All five
         // calls marshal actor+0xD0 in R8 and ignore the playback result.

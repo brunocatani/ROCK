@@ -112,8 +112,8 @@ namespace rock::saved_grab_capture
          * to explain, so this is a first-class field rather than an inference
          * from bodyInObjectNode.
          *
-         * Offset authority: this binary's OWN reflection table, verified
-         * 2026-07-25 - the hkClassMember record at 142e93930 names hknpMotion
+         * Offset authority: this binary's OWN reflection table, verified:
+         * the hkClassMember record at 142e93930 names hknpMotion
          * member 'centerOfMassAndMassFactor' at +0x00 (xyz = world COM, w =
          * mass factor). Corroborated by the same table's +0x20 packed inertia
          * and +0x40/+0x50 velocities, both of which ROCK already depends on at

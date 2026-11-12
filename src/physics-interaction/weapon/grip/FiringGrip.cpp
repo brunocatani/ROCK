@@ -1082,8 +1082,8 @@ namespace rock
      * controller basis and a melee weapon its authored grip, so neither
      * depends on where the weapon node was parented. (It was once captured
      * only during native right carry; a support-carry restore with the left
-     * firing never captured it and refused every left reattach, runtime
-     * 14 Oct 22:08:13.)
+     * firing never captured it and refused every left reattach at
+     * runtime.)
      */
     bool TwoHandedGrip::tryResolveRightWeaponAimInWand(const RE::NiNode* weaponNode,
         const std::uint64_t weaponGenerationKey, const std::uint64_t weaponOwnershipKey,

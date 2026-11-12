@@ -23,8 +23,7 @@ namespace rock
     /*
      * Visual-only bridge that covers the loose->equipped weapon gap.
      *
-     * Engine facts this design rests on (Ghidra map, see
-     * docs/research/2026-07-04-loose-to-equipped-weapon-visual-gap.md):
+     * Engine facts this design rests on (Ghidra map):
      * the pickup message handler detaches the loose ref's 3D from the scene
      * graph synchronously inside ActivateRef (DetachHavok + Set3D(nullptr)),
      * but that teardown is a refcount release, not a recursive destroy. A

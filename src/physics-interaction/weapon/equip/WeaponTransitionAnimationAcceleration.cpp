@@ -145,7 +145,7 @@ namespace rock::weapon_transition_animation_acceleration
             std::chrono::steady_clock::time_point requestedAt{};
             std::uint64_t sequence{ 0 };
             // The player's graph manager can be unavailable on the request
-            // frame (trigger equip from Sheathed, runtime 12 Oct 22:16:42).
+            // frame (trigger equip from Sheathed, observed at runtime).
             // The lease is then held inert (no encoded lease, so animation
             // callbacks ignore it) and service retries the graph each frame
             // until it is published or the lease's watchdog ends it.

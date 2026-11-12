@@ -151,7 +151,7 @@ namespace rock
         /*
          * Fixed process-lifetime ownership for neutralized bhkNPCollisionObject
          * addresses. Native FO4VR readers retain uncounted raw pointers after a
-         * generated body leaves the world. The 2026-08-28 weapon-switch crash at
+         * generated body leaves the world. The weapon-switch crash at
          * Fallout4VR.exe+1E08DF3 proved that eight completed physics steps are not
          * a release boundary: GetCollisionFilterInfo still reached the old wrapper
          * and indexed hknpBody with its stale mapped ID.

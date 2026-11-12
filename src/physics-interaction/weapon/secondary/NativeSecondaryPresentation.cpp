@@ -458,7 +458,7 @@ namespace rock::native_secondary_presentation
          * renders whenever no native hide owner is active; a menu's hold shows
          * it regardless, as it does the first weapon. A Pip-Boy equip
          * builds the index-1 model culled; restoring the visibility seen when
-         * it was first hidden kept it invisible (runtime 14 Oct 21:17:44).
+         * it was first hidden kept it invisible (observed at runtime).
          * A model that left the equipment belongs to native teardown and is
          * never touched.
          * The scope view draws no weapon: FO4VR hides its own first-person

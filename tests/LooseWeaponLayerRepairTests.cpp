@@ -9,7 +9,7 @@ int main()
     using namespace physics_body_classifier;
     using loose_weapon_layer_repair::correctedFilter;
 
-    // 2026-09-24 14:37:05.915: SR-25 FF004E7A, P-PistolGrip,
+    // Captured: SR-25 FF004E7A, P-PistolGrip,
     // body 56, motion 53, filter 00230001, flags 00041082, exact owner.
     BodyClassificationInput captured{};
     captured.bodyId = 56;

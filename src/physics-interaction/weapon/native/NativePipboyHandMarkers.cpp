@@ -20,8 +20,8 @@ namespace rock::native_pipboy_hand_markers
     {
         // FO4VR 1.2.72, raw disassembly (ghidra_fo4vr):
         // 140C21450 fills one Pip-Boy inventory entry. Members it sets reach
-        //   the AS3 entry, but an extra member added there does not (runtime
-        //   12 Oct 22:24), so the hand is read from native members only.
+        //   the AS3 entry, but an extra member added there does not (observed at
+        //   runtime), so the hand is read from native members only.
         // 140C1E9A0 computes "equipState". For a weapon (form type 0x2B) it
         //   counts the stack's equip-slot bits (flags +0x24 & 7): one bit
         //   without bit 0 gives 2 (140C1EA7C), bit 0 gives 3 or 4
