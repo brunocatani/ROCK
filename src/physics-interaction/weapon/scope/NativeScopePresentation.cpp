@@ -702,20 +702,22 @@ namespace rock
         }
         if (resolved.source == native_scope_sight_anchor_policy::AnchorSource::GeneratedSight) {
             ROCK_LOG_DEBUG(Weapon,
-                "TwoHandedGrip: native scope anchor generation={:016X} source=generated-sight bodies={} "
+                "TwoHandedGrip: native scope anchor generation={:016X} form={:08X} eligible={} source=generated-sight bodies={} "
                 "local=({:.2f},{:.2f},{:.2f}) boundsMin=({:.2f},{:.2f},{:.2f}) boundsMax=({:.2f},{:.2f},{:.2f}) "
                 "policy=rear-center",
-                currentWeaponGenerationKey, snapshot.sightBodyCount, snapshot.anchorWeaponLocal.x,
+                currentWeaponGenerationKey, currentEquippedWeaponFormID, snapshot.scopeEligible, snapshot.sightBodyCount,
+                snapshot.anchorWeaponLocal.x,
                 snapshot.anchorWeaponLocal.y, snapshot.anchorWeaponLocal.z, snapshot.sightBoundsMinWeaponLocal.x,
                 snapshot.sightBoundsMinWeaponLocal.y, snapshot.sightBoundsMinWeaponLocal.z,
                 snapshot.sightBoundsMaxWeaponLocal.x, snapshot.sightBoundsMaxWeaponLocal.y,
                 snapshot.sightBoundsMaxWeaponLocal.z);
         } else {
             ROCK_LOG_DEBUG(Weapon,
-                "TwoHandedGrip: native scope anchor generation={:016X} source=firing-grip origin={} "
+                "TwoHandedGrip: native scope anchor generation={:016X} form={:08X} eligible={} source=firing-grip origin={} "
                 "gripLocal=({:.2f},{:.2f},{:.2f}) offset=({:.2f},{:.2f},{:.2f}) rotation=({:.2f},{:.2f},{:.2f}) "
                 "anchorLocal=({:.2f},{:.2f},{:.2f})",
-                currentWeaponGenerationKey, firingGripFromCanonical ? "canonical" : "active-grip",
+                currentWeaponGenerationKey, currentEquippedWeaponFormID, snapshot.scopeEligible,
+                firingGripFromCanonical ? "canonical" : "active-grip",
                 firingGripWeaponLocal.x, firingGripWeaponLocal.y, firingGripWeaponLocal.z, firingGripOffsetWeaponLocal.x,
                 firingGripOffsetWeaponLocal.y, firingGripOffsetWeaponLocal.z, firingGripRotationDegrees.x,
                 firingGripRotationDegrees.y, firingGripRotationDegrees.z, _scope.anchorWeaponLocal.x,

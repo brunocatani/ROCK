@@ -1173,15 +1173,16 @@ namespace rock
             target.directTransitionRequired = manual_scope_target_policy::requiresDirectNativeTransition(
                 nativeScopeMetadataAuthored, explicitScopeModelInstalled,
                 manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence), target.overlayValid);
-            if (target.scopeEligible) {
-                ROCK_LOG_DEBUG(Weapon,
-                    "Native scope target weapon={:08X} nativeHasScope={} named={} structure={} authoredOverlay={} "
-                    "selectedOverlay={} authoredZoom={} direct={}",
-                    weapon->formID, nativeScopeMetadataAuthored, explicitScopeModelInstalled,
-                    manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence),
-                    zoomData ? zoomData->zoomData.overlay : 0, target.overlayIndex,
-                    zoomData ? zoomData->zoomData.fovMult : 0.0f, target.directTransitionRequired);
-            }
+            // One census line per weapon publication, eligible or not, so a
+            // scope ROCK misses is as visible as one it admits.
+            ROCK_LOG_DEBUG(Weapon,
+                "Scope census weapon={:08X} name='{}' eligible={} nativeHasScope={} named={} structure={} "
+                "zoomForm={:08X} authoredOverlay={} selectedOverlay={} authoredZoom={:.2f} direct={}",
+                weapon->formID, weapon->fullName.c_str() ? weapon->fullName.c_str() : "", target.scopeEligible,
+                nativeScopeMetadataAuthored, explicitScopeModelInstalled,
+                manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence),
+                zoomData ? zoomData->formID : 0u, zoomData ? zoomData->zoomData.overlay : 0u, target.overlayIndex,
+                zoomData ? zoomData->zoomData.fovMult : 0.0f, target.directTransitionRequired);
             return target;
         }
 
@@ -2137,6 +2138,16 @@ namespace rock
             }
 
             if (!hasSightBounds) {
+                std::string parts;
+                for (const auto& descriptor : descriptors) {
+                    if (!descriptor.valid || descriptor.weaponGenerationKey != weaponGenerationKey) {
+                        continue;
+                    }
+                    parts += std::format("{}{}:{}:{:08X}", parts.empty() ? "" : " ", descriptor.sourceName,
+                        generatedWeaponPartKindName(descriptor.semantic.partKind), descriptor.omodFormId);
+                }
+                ROCK_LOG_DEBUG(Weapon, "Scope census weapon={:08X} generation={:016X} no Scope/Sight body parts=[{}]",
+                    weaponFormID, weaponGenerationKey, parts);
                 return snapshot;
             }
 
