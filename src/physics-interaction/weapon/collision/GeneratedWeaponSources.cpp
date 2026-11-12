@@ -709,7 +709,7 @@ namespace rock
                 }
             }
 
-            const auto installedOptics = collectInstalledOpticModels(omodByAttachPointFormId, _equipIndex);
+            const auto installedOptics = collectInstalledOpticModels(_equipIndex);
 
             const auto emitterSnapshot =
                 collectWeaponEmitterSnapshot(weaponNode, omodByAttachPointFormId, equippedWeaponKey, equippedWeaponKey,

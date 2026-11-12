@@ -1053,7 +1053,17 @@ namespace rock
                           omod->attachPoint.keywordIndex)
                     : nullptr;
                 if (!modIndex.disabled && attachPointKeyword && omod) {
-                    result.emplace(attachPointKeyword->formID, omod->formID);
+                    // A slot can list a model-less record beside the mod that
+                    // supplies its model (Army Service Rifle: an unnamed record
+                    // and "Digicon ACOG 4x Sight" both on the sight slot). The
+                    // slot's part geometry belongs to the mod with the model.
+                    const auto [slot, inserted] = result.emplace(attachPointKeyword->formID, omod->formID);
+                    if (!inserted && omod->model.c_str() && *omod->model.c_str()) {
+                        const auto* current = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(slot->second);
+                        if (!current || !current->model.c_str() || !*current->model.c_str()) {
+                            slot->second = omod->formID;
+                        }
+                    }
                 }
                 if (outComposition && outComposition->entryCount < outComposition->entries.size()) {
                     auto& entry = outComposition->entries[outComposition->entryCount++];
@@ -1143,14 +1153,24 @@ namespace rock
             std::vector<std::string> topLevelNodeNames;
         };
 
-        [[nodiscard]] inline std::vector<InstalledOpticModel> collectInstalledOpticModels(
-            const std::unordered_map<std::uint32_t, std::uint32_t>& omodByAttachPointFormId, std::uint32_t equipIndex)
+        [[nodiscard]] inline std::vector<InstalledOpticModel> collectInstalledOpticModels(std::uint32_t equipIndex)
         {
             std::vector<InstalledOpticModel> optics;
+            auto* equipData = f4vr::getEquippedWeaponItem(equipIndex);
+            auto* weaponForm = equipData ? equipData->item.object : nullptr;
+            const RE::BGSObjectInstanceExtra* objectInstanceExtra = weaponForm
+                ? findEquippedWeaponObjectInstanceExtra(f4vr::getPlayer(), weaponForm, equipData->item.instanceData.get())
+                : nullptr;
+            if (!objectInstanceExtra || !objectInstanceExtra->values) {
+                return optics;
+            }
             const bool weaponZoomIsScopeMagnification =
                 manual_scope_target_policy::isValidMagnification(equippedWeaponZoomMagnification(equipIndex));
-            for (const auto& [attachPointFormId, omodFormId] : omodByAttachPointFormId) {
-                (void)attachPointFormId;
+            for (const auto& modIndex : objectInstanceExtra->GetIndexData()) {
+                if (modIndex.disabled) {
+                    continue;
+                }
+                const std::uint32_t omodFormId = modIndex.objectID;
                 auto* omod = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(omodFormId);
                 if (!omod || !omod->model.c_str() || !*omod->model.c_str() ||
                     !attachmentModIsInstalledOptic(*omod, weaponZoomIsScopeMagnification)) {
