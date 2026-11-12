@@ -220,7 +220,7 @@ if(NOT EXISTS "${PALM_INCLUDE_DIR}/RobCoPALM/Developer.h")
 endif()
 target_include_directories(${PROJECT_NAME} PRIVATE "${PALM_INCLUDE_DIR}")
 # RPS Framework's staged package: the settings files (RPS::Settings) and the
-# header-only required-update stop (RPS/Runtime/RequiredUpdate.h). The
+# header-only caller naming for refusal logs (RPS/Runtime/CallerModule.h). The
 # framework's custom-fast build stages it; rebuild it there after framework changes.
 set(RPSFramework_DIR "${WORKSPACE_ROOT}/my_frameworks_and_sdks/RPS_Framework/build-fast/stage/lib/cmake/RPSFramework"
   CACHE PATH "RPS Framework staged package.")

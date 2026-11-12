@@ -9,7 +9,7 @@ To change ROCK: read [Architecture](#architecture), find the task in [Where to s
 - Provider API 2.0: 13 interfaces in `include/ROCK/`, standard library only, nothing to link. Add ROCK's `include/` through a CMake cache variable such as `ROCK_INCLUDE_DIR`, resolve `ROCKAPI_QueryInterfaceV1` from `ROCK.dll` and connect with `rock::api::Client`. Never include `src/` headers or copy ROCK's headers.
 - Read `docs/api/Overview.md`, then each interface's page; they state every call's thread, permission and limits.
 - A mod built for ROCK 0.92: follow `skills/rock-1.0-migration/SKILL.md` (it also covers PAPER, RPS UI Framework and RobCo PALM) and `docs/api/Migration.md`.
-- Without ROCK, turn ROCK features off and keep running. Request exactly the versions your headers declare and never probe: every version refusal shows an error box at the main menu and closes the game.
+- Without ROCK, turn ROCK features off and keep running. Request exactly the versions your headers declare and never probe: every version refusal is logged in `ROCK.log` with your DLL.
 
 ## Repository map
 
@@ -72,7 +72,7 @@ Subsystems read the per-frame snapshot `core/RockRuntimeState.h` instead of poll
 3. `src/api/ProviderRuntime.cpp` and `src/api/services/*.inl`: owners, leases, published state.
 4. `PhysicsInteraction`: queries in `core/interaction/ProviderQueries.cpp`, commands in `core/interaction/ProviderCommands.cpp` and the topic files.
 
-NativeInteraction and Storage keep table and service together (`src/api/NativeInteractionService.cpp`, `src/api/StorageService.cpp`). Discovery: `src/api/Discovery.cpp`. Refusals and the error box: `src/api/OutdatedConsumers.cpp`.
+NativeInteraction and Storage keep table and service together (`src/api/NativeInteractionService.cpp`, `src/api/StorageService.cpp`). Discovery: `src/api/Discovery.cpp`. Refusal logging: `src/api/OutdatedConsumers.cpp`.
 
 ### Conventions
 
@@ -207,7 +207,7 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp` for engine math. `
 
 - Public headers include only the standard library and other `include/ROCK/` headers.
 - Every entry point validates the caller's `size` and `version` before reading. Records use fixed-width types.
-- Every version refusal is logged with the calling DLL and stops the game at the main menu.
+- Every version refusal is logged once with the calling DLL; the game keeps running.
 
 ### Configuration
 

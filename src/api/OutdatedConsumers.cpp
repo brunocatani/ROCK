@@ -2,18 +2,16 @@
 
 #include "InterfaceNegotiation.h"
 #include "physics-interaction/PhysicsLog.h"
-#include "rock_support/Logger.h"
 
-#include <RPS/Runtime/RequiredUpdate.h>
+#include <RPS/Runtime/CallerModule.h>
 
 #include <atomic>
-#include <string>
 
 namespace rock::api::discovery
 {
     namespace
     {
-        namespace required_update = RPS::Runtime::RequiredUpdate;
+        namespace caller_module = RPS::Runtime::CallerModule;
 
         enum class Mismatch
         {
@@ -43,54 +41,27 @@ namespace rock::api::discovery
                 return Mismatch::None;
             }
         }
-
-        // DLL file names for the log; characters outside ASCII become '?'.
-        std::string narrowForLog(const std::wstring& text)
-        {
-            std::string result;
-            result.reserve(text.size());
-            for (const wchar_t c : text)
-                result.push_back(c > 0 && c < 0x80 ? static_cast<char>(c) : '?');
-            return result;
-        }
-
-        void flushLog() noexcept
-        {
-            try {
-                if (const auto& log = rock::logger::internal::loggerInstance)
-                    log->flush();
-            } catch (...) {}
-        }
     }
 
     void noteRefusal(Status status, InterfaceId id, std::uint32_t requestedMajor, const void* callerAddress) noexcept
     {
         const auto mismatch = classify(status, id, requestedMajor);
-        if (mismatch == Mismatch::None || !required_update::firstFromCaller(callerAddress))
+        if (mismatch == Mismatch::None || !caller_module::firstFromCaller(callerAddress))
             return;
         try {
-            auto dll = required_update::moduleFileNameAt(callerAddress);
-            const std::string dllForLog = dll.empty() ? std::string{ "an unidentified module" } : narrowForLog(dll);
-            if (dll.empty())
-                dll = L"A mod (see ROCK.log)";
-            const std::wstring rockVersion(Version::NAME.begin(), Version::NAME.end());
-            std::wstring paragraph;
+            const auto dll = caller_module::moduleNameForLog(callerAddress);
             if (mismatch == Mismatch::ConsumerOlder) {
-                ROCK_LOG_CRITICAL(Api,
-                    "{} asked for interface {} major {}: it was built for an older ROCK. The game stops at the main "
-                    "menu until it is updated or removed.",
-                    dllForLog, static_cast<std::uint32_t>(id), requestedMajor);
-                paragraph = dll + L" was built for an older ROCK and does not work with ROCK " + rockVersion +
-                    L". Update it or remove it.";
+                ROCK_LOG_ERROR(Api,
+                    "{} asked for interface {} major {}: it was built for an older ROCK and gets no ROCK features "
+                    "until it is updated.",
+                    dll, static_cast<std::uint32_t>(id), requestedMajor);
             } else {
-                ROCK_LOG_CRITICAL(Api,
-                    "{} asked for interface {} major {} (status {}): it needs a newer ROCK than {}. The game stops at "
-                    "the main menu until ROCK is updated.",
-                    dllForLog, static_cast<std::uint32_t>(id), requestedMajor, static_cast<std::uint32_t>(status),
+                ROCK_LOG_ERROR(Api,
+                    "{} asked for interface {} major {} (status {}): it needs a newer ROCK than {} and gets no ROCK "
+                    "features until ROCK is updated.",
+                    dll, static_cast<std::uint32_t>(id), requestedMajor, static_cast<std::uint32_t>(status),
                     Version::NAME);
-                paragraph = dll + L" needs a newer ROCK than " + rockVersion + L". Update ROCK.";
             }
-            required_update::report(std::move(paragraph));
         } catch (...) {}
     }
 
@@ -100,19 +71,9 @@ namespace rock::api::discovery
         if (reported.test_and_set())
             return;
         try {
-            ROCK_LOG_CRITICAL(Api,
-                "RPS_UI_Framework.dll does not export its 2.0 discovery: it is older than ROCK supports. The game stops "
-                "at the main menu until they match.");
-            required_update::report(L"ROCK does not work with the installed RPS UI Framework: it is too old. Update RPS UI Framework.");
+            ROCK_LOG_ERROR(Api,
+                "RPS_UI_Framework.dll does not export its 2.0 discovery: it is older than ROCK supports. ROCK's world "
+                "drawing, ammo counters and input cooperation stay off until it is updated.");
         } catch (...) {}
-    }
-
-    void watchForOutdatedConsumers() noexcept
-    {
-        if (!required_update::watchMainMenu(L"ROCK: update required", &flushLog)) {
-            try {
-                ROCK_LOG_ERROR(Api, "The UI is unavailable; outdated consumers cannot stop the game at the main menu");
-            } catch (...) {}
-        }
     }
 }

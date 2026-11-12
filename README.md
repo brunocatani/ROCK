@@ -89,7 +89,7 @@ The wizard opens by itself the first time you play with this ROCK, and again whe
 ### Compatibility
 
 - **SCISSORS** owns NPC interactions: NPC collision, physical melee, blades, held NPCs and active ragdoll. ROCK 1.0 has no NPC features of its own. The original SCISSORS mod is a different, retired mod that the new SCISSORS replaces under the same name; remove it.
-- **Mods built for ROCK 0.92 or earlier** use provider API 1, which ROCK 1.0 does not serve. They stop the game: at the main menu an error box names each one, and the game closes when the box is closed. Update or remove them; they work again once rebuilt against ROCK 1.0's headers.
+- **Mods built for ROCK 0.92 or earlier** use provider API 1, which ROCK 1.0 does not serve. ROCK refuses them and names each one in `ROCK.log`; the game keeps running with their ROCK features off. Update or remove them; they work again once rebuilt against ROCK 1.0's headers.
 - **Upgrading from ROCK 0.92** keeps your settings: on its first start ROCK 1.0 carries every option you changed in `ROCK.ini` and `ROCK_Developer.ini` into `ROCK.toml` and `ROCK_Developer.toml`, then deletes the old INI files. Options you left at their old defaults take ROCK 1.0's defaults. ROCK.log lists the settings that no longer exist. NPC settings moved to SCISSORS.
 
 ## Configuration
@@ -154,9 +154,8 @@ Call `client.close()` on the game thread before your plugin's callback data goes
 ### Versions
 
 - `Client` asks for exactly the major, minor and table size your headers declare. Do the same if you call `ROCKAPI_QueryInterfaceV1` yourself, and read optional additions from the descriptor's `minor`; never try versions one after another.
-- A version mismatch stops the game. When ROCK refuses a request (`UnknownInterface`, `UnsupportedMajor`, `UnsupportedMinor`, `TableTooSmall`), it logs your DLL, shows an error box naming it at the main menu, and closes the game when the box is closed. A mod built for provider API 1 gets this.
-- When `ROCK.dll` is not loaded, turn your ROCK features off and keep running.
-- When a loaded ROCK refuses your mod, stop the game the same way so the player knows which mod to update. [RPS Framework](https://github.com/brunocatani/RPS_Framework)'s header-only `RPS/Runtime/RequiredUpdate.h` shows the box and closes the game.
+- When ROCK refuses a request (`UnknownInterface`, `UnsupportedMajor`, `UnsupportedMinor`, `TableTooSmall`), it logs your DLL once in `ROCK.log` and the game keeps running. A mod built for provider API 1 gets this.
+- When `ROCK.dll` is not loaded, or a loaded ROCK refuses your mod, turn your ROCK features off, log why and keep running.
 
 ### Interfaces
 
@@ -206,7 +205,7 @@ Start with the [API overview](docs/api/Overview.md), then the page of each inter
 | [CommonLibF4VR](https://github.com/brunocatani/CommonLibF4VR) (`master`) | Linked directly: engine types, Havok, F4SE, relocation | `COMMON_LIB_F4VR_PATH` |
 | [RPS UI Framework](https://github.com/brunocatani/RPS_UI_Framework) | Headers in `include/RPS_UI_Framework/`: world drawing and number overlays, bound at runtime | `RPSUI_INCLUDE_DIR` (its `include` folder) |
 | [RobCo PALM](https://github.com/brunocatani/RobCo_PALM) | Header `include/RobCoPALM/Developer.h`: the Developer wheel capture switch, bound at runtime | `PALM_INCLUDE_DIR` (its `include` folder) |
-| [RPS Framework](https://github.com/brunocatani/RPS_Framework) | Linked statically: the settings files (`RPS::Settings`); header `RPS/Runtime/RequiredUpdate.h`: the version-mismatch error box | `RPSFramework_DIR` (the package its `custom-fast` build stages, `build-fast/stage/lib/cmake/RPSFramework`) |
+| [RPS Framework](https://github.com/brunocatani/RPS_Framework) | Linked statically: the settings files (`RPS::Settings`); header `RPS/Runtime/CallerModule.h`: names the DLL behind a refused request in the log | `RPSFramework_DIR` (the package its `custom-fast` build stages, `build-fast/stage/lib/cmake/RPSFramework`) |
 
 ROCK is built and tested against that CommonLibF4VR fork: ArthurHub's [CommonLibF4VR](https://github.com/ArthurHub/CommonLibF4VR) with Fallout 4 VR additions. It links nothing from RPS UI Framework or RobCo PALM and binds them at runtime; RPS Framework is linked into `ROCK.dll`. F4VR-CommonFramework is not needed.
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Mods built for another ROCK API version no longer close the game.** ROCK refuses
+  them and names each one in `ROCK.log`; the game keeps running with their ROCK
+  features off. No error box appears at the main menu.
+
 ## v1.0.0
 
 ROCK 1.0 reworks controls, grabbing, weapon handling, settings and performance, and
