@@ -64,6 +64,7 @@ namespace rock::shoulder_stash
         }
 
         result.formID = heldRef->GetFormID();
+        result.lootActivatorScript = input.lootActivatorScript;
         result.count = resolveReferenceStackCount(heldRef);
         result.baseForm = heldRef->GetObjectReference();
         if (!result.baseForm) {
@@ -91,6 +92,8 @@ namespace rock::shoulder_stash
         }
         // Collectibles such as magazines, notes, and holotapes need native activation
         // so their scripts, perk grants, and terminal/holotape behavior run normally.
+        // A loot activator's bound script receives the same activation and gives
+        // the player its loot.
         result.success = heldRef->ActivateRef(player, nullptr, result.count, false, false, false);
         if (result.success) {
             result.untransferredRef.reset();

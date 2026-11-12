@@ -2,10 +2,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include "RE/Bethesda/BSScript/IObjectHandlePolicy.h"
 #include "RE/Bethesda/BSScript/IVirtualMachine.h"
 #include "RE/Bethesda/BSScript/Object.h"
-#include "RE/Bethesda/GameScript.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
 #include "RE/Havok/hkVector4.h"
 #include "RE/Havok/hknpBody.h"
@@ -16,6 +14,7 @@
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/havok/HavokRuntime.h"
 #include "physics-interaction/native/havok/PhysicsRecursiveWrappers.h"
+#include "physics-interaction/native/script/NativeScriptBinding.h"
 #include "physics-interaction/object/PhysicsBodyClassifier.h"
 
 namespace rock::native_object_placement
@@ -82,55 +81,26 @@ namespace rock::native_object_placement
         // Vanilla DefaultDisableHavokOnLoad otherwise calls MoveToMyEditorLocation
         // on reload. Mark this deliberately placed reference as already simulated,
         // through the engine's property setter, never by editing VM variable memory.
-        // GameVM+0xB0 and VM slots 23/24 are witnessed by 1413FA6E0/1413FA890;
-        // object type +8 and variable readback are witnessed by 142703060/142703C60.
+        // Object type +8 and variable readback are witnessed by 142703060/142703C60.
         auto reject = [&](const char* stage) {
             ROCK_LOG_WARN(Hand, "Held placement rejected ref={:08X} stage={}", ref ? ref->GetFormID() : 0, stage);
             return ScriptPreparation::Rejected;
         };
-        if (!ref)
-            return reject("script-reference");
-        RE::GameVM* gameVm = nullptr;
-        if (!native_memory::tryReadValue(reinterpret_cast<RE::GameVM**>(REL::Offset(0x5935428).address()), gameVm) ||
-            !native_memory::pointerRangeLooksReadable(gameVm, 0xB8))
-            return reject("game-vm");
-        RE::BSScript::IVirtualMachine* vm = nullptr;
-        std::uintptr_t vtable = 0;
-        if (!native_memory::tryReadField(gameVm, 0xB0, vm) || !native_memory::tryReadField(vm, 0, vtable) ||
-            vtable != REL::Offset(0x309D998).address())
-            return reject("script-vm-identity");
-        auto& handles = vm->GetObjectHandlePolicy();
-        if (!native_memory::pointerRangeLooksReadable(&handles, sizeof(void*)))
-            return reject("script-handle-policy");
-        const auto handle = handles.GetHandleForObject(static_cast<std::uint32_t>(ref->GetFormType()), ref);
-        if (handle == handles.EmptyHandle())
-            return reject("script-handle");
-        RE::BSTSmartPointer<RE::BSScript::Object> script;
-        if (!vm->FindBoundObject(handle, "DefaultDisableHavokOnLoad", false, script, true))
+        const auto bound = native_script_binding::findBoundScript(ref, "DefaultDisableHavokOnLoad");
+        if (bound.failedStage)
+            return reject(bound.failedStage);
+        if (!bound.script)
             return ScriptPreparation::Ready;
-        if (!script || !native_memory::pointerRangeLooksReadable(script.get(), sizeof(RE::BSScript::Object)))
-            return reject("load-script");
-        auto* type = script->GetTypeInfo();
-        if (!type || !native_memory::pointerRangeLooksReadable(type, sizeof(*type)) || !type->Valid() ||
-            type->GetNumProperties() > 64)
-            return reject("load-script-type");
-        // 1426C2060 derives this span from type +40/+44/+50; 1426C5FC0
-        // independently confirms the linked state, variable count and data base.
-        // The property search at 1426C6AC0 advances in 0x48-byte records.
-        const auto* properties = type->GetPropertyIter();
-        if (!type->data || !type->GetNumProperties() ||
-            !native_memory::pointerRangeLooksReadable(properties, type->GetNumProperties() * sizeof(*properties)))
-            return reject("load-script-property-span");
-        const auto index = type->GetPropertyIndex(RE::BSFixedString("BeenSimmed"));
-        RE::BSScript::Variable value;
-        if (index == 0xFFFF'FFFFu || !vm->GetVariableValue(script, index, value) || !value.is<bool>())
-            return reject("load-script-property");
-        if (RE::BSScript::get<bool>(value))
+        bool beenSimmed = false;
+        const char* propertyStage = nullptr;
+        if (!native_script_binding::readBoolProperty(bound, "BeenSimmed", beenSimmed, propertyStage))
+            return reject(propertyStage);
+        if (beenSimmed)
             return ScriptPreparation::Ready;
         if (start) {
             RE::BSScript::Variable simulated;
             simulated = true;
-            if (!vm->SetPropertyValue(script, "BeenSimmed", simulated, {}))
+            if (!bound.vm->SetPropertyValue(bound.script, "BeenSimmed", simulated, {}))
                 return reject("load-script-setter");
         }
         // The VM may execute its setter later. The game-thread caller keeps the

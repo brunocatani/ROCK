@@ -91,6 +91,7 @@
 #include "physics-interaction/native/player/NativePlayerCollisionFilter.h"
 #include "physics-interaction/object/CountBasedAmmoRootSync.h"
 #include "physics-interaction/stash/ShoulderStashDetector.h"
+#include "physics-interaction/stash/ShoulderStashPolicy.h"
 #include "physics-interaction/visual/AmmoCounterPose.h"
 #include "physics-interaction/weapon/authored/AuthoredPrimaryFiringGrip.h"
 #include "physics-interaction/weapon/collision/DynamicWeaponCollision.h"
@@ -1090,6 +1091,7 @@ namespace rock
             std::array<peer_held_join_retry_policy::RuntimeState, 2> peerHeldJoinRetryStates{};
             std::array<mouth_consume::RuntimeState, 2> mouthConsumeStates{};
             std::array<shoulder_stash::RuntimeState, 2> shoulderStashStates{};
+            std::array<shoulder_stash::LootActivatorMemo, 2> lootActivatorMemos{};
         };
 
         // State owned by the ForceGrabAndGrenades module.

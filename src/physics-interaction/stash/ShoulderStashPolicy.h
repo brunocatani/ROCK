@@ -42,8 +42,9 @@ namespace rock::shoulder_stash
         ActorBaseForm,
         NonPlayableBase,
         UntakeableBook,
-        // Activators are never inventory items; activating one runs its
-        // script instead of taking it (a movable prop such as a pre-war mug).
+        // An activator is not an inventory item; activating one runs whatever
+        // it does (a movable prop such as a pre-war mug starts a quest scene).
+        // Loot activators (see lootActivatorScript) are the one exception.
         ActivatorBaseForm,
     };
 
@@ -53,6 +54,8 @@ namespace rock::shoulder_stash
         bool peerHoldingSameObject = false;
         RE::TESObjectREFR* heldRef = nullptr;
         const SavedObjectState* savedState = nullptr;
+        // Bound loot script of an activator, from resolveLootActivatorScript.
+        const char* lootActivatorScript = nullptr;
     };
 
     struct EligibilityResult
@@ -60,7 +63,29 @@ namespace rock::shoulder_stash
         bool eligible = false;
         EligibilityReason reason = EligibilityReason::MissingHeldRef;
         RE::TESBoundObject* baseForm = nullptr;
+        const char* lootActivatorScript = nullptr;
     };
+
+    /*
+     * A loot activator is a world prop whose activation hands the activating
+     * actor an item and removes the prop: the vanilla caps stash tin and the
+     * placed caps of the bottlecap mine and Money Shot use bobbyPinBoxSCRIPT
+     * (leveled caps, then disable and delete); DefaultAddItemOnActivate with
+     * bDisableWhenDone set does the same for a single item. Stashing one is
+     * taking it, so the shoulder stash activates it like a pickup. The answer
+     * is fixed for one grab, so the frame loop asks the VM once per grab.
+     */
+    struct LootActivatorMemo
+    {
+        std::uint64_t grabIdentity = 0;
+        std::uint32_t formID = 0;
+        const char* script = nullptr;
+    };
+
+    // Game thread. Returns the bound loot script name, or null for any other
+    // reference, including an activator whose scripts cannot be read.
+    [[nodiscard]] const char* resolveLootActivatorScript(LootActivatorMemo& memo, std::uint64_t grabIdentity,
+        RE::TESObjectREFR* heldRef);
 
     [[nodiscard]] const char* eligibilityReasonName(EligibilityReason reason) noexcept;
     [[nodiscard]] bool isUntakeableBook(RE::TESBoundObject* baseForm) noexcept;

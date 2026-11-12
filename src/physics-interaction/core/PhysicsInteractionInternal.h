@@ -350,7 +350,7 @@ namespace rock
         inline void showShoulderStashCollectedNotification(const shoulder_stash::TransferResult& transferResult,
             std::uint32_t fallbackFormID)
         {
-            if (!g_rockConfig.rockShoulderStashShowCollectedNotifications) {
+            if (!g_rockConfig.rockShoulderStashShowCollectedNotifications || transferResult.lootActivatorScript) {
                 return;
             }
 

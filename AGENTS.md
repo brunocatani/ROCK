@@ -108,7 +108,7 @@ Under `src/physics-interaction/` unless the path says otherwise.
 | `animation/` | Authored grip capture from the native graph |
 | `visual/`, `debug/` | Hand world authority, ammo counters, indicators, RPS UI drawing; debug overlays |
 | `native/havok/` | Havok bodies, shapes, materials, world lock, step drive, timing fix, offsets |
-| `native/player/`, `scene/`, `query/`, `safety/` | Character controller, native HUD placement, reference placement, ray and shape casts, native fault boundaries |
+| `native/player/`, `scene/`, `query/`, `script/`, `safety/` | Character controller, native HUD placement, reference placement, ray and shape casts, bound Papyrus script queries, native fault boundaries |
 | `performance/`, `timing/` | Profiler, game-frame clock |
 | `src/api/` | Provider API and FRIK API binding |
 | `src/config/`, `src/RockConfig*.cpp` | Settings catalog and loader |

@@ -2046,6 +2046,9 @@ namespace rock
                       .peerHoldingSameObject = peerHoldingSameObject,
                       .heldRef = heldRefForGameplay,
                       .savedState = &hand.getSavedObjectState(),
+                      .lootActivatorScript = shoulder_stash::resolveLootActivatorScript(
+                          _grabInput.lootActivatorMemos[isLeft ? 1u : 0u], hand.heldGrabIdentity(),
+                          heldRefForGameplay),
                   })
                 : shoulder_stash::EligibilityResult{ .eligible = false,
                       .reason = shoulder_stash::EligibilityReason::SharedHeldObject };
@@ -2179,6 +2182,7 @@ namespace rock
                     }
                     const auto transferResult = shoulder_stash::transferToPlayerInventory(shoulder_stash::TransferInput{
                         .heldRef = releaseOutcome.takeRetainedReference(),
+                        .lootActivatorScript = stashEligibility.lootActivatorScript,
                     });
                     if (heldFormID == 0 && transferResult.formID != 0) {
                         heldFormID = transferResult.formID;
@@ -2195,10 +2199,11 @@ namespace rock
                             primaryBodyId, isLeft);
                     }
                     ROCK_LOG_INFO(Hand,
-                        "{} hand shoulder stash release formID={:08X} success={} transferReason={} stashSource={} "
-                        "zone={} count={} confidence={:.2f} speed={:.1f}",
+                        "{} hand shoulder stash release formID={:08X} success={} transferReason={} lootScript={} "
+                        "stashSource={} zone={} count={} confidence={:.2f} speed={:.1f}",
                         hand.handName(), heldFormID, transferResult.success ? "yes" : "no",
                         shoulder_stash::transferReasonName(transferResult.reason),
+                        transferResult.lootActivatorScript ? transferResult.lootActivatorScript : "none",
                         shoulder_stash::evidenceSourceName(stashDecision.source),
                         body_zone::bodyZoneName(stashDecision.zone), transferResult.count, stashDecision.confidence,
                         stashDecision.speedGameUnitsPerSecond);
