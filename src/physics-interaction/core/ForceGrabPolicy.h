@@ -1,3 +1,6 @@
+// Which hand may accept a force grab (provider world grab, inventory transfer,
+// grenade quick draw): the reasons a hand is busy, as a bit mask, and the
+// grenade hand choice built on it.
 #pragma once
 
 #include <cstdint>
@@ -22,7 +25,10 @@ namespace rock::force_grab_policy
         PendingForceGrab = 1u << 5,
         EquippedWeapon = 1u << 6,
         TouchGrab = 1u << 7,
-        InputReserved = 1u << 8,
+        // A separately equipped offhand weapon (native equipment index 1).
+        // Distinct from EquippedWeapon: equipped-grip and drop exemptions for
+        // the primary's own hand never apply to the other weapon's hand.
+        OffhandWeapon = 1u << 9,
     };
 
     struct HandAvailabilityInput
@@ -34,8 +40,8 @@ namespace rock::force_grab_policy
         bool extractionHandoff{ false };
         bool pendingForceGrab{ false };
         bool equippedWeaponOccupiesHand{ false };
+        bool offhandWeaponOccupiesHand{ false };
         bool touchGrabActive{ false };
-        bool inputReserved{ false };
     };
 
     [[nodiscard]] inline constexpr std::uint32_t blockerMask(const HandAvailabilityInput& input) noexcept
@@ -54,8 +60,8 @@ namespace rock::force_grab_policy
         add(input.extractionHandoff, HandBlocker::ExtractionHandoff);
         add(input.pendingForceGrab, HandBlocker::PendingForceGrab);
         add(input.equippedWeaponOccupiesHand, HandBlocker::EquippedWeapon);
+        add(input.offhandWeaponOccupiesHand, HandBlocker::OffhandWeapon);
         add(input.touchGrabActive, HandBlocker::TouchGrab);
-        add(input.inputReserved, HandBlocker::InputReserved);
         return result;
     }
 
@@ -71,24 +77,6 @@ namespace rock::force_grab_policy
         return (blockers & ~static_cast<std::uint32_t>(HandBlocker::EquippedWeapon)) == 0;
     }
 
-    /*
-     * Part grips are physical occupancy regardless of role. The firing hand is
-     * otherwise occupied while an equipped weapon is present, except during
-     * part-carry after that firing grip has detached. Keeping this role-driven
-     * makes grenade hand choice mirror correctly when left-hand weapon support
-     * becomes authoritative.
-     */
-    [[nodiscard]] inline constexpr bool equippedWeaponOccupiesHand(
-        bool handIsLeft,
-        bool equippedWeaponPresent,
-        bool partCarryActive,
-        bool firingHandIsLeft,
-        bool partGripActiveForHand) noexcept
-    {
-        return partGripActiveForHand ||
-               (equippedWeaponPresent && !partCarryActive && handIsLeft == firingHandIsLeft);
-    }
-
     enum class GrenadeSelectionFailure : std::uint8_t
     {
         None,
@@ -102,11 +90,8 @@ namespace rock::force_grab_policy
         GrenadeSelectionFailure failure{ GrenadeSelectionFailure::None };
     };
 
-    [[nodiscard]] inline constexpr GrenadeHandSelection selectGrenadeHand(
-        bool grenadeAlreadyHeld,
-        bool rightAvailable,
-        bool leftAvailable,
-        bool preferLeft) noexcept
+    [[nodiscard]] inline constexpr GrenadeHandSelection selectGrenadeHand(bool grenadeAlreadyHeld, bool rightAvailable,
+        bool leftAvailable, bool preferLeft) noexcept
     {
         if (grenadeAlreadyHeld) {
             return { .failure = GrenadeSelectionFailure::GrenadeAlreadyHeld };
@@ -120,11 +105,8 @@ namespace rock::force_grab_policy
         return { .failure = GrenadeSelectionFailure::HandsBlocked };
     }
 
-    [[nodiscard]] inline constexpr GrenadeHandSelection selectGrenadeHand(
-        bool grenadeAlreadyHeld,
-        const HandAvailabilityInput& right,
-        const HandAvailabilityInput& left,
-        bool preferLeft) noexcept
+    [[nodiscard]] inline constexpr GrenadeHandSelection selectGrenadeHand(bool grenadeAlreadyHeld,
+        const HandAvailabilityInput& right, const HandAvailabilityInput& left, bool preferLeft) noexcept
     {
         return selectGrenadeHand(grenadeAlreadyHeld, isAvailable(right), isAvailable(left), preferLeft);
     }

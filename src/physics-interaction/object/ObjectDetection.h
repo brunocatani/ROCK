@@ -1,10 +1,10 @@
 #pragma once
 
-#include "physics-interaction/native/HavokOffsets.h"
-#include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/native/PhysicsUtils.h"
 #include "api/NativeInteractionService.h"
+#include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/hand/HandSelection.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
+#include "physics-interaction/native/havok/PhysicsUtils.h"
 #include "physics-interaction/object/GrabTargetKind.h"
 
 #include "RE/Bethesda/BSHavok.h"
@@ -117,7 +117,8 @@ namespace rock
         bool isValid() const { return refr != nullptr && retainedRef.get() == refr; }
     };
 
-    inline bool resolveFarSelectionHmdConeAnchor(RE::hknpWorld* hknpWorld, const SelectedObject& selection, RE::NiPoint3& outAnchor)
+    inline bool resolveFarSelectionHmdConeAnchor(RE::hknpWorld* hknpWorld, const SelectedObject& selection,
+        RE::NiPoint3& outAnchor)
     {
         /*
          * Far HMD-cone revalidation happens after the original query frame, so
@@ -135,11 +136,11 @@ namespace rock
             // point as acquisition, transported by its verified native body.
             auto* owner = hknpWorld ? havok_runtime::getCollisionObjectFromBody(hknpWorld, selection.bodyId) : nullptr;
             RE::hknpWorld* ownerWorld = nullptr;
-            RE::hknpBodyId ownerBody{0x7FFF'FFFF};
+            RE::hknpBodyId ownerBody{ 0x7FFF'FFFF };
             RE::NiTransform bodyWorld{};
             return owner && reinterpret_cast<std::uintptr_t>(owner) == selection.equipmentAnchorOwner &&
-                havok_runtime::tryResolveCollisionObjectBody(owner, ownerWorld, ownerBody) &&
-                ownerWorld == hknpWorld && ownerBody.value == selection.bodyId.value &&
+                havok_runtime::tryResolveCollisionObjectBody(owner, ownerWorld, ownerBody) && ownerWorld == hknpWorld &&
+                ownerBody.value == selection.bodyId.value &&
                 tryResolveLiveBodyWorldTransform(hknpWorld, selection.bodyId, bodyWorld) &&
                 selection.equipmentAnchor.resolve(bodyWorld, outAnchor);
         }
@@ -172,11 +173,8 @@ namespace rock
         return false;
     }
 
-    inline bool selectedObjectPassesFarHmdCone(
-        RE::hknpWorld* hknpWorld,
-        const SelectedObject& selection,
-        const FarSelectionHmdConeGate& hmdConeGate,
-        float* outDot = nullptr)
+    inline bool selectedObjectPassesFarHmdCone(RE::hknpWorld* hknpWorld, const SelectedObject& selection,
+        const FarSelectionHmdConeGate& hmdConeGate, float* outDot = nullptr)
     {
         if (!selection.isValid() || !selection.isFarSelection || !hmdConeGate.enabled) {
             if (outDot) {
@@ -196,15 +194,17 @@ namespace rock
         const bool accepted = hmdConeGate.acceptsHitPoint(anchorWorld, outDot);
         if (!accepted && selection.targetKind == grab_target::Kind::ExtractableItem) {
             ROCK_LOG_SAMPLE_DEBUG(Hand, 2000,
-                "Extractable selection cone rejected live anchor: ref={:08X} owner={:016X} body={} anchor=({:.2f},{:.2f},{:.2f}) hmd=({:.2f},{:.2f},{:.2f})",
-                selection.refr->GetFormID(), selection.extensionSelection.owner, selection.bodyId.value,
-                anchorWorld.x, anchorWorld.y, anchorWorld.z,
-                hmdConeGate.hmdPositionWorld.x, hmdConeGate.hmdPositionWorld.y, hmdConeGate.hmdPositionWorld.z);
+                "Extractable selection cone rejected live anchor: ref={:08X} owner={:016X} body={} "
+                "anchor=({:.2f},{:.2f},{:.2f}) hmd=({:.2f},{:.2f},{:.2f})",
+                selection.refr->GetFormID(), selection.extensionSelection.owner, selection.bodyId.value, anchorWorld.x,
+                anchorWorld.y, anchorWorld.z, hmdConeGate.hmdPositionWorld.x, hmdConeGate.hmdPositionWorld.y,
+                hmdConeGate.hmdPositionWorld.z);
         }
         return accepted;
     }
 
-    inline bool selectedObjectPassesFarHmdCone(const SelectedObject& selection, const FarSelectionHmdConeGate& hmdConeGate, float* outDot = nullptr)
+    inline bool selectedObjectPassesFarHmdCone(const SelectedObject& selection,
+        const FarSelectionHmdConeGate& hmdConeGate, float* outDot = nullptr)
     {
         return selectedObjectPassesFarHmdCone(nullptr, selection, hmdConeGate, outDot);
     }
@@ -217,35 +217,33 @@ namespace rock
         api::native_interaction::SelectionReply extensionSelection{};
     };
 
-    inline api::native_interaction::SelectionQuery extensionSelectionQuery(RE::hknpWorld* world, const SelectedObject& selection)
+    inline api::native_interaction::SelectionQuery extensionSelectionQuery(RE::hknpWorld* world,
+        const SelectedObject& selection)
     {
         api::native_interaction::SelectionQuery query{};
-        query.reference=reinterpret_cast<std::uintptr_t>(selection.refr);
-        query.world=reinterpret_cast<std::uintptr_t>(world);
-        query.hitNode=reinterpret_cast<std::uintptr_t>(selection.hitNode);
-        query.body=selection.bodyId.value;query.farSelection=selection.isFarSelection;query.hasHitPoint=selection.hasHitPoint;
-        query.hitPoint={selection.hitPointWorld.x,selection.hitPointWorld.y,selection.hitPointWorld.z};
+        query.reference = reinterpret_cast<std::uintptr_t>(selection.refr);
+        query.world = reinterpret_cast<std::uintptr_t>(world);
+        query.hitNode = reinterpret_cast<std::uintptr_t>(selection.hitNode);
+        query.body = selection.bodyId.value;
+        query.farSelection = selection.isFarSelection;
+        query.hasHitPoint = selection.hasHitPoint;
+        query.hitPoint = { selection.hitPointWorld.x, selection.hitPointWorld.y, selection.hitPointWorld.z };
         return query;
     }
 
     bool isGrabbable(RE::TESObjectREFR* ref, const OtherHandSelectionContext& otherHandContext = {});
-    GrabTargetClassification classifySelectionGrabTarget(
-        RE::TESObjectREFR* ref,
-        RE::hknpWorld* hknpWorld,
-        RE::hknpBodyId bodyId,
-        const OtherHandSelectionContext& otherHandContext = {},
-        bool isFarSelection = false,
-        RE::NiAVObject* hitNode = nullptr,
-        const RE::NiPoint3& hitPointWorld = {},
-        bool hasHitPoint = false,
+    GrabTargetClassification classifySelectionGrabTarget(RE::TESObjectREFR* ref, RE::hknpWorld* hknpWorld,
+        RE::hknpBodyId bodyId, const OtherHandSelectionContext& otherHandContext = {}, bool isFarSelection = false,
+        RE::NiAVObject* hitNode = nullptr, const RE::NiPoint3& hitPointWorld = {}, bool hasHitPoint = false,
         std::optional<RE::TESBoundObject*> knownBaseForm = std::nullopt);
 
     RE::TESObjectREFR* resolveBodyToRef(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, RE::hknpBodyId bodyId);
 
-    SelectedObject findCloseObject(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& palmPos, const RE::NiPoint3& palmForward, bool isLeft,
-        const OtherHandSelectionContext& otherHandContext = {}, const char* debugQueryName = nullptr);
+    SelectedObject findCloseObject(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& palmPos,
+        const RE::NiPoint3& palmForward, bool isLeft, const OtherHandSelectionContext& otherHandContext = {},
+        const char* debugQueryName = nullptr);
 
-    SelectedObject findFarObject(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& handPos, const RE::NiPoint3& pointingDir,
-        const FarSelectionHmdConeGate& hmdConeGate,
+    SelectedObject findFarObject(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& handPos,
+        const RE::NiPoint3& pointingDir, const FarSelectionHmdConeGate& hmdConeGate,
         const OtherHandSelectionContext& otherHandContext = {});
 }

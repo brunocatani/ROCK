@@ -1,13 +1,16 @@
+// FO4VR runtime accessors (see Fo4VrRuntime.h). Node lookups are cached per
+// game frame; beginNodeLookupFrame() starts a new frame.
 #include "rock_support/Fo4VrRuntime.h"
 
+#include "physics-interaction/object/CarInteractionPolicy.h"
+#include "physics-interaction/weapon/classification/WeaponTypePolicy.h"
 #include "rock_support/Fo4VrActorStatePolicy.h"
 #include "rock_support/Logger.h"
-#include "physics-interaction/object/CarInteractionPolicy.h"
-#include "physics-interaction/weapon/WeaponTypePolicy.h"
 
 #include <RE/Bethesda/SendPapyrusEvent.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <ranges>
 
@@ -15,6 +18,9 @@ namespace rock::fo4vr
 {
     namespace
     {
+        // Advanced once per game frame by beginNodeLookupFrame().
+        std::atomic<std::uint64_t> s_nodeLookupFrame{ 1 };
+
         [[nodiscard]] bool hasKeyword(const RE::BGSKeywordForm* keywordForm, const std::uint32_t keywordFormId) noexcept
         {
             if (!keywordForm || !keywordForm->keywords) {
@@ -31,10 +37,7 @@ namespace rock::fo4vr
 
     }
 
-    RE::PlayerCharacter* getPlayer() noexcept
-    {
-        return RE::PlayerCharacter::GetSingleton();
-    }
+    RE::PlayerCharacter* getPlayer() noexcept { return RE::PlayerCharacter::GetSingleton(); }
 
     PlayerNodes* getPlayerNodes() noexcept
     {
@@ -80,15 +83,26 @@ namespace rock::fo4vr
         return reinterpret_cast<BSFlattenedBoneTree*>(skeleton->children[0]->IsNode());
     }
 
-    RE::EquippedItem* getEquippedWeaponItem() noexcept
+    RE::EquippedItem* getEquippedWeaponItem(const std::uint32_t index) noexcept
     {
         auto* player = getPlayer();
         auto* middleHigh = player && player->currentProcess ? player->currentProcess->middleHigh : nullptr;
-        if (!middleHigh || middleHigh->equippedItems.empty()) {
+        if (!middleHigh || middleHigh->equippedItems.empty() || middleHigh->equippedItems.size() > 32) {
             return nullptr;
         }
 
-        auto* equippedItem = std::addressof(middleHigh->equippedItems[0]);
+        // The native array is sorted by equipment index. With only a left
+        // firearm present element zero is index one, not the primary Weapon
+        // attachment. Never drive the primary model using the left item's data.
+        RE::EquippedItem* equippedItem = nullptr;
+        for (auto& entry : middleHigh->equippedItems) {
+            if (entry.equipIndex.index == index) {
+                equippedItem = std::addressof(entry);
+                break;
+            }
+        }
+        if (!equippedItem)
+            return nullptr;
         auto* object = equippedItem->item.object;
         if (!object || object->formType != RE::ENUM_FORM_ID::kWEAP) {
             return nullptr;
@@ -96,8 +110,7 @@ namespace rock::fo4vr
 
         const auto* weapon = static_cast<const RE::TESObjectWEAP*>(object);
         const auto weaponType = weapon->weaponData.type.get();
-        if (weaponType == RE::WEAPON_TYPE::kGrenade ||
-            weaponType == RE::WEAPON_TYPE::kMine) {
+        if (weaponType == RE::WEAPON_TYPE::kGrenade || weaponType == RE::WEAPON_TYPE::kMine) {
             // FO4VR keeps the selected throwable in equippedItems[0] when no
             // hand weapon is equipped. It is inventory selection state, not a
             // weapon presentation/occupancy identity for ROCK's hand systems.
@@ -110,19 +123,39 @@ namespace rock::fo4vr
     RE::EquippedWeaponData* getEquippedWeaponData() noexcept
     {
         auto* equippedItem = getEquippedWeaponItem();
-        return equippedItem && equippedItem->data ?
-            static_cast<RE::EquippedWeaponData*>(equippedItem->data.get()) : nullptr;
+        return equippedItem && equippedItem->data ? static_cast<RE::EquippedWeaponData*>(equippedItem->data.get())
+                                                  : nullptr;
     }
 
     RE::NiNode* getWeaponNode() noexcept
     {
-        return findNode(getFirstPersonSkeleton(), "Weapon");
+        auto* skeleton = getFirstPersonSkeleton();
+        if (!skeleton)
+            return nullptr;
+
+        /*
+         * The "Weapon" bone lives as long as its skeleton, and a skeleton swap
+         * (power armor) changes firstPerson3D. Search the tree once per frame
+         * and thread instead of on each of the many per-frame callers.
+         */
+        struct Cache
+        {
+            std::uint64_t frame{ 0 };
+            const RE::NiNode* skeleton{ nullptr };
+            RE::NiNode* node{ nullptr };
+        };
+
+        thread_local Cache cache;
+        const auto frame = s_nodeLookupFrame.load(std::memory_order_acquire);
+        if (cache.frame != frame || cache.skeleton != skeleton || !cache.node) {
+            cache = { frame, skeleton, findNode(skeleton, "Weapon") };
+        }
+        return cache.node;
     }
 
-    RE::PlayerCamera* getPlayerCamera() noexcept
-    {
-        return RE::PlayerCamera::GetSingleton();
-    }
+    void beginNodeLookupFrame() noexcept { s_nodeLookupFrame.fetch_add(1, std::memory_order_acq_rel); }
+
+    RE::PlayerCamera* getPlayerCamera() noexcept { return RE::PlayerCamera::GetSingleton(); }
 
     RE::NiPoint3 getCameraPosition() noexcept
     {
@@ -156,10 +189,8 @@ namespace rock::fo4vr
 
         const auto* actorState = static_cast<const RE::ActorState*>(actor);
         std::uint32_t actorStateStorage = 0;
-        std::memcpy(
-            &actorStateStorage,
-            reinterpret_cast<const std::byte*>(actorState) +
-                fo4vr_actor_state_policy::kWeaponStateStorageOffset,
+        std::memcpy(&actorStateStorage,
+            reinterpret_cast<const std::byte*>(actorState) + fo4vr_actor_state_policy::kWeaponStateStorageOffset,
             sizeof(actorStateStorage));
         return fo4vr_actor_state_policy::decodeWeaponState(actorStateStorage);
     }
@@ -172,18 +203,15 @@ namespace rock::fo4vr
 
         const auto* actorState = static_cast<const RE::ActorState*>(actor);
         std::uint32_t actorStateStorage = 0;
-        std::memcpy(
-            &actorStateStorage,
-            reinterpret_cast<const std::byte*>(actorState) +
-                fo4vr_actor_state_policy::kWeaponStateStorageOffset,
+        std::memcpy(&actorStateStorage,
+            reinterpret_cast<const std::byte*>(actorState) + fo4vr_actor_state_policy::kWeaponStateStorageOffset,
             sizeof(actorStateStorage));
         return fo4vr_actor_state_policy::decodeGunState(actorStateStorage);
     }
 
     bool IsWeaponDrawn() noexcept
     {
-        return fo4vr_actor_state_policy::isWeaponMagicDrawn(
-            getNativeWeaponState(getPlayer()));
+        return fo4vr_actor_state_policy::isWeaponMagicDrawn(getNativeWeaponState(getPlayer()));
     }
 
     bool isMeleeWeaponEquipped() noexcept
@@ -195,8 +223,7 @@ namespace rock::fo4vr
 
         return std::ranges::any_of(player->inventoryList->data, [](const RE::BGSInventoryItem& item) {
             const auto* weapon = item.object ? item.object->As<RE::TESObjectWEAP>() : nullptr;
-            return weapon && weapon_type_policy::isEquippedMelee(weapon->weaponData.type.get()) &&
-                item.stackData &&
+            return weapon && weapon_type_policy::isEquippedMelee(weapon->weaponData.type.get()) && item.stackData &&
                 item.stackData->IsEquipped();
         });
     }
@@ -261,6 +288,34 @@ namespace rock::fo4vr
         return nullptr;
     }
 
+    namespace
+    {
+        // Atomic because input and recoil hooks can ask off the frame thread.
+        RE::Setting* cachedIniSetting(std::atomic<RE::Setting*>& cache, const char* name) noexcept
+        {
+            auto* setting = cache.load(std::memory_order_acquire);
+            if (!setting) {
+                setting = getIniSetting(name);
+                if (setting) {
+                    cache.store(setting, std::memory_order_release);
+                }
+            }
+            return setting;
+        }
+    }
+
+    RE::Setting* leftHandedModeSetting() noexcept
+    {
+        static std::atomic<RE::Setting*> cache{ nullptr };
+        return cachedIniSetting(cache, "bLeftHandedMode:VR");
+    }
+
+    RE::Setting* vrScaleSetting() noexcept
+    {
+        static std::atomic<RE::Setting*> cache{ nullptr };
+        return cachedIniSetting(cache, "fVrScale:VR");
+    }
+
     void showNotification(const std::string& text)
     {
         logger::info("Show notification: '{}'", text);
@@ -311,15 +366,9 @@ namespace rock::fo4vr
         return nullptr;
     }
 
-    RE::NiNode* find1StChildNode(RE::NiAVObject* root, const char* name) noexcept
-    {
-        return findNode(root, name, 1);
-    }
+    RE::NiNode* find1StChildNode(RE::NiAVObject* root, const char* name) noexcept { return findNode(root, name, 1); }
 
-    bool isNodeVisible(const RE::NiAVObject* node) noexcept
-    {
-        return node && (node->flags.flags & 0x1) == 0;
-    }
+    bool isNodeVisible(const RE::NiAVObject* node) noexcept { return node && (node->flags.flags & 0x1) == 0; }
 
     void updateDown(RE::NiAVObject* node, const bool updateSelf, const char* ignoredNode) noexcept
     {
@@ -354,7 +403,8 @@ namespace rock::fo4vr
         }
         const auto& parentTransform = node->parent->world;
         const auto& localTransform = node->local;
-        const RE::NiPoint3 translated = parentTransform.rotate.Transpose() * (localTransform.translate * parentTransform.scale);
+        const RE::NiPoint3 translated =
+            parentTransform.rotate.Transpose() * (localTransform.translate * parentTransform.scale);
         node->world.translate = parentTransform.translate + translated;
         node->world.rotate = localTransform.rotate * parentTransform.rotate;
         node->world.scale = parentTransform.scale * localTransform.scale;

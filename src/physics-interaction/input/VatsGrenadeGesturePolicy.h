@@ -47,9 +47,7 @@ namespace rock::vats_grenade_gesture_policy
 
     [[nodiscard]] inline float sanitizedHoldSeconds(const float value)
     {
-        return std::isfinite(value) ?
-                   std::clamp(value, kMinimumHoldSeconds, kMaximumHoldSeconds) :
-                   kDefaultHoldSeconds;
+        return std::isfinite(value) ? std::clamp(value, kMinimumHoldSeconds, kMaximumHoldSeconds) : kDefaultHoldSeconds;
     }
 
     [[nodiscard]] inline float sanitizedHeldSeconds(const float value)
@@ -57,10 +55,7 @@ namespace rock::vats_grenade_gesture_policy
         return std::isfinite(value) && value >= 0.0f ? value : 0.0f;
     }
 
-    inline void reset(RuntimeState& state)
-    {
-        state = {};
-    }
+    inline void reset(RuntimeState& state) { state = {}; }
 
     /*
      * Primary-wand B is one exclusive gesture. A qualified hold draws an
@@ -84,8 +79,8 @@ namespace rock::vats_grenade_gesture_policy
 
         const bool modeChanged = state.state != State::Idle && state.immersiveGrenades != input.immersiveGrenades;
         if (!input.eligible || modeChanged) {
-            decision.cancelNativeThrow = decision.cancelNativeThrow ||
-                (state.state == State::HoldCommitted && !state.immersiveGrenades);
+            decision.cancelNativeThrow =
+                decision.cancelNativeThrow || (state.state == State::HoldCommitted && !state.immersiveGrenades);
             if (input.held) {
                 state.state = State::BlockedUntilRelease;
                 decision.reason = "ineligible-held";
@@ -123,9 +118,7 @@ namespace rock::vats_grenade_gesture_policy
                 decision.requestGrenade = heldSeconds >= holdSeconds && state.immersiveGrenades;
                 decision.requestNativeThrow = heldSeconds >= holdSeconds && !state.immersiveGrenades;
                 decision.releaseNativeThrow = decision.requestNativeThrow;
-                decision.reason = heldSeconds >= holdSeconds ?
-                    "release-after-threshold" :
-                    "short-release";
+                decision.reason = heldSeconds >= holdSeconds ? "release-after-threshold" : "short-release";
                 reset(state);
             } else if (!input.held) {
                 state.state = State::BlockedUntilRelease;

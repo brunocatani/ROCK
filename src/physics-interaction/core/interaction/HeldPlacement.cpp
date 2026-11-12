@@ -1,354 +1,603 @@
-#include "physics-interaction/core/PhysicsInteractionInternal.h"
-#include "physics-interaction/native/NativeObjectPlacement.h"
-#include "physics-interaction/native/HavokRuntime.h"
-#include "physics-interaction/native/HavokWorldLock.h"
-#include "physics-interaction/object/ObjectPhysicsBodySet.h"
-#include "physics-interaction/input/InputRemapRuntime.h"
-#include "physics-interaction/core/RockRuntimeState.h"
-#include "api/ProviderRuntimeServices.h"
+// Provider control of held objects (Grab API):
+//   held placement intent   a client reserves the placement click and has ROCK
+//                           release the held reference into a native fixed
+//                           placement (commitHeldPlacement)
+//   held object target      a client steers the held reference through the
+//                           grab constraint toward a pose, for example into a
+//                           socket, and reads the held object's pose back
 #include "RE/Havok/hknpBody.h"
+#include "api/ProviderRuntimeServices.h"
+#include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/core/RockRuntimeState.h"
+#include "physics-interaction/input/InputRemapRuntime.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
+#include "physics-interaction/native/havok/HavokWorldLock.h"
+#include "physics-interaction/native/scene/NativeObjectPlacement.h"
+#include "physics-interaction/object/ObjectPhysicsBodySet.h"
+#include "physics-interaction/weapon/native/BipodFrozenRetirement.h"
 
-namespace rock {
-api::Status PhysicsInteraction::getHeldObjectPose(api::OwnerToken owner,api::Hand which,api::grab::v1_3::HeldObjectPose& out) const
+namespace rock
 {
-    out={};
-    if(which!=api::Hand::Left&&which!=api::Hand::Right)return api::Status::InvalidArgument;
-    auto* world=_lifecycle.cachedHknpWorld;
-    if(!isProviderReady()||!world||!physicsWritesAllowedForWorld(world))return api::Status::NotReady;
-    provider::RockProviderHandInteractionStateV1 observed;
-    const auto status=provider::runtime::apiGetHandInteractionStateV1(owner,static_cast<provider::RockProviderHand>(which),&observed);
-    if(status!=provider::RockProviderResultV1::Ok)return static_cast<api::Status>(status);
-    const auto& hand=which==api::Hand::Left?_leftHand:_rightHand;
-    if(!hand.isHolding()||!hand.getHeldRef()||hand.getHeldRef()->GetFormID()!=observed.targetFormId)return api::Status::HandUnavailable;
-    RE::NiTransform root;
-    {havok_world_lock::ScopedWorldReadLock lock(world);if(!hand.readHeldObjectRoot(world,root))return api::Status::TargetUnavailable;}
-    out.hand=which;out.referenceFormId=observed.targetFormId;out.bodyId=hand.getSavedObjectState().bodyId.value;
-    out.sample=provider::runtime::sample();out.gripSequence=observed.gripSequence;
-    for(int r=0;r<3;++r)for(int c=0;c<3;++c)out.rootWorld.rotate[r*3+c]=root.rotate.entry[r][c];
-    out.rootWorld.translate[0]=root.translate.x;out.rootWorld.translate[1]=root.translate.y;out.rootWorld.translate[2]=root.translate.z;out.rootWorld.scale=root.scale;
-    return api::Status::Ok;
-}
-api::Status PhysicsInteraction::setHeldObjectTarget(api::OwnerToken owner,const api::grab::v1_3::HeldObjectTarget& request)
-{
-    const auto sample=provider::runtime::sample();
-    if(request.hand!=api::Hand::Left&&request.hand!=api::Hand::Right)return api::Status::InvalidArgument;
-    if(!isProviderReady()||!physicsWritesAllowedForWorld(_lifecycle.cachedHknpWorld))return api::Status::NotReady;
-    if(request.sample.frameIndex>sample.frameIndex||sample.frameIndex-request.sample.frameIndex>1||
-        request.sample.worldGeneration!=sample.worldGeneration||request.sample.skeletonGeneration!=sample.skeletonGeneration||
-        request.sample.providerGeneration!=sample.providerGeneration||request.sample.collisionGeneration!=sample.collisionGeneration)return api::Status::GenerationMismatch;
-    provider::RockProviderHandInteractionStateV1 observed;
-    const auto result=provider::runtime::apiGetHandInteractionStateV1(owner,static_cast<provider::RockProviderHand>(request.hand),&observed);
-    if(result!=provider::RockProviderResultV1::Ok)return static_cast<api::Status>(result);
-    if(observed.targetFormId!=request.referenceFormId||!(observed.flags&(1u<<3)))return api::Status::HandUnavailable;
-    if(!request.gripSequence||observed.gripSequence!=request.gripSequence)return api::Status::GenerationMismatch;
-    const auto weapon=_weaponCollision.getWeaponBodySnapshotAtomic();
-    if(request.reserved||bool(request.connectedWeaponFormId)!=bool(request.connectedWeaponGeneration))return api::Status::InvalidArgument;
-    if(request.connectedWeaponFormId&&(request.connectedWeaponFormId!=currentEquippedWeaponFormId()||
-        request.connectedWeaponGeneration!=weapon.generationKey||weapon.count==0||weapon.count>weapon.bodyIds.size()))return api::Status::TargetUnavailable;
-    return (request.hand==api::Hand::Left?_leftHand:_rightHand).setHeldObjectTarget(owner,request,
-        std::span(weapon.bodyIds).first(request.connectedWeaponFormId?weapon.count:0));
-}
-api::Status PhysicsInteraction::clearHeldObjectTarget(api::OwnerToken owner,api::Hand hand)
-{
-    if(hand!=api::Hand::Left&&hand!=api::Hand::Right)return api::Status::InvalidArgument;
-    return (hand==api::Hand::Left?_leftHand:_rightHand).clearHeldObjectTarget(owner);
-}
-api::Status PhysicsInteraction::queryHeldPlacementState(api::grab::v1_1::HeldPlacementState& out) const
-{
-    out={};
-    const auto& frame=runtime_state::currentFrame();
-    auto* bhk=getPlayerBhkWorld();
-    auto* world=bhk ? getHknpWorld(bhk) : nullptr;
-    if (!isProviderReady() || !frame.visualAuthorityAvailable || !frame.localSkeletonReady ||
-        frame.localMenuBlocking || frame.compatibilityConfigBlocking || !world ||
-        bhk!=_lifecycle.cachedBhkWorld || world!=_lifecycle.cachedHknpWorld ||
-        !physicsWritesAllowedForWorld(world) || !native_object_placement::available()) return api::Status::NotReady;
-    out.frameToken=_placementLease.token();
-    out.sample=provider::runtime::sample();
-    out.lastRequestToken=_placementLastRequestToken;
-    out.lastResult=_placementLastResult;
-    out.lastRequestFormId=_placementLastRequestForm;
-    using Flag=api::grab::v1_1::HeldPlacementFlag;
+    api::Status PhysicsInteraction::getHeldObjectPose(api::OwnerToken owner, api::Hand which,
+        api::grab::HeldObjectPose& out) const
     {
-        havok_world_lock::ScopedWorldReadLock lock(world);
-        for (const bool left : {false,true}) {
-            const auto& hand=left ? _leftHand : _rightHand;
-            auto& state=left ? out.left : out.right;
-            if (!hand.isHolding() || !hand.getHeldRef()) continue;
-            state.formId=hand.getHeldRef()->GetFormID();
-            const auto& saved=hand.getSavedObjectState();
-            if (!saved.isValid() || saved.refr->IsDeleted() || saved.refr->IsDisabled() ||
-                saved.targetKind!=grab_target::Kind::LooseObject || hand.getHeldBodyIds().empty() ||
-                hand.getHeldBodyIds().size()>held_placement_policy::kMaxBodies) continue;
-            state.flags=static_cast<std::uint32_t>(Flag::LooseObject);
-            const auto contact=hand.readHeldSurfaceContact();
-            if (!contact.recent || !hand.isHeldBodyId(contact.heldBodyId) ||
-                _rightHand.isHeldBodyId(contact.otherBodyId) || _leftHand.isHeldBodyId(contact.otherBodyId)) continue;
-            const auto other=havok_runtime::snapshotBodyIdentity(world,RE::hknpBodyId{contact.otherBodyId});
-            if (!other.valid || !other.body || !other.body->shape) continue;
-            const auto motion=physics_body_classifier::motionTypeFromBodyFlags(other.body->flags);
-            if (motion==physics_body_classifier::BodyMotionType::Static || motion==physics_body_classifier::BodyMotionType::Keyframed)
-                state.flags|=static_cast<std::uint32_t>(Flag::FixedSurfaceContact);
+        out = {};
+        if (which != api::Hand::Left && which != api::Hand::Right)
+            return api::Status::InvalidArgument;
+        auto* world = _lifecycle.cachedHknpWorld;
+        if (!isProviderReady() || !world || !physicsWritesAllowedForWorld(world))
+            return api::Status::NotReady;
+        api::grab::HandInteractionState observed;
+        const auto status = provider::runtime::getHandInteractionState(owner, static_cast<api::Hand>(which), observed);
+        if (status != api::Status::Ok)
+            return static_cast<api::Status>(status);
+        const auto& hand = which == api::Hand::Left ? _leftHand : _rightHand;
+        if (!hand.isHolding() || !hand.getHeldRef() || hand.getHeldRef()->GetFormID() != observed.targetFormId)
+            return api::Status::HandUnavailable;
+        RE::NiTransform root;
+        {
+            havok_world_lock::ScopedWorldReadLock lock(world);
+            if (!hand.readHeldObjectRoot(world, root))
+                return api::Status::TargetUnavailable;
         }
+        out.hand = which;
+        out.referenceFormId = observed.targetFormId;
+        out.bodyId = hand.getSavedObjectState().bodyId.value;
+        out.sample = provider::runtime::sample();
+        out.gripSequence = observed.gripSequence;
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c)
+                out.rootWorld.rotate[r * 3 + c] = root.rotate.entry[r][c];
+        out.rootWorld.translate[0] = root.translate.x;
+        out.rootWorld.translate[1] = root.translate.y;
+        out.rootWorld.translate[2] = root.translate.z;
+        out.rootWorld.scale = root.scale;
+        return api::Status::Ok;
     }
-    const auto raw=input_remap_runtime::peekRawButtonState(false,32);
-    out.buttonAvailable=raw.available && !input_remap_runtime::isProviderOpenVrGameInputSuppressedForHand(false);
-    out.buttonHeld=raw.held; out.buttonPressed=raw.pressed; out.buttonAgeMilliseconds=raw.sampleAgeMilliseconds;
-    return api::Status::Ok;
-}
 
-std::uint32_t PhysicsInteraction::heldPlacementCandidate(RE::hknpWorld* world) const
-{
-    if (world!=_lifecycle.cachedHknpWorld) return 0;
-    api::grab::v1_1::HeldPlacementState state;
-    if (queryHeldPlacementState(state)!=api::Status::Ok) return 0;
-    const auto id=held_placement_policy::singleObject(state.right.formId,state.left.formId);
-    if (!id) return 0;
-    using Flag=api::grab::v1_1::HeldPlacementFlag;
-    for (const auto& hand : {state.right,state.left})
-        if (hand.formId && !(hand.flags&static_cast<std::uint32_t>(Flag::LooseObject))) return 0;
-    return ((state.right.flags|state.left.flags)&static_cast<std::uint32_t>(Flag::FixedSurfaceContact)) ? id : 0;
-}
-
-api::Status PhysicsInteraction::submitHeldPlacementIntent(api::OwnerToken owner,const api::grab::v1_1::HeldPlacementIntent& intent)
-{
-    using Flag=api::grab::v1_1::PlacementIntentFlag;
-    const auto sample=provider::runtime::sample();
-    if (intent.reserved || (intent.flags&~3u) ||
-        ((intent.flags&static_cast<std::uint32_t>(Flag::Anchor)) &&
-         (!(intent.flags&static_cast<std::uint32_t>(Flag::ReserveClick)) || !intent.formId))) return api::Status::InvalidArgument;
-    if (intent.sample.frameIndex!=sample.frameIndex ||
-        intent.sample.worldGeneration!=sample.worldGeneration || intent.sample.skeletonGeneration!=sample.skeletonGeneration ||
-        intent.sample.providerGeneration!=sample.providerGeneration ||
-        intent.sample.collisionGeneration!=sample.collisionGeneration) return api::Status::GenerationMismatch;
-    using Admission=held_placement_policy::FrameLease::Admission;
-    switch (_placementLease.submit(owner,intent.frameToken)) {
-    case Admission::InvalidOwner: return api::Status::InvalidArgument;
-    case Admission::Stale: return api::Status::GenerationMismatch;
-    case Admission::Busy: return api::Status::Busy;
-    case Admission::Accepted: break;
-    }
-    _placementIntent=intent;
-    return api::Status::RequestQueued;
-}
-
-void PhysicsInteraction::clearHeldPlacementIntent(api::OwnerToken owner)
-{
-    if (_placementLease.owner()==owner) { _placementLease.clear(owner); _placementIntent={}; }
-    if (_placementActiveOwner==owner) {
-        _placementActiveOwner=0; _placementClickReserved=false;
-        _placementCandidate=0; _placementRequestedForm=0;
-    }
-    if (_placementPendingForm && _placementPendingOwner==owner) {
-        _placementPendingOwner=0; _placementPendingForm=0;
-        _placementLastResult=api::grab::v1_1::PlacementResult::Rejected;
-    }
-}
-
-void PhysicsInteraction::resetHeldPlacement()
-{
-    _placementIntent={}; _placementLease.invalidate();
-    _placementActiveOwner=0; _placementPendingOwner=0;
-    _placementPendingForm=0; _placementRequestedForm=0;
-    _placementCandidate=0; _placementClickReserved=false;
-    _placementLastRequestToken=0; _placementLastRequestForm=0;
-    _placementScriptWait=0.0f; _placementLastResult=api::grab::v1_1::PlacementResult::None;
-}
-
-void PhysicsInteraction::beginHeldPlacementFrame()
-{
-    const auto intent=std::exchange(_placementIntent,{});
-    const auto owner=_placementLease.consume();
-    const auto sample=provider::runtime::sample();
-    _placementActiveOwner=0; _placementClickReserved=false; _placementCandidate=0; _placementRequestedForm=0;
-    const auto& frame=runtime_state::currentFrame();
-    const bool usable=isInitialized() && frame.visualAuthorityAvailable && frame.localSkeletonReady &&
-        !frame.localMenuBlocking && !frame.compatibilityConfigBlocking &&
-        !input_remap_runtime::isProviderOpenVrGameInputSuppressedForHand(false);
-    if (!usable || !owner || intent.sample.worldGeneration!=sample.worldGeneration ||
-        intent.sample.skeletonGeneration!=sample.skeletonGeneration ||
-        intent.sample.providerGeneration!=sample.providerGeneration ||
-        intent.sample.collisionGeneration!=sample.collisionGeneration ||
-        provider::runtime::authorize(owner,api::grab::kInterfaceId,2,true)!=api::Status::Ok) {
-        if (_placementPendingForm) _placementLastResult=api::grab::v1_1::PlacementResult::Rejected;
-        _placementPendingForm=0; _placementPendingOwner=0;
-        return;
-    }
-    using Flag=api::grab::v1_1::PlacementIntentFlag;
-    if (_placementPendingForm && _placementPendingOwner!=owner) {
-        _placementLastResult=api::grab::v1_1::PlacementResult::Rejected;
-        _placementPendingForm=0; _placementPendingOwner=0;
-    }
-    _placementActiveOwner=owner;
-    _placementCandidate=intent.formId;
-    _placementClickReserved=(intent.flags&static_cast<std::uint32_t>(Flag::ReserveClick))!=0;
-    if (intent.flags&static_cast<std::uint32_t>(Flag::Anchor)) {
-        _placementRequestedForm=intent.formId;
-        if (!_placementPendingForm) {
-            _placementLastRequestToken=intent.frameToken;
-            _placementLastRequestForm=intent.formId;
-            // If this update exits before commit, the caller still receives a
-            // terminal result instead of waiting forever for a consumed token.
-            _placementLastResult=api::grab::v1_1::PlacementResult::Rejected;
-        }
-    }
-    // A submitted lease observes this click before bipod. An unreserved click
-    // remains available to bipod; otherwise drain its edges exactly once.
-    if (_placementClickReserved || !g_rockConfig.rockBipodMode)
-        (void)input_remap_runtime::consumeRawButtonState(false,32);
-}
-
-void PhysicsInteraction::queryPlacementClickState(api::input::v1_1::PlacementClickState& out) const
-{
-    out={}; out.sample=provider::runtime::sample();
-    if (!_placementActiveOwner ||
-        provider::runtime::authorize(_placementActiveOwner,api::grab::kInterfaceId,2,true)!=api::Status::Ok) return;
-    if (_placementClickReserved) out.flags=static_cast<std::uint32_t>(api::input::v1_1::PlacementClickFlag::InputReserved);
-    out.objectFormId=_placementCandidate;
-}
-
-void PhysicsInteraction::commitHeldPlacement(const PhysicsFrameContext& frame)
-{
-    const auto click=std::exchange(_placementRequestedForm,0u);
-    const bool starting=click!=0 && _placementPendingForm==0;
-    if (starting) {
-        _placementPendingForm=click; _placementScriptWait=0.0f; _placementPendingOwner=_placementActiveOwner;
-    }
-    const auto requested=_placementPendingForm;
-    if (!requested) return;
-    _placementLastResult=api::grab::v1_1::PlacementResult::Rejected;
-    if (!_placementActiveOwner || _placementPendingOwner!=_placementActiveOwner ||
-        provider::runtime::authorize(_placementActiveOwner,api::grab::kInterfaceId,2,true)!=api::Status::Ok ||
-        requested!=_placementCandidate || frame.menuBlocked || !frame.worldReady || !physicsWritesAllowedForWorld(frame.hknpWorld) ||
-        requested!=heldPlacementCandidate(frame.hknpWorld)) {
-        ROCK_LOG_INFO(Hand,"Held placement rejected ref={:08X} stage=commit-eligibility menu={} worldReady={}",requested,frame.menuBlocked,frame.worldReady);
-        _placementPendingForm=0;
-        return;
-    }
-    auto mutation=_generatedBodyStepDrive.callbackGate().pauseForMutation();
-    auto& owner=_rightHand.isHolding() ? _rightHand : _leftHand;
-    const auto retained=owner.getSavedObjectState().retainedRef;
-    auto* ref=retained.get();
-    auto* root=ref ? ref->Get3D() : nullptr;
-    auto* cell=ref ? ref->GetParentCell() : nullptr;
-    if (!root || !cell || cell->GetbhkWorld()!=frame.bhkWorld) {
-        ROCK_LOG_WARN(Hand,"Held placement rejected ref={:08X} stage=reference-world",requested);
-        _placementPendingForm=0;
-        return;
-    }
-    const auto prepared=native_object_placement::prepareLoadScript(ref,starting);
-    if (prepared==native_object_placement::ScriptPreparation::Rejected) { _placementPendingForm=0; return; }
-    if (prepared==native_object_placement::ScriptPreparation::Pending) {
-        _placementLastResult=api::grab::v1_1::PlacementResult::Pending;
-        _placementScriptWait+=std::clamp(frame.deltaSeconds,0.0f,0.1f);
-        if (_placementScriptWait>=2.0f) {
-            _placementLastResult=api::grab::v1_1::PlacementResult::Rejected;
-            ROCK_LOG_WARN(Hand,"Held placement rejected ref={:08X} stage=load-script-timeout; grab retained",requested);
-            _placementPendingForm=0;
-        }
-        return;
-    }
-    _placementPendingForm=0;
-    const auto pose=root->world;
-    std::array<std::uint32_t,held_placement_policy::kMaxBodies> bodies{};
-    std::size_t count=0;
+    api::Status PhysicsInteraction::setHeldObjectTarget(api::OwnerToken owner,
+        const api::grab::HeldObjectTarget& request)
     {
-        // Cached grab prep deliberately leaves its lifecycle incomplete after
-        // native activation. Re-enumerate the current tree once on placement,
-        // without seeding a held body that could conceal missing discovery.
-        using namespace object_physics_body_set;
-        havok_world_lock::ScopedWorldReadLock lock(frame.hknpWorld);
-        BodySetScanOptions options{};
-        options.requireSameResolvedRef=true;
-        ObjectPhysicsBodyScanCursor cursor;
-        ObjectPhysicsBodyScanCache cache;
-        if (!beginObjectPhysicsBodyScanCache(ref,options,cursor,cache)) {
-            ROCK_LOG_WARN(Hand,"Held placement rejected ref={:08X} stage=body-scan-start",requested);
+        const auto sample = provider::runtime::sample();
+        if (request.hand != api::Hand::Left && request.hand != api::Hand::Right)
+            return api::Status::InvalidArgument;
+        if (!isProviderReady() || !physicsWritesAllowedForWorld(_lifecycle.cachedHknpWorld))
+            return api::Status::NotReady;
+        if (request.sample.frameIndex > sample.frameIndex || sample.frameIndex - request.sample.frameIndex > 1 ||
+            request.sample.worldGeneration != sample.worldGeneration ||
+            request.sample.skeletonGeneration != sample.skeletonGeneration ||
+            request.sample.providerGeneration != sample.providerGeneration ||
+            request.sample.collisionGeneration != sample.collisionGeneration)
+            return api::Status::GenerationMismatch;
+        api::grab::HandInteractionState observed;
+        const auto result =
+            provider::runtime::getHandInteractionState(owner, static_cast<api::Hand>(request.hand), observed);
+        if (result != api::Status::Ok)
+            return static_cast<api::Status>(result);
+        if (observed.targetFormId != request.referenceFormId || !(observed.flags & (1u << 3)))
+            return api::Status::HandUnavailable;
+        if (!request.gripSequence || observed.gripSequence != request.gripSequence)
+            return api::Status::GenerationMismatch;
+        const auto weapon = _weaponCollision.getWeaponBodySnapshotAtomic();
+        if (bool(request.connectedWeaponFormId) != bool(request.connectedWeaponGeneration))
+            return api::Status::InvalidArgument;
+        if (request.connectedWeaponFormId &&
+            (request.connectedWeaponFormId != currentEquippedWeaponFormId() ||
+                request.connectedWeaponGeneration != weapon.generationKey || weapon.count == 0 ||
+                weapon.count > weapon.bodyIds.size()))
+            return api::Status::TargetUnavailable;
+        return (request.hand == api::Hand::Left ? _leftHand : _rightHand)
+            .setHeldObjectTarget(owner, request,
+                std::span(weapon.bodyIds).first(request.connectedWeaponFormId ? weapon.count : 0));
+    }
+
+    api::Status PhysicsInteraction::clearHeldObjectTarget(api::OwnerToken owner, api::Hand hand)
+    {
+        if (hand != api::Hand::Left && hand != api::Hand::Right)
+            return api::Status::InvalidArgument;
+        return (hand == api::Hand::Left ? _leftHand : _rightHand).clearHeldObjectTarget(owner);
+    }
+
+    api::Status PhysicsInteraction::queryHeldPlacementState(api::grab::HeldPlacementState& out) const
+    {
+        out = {};
+        const auto& frame = runtime_state::currentFrame();
+        auto* bhk = getPlayerBhkWorld();
+        auto* world = bhk ? getHknpWorld(bhk) : nullptr;
+        if (!isProviderReady() || !frame.visualAuthorityAvailable || !frame.localSkeletonReady ||
+            frame.localMenuBlocking || frame.compatibilityConfigBlocking || !world ||
+            bhk != _lifecycle.cachedBhkWorld || world != _lifecycle.cachedHknpWorld ||
+            !physicsWritesAllowedForWorld(world) || !native_object_placement::available())
+            return api::Status::NotReady;
+        out.frameToken = _placementLease.token();
+        out.sample = provider::runtime::sample();
+        out.lastRequestToken = _placementLastRequestToken;
+        out.lastResult = _placementLastResult;
+        out.lastRequestFormId = _placementLastRequestForm;
+        using Flag = api::grab::HeldPlacementFlag;
+        {
+            havok_world_lock::ScopedWorldReadLock lock(world);
+            for (const bool left : { false, true }) {
+                const auto& hand = left ? _leftHand : _rightHand;
+                auto& state = left ? out.left : out.right;
+                if (!hand.isHolding() || !hand.getHeldRef())
+                    continue;
+                state.formId = hand.getHeldRef()->GetFormID();
+                const auto& saved = hand.getSavedObjectState();
+                if (!saved.isValid() || saved.refr->IsDeleted() || saved.refr->IsDisabled() ||
+                    saved.targetKind != grab_target::Kind::LooseObject || hand.getHeldBodyIds().empty() ||
+                    hand.getHeldBodyIds().size() > held_placement_policy::kMaxBodies)
+                    continue;
+                state.flags = static_cast<std::uint32_t>(Flag::LooseObject);
+                if (const auto* base = saved.refr->GetObjectReference(); base && base->Is(RE::ENUM_FORM_ID::kWEAP))
+                    state.flags |= static_cast<std::uint32_t>(Flag::Weapon);
+                const auto contact = hand.readHeldSurfaceContact();
+                if (!contact.recent || !hand.isHeldBodyId(contact.heldBodyId) ||
+                    _rightHand.isHeldBodyId(contact.otherBodyId) || _leftHand.isHeldBodyId(contact.otherBodyId))
+                    continue;
+                const auto other = havok_runtime::snapshotBodyIdentity(world, RE::hknpBodyId{ contact.otherBodyId });
+                if (!other.valid || !other.body || !other.body->shape)
+                    continue;
+                const auto motion = physics_body_classifier::motionTypeFromBodyFlags(other.body->flags);
+                if (motion == physics_body_classifier::BodyMotionType::Static ||
+                    motion == physics_body_classifier::BodyMotionType::Keyframed)
+                    state.flags |= static_cast<std::uint32_t>(Flag::FixedSurfaceContact);
+            }
+        }
+        for (const bool left : { false, true }) {
+            const auto raw = input_remap_runtime::peekRawButtonState(left, 32);
+            auto& button = left ? out.leftButton : out.rightButton;
+            button.available = raw.available && !input_remap_runtime::isProviderOpenVrGameInputSuppressedForHand(left);
+            button.held = raw.held;
+            button.pressed = raw.pressed;
+            button.ageMilliseconds = raw.sampleAgeMilliseconds;
+        }
+        out.equippedWeapon = queryEquippedWeaponPlacement();
+        if (out.equippedWeapon.formId)
+            out.equippedWeaponHand = bipodInputIsLeft() ? api::Hand::Left : api::Hand::Right;
+        return api::Status::Ok;
+    }
+
+    void PhysicsInteraction::updateBipodInputHand()
+    {
+        // The bipod answers the hand on the weapon: the firing hand while both
+        // hands hold it, the only hand holding it otherwise (a detached firing
+        // grip leaves it to the support hand, a support release to the firing
+        // hand), and the last such hand while none does, so a weapon standing
+        // hands-free retires on the click of the hand that let it go.
+        const auto roster = equippedWeaponRoster();
+        const bool firingLeft = _twoHandedGrip.isFiringHandLeft();
+        if (!roster.facts().slot0.holdsHand) {
+            _bipodInputLeft = firingLeft;
             return;
         }
-        const auto step=advanceObjectPhysicsBodyScanCache(frame.hknpWorld,options,
-            {256,64,static_cast<std::uint32_t>(bodies.size())},cursor,cache);
-        const auto scanned=buildObjectPhysicsBodySetFromScanCache(frame.bhkWorld,frame.hknpWorld,ref,options,cache);
-        const auto isPreservedStatic=[&](const ObjectPhysicsBodyRecord& record) {
-            return held_placement_policy::preserveStaticBody(record.rejectReason,
-                physics_body_classifier::motionTypeFromBodyFlags(record.bodyFlags),record.motionId,
-                record.refResolutionKnown && record.resolvedRef==ref);
+        const bool supportGripping = _twoHandedGrip.getState() == TwoHandedState::Gripping;
+        const auto on = [&](bool left) { return roster.slotZeroHolds(left) || (supportGripping && left != firingLeft); };
+        const bool left = on(true), right = on(false);
+        if (left && right)
+            _bipodInputLeft = firingLeft;
+        else if (left != right)
+            _bipodInputLeft = left;
+    }
+
+    api::grab::HeldPlacementHand PhysicsInteraction::queryEquippedWeaponPlacement() const
+    {
+        using Flag = api::grab::HeldPlacementFlag;
+        api::grab::HeldPlacementHand out;
+        const auto form = currentEquippedWeaponFormId();
+        // A hands-free weapon already retires on its own click, and only one
+        // native retirement runs at a time.
+        if (!form || _twoHandedGrip.isHandsFreeRetained() || _equipped.transition.getPublicSnapshot().active ||
+            !bipod_frozen_retirement::available() || bipod_frozen_retirement::pending())
+            return out;
+        out.formId = form;
+        out.flags = static_cast<std::uint32_t>(Flag::Weapon);
+        if (_dynamicWeaponCollision.surfaceSupportReservesInput(
+                reinterpret_cast<std::uintptr_t>(resolveEquippedWeaponInteractionNode()),
+                _weaponCollision.getCurrentWeaponGenerationKey()))
+            out.flags |= static_cast<std::uint32_t>(Flag::FixedSurfaceContact);
+        return out;
+    }
+
+    bool PhysicsInteraction::beginEquippedWeaponPlacement(const PhysicsFrameContext& frame, RE::NiNode* weaponNode)
+    {
+        const auto requested = std::exchange(_placementEquippedRequestedForm, 0u);
+        if (!requested)
+            return false;
+        const auto reject = [&](const char* stage) {
+            ROCK_LOG_INFO(Weapon, "Equipped weapon placement rejected form={:08X} stage={}", requested, stage);
+            return false;
         };
-        const auto staticBodies=static_cast<std::size_t>(std::count_if(scanned.records.begin(),scanned.records.end(),isPreservedStatic));
-        const auto& diagnostics=scanned.diagnostics;
-        const auto issues=diagnostics.scanFailures+diagnostics.invalidPhysicsSystems+
-            diagnostics.benignScanSkips+diagnostics.foreignRefBodySkips+diagnostics.unresolvedRefBodySkips+
-            diagnostics.weaponExpansionSkips+diagnostics.depthLimitSkips+diagnostics.staleCacheEntrySkips;
-        const bool complete=held_placement_policy::completeBodyScan(step.finished && !step.invalidated,
-            scanned.records.size(),scanned.acceptedCount()+staticBodies,issues);
-        ROCK_LOG_INFO(Hand,"Held placement body scan ref={:08X} complete={} finished={} bodies={} accepted={} preservedStatic={} issues={} nodes={} collisionObjects={} budgetExhausted={}",
-            requested,complete,step.finished,scanned.records.size(),scanned.acceptedCount(),staticBodies,issues,
-            diagnostics.visitedNodes,diagnostics.collisionObjects,step.budgetExhausted);
-        if (!complete) {
-            ROCK_LOG_WARN(Hand,
-                "Held placement scan rejected ref={:08X} failures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedSkips={} depthSkips={} staleSkips={}",
-                requested,diagnostics.scanFailures,diagnostics.invalidPhysicsSystems,diagnostics.benignScanSkips,
-                diagnostics.foreignRefBodySkips,diagnostics.unresolvedRefBodySkips,
-                diagnostics.depthLimitSkips,diagnostics.staleCacheEntrySkips);
-            for (std::size_t i=0;i<(std::min)(scanned.records.size(),bodies.size());++i) {
-                const auto& record=scanned.records[i];
-                if (record.accepted || isPreservedStatic(record)) continue;
-                ROCK_LOG_WARN(Hand,
-                    "Held placement body rejected ref={:08X} body={} reason={} layer={} filter=0x{:08X} motion={} motionType={} motionProps={} flags=0x{:08X} refKnown={} resolvedRef={:08X} node='{}'",
-                    requested,record.bodyId,physics_body_classifier::rejectReasonName(record.rejectReason),
-                    record.collisionLayer,record.filterInfo,record.motionId,static_cast<unsigned>(record.motionType),
-                    record.motionPropertiesId,record.bodyFlags,record.refResolutionKnown,
-                    record.resolvedRef ? record.resolvedRef->GetFormID() : 0,
-                    record.owningNode && record.owningNode->name.c_str() ? record.owningNode->name.c_str() : "(none)");
-            }
-            return;
+        if (!_placementActiveOwner ||
+            provider::runtime::authorize(_placementActiveOwner, api::grab::kInterfaceId, 2, true) != api::Status::Ok)
+            return reject("owner");
+        if (!weaponNode || frame.menuBlocked || !frame.worldReady || !physicsWritesAllowedForWorld(frame.hknpWorld) ||
+            currentEquippedWeaponFormId() != requested)
+            return reject("eligibility");
+        // A grip session lets go through the hands-free path, so hand returns,
+        // part grips and native ownership need no second release; the grip update
+        // may already have let go this frame. A weapon without a latch (bipod off)
+        // keeps its presented pose. Native carry has no session to end.
+        const auto occupancy = equippedWeaponRoster().slotZeroGrips();
+        const bool nativeCarry = !_twoHandedGrip.isManualOwnershipActive();
+        if (nativeCarry) {
+            _twoHandedGrip.recordWeaponPlacedHaptic();
+        } else if (!_twoHandedGrip.isHandsFreeRetained()) {
+            auto pose = weaponNode->world;
+            (void)_dynamicWeaponCollision.tryGetLatchedSurfacePose(weaponNode,
+                _weaponCollision.getCurrentWeaponGenerationKey(), pose);
+            if (!_twoHandedGrip.retainHandsFree(pose, true))
+                return reject("let-go");
         }
-        for (const auto* hand : { &_rightHand, &_leftHand }) {
-            if (!hand->isHolding()) continue;
-            for (const auto id:hand->getHeldBodyIds()) {
-                if (!scanned.containsAcceptedBody(id)) {
-                    ROCK_LOG_WARN(Hand,"Held placement rejected ref={:08X} stage=held-body-missing body={}",requested,id);
-                    return;
-                }
-            }
+        // The hands were inside the weapon that now freezes in place. As after a
+        // drop, they stop colliding with it briefly instead of being thrown out.
+        for (const bool left : { false, true }) {
+            if (!(left ? occupancy.left.carriesWeapon() : occupancy.right.carriesWeapon() || nativeCarry))
+                continue;
+            setWeaponHandSuppression(frame.hknpWorld, left, WeaponHandReason::Drop, true);
+            setWeaponHandSuppression(frame.hknpWorld, left, WeaponHandReason::Drop, false,
+                g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds);
         }
-        for (const auto& record:scanned.records) bodies[count++]=record.bodyId;
+        ROCK_LOG_INFO(Weapon, "Equipped weapon placement started form={:08X} nativeCarry={}", requested, nativeCarry);
+        return true;
     }
-    // Release both motors and their inertia/filter leases before freezing. A
-    // native save never retains ROCK's hand constraint or a transient body ID.
-    std::array<bool,2> released{};
-    bool allReleased=true;
-    for (const bool left : { false,true }) {
-        auto& hand=left ? _leftHand : _rightHand;
-        if (!hand.isHolding()) continue;
-        auto context=makeGrabReleaseContext(hand,left);
-        context.applyCapturedReleaseVelocity=false;
-        context.reason="provider-held-placement";
-        released[left ? 1u : 0u]=hand.releaseGrabbedObject(frame.hknpWorld,
-            GrabReleaseCollisionRestoreMode::Delayed,context).released;
-        if (hand.isHolding()) {
-            ROCK_LOG_WARN(Hand,"Held placement rejected ref={:08X} stage=release hand={}",requested,left ? "left" : "right");
-            allReleased=false;
+
+    bool PhysicsInteraction::heldPlacementEligible(RE::hknpWorld* world, std::uint32_t formId) const
+    {
+        if (!formId || world != _lifecycle.cachedHknpWorld)
+            return false;
+        api::grab::HeldPlacementState state;
+        if (queryHeldPlacementState(state) != api::Status::Ok)
+            return false;
+        using Flag = api::grab::HeldPlacementFlag;
+        const auto hold = [](const api::grab::HeldPlacementHand& hand) {
+            return held_placement_policy::HandHold{ hand.formId,
+                (hand.flags & static_cast<std::uint32_t>(Flag::LooseObject)) != 0,
+                (hand.flags & static_cast<std::uint32_t>(Flag::FixedSurfaceContact)) != 0 };
+        };
+        const auto right = hold(state.right), left = hold(state.left);
+        return (placementReservesClick(false) && held_placement_policy::handCandidate(right, left) == formId) ||
+            (placementReservesClick(true) && held_placement_policy::handCandidate(left, right) == formId);
+    }
+
+    api::Status PhysicsInteraction::submitHeldPlacementIntent(api::OwnerToken owner,
+        const api::grab::HeldPlacementIntent& intent)
+    {
+        using Flag = api::grab::PlacementIntentFlag;
+        const auto sample = provider::runtime::sample();
+        const auto reserve =
+            static_cast<std::uint32_t>(Flag::ReserveRightClick) | static_cast<std::uint32_t>(Flag::ReserveLeftClick);
+        const auto anchor = static_cast<std::uint32_t>(Flag::Anchor);
+        const auto hold = static_cast<std::uint32_t>(Flag::TimeEquippedWeaponHold);
+        const auto anchorWeapon = static_cast<std::uint32_t>(Flag::AnchorEquippedWeapon);
+        // Reserving the weapon hand's click alongside AnchorEquippedWeapon is
+        // refused at the update, where the firing hand is known.
+        if ((intent.flags & ~(reserve | anchor | hold | anchorWeapon)) ||
+            ((intent.flags & anchor) && (!(intent.flags & reserve) || !intent.formId)) ||
+            ((intent.flags & anchorWeapon) && (!(intent.flags & hold) || (intent.flags & anchor) || !intent.formId)))
+            return api::Status::InvalidArgument;
+        if (intent.sample.frameIndex != sample.frameIndex || intent.sample.worldGeneration != sample.worldGeneration ||
+            intent.sample.skeletonGeneration != sample.skeletonGeneration ||
+            intent.sample.providerGeneration != sample.providerGeneration ||
+            intent.sample.collisionGeneration != sample.collisionGeneration)
+            return api::Status::GenerationMismatch;
+        using Admission = held_placement_policy::FrameLease::Admission;
+        switch (_placementLease.submit(owner, intent.frameToken)) {
+        case Admission::InvalidOwner:
+            return api::Status::InvalidArgument;
+        case Admission::Stale:
+            return api::Status::GenerationMismatch;
+        case Admission::Busy:
+            return api::Status::Busy;
+        case Admission::Accepted:
             break;
         }
-        releaseObject(ref,claimOwnerForHand(left));
-        clearGameplayCandidatesForHand(hand,left);
-        grab_input_intent_policy::reset(_grabInput.intentStates[left ? 1u : 0u]);
-        publishHandInputOwnership(hand,left);
+        _placementIntent = intent;
+        return api::Status::RequestQueued;
     }
-    const bool collisionRestored=allReleased && _looseWeaponCollision.releaseReference(ref,
-        frame.hknpWorld,_generatedBodyStepDrive.callbackGate()) && _objectRestCollision.releaseReference(ref,
-        frame.hknpWorld,_generatedBodyStepDrive.callbackGate());
-    const bool anchored=collisionRestored && native_object_placement::anchor(ref,frame.hknpWorld,pose,
-        std::span<const std::uint32_t>{bodies.data(),count});
-    _placementCandidate=0;
-    _placementLastResult=anchored ? api::grab::v1_1::PlacementResult::Anchored : api::grab::v1_1::PlacementResult::Rejected;
-    ROCK_LOG_INFO(Hand,"Held placement ref={:08X} anchored={} bodies={} position=({:.3f},{:.3f},{:.3f}) save=native",
-        requested,anchored,count,pose.translate.x,pose.translate.y,pose.translate.z);
-    for (const bool left : { false,true }) {
-        if (!released[left ? 1u : 0u]) continue;
-        dispatchPhysicsMessage(kPhysMsg_OnRelease,left,ref,requested,0);
-        dispatchSimpleGrabEvent(GrabEventType::Released,left,ref);
+
+    void PhysicsInteraction::clearHeldPlacementIntent(api::OwnerToken owner)
+    {
+        if (_placementLease.owner() == owner) {
+            _placementLease.clear(owner);
+            _placementIntent = {};
+        }
+        if (_placementActiveOwner == owner) {
+            _placementActiveOwner = 0;
+            _placementReservedHands = 0;
+            _placementEquippedHold = false;
+            _placementRequestedForm = 0;
+            _placementEquippedRequestedForm = 0;
+        }
+        if (_placementPendingForm && _placementPendingOwner == owner) {
+            _placementPendingOwner = 0;
+            _placementPendingForm = 0;
+            _placementLastResult = api::grab::PlacementResult::Rejected;
+        }
     }
-}
+
+    void PhysicsInteraction::resetHeldPlacement()
+    {
+        _placementIntent = {};
+        _placementLease.invalidate();
+        _placementActiveOwner = 0;
+        _placementPendingOwner = 0;
+        _placementPendingForm = 0;
+        _placementRequestedForm = 0;
+        _placementEquippedRequestedForm = 0;
+        _placementReservedHands = 0;
+        _placementEquippedHold = false;
+        _placementEquippedRetiring = false;
+        _placementLastRequestToken = 0;
+        _placementLastRequestForm = 0;
+        _placementScriptWait = 0.0f;
+        _placementLastResult = api::grab::PlacementResult::None;
+    }
+
+    void PhysicsInteraction::beginHeldPlacementFrame()
+    {
+        const auto intent = std::exchange(_placementIntent, {});
+        const auto owner = _placementLease.consume();
+        const auto sample = provider::runtime::sample();
+        _placementActiveOwner = 0;
+        _placementReservedHands = 0;
+        _placementEquippedHold = false;
+        _placementRequestedForm = 0;
+        _placementEquippedRequestedForm = 0;
+        const auto& frame = runtime_state::currentFrame();
+        const bool usable = isInitialized() && frame.visualAuthorityAvailable && frame.localSkeletonReady &&
+            !frame.localMenuBlocking && !frame.compatibilityConfigBlocking;
+        if (!usable || !owner || intent.sample.worldGeneration != sample.worldGeneration ||
+            intent.sample.skeletonGeneration != sample.skeletonGeneration ||
+            intent.sample.providerGeneration != sample.providerGeneration ||
+            intent.sample.collisionGeneration != sample.collisionGeneration ||
+            provider::runtime::authorize(owner, api::grab::kInterfaceId, 2, true) != api::Status::Ok) {
+            if (_placementPendingForm)
+                _placementLastResult = api::grab::PlacementResult::Rejected;
+            _placementPendingForm = 0;
+            _placementPendingOwner = 0;
+            return;
+        }
+        using Flag = api::grab::PlacementIntentFlag;
+        if (_placementPendingForm && _placementPendingOwner != owner) {
+            _placementLastResult = api::grab::PlacementResult::Rejected;
+            _placementPendingForm = 0;
+            _placementPendingOwner = 0;
+        }
+        _placementActiveOwner = owner;
+        const bool anchorsWeapon = (intent.flags & static_cast<std::uint32_t>(Flag::AnchorEquippedWeapon)) != 0;
+        // A hand a provider has taken over keeps its click to that provider.
+        for (const bool left : { false, true }) {
+            const auto flag = left ? Flag::ReserveLeftClick : Flag::ReserveRightClick;
+            if ((intent.flags & static_cast<std::uint32_t>(flag)) &&
+                !input_remap_runtime::isProviderOpenVrGameInputSuppressedForHand(left))
+                _placementReservedHands |= held_placement_policy::handBit(left);
+        }
+        _placementEquippedHold = (intent.flags & static_cast<std::uint32_t>(Flag::TimeEquippedWeaponHold)) != 0;
+        const bool weaponLeft = bipodInputIsLeft();
+        if (anchorsWeapon && !_placementPendingForm) {
+            _placementLastRequestToken = intent.frameToken;
+            _placementLastRequestForm = intent.formId;
+            _placementLastResult = api::grab::PlacementResult::Rejected;
+            // Read before this frame's surface input clears the observation the
+            // add-on's state came from.
+            const auto weapon = queryEquippedWeaponPlacement();
+            using HandFlag = api::grab::HeldPlacementFlag;
+            if (placementReservesClick(weaponLeft))
+                ROCK_LOG_INFO(Weapon, "Equipped weapon placement rejected form={:08X} stage=click-reserved hand={}",
+                    intent.formId, weaponLeft ? "left" : "right");
+            else if (weapon.formId == intent.formId &&
+                (weapon.flags & static_cast<std::uint32_t>(HandFlag::FixedSurfaceContact)))
+                _placementEquippedRequestedForm = intent.formId;
+            else
+                ROCK_LOG_INFO(Weapon, "Equipped weapon placement rejected form={:08X} stage=surface observed={:08X}",
+                    intent.formId, weapon.formId);
+        }
+        if (intent.flags & static_cast<std::uint32_t>(Flag::Anchor)) {
+            _placementRequestedForm = intent.formId;
+            if (!_placementPendingForm) {
+                _placementLastRequestToken = intent.frameToken;
+                _placementLastRequestForm = intent.formId;
+                // If this update exits before commit, the caller still receives a
+                // terminal result instead of waiting forever for a consumed token.
+                _placementLastResult = api::grab::PlacementResult::Rejected;
+            }
+        }
+        // A submitted lease observes each click before bipod. The bipod reads only
+        // the firing hand's click, and only while unreserved; every other click
+        // the owner sees drains its edges here exactly once, so a press it saw
+        // cannot replay on a later update.
+        for (const bool left : { false, true }) {
+            const bool bipodReads = g_rockConfig.rockBipodMode && left == weaponLeft;
+            if (placementReservesClick(left) || !bipodReads)
+                (void)input_remap_runtime::consumeRawButtonState(left, 32);
+        }
+    }
+
+    void PhysicsInteraction::queryPlacementClickState(api::input::PlacementClickState& out) const
+    {
+        out = {};
+        out.sample = provider::runtime::sample();
+        if (!_placementActiveOwner ||
+            provider::runtime::authorize(_placementActiveOwner, api::grab::kInterfaceId, 2, true) != api::Status::Ok)
+            return;
+        using ClickFlag = api::input::PlacementClickFlag;
+        if (placementReservesClick(false))
+            out.flags |= static_cast<std::uint32_t>(ClickFlag::RightInputReserved);
+        if (placementReservesClick(true))
+            out.flags |= static_cast<std::uint32_t>(ClickFlag::LeftInputReserved);
+    }
+
+    void PhysicsInteraction::commitHeldPlacement(const PhysicsFrameContext& frame)
+    {
+        const auto click = std::exchange(_placementRequestedForm, 0u);
+        const bool starting = click != 0 && _placementPendingForm == 0;
+        if (starting) {
+            _placementPendingForm = click;
+            _placementScriptWait = 0.0f;
+            _placementPendingOwner = _placementActiveOwner;
+        }
+        const auto requested = _placementPendingForm;
+        if (!requested)
+            return;
+        _placementLastResult = api::grab::PlacementResult::Rejected;
+        if (!_placementActiveOwner || _placementPendingOwner != _placementActiveOwner ||
+            provider::runtime::authorize(_placementActiveOwner, api::grab::kInterfaceId, 2, true) != api::Status::Ok ||
+            frame.menuBlocked || !frame.worldReady || !physicsWritesAllowedForWorld(frame.hknpWorld) ||
+            !heldPlacementEligible(frame.hknpWorld, requested)) {
+            ROCK_LOG_INFO(Hand, "Held placement rejected ref={:08X} stage=commit-eligibility menu={} worldReady={}",
+                requested, frame.menuBlocked, frame.worldReady);
+            _placementPendingForm = 0;
+            return;
+        }
+        auto mutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
+        // Only the hands holding the placed reference let go; the other hand
+        // keeps what it holds.
+        const auto holdsRequested = [requested](const Hand& hand) {
+            return hand.isHolding() && hand.getHeldRef() && hand.getHeldRef()->GetFormID() == requested;
+        };
+        auto& owner = holdsRequested(_rightHand) ? _rightHand : _leftHand;
+        const auto retained = owner.getSavedObjectState().retainedRef;
+        auto* ref = retained.get();
+        auto* root = ref ? ref->Get3D() : nullptr;
+        auto* cell = ref ? ref->GetParentCell() : nullptr;
+        if (!root || !cell || cell->GetbhkWorld() != frame.bhkWorld) {
+            ROCK_LOG_WARN(Hand, "Held placement rejected ref={:08X} stage=reference-world", requested);
+            _placementPendingForm = 0;
+            return;
+        }
+        const auto prepared = native_object_placement::prepareLoadScript(ref, starting);
+        if (prepared == native_object_placement::ScriptPreparation::Rejected) {
+            _placementPendingForm = 0;
+            return;
+        }
+        if (prepared == native_object_placement::ScriptPreparation::Pending) {
+            _placementLastResult = api::grab::PlacementResult::Pending;
+            _placementScriptWait += std::clamp(frame.deltaSeconds, 0.0f, 0.1f);
+            if (_placementScriptWait >= 2.0f) {
+                _placementLastResult = api::grab::PlacementResult::Rejected;
+                ROCK_LOG_WARN(Hand, "Held placement rejected ref={:08X} stage=load-script-timeout; grab retained",
+                    requested);
+                _placementPendingForm = 0;
+            }
+            return;
+        }
+        _placementPendingForm = 0;
+        const auto pose = root->world;
+        std::array<std::uint32_t, held_placement_policy::kMaxBodies> bodies{};
+        std::size_t count = 0;
+        {
+            // Cached grab prep deliberately leaves its lifecycle incomplete after
+            // native activation. Re-enumerate the current tree once on placement,
+            // without seeding a held body that could conceal missing discovery.
+            using namespace object_physics_body_set;
+            havok_world_lock::ScopedWorldReadLock lock(frame.hknpWorld);
+            BodySetScanOptions options{};
+            options.requireSameResolvedRef = true;
+            ObjectPhysicsBodyScanCursor cursor;
+            ObjectPhysicsBodyScanCache cache;
+            if (!beginObjectPhysicsBodyScanCache(ref, options, cursor, cache)) {
+                ROCK_LOG_WARN(Hand, "Held placement rejected ref={:08X} stage=body-scan-start", requested);
+                return;
+            }
+            const auto step = advanceObjectPhysicsBodyScanCache(frame.hknpWorld, options,
+                { 256, 64, static_cast<std::uint32_t>(bodies.size()) }, cursor, cache);
+            const auto scanned =
+                buildObjectPhysicsBodySetFromScanCache(frame.bhkWorld, frame.hknpWorld, ref, options, cache);
+            const auto isPreservedStatic = [&](const ObjectPhysicsBodyRecord& record) {
+                return held_placement_policy::preserveStaticBody(record.rejectReason,
+                    physics_body_classifier::motionTypeFromBodyFlags(record.bodyFlags), record.motionId,
+                    record.refResolutionKnown && record.resolvedRef == ref);
+            };
+            const auto staticBodies = static_cast<std::size_t>(
+                std::count_if(scanned.records.begin(), scanned.records.end(), isPreservedStatic));
+            const auto& diagnostics = scanned.diagnostics;
+            const auto issues = diagnostics.scanFailures + diagnostics.invalidPhysicsSystems +
+                diagnostics.benignScanSkips + diagnostics.foreignRefBodySkips + diagnostics.unresolvedRefBodySkips +
+                diagnostics.weaponExpansionSkips + diagnostics.depthLimitSkips + diagnostics.staleCacheEntrySkips;
+            const bool complete = held_placement_policy::completeBodyScan(step.finished && !step.invalidated,
+                scanned.records.size(), scanned.acceptedCount() + staticBodies, issues);
+            ROCK_LOG_INFO(Hand,
+                "Held placement body scan ref={:08X} complete={} finished={} bodies={} accepted={} preservedStatic={} "
+                "issues={} nodes={} collisionObjects={} budgetExhausted={}",
+                requested, complete, step.finished, scanned.records.size(), scanned.acceptedCount(), staticBodies,
+                issues, diagnostics.visitedNodes, diagnostics.collisionObjects, step.budgetExhausted);
+            if (!complete) {
+                ROCK_LOG_WARN(Hand,
+                    "Held placement scan rejected ref={:08X} failures={} invalidSystems={} benignSkips={} "
+                    "foreignSkips={} unresolvedSkips={} depthSkips={} staleSkips={}",
+                    requested, diagnostics.scanFailures, diagnostics.invalidPhysicsSystems, diagnostics.benignScanSkips,
+                    diagnostics.foreignRefBodySkips, diagnostics.unresolvedRefBodySkips, diagnostics.depthLimitSkips,
+                    diagnostics.staleCacheEntrySkips);
+                for (std::size_t i = 0; i < (std::min)(scanned.records.size(), bodies.size()); ++i) {
+                    const auto& record = scanned.records[i];
+                    if (record.accepted || isPreservedStatic(record))
+                        continue;
+                    ROCK_LOG_WARN(Hand,
+                        "Held placement body rejected ref={:08X} body={} reason={} layer={} filter=0x{:08X} motion={} "
+                        "motionType={} motionProps={} flags=0x{:08X} refKnown={} resolvedRef={:08X} node='{}'",
+                        requested, record.bodyId, physics_body_classifier::rejectReasonName(record.rejectReason),
+                        record.collisionLayer, record.filterInfo, record.motionId,
+                        static_cast<unsigned>(record.motionType), record.motionPropertiesId, record.bodyFlags,
+                        record.refResolutionKnown, record.resolvedRef ? record.resolvedRef->GetFormID() : 0,
+                        record.owningNode && record.owningNode->name.c_str() ? record.owningNode->name.c_str()
+                                                                             : "(none)");
+                }
+                return;
+            }
+            for (const auto* hand : { &_rightHand, &_leftHand }) {
+                if (!holdsRequested(*hand))
+                    continue;
+                for (const auto id : hand->getHeldBodyIds()) {
+                    if (!scanned.containsAcceptedBody(id)) {
+                        ROCK_LOG_WARN(Hand, "Held placement rejected ref={:08X} stage=held-body-missing body={}",
+                            requested, id);
+                        return;
+                    }
+                }
+            }
+            for (const auto& record : scanned.records)
+                bodies[count++] = record.bodyId;
+        }
+        // Release the holding hands' motors and their inertia/filter leases before
+        // freezing. A native save never retains ROCK's hand constraint or a
+        // transient body ID.
+        std::array<bool, 2> released{};
+        bool allReleased = true;
+        for (const bool left : { false, true }) {
+            auto& hand = left ? _leftHand : _rightHand;
+            if (!holdsRequested(hand))
+                continue;
+            auto context = makeGrabReleaseContext(hand, left);
+            context.applyCapturedReleaseVelocity = false;
+            context.reason = "provider-held-placement";
+            released[left ? 1u : 0u] =
+                hand.releaseGrabbedObject(frame.hknpWorld, GrabReleaseCollisionRestoreMode::Delayed, context).released;
+            if (hand.isHolding()) {
+                ROCK_LOG_WARN(Hand, "Held placement rejected ref={:08X} stage=release hand={}", requested,
+                    left ? "left" : "right");
+                allReleased = false;
+                break;
+            }
+            releaseObject(ref, claimOwnerForHand(left));
+            clearGameplayCandidatesForHand(hand, left);
+            grab_input_intent_policy::reset(_grabInput.intentStates[left ? 1u : 0u]);
+            publishHandInputOwnership(hand, left);
+        }
+        const bool collisionRestored = allReleased &&
+            _looseWeaponCollision.releaseReference(ref, frame.hknpWorld, _generatedBodyStepDrive.callbackGate()) &&
+            _objectRestCollision.releaseReference(ref, frame.hknpWorld, _generatedBodyStepDrive.callbackGate());
+        const bool anchored = collisionRestored &&
+            native_object_placement::anchor(ref, frame.hknpWorld, pose,
+                std::span<const std::uint32_t>{ bodies.data(), count });
+        _placementLastResult = anchored ? api::grab::PlacementResult::Anchored : api::grab::PlacementResult::Rejected;
+        ROCK_LOG_INFO(Hand,
+            "Held placement ref={:08X} anchored={} bodies={} position=({:.3f},{:.3f},{:.3f}) save=native", requested,
+            anchored, count, pose.translate.x, pose.translate.y, pose.translate.z);
+        for (const bool left : { false, true }) {
+            if (!released[left ? 1u : 0u])
+                continue;
+            dispatchSimpleGrabEvent(GrabEventType::Released, left, ref);
+        }
+    }
 }

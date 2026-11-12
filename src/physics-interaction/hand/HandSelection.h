@@ -4,18 +4,17 @@
  * Hand selection helpers are grouped here so selection query, highlight, state, close-finger, and VATS highlight policy stay together.
  */
 
-
-// ---- SelectionQueryPolicy.h ----
-
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <string_view>
-
 #include "RE/NetImmerse/NiPoint.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/hand/HandInteractionStateMachine.h"
+
+// ---- Selection query policy ----
 
 namespace rock::selection_query_policy
 {
@@ -30,7 +29,8 @@ namespace rock::selection_query_policy
         bool capture(const Transform& bodyWorld, const RE::NiPoint3& hitPoint)
         {
             valid = false;
-            if (!std::isfinite(bodyWorld.scale) || bodyWorld.scale <= 0.0f) return false;
+            if (!std::isfinite(bodyWorld.scale) || bodyWorld.scale <= 0.0f)
+                return false;
             localPoint = transform_math::worldPointToLocal(bodyWorld, hitPoint);
             valid = std::isfinite(localPoint.x) && std::isfinite(localPoint.y) && std::isfinite(localPoint.z);
             return valid;
@@ -39,7 +39,8 @@ namespace rock::selection_query_policy
         template <class Transform>
         bool resolve(const Transform& bodyWorld, RE::NiPoint3& outPoint) const
         {
-            if (!valid || !std::isfinite(bodyWorld.scale) || bodyWorld.scale <= 0.0f) return false;
+            if (!valid || !std::isfinite(bodyWorld.scale) || bodyWorld.scale <= 0.0f)
+                return false;
             outPoint = transform_math::localPointToWorld(bodyWorld, localPoint);
             return std::isfinite(outPoint.x) && std::isfinite(outPoint.y) && std::isfinite(outPoint.z);
         }
@@ -50,8 +51,7 @@ namespace rock::selection_query_policy
     constexpr float kNearCastRadiusGameUnits = 3.5f;
     constexpr float kNearCastDistanceGameUnits = 7.0f;
     constexpr float kFarCastRadiusGameUnits = 21.0f;
-    constexpr int kCloseSelectionAimAngleDegrees = 0;
-    constexpr int kFarSelectionAimAngleDegrees = 0;
+    constexpr int kDefaultSelectionAimAngleDegrees = 0;
     constexpr bool kFarSelectionHmdConeEnabled = true;
     constexpr float kFarSelectionHmdConeHalfAngleDegrees = 50.0f;
     constexpr std::string_view kFarSelectionBlockedReferenceFormIds{};
@@ -88,20 +88,30 @@ namespace rock::selection_query_policy
         bool valid = false;
     };
 
-    inline bool isAllowedSelectionAimAngleDegrees(int angleDegrees)
+    // Grabbing.GrabDirection: which way a hand reaches and aims, for close and far grabs alike.
+    enum class GrabDirection : int
     {
-        return angleDegrees == 0 || angleDegrees == 20 || angleDegrees == 45 || angleDegrees == 75 || angleDegrees == 90;
+        PalmDown = 1,  // out of the palm (HIGGS style)
+        Fingers = 2,   // along the fingers (Half-Life: Alyx style)
+    };
+    inline constexpr int kDefaultGrabDirection = static_cast<int>(GrabDirection::PalmDown);
+
+    [[nodiscard]] inline bool isValidGrabDirection(int direction) noexcept
+    {
+        return direction == static_cast<int>(GrabDirection::PalmDown) ||
+            direction == static_cast<int>(GrabDirection::Fingers);
     }
 
-    inline int sanitizeSelectionAimAngleDegrees(int angleDegrees)
+    // Degrees from the palm toward the fingers.
+    [[nodiscard]] inline int selectionAimAngleDegrees(int direction) noexcept
     {
-        return isAllowedSelectionAimAngleDegrees(angleDegrees) ? angleDegrees : kCloseSelectionAimAngleDegrees;
+        return direction == static_cast<int>(GrabDirection::Fingers) ? 90 : kDefaultSelectionAimAngleDegrees;
     }
 
     template <class Vector>
     inline Vector selectionAimHandspaceVectorFromAngleDegrees(int angleDegrees)
     {
-        const float radians = static_cast<float>(sanitizeSelectionAimAngleDegrees(angleDegrees)) * kDegreesToRadians;
+        const float radians = static_cast<float>(angleDegrees) * kDegreesToRadians;
         Vector result{};
         result.x = std::sin(radians);
         result.y = -std::cos(radians);
@@ -109,7 +119,8 @@ namespace rock::selection_query_policy
         return result;
     }
 
-    inline bool shouldReplaceSelectionForSameRef(bool currentIsFarSelection, bool nextIsFarSelection, std::uint32_t currentBodyId, std::uint32_t nextBodyId)
+    inline bool shouldReplaceSelectionForSameRef(bool currentIsFarSelection, bool nextIsFarSelection,
+        std::uint32_t currentBodyId, std::uint32_t nextBodyId)
     {
         return currentIsFarSelection != nextIsFarSelection || currentBodyId != nextBodyId;
     }
@@ -131,13 +142,15 @@ namespace rock::selection_query_policy
     inline ShapeCastCandidateScore scoreShapeCastCandidate(const ShapeCastCandidateScoringInput& input)
     {
         ShapeCastCandidateScore result{};
-        if (!std::isfinite(input.lateralDistance) || !std::isfinite(input.alongDistance) || input.lateralDistance < 0.0f || input.alongDistance < 0.0f) {
+        if (!std::isfinite(input.lateralDistance) || !std::isfinite(input.alongDistance) ||
+            input.lateralDistance < 0.0f || input.alongDistance < 0.0f) {
             return result;
         }
 
         const float lateralWeight = input.isFarSelection ? 0.80f : 0.70f;
         const float alongWeight = input.isFarSelection ? 0.12f : 0.22f;
-        result.lateralComponent = normalizedSquaredSelectionDistance(input.lateralDistance, input.lateralScale) * lateralWeight;
+        result.lateralComponent =
+            normalizedSquaredSelectionDistance(input.lateralDistance, input.lateralScale) * lateralWeight;
         result.alongComponent = normalizedSquaredSelectionDistance(input.alongDistance, input.alongScale) * alongWeight;
 
         /*
@@ -157,7 +170,8 @@ namespace rock::selection_query_policy
         return result;
     }
 
-    inline bool isBetterShapeCastCandidateScore(const ShapeCastCandidateScore& candidate, const ShapeCastCandidateScore& best)
+    inline bool isBetterShapeCastCandidateScore(const ShapeCastCandidateScore& candidate,
+        const ShapeCastCandidateScore& best)
     {
         if (!candidate.valid) {
             return false;
@@ -173,7 +187,8 @@ namespace rock::selection_query_policy
         return std::isfinite(score) && score >= 0.0f && score < (std::numeric_limits<float>::max)() * 0.5f;
     }
 
-    inline bool shouldKeepCurrentCloseSelectionAgainstCandidate(float currentScore, float candidateScore, float currentDistance, float candidateDistance)
+    inline bool shouldKeepCurrentCloseSelectionAgainstCandidate(float currentScore, float candidateScore,
+        float currentDistance, float candidateDistance)
     {
         if (isUsableShapeCastCandidateScore(currentScore) && isUsableShapeCastCandidateScore(candidateScore)) {
             return candidateScore >= currentScore * kCloseSelectionCandidateSwitchScoreRatio;
@@ -229,7 +244,8 @@ namespace rock::selection_query_policy
             return kFarSelectionHmdConeHalfAngleDegrees;
         }
 
-        return std::clamp(halfAngleDegrees, kMinFarSelectionHmdConeHalfAngleDegrees, kMaxFarSelectionHmdConeHalfAngleDegrees);
+        return std::clamp(halfAngleDegrees, kMinFarSelectionHmdConeHalfAngleDegrees,
+            kMaxFarSelectionHmdConeHalfAngleDegrees);
     }
 
     inline float farSelectionHmdConeMinDot(float halfAngleDegrees)
@@ -258,13 +274,8 @@ namespace rock::selection_query_policy
      * in front of the headset before it can highlight, cache, or start a pull.
      */
     template <class Vector>
-    inline bool isPointInsideFarHmdCone(bool gateEnabled,
-        bool hasHmdFrame,
-        const Vector& hmdPositionWorld,
-        const Vector& hmdForwardWorld,
-        const Vector& hitPointWorld,
-        float minDot,
-        float* outDot = nullptr)
+    inline bool isPointInsideFarHmdCone(bool gateEnabled, bool hasHmdFrame, const Vector& hmdPositionWorld,
+        const Vector& hmdForwardWorld, const Vector& hitPointWorld, float minDot, float* outDot = nullptr)
     {
         if (outDot) {
             *outDot = -1.0f;
@@ -296,7 +307,8 @@ namespace rock::selection_query_policy
             return false;
         }
 
-        const float dot = normalizedForward.x * normalizedToHit.x + normalizedForward.y * normalizedToHit.y + normalizedForward.z * normalizedToHit.z;
+        const float dot = normalizedForward.x * normalizedToHit.x + normalizedForward.y * normalizedToHit.y +
+            normalizedForward.z * normalizedToHit.z;
         if (outDot) {
             *outDot = dot;
         }
@@ -304,7 +316,8 @@ namespace rock::selection_query_policy
         return std::isfinite(dot) && dot >= std::clamp(minDot, -1.0f, 1.0f);
     }
 
-    inline bool shouldKeepSelectionAfterMiss(bool currentIsFarSelection, float heldSeconds, float minimumHoldSeconds, float currentDistance, float hysteresisRange)
+    inline bool shouldKeepSelectionAfterMiss(bool currentIsFarSelection, float heldSeconds, float minimumHoldSeconds,
+        float currentDistance, float hysteresisRange)
     {
         if (heldSeconds < minimumHoldSeconds) {
             return true;
@@ -326,18 +339,18 @@ namespace rock
         bool hasHmdFrame = false;
         RE::NiPoint3 hmdPositionWorld{};
         RE::NiPoint3 hmdForwardWorld{};
-        float minDot = selection_query_policy::farSelectionHmdConeMinDot(selection_query_policy::kFarSelectionHmdConeHalfAngleDegrees);
+        float minDot = selection_query_policy::farSelectionHmdConeMinDot(
+            selection_query_policy::kFarSelectionHmdConeHalfAngleDegrees);
 
         [[nodiscard]] bool acceptsHitPoint(const RE::NiPoint3& hitPointWorld, float* outDot = nullptr) const
         {
-            return selection_query_policy::isPointInsideFarHmdCone(enabled, hasHmdFrame, hmdPositionWorld, hmdForwardWorld, hitPointWorld, minDot, outDot);
+            return selection_query_policy::isPointInsideFarHmdCone(enabled, hasHmdFrame, hmdPositionWorld,
+                hmdForwardWorld, hitPointWorld, minDot, outDot);
         }
     };
 }
 
-// ---- SelectionHighlightPolicy.h ----
-
-#include <cstdint>
+// ---- Selection highlight policy ----
 
 namespace RE
 {
@@ -390,16 +403,15 @@ namespace rock::selection_highlight_policy
         return enabled && hasReference && !sameAsCurrent;
     }
 
-    [[nodiscard]] constexpr bool shouldRefreshVatsHighlightAttempt(bool enabled, bool hasReference, int framesSinceAttempt, int refreshIntervalFrames) noexcept
+    [[nodiscard]] constexpr bool shouldRefreshVatsHighlightAttempt(bool enabled, bool hasReference,
+        int framesSinceAttempt, int refreshIntervalFrames) noexcept
     {
         const int effectiveInterval = refreshIntervalFrames > 0 ? refreshIntervalFrames : 1;
         return enabled && hasReference && framesSinceAttempt >= effectiveInterval;
     }
 }
 
-// ---- SelectionStatePolicy.h ----
-
-#include "physics-interaction/hand/HandInteractionStateMachine.h"
+// ---- Selection state policy ----
 
 namespace rock::selection_state_policy
 {
@@ -436,10 +448,7 @@ namespace rock
     };
 }
 
-// ---- SelectedCloseFingerPolicy.h ----
-
-#include <algorithm>
-#include <cmath>
+// ---- Selected close finger policy ----
 
 namespace rock::selected_close_finger_policy
 {
@@ -449,7 +458,8 @@ namespace rock::selected_close_finger_policy
      * parsing, selection state, and FRIK hand-pose publishing from drifting
      * apart.
      */
-    inline bool shouldApplyPreCurl(bool enabled, bool isSelectedClose, bool selectionValid, float handSpeedMetersPerSecond, float maxHandSpeedMetersPerSecond)
+    inline bool shouldApplyPreCurl(bool enabled, bool isSelectedClose, bool selectionValid,
+        float handSpeedMetersPerSecond, float maxHandSpeedMetersPerSecond)
     {
         if (!enabled || !isSelectedClose || !selectionValid) {
             return false;
@@ -463,18 +473,18 @@ namespace rock::selected_close_finger_policy
         return handSpeedMetersPerSecond <= maxHandSpeedMetersPerSecond;
     }
 
-    inline float estimateHandSpeedMetersPerSecond(float distanceGameUnits, float deltaTimeSeconds, float gameUnitsPerMeter)
+    inline float estimateHandSpeedMetersPerSecond(float distanceGameUnits, float deltaTimeSeconds,
+        float gameUnitsPerMeter)
     {
-        if (!std::isfinite(distanceGameUnits) || !std::isfinite(deltaTimeSeconds) || !std::isfinite(gameUnitsPerMeter) || deltaTimeSeconds <= 0.0f ||
-            gameUnitsPerMeter <= 0.0f) {
+        if (!std::isfinite(distanceGameUnits) || !std::isfinite(deltaTimeSeconds) ||
+            !std::isfinite(gameUnitsPerMeter) || deltaTimeSeconds <= 0.0f || gameUnitsPerMeter <= 0.0f) {
             return 0.0f;
         }
         return (std::max)(0.0f, distanceGameUnits) / gameUnitsPerMeter / deltaTimeSeconds;
     }
 }
 
-
-// ---- VatsSelectionHighlight.h ----
+// ---- Vats selection highlight ----
 
 namespace RE
 {
@@ -501,15 +511,25 @@ namespace rock
         VatsSelectionHighlight(VatsSelectionHighlight&&) = delete;
         VatsSelectionHighlight& operator=(VatsSelectionHighlight&&) = delete;
 
-        bool play(RE::TESObjectREFR* refr, RE::NiAVObject* targetNode, bool enabled, const char* handName, const char* targetSourceName, bool stash = false);
+        bool play(RE::TESObjectREFR* refr, RE::NiAVObject* targetNode, bool enabled, const char* handName,
+            const char* targetSourceName, bool stash = false, bool world = false);
         bool refreshStash(RE::TESObjectREFR* refr, RE::NiAVObject* node, float intensity);
+        // Storage highlights: the configured color, at the shared world
+        // intensity (a stash candidate's green still wins the shared color).
+        bool refreshWorld(RE::TESObjectREFR* refr, RE::NiAVObject* node, float intensity);
         static bool stashAvailable() noexcept;
-        bool refresh(RE::TESObjectREFR* refr, RE::NiAVObject* targetNode, bool enabled, const char* handName, const char* targetSourceName);
+        bool refresh(RE::TESObjectREFR* refr, RE::NiAVObject* targetNode, bool enabled, const char* handName,
+            const char* targetSourceName);
         bool refreshActive(bool enabled, const char* handName);
         void stop();
 
         [[nodiscard]] bool isActive() const noexcept { return _target != nullptr; }
-        [[nodiscard]] bool isActiveForReference(RE::TESObjectREFR* refr) const noexcept { return _target != nullptr && _highlightedRef == refr; }
+
+        [[nodiscard]] bool isActiveForReference(RE::TESObjectREFR* refr) const noexcept
+        {
+            return _target != nullptr && _highlightedRef == refr;
+        }
+
         [[nodiscard]] bool isActiveFor(RE::TESObjectREFR* refr, RE::NiAVObject* targetNode) const noexcept
         {
             return _target != nullptr && _highlightedRef == refr && _highlightedNode == targetNode;
@@ -518,6 +538,7 @@ namespace rock
     private:
         detail::VatsEffectTarget* _target = nullptr;
         bool _stash{};
+        bool _world{};
         RE::TESObjectREFR* _highlightedRef = nullptr;
         RE::NiAVObject* _highlightedNode = nullptr;
     };

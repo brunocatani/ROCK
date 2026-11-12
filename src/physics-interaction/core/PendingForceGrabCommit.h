@@ -1,3 +1,5 @@
+// A force grab that cannot finish on the frame it was requested: the target
+// reference, the phase it waits in, and what to attach once it settles.
 #pragma once
 
 #include <cstdint>
@@ -5,10 +7,10 @@
 #include "RE/Bethesda/BSPointerHandle.h"
 #include "RE/NetImmerse/NiPoint.h"
 
-#include "api/ProviderRuntimeTypes.h"
+#include <ROCK/Grab.h>
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
-#include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
-#include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
+#include "physics-interaction/weapon/authored/AuthoredWeaponGripPose.h"
+#include "physics-interaction/weapon/equip/EquippedWeaponDropPolicy.h"
 
 namespace rock
 {
@@ -28,7 +30,7 @@ namespace rock
      * target to the hand. Freezing the grab-authority relation on the same
      * tick reads whatever hand transform
      * happens to exist that instant. This carries the request across the
-     * settle delay (fForceGrabAttachSettleSeconds) so the eventual commit
+     * settle delay (GrabDrive.ForceGrabAttachSettleSeconds) so the eventual commit
      * reads a genuinely live hand pose. A saved grab offset, if any exists
      * for the target object+hand, is applied by grabSelectedObject itself at
      * commit time (SelectedObject::forcedArrival already makes it eligible,
@@ -43,7 +45,6 @@ namespace rock
         RE::ObjectRefHandle targetHandle{};
         bool targetIsLooseThrowable{ false };
         bool inventoryTransfer{ false };
-        std::uint64_t weaponTransferSequence{ 0 }; // Zero for standalone/provider drops.
         // Internal B-hold draws share transfer/rollback, without an API owner.
         bool grenadeQuickDraw{ false };
         // Capture the mode at release so a hot reload cannot change an in-flight drop.
@@ -59,7 +60,7 @@ namespace rock
 
         // ProviderForceGrabCommand bookkeeping: pre-filled with request identity;
         // only .state/.failure/.targetBodyId are mutated when the commit resolves.
-        provider::RockProviderInteractionCommandResultV1 providerResultTemplate{};
+        api::grab::InteractionCommandResult providerResultTemplate{};
 
         [[nodiscard]] bool isEquippedWeaponTransfer() const noexcept
         {

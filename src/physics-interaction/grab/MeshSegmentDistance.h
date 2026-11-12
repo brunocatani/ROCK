@@ -45,13 +45,9 @@ namespace rock::mesh_segment_distance
             };
         }
 
-        [[nodiscard]] inline float lengthSquared(const RE::NiPoint3& value)
-        {
-            return dot(value, value);
-        }
+        [[nodiscard]] inline float lengthSquared(const RE::NiPoint3& value) { return dot(value, value); }
 
-        [[nodiscard]] inline RE::NiPoint3 closestPointOnTriangle(
-            const RE::NiPoint3& point,
+        [[nodiscard]] inline RE::NiPoint3 closestPointOnTriangle(const RE::NiPoint3& point,
             const GrabLocalTriangle& triangle)
         {
             const RE::NiPoint3 ab = subtract(triangle.v1, triangle.v0);
@@ -97,31 +93,24 @@ namespace rock::mesh_segment_distance
             return add(triangle.v0, add(scale(ab, vb * inverse), scale(ac, vc * inverse)));
         }
 
-        [[nodiscard]] inline float pointTriangleDistanceSquared(
-            const RE::NiPoint3& point,
+        [[nodiscard]] inline float pointTriangleDistanceSquared(const RE::NiPoint3& point,
             const GrabLocalTriangle& triangle)
         {
             return lengthSquared(subtract(point, closestPointOnTriangle(point, triangle)));
         }
 
-        [[nodiscard]] inline float pointSegmentDistanceSquared(
-            const RE::NiPoint3& point,
-            const RE::NiPoint3& a,
+        [[nodiscard]] inline float pointSegmentDistanceSquared(const RE::NiPoint3& point, const RE::NiPoint3& a,
             const RE::NiPoint3& b)
         {
             const RE::NiPoint3 axis = subtract(b, a);
             const float axisSquared = lengthSquared(axis);
-            const float ratio = axisSquared > 0.000001f ?
-                                    std::clamp(dot(subtract(point, a), axis) / axisSquared, 0.0f, 1.0f) :
-                                    0.0f;
+            const float ratio =
+                axisSquared > 0.000001f ? std::clamp(dot(subtract(point, a), axis) / axisSquared, 0.0f, 1.0f) : 0.0f;
             return lengthSquared(subtract(point, add(a, scale(axis, ratio))));
         }
 
-        [[nodiscard]] inline float segmentSegmentDistanceSquared(
-            const RE::NiPoint3& p1,
-            const RE::NiPoint3& q1,
-            const RE::NiPoint3& p2,
-            const RE::NiPoint3& q2)
+        [[nodiscard]] inline float segmentSegmentDistanceSquared(const RE::NiPoint3& p1, const RE::NiPoint3& q1,
+            const RE::NiPoint3& p2, const RE::NiPoint3& q2)
         {
             constexpr float epsilon = 0.000001f;
             const RE::NiPoint3 d1 = subtract(q1, p1);
@@ -162,9 +151,7 @@ namespace rock::mesh_segment_distance
             return lengthSquared(subtract(first, second));
         }
 
-        [[nodiscard]] inline bool segmentIntersectsTriangle(
-            const RE::NiPoint3& a,
-            const RE::NiPoint3& b,
+        [[nodiscard]] inline bool segmentIntersectsTriangle(const RE::NiPoint3& a, const RE::NiPoint3& b,
             const GrabLocalTriangle& triangle)
         {
             constexpr float epsilon = 0.000001f;
@@ -191,15 +178,14 @@ namespace rock::mesh_segment_distance
             return ratio >= 0.0f && ratio <= 1.0f;
         }
 
-        [[nodiscard]] inline float segmentTriangleDistanceSquared(
-            const RE::NiPoint3& a,
-            const RE::NiPoint3& b,
+        [[nodiscard]] inline float segmentTriangleDistanceSquared(const RE::NiPoint3& a, const RE::NiPoint3& b,
             const GrabLocalTriangle& triangle)
         {
             if (segmentIntersectsTriangle(a, b, triangle)) {
                 return 0.0f;
             }
-            float best = (std::min)(pointTriangleDistanceSquared(a, triangle), pointTriangleDistanceSquared(b, triangle));
+            float best =
+                (std::min)(pointTriangleDistanceSquared(a, triangle), pointTriangleDistanceSquared(b, triangle));
             best = (std::min)(best, segmentSegmentDistanceSquared(a, b, triangle.v0, triangle.v1));
             best = (std::min)(best, segmentSegmentDistanceSquared(a, b, triangle.v1, triangle.v2));
             return (std::min)(best, segmentSegmentDistanceSquared(a, b, triangle.v2, triangle.v0));

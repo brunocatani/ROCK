@@ -1,8 +1,8 @@
 #include "physics-interaction/hand/TrackedHandIsolationPolicy.h"
 #include "physics-interaction/visual/ScopeHandInputContinuityPolicy.h"
 
-#include <cmath>
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <limits>
 
@@ -47,10 +47,7 @@ namespace
         return false;
     }
 
-    RE::NiTransform identity()
-    {
-        return rock::transform_math::makeIdentityTransform<RE::NiTransform>();
-    }
+    RE::NiTransform identity() { return rock::transform_math::makeIdentityTransform<RE::NiTransform>(); }
 
     RE::NiTransform yawed(float degrees, float x, float y, float z, float scale = 1.0f)
     {
@@ -76,7 +73,8 @@ namespace
     {
         auto t = identity();
         for (int r = 0; r < 3; ++r)
-            for (int c = 0; c < 3; ++c) t.rotate.entry[r][c] = values[r * 3 + c];
+            for (int c = 0; c < 3; ++c)
+                t.rotate.entry[r][c] = values[r * 3 + c];
         t.translate = { values[9], values[10], values[11] };
         return rock::transform_math::orthonormalizedTransform(t);
     }
@@ -106,10 +104,13 @@ int main()
             input.claimConsumed = claimed;
             input.firstPersonHandWorld.translate.y += 10.0f;
             const auto recovered = resolveFrame(relation, input);
-            const auto expected = compose(compose(input.firstPersonHandWorld, relation.firstPersonToBodyHand), input.retainedPalmBlend);
+            const auto expected =
+                compose(compose(input.firstPersonHandWorld, relation.firstPersonToBodyHand), input.retainedPalmBlend);
             ok &= expectTrue("bad arm recovers from current input", canDriveExternalPose(relation, recovered));
-            ok &= expectNear("recovery follows movement", translationGameUnits(recovered.rawHandWorld, expected), 0.0f, 0.02f);
-            ok &= expectNear("recovery preserves local palm rotation", rotationDegrees(recovered.rawHandWorld, expected), 0.0f, 0.02f);
+            ok &= expectNear("recovery follows movement", translationGameUnits(recovered.rawHandWorld, expected), 0.0f,
+                0.02f);
+            ok &= expectNear("recovery preserves local palm rotation",
+                rotationDegrees(recovered.rawHandWorld, expected), 0.0f, 0.02f);
         }
         input.firstPersonHandValid = false;
         ok &= expectFalse("no stale world pose on tracking loss", resolveFrame(relation, input).valid);
@@ -139,21 +140,18 @@ int main()
     // pair. A held weapon must consume the shared hand result even while
     // its rendered wrist follows a displaced contact-constrained weapon.
     {
-        const auto offsetA = recorded({
-            0.9819524f, -0.1685165f, 0.0858600f, 0.1407563f, 0.9543747f, 0.2633571f,
+        const auto offsetA = recorded({ 0.9819524f, -0.1685165f, 0.0858600f, 0.1407563f, 0.9543747f, 0.2633571f,
             -0.1263224f, -0.2465187f, 0.9608702f, 272.71869f, -22.62910f, 67.51447f });
-        const auto handA = recorded({
-            0.0149407f, 0.9610964f, 0.2758087f, 0.9792818f, -0.0697772f, 0.1901008f,
+        const auto handA = recorded({ 0.0149407f, 0.9610964f, 0.2758087f, 0.9792818f, -0.0697772f, 0.1901008f,
             0.2019504f, 0.2672542f, -0.9422268f, 275.46606f, -23.96057f, 64.06477f });
-        const auto offsetB = recorded({
-            0.9784306f, -0.1782101f, 0.1044733f, 0.1543470f, 0.9668010f, 0.2036490f,
+        const auto offsetB = recorded({ 0.9784306f, -0.1782101f, 0.1044733f, 0.1543470f, 0.9668010f, 0.2036490f,
             -0.1372971f, -0.1831312f, 0.9734539f, 272.87717f, -21.58559f, 68.07898f });
-        const auto handB = recorded({
-            0.0175434f, 0.9597044f, 0.2804634f, 0.9775856f, -0.0753253f, 0.1966025f,
+        const auto handB = recorded({ 0.0175434f, 0.9597044f, 0.2804634f, 0.9775856f, -0.0753253f, 0.1966025f,
             0.2098063f, 0.2707278f, -0.9395146f, 275.55124f, -23.81933f, 64.45705f });
         const auto frozenRelation = compose(rock::transform_math::invertTransform(offsetA), handA);
         const auto staleHand = compose(offsetB, frozenRelation);
-        ok &= expectTrue("recorded offset reconstruction adds translation", translationGameUnits(staleHand, handB) > 0.65f);
+        ok &= expectTrue("recorded offset reconstruction adds translation",
+            translationGameUnits(staleHand, handB) > 0.65f);
         ok &= expectTrue("recorded offset reconstruction adds rotation", rotationDegrees(staleHand, handB) > 3.8f);
         RelationState relation{};
         relation.firstPersonToBodyHand = identity();
@@ -169,9 +167,12 @@ int main()
             .calibrationAllowed = false,
         };
         const auto physical = resolveFrame(relation, frame);
-        ok &= expectTrue("current physical frame remains usable under weapon authority", canDriveExternalPose(relation, physical));
-        ok &= expectNear("current physical frame rejects offset displacement", translationGameUnits(physical.rawHandWorld, handB), 0.0f, 0.001f);
-        ok &= expectNear("current physical frame rejects offset rotation", rotationDegrees(physical.rawHandWorld, handB), 0.0f, 0.001f);
+        ok &= expectTrue("current physical frame remains usable under weapon authority",
+            canDriveExternalPose(relation, physical));
+        ok &= expectNear("current physical frame rejects offset displacement",
+            translationGameUnits(physical.rawHandWorld, handB), 0.0f, 0.001f);
+        ok &= expectNear("current physical frame rejects offset rotation",
+            rotationDegrees(physical.rawHandWorld, handB), 0.0f, 0.001f);
     }
 
     // A skeleton with a small solver residual and a body scale: relation calibrates on a free frame.
@@ -201,7 +202,8 @@ int main()
         // The calibrated relation reproduces the flattened hand exactly.
         RE::NiTransform reconstructed{};
         ok &= expectTrue("calibrated relation reconstructs", reconstruct(state, input, reconstructed));
-        ok &= expectNear("reconstruction translation matches", translationGameUnits(reconstructed, flattenedA), 0.0f, 0.001f);
+        ok &= expectNear("reconstruction translation matches", translationGameUnits(reconstructed, flattenedA), 0.0f,
+            0.001f);
         ok &= expectNear("reconstruction rotation matches", rotationDegrees(reconstructed, flattenedA), 0.0f, 0.01f);
     }
 
@@ -245,12 +247,14 @@ int main()
             .flattenedHandValid = true,
             .claimConsumed = true,
         };
-        ok &= expectEnum("no relation degrades", resolveFrame(empty, input).source, RawHandSource::FlattenedContaminated);
+        ok &=
+            expectEnum("no relation degrades", resolveFrame(empty, input).source, RawHandSource::FlattenedContaminated);
         ok &= expectFalse("uncalibrated claimed output is unavailable", resolveFrame(empty, input).valid);
 
         FrameInput noFirstPerson = input;
         noFirstPerson.firstPersonHandValid = false;
-        ok &= expectEnum("no first-person hand degrades", resolveFrame(state, noFirstPerson).source, RawHandSource::FlattenedContaminated);
+        ok &= expectEnum("no first-person hand degrades", resolveFrame(state, noFirstPerson).source,
+            RawHandSource::FlattenedContaminated);
         ok &= expectFalse("missing controller cannot drive a claimed pose", resolveFrame(state, noFirstPerson).valid);
         auto freePeer = input;
         freePeer.claimConsumed = false;
@@ -270,13 +274,17 @@ int main()
         RelationState guarded = state;
         const RE::NiTransform collapsed = yawed(0.0f, 100.0f, 50.0f, 80.0f, 0.00001f);
         ok &= expectFalse("collapsed scale rejected", calibrateRelation(guarded, firstPersonA, collapsed));
-        ok &= expectFalse("far body rejected", calibrateRelation(guarded, firstPersonA, yawed(0.0f, 150.0f, 50.0f, 80.0f)));
-        ok &= expectFalse("twisted body rejected", calibrateRelation(guarded, firstPersonA, compose(firstPersonA, yawed(30.0f, 0.0f, 0.0f, 0.0f))));
+        ok &= expectFalse("far body rejected",
+            calibrateRelation(guarded, firstPersonA, yawed(0.0f, 150.0f, 50.0f, 80.0f)));
+        ok &= expectFalse("twisted body rejected",
+            calibrateRelation(guarded, firstPersonA, compose(firstPersonA, yawed(30.0f, 0.0f, 0.0f, 0.0f))));
         RE::NiTransform nan = firstPersonA;
         nan.translate.y = std::nanf("");
         ok &= expectFalse("non-finite rejected", calibrateRelation(guarded, nan, bodyNodeA));
-        ok &= expectTrue("previous relation kept", guarded.valid && guarded.rejectedSamples == 4 && guarded.acceptedSamples == 1);
-        ok &= expectNear("previous relation unchanged", guarded.firstPersonToBodyHand.translate.x, residual.translate.x, 0.0001f);
+        ok &= expectTrue("previous relation kept",
+            guarded.valid && guarded.rejectedSamples == 4 && guarded.acceptedSamples == 1);
+        ok &= expectNear("previous relation unchanged", guarded.firstPersonToBodyHand.translate.x, residual.translate.x,
+            0.0001f);
     }
 
     // A frame that carries a native recoil kick does not calibrate but still serves the flattened bone.
@@ -285,7 +293,8 @@ int main()
         FrameInput input{
             .firstPersonHandWorld = firstPersonA,
             .firstPersonHandValid = true,
-            .bodyHandNodeWorld = compose(bodyNodeA, yawed(3.0f, 2.0f, 0.0f, 0.0f)), // kick composed on the tracked target
+            .bodyHandNodeWorld =
+                compose(bodyNodeA, yawed(3.0f, 2.0f, 0.0f, 0.0f)), // kick composed on the tracked target
             .bodyHandNodeValid = true,
             .flattenedHandWorld = flattenedA,
             .flattenedHandValid = true,
@@ -294,8 +303,10 @@ int main()
         };
         const FrameResult result = resolveFrame(untouched, input);
         ok &= expectEnum("recoil frame uses flattened", result.source, RawHandSource::Flattened);
-        ok &= expectTrue("recoil frame did not calibrate", untouched.acceptedSamples == state.acceptedSamples && untouched.rejectedSamples == state.rejectedSamples);
-        ok &= expectNear("recoil frame relation unchanged", untouched.firstPersonToBodyHand.translate.x, state.firstPersonToBodyHand.translate.x, 0.0001f);
+        ok &= expectTrue("recoil frame did not calibrate",
+            untouched.acceptedSamples == state.acceptedSamples && untouched.rejectedSamples == state.rejectedSamples);
+        ok &= expectNear("recoil frame relation unchanged", untouched.firstPersonToBodyHand.translate.x,
+            state.firstPersonToBodyHand.translate.x, 0.0001f);
     }
 
     // Palm blend extraction is exact.
@@ -332,7 +343,8 @@ int main()
         };
         const FrameResult freeResult = resolveFrame(loopState, freeFrame);
         ok &= expectTrue("drift calibration accepted", loopState.valid && loopState.acceptedSamples == 1);
-        ok &= expectTrue("drift free frame orthonormal", rock::transform_math::storedRotationOrthonormalityError(freeResult.rawHandWorld.rotate) < 1e-5);
+        ok &= expectTrue("drift free frame orthonormal",
+            rock::transform_math::storedRotationOrthonormalityError(freeResult.rawHandWorld.rotate) < 1e-5);
 
         RE::NiTransform rendered = node;
         float firstX = 0.0f;
@@ -348,7 +360,8 @@ int main()
             };
             const FrameResult claimedResult = resolveFrame(loopState, claimed);
             ok &= expectEnum("echo frame reconstructed", claimedResult.source, RawHandSource::Reconstructed);
-            ok &= expectTrue("echo frame orthonormal", rock::transform_math::storedRotationOrthonormalityError(claimedResult.rawHandWorld.rotate) < 1e-5);
+            ok &= expectTrue("echo frame orthonormal",
+                rock::transform_math::storedRotationOrthonormalityError(claimedResult.rawHandWorld.rotate) < 1e-5);
             if (frame == 0) {
                 firstX = claimedResult.rawHandWorld.translate.x;
             } else {
@@ -386,7 +399,8 @@ int main()
         const auto result = resolveFrame(relation, corrected);
         ok &= expectEnum("scope controller input reconstructed", result.source, RawHandSource::Reconstructed);
         ok &= expectNear("scope input rejects displayed displacement", result.rawHandWorld.translate.x, 10.0f, 0.001f);
-        ok &= expectNear("current palm blend retained", rotationDegrees(result.rawHandWorld, compose(controller, blend)), 0.0f, 0.01f);
+        ok &= expectNear("current palm blend retained",
+            rotationDegrees(result.rawHandWorld, compose(controller, blend)), 0.0f, 0.01f);
         ok &= expectTrue("scope output cannot recalibrate relation", relation.acceptedSamples == 0);
         corrected.firstPersonHandValid = false;
         ok &= expectFalse("missing corrected input fails closed", resolveFrame(relation, corrected).valid);
@@ -414,8 +428,8 @@ int main()
                 camera.x += 2.0f;
                 raw.translate.x = camera.x + 20.0f;
                 raw.rotate = yawed(45.0f, 0, 0, 0).rotate;
-                const auto result = continuity::resolve(scopeState, damping, true, sequence,
-                    { raw, true }, { raw, true }, { compose(raw, handLocal), true }, camera, true);
+                const auto result = continuity::resolve(scopeState, damping, true, sequence, { raw, true },
+                    { raw, true }, { compose(raw, handLocal), true }, camera, true);
                 ok &= expectFalse("scope keeps provider's chosen damping", result.corrected);
             }
             const auto lastScoped = raw;
@@ -426,21 +440,25 @@ int main()
                 // FRIK's retained old history; independently reproduce the
                 // translation recurrence to make the original jump explicit.
                 nativeDriver.translate.x = raw.translate.x * 0.4f + (nativeDriver.translate.x + 2.0f) * 0.6f;
-                nativeDriver.rotate = rock::hand_visual_lerp_math::quaternionToMatrix<RE::NiMatrix3>(
-                    rock::hand_visual_lerp_math::slerp(rock::hand_visual_lerp_math::matrixToQuaternion(nativeDriver.rotate),
+                nativeDriver.rotate =
+                    rock::hand_visual_lerp_math::quaternionToMatrix<RE::NiMatrix3>(rock::hand_visual_lerp_math::slerp(
+                        rock::hand_visual_lerp_math::matrixToQuaternion(nativeDriver.rotate),
                         rock::hand_visual_lerp_math::matrixToQuaternion(raw.rotate), 0.4f));
                 const auto nativeHand = compose(nativeDriver, handLocal);
-                const auto result = continuity::resolve(scopeState, damping, false, sequence,
-                    { raw, true }, { raw, true }, { nativeHand, true }, camera, true);
+                const auto result = continuity::resolve(scopeState, damping, false, sequence, { raw, true },
+                    { raw, true }, { nativeHand, true }, camera, true);
                 const auto expected = compose(raw, handLocal);
                 ok &= expectTrue("recovery supplies a current hand", result.hand.valid);
                 ok &= expectNear("walking hand never returns to scope-entry position",
                     translationGameUnits(result.hand.world, expected), 0.0f, 0.055f);
-                ok &= expectNear("scope rotation stays current", rotationDegrees(result.hand.world, expected), 0.0f, 0.055f);
+                ok &= expectNear("scope rotation stays current", rotationDegrees(result.hand.world, expected), 0.0f,
+                    0.055f);
                 if (frame == 0) {
-                    ok &= expectTrue("fixture reproduces a large native snap", translationGameUnits(nativeHand, expected) > 400.0f);
+                    ok &= expectTrue("fixture reproduces a large native snap",
+                        translationGameUnits(nativeHand, expected) > 400.0f);
                     ok &= expectTrue("first exit frame is protected", result.corrected);
-                    ok &= expectNear("player motion is not damped", result.driver.world.translate.x - lastScoped.translate.x, 2.0f, 0.001f);
+                    ok &= expectNear("player motion is not damped",
+                        result.driver.world.translate.x - lastScoped.translate.x, 2.0f, 0.001f);
                 }
                 recovered |= !scopeState.recovering;
             }
@@ -453,14 +471,18 @@ int main()
         (void)continuity::resolve(scopeState, damping, true, 1, valid, valid, valid, {}, true);
         auto moved = driver;
         moved.translate.x = 20.0f;
-        const auto resumed = continuity::resolve(scopeState, damping, false, 2, { moved, true }, valid, valid, {}, true);
-        ok &= expectNear("controller motion still uses configured damping", resumed.driver.world.translate.x, 14.0f, 0.001f);
+        const auto resumed =
+            continuity::resolve(scopeState, damping, false, 2, { moved, true }, valid, valid, {}, true);
+        ok &= expectNear("controller motion still uses configured damping", resumed.driver.world.translate.x, 14.0f,
+            0.001f);
         const auto missing = continuity::resolve(scopeState, damping, false, 3, {}, valid, valid, {}, true);
         ok &= expectFalse("missing current controller fails closed", missing.hand.valid);
         ok &= expectTrue("missing controller cannot accept stale native pose", missing.corrected);
-        const auto restored = continuity::resolve(scopeState, damping, false, 5, { moved, true }, valid, valid, {}, true);
+        const auto restored =
+            continuity::resolve(scopeState, damping, false, 5, { moved, true }, valid, valid, {}, true);
         ok &= expectNear("a tracking gap discards filter history", restored.driver.world.translate.x, 20.0f, 0.001f);
-        const auto reopened = continuity::resolve(scopeState, damping, true, 6, { moved, true }, { moved, true }, { moved, true }, {}, true);
+        const auto reopened = continuity::resolve(scopeState, damping, true, 6, { moved, true }, { moved, true },
+            { moved, true }, {}, true);
         ok &= expectFalse("scope reentry releases recovery", reopened.corrected || scopeState.recovering);
         scopeState = {};
         const auto reset = continuity::resolve(scopeState, damping, false, 7, valid, valid, valid, {}, true);
@@ -470,7 +492,8 @@ int main()
                  continuity::Damping{ 0.6f, 0.6f, true, true, true } }) {
             scopeState = {};
             (void)continuity::resolve(scopeState, config, true, 1, valid, valid, valid, {}, true);
-            const auto result = continuity::resolve(scopeState, config, false, 2, { moved, true }, valid, valid, {}, true);
+            const auto result =
+                continuity::resolve(scopeState, config, false, 2, { moved, true }, valid, valid, {}, true);
             ok &= expectFalse("uninterrupted or disabled damping remains provider-owned", result.corrected);
             ok &= expectNear("ordinary native input preserved", result.hand.world.translate.x, 10.0f, 0.001f);
         }

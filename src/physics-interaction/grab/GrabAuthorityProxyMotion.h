@@ -8,18 +8,14 @@
  * paths that could reintroduce world-direction-dependent rotation.
  */
 
-#include "physics-interaction/native/HavokPhysicsTiming.h"
+#include "physics-interaction/native/havok/HavokPhysicsTiming.h"
 
 #include "RE/NetImmerse/NiTransform.h"
 
 namespace rock::grab_authority_proxy_motion
 {
-    inline void computeLinearVelocityHavok(
-        const RE::NiTransform& previous,
-        const RE::NiTransform& current,
-        float deltaSeconds,
-        float gameToHavokScale,
-        float outVelocity[4])
+    inline void computeLinearVelocityHavok(const RE::NiTransform& previous, const RE::NiTransform& current,
+        float deltaSeconds, float gameToHavokScale, float outVelocity[4])
     {
         outVelocity[0] = 0.0f;
         outVelocity[1] = 0.0f;

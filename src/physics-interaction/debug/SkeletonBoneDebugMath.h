@@ -7,15 +7,14 @@
 #include <string_view>
 #include <vector>
 
-#include "physics-interaction/body/BodyZone.h"
 #include "physics-interaction/debug/DebugMath.h"
 
 namespace rock::skeleton_bone_debug_math
 {
     // ROCK needs a skeleton map that can stand on its own instead of depending
     // on the FRIK API for every bone. This layer makes live FO4VR root-flattened
-    // bone state visible while keeping future collider roles scaffolded
-    // separately from the visualizer that proves the skeleton first.
+    // bone state visible. Body collider descriptors live in
+    // body/BodyColliderDescriptors.h.
 
     enum class DebugSkeletonBoneMode : int
     {
@@ -38,55 +37,6 @@ namespace rock::skeleton_bone_debug_math
         FirstPersonDiagnosticOnly = 2
     };
 
-    enum class BoneColliderRole : int
-    {
-        UpperArmSegment,
-        ForearmSegment,
-        HandSegment,
-        FingerSegment,
-        TorsoSegment,
-        LegSegment,
-        FootSegment
-    };
-
-    enum class BoneColliderEndpointMode : int
-    {
-        ChildBone,
-        ExtrapolatedTip,
-        DerivedLandmark
-    };
-
-    struct BoneColliderDescriptor
-    {
-        BoneColliderRole role = BoneColliderRole::FingerSegment;
-        body_zone::BodyZoneKind zone = body_zone::BodyZoneKind::Unknown;
-        body_zone::BodyZoneSide side = body_zone::BodyZoneSide::Center;
-        std::string_view startBone{};
-        std::string_view endBone{};
-        float radiusGameUnits = 1.0f;
-        float convexRadiusGameUnits = 0.25f;
-        bool enabled = true;
-        BoneColliderEndpointMode endpointMode = BoneColliderEndpointMode::ChildBone;
-        float startFraction = 0.0f;
-        float endFraction = 1.0f;
-    };
-
-    template <class Vector>
-    inline void applyColliderEndpointRange(const BoneColliderDescriptor& descriptor, Vector& start, Vector& end)
-    {
-        if (descriptor.startFraction == 0.0f && descriptor.endFraction == 1.0f) {
-            return;
-        }
-        const Vector origin = start;
-        const Vector span{ end.x - origin.x, end.y - origin.y, end.z - origin.z };
-        start = Vector{ origin.x + span.x * descriptor.startFraction,
-            origin.y + span.y * descriptor.startFraction,
-            origin.z + span.z * descriptor.startFraction };
-        end = Vector{ origin.x + span.x * descriptor.endFraction,
-            origin.y + span.y * descriptor.endFraction,
-            origin.z + span.z * descriptor.endFraction };
-    }
-
     template <class Vector>
     struct AxisEndpoints
     {
@@ -95,89 +45,23 @@ namespace rock::skeleton_bone_debug_math
         Vector zEnd{};
     };
 
-    inline constexpr std::array<std::string_view, 30> kRequiredFingerBoneNames{
-        "LArm_Finger11", "LArm_Finger12", "LArm_Finger13",
-        "LArm_Finger21", "LArm_Finger22", "LArm_Finger23",
-        "LArm_Finger31", "LArm_Finger32", "LArm_Finger33",
-        "LArm_Finger41", "LArm_Finger42", "LArm_Finger43",
-        "LArm_Finger51", "LArm_Finger52", "LArm_Finger53",
-        "RArm_Finger11", "RArm_Finger12", "RArm_Finger13",
-        "RArm_Finger21", "RArm_Finger22", "RArm_Finger23",
-        "RArm_Finger31", "RArm_Finger32", "RArm_Finger33",
-        "RArm_Finger41", "RArm_Finger42", "RArm_Finger43",
-        "RArm_Finger51", "RArm_Finger52", "RArm_Finger53"
-    };
+    inline constexpr std::array<std::string_view, 30> kRequiredFingerBoneNames{ "LArm_Finger11", "LArm_Finger12",
+        "LArm_Finger13", "LArm_Finger21", "LArm_Finger22", "LArm_Finger23", "LArm_Finger31", "LArm_Finger32",
+        "LArm_Finger33", "LArm_Finger41", "LArm_Finger42", "LArm_Finger43", "LArm_Finger51", "LArm_Finger52",
+        "LArm_Finger53", "RArm_Finger11", "RArm_Finger12", "RArm_Finger13", "RArm_Finger21", "RArm_Finger22",
+        "RArm_Finger23", "RArm_Finger31", "RArm_Finger32", "RArm_Finger33", "RArm_Finger41", "RArm_Finger42",
+        "RArm_Finger43", "RArm_Finger51", "RArm_Finger52", "RArm_Finger53" };
 
-    inline constexpr std::array<std::string_view, 31> kRequiredCoreBoneNames{
-        "COM", "Pelvis", "SPINE1", "SPINE2", "Chest", "Neck", "Head",
-        "LArm_Collarbone", "LArm_UpperArm", "LArm_ForeArm1", "LArm_ForeArm2", "LArm_ForeArm3", "LArm_Hand",
-        "RArm_Collarbone", "RArm_UpperArm", "RArm_ForeArm1", "RArm_ForeArm2", "RArm_ForeArm3", "RArm_Hand",
-        "LLeg_Thigh", "LLeg_Calf", "LLeg_Foot", "LLeg_Toe1",
-        "RLeg_Thigh", "RLeg_Calf", "RLeg_Foot", "RLeg_Toe1",
-        "LArm_UpperTwist1", "LArm_UpperTwist2", "RArm_UpperTwist1", "RArm_UpperTwist2"
-    };
+    inline constexpr std::array<std::string_view, 31> kRequiredCoreBoneNames{ "COM", "Pelvis", "SPINE1", "SPINE2",
+        "Chest", "Neck", "Head", "LArm_Collarbone", "LArm_UpperArm", "LArm_ForeArm1", "LArm_ForeArm2", "LArm_ForeArm3",
+        "LArm_Hand", "RArm_Collarbone", "RArm_UpperArm", "RArm_ForeArm1", "RArm_ForeArm2", "RArm_ForeArm3", "RArm_Hand",
+        "LLeg_Thigh", "LLeg_Calf", "LLeg_Foot", "LLeg_Toe1", "RLeg_Thigh", "RLeg_Calf", "RLeg_Foot", "RLeg_Toe1",
+        "LArm_UpperTwist1", "LArm_UpperTwist2", "RArm_UpperTwist1", "RArm_UpperTwist2" };
 
-    inline constexpr std::array<std::string_view, 16> kHandsAndForearmsBoneNames{
-        "LArm_ForeArm1", "LArm_ForeArm2", "LArm_ForeArm3", "LArm_Hand",
-        "RArm_ForeArm1", "RArm_ForeArm2", "RArm_ForeArm3", "RArm_Hand",
-        "LArm_UpperArm", "RArm_UpperArm", "LArm_Collarbone", "RArm_Collarbone",
-        "LArm_UpperTwist1", "LArm_UpperTwist2", "RArm_UpperTwist1", "RArm_UpperTwist2"
-    };
-
-    inline constexpr std::array<BoneColliderDescriptor, 23> kStandardBodyColliderDescriptors{
-        BoneColliderDescriptor{ BoneColliderRole::TorsoSegment, body_zone::BodyZoneKind::Pelvis, body_zone::BodyZoneSide::Center, "Pelvis", "SPINE1", 4.5f, 0.50f },
-        BoneColliderDescriptor{ BoneColliderRole::TorsoSegment, body_zone::BodyZoneKind::SpineLower, body_zone::BodyZoneSide::Center, "SPINE1", "SPINE2", 5.0f, 0.50f },
-        BoneColliderDescriptor{ BoneColliderRole::TorsoSegment, body_zone::BodyZoneKind::SpineUpper, body_zone::BodyZoneSide::Center, "SPINE2", "Chest", 5.5f, 0.50f },
-        BoneColliderDescriptor{ BoneColliderRole::TorsoSegment, body_zone::BodyZoneKind::Chest, body_zone::BodyZoneSide::Center, "Chest", "Neck", 3.5f, 0.40f },
-        BoneColliderDescriptor{ BoneColliderRole::TorsoSegment, body_zone::BodyZoneKind::NeckHead, body_zone::BodyZoneSide::Center, "Neck", "Head", 3.0f, 0.35f },
-        BoneColliderDescriptor{ BoneColliderRole::UpperArmSegment, body_zone::BodyZoneKind::LeftShoulder, body_zone::BodyZoneSide::Left, "LArm_Collarbone", "LArm_UpperArm", 2.5f, 0.30f },
-        BoneColliderDescriptor{ BoneColliderRole::UpperArmSegment, body_zone::BodyZoneKind::LeftUpperArm, body_zone::BodyZoneSide::Left, "LArm_UpperArm", "LArm_ForeArm1", 2.7f, 0.30f },
-        BoneColliderDescriptor{ BoneColliderRole::ForearmSegment, body_zone::BodyZoneKind::LeftForearmUpper, body_zone::BodyZoneSide::Left, "LArm_ForeArm1", "LArm_ForeArm2", 2.2f, 0.25f },
-        BoneColliderDescriptor{ BoneColliderRole::ForearmSegment, body_zone::BodyZoneKind::LeftForearmLower, body_zone::BodyZoneSide::Left, "LArm_ForeArm2", "LArm_ForeArm3", 2.0f, 0.25f },
-        BoneColliderDescriptor{ BoneColliderRole::HandSegment, body_zone::BodyZoneKind::LeftHand, body_zone::BodyZoneSide::Left, "LArm_ForeArm3", "LArm_Hand", 2.1f, 0.25f },
-        BoneColliderDescriptor{ BoneColliderRole::UpperArmSegment, body_zone::BodyZoneKind::RightShoulder, body_zone::BodyZoneSide::Right, "RArm_Collarbone", "RArm_UpperArm", 2.5f, 0.30f },
-        BoneColliderDescriptor{ BoneColliderRole::UpperArmSegment, body_zone::BodyZoneKind::RightUpperArm, body_zone::BodyZoneSide::Right, "RArm_UpperArm", "RArm_ForeArm1", 2.7f, 0.30f },
-        BoneColliderDescriptor{ BoneColliderRole::ForearmSegment, body_zone::BodyZoneKind::RightForearmUpper, body_zone::BodyZoneSide::Right, "RArm_ForeArm1", "RArm_ForeArm2", 2.2f, 0.25f },
-        BoneColliderDescriptor{ BoneColliderRole::ForearmSegment, body_zone::BodyZoneKind::RightForearmLower, body_zone::BodyZoneSide::Right, "RArm_ForeArm2", "RArm_ForeArm3", 2.0f, 0.25f },
-        BoneColliderDescriptor{ BoneColliderRole::HandSegment, body_zone::BodyZoneKind::RightHand, body_zone::BodyZoneSide::Right, "RArm_ForeArm3", "RArm_Hand", 2.1f, 0.25f },
-        BoneColliderDescriptor{ BoneColliderRole::LegSegment, body_zone::BodyZoneKind::LeftHip, body_zone::BodyZoneSide::Left, "Pelvis", "LLeg_Thigh", 3.4f, 0.35f },
-        BoneColliderDescriptor{ BoneColliderRole::LegSegment, body_zone::BodyZoneKind::LeftThigh, body_zone::BodyZoneSide::Left, "LLeg_Thigh", "LLeg_Calf", 3.0f, 0.35f },
-        BoneColliderDescriptor{ BoneColliderRole::LegSegment, body_zone::BodyZoneKind::LeftCalf, body_zone::BodyZoneSide::Left, "LLeg_Calf", "LLeg_Foot", 2.4f, 0.30f },
-        BoneColliderDescriptor{ BoneColliderRole::FootSegment, body_zone::BodyZoneKind::LeftFoot, body_zone::BodyZoneSide::Left, "LLeg_Foot", "LLeg_Toe1", 2.2f, 0.25f },
-        BoneColliderDescriptor{ BoneColliderRole::LegSegment, body_zone::BodyZoneKind::RightHip, body_zone::BodyZoneSide::Right, "Pelvis", "RLeg_Thigh", 3.4f, 0.35f },
-        BoneColliderDescriptor{ BoneColliderRole::LegSegment, body_zone::BodyZoneKind::RightThigh, body_zone::BodyZoneSide::Right, "RLeg_Thigh", "RLeg_Calf", 3.0f, 0.35f },
-        BoneColliderDescriptor{ BoneColliderRole::LegSegment, body_zone::BodyZoneKind::RightCalf, body_zone::BodyZoneSide::Right, "RLeg_Calf", "RLeg_Foot", 2.4f, 0.30f },
-        BoneColliderDescriptor{ BoneColliderRole::FootSegment, body_zone::BodyZoneKind::RightFoot, body_zone::BodyZoneSide::Right, "RLeg_Foot", "RLeg_Toe1", 2.2f, 0.25f }
-    };
-
-    // The armor rig has coincident ForeArm1/ForeArm2 positions (runtime 2026-09-08).
-    // Split the nonzero ForeArm1->ForeArm3 span into adjacent upper/lower zones;
-    // keep the wrist segment separate and the merged forearm's total length intact.
-    inline constexpr std::array<BoneColliderDescriptor, 23> kPowerArmorBodyColliderDescriptors{
-        BoneColliderDescriptor{ BoneColliderRole::TorsoSegment, body_zone::BodyZoneKind::Pelvis, body_zone::BodyZoneSide::Center, "Pelvis", "SPINE1", 6.5f, 0.65f },
-        BoneColliderDescriptor{ BoneColliderRole::TorsoSegment, body_zone::BodyZoneKind::SpineLower, body_zone::BodyZoneSide::Center, "SPINE1", "SPINE2", 7.0f, 0.65f },
-        BoneColliderDescriptor{ BoneColliderRole::TorsoSegment, body_zone::BodyZoneKind::SpineUpper, body_zone::BodyZoneSide::Center, "SPINE2", "Chest", 7.5f, 0.65f },
-        BoneColliderDescriptor{ BoneColliderRole::TorsoSegment, body_zone::BodyZoneKind::Chest, body_zone::BodyZoneSide::Center, "Chest", "Neck", 5.0f, 0.50f },
-        BoneColliderDescriptor{ BoneColliderRole::TorsoSegment, body_zone::BodyZoneKind::NeckHead, body_zone::BodyZoneSide::Center, "Neck", "Head", 4.0f, 0.45f },
-        BoneColliderDescriptor{ BoneColliderRole::UpperArmSegment, body_zone::BodyZoneKind::LeftShoulder, body_zone::BodyZoneSide::Left, "LArm_Collarbone", "LArm_UpperArm", 4.2f, 0.45f },
-        BoneColliderDescriptor{ BoneColliderRole::UpperArmSegment, body_zone::BodyZoneKind::LeftUpperArm, body_zone::BodyZoneSide::Left, "LArm_UpperArm", "LArm_ForeArm1", 4.5f, 0.45f },
-        BoneColliderDescriptor{ BoneColliderRole::ForearmSegment, body_zone::BodyZoneKind::LeftForearmUpper, body_zone::BodyZoneSide::Left, "LArm_ForeArm1", "LArm_ForeArm3", 3.8f, 0.40f, true, BoneColliderEndpointMode::ChildBone, 0.0f, 0.5f },
-        BoneColliderDescriptor{ BoneColliderRole::ForearmSegment, body_zone::BodyZoneKind::LeftForearmLower, body_zone::BodyZoneSide::Left, "LArm_ForeArm1", "LArm_ForeArm3", 3.4f, 0.40f, true, BoneColliderEndpointMode::ChildBone, 0.5f, 1.0f },
-        BoneColliderDescriptor{ BoneColliderRole::HandSegment, body_zone::BodyZoneKind::LeftHand, body_zone::BodyZoneSide::Left, "LArm_ForeArm3", "LArm_Hand", 3.5f, 0.35f },
-        BoneColliderDescriptor{ BoneColliderRole::UpperArmSegment, body_zone::BodyZoneKind::RightShoulder, body_zone::BodyZoneSide::Right, "RArm_Collarbone", "RArm_UpperArm", 4.2f, 0.45f },
-        BoneColliderDescriptor{ BoneColliderRole::UpperArmSegment, body_zone::BodyZoneKind::RightUpperArm, body_zone::BodyZoneSide::Right, "RArm_UpperArm", "RArm_ForeArm1", 4.5f, 0.45f },
-        BoneColliderDescriptor{ BoneColliderRole::ForearmSegment, body_zone::BodyZoneKind::RightForearmUpper, body_zone::BodyZoneSide::Right, "RArm_ForeArm1", "RArm_ForeArm3", 3.8f, 0.40f, true, BoneColliderEndpointMode::ChildBone, 0.0f, 0.5f },
-        BoneColliderDescriptor{ BoneColliderRole::ForearmSegment, body_zone::BodyZoneKind::RightForearmLower, body_zone::BodyZoneSide::Right, "RArm_ForeArm1", "RArm_ForeArm3", 3.4f, 0.40f, true, BoneColliderEndpointMode::ChildBone, 0.5f, 1.0f },
-        BoneColliderDescriptor{ BoneColliderRole::HandSegment, body_zone::BodyZoneKind::RightHand, body_zone::BodyZoneSide::Right, "RArm_ForeArm3", "RArm_Hand", 3.5f, 0.35f },
-        BoneColliderDescriptor{ BoneColliderRole::LegSegment, body_zone::BodyZoneKind::LeftHip, body_zone::BodyZoneSide::Left, "Pelvis", "LLeg_Thigh", 5.2f, 0.50f },
-        BoneColliderDescriptor{ BoneColliderRole::LegSegment, body_zone::BodyZoneKind::LeftThigh, body_zone::BodyZoneSide::Left, "LLeg_Thigh", "LLeg_Calf", 4.8f, 0.50f },
-        BoneColliderDescriptor{ BoneColliderRole::LegSegment, body_zone::BodyZoneKind::LeftCalf, body_zone::BodyZoneSide::Left, "LLeg_Calf", "LLeg_Foot", 4.0f, 0.45f },
-        BoneColliderDescriptor{ BoneColliderRole::FootSegment, body_zone::BodyZoneKind::LeftFoot, body_zone::BodyZoneSide::Left, "LLeg_Foot", "LLeg_Toe1", 3.5f, 0.35f },
-        BoneColliderDescriptor{ BoneColliderRole::LegSegment, body_zone::BodyZoneKind::RightHip, body_zone::BodyZoneSide::Right, "Pelvis", "RLeg_Thigh", 5.2f, 0.50f },
-        BoneColliderDescriptor{ BoneColliderRole::LegSegment, body_zone::BodyZoneKind::RightThigh, body_zone::BodyZoneSide::Right, "RLeg_Thigh", "RLeg_Calf", 4.8f, 0.50f },
-        BoneColliderDescriptor{ BoneColliderRole::LegSegment, body_zone::BodyZoneKind::RightCalf, body_zone::BodyZoneSide::Right, "RLeg_Calf", "RLeg_Foot", 4.0f, 0.45f },
-        BoneColliderDescriptor{ BoneColliderRole::FootSegment, body_zone::BodyZoneKind::RightFoot, body_zone::BodyZoneSide::Right, "RLeg_Foot", "RLeg_Toe1", 3.5f, 0.35f }
-    };
+    inline constexpr std::array<std::string_view, 16> kHandsAndForearmsBoneNames{ "LArm_ForeArm1", "LArm_ForeArm2",
+        "LArm_ForeArm3", "LArm_Hand", "RArm_ForeArm1", "RArm_ForeArm2", "RArm_ForeArm3", "RArm_Hand", "LArm_UpperArm",
+        "RArm_UpperArm", "LArm_Collarbone", "RArm_Collarbone", "LArm_UpperTwist1", "LArm_UpperTwist2",
+        "RArm_UpperTwist1", "RArm_UpperTwist2" };
 
     template <std::size_t Count>
     inline constexpr bool allBoneNamesNonEmpty(const std::array<std::string_view, Count>& names)
@@ -192,11 +76,21 @@ namespace rock::skeleton_bone_debug_math
 
     static_assert(allBoneNamesNonEmpty(kRequiredFingerBoneNames), "Required finger bone table contains an empty name.");
     static_assert(allBoneNamesNonEmpty(kRequiredCoreBoneNames), "Required core bone table contains an empty name.");
-    static_assert(allBoneNamesNonEmpty(kHandsAndForearmsBoneNames), "Hands/forearms bone table contains an empty name.");
+    static_assert(allBoneNamesNonEmpty(kHandsAndForearmsBoneNames),
+        "Hands/forearms bone table contains an empty name.");
 
-    inline constexpr const std::array<std::string_view, 30>& requiredFingerBoneNames() { return kRequiredFingerBoneNames; }
+    inline constexpr const std::array<std::string_view, 30>& requiredFingerBoneNames()
+    {
+        return kRequiredFingerBoneNames;
+    }
+
     inline constexpr const std::array<std::string_view, 31>& requiredCoreBoneNames() { return kRequiredCoreBoneNames; }
-    inline constexpr const std::array<std::string_view, 16>& handsAndForearmsBoneNames() { return kHandsAndForearmsBoneNames; }
+
+    inline constexpr const std::array<std::string_view, 16>& handsAndForearmsBoneNames()
+    {
+        return kHandsAndForearmsBoneNames;
+    }
+
     inline constexpr std::size_t skeletonOverlayBudget() { return 768; }
 
     inline int sanitizeMaxSkeletonBonesDrawn(int value)
@@ -283,7 +177,8 @@ namespace rock::skeleton_bone_debug_math
         return false;
     }
 
-    inline bool shouldDrawSkeletonAxis(std::string_view axisFilter, std::string_view boneName, std::size_t axesAlreadyDrawn, std::size_t axisCap)
+    inline bool shouldDrawSkeletonAxis(std::string_view axisFilter, std::string_view boneName,
+        std::size_t axesAlreadyDrawn, std::size_t axisCap)
     {
         if (axisCap == 0 || axesAlreadyDrawn >= axisCap) {
             return false;
@@ -305,19 +200,11 @@ namespace rock::skeleton_bone_debug_math
 
     inline bool isExcludedDefaultBone(std::string_view name)
     {
-        return containsName(name, "_skin") ||
-               containsName(name, "_armor") ||
-               containsName(name, "weapon") ||
-               containsName(name, "camera") ||
-               containsName(name, "projectile") ||
-               containsName(name, "animobject") ||
-               containsName(name, "pipboy") ||
-               containsName(name, "helper") ||
-               containsName(name, "ui") ||
-               containsName(name, "hud") ||
-               containsName(name, "scope") ||
-               containsName(name, "light") ||
-               containsName(name, "pauldron");
+        return containsName(name, "_skin") || containsName(name, "_armor") || containsName(name, "weapon") ||
+            containsName(name, "camera") || containsName(name, "projectile") || containsName(name, "animobject") ||
+            containsName(name, "pipboy") || containsName(name, "helper") || containsName(name, "ui") ||
+            containsName(name, "hud") || containsName(name, "scope") || containsName(name, "light") ||
+            containsName(name, "pauldron");
     }
 
     inline DebugSkeletonBoneMode sanitizeDebugSkeletonBoneMode(int mode)
@@ -416,7 +303,8 @@ namespace rock::skeleton_bone_debug_math
         return containsExact(kRequiredCoreBoneNames, name);
     }
 
-    inline int resolveDrawableParentIndex(std::size_t boneIndex, const std::vector<int>& parentIndices, const std::vector<bool>& included)
+    inline int resolveDrawableParentIndex(std::size_t boneIndex, const std::vector<int>& parentIndices,
+        const std::vector<bool>& included)
     {
         if (boneIndex >= parentIndices.size() || boneIndex >= included.size()) {
             return -1;
@@ -456,17 +344,24 @@ namespace rock::skeleton_bone_debug_math
     }
 
     template <class Transform>
-    inline AxisEndpoints<decltype(Transform{}.translate)> computeAxisEndpoints(const Transform& transform, float axisLength)
+    inline AxisEndpoints<decltype(Transform{}.translate)> computeAxisEndpoints(const Transform& transform,
+        float axisLength)
     {
         using Vector = decltype(transform.translate);
-        const Vector xAxis = normalized(debug_axis_math::rotateNiLocalToWorld(transform.rotate, makeVector<Vector>(1.0f, 0.0f, 0.0f)));
-        const Vector yAxis = normalized(debug_axis_math::rotateNiLocalToWorld(transform.rotate, makeVector<Vector>(0.0f, 1.0f, 0.0f)));
-        const Vector zAxis = normalized(debug_axis_math::rotateNiLocalToWorld(transform.rotate, makeVector<Vector>(0.0f, 0.0f, 1.0f)));
+        const Vector xAxis =
+            normalized(debug_axis_math::rotateNiLocalToWorld(transform.rotate, makeVector<Vector>(1.0f, 0.0f, 0.0f)));
+        const Vector yAxis =
+            normalized(debug_axis_math::rotateNiLocalToWorld(transform.rotate, makeVector<Vector>(0.0f, 1.0f, 0.0f)));
+        const Vector zAxis =
+            normalized(debug_axis_math::rotateNiLocalToWorld(transform.rotate, makeVector<Vector>(0.0f, 0.0f, 1.0f)));
 
         return AxisEndpoints<Vector>{
-            .xEnd = makeVector<Vector>(transform.translate.x + xAxis.x * axisLength, transform.translate.y + xAxis.y * axisLength, transform.translate.z + xAxis.z * axisLength),
-            .yEnd = makeVector<Vector>(transform.translate.x + yAxis.x * axisLength, transform.translate.y + yAxis.y * axisLength, transform.translate.z + yAxis.z * axisLength),
-            .zEnd = makeVector<Vector>(transform.translate.x + zAxis.x * axisLength, transform.translate.y + zAxis.y * axisLength, transform.translate.z + zAxis.z * axisLength),
+            .xEnd = makeVector<Vector>(transform.translate.x + xAxis.x * axisLength,
+                transform.translate.y + xAxis.y * axisLength, transform.translate.z + xAxis.z * axisLength),
+            .yEnd = makeVector<Vector>(transform.translate.x + yAxis.x * axisLength,
+                transform.translate.y + yAxis.y * axisLength, transform.translate.z + yAxis.z * axisLength),
+            .zEnd = makeVector<Vector>(transform.translate.x + zAxis.x * axisLength,
+                transform.translate.y + zAxis.y * axisLength, transform.translate.z + zAxis.z * axisLength),
         };
     }
 

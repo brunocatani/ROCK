@@ -1,4 +1,4 @@
-#include "physics-interaction/native/HavokTimingFixPolicy.h"
+#include "physics-interaction/native/havok/HavokTimingFixPolicy.h"
 
 #include <cmath>
 #include <cstdio>
@@ -133,7 +133,8 @@ int main()
         });
 
         ok &= expectTrue("accumulated 60hz clamp frame is valid", decision.valid);
-        ok &= expectNear("accumulated 60hz keeps split delta", decision.substepDeltaSeconds, rawDelta * 0.5f, 0.000001f);
+        ok &=
+            expectNear("accumulated 60hz keeps split delta", decision.substepDeltaSeconds, rawDelta * 0.5f, 0.000001f);
         ok &= expectEqual("accumulated 60hz count clamps to max", decision.substepCount, 3);
     }
 
@@ -186,7 +187,8 @@ int main()
         });
 
         ok &= expectTrue("45hz frame is valid", decision.valid);
-        ok &= expectNear("45hz splits into two 90hz substeps", decision.substepDeltaSeconds, rawDelta * 0.5f, 0.000001f);
+        ok &=
+            expectNear("45hz splits into two 90hz substeps", decision.substepDeltaSeconds, rawDelta * 0.5f, 0.000001f);
         ok &= expectEqual("45hz count", decision.substepCount, 2);
     }
 
@@ -254,7 +256,8 @@ int main()
         });
 
         ok &= expectTrue("accumulated 45hz frame is valid", decision.valid);
-        ok &= expectNear("accumulated 45hz keeps split delta", decision.substepDeltaSeconds, rawDelta * 0.5f, 0.000001f);
+        ok &=
+            expectNear("accumulated 45hz keeps split delta", decision.substepDeltaSeconds, rawDelta * 0.5f, 0.000001f);
         ok &= expectEqual("accumulated 45hz count", decision.substepCount, 3);
     }
 

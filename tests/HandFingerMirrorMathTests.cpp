@@ -45,7 +45,8 @@ namespace
         return false;
     }
 
-    bool expectTransformNear(const char* label, const TestTransform& actual, const TestTransform& expected, float tolerance = 0.0001f)
+    bool expectTransformNear(const char* label, const TestTransform& actual, const TestTransform& expected,
+        float tolerance = 0.0001f)
     {
         bool ok = true;
         ok &= expectNear(label, actual.translate.x, expected.translate.x, tolerance);
@@ -54,7 +55,8 @@ namespace
         ok &= expectNear(label, actual.scale, expected.scale, tolerance);
         for (int row = 0; row < 3; ++row) {
             for (int column = 0; column < 3; ++column) {
-                ok &= expectNear(label, actual.rotate.entry[row][column], expected.rotate.entry[row][column], tolerance);
+                ok &=
+                    expectNear(label, actual.rotate.entry[row][column], expected.rotate.entry[row][column], tolerance);
             }
         }
         return ok;
@@ -94,8 +96,8 @@ namespace
     float determinant(const TestMatrix3& m)
     {
         return m.entry[0][0] * (m.entry[1][1] * m.entry[2][2] - m.entry[1][2] * m.entry[2][1]) -
-               m.entry[0][1] * (m.entry[1][0] * m.entry[2][2] - m.entry[1][2] * m.entry[2][0]) +
-               m.entry[0][2] * (m.entry[1][0] * m.entry[2][1] - m.entry[1][1] * m.entry[2][0]);
+            m.entry[0][1] * (m.entry[1][0] * m.entry[2][2] - m.entry[1][2] * m.entry[2][0]) +
+            m.entry[0][2] * (m.entry[1][0] * m.entry[2][1] - m.entry[1][1] * m.entry[2][0]);
     }
 }
 
@@ -109,9 +111,7 @@ int main()
         const float identityRows[3][3] = { { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } };
         const TestTransform right = makeTransform(identityRows, { 7.5f, 0.43f, -2.28f });
         const TestTransform left = mirrorFingerLocalAcrossHands(right);
-        ok &= expectTransformNear(
-            "identity finger local mirrors to identity with negated Z",
-            left,
+        ok &= expectTransformNear("identity finger local mirrors to identity with negated Z", left,
             makeTransform(identityRows, { 7.5f, 0.43f, 2.28f }));
     }
 
@@ -131,8 +131,10 @@ int main()
         };
         const TestTransform rightClosed = makeTransform(rightClosedRows, { 1.583f, -1.263f, -1.853f });
         const TestTransform leftClosed = makeTransform(leftClosedRows, { 1.583f, -1.263f, 1.853f });
-        ok &= expectTransformNear("right thumb base mirrors onto authored left thumb base", mirrorFingerLocalAcrossHands(rightClosed), leftClosed);
-        ok &= expectTransformNear("left thumb base mirrors onto authored right thumb base", mirrorFingerLocalAcrossHands(leftClosed), rightClosed);
+        ok &= expectTransformNear("right thumb base mirrors onto authored left thumb base",
+            mirrorFingerLocalAcrossHands(rightClosed), leftClosed);
+        ok &= expectTransformNear("left thumb base mirrors onto authored right thumb base",
+            mirrorFingerLocalAcrossHands(leftClosed), rightClosed);
     }
 
     {
@@ -144,7 +146,8 @@ int main()
         const TestTransform mirrored = mirrorFingerLocalAcrossHands(scaledSource);
         ok &= expectNear("finger mirror remains a proper rotation", determinant(mirrored.rotate), 1.0f);
         ok &= expectNear("finger mirror keeps scale", mirrored.scale, 1.25f);
-        ok &= expectTransformNear("finger mirror is an involution", mirrorFingerLocalAcrossHands(mirrored), scaledSource);
+        ok &=
+            expectTransformNear("finger mirror is an involution", mirrorFingerLocalAcrossHands(mirrored), scaledSource);
         ok &= expectNear("finger mirror negates entry [0][2]", mirrored.rotate.entry[0][2], -source.rotate.entry[0][2]);
         ok &= expectNear("finger mirror negates entry [2][1]", mirrored.rotate.entry[2][1], -source.rotate.entry[2][1]);
         ok &= expectNear("finger mirror keeps entry [2][2]", mirrored.rotate.entry[2][2], source.rotate.entry[2][2]);
@@ -156,30 +159,33 @@ int main()
         // non-finite local, clearing the target.
         std::array<TestTransform, 15> source{};
         for (std::size_t index = 0; index < source.size(); ++index) {
-            source[index] = makeAxisAngle(
-                { 0.2f + 0.05f * static_cast<float>(index), -0.6f, 0.4f },
+            source[index] = makeAxisAngle({ 0.2f + 0.05f * static_cast<float>(index), -0.6f, 0.4f },
                 10.0f + 4.0f * static_cast<float>(index),
                 { 1.0f + static_cast<float>(index), -0.5f, 0.25f * static_cast<float>(index) });
         }
         std::array<TestTransform, 15> target{};
         ok &= expectTrue("complete finger pose mirrors", mirrorFingerLocalsAcrossHands<TestTransform>(source, target));
         for (std::size_t index = 0; index < source.size(); ++index) {
-            ok &= expectTransformNear("pose mirror matches per-bone mirror", target[index], mirrorFingerLocalAcrossHands(source[index]));
+            ok &= expectTransformNear("pose mirror matches per-bone mirror", target[index],
+                mirrorFingerLocalAcrossHands(source[index]));
         }
 
         std::array<TestTransform, 14> shortTarget{};
-        ok &= expectTrue("size mismatch fails closed", !mirrorFingerLocalsAcrossHands<TestTransform>(source, shortTarget));
+        ok &= expectTrue("size mismatch fails closed",
+            !mirrorFingerLocalsAcrossHands<TestTransform>(source, shortTarget));
 
         std::array<TestTransform, 15> poisoned = source;
         poisoned[7].translate.y = std::numeric_limits<float>::quiet_NaN();
         std::array<TestTransform, 15> poisonedTarget = target;
-        ok &= expectTrue("non-finite source fails closed", !mirrorFingerLocalsAcrossHands<TestTransform>(poisoned, poisonedTarget));
+        ok &= expectTrue("non-finite source fails closed",
+            !mirrorFingerLocalsAcrossHands<TestTransform>(poisoned, poisonedTarget));
         ok &= expectNear("failed mirror clears target", poisonedTarget[0].translate.x, 0.0f);
         ok &= expectNear("failed mirror clears target rotation", poisonedTarget[0].rotate.entry[0][0], 0.0f);
 
         std::array<TestTransform, 15> zeroScale = source;
         zeroScale[3].scale = 0.0f;
-        ok &= expectTrue("zero scale fails closed", !mirrorFingerLocalsAcrossHands<TestTransform>(zeroScale, poisonedTarget));
+        ok &= expectTrue("zero scale fails closed",
+            !mirrorFingerLocalsAcrossHands<TestTransform>(zeroScale, poisonedTarget));
     }
 
     return ok ? 0 : 1;

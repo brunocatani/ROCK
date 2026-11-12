@@ -1,3 +1,4 @@
+// Access to the F4SE messaging interface ROCK obtained at load (ROCKMain.cpp).
 #pragma once
 
 namespace F4SE

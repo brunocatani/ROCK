@@ -15,14 +15,14 @@ namespace rock::transferred_weapon_grab_policy
         ReleaseRequested,
     };
 
-    [[nodiscard]] constexpr bool ownsInput(
-        bool pendingTransfer, std::uint64_t committedGrab, std::uint64_t heldGrab) noexcept
+    [[nodiscard]] constexpr bool ownsInput(bool pendingTransfer, std::uint64_t committedGrab,
+        std::uint64_t heldGrab) noexcept
     {
         return pendingTransfer || (committedGrab != 0 && committedGrab == heldGrab);
     }
 
-    [[nodiscard]] constexpr bool advance(
-        State& state, bool held, bool pressed, bool released, bool releaseAllowed = true) noexcept
+    [[nodiscard]] constexpr bool advance(State& state, bool held, bool pressed, bool released,
+        bool releaseAllowed = true) noexcept
     {
         if (!releaseAllowed) {
             // A gesture spent on a holster/provider cannot become a delayed

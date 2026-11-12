@@ -62,10 +62,7 @@ namespace rock::grab_motion_controller
         float physicsHz = 0.0f;
     };
 
-    inline float finiteOr(float value, float fallback)
-    {
-        return std::isfinite(value) ? value : fallback;
-    }
+    inline float finiteOr(float value, float fallback) { return std::isfinite(value) ? value : fallback; }
 
     inline float clamp01(float value)
     {
@@ -146,7 +143,8 @@ namespace rock::grab_motion_controller
         return std::isfinite(hz) && hz > 0.0f ? hz : 0.0f;
     }
 
-    inline float computeLongObjectAngularSpeedScale(bool enabled, float leverGameUnits, float referenceLeverGameUnits, float minScale)
+    inline float computeLongObjectAngularSpeedScale(bool enabled, float leverGameUnits, float referenceLeverGameUnits,
+        float minScale)
     {
         /*
          * Long-object release handling should reduce angular throw velocity,
@@ -207,14 +205,17 @@ namespace rock::grab_motion_controller
         return state;
     }
 
-    inline float computeAuthorityScaledAngularVelocityCap(float configuredMaxSpeedRadiansPerSecond, float authorityScale, float longObjectAngularScale)
+    inline float computeAuthorityScaledAngularVelocityCap(float configuredMaxSpeedRadiansPerSecond,
+        float authorityScale, float longObjectAngularScale)
     {
-        const float configuredMax = std::clamp(
-            std::isfinite(configuredMaxSpeedRadiansPerSecond) ? configuredMaxSpeedRadiansPerSecond : 18.0f,
-            0.25f,
-            64.0f);
-        const float authority = std::clamp(std::isfinite(authorityScale) && authorityScale > 0.0f ? authorityScale : 1.0f, 0.05f, 1.0f);
-        const float longObject = std::clamp(std::isfinite(longObjectAngularScale) && longObjectAngularScale > 0.0f ? longObjectAngularScale : 1.0f, 0.05f, 1.0f);
+        const float configuredMax =
+            std::clamp(std::isfinite(configuredMaxSpeedRadiansPerSecond) ? configuredMaxSpeedRadiansPerSecond : 18.0f,
+                0.25f, 64.0f);
+        const float authority =
+            std::clamp(std::isfinite(authorityScale) && authorityScale > 0.0f ? authorityScale : 1.0f, 0.05f, 1.0f);
+        const float longObject = std::clamp(
+            std::isfinite(longObjectAngularScale) && longObjectAngularScale > 0.0f ? longObjectAngularScale : 1.0f,
+            0.05f, 1.0f);
         return (std::max)(0.25f, configuredMax * authority * longObject);
     }
 
@@ -266,11 +267,11 @@ namespace rock::grab_motion_controller
     {
         MotorOutput out{};
 
-        if (!std::isfinite(input.mass) || input.mass <= 0.0f ||
-            !std::isfinite(input.maximumInertia) || input.maximumInertia <= 0.0f ||
-            !std::isfinite(input.gripRadiusHavok) || input.gripRadiusHavok < 0.0f ||
+        if (!std::isfinite(input.mass) || input.mass <= 0.0f || !std::isfinite(input.maximumInertia) ||
+            input.maximumInertia <= 0.0f || !std::isfinite(input.gripRadiusHavok) || input.gripRadiusHavok < 0.0f ||
             !std::isfinite(input.freeLinearAcceleration) || input.freeLinearAcceleration <= 0.0f ||
-            !std::isfinite(input.freeAngularAcceleration) || input.freeAngularAcceleration <= 0.0f) return out;
+            !std::isfinite(input.freeAngularAcceleration) || input.freeAngularAcceleration <= 0.0f)
+            return out;
         const float baseLinearTau = safePositive(input.baseLinearTau, 0.1f);
         const float baseAngularTau = safePositive(input.baseAngularTau, baseLinearTau);
         const float collisionTau = safePositive(input.collisionTau, baseLinearTau);
@@ -286,14 +287,12 @@ namespace rock::grab_motion_controller
         const float authorityForceScale = std::clamp(safePositive(input.authorityForceScale, 1.0f), 0.05f, 1.0f);
         out.fadeFactor = input.fadeInEnabled ? computeFadeFactor(input.fadeElapsed, input.fadeDuration) : 1.0f;
         out.physicsHz = computePhysicsHz(input.physicsDeltaSeconds);
-        const float motorMass = effectiveMotorMass(
-            input.mass,
-            input.effectiveMotorMassFloorEnabled,
-            input.effectiveMotorMassFloor);
-        const float angularForceMultiplier =
-            std::clamp(safePositive(input.angularForceMultiplier, 1.0f), 0.05f, 8.0f);
+        const float motorMass =
+            effectiveMotorMass(input.mass, input.effectiveMotorMassFloorEnabled, input.effectiveMotorMassFloor);
+        const float angularForceMultiplier = std::clamp(safePositive(input.angularForceMultiplier, 1.0f), 0.05f, 8.0f);
         if (heldAuthority.softenForContact) {
-            out.linearMaxForce = capForceByMass(baseForce * out.fadeFactor, motorMass, input.forceToMassRatio) * authorityForceScale;
+            out.linearMaxForce =
+                capForceByMass(baseForce * out.fadeFactor, motorMass, input.forceToMassRatio) * authorityForceScale;
             out.angularMaxForce = out.linearMaxForce * angularForceMultiplier;
         } else {
             const float freeLinear = motorMass * input.freeLinearAcceleration;
@@ -307,7 +306,8 @@ namespace rock::grab_motion_controller
             out.linearMaxForce = freeLinear * out.fadeFactor * authorityForceScale;
             out.angularMaxForce = freeAngular * out.fadeFactor * authorityForceScale;
         }
-        if (!std::isfinite(out.linearMaxForce) || !std::isfinite(out.angularMaxForce)) return {};
+        if (!std::isfinite(out.linearMaxForce) || !std::isfinite(out.angularMaxForce))
+            return {};
         out.valid = true;
         return out;
     }

@@ -106,11 +106,9 @@ namespace rock::tracked_hand_isolation_policy
                 }
             }
         }
-        return std::isfinite(transform.translate.x) &&
-               std::isfinite(transform.translate.y) &&
-               std::isfinite(transform.translate.z) &&
-               std::isfinite(transform.scale) &&
-               std::fabs(transform.scale) > 0.000001f;
+        return std::isfinite(transform.translate.x) && std::isfinite(transform.translate.y) &&
+            std::isfinite(transform.translate.z) && std::isfinite(transform.scale) &&
+            std::fabs(transform.scale) > 0.000001f;
     }
 
     [[nodiscard]] inline float translationGameUnits(const RE::NiTransform& lhs, const RE::NiTransform& rhs) noexcept
@@ -150,23 +148,20 @@ namespace rock::tracked_hand_isolation_policy
      * Measure body-hand-node = firstPersonHand * relation on a claim-free
      * frame. Rejected samples keep the previous relation.
      */
-    [[nodiscard]] inline bool calibrateRelation(
-        RelationState& state,
-        const RE::NiTransform& firstPersonHandWorld,
+    [[nodiscard]] inline bool calibrateRelation(RelationState& state, const RE::NiTransform& firstPersonHandWorld,
         const RE::NiTransform& bodyHandNodeWorld) noexcept
     {
         if (!isFiniteTransform(firstPersonHandWorld) || !isFiniteTransform(bodyHandNodeWorld)) {
             ++state.rejectedSamples;
             return false;
         }
-        const RE::NiTransform relation = transform_math::composeTransforms(
-            transform_math::invertTransform(firstPersonHandWorld),
-            bodyHandNodeWorld);
+        const RE::NiTransform relation =
+            transform_math::composeTransforms(transform_math::invertTransform(firstPersonHandWorld), bodyHandNodeWorld);
         const RE::NiTransform identity = transform_math::makeIdentityTransform<RE::NiTransform>();
         if (!isFiniteTransform(relation) ||
             translationGameUnits(relation, identity) > kMaxRelationTranslationGameUnits ||
-            rotationDegrees(relation, identity) > kMaxRelationRotationDegrees ||
-            relation.scale < kMinRelationScale || relation.scale > kMaxRelationScale) {
+            rotationDegrees(relation, identity) > kMaxRelationRotationDegrees || relation.scale < kMinRelationScale ||
+            relation.scale > kMaxRelationScale) {
             ++state.rejectedSamples;
             return false;
         }
@@ -180,40 +175,33 @@ namespace rock::tracked_hand_isolation_policy
      * The palm pitch/yaw blend FRIK applied to the flattened bone this frame,
      * as flattened = bodyHandNode * blend. Independent of who owns the arm.
      */
-    [[nodiscard]] inline RE::NiTransform makePalmBlend(
-        const RE::NiTransform& bodyHandNodeWorld,
+    [[nodiscard]] inline RE::NiTransform makePalmBlend(const RE::NiTransform& bodyHandNodeWorld,
         const RE::NiTransform& flattenedHandWorld) noexcept
     {
-        return transform_math::composeTransforms(
-            transform_math::invertTransform(bodyHandNodeWorld),
+        return transform_math::composeTransforms(transform_math::invertTransform(bodyHandNodeWorld),
             flattenedHandWorld);
     }
 
-    [[nodiscard]] inline bool reconstruct(
-        const RelationState& state,
-        const FrameInput& input,
+    [[nodiscard]] inline bool reconstruct(const RelationState& state, const FrameInput& input,
         RE::NiTransform& outRawHandWorld) noexcept
     {
         outRawHandWorld = {};
-        if (!state.valid || !input.firstPersonHandValid ||
-            !isFiniteTransform(input.firstPersonHandWorld)) {
+        if (!state.valid || !input.firstPersonHandValid || !isFiniteTransform(input.firstPersonHandWorld)) {
             return false;
         }
         RE::NiTransform palmBlend{};
-        if (input.bodyHandNodeValid && input.flattenedHandValid &&
-            isFiniteTransform(input.bodyHandNodeWorld) && isFiniteTransform(input.flattenedHandWorld)) {
+        if (input.bodyHandNodeValid && input.flattenedHandValid && isFiniteTransform(input.bodyHandNodeWorld) &&
+            isFiniteTransform(input.flattenedHandWorld)) {
             palmBlend = makePalmBlend(input.bodyHandNodeWorld, input.flattenedHandWorld);
         } else if (input.retainedPalmBlendValid && isFiniteTransform(input.retainedPalmBlend)) {
             palmBlend = input.retainedPalmBlend;
         } else {
             return false;
         }
-        const RE::NiTransform controllerBodyHand = transform_math::composeTransforms(
-            input.firstPersonHandWorld,
-            state.firstPersonToBodyHand);
-        const RE::NiTransform raw = transform_math::orthonormalizedTransform(transform_math::composeTransforms(
-            controllerBodyHand,
-            palmBlend));
+        const RE::NiTransform controllerBodyHand =
+            transform_math::composeTransforms(input.firstPersonHandWorld, state.firstPersonToBodyHand);
+        const RE::NiTransform raw =
+            transform_math::orthonormalizedTransform(transform_math::composeTransforms(controllerBodyHand, palmBlend));
         if (!isFiniteTransform(raw)) {
             return false;
         }

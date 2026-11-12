@@ -1,9 +1,9 @@
-#include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/TransformMath.h"
-#include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
-#include "physics-interaction/weapon/WeaponGripTransfer.h"
-#include "physics-interaction/weapon/WeaponGripCalibration.h"
-#include "physics-interaction/weapon/WeaponAuthority.h"
+#include "physics-interaction/grab/GrabFinger.h"
+#include "physics-interaction/weapon/authored/AuthoredWeaponGripPose.h"
+#include "physics-interaction/weapon/grip/WeaponAuthority.h"
+#include "physics-interaction/weapon/grip/WeaponGripCalibration.h"
+#include "physics-interaction/weapon/grip/WeaponGripTransfer.h"
 
 #include <array>
 #include <cmath>
@@ -17,6 +17,7 @@ namespace rock::root_flattened_finger_skeleton_runtime
 {
     // A capture with a supplied snapshot must never query the game scene again.
     bool queriedLiveScene = false;
+
     bool resolveLiveFingerSkeletonSnapshot(bool, Snapshot&, std::string*, SkeletonBoneCaptureSpace)
     {
         queriedLiveScene = true;
@@ -39,6 +40,7 @@ namespace
         {
             float entry[3][3]{};
         } rotate{};
+
         TestVector translate{};
         float scale = 1.0f;
     };
@@ -69,33 +71,44 @@ static bool testPublicationSafety()
     TestTransform safePublishedFingerTransform = hiddenScaleTransform;
     safePublishedFingerTransform.scale = 1.0f;
     ok &= expectBool("rigid local finger transform is safe to publish",
-        inspectFingerLocalTransformForPublication(safePublishedFingerTransform) == FingerLocalTransformSafetyFailure::None, true);
+        inspectFingerLocalTransformForPublication(safePublishedFingerTransform) ==
+            FingerLocalTransformSafetyFailure::None,
+        true);
 
     TestTransform hiddenPublishedFingerTransform = safePublishedFingerTransform;
     hiddenPublishedFingerTransform.scale = 0.00001f;
     ok &= expectBool("near-zero local finger scale is rejected before publication",
-        inspectFingerLocalTransformForPublication(hiddenPublishedFingerTransform) == FingerLocalTransformSafetyFailure::ScaleMagnitude, true);
+        inspectFingerLocalTransformForPublication(hiddenPublishedFingerTransform) ==
+            FingerLocalTransformSafetyFailure::ScaleMagnitude,
+        true);
 
     TestTransform giantPublishedFingerTransform = safePublishedFingerTransform;
     giantPublishedFingerTransform.scale = 1000.0f;
     ok &= expectBool("giant local finger scale is rejected before publication",
-        inspectFingerLocalTransformForPublication(giantPublishedFingerTransform) == FingerLocalTransformSafetyFailure::ScaleMagnitude, true);
+        inspectFingerLocalTransformForPublication(giantPublishedFingerTransform) ==
+            FingerLocalTransformSafetyFailure::ScaleMagnitude,
+        true);
 
     TestTransform distantPublishedFingerTransform = safePublishedFingerTransform;
     distantPublishedFingerTransform.translate.x = kMaxPublishedFingerLocalTranslationGameUnits + 1.0f;
     ok &= expectBool("world-sized local finger translation is rejected before publication",
-        inspectFingerLocalTransformForPublication(distantPublishedFingerTransform) == FingerLocalTransformSafetyFailure::TranslationMagnitude, true);
+        inspectFingerLocalTransformForPublication(distantPublishedFingerTransform) ==
+            FingerLocalTransformSafetyFailure::TranslationMagnitude,
+        true);
 
     TestTransform shearedPublishedFingerTransform = safePublishedFingerTransform;
     shearedPublishedFingerTransform.rotate.entry[0][1] = 0.5f;
     ok &= expectBool("sheared local finger basis is rejected before publication",
-        inspectFingerLocalTransformForPublication(shearedPublishedFingerTransform) == FingerLocalTransformSafetyFailure::RotationNorm, true);
+        inspectFingerLocalTransformForPublication(shearedPublishedFingerTransform) ==
+            FingerLocalTransformSafetyFailure::RotationNorm,
+        true);
 
     TestTransform reflectedPublishedFingerTransform = safePublishedFingerTransform;
     reflectedPublishedFingerTransform.rotate.entry[2][2] = -1.0f;
     ok &= expectBool("reflected local finger basis is rejected before publication",
-        inspectFingerLocalTransformForPublication(reflectedPublishedFingerTransform) == FingerLocalTransformSafetyFailure::RotationDeterminant, true);
-
+        inspectFingerLocalTransformForPublication(reflectedPublishedFingerTransform) ==
+            FingerLocalTransformSafetyFailure::RotationDeterminant,
+        true);
 
     return ok;
 }
@@ -128,7 +141,8 @@ bool testIndexedFingerPadProbes()
     local[32] = {};
     local[33].v0.x = std::numeric_limits<float>::quiet_NaN();
     FingerPoseTriangleSpatialIndex index;
-    if (!index.buildFromLocalTriangles(local)) return false;
+    if (!index.buildFromLocalTriangles(local))
+        return false;
     std::uint64_t linearTests = 0, indexedTests = 0;
     int compared = 0;
     for (const float scale : { 1.0f, 0.1f, 3.0f, -2.0f }) {
@@ -142,11 +156,14 @@ bool testIndexedFingerPadProbes()
         world.rotate.entry[2][0] = 0.0001f; // finite authored basis drift
         std::vector<TriangleData> triangles;
         rebuildBoundedWorldTriangles(local, world, triangles);
-        if (triangles.size() != index.triangleCount()) return false;
+        if (triangles.size() != index.triangleCount())
+            return false;
         for (int query = 0; query < 160; ++query) {
             const auto& triangle = triangles[(query * 13) % triangles.size()];
-            const auto point = query < 120 ? triangle.v0 + RE::NiPoint3{ unit(random), unit(random), unit(random) } :
-                transform_math::localPointToWorld(world, RE::NiPoint3{ coordinate(random), coordinate(random), coordinate(random) });
+            const auto point = query < 120
+                ? triangle.v0 + RE::NiPoint3{ unit(random), unit(random), unit(random) }
+                : transform_math::localPointToWorld(world,
+                      RE::NiPoint3{ coordinate(random), coordinate(random), coordinate(random) });
             const RE::NiPoint3 direction{ unit(random), unit(random), unit(random) };
             const RE::NiPoint3 preferred{ unit(random), unit(random), unit(random) };
             FingerPadProbeOptions options;
@@ -154,10 +171,10 @@ bool testIndexedFingerPadProbes()
             options.probeDistanceGameUnits = 0.2f + 12.0f * std::abs(unit(random));
             options.closestSurfaceMaxDistanceGameUnits = 0.2f + 5.0f * std::abs(unit(random));
             FingerPoseSpatialQueryStats linearStats{}, indexedStats{};
-            const auto baseline = solveFingerPadSurfaceEvidenceFromTriangles(triangles, point, direction, preferred, query % 2 != 0,
-                options, nullptr, nullptr, &linearStats);
-            const auto accelerated = solveFingerPadSurfaceEvidenceFromTriangles(triangles, point, direction, preferred, query % 2 != 0,
-                options, &index, &world, &indexedStats);
+            const auto baseline = solveFingerPadSurfaceEvidenceFromTriangles(triangles, point, direction, preferred,
+                query % 2 != 0, options, nullptr, nullptr, &linearStats);
+            const auto accelerated = solveFingerPadSurfaceEvidenceFromTriangles(triangles, point, direction, preferred,
+                query % 2 != 0, options, &index, &world, &indexedStats);
             if (!equalEvidence(baseline, accelerated)) {
                 std::printf("Indexed finger pad mismatch scale=%f query=%d\n", scale, query);
                 return false;
@@ -168,19 +185,22 @@ bool testIndexedFingerPadProbes()
         }
     }
     // Exact tangent, coincident surfaces, capsule-only contact and clear misses.
-    local = { { {0, 0, 0}, {4, 0, 0}, {0, 4, 0} },
-        { {0, 0, 0}, {0, 4, 0}, {4, 0, 0} } };
+    local = { { { 0, 0, 0 }, { 4, 0, 0 }, { 0, 4, 0 } }, { { 0, 0, 0 }, { 0, 4, 0 }, { 4, 0, 0 } } };
     index.buildFromLocalTriangles(local);
     const auto identity = transform_math::makeIdentityTransform<RE::NiTransform>();
-    for (const auto point : { RE::NiPoint3{1, 1, 1}, RE::NiPoint3{1, 1, 0}, RE::NiPoint3{4.5f, 0, 1}, RE::NiPoint3{100, 100, 100} }) {
-        const auto baseline = solveFingerPadSurfaceEvidenceFromTriangles(local, point, {0, 0, -1}, {}, false);
-        const auto accelerated = solveFingerPadSurfaceEvidenceFromTriangles(local, point, {0, 0, -1}, {}, false, {}, &index, &identity);
-        if (!equalEvidence(baseline, accelerated)) return false;
+    for (const auto point : { RE::NiPoint3{ 1, 1, 1 }, RE::NiPoint3{ 1, 1, 0 }, RE::NiPoint3{ 4.5f, 0, 1 },
+             RE::NiPoint3{ 100, 100, 100 } }) {
+        const auto baseline = solveFingerPadSurfaceEvidenceFromTriangles(local, point, { 0, 0, -1 }, {}, false);
+        const auto accelerated =
+            solveFingerPadSurfaceEvidenceFromTriangles(local, point, { 0, 0, -1 }, {}, false, {}, &index, &identity);
+        if (!equalEvidence(baseline, accelerated))
+            return false;
     }
     index.clear();
-    if (index.buildFromLocalTriangles(std::vector<TriangleData>{})) return false;
-    std::printf("Finger pad parity: %d randomized queries, %llu linear vs %llu indexed triangle tests\n",
-        compared, static_cast<unsigned long long>(linearTests), static_cast<unsigned long long>(indexedTests));
+    if (index.buildFromLocalTriangles(std::vector<TriangleData>{}))
+        return false;
+    std::printf("Finger pad parity: %d randomized queries, %llu linear vs %llu indexed triangle tests\n", compared,
+        static_cast<unsigned long long>(linearTests), static_cast<unsigned long long>(indexedTests));
     return indexedTests < linearTests / 3;
 }
 

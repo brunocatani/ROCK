@@ -4,7 +4,20 @@
  * Grab telemetry helpers are grouped here to keep sampled transform diagnostics and overlay formatting separate from grab authority.
  */
 
-// ---- GrabTransformTelemetry.h ----
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <string>
+#include "RE/NetImmerse/NiPoint.h"
+#include "RE/NetImmerse/NiTransform.h"
+#include "physics-interaction/PhysicsBodyFrame.h"
+#include "physics-interaction/TransformMath.h"
+#include "physics-interaction/grab/GrabCore.h"
+
+// ---- Grab transform telemetry ----
 
 /*
  * Grab transform telemetry is diagnostic-only: it compares ROCK's live grab
@@ -13,21 +26,6 @@
  * formatting here lets the VR overlay and log rows report the same values, so an
  * in-game screenshot can be matched to the exact numeric frame in ROCK.log.
  */
-
-#include "physics-interaction/grab/GrabCore.h"
-#include "physics-interaction/PhysicsBodyFrame.h"
-#include "physics-interaction/TransformMath.h"
-
-#include "RE/NetImmerse/NiPoint.h"
-#include "RE/NetImmerse/NiTransform.h"
-
-#include <algorithm>
-#include <array>
-#include <cmath>
-#include <cstddef>
-#include <cstdint>
-#include <cstdio>
-#include <string>
 
 namespace rock::grab_transform_telemetry
 {
@@ -53,7 +51,8 @@ namespace rock::grab_transform_telemetry
             if (!std::isfinite(fallbackLength) || fallbackLength <= 1.0e-6f) {
                 return RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
             }
-            return RE::NiPoint3{ fallback.x / fallbackLength, fallback.y / fallbackLength, fallback.z / fallbackLength };
+            return RE::NiPoint3{ fallback.x / fallbackLength, fallback.y / fallbackLength,
+                fallback.z / fallbackLength };
         }
 
         return RE::NiPoint3{ value.x / length, value.y / length, value.z / length };
@@ -145,19 +144,9 @@ namespace rock::grab_transform_telemetry
         const AxisBestMatch y = bestAxisMatch(from.y, to);
         const AxisBestMatch z = bestAxisMatch(from.z, to);
         char buffer[128]{};
-        std::snprintf(buffer,
-            sizeof(buffer),
-            "%s X->%s%s %.2f Y->%s%s %.2f Z->%s%s %.2f",
-            label ? label : "axisMap",
-            x.dot < 0.0f ? "-" : "+",
-            axisName(x.axis),
-            x.absDot,
-            y.dot < 0.0f ? "-" : "+",
-            axisName(y.axis),
-            y.absDot,
-            z.dot < 0.0f ? "-" : "+",
-            axisName(z.axis),
-            z.absDot);
+        std::snprintf(buffer, sizeof(buffer), "%s X->%s%s %.2f Y->%s%s %.2f Z->%s%s %.2f", label ? label : "axisMap",
+            x.dot < 0.0f ? "-" : "+", axisName(x.axis), x.absDot, y.dot < 0.0f ? "-" : "+", axisName(y.axis), y.absDot,
+            z.dot < 0.0f ? "-" : "+", axisName(z.axis), z.absDot);
         return std::string(buffer);
     }
 

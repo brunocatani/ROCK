@@ -1,6 +1,6 @@
+#include "physics-interaction/consume/ImmersiveAidContact.h"
 #include "physics-interaction/consume/ImmersiveAidPolicy.h"
 #include "physics-interaction/consume/ImmersiveAidPose.h"
-#include "physics-interaction/consume/ImmersiveAidContact.h"
 
 #include <array>
 #include <cmath>
@@ -28,8 +28,8 @@ int main()
     using namespace rock::immersive_aid;
     using Zone = rock::body_zone::BodyZoneKind;
     bool ok = true;
-    constexpr std::array ids{ 0x23736u, 0x19C0D9u, 0x55F10u, 0x33779u, 0x58AA7u,
-        0x3377Du, 0x58AACu, 0x58AAAu, 0x58AA8u, 0xEC4F7u };
+    constexpr std::array ids{ 0x23736u, 0x19C0D9u, 0x55F10u, 0x33779u, 0x58AA7u, 0x3377Du, 0x58AACu, 0x58AAAu, 0x58AA8u,
+        0xEC4F7u };
     for (const auto id : ids) {
         ok &= check(classify("Fallout4.esm", id) != Injector::None, "injectable ALCH identity");
         ok &= check(classify("Other.esm", id) == Injector::None, "same local ID in another plugin stays oral");
@@ -39,11 +39,15 @@ int main()
     ok &= check(classify("Fallout4.esm", 0x459C5) == Injector::None, "Addictol stays oral");
     ok &= check(classify("Fallout4.esm", 0x58AF2) == Injector::None, "syringer poison excluded");
     ok &= check(usesStimpakPose(Injector::Stimpak) && usesStimpakPose(Injector::MedX), "shared Stimpak and Med-X pose");
-    ok &= check(!usesStimpakPose(Injector::Psycho) && !usesStimpakPose(Injector::Serum), "different injector shapes retain their grips");
-    ok &= check(!eligibleBodyZone(Zone::LeftHand, true) && !eligibleBodyZone(Zone::RightHand, false), "holding hand excluded");
-    ok &= check(eligibleBodyZone(Zone::RightHand, true) && eligibleBodyZone(Zone::LeftHand, false), "opposite hand allowed");
-    ok &= check(eligibleBodyZone(Zone::LeftForearmLower, true) && eligibleBodyZone(Zone::RightForearmLower, false), "suppressed forearm remains observable");
-    ok &= check(eligibleBodyZone(Zone::Chest, true) && eligibleBodyZone(Zone::LeftThigh, false), "torso and legs allowed");
+    ok &= check(!usesStimpakPose(Injector::Psycho) && !usesStimpakPose(Injector::Serum),
+        "different injector shapes retain their grips");
+    ok &= check(!eligibleBodyZone(Zone::LeftHand, true) && !eligibleBodyZone(Zone::RightHand, false),
+        "holding hand excluded");
+    ok &= check(eligibleBodyZone(Zone::RightHand, true) && eligibleBodyZone(Zone::LeftHand, false),
+        "opposite hand allowed");
+    ok &= check(eligibleBodyZone(Zone::LeftForearmLower, true) && eligibleBodyZone(Zone::RightForearmLower, false),
+        "suppressed forearm remains observable");
+    ok &= check(eligibleBodyZone(Zone::Chest, true) && eligibleBodyZone(Zone::Pelvis, false), "torso allowed");
     ok &= check(!eligibleBodyZone(Zone::Unknown, false), "unknown body zone rejected");
 
     for (const int hz : { 30, 60, 72, 90, 120, 144 }) {
@@ -71,16 +75,19 @@ int main()
     static_cast<void>(advanceContact(state, true, 1, 1, frame(44)));
     ok &= check(!advanceContact(state, true, 2, 1, frame(45)) && state.dwellSeconds == 0, "new grab resets dwell");
     static_cast<void>(advanceContact(state, true, 2, 1, frame(46)));
-    ok &= check(!advanceContact(state, true, 2, 2, frame(47)) && state.dwellSeconds == 0, "collider rebuild resets dwell");
+    ok &= check(!advanceContact(state, true, 2, 2, frame(47)) && state.dwellSeconds == 0,
+        "collider rebuild resets dwell");
     static_cast<void>(advanceContact(state, true, 2, 2, frame(48)));
-    ok &= check(!advanceContact(state, true, 2, 2, frame(50)) && state.dwellSeconds == 0, "unobserved frame cannot count as contact");
+    ok &= check(!advanceContact(state, true, 2, 2, frame(50)) && state.dwellSeconds == 0,
+        "unobserved frame cannot count as contact");
     auto paused = frame(51);
     paused.menuPaused = true;
     ok &= check(!advanceContact(state, true, 2, 2, paused) && !state.touching, "menu pause cancels gesture");
     auto hitch = frame(52);
     hitch.discontinuity = true;
     ok &= check(!advanceContact(state, true, 2, 2, hitch) && !state.touching, "hitch cancels gesture");
-    ok &= check(!advanceContact(state, true, 2, 2, frame(53, std::numeric_limits<float>::quiet_NaN())), "invalid delta rejected");
+    ok &= check(!advanceContact(state, true, 2, 2, frame(53, std::numeric_limits<float>::quiet_NaN())),
+        "invalid delta rejected");
     ok &= check(!advanceContact(state, true, 0, 2, frame(54)), "missing grab rejected");
 
     const std::array mesh{ rock::GrabLocalTriangle{ { 0, 0, 0 }, { 1, 0, 0 }, { 0, 1, 0 } } };
@@ -91,21 +98,25 @@ int main()
         "small needle vertex touching a capsule cap counts");
     ok &= check(!capsuleTouchesMesh(mesh, minimum, maximum, { 0.9f, 0.9f, -1 }, { 0.9f, 0.9f, 1 }, 0.05f),
         "overlapping bounding boxes alone cannot trigger injection");
-    ok &= check(!capsuleTouchesMesh(mesh, minimum, maximum, { 5, 5, -1 }, { 5, 5, 1 }, 0.1f), "distant body zone rejected");
-    ok &= check(!capsuleTouchesMesh(mesh, minimum, maximum, { 0, 0, 0 }, { 0, 0, 1 },
-        std::numeric_limits<float>::quiet_NaN()), "invalid body radius rejected");
+    ok &= check(!capsuleTouchesMesh(mesh, minimum, maximum, { 5, 5, -1 }, { 5, 5, 1 }, 0.1f),
+        "distant body zone rejected");
+    ok &= check(
+        !capsuleTouchesMesh(mesh, minimum, maximum, { 0, 0, 0 }, { 0, 0, 1 }, std::numeric_limits<float>::quiet_NaN()),
+        "invalid body radius rejected");
     ok &= check(!capsuleTouchesMesh({}, minimum, maximum, { 0, 0, 0 }, { 0, 0, 1 }, 1), "missing mesh rejected");
 
     for (const bool left : { false, true }) {
         const auto& pose = stimpakPose(left);
-        ok &= check(pose.present && pose.hasFingerPose && pose.hasFingerJointValues, "authored object and complete fingers retained");
+        ok &= check(pose.present && pose.hasFingerPose && pose.hasFingerJointValues,
+            "authored object and complete fingers retained");
         for (int row = 0; row < 3; ++row) {
             for (int other = 0; other < 3; ++other) {
                 float dot = 0;
                 for (int col = 0; col < 3; ++col) {
                     dot += pose.rotate[row * 3 + col] * pose.rotate[other * 3 + col];
                 }
-                ok &= check(std::abs(dot - (row == other ? 1.0f : 0.0f)) < 0.001f, "authored rotation remains orthonormal");
+                ok &= check(std::abs(dot - (row == other ? 1.0f : 0.0f)) < 0.001f,
+                    "authored rotation remains orthonormal");
             }
         }
     }

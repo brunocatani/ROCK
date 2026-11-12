@@ -28,8 +28,6 @@ namespace rock::grab_mass_policy
 
     [[nodiscard]] inline bool shouldNormalizeLooseWeaponGrabMass(float mass, bool looseWeaponGrab) noexcept
     {
-        return looseWeaponGrab &&
-               std::isfinite(mass) &&
-               mass > kLooseWeaponGrabMassCeiling;
+        return looseWeaponGrab && std::isfinite(mass) && mass > kLooseWeaponGrabMassCeiling;
     }
 }

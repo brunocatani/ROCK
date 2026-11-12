@@ -1,4 +1,4 @@
-#include "physics-interaction/native/HavokPhysicsTiming.h"
+#include "physics-interaction/native/havok/HavokPhysicsTiming.h"
 
 #include <cmath>
 #include <cstdio>
@@ -42,7 +42,8 @@ namespace
             return true;
         }
 
-        std::printf("%s expected %llu got %llu\n", label, static_cast<unsigned long long>(expected), static_cast<unsigned long long>(actual));
+        std::printf("%s expected %llu got %llu\n", label, static_cast<unsigned long long>(expected),
+            static_cast<unsigned long long>(actual));
         return false;
     }
 }
@@ -68,13 +69,15 @@ int main()
         ok &= expectTrue("missing raw flags fallback", missingRaw.usedFallback);
         ok &= expectFalse("missing raw never accumulates", shouldAccumulateSimulatedTime(missingRaw));
 
-        const auto nanRaw = makeTimingSample(std::numeric_limits<float>::quiet_NaN(), 1.0f / 90.0f, 0.0f, 1.0f / 90.0f, 1);
+        const auto nanRaw =
+            makeTimingSample(std::numeric_limits<float>::quiet_NaN(), 1.0f / 90.0f, 0.0f, 1.0f / 90.0f, 1);
         ok &= expectTrue("nan raw flags fallback", nanRaw.usedFallback);
 
         const auto zeroCount = makeTimingSample(1.0f / 90.0f, 1.0f / 90.0f, 0.0f, 1.0f / 90.0f, 0);
         ok &= expectTrue("zero substep count flags fallback", zeroCount.usedFallback);
 
-        const auto badSubstep = makeTimingSample(1.0f / 90.0f, std::numeric_limits<float>::infinity(), 0.0f, 1.0f / 90.0f, 2);
+        const auto badSubstep =
+            makeTimingSample(1.0f / 90.0f, std::numeric_limits<float>::infinity(), 0.0f, 1.0f / 90.0f, 2);
         ok &= expectTrue("unusable substep flags fallback", badSubstep.usedFallback);
     }
 
@@ -99,7 +102,8 @@ int main()
         ok &= expectEqualU64("phase sample keeps step sequence", postSolve.stepSequence, 41);
         ok &= expectTrue("phase sample post-solve", postSolve.phase == PhysicsStepPhase::SubstepPostSolve);
         ok &= expectNear("phase sample keeps substep delta", postSolve.substepDeltaSeconds, 1.0 / 90.0, 1.0e-9);
-        ok &= expectNear("all solves retain the multiplier sampled with their world update", postSolve.timeMultiplier, 0.04f, 0.0);
+        ok &= expectNear("all solves retain the multiplier sampled with their world update", postSolve.timeMultiplier,
+            0.04f, 0.0);
     }
 
     // A fallback substep delta poisons derived samples: the fallback flag is
@@ -151,10 +155,12 @@ int main()
         const auto wholeStep = makeTimingSample(0.033f, 0.011f, 0.0f, 0.033f, 3);
         const float substepDeltas[] = { 0.010f, 0.011f, 0.012f };
         for (std::uint32_t index = 0; index < 3; ++index) {
-            const auto substep = makeSubstepTimingSample(wholeStep, static_cast<float>(index) / 3.0f, substepDeltas[index], index);
+            const auto substep =
+                makeSubstepTimingSample(wholeStep, static_cast<float>(index) / 3.0f, substepDeltas[index], index);
             ok &= expectTrue("alternating substep valid", substep.valid);
             ok &= expectFalse("alternating substep measured", substep.usedFallback);
-            ok &= expectNear("alternating substep delta passthrough", substep.substepDeltaSeconds, substepDeltas[index], 1.0e-9);
+            ok &= expectNear("alternating substep delta passthrough", substep.substepDeltaSeconds, substepDeltas[index],
+                1.0e-9);
         }
     }
 

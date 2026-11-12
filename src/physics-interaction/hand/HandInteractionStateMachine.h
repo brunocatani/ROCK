@@ -95,7 +95,8 @@ namespace rock
     }
 
     template <class... Rest>
-    [[nodiscard]] constexpr std::uint32_t transitionEffectMask(HandTransitionEffect first, HandTransitionEffect second, Rest... rest)
+    [[nodiscard]] constexpr std::uint32_t transitionEffectMask(HandTransitionEffect first, HandTransitionEffect second,
+        Rest... rest)
     {
         return transitionEffectMask(first) | transitionEffectMask(second, rest...);
     }
@@ -105,7 +106,7 @@ namespace rock
     [[nodiscard]] constexpr bool isHoldingState(HandState state)
     {
         return state == HandState::HeldInit || state == HandState::HeldBody || state == HandState::StashCandidate ||
-               state == HandState::ConsumeCandidate;
+            state == HandState::ConsumeCandidate;
     }
 
     [[nodiscard]] constexpr bool canUpdateSelectionFromState(HandState state)
@@ -120,26 +121,17 @@ namespace rock
 
     [[nodiscard]] constexpr bool hasExclusiveObjectSelection(HandState state)
     {
-        return state == HandState::SelectionLocked ||
-               state == HandState::PreGrabItem ||
-               state == HandState::PrePullItem ||
-               state == HandState::Pulled ||
-               state == HandState::HeldInit ||
-               state == HandState::HeldBody ||
-               state == HandState::GrabExternal ||
-               state == HandState::LootOtherHand ||
-               state == HandState::StashCandidate ||
-               state == HandState::ConsumeCandidate;
+        return state == HandState::SelectionLocked || state == HandState::PreGrabItem ||
+            state == HandState::PrePullItem || state == HandState::Pulled || state == HandState::HeldInit ||
+            state == HandState::HeldBody || state == HandState::GrabExternal || state == HandState::LootOtherHand ||
+            state == HandState::StashCandidate || state == HandState::ConsumeCandidate;
     }
 
     [[nodiscard]] constexpr bool isGameplayScaffoldState(HandState state)
     {
-        return state == HandState::PreGrabItem ||
-               state == HandState::PrePullItem ||
-               state == HandState::GrabExternal ||
-               state == HandState::LootOtherHand ||
-               state == HandState::StashCandidate ||
-               state == HandState::ConsumeCandidate;
+        return state == HandState::PreGrabItem || state == HandState::PrePullItem || state == HandState::GrabExternal ||
+            state == HandState::LootOtherHand || state == HandState::StashCandidate ||
+            state == HandState::ConsumeCandidate;
     }
 
     [[nodiscard]] constexpr bool suppressesGeneratedHandContactEvidence(HandState state)
@@ -152,18 +144,11 @@ namespace rock
          * SelectedClose/SelectedFar stay open because fresh pre-grab contact is
          * useful evidence; locked/pulled/held/two-hand states own the hand.
          */
-        return state == HandState::SelectionLocked ||
-               state == HandState::PreGrabItem ||
-               state == HandState::PrePullItem ||
-               state == HandState::Pulled ||
-               state == HandState::HeldInit ||
-               state == HandState::HeldBody ||
-               state == HandState::GrabFromOtherHand ||
-               state == HandState::GrabExternal ||
-               state == HandState::LootOtherHand ||
-               state == HandState::SelectedTwoHand ||
-               state == HandState::HeldTwoHanded ||
-               state == HandState::StashCandidate ||
-               state == HandState::ConsumeCandidate;
+        return state == HandState::SelectionLocked || state == HandState::PreGrabItem ||
+            state == HandState::PrePullItem || state == HandState::Pulled || state == HandState::HeldInit ||
+            state == HandState::HeldBody || state == HandState::GrabFromOtherHand || state == HandState::GrabExternal ||
+            state == HandState::LootOtherHand || state == HandState::SelectedTwoHand ||
+            state == HandState::HeldTwoHanded || state == HandState::StashCandidate ||
+            state == HandState::ConsumeCandidate;
     }
 }

@@ -1,6 +1,9 @@
 #pragma once
 
-namespace RE { class ButtonEvent; }
+namespace RE
+{
+    class ButtonEvent;
+}
 
 namespace rock::native_grenade_throw_runtime
 {

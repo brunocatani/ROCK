@@ -64,6 +64,7 @@ namespace rock::shoulder_stash
         }
 
         result.formID = heldRef->GetFormID();
+        result.lootActivatorScript = input.lootActivatorScript;
         result.count = resolveReferenceStackCount(heldRef);
         result.baseForm = heldRef->GetObjectReference();
         if (!result.baseForm) {
@@ -78,19 +79,21 @@ namespace rock::shoulder_stash
         }
 
         result.attempted = true;
-        const auto conversion=stash_conversion::convert(result.formID,result.baseForm->formID);
-        if(conversion.decision!=api::stash_conversion::Decision::Pass) {
-            result.reason=TransferReason::ConsumerConversion;
-            result.success=conversion.decision==api::stash_conversion::Decision::Consumed;
-            if(result.success) {
-                result.count=static_cast<std::int32_t>(conversion.count);
-                result.baseForm=RE::TESForm::GetFormByID<RE::TESBoundObject>(conversion.inventoryForm);
+        const auto conversion = stash_conversion::convert(result.formID, result.baseForm->formID);
+        if (conversion.decision != api::storage::StashDecision::Pass) {
+            result.reason = TransferReason::ConsumerConversion;
+            result.success = conversion.decision == api::storage::StashDecision::Consumed;
+            if (result.success) {
+                result.count = static_cast<std::int32_t>(conversion.count);
+                result.baseForm = RE::TESForm::GetFormByID<RE::TESBoundObject>(conversion.inventoryFormId);
                 result.untransferredRef.reset();
             }
             return result;
         }
         // Collectibles such as magazines, notes, and holotapes need native activation
         // so their scripts, perk grants, and terminal/holotape behavior run normally.
+        // A loot activator's bound script receives the same activation and gives
+        // the player its loot.
         result.success = heldRef->ActivateRef(player, nullptr, result.count, false, false, false);
         if (result.success) {
             result.untransferredRef.reset();

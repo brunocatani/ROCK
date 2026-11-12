@@ -1,7 +1,7 @@
 #pragma once
 
+#include <ROCK/Touch.h>
 #include "api/ProviderLeasePolicy.h"
-#include "api/ProviderRuntimeTypes.h"
 
 #include <algorithm>
 #include <array>
@@ -12,7 +12,13 @@
 
 namespace rock::provider
 {
-    enum class TouchGrabMotionClassV1 : std::uint32_t
+    [[nodiscard]] inline constexpr bool hasTouchGrabTargetFlag(std::uint32_t flags,
+        ::rock::api::touch::TouchGrabTargetFlag flag)
+    {
+        return (flags & static_cast<std::uint32_t>(flag)) != 0;
+    }
+
+    enum class TouchGrabMotionClass : std::uint32_t
     {
         Static = 0,
         Keyframed = 1,
@@ -20,14 +26,14 @@ namespace rock::provider
         Other = 3,
     };
 
-    struct TouchGrabTargetMatchV1
+    struct TouchGrabTargetMatch
     {
         bool matched{ false };
         bool wildcard{ false };
         bool yieldRequested{ false };
         std::uint64_t ownerToken{ 0 };
         std::uint64_t scopeToken{ 0 };
-        RockProviderTouchGrabTargetV1 target{};
+        ::rock::api::touch::TouchGrabTarget target{};
     };
 
     class TouchGrabRegistry
@@ -41,22 +47,15 @@ namespace rock::provider
             OwnerConflict,
         };
 
-        static constexpr std::size_t kMaximumTargets =
-            ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGETS_V1;
-        static constexpr std::size_t kMaximumScopes =
-            ROCK_PROVIDER_MAX_TOUCH_GRAB_SCOPES_V1;
+        static constexpr std::size_t kMaximumTargets = api::touch::kMaxTargets;
+        static constexpr std::size_t kMaximumScopes = api::touch::kMaxScopes;
         static constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFFu;
 
-        RegistrationResult setScope(
-            const std::uint64_t ownerToken,
-            const std::uint64_t scopeToken,
-            const RockProviderTouchGrabTargetV1* targets,
-            const std::uint32_t targetCount,
+        RegistrationResult setScope(const std::uint64_t ownerToken, const std::uint64_t scopeToken,
+            const ::rock::api::touch::TouchGrabTarget* targets, const std::uint32_t targetCount,
             const std::uint64_t frameIndex)
         {
-            if (ownerToken == 0 || scopeToken == 0 ||
-                targetCount > kMaximumTargets ||
-                (targetCount != 0 && !targets)) {
+            if (ownerToken == 0 || scopeToken == 0 || targetCount > kMaximumTargets || (targetCount != 0 && !targets)) {
                 return RegistrationResult::InvalidArgument;
             }
 
@@ -65,29 +64,22 @@ namespace rock::provider
                 return RegistrationResult::InvalidArgument;
             }
 
-            const bool replacingExistingScope =
-                hasScope(ownerToken, scopeToken);
-            if (!replacingExistingScope &&
-                targetCount != 0 &&
-                scopeCount() >= kMaximumScopes) {
+            const bool replacingExistingScope = hasScope(ownerToken, scopeToken);
+            if (!replacingExistingScope && targetCount != 0 && scopeCount() >= kMaximumScopes) {
                 return RegistrationResult::CapacityFull;
             }
 
-            const std::size_t retainedCount =
-                activeCountOutsideScope(ownerToken, scopeToken);
+            const std::size_t retainedCount = activeCountOutsideScope(ownerToken, scopeToken);
             if (retainedCount + targetCount > kMaximumTargets) {
                 return RegistrationResult::CapacityFull;
             }
 
             for (std::uint32_t index = 0; index < targetCount; ++index) {
                 for (const auto& slot : _slots) {
-                    if (!slot.active ||
-                        (slot.ownerToken == ownerToken &&
-                            slot.scopeToken == scopeToken)) {
+                    if (!slot.active || (slot.ownerToken == ownerToken && slot.scopeToken == scopeToken)) {
                         continue;
                     }
-                    if (slot.ownerToken == ownerToken &&
-                        slot.target.targetId == targets[index].targetId) {
+                    if (slot.ownerToken == ownerToken && slot.target.targetId == targets[index].targetId) {
                         return RegistrationResult::OwnerConflict;
                     }
                     if (targetsConflict(slot.target, targets[index])) {
@@ -99,16 +91,13 @@ namespace rock::provider
             std::array<PreservedState, kMaximumTargets> preserved{};
             for (std::uint32_t index = 0; index < targetCount; ++index) {
                 for (const auto& slot : _slots) {
-                    if (!slot.active ||
-                        slot.ownerToken != ownerToken ||
-                        slot.scopeToken != scopeToken ||
+                    if (!slot.active || slot.ownerToken != ownerToken || slot.scopeToken != scopeToken ||
                         !sameTargetIdentity(slot.target, targets[index])) {
                         continue;
                     }
                     preserved[index].valid = true;
                     preserved[index].state = slot.state;
-                    preserved[index].yieldRequested =
-                        slot.yieldRequested;
+                    preserved[index].yieldRequested = slot.yieldRequested;
                     break;
                 }
             }
@@ -125,16 +114,10 @@ namespace rock::provider
                 slot->scopeToken = scopeToken;
                 slot->target = targets[index];
                 slot->target.leaseFrames =
-                    provider_lease_policy::clampLeaseFrames(
-                        targets[index].leaseFrames,
-                        ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGET_LEASE_FRAMES_V1);
+                    provider_lease_policy::clampLeaseFrames(targets[index].leaseFrames, api::touch::kMaxLeaseFrames);
                 slot->expiresAfterFrame =
-                    provider_lease_policy::exclusiveExpiryFrame(
-                        frameIndex,
-                        slot->target.leaseFrames);
-                slot->yieldRequested =
-                    preserved[index].valid &&
-                    preserved[index].yieldRequested;
+                    provider_lease_policy::exclusiveExpiryFrame(frameIndex, slot->target.leaseFrames);
+                slot->yieldRequested = preserved[index].valid && preserved[index].yieldRequested;
                 if (preserved[index].valid) {
                     slot->state = preserved[index].state;
                 } else {
@@ -145,9 +128,7 @@ namespace rock::provider
             return RegistrationResult::Ok;
         }
 
-        bool clearScope(
-            const std::uint64_t ownerToken,
-            const std::uint64_t scopeToken)
+        bool clearScope(const std::uint64_t ownerToken, const std::uint64_t scopeToken)
         {
             if (ownerToken == 0 || scopeToken == 0) {
                 return false;
@@ -167,116 +148,91 @@ namespace rock::provider
             }
         }
 
-        void clearAll()
-        {
-            _slots = {};
-        }
+        void clearAll() { _slots = {}; }
 
-        [[nodiscard]] TouchGrabTargetMatchV1 resolve(
-            const std::uint32_t bodyId,
-            const std::uint32_t collisionLayer,
-            const TouchGrabMotionClassV1 motionClass,
-            const RockProviderHand hand,
-            const std::uint32_t worldGeneration,
-            const std::uint32_t skeletonGeneration,
-            const std::uint32_t providerGeneration,
+        [[nodiscard]] TouchGrabTargetMatch resolve(const std::uint32_t bodyId, const std::uint32_t collisionLayer,
+            const TouchGrabMotionClass motionClass, const api::Hand hand, const std::uint32_t worldGeneration,
+            const std::uint32_t skeletonGeneration, const std::uint32_t providerGeneration,
             const std::uint64_t frameIndex)
         {
             pruneExpired(frameIndex);
-            TouchGrabTargetMatchV1 wildcardMatch{};
+            TouchGrabTargetMatch wildcardMatch{};
             for (const auto& slot : _slots) {
-                if (!slot.active ||
-                    slot.yieldRequested ||
-                    slot.state.phase ==
-                        RockProviderTouchGrabPhaseV1::Yielded ||
-                    slot.state.phase ==
-                        RockProviderTouchGrabPhaseV1::Invalidated ||
-                    !generationsMatch(
-                        slot.target,
-                        worldGeneration,
-                        skeletonGeneration,
-                        providerGeneration) ||
-                    !handMatches(slot.target, hand) ||
-                    !motionMatches(slot.target, motionClass)) {
+                if (!slot.active || slot.yieldRequested ||
+                    slot.state.phase == ::rock::api::touch::TouchGrabPhase::Yielded ||
+                    slot.state.phase == ::rock::api::touch::TouchGrabPhase::Invalidated ||
+                    !generationsMatch(slot.target, worldGeneration, skeletonGeneration, providerGeneration) ||
+                    !handMatches(slot.target, hand) || !motionMatches(slot.target, motionClass)) {
                     continue;
                 }
 
-                const bool wildcard = hasTouchGrabTargetFlagV1(
-                    slot.target.flags,
-                    RockProviderTouchGrabTargetFlagV1::MatchAnyBody);
+                const bool wildcard =
+                    hasTouchGrabTargetFlag(slot.target.flags, ::rock::api::touch::TouchGrabTargetFlag::MatchAnyBody);
                 if (!wildcard && slot.target.bodyId == bodyId) {
                     return makeMatch(slot, false);
                 }
-                if (wildcard &&
-                    collisionLayer < 64 &&
-                    (slot.target.allowedLayerMask &
-                        (std::uint64_t{ 1 } << collisionLayer)) != 0 &&
+                if (wildcard && collisionLayer < 64 &&
+                    (slot.target.allowedLayerMask & (std::uint64_t{ 1 } << collisionLayer)) != 0 &&
                     (!wildcardMatch.matched ||
-                        (hasTouchGrabTargetFlagV1(wildcardMatch.target.flags, RockProviderTouchGrabTargetFlagV1::FallbackOnly) &&
-                         !hasTouchGrabTargetFlagV1(slot.target.flags, RockProviderTouchGrabTargetFlagV1::FallbackOnly)))) {
+                        (hasTouchGrabTargetFlag(wildcardMatch.target.flags,
+                             ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly) &&
+                            !hasTouchGrabTargetFlag(slot.target.flags,
+                                ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly)))) {
                     wildcardMatch = makeMatch(slot, true);
                 }
             }
             return wildcardMatch;
         }
 
-        [[nodiscard]] bool currentTarget(
-            const std::uint64_t ownerToken,
-            const std::uint64_t scopeToken,
-            const std::uint64_t targetId,
-            const std::uint32_t targetGeneration,
-            const std::uint32_t worldGeneration,
-            const std::uint32_t skeletonGeneration,
-            const std::uint32_t providerGeneration,
-            const std::uint64_t frameIndex,
-            TouchGrabTargetMatchV1& outMatch)
+        // Whether a live target lets this hand latch with a grip already held
+        // (AcquireWhileGripHeld). Asked every frame a grip is held, before any
+        // contact is collected.
+        [[nodiscard]] bool hasHeldGripTarget(const api::Hand hand, const std::uint32_t worldGeneration,
+            const std::uint32_t skeletonGeneration, const std::uint32_t providerGeneration,
+            const std::uint64_t frameIndex)
+        {
+            pruneExpired(frameIndex);
+            return std::any_of(_slots.begin(), _slots.end(), [&](const Slot& slot) {
+                return slot.active && !slot.yieldRequested &&
+                    slot.state.phase != ::rock::api::touch::TouchGrabPhase::Yielded &&
+                    slot.state.phase != ::rock::api::touch::TouchGrabPhase::Invalidated &&
+                    hasTouchGrabTargetFlag(slot.target.flags,
+                        ::rock::api::touch::TouchGrabTargetFlag::AcquireWhileGripHeld) &&
+                    generationsMatch(slot.target, worldGeneration, skeletonGeneration, providerGeneration) &&
+                    handMatches(slot.target, hand);
+            });
+        }
+
+        [[nodiscard]] bool currentTarget(const std::uint64_t ownerToken, const std::uint64_t scopeToken,
+            const std::uint64_t targetId, const std::uint32_t targetGeneration, const std::uint32_t worldGeneration,
+            const std::uint32_t skeletonGeneration, const std::uint32_t providerGeneration,
+            const std::uint64_t frameIndex, TouchGrabTargetMatch& outMatch)
         {
             outMatch = {};
             pruneExpired(frameIndex);
             for (const auto& slot : _slots) {
-                if (!slot.active ||
-                    slot.ownerToken != ownerToken ||
-                    slot.scopeToken != scopeToken ||
-                    slot.target.targetId != targetId ||
-                    slot.target.targetGeneration != targetGeneration ||
-                    !generationsMatch(
-                        slot.target,
-                        worldGeneration,
-                        skeletonGeneration,
-                        providerGeneration)) {
+                if (!slot.active || slot.ownerToken != ownerToken || slot.scopeToken != scopeToken ||
+                    slot.target.targetId != targetId || slot.target.targetGeneration != targetGeneration ||
+                    !generationsMatch(slot.target, worldGeneration, skeletonGeneration, providerGeneration)) {
                     continue;
                 }
-                outMatch = makeMatch(
-                    slot,
-                    hasTouchGrabTargetFlagV1(
-                        slot.target.flags,
-                        RockProviderTouchGrabTargetFlagV1::MatchAnyBody));
+                outMatch = makeMatch(slot,
+                    hasTouchGrabTargetFlag(slot.target.flags, ::rock::api::touch::TouchGrabTargetFlag::MatchAnyBody));
                 return true;
             }
             return false;
         }
 
-        bool publishState(
-            const std::uint64_t ownerToken,
-            const std::uint64_t scopeToken,
-            const RockProviderTouchGrabStateV1& state,
-            const std::uint64_t frameIndex,
-            bool* changed = nullptr)
+        bool publishState(const std::uint64_t ownerToken, const std::uint64_t scopeToken,
+            const ::rock::api::touch::TouchGrabState& state, const std::uint64_t frameIndex)
         {
-            if (changed) *changed=false;
             for (auto& slot : _slots) {
-                if (!slot.active ||
-                    slot.ownerToken != ownerToken ||
-                    slot.scopeToken != scopeToken ||
-                    slot.target.targetId != state.targetId ||
-                    slot.target.targetGeneration != state.targetGeneration) {
+                if (!slot.active || slot.ownerToken != ownerToken || slot.scopeToken != scopeToken ||
+                    slot.target.targetId != state.targetId || slot.target.targetGeneration != state.targetGeneration) {
                     continue;
                 }
 
-                if (changed) *changed = slot.state.phase!=state.phase || slot.state.releaseReason!=state.releaseReason || slot.state.activeHandMask!=state.activeHandMask;
                 slot.state = state;
-                slot.state.size = sizeof(RockProviderTouchGrabStateV1);
-                slot.state.version = ROCK_PROVIDER_API_VERSION;
                 slot.state.frameIndex = frameIndex;
                 slot.state.sequence = nextSequence();
                 return true;
@@ -284,20 +240,13 @@ namespace rock::provider
             return false;
         }
 
-        bool requestYield(
-            const std::uint64_t ownerToken,
-            const std::uint64_t scopeToken,
-            const std::uint64_t targetId,
-            const std::uint32_t targetGeneration,
-            const std::uint64_t frameIndex)
+        bool requestYield(const std::uint64_t ownerToken, const std::uint64_t scopeToken, const std::uint64_t targetId,
+            const std::uint32_t targetGeneration, const std::uint64_t frameIndex)
         {
             pruneExpired(frameIndex);
             for (auto& slot : _slots) {
-                if (slot.active &&
-                    slot.ownerToken == ownerToken &&
-                    slot.scopeToken == scopeToken &&
-                    slot.target.targetId == targetId &&
-                    slot.target.targetGeneration == targetGeneration) {
+                if (slot.active && slot.ownerToken == ownerToken && slot.scopeToken == scopeToken &&
+                    slot.target.targetId == targetId && slot.target.targetGeneration == targetGeneration) {
                     slot.yieldRequested = true;
                     return true;
                 }
@@ -305,18 +254,12 @@ namespace rock::provider
             return false;
         }
 
-        bool acknowledgeYield(
-            const std::uint64_t ownerToken,
-            const std::uint64_t scopeToken,
-            const std::uint64_t targetId,
-            const std::uint32_t targetGeneration)
+        bool acknowledgeYield(const std::uint64_t ownerToken, const std::uint64_t scopeToken,
+            const std::uint64_t targetId, const std::uint32_t targetGeneration)
         {
             for (auto& slot : _slots) {
-                if (slot.active &&
-                    slot.ownerToken == ownerToken &&
-                    slot.scopeToken == scopeToken &&
-                    slot.target.targetId == targetId &&
-                    slot.target.targetGeneration == targetGeneration) {
+                if (slot.active && slot.ownerToken == ownerToken && slot.scopeToken == scopeToken &&
+                    slot.target.targetId == targetId && slot.target.targetGeneration == targetGeneration) {
                     slot.yieldRequested = false;
                     return true;
                 }
@@ -324,23 +267,21 @@ namespace rock::provider
             return false;
         }
 
-        std::uint32_t copyStates(
-            const std::uint64_t ownerToken,
-            const std::uint64_t scopeToken,
-            RockProviderTouchGrabStateV1* outStates,
-            const std::uint32_t maxStates,
-            const std::uint64_t frameIndex)
+        std::uint32_t copyStates(const std::uint64_t ownerToken, const std::uint64_t scopeToken,
+            ::rock::api::touch::TouchGrabState* outStates, const std::uint32_t maxStates,
+            const std::uint64_t frameIndex, const std::uint32_t collisionGeneration)
         {
             pruneExpired(frameIndex);
             std::uint32_t copied = 0;
             for (const auto& slot : _slots) {
-                if (!slot.active ||
-                    slot.ownerToken != ownerToken ||
-                    slot.scopeToken != scopeToken) {
+                if (!slot.active || slot.ownerToken != ownerToken || slot.scopeToken != scopeToken) {
                     continue;
                 }
                 if (outStates && copied < maxStates) {
                     outStates[copied] = slot.state;
+                    // Every copied state is live now, so it carries the current collision generation: a state no
+                    // hand has acted on would otherwise read 0, and one written earlier an older generation.
+                    outStates[copied].collisionGeneration = collisionGeneration;
                     ++copied;
                 } else if (outStates) {
                     break;
@@ -353,10 +294,8 @@ namespace rock::provider
 
         [[nodiscard]] std::size_t targetCount() const
         {
-            return static_cast<std::size_t>(std::count_if(
-                _slots.begin(),
-                _slots.end(),
-                [](const Slot& slot) { return slot.active; }));
+            return static_cast<std::size_t>(
+                std::count_if(_slots.begin(), _slots.end(), [](const Slot& slot) { return slot.active; }));
         }
 
     private:
@@ -367,117 +306,89 @@ namespace rock::provider
             std::uint64_t ownerToken{ 0 };
             std::uint64_t scopeToken{ 0 };
             std::uint64_t expiresAfterFrame{ 0 };
-            RockProviderTouchGrabTargetV1 target{};
-            RockProviderTouchGrabStateV1 state{};
+            ::rock::api::touch::TouchGrabTarget target{};
+            ::rock::api::touch::TouchGrabState state{};
         };
 
         struct PreservedState
         {
             bool valid{ false };
             bool yieldRequested{ false };
-            RockProviderTouchGrabStateV1 state{};
+            ::rock::api::touch::TouchGrabState state{};
         };
 
         static constexpr std::uint32_t kHandFlags =
-            static_cast<std::uint32_t>(
-                RockProviderTouchGrabTargetFlagV1::AllowRightHand) |
-            static_cast<std::uint32_t>(
-                RockProviderTouchGrabTargetFlagV1::AllowLeftHand);
+            static_cast<std::uint32_t>(::rock::api::touch::TouchGrabTargetFlag::AllowRightHand) |
+            static_cast<std::uint32_t>(::rock::api::touch::TouchGrabTargetFlag::AllowLeftHand);
         static constexpr std::uint32_t kMotionFlags =
-            static_cast<std::uint32_t>(
-                RockProviderTouchGrabTargetFlagV1::MatchStaticMotion) |
-            static_cast<std::uint32_t>(
-                RockProviderTouchGrabTargetFlagV1::MatchKeyframedMotion) |
-            static_cast<std::uint32_t>(
-                RockProviderTouchGrabTargetFlagV1::MatchDynamicMotion);
-        static constexpr std::uint32_t kKnownFlags =
-            kHandFlags |
-            kMotionFlags |
-            static_cast<std::uint32_t>(RockProviderTouchGrabTargetFlagV1::FallbackOnly) |
-            static_cast<std::uint32_t>(RockProviderTouchGrabTargetFlagV1::ExcludePowerArmor) |
-            static_cast<std::uint32_t>(
-                RockProviderTouchGrabTargetFlagV1::AllowTwoHands) |
-            static_cast<std::uint32_t>(
-                RockProviderTouchGrabTargetFlagV1::LatchOnRelease) |
-            static_cast<std::uint32_t>(
-                RockProviderTouchGrabTargetFlagV1::MatchAnyBody);
+            static_cast<std::uint32_t>(::rock::api::touch::TouchGrabTargetFlag::MatchStaticMotion) |
+            static_cast<std::uint32_t>(::rock::api::touch::TouchGrabTargetFlag::MatchKeyframedMotion) |
+            static_cast<std::uint32_t>(::rock::api::touch::TouchGrabTargetFlag::MatchDynamicMotion);
+        static constexpr std::uint32_t kKnownFlags = kHandFlags | kMotionFlags |
+            static_cast<std::uint32_t>(::rock::api::touch::TouchGrabTargetFlag::FallbackOnly) |
+            static_cast<std::uint32_t>(::rock::api::touch::TouchGrabTargetFlag::ExcludePowerArmor) |
+            static_cast<std::uint32_t>(::rock::api::touch::TouchGrabTargetFlag::AcquireWhileGripHeld) |
+            static_cast<std::uint32_t>(::rock::api::touch::TouchGrabTargetFlag::AllowTwoHands) |
+            static_cast<std::uint32_t>(::rock::api::touch::TouchGrabTargetFlag::LatchOnRelease) |
+            static_cast<std::uint32_t>(::rock::api::touch::TouchGrabTargetFlag::MatchAnyBody);
 
-        static bool finitePoint(const RockProviderPoint3& point)
+        static bool finitePoint(const api::Point3& point)
         {
-            return std::isfinite(point.x) &&
-                   std::isfinite(point.y) &&
-                   std::isfinite(point.z);
+            return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
         }
 
-        static bool validateTarget(
-            const RockProviderTouchGrabTargetV1& target)
+        static bool validateTarget(const ::rock::api::touch::TouchGrabTarget& target)
         {
-            if (target.size != sizeof(RockProviderTouchGrabTargetV1) ||
-                target.version != ROCK_PROVIDER_API_VERSION ||
-                target.targetId == 0 ||
-                target.targetGeneration == 0 ||
-                target.leaseFrames == 0 ||
-                target.worldGeneration == 0 ||
-                target.skeletonGeneration == 0 ||
-                target.providerGeneration == 0 ||
-                (target.flags & ~kKnownFlags) != 0 ||
-                (target.flags & kHandFlags) == 0 ||
+            if (target.targetId == 0 || target.targetGeneration == 0 || target.leaseFrames == 0 ||
+                target.worldGeneration == 0 || target.skeletonGeneration == 0 || target.providerGeneration == 0 ||
+                (target.flags & ~kKnownFlags) != 0 || (target.flags & kHandFlags) == 0 ||
                 (target.flags & kMotionFlags) == 0) {
                 return false;
             }
 
-            const bool wildcard = hasTouchGrabTargetFlagV1(
-                target.flags,
-                RockProviderTouchGrabTargetFlagV1::MatchAnyBody);
-            if (hasTouchGrabTargetFlagV1(target.flags, RockProviderTouchGrabTargetFlagV1::FallbackOnly) &&
-                (!wildcard || target.kind != RockProviderTouchGrabKindV1::FixedAnchor)) return false;
-            if (target.kind == RockProviderTouchGrabKindV1::FixedAnchor) {
+            const bool wildcard =
+                hasTouchGrabTargetFlag(target.flags, ::rock::api::touch::TouchGrabTargetFlag::MatchAnyBody);
+            if (hasTouchGrabTargetFlag(target.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly) &&
+                (!wildcard || target.kind != ::rock::api::touch::TouchGrabKind::FixedAnchor))
+                return false;
+            if (hasTouchGrabTargetFlag(target.flags,
+                    ::rock::api::touch::TouchGrabTargetFlag::AcquireWhileGripHeld) &&
+                (!wildcard || target.kind != ::rock::api::touch::TouchGrabKind::FixedAnchor))
+                return false;
+            if (target.kind == ::rock::api::touch::TouchGrabKind::FixedAnchor) {
                 if (wildcard) {
-                    return target.bodyId == kInvalidBodyId &&
-                           target.allowedLayerMask != 0;
+                    return target.bodyId == kInvalidBodyId && target.allowedLayerMask != 0;
                 }
                 return target.bodyId != kInvalidBodyId;
             }
-            if (target.kind != RockProviderTouchGrabKindV1::LimitedHinge &&
-                target.kind !=
-                    RockProviderTouchGrabKindV1::LimitedPrismatic) {
+            if (target.kind != ::rock::api::touch::TouchGrabKind::LimitedHinge &&
+                target.kind != ::rock::api::touch::TouchGrabKind::LimitedPrismatic) {
                 return false;
             }
             if (wildcard || target.bodyId == kInvalidBodyId ||
                 (target.flags &
-                    static_cast<std::uint32_t>(
-                        RockProviderTouchGrabTargetFlagV1::
-                            MatchStaticMotion)) != 0 ||
-                !finitePoint(target.pivotWorldGame) ||
-                !finitePoint(target.axisWorldGame) ||
-                !std::isfinite(target.minimumCoordinate) ||
-                !std::isfinite(target.maximumCoordinate) ||
-                !std::isfinite(target.currentCoordinate) ||
-                target.maximumCoordinate <= target.minimumCoordinate ||
+                    static_cast<std::uint32_t>(::rock::api::touch::TouchGrabTargetFlag::MatchStaticMotion)) != 0 ||
+                !finitePoint(target.pivotWorldGame) || !finitePoint(target.axisWorldGame) ||
+                !std::isfinite(target.minimumCoordinate) || !std::isfinite(target.maximumCoordinate) ||
+                !std::isfinite(target.currentCoordinate) || target.maximumCoordinate <= target.minimumCoordinate ||
                 target.currentCoordinate < target.minimumCoordinate ||
                 target.currentCoordinate > target.maximumCoordinate) {
                 return false;
             }
 
-            const float axisLengthSquared =
-                target.axisWorldGame.x * target.axisWorldGame.x +
-                target.axisWorldGame.y * target.axisWorldGame.y +
-                target.axisWorldGame.z * target.axisWorldGame.z;
-            return std::isfinite(axisLengthSquared) &&
-                   std::abs(axisLengthSquared - 1.0f) <= 0.01f;
+            const float axisLengthSquared = target.axisWorldGame.x * target.axisWorldGame.x +
+                target.axisWorldGame.y * target.axisWorldGame.y + target.axisWorldGame.z * target.axisWorldGame.z;
+            return std::isfinite(axisLengthSquared) && std::abs(axisLengthSquared - 1.0f) <= 0.01f;
         }
 
-        static bool validateInput(
-            const RockProviderTouchGrabTargetV1* targets,
-            const std::uint32_t targetCount)
+        static bool validateInput(const ::rock::api::touch::TouchGrabTarget* targets, const std::uint32_t targetCount)
         {
             for (std::uint32_t index = 0; index < targetCount; ++index) {
                 if (!validateTarget(targets[index])) {
                     return false;
                 }
                 for (std::uint32_t prior = 0; prior < index; ++prior) {
-                    if (targets[prior].targetId ==
-                            targets[index].targetId ||
+                    if (targets[prior].targetId == targets[index].targetId ||
                         targetsConflict(targets[prior], targets[index])) {
                         return false;
                     }
@@ -486,98 +397,74 @@ namespace rock::provider
             return true;
         }
 
-        static bool sameTargetIdentity(
-            const RockProviderTouchGrabTargetV1& left,
-            const RockProviderTouchGrabTargetV1& right)
+        static bool sameTargetIdentity(const ::rock::api::touch::TouchGrabTarget& left,
+            const ::rock::api::touch::TouchGrabTarget& right)
         {
-            return left.targetId == right.targetId &&
-                   left.targetGeneration == right.targetGeneration &&
-                   left.kind == right.kind &&
-                   left.bodyId == right.bodyId;
+            return left.targetId == right.targetId && left.targetGeneration == right.targetGeneration &&
+                left.kind == right.kind && left.bodyId == right.bodyId;
         }
 
-        static bool targetsConflict(
-            const RockProviderTouchGrabTargetV1& left,
-            const RockProviderTouchGrabTargetV1& right)
+        static bool targetsConflict(const ::rock::api::touch::TouchGrabTarget& left,
+            const ::rock::api::touch::TouchGrabTarget& right)
         {
-            const bool leftWildcard = hasTouchGrabTargetFlagV1(
-                left.flags,
-                RockProviderTouchGrabTargetFlagV1::MatchAnyBody);
-            const bool rightWildcard = hasTouchGrabTargetFlagV1(
-                right.flags,
-                RockProviderTouchGrabTargetFlagV1::MatchAnyBody);
+            const bool leftWildcard =
+                hasTouchGrabTargetFlag(left.flags, ::rock::api::touch::TouchGrabTargetFlag::MatchAnyBody);
+            const bool rightWildcard =
+                hasTouchGrabTargetFlag(right.flags, ::rock::api::touch::TouchGrabTargetFlag::MatchAnyBody);
             if (!leftWildcard && !rightWildcard) {
                 return left.bodyId == right.bodyId;
             }
             if (leftWildcard != rightWildcard) {
                 return false;
             }
-            if (hasTouchGrabTargetFlagV1(left.flags, RockProviderTouchGrabTargetFlagV1::FallbackOnly) !=
-                hasTouchGrabTargetFlagV1(right.flags, RockProviderTouchGrabTargetFlagV1::FallbackOnly)) return false;
+            if (hasTouchGrabTargetFlag(left.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly) !=
+                hasTouchGrabTargetFlag(right.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly))
+                return false;
             return (left.allowedLayerMask & right.allowedLayerMask) != 0 &&
-                   (left.flags & right.flags & kHandFlags) != 0 &&
-                   (left.flags & right.flags & kMotionFlags) != 0;
+                (left.flags & right.flags & kHandFlags) != 0 && (left.flags & right.flags & kMotionFlags) != 0;
         }
 
-        static bool generationsMatch(
-            const RockProviderTouchGrabTargetV1& target,
-            const std::uint32_t worldGeneration,
-            const std::uint32_t skeletonGeneration,
+        static bool generationsMatch(const ::rock::api::touch::TouchGrabTarget& target,
+            const std::uint32_t worldGeneration, const std::uint32_t skeletonGeneration,
             const std::uint32_t providerGeneration)
         {
-            return (target.worldGeneration == 0 ||
-                       target.worldGeneration == worldGeneration) &&
-                   (target.skeletonGeneration == 0 ||
-                       target.skeletonGeneration == skeletonGeneration) &&
-                   (target.providerGeneration == 0 ||
-                       target.providerGeneration == providerGeneration);
+            return (target.worldGeneration == 0 || target.worldGeneration == worldGeneration) &&
+                (target.skeletonGeneration == 0 || target.skeletonGeneration == skeletonGeneration) &&
+                (target.providerGeneration == 0 || target.providerGeneration == providerGeneration);
         }
 
-        static bool handMatches(
-            const RockProviderTouchGrabTargetV1& target,
-            const RockProviderHand hand)
+        static bool handMatches(const ::rock::api::touch::TouchGrabTarget& target, const api::Hand hand)
         {
-            if (hand == RockProviderHand::Right) {
-                return hasTouchGrabTargetFlagV1(
-                    target.flags,
-                    RockProviderTouchGrabTargetFlagV1::AllowRightHand);
+            if (hand == api::Hand::Right) {
+                return hasTouchGrabTargetFlag(target.flags, ::rock::api::touch::TouchGrabTargetFlag::AllowRightHand);
             }
-            if (hand == RockProviderHand::Left) {
-                return hasTouchGrabTargetFlagV1(
-                    target.flags,
-                    RockProviderTouchGrabTargetFlagV1::AllowLeftHand);
+            if (hand == api::Hand::Left) {
+                return hasTouchGrabTargetFlag(target.flags, ::rock::api::touch::TouchGrabTargetFlag::AllowLeftHand);
             }
             return false;
         }
 
-        static bool motionMatches(
-            const RockProviderTouchGrabTargetV1& target,
-            const TouchGrabMotionClassV1 motionClass)
+        static bool motionMatches(const ::rock::api::touch::TouchGrabTarget& target,
+            const TouchGrabMotionClass motionClass)
         {
             switch (motionClass) {
-            case TouchGrabMotionClassV1::Static:
-                return hasTouchGrabTargetFlagV1(
-                    target.flags,
-                    RockProviderTouchGrabTargetFlagV1::MatchStaticMotion);
-            case TouchGrabMotionClassV1::Keyframed:
-                return hasTouchGrabTargetFlagV1(
-                    target.flags,
-                    RockProviderTouchGrabTargetFlagV1::MatchKeyframedMotion);
-            case TouchGrabMotionClassV1::Dynamic:
-                return hasTouchGrabTargetFlagV1(
-                    target.flags,
-                    RockProviderTouchGrabTargetFlagV1::MatchDynamicMotion);
-            case TouchGrabMotionClassV1::Other:
+            case TouchGrabMotionClass::Static:
+                return hasTouchGrabTargetFlag(target.flags, ::rock::api::touch::TouchGrabTargetFlag::MatchStaticMotion);
+            case TouchGrabMotionClass::Keyframed:
+                return hasTouchGrabTargetFlag(target.flags,
+                    ::rock::api::touch::TouchGrabTargetFlag::MatchKeyframedMotion);
+            case TouchGrabMotionClass::Dynamic:
+                return hasTouchGrabTargetFlag(target.flags,
+                    ::rock::api::touch::TouchGrabTargetFlag::MatchDynamicMotion);
+            case TouchGrabMotionClass::Other:
             default:
                 return false;
             }
         }
 
-        static TouchGrabTargetMatchV1 makeMatch(
-            const Slot& slot,
-            const bool wildcard)
+        static TouchGrabTargetMatch makeMatch(const Slot& slot, const bool wildcard)
         {
-            TouchGrabTargetMatchV1 match{};
+            TouchGrabTargetMatch match{};
             match.matched = true;
             match.wildcard = wildcard;
             match.yieldRequested = slot.yieldRequested;
@@ -587,32 +474,27 @@ namespace rock::provider
             return match;
         }
 
-        static RockProviderTouchGrabStateV1 makeArmedState(
-            const RockProviderTouchGrabTargetV1& target,
+        static ::rock::api::touch::TouchGrabState makeArmedState(const ::rock::api::touch::TouchGrabTarget& target,
             const std::uint64_t frameIndex)
         {
-            RockProviderTouchGrabStateV1 state{};
+            ::rock::api::touch::TouchGrabState state{};
             state.targetId = target.targetId;
             state.targetGeneration = target.targetGeneration;
             state.kind = target.kind;
-            state.phase = RockProviderTouchGrabPhaseV1::Armed;
+            state.phase = ::rock::api::touch::TouchGrabPhase::Armed;
             state.bodyId = target.bodyId;
             state.referenceFormId = target.referenceFormId;
-            state.referenceNativeHandle =
-                target.referenceNativeHandle;
+            state.referenceNativeHandle = target.referenceNativeHandle;
             state.currentCoordinate = target.currentCoordinate;
             state.worldGeneration = target.worldGeneration;
             state.skeletonGeneration = target.skeletonGeneration;
             state.providerGeneration = target.providerGeneration;
             state.frameIndex = frameIndex;
-            if (target.kind ==
-                RockProviderTouchGrabKindV1::FixedAnchor) {
+            if (target.kind == ::rock::api::touch::TouchGrabKind::FixedAnchor) {
                 state.currentCoordinate = 0.0f;
-                state.flags |= static_cast<std::uint32_t>(
-                    RockProviderTouchGrabStateFlagV1::FixedAnchor);
+                state.flags |= static_cast<std::uint32_t>(::rock::api::touch::TouchGrabStateFlag::FixedAnchor);
             } else {
-                state.flags |= static_cast<std::uint32_t>(
-                    RockProviderTouchGrabStateFlagV1::CoordinateValid);
+                state.flags |= static_cast<std::uint32_t>(::rock::api::touch::TouchGrabStateFlag::CoordinateValid);
             }
             return state;
         }
@@ -620,41 +502,28 @@ namespace rock::provider
         void pruneExpired(const std::uint64_t frameIndex)
         {
             for (auto& slot : _slots) {
-                if (slot.active &&
-                    !provider_lease_policy::isActive(
-                        frameIndex,
-                        slot.expiresAfterFrame)) {
+                if (slot.active && !provider_lease_policy::isActive(frameIndex, slot.expiresAfterFrame)) {
                     slot = {};
                 }
             }
         }
 
-        bool hasScope(
-            const std::uint64_t ownerToken,
-            const std::uint64_t scopeToken) const
+        bool hasScope(const std::uint64_t ownerToken, const std::uint64_t scopeToken) const
         {
-            return std::any_of(
-                _slots.begin(),
-                _slots.end(),
-                [&](const Slot& slot) {
-                    return slot.active &&
-                           slot.ownerToken == ownerToken &&
-                           slot.scopeToken == scopeToken;
-                });
+            return std::any_of(_slots.begin(), _slots.end(), [&](const Slot& slot) {
+                return slot.active && slot.ownerToken == ownerToken && slot.scopeToken == scopeToken;
+            });
         }
 
         std::size_t scopeCount() const
         {
-            std::array<std::pair<std::uint64_t, std::uint64_t>,
-                kMaximumScopes>
-                scopes{};
+            std::array<std::pair<std::uint64_t, std::uint64_t>, kMaximumScopes> scopes{};
             std::size_t count = 0;
             for (const auto& slot : _slots) {
                 if (!slot.active) {
                     continue;
                 }
-                const auto identity =
-                    std::pair{ slot.ownerToken, slot.scopeToken };
+                const auto identity = std::pair{ slot.ownerToken, slot.scopeToken };
                 bool found = false;
                 for (std::size_t index = 0; index < count; ++index) {
                     if (scopes[index] == identity) {
@@ -669,29 +538,18 @@ namespace rock::provider
             return count;
         }
 
-        std::size_t activeCountOutsideScope(
-            const std::uint64_t ownerToken,
-            const std::uint64_t scopeToken) const
+        std::size_t activeCountOutsideScope(const std::uint64_t ownerToken, const std::uint64_t scopeToken) const
         {
-            return static_cast<std::size_t>(std::count_if(
-                _slots.begin(),
-                _slots.end(),
-                [&](const Slot& slot) {
-                    return slot.active &&
-                           (slot.ownerToken != ownerToken ||
-                               slot.scopeToken != scopeToken);
-                }));
+            return static_cast<std::size_t>(std::count_if(_slots.begin(), _slots.end(), [&](const Slot& slot) {
+                return slot.active && (slot.ownerToken != ownerToken || slot.scopeToken != scopeToken);
+            }));
         }
 
-        bool clearScopeUnchecked(
-            const std::uint64_t ownerToken,
-            const std::uint64_t scopeToken)
+        bool clearScopeUnchecked(const std::uint64_t ownerToken, const std::uint64_t scopeToken)
         {
             bool cleared = false;
             for (auto& slot : _slots) {
-                if (slot.active &&
-                    slot.ownerToken == ownerToken &&
-                    slot.scopeToken == scopeToken) {
+                if (slot.active && slot.ownerToken == ownerToken && slot.scopeToken == scopeToken) {
                     slot = {};
                     cleared = true;
                 }

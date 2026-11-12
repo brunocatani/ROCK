@@ -1,4 +1,4 @@
-#include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
+#include "physics-interaction/native/havok/PhysicsCallbackQuiescenceGate.h"
 
 #include <atomic>
 #include <cassert>
@@ -8,8 +8,10 @@
 using rock::PhysicsCallbackQuiescenceGate;
 
 // Timing is not part of the quiescence contract exercised by this executable.
-namespace rock::performance_profiler {
+namespace rock::performance_profiler
+{
     ScopedTimer::ScopedTimer(Scope scope) noexcept : _scope(scope) {}
+
     ScopedTimer::~ScopedTimer() = default;
 }
 

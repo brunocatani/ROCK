@@ -19,32 +19,51 @@ namespace rock::saved_grab_offset
     // per-hand finger pose alongside the transform; a v1 file still parses
     // fine under newer formats, it simply has no "finger" section.
     // v3: optional exact parent-local finger rotations on the normal FRIK rig.
-    // This private disk record does not change any published provider record.
-    inline constexpr std::uint32_t kFormatVersion = 3;
+    // v4: optional per-hand `bodyNode`, the node of the grabbed body the
+    // offset is measured against on objects whose bodies move against each
+    // other. This private disk record does not change any published provider
+    // record.
+    inline constexpr std::uint32_t kFormatVersion = 4;
     inline constexpr std::string_view kExactFingerRig = "frik-normal-authored-v1";
 
-    // Load-order-independent form identity; empty = none.
+    // Load-order-independent form identity; empty = none. `variant` names a
+    // differently shaped model of the same base form ("single" or "multiple"
+    // for count-based loose ammo) and is empty for every other object; each
+    // variant is a separate saved object with its own file.
     struct FormRef
     {
         std::string plugin;
         std::uint32_t localFormId{ 0 };
+        std::string variant;
+
         [[nodiscard]] bool empty() const { return plugin.empty() && localFormId == 0; }
     };
 
-    // Position + orientation relative to the live GrabAuthorityProxy frame
+    // Position + orientation relative to the hand's palm proxy frame
     // (proxy-local space, same convention as GrabCore.h's
     // objectInGeneratedProxyLocalSpace / objectFromGeneratedProxyLocalSpace),
     // plus an optional finger pose snapshot, both captured at button-save time.
+    // The palm frame is rigidly attached to the wrist (generatedProxyForWrist):
+    // a save measures it on the hand rendered on the object, a grab applies it
+    // on the grabbing hand.
     struct HandOffset
     {
         bool present{ false };
         float translateGame[3]{ 0.0f, 0.0f, 0.0f };
         // Row-major 3x3: rotate[row * 3 + column], row = object axis (X/Y/Z).
         float rotate[9]{ 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f };
+        // The object frame the transform places. Empty: the object's root (or
+        // the visible branch of count-based ammo), right for a rigid object.
+        // Otherwise the name of the node that owns the grabbed body: on an
+        // object whose bodies move against each other (ragdoll and skinned
+        // clutter, tongs) the root tells nothing about where the grabbed
+        // bone is, so the offset is measured against that bone and applies
+        // only to a grab of that body.
+        std::string bodyNode;
 
         // Same convention as grab_finger_pose_runtime::SolvedGrabFingerPose:
-        // thumb/index/middle/ring/pinky, 0 = closed, 1 = authored open.
-        // All fingers support over-open values through 2.0.
+        // thumb/index/middle/ring/pinky, 0 = closed, 1 = authored open. Files
+        // from earlier solves hold values up to 2.0; a grab shows those as 1.
         bool hasFingerPose{ false };
         float fingerValues[5]{ 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
         // Optional per-joint (3 per finger: proximal/mid/distal) shaping; when

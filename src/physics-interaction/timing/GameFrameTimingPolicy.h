@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 
@@ -33,6 +34,23 @@ namespace rock::game_frame_timing_policy
      */
     inline constexpr float kMaxOrdinaryDeltaSeconds = 0.1f;
 
+    /*
+     * Per-frame motion limits (jump, step and teleport distances) were tuned
+     * at 90 Hz. They bound a speed, not a distance: a 15 fps frame carries six
+     * 90 Hz frames of real hand and locomotion motion. Scale such a limit by
+     * this factor so slow frames are not misread as discontinuities. Never
+     * below 1, so faster frames keep the tuned limit.
+     */
+    inline constexpr float kMotionLimitReferenceFrameSeconds = 1.0f / 90.0f;
+
+    [[nodiscard]] inline float frameMotionScale(float frameSeconds) noexcept
+    {
+        if (!std::isfinite(frameSeconds) || frameSeconds <= kMotionLimitReferenceFrameSeconds) {
+            return 1.0f;
+        }
+        return (std::min)(frameSeconds, kMaxOrdinaryDeltaSeconds) / kMotionLimitReferenceFrameSeconds;
+    }
+
     struct GameFrameTiming
     {
         std::uint64_t sequence = 0;
@@ -62,7 +80,8 @@ namespace rock::game_frame_timing_policy
         bool menuPaused = false;
     };
 
-    [[nodiscard]] inline GameFrameTiming advanceGameFrameClock(GameFrameClockState& state, const GameFrameSampleInput& input)
+    [[nodiscard]] inline GameFrameTiming advanceGameFrameClock(GameFrameClockState& state,
+        const GameFrameSampleInput& input)
     {
         GameFrameTiming timing{};
         timing.sequence = ++state.sequence;

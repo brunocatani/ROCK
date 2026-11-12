@@ -1,0 +1,419 @@
+## ROCK_example.toml - every player option with its default and help
+## Reference only: ROCK never reads this file. The first time ROCK starts it writes this same text as
+## ROCK.toml in Documents\My Games\Fallout4VR\Mods_Config\ROCK.
+
+## === 01. Grabbing ===
+[Grabbing]
+## Grab Direction
+## 1 = Palm Down (HIGGS Style). 2 = Fingers (Alyx Style).
+## Palm Down (HIGGS Style): your hand reaches out of the palm, for objects near and far.
+## Fingers (Alyx Style): your hand reaches along your fingers, for objects near and far.
+## Far grabs also need the object in your view. Applies at once, on each hand.
+GrabDirection = 1
+
+## Far Grab Style
+## 1 = Immediate. 2 = Pull.
+## Immediate: grabbing a far object brings it to your hand at once, with no flick.
+## Pull: hold grab to lock on, then flick your hand toward yourself; release before the flick to cancel.
+## A pulled object follows your hand while you move or turn. Keep holding grab to catch it as it arrives, or let go and press grab again as it reaches you. Applies to the next far grab.
+FarGrabStyle = 1
+
+## === 02. Grab Highlight ===
+[SelectionFeedback]
+## Grab Highlight
+## Outlines the object your hand would grab.
+HighlightEnabled = true
+
+## Grab Highlight Strength
+## 1 = 40%. 2 = 60%. 3 = 80%. 4 = 100%.
+HighlightIntensityMode = 2
+
+## Grab Highlight Color
+## red, blue, orange or white.
+HighlightColor = "blue"
+
+## === 03. Prompts and Quick Loot ===
+[Prompts]
+## Quick Loot Panel Placement
+## 1 = Right Hand. 2 = Closer Hand. 3 = At Container.
+## Right Hand: the game's own panel on the right hand; it lists only what the right hand points at.
+## Closer Hand: the panel rides the hand pointing at the container, mirrored on the left hand; when both hands point at containers the closer one takes it.
+## At Container: the panel stands upright at the container it lists, turned toward you, at a fixed size; either hand can point at it.
+## The button hints go with the panel; the buttons themselves stay on the right controller in every mode. Applies at once.
+QuickLootPanelPlacement = 2
+
+## Activate Prompt Placement
+## 1 = Both Hands. 2 = Closer Hand. 3 = At Object.
+## The prompts each hand shows for what it points at (Open, Talk, Take and the rest).
+## Both Hands: the game's own prompts on each hand; two hands on one door show it twice.
+## Closer Hand: when both hands point at the same object only the closer hand shows its prompt.
+## At Object: the prompt stands upright at the object it names, turned toward you, at a fixed size, and shows once when both hands point at it.
+## Activation itself is unchanged. Applies at once.
+ActivatePromptPlacement = 2
+
+## === 04. Weapon Handling ===
+[WeaponHandling]
+## Gunstock Mode
+## Two-handed firearms aim along the line from your firing hand to your support hand, like a rifle with a stock.
+## Hand and finger poses stay as authored; the support hand may sit slightly away from its controller.
+## Melee weapons, weapon parts you operate and bipod-latched weapons are not affected.
+## False: normal two-hand aiming.
+GunstockMode = false
+
+## FRIK Weapon Offsets
+## Use the weapon offset files you saved in FRIK (FRIK_Config\Weapons_Offsets), including their weapon scale, instead of ROCK's grip.
+## FRIK's built-in default offsets are never used.
+## Weapons with a saved file use dynamic support grabs only and skip PAPER's reload and cycle animations.
+FrikUserWeaponOffsets = false
+
+## Bipod Mode
+## Click the right stick to latch any equipped weapon part to the surface it touches.
+## While latched, recoil is a fixed 10% whatever your hands or armor.
+## False: the click is left to other mods.
+BipodMode = true
+
+## Bipod Hands-Free Distance
+## A latched weapon stays equipped with no hand on it while your headset is within this distance of the latch point, in metres.
+## Farther away it is left in place as a world object (it does not fall). Must be above 0.
+BipodHandsFreeRadiusMeters = 2.0
+
+## Detach Either Hand
+## Either hand may let go of the weapon, including the hand on the firing grip; the other hand keeps holding it.
+## Grips release as Weapon Grab Mode sets. Parts you only attach to release when you let go of the button.
+## What happens when the last hand lets go is set by Weapon Release Mode.
+DetachEitherHand = true
+
+## Auto Equip
+## How a loose weapon you hold gets equipped.
+## True: once your palm settles on its firing grip (see Auto Equip Settle Time), no trigger needed (default).
+## False: pull the trigger while holding it to equip it in that hand.
+## Far grabs seat a loose weapon at its firing grip and close grabs at its nearest grip; touch grabs equip only inside a grip zone.
+## With a weapon already in the other hand, the new one becomes the second weapon.
+## With Auto Equip on, letting go always drops the weapon: kept in your hand, it would equip again at once.
+AutoEquip = true
+
+## Weapon Release Mode
+## What happens when the last hand lets go of an equipped weapon.
+## 1 = It stays equipped and held (game default).
+## 2 = It stays loose in your hand: press grab again and release to drop or stash it, or pull the trigger to equip it again.
+## 3 = It drops where it is, leaving with your hand's motion (default).
+## Applies only with Auto Equip off; Auto Equip always drops.
+## Applies per weapon. Weapon Grab Mode sets the release gesture.
+WeaponReleaseMode = 3
+
+## Weapon Grab Mode
+## 1 = Toggle both grips. 2 = Toggle firing grip only. 3 = Hold both grips.
+## Toggle: press grab to take the grip and press again to let go. Hold: the grip lasts while you hold grab.
+## Mode 2 toggles whichever hand holds the firing grip; support grips must be held.
+## Parts you only attach to always need grab held. Ordinary objects and surfaces always use hold to grab.
+## Weapon Release Mode decides whether the last release keeps a loose grab or drops the weapon.
+WeaponGrabMode = 1
+
+## Auto Equip Settle Time
+## Seconds your palm must stay on the firing grip before Auto Equip equips. Range: 0 to 2.
+AutoEquipSettleSeconds = 0.15
+
+## Grab Anywhere on Weapon
+## True: your support hand can hold a firearm anywhere.
+## False: firearms with authored support grips take the support hand only there (default).
+## Melee weapons, and firearms without an authored support grip, can always be held anywhere.
+## Applies to either support hand.
+GrabAnywhereOnWeapon = false
+
+## Melee Grip Angle
+## Tilts a held melee weapon and your hand together around the grip, in degrees, on top of ROCK's built-in 30 degree forward tilt.
+## Positive tilts further forward, negative tilts back; -30 gives the weapon's authored angle. Range: -180 to 180.
+## Regrab a loose weapon to see the change.
+MeleeGripPitchDegrees = 0.0
+
+## Shake Filtering
+## 0 = Off. 1 = Responsive. 2 = Balanced. 3 = Steady. 4 = Heavy.
+## Smooths controller shake on equipped firearms, loose weapons and held objects. Higher steadies more but responds more slowly.
+## Rotation and position smoothing: Responsive 12 and 6 ms, Balanced 25 and 12 ms, Steady 45 and 22 ms, Heavy 70 and 35 ms.
+## Free hands, FRIK and recoil are not affected. Applies at once.
+WeaponFilteringPreset = 3
+
+## Scoped Filtering: Rotation
+## Extra rotation smoothing, in seconds, while you look through a scope, with or without Shake Filtering.
+## 0 here and in Scoped Filtering: Position turns scoped filtering off. Range: 0 to 1.
+ScopedFilterRotationSeconds = 0.15
+
+## Scoped Filtering: Position
+## Extra position smoothing, in seconds, while you look through a scope. Range: 0 to 1.
+ScopedFilterTranslationSeconds = 0.08
+
+## Scoped Filtering: Release Speed
+## How fast you turn the controller, in degrees per second, before the scoped smoothing drops to half.
+## Holding still gets full smoothing; swinging to a new target loosens it.
+## 0 keeps full smoothing at any speed. Range: 0 to 720.
+ScopedFilterReleaseDegreesPerSecond = 45.0
+
+## Firing Grip Reach
+## How far from the firing grip a hand can take it over or grab it again, in game units (70 = 1 metre).
+## The zone is a quarter circle on each side of the grip, from straight out to straight down.
+## Press grab inside it to move the firing grip to that hand; the firing hand can also pass it with a grab tap. Range: 0.25 to 30.
+FiringGripReattachRadiusGameUnits = 10.0
+
+## Grip Zone Marker Size
+## Diameter of the sphere that marks a weapon's grip zones, in game units (70 = 1 metre). Range: 0.1 to 5.
+GripZoneIndicatorDiameterGameUnits = 0.7
+
+## Ammo Counter Style
+## 1 = Minimal. 2 = Immersive. 3 = Vanilla.
+## Minimal: white loaded and reserve rounds beside the firing grip on the palm side, shown while you look at them.
+## Immersive: the same place and look to show, in the game's HUD color and bracket frame, loaded over reserve.
+## Vanilla: the game's counter on the back of the hand holding the weapon, in HUD color, always shown (mirrored on the left hand).
+## Every style replaces the game's counter with one counter per drawn weapon. The counters are drawn through RPS UI Framework.
+AmmoCounterStyle = 2
+
+## === 05. Weapon Recoil ===
+[WeaponRecoil]
+## Immersive Recoil
+## Uses the recoil strengths below, for either hand and in power armor.
+## False: the game's own recoil strength, on the hand that fires.
+## The developer setting Emergency Disable Recoil overrides both.
+ImmersiveRecoil = true
+
+## Laser Recoil
+## Recoil for laser weapons in any hold and in power armor: 100 = 10% of the game's movement and rotation, 0 = none. Range: 0 to 300.
+## A bipod-latched weapon keeps its fixed 10%.
+LaserRecoilPercent = 100.0
+
+## Recoil Strength by Weapon Type
+## Percent of each weapon type's recoil: 0 = none, 100 = full, 300 = triple. Range: 0 to 300.
+## One Hand applies without a support grip, Two Hand with one.
+## Bipod latching and power armor use their own fixed recoil.
+## This key: pistols held with one hand.
+PistolOneHandRecoilPercent = 300.0
+
+## Pistols held with two hands. Range: 0 to 300.
+PistolTwoHandRecoilPercent = 80.0
+
+## Rifles held with one hand. Range: 0 to 300.
+RifleOneHandRecoilPercent = 300.0
+
+## Rifles held with two hands. Range: 0 to 300.
+RifleTwoHandRecoilPercent = 80.0
+
+## Shotguns held with one hand. Range: 0 to 300.
+ShotgunOneHandRecoilPercent = 300.0
+
+## Shotguns held with two hands. Range: 0 to 300.
+ShotgunTwoHandRecoilPercent = 80.0
+
+## Heavy weapons held with one hand. Range: 0 to 300.
+HeavyOneHandRecoilPercent = 300.0
+
+## Heavy weapons held with two hands. Range: 0 to 300.
+HeavyTwoHandRecoilPercent = 300.0
+
+## Any other firearm held with one hand. Range: 0 to 300.
+DefaultOneHandRecoilPercent = 300.0
+
+## Any other firearm held with two hands. Range: 0 to 300.
+DefaultTwoHandRecoilPercent = 80.0
+
+## === 06. Firing Hand ===
+[FiringHand]
+## Default Hand
+## right or left: the firing hand for equips that come without a hand (favorites, PALM, scripts and other mods).
+## Grenade draws prefer this hand and use the other one when it is busy.
+## Pip-Boy and trigger equips and grip handoffs always use the hand that acts.
+## Applies on the next equip or draw. The game's own left-handed mode is not supported and stays off.
+DefaultHand = "right"
+
+[FiringHand.Left]
+## Left Firing Aim: Yaw
+## Turns the aim of a weapon fired from the left hand, in degrees. 0 uses the plain mirror of the right-hand hold. Range: -30 to 30.
+AimYawDegrees = 0.0
+
+## Left Firing Aim: Pitch
+## Tilts the aim of a weapon fired from the left hand up or down, in degrees. Range: -30 to 30.
+AimPitchDegrees = 0.0
+
+## Left Firing Aim: Offset
+## Shifts the aim of a weapon fired from the left hand, in game units (70 = 1 metre), as [x, y, z]. Each value: -15 to 15.
+AimOffsetGameUnits = [0.0, 0.0, 0.0]
+
+## Left Firing Grip
+## Moves where the left hand holds the firing grip, in game units (70 = 1 metre), as [along the fingers, into or out of the palm, across the palm].
+## All 0 = the plain mirror of the right-hand grip. The hand stays put and the weapon moves the other way. Each value: -15 to 15. Regrab to apply.
+GripOffsetGameUnits = [0.0, 0.0, 0.0]
+
+[FiringHand.Right]
+## Right Support Grip
+## Moves where the right hand holds a support grip when the left hand fires, in game units (70 = 1 metre), as [along the fingers, into or out of the palm, across the palm].
+## All 0 = the plain mirror of the left-hand support grip. Each value: -15 to 15. Regrab to apply.
+SupportGripOffsetGameUnits = [0.0, 0.0, 0.0]
+
+## === 07. Scopes ===
+[Scopes]
+## Immersive Scopes
+## ROCK places the scope view on the weapon, raises it while you hold the scope button (right A by default), and corrects the overlay and zoom.
+## False: the game's own scopes.
+## Starting with this off leaves the game's scope hook free for other scope mods. Turning it on takes the hook until you restart; if another mod owns it, ROCK's scopes stay off.
+## Release the scope button before changing this. Reload stays on a tap of the same button.
+EnableImmersiveScopes = true
+
+## Scope Hold Time
+## Seconds to hold the scope button (right A, or left X for a left firing hand) before the scope view comes up; a shorter press reloads. Range: 0.05 to 2.
+ManualScopeHoldSeconds = 0.3
+
+## === 08. Grenades ===
+[Grenades]
+## Immersive Grenades
+## Hold the grenade button (right B by default) to draw a grenade into your hand and throw it by hand.
+## Selecting a grenade in PALM also puts it in your hand.
+## False: the game's own hold and release throw.
+## Release the grenade button before changing this; a grenade already drawn keeps its mode.
+ImmersiveGrenades = true
+
+## Grenade Fuse
+## Seconds from pulling the pin to detonation for grenades drawn by hand.
+## 0 uses the grenade's own fuse time. Range: 0 to 30.
+RealisticGrenadeFuseSeconds = 4.0
+
+## === 09. Immersive Aid ===
+[ImmersiveAid]
+## Immersive Aid
+## Stimpaks and Med-X sit in a fixed syringe grip and inject after touching your body for 0.5 seconds.
+## False: they are grabbed like any object and used by bringing them to your mouth.
+## Release and grab again to see the change on an item already in your hand.
+Enabled = true
+
+## === 10. Controller Input ===
+[ControllerInput]
+## Block VATS
+## Stops the game's VATS from opening on the VATS button (right B by default).
+## The button still works for ROCK and other mods.
+SuppressNativeVats = false
+
+## Offer ROCK's SteamVR Binding
+## True: when Index controllers or Vive wands use SteamVR's default binding for Fallout 4 VR, the setup wizard opens by itself once per game start, when no menu or scene is in the way, and offers ROCK's binding (the default binding turns A and X into grip). It never replaces a binding you chose in SteamVR.
+## False: the wizard opens only when you open it; it still offers the binding then. Choosing other controllers in the wizard sets this.
+OfferSteamVRBinding = true
+
+## Pip-Boy and Pause Hold Time
+## Tap left Y to open the Pip-Boy; hold it this many seconds to open the Pause menu instead. Range: 0.15 to 2.
+PipboyPauseHoldSeconds = 0.35
+
+[ControllerInput.Right]
+## Button Layout
+## The physical input that acts as each ROCK button, per hand. ROCK, PALM, PAPER, SCISSORS Redux, FRIK and the game all follow it.
+## The defaults are the Quest and Touch layout and change nothing.
+## Values: trigger, grip, a, b (x, y on the left), thumbstick, grip_click, axis3, axis4, pad_up, pad_down, pad_left, pad_right, pad_center (trackpad click regions), none.
+## Swapping two buttons moves every action of each. Stick movement is never remapped.
+## Controllers whose SteamVR binding merges buttons (Index A reports as grip) need the binding fixed in SteamVR first; ROCK only sees what SteamVR sends.
+## This key: the right trigger.
+Trigger = "trigger"
+
+## The right grab button (grip by default).
+Grab = "grip"
+
+## Right A: reload tap, scope hold.
+A = "a"
+
+## Right B: grenade draw hold, VATS.
+B = "b"
+
+## Right stick click: bipod latch; opens PALM by default.
+StickClick = "thumbstick"
+
+[ControllerInput.Left]
+## The left trigger.
+Trigger = "trigger"
+
+## The left grab button (grip by default).
+Grab = "grip"
+
+## Left X: reload tap and scope hold for a left firing hand.
+X = "x"
+
+## Left Y: Pip-Boy tap, Pause hold.
+Y = "y"
+
+## Left stick click.
+StickClick = "thumbstick"
+
+[SetupWizard]
+## Setup Wizard Shown
+## The setup wizard opens by itself once, 10 seconds after you are in the game with no menu or scene in the way, whenever this ROCK brings a newer edition of it (new pages or options to show). On a new game it waits until you leave the mirror. ROCK writes the edition here when the wizard opens.
+## 0 = show it at the next game start. 999 = never open it by itself.
+ShownEdition = 0
+
+[Bindings]
+## Bindings
+## The control and gesture of each function: "<hand> <gesture> <control>", or "none".
+## Hands: firing (the hand on the weapon's firing grip), support, primary, offhand, left, right, each.
+## Gestures: press (acts while held), tap, hold, double (double tap).
+## Controls: as in the button layout above. Add "+<hand> <control>" for a button that must be held at the same time.
+## This key: grab with each hand.
+Grab = "each press grip"
+
+## Fire the equipped weapon.
+Fire = "firing press trigger"
+
+## The support hand's trigger: a second weapon, or the support action of what that hand holds.
+SupportTrigger = "support press trigger"
+
+## Use what the primary hand points at (take, open, talk). It owns the whole press while there is something to use.
+Use = "primary press a"
+
+## Reload the equipped weapon.
+Reload = "firing tap a"
+
+## Look through the weapon's scope while active.
+Scope = "firing hold a"
+
+## Open VATS.
+Vats = "primary tap b"
+
+## Draw a grenade into the hand.
+Grenade = "primary hold b"
+
+## Open the Pip-Boy.
+Pipboy = "offhand tap y"
+
+## Open the Pause menu.
+Pause = "offhand hold y"
+
+## Bipod latch and held placement while the weapon touches a surface, and the game's Favorites menu.
+StickActions = "primary press thumbstick"
+
+## Open RobCo PALM's wheel.
+Palm = "primary press thumbstick"
+
+## Hold Time
+## Seconds a hold binding needs before it acts, for functions without their own hold time (Scope and Pause have theirs; Grenade uses the game's). Range: 0.1 to 2.
+HoldSeconds = 0.35
+
+## Double Tap Time
+## Longest gap between the two presses of a double tap. A tap on the same control waits this long before it acts. Range: 0.15 to 0.6.
+DoubleTapSeconds = 0.3
+
+## === 11. Native Gameplay ===
+[NativeGameplay]
+## Melee Swing Speed
+## Hand speed that starts a vanilla melee swing, in game units per second (70 = 1 metre per second). The game uses 200.
+## Turning the wrist alone never swings. Range: 50 to 2000.
+VanillaMeleeSwingSpeed = 300.0
+
+## Gun Bash Speed
+## Hand speed that starts a vanilla gun bash, in game units per second (70 = 1 metre per second). The game uses 200.
+## Turning the wrist alone never bashes. Range: 50 to 2000.
+VanillaGunBashSpeed = 400.0
+
+## === 12. Logging ===
+[Logging]
+## Log Level
+## How much ROCK writes to ROCK.log.
+## 0 = Trace. 1 = Debug. 2 = Info. 3 = Warn. 4 = Error. 5 = Critical. 6 = Off.
+## Trace and Debug write a lot and can cost frame time; keep Info for normal play.
+LogLevel = 2
+
+## === 13. Developer Settings ===
+[Developer]
+## Developer Settings
+## Shows the ROCK Dev page in the settings menu, with the developer and tuning options of ROCK_Developer.toml.
+## False: the page stays hidden; values already set there still apply.
+EnableDeveloperSettings = false

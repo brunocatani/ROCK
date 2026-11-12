@@ -1,181 +1,314 @@
-#include <ROCK/GrabV1_3.h>
+#include <ROCK/Grab.h>
+#include "Boundary.h"
+#include "api/GrabEventCallbacks.h"
+#include "physics-interaction/api/InteractionCommandQueue.h"
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
-#include "GrabMarshalling.h"
-#include <ROCK/Discovery.h>
-#include "EventBoundary.h"
 
-namespace rock::api::grab {
-namespace {
-using namespace boundary;
-Status ROCK_CALL requestForceGrabV1(std::uint64_t ownerToken, const ForceGrabRequestV1* request, std::uint64_t* outCommandId) noexcept {
-    if (!outCommandId) return Status::InvalidArgument;
-    *outCommandId = {};
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        if (const auto s = checkInput(request); s != Status::Ok) return s;
-        provider::RockProviderForceGrabRequestV1 native_request{};
-        convert(native_request, *request);
-        if (request->flags & ~(1u << 0)) return Status::InvalidArgument;
-        const auto result = provider::runtime::apiRequestForceGrabV1(ownerToken, &native_request, outCommandId);
-        return static_cast<Status>(result);
-    });
-}
-Status ROCK_CALL getInteractionCommandResultV1(std::uint64_t ownerToken, std::uint64_t commandId, InteractionCommandResultV1* outResult) noexcept {
-    if (const auto s = checkOutput(outResult); s != Status::Ok) return s;
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        provider::RockProviderInteractionCommandResultV1 native_outResult{};
-        const auto result = provider::runtime::apiGetInteractionCommandResultV1(ownerToken, commandId, &native_outResult);
-        convert(*outResult, native_outResult);
-        return static_cast<Status>(result);
-    });
-}
-Status ROCK_CALL requestForceReleaseV1(std::uint64_t ownerToken, const ForceReleaseRequestV1* request, std::uint64_t* outCommandId) noexcept {
-    if (!outCommandId) return Status::InvalidArgument;
-    *outCommandId = {};
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        if (const auto s = checkInput(request); s != Status::Ok) return s;
-        provider::RockProviderForceReleaseRequestV1 native_request{};
-        convert(native_request, *request);
-        const auto result = provider::runtime::apiRequestForceReleaseV1(ownerToken, &native_request, outCommandId);
-        return static_cast<Status>(result);
-    });
-}
-Status ROCK_CALL requestThrownDropV1(std::uint64_t ownerToken, const ThrownDropRequestV1* request, std::uint64_t* outCommandId) noexcept {
-    if (!outCommandId) return Status::InvalidArgument;
-    *outCommandId = {};
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        if (const auto s = checkInput(request); s != Status::Ok) return s;
-        provider::RockProviderThrownDropRequestV1 native_request{};
-        convert(native_request, *request);
-        const auto result = provider::runtime::apiRequestThrownDropV1(ownerToken, &native_request, outCommandId);
-        return static_cast<Status>(result);
-    });
-}
-Status ROCK_CALL cancelInteractionCommandV1(std::uint64_t ownerToken, std::uint64_t commandId) noexcept {
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        const auto result = provider::runtime::apiCancelInteractionCommandV1(ownerToken, commandId);
-        return static_cast<Status>(result);
-    });
-}
-Status ROCK_CALL acquireOffhandReservationV1(std::uint64_t ownerToken, const OffhandReservationRequestV1* request) noexcept {
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        if (const auto s = checkInput(request); s != Status::Ok) return s;
-        provider::RockProviderOffhandReservationRequestV1 native_request{};
-        convert(native_request, *request);
-        const auto result = provider::runtime::apiAcquireOffhandReservationV1(ownerToken, &native_request);
-        return static_cast<Status>(result);
-    });
-}
-Status ROCK_CALL renewOffhandReservationV1(std::uint64_t ownerToken, const OffhandReservationRequestV1* request) noexcept {
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        if (const auto s = checkInput(request); s != Status::Ok) return s;
-        provider::RockProviderOffhandReservationRequestV1 native_request{};
-        convert(native_request, *request);
-        const auto result = provider::runtime::apiRenewOffhandReservationV1(ownerToken, &native_request);
-        return static_cast<Status>(result);
-    });
-}
-Status ROCK_CALL releaseOffhandReservationV1(std::uint64_t ownerToken) noexcept {
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        const auto result = provider::runtime::apiReleaseOffhandReservationV1(ownerToken);
-        return static_cast<Status>(result);
-    });
-}
-Status ROCK_CALL getOffhandReservationStateV1(std::uint64_t ownerToken, OffhandReservationStateV1* outState) noexcept {
-    if (const auto s = checkOutput(outState); s != Status::Ok) return s;
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        provider::RockProviderOffhandReservationStateV1 native_outState{};
-        const auto result = provider::runtime::apiGetOffhandReservationStateV1(ownerToken, &native_outState);
-        convert(*outState, native_outState);
-        return static_cast<Status>(result);
-    });
-}
-Status ROCK_CALL getHandTargetDetailsV1(std::uint64_t ownerToken, Hand hand, HandTargetDetailsV1* outDetails) noexcept {
-    if (const auto s = checkOutput(outDetails); s != Status::Ok) return s;
-    if (hand!=Hand::Right && hand!=Hand::Left) return Status::InvalidArgument;
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        provider::RockProviderHandTargetDetailsV1 native_outDetails{};
-        const auto result = provider::runtime::apiGetHandTargetDetailsV1(ownerToken, static_cast<provider::RockProviderHand>(hand), &native_outDetails);
-        convert(*outDetails, native_outDetails);
-        return static_cast<Status>(result);
-    });
-}
-Status ROCK_CALL requestPowerArmorGrabV1(std::uint64_t ownerToken, const PowerArmorGrabRequestV1* request, std::uint64_t* outCommandId) noexcept {
-    if (!outCommandId) return Status::InvalidArgument;
-    *outCommandId = {};
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        if (const auto s = checkInput(request); s != Status::Ok) return s;
-        provider::RockProviderPowerArmorGrabRequestV1 native_request{};
-        convert(native_request, *request);
-        const auto result = provider::runtime::apiRequestPowerArmorGrabV1(ownerToken, &native_request, outCommandId);
-        return static_cast<Status>(result);
-    });
-}
+namespace rock::api::grab
+{
+    namespace
+    {
+        using namespace boundary;
+        namespace p = provider;
 
-#include "GrabEndpoints.inl"
-Status ROCK_CALL getHeldPlacementState(OwnerToken owner,v1_1::HeldPlacementState* out) noexcept {
-    if (const auto s=checkOutput(out); s!=Status::Ok) return s;
-    return invoke(owner,kInterfaceId,1,true,[&] {return provider::runtime::getHeldPlacementState(*out);});
-}
-Status ROCK_CALL submitHeldPlacementIntent(OwnerToken owner,const v1_1::HeldPlacementIntent* request) noexcept {
-    if (const auto s=checkInput(request); s!=Status::Ok) return s;
-    return invoke(owner,kInterfaceId,2,true,[&] {return provider::runtime::submitHeldPlacementIntent(owner,*request);});
-}
-Status ROCK_CALL clearHeldPlacementIntent(OwnerToken owner) noexcept {
-    return invoke(owner,kInterfaceId,2,true,[&] {return provider::runtime::clearHeldPlacementIntent(owner);});
-}
+        bool validHand(Hand hand) noexcept { return hand == Hand::Right || hand == Hand::Left; }
 
-Status ROCK_CALL setDefaultGrabPoses(OwnerToken owner, const v1_2::DefaultGrabPoses* request) noexcept {
-    return invoke(owner,kInterfaceId,2,true,[&]() -> Status {
-        if (const auto status=checkInput(request); status!=Status::Ok) return status;
-        return saved_grab_offset::setDefaultGrabPoses(owner,*request);
-    });
-}
-Status ROCK_CALL clearDefaultGrabPoses(OwnerToken owner, std::uint32_t baseFormId) noexcept {
-    return invoke(owner,kInterfaceId,2,true,[&] {return saved_grab_offset::clearDefaultGrabPoses(owner,baseFormId);});
-}
-Status ROCK_CALL setHeldObjectTarget(OwnerToken owner,const v1_3::HeldObjectTarget* request) noexcept {
-    return invoke(owner,kInterfaceId,2,true,[&]() -> Status {
-        if(const auto status=checkInput(request);status!=Status::Ok)return status;
-        return provider::runtime::setHeldObjectTarget(owner,*request);
-    });
-}
-Status ROCK_CALL clearHeldObjectTarget(OwnerToken owner,Hand hand) noexcept {
-    return invoke(owner,kInterfaceId,2,true,[&]{return provider::runtime::clearHeldObjectTarget(owner,hand);});
-}
-Status ROCK_CALL getHeldObjectPose(OwnerToken owner,Hand hand,v1_3::HeldObjectPose* output) noexcept {
-    if(const auto status=checkOutput(output);status!=Status::Ok)return status;
-    return invoke(owner,kInterfaceId,1,true,[&]{return provider::runtime::getHeldObjectPose(owner,hand,*output);});
-}
-}
-const v1_1::Api& tableV1_1() noexcept {
-    static const v1_1::Api value{{
-        &requestForceGrabV1,
-        &getInteractionCommandResultV1,
-        &requestForceReleaseV1,
-        &requestThrownDropV1,
-        &getHandInteractionStateV1,
-        &cancelInteractionCommandV1,
-        &acquireOffhandReservationV1,
-        &renewOffhandReservationV1,
-        &releaseOffhandReservationV1,
-        &getOffhandReservationStateV1,
-        &getHandTargetDetailsV1,
-        &requestPowerArmorGrabV1,
-        &getSample,
-        &requestInventoryGrab,
-        &copyEvents,
-        &setEventCallback,
-        &clearEventCallback,
-    },&getHeldPlacementState,&submitHeldPlacementIntent,&clearHeldPlacementIntent};
-    return value;
-}
-const v1_2::Api& tableV1_2() noexcept {
-    static const v1_2::Api value{tableV1_1(),&setDefaultGrabPoses,&clearDefaultGrabPoses};
-    return value;
-}
-const v1_3::Api& tableV1_3() noexcept {
-    static const v1_3::Api value{tableV1_2(),&setHeldObjectTarget,&clearHeldObjectTarget,&getHeldObjectPose};return value;
-}
-const ApiV1& table() noexcept { return tableV1_3().v1_2.v1_1.v1; }
+        Status startCommand(std::uint64_t* outCommandId) noexcept
+        {
+            if (!outCommandId)
+                return Status::InvalidArgument;
+            *outCommandId = 0;
+            return Status::Ok;
+        }
 
+        Status ROCK_CALL requestForceGrab(OwnerToken owner, const ForceGrabRequest* request,
+            std::uint64_t* outCommandId) noexcept
+        {
+            if (const auto s = startCommand(outCommandId); s != Status::Ok)
+                return s;
+            if (const auto s = checkInput(request); s != Status::Ok)
+                return s;
+            if (request->flags & ~static_cast<std::uint32_t>(ForceGrabFlag::UsePreferredGrabPointGame))
+                return Status::InvalidArgument;
+            return invoke(owner, kInterfaceId, 2, true,
+                [&] { return p::runtime::requestForceGrab(owner, *request, *outCommandId); });
+        }
+
+        Status ROCK_CALL requestForceRelease(OwnerToken owner, const ForceReleaseRequest* request,
+            std::uint64_t* outCommandId) noexcept
+        {
+            if (const auto s = startCommand(outCommandId); s != Status::Ok)
+                return s;
+            if (const auto s = checkInput(request); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 2, true,
+                [&] { return p::runtime::requestForceRelease(owner, *request, *outCommandId); });
+        }
+
+        Status ROCK_CALL requestThrownDrop(OwnerToken owner, const ThrownDropRequest* request,
+            std::uint64_t* outCommandId) noexcept
+        {
+            if (const auto s = startCommand(outCommandId); s != Status::Ok)
+                return s;
+            if (const auto s = checkInput(request); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 2, true,
+                [&] { return p::runtime::requestThrownDrop(owner, *request, *outCommandId); });
+        }
+
+        Status ROCK_CALL requestPowerArmorGrab(OwnerToken owner, const PowerArmorGrabRequest* request,
+            std::uint64_t* outCommandId) noexcept
+        {
+            if (const auto s = startCommand(outCommandId); s != Status::Ok)
+                return s;
+            if (const auto s = checkInput(request); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 2, true,
+                [&] { return p::runtime::requestPowerArmorGrab(owner, *request, *outCommandId); });
+        }
+
+        // An inventory grab is a force grab that first drops one owned item.
+        Status ROCK_CALL requestInventoryGrab(OwnerToken owner, const InventoryGrabRequest* request,
+            std::uint64_t* outCommandId) noexcept
+        {
+            if (const auto s = startCommand(outCommandId); s != Status::Ok)
+                return s;
+            if (const auto s = checkInput(request); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 2, true, [&] {
+                ForceGrabRequest grab{};
+                grab.hand = request->hand;
+                grab.flags = p::kForceGrabFromPlayerInventory;
+                grab.targetFormId = request->baseFormId;
+                grab.worldGeneration = request->worldGeneration;
+                grab.skeletonGeneration = request->skeletonGeneration;
+                grab.providerGeneration = request->providerGeneration;
+                return p::runtime::requestForceGrab(owner, grab, *outCommandId);
+            });
+        }
+
+        Status ROCK_CALL getInteractionCommandResult(OwnerToken owner, std::uint64_t commandId,
+            InteractionCommandResult* outResult) noexcept
+        {
+            if (const auto s = checkOutput(outResult); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 1, true,
+                [&] { return p::runtime::getInteractionCommandResult(owner, commandId, *outResult); });
+        }
+
+        Status ROCK_CALL cancelInteractionCommand(OwnerToken owner, std::uint64_t commandId) noexcept
+        {
+            return invoke(owner, kInterfaceId, 2, true,
+                [&] { return p::runtime::cancelInteractionCommand(owner, commandId); });
+        }
+
+        Status ROCK_CALL getHandInteractionState(OwnerToken owner, Hand hand, HandInteractionState* outState) noexcept
+        {
+            if (const auto s = checkOutput(outState); s != Status::Ok)
+                return s;
+            if (!validHand(hand))
+                return Status::InvalidArgument;
+            // The service copies an immutable-value publication under s_snapshotMutex;
+            // it does not read live hands, so F4SE tasks get the same safe snapshot.
+            return invoke(owner, kInterfaceId, 1, false,
+                [&] { return p::runtime::getHandInteractionState(owner, hand, *outState); });
+        }
+
+        Status ROCK_CALL getHandTargetDetails(OwnerToken owner, Hand hand, HandTargetDetails* outDetails) noexcept
+        {
+            if (const auto s = checkOutput(outDetails); s != Status::Ok)
+                return s;
+            if (!validHand(hand))
+                return Status::InvalidArgument;
+            return invoke(owner, kInterfaceId, 1, true,
+                [&] { return p::runtime::getHandTargetDetails(owner, hand, *outDetails); });
+        }
+
+        Status ROCK_CALL acquireHandReservation(OwnerToken owner, const HandReservationRequest* request) noexcept
+        {
+            if (const auto s = checkInput(request); s != Status::Ok)
+                return s;
+            if (const auto s = requireWeaponSlot(request->weaponSlot); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 2, true,
+                [&] { return p::runtime::acquireHandReservation(owner, *request); });
+        }
+
+        Status ROCK_CALL renewHandReservation(OwnerToken owner, const HandReservationRequest* request) noexcept
+        {
+            if (const auto s = checkInput(request); s != Status::Ok)
+                return s;
+            if (const auto s = requireWeaponSlot(request->weaponSlot); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 2, true,
+                [&] { return p::runtime::renewHandReservation(owner, *request); });
+        }
+
+        Status ROCK_CALL releaseHandReservation(OwnerToken owner) noexcept
+        {
+            return invoke(owner, kInterfaceId, 2, true, [&] { return p::runtime::releaseHandReservation(owner); });
+        }
+
+        Status ROCK_CALL getHandReservationState(OwnerToken owner, HandReservationState* outState) noexcept
+        {
+            if (const auto s = checkOutput(outState); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 1, true,
+                [&] { return p::runtime::getHandReservationState(owner, *outState); });
+        }
+
+        Status ROCK_CALL getHeldPlacementState(OwnerToken owner, HeldPlacementState* outState) noexcept
+        {
+            if (const auto s = checkOutput(outState); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 1, true, [&] { return p::runtime::getHeldPlacementState(*outState); });
+        }
+
+        Status ROCK_CALL submitHeldPlacementIntent(OwnerToken owner, const HeldPlacementIntent* intent) noexcept
+        {
+            if (const auto s = checkInput(intent); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 2, true,
+                [&] { return p::runtime::submitHeldPlacementIntent(owner, *intent); });
+        }
+
+        Status ROCK_CALL clearHeldPlacementIntent(OwnerToken owner) noexcept
+        {
+            return invoke(owner, kInterfaceId, 2, true, [&] { return p::runtime::clearHeldPlacementIntent(owner); });
+        }
+
+        Status ROCK_CALL setDefaultGrabPoses(OwnerToken owner, const DefaultGrabPoses* poses) noexcept
+        {
+            if (const auto s = checkInput(poses); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 2, true,
+                [&] { return saved_grab_offset::setDefaultGrabPoses(owner, *poses); });
+        }
+
+        Status ROCK_CALL clearDefaultGrabPoses(OwnerToken owner, std::uint32_t baseFormId) noexcept
+        {
+            return invoke(owner, kInterfaceId, 2, true,
+                [&] { return saved_grab_offset::clearDefaultGrabPoses(owner, baseFormId); });
+        }
+
+        Status ROCK_CALL setHeldObjectTarget(OwnerToken owner, const HeldObjectTarget* target) noexcept
+        {
+            if (const auto s = checkInput(target); s != Status::Ok)
+                return s;
+            if (const auto s = checkWeaponSlot(target->connectedWeaponSlot); s != Status::Ok)
+                return s;
+            if ((target->connectedWeaponFormId || target->connectedWeaponGeneration) &&
+                !weaponSlotPublished(target->connectedWeaponSlot))
+                return Status::TargetUnavailable;
+            return invoke(owner, kInterfaceId, 2, true,
+                [&] { return p::runtime::setHeldObjectTarget(owner, *target); });
+        }
+
+        Status ROCK_CALL clearHeldObjectTarget(OwnerToken owner, Hand hand) noexcept
+        {
+            return invoke(owner, kInterfaceId, 2, true, [&] { return p::runtime::clearHeldObjectTarget(owner, hand); });
+        }
+
+        Status ROCK_CALL getHeldObjectPose(OwnerToken owner, Hand hand, HeldObjectPose* outPose) noexcept
+        {
+            if (const auto s = checkOutput(outPose); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 1, true,
+                [&] { return p::runtime::getHeldObjectPose(owner, hand, *outPose); });
+        }
+
+        Status ROCK_CALL queryReferenceInteraction(OwnerToken owner, const ReferenceQuery* query,
+            ReferenceInteraction* outInteraction) noexcept
+        {
+            if (const auto s = checkOutput(outInteraction); s != Status::Ok)
+                return s;
+            if (const auto s = checkInput(query); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 1, true,
+                [&] { return p::runtime::queryReferenceInteraction(owner, *query, *outInteraction); });
+        }
+
+        Status ROCK_CALL queryPowerArmorTarget(OwnerToken owner, const ReferenceQuery* query,
+            PowerArmorTarget* outTarget) noexcept
+        {
+            if (const auto s = checkOutput(outTarget); s != Status::Ok)
+                return s;
+            if (const auto s = checkInput(query); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 1, true,
+                [&] { return p::runtime::queryPowerArmorTarget(owner, *query, *outTarget); });
+        }
+
+        Status ROCK_CALL setEventCallback(OwnerToken owner, EventCallback callback, void* userData) noexcept
+        {
+            if (!callback)
+                return Status::InvalidArgument;
+            return invoke(
+                owner, kInterfaceId, 1, true, [&] { return p::grab_callbacks::set(owner, callback, userData); },
+                p::OwnerAccess::Active);
+        }
+
+        Status ROCK_CALL clearEventCallback(OwnerToken owner) noexcept
+        {
+            return invoke(owner, kInterfaceId, 1, true, [&] {
+                p::grab_callbacks::clear(owner);
+                return Status::Ok;
+            });
+        }
+
+        Status ROCK_CALL getSample(OwnerToken owner, Sample* outSample) noexcept
+        {
+            return readSample(owner, kInterfaceId, outSample);
+        }
+
+        Status ROCK_CALL driveReleasedObject(OwnerToken owner, const ReleasedObjectDrive* drive,
+            ReleasedObjectProgress* outProgress) noexcept
+        {
+            if (const auto s = checkInput(drive); s != Status::Ok)
+                return s;
+            if (outProgress && (outProgress->size != sizeof(*outProgress) || outProgress->version != 1))
+                return outProgress->size != sizeof(*outProgress) ? Status::InvalidSize : Status::UnsupportedVersion;
+            return invoke(owner, kInterfaceId, 2, true, [&] {
+                ReleasedObjectProgress progress{};
+                const auto status = p::runtime::driveReleasedObject(*drive, progress);
+                if (outProgress)
+                    *outProgress = progress;
+                return status;
+            });
+        }
+    }
+
+    const Api& table() noexcept
+    {
+        static const Api value{
+            &requestForceGrab,
+            &requestForceRelease,
+            &requestThrownDrop,
+            &requestPowerArmorGrab,
+            &requestInventoryGrab,
+            &getInteractionCommandResult,
+            &cancelInteractionCommand,
+            &getHandInteractionState,
+            &getHandTargetDetails,
+            &acquireHandReservation,
+            &renewHandReservation,
+            &releaseHandReservation,
+            &getHandReservationState,
+            &getHeldPlacementState,
+            &submitHeldPlacementIntent,
+            &clearHeldPlacementIntent,
+            &setDefaultGrabPoses,
+            &clearDefaultGrabPoses,
+            &setHeldObjectTarget,
+            &clearHeldObjectTarget,
+            &getHeldObjectPose,
+            &queryReferenceInteraction,
+            &queryPowerArmorTarget,
+            &setEventCallback,
+            &clearEventCallback,
+            &getSample,
+            &driveReleasedObject,
+        };
+        return value;
+    }
 }

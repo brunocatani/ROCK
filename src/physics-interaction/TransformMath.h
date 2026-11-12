@@ -1,4 +1,5 @@
+// Transform value math. The implementation is the public header
+// <ROCK/TransformMath.h>, so ROCK and its API consumers share one convention.
 #pragma once
 
-// Shared value math lives with the public native-interaction convention.
 #include <ROCK/TransformMath.h>

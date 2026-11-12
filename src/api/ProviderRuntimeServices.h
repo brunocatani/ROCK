@@ -1,134 +1,228 @@
 #pragma once
+#include <ROCK/Animation.h>
+#include <ROCK/Collision.h>
+#include <ROCK/Core.h>
+#include <ROCK/Grab.h>
+#include <ROCK/Hands.h>
+#include <ROCK/Input.h>
+#include <ROCK/PlayerController.h>
+#include <ROCK/Touch.h>
+#include <ROCK/Weapon.h>
 #include <ROCK/WeaponParts.h>
-#include <ROCK/WeaponV1_1.h>
-#include <ROCK/InputV1_1.h>
-#include <ROCK/GrabV1_1.h>
-#include <ROCK/GrabV1_3.h>
-#include "WeaponSourceCatalog.h"
-#include "WeaponPartGrabPoints.h"
-#include "ProviderRuntimeTypes.h"
 #include "OwnerBindingPolicy.h"
+#include "ProviderPublication.h"
+#include "ProviderStatePolicy.h"
+#include "WeaponPartGrabPoints.h"
+#include "WeaponPartRequests.h"
+#include "WeaponSourceCatalog.h"
 
-namespace rock::weapon_part_runtime {struct Target;}
-namespace rock::provider::runtime {
+namespace rock::weapon_part_runtime
+{
+    struct Target;
+}
+
+namespace rock::provider::runtime
+{
+    // The public Core snapshot of one internal publication; getSnapshot and
+    // frame callbacks deliver the same values.
+    inline api::core::Snapshot toCoreSnapshot(const Publication& snapshot) noexcept
+    {
+        api::core::Snapshot result{};
+        result.sample = { snapshot.frameIndex, snapshot.stateSequence, snapshot.worldGeneration,
+            snapshot.skeletonGeneration, snapshot.providerGeneration, snapshot.collisionGeneration };
+        result.lifecycleFlags = snapshot.lifecycleFlags;
+        result.lastLifecycleReason = static_cast<api::core::LifecycleReason>(snapshot.lastLifecycleReason);
+        result.frikSkeletonReady = snapshot.frikSkeletonReady;
+        result.menuBlocking = snapshot.menuBlocking;
+        result.configBlocking = snapshot.configBlocking;
+        result.providerReady = snapshot.providerReady;
+        result.stableFrameCount = snapshot.stableFrameCount;
+        result.deltaSeconds = snapshot.deltaSeconds;
+        return result;
+    }
+
     bool onOwnerThread() noexcept;
-    api::Status setWeaponPartGrabPoints(api::OwnerToken,std::span<const api::weaponparts::v1_3::GrabPoint>,bool operating=false,bool pinky=false,bool anchored=false);
+    api::Status setWeaponPartGrabPoints(api::OwnerToken, std::span<const api::weaponparts::GrabPoint>);
     api::Status clearWeaponPartGrabPoints(api::OwnerToken);
-    bool hasOperatingGrabPoints(std::uint64_t generation);
-    std::size_t copyWeaponPartPointSelection(std::span<weapon_part_runtime::Target>,std::span<weapon_part_points::OwnedPoint>,std::size_t& pointCount);
-    api::Status setHeldObjectTarget(api::OwnerToken,const api::grab::v1_3::HeldObjectTarget&);
-    api::Status clearHeldObjectTarget(api::OwnerToken,api::Hand);
-    api::Status getHeldObjectPose(api::OwnerToken,api::Hand,api::grab::v1_3::HeldObjectPose&);
-    api::Status getHeldPlacementState(api::grab::v1_1::HeldPlacementState& output);
-    api::Status submitHeldPlacementIntent(api::OwnerToken owner, const api::grab::v1_1::HeldPlacementIntent& request);
+    bool hasGrabPoints(std::uint64_t generation);
+    std::size_t copyWeaponPartPointSelection(std::span<weapon_part_runtime::Target>,
+        std::span<weapon_part_points::OwnedPoint>, std::size_t& pointCount);
+    api::Status setHeldObjectTarget(api::OwnerToken, const api::grab::HeldObjectTarget&);
+    api::Status clearHeldObjectTarget(api::OwnerToken, api::Hand);
+    api::Status getHeldObjectPose(api::OwnerToken, api::Hand, api::grab::HeldObjectPose&);
+    api::Status driveReleasedObject(const api::grab::ReleasedObjectDrive&, api::grab::ReleasedObjectProgress&);
+    api::Status getHeldPlacementState(api::grab::HeldPlacementState& output);
+    api::Status submitHeldPlacementIntent(api::OwnerToken owner, const api::grab::HeldPlacementIntent& request);
     api::Status clearHeldPlacementIntent(api::OwnerToken owner);
-    api::Status getPlacementClickState(api::input::v1_1::PlacementClickState& output);
+    // Collision ejection clearance and object rest (EjectionContactsService.cpp,
+    // ObjectRestService.cpp); game thread, caller already authorized.
+    api::Status requestEjectionClearance(api::OwnerToken owner,
+        const api::collision::EjectionClearanceRequest& request);
+    api::Status cancelEjectionClearance(api::OwnerToken owner, std::uint32_t referenceFormId);
+    api::Status watchObjectRest(api::OwnerToken owner, const api::collision::ObjectRestRequest& request,
+        api::collision::ObjectRestState& state);
+    api::Status cancelObjectRest(api::OwnerToken owner, std::uint32_t referenceFormId);
+    api::Status getPlacementClickState(api::input::PlacementClickState& output);
     api::Status captureInventoryWeapon(std::uint64_t owner, std::uint32_t form, std::uint32_t stack,
-        api::weapon::v1_1::InventoryWeapon& output);
-    api::Status requestInventoryEquip(std::uint64_t owner, const api::weapon::v1_1::EquipRequest& request, std::uint64_t& command);
-    api::Status getInventoryEquipResult(std::uint64_t owner, std::uint64_t command, api::weapon::v1_1::EquipResult& output);
+        api::weapon::InventoryWeapon& output);
+    api::Status getHandlingAuthority(api::weapon::HandlingAuthority& output);
+    api::Status requestInventoryEquip(std::uint64_t owner, const api::weapon::EquipRequest& request,
+        std::uint64_t& command);
+    api::Status getInventoryEquipResult(std::uint64_t owner, std::uint64_t command, api::weapon::EquipResult& output);
     api::Status cancelInventoryEquip(std::uint64_t owner, std::uint64_t command);
+    api::Status unequipWeapon(std::uint32_t weaponSlot, std::uint32_t expectedFormId);
+    api::Status getFiringAimWorld(api::Hand hand, api::Transform& output);
+    api::Status setWarmInventoryWeapons(std::uint64_t owner, const api::weapon::InventoryWeapon* items,
+        std::uint32_t count);
+    api::Status requestInventoryDraw(std::uint64_t owner, const api::weapon::EquipRequest& request,
+        std::uint64_t& command);
+    api::Status setInventoryDrawPose(std::uint64_t owner, std::uint64_t command, const api::Transform& weaponWorld);
     std::uint64_t currentGameFrameIndex(); // Atomic game clock, including pre-publication lifecycle events.
-    const char* ROCK_PROVIDER_CALL apiGetModVersion();
-    bool ROCK_PROVIDER_CALL apiIsProviderReady();
-    bool ROCK_PROVIDER_CALL apiGetFrameSnapshot(RockProviderFrameSnapshot* outSnapshot);
-    bool ROCK_PROVIDER_CALL apiQueryWeaponContactAtPoint(const RockProviderWeaponContactQuery* query, RockProviderWeaponContactResult* outResult);
-    void ROCK_PROVIDER_CALL apiClearExternalBodies(std::uint64_t ownerToken);
-    std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEvidenceDetailCountV1();
-    std::uint32_t ROCK_PROVIDER_CALL apiCopyWeaponEvidenceDetailsV1(RockProviderWeaponEvidenceDetailV1* outDetails, std::uint32_t maxDetails);
-    std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEvidenceDetailPointCountV1(std::uint32_t bodyId);
-    std::uint32_t ROCK_PROVIDER_CALL apiCopyWeaponEvidenceDetailPointsV1(std::uint32_t bodyId, RockProviderPoint3* outPoints, std::uint32_t maxPoints);
-    std::uint32_t ROCK_PROVIDER_CALL apiGetBodyContactSnapshotV1(RockProviderBodyContactV1* outContacts, std::uint32_t maxContacts);
-    RockProviderHand ROCK_PROVIDER_CALL apiGetPrimaryHandV1();
-    RockProviderHand ROCK_PROVIDER_CALL apiGetOffhandHandV1();
-    bool ROCK_PROVIDER_CALL apiGetHandFrameV1(RockProviderHand hand, RockProviderHandFrameV1* outFrame);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiRegisterConsumerV1(const RockProviderConsumerRegistrationV1* registration, RockProviderConsumerHandleV1* outHandle);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiUnregisterConsumerV1(std::uint64_t ownerToken);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiRequestForceGrabV1(std::uint64_t ownerToken, const RockProviderForceGrabRequestV1* request, std::uint64_t* outCommandId);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetInteractionCommandResultV1(std::uint64_t ownerToken, std::uint64_t commandId, RockProviderInteractionCommandResultV1* outResult);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiRequestForceReleaseV1(std::uint64_t ownerToken, const RockProviderForceReleaseRequestV1* request, std::uint64_t* outCommandId);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiRequestThrownDropV1(std::uint64_t ownerToken, const RockProviderThrownDropRequestV1* request, std::uint64_t* outCommandId);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetHandInputSuppressionV1(std::uint64_t ownerToken, const RockProviderHandInputSuppressionRequestV1* request);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearHandInputSuppressionV1(std::uint64_t ownerToken, RockProviderHand hand);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetWeaponPartTargetsV1(std::uint64_t ownerToken, const RockProviderWeaponPartTargetV1* targets, std::uint32_t targetCount);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearWeaponPartTargetsV1(std::uint64_t ownerToken);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetWeaponPartDriveTargetsV1(std::uint64_t ownerToken, const RockProviderWeaponPartDriveTargetV1* targets, std::uint32_t targetCount);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearWeaponPartDriveTargetsV1(std::uint64_t ownerToken);
-    bool ROCK_PROVIDER_CALL apiQueryEquippedWeaponClassificationV1(RockProviderWeaponClassificationV1* outResult);
-    bool ROCK_PROVIDER_CALL apiGetWeaponPartGripStateV1(RockProviderHand hand, api::weaponparts::WeaponPartGripStateV1* outState);
-    bool ROCK_PROVIDER_CALL apiGetRawWandButtonStateV1(RockProviderHand hand, std::uint32_t buttonId, RockProviderRawWandButtonStateV1* outState);
-    bool ROCK_PROVIDER_CALL apiIsNativePipboyInputSuppressedV1();
-    std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEmitterCountV1();
-    std::uint32_t ROCK_PROVIDER_CALL apiCopyWeaponEmittersV1(RockProviderWeaponEmitterV1* outEmitters, std::uint32_t maxEmitters);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetNativeAnimationAuthorityV1(std::uint64_t ownerToken, const RockProviderNativeAnimationAuthorityRequestV1* request);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearNativeAnimationAuthorityV1(std::uint64_t ownerToken);
-    bool ROCK_PROVIDER_CALL apiGetNativeAnimationAuthorityStateV1(RockProviderNativeAnimationAuthorityStateV1* outState);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiRegisterAnimationPhaseCallbackV1(std::uint64_t ownerToken, RockProviderAnimationPhaseCallbackV1 callback, void* userData, std::uint64_t* outCallbackToken);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiUnregisterAnimationPhaseCallbackV1(std::uint64_t ownerToken, std::uint64_t callbackToken);
-    bool ROCK_PROVIDER_CALL apiGetEquippedWeaponGripStateV1(std::uint64_t ownerToken, RockProviderEquippedWeaponGripStateV1* outState);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetHandVisualAuthorityV1(std::uint64_t ownerToken, const RockProviderHandVisualAuthorityRequestV1* request);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearHandVisualAuthorityV1(std::uint64_t ownerToken, RockProviderHand hand);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiPublishNativeAnimationRuntimeV1(std::uint64_t ownerToken, const RockProviderNativeAnimationRuntimePublicationV1* publication);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetEquippedWeaponHandlingAuthorityV1(std::uint64_t ownerToken, const RockProviderEquippedWeaponHandlingRequestV1* request);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearEquippedWeaponHandlingAuthorityV1(std::uint64_t ownerToken);
-    bool ROCK_PROVIDER_CALL apiGetEquippedWeaponHandlingStateV1(RockProviderEquippedWeaponHandlingStateV1* outState);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiPublishDebugOverlayV1(std::uint64_t ownerToken, const RockProviderDebugOverlayPublicationV1* publication);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearDebugOverlayV1(std::uint64_t ownerToken);
-    bool ROCK_PROVIDER_CALL apiGetPresentedHandFrameV1(RockProviderHand hand, RockProviderHandFrameV1* outFrame);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiRegisterFrameCallbackForOwnerV1(std::uint64_t ownerToken, RockProviderFrameCallback callback, void* userData, std::uint64_t* outCallbackToken);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiUnregisterFrameCallbackForOwnerV1(std::uint64_t ownerToken, std::uint64_t callbackToken);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetHandInteractionStateV1(std::uint64_t ownerToken, RockProviderHand hand, RockProviderHandInteractionStateV1* outState);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetEquippedWeaponStateV1(std::uint64_t ownerToken, RockProviderEquippedWeaponStateV1* outState);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiRegisterExternalBodiesForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken, const RockProviderExternalBodyRegistration* bodies, std::uint32_t bodyCount);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearExternalBodiesForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiCopyExternalContactsSinceV1(std::uint64_t ownerToken, std::uint64_t scopeToken, std::uint64_t afterSequence, RockProviderExternalContactRecordV1* outContacts, std::uint32_t maxContacts, RockProviderExternalContactStreamStateV1* outStreamState);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryWeaponPartTargetResolutionV1(std::uint64_t ownerToken, const RockProviderWeaponPartResolutionQueryV1* query, RockProviderWeaponPartResolutionResultV1* outResolution);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiCopyWeaponPartPoseSnapshotV1(std::uint64_t ownerToken, RockProviderWeaponPartPoseV1* outParts, std::uint32_t maxParts, std::uint32_t* outPartCount);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiCopyWeaponPartDriveApplicationResultsV1(std::uint64_t ownerToken, RockProviderWeaponPartDriveApplicationResultV1* outResults, std::uint32_t maxResults, std::uint32_t* outResultCount);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetScopeSightStateV1(std::uint64_t ownerToken, RockProviderScopeSightStateV1* outState);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetWeaponCompositionStateV1(std::uint64_t ownerToken, RockProviderWeaponCompositionStateV1* outState);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiCopyWeaponCompositionEntriesV1(std::uint64_t ownerToken, RockProviderWeaponCompositionEntryV1* outEntries, std::uint32_t maxEntries, std::uint32_t* outEntryCount);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetSelectedAuthoredGripPoseV1(std::uint64_t ownerToken, RockProviderAuthoredGripPoseV1* outPose);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetPresentedHandPoseV1(std::uint64_t ownerToken, RockProviderHand hand, RockProviderPresentedHandPoseV1* outPose);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiCopySemanticHandContactsV1(std::uint64_t ownerToken, RockProviderHand hand, std::uint32_t maxFramesSinceContact, RockProviderSemanticHandContactV1* outContacts, std::uint32_t maxContacts, std::uint32_t* outContactCount);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiCopyPlayerColliderDescriptorsV1(std::uint64_t ownerToken, RockProviderPlayerColliderDescriptorV1* outDescriptors, std::uint32_t maxDescriptors, std::uint32_t* outDescriptorCount);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetHandCollisionAvailabilityV1(std::uint64_t ownerToken, RockProviderHand hand, RockProviderHandCollisionAvailabilityV1* outState);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiCancelInteractionCommandV1(std::uint64_t ownerToken, std::uint64_t commandId);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetHandInputSuppressionStateV1(std::uint64_t ownerToken, RockProviderHand hand, RockProviderHandInputSuppressionStateV1* outState);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiAcquireOffhandReservationV1(std::uint64_t ownerToken, const RockProviderOffhandReservationRequestV1* request);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiRenewOffhandReservationV1(std::uint64_t ownerToken, const RockProviderOffhandReservationRequestV1* request);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiReleaseOffhandReservationV1(std::uint64_t ownerToken);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetOffhandReservationStateV1(std::uint64_t ownerToken, RockProviderOffhandReservationStateV1* outState);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearNativeAnimationRuntimeV1(std::uint64_t ownerToken);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetTouchGrabTargetsForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken, const RockProviderTouchGrabTargetV1* targets, std::uint32_t targetCount);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearTouchGrabTargetsForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiCopyTouchGrabStatesForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken, RockProviderTouchGrabStateV1* outStates, std::uint32_t maxStates, std::uint32_t* outStateCount);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiRequestTouchGrabYieldV1(std::uint64_t ownerToken, std::uint64_t scopeToken, std::uint64_t targetId, std::uint32_t targetGeneration);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryWorldRaycastV1(std::uint64_t ownerToken, const RockProviderWorldRaycastRequestV1* request, RockProviderWorldRaycastResultV1* outResult);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetColliderVisualizationOverrideV1(std::uint64_t ownerToken, const RockProviderColliderVisualizationRequestV1* request);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearColliderVisualizationOverrideV1(std::uint64_t ownerToken);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetLogicalInputActionStateV1(std::uint64_t ownerToken, RockProviderLogicalInputActionV1 action, RockProviderLogicalInputActionStateV1* outState);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetPlayerControllerStateV1(std::uint64_t ownerToken, std::uint32_t queryFlags, RockProviderPlayerControllerStateV1* outState);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiRequestPlayerControllerJumpV1(std::uint64_t ownerToken, const RockProviderPlayerControllerJumpRequestV1* request);
-    bool ROCK_PROVIDER_CALL apiGetRawWandThumbstickV1(RockProviderHand hand, float* outX, float* outY);
-    std::uint32_t ROCK_PROVIDER_CALL apiGetNativeInputContextV1();
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetHandTargetDetailsV1(std::uint64_t ownerToken, RockProviderHand hand, RockProviderHandTargetDetailsV1* outDetails);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryReferenceInteractionV1(std::uint64_t ownerToken, const RockProviderReferenceQueryV1* query, RockProviderReferenceInteractionV1* outState);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryPowerArmorTargetV1(std::uint64_t ownerToken, const RockProviderReferenceQueryV1* query, RockProviderPowerArmorTargetV1* outTarget);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiRequestPowerArmorGrabV1(std::uint64_t ownerToken, const RockProviderPowerArmorGrabRequestV1* request, std::uint64_t* outCommandId);
-    rock::api::Status authorize(std::uint64_t owner, rock::api::InterfaceId family, std::uint32_t permission, bool requireThread = true,
-        OwnerAccess access = OwnerAccess::Existing);
-    rock::api::Status bind(std::uint64_t owner, rock::api::InterfaceId family, std::uint32_t major, std::uint32_t permissions);
-    rock::api::SampleV1 sample();
+    const char* getModVersion();
+    bool isProviderReady();
+    // Copies the latest publication; false before the first one.
+    bool copyPublication(Publication& outPublication);
+    std::uint32_t copyBodyContacts(api::collision::BodyContact* outContacts, std::uint32_t capacity);
+    // The hand holding the weapon's firing role, and the other hand.
+    api::Hand primaryHand();
+    api::Hand offhandHand();
+    // Weapon slot 0. The publication's state, then the live reads (game thread).
+    // Slot 0 unless weaponSlot names slot 1.
+    api::Status copyPublishedWeaponState(api::weapon::WeaponState& outState, std::uint32_t weaponSlot = 0);
+    // The key of the publication's weapon before and after its colliders exist.
+    std::uint64_t weaponInteractionKey(std::uint32_t weaponSlot = 0);
+    bool queryWeaponHandling(provider_state_policy::WeaponHandling& outHandling);
+    // Grip and emitters are read for either slot; the caller has checked it.
+    api::Status getWeaponGrip(api::weapon::Grip& outGrip, std::uint32_t weaponSlot);
+    api::Status getWeaponClassification(api::weapon::Classification& outClassification, std::uint32_t weaponSlot);
+    api::Status setAutomaticReloadBlocked(std::uint64_t ownerToken, bool blocked);
+    api::Status setChamberMarker(std::uint64_t ownerToken, std::uint32_t weaponSlot, api::weapon::ChamberMarker marker,
+        std::uint32_t leaseFrames);
+    std::uint32_t weaponEmitterCount(std::uint32_t weaponSlot);
+    std::uint32_t copyWeaponEmitters(std::uint32_t weaponSlot, api::weapon::Emitter* outEmitters,
+        std::uint32_t capacity);
+    api::Status getWeaponCompositionState(api::weapon::CompositionState& outState);
+    api::Status copyWeaponCompositionEntries(api::weapon::CompositionEntry* outEntries, std::uint32_t capacity,
+        std::uint32_t& outCount);
+    api::Status getAuthoredGripPose(api::weapon::AuthoredGripPose& outPose);
+    api::Status getScopeSightState(api::weapon::ScopeSightState& outState);
+    api::Status setHandlingAuthority(std::uint64_t ownerToken, const api::weapon::HandlingRequest& request);
+    api::Status clearHandlingAuthority(std::uint64_t ownerToken);
+    api::Status registerOwner(const api::core::Registration& registration, api::core::Owner& outOwner);
+    api::Status unregisterOwner(std::uint64_t ownerToken);
+    api::Status setHandInputSuppression(std::uint64_t ownerToken,
+        const api::input::HandInputSuppressionRequest& request);
+    api::Status clearHandInputSuppression(std::uint64_t ownerToken, api::Hand hand);
+    bool getRawWandButtonState(api::Hand hand, std::uint32_t buttonId, api::input::RawWandButtonState& outState);
+    bool isNativePipboyInputSuppressed();
+    api::Status setNativeAnimationAuthority(std::uint64_t ownerToken,
+        const api::animation::NativeAnimationAuthorityRequest& request);
+    api::Status clearNativeAnimationAuthority(std::uint64_t ownerToken);
+    bool getNativeAnimationAuthorityState(api::animation::NativeAnimationAuthorityState& outState);
+    api::Status registerAnimationPhaseCallback(std::uint64_t ownerToken,
+        const api::animation::PhaseCallbackRegistration& registration, std::uint64_t* outCallbackToken);
+    api::Status unregisterAnimationPhaseCallback(std::uint64_t ownerToken, std::uint64_t callbackToken);
+    api::Status setHandVisualAuthority(std::uint64_t ownerToken,
+        const api::animation::HandVisualAuthorityRequest& request);
+    api::Status clearHandVisualAuthority(std::uint64_t ownerToken, api::Hand hand);
+    api::Status publishNativeAnimationRuntime(std::uint64_t ownerToken,
+        const api::animation::NativeAnimationRuntimePublication& publication);
+    api::Status getHandFrame(api::Hand hand, api::hands::HandFrame& outFrame);
+    api::Status getPresentedHandFrame(api::Hand hand, api::hands::HandFrame& outFrame);
+    api::Status getPresentedHandPose(std::uint64_t ownerToken, api::Hand hand, api::hands::PresentedHandPose& outPose);
+    api::Status registerFrameCallback(std::uint64_t ownerToken, api::core::FrameCallback callback, void* userData,
+        std::uint64_t* outCallbackToken);
+    api::Status unregisterFrameCallback(std::uint64_t ownerToken, std::uint64_t callbackToken);
+    api::Status copySemanticHandContacts(api::Hand hand, std::uint32_t maxFramesSinceContact,
+        api::collision::SemanticHandContact* outContacts, std::uint32_t capacity, std::uint32_t& outCount);
+    api::Status copyPlayerColliderDescriptors(api::collision::PlayerColliderDescriptor* outDescriptors,
+        std::uint32_t capacity, std::uint32_t& outCount);
+    api::Status getHandCollisionAvailability(api::Hand hand, api::collision::HandCollisionAvailability& outState);
+    api::Status getHandInputSuppressionState(std::uint64_t ownerToken, api::Hand hand,
+        api::input::HandInputSuppressionState& outState);
+    api::Status clearNativeAnimationRuntime(std::uint64_t ownerToken);
+    api::Status setTouchGrabTargetsForScope(std::uint64_t ownerToken, std::uint64_t scopeToken,
+        const api::touch::TouchGrabTarget* targets, std::uint32_t targetCount);
+    api::Status clearTouchGrabTargetsForScope(std::uint64_t ownerToken, std::uint64_t scopeToken);
+    api::Status copyTouchGrabStatesForScope(std::uint64_t ownerToken, std::uint64_t scopeToken,
+        api::touch::TouchGrabState* outStates, std::uint32_t capacity, std::uint32_t& outCount);
+    api::Status requestTouchGrabYield(std::uint64_t ownerToken, std::uint64_t scopeToken, std::uint64_t targetId,
+        std::uint32_t targetGeneration);
+    api::Status queryWorldRaycast(std::uint64_t ownerToken, const api::collision::WorldRaycastRequest& request,
+        api::collision::WorldRaycastResult& outResult);
+    api::Status getLogicalInputActionState(std::uint64_t ownerToken, api::input::LogicalInputAction action,
+        api::input::LogicalInputActionState& outState);
+    api::Status getPlayerControllerState(std::uint64_t ownerToken,
+        api::playercontroller::PlayerControllerState& outState);
+    api::Status requestPlayerControllerJump(std::uint64_t ownerToken,
+        const api::playercontroller::PlayerControllerJumpRequest& request);
+    bool getRawWandThumbstick(api::Hand hand, float& outX, float& outY);
+    std::uint32_t getNativeInputContext();
+    rock::api::Status authorize(std::uint64_t owner, rock::api::InterfaceId family, std::uint32_t permission,
+        bool requireThread = true, OwnerAccess access = OwnerAccess::Existing);
+    rock::api::Status bind(std::uint64_t owner, rock::api::InterfaceId family, std::uint32_t major,
+        std::uint32_t permissions);
+    rock::api::Sample sample();
     void revoke(std::uint64_t owner);
+    // Grab: interaction commands, hand state and reservations.
+    api::Status requestForceGrab(std::uint64_t ownerToken, const api::grab::ForceGrabRequest& request,
+        std::uint64_t& outCommandId);
+    api::Status requestForceRelease(std::uint64_t ownerToken, const api::grab::ForceReleaseRequest& request,
+        std::uint64_t& outCommandId);
+    api::Status requestThrownDrop(std::uint64_t ownerToken, const api::grab::ThrownDropRequest& request,
+        std::uint64_t& outCommandId);
+    api::Status requestPowerArmorGrab(std::uint64_t ownerToken, const api::grab::PowerArmorGrabRequest& request,
+        std::uint64_t& outCommandId);
+    api::Status getInteractionCommandResult(std::uint64_t ownerToken, std::uint64_t commandId,
+        api::grab::InteractionCommandResult& outResult);
+    api::Status cancelInteractionCommand(std::uint64_t ownerToken, std::uint64_t commandId);
+    // The hand's state at the last publication.
+    api::Status getHandInteractionState(std::uint64_t ownerToken, api::Hand hand,
+        api::grab::HandInteractionState& outState);
+    api::Status getHandTargetDetails(std::uint64_t ownerToken, api::Hand hand,
+        api::grab::HandTargetDetails& outDetails);
+    api::Status acquireHandReservation(std::uint64_t ownerToken, const api::grab::HandReservationRequest& request);
+    api::Status renewHandReservation(std::uint64_t ownerToken, const api::grab::HandReservationRequest& request);
+    api::Status releaseHandReservation(std::uint64_t ownerToken);
+    api::Status getHandReservationState(std::uint64_t ownerToken, api::grab::HandReservationState& outState);
+    api::Status queryReferenceInteraction(std::uint64_t ownerToken, const api::grab::ReferenceQuery& query,
+        api::grab::ReferenceInteraction& outInteraction);
+    api::Status queryPowerArmorTarget(std::uint64_t ownerToken, const api::grab::ReferenceQuery& query,
+        api::grab::PowerArmorTarget& outTarget);
     void refreshSources(); // Once per WeaponParts batch before key conversion.
+    // Weapon slot 0's parts. Records carry opaque source keys; targets and
+    // drives arrive with their keys already resolved to live nodes.
+    bool queryWeaponContact(const api::weaponparts::ContactQuery& query, api::weaponparts::ContactResult& outResult);
+    std::uint32_t copyWeaponEvidenceDetails(api::weaponparts::EvidenceDetail* outDetails, std::uint32_t capacity,
+        std::uint32_t weaponSlot);
+    // Weapon slot 1's sources and bone drives, by key.
+    api::Status copySecondarySources(std::uint64_t generation, api::weaponparts::Source* outSources,
+        std::uint32_t capacity, std::uint32_t& outCount);
+    api::Status querySecondarySourcePose(std::uint64_t generation, std::uint64_t key, WeaponSourcePose& outPose);
+    api::Status setSecondaryWeaponDrives(std::uint64_t ownerToken, const api::weaponparts::DriveTarget* targets,
+        std::uint32_t count);
+    void clearSecondaryWeaponDrives(std::uint64_t ownerToken);
+    std::uint32_t copyWeaponEvidencePoints(std::uint32_t bodyId, api::Point3* outPoints, std::uint32_t capacity);
+    api::Status setWeaponPartTargets(std::uint64_t ownerToken, std::span<const PartTarget> targets);
+    api::Status clearWeaponPartTargets(std::uint64_t ownerToken);
+    api::Status setWeaponPartDrives(std::uint64_t ownerToken, std::span<const PartDrive> drives);
+    api::Status clearWeaponPartDrives(std::uint64_t ownerToken);
+    api::Status queryWeaponPartTargetResolution(const provider::PartQuery& query,
+        api::weaponparts::ResolutionResult& outResult);
+    api::Status copyWeaponPartPoses(api::weaponparts::PartPose* outPoses, std::uint32_t capacity,
+        std::uint32_t& outCount);
+    api::Status copyWeaponPartDriveResults(std::uint64_t ownerToken, api::weaponparts::DriveResult* outResults,
+        std::uint32_t capacity, std::uint32_t& outCount);
+    // The grip each hand held at the last publication.
+    bool copyPartGripState(api::Hand hand, api::weaponparts::GripState& outState);
     std::uintptr_t resolveSourceKey(std::uint64_t generation, std::uint64_t key);
     std::uint64_t sourceKey(std::uint64_t generation, std::uintptr_t node);
     std::uint64_t sourceKeyForBody(std::uint64_t generation, std::uint32_t body);
-    std::uintptr_t resolveSourceName(std::uint64_t generation,const char* name);
-    rock::api::Status copySources(std::uint64_t generation,std::uint32_t offset,rock::provider::WeaponSourceRecord*,std::uint32_t,std::uint32_t&,std::uint32_t&);
+    std::uintptr_t resolveSourceName(std::uint64_t generation, const char* name);
+    rock::api::Status copySources(std::uint64_t generation, std::uint32_t offset, rock::provider::WeaponSourceRecord*,
+        std::uint32_t, std::uint32_t&, std::uint32_t&);
     void deferRevoke(std::uint64_t owner);
-    rock::api::Status querySourcePose(std::uint64_t generation,std::uint64_t key,WeaponSourcePose&);
-    void reportBoundaryFailure(std::uint64_t owner,rock::api::InterfaceId) noexcept;
-    rock::api::Status querySourcePath(std::uint64_t generation,std::uint64_t key,std::uint64_t&,std::uint32_t&);
+    rock::api::Status querySourcePose(std::uint64_t generation, std::uint64_t key, WeaponSourcePose&);
+    void reportBoundaryFailure(std::uint64_t owner, rock::api::InterfaceId) noexcept;
+    rock::api::Status querySourcePath(std::uint64_t generation, std::uint64_t key, std::uint64_t&, std::uint32_t&);
 }

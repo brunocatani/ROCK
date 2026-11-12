@@ -33,10 +33,7 @@ namespace rock::hand_world_claim_registry_policy
     // orthonormal basis is not a pose FRIK may render (it stretches the arm).
     inline constexpr double kMaxTargetRotationError = 0.05;
 
-    [[nodiscard]] constexpr std::size_t handIndex(const bool isLeft) noexcept
-    {
-        return isLeft ? 1u : 0u;
-    }
+    [[nodiscard]] constexpr std::size_t handIndex(const bool isLeft) noexcept { return isLeft ? 1u : 0u; }
 
     struct DriverSample
     {
@@ -94,11 +91,9 @@ namespace rock::hand_world_claim_registry_policy
                 }
             }
         }
-        return std::isfinite(transform.translate.x) &&
-               std::isfinite(transform.translate.y) &&
-               std::isfinite(transform.translate.z) &&
-               std::isfinite(transform.scale) &&
-               std::fabs(transform.scale) > 0.000001f;
+        return std::isfinite(transform.translate.x) && std::isfinite(transform.translate.y) &&
+            std::isfinite(transform.translate.z) && std::isfinite(transform.scale) &&
+            std::fabs(transform.scale) > 0.000001f;
     }
 
     [[nodiscard]] inline bool isUsableTargetRotation(const RE::NiTransform& transform) noexcept
@@ -107,7 +102,8 @@ namespace rock::hand_world_claim_registry_policy
         return std::isfinite(error) && error <= kMaxTargetRotationError;
     }
 
-    [[nodiscard]] inline float translationDeltaGameUnits(const RE::NiTransform& lhs, const RE::NiTransform& rhs) noexcept
+    [[nodiscard]] inline float translationDeltaGameUnits(const RE::NiTransform& lhs,
+        const RE::NiTransform& rhs) noexcept
     {
         const float x = lhs.translate.x - rhs.translate.x;
         const float y = lhs.translate.y - rhs.translate.y;
@@ -150,7 +146,8 @@ namespace rock::hand_world_claim_registry_policy
         return nullptr;
     }
 
-    [[nodiscard]] inline const Claim* find(const Registry& registry, const std::string_view tag, const bool isLeft) noexcept
+    [[nodiscard]] inline const Claim* find(const Registry& registry, const std::string_view tag,
+        const bool isLeft) noexcept
     {
         for (const auto& claim : registry.claims) {
             if (claim.valid && claim.isLeft == isLeft && tagView(claim) == tag) {
@@ -176,12 +173,8 @@ namespace rock::hand_world_claim_registry_policy
      * and set again to claim the tie). Its unreachable report survives, since
      * owners republish every frame and the episode spans frames.
      */
-    [[nodiscard]] inline CommitResult commit(
-        Registry& registry,
-        const std::string_view tag,
-        const bool isLeft,
-        const int priority,
-        const RE::NiTransform& target) noexcept
+    [[nodiscard]] inline CommitResult commit(Registry& registry, const std::string_view tag, const bool isLeft,
+        const int priority, const RE::NiTransform& target) noexcept
     {
         if (!isRegistrableTag(tag)) {
             return CommitResult::InvalidTag;
@@ -255,8 +248,7 @@ namespace rock::hand_world_claim_registry_policy
      * already-corrected output back through its own transform.
      */
     [[nodiscard]] inline const Claim* winner(const Registry& registry, const bool isLeft,
-        const std::string_view excludedTag = {},
-        const int maximumPriority = (std::numeric_limits<int>::max)()) noexcept
+        const std::string_view excludedTag = {}, const int maximumPriority = (std::numeric_limits<int>::max)()) noexcept
     {
         const Claim* best = nullptr;
         for (const auto& claim : registry.claims) {

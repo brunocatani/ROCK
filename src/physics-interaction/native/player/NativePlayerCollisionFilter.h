@@ -1,0 +1,109 @@
+#pragma once
+
+#include "physics-interaction/collision/NativePlayerCollisionPolicy.h"
+
+#include <cstddef>
+#include <span>
+
+namespace RE
+{
+    class hknpWorld;
+}
+
+namespace rock::havok_runtime
+{
+    struct BodySnapshot;
+}
+
+namespace rock::native_player_collision
+{
+    inline constexpr std::size_t kMaximumPlayerBodies = 64;
+
+    // Process-lifetime hook, installed once on the game thread. Only simulation
+    // body pairs are filtered; native ray/shape query entry points stay intact.
+    bool install() noexcept;
+    bool installed() noexcept;
+
+    // Called only with a live callback-local snapshot. Equipped weapons resolve
+    // to their actor; only a positive world WEAP reference is a loose weapon.
+    // Missing/stale ownership preserves native contacts and records a counter.
+    bool isLooseWeaponBody(const havok_runtime::BodySnapshot& body) noexcept;
+
+    // Single game-thread publisher; physics workers only read a quiesced value
+    // snapshot. IDs are checked against live identity before any suppression.
+    // An empty publication restores physical pairs in the supplied live world.
+    void publish(RE::hknpWorld* world, std::span<const BodyIdentity> bodies);
+    // Exact dynamic-hand bodies owned by an authored handle. Only their world
+    // surface simulation pairs are removed; publication changes rebuild caches.
+    void publishAuthoredHands(RE::hknpWorld* world, std::span<const BodyIdentity> bodies);
+
+    // Single owner: the negotiated equipped-tool extension. Game-thread mutation
+    // while its physics callbacks are quiesced. The existing simulation hook
+    // consumes this exact pair even when the native-player body list is empty.
+    // One weapon/target pair per weapon slot (0 primary, 1 second weapon).
+    inline constexpr std::uint32_t kToolContactSlots = 2;
+    bool publishToolContactExclusion(std::uint32_t slot, RE::hknpWorld* world, std::uint32_t weaponBody,
+        std::uint32_t targetBody);
+    bool hasToolContactExclusion(std::uint32_t slot, RE::hknpWorld* world, std::uint32_t weaponBody,
+        std::uint32_t targetBody) noexcept;
+    std::uint64_t toolContactRejectedCount() noexcept;
+    // A null liveWorld clears ownership after world loss without native calls.
+    void clearToolContactExclusion(std::uint32_t slot, RE::hknpWorld* liveWorld);
+
+    // Keyframed hand (and arm) bodies of hands that own an equipped weapon.
+    // Only their pairs with that weapon's bodies are removed (suppressWeaponHandContact);
+    // publication changes rebuild the affected bodies' caches. A null world
+    // clears ownership without native calls.
+    struct WeaponHandBody
+    {
+        std::uint32_t bodyId{ 0x7FFF'FFFFu };
+        bool firstWeapon{ false };
+        bool secondWeapon{ false };
+        bool includeLooseWeapons{ false };
+        bool operator==(const WeaponHandBody&) const = default;
+    };
+
+    inline constexpr std::size_t kMaximumWeaponHandBodies = 64;
+    void publishWeaponHands(RE::hknpWorld* world, std::span<const WeaponHandBody> bodies);
+
+    // Body colliders and the held bodies they must not touch, each with a
+    // hand mask (suppressHeldExclusionContact). Publication changes rebuild
+    // the affected bodies' caches. A null world clears both sets.
+    struct HeldExclusionBody
+    {
+        std::uint32_t bodyId{ 0x7FFF'FFFFu };
+        std::uint8_t handMask{ 0 };
+        bool operator==(const HeldExclusionBody&) const = default;
+    };
+
+    // Body colliders plus both hands' colliders (mesh-reach lease, pull flight).
+    inline constexpr std::size_t kMaximumHeldExclusionColliders = 96;
+    inline constexpr std::size_t kMaximumHeldExclusionHeldBodies = 128;
+    void publishHeldExclusions(RE::hknpWorld* world, std::span<const HeldExclusionBody> colliders,
+        std::span<const HeldExclusionBody> held);
+
+    // Bodies the hands hold. The prop-row pair rule treats them as held
+    // objects (suppressPropRowContact); publication changes rebuild the
+    // affected bodies' caches. A null world clears the set.
+    inline constexpr std::size_t kMaximumHeldBodies = 128;
+    void publishHeldBodies(RE::hknpWorld* world, std::span<const std::uint32_t> bodies);
+
+    // Bodies that pass static bodies (NativeInteraction setStaticContactPass).
+    // Publication changes rebuild the affected bodies' caches, so a body that
+    // leaves the set collides again at once. A null world clears the set.
+    inline constexpr std::size_t kMaximumStaticPassBodies = 128;
+    void publishStaticPass(RE::hknpWorld* world, std::span<const std::uint32_t> bodies);
+
+    // EjectionContacts owns these exact magazine/equipped-weapon sets. Single
+    // game-thread publisher under the world write lock; empty sets restore pairs.
+    bool publishMagazineEjection(RE::hknpWorld* world, std::span<const std::uint32_t> magazines,
+        std::span<const std::uint32_t> weapons, std::span<const std::uint32_t> handProtected = {},
+        std::span<const std::uint32_t> hands = {});
+    void clearMagazineEjection(RE::hknpWorld* liveWorld);
+    std::uint64_t magazineEjectionRejectedCount() noexcept;
+    std::uint64_t takeMagazineEjectionHandPair() noexcept;
+
+    // Skeleton/world teardown: invalidate the snapshot without touching a world
+    // whose lifetime may have ended. No collision bits or pair leases to restore.
+    void abandon() noexcept;
+}

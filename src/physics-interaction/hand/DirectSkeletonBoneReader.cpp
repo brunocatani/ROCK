@@ -53,13 +53,11 @@ namespace rock
 
         bool validTree(const BSFlattenedBoneTree* tree)
         {
-            return tree && tree->transforms && tree->numTransforms > 0 && tree->numTransforms <= kMaxFlattenedBoneTransforms;
+            return tree && tree->transforms && tree->numTransforms > 0 &&
+                tree->numTransforms <= kMaxFlattenedBoneTransforms;
         }
 
-        RE::NiNode* safeWorldRootNode()
-        {
-            return f4vr::getWorldRootNode();
-        }
+        RE::NiNode* safeWorldRootNode() { return f4vr::getWorldRootNode(); }
 
         RE::NiNode* safeRootNode(RE::NiNode* worldRoot)
         {
@@ -98,11 +96,8 @@ namespace rock
 
     void logHandBoneCacheResolved(const void* skeleton, const void* boneTree, bool inPowerArmor)
     {
-        ROCK_LOG_DEBUG(Hand,
-            "HandBoneCache resolved rootFlattenedTree skeleton={:p} tree={:p} powerArmor={}",
-            skeleton,
-            boneTree,
-            inPowerArmor ? "yes" : "no");
+        ROCK_LOG_DEBUG(Hand, "HandBoneCache resolved rootFlattenedTree skeleton={:p} tree={:p} powerArmor={}", skeleton,
+            boneTree, inPowerArmor ? "yes" : "no");
     }
 
     void DirectSkeletonBoneReader::resetCache()
@@ -119,11 +114,8 @@ namespace rock
         _cachedMissingRequiredBones.clear();
     }
 
-    bool DirectSkeletonBoneReader::capture(
-        DebugSkeletonBoneMode mode,
-        DebugSkeletonBoneSource source,
-        const SkeletonBoneCaptureSpace space,
-        DirectSkeletonBoneSnapshot& outSnapshot,
+    bool DirectSkeletonBoneReader::capture(DebugSkeletonBoneMode mode, DebugSkeletonBoneSource source,
+        const SkeletonBoneCaptureSpace space, DirectSkeletonBoneSnapshot& outSnapshot,
         const SkeletonBoneCapturePayload payload)
     {
         // Reuse copied storage, but replace every transform and validity bit.
@@ -146,8 +138,7 @@ namespace rock
                     "Direct skeleton bone reader source unavailable: source={} skeleton={} tree={} mode={}",
                     skeleton_bone_debug_math::snapshotSourceName(resolved.source),
                     reinterpret_cast<std::uintptr_t>(resolved.skeleton),
-                    reinterpret_cast<std::uintptr_t>(resolved.tree),
-                    skeleton_bone_debug_math::modeName(mode));
+                    reinterpret_cast<std::uintptr_t>(resolved.tree), skeleton_bone_debug_math::modeName(mode));
                 _missingSourceLogged = true;
             }
             _cachedSkeleton = resolved.skeleton;
@@ -162,12 +153,9 @@ namespace rock
         }
 
         _missingSourceLogged = false;
-        if (_cachedSkeleton != resolved.skeleton ||
-            _cachedBoneTree != resolved.tree ||
-            _cachedSource != resolved.source ||
-            _cachedMode != mode ||
-            _cachedTotalBoneCount != resolved.tree->numTransforms ||
-            _cachedInPowerArmor != inPowerArmor) {
+        if (_cachedSkeleton != resolved.skeleton || _cachedBoneTree != resolved.tree ||
+            _cachedSource != resolved.source || _cachedMode != mode ||
+            _cachedTotalBoneCount != resolved.tree->numTransforms || _cachedInPowerArmor != inPowerArmor) {
             if (!rebuildTreeCache(resolved.skeleton, resolved.tree, resolved.source, mode, inPowerArmor)) {
                 resetCache();
                 outSnapshot = {};
@@ -176,8 +164,9 @@ namespace rock
         }
         const bool captured = captureFromCachedTree(outSnapshot, space, payload);
         if (captured) {
-            performance_profiler::observeValue(space == SkeletonBoneCaptureSpace::Rendered ?
-                performance_profiler::ValueMetric::RenderedSkeletonBones : performance_profiler::ValueMetric::ControllerSkeletonBones,
+            performance_profiler::observeValue(space == SkeletonBoneCaptureSpace::Rendered
+                    ? performance_profiler::ValueMetric::RenderedSkeletonBones
+                    : performance_profiler::ValueMetric::ControllerSkeletonBones,
                 outSnapshot.bones.size());
         } else {
             outSnapshot = {};
@@ -185,7 +174,8 @@ namespace rock
         return captured;
     }
 
-    bool DirectSkeletonBoneReader::rebuildTreeCache(void* skeleton, void* boneTree, SkeletonBoneSnapshotSource source, DebugSkeletonBoneMode mode, bool inPowerArmor)
+    bool DirectSkeletonBoneReader::rebuildTreeCache(void* skeleton, void* boneTree, SkeletonBoneSnapshotSource source,
+        DebugSkeletonBoneMode mode, bool inPowerArmor)
     {
         auto* tree = static_cast<BSFlattenedBoneTree*>(boneTree);
         if (!validTree(tree)) {
@@ -243,23 +233,20 @@ namespace rock
         }
 
         for (auto& bone : _cachedBones) {
-            const int drawableParentTreeIndex =
-                skeleton_bone_debug_math::resolveDrawableParentIndex(static_cast<std::size_t>(bone.treeIndex), parentIndices, included);
-            if (drawableParentTreeIndex >= 0 && static_cast<std::size_t>(drawableParentTreeIndex) < treeToSnapshot.size()) {
+            const int drawableParentTreeIndex = skeleton_bone_debug_math::resolveDrawableParentIndex(
+                static_cast<std::size_t>(bone.treeIndex), parentIndices, included);
+            if (drawableParentTreeIndex >= 0 &&
+                static_cast<std::size_t>(drawableParentTreeIndex) < treeToSnapshot.size()) {
                 bone.drawableParentSnapshotIndex = treeToSnapshot[static_cast<std::size_t>(drawableParentTreeIndex)];
             }
         }
 
         ROCK_LOG_INFO(Hand,
-            "Direct skeleton bone cache rebuilt: source={} skeleton={} tree={} total={} included={} required={}/{} mode={} powerArmor={}",
-            skeleton_bone_debug_math::snapshotSourceName(source),
-            reinterpret_cast<std::uintptr_t>(skeleton),
-            reinterpret_cast<std::uintptr_t>(boneTree),
-            _cachedTotalBoneCount,
-            _cachedBones.size(),
-            _cachedRequiredResolvedCount,
-            requiredNames.size(),
-            skeleton_bone_debug_math::modeName(mode),
+            "Direct skeleton bone cache rebuilt: source={} skeleton={} tree={} total={} included={} required={}/{} "
+            "mode={} powerArmor={}",
+            skeleton_bone_debug_math::snapshotSourceName(source), reinterpret_cast<std::uintptr_t>(skeleton),
+            reinterpret_cast<std::uintptr_t>(boneTree), _cachedTotalBoneCount, _cachedBones.size(),
+            _cachedRequiredResolvedCount, requiredNames.size(), skeleton_bone_debug_math::modeName(mode),
             _cachedInPowerArmor);
 
         if (!_cachedMissingRequiredBones.empty()) {
@@ -276,16 +263,15 @@ namespace rock
                 }
                 missing += "'";
             }
-            ROCK_LOG_WARN(Hand,
-                "Direct skeleton bone cache missing required bones count={}: {}",
-                _cachedMissingRequiredBones.size(),
-                missing);
+            ROCK_LOG_WARN(Hand, "Direct skeleton bone cache missing required bones count={}: {}",
+                _cachedMissingRequiredBones.size(), missing);
         }
 
         return !_cachedBones.empty();
     }
 
-    bool DirectSkeletonBoneReader::captureFromCachedTree(DirectSkeletonBoneSnapshot& outSnapshot, const SkeletonBoneCaptureSpace space, const SkeletonBoneCapturePayload payload)
+    bool DirectSkeletonBoneReader::captureFromCachedTree(DirectSkeletonBoneSnapshot& outSnapshot,
+        const SkeletonBoneCaptureSpace space, const SkeletonBoneCapturePayload payload)
     {
         auto* tree = static_cast<BSFlattenedBoneTree*>(_cachedBoneTree);
         if (!validTree(tree)) {
@@ -312,10 +298,14 @@ namespace rock
 
         for (const auto& cached : _cachedBones) {
             // Keep full arm topology for presentation; only narrow this copied output.
-            if (handRootsOnly && (cached.name != "RArm_Hand" && cached.name != "LArm_Hand")) continue;
-            if (handRootsOnly && std::any_of(outSnapshot.bones.begin(), outSnapshot.bones.begin() + capturedCount,
-                    [&](const auto& entry) { return entry.name == cached.name; })) continue;
-            if (handRootsOnly && capturedCount == outSnapshot.bones.size()) break;
+            if (handRootsOnly && (cached.name != "RArm_Hand" && cached.name != "LArm_Hand"))
+                continue;
+            if (handRootsOnly &&
+                std::any_of(outSnapshot.bones.begin(), outSnapshot.bones.begin() + capturedCount,
+                    [&](const auto& entry) { return entry.name == cached.name; }))
+                continue;
+            if (handRootsOnly && capturedCount == outSnapshot.bones.size())
+                break;
             if (cached.treeIndex < 0 || cached.treeIndex >= tree->numTransforms) {
                 continue;
             }
@@ -350,7 +340,8 @@ namespace rock
 
     bool transportControllerHands(DirectSkeletonBoneSnapshot& snapshot)
     {
-        if (!snapshot.valid || snapshot.space != SkeletonBoneCaptureSpace::Rendered) return false;
+        if (!snapshot.valid || snapshot.space != SkeletonBoneCaptureSpace::Rendered)
+            return false;
         namespace transport = rendered_bone_transport_policy;
         snapshot.controllerHandsValid = {};
         snapshot.space = SkeletonBoneCaptureSpace::Controller;
@@ -365,9 +356,10 @@ namespace rock
             } else if (logger::isWarnEnabled() &&
                 logger::internal::shouldEmitSample(isLeft ? "hand-input-chain-left" : "hand-input-chain-right", 2000)) {
                 ROCK_LOG_WARN(Hand,
-                    "Controller skeleton capture rejected: frame={} hand={} rejectedSource='{}' rawAvailable={} rawSource={} calibrated={} bones={} topology={} payload={}",
-                    runtime_state::currentFrame().frameIndex, isLeft ? "left" : "right", rejectedSource,
-                    rawAvailable, frik_hand_world_authority::rawHandSourceName(isLeft),
+                    "Controller skeleton capture rejected: frame={} hand={} rejectedSource='{}' rawAvailable={} "
+                    "rawSource={} calibrated={} bones={} topology={} payload={}",
+                    runtime_state::currentFrame().frameIndex, isLeft ? "left" : "right", rejectedSource, rawAvailable,
+                    frik_hand_world_authority::rawHandSourceName(isLeft),
                     frik_hand_world_authority::hasCalibratedRawHandFrame(isLeft), snapshot.bones.size(),
                     snapshot.topologyRevision, static_cast<unsigned>(snapshot.payload));
             }

@@ -4,8 +4,11 @@
 #include <cmath>
 #include <cstdint>
 
+#include "physics-interaction/input/FunctionBindingPolicy.h"
+
 namespace rock::manual_scope_input_policy
 {
+    using function_binding_policy::Function;
     enum class State : std::uint8_t
     {
         Idle,
@@ -44,6 +47,9 @@ namespace rock::manual_scope_input_policy
         bool immersiveScopesEnabled{ true };
         ButtonState leftButton{};
         ButtonState rightButton{};
+        // The function a binding made each hand's press for; Function::Count for a sampled press.
+        Function leftTag{ Function::Count };
+        Function rightTag{ Function::Count };
         float deltaSeconds{ 0.0f };
         float holdSeconds{ 0.30f };
     };
@@ -159,12 +165,42 @@ namespace rock::manual_scope_input_policy
             return decision;
         }
 
+        {
+            // A press a binding made for one function is that function at once:
+            // the bindings already decided the gesture.
+            const bool left = input.firingHandIsLeft;
+            const auto& button = buttonForHand(input, left);
+            const auto tag = left ? input.leftTag : input.rightTag;
+            if (tag != Function::Count && button.available && button.pressed) {
+                if (tag == Function::Scope && input.immersiveScopesEnabled) {
+                    state.state = State::ScopeHeld;
+                    state.heldSeconds = 0.0f;
+                    state.gestureHandIsLeft = left;
+                    decision.scopeRequested = true;
+                    decision.state = state.state;
+                    decision.reason = "bound-scope";
+                    return decision;
+                }
+                if (tag == Function::Use && !left) {
+                    state.state = State::NativeActivation;
+                    state.gestureHandIsLeft = false;
+                    decision.state = state.state;
+                    decision.reason = "bound-use";
+                    return decision;
+                }
+                blockUntilRelease(state);
+                decision.dispatchReload = tag == Function::Reload;
+                decision.state = state.state;
+                decision.reason = tag == Function::Reload ? "bound-reload" : "bound-other";
+                return decision;
+            }
+        }
+
         if (!input.immersiveScopesEnabled) {
             // The primary wand returns to its ordinary native event route.
             // ROCK still supplies reload for a left-hand firing grip, once
             // on press. Neither hold nor release can request a scope.
-            decision.dispatchReload = input.firingHandIsLeft &&
-                input.leftButton.available && input.leftButton.pressed;
+            decision.dispatchReload = input.firingHandIsLeft && input.leftButton.available && input.leftButton.pressed;
             decision.reason = "vanilla-scopes";
             return decision;
         }

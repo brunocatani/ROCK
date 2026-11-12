@@ -1,670 +1,207 @@
+// ROCK's settings contracts on RPS::Settings (whose own tests cover
+// organizing, faults and the developer file): the catalog and the loader
+// agree, the example files are what ROCK writes, documented defaults are the
+// runtime defaults, and ROCK's old INI keys migrate to the right options.
 #include "RockConfig.h"
-#include "config/SettingMetadata.h"
-#include <chrono>
+#include "config/RockSettings.h"
+
+#include <array>
+#include <filesystem>
+#include <format>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
-#include <map>
-#include <set>
+#include <string>
 
 namespace
 {
-    void require(bool condition, const char* message) { if (!condition) throw std::runtime_error(message); }
-    std::string bytes(const std::filesystem::path& path)
+    using namespace rock::config;
+    using RPS::Settings::Group;
+    namespace fs = std::filesystem;
+
+    void require(bool condition, const char* message)
     {
-        std::ifstream file(path, std::ios::binary);
-        return { std::istreambuf_iterator<char>(file), {} };
-    }
-    const rock::config::Setting& find(const rock::config::ConfigurationStore& store, std::string_view key)
-    {
-        for (const auto& setting : store.settings()) if (setting.key == key) return setting;
-        throw std::runtime_error("Missing compiled setting: " + std::string(key));
+        if (!condition)
+            throw std::runtime_error(message);
     }
 
-    void decorativeSectionChecks(const std::filesystem::path& directory, const CSimpleIniA& compiled)
+    std::string bytes(const fs::path& path)
     {
-        using namespace rock::config;
-        namespace fs = std::filesystem;
+        std::ifstream input(path, std::ios::binary);
+        require(input.good(), "cannot read a test file");
+        return { std::istreambuf_iterator<char>(input), {} };
+    }
+
+    void write(const fs::path& path, std::string_view text)
+    {
+        std::ofstream output(path, std::ios::binary | std::ios::trunc);
+        output << text;
+        require(output.good(), "cannot write a test file");
+    }
+
+    const Setting& find(const Store& store, std::string_view table, std::string_view key)
+    {
+        if (const auto* setting = store.find(table, key))
+            return *setting;
+        throw std::runtime_error(std::format("missing setting {}.{}", table, key));
+    }
+
+    bool hasLine(const std::vector<std::string>& lines, std::string_view text)
+    {
+        for (const auto& line : lines) {
+            if (line.find(text) != std::string::npos)
+                return true;
+        }
+        return false;
+    }
+
+    rock::RockConfigValues runtime(const Store& store) { return rock::RockConfig::parseValues(store.loadedValues()); }
+
+    // A player upgrading from ROCK 0.92 or the last INI version keeps the
+    // settings they changed: renamed keys, X/Y/Z triplets, bLeftHandedMode and
+    // options that changed files land in the right TOML file; old defaults,
+    // retired keys and values that do not fit stay behind.
+    void migrationChecks(const fs::path& directory, std::span<const SettingDefault> defaults)
+    {
         fs::create_directories(directory);
-        ConfigurationStore store(directory, compiled);
-        require(find(store, "bEmergencyDisableRecoil").group == Group::Developer,
-            "emergency recoil override must belong to developer controls");
-        require(find(store, "iWeaponFilteringPreset").group == Group::Consumer,
-            "weapon filtering must be a regular ROCK.ini setting");
-        CSimpleIniA filterConfig;
-        filterConfig.SetLongValue("ImmersiveWeapons", "iWeaponFilteringPreset", 3);
-        require(rock::RockConfig::parseValues(filterConfig).rockWeaponFilteringPreset == 3,
-            "weapon filtering preset was not loaded");
-        filterConfig.SetLongValue("ImmersiveWeapons", "iWeaponFilteringPreset", 999);
-        require(rock::RockConfig::parseValues(filterConfig).rockWeaponFilteringPreset == 0,
-            "invalid weapon filtering preset must select Off");
-        const auto write = [&](Group group, const std::string& text) {
-            std::ofstream file(store.path(group), std::ios::binary | std::ios::trunc);
-            file << text;
-            require(file.good(), "cannot write decorative-section fixture");
-        };
-        const auto runtime = [&] {
-            CSimpleIniA combined;
-            store.appendLoadedValues(combined);
-            return rock::RockConfig::parseValues(combined);
-        };
-        std::set<CSimpleIniA::Entry, CSimpleIniA::Entry::KeyOrder> uniqueKeys;
-        std::map<std::string, std::string> expected;
-        CSimpleIniA canonical;
-        std::array<std::string, 2> flat, labelled;
-        std::array<std::size_t, 2> counts{};
-        for (const auto& setting : store.settings()) {
-            require(uniqueKeys.emplace(setting.key.c_str()).second,
-                "decorative sections require globally unique case-insensitive setting names");
-            const auto group = setting.group == Group::Consumer ? 0u : 1u;
-            const std::string value = setting.type == ValueType::Boolean ? (setting.defaultValue == "true" ? "false" : "true") :
-                setting.type == ValueType::Integer ? (setting.defaultValue == "7" ? "8" : "7") :
-                setting.type == ValueType::Float ? "0.625" : "custom-value";
-            expected.emplace(setting.key, value);
-            canonical.SetValue(setting.section.c_str(), setting.key.c_str(), value.c_str());
-            std::string key = setting.key;
-            if (counts[group] % 2 == 0)
-                for (auto& c : key) if (c >= 'a' && c <= 'z') c -= 'a' - 'A';
-            const auto line = key + " = " + value + "\n";
-            flat[group] += line;
-            // Initial keys have no header; later groups repeat in nonalphabetic order.
-            if (counts[group] % 7 == 3)
-                labelled[group] += counts[group] % 2 == 0 ? "[Alpha notes]\n" : "[Zulu notes]\n";
-            labelled[group] += line;
-            ++counts[group];
-        }
-        for (const auto& files : { flat, labelled }) {
-            write(Group::Consumer, files[0]);
-            write(Group::Developer, files[1]);
-            require(store.load(false), "section-independent load failed");
-            for (const auto& setting : store.settings())
-                require(setting.specified && setting.value == expected.at(setting.key),
-                    "a known key was lost or changed outside its catalog section");
-            require(runtime() == rock::RockConfig::parseValues(canonical),
-                "decorative labels changed parsed runtime values");
-            require(bytes(store.path(Group::Consumer)) == files[0] && bytes(store.path(Group::Developer)) == files[1],
-                "loading decorative sections rewrote a user file");
-        }
-        const auto revision = store.revision();
-        write(Group::Consumer, flat[0]);
-        write(Group::Developer, flat[1]);
-        require(store.load(false) && store.revision() == revision,
-            "moving unchanged keys between labels caused a semantic reload");
+        const auto playerIni = directory / "ROCK.ini";
+        const auto developerIni = directory / "ROCK_Developer.ini";
+        write(playerIni,
+            "; ROCK.ini - player options\r\n"
+            "[ImmersiveWeapons]\r\n"
+            "bGunstockMode = true\r\n"
+            "iLogLevel = 2\r\n"
+            "iWeaponFilteringPreset = 0\r\n"
+            "[AmbidextrousFiring]\r\n"
+            "bLeftHandedMode = true\r\n"
+            "fLeftFiringAimOffsetXGameUnits = 0.0\r\n"
+            "fLeftFiringAimOffsetYGameUnits = 2.5\r\n"
+            "[Controls]\r\n"
+            "sRightAButton = b\r\n"
+            "bRockyModeEnabled = true\r\n"
+            "fRealisticGrenadeFuseSeconds = soon\r\n"
+            "[NativeScopes]\r\n"
+            "fNativeScopeOverlayOffsetYGameUnits = 12\r\n");
+        write(developerIni, "[PhysicsInteraction]\r\niDebugMaxBodyInstances = 100\r\n");
 
-        // Section names cannot redirect an option into the other owning file.
-        write(Group::Consumer, "[Debug]\nbPerformanceProfilerEnabled=true\n");
-        write(Group::Developer, "[Logging]\niLogLevel=0\nbLeftHandedMode=true\n");
-        require(store.load(false), "wrong-file fixture failed to load");
-        require(!find(store, "bPerformanceProfilerEnabled").specified && runtime().rockLogLevel == 2 &&
-                !find(store, "bLeftHandedMode").specified && !runtime().rockLeftHandedMode,
-            "decorative sections broke consumer/developer ownership");
-        require(settingGroup("Any label", "BPERFORMANCEPROFILERENABLED") == Group::Developer,
-            "key-only ownership lookup still depends on a section or spelling case");
-
-        write(Group::Developer,
-            "bPerformanceProfilerEnabled=false\n"
-            "[Zulu]\nbPerformanceProfilerEnabled=true\n"
-            "[Alpha]\nbPerformanceProfilerEnabled=false\n"
-            "[Zulu]\n; My selected profiler value\nBPERFORMANCEPROFILERENABLED=true\n"
-            "iPerformanceProfilerLogIntervalFrames=450\n"
-            "[Alpha]\niPerformanceProfilerLogIntervalFrames=600\niPerformanceProfilerLogIntervalFrames=750\n"
-            "bDebugShowColliders=false\n; My local note\nsUserNote=keep me\n");
-        require(store.load(false), "duplicate fixture failed to load");
-        require(runtime().rockPerformanceProfilerEnabled && runtime().rockPerformanceProfilerLogIntervalFrames == 750,
-            "last physical occurrence did not win across repeated headers/keys");
-        require(store.setValue(Group::Developer, "Unrelated menu label", "BDEBUGSHOWHANDAXES", "true"),
-            "case-insensitive key-only menu edit failed");
-        require(store.load(false) && runtime().rockPerformanceProfilerEnabled &&
-                runtime().rockPerformanceProfilerLogIntervalFrames == 750,
-            "organizing an unrelated edit resurrected a shadowed value");
-        require(find(store, "bDebugShowColliders").specified && !runtime().rockDebugShowColliders,
-            "an unrelated explicit developer default was pruned");
-        const auto organized = bytes(store.path(Group::Developer));
-        require(organized.find("; My selected profiler value") != std::string::npos &&
-                organized.find("; My local note") != std::string::npos && organized.find("keep me") != std::string::npos,
-            "writing discarded the effective option comment or an unknown entry");
-        require(store.setValue(Group::Developer, "Another label", "iperformanceprofilerlogintervalframes", "900"),
-            "editing a previously duplicated key failed");
-        require(store.load(false) && runtime().rockPerformanceProfilerLogIntervalFrames == 900,
-            "an older duplicate overrode the menu edit");
-        require(store.setValue(Group::Developer, "Anything", "bPerformanceProfilerEnabled", "false"),
-            "resetting a misplaced key failed");
-        require(store.load(false) && !runtime().rockPerformanceProfilerEnabled &&
-                !find(store, "bPerformanceProfilerEnabled").specified,
-            "reset left a stale profiler override in another section");
-
-        write(Group::Developer, "bPerformanceProfilerEnabled=true\n[One]\nbPerformanceProfilerEnabled=true\n[Two]\nBPERFORMANCEPROFILERENABLED=true\n");
-        require(store.setValue(Group::Developer, "", "bPerformanceProfilerEnabled", "false"),
-            "global reset of repeated keys failed");
-        require(!fs::exists(store.path(Group::Developer)), "reset did not delete an empty developer file");
-        // This is the production profiler's formerly ignored placement.
-        write(Group::Developer, "[PhysicsInteraction]\nbPerformanceProfilerEnabled=true\niPerformanceProfilerLogIntervalFrames=300\niPerformanceProfilerWarmupFrames=120\nbPerformanceProfilerOverlayText=false\n");
-        require(store.load(false), "production-layout profiler reload failed");
-        const auto profiler = runtime();
-        require(profiler.rockPerformanceProfilerEnabled && profiler.rockPerformanceProfilerLogIntervalFrames == 300 &&
-                profiler.rockPerformanceProfilerWarmupFrames == 120 && !profiler.rockPerformanceProfilerOverlayText,
-            "the real misplaced profiler configuration still does not activate");
+        const auto store = makeStore(directory, defaults);
+        store->load(true);
+        require(!fs::exists(playerIni) && !fs::exists(developerIni), "migrated INI files were not deleted");
+        require(find(*store, "WeaponHandling", "GunstockMode").value == "true", "a changed option was not carried");
+        require(find(*store, "Logging", "LogLevel").value == find(*store, "Logging", "LogLevel").defaultValue,
+            "an old default was carried");
+        require(find(*store, "WeaponHandling", "WeaponFilteringPreset").value ==
+                find(*store, "WeaponHandling", "WeaponFilteringPreset").defaultValue,
+            "an old default replaced the current default");
+        require(find(*store, "FiringHand", "DefaultHand").value == "left", "bLeftHandedMode was not carried");
+        require(find(*store, "FiringHand.Left", "AimOffsetGameUnits").value == "[0.0, 2.5, 0.0]",
+            "an X/Y/Z triplet was not carried as one list");
+        require(find(*store, "ControllerInput.Right", "A").value == "b", "a button layout key was not carried");
+        require(find(*store, "ScopePlacement", "NativeScopeOverlayOffsetGameUnits").value == "[0.0, 12.0, 0.0]" &&
+                    find(*store, "DebugOverlay", "DebugMaxBodyInstances").value == "100",
+            "developer options were not carried");
+        require(bytes(store->path(Group::Developer)).find("NativeScopeOverlayOffsetGameUnits = [0.0, 12.0, 0.0]") !=
+                std::string::npos,
+            "an option that moved to the developer file was not written there");
+        require(hasLine(store->messages(), "does not fit: fRealisticGrenadeFuseSeconds = soon"),
+            "a value that does not fit was not reported");
+        require(hasLine(store->notices(), "bRockyModeEnabled"), "a retired key was not named");
     }
 
-    void consumerCompletionChecks(const std::filesystem::path& directory, const CSimpleIniA& compiled)
+    // The examples are exactly what ROCK writes for files holding every option
+    // at its default, under a reference-only header, so their help is the catalog's.
+    constexpr std::array<const char*, 2> kExampleNames{ "ROCK_example.toml", "ROCK_Developer_example.toml" };
+    constexpr std::array<std::string_view, 2> kExampleHeaders{
+        "## ROCK_example.toml - every player option with its default and help\n"
+        "## Reference only: ROCK never reads this file. The first time ROCK starts it writes this same text as\n"
+        "## ROCK.toml in Documents\\My Games\\Fallout4VR\\Mods_Config\\ROCK.\n",
+        "## ROCK_Developer_example.toml - every developer option with its default and help\n"
+        "## Reference only: ROCK never reads this file. ROCK_Developer.toml in Documents\\My Games\\Fallout4VR\\\n"
+        "## Mods_Config\\ROCK holds only the developer options changed from these defaults.\n",
+    };
+
+    std::string withoutCarriageReturns(std::string text)
     {
-        using namespace rock::config;
-        namespace fs = std::filesystem;
+        std::erase(text, '\r');
+        return text;
+    }
+
+    // The body starts at the first category heading.
+    std::string bodyAfterHeader(const std::string& text)
+    {
+        const auto start = text.find("\n## === ");
+        require(start != std::string::npos, "settings text has no category");
+        return text.substr(start);
+    }
+
+    std::array<std::string, 2> organizedDefaultBodies(const fs::path& directory,
+        std::span<const SettingDefault> defaults)
+    {
         fs::create_directories(directory);
-        ConfigurationStore store(directory, compiled);
-        const auto consumerPath = store.path(Group::Consumer);
-        const auto developerPath = store.path(Group::Developer);
-        const auto write = [](const fs::path& path, std::string_view text) {
-            std::ofstream file(path, std::ios::binary | std::ios::trunc);
-            file << text;
-            require(file.good(), "cannot write consumer completion fixture");
-        };
-        const std::string suppliedDeveloper = "[My diagnostics]\nbDebugShowColliders=false\nsLocalNote=keep me\n";
-        const std::array<std::string, 3> fixtures{
-            "",
-            "\xEF\xBB\xBF; My settings\r\niLogLevel=1\r\n[My options]\r\nBBIPODMODE=false\r\n"
-            "; Keep this comment and blank value\r\nbEnableImmersiveScopes=\r\n"
-            "[Logging]\r\niLogLevel=4\r\n[My options]\r\nsUnknownOption = keep me",
-            "; Unix newlines\n[Custom]\nBBIPODMODE=false\nsUnknownOption=keep me\n"
-        };
-        for (const auto& original : fixtures) {
-            write(consumerPath, original);
-            if (original.empty()) fs::remove(developerPath);
-            else write(developerPath, suppliedDeveloper);
-            require(store.load(false), "sparse consumer hot reload failed");
-            require(bytes(consumerPath) == original, "hot reload wrote consumer defaults");
-            const auto previous = store.settings();
-            require(store.load(true), "consumer completion failed");
-            const auto completed = bytes(consumerPath);
-            require(completed.starts_with(original), "completion rewrote existing consumer bytes");
-            require(completed.size() > original.size(), "completion did not append missing options");
-            CSimpleIniA persisted;
-            persisted.SetMultiKey(true);
-            require(persisted.LoadFile(consumerPath.c_str()) >= 0, "completed consumer INI unreadable");
-            CSimpleIniA::TNamesDepend sections;
-            persisted.GetAllSections(sections);
-            CSimpleIniA additions;
-            require(additions.LoadData(completed.substr(original.size())) >= 0, "appended defaults unreadable");
-            CSimpleIniA::TNamesDepend addedSections;
-            additions.GetAllSections(addedSections);
-            for (const auto& setting : previous) {
-                const auto& loaded = find(store, setting.key);
-                require(loaded.value == setting.value, "completion changed an effective setting value");
-                if (setting.group == Group::Developer) {
-                    for (const auto& section : sections)
-                        require(!persisted.GetValue(section.pItem, setting.key.c_str(), nullptr),
-                            "completion added a developer key to the consumer file");
-                    continue;
-                }
-                require(loaded.specified, "completed consumer setting is still absent");
-                if (!setting.specified)
-                    require(std::string_view(persisted.GetValue(setting.section.c_str(), setting.key.c_str(), "")) == setting.defaultValue,
-                        "completion did not persist the compiled default");
-                else
-                    for (const auto& section : addedSections)
-                        require(!additions.GetValue(section.pItem, setting.key.c_str(), nullptr),
-                            "completion appended an existing key from another section or spelling case");
-            }
-            require(original.empty() ? !fs::exists(developerPath) : bytes(developerPath) == suppliedDeveloper,
-                "consumer completion created or changed the developer INI");
-            const auto revision = store.revision();
-            const auto timestamp = fs::last_write_time(consumerPath);
-            require(store.load(true) && store.revision() == revision, "repeat completion changed the catalog");
-            require(bytes(consumerPath) == completed && fs::last_write_time(consumerPath) == timestamp,
-                "repeat completion rewrote an already complete consumer INI");
+        const auto store = makeStore(directory, defaults);
+        std::string developer;
+        std::string_view table;
+        for (const auto& setting : store->settings()) {
+            if (setting.group != Group::Developer)
+                continue;
+            if (setting.table != table)
+                developer += std::format("[{}]\n", setting.table);
+            table = setting.table;
+            developer += std::format("{} = {}\n", setting.key,
+                setting.type == ValueType::String ? std::format("'{}'", setting.defaultValue) : setting.defaultValue);
         }
-        write(consumerPath, "[Logging]\niLogLevel=5\n");
-        const auto beforeFailure = bytes(consumerPath);
-        const auto revision = store.revision();
-        {
-            // Permit reads but deny replacement to exercise publication failure.
-            struct FileLock {
-                HANDLE handle;
-                ~FileLock() { if (handle != INVALID_HANDLE_VALUE) CloseHandle(handle); }
-            } lock{ CreateFileW(consumerPath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr) };
-            require(lock.handle != INVALID_HANDLE_VALUE, "cannot lock consumer completion fixture");
-            require(store.load(true) && !store.error().empty(), "failed completion did not load existing settings and report the error");
-        }
-        require(bytes(consumerPath) == beforeFailure && store.revision() > revision && find(store, "iLogLevel").value == "5",
-            "failed completion modified the file or lost the user's existing settings");
-        auto temporary = consumerPath;
-        temporary += L".creating";
-        require(!fs::exists(temporary), "failed completion retained its temporary file");
-        require(store.load(true), "consumer completion did not recover after unlocking");
+        write(store->path(Group::Developer), developer);
+        store->load(true);
+        require(store->messages().empty(), "cannot organize the default files");
+        return { bodyAfterHeader(withoutCarriageReturns(bytes(store->path(Group::Player)))),
+            bodyAfterHeader(withoutCarriageReturns(bytes(store->path(Group::Developer)))) };
     }
 
-    void verifyReference(const CSimpleIniA& reference,
-        const rock::config::ConfigurationStore& store, rock::config::Group owner)
+    // Both organized default files hold every option once at its default, and
+    // reading them gives the same runtime values as reading nothing.
+    void defaultChecks(const fs::path& directory, std::span<const SettingDefault> defaults)
     {
-        CSimpleIniA::TNamesDepend sections;
-        reference.GetAllSections(sections);
-        for (const auto& section : sections) {
-            CSimpleIniA::TNamesDepend keys;
-            reference.GetAllKeys(section.pItem, keys);
-            for (const auto& key : keys) {
-                const auto& setting = find(store, key.pItem);
-                require(setting.section == section.pItem && setting.group == owner,
-                    "reference key has an unsupported section or owner");
-                CSimpleIniA::TNamesDepend values;
-                reference.GetAllValues(section.pItem, key.pItem, values);
-                require(values.size() == 1, "reference contains a duplicate key");
-            }
+        const auto store = makeStore(directory, defaults);
+        store->load(false);
+        for (const auto& setting : store->settings()) {
+            require(setting.specified, "an organized default file is missing an option");
+            require(setting.value == setting.defaultValue, "an organized default differs from the compiled default");
         }
+        require(runtime(*store) == rock::RockConfig::parseValues({}),
+            "omitting options does not give the same runtime values as all documented defaults");
     }
 }
 
 int main(int argc, char** argv)
 {
-    using namespace rock::config;
-    namespace fs = std::filesystem;
+    const fs::path directory = fs::path(ROCK_CONFIG_TEST_DIR);
     try {
-        CSimpleIniA compiled;
-        rock::RockConfig::buildCompiledDefaults(compiled);
-        if (argc == 3 && std::string_view(argv[1]) == "--dump-defaults") {
-            require(compiled.SaveFile(argv[2], false) >= 0, "compiled defaults dump failed");
+        std::error_code ec;
+        fs::remove_all(directory, ec);
+        const auto defaults = rock::RockConfig::compiledDefaults();
+        // Construction checks the catalog against the loader in both directions.
+        const auto exampleBodies = organizedDefaultBodies(directory / "examples", defaults);
+        if (argc == 3 && std::string_view(argv[1]) == "--write-examples") {
+            for (std::size_t index = 0; index < kExampleNames.size(); ++index)
+                write(fs::path(argv[2]) / kExampleNames[index],
+                    std::string(kExampleHeaders[index]) + exampleBodies[index]);
+            fs::remove_all(directory, ec);
             return 0;
         }
-        const auto directory = fs::temp_directory_path() /
-            ("ROCK-configuration-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-        struct Cleanup { fs::path path; ~Cleanup() { std::error_code ec; fs::remove_all(path, ec); } } cleanup{ directory };
-        decorativeSectionChecks(directory / "decorative", compiled);
-        consumerCompletionChecks(directory / "completion", compiled);
-        ConfigurationStore store(directory, compiled);
-        CSimpleIniA consumerExample;
-        CSimpleIniA developerExample;
-        consumerExample.SetMultiKey(true);
-        developerExample.SetMultiKey(true);
-        require(consumerExample.LoadFile((fs::path(ROCK_CONFIG_REFERENCE_DIR) / "ROCK_example.ini").c_str()) >= 0, "consumer reference unavailable");
-        require(developerExample.LoadFile((fs::path(ROCK_CONFIG_REFERENCE_DIR) / "ROCK_Developer_example.ini").c_str()) >= 0, "developer reference unavailable");
-        verifyReference(consumerExample, store, Group::Consumer);
-        verifyReference(developerExample, store, Group::Developer);
-        CSimpleIniA allReferences;
-        require(allReferences.LoadFile((fs::path(ROCK_CONFIG_REFERENCE_DIR) / "ROCK_example.ini").c_str()) >= 0, "consumer reference merge failed");
-        require(allReferences.LoadFile((fs::path(ROCK_CONFIG_REFERENCE_DIR) / "ROCK_Developer_example.ini").c_str()) >= 0, "developer reference merge failed");
-        CSimpleIniA missingOptions;
-        require(rock::RockConfig::parseValues(missingOptions) == rock::RockConfig::parseValues(allReferences),
-            "omitting options does not produce the same runtime values as all documented defaults");
-        require(settingGroup("PhysicsInteraction", "fRightGrabLegacyPalmPivotAHandspaceX") == Group::Developer,
-            "the first option below the authored boundary is not developer-owned");
-        require(settingGroup("PhysicsInteraction", "fMouthConsumeCommitHapticIntensity") == Group::Developer,
-            "the final option below the authored boundary is not developer-owned");
-        require(settingGroup("PhysicsInteraction", "sHighlightColor") == Group::Consumer,
-            "the final option above the authored boundary is not consumer-owned");
-        for (const auto& setting : store.settings()) {
-            const auto& example = setting.group == Group::Consumer ? consumerExample : developerExample;
-            const auto& other = setting.group == Group::Consumer ? developerExample : consumerExample;
-            const auto* documented = example.GetValue(setting.section.c_str(), setting.key.c_str(), nullptr);
-            if (!documented || !ConfigurationStore::isDefault(setting, documented)) {
-                throw std::runtime_error(std::format("Example default differs from compiled [{}] {}: example={} compiled={}",
-                    setting.section, setting.key, documented ? documented : "missing", setting.defaultValue));
-            }
-            require(!other.GetValue(setting.section.c_str(), setting.key.c_str(), nullptr), "example option belongs to both files");
+        for (std::size_t index = 0; index < kExampleNames.size(); ++index) {
+            const auto example =
+                withoutCarriageReturns(bytes(fs::path(ROCK_CONFIG_REFERENCE_DIR) / kExampleNames[index]));
+            if (bodyAfterHeader(example) != exampleBodies[index])
+                throw std::runtime_error(
+                    std::format("{} differs from the catalog; regenerate it with --write-examples <data/config>",
+                        kExampleNames[index]));
         }
-        require(store.load(true), "first-run load failed");
-        const auto consumerBeforeRecoilOverride = bytes(store.path(Group::Consumer));
-        require(store.setValue(Group::Developer, "Debug", "bEmergencyDisableRecoil", "true") && store.load(false),
-            "emergency recoil override did not persist and reload");
-        CSimpleIniA recoilOverride;
-        store.appendLoadedValues(recoilOverride);
-        require(rock::RockConfig::parseValues(recoilOverride).rockEmergencyDisableRecoil,
-            "emergency recoil override did not reach runtime settings");
-        require(bytes(store.path(Group::Consumer)) == consumerBeforeRecoilOverride,
-            "emergency recoil override changed existing consumer recoil settings");
-        require(store.setValue(Group::Developer, "Debug", "bEmergencyDisableRecoil", "false") && store.load(false),
-            "emergency recoil reset did not reload");
-        CSimpleIniA recoilReset;
-        store.appendLoadedValues(recoilReset);
-        require(!rock::RockConfig::parseValues(recoilReset).rockEmergencyDisableRecoil &&
-                !fs::exists(store.path(Group::Developer)),
-            "reset retained the emergency override or an empty developer file");
-        require(find(store, "bLeftHandedMode").group == Group::Consumer &&
-            find(store, "bLeftHandedMode").type == ValueType::Boolean &&
-            !rock::RockConfig::parseValues(missingOptions).rockLeftHandedMode,
-            "left-hand mode must be an opt-in consumer boolean");
-        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "bLeftHandedMode", "true") && store.load(false),
-            "left-hand mode enable/reload failed");
-        CSimpleIniA leftHandValues;
-        store.appendLoadedValues(leftHandValues);
-        require(rock::RockConfig::parseValues(leftHandValues).rockLeftHandedMode,
-            "left-hand mode did not reach runtime");
-        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "bLeftHandedMode", "false") && store.load(false),
-            "left-hand mode reset/reload failed");
-        require(find(store, "bVatsPhysicsFixes").group == Group::Developer &&
-            find(store, "bVatsPhysicsFixes").type == ValueType::Boolean &&
-            rock::RockConfig::parseValues(missingOptions).rockVatsPhysicsFixes,
-            "VATS physics fixes must default on in the developer catalog");
-        require(store.setValue(Group::Developer, "PhysicsInteraction", "bVatsPhysicsFixes", "false") && store.load(false),
-            "VATS physics fixes disable/reload failed");
-        CSimpleIniA vatsValues;
-        store.appendLoadedValues(vatsValues);
-        require(!rock::RockConfig::parseValues(vatsValues).rockVatsPhysicsFixes,
-            "VATS physics fixes override did not reach runtime");
-        require(store.setValue(Group::Developer, "PhysicsInteraction", "bVatsPhysicsFixes", "true") && store.load(false),
-            "VATS physics fixes reset/reload failed");
-        require(!find(store, "bVatsPhysicsFixes").specified,
-            "resetting VATS physics fixes retained the default override");
-        // NPC controls moved to SCISSORS Redux by the owner's explicit decision.
-        for (const auto* key : {"npcDynamicCollisions", "bBladePenetrationEnabled",
-                 "bDebugDrawNpcNativeColliders", "bDebugDrawNpcSupplementColliders", "bDebugDrawNpcColliderLabels"}) {
-            require(std::none_of(store.settings().begin(), store.settings().end(),
-                [key](const auto& setting) { return setting.key == key; }), "Redux setting leaked into ROCK's catalog");
-            require(!store.setValue(Group::Consumer, "PhysicsInteraction", key, "true") &&
-                !store.setValue(Group::Developer, "PhysicsInteraction", key, "true"),
-                "ROCK must reject NPC setting writes instead of keeping a forwarding alias");
-        }
-        require(find(store, "fMeleeGripPitchDegrees").group == Group::Consumer &&
-            find(store, "fMeleeGripPitchDegrees").type == ValueType::Float,
-            "melee pitch must be a consumer float");
-        for (const auto* angle : { "15", "-30", "0" }) {
-            require(store.setValue(Group::Consumer, "ImmersiveWeapons", "fMeleeGripPitchDegrees", angle) && store.load(false),
-                "melee pitch edit/reload failed");
-            CSimpleIniA values;
-            store.appendLoadedValues(values);
-            require(rock::RockConfig::parseValues(values).rockMeleeGripPitchDegrees == std::stof(angle),
-                "melee pitch did not reach runtime");
-        }
-        for (const auto& [value, expected] : { std::pair{ "-181", -180.0f }, { "181", 180.0f }, { "nan", 0.0f } }) {
-            CSimpleIniA values;
-            values.SetValue("ImmersiveWeapons", "fMeleeGripPitchDegrees", value);
-            require(rock::RockConfig::parseValues(values).rockMeleeGripPitchDegrees == expected,
-                "invalid melee pitch was not bounded safely");
-        }
-        require(find(store, "fLaserRecoilPercent").type == ValueType::Float &&
-            rock::RockConfig::parseValues(missingOptions).rockLaserRecoilPercent == 100.0f,
-            "laser recoil must default to the bipod profile strength");
-        for (const auto* percent : { "0", "50", "100", "300" }) {
-            require(store.setValue(Group::Consumer, "ImmersiveWeapons", "fLaserRecoilPercent", percent),
-                "laser recoil strength write failed");
-            require(store.load(false), "laser recoil reload failed");
-            CSimpleIniA recoilValues;
-            store.appendLoadedValues(recoilValues);
-            const auto recoilConfig = rock::RockConfig::parseValues(recoilValues);
-            require(recoilConfig.rockLaserRecoilPercent == std::stof(percent),
-                "laser recoil setting did not reach runtime configuration");
-            require(recoilConfig.rockRifleOneHandRecoilPercent == 300.0f &&
-                recoilConfig.rockRifleTwoHandRecoilPercent == 80.0f,
-                "laser tuning changed ordinary rifle recoil");
-        }
-        for (const auto& [value, expected] : { std::pair{ "-1", 0.0f }, { "301", 300.0f }, { "nan", 100.0f } }) {
-            CSimpleIniA recoilValues;
-            recoilValues.SetValue("ImmersiveWeapons", "fLaserRecoilPercent", value);
-            require(rock::RockConfig::parseValues(recoilValues).rockLaserRecoilPercent == expected,
-                "invalid laser recoil strength was not bounded safely");
-        }
-        require(store.setValue(Group::Consumer, "ImmersiveWeapons", "fLaserRecoilPercent", "100"),
-            "laser recoil strength reset failed");
-        require(store.load(false), "laser recoil reset reload failed");
-        require(find(store, "iGrabFingerPoseMode").group == Group::Developer &&
-            find(store, "iGrabFingerPoseMode").value == "1", "finger mode must default to current in developer settings");
-        for (const auto* mode : { "2", "1", "2", "1" }) {
-            require(store.setValue(Group::Developer, "PhysicsInteraction", "iGrabFingerPoseMode", mode) && store.load(false),
-                "finger mode must switch and reset through the configuration API");
-            CSimpleIniA poseValues;
-            store.appendLoadedValues(poseValues);
-            require(rock::RockConfig::parseValues(poseValues).rockGrabFingerPoseMode == std::stoi(mode),
-                "hot reload must deliver the selected posing mode");
-        }
-        for (const auto* invalid : { "-1", "0", "3", "invalid" }) {
-            CSimpleIniA poseValues;
-            poseValues.SetValue("PhysicsInteraction", "iGrabFingerPoseMode", invalid);
-            require(rock::RockConfig::parseValues(poseValues).rockGrabFingerPoseMode == 1,
-                "invalid finger pose mode must use current posing");
-        }
-        require(find(store, "iWeaponGrabPoseMode").group == Group::Developer &&
-            find(store, "iWeaponGrabPoseMode").value == "0", "weapon posing must preserve the shared setting by default");
-        for (const auto* mode : { "2", "1", "0" }) {
-            require(store.setValue(Group::Developer, "PhysicsInteraction", "iWeaponGrabPoseMode", mode) && store.load(false),
-                "weapon posing must switch and reset through the configuration API");
-            CSimpleIniA poseValues;
-            store.appendLoadedValues(poseValues);
-            const auto config = rock::RockConfig::parseValues(poseValues);
-            require(config.rockWeaponGrabPoseMode == std::stoi(mode) && config.rockGrabFingerPoseMode == 1,
-                "weapon posing hot reload must not change loose-object posing");
-        }
-        for (const auto* invalid : { "-1", "3", "invalid" }) {
-            CSimpleIniA poseValues;
-            poseValues.SetValue("PhysicsInteraction", "iWeaponGrabPoseMode", invalid);
-            require(rock::RockConfig::parseValues(poseValues).rockWeaponGrabPoseMode == 0,
-                "invalid weapon posing must preserve the shared setting");
-        }
-        require(find(store, "iGrabCloseSeatMode").group == Group::Developer &&
-            find(store, "iGrabCloseSeatMode").value == "0", "close grabs must keep the current seat by default");
-        for (const auto* mode : { "1", "0", "1", "0" }) {
-            require(store.setValue(Group::Developer, "PhysicsInteraction", "iGrabCloseSeatMode", mode) && store.load(false),
-                "close-grab seat mode must switch and reset through the configuration API");
-            CSimpleIniA seatValues;
-            store.appendLoadedValues(seatValues);
-            const auto config = rock::RockConfig::parseValues(seatValues);
-            require(config.rockGrabCloseSeatMode == std::stoi(mode) && config.rockGrabFingerPoseMode == 1,
-                "close-grab seat hot reload must deliver the selected mode without changing finger posing");
-        }
-        for (const auto* invalid : { "-1", "2", "invalid" }) {
-            CSimpleIniA seatValues;
-            seatValues.SetValue("PhysicsInteraction", "iGrabCloseSeatMode", invalid);
-            require(rock::RockConfig::parseValues(seatValues).rockGrabCloseSeatMode == 0,
-                "invalid close-grab seat mode must keep the current seat");
-        }
-        require(find(store, "iWeaponDropMode").type == ValueType::Integer &&
-            find(store, "iWeaponDropMode").value == "2", "weapon drop must default to toggle drop");
-        require(find(store, "iWeaponGrabMode").type == ValueType::Integer &&
-            find(store, "iWeaponGrabMode").value == "1", "weapon grab must default to toggling both grips");
-        for (const auto* invalid : { "-1", "0", "4", "invalid" }) {
-            CSimpleIniA grabValues;
-            grabValues.SetValue("ImmersiveWeapons", "iWeaponGrabMode", invalid);
-            require(rock::RockConfig::parseValues(grabValues).rockWeaponGrabMode == 1,
-                "invalid weapon grab mode must fall back to the toggle-both default");
-        }
-        require(find(store, "bKeepPreviousWeaponInHandOnEquip").value == "true",
-            "previous weapon retention must default to enabled");
-        for (const auto* enabled : { "true", "false" }) {
-            require(store.setValue(Group::Consumer, "ImmersiveWeapons", "bKeepPreviousWeaponInHandOnEquip", enabled),
-                "previous weapon retention write failed");
-            require(store.load(false), "previous weapon retention reload failed");
-            CSimpleIniA swapValues;
-            store.appendLoadedValues(swapValues);
-            const auto swapConfig = rock::RockConfig::parseValues(swapValues);
-            require(swapConfig.rockKeepPreviousWeaponInHandOnEquip == (enabled[0] == 't') &&
-                swapConfig.rockWeaponDropMode == 2 && swapConfig.rockWeaponGrabMode == 1,
-                "retention reload must remain independent of weapon drop and grab modes");
-        }
-        require(!store.setValue(Group::Consumer, "ImmersiveWeapons", "bAutoDrop", "true"),
-            "removed auto-drop boolean must not remain writable");
-        for (const auto* mode : { "1", "2", "3", "4" }) {
-            require(store.setValue(Group::Consumer, "ImmersiveWeapons", "iWeaponDropMode", mode),
-                "weapon drop mode write failed");
-            require(store.load(false), "weapon drop mode reload failed");
-            CSimpleIniA dropValues;
-            store.appendLoadedValues(dropValues);
-            const auto dropConfig = rock::RockConfig::parseValues(dropValues);
-            require(dropConfig.rockWeaponDropMode == mode[0] - '0',
-                "weapon drop mode did not reach runtime configuration");
-            require(dropConfig.rockWeaponGrabMode == 1,
-                "weapon drop mode must not change the grip release gesture");
-        }
-        for (const auto* invalid : { "-1", "0", "5", "invalid" }) {
-            CSimpleIniA dropValues;
-            dropValues.SetValue("ImmersiveWeapons", "iWeaponDropMode", invalid);
-            require(rock::RockConfig::parseValues(dropValues).rockWeaponDropMode == 2,
-                "invalid weapon drop mode must fall back to toggle drop");
-        }
-        require(store.setValue(Group::Consumer, "ImmersiveWeapons", "iWeaponDropMode", "2"),
-            "weapon drop mode reset failed");
-        require(find(store, "fEquippedDropRadiusMeters").group == Group::Consumer,
-            "equipped drop radius must be a consumer setting");
-        {
-            CSimpleIniA radius;
-            radius.SetValue("ImmersiveWeapons", "fEquippedDropRadiusMeters", "12.5");
-            radius.SetValue("ImmersiveWeapons", "fBipodHandsFreeRadiusMeters", "3.0");
-            const auto value = rock::RockConfig::parseValues(radius);
-            require(value.rockEquippedDropRadiusMeters == 12.5f && value.rockBipodHandsFreeRadiusMeters == 3.0f,
-                "equipped drop and bipod radii must remain independent without an arbitrary upper clamp");
-            for (const auto* invalid : { "0", "-1", "nan", "inf" }) {
-                radius.SetValue("ImmersiveWeapons", "fEquippedDropRadiusMeters", invalid);
-                const auto rejected = rock::RockConfig::parseValues(radius);
-                require(rejected.rockEquippedDropRadiusMeters == 2.0f && rejected.rockBipodHandsFreeRadiusMeters == 3.0f,
-                    "invalid equipped drop radius must restore its default without changing bipod");
-            }
-        }
-        require(store.load(false), "weapon drop mode reset reload failed");
-        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "fLeftFiringGripOffsetYGameUnits", "0.25"),
-            "left firing relative placement write failed");
-        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "fRightSupportGripOffsetZGameUnits", "-0.5"),
-            "right support relative placement write failed");
-        require(store.load(false), "relative grip placement reload failed");
-        CSimpleIniA gripPlacementValues;
-        store.appendLoadedValues(gripPlacementValues);
-        const auto gripPlacement = rock::RockConfig::parseValues(gripPlacementValues);
-        require(gripPlacement.rockLeftFiringGripOffsetGameUnits == RE::NiPoint3(0.0f, 0.25f, 0.0f) &&
-            gripPlacement.rockRightSupportGripOffsetGameUnits == RE::NiPoint3(0.0f, 0.0f, -0.5f),
-            "relative firing and support placement must remain independent across reload");
-        require(gripPlacement.rockLeftFiringAimOffsetYGameUnits == 0.0f && gripPlacement.rockLeftFiringAimYawDegrees == 0.0f,
-            "relative grip placement must not change whole-carry position or aim");
-        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "fLeftFiringGripOffsetYGameUnits", "0"), "left placement reset failed");
-        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "fRightSupportGripOffsetZGameUnits", "0"), "right placement reset failed");
-        require(store.load(false), "relative grip placement reset reload failed");
-        require(find(store, "bEnableImmersiveScopes").value == "true", "immersive scopes must default on");
-        for (const bool enabled : { false, true }) {
-            require(store.setValue(Group::Consumer, "NativeScopes", "bEnableImmersiveScopes", enabled ? "true" : "false"),
-                "scope mode write failed");
-            require(store.load(false), "scope mode reload failed");
-            CSimpleIniA scopeValues;
-            store.appendLoadedValues(scopeValues);
-            require(rock::RockConfig::parseValues(scopeValues).rockEnableImmersiveScopes == enabled,
-                "scope mode did not reach runtime configuration");
-        }
-        require(find(store, "bImmersiveGrenades").value == "true", "immersive grenades must remain the default");
-        require(store.setValue(Group::Consumer, "RealisticWeapons", "bImmersiveGrenades", "false"), "vanilla fallback selection failed");
-        require(store.load(false), "vanilla fallback reload failed");
-        require(find(store, "bImmersiveGrenades").value == "false", "vanilla fallback selection was lost on reload");
-        require(store.setValue(Group::Consumer, "RealisticWeapons", "bImmersiveGrenades", "true"), "immersive mode restore failed");
-        require(store.load(false), "immersive restore reload failed");
-        require(fs::exists(store.path(Group::Consumer)), "consumer defaults were not created");
-        require(!fs::exists(store.path(Group::Developer)), "developer INI must not be created on load");
-        CSimpleIniA consumer;
-        require(consumer.LoadFile(store.path(Group::Consumer).c_str()) >= 0, "consumer defaults unreadable");
-        std::size_t developerCount = 0;
-        for (const auto& setting : store.settings()) {
-            require(!setting.defaultValue.empty() || setting.type == ValueType::String, "invalid compiled default");
-            if (setting.group == Group::Developer) {
-                ++developerCount;
-                require(consumer.GetValue(setting.section.c_str(), setting.key.c_str(), nullptr) == nullptr,
-                    "developer setting leaked into generated consumer INI");
-            } else {
-                require(consumer.GetValue(setting.section.c_str(), setting.key.c_str(), nullptr) != nullptr,
-                    "a supported consumer default is missing from first-run INI");
-            }
-        }
-        require(store.settings().size() == std::size(kSettingMetadata), "presentation catalog differs from supported loader options");
-        for (std::size_t index = 0; index < store.settings().size(); ++index) {
-            const auto& setting = store.settings()[index];
-            const auto& metadata = kSettingMetadata[index];
-            require(setting.section == metadata.section && setting.key == metadata.key &&
-                setting.group == metadata.group && setting.category == metadata.category,
-                "configuration API lost authored section or option order");
-        }
-        const auto originalConsumer = bytes(store.path(Group::Consumer));
-        std::string_view previousCategory;
-        std::size_t previousHeading = 0;
-        for (const auto& setting : store.settings()) {
-            if (setting.group != Group::Consumer || setting.category == previousCategory) continue;
-            const auto heading = originalConsumer.find("; === " + setting.category + " ===");
-            require(heading != std::string::npos && heading >= previousHeading, "generated consumer sections differ from menu order");
-            previousCategory = setting.category;
-            previousHeading = heading;
-        }
-        const auto originalRevision = store.revision();
-        require(store.load(true), "repeat load failed");
-        require(store.revision() == originalRevision, "unchanged reload was republished");
-        require(bytes(store.path(Group::Consumer)) == originalConsumer, "loading rewrote the consumer INI");
-
-        require(store.setValue(Group::Developer, "PhysicsInteraction", "bDebugShowColliders", "false"), "default write failed");
-        require(!fs::exists(store.path(Group::Developer)), "writing a default created the developer INI");
-        require(store.setValue(Group::Developer, "PhysicsInteraction", "bDebugShowColliders", "true"), "override write failed");
-        require(fs::exists(store.path(Group::Developer)), "first override did not create the developer INI");
-        require(store.load(false), "override reload failed");
-        require(find(store, "bDebugShowColliders").value == "true", "override did not load");
-        require(store.revision() > originalRevision, "changed file did not advance revision");
-        CSimpleIniA developer;
-        require(developer.LoadFile(store.path(Group::Developer).c_str()) >= 0, "developer file unreadable");
-        require(developer.GetSectionSize("PhysicsInteraction") == 1, "first override wrote unrelated defaults");
-        require(!store.setValue(Group::Consumer, "PhysicsInteraction", "bDebugShowColliders", "true"), "wrong owning file accepted");
-        require(!store.setValue(Group::Developer, "Debug", "bUnknown", "true"), "unknown setting accepted");
-        require(!store.setValue(Group::Developer, "Debug", "bDeveloperModeEnabled", "invalid"), "invalid bool accepted");
-        require(!store.setValue(Group::Developer, "PhysicsInteraction", "fDebugSkeletonBoneAxisLength", "nan"), "nonfinite override accepted");
-
-        // An editor changes one key after the menu snapshot. A menu change to
-        // another key must preserve the newer edit, then both must hot reload.
-        require(developer.SetBoolValue("Debug", "bDeveloperModeEnabled", true) >= 0, "external edit setup failed");
-        require(developer.SaveFile(store.path(Group::Developer).c_str(), false) >= 0, "external edit failed");
-        require(store.setValue(Group::Developer, "PhysicsInteraction", "bDebugShowHandAxes", "true"), "second override failed");
-        require(store.load(false), "external+menu reload failed");
-        require(find(store, "bDeveloperModeEnabled").value == "true", "menu overwrote an external edit");
-        const auto organizedDeveloper = bytes(store.path(Group::Developer));
-        const auto controlsHeading = "; === " + find(store, "bDeveloperModeEnabled").category + " ===";
-        const auto overlayHeading = "; === " + find(store, "bDebugShowColliders").category + " ===";
-        require(organizedDeveloper.find(overlayHeading) != std::string::npos &&
-            organizedDeveloper.find(controlsHeading) < organizedDeveloper.find(overlayHeading),
-            "sparse developer sections follow edit order instead of menu order");
-        require(organizedDeveloper.find(overlayHeading) == organizedDeveloper.rfind(overlayHeading),
-            "editing multiple options duplicated a section heading");
-        require(find(store, "bDebugShowHandAxes").value == "true", "menu override missing");
-        require(bytes(store.path(Group::Consumer)) == originalConsumer, "developer edits rewrote consumer options");
-        require(store.setValue(Group::Developer, "PhysicsInteraction", "bDebugShowColliders", "0"), "default restoration failed");
-        require(store.setValue(Group::Developer, "PhysicsInteraction", "bDebugShowHandAxes", "false"), "second default restoration failed");
-        require(store.setValue(Group::Developer, "Debug", "bDeveloperModeEnabled", "false"), "final default restoration failed");
-        require(!fs::exists(store.path(Group::Developer)), "empty developer INI was retained");
-        require(store.load(false), "reload after deletion failed");
-        require(find(store, "bDebugShowColliders").value == "false", "removed override did not restore default");
-        require(find(store, "bDeveloperModeEnabled").value == "false", "deleted developer file retained stale values");
-
-        require(store.setValue(Group::Consumer, "ImmersiveWeapons", "bBipodMode", "false"), "consumer edit failed");
-        require(store.load(false), "consumer edit reload failed");
-        require(find(store, "bBipodMode").value == "false", "consumer edit did not synchronize");
-        require(!fs::exists(store.path(Group::Developer)), "consumer edit created developer INI");
-        fs::remove(store.path(Group::Consumer));
-        require(store.setValue(Group::Consumer, "ImmersiveWeapons", "bBipodMode", "false"), "edit after consumer deletion failed");
-        CSimpleIniA recreated;
-        require(recreated.LoadFile(store.path(Group::Consumer).c_str()) >= 0, "consumer INI was not recreated");
-        for (const auto& setting : store.settings()) {
-            if (setting.group == Group::Consumer) require(recreated.GetValue(setting.section.c_str(), setting.key.c_str(), nullptr), "recreated consumer INI lost defaults");
-        }
-
-        const auto beforeFailure = bytes(store.path(Group::Consumer));
-        const std::array invalidBatch{ Change{"ImmersiveWeapons", "bBipodMode", "true"}, Change{"Debug", "bDeveloperModeEnabled", "true"} };
-        require(!store.setValues(Group::Consumer, invalidBatch), "mixed-owner batch accepted");
-        require(bytes(store.path(Group::Consumer)) == beforeFailure, "failed batch partially persisted");
-
-        // Existing developer configurations may deliberately list defaults.
-        // Loading them, or editing another key, must preserve those entries.
-        CSimpleIniA supplied;
-        require(supplied.SetBoolValue("Debug", "bDeveloperModeEnabled", false) >= 0, "supplied developer setup failed");
-        require(supplied.SetLongValue("Debug", "iLogSampleMilliseconds", 2000) >= 0, "supplied default setup failed");
-        require(supplied.SetValue("Debug", "sLogPattern", "%v", "; My log format") >= 0, "authored comment setup failed");
-        require(supplied.SetValue("Local", "sNote", "keep me", "; My local note") >= 0, "external entry setup failed");
-        require(supplied.SaveFile(store.path(Group::Developer).c_str(), false) >= 0, "supplied developer save failed");
-        const auto suppliedBytes = bytes(store.path(Group::Developer));
-        require(store.load(false), "supplied developer file did not load");
-        require(bytes(store.path(Group::Developer)) == suppliedBytes, "loading pruned supplied developer defaults");
-        require(store.setValue(Group::Developer, "PhysicsInteraction", "bDebugShowHandAxes", "true"), "supplied developer edit failed");
-        require(store.setValue(Group::Developer, "PhysicsInteraction", "bDebugShowHandAxes", "false"), "supplied developer reset failed");
-        CSimpleIniA retained;
-        require(retained.LoadFile(store.path(Group::Developer).c_str()) >= 0, "reset deleted the supplied developer file");
-        require(retained.GetValue("Debug", "bDeveloperModeEnabled", nullptr), "reset removed an unrelated supplied default");
-        require(retained.GetValue("Debug", "iLogSampleMilliseconds", nullptr), "edit pruned an unrelated supplied default");
-        require(std::string_view(retained.GetValue("Local", "sNote", "")) == "keep me", "organization discarded an external entry");
-        const auto retainedBytes = bytes(store.path(Group::Developer));
-        require(retainedBytes.find("; My log format") != std::string::npos && retainedBytes.find("; My local note") != std::string::npos,
-            "organization discarded authored option comments");
-        fs::remove(store.path(Group::Developer));
-        require(fs::create_directory(store.path(Group::Developer)), "failure directory setup failed");
-        require(!store.load(false), "unreadable developer path was accepted");
-        require(!store.setValue(Group::Developer, "Debug", "bDeveloperModeEnabled", "true"), "write over directory was accepted");
-        require(find(store, "bBipodMode").value == "false", "failed reload lost valid settings");
-        std::cout << "Configuration persistence checks passed: " << store.settings().size()
-                  << " compiled settings, " << developerCount << " developer settings.\n";
-        return 0;
+        defaultChecks(directory / "examples", defaults);
+        migrationChecks(directory / "migration", defaults);
+        fs::remove_all(directory, ec);
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;
     }
+    return 0;
 }

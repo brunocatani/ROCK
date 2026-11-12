@@ -144,8 +144,10 @@ int main()
         const float currentBefore = phaseLock.currentTranslation.x;
         phaseLock.advanceSource(RE::NiPoint3{ 99.0f, 0.0f, 0.0f }, identity, 0.011f, sequence);
         ok &= expectTrue("duplicate sequence is counted", phaseLock.duplicateSourceCount == 1);
-        ok &= expectNear("duplicate sequence leaves the segment start alone", phaseLock.previousTranslation.x, previousBefore, 0.0f);
-        ok &= expectNear("duplicate sequence leaves the segment end alone", phaseLock.currentTranslation.x, currentBefore, 0.0f);
+        ok &= expectNear("duplicate sequence leaves the segment start alone", phaseLock.previousTranslation.x,
+            previousBefore, 0.0f);
+        ok &= expectNear("duplicate sequence leaves the segment end alone", phaseLock.currentTranslation.x,
+            currentBefore, 0.0f);
     }
 
     // Stationary target: evaluated position holds exactly.
@@ -219,12 +221,14 @@ int main()
         RE::NiPoint3 evaluated = phaseLock.evaluate(0, 2, action);
         ok &= expectNear("translation jump lands exactly on the new target", evaluated.x, 51.0f, 0.0f);
 
-        phaseLock.advanceSource(RE::NiPoint3{ 51.5f, 0.0f, 0.0f }, rotationAroundZ(kPi * 20.0f / 180.0f), 0.011f, ++sequence);
+        phaseLock.advanceSource(RE::NiPoint3{ 51.5f, 0.0f, 0.0f }, rotationAroundZ(kPi * 20.0f / 180.0f), 0.011f,
+            ++sequence);
         ok &= expectTrue("rotation jump rebases", phaseLock.rebaseCount == 3);
         evaluated = phaseLock.evaluate(0, 1, action);
         ok &= expectNear("rotation jump lands exactly on the new target", evaluated.x, 51.5f, 0.0f);
 
-        phaseLock.advanceSource(RE::NiPoint3{ 51.6f, 0.0f, 0.0f }, rotationAroundZ(kPi * 22.0f / 180.0f), 0.011f, ++sequence);
+        phaseLock.advanceSource(RE::NiPoint3{ 51.6f, 0.0f, 0.0f }, rotationAroundZ(kPi * 22.0f / 180.0f), 0.011f,
+            ++sequence);
         ok &= expectTrue("small rotation step after a jump does not rebase", phaseLock.rebaseCount == 3);
     }
 

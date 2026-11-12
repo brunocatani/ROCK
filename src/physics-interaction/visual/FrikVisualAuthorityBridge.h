@@ -58,7 +58,8 @@ namespace rock::frik_visual_authority
         };
 
         inline std::array<CachedHandPosePublication, kCachedHandPosePublicationCount> g_cachedHandPosePublications{};
-        inline std::array<CachedFingerLocalTransformPublication, kCachedHandPosePublicationCount> g_cachedFingerLocalTransformPublications{};
+        inline std::array<CachedFingerLocalTransformPublication, kCachedHandPosePublicationCount>
+            g_cachedFingerLocalTransformPublications{};
         inline std::size_t g_nextCachedHandPosePublication = 0;
         inline std::size_t g_nextCachedFingerLocalTransformPublication = 0;
 
@@ -82,25 +83,18 @@ namespace rock::frik_visual_authority
             return std::string_view(entry.tag.data(), entry.tagLength);
         }
 
-        [[nodiscard]] inline bool sameFingerPoseData(
-            const frik::api::FRIKApiV2::FingerPoseData& lhs,
+        [[nodiscard]] inline bool sameFingerPoseData(const frik::api::FRIKApiV2::FingerPoseData& lhs,
             const frik::api::FRIKApiV2::FingerPoseData& rhs)
         {
-            return lhs.prox == rhs.prox &&
-                   lhs.mid == rhs.mid &&
-                   lhs.dist == rhs.dist &&
-                   lhs.splay == rhs.splay;
+            return lhs.prox == rhs.prox && lhs.mid == rhs.mid && lhs.dist == rhs.dist && lhs.splay == rhs.splay;
         }
 
         [[nodiscard]] inline bool sameHandPoseData(const HandPoseData& lhs, const HandPoseData& rhs)
         {
-            return sameFingerPoseData(lhs.thumb, rhs.thumb) &&
-                   sameFingerPoseData(lhs.index, rhs.index) &&
-                   sameFingerPoseData(lhs.middle, rhs.middle) &&
-                   sameFingerPoseData(lhs.ring, rhs.ring) &&
-                   sameFingerPoseData(lhs.pinky, rhs.pinky) &&
-                   lhs.palmPitch == rhs.palmPitch &&
-                   lhs.palmYaw == rhs.palmYaw;
+            return sameFingerPoseData(lhs.thumb, rhs.thumb) && sameFingerPoseData(lhs.index, rhs.index) &&
+                sameFingerPoseData(lhs.middle, rhs.middle) && sameFingerPoseData(lhs.ring, rhs.ring) &&
+                sameFingerPoseData(lhs.pinky, rhs.pinky) && lhs.palmPitch == rhs.palmPitch &&
+                lhs.palmYaw == rhs.palmYaw;
         }
 
         [[nodiscard]] inline bool sameNiTransform(const RE::NiTransform& lhs, const RE::NiTransform& rhs)
@@ -112,35 +106,34 @@ namespace rock::frik_visual_authority
                     }
                 }
             }
-            return lhs.translate.x == rhs.translate.x && lhs.translate.y == rhs.translate.y && lhs.translate.z == rhs.translate.z && lhs.scale == rhs.scale;
+            return lhs.translate.x == rhs.translate.x && lhs.translate.y == rhs.translate.y &&
+                lhs.translate.z == rhs.translate.z && lhs.scale == rhs.scale;
         }
 
-        [[nodiscard]] inline bool isFiniteNiTransform(
-            const RE::NiTransform& transform)
+        [[nodiscard]] inline bool isFiniteNiTransform(const RE::NiTransform& transform)
         {
             for (int row = 0; row < 3; ++row) {
                 for (int column = 0; column < 3; ++column) {
-                    if (!std::isfinite(
-                            transform.rotate.entry[row][column])) {
+                    if (!std::isfinite(transform.rotate.entry[row][column])) {
                         return false;
                     }
                 }
             }
-            return std::isfinite(transform.translate.x) &&
-                   std::isfinite(transform.translate.y) &&
-                   std::isfinite(transform.translate.z) &&
-                   std::isfinite(transform.scale) &&
-                   std::abs(transform.scale) > 0.000001f;
+            return std::isfinite(transform.translate.x) && std::isfinite(transform.translate.y) &&
+                std::isfinite(transform.translate.z) && std::isfinite(transform.scale) &&
+                std::abs(transform.scale) > 0.000001f;
         }
 
-        [[nodiscard]] inline bool sameFingerLocalTransforms(const FingerLocalTransformOverride& lhs, const FingerLocalTransformOverride& rhs)
+        [[nodiscard]] inline bool sameFingerLocalTransforms(const FingerLocalTransformOverride& lhs,
+            const FingerLocalTransformOverride& rhs)
         {
             if (lhs.enabledMask != rhs.enabledMask) {
                 return false;
             }
             for (std::size_t index = 0; index < std::size(lhs.localTransforms); ++index) {
                 const std::uint16_t bit = static_cast<std::uint16_t>(1U << index);
-                if ((lhs.enabledMask & bit) != 0 && !sameNiTransform(lhs.localTransforms[index], rhs.localTransforms[index])) {
+                if ((lhs.enabledMask & bit) != 0 &&
+                    !sameNiTransform(lhs.localTransforms[index], rhs.localTransforms[index])) {
                     return false;
                 }
             }
@@ -157,7 +150,8 @@ namespace rock::frik_visual_authority
             return nullptr;
         }
 
-        [[nodiscard]] inline CachedFingerLocalTransformPublication* findCachedFingerLocalTransformPublication(std::string_view tag, Hand hand)
+        [[nodiscard]] inline CachedFingerLocalTransformPublication* findCachedFingerLocalTransformPublication(
+            std::string_view tag, Hand hand)
         {
             for (auto& entry : g_cachedFingerLocalTransformPublications) {
                 if (entry.valid && entry.hand == hand && cachedTagView(entry) == tag) {
@@ -191,7 +185,8 @@ namespace rock::frik_visual_authority
             }
         }
 
-        inline void rememberCachedHandPosePublication(std::string_view tag, Hand hand, const HandPoseData& handPose, int priority)
+        inline void rememberCachedHandPosePublication(std::string_view tag, Hand hand, const HandPoseData& handPose,
+            int priority)
         {
             auto* entry = findCachedHandPosePublication(tag, hand);
             if (!entry) {
@@ -203,7 +198,8 @@ namespace rock::frik_visual_authority
                 }
             }
             if (!entry) {
-                entry = &g_cachedHandPosePublications[g_nextCachedHandPosePublication % g_cachedHandPosePublications.size()];
+                entry = &g_cachedHandPosePublications[g_nextCachedHandPosePublication %
+                    g_cachedHandPosePublications.size()];
                 ++g_nextCachedHandPosePublication;
             }
 
@@ -216,9 +212,8 @@ namespace rock::frik_visual_authority
             entry->valid = true;
         }
 
-        inline void rememberCachedFingerLocalTransformPublication(std::string_view tag,
-            Hand hand, const FingerLocalTransformOverride& transforms,
-            int priority)
+        inline void rememberCachedFingerLocalTransformPublication(std::string_view tag, Hand hand,
+            const FingerLocalTransformOverride& transforms, int priority)
         {
             auto* entry = findCachedFingerLocalTransformPublication(tag, hand);
             if (!entry) {
@@ -230,7 +225,8 @@ namespace rock::frik_visual_authority
                 }
             }
             if (!entry) {
-                entry = &g_cachedFingerLocalTransformPublications[g_nextCachedFingerLocalTransformPublication % g_cachedFingerLocalTransformPublications.size()];
+                entry = &g_cachedFingerLocalTransformPublications[g_nextCachedFingerLocalTransformPublication %
+                    g_cachedFingerLocalTransformPublications.size()];
                 ++g_nextCachedFingerLocalTransformPublication;
             }
 
@@ -243,36 +239,28 @@ namespace rock::frik_visual_authority
             entry->valid = true;
         }
 
-        [[nodiscard]] inline bool cachedHandPosePublicationStillActive(
-            const frik::api::FRIKApiV2* frikApi,
-            const char* tag,
-            Hand hand)
+        [[nodiscard]] inline bool cachedHandPosePublicationStillActive(const frik::api::FRIKApiV2* frikApi,
+            const char* tag, Hand hand)
         {
-            return frikApi &&
-                   frikApi->getHandPoseSetTagState &&
-                   frikApi->getHandPoseSetTagState(tag, hand) == HandPoseTagState::Active;
+            return frikApi && frikApi->getHandPoseSetTagState &&
+                frikApi->getHandPoseSetTagState(tag, hand) == HandPoseTagState::Active;
         }
 
-        [[nodiscard]] inline bool shouldSkipCachedHandPosePublication(
-            const frik::api::FRIKApiV2* frikApi,
-            const char* tag,
-            Hand hand,
-            const HandPoseData& handPose,
-            int priority,
-            std::string_view& outTagView)
+        [[nodiscard]] inline bool shouldSkipCachedHandPosePublication(const frik::api::FRIKApiV2* frikApi,
+            const char* tag, Hand hand, const HandPoseData& handPose, int priority, std::string_view& outTagView)
         {
             if (!makeCacheableTagView(tag, outTagView)) {
                 return false;
             }
 
             const auto* entry = findCachedHandPosePublication(outTagView, hand);
-            return entry &&
-                   entry->priority == priority &&
-                   sameHandPoseData(entry->pose, handPose) && cachedHandPosePublicationStillActive(frikApi, tag, hand);
+            return entry && entry->priority == priority && sameHandPoseData(entry->pose, handPose) &&
+                cachedHandPosePublicationStillActive(frikApi, tag, hand);
         }
 
-        [[nodiscard]] inline bool shouldSkipCachedFingerLocalTransformPublication(const frik::api::FRIKApiV2* frikApi, const char* tag, Hand hand,
-            const FingerLocalTransformOverride& transforms, int priority, std::string_view& outTagView)
+        [[nodiscard]] inline bool shouldSkipCachedFingerLocalTransformPublication(const frik::api::FRIKApiV2* frikApi,
+            const char* tag, Hand hand, const FingerLocalTransformOverride& transforms, int priority,
+            std::string_view& outTagView)
         {
             if (!makeCacheableTagView(tag, outTagView)) {
                 return false;
@@ -280,20 +268,14 @@ namespace rock::frik_visual_authority
 
             const auto* entry = findCachedFingerLocalTransformPublication(outTagView, hand);
             return entry && entry->priority == priority && sameFingerLocalTransforms(entry->transforms, transforms) &&
-                   cachedHandPosePublicationStillActive(frikApi, tag, hand);
+                cachedHandPosePublicationStillActive(frikApi, tag, hand);
         }
     }
 
-    [[nodiscard]] inline float finiteOrZero(float value)
-    {
-        return std::isfinite(value) ? value : 0.0f;
-    }
+    [[nodiscard]] inline float finiteOrZero(float value) { return std::isfinite(value) ? value : 0.0f; }
 
-    [[nodiscard]] inline HandPoseData makeHandPoseDataFromJointValues(
-        const float values[15],
-        const std::array<float, 5>& splayRadians,
-        float palmPitchDegrees = 0.0f,
-        float palmYawDegrees = 0.0f)
+    [[nodiscard]] inline HandPoseData makeHandPoseDataFromJointValues(const float values[15],
+        const std::array<float, 5>& splayRadians, float palmPitchDegrees = 0.0f, float palmYawDegrees = 0.0f)
     {
         return HandPoseData{
             .thumb = { values[0], values[1], values[2], finiteOrZero(splayRadians[0]) },
@@ -311,11 +293,8 @@ namespace rock::frik_visual_authority
         return makeHandPoseDataFromJointValues(values, std::array<float, 5>{});
     }
 
-    [[nodiscard]] inline HandPoseData makeHandPoseDataFromJointValues(
-        const std::array<float, 15>& values,
-        const std::array<float, 5>& splayRadians,
-        float palmPitchDegrees = 0.0f,
-        float palmYawDegrees = 0.0f)
+    [[nodiscard]] inline HandPoseData makeHandPoseDataFromJointValues(const std::array<float, 15>& values,
+        const std::array<float, 5>& splayRadians, float palmPitchDegrees = 0.0f, float palmYawDegrees = 0.0f)
     {
         return makeHandPoseDataFromJointValues(values.data(), splayRadians, palmPitchDegrees, palmYawDegrees);
     }
@@ -325,14 +304,8 @@ namespace rock::frik_visual_authority
         return makeHandPoseDataFromJointValues(values.data());
     }
 
-    [[nodiscard]] inline HandPoseData makeUniformHandPoseData(
-        float thumb,
-        float index,
-        float middle,
-        float ring,
-        float pinky,
-        const std::array<float, 5>& splayRadians = {},
-        float palmPitchDegrees = 0.0f,
+    [[nodiscard]] inline HandPoseData makeUniformHandPoseData(float thumb, float index, float middle, float ring,
+        float pinky, const std::array<float, 5>& splayRadians = {}, float palmPitchDegrees = 0.0f,
         float palmYawDegrees = 0.0f)
     {
         return HandPoseData{
@@ -346,15 +319,24 @@ namespace rock::frik_visual_authority
         };
     }
 
-    [[nodiscard]] inline const frik::api::FRIKApiV2* api()
+    [[nodiscard]] inline const frik::api::FRIKApiV2* api() { return frik::api::FRIKApiV2::inst; }
+
+    /*
+     * The FRIK API v2 version ROCK requires. The header is FRIK's own copy at
+     * a newer version; every entry or capability newer than this minimum is
+     * used only when the loaded FRIK reports it (supportsApiVersion).
+     */
+    inline constexpr std::uint32_t kRequiredApiVersion = 3;
+    // ScopeCapability::PlacesScopeWidget.
+    inline constexpr std::uint32_t kPlacesScopeWidgetApiVersion = 4;
+
+    [[nodiscard]] inline bool supportsApiVersion(std::uint32_t version)
     {
-        return frik::api::FRIKApiV2::inst;
+        auto* frikApi = api();
+        return frikApi && frikApi->getVersion && frikApi->getVersion() >= version;
     }
 
-    [[nodiscard]] inline Hand handFromBool(bool isLeft)
-    {
-        return isLeft ? Hand::Left : Hand::Right;
-    }
+    [[nodiscard]] inline Hand handFromBool(bool isLeft) { return isLeft ? Hand::Left : Hand::Right; }
 
     /*
      * Physical side of an API hand. Primary/Offhand follow the game's
@@ -371,7 +353,7 @@ namespace rock::frik_visual_authority
             return true;
         case Hand::Primary:
         case Hand::Offhand: {
-            const auto* leftHandedMode = f4vr::getIniSetting("bLeftHandedMode:VR");
+            const auto* leftHandedMode = f4vr::leftHandedModeSetting();
             if (!leftHandedMode) {
                 return false;
             }
@@ -384,10 +366,7 @@ namespace rock::frik_visual_authority
         }
     }
 
-    [[nodiscard]] inline bool isAvailable()
-    {
-        return api() != nullptr;
-    }
+    [[nodiscard]] inline bool isAvailable() { return api() != nullptr; }
 
     [[nodiscard]] inline bool isSkeletonReadyHint()
     {
@@ -395,11 +374,19 @@ namespace rock::frik_visual_authority
         return frikApi && frikApi->isSkeletonReady();
     }
 
-    [[nodiscard]] inline bool isCompatibilityConfigBlocking()
+    [[nodiscard]] inline bool isConfigOpen()
     {
         auto* frikApi = api();
-        return frikApi && (frikApi->isConfigOpen() || frikApi->isWristPipboyOpen());
+        return frikApi && frikApi->isConfigOpen();
     }
+
+    [[nodiscard]] inline bool isWristPipboyOpen()
+    {
+        auto* frikApi = api();
+        return frikApi && frikApi->isWristPipboyOpen();
+    }
+
+    [[nodiscard]] inline bool isCompatibilityConfigBlocking() { return isConfigOpen() || isWristPipboyOpen(); }
 
     [[nodiscard]] inline bool clearHandPose(const char* tag, Hand hand)
     {
@@ -413,8 +400,7 @@ namespace rock::frik_visual_authority
     {
         auto* frikApi = api();
         return frikApi && tag && frikApi->getHandPoseSetTagState &&
-               frikApi->getHandPoseSetTagState(tag, hand) ==
-                   HandPoseTagState::Active;
+            frikApi->getHandPoseSetTagState(tag, hand) == HandPoseTagState::Active;
     }
 
     [[nodiscard]] inline bool setHandPoseCustom(const char* tag, Hand hand, const HandPoseData& handPose, int priority)
@@ -460,7 +446,8 @@ namespace rock::frik_visual_authority
      * anywhere (gate closed, FRIK rejected it, or FRIK fell back to the
      * tracked hand for it); the caller runs its failure reaction.
      */
-    [[nodiscard]] inline bool publishHandWorld(const char* tag, Hand hand, const RE::NiTransform& worldTarget, int priority)
+    [[nodiscard]] inline bool publishHandWorld(const char* tag, Hand hand, const RE::NiTransform& worldTarget,
+        int priority)
     {
         bool isLeft = false;
         if (!tryResolveHandIsLeft(hand, isLeft)) {
@@ -493,11 +480,8 @@ namespace rock::frik_visual_authority
         return frik_hand_world_authority::tryGetPublishedHandWorld(isLeft, outWorld, excludedTag, maximumPriority);
     }
 
-    [[nodiscard]] inline bool setHandPoseCustomLocalTransforms(
-        const char* tag,
-        Hand hand,
-        const FingerLocalTransformOverride* overrideData,
-        int priority)
+    [[nodiscard]] inline bool setHandPoseCustomLocalTransforms(const char* tag, Hand hand,
+        const FingerLocalTransformOverride* overrideData, int priority)
     {
         auto* frikApi = api();
         if (!frikApi || !frikApi->setHandPoseCustomLocalTransforms || !overrideData) {
@@ -506,7 +490,8 @@ namespace rock::frik_visual_authority
         }
 
         std::string_view tagView;
-        if (detail::shouldSkipCachedFingerLocalTransformPublication(frikApi, tag, hand, *overrideData, priority, tagView)) {
+        if (detail::shouldSkipCachedFingerLocalTransformPublication(frikApi, tag, hand, *overrideData, priority,
+                tagView)) {
             return true;
         }
 
@@ -519,14 +504,24 @@ namespace rock::frik_visual_authority
         return published;
     }
 
-    [[nodiscard]] inline bool getHandPoseLocalTransformsForPose(
-        Hand hand,
-        const HandPoseData& handPose,
+    // FRIK attaches exact finger locals to an existing tagged pose; locals
+    // alone do not create one. Keep acquisition and failure cleanup together.
+    [[nodiscard]] inline bool setAuthoredFingerPose(const char* tag, Hand hand,
+        const FingerLocalTransformOverride& transforms, int priority)
+    {
+        if (!setHandPoseCustom(tag, hand, HandPoseData{}, priority) ||
+            !setHandPoseCustomLocalTransforms(tag, hand, &transforms, priority)) {
+            (void)clearHandPose(tag, hand);
+            return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] inline bool getHandPoseLocalTransformsForPose(Hand hand, const HandPoseData& handPose,
         FingerLocalTransformOverride* outTransforms)
     {
         auto* frikApi = api();
-        return frikApi &&
-            frikApi->getHandPoseLocalTransformsForPose &&
+        return frikApi && frikApi->getHandPoseLocalTransformsForPose &&
             frikApi->getHandPoseLocalTransformsForPose(hand, handPose, outTransforms);
     }
 
@@ -539,9 +534,7 @@ namespace rock::frik_visual_authority
     [[nodiscard]] inline bool blockPrimaryHandWeaponPose(const char* tag, bool block)
     {
         auto* frikApi = api();
-        return frikApi &&
-            frikApi->blockPrimaryHandWeaponPose &&
-            frikApi->blockPrimaryHandWeaponPose(tag, block);
+        return frikApi && frikApi->blockPrimaryHandWeaponPose && frikApi->blockPrimaryHandWeaponPose(tag, block);
     }
 
     [[nodiscard]] inline bool canBlockPrimaryHandWeaponPose()
@@ -558,7 +551,8 @@ namespace rock::frik_visual_authority
     [[nodiscard]] inline bool blockPrimaryWeaponNodeOwnership(const char* tag, bool block)
     {
         auto* frikApi = api();
-        return frikApi && frikApi->blockPrimaryWeaponNodeOwnership && frikApi->blockPrimaryWeaponNodeOwnership(tag, block);
+        return frikApi && frikApi->blockPrimaryWeaponNodeOwnership &&
+            frikApi->blockPrimaryWeaponNodeOwnership(tag, block);
     }
 
     [[nodiscard]] inline bool canBlockPrimaryWeaponNodeOwnership()
@@ -567,23 +561,18 @@ namespace rock::frik_visual_authority
         return frikApi && frikApi->blockPrimaryWeaponNodeOwnership != nullptr;
     }
 
-    [[nodiscard]] inline bool registerWeaponHandRecoilController(
-        const char* tag,
-        WeaponHandRecoilController controller,
-        void* userData,
-        int priority)
+    [[nodiscard]] inline bool registerWeaponHandRecoilController(const char* tag, WeaponHandRecoilController controller,
+        void* userData, int priority)
     {
         auto* frikApi = api();
-        return frikApi &&
-            frikApi->registerWeaponHandRecoilController &&
+        return frikApi && frikApi->registerWeaponHandRecoilController &&
             frikApi->registerWeaponHandRecoilController(tag, controller, userData, priority);
     }
 
     [[nodiscard]] inline bool unregisterWeaponHandRecoilController(const char* tag)
     {
         auto* frikApi = api();
-        return frikApi &&
-            frikApi->unregisterWeaponHandRecoilController &&
+        return frikApi && frikApi->unregisterWeaponHandRecoilController &&
             frikApi->unregisterWeaponHandRecoilController(tag);
     }
 
@@ -618,15 +607,18 @@ namespace rock::frik_visual_authority
      * Pip-Boy guards and isOffHandGrippingWeapon see it. FRIK drops the grip
      * on a drawn weapon change and on skeleton release.
      */
-    [[nodiscard]] inline bool setOffHandGripping(const char* tag, bool active, Hand supportHand, const RE::NiTransform* supportWorld)
+    [[nodiscard]] inline bool setOffHandGripping(const char* tag, bool active, Hand supportHand,
+        const RE::NiTransform* supportWorld)
     {
         auto* frikApi = api();
-        return frikApi && frikApi->setOffHandGripping && frikApi->setOffHandGripping(tag, active, supportHand, supportWorld);
+        return frikApi && frikApi->setOffHandGripping &&
+            frikApi->setOffHandGripping(tag, active, supportHand, supportWorld);
     }
 
     // ---- Frame phases (v2.3) ----
 
-    [[nodiscard]] inline bool registerFrameCallback(const char* tag, FramePhase phase, FrameCallback callback, void* userData, int priority)
+    [[nodiscard]] inline bool registerFrameCallback(const char* tag, FramePhase phase, FrameCallback callback,
+        void* userData, int priority)
     {
         auto* frikApi = api();
         return frikApi && frikApi->registerFrameCallback &&
@@ -649,19 +641,23 @@ namespace rock::frik_visual_authority
         const char** failure = nullptr)
     {
         outWorld = {};
-        if (failure) *failure = "none";
+        if (failure)
+            *failure = "none";
         auto* frikApi = api();
         if (!frikApi || !frikApi->getTrackedHandTransform) {
-            if (failure) *failure = frikApi ? "tracked-input-api-unavailable" : "frik-api-unavailable";
+            if (failure)
+                *failure = frikApi ? "tracked-input-api-unavailable" : "frik-api-unavailable";
             return false;
         }
         if (!frikApi->getTrackedHandTransform(hand, kind, &outWorld)) {
-            if (failure) *failure = "tracked-input-rejected";
+            if (failure)
+                *failure = "tracked-input-rejected";
             outWorld = {};
             return false;
         }
         const bool valid = detail::isFiniteNiTransform(outWorld);
-        if (!valid && failure) *failure = "tracked-input-invalid-transform";
+        if (!valid && failure)
+            *failure = "tracked-input-invalid-transform";
         return valid;
     }
 
@@ -679,7 +675,8 @@ namespace rock::frik_visual_authority
     {
         outWorld = {};
         auto* frikApi = api();
-        if (!frikApi || !frikApi->getBoneWorldTransform || !boneName || !frikApi->getBoneWorldTransform(boneName, &outWorld)) {
+        if (!frikApi || !frikApi->getBoneWorldTransform || !boneName ||
+            !frikApi->getBoneWorldTransform(boneName, &outWorld)) {
             outWorld = {};
             return false;
         }

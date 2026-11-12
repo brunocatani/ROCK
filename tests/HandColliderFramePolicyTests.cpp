@@ -1,7 +1,8 @@
+#include "physics-interaction/TransformMath.h"
+#include "physics-interaction/body/BodyColliderDescriptors.h"
+#include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
 #include "physics-interaction/hand/HandFrame.h"
-#include "physics-interaction/TransformMath.h"
-#include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 
 #include "RE/NetImmerse/NiMatrix3.h"
 #include "RE/NetImmerse/NiPoint.h"
@@ -45,8 +46,7 @@ namespace
             for (int column = 0; column < 3; ++column) {
                 ok &= expectNear(
                     (std::string(label) + "[" + std::to_string(row) + "][" + std::to_string(column) + "]").c_str(),
-                    actual.entry[row][column],
-                    expected.entry[row][column]);
+                    actual.entry[row][column], expected.entry[row][column]);
             }
         }
         return ok;
@@ -74,10 +74,7 @@ namespace
         };
     }
 
-    float length(const RE::NiPoint3& value)
-    {
-        return std::sqrt(dot(value, value));
-    }
+    float length(const RE::NiPoint3& value) { return std::sqrt(dot(value, value)); }
 
     RE::NiPoint3 normalize(const RE::NiPoint3& value)
     {
@@ -88,7 +85,8 @@ namespace
         return RE::NiPoint3{ value.x / len, value.y / len, value.z / len };
     }
 
-    bool expectUnitAxes(const char* label, const RE::NiPoint3& xAxis, const RE::NiPoint3& yAxis, const RE::NiPoint3& zAxis)
+    bool expectUnitAxes(const char* label, const RE::NiPoint3& xAxis, const RE::NiPoint3& yAxis,
+        const RE::NiPoint3& zAxis)
     {
         bool ok = true;
         ok &= expectNear((std::string(label) + " x length").c_str(), length(xAxis), 1.0f);
@@ -100,10 +98,7 @@ namespace
         return ok;
     }
 
-    RE::NiTransform identityTransform()
-    {
-        return rock::transform_math::makeIdentityTransform<RE::NiTransform>();
-    }
+    RE::NiTransform identityTransform() { return rock::transform_math::makeIdentityTransform<RE::NiTransform>(); }
 
     RE::NiPoint3 rotateLocal(const RE::NiMatrix3& matrix, const RE::NiPoint3& localAxis)
     {
@@ -136,26 +131,25 @@ int main()
     bool ok = true;
 
     {
-        namespace skeleton = rock::skeleton_bone_debug_math;
+        namespace body = rock::body_collider;
         namespace geometry = rock::hand_bone_collider_geometry_math;
         // Armor-session geometry: ForeArm1/2 coincide, ForeArm3 is 10 gu
         // farther along the arm, and the wrist span is 16.96 gu. Resolve the
         // production descriptors against that rig so zero-length dependencies
         // cannot silently remove a forearm target and the whole dynamic hand.
         for (const bool armor : { false, true }) {
-            const auto& descriptors = armor ? skeleton::kPowerArmorBodyColliderDescriptors :
-                                              skeleton::kStandardBodyColliderDescriptors;
+            const auto& descriptors = armor ? body::kPowerArmorDescriptors : body::kStandardDescriptors;
             for (const std::size_t first : { 7u, 12u }) {
                 const std::string prefix = first == 7 ? "LArm_" : "RArm_";
-                const std::array<std::string, 4> names{
-                    prefix + "ForeArm1", prefix + "ForeArm2", prefix + "ForeArm3", prefix + "Hand" };
+                const std::array<std::string, 4> names{ prefix + "ForeArm1", prefix + "ForeArm2", prefix + "ForeArm3",
+                    prefix + "Hand" };
                 const std::array<float, 4> positions{ 0.0f, armor ? 0.0f : 4.0f, 10.0f, 26.96f };
                 auto resolve = [&](std::string_view name, RE::NiTransform& transform) {
                     for (std::size_t i = 0; i < names.size(); ++i) {
                         if (name == names[i]) {
                             transform = identityTransform();
-                            transform.translate = RE::NiPoint3{ 100.0f + positions[i] * 0.6f,
-                                200.0f + positions[i] * 0.8f, 300.0f };
+                            transform.translate =
+                                RE::NiPoint3{ 100.0f + positions[i] * 0.6f, 200.0f + positions[i] * 0.8f, 300.0f };
                             return true;
                         }
                     }
@@ -166,30 +160,36 @@ int main()
                 for (std::size_t segment = 0; segment < 3; ++segment) {
                     const auto& descriptor = descriptors[first + segment];
                     geometry::BoneColliderFrameInput<RE::NiTransform, RE::NiPoint3> input{};
-                    const bool resolved = resolve(descriptor.startBone, input.start) &&
-                                          resolve(descriptor.endBone, input.end);
+                    const bool resolved =
+                        resolve(descriptor.startBone, input.start) && resolve(descriptor.endBone, input.end);
                     ok &= expectNear("forearm endpoints resolve", resolved ? 1.0f : 0.0f, 1.0f);
                     input.radius = descriptor.radiusGameUnits;
                     input.convexRadius = descriptor.convexRadiusGameUnits;
-                    skeleton::applyColliderEndpointRange(descriptor, input.start.translate, input.end.translate);
+                    body::applyEndpointRange(descriptor, input.start.translate, input.end.translate);
                     const auto frame = geometry::buildSegmentColliderFrame(input);
                     ok &= expectNear("every forearm merge source remains valid",
-                        frame.valid && geometry::colliderDimensionsWithinLimits(
-                            frame.length, frame.radius, frame.convexRadius, {}) ? 1.0f : 0.0f, 1.0f);
+                        frame.valid &&
+                                geometry::colliderDimensionsWithinLimits(frame.length, frame.radius, frame.convexRadius,
+                                    {})
+                            ? 1.0f
+                            : 0.0f,
+                        1.0f);
                     ok &= expectVectorNear("forearm zones meet without gaps", input.start.translate, previousEnd);
                     ok &= expectNear("forearm zone length", frame.length,
-                        segment == 2 ? 16.96f : armor ? 5.0f : segment == 0 ? 4.0f : 6.0f);
+                        segment == 2       ? 16.96f
+                            : armor        ? 5.0f
+                            : segment == 0 ? 4.0f
+                                           : 6.0f);
                     previousEnd = input.end.translate;
                     totalLength += frame.length;
 
                     input.end.translate = input.start.translate;
-                    skeleton::applyColliderEndpointRange(descriptor, input.start.translate, input.end.translate);
+                    body::applyEndpointRange(descriptor, input.start.translate, input.end.translate);
                     const auto collapsed = geometry::buildSegmentColliderFrame(input);
                     ok &= expectNear("collapsed live arm still fails closed", collapsed.valid ? 1.0f : 0.0f, 0.0f);
                 }
                 ok &= expectNear("merged forearm retains full length", totalLength, 26.96f);
-                ok &= expectVectorNear("forearm reaches hand", previousEnd,
-                    RE::NiPoint3{ 116.176f, 221.568f, 300.0f });
+                ok &= expectVectorNear("forearm reaches hand", previousEnd, RE::NiPoint3{ 116.176f, 221.568f, 300.0f });
             }
         }
     }
@@ -210,20 +210,10 @@ int main()
         ok &= expectVectorNear("migrated left pivot preserves old raw point",
             rock::handspace_convention::authoredToRaw(RE::NiPoint3{ 6.0f, -2.0f, -0.2f }),
             RE::NiPoint3{ 6.0f, -2.0f, 0.2f });
-        ok &= expectVectorNear("fixed palm normal includes final reversal",
-            rock::palmNormalHandspace(),
+        ok &= expectVectorNear("fixed palm normal includes final reversal", rock::palmNormalHandspace(),
             RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
         ok &= expectVectorNear("fixed legacy pointing vector includes final reversal",
-            rock::legacyPointingVectorHandspace(),
-            RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
-        ok &= expectNear("fixed close selection angle is -Y", static_cast<float>(rock::selection_query_policy::kCloseSelectionAimAngleDegrees), 0.0f);
-        ok &= expectNear("fixed far selection angle is -Y", static_cast<float>(rock::selection_query_policy::kFarSelectionAimAngleDegrees), 0.0f);
-        ok &= expectVectorNear("default right pivot uses migrated handspace",
-            rock::g_rockConfig.rockRightGrabLegacyPalmPivotAHandspace,
-            RE::NiPoint3{ 6.0f, -2.0f, 0.2f });
-        ok &= expectVectorNear("default left pivot uses migrated handspace",
-            rock::g_rockConfig.rockLeftGrabLegacyPalmPivotAHandspace,
-            RE::NiPoint3{ 6.0f, -2.0f, -0.2f });
+            rock::legacyPointingVectorHandspace(), RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
     }
 
     {
@@ -236,17 +226,18 @@ int main()
         ok &= expectVectorNear("selection angle 90 points +X",
             rock::selection_query_policy::selectionAimHandspaceVectorFromAngleDegrees<RE::NiPoint3>(90),
             RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
-        ok &= expectVectorNear("invalid selection angle falls back to -Y",
-            rock::selection_query_policy::selectionAimHandspaceVectorFromAngleDegrees<RE::NiPoint3>(30),
-            RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
-
         const auto identity = identityTransform();
-        ok &= expectVectorNear("close selection uses fixed compiled angle",
-            rock::computeCloseSelectionDirectionFromHandBasis(identity, false),
-            rock::selection_query_policy::selectionAimHandspaceVectorFromAngleDegrees<RE::NiPoint3>(rock::selection_query_policy::kCloseSelectionAimAngleDegrees));
-        ok &= expectVectorNear("far selection uses fixed compiled angle",
-            rock::computeFarSelectionDirectionFromHandBasis(identity, false),
-            rock::selection_query_policy::selectionAimHandspaceVectorFromAngleDegrees<RE::NiPoint3>(rock::selection_query_policy::kFarSelectionAimAngleDegrees));
+        rock::g_rockConfig.rockGrabDirection = static_cast<int>(rock::selection_query_policy::GrabDirection::Fingers);
+        ok &= expectVectorNear("fingers: close selection along the fingers",
+            rock::computeCloseSelectionDirectionFromHandBasis(identity, false), RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+        ok &= expectVectorNear("fingers: far selection along the fingers",
+            rock::computeFarSelectionDirectionFromHandBasis(identity, true), RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+        rock::g_rockConfig.rockGrabDirection = static_cast<int>(rock::selection_query_policy::GrabDirection::PalmDown);
+        ok &= expectVectorNear("palm down: close selection out of the palm",
+            rock::computeCloseSelectionDirectionFromHandBasis(identity, true), RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
+        ok &= expectVectorNear("palm down: far selection out of the palm",
+            rock::computeFarSelectionDirectionFromHandBasis(identity, false), RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
+        rock::g_rockConfig.rockGrabDirection = rock::selection_query_policy::kDefaultGrabDirection;
     }
 
     {
@@ -304,7 +295,8 @@ int main()
     }
 
     {
-        const auto palmBox = rock::hand_bone_collider_geometry_math::makePalmBoxHullPoints<RE::NiPoint3>(10.0f, 2.0f, 6.0f);
+        const auto palmBox =
+            rock::hand_bone_collider_geometry_math::makePalmBoxHullPoints<RE::NiPoint3>(10.0f, 2.0f, 6.0f);
         ok &= expectNear("palm box half X length", maxAbsAxis(palmBox, 'x'), 5.0f);
         ok &= expectNear("palm box half Y depth", maxAbsAxis(palmBox, 'y'), 1.0f);
         ok &= expectNear("palm box half Z cross-palm width", maxAbsAxis(palmBox, 'z'), 3.0f);
@@ -319,10 +311,13 @@ int main()
         proxyFrame.rotate = rock::hand_bone_collider_geometry_math::matrixFromAxes<RE::NiMatrix3>(xAxis, yAxis, zAxis);
 
         const RE::NiPoint3 generatedLocalYWorld =
-            rock::hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(proxyFrame, RE::NiPoint3{ 0.0f, -2.0f, 0.0f });
-        ok &= expectVectorNear("generated collider local offset uses stored column Y", generatedLocalYWorld, RE::NiPoint3{ 0.0f, 0.0f, -2.0f });
+            rock::hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(proxyFrame,
+                RE::NiPoint3{ 0.0f, -2.0f, 0.0f });
+        ok &= expectVectorNear("generated collider local offset uses stored column Y", generatedLocalYWorld,
+            RE::NiPoint3{ 0.0f, 0.0f, -2.0f });
         ok &= expectVectorNear("generated collider world point returns stored column local Y",
-            rock::hand_bone_collider_geometry_math::generatedColliderWorldPointToLocal(proxyFrame, proxyFrame.translate + generatedLocalYWorld),
+            rock::hand_bone_collider_geometry_math::generatedColliderWorldPointToLocal(proxyFrame,
+                proxyFrame.translate + generatedLocalYWorld),
             RE::NiPoint3{ 0.0f, -2.0f, 0.0f });
 
         const RE::NiTransform relationFrame = rock::makeGeneratedProxyAuthorityRelationFrame(proxyFrame);
@@ -332,11 +327,13 @@ int main()
 
         rock::g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3{ 0.0f, -2.0f, 0.0f };
         const RE::NiTransform rightOffset = rock::applyGrabAuthorityProxyLocalOffsetToFrame(proxyFrame, false);
-        ok &= expectVectorNear("right proxy offset uses stored column Y", rightOffset.translate, RE::NiPoint3{ 10.0f, 20.0f, 28.0f });
+        ok &= expectVectorNear("right proxy offset uses stored column Y", rightOffset.translate,
+            RE::NiPoint3{ 10.0f, 20.0f, 28.0f });
 
         rock::g_rockConfig.rockLeftGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3{ 0.0f, -3.0f, 0.0f };
         const RE::NiTransform leftOffset = rock::applyGrabAuthorityProxyLocalOffsetToFrame(proxyFrame, true);
-        ok &= expectVectorNear("left proxy offset uses stored column Y", leftOffset.translate, RE::NiPoint3{ 10.0f, 20.0f, 27.0f });
+        ok &= expectVectorNear("left proxy offset uses stored column Y", leftOffset.translate,
+            RE::NiPoint3{ 10.0f, 20.0f, 27.0f });
     }
 
     {
@@ -356,9 +353,12 @@ int main()
             std::printf("segment collider frame was not valid\n");
             ok = false;
         } else {
-            ok &= expectVectorNear("segment collider column X", matrixColumn(segment.transform.rotate, 0), segment.xAxis);
-            ok &= expectVectorNear("segment collider column Y", matrixColumn(segment.transform.rotate, 1), segment.yAxis);
-            ok &= expectVectorNear("segment collider column Z", matrixColumn(segment.transform.rotate, 2), segment.zAxis);
+            ok &=
+                expectVectorNear("segment collider column X", matrixColumn(segment.transform.rotate, 0), segment.xAxis);
+            ok &=
+                expectVectorNear("segment collider column Y", matrixColumn(segment.transform.rotate, 1), segment.yAxis);
+            ok &=
+                expectVectorNear("segment collider column Z", matrixColumn(segment.transform.rotate, 2), segment.zAxis);
 
             const RE::NiTransform grabSegment =
                 rock::hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(segment.transform);
@@ -386,8 +386,8 @@ int main()
         const RE::NiPoint3 curledX{ std::cos(curl), -std::sin(curl), 0.0f };
         const RE::NiPoint3 curledY{ std::sin(curl), std::cos(curl), 0.0f };
         const RE::NiPoint3 bentAxisWorld{ std::cos(curl), std::sin(curl), 0.0f };
-        distal.rotate = rock::hand_bone_collider_geometry_math::matrixFromAxes<RE::NiMatrix3>(
-            curledX, curledY, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+        distal.rotate = rock::hand_bone_collider_geometry_math::matrixFromAxes<RE::NiMatrix3>(curledX, curledY,
+            RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
 
         rock::hand_bone_collider_geometry_math::BoneColliderFrameInput<RE::NiTransform, RE::NiPoint3> input{};
         input.previous = middle;
@@ -411,7 +411,8 @@ int main()
                 bentAxisWorld.y * 4.0f * 0.65f * 0.5f,
                 0.0f,
             };
-            ok &= expectVectorNear("bone-axis tip center sits on the bent segment", bent.transform.translate, expectedCenter);
+            ok &= expectVectorNear("bone-axis tip center sits on the bent segment", bent.transform.translate,
+                expectedCenter);
         }
 
         // A straight distal joint must reproduce the legacy straight
@@ -426,7 +427,8 @@ int main()
         } else {
             ok &= expectNear("straight tip length matches legacy", straight.length, legacy.length);
             ok &= expectVectorNear("straight tip axis matches legacy", straight.xAxis, legacy.xAxis);
-            ok &= expectVectorNear("straight tip center matches legacy", straight.transform.translate, legacy.transform.translate);
+            ok &= expectVectorNear("straight tip center matches legacy", straight.transform.translate,
+                legacy.transform.translate);
         }
     }
 

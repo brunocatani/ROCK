@@ -1,36 +1,42 @@
-#include "PlayerControllerMarshalling.h"
-#include <ROCK/Discovery.h>
+#include <ROCK/PlayerController.h>
+#include "Boundary.h"
 
-namespace rock::api::playercontroller {
-namespace {
-using namespace boundary;
-Status ROCK_CALL getPlayerControllerStateV1(std::uint64_t ownerToken, PlayerControllerStateV1* outState) noexcept {
-    if (const auto s = checkOutput(outState); s != Status::Ok) return s;
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        provider::RockProviderPlayerControllerStateV1 native_outState{};
-        const auto result = provider::runtime::apiGetPlayerControllerStateV1(ownerToken, 0, &native_outState);
-        convert(*outState, native_outState);
-        return static_cast<Status>(result);
-    });
-}
-Status ROCK_CALL requestPlayerControllerJumpV1(std::uint64_t ownerToken, const PlayerControllerJumpRequestV1* request) noexcept {
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        if (const auto s = checkInput(request); s != Status::Ok) return s;
-        provider::RockProviderPlayerControllerJumpRequestV1 native_request{};
-        convert(native_request, *request);
-        const auto result = provider::runtime::apiRequestPlayerControllerJumpV1(ownerToken, &native_request);
-        return static_cast<Status>(result);
-    });
-}
+namespace rock::api::playercontroller
+{
+    namespace
+    {
+        using namespace boundary;
 
-#include "PlayerControllerEndpoints.inl"
-}
-const ApiV1& table() noexcept {
-    static const ApiV1 value{
-        &getPlayerControllerStateV1,
-        &requestPlayerControllerJumpV1,
-        &getSample,
-    };
-    return value;
-}
+        Status ROCK_CALL getPlayerControllerState(OwnerToken owner, PlayerControllerState* outState) noexcept
+        {
+            if (const auto s = checkOutput(outState); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 1, true,
+                [&] { return provider::runtime::getPlayerControllerState(owner, *outState); });
+        }
+
+        Status ROCK_CALL requestPlayerControllerJump(OwnerToken owner,
+            const PlayerControllerJumpRequest* request) noexcept
+        {
+            if (const auto s = checkInput(request); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 2, true,
+                [&] { return provider::runtime::requestPlayerControllerJump(owner, *request); });
+        }
+
+        Status ROCK_CALL getSample(OwnerToken owner, Sample* outSample) noexcept
+        {
+            return readSample(owner, kInterfaceId, outSample);
+        }
+    }
+
+    const Api& table() noexcept
+    {
+        static const Api value{
+            &getPlayerControllerState,
+            &requestPlayerControllerJump,
+            &getSample,
+        };
+        return value;
+    }
 }

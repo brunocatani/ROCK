@@ -1,0 +1,855 @@
+## ROCK_Developer_example.toml - every developer option with its default and help
+## Reference only: ROCK never reads this file. ROCK_Developer.toml in Documents\My Games\Fallout4VR\
+## Mods_Config\ROCK holds only the developer options changed from these defaults.
+
+## === 01. Developer Controls ===
+[DeveloperControls]
+## Gates advanced/tuning-only features not meant for normal play. Currently:
+## pressing A while holding an object records/overwrites a saved grab offset
+## for that object+hand. Saved offsets keep applying on future grabs
+## regardless of this setting - it only gates recording new ones.
+DeveloperModeEnabled = false
+
+## Emergency Disable Recoil
+## ON: disables native VR recoil and kickback plus ROCK weapon/hand recoil, overriding every recoil profile.
+## OFF: restores native recoil/kickback and the existing Immersive Recoil setting.
+## Applies immediately, independently of Developer Mode. Does not change projectile spread.
+EmergencyDisableRecoil = false
+
+## === 02. Logging and Profiling ===
+[LoggingAndProfiling]
+## Text format for each ROCK.log line.
+LogPattern = "%Y-%m-%d %H:%M:%S.%e [%l] %v"
+
+## Minimum time between repeated sampled diagnostic messages.
+LogSampleMilliseconds = 2000
+
+## Writes each ROCK.log line to disk as it is logged.
+## Off, the log is block buffered, so a freeze or a crash loses the last lines
+## and every log ends mid-line. On, the tail survives, at one file write per line.
+## Leave off unless you are chasing a hang.
+LogFlushImmediate = false
+
+## Asynchronous performance profiler.
+## Independent from LogLevel. When enabled, timing scopes stay on the frame path,
+## but completed profiler windows are queued to a bounded background writer.
+## Output goes to ROCK_Profiler.log, not ROCK.log. File formatting/writes are not done
+## by grab, reload, physics, or frame update code. If the writer falls behind, profiler
+## windows are dropped instead of stalling gameplay.
+PerformanceProfilerEnabled = false
+
+## Number of frames per queued profiler window after warmup. Larger values reduce file traffic.
+PerformanceProfilerLogIntervalFrames = 300
+
+## Startup/reload frames ignored before profiler windows are emitted.
+PerformanceProfilerWarmupFrames = 120
+
+## === 03. Palm and Grab Offsets ===
+[PalmAndGrabOffsets]
+## Right-hand local offset [x, y, z] for the hidden grab authority proxy/seat point, in corrected palm proxy space.
+## X follows the fingers, -Y moves into the palm face/skin, +Y moves to the back of the hand,
+## and Z moves across the palm. This does not move the real palm/finger physics colliders.
+RightGrabAuthorityProxyOffsetGameUnits = [0.5, -1.0, 0.0]
+
+## Left-hand local offset [x, y, z] for the hidden grab authority proxy/seat point, in the same axes.
+LeftGrabAuthorityProxyOffsetGameUnits = [0.5, -1.0, 0.0]
+
+## === 04. Weapon Collision and Support ===
+[WeaponCollisionAndSupport]
+## Controls whether ROCK weapon hulls collide with projectile/spell layers.
+## False avoids self-collisions with modded projectile systems while aiming.
+WeaponCollisionBlocksProjectiles = false
+
+WeaponCollisionBlocksSpells = false
+
+## New casings ignore the firing weapon's generated colliders for this many simulation milliseconds.
+## Positive values protect at least one physics step. Zero disables the grace period. Range: 0-500 ms.
+## World contacts and native casing lifetime are preserved. Changes apply to new casings.
+WeaponShellCollisionGraceMs = 30.0
+
+## False: original convex fitting. True: bounded gap-preserving compounds.
+## Changing this key rebuilds weapon colliders after a live settings reload.
+## Compare with PerformanceProfilerEnabled: weaponColliderBuild/Create vs weaponGapColliderBuild/Create.
+WeaponCollisionPreserveGaps = true
+
+## Seconds ROCK waits for the visual weapon tree to stay visible/stable before replacing generated hulls after weapon/mod swaps.
+WeaponCollisionVisualStabilizationSeconds = 0.0889
+
+## Maximum speed allowed when ROCK keyframes generated weapon hulls.
+WeaponCollisionMaxLinearVelocity = 800.0
+
+WeaponCollisionMaxAngularVelocity = 800.0
+
+## Immediately resets a failed dynamic weapon collider onto the firing hand if
+## its live firing-grip authority point is farther away than this distance.
+## This catastrophic-failure limit is separate from normal wall-contact
+## convergence. 210 game units is about 3 metres. Game units (~1.4cm each).
+WeaponCollisionGripRecoveryDistanceGameUnits = 210.0
+
+## Small sphere around each hand's palm point. If it overlaps a
+## generated weapon collider, the grab uses ROCK's unrestricted dynamic seat.
+WeaponInteractionTouchRadius = 2.0
+
+## Broader per-hand search used when the palm is not touching the weapon.
+## With authored weapon grips enabled, a grab acquired only by this probe uses
+## the modeler's authored firing/support seat instead of the dynamic mesh seat.
+WeaponInteractionProbeRadius = 12.0
+
+## Testing only: authored support seats are never used, so every support grab
+## runs the dynamic mesh grip. Use to test dynamic grips where an authored zone
+## would win. Leave off for play.
+DebugWeaponSupportDynamicOnly = false
+
+## Every support grab inside this distance from the firing grip stays visual-only
+## so pistols retain a stable support pose without competing weapon authority.
+## ROCK always owns this behavior. An active equipped-weapon addon may override
+## only the radius through the ROCK V1 API. Game units (~1.4cm each).
+FiringGripProximitySupportRadius = 8.0
+
+## Eases ROCK's external FRIK hand target into an equipped weapon support grip.
+## This is visual-only: weapon aim authority remains immediate.
+WeaponSupportGripHandLerpEnabled = true
+
+WeaponSupportGripHandLerpTimeMin = 0.12
+
+WeaponSupportGripHandLerpTimeMax = 0.2
+
+WeaponSupportGripHandLerpMinDistance = 1.0
+
+WeaponSupportGripHandLerpMaxDistance = 14.0
+
+## Seats the visual support palm toward the contacted surface without rotating the weapon.
+WeaponSupportSurfaceSeatEnabled = true
+
+WeaponSupportSurfaceSeatMaxDegrees = 35.0
+
+## Thickness of the firing-grip reattach zone in game units (70 = 1 metre): how far above the grip point and how far forward or back along the barrel the palm may sit.
+## A handling mod that selects the cylinder zone uses it as the cylinder radius. Range: 0.1 to 30.
+FiringGripReattachCylinderRadiusGameUnits = 4.0
+
+## === 05. Hand and Body Collision ===
+[HandAndBodyCollision]
+## Allows generated hand colliders to collide with static/animstatic world geometry for native contact evidence.
+HandCollisionStaticWorldEnabled = true
+
+## Makes dynamic-hand world-surface contacts eligible for fixed-anchor grab fallback.
+GlobalSurfaceGrabEnabled = true
+
+## Uses the contacted render mesh as the spatial authority for fixed-surface grabs.
+SurfaceMeshGrabEnabled = false
+
+SurfaceMeshGrabMaxProjectionDistanceGameUnits = 48.0
+
+SurfaceMeshGrabMaxTriangles = 20000
+
+## Optional generated hand capsule-like collider radius scale overrides. Palm-box roles are controlled by X/Y/Z below.
+## Role names: ThumbBase, ThumbMiddle, ThumbTip, IndexBase, IndexMiddle, IndexTip, MiddleBase, MiddleMiddle,
+## MiddleTip, RingBase, RingMiddle, RingTip, PinkyBase, PinkyMiddle, PinkyTip.
+## Format: Role=radiusScale;PowerArmor.Role=radiusScale
+HandBoneColliderRadiusScaleOverrides = ""
+
+## Optional generated palm-box collider local dimension scale overrides.
+## Local X=fingers/segment length, local Y=palm depth, local Z=cross-palm width.
+## Role names: PalmAnchor, PalmFace, PalmBack, PalmHeel, ThumbPad.
+## Format: Role=xScale,yScale,zScale;PowerArmor.Role=xScale,yScale,zScale
+HandPalmColliderDimensionScaleOverrides = "PalmAnchor=0.8,1.0,2.0"
+
+## Requires the palm anchor before creating hand bone colliders.
+HandBoneCollidersRequirePalmAnchor = true
+
+## Speed clamps for bone-driven hand colliders.
+HandBoneColliderMaxLinearVelocity = 800.0
+
+HandBoneColliderMaxAngularVelocity = 800.0
+
+## === 06. Selection and Pulling ===
+[SelectionAndPulling]
+## Far grabs pull the visual mesh point nearest the mesh's centre to the hand
+## instead of the mesh point nearest the ray hit (a hit at selection range is aim
+## noise, not grip intent). The arrival seat then settles the mesh onto the palm.
+PullToObjectCenterEnabled = true
+
+## Long-object presentation during pull flight: rotates elongated props (brooms,
+## bottles) so their mesh long axis lines up with the hand's thumb->pinky line
+## before arrival. Flight-only; held objects are never rotated. Elongation is the
+## RMS extent ratio between the mesh's dominant and second axis (compact objects
+## ~1 skip presentation). Gain is proportional rad/s per rad of error.
+PullLongAxisPresentationEnabled = true
+
+PullPresentationMinElongationRatio = 2.0
+
+PullPresentationAngularGainPerSecond = 6.0
+
+PullPresentationMaxAngularSpeedRadiansPerSecond = 8.0
+
+## Tilts the presentation target off pure cross-palm Z toward fingers-forward
+## +X, in degrees (0..45): the thumb occupies the pure-Z line, so the natural
+## long-object hold sits a few degrees toward the fingertips. Applies to both
+## the pull-flight servo and the force-grab seat alignment.
+## This is an anatomical magnitude, not a signed rotation. Authored Z reverses
+## its cross-palm direction between hands, but +X points toward the fingertips
+## on both. ROCK resolves the live axes first, then tilts each signed Z axis
+## toward its own +X, so one value has the same meaning for both hands.
+PullPresentationGripAxisTiltDegrees = 15.0
+
+## Shape-classification gate shared by the flight presentation servo and the
+## grab pose solver: sqrt(lambda2/lambda3) of the mesh PCA at or above this
+## ratio marks a distinct flat face (plate class). The solver uses the class
+## for its rod-only terms; plates keep their edge/corner holds (31 verified
+## plate holds put the face normal 63 deg off the palm normal - edge holds are
+## the intended grip, not an artifact).
+GrabSeatRollMinSecondElongationRatio = 1.25
+
+## Maximum scene-node depth used when scanning an object for physics bodies.
+ObjectPhysicsTreeMaxDepth = 12
+
+## === 07. Grab Drive ===
+[GrabDrive]
+## Shared dynamic-grab response for held objects and equipped weapon colliders. Higher tau increases positional recovery. Damping calms oscillation; angular response remains independent.
+GrabLinearTau = 0.1
+
+GrabLinearDamping = 0.8
+
+GrabLinearProportionalRecovery = 2.0
+
+GrabLinearConstantRecovery = 1.0
+
+## Angular shared-constraint motor response. Same idea as linear motor, but for rotation.
+GrabAngularTau = 0.03
+
+GrabAngularDamping = 0.8
+
+GrabAngularProportionalRecovery = 2.0
+
+GrabAngularConstantRecovery = 1.0
+
+## Contact and initial-attachment linear force ceiling. Free motion uses actual mass and Free Linear Acceleration.
+GrabConstraintMaxForce = 2000.0
+
+## Keeps the motor's effective mass finite for very light or unstable bodies.
+GrabEffectiveMotorMassFloor = 2.0
+
+## Contact force per unit effective mass. This caps the contact ceiling for light objects.
+GrabMaxForceToMassRatio = 500.0
+
+## Free-motion linear effort per unit effective driven mass, in Havok acceleration units. Contact keeps its separate ceiling.
+GrabFreeLinearAcceleration = 1000.0
+
+## Free-motion angular effort per unit maximum principal inertia. The grip lever adds capacity to oppose off-center linear effort; the native solver determines the applied torque.
+GrabFreeAngularAcceleration = 6000.0
+
+## Waits for a stable live hand transform before a force grab freezes its relation.
+ForceGrabAttachSettleSeconds = 0.1
+
+## Time for grab force to ramp in after pickup.
+GrabForceFadeInTime = 0.1
+
+## Weapon response multipliers for both loose and equipped weapons. Max Force and Angular Force multipliers control contact and initial-attachment budgets. Free-motion budgets use actual mass, inertia, and the grip offset.
+GrabLooseWeaponSharedConstraintLinearTauMultiplier = 1.0
+
+GrabLooseWeaponSharedConstraintAngularTauMultiplier = 1.0
+
+GrabLooseWeaponSharedConstraintCollisionTauMultiplier = 1.0
+
+GrabLooseWeaponSharedConstraintLinearDampingMultiplier = 1.0
+
+GrabLooseWeaponSharedConstraintAngularDampingMultiplier = 1.0
+
+GrabLooseWeaponSharedConstraintMaxForceMultiplier = 4.5
+
+GrabLooseWeaponSharedConstraintAngularForceMultiplier = 2.0
+
+GrabLooseWeaponSharedConstraintLinearRecoveryMultiplier = 1.0
+
+GrabLooseWeaponSharedConstraintAngularRecoveryMultiplier = 1.0
+
+## Contact-softened tau. Normal held linear/angular tau stay fixed at their base values.
+GrabTauMin = 0.01
+
+GrabTauLerpSpeed = 0.5
+
+## Reduces held angular speed for long objects by grip-to-extents lever length.
+## This keeps long guns/objects from sweeping as if their far end had no leverage.
+GrabLongObjectAngularScalingEnabled = true
+
+GrabLongObjectReferenceLeverGameUnits = 24.0
+
+GrabLongObjectMinAngularScale = 0.35
+
+## Clamps extreme inertia tensors on grabbed rigid bodies to keep the solver stable.
+GrabMaxInertiaRatio = 10.0
+
+GrabMinInertia = 0.01
+
+## === 08. Grab Safety and Release ===
+[GrabSafetyAndRelease]
+## Multiplies held-object velocity when you release to throw.
+ThrowVelocityMultiplier = 1.5
+
+## Throws follow tracked hand movement. Wrist rotation supplies spin without steering the throw.
+GrabControllerDerivedThrowVelocityEnabled = true
+
+GrabThrowMaxVelocityHavok = 12.0
+
+GrabThrowAngularVelocityScale = 1.0
+
+GrabThrowMaxAngularVelocityRadiansPerSecond = 18.0
+
+## Keeps hand collision suppressed briefly after release so the object is not launched instantly.
+GrabReleaseHandCollisionDelaySeconds = 0.8
+
+## Shoulder stash transfers a held loose item to inventory when grip is released inside the HMD-relative back volume.
+## Generated FRIK body-zone colliders are backup evidence for tracking loss and remain the preferred path for holsters.
+ShoulderStashEnabled = true
+
+## Equipped weapons, either one, use the same HMD-relative back volumes and return to the inventory.
+## Toggle-grab: press inside with the hand carrying the weapon.
+## Hold-to-grab: hold inside and release.
+EquippedWeaponShoulderStashEnabled = true
+
+ShoulderStashUseBodyZoneColliders = true
+
+ShoulderStashUseHmdBackVolume = true
+
+ShoulderStashEnterPaddingGameUnits = 5.0
+
+ShoulderStashExitPaddingGameUnits = 8.0
+
+ShoulderStashRecentContactSeconds = 0.0444
+
+ShoulderStashSustainedContactMissSeconds = 0.2
+
+## Centre of the right shoulder stash volume behind the headset, [x, y, z] in game units.
+ShoulderStashHmdBackRightOffsetGameUnits = [14.0, -18.0, -6.85]
+
+## Centre of the left shoulder stash volume behind the headset, [x, y, z] in game units.
+ShoulderStashHmdBackLeftOffsetGameUnits = [-14.0, -18.0, -6.85]
+
+ShoulderStashHmdBackRadiusGameUnits = 11.0
+
+ShoulderStashHmdBackEnterPaddingGameUnits = 0.0
+
+ShoulderStashHmdBackExitPaddingGameUnits = 2.0
+
+ShoulderStashHmdBackMinBehindGameUnits = 4.0
+
+ShoulderStashShowCollectedNotifications = true
+
+## Mouth consume uses a tight HMD-relative sphere near the mouth.
+## Only loose ALCH ingestibles can become mouth candidates; other objects use backpack stash/drop paths.
+MouthConsumeEnabled = true
+
+MouthConsumeAllowPoison = false
+
+## Mouth position relative to the headset, [x, y, z] in game units. Each value: -120 to 120.
+MouthConsumeHmdOffsetGameUnits = [0.0, 7.0, -7.0]
+
+MouthConsumeRadiusGameUnits = 5.5
+
+MouthConsumeEnterPaddingGameUnits = 0.0
+
+MouthConsumeExitPaddingGameUnits = 1.0
+
+MouthConsumeMinDwellSeconds = 0.08
+
+MouthConsumeMaxSpeedGameUnitsPerSecond = 120.0
+
+## Reduces player movement speed while carrying held mass.
+GrabHeldMassMovementSlowdownEnabled = true
+
+GrabHeldMassMovementMassProportion = 0.675
+
+GrabHeldMassMovementMassExponent = 1.0
+
+GrabHeldMassMovementMaxReduction = 75.0
+
+GrabHeldMassMovementFadeOutSeconds = 5.0
+
+## === 09. Grab Acquisition ===
+[GrabAcquisition]
+## Seconds a held grab press waits for the hand to become ready to grab. Range: 0 to 0.5.
+GrabInputLeewaySeconds = 0.12
+
+## After that wait, seconds the held press keeps being sent every frame before ROCK stops trying. Range: 0 to 0.3.
+GrabInputForceSeconds = 0.08
+
+## Distance from the hand pocket where an object is considered already touching.
+GrabTouchAcquireDistanceGameUnits = 4.0
+
+## Distance where the object should converge into the palm pocket instead of finalizing immediately.
+GrabNearConvergeDistanceGameUnits = 28.0
+
+## Two hands on one loose non-weapon object turn it along the line between their grip points only when those points are at least this far apart.
+## Closer than this (two pinches on a cartridge), the object stays as the first hand holds it, and the hand left holding it keeps its own grip.
+## 0 = always pivot. Applies to the next two-hand hold.
+GrabTwoHandPivotMinSeparationGameUnits = 6.0
+
+## Hand-pocket offset and radius, in game units, from the root-flattened palm frame.
+GrabPocketDepthGameUnits = 7.0
+
+GrabPocketRadiusGameUnits = 9.0
+
+## Legacy seat-depth stop and penetration backstop dimensions, in game units.
+GrabSeatDepthMaxGameUnits = 30.0
+
+GrabSeatDepthFootprintRadiusGameUnits = 10.0
+
+GrabSeatPenetrationBackstopFootprintRadiusGameUnits = 6.0
+
+GrabSeatDepthSkinGameUnits = 0.5
+
+## 0 = Current seat. 1 = Local grasp solve.
+## Applies on the next close grab of a loose object. Pulled, forced, pinched and authored grabs are unchanged.
+## Mode 1 reads the mesh in front of the palm. A handle, neck, rim or round body is turned into the hand,
+## and the fingers close on that part instead of the body behind it.
+## When no such part is found the current seat is used. ROCK.log reports the result of each grab.
+GrabCloseSeatMode = 0
+
+## Moves the captured grip point slightly inside the object from the raw hit/mesh seed.
+GrabGripInsetGameUnits = 2.0
+
+## Optional near-converge diagnostic timeout. A value of 0 disables timeout promotion.
+GrabConvergeMaxTimeSeconds = 0.35
+
+GrabConvergeStableSeconds = 0.0333
+
+GrabConvergeMaxSeparatingSpeedGameUnitsPerSecond = 40.0
+
+GrabAcquisitionVisualStartDistanceGameUnits = 28.0
+
+## === 10. Grab Contact Evidence ===
+[GrabContactEvidence]
+GrabSurfaceBehindPalmToleranceGameUnits = 1.5
+
+## Maximum age in seconds for semantic contacts used as touch evidence.
+GrabOppositionContactMaxAgeSeconds = 0.0556
+
+## Allows a fallback close-selection cast along the pinch direction when the palm close cast misses.
+GrabPinchCloseSelectionEnabled = true
+
+GrabPinchMaxPocketDistanceGameUnits = 8.0
+
+GrabPinchMinFingerGapGameUnits = 1.0
+
+GrabPinchMaxFingerGapGameUnits = 12.0
+
+## Thumb and opposed finger curl of the weapon support hand's opposition pose
+## (1 open, 0 closed). A loose-object pinch opens to the object's thickness instead.
+GrabPinchThumbIndexMaxOpenValue = 0.45
+
+GrabPinchOtherFingerCurlValue = 0.2
+
+## Pinch detection direction [x, y, z] in ROCK hand space: X=fingers, Y=palm depth, Z=signed cross-palm.
+GrabPinchDetectionDirectionHandspace = [1.0, 0.0, 0.0]
+
+## Blends the live thumb-index axis with the authored pinch direction for mesh surface search.
+GrabPinchDetectionAxisBlend = 0.65
+
+## Moves the rendered hand toward the mesh-matched held pose during grab startup.
+GrabHandLerpEnabled = true
+
+GrabHandLerpTimeMin = 0.1
+
+GrabHandLerpTimeMax = 0.2
+
+GrabHandLerpMinDistance = 7.0
+
+GrabHandLerpMaxDistance = 14.0
+
+## Smooths the rendered hand back to live tracking after releasing a grabbed object.
+GrabHandReturnEnabled = true
+
+GrabHandReturnTimeMin = 0.1
+
+GrabHandReturnTimeMax = 0.2
+
+GrabHandReturnMinDistance = 7.0
+
+GrabHandReturnMaxDistance = 14.0
+
+GrabHandReturnMinAngleDegrees = 5.0
+
+GrabHandReturnMaxAngleDegrees = 90.0
+
+## === 11. Finger Poses ===
+[FingerPoses]
+## 0 = Follow grab finger mode. 1 = Current swept arc. 2 = July 9 calibrated slice.
+## 3 = Capsule probes (testing): the loose-object finger sweep, with thumb and index reaching onto small parts such as bolts and slides.
+## Applies on the next dynamic equipped weapon or part grip, on either hand.
+## July 9 uses the contacted part, translation-only palm seating and captured finger directions.
+## Uses current skeleton calibration and transform safety checks. Authored poses retain priority.
+WeaponGrabPoseMode = 0
+
+## 1 = Current swept arc. 2 = June 2 legacy plane slice.
+## Applies on the next dynamic weapon support grip when WeaponGrabPoseMode = 0.
+## Loose-object grabs use LooseGrabFingerPoseMode.
+## Legacy captures at contact and omits later pad refinement and splay.
+## Authored and saved finger poses keep their existing priority.
+GrabFingerPoseMode = 1
+
+## 0 = Capsule sweep.
+## 1 = Swept arc: the finger solve loose grabs used before the capsule sweep
+## (pad-probe refinement, contact splay, surface-aim local transforms).
+## Applies on the next loose-object grab. Weapon grips use WeaponGrabPoseMode.
+LooseGrabFingerPoseMode = 0
+
+## Sends per-joint finger values to FRIK when available instead of one curl per finger.
+GrabMeshJointPoseEnabled = true
+
+## Lowest allowed finger value. 0=fully closed, 1=fully straight.
+GrabFingerMinValue = 0.2
+
+## Maximum per-second finger pose movement.
+GrabFingerPoseSmoothingSpeed = 14.0
+
+## Uses FRIK's authored finger joint transforms plus bounded mesh-contact aim correction.
+GrabMeshLocalTransformPoseEnabled = true
+
+GrabFingerLocalTransformSmoothingSpeed = 14.0
+
+GrabFingerLocalTransformMaxCorrectionDegrees = 35.0
+
+GrabFingerSurfaceAimStrength = 0.75
+
+GrabFingerRejectBacksideHits = true
+
+GrabFingerSurfacePlaneToleranceGameUnits = 1.5
+
+## Swept-arc finger solver: finger-pad contact sphere radius. Bigger = fingers
+## stop earlier (hover), smaller = deeper wrap before contact.
+## Finger-pad contact radius for the swept-arc solver (0.05-4). The old
+## finger-width air gap was a solver bug (fixed: chord de-rotation), NOT this
+## radius - values near 0 now make fingers clip into the mesh.
+GrabFingerSweepContactRadiusGameUnits = 0.6
+
+## How far past the authored open pose fingers may hyper-extend when an
+## object is thicker than the open finger span (hFRIK flex units: 1.0 =
+## authored open pose, 2.0 = engine ceiling). The swept-arc close starts
+## from the most-open allowed row, so a raised cap lets fingers lie flat
+## on surfaces that interpenetrate the default open hand. Valid range
+## 1.0-2.0; out-of-range silently falls back (1.4 fingers / 2.0 thumb).
+GrabFingerSweepMaxOpenValue = 2.0
+
+GrabThumbSweepMaxOpenValue = 1.5
+
+GrabThumbOppositionStrength = 1.0
+
+GrabThumbAlternateCurveStrength = 0.65
+
+GrabThumbSurfaceSafetyMarginGameUnits = 1.0
+
+## === 12. Mesh Contact ===
+[MeshContact]
+## Weighting used when choosing the best mesh triangle for grab contact.
+GrabLateralWeight = 0.6
+
+GrabDirectionalWeight = 0.4
+
+GrabMaxTriangleDistance = 100.0
+
+GrabContactPatchMaxNormalAngleDegrees = 35.0
+
+## Furthest the grab point may snap from the selection hit onto the mesh.
+GrabAlignmentMaxSelectionToMeshDistance = 8.0
+
+## === 13. Close-Hand Curl ===
+[CloseHandCurl]
+## Pre-curls the hand when close selection is active.
+SelectedCloseFingerCurlEnabled = true
+
+SelectedCloseFingerAnimMaxHandSpeed = 0.9
+
+SelectedCloseFingerAnimValue = 0.9
+
+## === 14. Haptics ===
+[Haptics]
+## Length of the pulse on the acting hand when the firing grip attaches or detaches, in seconds. Range: 0.01 to 0.5.
+FiringGripHapticDurationSeconds = 0.1
+
+## Strength of the firing-grip attach pulse. Range: 0 to 1.
+FiringGripAttachHapticIntensity = 0.85
+
+## Strength of the firing-grip detach pulse. Range: 0 to 1.
+FiringGripDetachHapticIntensity = 0.3
+
+## Pulses for grab commit, pull start/catch, and held-object impacts.
+GrabHapticsEnabled = true
+
+GrabHapticDurationSeconds = 0.055
+
+GrabHapticBaseIntensity = 0.12
+
+GrabHapticMaxIntensity = 0.8
+
+GrabHapticMassScale = 0.06
+
+GrabHapticMassExponent = 0.6
+
+PullStartHapticIntensity = 0.18
+
+PullCatchHapticIntensity = 0.22
+
+SelectionLockHapticIntensity = 0.15
+
+SelectionLockReleaseHapticIntensity = 0.1
+
+SelectionLockReleaseHapticDurationSeconds = 0.02
+
+## Fixed-surface grabs use a longer confirmation pulse.
+SurfaceGrabHapticsEnabled = true
+
+SurfaceGrabHapticDurationSeconds = 0.075
+
+SurfaceGrabHapticIntensity = 0.85
+
+HeldImpactHapticsEnabled = true
+
+HeldImpactHapticDurationSeconds = 0.035
+
+HeldImpactHapticBaseIntensity = 0.12
+
+HeldImpactHapticMaxIntensity = 0.85
+
+HeldImpactHapticSpeedScale = 0.006
+
+HeldImpactHapticMassScale = 0.035
+
+HeldImpactHapticMassExponent = 0.55
+
+HeldImpactHapticMinSpeedGameUnits = 8.0
+
+HeldImpactHapticCooldownSeconds = 0.12
+
+HeldImpactHapticDampedMultiplier = 0.55
+
+## Shoulder stash haptics pulse clearly while an item is inside the stash zone, then fire a stronger confirmation on transfer.
+ShoulderStashHapticsEnabled = true
+
+ShoulderStashCandidateHapticDurationSeconds = 0.075
+
+ShoulderStashCandidateHapticBaseIntensity = 0.2
+
+ShoulderStashCandidateHapticIntensity = 0.42
+
+ShoulderStashCandidateHapticIntervalSeconds = 0.075
+
+ShoulderStashCommitHapticDurationSeconds = 0.12
+
+ShoulderStashCommitHapticIntensity = 0.85
+
+## Mouth consume haptics pulse while a consumable is in the mouth zone, then fire a confirmation on consume.
+MouthConsumeHapticsEnabled = true
+
+MouthConsumeCandidateHapticDurationSeconds = 0.05
+
+MouthConsumeCandidateHapticBaseIntensity = 0.22
+
+MouthConsumeCandidateHapticIntensity = 0.45
+
+MouthConsumeCandidateHapticIntervalSeconds = 0.075
+
+MouthConsumeCommitHapticDurationSeconds = 0.12
+
+MouthConsumeCommitHapticIntensity = 0.85
+
+## Draws the hidden no-contact grab authority proxy target/axes used by ROCK dynamic grab.
+DebugDrawGrabAuthorityProxy = false
+
+## === 15. Debug Overlay ===
+[DebugOverlay]
+## Master switch for all ROCK-owned collider visualizations below.
+DebugShowColliders = false
+
+## Draws the selected or held target body when the collider master is enabled.
+DebugShowTargetColliders = false
+
+## Draws live transform axes. Red=X, green=Y, blue=Z.
+DebugShowHandAxes = false
+
+## Draws grab constraint pivots and the error line between hand-side and object-side pivots.
+DebugShowGrabPivots = false
+
+## Draws the resolved mesh surface frame after a dynamic grab.
+DebugShowGrabPocketNormal = false
+
+## Draws a focused held-grab pivot force/lever view: target pivot, live pivot, correction vector, lever arm, and torque witness.
+DebugDrawGrabForceTorque = false
+
+## Adds a compact world label to the focused grab force/lever view.
+DebugDrawGrabForceTorqueText = false
+
+## Draws the hknp body/collider that owns the frozen object-side pivot B.
+DebugDrawGrabPivotSourceCollider = false
+
+## Draws the mesh triangle/contact-patch evidence that produced the frozen pivot.
+DebugDrawGrabPivotSourceEvidence = false
+
+## Draws the frozen grab support face frame at pivot B: normal, support axis, and binormal.
+DebugDrawGrabSupportFrame = false
+
+## Draws the live palm pocket and thumb/index pinch pocket for each hand.
+DebugDrawGrabPockets = false
+
+## Draws the grab finger solve live: while a hand has an object selected, the finger spheres the solve tests at the curl it would choose (grey wire = closed without touching, green = closed onto the surface, yellow = opened to clear, red = blocked; bright spheres touch the mesh) and each fingertip's sweep path. While holding, the spheres follow the drawn fingers.
+DebugDrawGrabFingerProbes = false
+
+## Draws palm center plus close/far selection aim rays.
+DebugShowPalmVectors = false
+
+## More specific overlay filters and draw limits.
+DebugDrawHandColliders = false
+
+DebugDrawHandBoneColliders = false
+
+DebugDrawBodyBoneColliders = false
+
+DebugDrawDynamicHandColliders = false
+
+DebugDrawHandBoneContacts = false
+
+DebugMaxHandBoneBodiesDrawn = 48
+
+DebugMaxBodyBoneBodiesDrawn = 32
+
+DebugDrawWeaponColliders = false
+
+## Draws the exact current weapon-part collider selected by each active part grip.
+DebugDrawGrabbedWeaponPartCollider = false
+
+## Native-scope diagnosis: sight bounds, live camera, exact pre-activation target pose/aim/up guides, write readback, parent/local camera, and HMD guides.
+DebugDrawNativeScopeActivation = false
+
+## Visualizes the topology-specific authored cone/arc, live approach vector, and
+## optional palm/fingertip collision witnesses. Witnesses are diagnostic only.
+## Also draws the firing-grip reattach zone and live palm vectors during part carry.
+DebugDrawAuthoredGripActivationZones = false
+
+## Draws two-handed weapon/hand/FRIK authority frames and mismatch evidence.
+DebugDrawWeaponAuthority = false
+
+## Compare both tracked wand frames, reference aim (cyan), configured aim (gold), damped aim (purple) and final barrel (green). The reference basis is a model, not physical ground truth. Does not change aiming.
+DebugDrawControllerAim = false
+
+## Gunstock measurements: exact tracked controller origins/axes, controller baseline, weapon forward and authored hand seats. Each support grab marks a sample. Does not change aiming.
+DebugDrawGunstock = false
+
+## Draws the loose-weapon projected grip point, palm relation, and equip radius state.
+DebugDrawLooseWeaponGripZones = false
+
+## Draws the layer-51 dynamic weapon compound proxy and contact/correction telemetry.
+DebugDrawDynamicWeaponColliders = false
+
+DebugMaxWeaponBodiesDrawn = 100
+
+## Bounded overlay work and memory budgets. Zero disables the corresponding capture/upload/draw stream where noted.
+## Ranges: captures 0..32, compound slots 1..1024, depth 1..8, queued/completed 0..256,
+## uploads 0..16, cache entries 16..4096, cache bytes 1048576..536870912,
+## body instances 0..195, line vertices 0..65536, text vertices 0..131072.
+DebugMaxShapeCapturesPerFrame = 32
+
+DebugMaxConvexSupportVertices = 8
+
+DebugMaxCompoundChildren = 256
+
+DebugMaxCompoundDepth = 4
+
+DebugMaxShapeQueuedJobs = 64
+
+DebugMaxShapeCompletedJobs = 64
+
+DebugMaxShapeUploadsPerFrame = 2
+
+DebugMaxShapeCacheEntries = 512
+
+DebugMaxShapeCacheBytes = 67108864
+
+DebugMaxBodyInstances = 163
+
+DebugMaxLineVertices = 8192
+
+DebugUseBoundsForHeavyConvex = true
+
+## === 16. Logs and Telemetry ===
+[LogsAndTelemetry]
+## Very noisy per-frame diagnostic logging. Use only while investigating a specific issue.
+DebugVerboseLogging = false
+
+## Publishes per-frame hand, head and controller state and ROCK events to shared memory for the external test bench. Leave off for play.
+DebugTestbenchTelemetry = false
+
+## === 17. Skeleton Debug ===
+[SkeletonDebug]
+## Draws markers and axes for live first-person skeleton bones.
+DebugShowRootFlattenedFingerSkeletonMarkers = false
+
+DebugShowSkeletonBoneVisualizer = false
+
+## 0 = minimal/core bones, 1 = core body and fingers, higher modes may draw more if supported.
+DebugSkeletonBoneMode = 1
+
+## Selects the skeleton source used by the debug visualizer.
+DebugSkeletonBoneSource = 1
+
+## Draw limits and filters for skeleton debug drawing.
+DebugMaxSkeletonBonesDrawn = 256
+
+DebugDrawSkeletonBoneAxes = false
+
+DebugMaxSkeletonBoneAxesDrawn = 80
+
+DebugSkeletonAxisBoneFilter = ""
+
+## Logs bone names and truncation information to ROCK.log.
+DebugLogSkeletonBones = false
+
+DebugLogSkeletonBoneTruncation = false
+
+DebugSkeletonBoneLogIntervalFrames = 120
+
+DebugSkeletonBoneLogFilter = "RArm_Hand,LArm_Hand,RArm_Finger23,LArm_Finger23,Chest,Pelvis"
+
+## Marker and axis sizes for skeleton debug visuals.
+DebugRootFlattenedFingerSkeletonMarkerSize = 1.4
+
+DebugSkeletonBonePointSize = 1.4
+
+DebugSkeletonBoneAxisLength = 4.0
+
+## === 18. Physics Timing ===
+[PhysicsTiming]
+## Stabilizes FO4VR physics timing when rendering falls below the reference rate.
+HavokTimingFixEnabled = true
+
+## VATS Physics Fixes
+## Preserves equipped-weapon handling speed during VATS and other game slow motion.
+## Compensates the weapon drive and constraint while keeping dynamic collision.
+## Changes apply at the next physics step; false restores uncompensated handling.
+VatsPhysicsFixes = true
+
+HavokTimingFixMinPhysicsFrameRate = 70.0
+
+HavokTimingFixMaxSubsteps = 3
+
+## === 19. Scope Placement ===
+[ScopePlacement]
+## Scope Fallback Anchor
+## When a weapon has no usable generated Scope or Sight geometry, the scope anchors at the firing grip, moved by these values.
+## Offsets are game units (70 = 1 metre) in the weapon's axes: X sideways, +Y toward the muzzle, Z up; all zero puts the anchor on the firing grip.
+## Rotations are degrees added after the game's camera calibration: pitch about X, yaw about Z, roll about the muzzle axis.
+## Position moves the activation point, camera and overlay together; rotation corrects the camera and overlay only.
+## This key: offset [x, y, z]. Each value: -100 to 100.
+NativeScopeFiringGripFallbackOffsetGameUnits = [0.0, 0.0, 10.0]
+
+## Scope fallback rotation [pitch, yaw, roll], in degrees. Each value: -180 to 180.
+NativeScopeFiringGripFallbackRotationDegrees = [0.0, 0.0, 0.0]
+
+## Scope Overlay
+## Fine-tunes only the game's own world_scope.nif overlay. The activation camera stays on the resolved sight or firing-grip anchor, so these values do not change when the scope activates.
+## All zero keeps automatic placement with the game's own model orientation and scale.
+## Offsets are game units in the calibrated model frame; rotations are degrees: pitch about X, yaw about Z, roll about the optical Y axis.
+## Tune one axis at a time; replacement scope meshes can use a reversed sign.
+## This key: offset [x, y, z]. Each value: -100 to 100.
+NativeScopeOverlayOffsetGameUnits = [0.0, 10.0, 0.0]
+
+## Scope overlay rotation [pitch, yaw, roll], in degrees. Each value: -180 to 180.
+NativeScopeOverlayRotationDegrees = [0.0, 0.0, 0.0]

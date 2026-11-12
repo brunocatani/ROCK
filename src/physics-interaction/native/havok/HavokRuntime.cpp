@@ -1,0 +1,1134 @@
+#include "physics-interaction/native/havok/HavokRuntime.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
+
+#include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/TransformMath.h"
+#include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/havok/CollisionSystemOwner.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
+#include "physics-interaction/native/havok/PhysicsScale.h"
+#include "physics-interaction/native/havok/PhysicsSystemBodyScanCache.h"
+
+#include "F4SE/Impl/PCH.h"
+#include "RE/Bethesda/bhkPhysicsSystem.h"
+#include "RE/Havok/hkVector4.h"
+#include "RE/Havok/hknpBody.h"
+#include "RE/Havok/hknpCollisionQueryCollector.h"
+#include "RE/Havok/hknpMotion.h"
+#include "RE/Havok/hknpWorld.h"
+#include "RE/NetImmerse/NiAVObject.h"
+#include "RE/NetImmerse/NiCollisionObject.h"
+#include "RE/NetImmerse/NiPoint.h"
+#include "RE/RTTI.h"
+#include "RE/RTTI_IDs.h"
+#include "RE/VTABLE_IDs.h"
+#include "REL/Relocation.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <mutex>
+#include <utility>
+#include <vector>
+#include <windows.h>
+
+namespace rock::havok_runtime
+{
+    namespace
+    {
+        struct NativeMotionArray
+        {
+            RE::hknpMotion* data = nullptr;
+            std::uint32_t slotCount = 0;
+            std::uint32_t capacityAndFlags = 0;
+        };
+
+        static_assert(sizeof(NativeMotionArray) == 0x10);
+
+        RE::hknpMotion* readAllocatedMotionSlot(RE::hknpWorld* world, std::uint32_t motionIndex,
+            NativeMotionArray& array, const char*& stage)
+        {
+            // FO4VR: world+0xD8 is the motion manager (0x14154639C).
+            // Its array at +0x08 has count/capacity at +0x10/+0x14:
+            // 0x1417E1C2F-49 writes all three; 0x141542FC0-CE reads capacity.
+            // Allocation byte +0x3F is set by 0x1417E1D97 and inspected by
+            // 0x1417E1B77. Keep this lookup on the caller's physics lifetime;
+            // do not retain the array across native allocation or retirement.
+#if defined(_MSC_VER)
+            __try {
+#endif
+                stage = "array-header";
+                array = *reinterpret_cast<const NativeMotionArray*>(reinterpret_cast<std::uintptr_t>(world) + 0xE0);
+                const auto address = reinterpret_cast<std::uintptr_t>(array.data);
+                stage = "array-pointer";
+                if (address < 0x10000 || (address & 0xF) != 0) {
+                    return nullptr;
+                }
+                stage = "array-bounds";
+                if (!body_frame::motionSlotCanBeRead(motionIndex, array.slotCount, array.capacityAndFlags)) {
+                    return nullptr;
+                }
+                stage = "slot-allocation";
+                auto* motion = &array.data[motionIndex];
+                if (*reinterpret_cast<const std::uint8_t*>(reinterpret_cast<std::uintptr_t>(motion) + 0x3F) == 0) {
+                    return nullptr;
+                }
+                return motion;
+#if defined(_MSC_VER)
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                return nullptr;
+            }
+#endif
+        }
+
+        struct alignas(16) NativeContactSignalPointBuffer
+        {
+            std::uint32_t pointCount = 0;
+            std::uint32_t field04 = 0;
+            std::uint32_t field08 = 0;
+            std::uint32_t field0C = 0;
+            float contactNormalHavok[4]{};
+            float reserved20[4]{};
+            float normalImpulseHavok[4]{};
+            float contactPointsHavok[kMaxContactSignalPoints][4]{};
+        };
+
+        static_assert(offsetof(NativeContactSignalPointBuffer, contactNormalHavok) == 0x10);
+        static_assert(offsetof(NativeContactSignalPointBuffer, contactPointsHavok) == 0x40);
+        static_assert(sizeof(NativeContactSignalPointBuffer) == 0x80);
+
+        struct BodyFlagLeaseEntry
+        {
+            RE::hknpWorld* world = nullptr;
+            RE::NiPointer<RE::NiCollisionObject> collisionObject;
+            std::uint32_t bodyId = body_frame::kInvalidBodyId;
+            std::uint32_t flags = 0;
+            std::uint32_t originalEnabledFlags = 0;
+            std::uint32_t mode = 0;
+            std::vector<std::uintptr_t> ownerTokens;
+        };
+
+        std::mutex g_bodyFlagLeaseMutex;
+        std::vector<BodyFlagLeaseEntry> g_bodyFlagLeases;
+
+        bool bodyFlagLeaseMatches(const BodyFlagLeaseEntry& lease, RE::hknpWorld* world, std::uint32_t bodyId,
+            std::uint32_t flags, std::uint32_t mode)
+        {
+            return lease.world == world && lease.bodyId == bodyId && lease.flags == flags && lease.mode == mode;
+        }
+
+        bool bodyFlagLeaseContainsOwner(const BodyFlagLeaseEntry& lease, std::uintptr_t ownerToken)
+        {
+            return std::find(lease.ownerTokens.begin(), lease.ownerTokens.end(), ownerToken) != lease.ownerTokens.end();
+        }
+
+        RE::NiPoint3 hkVectorToNiPoint(const RE::hkVector4f& value)
+        {
+            const float scale = physics_scale::havokToGame();
+            return RE::NiPoint3{ value.x * scale, value.y * scale, value.z * scale };
+        }
+
+        RE::NiMatrix3 havokRotationBlocksToNiMatrix(const float* bodyFloats)
+        {
+            return transform_math::hknpBodyColumnsToNiStoredAxes<RE::NiMatrix3>(bodyFloats);
+        }
+
+        bool tryReadBodyHighWaterMarkRaw(const void* world, std::uint32_t* outHighWaterMark)
+        {
+            if (!world || !outHighWaterMark) {
+                return false;
+            }
+
+#if defined(_MSC_VER)
+            __try {
+                const auto worldAddress = reinterpret_cast<std::uintptr_t>(world);
+                *outHighWaterMark =
+                    *reinterpret_cast<const std::uint32_t*>(worldAddress + kHknpWorldBodyHighWaterMarkOffset);
+                return true;
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                return false;
+            }
+#else
+            const auto worldAddress = reinterpret_cast<std::uintptr_t>(world);
+            *outHighWaterMark =
+                *reinterpret_cast<const std::uint32_t*>(worldAddress + kHknpWorldBodyHighWaterMarkOffset);
+            return true;
+#endif
+        }
+
+        RE::hknpBody* getReadableBodySlot(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+        {
+            if (!bodySlotLooksReadable(world, bodyId)) {
+                return nullptr;
+            }
+
+            auto* bodyArray = getBodyArray(world);
+            if (!bodyArray) {
+                return nullptr;
+            }
+
+            auto& body = bodyArray[bodyId.value];
+            return body.bodyId.value == bodyId.value ? &body : nullptr;
+        }
+
+        bool pointerLooksReadable(const void* ptr) { return native_memory::pointerLooksReadable(ptr); }
+
+        bool pointerRangeLooksReadable(const void* ptr, std::size_t byteCount)
+        {
+            return native_memory::pointerRangeLooksReadable(ptr, byteCount);
+        }
+
+        /*
+         * Object-tree scans walk native collision wrappers that may contain
+         * stale or transitional Havok pointers while a weapon is being pulled.
+         * Range checks reject obviously bad pages, but the real contract at
+         * this boundary is "do not let a native field read crash the caller."
+         * Centralizing guarded reads keeps high-level grab code out of SEH and
+         * makes every physics-system pointer/body-id read fail closed.
+         */
+        template <class T>
+        bool tryReadValue(const T* address, T& out)
+        {
+            return native_memory::tryReadValue(address, out);
+        }
+
+        template <class T>
+        bool tryReadField(const void* base, std::uintptr_t offset, T& out)
+        {
+            return native_memory::tryReadField(base, static_cast<std::ptrdiff_t>(offset), out);
+        }
+
+        float decodePackedVelocityCap(std::uint16_t packedValue)
+        {
+            const std::uint32_t bits = static_cast<std::uint32_t>(packedValue) << 16;
+            float value = 0.0f;
+            std::memcpy(&value, &bits, sizeof(value));
+            return value;
+        }
+    }
+
+    bool bodySlotLooksReadable(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+    {
+        if (!world) {
+            return false;
+        }
+
+        std::uint32_t highWaterMark = 0;
+        if (!tryReadBodyHighWaterMarkRaw(world, &highWaterMark)) {
+            return false;
+        }
+
+        return bodySlotCanBeRead(bodyId.value, highWaterMark);
+    }
+
+    bool tryReadBodyHighWaterMark(RE::hknpWorld* world, std::uint32_t& outHighWaterMark)
+    {
+        outHighWaterMark = 0;
+        return tryReadBodyHighWaterMarkRaw(world, &outHighWaterMark) &&
+            outHighWaterMark <= body_frame::kMaxReadableBodyIndex;
+    }
+
+    RE::hknpBody* getBodyArray(RE::hknpWorld* world) { return world ? world->GetBodyArray() : nullptr; }
+
+    RE::hknpBody* getBody(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+    {
+        auto* body = getReadableBodySlot(world, bodyId);
+        if (!body || body->motionIndex == body_frame::kFreeMotionIndex) {
+            return nullptr;
+        }
+
+        return body;
+    }
+
+    RE::hknpMotion* getMotion(RE::hknpWorld* world, std::uint32_t motionIndex)
+    {
+        if (!world || !body_frame::hasUsableMotionIndex(motionIndex)) {
+            return nullptr;
+        }
+
+        NativeMotionArray array{};
+        const char* stage = "array-header";
+        auto* motion = readAllocatedMotionSlot(world, motionIndex, array, stage);
+        if (!motion) {
+            ROCK_LOG_SAMPLE_WARN(Physics, 1000,
+                "Motion lookup rejected: stage={} world={:p} motion={} array={:p} slots={} capacityFlags=0x{:08X}",
+                stage, static_cast<void*>(world), motionIndex, static_cast<void*>(array.data), array.slotCount,
+                array.capacityAndFlags);
+        }
+        return motion;
+    }
+
+    RE::hknpMotion* getBodyMotion(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+    {
+        auto* body = getBody(world, bodyId);
+        if (!body) {
+            return nullptr;
+        }
+
+        return getMotion(world, body->motionIndex);
+    }
+
+    BodyIdentitySnapshot snapshotBodyIdentity(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+    {
+        BodyIdentitySnapshot snapshot{};
+        snapshot.bodyId = bodyId;
+
+        auto* body = getBody(world, bodyId);
+        if (!body) {
+            return snapshot;
+        }
+
+        snapshot.valid = true;
+        snapshot.body = body;
+        snapshot.motionIndex = body->motionIndex;
+        snapshot.collisionFilterInfo = body->collisionFilterInfo;
+        snapshot.collisionObject = getCollisionObjectFromBody(body);
+        return snapshot;
+    }
+
+    BodySnapshot snapshotBody(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+    {
+        const auto identity = snapshotBodyIdentity(world, bodyId);
+        BodySnapshot snapshot{};
+        snapshot.bodyId = bodyId;
+        if (!identity.valid)
+            return snapshot;
+        snapshot.valid = true;
+        snapshot.body = identity.body;
+        snapshot.motionIndex = identity.motionIndex;
+        snapshot.collisionFilterInfo = identity.collisionFilterInfo;
+        snapshot.motion = getMotion(world, identity.motionIndex);
+        snapshot.collisionObject = identity.collisionObject;
+        snapshot.ownerNode = getOwnerNodeFromCollisionObject(identity.collisionObject);
+        return snapshot;
+    }
+
+    void* getQueryFilterRef(RE::hknpWorld* world)
+    {
+        if (!world) {
+            return nullptr;
+        }
+
+        const auto modifierMgr = *reinterpret_cast<std::uintptr_t*>(
+            reinterpret_cast<std::uintptr_t>(world) + offsets::kHknpWorld_ModifierManager);
+        if (!modifierMgr) {
+            return nullptr;
+        }
+
+        return *reinterpret_cast<void**>(modifierMgr + offsets::kModifierMgr_FilterPtr);
+    }
+
+    RE::hknpWorld* getHknpWorldFromBhk(RE::bhkWorld* bhkWorld)
+    {
+        /*
+         * The bhkWorld -> hknpWorld pointer is a FO4VR native layout seam used
+         * by lifecycle, provider, and frame orchestration code. Keeping the raw
+         * offset here makes world acquisition part of the audited Havok runtime
+         * boundary instead of reintroducing layout reads in high-level systems.
+         */
+        if (!bhkWorld) {
+            return nullptr;
+        }
+
+        return *reinterpret_cast<RE::hknpWorld**>(
+            reinterpret_cast<std::uintptr_t>(bhkWorld) + offsets::kBhkWorld_HknpWorldPtr);
+    }
+
+    namespace
+    {
+        bool readSystemOwnership(RE::NiCollisionObject* collisionObject, RE::bhkPhysicsSystem*& system,
+            RE::hknpPhysicsSystemInstance*& instance, bool* knownEmpty = nullptr)
+        {
+            if (knownEmpty)
+                *knownEmpty = false;
+            system = nullptr;
+            instance = nullptr;
+            std::array<std::byte, offsets::kCollisionObject_PhysSystemPtr + sizeof(void*)> wrapper{};
+            if (!native_memory::guardedCopyFromMemory(collisionObject, wrapper.data(), wrapper.size()))
+                return false;
+            std::memcpy(&system, wrapper.data() + offsets::kCollisionObject_PhysSystemPtr, sizeof(system));
+            if (!system) {
+                if (knownEmpty)
+                    *knownEmpty = true;
+                return false;
+            }
+            // Copy bytes, never construct/copy an owning native C++ object.
+            std::array<std::byte, sizeof(RE::bhkPhysicsSystem)> bytes{};
+            if (!native_memory::guardedCopyFromMemory(system, bytes.data(), bytes.size())) {
+                system = nullptr;
+                return false;
+            }
+            std::memcpy(&instance, bytes.data() + offsetof(RE::bhkPhysicsSystem, instance), sizeof(instance));
+            return true;
+        }
+    }
+
+    RE::bhkPhysicsSystem* getPhysicsSystemFromCollisionObject(RE::NiCollisionObject* collisionObject)
+    {
+        RE::bhkPhysicsSystem* system = nullptr;
+        RE::hknpPhysicsSystemInstance* instance = nullptr;
+        return readSystemOwnership(collisionObject, system, instance) ? system : nullptr;
+    }
+
+    void* getPhysicsSystemInstance(RE::bhkPhysicsSystem* physicsSystem)
+    {
+        std::array<std::byte, sizeof(RE::bhkPhysicsSystem)> bytes{};
+        if (!native_memory::guardedCopyFromMemory(physicsSystem, bytes.data(), bytes.size()))
+            return nullptr;
+        RE::hknpPhysicsSystemInstance* instance = nullptr;
+        std::memcpy(&instance, bytes.data() + offsetof(RE::bhkPhysicsSystem, instance), sizeof(instance));
+        return pointerRangeLooksReadable(instance, sizeof(RE::hknpPhysicsSystemInstance)) ? instance : nullptr;
+    }
+
+    bool tryResolveCollisionObjectBody(RE::NiCollisionObject* collisionObject, RE::hknpWorld*& outWorld,
+        RE::hknpBodyId& outBodyId)
+    {
+        outWorld = nullptr;
+        outBodyId = RE::hknpBodyId{ body_frame::kInvalidBodyId };
+
+        RE::bhkPhysicsSystem* physicsSystem = nullptr;
+        RE::hknpPhysicsSystemInstance* instance = nullptr;
+        RE::hknpPhysicsSystemInstance header{};
+        if (!readSystemOwnership(collisionObject, physicsSystem, instance) ||
+            !native_memory::tryReadValue(instance, header)) {
+            return false;
+        }
+
+        std::int32_t systemBodyIndex = -1;
+        const auto bodyCount = header.bodyCount;
+        auto* world = header.world;
+        if (!tryReadField(collisionObject, offsets::kCollisionObject_SystemBodyIndex, systemBodyIndex) || !world ||
+            systemBodyIndex < 0 || systemBodyIndex >= bodyCount) {
+            return false;
+        }
+
+        using PhysicsSystemGetBodyId = void (*)(void*, RE::hknpBodyId*, std::int32_t);
+        static REL::Relocation<PhysicsSystemGetBodyId> getBodyId{ REL::Offset(offsets::kFunc_PhysicsSystem_GetBodyId) };
+
+        RE::hknpBodyId bodyId{ body_frame::kInvalidBodyId };
+        getBodyId(physicsSystem, &bodyId, systemBodyIndex);
+        if (!isValidBodyId(bodyId) || !bodySlotLooksReadable(world, bodyId) ||
+            getCollisionObjectFromBody(world, bodyId) != collisionObject) {
+            return false;
+        }
+
+        outWorld = world;
+        outBodyId = bodyId;
+        return true;
+    }
+
+    const char* physicsSystemBodyScanStatusName(PhysicsSystemBodyScanStatus status)
+    {
+        switch (status) {
+        case PhysicsSystemBodyScanStatus::Enumerated:
+            return "enumerated";
+        case PhysicsSystemBodyScanStatus::InvalidArguments:
+            return "invalid-arguments";
+        case PhysicsSystemBodyScanStatus::MissingPhysicsSystem:
+            return "missing-physics-system";
+        case PhysicsSystemBodyScanStatus::MissingInstance:
+            return "missing-instance";
+        case PhysicsSystemBodyScanStatus::WorldMismatch:
+            return "world-mismatch";
+        case PhysicsSystemBodyScanStatus::InvalidBodyCount:
+            return "invalid-body-count";
+        case PhysicsSystemBodyScanStatus::MissingBodyIds:
+            return "missing-body-ids";
+        case PhysicsSystemBodyScanStatus::UnreadableBodyIds:
+            return "unreadable-body-ids";
+        case PhysicsSystemBodyScanStatus::NoBodies:
+            return "no-bodies";
+        case PhysicsSystemBodyScanStatus::EmptyPhysicsSystem:
+            return "empty-physics-system";
+        case PhysicsSystemBodyScanStatus::UnsupportedCollisionObject:
+            return "unsupported-collision-object";
+        case PhysicsSystemBodyScanStatus::VisitorStopped:
+            return "visitor-stopped";
+        }
+        return "unknown";
+    }
+
+    PhysicsSystemBodyScanResult forEachPhysicsSystemBodyIdDetailed(RE::NiCollisionObject* collisionObject,
+        RE::hknpWorld* expectedWorld, std::uint32_t maxBodies, bool (*visitor)(std::uint32_t bodyId, void* userData),
+        void* userData, PhysicsSystemBodyScanCache* transactionCache)
+    {
+        PhysicsSystemBodyScanResult result{};
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::PhysicsSystemBodyScan);
+        // Tree walkers pass every node's collision slot; most are empty.
+        if (!collisionObject || !visitor || maxBodies == 0) {
+            result.status = PhysicsSystemBodyScanStatus::InvalidArguments;
+            return result;
+        }
+
+        RE::bhkPhysicsSystem* physicsSystem = nullptr;
+        RE::hknpPhysicsSystemInstance* instance = nullptr;
+        // Qualify the proxy layout before its first pointer read. The reader
+        // takes two +20 hops; interpreting the first as a system reads the
+        // body's flags as an instance and used to reject complete weapon scans.
+        static const bool proxyLayoutQualified = [] {
+            constexpr std::array<std::uint8_t, 12> expected{ 0x48, 0x8B, 0x49, 0x20, 0x48, 0x8B, 0x41, 0x20, 0x48, 0x85,
+                0xC0, 0x0F };
+            std::array<std::uint8_t, expected.size()> actual{};
+            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(0x1E0A43C).address()),
+                       actual.data(), actual.size()) &&
+                actual == expected;
+        }();
+        const auto owner = collision_system_owner::resolve(
+            reinterpret_cast<std::uintptr_t>(collisionObject),
+            [](std::uintptr_t object, std::uintptr_t& table) {
+                if (!native_memory::tryReadField(reinterpret_cast<const void*>(object), 0, table))
+                    return false;
+                const auto base = REL::Module::get().base();
+                if (table < base)
+                    return false;
+                table -= base;
+                return true;
+            },
+            [](std::uintptr_t object, std::uintptr_t& target) {
+                return proxyLayoutQualified &&
+                    native_memory::tryReadField(reinterpret_cast<const void*>(object),
+                        offsets::kCollisionObject_PhysSystemPtr, target);
+            });
+        if (owner.stage == collision_system_owner::Stage::SceneOnly) {
+            result.status = PhysicsSystemBodyScanStatus::EmptyPhysicsSystem;
+            return result;
+        }
+        if (!owner.usable()) {
+            ROCK_LOG_SAMPLE_WARN(Physics, 1000,
+                "Collision system owner rejected: stage={} object={:p} sourceVtableRva={:X} targetVtableRva={:X} "
+                "proxyLayout={}",
+                static_cast<unsigned>(owner.stage), static_cast<void*>(collisionObject), owner.sourceVtable,
+                owner.targetVtable, proxyLayoutQualified);
+            result.status = PhysicsSystemBodyScanStatus::UnsupportedCollisionObject;
+            return result;
+        }
+        if (owner.stage == collision_system_owner::Stage::Proxy) {
+            ROCK_LOG_SAMPLE_INFO(Physics, 1000, "Collision system proxy resolved: proxy={:p} bodyObject=0x{:X}",
+                static_cast<void*>(collisionObject), owner.owner);
+        }
+        bool knownEmpty = false;
+        if (!readSystemOwnership(reinterpret_cast<RE::NiCollisionObject*>(owner.owner), physicsSystem, instance,
+                &knownEmpty)) {
+            result.status = knownEmpty ? PhysicsSystemBodyScanStatus::EmptyPhysicsSystem
+                                       : PhysicsSystemBodyScanStatus::MissingPhysicsSystem;
+            return result;
+        }
+        RE::hknpPhysicsSystemInstance header{};
+        if (!native_memory::tryReadValue(instance, header)) {
+            result.status = PhysicsSystemBodyScanStatus::MissingInstance;
+            return result;
+        }
+        auto* instanceWorld = header.world;
+        auto* bodyIds = header.bodyIds;
+        const auto bodyCount = header.bodyCount;
+
+        if (expectedWorld && instanceWorld != expectedWorld) {
+            result.status = PhysicsSystemBodyScanStatus::WorldMismatch;
+            result.bodyCount = bodyCount;
+            return result;
+        }
+
+        result.bodyCount = bodyCount;
+        constexpr std::int32_t kMaxReasonablePhysicsSystemBodies = 4096;
+        if (bodyCount < 0 || bodyCount > kMaxReasonablePhysicsSystemBodies) {
+            result.status = PhysicsSystemBodyScanStatus::InvalidBodyCount;
+            return result;
+        }
+
+        if (bodyCount == 0) {
+            result.status = PhysicsSystemBodyScanStatus::NoBodies;
+            return result;
+        }
+
+        if (!bodyIds) {
+            result.status = PhysicsSystemBodyScanStatus::MissingBodyIds;
+            return result;
+        }
+
+        const std::int32_t count = (std::min)(bodyCount, static_cast<std::int32_t>(maxBodies));
+        // Every current visitor only reads/collects IDs. Copy this operation's
+        // complete bounded list under one guarded range check before visiting;
+        // no native array pointer or validation result survives the scan.
+        std::array<std::uint32_t, kMaxReasonablePhysicsSystemBodies> copiedBodyIds;
+        const PhysicsSystemBodyScanCache::Key cacheKey{ physicsSystem, instance, instanceWorld, bodyIds, bodyCount };
+        auto ids = transactionCache ? transactionCache->find(cacheKey, count) : std::span<const std::uint32_t>{};
+        if (ids.empty()) {
+            if (!native_memory::guardedCopyFromMemory(bodyIds, copiedBodyIds.data(), sizeof(std::uint32_t) * count)) {
+                result.status = PhysicsSystemBodyScanStatus::UnreadableBodyIds;
+                return result;
+            }
+            ids = { copiedBodyIds.data(), static_cast<std::size_t>(count) };
+            if (transactionCache)
+                transactionCache->remember(cacheKey, ids);
+        }
+
+        for (std::int32_t i = 0; i < count; ++i) {
+            const std::uint32_t bodyId = ids[static_cast<std::size_t>(i)];
+            if (bodyId == body_frame::kInvalidBodyId || bodyId > 0x000F'FFFF) {
+                ++result.skippedInvalidBodies;
+                continue;
+            }
+            ++result.visitedBodies;
+            if (!visitor(bodyId, userData)) {
+                result.status = PhysicsSystemBodyScanStatus::VisitorStopped;
+                return result;
+            }
+        }
+
+        result.status = PhysicsSystemBodyScanStatus::Enumerated;
+        return result;
+    }
+
+    bool forEachPhysicsSystemBodyId(RE::NiCollisionObject* collisionObject, RE::hknpWorld* expectedWorld,
+        std::uint32_t maxBodies, bool (*visitor)(std::uint32_t bodyId, void* userData), void* userData)
+    {
+        return forEachPhysicsSystemBodyIdDetailed(collisionObject, expectedWorld, maxBodies, visitor, userData)
+            .enumerated();
+    }
+
+    void* getQueryFilterRefWithFallback(RE::hknpWorld* world)
+    {
+        if (auto* filter = getQueryFilterRef(world)) {
+            return filter;
+        }
+
+        static REL::Relocation<void**> filterSingleton{ REL::Offset(offsets::kData_CollisionFilterSingleton) };
+        return *filterSingleton;
+    }
+
+    std::uint64_t* getCollisionFilterMatrix(void* filter)
+    {
+        /*
+         * The filter matrix is a native hknp filter layout field. Domain code
+         * can own ROCK layer policy, but the offset that finds the matrix stays
+         * in this runtime boundary.
+         */
+        if (!filter) {
+            return nullptr;
+        }
+
+        return reinterpret_cast<std::uint64_t*>(
+            reinterpret_cast<std::uintptr_t>(filter) + offsets::kFilter_CollisionMatrix);
+    }
+
+    std::uint64_t* getCollisionFilterMatrix(RE::hknpWorld* world, bool* outUsedFallback)
+    {
+        if (outUsedFallback) {
+            *outUsedFallback = false;
+        }
+
+        if (auto* filter = getQueryFilterRef(world)) {
+            return getCollisionFilterMatrix(filter);
+        }
+
+        if (outUsedFallback) {
+            *outUsedFallback = true;
+        }
+        return getCollisionFilterMatrix(getQueryFilterRefWithFallback(world));
+    }
+
+    RE::NiCollisionObject* getCollisionObjectFromBody(const RE::hknpBody* body)
+    {
+        if (!body) {
+            return nullptr;
+        }
+
+        const auto* bodyBytes = reinterpret_cast<const char*>(body);
+        return *reinterpret_cast<RE::NiCollisionObject* const*>(bodyBytes + offsets::kBody_CollisionObjectBackPointer);
+    }
+
+    RE::NiCollisionObject* getCollisionObjectFromBody(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+    {
+        return getCollisionObjectFromBody(getBody(world, bodyId));
+    }
+
+    bool setCollisionObjectForBody(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiCollisionObject* collisionObject)
+    {
+        auto* body = getBody(world, bodyId);
+        if (!body) {
+            return false;
+        }
+
+        body->userData = reinterpret_cast<std::uintptr_t>(collisionObject);
+        return true;
+    }
+
+    RE::NiAVObject* getOwnerNodeFromCollisionObject(const RE::NiCollisionObject* collisionObject)
+    {
+        if (!collisionObject) {
+            return nullptr;
+        }
+
+        RE::NiAVObject* sceneObject = nullptr;
+        if (!tryReadValue(&collisionObject->sceneObject, sceneObject)) {
+            return nullptr;
+        }
+        return pointerLooksReadable(sceneObject) ? sceneObject : nullptr;
+    }
+
+    RE::NiAVObject* getOwnerNodeFromBody(const RE::hknpBody* body)
+    {
+        return getOwnerNodeFromCollisionObject(getCollisionObjectFromBody(body));
+    }
+
+    RE::NiAVObject* getOwnerNodeFromBody(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+    {
+        return getOwnerNodeFromCollisionObject(getCollisionObjectFromBody(world, bodyId));
+    }
+
+    RE::NiTransform bodyArrayWorldTransform(const RE::hknpBody& body)
+    {
+        RE::NiTransform result = transform_math::makeIdentityTransform<RE::NiTransform>();
+        const auto* bodyFloats = reinterpret_cast<const float*>(&body);
+        result.rotate = havokRotationBlocksToNiMatrix(bodyFloats);
+        const float scale = physics_scale::havokToGame();
+        result.translate.x = bodyFloats[12] * scale;
+        result.translate.y = bodyFloats[13] * scale;
+        result.translate.z = bodyFloats[14] * scale;
+        result.scale = 1.0f;
+        return result;
+    }
+
+    bool tryGetBodyArrayWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform)
+    {
+        outTransform = transform_math::makeIdentityTransform<RE::NiTransform>();
+
+        auto* body = getBody(world, bodyId);
+        if (!body) {
+            return false;
+        }
+
+        outTransform = bodyArrayWorldTransform(*body);
+        return true;
+    }
+
+    bool tryGetBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform)
+    {
+        return tryGetBodyArrayWorldTransform(world, bodyId, outTransform);
+    }
+
+    bool tryGetMotionWorldTransform(RE::hknpWorld* world, const RE::hknpBody& body, RE::NiTransform& outTransform)
+    {
+        outTransform = transform_math::makeIdentityTransform<RE::NiTransform>();
+
+        auto* motion = getMotion(world, body.motionIndex);
+        if (!motion) {
+            return false;
+        }
+
+        const float quaternion[4]{ motion->orientation.x, motion->orientation.y, motion->orientation.z,
+            motion->orientation.w };
+        outTransform.rotate = transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(quaternion);
+        outTransform.translate = hkVectorToNiPoint(motion->position);
+        outTransform.scale = 1.0f;
+        return true;
+    }
+
+    ResolvedBodyWorldTransform resolveLiveBodyWorldTransform(RE::hknpWorld* world, const RE::hknpBody& body)
+    {
+        ResolvedBodyWorldTransform result{};
+        result.motionIndex = body.motionIndex;
+        RE::NiTransform motionTransform{};
+        const bool hasMotionTransform = tryGetMotionWorldTransform(world, body, motionTransform);
+        result.source = body_frame::chooseLiveBodyFrameSource(true, hasMotionTransform);
+        result.transform = result.source == body_frame::BodyFrameSource::MotionCenterOfMass
+            ? motionTransform
+            : bodyArrayWorldTransform(body);
+        result.valid = result.source != body_frame::BodyFrameSource::Fallback;
+        return result;
+    }
+
+    ResolvedBodyWorldTransform resolveLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+    {
+        if (const auto* body = getBody(world, bodyId))
+            return resolveLiveBodyWorldTransform(world, *body);
+        ResolvedBodyWorldTransform result{};
+        result.transform = transform_math::makeIdentityTransform<RE::NiTransform>();
+        return result;
+    }
+
+    bool tryResolveLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform,
+        body_frame::BodyFrameSource* outSource, std::uint32_t* outMotionIndex)
+    {
+        const auto resolved = resolveLiveBodyWorldTransform(world, bodyId);
+        outTransform = resolved.transform;
+        if (outSource) {
+            *outSource = resolved.source;
+        }
+        if (outMotionIndex) {
+            *outMotionIndex = resolved.motionIndex;
+        }
+        return resolved.valid;
+    }
+
+    bool getBodyCOMWorld(RE::hknpWorld* world, RE::hknpBodyId bodyId, float& outX, float& outY, float& outZ)
+    {
+        auto* motion = getBodyMotion(world, bodyId);
+        if (!motion) {
+            return false;
+        }
+
+        outX = motion->position.x;
+        outY = motion->position.y;
+        outZ = motion->position.z;
+        return true;
+    }
+
+    bool tryReadMotionPropertiesId(const RE::hknpMotion* motion, std::uint16_t& outMotionPropertiesId)
+    {
+        outMotionPropertiesId = 0;
+        return tryReadField(motion, offsets::kMotion_PropertiesId, outMotionPropertiesId);
+    }
+
+    bool tryReadBodyMotionPropertiesId(RE::hknpWorld* world, RE::hknpBodyId bodyId,
+        std::uint16_t& outMotionPropertiesId)
+    {
+        outMotionPropertiesId = 0;
+        if (auto* motion = getBodyMotion(world, bodyId)) {
+            return tryReadMotionPropertiesId(motion, outMotionPropertiesId);
+        }
+        return false;
+    }
+
+    bool tryReadMotionVelocityCaps(const RE::hknpMotion* motion, MotionVelocityCaps& outCaps)
+    {
+        outCaps = {};
+        if (!motion) {
+            return false;
+        }
+
+        std::uint16_t maxLinearVelocityPacked = 0;
+        std::uint16_t maxAngularVelocityPacked = 0;
+        if (!tryReadField(motion, offsets::kMotion_MaxLinearVelocityPacked, maxLinearVelocityPacked) ||
+            !tryReadField(motion, offsets::kMotion_MaxAngularVelocityPacked, maxAngularVelocityPacked)) {
+            return false;
+        }
+
+        outCaps.valid = true;
+        outCaps.maxLinearVelocityPacked = maxLinearVelocityPacked;
+        outCaps.maxAngularVelocityPacked = maxAngularVelocityPacked;
+        outCaps.maxLinearVelocity = decodePackedVelocityCap(maxLinearVelocityPacked);
+        outCaps.maxAngularVelocity = decodePackedVelocityCap(maxAngularVelocityPacked);
+        return true;
+    }
+
+    bool tryReadFilterInfo(RE::hknpWorld* world, RE::hknpBodyId bodyId, std::uint32_t& outFilterInfo)
+    {
+        auto* body = getBody(world, bodyId);
+        if (!body) {
+            return false;
+        }
+
+        outFilterInfo = body->collisionFilterInfo;
+        return true;
+    }
+
+    bool setFilterInfo(RE::hknpWorld* world, RE::hknpBodyId bodyId, std::uint32_t filterInfo, std::uint32_t rebuildMode)
+    {
+        auto* body = getReadableBodySlot(world, bodyId);
+        if (!body) {
+            return false;
+        }
+        (void)body;
+
+        using SetCollisionFilter_t = void (*)(void*, std::uint32_t, std::uint32_t, std::uint32_t);
+        static REL::Relocation<SetCollisionFilter_t> setBodyCollisionFilterInfo{ REL::Offset(
+            offsets::kFunc_SetBodyCollisionFilterInfo) };
+        setBodyCollisionFilterInfo(world, bodyId.value, filterInfo, rebuildMode);
+        return true;
+    }
+
+    bool setBodyVelocityDeferred(RE::hknpWorld* world, std::uint32_t bodyId, const RE::hkVector4f& linearVelocity,
+        const RE::hkVector4f& angularVelocity)
+    {
+        auto* body = getBody(world, RE::hknpBodyId{ bodyId });
+        if (!body || !getMotion(world, body->motionIndex)) {
+            return false;
+        }
+
+        alignas(16) float linear[4] = { linearVelocity.x, linearVelocity.y, linearVelocity.z, linearVelocity.w };
+        alignas(16) float angular[4] = { angularVelocity.x, angularVelocity.y, angularVelocity.z, angularVelocity.w };
+
+        using SetVelocityDeferred_t = void (*)(void*, std::uint32_t, const float*, const float*);
+        static REL::Relocation<SetVelocityDeferred_t> setVelocityDeferred{ REL::Offset(
+            offsets::kFunc_SetBodyVelocityDeferred) };
+        setVelocityDeferred(world, bodyId, linear, angular);
+        return true;
+    }
+
+    bool setBodyTransformDeferred(RE::hknpWorld* world, std::uint32_t bodyId, const RE::NiTransform& transform,
+        int mode)
+    {
+        auto* body = getReadableBodySlot(world, RE::hknpBodyId{ bodyId });
+        if (!body) {
+            return false;
+        }
+        (void)body;
+
+        RE::hkTransformf hkTransform;
+        hkTransform.rotation = transform_math::niStoredAxesToHknpBodyColumns(transform.rotate);
+        const float scale = physics_scale::gameToHavok();
+        hkTransform.translation = RE::NiPoint4(transform.translate.x * scale, transform.translate.y * scale,
+            transform.translate.z * scale, 0.0f);
+
+        using SetTransformDeferred_t = void (*)(void*, std::uint32_t, const float*, int);
+        static REL::Relocation<SetTransformDeferred_t> setBodyTransform{ REL::Offset(
+            offsets::kFunc_SetBodyTransformDeferred) };
+        setBodyTransform(world, bodyId, reinterpret_cast<const float*>(&hkTransform), mode);
+        return true;
+    }
+
+    bool activateBody(RE::hknpWorld* world, std::uint32_t bodyId)
+    {
+        auto* body = getReadableBodySlot(world, RE::hknpBodyId{ bodyId });
+        if (!body) {
+            return false;
+        }
+
+        using ActivateBody_t = void (*)(void*, std::uint32_t);
+        static REL::Relocation<ActivateBody_t> activate{ REL::Offset(offsets::kFunc_ActivateBody) };
+        activate(world, bodyId);
+        return true;
+    }
+
+    bool enableBodyFlags(RE::hknpWorld* world, std::uint32_t bodyId, std::uint32_t flags, std::uint32_t mode)
+    {
+        auto* body = getReadableBodySlot(world, RE::hknpBodyId{ bodyId });
+        if (!body) {
+            return false;
+        }
+        (void)body;
+
+        using EnableBodyFlags_t = void (*)(void*, std::uint32_t, std::uint32_t, std::uint32_t);
+        static REL::Relocation<EnableBodyFlags_t> enableFlags{ REL::Offset(offsets::kFunc_EnableBodyFlags) };
+        enableFlags(world, bodyId, flags, mode);
+        return true;
+    }
+
+    bool disableBodyFlags(RE::hknpWorld* world, std::uint32_t bodyId, std::uint32_t flags, std::uint32_t mode)
+    {
+        auto* body = getReadableBodySlot(world, RE::hknpBodyId{ bodyId });
+        if (!body) {
+            return false;
+        }
+        (void)body;
+
+        using DisableBodyFlags_t = void (*)(void*, std::uint32_t, std::uint32_t, std::uint32_t);
+        static REL::Relocation<DisableBodyFlags_t> disableFlags{ REL::Offset(offsets::kFunc_DisableBodyFlags) };
+        disableFlags(world, bodyId, flags, mode);
+        return true;
+    }
+
+    bool acquireBodyFlagLease(RE::hknpWorld* world, std::uint32_t bodyId, std::uint32_t flags, std::uint32_t mode,
+        std::uintptr_t ownerToken)
+    {
+        /*
+         * Body flags are a shared Havok resource once both hands can attach to
+         * the same dynamic object. Raw enable/disable calls make the first
+         * release able to undo flags that the peer hand still depends on. Keep
+         * a small owner-token lease table at the Havok runtime boundary so
+         * higher-level grab code can release its own lease while the final
+         * restore remains tied to the last live owner.
+         */
+        if (!world || flags == 0 || ownerToken == 0) {
+            return false;
+        }
+
+        std::scoped_lock lock(g_bodyFlagLeaseMutex);
+        auto leaseIt = std::find_if(g_bodyFlagLeases.begin(), g_bodyFlagLeases.end(),
+            [&](const BodyFlagLeaseEntry& lease) { return bodyFlagLeaseMatches(lease, world, bodyId, flags, mode); });
+        if (leaseIt != g_bodyFlagLeases.end()) {
+            auto* live = getReadableBodySlot(world, RE::hknpBodyId{ bodyId });
+            if (!live || getCollisionObjectFromBody(live) != leaseIt->collisionObject.get()) {
+                // A removed ragdoll body ID may be reused before the old hand
+                // releases. Its old lease must not transfer to the new body.
+                g_bodyFlagLeases.erase(leaseIt);
+                leaseIt = g_bodyFlagLeases.end();
+            }
+        }
+        if (leaseIt != g_bodyFlagLeases.end()) {
+            if (!bodyFlagLeaseContainsOwner(*leaseIt, ownerToken)) {
+                leaseIt->ownerTokens.push_back(ownerToken);
+            }
+            return true;
+        }
+
+        auto* body = getReadableBodySlot(world, RE::hknpBodyId{ bodyId });
+        if (!body) {
+            return false;
+        }
+
+        const std::uint32_t originalEnabledFlags = body->flags & flags;
+        if (!enableBodyFlags(world, bodyId, flags, mode)) {
+            return false;
+        }
+
+        BodyFlagLeaseEntry lease{};
+        lease.world = world;
+        lease.collisionObject.reset(getCollisionObjectFromBody(body));
+        lease.bodyId = bodyId;
+        lease.flags = flags;
+        lease.originalEnabledFlags = originalEnabledFlags;
+        lease.mode = mode;
+        lease.ownerTokens.push_back(ownerToken);
+        g_bodyFlagLeases.push_back(std::move(lease));
+        return true;
+    }
+
+    bool releaseBodyFlagLease(RE::hknpWorld* world, std::uint32_t bodyId, std::uint32_t flags, std::uint32_t mode,
+        std::uintptr_t ownerToken, bool restoreOnFinalLease)
+    {
+        if (flags == 0 || ownerToken == 0) {
+            return false;
+        }
+
+        std::scoped_lock lock(g_bodyFlagLeaseMutex);
+        auto leaseIt =
+            std::find_if(g_bodyFlagLeases.begin(), g_bodyFlagLeases.end(), [&](const BodyFlagLeaseEntry& lease) {
+                if (world) {
+                    return bodyFlagLeaseMatches(lease, world, bodyId, flags, mode);
+                }
+                return lease.bodyId == bodyId && lease.flags == flags && lease.mode == mode &&
+                    bodyFlagLeaseContainsOwner(lease, ownerToken);
+            });
+        if (leaseIt == g_bodyFlagLeases.end()) {
+            return false;
+        }
+
+        auto ownerIt = std::find(leaseIt->ownerTokens.begin(), leaseIt->ownerTokens.end(), ownerToken);
+        if (ownerIt == leaseIt->ownerTokens.end()) {
+            return false;
+        }
+
+        leaseIt->ownerTokens.erase(ownerIt);
+        if (!leaseIt->ownerTokens.empty()) {
+            return true;
+        }
+
+        const std::uint32_t flagsIntroducedByLease = leaseIt->flags & ~leaseIt->originalEnabledFlags;
+        auto* live = world ? getReadableBodySlot(world, RE::hknpBodyId{ bodyId }) : nullptr;
+        const bool sameIdentity = live && getCollisionObjectFromBody(live) == leaseIt->collisionObject.get();
+        const bool shouldRestore = restoreOnFinalLease && sameIdentity && flagsIntroducedByLease != 0;
+        g_bodyFlagLeases.erase(leaseIt);
+        return shouldRestore ? disableBodyFlags(world, bodyId, flagsIntroducedByLease, mode) : true;
+    }
+
+    bool applyLinearVelocityDeltaDeferred(RE::hknpWorld* world, std::uint32_t bodyId,
+        const RE::NiPoint3& velocityDeltaHavok)
+    {
+        auto* motion = getBodyMotion(world, RE::hknpBodyId{ bodyId });
+        if (!motion) {
+            return false;
+        }
+
+        RE::hkVector4f linearVelocity{ motion->linearVelocity.x + velocityDeltaHavok.x,
+            motion->linearVelocity.y + velocityDeltaHavok.y, motion->linearVelocity.z + velocityDeltaHavok.z, 0.0f };
+        RE::hkVector4f angularVelocity{ motion->angularVelocity.x, motion->angularVelocity.y, motion->angularVelocity.z,
+            0.0f };
+
+        return setBodyVelocityDeferred(world, bodyId, linearVelocity, angularVelocity);
+    }
+
+    bool rebuildMotionMassProperties(RE::hknpWorld* world, std::uint32_t motionIndex, int rebuildMode)
+    {
+        if (!getMotion(world, motionIndex)) {
+            return false;
+        }
+
+        using RebuildMotionMassProperties_t = void (*)(void*, std::uint32_t, int);
+        static REL::Relocation<RebuildMotionMassProperties_t> rebuildMotionMassProperties{ REL::Offset(
+            offsets::kFunc_RebuildMotionMassProperties) };
+        rebuildMotionMassProperties(world, motionIndex, rebuildMode);
+        return true;
+    }
+
+    bool tryExtractContactSignalPoint(RE::hknpWorld* world, const void* contactSignalData,
+        ContactSignalPointResult& outResult)
+    {
+        outResult = {};
+        if (!world || !contactSignalData) {
+            return false;
+        }
+
+        /*
+         * FO4VR already decodes the hknp contact-signal manifold for its own
+         * collision listener before applying gameplay effects. Calling the same
+         * helper keeps ROCK's RawPoint provider data aligned with Bethesda's
+         * hknp path instead of duplicating an internal manifold layout that can
+         * differ between single-point and multi-point contacts.
+         */
+        using ExtractContactSignalPoints_t = void (*)(const void*, RE::hknpWorld*, NativeContactSignalPointBuffer*);
+        static REL::Relocation<ExtractContactSignalPoints_t> extractContactSignalPoints{ REL::Offset(
+            offsets::kFunc_ExtractContactSignalPoints) };
+
+        NativeContactSignalPointBuffer native{};
+        extractContactSignalPoints(contactSignalData, world, &native);
+
+        ContactSignalPointSelectionInput selection{};
+        selection.pointCount = native.pointCount;
+
+        const auto* signalBytes = static_cast<const std::uint8_t*>(contactSignalData);
+        selection.contactIndex = signalBytes[0x18];
+        const auto* pointWeights = reinterpret_cast<const float*>(signalBytes + 0x30);
+        for (std::uint32_t i = 0; i < kMaxContactSignalPoints; ++i) {
+            selection.pointWeights[i] = pointWeights[i];
+            copyVector4(native.contactPointsHavok[i], selection.contactPointsHavok[i]);
+        }
+        copyVector4(native.contactNormalHavok, selection.contactNormalHavok);
+
+        return selectContactSignalPoint(selection, outResult);
+    }
+
+    void* allocateHavok(std::size_t size)
+    {
+        static REL::Relocation<std::uint32_t*> tlsIndex{ REL::Offset(offsets::kData_HavokTlsAllocKey) };
+        LPVOID tlsBlock = TlsGetValue(*tlsIndex);
+        if (!tlsBlock) {
+            return nullptr;
+        }
+
+        auto** allocator = reinterpret_cast<void***>(reinterpret_cast<char*>(tlsBlock) + 0x58);
+        if (!allocator || !*allocator) {
+            return nullptr;
+        }
+
+        auto* vtable = reinterpret_cast<void* (**)(void*, std::size_t)>(**allocator);
+        return vtable[1](*allocator, size);
+    }
+
+    void freeHavok(void* ptr, std::size_t size)
+    {
+        if (!ptr) {
+            return;
+        }
+
+        static REL::Relocation<std::uint32_t*> tlsIndex{ REL::Offset(offsets::kData_HavokTlsAllocKey) };
+        LPVOID tlsBlock = TlsGetValue(*tlsIndex);
+        if (!tlsBlock) {
+            return;
+        }
+
+        auto** allocator = reinterpret_cast<void***>(reinterpret_cast<char*>(tlsBlock) + 0x58);
+        if (!allocator || !*allocator) {
+            return;
+        }
+
+        auto* vtable = reinterpret_cast<void (**)(void*, void*, std::size_t)>(**allocator);
+        vtable[2](*allocator, ptr, size);
+    }
+
+    bool hkArrayReserveMore(void* arrayBase, int elementSize)
+    {
+        if (!arrayBase || elementSize <= 0) {
+            return false;
+        }
+
+        using ReserveMore_t = void (*)(void*, void*, int);
+        static REL::Relocation<ReserveMore_t> reserveMore{ REL::Offset(offsets::kFunc_HkArray_ReserveMore) };
+        static REL::Relocation<std::uintptr_t> arrayAllocGlobal{ REL::Offset(offsets::kData_HkArrayAllocatorGlobal) };
+        reserveMore(reinterpret_cast<void*>(arrayAllocGlobal.address()), arrayBase, elementSize);
+        return true;
+    }
+}

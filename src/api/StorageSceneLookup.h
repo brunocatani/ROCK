@@ -11,10 +11,11 @@ namespace rock::storage_scene_lookup
 
     // Borrowed result. The storage-display owner retains the returned node
     // before installing its native highlight; null means no matching object.
-    template<class SceneObject, class FixedString>
+    template <class SceneObject, class FixedString>
     [[nodiscard]] SceneObject* find(SceneObject* root, const FixedString& name)
     {
-        if (!root) return nullptr;
+        if (!root)
+            return nullptr;
         using Lookup = SceneObject* (*)(SceneObject*, const FixedString&);
         const auto* table = *reinterpret_cast<Lookup* const*>(root);
         const auto lookup = table ? table[kGetObjectByNameSlot] : nullptr;

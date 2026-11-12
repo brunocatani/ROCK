@@ -30,7 +30,7 @@
  * A broad flat face is deliberately left to the current seat. Swinging a face
  * flat onto the palm was tried for arrivals and removed: verified holds of
  * flat objects sit on an edge, well off the palm normal (the plate note in
- * HandGrab.cpp's seat alignment). The Edge class above is that hold.
+ * HandGrabSeat.cpp's seat alignment). The Edge class above is that hold.
  *
  * Whole-mesh shape classes cannot do this: a mug is compact as a whole and its
  * handle is a bar only locally. The direction of the part comes from the
@@ -165,16 +165,38 @@ namespace rock::grab_local_grasp
         inline constexpr int kSectionCells = 32;
         inline constexpr float kSectionCell = 0.4f;
 
-        [[nodiscard]] inline Vec3 add(const Vec3& lhs, const Vec3& rhs) { return Vec3{ lhs.x + rhs.x, lhs.y + rhs.y, lhs.z + rhs.z }; }
-        [[nodiscard]] inline Vec3 sub(const Vec3& lhs, const Vec3& rhs) { return Vec3{ lhs.x - rhs.x, lhs.y - rhs.y, lhs.z - rhs.z }; }
-        [[nodiscard]] inline Vec3 mul(const Vec3& value, float scalar) { return Vec3{ value.x * scalar, value.y * scalar, value.z * scalar }; }
-        [[nodiscard]] inline float dot(const Vec3& lhs, const Vec3& rhs) { return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z; }
+        [[nodiscard]] inline Vec3 add(const Vec3& lhs, const Vec3& rhs)
+        {
+            return Vec3{ lhs.x + rhs.x, lhs.y + rhs.y, lhs.z + rhs.z };
+        }
+
+        [[nodiscard]] inline Vec3 sub(const Vec3& lhs, const Vec3& rhs)
+        {
+            return Vec3{ lhs.x - rhs.x, lhs.y - rhs.y, lhs.z - rhs.z };
+        }
+
+        [[nodiscard]] inline Vec3 mul(const Vec3& value, float scalar)
+        {
+            return Vec3{ value.x * scalar, value.y * scalar, value.z * scalar };
+        }
+
+        [[nodiscard]] inline float dot(const Vec3& lhs, const Vec3& rhs)
+        {
+            return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+        }
+
         [[nodiscard]] inline Vec3 cross(const Vec3& lhs, const Vec3& rhs)
         {
             return Vec3{ lhs.y * rhs.z - lhs.z * rhs.y, lhs.z * rhs.x - lhs.x * rhs.z, lhs.x * rhs.y - lhs.y * rhs.x };
         }
+
         [[nodiscard]] inline float lengthSquared(const Vec3& value) { return dot(value, value); }
-        [[nodiscard]] inline bool finite(const Vec3& value) { return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z); }
+
+        [[nodiscard]] inline bool finite(const Vec3& value)
+        {
+            return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+        }
+
         [[nodiscard]] inline Vec3 normalizeOrZero(const Vec3& value)
         {
             const float squared = lengthSquared(value);
@@ -183,7 +205,11 @@ namespace rock::grab_local_grasp
             }
             return mul(value, 1.0f / std::sqrt(squared));
         }
-        [[nodiscard]] inline float component(const Vec3& value, int axis) { return axis == 0 ? value.x : (axis == 1 ? value.y : value.z); }
+
+        [[nodiscard]] inline float component(const Vec3& value, int axis)
+        {
+            return axis == 0 ? value.x : (axis == 1 ? value.y : value.z);
+        }
 
         struct Eigen3
         {
@@ -208,7 +234,8 @@ namespace rock::grab_local_grasp
                             continue;
                         }
                         const double theta = (a[q][q] - a[p][p]) / (2.0 * a[p][q]);
-                        const double t = (theta >= 0.0 ? 1.0 : -1.0) / (std::abs(theta) + std::sqrt(theta * theta + 1.0));
+                        const double t =
+                            (theta >= 0.0 ? 1.0 : -1.0) / (std::abs(theta) + std::sqrt(theta * theta + 1.0));
                         const double c = 1.0 / std::sqrt(t * t + 1.0);
                         const double s = t * c;
                         for (int k = 0; k < 3; ++k) {
@@ -271,12 +298,16 @@ namespace rock::grab_local_grasp
                 ++count;
             }
 
-            [[nodiscard]] bool usable(std::uint32_t minimumCount) const { return count >= minimumCount && weight > 1e-9; }
+            [[nodiscard]] bool usable(std::uint32_t minimumCount) const
+            {
+                return count >= minimumCount && weight > 1e-9;
+            }
 
             [[nodiscard]] Vec3 mean() const
             {
                 const double inverse = 1.0 / weight;
-                return Vec3{ static_cast<float>(sx * inverse), static_cast<float>(sy * inverse), static_cast<float>(sz * inverse) };
+                return Vec3{ static_cast<float>(sx * inverse), static_cast<float>(sy * inverse),
+                    static_cast<float>(sz * inverse) };
             }
 
             [[nodiscard]] Eigen3 eigen() const
@@ -285,8 +316,7 @@ namespace rock::grab_local_grasp
                 const double mx = sx * inverse;
                 const double my = sy * inverse;
                 const double mz = sz * inverse;
-                return symmetricEigen(
-                    xx * inverse - mx * mx, xy * inverse - mx * my, xz * inverse - mx * mz,
+                return symmetricEigen(xx * inverse - mx * mx, xy * inverse - mx * my, xz * inverse - mx * mz,
                     yy * inverse - my * my, yz * inverse - my * mz, zz * inverse - mz * mz);
             }
         };
@@ -300,7 +330,8 @@ namespace rock::grab_local_grasp
         // A triangle clipped by the six window planes has at most nine vertices.
         using Polygon = std::array<Vec3, 12>;
 
-        [[nodiscard]] inline std::size_t clipAgainst(Polygon& polygon, std::size_t count, int axis, float limit, bool keepBelow)
+        [[nodiscard]] inline std::size_t clipAgainst(Polygon& polygon, std::size_t count, int axis, float limit,
+            bool keepBelow)
         {
             if (count == 0) {
                 return 0;
@@ -379,7 +410,8 @@ namespace rock::grab_local_grasp
                 const float rowArea = area * ((1.0f - start) * (1.0f - start) - (1.0f - end) * (1.0f - end));
                 const Vec3 left = add(a, mul(sub(c, a), middle));
                 const Vec3 right = add(b, mul(sub(c, b), middle));
-                const int columns = std::clamp(static_cast<int>(std::ceil(baseLength * (1.0f - middle) / spacing)), 1, 64);
+                const int columns =
+                    std::clamp(static_cast<int>(std::ceil(baseLength * (1.0f - middle) / spacing)), 1, 64);
                 const float weight = rowArea / static_cast<float>(columns);
                 for (int column = 0; column < columns; ++column) {
                     const float along = (static_cast<float>(column) + 0.5f) / static_cast<float>(columns);
@@ -394,7 +426,8 @@ namespace rock::grab_local_grasp
         // occupied cell nearest (column, row), looking at most `reach` cells
         // away for that start. False when no occupied cell is that near.
         template <std::size_t N>
-        [[nodiscard]] inline bool floodFromNearest(std::array<std::uint8_t, N>& grid, int cells, int column, int row, int reach)
+        [[nodiscard]] inline bool floodFromNearest(std::array<std::uint8_t, N>& grid, int cells, int column, int row,
+            int reach)
         {
             int bestDistance = (std::numeric_limits<int>::max)();
             int start = -1;
@@ -442,7 +475,8 @@ namespace rock::grab_local_grasp
 
         // Liang-Barsky clip of a 2D segment to a rectangle. False when
         // nothing of the segment is inside.
-        [[nodiscard]] inline bool clipSegment(float& ax, float& ay, float& bx, float& by, float minX, float maxX, float minY, float maxY)
+        [[nodiscard]] inline bool clipSegment(float& ax, float& ay, float& bx, float& by, float minX, float maxX,
+            float minY, float maxY)
         {
             float enter = 0.0f;
             float leave = 1.0f;
@@ -523,12 +557,29 @@ namespace rock::grab_local_grasp
         [[nodiscard]] inline bool validConfig(const Config& config)
         {
             const float values[] = {
-                config.windowHalfExtent, config.windowFrontDepth, config.windowBackDepth, config.sampleSpacing,
-                config.nearLayerDepth, config.nearLayerRadius, config.minElongation, config.minCylinderElongation, config.minAxisRmsLength,
-                config.maxAxisDepthComponent, config.maxWrapWidth, config.maxWrapThickness,
-                config.maxEdgeWidth, config.edgeNearDepth, config.frontClipMargin, config.minBarLength, config.handHalfWidth,
-                config.maxStationShift, config.minThreadGap, config.maxThreadGapCredit, config.threadEndMargin,
-                config.maxCupWidth, config.minAlignDegrees,
+                config.windowHalfExtent,
+                config.windowFrontDepth,
+                config.windowBackDepth,
+                config.sampleSpacing,
+                config.nearLayerDepth,
+                config.nearLayerRadius,
+                config.minElongation,
+                config.minCylinderElongation,
+                config.minAxisRmsLength,
+                config.maxAxisDepthComponent,
+                config.maxWrapWidth,
+                config.maxWrapThickness,
+                config.maxEdgeWidth,
+                config.edgeNearDepth,
+                config.frontClipMargin,
+                config.minBarLength,
+                config.handHalfWidth,
+                config.maxStationShift,
+                config.minThreadGap,
+                config.maxThreadGapCredit,
+                config.threadEndMargin,
+                config.maxCupWidth,
+                config.minAlignDegrees,
             };
             for (const float value : values) {
                 if (!std::isfinite(value) || value <= 0.0f) {
@@ -538,9 +589,9 @@ namespace rock::grab_local_grasp
             // Near-layer connectivity assumes neighbouring samples land in
             // neighbouring cells, and that the layer fits its grid.
             return config.sampleSpacing <= 0.8f * kNearCell + 0.0001f &&
-                   config.nearLayerRadius <= 0.5f * static_cast<float>(kNearCells) * kNearCell &&
-                   config.maxSamples >= 64 && config.maxWindowTriangles >= 1 && config.maxSectionPoints >= 64 &&
-                   config.maxAxisDepthComponent < 1.0f;
+                config.nearLayerRadius <= 0.5f * static_cast<float>(kNearCells) * kNearCell &&
+                config.maxSamples >= 64 && config.maxWindowTriangles >= 1 && config.maxSectionPoints >= 64 &&
+                config.maxAxisDepthComponent < 1.0f;
         }
     }
 
@@ -595,7 +646,8 @@ namespace rock::grab_local_grasp
     }
 
     template <class Triangles, class Project>
-    [[nodiscard]] Result solve(const Triangles& triangles, const Vec3& seed, const Vec3& gripLine, const Config& config, Project project)
+    [[nodiscard]] Result solve(const Triangles& triangles, const Vec3& seed, const Vec3& gripLine, const Config& config,
+        Project project)
     {
         using namespace detail;
 
@@ -623,8 +675,10 @@ namespace rock::grab_local_grasp
             }
             bool outsideWindow = false;
             for (int axis = 0; axis < 3 && !outsideWindow; ++axis) {
-                const float low = (std::min)({ component(polygon[0], axis), component(polygon[1], axis), component(polygon[2], axis) });
-                const float high = (std::max)({ component(polygon[0], axis), component(polygon[1], axis), component(polygon[2], axis) });
+                const float low = (std::min)(
+                    { component(polygon[0], axis), component(polygon[1], axis), component(polygon[2], axis) });
+                const float high = (std::max)(
+                    { component(polygon[0], axis), component(polygon[1], axis), component(polygon[2], axis) });
                 const float lowLimit = axis == 2 ? -config.windowFrontDepth : -config.windowHalfExtent;
                 const float highLimit = axis == 2 ? config.windowBackDepth : config.windowHalfExtent;
                 outsideWindow = low > highLimit || high < lowLimit;
@@ -639,14 +693,15 @@ namespace rock::grab_local_grasp
             windowTriangles.push_back({ polygon[0], polygon[1], polygon[2] });
             const std::size_t count = clipToWindow(polygon, 3, config);
             for (std::size_t i = 1; i + 1 < count && !overflow; ++i) {
-                sampleTriangle(polygon[0], polygon[i], polygon[i + 1], config.sampleSpacing, [&](const Vec3& point, float weight) {
-                    if (samples.size() >= config.maxSamples) {
-                        overflow = true;
-                        return false;
-                    }
-                    samples.push_back(Sample{ point, weight });
-                    return true;
-                });
+                sampleTriangle(polygon[0], polygon[i], polygon[i + 1], config.sampleSpacing,
+                    [&](const Vec3& point, float weight) {
+                        if (samples.size() >= config.maxSamples) {
+                            overflow = true;
+                            return false;
+                        }
+                        samples.push_back(Sample{ point, weight });
+                        return true;
+                    });
             }
             if (overflow) {
                 break;
@@ -687,7 +742,8 @@ namespace rock::grab_local_grasp
                 }
                 const float fc = (point.x - nearOrigin) / kNearCell;
                 const float fr = (point.y - nearOrigin) / kNearCell;
-                if (!(fc >= 0.0f) || !(fr >= 0.0f) || fc >= static_cast<float>(kNearCells) || fr >= static_cast<float>(kNearCells)) {
+                if (!(fc >= 0.0f) || !(fr >= 0.0f) || fc >= static_cast<float>(kNearCells) ||
+                    fr >= static_cast<float>(kNearCells)) {
                     return false;
                 }
                 index = static_cast<std::size_t>(static_cast<int>(fr) * kNearCells + static_cast<int>(fc));
@@ -720,10 +776,8 @@ namespace rock::grab_local_grasp
             if (dot(axis, line) < 0.0f) {
                 axis = mul(axis, -1.0f);
             }
-            axisValid = lengthSquared(axis) > 0.0f &&
-                        result.elongation >= config.minElongation &&
-                        std::sqrt(major) >= config.minAxisRmsLength &&
-                        std::abs(axis.z) <= config.maxAxisDepthComponent;
+            axisValid = lengthSquared(axis) > 0.0f && result.elongation >= config.minElongation &&
+                std::sqrt(major) >= config.minAxisRmsLength && std::abs(axis.z) <= config.maxAxisDepthComponent;
         }
 
         if (axisValid) {
@@ -736,7 +790,8 @@ namespace rock::grab_local_grasp
             auto sectionCell = [&](float side, float depth, int& column, int& row) {
                 const float fc = (side - sideOrigin) / kSectionCell;
                 const float fr = (depth - depthOrigin) / kSectionCell;
-                if (!(fc >= 0.0f) || !(fr >= 0.0f) || fc >= static_cast<float>(kSectionCells) || fr >= static_cast<float>(kSectionCells)) {
+                if (!(fc >= 0.0f) || !(fr >= 0.0f) || fc >= static_cast<float>(kSectionCells) ||
+                    fr >= static_cast<float>(kSectionCells)) {
                     return false;
                 }
                 column = static_cast<int>(fc);
@@ -755,6 +810,7 @@ namespace rock::grab_local_grasp
                 float depth = 0.0f;
                 float weight = 0.0f;
             };
+
             std::vector<SectionPoint> sectionPoints;
             sectionPoints.reserve(512);
             const float sideLimit = sideOrigin + static_cast<float>(kSectionCells) * kSectionCell;
@@ -771,7 +827,8 @@ namespace rock::grab_local_grasp
                         continue;
                     }
                     cut[cutCount++] = add(triangle[static_cast<std::size_t>(edge)],
-                        mul(sub(triangle[static_cast<std::size_t>(next)], triangle[static_cast<std::size_t>(edge)]), from / (from - to)));
+                        mul(sub(triangle[static_cast<std::size_t>(next)], triangle[static_cast<std::size_t>(edge)]),
+                            from / (from - to)));
                 }
                 if (cutCount != 2) {
                     continue;
@@ -808,7 +865,7 @@ namespace rock::grab_local_grasp
             int seedColumn = 0;
             int seedRow = 0;
             const bool componentFound = sectionCell(0.0f, 0.0f, seedColumn, seedRow) &&
-                                        floodFromNearest(grid, kSectionCells, seedColumn, seedRow, 2);
+                floodFromNearest(grid, kSectionCells, seedColumn, seedRow, 2);
 
             if (componentFound) {
                 constexpr float kUnset = (std::numeric_limits<float>::max)();
@@ -851,7 +908,8 @@ namespace rock::grab_local_grasp
                                 nearWeight += point.weight;
                                 nearSide += static_cast<double>(point.weight) * side;
                             }
-                        } else if (depth > depthMax && side >= sideMin - kSectionCell && side <= sideMax + kSectionCell) {
+                        } else if (depth > depthMax && side >= sideMin - kSectionCell &&
+                            side <= sideMax + kSectionCell) {
                             behindDepth = (std::min)(behindDepth, depth);
                         }
                     }
@@ -873,8 +931,8 @@ namespace rock::grab_local_grasp
                         auto inBar = [&](const Vec3& point) {
                             const float side = dot(point, sideAxis);
                             const float depth = dot(point, depthAxis);
-                            return side >= sideMin - margin && side <= sideMax + margin &&
-                                   depth >= depthMin - margin && depth <= depthMax + margin;
+                            return side >= sideMin - margin && side <= sideMax + margin && depth >= depthMin - margin &&
+                                depth <= depthMax + margin;
                         };
                         Moments barMoments{};
                         for (const auto& sample : samples) {
@@ -890,7 +948,8 @@ namespace rock::grab_local_grasp
                             }
                             // cos(30 degrees): a larger swing means the bar's own
                             // samples disagree with the layer that found it.
-                            if (dot(refined, axis) >= 0.8660254f && std::abs(refined.z) <= config.maxAxisDepthComponent) {
+                            if (dot(refined, axis) >= 0.8660254f &&
+                                std::abs(refined.z) <= config.maxAxisDepthComponent) {
                                 barAxis = refined;
                             }
                         }
@@ -909,7 +968,8 @@ namespace rock::grab_local_grasp
                             // point is close to one of its ends.
                             float station = 0.0f;
                             if (length >= 2.0f * config.handHalfWidth) {
-                                station = std::clamp(0.0f, stationMin + config.handHalfWidth, stationMax - config.handHalfWidth);
+                                station = std::clamp(0.0f, stationMin + config.handHalfWidth,
+                                    stationMax - config.handHalfWidth);
                             } else {
                                 station = 0.5f * (stationMin + stationMax);
                             }
@@ -944,7 +1004,8 @@ namespace rock::grab_local_grasp
                         result.kind = Kind::Edge;
                         result.reason = "thinDeepEdge";
                         result.widthGameUnits = nearWidth;
-                        const float crestSide = nearWeight > 1e-9 ? static_cast<float>(nearSide / nearWeight) : centreSide;
+                        const float crestSide =
+                            nearWeight > 1e-9 ? static_cast<float>(nearSide / nearWeight) : centreSide;
                         result.pivot = add(seed, add(mul(sideAxis, crestSide), mul(depthAxis, depthMin)));
                         setAlignment(axis, line);
                         return result;
@@ -980,12 +1041,13 @@ namespace rock::grab_local_grasp
     // bases. A part too wide for that corner ends up on the palm centre,
     // which is the current seat. `fingerBaseCentre` is the mean base joint of
     // the four fingers in the pocket frame.
-    [[nodiscard]] inline float fingerBaseSeat(const Result& result, const Vec3& fingerBaseCentre, float fingerRadius, const Vec3& gripLine)
+    [[nodiscard]] inline float fingerBaseSeat(const Result& result, const Vec3& fingerBaseCentre, float fingerRadius,
+        const Vec3& gripLine)
     {
         using namespace detail;
 
-        if (result.kind == Kind::None || !finite(fingerBaseCentre) || !std::isfinite(fingerRadius) || fingerRadius < 0.0f ||
-            !std::isfinite(result.widthGameUnits) || !(fingerBaseCentre.x > 0.0f)) {
+        if (result.kind == Kind::None || !finite(fingerBaseCentre) || !std::isfinite(fingerRadius) ||
+            fingerRadius < 0.0f || !std::isfinite(result.widthGameUnits) || !(fingerBaseCentre.x > 0.0f)) {
             return 0.0f;
         }
         const Vec3 line = normalizeOrZero(Vec3{ gripLine.x, gripLine.y, 0.0f });
@@ -1010,7 +1072,8 @@ namespace rock::grab_local_grasp
         if (!result.threadFingers) {
             return false;
         }
-        const Vec3 fromPivot[3] = { detail::sub(a, result.pivot), detail::sub(b, result.pivot), detail::sub(c, result.pivot) };
+        const Vec3 fromPivot[3] = { detail::sub(a, result.pivot), detail::sub(b, result.pivot),
+            detail::sub(c, result.pivot) };
         float stationLow = (std::numeric_limits<float>::max)();
         float stationHigh = -(std::numeric_limits<float>::max)();
         for (const Vec3& point : fromPivot) {

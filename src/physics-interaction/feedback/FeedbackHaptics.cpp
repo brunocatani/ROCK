@@ -11,10 +11,7 @@ namespace rock::feedback_haptics
         constexpr double kArmedPulsePeriodSeconds = 0.30;
         constexpr float kArmedPulseIntensity = 0.95f;
 
-        [[nodiscard]] std::size_t handIndex(FeedbackHand hand) noexcept
-        {
-            return hand == FeedbackHand::Left ? 1u : 0u;
-        }
+        [[nodiscard]] std::size_t handIndex(FeedbackHand hand) noexcept { return hand == FeedbackHand::Left ? 1u : 0u; }
 
         [[nodiscard]] float finiteOr(float value, float fallback) noexcept
         {
@@ -52,7 +49,8 @@ namespace rock::feedback_haptics
     void FeedbackHaptics::setArmedThrowable(FeedbackHand hand, std::uint32_t referenceId) noexcept
     {
         auto& pulse = _armedThrowables[handIndex(hand)];
-        if (pulse.referenceId != referenceId) pulse = { referenceId, 0.0 };
+        if (pulse.referenceId != referenceId)
+            pulse = { referenceId, 0.0 };
     }
 
     bool FeedbackHaptics::queue(FeedbackHand hand, float durationSeconds, float intensity) noexcept
@@ -60,7 +58,8 @@ namespace rock::feedback_haptics
         return queue(hand, durationSeconds, intensity, intensity);
     }
 
-    bool FeedbackHaptics::queue(FeedbackHand hand, float durationSeconds, float startIntensity, float endIntensity) noexcept
+    bool FeedbackHaptics::queue(FeedbackHand hand, float durationSeconds, float startIntensity,
+        float endIntensity) noexcept
     {
         const float duration = sanitizeDuration(durationSeconds);
         const float start = sanitizeIntensity(startIntensity);
@@ -147,8 +146,8 @@ namespace rock::feedback_haptics
                     const auto remaining = static_cast<float>(kArmedPulseDurationSeconds - pulse.phaseSeconds);
                     output.active = true;
                     output.intensity = std::max(output.intensity, kArmedPulseIntensity);
-                    output.pulseDurationSeconds = std::max(output.pulseDurationSeconds,
-                        std::min(remaining, std::clamp(delta, 0.005f, 0.02f)));
+                    output.pulseDurationSeconds =
+                        std::max(output.pulseDurationSeconds, std::min(remaining, std::clamp(delta, 0.005f, 0.02f)));
                 }
                 // A long frame advances the phase once; never replay missed
                 // bursts or enqueue a tail that could vibrate after release.

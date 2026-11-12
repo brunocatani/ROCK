@@ -19,7 +19,7 @@ namespace rock::debug_overlay_shape
         struct CacheEntry
         {
             CacheState state{ CacheState::Pending };
-            std::shared_ptr<const GpuShape> shape;
+            std::shared_ptr<const RegisteredShape> shape;
             std::uint64_t generation{ 0 };
             std::uint64_t lastUseSerial{ 0 };
         };
@@ -39,41 +39,21 @@ namespace rock::debug_overlay_shape
             std::uint64_t generation{ 0 };
         };
 
-        bool createBuffers(ID3D11Device* device, const BuiltShape& built, GpuShape& output)
+        bool registerShape(const MeshSink& sink, std::uint64_t meshId, const BuiltShape& built,
+            RegisteredShape& output) noexcept
         {
             const auto& mesh = built.mesh;
-            if (!device || !mesh.valid || mesh.vertices.empty() || mesh.indices.empty() ||
-                mesh.vertices.size() > (std::numeric_limits<UINT>::max)() / sizeof(Vertex) ||
-                mesh.indices.size() > (std::numeric_limits<UINT>::max)() / sizeof(std::uint16_t) ||
-                mesh.indices.size() > (std::numeric_limits<std::uint32_t>::max)()) {
+            if (!sink.registerMesh || !sink.releaseMesh || !mesh.valid || mesh.vertices.empty() ||
+                mesh.indices.empty() || mesh.indices.size() > (std::numeric_limits<std::uint32_t>::max)() ||
+                !sink.registerMesh(meshId, mesh)) {
                 return false;
             }
-
-            D3D11_BUFFER_DESC vertexDesc{};
-            vertexDesc.Usage = D3D11_USAGE_DEFAULT;
-            vertexDesc.ByteWidth = static_cast<UINT>(mesh.vertices.size() * sizeof(Vertex));
-            vertexDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-            D3D11_SUBRESOURCE_DATA vertexData{};
-            vertexData.pSysMem = mesh.vertices.data();
-            if (FAILED(device->CreateBuffer(&vertexDesc, &vertexData, output.vertexBuffer.GetAddressOf()))) {
-                return false;
-            }
-
-            D3D11_BUFFER_DESC indexDesc{};
-            indexDesc.Usage = D3D11_USAGE_DEFAULT;
-            indexDesc.ByteWidth = static_cast<UINT>(mesh.indices.size() * sizeof(std::uint16_t));
-            indexDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-            D3D11_SUBRESOURCE_DATA indexData{};
-            indexData.pSysMem = mesh.indices.data();
-            if (FAILED(device->CreateBuffer(&indexDesc, &indexData, output.indexBuffer.GetAddressOf()))) {
-                output.vertexBuffer.Reset();
-                return false;
-            }
-
+            output.meshId = meshId;
+            output.release = sink.releaseMesh;
             output.indexCount = static_cast<std::uint32_t>(mesh.indices.size());
             output.decodeMode = built.decodeMode;
             output.shapeType = built.shapeType;
-            output.approximateBytes = approximateGpuBytes(mesh);
+            output.approximateBytes = approximateMeshBytes(mesh);
             return true;
         }
     }
@@ -95,7 +75,8 @@ namespace rock::debug_overlay_shape
         std::uint64_t completedQueueDrops{ 0 };
         std::size_t reservedJobs{ 0 };
         std::size_t activeJobs{ 0 };
-        std::size_t approximateGpuBytes{ 0 };
+        std::size_t approximateBytes{ 0 };
+        std::uint64_t nextMeshId{ kFirstPipelineMeshId };
         bool running{ false };
         bool stopRequested{ false };
 
@@ -103,8 +84,7 @@ namespace rock::debug_overlay_shape
         {
             auto victim = cache.end();
             for (auto iterator = cache.begin(); iterator != cache.end(); ++iterator) {
-                if (iterator->second.state == CacheState::Pending ||
-                    (excluded && iterator->first == *excluded)) {
+                if (iterator->second.state == CacheState::Pending || (excluded && iterator->first == *excluded)) {
                     continue;
                 }
                 if (victim == cache.end() || iterator->second.lastUseSerial < victim->second.lastUseSerial) {
@@ -116,7 +96,7 @@ namespace rock::debug_overlay_shape
             }
 
             if (victim->second.shape) {
-                approximateGpuBytes -= (std::min)(approximateGpuBytes, victim->second.shape->approximateBytes);
+                approximateBytes -= (std::min)(approximateBytes, victim->second.shape->approximateBytes);
             }
             cache.erase(victim);
             ++evictions;
@@ -136,15 +116,12 @@ namespace rock::debug_overlay_shape
             return true;
         }
 
-        bool ensureGpuCapacityUnlocked(
-            std::size_t incomingBytes,
-            std::size_t maxBytes,
-            const ShapeKey& excluded)
+        bool ensureByteCapacityUnlocked(std::size_t incomingBytes, std::size_t maxBytes, const ShapeKey& excluded)
         {
             if (incomingBytes > maxBytes) {
                 return false;
             }
-            while (approximateGpuBytes > maxBytes - incomingBytes) {
+            while (approximateBytes > maxBytes - incomingBytes) {
                 if (!evictOneUnlocked(&excluded)) {
                     return false;
                 }
@@ -182,9 +159,8 @@ namespace rock::debug_overlay_shape
                     std::scoped_lock lock(mutex);
                     --activeJobs;
                     const auto entry = cache.find(job.key);
-                    if (!running || stopRequested || job.generation != generation ||
-                        entry == cache.end() || entry->second.state != CacheState::Pending ||
-                        entry->second.generation != job.generation) {
+                    if (!running || stopRequested || job.generation != generation || entry == cache.end() ||
+                        entry->second.state != CacheState::Pending || entry->second.generation != job.generation) {
                         ++staleResultDrops;
                         continue;
                     }
@@ -211,16 +187,13 @@ namespace rock::debug_overlay_shape
             pendingJobs.clear();
             completedJobs.clear();
             reservedJobs = 0;
-            approximateGpuBytes = 0;
+            approximateBytes = 0;
         }
     };
 
     ShapePipeline::ShapePipeline() : _impl(std::make_unique<Impl>()) {}
 
-    ShapePipeline::~ShapePipeline()
-    {
-        shutdown();
-    }
+    ShapePipeline::~ShapePipeline() { shutdown(); }
 
     bool ShapePipeline::initialize()
     {
@@ -279,10 +252,8 @@ namespace rock::debug_overlay_shape
     void ShapePipeline::trim(const PipelineLimits& limits) noexcept
     {
         std::scoped_lock lock(_impl->mutex);
-        while (_impl->cache.size() > limits.maxCacheEntries && _impl->evictOneUnlocked(nullptr)) {
-        }
-        while (_impl->approximateGpuBytes > limits.maxGpuBytes && _impl->evictOneUnlocked(nullptr)) {
-        }
+        while (_impl->cache.size() > limits.maxCacheEntries && _impl->evictOneUnlocked(nullptr)) {}
+        while (_impl->approximateBytes > limits.maxBytes && _impl->evictOneUnlocked(nullptr)) {}
     }
 
     ReserveResult ShapePipeline::reserve(const ShapeKey& key, const PipelineLimits& limits)
@@ -315,8 +286,8 @@ namespace rock::debug_overlay_shape
                 return result;
             }
 
-            const std::size_t backlog = _impl->reservedJobs + _impl->pendingJobs.size() +
-                                        _impl->activeJobs + _impl->completedJobs.size();
+            const std::size_t backlog =
+                _impl->reservedJobs + _impl->pendingJobs.size() + _impl->activeJobs + _impl->completedJobs.size();
             if (limits.maxQueuedJobs == 0 || backlog >= limits.maxQueuedJobs || limits.maxCompletedJobs == 0) {
                 result.status = ReserveStatus::QueueFull;
                 return result;
@@ -363,12 +334,8 @@ namespace rock::debug_overlay_shape
             }
 
             try {
-                _impl->pendingJobs.push_back(MeshJob{
-                    reservation.key,
-                    std::move(recipe),
-                    reservation.generation,
-                    reservation.maxCompletedJobs
-                });
+                _impl->pendingJobs.push_back(MeshJob{ reservation.key, std::move(recipe), reservation.generation,
+                    reservation.maxCompletedJobs });
             } catch (...) {
                 if (_impl->reservedJobs > 0) {
                     --_impl->reservedJobs;
@@ -416,11 +383,11 @@ namespace rock::debug_overlay_shape
         return LookupResult{ entry->second.state, entry->second.shape };
     }
 
-    UploadResult ShapePipeline::processCompletedUploads(
-        ID3D11Device* device, std::uint32_t maxUploads, const PipelineLimits& limits)
+    UploadResult ShapePipeline::processCompletedUploads(const MeshSink& sink, std::uint32_t maxUploads,
+        const PipelineLimits& limits)
     {
         UploadResult result{};
-        if (!device || maxUploads == 0) {
+        if (!sink.registerMesh || !sink.releaseMesh || maxUploads == 0) {
             return result;
         }
 
@@ -437,37 +404,41 @@ namespace rock::debug_overlay_shape
             ++result.processed;
 
             try {
-                const std::size_t incomingBytes = approximateGpuBytes(completed.built.mesh);
+                const std::size_t incomingBytes = approximateMeshBytes(completed.built.mesh);
+                std::uint64_t meshId = 0;
                 {
                     std::scoped_lock lock(_impl->mutex);
                     const auto entry = _impl->cache.find(completed.key);
-                    if (!_impl->running || completed.generation != _impl->generation ||
-                        entry == _impl->cache.end() || entry->second.state != CacheState::Pending ||
+                    if (!_impl->running || completed.generation != _impl->generation || entry == _impl->cache.end() ||
+                        entry->second.state != CacheState::Pending ||
                         entry->second.generation != completed.generation) {
                         ++_impl->staleResultDrops;
                         ++result.stale;
                         continue;
                     }
-                    if (!completed.built.mesh.valid || completed.built.decodeMode == debug_overlay_policy::ShapeDecodeMode::Unsupported) {
+                    if (!completed.built.mesh.valid ||
+                        completed.built.decodeMode == debug_overlay_policy::ShapeDecodeMode::Unsupported) {
                         entry->second.state = CacheState::Unsupported;
                         entry->second.lastUseSerial = ++_impl->useSerial;
                         ++result.unsupported;
                         continue;
                     }
-                    if (!_impl->ensureGpuCapacityUnlocked(incomingBytes, limits.maxGpuBytes, completed.key)) {
+                    if (!_impl->ensureByteCapacityUnlocked(incomingBytes, limits.maxBytes, completed.key)) {
                         entry->second.state = CacheState::Unsupported;
                         entry->second.lastUseSerial = ++_impl->useSerial;
                         ++result.failed;
                         continue;
                     }
+                    meshId = _impl->nextMeshId++;
                 }
 
-                auto uploaded = std::make_shared<GpuShape>();
-                if (!createBuffers(device, completed.built, *uploaded)) {
+                auto uploaded = std::make_shared<RegisteredShape>();
+                if (!registerShape(sink, meshId, completed.built, *uploaded)) {
                     std::scoped_lock lock(_impl->mutex);
                     const auto entry = _impl->cache.find(completed.key);
                     if (completed.generation == _impl->generation && entry != _impl->cache.end() &&
-                        entry->second.state == CacheState::Pending && entry->second.generation == completed.generation) {
+                        entry->second.state == CacheState::Pending &&
+                        entry->second.generation == completed.generation) {
                         entry->second.state = CacheState::Unsupported;
                         entry->second.lastUseSerial = ++_impl->useSerial;
                     }
@@ -478,8 +449,8 @@ namespace rock::debug_overlay_shape
                 {
                     std::scoped_lock lock(_impl->mutex);
                     const auto entry = _impl->cache.find(completed.key);
-                    if (!_impl->running || completed.generation != _impl->generation ||
-                        entry == _impl->cache.end() || entry->second.state != CacheState::Pending ||
+                    if (!_impl->running || completed.generation != _impl->generation || entry == _impl->cache.end() ||
+                        entry->second.state != CacheState::Pending ||
                         entry->second.generation != completed.generation) {
                         ++_impl->staleResultDrops;
                         ++result.stale;
@@ -488,7 +459,7 @@ namespace rock::debug_overlay_shape
                     entry->second.state = CacheState::Ready;
                     entry->second.shape = std::move(uploaded);
                     entry->second.lastUseSerial = ++_impl->useSerial;
-                    _impl->approximateGpuBytes += incomingBytes;
+                    _impl->approximateBytes += incomingBytes;
                     ++result.uploaded;
                 }
             } catch (...) {
@@ -532,7 +503,7 @@ namespace rock::debug_overlay_shape
         result.queuedJobs = _impl->pendingJobs.size();
         result.activeJobs = _impl->activeJobs;
         result.completedJobs = _impl->completedJobs.size();
-        result.approximateGpuBytes = _impl->approximateGpuBytes;
+        result.approximateBytes = _impl->approximateBytes;
         result.generation = _impl->generation;
         result.evictions = _impl->evictions;
         result.staleResultDrops = _impl->staleResultDrops;

@@ -1,0 +1,312 @@
+#include <ROCK/Weapon.h>
+#include <cassert>
+#include "api/providers/Boundary.h"
+#include "physics-interaction/weapon/equip/EquipPickupScope.h"
+
+namespace rock::api::weapon
+{
+    const Api& table() noexcept;
+}
+
+namespace
+{
+    using namespace rock;
+    constexpr api::OwnerToken testOwner = 42;
+    std::uint32_t permissions = 3;
+    bool weaponPresent = true;
+    bool firingLeft = true;
+    bool twoHand = true;
+    std::uint32_t emitterCount = 5;
+    unsigned handlingRequests = 0;
+}
+
+// Runtime boundary fixture: the published Weapon table is the code under test.
+namespace rock::provider::runtime
+{
+    api::Status authorize(std::uint64_t owner, api::InterfaceId family, std::uint32_t permission, bool, OwnerAccess)
+    {
+        if (owner != testOwner)
+            return api::Status::OwnerNotRegistered;
+        if (family != api::InterfaceId::Weapon || (permission & ~permissions))
+            return api::Status::PermissionDenied;
+        return api::Status::Ok;
+    }
+
+    api::Sample sample() { return { 20, 30, 1, 2, 3, 4 }; }
+
+    void reportBoundaryFailure(std::uint64_t, api::InterfaceId) noexcept { assert(false); }
+
+    api::Status copyPublishedWeaponState(api::weapon::WeaponState& out, std::uint32_t slot)
+    {
+        if (slot == 1) {
+            out = {};
+            out.weaponFormId = 789;
+            out.firingHand = api::Hand::Left;
+            return api::Status::Ok;
+        }
+        out.sample = { 19, 30, 7, 8, 9, 4 };
+        out.flags = static_cast<std::uint32_t>(api::weapon::WeaponStateFlag::Valid);
+        out.weaponFormId = 123;
+        out.weaponGenerationKey = 456;
+        out.transitionSequence = 3;
+        return api::Status::Ok;
+    }
+
+    bool queryWeaponHandling(provider_state_policy::WeaponHandling& out)
+    {
+        out = {};
+        out.weaponPresent = weaponPresent;
+        out.firingGripOccupied = true;
+        out.partCarry = true;
+        out.twoHandGrip = twoHand;
+        out.firingHand = firingLeft ? api::Hand::Left : api::Hand::Right;
+        return true;
+    }
+
+    api::Status getWeaponGrip(api::weapon::Grip& out, std::uint32_t slot)
+    {
+        out.flags = static_cast<std::uint32_t>(api::weapon::GripFlag::Valid) |
+            static_cast<std::uint32_t>(api::weapon::GripFlag::MuzzleWorldValid);
+        out.weaponFormId = slot == 1 ? 789 : 123;
+        out.muzzleOriginGame = { 1, 2, 3 };
+        return api::Status::Ok;
+    }
+
+    api::Status getWeaponClassification(api::weapon::Classification& out, std::uint32_t slot)
+    {
+        out.valid = 1;
+        out.weaponFormId = slot == 1 ? 789 : 123;
+        return api::Status::Ok;
+    }
+
+    api::Status setAutomaticReloadBlocked(std::uint64_t, bool) { return api::Status::Ok; }
+    api::Status setChamberMarker(std::uint64_t, std::uint32_t, api::weapon::ChamberMarker, std::uint32_t)
+    {
+        return api::Status::Ok;
+    }
+
+    std::uint32_t weaponEmitterCount(std::uint32_t slot) { return slot == 1 ? 1 : emitterCount; }
+
+    std::uint32_t copyWeaponEmitters(std::uint32_t slot, api::weapon::Emitter* out, std::uint32_t capacity)
+    {
+        const auto copied = (std::min)(capacity, slot == 1 ? 1u : emitterCount);
+        for (std::uint32_t i = 0; i < copied; ++i)
+            out[i].omodFormId = (slot == 1 ? 200 : 100) + i;
+        return copied;
+    }
+
+    api::Status setHandlingAuthority(std::uint64_t, const api::weapon::HandlingRequest& request)
+    {
+        assert((request.features & 3) == 3 && request.leaseFrames == 10 && request.leftFiringAimOffsetGameUnits[2] == 4);
+        ++handlingRequests;
+        return api::Status::Ok;
+    }
+
+    api::Status clearHandlingAuthority(std::uint64_t) { return api::Status::Ok; }
+
+    api::Status getScopeSightState(api::weapon::ScopeSightState&) { return api::Status::Ok; }
+
+    api::Status getWeaponCompositionState(api::weapon::CompositionState&) { return api::Status::Ok; }
+
+    api::Status copyWeaponCompositionEntries(api::weapon::CompositionEntry*, std::uint32_t, std::uint32_t& count)
+    {
+        count = 0;
+        return api::Status::Ok;
+    }
+
+    api::Status getAuthoredGripPose(api::weapon::AuthoredGripPose&) { return api::Status::Ok; }
+
+    api::Status getHandlingAuthority(api::weapon::HandlingAuthority& out)
+    {
+        out.active = 1;
+        out.owner = testOwner;
+        return api::Status::Ok;
+    }
+
+    api::Status captureInventoryWeapon(std::uint64_t, std::uint32_t, std::uint32_t, api::weapon::InventoryWeapon&)
+    {
+        return api::Status::Ok;
+    }
+
+    api::Status requestInventoryEquip(std::uint64_t, const api::weapon::EquipRequest&, std::uint64_t& command)
+    {
+        command = 9;
+        return api::Status::RequestQueued;
+    }
+
+    api::Status getInventoryEquipResult(std::uint64_t, std::uint64_t, api::weapon::EquipResult&)
+    {
+        return api::Status::Ok;
+    }
+
+    api::Status cancelInventoryEquip(std::uint64_t, std::uint64_t) { return api::Status::Ok; }
+
+    unsigned unequipRequests = 0;
+
+    api::Status unequipWeapon(std::uint32_t slot, std::uint32_t form)
+    {
+        assert(slot == 1 && form == 789);
+        ++unequipRequests;
+        return api::Status::Ok;
+    }
+
+    unsigned drawRequests = 0;
+
+    api::Status requestInventoryDraw(std::uint64_t, const api::weapon::EquipRequest&, std::uint64_t& command)
+    {
+        ++drawRequests;
+        command = 11;
+        return api::Status::RequestQueued;
+    }
+
+    unsigned drawPoses = 0;
+
+    api::Status setInventoryDrawPose(std::uint64_t, std::uint64_t command, const api::Transform&)
+    {
+        ++drawPoses;
+        return command == 11 ? api::Status::Ok : api::Status::RequestNotFound;
+    }
+
+    unsigned warmSets = 0;
+
+    api::Status setWarmInventoryWeapons(std::uint64_t, const api::weapon::InventoryWeapon*, std::uint32_t count)
+    {
+        ++warmSets;
+        return count == 2 ? api::Status::Ok : api::Status::TargetUnavailable;
+    }
+
+    api::Status getFiringAimWorld(api::Hand hand, api::Transform& output)
+    {
+        output.translate[0] = hand == api::Hand::Left ? -1.0f : 1.0f;
+        return api::Status::Ok;
+    }
+
+    std::uint64_t weaponInteractionKey(std::uint32_t slot) { return slot == 1 ? 790 : 456; }
+}
+
+int main()
+{
+    using namespace rock::api;
+    using namespace rock::api::weapon;
+    const auto& api = table();
+
+    WeaponState state;
+    assert(api.getWeaponState(testOwner, kMaxWeaponSlots, &state) == Status::InvalidArgument);
+    // Slot 1 publishes its own state and hand; slot 0's handling is not applied to it.
+    assert(api.getWeaponState(testOwner, 1, &state) == Status::Ok && state.weaponSlot == 1 &&
+        state.weaponFormId == 789 && state.firingHand == Hand::Left && state.supportHand == Hand::None);
+    // Slot 1's grip is its own weapon's.
+    Grip grip;
+    assert(api.getGrip(testOwner, 1, &grip) == Status::Ok && grip.weaponSlot == 1 && grip.weaponFormId == 789);
+    assert(api.getGrip(testOwner, kMaxWeaponSlots, &grip) == Status::InvalidArgument);
+    // Each slot's interaction key is its own weapon's.
+    std::uint64_t key = 1;
+    assert(api.getInteractionKey(testOwner, 1, &key) == Status::Ok && key == 790);
+    assert(api.getInteractionKey(testOwner, 0, &key) == Status::Ok && key == 456);
+    assert(api.getInteractionKey(testOwner, kMaxWeaponSlots, &key) == Status::InvalidArgument && key == 0);
+
+    // Slot 0: hand assignment is data. Left fires; the two-hand grip puts the
+    // right hand on the support grip.
+    assert(api.getWeaponState(testOwner, 0, &state) == Status::Ok);
+    assert(state.weaponSlot == 0 && state.weaponFormId == 123 && state.weaponGenerationKey == 456 &&
+        state.transitionSequence == 3);
+    assert(state.firingHand == Hand::Left && state.supportHand == Hand::Right);
+    assert(state.handlingFlags ==
+        (static_cast<std::uint32_t>(HandlingStateFlag::FiringGripHeld) |
+            static_cast<std::uint32_t>(HandlingStateFlag::PartCarry)));
+    assert(state.sample.frameIndex == 19 && state.sample.publicationSequence == 30 &&
+        state.sample.worldGeneration == 7 && state.sample.providerGeneration == 9 &&
+        state.sample.collisionGeneration == 4);
+    firingLeft = false;
+    twoHand = false;
+    assert(api.getWeaponState(testOwner, 0, &state) == Status::Ok && state.firingHand == Hand::Right &&
+        state.supportHand == Hand::None);
+    weaponPresent = false;
+    assert(api.getWeaponState(testOwner, 0, &state) == Status::Ok && state.firingHand == Hand::None &&
+        state.supportHand == Hand::None && state.handlingFlags == 0 && state.weaponFormId == 123);
+    weaponPresent = true;
+    firingLeft = true;
+    twoHand = true;
+
+    assert(api.getGrip(testOwner, 0, &grip) == Status::Ok && grip.weaponSlot == 0 && grip.muzzleOriginGame.z == 3);
+
+    // Emitters: one call reports the full count and copies what fits.
+    Emitter emitters[2];
+    std::uint32_t count = 99;
+    assert(api.copyEmitters(testOwner, 0, emitters, 2, &count) == Status::Ok && count == 5 &&
+        emitters[1].omodFormId == 101);
+    assert(api.copyEmitters(testOwner, 0, nullptr, 0, &count) == Status::Ok && count == 5);
+    assert(api.copyEmitters(testOwner, 0, emitters, kMaxEmitters + 1, &count) == Status::CapacityFull && count == 0);
+    assert(api.copyEmitters(testOwner, 1, emitters, 2, &count) == Status::Ok && count == 1 &&
+        emitters[0].omodFormId == 200);
+
+    // Handling authority: every published feature reaches ROCK, including
+    // FiringGripCylinderZone (bit 6), which a stale provider mask once refused;
+    // an unassigned bit is refused before ROCK sees it.
+    HandlingRequest request;
+    request.features = 3;
+    request.leaseFrames = 10;
+    request.leftFiringAimOffsetGameUnits[2] = 4;
+    assert(api.setHandlingAuthority(testOwner, &request) == Status::Ok && handlingRequests == 1);
+    request.features = 3 | static_cast<std::uint32_t>(HandlingFeature::FiringGripCylinderZone);
+    assert(api.setHandlingAuthority(testOwner, &request) == Status::Ok && handlingRequests == 2);
+    request.features = 3 | (1u << 7);
+    assert(api.setHandlingAuthority(testOwner, &request) == Status::InvalidArgument && handlingRequests == 2);
+    request.features = 3;
+    HandlingAuthority authority;
+    assert(api.getHandlingAuthority(testOwner, &authority) == Status::Ok && authority.active == 1 &&
+        authority.owner == testOwner);
+
+    // Equip pickup intent is visible only inside ROCK's acquisition scope.
+    std::uint32_t matches = 7;
+    assert(api.isEquipPickup(testOwner, 500, 1, &matches) == Status::Ok && matches == 0);
+    {
+        const rock::equip_pickup::Scope acquiring(500, 1);
+        assert(api.isEquipPickup(testOwner, 500, 1, &matches) == Status::Ok && matches == 1);
+        assert(api.isEquipPickup(testOwner, 500, 2, &matches) == Status::Ok && matches == 0);
+    }
+
+    // Unequip names its slot and the weapon expected there before ROCK sees it.
+    assert(api.unequipWeapon(testOwner, kMaxWeaponSlots, 789) == Status::InvalidArgument);
+    assert(api.unequipWeapon(testOwner, 1, 0) == Status::InvalidArgument);
+    assert(api.unequipWeapon(testOwner, 1, 789) == Status::Ok && rock::provider::runtime::unequipRequests == 1);
+    Transform aim;
+    assert(api.getFiringAimWorld(testOwner, Hand::None, &aim) == Status::InvalidArgument);
+    assert(api.getFiringAimWorld(testOwner, Hand::Left, nullptr) == Status::InvalidArgument);
+    assert(api.getFiringAimWorld(testOwner, Hand::Left, &aim) == Status::Ok && aim.translate[0] == -1.0f);
+    InventoryWeapon warm[kMaxWarmInventoryWeapons + 1]{};
+    assert(api.setWarmInventoryWeapons(testOwner, warm, kMaxWarmInventoryWeapons + 1) == Status::CapacityFull);
+    assert(api.setWarmInventoryWeapons(testOwner, nullptr, 2) == Status::InvalidArgument);
+    warm[1].size = 0;
+    assert(api.setWarmInventoryWeapons(testOwner, warm, 2) == Status::InvalidSize);
+    warm[1] = {};
+    assert(api.setWarmInventoryWeapons(testOwner, warm, 2) == Status::Ok && rock::provider::runtime::warmSets == 1);
+    std::uint64_t drawCommand = 0;
+    EquipRequest draw{};
+    assert(api.requestInventoryDraw(testOwner, &draw, nullptr) == Status::InvalidArgument);
+    draw.version = 2;
+    assert(api.requestInventoryDraw(testOwner, &draw, &drawCommand) == Status::UnsupportedVersion && drawCommand == 0);
+    draw.version = 1;
+    assert(api.requestInventoryDraw(testOwner, &draw, &drawCommand) == Status::RequestQueued && drawCommand == 11 &&
+        rock::provider::runtime::drawRequests == 1);
+    // The stand-in's pose names the owner's pending draw.
+    const rock::api::Transform drawPose{};
+    assert(api.setInventoryDrawPose(testOwner, 0, &drawPose) == Status::InvalidArgument);
+    assert(api.setInventoryDrawPose(testOwner, drawCommand, nullptr) == Status::InvalidArgument &&
+        rock::provider::runtime::drawPoses == 0);
+    assert(api.setInventoryDrawPose(testOwner, drawCommand, &drawPose) == Status::Ok);
+    assert(api.setInventoryDrawPose(testOwner, drawCommand + 1, &drawPose) == Status::RequestNotFound &&
+        rock::provider::runtime::drawPoses == 2);
+
+    // Permissions are Weapon's own.
+    permissions = 1;
+    assert(api.unequipWeapon(testOwner, 1, 789) == Status::PermissionDenied &&
+        rock::provider::runtime::unequipRequests == 1);
+    request.features = 3;
+    assert(api.setHandlingAuthority(testOwner, &request) == Status::PermissionDenied);
+    EquipRequest equip;
+    std::uint64_t command = 0;
+    assert(api.requestInventoryEquip(testOwner, &equip, &command) == Status::PermissionDenied && command == 0);
+    permissions = 0;
+    assert(api.getWeaponState(testOwner, 0, &state) == Status::PermissionDenied && state.weaponFormId == 0);
+}

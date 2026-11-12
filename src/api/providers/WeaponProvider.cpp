@@ -1,156 +1,344 @@
-#include "SnapshotReads.h"
-#include "WeaponMarshalling.h"
-#include <ROCK/Discovery.h>
-#include <ROCK/WeaponV1_1.h>
-#include "EventBoundary.h"
+#include <ROCK/Weapon.h>
+#include "Boundary.h"
+#include "physics-interaction/weapon/equip/EquipPickupScope.h"
+#include "physics-interaction/weapon/handling/EquippedWeaponHandlingSettings.h"
 
-namespace rock::api::weapon {
-namespace {
-using namespace boundary;
-Status ROCK_CALL getPrimaryHandV1(OwnerToken ownerToken, Hand* outValue) noexcept {
-    if (!outValue) return Status::InvalidArgument;
-    *outValue = {};
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        *outValue = static_cast<Hand>(provider::runtime::apiGetPrimaryHandV1());
-        return Status::Ok;
-    });
-}
-Status ROCK_CALL getOffhandHandV1(OwnerToken ownerToken, Hand* outValue) noexcept {
-    if (!outValue) return Status::InvalidArgument;
-    *outValue = {};
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        *outValue = static_cast<Hand>(provider::runtime::apiGetOffhandHandV1());
-        return Status::Ok;
-    });
-}
-Status ROCK_CALL queryEquippedWeaponClassificationV1(OwnerToken ownerToken, WeaponClassificationV1* outResult) noexcept {
-    if (const auto s = checkOutput(outResult); s != Status::Ok) return s;
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        provider::RockProviderWeaponClassificationV1 native_outResult{};
-        const auto result = provider::runtime::apiQueryEquippedWeaponClassificationV1(&native_outResult);
-        convert(*outResult, native_outResult);
-        return result ? Status::Ok : Status::NotReady;
-    });
-}
-Status ROCK_CALL getWeaponEmitterCountV1(OwnerToken ownerToken, std::uint32_t* outValue) noexcept {
-    if (!outValue) return Status::InvalidArgument;
-    *outValue = {};
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        *outValue = static_cast<std::uint32_t>(provider::runtime::apiGetWeaponEmitterCountV1());
-        return Status::Ok;
-    });
-}
-Status ROCK_CALL copyWeaponEmittersV1(OwnerToken ownerToken, WeaponEmitterV1* outEmitters, std::uint32_t maxEmitters, std::uint32_t* outCopied) noexcept {
-    if (!outCopied) return Status::InvalidArgument;
-    *outCopied = {};
-    if (maxEmitters > kMaxEmitters) return Status::CapacityFull;
-    if (maxEmitters && !outEmitters) return Status::InvalidArgument;
-    for (std::uint32_t i=0;i<maxEmitters;++i) if (const auto status=checkOutput(outEmitters+i); status!=Status::Ok) return status;
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        std::array<provider::RockProviderWeaponEmitterV1, kMaxEmitters> native_outEmitters{};
-        *outCopied = static_cast<std::uint32_t>(provider::runtime::apiCopyWeaponEmittersV1(native_outEmitters.data(), maxEmitters));
-        for (std::uint32_t i=0; i<std::min<std::uint32_t>(maxEmitters, *outCopied); ++i) convert(outEmitters[i], native_outEmitters[i]);
-        return Status::Ok;
-    });
-}
-Status ROCK_CALL getEquippedWeaponGripStateV1(std::uint64_t ownerToken, EquippedWeaponGripStateV1* outState) noexcept {
-    if (const auto s = checkOutput(outState); s != Status::Ok) return s;
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        provider::RockProviderEquippedWeaponGripStateV1 native_outState{};
-        const auto result = provider::runtime::apiGetEquippedWeaponGripStateV1(ownerToken, &native_outState);
-        convert(*outState, native_outState);
-        return result ? Status::Ok : Status::NotReady;
-    });
-}
-Status ROCK_CALL setEquippedWeaponHandlingAuthorityV1(std::uint64_t ownerToken, const EquippedWeaponHandlingRequestV1* request) noexcept {
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        if (const auto s = checkInput(request); s != Status::Ok) return s;
-        provider::RockProviderEquippedWeaponHandlingRequestV1 native_request{};
-        convert(native_request, *request);
-        if (request->flags & ~0x3Fu) return Status::InvalidArgument;
-        const auto result = provider::runtime::apiSetEquippedWeaponHandlingAuthorityV1(ownerToken, &native_request);
-        return static_cast<Status>(result);
-    });
-}
-Status ROCK_CALL clearEquippedWeaponHandlingAuthorityV1(std::uint64_t ownerToken) noexcept {
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        const auto result = provider::runtime::apiClearEquippedWeaponHandlingAuthorityV1(ownerToken);
-        return static_cast<Status>(result);
-    });
-}
-Status ROCK_CALL getEquippedWeaponHandlingStateV1(OwnerToken ownerToken, EquippedWeaponHandlingStateV1* outState) noexcept {
-    if (const auto s = checkOutput(outState); s != Status::Ok) return s;
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        provider::RockProviderEquippedWeaponHandlingStateV1 native_outState{};
-        const auto result = provider::runtime::apiGetEquippedWeaponHandlingStateV1(&native_outState);
-        convert(*outState, native_outState);
-        return result ? Status::Ok : Status::NotReady;
-    });
-}
-Status ROCK_CALL getScopeSightStateV1(std::uint64_t ownerToken, ScopeSightStateV1* outState) noexcept {
-    if (const auto s = checkOutput(outState); s != Status::Ok) return s;
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        provider::RockProviderScopeSightStateV1 native_outState{};
-        const auto result = provider::runtime::apiGetScopeSightStateV1(ownerToken, &native_outState);
-        convert(*outState, native_outState);
-        return static_cast<Status>(result);
-    });
-}
-Status ROCK_CALL getWeaponCompositionStateV1(std::uint64_t ownerToken, WeaponCompositionStateV1* outState) noexcept {
-    if (const auto s = checkOutput(outState); s != Status::Ok) return s;
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        provider::RockProviderWeaponCompositionStateV1 native_outState{};
-        const auto result = provider::runtime::apiGetWeaponCompositionStateV1(ownerToken, &native_outState);
-        convert(*outState, native_outState);
-        return static_cast<Status>(result);
-    });
-}
-Status ROCK_CALL copyWeaponCompositionEntriesV1(std::uint64_t ownerToken, WeaponCompositionEntryV1* outEntries, std::uint32_t maxEntries, std::uint32_t* outEntryCount) noexcept {
-    if (maxEntries > kMaxCompositionEntries) return Status::CapacityFull;
-    if (maxEntries && !outEntries) return Status::InvalidArgument;
-    for (std::uint32_t i=0;i<maxEntries;++i) if (const auto status=checkOutput(outEntries+i); status!=Status::Ok) return status;
-    if (!outEntryCount) return Status::InvalidArgument;
-    *outEntryCount = {};
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        std::array<provider::RockProviderWeaponCompositionEntryV1, kMaxCompositionEntries> native_outEntries{};
-        const auto result = provider::runtime::apiCopyWeaponCompositionEntriesV1(ownerToken, native_outEntries.data(), maxEntries, outEntryCount);
-        for (std::uint32_t i=0; i<std::min<std::uint32_t>(maxEntries, *outEntryCount); ++i) convert(outEntries[i], native_outEntries[i]);
-        return static_cast<Status>(result);
-    });
-}
-Status ROCK_CALL getSelectedAuthoredGripPoseV1(std::uint64_t ownerToken, AuthoredGripPoseV1* outPose) noexcept {
-    if (const auto s = checkOutput(outPose); s != Status::Ok) return s;
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        provider::RockProviderAuthoredGripPoseV1 native_outPose{};
-        const auto result = provider::runtime::apiGetSelectedAuthoredGripPoseV1(ownerToken, &native_outPose);
-        convert(*outPose, native_outPose);
-        return static_cast<Status>(result);
-    });
-}
+namespace rock::api::weapon
+{
+    namespace
+    {
+        using namespace boundary;
+        namespace p = provider;
 
-#include "WeaponEndpoints.inl"
-#include "WeaponInventoryEndpoints.inl"
-}
-const v1_1::Api& tableV1_1() noexcept {
-    static const v1_1::Api value{{
-        &getPrimaryHandV1,
-        &getOffhandHandV1,
-        &queryEquippedWeaponClassificationV1,
-        &getWeaponEmitterCountV1,
-        &copyWeaponEmittersV1,
-        &getEquippedWeaponGripStateV1,
-        &setEquippedWeaponHandlingAuthorityV1,
-        &clearEquippedWeaponHandlingAuthorityV1,
-        &getEquippedWeaponHandlingStateV1,
-        &getEquippedWeaponStateV1,
-        &getScopeSightStateV1,
-        &getWeaponCompositionStateV1,
-        &copyWeaponCompositionEntriesV1,
-        &getSelectedAuthoredGripPoseV1,
-        &getSample,
-        &copyEvents,
-    }, &captureInventoryWeapon, &requestInventoryEquip, &getInventoryEquipResult, &cancelInventoryEquip};
-    return value;
-}
-const ApiV1& table() noexcept { return tableV1_1().v1; }
+        template <class Record>
+        Status checkOutputs(Record* records, std::uint32_t capacity, std::uint32_t maxCapacity,
+            std::uint32_t* outCount) noexcept
+        {
+            if (!outCount)
+                return Status::InvalidArgument;
+            *outCount = 0;
+            if (capacity > maxCapacity)
+                return Status::CapacityFull;
+            if (capacity && !records)
+                return Status::InvalidArgument;
+            for (std::uint32_t i = 0; i < capacity; ++i)
+                if (const auto s = checkOutput(records + i); s != Status::Ok)
+                    return s;
+            return Status::Ok;
+        }
+
+        Status ROCK_CALL getWeaponState(OwnerToken owner, std::uint32_t slot, WeaponState* outState) noexcept
+        {
+            if (const auto s = checkOutput(outState); s != Status::Ok)
+                return s;
+            if (const auto s = checkWeaponSlot(slot); s != Status::Ok)
+                return s;
+            outState->weaponSlot = slot;
+            return invoke(owner, kInterfaceId, 1, true, [&] {
+                // Every slot publishes its state; slot 1's hands are in the record.
+                if (const auto s = p::runtime::copyPublishedWeaponState(*outState, slot); s != Status::Ok)
+                    return s;
+                outState->weaponSlot = slot;
+                if (slot != 0)
+                    return Status::Ok;
+                ::rock::provider_state_policy::WeaponHandling handling{};
+                if (p::runtime::queryWeaponHandling(handling))
+                    ::rock::provider_state_policy::applyHandling(*outState, handling);
+                return Status::Ok;
+            });
+        }
+
+        // The single-weapon reads: run, then name the slot the record describes.
+        template <class Record, class Read>
+        Status readSlot(OwnerToken owner, std::uint32_t slot, Record* outRecord, Read&& read) noexcept
+        {
+            if (const auto s = checkOutput(outRecord); s != Status::Ok)
+                return s;
+            if (const auto s = checkWeaponSlot(slot); s != Status::Ok)
+                return s;
+            outRecord->weaponSlot = slot;
+            return invoke(owner, kInterfaceId, 1, true, [&] {
+                if (!weaponSlotPublished(slot))
+                    return Status::TargetUnavailable;
+                const auto status = read(*outRecord);
+                outRecord->weaponSlot = slot;
+                return status;
+            });
+        }
+
+        // Grip and emitters describe every equipped weapon, slot 1 included.
+        Status ROCK_CALL getGrip(OwnerToken owner, std::uint32_t slot, Grip* outGrip) noexcept
+        {
+            if (const auto s = checkOutput(outGrip); s != Status::Ok)
+                return s;
+            if (const auto s = checkWeaponSlot(slot); s != Status::Ok)
+                return s;
+            outGrip->weaponSlot = slot;
+            return invoke(owner, kInterfaceId, 1, true, [&] {
+                const auto status = p::runtime::getWeaponGrip(*outGrip, slot);
+                outGrip->weaponSlot = slot;
+                return status;
+            });
+        }
+
+        Status ROCK_CALL getClassification(OwnerToken owner, std::uint32_t slot,
+            Classification* outClassification) noexcept
+        {
+            if (const auto s = checkOutput(outClassification); s != Status::Ok)
+                return s;
+            if (const auto s = checkWeaponSlot(slot); s != Status::Ok)
+                return s;
+            outClassification->weaponSlot = slot;
+            return invoke(owner, kInterfaceId, 1, true, [&] {
+                const auto status = p::runtime::getWeaponClassification(*outClassification, slot);
+                outClassification->weaponSlot = slot;
+                return status;
+            });
+        }
+
+        Status ROCK_CALL setAutomaticReloadBlocked(OwnerToken owner, std::uint32_t blocked) noexcept
+        {
+            return invoke(owner, kInterfaceId, 2, true,
+                [&] { return p::runtime::setAutomaticReloadBlocked(owner, blocked != 0); });
+        }
+
+        Status ROCK_CALL setChamberMarker(OwnerToken owner, std::uint32_t slot, ChamberMarker marker,
+            std::uint32_t leaseFrames) noexcept
+        {
+            return invoke(owner, kInterfaceId, 2, true,
+                [&] { return p::runtime::setChamberMarker(owner, slot, marker, leaseFrames); });
+        }
+
+        Status ROCK_CALL getInteractionKey(OwnerToken owner, std::uint32_t slot, std::uint64_t* outKey) noexcept
+        {
+            if (!outKey)
+                return Status::InvalidArgument;
+            *outKey = 0;
+            if (const auto s = checkWeaponSlot(slot); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 1, true, [&] {
+                *outKey = p::runtime::weaponInteractionKey(slot);
+                return Status::Ok;
+            });
+        }
+
+        Status ROCK_CALL getCompositionState(OwnerToken owner, std::uint32_t slot, CompositionState* outState) noexcept
+        {
+            return readSlot(owner, slot, outState,
+                [](CompositionState& state) { return p::runtime::getWeaponCompositionState(state); });
+        }
+
+        Status ROCK_CALL getAuthoredGripPose(OwnerToken owner, std::uint32_t slot, AuthoredGripPose* outPose) noexcept
+        {
+            return readSlot(owner, slot, outPose,
+                [](AuthoredGripPose& pose) { return p::runtime::getAuthoredGripPose(pose); });
+        }
+
+        Status ROCK_CALL getScopeSightState(OwnerToken owner, std::uint32_t slot, ScopeSightState* outState) noexcept
+        {
+            return readSlot(owner, slot, outState,
+                [](ScopeSightState& state) { return p::runtime::getScopeSightState(state); });
+        }
+
+        Status ROCK_CALL copyEmitters(OwnerToken owner, std::uint32_t slot, Emitter* outEmitters,
+            std::uint32_t capacity, std::uint32_t* outCount) noexcept
+        {
+            if (const auto s = checkOutputs(outEmitters, capacity, kMaxEmitters, outCount); s != Status::Ok)
+                return s;
+            if (const auto s = checkWeaponSlot(slot); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 1, true, [&] {
+                *outCount = p::runtime::weaponEmitterCount(slot);
+                (void)p::runtime::copyWeaponEmitters(slot, outEmitters, capacity);
+                return Status::Ok;
+            });
+        }
+
+        Status ROCK_CALL copyCompositionEntries(OwnerToken owner, std::uint32_t slot, CompositionEntry* outEntries,
+            std::uint32_t capacity, std::uint32_t* outCount) noexcept
+        {
+            if (const auto s = checkOutputs(outEntries, capacity, kMaxCompositionEntries, outCount); s != Status::Ok)
+                return s;
+            if (const auto s = checkWeaponSlot(slot); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 1, true, [&] {
+                if (!weaponSlotPublished(slot))
+                    return Status::TargetUnavailable;
+                return p::runtime::copyWeaponCompositionEntries(outEntries, capacity, *outCount);
+            });
+        }
+
+        Status ROCK_CALL setHandlingAuthority(OwnerToken owner, const HandlingRequest* request) noexcept
+        {
+            if (const auto s = checkInput(request); s != Status::Ok)
+                return s;
+            if (request->features & ~::rock::kImplementedHandlingFeatures)
+                return Status::InvalidArgument;
+            return invoke(owner, kInterfaceId, 2, true,
+                [&] { return p::runtime::setHandlingAuthority(owner, *request); });
+        }
+
+        Status ROCK_CALL clearHandlingAuthority(OwnerToken owner) noexcept
+        {
+            return invoke(owner, kInterfaceId, 2, true, [&] { return p::runtime::clearHandlingAuthority(owner); });
+        }
+
+        Status ROCK_CALL getHandlingAuthority(OwnerToken owner, HandlingAuthority* outAuthority) noexcept
+        {
+            if (const auto s = checkOutput(outAuthority); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 1, true,
+                [&] { return p::runtime::getHandlingAuthority(*outAuthority); });
+        }
+
+        Status ROCK_CALL captureInventoryWeapon(OwnerToken owner, std::uint32_t baseFormId, std::uint32_t stackIndex,
+            InventoryWeapon* outItem) noexcept
+        {
+            if (const auto s = checkOutput(outItem); s != Status::Ok)
+                return s;
+            return invoke(
+                owner, kInterfaceId, 1, true,
+                [&] { return p::runtime::captureInventoryWeapon(owner, baseFormId, stackIndex, *outItem); },
+                p::OwnerAccess::Active);
+        }
+
+        Status ROCK_CALL requestInventoryEquip(OwnerToken owner, const EquipRequest* request,
+            std::uint64_t* outCommandId) noexcept
+        {
+            if (!outCommandId)
+                return Status::InvalidArgument;
+            *outCommandId = 0;
+            if (const auto s = checkInput(request); s != Status::Ok)
+                return s;
+            return invoke(
+                owner, kInterfaceId, 2, true,
+                [&] { return p::runtime::requestInventoryEquip(owner, *request, *outCommandId); },
+                p::OwnerAccess::Active);
+        }
+
+        Status ROCK_CALL getInventoryEquipResult(OwnerToken owner, std::uint64_t commandId,
+            EquipResult* outResult) noexcept
+        {
+            if (const auto s = checkOutput(outResult); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 1, true,
+                [&] { return p::runtime::getInventoryEquipResult(owner, commandId, *outResult); });
+        }
+
+        Status ROCK_CALL cancelInventoryEquip(OwnerToken owner, std::uint64_t commandId) noexcept
+        {
+            return invoke(owner, kInterfaceId, 2, true,
+                [&] { return p::runtime::cancelInventoryEquip(owner, commandId); });
+        }
+
+        Status ROCK_CALL isEquipPickup(OwnerToken owner, std::uint32_t referenceFormId, std::uint32_t count,
+            std::uint32_t* outMatches) noexcept
+        {
+            if (!outMatches)
+                return Status::InvalidArgument;
+            *outMatches = 0;
+            return invoke(owner, kInterfaceId, 1, false, [&] {
+                *outMatches = equip_pickup::matches(referenceFormId, count) ? 1u : 0u;
+                return Status::Ok;
+            });
+        }
+
+        Status ROCK_CALL getSample(OwnerToken owner, Sample* outSample) noexcept
+        {
+            return readSample(owner, kInterfaceId, outSample);
+        }
+
+        Status ROCK_CALL unequipWeapon(OwnerToken owner, std::uint32_t slot, std::uint32_t expectedFormId) noexcept
+        {
+            if (const auto s = checkWeaponSlot(slot); s != Status::Ok)
+                return s;
+            if (!expectedFormId)
+                return Status::InvalidArgument;
+            return invoke(
+                owner, kInterfaceId, 2, true, [&] { return p::runtime::unequipWeapon(slot, expectedFormId); },
+                p::OwnerAccess::Active);
+        }
+
+        Status ROCK_CALL getFiringAimWorld(OwnerToken owner, Hand hand, Transform* outWorld) noexcept
+        {
+            if (!outWorld)
+                return Status::InvalidArgument;
+            *outWorld = {};
+            if (hand != Hand::Left && hand != Hand::Right)
+                return Status::InvalidArgument;
+            return invoke(owner, kInterfaceId, 1, true, [&] { return p::runtime::getFiringAimWorld(hand, *outWorld); });
+        }
+
+        Status ROCK_CALL requestInventoryDraw(OwnerToken owner, const EquipRequest* request,
+            std::uint64_t* outCommandId) noexcept
+        {
+            if (!outCommandId)
+                return Status::InvalidArgument;
+            *outCommandId = 0;
+            if (const auto s = checkInput(request); s != Status::Ok)
+                return s;
+            return invoke(
+                owner, kInterfaceId, 2, true,
+                [&] { return p::runtime::requestInventoryDraw(owner, *request, *outCommandId); },
+                p::OwnerAccess::Active);
+        }
+
+        Status ROCK_CALL setInventoryDrawPose(OwnerToken owner, std::uint64_t commandId,
+            const Transform* weaponWorld) noexcept
+        {
+            if (!commandId || !weaponWorld)
+                return Status::InvalidArgument;
+            return invoke(
+                owner, kInterfaceId, 2, true,
+                [&] { return p::runtime::setInventoryDrawPose(owner, commandId, *weaponWorld); },
+                p::OwnerAccess::Active);
+        }
+
+        Status ROCK_CALL setWarmInventoryWeapons(OwnerToken owner, const InventoryWeapon* items,
+            std::uint32_t count) noexcept
+        {
+            if (count > kMaxWarmInventoryWeapons)
+                return Status::CapacityFull;
+            if (count && !items)
+                return Status::InvalidArgument;
+            for (std::uint32_t i = 0; i < count; ++i)
+                if (const auto s = checkInput(items + i); s != Status::Ok)
+                    return s;
+            return invoke(
+                owner, kInterfaceId, 2, true, [&] { return p::runtime::setWarmInventoryWeapons(owner, items, count); },
+                p::OwnerAccess::Active);
+        }
+    }
+
+    const Api& table() noexcept
+    {
+        static const Api value{
+            &getWeaponState,
+            &getGrip,
+            &getClassification,
+            &copyEmitters,
+            &getCompositionState,
+            &copyCompositionEntries,
+            &getAuthoredGripPose,
+            &getScopeSightState,
+            &setHandlingAuthority,
+            &clearHandlingAuthority,
+            &getHandlingAuthority,
+            &captureInventoryWeapon,
+            &requestInventoryEquip,
+            &getInventoryEquipResult,
+            &cancelInventoryEquip,
+            &isEquipPickup,
+            &getSample,
+            &unequipWeapon,
+            &getFiringAimWorld,
+            &setWarmInventoryWeapons,
+            &requestInventoryDraw,
+            &setAutomaticReloadBlocked,
+            &setChamberMarker,
+            &getInteractionKey,
+            &setInventoryDrawPose,
+        };
+        return value;
+    }
 }

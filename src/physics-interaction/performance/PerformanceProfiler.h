@@ -11,6 +11,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <source_location>
 
 namespace rock::performance_profiler
 {
@@ -44,6 +45,7 @@ namespace rock::performance_profiler
         WeaponGapColliderCreate,
         TwoHandedGripStart,
         EquippedWeaponFingerPoseCapture,
+        EquippedWeaponFingerTriangleSelection,
         SupportGripSuppression,
         SelectionCasts,
         DynamicHandCollisionFrame,
@@ -121,6 +123,11 @@ namespace rock::performance_profiler
         RagdollComponentRead,
         RagdollBodyRefresh,
         GrabAuthoredPreparation,
+        GrabProbeContact,
+        GrabProbeMeshRead,
+        GrabProbeIndex,
+        GrabProbeSolve,
+        GrabLibraryPose,
         EquippedGripController,
         EquippedGripScopeFrames,
         EquippedGripActivation,
@@ -135,6 +142,49 @@ namespace rock::performance_profiler
         WeaponDynamicDrive,
         LooseWeaponCollision,
         LooseWeaponLayerRepair,
+        // Sub-steps of interactionFinalize.
+        FinalizeGrabInput,
+        FinalizeHeldObjects,
+        FinalizeHandFeedback,
+        FinalizeConsumers,
+        FinalizeHandoff,
+        // Sub-steps of equippedWeaponInteraction.
+        EquippedObserve,
+        EquippedRouting,
+        EquippedContacts,
+        EquippedGripStart,
+        EquippedGripUpdate,
+        EquippedStashDrop,
+        EquippedPublish,
+        // Sub-steps of finalPresentation.
+        PresentedHandPoseCapture,
+        FinalPoseCommit,
+        PresentationPublish,
+        // Sub-steps of generatedFlush (physics thread).
+        FlushHands,
+        FlushBody,
+        FlushWeapons,
+        FlushDynamicHands,
+        FlushConsumers,
+        // Sub-steps of interactionFinalize not covered above.
+        FinalizeSelection,
+        FinalizeContacts,
+        HeldLooseWeapons,
+        HeldObjectRest,
+        HeldExclusions,
+        // Sub-steps of runtimePreparation.
+        PrepSettings,
+        PrepRuntimeState,
+        PrepGates,
+        // Sub-steps of nativeIdleGripHarvest, which runs native animation code.
+        HarvestGraphHolderStart,
+        HarvestSubgraphRequest,
+        HarvestClipSample,
+        HarvestLoadPoll,
+        HarvestJobRelease,
+        HarvestWarmRelease,
+        HarvestSubgraphRelease,
+        HarvestHolderDestroy,
         Count
     };
 
@@ -198,6 +248,8 @@ namespace rock::performance_profiler
         GrabMeshTriangles,
         EquippedWeaponFingerPoseSourceTriangles,
         EquippedWeaponFingerPoseSelectedTriangles,
+        EquippedWeaponFingerSelectionMeasuredTriangles,
+        EquippedWeaponFingerSelectionNodeVisits,
         EquippedWeaponFingerPoseSpatialNodeVisits,
         EquippedWeaponFingerPoseTriangleTests,
         NativeMeleeCallbacksPerFrame,
@@ -240,11 +292,7 @@ namespace rock::performance_profiler
         Count
     };
 
-    inline constexpr std::size_t kOverlayMaxLines = 8;
-    inline constexpr std::size_t kOverlayLineLength = 128;
-    using OverlayLines = std::array<std::array<char, kOverlayLineLength>, kOverlayMaxLines>;
-
-    void refreshSettings(bool enabled, int logIntervalFrames, int warmupFrames, bool overlayTextEnabled) noexcept;
+    void refreshSettings(bool enabled, int logIntervalFrames, int warmupFrames) noexcept;
     bool enabled() noexcept;
     void beginFrame() noexcept;
     void endFrame() noexcept;
@@ -255,10 +303,13 @@ namespace rock::performance_profiler
     enum class ContactStage : std::uint8_t;
     // Diagnostic values only; ownership and collision decisions stay with callers.
     void observeContactPair(ContactPair pair, ContactStage stage) noexcept;
-    bool overlayTextEnabled() noexcept;
-    std::uint32_t copyOverlayLines(OverlayLines& outLines) noexcept;
 
-    enum class MemoryQueryKind : std::uint8_t { Read, Write, Execute };
+    // A memory query is one native_memory range check (a page-touch probe).
+    enum class MemoryQueryKind : std::uint8_t
+    {
+        Read,
+        Write
+    };
 
     struct MemoryQuerySample
     {
@@ -270,7 +321,11 @@ namespace rock::performance_profiler
     // One of every 64 queries on each calling thread is timed. All admitted
     // queries are counted; no per-query allocation, logging, or shared lock.
     MemoryQuerySample beginMemoryQuery() noexcept;
-    void endMemoryQuery(MemoryQuerySample sample, MemoryQueryKind kind, bool apiSucceeded) noexcept;
+    void endMemoryQuery(MemoryQuerySample sample, MemoryQueryKind kind) noexcept;
+
+    // Counts guarded native reads per source call site; each window logs the
+    // hottest sites, so per-frame pointer walks can be found and restructured.
+    void countGuardedRead(const std::source_location& site) noexcept;
 
     // Callback-owned wall-time interval. Unlike ScopedTimer, this never changes
     // thread-local query attribution and may end in a later callback. A settings
@@ -280,6 +335,7 @@ namespace rock::performance_profiler
         std::uint64_t startTicks{ 0 };
         std::uint64_t generation{ 0 };
     };
+
     IntervalSample beginInterval() noexcept;
     bool endInterval(Scope scope, IntervalSample& sample) noexcept;
 
@@ -305,4 +361,31 @@ namespace rock::performance_profiler
         Scope _parentScope{ Scope::UnattributedMemoryQueries };
     };
 
+    enum class ConsumerKind : std::uint8_t
+    {
+        Frame,
+        Animation
+    };
+
+    /*
+     * Wall time spent inside one provider consumer callback, keyed by the
+     * callback's address. Consumer time runs inside ROCK's frame, so external
+     * profilers count it as ROCK; each window names the owning module and
+     * offset of every callback so it can be attributed to its mod.
+     */
+    class ConsumerTimer
+    {
+    public:
+        ConsumerTimer(ConsumerKind kind, const void* callback) noexcept;
+        ~ConsumerTimer();
+
+        ConsumerTimer(const ConsumerTimer&) = delete;
+        ConsumerTimer& operator=(const ConsumerTimer&) = delete;
+        ConsumerTimer(ConsumerTimer&&) = delete;
+        ConsumerTimer& operator=(ConsumerTimer&&) = delete;
+
+    private:
+        std::uint64_t _key{ 0 };
+        std::uint64_t _startTicks{ 0 };
+    };
 }

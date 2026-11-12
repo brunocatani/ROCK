@@ -8,12 +8,14 @@ namespace rock::native_vats_input_suppression_policy
     inline constexpr float kDefaultHoldSeconds = 0.25f;
     inline constexpr float kMinimumHoldSeconds = 0.05f;
     inline constexpr float kMaximumHoldSeconds = 10.0f;
-    inline float sanitizedHoldSeconds(float value) {
-        return std::isfinite(value) ? std::clamp(value,kMinimumHoldSeconds,kMaximumHoldSeconds) : kDefaultHoldSeconds;
+
+    inline float sanitizedHoldSeconds(float value)
+    {
+        return std::isfinite(value) ? std::clamp(value, kMinimumHoldSeconds, kMaximumHoldSeconds) : kDefaultHoldSeconds;
     }
-    inline float sanitizedHeldSeconds(float value) {
-        return std::isfinite(value) && value >= 0.0f ? value : 0.0f;
-    }
+
+    inline float sanitizedHeldSeconds(float value) { return std::isfinite(value) && value >= 0.0f ? value : 0.0f; }
+
     struct RuntimeState
     {
         bool suppressVatsOnRelease{ false };
@@ -28,9 +30,7 @@ namespace rock::native_vats_input_suppression_policy
         bool justPressed{ false };
         bool released{ false };
         float heldSeconds{ 0.0f };
-        float holdSeconds{
-            kDefaultHoldSeconds
-        };
+        float holdSeconds{ kDefaultHoldSeconds };
         bool suppressVats{ false };
         bool suppressVans{ false };
         bool reserveHoldGesture{ false };
@@ -46,10 +46,7 @@ namespace rock::native_vats_input_suppression_policy
         const char* reason{ "native" };
     };
 
-    inline void reset(RuntimeState& state)
-    {
-        state = {};
-    }
+    inline void reset(RuntimeState& state) { state = {}; }
 
     /*
      * Bethesda's native helper has two phases: button-down samples can start
@@ -62,12 +59,8 @@ namespace rock::native_vats_input_suppression_policy
     [[nodiscard]] inline Decision update(RuntimeState& state, const Input& input)
     {
         Decision decision{};
-        const float heldSeconds =
-            sanitizedHeldSeconds(
-                input.heldSeconds);
-        const float holdSeconds =
-            sanitizedHoldSeconds(
-                input.holdSeconds);
+        const float heldSeconds = sanitizedHeldSeconds(input.heldSeconds);
+        const float holdSeconds = sanitizedHoldSeconds(input.holdSeconds);
 
         if (input.buttonDown) {
             if (input.justPressed) {
@@ -76,27 +69,16 @@ namespace rock::native_vats_input_suppression_policy
                 // newly observed gesture.
                 reset(state);
             }
-            state.suppressVatsOnRelease =
-                state.suppressVatsOnRelease ||
-                input.suppressVats ||
-                input.suppressAll;
-            state.suppressVansWhileDown =
-                state.suppressVansWhileDown ||
-                input.suppressVans ||
-                input.suppressAll;
-            state.reserveHoldGesture =
-                state.reserveHoldGesture ||
-                input.reserveHoldGesture;
+            state.suppressVatsOnRelease = state.suppressVatsOnRelease || input.suppressVats || input.suppressAll;
+            state.suppressVansWhileDown = state.suppressVansWhileDown || input.suppressVans || input.suppressAll;
+            state.reserveHoldGesture = state.reserveHoldGesture || input.reserveHoldGesture;
             state.holdThresholdReached =
-                state.holdThresholdReached ||
-                (state.reserveHoldGesture && heldSeconds >= holdSeconds);
+                state.holdThresholdReached || (state.reserveHoldGesture && heldSeconds >= holdSeconds);
 
             if (state.suppressVansWhileDown) {
                 decision.forwardNative = false;
                 decision.vansSuppressed = true;
-                decision.reason = input.suppressAll ?
-                    "all-suppression-held" :
-                    "vans-suppression-held";
+                decision.reason = input.suppressAll ? "all-suppression-held" : "vans-suppression-held";
             } else if (state.suppressVatsOnRelease) {
                 decision.reason = "native-vans-vats-release-armed";
             }
@@ -104,25 +86,18 @@ namespace rock::native_vats_input_suppression_policy
         }
 
         if (input.released) {
-            const bool suppressHeldGestureRelease =
-                (state.reserveHoldGesture || input.reserveHoldGesture) &&
+            const bool suppressHeldGestureRelease = (state.reserveHoldGesture || input.reserveHoldGesture) &&
                 (state.holdThresholdReached || heldSeconds >= holdSeconds);
             const bool suppressVats =
-                state.suppressVatsOnRelease ||
-                input.suppressVats ||
-                input.suppressAll ||
-                suppressHeldGestureRelease;
+                state.suppressVatsOnRelease || input.suppressVats || input.suppressAll || suppressHeldGestureRelease;
             reset(state);
             if (suppressVats) {
                 decision.forwardNative = false;
                 decision.vatsSuppressed = true;
-                decision.holdReleaseSuppressed =
-                    suppressHeldGestureRelease;
-                decision.reason = input.suppressAll ?
-                    "all-suppression-release" :
-                    suppressHeldGestureRelease ?
-                        "reserved-hold-release" :
-                        "vats-suppression-release";
+                decision.holdReleaseSuppressed = suppressHeldGestureRelease;
+                decision.reason = input.suppressAll ? "all-suppression-release"
+                    : suppressHeldGestureRelease    ? "reserved-hold-release"
+                                                    : "vats-suppression-release";
             } else {
                 decision.reason = "native-vats-release";
             }

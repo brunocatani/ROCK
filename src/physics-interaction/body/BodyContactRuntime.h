@@ -1,7 +1,7 @@
 #pragma once
 
+#include "physics-interaction/body/BodyColliderDescriptors.h"
 #include "physics-interaction/collision/ContactPipelinePolicy.h"
-#include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 
 #include "RE/NetImmerse/NiPoint.h"
 
@@ -32,18 +32,13 @@ namespace rock::body_contact_runtime
         std::uint32_t targetBodyId = kInvalidBodyContactId;
         std::uint32_t bodyLayer = contact_pipeline_policy::kUnknownLayer;
         std::uint32_t targetLayer = contact_pipeline_policy::kUnknownLayer;
-        skeleton_bone_debug_math::BoneColliderRole role = skeleton_bone_debug_math::BoneColliderRole::TorsoSegment;
+        body_collider::Role role = body_collider::Role::TorsoSegment;
         body_zone::BodyZoneKind zone = body_zone::BodyZoneKind::Unknown;
         body_zone::BodyZoneSide side = body_zone::BodyZoneSide::Center;
         std::uint32_t descriptorIndex = 0;
         contact_pipeline_policy::ContactEndpointKind targetKind = contact_pipeline_policy::ContactEndpointKind::Unknown;
-        skeleton_bone_debug_math::BoneColliderRole targetRole = skeleton_bone_debug_math::BoneColliderRole::TorsoSegment;
-        body_zone::BodyZoneKind targetZone = body_zone::BodyZoneKind::Unknown;
-        body_zone::BodyZoneSide targetSide = body_zone::BodyZoneSide::Center;
-        std::uint32_t targetDescriptorIndex = 0;
         RE::NiPoint3 contactPointGame{};
         bool inPowerArmor = false;
-        bool targetInPowerArmor = false;
         bool hasContactPointGame = false;
     };
 
@@ -61,8 +56,7 @@ namespace rock::body_contact_runtime
         void record(const BodyContactRecord& record)
         {
             if (!contact_pipeline_policy::isValidBodyId(record.bodyId) ||
-                !contact_pipeline_policy::isValidBodyId(record.targetBodyId) ||
-                record.bodyId == record.targetBodyId) {
+                !contact_pipeline_policy::isValidBodyId(record.targetBodyId) || record.bodyId == record.targetBodyId) {
                 return;
             }
 

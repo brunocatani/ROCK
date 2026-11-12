@@ -42,7 +42,8 @@ int main()
 
     {
         auto second = admission.tryAcquire();
-        ok &= expect(static_cast<bool>(second), "the newer published frame must remain claimable after the active draw completes");
+        ok &= expect(static_cast<bool>(second),
+            "the newer published frame must remain claimable after the active draw completes");
     }
 
     {
@@ -55,7 +56,8 @@ int main()
         auto third = admission.tryAcquire();
         ok &= expect(static_cast<bool>(third), "the next published frame must be claimable");
         auto moved = std::move(third);
-        ok &= expect(!third && static_cast<bool>(moved), "lease ownership must transfer without releasing the frame early");
+        ok &= expect(!third && static_cast<bool>(moved),
+            "lease ownership must transfer without releasing the frame early");
     }
 
     const auto stats = admission.stats();

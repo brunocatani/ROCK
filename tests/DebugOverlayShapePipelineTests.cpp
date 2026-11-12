@@ -65,20 +65,24 @@ int main()
     limits.maxQueuedJobs = 2;
     limits.maxCompletedJobs = 2;
     limits.maxCacheEntries = 2;
-    limits.maxGpuBytes = 1024 * 1024;
+    limits.maxBytes = 1024 * 1024;
 
     const ShapeKey firstKey{ 0x1000, 0xA1 };
     const auto first = pipeline.reserve(firstKey, limits);
-    passed &= expect(first.status == ReserveStatus::Reserved && first.reservation.valid, "First recipe was not reserved.");
-    passed &= expect(pipeline.reserve(firstKey, limits).status == ReserveStatus::Pending, "Duplicate reservation was not coalesced.");
+    passed &=
+        expect(first.status == ReserveStatus::Reserved && first.reservation.valid, "First recipe was not reserved.");
+    passed &= expect(pipeline.reserve(firstKey, limits).status == ReserveStatus::Pending,
+        "Duplicate reservation was not coalesced.");
     passed &= expect(pipeline.submit(first.reservation, sphereRecipe()), "Reserved recipe was not queued.");
     passed &= expect(waitForCompleted(pipeline, 1), "Worker did not publish a completed CPU mesh.");
-    passed &= expect(pipeline.lookup(firstKey).state == CacheState::Pending, "CPU completion became Ready before render-thread upload.");
+    passed &= expect(pipeline.lookup(firstKey).state == CacheState::Pending,
+        "CPU completion became Ready before render-thread upload.");
 
     const auto generationBeforeClear = pipeline.stats().generation;
     pipeline.invalidate();
     const auto afterClear = pipeline.stats();
-    passed &= expect(afterClear.generation == generationBeforeClear + 1, "Invalidation did not advance the generation token.");
+    passed &= expect(afterClear.generation == generationBeforeClear + 1,
+        "Invalidation did not advance the generation token.");
     passed &= expect(afterClear.entries == 0 && afterClear.queuedJobs == 0 && afterClear.completedJobs == 0,
         "Invalidation retained stale cache or queue state.");
     passed &= expect(pipeline.lookup(firstKey).state == CacheState::Missing, "Invalidated key remained visible.");
@@ -102,10 +106,13 @@ int main()
     completedLimit.maxCompletedJobs = 1;
     const auto completedFirst = pipeline.reserve(firstKey, completedLimit);
     const auto completedSecond = pipeline.reserve(secondKey, completedLimit);
-    passed &= expect(completedFirst.status == ReserveStatus::Reserved && completedSecond.status == ReserveStatus::Reserved,
-        "Completed-queue test reservations failed.");
-    passed &= expect(pipeline.submit(completedFirst.reservation, sphereRecipe()), "First completed-queue job was not submitted.");
-    passed &= expect(pipeline.submit(completedSecond.reservation, sphereRecipe()), "Second completed-queue job was not submitted.");
+    passed &=
+        expect(completedFirst.status == ReserveStatus::Reserved && completedSecond.status == ReserveStatus::Reserved,
+            "Completed-queue test reservations failed.");
+    passed &= expect(pipeline.submit(completedFirst.reservation, sphereRecipe()),
+        "First completed-queue job was not submitted.");
+    passed &= expect(pipeline.submit(completedSecond.reservation, sphereRecipe()),
+        "Second completed-queue job was not submitted.");
     passed &= expect(waitForCompletedDrop(pipeline), "Completed queue did not enforce its independent bound.");
     const auto completedStats = pipeline.stats();
     passed &= expect(completedStats.completedJobs == 1 && completedStats.completedQueueDrops == 1,

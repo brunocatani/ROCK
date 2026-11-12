@@ -8,19 +8,22 @@
 
 #include <algorithm>
 #include <atomic>
-#include <condition_variable>
-#include <cmath>
-#include <cstdio>
 #include <chrono>
+#include <cmath>
+#include <condition_variable>
+#include <cstdio>
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <thread>
 #include <utility>
 
+#include <F4SE/Logger.h>
 #include <spdlog/pattern_formatter.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/spdlog.h>
-#include <F4SE/Logger.h>
+
+extern "C" IMAGE_DOS_HEADER __ImageBase;
 
 namespace rock::performance_profiler
 {
@@ -32,8 +35,7 @@ namespace rock::performance_profiler
             std::atomic<std::uint64_t> maxTicks{ 0 };
             std::atomic<std::uint64_t> samples{ 0 };
             std::atomic<std::uint64_t> events{ 0 };
-            std::array<std::atomic<std::uint64_t>, 3> memoryQueries{};
-            std::atomic<std::uint64_t> memoryQueryFailures{ 0 };
+            std::array<std::atomic<std::uint64_t>, 2> memoryQueries{};
             std::atomic<std::uint64_t> memoryQueryTimedSamples{ 0 };
             std::atomic<std::uint64_t> memoryQueryTotalTicks{ 0 };
             std::atomic<std::uint64_t> memoryQueryMaxTicks{ 0 };
@@ -54,7 +56,6 @@ namespace rock::performance_profiler
         struct Settings
         {
             std::atomic<bool> enabled{ false };
-            std::atomic<bool> overlayText{ false };
             std::atomic<std::uint32_t> logIntervalFrames{ 300 };
             std::atomic<std::uint32_t> warmupFrames{ 120 };
             std::atomic<std::uint64_t> frameIndex{ 0 };
@@ -66,6 +67,79 @@ namespace rock::performance_profiler
         std::array<CounterAccum, static_cast<std::size_t>(Counter::Count)> s_counterAccum;
         std::array<ValueAccum, static_cast<std::size_t>(ValueMetric::Count)> s_valueAccum;
         Settings s_settings;
+
+        /*
+         * Guarded native reads per call site. A site is one 64-bit key: the
+         * offset of its file-name literal inside ROCK.dll and its line, claimed
+         * lock-free by CAS, so any thread may count and no pointer is stored.
+         * Keys persist across windows and counts reset; when a probe sequence
+         * is full the read is counted as dropped.
+         */
+        constexpr std::size_t kReadSiteSlots = 512;
+        constexpr std::size_t kReadSiteProbes = 16;
+        constexpr std::size_t kReadSiteReportRows = 24;
+
+        struct ReadSiteSlot
+        {
+            std::atomic<std::uint64_t> key{ 0 };
+            std::atomic<std::uint64_t> count{ 0 };
+        };
+
+        struct ReadSiteRow
+        {
+            std::uint64_t key{ 0 };
+            std::uint64_t count{ 0 };
+        };
+
+        struct ReadSiteSnapshot
+        {
+            std::array<ReadSiteRow, kReadSiteReportRows> rows{};
+            std::size_t size{ 0 };
+            std::size_t sites{ 0 };
+            std::uint64_t total{ 0 };
+            std::uint64_t dropped{ 0 };
+        };
+
+        std::array<ReadSiteSlot, kReadSiteSlots> s_readSites;
+        std::atomic<std::uint64_t> s_readSitesDropped{ 0 };
+
+        std::uintptr_t moduleBase() noexcept { return reinterpret_cast<std::uintptr_t>(&__ImageBase); }
+
+        /*
+         * Provider consumer callbacks, keyed by callback address with the top
+         * bit marking animation-phase callbacks (user-mode addresses never set
+         * it). Same lock-free claim as the read-site table; the writer thread
+         * resolves each address to its module only when logging.
+         */
+        constexpr std::size_t kConsumerSlots = 32;
+        constexpr std::uint64_t kAnimationConsumerBit = 1ull << 63;
+
+        struct ConsumerSlot
+        {
+            std::atomic<std::uint64_t> key{ 0 };
+            std::atomic<std::uint64_t> calls{ 0 };
+            std::atomic<std::uint64_t> ticks{ 0 };
+            std::atomic<std::uint64_t> maxTicks{ 0 };
+        };
+
+        struct ConsumerRow
+        {
+            std::uint64_t key{ 0 };
+            std::uint64_t calls{ 0 };
+            std::uint64_t ticks{ 0 };
+            std::uint64_t maxTicks{ 0 };
+        };
+
+        struct ConsumerSnapshot
+        {
+            std::array<ConsumerRow, kConsumerSlots> rows{};
+            std::size_t size{ 0 };
+            std::uint64_t dropped{ 0 };
+        };
+
+        std::array<ConsumerSlot, kConsumerSlots> s_consumers;
+        std::atomic<std::uint64_t> s_consumersDropped{ 0 };
+
         ContactPairTable<128> s_contactPairs;
         ContactPairTable<512> s_contactChildren;
         // All native/game/render threads merge into the existing atomic window.
@@ -74,9 +148,6 @@ namespace rock::performance_profiler
         thread_local std::uint32_t t_memoryQuerySequence = 0;
         LARGE_INTEGER s_frequency{};
         std::atomic<bool> s_frequencyReady{ false };
-        std::mutex s_overlayMutex;
-        OverlayLines s_overlayLines{};
-        std::uint32_t s_overlayLineCount = 0;
 
         constexpr std::uint32_t sanitizeIntervalFrames(int value) noexcept
         {
@@ -149,6 +220,8 @@ namespace rock::performance_profiler
                 return "twoHandedGripStart";
             case Scope::EquippedWeaponFingerPoseCapture:
                 return "equippedWeaponFingerPoseCapture";
+            case Scope::EquippedWeaponFingerTriangleSelection:
+                return "equippedWeaponFingerTriangleSelection";
             case Scope::SupportGripSuppression:
                 return "supportGripSuppression";
             case Scope::SelectionCasts:
@@ -181,80 +254,236 @@ namespace rock::performance_profiler
                 return "grabHeldObjectUpdate";
             case Scope::GrabAuthorityFlush:
                 return "grabAuthorityFlush";
-            case Scope::FramePrelude: return "framePrelude";
-            case Scope::FrameBeginPreparation: return "frameBeginPreparation";
-            case Scope::WeaponPresentation: return "weaponPresentation";
-            case Scope::FinalPresentation: return "finalPresentation";
-            case Scope::HandFrameResolve: return "handFrameResolve";
-            case Scope::HandBoneCapture: return "handBoneCapture";
-            case Scope::BodyBoneCapture: return "bodyBoneCapture";
-            case Scope::FingerBoneCapture: return "fingerBoneCapture";
-            case Scope::SelectionHitProcessing: return "selectionHitProcessing";
-            case Scope::PhysicsSystemBodyScan: return "physicsSystemBodyScan";
-            case Scope::NativePlayerRefresh: return "nativePlayerRefresh";
-            case Scope::NativePlayerPairFilter: return "nativePlayerPairFilter";
-            case Scope::HeldSceneWriter: return "heldSceneWriter";
-            case Scope::ProviderFrameDispatch: return "providerFrameDispatch";
-            case Scope::ProviderFrameConsumer: return "providerFrameConsumer";
-            case Scope::ProviderAnimationDispatch: return "providerAnimationDispatch";
-            case Scope::ProviderAnimationConsumer: return "providerAnimationConsumer";
-            case Scope::NativeWorldReadWait: return "nativeWorldReadWait";
-            case Scope::CallbackQuiescenceWait: return "callbackQuiescenceWait";
-            case Scope::NearbyDampingWait: return "nearbyDampingWait";
-            case Scope::NativeIdleGripHarvest: return "nativeIdleGripHarvest";
-            case Scope::UnattributedMemoryQueries: return "unattributedMemoryQueries";
-            case Scope::GrabAcquisition: return "grabAcquisition";
-            case Scope::GrabSurfaceResolution: return "grabSurfaceResolution";
-            case Scope::GrabFingerSolve: return "grabFingerSolve";
-            case Scope::GrabFingerIndexBuild: return "grabFingerIndexBuild";
-            case Scope::GrabFingerPadProbes: return "grabFingerPadProbes";
-            case Scope::NativePhysicsUpdate: return "nativePhysicsUpdate";
-            case Scope::NativePhysicsCollideInterval: return "nativePhysicsCollideInterval";
-            case Scope::NativePhysicsSolveInterval: return "nativePhysicsSolveInterval";
-            case Scope::GrabSelectionValidation: return "grabSelectionValidation";
-            case Scope::GrabBodyPreparation: return "grabBodyPreparation";
-            case Scope::GrabProxyPreparation: return "grabProxyPreparation";
-            case Scope::GrabMeshCapturePreparation: return "grabMeshCapturePreparation";
-            case Scope::GrabBodyResolution: return "grabBodyResolution";
-            case Scope::GrabResolvedBodyCapture: return "grabResolvedBodyCapture";
-            case Scope::GrabPivotEvidence: return "grabPivotEvidence";
-            case Scope::GrabPinchPocket: return "grabPinchPocket";
-            case Scope::GrabCommitPreparation: return "grabCommitPreparation";
-            case Scope::GrabBodyFrameCapture: return "grabBodyFrameCapture";
-            case Scope::GrabSeatCapture: return "grabSeatCapture";
-            case Scope::GrabFrozenCommit: return "grabFrozenCommit";
-            case Scope::GrabPostFreeze: return "grabPostFreeze";
-            case Scope::GrabConstraintCommit: return "grabConstraintCommit";
-            case Scope::GrabLocalTriangleCapture: return "grabLocalTriangleCapture";
-            case Scope::GrabTriangleSelection: return "grabTriangleSelection";
-            case Scope::MeshStaticExtraction: return "meshStaticExtraction";
-            case Scope::MeshDynamicExtraction: return "meshDynamicExtraction";
-            case Scope::MeshSkinnedExtraction: return "meshSkinnedExtraction";
-            case Scope::MeshPointQuery: return "meshPointQuery";
-            case Scope::MeshDirectionalQuery: return "meshDirectionalQuery";
-            case Scope::GrabMeshQueryIndexBuild: return "grabMeshQueryIndexBuild";
-            case Scope::NativePairProfileBatch: return "nativePairProfileBatch";
-            case Scope::NativeSimulationPairFilter: return "nativeSimulationPairFilter";
-            case Scope::NativeImpactListener: return "nativeImpactListener";
-            case Scope::NativeImpactDispatch: return "nativeImpactDispatch";
-            case Scope::NativeImpactConsumer: return "nativeImpactConsumer";
-            case Scope::NativeImpactManifoldObserve: return "nativeImpactManifoldObserve";
-            case Scope::RagdollComponentRead: return "ragdollComponentRead";
-            case Scope::RagdollBodyRefresh: return "ragdollBodyRefresh";
-            case Scope::GrabAuthoredPreparation: return "grabAuthoredPreparation";
-            case Scope::EquippedGripController: return "equippedGripController";
-            case Scope::EquippedGripScopeFrames: return "equippedGripScopeFrames";
-            case Scope::EquippedGripActivation: return "equippedGripActivation";
-            case Scope::EquippedGripSolve: return "equippedGripSolve";
-            case Scope::EquippedGripVisualReturn: return "equippedGripVisualReturn";
-            case Scope::EquippedNativeScopeRead: return "equippedNativeScopeRead";
-            case Scope::EquippedNativeScopeAnchor: return "equippedNativeScopeAnchor";
-            case Scope::WeaponProbePoseCapture: return "weaponProbePoseCapture";
-            case Scope::WeaponSourcePoseUpdate: return "weaponSourcePoseUpdate";
-            case Scope::WeaponCompoundPoseUpdate: return "weaponCompoundPoseUpdate";
-            case Scope::WeaponKinematicDrive: return "weaponKinematicDrive";
-            case Scope::WeaponDynamicDrive: return "weaponDynamicDrive";
-            case Scope::LooseWeaponLayerRepair: return "looseWeaponLayerRepair";
+            case Scope::FramePrelude:
+                return "framePrelude";
+            case Scope::FrameBeginPreparation:
+                return "frameBeginPreparation";
+            case Scope::WeaponPresentation:
+                return "weaponPresentation";
+            case Scope::FinalPresentation:
+                return "finalPresentation";
+            case Scope::HandFrameResolve:
+                return "handFrameResolve";
+            case Scope::HandBoneCapture:
+                return "handBoneCapture";
+            case Scope::BodyBoneCapture:
+                return "bodyBoneCapture";
+            case Scope::FingerBoneCapture:
+                return "fingerBoneCapture";
+            case Scope::SelectionHitProcessing:
+                return "selectionHitProcessing";
+            case Scope::PhysicsSystemBodyScan:
+                return "physicsSystemBodyScan";
+            case Scope::NativePlayerRefresh:
+                return "nativePlayerRefresh";
+            case Scope::NativePlayerPairFilter:
+                return "nativePlayerPairFilter";
+            case Scope::HeldSceneWriter:
+                return "heldSceneWriter";
+            case Scope::ProviderFrameDispatch:
+                return "providerFrameDispatch";
+            case Scope::ProviderFrameConsumer:
+                return "providerFrameConsumer";
+            case Scope::ProviderAnimationDispatch:
+                return "providerAnimationDispatch";
+            case Scope::ProviderAnimationConsumer:
+                return "providerAnimationConsumer";
+            case Scope::NativeWorldReadWait:
+                return "nativeWorldReadWait";
+            case Scope::CallbackQuiescenceWait:
+                return "callbackQuiescenceWait";
+            case Scope::NearbyDampingWait:
+                return "nearbyDampingWait";
+            case Scope::NativeIdleGripHarvest:
+                return "nativeIdleGripHarvest";
+            case Scope::UnattributedMemoryQueries:
+                return "unattributedMemoryQueries";
+            case Scope::GrabAcquisition:
+                return "grabAcquisition";
+            case Scope::GrabSurfaceResolution:
+                return "grabSurfaceResolution";
+            case Scope::GrabFingerSolve:
+                return "grabFingerSolve";
+            case Scope::GrabFingerIndexBuild:
+                return "grabFingerIndexBuild";
+            case Scope::GrabFingerPadProbes:
+                return "grabFingerPadProbes";
+            case Scope::NativePhysicsUpdate:
+                return "nativePhysicsUpdate";
+            case Scope::NativePhysicsCollideInterval:
+                return "nativePhysicsCollideInterval";
+            case Scope::NativePhysicsSolveInterval:
+                return "nativePhysicsSolveInterval";
+            case Scope::GrabSelectionValidation:
+                return "grabSelectionValidation";
+            case Scope::GrabBodyPreparation:
+                return "grabBodyPreparation";
+            case Scope::GrabProxyPreparation:
+                return "grabProxyPreparation";
+            case Scope::GrabMeshCapturePreparation:
+                return "grabMeshCapturePreparation";
+            case Scope::GrabBodyResolution:
+                return "grabBodyResolution";
+            case Scope::GrabResolvedBodyCapture:
+                return "grabResolvedBodyCapture";
+            case Scope::GrabPivotEvidence:
+                return "grabPivotEvidence";
+            case Scope::GrabPinchPocket:
+                return "grabPinchPocket";
+            case Scope::GrabCommitPreparation:
+                return "grabCommitPreparation";
+            case Scope::GrabBodyFrameCapture:
+                return "grabBodyFrameCapture";
+            case Scope::GrabSeatCapture:
+                return "grabSeatCapture";
+            case Scope::GrabFrozenCommit:
+                return "grabFrozenCommit";
+            case Scope::GrabPostFreeze:
+                return "grabPostFreeze";
+            case Scope::GrabConstraintCommit:
+                return "grabConstraintCommit";
+            case Scope::GrabLocalTriangleCapture:
+                return "grabLocalTriangleCapture";
+            case Scope::GrabTriangleSelection:
+                return "grabTriangleSelection";
+            case Scope::MeshStaticExtraction:
+                return "meshStaticExtraction";
+            case Scope::MeshDynamicExtraction:
+                return "meshDynamicExtraction";
+            case Scope::MeshSkinnedExtraction:
+                return "meshSkinnedExtraction";
+            case Scope::MeshPointQuery:
+                return "meshPointQuery";
+            case Scope::MeshDirectionalQuery:
+                return "meshDirectionalQuery";
+            case Scope::GrabMeshQueryIndexBuild:
+                return "grabMeshQueryIndexBuild";
+            case Scope::NativePairProfileBatch:
+                return "nativePairProfileBatch";
+            case Scope::NativeSimulationPairFilter:
+                return "nativeSimulationPairFilter";
+            case Scope::NativeImpactListener:
+                return "nativeImpactListener";
+            case Scope::NativeImpactDispatch:
+                return "nativeImpactDispatch";
+            case Scope::NativeImpactConsumer:
+                return "nativeImpactConsumer";
+            case Scope::NativeImpactManifoldObserve:
+                return "nativeImpactManifoldObserve";
+            case Scope::RagdollComponentRead:
+                return "ragdollComponentRead";
+            case Scope::RagdollBodyRefresh:
+                return "ragdollBodyRefresh";
+            case Scope::GrabAuthoredPreparation:
+                return "grabAuthoredPreparation";
+            case Scope::GrabProbeContact:
+                return "grabProbeContact";
+            case Scope::GrabProbeMeshRead:
+                return "grabProbeMeshRead";
+            case Scope::GrabProbeIndex:
+                return "grabProbeIndex";
+            case Scope::GrabProbeSolve:
+                return "grabProbeSolve";
+            case Scope::GrabLibraryPose:
+                return "grabLibraryPose";
+            case Scope::EquippedGripController:
+                return "equippedGripController";
+            case Scope::EquippedGripScopeFrames:
+                return "equippedGripScopeFrames";
+            case Scope::EquippedGripActivation:
+                return "equippedGripActivation";
+            case Scope::EquippedGripSolve:
+                return "equippedGripSolve";
+            case Scope::EquippedGripVisualReturn:
+                return "equippedGripVisualReturn";
+            case Scope::EquippedNativeScopeRead:
+                return "equippedNativeScopeRead";
+            case Scope::EquippedNativeScopeAnchor:
+                return "equippedNativeScopeAnchor";
+            case Scope::WeaponProbePoseCapture:
+                return "weaponProbePoseCapture";
+            case Scope::WeaponSourcePoseUpdate:
+                return "weaponSourcePoseUpdate";
+            case Scope::WeaponCompoundPoseUpdate:
+                return "weaponCompoundPoseUpdate";
+            case Scope::WeaponKinematicDrive:
+                return "weaponKinematicDrive";
+            case Scope::WeaponDynamicDrive:
+                return "weaponDynamicDrive";
+            case Scope::LooseWeaponLayerRepair:
+                return "looseWeaponLayerRepair";
+            case Scope::FinalizeGrabInput:
+                return "finalizeGrabInput";
+            case Scope::FinalizeHeldObjects:
+                return "finalizeHeldObjects";
+            case Scope::FinalizeHandFeedback:
+                return "finalizeHandFeedback";
+            case Scope::FinalizeConsumers:
+                return "finalizeConsumers";
+            case Scope::FinalizeHandoff:
+                return "finalizeHandoff";
+            case Scope::EquippedObserve:
+                return "equippedObserve";
+            case Scope::EquippedRouting:
+                return "equippedRouting";
+            case Scope::EquippedContacts:
+                return "equippedContacts";
+            case Scope::EquippedGripStart:
+                return "equippedGripStart";
+            case Scope::EquippedGripUpdate:
+                return "equippedGripUpdate";
+            case Scope::EquippedStashDrop:
+                return "equippedStashDrop";
+            case Scope::EquippedPublish:
+                return "equippedPublish";
+            case Scope::PresentedHandPoseCapture:
+                return "presentedHandPoseCapture";
+            case Scope::FinalPoseCommit:
+                return "finalPoseCommit";
+            case Scope::PresentationPublish:
+                return "presentationPublish";
+            case Scope::FlushHands:
+                return "flushHands";
+            case Scope::FlushBody:
+                return "flushBody";
+            case Scope::FlushWeapons:
+                return "flushWeapons";
+            case Scope::FlushDynamicHands:
+                return "flushDynamicHands";
+            case Scope::FlushConsumers:
+                return "flushConsumers";
+            case Scope::FinalizeSelection:
+                return "finalizeSelection";
+            case Scope::FinalizeContacts:
+                return "finalizeContacts";
+            case Scope::HeldLooseWeapons:
+                return "heldLooseWeapons";
+            case Scope::HeldObjectRest:
+                return "heldObjectRest";
+            case Scope::HeldExclusions:
+                return "heldExclusions";
+            case Scope::PrepSettings:
+                return "prepSettings";
+            case Scope::PrepRuntimeState:
+                return "prepRuntimeState";
+            case Scope::PrepGates:
+                return "prepGates";
+            case Scope::HarvestGraphHolderStart:
+                return "harvestGraphHolderStart";
+            case Scope::HarvestSubgraphRequest:
+                return "harvestSubgraphRequest";
+            case Scope::HarvestClipSample:
+                return "harvestClipSample";
+            case Scope::HarvestLoadPoll:
+                return "harvestLoadPoll";
+            case Scope::HarvestJobRelease:
+                return "harvestJobRelease";
+            case Scope::HarvestWarmRelease:
+                return "harvestWarmRelease";
+            case Scope::HarvestSubgraphRelease:
+                return "harvestSubgraphRelease";
+            case Scope::HarvestHolderDestroy:
+                return "harvestHolderDestroy";
             case Scope::Count:
                 break;
             }
@@ -302,26 +531,46 @@ namespace rock::performance_profiler
                 return "nativeMeleeRockPartnerDropped";
             case Counter::NativeMeleeDecodeFailed:
                 return "nativeMeleeDecodeFailed";
-            case Counter::NativeReadRangeRejected: return "nativeReadRangeRejected";
-            case Counter::NativeWriteRangeRejected: return "nativeWriteRangeRejected";
-            case Counter::PhysicsTimingSubstepsIncreased: return "physicsTimingSubstepsIncreased";
-            case Counter::GrabAcquisitionPeerHeld: return "grabAcquisitionPeerHeld";
-            case Counter::GrabAcquisitionEquippedTransfer: return "grabAcquisitionEquippedTransfer";
-            case Counter::GrabAcquisitionSucceeded: return "grabAcquisitionSucceeded";
-            case Counter::GrabSingleBodyVisualOwnerAccepted: return "grabSingleBodyVisualOwnerAccepted";
-            case Counter::GrabAuthoredPositionsOnly: return "grabAuthoredPositionsOnly";
-            case Counter::GrabAuthoredArrivalDynamicFallback: return "grabAuthoredArrivalDynamicFallback";
-            case Counter::GrabAuthoredSurfaceWorkSkipped: return "grabAuthoredSurfaceWorkSkipped";
-            case Counter::GrabAuthoredSurfaceWorkRequired: return "grabAuthoredSurfaceWorkRequired";
-            case Counter::GrabAuthoredPreparationInvalidated: return "grabAuthoredPreparationInvalidated";
-            case Counter::WeaponProbeFramesEnabled: return "weaponProbeFramesEnabled";
-            case Counter::WeaponProbeFramesSkipped: return "weaponProbeFramesSkipped";
-            case Counter::WeaponProbePoseBatches: return "weaponProbePoseBatches";
-            case Counter::WeaponProbeBatchReuses: return "weaponProbeBatchReuses";
-            case Counter::NativeWeaponSelfPairsRejected: return "nativeWeaponSelfPairsRejected";
-            case Counter::NativeWeaponOwnerUnresolved: return "nativeWeaponOwnerUnresolved";
-            case Counter::NativeWeaponOwnerResolvedOther: return "nativeWeaponOwnerResolvedOther";
-            case Counter::ContactPairBatchTruncated: return "contactPairBatchTruncated";
+            case Counter::NativeReadRangeRejected:
+                return "nativeReadRangeRejected";
+            case Counter::NativeWriteRangeRejected:
+                return "nativeWriteRangeRejected";
+            case Counter::PhysicsTimingSubstepsIncreased:
+                return "physicsTimingSubstepsIncreased";
+            case Counter::GrabAcquisitionPeerHeld:
+                return "grabAcquisitionPeerHeld";
+            case Counter::GrabAcquisitionEquippedTransfer:
+                return "grabAcquisitionEquippedTransfer";
+            case Counter::GrabAcquisitionSucceeded:
+                return "grabAcquisitionSucceeded";
+            case Counter::GrabSingleBodyVisualOwnerAccepted:
+                return "grabSingleBodyVisualOwnerAccepted";
+            case Counter::GrabAuthoredPositionsOnly:
+                return "grabAuthoredPositionsOnly";
+            case Counter::GrabAuthoredArrivalDynamicFallback:
+                return "grabAuthoredArrivalDynamicFallback";
+            case Counter::GrabAuthoredSurfaceWorkSkipped:
+                return "grabAuthoredSurfaceWorkSkipped";
+            case Counter::GrabAuthoredSurfaceWorkRequired:
+                return "grabAuthoredSurfaceWorkRequired";
+            case Counter::GrabAuthoredPreparationInvalidated:
+                return "grabAuthoredPreparationInvalidated";
+            case Counter::WeaponProbeFramesEnabled:
+                return "weaponProbeFramesEnabled";
+            case Counter::WeaponProbeFramesSkipped:
+                return "weaponProbeFramesSkipped";
+            case Counter::WeaponProbePoseBatches:
+                return "weaponProbePoseBatches";
+            case Counter::WeaponProbeBatchReuses:
+                return "weaponProbeBatchReuses";
+            case Counter::NativeWeaponSelfPairsRejected:
+                return "nativeWeaponSelfPairsRejected";
+            case Counter::NativeWeaponOwnerUnresolved:
+                return "nativeWeaponOwnerUnresolved";
+            case Counter::NativeWeaponOwnerResolvedOther:
+                return "nativeWeaponOwnerResolvedOther";
+            case Counter::ContactPairBatchTruncated:
+                return "contactPairBatchTruncated";
             case Counter::Count:
                 break;
             }
@@ -359,48 +608,88 @@ namespace rock::performance_profiler
                 return "equippedWeaponFingerPoseSourceTriangles";
             case ValueMetric::EquippedWeaponFingerPoseSelectedTriangles:
                 return "equippedWeaponFingerPoseSelectedTriangles";
+            case ValueMetric::EquippedWeaponFingerSelectionMeasuredTriangles:
+                return "equippedWeaponFingerSelectionMeasuredTriangles";
+            case ValueMetric::EquippedWeaponFingerSelectionNodeVisits:
+                return "equippedWeaponFingerSelectionNodeVisits";
             case ValueMetric::EquippedWeaponFingerPoseSpatialNodeVisits:
                 return "equippedWeaponFingerPoseSpatialNodeVisits";
             case ValueMetric::EquippedWeaponFingerPoseTriangleTests:
                 return "equippedWeaponFingerPoseTriangleTests";
             case ValueMetric::NativeMeleeCallbacksPerFrame:
                 return "nativeMeleeCallbacksPerFrame";
-            case ValueMetric::RenderedSkeletonBones: return "renderedSkeletonBones";
-            case ValueMetric::ControllerSkeletonBones: return "controllerSkeletonBones";
-            case ValueMetric::SelectionRawHits: return "selectionRawHits";
-            case ValueMetric::PhysicsOriginalSubsteps: return "physicsOriginalSubsteps";
-            case ValueMetric::PhysicsRequestedSubsteps: return "physicsRequestedSubsteps";
-            case ValueMetric::PhysicsCompletedSubsteps: return "physicsCompletedSubsteps";
-            case ValueMetric::PhysicsRawDeltaMicroseconds: return "physicsRawDeltaMicroseconds";
-            case ValueMetric::GeneratedHandBodies: return "generatedHandBodies";
-            case ValueMetric::GeneratedBodyBodies: return "generatedBodyBodies";
-            case ValueMetric::GeneratedWeaponBodies: return "generatedWeaponBodies";
-            case ValueMetric::FingerPadCandidateTriangles: return "fingerPadCandidateTriangles";
-            case ValueMetric::FingerPadTriangleTests: return "fingerPadTriangleTests";
-            case ValueMetric::GrabMeshStaticTriangles: return "grabMeshStaticTriangles";
-            case ValueMetric::GrabMeshDynamicTriangles: return "grabMeshDynamicTriangles";
-            case ValueMetric::GrabMeshSkinnedTriangles: return "grabMeshSkinnedTriangles";
-            case ValueMetric::GrabMeshCaptureAttempts: return "grabMeshCaptureAttempts";
-            case ValueMetric::GrabMeshPayloadBytes: return "grabMeshPayloadBytes";
-            case ValueMetric::MeshPointQueryTriangles: return "meshPointQueryTriangles";
-            case ValueMetric::MeshDirectionalQueryTriangles: return "meshDirectionalQueryTriangles";
-            case ValueMetric::MeshPointQueryTriangleTests: return "meshPointQueryTriangleTests";
-            case ValueMetric::GrabTriangleSelectionTests: return "grabTriangleSelectionTests";
-            case ValueMetric::MeshStaticVerticesTransformed: return "meshStaticVerticesTransformed";
-            case ValueMetric::SimulationPairsInput: return "simulationPairsInput";
-            case ValueMetric::SimulationPairsNative: return "simulationPairsNative";
-            case ValueMetric::SimulationPairsKept: return "simulationPairsKept";
-            case ValueMetric::RagdollSystemBodies: return "ragdollSystemBodies";
-            case ValueMetric::RagdollSystemConstraints: return "ragdollSystemConstraints";
-            case ValueMetric::RagdollConnectedBodies: return "ragdollConnectedBodies";
-            case ValueMetric::MeshSkinnedVerticesSource: return "meshSkinnedVerticesSource";
-            case ValueMetric::MeshSkinnedVerticesEvaluated: return "meshSkinnedVerticesEvaluated";
-            case ValueMetric::MeshSkinnedBonesSource: return "meshSkinnedBonesSource";
-            case ValueMetric::MeshSkinnedBonesEvaluated: return "meshSkinnedBonesEvaluated";
-            case ValueMetric::WeaponProbePoseParts: return "weaponProbePoseParts";
-            case ValueMetric::WeaponProbeBoundsCandidates: return "weaponProbeBoundsCandidates";
-            case ValueMetric::WeaponProbeSurfaceCandidates: return "weaponProbeSurfaceCandidates";
-            case ValueMetric::WeaponColliderDriveBodies: return "weaponColliderDriveBodies";
+            case ValueMetric::RenderedSkeletonBones:
+                return "renderedSkeletonBones";
+            case ValueMetric::ControllerSkeletonBones:
+                return "controllerSkeletonBones";
+            case ValueMetric::SelectionRawHits:
+                return "selectionRawHits";
+            case ValueMetric::PhysicsOriginalSubsteps:
+                return "physicsOriginalSubsteps";
+            case ValueMetric::PhysicsRequestedSubsteps:
+                return "physicsRequestedSubsteps";
+            case ValueMetric::PhysicsCompletedSubsteps:
+                return "physicsCompletedSubsteps";
+            case ValueMetric::PhysicsRawDeltaMicroseconds:
+                return "physicsRawDeltaMicroseconds";
+            case ValueMetric::GeneratedHandBodies:
+                return "generatedHandBodies";
+            case ValueMetric::GeneratedBodyBodies:
+                return "generatedBodyBodies";
+            case ValueMetric::GeneratedWeaponBodies:
+                return "generatedWeaponBodies";
+            case ValueMetric::FingerPadCandidateTriangles:
+                return "fingerPadCandidateTriangles";
+            case ValueMetric::FingerPadTriangleTests:
+                return "fingerPadTriangleTests";
+            case ValueMetric::GrabMeshStaticTriangles:
+                return "grabMeshStaticTriangles";
+            case ValueMetric::GrabMeshDynamicTriangles:
+                return "grabMeshDynamicTriangles";
+            case ValueMetric::GrabMeshSkinnedTriangles:
+                return "grabMeshSkinnedTriangles";
+            case ValueMetric::GrabMeshCaptureAttempts:
+                return "grabMeshCaptureAttempts";
+            case ValueMetric::GrabMeshPayloadBytes:
+                return "grabMeshPayloadBytes";
+            case ValueMetric::MeshPointQueryTriangles:
+                return "meshPointQueryTriangles";
+            case ValueMetric::MeshDirectionalQueryTriangles:
+                return "meshDirectionalQueryTriangles";
+            case ValueMetric::MeshPointQueryTriangleTests:
+                return "meshPointQueryTriangleTests";
+            case ValueMetric::GrabTriangleSelectionTests:
+                return "grabTriangleSelectionTests";
+            case ValueMetric::MeshStaticVerticesTransformed:
+                return "meshStaticVerticesTransformed";
+            case ValueMetric::SimulationPairsInput:
+                return "simulationPairsInput";
+            case ValueMetric::SimulationPairsNative:
+                return "simulationPairsNative";
+            case ValueMetric::SimulationPairsKept:
+                return "simulationPairsKept";
+            case ValueMetric::RagdollSystemBodies:
+                return "ragdollSystemBodies";
+            case ValueMetric::RagdollSystemConstraints:
+                return "ragdollSystemConstraints";
+            case ValueMetric::RagdollConnectedBodies:
+                return "ragdollConnectedBodies";
+            case ValueMetric::MeshSkinnedVerticesSource:
+                return "meshSkinnedVerticesSource";
+            case ValueMetric::MeshSkinnedVerticesEvaluated:
+                return "meshSkinnedVerticesEvaluated";
+            case ValueMetric::MeshSkinnedBonesSource:
+                return "meshSkinnedBonesSource";
+            case ValueMetric::MeshSkinnedBonesEvaluated:
+                return "meshSkinnedBonesEvaluated";
+            case ValueMetric::WeaponProbePoseParts:
+                return "weaponProbePoseParts";
+            case ValueMetric::WeaponProbeBoundsCandidates:
+                return "weaponProbeBoundsCandidates";
+            case ValueMetric::WeaponProbeSurfaceCandidates:
+                return "weaponProbeSurfaceCandidates";
+            case ValueMetric::WeaponColliderDriveBodies:
+                return "weaponColliderDriveBodies";
             case ValueMetric::Count:
                 break;
             }
@@ -455,20 +744,11 @@ namespace rock::performance_profiler
             return static_cast<std::uint8_t>(metric) < static_cast<std::uint8_t>(ValueMetric::Count);
         }
 
-        ScopeAccum& accumFor(Scope scope) noexcept
-        {
-            return s_accum[static_cast<std::size_t>(scope)];
-        }
+        ScopeAccum& accumFor(Scope scope) noexcept { return s_accum[static_cast<std::size_t>(scope)]; }
 
-        CounterAccum& accumFor(Counter counter) noexcept
-        {
-            return s_counterAccum[static_cast<std::size_t>(counter)];
-        }
+        CounterAccum& accumFor(Counter counter) noexcept { return s_counterAccum[static_cast<std::size_t>(counter)]; }
 
-        ValueAccum& accumFor(ValueMetric metric) noexcept
-        {
-            return s_valueAccum[static_cast<std::size_t>(metric)];
-        }
+        ValueAccum& accumFor(ValueMetric metric) noexcept { return s_valueAccum[static_cast<std::size_t>(metric)]; }
 
         void clearAccumulators() noexcept
         {
@@ -477,8 +757,8 @@ namespace rock::performance_profiler
                 slot.maxTicks.store(0, std::memory_order_release);
                 slot.samples.store(0, std::memory_order_release);
                 slot.events.store(0, std::memory_order_release);
-                for (auto& count : slot.memoryQueries) count.store(0, std::memory_order_relaxed);
-                slot.memoryQueryFailures.store(0, std::memory_order_relaxed);
+                for (auto& count : slot.memoryQueries)
+                    count.store(0, std::memory_order_relaxed);
                 slot.memoryQueryTimedSamples.store(0, std::memory_order_relaxed);
                 slot.memoryQueryTotalTicks.store(0, std::memory_order_relaxed);
                 slot.memoryQueryMaxTicks.store(0, std::memory_order_relaxed);
@@ -493,6 +773,101 @@ namespace rock::performance_profiler
             for (auto& slot : s_counterAccum) {
                 slot.count.store(0, std::memory_order_release);
             }
+            for (auto& slot : s_readSites) {
+                slot.count.store(0, std::memory_order_release);
+            }
+            s_readSitesDropped.store(0, std::memory_order_release);
+            for (auto& slot : s_consumers) {
+                slot.calls.store(0, std::memory_order_release);
+                slot.ticks.store(0, std::memory_order_release);
+                slot.maxTicks.store(0, std::memory_order_release);
+            }
+            s_consumersDropped.store(0, std::memory_order_release);
+        }
+
+        ConsumerSnapshot takeConsumerSnapshot() noexcept
+        {
+            ConsumerSnapshot snapshot{};
+            snapshot.dropped = s_consumersDropped.exchange(0, std::memory_order_acq_rel);
+            for (auto& slot : s_consumers) {
+                const auto key = slot.key.load(std::memory_order_acquire);
+                const auto calls = slot.calls.exchange(0, std::memory_order_acq_rel);
+                const auto ticks = slot.ticks.exchange(0, std::memory_order_acq_rel);
+                const auto maxTicks = slot.maxTicks.exchange(0, std::memory_order_acq_rel);
+                if (key != 0 && calls != 0) {
+                    snapshot.rows[snapshot.size++] = { key, calls, ticks, maxTicks };
+                }
+            }
+            std::sort(snapshot.rows.begin(), snapshot.rows.begin() + snapshot.size,
+                [](const ConsumerRow& a, const ConsumerRow& b) { return a.ticks > b.ticks; });
+            return snapshot;
+        }
+
+        // Module file name and offset of a callback address; writer thread only.
+        void describeCallback(std::uintptr_t address, char (&moduleName)[MAX_PATH], std::uintptr_t& offset) noexcept
+        {
+            strcpy_s(moduleName, "unknown");
+            offset = address;
+            HMODULE module = nullptr;
+            char path[MAX_PATH]{};
+            if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                    reinterpret_cast<LPCSTR>(address), &module) ||
+                !module || GetModuleFileNameA(module, path, MAX_PATH) == 0) {
+                return;
+            }
+            const char* base = path;
+            for (const char* cursor = path; *cursor; ++cursor) {
+                if (*cursor == '\\' || *cursor == '/')
+                    base = cursor + 1;
+            }
+            strcpy_s(moduleName, base);
+            offset = address - reinterpret_cast<std::uintptr_t>(module);
+        }
+
+        ReadSiteSnapshot takeReadSiteSnapshot() noexcept
+        {
+            ReadSiteSnapshot snapshot{};
+            snapshot.dropped = s_readSitesDropped.exchange(0, std::memory_order_acq_rel);
+            for (auto& slot : s_readSites) {
+                const auto key = slot.key.load(std::memory_order_acquire);
+                const auto count = slot.count.exchange(0, std::memory_order_acq_rel);
+                if (key == 0 || count == 0) {
+                    continue;
+                }
+                ++snapshot.sites;
+                snapshot.total += count;
+                // Keep the hottest rows, sorted by count, descending.
+                auto position = snapshot.size;
+                if (position == snapshot.rows.size()) {
+                    if (count <= snapshot.rows.back().count) {
+                        continue;
+                    }
+                    --position;
+                } else {
+                    ++snapshot.size;
+                }
+                while (position > 0 && snapshot.rows[position - 1].count < count) {
+                    snapshot.rows[position] = snapshot.rows[position - 1];
+                    --position;
+                }
+                snapshot.rows[position] = { key, count };
+            }
+            return snapshot;
+        }
+
+        // Path below the repository's src folder, for readable site names.
+        const char* readSiteFileName(std::uint64_t key) noexcept
+        {
+            const auto* path = reinterpret_cast<const char*>(moduleBase() + (key >> 32));
+            const char* shortest = path;
+            for (const char* cursor = path; *cursor; ++cursor) {
+                if ((cursor[0] == '\\' || cursor[0] == '/') && cursor[1] == 's' && cursor[2] == 'r' &&
+                    cursor[3] == 'c' && (cursor[4] == '\\' || cursor[4] == '/')) {
+                    shortest = cursor + 5;
+                }
+            }
+            return shortest;
         }
 
         void clearValueAccumulators() noexcept
@@ -504,18 +879,11 @@ namespace rock::performance_profiler
             }
         }
 
-        void clearOverlayLines() noexcept
-        {
-            std::scoped_lock lock(s_overlayMutex);
-            s_overlayLines = {};
-            s_overlayLineCount = 0;
-        }
-
         void atomicMax(std::atomic<std::uint64_t>& target, std::uint64_t value) noexcept
         {
             auto current = target.load(std::memory_order_relaxed);
-            while (value > current && !target.compare_exchange_weak(current, value, std::memory_order_release, std::memory_order_relaxed)) {
-            }
+            while (value > current &&
+                !target.compare_exchange_weak(current, value, std::memory_order_release, std::memory_order_relaxed)) {}
         }
 
         void recordTicks(Scope scope, std::uint64_t ticks) noexcept
@@ -532,8 +900,7 @@ namespace rock::performance_profiler
 
         struct MemoryQueryTotals
         {
-            std::array<std::uint64_t, 3> calls{};
-            std::uint64_t apiFailures{ 0 };
+            std::array<std::uint64_t, 2> calls{};
             std::uint64_t timedSamples{ 0 };
             std::uint64_t totalTicks{ 0 };
             std::uint64_t maxTicks{ 0 };
@@ -549,15 +916,22 @@ namespace rock::performance_profiler
             MemoryQueryTotals memory{};
 
             // Concurrent queries can straddle the individual atomic exchanges
-            // at a window boundary. Retain timing/failure-only tails as well.
+            // at a window boundary. Retain timing-only tails as well.
             [[nodiscard]] bool hasQueries() const noexcept
             {
-                return memory.calls[0] || memory.calls[1] || memory.calls[2] || memory.apiFailures || memory.timedSamples;
+                return memory.calls[0] || memory.calls[1] || memory.timedSamples;
             }
+
             [[nodiscard]] bool hasData() const noexcept { return samples > 0 || events > 0 || hasQueries(); }
+
             [[nodiscard]] double totalMs() const noexcept { return ticksToMilliseconds(totalTicks); }
+
             [[nodiscard]] double maxMs() const noexcept { return ticksToMilliseconds(maxTicks); }
-            [[nodiscard]] double avgMs() const noexcept { return samples > 0 ? totalMs() / static_cast<double>(samples) : 0.0; }
+
+            [[nodiscard]] double avgMs() const noexcept
+            {
+                return samples > 0 ? totalMs() / static_cast<double>(samples) : 0.0;
+            }
         };
 
         struct CounterSnapshot
@@ -576,7 +950,11 @@ namespace rock::performance_profiler
             std::uint64_t samples{ 0 };
 
             [[nodiscard]] bool hasData() const noexcept { return samples > 0; }
-            [[nodiscard]] double avg() const noexcept { return samples > 0 ? static_cast<double>(total) / static_cast<double>(samples) : 0.0; }
+
+            [[nodiscard]] double avg() const noexcept
+            {
+                return samples > 0 ? static_cast<double>(total) / static_cast<double>(samples) : 0.0;
+            }
         };
 
         struct QueuedSnapshot
@@ -586,6 +964,8 @@ namespace rock::performance_profiler
             std::array<ValueSnapshot, static_cast<std::size_t>(ValueMetric::Count)> values{};
             ContactPairTable<128>::Snapshot pairs{};
             ContactPairTable<512>::Snapshot children{};
+            ReadSiteSnapshot readSites{};
+            ConsumerSnapshot consumers{};
             std::uint64_t frames{ 0 };
             std::uint64_t droppedSnapshotsBeforeThis{ 0 };
         };
@@ -661,8 +1041,7 @@ namespace rock::performance_profiler
                 if (threadToJoin.joinable()) {
                     try {
                         threadToJoin.join();
-                    } catch (...) {
-                    }
+                    } catch (...) {}
                 }
 
                 _started.store(false, std::memory_order_release);
@@ -709,7 +1088,8 @@ namespace rock::performance_profiler
                     }
 
                     *path /= "ROCK_Profiler.log";
-                    auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_st>(path->string(), 1024 * 1024 * 10, 5, true);
+                    auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_st>(path->string(), 1024 * 1024 * 10,
+                        5, true);
                     _logger = std::make_shared<spdlog::logger>("ROCK_PROFILER_ASYNC", sink);
                     _logger->set_level(spdlog::level::info);
                     _logger->flush_on(spdlog::level::critical);
@@ -726,8 +1106,7 @@ namespace rock::performance_profiler
                     if (_logger) {
                         _logger->flush();
                     }
-                } catch (...) {
-                }
+                } catch (...) {}
             }
 
             void flushIfDue() noexcept
@@ -756,26 +1135,32 @@ namespace rock::performance_profiler
                             snapshot.droppedSnapshotsBeforeThis);
                     }
 
-                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=3 pid={} scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64 nativePhysicsTimes=callbackBoundedWall grabAcquisitionBreakdown=1 grabMeshQueries=1 contactPairs=1 nativeWeaponSelfFilter=1 grabSingleBodyVisualOwner=1 grabRagdollWork=1 equippedProbeBatch=1 equippedProbeGate=1 authoredPickupPreparation=1 authoredArrivalRouting=1 equippedGripBreakdown=1", snapshot.frames, GetCurrentProcessId());
+                    logger->info(
+                        "[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=3 pid={} "
+                        "scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64 "
+                        "nativePhysicsTimes=callbackBoundedWall grabAcquisitionBreakdown=1 grabMeshQueries=1 "
+                        "contactPairs=1 nativeWeaponSelfFilter=1 grabSingleBodyVisualOwner=1 grabRagdollWork=1 "
+                        "equippedProbeBatch=1 equippedProbeGate=1 authoredPickupPreparation=1 authoredArrivalRouting=1 "
+                        "equippedGripBreakdown=1",
+                        snapshot.frames, GetCurrentProcessId());
                     for (const auto& item : snapshot.scopes) {
                         if (!item.hasData()) {
                             continue;
                         }
                         logger->info(
-                            "[ROCK::Performance] Profiler {}: avgMs={:.4f} maxMs={:.4f} totalMs={:.4f} samples={} events={}",
-                            scopeName(item.scope),
-                            item.avgMs(),
-                            item.maxMs(),
-                            item.totalMs(),
-                            item.samples,
+                            "[ROCK::Performance] Profiler {}: avgMs={:.4f} maxMs={:.4f} totalMs={:.4f} samples={} "
+                            "events={}",
+                            scopeName(item.scope), item.avgMs(), item.maxMs(), item.totalMs(), item.samples,
                             item.events);
                         if (item.hasQueries()) {
                             const auto& query = item.memory;
                             logger->info(
-                                "[ROCK::Performance] Profiler memory {}: readQueries={} writeQueries={} executeQueries={} apiFailures={} timedQueries={} sampledAvgUs={:.3f} sampledMaxUs={:.3f} sampledTotalUs={:.3f}",
-                                scopeName(item.scope), query.calls[0], query.calls[1], query.calls[2], query.apiFailures,
-                                query.timedSamples,
-                                query.timedSamples ? ticksToMilliseconds(query.totalTicks) * 1000.0 / static_cast<double>(query.timedSamples) : 0.0,
+                                "[ROCK::Performance] Profiler memory {}: readQueries={} writeQueries={} "
+                                "timedQueries={} sampledAvgUs={:.3f} sampledMaxUs={:.3f} sampledTotalUs={:.3f}",
+                                scopeName(item.scope), query.calls[0], query.calls[1], query.timedSamples,
+                                query.timedSamples ? ticksToMilliseconds(query.totalTicks) * 1000.0 /
+                                        static_cast<double>(query.timedSamples)
+                                                   : 0.0,
                                 ticksToMilliseconds(query.maxTicks) * 1000.0,
                                 ticksToMilliseconds(query.totalTicks) * 1000.0);
                         }
@@ -785,38 +1170,74 @@ namespace rock::performance_profiler
                         if (!item.hasData()) {
                             continue;
                         }
-                        logger->info("[ROCK::Performance] Profiler counter {}: count={}", counterName(item.counter), item.count);
+                        logger->info("[ROCK::Performance] Profiler counter {}: count={}", counterName(item.counter),
+                            item.count);
                     }
 
                     for (const auto& item : snapshot.values) {
                         if (!item.hasData()) {
                             continue;
                         }
-                        logger->info(
-                            "[ROCK::Performance] Profiler value {}: avg={:.2f} max={} samples={}",
-                            valueMetricName(item.metric),
-                            item.avg(),
-                            item.max,
-                            item.samples);
+                        logger->info("[ROCK::Performance] Profiler value {}: avg={:.2f} max={} samples={}",
+                            valueMetricName(item.metric), item.avg(), item.max, item.samples);
                     }
 
                     const auto writePairs = [&](const auto& table, const char* kind) {
                         if (table.size || table.dropped || table.carriedBuckets) {
-                            logger->info("[ROCK::Performance] Profiler contactTable {}: entries={} dropped={} carriedBuckets={}",
+                            logger->info(
+                                "[ROCK::Performance] Profiler contactTable {}: entries={} dropped={} carriedBuckets={}",
                                 kind, table.size, table.dropped, table.carriedBuckets);
                         }
                         for (std::size_t i = 0; i < table.size; ++i) {
                             const auto& row = table.entries[i];
                             const auto& p = row.pair;
                             const auto& c = row.counts;
-                            logger->info("[ROCK::Performance] Profiler contact{}: world=0x{:X} bodies={}/{} layers={}/{} shapeKeys=0x{:08X}/0x{:08X} frames={}-{} layerChanged={} simulationInput={} simulationNative={} simulationKept={} manifolds={} impulses={} playerMeleeDropped={} otherMeleeDropped={} playerMeleeForwarded={} otherMeleeForwarded={} nativeWeaponSelfRejected={}",
-                                kind, p.world, p.bodyA, p.bodyB, p.layerA, p.layerB, p.shapeA, p.shapeB,
-                                row.firstFrame, row.lastFrame, row.layerChanged,
-                                c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9]);
+                            logger->info(
+                                "[ROCK::Performance] Profiler contact{}: world=0x{:X} bodies={}/{} layers={}/{} "
+                                "shapeKeys=0x{:08X}/0x{:08X} frames={}-{} layerChanged={} simulationInput={} "
+                                "simulationNative={} simulationKept={} manifolds={} impulses={} playerMeleeDropped={} "
+                                "otherMeleeDropped={} playerMeleeForwarded={} otherMeleeForwarded={} "
+                                "nativeWeaponSelfRejected={}",
+                                kind, p.world, p.bodyA, p.bodyB, p.layerA, p.layerB, p.shapeA, p.shapeB, row.firstFrame,
+                                row.lastFrame, row.layerChanged, c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8],
+                                c[9]);
                         }
                     };
                     writePairs(snapshot.pairs, "Pair");
                     writePairs(snapshot.children, "Child");
+
+                    const auto& reads = snapshot.readSites;
+                    const auto frames = static_cast<double>((std::max)(snapshot.frames, std::uint64_t{ 1 }));
+                    if (reads.total || reads.dropped) {
+                        logger->info(
+                            "[ROCK::Performance] Profiler guardedReads: total={} perFrame={:.1f} sites={} dropped={}",
+                            reads.total, static_cast<double>(reads.total) / frames, reads.sites, reads.dropped);
+                    }
+                    for (std::size_t i = 0; i < reads.size; ++i) {
+                        const auto& row = reads.rows[i];
+                        logger->info("[ROCK::Performance] Profiler guardedReadSite {}:{} count={} perFrame={:.2f}",
+                            readSiteFileName(row.key), static_cast<std::uint32_t>(row.key), row.count,
+                            static_cast<double>(row.count) / frames);
+                    }
+
+                    const auto& consumers = snapshot.consumers;
+                    if (consumers.dropped) {
+                        logger->info("[ROCK::Performance] Profiler consumers dropped={}", consumers.dropped);
+                    }
+                    for (std::size_t i = 0; i < consumers.size; ++i) {
+                        const auto& row = consumers.rows[i];
+                        char moduleName[MAX_PATH]{};
+                        std::uintptr_t offset = 0;
+                        describeCallback(static_cast<std::uintptr_t>(row.key & ~kAnimationConsumerBit), moduleName,
+                            offset);
+                        const double totalMs = ticksToMilliseconds(row.ticks);
+                        logger->info(
+                            "[ROCK::Performance] Profiler consumer {} {}+0x{:X}: perFrameMs={:.4f} avgMs={:.4f} "
+                            "maxMs={:.4f} calls={}",
+                            (row.key & kAnimationConsumerBit) ? "animation" : "frame", moduleName, offset,
+                            totalMs / frames, totalMs / static_cast<double>(row.calls),
+                            ticksToMilliseconds(row.maxTicks), row.calls);
+                    }
 
                     flushIfDue();
                 } catch (...) {
@@ -843,9 +1264,8 @@ namespace rock::performance_profiler
                     }
 
                     std::unique_lock lock(_wakeMutex);
-                    _wakeCv.wait_for(lock, std::chrono::milliseconds(250), [this]() noexcept {
-                        return _stopRequested.load(std::memory_order_acquire) || hasPending();
-                    });
+                    _wakeCv.wait_for(lock, std::chrono::milliseconds(250),
+                        [this]() noexcept { return _stopRequested.load(std::memory_order_acquire) || hasPending(); });
                 }
 
                 drainQueue();
@@ -887,9 +1307,7 @@ namespace rock::performance_profiler
                     .events = slot.events.exchange(0, std::memory_order_acq_rel),
                     .memory = {
                         .calls = { slot.memoryQueries[0].exchange(0, std::memory_order_acq_rel),
-                            slot.memoryQueries[1].exchange(0, std::memory_order_acq_rel),
-                            slot.memoryQueries[2].exchange(0, std::memory_order_acq_rel) },
-                        .apiFailures = slot.memoryQueryFailures.exchange(0, std::memory_order_acq_rel),
+                            slot.memoryQueries[1].exchange(0, std::memory_order_acq_rel) },
                         .timedSamples = slot.memoryQueryTimedSamples.exchange(0, std::memory_order_acq_rel),
                         .totalTicks = slot.memoryQueryTotalTicks.exchange(0, std::memory_order_acq_rel),
                         .maxTicks = slot.memoryQueryMaxTicks.exchange(0, std::memory_order_acq_rel),
@@ -927,35 +1345,6 @@ namespace rock::performance_profiler
             return snapshot;
         }
 
-        void publishOverlayLines(const std::array<ScopeSnapshot, static_cast<std::size_t>(Scope::Count)>& snapshot, std::uint64_t frames) noexcept
-        {
-            std::scoped_lock lock(s_overlayMutex);
-            s_overlayLines = {};
-            s_overlayLineCount = 0;
-
-            auto addLine = [&](const char* format, auto&&... args) {
-                if (s_overlayLineCount >= s_overlayLines.size()) {
-                    return;
-                }
-                auto& line = s_overlayLines[s_overlayLineCount++];
-                std::snprintf(line.data(), line.size(), format, std::forward<decltype(args)>(args)...);
-                line.back() = '\0';
-            };
-
-            addLine("ROCK PERF %lluf", static_cast<unsigned long long>(frames));
-            for (const auto& item : snapshot) {
-                if (!item.hasData() || s_overlayLineCount >= s_overlayLines.size()) {
-                    continue;
-                }
-                addLine("%s avg %.3f max %.3f n %llu e %llu",
-                    scopeName(item.scope),
-                    item.avgMs(),
-                    item.maxMs(),
-                    static_cast<unsigned long long>(item.samples),
-                    static_cast<unsigned long long>(item.events));
-            }
-        }
-
         void queueSnapshot(const std::array<ScopeSnapshot, static_cast<std::size_t>(Scope::Count)>& snapshot,
             const std::array<CounterSnapshot, static_cast<std::size_t>(Counter::Count)>& counterSnapshot,
             const std::array<ValueSnapshot, static_cast<std::size_t>(ValueMetric::Count)>& valueSnapshot,
@@ -969,12 +1358,14 @@ namespace rock::performance_profiler
                 .values = valueSnapshot,
                 .pairs = s_contactPairs.take(s_settings.generation.load(std::memory_order_acquire)),
                 .children = s_contactChildren.take(s_settings.generation.load(std::memory_order_acquire)),
+                .readSites = takeReadSiteSnapshot(),
+                .consumers = takeConsumerSnapshot(),
                 .frames = frames,
             });
         }
     }
 
-    void refreshSettings(bool enabled, int logIntervalFrames, int warmupFrames, bool overlayTextEnabled) noexcept
+    void refreshSettings(bool enabled, int logIntervalFrames, int warmupFrames) noexcept
     {
         const auto sanitizedInterval = sanitizeIntervalFrames(logIntervalFrames);
         const auto sanitizedWarmup = sanitizeWarmupFrames(warmupFrames);
@@ -989,14 +1380,12 @@ namespace rock::performance_profiler
 
         s_settings.logIntervalFrames.store(sanitizedInterval, std::memory_order_release);
         s_settings.warmupFrames.store(sanitizedWarmup, std::memory_order_release);
-        s_settings.overlayText.store(overlayTextEnabled, std::memory_order_release);
 
         if (!enabled) {
             if (wasEnabled) {
                 clearAccumulators();
                 clearCounterAccumulators();
                 clearValueAccumulators();
-                clearOverlayLines();
                 s_settings.frameIndex.store(0, std::memory_order_release);
                 s_settings.intervalStartFrame.store(0, std::memory_order_release);
             }
@@ -1008,7 +1397,6 @@ namespace rock::performance_profiler
             s_settings.enabled.store(false, std::memory_order_release);
             clearCounterAccumulators();
             clearValueAccumulators();
-            clearOverlayLines();
             return;
         }
 
@@ -1018,17 +1406,13 @@ namespace rock::performance_profiler
             clearAccumulators();
             clearCounterAccumulators();
             clearValueAccumulators();
-            clearOverlayLines();
             s_settings.frameIndex.store(0, std::memory_order_release);
             s_settings.intervalStartFrame.store(0, std::memory_order_release);
         }
         s_settings.enabled.store(true, std::memory_order_release);
     }
 
-    bool enabled() noexcept
-    {
-        return s_settings.enabled.load(std::memory_order_acquire);
-    }
+    bool enabled() noexcept { return s_settings.enabled.load(std::memory_order_acquire); }
 
     void beginFrame() noexcept
     {
@@ -1065,9 +1449,6 @@ namespace rock::performance_profiler
         const auto counterSnapshot = takeCounterSnapshot();
         const auto valueSnapshot = takeValueSnapshot();
         const auto frames = frame - intervalStart;
-        if (s_settings.overlayText.load(std::memory_order_acquire)) {
-            publishOverlayLines(snapshot, frames);
-        }
         queueSnapshot(snapshot, counterSnapshot, valueSnapshot, frames);
     }
 
@@ -1089,10 +1470,12 @@ namespace rock::performance_profiler
 
     void observeContactPair(ContactPair pair, ContactStage stage) noexcept
     {
-        if (!enabled()) return;
+        if (!enabled())
+            return;
         const auto generation = s_settings.generation.load(std::memory_order_acquire);
         const auto frame = s_settings.frameIndex.load(std::memory_order_acquire);
-        if (frame <= s_settings.warmupFrames.load(std::memory_order_acquire)) return;
+        if (frame <= s_settings.warmupFrames.load(std::memory_order_acquire))
+            return;
         if (pair.shapeA != kUnknownContactDetail || pair.shapeB != kUnknownContactDetail) {
             s_contactChildren.record(pair, stage, frame, generation);
         }
@@ -1111,37 +1494,21 @@ namespace rock::performance_profiler
         atomicMax(slot.max, value);
     }
 
-    bool overlayTextEnabled() noexcept
-    {
-        return s_settings.enabled.load(std::memory_order_acquire) && s_settings.overlayText.load(std::memory_order_acquire);
-    }
-
-    std::uint32_t copyOverlayLines(OverlayLines& outLines) noexcept
-    {
-        outLines = {};
-        if (!overlayTextEnabled()) {
-            return 0;
-        }
-
-        std::scoped_lock lock(s_overlayMutex);
-        outLines = s_overlayLines;
-        return s_overlayLineCount;
-    }
-
     MemoryQuerySample beginMemoryQuery() noexcept
     {
-        if (!enabled()) return {};
+        if (!enabled())
+            return {};
         const bool timed = (t_memoryQuerySequence++ & 63u) == 0;
         return { timed ? queryPerformanceTicks() : 0, t_memoryQueryScope, true };
     }
 
-    void endMemoryQuery(MemoryQuerySample sample, MemoryQueryKind kind, bool apiSucceeded) noexcept
+    void endMemoryQuery(MemoryQuerySample sample, MemoryQueryKind kind) noexcept
     {
-        if (!sample.active) return;
+        if (!sample.active)
+            return;
         const auto endTicks = sample.startTicks ? queryPerformanceTicks() : 0;
         auto& slot = accumFor(sample.scope);
         slot.memoryQueries[static_cast<std::size_t>(kind)].fetch_add(1, std::memory_order_relaxed);
-        if (!apiSucceeded) slot.memoryQueryFailures.fetch_add(1, std::memory_order_relaxed);
         if (sample.startTicks && endTicks >= sample.startTicks) {
             const auto ticks = endTicks - sample.startTicks;
             slot.memoryQueryTimedSamples.fetch_add(1, std::memory_order_relaxed);
@@ -1150,9 +1517,31 @@ namespace rock::performance_profiler
         }
     }
 
+    void countGuardedRead(const std::source_location& site) noexcept
+    {
+        if (!s_settings.enabled.load(std::memory_order_relaxed))
+            return;
+        const auto fileOffset = reinterpret_cast<std::uintptr_t>(site.file_name()) - moduleBase();
+        const std::uint64_t key = (static_cast<std::uint64_t>(fileOffset) << 32) | site.line();
+        const auto first = static_cast<std::size_t>(((key ^ (key >> 29)) * 0x9E3779B97F4A7C15ull) >> 55);
+        for (std::size_t probe = 0; probe < kReadSiteProbes; ++probe) {
+            auto& slot = s_readSites[(first + probe) % kReadSiteSlots];
+            auto current = slot.key.load(std::memory_order_acquire);
+            if (current == 0 && slot.key.compare_exchange_strong(current, key, std::memory_order_acq_rel)) {
+                current = key;
+            }
+            if (current == key) {
+                slot.count.fetch_add(1, std::memory_order_relaxed);
+                return;
+            }
+        }
+        s_readSitesDropped.fetch_add(1, std::memory_order_relaxed);
+    }
+
     IntervalSample beginInterval() noexcept
     {
-        if (!enabled()) return {};
+        if (!enabled())
+            return {};
         const auto generation = s_settings.generation.load(std::memory_order_acquire);
         return { queryPerformanceTicks(), generation };
     }
@@ -1161,17 +1550,18 @@ namespace rock::performance_profiler
     {
         const auto completed = std::exchange(sample, {});
         if (!completed.startTicks || !enabled() || !validScope(scope) ||
-            completed.generation != s_settings.generation.load(std::memory_order_acquire)) return false;
+            completed.generation != s_settings.generation.load(std::memory_order_acquire))
+            return false;
         const auto endTicks = queryPerformanceTicks();
         // A completed interval shorter than one clock tick still represents a
         // real callback pair and must count toward completed physics substeps.
-        if (endTicks < completed.startTicks) return false;
+        if (endTicks < completed.startTicks)
+            return false;
         recordTicks(scope, endTicks - completed.startTicks);
         return true;
     }
 
-    ScopedTimer::ScopedTimer(Scope scope) noexcept :
-        _scope(scope)
+    ScopedTimer::ScopedTimer(Scope scope) noexcept : _scope(scope)
     {
         if (!s_settings.enabled.load(std::memory_order_acquire) || !validScope(scope)) {
             return;
@@ -1182,10 +1572,7 @@ namespace rock::performance_profiler
         _active = true;
     }
 
-    ScopedTimer::~ScopedTimer()
-    {
-        stop();
-    }
+    ScopedTimer::~ScopedTimer() { stop(); }
 
     void ScopedTimer::stop() noexcept
     {
@@ -1202,4 +1589,40 @@ namespace rock::performance_profiler
         _active = false;
     }
 
+    ConsumerTimer::ConsumerTimer(const ConsumerKind kind, const void* callback) noexcept
+    {
+        if (!callback || !s_settings.enabled.load(std::memory_order_relaxed)) {
+            return;
+        }
+        _key =
+            reinterpret_cast<std::uintptr_t>(callback) | (kind == ConsumerKind::Animation ? kAnimationConsumerBit : 0);
+        _startTicks = queryPerformanceTicks();
+    }
+
+    ConsumerTimer::~ConsumerTimer()
+    {
+        if (!_key || !_startTicks) {
+            return;
+        }
+        const auto endTicks = queryPerformanceTicks();
+        if (endTicks < _startTicks) {
+            return;
+        }
+        const auto ticks = endTicks - _startTicks;
+        const auto first = static_cast<std::size_t>(((_key ^ (_key >> 29)) * 0x9E3779B97F4A7C15ull) >> 59);
+        for (std::size_t probe = 0; probe < kConsumerSlots; ++probe) {
+            auto& slot = s_consumers[(first + probe) % kConsumerSlots];
+            auto current = slot.key.load(std::memory_order_acquire);
+            if (current == 0 && slot.key.compare_exchange_strong(current, _key, std::memory_order_acq_rel)) {
+                current = _key;
+            }
+            if (current == _key) {
+                slot.calls.fetch_add(1, std::memory_order_relaxed);
+                slot.ticks.fetch_add(ticks, std::memory_order_relaxed);
+                atomicMax(slot.maxTicks, ticks);
+                return;
+            }
+        }
+        s_consumersDropped.fetch_add(1, std::memory_order_relaxed);
+    }
 }

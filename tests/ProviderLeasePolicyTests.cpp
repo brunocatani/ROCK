@@ -1,5 +1,5 @@
-#include "api/ProviderLeasePolicy.h"
 #include "api/ProviderFrameClock.h"
+#include "api/ProviderLeasePolicy.h"
 
 #include <cassert>
 #include <cstdint>
@@ -25,8 +25,7 @@ int main()
     assert(!isActive(220, maximumExpiry));
     assert(remainingFrames(100, maximumExpiry) == 120);
 
-    constexpr auto maximumFrame =
-        (std::numeric_limits<std::uint64_t>::max)();
+    constexpr auto maximumFrame = (std::numeric_limits<std::uint64_t>::max)();
     assert(exclusiveExpiryFrame(maximumFrame - 1, 120) == maximumFrame);
     assert(isActive(maximumFrame - 1, maximumFrame));
     assert(!isActive(maximumFrame, maximumFrame));
@@ -55,31 +54,31 @@ int main()
 
     // Native graph output observes the last measured timing between game-loop
     // entries. It cannot preempt BeforeRock or consume a one-frame drive.
-    using Phase=rock::api::core::AnimationPhaseV1;
+    using Phase = rock::api::animation::AnimationPhase;
     rock::provider::ProviderFrameClock phases;
-    assert(phases.beginPhase(Phase::NativeGraphOutput,0)==0);
-    assert(phases.current()==0 && phases.leaseBoundary()==0);
-    assert(phases.beginPhase(Phase::BeforeRock,40)==40);
-    assert(phases.publishFrame()==40);
-    assert(phases.beginPhase(Phase::Complete,40)==40);
-    const auto pendingDrive=exclusiveExpiryFrame(phases.leaseBoundary(),1);
-    assert(phases.beginPhase(Phase::NativeGraphOutput,40)==40);
-    assert(phases.beginPhase(Phase::NativeGraphOutput,40)==40);
-    assert(phases.beginPhase(Phase::BeforeRock,41)==41);
-    assert(phases.current()==41 && phases.leaseBoundary()==40);
-    assert(isActive(phases.leaseBoundary(),pendingDrive));
-    assert(phases.beginPhase(Phase::AfterRock,41)==41);
-    assert(phases.publishFrame()==41);
-    assert(!isActive(phases.leaseBoundary(),pendingDrive));
-    assert(phases.beginPhase(Phase::Complete,41)==41);
-    assert(phases.beginPhase(Phase::Presented,41)==41);
-    assert(phases.current()==41 && phases.leaseBoundary()==41);
+    assert(phases.beginPhase(Phase::NativeGraphOutput, 0) == 0);
+    assert(phases.current() == 0 && phases.leaseBoundary() == 0);
+    assert(phases.beginPhase(Phase::BeforeRock, 40) == 40);
+    assert(phases.publishFrame() == 40);
+    assert(phases.beginPhase(Phase::Complete, 40) == 40);
+    const auto pendingDrive = exclusiveExpiryFrame(phases.leaseBoundary(), 1);
+    assert(phases.beginPhase(Phase::NativeGraphOutput, 40) == 40);
+    assert(phases.beginPhase(Phase::NativeGraphOutput, 40) == 40);
+    assert(phases.beginPhase(Phase::BeforeRock, 41) == 41);
+    assert(phases.current() == 41 && phases.leaseBoundary() == 40);
+    assert(isActive(phases.leaseBoundary(), pendingDrive));
+    assert(phases.beginPhase(Phase::AfterRock, 41) == 41);
+    assert(phases.publishFrame() == 41);
+    assert(!isActive(phases.leaseBoundary(), pendingDrive));
+    assert(phases.beginPhase(Phase::Complete, 41) == 41);
+    assert(phases.beginPhase(Phase::Presented, 41) == 41);
+    assert(phases.current() == 41 && phases.leaseBoundary() == 41);
     // An observation does not advance the clock even if called with a later
     // sequence; the next measured BeforeRock owns that transition.
-    assert(phases.beginPhase(Phase::NativeGraphOutput,42)==42);
-    assert(phases.current()==41 && phases.leaseBoundary()==41);
-    assert(phases.beginPhase(Phase::BeforeRock,42)==42);
-    assert(phases.publishFrame()==42);
+    assert(phases.beginPhase(Phase::NativeGraphOutput, 42) == 42);
+    assert(phases.current() == 41 && phases.leaseBoundary() == 41);
+    assert(phases.beginPhase(Phase::BeforeRock, 42) == 42);
+    assert(phases.publishFrame() == 42);
 
     // FRIK 2.3 can initialize the provider during FrameBegin, before BeforeRock.
     // Those events need the new frame while the previous publication's drive

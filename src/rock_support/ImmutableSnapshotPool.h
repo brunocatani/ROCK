@@ -1,3 +1,5 @@
+// Fixed-capacity pool of reusable snapshot buffers handed out as shared_ptr,
+// so a producer can publish frames to a reader thread without allocating.
 #pragma once
 
 #include <array>
@@ -33,6 +35,7 @@ namespace rock::immutable_snapshot
         }
 
         [[nodiscard]] std::size_t size() const noexcept { return _size; }
+
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
     private:

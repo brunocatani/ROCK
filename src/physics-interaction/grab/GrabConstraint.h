@@ -1,13 +1,13 @@
 #pragma once
 
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/native/havok/PhysicsUtils.h"
 #include "physics-interaction/object/GrabTargetKind.h"
 
+#include "RE/Bethesda/TESObjectREFRs.h"
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/Havok/hknpConstraintCinfo.h"
 #include "RE/Havok/hknpWorld.h"
-#include "RE/Bethesda/TESObjectREFRs.h"
 #include "RE/NetImmerse/NiSmartPointer.h"
 
 #include <cstdint>
@@ -32,6 +32,7 @@ namespace rock
         float proportionalRecoveryVelocity;
         float constantRecoveryVelocity;
     };
+
     static_assert(sizeof(HkPositionMotor) == 0x30);
 
     constexpr std::size_t HK_POSITION_MOTOR_SIZE = 0x30;
@@ -133,8 +134,8 @@ namespace rock
         bool valid = false;
     };
 
-    GrabMotorBodyProperties readGrabMotorBodyProperties(RE::hknpWorld* world,
-        RE::hknpBodyId bodyId, const RE::NiPoint3& pivotBodyLocalGame);
+    GrabMotorBodyProperties readGrabMotorBodyProperties(RE::hknpWorld* world, RE::hknpBodyId bodyId,
+        const RE::NiPoint3& pivotBodyLocalGame);
 
     struct ActiveConstraint
     {
@@ -149,7 +150,11 @@ namespace rock
         GrabMotorBodyProperties motorBodyProperties{};
 
         bool isValid() const { return constraintId != 0x7FFF'FFFF && constraintData != nullptr; }
-        bool usesRagdollAngularMotorAtom() const { return angularAuthority == GrabAngularAuthority::HknpRagdollMotorAtom; }
+
+        bool usesRagdollAngularMotorAtom() const
+        {
+            return angularAuthority == GrabAngularAuthority::HknpRagdollMotorAtom;
+        }
 
         void clear()
         {
@@ -222,6 +227,8 @@ namespace rock
         RE::NiPointer<RE::TESObjectREFR> retainedRef{};
         RE::TESObjectREFR* refr = nullptr;
         grab_target::Kind targetKind = grab_target::Kind::LooseObject;
+        // A ConnectedBody grab of a living actor's limb (extension DirectLiveLimb).
+        bool liveLimb = false;
         std::uint32_t originalFilterInfo = 0;
         std::uint16_t originalMotionPropsId = 0;
         float inverseMass = 0.0f;
@@ -236,10 +243,7 @@ namespace rock
             refr = retainedRef.get();
         }
 
-        bool isValid() const
-        {
-            return bodyId.value != 0x7FFF'FFFF && refr != nullptr && retainedRef.get() == refr;
-        }
+        bool isValid() const { return bodyId.value != 0x7FFF'FFFF && refr != nullptr && retainedRef.get() == refr; }
 
         void clear()
         {
@@ -247,6 +251,7 @@ namespace rock
             refr = nullptr;
             retainedRef.reset();
             targetKind = grab_target::Kind::LooseObject;
+            liveLimb = false;
             originalFilterInfo = 0;
             originalMotionPropsId = 0;
             inverseMass = 0.0f;
@@ -257,22 +262,21 @@ namespace rock
         }
     };
 
-    void normalizeGrabbedInertia(RE::hknpWorld* world, RE::hknpBodyId bodyId, SavedObjectState& savedState, bool looseWeaponGrab = false);
-
-    void normalizeGrabbedInertiaForBodies(
-        RE::hknpWorld* world,
-        RE::hknpBodyId primaryBodyId,
-        const std::vector<std::uint32_t>& heldBodyIds,
-        SavedObjectState& savedState,
+    void normalizeGrabbedInertia(RE::hknpWorld* world, RE::hknpBodyId bodyId, SavedObjectState& savedState,
         bool looseWeaponGrab = false);
+
+    void normalizeGrabbedInertiaForBodies(RE::hknpWorld* world, RE::hknpBodyId primaryBodyId,
+        const std::vector<std::uint32_t>& heldBodyIds, SavedObjectState& savedState, bool looseWeaponGrab = false);
 
     void restoreGrabbedInertia(RE::hknpWorld* world, SavedObjectState& savedState);
 
-    HkPositionMotor* createPositionMotor(float tau, float damping, float proportionalRecoveryVelocity, float constantRecoveryVelocity, float minForce, float maxForce);
+    HkPositionMotor* createPositionMotor(float tau, float damping, float proportionalRecoveryVelocity,
+        float constantRecoveryVelocity, float minForce, float maxForce);
 
     ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
         const RE::NiTransform& handBodyWorld, const RE::NiPoint3& palmWorldGame,
-        const RE::NiTransform& desiredBodyTransformHandSpace, float tau, float damping, float maxForce, float proportionalRecovery, float constantRecovery);
+        const RE::NiTransform& desiredBodyTransformHandSpace, float tau, float damping, float maxForce,
+        float proportionalRecovery, float constantRecovery);
 
     ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
         const RE::NiTransform& handBodyWorld, const RE::NiPoint3& palmWorldGame,

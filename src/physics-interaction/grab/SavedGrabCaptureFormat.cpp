@@ -123,7 +123,8 @@ namespace rock::saved_grab_capture
             return json{
                 { "seatDepthMaxGameUnits", tuning.seatDepthMaxGameUnits },
                 { "seatDepthFootprintRadiusGameUnits", tuning.seatDepthFootprintRadiusGameUnits },
-                { "seatPenetrationBackstopFootprintRadiusGameUnits", tuning.seatPenetrationBackstopFootprintRadiusGameUnits },
+                { "seatPenetrationBackstopFootprintRadiusGameUnits",
+                    tuning.seatPenetrationBackstopFootprintRadiusGameUnits },
                 { "seatDepthSkinGameUnits", tuning.seatDepthSkinGameUnits },
                 { "gripInsetGameUnits", tuning.gripInsetGameUnits },
                 { "pullPresentationMinElongationRatio", tuning.pullPresentationMinElongationRatio },
@@ -171,6 +172,9 @@ namespace rock::saved_grab_capture
             { "rockVersion", file.rockVersion },
             { "capturedUtc", file.capturedUtc },
         };
+        if (!file.object.variant.empty()) {
+            document["object"]["variant"] = file.object.variant;
+        }
         if (file.capture.present) {
             document["capture"] = handToJson(file.capture);
         }

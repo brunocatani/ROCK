@@ -1,6 +1,7 @@
+// Recoil profiles per weapon family and hold, and the gains each profile uses.
 #pragma once
 
-#include "physics-interaction/weapon/WeaponTypes.h"
+#include "physics-interaction/weapon/classification/WeaponTypes.h"
 
 namespace rock::weapon_recoil_policy
 {
@@ -26,39 +27,57 @@ namespace rock::weapon_recoil_policy
     inline constexpr ProfileGains kPowerArmor{ 0.45f, 0.30f };
     inline constexpr ProfileGains kBipod{ 0.10f, 0.10f };
 
-    [[nodiscard]] inline constexpr Profile selectProfile(
-        const bool inPowerArmor, const bool closeSupport, const bool fullTwoHanded,
-        const bool surfaceLatched = false) noexcept
+    [[nodiscard]] inline constexpr Profile selectProfile(const bool inPowerArmor, const bool closeSupport,
+        const bool fullTwoHanded, const bool surfaceLatched = false) noexcept
     {
-        return surfaceLatched ? Profile::Bipod :
-               inPowerArmor ? Profile::PowerArmor :
-               closeSupport ? Profile::CloseSupport :
-               fullTwoHanded ? Profile::FullTwoHand : Profile::OneHand;
+        return surfaceLatched ? Profile::Bipod
+            : inPowerArmor    ? Profile::PowerArmor
+            : closeSupport    ? Profile::CloseSupport
+            : fullTwoHanded   ? Profile::FullTwoHand
+                              : Profile::OneHand;
     }
 
     [[nodiscard]] inline constexpr ProfileGains gainsFor(const Profile profile) noexcept
     {
         switch (profile) {
-        case Profile::Bipod: return kBipod;
-        case Profile::PowerArmor: return kPowerArmor;
-        case Profile::CloseSupport: return kCloseSupport;
-        case Profile::FullTwoHand: return kFullTwoHand;
-        default: return kOneHand;
+        case Profile::Bipod:
+            return kBipod;
+        case Profile::PowerArmor:
+            return kPowerArmor;
+        case Profile::CloseSupport:
+            return kCloseSupport;
+        case Profile::FullTwoHand:
+            return kFullTwoHand;
+        default:
+            return kOneHand;
         }
     }
 
     [[nodiscard]] inline constexpr const char* name(const Profile profile) noexcept
     {
         switch (profile) {
-        case Profile::Bipod: return "bipod";
-        case Profile::PowerArmor: return "power-armor";
-        case Profile::CloseSupport: return "close-support";
-        case Profile::FullTwoHand: return "full-two-hand";
-        default: return "one-hand";
+        case Profile::Bipod:
+            return "bipod";
+        case Profile::PowerArmor:
+            return "power-armor";
+        case Profile::CloseSupport:
+            return "close-support";
+        case Profile::FullTwoHand:
+            return "full-two-hand";
+        default:
+            return "one-hand";
         }
     }
 
-    enum class Family : std::uint8_t { Default, Pistol, Rifle, Shotgun, Heavy, Laser };
+    enum class Family : std::uint8_t
+    {
+        Default,
+        Pistol,
+        Rifle,
+        Shotgun,
+        Heavy,
+        Laser
+    };
 
     struct WeaponEvidence
     {
@@ -93,40 +112,45 @@ namespace rock::weapon_recoil_policy
     [[nodiscard]] inline constexpr const char* name(const Family family) noexcept
     {
         switch (family) {
-        case Family::Pistol: return "pistol";
-        case Family::Rifle: return "rifle";
-        case Family::Shotgun: return "shotgun";
-        case Family::Heavy: return "heavy";
-        case Family::Laser: return "laser";
-        default: return "default";
+        case Family::Pistol:
+            return "pistol";
+        case Family::Rifle:
+            return "rifle";
+        case Family::Shotgun:
+            return "shotgun";
+        case Family::Heavy:
+            return "heavy";
+        case Family::Laser:
+            return "laser";
+        default:
+            return "default";
         }
     }
 
     // The physical support state selects the percentage independently of the
     // recoil delivery/profile (provider visual support can retain OneHand's
     // geometric profile while still being a supported hold).
-    [[nodiscard]] inline constexpr float selectHoldPercent(const bool oneHanded,
-        const float oneHandPercent, const float twoHandPercent) noexcept
+    [[nodiscard]] inline constexpr float selectHoldPercent(const bool oneHanded, const float oneHandPercent,
+        const float twoHandPercent) noexcept
     {
         return oneHanded ? oneHandPercent : twoHandPercent;
     }
 
-    // Percent has already been validated by ROCK's central INI loader.
+    // Percent has already been validated by ROCK's central settings loader.
     // A latched bipod is always 10% of the native kick. Armor retains its
     // fixed profile for non-lasers; lasers use their own strength in armor.
-    [[nodiscard]] inline constexpr ProfileGains effectiveGains(
-        const Family family, const Profile profile, const float percent) noexcept
+    [[nodiscard]] inline constexpr ProfileGains effectiveGains(const Family family, const Profile profile,
+        const float percent) noexcept
     {
-        if (profile == Profile::Bipod ||
-            (profile == Profile::PowerArmor && family != Family::Laser)) {
+        if (profile == Profile::Bipod || (profile == Profile::PowerArmor && family != Family::Laser)) {
             return gainsFor(profile);
         }
         // Lasers share the bipod attenuation for every hold, without stacking
         // the close-support or pistol/rifle/heavy multipliers on top of it.
         // A pistol's close support keeps its aim authority but uses the same
         // recoil strength as a full two-hand grip.
-        const auto strengthProfile = family == Family::Pistol && profile == Profile::CloseSupport ?
-                                         Profile::FullTwoHand : profile;
+        const auto strengthProfile =
+            family == Family::Pistol && profile == Profile::CloseSupport ? Profile::FullTwoHand : profile;
         const auto base = family == Family::Laser ? kBipod : gainsFor(strengthProfile);
         const float multiplier = percent * 0.01f;
         return { base.translation * multiplier, base.rotation * multiplier };

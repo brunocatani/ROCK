@@ -1,7 +1,7 @@
 #pragma once
 
-#include "physics-interaction/visual/HandWorldClaimRegistryPolicy.h"
 #include "physics-interaction/hand/HandVisual.h"
+#include "physics-interaction/visual/HandWorldClaimRegistryPolicy.h"
 
 namespace rock::scope_hand_input_continuity_policy
 {
@@ -40,12 +40,12 @@ namespace rock::scope_hand_input_continuity_policy
 
     [[nodiscard]] inline bool usable(const RE::NiTransform& world)
     {
-        return hand_world_claim_registry_policy::isFiniteTransform(world) &&
-            world.scale > 0.000001f && hand_world_claim_registry_policy::isUsableTargetRotation(world);
+        return hand_world_claim_registry_policy::isFiniteTransform(world) && world.scale > 0.000001f &&
+            hand_world_claim_registry_policy::isUsableTargetRotation(world);
     }
 
-    [[nodiscard]] inline RE::NiTransform dampen(const RE::NiTransform& raw,
-        const RE::NiTransform& previous, const RE::NiPoint3& cameraDelta, const Damping& config)
+    [[nodiscard]] inline RE::NiTransform dampen(const RE::NiTransform& raw, const RE::NiTransform& previous,
+        const RE::NiPoint3& cameraDelta, const Damping& config)
     {
         auto result = raw;
         result.translate = raw.translate - (raw.translate - previous.translate - cameraDelta) * config.translation;
@@ -60,9 +60,9 @@ namespace rock::scope_hand_input_continuity_policy
     // the last scoped frame until native first-person input agrees again.
     // The native WeaponOffset world may have had recoil restored after the
     // arm update, so convergence is measured against FirstPersonHand instead.
-    [[nodiscard]] inline Result resolve(State& state, const Damping& config, bool scoped,
-        std::uint64_t sequence, const DriverSample& raw, const DriverSample& nativeDriver,
-        const DriverSample& nativeHand, const RE::NiPoint3& camera, bool cameraValid)
+    [[nodiscard]] inline Result resolve(State& state, const Damping& config, bool scoped, std::uint64_t sequence,
+        const DriverSample& raw, const DriverSample& nativeDriver, const DriverSample& nativeHand,
+        const RE::NiPoint3& camera, bool cameraValid)
     {
         namespace registry = hand_world_claim_registry_policy;
         Result result{ nativeDriver, nativeHand };
@@ -75,10 +75,12 @@ namespace rock::scope_hand_input_continuity_policy
             // from native history on the exit edge, or from a rendered wrist.
             if (rawValid && nativeHand.valid && usable(nativeHand.world)) {
                 const auto relation = transform_math::orthonormalizedTransform(transform_math::composeTransforms(
-                    transform_math::invertTransform(transform_math::orthonormalizedTransform(raw.world)), nativeHand.world));
-                state.relationValid = usable(relation) &&
-                    relation.translate.Length() <= 30.0f && relation.scale >= 0.25f && relation.scale <= 4.0f;
-                if (state.relationValid) state.handInDriver = relation;
+                    transform_math::invertTransform(transform_math::orthonormalizedTransform(raw.world)),
+                    nativeHand.world));
+                state.relationValid = usable(relation) && relation.translate.Length() <= 30.0f &&
+                    relation.scale >= 0.25f && relation.scale <= 4.0f;
+                if (state.relationValid)
+                    state.handInDriver = relation;
             }
             state.previousDriver = raw.world;
             state.previousCamera = camera;
@@ -90,10 +92,11 @@ namespace rock::scope_hand_input_continuity_policy
             if (rawValid && cameraValid && state.relationValid) {
                 // A skipped frame cannot supply filter history. Current input
                 // remains usable; stale history must never be replayed.
-                const bool consecutive = state.previousValid && state.sequence != 0 &&
-                    sequence > state.sequence && sequence - state.sequence == 1;
-                const auto driver = consecutive ?
-                    dampen(raw.world, state.previousDriver, camera - state.previousCamera, config) : raw.world;
+                const bool consecutive = state.previousValid && state.sequence != 0 && sequence > state.sequence &&
+                    sequence - state.sequence == 1;
+                const auto driver = consecutive
+                    ? dampen(raw.world, state.previousDriver, camera - state.previousCamera, config)
+                    : raw.world;
                 const auto hand = transform_math::orthonormalizedTransform(
                     transform_math::composeTransforms(driver, state.handInDriver));
                 if (usable(driver) && usable(hand)) {
@@ -105,7 +108,8 @@ namespace rock::scope_hand_input_continuity_policy
                         if (result.residualGameUnits <= 0.05f && result.residualDegrees <= 0.05f &&
                             std::fabs(hand.scale - nativeHand.world.scale) <= 0.0001f) {
                             state.recovering = false;
-                            result = { nativeDriver, nativeHand, false, result.residualGameUnits, result.residualDegrees };
+                            result = { nativeDriver, nativeHand, false, result.residualGameUnits,
+                                result.residualDegrees };
                         }
                     }
                 }

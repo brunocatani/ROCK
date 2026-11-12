@@ -1,6 +1,8 @@
+// PhysicsInteraction's lifecycle state machine as published to the Core
+// provider: world and generation tracking, and when physics writes are allowed.
 #pragma once
 
-#include "api/ProviderRuntimeTypes.h"
+#include <ROCK/Core.h>
 
 #include <cstdint>
 
@@ -22,7 +24,7 @@ namespace rock::physics_lifecycle
         std::uint32_t providerGeneration{ 1 };
         std::uint32_t stableFrameCount{ 0 };
         std::uint32_t flags{ 0 };
-        provider::RockProviderLifecycleReason lastReason{ provider::RockProviderLifecycleReason::None };
+        api::core::LifecycleReason lastReason{ api::core::LifecycleReason::None };
     };
 
     struct FrameInputs
@@ -34,17 +36,18 @@ namespace rock::physics_lifecycle
         bool menuBlocking{ false };
         bool configBlocking{ false };
         bool generatedBodiesValid{ false };
-        provider::RockProviderLifecycleReason reasonHint{ provider::RockProviderLifecycleReason::None };
+        api::core::LifecycleReason reasonHint{ api::core::LifecycleReason::None };
     };
 
-    inline void noteReason(RuntimeState& state, provider::RockProviderLifecycleReason reason)
+    inline void noteReason(RuntimeState& state, api::core::LifecycleReason reason)
     {
-        if (reason != provider::RockProviderLifecycleReason::None) {
+        if (reason != api::core::LifecycleReason::None) {
             state.lastReason = reason;
         }
     }
 
-    inline void noteGeneration(std::uint32_t& current, std::uint32_t generation, RuntimeState& state, provider::RockProviderLifecycleReason reason)
+    inline void noteGeneration(std::uint32_t& current, std::uint32_t generation, RuntimeState& state,
+        api::core::LifecycleReason reason)
     {
         generation = generation == 0 ? 1 : generation;
         if (current != generation) {
@@ -65,32 +68,36 @@ namespace rock::physics_lifecycle
             state.bhkWorld = input.bhkWorld;
             state.hknpWorld = input.hknpWorld;
             state.stableFrameCount = 0;
-            using Reason = provider::RockProviderLifecycleReason;
-            noteReason(state, input.reasonHint != Reason::None ? input.reasonHint :
-                !worldAvailable ? Reason::WorldUnavailable : hadWorld ? Reason::WorldChanged : Reason::WorldAvailable);
+            using Reason = api::core::LifecycleReason;
+            noteReason(state,
+                input.reasonHint != Reason::None ? input.reasonHint
+                    : !worldAvailable            ? Reason::WorldUnavailable
+                    : hadWorld                   ? Reason::WorldChanged
+                                                 : Reason::WorldAvailable);
         }
 
         const bool bodiesValid = worldAvailable && input.skeletonReady && input.generatedBodiesValid;
         const bool live = bodiesValid && input.providerReady;
         if (live && state.stableFrameCount == 0) {
             state.stableFrameCount = 1;
-            noteReason(state, provider::RockProviderLifecycleReason::TransitionSettled);
+            noteReason(state, api::core::LifecycleReason::TransitionSettled);
         } else if (!live) {
             state.stableFrameCount = 0;
         }
 
         if (input.menuBlocking) {
-            noteReason(state, provider::RockProviderLifecycleReason::MenuBlocked);
+            noteReason(state, api::core::LifecycleReason::MenuBlocked);
         } else if (input.configBlocking) {
-            noteReason(state, provider::RockProviderLifecycleReason::ConfigBlocked);
+            noteReason(state, api::core::LifecycleReason::ConfigBlocked);
         } else {
             noteReason(state, input.reasonHint);
         }
 
-        using Flag = provider::RockProviderLifecycleFlag;
+        using Flag = api::core::LifecycleFlag;
         std::uint32_t flags = 0;
         const auto add = [&flags](Flag flag, bool on) {
-            if (on) flags |= static_cast<std::uint32_t>(flag);
+            if (on)
+                flags |= static_cast<std::uint32_t>(flag);
         };
         add(Flag::WorldAvailable, worldAvailable);
         add(Flag::SkeletonReady, input.skeletonReady);

@@ -13,8 +13,11 @@ namespace rock
     {
     public:
         explicit PhysicsInteraction(std::atomic<bool>& destroyed) : _destroyed(destroyed) {}
+
         ~PhysicsInteraction() { _destroyed = true; }
+
         int value = 42;
+
     private:
         std::atomic<bool>& _destroyed;
     };
@@ -25,7 +28,7 @@ int main()
     using namespace std::chrono_literals;
     rock::provider::ProviderInstanceAccess access;
     assert(!access.borrow().get());
-    std::atomic<bool> destroyed{false};
+    std::atomic<bool> destroyed{ false };
     auto instance = std::make_unique<rock::PhysicsInteraction>(destroyed);
     access.publish(instance.get());
     std::future<void> retire;

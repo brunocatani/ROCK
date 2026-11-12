@@ -42,7 +42,8 @@ namespace
             return true;
         }
 
-        std::printf("%s expected %llu got %llu\n", label, static_cast<unsigned long long>(expected), static_cast<unsigned long long>(actual));
+        std::printf("%s expected %llu got %llu\n", label, static_cast<unsigned long long>(expected),
+            static_cast<unsigned long long>(actual));
         return false;
     }
 }
@@ -89,7 +90,8 @@ int main()
                 ok &= expectNear("cadence delta passthrough", last.deltaSeconds, delta, 1.0e-9);
             }
             // One nominal second of frames accumulates one second of game time.
-            ok &= expectNear("cadence elapsed one second", last.elapsedGameSeconds, static_cast<double>(frames) * delta, 1.0e-4);
+            ok &= expectNear("cadence elapsed one second", last.elapsedGameSeconds, static_cast<double>(frames) * delta,
+                1.0e-4);
         }
     }
 
@@ -160,10 +162,11 @@ int main()
         (void)advanceGameFrameClock(state, GameFrameSampleInput{ .rawDeltaSeconds = 0.02f });
         const double elapsedBefore = state.elapsedGameSeconds;
         for (int i = 0; i < 10; ++i) {
-            const auto timing = advanceGameFrameClock(state, GameFrameSampleInput{
-                .rawDeltaSeconds = 0.011f,
-                .menuPaused = true,
-            });
+            const auto timing = advanceGameFrameClock(state,
+                GameFrameSampleInput{
+                    .rawDeltaSeconds = 0.011f,
+                    .menuPaused = true,
+                });
             ok &= expectTrue("paused frame valid", timing.valid);
             ok &= expectTrue("paused frame flagged", timing.menuPaused);
             ok &= expectNear("paused frame delta reported", timing.deltaSeconds, 0.011, 1.0e-6);
@@ -194,7 +197,8 @@ int main()
 
         const auto secondAfterReset = advanceGameFrameClock(state, GameFrameSampleInput{ .rawDeltaSeconds = 0.02f });
         ok &= expectTrue("post-reset second frame valid", secondAfterReset.valid);
-        ok &= expectNear("post-reset accumulation resumes", secondAfterReset.elapsedGameSeconds, elapsedBefore + 0.02, 1.0e-6);
+        ok &= expectNear("post-reset accumulation resumes", secondAfterReset.elapsedGameSeconds, elapsedBefore + 0.02,
+            1.0e-6);
     }
 
     // Irregular pacing keeps the cumulative clock equal to the sum of the

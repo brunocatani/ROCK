@@ -1,7 +1,7 @@
 #pragma once
 
-#include "physics-interaction/body/BodyZone.h"
 #include "physics-interaction/VectorMath.h"
+#include "physics-interaction/body/BodyZone.h"
 
 #include "RE/NetImmerse/NiPoint.h"
 
@@ -104,8 +104,8 @@ namespace rock::shoulder_stash
 
     [[nodiscard]] inline bool sustainedContactMissWithinTolerance(float missSeconds, float maxMissSeconds) noexcept
     {
-        return std::isfinite(maxMissSeconds) && maxMissSeconds >= 0.0f &&
-               std::isfinite(missSeconds) && missSeconds <= maxMissSeconds;
+        return std::isfinite(maxMissSeconds) && maxMissSeconds >= 0.0f && std::isfinite(missSeconds) &&
+            missSeconds <= maxMissSeconds;
     }
 
     inline void clearSustainedContact(RuntimeState& state) noexcept
@@ -120,7 +120,8 @@ namespace rock::shoulder_stash
         state.hasSustainedPointGame = false;
     }
 
-    [[nodiscard]] inline bool hmdBackBehindGateAllows(float hmdForwardOffsetGameUnits, float minBehindGameUnits) noexcept
+    [[nodiscard]] inline bool hmdBackBehindGateAllows(float hmdForwardOffsetGameUnits,
+        float minBehindGameUnits) noexcept
     {
         if (!std::isfinite(hmdForwardOffsetGameUnits)) {
             return false;
@@ -183,11 +184,8 @@ namespace rock::shoulder_stash
         return mul(value, 1.0f / len);
     }
 
-    [[nodiscard]] inline float pointSegmentDistance(
-        const RE::NiPoint3& point,
-        const RE::NiPoint3& start,
-        const RE::NiPoint3& end,
-        RE::NiPoint3* outNearest = nullptr) noexcept
+    [[nodiscard]] inline float pointSegmentDistance(const RE::NiPoint3& point, const RE::NiPoint3& start,
+        const RE::NiPoint3& end, RE::NiPoint3* outNearest = nullptr) noexcept
     {
         const auto segment = sub(end, start);
         const float denom = lengthSquared(segment);
@@ -208,8 +206,7 @@ namespace rock::shoulder_stash
         return probe.hasVelocity ? length(probe.velocityGamePerSecond) : 0.0f;
     }
 
-    [[nodiscard]] inline RE::NiPoint3 probePointRelativeToHmdTranslation(
-        const RE::NiPoint3& probePointGame,
+    [[nodiscard]] inline RE::NiPoint3 probePointRelativeToHmdTranslation(const RE::NiPoint3& probePointGame,
         const RE::NiPoint3& hmdPositionWorld) noexcept
     {
         return sub(probePointGame, hmdPositionWorld);
@@ -223,6 +220,6 @@ namespace rock::shoulder_stash
     [[nodiscard]] inline bool isSameSideShoulder(bool isLeftHand, body_zone::BodyZoneKind zone) noexcept
     {
         return (isLeftHand && zone == body_zone::BodyZoneKind::LeftShoulder) ||
-               (!isLeftHand && zone == body_zone::BodyZoneKind::RightShoulder);
+            (!isLeftHand && zone == body_zone::BodyZoneKind::RightShoulder);
     }
 }

@@ -1,3 +1,6 @@
+// Precompiled header for every ROCK translation unit (target_precompile_headers
+// in CMakeLists.txt): CommonLibF4VR, F4SE, ROCK's logger and the generated
+// Version.h. Anything added here recompiles the whole plugin when it changes.
 #pragma once
 
 #define NOMMNOSOUND
@@ -17,7 +20,6 @@ using std::max;
 using std::min;
 
 #include "rock_support/Logger.h"
-
 
 #define DLLEXPORT __declspec(dllexport)
 

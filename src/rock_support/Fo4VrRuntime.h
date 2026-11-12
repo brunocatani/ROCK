@@ -1,3 +1,7 @@
+// FO4VR runtime access ROCK needs beyond CommonLibF4VR: the player's VR scene
+// nodes (PlayerNodes layout), skeleton bone trees, equipped weapon and its node,
+// hand nodes, power-armor state, game INI settings and scene-graph helpers
+// (node search, visibility, transform updates).
 #pragma once
 
 #include <cstddef>
@@ -14,49 +18,50 @@ namespace rock::fo4vr
 
     struct PlayerNodes
     {
-        RE::NiNode* playerworldnode;                        // PlayerCharacter + 0x06E0
-        RE::NiNode* roomnode;                               // + 0x06E8
-        RE::NiNode* primaryWandNode;                        // + 0x06F0
-        RE::NiNode* primaryWandandTouchPad;                 // + 0x06F8
-        RE::NiNode* primaryUIAttachNode;                    // + 0x0700
-        RE::NiNode* primaryWeapontoWeaponNode;              // + 0x0708
-        RE::NiNode* primaryWeaponKickbackRecoilNode;        // + 0x0710
-        RE::NiNode* primaryWeaponOffsetNOde;                // + 0x0718
-        RE::NiNode* primaryWeaponScopeCamera;               // + 0x0720
-        RE::NiNode* primaryVertibirdMinigunOffNOde;         // + 0x0728
-        RE::NiNode* primaryMeleeWeaponOffsetNode;           // + 0x0730
+        RE::NiNode* playerworldnode; // PlayerCharacter + 0x06E0
+        RE::NiNode* roomnode; // + 0x06E8
+        RE::NiNode* primaryWandNode; // + 0x06F0
+        RE::NiNode* primaryWandandTouchPad; // + 0x06F8
+        RE::NiNode* primaryUIAttachNode; // + 0x0700
+        RE::NiNode* primaryWeapontoWeaponNode; // + 0x0708
+        RE::NiNode* primaryWeaponKickbackRecoilNode; // + 0x0710
+        RE::NiNode* primaryWeaponOffsetNOde; // + 0x0718
+        RE::NiNode* primaryWeaponScopeCamera; // + 0x0720
+        RE::NiNode* primaryVertibirdMinigunOffNOde; // + 0x0728
+        RE::NiNode* primaryMeleeWeaponOffsetNode; // + 0x0730
         RE::NiNode* primaryUnarmedPowerArmorWeaponOffsetNode; // + 0x0738
-        RE::NiNode* primaryWandLaserPointer;                // + 0x0740
-        RE::NiNode* PrimaryWandLaserPointerAdjuster;        // + 0x0748
-        RE::NiNode* unk750;                                 // + 0x0750
-        RE::NiNode* PrimaryMeleeWeaponOffsetNode;           // + 0x0758
-        RE::NiNode* SecondaryMeleeWeaponOffsetNode;         // + 0x0760
-        RE::NiNode* SecondaryWandNode;                      // + 0x0768
-        RE::NiNode* Point002Node;                           // + 0x0770
-        RE::NiNode* WorkshopPalletNode;                     // + 0x0778
-        RE::NiNode* WorkshopPallenSlide;                    // + 0x0780
-        RE::NiNode* SecondaryUIOffsetNode;                  // + 0x0788
-        RE::NiNode* SecondaryMeleeWeaponOffsetNode2;        // + 0x0790
+        RE::NiNode* primaryWandLaserPointer; // + 0x0740
+        RE::NiNode* PrimaryWandLaserPointerAdjuster; // + 0x0748
+        RE::NiNode* unk750; // + 0x0750
+        RE::NiNode* PrimaryMeleeWeaponOffsetNode; // + 0x0758
+        RE::NiNode* SecondaryMeleeWeaponOffsetNode; // + 0x0760
+        RE::NiNode* SecondaryWandNode; // + 0x0768
+        RE::NiNode* Point002Node; // + 0x0770
+        RE::NiNode* WorkshopPalletNode; // + 0x0778
+        RE::NiNode* WorkshopPallenSlide; // + 0x0780
+        RE::NiNode* SecondaryUIOffsetNode; // + 0x0788
+        RE::NiNode* SecondaryMeleeWeaponOffsetNode2; // + 0x0790
         RE::NiNode* SecondaryUnarmedPowerArmorWeaponOffsetNode; // + 0x0798
-        RE::NiNode* SecondaryAimNode;                       // + 0x07A0
-        RE::NiNode* PipboyParentNode;                       // + 0x07A8
-        RE::NiNode* PipboyRoot_nif_only_node;               // + 0x07B0
-        RE::NiNode* ScreenNode;                             // + 0x07B8
-        RE::NiNode* PipboyLightParentNode;                  // + 0x07C0
-        RE::NiNode* unk7c8;                                 // + 0x07C8
-        RE::NiNode* ScopeParentNode;                        // + 0x07D0
-        RE::NiNode* unk7d8;                                 // + 0x07D8
-        RE::NiNode* HmdNode;                                // + 0x07E0
-        RE::NiNode* OffscreenHmdNode;                       // + 0x07E8
-        RE::NiNode* UprightHmdNode;                         // + 0x07F0
-        RE::NiNode* UprightHmdLagNode;                      // + 0x07F8
-        RE::NiNode* BlackSphereNode;                        // + 0x0800
-        RE::NiNode* HeadLightParentNode;                    // + 0x0808
-        RE::NiNode* unk810;                                 // + 0x0810
-        RE::NiNode* WeaponLeftNode;                         // + 0x0818
-        RE::NiNode* unk820;                                 // + 0x0820
-        RE::NiNode* LockPickParentNode;                     // + 0x0828
+        RE::NiNode* SecondaryAimNode; // + 0x07A0
+        RE::NiNode* PipboyParentNode; // + 0x07A8
+        RE::NiNode* PipboyRoot_nif_only_node; // + 0x07B0
+        RE::NiNode* ScreenNode; // + 0x07B8
+        RE::NiNode* PipboyLightParentNode; // + 0x07C0
+        RE::NiNode* unk7c8; // + 0x07C8
+        RE::NiNode* ScopeParentNode; // + 0x07D0
+        RE::NiNode* unk7d8; // + 0x07D8
+        RE::NiNode* HmdNode; // + 0x07E0
+        RE::NiNode* OffscreenHmdNode; // + 0x07E8
+        RE::NiNode* UprightHmdNode; // + 0x07F0
+        RE::NiNode* UprightHmdLagNode; // + 0x07F8
+        RE::NiNode* BlackSphereNode; // + 0x0800
+        RE::NiNode* HeadLightParentNode; // + 0x0808
+        RE::NiNode* unk810; // + 0x0810
+        RE::NiNode* WeaponLeftNode; // + 0x0818
+        RE::NiNode* unk820; // + 0x0820
+        RE::NiNode* LockPickParentNode; // + 0x0828
     };
+
     static_assert(sizeof(PlayerNodes) == 0x150);
 
     class BSFlattenedBoneTree : public RE::NiNode
@@ -92,6 +97,7 @@ namespace rock::fo4vr
         std::uint64_t unk1b0;
         BoneNodePosition* bonePositions;
     };
+
     static_assert(sizeof(BSFlattenedBoneTree::BoneTransforms) == 0xA0);
     static_assert(sizeof(BSFlattenedBoneTree::BoneNodePosition) == 0x18);
     static_assert(sizeof(BSFlattenedBoneTree) == 0x1C0);
@@ -104,6 +110,7 @@ namespace rock::fo4vr
         RE::NiNode* fireNode;
         RE::NiNode* projectileNode;
     };
+
     static_assert(sizeof(MuzzleFlash) == 0x20);
 
     using LoadNif = int (*)(std::uint64_t path, std::uint64_t output, std::uint64_t flags);
@@ -121,18 +128,20 @@ namespace rock::fo4vr
     [[nodiscard]] BSFlattenedBoneTree* getFlattenedBoneTree() noexcept;
     [[nodiscard]] RE::NiNode* getFirstPersonSkeleton() noexcept;
     [[nodiscard]] BSFlattenedBoneTree* getFirstPersonBoneTree() noexcept;
-    [[nodiscard]] RE::EquippedItem* getEquippedWeaponItem() noexcept;
+    // Native equipment index 0 (primary graph) or 1 (ROCK's second graph).
+    [[nodiscard]] RE::EquippedItem* getEquippedWeaponItem(std::uint32_t index = 0) noexcept;
     [[nodiscard]] RE::EquippedWeaponData* getEquippedWeaponData() noexcept;
+    // The first-person skeleton's "Weapon" bone, searched once per frame.
     [[nodiscard]] RE::NiNode* getWeaponNode() noexcept;
+    // Starts a new frame for getWeaponNode(); called once at FRIK's FrameBegin.
+    void beginNodeLookupFrame() noexcept;
     [[nodiscard]] RE::PlayerCamera* getPlayerCamera() noexcept;
     [[nodiscard]] RE::NiPoint3 getCameraPosition() noexcept;
     [[nodiscard]] RE::NiNode* getLeftHandNode() noexcept;
     [[nodiscard]] RE::NiNode* getRightHandNode() noexcept;
 
-    [[nodiscard]] std::uint32_t getNativeWeaponState(
-        const RE::Actor* actor) noexcept;
-    [[nodiscard]] std::uint32_t getNativeGunState(
-        const RE::Actor* actor) noexcept;
+    [[nodiscard]] std::uint32_t getNativeWeaponState(const RE::Actor* actor) noexcept;
+    [[nodiscard]] std::uint32_t getNativeGunState(const RE::Actor* actor) noexcept;
     [[nodiscard]] bool IsWeaponDrawn() noexcept;
     [[nodiscard]] bool isMeleeWeaponEquipped() noexcept;
     /*
@@ -146,7 +155,15 @@ namespace rock::fo4vr
     using PowerArmorStateProvider = bool (*)() noexcept;
     void setPowerArmorStateProvider(PowerArmorStateProvider provider) noexcept;
     [[nodiscard]] bool isExplodableCar(const RE::TESBoundObject* baseForm) noexcept;
+    // Walks both INI collections by name: for one-time lookups, never per frame.
     [[nodiscard]] RE::Setting* getIniSetting(const char* name) noexcept;
+    /*
+     * bLeftHandedMode:VR and fVrScale:VR, looked up once. The game's INI
+     * settings are process-lifetime objects, so the pointer is kept; a lookup
+     * that fails (collections not built yet) is retried on the next call.
+     */
+    [[nodiscard]] RE::Setting* leftHandedModeSetting() noexcept;
+    [[nodiscard]] RE::Setting* vrScaleSetting() noexcept;
 
     void showNotification(const std::string& text);
 

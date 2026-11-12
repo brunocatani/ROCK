@@ -1,3 +1,4 @@
+// Small conversions shared across ROCK.
 #pragma once
 
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"

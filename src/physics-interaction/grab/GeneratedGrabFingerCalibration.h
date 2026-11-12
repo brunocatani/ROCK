@@ -14,7 +14,8 @@ namespace rock::grab_finger_calibration_data
 {
     inline constexpr std::uint32_t kGrabFingerCalibrationGeneratorVersion = 4;
     inline constexpr std::size_t kGrabFingerCalibrationSampleCount = 201;
-    inline constexpr const char* kGrabFingerCalibrationSourceHash = "5c3fc5ca755efbf723b72152450ff2049006396c233179b07184b50c57123503";
+    inline constexpr const char* kGrabFingerCalibrationSourceHash =
+        "5c3fc5ca755efbf723b72152450ff2049006396c233179b07184b50c57123503";
 
     enum class BakedGrabFingerProbe : std::uint8_t
     {

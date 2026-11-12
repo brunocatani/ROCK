@@ -1,9 +1,10 @@
+// Documents-folder path resolution and directory creation (see ResourceUtils.h).
 #include "rock_support/ResourceUtils.h"
 
 #include "rock_support/Logger.h"
 
-#include <Windows.h>
 #include <ShlObj_core.h>
+#include <Windows.h>
 
 #include <filesystem>
 #include <stdexcept>

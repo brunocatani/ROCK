@@ -1,9 +1,9 @@
 #pragma once
 
-#include "api/ROCKProviderApiInternal.h"
+#include "api/ProviderRuntime.h"
 #include "physics-interaction/hand/HandLifecycle.h"
-#include "physics-interaction/native/BethesdaPhysicsBody.h"
-#include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
+#include "physics-interaction/native/havok/BethesdaPhysicsBody.h"
+#include "physics-interaction/native/havok/PhysicsCallbackQuiescenceGate.h"
 
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/NetImmerse/NiTransform.h"
@@ -54,19 +54,15 @@ namespace rock
             bool globalSurface = false;
             bool commandOwned = false;
             bool hasSurfaceAnchor = false;
-            provider::RockProviderTouchGrabKindV1 kind{
-                provider::RockProviderTouchGrabKindV1::FixedAnchor
-            };
-            provider::RockProviderSurfaceGripModeV1 surfaceGripMode{
-                provider::RockProviderSurfaceGripModeV1::CollisionAnchor
-            };
+            ::rock::api::touch::TouchGrabKind kind{ ::rock::api::touch::TouchGrabKind::FixedAnchor };
+            ::rock::api::touch::SurfaceGripMode surfaceGripMode{ ::rock::api::touch::SurfaceGripMode::CollisionAnchor };
             std::uint32_t bodyId = 0x7FFF'FFFFu;
             std::uint32_t referenceFormId = 0;
             std::uint32_t referenceNativeHandle = 0;
             RE::NiPoint3 surfaceAnchorGame{};
             bool hasNormal = false;
             RE::NiPoint3 normalGame{};
-            provider::RockProviderPowerArmorPointV1 powerArmorPoint{};
+            api::PowerArmorPoint powerArmorPoint{};
             std::uint32_t sourceTriangleIndex = 0xFFFF'FFFFu;
             char meshPartName[64]{};
         };
@@ -77,10 +73,12 @@ namespace rock
             std::uint32_t referenceFormId = 0;
             std::uint32_t referenceNativeHandle = 0;
             std::uint32_t bodyId = 0x7FFF'FFFFu;
-            provider::RockProviderPowerArmorPointV1 point{};
+            api::PowerArmorPoint point{};
             RE::NiPoint3 positionGame{};
         };
+
         static constexpr float kPowerArmorProximityRadiusGame = 8.0f;
+
         struct PowerArmorProbeDiagnostics
         {
             // 0 not attempted, 1 query failed, 2 no PA, 3 no bone,
@@ -92,16 +90,13 @@ namespace rock
             std::uint32_t bones = 0;
             float nearestDistanceGame = -1.0f;
         };
-        PowerArmorCandidate findPowerArmorCandidate(RE::hknpWorld* world,
-            const RE::NiPoint3& handPosition, std::uint32_t frameFormId = 0,
-            provider::RockProviderPowerArmorPointV1 point = {},
-            float radius = kPowerArmorProximityRadiusGame,
-            PowerArmorProbeDiagnostics* diagnostics = nullptr) const;
-        bool tryAcquirePowerArmor(bool isLeft, const PowerArmorCandidate& candidate,
-            RE::bhkWorld* bhkWorld, RE::hknpWorld* world,
-            std::uint32_t worldGeneration, std::uint32_t skeletonGeneration,
-            std::uint32_t providerGeneration, std::uint32_t collisionGeneration,
-            std::uint64_t commandOwnerToken = 0);
+
+        PowerArmorCandidate findPowerArmorCandidate(RE::hknpWorld* world, const RE::NiPoint3& handPosition,
+            std::uint32_t frameFormId = 0, api::PowerArmorPoint point = {},
+            float radius = kPowerArmorProximityRadiusGame, PowerArmorProbeDiagnostics* diagnostics = nullptr) const;
+        bool tryAcquirePowerArmor(bool isLeft, const PowerArmorCandidate& candidate, RE::bhkWorld* bhkWorld,
+            RE::hknpWorld* world, std::uint32_t worldGeneration, std::uint32_t skeletonGeneration,
+            std::uint32_t providerGeneration, std::uint32_t collisionGeneration, std::uint64_t commandOwnerToken = 0);
 
         enum class AttemptFailure : std::uint8_t
         {
@@ -126,9 +121,7 @@ namespace rock
             AttemptFailure failure{ AttemptFailure::NoCandidates };
             TargetClass targetClass{ TargetClass::Explicit };
             ContactSource contactSource{ ContactSource::SemanticHand };
-            provider::TouchGrabMotionClassV1 motionClass{
-                provider::TouchGrabMotionClassV1::Other
-            };
+            provider::TouchGrabMotionClass motionClass{ provider::TouchGrabMotionClass::Other };
             std::uint32_t bodyId = 0x7FFF'FFFFu;
             std::uint32_t collisionLayer = 0xFFFF'FFFFu;
             std::uint32_t motionIndex = 0xFFFF'FFFFu;
@@ -137,76 +130,45 @@ namespace rock
             std::uint8_t surfaceMeshFailure = 0;
         };
 
-        void setPhysicsCallbackGate(
-            PhysicsCallbackQuiescenceGate* gate) noexcept;
-        void setDynamicHandCollisionRuntime(
-            DynamicHandCollisionRuntime* runtime) noexcept
+        void setPhysicsCallbackGate(PhysicsCallbackQuiescenceGate* gate) noexcept;
+
+        void setDynamicHandCollisionRuntime(DynamicHandCollisionRuntime* runtime) noexcept
         {
             _dynamicHandCollision = runtime;
         }
-        void setGlobalSurfaceGrabEnabled(const bool enabled) noexcept
-        {
-            _globalSurfaceGrabEnabled = enabled;
-        }
+
+        void setGlobalSurfaceGrabEnabled(const bool enabled) noexcept { _globalSurfaceGrabEnabled = enabled; }
 
         [[nodiscard]] bool isHandActive(bool isLeft) const noexcept;
-        [[nodiscard]] bool getHandReport(
-            bool isLeft,
-            HandReport& outReport) const noexcept;
-        void beginAttemptDiagnostics() noexcept
-        {
-            _lastAttemptReport = {};
-        }
-        [[nodiscard]] AttemptReport getAttemptReport() const noexcept
-        {
-            return _lastAttemptReport;
-        }
+        [[nodiscard]] bool getHandReport(bool isLeft, HandReport& outReport) const noexcept;
 
-        [[nodiscard]] bool tryAcquire(
-            bool isLeft,
-            const hand_semantic_contact_state::SemanticContactRecord& contact,
-            RE::bhkWorld* bhkWorld,
-            RE::hknpWorld* hknpWorld,
-            std::uint32_t worldGeneration,
-            std::uint32_t skeletonGeneration,
-            std::uint32_t providerGeneration,
-            std::uint32_t collisionGeneration,
-            TargetClass targetClass,
-            ContactSource contactSource,
-            bool closeObjectCandidate,
-            provider::RockProviderPowerArmorPointV1 powerArmorPoint = {});
+        void beginAttemptDiagnostics() noexcept { _lastAttemptReport = {}; }
 
-        void service(
-            RE::bhkWorld* bhkWorld,
-            RE::hknpWorld* hknpWorld,
-            float deltaSeconds,
-            std::uint32_t worldGeneration,
-            std::uint32_t skeletonGeneration,
-            std::uint32_t providerGeneration,
+        [[nodiscard]] AttemptReport getAttemptReport() const noexcept { return _lastAttemptReport; }
+
+        [[nodiscard]] bool tryAcquire(bool isLeft, const hand_semantic_contact_state::SemanticContactRecord& contact,
+            RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, std::uint32_t worldGeneration,
+            std::uint32_t skeletonGeneration, std::uint32_t providerGeneration, std::uint32_t collisionGeneration,
+            TargetClass targetClass, ContactSource contactSource, bool closeObjectCandidate,
+            api::PowerArmorPoint powerArmorPoint = {}, bool heldGrip = false);
+
+        void service(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, float deltaSeconds,
+            std::uint32_t worldGeneration, std::uint32_t skeletonGeneration, std::uint32_t providerGeneration,
             std::uint32_t collisionGeneration);
 
-        void releaseCommandOwner(std::uint64_t ownerToken,
-            RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
+        void releaseCommandOwner(std::uint64_t ownerToken, RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
             std::uint32_t collisionGeneration);
 
-        void releaseHand(
-            bool isLeft,
-            RE::bhkWorld* bhkWorld,
-            RE::hknpWorld* hknpWorld,
-            provider::RockProviderTouchGrabReleaseReasonV1 reason,
-            std::uint32_t collisionGeneration);
+        void releaseHand(bool isLeft, RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
+            ::rock::api::touch::TouchGrabReleaseReason reason, std::uint32_t collisionGeneration);
 
-        void releaseAll(
-            RE::bhkWorld* bhkWorld,
-            RE::hknpWorld* hknpWorld,
-            provider::RockProviderTouchGrabReleaseReasonV1 reason,
-            std::uint32_t collisionGeneration);
+        void releaseAll(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
+            ::rock::api::touch::TouchGrabReleaseReason reason, std::uint32_t collisionGeneration);
 
         // World loss means native world teardown owns constraints already.
         // This path releases only ROCK wrapper references and never dereferences
         // the no-longer-authoritative target body.
-        void abandonAll(
-            provider::RockProviderTouchGrabReleaseReasonV1 reason) noexcept;
+        void abandonAll(::rock::api::touch::TouchGrabReleaseReason reason) noexcept;
 
     private:
         static constexpr std::uint32_t kInvalidId = 0x7FFF'FFFFu;
@@ -224,15 +186,13 @@ namespace rock
             bool hasContactNormal = false;
             bool surfaceLatch = false;
             bool contactRelativeToTarget = false;
-            provider::RockProviderSurfaceGripModeV1 surfaceGripMode{
-                provider::RockProviderSurfaceGripModeV1::CollisionAnchor
-            };
+            ::rock::api::touch::SurfaceGripMode surfaceGripMode{ ::rock::api::touch::SurfaceGripMode::CollisionAnchor };
             RE::NiPoint3 contactPointGame{};
             RE::NiPoint3 contactNormalGame{};
             RE::NiPoint3 contactPointInTargetBody{};
             RE::NiPoint3 contactNormalInTargetBody{};
             float shellToMeshDistanceGameUnits = 0.0f;
-            provider::RockProviderPowerArmorPointV1 powerArmorPoint{};
+            api::PowerArmorPoint powerArmorPoint{};
             std::uint32_t sourceTriangleIndex = 0xFFFF'FFFFu;
             char meshPartName[64]{};
         };
@@ -243,11 +203,9 @@ namespace rock
             bool globalSurface = false;
             std::uint64_t ownerToken = 0;
             std::uint64_t scopeToken = 0;
-            provider::RockProviderTouchGrabTargetV1 target{};
+            ::rock::api::touch::TouchGrabTarget target{};
             std::uint32_t bodyId = kInvalidId;
-            provider::TouchGrabMotionClassV1 originalMotionClass{
-                provider::TouchGrabMotionClassV1::Other
-            };
+            provider::TouchGrabMotionClass originalMotionClass{ provider::TouchGrabMotionClass::Other };
             RE::NiCollisionObject* collisionIdentity = nullptr;
             RE::bhkNPCollisionObject* collisionObject = nullptr;
             BethesdaPhysicsBody anchor{};
@@ -261,49 +219,26 @@ namespace rock
             std::array<HandAttachment, kHandsPerTarget> hands{};
         };
 
-        [[nodiscard]] ActiveTarget* findTarget(
-            std::uint64_t ownerToken,
-            std::uint64_t scopeToken,
-            std::uint64_t targetId,
-            std::uint32_t targetGeneration) noexcept;
-        [[nodiscard]] const ActiveTarget* findTargetForHand(
-            bool isLeft) const noexcept;
-        [[nodiscard]] ActiveTarget* findTargetForHand(
-            bool isLeft) noexcept;
+        [[nodiscard]] ActiveTarget* findTarget(std::uint64_t ownerToken, std::uint64_t scopeToken,
+            std::uint64_t targetId, std::uint32_t targetGeneration) noexcept;
+        [[nodiscard]] const ActiveTarget* findTargetForHand(bool isLeft) const noexcept;
+        [[nodiscard]] ActiveTarget* findTargetForHand(bool isLeft) noexcept;
         [[nodiscard]] ActiveTarget* firstFreeTarget() noexcept;
         void resetTarget(ActiveTarget& active) noexcept;
 
-        [[nodiscard]] bool attachHand(
-            ActiveTarget& active,
-            bool isLeft,
-            const hand_semantic_contact_state::SemanticContactRecord& contact,
-            RE::hknpWorld* world,
-            ContactSource contactSource,
-            provider::RockProviderPowerArmorPointV1 powerArmorPoint = {});
-        [[nodiscard]] bool createMechanism(
-            ActiveTarget& active,
-            RE::bhkWorld* bhkWorld,
-            RE::hknpWorld* world);
+        [[nodiscard]] bool attachHand(ActiveTarget& active, bool isLeft,
+            const hand_semantic_contact_state::SemanticContactRecord& contact, RE::hknpWorld* world,
+            ContactSource contactSource, api::PowerArmorPoint powerArmorPoint = {});
+        [[nodiscard]] bool createMechanism(ActiveTarget& active, RE::bhkWorld* bhkWorld, RE::hknpWorld* world);
 
-        void releaseTarget(
-            ActiveTarget& active,
-            RE::bhkWorld* bhkWorld,
-            RE::hknpWorld* world,
-            provider::RockProviderTouchGrabReleaseReasonV1 reason,
-            std::uint32_t collisionGeneration,
-            bool restoreTarget);
-        void publishState(
-            ActiveTarget& active,
-            provider::RockProviderTouchGrabPhaseV1 phase,
-            provider::RockProviderTouchGrabReleaseReasonV1 reason,
-            float coordinateVelocity,
+        void releaseTarget(ActiveTarget& active, RE::bhkWorld* bhkWorld, RE::hknpWorld* world,
+            ::rock::api::touch::TouchGrabReleaseReason reason, std::uint32_t collisionGeneration, bool restoreTarget);
+        void publishState(ActiveTarget& active, ::rock::api::touch::TouchGrabPhase phase,
+            ::rock::api::touch::TouchGrabReleaseReason reason, float coordinateVelocity,
             std::uint32_t collisionGeneration);
 
-        [[nodiscard]] float sampleCoordinate(
-            ActiveTarget& active,
-            RE::hknpWorld* world) const;
-        [[nodiscard]] std::uint32_t activeHandMask(
-            const ActiveTarget& active) const noexcept;
+        [[nodiscard]] float sampleCoordinate(ActiveTarget& active, RE::hknpWorld* world) const;
+        [[nodiscard]] std::uint32_t activeHandMask(const ActiveTarget& active) const noexcept;
 
         std::array<ActiveTarget, kMaximumActiveTargets> _targets{};
         PhysicsCallbackQuiescenceGate* _physicsCallbackGate = nullptr;

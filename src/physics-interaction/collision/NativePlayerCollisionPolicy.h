@@ -7,22 +7,6 @@
 
 namespace rock::native_player_collision
 {
-    inline constexpr bool isRetiredWeaponHandPair(std::uint32_t layerA, std::uint32_t layerB)
-    {
-        using namespace collision_layer_policy;
-        return (layerA == FO4_LAYER_WEAPON && isDynamicHandInteractionLayer(layerB)) ||
-               (layerB == FO4_LAYER_WEAPON && isDynamicHandInteractionLayer(layerA));
-    }
-
-    inline constexpr bool allowsRetiredWeaponHandContact(
-        physics_body_classifier::BodyMotionType motion, bool looseWeapon)
-    {
-        using physics_body_classifier::BodyMotionType;
-        // Anchoring preserves native static parts beside the keyframed bodies.
-        // Active grab/pull preparation converts movable bodies back to dynamic.
-        return looseWeapon && (motion == BodyMotionType::Keyframed || motion == BodyMotionType::Static);
-    }
-
     // FO4VR proxy ctor 1E4B268/1E4B28C, dtor 1E4B3E3/1E4B4C0,
     // and processConstraintsCallback 1E4B83E use this same base adjustment.
     // The actor stores the controller interface; the callback receives the
@@ -32,7 +16,7 @@ namespace rock::native_player_collision
     inline constexpr bool proxyListenerMatchesPlayer(std::uintptr_t listener, std::uintptr_t playerController)
     {
         return listener != 0 && playerController > listener &&
-               playerController - listener == kProxyListenerControllerOffset;
+            playerController - listener == kProxyListenerControllerOffset;
     }
 
     struct BodyIdentity
@@ -47,12 +31,12 @@ namespace rock::native_player_collision
 
     inline bool matchesLiveBody(const BodyIdentity& expected, const BodyIdentity& live)
     {
-        return expected.bodyId != 0x7FFF'FFFFu && expected.collisionObject != 0 &&
-               expected.ownerNode != 0 && expected == live;
+        return expected.bodyId != 0x7FFF'FFFFu && expected.collisionObject != 0 && expected.ownerNode != 0 &&
+            expected == live;
     }
 
-    inline bool suppressAuthoredHandWorldPair(const BodyIdentity& expected,
-        const BodyIdentity& live, std::uint32_t otherLayer)
+    inline bool suppressAuthoredHandWorldPair(const BodyIdentity& expected, const BodyIdentity& live,
+        std::uint32_t otherLayer)
     {
         return matchesLiveBody(expected, live) && collision_layer_policy::isWorldSurfaceLayer(otherLayer);
     }
@@ -63,32 +47,133 @@ namespace rock::native_player_collision
     inline constexpr bool isDuplicatePhysicalContactLayer(std::uint32_t layer)
     {
         using namespace collision_layer_policy;
-        return isWorldSurfaceLayer(layer) || isDynamicWorldCarLayer(layer) ||
-               layer == FO4_LAYER_CLUTTER || layer == FO4_LAYER_DEBRIS_SMALL ||
-               layer == FO4_LAYER_DEBRIS_LARGE || layer == FO4_LAYER_SHELLCASING ||
-               layer == FO4_LAYER_CLUTTER_LARGE || layer == FO4_LAYER_PROPS ||
-               layer == ROCK_LAYER_HAND || layer == ROCK_LAYER_WEAPON ||
-               layer == ROCK_LAYER_BODY || layer == ROCK_LAYER_DYNAMIC_HAND_PROXY ||
-               layer == ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY ||
-               layer == ROCK_LAYER_DYNAMIC_WEAPON_PROXY || layer == ROCK_LAYER_EQUIPPED_DROP_PROXY;
+        return isWorldSurfaceLayer(layer) || layer == FO4_LAYER_CLUTTER || layer == FO4_LAYER_DEBRIS_SMALL ||
+            layer == FO4_LAYER_DEBRIS_LARGE || layer == FO4_LAYER_SHELLCASING || layer == FO4_LAYER_CLUTTER_LARGE ||
+            layer == FO4_LAYER_PROPS || layer == ROCK_LAYER_HAND || layer == ROCK_LAYER_WEAPON ||
+            layer == ROCK_LAYER_BODY || layer == ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY ||
+            layer == ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY || layer == ROCK_LAYER_DYNAMIC_WEAPON_PROXY ||
+            layer == ROCK_LAYER_SECONDARY_WEAPON || layer == ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY;
     }
 
-    inline constexpr bool suppressPhysicalPair(bool playerA, bool playerB,
-        std::uint32_t layerA, std::uint32_t layerB, bool looseWeaponContact = false)
+    inline constexpr bool suppressPhysicalPair(bool playerA, bool playerB, std::uint32_t layerA, std::uint32_t layerB,
+        bool looseWeaponContact = false)
     {
-        return (playerA && playerB) ||
-               (playerA && isDuplicatePhysicalContactLayer(layerB)) ||
-               (playerB && isDuplicatePhysicalContactLayer(layerA)) ||
-               (looseWeaponContact &&
-                   ((playerA && layerB == collision_layer_policy::FO4_LAYER_WEAPON) ||
-                       (playerB && layerA == collision_layer_policy::FO4_LAYER_WEAPON)));
+        return (playerA && playerB) || (playerA && isDuplicatePhysicalContactLayer(layerB)) ||
+            (playerB && isDuplicatePhysicalContactLayer(layerA)) ||
+            (looseWeaponContact &&
+                ((playerA && layerB == collision_layer_policy::FO4_LAYER_WEAPON) ||
+                    (playerB && layerA == collision_layer_policy::FO4_LAYER_WEAPON)));
+    }
+
+    /*
+     * Pairs of a native prop-row body (isProxyPropRowLayer) with one of ROCK's
+     * generated rows. The dynamic hand and weapon proxies have real mass: they
+     * stop against fixed props, meaning an explodable car or a keyframed or
+     * static world object such as a retired weapon or a placed decoration, and
+     * pass through moving props, which the keyframed hand and weapon hulls
+     * push natively. Those keyframed rows (hands, weapon hulls, body colliders)
+     * have infinite mass and would shove a car, so they pass through cars. A
+     * body a hand holds (an object, or a car such as power armor) is an
+     * ordinary held object: the proxies pass through it and the keyframed rows
+     * keep their native pairs.
+     */
+    enum class PropRowPairKind : std::uint8_t
+    {
+        None,
+        Proxy,
+        Keyframed
+    };
+
+    struct PropRowPair
+    {
+        PropRowPairKind kind = PropRowPairKind::None;
+        bool propIsA = false;
+    };
+
+    inline constexpr PropRowPairKind propRowPeerKind(std::uint32_t propLayer, std::uint32_t peerLayer)
+    {
+        using namespace collision_layer_policy;
+        if (isDynamicHandInteractionLayer(peerLayer) || isDynamicWeaponProxyLayer(peerLayer))
+            return PropRowPairKind::Proxy;
+        if (isCarRowLayer(propLayer) &&
+            (peerLayer == ROCK_LAYER_HAND || peerLayer == ROCK_LAYER_WEAPON || peerLayer == ROCK_LAYER_BODY ||
+                peerLayer == ROCK_LAYER_SECONDARY_WEAPON))
+            return PropRowPairKind::Keyframed;
+        return PropRowPairKind::None;
+    }
+
+    // Which ROCK row meets the prop-row body, and which side the prop is.
+    inline constexpr PropRowPair classifyPropRowPair(std::uint32_t layerA, std::uint32_t layerB)
+    {
+        using namespace collision_layer_policy;
+        if (isProxyPropRowLayer(layerA)) {
+            if (const auto kind = propRowPeerKind(layerA, layerB); kind != PropRowPairKind::None)
+                return { kind, true };
+        }
+        if (isProxyPropRowLayer(layerB))
+            return { propRowPeerKind(layerB, layerA), false };
+        return {};
+    }
+
+    // Anchoring keeps native static parts beside the keyframed bodies, and
+    // grab or pull preparation converts a fixed body back to dynamic.
+    inline constexpr bool isFixedPropMotion(physics_body_classifier::BodyMotionType motion)
+    {
+        using physics_body_classifier::BodyMotionType;
+        return motion == BodyMotionType::Keyframed || motion == BodyMotionType::Static;
+    }
+
+    inline constexpr bool suppressPropRowContact(PropRowPairKind kind, bool fixedWorldObject, bool explodableCar,
+        bool held)
+    {
+        switch (kind) {
+        case PropRowPairKind::Proxy:
+            return held || !(fixedWorldObject || explodableCar);
+        case PropRowPairKind::Keyframed:
+            return explodableCar && !held;
+        default:
+            return false;
+        }
+    }
+
+    /*
+     * A held object must not solve against the arm holding it. Each body
+     * carries a hand mask (bit 0 right, bit 1 left): as a body collider, the
+     * hands whose held object it must not touch; as a held body, the hands
+     * holding it. A pair is removed when either side's collider mask meets
+     * the other side's held mask.
+     */
+    inline constexpr bool suppressHeldExclusionContact(std::uint8_t colliderMaskA, std::uint8_t heldMaskA,
+        std::uint8_t colliderMaskB, std::uint8_t heldMaskB)
+    {
+        return (colliderMaskA & heldMaskB) != 0 || (colliderMaskB & heldMaskA) != 0;
+    }
+
+    /*
+     * A hand that owns an equipped weapon (firing hand, part or support grip,
+     * just after it dropped the weapon, or the second weapon it holds) must
+     * not become a second physical owner of that weapon. Only its pairs with
+     * that weapon's bodies are removed: the first weapon's hulls and dynamic
+     * proxy, or the second weapon's, plus native-layer weapons right after a
+     * drop, when the dropped weapon is a native world body. The other weapon,
+     * props, world and body contacts are kept.
+     */
+    inline constexpr bool suppressWeaponHandContact(std::uint32_t otherLayer, bool firstWeapon, bool secondWeapon,
+        bool includeLooseWeapons)
+    {
+        using namespace collision_layer_policy;
+        return (firstWeapon && (otherLayer == ROCK_LAYER_WEAPON || otherLayer == ROCK_LAYER_DYNAMIC_WEAPON_PROXY)) ||
+            (secondWeapon &&
+                (otherLayer == ROCK_LAYER_SECONDARY_WEAPON ||
+                    otherLayer == ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY)) ||
+            (includeLooseWeapons && otherLayer == FO4_LAYER_WEAPON);
     }
 
     inline constexpr bool isNativeWeaponSelfContactCandidate(std::uint32_t layerA, std::uint32_t layerB)
     {
         using namespace collision_layer_policy;
         return (layerA == FO4_LAYER_WEAPON && isRockGeneratedColliderLayer(layerB)) ||
-               (layerB == FO4_LAYER_WEAPON && isRockGeneratedColliderLayer(layerA));
+            (layerB == FO4_LAYER_WEAPON && isRockGeneratedColliderLayer(layerA));
     }
 
     // Native equipped-weapon contacts against generated player geometry duplicate
@@ -105,6 +190,7 @@ namespace rock::native_player_collision
         std::uint32_t bodyA;
         std::uint32_t bodyB;
     };
+
     static_assert(sizeof(BodyPair) == 8);
 
     // One controlled equipped tool may exclude one exact target. The extension
@@ -118,8 +204,8 @@ namespace rock::native_player_collision
 
         bool valid() const
         {
-            return world != 0 && weapon.bodyId != target.bodyId &&
-                matchesLiveBody(weapon, weapon) && matchesLiveBody(target, target);
+            return world != 0 && weapon.bodyId != target.bodyId && matchesLiveBody(weapon, weapon) &&
+                matchesLiveBody(target, target);
         }
 
         bool matchesIds(const BodyPair& pair) const
@@ -128,16 +214,16 @@ namespace rock::native_player_collision
                 (pair.bodyB == weapon.bodyId && pair.bodyA == target.bodyId);
         }
 
-        bool suppresses(std::uintptr_t liveWorld, const BodyIdentity& bodyA,
-            const BodyIdentity& bodyB, std::uint32_t layerA, std::uint32_t layerB) const
+        bool suppresses(std::uintptr_t liveWorld, const BodyIdentity& bodyA, const BodyIdentity& bodyB,
+            std::uint32_t layerA, std::uint32_t layerB) const
         {
             using namespace collision_layer_policy;
-            if (!valid() || liveWorld != world || !matchesIds({ bodyA.bodyId, bodyB.bodyId })) return false;
+            if (!valid() || liveWorld != world || !matchesIds({ bodyA.bodyId, bodyB.bodyId }))
+                return false;
             const bool weaponIsA = bodyA.bodyId == weapon.bodyId;
             return matchesLiveBody(weapon, weaponIsA ? bodyA : bodyB) &&
                 matchesLiveBody(target, weaponIsA ? bodyB : bodyA) &&
-                (weaponIsA ? layerA : layerB) == ROCK_LAYER_DYNAMIC_WEAPON_PROXY &&
-                (weaponIsA ? layerB : layerA) == targetLayer;
+                isDynamicWeaponProxyLayer(weaponIsA ? layerA : layerB) && (weaponIsA ? layerB : layerA) == targetLayer;
         }
     };
 

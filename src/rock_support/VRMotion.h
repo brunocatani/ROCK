@@ -1,3 +1,4 @@
+// OpenVR pose validation and controller velocity in headset axes.
 #pragma once
 
 #include <array>
@@ -6,15 +7,18 @@
 
 namespace rock::vr_input
 {
+    // A pose ROCK can use: connected, tracked, and every value finite.
     [[nodiscard]] inline bool usableMotionPose(const vr::TrackedDevicePose_t& pose) noexcept
     {
-        if (!pose.bDeviceIsConnected || !pose.bPoseIsValid ||
-            pose.eTrackingResult != vr::TrackingResult_Running_OK) return false;
+        if (!pose.bDeviceIsConnected || !pose.bPoseIsValid || pose.eTrackingResult != vr::TrackingResult_Running_OK)
+            return false;
         for (const auto& row : pose.mDeviceToAbsoluteTracking.m)
             for (float value : row)
-                if (!std::isfinite(value)) return false;
+                if (!std::isfinite(value))
+                    return false;
         for (float value : pose.vVelocity.v)
-            if (!std::isfinite(value)) return false;
+            if (!std::isfinite(value))
+                return false;
         return true;
     }
 
@@ -25,7 +29,8 @@ namespace rock::vr_input
         const vr::TrackedDevicePose_t& hmd, std::array<float, 3>& result) noexcept
     {
         result = {};
-        if (!usableMotionPose(controller) || !usableMotionPose(hmd)) return false;
+        if (!usableMotionPose(controller) || !usableMotionPose(hmd))
+            return false;
         std::array<float, 3> local{};
         for (std::size_t axis = 0; axis < 3; ++axis) {
             float lengthSquared = 0.0f;
@@ -34,7 +39,8 @@ namespace rock::vr_input
                 lengthSquared += basis * basis;
                 local[axis] += basis * controller.vVelocity.v[row];
             }
-            if (std::abs(lengthSquared - 1.0f) > 0.01f || !std::isfinite(local[axis])) return false;
+            if (std::abs(lengthSquared - 1.0f) > 0.01f || !std::isfinite(local[axis]))
+                return false;
         }
         result = { local[0], -local[2], local[1] };
         return true;

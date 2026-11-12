@@ -1,4 +1,4 @@
-#include "physics-interaction/native/NativeGrabHapticSuppressionPolicy.h"
+#include "physics-interaction/native/player/NativeGrabHapticSuppressionPolicy.h"
 
 #include <cstdio>
 #include <string_view>
@@ -28,12 +28,8 @@ namespace
         if (actual == expected) {
             return true;
         }
-        std::printf("%s expected '%.*s' got '%.*s'\n",
-            label,
-            static_cast<int>(expected.size()),
-            expected.data(),
-            static_cast<int>(actual.size()),
-            actual.data());
+        std::printf("%s expected '%.*s' got '%.*s'\n", label, static_cast<int>(expected.size()), expected.data(),
+            static_cast<int>(actual.size()), actual.data());
         return false;
     }
 }

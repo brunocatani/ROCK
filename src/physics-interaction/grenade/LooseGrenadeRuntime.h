@@ -1,7 +1,7 @@
 #pragma once
 
-#include "RE/Bethesda/BSTSmartPointer.h"
 #include "RE/Bethesda/BSPointerHandle.h"
+#include "RE/Bethesda/BSTSmartPointer.h"
 
 #include "physics-interaction/grenade/LooseThrowablePolicy.h"
 
@@ -58,12 +58,9 @@ namespace rock::loose_grenade_runtime
 
     [[nodiscard]] bool isThrowableWeapon(const RE::TESObjectWEAP* weapon) noexcept;
     [[nodiscard]] bool isThrowableRef(RE::TESObjectREFR* ref) noexcept;
-    [[nodiscard]] bool resolveGrenadeRuntimeData(
-        RE::TESObjectWEAP* weapon,
-        RE::TBO_InstanceData* instanceData,
+    [[nodiscard]] bool resolveGrenadeRuntimeData(RE::TESObjectWEAP* weapon, RE::TBO_InstanceData* instanceData,
         GrenadeRuntimeData& outRuntime) noexcept;
-    [[nodiscard]] bool resolveGrenadeRuntimeDataForReference(
-        RE::TESObjectREFR* ref,
+    [[nodiscard]] bool resolveGrenadeRuntimeDataForReference(RE::TESObjectREFR* ref,
         GrenadeRuntimeData& outRuntime) noexcept;
 
     [[nodiscard]] bool createExplosionAtReference(RE::TESObjectREFR* ref, RE::BGSExplosion* explosion);

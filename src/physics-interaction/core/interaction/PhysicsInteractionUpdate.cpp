@@ -1,12 +1,35 @@
-#include "api/EventStreams.h"
+// PhysicsInteraction's frame. update() runs once per frame from FRIK's
+// AfterArmSolve phase:
+//
+//   1. Stop early when FRIK, the skeleton or the Havok world is unavailable, a
+//      menu blocks play, or physics writes are closed; a changed world shuts
+//      down and re-initializes.
+//   2. Sample the controllers and the native equipped weapons, then build the
+//      frame context (buildFrameContext, FrameContext.cpp).
+//   3. Lease the hands that own the equipped weapon, update the hand and body
+//      colliders and the native player collision filter, then run the
+//      equipped-weapon frame (EquippedWeaponFrame.cpp).
+//   4. finalizeInteractionFrame: selection, grab input, object rest, held
+//      placement, dynamic hand collision, haptics, contacts, grenade and
+//      ejection collision, weapon continuity and test-bench capture.
+//
+// Later FRIK phases call finalizeFramePose, which publishes the final collider
+// pose and registers the physics-step callbacks. Those callbacks run inside the
+// Havok step and drive the generated colliders and the custom grab authority
+// between substeps.
 #include "api/AuthoredInteractionService.h"
+#include "api/GrabEventCallbacks.h"
 #include "api/ProviderRuntimeServices.h"
 #include "api/StorageService.h"
 #include "api/WeaponPartCollisionService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
-#include "physics-interaction/native/NativePlayerCollisionFilter.h"
+#include "physics-interaction/native/player/NativePlayerCollisionFilter.h"
+#include "physics-interaction/weapon/native/NativeHandEquipment.h"
+#include "physics-interaction/weapon/native/NativeMeleeWand.h"
+#include "physics-interaction/weapon/secondary/NativeSecondaryPresentation.h"
+#include "rock_support/TestbenchTelemetry.h"
 
-// Per-frame orchestration: update(), interaction frame finalization, hand transform sampling, physics substep callbacks, held-mass slowdown, and the frame/debug-overlay implementation includes.
+#include <openvr.h>
 
 namespace rock
 {
@@ -17,18 +40,15 @@ namespace rock
         }
 
         _weaponCollision.requestWorkbenchExitRebuild();
-        _equipped.transition.requestCurrentWeaponReconcile(
-            EquippedWeaponTransitionCoordinator::Source::WorkbenchExit);
-        ROCK_LOG_DEBUG(Weapon,
-            "Weapon collision workbench-exit rebuild gate armed by {} close",
+        _equipped.transition.requestCurrentWeaponReconcile(EquippedWeaponTransitionCoordinator::Source::WorkbenchExit);
+        ROCK_LOG_DEBUG(Weapon, "Weapon collision workbench-exit rebuild gate armed by {} close",
             sourceMenuName ? sourceMenuName : "<unknown>");
     }
 
     bool PhysicsInteraction::tryGetRootFlattenedHandTransform(bool isLeft, RE::NiTransform& outTransform) const
     {
         outTransform = {};
-        return _handBoneCache.isReady() &&
-               frik_hand_world_authority::tryGetRawHandWorld(isLeft, outTransform);
+        return _handBoneCache.isReady() && frik_hand_world_authority::tryGetRawHandWorld(isLeft, outTransform);
     }
 
     bool PhysicsInteraction::refreshHandBoneCache()
@@ -87,18 +107,22 @@ namespace rock
     void PhysicsInteraction::discardUnfinishedFramePose()
     {
         const auto pending = std::exchange(_frame.poseFrameIndex, 0);
-        if (!pending || !_lifecycle.initialized.load(std::memory_order_acquire)) return;
+        if (!pending || !_lifecycle.initialized.load(std::memory_order_acquire))
+            return;
         auto* bhk = getPlayerBhkWorld();
         auto* world = bhk ? getHknpWorld(bhk) : nullptr;
         if (!bhk || bhk != _lifecycle.cachedBhkWorld || !world || world != _lifecycle.cachedHknpWorld ||
-            !physicsWritesAllowedForWorld(world)) return;
+            !physicsWritesAllowedForWorld(world))
+            return;
         auto mutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
         _bodyBoneColliders.invalidatePose(world);
         _rightHand.invalidateCollisionPose(world);
         _leftHand.invalidateCollisionPose(world);
         _dynamicHandCollision.retireAll(bhk);
         _dynamicWeaponCollision.retireAll(bhk);
-        ROCK_LOG_SAMPLE_WARN(Physics, 1000, "Collision pose publication interrupted frame={}; old collider targets invalidated", pending);
+        _secondaryDynamicWeaponCollision.retireAll(bhk);
+        ROCK_LOG_SAMPLE_WARN(Physics, 1000,
+            "Collision pose publication interrupted frame={}; old collider targets invalidated", pending);
     }
 
     void PhysicsInteraction::finalizeFramePose()
@@ -107,18 +131,21 @@ namespace rock
         const auto sourceFrame = _frame.poseFrameIndex;
         if (sourceFrame == 0 || sourceFrame != runtime.frameIndex ||
             !_lifecycle.initialized.load(std::memory_order_acquire) || !runtime.localSkeletonReady ||
-            runtime.localMenuBlocking || runtime.compatibilityConfigBlocking) return;
+            runtime.localMenuBlocking || runtime.compatibilityConfigBlocking)
+            return;
         auto* bhk = getPlayerBhkWorld();
         auto* world = bhk ? getHknpWorld(bhk) : nullptr;
         if (!bhk || bhk != _lifecycle.cachedBhkWorld || !world || world != _lifecycle.cachedHknpWorld ||
-            !physicsWritesAllowedForWorld(world)) return;
+            !physicsWritesAllowedForWorld(world))
+            return;
 
         // No native callback can consume half of this final pose publication.
         // The existing mutation gate resumes on every exit, including faults.
         {
             auto mutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
             auto frame = buildFrameContext(bhk, world);
-            const bool bodyPoseValid = _bodyBoneColliders.finalizePose(world, frame.deltaSeconds, _finalPoseBoneSnapshot);
+            const bool bodyPoseValid =
+                _bodyBoneColliders.finalizePose(world, frame.deltaSeconds, _finalPoseBoneSnapshot);
             // Presented poses already copied this final array. Transport that
             // same snapshot once; do not reread or blend animation phases.
             const bool handPoseValid = transportControllerHands(_finalPoseBoneSnapshot);
@@ -128,33 +155,103 @@ namespace rock
                 if (!handPoseValid || input.disabled) {
                     hand.invalidateCollisionPose(world);
                     input.disabled = true;
-                } else if (!hand.finalizeCollisionPose(world, input.rawHandWorld,
-                        frame.deltaSeconds, _finalPoseBoneSnapshot)) input.disabled = true;
+                } else if (!hand.finalizeCollisionPose(world, input.rawHandWorld, frame.deltaSeconds,
+                               _finalPoseBoneSnapshot))
+                    input.disabled = true;
             }
-            if (!bodyPoseValid) { frame.right.disabled = true; frame.left.disabled = true; }
+            if (!bodyPoseValid) {
+                frame.right.disabled = true;
+                frame.left.disabled = true;
+            }
             if (!bodyPoseValid || !handPoseValid) {
                 ROCK_LOG_SAMPLE_WARN(Hand, 2000,
                     "Final collision pose unavailable frame={} body={} hands={}; invalid targets were not published",
                     runtime.frameIndex, bodyPoseValid, handPoseValid);
             }
             _dynamicHandCollision.finalizePose(frame, _rightHand, _leftHand, _bodyBoneColliders);
+            finalizeSecondaryWeaponCollisionPose(frame, world, runtime.weaponDrawn);
             if (auto* weapon = resolveEquippedWeaponInteractionNode()) {
                 performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponCollisionTransforms);
                 _weaponCollision.updateBodiesFromCurrentSourceTransforms(world, weapon, frame.deltaSeconds, nullptr, 0);
-                _dynamicWeaponCollision.finalizeCompoundPose(_weaponCollision, weapon,
-                    frame, _weaponCollision.getCurrentWeaponGenerationKey());
+                _dynamicWeaponCollision.finalizeCompoundPose(_weaponCollision, weapon, frame,
+                    _weaponCollision.getCurrentWeaponGenerationKey());
             }
         }
         _frame.poseFrameIndex = 0;
         _generatedBodyStepDrive.registerForNextStep(bhk, world);
     }
 
+    bool PhysicsInteraction::resolveSecondaryWeaponCollision(void* context, const RE::NiTransform& modelIntentWorld,
+        RE::NiTransform& resolvedModelWorld)
+    {
+        resolvedModelWorld = modelIntentWorld;
+        auto* self = static_cast<PhysicsInteraction*>(context);
+        if (!self || !self->_lifecycle.initialized.load(std::memory_order_acquire))
+            return false;
+        auto* bhk = self->getPlayerBhkWorld();
+        auto* world = bhk ? getHknpWorld(bhk) : nullptr;
+        if (!world || bhk != self->_lifecycle.cachedBhkWorld || world != self->_lifecycle.cachedHknpWorld)
+            return false;
+        return self->_secondaryDynamicWeaponCollision.resolvePresentedIntent(world, modelIntentWorld,
+            resolvedModelWorld);
+    }
+
+    void PhysicsInteraction::finalizeSecondaryWeaponCollisionPose(const PhysicsFrameContext& frame,
+        RE::hknpWorld* world, bool weaponDrawn)
+    {
+        /*
+         * native_secondary_presentation places the second weapon through
+         * AfterWorldFinal, so its colliders are built and posed here, after
+         * that placement. The keyframed hulls (53) follow the presented gun;
+         * the dynamic proxy (56) is driven toward the collision-free intent,
+         * and its blocked deviation is what the presentation applies next frame.
+         */
+        performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponCollisionTransforms);
+        auto* model = native_secondary_presentation::presentedModel();
+        const bool enabled = weaponDrawn && native_hand_equipment::equippedViews()[1].weapon;
+        _secondaryWeaponCollision.update(world, model, frame.deltaSeconds, enabled);
+        native_secondary_presentation::setMirrorOffsets(_secondaryWeaponCollision.holdingMirrorOffsets(),
+            _secondaryWeaponCollision.getCurrentObservedEquippedWeaponFormID());
+
+        auto* modelNode = model ? model->IsNode() : nullptr;
+        RE::NiTransform intent{};
+        const bool hasIntent = modelNode && native_secondary_presentation::tryGetModelIntentWorld(intent);
+        const auto generation = _secondaryWeaponCollision.getCurrentWeaponGenerationKey();
+        _secondaryDynamicWeaponCollision.beginFrame(frame.timing.sequence, world, frame.bhkWorld, modelNode, generation,
+            dynamic_weapon_collision_policy::kDynamicCompoundEnabled && enabled && hasIntent && !frame.menuBlocked);
+        if (hasIntent) {
+            _secondaryDynamicWeaponCollision.captureIntent(modelNode, intent, generation);
+        }
+        // The holding hand on the second weapon, in its model frame: the
+        // firing seat sits in the attachment's frame.
+        RE::NiTransform seat{};
+        RE::NiTransform attachmentWorld{};
+        RE::NiPoint3 grip{};
+        const bool gripValid = modelNode && native_secondary_presentation::tryGetFiringSeat(seat, attachmentWorld) &&
+            dynamic_weapon_collision_policy::isFinitePoint(
+                grip = transform_math::worldPointToLocal(modelNode->world,
+                    transform_math::localPointToWorld(attachmentWorld, seat.translate)));
+        // Retires the proxy itself when this frame has no current intent.
+        (void)_secondaryDynamicWeaponCollision.finishFrame(frame, true, modelNode, generation,
+            _secondaryWeaponCollision, gripValid ? &grip : nullptr);
+        if (_secondaryDynamicWeaponCollision.compoundSourcesUnavailable()) {
+            _secondaryWeaponCollision.requestRebuildForReplacedSources();
+        }
+        if (model) {
+            _secondaryWeaponCollision.updateBodiesFromCurrentSourceTransforms(world, model, frame.deltaSeconds, nullptr,
+                0);
+        }
+        if (modelNode) {
+            _secondaryDynamicWeaponCollision.finalizeCompoundPose(_secondaryWeaponCollision, modelNode, frame,
+                generation);
+        }
+    }
 
     RE::NiTransform PhysicsInteraction::getInteractionHandTransform(bool isLeft) const
     {
         RE::NiTransform rawHandWorld{};
-        const bool cacheReady = _handBoneCache.isReady() &&
-                                frik_hand_world_authority::tryGetRawHandWorld(isLeft, rawHandWorld);
+        const bool cacheReady =
+            _handBoneCache.isReady() && frik_hand_world_authority::tryGetRawHandWorld(isLeft, rawHandWorld);
         const auto frame = _handFrameResolver.resolve(isLeft, cacheReady, rawHandWorld);
         if (frame.valid) {
             return frame.transform;
@@ -166,8 +263,8 @@ namespace rock
     RE::NiNode* PhysicsInteraction::getInteractionHandNode(bool isLeft) const
     {
         RE::NiTransform rawHandWorld{};
-        const bool cacheReady = _handBoneCache.isReady() &&
-                                frik_hand_world_authority::tryGetRawHandWorld(isLeft, rawHandWorld);
+        const bool cacheReady =
+            _handBoneCache.isReady() && frik_hand_world_authority::tryGetRawHandWorld(isLeft, rawHandWorld);
         const auto frame = _handFrameResolver.resolve(isLeft, cacheReady, rawHandWorld);
         if (frame.valid) {
             return frame.node;
@@ -176,8 +273,6 @@ namespace rock
         return nullptr;
     }
 
-#include "physics-interaction/core/PhysicsInteractionFrame.inl"
-
     void PhysicsInteraction::synchronizeNativeScopePresentationAfterFrikUpdate()
     {
         if (!_lifecycle.initialized.load(std::memory_order_acquire) || !runtime_state::isLocalSkeletonReady()) {
@@ -185,7 +280,8 @@ namespace rock
         }
 
         auto* weaponNode = f4vr::getWeaponNode();
-        _twoHandedGrip.synchronizeNativeScopePresentationAfterFrikUpdate(weaponNode, _weaponCollision.getCurrentWeaponGenerationKey());
+        _twoHandedGrip.synchronizeNativeScopePresentationAfterFrikUpdate(weaponNode,
+            _weaponCollision.getCurrentWeaponGenerationKey());
     }
 
     void PhysicsInteraction::finalizeFrikWeaponOwnershipForFrame()
@@ -199,10 +295,7 @@ namespace rock
         _twoHandedGrip.finalizeFrikWeaponOwnershipForFrame(equippedWeaponOwnershipKey);
     }
 
-    void PhysicsInteraction::syncFrikOffHandGripReport()
-    {
-        _twoHandedGrip.syncFrikOffHandGripReport();
-    }
+    void PhysicsInteraction::syncFrikOffHandGripReport() { _twoHandedGrip.syncFrikOffHandGripReport(); }
 
     void PhysicsInteraction::publishDebugRenderFrame()
     {
@@ -224,14 +317,28 @@ namespace rock
         // flattened bone rebuild have completed. Re-sample on the main thread;
         // PublishFrame copies values before the render thread consumes them.
         _twoHandedGrip.publishGunstockRenderDebug(resolveEquippedWeaponInteractionNode());
-        const auto context=buildFrameContext(bhk,hknp);
-        native_interaction_service::render(context);
+        const auto context = buildFrameContext(bhk, hknp);
         publishDebugBodyOverlay(context);
     }
 
-    void PhysicsInteraction::finalizeInteractionFrame(
-        const PhysicsFrameContext& frame,
-        RE::hknpWorld* hknp,
+    void PhysicsInteraction::updateCountBasedAmmoRootSync(const PhysicsFrameContext& frame)
+    {
+        // Runs after grab input, so this frame's selections, pulls and holds
+        // are final. A hand that holds or pulls the round carries its root body.
+        for (const auto* hand : { &_rightHand, &_leftHand }) {
+            if (hand->isHolding()) {
+                _countBasedAmmoRootSync.track(hand->getHeldRef(), true);
+            } else if (hand->hasSelection()) {
+                _countBasedAmmoRootSync.track(hand->getSelection().refr, hand->getState() == HandState::Pulled);
+            }
+        }
+        if (frame.menuBlocked || !physicsWritesAllowedForWorld(frame.hknpWorld)) {
+            return;
+        }
+        _countBasedAmmoRootSync.update(frame.hknpWorld, frame.deltaSeconds);
+    }
+
+    void PhysicsInteraction::finalizeInteractionFrame(const PhysicsFrameContext& frame, RE::hknpWorld* hknp,
         const EquippedWeaponFrameResult& equippedWeaponFrame)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::InteractionFinalize);
@@ -239,8 +346,11 @@ namespace rock
         const bool leftSupportGripActive = equippedWeaponFrame.leftSupportGripActive;
         const bool rightPartGripActive = equippedWeaponFrame.rightPartGripActive;
 
-        refreshGeneratedBodyContactRegistry();
-        updateSelection(frame);
+        {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::FinalizeSelection);
+            refreshGeneratedBodyContactRegistry();
+            updateSelection(frame);
+        }
 
         /*
          * ROCK applies player/room-space compensation before held-object grab
@@ -250,53 +360,55 @@ namespace rock
          * written the frame target.
          */
 
-        updateGrabInput(frame);
-        _looseWeaponCollision.update(frame,
-            _rightHand.isHolding() ? _rightHand.getHeldRef() : nullptr,
-            _leftHand.isHolding() ? _leftHand.getHeldRef() : nullptr,
-            _generatedBodyStepDrive.callbackGate());
-        updateObjectRest(frame);
-        commitHeldPlacement(frame);
-        auto selectedCloseCarTarget = [&](const Hand& hand, const HandFrameInput& handInput) {
-            DynamicWorldCarTarget target{};
-            if (handInput.disabled || hand.isHolding() || !hand.hasSelection()) {
-                return target;
+        {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::FinalizeGrabInput);
+            updateGrabInput(frame);
+        }
+        {
+            using performance_profiler::Scope;
+            performance_profiler::ScopedTimer stageTimer(Scope::FinalizeHeldObjects);
+            performance_profiler::ScopedTimer looseTimer(Scope::HeldLooseWeapons);
+            {
+                // Before the loose pool admits a weapon a hand just took: the
+                // lodge gives its bodies their own filters back first.
+                const auto taken = lodgedWeaponHandReferences();
+                auto mutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
+                _lodgedWeapons.update(frame.hknpWorld, taken);
             }
-            const auto& selection = hand.getSelection();
-            if (selection.isFarSelection || !selection.refr || !fo4vr::isExplodableCar(selection.refr->GetObjectReference())) {
-                return target;
-            }
-            target.ref = selection.refr;
-            target.seedBodyId = selection.bodyId.value;
-            return target;
-        };
-        _dynamicWorldCarCollision.update(
-            frame.bhkWorld,
-            frame.hknpWorld,
-            std::array<DynamicWorldCarTarget, 2>{
-                selectedCloseCarTarget(_rightHand, frame.right),
-                selectedCloseCarTarget(_leftHand, frame.left),
-            });
-        updateHeldMassMovementSlowdown(hknp, frame.deltaSeconds);
-        synchronizeContactEvidenceOwnership(rightHandWeaponAuthorityActive, leftSupportGripActive, rightPartGripActive);
+            _looseWeaponCollision.update(frame, _rightHand.isHolding() ? _rightHand.getHeldRef() : nullptr,
+                _leftHand.isHolding() ? _leftHand.getHeldRef() : nullptr, _generatedBodyStepDrive.callbackGate());
+            looseTimer.stop();
+            performance_profiler::ScopedTimer restTimer(Scope::HeldObjectRest);
+            updateObjectRest(frame);
+            updateCountBasedAmmoRootSync(frame);
+            restTimer.stop();
+            performance_profiler::ScopedTimer exclusionTimer(Scope::HeldExclusions);
+            commitHeldPlacement(frame);
+            publishHeldProxyExclusion(frame.hknpWorld);
+            publishHeldBodyExclusion(frame.hknpWorld, frame.deltaSeconds);
+            updateHeldMassMovementSlowdown(hknp, frame.deltaSeconds);
+            synchronizeContactEvidenceOwnership(rightHandWeaponAuthorityActive, leftSupportGripActive,
+                rightPartGripActive);
+        }
+        performance_profiler::ScopedTimer feedbackTimer(performance_profiler::Scope::FinalizeHandFeedback);
 
         /*
          * Dynamic hand collision runs after normal grab input so the final
          * grab, pull, support-grip, or weapon owner for this frame can gate its
          * lower-priority visual authority without delaying proxy tracking.
+         * A hand that holds either equipped weapon owns it: its dynamic proxy
+         * stops colliding, so it never pushes the weapon's proxy. Ownership
+         * ends with the grip; the delay after a release keeps the proxy off
+         * the weapon only, never off the world.
          */
-        _dynamicHandCollision.updateFrame(
-            frame,
-            physicsWritesAllowedForWorld(frame.hknpWorld),
-            _rightHand,
-            _leftHand,
+        _dynamicHandCollision.updateFrame(frame, physicsWritesAllowedForWorld(frame.hknpWorld), _rightHand, _leftHand,
             _bodyBoneColliders,
             rightHandWeaponAuthorityActive || rightPartGripActive ||
-                weaponHandSuppressedFor(false, WeaponHandReason::Grip),
-            leftSupportGripActive ||
-                (_twoHandedGrip.isFiringHandLeft() &&
-                    _twoHandedGrip.isFiringGripOccupied()) ||
-                weaponHandSuppressedFor(true, WeaponHandReason::Grip),
+                weaponHandActiveFor(false, WeaponHandReason::Grip) ||
+                weaponHandActiveFor(false, WeaponHandReason::SecondWeapon),
+            leftSupportGripActive || equippedWeaponRoster().slotZeroGrips(true).firingGripActive ||
+                weaponHandActiveFor(true, WeaponHandReason::Grip) ||
+                weaponHandActiveFor(true, WeaponHandReason::SecondWeapon),
             _dynamicWeaponCollision.proxyBodyIdForDebug().value,
             _rightHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(false),
             _leftHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(true));
@@ -306,42 +418,28 @@ namespace rock
                 continue;
             }
             TouchGrabRuntime::HandReport touchGrabReport{};
-            const bool surfaceGrabOwnsFeedback =
-                g_rockConfig.rockSurfaceGrabHapticsEnabled &&
-                _touchGrabRuntime.getHandReport(
-                    pulse.isLeft,
-                    touchGrabReport) &&
-                touchGrabReport.kind ==
-                    provider::RockProviderTouchGrabKindV1::FixedAnchor;
+            const bool surfaceGrabOwnsFeedback = g_rockConfig.rockSurfaceGrabHapticsEnabled &&
+                _touchGrabRuntime.getHandReport(pulse.isLeft, touchGrabReport) &&
+                touchGrabReport.kind == ::rock::api::touch::TouchGrabKind::FixedAnchor;
             if (surfaceGrabOwnsFeedback) {
                 continue;
             }
-            (void)_feedbackHaptics.queue(
-                pulse.isLeft ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
-                dynamic_hand_collision_policy::kHapticDurationSeconds,
-                pulse.intensity);
+            (void)_feedbackHaptics.queue(pulse.isLeft ? feedback_haptics::FeedbackHand::Left
+                                                      : feedback_haptics::FeedbackHand::Right,
+                dynamic_hand_collision_policy::kHapticDurationSeconds, pulse.intensity);
         }
         updateFeedbackHaptics(frame.deltaSeconds);
+        feedbackTimer.stop();
 
         _frame.debugOverlayFrameIndex = runtime_state::currentFrame().frameIndex;
 
-        resolveContacts(frame);
+        {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::FinalizeContacts);
+            resolveContacts(frame);
+        }
 
-        bool wasTouchingR = _rightHand.isTouching();
-        bool wasTouchingL = _leftHand.isTouching();
-        const float measuredFrameDeltaSeconds =
-            frame.timing.valid ? frame.timing.deltaSeconds : 0.0f;
-        _rightHand.tickTouchState(measuredFrameDeltaSeconds);
-        _leftHand.tickTouchState(measuredFrameDeltaSeconds);
-        _rightHand.tickSemanticContactState(measuredFrameDeltaSeconds);
-        _leftHand.tickSemanticContactState(measuredFrameDeltaSeconds);
-        _contacts.handActivity.advanceFrame(measuredFrameDeltaSeconds);
-        if (wasTouchingR && !_rightHand.isTouching()) {
-            dispatchPhysicsMessage(kPhysMsg_OnTouchEnd, false, _rightHand.getLastTouchedRef(), _rightHand.getLastTouchedFormID(), _rightHand.getLastTouchedLayer());
-        }
-        if (wasTouchingL && !_leftHand.isTouching()) {
-            dispatchPhysicsMessage(kPhysMsg_OnTouchEnd, true, _leftHand.getLastTouchedRef(), _leftHand.getLastTouchedFormID(), _leftHand.getLastTouchedLayer());
-        }
+        const float measuredFrameDeltaSeconds = frame.timing.valid ? frame.timing.deltaSeconds : 0.0f;
+        _contacts.clock.advance(measuredFrameDeltaSeconds);
 
         /*
          * Bounded timing telemetry: one rate-limited line that explains the
@@ -355,31 +453,20 @@ namespace rock
             const auto rightGrabClock = _rightHand.getGrabClockTelemetry();
             const auto leftGrabClock = _leftHand.getGrabClockTelemetry();
             const float gameHz = gameTelemetry.deltaSeconds > 0.0f ? 1.0f / gameTelemetry.deltaSeconds : 0.0f;
-            const float physicsHz = physicsTelemetry.substepDeltaSeconds > 0.0f ? 1.0f / physicsTelemetry.substepDeltaSeconds : 0.0f;
-            ROCK_LOG_SAMPLE_DEBUG(Update,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "TIMING game: seq={} dt={:.6f} hz={:.1f} valid={} paused={} elapsed={:.2f}s disc={} invalid={} | physics: step={} solve={} rawDt={:.6f} subDt={:.6f} substeps={} hz={:.1f} fallback={} fallbackCount={} simulated={:.2f}s | phaseIdentity={} | grabR: hz={:.1f} srcInt={:.4f} | grabL: hz={:.1f} srcInt={:.4f}",
-                gameTelemetry.sequence,
-                gameTelemetry.deltaSeconds,
-                gameHz,
-                gameTelemetry.valid ? "y" : "n",
-                gameTelemetry.menuPaused ? "y" : "n",
-                gameTelemetry.elapsedGameSeconds,
-                gameTelemetry.discontinuityCount,
-                gameTelemetry.invalidSampleCount,
-                physicsTelemetry.stepSequence,
-                physicsTelemetry.solveSequence,
-                physicsTelemetry.rawDeltaSeconds,
-                physicsTelemetry.substepDeltaSeconds,
-                physicsTelemetry.substepCount,
-                physicsHz,
-                physicsTelemetry.lastSampleUsedFallback ? "y" : "n",
-                physicsTelemetry.fallbackSampleCount,
-                physicsTelemetry.elapsedSimulatedSeconds,
-                frame.timing.sequence,
-                rightGrabClock.physicsHz,
-                rightGrabClock.sourceIntervalSeconds,
-                leftGrabClock.physicsHz,
+            const float physicsHz =
+                physicsTelemetry.substepDeltaSeconds > 0.0f ? 1.0f / physicsTelemetry.substepDeltaSeconds : 0.0f;
+            ROCK_LOG_SAMPLE_DEBUG(Update, g_rockConfig.rockLogSampleMilliseconds,
+                "TIMING game: seq={} dt={:.6f} hz={:.1f} valid={} paused={} elapsed={:.2f}s disc={} invalid={} | "
+                "physics: step={} solve={} rawDt={:.6f} subDt={:.6f} substeps={} hz={:.1f} fallback={} "
+                "fallbackCount={} simulated={:.2f}s | phaseIdentity={} | grabR: hz={:.1f} srcInt={:.4f} | grabL: "
+                "hz={:.1f} srcInt={:.4f}",
+                gameTelemetry.sequence, gameTelemetry.deltaSeconds, gameHz, gameTelemetry.valid ? "y" : "n",
+                gameTelemetry.menuPaused ? "y" : "n", gameTelemetry.elapsedGameSeconds,
+                gameTelemetry.discontinuityCount, gameTelemetry.invalidSampleCount, physicsTelemetry.stepSequence,
+                physicsTelemetry.solveSequence, physicsTelemetry.rawDeltaSeconds, physicsTelemetry.substepDeltaSeconds,
+                physicsTelemetry.substepCount, physicsHz, physicsTelemetry.lastSampleUsedFallback ? "y" : "n",
+                physicsTelemetry.fallbackSampleCount, physicsTelemetry.elapsedSimulatedSeconds, frame.timing.sequence,
+                rightGrabClock.physicsHz, rightGrabClock.sourceIntervalSeconds, leftGrabClock.physicsHz,
                 leftGrabClock.sourceIntervalSeconds);
         }
 
@@ -395,7 +482,8 @@ namespace rock
                 if (_frame.hasPrevPositions && moving) {
                     const auto smoothDelta = smoothPos - _frame.prevSmoothedPos;
 
-                    ROCK_LOG_DEBUG(Update, "PlayerSpace: smoothDelta=({:.2f},{:.2f},{:.2f}) moving={}", smoothDelta.x, smoothDelta.y, smoothDelta.z, moving);
+                    ROCK_LOG_DEBUG(Update, "PlayerSpace: smoothDelta=({:.2f},{:.2f},{:.2f}) moving={}", smoothDelta.x,
+                        smoothDelta.y, smoothDelta.z, moving);
                 }
 
                 _frame.prevSmoothedPos = smoothPos;
@@ -403,28 +491,234 @@ namespace rock
             }
         }
 
-        updateNativeGrenadeCollisionSuppression(hknp, 0.0f);
-        ::rock::provider::dispatchFrameCallbacks(*this);
-        // Consumers can create and register an ejected reference in this callback.
-        // Apply its pair exclusion in the same frame, before the next solve.
-        updateEjectionContacts(frame);
-        storage_service::update(*this, frame);
-        storage_interaction::update(*this,frame,_dynamicHandCollision,_generatedBodyStepDrive.callbackGate());
-        weapon_part_collision::update(*this, frame);
+        {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::FinalizeConsumers);
+            updateNativeGrenadeCollisionSuppression(hknp, 0.0f);
+            ::rock::provider::dispatchFrameCallbacks(*this);
+            // Consumers can create and register an ejected reference in this callback.
+            // Apply its pair exclusion in the same frame, before the next solve.
+            updateEjectionContacts(frame);
+            storage_service::update(*this, frame);
+            storage_interaction::update(*this, frame, _dynamicHandCollision, _generatedBodyStepDrive.callbackGate());
+            weapon_part_collision::update(*this, frame);
+        }
         // Equip identity/grip reconciliation can clear the early authored pose.
         // Yield the bridge only after every hand owner has finished this frame.
+        performance_profiler::ScopedTimer handoffTimer(performance_profiler::Scope::FinalizeHandoff);
         finishEquippedWeaponHandPoseHandoff();
         captureEquippedWeaponContinuity();
         // Final pose publication consumes this completed decision frame and
         // registers the callback only after all collider targets are committed.
         _frame.poseFrameIndex = frame.timing.sequence;
         _frame.gripZoneIndicatorFrameIndex = frame.timing.sequence;
+        captureTestbenchFrame(frame);
+    }
+
+    void PhysicsInteraction::publishTestbenchSkeleton() const
+    {
+        // The presented skeleton captured this frame by captureProviderPresentedHandPoses().
+        const auto& skeleton = _finalPoseBoneSnapshot;
+        if (!testbench_telemetry::enabled() || !skeleton.valid || skeleton.bones.empty()) {
+            return;
+        }
+        static std::vector<testbench_telemetry::SkeletonBone> bones; // frame thread only; capacity reused
+        bones.clear();
+        for (const auto& entry : skeleton.bones) {
+            testbench_telemetry::SkeletonBone bone{};
+            bone.name = entry.name;
+            bone.position[0] = entry.world.translate.x;
+            bone.position[1] = entry.world.translate.y;
+            bone.position[2] = entry.world.translate.z;
+            for (int row = 0; row < 3; ++row) {
+                bone.rotation[row * 3 + 0] = entry.world.rotate.entry[row].x;
+                bone.rotation[row * 3 + 1] = entry.world.rotate.entry[row].y;
+                bone.rotation[row * 3 + 2] = entry.world.rotate.entry[row].z;
+            }
+            bones.push_back(bone);
+        }
+        testbench_telemetry::publishSkeleton(runtime_state::currentFrame().timing.sequence, skeleton.topologyRevision,
+            bones);
+    }
+
+    void PhysicsInteraction::captureTestbenchFrame(const PhysicsFrameContext& frame)
+    {
+        if (!g_rockConfig.rockDebugTestbenchTelemetry && !testbench_telemetry::captureActive() &&
+            !testbench_telemetry::enabled()) {
+            return;
+        }
+        // Physics fields only; publishTestbenchFrame() adds the per-frame state at FrameEnd.
+        auto& sample = _testbenchPhysicsSample;
+        sample = {};
+        sample.physicsFrame = true;
+        sample.frameIndex = frame.timing.sequence;
+        sample.deltaSeconds = frame.deltaSeconds;
+        sample.worldReady = frame.worldReady;
+        sample.hasHmd = frame.hasHmdFrame;
+        sample.hmdPosition[0] = frame.hmdPositionWorld.x;
+        sample.hmdPosition[1] = frame.hmdPositionWorld.y;
+        sample.hmdPosition[2] = frame.hmdPositionWorld.z;
+        sample.hmdForward[0] = frame.hmdForwardWorld.x;
+        sample.hmdForward[1] = frame.hmdForwardWorld.y;
+        sample.hmdForward[2] = frame.hmdForwardWorld.z;
+        for (const auto* input : { &frame.left, &frame.right }) {
+            auto& out = sample.hand[input->isLeft ? 0 : 1];
+            const auto& world = input->rawHandWorld;
+            out.position[0] = world.translate.x;
+            out.position[1] = world.translate.y;
+            out.position[2] = world.translate.z;
+            for (int row = 0; row < 3; ++row) {
+                out.rotation[row * 3 + 0] = world.rotate.entry[row].x;
+                out.rotation[row * 3 + 1] = world.rotate.entry[row].y;
+                out.rotation[row * 3 + 2] = world.rotate.entry[row].z;
+            }
+            out.velocity[0] = input->gestureVelocityMetersPerSecond.x;
+            out.velocity[1] = input->gestureVelocityMetersPerSecond.y;
+            out.velocity[2] = input->gestureVelocityMetersPerSecond.z;
+            out.hasVelocity = input->hasGestureVelocity;
+            out.disabled = input->disabled;
+        }
+        // Held state after every hand owner finished this frame (the bench checks it against the picture).
+        const auto roster = equippedWeaponRoster();
+        for (const bool isLeft : { true, false }) {
+            const Hand& hand = isLeft ? _leftHand : _rightHand;
+            auto& out = sample.hand[isLeft ? 0 : 1];
+            const auto grips = roster.slotZeroGrips(isLeft);
+            if (hand.isHolding()) {
+                out.held = hand.isHoldingLooseWeapon() ? testbench_telemetry::HeldKind::LooseWeapon
+                                                       : testbench_telemetry::HeldKind::Object;
+                if (const auto* ref = hand.getHeldRef()) {
+                    out.heldFormId = ref->GetFormID();
+                }
+                RE::NiTransform root;
+                if (hand.readHeldObjectRoot(frame.hknpWorld, root)) {
+                    out.heldRoot.position[0] = root.translate.x;
+                    out.heldRoot.position[1] = root.translate.y;
+                    out.heldRoot.position[2] = root.translate.z;
+                    for (int row = 0; row < 3; ++row) {
+                        out.heldRoot.rotation[row * 3 + 0] = root.rotate.entry[row].x;
+                        out.heldRoot.rotation[row * 3 + 1] = root.rotate.entry[row].y;
+                        out.heldRoot.rotation[row * 3 + 2] = root.rotate.entry[row].z;
+                    }
+                    out.heldRoot.scale = root.scale;
+                    out.heldRoot.valid = true;
+                }
+            } else if (grips.firingGripActive || roster.slotOneHolds(isLeft)) {
+                out.held = testbench_telemetry::HeldKind::EquippedWeapon;
+            } else if (grips.partGripActive) {
+                out.held = testbench_telemetry::HeldKind::EquippedWeaponPart;
+            }
+        }
+    }
+
+    void PhysicsInteraction::publishTestbenchFrame()
+    {
+        if (const auto capture = testbench_telemetry::takeCaptureToggle()) {
+            // Felt confirmation of the wheel press: a short pulse starts, a long one stops.
+            const float seconds = *capture ? 0.08f : 0.4f;
+            vrcf::VRControllers.triggerHaptic(vrcf::Hand::Left, seconds, 0.6f);
+            vrcf::VRControllers.triggerHaptic(vrcf::Hand::Right, seconds, 0.6f);
+        }
+        // A wheel capture keeps the section open whatever the developer setting says.
+        const bool settingOn = g_rockConfig.rockDebugTestbenchTelemetry || testbench_telemetry::captureActive();
+        if (!settingOn && !testbench_telemetry::enabled()) {
+            return;
+        }
+        const auto& runtime = runtime_state::currentFrame();
+        // A menu frame keeps the empty physics fields; a stale capture from an earlier frame is
+        // never republished.
+        testbench_telemetry::FrameSample sample{};
+        if (_testbenchPhysicsSample.physicsFrame && _testbenchPhysicsSample.frameIndex == runtime.timing.sequence) {
+            sample = _testbenchPhysicsSample;
+        } else {
+            sample.frameIndex = runtime.timing.sequence;
+            sample.deltaSeconds = runtime.timing.deltaSeconds;
+        }
+        sample.playerAvailable = runtime.playerAvailable;
+        sample.weaponDrawn = runtime.weaponDrawn;
+        sample.menuBlocking = runtime.localMenuBlocking;
+        sample.loadingMenuOpen = runtime.localLoadingMenuOpen;
+        sample.gameStopped = runtime.localGameStopped;
+        sample.inputMenuBlocking = runtime.inputMenuBlocking;
+        if (const auto* player = f4vr::getPlayer()) {
+            sample.playerPoseValid = true;
+            sample.playerHeading = player->data.angle.z;
+            sample.playerPosition[0] = player->data.location.x;
+            sample.playerPosition[1] = player->data.location.y;
+            sample.playerPosition[2] = player->data.location.z;
+        }
+        if (const auto* nodes = f4vr::getPlayerNodes()) {
+            const auto copyNode = [](const RE::NiNode* node, testbench_telemetry::NodeSample& out) {
+                if (!node) {
+                    return;
+                }
+                const auto& world = node->world;
+                out.position[0] = world.translate.x;
+                out.position[1] = world.translate.y;
+                out.position[2] = world.translate.z;
+                for (int row = 0; row < 3; ++row) {
+                    out.rotation[row * 3 + 0] = world.rotate.entry[row].x;
+                    out.rotation[row * 3 + 1] = world.rotate.entry[row].y;
+                    out.rotation[row * 3 + 2] = world.rotate.entry[row].z;
+                }
+                out.scale = world.scale;
+                out.valid = true;
+            };
+            copyNode(nodes->roomnode, sample.room);
+            copyNode(nodes->HmdNode, sample.hmdNode);
+            copyNode(nodes->SecondaryWandNode, sample.wand[0]);
+            copyNode(nodes->primaryWandNode, sample.wand[1]);
+            // The held reference as drawn: its scene root after this frame's skeleton and
+            // held-scene writer, for the bench's drawn-hand-to-drawn-object comparison.
+            if (sample.physicsFrame) {
+                for (const bool isLeft : { true, false }) {
+                    Hand& hand = isLeft ? _leftHand : _rightHand;
+                    auto* ref = hand.isHolding() ? hand.getHeldRef() : nullptr;
+                    auto* root = ref ? ref->Get3D() : nullptr;
+                    copyNode(root ? root->IsNode() : nullptr, sample.hand[isLeft ? 0 : 1].heldNode);
+                }
+            }
+        }
+        // Tracking space as the game received it, before its room and heading transforms; the
+        // test bench replays these poses through its driver.
+        auto* system = vr::VRSystem();
+        auto* compositor = vr::VRCompositor();
+        std::array<vr::TrackedDevicePose_t, vr::k_unMaxTrackedDeviceCount> poses{};
+        if (system && compositor &&
+            compositor->GetLastPoses(poses.data(), static_cast<std::uint32_t>(poses.size()), nullptr, 0) ==
+                vr::VRCompositorError_None) {
+            const std::array<vr::TrackedDeviceIndex_t, 3> devices{
+                vr::k_unTrackedDeviceIndex_Hmd,
+                system->GetTrackedDeviceIndexForControllerRole(vr::TrackedControllerRole_LeftHand),
+                system->GetTrackedDeviceIndexForControllerRole(vr::TrackedControllerRole_RightHand),
+            };
+            for (std::size_t i = 0; i < devices.size(); ++i) {
+                if (devices[i] >= poses.size() || !poses[devices[i]].bPoseIsValid) {
+                    continue;
+                }
+                const auto& m = poses[devices[i]].mDeviceToAbsoluteTracking.m;
+                auto& out = sample.rawPose[i];
+                for (int row = 0; row < 3; ++row) {
+                    out.position[row] = m[row][3];
+                    out.rotation[row * 3 + 0] = m[row][0];
+                    out.rotation[row * 3 + 1] = m[row][1];
+                    out.rotation[row * 3 + 2] = m[row][2];
+                }
+                out.valid = true;
+            }
+        }
+        testbench_telemetry::publishFrame(settingOn, sample);
     }
 
     void PhysicsInteraction::interruptInteractionFrame(const char* reason)
     {
         debug::ClearFrame();
-        _twoHandedGrip.reset();
+        // One grip reset per contiguous interruption. No grip session starts
+        // while the update is interrupted, and resetting on every menu frame
+        // re-entered FRIK's API for each claim and block it clears.
+        if (!_frame.interruptionGripResetDone) {
+            _twoHandedGrip.reset();
+            _frame.interruptionGripResetDone = true;
+        }
         _equipped.transition.pendingGrip() = {};
         clearEquippedWeaponFiringGripInputState();
         restoreHeldMassMovementSlowdown(reason);
@@ -437,6 +731,16 @@ namespace rock
     void PhysicsInteraction::update()
     {
         auto authoredCollision = F4SE::stl::scope_exit([this] {
+            // The frame's final stick reservations, after every presentation
+            // pass and on interrupted frames too (retireAll clears the bipod's):
+            // the bipod on the firing hand's click, placement on each hand's.
+            const bool bipod = g_rockConfig.rockBipodMode &&
+                _dynamicWeaponCollision.surfaceSupportReservesInput(
+                    reinterpret_cast<std::uintptr_t>(resolveEquippedWeaponInteractionNode()),
+                    _weaponCollision.getCurrentWeaponGenerationKey());
+            const bool bipodLeft = bipodInputIsLeft();
+            input_remap_runtime::setStickClickReserved((bipod && bipodLeft) || placementReservesClick(true),
+                (bipod && !bipodLeft) || placementReservesClick(false));
             const auto& runtime = runtime_state::currentFrame();
             auto* bhk = getPlayerBhkWorld();
             auto* world = bhk ? getHknpWorld(bhk) : nullptr;
@@ -445,16 +749,18 @@ namespace rock
             std::size_t count = 0;
             if (live && _frame.poseFrameIndex == runtime.frameIndex && runtime.visualAuthorityAvailable &&
                 runtime.localSkeletonReady && !runtime.localMenuBlocking && !runtime.compatibilityConfigBlocking) {
-                for (bool left : {false, true}) if (authored_interaction::isAttached(left)) {
-                    const auto body = havok_runtime::snapshotBody(world, _dynamicHandCollision.proxyBodyIdForDebug(left, 0));
-                    if (body.valid) bodies[count++] = {body.bodyId.value, body.motionIndex,
-                        reinterpret_cast<std::uintptr_t>(body.collisionObject), reinterpret_cast<std::uintptr_t>(body.ownerNode)};
-                }
-            } else authored_interaction::reset();
+                for (bool left : { false, true })
+                    if (authored_interaction::isAttached(left)) {
+                        const auto body =
+                            havok_runtime::snapshotBody(world, _dynamicHandCollision.proxyBodyIdForDebug(left, 0));
+                        if (body.valid)
+                            bodies[count++] = { body.bodyId.value, body.motionIndex,
+                                reinterpret_cast<std::uintptr_t>(body.collisionObject),
+                                reinterpret_cast<std::uintptr_t>(body.ownerNode) };
+                    }
+            } else
+                authored_interaction::reset();
             native_player_collision::publishAuthoredHands(live ? world : nullptr, std::span(bodies).first(count));
-        });
-        auto cancelInterruptedFists = F4SE::stl::scope_exit([this] {
-            cancelBareFistMode("interaction-frame-interrupted");
         });
         _frame.debugOverlayFrameIndex = 0;
         _frame.gripZoneIndicatorFrameIndex = 0;
@@ -463,11 +769,11 @@ namespace rock
 
         _equipped.shoulderGestureConsumedThisFrame = {};
         _equipped.toggleGrabReleasePressConsumedThisFrame = {};
-        _equipped.holsterInputConsumedThisFrame = {};
         const auto& runtime = runtime_state::currentFrame();
-        if (!runtime.visualAuthorityAvailable || !runtime.localSkeletonReady ||
-            runtime.localMenuBlocking || runtime.compatibilityConfigBlocking) {
-            for (auto& visual : _drop.visuals) visual.release("interaction-interrupted");
+        if (!runtime.visualAuthorityAvailable || !runtime.localSkeletonReady || runtime.localMenuBlocking ||
+            runtime.compatibilityConfigBlocking) {
+            for (auto& visual : _drop.visuals)
+                visual.release("interaction-interrupted");
         }
         if (!_suppression.nativeGrenadeLeases.empty()) {
             auto* bhk = getPlayerBhkWorld();
@@ -475,24 +781,32 @@ namespace rock
             if (bhk == _lifecycle.cachedBhkWorld && world == _lifecycle.cachedHknpWorld)
                 updateNativeGrenadeCollisionSuppression(world, runtime.deltaSeconds);
         }
+        updateBipodInputHand();
         beginHeldPlacementFrame();
-        _dynamicWeaponCollision.updateSurfaceSupportInput(_placementClickReserved);
+        _dynamicWeaponCollision.updateSurfaceSupportInput(bipodInputIsLeft(), placementReservesClick(bipodInputIsLeft()),
+            _placementEquippedHold);
         const auto retireDynamicWeaponForInterruptedFrame = [this](bool preserveSurfaceSupport = false) {
             if (!_lifecycle.initialized.load(std::memory_order_acquire)) {
                 return;
             }
-            auto* currentBhk = getPlayerBhkWorld();
-            auto* currentHknp = currentBhk ? getHknpWorld(currentBhk) : nullptr;
+            // ROCK's own world, not the player's: see shutdown().
+            const auto owned = ownedLiveWorld();
+            auto* currentBhk = owned.bhk;
+            auto* currentHknp = owned.hknp;
             native_interaction_service::clear(currentHknp, currentBhk);
-            if (currentBhk && currentBhk == _lifecycle.cachedBhkWorld &&
-                currentHknp && currentHknp == _lifecycle.cachedHknpWorld) {
-                _weaponCollision.setEquippedDropActive(currentHknp, false);
+            if (currentBhk) {
                 _dynamicWeaponCollision.retireAll(currentBhk, preserveSurfaceSupport);
+                _secondaryDynamicWeaponCollision.retireAll(currentBhk);
             } else {
                 _dynamicWeaponCollision.abandonHavokStateAfterWorldLoss();
+                _secondaryDynamicWeaponCollision.abandonHavokStateAfterWorldLoss();
             }
         };
         refreshEquippedWeaponHandlingSettings();
+        // Sampled before any early return so input-thread grenade gating never
+        // reads a stale pairing.
+        sampleEquippedSlotOne();
+        input_remap_runtime::setBothHandsHoldWeapons(equippedWeaponRoster().bothHandsHoldWeapons());
         if (!runtime.visualAuthorityAvailable) {
             retireDynamicWeaponForInterruptedFrame();
             restoreHeldMassMovementSlowdown("frik-unavailable");
@@ -508,12 +822,26 @@ namespace rock
         // primary wand and left is the secondary wand. Weapon handedness is a
         // separate ROCK role and never remaps buttons/controllers.
         vrcf::VRControllers.update(false,
-            g_rockConfig.rockFarGrabMode == static_cast<int>(far_pull_gesture::Mode::Gesture) ||
-            _rightHand.getState() == HandState::SelectionLocked || _leftHand.getState() == HandState::SelectionLocked);
+            g_rockConfig.rockFarGrabStyle == static_cast<int>(far_pull_gesture::Mode::Gesture) ||
+                _rightHand.getState() == HandState::SelectionLocked ||
+                _leftHand.getState() == HandState::SelectionLocked);
 
         // Before any early return below: a skipped consume would let a stale
         // accept-button press replay as a reload frames later (see the API doc).
         input_remap_runtime::updateFiringHandReloadInput(runtime.deltaSeconds);
+        native_hand_equipment::applyRestoredHands();
+        native_hand_equipment::observe();
+        {
+            const auto roster = equippedWeaponRoster();
+            const auto& facts = roster.facts();
+            const auto views = native_hand_equipment::equippedViews();
+            native_melee_wand::update({
+                .indexZeroLeft = facts.slot0.holdsHand && facts.slot0.firingHand == equipped_weapon_roster::Hand::Left,
+                .indexZeroHeld = views[0].weapon != nullptr,
+                .indexOneHeld = facts.slot1.holdsHand && views[1].weapon,
+                .indexOneLeft = facts.slot1.hand == equipped_weapon_roster::Hand::Left,
+            });
+        }
 
         /*
          * runtime.deltaSeconds is the central sanitized game delta; no local
@@ -522,16 +850,7 @@ namespace rock
          */
         _frame.deltaTime = runtime.deltaSeconds;
         enforceNativeGrabHapticRuntimeSuppression();
-        _contacts.dynamicPushElapsedSeconds += _frame.deltaTime;
-        if (_contacts.dynamicPushCooldownUntil.size() > 512) {
-            for (auto it = _contacts.dynamicPushCooldownUntil.begin(); it != _contacts.dynamicPushCooldownUntil.end();) {
-                if (it->second <= _contacts.dynamicPushElapsedSeconds) {
-                    it = _contacts.dynamicPushCooldownUntil.erase(it);
-                } else {
-                    ++it;
-                }
-            }
-        }
+        _contacts.hapticClockSeconds += _frame.deltaTime;
 
         if (!runtime.localSkeletonReady) {
             if (_lifecycle.initialized) {
@@ -542,13 +861,13 @@ namespace rock
         }
 
         if (runtime.localMenuBlocking) {
-            _equippedDropPickup = {};
             retireDynamicWeaponForInterruptedFrame(true);
             _equipped.menuReconcilePending = true;
             auto* bhkMenu = getPlayerBhkWorld();
             auto* hknpMenu = bhkMenu ? getHknpWorld(bhkMenu) : nullptr;
             if (_lifecycle.initialized) {
-                if (bhkMenu && bhkMenu == _lifecycle.cachedBhkWorld && hknpMenu && hknpMenu == _lifecycle.cachedHknpWorld) {
+                if (bhkMenu && bhkMenu == _lifecycle.cachedBhkWorld && hknpMenu &&
+                    hknpMenu == _lifecycle.cachedHknpWorld) {
                     // Weapon grips yield to the menu and resume through the
                     // equip continuity path. Held objects stay held: no menu
                     // drops what a hand is holding.
@@ -560,19 +879,13 @@ namespace rock
             }
             storage_service::shutdown(hknpMenu);
             storage_interaction::shutdown(hknpMenu);
-            if (bhkMenu && hknpMenu) {
-                _dynamicWorldCarCollision.restoreAll(bhkMenu, hknpMenu, "menu-blocked");
-            } else {
-                _dynamicWorldCarCollision.abandon();
-            }
-            observeLifecycleFrame(bhkMenu, hknpMenu, ::rock::provider::RockProviderLifecycleReason::MenuBlocked);
+            observeLifecycleFrame(bhkMenu, hknpMenu, api::core::LifecycleReason::MenuBlocked);
             interruptInteractionFrame("menu-blocked");
             return;
         }
 
         auto* bhk = getPlayerBhkWorld();
         if (!bhk) {
-            _dynamicWorldCarCollision.abandon();
             if (_lifecycle.initialized) {
                 ROCK_LOG_WARN(Update, "bhkWorld became null — shutting down");
                 shutdown();
@@ -580,7 +893,8 @@ namespace rock
             return;
         }
 
-        if (_lifecycle.initialized && (bhk != _lifecycle.cachedBhkWorld || getHknpWorld(bhk) != _lifecycle.cachedHknpWorld)) {
+        if (_lifecycle.initialized &&
+            (bhk != _lifecycle.cachedBhkWorld || getHknpWorld(bhk) != _lifecycle.cachedHknpWorld)) {
             ROCK_LOG_INFO(Update, "Physics world changed (cell transition) — reinitializing");
 
             shutdown();
@@ -598,9 +912,8 @@ namespace rock
         auto* hknp = getHknpWorld(bhk);
         if (!hknp) {
             native_interaction_service::clear(nullptr, nullptr);
-            _dynamicWorldCarCollision.abandon();
             _lifecycle.cachedHknpWorld = nullptr;
-            observeLifecycleFrame(bhk, nullptr, ::rock::provider::RockProviderLifecycleReason::WorldUnavailable);
+            observeLifecycleFrame(bhk, nullptr, api::core::LifecycleReason::WorldUnavailable);
             _equipped.gripResumePending = _equipped.continuityGrip.pending;
             interruptInteractionFrame("world-unavailable");
             return;
@@ -611,7 +924,7 @@ namespace rock
         const auto frame = buildFrameContext(bhk, hknp);
         _frame.palmClockGameFrameIndex.store(runtime.frameIndex, std::memory_order_release);
         _frame.palmClockGameDeltaSeconds.store(frame.deltaSeconds, std::memory_order_release);
-        observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::None);
+        observeLifecycleFrame(bhk, hknp, api::core::LifecycleReason::None);
 
         if (!physicsWritesAllowedForWorld(hknp)) {
             native_interaction_service::clear(hknp, bhk);
@@ -619,10 +932,29 @@ namespace rock
             interruptInteractionFrame("physics-gate-closed");
             return;
         }
+        _frame.interruptionGripResetDone = false;
 
-        if (_equipped.gripResumePending &&
-            frik_hand_world_authority::hasCalibratedRawHandFrame(false) &&
+        if (_equipped.gripResumePending && frik_hand_world_authority::hasCalibratedRawHandFrame(false) &&
             frik_hand_world_authority::hasCalibratedRawHandFrame(true)) {
+            /*
+             * A Pip-Boy equip in the menu that gave the carried item to the
+             * other hand supersedes the carry saved when the menu opened.
+             * Resumed, the carry pulled the weapon back to the old hand, which
+             * may now hold the second weapon, and the directed move waited
+             * behind its pending grip with the weapon culled (bench 2 Nov
+             * 16:07:22). The directed move then applies as for any equip.
+             */
+            const auto directed = native_hand_equipment::lastDirectedPrimaryEquip();
+            auto& carry = _equipped.continuityGrip;
+            if (carry.pending && directed.sequence != 0 && directed.sequence != _equipped.directedPrimarySequence &&
+                directed.form == carry.targetWeaponFormID && directed.instance == carry.targetWeaponInstanceData &&
+                (directed.left != carry.isLeft || carry.supportGrip.validCarry())) {
+                ROCK_LOG_INFO(Weapon,
+                    "Equipped grip resume dropped form={:08X}: the Pip-Boy moved it from hand={} to hand={}",
+                    carry.targetWeaponFormID, carry.isLeft ? "left" : "right", directed.left ? "left" : "right");
+                carry = {};
+                _equipped.resumeAwaitingHold = {};
+            }
             _equipped.transition.resumeMenuGrip(_equipped.continuityGrip,
                 _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire),
                 _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire));
@@ -630,9 +962,11 @@ namespace rock
             if (resumed.menuResume) {
                 for (const bool left : { false, true }) {
                     const bool firing = !resumed.supportGrip.validCarry() && left == resumed.isLeft;
-                    const bool occupied = left == resumed.isLeft || resumed.pairedGrips.valid() || resumed.secondSupportGrip.validCarry();
+                    const bool occupied =
+                        left == resumed.isLeft || resumed.pairedGrips.valid() || resumed.secondSupportGrip.validCarry();
                     _equipped.resumeAwaitingHold[equipped_weapon_toggle_grab_policy::handIndex(left)] = occupied &&
-                        !equipped_weapon_toggle_grab_policy::usesToggleForRole(_equipped.handlingSettings.weaponGrabMode, firing);
+                        !equipped_weapon_toggle_grab_policy::usesToggleForRole(
+                            _equipped.handlingSettings.weaponGrabMode, firing);
                 }
             }
             _equipped.gripResumePending = false;
@@ -641,30 +975,21 @@ namespace rock
         const bool forceBareFistRecheck = _equipped.menuReconcilePending;
         if (_equipped.menuReconcilePending && !_equipped.transition.pendingGrip().menuResume &&
             !_equipped.gripResumePending && !_equipped.transition.heldTransfer().active()) {
-            const bool firingHandIsLeft =
-                _twoHandedGrip.isFiringGripOccupied() &&
-                _twoHandedGrip.isFiringHandLeft();
-            const auto detachDecision =
-                resolveEquippedWeaponDetachDecision(
-                    _equipped.handlingSettings);
-            const bool primaryGrabHeld = input_remap_runtime::isRawButtonPhysicallyHeld(
-                firingHandIsLeft,
-                input_remap_policy::kGrabButtonId);
+            const bool firingHandIsLeft = equippedWeaponRoster().slotZeroGrips(true).firingGripActive;
+            const auto detachDecision = resolveEquippedWeaponDetachDecision(_equipped.handlingSettings);
+            const bool primaryGrabHeld =
+                input_remap_runtime::isRawButtonPhysicallyHeld(firingHandIsLeft, input_remap_policy::kGrabButtonId);
             _equipped.transition.pendingGrip() = PendingEquippedWeaponPrimaryOnlyGripStart{
-                .pending = detachDecision.primaryDetachEnabled &&
-                    primaryGrabHeld,
+                .pending = detachDecision.primaryDetachEnabled && primaryGrabHeld,
                 .isLeft = firingHandIsLeft,
-                .toggleAcquisitionCommitted =
-                    primaryGrabHeld,
+                .toggleAcquisitionCommitted = primaryGrabHeld,
             };
             _equipped.menuReconcilePending = false;
             ROCK_LOG_DEBUG(Weapon,
                 "Equipped weapon ownership reconciled after menu: primaryGrabHeld={} pendingPrimaryOnlyStart={}",
-                primaryGrabHeld ? "yes" : "no",
-                _equipped.transition.pendingGrip().pending ? "yes" : "no");
+                primaryGrabHeld ? "yes" : "no", _equipped.transition.pendingGrip().pending ? "yes" : "no");
         }
         _equipped.menuReconcilePending = false;
-        updateBareFistMode(frame);
         enforceNoBareFistState(forceBareFistRecheck);
 
         native_interaction_service::update(frame);
@@ -676,16 +1001,24 @@ namespace rock
             registerCollisionLayer(hknp);
         }
 
-
-        const auto equippedWeaponFrame = updateEquippedWeaponFrame(frame, bhk, hknp);
+        // The hands that own the equipped weapon are leased before the
+        // colliders update, so recreated hand bodies are re-leased before
+        // the next physics step.
+        const auto equippedWeaponPreparation = beginEquippedWeaponFrame(frame, hknp);
+        updateHandCollisions(frame);
+        const auto frameIndex = runtime_state::currentFrame().frameIndex;
+        logPalmClockSampleForHand("game-after-hand-collider-prepare", _rightHand, hknp,
+            frame.right.disabled ? nullptr : &frame.right.rawHandWorld, frameIndex, frame.deltaSeconds, nullptr);
+        logPalmClockSampleForHand("game-after-hand-collider-prepare", _leftHand, hknp,
+            frame.left.disabled ? nullptr : &frame.left.rawHandWorld, frameIndex, frame.deltaSeconds, nullptr);
+        updateBodyBoneCollisions(frame);
+        updateNativePlayerCollisionFilter(bhk, hknp, frame.deltaSeconds);
+        const auto equippedWeaponFrame = updateEquippedWeaponFrame(frame, bhk, hknp, equippedWeaponPreparation);
         finalizeInteractionFrame(frame, hknp, equippedWeaponFrame);
-        if (input_remap_runtime::ownsBareFistInput()) {
-            if (const auto* reason = bareFistHandBlockReason(frame)) cancelBareFistMode(reason);
-        }
-        cancelInterruptedFists.release();
     }
 
-    void PhysicsInteraction::onGeneratedColliderPhysicsSubstep(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
+    void PhysicsInteraction::onGeneratedColliderPhysicsSubstep(void* userData, RE::hknpWorld* world,
+        const havok_physics_timing::PhysicsTimingSample& timing)
     {
         auto* self = static_cast<PhysicsInteraction*>(userData);
         if (!self) {
@@ -695,7 +1028,8 @@ namespace rock
         self->driveGeneratedCollidersFromPhysicsSubstep(world, timing);
     }
 
-    void PhysicsInteraction::onCustomGrabAuthorityBetweenStep(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
+    void PhysicsInteraction::onCustomGrabAuthorityBetweenStep(void* userData, RE::hknpWorld* world,
+        const havok_physics_timing::PhysicsTimingSample& timing)
     {
         auto* self = static_cast<PhysicsInteraction*>(userData);
         if (!self) {
@@ -705,7 +1039,8 @@ namespace rock
         self->driveCustomGrabAuthorityFromBetweenStep(world, timing);
     }
 
-    void PhysicsInteraction::onCustomGrabAuthorityAfterSolve(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
+    void PhysicsInteraction::onCustomGrabAuthorityAfterSolve(void* userData, RE::hknpWorld* world,
+        const havok_physics_timing::PhysicsTimingSample& timing)
     {
         auto* self = static_cast<PhysicsInteraction*>(userData);
         if (!self) {
@@ -715,7 +1050,8 @@ namespace rock
         self->observeCustomGrabAuthorityAfterSolve(world, timing);
     }
 
-    void PhysicsInteraction::driveGeneratedCollidersFromPhysicsSubstep(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
+    void PhysicsInteraction::driveGeneratedCollidersFromPhysicsSubstep(RE::hknpWorld* world,
+        const havok_physics_timing::PhysicsTimingSample& timing)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GeneratedColliderPhysicsFlush);
 
@@ -724,28 +1060,51 @@ namespace rock
         }
 
         native_interaction_service::preCollide(world, timing);
-        _rightHand.flushPendingCollisionPhysicsDrive(world, timing);
-        _leftHand.flushPendingCollisionPhysicsDrive(world, timing);
-        _bodyBoneColliders.flushPendingPhysicsDrive(world, timing);
-        _weaponCollision.flushPendingPhysicsDrive(world, timing);
-        _dynamicWeaponCollision.flushPendingPhysicsDrive(world, timing);
-        _dynamicHandCollision.flushPendingPhysicsDrive(world, timing);
-        storage_interaction::flush(world,timing);
-        _rightHand.flushConsumerObjectPairs(world);
-        _leftHand.flushConsumerObjectPairs(world);
+        {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::FlushHands);
+            _rightHand.flushPendingCollisionPhysicsDrive(world, timing);
+            _leftHand.flushPendingCollisionPhysicsDrive(world, timing);
+        }
+        {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::FlushBody);
+            _bodyBoneColliders.flushPendingPhysicsDrive(world, timing);
+        }
+        {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::FlushWeapons);
+            _weaponCollision.flushPendingPhysicsDrive(world, timing);
+            _secondaryWeaponCollision.flushPendingPhysicsDrive(world, timing);
+            _dynamicWeaponCollision.flushPendingPhysicsDrive(world, timing);
+            _secondaryDynamicWeaponCollision.flushPendingPhysicsDrive(world, timing);
+        }
+        {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::FlushDynamicHands);
+            _dynamicHandCollision.flushPendingPhysicsDrive(world, timing);
+        }
+        {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::FlushConsumers);
+            storage_interaction::flush(world, timing);
+            _rightHand.flushConsumerObjectPairs(world);
+            _leftHand.flushConsumerObjectPairs(world);
+            _lodgedWeapons.step(world, timing);
+        }
         if (performance_profiler::enabled()) {
             performance_profiler::observeValue(performance_profiler::ValueMetric::GeneratedHandBodies,
                 _rightHand.getHandColliderBodyCount() + _leftHand.getHandColliderBodyCount());
-            performance_profiler::observeValue(performance_profiler::ValueMetric::GeneratedBodyBodies, _bodyBoneColliders.getBodyCount());
-            performance_profiler::observeValue(performance_profiler::ValueMetric::GeneratedWeaponBodies, _weaponCollision.getWeaponBodyCount());
+            performance_profiler::observeValue(performance_profiler::ValueMetric::GeneratedBodyBodies,
+                _bodyBoneColliders.getBodyCount());
+            performance_profiler::observeValue(performance_profiler::ValueMetric::GeneratedWeaponBodies,
+                _weaponCollision.getWeaponBodyCount());
         }
         const auto gameFrameIndex = _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
         const auto gameDeltaSeconds = _frame.palmClockGameDeltaSeconds.load(std::memory_order_acquire);
-        logPalmClockSampleForHand("physics-after-collider-drive", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
-        logPalmClockSampleForHand("physics-after-collider-drive", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
+        logPalmClockSampleForHand("physics-after-collider-drive", _rightHand, world, nullptr, gameFrameIndex,
+            gameDeltaSeconds, &timing);
+        logPalmClockSampleForHand("physics-after-collider-drive", _leftHand, world, nullptr, gameFrameIndex,
+            gameDeltaSeconds, &timing);
     }
 
-    void PhysicsInteraction::driveCustomGrabAuthorityFromBetweenStep(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
+    void PhysicsInteraction::driveCustomGrabAuthorityFromBetweenStep(RE::hknpWorld* world,
+        const havok_physics_timing::PhysicsTimingSample& timing)
     {
         if (!world || !_lifecycle.initialized.load(std::memory_order_acquire) || !physicsWritesAllowedForWorld(world)) {
             return;
@@ -753,41 +1112,38 @@ namespace rock
 
         const auto gameFrameIndex = _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
         const auto gameDeltaSeconds = _frame.palmClockGameDeltaSeconds.load(std::memory_order_acquire);
-        logPalmClockSampleForHand("physics-between-before-grab-flush", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
-        logPalmClockSampleForHand("physics-between-before-grab-flush", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
+        logPalmClockSampleForHand("physics-between-before-grab-flush", _rightHand, world, nullptr, gameFrameIndex,
+            gameDeltaSeconds, &timing);
+        logPalmClockSampleForHand("physics-between-before-grab-flush", _leftHand, world, nullptr, gameFrameIndex,
+            gameDeltaSeconds, &timing);
         _rightHand.flushPendingCustomGrabAuthority(world, timing);
         _leftHand.flushPendingCustomGrabAuthority(world, timing);
     }
 
-    void PhysicsInteraction::observeCustomGrabAuthorityAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
+    void PhysicsInteraction::observeCustomGrabAuthorityAfterSolve(RE::hknpWorld* world,
+        const havok_physics_timing::PhysicsTimingSample& timing)
     {
         if (!world || !_lifecycle.initialized.load(std::memory_order_acquire) || !physicsWritesAllowedForWorld(world)) {
             return;
         }
 
         const auto completedSolveSequence =
-            _frame.completedPhysicsSolveSequence.fetch_add(
-                1,
-                std::memory_order_release) +
-            1;
+            _frame.completedPhysicsSolveSequence.fetch_add(1, std::memory_order_release) + 1;
         _rightHand.observeCustomGrabAuthorityAfterSolve(world, timing);
         _leftHand.observeCustomGrabAuthorityAfterSolve(world, timing);
-        _dynamicWeaponCollision.samplePostSolve(
-            world,
-            completedSolveSequence,
-            timing);
+        _dynamicWeaponCollision.samplePostSolve(world, completedSolveSequence, timing);
+        _secondaryDynamicWeaponCollision.samplePostSolve(world, completedSolveSequence, timing);
         _dynamicHandCollision.samplePostSolveDeviations(world, timing);
         const auto gameFrameIndex = _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
-        debug::CapturePostSolveBodyPhases(
-            world,
-            timing,
-            gameFrameIndex,
-            completedSolveSequence);
+        debug::CapturePostSolveBodyPhases(world, timing, gameFrameIndex, completedSolveSequence);
         const auto gameDeltaSeconds = _frame.palmClockGameDeltaSeconds.load(std::memory_order_acquire);
-        logPalmClockSampleForHand("physics-after-solve", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
-        logPalmClockSampleForHand("physics-after-solve", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
+        logPalmClockSampleForHand("physics-after-solve", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds,
+            &timing);
+        logPalmClockSampleForHand("physics-after-solve", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds,
+            &timing);
         serviceRetiredGrabConstraintPayloads();
         _weaponCollision.serviceRetiredWeaponBodies(world);
+        _secondaryWeaponCollision.serviceRetiredWeaponBodies(world);
         // Neutralizes hand/body and grab-authority wrappers removed on the main
         // thread after the broadphase grace, while retaining their addresses for
         // native late readers. All generated body owners share this post-solve
@@ -795,7 +1151,6 @@ namespace rock
         BethesdaPhysicsBody::serviceRetiredDeferredPayloads(world);
     }
 
-#include "physics-interaction/core/PhysicsInteractionDebugOverlay.inl"
     void PhysicsInteraction::updateSelection(const PhysicsFrameContext& frame)
     {
         if (!runtime_state::isLocalSkeletonReady()) {
@@ -825,48 +1180,32 @@ namespace rock
             return context;
         };
 
-        const auto rightHandContext = selectionContextForOtherHand(
-            _rightHand,
+        const auto rightHandContext = selectionContextForOtherHand(_rightHand,
             _forceGrab.pendingCommits[0].active ? rightPendingTargetPtr.get() : nullptr);
-        const auto leftHandContext = selectionContextForOtherHand(
-            _leftHand,
+        const auto leftHandContext = selectionContextForOtherHand(_leftHand,
             _forceGrab.pendingCommits[1].active ? leftPendingTargetPtr.get() : nullptr);
         const auto farHmdConeGate = makeFarSelectionHmdConeGate(frame);
 
-        if (_forceGrab.pendingCommits[0].active || _equippedDropPickup.consumed[0]) {
+        if (_forceGrab.pendingCommits[0].active) {
             if (_rightHand.hasSelection()) {
                 _rightHand.clearSelectionState(false);
             }
         } else if (!frame.right.disabled) {
-            _rightHand.updateSelection(frame.bhkWorld,
-                frame.hknpWorld,
-                frame.right.grabAnchorWorld,
-                frame.right.closeSelectionDirectionWorld,
-                frame.right.farSelectionDirectionWorld,
-                frame.right.pinchPocketWorld,
-                frame.right.pinchDirectionWorld,
-                frame.right.hasPinchPocketWorld,
-                farHmdConeGate,
-                frame.deltaSeconds,
-                leftHandContext);
+            _rightHand.updateSelection(frame.bhkWorld, frame.hknpWorld, frame.right.grabAnchorWorld,
+                frame.right.closeSelectionDirectionWorld, frame.right.farSelectionDirectionWorld,
+                frame.right.pinchPocketWorld, frame.right.pinchDirectionWorld, frame.right.hasPinchPocketWorld,
+                farHmdConeGate, frame.deltaSeconds, leftHandContext);
         }
 
-        if (_forceGrab.pendingCommits[1].active || _equippedDropPickup.consumed[1]) {
+        if (_forceGrab.pendingCommits[1].active) {
             if (_leftHand.hasSelection()) {
                 _leftHand.clearSelectionState(false);
             }
         } else if (!frame.left.disabled) {
-            _leftHand.updateSelection(frame.bhkWorld,
-                frame.hknpWorld,
-                frame.left.grabAnchorWorld,
-                frame.left.closeSelectionDirectionWorld,
-                frame.left.farSelectionDirectionWorld,
-                frame.left.pinchPocketWorld,
-                frame.left.pinchDirectionWorld,
-                frame.left.hasPinchPocketWorld,
-                farHmdConeGate,
-                frame.deltaSeconds,
-                rightHandContext);
+            _leftHand.updateSelection(frame.bhkWorld, frame.hknpWorld, frame.left.grabAnchorWorld,
+                frame.left.closeSelectionDirectionWorld, frame.left.farSelectionDirectionWorld,
+                frame.left.pinchPocketWorld, frame.left.pinchDirectionWorld, frame.left.hasPinchPocketWorld,
+                farHmdConeGate, frame.deltaSeconds, rightHandContext);
         }
     }
 
@@ -881,15 +1220,11 @@ namespace rock
             _frame.heldMassSpeedReduction = 0.0f;
             _frame.heldMassFadeStartReduction = 0.0f;
             _frame.heldMassFadeElapsedSeconds = 0.0f;
-            ROCK_LOG_DEBUG(Hand,
-                "Held mass movement slowdown restored: previousReduction={:.2f} reason={}",
-                previousReduction,
-                reason ? reason : "restore");
+            ROCK_LOG_DEBUG(Hand, "Held mass movement slowdown restored: previousReduction={:.2f} reason={}",
+                previousReduction, reason ? reason : "restore");
         } else {
-            ROCK_LOG_SAMPLE_WARN(Hand,
-                300,
-                "Held mass movement slowdown restore delayed: previousReduction={:.2f} reason={}",
-                previousReduction,
+            ROCK_LOG_SAMPLE_WARN(Hand, 300,
+                "Held mass movement slowdown restore delayed: previousReduction={:.2f} reason={}", previousReduction,
                 reason ? reason : "restore");
         }
     }
@@ -922,7 +1257,8 @@ namespace rock
                 }
 
                 auto* body = havok_runtime::getBody(hknp, RE::hknpBodyId{ bodyId });
-                if (!body || !body_frame::hasUsableMotionIndex(body->motionIndex) || motionAlreadySampled(body->motionIndex)) {
+                if (!body || !body_frame::hasUsableMotionIndex(body->motionIndex) ||
+                    motionAlreadySampled(body->motionIndex)) {
                     return;
                 }
                 if (sampledMotionSlotCount >= sampledMotionSlots.size()) {
@@ -972,10 +1308,8 @@ namespace rock
                 _frame.heldMassFadeElapsedSeconds = 0.0f;
             }
             _frame.heldMassFadeElapsedSeconds += std::isfinite(deltaSeconds) ? (std::max)(0.0f, deltaSeconds) : 0.0f;
-            targetReduction = held_mass_movement::computeFadeOutReduction(
-                _frame.heldMassFadeStartReduction,
-                _frame.heldMassFadeElapsedSeconds,
-                movementConfig.fadeOutSeconds);
+            targetReduction = held_mass_movement::computeFadeOutReduction(_frame.heldMassFadeStartReduction,
+                _frame.heldMassFadeElapsedSeconds, movementConfig.fadeOutSeconds);
         } else {
             _frame.heldMassFadeStartReduction = 0.0f;
             _frame.heldMassFadeElapsedSeconds = 0.0f;
@@ -988,12 +1322,9 @@ namespace rock
 
         const float previousReduction = _frame.heldMassSpeedReduction;
         if (!applyPlayerSpeedReduction(previousReduction, targetReduction)) {
-            ROCK_LOG_SAMPLE_WARN(Hand,
-                300,
+            ROCK_LOG_SAMPLE_WARN(Hand, 300,
                 "Held mass movement slowdown skipped: heldMass={:.3f} previousReduction={:.2f} targetReduction={:.2f}",
-                heldMass,
-                previousReduction,
-                targetReduction);
+                heldMass, previousReduction, targetReduction);
             return;
         }
 

@@ -1,3 +1,5 @@
+// Menu open/close tracking: whether a game-stopping menu, the scope menu or the
+// Pip-Boy is open, kept from the UI's MenuOpenCloseEvent stream.
 #pragma once
 
 #include "rock_support/Logger.h"
@@ -48,15 +50,9 @@ namespace rock::fo4vr
             _registered = true;
         }
 
-        [[nodiscard]] bool isInScopeMenu() const noexcept
-        {
-            return _scopeMenuOpen;
-        }
+        [[nodiscard]] bool isInScopeMenu() const noexcept { return _scopeMenuOpen; }
 
-        [[nodiscard]] bool isLoadingMenuOpen() const noexcept
-        {
-            return _loadingMenuOpen;
-        }
+        [[nodiscard]] bool isLoadingMenuOpen() const noexcept { return _loadingMenuOpen; }
 
         [[nodiscard]] bool isGameStopped() const noexcept
         {
@@ -69,8 +65,7 @@ namespace rock::fo4vr
         }
 
     private:
-        RE::BSEventNotifyControl ProcessEvent(
-            const RE::MenuOpenCloseEvent& event,
+        RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent& event,
             RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override
         {
             const char* rawName = event.menuName.c_str();

@@ -1,0 +1,48 @@
+#pragma once
+#include "Abi.h"
+
+#pragma pack(push, 8)
+namespace rock::api::configuration {
+    inline constexpr InterfaceId kInterfaceId = InterfaceId::Configuration;
+    inline constexpr std::uint32_t kMajor = 2;
+    inline constexpr std::uint32_t kMinor = 0;
+    enum class Permission : std::uint32_t { Read=1, Write=2 };
+    inline constexpr std::uint32_t kSupportedPermissions = 3;
+    enum class Group : std::uint32_t { Consumer, Developer };
+    // Float3 values are three numbers written "[x, y, z]".
+    enum class ValueType : std::uint32_t { Boolean, Integer, Float, String, Float3 };
+    // section is the TOML table path that holds the key, for example
+    // "ControllerInput.Left"; section and key are case-sensitive.
+    struct Setting {
+        const char* section;
+        const char* key;
+        const char* value;
+        const char* defaultValue;
+        const char* category;
+        const char* description;
+        ValueType type;
+        std::uint32_t overridden;
+    };
+    // Strings and the setting record are borrowed for this synchronous callback only.
+    using Visitor = void(ROCK_CALL*)(const Setting*, void*);
+    // revision: any thread; increases whenever a setting changes.
+    // visit: any thread; calls the visitor once per setting of the group.
+    // setValue: any thread; validates, applies and saves one setting. On
+    // failure, error receives a message when errorCapacity is nonzero.
+    // openSetupWizard: any thread; opens ROCK's setup wizard in front of the
+    // player on the next frame. NotReady without RPS UI Framework or outside
+    // gameplay; Ok when the wizard is open or opening.
+    struct Api {
+        static constexpr InterfaceId interfaceId=kInterfaceId;
+        static constexpr std::uint32_t majorVersion=kMajor;
+        static constexpr std::uint32_t minorVersion=kMinor;
+        Status(ROCK_CALL* revision)(OwnerToken, std::uint64_t* outRevision) noexcept;
+        Status(ROCK_CALL* visit)(OwnerToken, Group, Visitor, void*) noexcept;
+        Status(ROCK_CALL* setValue)(OwnerToken, Group, const char* section, const char* key,
+            const char* value, char* error, std::uint32_t errorCapacity) noexcept;
+        Status(ROCK_CALL* openSetupWizard)(OwnerToken) noexcept;
+    };
+    static_assert(sizeof(Setting)==56);
+}
+
+#pragma pack(pop)

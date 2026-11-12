@@ -29,19 +29,23 @@ namespace rock::performance_profiler
         {
             _solve = {};
             _collide = _whole.startTicks ? beginInterval() : IntervalSample{};
-            if (_collide.generation != _whole.generation) _collide = {};
+            if (_collide.generation != _whole.generation)
+                _collide = {};
         }
 
         void endCollide() noexcept { endInterval(Scope::NativePhysicsCollideInterval, _collide); }
+
         void beginSolve() noexcept
         {
             _solve = _whole.startTicks ? beginInterval() : IntervalSample{};
-            if (_solve.generation != _whole.generation) _solve = {};
+            if (_solve.generation != _whole.generation)
+                _solve = {};
         }
 
         void endSolve() noexcept
         {
-            if (endInterval(Scope::NativePhysicsSolveInterval, _solve)) ++_completedSubsteps;
+            if (endInterval(Scope::NativePhysicsSolveInterval, _solve))
+                ++_completedSubsteps;
         }
 
         void endUpdate() noexcept

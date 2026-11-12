@@ -1,17 +1,21 @@
 #pragma once
 
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <vector>
+#include "physics-interaction/TransformMath.h"
 #include "physics-interaction/VectorMath.h"
+#include "physics-interaction/debug/DebugMath.h"
 
 /*
  * Hand collider types are grouped here so semantic IDs, collider geometry, and grab pivot math remain one generated-hand-collider surface.
  */
 
-
-// ---- HandColliderSemanticTypes.h ----
-
-#include <array>
-#include <cstddef>
-#include <cstdint>
+// ---- Hand collider semantic types ----
 
 namespace rock::hand_collider_semantics
 {
@@ -73,63 +77,32 @@ namespace rock::hand_collider_semantics
     inline constexpr std::size_t kHandSegmentColliderBodyCountPerHand = kHandColliderBodyCountPerHand - 1;
 
     inline constexpr std::array<HandColliderRole, kHandColliderBodyCountPerHand> kHandColliderRoles{
-        HandColliderRole::PalmAnchor,
-        HandColliderRole::PalmFace,
-        HandColliderRole::PalmBack,
-        HandColliderRole::PalmHeel,
-        HandColliderRole::ThumbPad,
-        HandColliderRole::ThumbBase,
-        HandColliderRole::ThumbMiddle,
-        HandColliderRole::ThumbTip,
-        HandColliderRole::IndexBase,
-        HandColliderRole::IndexMiddle,
-        HandColliderRole::IndexTip,
-        HandColliderRole::MiddleBase,
-        HandColliderRole::MiddleMiddle,
-        HandColliderRole::MiddleTip,
-        HandColliderRole::RingBase,
-        HandColliderRole::RingMiddle,
-        HandColliderRole::RingTip,
-        HandColliderRole::PinkyBase,
-        HandColliderRole::PinkyMiddle,
-        HandColliderRole::PinkyTip
+        HandColliderRole::PalmAnchor, HandColliderRole::PalmFace, HandColliderRole::PalmBack,
+        HandColliderRole::PalmHeel, HandColliderRole::ThumbPad, HandColliderRole::ThumbBase,
+        HandColliderRole::ThumbMiddle, HandColliderRole::ThumbTip, HandColliderRole::IndexBase,
+        HandColliderRole::IndexMiddle, HandColliderRole::IndexTip, HandColliderRole::MiddleBase,
+        HandColliderRole::MiddleMiddle, HandColliderRole::MiddleTip, HandColliderRole::RingBase,
+        HandColliderRole::RingMiddle, HandColliderRole::RingTip, HandColliderRole::PinkyBase,
+        HandColliderRole::PinkyMiddle, HandColliderRole::PinkyTip
     };
 
     inline constexpr std::array<HandColliderRole, kHandSegmentColliderBodyCountPerHand> kHandNonAnchorColliderRoles{
-        HandColliderRole::PalmFace,
-        HandColliderRole::PalmBack,
-        HandColliderRole::PalmHeel,
-        HandColliderRole::ThumbPad,
-        HandColliderRole::ThumbBase,
-        HandColliderRole::ThumbMiddle,
-        HandColliderRole::ThumbTip,
-        HandColliderRole::IndexBase,
-        HandColliderRole::IndexMiddle,
-        HandColliderRole::IndexTip,
-        HandColliderRole::MiddleBase,
-        HandColliderRole::MiddleMiddle,
-        HandColliderRole::MiddleTip,
-        HandColliderRole::RingBase,
-        HandColliderRole::RingMiddle,
-        HandColliderRole::RingTip,
-        HandColliderRole::PinkyBase,
-        HandColliderRole::PinkyMiddle,
-        HandColliderRole::PinkyTip
+        HandColliderRole::PalmFace, HandColliderRole::PalmBack, HandColliderRole::PalmHeel, HandColliderRole::ThumbPad,
+        HandColliderRole::ThumbBase, HandColliderRole::ThumbMiddle, HandColliderRole::ThumbTip,
+        HandColliderRole::IndexBase, HandColliderRole::IndexMiddle, HandColliderRole::IndexTip,
+        HandColliderRole::MiddleBase, HandColliderRole::MiddleMiddle, HandColliderRole::MiddleTip,
+        HandColliderRole::RingBase, HandColliderRole::RingMiddle, HandColliderRole::RingTip,
+        HandColliderRole::PinkyBase, HandColliderRole::PinkyMiddle, HandColliderRole::PinkyTip
     };
 
     inline constexpr bool isPalmRole(HandColliderRole role)
     {
-        return role == HandColliderRole::PalmAnchor ||
-               role == HandColliderRole::PalmFace ||
-               role == HandColliderRole::PalmBack ||
-               role == HandColliderRole::PalmHeel ||
-               role == HandColliderRole::ThumbPad;
+        return role == HandColliderRole::PalmAnchor || role == HandColliderRole::PalmFace ||
+            role == HandColliderRole::PalmBack || role == HandColliderRole::PalmHeel ||
+            role == HandColliderRole::ThumbPad;
     }
 
-    inline constexpr bool isFingerRole(HandColliderRole role)
-    {
-        return !isPalmRole(role);
-    }
+    inline constexpr bool isFingerRole(HandColliderRole role) { return !isPalmRole(role); }
 
     inline constexpr HandFinger fingerForRole(HandColliderRole role)
     {
@@ -190,25 +163,25 @@ namespace rock::hand_collider_semantics
     {
         switch (finger) {
         case HandFinger::Thumb:
-            return segment == HandFingerSegment::Base ? HandColliderRole::ThumbBase :
-                   segment == HandFingerSegment::Middle ? HandColliderRole::ThumbMiddle :
-                   HandColliderRole::ThumbTip;
+            return segment == HandFingerSegment::Base  ? HandColliderRole::ThumbBase
+                : segment == HandFingerSegment::Middle ? HandColliderRole::ThumbMiddle
+                                                       : HandColliderRole::ThumbTip;
         case HandFinger::Index:
-            return segment == HandFingerSegment::Base ? HandColliderRole::IndexBase :
-                   segment == HandFingerSegment::Middle ? HandColliderRole::IndexMiddle :
-                   HandColliderRole::IndexTip;
+            return segment == HandFingerSegment::Base  ? HandColliderRole::IndexBase
+                : segment == HandFingerSegment::Middle ? HandColliderRole::IndexMiddle
+                                                       : HandColliderRole::IndexTip;
         case HandFinger::Middle:
-            return segment == HandFingerSegment::Base ? HandColliderRole::MiddleBase :
-                   segment == HandFingerSegment::Middle ? HandColliderRole::MiddleMiddle :
-                   HandColliderRole::MiddleTip;
+            return segment == HandFingerSegment::Base  ? HandColliderRole::MiddleBase
+                : segment == HandFingerSegment::Middle ? HandColliderRole::MiddleMiddle
+                                                       : HandColliderRole::MiddleTip;
         case HandFinger::Ring:
-            return segment == HandFingerSegment::Base ? HandColliderRole::RingBase :
-                   segment == HandFingerSegment::Middle ? HandColliderRole::RingMiddle :
-                   HandColliderRole::RingTip;
+            return segment == HandFingerSegment::Base  ? HandColliderRole::RingBase
+                : segment == HandFingerSegment::Middle ? HandColliderRole::RingMiddle
+                                                       : HandColliderRole::RingTip;
         case HandFinger::Pinky:
-            return segment == HandFingerSegment::Base ? HandColliderRole::PinkyBase :
-                   segment == HandFingerSegment::Middle ? HandColliderRole::PinkyMiddle :
-                   HandColliderRole::PinkyTip;
+            return segment == HandFingerSegment::Base  ? HandColliderRole::PinkyBase
+                : segment == HandFingerSegment::Middle ? HandColliderRole::PinkyMiddle
+                                                       : HandColliderRole::PinkyTip;
         default:
             return HandColliderRole::PalmAnchor;
         }
@@ -217,41 +190,52 @@ namespace rock::hand_collider_semantics
     inline constexpr const char* roleName(HandColliderRole role)
     {
         switch (role) {
-        case HandColliderRole::PalmAnchor: return "PalmAnchor";
-        case HandColliderRole::PalmFace: return "PalmFace";
-        case HandColliderRole::PalmBack: return "PalmBack";
-        case HandColliderRole::PalmHeel: return "PalmHeel";
-        case HandColliderRole::ThumbPad: return "ThumbPad";
-        case HandColliderRole::ThumbBase: return "ThumbBase";
-        case HandColliderRole::ThumbMiddle: return "ThumbMiddle";
-        case HandColliderRole::ThumbTip: return "ThumbTip";
-        case HandColliderRole::IndexBase: return "IndexBase";
-        case HandColliderRole::IndexMiddle: return "IndexMiddle";
-        case HandColliderRole::IndexTip: return "IndexTip";
-        case HandColliderRole::MiddleBase: return "MiddleBase";
-        case HandColliderRole::MiddleMiddle: return "MiddleMiddle";
-        case HandColliderRole::MiddleTip: return "MiddleTip";
-        case HandColliderRole::RingBase: return "RingBase";
-        case HandColliderRole::RingMiddle: return "RingMiddle";
-        case HandColliderRole::RingTip: return "RingTip";
-        case HandColliderRole::PinkyBase: return "PinkyBase";
-        case HandColliderRole::PinkyMiddle: return "PinkyMiddle";
-        case HandColliderRole::PinkyTip: return "PinkyTip";
+        case HandColliderRole::PalmAnchor:
+            return "PalmAnchor";
+        case HandColliderRole::PalmFace:
+            return "PalmFace";
+        case HandColliderRole::PalmBack:
+            return "PalmBack";
+        case HandColliderRole::PalmHeel:
+            return "PalmHeel";
+        case HandColliderRole::ThumbPad:
+            return "ThumbPad";
+        case HandColliderRole::ThumbBase:
+            return "ThumbBase";
+        case HandColliderRole::ThumbMiddle:
+            return "ThumbMiddle";
+        case HandColliderRole::ThumbTip:
+            return "ThumbTip";
+        case HandColliderRole::IndexBase:
+            return "IndexBase";
+        case HandColliderRole::IndexMiddle:
+            return "IndexMiddle";
+        case HandColliderRole::IndexTip:
+            return "IndexTip";
+        case HandColliderRole::MiddleBase:
+            return "MiddleBase";
+        case HandColliderRole::MiddleMiddle:
+            return "MiddleMiddle";
+        case HandColliderRole::MiddleTip:
+            return "MiddleTip";
+        case HandColliderRole::RingBase:
+            return "RingBase";
+        case HandColliderRole::RingMiddle:
+            return "RingMiddle";
+        case HandColliderRole::RingTip:
+            return "RingTip";
+        case HandColliderRole::PinkyBase:
+            return "PinkyBase";
+        case HandColliderRole::PinkyMiddle:
+            return "PinkyMiddle";
+        case HandColliderRole::PinkyTip:
+            return "PinkyTip";
         }
         return "Unknown";
     }
 }
 
-// ---- HandBoneColliderGeometryMath.h ----
-
-#include "physics-interaction/debug/DebugMath.h"
-#include "physics-interaction/TransformMath.h"
-
-#include <algorithm>
-#include <array>
-#include <cmath>
-#include <limits>
-#include <vector>
+// ---- Hand bone collider geometry math ----
 
 namespace rock::hand_bone_collider_geometry_math
 {
@@ -315,16 +299,13 @@ namespace rock::hand_bone_collider_geometry_math
         return vector_math::hasFiniteComponents(value);
     }
 
-    inline bool finitePositive(float value)
-    {
-        return std::isfinite(value) && value > 0.0f;
-    }
+    inline bool finitePositive(float value) { return std::isfinite(value) && value > 0.0f; }
 
     struct ColliderDimensionLimits
     {
         // Generated colliders are fed by live root-flattened skeleton data, so
         // dimensions are treated as a runtime trust boundary. Bad single-frame
-        // skeleton samples and compounded INI scale mistakes must be rejected
+        // skeleton samples and compounded settings scale mistakes must be rejected
         // before Havok shape creation instead of producing oversized bodies.
         float minLength = 0.05f;
         float maxLength = 80.0f;
@@ -334,9 +315,11 @@ namespace rock::hand_bone_collider_geometry_math
         float maxLongAxisExtent = 120.0f;
     };
 
-    inline bool colliderDimensionsWithinLimits(float lengthValue, float radius, float convexRadius, const ColliderDimensionLimits& limits)
+    inline bool colliderDimensionsWithinLimits(float lengthValue, float radius, float convexRadius,
+        const ColliderDimensionLimits& limits)
     {
-        if (!finitePositive(lengthValue) || !finitePositive(radius) || !std::isfinite(convexRadius) || convexRadius < 0.0f) {
+        if (!finitePositive(lengthValue) || !finitePositive(radius) || !std::isfinite(convexRadius) ||
+            convexRadius < 0.0f) {
             return false;
         }
         if (lengthValue < limits.minLength || lengthValue > limits.maxLength) {
@@ -412,21 +395,25 @@ namespace rock::hand_bone_collider_geometry_math
          * NiTransform convention.
          */
         const auto& matrix = frameWorld.rotate;
-        const Vector rotated = makeVector<Vector>(
-            matrix.entry[0][0] * localVector.x + matrix.entry[0][1] * localVector.y + matrix.entry[0][2] * localVector.z,
-            matrix.entry[1][0] * localVector.x + matrix.entry[1][1] * localVector.y + matrix.entry[1][2] * localVector.z,
-            matrix.entry[2][0] * localVector.x + matrix.entry[2][1] * localVector.y + matrix.entry[2][2] * localVector.z);
-        return makeVector<Vector>(rotated.x * frameWorld.scale, rotated.y * frameWorld.scale, rotated.z * frameWorld.scale);
+        const Vector rotated = makeVector<Vector>(matrix.entry[0][0] * localVector.x +
+                matrix.entry[0][1] * localVector.y + matrix.entry[0][2] * localVector.z,
+            matrix.entry[1][0] * localVector.x + matrix.entry[1][1] * localVector.y +
+                matrix.entry[1][2] * localVector.z,
+            matrix.entry[2][0] * localVector.x + matrix.entry[2][1] * localVector.y +
+                matrix.entry[2][2] * localVector.z);
+        return makeVector<Vector>(rotated.x * frameWorld.scale, rotated.y * frameWorld.scale,
+            rotated.z * frameWorld.scale);
     }
 
     template <class Transform, class Vector>
     inline Vector generatedColliderWorldVectorToLocal(const Transform& frameWorld, const Vector& worldVector)
     {
         const float inverseScale = (std::abs(frameWorld.scale) > 0.0001f) ? (1.0f / frameWorld.scale) : 1.0f;
-        const Vector unscaled = makeVector<Vector>(worldVector.x * inverseScale, worldVector.y * inverseScale, worldVector.z * inverseScale);
+        const Vector unscaled = makeVector<Vector>(worldVector.x * inverseScale, worldVector.y * inverseScale,
+            worldVector.z * inverseScale);
         const auto& matrix = frameWorld.rotate;
-        return makeVector<Vector>(
-            matrix.entry[0][0] * unscaled.x + matrix.entry[1][0] * unscaled.y + matrix.entry[2][0] * unscaled.z,
+        return makeVector<Vector>(matrix.entry[0][0] * unscaled.x + matrix.entry[1][0] * unscaled.y +
+                matrix.entry[2][0] * unscaled.z,
             matrix.entry[0][1] * unscaled.x + matrix.entry[1][1] * unscaled.y + matrix.entry[2][1] * unscaled.z,
             matrix.entry[0][2] * unscaled.x + matrix.entry[1][2] * unscaled.y + matrix.entry[2][2] * unscaled.z);
     }
@@ -434,10 +421,8 @@ namespace rock::hand_bone_collider_geometry_math
     template <class Transform, class Vector>
     inline Vector generatedColliderWorldPointToLocal(const Transform& frameWorld, const Vector& worldPoint)
     {
-        const Vector delta = makeVector<Vector>(
-            worldPoint.x - frameWorld.translate.x,
-            worldPoint.y - frameWorld.translate.y,
-            worldPoint.z - frameWorld.translate.z);
+        const Vector delta = makeVector<Vector>(worldPoint.x - frameWorld.translate.x,
+            worldPoint.y - frameWorld.translate.y, worldPoint.z - frameWorld.translate.z);
         return generatedColliderWorldVectorToLocal(frameWorld, delta);
     }
 
@@ -506,7 +491,8 @@ namespace rock::hand_bone_collider_geometry_math
     };
 
     template <class Transform, class Vector>
-    inline BoneColliderFrameResult<Transform, Vector> buildSegmentColliderFrame(const BoneColliderFrameInput<Transform, Vector>& input)
+    inline BoneColliderFrameResult<Transform, Vector> buildSegmentColliderFrame(
+        const BoneColliderFrameInput<Transform, Vector>& input)
     {
         BoneColliderFrameResult<Transform, Vector> result{};
         result.radius = (std::max)(0.01f, input.radius);
@@ -523,7 +509,8 @@ namespace rock::hand_bone_collider_geometry_math
             }
             const Vector parentToTip = sub(input.start.translate, input.previous.translate);
             const float parentLength = length(parentToTip);
-            if (!std::isfinite(parentLength) || parentLength <= 1.0e-5f || !std::isfinite(input.extrapolatedLengthScale)) {
+            if (!std::isfinite(parentLength) || parentLength <= 1.0e-5f ||
+                !std::isfinite(input.extrapolatedLengthScale)) {
                 return result;
             }
             Vector extrapolationDirection = mul(parentToTip, 1.0f / parentLength);
@@ -536,7 +523,8 @@ namespace rock::hand_bone_collider_geometry_math
                 float bestAbsDot = 0.0f;
                 Vector bestLocalAxis{};
                 for (const auto& localAxis : localAxes) {
-                    const Vector previousAxisWorld = debug_axis_math::rotateNiLocalToWorld(input.previous.rotate, localAxis);
+                    const Vector previousAxisWorld =
+                        debug_axis_math::rotateNiLocalToWorld(input.previous.rotate, localAxis);
                     const float axisDot = dot(previousAxisWorld, extrapolationDirection);
                     if (std::isfinite(axisDot) && std::fabs(axisDot) > bestAbsDot) {
                         bestAbsDot = std::fabs(axisDot);
@@ -547,7 +535,8 @@ namespace rock::hand_bone_collider_geometry_math
                 // observed segment or the bone data is not trustworthy this
                 // frame — keep the straight continuation instead.
                 if (bestAbsDot > 0.5f) {
-                    const Vector startAxisWorld = debug_axis_math::rotateNiLocalToWorld(input.start.rotate, bestLocalAxis);
+                    const Vector startAxisWorld =
+                        debug_axis_math::rotateNiLocalToWorld(input.start.rotate, bestLocalAxis);
                     const float startAxisLength = length(startAxisWorld);
                     if (std::isfinite(startAxisLength) && startAxisLength > 1.0e-5f) {
                         extrapolationDirection = mul(startAxisWorld, 1.0f / startAxisLength);
@@ -576,7 +565,8 @@ namespace rock::hand_bone_collider_geometry_math
 
         result.transform = input.start;
         result.transform.translate = add(start, mul(segment, 0.5f));
-        result.transform.rotate = matrixFromAxes<decltype(result.transform.rotate)>(result.xAxis, result.yAxis, result.zAxis);
+        result.transform.rotate =
+            matrixFromAxes<decltype(result.transform.rotate)>(result.xAxis, result.yAxis, result.zAxis);
         result.transform.scale = 1.0f;
         result.valid = true;
         return result;
@@ -641,11 +631,8 @@ namespace rock::hand_bone_collider_geometry_math
     }
 
     template <class Transform, class Vector>
-    inline BoneColliderFrameResult<Transform, Vector> buildPalmAnchorFrame(
-        const Transform& hand,
-        const std::array<Vector, 5>& fingerBases,
-        const Vector& crossPalmDirection,
-        float palmDepth)
+    inline BoneColliderFrameResult<Transform, Vector> buildPalmAnchorFrame(const Transform& hand,
+        const std::array<Vector, 5>& fingerBases, const Vector& crossPalmDirection, float palmDepth)
     {
         BoneColliderFrameResult<Transform, Vector> result{};
         if (!finiteVector(hand.translate) || !finiteVector(crossPalmDirection)) {
@@ -688,7 +675,8 @@ namespace rock::hand_bone_collider_geometry_math
         const float currentPalmDepthOffset = dot(sub(palmCenter, hand.translate), result.palmDepthAxis);
         palmCenter = sub(palmCenter, mul(result.palmDepthAxis, currentPalmDepthOffset));
         result.transform.translate = add(palmCenter, mul(result.palmDepthAxis, -std::fabs(palmDepth) / 3.0f));
-        result.transform.rotate = matrixFromAxes<decltype(result.transform.rotate)>(result.xAxis, result.yAxis, result.zAxis);
+        result.transform.rotate =
+            matrixFromAxes<decltype(result.transform.rotate)>(result.xAxis, result.yAxis, result.zAxis);
         result.transform.scale = 1.0f;
         result.valid = true;
         return result;

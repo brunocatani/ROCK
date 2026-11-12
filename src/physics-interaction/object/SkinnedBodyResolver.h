@@ -65,32 +65,39 @@ namespace rock::skinned_body_resolver
             (!input.surfaceOwnerUsable || !validBody(input.surfaceOwnerBodyId))) {
             return Resolution{ .reason = "ragdoll-surface-owner-unresolved" };
         }
-        if (input.surfaceIsSkinned && input.hasSkinInfluences && input.surfaceOwnerUsable && validBody(input.surfaceOwnerBodyId)) {
+        if (input.surfaceIsSkinned && input.hasSkinInfluences && input.surfaceOwnerUsable &&
+            validBody(input.surfaceOwnerBodyId)) {
             return Resolution{
                 .bodyId = input.surfaceOwnerBodyId,
                 .source = ResolutionSource::WeightedSkinOwner,
                 .reason = "weightedSkinOwner",
                 .usedSkinInfluences = true,
-                .relaxedMechanicalAuthority = grab_target::relaxesStrictPocketAuthorityForMechanicalGrab(input.targetKind),
+                .relaxedMechanicalAuthority =
+                    grab_target::relaxesStrictPocketAuthorityForMechanicalGrab(input.targetKind),
             };
         }
 
-        const auto base = geometry_body_resolver::resolveGeometryBody(geometry_body_resolver::GeometryBodyResolutionInput{
-            .triangleOwnerBodyId = input.surfaceOwnerBodyId,
-            .selectedBodyId = input.selectedBodyId,
-            .nearestBodyId = input.nearestBodyId,
-            .triangleOwnerUsable = input.surfaceOwnerUsable,
-            .selectedUsable = input.selectedUsable,
-            .nearestUsable = input.nearestUsable,
-        });
+        const auto base =
+            geometry_body_resolver::resolveGeometryBody(geometry_body_resolver::GeometryBodyResolutionInput{
+                .triangleOwnerBodyId = input.surfaceOwnerBodyId,
+                .selectedBodyId = input.selectedBodyId,
+                .nearestBodyId = input.nearestBodyId,
+                .triangleOwnerUsable = input.surfaceOwnerUsable,
+                .selectedUsable = input.selectedUsable,
+                .nearestUsable = input.nearestUsable,
+            });
 
         switch (base.source) {
         case geometry_body_resolver::GeometryBodyResolutionSource::TriangleOwner:
-            return Resolution{ .bodyId = base.bodyId, .source = ResolutionSource::TriangleOwner, .reason = base.reason };
+            return Resolution{ .bodyId = base.bodyId,
+                .source = ResolutionSource::TriangleOwner,
+                .reason = base.reason };
         case geometry_body_resolver::GeometryBodyResolutionSource::SelectedBody:
             return Resolution{ .bodyId = base.bodyId, .source = ResolutionSource::SelectedBody, .reason = base.reason };
         case geometry_body_resolver::GeometryBodyResolutionSource::NearestAccepted:
-            return Resolution{ .bodyId = base.bodyId, .source = ResolutionSource::NearestAccepted, .reason = base.reason };
+            return Resolution{ .bodyId = base.bodyId,
+                .source = ResolutionSource::NearestAccepted,
+                .reason = base.reason };
         default:
             return Resolution{};
         }

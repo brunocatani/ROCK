@@ -1,24 +1,27 @@
+// Native scope hooks: scope menu messages, housing configuration, overlay and
+// field of view, and the second weapon's scope target.
 #include "physics-interaction/weapon/scope/NativeScopeData.h"
 
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/native/HavokOffsets.h"
-#include "rock_support/Fo4VrRuntime.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
+#include "physics-interaction/weapon/scope/ManualScopeTargetPolicy.h"
 #include "physics-interaction/weapon/scope/NativeScopeAdmissionStub.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 #include "RE/Bethesda/IMenu.h"
-#include "RE/Bethesda/UIMessage.h"
 #include "RE/Bethesda/TESBoundObjects.h"
+#include "RE/Bethesda/UIMessage.h"
 #include "RE/Scaleform/GFx/GFx_Player.h"
 
+#include <Windows.h>
 #include <array>
 #include <atomic>
 #include <bit>
 #include <cmath>
 #include <cstring>
 #include <limits>
-#include <Windows.h>
+#include <RPS/Runtime/HookChain.h>
 
 namespace rock::native_scope_data
 {
@@ -28,7 +31,8 @@ namespace rock::native_scope_data
         using Value = RE::Scaleform::GFx::Value;
         using ConfigureHousing = void (*)(void*, std::uint32_t);
         using SetScopeVisibility = void (*)(void*, bool);
-        using InvokeOverlay = bool (*)(Value::ObjectInterface*, void*, Value*, const char*, const Value*, std::size_t, bool);
+        using InvokeOverlay = bool (*)(Value::ObjectInterface*, void*, Value*, const char*, const Value*, std::size_t,
+            bool);
         using ScopeFieldOfView = float (*)(RE::TESObjectWEAP*, float, RE::TESObjectWEAP::InstanceData*);
         using ProcessScopeMessage = RE::UI_MESSAGE_RESULTS (*)(RE::IMenu*, RE::UIMessage&);
 
@@ -61,12 +65,16 @@ namespace rock::native_scope_data
         std::atomic<std::uint32_t> s_zoomReadFailureStage{ 0 };
         std::atomic<std::uint64_t> s_projectionSample{ 0 };
         std::atomic<bool> s_housingStateFailure{ false };
+        std::atomic<bool> s_secondaryActive{ false };
+        std::atomic<std::uint32_t> s_secondaryOverlay{ 0 };
+        std::atomic<float> s_secondaryMagnification{ 0.0f };
         static_assert(std::atomic<std::uint64_t>::is_always_lock_free);
 
         bool nativeHasScope(std::uint32_t nativeFlag, const void* weapon, const void* instance,
             native_scope_admission::Site site) noexcept
         {
-            if (!s_enabled.load(std::memory_order_acquire)) return nativeFlag != 0;
+            if (!s_enabled.load(std::memory_order_acquire))
+                return nativeFlag != 0;
             auto& queries = site == native_scope_admission::Site::Geometry ? s_geometryQueries : s_menuQueries;
             queries.fetch_add(1, std::memory_order_relaxed);
             if (nativeFlag != 0) {
@@ -90,7 +98,8 @@ namespace rock::native_scope_data
 
         RE::UI_MESSAGE_RESULTS processScopeMessage(RE::IMenu* menu, RE::UIMessage& message)
         {
-            if (!s_enabled.load(std::memory_order_acquire)) return s_processScopeMessage(menu, message);
+            if (!s_enabled.load(std::memory_order_acquire))
+                return s_processScopeMessage(menu, message);
             // Observation only. Bethesda owns Show, its fade callback, Hide,
             // input-layer removal and the menu object's lifetime.
             const auto type = static_cast<std::uint32_t>(*message.type);
@@ -102,15 +111,16 @@ namespace rock::native_scope_data
                 // BSUIMessageData payload: native sender 0x1420D93F0 writes
                 // vtable 0x142D56B40 and +0x28. Other Update payload classes
                 // must not be interpreted as the scope begin/end enum.
-                payloadValid = data && native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(data), dataVtable) &&
+                payloadValid = data &&
+                    native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(data), dataVtable) &&
                     dataVtable == REL::Offset(0x2D56B40).address() && native_memory::tryReadField(data, 0x28, payload);
             }
             const bool movieBefore = menu->uiMovie != nullptr;
             const bool rootBefore = menu->menuObj.IsObject();
             const auto result = s_processScopeMessage(menu, message);
             const std::uint64_t sample = payload | (static_cast<std::uint64_t>(type & 0xFF) << 32) |
-                (static_cast<std::uint64_t>(payloadValid) << 40) |
-                (static_cast<std::uint64_t>(movieBefore) << 41) | (static_cast<std::uint64_t>(rootBefore) << 42) |
+                (static_cast<std::uint64_t>(payloadValid) << 40) | (static_cast<std::uint64_t>(movieBefore) << 41) |
+                (static_cast<std::uint64_t>(rootBefore) << 42) |
                 (static_cast<std::uint64_t>(menu->uiMovie != nullptr) << 43) |
                 (static_cast<std::uint64_t>(menu->menuObj.IsObject()) << 44) |
                 (static_cast<std::uint64_t>(result) << 48);
@@ -128,8 +138,8 @@ namespace rock::native_scope_data
             }
         }
 
-        bool invokeOverlay(Value::ObjectInterface* objectInterface, void* object, Value* result,
-            const char* method, const Value* args, std::size_t count, bool displayObject)
+        bool invokeOverlay(Value::ObjectInterface* objectInterface, void* object, Value* result, const char* method,
+            const Value* args, std::size_t count, bool displayObject)
         {
             if (!s_enabled.load(std::memory_order_acquire)) {
                 return s_invokeOverlay(objectInterface, object, result, method, args, count, displayObject);
@@ -137,18 +147,20 @@ namespace rock::native_scope_data
             // This is ScopeMenu's SetOverlay call, not a global Scaleform hook.
             // Use a value owned by this callback so neither the weapon's ZOOM
             // nor native caller's argument storage needs restoration.
+            const bool secondary = s_secondaryActive.load(std::memory_order_acquire);
             const bool replace = count == 1 && args && args[0].IsUInt() &&
-                !policy::isValidNativeOverlayIndex(args[0].GetUInt());
-            Value fallback(policy::kDefaultOverlayIndex);
-            const bool applied = s_invokeOverlay(objectInterface, object, result, method,
-                replace ? &fallback : args, count, displayObject);
+                (secondary || !policy::isValidNativeOverlayIndex(args[0].GetUInt()));
+            Value fallback(secondary ? policy::resolveOverlay(s_secondaryOverlay.load(std::memory_order_relaxed))
+                                     : policy::kDefaultOverlayIndex);
+            const bool applied = s_invokeOverlay(objectInterface, object, result, method, replace ? &fallback : args,
+                count, displayObject);
             const auto authored = count == 1 && args && args[0].IsUInt() ? args[0].GetUInt() : 0xFFFFFFFFu;
-            const auto selected = replace ? policy::kDefaultOverlayIndex : authored;
+            const auto selected = replace ? fallback.GetUInt() : authored;
             s_overlaySample.store(authored | (static_cast<std::uint64_t>(selected & 0xFFFFu) << 32) |
                     (static_cast<std::uint64_t>(replace) << 48) | (static_cast<std::uint64_t>(applied) << 49),
                 std::memory_order_relaxed);
             s_overlayInvocationCount.fetch_add(1, std::memory_order_release);
-            if (replace) {
+            if (replace && !secondary) {
                 s_overlayFallbacks.fetch_add(1, std::memory_order_relaxed);
             }
             if (!applied) {
@@ -159,7 +171,8 @@ namespace rock::native_scope_data
 
         float scopeFieldOfView(RE::TESObjectWEAP* weapon, float baseFov, RE::TESObjectWEAP::InstanceData* instance)
         {
-            if (!s_enabled.load(std::memory_order_acquire)) return s_scopeFieldOfView(weapon, baseFov, instance);
+            if (!s_enabled.load(std::memory_order_acquire))
+                return s_scopeFieldOfView(weapon, baseFov, instance);
             // 0x140D835AF is exclusively the native mono-scope render pass.
             // Its RCX/R8 are held by the caller for the entire render. The
             // same instance/base ZOOM fields are read by 0x140332CB0 and
@@ -170,6 +183,17 @@ namespace rock::native_scope_data
                 s_zoomReadFailureStage.store(1, std::memory_order_relaxed);
                 s_zoomReadFailures.fetch_add(1, std::memory_order_relaxed);
                 return 90.0f;
+            }
+            if (s_secondaryActive.load(std::memory_order_acquire)) {
+                // 0x140332CB0's own projection, with the second weapon's ZOOM.
+                const float magnification = s_secondaryMagnification.load(std::memory_order_relaxed);
+                const float renderedFov = policy::magnifiedFieldOfView(baseFov, magnification);
+                s_projectionSample.store((static_cast<std::uint64_t>(
+                                              std::bit_cast<std::uint32_t>(policy::resolveMagnification(magnification)))
+                                             << 32) |
+                        std::bit_cast<std::uint32_t>(renderedFov),
+                    std::memory_order_relaxed);
+                return renderedFov;
             }
             RE::BGSZoomData* zoom = nullptr;
             if (instance && !native_memory::tryReadValue(&instance->zoomData, zoom)) {
@@ -189,8 +213,8 @@ namespace rock::native_scope_data
                 return baseFov;
             }
             const bool authored = policy::isValidMagnification(magnification);
-            const float renderedFov = authored ? s_scopeFieldOfView(weapon, baseFov, instance) :
-                policy::magnifiedFieldOfView(baseFov, policy::kDefaultMagnification);
+            const float renderedFov = authored ? s_scopeFieldOfView(weapon, baseFov, instance)
+                                               : policy::magnifiedFieldOfView(baseFov, policy::kDefaultMagnification);
             if (!authored) {
                 s_zoomFallbackFrames.fetch_add(1, std::memory_order_relaxed);
             }
@@ -199,21 +223,22 @@ namespace rock::native_scope_data
             // in-game report need not infer projection from an OMOD label.
             const auto zoomBits = std::bit_cast<std::uint32_t>(policy::resolveMagnification(magnification));
             s_projectionSample.store((static_cast<std::uint64_t>(zoomBits) << 32) |
-                    std::bit_cast<std::uint32_t>(renderedFov), std::memory_order_relaxed);
+                    std::bit_cast<std::uint32_t>(renderedFov),
+                std::memory_order_relaxed);
             return renderedFov;
         }
 
+        // The call reaches the native function or another plugin's detour; the
+        // hooks call through whichever is there (write_call returns it).
         [[nodiscard]] bool callMatches(std::uintptr_t site, std::uintptr_t target)
         {
-            std::array<std::uint8_t, 5> bytes{};
-            const auto address = REL::Offset(site).address();
-            std::int32_t relative = 0;
-            if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), bytes.data(), bytes.size()) ||
-                bytes[0] != 0xE8) {
-                return false;
+            const auto resolved =
+                RPS::Runtime::HookChain::resolveCall(REL::Offset(site).address(), REL::Offset(target).address());
+            if (resolved.foreign()) {
+                ROCK_LOG_INFO(Init, "Native scope call at {:#x} already hooked by {}; ROCK calls through it", site,
+                    resolved.owner);
             }
-            std::memcpy(&relative, bytes.data() + 1, sizeof(relative));
-            return address + 5 + relative == REL::Offset(target).address();
+            return static_cast<bool>(resolved);
         }
 
         template <std::size_t N>
@@ -221,7 +246,8 @@ namespace rock::native_scope_data
         {
             std::array<std::uint8_t, N> actual{};
             return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(site).address()),
-                       actual.data(), actual.size()) && actual == expected;
+                       actual.data(), actual.size()) &&
+                actual == expected;
         }
 
         template <std::size_t N>
@@ -229,7 +255,8 @@ namespace rock::native_scope_data
         {
             const auto delta = static_cast<std::int64_t>(reinterpret_cast<std::uintptr_t>(target)) -
                 static_cast<std::int64_t>(REL::Offset(site).address() + 5);
-            if (delta < (std::numeric_limits<std::int32_t>::min)() || delta > (std::numeric_limits<std::int32_t>::max)()) {
+            if (delta < (std::numeric_limits<std::int32_t>::min)() ||
+                delta > (std::numeric_limits<std::int32_t>::max)()) {
                 return false;
             }
             const auto relative = static_cast<std::int32_t>(delta);
@@ -249,26 +276,29 @@ namespace rock::native_scope_data
         // 0x140BC7F00 independently read the ZOOM overlay at +0x24. The
         // mono renderer 0x140D831F0 passes its weapon/instance and base FOV
         // to 0x140332CB0, which implements 2*atan(tan(FOV/2)/zoom).
-        constexpr std::array<std::uint8_t, 10> visibilityPrefix{
-            0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20
-        };
-        std::array<std::uint8_t, visibilityPrefix.size()> actualVisibilityPrefix{};
+        constexpr std::array<std::uint8_t, 10> visibilityPrefix{ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC,
+            0x20 };
+        // The ScopeMenu message slot holds the native handler or another plugin's,
+        // which ROCK's handler calls through.
+        const auto messageSlot = RPS::Runtime::HookChain::resolveSlot(REL::Offset(0x2D5AC30).address(),
+            REL::Offset(0xBC7F00).address());
+        if (messageSlot.foreign()) {
+            ROCK_LOG_INFO(Init, "ScopeMenu message handler already replaced by {}; ROCK calls through it",
+                messageSlot.owner);
+        }
         // Independent native readers of the HasScope bit: geometry keeps
         // the scope active; the player aiming transition admits ScopeMenu.
         constexpr std::array<std::uint8_t, 6> geometryExtract{ 0xC1, 0xEB, 0x15, 0x80, 0xE3, 0x01 };
         constexpr std::array<std::uint8_t, 5> menuExtract{ 0xC1, 0xE8, 0x15, 0x24, 0x01 };
-        std::uintptr_t processMessage = 0;
+        const std::uintptr_t processMessage = messageSlot.callee;
         if (!query || !REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72 ||
-            !bytesMatch(0xEF838E, geometryExtract) || !bytesMatch(0xF300CA, menuExtract) ||
-            !native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(REL::Offset(0x2D5AC30).address()), processMessage) ||
-            processMessage != REL::Offset(0xBC7F00).address() ||
-            !callMatches(0xF0AAD9, 0xC8DC60) ||
-            !callMatches(0xBC8073, 0x213BB80) ||
-            !callMatches(0xD835AF, 0x332CB0) ||
+            !bytesMatch(0xEF838E, geometryExtract) || !bytesMatch(0xF300CA, menuExtract) || !messageSlot ||
+            !callMatches(0xF0AAD9, 0xC8DC60) || !callMatches(0xBC8073, 0x213BB80) || !callMatches(0xD835AF, 0x332CB0) ||
             !callMatches(0xEFAAF2, 0xC8E340) ||
-            !native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(0xC8E340).address()),
-                actualVisibilityPrefix.data(), actualVisibilityPrefix.size()) || actualVisibilityPrefix != visibilityPrefix) {
-            ROCK_LOG_ERROR(Init, "Native scope data hooks rejected: admission, message, housing, visibility, SetOverlay, or mono FOV bytes differ");
+            !RPS::Runtime::HookChain::resolveEntry(REL::Offset(0xC8E340).address(), visibilityPrefix)) {
+            ROCK_LOG_ERROR(Init,
+                "Native scope data hooks rejected: admission, message, housing, visibility, SetOverlay, or mono FOV "
+                "bytes differ");
             return false;
         }
         auto& trampoline = F4SE::GetTrampoline();
@@ -293,15 +323,17 @@ namespace rock::native_scope_data
         s_setScopeVisibility = reinterpret_cast<SetScopeVisibility>(REL::Offset(0xC8E340).address());
         s_configureHousing = reinterpret_cast<ConfigureHousing>(
             trampoline.write_call<5>(REL::Offset(0xF0AAD9).address(), &configureHousing));
-        s_invokeOverlay = reinterpret_cast<InvokeOverlay>(
-            trampoline.write_call<5>(REL::Offset(0xBC8073).address(), &invokeOverlay));
+        s_invokeOverlay =
+            reinterpret_cast<InvokeOverlay>(trampoline.write_call<5>(REL::Offset(0xBC8073).address(), &invokeOverlay));
         s_scopeFieldOfView = reinterpret_cast<ScopeFieldOfView>(
             trampoline.write_call<5>(REL::Offset(0xD835AF).address(), &scopeFieldOfView));
         REL::safe_write(REL::Offset(0x2D5AC30).address(), reinterpret_cast<std::uintptr_t>(&processScopeMessage));
         REL::safe_write(REL::Offset(0xEF838E).address(), geometryBranch.data(), geometryBranch.size());
         REL::safe_write(REL::Offset(0xF300CA).address(), menuBranch.data(), menuBranch.size());
         s_installed = true;
-        ROCK_LOG_INFO(Init, "Native scope data hooks installed: native geometry/menu admission, authored overlay/zoom preferred, defaults overlay=6 zoom=4x");
+        ROCK_LOG_INFO(Init,
+            "Native scope data hooks installed: native geometry/menu admission, authored overlay/zoom preferred, "
+            "defaults overlay=6 zoom=4x");
         return true;
     }
 
@@ -320,8 +352,9 @@ namespace rock::native_scope_data
         // Getter 0x141D947B0 and setter 0x141D947A0 independently witness
         // request byte +3. 0x140EFAA60 uses the same byte and calls
         // 0x140C8E340 to show/hide WSScope's current lens layers.
-        if (!native_memory::tryReadValue(reinterpret_cast<const std::uint8_t*>(
-                REL::Offset(0x6239343).address()), active) || active > 1) {
+        if (!native_memory::tryReadValue(reinterpret_cast<const std::uint8_t*>(REL::Offset(0x6239343).address()),
+                active) ||
+            active > 1) {
             s_housingStateFailure.store(true, std::memory_order_relaxed);
             return false;
         }
@@ -336,15 +369,20 @@ namespace rock::native_scope_data
         return true;
     }
 
-    void setEnabled(bool enabled)
+    void setEnabled(bool enabled) { s_enabled.store(enabled, std::memory_order_release); }
+
+    void setSecondaryTarget(bool active, std::uint32_t overlay, float magnification)
     {
-        s_enabled.store(enabled, std::memory_order_release);
+        s_secondaryOverlay.store(overlay, std::memory_order_relaxed);
+        s_secondaryMagnification.store(magnification, std::memory_order_relaxed);
+        s_secondaryActive.store(active, std::memory_order_release);
     }
 
     void restoreNativeHousing()
     {
         if (!s_installed || s_enabled.load(std::memory_order_acquire) ||
-            !s_housingModified.load(std::memory_order_acquire)) return;
+            !s_housingModified.load(std::memory_order_acquire))
+            return;
 
         // Resolve current engine objects afresh. No equip/render callback
         // publishes an engine pointer for the game thread to retain.
@@ -352,35 +390,43 @@ namespace rock::native_scope_data
         std::uintptr_t vtable = 0;
         std::uint8_t active = 0;
         if (!native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(
-                REL::Offset(offsets::kData_NativeWorldScopeSingleton).address()), worldScope) ||
+                                             REL::Offset(offsets::kData_NativeWorldScopeSingleton).address()),
+                worldScope) ||
             !worldScope || !native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(worldScope), vtable) ||
             vtable != REL::Offset(offsets::kData_NativeWorldScopePrimaryVtable).address() ||
-            !native_memory::tryReadValue(reinterpret_cast<const std::uint8_t*>(REL::Offset(0x6239343).address()), active) || active > 1) {
-            ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Vanilla scopes: housing restore waiting for valid native renderer state");
+            !native_memory::tryReadValue(reinterpret_cast<const std::uint8_t*>(REL::Offset(0x6239343).address()),
+                active) ||
+            active > 1) {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 2000,
+                "Vanilla scopes: housing restore waiting for valid native renderer state");
             return;
         }
         const auto* equipped = f4vr::getEquippedWeaponItem();
         auto* form = equipped ? equipped->item.object : nullptr;
         auto* weapon = form ? form->As<RE::TESObjectWEAP>() : nullptr;
-        if (!weapon) return;
+        if (!weapon)
+            return;
         const auto* instance = static_cast<const RE::TESObjectWEAP::InstanceData*>(equipped->item.instanceData.get());
         RE::BGSZoomData* zoom = nullptr;
         std::uint32_t overlay = 0;
         if ((instance && !native_memory::tryReadValue(&instance->zoomData, zoom)) ||
             (!zoom && !native_memory::tryReadValue(&weapon->weaponData.zoomData, zoom)) ||
             (zoom && !native_memory::tryReadValue(&zoom->zoomData.overlay, overlay))) {
-            ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Vanilla scopes: housing restore could not read the equipped weapon ZOOM");
+            ROCK_LOG_SAMPLE_WARN(Weapon, 2000,
+                "Vanilla scopes: housing restore could not read the equipped weapon ZOOM");
             return;
         }
         s_configureHousing(reinterpret_cast<void*>(worldScope), overlay);
-        if (active != 0) s_setScopeVisibility(reinterpret_cast<void*>(worldScope), true);
+        if (active != 0)
+            s_setScopeVisibility(reinterpret_cast<void*>(worldScope), true);
         s_housingModified.store(false, std::memory_order_release);
         ROCK_LOG_INFO(Weapon, "Vanilla scopes: restored native housing overlay={}", overlay);
     }
 
     void reportDiagnostics()
     {
-        if (!s_enabled.load(std::memory_order_acquire)) return;
+        if (!s_enabled.load(std::memory_order_acquire))
+            return;
         const auto geometryAdmissions = s_geometryAdmissions.load(std::memory_order_relaxed);
         const auto menuAdmissions = s_menuAdmissions.load(std::memory_order_relaxed);
         const auto wrongThread = s_wrongThreadQueries.load(std::memory_order_relaxed);
@@ -390,7 +436,8 @@ namespace rock::native_scope_data
         const std::array<std::uint32_t, 4> admissions{ geometryAdmissions, menuAdmissions, wrongThread, menuQueries };
         if (admissions != lastAdmissions) {
             lastAdmissions = admissions;
-            ROCK_LOG_SAMPLE_DEBUG(Weapon, 1000, "Native scope admission geometry={} menu={} rejectedThread={} geometryQueries={} menuQueries={}",
+            ROCK_LOG_SAMPLE_DEBUG(Weapon, 1000,
+                "Native scope admission geometry={} menu={} rejectedThread={} geometryQueries={} menuQueries={}",
                 geometryAdmissions, menuAdmissions, wrongThread, geometryQueries, menuQueries);
         }
         static std::uint32_t lastMessages = 0;
@@ -399,7 +446,8 @@ namespace rock::native_scope_data
             lastMessages = messages;
             const auto sample = s_scopeMessageSample.load(std::memory_order_relaxed);
             ROCK_LOG_SAMPLE_DEBUG(Weapon, 1000,
-                "Native scope menu messages={} type={} payload={} payloadValid={} movieBefore={} rootBefore={} movieAfter={} rootAfter={} result={}",
+                "Native scope menu messages={} type={} payload={} payloadValid={} movieBefore={} rootBefore={} "
+                "movieAfter={} rootAfter={} result={}",
                 messages, (sample >> 32) & 0xFF, static_cast<std::uint32_t>(sample), (sample >> 40) & 1,
                 (sample >> 41) & 1, (sample >> 42) & 1, (sample >> 43) & 1, (sample >> 44) & 1, sample >> 48);
         }
@@ -408,8 +456,9 @@ namespace rock::native_scope_data
         if (overlays != lastOverlays) {
             lastOverlays = overlays;
             const auto sample = s_overlaySample.load(std::memory_order_relaxed);
-            ROCK_LOG_SAMPLE_DEBUG(Weapon, 1000, "Native scope SetOverlay calls={} authored={} selected={} fallback={} applied={}",
-                overlays, static_cast<std::uint32_t>(sample), (sample >> 32) & 0xFFFF, (sample >> 48) & 1, (sample >> 49) & 1);
+            ROCK_LOG_SAMPLE_DEBUG(Weapon, 1000,
+                "Native scope SetOverlay calls={} authored={} selected={} fallback={} applied={}", overlays,
+                static_cast<std::uint32_t>(sample), (sample >> 32) & 0xFFFF, (sample >> 48) & 1, (sample >> 49) & 1);
         }
         // Game-frame observer, never called by the UI/render callbacks. Each
         // category reports once per session, avoiding render-loop log churn.
@@ -420,8 +469,7 @@ namespace rock::native_scope_data
         const auto projection = s_projectionSample.load(std::memory_order_relaxed);
         if (projection != 0 && projection != lastProjection) {
             lastProjection = projection;
-            ROCK_LOG_SAMPLE_DEBUG(Weapon, 1000,
-                "Native scope projection magnification={} fieldOfViewDegrees={}",
+            ROCK_LOG_SAMPLE_DEBUG(Weapon, 1000, "Native scope projection magnification={} fieldOfViewDegrees={}",
                 std::bit_cast<float>(static_cast<std::uint32_t>(projection >> 32)),
                 std::bit_cast<float>(static_cast<std::uint32_t>(projection)));
         }
@@ -433,13 +481,17 @@ namespace rock::native_scope_data
             zoomReported = true;
             ROCK_LOG_INFO(Weapon, "Native mono scope renderer selected 4x for missing/invalid authored magnification");
         }
-        if (!failureReported && (s_overlayFailures.load(std::memory_order_relaxed) != 0 ||
-                                   s_zoomReadFailures.load(std::memory_order_relaxed) != 0 ||
-                                   s_housingStateFailure.load(std::memory_order_relaxed))) {
+        if (!failureReported &&
+            (s_overlayFailures.load(std::memory_order_relaxed) != 0 ||
+                s_zoomReadFailures.load(std::memory_order_relaxed) != 0 ||
+                s_housingStateFailure.load(std::memory_order_relaxed))) {
             failureReported = true;
-            ROCK_LOG_WARN(Weapon, "Native scope presentation failed: SetOverlay failures={} zoom read failures={} lastReadStage={} (1=input 2=instance 3=base 4=ZOOM) housingStateFailure={}",
+            ROCK_LOG_WARN(Weapon,
+                "Native scope presentation failed: SetOverlay failures={} zoom read failures={} lastReadStage={} "
+                "(1=input 2=instance 3=base 4=ZOOM) housingStateFailure={}",
                 s_overlayFailures.load(std::memory_order_relaxed), s_zoomReadFailures.load(std::memory_order_relaxed),
-                s_zoomReadFailureStage.load(std::memory_order_relaxed), s_housingStateFailure.load(std::memory_order_relaxed));
+                s_zoomReadFailureStage.load(std::memory_order_relaxed),
+                s_housingStateFailure.load(std::memory_order_relaxed));
         }
     }
 }

@@ -60,22 +60,22 @@ namespace rock::mechanical_connected_body_set
         return std::find(bodyIds.begin(), bodyIds.end(), bodyId) != bodyIds.end();
     }
 
-    [[nodiscard]] inline std::uint32_t rejectCount(
-        const object_physics_body_set::ObjectPhysicsBodySet& bodySet,
+    [[nodiscard]] inline std::uint32_t rejectCount(const object_physics_body_set::ObjectPhysicsBodySet& bodySet,
         physics_body_classifier::BodyRejectReason reason) noexcept
     {
         const auto index = static_cast<std::size_t>(reason);
         return index < bodySet.diagnostics.rejectCounts.size() ? bodySet.diagnostics.rejectCounts[index] : 0u;
     }
 
-    [[nodiscard]] inline std::uint32_t acceptedRecordCount(const object_physics_body_set::ObjectPhysicsBodySet& bodySet) noexcept
+    [[nodiscard]] inline std::uint32_t acceptedRecordCount(
+        const object_physics_body_set::ObjectPhysicsBodySet& bodySet) noexcept
     {
-        return static_cast<std::uint32_t>(std::count_if(bodySet.records.begin(), bodySet.records.end(), [](const object_physics_body_set::ObjectPhysicsBodyRecord& record) {
-            return record.accepted;
-        }));
+        return static_cast<std::uint32_t>(std::count_if(bodySet.records.begin(), bodySet.records.end(),
+            [](const object_physics_body_set::ObjectPhysicsBodyRecord& record) { return record.accepted; }));
     }
 
-    [[nodiscard]] inline std::uint32_t uniqueAcceptedMotionCount(const object_physics_body_set::ObjectPhysicsBodySet& bodySet)
+    [[nodiscard]] inline std::uint32_t uniqueAcceptedMotionCount(
+        const object_physics_body_set::ObjectPhysicsBodySet& bodySet)
     {
         std::unordered_set<std::uint32_t> seenMotions;
         for (const auto& record : bodySet.records) {
@@ -86,7 +86,8 @@ namespace rock::mechanical_connected_body_set
         return static_cast<std::uint32_t>(seenMotions.size());
     }
 
-    [[nodiscard]] inline std::vector<std::uint32_t> acceptedBodyIds(const object_physics_body_set::ObjectPhysicsBodySet& bodySet)
+    [[nodiscard]] inline std::vector<std::uint32_t> acceptedBodyIds(
+        const object_physics_body_set::ObjectPhysicsBodySet& bodySet)
     {
         std::vector<std::uint32_t> result;
         result.reserve(bodySet.records.size());
@@ -100,10 +101,8 @@ namespace rock::mechanical_connected_body_set
 
     [[nodiscard]] inline MechanicalScope buildFromPreparedBodySet(
         const object_physics_body_set::ObjectPhysicsBodySet& beforePrepBodySet,
-        const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet,
-        std::uint32_t primaryBodyId,
-        grab_target::Kind targetKind,
-        bool lifecycleIncompleteNativeScan)
+        const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet, std::uint32_t primaryBodyId,
+        grab_target::Kind targetKind, bool lifecycleIncompleteNativeScan, bool carriedRigidAssembly)
     {
         MechanicalScope result{};
         result.primaryBodyId = primaryBodyId;
@@ -115,22 +114,27 @@ namespace rock::mechanical_connected_body_set
             rejectCount(preparedBodySet, physics_body_classifier::BodyRejectReason::StaticMotion) +
             rejectCount(preparedBodySet, physics_body_classifier::BodyRejectReason::NotDynamicAfterActivePrep);
         result.scanFailureCount = beforePrepBodySet.diagnostics.scanFailures + preparedBodySet.diagnostics.scanFailures;
-        result.invalidPhysicsSystemCount = beforePrepBodySet.diagnostics.invalidPhysicsSystems + preparedBodySet.diagnostics.invalidPhysicsSystems;
-        result.incompleteDiscovery = lifecycleIncompleteNativeScan || result.scanFailureCount > 0 || result.invalidPhysicsSystemCount > 0;
+        result.invalidPhysicsSystemCount =
+            beforePrepBodySet.diagnostics.invalidPhysicsSystems + preparedBodySet.diagnostics.invalidPhysicsSystems;
+        result.incompleteDiscovery =
+            lifecycleIncompleteNativeScan || result.scanFailureCount > 0 || result.invalidPhysicsSystemCount > 0;
 
-        result.committedBodyIds = held_object_body_set_policy::makePrimaryFirstUniqueBodyList(primaryBodyId, acceptedBodyIds(preparedBodySet));
+        result.committedBodyIds = held_object_body_set_policy::makePrimaryFirstUniqueBodyList(primaryBodyId,
+            acceptedBodyIds(preparedBodySet));
         if (result.committedBodyIds.empty() && primaryBodyId != kInvalidBodyId) {
             result.committedBodyIds.push_back(primaryBodyId);
         }
 
-        result.driveDecision = held_object_drive_policy::evaluateHeldBodySetDrive(held_object_drive_policy::HeldBodySetDriveInput{
-            .acceptedBodyCount = result.acceptedBodyCount,
-            .uniqueMotionCount = result.uniqueMotionCount,
-            .rejectedFixedOrNonDynamicCount = result.rejectedFixedOrNonDynamicCount,
-            .scanFailureCount = result.scanFailureCount,
-            .invalidPhysicsSystemCount = result.invalidPhysicsSystemCount,
-            .incompleteNativeScan = result.incompleteDiscovery,
-        });
+        result.driveDecision =
+            held_object_drive_policy::evaluateHeldBodySetDrive(held_object_drive_policy::HeldBodySetDriveInput{
+                .acceptedBodyCount = result.acceptedBodyCount,
+                .uniqueMotionCount = result.uniqueMotionCount,
+                .rejectedFixedOrNonDynamicCount = result.rejectedFixedOrNonDynamicCount,
+                .scanFailureCount = result.scanFailureCount,
+                .invalidPhysicsSystemCount = result.invalidPhysicsSystemCount,
+                .incompleteNativeScan = result.incompleteDiscovery,
+                .carriedRigidAssembly = carriedRigidAssembly,
+            });
 
         if (result.driveDecision.mode == held_object_drive_policy::HeldBodySetDriveMode::IncompleteNativeScan) {
             result.kind = ScopeKind::IncompleteDiscovery;
@@ -138,9 +142,12 @@ namespace rock::mechanical_connected_body_set
         } else if (result.driveDecision.mode == held_object_drive_policy::HeldBodySetDriveMode::FixedAttached) {
             result.kind = ScopeKind::FixedAttached;
             result.reason = result.driveDecision.reason;
-        } else if (result.targetPrefersMechanical && (targetKind == grab_target::Kind::ConnectedBody || result.acceptedBodyCount > 1 || result.uniqueMotionCount > 1)) {
+        } else if (result.targetPrefersMechanical &&
+            (targetKind == grab_target::Kind::ConnectedBody || result.acceptedBodyCount > 1 ||
+                result.uniqueMotionCount > 1)) {
             result.kind = ScopeKind::ArticulatedMechanical;
-            result.reason = targetKind == grab_target::Kind::ConnectedBody ? "dead-actor-mechanical-scope" : "mechanical-target-body-set";
+            result.reason = targetKind == grab_target::Kind::ConnectedBody ? "dead-actor-mechanical-scope"
+                                                                           : "mechanical-target-body-set";
         } else if (result.driveDecision.mode == held_object_drive_policy::HeldBodySetDriveMode::ComplexArticulated) {
             result.kind = ScopeKind::ArticulatedMechanical;
             result.reason = result.driveDecision.reason;

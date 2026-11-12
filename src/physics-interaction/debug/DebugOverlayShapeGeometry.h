@@ -70,12 +70,8 @@ namespace rock::debug_overlay_shape
 
         struct Child
         {
-            std::array<float, 16> transform{
-                1.0f, 0.0f, 0.0f, 0.0f,
-                0.0f, 1.0f, 0.0f, 0.0f,
-                0.0f, 0.0f, 1.0f, 0.0f,
-                0.0f, 0.0f, 0.0f, 1.0f
-            };
+            std::array<float, 16> transform{ 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 1.0f };
             std::array<float, 4> scale{ 1.0f, 1.0f, 1.0f, 0.0f };
             std::unique_ptr<ShapeRecipe> recipe;
         };
@@ -104,5 +100,5 @@ namespace rock::debug_overlay_shape
 
     [[nodiscard]] BuiltShape buildMeshFromRecipe(const ShapeRecipe& recipe);
     [[nodiscard]] MeshData makeUnitBoxMesh();
-    [[nodiscard]] std::size_t approximateGpuBytes(const MeshData& mesh) noexcept;
+    [[nodiscard]] std::size_t approximateMeshBytes(const MeshData& mesh) noexcept;
 }

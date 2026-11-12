@@ -129,7 +129,8 @@ namespace rock::mouth_consume
             // after ActivateRef has transferred the loose reference.
             // The wrapper can return false for that use path, so activation success is the
             // transfer boundary and the use call is a best-effort inventory consume dispatch.
-            static_cast<void>(equipManager->EquipObject(player, objectInstance, 0, 1, nullptr, false, false, true, false, false));
+            static_cast<void>(
+                equipManager->EquipObject(player, objectInstance, 0, 1, nullptr, false, false, true, false, false));
             result.success = true;
             result.reason = ConsumeReason::ActivateRefThenUseObject;
             return result;

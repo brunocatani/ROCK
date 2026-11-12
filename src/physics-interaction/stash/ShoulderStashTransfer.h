@@ -26,6 +26,7 @@ namespace rock::shoulder_stash
     struct TransferInput
     {
         RE::NiPointer<RE::TESObjectREFR> heldRef{};
+        const char* lootActivatorScript = nullptr;
     };
 
     struct TransferResult
@@ -33,6 +34,9 @@ namespace rock::shoulder_stash
         bool attempted = false;
         bool success = false;
         TransferReason reason = TransferReason::NotAttempted;
+        // Set for a loot activator: its script gives the item and announces
+        // it, so ROCK adds no notification of its own.
+        const char* lootActivatorScript = nullptr;
         std::int32_t count = 1;
         std::uint32_t formID = 0;
         RE::TESBoundObject* baseForm = nullptr;

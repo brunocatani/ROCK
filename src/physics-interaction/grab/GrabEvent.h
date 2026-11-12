@@ -10,10 +10,9 @@ namespace RE
 namespace rock
 {
     /*
-     * ROCK exposes grab lifecycle events through one source so pull, grab,
+     * ROCK raises grab lifecycle events through one source so pull, grab,
      * impact, two-hand, and future stash/consume paths do not grow separate
-     * notification code. The payload is POD and versioned so it can also cross
-     * F4SE messaging without binding consumers to ROCK internals.
+     * notification code. Haptics and the Grab event callback consume them.
      */
     enum class GrabEventType : std::uint32_t
     {
@@ -49,7 +48,6 @@ namespace rock
         External = 5,
     };
 
-    inline constexpr std::uint32_t ROCK_GRAB_EVENT_VERSION = 1;
     inline constexpr std::uint32_t ROCK_GRAB_EVENT_INVALID_BODY_ID = 0x7FFF'FFFFu;
     inline constexpr std::uint32_t ROCK_GRAB_EVENT_FLAG_HELD_IMPACT_DAMPED = 1u << 0;
     inline constexpr std::uint32_t ROCK_GRAB_EVENT_FLAG_SUPPRESS_HAPTIC = 1u << 1;
@@ -61,12 +59,9 @@ namespace rock
 
     struct GrabEventData
     {
-        std::uint32_t size{ sizeof(GrabEventData) };
-        std::uint32_t version{ ROCK_GRAB_EVENT_VERSION };
         GrabEventType type{ GrabEventType::Unknown };
         GrabEventSourceKind sourceKind{ GrabEventSourceKind::Unknown };
         bool isLeft{ false };
-        std::uint8_t reservedBool[3]{};
         RE::TESObjectREFR* refr{ nullptr };
         std::uint32_t formID{ 0 };
         std::uint32_t primaryBodyId{ ROCK_GRAB_EVENT_INVALID_BODY_ID };
@@ -79,6 +74,5 @@ namespace rock
         float mass{ 0.0f };
         float speedGameUnitsPerSecond{ 0.0f };
         float intensityHint{ 0.0f };
-        float reservedFloat[3]{};
     };
 }

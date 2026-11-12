@@ -1,3 +1,7 @@
+// Native hooks implemented in PhysicsHooks.cpp: the Havok timing fix
+// (installed once by ROCKMain.cpp), the native grab and refresh-manifold hooks
+// (installed by the PhysicsInteraction constructor), the native melee gate
+// (installed by PhysicsInteraction::init) and native grab-haptic suppression.
 #pragma once
 
 #include <cstdint>
@@ -8,9 +12,7 @@ namespace rock
     void installNativeGrabHook();
     bool validateNativeMeleeSuppressionHookTargets();
     bool installNativeMeleeSuppressionHooks();
-    void enforceNativeMeleeRuntimeSuppression(bool forceCheck = false);
-    [[nodiscard]] bool isNativeMeleeSuppressionActive();
-    [[nodiscard]] bool areNativeMeleeHooksInstalled();
+    void enforceNativeMeleeVelocityGate(bool forceCheck = false);
     void enforceNativeGrabHapticRuntimeSuppression(bool forceCheck = false);
     void installRefreshManifoldHook();
 

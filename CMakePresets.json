@@ -14,10 +14,10 @@
     },
     {
       "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
+        "CMAKE_TOOLCHAIN_FILE": "$penv{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
       },
       "environment": {
-        "VCPKG_ROOT": "C:/vcpkg"
+        "VCPKG_ROOT": "$penv{VCPKG_ROOT}"
       },
       "hidden": true,
       "name": "vcpkg"
@@ -43,13 +43,9 @@
       "name": "vs2022"
     },
     {
-      "inherits": ["cmake-dev", "vcpkg", "windows", "vs2022"],
-      "name": "default"
-    },
-    {
       "binaryDir": "${sourceDir}/build-fast",
       "cacheVariables": {
-        "BUILD_ROCK_TESTS": false,
+        "BUILD_ROCK_TESTS": true,
         "POST_BUILD_COPY_PLUGIN": false,
         "ROCK_PACKAGE_RELEASE": false
       },
@@ -57,19 +53,10 @@
       "name": "fast"
     },
     {
-      "binaryDir": "${sourceDir}/build-tests",
-      "cacheVariables": {
-        "BUILD_ROCK_TESTS": true,
-        "POST_BUILD_COPY_PLUGIN": false,
-        "ROCK_PACKAGE_RELEASE": false
-      },
-      "inherits": ["cmake-dev", "vcpkg", "windows", "vs2022"],
-      "name": "tests"
-    },
-    {
       "binaryDir": "${sourceDir}/build-release",
       "cacheVariables": {
         "BUILD_ROCK_TESTS": false,
+        "ROCK_SETUP_WIZARD_PREVIEW": false,
         "POST_BUILD_COPY_PLUGIN": false,
         "ROCK_PACKAGE_RELEASE": true
       },

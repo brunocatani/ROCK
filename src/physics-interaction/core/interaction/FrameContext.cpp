@@ -1,0 +1,102 @@
+// buildFrameContext: one snapshot of the worlds, timing, menu state and both
+// hands' inputs, built at the top of a PhysicsInteraction frame so every stage
+// reads the same values instead of querying FRIK and the game separately.
+#include "physics-interaction/core/PhysicsInteractionInternal.h"
+
+#include "api/ProviderRuntimeServices.h"
+
+namespace rock
+{
+    PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE::hknpWorld* hknp)
+    {
+        PhysicsFrameContext frame{};
+        frame.bhkWorld = bhk;
+        frame.hknpWorld = hknp;
+        /*
+     * One central timing identity per frame: the runtime snapshot's timing is
+     * authoritative and its legacy sanitized delta is copied without local
+     * resanitization.
+     */
+        frame.timing = runtime_state::currentFrame().timing;
+        frame.deltaSeconds = runtime_state::currentFrame().deltaSeconds;
+        frame.worldReady = bhk && hknp;
+        frame.menuBlocked = runtime_state::isPhysicsMenuBlocked();
+        const auto animationAuthorityFlags = rock::provider::currentNativeAnimationAuthorityFlags();
+        frame.reloadBoundaryActive =
+            (animationAuthorityFlags &
+                (authored_weapon_grip_capture_policy::kArms | authored_weapon_grip_capture_policy::kHands)) != 0;
+
+        if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+            (void)player;
+            if (auto* playerNodes = f4vr::getPlayerNodes(); playerNodes && playerNodes->HmdNode) {
+                frame.hmdPositionWorld = playerNodes->HmdNode->world.translate;
+                const RE::NiPoint3 rawHmdForwardWorld =
+                    playerNodes->HmdNode->world.rotate.Transpose() * RE::NiPoint3(0.0f, 1.0f, 0.0f);
+                frame.hasHmdFrame =
+                    selection_query_policy::tryNormalizeVectorForHmdCone(rawHmdForwardWorld, frame.hmdForwardWorld);
+            }
+        }
+
+        auto buildHandInput = [&](bool isLeft, Hand& hand) {
+            HandFrameInput input{};
+            input.isLeft = isLeft;
+            const bool rootHandReady =
+                _handBoneCache.isReady() && frik_hand_world_authority::tryGetRawHandWorld(isLeft, input.rawHandWorld);
+            input.disabled = (isLeft ? s_leftHandDisabled.load(std::memory_order_acquire)
+                                     : s_rightHandDisabled.load(std::memory_order_acquire)) ||
+                !rootHandReady;
+            if (!rootHandReady) {
+                return input;
+            }
+
+            if (frame.hasHmdFrame && frame.timing.valid && !frame.timing.discontinuity && !frame.timing.menuPaused &&
+                !frame.menuBlocked) {
+                std::array<float, 3> velocity{};
+                auto* playerNodes = f4vr::getPlayerNodes();
+                if (playerNodes && playerNodes->HmdNode &&
+                    vrcf::VRControllers.getVelocityInHmdAxes(isLeft ? vrcf::Hand::Left : vrcf::Hand::Right, velocity)) {
+                    // Use the same HmdNode basis as the far-selection forward vector.
+                    input.gestureVelocityMetersPerSecond = playerNodes->HmdNode->world.rotate.Transpose() *
+                        RE::NiPoint3{ velocity[0], velocity[1], velocity[2] };
+                    input.hasGestureVelocity = std::isfinite(input.gestureVelocityMetersPerSecond.x) &&
+                        std::isfinite(input.gestureVelocityMetersPerSecond.y) &&
+                        std::isfinite(input.gestureVelocityMetersPerSecond.z);
+                }
+            }
+
+            // The resolver intentionally exposes no scene node. Keep the validity
+            // of this exact controller sample through every consumer's admission.
+            input.grabAnchorWorld = input.rawHandWorld.translate;
+            RE::NiTransform closeSelectionBasisWorld = input.rawHandWorld;
+            if (frame.worldReady) {
+                RE::NiTransform proxyFrameWorld{};
+                if (hand.tryComputeGrabProxyLocalPalmPocketFrameWorld(hknp, proxyFrameWorld)) {
+                    input.grabAnchorWorld = proxyFrameWorld.translate;
+                    closeSelectionBasisWorld = makeGeneratedProxyAuthorityRelationFrame(proxyFrameWorld);
+                }
+            }
+            input.palmNormalWorld = computePalmNormalFromHandBasis(closeSelectionBasisWorld, isLeft);
+            input.pointingWorld = computePointingVectorFromHandBasis(input.rawHandWorld, isLeft);
+            input.closeSelectionDirectionWorld =
+                computeCloseSelectionDirectionFromHandBasis(closeSelectionBasisWorld, isLeft);
+            input.farSelectionDirectionWorld = computeFarSelectionDirectionFromHandBasis(input.rawHandWorld, isLeft);
+            input.pinchDirectionWorld = computePinchDetectionDirectionFromHandBasis(input.rawHandWorld, isLeft);
+            if (g_rockConfig.rockDebugDrawGrabPockets) {
+                grab_pinch_pocket_policy::FingerFrame pinchFrame{};
+                if (hand.tryGetPinchFingerFrame(pinchFrame)) {
+                    input.thumbPadWorld = pinchFrame.thumbTip;
+                    input.indexPadWorld = pinchFrame.indexTip;
+                    input.pinchPocketWorld = pinchFrame.center;
+                    input.pinchDirectionWorld = grab_pinch_pocket_policy::detectionDirection(pinchFrame,
+                        input.pinchDirectionWorld, g_rockConfig.rockGrabPinchDetectionAxisBlend);
+                    input.hasPinchPocketWorld = true;
+                }
+            }
+            return input;
+        };
+
+        frame.right = buildHandInput(false, _rightHand);
+        frame.left = buildHandInput(true, _leftHand);
+        return frame;
+    }
+}

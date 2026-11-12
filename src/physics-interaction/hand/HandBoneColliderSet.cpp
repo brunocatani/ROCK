@@ -1,15 +1,16 @@
 #include "physics-interaction/hand/HandBoneColliderSet.h"
+#include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 
-#include "physics-interaction/hand/Hand.h"
-#include "physics-interaction/debug/DebugMath.h"
-#include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
-#include "physics-interaction/native/HavokConvexShapeBuilder.h"
-#include "physics-interaction/native/HavokMaterialRegistry.h"
-#include "physics-interaction/native/HavokRefCount.h"
-#include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/native/PhysicsUtils.h"
 #include "RockConfig.h"
+#include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/debug/DebugMath.h"
+#include "physics-interaction/hand/Hand.h"
+#include "physics-interaction/native/havok/GeneratedKeyframedBodyDrive.h"
+#include "physics-interaction/native/havok/HavokConvexShapeBuilder.h"
+#include "physics-interaction/native/havok/HavokMaterialRegistry.h"
+#include "physics-interaction/native/havok/HavokRefCount.h"
+#include "physics-interaction/native/havok/PhysicsUtils.h"
 
 #include <algorithm>
 #include <array>
@@ -28,10 +29,7 @@ namespace rock
 
         constexpr std::uint32_t kHandFilterInfo = (0x000B << 16) | (ROCK_HAND_LAYER & 0x7F);
 
-        RE::NiTransform makeIdentityTransform()
-        {
-            return transform_math::makeIdentityTransform<RE::NiTransform>();
-        }
+        RE::NiTransform makeIdentityTransform() { return transform_math::makeIdentityTransform<RE::NiTransform>(); }
 
         RE::NiPoint3 normalizeOr(const RE::NiPoint3& value, const RE::NiPoint3& fallback)
         {
@@ -53,25 +51,25 @@ namespace rock
 
         using SnapshotBoneLookup = SkeletonBoneNameIndex::View;
 
-        bool findSnapshotBone(const SnapshotBoneLookup& bonesByName, std::string_view name, RE::NiTransform& outTransform)
+        bool findSnapshotBone(const SnapshotBoneLookup& bonesByName, std::string_view name,
+            RE::NiTransform& outTransform)
         {
             const auto* bone = bonesByName.find(name);
-            if (!bone) return false;
+            if (!bone)
+                return false;
             outTransform = bone->world;
             return true;
         }
 
-        void shapeRemoveRef(const RE::hknpShape* shape)
-        {
-            havok_ref_count::release(shape);
-        }
+        void shapeRemoveRef(const RE::hknpShape* shape) { havok_ref_count::release(shape); }
 
         std::vector<RE::NiPoint3> toHavokPointCloud(const std::vector<RE::NiPoint3>& gamePoints)
         {
             std::vector<RE::NiPoint3> havokPoints;
             havokPoints.reserve(gamePoints.size());
             for (const auto& point : gamePoints) {
-                havokPoints.emplace_back(point.x * gameToHavokScale(), point.y * gameToHavokScale(), point.z * gameToHavokScale());
+                havokPoints.emplace_back(point.x * gameToHavokScale(), point.y * gameToHavokScale(),
+                    point.z * gameToHavokScale());
             }
             return havokPoints;
         }
@@ -100,7 +98,8 @@ namespace rock
             return powerArmor ? 0.15f : 0.10f;
         }
 
-        hand_bone_collider_geometry_math::ColliderDimensionLimits handRoleDimensionLimits(HandColliderRole role, bool powerArmor)
+        hand_bone_collider_geometry_math::ColliderDimensionLimits handRoleDimensionLimits(HandColliderRole role,
+            bool powerArmor)
         {
             hand_bone_collider_geometry_math::ColliderDimensionLimits limits{};
             if (hand_collider_semantics::isPalmRole(role)) {
@@ -122,11 +121,8 @@ namespace rock
         bool handRoleFrameDimensionsValid(const Frame& frame, HandColliderRole role, bool powerArmor)
         {
             return frame.valid &&
-                   hand_bone_collider_geometry_math::colliderDimensionsWithinLimits(
-                       frame.length,
-                       frame.radius,
-                       frame.convexRadius,
-                       handRoleDimensionLimits(role, powerArmor));
+                hand_bone_collider_geometry_math::colliderDimensionsWithinLimits(frame.length, frame.radius,
+                    frame.convexRadius, handRoleDimensionLimits(role, powerArmor));
         }
     }
 
@@ -144,31 +140,29 @@ namespace rock
         return _tuning.signature;
     }
 
-    HandBoneColliderSet::HandBoneColliderSet()
-    {
-        clearAtomicBodyIds();
-    }
+    HandBoneColliderSet::HandBoneColliderSet() { clearAtomicBodyIds(); }
 
-    bool HandBoneColliderSet::captureBoneLookup(
-        bool isLeft,
-        const RE::NiTransform& rollAuthorityWorld,
+    bool HandBoneColliderSet::captureBoneLookup(bool isLeft, const RE::NiTransform& rollAuthorityWorld,
         BoneFrameLookup& outLookup)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::HandBoneCapture);
         outLookup = {};
         DirectSkeletonBoneSnapshot snapshot{};
-        if (!_reader.capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
-                skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
-                SkeletonBoneCaptureSpace::Controller,
-                snapshot)) {
+        // A pose that cannot be read yet is the one create() failure that
+        // resolves by itself; a missing bone or a native failure does not.
+        _createWaitedOnPose = !_reader.capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
+                                  skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                                  SkeletonBoneCaptureSpace::Controller, snapshot) ||
+            !snapshot.valid || !snapshot.controllerHandsValid[isLeft ? 1u : 0u];
+        if (_createWaitedOnPose) {
             return false;
         }
 
         return makeBoneLookup(snapshot, isLeft, rollAuthorityWorld, outLookup);
     }
 
-    bool HandBoneColliderSet::makeBoneLookup(const DirectSkeletonBoneSnapshot& snapshot,
-        bool isLeft, const RE::NiTransform& rollAuthorityWorld, BoneFrameLookup& outLookup, bool finalPose)
+    bool HandBoneColliderSet::makeBoneLookup(const DirectSkeletonBoneSnapshot& snapshot, bool isLeft,
+        const RE::NiTransform& rollAuthorityWorld, BoneFrameLookup& outLookup, bool finalPose)
     {
         outLookup = {};
         if (!snapshot.valid || snapshot.space != SkeletonBoneCaptureSpace::Controller ||
@@ -188,18 +182,18 @@ namespace rock
 
         outLookup.rollAuthorityWorld = rollAuthorityWorld;
 
-        outLookup.hasForearm3 = findSnapshotBone(bonesByName, isLeft ? "LArm_ForeArm3" : "RArm_ForeArm3", outLookup.forearm3);
-        outLookup.crossPalmDirection = normalizeOr(
-            debug_axis_math::rotateNiLocalToWorld(outLookup.hand.rotate, RE::NiPoint3(0.0f, 0.0f, 1.0f)),
-            RE::NiPoint3(0.0f, 0.0f, 1.0f));
+        outLookup.hasForearm3 =
+            findSnapshotBone(bonesByName, isLeft ? "LArm_ForeArm3" : "RArm_ForeArm3", outLookup.forearm3);
+        outLookup.crossPalmDirection =
+            normalizeOr(debug_axis_math::rotateNiLocalToWorld(outLookup.hand.rotate, RE::NiPoint3(0.0f, 0.0f, 1.0f)),
+                RE::NiPoint3(0.0f, 0.0f, 1.0f));
 
         bool allFingerBones = true;
         for (std::size_t fingerIndex = 0; fingerIndex < hand_collider_semantics::kHandFingerCount; ++fingerIndex) {
             bool fingerValid = true;
-            for (std::size_t segmentIndex = 0; segmentIndex < hand_collider_semantics::kHandFingerSegmentCount; ++segmentIndex) {
-                const auto name = fingerBoneName(
-                    isLeft,
-                    static_cast<HandFinger>(fingerIndex),
+            for (std::size_t segmentIndex = 0; segmentIndex < hand_collider_semantics::kHandFingerSegmentCount;
+                ++segmentIndex) {
+                const auto name = fingerBoneName(isLeft, static_cast<HandFinger>(fingerIndex),
                     static_cast<HandFingerSegment>(segmentIndex));
                 if (!findSnapshotBone(bonesByName, name, outLookup.fingers[fingerIndex][segmentIndex])) {
                     fingerValid = false;
@@ -209,7 +203,8 @@ namespace rock
                 }
             }
             outLookup.fingerValid[fingerIndex] = fingerValid;
-            outLookup.fingerBases[fingerIndex] = fingerValid ? outLookup.fingers[fingerIndex][0].translate : outLookup.hand.translate;
+            outLookup.fingerBases[fingerIndex] =
+                fingerValid ? outLookup.fingers[fingerIndex][0].translate : outLookup.hand.translate;
         }
 
         if (!allFingerBones) {
@@ -220,7 +215,8 @@ namespace rock
         return true;
     }
 
-    bool HandBoneColliderSet::makeRoleFrame(const BoneFrameLookup& lookup, bool isLeft, HandColliderRole role, RoleFrameResult& outFrame) const
+    bool HandBoneColliderSet::makeRoleFrame(const BoneFrameLookup& lookup, bool isLeft, HandColliderRole role,
+        RoleFrameResult& outFrame) const
     {
         (void)isLeft;
         outFrame = {};
@@ -228,8 +224,10 @@ namespace rock
             return false;
         }
 
-        if (role == HandColliderRole::PalmAnchor || role == HandColliderRole::PalmFace || role == HandColliderRole::PalmBack) {
-            const auto palm = hand_bone_collider_geometry_math::buildPalmAnchorFrame(lookup.hand, lookup.fingerBases, lookup.crossPalmDirection, 0.75f);
+        if (role == HandColliderRole::PalmAnchor || role == HandColliderRole::PalmFace ||
+            role == HandColliderRole::PalmBack) {
+            const auto palm = hand_bone_collider_geometry_math::buildPalmAnchorFrame(lookup.hand, lookup.fingerBases,
+                lookup.crossPalmDirection, 0.75f);
             if (!palm.valid) {
                 return false;
             }
@@ -238,22 +236,20 @@ namespace rock
             for (const auto& fingerBase : lookup.fingerBases) {
                 palmCenter = hand_bone_collider_geometry_math::add(palmCenter, fingerBase);
             }
-            palmCenter = hand_bone_collider_geometry_math::mul(palmCenter, 1.0f / static_cast<float>(lookup.fingerBases.size() + 1));
+            palmCenter = hand_bone_collider_geometry_math::mul(palmCenter,
+                1.0f / static_cast<float>(lookup.fingerBases.size() + 1));
 
             const RE::NiPoint3 rawPalmDepthAxis = normalizeOr(
                 debug_axis_math::rotateNiLocalToWorld(lookup.rollAuthorityWorld.rotate, RE::NiPoint3(0.0f, 1.0f, 0.0f)),
                 RE::NiPoint3(0.0f, 1.0f, 0.0f));
             const float depthOffset = hand_bone_collider_geometry_math::dot(
-                hand_bone_collider_geometry_math::sub(palmCenter, lookup.hand.translate),
-                rawPalmDepthAxis);
-            const RE::NiPoint3 palmPlaneCenter = hand_bone_collider_geometry_math::sub(
-                palmCenter,
+                hand_bone_collider_geometry_math::sub(palmCenter, lookup.hand.translate), rawPalmDepthAxis);
+            const RE::NiPoint3 palmPlaneCenter = hand_bone_collider_geometry_math::sub(palmCenter,
                 hand_bone_collider_geometry_math::mul(rawPalmDepthAxis, depthOffset));
 
             outFrame.valid = true;
             outFrame.transform = lookup.hand;
-            outFrame.transform.translate = hand_bone_collider_geometry_math::add(
-                palmPlaneCenter,
+            outFrame.transform.translate = hand_bone_collider_geometry_math::add(palmPlaneCenter,
                 hand_bone_collider_geometry_math::mul(rawPalmDepthAxis, -0.25f));
             /*
              * Palm roles take roll from the normal Ni frame, but generated hand
@@ -277,13 +273,10 @@ namespace rock
             }
             if (!handRoleFrameDimensionsValid(outFrame, role, _lastCapturedPowerArmor)) {
                 ROCK_LOG_WARN(Hand,
-                    "{} {} collider frame rejected: implausible dimensions length={:.2f} radius={:.2f} convex={:.2f} powerArmor={}",
-                    isLeft ? "Left" : "Right",
-                    hand_collider_semantics::roleName(role),
-                    outFrame.length,
-                    outFrame.radius,
-                    outFrame.convexRadius,
-                    _lastCapturedPowerArmor ? "yes" : "no");
+                    "{} {} collider frame rejected: implausible dimensions length={:.2f} radius={:.2f} convex={:.2f} "
+                    "powerArmor={}",
+                    isLeft ? "Left" : "Right", hand_collider_semantics::roleName(role), outFrame.length,
+                    outFrame.radius, outFrame.convexRadius, _lastCapturedPowerArmor ? "yes" : "no");
                 outFrame = {};
                 return false;
             }
@@ -291,7 +284,8 @@ namespace rock
         }
 
         hand_bone_collider_geometry_math::BoneColliderFrameInput<RE::NiTransform, RE::NiPoint3> input{};
-        input.radius = roleRadius(role, _lastCapturedPowerArmor) * _tuning.roles[static_cast<std::size_t>(role)].radiusScale;
+        input.radius =
+            roleRadius(role, _lastCapturedPowerArmor) * _tuning.roles[static_cast<std::size_t>(role)].radiusScale;
         input.convexRadius = roleConvexRadius(role, _lastCapturedPowerArmor);
 
         if (role == HandColliderRole::PalmHeel) {
@@ -350,17 +344,52 @@ namespace rock
         outFrame.convexRadius = frame.convexRadius;
         if (!handRoleFrameDimensionsValid(outFrame, role, _lastCapturedPowerArmor)) {
             ROCK_LOG_WARN(Hand,
-                "{} {} collider frame rejected: implausible dimensions length={:.2f} radius={:.2f} convex={:.2f} powerArmor={}",
-                isLeft ? "Left" : "Right",
-                hand_collider_semantics::roleName(role),
-                outFrame.length,
-                outFrame.radius,
-                outFrame.convexRadius,
-                _lastCapturedPowerArmor ? "yes" : "no");
+                "{} {} collider frame rejected: implausible dimensions length={:.2f} radius={:.2f} convex={:.2f} "
+                "powerArmor={}",
+                isLeft ? "Left" : "Right", hand_collider_semantics::roleName(role), outFrame.length, outFrame.radius,
+                outFrame.convexRadius, _lastCapturedPowerArmor ? "yes" : "no");
             outFrame = {};
             return false;
         }
         return true;
+    }
+
+    void HandBoneColliderSet::publishPalmPoint(const BoneFrameLookup& lookup, bool isLeft,
+        const RoleFrameResult& anchorFrame) const
+    {
+        // The object-grab authority point (palm anchor plus proxy offset),
+        // brought into the raw hand frame by inverting
+        // transformHandspaceLocalToWorld. The anchor comes from the finger
+        // base positions, which the skeleton fixes relative to the hand, so
+        // the point is published only when the colliders are built (skeleton,
+        // power armor or tuning change). Republishing it every pose update
+        // fed world-space float noise and the alternating mid-frame and
+        // final-pose snapshots into every weapon grip seat as jitter.
+        const RE::NiTransform authority = applyGrabAuthorityProxyLocalOffsetToFrame(anchorFrame.transform, isLeft);
+        const RE::NiTransform& hand = lookup.rollAuthorityWorld;
+        if (!std::isfinite(hand.scale) || hand.scale <= 0.0001f) {
+            return;
+        }
+        const RE::NiPoint3 local = (hand.rotate * (authority.translate - hand.translate)) * (1.0f / hand.scale);
+        if (std::isfinite(local.x) && std::isfinite(local.y) && std::isfinite(local.z)) {
+            palm_point::publishHandLocal(isLeft, local);
+            // Once per collider build. The offline grip tools (Reload Maker,
+            // Offset Maker) seat their hands with this point, measured from
+            // the hand bone, so they need it and the roll frame's offset.
+            float rotationDelta = 0.0f;
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    rotationDelta = (std::max)(rotationDelta,
+                        std::abs(hand.rotate.entry[row][column] - lookup.hand.rotate.entry[row][column]));
+                }
+            }
+            const RE::NiPoint3 rollOrigin = transform_math::worldPointToLocal(lookup.hand, hand.translate);
+            ROCK_LOG_INFO(Hand,
+                "{} palm point published: handLocal=({:.4f},{:.4f},{:.4f}) "
+                "rollFrameOriginInHandBone=({:.4f},{:.4f},{:.4f}) rollFrameRotationDelta={:.5f} powerArmor={}",
+                isLeft ? "Left" : "Right", local.x, local.y, local.z, rollOrigin.x, rollOrigin.y, rollOrigin.z,
+                rotationDelta, _lastCapturedPowerArmor ? "yes" : "no");
+        }
     }
 
     RE::hknpShape* HandBoneColliderSet::buildShapeForRole(const RoleFrameResult& frame, HandColliderRole role,
@@ -379,31 +408,26 @@ namespace rock
             length = (std::max)(2.5f, frame.length);
             radius = (std::max)(0.8f, frame.radius);
             const float crossPalmWidth = radius * 2.25f;
-            const float palmDepth = role == HandColliderRole::PalmFace ? radius * 0.55f :
-                                    role == HandColliderRole::PalmBack ? radius * 0.70f :
-                                    role == HandColliderRole::ThumbPad ? radius * 0.80f :
-                                    radius * 0.95f;
+            const float palmDepth = role == HandColliderRole::PalmFace ? radius * 0.55f
+                : role == HandColliderRole::PalmBack                   ? radius * 0.70f
+                : role == HandColliderRole::ThumbPad                   ? radius * 0.80f
+                                                                       : radius * 0.95f;
             const auto dimensionScale = _tuning.roles[static_cast<std::size_t>(role)].palmDimensionScale;
             length *= dimensionScale.x;
             const float scaledPalmDepth = palmDepth * dimensionScale.y;
             const float scaledCrossPalmWidth = crossPalmWidth * dimensionScale.z;
             const float radialEquivalent = (std::max)(scaledPalmDepth, scaledCrossPalmWidth) * 0.5f;
-            if (!hand_bone_collider_geometry_math::colliderDimensionsWithinLimits(
-                    length,
-                    radialEquivalent,
-                    frame.convexRadius,
-                    handRoleDimensionLimits(role, _lastCapturedPowerArmor))) {
+            if (!hand_bone_collider_geometry_math::colliderDimensionsWithinLimits(length, radialEquivalent,
+                    frame.convexRadius, handRoleDimensionLimits(role, _lastCapturedPowerArmor))) {
                 ROCK_LOG_WARN(Hand,
-                    "{} collider shape rejected: implausible palm dimensions x={:.2f} y={:.2f} z={:.2f} convex={:.2f} powerArmor={}",
-                    hand_collider_semantics::roleName(role),
-                    length,
-                    scaledPalmDepth,
-                    scaledCrossPalmWidth,
-                    frame.convexRadius,
-                    _lastCapturedPowerArmor ? "yes" : "no");
+                    "{} collider shape rejected: implausible palm dimensions x={:.2f} y={:.2f} z={:.2f} convex={:.2f} "
+                    "powerArmor={}",
+                    hand_collider_semantics::roleName(role), length, scaledPalmDepth, scaledCrossPalmWidth,
+                    frame.convexRadius, _lastCapturedPowerArmor ? "yes" : "no");
                 return nullptr;
             }
-            const auto gamePoints = hand_bone_collider_geometry_math::makePalmBoxHullPoints<RE::NiPoint3>(length, scaledPalmDepth, scaledCrossPalmWidth);
+            const auto gamePoints = hand_bone_collider_geometry_math::makePalmBoxHullPoints<RE::NiPoint3>(length,
+                scaledPalmDepth, scaledCrossPalmWidth);
             if (outPalmHalfExtents) {
                 for (const auto& point : gamePoints) {
                     outPalmHalfExtents->x = (std::max)(outPalmHalfExtents->x, std::abs(point.x));
@@ -411,14 +435,18 @@ namespace rock
                     outPalmHalfExtents->z = (std::max)(outPalmHalfExtents->z, std::abs(point.z));
                 }
             }
-            return havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(toHavokPointCloud(gamePoints), frame.convexRadius * gameToHavokScale());
+            return havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(toHavokPointCloud(gamePoints),
+                frame.convexRadius * gameToHavokScale());
         }
 
-        const auto gamePoints = hand_bone_collider_geometry_math::makeCapsuleLikeHullPoints<RE::NiPoint3>(length, radius);
-        return havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(toHavokPointCloud(gamePoints), frame.convexRadius * gameToHavokScale());
+        const auto gamePoints =
+            hand_bone_collider_geometry_math::makeCapsuleLikeHullPoints<RE::NiPoint3>(length, radius);
+        return havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(toHavokPointCloud(gamePoints),
+            frame.convexRadius * gameToHavokScale());
     }
 
-    RE::hknpShape* HandBoneColliderSet::buildDynamicTwinShape(const dynamic_hand_twin::TwinSlotFrame& slotFrame, bool isPalm) const
+    RE::hknpShape* HandBoneColliderSet::buildDynamicTwinShape(const dynamic_hand_twin::TwinSlotFrame& slotFrame,
+        bool isPalm) const
     {
         if (!slotFrame.valid) {
             return nullptr;
@@ -440,11 +468,13 @@ namespace rock
         return buildShapeForRole(frame, isPalm ? HandColliderRole::PalmAnchor : HandColliderRole::IndexTip);
     }
 
-    bool HandBoneColliderSet::createBodyForRole(RE::hknpWorld* world, void* bhkWorld, bool isLeft, HandColliderRole role, const RoleFrameResult& frame, BodyInstance& instance)
+    bool HandBoneColliderSet::createBodyForRole(RE::hknpWorld* world, void* bhkWorld, bool isLeft,
+        HandColliderRole role, const RoleFrameResult& frame, BodyInstance& instance)
     {
         auto* shape = buildShapeForRole(frame, role, &instance.palmHalfExtents);
         if (!shape) {
-            ROCK_LOG_WARN(Hand, "{} {} collider shape build failed", isLeft ? "Left" : "Right", hand_collider_semantics::roleName(role));
+            ROCK_LOG_WARN(Hand, "{} {} collider shape build failed", isLeft ? "Left" : "Right",
+                hand_collider_semantics::roleName(role));
             return false;
         }
 
@@ -453,48 +483,40 @@ namespace rock
         instance.ownsShapeRef = true;
         clearGeneratedKeyframedBodyDriveState(instance.driveState);
 
-        const std::string name = std::string(isLeft ? "ROCK_Left" : "ROCK_Right") + hand_collider_semantics::roleName(role);
-        if (!instance.body.create(world, bhkWorld, shape, kHandFilterInfo, havok_material_registry::registerGeneratedBodyMaterial(world), BethesdaMotionType::Keyframed, name.c_str())) {
+        const std::string name =
+            std::string(isLeft ? "ROCK_Left" : "ROCK_Right") + hand_collider_semantics::roleName(role);
+        if (!instance.body.create(world, bhkWorld, shape, kHandFilterInfo,
+                havok_material_registry::registerGeneratedBodyMaterial(world), BethesdaMotionType::Keyframed,
+                name.c_str())) {
             shapeRemoveRef(shape);
             clearInstance(instance, false);
-            ROCK_LOG_ERROR(Hand, "{} {} collider body create failed", isLeft ? "Left" : "Right", hand_collider_semantics::roleName(role));
+            ROCK_LOG_ERROR(Hand, "{} {} collider body create failed", isLeft ? "Left" : "Right",
+                hand_collider_semantics::roleName(role));
             return false;
         }
 
         instance.body.createNiNode(name.c_str());
         if (!placeGeneratedKeyframedBodyImmediately(instance.body, frame.transform)) {
-            ROCK_LOG_ERROR(Hand,
-                "{} {} collider initial placement failed; destroying generated body bodyId={}",
-                isLeft ? "Left" : "Right",
-                hand_collider_semantics::roleName(role),
-                instance.body.getBodyId().value);
+            ROCK_LOG_ERROR(Hand, "{} {} collider initial placement failed; destroying generated body bodyId={}",
+                isLeft ? "Left" : "Right", hand_collider_semantics::roleName(role), instance.body.getBodyId().value);
             instance.body.retireDeferred(bhkWorld);
             shapeRemoveRef(shape);
             clearInstance(instance, false);
             return false;
         }
         initializeGeneratedKeyframedBodyDriveState(instance.driveState, frame.transform);
-        ROCK_LOG_DEBUG(Hand,
-            "{} {} collider created bodyId={} length={:.2f} radius={:.2f}",
-            isLeft ? "Left" : "Right",
-            hand_collider_semantics::roleName(role),
-            instance.body.getBodyId().value,
-            frame.length,
-            frame.radius);
+        ROCK_LOG_DEBUG(Hand, "{} {} collider created bodyId={} length={:.2f} radius={:.2f}", isLeft ? "Left" : "Right",
+            hand_collider_semantics::roleName(role), instance.body.getBodyId().value, frame.length, frame.radius);
         return true;
     }
 
-    bool HandBoneColliderSet::create(
-        RE::hknpWorld* world,
-        void* bhkWorld,
-        bool isLeft,
-        const RE::NiTransform& rollAuthorityWorld,
-        BethesdaPhysicsBody& palmAnchorBody)
+    bool HandBoneColliderSet::create(RE::hknpWorld* world, void* bhkWorld, bool isLeft,
+        const RE::NiTransform& rollAuthorityWorld, BethesdaPhysicsBody& palmAnchorBody)
     {
-        auto structuralMutation = _physicsCallbackGate ?
-            _physicsCallbackGate->pauseForMutation() :
-            PhysicsCallbackQuiescenceGate::MutationLease{};
+        auto structuralMutation = _physicsCallbackGate ? _physicsCallbackGate->pauseForMutation()
+                                                       : PhysicsCallbackQuiescenceGate::MutationLease{};
         destroy(bhkWorld, palmAnchorBody);
+        _createWaitedOnPose = false;
         if (!world || !bhkWorld) {
             return false;
         }
@@ -515,42 +537,49 @@ namespace rock
 
         RoleFrameResult anchorFrame{};
         if (!makeRoleFrame(lookup, isLeft, HandColliderRole::PalmAnchor, anchorFrame)) {
-            ROCK_LOG_ERROR(Hand, "{} palm anchor frame could not be derived; bone-derived hand creation cannot continue", isLeft ? "Left" : "Right");
+            ROCK_LOG_ERROR(Hand,
+                "{} palm anchor frame could not be derived; bone-derived hand creation cannot continue",
+                isLeft ? "Left" : "Right");
             return false;
         }
         publishCanonicalTwinSlot(canonicalTwinTargets.palm, anchorFrame);
 
         auto* anchorShape = buildShapeForRole(anchorFrame, HandColliderRole::PalmAnchor);
         if (!anchorShape) {
-            ROCK_LOG_ERROR(Hand, "{} palm anchor shape build failed; bone-derived hand creation cannot continue", isLeft ? "Left" : "Right");
+            ROCK_LOG_ERROR(Hand, "{} palm anchor shape build failed; bone-derived hand creation cannot continue",
+                isLeft ? "Left" : "Right");
             return false;
         }
 
         const std::string anchorName = std::string(isLeft ? "ROCK_Left" : "ROCK_Right") + "PalmAnchor";
-        if (!palmAnchorBody.create(world, bhkWorld, anchorShape, kHandFilterInfo, havok_material_registry::registerGeneratedBodyMaterial(world), BethesdaMotionType::Keyframed, anchorName.c_str())) {
+        if (!palmAnchorBody.create(world, bhkWorld, anchorShape, kHandFilterInfo,
+                havok_material_registry::registerGeneratedBodyMaterial(world), BethesdaMotionType::Keyframed,
+                anchorName.c_str())) {
             shapeRemoveRef(anchorShape);
-            ROCK_LOG_ERROR(Hand, "{} palm anchor body create failed; bone-derived hand creation cannot continue", isLeft ? "Left" : "Right");
+            ROCK_LOG_ERROR(Hand, "{} palm anchor body create failed; bone-derived hand creation cannot continue",
+                isLeft ? "Left" : "Right");
             return false;
         }
         shapeRemoveRef(anchorShape);
         palmAnchorBody.createNiNode(anchorName.c_str());
         if (!placeGeneratedKeyframedBodyImmediately(palmAnchorBody, anchorFrame.transform)) {
-            ROCK_LOG_ERROR(Hand,
-                "{} palm anchor initial placement failed; destroying generated anchor bodyId={}",
-                isLeft ? "Left" : "Right",
-                palmAnchorBody.getBodyId().value);
+            ROCK_LOG_ERROR(Hand, "{} palm anchor initial placement failed; destroying generated anchor bodyId={}",
+                isLeft ? "Left" : "Right", palmAnchorBody.getBodyId().value);
             palmAnchorBody.retireDeferred(bhkWorld);
             return false;
         }
         initializeGeneratedKeyframedBodyDriveState(_palmAnchorDriveState, anchorFrame.transform);
         _latestPalmAnchorTarget = anchorFrame.transform;
+        _latestPalmAnchorRawHand = lookup.rollAuthorityWorld;
+        publishPalmPoint(lookup, isLeft, anchorFrame);
         _hasLatestPalmAnchorTarget = true;
 
         std::size_t createdCount = 0;
         for (const auto role : hand_collider_semantics::kHandNonAnchorColliderRoles) {
             RoleFrameResult frame{};
             if (!makeRoleFrame(lookup, isLeft, role, frame)) {
-                ROCK_LOG_ERROR(Hand, "{} {} collider frame missing; destroying bone-derived hand", isLeft ? "Left" : "Right", hand_collider_semantics::roleName(role));
+                ROCK_LOG_ERROR(Hand, "{} {} collider frame missing; destroying bone-derived hand",
+                    isLeft ? "Left" : "Right", hand_collider_semantics::roleName(role));
                 destroy(bhkWorld, palmAnchorBody);
                 return false;
             }
@@ -559,20 +588,17 @@ namespace rock
                 break;
             }
             if (!createBodyForRole(world, bhkWorld, isLeft, role, frame, _bodies[createdCount])) {
-                ROCK_LOG_ERROR(Hand, "{} {} collider body allocation failed; destroying bone-derived hand", isLeft ? "Left" : "Right", hand_collider_semantics::roleName(role));
+                ROCK_LOG_ERROR(Hand, "{} {} collider body allocation failed; destroying bone-derived hand",
+                    isLeft ? "Left" : "Right", hand_collider_semantics::roleName(role));
                 destroy(bhkWorld, palmAnchorBody);
                 return false;
             }
             if (hand_collider_semantics::isFingerRole(role)) {
-                const auto fingerIndex =
-                    static_cast<std::size_t>(hand_collider_semantics::fingerForRole(role));
-                const auto segmentIndex =
-                    static_cast<std::size_t>(hand_collider_semantics::segmentForRole(role));
+                const auto fingerIndex = static_cast<std::size_t>(hand_collider_semantics::fingerForRole(role));
+                const auto segmentIndex = static_cast<std::size_t>(hand_collider_semantics::segmentForRole(role));
                 if (fingerIndex < canonicalTwinTargets.fingers.size() &&
                     segmentIndex < canonicalTwinTargets.fingers[fingerIndex].size()) {
-                    publishCanonicalTwinSlot(
-                        canonicalTwinTargets.fingers[fingerIndex][segmentIndex],
-                        frame);
+                    publishCanonicalTwinSlot(canonicalTwinTargets.fingers[fingerIndex][segmentIndex], frame);
                 }
             }
             ++createdCount;
@@ -596,20 +622,16 @@ namespace rock
         publishAtomicBodyIds(palmAnchorBody, isLeft);
         ROCK_LOG_INFO(Hand,
             "{} bone-derived hand colliders created: anchor={} segments={} sourceSkeleton={} tree={} powerArmor={}",
-            isLeft ? "Left" : "Right",
-            palmAnchorBody.getBodyId().value,
-            createdCount,
-            reinterpret_cast<std::uintptr_t>(_cachedSkeleton),
-            reinterpret_cast<std::uintptr_t>(_cachedBoneTree),
+            isLeft ? "Left" : "Right", palmAnchorBody.getBodyId().value, createdCount,
+            reinterpret_cast<std::uintptr_t>(_cachedSkeleton), reinterpret_cast<std::uintptr_t>(_cachedBoneTree),
             _cachedPowerArmor ? "yes" : "no");
         return true;
     }
 
     void HandBoneColliderSet::destroy(void* bhkWorld, BethesdaPhysicsBody& palmAnchorBody)
     {
-        auto structuralMutation = _physicsCallbackGate ?
-            _physicsCallbackGate->pauseForMutation() :
-            PhysicsCallbackQuiescenceGate::MutationLease{};
+        auto structuralMutation = _physicsCallbackGate ? _physicsCallbackGate->pauseForMutation()
+                                                       : PhysicsCallbackQuiescenceGate::MutationLease{};
         clearAtomicBodyIds();
         for (auto& instance : _bodies) {
             if (instance.body.isValid()) {
@@ -645,9 +667,8 @@ namespace rock
 
     void HandBoneColliderSet::reset()
     {
-        auto structuralMutation = _physicsCallbackGate ?
-            _physicsCallbackGate->pauseForMutation() :
-            PhysicsCallbackQuiescenceGate::MutationLease{};
+        auto structuralMutation = _physicsCallbackGate ? _physicsCallbackGate->pauseForMutation()
+                                                       : PhysicsCallbackQuiescenceGate::MutationLease{};
         clearAtomicBodyIds();
         for (auto& instance : _bodies) {
             clearInstance(instance, false);
@@ -671,13 +692,8 @@ namespace rock
         _reader.resetCache();
     }
 
-    void HandBoneColliderSet::update(
-        RE::hknpWorld* world,
-        bool isLeft,
-        const RE::NiTransform& rollAuthorityWorld,
-        BethesdaPhysicsBody& palmAnchorBody,
-        float deltaTime,
-        const DirectSkeletonBoneSnapshot& colliderBones)
+    void HandBoneColliderSet::update(RE::hknpWorld* world, bool isLeft, const RE::NiTransform& rollAuthorityWorld,
+        BethesdaPhysicsBody& palmAnchorBody, float deltaTime, const DirectSkeletonBoneSnapshot& colliderBones)
     {
         if (!world || !_created || !palmAnchorBody.isValid()) {
             return;
@@ -686,14 +702,15 @@ namespace rock
         if (_driveRebuildRequested.exchange(false, std::memory_order_acq_rel)) {
             if (palmAnchorBody.isConstrained()) {
                 _driveRebuildRequested.store(true, std::memory_order_release);
-                ROCK_LOG_SAMPLE_WARN(Hand,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "{} bone-derived hand collider rebuild deferred after drive failure while palm anchor is constrained",
+                ROCK_LOG_SAMPLE_WARN(Hand, g_rockConfig.rockLogSampleMilliseconds,
+                    "{} bone-derived hand collider rebuild deferred after drive failure while palm anchor is "
+                    "constrained",
                     isLeft ? "Left" : "Right");
                 return;
             }
 
-            ROCK_LOG_WARN(Hand, "{} bone-derived hand collider drive failure requested rebuild", isLeft ? "Left" : "Right");
+            ROCK_LOG_WARN(Hand, "{} bone-derived hand collider drive failure requested rebuild",
+                isLeft ? "Left" : "Right");
             create(world, _cachedBhkWorld, isLeft, rollAuthorityWorld, palmAnchorBody);
             return;
         }
@@ -704,26 +721,21 @@ namespace rock
         }
 
         const auto tuningSignature = refreshTuning(_lastCapturedPowerArmor);
-        if (_cachedWorld != world ||
-            _cachedSkeleton != _lastCapturedSkeleton ||
-            _cachedBoneTree != _lastCapturedBoneTree ||
-            _cachedPowerArmor != _lastCapturedPowerArmor ||
+        if (_cachedWorld != world || _cachedSkeleton != _lastCapturedSkeleton ||
+            _cachedBoneTree != _lastCapturedBoneTree || _cachedPowerArmor != _lastCapturedPowerArmor ||
             _cachedTuningSignature != tuningSignature) {
             if (palmAnchorBody.isConstrained()) {
                 if (++_updateLogCounter > 120) {
                     _updateLogCounter = 0;
                     ROCK_LOG_WARN(Hand,
-                        "{} bone-derived hand collider source/tuning rebuild deferred while palm anchor is constrained; live transforms still update tuning=0x{:016X}->0x{:016X}",
-                        isLeft ? "Left" : "Right",
-                        _cachedTuningSignature,
-                        tuningSignature);
+                        "{} bone-derived hand collider source/tuning rebuild deferred while palm anchor is "
+                        "constrained; live transforms still update tuning=0x{:016X}->0x{:016X}",
+                        isLeft ? "Left" : "Right", _cachedTuningSignature, tuningSignature);
                 }
             } else {
                 ROCK_LOG_INFO(Hand,
                     "{} bone-derived hand collider source/tuning changed; rebuilding tuning=0x{:016X}->0x{:016X}",
-                    isLeft ? "Left" : "Right",
-                    _cachedTuningSignature,
-                    tuningSignature);
+                    isLeft ? "Left" : "Right", _cachedTuningSignature, tuningSignature);
                 create(world, _cachedBhkWorld, isLeft, rollAuthorityWorld, palmAnchorBody);
                 return;
             }
@@ -734,27 +746,24 @@ namespace rock
 
     void HandBoneColliderSet::invalidatePose(RE::hknpWorld* world, BethesdaPhysicsBody& palmAnchorBody)
     {
-        if (!_created || !world || world != _cachedWorld) return;
+        if (!_created || !world || world != _cachedWorld)
+            return;
         invalidateGeneratedColliderPose(world, palmAnchorBody, _palmAnchorDriveState);
-        publishSampledVelocityAtomic(_palmAnchorPublicationIndex, {});
         for (auto& instance : _bodies) {
             invalidateGeneratedColliderPose(world, instance.body, instance.driveState);
-            publishSampledVelocityAtomic(instance.publicationIndex, {});
         }
         _hasLatestPalmAnchorTarget = false;
         _dynamicTwinTargets = {};
         _segmentFrames = {};
     }
 
-    bool HandBoneColliderSet::finalizePose(RE::hknpWorld* world, bool isLeft,
-        const RE::NiTransform& rawHand, BethesdaPhysicsBody& palmAnchorBody,
-        float deltaTime, const DirectSkeletonBoneSnapshot& bones)
+    bool HandBoneColliderSet::finalizePose(RE::hknpWorld* world, bool isLeft, const RE::NiTransform& rawHand,
+        BethesdaPhysicsBody& palmAnchorBody, float deltaTime, const DirectSkeletonBoneSnapshot& bones)
     {
         BoneFrameLookup lookup{};
         if (!_created || world != _cachedWorld || !palmAnchorBody.isValid() ||
-            !makeBoneLookup(bones, isLeft, rawHand, lookup, true) ||
-            bones.skeleton != _cachedSkeleton || bones.boneTree != _cachedBoneTree ||
-            bones.inPowerArmor != _cachedPowerArmor) {
+            !makeBoneLookup(bones, isLeft, rawHand, lookup, true) || bones.skeleton != _cachedSkeleton ||
+            bones.boneTree != _cachedBoneTree || bones.inPowerArmor != _cachedPowerArmor) {
             invalidatePose(world, palmAnchorBody);
             return false;
         }
@@ -777,15 +786,16 @@ namespace rock
         RoleFrameResult anchorFrame{};
         if (makeRoleFrame(lookup, isLeft, HandColliderRole::PalmAnchor, anchorFrame)) {
             _latestPalmAnchorTarget = anchorFrame.transform;
+            _latestPalmAnchorRawHand = lookup.rollAuthorityWorld;
             _hasLatestPalmAnchorTarget = true;
             publishTwinSlot(twinTargets.palm, anchorFrame);
-            if (publishTargets) queueBodyTarget(palmAnchorBody, anchorFrame.transform, deltaTime, _palmAnchorDriveState, _palmAnchorPublicationIndex);
+            if (publishTargets)
+                queueBodyTarget(palmAnchorBody, anchorFrame.transform, deltaTime, _palmAnchorDriveState);
         } else {
             complete = false;
             _hasLatestPalmAnchorTarget = false;
             if (publishTargets) {
                 invalidateGeneratedColliderPose(_cachedWorld, palmAnchorBody, _palmAnchorDriveState);
-                publishSampledVelocityAtomic(_palmAnchorPublicationIndex, {});
             }
         }
 
@@ -798,13 +808,13 @@ namespace rock
             RoleFrameResult frame{};
             if (makeRoleFrame(lookup, isLeft, instance.role, frame)) {
                 if (hand_collider_semantics::isFingerRole(instance.role)) {
-                    const auto fingerIndex = static_cast<std::size_t>(hand_collider_semantics::fingerForRole(instance.role));
-                    const auto segmentIndex = static_cast<std::size_t>(hand_collider_semantics::segmentForRole(instance.role));
+                    const auto fingerIndex =
+                        static_cast<std::size_t>(hand_collider_semantics::fingerForRole(instance.role));
+                    const auto segmentIndex =
+                        static_cast<std::size_t>(hand_collider_semantics::segmentForRole(instance.role));
                     if (fingerIndex < twinTargets.fingers.size() &&
                         segmentIndex < twinTargets.fingers[fingerIndex].size()) {
-                        publishTwinSlot(
-                            twinTargets.fingers[fingerIndex][segmentIndex],
-                            frame);
+                        publishTwinSlot(twinTargets.fingers[fingerIndex][segmentIndex], frame);
                     }
                 }
                 if (publishedSegmentCount < segmentFrames.size()) {
@@ -817,43 +827,35 @@ namespace rock
                     published.convexRadius = frame.convexRadius;
                     published.palmHalfExtents = instance.palmHalfExtents;
                 }
-                if (publishTargets) queueBodyTarget(instance.body, frame.transform, deltaTime, instance.driveState, instance.publicationIndex);
+                if (publishTargets)
+                    queueBodyTarget(instance.body, frame.transform, deltaTime, instance.driveState);
             } else {
                 complete = false;
                 if (publishTargets) {
                     invalidateGeneratedColliderPose(_cachedWorld, instance.body, instance.driveState);
-                    publishSampledVelocityAtomic(instance.publicationIndex, {});
                 }
             }
         }
         _segmentFrames = segmentFrames;
 
-        dynamic_hand_twin::applyCanonicalHandDimensions(
-            twinTargets,
-            _canonicalDynamicTwinDimensions);
+        dynamic_hand_twin::applyCanonicalHandDimensions(twinTargets, _canonicalDynamicTwinDimensions);
         twinTargets.updateCounter = _dynamicTwinTargets.updateCounter + 1;
         twinTargets.geometryGeneration = _dynamicTwinGeometryGeneration;
         _dynamicTwinTargets = twinTargets;
         return complete;
     }
 
-    void HandBoneColliderSet::flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing, BethesdaPhysicsBody& palmAnchorBody)
+    void HandBoneColliderSet::flushPendingPhysicsDrive(RE::hknpWorld* world,
+        const havok_physics_timing::PhysicsTimingSample& timing, BethesdaPhysicsBody& palmAnchorBody)
     {
         if (!world || !_created || !palmAnchorBody.isValid()) {
             return;
         }
 
-        handleGeneratedBodyDriveResult(
-            driveGeneratedKeyframedBody(world,
-                palmAnchorBody,
-                _palmAnchorDriveState,
-                timing,
-                "hand-palm-anchor",
-                0,
-                g_rockConfig.rockHandBoneColliderMaxLinearVelocity,
-                g_rockConfig.rockHandBoneColliderMaxAngularVelocity),
-            "hand-palm-anchor",
-            0);
+        handleGeneratedBodyDriveResult(driveGeneratedKeyframedBody(world, palmAnchorBody, _palmAnchorDriveState, timing,
+                                           "hand-palm-anchor", 0, g_rockConfig.rockHandBoneColliderMaxLinearVelocity,
+                                           g_rockConfig.rockHandBoneColliderMaxAngularVelocity),
+            "hand-palm-anchor", 0);
 
         for (std::size_t i = 0; i < _bodies.size(); ++i) {
             auto& instance = _bodies[i];
@@ -861,28 +863,22 @@ namespace rock
                 continue;
             }
             const auto bodyIndex = static_cast<std::uint32_t>(i + 1);
-            handleGeneratedBodyDriveResult(
-                driveGeneratedKeyframedBody(world,
-                    instance.body,
-                    instance.driveState,
-                    timing,
-                    "hand-bone-collider",
-                    bodyIndex,
-                    g_rockConfig.rockHandBoneColliderMaxLinearVelocity,
-                    g_rockConfig.rockHandBoneColliderMaxAngularVelocity),
-                "hand-bone-collider",
-                bodyIndex);
+            handleGeneratedBodyDriveResult(driveGeneratedKeyframedBody(world, instance.body, instance.driveState,
+                                               timing, "hand-bone-collider", bodyIndex,
+                                               g_rockConfig.rockHandBoneColliderMaxLinearVelocity,
+                                               g_rockConfig.rockHandBoneColliderMaxAngularVelocity),
+                "hand-bone-collider", bodyIndex);
         }
     }
 
-    void HandBoneColliderSet::queueBodyTarget(BethesdaPhysicsBody& body, const RE::NiTransform& target, float sourceDeltaSeconds, GeneratedKeyframedBodyDriveState& driveState, std::uint32_t publicationIndex)
+    void HandBoneColliderSet::queueBodyTarget(BethesdaPhysicsBody& body, const RE::NiTransform& target,
+        float sourceDeltaSeconds, GeneratedKeyframedBodyDriveState& driveState)
     {
         if (!body.isValid()) {
             return;
         }
 
-        const auto queueResult = queueGeneratedKeyframedBodyTarget(driveState, target, sourceDeltaSeconds, 1000.0f);
-        publishSampledVelocityAtomic(publicationIndex, queueResult);
+        queueGeneratedKeyframedBodyTarget(driveState, target, sourceDeltaSeconds, 1000.0f);
         restoreGeneratedColliderPoseAfterDrive(_cachedWorld, body, driveState);
     }
 
@@ -895,7 +891,19 @@ namespace rock
         return true;
     }
 
-    void HandBoneColliderSet::handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex)
+    bool HandBoneColliderSet::tryGetPalmAnchorTargetWithRawHand(RE::NiTransform& outTarget,
+        RE::NiTransform& outRawHand) const
+    {
+        if (!_hasLatestPalmAnchorTarget) {
+            return false;
+        }
+        outTarget = _latestPalmAnchorTarget;
+        outRawHand = _latestPalmAnchorRawHand;
+        return true;
+    }
+
+    void HandBoneColliderSet::handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result,
+        const char* ownerName, std::uint32_t bodyIndex)
     {
         if (!result.attempted || result.skippedStale) {
             return;
@@ -912,17 +920,12 @@ namespace rock
 
         const auto failures = _driveFailureCount.fetch_add(1, std::memory_order_acq_rel) + 1;
         _driveRebuildRequested.store(true, std::memory_order_release);
-        ROCK_LOG_SAMPLE_WARN(Hand,
-            g_rockConfig.rockLogSampleMilliseconds,
-            "Hand generated collider drive result requested rebuild owner={} bodyIndex={} failures={} missingBody={} ownerMismatch={} placementFailed={} nativeDriveFailed={} bodyDeltaGame={:.2f} bodyRotErr={:.2f}",
-            ownerName ? ownerName : "unknown",
-            bodyIndex,
-            failures,
-            result.missingBody ? "yes" : "no",
-            result.bodyCollisionObjectMismatch ? "yes" : "no",
-            result.placementFailed ? "yes" : "no",
-            result.nativeDriveFailed ? "yes" : "no",
-            result.hasLiveBodyTransform ? result.bodyDeltaGameUnits : -1.0f,
+        ROCK_LOG_SAMPLE_WARN(Hand, g_rockConfig.rockLogSampleMilliseconds,
+            "Hand generated collider drive result requested rebuild owner={} bodyIndex={} failures={} missingBody={} "
+            "ownerMismatch={} placementFailed={} nativeDriveFailed={} bodyDeltaGame={:.2f} bodyRotErr={:.2f}",
+            ownerName ? ownerName : "unknown", bodyIndex, failures, result.missingBody ? "yes" : "no",
+            result.bodyCollisionObjectMismatch ? "yes" : "no", result.placementFailed ? "yes" : "no",
+            result.nativeDriveFailed ? "yes" : "no", result.hasLiveBodyTransform ? result.bodyDeltaGameUnits : -1.0f,
             result.hasLiveBodyTransform ? result.targetToBodyRotationDegrees : -1.0f);
     }
 
@@ -937,15 +940,10 @@ namespace rock
         instance.ownsShapeRef = false;
         instance.palmHalfExtents = {};
         clearGeneratedKeyframedBodyDriveState(instance.driveState);
-        instance.publicationIndex = kInvalidPublicationIndex;
     }
 
     void HandBoneColliderSet::clearAtomicBodyIds()
     {
-        _palmAnchorPublicationIndex = kInvalidPublicationIndex;
-        for (auto& instance : _bodies) {
-            instance.publicationIndex = kInvalidPublicationIndex;
-        }
         _bodyCountAtomic.store(0, std::memory_order_release);
         for (std::size_t i = 0; i < _bodyIdsAtomic.size(); ++i) {
             _bodyIdsAtomic[i].store(hand_collider_semantics::kInvalidBodyId, std::memory_order_release);
@@ -953,31 +951,7 @@ namespace rock
             _fingersAtomic[i].store(static_cast<std::uint32_t>(HandFinger::None), std::memory_order_release);
             _segmentsAtomic[i].store(static_cast<std::uint32_t>(HandFingerSegment::None), std::memory_order_release);
             _primaryAnchorAtomic[i].store(0, std::memory_order_release);
-            _sampledVelocityValidAtomic[i].store(0, std::memory_order_release);
-            _sampledVelocityHavokXAtomic[i].store(0.0f, std::memory_order_release);
-            _sampledVelocityHavokYAtomic[i].store(0.0f, std::memory_order_release);
-            _sampledVelocityHavokZAtomic[i].store(0.0f, std::memory_order_release);
         }
-    }
-
-    void HandBoneColliderSet::publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult)
-    {
-        if (publicationIndex >= _bodyIdsAtomic.size() || publicationIndex >= _bodyCountAtomic.load(std::memory_order_acquire)) {
-            return;
-        }
-
-        if (!queueResult.sampledVelocityValid) {
-            _sampledVelocityValidAtomic[publicationIndex].store(0, std::memory_order_release);
-            _sampledVelocityHavokXAtomic[publicationIndex].store(0.0f, std::memory_order_release);
-            _sampledVelocityHavokYAtomic[publicationIndex].store(0.0f, std::memory_order_release);
-            _sampledVelocityHavokZAtomic[publicationIndex].store(0.0f, std::memory_order_release);
-            return;
-        }
-
-        _sampledVelocityHavokXAtomic[publicationIndex].store(queueResult.sampledLinearVelocityHavok.x, std::memory_order_release);
-        _sampledVelocityHavokYAtomic[publicationIndex].store(queueResult.sampledLinearVelocityHavok.y, std::memory_order_release);
-        _sampledVelocityHavokZAtomic[publicationIndex].store(queueResult.sampledLinearVelocityHavok.z, std::memory_order_release);
-        _sampledVelocityValidAtomic[publicationIndex].store(1, std::memory_order_release);
     }
 
     void HandBoneColliderSet::publishAtomicBodyIds(const BethesdaPhysicsBody& palmAnchorBody, bool isLeft)
@@ -985,10 +959,11 @@ namespace rock
         clearAtomicBodyIds();
         std::uint32_t count = 0;
         if (palmAnchorBody.isValid()) {
-            _palmAnchorPublicationIndex = count;
-            _rolesAtomic[count].store(static_cast<std::uint32_t>(HandColliderRole::PalmAnchor), std::memory_order_release);
+            _rolesAtomic[count].store(static_cast<std::uint32_t>(HandColliderRole::PalmAnchor),
+                std::memory_order_release);
             _fingersAtomic[count].store(static_cast<std::uint32_t>(HandFinger::None), std::memory_order_release);
-            _segmentsAtomic[count].store(static_cast<std::uint32_t>(HandFingerSegment::None), std::memory_order_release);
+            _segmentsAtomic[count].store(static_cast<std::uint32_t>(HandFingerSegment::None),
+                std::memory_order_release);
             _primaryAnchorAtomic[count].store(1, std::memory_order_release);
             _bodyIdsAtomic[count].store(palmAnchorBody.getBodyId().value, std::memory_order_release);
             ++count;
@@ -996,14 +971,14 @@ namespace rock
 
         for (auto& instance : _bodies) {
             if (!instance.body.isValid() || count >= _bodyIdsAtomic.size()) {
-                instance.publicationIndex = kInvalidPublicationIndex;
                 continue;
             }
-            instance.publicationIndex = count;
             const auto role = instance.role;
             _rolesAtomic[count].store(static_cast<std::uint32_t>(role), std::memory_order_release);
-            _fingersAtomic[count].store(static_cast<std::uint32_t>(hand_collider_semantics::fingerForRole(role)), std::memory_order_release);
-            _segmentsAtomic[count].store(static_cast<std::uint32_t>(hand_collider_semantics::segmentForRole(role)), std::memory_order_release);
+            _fingersAtomic[count].store(static_cast<std::uint32_t>(hand_collider_semantics::fingerForRole(role)),
+                std::memory_order_release);
+            _segmentsAtomic[count].store(static_cast<std::uint32_t>(hand_collider_semantics::segmentForRole(role)),
+                std::memory_order_release);
             _primaryAnchorAtomic[count].store(0, std::memory_order_release);
             _bodyIdsAtomic[count].store(instance.body.getBodyId().value, std::memory_order_release);
             ++count;
@@ -1036,7 +1011,8 @@ namespace rock
         return true;
     }
 
-    bool HandBoneColliderSet::tryGetBodyMetadataAtomic(std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const
+    bool HandBoneColliderSet::tryGetBodyMetadataAtomic(std::uint32_t bodyId,
+        HandColliderBodyMetadata& outMetadata) const
     {
         outMetadata = {};
         if (bodyId == hand_collider_semantics::kInvalidBodyId) {
@@ -1053,12 +1029,13 @@ namespace rock
         return false;
     }
 
-    bool HandBoneColliderSet::tryGetBodyMetadataAtIndexAtomic(std::uint32_t i,
-        std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const
+    bool HandBoneColliderSet::tryGetBodyMetadataAtIndexAtomic(std::uint32_t i, std::uint32_t bodyId,
+        HandColliderBodyMetadata& outMetadata) const
     {
         outMetadata = {};
         if (i >= _bodyIdsAtomic.size() || i >= _bodyCountAtomic.load(std::memory_order_acquire) ||
-            bodyId == hand_collider_semantics::kInvalidBodyId || _bodyIdsAtomic[i].load(std::memory_order_acquire) != bodyId) {
+            bodyId == hand_collider_semantics::kInvalidBodyId ||
+            _bodyIdsAtomic[i].load(std::memory_order_acquire) != bodyId) {
             return false;
         }
         outMetadata.valid = true;
@@ -1068,18 +1045,6 @@ namespace rock
         outMetadata.finger = static_cast<HandFinger>(_fingersAtomic[i].load(std::memory_order_acquire));
         outMetadata.segment = static_cast<HandFingerSegment>(_segmentsAtomic[i].load(std::memory_order_acquire));
         outMetadata.primaryPalmAnchor = _primaryAnchorAtomic[i].load(std::memory_order_acquire) != 0;
-        if (_sampledVelocityValidAtomic[i].load(std::memory_order_acquire) != 0) {
-            const float vx = _sampledVelocityHavokXAtomic[i].load(std::memory_order_acquire);
-            const float vy = _sampledVelocityHavokYAtomic[i].load(std::memory_order_acquire);
-            const float vz = _sampledVelocityHavokZAtomic[i].load(std::memory_order_acquire);
-            if (std::isfinite(vx) && std::isfinite(vy) && std::isfinite(vz)) {
-                outMetadata.hasSampledLinearVelocityHavok = true;
-                outMetadata.sampledLinearVelocityHavok[0] = vx;
-                outMetadata.sampledLinearVelocityHavok[1] = vy;
-                outMetadata.sampledLinearVelocityHavok[2] = vz;
-                outMetadata.sampledLinearVelocityHavok[3] = 0.0f;
-            }
-        }
         return true;
     }
 }

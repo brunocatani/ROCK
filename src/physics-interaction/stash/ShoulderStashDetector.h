@@ -44,7 +44,7 @@ namespace rock::shoulder_stash
         const BodyBoneColliderSet* bodyColliders = nullptr;
         const body_contact_runtime::BodyContactRuntime* bodyContacts = nullptr;
         const std::vector<std::uint32_t>* heldBodyIds = nullptr;
-        // "Now" on the contact clock (ContactActivityTracker elapsed seconds).
+        // "Now" on the shared contact clock (ContactClock seconds).
         double contactElapsedSeconds = 0.0;
         bool isLeftHand = false;
         Probe probe{};

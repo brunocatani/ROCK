@@ -51,11 +51,8 @@ namespace rock::contact_signal_subscription_policy
         return snapshot.active && snapshot.world != 0 && snapshot.signal != 0;
     }
 
-    inline constexpr ContactSignalSubscriptionPlan planSubscription(
-        const ContactSignalSubscriptionSnapshot& current,
-        std::uintptr_t requestedWorld,
-        std::uintptr_t requestedSignal,
-        bool requestedNativeSlotRetained = false)
+    inline constexpr ContactSignalSubscriptionPlan planSubscription(const ContactSignalSubscriptionSnapshot& current,
+        std::uintptr_t requestedWorld, std::uintptr_t requestedSignal, bool requestedNativeSlotRetained = false)
     {
         if (requestedWorld == 0 || requestedSignal == 0) {
             return {};
@@ -97,7 +94,8 @@ namespace rock::contact_signal_subscription_policy
         };
     }
 
-    inline constexpr ContactCallbackAcceptance evaluateCallbackAcceptance(const ContactSignalSubscriptionSnapshot& current, std::uintptr_t callbackWorld)
+    inline constexpr ContactCallbackAcceptance evaluateCallbackAcceptance(
+        const ContactSignalSubscriptionSnapshot& current, std::uintptr_t callbackWorld)
     {
         if (!isActiveSubscription(current)) {
             return {};

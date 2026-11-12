@@ -1,3 +1,7 @@
+// Native grenade throws: while the game's own throw runs, and for half a second
+// after release, every ROCK generated body (hand, body bone, weapon and proxy
+// colliders) stops colliding, so the new grenade cannot hit the player's own
+// colliders. A throw is blocked when that protection cannot be applied.
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/input/NativeGrenadeThrowRuntime.h"
 
@@ -12,14 +16,16 @@ namespace rock
     {
         auto* bhk = getPlayerBhkWorld();
         auto* world = bhk ? getHknpWorld(bhk) : nullptr;
-        if (!_lifecycle.initialized.load(std::memory_order_acquire) ||
-            bhk != _lifecycle.cachedBhkWorld || !physicsWritesAllowedForWorld(world)) return false;
+        if (!_lifecycle.initialized.load(std::memory_order_acquire) || bhk != _lifecycle.cachedBhkWorld ||
+            !physicsWritesAllowedForWorld(world))
+            return false;
 
         auto mutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
         const bool ready = refreshNativeGrenadeCollisionSuppression(world);
         if (!ready || !_suppression.nativeGrenadeLeases.beginDelayedRestore(kNativeGrenadeCollisionGraceSeconds)) {
             restoreNativeGrenadeCollisionSuppression(world);
-            ROCK_LOG_WARN(Hand, "Native grenade blocked: collision protection could not cover current player colliders");
+            ROCK_LOG_WARN(Hand,
+                "Native grenade blocked: collision protection could not cover current player colliders");
             return false;
         }
         ROCK_LOG_INFO(Hand, "Native grenade collision protection: bodies={} grace={:.2f}s after release",
@@ -31,59 +37,78 @@ namespace rock
     {
         // Game thread under the existing callback mutation gate. Body IDs are
         // collected afresh; the shared registry verifies identity on restore.
-        std::array<std::uint32_t, kGeneratedBodyContactRegistryCapacity + 3> desired{};
+        std::array<std::uint32_t, kGeneratedBodyContactRegistryCapacity + MAX_WEAPON_COLLISION_BODIES + 4> desired{};
         std::size_t count = 0;
         bool complete = true;
         const auto append = [&](std::uint32_t id) {
-            if (id == INVALID_CONTACT_BODY_ID) return;
-            if (std::find(desired.begin(), desired.begin() + count, id) != desired.begin() + count) return;
-            if (count == desired.size()) {complete = false; return;}
+            if (id == INVALID_CONTACT_BODY_ID)
+                return;
+            if (std::find(desired.begin(), desired.begin() + count, id) != desired.begin() + count)
+                return;
+            if (count == desired.size()) {
+                complete = false;
+                return;
+            }
             desired[count++] = id;
         };
-        for (const bool isLeft : {false, true}) {
+        for (const bool isLeft : { false, true }) {
             const auto& hand = isLeft ? _leftHand : _rightHand;
             const auto handCount = hand.getHandColliderBodyCount();
             complete = complete && handCount <= hand_collider_semantics::kHandColliderBodyCountPerHand;
-            for (std::uint32_t i = 0; i < (std::min)(handCount,
-                     static_cast<std::uint32_t>(hand_collider_semantics::kHandColliderBodyCountPerHand)); ++i)
+            for (std::uint32_t i = 0;
+                i < (std::min)(handCount,
+                        static_cast<std::uint32_t>(hand_collider_semantics::kHandColliderBodyCountPerHand));
+                ++i)
                 append(hand.getHandColliderBodyIdAtomic(i));
-            if (!handCount) append(hand.getCollisionBodyId().value);
+            if (!handCount)
+                append(hand.getCollisionBodyId().value);
             append(_dynamicHandCollision.proxyBodyIdForDebug(isLeft, 0).value);
         }
         const auto bodyCount = _bodyBoneColliders.getBodyCount();
         const auto weaponCount = _weaponCollision.getWeaponBodyCount();
         complete = complete && bodyCount <= kBodyBoneColliderBodyCount && weaponCount <= MAX_WEAPON_COLLISION_BODIES;
-        for (std::uint32_t i = 0; i < (std::min)(bodyCount,
-                 static_cast<std::uint32_t>(kBodyBoneColliderBodyCount)); ++i)
+        for (std::uint32_t i = 0; i < (std::min)(bodyCount, static_cast<std::uint32_t>(kBodyBoneColliderBodyCount));
+            ++i)
             append(_bodyBoneColliders.getBodyIdAtomic(i));
-        for (std::uint32_t i = 0; i < (std::min)(weaponCount,
-                 static_cast<std::uint32_t>(MAX_WEAPON_COLLISION_BODIES)); ++i)
+        for (std::uint32_t i = 0; i < (std::min)(weaponCount, static_cast<std::uint32_t>(MAX_WEAPON_COLLISION_BODIES));
+            ++i)
             append(_weaponCollision.getWeaponBodyIdAtomic(i));
+        const auto secondaryWeaponCount = _secondaryWeaponCollision.getWeaponBodyCount();
+        complete = complete && secondaryWeaponCount <= MAX_WEAPON_COLLISION_BODIES;
+        for (std::uint32_t i = 0;
+            i < (std::min)(secondaryWeaponCount, static_cast<std::uint32_t>(MAX_WEAPON_COLLISION_BODIES)); ++i)
+            append(_secondaryWeaponCollision.getWeaponBodyIdAtomic(i));
         append(_dynamicWeaponCollision.proxyBodyIdForDebug().value);
+        append(_secondaryDynamicWeaponCollision.proxyBodyIdForDebug().value);
 
         auto& leases = _suppression.nativeGrenadeLeases;
         const bool restorePending = leases.delayedRestorePending();
         const float remaining = leases.delayedRestoreRemainingSeconds();
-        leases.releaseWhere(world, "native-grenade-stale",
-            [&](std::uint32_t id) {return std::find(desired.begin(), desired.begin() + count, id) == desired.begin() + count;},
+        leases.releaseWhere(
+            world, "native-grenade-stale",
+            [&](std::uint32_t id) {
+                return std::find(desired.begin(), desired.begin() + count, id) == desired.begin() + count;
+            },
             [](std::uint32_t, const auto&) {});
         for (std::size_t i = 0; i < count; ++i) {
             const auto result = leases.acquire(world, desired[i], "native-grenade");
             std::uint32_t filter{};
-            if (!result.valid || !body_collision::tryReadFilterInfo(world, RE::hknpBodyId{desired[i]}, filter) ||
+            if (!result.valid || !body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ desired[i] }, filter) ||
                 !(filter & collision_suppression_registry::kSuppressionNoCollideBit)) {
                 complete = false;
                 ROCK_LOG_SAMPLE_WARN(Hand, 1000, "Native grenade collision protection incomplete: body={}", desired[i]);
             }
         }
-        if (restorePending && !leases.delayedRestorePending()) leases.beginDelayedRestore(remaining);
+        if (restorePending && !leases.delayedRestorePending())
+            leases.beginDelayedRestore(remaining);
         return complete && count != 0;
     }
 
     void PhysicsInteraction::restoreNativeGrenadeCollisionSuppression(RE::hknpWorld* world)
     {
         auto& leases = _suppression.nativeGrenadeLeases;
-        if (leases.empty()) return;
+        if (leases.empty())
+            return;
         auto mutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
         const auto count = leases.size();
         if (leases.releaseAll(world, "native-grenade-restore", [](std::uint32_t, const auto&) {})) {
@@ -96,7 +121,8 @@ namespace rock
     void PhysicsInteraction::updateNativeGrenadeCollisionSuppression(RE::hknpWorld* world, float deltaSeconds)
     {
         auto& leases = _suppression.nativeGrenadeLeases;
-        if (!world || leases.empty()) return;
+        if (!world || leases.empty())
+            return;
         auto mutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
         if (!native_grenade_throw_runtime::active() &&
             (!leases.delayedRestorePending() || leases.advanceDelayedRestore(deltaSeconds))) {

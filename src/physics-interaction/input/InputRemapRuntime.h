@@ -1,7 +1,8 @@
 #pragma once
 
 #include <cstdint>
-#include "physics-interaction/input/BareFistGesturePolicy.h"
+#include "physics-interaction/input/FunctionBindingPolicy.h"
+#include "physics-interaction/input/WeaponTriggerRouting.h"
 
 namespace RE
 {
@@ -10,27 +11,6 @@ namespace RE
 
 namespace rock::input_remap_runtime
 {
-    // Admission/readiness are published by the interaction frame owner.
-    // Physical capture and cancellation happen before native event dispatch.
-    void setBareFistAdmission(bool allowed);
-    void cancelBareFistInput();
-    [[nodiscard]] std::uint64_t bareFistInputCycle();
-    [[nodiscard]] bool ownsBareFistInput();
-    [[nodiscard]] bool bareFistChordValid();
-    [[nodiscard]] bool bareFistHooksReady();
-    void setBareFistDrawState(std::uint64_t cycle, bool owned, bool ready);
-    [[nodiscard]] bool isBareFistDrawPermitted();
-    [[nodiscard]] bool isBareFistMeleeSuppressed();
-
-    struct BareFistInputSnapshot
-    {
-        bare_fist_gesture::Buttons buttons{};
-        std::uint64_t cycle{};
-        bool admissionFresh{};
-    };
-    // Diagnostics on the frame owner, using the same atomic samples as capture.
-    [[nodiscard]] BareFistInputSnapshot readBareFistInputSnapshot();
-
     enum class RawButtonAvailabilityReason : std::uint32_t
     {
         Available = 0,
@@ -48,9 +28,7 @@ namespace rock::input_remap_runtime
         bool released{ false };
         std::uint64_t sampleSequence{ 0 };
         std::uint32_t sampleAgeMilliseconds{ 0 };
-        RawButtonAvailabilityReason availabilityReason{
-            RawButtonAvailabilityReason::HookNotSampled
-        };
+        RawButtonAvailabilityReason availabilityReason{ RawButtonAvailabilityReason::HookNotSampled };
     };
 
     struct LogicalJumpState
@@ -60,21 +38,24 @@ namespace rock::input_remap_runtime
         std::uint64_t sampleSequence{ 0 };
         std::uint64_t pressSequence{ 0 };
         std::uint32_t sampleAgeMilliseconds{ 0 };
-        RawButtonAvailabilityReason availabilityReason{
-            RawButtonAvailabilityReason::HookNotSampled
-        };
+        RawButtonAvailabilityReason availabilityReason{ RawButtonAvailabilityReason::HookNotSampled };
     };
 
     struct PhysicalTraceSnapshot
     {
-        bool valid{false};
-        std::uint64_t sequence{0}, ageMilliseconds{0}, pressed{0};
-        std::uint64_t pendingPressed{0}, pendingReleased{0}, rearm{0};
-        float trigger{0.0f};
+        bool valid{ false };
+        std::uint64_t sequence{ 0 }, ageMilliseconds{ 0 }, pressed{ 0 };
+        std::uint64_t pendingPressed{ 0 }, pendingReleased{ 0 }, rearm{ 0 };
+        float trigger{ 0.0f };
     };
+
     // Diagnostic-only atomic loads. Unlike peekRawButtonState, this never
     // drains edges or rearms buttons when a menu/UI owns input.
     PhysicalTraceSnapshot readPhysicalTraceSnapshot(bool isLeft) noexcept;
+
+    // The function behind the current synthesized press of a logical button, or
+    // Function::Count while the button passes through as sampled (default bindings).
+    [[nodiscard]] function_binding_policy::Function functionTag(bool isLeft, button_layout_policy::Slot slot) noexcept;
 
     bool installInputRemapHooks();
     bool isInputRemapHookInstalled();
@@ -84,6 +65,9 @@ namespace rock::input_remap_runtime
     // GameLoaded/config-change boundary only: the FRIK session override
     // reloads its configuration. Never call from a controller/input hook.
     void configurePipboyInput();
+    // Load/config-change boundary: publishes the [Controls] button layout to
+    // the controller-state hooks. Safe from any thread.
+    void configureButtonLayout();
 
     void setGameplayInputAllowed(bool allowed);
     void setWeaponDrawn(bool weaponDrawn);
@@ -92,12 +76,27 @@ namespace rock::input_remap_runtime
     void setHandInteractionEngaged(bool isLeft, bool engaged);
     void setHeldObjectFormId(bool isLeft, std::uint32_t formId, bool looseWeapon = false);
     void setEquippedWeaponFiringGripInputActive(bool active);
-    void setEquippedWeaponPrimaryDetached(bool detached, bool equippedDrop = false);
-    void setEquippedWeaponShoulderSheathActive(bool active);
+    void setEquippedWeaponPrimaryDetached(bool detached);
     // Left-hand fire: while true (LEFT hand occupies the firing grip), the
     // OpenVR hooks present the physical left trigger to the game as the
     // primary wand's trigger and blank both physical trigger identities.
     void setEquippedWeaponLeftHandFiringActive(bool active);
+    // Independent equipped index one consumes the physical left trigger itself.
+    // Raw capture and menu/Pip-Boy input retain their existing physical identity.
+    // Slot 1 (the second equipped weapon) owns the trigger and reload button
+    // of the physical hand that holds it. Published with the frame's routing.
+    void setSlotOneTrigger(bool equipped, bool drawn, bool left) noexcept;
+    // Last routing published by the interaction frame (any thread).
+    [[nodiscard]] weapon_trigger_routing::Snapshot publishedWeaponTriggerRouting() noexcept;
+    // Frame thread publication: a weapon is drawn in each hand, so grenade
+    // use (native throw and ROCK quick-draw) has no free hand.
+    void setBothHandsHoldWeapons(bool occupied) noexcept;
+    // Frame thread publication: which hands' stick clicks Bipod Mode (on the
+    // weapon's firing hand, while it touches a fixed surface or is latched) or
+    // an add-on's held placement would act on. The game never sees a press that
+    // begins on a reserved click, and the vanilla Favorites menu leaves a
+    // reserved right click to its owner.
+    void setStickClickReserved(bool leftReserved, bool rightReserved) noexcept;
     // Frame-thread staging and one coherent publication to controller hooks.
     void setWeaponTransferPending(bool pending);
     void publishWeaponTriggerRouting();
@@ -118,6 +117,8 @@ namespace rock::input_remap_runtime
     // Published manual-scope level state. The native scope decision hook owns
     // the engine transition; input runtime owns only the physical hold gesture.
     bool isManualScopeActivationRequested();
+    // The equipment index whose scope is held: -1 none, 0 or 1.
+    std::int32_t manualScopeSlot();
     bool isMenuInputActive();
     // Frame-thread query using the same ViewCaster classification as Activate.
     bool hasNativeActivationTarget(bool primaryHand);
@@ -125,6 +126,8 @@ namespace rock::input_remap_runtime
     bool isNativePipboyInputSuppressionActive();
     bool isPipboyMenuOpen();
     LogicalJumpState readLogicalJumpState();
+    // The primary stick click while it is PALM's under the player's bindings.
+    LogicalJumpState readLogicalPalmWheelState();
 
     // Test-and-clear: true once for the frame after an Activate/WandAccept
     // (A button) press fired on this hand while it was holding a ROCK

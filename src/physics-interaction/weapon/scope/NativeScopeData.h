@@ -1,3 +1,4 @@
+// Native scope hooks and per-frame scope state (see NativeScopeData.cpp).
 #pragma once
 
 #include <cstdint>
@@ -17,5 +18,9 @@ namespace rock::native_scope_data
     // Caller verifies the current WSScope identity. Preserve its open/closed
     // lens visibility when a manual hold needs to configure the housing.
     [[nodiscard]] bool configureManual(void* worldScope, std::uint32_t overlay);
+    // Game-thread publication for the second weapon's scope: ScopeMenu and the
+    // mono renderer still pass equipment index 0, so its overlay and
+    // magnification replace theirs while active. Values only cross threads.
+    void setSecondaryTarget(bool active, std::uint32_t overlay, float magnification);
     void reportDiagnostics();
 }

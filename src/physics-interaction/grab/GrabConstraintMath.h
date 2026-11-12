@@ -97,20 +97,22 @@ namespace rock::grab_constraint_math
     }
 
     template <class Transform, class Vector>
-    inline Vector computeHiggsTransformBTranslationGameFromProxyInBody(const Transform& proxyInBody, const Vector& frozenPivotAProxyLocalGame)
+    inline Vector computeHiggsTransformBTranslationGameFromProxyInBody(const Transform& proxyInBody,
+        const Vector& frozenPivotAProxyLocalGame)
     {
         return transform_math::localPointToWorld(proxyInBody, frozenPivotAProxyLocalGame);
     }
 
     template <class Transform, class Vector>
-    inline Vector computeHiggsTransformBTranslationGame(const Transform& bodyInProxy, const Vector& frozenPivotAProxyLocalGame)
+    inline Vector computeHiggsTransformBTranslationGame(const Transform& bodyInProxy,
+        const Vector& frozenPivotAProxyLocalGame)
     {
-        return computeHiggsTransformBTranslationGameFromProxyInBody(proxyInBodyFromBodyInProxy(bodyInProxy), frozenPivotAProxyLocalGame);
+        return computeHiggsTransformBTranslationGameFromProxyInBody(proxyInBodyFromBodyInProxy(bodyInProxy),
+            frozenPivotAProxyLocalGame);
     }
 
     template <class Transform>
-    inline void writeGrabConstraintAngularDecomposition(float* transformBRotation,
-        float* targetBRca,
+    inline void writeGrabConstraintAngularDecomposition(float* transformBRotation, float* targetBRca,
         const Transform& proxyInBody)
     {
         /*
@@ -125,11 +127,8 @@ namespace rock::grab_constraint_math
     }
 
     template <class Transform, class Vector>
-    inline void writeGrabConstraintHeldTargetAtoms(float* transformBRotation,
-        float* transformBTranslation,
-        float* targetBRca,
-        const Transform& bodyInProxy,
-        const Vector& frozenPivotAProxyLocalGame,
+    inline void writeGrabConstraintHeldTargetAtoms(float* transformBRotation, float* transformBTranslation,
+        float* targetBRca, const Transform& bodyInProxy, const Vector& frozenPivotAProxyLocalGame,
         float gameToHavokScale)
     {
         const Transform proxyInBody = proxyInBodyFromBodyInProxy(bodyInProxy);
@@ -146,11 +145,8 @@ namespace rock::grab_constraint_math
     }
 
     template <class Transform, class Vector>
-    inline void writeGrabConstraintCreationAtoms(float* transformBRotation,
-        float* transformBTranslation,
-        float* targetBRca,
-        const Transform& bodyInProxyAtCreation,
-        const Vector& frozenPivotAProxyLocalGame,
+    inline void writeGrabConstraintCreationAtoms(float* transformBRotation, float* transformBTranslation,
+        float* targetBRca, const Transform& bodyInProxyAtCreation, const Vector& frozenPivotAProxyLocalGame,
         float gameToHavokScale)
     {
         const Transform proxyInBody = proxyInBodyFromBodyInProxy(bodyInProxyAtCreation);
@@ -173,7 +169,8 @@ namespace rock::grab_constraint_math
     }
 
     template <class Transform, class Vector>
-    inline Vector computeDynamicTransformBTranslationGame(const Transform& desiredBodyTransformHandSpace, const Vector& pivotAHandBodyLocalGame)
+    inline Vector computeDynamicTransformBTranslationGame(const Transform& desiredBodyTransformHandSpace,
+        const Vector& pivotAHandBodyLocalGame)
     {
         return computeHiggsTransformBTranslationGame(desiredBodyTransformHandSpace, pivotAHandBodyLocalGame);
     }

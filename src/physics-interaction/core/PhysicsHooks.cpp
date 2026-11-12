@@ -1,30 +1,46 @@
+// ROCK's native hooks (declared in PhysicsHooks.h):
+//   Havok timing fix         substeps the physics step at a minimum rate
+//   native grab              patches VR Grab Initiate to return at once, so the
+//                            game's own grab never starts
+//   native melee gate        animation-event, swing, attack and VR melee impact
+//                            hooks: skip native melee for an unarmed player and
+//                            player contacts with movable objects; enforce the
+//                            VRInput velocity gate settings
+//   grab haptic suppression  keeps the native hover and rollover rumble
+//                            settings off; ROCK sends its own haptics
+//   refresh manifold         bhkCharProxyController::processConstraintsCallback,
+//                            where ROCK compacts the player character proxy's
+//                            contact rows against its own generated bodies
+// The file-local section holds the hook state and the per-hook handlers.
 #include "physics-interaction/core/PhysicsHooks.h"
 
-#include "physics-interaction/native/HavokOffsets.h"
-#include "physics-interaction/grab/GrabHeldObject.h"
-#include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/NativeMeleeSuppressionPolicy.h"
+#include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
-#include "physics-interaction/object/ObjectDetection.h"
-#include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/native/BodyCollisionControl.h"
-#include "physics-interaction/native/CharacterControllerRuntime.h"
-#include "physics-interaction/native/HavokRuntime.h"
-#include "physics-interaction/native/HavokTimingFixPolicy.h"
-#include "physics-interaction/native/HavokPhysicsTiming.h"
-#include "physics-interaction/native/NativeGrabHapticSuppressionPolicy.h"
+#include "physics-interaction/grab/GrabHeldObject.h"
+#include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/native/TriggerEquipReadinessTrace.h"
-#include "physics-interaction/performance/PerformanceProfiler.h"
+#include "physics-interaction/native/havok/BodyCollisionControl.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
+#include "physics-interaction/native/havok/HavokPhysicsTiming.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
+#include "physics-interaction/native/havok/HavokTimingFixPolicy.h"
+#include "physics-interaction/native/player/CharacterControllerRuntime.h"
+#include "physics-interaction/native/player/NativeGrabHapticSuppressionPolicy.h"
+#include "physics-interaction/native/player/NativePlayerCollisionFilter.h"
+#include "physics-interaction/object/ObjectDetection.h"
+#include "physics-interaction/object/PhysicsBodyClassifier.h"
 #include "physics-interaction/performance/ContactPairProfile.h"
-#include "physics-interaction/native/NativePlayerCollisionFilter.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
+#include "physics-interaction/weapon/native/TriggerEquipReadinessTrace.h"
+#include "physics-interaction/weapon/secondary/NativeSecondaryMelee.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include "RockConfig.h"
 
-#include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/InputEvent.h"
+#include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/Settings.h"
 
 #include <algorithm>
@@ -35,6 +51,8 @@
 #include <cstring>
 #include <mutex>
 #include <string_view>
+#include <RPS/Runtime/HookChain.h>
+#include "physics-interaction/native/EntryTrampolineHook.h"
 
 namespace rock
 {
@@ -58,6 +76,7 @@ namespace rock
         constexpr std::uintptr_t kFunc_BhkWorldSetDeltaTime = 0x1DF7120;
         constexpr std::uintptr_t kHookSite_BhkWorldSetDeltaTimeMainCall = 0x0D84BD0;
         static std::atomic<std::uint64_t> g_nativeRuntimeSettingFrameClock{ 1 };
+
         struct ProxyContactTrace
         {
             std::atomic<std::uint64_t> playerCallbacks{ 0 }, identityFailures{ 0 }, invalidBuffers{ 0 };
@@ -65,6 +84,7 @@ namespace rock
             std::atomic<std::uint64_t> supportKept{ 0 }, actorsKept{ 0 }, attacksKept{ 0 }, unknownKept{ 0 };
             std::atomic<unsigned> failedProofStage{ 0 }; // 1 listener, 2 controller, 3 reciprocal proxy
         };
+
         static ProxyContactTrace g_proxyContactTrace;
 
         // Physics callbacks publish counts only. The existing main-thread clock
@@ -91,34 +111,32 @@ namespace rock
             const auto unknown = g_proxyContactTrace.unknownKept.exchange(0);
             if (callbacks && !identityReported) {
                 identityReported = true;
-                ROCK_LOG_INFO(CC, "Player controller contact filter active: listener + 16 identity, vtables and reciprocal proxy verified");
+                ROCK_LOG_INFO(CC,
+                    "Player controller contact filter active: listener + 16 identity, vtables and reciprocal proxy "
+                    "verified");
             }
             if (removed || actors || failures || invalid) {
                 ROCK_LOG_INFO(CC,
-                    "Player controller contact filter: callbacks={} removed={} msttRemoved={} looseWeaponsRemoved={} heldRemoved={} supportKept={} actorsKept={} attacksKept={} unknownKept={} invalidBuffers={} identityFailures={} failedProofStage={}",
+                    "Player controller contact filter: callbacks={} removed={} msttRemoved={} looseWeaponsRemoved={} "
+                    "heldRemoved={} supportKept={} actorsKept={} attacksKept={} unknownKept={} invalidBuffers={} "
+                    "identityFailures={} failedProofStage={}",
                     callbacks, removed, mstt, looseWeapons, held, support, actors, attacks, unknown, invalid, failures,
                     g_proxyContactTrace.failedProofStage.load());
             }
             if (failures) {
-                ROCK_LOG_WARN(CC, "Player controller listener identity rejected: count={} deepestStage={} (1=listener,2=controller,3=proxy); native contacts preserved",
+                ROCK_LOG_WARN(CC,
+                    "Player controller listener identity rejected: count={} deepestStage={} "
+                    "(1=listener,2=controller,3=proxy); native contacts preserved",
                     failures, g_proxyContactTrace.failedProofStage.load());
             }
         }
+
         static std::atomic<bool> g_nativeMeleeSuppressionHooksInstalled{ false };
-        static std::atomic<bool> g_nativeMeleeSuppressionActive{ false };
         constexpr std::uint64_t kNativeMeleeRuntimeSettingCheckIntervalFrames = 90;
         constexpr std::uint64_t kNativeGrabHapticRuntimeSettingCheckIntervalFrames = 90;
-        constexpr std::array<std::uint8_t, 14> kVrMeleeImpactExpectedPrefix{
-            0x48, 0x8B, 0xC4,
-            0x4C, 0x89, 0x40, 0x18,
-            0x48, 0x89, 0x50, 0x10,
-            0x55,
-            0x53,
-            0x56
-        };
-        constexpr DWORD kVirtualMemoryCommitReserve = 0x00001000u | 0x00002000u;
+        constexpr std::array<std::uint8_t, 14> kVrMeleeImpactExpectedPrefix{ 0x48, 0x8B, 0xC4, 0x4C, 0x89, 0x40, 0x18,
+            0x48, 0x89, 0x50, 0x10, 0x55, 0x53, 0x56 };
         constexpr DWORD kVirtualMemoryRelease = 0x00008000u;
-        constexpr DWORD kPageExecuteRead = 0x00000020u;
         constexpr DWORD kPageExecuteReadWrite = 0x00000040u;
 
         struct NativeBinaryRuntimeSettingState
@@ -137,6 +155,7 @@ namespace rock
         {
             RE::Setting* setting = nullptr;
             float originalValue = 0.0f;
+            float appliedValue = 0.0f;
             bool originalCaptured = false;
             bool missingLogged = false;
             bool typeMismatchLogged = false;
@@ -172,10 +191,13 @@ namespace rock
         static std::atomic<std::uint64_t> g_nativeMeleeRuntimeSettingNextCheckFrame{ 0 };
         // Runtime-setting ownership is mutated only by initialization and the
         // main-frame update. Hook callbacks read config, never this lease state.
-        static bool g_nativeMeleeRuntimeSuppressionRequested = false;
+        static native_melee_suppression::NativeMeleeVelocityGate g_nativeMeleeVelocityGateRequested{};
+        static bool g_nativeMeleeVelocityGateOwned = false;
         static NativeBinaryRuntimeSettingState g_nativeMeleeVelocityCheckState;
         static NativeFloatRuntimeSettingState g_nativeMeleeLinearThresholdState;
         static NativeFloatRuntimeSettingState g_nativeMeleeAngularThresholdState;
+        static NativeFloatRuntimeSettingState g_nativeGunBashLinearThresholdState;
+        static NativeFloatRuntimeSettingState g_nativeGunBashAngularThresholdState;
         static std::atomic<std::uint64_t> g_nativeGrabHapticRuntimeSettingNextCheckFrame{ 0 };
         static NativeGrabHapticBinarySettingState g_nativeGrabHapticRolloverState;
         static NativeGrabHapticFloatSettingState g_nativeGrabHapticHoverIntensityState;
@@ -187,7 +209,8 @@ namespace rock
             return address >= text.address() && address < text.address() + text.size();
         }
 
-        bool validateNativeMeleeVtableTarget(std::uintptr_t entryOffset, std::uintptr_t expectedFunctionOffset, const char* label)
+        bool validateNativeMeleeVtableTarget(std::uintptr_t entryOffset, std::uintptr_t expectedFunctionOffset,
+            const char* label)
         {
             REL::Relocation<std::uintptr_t> entry{ REL::Offset(entryOffset) };
             auto* slot = reinterpret_cast<std::uintptr_t*>(entry.address());
@@ -208,18 +231,25 @@ namespace rock
             }
 
             if (isAddressInGameText(current)) {
-                ROCK_LOG_ERROR(Init, "{} vtable validation failed: slot 0x{:X} points to game text 0x{:X}, expected 0x{:X}", label, entry.address(), current, expected);
+                ROCK_LOG_ERROR(Init,
+                    "{} vtable validation failed: slot 0x{:X} points to game text 0x{:X}, expected 0x{:X}", label,
+                    entry.address(), current, expected);
                 return false;
             }
 
-            ROCK_LOG_WARN(Init, "{} vtable slot 0x{:X} is already patched to external target 0x{:X}; ROCK will chain it if hook install proceeds", label, entry.address(), current);
+            ROCK_LOG_WARN(Init,
+                "{} vtable slot 0x{:X} is already patched to external target 0x{:X}; ROCK will chain it if hook "
+                "install proceeds",
+                label, entry.address(), current);
             return true;
         }
 
-        bool validateEntryTrampolineTarget(const char* label, std::uintptr_t targetOffset, const std::uint8_t* expectedPrefix, std::size_t stolenBytes)
+        bool validateEntryTrampolineTarget(const char* label, std::uintptr_t targetOffset,
+            const std::uint8_t* expectedPrefix, std::size_t stolenBytes)
         {
             if (stolenBytes < 14) {
-                ROCK_LOG_ERROR(Init, "{} entry validation failed: stolen byte count {} cannot hold an absolute jump", label, stolenBytes);
+                ROCK_LOG_ERROR(Init, "{} entry validation failed: stolen byte count {} cannot hold an absolute jump",
+                    label, stolenBytes);
                 return false;
             }
 
@@ -231,7 +261,8 @@ namespace rock
             }
 
             if (std::memcmp(targetAddr, expectedPrefix, stolenBytes) != 0) {
-                ROCK_LOG_ERROR(Init, "{} entry validation failed at 0x{:X}; native bytes changed", label, target.address());
+                ROCK_LOG_ERROR(Init, "{} entry validation failed at 0x{:X}; native bytes changed", label,
+                    target.address());
                 return false;
             }
 
@@ -287,24 +318,26 @@ namespace rock
             }
 
             if (callBytes[0] != 0xE8) {
-                ROCK_LOG_ERROR(
-                    Init,
-                    "HAVOK_TIMING_FIX call-site validation failed at 0x{:X}: expected CALL rel32, found opcode 0x{:02X}",
-                    callSiteAddress,
-                    callBytes[0]);
+                ROCK_LOG_ERROR(Init,
+                    "HAVOK_TIMING_FIX call-site validation failed at 0x{:X}: expected CALL rel32, found opcode "
+                    "0x{:02X}",
+                    callSiteAddress, callBytes[0]);
                 return false;
             }
 
+            // SetDeltaTime, or another plugin's detour, which the hook calls through
+            // (write_call returns whichever is there).
             const auto relativeTarget = *reinterpret_cast<const std::int32_t*>(callBytes + 1);
             const auto decodedTarget = callSiteAddress + 5u + relativeTarget;
             const auto expectedTarget = REL::Offset(kFunc_BhkWorldSetDeltaTime).address();
-            if (decodedTarget != expectedTarget) {
-                ROCK_LOG_ERROR(
-                    Init,
+            const auto resolved = RPS::Runtime::HookChain::resolveCall(callSiteAddress, expectedTarget);
+            if (resolved.foreign()) {
+                ROCK_LOG_INFO(Init, "HAVOK_TIMING_FIX call already hooked by {}; ROCK calls through it", resolved.owner);
+            }
+            if (!resolved) {
+                ROCK_LOG_ERROR(Init,
                     "HAVOK_TIMING_FIX call-site validation failed at 0x{:X}: decoded target 0x{:X}, expected 0x{:X}",
-                    callSiteAddress,
-                    decodedTarget,
-                    expectedTarget);
+                    callSiteAddress, decodedTarget, expectedTarget);
                 return false;
             }
 
@@ -315,7 +348,8 @@ namespace rock
         {
             if (!g_originalBhkWorldSetDeltaTime) {
                 if (!g_havokTimingFixMissingOriginalLogged.exchange(true, std::memory_order_acq_rel)) {
-                    ROCK_LOG_CRITICAL(Init, "HAVOK_TIMING_FIX missing original bhkWorld::SetDeltaTime; timing hook cannot safely continue");
+                    ROCK_LOG_CRITICAL(Init,
+                        "HAVOK_TIMING_FIX missing original bhkWorld::SetDeltaTime; timing hook cannot safely continue");
                 }
                 return;
             }
@@ -331,15 +365,16 @@ namespace rock
                 readBhkWorldFloatGlobal(offsets::kData_BhkWorldAccumulatedDeltaSeconds, rawDeltaSeconds);
             const float oldSubstepDeltaSeconds =
                 readBhkWorldFloatGlobal(offsets::kData_BhkWorldSubstepDeltaSeconds, rawDeltaSeconds);
-            const auto oldSubstepCount =
-                readBhkWorldUintGlobal(offsets::kData_BhkWorldSubstepCount, 1);
-            performance_profiler::observeValue(performance_profiler::ValueMetric::PhysicsOriginalSubsteps, oldSubstepCount);
+            const auto oldSubstepCount = readBhkWorldUintGlobal(offsets::kData_BhkWorldSubstepCount, 1);
+            performance_profiler::observeValue(performance_profiler::ValueMetric::PhysicsOriginalSubsteps,
+                oldSubstepCount);
             if (havok_timing_fix_policy::isUsableDeltaSeconds(rawDeltaSeconds)) {
                 performance_profiler::observeValue(performance_profiler::ValueMetric::PhysicsRawDeltaMicroseconds,
                     static_cast<std::uint64_t>(rawDeltaSeconds * 1'000'000.0f));
             }
             if (!g_rockConfig.rockHavokTimingFixEnabled) {
-                performance_profiler::observeValue(performance_profiler::ValueMetric::PhysicsRequestedSubsteps, oldSubstepCount);
+                performance_profiler::observeValue(performance_profiler::ValueMetric::PhysicsRequestedSubsteps,
+                    oldSubstepCount);
                 return;
             }
             const auto decision = havok_timing_fix_policy::evaluateTimingFix(havok_timing_fix_policy::TimingFixInput{
@@ -350,15 +385,12 @@ namespace rock
             });
 
             if (!decision.valid) {
-                performance_profiler::observeValue(performance_profiler::ValueMetric::PhysicsRequestedSubsteps, oldSubstepCount);
+                performance_profiler::observeValue(performance_profiler::ValueMetric::PhysicsRequestedSubsteps,
+                    oldSubstepCount);
                 if (g_rockConfig.rockDebugVerboseLogging) {
-                    ROCK_LOG_SAMPLE_DEBUG(Physics,
-                        g_rockConfig.rockLogSampleMilliseconds,
+                    ROCK_LOG_SAMPLE_DEBUG(Physics, g_rockConfig.rockLogSampleMilliseconds,
                         "HAVOK_TIMING_FIX skipped reason={} rawDt={:.6f} accumDt={:.6f} oldSubDt={:.6f} oldSubsteps={}",
-                        decision.reason,
-                        rawDeltaSeconds,
-                        accumulatedDeltaSeconds,
-                        oldSubstepDeltaSeconds,
+                        decision.reason, rawDeltaSeconds, accumulatedDeltaSeconds, oldSubstepDeltaSeconds,
                         oldSubstepCount);
                 }
                 return;
@@ -371,29 +403,25 @@ namespace rock
             if (!wroteSubstepDelta || !wroteSubstepCount) {
                 if (!g_havokTimingFixWriteFailureLogged.exchange(true, std::memory_order_acq_rel)) {
                     ROCK_LOG_ERROR(Init,
-                        "HAVOK_TIMING_FIX failed to write FO4VR timing globals: wroteSubstepDelta={} wroteSubstepCount={}",
-                        wroteSubstepDelta ? "yes" : "no",
-                        wroteSubstepCount ? "yes" : "no");
+                        "HAVOK_TIMING_FIX failed to write FO4VR timing globals: wroteSubstepDelta={} "
+                        "wroteSubstepCount={}",
+                        wroteSubstepDelta ? "yes" : "no", wroteSubstepCount ? "yes" : "no");
                 }
                 return;
             }
 
-            performance_profiler::observeValue(performance_profiler::ValueMetric::PhysicsRequestedSubsteps, decision.substepCount);
+            performance_profiler::observeValue(performance_profiler::ValueMetric::PhysicsRequestedSubsteps,
+                decision.substepCount);
             if (decision.substepCount > oldSubstepCount) {
                 performance_profiler::addCounter(performance_profiler::Counter::PhysicsTimingSubstepsIncreased);
             }
             if (g_rockConfig.rockDebugVerboseLogging) {
-                ROCK_LOG_SAMPLE_DEBUG(Physics,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "HAVOK_TIMING_FIX rawDt={:.6f} accumDt={:.6f} oldSubDt={:.6f} oldSubsteps={} newSubDt={:.6f} newSubsteps={} minHz={:.2f} maxFrameDt={:.6f} maxSubsteps={}",
-                    rawDeltaSeconds,
-                    accumulatedDeltaSeconds,
-                    oldSubstepDeltaSeconds,
-                    oldSubstepCount,
-                    decision.substepDeltaSeconds,
-                    decision.substepCount,
-                    g_rockConfig.rockHavokTimingFixMinPhysicsFrameRate,
-                    decision.maxPhysicsFrameSeconds,
+                ROCK_LOG_SAMPLE_DEBUG(Physics, g_rockConfig.rockLogSampleMilliseconds,
+                    "HAVOK_TIMING_FIX rawDt={:.6f} accumDt={:.6f} oldSubDt={:.6f} oldSubsteps={} newSubDt={:.6f} "
+                    "newSubsteps={} minHz={:.2f} maxFrameDt={:.6f} maxSubsteps={}",
+                    rawDeltaSeconds, accumulatedDeltaSeconds, oldSubstepDeltaSeconds, oldSubstepCount,
+                    decision.substepDeltaSeconds, decision.substepCount,
+                    g_rockConfig.rockHavokTimingFixMinPhysicsFrameRate, decision.maxPhysicsFrameSeconds,
                     decision.clampedMaxSubsteps);
             }
         }
@@ -414,77 +442,43 @@ namespace rock
             const auto* nativePlayerActor = resolveNativePlayerActorGlobal();
             const auto* actorPtr = reinterpret_cast<const void*>(actor);
             const bool matchesCommonLib = commonLibPlayer && actorPtr == reinterpret_cast<const void*>(commonLibPlayer);
-            const bool matchesNative = nativePlayerActor && actorPtr == reinterpret_cast<const void*>(nativePlayerActor);
+            const bool matchesNative =
+                nativePlayerActor && actorPtr == reinterpret_cast<const void*>(nativePlayerActor);
 
-            if (commonLibPlayer && nativePlayerActor && reinterpret_cast<const void*>(commonLibPlayer) != reinterpret_cast<const void*>(nativePlayerActor)) {
+            if (commonLibPlayer && nativePlayerActor &&
+                reinterpret_cast<const void*>(commonLibPlayer) != reinterpret_cast<const void*>(nativePlayerActor)) {
                 static std::atomic<bool> loggedDivergence{ false };
                 if (!loggedDivergence.exchange(true, std::memory_order_acq_rel)) {
                     ROCK_LOG_WARN(Combat,
-                        "Native melee player pointer divergence: CommonLib player={:p}, native actor global={:p}; accepting either for suppression",
-                        static_cast<const void*>(commonLibPlayer),
-                        static_cast<const void*>(nativePlayerActor));
+                        "Native melee player pointer divergence: CommonLib player={:p}, native actor global={:p}; "
+                        "accepting either for suppression",
+                        static_cast<const void*>(commonLibPlayer), static_cast<const void*>(nativePlayerActor));
                 }
             }
 
             return matchesCommonLib || matchesNative;
         }
 
-        native_melee_suppression::NativeMeleeInputEvent classifyNativeMeleeInputEvent(const RE::InputEvent* event)
+        // ROCK holsters the player's unarmed fallback (enforceNoBareFistState),
+        // but a script or delayed native draw can reach melee before that
+        // lands. A player without a real equipped weapon never deals native
+        // melee damage; SCISSORS owns free-hand strikes.
+        [[nodiscard]] bool playerUnarmedMeleeSuppressed(bool player)
         {
-            if (!event) {
-                return native_melee_suppression::NativeMeleeInputEvent::Unknown;
-            }
-
-            const auto& userEvent = event->QUserEvent();
-            const auto* userEventText = userEvent.c_str();
-            const std::string_view userEventName{ userEventText ? userEventText : "", userEvent.length() };
-
-            if (userEventName == "RightStick") {
-                return native_melee_suppression::NativeMeleeInputEvent::RightStick;
-            }
-            if (userEventName == "PrimaryAttack") {
-                return native_melee_suppression::NativeMeleeInputEvent::PrimaryAttack;
-            }
-            if (userEventName == "SecondaryAttack") {
-                return native_melee_suppression::NativeMeleeInputEvent::SecondaryAttack;
-            }
-
-            return native_melee_suppression::NativeMeleeInputEvent::Unknown;
-        }
-
-        const char* nativeMeleeInputEventName(native_melee_suppression::NativeMeleeInputEvent event)
-        {
-            switch (event) {
-            case native_melee_suppression::NativeMeleeInputEvent::RightStick:
-                return "RightStick";
-            case native_melee_suppression::NativeMeleeInputEvent::PrimaryAttack:
-                return "PrimaryAttack";
-            case native_melee_suppression::NativeMeleeInputEvent::SecondaryAttack:
-                return "SecondaryAttack";
-            case native_melee_suppression::NativeMeleeInputEvent::Unknown:
-            default:
-                return "Unknown";
-            }
-        }
-
-        native_melee_suppression::NativeMeleeInputGatePolicyInput makeNativeMeleeInputGatePolicyInput(
-            native_melee_suppression::NativeMeleeInputEvent event)
-        {
-            return native_melee_suppression::NativeMeleeInputGatePolicyInput{
-                .suppressionActive = g_nativeMeleeSuppressionActive.load(std::memory_order_acquire),
-                .inputEvent = event };
+            return player && !f4vr::getEquippedWeaponItem();
         }
 
         native_melee_suppression::NativeMeleeImpactPolicyInput makeNativeMeleeImpactPolicyInput(const RE::Actor* actor)
         {
             const bool player = isPlayerActor(actor);
             return native_melee_suppression::NativeMeleeImpactPolicyInput{
-                .suppressionActive = g_nativeMeleeSuppressionActive.load(std::memory_order_acquire) ||
-                    (player && input_remap_runtime::isBareFistMeleeSuppressed() && !f4vr::getEquippedWeaponItem()),
-                .actorIsPlayer = player };
+                .suppressionActive = playerUnarmedMeleeSuppressed(player),
+                .actorIsPlayer = player
+            };
         }
 
-        RE::Setting* resolveNativeMeleeRuntimeSetting(RE::Setting*& cachedSetting, const char* settingName, bool& missingLogged)
+        RE::Setting* resolveNativeMeleeRuntimeSetting(RE::Setting*& cachedSetting, const char* settingName,
+            bool& missingLogged)
         {
             if (!cachedSetting) {
                 cachedSetting = RE::GetINISetting(settingName);
@@ -498,7 +492,8 @@ namespace rock
             return cachedSetting;
         }
 
-        bool enforceNativeMeleeBinarySetting(NativeBinaryRuntimeSettingState& state, const char* settingName, bool desiredValue, const char* label)
+        bool enforceNativeMeleeBinarySetting(NativeBinaryRuntimeSettingState& state, const char* settingName,
+            bool desiredValue, const char* label)
         {
             auto* setting = resolveNativeMeleeRuntimeSetting(state.setting, settingName, state.missingLogged);
             if (!setting) {
@@ -516,7 +511,8 @@ namespace rock
             if (!state.originalCaptured) {
                 state.originalValue = setting->GetBinary();
                 state.originalCaptured = true;
-                ROCK_LOG_INFO(Combat, "Native VR melee {} setting '{}' resolved: original={}", label, settingName, state.originalValue ? "true" : "false");
+                ROCK_LOG_INFO(Combat, "Native VR melee {} setting '{}' resolved: original={}", label, settingName,
+                    state.originalValue ? "true" : "false");
             }
 
             const bool currentValue = setting->GetBinary();
@@ -529,18 +525,16 @@ namespace rock
                 const auto reapplyCount = state.reapplyCount.fetch_add(1, std::memory_order_relaxed) + 1;
                 if (reapplyCount == 1 || reapplyCount % 30 == 0) {
                     ROCK_LOG_WARN(Combat,
-                        "Set FO4VR native VR melee {} setting '{}' to {} (original={} reapplyCount={})",
-                        label,
-                        settingName,
-                        desiredValue ? "true" : "false",
-                        state.originalValue ? "true" : "false",
+                        "Set FO4VR native VR melee {} setting '{}' to {} (original={} reapplyCount={})", label,
+                        settingName, desiredValue ? "true" : "false", state.originalValue ? "true" : "false",
                         reapplyCount);
                 }
                 state.confirmedLogged = true;
             }
 
             if (!state.confirmedLogged) {
-                ROCK_LOG_INFO(Combat, "FO4VR native VR melee {} setting '{}' is {}", label, settingName, desiredValue ? "true" : "false");
+                ROCK_LOG_INFO(Combat, "FO4VR native VR melee {} setting '{}' is {}", label, settingName,
+                    desiredValue ? "true" : "false");
                 state.confirmedLogged = true;
             }
 
@@ -548,7 +542,8 @@ namespace rock
             return true;
         }
 
-        bool enforceNativeMeleeFloatMinimumSetting(NativeFloatRuntimeSettingState& state, const char* settingName, float desiredMinimum, const char* label)
+        bool enforceNativeMeleeFloatSetting(NativeFloatRuntimeSettingState& state, const char* settingName,
+            float desiredValue, const char* label)
         {
             auto* setting = resolveNativeMeleeRuntimeSetting(state.setting, settingName, state.missingLogged);
             if (!setting) {
@@ -566,35 +561,36 @@ namespace rock
             if (!state.originalCaptured) {
                 state.originalValue = setting->GetFloat();
                 state.originalCaptured = true;
-                ROCK_LOG_INFO(Combat, "Native VR melee {} setting '{}' resolved: original={:.3f}", label, settingName, state.originalValue);
+                ROCK_LOG_INFO(Combat, "Native VR melee {} setting '{}' resolved: original={:.3f}", label, settingName,
+                    state.originalValue);
             }
 
-            const float currentValue = setting->GetFloat();
-            if (!std::isfinite(currentValue) || currentValue < desiredMinimum) {
-                setting->SetFloat(desiredMinimum);
-                const float appliedValue = setting->GetFloat();
-                if (!std::isfinite(appliedValue) || appliedValue < desiredMinimum) {
+            const bool requestChanged =
+                !state.applied || !native_melee_suppression::sameRuntimeFloatBits(state.appliedValue, desiredValue);
+            if (!native_melee_suppression::sameRuntimeFloatBits(setting->GetFloat(), desiredValue)) {
+                setting->SetFloat(desiredValue);
+                if (!native_melee_suppression::sameRuntimeFloatBits(setting->GetFloat(), desiredValue)) {
                     ROCK_LOG_ERROR(Combat, "Failed to apply FO4VR native VR melee {} setting '{}'", label, settingName);
                     return false;
                 }
-                const auto reapplyCount = state.reapplyCount.fetch_add(1, std::memory_order_relaxed) + 1;
-                if (reapplyCount == 1 || reapplyCount % 30 == 0) {
-                    ROCK_LOG_WARN(Combat,
-                        "Raised FO4VR native VR melee {} setting '{}' to {:.1f} (original={:.3f} reapplyCount={})",
-                        label,
-                        settingName,
-                        desiredMinimum,
-                        state.originalValue,
-                        reapplyCount);
+                if (requestChanged) {
+                    ROCK_LOG_INFO(Combat, "Set FO4VR native VR melee {} setting '{}' to {:.1f} (original={:.3f})",
+                        label, settingName, desiredValue, state.originalValue);
+                } else {
+                    // Something outside ROCK rewrote an owned value.
+                    const auto reapplyCount = state.reapplyCount.fetch_add(1, std::memory_order_relaxed) + 1;
+                    if (reapplyCount == 1 || reapplyCount % 30 == 0) {
+                        ROCK_LOG_WARN(Combat,
+                            "Reapplied FO4VR native VR melee {} setting '{}' to {:.1f} (reapplyCount={})", label,
+                            settingName, desiredValue, reapplyCount);
+                    }
                 }
-                state.confirmedLogged = true;
+            } else if (requestChanged) {
+                ROCK_LOG_INFO(Combat, "FO4VR native VR melee {} setting '{}' is {:.1f}", label, settingName,
+                    desiredValue);
             }
 
-            if (!state.confirmedLogged) {
-                ROCK_LOG_INFO(Combat, "FO4VR native VR melee {} setting '{}' is armed at {:.1f}", label, settingName, currentValue);
-                state.confirmedLogged = true;
-            }
-
+            state.appliedValue = desiredValue;
             state.applied = true;
             return true;
         }
@@ -608,8 +604,8 @@ namespace rock
             state.reapplyCount.store(0, std::memory_order_relaxed);
         }
 
-        bool restoreNativeMeleeBinarySetting(
-            NativeBinaryRuntimeSettingState& state, const char* settingName, bool appliedValue, const char* label)
+        bool restoreNativeMeleeBinarySetting(NativeBinaryRuntimeSettingState& state, const char* settingName,
+            bool appliedValue, const char* label)
         {
             if (!state.originalCaptured || !state.applied) {
                 return true;
@@ -623,7 +619,8 @@ namespace rock
             if (setting->GetType() != RE::Setting::SETTING_TYPE::kBinary) {
                 if (!state.typeMismatchLogged) {
                     state.typeMismatchLogged = true;
-                    ROCK_LOG_ERROR(Combat, "Native VR melee suppression found non-binary setting '{}' while restoring", settingName);
+                    ROCK_LOG_ERROR(Combat, "Native VR melee suppression found non-binary setting '{}' while restoring",
+                        settingName);
                 }
                 return false;
             }
@@ -633,29 +630,28 @@ namespace rock
                 if (currentValue != state.originalValue) {
                     setting->SetBinary(state.originalValue);
                     if (setting->GetBinary() != state.originalValue) {
-                        ROCK_LOG_ERROR(Combat, "Failed to restore FO4VR native VR melee {} setting '{}'", label, settingName);
+                        ROCK_LOG_ERROR(Combat, "Failed to restore FO4VR native VR melee {} setting '{}'", label,
+                            settingName);
                         return false;
                     }
                 }
-                ROCK_LOG_INFO(Combat,
-                    "Restored FO4VR native VR melee {} setting '{}' to {}",
-                    label,
-                    settingName,
+                ROCK_LOG_INFO(Combat, "Restored FO4VR native VR melee {} setting '{}' to {}", label, settingName,
                     state.originalValue ? "true" : "false");
             } else {
                 ROCK_LOG_INFO(Combat,
-                    "Released FO4VR native VR melee {} setting '{}' without overwrite because its live value changed outside ROCK",
-                    label,
-                    settingName);
+                    "Released FO4VR native VR melee {} setting '{}' without overwrite because its live value changed "
+                    "outside ROCK",
+                    label, settingName);
             }
 
             releaseNativeMeleeRuntimeSettingOwnership(state);
             return true;
         }
 
-        bool restoreNativeMeleeFloatSetting(
-            NativeFloatRuntimeSettingState& state, const char* settingName, float appliedValue, const char* label)
+        bool restoreNativeMeleeFloatSetting(NativeFloatRuntimeSettingState& state, const char* settingName,
+            const char* label)
         {
+            const float appliedValue = state.appliedValue;
             if (!state.originalCaptured || !state.applied) {
                 return true;
             }
@@ -668,7 +664,8 @@ namespace rock
             if (setting->GetType() != RE::Setting::SETTING_TYPE::kFloat) {
                 if (!state.typeMismatchLogged) {
                     state.typeMismatchLogged = true;
-                    ROCK_LOG_ERROR(Combat, "Native VR melee suppression found non-float setting '{}' while restoring", settingName);
+                    ROCK_LOG_ERROR(Combat, "Native VR melee suppression found non-float setting '{}' while restoring",
+                        settingName);
                 }
                 return false;
             }
@@ -678,16 +675,18 @@ namespace rock
                 if (!native_melee_suppression::sameRuntimeFloatBits(currentValue, state.originalValue)) {
                     setting->SetFloat(state.originalValue);
                     if (!native_melee_suppression::sameRuntimeFloatBits(setting->GetFloat(), state.originalValue)) {
-                        ROCK_LOG_ERROR(Combat, "Failed to restore FO4VR native VR melee {} setting '{}'", label, settingName);
+                        ROCK_LOG_ERROR(Combat, "Failed to restore FO4VR native VR melee {} setting '{}'", label,
+                            settingName);
                         return false;
                     }
                 }
-                ROCK_LOG_INFO(Combat, "Restored FO4VR native VR melee {} setting '{}' to {:.3f}", label, settingName, state.originalValue);
+                ROCK_LOG_INFO(Combat, "Restored FO4VR native VR melee {} setting '{}' to {:.3f}", label, settingName,
+                    state.originalValue);
             } else {
                 ROCK_LOG_INFO(Combat,
-                    "Released FO4VR native VR melee {} setting '{}' without overwrite because its live value changed outside ROCK",
-                    label,
-                    settingName);
+                    "Released FO4VR native VR melee {} setting '{}' without overwrite because its live value changed "
+                    "outside ROCK",
+                    label, settingName);
             }
 
             releaseNativeMeleeRuntimeSettingOwnership(state);
@@ -696,10 +695,13 @@ namespace rock
 
         [[nodiscard]] bool nativeMeleeRuntimeSuppressionApplied()
         {
-            return g_nativeMeleeVelocityCheckState.applied || g_nativeMeleeLinearThresholdState.applied || g_nativeMeleeAngularThresholdState.applied;
+            return g_nativeMeleeVelocityCheckState.applied || g_nativeMeleeLinearThresholdState.applied ||
+                g_nativeMeleeAngularThresholdState.applied || g_nativeGunBashLinearThresholdState.applied ||
+                g_nativeGunBashAngularThresholdState.applied;
         }
 
-        RE::Setting* resolveNativeGrabHapticRuntimeSetting(RE::Setting*& cachedSetting, const char* settingName, bool& missingLogged)
+        RE::Setting* resolveNativeGrabHapticRuntimeSetting(RE::Setting*& cachedSetting, const char* settingName,
+            bool& missingLogged)
         {
             if (!cachedSetting) {
                 cachedSetting = RE::GetINISetting(settingName);
@@ -707,13 +709,15 @@ namespace rock
 
             if (!cachedSetting && !missingLogged) {
                 missingLogged = true;
-                ROCK_LOG_WARN(Haptics, "Native grab-hover haptic suppression could not resolve INI setting '{}'", settingName);
+                ROCK_LOG_WARN(Haptics, "Native grab-hover haptic suppression could not resolve INI setting '{}'",
+                    settingName);
             }
 
             return cachedSetting;
         }
 
-        bool enforceNativeGrabHapticBinarySetting(NativeGrabHapticBinarySettingState& state, const char* settingName, bool desiredValue, const char* label)
+        bool enforceNativeGrabHapticBinarySetting(NativeGrabHapticBinarySettingState& state, const char* settingName,
+            bool desiredValue, const char* label)
         {
             auto* setting = resolveNativeGrabHapticRuntimeSetting(state.setting, settingName, state.missingLogged);
             if (!setting) {
@@ -723,7 +727,8 @@ namespace rock
             if (setting->GetType() != RE::Setting::SETTING_TYPE::kBinary) {
                 if (!state.typeMismatchLogged) {
                     state.typeMismatchLogged = true;
-                    ROCK_LOG_ERROR(Haptics, "Native grab-hover haptic suppression found non-binary setting '{}'", settingName);
+                    ROCK_LOG_ERROR(Haptics, "Native grab-hover haptic suppression found non-binary setting '{}'",
+                        settingName);
                 }
                 return false;
             }
@@ -731,7 +736,8 @@ namespace rock
             if (!state.originalCaptured) {
                 state.originalValue = setting->GetBinary();
                 state.originalCaptured = true;
-                ROCK_LOG_INFO(Haptics, "Native grab-hover {} setting '{}' resolved: original={}", label, settingName, state.originalValue ? "true" : "false");
+                ROCK_LOG_INFO(Haptics, "Native grab-hover {} setting '{}' resolved: original={}", label, settingName,
+                    state.originalValue ? "true" : "false");
             }
 
             const bool currentValue = setting->GetBinary();
@@ -739,13 +745,15 @@ namespace rock
                 setting->SetBinary(desiredValue);
                 state.applied = true;
                 const auto reapplyCount = state.reapplyCount.fetch_add(1, std::memory_order_relaxed) + 1;
-                if (reapplyCount == 1 || reapplyCount % 30 == 0) {
+                // The first application is ROCK's own override; a repeat means
+                // something keeps putting the value back.
+                if (reapplyCount == 1) {
+                    ROCK_LOG_INFO(Haptics, "Set FO4VR native grab-hover {} setting '{}' to {} (original={})", label,
+                        settingName, desiredValue ? "true" : "false", state.originalValue ? "true" : "false");
+                } else if (reapplyCount % 30 == 0) {
                     ROCK_LOG_WARN(Haptics,
-                        "Set FO4VR native grab-hover {} setting '{}' to {} (original={} reapplyCount={})",
-                        label,
-                        settingName,
-                        desiredValue ? "true" : "false",
-                        state.originalValue ? "true" : "false",
+                        "Set FO4VR native grab-hover {} setting '{}' to {} (original={} reapplyCount={})", label,
+                        settingName, desiredValue ? "true" : "false", state.originalValue ? "true" : "false",
                         reapplyCount);
                 }
                 state.confirmedLogged = true;
@@ -753,14 +761,16 @@ namespace rock
             }
 
             if (!state.confirmedLogged) {
-                ROCK_LOG_INFO(Haptics, "FO4VR native grab-hover {} setting '{}' is {}", label, settingName, desiredValue ? "true" : "false");
+                ROCK_LOG_INFO(Haptics, "FO4VR native grab-hover {} setting '{}' is {}", label, settingName,
+                    desiredValue ? "true" : "false");
                 state.confirmedLogged = true;
             }
 
             return true;
         }
 
-        bool enforceNativeGrabHapticFloatSetting(NativeGrabHapticFloatSettingState& state, const char* settingName, float desiredValue, const char* label)
+        bool enforceNativeGrabHapticFloatSetting(NativeGrabHapticFloatSettingState& state, const char* settingName,
+            float desiredValue, const char* label)
         {
             auto* setting = resolveNativeGrabHapticRuntimeSetting(state.setting, settingName, state.missingLogged);
             if (!setting) {
@@ -770,7 +780,8 @@ namespace rock
             if (setting->GetType() != RE::Setting::SETTING_TYPE::kFloat) {
                 if (!state.typeMismatchLogged) {
                     state.typeMismatchLogged = true;
-                    ROCK_LOG_ERROR(Haptics, "Native grab-hover haptic suppression found non-float setting '{}'", settingName);
+                    ROCK_LOG_ERROR(Haptics, "Native grab-hover haptic suppression found non-float setting '{}'",
+                        settingName);
                 }
                 return false;
             }
@@ -778,7 +789,8 @@ namespace rock
             if (!state.originalCaptured) {
                 state.originalValue = setting->GetFloat();
                 state.originalCaptured = true;
-                ROCK_LOG_INFO(Haptics, "Native grab-hover {} setting '{}' resolved: original={:.3f}", label, settingName, state.originalValue);
+                ROCK_LOG_INFO(Haptics, "Native grab-hover {} setting '{}' resolved: original={:.3f}", label,
+                    settingName, state.originalValue);
             }
 
             const float currentValue = setting->GetFloat();
@@ -786,28 +798,29 @@ namespace rock
                 setting->SetFloat(desiredValue);
                 state.applied = true;
                 const auto reapplyCount = state.reapplyCount.fetch_add(1, std::memory_order_relaxed) + 1;
-                if (reapplyCount == 1 || reapplyCount % 30 == 0) {
+                if (reapplyCount == 1) {
+                    ROCK_LOG_INFO(Haptics, "Set FO4VR native grab-hover {} setting '{}' to {:.3f} (original={:.3f})",
+                        label, settingName, desiredValue, state.originalValue);
+                } else if (reapplyCount % 30 == 0) {
                     ROCK_LOG_WARN(Haptics,
                         "Set FO4VR native grab-hover {} setting '{}' to {:.3f} (original={:.3f} reapplyCount={})",
-                        label,
-                        settingName,
-                        desiredValue,
-                        state.originalValue,
-                        reapplyCount);
+                        label, settingName, desiredValue, state.originalValue, reapplyCount);
                 }
                 state.confirmedLogged = true;
                 return true;
             }
 
             if (!state.confirmedLogged) {
-                ROCK_LOG_INFO(Haptics, "FO4VR native grab-hover {} setting '{}' is {:.3f}", label, settingName, desiredValue);
+                ROCK_LOG_INFO(Haptics, "FO4VR native grab-hover {} setting '{}' is {:.3f}", label, settingName,
+                    desiredValue);
                 state.confirmedLogged = true;
             }
 
             return true;
         }
 
-        bool restoreNativeGrabHapticBinarySetting(NativeGrabHapticBinarySettingState& state, const char* settingName, const char* label)
+        bool restoreNativeGrabHapticBinarySetting(NativeGrabHapticBinarySettingState& state, const char* settingName,
+            const char* label)
         {
             if (!state.originalCaptured || !state.applied) {
                 return true;
@@ -821,17 +834,16 @@ namespace rock
             if (setting->GetType() != RE::Setting::SETTING_TYPE::kBinary) {
                 if (!state.typeMismatchLogged) {
                     state.typeMismatchLogged = true;
-                    ROCK_LOG_ERROR(Haptics, "Native grab-hover haptic suppression found non-binary setting '{}' while restoring", settingName);
+                    ROCK_LOG_ERROR(Haptics,
+                        "Native grab-hover haptic suppression found non-binary setting '{}' while restoring",
+                        settingName);
                 }
                 return false;
             }
 
             if (setting->GetBinary() != state.originalValue) {
                 setting->SetBinary(state.originalValue);
-                ROCK_LOG_INFO(Haptics,
-                    "Restored FO4VR native grab-hover {} setting '{}' to {}",
-                    label,
-                    settingName,
+                ROCK_LOG_INFO(Haptics, "Restored FO4VR native grab-hover {} setting '{}' to {}", label, settingName,
                     state.originalValue ? "true" : "false");
             }
             state.applied = false;
@@ -839,7 +851,8 @@ namespace rock
             return true;
         }
 
-        bool restoreNativeGrabHapticFloatSetting(NativeGrabHapticFloatSettingState& state, const char* settingName, const char* label)
+        bool restoreNativeGrabHapticFloatSetting(NativeGrabHapticFloatSettingState& state, const char* settingName,
+            const char* label)
         {
             if (!state.originalCaptured || !state.applied) {
                 return true;
@@ -853,7 +866,9 @@ namespace rock
             if (setting->GetType() != RE::Setting::SETTING_TYPE::kFloat) {
                 if (!state.typeMismatchLogged) {
                     state.typeMismatchLogged = true;
-                    ROCK_LOG_ERROR(Haptics, "Native grab-hover haptic suppression found non-float setting '{}' while restoring", settingName);
+                    ROCK_LOG_ERROR(Haptics,
+                        "Native grab-hover haptic suppression found non-float setting '{}' while restoring",
+                        settingName);
                 }
                 return false;
             }
@@ -861,7 +876,8 @@ namespace rock
             const float currentValue = setting->GetFloat();
             if (!std::isfinite(currentValue) || currentValue != state.originalValue) {
                 setting->SetFloat(state.originalValue);
-                ROCK_LOG_INFO(Haptics, "Restored FO4VR native grab-hover {} setting '{}' to {:.3f}", label, settingName, state.originalValue);
+                ROCK_LOG_INFO(Haptics, "Restored FO4VR native grab-hover {} setting '{}' to {:.3f}", label, settingName,
+                    state.originalValue);
             }
             state.applied = false;
             state.confirmedLogged = false;
@@ -870,16 +886,17 @@ namespace rock
 
         [[nodiscard]] bool nativeGrabHapticSuppressionApplied()
         {
-            return g_nativeGrabHapticRolloverState.applied || g_nativeGrabHapticHoverIntensityState.applied || g_nativeGrabHapticHoverDurationState.applied;
+            return g_nativeGrabHapticRolloverState.applied || g_nativeGrabHapticHoverIntensityState.applied ||
+                g_nativeGrabHapticHoverDurationState.applied;
         }
 
         native_melee_suppression::NativeMeleePolicyInput makeNativeMeleePolicyInput(const RE::Actor* actor)
         {
             const bool player = isPlayerActor(actor);
             return native_melee_suppression::NativeMeleePolicyInput{
-                .suppressionActive = g_nativeMeleeSuppressionActive.load(std::memory_order_acquire) ||
-                    (player && input_remap_runtime::isBareFistMeleeSuppressed() && !f4vr::getEquippedWeaponItem()),
-                .actorIsPlayer = player };
+                .suppressionActive = playerUnarmedMeleeSuppressed(player),
+                .actorIsPlayer = player
+            };
         }
 
         bool applyNativeMeleeDecision(const native_melee_suppression::NativeMeleeEvent event,
@@ -922,12 +939,9 @@ namespace rock
                 static std::atomic<std::uint32_t> impactLogCounter{ 0 };
                 const auto count = impactLogCounter.fetch_add(1, std::memory_order_relaxed) + 1;
                 if (count == 1 || count % 180 == 0) {
-                    ROCK_LOG_DEBUG(Combat,
-                        "Native melee VRMeleeImpact decision={} reason={} player={} count={}",
+                    ROCK_LOG_DEBUG(Combat, "Native melee VRMeleeImpact decision={} reason={} player={} count={}",
                         decision.action == NativeMeleeImpactAction::CallNative ? "native" : "suppressed",
-                        decision.reason,
-                        input.actorIsPlayer ? "yes" : "no",
-                        count);
+                        decision.reason, input.actorIsPlayer ? "yes" : "no", count);
                 }
             }
 
@@ -954,11 +968,17 @@ namespace rock
         // instead of querying page protection for each scalar. Body lookup still
         // validates the allocation bound, body identity, and live motion slot.
         // Never cache an event, world, or body pointer between callbacks.
-        MeleeContactDecodeStage readMeleeContactPartner(
-            const void* contactEvent, const void* collisionEvent, std::uint32_t& filterInfo,
-            performance_profiler::ContactPair* profilePair) noexcept
+        struct MeleeContactPartner
         {
-            filterInfo = 0;
+            RE::hknpWorld* world = nullptr;
+            std::uint32_t bodyId = 0;
+            std::uint32_t filterInfo = 0;
+        };
+
+        MeleeContactDecodeStage readMeleeContactPartner(const void* contactEvent, const void* collisionEvent,
+            MeleeContactPartner& partner, performance_profiler::ContactPair* profilePair) noexcept
+        {
+            partner = {};
             auto stage = MeleeContactDecodeStage::EventBuffers;
             if (!native_memory::pointerLooksReadable(contactEvent) ||
                 !native_memory::pointerLooksReadable(collisionEvent)) {
@@ -982,15 +1002,17 @@ namespace rock
                     return stage;
                 }
                 stage = MeleeContactDecodeStage::PartnerBody;
-                if (!readMeleeBodyFilter(world, otherId, filterInfo)) {
+                if (!readMeleeBodyFilter(world, otherId, partner.filterInfo)) {
                     return stage;
                 }
+                partner.world = world;
+                partner.bodyId = otherId;
                 stage = MeleeContactDecodeStage::Complete;
                 // Optional evidence must never change native forwarding on a read fault.
                 if (profilePair) {
                     profilePair->world = reinterpret_cast<std::uintptr_t>(world);
                     profilePair->bodyB = otherId;
-                    profilePair->layerB = filterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+                    profilePair->layerB = partner.filterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
                     std::memcpy(&profilePair->bodyA,
                         static_cast<const char*>(collisionEvent) + 0x08 + ourIndex * sizeof(otherId), sizeof(otherId));
                     std::uint32_t sourceFilter = 0;
@@ -1004,6 +1026,31 @@ namespace rock
             }
         }
 
+        /*
+         * Tells an actor from an object the way VRMeleeImpact (140EFF000) does:
+         * body userData (+0x88) -> collision object -> scene object -> owning
+         * reference (FindReferenceFor3D, 1403F0890), an actor when that
+         * reference is an ACHR. It runs on the native callback's thread and
+         * reads only what the native callback reads next.
+         */
+        native_melee_suppression::NativeMeleePartner classifyMeleeContactPartner(const MeleeContactPartner& partner)
+        {
+            using native_melee_suppression::NativeMeleePartner;
+            const auto body = havok_runtime::snapshotBodyIdentity(partner.world, RE::hknpBodyId{ partner.bodyId });
+            if (!body.valid || !body.body) {
+                return NativeMeleePartner::Unknown;
+            }
+            auto* ownerNode = havok_runtime::getOwnerNodeFromCollisionObject(body.collisionObject);
+            auto* ref = ownerNode ? RE::TESObjectREFR::FindReferenceFor3D(ownerNode) : nullptr;
+            if (ref && ref->As<RE::Actor>()) {
+                return NativeMeleePartner::Actor;
+            }
+            return physics_body_classifier::motionTypeFromBodyFlags(body.body->flags) ==
+                    physics_body_classifier::BodyMotionType::Static
+                ? NativeMeleePartner::StaticWorld
+                : NativeMeleePartner::MovableObject;
+        }
+
         // Counts cross the physics/main-thread boundary without retaining engine
         // pointers. Timing and per-frame volume use the opt-in asynchronous profiler;
         // only malformed input produces a rate-limited main-thread warning.
@@ -1014,11 +1061,13 @@ namespace rock
         void reportMeleeContactFrame()
         {
             const auto callbacks = g_meleeCallbacksThisFrame.exchange(0, std::memory_order_relaxed);
-            performance_profiler::observeValue(performance_profiler::ValueMetric::NativeMeleeCallbacksPerFrame, callbacks);
+            performance_profiler::observeValue(performance_profiler::ValueMetric::NativeMeleeCallbacksPerFrame,
+                callbacks);
             const auto failures = g_meleeDecodeFailures.exchange(0, std::memory_order_relaxed);
             if (failures != 0) {
                 ROCK_LOG_SAMPLE_WARN(Combat, 2000,
-                    "Native melee contact decode failed: frameFailures={} deepestStage={} (1=events,2=world,3=body); native forwarding preserved",
+                    "Native melee contact decode failed: frameFailures={} deepestStage={} (1=events,2=world,3=body); "
+                    "native forwarding preserved",
                     failures, static_cast<std::uint32_t>(g_meleeDecodeFailureStage.load(std::memory_order_relaxed)));
             }
         }
@@ -1026,30 +1075,38 @@ namespace rock
         bool hookedWeaponSwingHandler(void* handler, RE::Actor* actor, RE::BSFixedString* side)
         {
             const auto input = makeNativeMeleePolicyInput(actor);
-            const auto decision = native_melee_suppression::evaluateNativeMeleeSuppression(native_melee_suppression::NativeMeleeEvent::WeaponSwing, input);
+            const auto decision = native_melee_suppression::evaluateNativeMeleeSuppression(
+                native_melee_suppression::NativeMeleeEvent::WeaponSwing, input);
 
-            const bool shouldCallNative = decision.action == native_melee_suppression::NativeMeleeSuppressionAction::CallNative;
-            const bool decisionResult = applyNativeMeleeDecision(native_melee_suppression::NativeMeleeEvent::WeaponSwing, input, decision);
+            const bool shouldCallNative =
+                decision.action == native_melee_suppression::NativeMeleeSuppressionAction::CallNative;
+            const bool decisionResult =
+                applyNativeMeleeDecision(native_melee_suppression::NativeMeleeEvent::WeaponSwing, input, decision);
             if (!shouldCallNative) {
                 return decisionResult;
             }
 
-            const bool nativeResult = g_originalWeaponSwingHandler ? g_originalWeaponSwingHandler(handler, actor, side) : false;
+            const bool nativeResult =
+                g_originalWeaponSwingHandler ? g_originalWeaponSwingHandler(handler, actor, side) : false;
             return nativeResult;
         }
 
         bool hookedHitFrameHandler(void* handler, RE::Actor* actor, RE::BSFixedString* side)
         {
             const auto input = makeNativeMeleePolicyInput(actor);
-            const auto decision = native_melee_suppression::evaluateNativeMeleeSuppression(native_melee_suppression::NativeMeleeEvent::HitFrame, input);
+            const auto decision = native_melee_suppression::evaluateNativeMeleeSuppression(
+                native_melee_suppression::NativeMeleeEvent::HitFrame, input);
 
-            const bool shouldCallNative = decision.action == native_melee_suppression::NativeMeleeSuppressionAction::CallNative;
-            const bool decisionResult = applyNativeMeleeDecision(native_melee_suppression::NativeMeleeEvent::HitFrame, input, decision);
+            const bool shouldCallNative =
+                decision.action == native_melee_suppression::NativeMeleeSuppressionAction::CallNative;
+            const bool decisionResult =
+                applyNativeMeleeDecision(native_melee_suppression::NativeMeleeEvent::HitFrame, input, decision);
             if (!shouldCallNative) {
                 return decisionResult;
             }
 
-            const bool nativeResult = g_originalHitFrameHandler ? g_originalHitFrameHandler(handler, actor, side) : false;
+            const bool nativeResult =
+                g_originalHitFrameHandler ? g_originalHitFrameHandler(handler, actor, side) : false;
             return nativeResult;
         }
 
@@ -1063,8 +1120,10 @@ namespace rock
              * at this player-only boundary without changing NPC swing behavior.
              */
             const auto input = makeNativeMeleePolicyInput(actor);
-            const auto decision = native_melee_suppression::evaluateNativeMeleeSuppression(native_melee_suppression::NativeMeleeEvent::WeaponSwing, input);
-            const bool shouldCallNative = decision.action == native_melee_suppression::NativeMeleeSuppressionAction::CallNative;
+            const auto decision = native_melee_suppression::evaluateNativeMeleeSuppression(
+                native_melee_suppression::NativeMeleeEvent::WeaponSwing, input);
+            const bool shouldCallNative =
+                decision.action == native_melee_suppression::NativeMeleeSuppressionAction::CallNative;
 
             if (!shouldCallNative) {
                 applyNativeMeleeDecision(native_melee_suppression::NativeMeleeEvent::WeaponSwing, input, decision);
@@ -1086,20 +1145,15 @@ namespace rock
              * FO4VR registers this callback while attaching native VR melee
              * collision to the first-person weapon nodes. It owns the native
              * contact-to-hit path, including target filtering, action dispatch,
-             * impulse direction, and melee cooldown writes. When complete ROCK
-             * suppression is active, skip the player callback here so no native
-             * impact or damage side effect survives the master switch.
+             * impulse direction, and melee cooldown writes. An unarmed player's
+             * contacts never reach it.
              */
-            const auto input = makeNativeMeleeImpactPolicyInput(actor);
-            const auto decision = native_melee_suppression::evaluateNativeMeleeImpactSuppression(input);
-
-            if (applyNativeMeleeImpactDecision(input, decision)) {
-                ROCK_LOG_SAMPLE_DEBUG(Combat,
-                    g_rockConfig.rockLogSampleMilliseconds,
+            auto input = makeNativeMeleeImpactPolicyInput(actor);
+            if (applyNativeMeleeImpactDecision(input,
+                    native_melee_suppression::evaluateNativeMeleeImpactSuppression(input))) {
+                ROCK_LOG_SAMPLE_DEBUG(Combat, g_rockConfig.rockLogSampleMilliseconds,
                     "Suppressed FO4VR native VRMeleeImpact callback actor={:p} contactEvent={:p} collisionEvent={:p}",
-                    static_cast<void*>(actor),
-                    contactEvent,
-                    collisionEvent);
+                    static_cast<void*>(actor), contactEvent, collisionEvent);
                 return;
             }
 
@@ -1110,26 +1164,50 @@ namespace rock
              * co-located colliders from consuming the melee hit and arming
              * the cooldown. Undecodable events pass through unchanged.
              */
-            std::uint32_t partnerFilter = 0;
+            MeleeContactPartner partner{};
             performance_profiler::ContactPair profilePair{};
             const bool profiling = performance_profiler::enabled();
-            const auto decodeStage = readMeleeContactPartner(contactEvent, collisionEvent, partnerFilter, profiling ? &profilePair : nullptr);
+            const auto decodeStage = readMeleeContactPartner(contactEvent, collisionEvent, partner,
+                profiling ? &profilePair : nullptr);
             if (decodeStage != MeleeContactDecodeStage::Complete) {
                 g_meleeDecodeFailureStage.store(decodeStage, std::memory_order_relaxed);
                 g_meleeDecodeFailures.fetch_add(1, std::memory_order_relaxed);
                 performance_profiler::addCounter(performance_profiler::Counter::NativeMeleeDecodeFailed);
             } else if (collision_layer_policy::isRockOwnedMatrixLayer(
-                           partnerFilter & collision_layer_policy::FO4_LAYER_FILTER_MASK)) {
+                           partner.filterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK)) {
                 performance_profiler::addCounter(performance_profiler::Counter::NativeMeleeRockPartnerDropped);
-                if (profiling) performance_profiler::observeContactPair(profilePair, input.actorIsPlayer ?
-                    performance_profiler::ContactStage::PlayerMeleeDropped : performance_profiler::ContactStage::OtherMeleeDropped);
+                if (profiling)
+                    performance_profiler::observeContactPair(profilePair,
+                        input.actorIsPlayer ? performance_profiler::ContactStage::PlayerMeleeDropped
+                                            : performance_profiler::ContactStage::OtherMeleeDropped);
                 return;
             }
 
+            /*
+             * The native object hit (140E56FA0) pushes any non-actor body the
+             * player's swing touches with up to 5000 units per axis. Movable
+             * objects already take the real push of ROCK's weapon and hand
+             * bodies, so the player's native melee keeps only actors (SCISSORS
+             * decides those hits) and the static world (impact effects).
+             */
+            if (input.actorIsPlayer && decodeStage == MeleeContactDecodeStage::Complete) {
+                input.partner = classifyMeleeContactPartner(partner);
+                if (applyNativeMeleeImpactDecision(input,
+                        native_melee_suppression::evaluateNativeMeleeImpactSuppression(input))) {
+                    if (profiling)
+                        performance_profiler::observeContactPair(profilePair,
+                            performance_profiler::ContactStage::PlayerMeleeDropped);
+                    return;
+                }
+            }
+
             if (g_originalVrMeleeImpactCallback) {
+                // A contact from the index-1 melee model resolves with index 1.
+                const native_secondary_melee::ImpactRoute route(contactEvent, collisionEvent);
                 if (profiling && decodeStage == MeleeContactDecodeStage::Complete) {
-                    performance_profiler::observeContactPair(profilePair, input.actorIsPlayer ?
-                        performance_profiler::ContactStage::PlayerMeleeForwarded : performance_profiler::ContactStage::OtherMeleeForwarded);
+                    performance_profiler::observeContactPair(profilePair,
+                        input.actorIsPlayer ? performance_profiler::ContactStage::PlayerMeleeForwarded
+                                            : performance_profiler::ContactStage::OtherMeleeForwarded);
                 }
                 performance_profiler::ScopedTimer nativeTimer(performance_profiler::Scope::NativeMeleeDispatch);
                 g_originalVrMeleeImpactCallback(actor, contactEvent, collisionEvent);
@@ -1140,50 +1218,22 @@ namespace rock
         {
             if (input_remap_runtime::shouldSuppressNativeTriggerAction(event)) {
                 trigger_equip_readiness_trace::input(event, true, false, false, handler);
-                ROCK_LOG_SAMPLE_DEBUG(Input,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "Suppressed native WandTrigger AttackBlock gate while ROCK owns holstered or held-weapon trigger input");
+                ROCK_LOG_SAMPLE_DEBUG(Input, g_rockConfig.rockLogSampleMilliseconds,
+                    "Suppressed native WandTrigger AttackBlock gate while ROCK owns holstered or held-weapon trigger "
+                    "input");
                 return false;
             }
 
-            /*
-             * FO4VR has a third native melee path before the animation events:
-             * AttackBlockHandler::ShouldHandleEvent accepts the VR RightStick
-             * input and can classify fast rotation as melee. The hook is kept
-             * at this input gate and only returns false for RightStick during
-             * full ROCK suppression; PrimaryAttack and SecondaryAttack remain
-             * native so normal weapon inputs are not segregated or broken.
-             */
-            const auto inputEvent = classifyNativeMeleeInputEvent(event);
-            const auto policyInput = makeNativeMeleeInputGatePolicyInput(inputEvent);
-            const auto decision = native_melee_suppression::evaluateNativeMeleeInputGate(policyInput);
-
-            if (decision.action != native_melee_suppression::NativeMeleeInputGateAction::CallNative) {
-                static std::atomic<std::uint32_t> inputGateLogCounter{ 0 };
-                const auto count = inputGateLogCounter.fetch_add(1, std::memory_order_relaxed) + 1;
-                if (count == 1 || count % 180 == 0) {
-                    ROCK_LOG_DEBUG(Combat,
-                        "Native melee AttackBlock input gate event={} decision={} reason={} count={}",
-                        nativeMeleeInputEventName(inputEvent),
-                        decision.action == native_melee_suppression::NativeMeleeInputGateAction::CallNative ? "native" : "false",
-                        decision.reason,
-                        count);
-                }
-            }
-
-            if (decision.action == native_melee_suppression::NativeMeleeInputGateAction::ReturnFalse) {
-                trigger_equip_readiness_trace::input(event, true, false, false, handler);
-                return false;
-            }
-
-            const bool nativeResult = g_originalAttackBlockShouldHandleEvent ? g_originalAttackBlockShouldHandleEvent(handler, event) : false;
-            trigger_equip_readiness_trace::input(event, false,
-                g_originalAttackBlockShouldHandleEvent != nullptr, nativeResult, handler);
+            const bool nativeResult =
+                g_originalAttackBlockShouldHandleEvent ? g_originalAttackBlockShouldHandleEvent(handler, event) : false;
+            trigger_equip_readiness_trace::input(event, false, g_originalAttackBlockShouldHandleEvent != nullptr,
+                nativeResult, handler);
             return nativeResult;
         }
 
         template <class HandlerT>
-        bool installNativeMeleeVtableHook(std::uintptr_t entryOffset, HandlerT hook, HandlerT& original, const char* label)
+        bool installNativeMeleeVtableHook(std::uintptr_t entryOffset, HandlerT hook, HandlerT& original,
+            const char* label)
         {
             REL::Relocation<std::uintptr_t> entry{ REL::Offset(entryOffset) };
             auto* slot = reinterpret_cast<std::uintptr_t*>(entry.address());
@@ -1207,7 +1257,8 @@ namespace rock
 
             DWORD oldProtect = 0;
             if (!VirtualProtect(slot, sizeof(*slot), kPageExecuteReadWrite, &oldProtect)) {
-                ROCK_LOG_ERROR(Init, "FAILED to install {} hook at 0x{:X}: VirtualProtect failed", label, entry.address());
+                ROCK_LOG_ERROR(Init, "FAILED to install {} hook at 0x{:X}: VirtualProtect failed", label,
+                    entry.address());
                 original = nullptr;
                 return false;
             }
@@ -1216,13 +1267,14 @@ namespace rock
             FlushInstructionCache(GetCurrentProcess(), slot, sizeof(*slot));
             VirtualProtect(slot, sizeof(*slot), oldProtect, &oldProtect);
 
-            ROCK_LOG_INFO(Init, "Installed {} vtable hook at 0x{:X}, original=0x{:X}, hook=0x{:X}", label, entry.address(), reinterpret_cast<std::uintptr_t>(original),
-                hookAddress);
+            ROCK_LOG_INFO(Init, "Installed {} vtable hook at 0x{:X}, original=0x{:X}, hook=0x{:X}", label,
+                entry.address(), reinterpret_cast<std::uintptr_t>(original), hookAddress);
             return true;
         }
 
         template <class HandlerT>
-        bool restoreNativeMeleeVtableHook(std::uintptr_t entryOffset, HandlerT hook, HandlerT& original, bool& installed, const char* label)
+        bool restoreNativeMeleeVtableHook(std::uintptr_t entryOffset, HandlerT hook, HandlerT& original,
+            bool& installed, const char* label)
         {
             if (!installed) {
                 return true;
@@ -1238,7 +1290,8 @@ namespace rock
             const auto hookAddress = reinterpret_cast<std::uintptr_t>(hook);
             const auto originalAddress = reinterpret_cast<std::uintptr_t>(original);
             if (*slot != hookAddress) {
-                ROCK_LOG_WARN(Init, "Skipped {} rollback: slot 0x{:X} no longer points to ROCK hook", label, entry.address());
+                ROCK_LOG_WARN(Init, "Skipped {} rollback: slot 0x{:X} no longer points to ROCK hook", label,
+                    entry.address());
                 installed = false;
                 original = nullptr;
                 return true;
@@ -1246,7 +1299,8 @@ namespace rock
 
             DWORD oldProtect = 0;
             if (!VirtualProtect(slot, sizeof(*slot), kPageExecuteReadWrite, &oldProtect)) {
-                ROCK_LOG_ERROR(Init, "FAILED to restore {} hook at 0x{:X}: VirtualProtect failed", label, entry.address());
+                ROCK_LOG_ERROR(Init, "FAILED to restore {} hook at 0x{:X}: VirtualProtect failed", label,
+                    entry.address());
                 return false;
             }
 
@@ -1263,18 +1317,19 @@ namespace rock
 
     bool validateNativeMeleeSuppressionHookTargets()
     {
-        const bool swingValid = validateNativeMeleeVtableTarget(
-            offsets::kVtableEntry_WeaponSwingHandler_Handle, offsets::kFunc_WeaponSwingHandler_Handle, "WeaponSwingHandler::Handle");
-        const bool hitFrameValid =
-            validateNativeMeleeVtableTarget(offsets::kVtableEntry_HitFrameHandler_Handle, offsets::kFunc_HitFrameHandler_Handle, "HitFrameHandler::Handle");
-        const bool attackBlockValid = validateNativeMeleeVtableTarget(offsets::kVtableEntry_AttackBlockHandler_ShouldHandleEvent,
-            offsets::kFunc_AttackBlockHandler_ShouldHandleEvent,
-            "AttackBlockHandler::ShouldHandleEvent");
-        const bool playerSwingCallbackValid = validateNativeMeleeVtableTarget(offsets::kVtableEntry_PlayerCharacter_WeaponSwingCallBack,
-            offsets::kFunc_PlayerCharacter_WeaponSwingCallBack,
-            "PlayerCharacter::WeaponSwingCallBack");
-        const bool vrMeleeImpactValid = validateEntryTrampolineTarget(
-            "VRMeleeImpact", offsets::kFunc_VRMeleeImpactCallback, kVrMeleeImpactExpectedPrefix.data(), kVrMeleeImpactExpectedPrefix.size());
+        const bool swingValid = validateNativeMeleeVtableTarget(offsets::kVtableEntry_WeaponSwingHandler_Handle,
+            offsets::kFunc_WeaponSwingHandler_Handle, "WeaponSwingHandler::Handle");
+        const bool hitFrameValid = validateNativeMeleeVtableTarget(offsets::kVtableEntry_HitFrameHandler_Handle,
+            offsets::kFunc_HitFrameHandler_Handle, "HitFrameHandler::Handle");
+        const bool attackBlockValid =
+            validateNativeMeleeVtableTarget(offsets::kVtableEntry_AttackBlockHandler_ShouldHandleEvent,
+                offsets::kFunc_AttackBlockHandler_ShouldHandleEvent, "AttackBlockHandler::ShouldHandleEvent");
+        const bool playerSwingCallbackValid =
+            validateNativeMeleeVtableTarget(offsets::kVtableEntry_PlayerCharacter_WeaponSwingCallBack,
+                offsets::kFunc_PlayerCharacter_WeaponSwingCallBack, "PlayerCharacter::WeaponSwingCallBack");
+        const bool vrMeleeImpactValid =
+            validateEntryTrampolineTarget("VRMeleeImpact", offsets::kFunc_VRMeleeImpactCallback,
+                kVrMeleeImpactExpectedPrefix.data(), kVrMeleeImpactExpectedPrefix.size());
         return swingValid && hitFrameValid && attackBlockValid && playerSwingCallbackValid && vrMeleeImpactValid;
     }
 
@@ -1285,36 +1340,25 @@ namespace rock
         reportMeleeContactFrame();
     }
 
-    bool isNativeMeleeSuppressionActive()
-    {
-        return g_nativeMeleeSuppressionActive.load(std::memory_order_acquire);
-    }
-
-    bool areNativeMeleeHooksInstalled()
-    {
-        return g_nativeMeleeSuppressionHooksInstalled.load(std::memory_order_acquire);
-    }
-
-    void enforceNativeMeleeRuntimeSuppression(bool forceCheck)
+    void enforceNativeMeleeVelocityGate(bool forceCheck)
     {
         /*
          * FO4VR owns two native player melee paths: animation events
          * (WeaponSwing/HitFrame) and a VRInput velocity gate that can classify
-         * controller or HMD motion as melee. Full suppression keeps that gate
-         * enabled and pushes its thresholds out of reach; disabling the boolean
-         * bypasses the gate on some builds and causes cooldown-paced false melee
-         * swings.
+         * controller or HMD motion as melee. ROCK owns that gate while its
+         * hooks are installed (native_melee_suppression::velocityGate) and
+         * gives it ROCK's speed thresholds. The gate boolean stays enabled;
+         * disabling it bypasses the gate on some builds and causes
+         * cooldown-paced false melee swings.
          */
-        const native_melee_suppression::NativeMeleeRuntimeSettingPolicyInput input{
-            .hooksInstalled = g_nativeMeleeSuppressionHooksInstalled.load(std::memory_order_acquire),
-            .suppressionEnabled = !g_rockConfig.rockEnableVanillaMelee,
-        };
-        const bool shouldSuppress = native_melee_suppression::shouldSuppressNativeMeleeRuntimeSettings(input);
-        const bool shouldRestore = native_melee_suppression::shouldRestoreNativeMeleeRuntimeSettings(nativeMeleeRuntimeSuppressionApplied(), input);
-        const bool requestChanged = g_nativeMeleeRuntimeSuppressionRequested != shouldSuppress;
-        g_nativeMeleeRuntimeSuppressionRequested = shouldSuppress;
-        g_nativeMeleeSuppressionActive.store(shouldSuppress, std::memory_order_release);
-        if (!shouldSuppress && !shouldRestore) {
+        const bool hooksInstalled = g_nativeMeleeSuppressionHooksInstalled.load(std::memory_order_acquire);
+        const auto gate = native_melee_suppression::velocityGate(g_rockConfig.rockVanillaMeleeSwingSpeed,
+            g_rockConfig.rockVanillaGunBashSpeed);
+        const bool requestChanged =
+            g_nativeMeleeVelocityGateOwned != hooksInstalled || !(g_nativeMeleeVelocityGateRequested == gate);
+        g_nativeMeleeVelocityGateOwned = hooksInstalled;
+        g_nativeMeleeVelocityGateRequested = gate;
+        if (!hooksInstalled && !nativeMeleeRuntimeSuppressionApplied()) {
             return;
         }
 
@@ -1323,32 +1367,35 @@ namespace rock
         if (!forceCheck && !requestChanged && currentFrame < nextCheckFrame) {
             return;
         }
-        g_nativeMeleeRuntimeSettingNextCheckFrame.store(currentFrame + kNativeMeleeRuntimeSettingCheckIntervalFrames, std::memory_order_release);
+        g_nativeMeleeRuntimeSettingNextCheckFrame.store(currentFrame + kNativeMeleeRuntimeSettingCheckIntervalFrames,
+            std::memory_order_release);
 
-        if (shouldSuppress) {
-            enforceNativeMeleeBinarySetting(
-                g_nativeMeleeVelocityCheckState, native_melee_suppression::kVelocityCheckSetting, true, "velocity gate");
-            enforceNativeMeleeFloatMinimumSetting(g_nativeMeleeLinearThresholdState,
-                native_melee_suppression::kLinearVelocityThresholdSetting,
-                native_melee_suppression::kSuppressedVelocityThreshold,
-                "linear threshold");
-            enforceNativeMeleeFloatMinimumSetting(g_nativeMeleeAngularThresholdState,
-                native_melee_suppression::kAngularVelocityThresholdSetting,
-                native_melee_suppression::kSuppressedVelocityThreshold,
-                "angular threshold");
+        if (hooksInstalled) {
+            enforceNativeMeleeBinarySetting(g_nativeMeleeVelocityCheckState,
+                native_melee_suppression::kVelocityCheckSetting, true, "velocity gate");
+            enforceNativeMeleeFloatSetting(g_nativeMeleeLinearThresholdState,
+                native_melee_suppression::kLinearVelocityThresholdSetting, gate.meleeLinear, "linear threshold");
+            enforceNativeMeleeFloatSetting(g_nativeMeleeAngularThresholdState,
+                native_melee_suppression::kAngularVelocityThresholdSetting, gate.meleeAngular, "angular threshold");
+            enforceNativeMeleeFloatSetting(g_nativeGunBashLinearThresholdState,
+                native_melee_suppression::kGunBashLinearVelocityThresholdSetting, gate.gunBashLinear,
+                "gun bash linear threshold");
+            enforceNativeMeleeFloatSetting(g_nativeGunBashAngularThresholdState,
+                native_melee_suppression::kGunBashAngularVelocityThresholdSetting, gate.gunBashAngular,
+                "gun bash angular threshold");
             return;
         }
 
-        restoreNativeMeleeBinarySetting(
-            g_nativeMeleeVelocityCheckState, native_melee_suppression::kVelocityCheckSetting, true, "velocity gate");
+        restoreNativeMeleeBinarySetting(g_nativeMeleeVelocityCheckState,
+            native_melee_suppression::kVelocityCheckSetting, true, "velocity gate");
         restoreNativeMeleeFloatSetting(g_nativeMeleeLinearThresholdState,
-            native_melee_suppression::kLinearVelocityThresholdSetting,
-            native_melee_suppression::kSuppressedVelocityThreshold,
-            "linear threshold");
+            native_melee_suppression::kLinearVelocityThresholdSetting, "linear threshold");
         restoreNativeMeleeFloatSetting(g_nativeMeleeAngularThresholdState,
-            native_melee_suppression::kAngularVelocityThresholdSetting,
-            native_melee_suppression::kSuppressedVelocityThreshold,
-            "angular threshold");
+            native_melee_suppression::kAngularVelocityThresholdSetting, "angular threshold");
+        restoreNativeMeleeFloatSetting(g_nativeGunBashLinearThresholdState,
+            native_melee_suppression::kGunBashLinearVelocityThresholdSetting, "gun bash linear threshold");
+        restoreNativeMeleeFloatSetting(g_nativeGunBashAngularThresholdState,
+            native_melee_suppression::kGunBashAngularVelocityThresholdSetting, "gun bash angular threshold");
     }
 
     void enforceNativeGrabHapticRuntimeSuppression(bool forceCheck)
@@ -1364,7 +1411,8 @@ namespace rock
             .suppressionEnabled = native_grab_haptic_suppression::kSuppressionEnabled,
         };
         const bool shouldSuppress = native_grab_haptic_suppression::shouldSuppressNativeGrabHoverHaptics(input);
-        const bool shouldRestore = native_grab_haptic_suppression::shouldRestoreNativeGrabHoverHaptics(nativeGrabHapticSuppressionApplied(), input);
+        const bool shouldRestore = native_grab_haptic_suppression::shouldRestoreNativeGrabHoverHaptics(
+            nativeGrabHapticSuppressionApplied(), input);
         if (!shouldSuppress && !shouldRestore) {
             return;
         }
@@ -1374,115 +1422,50 @@ namespace rock
         if (!forceCheck && currentFrame < nextCheckFrame) {
             return;
         }
-        g_nativeGrabHapticRuntimeSettingNextCheckFrame.store(currentFrame + kNativeGrabHapticRuntimeSettingCheckIntervalFrames, std::memory_order_release);
+        g_nativeGrabHapticRuntimeSettingNextCheckFrame.store(
+            currentFrame + kNativeGrabHapticRuntimeSettingCheckIntervalFrames, std::memory_order_release);
 
         if (shouldSuppress) {
             enforceNativeGrabHapticBinarySetting(g_nativeGrabHapticRolloverState,
                 native_grab_haptic_suppression::kRolloverRumbleEnabledSetting,
-                native_grab_haptic_suppression::kSuppressedRolloverRumbleEnabled,
-                "rollover rumble");
+                native_grab_haptic_suppression::kSuppressedRolloverRumbleEnabled, "rollover rumble");
             enforceNativeGrabHapticFloatSetting(g_nativeGrabHapticHoverIntensityState,
                 native_grab_haptic_suppression::kHoverRumbleIntensitySetting,
-                native_grab_haptic_suppression::kSuppressedHoverRumbleFloat,
-                "hover intensity");
+                native_grab_haptic_suppression::kSuppressedHoverRumbleFloat, "hover intensity");
             enforceNativeGrabHapticFloatSetting(g_nativeGrabHapticHoverDurationState,
                 native_grab_haptic_suppression::kHoverRumbleDurationSetting,
-                native_grab_haptic_suppression::kSuppressedHoverRumbleFloat,
-                "hover duration");
+                native_grab_haptic_suppression::kSuppressedHoverRumbleFloat, "hover duration");
             return;
         }
 
         restoreNativeGrabHapticBinarySetting(g_nativeGrabHapticRolloverState,
-            native_grab_haptic_suppression::kRolloverRumbleEnabledSetting,
-            "rollover rumble");
+            native_grab_haptic_suppression::kRolloverRumbleEnabledSetting, "rollover rumble");
         restoreNativeGrabHapticFloatSetting(g_nativeGrabHapticHoverIntensityState,
-            native_grab_haptic_suppression::kHoverRumbleIntensitySetting,
-            "hover intensity");
+            native_grab_haptic_suppression::kHoverRumbleIntensitySetting, "hover intensity");
         restoreNativeGrabHapticFloatSetting(g_nativeGrabHapticHoverDurationState,
-            native_grab_haptic_suppression::kHoverRumbleDurationSetting,
-            "hover duration");
+            native_grab_haptic_suppression::kHoverRumbleDurationSetting, "hover duration");
     }
 
-    static void writeAbsoluteJump(std::uint8_t* target, std::uintptr_t destination)
+    // The bytes at a hooked entry before ROCK patched it: the native prologue,
+    // or another plugin's jump when the hook chained behind it.
+    using EntryBytes = std::array<std::uint8_t, 14>;
+
+    // Load owner: written once before the melee impact entry is patched.
+    EntryBytes g_vrMeleeImpactEntryBefore{};
+
+    static bool installEntryTrampolineHook(const char* label, std::uintptr_t targetOffset,
+        const std::uint8_t* expectedPrefix, std::size_t stolenBytes, void* hook, void*& original,
+        EntryBytes* before = nullptr)
     {
-        target[0] = 0xFF;
-        target[1] = 0x25;
-        target[2] = 0x00;
-        target[3] = 0x00;
-        target[4] = 0x00;
-        target[5] = 0x00;
-        *reinterpret_cast<std::uintptr_t*>(target + 6) = destination;
+        if (before && stolenBytes == before->size()) {
+            std::memcpy(before->data(), reinterpret_cast<const void*>(REL::Offset(targetOffset).address()),
+                before->size());
+        }
+        return entry_trampoline_hook::install(label, targetOffset, expectedPrefix, stolenBytes, hook, original);
     }
 
-    static bool installEntryTrampolineHook(const char* label,
-        std::uintptr_t targetOffset,
-        const std::uint8_t* expectedPrefix,
-        std::size_t stolenBytes,
-        void* hook,
-        void*& original)
-    {
-        if (stolenBytes < 14) {
-            ROCK_LOG_ERROR(Init, "{} hook install failed: stolen byte count {} cannot hold an absolute jump", label, stolenBytes);
-            return false;
-        }
-
-        REL::Relocation<std::uintptr_t> target{ REL::Offset(targetOffset) };
-        auto* targetAddr = reinterpret_cast<std::uint8_t*>(target.address());
-        if (!targetAddr || !expectedPrefix) {
-            ROCK_LOG_ERROR(Init, "{} hook install failed: target or validation bytes are null", label);
-            return false;
-        }
-
-        if (std::memcmp(targetAddr, expectedPrefix, stolenBytes) != 0) {
-            ROCK_LOG_ERROR(Init, "{} hook validation failed at 0x{:X}; native bytes changed, hook not installed", label, target.address());
-            return false;
-        }
-
-        constexpr std::size_t kJumpBytes = 14;
-        const std::size_t trampolineBytes = stolenBytes + kJumpBytes;
-        auto* trampolineMem = reinterpret_cast<std::uint8_t*>(VirtualAlloc(nullptr, trampolineBytes, kVirtualMemoryCommitReserve, kPageExecuteReadWrite));
-        if (!trampolineMem) {
-            ROCK_LOG_ERROR(Init, "{} hook install failed: trampoline allocation failed", label);
-            return false;
-        }
-
-        std::memcpy(trampolineMem, targetAddr, stolenBytes);
-        writeAbsoluteJump(trampolineMem + stolenBytes, target.address() + stolenBytes);
-
-        DWORD oldTrampolineProtect = 0;
-        if (!VirtualProtect(trampolineMem, trampolineBytes, kPageExecuteRead, &oldTrampolineProtect)) {
-            ROCK_LOG_ERROR(Init, "{} hook install failed: trampoline protection failed", label);
-            VirtualFree(trampolineMem, 0, kVirtualMemoryRelease);
-            return false;
-        }
-
-        DWORD oldProtect = 0;
-        if (!VirtualProtect(targetAddr, stolenBytes, kPageExecuteReadWrite, &oldProtect)) {
-            ROCK_LOG_ERROR(Init, "{} hook install failed at 0x{:X}: target protection failed", label, target.address());
-            VirtualFree(trampolineMem, 0, kVirtualMemoryRelease);
-            return false;
-        }
-
-        writeAbsoluteJump(targetAddr, reinterpret_cast<std::uintptr_t>(hook));
-        for (std::size_t i = kJumpBytes; i < stolenBytes; ++i) {
-            targetAddr[i] = 0x90;
-        }
-
-        FlushInstructionCache(GetCurrentProcess(), targetAddr, stolenBytes);
-        VirtualProtect(targetAddr, stolenBytes, oldProtect, &oldProtect);
-
-        original = trampolineMem;
-        ROCK_LOG_INFO(Init, "Installed {} hook at 0x{:X}, original trampoline=0x{:X}", label, target.address(), reinterpret_cast<std::uintptr_t>(trampolineMem));
-        return true;
-    }
-
-    static bool restoreEntryTrampolineHook(const char* label,
-        std::uintptr_t targetOffset,
-        const std::uint8_t* originalPrefix,
-        std::size_t stolenBytes,
-        void* hook,
-        void*& original,
-        bool& installed)
+    static bool restoreEntryTrampolineHook(const char* label, std::uintptr_t targetOffset,
+        const std::uint8_t* nativePrefix, const EntryBytes& before, void* hook, void*& original, bool& installed)
     {
         if (!installed) {
             return true;
@@ -1490,16 +1473,17 @@ namespace rock
 
         REL::Relocation<std::uintptr_t> target{ REL::Offset(targetOffset) };
         auto* targetAddr = reinterpret_cast<std::uint8_t*>(target.address());
-        if (!targetAddr || !originalPrefix || !original) {
+        if (!targetAddr || !nativePrefix || !original) {
             ROCK_LOG_ERROR(Init, "{} rollback failed: target, original bytes, or trampoline is null", label);
             return false;
         }
 
-        const auto hookAddress = reinterpret_cast<std::uintptr_t>(hook);
-        const bool hasRockJump = targetAddr[0] == 0xFF && targetAddr[1] == 0x25 && targetAddr[2] == 0x00 && targetAddr[3] == 0x00 && targetAddr[4] == 0x00 &&
-                                 targetAddr[5] == 0x00 && *reinterpret_cast<std::uintptr_t*>(targetAddr + 6) == hookAddress;
-        if (!hasRockJump) {
-            ROCK_LOG_WARN(Init, "Skipped {} rollback: target 0x{:X} no longer points to ROCK hook", label, target.address());
+        // ROCK's jump, or its 5-byte branch chained behind another plugin.
+        const std::size_t stolenBytes = before.size();
+        const bool chained = std::memcmp(before.data(), nativePrefix, stolenBytes) != 0;
+        if (!RPS::Runtime::HookChain::reaches(target.address(), reinterpret_cast<std::uintptr_t>(hook))) {
+            ROCK_LOG_WARN(Init, "Skipped {} rollback: target 0x{:X} no longer points to ROCK hook", label,
+                target.address());
             installed = false;
             original = nullptr;
             return true;
@@ -1511,11 +1495,14 @@ namespace rock
             return false;
         }
 
-        std::memcpy(targetAddr, originalPrefix, stolenBytes);
+        std::memcpy(targetAddr, before.data(), stolenBytes);
         FlushInstructionCache(GetCurrentProcess(), targetAddr, stolenBytes);
         VirtualProtect(targetAddr, stolenBytes, oldProtect, &oldProtect);
 
-        VirtualFree(original, 0, kVirtualMemoryRelease);
+        // A chained hook's original is the other plugin's detour, not ROCK's trampoline.
+        if (!chained) {
+            VirtualFree(original, 0, kVirtualMemoryRelease);
+        }
         original = nullptr;
         installed = false;
         ROCK_LOG_WARN(Init, "Rolled back {} entry hook at 0x{:X}", label, target.address());
@@ -1541,21 +1528,18 @@ namespace rock
         bool isLooseWeapon = false;
     };
 
-    PlayerContactTargetIdentity resolvePlayerContactTargetIdentity(
-        RE::bhkWorld* bhkWorld,
-        RE::hknpWorld* world,
-        RE::hknpBodyId bodyId,
-        std::uint32_t layer)
+    PlayerContactTargetIdentity resolvePlayerContactTargetIdentity(RE::bhkWorld* bhkWorld, RE::hknpWorld* world,
+        RE::hknpBodyId bodyId, std::uint32_t layer)
     {
         if (layer == collision_layer_policy::FO4_LAYER_WEAPON) {
             return PlayerContactTargetIdentity{
-                .isLooseWeapon = native_player_collision::isLooseWeaponBody(
-                    havok_runtime::snapshotBody(world, bodyId)),
+                .isLooseWeapon = native_player_collision::isLooseWeaponBody(havok_runtime::snapshotBody(world, bodyId)),
             };
         }
-        const bool requiresFormIdentity =
-            collision_layer_policy::isPlayerCharacterControllerSupportLayer(layer) ||
-            collision_layer_policy::isDynamicWorldCarLayer(layer);
+        // Cars sit on the clutter rows, whose other bodies the controller
+        // filter removes; only form identity keeps the car an obstacle.
+        const bool requiresFormIdentity = collision_layer_policy::isPlayerCharacterControllerSupportLayer(layer) ||
+            collision_layer_policy::isCarRowLayer(layer);
         if (!bhkWorld || !world || !requiresFormIdentity) {
             return {};
         }
@@ -1579,18 +1563,18 @@ namespace rock
     }
 
     collision_layer_policy::PlayerCharacterControllerContactPolicyDecision evaluatePlayerControllerTargetBody(
-        RE::bhkWorld* bhkWorld,
-        RE::hknpWorld* world,
-        std::uint32_t rawBodyId)
+        RE::bhkWorld* bhkWorld, RE::hknpWorld* world, std::uint32_t rawBodyId)
     {
         if (!world || rawBodyId == body_frame::kInvalidBodyId) {
-            return collision_layer_policy::PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "unknownTargetLayer" };
+            return collision_layer_policy::PlayerCharacterControllerContactPolicyDecision{ .suppress = false,
+                .reason = "unknownTargetLayer" };
         }
 
         const RE::hknpBodyId bodyId{ rawBodyId };
         std::uint32_t filterInfo = 0;
         if (!body_collision::tryReadFilterInfo(world, bodyId, filterInfo)) {
-            return collision_layer_policy::PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "unknownTargetLayer" };
+            return collision_layer_policy::PlayerCharacterControllerContactPolicyDecision{ .suppress = false,
+                .reason = "unknownTargetLayer" };
         }
 
         const std::uint32_t layer = filterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
@@ -1609,8 +1593,8 @@ namespace rock
 
     bool isPlayerProxyListener(void* listener, void* proxy, void* playerController)
     {
-        if (!native_player_collision::proxyListenerMatchesPlayer(
-                reinterpret_cast<std::uintptr_t>(listener), reinterpret_cast<std::uintptr_t>(playerController))) {
+        if (!native_player_collision::proxyListenerMatchesPlayer(reinterpret_cast<std::uintptr_t>(listener),
+                reinterpret_cast<std::uintptr_t>(playerController))) {
             return false;
         }
         // Keep the callback's listener pointer unchanged when chaining native.
@@ -1620,12 +1604,16 @@ namespace rock
         void* ownedProxy = nullptr;
         const bool listenerValid = native_memory::tryReadField(listener, 0, listenerVtable) &&
             listenerVtable == REL::Offset(0x2E892B8).address();
-        const bool controllerValid = listenerValid && native_memory::tryReadField(playerController, 0, controllerVtable) &&
+        const bool controllerValid = listenerValid &&
+            native_memory::tryReadField(playerController, 0, controllerVtable) &&
             controllerVtable == REL::Offset(0x2E89328).address();
         const bool proxyValid = controllerValid && native_memory::tryReadField(playerController, 0x470, ownedProxy) &&
             ownedProxy == proxy && proxy;
         if (!proxyValid) {
-            g_proxyContactTrace.failedProofStage.store(!listenerValid ? 1 : !controllerValid ? 2 : 3, std::memory_order_relaxed);
+            g_proxyContactTrace.failedProofStage.store(!listenerValid ? 1
+                    : !controllerValid                                ? 2
+                                                                      : 3,
+                std::memory_order_relaxed);
             g_proxyContactTrace.identityFailures.fetch_add(1, std::memory_order_relaxed);
             return false;
         }
@@ -1646,7 +1634,8 @@ namespace rock
         installAttempted = true;
 
         if (!validateBhkWorldSetDeltaTimeMainCallSite()) {
-            ROCK_LOG_ERROR(Init, "HAVOK_TIMING_FIX hook not installed; FO4VR timing call site did not match verified bytes");
+            ROCK_LOG_ERROR(Init,
+                "HAVOK_TIMING_FIX hook not installed; FO4VR timing call site did not match verified bytes");
             return false;
         }
 
@@ -1658,17 +1647,15 @@ namespace rock
         installed = g_originalBhkWorldSetDeltaTime != nullptr;
 
         if (!installed) {
-            ROCK_LOG_CRITICAL(Init, "HAVOK_TIMING_FIX hook install failed at 0x{:X}: original target was null", hookCallSite.address());
+            ROCK_LOG_CRITICAL(Init, "HAVOK_TIMING_FIX hook install failed at 0x{:X}: original target was null",
+                hookCallSite.address());
             return false;
         }
 
         ROCK_LOG_INFO(Init,
             "HAVOK_TIMING_FIX hook installed at 0x{:X}; original=0x{:X} enabled={} minHz={:.2f} maxSubsteps={}",
-            hookCallSite.address(),
-            original,
-            g_rockConfig.rockHavokTimingFixEnabled ? "yes" : "no",
-            g_rockConfig.rockHavokTimingFixMinPhysicsFrameRate,
-            g_rockConfig.rockHavokTimingFixMaxSubsteps);
+            hookCallSite.address(), original, g_rockConfig.rockHavokTimingFixEnabled ? "yes" : "no",
+            g_rockConfig.rockHavokTimingFixMinPhysicsFrameRate, g_rockConfig.rockHavokTimingFixMaxSubsteps);
         return true;
     }
 
@@ -1688,9 +1675,11 @@ namespace rock
             addr[1] = 0xC0;
             addr[2] = 0xC3;
             VirtualProtect(addr, 3, oldProtect, &oldProtect);
-            ROCK_LOG_INFO(Init, "Patched VR Grab Initiate at 0x{:X} — native grab DISABLED (xor eax,eax; ret)", target.address());
+            ROCK_LOG_INFO(Init, "Patched VR Grab Initiate at 0x{:X} — native grab DISABLED (xor eax,eax; ret)",
+                target.address());
         } else {
-            ROCK_LOG_ERROR(Init, "FAILED to patch VR Grab Initiate at 0x{:X} — VirtualProtect failed", target.address());
+            ROCK_LOG_ERROR(Init, "FAILED to patch VR Grab Initiate at 0x{:X} — VirtualProtect failed",
+                target.address());
         }
     }
 
@@ -1706,56 +1695,50 @@ namespace rock
             bool rollbackOk = true;
 
             rollbackOk = restoreNativeMeleeVtableHook(offsets::kVtableEntry_PlayerCharacter_WeaponSwingCallBack,
-                             &hookedPlayerWeaponSwingCallback,
-                             g_originalPlayerWeaponSwingCallback,
-                             playerWeaponSwingCallbackInstalled,
-                             "PlayerCharacter::WeaponSwingCallBack") &&
-                         rollbackOk;
+                             &hookedPlayerWeaponSwingCallback, g_originalPlayerWeaponSwingCallback,
+                             playerWeaponSwingCallbackInstalled, "PlayerCharacter::WeaponSwingCallBack") &&
+                rollbackOk;
             rollbackOk = restoreNativeMeleeVtableHook(offsets::kVtableEntry_AttackBlockHandler_ShouldHandleEvent,
-                             &hookedAttackBlockShouldHandleEvent,
-                             g_originalAttackBlockShouldHandleEvent,
-                             attackBlockInstalled,
-                             "AttackBlockHandler::ShouldHandleEvent") &&
-                         rollbackOk;
-            rollbackOk = restoreNativeMeleeVtableHook(
-                             offsets::kVtableEntry_HitFrameHandler_Handle, &hookedHitFrameHandler, g_originalHitFrameHandler, hitFrameInstalled, "HitFrameHandler::Handle") &&
-                         rollbackOk;
-            rollbackOk = restoreNativeMeleeVtableHook(offsets::kVtableEntry_WeaponSwingHandler_Handle,
-                             &hookedWeaponSwingHandler,
-                             g_originalWeaponSwingHandler,
-                             weaponSwingInstalled,
-                             "WeaponSwingHandler::Handle") &&
-                         rollbackOk;
+                             &hookedAttackBlockShouldHandleEvent, g_originalAttackBlockShouldHandleEvent,
+                             attackBlockInstalled, "AttackBlockHandler::ShouldHandleEvent") &&
+                rollbackOk;
+            rollbackOk =
+                restoreNativeMeleeVtableHook(offsets::kVtableEntry_HitFrameHandler_Handle, &hookedHitFrameHandler,
+                    g_originalHitFrameHandler, hitFrameInstalled, "HitFrameHandler::Handle") &&
+                rollbackOk;
+            rollbackOk =
+                restoreNativeMeleeVtableHook(offsets::kVtableEntry_WeaponSwingHandler_Handle, &hookedWeaponSwingHandler,
+                    g_originalWeaponSwingHandler, weaponSwingInstalled, "WeaponSwingHandler::Handle") &&
+                rollbackOk;
 
             void* impactOriginal = reinterpret_cast<void*>(g_originalVrMeleeImpactCallback);
-            rollbackOk = restoreEntryTrampolineHook("VRMeleeImpact",
-                             offsets::kFunc_VRMeleeImpactCallback,
-                             kVrMeleeImpactExpectedPrefix.data(),
-                             kVrMeleeImpactExpectedPrefix.size(),
-                             &hookedVrMeleeImpactCallback,
-                             impactOriginal,
-                             vrMeleeImpactInstalled) &&
-                         rollbackOk;
+            rollbackOk = restoreEntryTrampolineHook("VRMeleeImpact", offsets::kFunc_VRMeleeImpactCallback,
+                             kVrMeleeImpactExpectedPrefix.data(), g_vrMeleeImpactEntryBefore,
+                             &hookedVrMeleeImpactCallback, impactOriginal, vrMeleeImpactInstalled) &&
+                rollbackOk;
             g_originalVrMeleeImpactCallback = reinterpret_cast<NativeVrMeleeImpactCallback_t>(impactOriginal);
 
             if (!rollbackOk) {
-                ROCK_LOG_CRITICAL(Init, "Native melee suppression rollback was incomplete; one or more partial hooks may remain installed");
+                ROCK_LOG_CRITICAL(Init,
+                    "Native melee suppression rollback was incomplete; one or more partial hooks may remain installed");
             }
 
             g_nativeMeleeSuppressionHooksInstalled.store(false, std::memory_order_release);
-            g_nativeMeleeSuppressionActive.store(false, std::memory_order_release);
             return rollbackOk;
         };
 
-        const bool allInstalled = weaponSwingInstalled && hitFrameInstalled && attackBlockInstalled && playerWeaponSwingCallbackInstalled && vrMeleeImpactInstalled;
+        const bool allInstalled = weaponSwingInstalled && hitFrameInstalled && attackBlockInstalled &&
+            playerWeaponSwingCallbackInstalled && vrMeleeImpactInstalled;
         if (allInstalled) {
             g_nativeMeleeSuppressionHooksInstalled.store(true, std::memory_order_release);
             return true;
         }
 
-        const bool anyInstalled = weaponSwingInstalled || hitFrameInstalled || attackBlockInstalled || playerWeaponSwingCallbackInstalled || vrMeleeImpactInstalled;
+        const bool anyInstalled = weaponSwingInstalled || hitFrameInstalled || attackBlockInstalled ||
+            playerWeaponSwingCallbackInstalled || vrMeleeImpactInstalled;
         if (anyInstalled) {
-            ROCK_LOG_ERROR(Init, "Native melee suppression hook set is partial before install; rolling back before retry");
+            ROCK_LOG_ERROR(Init,
+                "Native melee suppression hook set is partial before install; rolling back before retry");
             rollbackNativeMeleeSuppressionHooks();
             return false;
         }
@@ -1763,61 +1746,56 @@ namespace rock
         if (!validateNativeMeleeSuppressionHookTargets()) {
             ROCK_LOG_ERROR(Init, "Native melee suppression hook validation failed; install deferred");
             g_nativeMeleeSuppressionHooksInstalled.store(false, std::memory_order_release);
-            g_nativeMeleeSuppressionActive.store(false, std::memory_order_release);
             return false;
         }
 
         if (!vrMeleeImpactInstalled) {
             void* impactOriginal = reinterpret_cast<void*>(g_originalVrMeleeImpactCallback);
-            vrMeleeImpactInstalled = installEntryTrampolineHook("VRMeleeImpact",
-                offsets::kFunc_VRMeleeImpactCallback,
-                kVrMeleeImpactExpectedPrefix.data(),
-                kVrMeleeImpactExpectedPrefix.size(),
-                &hookedVrMeleeImpactCallback,
-                impactOriginal);
+            vrMeleeImpactInstalled = installEntryTrampolineHook("VRMeleeImpact", offsets::kFunc_VRMeleeImpactCallback,
+                kVrMeleeImpactExpectedPrefix.data(), kVrMeleeImpactExpectedPrefix.size(), &hookedVrMeleeImpactCallback,
+                impactOriginal, &g_vrMeleeImpactEntryBefore);
             g_originalVrMeleeImpactCallback = reinterpret_cast<NativeVrMeleeImpactCallback_t>(impactOriginal);
         }
         if (!weaponSwingInstalled) {
-            weaponSwingInstalled = installNativeMeleeVtableHook(
-                offsets::kVtableEntry_WeaponSwingHandler_Handle, &hookedWeaponSwingHandler, g_originalWeaponSwingHandler, "WeaponSwingHandler::Handle");
+            weaponSwingInstalled = installNativeMeleeVtableHook(offsets::kVtableEntry_WeaponSwingHandler_Handle,
+                &hookedWeaponSwingHandler, g_originalWeaponSwingHandler, "WeaponSwingHandler::Handle");
         }
         if (!hitFrameInstalled) {
-            hitFrameInstalled =
-                installNativeMeleeVtableHook(offsets::kVtableEntry_HitFrameHandler_Handle, &hookedHitFrameHandler, g_originalHitFrameHandler, "HitFrameHandler::Handle");
+            hitFrameInstalled = installNativeMeleeVtableHook(offsets::kVtableEntry_HitFrameHandler_Handle,
+                &hookedHitFrameHandler, g_originalHitFrameHandler, "HitFrameHandler::Handle");
         }
         if (!attackBlockInstalled) {
-            attackBlockInstalled = installNativeMeleeVtableHook(offsets::kVtableEntry_AttackBlockHandler_ShouldHandleEvent,
-                &hookedAttackBlockShouldHandleEvent,
-                g_originalAttackBlockShouldHandleEvent,
-                "AttackBlockHandler::ShouldHandleEvent");
+            attackBlockInstalled = installNativeMeleeVtableHook(
+                offsets::kVtableEntry_AttackBlockHandler_ShouldHandleEvent, &hookedAttackBlockShouldHandleEvent,
+                g_originalAttackBlockShouldHandleEvent, "AttackBlockHandler::ShouldHandleEvent");
         }
         if (!playerWeaponSwingCallbackInstalled) {
-            playerWeaponSwingCallbackInstalled = installNativeMeleeVtableHook(offsets::kVtableEntry_PlayerCharacter_WeaponSwingCallBack,
-                &hookedPlayerWeaponSwingCallback,
-                g_originalPlayerWeaponSwingCallback,
-                "PlayerCharacter::WeaponSwingCallBack");
+            playerWeaponSwingCallbackInstalled = installNativeMeleeVtableHook(
+                offsets::kVtableEntry_PlayerCharacter_WeaponSwingCallBack, &hookedPlayerWeaponSwingCallback,
+                g_originalPlayerWeaponSwingCallback, "PlayerCharacter::WeaponSwingCallBack");
         }
 
-        if (!(weaponSwingInstalled && hitFrameInstalled && attackBlockInstalled && playerWeaponSwingCallbackInstalled && vrMeleeImpactInstalled)) {
+        if (!(weaponSwingInstalled && hitFrameInstalled && attackBlockInstalled && playerWeaponSwingCallbackInstalled &&
+                vrMeleeImpactInstalled)) {
             ROCK_LOG_ERROR(Init,
-                "Native melee suppression hook installation was incomplete: weaponSwing={} hitFrame={} attackBlock={} playerSwingCallback={} vrMeleeImpact={}; rolling back",
-                weaponSwingInstalled ? "yes" : "no",
-                hitFrameInstalled ? "yes" : "no",
-                attackBlockInstalled ? "yes" : "no",
-                playerWeaponSwingCallbackInstalled ? "yes" : "no",
+                "Native melee suppression hook installation was incomplete: weaponSwing={} hitFrame={} attackBlock={} "
+                "playerSwingCallback={} vrMeleeImpact={}; rolling back",
+                weaponSwingInstalled ? "yes" : "no", hitFrameInstalled ? "yes" : "no",
+                attackBlockInstalled ? "yes" : "no", playerWeaponSwingCallbackInstalled ? "yes" : "no",
                 vrMeleeImpactInstalled ? "yes" : "no");
             rollbackNativeMeleeSuppressionHooks();
             g_nativeMeleeSuppressionHooksInstalled.store(false, std::memory_order_release);
-            g_nativeMeleeSuppressionActive.store(false, std::memory_order_release);
             return false;
         }
 
         g_nativeMeleeSuppressionHooksInstalled.store(true, std::memory_order_release);
-        ROCK_LOG_INFO(Init, "Native melee suppression hooks installed: weaponSwing={} hitFrame={} attackBlock={} playerSwingCallback={} vrMeleeImpact={} requested={}",
+        ROCK_LOG_INFO(Init,
+            "Native melee suppression hooks installed: weaponSwing={} hitFrame={} attackBlock={} "
+            "playerSwingCallback={} vrMeleeImpact={}",
             weaponSwingInstalled ? "yes" : "no", hitFrameInstalled ? "yes" : "no", attackBlockInstalled ? "yes" : "no",
-            playerWeaponSwingCallbackInstalled ? "yes" : "no", vrMeleeImpactInstalled ? "yes" : "no",
-            g_rockConfig.rockEnableVanillaMelee ? "no" : "yes");
-        return weaponSwingInstalled && hitFrameInstalled && attackBlockInstalled && playerWeaponSwingCallbackInstalled && vrMeleeImpactInstalled;
+            playerWeaponSwingCallbackInstalled ? "yes" : "no", vrMeleeImpactInstalled ? "yes" : "no");
+        return weaponSwingInstalled && hitFrameInstalled && attackBlockInstalled &&
+            playerWeaponSwingCallbackInstalled && vrMeleeImpactInstalled;
     }
 
     using ProcessConstraints_t = void (*)(void*, void*, void*, void*);
@@ -1835,23 +1813,24 @@ namespace rock
         }
 
         __try {
-            const bool playerControllerFilterEnabled = g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled;
             void* playerControllerPointer = resolvePlayerCharacterController();
             const bool playerController = isPlayerProxyListener(listener, charProxy, playerControllerPointer);
             RE::bhkWorld* playerBhkWorld = playerController ? resolvePlayerBhkWorld() : nullptr;
-            RE::hknpWorld* playerHknpWorld = playerBhkWorld ? havok_runtime::getHknpWorldFromBhk(playerBhkWorld) : nullptr;
-            const bool playerControllerFilterActive = playerControllerFilterEnabled && playerController && playerHknpWorld;
+            RE::hknpWorld* playerHknpWorld =
+                playerBhkWorld ? havok_runtime::getHknpWorldFromBhk(playerBhkWorld) : nullptr;
+            const bool playerControllerFilterActive = playerController && playerHknpWorld;
 
             auto* pi = PhysicsInteraction::s_instance.load(std::memory_order_acquire);
             const bool piReady = pi && pi->isInitialized();
             const bool rightHolding = piReady && pi->getRightHand().isHoldingAtomic();
             const bool leftHolding = piReady && pi->getLeftHand().isHoldingAtomic();
             const bool diagnosticsEnabled = g_rockConfig.rockDebugVerboseLogging;
-            const auto contactPolicy = held_grab_cc_policy::evaluateHeldGrabContactPolicy(held_grab_cc_policy::HeldGrabContactPolicyInput{
-                .hooksEnabled = piReady,
-                .holdingHeldObject = rightHolding || leftHolding,
-                .diagnosticsEnabled = diagnosticsEnabled,
-            });
+            const auto contactPolicy =
+                held_grab_cc_policy::evaluateHeldGrabContactPolicy(held_grab_cc_policy::HeldGrabContactPolicyInput{
+                    .hooksEnabled = piReady,
+                    .holdingHeldObject = rightHolding || leftHolding,
+                    .diagnosticsEnabled = diagnosticsEnabled,
+                });
             const bool heldFilterActive = playerController && piReady && contactPolicy.mayFilterBeforeOriginal;
 
             if (!heldFilterActive && !playerControllerFilterActive) {
@@ -1870,14 +1849,11 @@ namespace rock
                 // Without body identities no targeted decision is possible.
                 // Keep native support and attack constraints intact.
                 if (g_rockConfig.rockDebugVerboseLogging) {
-                    ROCK_LOG_SAMPLE_DEBUG(CC,
-                        g_rockConfig.rockLogSampleMilliseconds,
-                        "Skipped character-controller pre-filter reason={} manifoldCount={} constraintCount={} heldFilter={} playerObjectFilter={}",
-                        contactBuffers.reason,
-                        contactBuffers.manifoldCount,
-                        contactBuffers.constraintCount,
-                        heldFilterActive ? "on" : "off",
-                        playerControllerFilterActive ? "on" : "off");
+                    ROCK_LOG_SAMPLE_DEBUG(CC, g_rockConfig.rockLogSampleMilliseconds,
+                        "Skipped character-controller pre-filter reason={} manifoldCount={} constraintCount={} "
+                        "heldFilter={} playerObjectFilter={}",
+                        contactBuffers.reason, contactBuffers.manifoldCount, contactBuffers.constraintCount,
+                        heldFilterActive ? "on" : "off", playerControllerFilterActive ? "on" : "off");
                 }
                 if (g_originalProcessConstraints) {
                     originalAttempted = true;
@@ -1896,83 +1872,80 @@ namespace rock
             int preservedPlayerSupportPairs = 0;
             int preservedPlayerCarPairs = 0;
             int preservedUnknownTargetPairs = 0;
-            const auto filterResult = held_grab_cc_policy::filterGeneratedContactBuffers(contactBuffers, [&](std::uint32_t bodyId) {
-                if (heldFilterActive) {
-                    bool isHeld = false;
-                    if (rightHolding) {
-                        isHeld = pi->getRightHand().isHeldBodyId(bodyId);
-                    }
-                    if (!isHeld && leftHolding) {
-                        isHeld = pi->getLeftHand().isHeldBodyId(bodyId);
-                    }
-                    if (isHeld) {
-                        ++removedHeldPairs;
-                        return true;
-                    }
-                }
-
-                if (playerControllerFilterActive) {
-                    const auto decision = evaluatePlayerControllerTargetBody(playerBhkWorld, playerHknpWorld, bodyId);
-                    if (decision.suppress) {
-                        ++removedPlayerObjectPairs;
-                        if (std::string_view(decision.reason) == "movableStaticSupportLayer") {
-                            ++removedPlayerMovableStaticPairs;
-                        } else if (std::string_view(decision.reason) == "looseWeapon") {
-                            ++removedLooseWeaponPairs;
-                        } else {
-                            ++removedPlayerNonSupportPairs;
+            const auto filterResult =
+                held_grab_cc_policy::filterGeneratedContactBuffers(contactBuffers, [&](std::uint32_t bodyId) {
+                    if (heldFilterActive) {
+                        bool isHeld = false;
+                        if (rightHolding) {
+                            isHeld = pi->getRightHand().isHeldBodyId(bodyId);
                         }
-                        return true;
+                        if (!isHeld && leftHolding) {
+                            isHeld = pi->getLeftHand().isHeldBodyId(bodyId);
+                        }
+                        if (isHeld) {
+                            ++removedHeldPairs;
+                            return true;
+                        }
                     }
-                    if (std::string_view(decision.reason) == "nativeAttack") {
-                        ++preservedAttackPairs;
-                    } else if (std::string_view(decision.reason) == "nativeActor") {
-                        ++preservedActorPairs;
-                    } else if (std::string_view(decision.reason) == "supportLayer") {
-                        ++preservedPlayerSupportPairs;
-                    } else if (std::string_view(decision.reason) == "carCollision") {
-                        ++preservedPlayerCarPairs;
-                    } else if (std::string_view(decision.reason) == "unknownTargetLayer") {
-                        ++preservedUnknownTargetPairs;
+
+                    if (playerControllerFilterActive) {
+                        const auto decision =
+                            evaluatePlayerControllerTargetBody(playerBhkWorld, playerHknpWorld, bodyId);
+                        if (decision.suppress) {
+                            ++removedPlayerObjectPairs;
+                            if (std::string_view(decision.reason) == "movableStaticSupportLayer") {
+                                ++removedPlayerMovableStaticPairs;
+                            } else if (std::string_view(decision.reason) == "looseWeapon") {
+                                ++removedLooseWeaponPairs;
+                            } else {
+                                ++removedPlayerNonSupportPairs;
+                            }
+                            return true;
+                        }
+                        if (std::string_view(decision.reason) == "nativeAttack") {
+                            ++preservedAttackPairs;
+                        } else if (std::string_view(decision.reason) == "nativeActor") {
+                            ++preservedActorPairs;
+                        } else if (std::string_view(decision.reason) == "supportLayer") {
+                            ++preservedPlayerSupportPairs;
+                        } else if (std::string_view(decision.reason) == "carCollision") {
+                            ++preservedPlayerCarPairs;
+                        } else if (std::string_view(decision.reason) == "unknownTargetLayer") {
+                            ++preservedUnknownTargetPairs;
+                        }
                     }
-                }
-                return false;
-            });
+                    return false;
+                });
 
             if (filterResult.valid) {
                 g_proxyContactTrace.removed.fetch_add(filterResult.removedPairCount, std::memory_order_relaxed);
-                g_proxyContactTrace.movableStatics.fetch_add(removedPlayerMovableStaticPairs, std::memory_order_relaxed);
+                g_proxyContactTrace.movableStatics.fetch_add(removedPlayerMovableStaticPairs,
+                    std::memory_order_relaxed);
                 g_proxyContactTrace.looseWeapons.fetch_add(removedLooseWeaponPairs, std::memory_order_relaxed);
                 g_proxyContactTrace.held.fetch_add(removedHeldPairs, std::memory_order_relaxed);
-                g_proxyContactTrace.supportKept.fetch_add(preservedPlayerSupportPairs + preservedPlayerCarPairs, std::memory_order_relaxed);
+                g_proxyContactTrace.supportKept.fetch_add(preservedPlayerSupportPairs + preservedPlayerCarPairs,
+                    std::memory_order_relaxed);
                 g_proxyContactTrace.attacksKept.fetch_add(preservedAttackPairs, std::memory_order_relaxed);
                 g_proxyContactTrace.actorsKept.fetch_add(preservedActorPairs, std::memory_order_relaxed);
                 g_proxyContactTrace.unknownKept.fetch_add(preservedUnknownTargetPairs, std::memory_order_relaxed);
             }
             if (diagnosticsEnabled && filterResult.valid) {
                 if (filterResult.removedPairCount > 0) {
-                    ROCK_LOG_SAMPLE_DEBUG(CC,
-                        g_rockConfig.rockLogSampleMilliseconds,
-                        "Filtered {} character-controller contacts before original listener kept={} originalPairs={} heldRemoved={} playerObjectRemoved={} playerNonSupportRemoved={} playerMovableStaticRemoved={} playerSupportPreserved={} playerCarPreserved={} playerUnknownPreserved={}",
-                        filterResult.removedPairCount,
-                        filterResult.keptPairCount,
-                        filterResult.originalPairCount,
-                        removedHeldPairs,
-                        removedPlayerObjectPairs,
-                        removedPlayerNonSupportPairs,
-                        removedPlayerMovableStaticPairs,
-                        preservedPlayerSupportPairs,
-                        preservedPlayerCarPairs,
+                    ROCK_LOG_SAMPLE_DEBUG(CC, g_rockConfig.rockLogSampleMilliseconds,
+                        "Filtered {} character-controller contacts before original listener kept={} originalPairs={} "
+                        "heldRemoved={} playerObjectRemoved={} playerNonSupportRemoved={} "
+                        "playerMovableStaticRemoved={} playerSupportPreserved={} playerCarPreserved={} "
+                        "playerUnknownPreserved={}",
+                        filterResult.removedPairCount, filterResult.keptPairCount, filterResult.originalPairCount,
+                        removedHeldPairs, removedPlayerObjectPairs, removedPlayerNonSupportPairs,
+                        removedPlayerMovableStaticPairs, preservedPlayerSupportPairs, preservedPlayerCarPairs,
                         preservedUnknownTargetPairs);
                 } else if (g_rockConfig.rockDebugVerboseLogging) {
-                    ROCK_LOG_SAMPLE_DEBUG(CC,
-                        g_rockConfig.rockLogSampleMilliseconds,
-                        "Character-controller pre-filter kept native contacts originalPairs={} reason={} playerSupportPreserved={} playerCarPreserved={} playerUnknownPreserved={}",
-                        filterResult.originalPairCount,
-                        filterResult.reason,
-                        preservedPlayerSupportPairs,
-                        preservedPlayerCarPairs,
-                        preservedUnknownTargetPairs);
+                    ROCK_LOG_SAMPLE_DEBUG(CC, g_rockConfig.rockLogSampleMilliseconds,
+                        "Character-controller pre-filter kept native contacts originalPairs={} reason={} "
+                        "playerSupportPreserved={} playerCarPreserved={} playerUnknownPreserved={}",
+                        filterResult.originalPairCount, filterResult.reason, preservedPlayerSupportPairs,
+                        preservedPlayerCarPairs, preservedUnknownTargetPairs);
                 }
             }
 
@@ -1989,8 +1962,7 @@ namespace rock
                 __try {
                     originalAttempted = true;
                     g_originalProcessConstraints(listener, charProxy, manifold, simplexInput);
-                } __except (EXCEPTION_EXECUTE_HANDLER) {
-                }
+                } __except (EXCEPTION_EXECUTE_HANDLER) {}
             }
         }
     }
@@ -2009,21 +1981,12 @@ namespace rock
         // 0x141E4B7E0 starts with whole prologue instructions through PUSH R12.
         // This callback owns the generated contact rows ROCK compacts, so it
         // validates the whole prologue before installing its entry trampoline.
-        constexpr std::array<std::uint8_t, 14> expectedPrefix{
-            0x48, 0x8B, 0xC4,
-            0x4C, 0x89, 0x48, 0x20,
-            0x4C, 0x89, 0x40, 0x18,
-            0x55,
-            0x41, 0x54
-        };
+        constexpr std::array<std::uint8_t, 14> expectedPrefix{ 0x48, 0x8B, 0xC4, 0x4C, 0x89, 0x48, 0x20, 0x4C, 0x89,
+            0x40, 0x18, 0x55, 0x41, 0x54 };
 
         void* original = reinterpret_cast<void*>(g_originalProcessConstraints);
-        installed = installEntryTrampolineHook("ProcessConstraintsCallback",
-            offsets::kFunc_ProcessConstraintsCallback,
-            expectedPrefix.data(),
-            expectedPrefix.size(),
-            &hookedProcessConstraintsCallback,
-            original);
+        installed = installEntryTrampolineHook("ProcessConstraintsCallback", offsets::kFunc_ProcessConstraintsCallback,
+            expectedPrefix.data(), expectedPrefix.size(), &hookedProcessConstraintsCallback, original);
         g_originalProcessConstraints = reinterpret_cast<ProcessConstraints_t>(original);
     }
 }

@@ -1,6 +1,7 @@
-#include "physics-interaction/grab/DefaultGrabPoseRegistry.h"
 #include <cassert>
 #include <limits>
+#include "physics-interaction/grab/DefaultGrabPoseRegistry.h"
+
 int main()
 {
     using namespace rock;
@@ -26,21 +27,29 @@ int main()
     auto invalid = request;
     --invalid.size;
     assert(registry.set(1, invalid) == Status::InvalidSize);
-    invalid = request; invalid.left.rotate[0] = -1;
+    invalid = request;
+    invalid.left.rotate[0] = -1;
     assert(registry.set(1, invalid) == Status::InvalidArgument); // reflection
-    invalid = request; invalid.left.rotate[4] = 2;
+    invalid = request;
+    invalid.left.rotate[4] = 2;
     assert(registry.set(1, invalid) == Status::InvalidArgument); // scaled rotation
-    invalid = request; invalid.right.translateGame[1] = std::numeric_limits<float>::quiet_NaN();
+    invalid = request;
+    invalid.right.translateGame[1] = std::numeric_limits<float>::quiet_NaN();
     assert(registry.set(1, invalid) == Status::InvalidArgument);
-    invalid = request; invalid.left.fingerValues[1] = 1.01f;
+    invalid = request;
+    invalid.left.fingerValues[1] = 1.01f;
     assert(registry.set(1, invalid) == Status::InvalidArgument);
-    invalid = request; invalid.left.fingerJointValues[3] = -0.01f;
+    invalid = request;
+    invalid.left.fingerJointValues[3] = -0.01f;
     assert(registry.set(1, invalid) == Status::InvalidArgument);
-    invalid = request; invalid.left.flags = 5;
+    invalid = request;
+    invalid.left.flags = 5;
     assert(registry.set(1, invalid) == Status::InvalidArgument);
-    invalid = request; invalid.left.flags = 8;
+    invalid = request;
+    invalid.left.flags = 8;
     assert(registry.set(1, invalid) == Status::InvalidArgument);
-    invalid = request; invalid.left.flags = invalid.right.flags = 0;
+    invalid = request;
+    invalid.left.flags = invalid.right.flags = 0;
     assert(registry.set(1, invalid) == Status::InvalidArgument);
     assert(registry.load(100, true, left) && left.translateGame[0] == -5); // rejected updates are atomic
     request.left.flags = 0;

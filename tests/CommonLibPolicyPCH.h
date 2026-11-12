@@ -5,7 +5,8 @@
  * the F4SE plugin loader. They still need CommonLib's compile-time prelude for
  * REL, REX, RTTI, VTABLE, and stl aliases, while avoiding leaked Windows macros
  * that corrupt later CommonLib declarations. This header is force-included only
- * for policy test targets; the production DLL continues to use src/PCH.h.
+ * for policy test targets and the setup wizard preview's settings library; the
+ * production DLL continues to use src/PCH.h.
  */
 
 #define NOMMNOSOUND
@@ -15,7 +16,7 @@
 
 #include "F4SE/Impl/PCH.h"
 
-// RockConfig.h drags in <windows.h> through SimpleIni and FileWatch. It must
+// RockConfig.h drags in <windows.h> for FileWatch. It must
 // be compiled here, before the macro scrub below, so a policy-test TU that
 // reaches RockConfig.h through production headers cannot re-introduce Windows
 // macros (MEM_RELEASE et al.) ahead of CommonLib declarations such as
@@ -45,4 +46,9 @@
 #endif
 #ifdef MAX_PATH
 #undef MAX_PATH
+#endif
+// winnt.h maps it to the _InterlockedCompareExchange intrinsic, which breaks
+// hkReferencedObject's REX::W32::InterlockedCompareExchange calls.
+#ifdef InterlockedCompareExchange
+#undef InterlockedCompareExchange
 #endif

@@ -1,7 +1,9 @@
+// Recoil kick math: building the controlled kick, mirroring it across the body
+// and resolving it in world and carrier space.
 #pragma once
 
-#include "physics-interaction/weapon/recoil/RecoilProfiles.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/weapon/recoil/RecoilProfiles.h"
 
 #include <algorithm>
 #include <cmath>
@@ -28,24 +30,20 @@ namespace rock::weapon_recoil_authority_math
     }
 
     template <class Transform>
-    inline void applyOneHandKick(const Transform& delta, const Transform& weaponBase,
-        const Transform& handBase, Transform& weaponTarget, Transform& handTarget)
+    inline void applyOneHandKick(const Transform& delta, const Transform& weaponBase, const Transform& handBase,
+        Transform& weaponTarget, Transform& handTarget)
     {
         weaponTarget = transform_math::composeTransforms(delta, weaponBase);
         handTarget = transform_math::composeTransforms(delta, handBase);
     }
 
     template <class Transform>
-    [[nodiscard]] inline bool tryBuildControlledKick(
-        const Transform& nativeKickLocal,
-        const weapon_recoil_policy::ProfileGains gains,
-        Transform& outControlledKickLocal)
+    [[nodiscard]] inline bool tryBuildControlledKick(const Transform& nativeKickLocal,
+        const weapon_recoil_policy::ProfileGains gains, Transform& outControlledKickLocal)
     {
         const auto isRigidKick = [](const Transform& local) {
-            if (!std::isfinite(local.translate.x) ||
-                !std::isfinite(local.translate.y) ||
-                !std::isfinite(local.translate.z) ||
-                !std::isfinite(local.scale) ||
+            if (!std::isfinite(local.translate.x) || !std::isfinite(local.translate.y) ||
+                !std::isfinite(local.translate.z) || !std::isfinite(local.scale) ||
                 std::abs(local.scale - 1.0f) > 0.01f) {
                 return false;
             }
@@ -69,23 +67,18 @@ namespace rock::weapon_recoil_authority_math
             }
             const auto& r = local.rotate.entry;
             const float determinant = r[0][0] * (r[1][1] * r[2][2] - r[1][2] * r[2][1]) -
-                r[0][1] * (r[1][0] * r[2][2] - r[1][2] * r[2][0]) +
-                r[0][2] * (r[1][0] * r[2][1] - r[1][1] * r[2][0]);
+                r[0][1] * (r[1][0] * r[2][2] - r[1][2] * r[2][0]) + r[0][2] * (r[1][0] * r[2][1] - r[1][1] * r[2][0]);
             return std::abs(determinant - 1.0f) <= 0.01f;
         };
 
-        outControlledKickLocal =
-            transform_math::makeIdentityTransform<Transform>();
-        if (!isRigidKick(nativeKickLocal) ||
-            !std::isfinite(gains.translation) || gains.translation < 0.0f ||
+        outControlledKickLocal = transform_math::makeIdentityTransform<Transform>();
+        if (!isRigidKick(nativeKickLocal) || !std::isfinite(gains.translation) || gains.translation < 0.0f ||
             !std::isfinite(gains.rotation) || gains.rotation < 0.0f) {
             return false;
         }
 
         float nativeQuaternion[4]{};
-        transform_math::niRowsToHavokQuaternion(
-            nativeKickLocal.rotate,
-            nativeQuaternion);
+        transform_math::niRowsToHavokQuaternion(nativeKickLocal.rotate, nativeQuaternion);
         float quaternionLengthSquared = 0.0f;
         for (const float component : nativeQuaternion) {
             if (!std::isfinite(component)) {
@@ -93,12 +86,10 @@ namespace rock::weapon_recoil_authority_math
             }
             quaternionLengthSquared += component * component;
         }
-        if (!std::isfinite(quaternionLengthSquared) ||
-            quaternionLengthSquared <= 0.000001f) {
+        if (!std::isfinite(quaternionLengthSquared) || quaternionLengthSquared <= 0.000001f) {
             return false;
         }
-        const float inverseQuaternionLength =
-            1.0f / std::sqrt(quaternionLengthSquared);
+        const float inverseQuaternionLength = 1.0f / std::sqrt(quaternionLengthSquared);
         for (float& component : nativeQuaternion) {
             component *= inverseQuaternionLength;
         }
@@ -108,19 +99,13 @@ namespace rock::weapon_recoil_authority_math
             }
         }
 
-        const float vectorLength = std::sqrt(
-            nativeQuaternion[0] * nativeQuaternion[0] +
-            nativeQuaternion[1] * nativeQuaternion[1] +
-            nativeQuaternion[2] * nativeQuaternion[2]);
+        const float vectorLength = std::sqrt(nativeQuaternion[0] * nativeQuaternion[0] +
+            nativeQuaternion[1] * nativeQuaternion[1] + nativeQuaternion[2] * nativeQuaternion[2]);
         float controlledQuaternion[4]{ 0.0f, 0.0f, 0.0f, 1.0f };
         if (std::isfinite(vectorLength) && vectorLength > 0.000001f) {
-            const float halfAngle = std::atan2(
-                vectorLength,
-                std::clamp(nativeQuaternion[3], -1.0f, 1.0f));
-            const float controlledHalfAngle =
-                halfAngle * gains.rotation;
-            const float axisScale =
-                std::sin(controlledHalfAngle) / vectorLength;
+            const float halfAngle = std::atan2(vectorLength, std::clamp(nativeQuaternion[3], -1.0f, 1.0f));
+            const float controlledHalfAngle = halfAngle * gains.rotation;
+            const float axisScale = std::sin(controlledHalfAngle) / vectorLength;
             controlledQuaternion[0] = nativeQuaternion[0] * axisScale;
             controlledQuaternion[1] = nativeQuaternion[1] * axisScale;
             controlledQuaternion[2] = nativeQuaternion[2] * axisScale;
@@ -128,39 +113,28 @@ namespace rock::weapon_recoil_authority_math
         }
 
         outControlledKickLocal.rotate =
-            transform_math::havokQuaternionToNiRows<
-                decltype(outControlledKickLocal.rotate)>(
-                controlledQuaternion);
+            transform_math::havokQuaternionToNiRows<decltype(outControlledKickLocal.rotate)>(controlledQuaternion);
         outControlledKickLocal.translate = {
-            nativeKickLocal.translate.x *
-                gains.translation,
-            nativeKickLocal.translate.y *
-                gains.translation,
-            nativeKickLocal.translate.z *
-                gains.translation,
+            nativeKickLocal.translate.x * gains.translation,
+            nativeKickLocal.translate.y * gains.translation,
+            nativeKickLocal.translate.z * gains.translation,
         };
         outControlledKickLocal.scale = 1.0f;
         return isRigidKick(outControlledKickLocal);
     }
 
     template <class Transform>
-    [[nodiscard]] inline Transform mirrorLocalAcrossSagittal(
-        const Transform& local)
+    [[nodiscard]] inline Transform mirrorLocalAcrossSagittal(const Transform& local)
     {
         Transform mirror = transform_math::makeIdentityTransform<Transform>();
         mirror.rotate.entry[0][0] = -1.0f;
-        return transform_math::composeTransforms(
-            mirror,
-            transform_math::composeTransforms(local, mirror));
+        return transform_math::composeTransforms(mirror, transform_math::composeTransforms(local, mirror));
     }
 
     template <class Transform>
-    [[nodiscard]] inline Transform resolveWorldDelta(
-        const Transform& nativeKickLocal,
-        const Transform& nativeKickParentWorld,
-        const Transform& nativePrimaryWandWorld,
-        const Transform& nativeOffhandWandWorld,
-        const bool targetIsNativeOffhand)
+    [[nodiscard]] inline Transform resolveWorldDelta(const Transform& nativeKickLocal,
+        const Transform& nativeKickParentWorld, const Transform& nativePrimaryWandWorld,
+        const Transform& nativeOffhandWandWorld, const bool targetIsNativeOffhand)
     {
         // Conjugating identity at distant world coordinates can introduce
         // cancellation noise. A neutral sample must remain exactly neutral.
@@ -170,34 +144,28 @@ namespace rock::weapon_recoil_authority_math
         Transform kickParentWorld = nativeKickParentWorld;
         Transform kickLocal = nativeKickLocal;
         if (targetIsNativeOffhand) {
-            const Transform kickParentInPrimaryWand =
-                transform_math::composeTransforms(
-                    transform_math::invertTransform(nativePrimaryWandWorld),
-                    nativeKickParentWorld);
-            kickParentWorld = transform_math::composeTransforms(
-                nativeOffhandWandWorld,
+            const Transform kickParentInPrimaryWand = transform_math::composeTransforms(
+                transform_math::invertTransform(nativePrimaryWandWorld), nativeKickParentWorld);
+            kickParentWorld = transform_math::composeTransforms(nativeOffhandWandWorld,
                 mirrorLocalAcrossSagittal(kickParentInPrimaryWand));
             kickLocal = mirrorLocalAcrossSagittal(nativeKickLocal);
         }
 
-        return transform_math::composeTransforms(
-            kickParentWorld,
-            transform_math::composeTransforms(
-                kickLocal,
-                transform_math::invertTransform(kickParentWorld)));
+        return transform_math::composeTransforms(kickParentWorld,
+            transform_math::composeTransforms(kickLocal, transform_math::invertTransform(kickParentWorld)));
     }
 
     // Preserve the authored kick relative to the physical firing controller.
     // Filtering moves that controller's presentation frame after the callback;
     // retaining a world-space pivot would change the kick's lever arm and axes.
     template <class Transform>
-    [[nodiscard]] inline Transform resolveCarrierLocalDelta(
-        const Transform& kickLocal, const Transform& parentWorld,
+    [[nodiscard]] inline Transform resolveCarrierLocalDelta(const Transform& kickLocal, const Transform& parentWorld,
         const Transform& primaryWandWorld, bool nativeOffhand)
     {
-        if (!hasKick(kickLocal)) return transform_math::makeIdentityTransform<Transform>();
-        auto parentLocal = transform_math::composeTransforms(
-            transform_math::invertTransform(primaryWandWorld), parentWorld);
+        if (!hasKick(kickLocal))
+            return transform_math::makeIdentityTransform<Transform>();
+        auto parentLocal =
+            transform_math::composeTransforms(transform_math::invertTransform(primaryWandWorld), parentWorld);
         auto kick = kickLocal;
         if (nativeOffhand) {
             parentLocal = mirrorLocalAcrossSagittal(parentLocal);
@@ -208,12 +176,12 @@ namespace rock::weapon_recoil_authority_math
     }
 
     template <class Transform>
-    [[nodiscard]] inline Transform resolveCarrierWorldDelta(
-        const Transform& carrierLocalDelta, const Transform& carrierWorld)
+    [[nodiscard]] inline Transform resolveCarrierWorldDelta(const Transform& carrierLocalDelta,
+        const Transform& carrierWorld)
     {
-        if (!hasKick(carrierLocalDelta)) return transform_math::makeIdentityTransform<Transform>();
+        if (!hasKick(carrierLocalDelta))
+            return transform_math::makeIdentityTransform<Transform>();
         return transform_math::composeTransforms(carrierWorld,
             transform_math::composeTransforms(carrierLocalDelta, transform_math::invertTransform(carrierWorld)));
     }
 }
-

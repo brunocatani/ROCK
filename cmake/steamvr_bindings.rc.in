@@ -1,0 +1,4 @@
+#include "@SOURCE_DIR@/setup-wizard/SteamVrBindingResources.h"
+
+ROCK_RC_STEAMVR_BINDING_KNUCKLES RCDATA "@ROOT_DIR@/steamvr_bindings/legacy_bindings_knuckles_rock.json"
+ROCK_RC_STEAMVR_BINDING_VIVE_CONTROLLER RCDATA "@ROOT_DIR@/steamvr_bindings/legacy_bindings_vive_controller_rock.json"

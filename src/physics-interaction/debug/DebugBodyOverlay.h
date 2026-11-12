@@ -4,11 +4,10 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "api/ProviderRuntimeTypes.h"
-#include "physics-interaction/weapon/WeaponTypes.h"
+#include "physics-interaction/body/BodyColliderDescriptors.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
-#include <ROCK/NativeInteraction.h>
+#include "physics-interaction/weapon/classification/WeaponTypes.h"
 
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/NetImmerse/NiPoint.h"
@@ -34,8 +33,6 @@ namespace rock::debug
         LeftHandSegment,
         BodyTorsoSegment,
         BodyArmSegment,
-        BodyLegSegment,
-        BodyFootSegment,
         Weapon,
         DynamicWeaponProxy,
         FocusedWeaponPart,
@@ -43,14 +40,8 @@ namespace rock::debug
         LeftGrabAuthorityProxy,
         RightGrabPivotSourceCollider,
         LeftGrabPivotSourceCollider,
-        Target,
-        External
+        Target
     };
-
-    inline constexpr bool isExternalBodyRole(BodyOverlayRole role)
-    {
-        return role == BodyOverlayRole::External;
-    }
 
     enum class AxisOverlayRole : std::uint8_t
     {
@@ -210,24 +201,6 @@ namespace rock::debug
         LeftGrabSupportFrameAxis,
         RightGrabSupportFrameBinormal,
         LeftGrabSupportFrameBinormal,
-        RightGrabFingerProbe,
-        LeftGrabFingerProbe,
-        RightGrabFingerPadProbe,
-        LeftGrabFingerPadProbe,
-        RightGrabFingerSurfaceTarget,
-        LeftGrabFingerSurfaceTarget,
-        GrabFingerSweepTip,
-        GrabFingerSweepOuter,
-        GrabFingerSweepInner,
-        GrabFingerSweepPivot,
-        GrabFingerSweepAuthoredOpen,
-        GrabFingerSweepContact,
-        GrabFingerSweepHitNormal,
-        GrabFingerSweepMiss,
-        GrabFingerSweepOutOfReach,
-        GrabFingerSweepOverOpen,
-        GrabFingerSweepClosedLimit,
-        GrabFingerSweepLiveSkeleton,
         RightHandBoneContact,
         LeftHandBoneContact,
         NativeScopeLiveCamera,
@@ -284,14 +257,6 @@ namespace rock::debug
     {
         RE::hknpBodyId bodyId{ 0x7FFF'FFFF };
         BodyOverlayRole role{ BodyOverlayRole::Target };
-        // Optional identity witnesses for external/native body IDs. Publication
-        // and post-solve readback reject a recycled source before drawing it.
-        std::uintptr_t expectedCollisionObject{ 0 };
-        std::uintptr_t expectedShape{ 0 };
-        char label[64]{};
-        float color[4]{1,1,1,1};
-        float labelOffsetY{};
-        std::uint32_t visualFlags{};
     };
 
     struct AxisOverlayEntry
@@ -328,6 +293,25 @@ namespace rock::debug
         bool inPowerArmor{ false };
     };
 
+    /*
+     * Primitives drawn in their own colour (the grab finger probe view): a
+     * sphere at its true radius, solid or wire, and a plain line.
+     */
+    struct ProbeSphereOverlayEntry
+    {
+        RE::NiPoint3 center{};
+        float radius{ 0.5f };
+        float color[4]{ 1.0f, 1.0f, 1.0f, 1.0f };
+        bool wire{ false };
+    };
+
+    struct ProbeLineOverlayEntry
+    {
+        RE::NiPoint3 start{};
+        RE::NiPoint3 end{};
+        float color[4]{ 1.0f, 1.0f, 1.0f, 1.0f };
+    };
+
     struct TextOverlayEntry
     {
         char text[128]{};
@@ -335,19 +319,10 @@ namespace rock::debug
         float y{ 18.0f };
         float size{ 2.0f };
         float color[4]{ 0.90f, 1.0f, 0.95f, 0.92f };
+        // Drawn by RPS UI beside the anchor, offset by x/y pixels. Text without
+        // a world anchor has no VR placement and is not drawn.
         RE::NiPoint3 worldAnchor{};
         bool worldAnchored{ false };
-        // World-space bitmap glyphs use size/x/y in game units. Both eyes
-        // project the same quad vertices through the stereo geometry shader.
-        RE::NiPoint3 worldRight{}, worldDown{};
-        bool worldSpaceGlyphs{ false };
-    };
-
-    struct ColoredLineOverlayEntry
-    {
-        RE::NiPoint3 start{};
-        RE::NiPoint3 end{};
-        float color[4]{ 1.0f, 1.0f, 1.0f, 1.0f };
     };
 
     struct BodyOverlayFrame
@@ -355,51 +330,44 @@ namespace rock::debug
         RE::hknpWorld* world{ nullptr };
         std::uint64_t gameFrameIndex{ 0 };
         std::array<BodyOverlayEntry,
-            MAX_WEAPON_COLLISION_BODIES +
-                (hand_collider_semantics::kHandColliderBodyCountPerHand * 2) +
-                skeleton_bone_debug_math::kStandardBodyColliderDescriptors.size() + 8 + api::native_interaction::kMaxVisualBodies>
+            MAX_WEAPON_COLLISION_BODIES + (hand_collider_semantics::kHandColliderBodyCountPerHand * 2) +
+                body_collider::kStandardDescriptors.size() + 8>
             entries{};
         std::array<AxisOverlayEntry, 96> axisEntries{};
         std::array<MarkerOverlayEntry, 512> markerEntries{};
         std::array<SkeletonOverlayEntry, skeleton_bone_debug_math::skeletonOverlayBudget()> skeletonEntries{};
-        // Borrowed only for the synchronous PublishFrame call, which copies
-        // the bounded prefix before returning.
-        const provider::RockProviderDebugOverlayLineV1* coloredLineEntries{ nullptr };
         std::array<TextOverlayEntry, 96> textEntries{};
+        // Both hands' probe spheres; RPS UI draws at most 256 spheres per frame in total.
+        std::array<ProbeSphereOverlayEntry, 240> probeSphereEntries{};
+        std::array<ProbeLineOverlayEntry, 160> probeLineEntries{};
         std::uint32_t count{ 0 };
         std::uint32_t axisCount{ 0 };
         std::uint32_t markerCount{ 0 };
         std::uint32_t skeletonCount{ 0 };
-        std::uint32_t coloredLineCount{ 0 };
         std::uint32_t textCount{ 0 };
+        std::uint32_t probeSphereCount{ 0 };
+        std::uint32_t probeLineCount{ 0 };
         bool drawRockBodies{ false };
         bool drawTargetBodies{ false };
         bool drawAxes{ false };
         bool drawMarkers{ false };
         bool drawSkeleton{ false };
-        bool drawColoredLines{ false };
         bool drawText{ false };
+        bool drawProbes{ false };
     };
 
+    // Binds RPS UI world drawing when it is loaded; ROCK draws nothing without it.
     void Install();
-    bool IsInstalled();
     void PublishFrame(const BodyOverlayFrame& frame);
     // Physics-step-thread callback. Captures only bounded body matrices for the
     // final substep. The implementation is non-blocking and does no allocation,
     // logging, shape inspection, or rendering work.
-    void CapturePostSolveBodyPhases(
-        RE::hknpWorld* world,
-        const havok_physics_timing::PhysicsTimingSample& timing,
-        std::uint64_t gameFrameIndex,
-        std::uint64_t solveSequence) noexcept;
+    void CapturePostSolveBodyPhases(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing,
+        std::uint64_t gameFrameIndex, std::uint64_t solveSequence) noexcept;
     // Clears diagnostics only. Gameplay marker lifetime is owned separately.
     void ClearFrame();
     void ClearShapeCache();
-    // Stops and joins the owned CPU shape worker without uninstalling the
-    // process-scoped OpenVR hook or D3D resources. PublishFrame restarts it.
+    // Stops and joins the owned CPU shape worker; the RPS UI binding stays.
+    // PublishFrame restarts it.
     void ShutdownShapePipeline();
-    // Current-frame left-eye stereo origin (game world units) from the same
-    // fail-closed engine read the overlay camera uses. Diagnostic sampling only;
-    // returns false without touching the overlay's stereo health telemetry.
-    bool TryGetCurrentStereoOrigin(RE::NiPoint3& outOrigin);
 }

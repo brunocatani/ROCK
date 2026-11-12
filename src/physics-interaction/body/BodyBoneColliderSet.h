@@ -1,15 +1,15 @@
 #pragma once
 
+#include "physics-interaction/body/BodyColliderDescriptors.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/hand/DynamicHandTwinTargets.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/hand/SkeletonBoneNameIndex.h"
-#include "physics-interaction/collision/ColliderTuning.h"
-#include "physics-interaction/native/BethesdaPhysicsBody.h"
-#include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
-#include "physics-interaction/native/HavokPhysicsTiming.h"
-#include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
+#include "physics-interaction/native/havok/BethesdaPhysicsBody.h"
+#include "physics-interaction/native/havok/GeneratedKeyframedBodyDrive.h"
+#include "physics-interaction/native/havok/HavokPhysicsTiming.h"
+#include "physics-interaction/native/havok/PhysicsCallbackQuiescenceGate.h"
 
 #include "RE/Havok/hknpShape.h"
 #include "RE/Havok/hknpWorld.h"
@@ -24,7 +24,7 @@
 
 namespace rock
 {
-    inline constexpr std::size_t kBodyBoneColliderBodyCount = skeleton_bone_debug_math::kStandardBodyColliderDescriptors.size();
+    inline constexpr std::size_t kBodyBoneColliderBodyCount = body_collider::kStandardDescriptors.size();
     inline constexpr std::uint32_t kInvalidBodyBoneColliderBodyId = 0x7FFF'FFFFu;
     inline constexpr std::size_t kBodyBoneGrabSuppressionArmBodyCountPerSide = 3;
 
@@ -32,7 +32,7 @@ namespace rock
     {
         bool valid = false;
         bool inPowerArmor = false;
-        skeleton_bone_debug_math::BoneColliderRole role = skeleton_bone_debug_math::BoneColliderRole::TorsoSegment;
+        body_collider::Role role = body_collider::Role::TorsoSegment;
         body_zone::BodyZoneKind zone = body_zone::BodyZoneKind::Unknown;
         body_zone::BodyZoneSide side = body_zone::BodyZoneSide::Center;
         std::uint32_t bodyId = kInvalidBodyBoneColliderBodyId;
@@ -66,17 +66,30 @@ namespace rock
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
 
         bool hasBodies() const { return _created; }
+
+        // True when the last create() stopped because the skeleton pose could
+        // not be read yet (see HandBoneColliderSet::createWaitedOnPose).
+        bool createWaitedOnPose() const { return _createWaitedOnPose; }
+
         std::uint32_t getBodyCount() const { return _bodyCountAtomic.load(std::memory_order_acquire); }
+
         std::uint32_t getBodyIdAtomic(std::size_t index) const;
-        std::uint32_t copyGrabSuppressionArmBodyIdsAtomic(bool isLeft, std::uint32_t* outBodyIds, std::size_t maxBodyIds) const;
+        std::uint32_t copyGrabSuppressionArmBodyIdsAtomic(bool isLeft, std::uint32_t* outBodyIds,
+            std::size_t maxBodyIds) const;
         bool isColliderBodyIdAtomic(std::uint32_t bodyId) const;
         bool tryGetBodyMetadataAtomic(std::uint32_t bodyId, BodyBoneColliderMetadata& outMetadata) const;
-        bool tryGetBodyMetadataAtIndexAtomic(std::uint32_t index, std::uint32_t bodyId, BodyBoneColliderMetadata& outMetadata) const;
-        bool tryGetBodyRoleAtomic(std::uint32_t bodyId, skeleton_bone_debug_math::BoneColliderRole& outRole) const;
+        bool tryGetBodyMetadataAtIndexAtomic(std::uint32_t index, std::uint32_t bodyId,
+            BodyBoneColliderMetadata& outMetadata) const;
+
         // Main-thread debug publication only. Returns the exact pending target
         // that the next generated-body physics callback will consume.
         bool isRebuildPendingAtomic() const { return _driveRebuildRequested.load(std::memory_order_acquire); }
-        const dynamic_hand_twin::ForearmTwinTargets& dynamicForearmTwinTargets() const { return _dynamicForearmTwinTargets; }
+
+        const dynamic_hand_twin::ForearmTwinTargets& dynamicForearmTwinTargets() const
+        {
+            return _dynamicForearmTwinTargets;
+        }
+
         RE::hknpShape* buildDynamicForearmTwinShape(const dynamic_hand_twin::TwinSlotFrame& slotFrame) const;
 
     private:
@@ -84,7 +97,7 @@ namespace rock
         {
             BethesdaPhysicsBody body;
             const RE::hknpShape* shape = nullptr;
-            skeleton_bone_debug_math::BoneColliderRole role = skeleton_bone_debug_math::BoneColliderRole::TorsoSegment;
+            body_collider::Role role = body_collider::Role::TorsoSegment;
             body_zone::BodyZoneKind zone = body_zone::BodyZoneKind::Unknown;
             body_zone::BodyZoneSide side = body_zone::BodyZoneSide::Center;
             std::uint32_t descriptorIndex = 0;
@@ -96,17 +109,13 @@ namespace rock
 
         bool captureBoneSnapshot(DirectSkeletonBoneSnapshot& outSnapshot);
         bool updatePose(const DirectSkeletonBoneSnapshot& snapshot, float deltaTime, bool publishTargets);
-        std::uint64_t refreshTuning(bool powerArmor);
         RE::hknpShape* buildShapeForFrame(const DescriptorFrameResult& frame) const;
-        bool createBodyForDescriptor(
-            RE::hknpWorld* world,
-            void* bhkWorld,
-            const skeleton_bone_debug_math::BoneColliderDescriptor& descriptor,
-            std::uint32_t descriptorIndex,
-            const DescriptorFrameResult& frame,
-            BodyInstance& instance);
-        void queueBodyTarget(BethesdaPhysicsBody& body, const RE::NiTransform& target, float sourceDeltaSeconds, GeneratedKeyframedBodyDriveState& driveState);
-        void handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex);
+        bool createBodyForDescriptor(RE::hknpWorld* world, void* bhkWorld, const body_collider::Descriptor& descriptor,
+            std::uint32_t descriptorIndex, const DescriptorFrameResult& frame, BodyInstance& instance);
+        void queueBodyTarget(BethesdaPhysicsBody& body, const RE::NiTransform& target, float sourceDeltaSeconds,
+            GeneratedKeyframedBodyDriveState& driveState);
+        void handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName,
+            std::uint32_t bodyIndex);
         void clearInstance(BodyInstance& instance, bool releaseShapeRef);
         void publishAtomicBodyIds(bool inPowerArmor);
         void clearAtomicBodyIds();
@@ -114,10 +123,6 @@ namespace rock
         DirectSkeletonBoneReader _reader;
         SkeletonBoneNameIndex _boneNameIndex;
         SkeletonBoneNameIndex _finalBoneNameIndex;
-        collider_tuning::BodyProfile _tuning;
-        std::uint64_t _tuningConfigRevision = 0;
-        bool _tuningPowerArmor = false;
-        bool _tuningReady = false;
         DirectSkeletonBoneSnapshot _snapshot;
         std::array<BodyInstance, kBodyBoneColliderBodyCount> _bodies{};
         RE::hknpWorld* _cachedWorld = nullptr;
@@ -125,7 +130,6 @@ namespace rock
         const void* _cachedSkeleton = nullptr;
         const void* _cachedBoneTree = nullptr;
         bool _cachedPowerArmor = false;
-        std::uint64_t _cachedTuningSignature = 0;
         const void* _lastCapturedSkeleton = nullptr;
         const void* _lastCapturedBoneTree = nullptr;
         bool _lastCapturedPowerArmor = false;
@@ -135,6 +139,7 @@ namespace rock
         std::atomic<bool> _driveRebuildRequested{ false };
         std::atomic<std::uint32_t> _driveFailureCount{ 0 };
         bool _created = false;
+        bool _createWaitedOnPose = false;
         std::uint64_t _dynamicForearmGeometryGeneration = 0;
         int _updateLogCounter = 0;
 

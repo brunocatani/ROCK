@@ -44,24 +44,14 @@ namespace REL
      * Production code still uses the real CommonLib definitions through the DLL
      * target; these inert definitions are linked only into standalone tests.
      */
-    Module::Module() :
-        _filename(L"Fallout4VR.exe"),
-        _filePath(L"Fallout4VR.exe"),
-        _runtime(Runtime::VR)
-    {}
+    Module::Module() : _filename(L"Fallout4VR.exe"), _filePath(L"Fallout4VR.exe"), _runtime(Runtime::VR) {}
 
     IDDB::IDDB() = default;
 
-    std::size_t IDDB::id2offset(std::uint64_t) const
-    {
-        return 0;
-    }
+    std::size_t IDDB::id2offset(std::uint64_t) const { return 0; }
 
 #ifdef ENABLE_FALLOUT_VR
-    bool IDDB::IsVRAddressLibraryAtLeastVersion(const char*, bool) const
-    {
-        return true;
-    }
+    bool IDDB::IsVRAddressLibraryAtLeastVersion(const char*, bool) const { return true; }
 #endif
 }
 
@@ -69,7 +59,7 @@ namespace rock
 {
     /*
      * Policy executables exercise header-only math and state decisions without
-     * loading the runtime INI watcher. Refactored grouped headers can still
+     * loading the runtime settings watcher. Refactored grouped headers can still
      * instantiate the inline global config for default values, so tests provide
      * only the file-watch shutdown hook needed by RockConfig's destructor.
      */

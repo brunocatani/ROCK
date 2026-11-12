@@ -87,19 +87,11 @@ namespace rock::mouth_consume
         }
     }
 
-    void resetRuntime(RuntimeState& state) noexcept
-    {
-        state = {};
-    }
+    void resetRuntime(RuntimeState& state) noexcept { state = {}; }
 
-    bool finitePoint(const RE::NiPoint3& value) noexcept
-    {
-        return vector_math::hasFiniteComponents(value);
-    }
+    bool finitePoint(const RE::NiPoint3& value) noexcept { return vector_math::hasFiniteComponents(value); }
 
-    RE::NiPoint3 computeMouthCenter(
-        const RE::NiPoint3& hmdPositionWorld,
-        const RE::NiPoint3& hmdForwardWorld,
+    RE::NiPoint3 computeMouthCenter(const RE::NiPoint3& hmdPositionWorld, const RE::NiPoint3& hmdForwardWorld,
         const RE::NiPoint3& offsetGameUnits) noexcept
     {
         const RE::NiPoint3 forward = normalizeOr(hmdForwardWorld, kWorldForward);
@@ -108,7 +100,8 @@ namespace rock::mouth_consume
             right = RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
         }
 
-        return add(add(add(hmdPositionWorld, mul(right, offsetGameUnits.x)), mul(forward, offsetGameUnits.y)), mul(kWorldUp, offsetGameUnits.z));
+        return add(add(add(hmdPositionWorld, mul(right, offsetGameUnits.x)), mul(forward, offsetGameUnits.y)),
+            mul(kWorldUp, offsetGameUnits.z));
     }
 
     float candidateConfidence(float distanceGameUnits, float thresholdGameUnits, float radiusGameUnits) noexcept
@@ -138,24 +131,17 @@ namespace rock::mouth_consume
         const float speed = resolvedProbeSpeed(input, runtime);
         decision.speedGameUnitsPerSecond = speed;
 
-        if (!input.config.enabled ||
-            !input.hasHmdFrame ||
-            !probe ||
-            !finitePoint(input.hmdPositionWorld) ||
-            !finitePoint(input.hmdForwardWorld) ||
-            !finitePoint(input.config.hmdMouthOffsetGameUnits) ||
-            !std::isfinite(input.config.mouthRadiusGameUnits) ||
-            !std::isfinite(input.config.enterPaddingGameUnits) ||
-            !std::isfinite(input.config.exitPaddingGameUnits) ||
-            !std::isfinite(input.config.minDwellSeconds) ||
+        if (!input.config.enabled || !input.hasHmdFrame || !probe || !finitePoint(input.hmdPositionWorld) ||
+            !finitePoint(input.hmdForwardWorld) || !finitePoint(input.config.hmdMouthOffsetGameUnits) ||
+            !std::isfinite(input.config.mouthRadiusGameUnits) || !std::isfinite(input.config.enterPaddingGameUnits) ||
+            !std::isfinite(input.config.exitPaddingGameUnits) || !std::isfinite(input.config.minDwellSeconds) ||
             !std::isfinite(input.config.maxSpeedGameUnitsPerSecond)) {
             resetRuntime(runtime);
             updateProbeHistory();
             return decision;
         }
 
-        if (std::isfinite(input.config.maxSpeedGameUnitsPerSecond) &&
-            input.config.maxSpeedGameUnitsPerSecond > 0.0f &&
+        if (std::isfinite(input.config.maxSpeedGameUnitsPerSecond) && input.config.maxSpeedGameUnitsPerSecond > 0.0f &&
             speed > input.config.maxSpeedGameUnitsPerSecond) {
             runtime.candidate = false;
             runtime.confirmed = false;
@@ -164,7 +150,8 @@ namespace rock::mouth_consume
             return decision;
         }
 
-        const RE::NiPoint3 mouthCenter = computeMouthCenter(input.hmdPositionWorld, input.hmdForwardWorld, input.config.hmdMouthOffsetGameUnits);
+        const RE::NiPoint3 mouthCenter =
+            computeMouthCenter(input.hmdPositionWorld, input.hmdForwardWorld, input.config.hmdMouthOffsetGameUnits);
         if (!finitePoint(mouthCenter)) {
             runtime.candidate = false;
             runtime.confirmed = false;

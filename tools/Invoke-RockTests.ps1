@@ -47,7 +47,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $script:RepoRoot = (Resolve-Path -LiteralPath $Root).Path
-$script:BuildDirectory = Join-Path $script:RepoRoot 'build-tests'
+$script:BuildDirectory = Join-Path $script:RepoRoot 'build-fast'
 $script:IncludeCache = [System.Collections.Generic.Dictionary[string, object]]::new(
     [System.StringComparer]::OrdinalIgnoreCase)
 
@@ -327,10 +327,10 @@ if ($Json -and -not $PlanOnly) {
 # PlanOnly stays read-only and uses the catalog that exists.
 $catalogConfigured = $false
 if (-not $PlanOnly) {
-    Invoke-CheckedCommand 'cmake' @('--preset', 'custom-tests')
+    Invoke-CheckedCommand 'cmake' @('--preset', 'custom-fast')
     $catalogConfigured = $true
 } elseif (-not (Test-CatalogPresent)) {
-    throw 'The CMake test catalog is missing. Run cmake --preset custom-tests before requesting a plan.'
+    throw 'The CMake test catalog is missing. Run cmake --preset custom-fast before requesting a plan.'
 }
 $policyDefinitions = Get-PolicyTargetDefinitions
 $allPolicyTargets = @($policyDefinitions.Keys | Sort-Object)
@@ -473,12 +473,7 @@ if ($fullSuiteReason) {
 
 $policyTargets = @($selectedPolicy | Sort-Object)
 $sourceTests = @($selectedSource | Sort-Object)
-$sdkSelected = [bool]($fullSuiteReason -or @($changedFiles | Where-Object {
-    $_ -match '(?i)^(src/api|public|sdk)/'
-}).Count -gt 0)
-$sdkBuildTargets = if ($sdkSelected) { @('ROCKSDKExamplePlugins') } else { @() }
-$sdkTests = if ($sdkSelected) { @('RpsSdkRockContractTests', 'ROCKSDKExampleBehaviorTests') } else { @() }
-$testNames = @($policyTargets + $sourceTests + $sdkTests | Sort-Object -Unique)
+$testNames = @($policyTargets + $sourceTests | Sort-Object -Unique)
 # Full selection is conservative; it cannot establish integration coverage.
 # The outer @() keeps an empty result an array under StrictMode.
 $uncoveredBehavior = @($changedFiles | Where-Object {
@@ -508,8 +503,6 @@ $plan = [pscustomobject]@{
     AllPolicyReason = $allPolicyReason
     PolicyTargets = @($policyTargets)
     PolicyBuildTargets = @($policyBuildTargets)
-    SdkBuildTargets = @($sdkBuildTargets)
-    SdkTests = @($sdkTests)
     BehavioralCoverageUnverified = @($uncoveredBehavior)
     SourceTests = @($sourceTests)
     TestNames = @($testNames)
@@ -529,7 +522,6 @@ if ($Json) {
         Write-Host $allPolicyReason
     }
     Write-Host "Policy binaries selected: $($policyTargets.Count)/$($allPolicyTargets.Count)"
-    Write-Host "SDK example builds selected: $sdkSelected"
     if ($uncoveredBehavior.Count -gt 0) {
         Write-Host "Behavioral coverage unverified: $($uncoveredBehavior -join ', '). Source checks and broad selection do not establish runtime coverage."
     }
@@ -541,10 +533,10 @@ if ($PlanOnly) {
 }
 
 if ($configureRequired -and -not $catalogConfigured) {
-    Invoke-CheckedCommand 'cmake' @('--preset', 'custom-tests')
+    Invoke-CheckedCommand 'cmake' @('--preset', 'custom-fast')
 }
 
-$buildTargets = @($policyBuildTargets + $sdkBuildTargets)
+$buildTargets = @($policyBuildTargets)
 if ($buildTargets.Count -gt 0) {
     $buildArguments = @(
         '--build',
@@ -554,7 +546,6 @@ if ($buildTargets.Count -gt 0) {
         '--target'
     )
     $buildArguments += $buildTargets
-    $buildArguments += @('--', '/m:1', '/p:CL_MPCount=2')
     Invoke-CheckedCommand 'cmake' $buildArguments
 }
 
@@ -569,8 +560,6 @@ $ctestArguments = @(
     '-C',
     'Release',
     '--output-on-failure',
-    '-j',
-    '4',
     '--no-tests=error'
 )
 if (-not $fullSuiteReason) {

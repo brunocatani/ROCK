@@ -46,13 +46,19 @@ namespace rock::geometry_body_resolver
     inline GeometryBodyResolution resolveGeometryBody(const GeometryBodyResolutionInput& input)
     {
         if (input.triangleOwnerUsable && validBody(input.triangleOwnerBodyId)) {
-            return GeometryBodyResolution{ .bodyId = input.triangleOwnerBodyId, .source = GeometryBodyResolutionSource::TriangleOwner, .reason = "triangleOwner" };
+            return GeometryBodyResolution{ .bodyId = input.triangleOwnerBodyId,
+                .source = GeometryBodyResolutionSource::TriangleOwner,
+                .reason = "triangleOwner" };
         }
         if (input.selectedUsable && validBody(input.selectedBodyId)) {
-            return GeometryBodyResolution{ .bodyId = input.selectedBodyId, .source = GeometryBodyResolutionSource::SelectedBody, .reason = "selectedBody" };
+            return GeometryBodyResolution{ .bodyId = input.selectedBodyId,
+                .source = GeometryBodyResolutionSource::SelectedBody,
+                .reason = "selectedBody" };
         }
         if (input.nearestUsable && validBody(input.nearestBodyId)) {
-            return GeometryBodyResolution{ .bodyId = input.nearestBodyId, .source = GeometryBodyResolutionSource::NearestAccepted, .reason = "nearestAccepted" };
+            return GeometryBodyResolution{ .bodyId = input.nearestBodyId,
+                .source = GeometryBodyResolutionSource::NearestAccepted,
+                .reason = "nearestAccepted" };
         }
         return GeometryBodyResolution{};
     }

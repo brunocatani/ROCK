@@ -33,35 +33,20 @@ namespace rock::debug_convex_hull_mesh
     inline constexpr float kPlaneNormalDotEpsilon = 0.999f;
     inline constexpr float kTriangleAreaSqEpsilon = 1.0e-6f;
 
-    inline Vec3 add(const Vec3& lhs, const Vec3& rhs)
-    {
-        return Vec3{ lhs.x + rhs.x, lhs.y + rhs.y, lhs.z + rhs.z };
-    }
+    inline Vec3 add(const Vec3& lhs, const Vec3& rhs) { return Vec3{ lhs.x + rhs.x, lhs.y + rhs.y, lhs.z + rhs.z }; }
 
-    inline Vec3 sub(const Vec3& lhs, const Vec3& rhs)
-    {
-        return Vec3{ lhs.x - rhs.x, lhs.y - rhs.y, lhs.z - rhs.z };
-    }
+    inline Vec3 sub(const Vec3& lhs, const Vec3& rhs) { return Vec3{ lhs.x - rhs.x, lhs.y - rhs.y, lhs.z - rhs.z }; }
 
     inline Vec3 scale(const Vec3& value, float scalar)
     {
         return Vec3{ value.x * scalar, value.y * scalar, value.z * scalar };
     }
 
-    inline float dot(const Vec3& lhs, const Vec3& rhs)
-    {
-        return vector_math::dot(lhs, rhs);
-    }
+    inline float dot(const Vec3& lhs, const Vec3& rhs) { return vector_math::dot(lhs, rhs); }
 
-    inline Vec3 cross(const Vec3& lhs, const Vec3& rhs)
-    {
-        return vector_math::cross(lhs, rhs);
-    }
+    inline Vec3 cross(const Vec3& lhs, const Vec3& rhs) { return vector_math::cross(lhs, rhs); }
 
-    inline float lengthSq(const Vec3& value)
-    {
-        return vector_math::lengthSquared(value);
-    }
+    inline float lengthSq(const Vec3& value) { return vector_math::lengthSquared(value); }
 
     inline Vec3 normalized(const Vec3& value)
     {
@@ -73,7 +58,8 @@ namespace rock::debug_convex_hull_mesh
         return scale(value, 1.0f / std::sqrt(lenSq));
     }
 
-    inline std::vector<Vec3> deduplicateVertices(const std::vector<Vec3>& vertices, float distanceSq = kDefaultVertexDedupDistanceSq)
+    inline std::vector<Vec3> deduplicateVertices(const std::vector<Vec3>& vertices,
+        float distanceSq = kDefaultVertexDedupDistanceSq)
     {
         std::vector<Vec3> unique;
         unique.reserve(vertices.size());
@@ -124,7 +110,8 @@ namespace rock::debug_convex_hull_mesh
 
     inline bool samePlane(const FacePlane& lhs, const FacePlane& rhs)
     {
-        return dot(lhs.normal, rhs.normal) > kPlaneNormalDotEpsilon && std::fabs(lhs.offset - rhs.offset) <= kPlaneDistanceEpsilon;
+        return dot(lhs.normal, rhs.normal) > kPlaneNormalDotEpsilon &&
+            std::fabs(lhs.offset - rhs.offset) <= kPlaneDistanceEpsilon;
     }
 
     inline bool containsTriangle(const std::vector<Triangle>& triangles, Triangle candidate)
@@ -139,7 +126,8 @@ namespace rock::debug_convex_hull_mesh
         return false;
     }
 
-    inline void appendTriangle(std::vector<Triangle>& triangles, const std::vector<Vec3>& vertices, std::uint16_t a, std::uint16_t b, std::uint16_t c, const Vec3& outwardNormal)
+    inline void appendTriangle(std::vector<Triangle>& triangles, const std::vector<Vec3>& vertices, std::uint16_t a,
+        std::uint16_t b, std::uint16_t c, const Vec3& outwardNormal)
     {
         if (a == b || b == c || a == c) {
             return;
@@ -165,7 +153,8 @@ namespace rock::debug_convex_hull_mesh
         std::vector<std::uint16_t> indices;
         indices.reserve(vertices.size());
 
-        for (std::size_t i = 0; i < vertices.size() && i <= static_cast<std::size_t>((std::numeric_limits<std::uint16_t>::max)()); ++i) {
+        for (std::size_t i = 0;
+            i < vertices.size() && i <= static_cast<std::size_t>((std::numeric_limits<std::uint16_t>::max)()); ++i) {
             if (std::fabs(dot(plane.normal, vertices[i]) - plane.offset) <= kPlaneDistanceEpsilon) {
                 indices.push_back(static_cast<std::uint16_t>(i));
             }
@@ -265,7 +254,8 @@ namespace rock::debug_convex_hull_mesh
 
                     acceptedPlanes.push_back(plane);
                     for (std::size_t faceIndex = 1; faceIndex + 1 < faceIndices.size(); ++faceIndex) {
-                        appendTriangle(triangles, vertices, faceIndices[0], faceIndices[faceIndex], faceIndices[faceIndex + 1], plane.normal);
+                        appendTriangle(triangles, vertices, faceIndices[0], faceIndices[faceIndex],
+                            faceIndices[faceIndex + 1], plane.normal);
                     }
                 }
             }

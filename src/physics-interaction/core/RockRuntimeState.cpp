@@ -1,10 +1,17 @@
+// Builds the per-frame runtime snapshot (RockRuntimeState.h): samples menu and
+// pause state once in beginFrameTiming, then updateFrame adds weapon-drawn,
+// skeleton readiness (root attached, required hand bones readable) and the
+// player-space frame used to compensate player movement.
 #include "physics-interaction/core/RockRuntimeState.h"
 
 #include "RockConfig.h"
+#include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/timing/RockGameTiming.h"
+#include "physics-interaction/weapon/equip/HeldWeaponEquipStatePolicy.h"
 
+#include <atomic>
 #include <string_view>
 
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -33,8 +40,55 @@ namespace rock::runtime_state
             bool scopeMenuOpen = false;
             bool loadingMenuOpen = false;
             bool gameStopped = false;
+            bool gamePaused = false;
         };
+
         FrameMenuSample s_frameMenuSample{};
+
+        // Frame owner writes, native equip callbacks on other threads read.
+        std::atomic<bool> s_menuHoldsWeapons{ false };
+
+        // Backstop for a native draw that never ends after a menu. The draw
+        // measures three frames (23 ms).
+        constexpr float kMenuExitSettleMaxSeconds = 1.0f;
+        float s_menuExitSettleSeconds = 0.0f;
+
+        [[nodiscard]] bool sampleMenuExitSettling(const RuntimeFrameSnapshot& next)
+        {
+            const bool heldLastFrame = s_snapshot.menuHoldsWeapons();
+            if (next.localMenuBlocking || !heldLastFrame || !next.playerAvailable) {
+                s_menuExitSettleSeconds = 0.0f;
+                return false;
+            }
+            using NativeWeaponState = held_weapon_equip_state_policy::NativeWeaponState;
+            const auto state = f4vr::getNativeWeaponState(f4vr::getPlayer());
+            if (state != static_cast<std::uint32_t>(NativeWeaponState::WantToDraw) &&
+                state != static_cast<std::uint32_t>(NativeWeaponState::Drawing)) {
+                s_menuExitSettleSeconds = 0.0f;
+                return false;
+            }
+            s_menuExitSettleSeconds += next.deltaSeconds;
+            if (s_menuExitSettleSeconds <= kMenuExitSettleMaxSeconds)
+                return true;
+            ROCK_LOG_WARN(Weapon, "Menu exit draw still running after {:.2f}s state={}; weapons return to native",
+                s_menuExitSettleSeconds, held_weapon_equip_state_policy::nativeWeaponStateName(state));
+            s_menuExitSettleSeconds = 0.0f;
+            return false;
+        }
+
+        /*
+         * UI::menuMode at UI+0x1E0 counts the open menus that pause the game.
+         * Raw FO4VR disassembly: 140DF5050 (UseItem's "queue the equip for the
+         * animation" test) compares that dword with zero on the UI singleton
+         * 145932320, and 140D04360 uses the BSSpinLock at 0x1D8 just before
+         * it, both matching CommonLibF4VR's UI layout.
+         */
+        [[nodiscard]] bool sampleGamePaused()
+        {
+            const auto* ui = RE::UI::GetSingleton();
+            return ui && ui->menuMode != 0;
+        }
+
         constexpr float kPlayerMovingThresholdGameUnits = 0.05f;
         bool s_hasPreviousPlayerPosition = false;
         RE::NiPoint3 s_previousPlayerPosition{};
@@ -52,17 +106,12 @@ namespace rock::runtime_state
             const void* transforms = nullptr;
             std::uint32_t transformCount = 0;
         };
+
         VerifiedSkeleton s_verifiedSkeleton{};
 
-        [[nodiscard]] bool hasPlayer()
-        {
-            return RE::PlayerCharacter::GetSingleton() != nullptr;
-        }
+        [[nodiscard]] bool hasPlayer() { return RE::PlayerCharacter::GetSingleton() != nullptr; }
 
-        [[nodiscard]] RE::NiNode* safeWorldRootNode()
-        {
-            return f4vr::getWorldRootNode();
-        }
+        [[nodiscard]] RE::NiNode* safeWorldRootNode() { return f4vr::getWorldRootNode(); }
 
         [[nodiscard]] RE::NiNode* safeRootNode(RE::NiNode* worldRoot)
         {
@@ -84,7 +133,8 @@ namespace rock::runtime_state
 
         [[nodiscard]] bool flattenedTreeValid(const f4vr::BSFlattenedBoneTree* tree)
         {
-            return tree && tree->transforms && tree->numTransforms > 0 && tree->numTransforms <= kMaxFlattenedBoneTransforms;
+            return tree && tree->transforms && tree->numTransforms > 0 &&
+                tree->numTransforms <= kMaxFlattenedBoneTransforms;
         }
 
         [[nodiscard]] bool snapshotHasBone(const DirectSkeletonBoneSnapshot& snapshot, std::string_view name)
@@ -167,11 +217,10 @@ namespace rock::runtime_state
                 return true;
             }
 
-            const bool captured = s_skeletonReader.capture(
-                skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
-                skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
-                SkeletonBoneCaptureSpace::Rendered,
-                s_readinessBones);
+            const bool captured =
+                s_skeletonReader.capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
+                    skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                    SkeletonBoneCaptureSpace::Rendered, s_readinessBones);
             const bool handBonesReady = captured && snapshotHasBone(s_readinessBones, "RArm_Hand") &&
                 snapshotHasBone(s_readinessBones, "LArm_Hand") && snapshotHasRequiredFingerBones(s_readinessBones);
             snapshot.localSkeletonRequiredHandBonesReady = handBonesReady;
@@ -199,6 +248,8 @@ namespace rock::runtime_state
         s_readinessBones = {};
         s_snapshot = {};
         s_frameMenuSample = {};
+        s_menuExitSettleSeconds = 0.0f;
+        s_menuHoldsWeapons.store(false, std::memory_order_release);
     }
 
     const game_frame_timing_policy::GameFrameTiming& beginFrameTiming(const bool menuInputBlocking)
@@ -208,6 +259,7 @@ namespace rock::runtime_state
         s_frameMenuSample.scopeMenuOpen = isScopeMenuOpenNow();
         s_frameMenuSample.loadingMenuOpen = s_menuHandlerInitialized && s_gameMenus.isLoadingMenuOpen();
         s_frameMenuSample.gameStopped = s_menuHandlerInitialized && s_gameMenus.isGameStopped();
+        s_frameMenuSample.gamePaused = sampleGamePaused();
         return game_timing::beginGameFrame(s_frameMenuSample.gameStopped || menuInputBlocking);
     }
 
@@ -227,6 +279,7 @@ namespace rock::runtime_state
         next.localScopeMenuOpen = s_frameMenuSample.scopeMenuOpen;
         next.localLoadingMenuOpen = s_frameMenuSample.loadingMenuOpen;
         next.localGameStopped = s_frameMenuSample.gameStopped;
+        next.localGamePaused = s_frameMenuSample.gamePaused;
         next.localMenuBlocking = next.localGameStopped || next.inputMenuBlocking;
         next.timing = game_timing::currentFrameTiming();
         next.frameIndex = next.timing.sequence;
@@ -238,36 +291,26 @@ namespace rock::runtime_state
          */
         next.deltaSeconds = next.timing.valid ? next.timing.deltaSeconds : 0.0f;
         next.compatibilityConfigBlocking = input.compatibilityConfigBlocking;
+        next.wristPipboyOpen = input.wristPipboyOpen;
         next.visualAuthorityAvailable = input.visualAuthorityAvailable;
         next.visualSkeletonReadyHint = input.visualSkeletonReadyHint;
         next.playerSpace = samplePlayerSpace();
         next.localSkeletonReady = sampleLocalSkeletonReady(next);
+        next.localMenuExitSettling = sampleMenuExitSettling(next);
+        s_menuHoldsWeapons.store(next.menuHoldsWeapons(), std::memory_order_release);
         s_frameMenuSample.valid = false;
         s_snapshot = next;
     }
 
-    const RuntimeFrameSnapshot& currentFrame()
-    {
-        return s_snapshot;
-    }
+    const RuntimeFrameSnapshot& currentFrame() { return s_snapshot; }
 
-    bool isScopeMenuOpenNow()
-    {
-        return s_menuHandlerInitialized && s_gameMenus.isInScopeMenu();
-    }
+    bool isScopeMenuOpenNow() { return s_menuHandlerInitialized && s_gameMenus.isInScopeMenu(); }
 
-    bool isLocalSkeletonReady()
-    {
-        return s_snapshot.localSkeletonReady;
-    }
+    bool isLocalSkeletonReady() { return s_snapshot.localSkeletonReady; }
 
-    bool isPhysicsMenuBlocked()
-    {
-        return s_snapshot.localMenuBlocking;
-    }
+    bool isPhysicsMenuBlocked() { return s_snapshot.localMenuBlocking; }
 
-    bool isCompatibilityConfigBlocked()
-    {
-        return s_snapshot.compatibilityConfigBlocking;
-    }
+    bool isCompatibilityConfigBlocked() { return s_snapshot.compatibilityConfigBlocking; }
+
+    bool menuHoldsWeaponsAnyThread() noexcept { return s_menuHoldsWeapons.load(std::memory_order_acquire); }
 }

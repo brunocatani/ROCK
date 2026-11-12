@@ -19,9 +19,7 @@ namespace rock
 {
     namespace
     {
-        constexpr std::array kShapeNames{
-            "baseGlow001:0", "WickFX:0", "flameSmall:0", "flameSmall:1", "FlameBig:0"
-        };
+        constexpr std::array kShapeNames{ "baseGlow001:0", "WickFX:0", "flameSmall:0", "flameSmall:1", "FlameBig:0" };
         constexpr std::size_t kMaxControllersPerProperty = 4;
         constexpr std::uintptr_t kEffectPropertyVtable = 0x30A5938;
         constexpr std::uintptr_t kFloatControllerVtable = 0x30BFE88;
@@ -41,7 +39,9 @@ namespace rock
 
         // Explicitly replaced on GameLoaded/NewGame/PostLoadGame, after the old
         // PhysicsInteraction has released its armed slots. No initialization I/O.
-        std::unique_ptr<Resources> resources;
+        // Never destroyed: releasing engine objects in DLL detach, after the engine has shut
+        // down, raises R6025 during ExitProcess and the game never closes.
+        std::unique_ptr<Resources>& resources = *new std::unique_ptr<Resources>;
         Clone cloneObject = nullptr;
         StartController startController = nullptr;
         UpdateController updateController = nullptr;
@@ -50,8 +50,8 @@ namespace rock
         bool verifiedEntry(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected)
         {
             std::array<std::uint8_t, N> actual{};
-            return native_memory::guardedCopyFromMemory(
-                reinterpret_cast<const void*>(REL::Module::get().base() + rva), actual.data(), actual.size()) &&
+            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Module::get().base() + rva),
+                       actual.data(), actual.size()) &&
                 actual == expected;
         }
 
@@ -66,16 +66,19 @@ namespace rock
             // by 14292CC70; 14292CF80 consumes NiUpdateData.time. 141C26060 and
             // 141C26400 agree on start/last-time fields. Never trust flat slots.
             const bool valid =
-                verifiedEntry(0x1D0DEE0, std::to_array<std::uint8_t>({
-                    0x48,0x89,0x5C,0x24,0x08,0x57,0x48,0x83,0xEC,0x30,0x48,0x8B,0xDA,0x48,0x8D,0x54,0x24,0x20,
-                    0x48,0xC7,0x44,0x24,0x20,0,0,0,0 })) &&
-                verifiedEntry(0x1C13FF0, std::to_array<std::uint8_t>({
-                    0x48,0x89,0x5C,0x24,0x08,0x48,0x89,0x74,0x24,0x10,0x57,0x48,0x83,0xEC,0x20,
-                    0x48,0x8B,0x01,0x48,0x8B,0xFA,0x48,0x8B,0xF1,0xFF,0x90,0xE0,0,0,0 })) &&
-                verifiedEntry(0x1C26060, std::to_array<std::uint8_t>({
-                    0x66,0x83,0x49,0x10,0x08,0xF6,0x41,0x10,0x01,0xC7,0x41,0x28,0xFF,0xFF,0x7F,0xFF })) &&
-                verifiedEntry(0x292CF80, std::to_array<std::uint8_t>({
-                    0x40,0x53,0x48,0x83,0xEC,0x20,0x0F,0xB6,0x41,0x10,0x48,0x8B,0xD9,0xC0,0xE8,0x05,0xA8,0x01 }));
+                verifiedEntry(0x1D0DEE0,
+                    std::to_array<std::uint8_t>({ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x48,
+                        0x8B, 0xDA, 0x48, 0x8D, 0x54, 0x24, 0x20, 0x48, 0xC7, 0x44, 0x24, 0x20, 0, 0, 0, 0 })) &&
+                verifiedEntry(0x1C13FF0,
+                    std::to_array<std::uint8_t>(
+                        { 0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20,
+                            0x48, 0x8B, 0x01, 0x48, 0x8B, 0xFA, 0x48, 0x8B, 0xF1, 0xFF, 0x90, 0xE0, 0, 0, 0 })) &&
+                verifiedEntry(0x1C26060,
+                    std::to_array<std::uint8_t>({ 0x66, 0x83, 0x49, 0x10, 0x08, 0xF6, 0x41, 0x10, 0x01, 0xC7, 0x41,
+                        0x28, 0xFF, 0xFF, 0x7F, 0xFF })) &&
+                verifiedEntry(0x292CF80,
+                    std::to_array<std::uint8_t>({ 0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x0F, 0xB6, 0x41, 0x10, 0x48,
+                        0x8B, 0xD9, 0xC0, 0xE8, 0x05, 0xA8, 0x01 }));
             if (valid) {
                 const auto base = REL::Module::get().base();
                 cloneObject = reinterpret_cast<Clone>(base + 0x1C13FF0);
@@ -103,17 +106,23 @@ namespace rock
             RE::BSTriShape* result = nullptr;
             for (std::size_t index = 0; index < count; ++index) {
                 auto* object = pending[index];
-                if (!object) continue;
+                if (!object)
+                    continue;
                 if (object->name.c_str() && std::strcmp(object->name.c_str(), name) == 0) {
-                    if (result) return nullptr;
+                    if (result)
+                        return nullptr;
                     result = object->IsTriShape();
-                    if (!result) return nullptr;
+                    if (!result)
+                        return nullptr;
                 }
                 if (auto* node = object->IsNode()) {
                     for (const auto& child : node->children) {
-                        if (++visitedSlots > pending.size()) return nullptr;
-                        if (!child) continue;
-                        if (count == pending.size()) return nullptr;
+                        if (++visitedSlots > pending.size())
+                            return nullptr;
+                        if (!child)
+                            continue;
+                        if (count == pending.size())
+                            return nullptr;
                         pending[count++] = child.get();
                     }
                 }
@@ -128,12 +137,14 @@ namespace rock
                 if (++count > kMaxControllersPerProperty || !hasVtable(controller, kFloatControllerVtable) ||
                     !native_memory::pointerRangeLooksReadable(controller, 0x58) || controller->target != property ||
                     !std::isfinite(controller->frequency) || !std::isfinite(controller->phase) ||
-                    !std::isfinite(controller->loKeyTime) || !std::isfinite(controller->hiKeyTime)) return false;
+                    !std::isfinite(controller->loKeyTime) || !std::isfinite(controller->hiKeyTime))
+                    return false;
                 void* interpolator = nullptr;
                 std::uint32_t variable = 0;
                 if (!native_memory::tryReadField(controller, 0x48, interpolator) ||
                     !native_memory::pointerLooksReadable(interpolator) ||
-                    !native_memory::tryReadField(controller, 0x50, variable) || variable > 8) return false;
+                    !native_memory::tryReadField(controller, 0x50, variable) || variable > 8)
+                    return false;
             }
             return true;
         }
@@ -143,28 +154,35 @@ namespace rock
             bool animated = false;
             for (std::size_t index = 0; index < 2; ++index) {
                 auto* property = shape->properties[index].get();
-                if (!property || !property->controllers) continue;
+                if (!property || !property->controllers)
+                    continue;
                 if (!hasVtable(property, kEffectPropertyVtable) ||
-                    !validControllerChain(property->controllers.get(), property)) return false;
+                    !validControllerChain(property->controllers.get(), property))
+                    return false;
                 void* material = nullptr;
                 if (!native_memory::tryReadField(property, 0x58, material) ||
-                    !native_memory::pointerLooksReadable(material)) return false;
+                    !native_memory::pointerLooksReadable(material))
+                    return false;
                 if (source) {
                     auto* original = source->properties[index].get();
                     void* originalMaterial = nullptr;
                     if (!original || original == property || original->controllers == property->controllers ||
-                        !native_memory::tryReadField(original, 0x58, originalMaterial) || material == originalMaterial) return false;
+                        !native_memory::tryReadField(original, 0x58, originalMaterial) || material == originalMaterial)
+                        return false;
                     auto* originalController = original->controllers.get();
-                    for (auto* controller = property->controllers.get(); controller; controller = controller->next.get()) {
+                    for (auto* controller = property->controllers.get(); controller;
+                        controller = controller->next.get()) {
                         void* interpolator = nullptr;
                         void* originalInterpolator = nullptr;
                         if (!originalController || controller == originalController ||
                             !native_memory::tryReadField(controller, 0x48, interpolator) ||
                             !native_memory::tryReadField(originalController, 0x48, originalInterpolator) ||
-                            interpolator == originalInterpolator) return false;
+                            interpolator == originalInterpolator)
+                            return false;
                         originalController = originalController->next.get();
                     }
-                    if (originalController) return false;
+                    if (originalController)
+                        return false;
                 }
                 animated = true;
             }
@@ -186,14 +204,16 @@ namespace rock
             // The native output already owns a reference. Pass the smart-pointer
             // storage directly rather than incrementing a raw owned result again.
             static_assert(sizeof(RE::NiPointer<RE::NiNode>) == sizeof(void*));
-            if (load("Data/Meshes/Weapons/Grenade/MolotovCocktailProjectile.nif", &next->model, flags) != 0 || !next->model) {
+            if (load("Data/Meshes/Weapons/Grenade/MolotovCocktailProjectile.nif", &next->model, flags) != 0 ||
+                !next->model) {
                 ROCK_LOG_ERROR(Hand, "Molotov flame unavailable: projectile model could not be loaded");
                 return;
             }
             auto* wick = findShape(next->model.get(), "Wick002:0");
             if (!wick || wick->parent != next->model.get() ||
                 !held_scene_presentation_policy::finiteTransform(wick->local) ||
-                !loose_molotov_visual_policy::compatibleWick(wick->numVertices, wick->numTriangles, wick->modelBound, wick->modelBound)) {
+                !loose_molotov_visual_policy::compatibleWick(wick->numVertices, wick->numTriangles, wick->modelBound,
+                    wick->modelBound)) {
                 ROCK_LOG_WARN(Hand, "Molotov flame unavailable: projectile wick geometry or frame is unsupported");
                 return;
             }
@@ -203,13 +223,15 @@ namespace rock
                 auto* shape = findShape(next->model.get(), kShapeNames[index]);
                 if (!shape || shape->parent != next->model.get() || shape->collisionObject || shape->skinInstance ||
                     !held_scene_presentation_policy::finiteTransform(shape->local) || !qualifyProperties(shape)) {
-                    ROCK_LOG_WARN(Hand, "Molotov flame unavailable: source component rejected at shape={}", kShapeNames[index]);
+                    ROCK_LOG_WARN(Hand, "Molotov flame unavailable: source component rejected at shape={}",
+                        kShapeNames[index]);
                     return;
                 }
                 next->shapes[index].reset(shape);
             }
             resources = std::move(next);
-            ROCK_LOG_INFO(Hand, "Molotov flame resources ready: shapes={} source=MolotovCocktailProjectile", kShapeNames.size());
+            ROCK_LOG_INFO(Hand, "Molotov flame resources ready: shapes={} source=MolotovCocktailProjectile",
+                kShapeNames.size());
         } catch (const std::exception& error) {
             ROCK_LOG_ERROR(Hand, "Molotov flame resource preparation failed: {}", error.what());
         } catch (...) {
@@ -219,7 +241,8 @@ namespace rock
 
     std::unique_ptr<LooseMolotovVisual> LooseMolotovVisual::create(RE::TESObjectREFR* reference) noexcept
     {
-        if (!reference) return {};
+        if (!reference)
+            return {};
         const auto referenceId = reference->GetFormID();
         if (!resources) {
             ROCK_LOG_WARN(Hand, "Armed Molotov flame skipped: ref={:08X} reason=resources-unavailable", referenceId);
@@ -240,10 +263,12 @@ namespace rock
 
     bool LooseMolotovVisual::bind(RE::NiAVObject* root)
     {
-        if (!resources) return false;
+        if (!resources)
+            return false;
         auto* wick = findShape(root, "Wick:0");
         if (!wick || !wick->parent || !held_scene_presentation_policy::finiteTransform(wick->local) ||
-            !loose_molotov_visual_policy::compatibleWick(wick->numVertices, wick->numTriangles, wick->modelBound, resources->wickBound)) {
+            !loose_molotov_visual_policy::compatibleWick(wick->numVertices, wick->numTriangles, wick->modelBound,
+                resources->wickBound)) {
             ROCK_LOG_WARN(Hand, "Armed Molotov flame skipped: ref={:08X} reason=unsupported-loose-wick", _referenceId);
             return false;
         }
@@ -256,7 +281,8 @@ namespace rock
             RE::NiPointer<RE::NiObject> copy{ cloneObject(source, &cloning) };
             auto* shape = copy ? copy->IsTriShape() : nullptr;
             if (!shape || shape == source || shape->parent || !qualifyProperties(shape, source)) {
-                ROCK_LOG_WARN(Hand, "Armed Molotov flame skipped: ref={:08X} reason=clone-not-independent shape={}", _referenceId, kShapeNames[index]);
+                ROCK_LOG_WARN(Hand, "Armed Molotov flame skipped: ref={:08X} reason=clone-not-independent shape={}",
+                    _referenceId, kShapeNames[index]);
                 detach("clone-rejected");
                 return false;
             }
@@ -271,12 +297,14 @@ namespace rock
             }
             for (std::size_t propertyIndex = 0; propertyIndex < 2; ++propertyIndex) {
                 auto* property = shape->properties[propertyIndex].get();
-                if (!property || !property->controllers) continue;
+                if (!property || !property->controllers)
+                    continue;
                 // The cloned animated material is already private. Move its
                 // controllers out of the scene's automatic update chain so only
                 // this armed slot supplies time, including when Havok sleeps.
                 part.controllers[propertyIndex] = std::move(property->controllers);
-                for (auto* controller = part.controllers[propertyIndex].get(); controller; controller = controller->next.get())
+                for (auto* controller = part.controllers[propertyIndex].get(); controller;
+                    controller = controller->next.get())
                     startController(controller, 0.0f);
             }
         }
@@ -285,8 +313,8 @@ namespace rock
             _parent->AttachChild(part.shape.get(), true);
             f4vr::updateDown(part.shape.get(), true);
         }
-        ROCK_LOG_INFO(Hand, "Armed Molotov flame attached: ref={:08X} shapes={} wick={} elapsed={:.3f}s",
-            _referenceId, _parts.size(), wick->name.c_str(), _elapsedSeconds);
+        ROCK_LOG_INFO(Hand, "Armed Molotov flame attached: ref={:08X} shapes={} wick={} elapsed={:.3f}s", _referenceId,
+            _parts.size(), wick->name.c_str(), _elapsedSeconds);
         return true;
     }
 
@@ -318,7 +346,8 @@ namespace rock
             release("reference-unavailable");
             return;
         }
-        if (std::isfinite(deltaSeconds) && deltaSeconds > 0.0f) _elapsedSeconds += deltaSeconds;
+        if (std::isfinite(deltaSeconds) && deltaSeconds > 0.0f)
+            _elapsedSeconds += deltaSeconds;
         auto* root = reference->Get3D();
         if (root != _observedRoot.get()) {
             detach("reference-scene-changed");
@@ -328,7 +357,8 @@ namespace rock
                     (void)bind(root);
                 } catch (...) {
                     detach("attachment-exception");
-                    ROCK_LOG_ERROR(Hand, "Armed Molotov flame skipped: ref={:08X} reason=attachment-exception", _referenceId);
+                    ROCK_LOG_ERROR(Hand, "Armed Molotov flame skipped: ref={:08X} reason=attachment-exception",
+                        _referenceId);
                 }
             }
         }
@@ -358,12 +388,14 @@ namespace rock
                 RE::NiPointer<RE::NiAVObject> detached;
                 _parent->DetachChild(part.shape.get(), detached);
             }
-            for (auto& chain : part.controllers) chain.reset();
+            for (auto& chain : part.controllers)
+                chain.reset();
             part.shape.reset();
         }
         _parent.reset();
-        if (attached) ROCK_LOG_INFO(Hand, "Armed Molotov flame retired: ref={:08X} reason={} sceneAvailable={}",
-            _referenceId, reason, sameScene);
+        if (attached)
+            ROCK_LOG_INFO(Hand, "Armed Molotov flame retired: ref={:08X} reason={} sceneAvailable={}", _referenceId,
+                reason, sameScene);
     }
 
     void LooseMolotovVisual::release(const char* reason)
