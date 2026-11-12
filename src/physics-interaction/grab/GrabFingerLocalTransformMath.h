@@ -50,35 +50,6 @@ namespace rock::grab_finger_local_transform_math
         return enabled && poseSolved && hasCanonicalHandPose && hasBaselineApi && hasPublishApi;
     }
 
-    [[nodiscard]] inline float sanitizeUnitStrength(float value, float fallback)
-    {
-        const float resolvedFallback = std::isfinite(fallback) ? std::clamp(fallback, 0.0f, 1.0f) : 0.0f;
-        if (!std::isfinite(value)) {
-            return resolvedFallback;
-        }
-        return std::clamp(value, 0.0f, 1.0f);
-    }
-
-    [[nodiscard]] inline float sanitizeMaxCorrectionDegrees(float value, float fallback)
-    {
-        const float resolvedFallback =
-            std::isfinite(fallback) ? std::max(0.0f, fallback) : kDefaultMaxCorrectionDegrees;
-        if (!std::isfinite(value)) {
-            return resolvedFallback;
-        }
-        return std::max(0.0f, value);
-    }
-
-    [[nodiscard]] inline float sanitizeSmoothingSpeed(float value, float fallback)
-    {
-        const float resolvedFallback =
-            std::isfinite(fallback) ? std::max(0.0f, fallback) : kDefaultLocalTransformSmoothingSpeed;
-        if (!std::isfinite(value)) {
-            return resolvedFallback;
-        }
-        return std::max(0.0f, value);
-    }
-
     [[nodiscard]] inline float correctionStrengthForFinger(std::size_t fingerIndex, float surfaceAimStrength,
         float thumbOppositionStrength)
     {
@@ -114,13 +85,12 @@ namespace rock::grab_finger_local_transform_math
             return 0.0f;
         }
 
-        const float resolvedStrength = sanitizeUnitStrength(strength, 0.0f);
-        if (resolvedStrength <= 0.0f) {
+        if (strength <= 0.0f) {
             return 0.0f;
         }
 
         return std::min(
-            std::min(rawAngleRadians * resolvedStrength * segmentWeight, maxCorrectionRadians * segmentWeight),
+            std::min(rawAngleRadians * strength * segmentWeight, maxCorrectionRadians * segmentWeight),
             kMaxSurfaceAimCorrectionRadians);
     }
 
@@ -148,7 +118,7 @@ namespace rock::grab_finger_local_transform_math
         if (segment >= 3) {
             return 0.0f;
         }
-        return sanitizeUnitStrength(strength, kDefaultThumbAlternateCurveStrength) * kSegmentWeights[segment];
+        return strength * kSegmentWeights[segment];
     }
 
     template <class Vector>

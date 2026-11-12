@@ -74,24 +74,6 @@ namespace rock::grab_finger_local_transform_runtime
         node.world.rotate = transform_math::orthonormalizeStoredRotation(node.world.rotate);
     }
 
-    [[nodiscard]] inline Options sanitizeOptions(Options options)
-    {
-        options.smoothingSpeed = grab_finger_local_transform_math::sanitizeSmoothingSpeed(options.smoothingSpeed,
-            grab_finger_local_transform_math::kDefaultLocalTransformSmoothingSpeed);
-        options.maxCorrectionDegrees = grab_finger_local_transform_math::sanitizeMaxCorrectionDegrees(
-            options.maxCorrectionDegrees, grab_finger_local_transform_math::kDefaultMaxCorrectionDegrees);
-        options.surfaceAimStrength = grab_finger_local_transform_math::sanitizeUnitStrength(options.surfaceAimStrength,
-            grab_finger_local_transform_math::kDefaultSurfaceAimStrength);
-        options.thumbOppositionStrength = grab_finger_local_transform_math::sanitizeUnitStrength(
-            options.thumbOppositionStrength, grab_finger_local_transform_math::kDefaultThumbOppositionStrength);
-        options.thumbAlternateCurveStrength = grab_finger_local_transform_math::sanitizeUnitStrength(
-            options.thumbAlternateCurveStrength, grab_finger_local_transform_math::kDefaultThumbAlternateCurveStrength);
-        options.thumbSurfaceSafetyMarginGameUnits = std::max(0.0f,
-            std::isfinite(options.thumbSurfaceSafetyMarginGameUnits) ? options.thumbSurfaceSafetyMarginGameUnits
-                                                                     : 1.0f);
-        return options;
-    }
-
     [[nodiscard]] inline bool isFiniteRotation(const RE::NiMatrix3& rotation)
     {
         for (int row = 0; row < 3; ++row) {
@@ -279,11 +261,9 @@ namespace rock::grab_finger_local_transform_runtime
         bool surfaceSafetyEnabled, float surfaceSafetyMarginGameUnits,
         frik_visual_authority::FingerLocalTransformOverride& transforms)
     {
-        const float configuredStrength = grab_finger_local_transform_math::sanitizeUnitStrength(strength,
-            grab_finger_local_transform_math::kDefaultThumbAlternateCurveStrength);
+        const float configuredStrength = strength;
         const float laneStrength = fingerPose.selectedThumbLaneLocalCorrectionStrength > 0.0f
-            ? grab_finger_local_transform_math::sanitizeUnitStrength(
-                  fingerPose.selectedThumbLaneLocalCorrectionStrength, 1.0f)
+            ? fingerPose.selectedThumbLaneLocalCorrectionStrength
             : 1.0f;
         const float curveStrength = configuredStrength * laneStrength;
         if (!grab_finger_local_transform_math::shouldApplyAlternateThumbLocalCorrection(
@@ -482,7 +462,6 @@ namespace rock::grab_finger_local_transform_runtime
             local.rotate = transform_math::orthonormalizeStoredRotation(local.rotate);
         }
 
-        options = sanitizeOptions(options);
         if (!options.enabled) {
             return true;
         }
@@ -690,8 +669,7 @@ namespace rock::grab_finger_local_transform_runtime
             return false;
         }
 
-        const Options sanitizedOptions = sanitizeOptions(options);
-        const auto smoothed = smoothLocalTransforms(corrected, state, sanitizedOptions.smoothingSpeed, deltaTime);
+        const auto smoothed = smoothLocalTransforms(corrected, state, options.smoothingSpeed, deltaTime);
         // The one safety check: an unsafe result clears the override and
         // the smoothing state, so the next publish starts from the target.
         std::size_t unsafeIndex = kInvalidFingerLocalTransformIndex;

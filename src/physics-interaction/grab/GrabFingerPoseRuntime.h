@@ -426,28 +426,6 @@ namespace rock::grab_finger_pose_runtime
         float targetOverrideMinQuality = 0.5f;
     };
 
-    inline FingerPadProbeOptions sanitizeFingerPadProbeOptions(FingerPadProbeOptions options)
-    {
-        if (!std::isfinite(options.probeRadiusGameUnits) || options.probeRadiusGameUnits <= 0.0f) {
-            options.probeRadiusGameUnits = 1.0f;
-        }
-        if (!std::isfinite(options.probeDistanceGameUnits) || options.probeDistanceGameUnits <= 0.0f) {
-            options.probeDistanceGameUnits = 6.0f;
-        }
-        if (!std::isfinite(options.closestSurfaceMaxDistanceGameUnits) ||
-            options.closestSurfaceMaxDistanceGameUnits <= 0.0f) {
-            options.closestSurfaceMaxDistanceGameUnits = 4.0f;
-        }
-
-        options.probeRadiusGameUnits = std::clamp(options.probeRadiusGameUnits, 0.05f, 8.0f);
-        options.probeDistanceGameUnits = std::clamp(options.probeDistanceGameUnits, 0.5f, 32.0f);
-        options.closestSurfaceMaxDistanceGameUnits =
-            std::clamp(options.closestSurfaceMaxDistanceGameUnits, 0.5f, 24.0f);
-        options.targetOverrideMinQuality = std::isfinite(options.targetOverrideMinQuality)
-            ? std::clamp(options.targetOverrideMinQuality, 0.0f, 1.0f)
-            : 0.5f;
-        return options;
-    }
 
     inline void captureSurfaceAimObjectLocal(SolvedGrabFingerPose& pose, const RE::NiTransform& objectWorldTransform)
     {
@@ -1245,7 +1223,6 @@ namespace rock::grab_finger_pose_runtime
         const FingerPoseTriangleSpatialIndex* spatialIndex = nullptr,
         const RE::NiTransform* spatialObjectWorldTransform = nullptr, FingerPoseSpatialQueryStats* stats = nullptr)
     {
-        options = sanitizeFingerPadProbeOptions(options);
         FingerPadSurfaceEvidence result{};
         const RE::NiPoint3 probeDirection = normalizedOrFallback(probeDirectionWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
         result.startWorld = padCenterWorld;
@@ -1400,7 +1377,6 @@ namespace rock::grab_finger_pose_runtime
         const GrabFingerPoseTargetSet& poseTargets, const FingerPadSurfaceEvidence& evidence, std::size_t finger,
         FingerPadProbeOptions options)
     {
-        options = sanitizeFingerPadProbeOptions(options);
         if (!evidence.hit || evidence.quality < options.targetOverrideMinQuality ||
             !isFinitePoint(evidence.hitPointWorld)) {
             return false;
@@ -1438,7 +1414,6 @@ namespace rock::grab_finger_pose_runtime
         FingerPadProbeOptions options = {}, const FingerPoseTriangleSpatialIndex* spatialIndex = nullptr)
     {
         performance_profiler::ScopedTimer timer(performance_profiler::Scope::GrabFingerPadProbes);
-        options = sanitizeFingerPadProbeOptions(options);
         outEvidence = {};
         const bool liveSnapshotValid = liveFingerSnapshot.valid;
         const bool shouldRun = shouldRunFingerPadProbeRefinement(meshFingerPoseEnabled, grabFingerPosePublished,
