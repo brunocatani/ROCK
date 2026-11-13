@@ -233,7 +233,9 @@ namespace rock
             // the same authored weapon resolver as a far-grab catch.
             RE::NiPoint3 releaseLoc = dropLoc;
             RE::NiPoint3 releaseRot{};
-            const auto& releaseWeaponWorld = request.weaponWorld;
+            // The request holds the hand's carry pose; a lodged weapon stays
+            // where its driver presented it, held by the target.
+            const auto& releaseWeaponWorld = lodge.valid ? lodge.weaponWorld : request.weaponWorld;
             const bool hasReleaseRot = finiteNiTransform(releaseWeaponWorld);
             if (hasReleaseRot) {
                 releaseLoc = releaseWeaponWorld.translate;

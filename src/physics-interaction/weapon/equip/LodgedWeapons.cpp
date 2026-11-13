@@ -60,6 +60,8 @@ namespace rock
             ROCK_LOG_INFO(Weapon, "Lodged weapon refused: slot={} target={} has no collision group", slot, target.body);
             return false;
         }
+        // The service accepted this command only with a finite presentation.
+        out.weaponWorld = native_interaction_service::weaponPresentation(slot);
         out.valid = true;
         out.slot = slot;
         out.body = target.body;

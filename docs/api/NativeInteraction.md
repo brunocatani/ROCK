@@ -48,8 +48,8 @@ target and the visual weapon pose for that frame.
 A `Controlled` command may also set `lodged` with `lodgeTarget`, the body
 that holds the weapon (a blade stuck in a limb). When the last hand lets go
 while that mark is from the current or previous frame, and Weapon Equip Mode
-drops the weapon in place (Auto Drop), ROCK places the loose weapon without
-the hand's throw and keeps it lodged: it rides that body every physics step
+drops the weapon in place (Auto Drop), ROCK places the loose weapon at that
+command's `presentation`, without the hand's throw, and keeps it lodged: it rides that body every physics step
 and takes the body's collision group, so it never collides with that actor
 while hands, grab selection and the world still meet it. If the body goes
 away, the lodge follows the same bone's new body (an actor's limb changes
