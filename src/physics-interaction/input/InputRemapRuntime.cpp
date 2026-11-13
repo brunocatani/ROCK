@@ -1850,11 +1850,30 @@ namespace rock::input_remap_runtime
             original(caster, pick, point);
         }
 
+        /*
+         * Companion command mode: PlayerCharacter::actorDoingPlayerCommand (VR
+         * 0xF8C) holds the companion taking orders. The player's activation
+         * (0x140EF8B00) gives the command on the primary wand's Activate: at
+         * its pick, or with no pick at the location the wand aims at, which
+         * 0x140F24B20 turns into the command wait marker (0xB3C). Both read
+         * 0xF8C as the commanded actor's handle.
+         */
+        [[nodiscard]] bool isCompanionCommandModeActive()
+        {
+            const auto* player = RE::PlayerCharacter::GetSingleton();
+            return player && player->actorDoingPlayerCommand.get();
+        }
+
         [[nodiscard]] ActivateTarget classifyActivateTarget(bool primaryHandEvent)
         {
             const auto globalOffset =
                 primaryHandEvent ? kActivatePrimaryWandPickRefGlobalOffset : kActivateSecondaryWandPickRefGlobalOffset;
+            // While commanding, every primary press is the game's order to the
+            // companion; only what ROCK itself holds stays protected below.
+            const bool commanding = primaryHandEvent && isCompanionCommandModeActive();
             std::uint32_t handleValue = readWandPickRefHandle(globalOffset);
+            if (handleValue == 0 && commanding)
+                return ActivateTarget::NativeActivation;
             const bool usedOtherWand = handleValue == 0;
             if (handleValue == 0) {
                 /*
@@ -1924,6 +1943,9 @@ namespace rock::input_remap_runtime
                 "Take/Equip suppression classification: handleValue=0x{:X} refFormID=0x{:X} heldFormID=0x{:X} "
                 "formType='{}' eligible={}",
                 handleValue, refFormId, heldFormId, formTypeChars, eligible ? "yes" : "no");
+            // A commanded item is the companion's to fetch, not the player's to take.
+            if (commanding)
+                return ActivateTarget::NativeActivation;
             // The existing opposite-wand fallback protects against taking an
             // owned object. It cannot grant use priority for this wand.
             return eligible ? (usedOtherWand ? ActivateTarget::OtherWandTakeEquip : ActivateTarget::TakeEquip)

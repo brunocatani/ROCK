@@ -24,6 +24,9 @@
 - `ROCK.log` lists, for every equipped weapon, whether it gets a scope, which zoom
   data and installed mods decided it, and where the view is anchored, so a scope
   report can be checked from the log.
+- **Commanding companions works with a weapon drawn.** In command mode the Use button
+  gives the order wherever you point, including bare ground for "move here", instead
+  of reloading or raising the scope. This holds with moved `[Bindings]` too.
 
 ## v1.0.0
 
