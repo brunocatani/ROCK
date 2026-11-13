@@ -117,6 +117,17 @@ namespace rock::input_remap_runtime
         constexpr std::uintptr_t kMenuOpenHandlerHandleEventFunctionOffset = 0x1326760;
         constexpr std::uintptr_t kMenuOpenHandlerHandleEventVTableSlotOffset = 0x2DCC850;
         /*
+         * The same processor owns the off-hand Workshop hold. Raw disassembly:
+         * a press (value != 0, heldDownSecs == 0) stores at this+0x10 whether
+         * the player may enter Workshop mode here (0x13268EB; 0x1FDDA0 found
+         * the player's workshop with state 0). A later pressed phase held for
+         * fEnterWorkshopDelay:Controls (0x37D5D40, 1.5 s) reads it (0x1326CB2),
+         * calls the Workshop entry 0x1FDE20 and clears it (0x1326D39). Pressed
+         * phases of the secondary wand do nothing else here: VATS needs the
+         * primary wand (0x132694C) and Pause a release (0x13269A8).
+         */
+        constexpr std::ptrdiff_t kMenuOpenHandlerWorkshopArmedOffset = 0x10;
+        /*
          * MenuOpenHandler calls this helper only after its semantic Pause,
          * player/menu, and primary-wand VATS eligibility gates. The helper's
          * button-down path starts V.A.N.S. at Bethesda's hold threshold; its
@@ -2672,14 +2683,37 @@ namespace rock::input_remap_runtime
             const auto previousState = s_pipboyPauseGestureState.state;
             const bool boundPause =
                 functionTag(true, button_layout_policy::Slot::UpperFace) == function_binding_policy::Function::Pause;
+            const bool eligible = gameplayInputAllowed && !menuInputActive && route == s_pipboyGestureRoute;
+            /*
+             * The game's Workshop hold sees this button's pressed phases, never
+             * its release (that would be the game's Pause). A press a binding
+             * made for Pause stays a Pause.
+             */
+            bool workshopAvailable = false;
+            bool workshopEntered = false;
+            if (eligible && !providerSuppressed && !boundPause && button->QPressed() && s_originalMenuOpenEventHandler) {
+                using pipboy_pause_gesture_policy::State;
+                const auto* workshopArmed =
+                    reinterpret_cast<const std::uint8_t*>(handler) + kMenuOpenHandlerWorkshopArmedOffset;
+                if (button->QJustPressed()) {
+                    s_originalMenuOpenEventHandler(handler, inputEvent);
+                    workshopAvailable = *workshopArmed != 0;
+                } else if (s_pipboyPauseGestureState.workshop &&
+                    (previousState == State::Pending || previousState == State::PauseOnRelease)) {
+                    s_originalMenuOpenEventHandler(handler, inputEvent);
+                    workshopEntered = *workshopArmed == 0;
+                }
+            }
             const auto decision = pipboy_pause_gesture_policy::update(s_pipboyPauseGestureState,
                 pipboy_pause_gesture_policy::Input{
                     .enabled = true,
-                    .eligible = gameplayInputAllowed && !menuInputActive && route == s_pipboyGestureRoute,
+                    .eligible = eligible,
                     .pressed = button->QJustPressed(),
                     .held = button->QPressed(),
                     .released = !button->QPressed(),
                     .pipboyDispatchAllowed = !providerSuppressed,
+                    .workshopAvailable = workshopAvailable,
+                    .workshopEntered = workshopEntered,
                     // A Y press a binding made for Pause is a Pause from its first held frame.
                     .heldSeconds = boundPause && button->QPressed()
                         ? (std::max)(button->QHeldDownSecs(), g_rockConfig.rockPipboyPauseHoldSeconds)
@@ -2691,6 +2725,11 @@ namespace rock::input_remap_runtime
                 ROCK_LOG_SAMPLE_DEBUG(Input, 100,
                     "Pip-Boy Y fresh press after missing release: previousState={} reason={}",
                     static_cast<unsigned>(previousState), decision.reason);
+            }
+            if (workshopAvailable || workshopEntered) {
+                ROCK_LOG_DEBUG(Input, "Pip-Boy Y in a workshop area: {} heldSeconds={:.3f}",
+                    workshopEntered ? "the game entered Workshop mode" : "hold enters Workshop, Pause opens on release",
+                    button->QHeldDownSecs());
             }
 
             if (!decision.consume) {

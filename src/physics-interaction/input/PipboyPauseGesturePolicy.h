@@ -29,17 +29,27 @@ namespace rock::pipboy_pause_gesture_policy
         return wristBindingReady ? PipboyRoute::FrikWrist : PipboyRoute::Unavailable;
     }
 
+    /*
+     * Inside a workshop's buildable area the game enters Workshop mode when the
+     * same off-hand menu button is held for fEnterWorkshopDelay (1.5 s). There
+     * a hold past the Pause threshold only arms Pause: the release opens it,
+     * and the game's own Workshop entry, reached first, ends the gesture with
+     * nothing dispatched. A tap still opens the Pip-Boy.
+     */
     enum class State : std::uint8_t
     {
         Idle,
         Pending,
         PauseCommitted,
+        PauseOnRelease,
         BlockedUntilRelease,
     };
 
     struct RuntimeState
     {
         State state{ State::Idle };
+        // The game's Workshop gate passed at this gesture's press.
+        bool workshop{ false };
     };
 
     struct Input
@@ -50,6 +60,10 @@ namespace rock::pipboy_pause_gesture_policy
         bool held{ false };
         bool released{ false };
         bool pipboyDispatchAllowed{ true };
+        // Read at the press: the game would enter Workshop mode on this hold.
+        bool workshopAvailable{ false };
+        // The game attempted its Workshop entry on this held event.
+        bool workshopEntered{ false };
         float heldSeconds{ 0.0f };
         float holdSeconds{ kDefaultHoldSeconds };
     };
@@ -106,8 +120,17 @@ namespace rock::pipboy_pause_gesture_policy
         if (input.pressed) {
             decision.reason = state.state == State::Idle ? "press" : "fresh-press-after-missed-release";
             state.state = State::Pending;
+            state.workshop = input.workshopAvailable;
             decision.state = state.state;
             decision.consume = true;
+            return decision;
+        }
+
+        if (input.workshopEntered && (state.state == State::Pending || state.state == State::PauseOnRelease)) {
+            state.state = State::BlockedUntilRelease;
+            decision.state = state.state;
+            decision.consume = true;
+            decision.reason = "workshop-entered";
             return decision;
         }
 
@@ -139,12 +162,29 @@ namespace rock::pipboy_pause_gesture_policy
             } else if (!input.held) {
                 state.state = State::BlockedUntilRelease;
                 decision.reason = "lost-level";
+            } else if (input.heldSeconds >= threshold && state.workshop) {
+                state.state = State::PauseOnRelease;
+                decision.reason = "hold-threshold-workshop-area";
             } else if (input.heldSeconds >= threshold) {
                 state.state = State::PauseCommitted;
                 decision.dispatchPause = true;
                 decision.reason = "hold-threshold";
             } else {
                 decision.reason = "pending";
+            }
+            break;
+
+        case State::PauseOnRelease:
+            decision.consume = true;
+            if (input.released) {
+                decision.dispatchPause = true;
+                decision.reason = "release-before-workshop";
+                reset(state);
+            } else if (!input.held) {
+                state.state = State::BlockedUntilRelease;
+                decision.reason = "lost-level";
+            } else {
+                decision.reason = "pause-on-release";
             }
             break;
 

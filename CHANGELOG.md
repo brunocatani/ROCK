@@ -13,6 +13,10 @@
 
 ### Fixed
 
+- **Workshop mode opens again.** In a settlement's build area, holding the off-hand
+  menu button (Y on Touch controllers) enters Workshop mode as in the base game. There
+  a tap still opens the Pip-Boy, and Pause opens when you release a hold shorter than
+  the Workshop hold.
 - **Scopes only on real optics.** Iron sights, red dots, holographic and laser sights
   no longer get ROCK's scope view; they stay sights. A weapon gets the scope view for
   an optic named as a scope or marked as one, or one magnifying 3x or more; nothing
