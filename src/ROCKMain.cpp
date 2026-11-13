@@ -568,8 +568,14 @@ namespace
             return false;
         }
 
-        if (s_manualScopeConfiguredWeaponGeneration == weaponGenerationKey &&
-            s_manualScopeConfiguredOverlayIndex == overlayIndex && s_manualScopeConfiguredWorldScope == worldScope) {
+        // The housing depends only on the singleton and the overlay. The weapon
+        // key changes mid-hold when the colliders arrive after a scope opened at
+        // equip; reconfiguring the active WSScope then would rebuild its housing
+        // under the renderer. Any hold end clears this cache (see
+        // driveManualScopeTransitionFallback), so a new weapon still configures.
+        if (s_manualScopeConfiguredWeaponGeneration != 0 && s_manualScopeConfiguredOverlayIndex == overlayIndex &&
+            s_manualScopeConfiguredWorldScope == worldScope) {
+            s_manualScopeConfiguredWeaponGeneration = weaponGenerationKey;
             return true;
         }
 
