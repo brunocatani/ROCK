@@ -1,10 +1,10 @@
+#include "RockConfig.h"
 #include "config/SettingMetadata.h"
 #include "setup-wizard/SetupWizardPolicy.h"
 #include "setup-wizard/SteamVrBindingPolicy.h"
 
 #include <algorithm>
 #include <cstdio>
-#include <fstream>
 #include <map>
 #include <string>
 
@@ -23,24 +23,12 @@ namespace
         }
     }
 
-    // "Table.Key" -> value, from the shipped example file (every key at its default).
+    // "Table.Key" -> the default ROCK ships.
     [[nodiscard]] std::map<std::string, std::string> exampleDefaults()
     {
         std::map<std::string, std::string> values;
-        std::ifstream file(std::string(ROCK_CONFIG_REFERENCE_DIR) + "/ROCK_example.toml");
-        std::string line, table;
-        while (std::getline(file, line)) {
-            if (!line.empty() && line.back() == '\r') line.pop_back();
-            if (line.size() > 2 && line.front() == '[') {
-                table = line.substr(1, line.find(']') - 1);
-                continue;
-            }
-            const auto equals = line.find(" = ");
-            if (line.empty() || line.front() == '#' || equals == std::string::npos) continue;
-            auto value = line.substr(equals + 3);
-            if (value.size() >= 2 && value.front() == '"' && value.back() == '"') value = value.substr(1, value.size() - 2);
-            values[table + "." + line.substr(0, equals)] = value;
-        }
+        for (const auto& setting : rock::RockConfig::compiledDefaults())
+            values[setting.table + "." + setting.key] = setting.value;
         return values;
     }
 

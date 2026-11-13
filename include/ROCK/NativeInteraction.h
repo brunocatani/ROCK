@@ -153,7 +153,8 @@ namespace rock::api::native_interaction {
     // lodged (with Controlled): the weapon is held by lodgeTarget's body, as a
     // blade stuck in a limb. If the last hand lets go while the mark is from
     // this frame or the last, and Weapon Equip Mode drops the weapon, ROCK
-    // places it without the hand's throw and keeps it lodged: the loose
+    // places it at that command's presentation, without the hand's throw, and
+    // keeps it lodged: the loose
     // weapon follows that body, takes the body's collision group so it never
     // touches that actor, and stays until a hand takes it, the body goes away
     // (it follows the same bone's new body when there is one), or it is

@@ -473,24 +473,14 @@ GrabHandReturnMaxAngleDegrees = 90.0
 
 ## === 11. Finger Poses ===
 [FingerPoses]
-## 0 = Follow grab finger mode. 1 = Current swept arc. 2 = July 9 calibrated slice.
-## 3 = Capsule probes (testing): the loose-object finger sweep, with thumb and index reaching onto small parts such as bolts and slides.
-## Applies on the next dynamic equipped weapon or part grip, on either hand.
-## July 9 uses the contacted part, translation-only palm seating and captured finger directions.
-## Uses current skeleton calibration and transform safety checks. Authored poses retain priority.
-WeaponGrabPoseMode = 0
-
-## 1 = Current swept arc. 2 = June 2 legacy plane slice.
-## Applies on the next dynamic weapon support grip when WeaponGrabPoseMode = 0.
-## Loose-object grabs use LooseGrabFingerPoseMode.
-## Legacy captures at contact and omits later pad refinement and splay.
-## Authored and saved finger poses keep their existing priority.
-GrabFingerPoseMode = 1
+## Testing: pose dynamic equipped weapon and part grips with the loose-object capsule probes, with thumb and index reaching onto small parts such as bolts and slides, instead of the swept arc.
+## Applies on the next dynamic weapon grip, on either hand. Authored poses retain priority.
+WeaponGrabCapsuleProbes = false
 
 ## 0 = Capsule sweep.
 ## 1 = Swept arc: the finger solve loose grabs used before the capsule sweep
 ## (pad-probe refinement, contact splay, surface-aim local transforms).
-## Applies on the next loose-object grab. Weapon grips use WeaponGrabPoseMode.
+## Applies on the next loose-object grab. Weapon grips use WeaponGrabCapsuleProbes.
 LooseGrabFingerPoseMode = 0
 
 ## Sends per-joint finger values to FRIK when available instead of one curl per finger.
@@ -832,15 +822,15 @@ HavokTimingFixMaxSubsteps = 3
 
 ## === 19. Scope Placement ===
 [ScopePlacement]
-## Scope Fallback Anchor
-## When a weapon has no usable generated Scope or Sight geometry, the scope anchors at the firing grip, moved by these values.
+## Scope Anchor Without Optic Geometry
+## Used only when a scoped weapon has no separate Scope or Sight part ROCK can measure, such as an optic modelled into the receiver. The scope view then starts at the firing hand's grip, moved by these values. Weapons with a measurable optic anchor on the optic and ignore these keys.
 ## Offsets are game units (70 = 1 metre) in the weapon's axes: X sideways, +Y toward the muzzle, Z up; all zero puts the anchor on the firing grip.
 ## Rotations are degrees added after the game's camera calibration: pitch about X, yaw about Z, roll about the muzzle axis.
 ## Position moves the activation point, camera and overlay together; rotation corrects the camera and overlay only.
 ## This key: offset [x, y, z]. Each value: -100 to 100.
 NativeScopeFiringGripFallbackOffsetGameUnits = [0.0, 0.0, 10.0]
 
-## Scope fallback rotation [pitch, yaw, roll], in degrees. Each value: -180 to 180.
+## Rotation of the scope anchor used without optic geometry (see the offset above) [pitch, yaw, roll], in degrees. Each value: -180 to 180.
 NativeScopeFiringGripFallbackRotationDegrees = [0.0, 0.0, 0.0]
 
 ## Scope Overlay

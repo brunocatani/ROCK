@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Mods built for another ROCK API version no longer close the game.** ROCK refuses
+  them and names each one in `ROCK.log`; the game keeps running with their ROCK
+  features off. No error box appears at the main menu.
+- **Developer settings:** `GrabFingerPoseMode` is removed and `WeaponGrabPoseMode`
+  becomes `WeaponGrabCapsuleProbes` in `ROCK_Developer.toml`. Old values of either
+  key are dropped.
+
+### Fixed
+
+- **Workshop mode can be entered again.** In a settlement's build area, hold B for
+  3 seconds: the grenade the hold drew goes back to your inventory and Workshop mode
+  opens. Elsewhere the B hold is the grenade hold as before, and the off-hand menu
+  button keeps the Pip-Boy tap and the Pause hold.
+- **Scopes only on real optics.** Iron sights, red dots, holographic and laser sights
+  no longer get ROCK's scope view; they stay sights. A weapon gets the scope view for
+  an optic named as a scope or marked as one, or one magnifying 3x or more; nothing
+  under 2x gets it.
+- **Scopes from weapon mods are recognized** when the mod sets the magnification
+  directly instead of through a zoom record.
+- **The scope view sits on the optic itself**, also when a weapon mod mounts it on its
+  own attach point (such as `P-Fourx`) instead of the standard scope slot.
+- `ROCK.log` lists, for every equipped weapon, whether it gets a scope, which zoom
+  data and installed mods decided it, and where the view is anchored, so a scope
+  report can be checked from the log.
+- **Commanding companions works with a weapon drawn.** In command mode the Use button
+  gives the order wherever you point, including bare ground for "move here", instead
+  of reloading or raising the scope. This holds with moved `[Bindings]` too.
+
 ## v1.0.0
 
 ROCK 1.0 reworks controls, grabbing, weapon handling, settings and performance, and

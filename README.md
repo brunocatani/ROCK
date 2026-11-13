@@ -36,7 +36,7 @@ What it provides:
 - **Weapon handling** - firing and support grips taken from each weapon's animation, hand switching, recoil applied to the firing hand, scopes, bipods, a reverse grip for one-handed melee weapons, and one ammo counter per held weapon.
 - **Physical items** - grenades, aid items, eating and drinking at your mouth, grabbing to equip, and stashing a weapon at your shoulder.
 - **Controls** - a button layout (`[ControllerInput.Left]` and `[ControllerInput.Right]`) that ROCK, its add-ons and the game all follow, plus SteamVR binding templates for Index, Vive wands and Steam Frame controllers.
-- **Configuration** - typed TOML settings that reload while the game runs, with in-game pages in RobCo PALM.
+- **Configuration** - typed TOML settings that reload while the game runs, with in-game pages in RPS UI Framework's settings menu (from RobCo PALM's Config or the RPS UI Settings holotape).
 - **Provider API** - 13 interfaces that other mods use to read hands and weapons and to request grabs, equips and input.
 
 ROCK is the base of the RPS suite: [SCISSORS](https://github.com/brunocatani/SCISSORS) adds NPC interactions, [PAPER](https://github.com/brunocatani/PAPER) adds reload animations, and RobCo PALM, RPS UI Framework and ROCK Wall Climbing build on it.
@@ -49,7 +49,9 @@ ROCK is the base of the RPS suite: [SCISSORS](https://github.com/brunocatani/SCI
 - [VR Address Library for F4SEVR](https://www.nexusmods.com/fallout4/mods/64879).
 - [FRIK](https://www.nexusmods.com/fallout4/mods/53464) 0.79.1 or newer, with FRIK API 2.3. ROCK runs inside FRIK's frame phases and refuses an older FRIK API.
 - [RPS UI Framework](https://www.nexusmods.com/fallout4/mods/108951). ROCK's setup wizard, grab indicators and ammo counters draw through it; without it they are not shown.
-- Optional: RobCo PALM, for ROCK's in-game settings pages.
+- Recommended: [RobCo PALM](https://www.nexusmods.com/fallout4/mods/108954), the wheel menu that opens the settings menu; without it the RPS UI Settings holotape opens the same menu.
+- Recommended: [Buffout 4 NG and VR](https://www.nexusmods.com/fallout4/mods/64880) for engine fixes and a crash logger, and Asciim0v's [Faster Loadscreens](https://www.nexusmods.com/fallout4/mods/102233) for faster loading.
+- **Do not use High FPS Physics Fix.** It is incompatible with ROCK and tanks the frame rate. Use Faster Loadscreens for faster loading instead.
 - Every mod that builds on ROCK must be a version made for ROCK 1.0. ROCK, RPS UI Framework, RobCo PALM, PAPER and the ROCK add-ons are released together; install them together.
 
 ### Recommended install
@@ -78,16 +80,16 @@ Menu names can differ between SteamVR versions. After that, the `[ControllerInpu
 
 ### The setup wizard
 
-ROCK's setup wizard asks what matters on your first start. Its first page asks which controllers you play with and says what ROCK does for them: Index controllers and Vive wands get ROCK's SteamVR binding. The next pages set the main choices by topic (grabbing, holding weapons, aiming and shooting, grenades and healing, the stick click and menus), then a review saves them. "Use recommended settings" sets the binding and ROCK's recommendation for every option at once. Closing the wizard saves no option, but still sets ROCK's binding for the controllers SteamVR reports unless you chose others. Open it again any time from PALM's Config (the ROCK page's Setup wizard button).
+ROCK's setup wizard asks what matters on your first start. Its first page asks which controllers you play with and says what ROCK does for them: Index controllers and Vive wands get ROCK's SteamVR binding. The next pages set the main choices by topic (grabbing, holding weapons, aiming and shooting, grenades and healing, the stick click and menus), then a review saves them. "Use recommended settings" sets the binding and ROCK's recommendation for every option at once. Closing the wizard saves no option, but still sets ROCK's binding for the controllers SteamVR reports unless you chose others. Open it again any time from the settings menu (RobCo PALM's Config or the RPS UI Settings holotape): the ROCK page's Setup wizard button.
 
-Everything else, including which button does what (the `[Bindings]` table), is in `ROCK.toml` and PALM's Config.
+Everything else, including which button does what (the `[Bindings]` table), is in `ROCK.toml` and the settings menu.
 
 The wizard opens by itself the first time you play with this ROCK, and again when an update brings something new to show: 10 seconds after you are in the game with no menu, message box, loading screen or scene in the way. On a new game it waits until you have left the mirror. If a message box or menu interrupts it, it comes back where you were once the game is free again. `ShownEdition` in `[SetupWizard]` records what you have seen; set it to 0 to see the wizard again at the next game start.
 
 ### Compatibility
 
 - **SCISSORS** owns NPC interactions: NPC collision, physical melee, blades, held NPCs and active ragdoll. ROCK 1.0 has no NPC features of its own. The original SCISSORS mod is a different, retired mod that the new SCISSORS replaces under the same name; remove it.
-- **Mods built for ROCK 0.92 or earlier** use provider API 1, which ROCK 1.0 does not serve. They stop the game: at the main menu an error box names each one, and the game closes when the box is closed. Update or remove them; they work again once rebuilt against ROCK 1.0's headers.
+- **Mods built for ROCK 0.92 or earlier** use provider API 1, which ROCK 1.0 does not serve. ROCK refuses them and names each one in `ROCK.log`; the game keeps running with their ROCK features off. Update or remove them; they work again once rebuilt against ROCK 1.0's headers.
 - **Upgrading from ROCK 0.92** keeps your settings: on its first start ROCK 1.0 carries every option you changed in `ROCK.ini` and `ROCK_Developer.ini` into `ROCK.toml` and `ROCK_Developer.toml`, then deletes the old INI files. Options you left at their old defaults take ROCK 1.0's defaults. ROCK.log lists the settings that no longer exist. NPC settings moved to SCISSORS.
 
 ## Configuration
@@ -101,7 +103,7 @@ My Games/Fallout4VR/Mods_Config/ROCK/ROCK_Developer.toml
 
 Both are [TOML](https://toml.io) files. Options are grouped into tables such as `[Grabbing]` or `[ControllerInput.Left]`, and values are typed: `true`/`false`, whole numbers, decimal numbers, `"text"` and lists of three numbers such as `[0.0, 7.0, -7.0]` for offsets. Help for each option sits above it on lines starting with `##`.
 
-`ROCK.toml` is created from the compiled defaults when it is missing. When ROCK starts it adds options the file lacks, refreshes the `##` help lines and moves options it no longer reads to a commented block at the end. Your own notes on lines starting with a single `#` above an option are kept. `ROCK_Developer.toml` is optional and holds only developer overrides. Both files reload while the game runs. RobCo PALM's ROCK pages edit them through ROCK's configuration API.
+`ROCK.toml` is created from the compiled defaults when it is missing. When ROCK starts it adds options the file lacks, refreshes the `##` help lines and moves options it no longer reads to a commented block at the end. Your own notes on lines starting with a single `#` above an option are kept. `ROCK_Developer.toml` is optional and holds only developer overrides. Both files reload while the game runs. The ROCK pages of RPS UI Framework's settings menu edit them through ROCK's configuration API.
 
 If a file has a syntax error, ROCK writes the file name, line and column to `ROCK.log`, keeps the values it last read from that file and leaves the file untouched until it is fixed. A value of the wrong type (text for a number, for example) is logged with its line, and that option keeps its last value.
 
@@ -152,9 +154,8 @@ Call `client.close()` on the game thread before your plugin's callback data goes
 ### Versions
 
 - `Client` asks for exactly the major, minor and table size your headers declare. Do the same if you call `ROCKAPI_QueryInterfaceV1` yourself, and read optional additions from the descriptor's `minor`; never try versions one after another.
-- A version mismatch stops the game. When ROCK refuses a request (`UnknownInterface`, `UnsupportedMajor`, `UnsupportedMinor`, `TableTooSmall`), it logs your DLL, shows an error box naming it at the main menu, and closes the game when the box is closed. A mod built for provider API 1 gets this.
-- When `ROCK.dll` is not loaded, turn your ROCK features off and keep running.
-- When a loaded ROCK refuses your mod, stop the game the same way so the player knows which mod to update. [RPS Framework](https://github.com/brunocatani/RPS_Framework)'s header-only `RPS/Runtime/RequiredUpdate.h` shows the box and closes the game.
+- When ROCK refuses a request (`UnknownInterface`, `UnsupportedMajor`, `UnsupportedMinor`, `TableTooSmall`), it logs your DLL once in `ROCK.log` and the game keeps running. A mod built for provider API 1 gets this.
+- When `ROCK.dll` is not loaded, or a loaded ROCK refuses your mod, turn your ROCK features off, log why and keep running.
 
 ### Interfaces
 
@@ -204,7 +205,7 @@ Start with the [API overview](docs/api/Overview.md), then the page of each inter
 | [CommonLibF4VR](https://github.com/brunocatani/CommonLibF4VR) (`master`) | Linked directly: engine types, Havok, F4SE, relocation | `COMMON_LIB_F4VR_PATH` |
 | [RPS UI Framework](https://github.com/brunocatani/RPS_UI_Framework) | Headers in `include/RPS_UI_Framework/`: world drawing and number overlays, bound at runtime | `RPSUI_INCLUDE_DIR` (its `include` folder) |
 | [RobCo PALM](https://github.com/brunocatani/RobCo_PALM) | Header `include/RobCoPALM/Developer.h`: the Developer wheel capture switch, bound at runtime | `PALM_INCLUDE_DIR` (its `include` folder) |
-| [RPS Framework](https://github.com/brunocatani/RPS_Framework) | Linked statically: the settings files (`RPS::Settings`); header `RPS/Runtime/RequiredUpdate.h`: the version-mismatch error box | `RPSFramework_DIR` (the package its `custom-fast` build stages, `build-fast/stage/lib/cmake/RPSFramework`) |
+| [RPS Framework](https://github.com/brunocatani/RPS_Framework) | Linked statically: the settings files (`RPS::Settings`); header `RPS/Runtime/CallerModule.h`: names the DLL behind a refused request in the log | `RPSFramework_DIR` (the package its `custom-fast` build stages, `build-fast/stage/lib/cmake/RPSFramework`) |
 
 ROCK is built and tested against that CommonLibF4VR fork: ArthurHub's [CommonLibF4VR](https://github.com/ArthurHub/CommonLibF4VR) with Fallout 4 VR additions. It links nothing from RPS UI Framework or RobCo PALM and binds them at runtime; RPS Framework is linked into `ROCK.dll`. F4VR-CommonFramework is not needed.
 
@@ -229,13 +230,7 @@ cmake --build build-fast --config Release --target ROCK
 
 ### Tests
 
-Tests share `build-fast` but are built only on request. The test selector builds and runs the tests your changes affect:
-
-```powershell
-pwsh -NoProfile -File tools/Invoke-RockTests.ps1
-```
-
-`-PlanOnly` shows the selection, `-BaseRef <commit>` covers a committed range, and `-All` runs everything. To build and run every test directly:
+Tests share `build-fast` but are built only on request:
 
 ```powershell
 cmake --build build-fast --config Release --target build_tests

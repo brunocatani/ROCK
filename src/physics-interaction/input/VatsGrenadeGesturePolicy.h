@@ -57,6 +57,9 @@ namespace rock::vats_grenade_gesture_policy
 
     inline void reset(RuntimeState& state) { state = {}; }
 
+    // Another use took this hold: its release neither draws nor throws.
+    inline void blockUntilRelease(RuntimeState& state) { state.state = State::BlockedUntilRelease; }
+
     /*
      * Primary-wand B is one exclusive gesture. A qualified hold draws an
      * immersive grenade or primes the native throw for physical release.

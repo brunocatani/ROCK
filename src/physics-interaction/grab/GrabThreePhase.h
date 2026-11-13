@@ -208,7 +208,7 @@ namespace rock::grab_three_phase
         float seedInsetGameUnits = 0.0f;
         float confidence = 0.0f;
         const char* source = "none";
-        const char* fallbackReason = "none";
+        const char* gripReason = "none";
         bool valid = false;
         bool centerOfMassValid = false;
     };
@@ -236,7 +236,7 @@ namespace rock::grab_three_phase
         area.source = input.source ? input.source : "selection";
 
         if (!isFinite(input.objectBodyWorld) || !isFinite(input.contactSeedWorld)) {
-            area.fallbackReason = "nonFiniteInput";
+            area.gripReason = "nonFiniteInput";
             return area;
         }
 
@@ -245,13 +245,13 @@ namespace rock::grab_three_phase
         if (input.centerOfMassValid && isFinite(input.centerOfMassWorld)) {
             seedToInterior = input.centerOfMassWorld - input.contactSeedWorld;
             hasInteriorDirection = true;
-            area.fallbackReason = "centerOfMassInterior";
+            area.gripReason = "centerOfMassInterior";
         } else if (input.interiorDirectionValid && isFinite(input.interiorDirectionWorld)) {
             seedToInterior = input.interiorDirectionWorld;
             hasInteriorDirection = true;
-            area.fallbackReason = "providedInteriorDirection";
+            area.gripReason = "providedInteriorDirection";
         } else {
-            area.fallbackReason = "noTrustedInteriorDirection";
+            area.gripReason = "noTrustedInteriorDirection";
         }
 
         const float seedToInteriorLength = length(seedToInterior);

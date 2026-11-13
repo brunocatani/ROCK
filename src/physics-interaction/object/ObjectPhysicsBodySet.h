@@ -58,7 +58,7 @@ namespace rock::object_physics_body_set
         None,
         PreferredHitAccepted,
         SurfaceOwnerAccepted,
-        NearestAcceptedFallback,
+        NearestAccepted,
         NoAcceptedBody,
     };
 
@@ -133,7 +133,7 @@ namespace rock::object_physics_body_set
                     .reason = PrimaryBodyChoiceReason::NoAcceptedBody };
             }
             return PrimaryBodyChoice{ .bodyId = bestBodyId,
-                .reason = PrimaryBodyChoiceReason::NearestAcceptedFallback };
+                .reason = PrimaryBodyChoiceReason::NearestAccepted };
         }
 
         PrimaryBodyChoice choosePrimaryBodyWithSurfaceOwner(std::uint32_t preferredBodyId, std::uintptr_t ownerKey,
@@ -168,7 +168,7 @@ namespace rock::object_physics_body_set
                     .reason = PrimaryBodyChoiceReason::PreferredHitAccepted };
             case geometry_body_resolver::GeometryBodyResolutionSource::NearestAccepted:
                 return PrimaryBodyChoice{ .bodyId = resolution.bodyId,
-                    .reason = PrimaryBodyChoiceReason::NearestAcceptedFallback };
+                    .reason = PrimaryBodyChoiceReason::NearestAccepted };
             default:
                 return PrimaryBodyChoice{ .bodyId = INVALID_BODY_ID,
                     .reason = PrimaryBodyChoiceReason::NoAcceptedBody };

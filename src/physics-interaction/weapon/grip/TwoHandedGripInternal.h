@@ -140,7 +140,7 @@ namespace rock
 
         inline grab_pinch_pocket_policy::Config currentWeaponOppositionPocketConfig()
         {
-            return grab_pinch_pocket_policy::sanitizeConfig(grab_pinch_pocket_policy::Config{
+            return grab_pinch_pocket_policy::Config{
                 .maxPocketDistanceGameUnits = g_rockConfig.rockGrabPinchMaxPocketDistanceGameUnits,
                 .minFingerGapGameUnits = g_rockConfig.rockGrabPinchMinFingerGapGameUnits,
                 .maxFingerGapGameUnits = g_rockConfig.rockGrabPinchMaxFingerGapGameUnits,
@@ -148,7 +148,7 @@ namespace rock
                 .otherFingerCurlValue = g_rockConfig.rockGrabPinchOtherFingerCurlValue,
                 .detectionDirectionHandspace = g_rockConfig.rockGrabPinchDetectionDirectionHandspace,
                 .detectionAxisBlend = g_rockConfig.rockGrabPinchDetectionAxisBlend,
-            });
+            };
         }
 
         inline void applyStableWeaponOppositionPose(grab_finger_pose_runtime::SolvedGrabFingerPose& pose,

@@ -17,7 +17,7 @@ namespace
     };
     std::vector<NotedRefusal> s_noted;
 
-    // A refusal from the export reached the required-update stop with its
+    // A refusal from the export reached the refusal log with its
     // status, interface, requested major and the caller's address.
     void assertNoted(rock::api::Status status, rock::api::InterfaceId id, std::uint32_t major)
     {
@@ -28,8 +28,8 @@ namespace
     }
 }
 
-// The plugin links the required-update stop here (OutdatedConsumers.cpp, which
-// needs the game's UI); the test records what discovery hands it.
+// The plugin links the refusal log here (OutdatedConsumers.cpp, which needs
+// ROCK's logger); the test records what discovery hands it.
 void rock::api::discovery::noteRefusal(Status status, InterfaceId id, std::uint32_t requestedMajor,
     const void* callerAddress) noexcept
 {

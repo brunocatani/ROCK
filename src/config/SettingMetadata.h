@@ -773,24 +773,15 @@ namespace rock::config
             api::configuration::Group::Developer },
         { "GrabContactEvidence", "GrabHandReturnMaxAngleDegrees", "10. Grab Contact Evidence", "",
             api::configuration::Group::Developer },
-        { "FingerPoses", "WeaponGrabPoseMode", "11. Finger Poses",
-            "0 = Follow grab finger mode. 1 = Current swept arc. 2 = July 9 calibrated slice.\n3 = Capsule probes "
-            "(testing): the loose-object finger sweep, with thumb and index reaching onto small parts such as bolts "
-            "and slides.\nApplies on the next "
-            "dynamic equipped weapon or part grip, on either hand.\nJuly 9 uses the contacted part, translation-only "
-            "palm seating and captured finger directions.\nUses current skeleton calibration and transform safety "
-            "checks. Authored poses retain priority.",
-            api::configuration::Group::Developer },
-        { "FingerPoses", "GrabFingerPoseMode", "11. Finger Poses",
-            "1 = Current swept arc. 2 = June 2 legacy plane slice.\nApplies on the next dynamic weapon support grip "
-            "when WeaponGrabPoseMode = 0.\nLoose-object grabs use LooseGrabFingerPoseMode.\nLegacy captures at "
-            "contact and omits later pad refinement and splay.\nAuthored and saved finger poses keep their existing "
-            "priority.",
+        { "FingerPoses", "WeaponGrabCapsuleProbes", "11. Finger Poses",
+            "Testing: pose dynamic equipped weapon and part grips with the loose-object capsule probes, with thumb "
+            "and index reaching onto small parts such as bolts and slides, instead of the swept arc.\nApplies on the "
+            "next dynamic weapon grip, on either hand. Authored poses retain priority.",
             api::configuration::Group::Developer },
         { "FingerPoses", "LooseGrabFingerPoseMode", "11. Finger Poses",
             "0 = Capsule sweep.\n1 = Swept arc: the finger solve loose grabs used before the capsule sweep\n(pad-probe "
             "refinement, contact splay, surface-aim local transforms).\nApplies on the next loose-object grab. Weapon "
-            "grips use WeaponGrabPoseMode.",
+            "grips use WeaponGrabCapsuleProbes.",
             api::configuration::Group::Developer },
         { "FingerPoses", "GrabMeshJointPoseEnabled", "11. Finger Poses",
             "Sends per-joint finger values to FRIK when available instead of one curl per finger.",
@@ -1097,15 +1088,18 @@ namespace rock::config
         { "PhysicsTiming", "HavokTimingFixMaxSubsteps", "18. Physics Timing", "",
             api::configuration::Group::Developer },
         { "ScopePlacement", "NativeScopeFiringGripFallbackOffsetGameUnits", "19. Scope Placement",
-            "Scope Fallback Anchor\nWhen a weapon has no usable generated Scope or Sight geometry, the scope anchors "
-            "at the firing grip, moved by these values.\nOffsets are game units (70 = 1 metre) in the weapon's axes: "
+            "Scope Anchor Without Optic Geometry\nUsed only when a scoped weapon has no separate Scope or Sight part "
+            "ROCK can measure, such as an optic modelled into the receiver. The scope view then starts at the firing "
+            "hand's grip, moved by these values. Weapons with a measurable optic anchor on the optic and ignore these "
+            "keys.\nOffsets are game units (70 = 1 metre) in the weapon's axes: "
             "X sideways, +Y toward the muzzle, Z up; all zero puts the anchor on the firing grip.\nRotations are "
             "degrees added after the game's camera calibration: pitch about X, yaw about Z, roll about the muzzle "
             "axis.\nPosition moves the activation point, camera and overlay together; rotation corrects the camera "
             "and overlay only.\nThis key: offset [x, y, z]. Each value: -100 to 100.",
             api::configuration::Group::Developer },
         { "ScopePlacement", "NativeScopeFiringGripFallbackRotationDegrees", "19. Scope Placement",
-            "Scope fallback rotation [pitch, yaw, roll], in degrees. Each value: -180 to 180.",
+            "Rotation of the scope anchor used without optic geometry (see the offset above) [pitch, yaw, roll], in "
+            "degrees. Each value: -180 to 180.",
             api::configuration::Group::Developer },
         { "ScopePlacement", "NativeScopeOverlayOffsetGameUnits", "19. Scope Placement",
             "Scope Overlay\nFine-tunes only the game's own world_scope.nif overlay. The activation camera stays on "

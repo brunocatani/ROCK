@@ -1,9 +1,8 @@
 #pragma once
 
-// A consumer built for another ROCK API version is never left running with
-// its ROCK features silently off: discovery reports it and the game stops at
-// the main menu with an error box naming the DLL to update
-// (RPS/Runtime/RequiredUpdate.h).
+// A consumer built for another ROCK API version is refused by discovery and
+// keeps running without ROCK features. ROCK logs it once, naming the DLL to
+// update; the game is never stopped.
 
 #include <ROCK/Abi.h>
 
@@ -18,9 +17,6 @@ namespace rock::api::discovery
 
     // Any thread. RPS_UI_Framework.dll is loaded but older than the API ROCK was
     // built for, so ROCK's world drawing, ammo counters and input cooperation
-    // would silently stay off.
+    // stay off.
     void noteRpsUiWithoutDiscovery() noexcept;
-
-    // Once, from the F4SE GameLoaded message.
-    void watchForOutdatedConsumers() noexcept;
 }

@@ -32,7 +32,7 @@ namespace rock::reference_interaction
             return reinterpret_cast<Fn>(address);
         }
 
-        // VR disassembly witnesses and entry bytes: 2026-09-11 surface/PA audit.
+        // VR disassembly witnesses and entry bytes: surface/PA audit.
         // Each function validates once; missing evidence disables only its field.
         bool hasExtraList(RE::TESObjectREFR* ref)
         {

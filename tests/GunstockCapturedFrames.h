@@ -1,7 +1,7 @@
 #pragma once
 #include "RE/NetImmerse/NiTransform.h"
 
-// Captured 2026-10-10. Tracking evidence only; these are NOT calibration offsets.
+// Captured frames. Tracking evidence only; these are NOT calibration offsets.
 namespace gunstock_fixture
 {
     inline RE::NiTransform pose(const float (&v)[13])

@@ -179,9 +179,7 @@ namespace rock
                 .angularConstantRecovery = scaleFiniteValue(g_rockConfig.rockGrabAngularConstantRecovery,
                     g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier),
                 .angularMaxForce = linearMaxForce *
-                    (std::isfinite(g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularForceMultiplier)
-                            ? g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularForceMultiplier
-                            : 1.0f),
+                    g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularForceMultiplier,
             };
         }
 

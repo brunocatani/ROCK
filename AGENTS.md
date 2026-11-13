@@ -9,7 +9,7 @@ To change ROCK: read [Architecture](#architecture), find the task in [Where to s
 - Provider API 2.0: 13 interfaces in `include/ROCK/`, standard library only, nothing to link. Add ROCK's `include/` through a CMake cache variable such as `ROCK_INCLUDE_DIR`, resolve `ROCKAPI_QueryInterfaceV1` from `ROCK.dll` and connect with `rock::api::Client`. Never include `src/` headers or copy ROCK's headers.
 - Read `docs/api/Overview.md`, then each interface's page; they state every call's thread, permission and limits.
 - A mod built for ROCK 0.92: follow `skills/rock-1.0-migration/SKILL.md` (it also covers PAPER, RPS UI Framework and RobCo PALM) and `docs/api/Migration.md`.
-- Without ROCK, turn ROCK features off and keep running. Request exactly the versions your headers declare and never probe: every version refusal shows an error box at the main menu and closes the game.
+- Without ROCK, turn ROCK features off and keep running. Request exactly the versions your headers declare and never probe: every version refusal is logged in `ROCK.log` with your DLL.
 
 ## Repository map
 
@@ -19,7 +19,7 @@ To change ROCK: read [Architecture](#architecture), find the task in [Where to s
 | `include/ROCK/` | Public provider API headers, the only copy |
 | `docs/api/` | One page per interface, and `Migration.md` for mods built for ROCK 0.92 |
 | `skills/rock-1.0-migration/` | Agent skill for updating a mod built for ROCK 0.92 |
-| `tests/`, `tools/Invoke-RockTests.ps1` | Tests and the affected-test selector |
+| `tests/` | Tests |
 | `preview/` | The setup wizard preview (`ROCKSetupWizardPreview.exe`): the wizard on the desktop, without the game |
 | `data/config/` | Example settings files, generated from the catalog |
 | `data/mod/` | Game data for the mod package, if any |
@@ -72,11 +72,11 @@ Subsystems read the per-frame snapshot `core/RockRuntimeState.h` instead of poll
 3. `src/api/ProviderRuntime.cpp` and `src/api/services/*.inl`: owners, leases, published state.
 4. `PhysicsInteraction`: queries in `core/interaction/ProviderQueries.cpp`, commands in `core/interaction/ProviderCommands.cpp` and the topic files.
 
-NativeInteraction and Storage keep table and service together (`src/api/NativeInteractionService.cpp`, `src/api/StorageService.cpp`). Discovery: `src/api/Discovery.cpp`. Refusals and the error box: `src/api/OutdatedConsumers.cpp`.
+NativeInteraction and Storage keep table and service together (`src/api/NativeInteractionService.cpp`, `src/api/StorageService.cpp`). Discovery: `src/api/Discovery.cpp`. Refusal logging: `src/api/OutdatedConsumers.cpp`.
 
 ### Conventions
 
-- `*Policy.h` headers hold decisions and math, mostly free of engine types so tests compile them. Put a new rule in a policy with a test whenever it can be expressed without the engine.
+- `*Policy.h` headers hold decisions and math, mostly free of engine types so tests compile them. A policy gets a test only when it guards a contract listed in [Build and test](#build-and-test).
 - Native addresses and layouts are named constants (`native/havok/HavokOffsets.h` for Havok). A hook verifies the live bytes at its site before patching; copy an existing `install()` such as `native/safety/NativeShapeCastSafety.cpp`.
 - Convert game and Havok units only through `physics_scale` (`native/havok/PhysicsScale.h`; `gameToHavokScale()`, `havokToGameScale()`), never with a literal factor or FRIK's player scale.
 - Log through `physics-interaction/PhysicsLog.h`; per-frame paths use the rate-limited `ROCK_LOG_SAMPLE_*`.
@@ -163,13 +163,9 @@ cmake --preset custom-fast
 cmake --build build-fast --config Release --target ROCK
 ```
 
-Tests are outside the default build. Run the ones a change affects:
+Tests are outside the default build. Build them with `cmake --build build-fast --config Release --target build_tests`, then run the ones a change affects with `ctest --test-dir build-fast -C Release --output-on-failure -R <name>` (all of them without `-R`).
 
-```powershell
-pwsh -NoProfile -File tools/Invoke-RockTests.ps1
-```
-
-It selects from the working tree (or the latest commit when clean) and widens the selection when unsure; `-PlanOnly`, `-BaseRef <ref>` and `-All` adjust it. Everything: `cmake --build build-fast --config Release --target build_tests`, then `ctest --test-dir build-fast -C Release --output-on-failure`.
+A test guards a real contract: a public API or configuration contract, math on real engine types or captured data, lifetime and memory safety, optimized-versus-reference equivalence, or a regression replayed from captured input. Tests that restate a policy row by row or pin tuning constants are not added.
 
 The setup wizard preview, `ROCKSetupWizardPreview.exe`, runs the wizard's own panel through RPS UI's `LocalPanelHost` and ROCK's settings store over a sandbox folder (`Settings sandbox` beside the exe, or `--settings <folder>`), with stand-ins for the controllers, the pointer and SteamVR. It builds with ROCK (`ROCK_SETUP_WIZARD_PREVIEW`, off in the release preset) and needs only Windows' own DLLs; `ROCK_SETUP_WIZARD_PREVIEW_COPY_PATH` in `CMakeUserPresets.json` copies it to a folder to open it from. `ROCKSetupWizardPreview.exe --capture <folder>` writes every page to PNG instead of opening the window.
 
@@ -189,7 +185,7 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp` for engine math. `
 - **NPC interactions**: SCISSORS, through the NativeInteraction interface, owns its NPC bodies, constraints, blade and limb policy. ROCK keeps the shared mechanisms (native allocation, callback lifetime, hand and weapon authority, grab execution, native safety) and has no NPC settings.
 - **World drawing**: RPS UI Framework. ROCK draws through it (`visual/WorldDrawClient.cpp`, `visual/AmmoCounters.cpp`) and has no renderer.
 - **Reload and manual-cycle animation**: PAPER.
-- **Settings screens**: RobCo PALM, through the Configuration interface. Nothing else writes ROCK's settings files.
+- **Settings screens**: RPS UI Framework's settings menu (opened from its holotape or RobCo PALM's Config), through the Configuration interface. ROCK owns only the setup wizard. Nothing else writes ROCK's settings files.
 
 ## Invariants
 
@@ -211,7 +207,7 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp` for engine math. `
 
 - Public headers include only the standard library and other `include/ROCK/` headers.
 - Every entry point validates the caller's `size` and `version` before reading. Records use fixed-width types.
-- Every version refusal is logged with the calling DLL and stops the game at the main menu.
+- Every version refusal is logged once with the calling DLL; the game keeps running.
 
 ### Configuration
 

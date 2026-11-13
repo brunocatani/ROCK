@@ -1335,7 +1335,7 @@ namespace rock
          * initializes; a firing-grip reattach turns it into a two-hand
          * support whose seat is off the controller, and a lerp from the
          * controller turned the support hand 54-97 degrees in one frame
-         * (runtime 14 Oct 22:07:55, 22:08:06). The record is cleared when a
+         * (observed at runtime). The record is cleared when a
          * hand's presentation ends, so a fresh grab still starts at the
          * controller.
          */

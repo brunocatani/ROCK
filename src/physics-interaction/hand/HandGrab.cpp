@@ -47,7 +47,7 @@ namespace rock
 
         grab_pinch_pocket_policy::Config currentPinchPocketConfig()
         {
-            return grab_pinch_pocket_policy::sanitizeConfig(grab_pinch_pocket_policy::Config{
+            return grab_pinch_pocket_policy::Config{
                 .maxPocketDistanceGameUnits = g_rockConfig.rockGrabPinchMaxPocketDistanceGameUnits,
                 .minFingerGapGameUnits = g_rockConfig.rockGrabPinchMinFingerGapGameUnits,
                 .maxFingerGapGameUnits = g_rockConfig.rockGrabPinchMaxFingerGapGameUnits,
@@ -55,7 +55,7 @@ namespace rock
                 .otherFingerCurlValue = g_rockConfig.rockGrabPinchOtherFingerCurlValue,
                 .detectionDirectionHandspace = g_rockConfig.rockGrabPinchDetectionDirectionHandspace,
                 .detectionAxisBlend = g_rockConfig.rockGrabPinchDetectionAxisBlend,
-            });
+            };
         }
 
         bool solveRuntimePinchClosure(RuntimePinchPocketCandidate& candidate,
@@ -698,7 +698,7 @@ namespace rock
             surface.gripPoint = transform_math::localPointToWorld(rootNode->world, seatLocal);
             surface.pointMode = "authoredWeaponSeat";
             surface.pointAuthoritySource = GrabPivotAuthoritySource::LooseWeaponPrimaryAttach;
-            surface.fallbackReason = "authoredArrival";
+            surface.gripReason = "authoredArrival";
             // No mesh hit is fabricated: the authored pose is the position authority.
         };
 
@@ -817,7 +817,7 @@ namespace rock
             ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
                 "{} hand GRAB refused: no mesh point to hold ref={:08X} reason={} pullCatch={} forced={} reach={}",
                 handName(), sel.refr ? sel.refr->GetFormID() : 0,
-                surfaceEvidence.fallbackReason ? surfaceEvidence.fallbackReason : "none",
+                surfaceEvidence.gripReason ? surfaceEvidence.gripReason : "none",
                 grabbedFromPullCatch ? "yes" : "no", sel.forcedArrival ? "yes" : "no", reachArrival ? "yes" : "no");
             grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);

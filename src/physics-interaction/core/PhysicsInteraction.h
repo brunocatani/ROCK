@@ -587,6 +587,9 @@ namespace rock
         bool isPendingForceGrabTarget(RE::TESObjectREFR* ref) const;
         void pruneInactiveProviderForceGrabCommits();
         void serviceLooseGrenadeQuickDraw(const PhysicsFrameContext& frame);
+        void serviceWorkshopHoldEntry(const PhysicsFrameContext& frame);
+        // False when the drawn grenade is armed and stays in the hand.
+        bool returnQuickDrawnGrenade(const PhysicsFrameContext& frame);
         void servicePendingForceGrabCommits(const PhysicsFrameContext& frame);
         void clearPendingForceGrabCommits();
         void cancelEquippedWeaponTransfersForMenu();
@@ -1109,6 +1112,8 @@ namespace rock
             std::array<RetainedWeaponGrab, 2> retainedWeaponGrabs{};
             std::array<bool, 2> committedThisFrame{};
             std::array<ArmedLooseGrenadeFuseState, kArmedLooseGrenadeFuseCapacity> grenadeFuses{};
+            // The grenade the last B hold drew; the Workshop hold puts it back.
+            RE::ObjectRefHandle quickDrawnGrenade{};
             std::array<std::atomic<std::uint32_t>, kArmedLooseGrenadeFuseCapacity> grenadeImpactBodyIds{};
             std::atomic<std::uint64_t> pendingGrenadeImpactPair{ INVALID_HELD_IMPACT_PAIR };
         };

@@ -709,6 +709,8 @@ namespace rock
                 }
             }
 
+            const auto installedOptics = collectInstalledOpticModels(_equipIndex);
+
             const auto emitterSnapshot =
                 collectWeaponEmitterSnapshot(weaponNode, omodByAttachPointFormId, equippedWeaponKey, equippedWeaponKey,
                     makeWeaponEmitterRootSetKey(weaponNode, usesPlayerWeaponRoots()), usesPlayerWeaponRoots());
@@ -721,8 +723,13 @@ namespace rock
                     }
                 }
 
+                const std::uint32_t opticOmodFormId = installedOpticOwningPart(source.sourceRoot, installedOptics);
+                if (opticOmodFormId != 0) {
+                    sourceOmodFormId = opticOmodFormId;
+                }
+
                 weapon_accessory_part_kind_policy::Evidence evidence{};
-                evidence.nativeScopeOverlay =
+                evidence.installedOptic = opticOmodFormId != 0 ||
                     (sourceOmodFormId != 0 && nativeScopeOverlayOmods.contains(sourceOmodFormId)) ||
                     (sourceOmodFormId == 0 && source.semantic.partKind == WeaponPartKind::Sight &&
                         nativeScopeOverlayOmods.size() == 1);
@@ -763,10 +770,10 @@ namespace rock
                 if (source.semantic.partKind != baseKind) {
                     ROCK_LOG_DEBUG(Weapon,
                         "Generated weapon part refined by attachment evidence: source='{}' base={} resolved={} "
-                        "omod={:08X} nativeScope={} laser={} flashlight={}",
+                        "omod={:08X} optic={} laser={} flashlight={}",
                         source.sourceName, generatedWeaponPartKindName(baseKind),
                         generatedWeaponPartKindName(source.semantic.partKind), sourceOmodFormId,
-                        evidence.nativeScopeOverlay, evidence.laserEmitter, evidence.flashlightEmitter);
+                        evidence.installedOptic, evidence.laserEmitter, evidence.flashlightEmitter);
                 }
             }
         }

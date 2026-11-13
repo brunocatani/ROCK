@@ -175,7 +175,7 @@ namespace rock::native_inventory_hand_slots
                     ROCK_LOG_SAMPLE_INFO(Weapon, 1000,
                         "AKIMBO native primary construction form={:08X} authoredSlot={:08X} actualSlot={:08X}",
                         item->object->formID, slot->formID, selected->formID);
-                    // Wrist Pip-Boy left equips (runtime 12 Oct 22:34) reach
+                    // Wrist Pip-Boy left equips (observed at runtime) reach
                     // here with the authored slot although the execution
                     // resolver selected the left leaf; the caller chain
                     // names the path that drops it. Bounded per session.

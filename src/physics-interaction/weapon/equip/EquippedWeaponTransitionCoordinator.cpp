@@ -972,7 +972,7 @@ namespace rock
              * Native equips (Pip-Boy, favorites, other mods) and the redraw
              * after a menu or workbench play their own draw clip at native
              * speed, and the native equip hide lasts until it ends (~200 ms
-             * after the Pip-Boy closed, runtime 12 Oct 22:35:44). Arm the same
+             * after the Pip-Boy closed, observed at runtime). Arm the same
              * bounded draw-clip acceleration lease that ROCK's own draws use:
              * it only speeds this identity's Equip/EquipFast clips while the
              * native state is Drawing (or briefly Drawn for a late clip).

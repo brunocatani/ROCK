@@ -3,8 +3,8 @@
 ROCK 0.92 published provider API **1** through the RPS SDK. ROCK 1.0 publishes
 provider API **2** from this repository's `include/ROCK/` and serves nothing
 else. A mod built against the old headers asks for major 1, gets
-`UnsupportedMajor`, and ROCK stops the game at the main menu with an error box
-naming that mod. There is no compatibility layer: the mod has to be rebuilt
+`UnsupportedMajor`, and ROCK names that mod in `ROCK.log`; it runs without its
+ROCK features. There is no compatibility layer: the mod has to be rebuilt
 against provider API 2 with the changes on this page.
 
 You need this page if your plugin calls `ROCKAPI_QueryInterfaceV1`, directly or
@@ -52,12 +52,9 @@ interface's page hold the full 2.0 contract; this page lists what changed from
 - Every interface is major 2, minor 0, with one table. There are no minors to
   negotiate.
 - Never probe with trial queries, for example "ask for 2, then 1". Every
-  refused query stops the game.
-- When `ROCK.dll` is loaded but refuses your request, do the same as ROCK: show
-  an error box naming your mod and stop at the main menu, so the player knows
-  which mod needs an update. RPS Framework's `RPS/Runtime/RequiredUpdate.h`
-  provides the box. When `ROCK.dll` is not loaded, turn your ROCK features off
-  and keep running.
+  refused query is logged in `ROCK.log` as a mismatch.
+- When `ROCK.dll` is not loaded, or is loaded but refuses your request, turn
+  your ROCK features off, log why and keep running.
 - Permission bits are unchanged, except that Animation gains `Callbacks` (4)
   for the animation phase callbacks, which moved there from Core.
 
@@ -320,8 +317,8 @@ returns `OwnerRevoked`.
   click.
 - The leg and foot body colliders are gone.
 - ROCK draws nothing for other mods.
-- Every version refusal stops the game, including a refusal your own fallback
-  query caused.
+- Every version refusal is logged in `ROCK.log` with your DLL, including a
+  refusal your own fallback query caused.
 
 ## 9. Check the result
 
@@ -330,8 +327,7 @@ returns `OwnerRevoked`.
 2. Search your source for leftovers: `V1` outside the discovery names,
    `reserved`, `copyEvents`, `Offhand`, `primary`, `ForOwner`, and literal
    majors or table sizes.
-3. Start the game with ROCK 1.0. No error box appears at the main menu,
-   `ROCK.log` names no refusal for your DLL, and your own log shows `connect`
+3. Start the game with ROCK 1.0. `ROCK.log` names no refusal for your DLL, and your own log shows `connect`
    and every `acquire` returning `Ok`.
 4. If your mod touches weapons, test with a weapon in each hand.
 

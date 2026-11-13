@@ -1860,7 +1860,7 @@ namespace rock
              * swings with wrist/arm IK as the firing hand translates, and
              * the weapon-origin-to-support-seat lever converts that swing
              * into inverted, amplified weapon motion around the static
-             * offhand seat. Trace evidence 2026-08-27, Docs/ROCK/lessons.
+             * offhand seat (trace evidence).
              */
             solverInput.useSupportNormalTwist = false;
             solverInput.supportNormalTwistFactor = 0.0f;
@@ -2223,13 +2223,8 @@ namespace rock
 
         float fallbackValue = 0.0f;
         if (fallback == SupportGripPoseFallback::SelectedClose) {
-            const float fallbackMin = std::clamp(
-                std::isfinite(g_rockConfig.rockGrabFingerMinValue) ? g_rockConfig.rockGrabFingerMinValue : 0.2f, 0.0f,
-                1.0f);
-            const float configuredFallback = std::isfinite(g_rockConfig.rockSelectedCloseFingerAnimValue)
-                ? g_rockConfig.rockSelectedCloseFingerAnimValue
-                : 0.9f;
-            fallbackValue = std::clamp(configuredFallback, fallbackMin, 1.0f);
+            fallbackValue =
+                std::clamp(g_rockConfig.rockSelectedCloseFingerAnimValue, g_rockConfig.rockGrabFingerMinValue, 1.0f);
         }
         const std::array<float, 5> fallbackCurls{
             fallbackValue,
@@ -3016,10 +3011,7 @@ namespace rock
             : useDynamicHandoffGrip                       ? firingGripWorld
                                                           : (meshFound ? grabPoint.position : palmPos);
         constexpr float kDegreesToRadians = 0.01745329251994329577f;
-        const float surfaceSeatMaxRadians =
-            grab_finger_pose_runtime::weaponGrabPoseMode(g_rockConfig.rockWeaponGrabPoseMode,
-                g_rockConfig.rockGrabFingerPoseMode) != grab_finger_pose_runtime::FingerPoseMode::July9 &&
-                g_rockConfig.rockWeaponSupportSurfaceSeatEnabled && meshFound
+        const float surfaceSeatMaxRadians = g_rockConfig.rockWeaponSupportSurfaceSeatEnabled && meshFound
             ? g_rockConfig.rockWeaponSupportSurfaceSeatMaxDegrees * kDegreesToRadians
             : 0.0f;
         const auto surfaceSeat =

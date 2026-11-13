@@ -35,13 +35,13 @@ namespace rock::body_frame
         MotionCenterOfMass,
         OwnerNode,
         ContactPoint,
-        Fallback
+        None
     };
 
     struct BodyFrameAnchor
     {
         RE::NiPoint3 position{};
-        BodyFrameSource source{ BodyFrameSource::Fallback };
+        BodyFrameSource source{ BodyFrameSource::None };
     };
 
     inline bool hasUsableMotionIndex(std::uint32_t motionIndex)
@@ -78,12 +78,12 @@ namespace rock::body_frame
         if (hasBodyTransform) {
             return BodyFrameSource::BodyTransform;
         }
-        return BodyFrameSource::Fallback;
+        return BodyFrameSource::None;
     }
 
     inline BodyFrameAnchor chooseSelectionDistanceAnchor(bool hasContactPoint, const RE::NiPoint3& contactPoint,
         bool hasBodyTransform, const RE::NiPoint3& bodyTransform, bool hasOwnerNode, const RE::NiPoint3& ownerNode,
-        bool hasMotionCenterOfMass, const RE::NiPoint3& motionCenterOfMass, const RE::NiPoint3& fallback)
+        bool hasMotionCenterOfMass, const RE::NiPoint3& motionCenterOfMass)
     {
         if (hasContactPoint) {
             return BodyFrameAnchor{ contactPoint, BodyFrameSource::ContactPoint };
@@ -97,7 +97,7 @@ namespace rock::body_frame
         if (hasMotionCenterOfMass) {
             return BodyFrameAnchor{ motionCenterOfMass, BodyFrameSource::MotionCenterOfMass };
         }
-        return BodyFrameAnchor{ fallback, BodyFrameSource::Fallback };
+        return BodyFrameAnchor{ RE::NiPoint3{}, BodyFrameSource::None };
     }
 
     inline float distance(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
@@ -119,9 +119,9 @@ namespace rock::body_frame
             return "ownerNode";
         case BodyFrameSource::ContactPoint:
             return "contactPoint";
-        case BodyFrameSource::Fallback:
+        case BodyFrameSource::None:
         default:
-            return "fallback";
+            return "none";
         }
     }
 
@@ -136,9 +136,9 @@ namespace rock::body_frame
             return "OWNER";
         case BodyFrameSource::ContactPoint:
             return "CONTACT";
-        case BodyFrameSource::Fallback:
+        case BodyFrameSource::None:
         default:
-            return "FALLBACK";
+            return "NONE";
         }
     }
 }

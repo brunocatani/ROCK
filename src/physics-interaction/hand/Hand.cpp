@@ -78,8 +78,8 @@ namespace rock
                 return "preferredHitAccepted";
             case PrimaryBodyChoiceReason::SurfaceOwnerAccepted:
                 return "surfaceOwnerAccepted";
-            case PrimaryBodyChoiceReason::NearestAcceptedFallback:
-                return "nearestAcceptedFallback";
+            case PrimaryBodyChoiceReason::NearestAccepted:
+                return "nearestAccepted";
             case PrimaryBodyChoiceReason::NoAcceptedBody:
                 return "noAcceptedBody";
             case PrimaryBodyChoiceReason::None:
@@ -1239,7 +1239,7 @@ namespace rock
             return false;
         }
 
-        body_frame::BodyFrameSource source = body_frame::BodyFrameSource::Fallback;
+        body_frame::BodyFrameSource source = body_frame::BodyFrameSource::None;
         std::uint32_t motionIndex = body_frame::kFreeMotionIndex;
         RE::NiTransform livePalmWorld{};
         if (!tryResolveLiveBodyWorldTransform(world, _handBody.getBodyId(), livePalmWorld, &source, &motionIndex)) {
@@ -1524,7 +1524,7 @@ namespace rock
         /*
          * Centre of mass from the held body's Havok motion. Offset authority is
          * this binary's own reflection table: hknpMotion member
-         * 'centerOfMassAndMassFactor' at +0x00 (verified 2026-07-25). Mass
+         * 'centerOfMassAndMassFactor' at +0x00. Mass
          * distribution cannot be recovered from the render mesh, so this is
          * captured as a first-class field rather than inferred later from the
          * body frame.
@@ -2451,8 +2451,8 @@ namespace rock
 
                 const auto anchor = body_frame::chooseSelectionDistanceAnchor(false, _currentSelection.hitPointWorld,
                     hasBodyTransform, bodyWorld.translate, hasOwnerNode, ownerNodePosition, hasMotionCenterOfMass,
-                    motionCenterOfMass, currentCloseSelectionOrigin());
-                if (anchor.source != body_frame::BodyFrameSource::Fallback) {
+                    motionCenterOfMass);
+                if (anchor.source != body_frame::BodyFrameSource::None) {
                     _currentSelection.distance = body_frame::distance(anchor.position, currentCloseSelectionOrigin());
                 } else {
                     stopSelectionHighlight();

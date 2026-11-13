@@ -39,7 +39,7 @@ namespace rock::saved_grab_offset
      * (canonical primary attach / mirrored firing hold), and a saved hold
      * captured outside that pipeline seats the weapon away from the firing
      * grip the grip-zone equip snaps it to (stale left-only Service Rifle
-     * save, 2026-07-13). Grenades and mines are hand-thrown refs with no
+     * save). Grenades and mines are hand-thrown refs with no
      * FRIK attach; they keep the saved/calibrated offset path.
      */
     [[nodiscard]] constexpr bool participatesInSavedGrabOffsets(bool isWeaponForm, bool isThrowableWeapon)

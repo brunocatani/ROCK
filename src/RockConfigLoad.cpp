@@ -590,23 +590,23 @@ namespace rock
         rockManualScopeHoldSeconds = readClampedFloat(ini, "Scopes", "ManualScopeHoldSeconds",
             rockManualScopeHoldSeconds, 0.30f, 0.05f, 2.0f);
         {
-            const auto fallbackOffset = readClampedFloat3(ini, "ScopePlacement",
+            const auto firingGripOffset = readClampedFloat3(ini, "ScopePlacement",
                 "NativeScopeFiringGripFallbackOffsetGameUnits",
-                RE::NiPoint3(rockNativeScopeFiringGripFallbackOffsetXGameUnits,
-                    rockNativeScopeFiringGripFallbackOffsetYGameUnits, rockNativeScopeFiringGripFallbackOffsetZGameUnits),
+                RE::NiPoint3(rockNativeScopeFiringGripOffsetXGameUnits,
+                    rockNativeScopeFiringGripOffsetYGameUnits, rockNativeScopeFiringGripOffsetZGameUnits),
                 -100.0f, 100.0f);
-            rockNativeScopeFiringGripFallbackOffsetXGameUnits = fallbackOffset.x;
-            rockNativeScopeFiringGripFallbackOffsetYGameUnits = fallbackOffset.y;
-            rockNativeScopeFiringGripFallbackOffsetZGameUnits = fallbackOffset.z;
+            rockNativeScopeFiringGripOffsetXGameUnits = firingGripOffset.x;
+            rockNativeScopeFiringGripOffsetYGameUnits = firingGripOffset.y;
+            rockNativeScopeFiringGripOffsetZGameUnits = firingGripOffset.z;
             // [pitch, yaw, roll]
-            const auto fallbackRotation = readClampedFloat3(ini, "ScopePlacement",
+            const auto firingGripRotation = readClampedFloat3(ini, "ScopePlacement",
                 "NativeScopeFiringGripFallbackRotationDegrees",
-                RE::NiPoint3(rockNativeScopeFiringGripFallbackPitchDegrees, rockNativeScopeFiringGripFallbackYawDegrees,
-                    rockNativeScopeFiringGripFallbackRollDegrees),
+                RE::NiPoint3(rockNativeScopeFiringGripPitchDegrees, rockNativeScopeFiringGripYawDegrees,
+                    rockNativeScopeFiringGripRollDegrees),
                 -180.0f, 180.0f);
-            rockNativeScopeFiringGripFallbackPitchDegrees = fallbackRotation.x;
-            rockNativeScopeFiringGripFallbackYawDegrees = fallbackRotation.y;
-            rockNativeScopeFiringGripFallbackRollDegrees = fallbackRotation.z;
+            rockNativeScopeFiringGripPitchDegrees = firingGripRotation.x;
+            rockNativeScopeFiringGripYawDegrees = firingGripRotation.y;
+            rockNativeScopeFiringGripRollDegrees = firingGripRotation.z;
             const auto overlayOffset = readClampedFloat3(ini, "ScopePlacement", "NativeScopeOverlayOffsetGameUnits",
                 RE::NiPoint3(rockNativeScopeOverlayOffsetXGameUnits, rockNativeScopeOverlayOffsetYGameUnits,
                     rockNativeScopeOverlayOffsetZGameUnits),
@@ -1109,12 +1109,14 @@ namespace rock
         rockGrabPinchDetectionAxisBlend = readClampedFloat(ini, "GrabContactEvidence", "GrabPinchDetectionAxisBlend",
             rockGrabPinchDetectionAxisBlend, grab_pinch_pocket_policy::kDefaultDetectionAxisBlend, 0.0f, 1.0f);
         {
-            auto pinchDetectionConfig = grab_pinch_pocket_policy::Config{};
-            pinchDetectionConfig.detectionDirectionHandspace = rockGrabPinchDetectionDirectionHandspace;
-            pinchDetectionConfig.detectionAxisBlend = rockGrabPinchDetectionAxisBlend;
-            const auto sanitizedPinchDetectionConfig = grab_pinch_pocket_policy::sanitizeConfig(pinchDetectionConfig);
-            rockGrabPinchDetectionDirectionHandspace = sanitizedPinchDetectionConfig.detectionDirectionHandspace;
-            rockGrabPinchDetectionAxisBlend = sanitizedPinchDetectionConfig.detectionAxisBlend;
+            const auto& direction = rockGrabPinchDetectionDirectionHandspace;
+            const float lengthSquared = direction.x * direction.x + direction.y * direction.y + direction.z * direction.z;
+            if (lengthSquared > 0.000001f) {
+                rockGrabPinchDetectionDirectionHandspace = direction * (1.0f / std::sqrt(lengthSquared));
+            } else {
+                ROCK_LOG_WARN(Config, "Invalid GrabContactEvidence.GrabPinchDetectionDirectionHandspace -- using +X");
+                rockGrabPinchDetectionDirectionHandspace = RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
+            }
         }
         rockGrabHandLerpEnabled = ini.boolean("GrabContactEvidence", "GrabHandLerpEnabled", rockGrabHandLerpEnabled);
         rockGrabHandLerpTimeMin =
@@ -1138,18 +1140,8 @@ namespace rock
             rockGrabHandReturnMinAngleDegrees, 5.0f, 0.0f, 180.0f);
         rockGrabHandReturnMaxAngleDegrees = readClampedFloat(ini, "GrabContactEvidence", "GrabHandReturnMaxAngleDegrees",
             rockGrabHandReturnMaxAngleDegrees, 90.0f, rockGrabHandReturnMinAngleDegrees, 180.0f);
-        rockGrabFingerPoseMode =
-            static_cast<int>(ini.integer("FingerPoses", "GrabFingerPoseMode", rockGrabFingerPoseMode));
-        if (rockGrabFingerPoseMode != 1 && rockGrabFingerPoseMode != 2) {
-            ROCK_LOG_WARN(Config, "Invalid FingerPoses.GrabFingerPoseMode={} -- using 1", rockGrabFingerPoseMode);
-            rockGrabFingerPoseMode = 1;
-        }
-        rockWeaponGrabPoseMode =
-            static_cast<int>(ini.integer("FingerPoses", "WeaponGrabPoseMode", rockWeaponGrabPoseMode));
-        if (rockWeaponGrabPoseMode < 0 || rockWeaponGrabPoseMode > 3) {
-            ROCK_LOG_WARN(Config, "Invalid FingerPoses.WeaponGrabPoseMode={} -- using 0", rockWeaponGrabPoseMode);
-            rockWeaponGrabPoseMode = 0;
-        }
+        rockWeaponGrabCapsuleProbes =
+            ini.boolean("FingerPoses", "WeaponGrabCapsuleProbes", rockWeaponGrabCapsuleProbes);
         rockLooseGrabFingerPoseMode =
             static_cast<int>(ini.integer("FingerPoses", "LooseGrabFingerPoseMode", rockLooseGrabFingerPoseMode));
         if (rockLooseGrabFingerPoseMode < 0 || rockLooseGrabFingerPoseMode > 1) {
@@ -1248,7 +1240,10 @@ namespace rock
         rockGrabContactPatchMaxNormalAngleDegrees = static_cast<float>(ini.number("MeshContact", "GrabContactPatchMaxNormalAngleDegrees", rockGrabContactPatchMaxNormalAngleDegrees));
         rockGrabContactPatchMaxNormalAngleDegrees = std::clamp(rockGrabContactPatchMaxNormalAngleDegrees, 0.0f, 179.0f);
         rockGrabAlignmentMaxSelectionToMeshDistance = static_cast<float>(ini.number("MeshContact", "GrabAlignmentMaxSelectionToMeshDistance", rockGrabAlignmentMaxSelectionToMeshDistance));
-        if (!std::isfinite(rockGrabAlignmentMaxSelectionToMeshDistance)) {
+        if (!std::isfinite(rockGrabAlignmentMaxSelectionToMeshDistance) ||
+            rockGrabAlignmentMaxSelectionToMeshDistance < 0.0f) {
+            ROCK_LOG_WARN(Config, "Invalid MeshContact.GrabAlignmentMaxSelectionToMeshDistance={} -- using 8.0",
+                rockGrabAlignmentMaxSelectionToMeshDistance);
             rockGrabAlignmentMaxSelectionToMeshDistance = 8.0f;
         }
         rockSelectedCloseFingerCurlEnabled =

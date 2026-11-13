@@ -9,8 +9,8 @@
 namespace rock::rps_ui
 {
     // Null when RPS UI Framework is not loaded (ROCK then runs without it), or
-    // when the loaded one has no 2.0 discovery, which also stops the game at the
-    // main menu. A refusal after this comes from RPS UI, which reports it itself.
+    // when the loaded one has no 2.0 discovery, which is logged once. A refusal
+    // after this comes from RPS UI, which logs it itself.
     [[nodiscard]] inline rpsui::api::QueryInterfaceV1 query() noexcept
     {
         const auto module = GetModuleHandleW(rpsui::api::kModuleName);

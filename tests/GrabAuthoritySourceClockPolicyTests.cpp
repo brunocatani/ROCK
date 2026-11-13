@@ -62,7 +62,7 @@ int main()
     // THE game-clock lock: with one substep per frame, every frame-end
     // evaluate lands EXACTLY on the newest game-frame sample, so consecutive
     // frame-end positions reproduce the sampled wand path with zero
-    // physics-clock deviation (the 2026-07-13 OVERLAY_POINT stutter link).
+    // physics-clock deviation (the OVERLAY_POINT stutter link).
     {
         GameClockPhaseLock phaseLock;
         const float speed = 400.0f;

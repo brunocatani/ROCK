@@ -138,6 +138,9 @@ namespace rock::input_remap_runtime
     // V.A.N.S. hold threshold during eligible gameplay. Frame thread only.
 
     bool consumeGrenadeQuickDrawHoldRequest();
+    // Test-and-clear: B was held for the Workshop hold inside a workshop's
+    // buildable area. Frame thread only.
+    bool consumeWorkshopEntryRequest();
     RawButtonState peekRawButtonState(bool isLeft, int buttonId);
     // Physical Axis0, sampled before game-input suppression. False returns zero axes.
     bool peekRawThumbstick(bool isLeft, float& x, float& y);

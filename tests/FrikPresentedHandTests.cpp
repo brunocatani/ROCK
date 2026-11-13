@@ -33,7 +33,7 @@ namespace
     {
         ++fingerPublications;
         // Published FRIK 2.3 contract, and the exact rejection observed in the
-        // 2026-10-12 12:03:21.932 runtime log: locals require a tagged pose.
+        // runtime log: locals require a tagged pose.
         if (!poseRegistered || !acceptFingerLocals)
             return false;
         receivedFingers = *locals;

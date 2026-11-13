@@ -64,7 +64,7 @@ namespace rock::havok_runtime
     {
         bool valid = false;
         RE::NiTransform transform{};
-        body_frame::BodyFrameSource source{ body_frame::BodyFrameSource::Fallback };
+        body_frame::BodyFrameSource source{ body_frame::BodyFrameSource::None };
         std::uint32_t motionIndex{ body_frame::kFreeMotionIndex };
     };
 

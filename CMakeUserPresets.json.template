@@ -12,7 +12,7 @@
 // Run:
 // cmake --preset custom-fast
 // cmake --build build-fast --config Release --target ROCK
-// cmake --build build-fast --config Release --target ROCKPolicyTestBinaries
+// cmake --build build-fast --config Release --target build_tests
 // ctest --test-dir build-fast -C Release --output-on-failure
 
 {

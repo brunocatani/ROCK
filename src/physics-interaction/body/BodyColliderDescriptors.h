@@ -98,7 +98,7 @@ namespace rock::body_collider
             "RArm_ForeArm3", "RArm_Hand", 2.1f, 0.25f }
     };
 
-    // The armor rig has coincident ForeArm1/ForeArm2 positions (runtime 2026-09-08).
+    // The armor rig has coincident ForeArm1/ForeArm2 positions (observed at runtime).
     // Split the nonzero ForeArm1->ForeArm3 span into adjacent upper/lower zones;
     // keep the wrist segment separate and the merged forearm's total length intact.
     inline constexpr std::array<Descriptor, 15> kPowerArmorDescriptors{

@@ -741,7 +741,7 @@ namespace rock
         _scope.anchorWeaponLocal = {};
         _scope.anchorSource = native_scope_sight_anchor_policy::AnchorSource::None;
         _scope.anchorValid = false;
-        _scope.fallbackRotationDegrees = {};
+        _scope.firingGripRotationDegrees = {};
         _scope.cameraDebugSnapshot = {};
         _scope.activationDebugSnapshot = {};
         clearNativeScopeRigidFrame();

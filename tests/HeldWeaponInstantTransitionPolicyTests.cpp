@@ -87,7 +87,7 @@ int main()
     ok &= expect("authored equip clips qualify regardless of weapon directory or case",
         isEquipClip("Meshes/Actors/Character/Animations/RU556Anims/WPNEquip.hkx") &&
             isEquipClip("Pistol\\WPNEQUIPFAST.HKX") && isEquipClip("WPNUnEquip.hkx"));
-    // Exact clip identities in the 2026-10-05 runtime trace. These events
+    // Exact clip identities in the captured runtime trace. These events
     // reached the filter but previously escaped its HKX/WPN-only matcher.
     ok &= expect("captured firearm fast-equip clip suppresses its sound",
         isEquipClip("Animations\\44Pistol\\WPNEquipFast.hkt"));

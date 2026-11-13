@@ -812,8 +812,7 @@ namespace rock::weapon_equip_transfer
         /*
          * Capture the loose 3D before ActivateRef. The pickup path detaches it
          * from the scene graph synchronously inside this call (DetachHavok +
-         * Set3D(nullptr) via the inline-processed remove task; see
-         * docs/research/2026-07-04-loose-to-equipped-weapon-visual-gap.md),
+         * Set3D(nullptr) via the inline-processed remove task),
          * but that teardown only releases the ref's own ownership — this
          * NiPointer keeps the assembled model alive for the visual bridge.
          */
@@ -972,8 +971,8 @@ namespace rock::weapon_equip_transfer
         const bool instanceMatch = stack.instanceData.get() == equipped.instanceData;
         if (!stack.found || !stack.equipSlot || !stack.count || !unequip || !instanceMatch ||
             !native_one_hand_restore::disabled()) {
-            // Identical-copy drops fail here without a native call (runtime
-            // 23 Oct 17:57:04); name the failing precondition.
+            // Identical-copy drops fail here without a native call (observed
+            // at runtime); name the failing precondition.
             ROCK_LOG_WARN(Weapon,
                 "Equipped index unequip refused index={} form={:08X} stackFound={} slot={} count={} unequip={} "
                 "instanceMatch={} stackInstance={:#x} equippedInstance={:#x}",
@@ -1020,7 +1019,7 @@ namespace rock::weapon_equip_transfer
          * within a frame or two and the native transition stays intact. The
          * native sheathe starts the clip inside the unequip, so the lease is
          * armed first, as ROCK's draws arm before the native draw (armed
-         * after, it saw no clip: runtime 2 Nov 12:01:17, registeredClips=0).
+         * after, it saw no clip at runtime, registeredClips=0).
          */
         using AccelerationResult = weapon_transition_animation_acceleration::RequestResult;
         auto putAway = AccelerationResult::MissingInput;

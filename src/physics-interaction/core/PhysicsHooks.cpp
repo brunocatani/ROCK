@@ -819,77 +819,6 @@ namespace rock
             return true;
         }
 
-        bool restoreNativeGrabHapticBinarySetting(NativeGrabHapticBinarySettingState& state, const char* settingName,
-            const char* label)
-        {
-            if (!state.originalCaptured || !state.applied) {
-                return true;
-            }
-
-            auto* setting = resolveNativeGrabHapticRuntimeSetting(state.setting, settingName, state.missingLogged);
-            if (!setting) {
-                return false;
-            }
-
-            if (setting->GetType() != RE::Setting::SETTING_TYPE::kBinary) {
-                if (!state.typeMismatchLogged) {
-                    state.typeMismatchLogged = true;
-                    ROCK_LOG_ERROR(Haptics,
-                        "Native grab-hover haptic suppression found non-binary setting '{}' while restoring",
-                        settingName);
-                }
-                return false;
-            }
-
-            if (setting->GetBinary() != state.originalValue) {
-                setting->SetBinary(state.originalValue);
-                ROCK_LOG_INFO(Haptics, "Restored FO4VR native grab-hover {} setting '{}' to {}", label, settingName,
-                    state.originalValue ? "true" : "false");
-            }
-            state.applied = false;
-            state.confirmedLogged = false;
-            return true;
-        }
-
-        bool restoreNativeGrabHapticFloatSetting(NativeGrabHapticFloatSettingState& state, const char* settingName,
-            const char* label)
-        {
-            if (!state.originalCaptured || !state.applied) {
-                return true;
-            }
-
-            auto* setting = resolveNativeGrabHapticRuntimeSetting(state.setting, settingName, state.missingLogged);
-            if (!setting) {
-                return false;
-            }
-
-            if (setting->GetType() != RE::Setting::SETTING_TYPE::kFloat) {
-                if (!state.typeMismatchLogged) {
-                    state.typeMismatchLogged = true;
-                    ROCK_LOG_ERROR(Haptics,
-                        "Native grab-hover haptic suppression found non-float setting '{}' while restoring",
-                        settingName);
-                }
-                return false;
-            }
-
-            const float currentValue = setting->GetFloat();
-            if (!std::isfinite(currentValue) || currentValue != state.originalValue) {
-                setting->SetFloat(state.originalValue);
-                ROCK_LOG_INFO(Haptics, "Restored FO4VR native grab-hover {} setting '{}' to {:.3f}", label, settingName,
-                    state.originalValue);
-            }
-            state.applied = false;
-            state.confirmedLogged = false;
-            return true;
-        }
-
-        [[nodiscard]] bool nativeGrabHapticSuppressionApplied()
-        {
-            return g_nativeGrabHapticRolloverState.applied || g_nativeGrabHapticHoverIntensityState.applied ||
-                g_nativeGrabHapticHoverDurationState.applied;
-        }
-
         native_melee_suppression::NativeMeleePolicyInput makeNativeMeleePolicyInput(const RE::Actor* actor)
         {
             const bool player = isPlayerActor(actor);
@@ -1406,17 +1335,6 @@ namespace rock
          * ROCK-owned haptics untouched because ROCK emits haptics directly
          * through its feedback pipeline instead of through native rollover UI.
          */
-        const native_grab_haptic_suppression::RuntimeInput input{
-            .rockEnabled = true,
-            .suppressionEnabled = native_grab_haptic_suppression::kSuppressionEnabled,
-        };
-        const bool shouldSuppress = native_grab_haptic_suppression::shouldSuppressNativeGrabHoverHaptics(input);
-        const bool shouldRestore = native_grab_haptic_suppression::shouldRestoreNativeGrabHoverHaptics(
-            nativeGrabHapticSuppressionApplied(), input);
-        if (!shouldSuppress && !shouldRestore) {
-            return;
-        }
-
         const auto currentFrame = g_nativeRuntimeSettingFrameClock.load(std::memory_order_acquire);
         const auto nextCheckFrame = g_nativeGrabHapticRuntimeSettingNextCheckFrame.load(std::memory_order_acquire);
         if (!forceCheck && currentFrame < nextCheckFrame) {
@@ -1425,25 +1343,15 @@ namespace rock
         g_nativeGrabHapticRuntimeSettingNextCheckFrame.store(
             currentFrame + kNativeGrabHapticRuntimeSettingCheckIntervalFrames, std::memory_order_release);
 
-        if (shouldSuppress) {
-            enforceNativeGrabHapticBinarySetting(g_nativeGrabHapticRolloverState,
-                native_grab_haptic_suppression::kRolloverRumbleEnabledSetting,
-                native_grab_haptic_suppression::kSuppressedRolloverRumbleEnabled, "rollover rumble");
-            enforceNativeGrabHapticFloatSetting(g_nativeGrabHapticHoverIntensityState,
-                native_grab_haptic_suppression::kHoverRumbleIntensitySetting,
-                native_grab_haptic_suppression::kSuppressedHoverRumbleFloat, "hover intensity");
-            enforceNativeGrabHapticFloatSetting(g_nativeGrabHapticHoverDurationState,
-                native_grab_haptic_suppression::kHoverRumbleDurationSetting,
-                native_grab_haptic_suppression::kSuppressedHoverRumbleFloat, "hover duration");
-            return;
-        }
-
-        restoreNativeGrabHapticBinarySetting(g_nativeGrabHapticRolloverState,
-            native_grab_haptic_suppression::kRolloverRumbleEnabledSetting, "rollover rumble");
-        restoreNativeGrabHapticFloatSetting(g_nativeGrabHapticHoverIntensityState,
-            native_grab_haptic_suppression::kHoverRumbleIntensitySetting, "hover intensity");
-        restoreNativeGrabHapticFloatSetting(g_nativeGrabHapticHoverDurationState,
-            native_grab_haptic_suppression::kHoverRumbleDurationSetting, "hover duration");
+        enforceNativeGrabHapticBinarySetting(g_nativeGrabHapticRolloverState,
+            native_grab_haptic_suppression::kRolloverRumbleEnabledSetting,
+            native_grab_haptic_suppression::kSuppressedRolloverRumbleEnabled, "rollover rumble");
+        enforceNativeGrabHapticFloatSetting(g_nativeGrabHapticHoverIntensityState,
+            native_grab_haptic_suppression::kHoverRumbleIntensitySetting,
+            native_grab_haptic_suppression::kSuppressedHoverRumbleFloat, "hover intensity");
+        enforceNativeGrabHapticFloatSetting(g_nativeGrabHapticHoverDurationState,
+            native_grab_haptic_suppression::kHoverRumbleDurationSetting,
+            native_grab_haptic_suppression::kSuppressedHoverRumbleFloat, "hover duration");
     }
 
     // The bytes at a hooked entry before ROCK patched it: the native prologue,

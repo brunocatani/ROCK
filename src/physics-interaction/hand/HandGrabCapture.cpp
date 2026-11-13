@@ -567,11 +567,11 @@ namespace rock
         auto& surfaceOwnerNode = outEvidence.surfaceOwnerNode;
         auto& grabPointMode = outEvidence.pointMode;
         auto& grabPointAuthoritySource = outEvidence.pointAuthoritySource;
-        auto& grabFallbackReason = outEvidence.fallbackReason;
+        auto& gripReason = outEvidence.gripReason;
         grabGripPoint = sel.hasHitPoint ? sel.hitPointWorld : proxy.grabPivotAForPrimaryChoice;
         grabPointMode = "none";
         grabPointAuthoritySource = GrabPivotAuthoritySource::None;
-        grabFallbackReason = meshSourceNode ? "noTriangles" : "noMeshSourceNode";
+        gripReason = meshSourceNode ? "noTriangles" : "noMeshSourceNode";
         /*
          * hknp selection identifies the object and body only. The grabbed point
          * is always on the rendered mesh: object collision often sits well off
@@ -609,12 +609,10 @@ namespace rock
                     closePocket.valid ? closePocket.palmCenterWorld : grabPivotAWorld;
                 const RE::NiPoint3 pocketAuthorityNormal = closePocket.valid ? closePocket.palmNormalWorld : palmDir;
                 // A hand reach (grabSelectedObject) searches the whole close reach.
-                const float palmPocketSnapDistance = (std::max)(
-                    (std::max)(finitePositiveOr(g_rockConfig.rockGrabPocketRadiusGameUnits, 6.0f),
-                        (std::max)(finitePositiveOr(g_rockConfig.rockGrabAlignmentMaxSelectionToMeshDistance, 8.0f),
-                            finitePositiveOr(g_rockConfig.rockGrabTouchAcquireDistanceGameUnits, 10.0f))),
-                    selection.handReach ? finitePositiveOr(g_rockConfig.rockGrabNearConvergeDistanceGameUnits, 28.0f)
-                                        : 0.0f);
+                const float palmPocketSnapDistance = (std::max)({ g_rockConfig.rockGrabPocketRadiusGameUnits,
+                    g_rockConfig.rockGrabAlignmentMaxSelectionToMeshDistance,
+                    g_rockConfig.rockGrabTouchAcquireDistanceGameUnits,
+                    selection.handReach ? g_rockConfig.rockGrabNearConvergeDistanceGameUnits : 0.0f });
 
                 if (findClosestGrabSurfaceHitToPointPositionOnly(grabSurfaceTriangles, pocketAuthorityPoint,
                         pocketAuthorityNormal, palmPocketSnapDistance, grabSurfaceHit, &mesh.queryIndex)) {
@@ -634,7 +632,7 @@ namespace rock
                     meshGrabFound = true;
                     grabPointMode = "palmPocketMeshSurface";
                     grabPointAuthoritySource = GrabPivotAuthoritySource::PalmPocketMeshPoint;
-                    grabFallbackReason = "closePalmPocketMeshAuthority";
+                    gripReason = "closePalmPocketMeshAuthority";
                     ROCK_LOG_DEBUG(Hand,
                         "{} hand MESH GRAB: mode={} tris={} closest=({:.1f},{:.1f},{:.1f}) tri={} source={} owner='{}' "
                         "shape='{}' "
@@ -678,7 +676,7 @@ namespace rock
                     meshGrabFound = true;
                     grabPointMode = "pullCatchPalmLineMeshSurface";
                     grabPointAuthoritySource = GrabPivotAuthoritySource::PalmPocketMeshPoint;
-                    grabFallbackReason = "pullCatchPalmLine";
+                    gripReason = "pullCatchPalmLine";
                     ROCK_LOG_DEBUG(Hand,
                         "{} hand MESH GRAB: mode={} tris={} closest=({:.1f},{:.1f},{:.1f}) tri={} source={} owner='{}' "
                         "selectionDelta={:.1f}gu surfaceAlong={:.1f} surfaceLateral={:.1f} normalDotPalm={:.2f}",
@@ -715,7 +713,7 @@ namespace rock
                     meshGrabFound = true;
                     grabPointMode = "selectionHitMeshSnap";
                     grabPointAuthoritySource = GrabPivotAuthoritySource::SelectionHitMeshSnap;
-                    grabFallbackReason = "selectionHitMeshSnap";
+                    gripReason = "selectionHitMeshSnap";
                     ROCK_LOG_DEBUG(Hand,
                         "{} hand MESH GRAB: mode={} tris={} closest=({:.1f},{:.1f},{:.1f}) tri={} source={} owner='{}' "
                         "shape='{}' selectionDelta={:.1f}gu surfaceAlong={:.1f} surfaceLateral={:.1f}",
@@ -728,7 +726,7 @@ namespace rock
             }
 
             if (!meshGrabFound) {
-                grabFallbackReason = grabSurfaceTriangles.empty() ? "noTriangles" : "noMeshNearPalmOrSelection";
+                gripReason = grabSurfaceTriangles.empty() ? "noTriangles" : "noMeshNearPalmOrSelection";
             }
         }
         if (!meshGrabFound) {
@@ -736,7 +734,7 @@ namespace rock
                 "{} hand GRAB POINT unavailable: no mesh surface near the palm reason={} meshNode='{}' ownerNode='{}' "
                 "rootNode='{}' shapes={} static={}/{} dynamic={}/{} skinned={}/{} dynamicSkinnedSkipped={} "
                 "emptyShapes={}",
-                handName(), grabFallbackReason, nodeDebugName(meshSourceNode), nodeDebugName(collidableNode),
+                handName(), gripReason, nodeDebugName(meshSourceNode), nodeDebugName(collidableNode),
                 nodeDebugName(rootNode), meshStats.visitedShapes, meshStats.staticShapes, meshStats.staticTriangles,
                 meshStats.dynamicShapes, meshStats.dynamicTriangles, meshStats.skinnedShapes,
                 meshStats.skinnedTriangles, meshStats.dynamicSkinnedSkipped, meshStats.emptyShapes);
@@ -784,7 +782,7 @@ namespace rock
             : (skinnedResolution.source == skinned_body_resolver::ResolutionSource::SelectedBody
                       ? object_physics_body_set::PrimaryBodyChoiceReason::PreferredHitAccepted
                       : (skinnedResolution.source == skinned_body_resolver::ResolutionSource::NearestAccepted
-                                ? object_physics_body_set::PrimaryBodyChoiceReason::NearestAcceptedFallback
+                                ? object_physics_body_set::PrimaryBodyChoiceReason::NearestAccepted
                                 : object_physics_body_set::PrimaryBodyChoiceReason::NoAcceptedBody));
 
         // Count-based loose ammo is held by its visible branch body. The root

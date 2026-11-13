@@ -19,6 +19,7 @@
 #include "physics-interaction/input/VatsGrenadeGesturePolicy.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/player/NativeQuickLootPanel.h"
+#include "physics-interaction/native/player/NativeWorkshop.h"
 #include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
 
 #include "api/ProviderRuntime.h"
@@ -91,7 +92,7 @@ namespace rock::input_remap_runtime
          * 0x2DC84C0): the wand touchpad event. With FO4VR's controller kind 0 (lighthouse:
          * Index, Vive, any non-Oculus/WMR tracking system) it opens Favorites on a centre
          * pad/stick click (direction 8), which on Index blocked PALM on the right stick
-         * click. Raw disassembly 2026-10-30: 0x12F1A70 tests the primary wand
+         * click. Raw disassembly: 0x12F1A70 tests the primary wand
          * (player+0x8CC), reads [0x59429C0]+0x260 and posts FavoritesMenu through the same
          * 0x20D3C00/0x20D93F0 calls as slot 12; the slot 0x2DC84E8 references it.
          */
@@ -102,7 +103,7 @@ namespace rock::input_remap_runtime
         // JumpHandler::ShouldHandleEvent receives the semantic Jump ButtonEvent
         // produced by FO4VR's configured locomotion input, including the VR
         // analog-up gesture. The hook observes it and always chains unchanged.
-        // FO4VR 1.2.72 raw vtable/function verification: 2026-08-30.
+        // FO4VR 1.2.72 raw vtable/function verification.
         constexpr std::uintptr_t kJumpHandlerShouldHandleEventFunctionOffset = 0x0FCDC70;
         constexpr std::uintptr_t kJumpHandlerShouldHandleEventVTableSlotOffset = 0x2D8A7F0;
         /*
@@ -110,7 +111,7 @@ namespace rock::input_remap_runtime
          * "Pause" event. FO4VR maps OpenVR button 1 (Quest 2 Y on the
          * secondary wand) to Pause. Its slot-11 processor opens Pause from a
          * released ButtonEvent after verifying the secondary-wand device and
-         * all native menu/player gates. Verified 2026-07-21 from the
+         * all native menu/player gates. Verified from the
          * MenuControls constructor (RVA 0x1323210), handler construction/list
          * order (RVA 0x1323870), and processor (RVA 0x1326760).
          */
@@ -121,8 +122,8 @@ namespace rock::input_remap_runtime
          * player/menu, and primary-wand VATS eligibility gates. The helper's
          * button-down path starts V.A.N.S. at Bethesda's hold threshold; its
          * release path opens ordinary VATS. There is one executable caller.
-         * Verified 2026-07-27 in FO4VR 1.2.72 at callsite RVA 0x1326990 and
-         * helper RVA 0xBEB280. Reverified 2026-08-29 from raw disassembly:
+         * Verified in FO4VR 1.2.72 at callsite RVA 0x1326990 and
+         * helper RVA 0xBEB280. Reverified from raw disassembly:
          * the held comparison reads fVANSButtonHeldThreshold at RVA 0x3756388
          * (0.25 seconds in the authoritative executable), while the release
          * path has no upper-duration check.
@@ -138,13 +139,13 @@ namespace rock::input_remap_runtime
          * 0x2DCC778) processes the pipboy-hand trigger in vtable slot 11
          * (0x2DCC7D0): press starts hold tracking, holding past the game
          * threshold toggles the pipboy light, release opens the Pip-Boy.
-         * Verified 2026-07-04 from raw disassembly of the constructor
+         * Verified from raw disassembly of the constructor
          * (0x1325090 region) and the slot-11 processor (0x1326D90); the same
          * function independently re-uses the already-verified player global
          * (0x5B043F0), device-to-controller-id converter (0x1BA6ED0), and
          * action dispatcher data (0x5A3B8A0). The VR wand trigger reaches the
          * handler as user event "WandTrigger" from BOTH wands (observed live
-         * 2026-07-04 via the hook trace; the handler filters to the secondary
+         * via the hook trace; the handler filters to the secondary
          * wand at player+0x8D0 internally), while "Pipboy" is the flat/
          * gamepad direct binding. ShouldHandleEvent (slot 1) additionally
          * accepts "Pause" and the Quick* tab events, which the hook must
@@ -159,7 +160,7 @@ namespace rock::input_remap_runtime
          * when heldDownSecs passes the same threshold global (0x3844EA0) the
          * flat path uses, latched by this+0x28 until the next fresh press
          * (release does not clear it). Verified
-         * 2026-07-04 from raw disassembly after live traces showed the
+         * from raw disassembly after live traces showed the
          * PipboyHandler hook suppressing opens while the light still fired -
          * the light-on-hold path inside PipboyHandler is flat-game only.
          * The hook now only enforces provider input leases. Holding an
@@ -168,7 +169,7 @@ namespace rock::input_remap_runtime
         constexpr std::uintptr_t kPipboyLightHandlerHandleEventFunctionOffset = 0x0FC9170;
         constexpr std::uintptr_t kPipboyLightHandlerHandleEventVTableSlotOffset = 0x2D8A2A0;
         /*
-         * FO4VR 1.2.72, raw disassembly reverified 2026-09-17:
+         * FO4VR 1.2.72, raw disassembly reverified:
          * PlayerControls construction (0xFC2F69..0xFC2F80) stores the light
          * handler at +0x318. Query 0xFC1C40 reads its +0x28 hold latch;
          * 0xFC918F clears it on press and 0xFC920A sets it after a hold.
@@ -200,7 +201,7 @@ namespace rock::input_remap_runtime
          * at/reaching for) from one of these two per-wand handle globals before dispatching
          * Activate/WandAccept - there is no separate "Take" input action; Take vs Talk/Open/
          * Search/Read is decided later, per-FormType, on whichever ref this handle names.
-         * Verified 2026-07-05 from raw disassembly of two independent functions
+         * Verified from raw disassembly of two independent functions
          * (FUN_140FCF360/FUN_140FCB5B0 RVA, both reached from the already-hooked
          * ActivateHandler::HandleEvent at 0xFC7F00) that each independently perform the same
          * primary/secondary wand selection over these globals, plus an independently-named
@@ -211,13 +212,12 @@ namespace rock::input_remap_runtime
          * to the wand's caster/view object, NOT a bare handle - the real ObjectRefHandle is
          * behind a locked virtual call on that caster (see readWandPickRefHandle()). An earlier
          * build treated the global's raw memory as the handle directly and silently never
-         * resolved anything; corrected 2026-07-05 - see
-         * docs/docs/reverse-engineering/2026-07-05-take-equip-activate-classification-ghidra-findings.md.
+         * resolved anything.
          */
         constexpr std::uintptr_t kActivatePrimaryWandPickRefGlobalOffset = 0x5AC72B0;
         constexpr std::uintptr_t kActivateSecondaryWandPickRefGlobalOffset = 0x5AC7F10;
         /*
-         * The wand caster object's handle accessor, verified 2026-07-05 via raw disassembly of
+         * The wand caster object's handle accessor, verified via raw disassembly of
          * FUN_1409D0CE0 (RVA 0x9D0CE0): lock a spinlock at caster+0x70, call the vtable
          * function at byte offset 0x10 (slot index 2, 8-byte slots) with the caster as `this`,
          * read the first 4 bytes of the CALL'S RETURN VALUE (not the caster) as the handle,
@@ -363,6 +363,17 @@ namespace rock::input_remap_runtime
         // Native input publishes one edge; the interaction frame owns inventory.
         std::atomic<bool> s_pendingGrenadeQuickDrawHoldRequest{ false };
         std::atomic<bool> s_grenadeQuickDrawReleaseToRearm{ true };
+        /*
+         * Workshop mode on the B hold. ROCK keeps the off-hand menu button's
+         * hold for Pause, so the game's own Workshop hold on it never runs.
+         * Inside a workshop's buildable area, B held this long puts the
+         * grenade it drew back and enters Workshop mode instead; elsewhere the
+         * hold stays a grenade hold.
+         */
+        constexpr float kWorkshopHoldSeconds = 3.0f;
+        bool s_workshopHoldDecided = false; // Input thread: this B press reached the hold.
+        // Input thread -> interaction frame, which owns the drawn grenade.
+        std::atomic<bool> s_pendingWorkshopEntryRequest{ false };
         using PipboyRoute = pipboy_pause_gesture_policy::PipboyRoute;
         PipboyRoute s_pipboyGestureRoute{ PipboyRoute::Unavailable };
         // Frame/config thread only. Engine settings are registered for the
@@ -1663,7 +1674,7 @@ namespace rock::input_remap_runtime
             const bool eventMatched = isActivateReloadEvent(event);
             /*
              * This handler only ever receives PRIMARY-wand Activate/WandAccept
-             * (live-verified 2026-07-12; the secondary wand's accept button
+             * (live-verified; the secondary wand's accept button
              * never produces an event here), so the event's physical hand is
              * the primary-wand hand by identity.
              */
@@ -1775,7 +1786,7 @@ namespace rock::input_remap_runtime
              * The globals at kActivate*WandPickRefGlobalOffset do NOT store a bare
              * ObjectRefHandle - each stores an 8-byte pointer to the wand's caster/view
              * object (the primary one is FO4VR's ViewCasterPrimaryWand). The real handle is
-             * behind a locked virtual call, verified 2026-07-05 via raw disassembly of
+             * behind a locked virtual call, verified via raw disassembly of
              * FUN_1409D0CE0 (two agreeing sources: decompile + byte-for-byte disassembly,
              * cross-checked against a second caller in the already-verified native action
              * dispatcher at 0xFC07E0): lock casterObj+0x70, call the vtable slot at byte
@@ -1783,9 +1794,7 @@ namespace rock::input_remap_runtime
              * RETURNED pointer (not the caster itself) as the ObjectRefHandle, unlock. An
              * earlier build read the global's raw memory directly as the handle, which
              * silently produced a plausible-looking-but-wrong value (0xFE3A360 observed live)
-             * and made suppression permanently a no-op - see
-             * docs/docs/reverse-engineering/2026-07-05-take-equip-activate-classification-ghidra-findings.md
-             * for full verification detail.
+             * and made suppression permanently a no-op.
              */
             REL::Relocation<void**> casterObjectGlobal{ REL::Offset(globalOffset) };
             void* casterObject = *casterObjectGlobal;
@@ -1853,11 +1862,30 @@ namespace rock::input_remap_runtime
             original(caster, pick, point);
         }
 
+        /*
+         * Companion command mode: PlayerCharacter::actorDoingPlayerCommand (VR
+         * 0xF8C) holds the companion taking orders. The player's activation
+         * (0x140EF8B00) gives the command on the primary wand's Activate: at
+         * its pick, or with no pick at the location the wand aims at, which
+         * 0x140F24B20 turns into the command wait marker (0xB3C). Both read
+         * 0xF8C as the commanded actor's handle.
+         */
+        [[nodiscard]] bool isCompanionCommandModeActive()
+        {
+            const auto* player = RE::PlayerCharacter::GetSingleton();
+            return player && player->actorDoingPlayerCommand.get();
+        }
+
         [[nodiscard]] ActivateTarget classifyActivateTarget(bool primaryHandEvent)
         {
             const auto globalOffset =
                 primaryHandEvent ? kActivatePrimaryWandPickRefGlobalOffset : kActivateSecondaryWandPickRefGlobalOffset;
+            // While commanding, every primary press is the game's order to the
+            // companion; only what ROCK itself holds stays protected below.
+            const bool commanding = primaryHandEvent && isCompanionCommandModeActive();
             std::uint32_t handleValue = readWandPickRefHandle(globalOffset);
+            if (handleValue == 0 && commanding)
+                return ActivateTarget::NativeActivation;
             const bool usedOtherWand = handleValue == 0;
             if (handleValue == 0) {
                 /*
@@ -1927,6 +1955,9 @@ namespace rock::input_remap_runtime
                 "Take/Equip suppression classification: handleValue=0x{:X} refFormID=0x{:X} heldFormID=0x{:X} "
                 "formType='{}' eligible={}",
                 handleValue, refFormId, heldFormId, formTypeChars, eligible ? "yes" : "no");
+            // A commanded item is the companion's to fetch, not the player's to take.
+            if (commanding)
+                return ActivateTarget::NativeActivation;
             // The existing opposite-wand fallback protects against taking an
             // owned object. It cannot grant use priority for this wand.
             return eligible ? (usedOtherWand ? ActivateTarget::OtherWandTakeEquip : ActivateTarget::TakeEquip)
@@ -2569,6 +2600,35 @@ namespace rock::input_remap_runtime
                 !isAnyProviderOpenVrGameInputSuppressedAtDispatch();
         }
 
+        // After the grenade gesture has seen this B event: the Workshop hold.
+        void observeWorkshopHold(const RE::ButtonEvent& button)
+        {
+            if (!button.QPressed() || button.QJustPressed()) {
+                s_workshopHoldDecided = false;
+                return;
+            }
+            if (s_workshopHoldDecided || button.QHeldDownSecs() < kWorkshopHoldSeconds) {
+                return;
+            }
+            s_workshopHoldDecided = true;
+            if (!s_gameplayInputAllowed.load(std::memory_order_acquire) || isInputBlockingMenuActive() ||
+                isAnyProviderOpenVrGameInputSuppressedAtDispatch()) {
+                return;
+            }
+            const auto status = native_workshop::query();
+            if (status != native_workshop::Status::Available) {
+                ROCK_LOG_DEBUG(Input, "B held {:.2f}s: no Workshop ({})", button.QHeldDownSecs(),
+                    native_workshop::statusName(status));
+                return;
+            }
+            // The B release must neither throw nor draw: the grenade goes back.
+            native_grenade_throw_runtime::cancel();
+            vats_grenade_gesture_policy::blockUntilRelease(s_vatsGrenadeGestureState);
+            s_pendingWorkshopEntryRequest.store(true, std::memory_order_release);
+            ROCK_LOG_INFO(Input, "B held {:.2f}s in a workshop's buildable area: entering Workshop mode",
+                button.QHeldDownSecs());
+        }
+
         void observePrimaryVatsGrenadeGesture(RE::ButtonEvent& button)
         {
             const auto raw = peekRawButtonState(false, 1);
@@ -2616,6 +2676,7 @@ namespace rock::input_remap_runtime
                     decision.requestGrenade, decision.requestNativeThrow, decision.releaseNativeThrow, raw.available,
                     raw.held, s_grenadeQuickDrawReleaseToRearm.load(std::memory_order_acquire));
             }
+            observeWorkshopHold(button);
         }
 
         void hookedMenuOpenEventHandler(void* handler, RE::InputEvent* inputEvent)
@@ -3347,6 +3408,7 @@ namespace rock::input_remap_runtime
             if (wasAllowed)
                 blockManualScopeInputUntilRelease();
             s_pendingGrenadeQuickDrawHoldRequest.store(false, std::memory_order_release);
+            s_pendingWorkshopEntryRequest.store(false, std::memory_order_release);
             s_grenadeQuickDrawReleaseToRearm.store(true, std::memory_order_release);
         }
     }
@@ -3708,6 +3770,11 @@ namespace rock::input_remap_runtime
     bool consumePendingSavedGrabOffsetRequest(bool isLeft)
     {
         return s_pendingSavedGrabOffsetRequest[isLeft ? 0u : 1u].exchange(false, std::memory_order_acq_rel);
+    }
+
+    bool consumeWorkshopEntryRequest()
+    {
+        return s_pendingWorkshopEntryRequest.exchange(false, std::memory_order_acq_rel);
     }
 
     bool consumeGrenadeQuickDrawHoldRequest()

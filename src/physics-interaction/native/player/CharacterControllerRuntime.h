@@ -66,7 +66,7 @@ namespace rock::character_controller_runtime
     // Raw read: the velocity chain above, then -> +0x470 (character impl) -> +0x70 (hkVector4f
     // position, HAVOK units, converted here). Both offsets were read out of
     // bhkCharacterController::GetPositionImpl (FO4VR 0x141e4dfd0, CommonLib vtable slot 0x33) by raw
-    // disassembly 2026-07-25; that function loads the position from exactly [[this+0x470]+0x70] and,
+    // disassembly; that function loads the position from exactly [[this+0x470]+0x70] and,
     // when its a_applyCenterOffset argument is false, returns it unmodified. Corroborated by its
     // mirror SetPositionImpl (0x141e4df60), GetKeepDistanceImpl (0x141e4df40), InitPhysicsSystemImpl
     // (0x141e4da60), and by this+0x1A0 matching CommonLib's declared rotCenter.

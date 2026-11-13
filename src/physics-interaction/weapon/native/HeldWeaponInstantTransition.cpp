@@ -117,7 +117,7 @@ namespace rock::held_weapon_instant_transition
          * equip preparation 140EF8E60: wait flag +12A3:80, presentation
          * deadline +8A8 = now + 0.5 s (1437CFE88) and attack cooldown +908
          * (1437D0158). Every menu exit hid the weapon ~500 ms and refused
-         * fire ~1 s (runtime 14 Oct 21:12). The same removal as an equip
+         * fire ~1 s (observed at runtime). The same removal as an equip
          * preparation applies after a real show; a hide, or a show of an
          * already shown weapon, is untouched.
          */

@@ -105,7 +105,7 @@ namespace rock
         RE::NiTransform palmAuthorityBaseWorld{};
         RE::NiTransform proxyTargetWorld{};
         RE::NiPoint3 localOffsetGameUnits{};
-        body_frame::BodyFrameSource palmSource{ body_frame::BodyFrameSource::Fallback };
+        body_frame::BodyFrameSource palmSource{ body_frame::BodyFrameSource::None };
         std::uint32_t palmMotionIndex{ body_frame::kFreeMotionIndex };
     };
 
@@ -679,7 +679,7 @@ namespace rock
         {
             bool valid = false;
             RE::NiTransform world{};
-            body_frame::BodyFrameSource source{ body_frame::BodyFrameSource::Fallback };
+            body_frame::BodyFrameSource source{ body_frame::BodyFrameSource::None };
             std::uint32_t motionIndex{ body_frame::kFreeMotionIndex };
             bool hasMotionVelocity = false;
             RE::NiPoint3 linearVelocityHavok{};

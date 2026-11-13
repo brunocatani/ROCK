@@ -84,7 +84,7 @@ int main()
 {
     bool ok = true;
     {
-        // October 8 failure: current first-person input and calibration were
+        // Captured failure: current first-person input and calibration were
         // valid, but the claimed body hand and flattened hand were non-finite.
         RelationState relation{};
         const auto first = yawed(3.0f, -69782.0f, 79957.0f, 7473.0f);
@@ -135,7 +135,7 @@ int main()
         ok &= expectFalse("missing controller frame releases recoil", canDriveExternalPose(startup, raw));
     }
 
-    // Recorded support excursion, 2026-09-19 23:51:06.796 -> 06.885.
+    // Recorded support excursion over 89 ms.
     // The native weapon offset and isolated physical hand are not a rigid
     // pair. A held weapon must consume the shared hand result even while
     // its rendered wrist follows a displaced contact-constrained weapon.

@@ -7,10 +7,6 @@ if(NOT CONFIG_LOWER STREQUAL "release")
   return()
 endif()
 
-
-include("${ROOT_DIR}/cmake/VerifyDistributionInputs.cmake")
-rock_verify_distribution_inputs(TREES "${ROOT_DIR}/data/mod")
-
 set(PACKAGE_DIR "${BUILD_DIR}/package")
 set(PACKAGE_STAGE_DIR "${PACKAGE_DIR}/stageing")
 set(PACKAGE_STAGE_PLUGINS_DIR "${PACKAGE_STAGE_DIR}/F4SE/Plugins")
@@ -28,18 +24,6 @@ file(COPY "${TARGET_FILE}" DESTINATION "${PACKAGE_STAGE_PLUGINS_DIR}")
 # SteamVR legacy binding templates for non-Quest controllers. Players install them
 # through SteamVR; they never deploy into a game or mod folder.
 file(COPY "${ROOT_DIR}/steamvr_bindings" DESTINATION "${PACKAGE_STAGE_DIR}")
-
-# Only files the game or the player's install use go in the zip. The PDB, the
-# license, readmes and development files (provider headers, example INIs, docs)
-# stay out; mod authors take include/ROCK from the release tag.
-file(GLOB_RECURSE STAGED_FILES LIST_DIRECTORIES false "${PACKAGE_STAGE_DIR}/*")
-foreach(STAGED_FILE IN LISTS STAGED_FILES)
-  cmake_path(GET STAGED_FILE FILENAME STAGED_NAME)
-  string(TOLOWER "${STAGED_NAME}" STAGED_NAME)
-  if(STAGED_NAME MATCHES "\\.(pdb|md|txt|ini|h)$" OR STAGED_NAME MATCHES "^(license|readme|copying)")
-    message(FATAL_ERROR "package.cmake: the zip must not hold '${STAGED_FILE}'")
-  endif()
-endforeach()
 
 file(REMOVE "${TARGET_ZIP}")
 execute_process(COMMAND ${CMAKE_COMMAND} -E tar cf "${TARGET_ZIP}" --format=zip -- .

@@ -1053,7 +1053,17 @@ namespace rock
                           omod->attachPoint.keywordIndex)
                     : nullptr;
                 if (!modIndex.disabled && attachPointKeyword && omod) {
-                    result.emplace(attachPointKeyword->formID, omod->formID);
+                    // A slot can list a model-less record beside the mod that
+                    // supplies its model (Army Service Rifle: an unnamed record
+                    // and "Digicon ACOG 4x Sight" both on the sight slot). The
+                    // slot's part geometry belongs to the mod with the model.
+                    const auto [slot, inserted] = result.emplace(attachPointKeyword->formID, omod->formID);
+                    if (!inserted && omod->model.c_str() && *omod->model.c_str()) {
+                        const auto* current = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(slot->second);
+                        if (!current || !current->model.c_str() || !*current->model.c_str()) {
+                            slot->second = omod->formID;
+                        }
+                    }
                 }
                 if (outComposition && outComposition->entryCount < outComposition->entries.size()) {
                     auto& entry = outComposition->entries[outComposition->entryCount++];
@@ -1090,8 +1100,153 @@ namespace rock
             return false;
         }
 
+        [[nodiscard]] inline float equippedWeaponZoomMagnification(std::uint32_t equipIndex)
+        {
+            auto* equipData = f4vr::getEquippedWeaponItem(equipIndex);
+            auto* weapon = equipData && equipData->item.object ? equipData->item.object->As<RE::TESObjectWEAP>() : nullptr;
+            if (!weapon) {
+                return 0.0f;
+            }
+            auto* instanceData = static_cast<RE::TESObjectWEAP::InstanceData*>(equipData->item.instanceData.get());
+            RE::BGSZoomData* zoomData = instanceData ? instanceData->zoomData : nullptr;
+            if (!zoomData) {
+                zoomData = weapon->weaponData.zoomData;
+            }
+            return zoomData ? zoomData->zoomData.fovMult : 0.0f;
+        }
+
+        /*
+         * The installed optic is the OMOD that sets the HasScope flag (property
+         * target 48), whose record name says scope on a weapon zoomed at least
+         * kMinimumScopeMagnification, that sets the ZOOM
+         * magnification float (target 49) to a scope value (EBR-14
+         * mod_Mike14_Hybrid06 sets 4.0; the vanilla reflex sight sets 1.5), or
+         * that sets the instance ZOOM form (target 67, e.g. Fallout4.esm
+         * mod_PipeGun_Scope_ScopeShort -> ZM_Standard_Scope_x4) while the
+         * equipped weapon's resolved ZOOM is
+         * a magnification that admits a scope on its own. Iron, red-dot and laser
+         * sights also set ZOOM (1.0 to 2.4), so a ZOOM property alone is not
+         * optic evidence.
+         */
+        [[nodiscard]] inline bool attachmentModIsInstalledOptic(RE::BGSMod::Attachment::Mod& omod,
+            float weaponZoomMagnification)
+        {
+            constexpr std::uint8_t kBgsModPropertyBlockId = 1;
+            constexpr std::uint32_t kHasScopeTarget = 48;
+            constexpr std::uint32_t kZoomMagnificationTarget = 49;
+            constexpr std::uint32_t kZoomDataTarget = 67;
+            for (const auto& property : omod.GetBuffer<RE::BGSMod::Property::Mod>(kBgsModPropertyBlockId)) {
+                if (property.target == kZoomMagnificationTarget && property.type == RE::BGSMod::Property::TYPE::kFloat &&
+                    property.op == RE::BGSMod::Property::OP::kSet &&
+                    manual_scope_target_policy::hasScopeMagnification(property.data.mm.min.f)) {
+                    return true;
+                }
+                if (property.target == kHasScopeTarget ||
+                    (property.target == kZoomDataTarget &&
+                        manual_scope_target_policy::hasScopeMagnification(weaponZoomMagnification))) {
+                    return true;
+                }
+            }
+            return manual_scope_target_policy::isValidMagnification(weaponZoomMagnification) &&
+                manual_scope_target_policy::hasExplicitScopeIdentity(
+                    omod.fullName.c_str() ? omod.fullName.c_str() : "", omod.model.c_str() ? omod.model.c_str() : "");
+        }
+
+        /*
+         * The game attaches an OMOD's model under a "P-<connect point>" node of
+         * its parent model, and the model's top-level nodes keep their NIF
+         * names there (EBR-14 SZ Oscar-9: P-Fourx holds the hybrid optic's
+         * shapes and _SightHelper). Matching those names against the optic
+         * OMOD's own model template finds its geometry under any slot name,
+         * including mod-added attach points absent from the vanilla table.
+         */
+        struct InstalledOpticModel
+        {
+            std::uint32_t omodFormId{ 0 };
+            std::vector<std::string> topLevelNodeNames;
+        };
+
+        [[nodiscard]] inline std::vector<InstalledOpticModel> collectInstalledOpticModels(std::uint32_t equipIndex)
+        {
+            std::vector<InstalledOpticModel> optics;
+            auto* equipData = f4vr::getEquippedWeaponItem(equipIndex);
+            auto* weaponForm = equipData ? equipData->item.object : nullptr;
+            const RE::BGSObjectInstanceExtra* objectInstanceExtra = weaponForm
+                ? findEquippedWeaponObjectInstanceExtra(f4vr::getPlayer(), weaponForm, equipData->item.instanceData.get())
+                : nullptr;
+            if (!objectInstanceExtra || !objectInstanceExtra->values) {
+                return optics;
+            }
+            const float weaponZoomMagnification = equippedWeaponZoomMagnification(equipIndex);
+            for (const auto& modIndex : objectInstanceExtra->GetIndexData()) {
+                if (modIndex.disabled) {
+                    continue;
+                }
+                const std::uint32_t omodFormId = modIndex.objectID;
+                auto* omod = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(omodFormId);
+                if (!omod || !omod->model.c_str() || !*omod->model.c_str() ||
+                    !attachmentModIsInstalledOptic(*omod, weaponZoomMagnification)) {
+                    continue;
+                }
+                const auto templateRoot = loadCompleteOmodModelTemplate(omod->model.c_str());
+                if (!templateRoot) {
+                    continue;
+                }
+                InstalledOpticModel optic{ .omodFormId = omodFormId };
+                const auto& children = templateRoot->GetRuntimeData().children;
+                for (std::uint16_t i = 0; i < children.capacity(); ++i) {
+                    const auto* child = children[i].get();
+                    if (child && child->name.c_str() && *child->name.c_str()) {
+                        optic.topLevelNodeNames.emplace_back(child->name.c_str());
+                    }
+                }
+                if (!optic.topLevelNodeNames.empty()) {
+                    optics.push_back(std::move(optic));
+                }
+            }
+            return optics;
+        }
+
+        // The optic OMOD owning the nearest "P-" slot above a part, or 0. A slot
+        // matches only when it holds every top-level node of the optic model.
+        [[nodiscard]] inline std::uint32_t installedOpticOwningPart(const RE::NiAVObject* sourceRoot,
+            const std::vector<InstalledOpticModel>& optics)
+        {
+            if (optics.empty()) {
+                return 0;
+            }
+            const RE::NiAVObject* slot = sourceRoot;
+            for (int hop = 0; slot && hop < 32; ++hop, slot = slot->parent) {
+                const char* name = slot->name.c_str();
+                if (name && name[0] == 'P' && name[1] == '-') {
+                    break;
+                }
+            }
+            const auto* slotNode = slot ? const_cast<RE::NiAVObject*>(slot)->IsNode() : nullptr;
+            if (!slotNode) {
+                return 0;
+            }
+            const auto& children = slotNode->GetRuntimeData().children;
+            for (const auto& optic : optics) {
+                const bool allPresent = std::all_of(optic.topLevelNodeNames.begin(), optic.topLevelNodeNames.end(),
+                    [&](const std::string& expected) {
+                        for (std::uint16_t i = 0; i < children.capacity(); ++i) {
+                            const auto* child = children[i].get();
+                            if (child && child->name.c_str() && expected == child->name.c_str()) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    });
+                if (allPresent) {
+                    return optic.omodFormId;
+                }
+            }
+            return 0;
+        }
+
         [[nodiscard]] inline EquippedManualScopeTarget resolveEquippedManualScopeTarget(
-            RE::NiAVObject* assembledWeaponRoot, std::uint32_t equipIndex)
+            RE::NiAVObject* assembledWeaponRoot, std::uint32_t equipIndex, bool logCensus)
         {
             EquippedManualScopeTarget target{};
             auto* player = f4vr::getPlayer();
@@ -1122,6 +1277,7 @@ namespace rock
                 instanceData && instanceData->flags.all(RE::WEAPON_FLAGS::kHasScope),
                 weapon->weaponData.flags.all(RE::WEAPON_FLAGS::kHasScope));
             bool explicitScopeModelInstalled = false;
+            std::string installedMods;
             manual_scope_target_policy::StructuralMarkerEvidence structuralEvidence{};
             std::size_t structuralVisited = 0;
             collectManualScopeStructuralMarkers(assembledWeaponRoot, structuralEvidence, structuralVisited);
@@ -1134,6 +1290,17 @@ namespace rock
                     auto* omod = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(modIndex.objectID);
                     if (!omod) {
                         continue;
+                    }
+                    if (installedMods.size() < 4096) {
+                        const RE::BGSKeyword* censusAttachPoint = RE::BGSKeyword::GetTypedKeywordByIndex(
+                            RE::KeywordType::kAttachPoint, omod->attachPoint.keywordIndex);
+                        const std::string_view censusModel = omod->model.c_str() ? omod->model.c_str() : "";
+                        const auto censusSeparator = censusModel.find_last_of("/\\");
+                        installedMods += std::format("{}{:08X}'{}'@{:08X}:{}", installedMods.empty() ? "" : " ",
+                            omod->formID, omod->fullName.c_str() ? omod->fullName.c_str() : "",
+                            censusAttachPoint ? censusAttachPoint->formID : 0u,
+                            censusSeparator == std::string_view::npos ? censusModel
+                                                                      : censusModel.substr(censusSeparator + 1));
                     }
                     explicitScopeModelInstalled = explicitScopeModelInstalled ||
                         manual_scope_target_policy::hasExplicitScopeIdentity(
@@ -1163,25 +1330,31 @@ namespace rock
                     }
                 }
             }
+            const bool scopeStructure = manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence);
+            const float authoredZoom = zoomData ? zoomData->zoomData.fovMult : 0.0f;
+            const bool scopeMagnification = manual_scope_target_policy::hasScopeMagnification(authoredZoom);
+            const bool manualScopeEvidence = manual_scope_target_policy::hasManualScopeEvidence(
+                explicitScopeModelInstalled, scopeStructure, authoredZoom);
             target.scopeEligible =
-                manual_scope_target_policy::isScopeEligible(nativeScopeMetadataAuthored, explicitScopeModelInstalled,
-                    manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence));
+                manual_scope_target_policy::isScopeEligible(nativeScopeMetadataAuthored, manualScopeEvidence);
             target.overlayValid = target.scopeEligible;
             if (target.scopeEligible) {
                 target.overlayIndex = manual_scope_target_policy::resolveOverlay(target.overlayIndex);
             }
             target.directTransitionRequired = manual_scope_target_policy::requiresDirectNativeTransition(
-                nativeScopeMetadataAuthored, explicitScopeModelInstalled,
-                manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence), target.overlayValid);
-            if (target.scopeEligible) {
-                ROCK_LOG_DEBUG(Weapon,
-                    "Native scope target weapon={:08X} nativeHasScope={} named={} structure={} authoredOverlay={} "
-                    "selectedOverlay={} authoredZoom={} direct={}",
-                    weapon->formID, nativeScopeMetadataAuthored, explicitScopeModelInstalled,
-                    manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence),
-                    zoomData ? zoomData->zoomData.overlay : 0, target.overlayIndex,
-                    zoomData ? zoomData->zoomData.fovMult : 0.0f, target.directTransitionRequired);
+                nativeScopeMetadataAuthored, manualScopeEvidence, target.overlayValid);
+            // One census line per equipped weapon, eligible or not, so a
+            // scope ROCK misses is as visible as one it admits.
+            if (!logCensus) {
+                return target;
             }
+            ROCK_LOG_INFO(Weapon,
+                "Scope census weapon={:08X} name='{}' eligible={} nativeHasScope={} named={} structure={} zoomScope={} "
+                "zoomForm={:08X} authoredOverlay={} selectedOverlay={} authoredZoom={:.2f} direct={} mods=[{}]",
+                weapon->formID, weapon->fullName.c_str() ? weapon->fullName.c_str() : "", target.scopeEligible,
+                nativeScopeMetadataAuthored, explicitScopeModelInstalled, scopeStructure, scopeMagnification,
+                zoomData ? zoomData->formID : 0u, zoomData ? zoomData->zoomData.overlay : 0u, target.overlayIndex,
+                authoredZoom, target.directTransitionRequired, installedMods);
             return target;
         }
 
@@ -1196,7 +1369,7 @@ namespace rock
 
         /*
          * Fallout4.esm's WeaponType* keyword records, verified directly against
-         * the ESM (2026-07-03) rather than assumed from general modding
+         * the ESM rather than assumed from general modding
          * knowledge. Stored directly on every sampled vanilla WEAP record's own
          * keyword array - no OMOD/template indirection - so a direct
          * HasKeyword() check against the equipped form is sufficient. FormIDs are
@@ -1267,7 +1440,7 @@ namespace rock
                 identity.instanceContentKey =
                     makeEquippedWeaponInstanceContentKey(weapon, instanceData, objectInstanceExtra);
                 /*
-                 * FO4VR binary verification (2026-08-05): the TESObjectWEAP
+                 * FO4VR binary verification: the TESObjectWEAP
                  * BGSEquipType-subobject override at 0x14033FD70 returns
                  * InstanceData::equipSlot (+0x70) whenever instanceData is
                  * non-null, otherwise BGSEquipType::equipSlot (+0x08). Keep
@@ -2137,6 +2310,16 @@ namespace rock
             }
 
             if (!hasSightBounds) {
+                std::string parts;
+                for (const auto& descriptor : descriptors) {
+                    if (!descriptor.valid || descriptor.weaponGenerationKey != weaponGenerationKey) {
+                        continue;
+                    }
+                    parts += std::format("{}{}:{}:{:08X}", parts.empty() ? "" : " ", descriptor.sourceName,
+                        generatedWeaponPartKindName(descriptor.semantic.partKind), descriptor.omodFormId);
+                }
+                ROCK_LOG_INFO(Weapon, "Scope census weapon={:08X} generation={:016X} no Scope/Sight body parts=[{}]",
+                    weaponFormID, weaponGenerationKey, parts);
                 return snapshot;
             }
 

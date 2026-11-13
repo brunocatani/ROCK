@@ -1,6 +1,6 @@
 ---
 name: rock-1.0-migration
-description: Update a Fallout 4 VR F4SE plugin built for ROCK 0.92 (provider API 1, the RPS SDK) to ROCK 1.0 and the providers released with it - ROCK provider API 2, PAPER 2.0, RPS UI Framework 2.0 and RobCo PALM 2.0. Use whenever a mod includes RPS SDK headers (ROCK/*.h from SDK/ROCK/include, PAPERApi.h, RPSUIFrameworkApi.h, RPSUIInputApi.h, RPSUICooperationApi.h, PALMMenuApi.h), calls ROCKAPI_QueryInterfaceV1 with major 1, RPSUI_RequestApi, PAPERAPI_GetProviderApi or GetPALMMenuApi, or when ROCK, PAPER, RPS UI or PALM shows an error box at the main menu saying a mod must be updated - even if the user only says "make my mod work with ROCK 1.0" or "it says my mod is outdated".
+description: Update a Fallout 4 VR F4SE plugin built for ROCK 0.92 (provider API 1, the RPS SDK) to ROCK 1.0 and the providers released with it - ROCK provider API 2, PAPER 2.0, RPS UI Framework 2.0 and RobCo PALM 2.0. Use whenever a mod includes RPS SDK headers (ROCK/*.h from SDK/ROCK/include, PAPERApi.h, RPSUIFrameworkApi.h, RPSUIInputApi.h, RPSUICooperationApi.h, PALMMenuApi.h), calls ROCKAPI_QueryInterfaceV1 with major 1, RPSUI_RequestApi, PAPERAPI_GetProviderApi or GetPALMMenuApi, or when the ROCK, PAPER, RPS UI or PALM log names a mod as refused or built for an older version - even if the user only says "make my mod work with ROCK 1.0" or "it says my mod is outdated".
 ---
 
 # Migrating a mod to ROCK 1.0 and its providers
@@ -8,8 +8,8 @@ description: Update a Fallout 4 VR F4SE plugin built for ROCK 0.92 (provider API
 ROCK 1.0 ships together with PAPER 2.0, RPS UI Framework 2.0 and RobCo PALM
 2.0. Each publishes a reworked API at major 2 from its own repository's
 `include/` directory. None of them serves the old API: a mod built against the
-old headers is refused, and the provider stops the game at the main menu with
-an error box naming that mod. There is no compatibility layer to keep. The fix
+old headers is refused, and the provider names that mod in its log; the mod
+runs without that provider's features. There is no compatibility layer to keep. The fix
 is always a rebuild against the new headers with the code changes each
 provider's migration page lists.
 
@@ -65,7 +65,7 @@ Work from the migration page's sections in order. For each provider:
 5. Compile, and fix each error from the page's tables. Repeat until it builds.
 
 Do not keep the old code path beside the new one, and do not query an old
-major as a fallback: every refused query stops the game. One build of the mod
+major as a fallback: every refused query is logged as a mismatch. One build of the mod
 targets one set of provider majors.
 
 ## 4. Changes that compile but behave differently
@@ -99,10 +99,8 @@ Check the mod's logic against these even when the code compiles:
 ## 5. Absent and mismatched providers
 
 - Provider DLL not loaded: turn that provider's features off and keep running.
-- Provider loaded but refusing the mod's request: show an error box naming the
-  mod and the provider to update, and stop at the main menu, as the providers
-  do. RPS Framework's header-only `RPS/Runtime/RequiredUpdate.h`
-  ([RPS Framework](https://github.com/brunocatani/RPS_Framework)) provides it.
+- Provider loaded but refusing the mod's request: log the refusal, turn that
+  provider's features off and keep running.
 - Never ask for several versions in turn to find one that works.
 
 ## 6. Verify
@@ -113,8 +111,7 @@ Check the mod's logic against these even when the code compiles:
    (`QueryInterfaceV1`, `InterfaceDescriptorV1`), `reserved`, `structSize`,
    `apiVersion`, `copyEvents`, `rpsui::sdk`, `RPSUI_Request`,
    `PAPERAPI_GetProviderApi`, `GetPALMMenuApi`, literal majors or table sizes.
-3. Ask the user to start the game with the new providers: no error box at the
-   main menu, the provider logs (`ROCK.log`, `PAPER.log`,
+3. Ask the user to start the game with the new providers: the provider logs (`ROCK.log`, `PAPER.log`,
    `RPS_UI_Framework.log` in `Documents/My Games/Fallout4VR/F4SE/`) name no
    refusal for the mod's DLL, and the mod's own log shows each connection
    returning `Ok`. A mod that touches weapons is tested with a weapon in each

@@ -11,7 +11,7 @@
  * trajectory resampler -- played the sampled trajectory back on the PHYSICS
  * clock: the commanded velocity was smooth, but the commanded POSITION
  * deviated from the wand's game-time path by v x (clock mismatch) on every
- * rendered frame. The 2026-07-13 OVERLAY_POINT probe measured that deviation
+ * rendered frame. The OVERLAY_POINT probe measured that deviation
  * as the dominant visible-stutter link (tgt-wand jitter 2x every other link;
  * frame-gap-binned drift +0.28 gu on short frames / -0.19 gu on long frames
  * at a 400 gu/s walk), while the hand collider -- keyframed straight onto the

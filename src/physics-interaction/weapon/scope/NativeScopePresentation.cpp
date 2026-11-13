@@ -45,7 +45,7 @@ namespace rock
         _scope.anchorWeaponLocal = {};
         _scope.anchorSource = native_scope_sight_anchor_policy::AnchorSource::None;
         _scope.anchorValid = false;
-        _scope.fallbackRotationDegrees = {};
+        _scope.firingGripRotationDegrees = {};
         _scope.rejectedRigidFrameGeneration = 0;
         _scope.cameraDebugSnapshot = {};
         _scope.activationDebugSnapshot = {};
@@ -61,10 +61,10 @@ namespace rock
 
         RE::NiTransform targetCameraWeaponLocal = _scope.rigidFrame.nativeCameraWeaponLocal;
         targetCameraWeaponLocal.translate = _scope.anchorWeaponLocal;
-        if (_scope.anchorSource == native_scope_sight_anchor_policy::AnchorSource::FiringGripFallback) {
+        if (_scope.anchorSource == native_scope_sight_anchor_policy::AnchorSource::FiringGrip) {
             targetCameraWeaponLocal = native_scope_camera_follow_math::applyWeaponLocalRotationOffset(
-                targetCameraWeaponLocal, _scope.fallbackRotationDegrees.x, _scope.fallbackRotationDegrees.y,
-                _scope.fallbackRotationDegrees.z);
+                targetCameraWeaponLocal, _scope.firingGripRotationDegrees.x, _scope.firingGripRotationDegrees.y,
+                _scope.firingGripRotationDegrees.z);
         }
         if (!isFiniteTransform(targetCameraWeaponLocal) || std::abs(targetCameraWeaponLocal.scale) <= 0.0001f) {
             return false;
@@ -410,8 +410,8 @@ namespace rock
          * carries the rig for a left-held weapon, so the calibration is
          * composed from them and the observed rest, never from the carried
          * nodes: those keep the world they had at the carry start, which
-         * would bake the right hand's pose into the overlay (runtime 22 Oct
-         * 16:56:18, excludedAim 171deg).
+         * would bake the right hand's pose into the overlay (observed at runtime,
+         * excludedAim 171deg).
          */
         const auto& rest = _scope.nativeRigRest;
         if (!rest.valid || rest.scopeParentIdentity != scopeParent || rest.scopeCameraIdentity != scopeCamera) {
@@ -553,15 +553,15 @@ namespace rock
             _scope.anchorGenerationKey = currentWeaponGenerationKey;
             return;
         }
-        const RE::NiPoint3 fallbackOffsetWeaponLocal{
-            g_rockConfig.rockNativeScopeFiringGripFallbackOffsetXGameUnits,
-            g_rockConfig.rockNativeScopeFiringGripFallbackOffsetYGameUnits,
-            g_rockConfig.rockNativeScopeFiringGripFallbackOffsetZGameUnits,
+        const RE::NiPoint3 firingGripOffsetWeaponLocal{
+            g_rockConfig.rockNativeScopeFiringGripOffsetXGameUnits,
+            g_rockConfig.rockNativeScopeFiringGripOffsetYGameUnits,
+            g_rockConfig.rockNativeScopeFiringGripOffsetZGameUnits,
         };
-        const RE::NiPoint3 fallbackRotationDegrees{
-            g_rockConfig.rockNativeScopeFiringGripFallbackPitchDegrees,
-            g_rockConfig.rockNativeScopeFiringGripFallbackYawDegrees,
-            g_rockConfig.rockNativeScopeFiringGripFallbackRollDegrees,
+        const RE::NiPoint3 firingGripRotationDegrees{
+            g_rockConfig.rockNativeScopeFiringGripPitchDegrees,
+            g_rockConfig.rockNativeScopeFiringGripYawDegrees,
+            g_rockConfig.rockNativeScopeFiringGripRollDegrees,
         };
 
         RE::NiPoint3 firingGripWeaponLocal{};
@@ -599,7 +599,7 @@ namespace rock
             _scope.anchorWeaponLocal = {};
             _scope.anchorSource = native_scope_sight_anchor_policy::AnchorSource::None;
             _scope.anchorValid = false;
-            _scope.fallbackRotationDegrees = fallbackRotationDegrees;
+            _scope.firingGripRotationDegrees = firingGripRotationDegrees;
         }
         if (!weaponNode || currentWeaponGenerationKey == 0 || currentEquippedWeaponOwnershipKey == 0 ||
             currentEquippedWeaponFormID == 0) {
@@ -620,7 +620,7 @@ namespace rock
         if (snapshot.weaponGenerationKey != currentWeaponGenerationKey ||
             !native_scope_sight_anchor_policy::matchesCurrentEquippedWeapon(publishedIdentity, currentIdentity)) {
             // A racing publication is never allowed to select either its
-            // geometry or a sticky fallback. Clear the identity so the
+            // geometry or a stale firing-grip anchor. Clear the identity so the
             // next frame retries against one coherent body-set snapshot.
             _scope.anchorWeaponNode = nullptr;
             _scope.anchorGenerationKey = 0;
@@ -629,7 +629,7 @@ namespace rock
             _scope.anchorWeaponLocal = {};
             _scope.anchorSource = native_scope_sight_anchor_policy::AnchorSource::None;
             _scope.anchorValid = false;
-            _scope.fallbackRotationDegrees = {};
+            _scope.firingGripRotationDegrees = {};
             clearNativeScopeOverlayAuthority(true);
             clearNativeScopeRigidFrame();
             ROCK_LOG_DEBUG(Weapon,
@@ -641,7 +641,7 @@ namespace rock
         }
 
         const auto resolved = native_scope_sight_anchor_policy::resolve(snapshot.valid, snapshot.anchorWeaponLocal,
-            firingGripValid, firingGripWeaponLocal, fallbackOffsetWeaponLocal);
+            firingGripValid, firingGripWeaponLocal, firingGripOffsetWeaponLocal);
         if (!resolved.valid) {
             if (_scope.anchorValid) {
                 clearNativeScopeOverlayAuthority(true);
@@ -650,7 +650,7 @@ namespace rock
             _scope.anchorWeaponLocal = {};
             _scope.anchorSource = native_scope_sight_anchor_policy::AnchorSource::None;
             _scope.anchorValid = false;
-            _scope.fallbackRotationDegrees = fallbackRotationDegrees;
+            _scope.firingGripRotationDegrees = firingGripRotationDegrees;
             ROCK_LOG_SAMPLE_DEBUG(Weapon, g_rockConfig.rockLogSampleMilliseconds,
                 "TwoHandedGrip: native scope anchor unavailable generation={:016X} generatedSight={} firingGrip={}; "
                 "leaving native camera untouched",
@@ -661,64 +661,66 @@ namespace rock
         const bool sameResolvedAnchor = !identityChanged && _scope.anchorValid &&
             _scope.anchorSource == resolved.source &&
             arePointsNearlyEqual(_scope.anchorWeaponLocal, resolved.weaponLocal);
-        const bool fallbackRotationChanged =
-            resolved.source == native_scope_sight_anchor_policy::AnchorSource::FiringGripFallback &&
-            !arePointsNearlyEqual(_scope.fallbackRotationDegrees, fallbackRotationDegrees);
-        if (sameResolvedAnchor && !fallbackRotationChanged) {
+        const bool firingGripRotationChanged =
+            resolved.source == native_scope_sight_anchor_policy::AnchorSource::FiringGrip &&
+            !arePointsNearlyEqual(_scope.firingGripRotationDegrees, firingGripRotationDegrees);
+        if (sameResolvedAnchor && !firingGripRotationChanged) {
             return;
         }
 
         if (sameResolvedAnchor) {
-            _scope.fallbackRotationDegrees = fallbackRotationDegrees;
+            _scope.firingGripRotationDegrees = firingGripRotationDegrees;
             if (_scope.rigidFrame.valid && !rebuildNativeScopeRigidFrameTarget()) {
                 clearNativeScopeOverlayAuthority(true);
                 clearNativeScopeRigidFrame();
                 ROCK_LOG_WARN(Weapon,
-                    "TwoHandedGrip: rejected invalid native scope fallback rotation pitch={:.2f} yaw={:.2f} "
+                    "TwoHandedGrip: rejected invalid native scope firing-grip rotation pitch={:.2f} yaw={:.2f} "
                     "roll={:.2f}",
-                    fallbackRotationDegrees.x, fallbackRotationDegrees.y, fallbackRotationDegrees.z);
+                    firingGripRotationDegrees.x, firingGripRotationDegrees.y, firingGripRotationDegrees.z);
                 return;
             }
             ROCK_LOG_DEBUG(Weapon,
-                "TwoHandedGrip: native scope firing-grip fallback rotation refreshed generation={:016X} pitch={:.2f} "
+                "TwoHandedGrip: native scope firing-grip rotation refreshed generation={:016X} pitch={:.2f} "
                 "yaw={:.2f} roll={:.2f}",
-                currentWeaponGenerationKey, fallbackRotationDegrees.x, fallbackRotationDegrees.y,
-                fallbackRotationDegrees.z);
+                currentWeaponGenerationKey, firingGripRotationDegrees.x, firingGripRotationDegrees.y,
+                firingGripRotationDegrees.z);
             return;
         }
 
         _scope.anchorWeaponLocal = resolved.weaponLocal;
         _scope.anchorSource = resolved.source;
         _scope.anchorValid = true;
-        _scope.fallbackRotationDegrees = fallbackRotationDegrees;
+        _scope.firingGripRotationDegrees = firingGripRotationDegrees;
         if (_scope.rigidFrame.valid && !rebuildNativeScopeRigidFrameTarget()) {
             clearNativeScopeOverlayAuthority(true);
             clearNativeScopeRigidFrame();
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: native scope target rebuild failed generation={:016X} source={}",
                 currentWeaponGenerationKey,
-                resolved.source == native_scope_sight_anchor_policy::AnchorSource::FiringGripFallback
-                    ? "firing-grip-fallback"
+                resolved.source == native_scope_sight_anchor_policy::AnchorSource::FiringGrip
+                    ? "firing-grip"
                     : "generated-sight");
         }
         if (resolved.source == native_scope_sight_anchor_policy::AnchorSource::GeneratedSight) {
-            ROCK_LOG_DEBUG(Weapon,
-                "TwoHandedGrip: native scope anchor generation={:016X} source=generated-sight bodies={} "
+            ROCK_LOG_INFO(Weapon,
+                "TwoHandedGrip: native scope anchor generation={:016X} form={:08X} eligible={} source=generated-sight bodies={} "
                 "local=({:.2f},{:.2f},{:.2f}) boundsMin=({:.2f},{:.2f},{:.2f}) boundsMax=({:.2f},{:.2f},{:.2f}) "
                 "policy=rear-center",
-                currentWeaponGenerationKey, snapshot.sightBodyCount, snapshot.anchorWeaponLocal.x,
+                currentWeaponGenerationKey, currentEquippedWeaponFormID, snapshot.scopeEligible, snapshot.sightBodyCount,
+                snapshot.anchorWeaponLocal.x,
                 snapshot.anchorWeaponLocal.y, snapshot.anchorWeaponLocal.z, snapshot.sightBoundsMinWeaponLocal.x,
                 snapshot.sightBoundsMinWeaponLocal.y, snapshot.sightBoundsMinWeaponLocal.z,
                 snapshot.sightBoundsMaxWeaponLocal.x, snapshot.sightBoundsMaxWeaponLocal.y,
                 snapshot.sightBoundsMaxWeaponLocal.z);
         } else {
-            ROCK_LOG_DEBUG(Weapon,
-                "TwoHandedGrip: native scope anchor generation={:016X} source=firing-grip-fallback origin={} "
+            ROCK_LOG_INFO(Weapon,
+                "TwoHandedGrip: native scope anchor generation={:016X} form={:08X} eligible={} source=firing-grip origin={} "
                 "gripLocal=({:.2f},{:.2f},{:.2f}) offset=({:.2f},{:.2f},{:.2f}) rotation=({:.2f},{:.2f},{:.2f}) "
                 "anchorLocal=({:.2f},{:.2f},{:.2f})",
-                currentWeaponGenerationKey, firingGripFromCanonical ? "canonical" : "active-grip",
-                firingGripWeaponLocal.x, firingGripWeaponLocal.y, firingGripWeaponLocal.z, fallbackOffsetWeaponLocal.x,
-                fallbackOffsetWeaponLocal.y, fallbackOffsetWeaponLocal.z, fallbackRotationDegrees.x,
-                fallbackRotationDegrees.y, fallbackRotationDegrees.z, _scope.anchorWeaponLocal.x,
+                currentWeaponGenerationKey, currentEquippedWeaponFormID, snapshot.scopeEligible,
+                firingGripFromCanonical ? "canonical" : "active-grip",
+                firingGripWeaponLocal.x, firingGripWeaponLocal.y, firingGripWeaponLocal.z, firingGripOffsetWeaponLocal.x,
+                firingGripOffsetWeaponLocal.y, firingGripOffsetWeaponLocal.z, firingGripRotationDegrees.x,
+                firingGripRotationDegrees.y, firingGripRotationDegrees.z, _scope.anchorWeaponLocal.x,
                 _scope.anchorWeaponLocal.y, _scope.anchorWeaponLocal.z);
         }
     }

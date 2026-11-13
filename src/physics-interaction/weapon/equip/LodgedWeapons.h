@@ -62,6 +62,10 @@ namespace rock
             std::uintptr_t collisionObject{ 0 };
             std::uint32_t group{ 0 };
             RE::NiPointer<RE::NiAVObject> bone{};
+            // Where the driver presented the weapon with the mark: its body
+            // as the target holds it. The drop places the weapon here, never
+            // at the hand's pose, which a stuck blade no longer follows.
+            RE::NiTransform weaponWorld{};
         };
 
         // One placed native body of the dropped weapon. drive: one body per

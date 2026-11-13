@@ -31,7 +31,7 @@ namespace rock::native_shape_cast_safety
         /*
          * Both prologues are whole-instruction and position-independent. They
          * were verified from Fallout4VR.exe 1.2.72 raw disassembly alongside
-         * the 2026-08-29 castShape crash at module+0x15FFD43.
+         * the castShape crash at module+0x15FFD43.
          */
         constexpr std::array<std::uint8_t, 15> kExpectedWorldCastShapeEntry{
             0x48,

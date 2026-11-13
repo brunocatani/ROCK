@@ -745,7 +745,7 @@ namespace rock
         float proxyAngularVelocityRadiansPerSecond = 0.0f;
         bool proxyVelocityTelemetryOk = false;
         RE::NiTransform proxyReadbackBetween{};
-        body_frame::BodyFrameSource proxyReadbackSourceBetween = body_frame::BodyFrameSource::Fallback;
+        body_frame::BodyFrameSource proxyReadbackSourceBetween = body_frame::BodyFrameSource::None;
         std::uint32_t proxyReadbackMotionIndexBetween = body_frame::kFreeMotionIndex;
         bool proxyReadbackBetweenOk = false;
         float proxyReadbackBetweenPositionErrorGameUnits = -1.0f;
@@ -804,7 +804,7 @@ namespace rock
             // Game-clock phase lock: the frame's last substep commands EXACTLY
             // the queued game-frame sample, so frame-end proxy positions lie on
             // the sampled wand path the same way the hand collider's do -- the
-            // 2026-07-13 OVERLAY_POINT probe proved physics-clock playback put
+            // OVERLAY_POINT probe proved physics-clock playback put
             // v x (clock mismatch) between the held object and everything else
             // the eye tracks. Intra-frame substeps interpolate along the
             // sample segment. Local copy only: every downstream use in this

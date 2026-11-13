@@ -64,18 +64,14 @@ reorder them.
 | `TableTooSmall` | ROCK's table is smaller than `minimumTableBytes`. |
 | `InvalidArgument` | Null output, or a zero major or table size. |
 
-A version mismatch stops the game. After `UnknownInterface`,
-`UnsupportedMajor`, `UnsupportedMinor` or `TableTooSmall`, ROCK logs the
-calling DLL and, when the main menu opens (or at once, if it is already open),
-shows an error box naming that DLL and what to update; the game closes when the
-box is closed. Request exactly the major, minor and table size your headers
-declare, as `Client` does, and read optional additions from the descriptor's
-`minor`. Never probe for versions with trial queries.
+After `UnknownInterface`, `UnsupportedMajor`, `UnsupportedMinor` or
+`TableTooSmall`, ROCK logs the calling DLL once in `ROCK.log` and the game keeps
+running. Request exactly the major, minor and table size your headers declare,
+as `Client` does, and read optional additions from the descriptor's `minor`.
+Never probe for versions with trial queries.
 
-Your mod should do the same when a loaded ROCK refuses it, so a player with an
-older ROCK sees which mod needs which update. RPS Framework's
-`RPS/Runtime/RequiredUpdate.h` provides the box. When `ROCK.dll` is not loaded
-at all, turn your ROCK features off and keep running.
+When `ROCK.dll` is not loaded, or a loaded ROCK refuses your request, turn your
+ROCK features off, log why and keep running.
 
 Discovery grants no permissions. Bind each interface to your owner with the
 permissions you need (Core `bindInterface`, or `Client::acquire`).

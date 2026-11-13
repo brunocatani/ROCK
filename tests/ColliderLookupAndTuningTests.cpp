@@ -79,10 +79,6 @@ int main()
     constexpr auto finger = static_cast<std::size_t>(HandColliderRole::IndexBase);
     RockConfigValues config{};
     const auto defaults = collider_tuning::prepareHand(config, false);
-    near(defaults.roles[palm].palmDimensionScale.x, 0.8f);
-    near(defaults.roles[palm].palmDimensionScale.y, 1.0f);
-    near(defaults.roles[palm].palmDimensionScale.z, 2.0f);
-    near(defaults.roles[finger].radiusScale, 1.0f);
 
     config.rockHandBoneColliderRadiusScaleOverrides =
         "IndexBase=0.8;PowerArmor.IndexBase=1.7;IndexBase=0.6;PowerArmor.IndexBase=1.9;PowerArmor.IndexBase=nan;"

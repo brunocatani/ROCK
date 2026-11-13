@@ -299,7 +299,7 @@ namespace rock
             }
             const float driveDelta = driveDeltaSeconds;
             const float scale =
-                physics_scale::isUsableScale(gameToHavokScale) ? gameToHavokScale : physics_scale::kFallbackGameToHavok;
+                physics_scale::isUsableScale(gameToHavokScale) ? gameToHavokScale : physics_scale::kNominalGameToHavok;
 
             if (std::isfinite(maxLinearVelocityHavok) && maxLinearVelocityHavok > 0.0f &&
                 std::isfinite(linearDistanceGameUnits) && linearDistanceGameUnits > kTinyDistanceGameUnits) {
@@ -486,7 +486,7 @@ namespace rock
         float targetToBodyAxisYDegrees = 0.0f;
         float targetToBodyAxisZDegrees = 0.0f;
         std::uint32_t motionIndex = body_frame::kFreeMotionIndex;
-        body_frame::BodyFrameSource liveBodyFrameSource = body_frame::BodyFrameSource::Fallback;
+        body_frame::BodyFrameSource liveBodyFrameSource = body_frame::BodyFrameSource::None;
         float driveDeltaSeconds = 0.0f;
         float sourceDeltaSeconds = 0.0f;
         float sourceAgeSeconds = 0.0f;

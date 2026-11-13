@@ -1,6 +1,8 @@
 // Provider force-grab commits, fuse service, and held-grenade arming.
 #include "api/StorageService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/native/player/NativeWorkshop.h"
+#include "setup-wizard/AutoOpenGate.h"
 
 namespace rock
 {
@@ -72,6 +74,7 @@ namespace rock
     void PhysicsInteraction::clearLooseGrenadeRuntimeState()
     {
         _forceGrab.grenadeFuses = {};
+        _forceGrab.quickDrawnGrenade = {};
         clearLooseGrenadeImpactWatches();
     }
 
@@ -184,8 +187,85 @@ namespace rock
             .grenadeQuickDraw = true,
             .maxDistanceGame = 96.0f,
         };
+        _forceGrab.quickDrawnGrenade = drop.handle;
         ROCK_LOG_INFO(Hand, "Grenade mode draw: ref={:08X} stack={} hand={}",
             drop.droppedRef ? drop.droppedRef->GetFormID() : 0, drop.stackId, isLeft ? "left" : "right");
+    }
+
+    void PhysicsInteraction::serviceWorkshopHoldEntry(const PhysicsFrameContext& frame)
+    {
+        if (!input_remap_runtime::consumeWorkshopEntryRequest())
+            return;
+        if (!frame.worldReady || !frame.hknpWorld || !physicsWritesAllowedForWorld(frame.hknpWorld)) {
+            ROCK_LOG_INFO(Input, "Workshop hold refused: physics world not ready");
+            return;
+        }
+        // The game's own hold also requires free play with movement controls.
+        const auto gate = setup_wizard::auto_open_gate::read();
+        if (!gate.ready()) {
+            ROCK_LOG_INFO(Input, "Workshop hold refused: {}", setup_wizard::auto_open_gate::describe(gate));
+            return;
+        }
+        if (!returnQuickDrawnGrenade(frame))
+            return;
+        const auto status = native_workshop::enter();
+        ROCK_LOG_INFO(Input, "Workshop hold: {}",
+            status == native_workshop::Status::Available ? "entered Workshop mode" : native_workshop::statusName(status));
+    }
+
+    bool PhysicsInteraction::returnQuickDrawnGrenade(const PhysicsFrameContext& frame)
+    {
+        const auto handle = std::exchange(_forceGrab.quickDrawnGrenade, RE::ObjectRefHandle{});
+        const auto refPtr = handle.get();
+        auto* grenade = refPtr.get();
+        if (!grenade)
+            return true;
+
+        // Still on its way to the hand: the drop goes straight back.
+        for (auto& commit : _forceGrab.pendingCommits) {
+            if (!commit.active || !commit.grenadeQuickDraw || commit.targetHandle.get().get() != grenade)
+                continue;
+            commit = {};
+            const bool returned = loose_grenade_runtime::returnDroppedReferenceToInventory(grenade);
+            ROCK_LOG_INFO(Hand, "Workshop hold: drawn grenade {:08X} returned before reaching the hand: {}",
+                grenade->GetFormID(), returned ? "yes" : "no");
+            return true;
+        }
+
+        for (const bool isLeft : { false, true }) {
+            auto& hand = isLeft ? _leftHand : _rightHand;
+            if (!hand.isHolding() || hand.getHeldRef() != grenade)
+                continue;
+            for (const auto& fuse : _forceGrab.grenadeFuses) {
+                if (fuse.active && fuse.handle.get().get() == grenade) {
+                    // A live grenade is never pocketed, and Workshop mode would leave it in the hand.
+                    f4vr::showNotification("ROCK: Throw the armed grenade first.");
+                    ROCK_LOG_INFO(Hand, "Workshop hold refused: drawn grenade {:08X} is armed", grenade->GetFormID());
+                    return false;
+                }
+            }
+            const std::uint32_t formId = grenade->GetFormID();
+            const std::uint32_t bodyId = hand.getSavedObjectState().bodyId.value;
+            auto releaseContext = makeGrabReleaseContext(hand, isLeft);
+            releaseContext.disposition = GrabReleaseDisposition::PendingInventoryTransfer;
+            releaseContext.reason = "workshop-hold-return";
+            auto outcome =
+                hand.releaseGrabbedObject(frame.hknpWorld, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
+            releaseObject(grenade, claimOwnerForHand(isLeft));
+            dispatchSimpleGrabEvent(GrabEventType::Released, isLeft, grenade, bodyId);
+            clearGameplayCandidatesForHand(hand, isLeft);
+            const auto retained = outcome.takeRetainedReference();
+            const bool returned =
+                loose_grenade_runtime::returnDroppedReferenceToInventory(retained ? retained.get() : grenade);
+            if (!returned) {
+                // As the shoulder stash does: a refused pickup is an honest drop.
+                hand.applyReleaseVelocitySnapshot(frame.hknpWorld, outcome.velocity);
+            }
+            ROCK_LOG_INFO(Hand, "Workshop hold: {} hand drawn grenade {:08X} returned to inventory: {}", hand.handName(),
+                formId, returned ? "yes" : "no");
+            return true;
+        }
+        return true;
     }
 
     void PhysicsInteraction::servicePendingForceGrabCommits(const PhysicsFrameContext& frame)

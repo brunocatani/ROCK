@@ -315,7 +315,7 @@ namespace rock
          * any branch. Publishing it only from some branches let an equip-
          * transition suspension withdraw the candidate: the support
          * capability expired to Unavailable and the weapon lost its support
-         * grabs and zones (runtime 14 Oct 21:38:29, 0D000FA1).
+         * grabs and zones (observed at runtime, 0D000FA1).
          */
         // A user offset publishes support absence, which selects the dynamic
         // fallback, and counts as published so no live or stable authored

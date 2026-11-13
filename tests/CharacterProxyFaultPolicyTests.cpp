@@ -21,7 +21,7 @@ int main()
     };
 
     // Replay both active callsites and the body/read addresses from the
-    // 2026-09-10 crash. Neither caller can accept a successful null result.
+    // captured crash. Neither caller can accept a successful null result.
     Evidence observed{ instruction, 0x6237C, 0x62310, 0x141E4B8DE, true };
     check("constraint listener preserves original exception", observed, Disposition::PreserveNativeException);
     observed.caller = 0x141E9E20D;

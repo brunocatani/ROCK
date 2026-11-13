@@ -907,7 +907,7 @@ namespace rock
             /*
              * Live-world teardown must go through the deferred-retirement queue:
              * the hknp broadphase can still reach this body until the next
-             * physics step (see 2026-07-08 use-after-free lesson).
+             * physics step (freeing it earlier was a use-after-free).
              */
             slot.body.retireDeferred(bhkWorld ? bhkWorld : slot.createdBhkWorld);
         }

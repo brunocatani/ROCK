@@ -142,8 +142,8 @@ namespace rock::native_hand_equipment
          * its settled grip outside menus (recordPrimaryHand) and when a
          * directed hand is applied. Menus release the live firing grip and
          * its input routing, so Pip-Boy readers must use this record: the
-         * live routing reported every left-held weapon as right (runtime
-         * 14 Oct 21:25:03). Same lock discipline as the secondary record.
+         * live routing reported every left-held weapon as right (observed at
+         * runtime). Same lock discipline as the secondary record.
          */
         SRWLOCK s_primaryHandLock = SRWLOCK_INIT;
         PrimaryHand s_primaryHand{};

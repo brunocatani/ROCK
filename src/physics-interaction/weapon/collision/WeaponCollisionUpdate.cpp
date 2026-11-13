@@ -146,6 +146,7 @@ namespace rock
             _identity.observedOwnershipKey = 0;
             _identity.observedFormID = 0;
             _identity.observedInstanceContentKey = 0;
+            _scopeTargetPreview = {};
             clearGeneratedSourceCompletenessTracking();
             clearPendingWeaponVisualRebuild();
             clearGeneratedSourceCache();
@@ -237,6 +238,9 @@ namespace rock
             retireActiveWeaponBodiesForSceneTransition(world, transitionReason);
         }
         updateWeaponEmitterSnapshot(weaponNode, observedKey);
+        if (getCurrentWeaponGenerationKey() == 0) {
+            publishScopeTargetBeforeGeometry(weaponNode, observedKey);
+        }
 
         const bool missingBodies = observedKey != 0 && !hasWeaponBody();
         bool rebuildRequired = driveRequestedRebuild || workbenchExitRequested || keyChanged || ownershipKeyChanged ||

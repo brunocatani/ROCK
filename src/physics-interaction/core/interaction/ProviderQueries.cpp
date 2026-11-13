@@ -1221,7 +1221,10 @@ namespace rock
         using Flag = api::weapon::ScopeSightFlag;
         outState = {};
         const auto anchor = _weaponCollision.getNativeScopeSightAnchorSnapshot();
-        if (anchor.weaponGenerationKey == 0 || anchor.weaponFormID == 0) {
+        // ScopeSightState 2.0 names the colliders' generation. The scope target
+        // published at equip, before the colliders, stays internal.
+        if (anchor.weaponGenerationKey == 0 || anchor.weaponFormID == 0 ||
+            anchor.weaponGenerationKey != _weaponCollision.getCurrentWeaponGenerationKey()) {
             return false;
         }
 

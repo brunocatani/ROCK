@@ -16,7 +16,7 @@ namespace rock::pipe_firing_grip_policy
         float scale{ 1.0f };
     };
 
-    // User calibration from Pipe.json, 2026-09-14 23:07. FRIK's
+    // User calibration from Pipe.json. FRIK's
     // Weapon-in-Hand convention; canonical for the shared pipe firing poses.
     inline constexpr Transform kWeaponInHand{ { -0.122000001f, 0.99000001f, 0.0689999983f, 0.986999989f, 0.114f,
                                                   0.108999997f, 0.100000001f, 0.0810000002f, -0.991999984f },
@@ -29,7 +29,7 @@ namespace rock::pipe_firing_grip_policy
         std::array<Transform, 15> fingers;
     };
 
-    // Original FO4VR idle samples captured 2026-09-14. These are identity
+    // Original FO4VR idle samples. These are identity
     // witnesses only, not replacement poses. Compare the full right-hand pose
     // regardless of weapon ID or clip filename, so copied animations qualify
     // while replacements with a different pose supply their own grip.

@@ -27,7 +27,6 @@
 #include "RockConfig.h"
 #include "api/FRIKApiV2.h"
 #include "api/LooseWeaponStateService.h"
-#include "api/OutdatedConsumers.h"
 #include "api/ProviderRuntime.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/core/PhysicsHooks.h"
@@ -44,6 +43,7 @@
 #include "physics-interaction/native/havok/NativeImpactAudio.h"
 #include "physics-interaction/native/player/NativeActivatePrompts.h"
 #include "physics-interaction/native/player/NativeQuickLootPanel.h"
+#include "physics-interaction/native/player/NativeWorkshop.h"
 #include "physics-interaction/native/player/NativeWristPipboyLook.h"
 #include "physics-interaction/native/safety/NativeCharacterProxySafety.h"
 #include "physics-interaction/native/safety/NativeCollisionFilterSafety.h"
@@ -569,8 +569,14 @@ namespace
             return false;
         }
 
-        if (s_manualScopeConfiguredWeaponGeneration == weaponGenerationKey &&
-            s_manualScopeConfiguredOverlayIndex == overlayIndex && s_manualScopeConfiguredWorldScope == worldScope) {
+        // The housing depends only on the singleton and the overlay. The weapon
+        // key changes mid-hold when the colliders arrive after a scope opened at
+        // equip; reconfiguring the active WSScope then would rebuild its housing
+        // under the renderer. Any hold end clears this cache (see
+        // driveManualScopeTransitionFallback), so a new weapon still configures.
+        if (s_manualScopeConfiguredWeaponGeneration != 0 && s_manualScopeConfiguredOverlayIndex == overlayIndex &&
+            s_manualScopeConfiguredWorldScope == worldScope) {
+            s_manualScopeConfiguredWeaponGeneration = weaponGenerationKey;
             return true;
         }
 
@@ -1258,9 +1264,6 @@ namespace
         }
 
         if (msg->type == F4SE::MessagingInterface::kGameLoaded) {
-            // Before anything below can disable ROCK: an outdated consumer still
-            // stops the game when ROCK itself cannot run.
-            api::discovery::watchForOutdatedConsumers();
             s_messaging->RegisterListener(onExternalWeaponVisualChanged, "VRVanillaFixes");
             logger::info("ROCK: GameLoaded -- initializing FRIKApi and loading config...");
             const auto providerGeneration = bumpGeneration(s_providerGeneration);
@@ -1342,6 +1345,7 @@ namespace
             frik_weapon_offsets::load();
             input_remap_runtime::configurePipboyInput();
             input_remap_runtime::configureButtonLayout();
+            native_workshop::install();
             g_rockConfig.subscribeForConfigChanged("ROCKPipboyInput", [](const std::string&) {
                 input_remap_runtime::configurePipboyInput();
                 input_remap_runtime::configureButtonLayout();
