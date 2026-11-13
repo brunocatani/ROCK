@@ -280,8 +280,9 @@ namespace rock
         }
 
         auto* weaponNode = f4vr::getWeaponNode();
+        // The anchor's key: the scope opens at equip, before the colliders.
         _twoHandedGrip.synchronizeNativeScopePresentationAfterFrikUpdate(weaponNode,
-            _weaponCollision.getCurrentWeaponGenerationKey());
+            _weaponCollision.getCurrentWeaponInteractionKey());
     }
 
     void PhysicsInteraction::finalizeFrikWeaponOwnershipForFrame()
