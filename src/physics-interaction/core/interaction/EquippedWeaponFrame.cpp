@@ -98,8 +98,10 @@ namespace rock
             .equippedWeaponOwnershipKey = snapshot.equippedWeaponOwnershipKey,
             .weaponFormID = snapshot.weaponFormID,
         };
+        // The interaction key: the ownership key from the draw, then the body
+        // set's generation, matching the scope target published before geometry.
         const native_scope_sight_anchor_policy::PublicationIdentity currentIdentity{
-            .weaponGenerationKey = _weaponCollision.getCurrentWeaponGenerationKey(),
+            .weaponGenerationKey = _weaponCollision.getCurrentWeaponInteractionKey(),
             .equippedWeaponOwnershipKey = _weaponCollision.getCurrentEquippedWeaponOwnershipKey(),
             .weaponFormID = _weaponCollision.getCurrentObservedEquippedWeaponFormID(),
         };

@@ -594,6 +594,7 @@ namespace rock
         void publishWeaponBodySetGeneration(
             const weapon_generated_source_completeness_policy::GeneratedSourceCompleteness& sourceCompleteness);
         void publishAtomicBodyIds(WeaponBodyBank& bank);
+        void publishScopeTargetBeforeGeometry(RE::NiAVObject* weaponNode, std::uint64_t observedKey);
         void unpublishAtomicBodyIds();
         void beginWeaponBodyPublication();
         void endWeaponBodyPublication();
@@ -782,7 +783,22 @@ namespace rock
             std::atomic<std::uint32_t> failureCount{ 0 };
         };
 
+        /*
+         * Scope target resolved from the equipped records (HasScope, optic
+         * mods, ZOOM) as soon as the weapon is observed, keyed by its
+         * equipped key. Until the generated bodies publish, the sight-anchor
+         * snapshot carries it under the ownership key, so a scope opens at
+         * equip on the firing-grip anchor and moves to the optic when its
+         * geometry is published. Main thread only.
+         */
+        struct ScopeTargetPreview
+        {
+            std::uint64_t observedKey{ 0 };
+            NativeScopeSightAnchorSnapshot target{};
+        };
+
         WeaponIdentityState _identity{};
+        ScopeTargetPreview _scopeTargetPreview{};
         WeaponBodyBankState _bodies{};
         // Default-initialized on purpose; see the struct comment.
         AtomicBodyPublicationState _published;

@@ -1246,7 +1246,7 @@ namespace rock
         }
 
         [[nodiscard]] inline EquippedManualScopeTarget resolveEquippedManualScopeTarget(
-            RE::NiAVObject* assembledWeaponRoot, std::uint32_t equipIndex)
+            RE::NiAVObject* assembledWeaponRoot, std::uint32_t equipIndex, bool logCensus)
         {
             EquippedManualScopeTarget target{};
             auto* player = f4vr::getPlayer();
@@ -1343,8 +1343,11 @@ namespace rock
             }
             target.directTransitionRequired = manual_scope_target_policy::requiresDirectNativeTransition(
                 nativeScopeMetadataAuthored, manualScopeEvidence, target.overlayValid);
-            // One census line per weapon publication, eligible or not, so a
+            // One census line per equipped weapon, eligible or not, so a
             // scope ROCK misses is as visible as one it admits.
+            if (!logCensus) {
+                return target;
+            }
             ROCK_LOG_INFO(Weapon,
                 "Scope census weapon={:08X} name='{}' eligible={} nativeHasScope={} named={} structure={} zoomScope={} "
                 "zoomForm={:08X} authoredOverlay={} selectedOverlay={} authoredZoom={:.2f} direct={} mods=[{}]",

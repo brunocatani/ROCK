@@ -425,6 +425,37 @@ namespace rock
 
     void WeaponCollision::unpublishAtomicBodyIds() { clearAtomicBodyIds(); }
 
+    void WeaponCollision::publishScopeTargetBeforeGeometry(RE::NiAVObject* weaponNode, std::uint64_t observedKey)
+    {
+        if (!weaponNode || observedKey == 0 || _identity.observedOwnershipKey == 0 || _identity.observedFormID == 0) {
+            return;
+        }
+        if (_scopeTargetPreview.observedKey != observedKey) {
+            const auto target = resolveEquippedManualScopeTarget(weaponNode, _equipIndex, true);
+            _scopeTargetPreview.observedKey = observedKey;
+            _scopeTargetPreview.target = {};
+            _scopeTargetPreview.target.scopeEligible = target.scopeEligible;
+            _scopeTargetPreview.target.manualDirectTransitionRequired = target.directTransitionRequired;
+            _scopeTargetPreview.target.nativeScopeOverlayValid = target.overlayValid;
+            _scopeTargetPreview.target.nativeScopeOverlayIndex = target.overlayIndex;
+            _scopeTargetPreview.target.scopeWeaponIdentity = target.weaponIdentity;
+            _scopeTargetPreview.target.scopeInstanceIdentity = target.instanceIdentity;
+        }
+        // No generated sight yet (valid=false): the anchor resolves to the
+        // firing grip until publishAtomicBodyIds replaces this snapshot.
+        auto preview = _scopeTargetPreview.target;
+        preview.weaponGenerationKey = _identity.observedOwnershipKey;
+        preview.equippedWeaponOwnershipKey = _identity.observedOwnershipKey;
+        preview.weaponFormID = _identity.observedFormID;
+        std::scoped_lock lock(_evidence.mutex);
+        const auto& current = _evidence.sightAnchor;
+        if (current.weaponGenerationKey != preview.weaponGenerationKey || current.weaponFormID != preview.weaponFormID ||
+            current.scopeInstanceIdentity != preview.scopeInstanceIdentity ||
+            current.scopeEligible != preview.scopeEligible) {
+            _evidence.sightAnchor = preview;
+        }
+    }
+
     void WeaponCollision::publishAtomicBodyIds(WeaponBodyBank& bank)
     {
         WeaponCompositionSnapshot weaponCompositionSnapshot{};
@@ -433,7 +464,21 @@ namespace rock
         RE::NiAVObject* packageDriveNode = resolvePackageDriveNode(bank, nullptr);
         NativeScopeSightAnchorSnapshot nativeScopeSightAnchorSnapshot = buildNativeScopeSightAnchorSnapshot(
             _identity.cachedBodySetKey, _identity.cachedOwnershipKey, _identity.cachedFormID, evidenceSnapshot);
-        const auto manualScopeTarget = resolveEquippedManualScopeTarget(packageDriveNode, _equipIndex);
+        // The geometry root is authoritative; the census line was already
+        // written when the same equipped weapon was resolved before geometry.
+        const bool previewed = _scopeTargetPreview.observedKey != 0 &&
+            _scopeTargetPreview.observedKey == _identity.cachedWeaponKey;
+        const auto manualScopeTarget = resolveEquippedManualScopeTarget(packageDriveNode, _equipIndex, !previewed);
+        if (previewed && (manualScopeTarget.scopeEligible != _scopeTargetPreview.target.scopeEligible ||
+                             manualScopeTarget.overlayIndex != _scopeTargetPreview.target.nativeScopeOverlayIndex ||
+                             manualScopeTarget.directTransitionRequired !=
+                                 _scopeTargetPreview.target.manualDirectTransitionRequired)) {
+            ROCK_LOG_INFO(Weapon,
+                "Scope target revised by generated geometry form={:08X} eligible={}->{} overlay={}->{} direct={}->{}",
+                _identity.cachedFormID, _scopeTargetPreview.target.scopeEligible, manualScopeTarget.scopeEligible,
+                _scopeTargetPreview.target.nativeScopeOverlayIndex, manualScopeTarget.overlayIndex,
+                _scopeTargetPreview.target.manualDirectTransitionRequired, manualScopeTarget.directTransitionRequired);
+        }
         nativeScopeSightAnchorSnapshot.scopeWeaponIdentity = manualScopeTarget.weaponIdentity;
         nativeScopeSightAnchorSnapshot.scopeInstanceIdentity = manualScopeTarget.instanceIdentity;
         nativeScopeSightAnchorSnapshot.scopeEligible = manualScopeTarget.scopeEligible;
