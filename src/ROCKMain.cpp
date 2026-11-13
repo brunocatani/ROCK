@@ -36,6 +36,7 @@
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/hand/NativeWandVisualSuppression.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
+#include "physics-interaction/input/WorkshopEntryGesture.h"
 #include "setup-wizard/SetupWizard.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/havok/HavokOffsets.h"
@@ -956,6 +957,7 @@ namespace
             static_cast<native_quick_loot_panel::Placement>(g_rockConfig.rockQuickLootPanelPlacement));
         native_activate_prompts::update(
             static_cast<native_activate_prompts::Placement>(g_rockConfig.rockActivatePromptPlacement));
+        workshop_entry_gesture::update();
         native_secondary_presentation::beginFrame();
         frik_hand_world_authority::noteNativeRecoilControlled(false);
         performance_profiler::refreshSettings(g_rockConfig.rockPerformanceProfilerEnabled,
@@ -1344,6 +1346,7 @@ namespace
             frik_weapon_offsets::load();
             input_remap_runtime::configurePipboyInput();
             input_remap_runtime::configureButtonLayout();
+            workshop_entry_gesture::install();
             g_rockConfig.subscribeForConfigChanged("ROCKPipboyInput", [](const std::string&) {
                 input_remap_runtime::configurePipboyInput();
                 input_remap_runtime::configureButtonLayout();
