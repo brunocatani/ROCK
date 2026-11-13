@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 4.2)
 
 set(NAME "ROCK")
 set(FRIENDLY_NAME "ROCK")
-set(VERSION 1.0.1)
+set(VERSION 1.0.2)
 
 message(">>> Start build for '${NAME}' v${VERSION}")
 
