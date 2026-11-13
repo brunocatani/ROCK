@@ -19,6 +19,7 @@
 #include "physics-interaction/input/VatsGrenadeGesturePolicy.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/player/NativeQuickLootPanel.h"
+#include "physics-interaction/native/player/NativeWorkshop.h"
 #include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
 
 #include "api/ProviderRuntime.h"
@@ -362,6 +363,17 @@ namespace rock::input_remap_runtime
         // Native input publishes one edge; the interaction frame owns inventory.
         std::atomic<bool> s_pendingGrenadeQuickDrawHoldRequest{ false };
         std::atomic<bool> s_grenadeQuickDrawReleaseToRearm{ true };
+        /*
+         * Workshop mode on the B hold. ROCK keeps the off-hand menu button's
+         * hold for Pause, so the game's own Workshop hold on it never runs.
+         * Inside a workshop's buildable area, B held this long puts the
+         * grenade it drew back and enters Workshop mode instead; elsewhere the
+         * hold stays a grenade hold.
+         */
+        constexpr float kWorkshopHoldSeconds = 3.0f;
+        bool s_workshopHoldDecided = false; // Input thread: this B press reached the hold.
+        // Input thread -> interaction frame, which owns the drawn grenade.
+        std::atomic<bool> s_pendingWorkshopEntryRequest{ false };
         using PipboyRoute = pipboy_pause_gesture_policy::PipboyRoute;
         PipboyRoute s_pipboyGestureRoute{ PipboyRoute::Unavailable };
         // Frame/config thread only. Engine settings are registered for the
@@ -2588,6 +2600,35 @@ namespace rock::input_remap_runtime
                 !isAnyProviderOpenVrGameInputSuppressedAtDispatch();
         }
 
+        // After the grenade gesture has seen this B event: the Workshop hold.
+        void observeWorkshopHold(const RE::ButtonEvent& button)
+        {
+            if (!button.QPressed() || button.QJustPressed()) {
+                s_workshopHoldDecided = false;
+                return;
+            }
+            if (s_workshopHoldDecided || button.QHeldDownSecs() < kWorkshopHoldSeconds) {
+                return;
+            }
+            s_workshopHoldDecided = true;
+            if (!s_gameplayInputAllowed.load(std::memory_order_acquire) || isInputBlockingMenuActive() ||
+                isAnyProviderOpenVrGameInputSuppressedAtDispatch()) {
+                return;
+            }
+            const auto status = native_workshop::query();
+            if (status != native_workshop::Status::Available) {
+                ROCK_LOG_DEBUG(Input, "B held {:.2f}s: no Workshop ({})", button.QHeldDownSecs(),
+                    native_workshop::statusName(status));
+                return;
+            }
+            // The B release must neither throw nor draw: the grenade goes back.
+            native_grenade_throw_runtime::cancel();
+            vats_grenade_gesture_policy::blockUntilRelease(s_vatsGrenadeGestureState);
+            s_pendingWorkshopEntryRequest.store(true, std::memory_order_release);
+            ROCK_LOG_INFO(Input, "B held {:.2f}s in a workshop's buildable area: entering Workshop mode",
+                button.QHeldDownSecs());
+        }
+
         void observePrimaryVatsGrenadeGesture(RE::ButtonEvent& button)
         {
             const auto raw = peekRawButtonState(false, 1);
@@ -2635,6 +2676,7 @@ namespace rock::input_remap_runtime
                     decision.requestGrenade, decision.requestNativeThrow, decision.releaseNativeThrow, raw.available,
                     raw.held, s_grenadeQuickDrawReleaseToRearm.load(std::memory_order_acquire));
             }
+            observeWorkshopHold(button);
         }
 
         void hookedMenuOpenEventHandler(void* handler, RE::InputEvent* inputEvent)
@@ -3366,6 +3408,7 @@ namespace rock::input_remap_runtime
             if (wasAllowed)
                 blockManualScopeInputUntilRelease();
             s_pendingGrenadeQuickDrawHoldRequest.store(false, std::memory_order_release);
+            s_pendingWorkshopEntryRequest.store(false, std::memory_order_release);
             s_grenadeQuickDrawReleaseToRearm.store(true, std::memory_order_release);
         }
     }
@@ -3727,6 +3770,11 @@ namespace rock::input_remap_runtime
     bool consumePendingSavedGrabOffsetRequest(bool isLeft)
     {
         return s_pendingSavedGrabOffsetRequest[isLeft ? 0u : 1u].exchange(false, std::memory_order_acq_rel);
+    }
+
+    bool consumeWorkshopEntryRequest()
+    {
+        return s_pendingWorkshopEntryRequest.exchange(false, std::memory_order_acq_rel);
     }
 
     bool consumeGrenadeQuickDrawHoldRequest()

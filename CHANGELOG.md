@@ -13,9 +13,10 @@
 
 ### Fixed
 
-- **Workshop mode can be entered again.** In a settlement's build area, hold the left
-  stick click for the game's Workshop hold (1.5 s). The off-hand menu button keeps the
-  Pip-Boy tap and the Pause hold; a click of the left stick works as before.
+- **Workshop mode can be entered again.** In a settlement's build area, hold B for
+  3 seconds: the grenade the hold drew goes back to your inventory and Workshop mode
+  opens. Elsewhere the B hold is the grenade hold as before, and the off-hand menu
+  button keeps the Pip-Boy tap and the Pause hold.
 - **Scopes only on real optics.** Iron sights, red dots, holographic and laser sights
   no longer get ROCK's scope view; they stay sights. A weapon gets the scope view for
   an optic named as a scope or marked as one, or one magnifying 3x or more; nothing

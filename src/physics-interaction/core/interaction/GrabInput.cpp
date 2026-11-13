@@ -2681,6 +2681,7 @@ namespace rock
         processProviderInventoryEquip(frame);
         processProviderInteractionCommands(frame);
         serviceLooseGrenadeQuickDraw(frame);
+        serviceWorkshopHoldEntry(frame);
         serviceEquippedWeaponNativeHandoff(frame);
         servicePendingForceGrabCommits(frame);
         updateEquippedWeaponDropVisuals(frame);
