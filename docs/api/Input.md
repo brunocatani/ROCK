@@ -4,7 +4,8 @@ Header: `include/ROCK/Input.h`. Hand input suppression, raw controller reads,
 native input context, and leases on the reload button and support trigger of
 the equipped weapon.
 
-Interface `Input`, major 2, minor 0; major 1 and its minors are refused.
+Interface `Input`, major 2, minor 1 (2.1 adds `getWandPickReference`; request
+minor 0 when you do not call it); major 1 and its minors are refused.
 Permissions: `Read` (1), `Write` (2). All functions except `getSample` run on
 the game thread.
 
@@ -48,6 +49,11 @@ expiry counts against; `sample` identifies the publication.
   and `LeftInputReserved` while an add-on's held placement action owns that
   hand's stick click for the object in that hand, including its release. The
   other hand's click stays free.
+- `getWandPickReference(owner, hand, referenceFormId)` (2.1): form ID of the
+  reference that hand's wand points at for activation, the game's own pick
+  (the one its prompts and quick-loot view follow); 0 when it points at
+  nothing. ROCK keeps the game's left-handed mode off, so the right hand is
+  always the game's primary wand.
 
 ## Reload gesture
 

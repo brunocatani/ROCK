@@ -150,8 +150,13 @@ namespace rock
                 continue;
             }
 
-            const bool inventoryTransfer =
+            // ROCK picks the hand for requestInventoryGrab; requestInventoryItemGrab
+            // names it and the exact stack.
+            const bool inventoryAnyHand =
                 isForceGrabCommand && (command.forceGrab.flags & provider::kForceGrabFromPlayerInventory) != 0;
+            const bool inventoryItem =
+                isForceGrabCommand && (command.forceGrab.flags & provider::kForceGrabInventoryItem) != 0;
+            const bool inventoryTransfer = inventoryAnyHand || inventoryItem;
             if (isForceGrabCommand && !inventoryTransfer &&
                 !storage_service::allowsGrab(requestTargetFormId, command.ownerToken)) {
                 complete(api::grab::InteractionCommandState::Rejected,
@@ -161,7 +166,7 @@ namespace rock
             const bool inventoryThrowable = inventoryTransfer &&
                 loose_grenade_runtime::isThrowableWeapon(
                     RE::TESForm::GetFormByID<RE::TESObjectWEAP>(command.forceGrab.targetFormId));
-            if (inventoryTransfer) {
+            if (inventoryAnyHand) {
                 const bool rightFree = forceGrabHandBlockerMask(_rightHand, false, frame.right.disabled, true) == 0;
                 const bool leftFree = forceGrabHandBlockerMask(_leftHand, true, frame.left.disabled, true) == 0;
                 const auto choice = force_grab_policy::selectGrenadeHand(false, rightFree, leftFree,
@@ -391,12 +396,16 @@ namespace rock
                 }
                 RE::NiPoint3 dropLocation = handInput.grabAnchorWorld;
                 dropLocation.z -= 3.0f;
-                const auto drop =
-                    loose_grenade_runtime::dropInventoryItemToWorld(command.forceGrab.targetFormId, dropLocation);
+                const auto drop = inventoryItem
+                    ? loose_grenade_runtime::dropInventoryItemStackToWorld(command.forceGrab.targetFormId,
+                          command.inventoryUniqueId, dropLocation)
+                    : loose_grenade_runtime::dropInventoryItemToWorld(command.forceGrab.targetFormId, dropLocation);
                 if (!drop.success) {
-                    ROCK_LOG_WARN(Hand, "Inventory handoff rejected: item={:08X} reason={}",
-                        command.forceGrab.targetFormId, drop.reason);
-                    f4vr::showNotification("ROCK: This inventory item could not be taken.");
+                    ROCK_LOG_WARN(Hand, "Inventory handoff rejected: item={:08X} uniqueID={} reason={}",
+                        command.forceGrab.targetFormId, command.inventoryUniqueId, drop.reason);
+                    // The item consumer presents its own outcome.
+                    if (inventoryAnyHand)
+                        f4vr::showNotification("ROCK: This inventory item could not be taken.");
                     complete(api::grab::InteractionCommandState::Rejected,
                         api::grab::InteractionFailure::TargetUnavailable);
                     continue;

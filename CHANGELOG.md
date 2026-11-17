@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **For mod authors: Grab 2.1 and Input 2.1.** `requestInventoryItemGrab` puts one
+  item from the player's inventory into the hand you name, from the exact stack
+  (`uniqueId`), for any playable item with a world model; a failed grab returns it to
+  the inventory. `getWandPickReference` reports what each hand's wand points at.
+  Mods built for 2.0 keep working.
+
 ## v1.0.2
 
 ### Changed

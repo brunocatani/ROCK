@@ -103,6 +103,12 @@ int main()
     verify(storage::table(), storage::kSupportedPermissions);
     verify(grab::table(), grab::kSupportedPermissions);
     {
+        // A Grab 2.0 consumer (minor 0, the 2.0 table of 216 bytes) still binds to 2.1.
+        const InterfaceDescriptorV1* released{};
+        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::Grab, 2, 0, 216, &released) == Status::Ok);
+        assert(released && released->table == &grab::table() && released->minor == 1);
+    }
+    {
         const auto& api = grab::table();
         grab::DefaultGrabPoses poses;
         poses.baseFormId = 100;
@@ -135,6 +141,12 @@ int main()
     verify(weaponparts::table(), weaponparts::kSupportedPermissions);
     verify(animation::table(), animation::kSupportedPermissions);
     verify(input::table(), input::kSupportedPermissions);
+    {
+        // An Input 2.0 consumer (minor 0, the 2.0 table of 128 bytes) still binds to 2.1.
+        const InterfaceDescriptorV1* released{};
+        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::Input, 2, 0, 128, &released) == Status::Ok);
+        assert(released && released->table == &input::table() && released->minor == 1);
+    }
     verify(playercontroller::table(), playercontroller::kSupportedPermissions);
     {
         // Diagnostics (12) is retired: other mods draw through RPS UI Framework.

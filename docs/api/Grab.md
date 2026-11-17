@@ -4,7 +4,8 @@ Header: `include/ROCK/Grab.h`. Grab and release commands, hand interaction
 state, hand reservations, held placement, default grab poses, guided held
 objects, reference and power-armor queries, and grab events.
 
-Interface `Grab`, major 2, minor 0; major 1 and its minors are refused. The
+Interface `Grab`, major 2, minor 1 (2.1 adds `requestInventoryItemGrab`;
+request minor 0 when you do not call it); major 1 and its minors are refused. The
 References interface (10) is retired; its queries are here. Permissions:
 `Read` (1), `Write` (2).
 
@@ -15,9 +16,20 @@ References interface (10) is retired; its queries are here. Permissions:
 its id (up to `kMaxQueuedCommands` queued). Poll the outcome with
 `getInteractionCommandResult` (Read; the latest `kMaxCommandResults` results
 are kept); `cancelInteractionCommand` cancels a queued command. Nonzero generation fields in a request must match ROCK's current
-ones. `requestInventoryGrab` puts an item of `baseFormId` from the player's
-inventory into the hand. Power armor grabs reach at most
-`kMaxPowerArmorGrabDistanceGame`.
+ones. `requestInventoryGrab` puts an aid item or a throwable of `baseFormId`
+from the player's inventory into a free hand ROCK picks (`hand` must be
+`None`). Power armor grabs reach at most `kMaxPowerArmorGrabDistanceGame`.
+
+`requestInventoryItemGrab` (2.1) puts one item of `baseFormId` into the
+requested hand (`Right` or `Left`; a busy or disabled hand is rejected with
+`HandBusy` or `HandDisabled`, never moved to the other hand). `uniqueId`
+selects the stack by its `ExtraUniqueID`, the value `TESContainerChangedEvent`
+reports; 0 takes the first stack holding the item. Any playable item with a
+world model is accepted, armor included. The item is dropped at the hand and
+grabbed there; a grab that cannot complete returns it to the inventory. The
+command is a `ForceGrab` command: poll it with `getInteractionCommandResult`,
+which reports the dropped reference as `targetFormId`. ROCK shows no
+notification for it; the caller presents the outcome.
 
 ## Hand state (Read)
 
@@ -133,6 +145,7 @@ publication identity.
 | `ForceReleaseRequest`, `ThrownDropRequest` | `requestForceRelease`, `requestThrownDrop` | `hand`, `flags` (`ImmediateCollisionRestore`, `RequireMatchingTarget`, `UseVelocityHavok`), `targetFormId`, `targetBodyId`, the three guard generations, `linearVelocityHavok[3]`, `angularVelocityRadiansPerSecond[3]` |
 | `PowerArmorGrabRequest` | `requestPowerArmorGrab` | `target` (`ReferenceKey`), `hand`, `point` (`PowerArmorPoint`), `maxDistanceGame` |
 | `InventoryGrabRequest` | `requestInventoryGrab` | `hand`, `baseFormId`, the three guard generations |
+| `InventoryItemGrabRequest` | `requestInventoryItemGrab` (2.1) | `hand`, `baseFormId`, `uniqueId`, the three guard generations |
 | `InteractionCommandResult` | `getInteractionCommandResult` | `ownerToken`, `commandId`, `kind` (`InteractionCommandKind`), `state` (`InteractionCommandState`: `Queued`, `Succeeded`, `Rejected`, `Cancelled`), `failure` and `failureStage` (`InteractionFailure`), `hand`, `targetFormId`, `targetBodyId`, `frameIndex`, the three generations, `stage` (`CommandStage`: `Accepted`, `Queued`, `Committed`, `Applied`, `Terminal`), `acceptedFrame`, `committedFrame`, `appliedFrame` |
 | `ReleasedObjectDrive`, `ReleasedObjectProgress` | `driveReleasedObject` | `reference` (`ReferenceKey`), `expectedBase`, `approachSeconds`, `rootWorld`; `distanceGame`, `angleRadians` |
 | `HandInteractionState` | `getHandInteractionState` | `frameIndex`, `hand`, `phase` (`HandInteractionPhase`), `targetKind` (`BodyContactTargetKind`), `flags` (`HandInteractionFlag`), `reservedTargetIdentity`, `targetFormId`, `primaryBodyId`, `heldBodyCount`, `heldBodyIds[8]`, `stateSequence`, `targetSequence`, `gripSequence`, `releaseSequence`, the four generations, `surfaceAnchorGame`, `surfaceGripMode` |

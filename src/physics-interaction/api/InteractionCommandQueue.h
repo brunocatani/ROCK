@@ -8,6 +8,10 @@ namespace rock::provider
     // force grab that first drops one owned item. A consumer's
     // ForceGrabRequest can never carry it.
     inline constexpr std::uint32_t kForceGrabFromPlayerInventory = 1u << 1;
+    // ROCK-internal: requestInventoryItemGrab. Like kForceGrabFromPlayerInventory,
+    // but into the requested hand only, from the stack inventoryUniqueId names,
+    // for any playable item with a world model.
+    inline constexpr std::uint32_t kForceGrabInventoryItem = 1u << 2;
 
     struct QueuedInteractionCommand
     {
@@ -17,6 +21,7 @@ namespace rock::provider
         api::grab::ForceGrabRequest forceGrab{};
         api::PowerArmorPoint powerArmorPoint{};
         std::uint32_t powerArmorReferenceNativeHandle = 0;
+        std::uint16_t inventoryUniqueId = 0;
         api::grab::ForceReleaseRequest forceRelease{};
         api::grab::ThrownDropRequest thrownDrop{};
     };

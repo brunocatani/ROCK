@@ -87,6 +87,17 @@ namespace rock::api::grab
             });
         }
 
+        Status ROCK_CALL requestInventoryItemGrab(OwnerToken owner, const InventoryItemGrabRequest* request,
+            std::uint64_t* outCommandId) noexcept
+        {
+            if (const auto s = startCommand(outCommandId); s != Status::Ok)
+                return s;
+            if (const auto s = checkInput(request); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 2, true,
+                [&] { return p::runtime::requestInventoryItemGrab(owner, *request, *outCommandId); });
+        }
+
         Status ROCK_CALL getInteractionCommandResult(OwnerToken owner, std::uint64_t commandId,
             InteractionCommandResult* outResult) noexcept
         {
@@ -308,6 +319,7 @@ namespace rock::api::grab
             &clearEventCallback,
             &getSample,
             &driveReleasedObject,
+            &requestInventoryItemGrab,
         };
         return value;
     }

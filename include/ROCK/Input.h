@@ -5,7 +5,7 @@
 namespace rock::api::input {
     inline constexpr InterfaceId kInterfaceId = InterfaceId::Input;
     inline constexpr std::uint32_t kMajor = 2;
-    inline constexpr std::uint32_t kMinor = 0;
+    inline constexpr std::uint32_t kMinor = 1;
     inline constexpr std::uint32_t kMaxSuppressions = 32;
     inline constexpr std::uint32_t kMaxSuppressionLeaseFrames = 120;
     inline constexpr std::uint32_t kMaxWeaponInputLeaseFrames = 120;
@@ -265,6 +265,11 @@ namespace rock::api::input {
         Status(ROCK_CALL* getSupportTrigger)(OwnerToken owner, SupportTriggerState* outState) noexcept;
         // Any thread. Identity of the current publication.
         Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
+        // 2.1. Game thread (Read). Form ID of the reference the hand's wand
+        // points at for activation, the game's own pick; 0 when it points at
+        // nothing. ROCK keeps the game's left-handed mode off, so the right
+        // hand is always the game's primary wand.
+        Status(ROCK_CALL* getWandPickReference)(OwnerToken owner, Hand hand, std::uint32_t* outReferenceFormId) noexcept;
     };
 }
 

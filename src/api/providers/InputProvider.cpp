@@ -1,5 +1,6 @@
 #include <ROCK/Input.h>
 #include "Boundary.h"
+#include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/input/PhysicalReloadInput.h"
 #include "physics-interaction/input/SupportTriggerInput.h"
 
@@ -151,6 +152,20 @@ namespace rock::api::input
         {
             return readSample(owner, kInterfaceId, outSample);
         }
+
+        Status ROCK_CALL getWandPickReference(OwnerToken owner, Hand hand, std::uint32_t* outReferenceFormId) noexcept
+        {
+            if (!outReferenceFormId)
+                return Status::InvalidArgument;
+            *outReferenceFormId = 0;
+            if (!validHand(hand))
+                return Status::InvalidArgument;
+            // ROCK holds bLeftHandedMode:VR off: the right wand is always primary.
+            return invoke(owner, kInterfaceId, 1, true, [&] {
+                *outReferenceFormId = ::rock::input_remap_runtime::wandPickRefFormId(hand == Hand::Right);
+                return Status::Ok;
+            });
+        }
     }
 
     const Api& table() noexcept
@@ -172,6 +187,7 @@ namespace rock::api::input
             &clearSupportTrigger,
             &getSupportTrigger,
             &getSample,
+            &getWandPickReference,
         };
         return value;
     }

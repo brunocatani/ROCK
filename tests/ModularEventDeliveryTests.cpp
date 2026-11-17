@@ -91,6 +91,12 @@ namespace rock::provider::runtime
         return api::Status::RequestQueued;
     }
 
+    api::Status requestInventoryItemGrab(std::uint64_t, const api::grab::InventoryItemGrabRequest&, std::uint64_t&)
+    {
+        assert(false);
+        return api::Status::NotReady;
+    }
+
     api::Status queryPowerArmorTarget(std::uint64_t, const api::grab::ReferenceQuery& query,
         api::grab::PowerArmorTarget& target)
     {

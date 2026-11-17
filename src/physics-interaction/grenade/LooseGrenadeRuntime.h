@@ -66,6 +66,11 @@ namespace rock::loose_grenade_runtime
     [[nodiscard]] bool createExplosionAtReference(RE::TESObjectREFR* ref, RE::BGSExplosion* explosion);
     // Main-thread inventory transfer; does not create a duplicate or dispatch EquipObject.
     [[nodiscard]] DropResult dropInventoryItemToWorld(std::uint32_t baseFormId, const RE::NiPoint3& dropLocation);
+    // Main-thread transfer of one playable item with a world model (Grab
+    // requestInventoryItemGrab). uniqueId selects the stack by ExtraUniqueID;
+    // 0 takes the first stack that holds the item.
+    [[nodiscard]] DropResult dropInventoryItemStackToWorld(std::uint32_t baseFormId, std::uint16_t uniqueId,
+        const RE::NiPoint3& dropLocation);
     [[nodiscard]] DropResult dropEquippedThrowableToWorld(const RE::NiPoint3& dropLocation);
     [[nodiscard]] const char* detonationModeName(GrenadeDetonationMode mode) noexcept;
     [[nodiscard]] bool playPinPulledFeedbackAtReference(RE::TESObjectREFR* ref);

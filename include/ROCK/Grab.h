@@ -6,7 +6,7 @@
 namespace rock::api::grab {
     inline constexpr InterfaceId kInterfaceId = InterfaceId::Grab;
     inline constexpr std::uint32_t kMajor = 2;
-    inline constexpr std::uint32_t kMinor = 0;
+    inline constexpr std::uint32_t kMinor = 1;
     inline constexpr std::uint32_t kMaxQueuedCommands = 32;
     inline constexpr std::uint32_t kMaxCommandResults = 64;
     inline constexpr std::uint32_t kMaxReservationLeaseFrames = 120;
@@ -165,6 +165,26 @@ namespace rock::api::grab {
         std::uint32_t version{ 1 };
         Hand hand{ Hand::None };
         std::uint32_t baseFormId{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+    };
+
+    /*
+     * 2.1. Puts one item of baseFormId from the player's inventory into hand
+     * (Right or Left; ROCK never picks another hand). uniqueId names the
+     * stack by its ExtraUniqueID, as TESContainerChangedEvent reports it; 0
+     * takes the first stack holding the item. Any playable item with a world
+     * model is accepted. A grab that cannot complete returns the item to the
+     * inventory.
+     */
+    struct InventoryItemGrabRequest
+    {
+        std::uint32_t size{ sizeof(InventoryItemGrabRequest) };
+        std::uint32_t version{ 1 };
+        Hand hand{ Hand::None };
+        std::uint32_t baseFormId{ 0 };
+        std::uint32_t uniqueId{ 0 };
         std::uint32_t worldGeneration{ 0 };
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
@@ -717,6 +737,9 @@ namespace rock::api::grab {
         Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
         // Game thread (Write). outProgress may be null.
         Status(ROCK_CALL* driveReleasedObject)(OwnerToken owner, const ReleasedObjectDrive* drive, ReleasedObjectProgress* outProgress) noexcept;
+        // 2.1. Game thread (Write). An InteractionCommandKind::ForceGrab command:
+        // poll it with getInteractionCommandResult.
+        Status(ROCK_CALL* requestInventoryItemGrab)(OwnerToken owner, const InventoryItemGrabRequest* request, std::uint64_t* outCommandId) noexcept;
     };
 }
 

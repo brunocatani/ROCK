@@ -348,3 +348,25 @@
         grab.maxDistanceGame = request.maxDistanceGame;
         return enqueueInteractionCommand(command, &outCommandId);
     }
+
+    api::Status requestInventoryItemGrab(std::uint64_t ownerToken,
+        const api::grab::InventoryItemGrabRequest& request, std::uint64_t& outCommandId)
+    {
+        outCommandId = 0;
+        if (!ownerToken || !request.baseFormId || request.uniqueId > 0xFFFF)
+            return api::Status::InvalidArgument;
+        if (request.hand != api::Hand::Left && request.hand != api::Hand::Right)
+            return api::Status::HandUnavailable;
+        QueuedInteractionCommand command{};
+        command.kind = api::grab::InteractionCommandKind::ForceGrab;
+        command.ownerToken = ownerToken;
+        command.inventoryUniqueId = static_cast<std::uint16_t>(request.uniqueId);
+        auto& grab = command.forceGrab;
+        grab.hand = request.hand;
+        grab.flags = kForceGrabInventoryItem;
+        grab.targetFormId = request.baseFormId;
+        grab.worldGeneration = request.worldGeneration;
+        grab.skeletonGeneration = request.skeletonGeneration;
+        grab.providerGeneration = request.providerGeneration;
+        return enqueueInteractionCommand(command, &outCommandId);
+    }
