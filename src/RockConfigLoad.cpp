@@ -360,6 +360,8 @@ namespace rock
         rockLogSampleMilliseconds = logging_policy::sanitizeSampleMilliseconds(
             static_cast<int>(ini.integer("LoggingAndProfiling", "LogSampleMilliseconds", rockLogSampleMilliseconds)));
         rockLogFlushImmediate = ini.boolean("LoggingAndProfiling", "LogFlushImmediate", rockLogFlushImmediate);
+        rockWeaponVisibilityTrace =
+            ini.boolean("LoggingAndProfiling", "WeaponVisibilityTrace", rockWeaponVisibilityTrace);
         rockPerformanceProfilerEnabled =
             ini.boolean("LoggingAndProfiling", "PerformanceProfilerEnabled", rockPerformanceProfilerEnabled);
         rockPerformanceProfilerLogIntervalFrames =

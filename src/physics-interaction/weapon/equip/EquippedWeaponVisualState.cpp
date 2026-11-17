@@ -10,6 +10,7 @@
 #include "rock_support/Fo4VrRuntime.h"
 
 #include <array>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 
@@ -139,11 +140,58 @@ namespace rock::equipped_weapon_visual_state
         return node && (node->flags.flags & kAppCulledFlag) == 0;
     }
 
-    void setLocallyVisible(RE::NiAVObject* node, const bool visible) noexcept
+    namespace
+    {
+        // Recent visibility writes for the weapon visibility trace. Callers run
+        // on the frame thread and the provider API's game thread; each field is
+        // atomic and an entry is published by its node last, so a reader sees
+        // a whole entry unless two writers race on one slot.
+        struct WriteRecord
+        {
+            std::atomic<std::uintptr_t> node{ 0 };
+            std::atomic<const char*> file{ nullptr };
+            std::atomic<std::uint32_t> line{ 0 };
+            std::atomic<bool> visible{ false };
+        };
+        constexpr std::size_t kWriteRecordCount = 32;
+        std::array<WriteRecord, kWriteRecordCount> s_writes{};
+        std::atomic<std::uint32_t> s_nextWrite{ 0 };
+
+        void recordWrite(const RE::NiAVObject* node, const bool visible, const std::source_location& site) noexcept
+        {
+            auto& record = s_writes[s_nextWrite.fetch_add(1, std::memory_order_relaxed) % kWriteRecordCount];
+            record.node.store(0, std::memory_order_relaxed);
+            record.file.store(site.file_name(), std::memory_order_relaxed);
+            record.line.store(site.line(), std::memory_order_relaxed);
+            record.visible.store(visible, std::memory_order_relaxed);
+            record.node.store(reinterpret_cast<std::uintptr_t>(node), std::memory_order_release);
+        }
+    }
+
+    bool lastVisibilityWrite(const RE::NiAVObject* node, VisibilityWrite& out) noexcept
+    {
+        if (!node)
+            return false;
+        const auto key = reinterpret_cast<std::uintptr_t>(node);
+        const auto next = s_nextWrite.load(std::memory_order_relaxed);
+        for (std::size_t age = 1; age <= kWriteRecordCount; ++age) {
+            const auto& record = s_writes[(next - age) % kWriteRecordCount];
+            if (record.node.load(std::memory_order_acquire) != key)
+                continue;
+            out.file = record.file.load(std::memory_order_relaxed);
+            out.line = record.line.load(std::memory_order_relaxed);
+            out.visible = record.visible.load(std::memory_order_relaxed);
+            return true;
+        }
+        return false;
+    }
+
+    void setLocallyVisible(RE::NiAVObject* node, const bool visible, const std::source_location site) noexcept
     {
         if (!node) {
             return;
         }
+        recordWrite(node, visible, site);
         // Native VR SetAppCulled also dirties geometry caches on the node and
         // its ancestors. A raw bit change can leave a dropped weapon's cached
         // geometry empty after the temporary presentation root is restored.

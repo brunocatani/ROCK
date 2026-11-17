@@ -356,6 +356,12 @@ namespace rock::config
             "crash loses the last lines\nand every log ends mid-line. On, the tail survives, at one file write per "
             "line.\nLeave off unless you are chasing a hang.",
             api::configuration::Group::Developer },
+        { "LoggingAndProfiling", "WeaponVisibilityTrace", "02. Logging and Profiling",
+            "Weapon visibility trace.\nWrites a VISIBILITY line to ROCK.log whenever the reason an equipped weapon "
+            "would not render changes\n(a hidden node and who hid it, lost geometry, a stale bound, the weapon away "
+            "from its hand, the scope),\nand a VISIBILITY tick once per second with the full state, the cell and the "
+            "position.\nIndependent from LogLevel. Walks the equipped weapons each frame; leave off for normal play.",
+            api::configuration::Group::Developer },
         { "LoggingAndProfiling", "PerformanceProfilerEnabled", "02. Logging and Profiling",
             "Asynchronous performance profiler.\nIndependent from LogLevel. When enabled, timing scopes stay on the "
             "frame path,\nbut completed profiler windows are queued to a bounded background writer.\nOutput goes to "

@@ -1082,6 +1082,7 @@ namespace
             performance_profiler::ScopedTimer publishStage(Scope::PresentationPublish);
             s_physicsInteraction->finalizeEquipVisualBridgePresentation();
             s_physicsInteraction->sampleTransitionSeam();
+            s_physicsInteraction->sampleWeaponVisibility();
             s_physicsInteraction->publishGripZoneIndicatorRenderFrame(runtime_state::currentFrame().frameIndex);
             s_physicsInteraction->publishAmmoCounters();
             s_physicsInteraction->publishDebugRenderFrame();

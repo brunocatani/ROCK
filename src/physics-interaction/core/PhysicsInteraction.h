@@ -29,6 +29,7 @@
 //   NativeGrenadeCollision       collision protection for native grenade throws
 //   AmmoCounterFrame             ammo counters on the firing hands
 //   TransitionSeamTrace          equip/drop seam diagnostic
+//   WeaponVisibilityTrace        why an equipped weapon would not render
 //   ProviderCommands             provider interaction commands and part drives
 //   ProviderQueries              provider snapshot and query answers
 //   ProviderEventDispatch        grab events delivered to provider clients
@@ -181,6 +182,9 @@ namespace rock
         // transition arms it; AfterWorldFinal samples the rendered frame.
         void armTransitionSeamTrace(const char* event) noexcept;
         void sampleTransitionSeam() noexcept;
+        // Developer weapon visibility trace (WeaponVisibilityTrace.cpp), sampled
+        // at AfterWorldFinal on the presented frame.
+        void sampleWeaponVisibility() noexcept;
 
         [[nodiscard]] bool tryGetManualScopePresentationTarget(std::uint64_t& outWeaponGenerationKey,
             std::uint32_t& outNativeOverlayIndex, bool& outDirectTransitionRequired,

@@ -30,6 +30,13 @@ LogSampleMilliseconds = 2000
 ## Leave off unless you are chasing a hang.
 LogFlushImmediate = false
 
+## Weapon visibility trace.
+## Writes a VISIBILITY line to ROCK.log whenever the reason an equipped weapon would not render changes
+## (a hidden node and who hid it, lost geometry, a stale bound, the weapon away from its hand, the scope),
+## and a VISIBILITY tick once per second with the full state, the cell and the position.
+## Independent from LogLevel. Walks the equipped weapons each frame; leave off for normal play.
+WeaponVisibilityTrace = false
+
 ## Asynchronous performance profiler.
 ## Independent from LogLevel. When enabled, timing scopes stay on the frame path,
 ## but completed profiler windows are queued to a bounded background writer.
