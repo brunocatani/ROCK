@@ -125,6 +125,20 @@ namespace rock::api::collision
         {
             return readSample(owner, kInterfaceId, outSample);
         }
+
+        Status ROCK_CALL queryWorldSurfaceTriangles(OwnerToken owner, const SurfaceTrianglesRequest* request,
+            SurfaceTriangle* outTriangles, std::uint32_t capacity, SurfaceTrianglesResult* outResult) noexcept
+        {
+            if (const auto s = checkOutput(outResult); s != Status::Ok)
+                return s;
+            if (const auto s = checkInput(request); s != Status::Ok)
+                return s;
+            if (!outTriangles || capacity == 0 || capacity > kMaxSurfaceTriangles)
+                return Status::InvalidArgument;
+            return invoke(owner, kInterfaceId, 1, true, [&] {
+                return p::runtime::queryWorldSurfaceTriangles(owner, *request, outTriangles, capacity, *outResult);
+            });
+        }
     }
 
     const Api& table() noexcept
@@ -141,6 +155,7 @@ namespace rock::api::collision
             &watchObjectRest,
             &cancelObjectRest,
             &getSample,
+            &queryWorldSurfaceTriangles,
         };
         return value;
     }

@@ -1,11 +1,12 @@
 # Collision (interface 3, major 2)
 
 Header: `include/ROCK/Collision.h`. Hand and body contacts, player collider
-descriptors, hand collision availability, world raycasts, physics scale and
+descriptors, hand collision availability, world raycasts, surface triangles, physics scale and
 each weapon slot's generated bodies, magazine ejection clearance and object
 rest watches.
 
-Interface `Collision`, major 2, minor 0; major 1 is refused. The former
+Interface `Collision`, major 2, minor 1 (2.1 adds `queryWorldSurfaceTriangles`
+at the end of the table; a 2.0 consumer is served unchanged); major 1 is refused. The former
 `ROCK_EjectionContacts_Query*` and `ROCK_ObjectRest_QueryV1` exports are
 removed; their functions are here. External body registration is removed
 with no replacement. Permissions: `Read` (1), `Write` (2).
@@ -42,6 +43,23 @@ sweeps a 1-unit sphere and returns the closest visible solid surface (world
 geometry, terrain, trees, clutter, props, debris, glass), passing through
 actors, weapons, projectiles, triggers and invisible collision; the result's
 `hitLayer` is then the Fallout 4 collision layer of that surface.
+
+## Surface triangles (game thread, Read; 2.1)
+
+`queryWorldSurfaceTriangles(owner, request, triangles, capacity, result)`
+returns the collision triangles of the surfaces the `Surfaces` raycast can hit
+that lie within `request.radiusGame` (at most
+`kMaxSurfaceTriangleRadiusGame`) of `request.centreGame`, in game units, as
+they lie this frame: mesh and compound world geometry, terrain and the hulls of
+convex clutter (without the rounding of their convex radius). Use it to test
+many short paths against the scene with one query, for example flying blood,
+instead of a raycast per path per frame. At most
+`kMaxSurfaceTriangleQueriesPerOwnerPerFrame` queries per owner per frame;
+`capacity` is 1 to `kMaxSurfaceTriangles`. `result.count` triangles are
+written; `SurfaceTrianglesFlag::Truncated` in `result.flags` means more lay in
+the sphere. Each `SurfaceTriangle` has its corners `aGame`, `bGame`, `cGame`
+counter-clockwise seen from `normalGame` and the Fallout 4 collision `layer` of
+its body. Nonzero generation fields guard the request, as for raycasts.
 
 ## Environment (any thread, Read)
 
@@ -93,6 +111,9 @@ semantic hand contacts and their contact state.
 | `PlayerColliderDescriptor` | `copyPlayerColliderDescriptors` | `frameIndex`, `kind` (`PlayerColliderKind`: `Hand`, `Body`), `hand`, `bodyId`, `role`, `zone`, `side`, `descriptorIndex`, `flags` (`PlayerColliderFlag`), `lengthGameUnits`, `radiusGameUnits`, `transform`, `collisionGeneration` |
 | `HandCollisionAvailability` | `getHandCollisionAvailability` | `frameIndex`, `hand`, `flags` (`HandCollisionAvailabilityFlag`), `collisionSequence`, `collisionGeneration`, `handBodyCount`, `dynamicTwinCount`, the three generations, `otherHandContactSlots`, `weaponContactSlots`, `dynamicCollisionLayer`, `pairSuppressionLeaseCount`, `collisionEnabledBodyCount`, `filterKnownBodyCount` |
 | `WorldRaycastRequest` | `queryWorldRaycast` | `startGame`, `directionGame`, `maxDistanceGame`, the three guard generations, `filter` (`WorldRaycastFilter`: `Selection` 0, `Surfaces` 1) |
+| `SurfaceTrianglesRequest` | `queryWorldSurfaceTriangles` | `centreGame`, `radiusGame`, the three guard generations |
+| `SurfaceTriangle` | `queryWorldSurfaceTriangles` | `aGame`, `bGame`, `cGame`, `normalGame`, `layer` |
+| `SurfaceTrianglesResult` | `queryWorldSurfaceTriangles` | `count`, `flags` (`SurfaceTrianglesFlag`: `Truncated`), `frameIndex`, the three generations |
 | `WorldRaycastResult` | `queryWorldRaycast` | `hit`, `flags` (`WorldRaycastResultFlag`: `Hit`, `NormalValid`), `hitFraction`, `hitDistanceGame`, `hitPointGame`, `hitNormalGame`, `frameIndex`, the three generations, `hitLayer` |
 | `Environment` | `getEnvironment` | `sample`, `gameToHavokScale`, `havokToGameScale`, `physicsScaleRevision`, `weapons[kMaxWeaponSlots]` |
 | `WeaponBodies` | inside `Environment` | `weaponGenerationKey`, `bodyCount`, `bodyIds[8]` |

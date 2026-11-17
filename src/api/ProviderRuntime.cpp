@@ -305,6 +305,8 @@ namespace rock::provider::runtime
         std::uint32_t providerGeneration{ 0 };
         std::uint64_t worldRaycastFrameIndex{ 0 };
         std::uint32_t worldRaycastCount{ 0 };
+        std::uint64_t surfaceTrianglesFrameIndex{ 0 };
+        std::uint32_t surfaceTrianglesCount{ 0 };
         char modName[64]{};
     };
 

@@ -150,6 +150,9 @@ namespace rock::provider::runtime
         std::uint32_t targetGeneration);
     api::Status queryWorldRaycast(std::uint64_t ownerToken, const api::collision::WorldRaycastRequest& request,
         api::collision::WorldRaycastResult& outResult);
+    api::Status queryWorldSurfaceTriangles(std::uint64_t ownerToken,
+        const api::collision::SurfaceTrianglesRequest& request, api::collision::SurfaceTriangle* outTriangles,
+        std::uint32_t capacity, api::collision::SurfaceTrianglesResult& outResult);
     api::Status getLogicalInputActionState(std::uint64_t ownerToken, api::input::LogicalInputAction action,
         api::input::LogicalInputActionState& outState);
     api::Status getPlayerControllerState(std::uint64_t ownerToken,

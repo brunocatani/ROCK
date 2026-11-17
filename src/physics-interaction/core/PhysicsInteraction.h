@@ -337,6 +337,9 @@ namespace rock
             api::collision::WorldRaycastResult& outResult) const;
         bool queryProviderSurfaceRaycast(const api::collision::WorldRaycastRequest& request, const RE::NiPoint3& start,
             const RE::NiPoint3& direction, api::collision::WorldRaycastResult& outResult) const;
+        bool queryProviderSurfaceTriangles(const api::collision::SurfaceTrianglesRequest& request,
+            api::collision::SurfaceTriangle* outTriangles, std::uint32_t capacity,
+            api::collision::SurfaceTrianglesResult& outResult) const;
         void releaseProviderPowerArmorGrabs(std::uint64_t ownerToken);
         bool getProviderHandTargetDetails(const provider::HandInteractionPublication& handState,
             api::grab::HandTargetDetails& outDetails) const;

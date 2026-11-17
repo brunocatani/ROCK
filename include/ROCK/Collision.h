@@ -5,7 +5,7 @@
 namespace rock::api::collision {
     inline constexpr InterfaceId kInterfaceId = InterfaceId::Collision;
     inline constexpr std::uint32_t kMajor = 2;
-    inline constexpr std::uint32_t kMinor = 0;
+    inline constexpr std::uint32_t kMinor = 1;
     inline constexpr std::uint32_t kMaxBodyContacts = 128;
     inline constexpr std::uint32_t kMaxSemanticContacts = 20;
     inline constexpr std::uint32_t kMaxColliderDescriptors = 96;
@@ -263,6 +263,67 @@ namespace rock::api::collision {
     };
 
     // ------------------------------------------------------------------
+    // Surface triangles (2.1)
+    // ------------------------------------------------------------------
+
+    inline constexpr float kMaxSurfaceTriangleRadiusGame = 128.0f;
+    inline constexpr std::uint32_t kMaxSurfaceTriangles = 512;
+    inline constexpr std::uint32_t kMaxSurfaceTriangleQueriesPerOwnerPerFrame = 2;
+
+    /*
+     * 2.1. The collision triangles of the surfaces queryWorldRaycast's Surfaces
+     * filter can hit (visible solid world geometry, terrain, clutter; never
+     * actors, weapons, projectiles, triggers or invisible collision) within
+     * radiusGame of centreGame, in game units, as they lie this frame. For
+     * code that tests many short paths against the scene, such as flying blood,
+     * with one query instead of a raycast per path per frame. Convex bodies
+     * are their hulls, without the rounding of their convex radius. Nonzero
+     * generation fields guard the request.
+     */
+    struct SurfaceTrianglesRequest
+    {
+        std::uint32_t size{ sizeof(SurfaceTrianglesRequest) };
+        std::uint32_t version{ 1 };
+        Point3 centreGame{};
+        float radiusGame{ 0.0f };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+    };
+
+    // a, b, c wind counter-clockwise seen from the side normalGame faces.
+    // layer is the Fallout 4 collision layer of the body it belongs to.
+    struct SurfaceTriangle
+    {
+        Point3 aGame{};
+        Point3 bGame{};
+        Point3 cGame{};
+        Point3 normalGame{};
+        std::uint32_t layer{ 0 };
+        std::uint32_t reserved{ 0 };
+    };
+
+    enum class SurfaceTrianglesFlag : std::uint32_t
+    {
+        // More triangles lay in the sphere than capacity or ROCK's own limit.
+        Truncated = 1u << 0,
+    };
+
+    // frameIndex and the generations are those at the time of the query.
+    struct SurfaceTrianglesResult
+    {
+        std::uint32_t size{ sizeof(SurfaceTrianglesResult) };
+        std::uint32_t version{ 1 };
+        std::uint32_t count{ 0 };
+        std::uint32_t flags{ 0 };
+        std::uint64_t frameIndex{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved{ 0 };
+    };
+
+    // ------------------------------------------------------------------
     // Environment
     // ------------------------------------------------------------------
 
@@ -371,6 +432,11 @@ namespace rock::api::collision {
         Status(ROCK_CALL* cancelObjectRest)(OwnerToken owner, std::uint32_t referenceFormId) noexcept;
         // Any thread. Identity of the current publication.
         Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
+        // 2.1. Game thread (Read); at most
+        // kMaxSurfaceTriangleQueriesPerOwnerPerFrame per frame. capacity is at
+        // most kMaxSurfaceTriangles; outResult->count triangles are written.
+        Status(ROCK_CALL* queryWorldSurfaceTriangles)(OwnerToken owner, const SurfaceTrianglesRequest* request,
+            SurfaceTriangle* outTriangles, std::uint32_t capacity, SurfaceTrianglesResult* outResult) noexcept;
     };
 }
 

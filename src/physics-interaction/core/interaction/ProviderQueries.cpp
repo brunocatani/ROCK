@@ -6,6 +6,9 @@
 
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/native/query/PhysicsShapeCast.h"
+#include "physics-interaction/native/query/PhysicsSurfaceTriangles.h"
+
+#include <array>
 #include "physics-interaction/weapon/handling/FrikWeaponOffsets.h"
 #include "physics-interaction/weapon/secondary/NativeSecondaryActions.h"
 #include "physics-interaction/weapon/secondary/NativeSecondaryPresentation.h"
@@ -243,6 +246,30 @@ namespace rock
                 outResult.hitNormalGame = { normal.x * inverse, normal.y * inverse, normal.z * inverse };
             }
         }
+        outResult.worldGeneration = _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
+        outResult.skeletonGeneration = _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
+        outResult.providerGeneration = _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
+        return true;
+    }
+
+    bool PhysicsInteraction::queryProviderSurfaceTriangles(const api::collision::SurfaceTrianglesRequest& request,
+        api::collision::SurfaceTriangle* outTriangles, std::uint32_t capacity,
+        api::collision::SurfaceTrianglesResult& outResult) const
+    {
+        std::array<physics_surface_triangles::Triangle, api::collision::kMaxSurfaceTriangles> triangles{};
+        physics_surface_triangles::Result found{};
+        const RE::NiPoint3 centre{ request.centreGame.x, request.centreGame.y, request.centreGame.z };
+        if (!physics_surface_triangles::collect(_lifecycle.cachedHknpWorld, centre, request.radiusGame, triangles.data(),
+                capacity, found)) {
+            return false;
+        }
+        for (std::uint32_t i = 0; i < found.count; ++i) {
+            const auto& t = triangles[i];
+            outTriangles[i] = { { t.a.x, t.a.y, t.a.z }, { t.b.x, t.b.y, t.b.z }, { t.c.x, t.c.y, t.c.z },
+                { t.normal.x, t.normal.y, t.normal.z }, t.layer, 0 };
+        }
+        outResult.count = found.count;
+        outResult.flags = found.truncated ? static_cast<std::uint32_t>(api::collision::SurfaceTrianglesFlag::Truncated) : 0u;
         outResult.worldGeneration = _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
         outResult.skeletonGeneration = _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
         outResult.providerGeneration = _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);

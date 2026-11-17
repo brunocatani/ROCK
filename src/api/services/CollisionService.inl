@@ -121,3 +121,57 @@
         }
         return api::Status::Ok;
     }
+
+    api::Status queryWorldSurfaceTriangles(
+        const std::uint64_t ownerToken,
+        const api::collision::SurfaceTrianglesRequest& request,
+        api::collision::SurfaceTriangle* outTriangles,
+        const std::uint32_t capacity,
+        api::collision::SurfaceTrianglesResult& outResult)
+    {
+        if (!finiteProviderPoint(request.centreGame) || !std::isfinite(request.radiusGame) ||
+            request.radiusGame <= 0.0f || request.radiusGame > api::collision::kMaxSurfaceTriangleRadiusGame ||
+            capacity == 0 || capacity > api::collision::kMaxSurfaceTriangles || !outTriangles) {
+            return api::Status::InvalidArgument;
+        }
+        const auto generationResult = validateGenerationGuards(
+            request.worldGeneration,
+            request.skeletonGeneration,
+            request.providerGeneration);
+        if (generationResult != api::Status::Ok) {
+            return generationResult;
+        }
+        if (!isProviderReady()) {
+            return api::Status::NotReady;
+        }
+
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
+        if (!pi || !pi->isInitialized()) {
+            return api::Status::NotReady;
+        }
+
+        // Each owner gets a bounded number of queries per game frame.
+        const auto frameIndex = currentGameFrameIndex();
+        {
+            std::scoped_lock lock(s_consumerMutex);
+            auto* slot = findConsumerSlotLocked(ownerToken);
+            if (!slot) {
+                return api::Status::OwnerNotRegistered;
+            }
+            if (slot->surfaceTrianglesFrameIndex != frameIndex) {
+                slot->surfaceTrianglesFrameIndex = frameIndex;
+                slot->surfaceTrianglesCount = 0;
+            }
+            if (slot->surfaceTrianglesCount >= api::collision::kMaxSurfaceTriangleQueriesPerOwnerPerFrame) {
+                return api::Status::CapacityFull;
+            }
+            ++slot->surfaceTrianglesCount;
+        }
+
+        outResult.frameIndex = frameIndex;
+        if (!pi->queryProviderSurfaceTriangles(request, outTriangles, capacity, outResult)) {
+            return api::Status::WorldNotReady;
+        }
+        return api::Status::Ok;
+    }
