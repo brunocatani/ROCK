@@ -10,6 +10,13 @@
   the inventory. `getWandPickReference` reports what each hand's wand points at.
   Mods built for 2.0 keep working.
 
+### Fixed
+
+- **Vive wands: sprint on the left trackpad.** Clicking the left trackpad anywhere
+  but its bottom edge is the stick click, so clicking while moving sprints. The top
+  edge no longer opens the Pip-Boy a second time; the menu button still does. ROCK
+  updates an installed copy of its wand binding at the next game start.
+
 ## v1.0.2
 
 ### Changed
