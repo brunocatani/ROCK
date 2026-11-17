@@ -16,6 +16,10 @@
   but its bottom edge is the stick click, so clicking while moving sprints. The top
   edge no longer opens the Pip-Boy a second time; the menu button still does. ROCK
   updates an installed copy of its wand binding at the next game start.
+- **Pulled objects no longer fly past the hand.** An object pulled to the hand stops
+  there with the hand's own motion. Without grab held it drops at the hand, where a
+  grab press within a second still catches it, instead of carrying on across the
+  room.
 
 ## v1.0.2
 

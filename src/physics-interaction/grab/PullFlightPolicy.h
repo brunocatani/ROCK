@@ -16,8 +16,9 @@
  * object homes on the hand instead of coasting past it. A flight that stops
  * closing in (blocked by the world) ends as a physical drop.
  *
- * The catch: holding grab when the object arrives catches it. An object that
- * arrives without grab held falls free and a press within the catch window
+ * The catch: holding grab when the object arrives catches it. Arrival drops
+ * the flight speed to the hand's own velocity, so an object that arrives
+ * without grab held falls free at the hand and a press within the catch window
  * catches it while its pulled point is within the catch radius of the palm.
  */
 namespace rock::pull_motion_math

@@ -723,6 +723,16 @@ namespace rock
                 arrivalPointHavok.z * havokToGameScale(),
             };
             _currentSelection.hasHitPoint = true;
+            /*
+             * Arrival ends the flight at the hand: the object keeps the hand's
+             * own motion and loses the homing speed (up to the flight's 10 m/s
+             * cap at a 0.1 s time to go). Grab held now catches it as before;
+             * without grab it falls free from the hand, inside the catch radius
+             * for the catch window, instead of coasting on across the room.
+             */
+            setHeldVelocity(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, _pulledBodyIds,
+                _pullTargetVelocity.velocityHavok, RE::NiPoint3{}, true, 1.0f,
+                _pullDriveDecision.includeConnectedLinearVelocity, _pullDriveDecision.includeConnectedAngularVelocity);
             markPullCatchIntentArrived();
             _pullElapsedSeconds = 0.0f;
             _pullDurationSeconds = 0.0f;
