@@ -21,6 +21,9 @@ namespace rock
         // Transition seam diagnostic only.
         [[nodiscard]] const EquipVisualBridge& bridgeForTrace() const noexcept { return _bridge; }
 
+        // The equip copy shown in the hand this frame, or null. Borrowed for the frame.
+        [[nodiscard]] RE::NiAVObject* presentedBridgeModel() const noexcept { return _bridge.presentedModel(); }
+
         [[nodiscard]] const RE::NiAVObject* pendingNativeCullForTrace() const noexcept
         {
             return _pendingNativeCull.get();

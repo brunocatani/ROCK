@@ -155,6 +155,12 @@ namespace rock
 
         [[nodiscard]] bool isModelPresented() const noexcept { return _modelPresented; }
 
+        // The model shown in the hand this frame, or null. Borrowed for the frame.
+        [[nodiscard]] RE::NiAVObject* presentedModel() const noexcept
+        {
+            return _modelPresented ? _model.get() : nullptr;
+        }
+
         // Transition seam diagnostic only.
         [[nodiscard]] const RE::NiAVObject* traceModel() const noexcept { return _model.get(); }
 

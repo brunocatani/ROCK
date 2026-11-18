@@ -29,6 +29,7 @@
 //   NativeGrenadeCollision       collision protection for native grenade throws
 //   AmmoCounterFrame             ammo counters on the firing hands
 //   TransitionSeamTrace          equip/drop seam diagnostic
+//   EquippedWeaponWorldBounds    world bounds of the presented equipped weapons
 //   WeaponVisibilityTrace        why an equipped weapon would not render
 //   ProviderCommands             provider interaction commands and part drives
 //   ProviderQueries              provider snapshot and query answers
@@ -178,6 +179,8 @@ namespace rock
         void applyWeaponPresentationScale(bool userOffsetOnly);
         void synchronizeEquipVisualBridgeAfterFrikWeaponPass();
         void finalizeEquipVisualBridgePresentation();
+        // AfterWorldFinal, after the last weapon placement (EquippedWeaponWorldBounds.cpp).
+        void refreshEquippedWeaponWorldBounds() noexcept;
         // Equip/drop seamlessness diagnostic (TransitionSeamTrace.cpp): a
         // transition arms it; AfterWorldFinal samples the rendered frame.
         void armTransitionSeamTrace(const char* event) noexcept;
