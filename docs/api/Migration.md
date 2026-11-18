@@ -44,13 +44,14 @@ interface's page hold the full 2.0 contract; this page lists what changed from
 
 - The export and the handshake keep their names: `ROCKAPI_QueryInterfaceV1`,
   `QueryInterfaceV1`, `InterfaceDescriptorV1`, `kQueryExportName`.
-- Request major 2, minor 0, with your own `sizeof(Api)`. `rock::api::Client`
+- Request major 2 and the minor your header declares, with your own `sizeof(Api)`. `rock::api::Client`
   does this: `connect(query, name)` registers your owner through Core 2, and
   `acquire(permissions, table)` binds each interface. If you wrote discovery by
   hand with literal `1`s, use each table's `interfaceId`, `majorVersion` and
   `minorVersion` instead.
-- Every interface is major 2, minor 0, with one table. There are no minors to
-  negotiate.
+- Every interface is major 2 with one table. ROCK 1.0 served every interface
+  at minor 0; ROCK 1.0.3 raises Collision, Grab and Input to minor 1, and a
+  minor-0 request is still served.
 - Never probe with trial queries, for example "ask for 2, then 1". Every
   refused query is logged in `ROCK.log` as a mismatch.
 - When `ROCK.dll` is not loaded, or is loaded but refuses your request, turn
