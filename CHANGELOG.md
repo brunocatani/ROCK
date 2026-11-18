@@ -12,11 +12,11 @@
 
 ### Fixed
 
-- **Weapons and sights no longer vanish in the hand.** The game decided whether to
-  draw a held weapon from where it was before ROCK placed it in your hand, so
-  depending on where you looked and where you were (most often with the gun at your
-  face, or in heavily modded locations) the whole weapon or its sights disappeared.
-  ROCK now updates that after the weapon reaches your hand.
+- **Weapons no longer vanish in the hand.** The game decided whether to draw a held
+  weapon from where it was before ROCK placed it in your hand. A gun held in your off
+  hand disappeared whenever your firing hand left your view, and parts of a gun could
+  disappear close to your face. ROCK now updates that after the weapon reaches your
+  hand.
 - **Vive wands: sprint on the left trackpad.** Clicking the left trackpad anywhere
   but its bottom edge is the stick click, so clicking while moving sprints. The top
   edge no longer opens the Pip-Boy a second time; the menu button still does. ROCK
