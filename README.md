@@ -60,12 +60,12 @@ Install the archive from [Nexus Mods](https://www.nexusmods.com/fallout4/mods/10
 
 ### Index, Vive and Steam Frame controllers
 
-ROCK expects the Oculus Touch (Quest) button layout. For these controllers the archive's `steamvr_bindings/` folder has a SteamVR binding that maps the buttons to that layout and makes the game see Touch controllers:
+ROCK expects the Oculus Touch (Quest) button layout. For these controllers the archive's `steamvr_bindings/` folder has a SteamVR binding that maps the buttons to that layout. The Index and Steam Frame bindings make the game see Touch controllers; the Vive binding keeps the game's own wand controls (click the right trackpad's edges to turn, its centre for Favorites when RobCo PALM is not installed) and adds A and X on the bottom of each trackpad and B and Y on the menu buttons:
 
 | Controller | File | Name in SteamVR |
 | --- | --- | --- |
 | Valve Index | `legacy_bindings_knuckles_rock.json` | ROCK - Index as Touch |
-| HTC Vive wands | `legacy_bindings_vive_controller_rock.json` | ROCK - Vive wands as Touch |
+| HTC Vive wands | `legacy_bindings_vive_controller_rock.json` | ROCK - Vive wands |
 | Steam Frame | `legacy_bindings_frame_controller_rock.json` | ROCK - Steam Frame as Touch |
 
 On SteamVR, ROCK sets the Index and Vive binding for you. When your controllers use SteamVR's default binding for Fallout 4 VR, the setup wizard opens by itself (see below): choose your controllers on its first page, finish the wizard, then restart the game. ROCK saves the binding in `Mods_Config\ROCK\SteamVR\` and sets it for Fallout 4 VR only; it never replaces a binding you chose in SteamVR. `OfferSteamVRBinding` in `[ControllerInput]` turns the automatic offer off.

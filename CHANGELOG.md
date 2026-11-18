@@ -17,10 +17,14 @@
   hand disappeared whenever your firing hand left your view, and parts of a gun could
   disappear close to your face. ROCK now updates that after the weapon reaches your
   hand.
-- **Vive wands: sprint on the left trackpad.** Clicking the left trackpad anywhere
-  but its bottom edge is the stick click, so clicking while moving sprints. The top
-  edge no longer opens the Pip-Boy a second time; the menu button still does. ROCK
-  updates an installed copy of its wand binding at the next game start.
+- **Vive wands keep the game's own wand controls.** ROCK's wand binding no longer
+  makes the game see Touch controllers: touching the right trackpad no longer turns
+  you; click its left or right edge to turn, as without ROCK, and its centre opens
+  Favorites when RobCo PALM is not installed. Clicking the left trackpad anywhere but
+  its bottom edge sprints while moving; the top edge no longer opens the Pip-Boy a
+  second time. A and X stay on the bottom of each trackpad, B and Y on the menu
+  buttons. ROCK updates an installed copy of its wand binding at the next game start;
+  restart the game once more for SteamVR to load it.
 - **Pulled objects no longer fly past the hand.** An object pulled to the hand stops
   there with the hand's own motion. Without grab held it drops at the hand, where a
   grab press within a second still catches it, instead of carrying on across the

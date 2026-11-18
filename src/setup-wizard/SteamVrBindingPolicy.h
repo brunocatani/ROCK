@@ -111,9 +111,11 @@ namespace rock::steamvr_binding_policy
 
     /*
      * The controllers SteamVR reports, from Prop_ControllerType_String and Fallout 4 VR's
-     * setting for each controller ROCK has a binding for. ROCK's binding presents Index
-     * controllers and wands as Touch, so SteamVR then reports oculus_touch: the controller
-     * whose setting names ROCK's file is the one in the player's hands.
+     * setting for each controller ROCK has a binding for. ROCK's Index binding presents the
+     * controllers as Touch, so SteamVR then reports oculus_touch: the controller whose setting
+     * names ROCK's file is the one in the player's hands. Wands keep reporting
+     * vive_controller, except in the first session after an update from the wand binding
+     * that still presented them as Touch.
      */
     [[nodiscard]] constexpr std::optional<Headset> detectHeadset(bool steamVr, std::string_view reportedType, Status index,
         Status vive) noexcept

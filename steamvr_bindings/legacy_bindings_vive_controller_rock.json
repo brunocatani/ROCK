@@ -42,6 +42,8 @@
         { "path": "/user/hand/right/input/trackpad", "mode": "dpad", "parameters": { "sub_mode": "click" },
           "inputs": {
             "north": { "output": "/actions/legacy/in/right_applicationmenu_press" },
+            "east": { "output": "/actions/legacy/in/right_axis0_press" },
+            "west": { "output": "/actions/legacy/in/right_axis0_press" },
             "south": { "output": "/actions/legacy/in/right_a_press" },
             "center": { "output": "/actions/legacy/in/right_axis0_press" } } }
       ]
@@ -49,12 +51,10 @@
   },
   "category": "legacy",
   "controller_type": "vive_controller",
-  "description": "ROCK: HTC Vive wands in the Quest/Touch button layout ROCK expects. Left trackpad: click south is X, any other click is the stick click (sprint while moving); the menu button is Y. Right trackpad: click north is B, south is A, centre is the stick click; the menu button is B. Fallout 4 VR sees an Oculus Touch system.",
-  "name": "ROCK - Vive wands as Touch",
+  "description": "ROCK: HTC Vive wands with ROCK's A, B, X and Y. Fallout 4 VR keeps its own wand controls. Left trackpad: click south is X, any other click is the trackpad click (sprint while moving); the menu button is Y. Right trackpad: click north is B, south is A, left and right turn, centre is the trackpad click (Favorites); the menu button is B.",
+  "name": "ROCK - Vive wands",
   "options": {
-    "mirror_actions": false,
-    "simulated_controller_type": "oculus_touch",
-    "simulate_rendermodel": "name_only"
+    "mirror_actions": false
   },
   "simulated_actions": []
 }
