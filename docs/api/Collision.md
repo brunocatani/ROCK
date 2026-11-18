@@ -5,8 +5,10 @@ descriptors, hand collision availability, world raycasts, surface triangles, phy
 each weapon slot's generated bodies, magazine ejection clearance and object
 rest watches.
 
-Interface `Collision`, major 2, minor 1 (2.1 adds `queryWorldSurfaceTriangles`
-at the end of the table; a 2.0 consumer is served unchanged); major 1 is refused. The former
+Interface `Collision`, major 2, minor 1 (ROCK 1.0.3; 2.1 adds
+`queryWorldSurfaceTriangles` at the end of the table). A mod built against these
+headers needs ROCK 1.0.3 or newer; a mod built against 2.0 keeps working. Major 1
+is refused. The former
 `ROCK_EjectionContacts_Query*` and `ROCK_ObjectRest_QueryV1` exports are
 removed; their functions are here. External body registration is removed
 with no replacement. Permissions: `Read` (1), `Write` (2).

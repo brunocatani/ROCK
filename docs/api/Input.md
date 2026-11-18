@@ -4,8 +4,9 @@ Header: `include/ROCK/Input.h`. Hand input suppression, raw controller reads,
 native input context, and leases on the reload button and support trigger of
 the equipped weapon.
 
-Interface `Input`, major 2, minor 1 (2.1 adds `getWandPickReference`; request
-minor 0 when you do not call it); major 1 and its minors are refused.
+Interface `Input`, major 2, minor 1 (ROCK 1.0.3; 2.1 adds
+`getWandPickReference`). A mod built against these headers needs ROCK 1.0.3 or
+newer; a mod built against 2.0 keeps working. Major 1 and its minors are refused.
 Permissions: `Read` (1), `Write` (2). All functions except `getSample` run on
 the game thread.
 

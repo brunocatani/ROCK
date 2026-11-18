@@ -4,8 +4,9 @@ Header: `include/ROCK/Grab.h`. Grab and release commands, hand interaction
 state, hand reservations, held placement, default grab poses, guided held
 objects, reference and power-armor queries, and grab events.
 
-Interface `Grab`, major 2, minor 1 (2.1 adds `requestInventoryItemGrab`;
-request minor 0 when you do not call it); major 1 and its minors are refused. The
+Interface `Grab`, major 2, minor 1 (ROCK 1.0.3; 2.1 adds
+`requestInventoryItemGrab`). A mod built against these headers needs ROCK 1.0.3
+or newer; a mod built against 2.0 keeps working. Major 1 and its minors are refused. The
 References interface (10) is retired; its queries are here. Permissions:
 `Read` (1), `Write` (2).
 
