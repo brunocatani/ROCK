@@ -924,6 +924,8 @@ namespace rock
         _savedObjectState.targetKind = selectedObject.targetKind;
         _savedObjectState.liveLimb =
             selectedObject.extensionSelection.kind == api::native_interaction::SelectionKind::DirectLiveLimb;
+        _savedObjectState.actorBodies = _savedObjectState.liveLimb ||
+            (selectedObject.targetKind == grab_target::Kind::ConnectedBody && selectedRef && selectedRef->As<RE::Actor>());
         _savedObjectState.originalFilterInfo = preparedBody->collisionFilterInfo;
         _savedObjectState.originalMotionPropsId = selectedOriginalMotionPropsId;
         if (const auto* originalPrimaryRecord = beforePrepBodySet.findRecord(outCapture.bodyId.value)) {

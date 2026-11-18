@@ -229,6 +229,8 @@ namespace rock
         grab_target::Kind targetKind = grab_target::Kind::LooseObject;
         // A ConnectedBody grab of a living actor's limb (extension DirectLiveLimb).
         bool liveLimb = false;
+        // A ConnectedBody grab of an actor's ragdoll, living or dead: never scene-presented.
+        bool actorBodies = false;
         std::uint32_t originalFilterInfo = 0;
         std::uint16_t originalMotionPropsId = 0;
         float inverseMass = 0.0f;
@@ -252,6 +254,7 @@ namespace rock
             retainedRef.reset();
             targetKind = grab_target::Kind::LooseObject;
             liveLimb = false;
+            actorBodies = false;
             originalFilterInfo = 0;
             originalMotionPropsId = 0;
             inverseMass = 0.0f;

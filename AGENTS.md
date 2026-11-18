@@ -200,6 +200,7 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp` for engine math. `
 - The held point is always a mesh point or an authored weapon seat, never native collision's centre of mass.
 - Two hands on one loose object aim it along the line between their grips, except under 6 game units apart on a non-weapon, where tremor exceeds the distance.
 - A live NPC's limb keeps its own body: the hold is a reduced-force point and the limb may lag the hand.
+- A held actor's ragdoll, living or dead, is drawn from its own bodies, never presented at the hand: shifting every body by the hand's lead over the held limb shook his hands, feet and head with a shaken limb.
 - Per-frame limits scale with frame length, never with 90 Hz frame counts.
 - Every controller-state read passes through the `[Controls]` button layout before ROCK sees it, so everything reads one logical button set; features never keep their own physical button tables. `[Bindings]` then presents a moved function as a tagged press of its home button.
 
