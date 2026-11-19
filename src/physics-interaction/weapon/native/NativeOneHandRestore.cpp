@@ -68,13 +68,18 @@ namespace rock::native_one_hand_restore
             ROCK_LOG_ERROR(Init, "Native one-hand item restore left active: trampoline capacity");
             return false;
         }
+        // Every site's bytes are kept before the first write, so a failure at
+        // any point, including the flush of a site just written, restores them all.
         std::array<std::array<std::uint8_t, 5>, kRestoreCallsites.size()> originals{};
-        std::size_t written = 0;
+        for (std::size_t index = 0; index < kRestoreCallsites.size(); ++index) {
+            if (!readCall(kRestoreCallsites[index], originals[index])) {
+                ROCK_LOG_ERROR(Init, "Native one-hand item restore left active: callsite {:#x} unreadable",
+                    kRestoreCallsites[index]);
+                return false;
+            }
+        }
         try {
-            for (; written < kRestoreCallsites.size(); ++written) {
-                const auto callsite = kRestoreCallsites[written];
-                if (!readCall(callsite, originals[written]))
-                    throw std::runtime_error("callsite unreadable");
+            for (const auto callsite : kRestoreCallsites) {
                 const auto address = REL::Offset(callsite).address();
                 (void)trampoline.write_call<5>(address, &skipRestore);
                 if (!FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<const void*>(address), 5))
@@ -82,7 +87,7 @@ namespace rock::native_one_hand_restore
             }
         } catch (...) {
             // All four or none: a partial set would still restore at some sites.
-            for (std::size_t index = 0; index < written; ++index) {
+            for (std::size_t index = 0; index < kRestoreCallsites.size(); ++index) {
                 const auto address = REL::Offset(kRestoreCallsites[index]).address();
                 REL::safe_write(address, originals[index].data(), originals[index].size());
                 FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<const void*>(address),
