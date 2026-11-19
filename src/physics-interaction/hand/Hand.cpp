@@ -311,11 +311,11 @@ namespace rock
         _objectReleaseHistory.clear();
         _releaseObjectNotBefore = release_velocity::sampleTimeSeconds();
         _releaseControllerFrame = 0;
-        _previousHeldRawHandWorld = {};
-        _previousHeldRoomWorld = {};
-        _previousHeldRoomSource = nullptr;
+        _previousHeld.rawHandWorld = {};
+        _previousHeld.roomWorld = {};
+        _previousHeld.roomSource = nullptr;
         _lastHeldHandPositionHavok = {};
-        _hasPreviousHeldRawHandWorld = false;
+        _previousHeld.valid = false;
         clearGrabHandCollisionSuppressionState();
     }
 
@@ -394,11 +394,11 @@ namespace rock
         _grabPoseReplay.reset();
         _grabFingerProbePreview.clear();
         _hasGrabFingerPose = false;
-        _previousHeldRawHandWorld = {};
-        _previousHeldRoomWorld = {};
-        _previousHeldRoomSource = nullptr;
+        _previousHeld.rawHandWorld = {};
+        _previousHeld.roomWorld = {};
+        _previousHeld.roomSource = nullptr;
         _lastHeldHandPositionHavok = {};
-        _hasPreviousHeldRawHandWorld = false;
+        _previousHeld.valid = false;
     }
 
     HandTransitionResult Hand::applyTransition(const HandTransitionRequest& request)
@@ -470,14 +470,14 @@ namespace rock
         _pulledBodyIds.clear();
         _pullDriveDecision = {};
         _pulledPrimaryBodyId = INVALID_BODY_ID;
-        _pullMeshPointBodyLocal = {};
-        _pullTargetVelocity = {};
-        _pullProgress = {};
-        _pullElapsedSeconds = 0.0f;
-        _pullDurationSeconds = 0.0f;
-        _pullHasPreviousObjectPoint = false;
-        _pullPresentationAxisBodyLocal = {};
-        _pullPresentationValid = false;
+        _pullFlight.meshPointBodyLocal = {};
+        _pullFlight.targetVelocity = {};
+        _pullFlight.progress = {};
+        _pullFlight.elapsedSeconds = 0.0f;
+        _pullFlight.durationSeconds = 0.0f;
+        _pullFlight.hasPreviousObjectPoint = false;
+        _pullPresentation.axisBodyLocal = {};
+        _pullPresentation.valid = false;
         _pullSeat.valid = false;
         _pullSeat.objectProxyLocal = {};
         _pullSeat.bodyInFrame = {};

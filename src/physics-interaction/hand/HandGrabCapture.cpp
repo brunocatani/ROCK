@@ -89,9 +89,9 @@ namespace rock
             RE::NiAVObject* meshSourceNode, RE::NiAVObject* collidableNode, bool refreshScene = true)
         {
             GrabCaptureTransformRefreshResult result{};
-            refreshGrabCaptureNodeTransform(result, "root", rootNode, refreshScene);
-            refreshGrabCaptureNodeTransform(result, "mesh", meshSourceNode, refreshScene);
-            refreshGrabCaptureNodeTransform(result, "collidable", collidableNode, refreshScene);
+            refreshGrabCaptureNodeTransform(result, rootNode, refreshScene);
+            refreshGrabCaptureNodeTransform(result, meshSourceNode, refreshScene);
+            refreshGrabCaptureNodeTransform(result, collidableNode, refreshScene);
             return result;
         }
 
@@ -942,7 +942,7 @@ namespace rock
             ownerWorld ? RE::bhkNPCollisionObject::Getbhk(ownerWorld, outCapture.bodyId) : nullptr;
         if (auto* resolvedOwnerNode = bodyCollisionObject ? bodyCollisionObject->sceneObject : nullptr) {
             GrabCaptureTransformRefreshResult ownerRefresh{};
-            refreshGrabCaptureNodeTransform(ownerRefresh, "resolvedOwner", resolvedOwnerNode,
+            refreshGrabCaptureNodeTransform(ownerRefresh, resolvedOwnerNode,
                 !grab_target::requiresNativeBodyOwnership(selectedObject.targetKind));
             if (!ownerRefresh.ok) {
                 ROCK_LOG_WARN(Hand,

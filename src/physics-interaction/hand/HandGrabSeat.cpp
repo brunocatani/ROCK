@@ -553,7 +553,7 @@ namespace rock
         ownerNodeAtGrab = bodyCollisionObjectAtGrab ? bodyCollisionObjectAtGrab->sceneObject : nullptr;
         if (ownerNodeAtGrab && ownerNodeAtGrab != collidableNode) {
             GrabCaptureTransformRefreshResult ownerAtGrabRefresh{};
-            refreshGrabCaptureNodeTransform(ownerAtGrabRefresh, "ownerAtGrab", ownerNodeAtGrab,
+            refreshGrabCaptureNodeTransform(ownerAtGrabRefresh, ownerNodeAtGrab,
                 !grab_target::requiresNativeBodyOwnership(sel.targetKind));
             if (!ownerAtGrabRefresh.ok) {
                 ROCK_LOG_WARN(Hand,

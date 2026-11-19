@@ -236,7 +236,6 @@ namespace rock
         float motorSolverEffectiveBodyDeltaDegrees = 0.0f;
         float motorSolverEffectiveToAtomDeltaDegrees = 0.0f;
         float motorSolverEffectiveLiveABodyDeltaDegrees = 0.0f;
-        float motorSolverEffectiveTargetALiveADeltaDegrees = 0.0f;
         float motorTargetProxyToLiveProxyDeltaDegrees = 0.0f;
         float motorTargetProxyToLiveProxyDeltaGameUnits = 0.0f;
         float motorTransformBRelationLocalDeltaGameUnits = 0.0f;
@@ -1538,13 +1537,17 @@ namespace rock
         } _releaseObjectSample;
 
         double _releaseObjectNotBefore = 0.0; // Game thread rebase boundary.
-        RE::NiTransform _previousHeldRawHandWorld{};
-        // Player space (room node) of the same sample, valid with
-        // _hasPreviousHeldRawHandWorld; it splits arm motion from locomotion.
-        RE::NiTransform _previousHeldRoomWorld{};
-        const char* _previousHeldRoomSource = nullptr;
+        // The previous held-object update's hand sample.
+        struct PreviousHeldSample
+        {
+            bool valid = false;
+            RE::NiTransform rawHandWorld{};
+            // Player space (room node) of the same sample; it splits arm motion from locomotion.
+            RE::NiTransform roomWorld{};
+            const char* roomSource = nullptr;
+        };
+        PreviousHeldSample _previousHeld;
         RE::NiPoint3 _lastHeldHandPositionHavok{};
-        bool _hasPreviousHeldRawHandWorld = false;
 
         std::vector<std::uint32_t> _heldBodyIds;
         std::vector<std::uint32_t> _pulledBodyIds;
@@ -1561,21 +1564,29 @@ namespace rock
         };
         PullPrep _pullPrep;
         std::uint32_t _pulledPrimaryBodyId = INVALID_BODY_ID;
-        // The visual mesh point a pull flies to the palm, in the primary body's motion frame (game units).
-        RE::NiPoint3 _pullMeshPointBodyLocal{};
-        // The flight target's measured velocity (hand motion and locomotion) and the flight's progress.
-        pull_motion_math::TargetVelocityEstimate<RE::NiPoint3> _pullTargetVelocity{};
-        pull_motion_math::PullProgress _pullProgress{};
-        float _pullElapsedSeconds = 0.0f;
-        float _pullDurationSeconds = 0.0f;
-        // Object pull point of the previous pull update, for the swept arrival test.
-        RE::NiPoint3 _pullPreviousObjectPointHavok{};
-        bool _pullHasPreviousObjectPoint = false;
+        struct PullFlight
+        {
+            // The visual mesh point a pull flies to the palm, in the primary body's motion frame (game units).
+            RE::NiPoint3 meshPointBodyLocal{};
+            // The flight target's measured velocity (hand motion and locomotion) and the flight's progress.
+            pull_motion_math::TargetVelocityEstimate<RE::NiPoint3> targetVelocity{};
+            pull_motion_math::PullProgress progress{};
+            float elapsedSeconds = 0.0f;
+            float durationSeconds = 0.0f;
+            // Object pull point of the previous pull update, for the swept arrival test.
+            RE::NiPoint3 previousObjectPointHavok{};
+            bool hasPreviousObjectPoint = false;
+        };
+        PullFlight _pullFlight;
         // Long-object presentation during pull flight: mesh principal axis in
         // primary-body local space, captured once at pull start. Flight-only;
         // held objects keep the no-rotate rule.
-        RE::NiPoint3 _pullPresentationAxisBodyLocal{};
-        bool _pullPresentationValid = false;
+        struct PullPresentation
+        {
+            RE::NiPoint3 axisBodyLocal{};
+            bool valid = false;
+        };
+        PullPresentation _pullPresentation;
         /*
          * Authored seat the pull flies to (resolveAuthoredGrabOffset), captured
          * at pull start: the offset's object frame in the palm proxy, the

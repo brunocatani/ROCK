@@ -165,14 +165,14 @@ namespace rock
             return handMotion;
         _releaseControllerFrame = timing.sequence;
         if (admission.rebase) {
-            if (_hasPreviousHeldRawHandWorld && timing.discontinuity && timing.valid) {
+            if (_previousHeld.valid && timing.discontinuity && timing.valid) {
                 ROCK_LOG_SAMPLE_WARN(Hand, 1000, "{} throw history rebased after timing discontinuity rawDt={:.4f}",
                     handName(), timing.rawDeltaSeconds);
             }
             _controllerReleaseHistory.clear();
             _objectReleaseHistory.clear();
             _releaseObjectNotBefore = release_velocity::sampleTimeSeconds();
-            _hasPreviousHeldRawHandWorld = false;
+            _previousHeld.valid = false;
         }
         const float deltaTime = admission.deltaSeconds;
         const bool usableDeltaTime = std::isfinite(deltaTime) && deltaTime > 0.000001f;
@@ -186,10 +186,10 @@ namespace rock
         // arm alone; the room's turning (snap or smooth) is neither and is not
         // passed to the object.
         const auto& playerSpace = runtime_state::currentFrame().playerSpace;
-        const bool samePlayerSpace = playerSpace.valid && _previousHeldRoomSource == playerSpace.source;
-        if (_hasPreviousHeldRawHandWorld && samePlayerSpace && usableDeltaTime) {
+        const bool samePlayerSpace = playerSpace.valid && _previousHeld.roomSource == playerSpace.source;
+        if (_previousHeld.valid && samePlayerSpace && usableDeltaTime) {
             const RE::NiTransform previousHandInCurrentRoom = multiplyTransforms(playerSpace.world,
-                multiplyTransforms(invertTransform(_previousHeldRoomWorld), _previousHeldRawHandWorld));
+                multiplyTransforms(invertTransform(_previousHeld.roomWorld), _previousHeld.rawHandWorld));
             handMotion.localLinearVelocityHavok = scalePoint(
                 currentHandPositionHavok - gamePointToHavokPoint(previousHandInCurrentRoom.translate), 1.0f / deltaTime);
             handMotion.hasLocalLinearVelocity = true;
@@ -199,7 +199,7 @@ namespace rock
             handMotion.hasAngularVelocity = lengthSquared(handMotion.angularVelocityRadiansPerSecond) > 0.000001f;
 
             const RE::NiPoint3 locomotionVelocityHavok = scalePoint(
-                gamePointToHavokPoint(playerSpace.world.translate - _previousHeldRoomWorld.translate),
+                gamePointToHavokPoint(playerSpace.world.translate - _previousHeld.roomWorld.translate),
                 1.0f / deltaTime);
             _controllerReleaseHistory.append(timing.sequence, timing.elapsedGameSeconds,
                 handMotion.localLinearVelocityHavok, handMotion.angularVelocityRadiansPerSecond,
@@ -208,10 +208,10 @@ namespace rock
 
         // Without player space there is no frame to measure the arm in; the
         // next sample with one starts a new pair.
-        _previousHeldRawHandWorld = handWorldTransform;
-        _previousHeldRoomWorld = playerSpace.world;
-        _previousHeldRoomSource = playerSpace.valid ? playerSpace.source : nullptr;
-        _hasPreviousHeldRawHandWorld = playerSpace.valid;
+        _previousHeld.rawHandWorld = handWorldTransform;
+        _previousHeld.roomWorld = playerSpace.world;
+        _previousHeld.roomSource = playerSpace.valid ? playerSpace.source : nullptr;
+        _previousHeld.valid = playerSpace.valid;
         return handMotion;
     }
 

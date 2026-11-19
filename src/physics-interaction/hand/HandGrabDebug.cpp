@@ -366,15 +366,12 @@ namespace rock
                         atomTransformBLocalGame, liveAnchorAWorld, desiredBodyWorld.scale);
                     out.motorSolverEffectiveLiveABodyDeltaDegrees =
                         rotationDeltaDegrees(solverEffectiveLiveAWorld.rotate, desiredBodyWorld.rotate);
-                    out.motorSolverEffectiveTargetALiveADeltaDegrees = rotationDeltaDegrees(
-                        out.motorSolverEffectiveBodyWorld.rotate, solverEffectiveLiveAWorld.rotate);
                     out.motorTargetProxyToLiveProxyDeltaGameUnits =
                         pointDistanceGameUnits(proxyWorld.translate, liveProxyWorld.translate);
                     out.motorTargetProxyToLiveProxyDeltaDegrees =
                         rotationDeltaDegrees(proxyWorld.rotate, liveProxyWorld.rotate);
                 } else {
                     out.motorSolverEffectiveLiveABodyDeltaDegrees = -1.0f;
-                    out.motorSolverEffectiveTargetALiveADeltaDegrees = -1.0f;
                     out.motorTargetProxyToLiveProxyDeltaGameUnits = -1.0f;
                     out.motorTargetProxyToLiveProxyDeltaDegrees = -1.0f;
                 }

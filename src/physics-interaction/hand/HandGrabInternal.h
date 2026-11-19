@@ -544,19 +544,11 @@ namespace rock::hand_grab_internal
         return transform_math::rotationDeltaDegrees(a, b);
     }
 
-    struct GrabCaptureTransformRefreshSample
-    {
-        const char* role = "unknown";
-        RE::NiAVObject* node = nullptr;
-        bool validBefore = true;
-        bool validAfter = true;
-        float positionDeltaGameUnits = 0.0f;
-        float rotationDeltaDegrees = 0.0f;
-    };
-
+    // The nodes one grab capture has refreshed, each once, and whether every
+    // refreshed world transform was finite.
     struct GrabCaptureTransformRefreshResult
     {
-        std::array<GrabCaptureTransformRefreshSample, 6> samples{};
+        std::array<RE::NiAVObject*, 6> nodes{};
         std::uint32_t count = 0;
         bool ok = true;
     };
@@ -565,26 +557,21 @@ namespace rock::hand_grab_internal
         const RE::NiAVObject* node)
     {
         for (std::uint32_t i = 0; i < result.count; ++i) {
-            if (result.samples[i].node == node) {
+            if (result.nodes[i] == node) {
                 return true;
             }
         }
         return false;
     }
 
-    inline void refreshGrabCaptureNodeTransform(GrabCaptureTransformRefreshResult& result, const char* role,
-        RE::NiAVObject* node, bool refreshScene = true)
+    inline void refreshGrabCaptureNodeTransform(GrabCaptureTransformRefreshResult& result, RE::NiAVObject* node,
+        bool refreshScene = true)
     {
-        if (!node || result.count >= result.samples.size() || grabCaptureRefreshAlreadyVisited(result, node)) {
+        if (!node || result.count >= result.nodes.size() || grabCaptureRefreshAlreadyVisited(result, node)) {
             return;
         }
 
-        auto& sample = result.samples[result.count++];
-        sample.role = role ? role : "unknown";
-        sample.node = node;
-
-        const RE::NiTransform before = node->world;
-        sample.validBefore = grab_three_phase::isFinite(before);
+        result.nodes[result.count++] = node;
 
         // Ragdoll world transforms are the engine's current physics/skin
         // output. Acquisition must sample that pose without recalculating it.
@@ -593,11 +580,7 @@ namespace rock::hand_grab_internal
             node->UpdateTransforms(update);
         }
 
-        const RE::NiTransform after = node->world;
-        sample.validAfter = grab_three_phase::isFinite(after);
-        sample.positionDeltaGameUnits = translationDeltaGameUnits(before, after);
-        sample.rotationDeltaDegrees = rotationDeltaDegrees(before.rotate, after.rotate);
-        result.ok = result.ok && sample.validAfter;
+        result.ok = result.ok && grab_three_phase::isFinite(node->world);
     }
 
     inline RE::NiMatrix3 matrixFromHkColumns(const float* hkMatrix)

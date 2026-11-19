@@ -370,11 +370,11 @@ namespace rock
         _objectReleaseHistory.clear();
         _releaseObjectNotBefore = release_velocity::sampleTimeSeconds();
         _releaseControllerFrame = 0;
-        _previousHeldRawHandWorld = {};
-        _previousHeldRoomWorld = {};
-        _previousHeldRoomSource = nullptr;
+        _previousHeld.rawHandWorld = {};
+        _previousHeld.roomWorld = {};
+        _previousHeld.roomSource = nullptr;
         _lastHeldHandPositionHavok = {};
-        _hasPreviousHeldRawHandWorld = false;
+        _previousHeld.valid = false;
         _currentSelection.clear();
         clearGrabAcquisitionCache("release-cleared-selection");
         HandInteractionEvent releaseEvent = HandInteractionEvent::ReleaseRequested;
