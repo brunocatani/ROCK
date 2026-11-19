@@ -375,7 +375,6 @@ namespace rock
         _previousHeldRoomSource = nullptr;
         _lastHeldHandPositionHavok = {};
         _hasPreviousHeldRawHandWorld = false;
-        _hasLastHeldHandPositionHavok = false;
         _currentSelection.clear();
         clearGrabAcquisitionCache("release-cleared-selection");
         HandInteractionEvent releaseEvent = HandInteractionEvent::ReleaseRequested;

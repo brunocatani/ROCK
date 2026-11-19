@@ -1101,12 +1101,7 @@ namespace rock
         bool _isLeft;
         const contact_clock::ContactClock& _contactClock;
         HandState _state = HandState::Idle;
-        HandState _prevState = HandState::Idle;
         std::atomic<HandState> _stateAtomic{ HandState::Idle };
-
-        bool _idleDesired = false;
-        bool _grabRequested = false;
-        bool _releaseRequested = false;
 
         BethesdaPhysicsBody _handBody;
         HandBoneColliderSet _boneColliders;
@@ -1539,7 +1534,6 @@ namespace rock
         const char* _previousHeldRoomSource = nullptr;
         RE::NiPoint3 _lastHeldHandPositionHavok{};
         bool _hasPreviousHeldRawHandWorld = false;
-        bool _hasLastHeldHandPositionHavok = false;
 
         std::vector<std::uint32_t> _heldBodyIds;
         std::vector<std::uint32_t> _pulledBodyIds;
@@ -1565,7 +1559,6 @@ namespace rock
         // primary-body local space, captured once at pull start. Flight-only;
         // held objects keep the no-rotate rule.
         RE::NiPoint3 _pullPresentationAxisBodyLocal{};
-        float _pullPresentationElongationRatio = 0.0f;
         bool _pullPresentationValid = false;
         /*
          * Authored seat the pull flies to (resolveAuthoredGrabOffset), captured

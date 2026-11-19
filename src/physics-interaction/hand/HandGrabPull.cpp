@@ -560,7 +560,6 @@ namespace rock
          * without touching nodes per frame.
          */
         _pullPresentationAxisBodyLocal = {};
-        _pullPresentationElongationRatio = 0.0f;
         _pullPresentationValid = false;
         if (g_rockConfig.rockPullLongAxisPresentationEnabled && hasPrimaryBodyWorld) {
             const auto longAxis = computeGrabMeshLongAxis(pulledMeshTriangles);
@@ -569,7 +568,6 @@ namespace rock
                     normalizeOrZero(transform_math::worldVectorToLocal(primaryBodyWorld, longAxis.axisWorld));
                 if (lengthSquared(axisBodyLocal) > 0.000001f) {
                     _pullPresentationAxisBodyLocal = axisBodyLocal;
-                    _pullPresentationElongationRatio = longAxis.elongationRatio;
                     _pullPresentationValid = true;
                 }
             }

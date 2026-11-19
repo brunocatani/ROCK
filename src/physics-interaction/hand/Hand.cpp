@@ -225,11 +225,7 @@ namespace rock
         _heldBodyIdsCount.store(0, std::memory_order_release);
         clearHeldBodyContactSnapshot();
         _state = HandState::Idle;
-        _prevState = HandState::Idle;
         _stateAtomic.store(HandState::Idle, std::memory_order_release);
-        _idleDesired = false;
-        _grabRequested = false;
-        _releaseRequested = false;
         _boneColliders.reset();
         _handBody.reset();
         _currentSelection.clear();
@@ -320,7 +316,6 @@ namespace rock
         _previousHeldRoomSource = nullptr;
         _lastHeldHandPositionHavok = {};
         _hasPreviousHeldRawHandWorld = false;
-        _hasLastHeldHandPositionHavok = false;
         clearGrabHandCollisionSuppressionState();
     }
 
@@ -404,7 +399,6 @@ namespace rock
         _previousHeldRoomSource = nullptr;
         _lastHeldHandPositionHavok = {};
         _hasPreviousHeldRawHandWorld = false;
-        _hasLastHeldHandPositionHavok = false;
     }
 
     HandTransitionResult Hand::applyTransition(const HandTransitionRequest& request)
@@ -425,7 +419,6 @@ namespace rock
                 _gestureCollisionOwner = 0;
                 _gestureSelectionAnchor = {};
             }
-            _prevState = oldState;
             _state = result.next;
             _stateAtomic.store(result.next, std::memory_order_release);
             if (suppressesGeneratedHandContactEvidence(oldState) ||
@@ -484,7 +477,6 @@ namespace rock
         _pullDurationSeconds = 0.0f;
         _pullHasPreviousObjectPoint = false;
         _pullPresentationAxisBodyLocal = {};
-        _pullPresentationElongationRatio = 0.0f;
         _pullPresentationValid = false;
         _pullSeatValid = false;
         _pullSeatObjectProxyLocal = {};

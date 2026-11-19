@@ -178,7 +178,6 @@ namespace rock
         const bool usableDeltaTime = std::isfinite(deltaTime) && deltaTime > 0.000001f;
         const RE::NiPoint3 currentHandPositionHavok = gamePointToHavokPoint(handWorldTransform.translate);
         _lastHeldHandPositionHavok = currentHandPositionHavok;
-        _hasLastHeldHandPositionHavok = true;
 
         // The hand's world motion is the arm's motion in player space plus the
         // player's locomotion. A throw scales only the arm; the released object

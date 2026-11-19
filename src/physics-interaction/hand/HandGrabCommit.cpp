@@ -437,7 +437,6 @@ namespace rock
         _previousHeldRoomSource = nullptr;
         _lastHeldHandPositionHavok = {};
         _hasPreviousHeldRawHandWorld = false;
-        _hasLastHeldHandPositionHavok = false;
         _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
 
         ROCK_LOG_DEBUG(Hand,
