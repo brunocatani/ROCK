@@ -409,11 +409,13 @@ namespace
         input_remap_runtime::installInputRemapHooks();
 
         const bool wristPipboyOpen = frik_visual_authority::isWristPipboyOpen();
+        const bool frikConfigOpen = frik_visual_authority::isConfigOpen();
         runtime_state::updateFrame(runtime_state::RuntimeFrameInput{
             .visualAuthorityAvailable = frik_visual_authority::isAvailable(),
             .visualSkeletonReadyHint = frik_visual_authority::isSkeletonReadyHint(),
-            .compatibilityConfigBlocking = wristPipboyOpen || frik_visual_authority::isConfigOpen(),
+            .compatibilityConfigBlocking = wristPipboyOpen || frikConfigOpen,
             .wristPipboyOpen = wristPipboyOpen,
+            .frikConfigOpen = frikConfigOpen,
         });
         stateTimer.stop();
         performance_profiler::ScopedTimer gatesTimer(performance_profiler::Scope::PrepGates);

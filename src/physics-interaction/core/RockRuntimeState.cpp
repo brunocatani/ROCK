@@ -292,6 +292,7 @@ namespace rock::runtime_state
         next.deltaSeconds = next.timing.valid ? next.timing.deltaSeconds : 0.0f;
         next.compatibilityConfigBlocking = input.compatibilityConfigBlocking;
         next.wristPipboyOpen = input.wristPipboyOpen;
+        next.frikConfigOpen = input.frikConfigOpen;
         next.visualAuthorityAvailable = input.visualAuthorityAvailable;
         next.visualSkeletonReadyHint = input.visualSkeletonReadyHint;
         next.playerSpace = samplePlayerSpace();
