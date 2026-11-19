@@ -2,6 +2,7 @@
 #include "config/SettingMetadata.h"
 
 #include <algorithm>
+#include <array>
 #include <format>
 #include <stdexcept>
 #include <vector>
@@ -17,13 +18,35 @@ namespace rock::config
 #include "config/LegacyIniMigrationTable.inl"
         };
 
+        // Keys ROCK.toml held before a later version renamed them. Frozen like
+        // the INI table: a row leaves only with its option. The firing-hand
+        // offsets became position-only transforms, for Mods Config's transform editor.
+        constexpr RPS::Settings::RenamedKey kRenamedKeys[] = {
+            { "FiringHand.Left", "AimOffsetGameUnits", "FiringHand.Left", "AimOffset",
+                RPS::Settings::RenameKind::Float3ToTransformPosition },
+            { "FiringHand.Left", "GripOffsetGameUnits", "FiringHand.Left", "GripOffset",
+                RPS::Settings::RenameKind::Float3ToTransformPosition },
+            { "FiringHand.Right", "SupportGripOffsetGameUnits", "FiringHand.Right", "SupportGripOffset",
+                RPS::Settings::RenameKind::Float3ToTransformPosition },
+        };
+
+        // A transform's position as canonical Float3 text; no pos is no move.
+        std::string positionText(const std::string& transform)
+        {
+            const auto position =
+                parseTransform(transform).value_or(Transform{}).position.value_or(std::array<float, 3>{});
+            return normalizeValue(ValueType::Float3, std::format("{}, {}, {}", position[0], position[1], position[2]))
+                .value_or("[0.0, 0.0, 0.0]");
+        }
+
         constexpr std::string_view kPlayerHeader =
             "## ROCK.toml - player options\n"
             "## Change these in game in the RobCo PALM wheel menu, or edit this file. Changes are picked up while the "
             "game runs.\n"
             "## Each option has its help above it. Options missing from this file use their defaults.\n"
-            "## Values are typed: true or false, whole numbers, decimal numbers, \"text in quotes\" and lists such as "
-            "[0.0, 1.0, 2.0].\n"
+            "## Values are typed: true or false, whole numbers, decimal numbers, \"text in quotes\", lists such as "
+            "[0.0, 1.0, 2.0]\n"
+            "## and tables such as { pos = [0.0, 1.0, 2.0] }.\n"
             "## If this file cannot be read, ROCK.log names the line and ROCK keeps the last values it read.\n"
             "## When ROCK starts it adds new options with their defaults, rewrites its help lines (the lines starting "
             "with ##),\n"
@@ -79,6 +102,35 @@ namespace rock::config
                 .developerHeader = std::string(kDeveloperHeader),
             },
             std::move(definitions),
-            RPS::Settings::LegacyIni{ { directory / "ROCK.ini", directory / "ROCK_Developer.ini" }, kLegacyKeys });
+            RPS::Settings::LegacyIni{ { directory / "ROCK.ini", directory / "ROCK_Developer.ini" }, kLegacyKeys },
+            kRenamedKeys);
+    }
+
+    /**
+     * A setting as the Configuration API publishes it. A Transform is published as its position, a Float3: the API
+     * has no transform type, a consumer that meets an unknown type drops every setting, and ROCK's transforms hold
+     * only a position.
+     */
+    ApiSetting apiSetting(const Setting& setting)
+    {
+        if (setting.type != ValueType::Transform)
+            return { static_cast<api::configuration::ValueType>(setting.type), setting.value, setting.defaultValue };
+        return { api::configuration::ValueType::Float3, positionText(setting.value), positionText(setting.defaultValue) };
+    }
+
+    /**
+     * The store value of a Configuration API write. A Float3 sent to a Transform replaces its position and keeps
+     * the parts the file has besides; any other value is passed on for the store to check.
+     */
+    std::string storeValueFromApi(const Setting& setting, std::string_view value)
+    {
+        if (setting.type != ValueType::Transform)
+            return std::string(value);
+        const auto position = parseFloat3(value);
+        if (!position)
+            return std::string(value);
+        auto transform = parseTransform(setting.value).value_or(Transform{});
+        transform.position = *position;
+        return formatTransform(transform);
     }
 }

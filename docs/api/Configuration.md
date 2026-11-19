@@ -49,6 +49,10 @@ setting exactly; pass them to `setValue` as `visit` reports them.
 Rotations stored as `Float3` are `[pitch, yaw, roll]`; the setting's
 `description` says which form it uses.
 
+A few options are written in `ROCK.toml` as a transform table,
+`{ pos = [x, y, z] }` (the firing-hand offsets). `visit` reports each as a
+`Float3`, its position, and `setValue` with a `Float3` sets that position.
+
 ## Callback rules
 
 The visitor runs synchronously inside `visit`. It must not call back into

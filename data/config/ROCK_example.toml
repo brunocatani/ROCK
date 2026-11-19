@@ -232,19 +232,19 @@ AimYawDegrees = 0.0
 AimPitchDegrees = 0.0
 
 ## Left Firing Aim: Offset
-## Shifts the aim of a weapon fired from the left hand, in game units (70 = 1 metre), as [x, y, z]. Each value: -15 to 15.
-AimOffsetGameUnits = [0.0, 0.0, 0.0]
+## Shifts the aim of a weapon fired from the left hand, in game units (70 = 1 metre), as { pos = [x, y, z] }. Each value: -15 to 15.
+AimOffset = { pos = [0.0, 0.0, 0.0] }
 
 ## Left Firing Grip
-## Moves where the left hand holds the firing grip, in game units (70 = 1 metre), as [along the fingers, into or out of the palm, across the palm].
+## Moves where the left hand holds the firing grip, in game units (70 = 1 metre), as { pos = [along the fingers, into or out of the palm, across the palm] }.
 ## All 0 = the plain mirror of the right-hand grip. The hand stays put and the weapon moves the other way. Each value: -15 to 15. Regrab to apply.
-GripOffsetGameUnits = [0.0, 0.0, 0.0]
+GripOffset = { pos = [0.0, 0.0, 0.0] }
 
 [FiringHand.Right]
 ## Right Support Grip
-## Moves where the right hand holds a support grip when the left hand fires, in game units (70 = 1 metre), as [along the fingers, into or out of the palm, across the palm].
+## Moves where the right hand holds a support grip when the left hand fires, in game units (70 = 1 metre), as { pos = [along the fingers, into or out of the palm, across the palm] }.
 ## All 0 = the plain mirror of the left-hand support grip. Each value: -15 to 15. Regrab to apply.
-SupportGripOffsetGameUnits = [0.0, 0.0, 0.0]
+SupportGripOffset = { pos = [0.0, 0.0, 0.0] }
 
 ## === 07. Scopes ===
 [Scopes]

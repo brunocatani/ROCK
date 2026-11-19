@@ -1,8 +1,9 @@
 // Generated from ROCK's v0.92.2 and last pre-TOML settings catalogs and
 // example INIs. Frozen: these are the INI keys ROCK ever shipped, so the
-// table never changes when the TOML catalog does; a test checks every
-// target still exists. Old defaults use the old INI text. A row leaves
-// only with its option: an old INI value for a removed option is dropped.
+// table is never regenerated from the TOML catalog; a test checks every
+// target still exists. Old defaults use the old INI text. A row follows its
+// option when the option is renamed (only its target changes) and leaves
+// with it when it is removed: an old INI value for a removed option is dropped.
 
 { "bBipodMode", "WeaponHandling", "BipodMode", LegacyKind::Value, 0, "true", "true" },
 { "bDebugDrawAuthoredGripActivationZones", "DebugOverlay", "DebugDrawAuthoredGripActivationZones", LegacyKind::Value, 0, "false", "false" },
@@ -218,14 +219,14 @@
 { "fHeldImpactHapticMinSpeedGameUnits", "Haptics", "HeldImpactHapticMinSpeedGameUnits", LegacyKind::Value, 0, "8.0", "8" },
 { "fHeldImpactHapticSpeedScale", "Haptics", "HeldImpactHapticSpeedScale", LegacyKind::Value, 0, "0.006", "0.006" },
 { "fLaserRecoilPercent", "WeaponRecoil", "LaserRecoilPercent", LegacyKind::Value, 0, "100.0", "100" },
-{ "fLeftFiringAimOffsetXGameUnits", "FiringHand.Left", "AimOffsetGameUnits", LegacyKind::Float3Component, 0, "0.0", "0" },
-{ "fLeftFiringAimOffsetYGameUnits", "FiringHand.Left", "AimOffsetGameUnits", LegacyKind::Float3Component, 1, "0.0", "0" },
-{ "fLeftFiringAimOffsetZGameUnits", "FiringHand.Left", "AimOffsetGameUnits", LegacyKind::Float3Component, 2, "0.0", "0" },
+{ "fLeftFiringAimOffsetXGameUnits", "FiringHand.Left", "AimOffset", LegacyKind::Float3Component, 0, "0.0", "0" },
+{ "fLeftFiringAimOffsetYGameUnits", "FiringHand.Left", "AimOffset", LegacyKind::Float3Component, 1, "0.0", "0" },
+{ "fLeftFiringAimOffsetZGameUnits", "FiringHand.Left", "AimOffset", LegacyKind::Float3Component, 2, "0.0", "0" },
 { "fLeftFiringAimPitchDegrees", "FiringHand.Left", "AimPitchDegrees", LegacyKind::Value, 0, "0.0", "0" },
 { "fLeftFiringAimYawDegrees", "FiringHand.Left", "AimYawDegrees", LegacyKind::Value, 0, "0.0", "0" },
-{ "fLeftFiringGripOffsetXGameUnits", "FiringHand.Left", "GripOffsetGameUnits", LegacyKind::Float3Component, 0, "0.0", "0" },
-{ "fLeftFiringGripOffsetYGameUnits", "FiringHand.Left", "GripOffsetGameUnits", LegacyKind::Float3Component, 1, "0.0", "0" },
-{ "fLeftFiringGripOffsetZGameUnits", "FiringHand.Left", "GripOffsetGameUnits", LegacyKind::Float3Component, 2, "0.0", "0" },
+{ "fLeftFiringGripOffsetXGameUnits", "FiringHand.Left", "GripOffset", LegacyKind::Float3Component, 0, "0.0", "0" },
+{ "fLeftFiringGripOffsetYGameUnits", "FiringHand.Left", "GripOffset", LegacyKind::Float3Component, 1, "0.0", "0" },
+{ "fLeftFiringGripOffsetZGameUnits", "FiringHand.Left", "GripOffset", LegacyKind::Float3Component, 2, "0.0", "0" },
 { "fLeftGrabAuthorityProxyOffsetXGameUnits", "PalmAndGrabOffsets", "LeftGrabAuthorityProxyOffsetGameUnits", LegacyKind::Float3Component, 0, "0.5", "0.5" },
 { "fLeftGrabAuthorityProxyOffsetYGameUnits", "PalmAndGrabOffsets", "LeftGrabAuthorityProxyOffsetGameUnits", LegacyKind::Float3Component, 1, "-1.0", "-1" },
 { "fLeftGrabAuthorityProxyOffsetZGameUnits", "PalmAndGrabOffsets", "LeftGrabAuthorityProxyOffsetGameUnits", LegacyKind::Float3Component, 2, "0.0", "0" },
@@ -272,9 +273,9 @@
 { "fRightGrabAuthorityProxyOffsetXGameUnits", "PalmAndGrabOffsets", "RightGrabAuthorityProxyOffsetGameUnits", LegacyKind::Float3Component, 0, "0.5", "0.5" },
 { "fRightGrabAuthorityProxyOffsetYGameUnits", "PalmAndGrabOffsets", "RightGrabAuthorityProxyOffsetGameUnits", LegacyKind::Float3Component, 1, "-1.0", "-1" },
 { "fRightGrabAuthorityProxyOffsetZGameUnits", "PalmAndGrabOffsets", "RightGrabAuthorityProxyOffsetGameUnits", LegacyKind::Float3Component, 2, "0.0", "0" },
-{ "fRightSupportGripOffsetXGameUnits", "FiringHand.Right", "SupportGripOffsetGameUnits", LegacyKind::Float3Component, 0, "0.0", "0" },
-{ "fRightSupportGripOffsetYGameUnits", "FiringHand.Right", "SupportGripOffsetGameUnits", LegacyKind::Float3Component, 1, "0.0", "0" },
-{ "fRightSupportGripOffsetZGameUnits", "FiringHand.Right", "SupportGripOffsetGameUnits", LegacyKind::Float3Component, 2, "0.0", "0" },
+{ "fRightSupportGripOffsetXGameUnits", "FiringHand.Right", "SupportGripOffset", LegacyKind::Float3Component, 0, "0.0", "0" },
+{ "fRightSupportGripOffsetYGameUnits", "FiringHand.Right", "SupportGripOffset", LegacyKind::Float3Component, 1, "0.0", "0" },
+{ "fRightSupportGripOffsetZGameUnits", "FiringHand.Right", "SupportGripOffset", LegacyKind::Float3Component, 2, "0.0", "0" },
 { "fScopedFilterReleaseDegreesPerSecond", "WeaponHandling", "ScopedFilterReleaseDegreesPerSecond", LegacyKind::Value, 0, {}, "45" },
 { "fScopedFilterRotationSeconds", "WeaponHandling", "ScopedFilterRotationSeconds", LegacyKind::Value, 0, {}, "0.15" },
 { "fScopedFilterTranslationSeconds", "WeaponHandling", "ScopedFilterTranslationSeconds", LegacyKind::Value, 0, {}, "0.08" },

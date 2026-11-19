@@ -1,7 +1,8 @@
 // ROCK's settings contracts on RPS::Settings (whose own tests cover
 // organizing, faults and the developer file): the catalog and the loader
 // agree, the example files are what ROCK writes, documented defaults are the
-// runtime defaults, and ROCK's old INI keys migrate to the right options.
+// runtime defaults, ROCK's old INI keys and renamed TOML keys migrate to the
+// right options, and transforms reach the Configuration API as Float3.
 #include "RockConfig.h"
 #include "config/RockSettings.h"
 
@@ -94,8 +95,8 @@ namespace
                 find(*store, "WeaponHandling", "WeaponFilteringPreset").defaultValue,
             "an old default replaced the current default");
         require(find(*store, "FiringHand", "DefaultHand").value == "left", "bLeftHandedMode was not carried");
-        require(find(*store, "FiringHand.Left", "AimOffsetGameUnits").value == "[0.0, 2.5, 0.0]",
-            "an X/Y/Z triplet was not carried as one list");
+        require(find(*store, "FiringHand.Left", "AimOffset").value == "{ pos = [0.0, 2.5, 0.0] }",
+            "an X/Y/Z triplet was not carried as one transform position");
         require(find(*store, "ControllerInput.Right", "A").value == "b", "a button layout key was not carried");
         require(find(*store, "ScopePlacement", "NativeScopeOverlayOffsetGameUnits").value == "[0.0, 12.0, 0.0]" &&
                     find(*store, "DebugOverlay", "DebugMaxBodyInstances").value == "100",
@@ -106,6 +107,38 @@ namespace
         require(hasLine(store->messages(), "does not fit: fRealisticGrenadeFuseSeconds = soon"),
             "a value that does not fit was not reported");
         require(hasLine(store->notices(), "bRockyModeEnabled"), "a retired key was not named");
+    }
+
+    // A ROCK.toml from before the firing-hand offsets became transforms keeps
+    // them, and the Configuration API still sees and writes each as a Float3.
+    void transformChecks(const fs::path& directory, std::span<const SettingDefault> defaults)
+    {
+        fs::create_directories(directory);
+        const auto store = makeStore(directory, defaults);
+        write(store->path(Group::Player),
+            "[FiringHand.Left]\nAimOffsetGameUnits = [1, 2, 3]\n[FiringHand.Right]\nSupportGripOffsetGameUnits = [0, 0, -4]\n");
+        store->load(true);
+        require(find(*store, "FiringHand.Left", "AimOffset").value == "{ pos = [1.0, 2.0, 3.0] }" &&
+                    find(*store, "FiringHand.Right", "SupportGripOffset").value == "{ pos = [0.0, 0.0, -4.0] }",
+            "a renamed offset was not carried into its transform");
+        const auto values = runtime(*store);
+        require(values.rockLeftFiringAimOffsetYGameUnits > 1.99f && values.rockLeftFiringAimOffsetYGameUnits < 2.01f &&
+                    values.rockRightSupportGripOffsetGameUnits.z < -3.99f &&
+                    values.rockRightSupportGripOffsetGameUnits.z > -4.01f,
+            "a carried transform position did not apply");
+
+        const auto& aim = find(*store, "FiringHand.Left", "AimOffset");
+        const auto published = apiSetting(aim);
+        require(published.type == rock::api::configuration::ValueType::Float3 && published.value == "[1.0, 2.0, 3.0]" &&
+                    published.defaultValue == "[0.0, 0.0, 0.0]",
+            "a transform was not published as its Float3 position");
+        auto withRotation = aim;
+        withRotation.value = "{ pos = [1.0, 2.0, 3.0], rot = [0.0, 90.0, 0.0] }";
+        require(storeValueFromApi(withRotation, "[4, 5, 6]") == "{ pos = [4.0, 5.0, 6.0], rot = [0.0, 90.0, 0.0] }",
+            "a Float3 write did not replace only the transform's position");
+        require(storeValueFromApi(aim, "{ pos = [7, 8, 9] }") == "{ pos = [7, 8, 9] }" &&
+                    storeValueFromApi(find(*store, "Logging", "LogLevel"), "3") == "3",
+            "a value the mapping does not own was changed");
     }
 
     // The examples are exactly what ROCK writes for files holding every option
@@ -198,6 +231,7 @@ int main(int argc, char** argv)
         }
         defaultChecks(directory / "examples", defaults);
         migrationChecks(directory / "migration", defaults);
+        transformChecks(directory / "transforms", defaults);
         fs::remove_all(directory, ec);
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

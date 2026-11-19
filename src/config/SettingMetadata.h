@@ -196,20 +196,20 @@ namespace rock::config
             "Left Firing Aim: Pitch\nTilts the aim of a weapon fired from the left hand up or down, in degrees. "
             "Range: -30 to 30.",
             api::configuration::Group::Consumer },
-        { "FiringHand.Left", "AimOffsetGameUnits", "06. Firing Hand",
+        { "FiringHand.Left", "AimOffset", "06. Firing Hand",
             "Left Firing Aim: Offset\nShifts the aim of a weapon fired from the left hand, in game units (70 = 1 "
-            "metre), as [x, y, z]. Each value: -15 to 15.",
+            "metre), as { pos = [x, y, z] }. Each value: -15 to 15.",
             api::configuration::Group::Consumer },
-        { "FiringHand.Left", "GripOffsetGameUnits", "06. Firing Hand",
+        { "FiringHand.Left", "GripOffset", "06. Firing Hand",
             "Left Firing Grip\nMoves where the left hand holds the firing grip, in game units (70 = 1 metre), as "
-            "[along the fingers, into or out of the palm, across the palm].\nAll 0 = the plain mirror of the "
-            "right-hand grip. The hand stays put and the weapon moves the other way. Each value: -15 to 15. Regrab "
-            "to apply.",
+            "{ pos = [along the fingers, into or out of the palm, across the palm] }.\nAll 0 = the plain mirror of "
+            "the right-hand grip. The hand stays put and the weapon moves the other way. Each value: -15 to 15. "
+            "Regrab to apply.",
             api::configuration::Group::Consumer },
-        { "FiringHand.Right", "SupportGripOffsetGameUnits", "06. Firing Hand",
+        { "FiringHand.Right", "SupportGripOffset", "06. Firing Hand",
             "Right Support Grip\nMoves where the right hand holds a support grip when the left hand fires, in game "
-            "units (70 = 1 metre), as [along the fingers, into or out of the palm, across the palm].\nAll 0 = the "
-            "plain mirror of the left-hand support grip. Each value: -15 to 15. Regrab to apply.",
+            "units (70 = 1 metre), as { pos = [along the fingers, into or out of the palm, across the palm] }.\nAll "
+            "0 = the plain mirror of the left-hand support grip. Each value: -15 to 15. Regrab to apply.",
             api::configuration::Group::Consumer },
         { "Scopes", "EnableImmersiveScopes", "07. Scopes",
             "Immersive Scopes\nROCK places the scope view on the weapon, raises it while you hold the scope button "

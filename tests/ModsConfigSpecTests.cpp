@@ -31,10 +31,10 @@ namespace
         "SetupWizard.ShownEdition",
         // Shows the ROCK Dev page in RPS UI Framework's settings menu only.
         "Developer.EnableDeveloperSettings",
-        // Three-number lists: a config spec has no control for an array.
-        "FiringHand.Left.AimOffsetGameUnits",
-        "FiringHand.Left.GripOffsetGameUnits",
-        "FiringHand.Right.SupportGripOffsetGameUnits",
+        // Transforms, not on the page yet.
+        "FiringHand.Left.AimOffset",
+        "FiringHand.Left.GripOffset",
+        "FiringHand.Right.SupportGripOffset",
     };
 
     void require(bool condition, const std::string& message)

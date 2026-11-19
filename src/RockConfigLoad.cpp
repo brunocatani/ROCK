@@ -93,6 +93,26 @@ namespace rock::config
             return current;
         }
 
+        /**
+         * The position of a Transform option, declared as a position-only transform. A loaded transform without pos
+         * means no move.
+         */
+        [[nodiscard]] RE::NiPoint3 transformPosition(const char* table, const char* key, const RE::NiPoint3& current)
+        {
+            if (_defaults) {
+                declare(table, key, ValueType::Transform,
+                    formatTransform(Transform{ .position = std::array{ current.x, current.y, current.z } }));
+                return current;
+            }
+            if (const auto* value = loaded(table, key)) {
+                if (const auto parsed = parseTransform(*value)) {
+                    const auto position = parsed->position.value_or(std::array<float, 3>{});
+                    return RE::NiPoint3(position[0], position[1], position[2]);
+                }
+            }
+            return current;
+        }
+
     private:
         static std::string floatText(float value)
         {
@@ -174,6 +194,19 @@ namespace
         float minValue, float maxValue)
     {
         auto value = ini.float3(table, key, current);
+        value.x = std::clamp(value.x, minValue, maxValue);
+        value.y = std::clamp(value.y, minValue, maxValue);
+        value.z = std::clamp(value.z, minValue, maxValue);
+        return value;
+    }
+
+    /**
+     * The position of a Transform option, each component clamped on its own.
+     */
+    RE::NiPoint3 readClampedPosition(SettingReader& ini, const char* table, const char* key, const RE::NiPoint3& current,
+        float minValue, float maxValue)
+    {
+        auto value = ini.transformPosition(table, key, current);
         value.x = std::clamp(value.x, minValue, maxValue);
         value.y = std::clamp(value.y, minValue, maxValue);
         value.z = std::clamp(value.z, minValue, maxValue);
@@ -526,7 +559,7 @@ namespace rock
         rockLeftFiringAimPitchDegrees = readClampedFloat(ini, "FiringHand.Left", "AimPitchDegrees",
             rockLeftFiringAimPitchDegrees, 0.0f, -30.0f, 30.0f);
         {
-            const auto aimOffset = readClampedFloat3(ini, "FiringHand.Left", "AimOffsetGameUnits",
+            const auto aimOffset = readClampedPosition(ini, "FiringHand.Left", "AimOffset",
                 RE::NiPoint3(rockLeftFiringAimOffsetXGameUnits, rockLeftFiringAimOffsetYGameUnits,
                     rockLeftFiringAimOffsetZGameUnits),
                 -15.0f, 15.0f);
@@ -536,9 +569,9 @@ namespace rock
         }
         rockWeaponCollisionBlocksProjectiles =
             ini.boolean("WeaponCollisionAndSupport", "WeaponCollisionBlocksProjectiles", rockWeaponCollisionBlocksProjectiles);
-        rockLeftFiringGripOffsetGameUnits = readClampedFloat3(ini, "FiringHand.Left", "GripOffsetGameUnits",
+        rockLeftFiringGripOffsetGameUnits = readClampedPosition(ini, "FiringHand.Left", "GripOffset",
             rockLeftFiringGripOffsetGameUnits, -15.0f, 15.0f);
-        rockRightSupportGripOffsetGameUnits = readClampedFloat3(ini, "FiringHand.Right", "SupportGripOffsetGameUnits",
+        rockRightSupportGripOffsetGameUnits = readClampedPosition(ini, "FiringHand.Right", "SupportGripOffset",
             rockRightSupportGripOffsetGameUnits, -15.0f, 15.0f);
         rockWeaponCollisionBlocksSpells =
             ini.boolean("WeaponCollisionAndSupport", "WeaponCollisionBlocksSpells", rockWeaponCollisionBlocksSpells);

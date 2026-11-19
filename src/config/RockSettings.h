@@ -1,8 +1,10 @@
 // ROCK's settings files on RPS Framework's settings store (RPS::Settings):
 // ROCK.toml and ROCK_Developer.toml, declared by the catalog
 // (SettingMetadata.h) joined with the compiled defaults the loader declares
-// (RockConfigLoad.cpp), and the one-time migration of the INI files of
-// earlier versions (LegacyIniMigrationTable.inl).
+// (RockConfigLoad.cpp), the one-time migration of the INI files of earlier
+// versions (LegacyIniMigrationTable.inl), the keys a later version renamed
+// (kRenamedKeys in RockSettings.cpp), and how a setting looks through the
+// Configuration API.
 #pragma once
 
 #include <ROCK/Configuration.h>
@@ -17,15 +19,19 @@
 namespace rock::config
 {
     using RPS::Settings::Change;
+    using RPS::Settings::formatTransform;
     using RPS::Settings::LoadedValues;
     using RPS::Settings::normalizeValue;
     using RPS::Settings::parseFloat3;
+    using RPS::Settings::parseTransform;
     using RPS::Settings::Setting;
     using RPS::Settings::settingPath;
     using RPS::Settings::Store;
+    using RPS::Settings::Transform;
     using RPS::Settings::ValueType;
 
-    // ROCK's Configuration API publishes the store's enums unchanged.
+    // ROCK's Configuration API publishes the store's enums unchanged, except
+    // Transform, which it publishes as a Float3 position (apiSetting).
     static_assert(static_cast<std::uint32_t>(ValueType::Boolean) ==
             static_cast<std::uint32_t>(api::configuration::ValueType::Boolean) &&
         static_cast<std::uint32_t>(ValueType::Integer) == static_cast<std::uint32_t>(api::configuration::ValueType::Integer) &&
@@ -61,4 +67,15 @@ namespace rock::config
     // Throws when the catalog and the loader disagree in either direction.
     [[nodiscard]] std::unique_ptr<Store> makeStore(const std::filesystem::path& directory,
         std::span<const SettingDefault> defaults);
+
+    // A setting's type, value and default as the Configuration API publishes them.
+    struct ApiSetting
+    {
+        api::configuration::ValueType type;
+        std::string value;
+        std::string defaultValue;
+    };
+
+    [[nodiscard]] ApiSetting apiSetting(const Setting& setting);
+    [[nodiscard]] std::string storeValueFromApi(const Setting& setting, std::string_view value);
 }

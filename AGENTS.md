@@ -216,3 +216,5 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp` for engine math. `
 - After any catalog change, regenerate `data/config/*_example.toml` with `ROCKConfigurationStoreTests --write-examples data/config`; the test fails when they differ. ROCK never reads the examples.
 - RPS Framework's settings store reads, organizes and writes the files (`src/config/RockSettings.cpp`). A file that does not parse is never rewritten, keeps its last values and refuses API writes until fixed. Both files reload while the game runs.
 - Old `ROCK.ini` files migrate once, only when `ROCK.toml` is missing, through the frozen table `src/config/LegacyIniMigrationTable.inl` (never regenerated), and are deleted only after the TOML files read back.
+- A renamed TOML key gets a row in the frozen `kRenamedKeys` (`src/config/RockSettings.cpp`), which carries its value to the new key at startup, and the INI rows that targeted it follow the new name.
+- A `Transform` option (an inline `{ pos = [x, y, z] }` table, for Mods Config's transform editor) reaches the Configuration API as a `Float3` position (`apiSetting`); never publish a type RPS UI does not know.
