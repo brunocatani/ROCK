@@ -839,6 +839,18 @@ if(BUILD_ROCK_TESTS)
   list(APPEND ROCK_COMMONLIB_TEST_TARGETS ROCKConfigurationStoreTests)
   add_rock_test(ROCKConfigurationStoreTests)
 
+  add_executable(ROCKModsConfigSpecTests
+    "${ROOT_DIR}/tests/ModsConfigSpecTests.cpp"
+    "${SOURCE_DIR}/config/RockSettings.cpp"
+    "${SOURCE_DIR}/RockConfigLoad.cpp"
+  )
+  target_compile_features(ROCKModsConfigSpecTests PRIVATE cxx_std_23)
+  target_compile_definitions(ROCKModsConfigSpecTests PRIVATE
+    ROCK_MODS_CONFIG_SPEC="${ROOT_DIR}/data/mod/ModsConfigFO4/Config/ROCK/spec.json")
+  target_link_libraries(ROCKModsConfigSpecTests PRIVATE nlohmann_json::nlohmann_json)
+  list(APPEND ROCK_COMMONLIB_TEST_TARGETS ROCKModsConfigSpecTests)
+  add_rock_test(ROCKModsConfigSpecTests)
+
   add_executable(ROCKSetupWizardTests
     "${ROOT_DIR}/tests/SetupWizardTests.cpp"
     "${SOURCE_DIR}/config/RockSettings.cpp"

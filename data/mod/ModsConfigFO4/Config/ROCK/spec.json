@@ -1,0 +1,1062 @@
+{
+  "minSchemaVersion": 1,
+  "modName": "ROCK",
+  "displayName": "ROCK",
+  "help": "Physical hands: grabbing, weapon handling, recoil, scopes, grenades and the controller layout.",
+  "category": "VR",
+  "specVersion": 1,
+  "f4sePluginRequirements": ["ROCK"],
+  "files": {
+    "config": { "format": "toml", "root": "myGames", "path": "Mods_Config/ROCK/ROCK.toml" }
+  },
+  "defaultFile": "config",
+  "applies": "save",
+  "sharedLists": {
+    "rightControls": [
+      { "value": "trigger", "text": "Trigger" },
+      { "value": "grip", "text": "Grip" },
+      { "value": "a", "text": "A (lower face)" },
+      { "value": "b", "text": "B (upper face)" },
+      { "value": "thumbstick", "text": "Stick / trackpad click" },
+      { "value": "grip_click", "text": "Grip click (Axis2)" },
+      { "value": "axis3", "text": "Axis3 click (bumper)" },
+      { "value": "axis4", "text": "Axis4 click" },
+      { "value": "pad_up", "text": "Trackpad up" },
+      { "value": "pad_down", "text": "Trackpad down" },
+      { "value": "pad_left", "text": "Trackpad left" },
+      { "value": "pad_right", "text": "Trackpad right" },
+      { "value": "pad_center", "text": "Trackpad centre" },
+      { "value": "none", "text": "None" }
+    ],
+    "leftControls": [
+      { "value": "trigger", "text": "Trigger" },
+      { "value": "grip", "text": "Grip" },
+      { "value": "x", "text": "X (lower face)" },
+      { "value": "y", "text": "Y (upper face)" },
+      { "value": "thumbstick", "text": "Stick / trackpad click" },
+      { "value": "grip_click", "text": "Grip click (Axis2)" },
+      { "value": "axis3", "text": "Axis3 click (bumper)" },
+      { "value": "axis4", "text": "Axis4 click" },
+      { "value": "pad_up", "text": "Trackpad up" },
+      { "value": "pad_down", "text": "Trackpad down" },
+      { "value": "pad_left", "text": "Trackpad left" },
+      { "value": "pad_right", "text": "Trackpad right" },
+      { "value": "pad_center", "text": "Trackpad centre" },
+      { "value": "none", "text": "None" }
+    ]
+  },
+  "content": [
+    {
+      "type": "section",
+      "text": "About",
+      "content": [
+        {
+          "type": "text",
+          "text": "ROCK - Realistic Overengineered Character Kinetics - gives you physical hands in Fallout 4 VR. They collide with the world, pick things up, pull them from a distance, hold weapons by their grips, and use grenades and aid items by hand. Changes apply as soon as you save."
+        }
+      ]
+    },
+    { "type": "spacer" },
+    {
+      "type": "section",
+      "text": "Help",
+      "content": [
+        {
+          "type": "button",
+          "text": "ROCK on Nexus Mods",
+          "help": "Opens ROCK's Nexus Mods page in your browser. Take off the headset to read it on your monitor.",
+          "buttonText": "Open",
+          "action": { "type": "OpenURL", "url": "https://www.nexusmods.com/fallout4/mods/108881" }
+        },
+        {
+          "type": "button",
+          "text": "ROCK on GitHub",
+          "help": "Opens ROCK's readme in your browser. Take off the headset to read it on your monitor.",
+          "buttonText": "Open",
+          "action": { "type": "OpenURL", "url": "https://github.com/ArthurHub/FO4VR-ROCK/blob/main/README.md" }
+        },
+        { "type": "spacer" },
+        {
+          "type": "text",
+          "text": "<font color='#10FA78'>Grabbing:</font> Hold grip near an object to pick it up. Point at a far object and hold grip to bring it to you; with Far Grab Style set to Pull, flick your hand toward yourself and catch it.",
+          "html": true
+        },
+        {
+          "type": "text",
+          "text": "<font color='#10FA78'>Weapons:</font> Grab a loose weapon by its firing grip to equip it. Hold the barrel or a support grip with your other hand to aim with both hands. Grab the firing grip with your other hand to switch hands.",
+          "html": true
+        },
+        {
+          "type": "text",
+          "text": "<font color='#10FA78'>Reload and scope:</font> Tap A on the firing hand to reload, hold it to look through the scope (X when you fire with your left hand).",
+          "html": true
+        },
+        {
+          "type": "text",
+          "text": "<font color='#10FA78'>Grenades:</font> Hold B to draw a grenade into your hand, then throw it like a real one.",
+          "html": true
+        },
+        {
+          "type": "text",
+          "text": "<font color='#10FA78'>Bipod:</font> Rest any part of your weapon on a surface and click the right stick to latch it there.",
+          "html": true
+        },
+        {
+          "type": "text",
+          "text": "<font color='#10FA78'>Setup wizard:</font> ROCK's setup wizard picks your controllers and main options. Open it from RobCo PALM's Config, on ROCK's page.",
+          "html": true
+        }
+      ]
+    },
+    { "type": "spacer" },
+    {
+      "type": "section",
+      "text": "Developer",
+      "isCollapsible": true,
+      "collapsed": true,
+      "content": [
+        {
+          "type": "stepper",
+          "valueType": "int",
+          "text": "Log Level",
+          "help": "How much ROCK writes to ROCK.log.",
+          "default": 2,
+          "valueOptions": {
+            "options": [
+              { "value": 2, "text": "Info", "help": "The basic log, for normal play." },
+              { "value": 1, "text": "Debug", "help": "More logs, to find a problem. Can cost frame time." },
+              { "value": 0, "text": "Trace", "help": "A lot of logs, every frame. Slows the game." },
+              { "value": 6, "text": "Off", "help": "No log." }
+            ]
+          },
+          "storage": { "path": ["Logging", "LogLevel"] }
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "pageDisplayName": "Interaction",
+      "help": "How your hands grab, what they highlight, where prompts show, and how aid items are used.",
+      "content": [
+        {
+          "type": "section",
+          "text": "Grabbing",
+          "content": [
+            {
+              "type": "dropdown",
+              "valueType": "int",
+              "text": "Grab Direction",
+              "help": "Which way your hand reaches for objects, near and far. Far grabs also need the object in your view.",
+              "default": 1,
+              "valueOptions": {
+                "options": [
+                  { "value": 1, "text": "Palm Down (HIGGS Style)", "help": "Your hand reaches out of the palm." },
+                  { "value": 2, "text": "Fingers (Alyx Style)", "help": "Your hand reaches along your fingers." }
+                ]
+              },
+              "storage": { "path": ["Grabbing", "GrabDirection"] }
+            },
+            {
+              "type": "dropdown",
+              "valueType": "int",
+              "text": "Far Grab Style",
+              "help": "How a far object comes to your hand. Applies to the next far grab.",
+              "default": 1,
+              "valueOptions": {
+                "options": [
+                  { "value": 1, "text": "Immediate", "help": "Grabbing a far object brings it to your hand at once, with no flick." },
+                  {
+                    "value": 2,
+                    "text": "Pull",
+                    "help": "Hold grab to lock on, then flick your hand toward yourself; release before the flick to cancel. Hold grab to catch it as it arrives."
+                  }
+                ]
+              },
+              "storage": { "path": ["Grabbing", "FarGrabStyle"] }
+            }
+          ]
+        },
+        {
+          "type": "section",
+          "text": "Grab Highlight",
+          "content": [
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "id": "highlightEnabled",
+              "text": "Grab Highlight",
+              "help": "Outlines the object your hand would grab.",
+              "default": true,
+              "storage": { "path": ["SelectionFeedback", "HighlightEnabled"] }
+            },
+            {
+              "type": "stepper",
+              "valueType": "int",
+              "text": "Grab Highlight Strength",
+              "help": "How strong the outline is.",
+              "default": 2,
+              "valueOptions": {
+                "options": [
+                  { "value": 1, "text": "40%" },
+                  { "value": 2, "text": "60%" },
+                  { "value": 3, "text": "80%" },
+                  { "value": 4, "text": "100%" }
+                ]
+              },
+              "enabledWhen": { "setting": "highlightEnabled", "equals": true },
+              "storage": { "path": ["SelectionFeedback", "HighlightIntensityMode"] }
+            },
+            {
+              "type": "dropdown",
+              "valueType": "string",
+              "text": "Grab Highlight Color",
+              "help": "The color of the outline.",
+              "default": "blue",
+              "valueOptions": {
+                "options": [
+                  { "value": "red", "text": "Red" },
+                  { "value": "blue", "text": "Blue" },
+                  { "value": "orange", "text": "Orange" },
+                  { "value": "white", "text": "White" }
+                ]
+              },
+              "enabledWhen": { "setting": "highlightEnabled", "equals": true },
+              "storage": { "path": ["SelectionFeedback", "HighlightColor"] }
+            }
+          ]
+        },
+        {
+          "type": "section",
+          "text": "Prompts and Quick Loot",
+          "content": [
+            {
+              "type": "dropdown",
+              "valueType": "int",
+              "text": "Quick Loot Panel Placement",
+              "help": "Where the container's loot panel shows. Its button hints go with it; the buttons stay on the right controller.",
+              "default": 2,
+              "valueOptions": {
+                "options": [
+                  { "value": 1, "text": "Right Hand", "help": "The game's own panel on the right hand; it lists only what the right hand points at." },
+                  {
+                    "value": 2,
+                    "text": "Closer Hand",
+                    "help": "The panel rides the hand pointing at the container. When both hands point at containers, the closer one takes it."
+                  },
+                  {
+                    "value": 3,
+                    "text": "At Container",
+                    "help": "The panel stands upright at the container, turned toward you. Either hand can point at it."
+                  }
+                ]
+              },
+              "storage": { "path": ["Prompts", "QuickLootPanelPlacement"] }
+            },
+            {
+              "type": "dropdown",
+              "valueType": "int",
+              "text": "Activate Prompt Placement",
+              "help": "Where each hand's prompt (Open, Talk, Take and the rest) shows for what it points at.",
+              "default": 2,
+              "valueOptions": {
+                "options": [
+                  { "value": 1, "text": "Both Hands", "help": "The game's own prompt on each hand; two hands on one door show it twice." },
+                  { "value": 2, "text": "Closer Hand", "help": "When both hands point at the same object, only the closer hand shows its prompt." },
+                  { "value": 3, "text": "At Object", "help": "The prompt stands upright at the object, turned toward you, and shows once." }
+                ]
+              },
+              "storage": { "path": ["Prompts", "ActivatePromptPlacement"] }
+            }
+          ]
+        },
+        {
+          "type": "section",
+          "text": "Immersive Aid",
+          "content": [
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Immersive Aid",
+              "help": "Stimpaks and Med-X sit in a syringe grip and inject after touching your body for half a second. Off: grab them like any object and bring them to your mouth. Grab again to see the change on an item in your hand.",
+              "default": true,
+              "storage": { "path": ["ImmersiveAid", "Enabled"] }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "pageDisplayName": "Weapons",
+      "help": "Equipping and holding weapons, the bipod, steadying your aim, the firing hand, and melee swings.",
+      "content": [
+        {
+          "type": "section",
+          "text": "Handling",
+          "content": [
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "id": "autoEquip",
+              "text": "Auto Equip",
+              "help": "Equips a loose weapon once your palm settles on its firing grip, with no trigger. Off: pull the trigger while holding it. With Auto Equip, letting go always drops the weapon.",
+              "default": true,
+              "storage": { "path": ["WeaponHandling", "AutoEquip"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Auto Equip Settle Time",
+              "help": "How long your palm must stay on the firing grip before Auto Equip equips.",
+              "default": 0.15,
+              "valueOptions": { "min": 0.0, "max": 2.0, "step": 0.05 },
+              "display": { "unit": "s" },
+              "enabledWhen": { "setting": "autoEquip", "equals": true },
+              "storage": { "path": ["WeaponHandling", "AutoEquipSettleSeconds"] }
+            },
+            {
+              "type": "dropdown",
+              "valueType": "int",
+              "text": "Weapon Release Mode",
+              "help": "What happens when the last hand lets go of an equipped weapon. Only with Auto Equip off.",
+              "default": 3,
+              "valueOptions": {
+                "options": [
+                  { "value": 1, "text": "Stays equipped", "help": "It stays equipped and held, as in the game." },
+                  {
+                    "value": 2,
+                    "text": "Stays loose in hand",
+                    "help": "Press grab again and release to drop or stash it, or pull the trigger to equip it again."
+                  },
+                  { "value": 3, "text": "Drops", "help": "It drops where it is, leaving with your hand's motion." }
+                ]
+              },
+              "enabledWhen": { "setting": "autoEquip", "equals": false },
+              "storage": { "path": ["WeaponHandling", "WeaponReleaseMode"] }
+            },
+            {
+              "type": "dropdown",
+              "valueType": "int",
+              "text": "Weapon Grab Mode",
+              "help": "How grab holds a weapon's grips. Parts you only attach to, ordinary objects and surfaces always need grab held.",
+              "default": 1,
+              "valueOptions": {
+                "options": [
+                  { "value": 1, "text": "Toggle both grips", "help": "Press grab to take a grip and press again to let go." },
+                  { "value": 2, "text": "Toggle firing grip only", "help": "The firing grip toggles; support grips must be held." },
+                  { "value": 3, "text": "Hold both grips", "help": "A grip lasts while you hold grab." }
+                ]
+              },
+              "storage": { "path": ["WeaponHandling", "WeaponGrabMode"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Detach Either Hand",
+              "help": "Either hand may let go of the weapon, including the hand on the firing grip; the other hand keeps holding it.",
+              "default": true,
+              "storage": { "path": ["WeaponHandling", "DetachEitherHand"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Grab Anywhere on Weapon",
+              "help": "Your support hand can hold a firearm anywhere. Off: firearms with authored support grips take the support hand only there.",
+              "default": false,
+              "storage": { "path": ["WeaponHandling", "GrabAnywhereOnWeapon"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Gunstock Mode",
+              "help": "Two-handed firearms aim along the line from your firing hand to your support hand, like a rifle with a stock. Melee weapons and bipod-latched weapons are not affected.",
+              "default": false,
+              "storage": { "path": ["WeaponHandling", "GunstockMode"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Firing Grip Reach",
+              "help": "How far from the firing grip a hand can take it over or grab it again, in game units (70 = 1 metre).",
+              "default": 10.0,
+              "valueOptions": { "min": 0.25, "max": 30.0, "step": 0.25 },
+              "storage": { "path": ["WeaponHandling", "FiringGripReattachRadiusGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grip Zone Marker Size",
+              "help": "How big the sphere that marks a weapon's grip zones is, in game units (70 = 1 metre).",
+              "default": 0.7,
+              "valueOptions": { "min": 0.1, "max": 5.0, "step": 0.1 },
+              "storage": { "path": ["WeaponHandling", "GripZoneIndicatorDiameterGameUnits"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "FRIK Weapon Offsets",
+              "help": "Uses the weapon offsets you saved in FRIK, with their weapon scale, instead of ROCK's grip. Weapons with a saved offset use dynamic support grabs only and skip PAPER's reload animations.",
+              "default": false,
+              "storage": { "path": ["WeaponHandling", "FrikUserWeaponOffsets"] }
+            },
+            {
+              "type": "dropdown",
+              "valueType": "int",
+              "text": "Ammo Counter Style",
+              "help": "How the ammo counter of each drawn weapon looks. Every style replaces the game's counter.",
+              "default": 2,
+              "valueOptions": {
+                "options": [
+                  { "value": 1, "text": "Minimal", "help": "White loaded and reserve rounds beside the firing grip, shown while you look at them." },
+                  { "value": 2, "text": "Immersive", "help": "The same place, in the game's HUD color and bracket frame, loaded over reserve." },
+                  { "value": 3, "text": "Vanilla", "help": "The game's counter on the back of the hand holding the weapon, always shown." }
+                ]
+              },
+              "storage": { "path": ["WeaponHandling", "AmmoCounterStyle"] }
+            }
+          ]
+        },
+        {
+          "type": "section",
+          "text": "Bipod",
+          "content": [
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "id": "bipodMode",
+              "text": "Bipod Mode",
+              "help": "Click the right stick to latch an equipped weapon to the surface it touches. While latched, recoil is a fixed 10%. Off: the click is left to other mods.",
+              "default": true,
+              "storage": { "path": ["WeaponHandling", "BipodMode"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Bipod Hands-Free Distance",
+              "help": "A latched weapon stays equipped with no hand on it while your headset is within this distance of the latch. Farther away it is left in place as a world object.",
+              "default": 2.0,
+              "valueOptions": { "min": 0.5, "max": 10.0, "step": 0.1 },
+              "display": { "unit": "m" },
+              "enabledWhen": { "setting": "bipodMode", "equals": true },
+              "storage": { "path": ["WeaponHandling", "BipodHandsFreeRadiusMeters"] }
+            }
+          ]
+        },
+        {
+          "type": "section",
+          "text": "Shake Filtering",
+          "content": [
+            {
+              "type": "stepper",
+              "valueType": "int",
+              "text": "Shake Filtering",
+              "help": "Smooths controller shake on equipped firearms, loose weapons and held objects. Higher steadies more but responds more slowly. Free hands and recoil are not affected.",
+              "default": 3,
+              "valueOptions": {
+                "options": [
+                  { "value": 0, "text": "Off" },
+                  { "value": 1, "text": "Responsive", "help": "12 ms rotation and 6 ms position smoothing." },
+                  { "value": 2, "text": "Balanced", "help": "25 ms rotation and 12 ms position smoothing." },
+                  { "value": 3, "text": "Steady", "help": "45 ms rotation and 22 ms position smoothing." },
+                  { "value": 4, "text": "Heavy", "help": "70 ms rotation and 35 ms position smoothing." }
+                ]
+              },
+              "storage": { "path": ["WeaponHandling", "WeaponFilteringPreset"] }
+            },
+            {
+              "type": "section",
+              "text": "Scoped Filtering",
+              "help": "Extra smoothing while you look through a scope, with or without Shake Filtering. Both at 0 turn it off.",
+              "isCollapsible": true,
+              "collapsed": true,
+              "content": [
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "text": "Scoped Filtering: Rotation",
+                  "help": "Extra rotation smoothing while you look through a scope.",
+                  "default": 0.15,
+                  "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+                  "display": { "unit": "s" },
+                  "storage": { "path": ["WeaponHandling", "ScopedFilterRotationSeconds"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "text": "Scoped Filtering: Position",
+                  "help": "Extra position smoothing while you look through a scope.",
+                  "default": 0.08,
+                  "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+                  "display": { "unit": "s" },
+                  "storage": { "path": ["WeaponHandling", "ScopedFilterTranslationSeconds"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "text": "Scoped Filtering: Release Speed",
+                  "help": "How fast you turn the controller before the scoped smoothing drops to half: holding still gets full smoothing, swinging to a new target loosens it. 0 keeps full smoothing at any speed.",
+                  "default": 45.0,
+                  "valueOptions": { "min": 0.0, "max": 720.0, "step": 5.0 },
+                  "display": { "unit": "°/s" },
+                  "storage": { "path": ["WeaponHandling", "ScopedFilterReleaseDegreesPerSecond"] }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "section",
+          "text": "Firing Hand",
+          "content": [
+            {
+              "type": "dropdown",
+              "valueType": "string",
+              "text": "Default Hand",
+              "help": "The firing hand for equips that come without a hand: favorites, PALM, scripts and other mods. Grenade draws prefer it. Applies on the next equip or draw.",
+              "default": "right",
+              "valueOptions": {
+                "options": [
+                  { "value": "right", "text": "Right" },
+                  { "value": "left", "text": "Left" }
+                ]
+              },
+              "storage": { "path": ["FiringHand", "DefaultHand"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Left Firing Aim: Yaw",
+              "help": "Turns the aim of a weapon fired from the left hand. 0 is the plain mirror of the right-hand hold.",
+              "default": 0.0,
+              "valueOptions": { "min": -30.0, "max": 30.0, "step": 0.5 },
+              "display": { "unit": "°" },
+              "storage": { "path": ["FiringHand", "Left", "AimYawDegrees"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Left Firing Aim: Pitch",
+              "help": "Tilts the aim of a weapon fired from the left hand up or down.",
+              "default": 0.0,
+              "valueOptions": { "min": -30.0, "max": 30.0, "step": 0.5 },
+              "display": { "unit": "°" },
+              "storage": { "path": ["FiringHand", "Left", "AimPitchDegrees"] }
+            }
+          ]
+        },
+        {
+          "type": "section",
+          "text": "Melee",
+          "content": [
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Melee Grip Angle",
+              "help": "Tilts a held melee weapon and your hand together around the grip, on top of ROCK's 30 degree forward tilt. Negative tilts back; -30 gives the weapon's authored angle. Regrab a loose weapon to see it.",
+              "default": 0.0,
+              "valueOptions": { "min": -180.0, "max": 180.0, "step": 1.0 },
+              "display": { "unit": "°" },
+              "storage": { "path": ["WeaponHandling", "MeleeGripPitchDegrees"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Melee Swing Speed",
+              "help": "How fast your hand must move to start a melee swing, in game units per second (70 = 1 metre per second). The game uses 200. Turning the wrist alone never swings.",
+              "default": 300.0,
+              "valueOptions": { "min": 50.0, "max": 2000.0, "step": 10.0 },
+              "storage": { "path": ["NativeGameplay", "VanillaMeleeSwingSpeed"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Gun Bash Speed",
+              "help": "How fast your hand must move to start a gun bash, in game units per second (70 = 1 metre per second). The game uses 200. Turning the wrist alone never bashes.",
+              "default": 400.0,
+              "valueOptions": { "min": 50.0, "max": 2000.0, "step": 10.0 },
+              "storage": { "path": ["NativeGameplay", "VanillaGunBashSpeed"] }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "pageDisplayName": "Recoil",
+      "help": "How much each weapon kicks in your hands.",
+      "content": [
+        {
+          "type": "switcher",
+          "valueType": "bool",
+          "id": "immersiveRecoil",
+          "text": "Immersive Recoil",
+          "help": "Uses the recoil strengths below, for either hand and in power armor. Off: the game's own recoil, on the hand that fires.",
+          "default": true,
+          "storage": { "path": ["WeaponRecoil", "ImmersiveRecoil"] }
+        },
+        {
+          "type": "slider",
+          "valueType": "float",
+          "text": "Laser Recoil",
+          "help": "Recoil of laser weapons in any hold and in power armor: 100 is 10% of the game's kick, 0 is none. A bipod-latched weapon keeps its fixed 10%.",
+          "default": 100.0,
+          "valueOptions": { "min": 0.0, "max": 300.0, "step": 5.0 },
+          "display": { "unit": "%" },
+          "enabledWhen": { "setting": "immersiveRecoil", "equals": true },
+          "storage": { "path": ["WeaponRecoil", "LaserRecoilPercent"] }
+        },
+        {
+          "type": "section",
+          "text": "Recoil Strength by Weapon Type",
+          "help": "Percent of each weapon type's recoil: 0 is none, 100 full, 300 triple. One hand applies without a support grip, two hands with one.",
+          "enabledWhen": { "setting": "immersiveRecoil", "equals": true },
+          "content": [
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Pistol, One Hand",
+              "help": "Recoil of pistols held with one hand.",
+              "default": 300.0,
+              "valueOptions": { "min": 0.0, "max": 300.0, "step": 5.0 },
+              "display": { "unit": "%" },
+              "storage": { "path": ["WeaponRecoil", "PistolOneHandRecoilPercent"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Pistol, Two Hands",
+              "help": "Recoil of pistols held with two hands.",
+              "default": 80.0,
+              "valueOptions": { "min": 0.0, "max": 300.0, "step": 5.0 },
+              "display": { "unit": "%" },
+              "storage": { "path": ["WeaponRecoil", "PistolTwoHandRecoilPercent"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Rifle, One Hand",
+              "help": "Recoil of rifles held with one hand.",
+              "default": 300.0,
+              "valueOptions": { "min": 0.0, "max": 300.0, "step": 5.0 },
+              "display": { "unit": "%" },
+              "storage": { "path": ["WeaponRecoil", "RifleOneHandRecoilPercent"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Rifle, Two Hands",
+              "help": "Recoil of rifles held with two hands.",
+              "default": 80.0,
+              "valueOptions": { "min": 0.0, "max": 300.0, "step": 5.0 },
+              "display": { "unit": "%" },
+              "storage": { "path": ["WeaponRecoil", "RifleTwoHandRecoilPercent"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Shotgun, One Hand",
+              "help": "Recoil of shotguns held with one hand.",
+              "default": 300.0,
+              "valueOptions": { "min": 0.0, "max": 300.0, "step": 5.0 },
+              "display": { "unit": "%" },
+              "storage": { "path": ["WeaponRecoil", "ShotgunOneHandRecoilPercent"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Shotgun, Two Hands",
+              "help": "Recoil of shotguns held with two hands.",
+              "default": 80.0,
+              "valueOptions": { "min": 0.0, "max": 300.0, "step": 5.0 },
+              "display": { "unit": "%" },
+              "storage": { "path": ["WeaponRecoil", "ShotgunTwoHandRecoilPercent"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Heavy, One Hand",
+              "help": "Recoil of heavy weapons held with one hand.",
+              "default": 300.0,
+              "valueOptions": { "min": 0.0, "max": 300.0, "step": 5.0 },
+              "display": { "unit": "%" },
+              "storage": { "path": ["WeaponRecoil", "HeavyOneHandRecoilPercent"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Heavy, Two Hands",
+              "help": "Recoil of heavy weapons held with two hands.",
+              "default": 300.0,
+              "valueOptions": { "min": 0.0, "max": 300.0, "step": 5.0 },
+              "display": { "unit": "%" },
+              "storage": { "path": ["WeaponRecoil", "HeavyTwoHandRecoilPercent"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Other, One Hand",
+              "help": "Recoil of any other firearm held with one hand.",
+              "default": 300.0,
+              "valueOptions": { "min": 0.0, "max": 300.0, "step": 5.0 },
+              "display": { "unit": "%" },
+              "storage": { "path": ["WeaponRecoil", "DefaultOneHandRecoilPercent"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Other, Two Hands",
+              "help": "Recoil of any other firearm held with two hands.",
+              "default": 80.0,
+              "valueOptions": { "min": 0.0, "max": 300.0, "step": 5.0 },
+              "display": { "unit": "%" },
+              "storage": { "path": ["WeaponRecoil", "DefaultTwoHandRecoilPercent"] }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "pageDisplayName": "Scopes and Grenades",
+      "help": "ROCK's scopes on the weapon, and grenades drawn and thrown by hand.",
+      "content": [
+        {
+          "type": "section",
+          "text": "Scopes",
+          "content": [
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "id": "immersiveScopes",
+              "text": "Immersive Scopes",
+              "help": "Places the scope view on the weapon, raises it while you hold the scope button, and corrects the overlay and zoom. Off: the game's own scopes. Turning it on takes the game's scope hook until you restart. Release the scope button before changing it.",
+              "default": true,
+              "storage": { "path": ["Scopes", "EnableImmersiveScopes"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Scope Hold Time",
+              "help": "How long to hold the scope button (A, or X for a left firing hand) before the scope view comes up; a shorter press reloads.",
+              "default": 0.3,
+              "valueOptions": { "min": 0.05, "max": 2.0, "step": 0.05 },
+              "display": { "unit": "s" },
+              "enabledWhen": { "setting": "immersiveScopes", "equals": true },
+              "storage": { "path": ["Scopes", "ManualScopeHoldSeconds"] }
+            }
+          ]
+        },
+        {
+          "type": "section",
+          "text": "Grenades",
+          "content": [
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "id": "immersiveGrenades",
+              "text": "Immersive Grenades",
+              "help": "Hold the grenade button (B) to draw a grenade into your hand and throw it by hand; selecting one in PALM also puts it in your hand. Off: the game's own throw. Release the grenade button before changing it.",
+              "default": true,
+              "storage": { "path": ["Grenades", "ImmersiveGrenades"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grenade Fuse",
+              "help": "Time from pulling the pin to detonation for grenades drawn by hand. 0 uses the grenade's own fuse.",
+              "default": 4.0,
+              "valueOptions": { "min": 0.0, "max": 30.0, "step": 0.5 },
+              "display": { "unit": "s" },
+              "enabledWhen": { "setting": "immersiveGrenades", "equals": true },
+              "storage": { "path": ["Grenades", "RealisticGrenadeFuseSeconds"] }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "pageDisplayName": "Controls",
+      "help": "The buttons ROCK listens for: which function is on which button, and which physical control acts as each button.",
+      "content": [
+        {
+          "type": "switcher",
+          "valueType": "bool",
+          "text": "Block VATS",
+          "help": "Stops the game's VATS from opening on the VATS button (right B). The button still works for ROCK and other mods.",
+          "default": false,
+          "storage": { "path": ["ControllerInput", "SuppressNativeVats"] }
+        },
+        {
+          "type": "switcher",
+          "valueType": "bool",
+          "text": "Offer ROCK's SteamVR Binding",
+          "help": "When Index controllers or Vive wands use SteamVR's default binding, the setup wizard opens by itself once per game start and offers ROCK's binding. It never replaces a binding you chose in SteamVR. Off: the wizard opens only when you open it.",
+          "default": true,
+          "storage": { "path": ["ControllerInput", "OfferSteamVRBinding"] }
+        },
+        {
+          "type": "slider",
+          "valueType": "float",
+          "text": "Pip-Boy and Pause Hold Time",
+          "help": "Tap left Y to open the Pip-Boy; hold it this long to open the Pause menu instead.",
+          "default": 0.35,
+          "valueOptions": { "min": 0.15, "max": 2.0, "step": 0.05 },
+          "display": { "unit": "s" },
+          "storage": { "path": ["ControllerInput", "PipboyPauseHoldSeconds"] }
+        },
+        {
+          "type": "slider",
+          "valueType": "float",
+          "text": "Hold Time",
+          "help": "How long a hold binding needs before it acts, for functions without their own hold time (Scope and Pause have theirs; Grenade uses the game's).",
+          "default": 0.35,
+          "valueOptions": { "min": 0.1, "max": 2.0, "step": 0.05 },
+          "display": { "unit": "s" },
+          "storage": { "path": ["Bindings", "HoldSeconds"] }
+        },
+        {
+          "type": "slider",
+          "valueType": "float",
+          "text": "Double Tap Time",
+          "help": "The longest gap between the two presses of a double tap. A tap on the same control waits this long before it acts.",
+          "default": 0.3,
+          "valueOptions": { "min": 0.15, "max": 0.6, "step": 0.05 },
+          "display": { "unit": "s" },
+          "storage": { "path": ["Bindings", "DoubleTapSeconds"] }
+        },
+        {
+          "type": "section",
+          "text": "Bindings",
+          "help": "The control and gesture of each function, typed as text.",
+          "content": [
+            {
+              "type": "text",
+              "text": "Write each binding as \"hand gesture control\", or \"none\". Add \"+hand control\" for a button that must be held at the same time. Hand: firing (the hand on the weapon's firing grip), support, primary, offhand, left, right, each. Gesture: press (acts while held), tap, hold, double. Control: trigger, grip, a or x, b or y, thumbstick, grip_click, axis3, axis4, pad_up, pad_down, pad_left, pad_right, pad_center. A binding ROCK can't read uses its default."
+            },
+            {
+              "type": "textinput",
+              "valueType": "string",
+              "text": "Grab",
+              "help": "Grab with each hand. Default: each press grip.",
+              "default": "each press grip",
+              "valueOptions": { "maxLength": 64 },
+              "storage": { "path": ["Bindings", "Grab"] }
+            },
+            {
+              "type": "textinput",
+              "valueType": "string",
+              "text": "Fire",
+              "help": "Fire the equipped weapon. Default: firing press trigger.",
+              "default": "firing press trigger",
+              "valueOptions": { "maxLength": 64 },
+              "storage": { "path": ["Bindings", "Fire"] }
+            },
+            {
+              "type": "textinput",
+              "valueType": "string",
+              "text": "Support Trigger",
+              "help": "The support hand's trigger: a second weapon, or the support action of what that hand holds. Default: support press trigger.",
+              "default": "support press trigger",
+              "valueOptions": { "maxLength": 64 },
+              "storage": { "path": ["Bindings", "SupportTrigger"] }
+            },
+            {
+              "type": "textinput",
+              "valueType": "string",
+              "text": "Use",
+              "help": "Use what the primary hand points at: take, open, talk. Default: primary press a.",
+              "default": "primary press a",
+              "valueOptions": { "maxLength": 64 },
+              "storage": { "path": ["Bindings", "Use"] }
+            },
+            {
+              "type": "textinput",
+              "valueType": "string",
+              "text": "Reload",
+              "help": "Reload the equipped weapon. Default: firing tap a.",
+              "default": "firing tap a",
+              "valueOptions": { "maxLength": 64 },
+              "storage": { "path": ["Bindings", "Reload"] }
+            },
+            {
+              "type": "textinput",
+              "valueType": "string",
+              "text": "Scope",
+              "help": "Look through the weapon's scope. Default: firing hold a.",
+              "default": "firing hold a",
+              "valueOptions": { "maxLength": 64 },
+              "storage": { "path": ["Bindings", "Scope"] }
+            },
+            {
+              "type": "textinput",
+              "valueType": "string",
+              "text": "VATS",
+              "help": "Open VATS. Default: primary tap b.",
+              "default": "primary tap b",
+              "valueOptions": { "maxLength": 64 },
+              "storage": { "path": ["Bindings", "Vats"] }
+            },
+            {
+              "type": "textinput",
+              "valueType": "string",
+              "text": "Grenade",
+              "help": "Draw a grenade into the hand. Default: primary hold b.",
+              "default": "primary hold b",
+              "valueOptions": { "maxLength": 64 },
+              "storage": { "path": ["Bindings", "Grenade"] }
+            },
+            {
+              "type": "textinput",
+              "valueType": "string",
+              "text": "Pip-Boy",
+              "help": "Open the Pip-Boy. Default: offhand tap y.",
+              "default": "offhand tap y",
+              "valueOptions": { "maxLength": 64 },
+              "storage": { "path": ["Bindings", "Pipboy"] }
+            },
+            {
+              "type": "textinput",
+              "valueType": "string",
+              "text": "Pause",
+              "help": "Open the Pause menu. Default: offhand hold y.",
+              "default": "offhand hold y",
+              "valueOptions": { "maxLength": 64 },
+              "storage": { "path": ["Bindings", "Pause"] }
+            },
+            {
+              "type": "textinput",
+              "valueType": "string",
+              "text": "Bipod and Favorites",
+              "help": "Bipod latch and placing a held object while the weapon touches a surface, and the game's Favorites menu. Default: primary press thumbstick.",
+              "default": "primary press thumbstick",
+              "valueOptions": { "maxLength": 64 },
+              "storage": { "path": ["Bindings", "StickActions"] }
+            },
+            {
+              "type": "textinput",
+              "valueType": "string",
+              "text": "RobCo PALM",
+              "help": "Open RobCo PALM's wheel. Default: primary press thumbstick.",
+              "default": "primary press thumbstick",
+              "valueOptions": { "maxLength": 64 },
+              "storage": { "path": ["Bindings", "Palm"] }
+            }
+          ]
+        },
+        {
+          "type": "section",
+          "text": "Button Layout",
+          "help": "The physical control that acts as each ROCK button, per hand. ROCK, PALM, PAPER, SCISSORS Redux, FRIK and the game all follow it. Swapping two buttons moves every action of each; stick movement is never remapped.",
+          "isCollapsible": true,
+          "collapsed": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "The defaults are the Quest and Touch layout and change nothing. Controllers whose SteamVR binding merges buttons (Index A reports as grip) need the binding fixed in SteamVR first: ROCK only sees what SteamVR sends."
+            },
+            {
+              "type": "section",
+              "text": "Right Hand",
+              "content": [
+                {
+                  "type": "dropdown",
+                  "valueType": "string",
+                  "text": "Trigger",
+                  "help": "The control that acts as the right trigger.",
+                  "default": "trigger",
+                  "valueOptions": { "sharedOptions": "rightControls" },
+                  "storage": { "path": ["ControllerInput", "Right", "Trigger"] }
+                },
+                {
+                  "type": "dropdown",
+                  "valueType": "string",
+                  "text": "Grab",
+                  "help": "The control that acts as the right grab button.",
+                  "default": "grip",
+                  "valueOptions": { "sharedOptions": "rightControls" },
+                  "storage": { "path": ["ControllerInput", "Right", "Grab"] }
+                },
+                {
+                  "type": "dropdown",
+                  "valueType": "string",
+                  "text": "A",
+                  "help": "The control that acts as right A: reload tap, scope hold.",
+                  "default": "a",
+                  "valueOptions": { "sharedOptions": "rightControls" },
+                  "storage": { "path": ["ControllerInput", "Right", "A"] }
+                },
+                {
+                  "type": "dropdown",
+                  "valueType": "string",
+                  "text": "B",
+                  "help": "The control that acts as right B: grenade draw hold, VATS.",
+                  "default": "b",
+                  "valueOptions": { "sharedOptions": "rightControls" },
+                  "storage": { "path": ["ControllerInput", "Right", "B"] }
+                },
+                {
+                  "type": "dropdown",
+                  "valueType": "string",
+                  "text": "Stick Click",
+                  "help": "The control that acts as the right stick click: bipod latch, and RobCo PALM by default.",
+                  "default": "thumbstick",
+                  "valueOptions": { "sharedOptions": "rightControls" },
+                  "storage": { "path": ["ControllerInput", "Right", "StickClick"] }
+                }
+              ]
+            },
+            {
+              "type": "section",
+              "text": "Left Hand",
+              "content": [
+                {
+                  "type": "dropdown",
+                  "valueType": "string",
+                  "text": "Trigger",
+                  "help": "The control that acts as the left trigger.",
+                  "default": "trigger",
+                  "valueOptions": { "sharedOptions": "leftControls" },
+                  "storage": { "path": ["ControllerInput", "Left", "Trigger"] }
+                },
+                {
+                  "type": "dropdown",
+                  "valueType": "string",
+                  "text": "Grab",
+                  "help": "The control that acts as the left grab button.",
+                  "default": "grip",
+                  "valueOptions": { "sharedOptions": "leftControls" },
+                  "storage": { "path": ["ControllerInput", "Left", "Grab"] }
+                },
+                {
+                  "type": "dropdown",
+                  "valueType": "string",
+                  "text": "X",
+                  "help": "The control that acts as left X: reload tap and scope hold for a left firing hand.",
+                  "default": "x",
+                  "valueOptions": { "sharedOptions": "leftControls" },
+                  "storage": { "path": ["ControllerInput", "Left", "X"] }
+                },
+                {
+                  "type": "dropdown",
+                  "valueType": "string",
+                  "text": "Y",
+                  "help": "The control that acts as left Y: Pip-Boy tap, Pause hold.",
+                  "default": "y",
+                  "valueOptions": { "sharedOptions": "leftControls" },
+                  "storage": { "path": ["ControllerInput", "Left", "Y"] }
+                },
+                {
+                  "type": "dropdown",
+                  "valueType": "string",
+                  "text": "Stick Click",
+                  "help": "The control that acts as the left stick click.",
+                  "default": "thumbstick",
+                  "valueOptions": { "sharedOptions": "leftControls" },
+                  "storage": { "path": ["ControllerInput", "Left", "StickClick"] }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
