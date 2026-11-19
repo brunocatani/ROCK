@@ -90,7 +90,11 @@ namespace rock::native_weapon_fade_suppression
             REL::safe_write(address, kOpaque.data(), kOpaque.size());
             if (!FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<const void*>(address), kOpaque.size()) ||
                 !bytesMatch(kAlphaCommit, kOpaque)) {
-                ROCK_LOG_ERROR(Init, "Native weapon fade suppression could not verify the installed alpha patch");
+                // A reported failure leaves the game's own instructions in place.
+                REL::safe_write(address, kOriginal.data(), kOriginal.size());
+                FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<const void*>(address), kOriginal.size());
+                ROCK_LOG_ERROR(Init,
+                    "Native weapon fade suppression could not verify the installed alpha patch; native bytes restored");
                 return false;
             }
             s_installed = true;
