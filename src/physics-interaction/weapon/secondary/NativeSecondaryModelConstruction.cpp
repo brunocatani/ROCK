@@ -282,16 +282,17 @@ namespace rock::native_secondary_model
         // The four calls reach the native function or another plugin's detour,
         // which the hooks then call through.
         std::array<std::uintptr_t, kCallTargets.size()> callees{};
+        // The live bytes of every site, written back when the install fails: a
+        // call site may already hold another plugin's redirect, not the native call.
+        std::array<std::array<std::uint8_t, 8>, kPatches.size()> before{};
         for (std::size_t i = 0; i < kPatches.size(); ++i) {
             const auto& patch = kPatches[i];
             const auto address = REL::Offset(patch.rva).address();
-            bool valid = false;
+            bool valid = native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), before[i].data(),
+                patch.length);
             if (i < 3) {
-                std::array<std::uint8_t, 8> actual{};
-                valid = native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), actual.data(),
-                            patch.length) &&
-                    std::memcmp(actual.data(), patch.bytes.data(), patch.length) == 0;
-            } else {
+                valid = valid && std::memcmp(before[i].data(), patch.bytes.data(), patch.length) == 0;
+            } else if (valid) {
                 const auto resolved =
                     RPS::Runtime::HookChain::resolveCall(address, REL::Offset(kCallTargets[i - 3]).address());
                 valid = static_cast<bool>(resolved);
@@ -367,8 +368,8 @@ namespace rock::native_secondary_model
                 "collision kept, native biped/graph ownership");
             return true;
         } catch (...) {
-            for (const auto& patch : kPatches)
-                REL::safe_write(REL::Offset(patch.rva).address(), patch.bytes.data(), patch.length);
+            for (std::size_t i = 0; i < kPatches.size(); ++i)
+                REL::safe_write(REL::Offset(kPatches[i].rva).address(), before[i].data(), kPatches[i].length);
             FlushInstructionCache(GetCurrentProcess(), nullptr, 0);
             ROCK_LOG_ERROR(Init, "Secondary native model installation failed; original instructions restored");
             return false;
