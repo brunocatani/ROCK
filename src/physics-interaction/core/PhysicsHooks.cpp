@@ -1572,12 +1572,26 @@ namespace rock
         static REL::Relocation<std::uintptr_t> target{ REL::Offset(offsets::kFunc_VRGrabInitiate) };
         auto* addr = reinterpret_cast<std::uint8_t*>(target.address());
 
+        // FO4VR 1.2.72 entry: mov [rsp+20h],r9d; mov [rsp+10h],edx; push rbp; push rbx; push rsi; push rdi.
+        // Another plugin's detour at the entry is accepted as well: the three bytes written below return
+        // before any jump there runs, so native grab is disabled either way. Anything else is not this
+        // function, and nothing is written.
+        constexpr std::array<std::uint8_t, 13> kNativeEntry{ 0x44, 0x89, 0x4C, 0x24, 0x20, 0x89, 0x54, 0x24, 0x10, 0x55,
+            0x53, 0x56, 0x57 };
+        if (!native_code::entryIsNativeOrDetoured(offsets::kFunc_VRGrabInitiate, kNativeEntry)) {
+            ROCK_LOG_ERROR(Init,
+                "VR Grab Initiate at 0x{:X} not patched: entry bytes differ from FO4VR 1.2.72; native grab stays enabled",
+                target.address());
+            return;
+        }
+
         DWORD oldProtect;
         if (VirtualProtect(addr, 3, kPageExecuteReadWrite, &oldProtect)) {
             addr[0] = 0x31;
             addr[1] = 0xC0;
             addr[2] = 0xC3;
             VirtualProtect(addr, 3, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), addr, 3);
             ROCK_LOG_INFO(Init, "Patched VR Grab Initiate at 0x{:X} — native grab DISABLED (xor eax,eax; ret)",
                 target.address());
         } else {
