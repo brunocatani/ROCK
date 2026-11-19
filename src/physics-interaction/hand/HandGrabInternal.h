@@ -541,14 +541,7 @@ namespace rock::hand_grab_internal
 
     inline float rotationDeltaDegrees(const RE::NiMatrix3& a, const RE::NiMatrix3& b)
     {
-        const RE::NiMatrix3 delta = a.Transpose() * b;
-        float cosTheta = (delta.entry[0][0] + delta.entry[1][1] + delta.entry[2][2] - 1.0f) * 0.5f;
-        if (cosTheta < -1.0f) {
-            cosTheta = -1.0f;
-        } else if (cosTheta > 1.0f) {
-            cosTheta = 1.0f;
-        }
-        return std::acos(cosTheta) * (180.0f / 3.14159265358979323846f);
+        return transform_math::rotationDeltaDegrees(a, b);
     }
 
     struct GrabCaptureTransformRefreshSample

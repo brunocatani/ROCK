@@ -969,14 +969,7 @@ namespace rock::native_idle_grip_preharvest
 
         [[nodiscard]] float rotationDeltaDegrees(const RE::NiTransform& left, const RE::NiTransform& right) noexcept
         {
-            float trace = 0.0f;
-            for (std::size_t row = 0; row < 3; ++row) {
-                for (std::size_t column = 0; column < 3; ++column) {
-                    trace += left.rotate.entry[row][column] * right.rotate.entry[row][column];
-                }
-            }
-            const float cosine = std::clamp((trace - 1.0f) * 0.5f, -1.0f, 1.0f);
-            return std::acos(cosine) * 180.0f / std::numbers::pi_v<float>;
+            return transform_math::rotationDeltaDegrees(left.rotate, right.rotate);
         }
 
         void accumulateHandPoseDelta(const RE::NiTransform& baselineHand,
