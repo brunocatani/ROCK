@@ -158,8 +158,8 @@ namespace rock
 
     void Hand::clearGrabAuthorityProxyRuntimeLocked()
     {
-        _consumerPairCount = 0;
-        _releaseObjectSample = {};
+        _consumerPairSet.count = 0;
+        _release.objectSample = {};
         _grabAuthorityProxyBhkWorld = nullptr;
         _grabAuthorityProxyHknpWorld = nullptr;
         _grabAuthorityPivotAProxyLocalGame = {};
@@ -203,7 +203,7 @@ namespace rock
 
     void Hand::abandonGrabAuthorityProxyLocked()
     {
-        _consumerPairLeases.abandonWorld();
+        _consumerPairSet.leases.abandonWorld();
         _grabAuthorityProxy.reset();
         clearGrabAuthorityProxyRuntimeLocked();
     }
@@ -962,7 +962,7 @@ namespace rock
         std::scoped_lock lock(_grabAuthorityProxyMutex);
         const bool hasAuthority = _grabAuthorityProxy.isValid() && _grabAuthorityProxyHknpWorld == world &&
             _hasLastAppliedGrabAuthorityProxyWorld;
-        _releaseObjectSample = {};
+        _release.objectSample = {};
         if (!hasAuthority || !timing.valid || timing.usedFallback) {
             return;
         }
@@ -972,7 +972,7 @@ namespace rock
             ? havok_runtime::getMotion(world, body->motionIndex)
             : nullptr;
         if (motion) {
-            _releaseObjectSample = { world, _savedObjectState.bodyId.value, _grabFrame.traceId, timing.solveSequence,
+            _release.objectSample = { world, _savedObjectState.bodyId.value, _grabFrame.traceId, timing.solveSequence,
                 release_velocity::sampleTimeSeconds(),
                 { motion->linearVelocity.x, motion->linearVelocity.y, motion->linearVelocity.z } };
         }

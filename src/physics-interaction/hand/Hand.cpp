@@ -229,15 +229,15 @@ namespace rock
         _boneColliders.reset();
         _handBody.reset();
         _currentSelection.clear();
-        _cachedFarCandidate.clear();
+        _selectionTracking.cachedFarCandidate.clear();
         clearGrabAcquisitionCache("reset");
         _gestureSelection.root.reset();
         _gestureSelection.collisionOwner = 0;
         _gestureSelection.anchor = {};
-        _farDetectCounter = 0;
-        _selectionHoldSeconds = 0.0f;
-        _deselectCooldown = 0;
-        _lastDeselectedRef = nullptr;
+        _selectionTracking.farDetectCounter = 0;
+        _selectionTracking.holdSeconds = 0.0f;
+        _selectionTracking.deselectCooldown = 0;
+        _selectionTracking.lastDeselectedRef = nullptr;
         {
             std::scoped_lock writeLock(_semanticContactSet.writeMutex);
             _touchBodyId.store(hand_semantic_contact_state::kInvalidBodyId, std::memory_order_release);
@@ -307,10 +307,10 @@ namespace rock
         _selectedClose.lastOrigin = {};
         _selectedClose.hasLastOrigin = false;
         _selectedClose.handSpeedMetersPerSecond = 0.0f;
-        _controllerReleaseHistory.clear();
-        _objectReleaseHistory.clear();
-        _releaseObjectNotBefore = release_velocity::sampleTimeSeconds();
-        _releaseControllerFrame = 0;
+        _release.controllerHistory.clear();
+        _release.objectHistory.clear();
+        _release.objectNotBefore = release_velocity::sampleTimeSeconds();
+        _release.controllerFrame = 0;
         _previousHeld.rawHandWorld = {};
         _previousHeld.roomWorld = {};
         _previousHeld.roomSource = nullptr;
@@ -852,7 +852,7 @@ namespace rock
         stopSelectionHighlight();
         _currentSelection = selection;
         applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::SelectionFoundClose });
-        _selectionHoldSeconds = 0.0f;
+        _selectionTracking.holdSeconds = 0.0f;
         clearSelectedCloseFingerPose();
         playSelectionHighlight(_currentSelection);
 
@@ -1029,9 +1029,9 @@ namespace rock
 
         stopSelectionHighlight();
         _currentSelection = replacement;
-        _cachedFarCandidate = replacement;
+        _selectionTracking.cachedFarCandidate = replacement;
         applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::SelectionFoundFar });
-        _selectionHoldSeconds = 0.0f;
+        _selectionTracking.holdSeconds = 0.0f;
         playSelectionHighlight(_currentSelection);
 
         ROCK_LOG_DEBUG(Hand,
@@ -1143,7 +1143,7 @@ namespace rock
         stopSelectionHighlight();
         _currentSelection = selection;
         applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::SelectionFoundClose });
-        _selectionHoldSeconds = 0.0f;
+        _selectionTracking.holdSeconds = 0.0f;
         clearSelectedCloseFingerPose();
 
         ROCK_LOG_DEBUG(Hand, "{} hand force-grab selection acquired: target={:08X} body={} reason={} distance={:.1f}",
@@ -2049,7 +2049,7 @@ namespace rock
         if (!transition.accepted) {
             return false;
         }
-        _selectionHoldSeconds = 0.0f;
+        _selectionTracking.holdSeconds = 0.0f;
         ROCK_LOG_DEBUG(Hand, "{} hand locked far selection formID={:08X} dist={:.1f}", handName(),
             _currentSelection.refr ? _currentSelection.refr->GetFormID() : 0, _currentSelection.distance);
         return true;
@@ -2144,11 +2144,11 @@ namespace rock
         stopSelectionHighlight();
         clearSelectedCloseFingerPose();
         if (rememberDeselect) {
-            _lastDeselectedRef = _currentSelection.refr;
-            _deselectCooldown = 10;
+            _selectionTracking.lastDeselectedRef = _currentSelection.refr;
+            _selectionTracking.deselectCooldown = 10;
         }
         _currentSelection.clear();
-        _cachedFarCandidate.clear();
+        _selectionTracking.cachedFarCandidate.clear();
         clearGrabAcquisitionCache(rememberDeselect ? "selection-cleared-remembered" : "selection-cleared");
         clearPullRuntimeState(true, rememberDeselect ? "selection-cleared-remembered" : "selection-cleared");
         clearPullCatchIntent(rememberDeselect ? "selectionClearedRemembered" : "selectionCleared");
@@ -2156,7 +2156,7 @@ namespace rock
         _selectedClose.lastOrigin = {};
         _selectedClose.hasLastOrigin = false;
         _selectedClose.handSpeedMetersPerSecond = 0.0f;
-        _selectionHoldSeconds = 0.0f;
+        _selectionTracking.holdSeconds = 0.0f;
     }
 
     std::size_t Hand::getPinkyOperatingProbes(std::array<RE::NiPoint3, 2>& outProbes) const
@@ -2217,8 +2217,8 @@ namespace rock
             // the candidate cached before it must not come back when they
             // resume: after a trigger equip it was the weapon just moved into
             // the inventory, far-selected and highlighted for the minimum hold.
-            _cachedFarCandidate.clear();
-            _farDetectCounter = 0;
+            _selectionTracking.cachedFarCandidate.clear();
+            _selectionTracking.farDetectCounter = 0;
             return;
         }
 
@@ -2234,7 +2234,7 @@ namespace rock
              * the claimed pulled object or restart the far-pull path.
              */
             if (_currentSelection.isValid()) {
-                _selectionHoldSeconds += measuredSelectionDelta;
+                _selectionTracking.holdSeconds += measuredSelectionDelta;
                 refreshSelectionHighlight(_currentSelection);
                 updateGrabAcquisitionCache(bhkWorld, hknpWorld);
             }
@@ -2250,7 +2250,7 @@ namespace rock
              * root and lose the far-only clothing authority.
              */
             if (_currentSelection.isValid()) {
-                _selectionHoldSeconds += measuredSelectionDelta;
+                _selectionTracking.holdSeconds += measuredSelectionDelta;
                 refreshSelectionHighlight(_currentSelection);
                 updateGrabAcquisitionCache(bhkWorld, hknpWorld);
             }
@@ -2296,35 +2296,35 @@ namespace rock
 
         const bool farSelectionQueryReady = !farHmdConeGate.enabled || farHmdConeGate.hasHmdFrame;
         if (!farSelectionQueryReady) {
-            _cachedFarCandidate.clear();
-            _farDetectCounter = 0;
+            _selectionTracking.cachedFarCandidate.clear();
+            _selectionTracking.farDetectCounter = 0;
         }
 
         SelectedObject farCandidate;
         if (farSelectionQueryReady) {
-            _farDetectCounter++;
-            if (_farDetectCounter >= 3) {
-                _farDetectCounter = 0;
+            _selectionTracking.farDetectCounter++;
+            if (_selectionTracking.farDetectCounter >= 3) {
+                _selectionTracking.farDetectCounter = 0;
                 farCandidate = findFarObject(bhkWorld, hknpWorld, selectionOrigin, farSelectionDirection,
                     farHmdConeGate, otherHandContext);
-                _cachedFarCandidate = farCandidate;
+                _selectionTracking.cachedFarCandidate = farCandidate;
             } else {
-                farCandidate = _cachedFarCandidate;
+                farCandidate = _selectionTracking.cachedFarCandidate;
                 if (!selectedObjectPassesFarHmdCone(hknpWorld, farCandidate, farHmdConeGate)) {
                     farCandidate.clear();
-                    _cachedFarCandidate.clear();
+                    _selectionTracking.cachedFarCandidate.clear();
                 }
             }
         }
 
-        if (_deselectCooldown > 0) {
-            _deselectCooldown--;
-            if (nearCandidate.refr == _lastDeselectedRef)
+        if (_selectionTracking.deselectCooldown > 0) {
+            _selectionTracking.deselectCooldown--;
+            if (nearCandidate.refr == _selectionTracking.lastDeselectedRef)
                 nearCandidate.clear();
-            if (farCandidate.refr == _lastDeselectedRef)
+            if (farCandidate.refr == _selectionTracking.lastDeselectedRef)
                 farCandidate.clear();
-            if (_deselectCooldown == 0)
-                _lastDeselectedRef = nullptr;
+            if (_selectionTracking.deselectCooldown == 0)
+                _selectionTracking.lastDeselectedRef = nullptr;
         }
 
         if (_currentSelection.isValid() && _currentSelection.isFarSelection) {
@@ -2349,7 +2349,7 @@ namespace rock
                 best.hasSelectionScore ? best.selectionScore : (std::numeric_limits<float>::infinity)();
             if (selection_query_policy::shouldKeepCurrentCloseSelectionAgainstCandidate(currentScore, candidateScore,
                     _currentSelection.distance, best.distance)) {
-                _selectionHoldSeconds += measuredSelectionDelta;
+                _selectionTracking.holdSeconds += measuredSelectionDelta;
                 refreshSelectionHighlight(_currentSelection);
                 updateGrabAcquisitionCache(bhkWorld, hknpWorld);
                 return;
@@ -2371,7 +2371,7 @@ namespace rock
                     handName(), best.isFarSelection ? "far" : "near", best.refr ? best.refr->GetFormID() : 0,
                     best.bodyId.value, best.distance, best.signedAlongDistance, best.lateralDistance);
             }
-            _selectionHoldSeconds += measuredSelectionDelta;
+            _selectionTracking.holdSeconds += measuredSelectionDelta;
             if (refreshedSource) {
                 playSelectionHighlight(_currentSelection);
             } else {
@@ -2405,7 +2405,7 @@ namespace rock
             applyTransition(
                 HandTransitionRequest{ .event = best.isFarSelection ? HandInteractionEvent::SelectionFoundFar
                                                                     : HandInteractionEvent::SelectionFoundClose });
-            _selectionHoldSeconds = 0.0f;
+            _selectionTracking.holdSeconds = 0.0f;
 
             playSelectionHighlight(_currentSelection);
         } else if (_currentSelection.isValid()) {
@@ -2413,8 +2413,8 @@ namespace rock
             // 90 Hz tuning baseline), rate-independent in seconds.
             constexpr float MIN_HOLD_SECONDS = 15.0f / 90.0f;
 
-            if (_selectionHoldSeconds < MIN_HOLD_SECONDS) {
-                _selectionHoldSeconds += measuredSelectionDelta;
+            if (_selectionTracking.holdSeconds < MIN_HOLD_SECONDS) {
+                _selectionTracking.holdSeconds += measuredSelectionDelta;
                 refreshSelectionHighlight(_currentSelection);
                 return;
             }
@@ -2451,7 +2451,7 @@ namespace rock
                     _currentSelection.clear();
                     clearGrabAcquisitionCache("selection-anchor-lost");
                     applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::SelectionLost });
-                    _selectionHoldSeconds = 0.0f;
+                    _selectionTracking.holdSeconds = 0.0f;
                     clearSelectedCloseFingerPose();
                     return;
                 }
@@ -2462,12 +2462,12 @@ namespace rock
 
             const bool keepAfterMiss =
                 selection_query_policy::shouldKeepSelectionAfterMiss(_currentSelection.isFarSelection,
-                    _selectionHoldSeconds, MIN_HOLD_SECONDS, _currentSelection.distance, hysteresisRange);
+                    _selectionTracking.holdSeconds, MIN_HOLD_SECONDS, _currentSelection.distance, hysteresisRange);
 
             if (refInvalid || !keepAfterMiss) {
                 ROCK_LOG_DEBUG(Hand, "{} hand cleared (formID={:08X}, dist={:.1f}, held={:.3f}s)", handName(),
                     _currentSelection.refr ? _currentSelection.refr->GetFormID() : 0, _currentSelection.distance,
-                    _selectionHoldSeconds);
+                    _selectionTracking.holdSeconds);
                 clearSelectionState(true);
             } else {
                 refreshSelectionHighlight(_currentSelection);
@@ -2691,7 +2691,7 @@ namespace rock
 
         stopSelectionHighlight();
         _currentSelection = best;
-        _selectionHoldSeconds = 0.0f;
+        _selectionTracking.holdSeconds = 0.0f;
         clearSelectedCloseFingerPose();
 
         ROCK_LOG_DEBUG(Hand,

@@ -428,10 +428,10 @@ namespace rock
         } else {
             _grabFrame.motorFadeReason = "none";
         }
-        _controllerReleaseHistory.clear();
-        _objectReleaseHistory.clear();
-        _releaseObjectNotBefore = release_velocity::sampleTimeSeconds();
-        _releaseControllerFrame = 0;
+        _release.controllerHistory.clear();
+        _release.objectHistory.clear();
+        _release.objectNotBefore = release_velocity::sampleTimeSeconds();
+        _release.controllerFrame = 0;
         _previousHeld.rawHandWorld = {};
         _previousHeld.roomWorld = {};
         _previousHeld.roomSource = nullptr;
@@ -850,12 +850,12 @@ namespace rock
             return false;
         }
 
-        _ragdollGrabOwner.reset(grab_target::requiresNativeBodyOwnership(sel.targetKind)
+        _ragdollGrab.owner.reset(grab_target::requiresNativeBodyOwnership(sel.targetKind)
                 ? havok_runtime::getCollisionObjectFromBody(world, _savedObjectState.bodyId)
                 : nullptr);
-        _ragdollGrabSurface.reset(
+        _ragdollGrab.surface.reset(
             grab_target::requiresNativeBodyOwnership(sel.targetKind) ? input.surface->surfaceHit.sourceShape : nullptr);
-        _ragdollGrabTriangle = input.surface->surfaceHit.sourceTriangleIndex;
+        _ragdollGrab.triangle = input.surface->surfaceHit.sourceTriangleIndex;
         _heldObjectIsLooseWeapon = looseWeaponGrab;
         const auto massSummaryAtGrab = readHeldBodyMassSummary(world, _savedObjectState.bodyId, _heldBodyIds,
             _heldDriveDecision.includeConnectedMass);

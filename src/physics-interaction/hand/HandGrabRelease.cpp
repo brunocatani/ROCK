@@ -103,7 +103,7 @@ namespace rock
     {
         // The weapon rode the hand, so the hand's motion is also the weapon's;
         // there is no held body with a solved velocity of its own.
-        const auto handHistory = _controllerReleaseHistory.peaks(runtime_state::currentFrame().timing.elapsedGameSeconds);
+        const auto handHistory = _release.controllerHistory.peaks(runtime_state::currentFrame().timing.elapsedGameSeconds);
         if (handHistory.count == 0)
             return {};
         const auto motion = composeReleaseMotion(handHistory, handHistory, false, leverGameUnits);
@@ -157,8 +157,8 @@ namespace rock
             releaseContext.reason ? releaseContext.reason : "none", _grabFrame.traceId, callerFile, caller.line());
 
         const auto releaseTime = runtime_state::currentFrame().timing.elapsedGameSeconds;
-        const auto objectHistory = _objectReleaseHistory.peaks(release_velocity::sampleTimeSeconds());
-        const auto handHistory = _controllerReleaseHistory.peaks(releaseTime);
+        const auto objectHistory = _release.objectHistory.peaks(release_velocity::sampleTimeSeconds());
+        const auto handHistory = _release.controllerHistory.peaks(releaseTime);
         const bool captureReleaseVelocity = !grab_target::requiresNativeBodyOwnership(_savedObjectState.targetKind) &&
             (releaseContext.disposition == GrabReleaseDisposition::PhysicalDrop ||
                 releaseContext.disposition == GrabReleaseDisposition::PendingInventoryTransfer ||
@@ -321,8 +321,8 @@ namespace rock
         (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
         clearGrabExternalHandWorldTransform(_isLeft);
         clearSelectedCloseFingerPose();
-        _ragdollGrabOwner.reset();
-        _ragdollGrabSurface.reset();
+        _ragdollGrab.owner.reset();
+        _ragdollGrab.surface.reset();
         _savedObjectState.clear();
         _activeGrabLifecycle.clear();
         _activeConstraint.clear();
@@ -366,10 +366,10 @@ namespace rock
         _grabPoseQualityUpdatesRemaining = -1;
         _grabPoseReplay.reset();
         _grabFingers.hasPose = false;
-        _controllerReleaseHistory.clear();
-        _objectReleaseHistory.clear();
-        _releaseObjectNotBefore = release_velocity::sampleTimeSeconds();
-        _releaseControllerFrame = 0;
+        _release.controllerHistory.clear();
+        _release.objectHistory.clear();
+        _release.objectNotBefore = release_velocity::sampleTimeSeconds();
+        _release.controllerFrame = 0;
         _previousHeld.rawHandWorld = {};
         _previousHeld.roomWorld = {};
         _previousHeld.roomSource = nullptr;

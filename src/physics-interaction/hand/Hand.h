@@ -889,10 +889,14 @@ namespace rock
         held_object_target::Lease _consumerObjectTarget{};
         // Pair requests share the existing grab-drive mutex. Native pair
         // reconciliation runs only at pre-collide, never in a provider call.
-        HavokPairCollisionLeaseSet _consumerPairLeases{};
-        std::array<HavokPairCollisionLeaseSet::DesiredPair, 34> _consumerPairs{};
-        std::size_t _consumerPairCount{};
-        std::uint64_t _consumerPairsExpire{};
+        struct ConsumerPairSet
+        {
+            HavokPairCollisionLeaseSet leases{};
+            std::array<HavokPairCollisionLeaseSet::DesiredPair, 34> desired{};
+            std::size_t count{};
+            std::uint64_t expire{};
+        };
+        ConsumerPairSet _consumerPairSet;
         std::uint64_t runtimeFrameForObjectTarget() const;
         struct HeldDriveUpdate;
         bool validateSelectedGrab(RE::hknpWorld* world, const GrabSharedObjectContext& sharedContext,
@@ -1115,15 +1119,20 @@ namespace rock
             selection_query_policy::BodyLocalSelectionAnchor anchor{};
         };
         GestureSelection _gestureSelection;
-        SelectedObject _cachedFarCandidate;
+        // How the current selection was found and how long it has lasted.
+        struct SelectionTracking
+        {
+            SelectedObject cachedFarCandidate;
+            int farDetectCounter = 0;
+            // Elapsed time the current selection has been held (rate-independent
+            // minimum-hold and hysteresis windows consume seconds).
+            float holdSeconds = 0.0f;
+            int deselectCooldown = 0;
+            RE::TESObjectREFR* lastDeselectedRef = nullptr;
+        };
+        SelectionTracking _selectionTracking;
         GrabAcquisitionCache _grabAcquisitionCache;
-        int _farDetectCounter = 0;
-        // Elapsed time the current selection has been held (rate-independent
-        // minimum-hold and hysteresis windows consume seconds).
-        float _selectionHoldSeconds = 0.0f;
         int _selectionHighlightRefreshFrames = 0;
-        int _deselectCooldown = 0;
-        RE::TESObjectREFR* _lastDeselectedRef = nullptr;
 
         std::atomic<int> _heldBodyContactFrame{ 100 };
         held_placement_policy::SurfaceContactState _heldSurfaceContact;
@@ -1375,9 +1384,14 @@ namespace rock
         grab_three_phase::AcquisitionPhase _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
         grab_three_phase::ObjectGripArea _grabObjectGripAtGrab{};
         held_object_drive_policy::HeldBodySetDriveDecision _heldDriveDecision{};
-        RE::NiPointer<RE::NiCollisionObject> _ragdollGrabOwner;
-        RE::NiPointer<RE::BSTriShape> _ragdollGrabSurface;
-        std::uint32_t _ragdollGrabTriangle = 0;
+        // The collision owner and skinned surface triangle a ragdoll grab holds.
+        struct RagdollGrab
+        {
+            RE::NiPointer<RE::NiCollisionObject> owner;
+            RE::NiPointer<RE::BSTriShape> surface;
+            std::uint32_t triangle = 0;
+        };
+        RagdollGrab _ragdollGrab;
         held_object_drive_policy::HeldBodySetDriveDecision _pullDriveDecision{};
         // Root body of count-based loose ammo, carried rigidly with the held
         // visible branch body. Body IDs only; cleared at every grab start and release.
@@ -1534,12 +1548,6 @@ namespace rock
         };
         SelectedClose _selectedClose;
 
-        release_velocity::History<RE::NiPoint3> _controllerReleaseHistory;
-        release_velocity::History<RE::NiPoint3> _objectReleaseHistory;
-        std::uint64_t _releaseControllerFrame = 0; // Game thread only.
-
-        // Physics writes and the game thread copies under the existing proxy
-        // mutex. Identity, velocity and capture time belong to one solve.
         struct ReleaseObjectSample
         {
             RE::hknpWorld* world = nullptr; // Identity only, never dereferenced by readback.
@@ -1548,9 +1556,19 @@ namespace rock
             std::uint64_t solve = 0;
             double capturedAt = 0.0;
             RE::NiPoint3 velocity{};
-        } _releaseObjectSample;
-
-        double _releaseObjectNotBefore = 0.0; // Game thread rebase boundary.
+        };
+        // The motion history a release turns into the thrown object's velocity.
+        struct ReleaseTracking
+        {
+            release_velocity::History<RE::NiPoint3> controllerHistory;
+            release_velocity::History<RE::NiPoint3> objectHistory;
+            std::uint64_t controllerFrame = 0; // Game thread only.
+            // Physics writes and the game thread copies under the existing proxy
+            // mutex. Identity, velocity and capture time belong to one solve.
+            ReleaseObjectSample objectSample;
+            double objectNotBefore = 0.0; // Game thread rebase boundary.
+        };
+        ReleaseTracking _release;
         // The previous held-object update's hand sample.
         struct PreviousHeldSample
         {

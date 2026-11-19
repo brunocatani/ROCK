@@ -160,18 +160,18 @@ namespace rock
         const game_frame_timing_policy::GameFrameTiming& timing)
     {
         HeldHandMotionSample handMotion{};
-        const auto admission = release_velocity::admitControllerSample(_releaseControllerFrame, timing);
+        const auto admission = release_velocity::admitControllerSample(_release.controllerFrame, timing);
         if (admission.duplicate)
             return handMotion;
-        _releaseControllerFrame = timing.sequence;
+        _release.controllerFrame = timing.sequence;
         if (admission.rebase) {
             if (_previousHeld.valid && timing.discontinuity && timing.valid) {
                 ROCK_LOG_SAMPLE_WARN(Hand, 1000, "{} throw history rebased after timing discontinuity rawDt={:.4f}",
                     handName(), timing.rawDeltaSeconds);
             }
-            _controllerReleaseHistory.clear();
-            _objectReleaseHistory.clear();
-            _releaseObjectNotBefore = release_velocity::sampleTimeSeconds();
+            _release.controllerHistory.clear();
+            _release.objectHistory.clear();
+            _release.objectNotBefore = release_velocity::sampleTimeSeconds();
             _previousHeld.valid = false;
         }
         const float deltaTime = admission.deltaSeconds;
@@ -201,7 +201,7 @@ namespace rock
             const RE::NiPoint3 locomotionVelocityHavok = scalePoint(
                 gamePointToHavokPoint(playerSpace.world.translate - _previousHeld.roomWorld.translate),
                 1.0f / deltaTime);
-            _controllerReleaseHistory.append(timing.sequence, timing.elapsedGameSeconds,
+            _release.controllerHistory.append(timing.sequence, timing.elapsedGameSeconds,
                 handMotion.localLinearVelocityHavok, handMotion.angularVelocityRadiansPerSecond,
                 locomotionVelocityHavok);
         }
@@ -223,14 +223,14 @@ namespace rock
         ReleaseObjectSample sample{};
         {
             std::scoped_lock lock(_grabAuthorityProxyMutex);
-            sample = _releaseObjectSample;
+            sample = _release.objectSample;
         }
         if (sample.world != world || sample.bodyId != _savedObjectState.bodyId.value ||
-            sample.grabTrace != _grabFrame.traceId || !_objectReleaseHistory.needsSource(sample.solve) ||
-            !release_velocity::usablePhysicsSample(sample.solve, sample.capturedAt, _releaseObjectNotBefore,
+            sample.grabTrace != _grabFrame.traceId || !_release.objectHistory.needsSource(sample.solve) ||
+            !release_velocity::usablePhysicsSample(sample.solve, sample.capturedAt, _release.objectNotBefore,
                 release_velocity::sampleTimeSeconds()))
             return;
-        _objectReleaseHistory.append(sample.solve, sample.capturedAt, sample.velocity);
+        _release.objectHistory.append(sample.solve, sample.capturedAt, sample.velocity);
     }
 
     void Hand::captureHeldReleaseMotion(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform,
@@ -345,14 +345,14 @@ namespace rock
         }
         segment_visibility::VisibleRanges visible{};
         std::uint32_t triangles = 0;
-        const bool surfaceVisible = _ragdollGrabSurface && (_ragdollGrabSurface->flags.flags & 1) == 0 &&
-            native_memory::tryReadField(_ragdollGrabSurface.get(), VROffset::numTriangles, triangles) &&
-            readVisibleTriangleRanges(_ragdollGrabSurface.get(), triangles, visible) &&
-            visible.contains(_ragdollGrabTriangle);
-        if (!component.valid || !sameNode || !surfaceVisible || liveOwner != _ragdollGrabOwner.get() ||
+        const bool surfaceVisible = _ragdollGrab.surface && (_ragdollGrab.surface->flags.flags & 1) == 0 &&
+            native_memory::tryReadField(_ragdollGrab.surface.get(), VROffset::numTriangles, triangles) &&
+            readVisibleTriangleRanges(_ragdollGrab.surface.get(), triangles, visible) &&
+            visible.contains(_ragdollGrab.triangle);
+        if (!component.valid || !sameNode || !surfaceVisible || liveOwner != _ragdollGrab.owner.get() ||
             component.count > MAX_HELD_BODIES) {
             ROCK_LOG_WARN(Hand, "{} ragdoll hold ended: body={} stage={} ownerMatch={} surfaceVisible={}", handName(),
-                _savedObjectState.bodyId.value, component.reason, liveOwner == _ragdollGrabOwner.get(), surfaceVisible);
+                _savedObjectState.bodyId.value, component.reason, liveOwner == _ragdollGrab.owner.get(), surfaceVisible);
             releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
             return false;
         }
@@ -523,18 +523,18 @@ namespace rock
             r[2] * (r[3] * r[7] - r[4] * r[6]);
         if (determinant < .999f)
             return api::Status::InvalidArgument;
-        if (_heldBodyIds.size() * weaponBodies.size() > _consumerPairs.size())
+        if (_heldBodyIds.size() * weaponBodies.size() > _consumerPairSet.desired.size())
             return api::Status::CapacityFull;
         const auto status =
             _consumerObjectTarget.set(owner, heldGrabIdentity(), runtimeFrameForObjectTarget(), request);
         if (status != api::Status::Ok)
             return status;
         std::scoped_lock lock(_grabAuthorityProxyMutex);
-        _consumerPairCount = 0;
-        _consumerPairsExpire = _consumerObjectTarget.expires;
+        _consumerPairSet.count = 0;
+        _consumerPairSet.expire = _consumerObjectTarget.expires;
         for (const auto held : _heldBodyIds)
             for (const auto weapon : weaponBodies)
-                _consumerPairs[_consumerPairCount++] = { held, weapon, 0 };
+                _consumerPairSet.desired[_consumerPairSet.count++] = { held, weapon, 0 };
         return api::Status::Ok;
     }
 
@@ -543,7 +543,7 @@ namespace rock
         const auto result = _consumerObjectTarget.clear(owner, heldGrabIdentity(), runtimeFrameForObjectTarget());
         if (result == api::Status::Ok) {
             std::scoped_lock lock(_grabAuthorityProxyMutex);
-            _consumerPairCount = 0;
+            _consumerPairSet.count = 0;
         }
         return result;
     }
@@ -551,10 +551,10 @@ namespace rock
     void Hand::flushConsumerObjectPairs(RE::hknpWorld* world)
     {
         std::scoped_lock lock(_grabAuthorityProxyMutex);
-        if (world != _grabAuthorityProxyHknpWorld || provider::runtime::currentGameFrameIndex() > _consumerPairsExpire)
-            _consumerPairCount = 0;
-        const auto result = _consumerPairLeases.reconcile(world, _consumerPairs.data(), _consumerPairCount);
-        if (_consumerPairCount && (!result.filterAvailable || result.activePairCount != _consumerPairCount)) {
+        if (world != _grabAuthorityProxyHknpWorld || provider::runtime::currentGameFrameIndex() > _consumerPairSet.expire)
+            _consumerPairSet.count = 0;
+        const auto result = _consumerPairSet.leases.reconcile(world, _consumerPairSet.desired.data(), _consumerPairSet.count);
+        if (_consumerPairSet.count && (!result.filterAvailable || result.activePairCount != _consumerPairSet.count)) {
             _grabAuthorityProxyReleasePending.store(true, std::memory_order_release);
             ROCK_LOG_SAMPLE_WARN(Hand, 1000, "Held object connection pairs unavailable; releasing guided object");
         }
@@ -899,7 +899,7 @@ namespace rock
         if (!consumerTarget && _consumerObjectTarget.owner) {
             _consumerObjectTarget = {};
             std::scoped_lock lock(_grabAuthorityProxyMutex);
-            _consumerPairCount = 0;
+            _consumerPairSet.count = 0;
         }
         if (consumerTarget) {
             // Change only the queued proxy target. Frozen body/constraint
