@@ -1,6 +1,7 @@
 #include "physics-interaction/native/query/PhysicsQueryResources.h"
 
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/NativeCodeBytes.h"
 #include "physics-interaction/native/NativeMemory.h"
 
 #include <array>
@@ -17,14 +18,7 @@ namespace rock::physics_query_resources
         // pick+0xC0; RE::bhkPickData's destructor releases it.
         static_assert(offsetof(RE::bhkPickData, world) == 0xC0);
 
-        template <std::size_t N>
-        bool matches(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected)
-        {
-            std::array<std::uint8_t, N> actual{};
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(rva).address()),
-                       actual.data(), actual.size()) &&
-                actual == expected;
-        }
+        using native_code::bytesMatch;
 
         DestroyCollector collectorDestructor() noexcept
         {
@@ -38,11 +32,11 @@ namespace rock::physics_query_resources
                 // the deleting-destructor flag must be zero for our stack object.
                 const auto destructor = REL::Offset(0x066E80).address();
                 std::uintptr_t vtableEntry = 0;
-                if (!matches(0x1DF8E76,
+                if (!bytesMatch(0x1DF8E76,
                         std::array<std::uint8_t, 16>{ 0x66, 0x39, 0x5E, 0x0A, 0x74, 0x18, 0x0F, 0x0D, 0x4E, 0x08, 0x8B,
                             0x46, 0x08, 0x8D, 0x48, 0x01 }) ||
-                    !matches(0x1DF8ED6, std::array<std::uint8_t, 7>{ 0x49, 0x89, 0xB6, 0xC0, 0x00, 0x00, 0x00 }) ||
-                    !matches(0x066E80,
+                    !bytesMatch(0x1DF8ED6, std::array<std::uint8_t, 7>{ 0x49, 0x89, 0xB6, 0xC0, 0x00, 0x00, 0x00 }) ||
+                    !bytesMatch(0x066E80,
                         std::array<std::uint8_t, 10>{ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20 }) ||
                     !native_memory::tryReadValue(
                         reinterpret_cast<const std::uintptr_t*>(REL::Offset(0x2C838C8).address()), vtableEntry) ||

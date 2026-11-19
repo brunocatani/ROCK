@@ -2,6 +2,7 @@
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
+#include "physics-interaction/native/NativeCodeBytes.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -71,14 +72,7 @@ namespace rock::native_weapon_animation_audio
             { 0x16A6058, { 0xE8, 0x03, 0x7C, 0x26, 0x00 } },
         } };
 
-        template <std::size_t N>
-        bool matches(std::uintptr_t rva, const std::array<std::uint8_t, N>& bytes)
-        {
-            std::array<std::uint8_t, N> actual{};
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(rva).address()),
-                       actual.data(), actual.size()) &&
-                actual == bytes;
-        }
+        using native_code::bytesMatch;
 
         template <std::size_t N>
         bool copyText(const char* text, std::array<char, N>& out)
@@ -244,20 +238,17 @@ namespace rock::native_weapon_animation_audio
             return false;
         // Entries: the prologue or another plugin's jump (the context hook then
         // chains behind it). Copy calls: the native copy or another plugin's detour.
-        const auto callable = [](std::uintptr_t rva, const auto& bytes) {
-            return static_cast<bool>(RPS::Runtime::HookChain::resolveEntry(REL::Offset(rva).address(), bytes));
-        };
-        if (!callable(kProcessEvents, kProcessEntry) ||
-            !callable(0x190DC60,
+        if (!native_code::entryIsNativeOrDetoured(kProcessEvents, kProcessEntry) ||
+            !native_code::entryIsNativeOrDetoured(0x190DC60,
                 std::array<std::uint8_t, 16>{ 0x40, 0x53, 0x57, 0x48, 0x83, 0xEC, 0x48, 0x8B, 0x42, 0x14, 0x48, 0x8B,
                     0xDA, 0x48, 0x8B, 0xF9 }) ||
-            !matches(0x16A3429, std::array<std::uint8_t, 7>{ 0x49, 0x89, 0xBE, 0x80, 0x03, 0, 0 }) ||
-            !matches(0x16A60B8,
+            !bytesMatch(0x16A3429, std::array<std::uint8_t, 7>{ 0x49, 0x89, 0xBE, 0x80, 0x03, 0, 0 }) ||
+            !bytesMatch(0x16A60B8,
                 std::array<std::uint8_t, 16>{ 0x49, 0x8B, 0x85, 0x70, 0x03, 0, 0, 0x89, 0x55, 0x13, 0x3B, 0x98, 0xE8, 0,
                     0, 0 }) ||
-            !matches(0x16A60F6, std::array<std::uint8_t, 7>{ 0x48, 0x8B, 0x88, 0xD8, 0, 0, 0 }) ||
-            !matches(0x192CC15, std::array<std::uint8_t, 7>{ 0x48, 0x8B, 0x87, 0x90, 0, 0, 0 }) ||
-            !callable(0x1BC18F0,
+            !bytesMatch(0x16A60F6, std::array<std::uint8_t, 7>{ 0x48, 0x8B, 0x88, 0xD8, 0, 0, 0 }) ||
+            !bytesMatch(0x192CC15, std::array<std::uint8_t, 7>{ 0x48, 0x8B, 0x87, 0x90, 0, 0, 0 }) ||
+            !native_code::entryIsNativeOrDetoured(0x1BC18F0,
                 std::array<std::uint8_t, 16>{ 0x48, 0x8B, 0x11, 0x48, 0x85, 0xD2, 0x74, 0x18, 0x8B, 0x42, 0x08, 0xC1,
                     0xE8, 0x0E, 0xA8, 0x01 })) {
             ROCK_LOG_ERROR(Init, "Equip animation audio filter rejected native function bytes");

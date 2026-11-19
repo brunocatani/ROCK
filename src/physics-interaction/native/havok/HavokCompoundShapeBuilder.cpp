@@ -1,6 +1,7 @@
 #include "physics-interaction/native/havok/HavokCompoundShapeBuilder.h"
 
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/NativeCodeBytes.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/native/havok/HavokRefCount.h"
@@ -79,12 +80,6 @@ namespace rock::havok_compound_shape_builder
             }
         };
 
-        [[nodiscard]] bool addressIsInGameText(const std::uintptr_t address) noexcept
-        {
-            const auto text = REL::Module::get().segment(REL::Segment::text);
-            return address >= text.address() && address < text.address() + text.size();
-        }
-
         template <std::size_t N>
         [[nodiscard]] bool validateNativeEntry(
             const char* label, const std::uintptr_t offset, const std::array<std::uint8_t, N>& expected,
@@ -96,7 +91,7 @@ namespace rock::havok_compound_shape_builder
         {
             const auto address = REL::Offset(offset).address();
             std::array<std::uint8_t, N> actual{};
-            if (!addressIsInGameText(address) ||
+            if (!native_code::isInGameText(address) ||
                 !native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), actual.data(),
                     actual.size())) {
                 ROCK_LOG_ERROR(Init, "Native compound-shape validation could not read {} at 0x{:X}", label, address);

@@ -6,6 +6,7 @@
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
+#include "physics-interaction/native/NativeCodeBytes.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/weapon/authored/NativeIdleGripPreharvest.h"
 #include "physics-interaction/weapon/native/NativePrimaryWeaponGraph.h"
@@ -58,25 +59,18 @@ namespace rock::native_trigger_equip_graph
             return s_collect(player, output);
         }
 
-        template <std::size_t N>
-        bool matches(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected)
-        {
-            std::array<std::uint8_t, N> actual{};
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(REL::Offset(rva).address()),
-                       actual.data(), actual.size()) &&
-                actual == expected;
-        }
+        using native_code::bytesMatch;
     }
 
     void install() noexcept
     {
         if (s_ready || !REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72)
             return;
-        if (!matches(0xE8D090,
+        if (!bytesMatch(0xE8D090,
                 std::array<std::uint8_t, 10>{ 0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18 }) ||
-            !matches(0xE15B50, std::array<std::uint8_t, 9>{ 0x40, 0x55, 0x53, 0x57, 0x48, 0x8D, 0x6C, 0x24, 0xB9 }) ||
-            !matches(0xEB81A0, std::array<std::uint8_t, 7>{ 0x48, 0x8B, 0xC4, 0x48, 0x89, 0x50, 0x10 }) ||
-            !matches(0xEDA2F0,
+            !bytesMatch(0xE15B50, std::array<std::uint8_t, 9>{ 0x40, 0x55, 0x53, 0x57, 0x48, 0x8D, 0x6C, 0x24, 0xB9 }) ||
+            !bytesMatch(0xEB81A0, std::array<std::uint8_t, 7>{ 0x48, 0x8B, 0xC4, 0x48, 0x89, 0x50, 0x10 }) ||
+            !bytesMatch(0xEDA2F0,
                 std::array<std::uint8_t, 10>{ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x30 })) {
             ROCK_LOG_ERROR(Init, "Trigger equip native graph preparation unavailable: entry mismatch");
             return;

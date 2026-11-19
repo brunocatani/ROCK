@@ -5,6 +5,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/collision/ImpactAudioPolicy.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
+#include "physics-interaction/native/NativeCodeBytes.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/havok/HavokRuntime.h"
 
@@ -109,14 +110,7 @@ namespace rock::native_impact_audio
             dispatch();
         }
 
-        template <std::size_t N>
-        bool entryMatches(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected) noexcept
-        {
-            std::array<std::uint8_t, N> actual{};
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(REL::Offset(rva).address()),
-                       actual.data(), actual.size()) &&
-                actual == expected;
-        }
+        using native_code::bytesMatch;
     }
 
     bool install() noexcept
@@ -134,7 +128,7 @@ namespace rock::native_impact_audio
         constexpr std::array<std::uint8_t, 14> consumerEntry{ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24,
             0x18, 0x56, 0x57, 0x41, 0x56 };
         if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72 ||
-            !entryMatches(0x61B5C0, listenerEntry) || !entryMatches(0xD643D0, consumerEntry)) {
+            !bytesMatch(0x61B5C0, listenerEntry) || !bytesMatch(0xD643D0, consumerEntry)) {
             ROCK_LOG_ERROR(Init, "Impact audio unavailable: native entry validation failed");
             return false;
         }

@@ -17,6 +17,7 @@
 #include "physics-interaction/input/NativeVatsInputSuppressionPolicy.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 #include "physics-interaction/input/VatsGrenadeGesturePolicy.h"
+#include "physics-interaction/native/NativeCodeBytes.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/player/NativeQuickLootPanel.h"
 #include "physics-interaction/native/player/NativeWorkshop.h"
@@ -1069,12 +1070,6 @@ namespace rock::input_remap_runtime
         {
             tracker.pressedEdges.fetch_and(~mask, std::memory_order_acq_rel);
             tracker.releasedEdges.fetch_and(~mask, std::memory_order_acq_rel);
-        }
-
-        [[nodiscard]] bool isAddressInGameText(std::uintptr_t address)
-        {
-            const auto text = REL::Module::get().segment(REL::Segment::text);
-            return text.size() != 0 && address >= text.address() && address < text.address() + text.size();
         }
 
         void captureControllerState(vr::TrackedDeviceIndex_t deviceIndex, vr::VRControllerState_t* state,
@@ -2833,7 +2828,7 @@ namespace rock::input_remap_runtime
             }
 
             if (currentTarget != expectedTarget) {
-                if (isAddressInGameText(currentTarget)) {
+                if (native_code::isInGameText(currentTarget)) {
                     ROCK_LOG_ERROR(Input,
                         "{} hook validation failed: slot 0x{:X} points to game text 0x{:X}, expected 0x{:X}", label,
                         slotEntry.address(), currentTarget, expectedTarget);

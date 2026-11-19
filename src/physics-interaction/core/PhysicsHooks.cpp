@@ -20,6 +20,7 @@
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
+#include "physics-interaction/native/NativeCodeBytes.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/havok/BodyCollisionControl.h"
 #include "physics-interaction/native/havok/HavokOffsets.h"
@@ -203,12 +204,6 @@ namespace rock
         static NativeGrabHapticFloatSettingState g_nativeGrabHapticHoverIntensityState;
         static NativeGrabHapticFloatSettingState g_nativeGrabHapticHoverDurationState;
 
-        bool isAddressInGameText(std::uintptr_t address)
-        {
-            const auto text = REL::Module::get().segment(REL::Segment::text);
-            return address >= text.address() && address < text.address() + text.size();
-        }
-
         bool validateNativeMeleeVtableTarget(std::uintptr_t entryOffset, std::uintptr_t expectedFunctionOffset,
             const char* label)
         {
@@ -230,7 +225,7 @@ namespace rock
                 return true;
             }
 
-            if (isAddressInGameText(current)) {
+            if (native_code::isInGameText(current)) {
                 ROCK_LOG_ERROR(Init,
                     "{} vtable validation failed: slot 0x{:X} points to game text 0x{:X}, expected 0x{:X}", label,
                     entry.address(), current, expected);

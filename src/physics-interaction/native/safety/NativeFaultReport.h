@@ -6,6 +6,8 @@
 #include <bit>
 #include <cstdint>
 
+#include "physics-interaction/native/NativeCodeBytes.h"
+
 namespace rock::native_fault_report
 {
     // The first four occurrences, then every power of two: a fault that
@@ -19,10 +21,6 @@ namespace rock::native_fault_report
     // 0 when `address` is outside it.
     [[nodiscard]] inline std::uintptr_t gameTextRelativeAddress(const std::uintptr_t address) noexcept
     {
-        const auto text = REL::Module::get().segment(REL::Segment::text);
-        if (text.size() == 0 || address < text.address() || address >= text.address() + text.size()) {
-            return 0;
-        }
-        return address - REL::Module::get().base();
+        return native_code::isInGameText(address) ? address - REL::Module::get().base() : 0;
     }
 }

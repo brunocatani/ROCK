@@ -1,6 +1,7 @@
 #include "physics-interaction/native/scene/NativeNiNodeFactory.h"
 
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/NativeCodeBytes.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/havok/HavokOffsets.h"
 
@@ -14,24 +15,18 @@ namespace rock::native_scene
     {
         using NiNodeConstructor = RE::NiNode* (*)(void*, std::uint16_t);
 
-        [[nodiscard]] bool addressIsInGameText(const std::uintptr_t address) noexcept
-        {
-            const auto text = REL::Module::get().segment(REL::Segment::text);
-            return address >= text.address() && address < text.address() + text.size();
-        }
-
         template <std::size_t N>
         [[nodiscard]] bool validateNativeEntry(const char* label, const std::uintptr_t offset,
             const std::array<std::uint8_t, N>& expected) noexcept
         {
             const auto address = REL::Offset(offset).address();
             std::array<std::uint8_t, N> actual{};
-            if (!addressIsInGameText(address) ||
+            if (!native_code::isInGameText(address) ||
                 !native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), actual.data(),
                     actual.size()) ||
                 actual != expected) {
                 ROCK_LOG_ERROR(Init, "Native NiNode factory validation failed for {} at 0x{:X}: inGameText={} bytes={}",
-                    label, address, addressIsInGameText(address), fmt::join(actual, ","));
+                    label, address, native_code::isInGameText(address), fmt::join(actual, ","));
                 return false;
             }
             return true;

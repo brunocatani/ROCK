@@ -13,6 +13,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
+#include "physics-interaction/native/NativeCodeBytes.h"
 #include "physics-interaction/native/NativeMemory.h"
 
 namespace rock::native_grenade_throw_runtime
@@ -36,28 +37,21 @@ namespace rock::native_grenade_throw_runtime
         using ShouldHandle = bool (*)(void*, RE::InputEvent*);
         bool s_active = false;
 
-        template <std::size_t N>
-        bool matches(std::uintptr_t rva, const std::array<unsigned char, N>& expected)
-        {
-            std::array<unsigned char, N> live{};
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(rva).address()),
-                       live.data(), N) &&
-                live == expected;
-        }
+        using native_code::bytesMatch;
 
         bool available()
         {
             static const bool verified = [] {
-                const bool valid = matches(kProcess,
+                const bool valid = bytesMatch(kProcess,
                                        std::array<unsigned char, 13>{ 0x40, 0x55, 0x56, 0x57, 0x41, 0x56, 0x48, 0x8B,
                                            0xEC, 0x48, 0x83, 0xEC, 0x78 }) &&
-                    matches(kShouldHandle,
+                    bytesMatch(kShouldHandle,
                         std::array<unsigned char, 16>{ 0x40, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0x0D, 0xA3, 0x62,
                             0xB3, 0x04, 0x48, 0x8B, 0xFA }) &&
-                    matches(kRestoreMode,
+                    bytesMatch(kRestoreMode,
                         std::array<unsigned char, 16>{ 0x40, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xF9, 0x48, 0x8B,
                             0x0D, 0xB0, 0xFA, 0xE9, 0x04 }) &&
-                    matches(0xFC1C00,
+                    bytesMatch(0xFC1C00,
                         std::array<unsigned char, 16>{ 0x48, 0x8B, 0x81, 0x00, 0x03, 0x00, 0x00, 0x48, 0x85, 0xC0, 0x74,
                             0x04, 0xC6, 0x40, 0x2A, 0x00 });
                 if (!valid)

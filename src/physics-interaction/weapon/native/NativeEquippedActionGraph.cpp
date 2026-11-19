@@ -12,6 +12,7 @@
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/native/NativeCodeBytes.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/scene/NativeNiNodeFactory.h"
 #include "physics-interaction/weapon/authored/HoldingGripRecords.h"
@@ -29,14 +30,7 @@ namespace rock::native_equipped_action_graph
             return reinterpret_cast<F>(REL::Offset(rva).address());
         }
 
-        template <std::size_t N>
-        bool matches(std::uintptr_t rva, const std::array<std::uint8_t, N>& bytes)
-        {
-            std::array<std::uint8_t, N> actual{};
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(REL::Offset(rva).address()),
-                       actual.data(), N) &&
-                actual == bytes;
-        }
+        using native_code::bytesMatch;
 
         bool s_validated = false;
         using Handles = RE::BSTSmallArray<RE::SubgraphHandle, 2>;
@@ -267,28 +261,28 @@ namespace rock::native_equipped_action_graph
         // Constructors/destructors and load/subgraph entries are shared with the
         // verified preharvest path. Bind/update/activation use the native manager,
         // not hka clip sampling or an independent simulation clock.
-        s_validated = matches(0x811F10, std::to_array<std::uint8_t>({ 0x40, 0x53, 0x48, 0x83, 0xEC, 0x20 })) &&
-            matches(0x811F50, std::to_array<std::uint8_t>({ 0x48, 0x89, 0x5C, 0x24, 0x10 })) &&
-            matches(0x811FE0, std::to_array<std::uint8_t>({ 0x48, 0x89, 0x5C, 0x24, 0x18 })) &&
-            matches(0x8122C0, std::to_array<std::uint8_t>({ 0x48, 0x8B, 0x41, 0x10, 0x48, 0x85, 0xC0, 0x74, 0x0C })) &&
-            matches(0x1016340,
+        s_validated = bytesMatch(0x811F10, std::to_array<std::uint8_t>({ 0x40, 0x53, 0x48, 0x83, 0xEC, 0x20 })) &&
+            bytesMatch(0x811F50, std::to_array<std::uint8_t>({ 0x48, 0x89, 0x5C, 0x24, 0x10 })) &&
+            bytesMatch(0x811FE0, std::to_array<std::uint8_t>({ 0x48, 0x89, 0x5C, 0x24, 0x18 })) &&
+            bytesMatch(0x8122C0, std::to_array<std::uint8_t>({ 0x48, 0x8B, 0x41, 0x10, 0x48, 0x85, 0xC0, 0x74, 0x0C })) &&
+            bytesMatch(0x1016340,
                 std::to_array<std::uint8_t>({ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10 })) &&
-            matches(0x7F4320, std::to_array<std::uint8_t>({ 0x48, 0x89, 0x5C, 0x24, 0x08 })) &&
-            matches(0x7F43C0, std::to_array<std::uint8_t>({ 0x48, 0x83, 0xEC, 0x28, 0x83, 0x7A, 0x18 })) &&
-            matches(0xEDA2F0,
+            bytesMatch(0x7F4320, std::to_array<std::uint8_t>({ 0x48, 0x89, 0x5C, 0x24, 0x08 })) &&
+            bytesMatch(0x7F43C0, std::to_array<std::uint8_t>({ 0x48, 0x83, 0xEC, 0x28, 0x83, 0x7A, 0x18 })) &&
+            bytesMatch(0xEDA2F0,
                 std::to_array<std::uint8_t>({ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x30 })) &&
-            matches(0x168F940, std::to_array<std::uint8_t>({ 0x40, 0x53, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x38 })) &&
-            matches(0x1690240, std::to_array<std::uint8_t>({ 0x48, 0x8B, 0xC4, 0x53, 0x57, 0x41, 0x55, 0x41, 0x57 })) &&
-            matches(0x169036E,
+            bytesMatch(0x168F940, std::to_array<std::uint8_t>({ 0x40, 0x53, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x38 })) &&
+            bytesMatch(0x1690240, std::to_array<std::uint8_t>({ 0x48, 0x8B, 0xC4, 0x53, 0x57, 0x41, 0x55, 0x41, 0x57 })) &&
+            bytesMatch(0x169036E,
                 std::to_array<std::uint8_t>({ 0x48, 0x8D, 0x8F, 0x88, 0, 0, 0, 0xE8, 0x96, 0x1A, 0x11, 0 })) &&
-            matches(0x1C23777, std::to_array<std::uint8_t>({ 0x8B, 0x43, 0x70, 0xF3, 0x0F, 0x10, 0x53, 0x7C })) &&
-            matches(0x1C2381F, std::to_array<std::uint8_t>({ 0x8B, 0x83, 0xA0, 0, 0, 0, 0x89, 0x83, 0xF0, 0, 0, 0 })) &&
-            matches(0x80D6C0,
+            bytesMatch(0x1C23777, std::to_array<std::uint8_t>({ 0x8B, 0x43, 0x70, 0xF3, 0x0F, 0x10, 0x53, 0x7C })) &&
+            bytesMatch(0x1C2381F, std::to_array<std::uint8_t>({ 0x8B, 0x83, 0xA0, 0, 0, 0, 0x89, 0x83, 0xF0, 0, 0, 0 })) &&
+            bytesMatch(0x80D6C0,
                 std::to_array<std::uint8_t>({ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x40 })) &&
-            matches(0x80DC20, std::to_array<std::uint8_t>({ 0x44, 0x89, 0x44, 0x24, 0x18, 0x48, 0x83, 0xEC, 0x28 })) &&
-            matches(0x80DC40,
+            bytesMatch(0x80DC20, std::to_array<std::uint8_t>({ 0x44, 0x89, 0x44, 0x24, 0x18, 0x48, 0x83, 0xEC, 0x28 })) &&
+            bytesMatch(0x80DC40,
                 std::to_array<std::uint8_t>({ 0xF3, 0x0F, 0x11, 0x54, 0x24, 0x18, 0x48, 0x83, 0xEC, 0x28 })) &&
-            matches(0xF2ED40,
+            bytesMatch(0xF2ED40,
                 std::to_array<std::uint8_t>(
                     { 0x48, 0x89, 0x5C, 0x24, 0x10, 0x57, 0x48, 0x81, 0xEC, 0x60, 0x02, 0, 0 }));
         return s_validated;

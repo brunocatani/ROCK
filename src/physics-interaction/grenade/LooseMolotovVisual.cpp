@@ -3,6 +3,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/grab/HeldScenePresentationPolicy.h"
 #include "physics-interaction/grenade/LooseMolotovVisualPolicy.h"
+#include "physics-interaction/native/NativeCodeBytes.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -46,14 +47,7 @@ namespace rock
         StartController startController = nullptr;
         UpdateController updateController = nullptr;
 
-        template <std::size_t N>
-        bool verifiedEntry(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected)
-        {
-            std::array<std::uint8_t, N> actual{};
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Module::get().base() + rva),
-                       actual.data(), actual.size()) &&
-                actual == expected;
-        }
+        using native_code::bytesMatch;
 
         bool verifyNativeCalls()
         {
@@ -66,17 +60,17 @@ namespace rock
             // by 14292CC70; 14292CF80 consumes NiUpdateData.time. 141C26060 and
             // 141C26400 agree on start/last-time fields. Never trust flat slots.
             const bool valid =
-                verifiedEntry(0x1D0DEE0,
+                bytesMatch(0x1D0DEE0,
                     std::to_array<std::uint8_t>({ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x48,
                         0x8B, 0xDA, 0x48, 0x8D, 0x54, 0x24, 0x20, 0x48, 0xC7, 0x44, 0x24, 0x20, 0, 0, 0, 0 })) &&
-                verifiedEntry(0x1C13FF0,
+                bytesMatch(0x1C13FF0,
                     std::to_array<std::uint8_t>(
                         { 0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20,
                             0x48, 0x8B, 0x01, 0x48, 0x8B, 0xFA, 0x48, 0x8B, 0xF1, 0xFF, 0x90, 0xE0, 0, 0, 0 })) &&
-                verifiedEntry(0x1C26060,
+                bytesMatch(0x1C26060,
                     std::to_array<std::uint8_t>({ 0x66, 0x83, 0x49, 0x10, 0x08, 0xF6, 0x41, 0x10, 0x01, 0xC7, 0x41,
                         0x28, 0xFF, 0xFF, 0x7F, 0xFF })) &&
-                verifiedEntry(0x292CF80,
+                bytesMatch(0x292CF80,
                     std::to_array<std::uint8_t>({ 0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x0F, 0xB6, 0x41, 0x10, 0x48,
                         0x8B, 0xD9, 0xC0, 0xE8, 0x05, 0xA8, 0x01 }));
             if (valid) {

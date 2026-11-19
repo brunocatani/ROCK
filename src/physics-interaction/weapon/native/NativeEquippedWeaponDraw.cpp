@@ -2,6 +2,7 @@
 // draw the engine only partly accepted.
 #include "physics-interaction/weapon/native/NativeEquippedWeaponDraw.h"
 
+#include "physics-interaction/native/NativeCodeBytes.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/weapon/equip/HeldWeaponEquipStatePolicy.h"
@@ -91,23 +92,14 @@ namespace rock::native_equipped_weapon_draw
             return matches;
         }
 
-        template <std::size_t N>
-        [[nodiscard]] bool entryMatches(const std::uintptr_t offset,
-            const std::array<std::uint8_t, N>& expected) noexcept
-        {
-            std::array<std::uint8_t, N> actual{};
-            const auto address = REL::Offset(offset).address();
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), actual.data(),
-                       actual.size()) &&
-                actual == expected;
-        }
+        using native_code::bytesMatch;
 
         [[nodiscard]] bool partialDrawCompletionMatchesVerifiedRuntime() noexcept
         {
             static const bool matches = []() noexcept {
                 return REL::Module::IsVR() && REL::Module::get().version() == F4SE::RUNTIME_VR_1_2_72 &&
-                    entryMatches(offsets::kFunc_ApplyAcceptedWeaponDraw, kExpectedApplyAcceptedDrawEntry) &&
-                    entryMatches(offsets::kFunc_RefreshActorEquipmentAfterAction, kExpectedRefreshEquipmentEntry);
+                    bytesMatch(offsets::kFunc_ApplyAcceptedWeaponDraw, kExpectedApplyAcceptedDrawEntry) &&
+                    bytesMatch(offsets::kFunc_RefreshActorEquipmentAfterAction, kExpectedRefreshEquipmentEntry);
             }();
             return matches;
         }

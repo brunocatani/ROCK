@@ -6,6 +6,7 @@
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/NativeCodeBytes.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/weapon/classification/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/native/NativeEquippedBoneOwnership.h"
@@ -29,14 +30,7 @@ namespace rock::native_primary_weapon_graph
             return weapon_type_policy::occupiesHandSlot(data->type.get());
         }
 
-        template <std::size_t N>
-        bool matches(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected) noexcept
-        {
-            std::array<std::uint8_t, N> actual{};
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(REL::Offset(rva).address()),
-                       actual.data(), N) &&
-                actual == expected;
-        }
+        using native_code::bytesMatch;
     }
 
     bool collect(RE::Actor* actor, RE::BSScrapArray<RE::IKeywordFormBase*>* output)
@@ -78,8 +72,8 @@ namespace rock::native_primary_weapon_graph
             return false;
         native_trigger_equip_graph::install();
         if (!native_trigger_equip_graph::installed() || !native_equipped_bone_ownership::install() ||
-            !matches(0xE50DA0, std::to_array<std::uint8_t>({ 0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xDA })) ||
-            !matches(0xEDA2F0,
+            !bytesMatch(0xE50DA0, std::to_array<std::uint8_t>({ 0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xDA })) ||
+            !bytesMatch(0xEDA2F0,
                 std::to_array<std::uint8_t>({ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x30 }))) {
             ROCK_LOG_ERROR(Init,
                 "Primary graph selection unavailable: shared collector or native instance lookup invalid");

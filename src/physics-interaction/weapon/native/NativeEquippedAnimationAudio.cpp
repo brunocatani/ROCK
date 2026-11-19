@@ -9,6 +9,7 @@
 #include "RE/NetImmerse/NiNode.h"
 #include "api/StorageSceneLookup.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/NativeCodeBytes.h"
 #include "physics-interaction/native/NativeMemory.h"
 
 namespace rock::native_equipped_animation_audio
@@ -21,14 +22,7 @@ namespace rock::native_equipped_animation_audio
             return reinterpret_cast<F>(REL::Offset(rva).address());
         }
 
-        template <std::size_t N>
-        bool matches(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected)
-        {
-            std::array<std::uint8_t, N> actual{};
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(REL::Offset(rva).address()),
-                       actual.data(), N) &&
-                actual == expected;
-        }
+        using native_code::bytesMatch;
 
         void release(RE::BSSoundHandle& handle, bool stop)
         {
@@ -44,13 +38,13 @@ namespace rock::native_equipped_animation_audio
     {
         // 172DB0/173820 resolve native descriptors and build/follow/play a
         // sound; 81FCD0 is the same operation with a caller-owned handle.
-        return matches(0x81FCD0, std::to_array<std::uint8_t>({ 0x48, 0x85, 0xD2, 0x0F, 0x84, 0xAE, 0, 0, 0 })) &&
-            matches(0x81FDE0, std::to_array<std::uint8_t>({ 0x40, 0x53, 0x48, 0x83, 0xEC, 0x20 })) &&
-            matches(0x1B4AA90, std::to_array<std::uint8_t>({ 0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x8B, 0x19 })) &&
-            matches(0x1B4B240,
+        return bytesMatch(0x81FCD0, std::to_array<std::uint8_t>({ 0x48, 0x85, 0xD2, 0x0F, 0x84, 0xAE, 0, 0, 0 })) &&
+            bytesMatch(0x81FDE0, std::to_array<std::uint8_t>({ 0x40, 0x53, 0x48, 0x83, 0xEC, 0x20 })) &&
+            bytesMatch(0x1B4AA90, std::to_array<std::uint8_t>({ 0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x8B, 0x19 })) &&
+            bytesMatch(0x1B4B240,
                 std::to_array<std::uint8_t>({ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10 })) &&
-            matches(0x1B4AB70, std::to_array<std::uint8_t>({ 0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x8B, 0x19 })) &&
-            matches(0x4A80F0, std::to_array<std::uint8_t>({ 0x48, 0x83, 0xEC, 0x28, 0x48, 0x8B, 0x49, 0x28 }));
+            bytesMatch(0x1B4AB70, std::to_array<std::uint8_t>({ 0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x8B, 0x19 })) &&
+            bytesMatch(0x4A80F0, std::to_array<std::uint8_t>({ 0x48, 0x83, 0xEC, 0x28, 0x48, 0x8B, 0x49, 0x28 }));
     }
 
     void Channel::stop() noexcept

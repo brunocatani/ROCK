@@ -11,6 +11,7 @@
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/NativeCodeBytes.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/weapon/classification/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/native/NativeWeaponModelGeometry.h"
@@ -242,11 +243,7 @@ namespace rock::native_secondary_model
             { 0x1C831A, { 0xE8, 0x51, 0x1C, 0, 0 }, 5 }, { 0x1CAD30, { 0xE8, 0x8B, 0xEA, 0xC2, 0x01 }, 5 } } };
 
         // A function ROCK calls: its prologue, or another plugin's detour at the entry.
-        template <std::size_t N>
-        bool bytesMatch(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected) noexcept
-        {
-            return static_cast<bool>(RPS::Runtime::HookChain::resolveEntry(REL::Offset(rva).address(), expected));
-        }
+        using native_code::entryIsNativeOrDetoured;
 
         // The native function each call patch (index 3..6) reaches.
         constexpr std::array<std::uintptr_t, 4> kCallTargets{ 0x1CE8A0, 0x1CCEC0, 0x1C9F70, 0x1DF97C0 };
@@ -308,16 +305,16 @@ namespace rock::native_secondary_model
                 return false;
             }
         }
-        if (!bytesMatch(0x1C9F70,
+        if (!entryIsNativeOrDetoured(0x1C9F70,
                 std::array<std::uint8_t, 15>{ 0x4C, 0x89, 0x4C, 0x24, 0x20, 0x4C, 0x89, 0x44, 0x24, 0x18, 0x48, 0x89,
                     0x4C, 0x24, 0x08 }) ||
-            !bytesMatch(0x1CE8A0,
+            !entryIsNativeOrDetoured(0x1CE8A0,
                 std::array<std::uint8_t, 15>{ 0x48, 0x89, 0x7C, 0x24, 0x20, 0x41, 0x56, 0x48, 0x83, 0xEC, 0x20, 0x48,
                     0x8B, 0x79, 0x08 }) ||
-            !bytesMatch(0x08B040,
+            !entryIsNativeOrDetoured(0x08B040,
                 std::array<std::uint8_t, 15>{ 0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48,
                     0x83, 0xEC, 0x20 }) ||
-            !bytesMatch(0xF0A0A0,
+            !entryIsNativeOrDetoured(0xF0A0A0,
                 std::array<std::uint8_t, 23>{ 0x48, 0x8B, 0x81, 0xE0, 0x0F, 0, 0, 0x48, 0x85, 0xC0, 0x74, 0x08, 0x48,
                     0x3B, 0x02, 0x75, 0x03, 0xB0, 0x01, 0xC3, 0x32, 0xC0, 0xC3 })) {
             ROCK_LOG_ERROR(Init, "Secondary native model dependency validation failed; builder unchanged");
