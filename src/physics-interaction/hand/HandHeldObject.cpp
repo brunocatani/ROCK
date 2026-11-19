@@ -816,9 +816,9 @@ namespace rock
                     if (frik_hand_world_authority::tryGetPresentedHandWorld(joining._isLeft, presented) &&
                         isUsableGrabVisualTransform(presented))
                         wrist = presented;
-                    joining._grabVisualHandLerpStartTransform = wrist;
-                    joining._grabVisualHandLerpElapsedSeconds = 0.0f;
-                    joining._grabVisualHandLerpDurationSeconds = acquisition.durationSeconds;
+                    joining._grabVisualHandLerp.startTransform = wrist;
+                    joining._grabVisualHandLerp.elapsedSeconds = 0.0f;
+                    joining._grabVisualHandLerp.durationSeconds = acquisition.durationSeconds;
                 }
                 ROCK_LOG_INFO(Hand, "Loose weapon handling ref={:08X} firingHand={} gunstock={} blend={:.3f}s",
                     getHeldRef()->formID, primary.handName(), gunstockAim, acquisition.durationSeconds);
@@ -1052,8 +1052,8 @@ namespace rock
                 update.authorityForceScale, update.heldMotorContactSoftening);
         }
 
-        update.averageGrabDeviationGameUnits = recordDeviationAverage(_grabDeviationHistory, _grabDeviationHistoryCount,
-            _grabDeviationHistoryNext, update.pivotTrackingErrorGameUnits);
+        update.averageGrabDeviationGameUnits = recordDeviationAverage(_grabDeviation.samples, _grabDeviation.count,
+            _grabDeviation.next, update.pivotTrackingErrorGameUnits);
 
         return true;
     }
@@ -1157,9 +1157,9 @@ namespace rock
                             acquisitionStart = presented;
                     }
                     _grabVisualHandTransform = acquisitionStart;
-                    _grabVisualHandLerpStartTransform = acquisitionStart;
-                    _grabVisualHandLerpElapsedSeconds = 0.0f;
-                    _grabVisualHandLerpDurationSeconds = smoothVisualHand
+                    _grabVisualHandLerp.startTransform = acquisitionStart;
+                    _grabVisualHandLerp.elapsedSeconds = 0.0f;
+                    _grabVisualHandLerp.durationSeconds = smoothVisualHand
                         ? (isHoldingLooseWeapon()
                                   ? hand_visual_lerp_math::computeVisualReturnDuration(acquisitionStart,
                                         targetVisualHandWorld, looseWeaponAcquireConfig())
@@ -1175,23 +1175,23 @@ namespace rock
 
                 float visualHandLerpAlpha = 1.0f;
                 if (smoothVisualHand) {
-                    _grabVisualHandLerpElapsedSeconds = hand_visual_lerp_math::advanceTimedBlendElapsed(
-                        _grabVisualHandLerpElapsedSeconds, deltaTime, _grabVisualHandLerpDurationSeconds);
+                    _grabVisualHandLerp.elapsedSeconds = hand_visual_lerp_math::advanceTimedBlendElapsed(
+                        _grabVisualHandLerp.elapsedSeconds, deltaTime, _grabVisualHandLerp.durationSeconds);
                     const auto advancedVisual = hand_visual_lerp_math::blendTransformOverDuration(
-                        _grabVisualHandLerpStartTransform, targetVisualHandWorld, _grabVisualHandLerpElapsedSeconds,
-                        _grabVisualHandLerpDurationSeconds);
+                        _grabVisualHandLerp.startTransform, targetVisualHandWorld, _grabVisualHandLerp.elapsedSeconds,
+                        _grabVisualHandLerp.durationSeconds);
                     nextVisualHandWorld = advancedVisual.transform;
-                    visualHandLerpAlpha = hand_visual_lerp_math::timedBlendAlpha(_grabVisualHandLerpElapsedSeconds,
-                        _grabVisualHandLerpDurationSeconds);
+                    visualHandLerpAlpha = hand_visual_lerp_math::timedBlendAlpha(_grabVisualHandLerp.elapsedSeconds,
+                        _grabVisualHandLerp.durationSeconds);
                     if (weaponVisual && _looseSharedHandBlendAlpha >= 0.0f) {
                         // Initial wrist acquisition and paired joining use the
                         // weapon's exact eased progress, including its last frame.
                         // Visual-only support retains its independent wrist blend.
                         visualHandLerpAlpha = _looseSharedHandBlendAlpha;
                         nextVisualHandWorld = hand_visual_lerp_math::interpolateTransform(
-                            _grabVisualHandLerpStartTransform, targetVisualHandWorld, visualHandLerpAlpha);
+                            _grabVisualHandLerp.startTransform, targetVisualHandWorld, visualHandLerpAlpha);
                         if (visualHandLerpAlpha >= 1.0f)
-                            _grabVisualHandLerpElapsedSeconds = _grabVisualHandLerpDurationSeconds;
+                            _grabVisualHandLerp.elapsedSeconds = _grabVisualHandLerp.durationSeconds;
                         if (visualHandLerpAlpha < 1.0f) {
                             ROCK_LOG_SAMPLE_DEBUG(Hand, 100,
                                 "{} loose grip slurp trace={} paired={} sharedAlpha={:.3f} wristDistance={:.3f}gu "
@@ -1204,9 +1204,9 @@ namespace rock
                         }
                     }
                 } else {
-                    _grabVisualHandLerpStartTransform = targetVisualHandWorld;
-                    _grabVisualHandLerpElapsedSeconds = 0.0f;
-                    _grabVisualHandLerpDurationSeconds = 0.0f;
+                    _grabVisualHandLerp.startTransform = targetVisualHandWorld;
+                    _grabVisualHandLerp.elapsedSeconds = 0.0f;
+                    _grabVisualHandLerp.durationSeconds = 0.0f;
                 }
 
                 const float visualHandDeviationGameUnits =
@@ -1234,7 +1234,7 @@ namespace rock
                     "normalAuthority=false",
                     handName(), grab_three_phase::phaseName(_grabAcquisitionPhase), visualPublishDecision.reason,
                     smoothVisualHand ? "smoothedAcquisition" : "immediateHeldObject", visualHandLerpAlpha,
-                    _grabVisualHandLerpDurationSeconds, targetVisualHandWorld.translate.x,
+                    _grabVisualHandLerp.durationSeconds, targetVisualHandWorld.translate.x,
                     targetVisualHandWorld.translate.y, targetVisualHandWorld.translate.z,
                     _grabVisualHandTransform.translate.x, _grabVisualHandTransform.translate.y,
                     _grabVisualHandTransform.translate.z, handWorldTransform.translate.x,
@@ -1246,9 +1246,9 @@ namespace rock
                     _lastPublishedGrabVisualHandTransform = {};
                     _hasLastPublishedGrabVisualHandTransform = false;
                 }
-                _grabVisualHandLerpStartTransform = {};
-                _grabVisualHandLerpElapsedSeconds = 0.0f;
-                _grabVisualHandLerpDurationSeconds = 0.0f;
+                _grabVisualHandLerp.startTransform = {};
+                _grabVisualHandLerp.elapsedSeconds = 0.0f;
+                _grabVisualHandLerp.durationSeconds = 0.0f;
             }
         } else {
             if (_hasGrabVisualHandTransform) {
@@ -1257,9 +1257,9 @@ namespace rock
                 _lastPublishedGrabVisualHandTransform = {};
                 _hasLastPublishedGrabVisualHandTransform = false;
             }
-            _grabVisualHandLerpStartTransform = {};
-            _grabVisualHandLerpElapsedSeconds = 0.0f;
-            _grabVisualHandLerpDurationSeconds = 0.0f;
+            _grabVisualHandLerp.startTransform = {};
+            _grabVisualHandLerp.elapsedSeconds = 0.0f;
+            _grabVisualHandLerp.durationSeconds = 0.0f;
         }
 
         return true;

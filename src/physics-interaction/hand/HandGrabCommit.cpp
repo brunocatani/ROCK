@@ -415,9 +415,9 @@ namespace rock
         _hasGrabVisualHandTransform = false;
         _lastPublishedGrabVisualHandTransform = {};
         _hasLastPublishedGrabVisualHandTransform = false;
-        _grabVisualHandLerpStartTransform = handWorldTransform;
-        _grabVisualHandLerpElapsedSeconds = 0.0f;
-        _grabVisualHandLerpDurationSeconds = 0.0f;
+        _grabVisualHandLerp.startTransform = handWorldTransform;
+        _grabVisualHandLerp.elapsedSeconds = 0.0f;
+        _grabVisualHandLerp.durationSeconds = 0.0f;
         const RE::NiPoint3 initialGrabDelta = grabPivotAWorld - grabGripPoint;
         const float initialGrabDistance = std::sqrt(initialGrabDelta.x * initialGrabDelta.x +
             initialGrabDelta.y * initialGrabDelta.y + initialGrabDelta.z * initialGrabDelta.z);

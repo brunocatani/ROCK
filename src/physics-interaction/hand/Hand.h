@@ -1107,10 +1107,15 @@ namespace rock
         HandBoneColliderSet _boneColliders;
 
         SelectedObject _currentSelection;
-        // Pins only the lock's scene generation; no Havok body pointer survives a frame.
-        RE::NiPointer<RE::NiAVObject> _gestureSelectionRoot;
-        std::uintptr_t _gestureCollisionOwner = 0;
-        selection_query_policy::BodyLocalSelectionAnchor _gestureSelectionAnchor{};
+        // The object a selection gesture has locked.
+        struct GestureSelection
+        {
+            // Pins only the lock's scene generation; no Havok body pointer survives a frame.
+            RE::NiPointer<RE::NiAVObject> root;
+            std::uintptr_t collisionOwner = 0;
+            selection_query_policy::BodyLocalSelectionAnchor anchor{};
+        };
+        GestureSelection _gestureSelection;
         SelectedObject _cachedFarCandidate;
         GrabAcquisitionCache _grabAcquisitionCache;
         int _farDetectCounter = 0;
@@ -1394,17 +1399,26 @@ namespace rock
         float _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
         // Grab-elapsed time of the last placement onto the hand target.
         float _grabTransitPlacementElapsedSeconds = 0.0f;
-        std::array<float, 5> _grabDeviationHistory{};
-        std::size_t _grabDeviationHistoryCount = 0;
-        std::size_t _grabDeviationHistoryNext = 0;
+        // Ring of the last grab deviation samples.
+        struct GrabDeviationHistory
+        {
+            std::array<float, 5> samples{};
+            std::size_t count = 0;
+            std::size_t next = 0;
+        };
+        GrabDeviationHistory _grabDeviation;
         RE::NiTransform _grabVisualHandTransform{};
         bool _hasGrabVisualHandTransform = false;
         RE::NiTransform _lastPublishedGrabVisualHandTransform{};
         bool _hasLastPublishedGrabVisualHandTransform = false;
         hand_visual_lerp_math::VisualReturnTransition<RE::NiTransform> _grabVisualReturn{};
-        RE::NiTransform _grabVisualHandLerpStartTransform{};
-        float _grabVisualHandLerpElapsedSeconds = 0.0f;
-        float _grabVisualHandLerpDurationSeconds = 0.0f;
+        struct GrabVisualHandLerp
+        {
+            RE::NiTransform startTransform{};
+            float elapsedSeconds = 0.0f;
+            float durationSeconds = 0.0f;
+        };
+        GrabVisualHandLerp _grabVisualHandLerp;
         std::array<float, 15> _grabFingerJointPose{};
         std::array<RE::NiTransform, 15> _grabFingerLocalTransforms{};
         std::uint16_t _grabFingerLocalTransformMask = 0;
@@ -1497,10 +1511,15 @@ namespace rock
         };
         MeshReachLease _meshReachLease{};
         bool _hasGrabFingerPose = false;
-        bool _selectedCloseFingerPoseActive = false;
-        RE::NiPoint3 _lastSelectedCloseOrigin{};
-        bool _hasLastSelectedCloseOrigin = false;
-        float _selectedCloseHandSpeedMetersPerSecond = 0.0f;
+        // The hand pose and motion tracked while a close object is selected.
+        struct SelectedClose
+        {
+            bool fingerPoseActive = false;
+            RE::NiPoint3 lastOrigin{};
+            bool hasLastOrigin = false;
+            float handSpeedMetersPerSecond = 0.0f;
+        };
+        SelectedClose _selectedClose;
 
         release_velocity::History<RE::NiPoint3> _controllerReleaseHistory;
         release_velocity::History<RE::NiPoint3> _objectReleaseHistory;
@@ -1530,12 +1549,17 @@ namespace rock
         std::vector<std::uint32_t> _heldBodyIds;
         std::vector<std::uint32_t> _pulledBodyIds;
         active_grab_body_lifecycle::BodyLifecycleSnapshot _pullActiveLifecycle;
-        RE::hknpWorld* _pullPrepHknpWorld = nullptr;
-        RE::NiAVObject* _pullPrepRootNode = nullptr;
-        RE::TESObjectREFR* _pullPrepRefr = nullptr;
-        grab_target::Kind _pullPrepTargetKind = grab_target::Kind::LooseObject;
-        std::uint16_t _pullPrepOriginalMotionPropsId = 1;
-        bool _pullPrepRestoreArmed = false;
+        // What a pull changed on its object before the flight, kept so it can be restored.
+        struct PullPrep
+        {
+            RE::hknpWorld* hknpWorld = nullptr;
+            RE::NiAVObject* rootNode = nullptr;
+            RE::TESObjectREFR* refr = nullptr;
+            grab_target::Kind targetKind = grab_target::Kind::LooseObject;
+            std::uint16_t originalMotionPropsId = 1;
+            bool restoreArmed = false;
+        };
+        PullPrep _pullPrep;
         std::uint32_t _pulledPrimaryBodyId = INVALID_BODY_ID;
         // The visual mesh point a pull flies to the palm, in the primary body's motion frame (game units).
         RE::NiPoint3 _pullMeshPointBodyLocal{};
@@ -1561,11 +1585,15 @@ namespace rock
          * body turns toward its seated orientation, so it arrives already
          * posed and the catch only completes the last few units.
          */
-        bool _pullSeatValid = false;
-        RE::NiTransform _pullSeatObjectProxyLocal{};
-        RE::NiTransform _pullSeatBodyInFrame{};
-        float _pullSeatFrameScale = 1.0f;
-        RE::NiPoint3 _pullSeatMeshPointBody{};
+        struct PullSeat
+        {
+            bool valid = false;
+            RE::NiTransform objectProxyLocal{};
+            RE::NiTransform bodyInFrame{};
+            float frameScale = 1.0f;
+            RE::NiPoint3 meshPointBody{};
+        };
+        PullSeat _pullSeat;
         // Solved library grab poses of this hand (prepareLibraryGrabPose),
         // oldest replaced first. found is false for an object no authored
         // object resembles, so it is not solved again. Frame thread only.

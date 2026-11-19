@@ -231,9 +231,9 @@ namespace rock
         _currentSelection.clear();
         _cachedFarCandidate.clear();
         clearGrabAcquisitionCache("reset");
-        _gestureSelectionRoot.reset();
-        _gestureCollisionOwner = 0;
-        _gestureSelectionAnchor = {};
+        _gestureSelection.root.reset();
+        _gestureSelection.collisionOwner = 0;
+        _gestureSelection.anchor = {};
         _farDetectCounter = 0;
         _selectionHoldSeconds = 0.0f;
         _deselectCooldown = 0;
@@ -304,9 +304,9 @@ namespace rock
         _meshReachLease = {};
         _hasGrabFingerPose = false;
         clearSelectedCloseFingerPose();
-        _lastSelectedCloseOrigin = {};
-        _hasLastSelectedCloseOrigin = false;
-        _selectedCloseHandSpeedMetersPerSecond = 0.0f;
+        _selectedClose.lastOrigin = {};
+        _selectedClose.hasLastOrigin = false;
+        _selectedClose.handSpeedMetersPerSecond = 0.0f;
         _controllerReleaseHistory.clear();
         _objectReleaseHistory.clear();
         _releaseObjectNotBefore = release_velocity::sampleTimeSeconds();
@@ -415,9 +415,9 @@ namespace rock
         const auto oldState = _state;
         if (result.next != oldState) {
             if (oldState == HandState::SelectionLocked) {
-                _gestureSelectionRoot.reset();
-                _gestureCollisionOwner = 0;
-                _gestureSelectionAnchor = {};
+                _gestureSelection.root.reset();
+                _gestureSelection.collisionOwner = 0;
+                _gestureSelection.anchor = {};
             }
             _state = result.next;
             _stateAtomic.store(result.next, std::memory_order_release);
@@ -478,11 +478,11 @@ namespace rock
         _pullHasPreviousObjectPoint = false;
         _pullPresentationAxisBodyLocal = {};
         _pullPresentationValid = false;
-        _pullSeatValid = false;
-        _pullSeatObjectProxyLocal = {};
-        _pullSeatBodyInFrame = {};
-        _pullSeatFrameScale = 1.0f;
-        _pullSeatMeshPointBody = {};
+        _pullSeat.valid = false;
+        _pullSeat.objectProxyLocal = {};
+        _pullSeat.bodyInFrame = {};
+        _pullSeat.frameScale = 1.0f;
+        _pullSeat.meshPointBody = {};
     }
 
     object_physics_body_set::BodySetScanOptions Hand::makeActiveGrabBodyScanOptions(
@@ -2075,9 +2075,9 @@ namespace rock
         }
         if (!lockFarSelection())
             return false;
-        _gestureSelectionRoot.reset(root);
-        _gestureCollisionOwner = reinterpret_cast<std::uintptr_t>(owner);
-        _gestureSelectionAnchor = anchor;
+        _gestureSelection.root.reset(root);
+        _gestureSelection.collisionOwner = reinterpret_cast<std::uintptr_t>(owner);
+        _gestureSelection.anchor = anchor;
         RE::NiPoint3 target{};
         if (!refreshGesturePullSelection(bhkWorld, world, handOrigin, target)) {
             clearSelectionState(true);
@@ -2098,10 +2098,10 @@ namespace rock
         auto* ref = _currentSelection.refr;
         auto* cell = ref->GetParentCell();
         if (ref->IsDeleted() || ref->IsDisabled() || !cell || cell->GetbhkWorld() != bhkWorld ||
-            !_gestureSelectionRoot || ref->Get3D() != _gestureSelectionRoot.get())
+            !_gestureSelection.root || ref->Get3D() != _gestureSelection.root.get())
             return false;
         auto* owner = havok_runtime::getCollisionObjectFromBody(world, _currentSelection.bodyId);
-        if (!owner || reinterpret_cast<std::uintptr_t>(owner) != _gestureCollisionOwner ||
+        if (!owner || reinterpret_cast<std::uintptr_t>(owner) != _gestureSelection.collisionOwner ||
             resolveBodyToRef(bhkWorld, world, _currentSelection.bodyId) != ref)
             return false;
         if (_currentSelection.targetKind == grab_target::Kind::ExtractableItem) {
@@ -2111,7 +2111,7 @@ namespace rock
         }
         RE::NiTransform bodyWorld{};
         if (!tryResolveLiveBodyWorldTransform(world, _currentSelection.bodyId, bodyWorld) ||
-            !_gestureSelectionAnchor.resolve(bodyWorld, targetWorld))
+            !_gestureSelection.anchor.resolve(bodyWorld, targetWorld))
             return false;
         const float distance = pointDistanceGameUnits(handOrigin, targetWorld);
         if (!std::isfinite(distance) || distance > selection_query_policy::kFarDetectionRangeGameUnits)
@@ -2137,7 +2137,7 @@ namespace rock
     {
         // A ref may already have replaced/unloaded its 3D. Keep the lock's old
         // graph alive until its highlight has been detached below.
-        [[maybe_unused]] const auto lockedRoot = _gestureSelectionRoot;
+        [[maybe_unused]] const auto lockedRoot = _gestureSelection.root;
         if (!applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::ClearSelection }).accepted) {
             return;
         }
@@ -2153,9 +2153,9 @@ namespace rock
         clearPullRuntimeState(true, rememberDeselect ? "selection-cleared-remembered" : "selection-cleared");
         clearPullCatchIntent(rememberDeselect ? "selectionClearedRemembered" : "selectionCleared");
         clearExtractedItemHandoff(rememberDeselect ? "selectionClearedRemembered" : "selectionCleared");
-        _lastSelectedCloseOrigin = {};
-        _hasLastSelectedCloseOrigin = false;
-        _selectedCloseHandSpeedMetersPerSecond = 0.0f;
+        _selectedClose.lastOrigin = {};
+        _selectedClose.hasLastOrigin = false;
+        _selectedClose.handSpeedMetersPerSecond = 0.0f;
         _selectionHoldSeconds = 0.0f;
     }
 
@@ -2480,22 +2480,22 @@ namespace rock
 
         if (_state == HandState::SelectedClose && _currentSelection.isValid()) {
             const RE::NiPoint3& selectedCloseOrigin = currentCloseSelectionOrigin();
-            if (_hasLastSelectedCloseOrigin) {
-                const float dx = selectedCloseOrigin.x - _lastSelectedCloseOrigin.x;
-                const float dy = selectedCloseOrigin.y - _lastSelectedCloseOrigin.y;
-                const float dz = selectedCloseOrigin.z - _lastSelectedCloseOrigin.z;
+            if (_selectedClose.hasLastOrigin) {
+                const float dx = selectedCloseOrigin.x - _selectedClose.lastOrigin.x;
+                const float dy = selectedCloseOrigin.y - _selectedClose.lastOrigin.y;
+                const float dz = selectedCloseOrigin.z - _selectedClose.lastOrigin.z;
                 const float distanceGameUnits = std::sqrt(dx * dx + dy * dy + dz * dz);
-                _selectedCloseHandSpeedMetersPerSecond = selected_close_finger_policy::estimateHandSpeedMetersPerSecond(
+                _selectedClose.handSpeedMetersPerSecond = selected_close_finger_policy::estimateHandSpeedMetersPerSecond(
                     distanceGameUnits, deltaTime, havokToGameScale());
             } else {
-                _selectedCloseHandSpeedMetersPerSecond = 0.0f;
+                _selectedClose.handSpeedMetersPerSecond = 0.0f;
             }
-            _lastSelectedCloseOrigin = selectedCloseOrigin;
-            _hasLastSelectedCloseOrigin = true;
+            _selectedClose.lastOrigin = selectedCloseOrigin;
+            _selectedClose.hasLastOrigin = true;
         } else {
-            _lastSelectedCloseOrigin = {};
-            _hasLastSelectedCloseOrigin = false;
-            _selectedCloseHandSpeedMetersPerSecond = 0.0f;
+            _selectedClose.lastOrigin = {};
+            _selectedClose.hasLastOrigin = false;
+            _selectedClose.handSpeedMetersPerSecond = 0.0f;
         }
 
         updateSelectedCloseFingerPose();
@@ -2707,7 +2707,7 @@ namespace rock
     {
         const bool shouldApply =
             selected_close_finger_policy::shouldApplyPreCurl(g_rockConfig.rockSelectedCloseFingerCurlEnabled,
-                _state == HandState::SelectedClose, _currentSelection.isValid(), _selectedCloseHandSpeedMetersPerSecond,
+                _state == HandState::SelectedClose, _currentSelection.isValid(), _selectedClose.handSpeedMetersPerSecond,
                 g_rockConfig.rockSelectedCloseFingerAnimMaxHandSpeed);
         if (!shouldApply) {
             clearSelectedCloseFingerPose();
@@ -2718,18 +2718,18 @@ namespace rock
         const auto hand = handFromBool(_isLeft);
         if (frik_visual_authority::setHandPoseCustom(SELECTED_CLOSE_FINGER_TAG, hand,
                 frik_visual_authority::makeUniformHandPoseData(value, value, value, value, value), 10)) {
-            _selectedCloseFingerPoseActive = true;
+            _selectedClose.fingerPoseActive = true;
         }
     }
 
     void Hand::clearSelectedCloseFingerPose()
     {
-        if (!_selectedCloseFingerPoseActive) {
+        if (!_selectedClose.fingerPoseActive) {
             return;
         }
 
         (void)frik_visual_authority::clearHandPose(SELECTED_CLOSE_FINGER_TAG, handFromBool(_isLeft));
-        _selectedCloseFingerPoseActive = false;
+        _selectedClose.fingerPoseActive = false;
     }
 
     bool Hand::createCollision(RE::hknpWorld* world, void* bhkWorld, const RE::NiTransform& rollAuthorityWorld)

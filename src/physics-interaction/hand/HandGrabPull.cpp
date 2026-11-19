@@ -159,28 +159,28 @@ namespace rock
     void Hand::clearPullPrepTracking()
     {
         _pullActiveLifecycle.clear();
-        _pullPrepHknpWorld = nullptr;
-        _pullPrepRootNode = nullptr;
-        _pullPrepRefr = nullptr;
-        _pullPrepTargetKind = grab_target::Kind::LooseObject;
-        _pullPrepOriginalMotionPropsId = 1;
-        _pullPrepRestoreArmed = false;
+        _pullPrep.hknpWorld = nullptr;
+        _pullPrep.rootNode = nullptr;
+        _pullPrep.refr = nullptr;
+        _pullPrep.targetKind = grab_target::Kind::LooseObject;
+        _pullPrep.originalMotionPropsId = 1;
+        _pullPrep.restoreArmed = false;
     }
 
     void Hand::restorePullPrepIfActive(const char* context)
     {
-        if (!_pullPrepRestoreArmed) {
+        if (!_pullPrep.restoreArmed) {
             return;
         }
 
         const std::uint32_t primaryBodyId =
             _pulledPrimaryBodyId != INVALID_BODY_ID ? _pulledPrimaryBodyId : active_grab_body_lifecycle::kInvalidBodyId;
 
-        restoreActiveGrabLifecycle(_pullPrepHknpWorld, _pullActiveLifecycle,
+        restoreActiveGrabLifecycle(_pullPrep.hknpWorld, _pullActiveLifecycle,
             _pullActiveLifecycle.restorePlanForFailure(), primaryBodyId, handName(),
             context ? context : "pull-prep-abandoned");
         if (_pullActiveLifecycle.hasIncompleteNativeScan()) {
-            restoreIncompleteActivePrepRoot(_pullPrepRootNode, _pullPrepOriginalMotionPropsId, handName(),
+            restoreIncompleteActivePrepRoot(_pullPrep.rootNode, _pullPrep.originalMotionPropsId, handName(),
                 context ? context : "pull-prep-abandoned-incomplete-scan");
         }
 
@@ -189,36 +189,36 @@ namespace rock
 
     void Hand::finishPullPrepAsPhysicalDropIfActive(const char* context)
     {
-        if (!_pullPrepRestoreArmed) {
+        if (!_pullPrep.restoreArmed) {
             return;
         }
 
         const std::uint32_t primaryBodyId =
             _pulledPrimaryBodyId != INVALID_BODY_ID ? _pulledPrimaryBodyId : active_grab_body_lifecycle::kInvalidBodyId;
         const auto releaseRestorePolicy =
-            active_grab_body_lifecycle::releaseRestorePolicyForTargetKind(_pullPrepTargetKind);
-        const auto releasePlan = _pullActiveLifecycle.restorePlanForRelease(releaseRestorePolicy, _pullPrepTargetKind,
+            active_grab_body_lifecycle::releaseRestorePolicyForTargetKind(_pullPrep.targetKind);
+        const auto releasePlan = _pullActiveLifecycle.restorePlanForRelease(releaseRestorePolicy, _pullPrep.targetKind,
             active_grab_body_lifecycle::BodyReleaseIntent::PhysicalDrop);
 
-        restoreActiveGrabLifecycle(_pullPrepHknpWorld, _pullActiveLifecycle, releasePlan, primaryBodyId, handName(),
+        restoreActiveGrabLifecycle(_pullPrep.hknpWorld, _pullActiveLifecycle, releasePlan, primaryBodyId, handName(),
             context ? context : "pull-physical-drop");
 
         if (_pullActiveLifecycle.hasIncompleteNativeScan()) {
             if (active_grab_body_lifecycle::shouldSkipIncompleteScanRootRestore(releasePlan,
-                    _pullPrepOriginalMotionPropsId)) {
+                    _pullPrep.originalMotionPropsId)) {
                 ROCK_LOG_DEBUG(Hand,
                     "{} hand {}: skipped recursive root restore for converted loose-object physical pull drop "
                     "root='{}' motionProps={} preservedMotion={}",
-                    handName(), context ? context : "pull-physical-drop", nodeDebugName(_pullPrepRootNode),
-                    _pullPrepOriginalMotionPropsId, releasePlan.preservedConvertedMotionCount);
+                    handName(), context ? context : "pull-physical-drop", nodeDebugName(_pullPrep.rootNode),
+                    _pullPrep.originalMotionPropsId, releasePlan.preservedConvertedMotionCount);
             } else {
-                restoreIncompleteActivePrepRoot(_pullPrepRootNode, _pullPrepOriginalMotionPropsId, handName(),
+                restoreIncompleteActivePrepRoot(_pullPrep.rootNode, _pullPrep.originalMotionPropsId, handName(),
                     context ? context : "pull-physical-drop-incomplete-scan");
             }
         }
 
-        if (_pullPrepHknpWorld && primaryBodyId != INVALID_BODY_ID) {
-            const auto releaseActivation = activateHeldObjectBodySet(_pullPrepHknpWorld, primaryBodyId, _pulledBodyIds);
+        if (_pullPrep.hknpWorld && primaryBodyId != INVALID_BODY_ID) {
+            const auto releaseActivation = activateHeldObjectBodySet(_pullPrep.hknpWorld, primaryBodyId, _pulledBodyIds);
             if (releaseActivation.failedActivationCount > 0) {
                 ROCK_LOG_WARN(Hand,
                     "{} hand PULL physical-drop activation incomplete: primaryBody={} bodies={} activated={} failed={}",
@@ -233,7 +233,7 @@ namespace rock
     bool Hand::consumePullPrepLifecycleForActiveGrab(RE::TESObjectREFR* refr,
         active_grab_body_lifecycle::BodyLifecycleSnapshot& outLifecycle)
     {
-        if (!_pullPrepRestoreArmed || !refr || refr != _pullPrepRefr) {
+        if (!_pullPrep.restoreArmed || !refr || refr != _pullPrep.refr) {
             return false;
         }
 
@@ -247,7 +247,7 @@ namespace rock
 
     void Hand::capturePullSeat(RE::hknpWorld* world, RE::NiAVObject* rootNode, const RE::NiPoint3& pulledMeshPointWorld)
     {
-        _pullSeatValid = false;
+        _pullSeat.valid = false;
         saved_grab_offset::HandOffset offset{};
         bool fixedAidPose = false;
         if (!resolveAuthoredGrabOffset(_currentSelection, selectedLooseWeaponForm(_currentSelection) != nullptr, true,
@@ -277,20 +277,20 @@ namespace rock
             return;
         }
 
-        _pullSeatObjectProxyLocal = makeIdentityTransform();
-        _pullSeatObjectProxyLocal.translate = { offset.translateGame[0], offset.translateGame[1],
+        _pullSeat.objectProxyLocal = makeIdentityTransform();
+        _pullSeat.objectProxyLocal.translate = { offset.translateGame[0], offset.translateGame[1],
             offset.translateGame[2] };
         for (int row = 0; row < 3; ++row) {
             for (int column = 0; column < 3; ++column) {
-                _pullSeatObjectProxyLocal.rotate.entry[row][column] = offset.rotate[row * 3 + column];
+                _pullSeat.objectProxyLocal.rotate.entry[row][column] = offset.rotate[row * 3 + column];
             }
         }
-        _pullSeatBodyInFrame = multiplyTransforms(invertTransform(frameNode->world), bodyWorld);
-        _pullSeatFrameScale = std::isfinite(frameNode->world.scale) && frameNode->world.scale > 0.0001f
+        _pullSeat.bodyInFrame = multiplyTransforms(invertTransform(frameNode->world), bodyWorld);
+        _pullSeat.frameScale = std::isfinite(frameNode->world.scale) && frameNode->world.scale > 0.0001f
             ? frameNode->world.scale
             : 1.0f;
-        _pullSeatMeshPointBody = transform_math::worldPointToLocal(bodyWorld, pulledMeshPointWorld);
-        _pullSeatValid = isFiniteNiTransform(_pullSeatBodyInFrame);
+        _pullSeat.meshPointBody = transform_math::worldPointToLocal(bodyWorld, pulledMeshPointWorld);
+        _pullSeat.valid = isFiniteNiTransform(_pullSeat.bodyInFrame);
         ROCK_LOG_DEBUG(Hand, "{} hand PULL aligns in flight to the {} seat (frame '{}')", handName(),
             fixedAidPose ? "aid" : "authored", nodeDebugName(frameNode));
     }
@@ -298,14 +298,14 @@ namespace rock
     bool Hand::tryComputePullSeatBodyWorld(const RE::NiTransform& rawHandWorld, RE::NiTransform& outBodyWorld) const
     {
         RE::NiTransform proxyWorld{};
-        if (!_pullSeatValid || !tryComputeGrabProxyFrameForRawHand(rawHandWorld, proxyWorld)) {
+        if (!_pullSeat.valid || !tryComputeGrabProxyFrameForRawHand(rawHandWorld, proxyWorld)) {
             return false;
         }
         // The same placement the catch makes (tryResolveSavedGrabOffsetAttach,
         // resolveLooseWeaponPrimaryAttachFrame), on the live palm.
-        auto frameWorld = grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorld, _pullSeatObjectProxyLocal);
-        frameWorld.scale = _pullSeatFrameScale;
-        outBodyWorld = multiplyTransforms(frameWorld, _pullSeatBodyInFrame);
+        auto frameWorld = grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorld, _pullSeat.objectProxyLocal);
+        frameWorld.scale = _pullSeat.frameScale;
+        outBodyWorld = multiplyTransforms(frameWorld, _pullSeat.bodyInFrame);
         return isFiniteNiTransform(outBodyWorld);
     }
 
@@ -605,12 +605,12 @@ namespace rock
             return false;
         }
         _pullActiveLifecycle = pullLifecycle;
-        _pullPrepHknpWorld = world;
-        _pullPrepRootNode = rootNode;
-        _pullPrepRefr = selectedRef;
-        _pullPrepTargetKind = _currentSelection.targetKind;
-        _pullPrepOriginalMotionPropsId = selectedOriginalMotionPropsId;
-        _pullPrepRestoreArmed = true;
+        _pullPrep.hknpWorld = world;
+        _pullPrep.rootNode = rootNode;
+        _pullPrep.refr = selectedRef;
+        _pullPrep.targetKind = _currentSelection.targetKind;
+        _pullPrep.originalMotionPropsId = selectedOriginalMotionPropsId;
+        _pullPrep.restoreArmed = true;
         stopSelectionHighlight();
 
         ROCK_LOG_INFO(Hand,
@@ -675,7 +675,7 @@ namespace rock
         bool seatTurnNeeded = false;
         if (seatTracked) {
             const auto seatedPointHavok =
-                niPointToHkVector(transform_math::localPointToWorld(seatBodyWorld, _pullSeatMeshPointBody));
+                niPointToHkVector(transform_math::localPointToWorld(seatBodyWorld, _pullSeat.meshPointBody));
             flightTargetHavok = RE::NiPoint3{ seatedPointHavok.x, seatedPointHavok.y, seatedPointHavok.z };
             RE::NiTransform bodyWorld{};
             seatTurnNeeded = tryGetGrabAuthorityBodyWorldTransform(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, bodyWorld) &&
@@ -739,7 +739,7 @@ namespace rock
                 "{} hand PULL arrived -> close grab window dist={:.1f} arrival={:.1f} configuredAuto={:.1f} "
                 "near={:.1f} pocketBand={:.1f} seat={} seatAngleDeg={:.1f}",
                 handName(), distanceGameUnits, arrivalDistance, configuredAutoGrabDistance, nearConvergeDistance,
-                pocketBand, seatTracked ? "tracked" : (_pullSeatValid ? "lost" : "none"),
+                pocketBand, seatTracked ? "tracked" : (_pullSeat.valid ? "lost" : "none"),
                 seatTurnNeeded ? seatTurnAngle * 57.29578f : 0.0f);
             return true;
         }
@@ -815,7 +815,7 @@ namespace rock
         bool presentationActive = seatTurnNeeded;
         // An authored seat owns the orientation; the long-axis presentation is
         // for objects the catch will seat dynamically.
-        if (!_pullSeatValid && _pullPresentationValid && g_rockConfig.rockPullLongAxisPresentationEnabled) {
+        if (!_pullSeat.valid && _pullPresentationValid && g_rockConfig.rockPullLongAxisPresentationEnabled) {
             RE::NiTransform pulledBodyWorld{};
             if (tryGetBodyWorldTransform(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, pulledBodyWorld)) {
                 const RE::NiPoint3 currentAxisWorld = normalizeOrZero(
