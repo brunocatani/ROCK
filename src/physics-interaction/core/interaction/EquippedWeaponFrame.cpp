@@ -4,6 +4,8 @@
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "RockUtils.h"
+#include "physics-interaction/weapon/native/NativeEquippedWeaponDraw.h"
 #include "physics-interaction/input/PhysicalReloadInput.h"
 #include "physics-interaction/input/SupportTriggerInput.h"
 #include "physics-interaction/visual/GripZoneIndicators.h"

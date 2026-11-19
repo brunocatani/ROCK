@@ -3,6 +3,8 @@
 // descriptors. These read ROCK's state for consumers and own no physics
 // behaviour.
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/native/havok/BodyCollisionControl.h"
+#include "physics-interaction/native/player/CharacterControllerRuntime.h"
 
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/native/query/PhysicsShapeCast.h"

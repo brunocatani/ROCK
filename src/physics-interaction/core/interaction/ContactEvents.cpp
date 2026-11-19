@@ -8,6 +8,9 @@
 // On the frame thread, resolveContacts turns the held-object impact pairs into
 // grab events.
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/collision/ContactSignalSubscriptionPolicy.h"
+#include "physics-interaction/grab/GrabMassPolicy.h"
+#include "physics-interaction/native/havok/BodyCollisionControl.h"
 
 namespace rock
 {
