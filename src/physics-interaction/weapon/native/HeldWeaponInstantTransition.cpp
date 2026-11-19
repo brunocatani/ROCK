@@ -3,6 +3,7 @@
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
+#include "physics-interaction/native/NativeCodeBytes.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/weapon/native/TriggerEquipReadinessTrace.h"
 
@@ -85,16 +86,7 @@ namespace rock::held_weapon_instant_transition
 
         __declspec(noinline) void onDrawWeaponMagicHands(RE::PlayerCharacter* player, bool draw);
 
-        template <std::size_t N>
-        [[nodiscard]] bool bytesMatch(const std::uintptr_t moduleOffset,
-            const std::array<std::uint8_t, N>& expected) noexcept
-        {
-            std::array<std::uint8_t, N> actual{};
-            const auto address = REL::Offset(moduleOffset).address();
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), actual.data(),
-                       actual.size()) &&
-                actual == expected;
-        }
+        using native_code::bytesMatch;
 
         // What the EquipManager preparation call reached before ROCK patched it:
         // the native preparation or another plugin's detour. Load owner.

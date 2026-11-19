@@ -1,5 +1,7 @@
 #include "physics-interaction/native/safety/NativeRagdollSafety.h"
 
+#include "physics-interaction/native/safety/NativeFaultReport.h"
+
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/NativeMemory.h"
@@ -106,19 +108,8 @@ namespace rock::native_ragdoll_safety
         std::atomic<std::uint64_t> s_suppressedFaultCount{ 0 };
         thread_local FaultContext t_faultContext{};
 
-        [[nodiscard]] bool shouldLogOccurrence(const std::uint64_t occurrence) noexcept
-        {
-            return occurrence <= 4 || std::has_single_bit(occurrence);
-        }
-
-        [[nodiscard]] std::uintptr_t gameTextRelativeAddress(const std::uintptr_t address) noexcept
-        {
-            const auto text = REL::Module::get().segment(REL::Segment::text);
-            if (text.size() == 0 || address < text.address() || address >= text.address() + text.size()) {
-                return 0;
-            }
-            return address - REL::Module::get().base();
-        }
+        using native_fault_report::gameTextRelativeAddress;
+        using native_fault_report::shouldLogOccurrence;
 
         int captureVerifiedTeardownFault(EXCEPTION_POINTERS* exceptionPointers) noexcept
         {

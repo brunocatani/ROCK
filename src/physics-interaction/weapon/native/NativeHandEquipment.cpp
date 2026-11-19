@@ -28,6 +28,7 @@
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/input/NativePipboyHandInput.h"
+#include "physics-interaction/native/NativeCodeBytes.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/weapon/native/NativeMeleeWand.h"
 #include "rock_support/Fo4VrRuntime.h"
@@ -719,14 +720,7 @@ namespace rock::native_hand_equipment
                 s_defaultSlotEmpty(actor);
         }
 
-        template <std::size_t N>
-        bool bytesMatch(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected) noexcept
-        {
-            std::array<std::uint8_t, N> actual{};
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(rva).address()),
-                       actual.data(), actual.size()) &&
-                actual == expected;
-        }
+        using native_code::bytesMatch;
 
         // A function ROCK calls or resumes inside: its prologue, or another plugin's
         // detour at the entry.

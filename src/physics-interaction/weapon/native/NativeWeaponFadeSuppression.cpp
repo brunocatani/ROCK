@@ -1,6 +1,7 @@
 #include "physics-interaction/weapon/native/NativeWeaponFadeSuppression.h"
 
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/NativeCodeBytes.h"
 #include "physics-interaction/native/NativeMemory.h"
 
 #include <REL/Relocation.h>
@@ -39,14 +40,7 @@ namespace rock::native_weapon_fade_suppression
             0x90,
         };
 
-        template <std::size_t N>
-        bool bytesMatch(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected) noexcept
-        {
-            std::array<std::uint8_t, N> actual{};
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(rva).address()),
-                       actual.data(), N) &&
-                actual == expected;
-        }
+        using native_code::bytesMatch;
     }
 
     bool installed() noexcept { return s_installed; }

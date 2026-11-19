@@ -1,5 +1,7 @@
 #include "physics-interaction/native/safety/NativeShapeCastSafety.h"
 
+#include "physics-interaction/native/safety/NativeFaultReport.h"
+
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/NativeMemory.h"
@@ -179,19 +181,8 @@ namespace rock::native_shape_cast_safety
             return true;
         }
 
-        [[nodiscard]] std::uintptr_t gameTextRelativeAddress(const std::uintptr_t address) noexcept
-        {
-            const auto text = REL::Module::get().segment(REL::Segment::text);
-            if (text.size() == 0 || address < text.address() || address >= text.address() + text.size()) {
-                return 0;
-            }
-            return address - REL::Module::get().base();
-        }
-
-        [[nodiscard]] bool shouldLogOccurrence(const std::uint64_t occurrence) noexcept
-        {
-            return occurrence <= 4 || std::has_single_bit(occurrence);
-        }
+        using native_fault_report::gameTextRelativeAddress;
+        using native_fault_report::shouldLogOccurrence;
 
         DiagnosticState captureDiagnosticState(const WorldCastContext& context, void* query, void* targetFilterData,
             void* targetShapeInfo) noexcept

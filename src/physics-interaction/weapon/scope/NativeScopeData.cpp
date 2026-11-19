@@ -3,6 +3,7 @@
 #include "physics-interaction/weapon/scope/NativeScopeData.h"
 
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/NativeCodeBytes.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/weapon/scope/ManualScopeTargetPolicy.h"
@@ -241,14 +242,7 @@ namespace rock::native_scope_data
             return static_cast<bool>(resolved);
         }
 
-        template <std::size_t N>
-        bool bytesMatch(std::uintptr_t site, const std::array<std::uint8_t, N>& expected)
-        {
-            std::array<std::uint8_t, N> actual{};
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(site).address()),
-                       actual.data(), actual.size()) &&
-                actual == expected;
-        }
+        using native_code::bytesMatch;
 
         template <std::size_t N>
         bool makeBranch(std::uintptr_t site, const void* target, std::array<std::uint8_t, N>& patch)

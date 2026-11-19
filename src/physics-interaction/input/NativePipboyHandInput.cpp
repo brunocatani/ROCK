@@ -15,6 +15,7 @@
 #include "api/FRIKApiV2.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
+#include "physics-interaction/native/NativeCodeBytes.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/weapon/native/NativePipboyHandMarkers.h"
 #include <RPS/Runtime/HookChain.h>
@@ -355,14 +356,7 @@ namespace rock::native_pipboy_hand_input
             s_flashCall(menu, params);
         }
 
-        template <std::size_t N>
-        bool bytesMatch(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected) noexcept
-        {
-            std::array<std::uint8_t, N> actual{};
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(rva).address()),
-                       actual.data(), N) &&
-                actual == expected;
-        }
+        using native_code::bytesMatch;
 
         struct Call
         {

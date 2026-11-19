@@ -2,6 +2,7 @@
 #include "physics-interaction/weapon/native/NativeWeaponAnimationAudio.h"
 
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/NativeCodeBytes.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -53,14 +54,7 @@ namespace rock::native_weapon_equip_audio
                 true },
         } };
 
-        template <std::size_t N>
-        bool bytesMatch(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected)
-        {
-            std::array<std::uint8_t, N> actual{};
-            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(rva).address()),
-                       actual.data(), N) &&
-                actual == expected;
-        }
+        using native_code::bytesMatch;
 
         // What each sound call reached: the native function or another plugin's
         // detour. Written before the calls are patched, then read-only.

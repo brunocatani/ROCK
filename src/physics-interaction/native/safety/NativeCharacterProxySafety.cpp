@@ -6,6 +6,7 @@
 #include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/native/havok/HavokWorldLock.h"
 #include "physics-interaction/native/safety/CharacterProxyFaultPolicy.h"
+#include "physics-interaction/native/safety/NativeFaultReport.h"
 
 #include <REL/Relocation.h>
 #include <Windows.h>
@@ -127,19 +128,8 @@ namespace rock::native_character_proxy_safety
 
         void recordFault(void* controller, std::uintptr_t caller, bool recoveredTeardown) noexcept;
 
-        [[nodiscard]] bool shouldLogOccurrence(const std::uint64_t occurrence) noexcept
-        {
-            return occurrence <= 4 || std::has_single_bit(occurrence);
-        }
-
-        [[nodiscard]] std::uintptr_t gameTextRelativeAddress(const std::uintptr_t address) noexcept
-        {
-            const auto text = REL::Module::get().segment(REL::Segment::text);
-            if (text.size() == 0 || address < text.address() || address >= text.address() + text.size()) {
-                return 0;
-            }
-            return address - REL::Module::get().base();
-        }
+        using native_fault_report::gameTextRelativeAddress;
+        using native_fault_report::shouldLogOccurrence;
 
         int captureVerifiedBodyFieldFault(EXCEPTION_POINTERS* exceptionPointers, void* controller,
             const std::uintptr_t caller) noexcept
