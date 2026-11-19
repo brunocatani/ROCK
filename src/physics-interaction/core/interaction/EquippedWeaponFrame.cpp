@@ -30,6 +30,78 @@ namespace rock
 {
     namespace
     {
+        /*
+         * Equipped-weapon stash reuses the loose-object back volume so the
+         * player learns one gesture. Body-zone collider/contact evidence is
+         * disabled for this variant: the equipped weapon has no held-body
+         * contact identity, so the HMD-relative back volume (forced on) is the
+         * gesture authority for hand-carried weapons.
+         */
+        inline shoulder_stash::DetectorConfig makeEquippedWeaponStashDetectorConfig(bool enabled)
+        {
+            shoulder_stash::DetectorConfig config = makeShoulderStashDetectorConfig();
+            config.enabled = enabled;
+            config.useBodyZoneColliders = false;
+            config.useHmdBackVolume = true;
+            return config;
+        }
+
+        inline GrabButtonState peekGrabButtonState(bool isLeft, int buttonId)
+        {
+            if (!input_remap_policy::isAllowedGrabButtonId(buttonId)) {
+                return {};
+            }
+
+            const auto rawState = input_remap_runtime::peekRawButtonState(isLeft, buttonId);
+            if (rawState.available) {
+                return GrabButtonState{
+                    .held = rawState.held,
+                    .pressed = rawState.pressed,
+                    .released = rawState.released,
+                };
+            }
+
+            const auto vrHand = isLeft ? vrcf::Hand::Left : vrcf::Hand::Right;
+            return GrabButtonState{
+                .held = vrcf::VRControllers.isPressHeldDown(vrHand, buttonId),
+                .pressed = vrcf::VRControllers.isPressed(vrHand, buttonId),
+                .released = vrcf::VRControllers.isReleased(vrHand, buttonId),
+            };
+        }
+
+        inline f4vr::MuzzleFlash* getEquippedMuzzleFlashNodes()
+        {
+            /*
+             * ROCK is the final weapon visual owner during mesh/hand authority.
+             * Any ROCK weapon write after the normal first-person weapon update
+             * must re-own the fire node from the current projectile node so the
+             * muzzle origin remains at the barrel tip.
+             */
+            const auto equipWeaponData = getValidatedEquippedWeaponData();
+            if (!equipWeaponData) {
+                return nullptr;
+            }
+
+            const auto muzzle = reinterpret_cast<f4vr::MuzzleFlash*>(equipWeaponData->muzzleFlash);
+            if (!muzzle || !muzzle->fireNode || !muzzle->projectileNode) {
+                return nullptr;
+            }
+
+            return muzzle;
+        }
+
+        inline void applyFinalWeaponMuzzleAuthority()
+        {
+            auto* muzzle = getEquippedMuzzleFlashNodes();
+            if (!muzzle) {
+                return;
+            }
+
+            muzzle->fireNode->local =
+                weapon_muzzle_authority_math::fireNodeLocalFromProjectileWorld(muzzle->projectileNode->world);
+            f4vr::updateTransformsDown(muzzle->fireNode, true);
+        }
+
         inline bool tryReadNativeScopeRequestState(bool& outActive)
         {
             performance_profiler::ScopedTimer gripStageTimer(performance_profiler::Scope::EquippedNativeScopeRead);

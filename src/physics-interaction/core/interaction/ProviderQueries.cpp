@@ -15,6 +15,70 @@
 
 namespace rock
 {
+    namespace
+    {
+        inline std::uint32_t providerColliderFlags(RE::hknpWorld* world, std::uint32_t bodyId, bool bodiesCurrent,
+            bool lifecycleAllowed)
+        {
+            std::uint32_t filter = 0;
+            const bool known =
+                bodiesCurrent && world && body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ bodyId }, filter);
+            return provider_state_policy::colliderFlags(lifecycleAllowed, known,
+                (filter & collision_suppression_registry::kSuppressionNoCollideBit) != 0);
+        }
+
+        inline api::Point3 makeProviderPoint(const WeaponEvidencePoint3& point)
+        {
+            return api::Point3{ .x = point.x, .y = point.y, .z = point.z };
+        }
+
+        inline api::Point3 makeProviderPoint(const RE::NiPoint3& point)
+        {
+            return api::Point3{ .x = point.x, .y = point.y, .z = point.z };
+        }
+
+        inline api::collision::BodyContactTargetKind providerBodyContactTargetKind(
+            contact_pipeline_policy::ContactEndpointKind kind)
+        {
+            using api::collision::BodyContactTargetKind;
+            using contact_pipeline_policy::ContactEndpointKind;
+            // Body colliders never touch hands or each other (layer 47).
+            switch (kind) {
+            case ContactEndpointKind::Weapon:
+            case ContactEndpointKind::SecondaryWeapon:
+                return api::collision::BodyContactTargetKind::Weapon;
+            case ContactEndpointKind::RightHeldObject:
+            case ContactEndpointKind::LeftHeldObject:
+                return api::collision::BodyContactTargetKind::HeldObject;
+            case ContactEndpointKind::WorldSurface:
+                return api::collision::BodyContactTargetKind::WorldSurface;
+            case ContactEndpointKind::DynamicProp:
+                return api::collision::BodyContactTargetKind::DynamicProp;
+            case ContactEndpointKind::Actor:
+                return api::collision::BodyContactTargetKind::Actor;
+            case ContactEndpointKind::QueryOnly:
+                return api::collision::BodyContactTargetKind::QueryOnly;
+            default:
+                break;
+            }
+            return api::collision::BodyContactTargetKind::Unknown;
+        }
+
+        inline RE::NiAVObject* getEquippedProjectileNode()
+        {
+            /*
+             * FO4VR 1.2.72 initializes EquippedWeaponData::fireNode (+0x30)
+             * during equip through its native ProjectileNode/P-ProjectileNode
+             * resolver and refreshes it with equipped-item updates. The
+             * separate muzzleFlash pointer (+0x28) is presentation state and
+             * may remain null until the weapon has fired, so provider data
+             * must never depend on it.
+             */
+            auto* equipWeaponData = getValidatedEquippedWeaponData();
+            return equipWeaponData ? equipWeaponData->fireNode : nullptr;
+        }
+    }
+
     void PhysicsInteraction::fillProviderFrameSnapshot(::rock::provider::Publication& outSnapshot) const
     {
         const auto& runtime = runtime_state::currentFrame();

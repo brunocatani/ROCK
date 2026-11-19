@@ -191,11 +191,6 @@ namespace rock
             return true;
         }
 
-        constexpr std::uint32_t claimOwnerBit(PhysicsObjectClaimOwner owner)
-        {
-            return 1u << static_cast<std::uint32_t>(owner);
-        }
-
         constexpr PhysicsObjectClaimOwner claimOwnerForHand(bool isLeft)
         {
             return isLeft ? PhysicsObjectClaimOwner::LeftHand : PhysicsObjectClaimOwner::RightHand;
@@ -239,82 +234,10 @@ namespace rock
             return config;
         }
 
-        /*
-         * Equipped-weapon stash reuses the loose-object back volume so the
-         * player learns one gesture. Body-zone collider/contact evidence is
-         * disabled for this variant: the equipped weapon has no held-body
-         * contact identity, so the HMD-relative back volume (forced on) is the
-         * gesture authority for hand-carried weapons.
-         */
-        inline shoulder_stash::DetectorConfig makeEquippedWeaponStashDetectorConfig(bool enabled)
-        {
-            shoulder_stash::DetectorConfig config = makeShoulderStashDetectorConfig();
-            config.enabled = enabled;
-            config.useBodyZoneColliders = false;
-            config.useHmdBackVolume = true;
-            return config;
-        }
-
-        inline shoulder_stash::Probe makeShoulderStashObjectProbe(RE::hknpWorld* world, const Hand& hand,
-            const HandFrameInput& handInput)
-        {
-            shoulder_stash::Probe probe{};
-            if (hand.tryGetHeldObjectGrabPivotWorld(world, probe.pointGame)) {
-                return probe;
-            }
-
-            const auto& savedState = hand.getSavedObjectState();
-            RE::NiTransform heldBodyWorld{};
-            if (savedState.isValid() && world && tryGetBodyWorldTransform(world, savedState.bodyId, heldBodyWorld)) {
-                probe.pointGame = heldBodyWorld.translate;
-            } else {
-                probe.pointGame = handInput.grabAnchorWorld;
-            }
-            return probe;
-        }
-
         inline shoulder_stash::Probe makeShoulderStashHmdProbe(const HandFrameInput& handInput)
         {
             shoulder_stash::Probe probe{};
             probe.pointGame = handInput.rawHandWorld.translate;
-            return probe;
-        }
-
-        inline mouth_consume::DetectorConfig makeMouthConsumeDetectorConfig()
-        {
-            mouth_consume::DetectorConfig config{};
-            config.enabled = g_rockConfig.rockMouthConsumeEnabled;
-            config.hmdMouthOffsetGameUnits = g_rockConfig.rockMouthConsumeHmdOffsetGameUnits;
-            config.mouthRadiusGameUnits = g_rockConfig.rockMouthConsumeRadiusGameUnits;
-            config.enterPaddingGameUnits = g_rockConfig.rockMouthConsumeEnterPaddingGameUnits;
-            config.exitPaddingGameUnits = g_rockConfig.rockMouthConsumeExitPaddingGameUnits;
-            config.minDwellSeconds = g_rockConfig.rockMouthConsumeMinDwellSeconds;
-            config.maxSpeedGameUnitsPerSecond = g_rockConfig.rockMouthConsumeMaxSpeedGameUnitsPerSecond;
-            return config;
-        }
-
-        inline mouth_consume::Probe makeMouthConsumeObjectProbe(RE::hknpWorld* world, const Hand& hand,
-            const HandFrameInput& handInput)
-        {
-            mouth_consume::Probe probe{};
-            if (hand.tryGetHeldObjectGrabPivotWorld(world, probe.pointGame)) {
-                return probe;
-            }
-
-            const auto& savedState = hand.getSavedObjectState();
-            RE::NiTransform heldBodyWorld{};
-            if (savedState.isValid() && world && tryGetBodyWorldTransform(world, savedState.bodyId, heldBodyWorld)) {
-                probe.pointGame = heldBodyWorld.translate;
-            } else {
-                probe.pointGame = handInput.grabAnchorWorld;
-            }
-            return probe;
-        }
-
-        inline mouth_consume::Probe makeMouthConsumeHandProbe(const HandFrameInput& handInput)
-        {
-            mouth_consume::Probe probe{};
-            probe.pointGame = handInput.grabAnchorWorld;
             return probe;
         }
 
@@ -327,28 +250,6 @@ namespace rock
             return RE::TESFullName::GetFullName(*baseForm, false);
         }
 
-        inline void showShoulderStashCollectedNotification(const shoulder_stash::TransferResult& transferResult,
-            std::uint32_t fallbackFormID)
-        {
-            if (!g_rockConfig.rockShoulderStashShowCollectedNotifications || transferResult.lootActivatorScript) {
-                return;
-            }
-
-            f4vr::showNotification(shoulder_stash_notification_policy::formatCollectedNotification(
-                shoulderStashItemName(transferResult.baseForm), transferResult.count,
-                transferResult.formID != 0 ? transferResult.formID : fallbackFormID));
-        }
-
-        inline std::uint32_t claimOwnerCount(std::uint32_t ownerMask)
-        {
-            std::uint32_t count = 0;
-            while (ownerMask != 0) {
-                count += ownerMask & 1u;
-                ownerMask >>= 1u;
-            }
-            return count;
-        }
-
         inline constexpr std::uint32_t kInvalidAtomicBodyId = 0xFFFF'FFFFu;
         inline constexpr std::uint64_t kInvalidHeldImpactPair = 0xFFFF'FFFF'FFFF'FFFFull;
 
@@ -356,14 +257,6 @@ namespace rock
         {
             return bodyId == kInvalidAtomicBodyId || bodyId == ROCK_GRAB_EVENT_INVALID_BODY_ID ||
                 bodyId == object_physics_body_set::INVALID_BODY_ID;
-        }
-
-        inline std::uint64_t packHeldImpactPair(std::uint32_t heldBodyId, std::uint32_t otherBodyId)
-        {
-            if (isInvalidGrabBodyId(heldBodyId) || isInvalidGrabBodyId(otherBodyId)) {
-                return kInvalidHeldImpactPair;
-            }
-            return (static_cast<std::uint64_t>(heldBodyId) << 32) | static_cast<std::uint64_t>(otherBodyId);
         }
 
         inline bool unpackHeldImpactPair(std::uint64_t packedPair, std::uint32_t& heldBodyId,
@@ -395,46 +288,6 @@ namespace rock
             return grab_mass_policy::massFromInverseMass(unpackBfloat16(packedInvMass));
         }
 
-        inline std::uint32_t fillGrabEventBodyKinematics(RE::hknpWorld* world, std::uint32_t bodyId,
-            GrabEventData& eventData)
-        {
-            if (!world || isInvalidGrabBodyId(bodyId)) {
-                return 0;
-            }
-
-            auto* motion = havok_runtime::getBodyMotion(world, RE::hknpBodyId{ bodyId });
-            if (!motion) {
-                return 0;
-            }
-
-            std::uint32_t flags = 0;
-            const float scale = havokToGameScale();
-            eventData.positionGame[0] = motion->position.x * scale;
-            eventData.positionGame[1] = motion->position.y * scale;
-            eventData.positionGame[2] = motion->position.z * scale;
-            flags |= ROCK_GRAB_EVENT_FLAG_POSITION_VALID;
-
-            eventData.velocityGame[0] = motion->linearVelocity.x * scale;
-            eventData.velocityGame[1] = motion->linearVelocity.y * scale;
-            eventData.velocityGame[2] = motion->linearVelocity.z * scale;
-            flags |= ROCK_GRAB_EVENT_FLAG_VELOCITY_VALID;
-
-            const float speedHavok = std::sqrt(motion->linearVelocity.x * motion->linearVelocity.x +
-                motion->linearVelocity.y * motion->linearVelocity.y +
-                motion->linearVelocity.z * motion->linearVelocity.z);
-            if (std::isfinite(speedHavok)) {
-                eventData.speedGameUnitsPerSecond = speedHavok * scale;
-                flags |= ROCK_GRAB_EVENT_FLAG_SPEED_VALID;
-            }
-
-            eventData.mass = readGrabEventBodyMass(world, bodyId);
-            if (eventData.mass > 0.0f) {
-                flags |= ROCK_GRAB_EVENT_FLAG_MASS_VALID;
-            }
-
-            return flags;
-        }
-
         struct GrabButtonState
         {
             bool held{ false };
@@ -462,54 +315,6 @@ namespace rock
                 .pressed = vrcf::VRControllers.isPressed(vrHand, buttonId),
                 .released = vrcf::VRControllers.isReleased(vrHand, buttonId),
             };
-        }
-
-        inline GrabButtonState peekGrabButtonState(bool isLeft, int buttonId)
-        {
-            if (!input_remap_policy::isAllowedGrabButtonId(buttonId)) {
-                return {};
-            }
-
-            const auto rawState = input_remap_runtime::peekRawButtonState(isLeft, buttonId);
-            if (rawState.available) {
-                return GrabButtonState{
-                    .held = rawState.held,
-                    .pressed = rawState.pressed,
-                    .released = rawState.released,
-                };
-            }
-
-            const auto vrHand = isLeft ? vrcf::Hand::Left : vrcf::Hand::Right;
-            return GrabButtonState{
-                .held = vrcf::VRControllers.isPressHeldDown(vrHand, buttonId),
-                .pressed = vrcf::VRControllers.isPressed(vrHand, buttonId),
-                .released = vrcf::VRControllers.isReleased(vrHand, buttonId),
-            };
-        }
-
-        inline bool readGrabButtonHeld(bool isLeft, int buttonId)
-        {
-            if (!input_remap_policy::isAllowedGrabButtonId(buttonId)) {
-                return false;
-            }
-
-            const auto rawState = input_remap_runtime::peekRawButtonState(isLeft, buttonId);
-            if (rawState.available) {
-                return rawState.held;
-            }
-
-            return vrcf::VRControllers.isPressHeldDown(isLeft ? vrcf::Hand::Left : vrcf::Hand::Right, buttonId);
-        }
-
-        inline bool readHeldWeaponEquipTriggerPressedEdge(bool isLeft)
-        {
-            constexpr int buttonId = input_remap_policy::kOpenVrSteamVrTriggerButtonId;
-            const auto rawState = input_remap_runtime::consumeRawButtonState(isLeft, buttonId);
-            if (rawState.available) {
-                return rawState.pressed;
-            }
-
-            return vrcf::VRControllers.isPressed(isLeft ? vrcf::Hand::Left : vrcf::Hand::Right, buttonId);
         }
 
         struct TransformDelta
@@ -683,29 +488,6 @@ namespace rock
             return result;
         }
 
-        inline std::string_view providerFixedStringView(const char* value, std::size_t capacity)
-        {
-            if (!value) {
-                return {};
-            }
-            for (std::size_t i = 0; i < capacity; ++i) {
-                if (value[i] == '\0') {
-                    return std::string_view(value, i);
-                }
-            }
-            return std::string_view(value, capacity);
-        }
-
-        inline std::uint32_t providerColliderFlags(RE::hknpWorld* world, std::uint32_t bodyId, bool bodiesCurrent,
-            bool lifecycleAllowed)
-        {
-            std::uint32_t filter = 0;
-            const bool known =
-                bodiesCurrent && world && body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ bodyId }, filter);
-            return provider_state_policy::colliderFlags(lifecycleAllowed, known,
-                (filter & collision_suppression_registry::kSuppressionNoCollideBit) != 0);
-        }
-
         inline void copyProviderString(char* target, std::size_t targetSize, const std::string& source)
         {
             if (!target || targetSize == 0) {
@@ -714,43 +496,6 @@ namespace rock
 
             std::snprintf(target, targetSize, "%s", source.c_str());
             target[targetSize - 1] = '\0';
-        }
-
-        inline api::Point3 makeProviderPoint(const WeaponEvidencePoint3& point)
-        {
-            return api::Point3{ .x = point.x, .y = point.y, .z = point.z };
-        }
-
-        inline api::Point3 makeProviderPoint(const RE::NiPoint3& point)
-        {
-            return api::Point3{ .x = point.x, .y = point.y, .z = point.z };
-        }
-
-        inline api::collision::BodyContactTargetKind providerBodyContactTargetKind(
-            contact_pipeline_policy::ContactEndpointKind kind)
-        {
-            using api::collision::BodyContactTargetKind;
-            using contact_pipeline_policy::ContactEndpointKind;
-            // Body colliders never touch hands or each other (layer 47).
-            switch (kind) {
-            case ContactEndpointKind::Weapon:
-            case ContactEndpointKind::SecondaryWeapon:
-                return api::collision::BodyContactTargetKind::Weapon;
-            case ContactEndpointKind::RightHeldObject:
-            case ContactEndpointKind::LeftHeldObject:
-                return api::collision::BodyContactTargetKind::HeldObject;
-            case ContactEndpointKind::WorldSurface:
-                return api::collision::BodyContactTargetKind::WorldSurface;
-            case ContactEndpointKind::DynamicProp:
-                return api::collision::BodyContactTargetKind::DynamicProp;
-            case ContactEndpointKind::Actor:
-                return api::collision::BodyContactTargetKind::Actor;
-            case ContactEndpointKind::QueryOnly:
-                return api::collision::BodyContactTargetKind::QueryOnly;
-            default:
-                break;
-            }
-            return api::collision::BodyContactTargetKind::Unknown;
         }
 
         inline RE::EquippedWeaponData* getValidatedEquippedWeaponData()
@@ -765,53 +510,6 @@ namespace rock
                 return nullptr;
             }
             return equipWeaponData;
-        }
-
-        inline RE::NiAVObject* getEquippedProjectileNode()
-        {
-            /*
-             * FO4VR 1.2.72 initializes EquippedWeaponData::fireNode (+0x30)
-             * during equip through its native ProjectileNode/P-ProjectileNode
-             * resolver and refreshes it with equipped-item updates. The
-             * separate muzzleFlash pointer (+0x28) is presentation state and
-             * may remain null until the weapon has fired, so provider data
-             * must never depend on it.
-             */
-            auto* equipWeaponData = getValidatedEquippedWeaponData();
-            return equipWeaponData ? equipWeaponData->fireNode : nullptr;
-        }
-
-        inline f4vr::MuzzleFlash* getEquippedMuzzleFlashNodes()
-        {
-            /*
-             * ROCK is the final weapon visual owner during mesh/hand authority.
-             * Any ROCK weapon write after the normal first-person weapon update
-             * must re-own the fire node from the current projectile node so the
-             * muzzle origin remains at the barrel tip.
-             */
-            const auto equipWeaponData = getValidatedEquippedWeaponData();
-            if (!equipWeaponData) {
-                return nullptr;
-            }
-
-            const auto muzzle = reinterpret_cast<f4vr::MuzzleFlash*>(equipWeaponData->muzzleFlash);
-            if (!muzzle || !muzzle->fireNode || !muzzle->projectileNode) {
-                return nullptr;
-            }
-
-            return muzzle;
-        }
-
-        inline void applyFinalWeaponMuzzleAuthority()
-        {
-            auto* muzzle = getEquippedMuzzleFlashNodes();
-            if (!muzzle) {
-                return;
-            }
-
-            muzzle->fireNode->local =
-                weapon_muzzle_authority_math::fireNodeLocalFromProjectileWorld(muzzle->projectileNode->world);
-            f4vr::updateTransformsDown(muzzle->fireNode, true);
         }
 
         inline RE::NiNode* resolveEquippedWeaponInteractionNodeDirect() { return f4vr::getWeaponNode(); }

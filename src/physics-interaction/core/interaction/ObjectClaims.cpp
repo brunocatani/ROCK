@@ -5,6 +5,24 @@
 
 namespace rock
 {
+    namespace
+    {
+        constexpr std::uint32_t claimOwnerBit(PhysicsObjectClaimOwner owner)
+        {
+            return 1u << static_cast<std::uint32_t>(owner);
+        }
+
+        inline std::uint32_t claimOwnerCount(std::uint32_t ownerMask)
+        {
+            std::uint32_t count = 0;
+            while (ownerMask != 0) {
+                count += ownerMask & 1u;
+                ownerMask >>= 1u;
+            }
+            return count;
+        }
+    }
+
     bool PhysicsInteraction::physicsModOwnsObject(RE::TESObjectREFR* ref) const
     {
         if (!ref)

@@ -13,6 +13,14 @@ namespace rock
 {
     namespace
     {
+        inline std::uint64_t packHeldImpactPair(std::uint32_t heldBodyId, std::uint32_t otherBodyId)
+        {
+            if (isInvalidGrabBodyId(heldBodyId) || isInvalidGrabBodyId(otherBodyId)) {
+                return kInvalidHeldImpactPair;
+            }
+            return (static_cast<std::uint64_t>(heldBodyId) << 32) | static_cast<std::uint64_t>(otherBodyId);
+        }
+
         struct ContactEventCallbackInfo
         {
             void* fn = nullptr;

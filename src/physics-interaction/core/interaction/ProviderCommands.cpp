@@ -7,6 +7,19 @@ namespace rock
 {
     namespace
     {
+        inline std::string_view providerFixedStringView(const char* value, std::size_t capacity)
+        {
+            if (!value) {
+                return {};
+            }
+            for (std::size_t i = 0; i < capacity; ++i) {
+                if (value[i] == '\0') {
+                    return std::string_view(value, i);
+                }
+            }
+            return std::string_view(value, capacity);
+        }
+
         inline bool nodeNameEquals(RE::NiAVObject* node, std::string_view name)
         {
             if (!node || name.empty()) {

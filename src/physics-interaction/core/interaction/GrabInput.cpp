@@ -15,6 +15,102 @@
 
 namespace rock
 {
+    namespace
+    {
+        inline shoulder_stash::Probe makeShoulderStashObjectProbe(RE::hknpWorld* world, const Hand& hand,
+            const HandFrameInput& handInput)
+        {
+            shoulder_stash::Probe probe{};
+            if (hand.tryGetHeldObjectGrabPivotWorld(world, probe.pointGame)) {
+                return probe;
+            }
+
+            const auto& savedState = hand.getSavedObjectState();
+            RE::NiTransform heldBodyWorld{};
+            if (savedState.isValid() && world && tryGetBodyWorldTransform(world, savedState.bodyId, heldBodyWorld)) {
+                probe.pointGame = heldBodyWorld.translate;
+            } else {
+                probe.pointGame = handInput.grabAnchorWorld;
+            }
+            return probe;
+        }
+
+        inline mouth_consume::DetectorConfig makeMouthConsumeDetectorConfig()
+        {
+            mouth_consume::DetectorConfig config{};
+            config.enabled = g_rockConfig.rockMouthConsumeEnabled;
+            config.hmdMouthOffsetGameUnits = g_rockConfig.rockMouthConsumeHmdOffsetGameUnits;
+            config.mouthRadiusGameUnits = g_rockConfig.rockMouthConsumeRadiusGameUnits;
+            config.enterPaddingGameUnits = g_rockConfig.rockMouthConsumeEnterPaddingGameUnits;
+            config.exitPaddingGameUnits = g_rockConfig.rockMouthConsumeExitPaddingGameUnits;
+            config.minDwellSeconds = g_rockConfig.rockMouthConsumeMinDwellSeconds;
+            config.maxSpeedGameUnitsPerSecond = g_rockConfig.rockMouthConsumeMaxSpeedGameUnitsPerSecond;
+            return config;
+        }
+
+        inline mouth_consume::Probe makeMouthConsumeObjectProbe(RE::hknpWorld* world, const Hand& hand,
+            const HandFrameInput& handInput)
+        {
+            mouth_consume::Probe probe{};
+            if (hand.tryGetHeldObjectGrabPivotWorld(world, probe.pointGame)) {
+                return probe;
+            }
+
+            const auto& savedState = hand.getSavedObjectState();
+            RE::NiTransform heldBodyWorld{};
+            if (savedState.isValid() && world && tryGetBodyWorldTransform(world, savedState.bodyId, heldBodyWorld)) {
+                probe.pointGame = heldBodyWorld.translate;
+            } else {
+                probe.pointGame = handInput.grabAnchorWorld;
+            }
+            return probe;
+        }
+
+        inline mouth_consume::Probe makeMouthConsumeHandProbe(const HandFrameInput& handInput)
+        {
+            mouth_consume::Probe probe{};
+            probe.pointGame = handInput.grabAnchorWorld;
+            return probe;
+        }
+
+        inline void showShoulderStashCollectedNotification(const shoulder_stash::TransferResult& transferResult,
+            std::uint32_t fallbackFormID)
+        {
+            if (!g_rockConfig.rockShoulderStashShowCollectedNotifications || transferResult.lootActivatorScript) {
+                return;
+            }
+
+            f4vr::showNotification(shoulder_stash_notification_policy::formatCollectedNotification(
+                shoulderStashItemName(transferResult.baseForm), transferResult.count,
+                transferResult.formID != 0 ? transferResult.formID : fallbackFormID));
+        }
+
+        inline bool readGrabButtonHeld(bool isLeft, int buttonId)
+        {
+            if (!input_remap_policy::isAllowedGrabButtonId(buttonId)) {
+                return false;
+            }
+
+            const auto rawState = input_remap_runtime::peekRawButtonState(isLeft, buttonId);
+            if (rawState.available) {
+                return rawState.held;
+            }
+
+            return vrcf::VRControllers.isPressHeldDown(isLeft ? vrcf::Hand::Left : vrcf::Hand::Right, buttonId);
+        }
+
+        inline bool readHeldWeaponEquipTriggerPressedEdge(bool isLeft)
+        {
+            constexpr int buttonId = input_remap_policy::kOpenVrSteamVrTriggerButtonId;
+            const auto rawState = input_remap_runtime::consumeRawButtonState(isLeft, buttonId);
+            if (rawState.available) {
+                return rawState.pressed;
+            }
+
+            return vrcf::VRControllers.isPressed(isLeft ? vrcf::Hand::Left : vrcf::Hand::Right, buttonId);
+        }
+    }
+
     GrabReleaseContext PhysicsInteraction::makeGrabReleaseContext(const Hand& hand, bool isLeft) const
     {
         const Hand& peer = isLeft ? _rightHand : _leftHand;

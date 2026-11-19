@@ -7,6 +7,49 @@
 
 namespace rock
 {
+    namespace
+    {
+        inline std::uint32_t fillGrabEventBodyKinematics(RE::hknpWorld* world, std::uint32_t bodyId,
+            GrabEventData& eventData)
+        {
+            if (!world || isInvalidGrabBodyId(bodyId)) {
+                return 0;
+            }
+
+            auto* motion = havok_runtime::getBodyMotion(world, RE::hknpBodyId{ bodyId });
+            if (!motion) {
+                return 0;
+            }
+
+            std::uint32_t flags = 0;
+            const float scale = havokToGameScale();
+            eventData.positionGame[0] = motion->position.x * scale;
+            eventData.positionGame[1] = motion->position.y * scale;
+            eventData.positionGame[2] = motion->position.z * scale;
+            flags |= ROCK_GRAB_EVENT_FLAG_POSITION_VALID;
+
+            eventData.velocityGame[0] = motion->linearVelocity.x * scale;
+            eventData.velocityGame[1] = motion->linearVelocity.y * scale;
+            eventData.velocityGame[2] = motion->linearVelocity.z * scale;
+            flags |= ROCK_GRAB_EVENT_FLAG_VELOCITY_VALID;
+
+            const float speedHavok = std::sqrt(motion->linearVelocity.x * motion->linearVelocity.x +
+                motion->linearVelocity.y * motion->linearVelocity.y +
+                motion->linearVelocity.z * motion->linearVelocity.z);
+            if (std::isfinite(speedHavok)) {
+                eventData.speedGameUnitsPerSecond = speedHavok * scale;
+                flags |= ROCK_GRAB_EVENT_FLAG_SPEED_VALID;
+            }
+
+            eventData.mass = readGrabEventBodyMass(world, bodyId);
+            if (eventData.mass > 0.0f) {
+                flags |= ROCK_GRAB_EVENT_FLAG_MASS_VALID;
+            }
+
+            return flags;
+        }
+    }
+
     void PhysicsInteraction::pruneHeldImpactHapticCooldowns()
     {
         if (_grabEvents.heldImpactHapticCooldownUntil.size() < 128) {
