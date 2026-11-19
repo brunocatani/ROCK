@@ -19,6 +19,7 @@
 // still has a timestamped record of what the weapon looked like at that moment.
 // Frame thread, AfterWorldFinal. The walk is bounded and runs only while the
 // setting is on.
+#include "physics-interaction/VectorMath.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/equip/EquippedWeaponVisualState.h"
@@ -63,11 +64,7 @@ namespace rock
 
         bool finite(const RE::NiPoint3& p) { return std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z); }
 
-        float distance(const RE::NiPoint3& a, const RE::NiPoint3& b)
-        {
-            const auto d = a - b;
-            return std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
-        }
+        using vector_math::distance;
 
         struct SlotState
         {

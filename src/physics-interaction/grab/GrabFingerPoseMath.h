@@ -139,11 +139,7 @@ namespace rock::grab_finger_pose_math
         return vector_math::dot(a, b);
     }
 
-    template <class Vector>
-    inline float length(const Vector& value)
-    {
-        return std::sqrt(dot(value, value));
-    }
+    using vector_math::length;
 
     template <class Vector>
     inline float lengthSquared(const Vector& value)

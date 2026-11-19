@@ -1,4 +1,6 @@
 #include "physics-interaction/object/ObjectDetection.h"
+
+#include "physics-interaction/VectorMath.h"
 #include "physics-interaction/object/CountBasedAmmo.h"
 #include "RockConfig.h"
 #include "physics-interaction/grab/GrabInteractionPolicy.h"
@@ -398,12 +400,6 @@ namespace rock
 
     namespace
     {
-        float pointDistance(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
-        {
-            const RE::NiPoint3 delta(lhs.x - rhs.x, lhs.y - rhs.y, lhs.z - rhs.z);
-            return std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
-        }
-
         bool normalizeGameDirection(RE::NiPoint3 value, RE::NiPoint3& out)
         {
             const float lengthSquared = value.x * value.x + value.y * value.y + value.z * value.z;
@@ -451,7 +447,7 @@ namespace rock
             const RE::NiPoint3& hitPoint, float nearReachDistance)
         {
             return classification.kind != grab_target::Kind::ExtractableItem &&
-                selection_query_policy::shouldPromoteFarHitToClose(pointDistance(start, hitPoint), nearReachDistance);
+                selection_query_policy::shouldPromoteFarHitToClose(vector_math::distance(start, hitPoint), nearReachDistance);
         }
 
         SelectedObject chooseShapeCastSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
@@ -873,7 +869,7 @@ namespace rock
         // sees a hit at the hand origin. Treating that as a pull creates a false "can't re-grab"
         // state; ROCK keeps active hand-reachable objects on the close-grab path.
         if (result.isValid() && result.hasHitPoint && result.targetKind != grab_target::Kind::ExtractableItem) {
-            const float hitDistance = pointDistance(handPos, result.hitPointWorld);
+            const float hitDistance = vector_math::distance(handPos, result.hitPointWorld);
             if (selection_query_policy::shouldPromoteFarHitToClose(hitDistance, configuredNearReach)) {
                 result.isFarSelection = false;
                 result.distance = hitDistance;

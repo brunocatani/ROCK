@@ -23,6 +23,8 @@
 
 #include <ROCK/TransformMath.h>
 
+#include "physics-interaction/VectorMath.h"
+
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -92,11 +94,7 @@ namespace rock::weapon_world_bounds
                 std::isfinite(bound.fRadius) && bound.fRadius > 0.0f;
         }
 
-        [[nodiscard]] inline float distance(const RE::NiPoint3& a, const RE::NiPoint3& b) noexcept
-        {
-            const float x = a.x - b.x, y = a.y - b.y, z = a.z - b.z;
-            return std::sqrt(x * x + y * y + z * z);
-        }
+        using vector_math::distance;
 
         [[nodiscard]] inline bool contains(const RE::NiBound& outer, const RE::NiBound& inner) noexcept
         {

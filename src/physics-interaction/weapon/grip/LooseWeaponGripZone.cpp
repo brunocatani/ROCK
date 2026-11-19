@@ -163,14 +163,6 @@ namespace rock::loose_weapon_grip_zone
 
         bool isFinitePoint(const RE::NiPoint3& point) { return vector_math::hasFiniteComponents(point); }
 
-        float pointDistance(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
-        {
-            const float dx = lhs.x - rhs.x;
-            const float dy = lhs.y - rhs.y;
-            const float dz = lhs.z - rhs.z;
-            return std::sqrt(dx * dx + dy * dy + dz * dz);
-        }
-
         // The authored grip fixes the visual wrist in weapon space. ROCK's
         // controller aim independently defines physical carry orientation;
         // probing hands never move the authored target on the loose weapon.
@@ -487,7 +479,7 @@ namespace rock::loose_weapon_grip_zone
         const auto probeLocal = transform_math::worldPointToLocal(root->world, probeWorld);
         HandZoneState firing{};
         const bool firingResolved = tryResolveGripWorld(isLeft, ref, firing);
-        const float firingDistance = pointDistance(probeLocal, firing.gripWeaponLocal) * std::fabs(root->world.scale);
+        const float firingDistance = vector_math::distance(probeLocal, firing.gripWeaponLocal) * std::fabs(root->world.scale);
         const auto& settings = equipped_weapon_handling_runtime::current();
         RE::NiPoint3 lateral{}, down{}, reference{};
         const bool firingAxesValid = TwoHandedGrip::tryResolveAuthoredActivationAxes(authored.rightHandWeaponLocal,
@@ -510,14 +502,14 @@ namespace rock::loose_weapon_grip_zone
         const auto nativeSupportPalm = computeGrabPalmPointWorldFromHandBasis(authored.supportHandWeaponLocal, true);
         out.arrangement = selection::arrangement(authored.found && authored.rightFiringFingerPose.complete(),
             authored.hasSupportRelation && authored.supportFingerPose.complete(), authored.supportPoseAbsent,
-            pointDistance(nativeSupportPalm, firing.gripWeaponLocal) * std::abs(root->world.scale),
+            vector_math::distance(nativeSupportPalm, firing.gripWeaponLocal) * std::abs(root->world.scale),
             settings.firingGripProximitySupportRadiusGameUnits);
         const bool sharedZone = selection::sharedFiringZone(out.arrangement);
         float supportDistance = 0.0f;
         bool supportEligible = false;
         if (supportResolved) {
             const auto seatLocal = computeGrabPalmPointWorldFromHandBasis(supportLocal, isLeft);
-            supportDistance = pointDistance(probeLocal, seatLocal) * std::fabs(root->world.scale);
+            supportDistance = vector_math::distance(probeLocal, seatLocal) * std::fabs(root->world.scale);
             auto& debug = state.debug;
             debug.seatWorld = transform_math::localPointToWorld(root->world, seatLocal);
             debug.probeWorld = probeWorld;
@@ -673,7 +665,7 @@ namespace rock::loose_weapon_grip_zone
             return;
         }
 
-        next.palmToGripDistance = pointDistance(next.palmWorld, next.gripWorld);
+        next.palmToGripDistance = vector_math::distance(next.palmWorld, next.gripWorld);
         // A hold at the authored support seat is itself the station: it
         // settles there for a support equip.
         next.insideRadius = supportSeatHeld || (firingGripEligible && next.palmToGripDistance <= equipRadiusGameUnits);
@@ -734,7 +726,7 @@ namespace rock::loose_weapon_grip_zone
             return;
         }
 
-        next.palmToGripDistance = pointDistance(next.palmWorld, next.gripWorld);
+        next.palmToGripDistance = vector_math::distance(next.palmWorld, next.gripWorld);
         next.insideRadius = next.palmToGripDistance <= equipRadiusGameUnits;
 
         if (next.insideRadius != state.insideRadius) {

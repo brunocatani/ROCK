@@ -15,6 +15,7 @@
 #include "RE/NetImmerse/NiNode.h"
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
+#include "physics-interaction/VectorMath.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/hand/RenderedBoneTransportPolicy.h"
 
@@ -309,13 +310,7 @@ namespace rock::root_flattened_finger_skeleton_runtime
         return isLeft ? kLeftNames[index] : kRightNames[index];
     }
 
-    inline float distance(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
-    {
-        const float dx = lhs.x - rhs.x;
-        const float dy = lhs.y - rhs.y;
-        const float dz = lhs.z - rhs.z;
-        return std::sqrt(dx * dx + dy * dy + dz * dz);
-    }
+    using vector_math::distance;
 
     inline RE::NiPoint3 normalizedOrFallback(const RE::NiPoint3& value, const RE::NiPoint3& fallback)
     {

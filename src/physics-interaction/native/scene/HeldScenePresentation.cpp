@@ -811,7 +811,7 @@ namespace rock::held_scene_presentation
                     "advance={:.3f}gu/{:.3f}deg output=({:.3f},{:.3f},{:.3f})",
                     traceId, frameIndex, isLeft ? "left" : "right", referenceRoot->name.c_str(), registration.count,
                     scenePoseCount,
-                    held_scene_presentation_policy::pointDistance(rootBefore.translate, referenceRoot->world.translate),
+                    vector_math::distance(rootBefore.translate, referenceRoot->world.translate),
                     held_scene_presentation_policy::matrixRotationDeltaDegrees(rootBefore.rotate,
                         referenceRoot->world.rotate),
                     referenceRoot->world.translate.x, referenceRoot->world.translate.y,

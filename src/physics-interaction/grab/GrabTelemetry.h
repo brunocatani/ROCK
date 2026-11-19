@@ -15,6 +15,7 @@
 #include "RE/NetImmerse/NiTransform.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/VectorMath.h"
 #include "physics-interaction/grab/GrabCore.h"
 
 // ---- Grab transform telemetry ----
@@ -37,17 +38,11 @@ namespace rock::grab_transform_telemetry
         RE::NiPoint3 z{ 0.0f, 0.0f, 1.0f };
     };
 
-    template <class Vector>
-    inline float vectorLength(const Vector& value)
-    {
-        return std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
-    }
-
     inline RE::NiPoint3 normalizeDirectionOrFallback(const RE::NiPoint3& value, const RE::NiPoint3& fallback)
     {
-        const float length = vectorLength(value);
+        const float length = vector_math::length(value);
         if (!std::isfinite(length) || length <= 1.0e-6f) {
-            const float fallbackLength = vectorLength(fallback);
+            const float fallbackLength = vector_math::length(fallback);
             if (!std::isfinite(fallbackLength) || fallbackLength <= 1.0e-6f) {
                 return RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
             }
@@ -83,8 +78,8 @@ namespace rock::grab_transform_telemetry
     template <class Vector>
     inline float directionDot(const Vector& a, const Vector& b)
     {
-        const float aLength = vectorLength(a);
-        const float bLength = vectorLength(b);
+        const float aLength = vector_math::length(a);
+        const float bLength = vector_math::length(b);
         if (aLength <= 1.0e-8f || bLength <= 1.0e-8f) {
             return 0.0f;
         }

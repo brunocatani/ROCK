@@ -7,6 +7,7 @@
 #include <format>
 
 #include "RE/NetImmerse/NiPoint.h"
+#include "physics-interaction/VectorMath.h"
 
 namespace rock::body_frame
 {
@@ -100,13 +101,7 @@ namespace rock::body_frame
         return BodyFrameAnchor{ RE::NiPoint3{}, BodyFrameSource::None };
     }
 
-    inline float distance(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
-    {
-        const float dx = lhs.x - rhs.x;
-        const float dy = lhs.y - rhs.y;
-        const float dz = lhs.z - rhs.z;
-        return std::sqrt(dx * dx + dy * dy + dz * dz);
-    }
+    using vector_math::distance;
 
     inline const char* bodyFrameSourceName(BodyFrameSource source)
     {

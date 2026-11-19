@@ -32,6 +32,24 @@ namespace rock::vector_math
         return dot(value, value);
     }
 
+    // Plain Euclidean length and distance. A non-finite input gives a
+    // non-finite result; a caller that needs a fallback states it itself.
+    template <class Vector>
+    [[nodiscard]] inline auto length(const Vector& value) noexcept
+    {
+        // Qualified so a caller namespace's own lengthSquared is never picked up through the argument type.
+        return std::sqrt(vector_math::lengthSquared(value));
+    }
+
+    template <class Vector>
+    [[nodiscard]] inline auto distance(const Vector& lhs, const Vector& rhs) noexcept
+    {
+        const auto x = lhs.x - rhs.x;
+        const auto y = lhs.y - rhs.y;
+        const auto z = lhs.z - rhs.z;
+        return std::sqrt(x * x + y * y + z * z);
+    }
+
     template <class Vector>
     [[nodiscard]] constexpr bool hasFiniteComponents(const Vector& value) noexcept
     {

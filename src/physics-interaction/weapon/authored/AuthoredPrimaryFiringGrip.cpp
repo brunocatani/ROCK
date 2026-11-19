@@ -10,6 +10,7 @@
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/VectorMath.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/hand/HandFrame.h"
@@ -31,18 +32,7 @@ namespace rock
     {
         [[nodiscard]] float translationDistance(const RE::NiTransform& lhs, const RE::NiTransform& rhs)
         {
-            const float x = lhs.translate.x - rhs.translate.x;
-            const float y = lhs.translate.y - rhs.translate.y;
-            const float z = lhs.translate.z - rhs.translate.z;
-            return std::sqrt(x * x + y * y + z * z);
-        }
-
-        [[nodiscard]] float pointDistance(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
-        {
-            const float x = lhs.x - rhs.x;
-            const float y = lhs.y - rhs.y;
-            const float z = lhs.z - rhs.z;
-            return std::sqrt(x * x + y * y + z * z);
+            return vector_math::distance(lhs.translate, rhs.translate);
         }
 
         [[nodiscard]] float rotationMatrixMaxDelta(const RE::NiTransform& lhs, const RE::NiTransform& rhs)
@@ -927,7 +917,7 @@ namespace rock
                         std::fabs(solvedWeaponWorld.translate.z), std::fabs(trackedHandWorld.translate.x),
                         std::fabs(trackedHandWorld.translate.y), std::fabs(trackedHandWorld.translate.z) }));
             const float positionOnlyHoldGripError =
-                pointDistance(cachedPositionOnlyGripWeaponLocal, authoredGripWeaponLocal);
+                vector_math::distance(cachedPositionOnlyGripWeaponLocal, authoredGripWeaponLocal);
             const bool positionOnlyHoldValid = transform_math::isNonCollapsedTransform(rightPositionOnlyHandWeaponLocal) &&
                 std::isfinite(positionOnlyHoldGripError) &&
                 positionOnlyHoldGripError <= positionOnlyHoldGripErrorTolerance;
@@ -964,7 +954,7 @@ namespace rock
         ROCK_LOG_SAMPLE_DEBUG(Animation, 1000,
             "Authored position-only trace weaponKey=0x{:X} generation=0x{:X} palmError={:.4f}gu "
             "rotationReadbackMaxDelta={:.7f} scaleDelta={:.7f}",
-            currentWeaponKey, input.weaponGenerationKey, pointDistance(publishedGripWorld, trackedPalmWorld),
+            currentWeaponKey, input.weaponGenerationKey, vector_math::distance(publishedGripWorld, trackedPalmWorld),
             rotationMatrixMaxDelta(liveWeaponWorld, input.weaponNode->world),
             std::abs(liveWeaponWorld.scale - input.weaponNode->world.scale));
 

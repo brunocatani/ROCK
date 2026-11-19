@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/VectorMath.h"
 #include "physics-interaction/timing/GameFrameTimingPolicy.h"
 
 #include <algorithm>
@@ -66,15 +67,6 @@ namespace rock::held_scene_presentation_policy
             transform.scale > transform_math::kCollapsedScaleMagnitude && transform.scale < 10000.0f;
     }
 
-    template <class Point>
-    inline float pointDistance(const Point& first, const Point& second) noexcept
-    {
-        const float deltaX = first.x - second.x;
-        const float deltaY = first.y - second.y;
-        const float deltaZ = first.z - second.z;
-        return std::sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
-    }
-
     template <class Matrix>
     inline float matrixRotationDeltaDegrees(const Matrix& first, const Matrix& second) noexcept
     {
@@ -115,7 +107,7 @@ namespace rock::held_scene_presentation_policy
         const float motionScale = game_frame_timing_policy::frameMotionScale(frameSeconds);
 
         decision.targetTranslationStepGameUnits =
-            pointDistance(previousTargetWorld.translate, currentTargetWorld.translate);
+            vector_math::distance(previousTargetWorld.translate, currentTargetWorld.translate);
         if (!std::isfinite(decision.targetTranslationStepGameUnits) ||
             decision.targetTranslationStepGameUnits > kMaxTargetTranslationStepGameUnits * motionScale) {
             decision.reason = TargetTransportRejectReason::ExcessiveTargetTranslationStep;
@@ -136,7 +128,7 @@ namespace rock::held_scene_presentation_policy
             return decision;
         }
         const decltype(physicalResidual.translate) residualOrigin{};
-        decision.physicalResidualGameUnits = pointDistance(physicalResidual.translate, residualOrigin);
+        decision.physicalResidualGameUnits = vector_math::distance(physicalResidual.translate, residualOrigin);
         if (!std::isfinite(decision.physicalResidualGameUnits) ||
             decision.physicalResidualGameUnits > kMaxTargetResidualTranslationGameUnits) {
             decision.reason = TargetTransportRejectReason::ExcessivePhysicalResidual;
@@ -148,7 +140,7 @@ namespace rock::held_scene_presentation_policy
             return decision;
         }
         decision.transportAdvanceGameUnits =
-            pointDistance(previousSolvedBodyWorld.translate, decision.presentedWorld.translate);
+            vector_math::distance(previousSolvedBodyWorld.translate, decision.presentedWorld.translate);
         const float transportRotationDegrees =
             matrixRotationDeltaDegrees(previousSolvedBodyWorld.rotate, decision.presentedWorld.rotate);
         if (!std::isfinite(decision.transportAdvanceGameUnits) || !std::isfinite(transportRotationDegrees) ||
@@ -178,7 +170,7 @@ namespace rock::held_scene_presentation_policy
         presentedBody = transform_math::composeTransforms(delta, solvedBody);
         presentedBody.scale = solvedBody.scale;
         return isPresentableTransform(presentedBody) &&
-            pointDistance(solvedBody.translate, presentedBody.translate) <=
+            vector_math::distance(solvedBody.translate, presentedBody.translate) <=
             kMaxTargetTransportAdvanceGameUnits * motionScale &&
             matrixRotationDeltaDegrees(solvedBody.rotate, presentedBody.rotate) <=
             kMaxTargetRotationStepDegrees * motionScale;
@@ -249,7 +241,7 @@ namespace rock::held_scene_presentation_policy
             }
             for (std::size_t prior = 0; prior < index; ++prior) {
                 if (poses[prior].node == pose.node) {
-                    if (pointDistance(poses[prior].world.translate, pose.world.translate) > 0.001f ||
+                    if (vector_math::distance(poses[prior].world.translate, pose.world.translate) > 0.001f ||
                         matrixRotationDeltaDegrees(poses[prior].world.rotate, pose.world.rotate) > 0.1f ||
                         std::fabs(poses[prior].world.scale - pose.world.scale) > 0.0001f) {
                         return false;

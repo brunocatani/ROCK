@@ -3,6 +3,7 @@
 
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/VectorMath.h"
 #include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/native/havok/HavokRuntime.h"
 #include "physics-interaction/native/havok/PhysicsUtils.h"
@@ -46,11 +47,6 @@ namespace rock
             return RE::NiPoint3{ to.x - from.x, to.y - from.y, to.z - from.z };
         }
 
-        float pointLength(const RE::NiPoint3& value)
-        {
-            return std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
-        }
-
         float radiansToDegrees(float radians) { return radians * 57.29577951308232f; }
 
         RE::NiPoint3 localAxisWorld(const RE::NiMatrix3& matrix, const RE::NiPoint3& axis)
@@ -58,14 +54,9 @@ namespace rock
             return transform_math::rotateLocalVectorToWorld(matrix, axis);
         }
 
-        float directionLength(const RE::NiPoint3& value)
-        {
-            return std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
-        }
-
         RE::NiPoint3 normalizedOrZero(const RE::NiPoint3& value)
         {
-            const float len = directionLength(value);
+            const float len = vector_math::length(value);
             if (len <= 0.000001f || !std::isfinite(len)) {
                 return {};
             }
@@ -93,7 +84,7 @@ namespace rock
                 result.requiredAngularVelocityRadians = 0.0f;
                 return;
             }
-            const float linearGame = pointLength(pointDelta(liveTransform.translate, target.translate));
+            const float linearGame = vector_math::length(pointDelta(liveTransform.translate, target.translate));
             result.requiredLinearVelocityHavok = linearGame * gameToHavokScale() / driveDeltaSeconds;
             const float angle =
                 generated_keyframed_body_drive_math::rotationAngleRadians(liveTransform.rotate, target.rotate);

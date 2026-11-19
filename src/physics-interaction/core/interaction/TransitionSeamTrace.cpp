@@ -13,6 +13,7 @@
 // is a geometry step. Every rendered frame is observed so the baseline is the
 // frame before. The observation walks weapon geometry and skin bones each frame,
 // so it runs only while debug logging is on, like the equip-readiness trace.
+#include "physics-interaction/VectorMath.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
@@ -121,11 +122,7 @@ namespace rock
             return {};
         }
 
-        float distance(const RE::NiPoint3& a, const RE::NiPoint3& b)
-        {
-            const auto d = a - b;
-            return std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
-        }
+        using vector_math::distance;
 
         // Rendered shapes' world bound centres, bounded walk.
         bool measureGeometry(const RE::NiAVObject* root, RE::NiPoint3& center, RE::NiPoint3& tip)

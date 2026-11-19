@@ -391,11 +391,7 @@ namespace rock::held_object_physics_math
         return vector_math::lengthSquared(value);
     }
 
-    template <class Vec3>
-    inline float length(const Vec3& value)
-    {
-        return std::sqrt(lengthSquared(value));
-    }
+    using vector_math::length;
 
     // An unmeasurable frame contributes zero time: velocity estimates
     // invalidate, dwell accumulation holds, and smoothing does not advance.
@@ -555,11 +551,7 @@ namespace rock::grab_held_response
         return vector_math::lengthSquared(value);
     }
 
-    template <class Vec3>
-    inline float length(const Vec3& value)
-    {
-        return std::sqrt(lengthSquared(value));
-    }
+    using vector_math::length;
 
     template <class Vec3>
     inline Vec3 clampMagnitude(const Vec3& value, float maxMagnitude)

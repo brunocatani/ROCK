@@ -223,11 +223,6 @@ namespace rock
             input_remap_runtime::setEquippedWeaponLeftHandFiringActive(false);
         }
 
-        [[nodiscard]] inline float pointLength(const RE::NiPoint3& value)
-        {
-            return std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
-        }
-
         inline FarSelectionHmdConeGate makeFarSelectionHmdConeGate(const PhysicsFrameContext& frame)
         {
             FarSelectionHmdConeGate gate{};
