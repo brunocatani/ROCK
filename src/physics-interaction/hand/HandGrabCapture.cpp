@@ -1039,8 +1039,8 @@ namespace rock
 
         _grabStartTime = 0.0f;
         _heldObjectUpdateFrame = 0;
-        _grabConvergeStableInsidePocketSeconds = 0.0f;
-        _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
+        _grabConverge.stableInsidePocketSeconds = 0.0f;
+        _grabConverge.previousGripErrorGameUnits = std::numeric_limits<float>::max();
         _grabTransitPlacementElapsedSeconds = 0.0f;
     }
 

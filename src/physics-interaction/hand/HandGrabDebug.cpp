@@ -637,9 +637,9 @@ namespace rock
      */
     void Hand::logGrabPoseQuality()
     {
-        if (!_grabFrame.heldNode || _grabFingerTriangleIndex.empty() || !_hasGrabVisualHandTransform) {
+        if (!_grabFrame.heldNode || _grabFingers.triangleIndex.empty() || !_hasGrabVisualHandTransform) {
             ROCK_LOG_INFO(Hand, "{} GRAB POSE QUALITY: skipped heldNode={} meshIndex={} visualHand={}", handName(),
-                _grabFrame.heldNode != nullptr, !_grabFingerTriangleIndex.empty(), _hasGrabVisualHandTransform);
+                _grabFrame.heldNode != nullptr, !_grabFingers.triangleIndex.empty(), _hasGrabVisualHandTransform);
             return;
         }
         /*
@@ -664,8 +664,8 @@ namespace rock
         const auto signedDistance = [&](const RE::NiPoint3& point, bool& inside) {
             RE::NiPoint3 nearest{};
             RE::NiPoint3 outward{};
-            inside = _grabFingerTriangleIndex.queryPointInsideWorld(objectWorld, point);
-            if (!_grabFingerTriangleIndex.querySphereWorld(objectWorld, point, kSearchGameUnits, &nearest, &outward,
+            inside = _grabFingers.triangleIndex.queryPointInsideWorld(objectWorld, point);
+            if (!_grabFingers.triangleIndex.querySphereWorld(objectWorld, point, kSearchGameUnits, &nearest, &outward,
                     nullptr, false)) {
                 return kNoSurface;
             }
@@ -707,9 +707,9 @@ namespace rock
                     }
                 }
             }
-            const float curl = _grabFingerPose.values[finger];
+            const float curl = _grabFingers.pose.values[finger];
             fingers += std::format(" f{}=[min={:.2f}@{} insideShell={}/12 curl={:.2f} contact={}]", finger, worst,
-                kSegment[worstSegment], insideSamples, curl, (_grabFingerPose.contactValidMask >> finger) & 1u);
+                kSegment[worstSegment], insideSamples, curl, (_grabFingers.pose.contactValidMask >> finger) & 1u);
         }
 
         // Palm centreline: wrist (visual hand origin) toward the knuckle midpoint.
@@ -732,7 +732,7 @@ namespace rock
             "contactMask=0x{:02X}{}",
             handName(), _grabObjectGripAtGrab.source ? _grabObjectGripAtGrab.source : "none", palmMin, palmInside,
             palmNormalLocal.x, palmNormalLocal.y, palmNormalLocal.z, fingerDirLocal.x, fingerDirLocal.y,
-            fingerDirLocal.z, _grabFingerPose.contactValidMask, fingers);
+            fingerDirLocal.z, _grabFingers.pose.contactValidMask, fingers);
         writeGrabPoseReplay(rendered, objectWorld);
     }
 
@@ -762,9 +762,9 @@ namespace rock
         record.capturedLocal = stamp;
 
         for (std::size_t f = 0; f < grab_pose_replay::kFingerCount; ++f)
-            record.finalValues[f] = _grabFingerPose.values[f];
-        record.finalJointValues = _grabFingerPose.jointValues;
-        record.publishedJointValues = _grabFingerJointPose;
+            record.finalValues[f] = _grabFingers.pose.values[f];
+        record.finalJointValues = _grabFingers.pose.jointValues;
+        record.publishedJointValues = _grabFingers.jointPose;
         record.renderedObjectWorld = toReplay(renderedObjectWorld);
         record.renderedVisualHandWorld = toReplay(_grabVisualHandTransform);
         record.rendered = toReplay(rendered);

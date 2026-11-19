@@ -619,11 +619,11 @@ namespace rock
         const bool leavingPair = _grabFrame.looseObjectSharedPeerTrace != 0 && !shared;
         finishOldPair(*this, shared ? peer->_grabFrame.traceId : 0);
         if (!shared) {
-            _looseSharedAcquisition = {};
-            _looseSharedAcquisitionPeer = 0;
-            _looseSharedAcquisitionFrame = 0;
-            _looseSharedGunstockAim = false;
-            _looseSharedHandBlendAlpha = -1.0f;
+            _looseShared.acquisition = {};
+            _looseShared.acquisitionPeer = 0;
+            _looseShared.acquisitionFrame = 0;
+            _looseShared.gunstockAim = false;
+            _looseShared.handBlendAlpha = -1.0f;
             proxyWorld = correctedProxy(*this, proxyWorld);
             if (leavingPair && isHoldingLooseWeapon()) {
                 RE::NiTransform presentedBody{};
@@ -751,7 +751,7 @@ namespace rock
                 RE::NiTransform presentedBody{};
                 if (!readPresentedBody(*this, presentedBody))
                     return false;
-                primary._looseSharedAcquisitionPeer = 0;
+                primary._looseShared.acquisitionPeer = 0;
                 proxyWorld = grab_frame_math::generatedProxyFromObjectWorld(presentedBody,
                     _grabFrame.proxyAuthorityBodyHandSpace);
                 ROCK_LOG_SAMPLE_WARN(Hand, 1000, "{} loose gunstock waiting for tracked controller baseline",
@@ -772,10 +772,10 @@ namespace rock
             const auto targetBody = transform_math::composeTransforms(sharedRoot, primaryBodyLocal);
             const auto targetInProxy = grab_frame_math::objectInGeneratedProxyLocalSpace(primaryProxy, targetBody);
             const auto pivot = primary.activeProxyConstraintPivotBLocalGame();
-            auto& acquisition = primary._looseSharedAcquisition;
+            auto& acquisition = primary._looseShared.acquisition;
             const auto sequence = runtime_state::currentFrame().timing.sequence;
-            if (primary._looseSharedAcquisitionPeer != support._grabFrame.traceId ||
-                primary._looseSharedGunstockAim != gunstockAim) {
+            if (primary._looseShared.acquisitionPeer != support._grabFrame.traceId ||
+                primary._looseShared.gunstockAim != gunstockAim) {
                 RE::NiTransform liveBody{};
                 if (!readPresentedBody(primary, liveBody))
                     return false;
@@ -803,9 +803,9 @@ namespace rock
                         ? (std::max)(linearDuration, angularDuration)
                         : 0.0f;
                 }
-                primary._looseSharedAcquisitionPeer = support._grabFrame.traceId;
-                primary._looseSharedAcquisitionFrame = sequence;
-                primary._looseSharedGunstockAim = gunstockAim;
+                primary._looseShared.acquisitionPeer = support._grabFrame.traceId;
+                primary._looseShared.acquisitionFrame = sequence;
+                primary._looseShared.gunstockAim = gunstockAim;
                 // A live mode change/tracking recovery reuses these grips.
                 // Rebase the wrist too; replaying its original free-hand start
                 // would produce a hand snap even though the weapon is eased.
@@ -824,14 +824,14 @@ namespace rock
                     getHeldRef()->formID, primary.handName(), gunstockAim, acquisition.durationSeconds);
             }
             const auto blendedProxy =
-                grab_offset_acquisition::advanceShared(acquisition, primary._looseSharedAcquisitionFrame, sequence,
+                grab_offset_acquisition::advanceShared(acquisition, primary._looseShared.acquisitionFrame, sequence,
                     primaryProxy, targetInProxy, pivot, runtime_state::currentFrame().deltaSeconds);
-            primary._looseSharedHandBlendAlpha = -1.0f;
-            support._looseSharedHandBlendAlpha = -1.0f;
+            primary._looseShared.handBlendAlpha = -1.0f;
+            support._looseShared.handBlendAlpha = -1.0f;
             const float alpha =
                 hand_visual_lerp_math::timedBlendAlpha(acquisition.elapsedSeconds, acquisition.durationSeconds);
             Hand& joining = primary._grabFrame.traceId > support._grabFrame.traceId ? primary : support;
-            joining._looseSharedHandBlendAlpha = !sharedFiringStation && acquisition.durationSeconds > 0.0f
+            joining._looseShared.handBlendAlpha = !sharedFiringStation && acquisition.durationSeconds > 0.0f
                 ? alpha * alpha * (3.0f - 2.0f * alpha)
                 : -1.0f;
             sharedRoot = transform_math::composeTransforms(
@@ -933,7 +933,7 @@ namespace rock
             if (synchronizeAcquiringWeaponHand) {
                 const float alpha = hand_visual_lerp_math::timedBlendAlpha(_grabOffsetAcquisition.elapsedSeconds,
                     _grabOffsetAcquisition.durationSeconds);
-                _looseSharedHandBlendAlpha = alpha * alpha * (3.0f - 2.0f * alpha);
+                _looseShared.handBlendAlpha = alpha * alpha * (3.0f - 2.0f * alpha);
             }
             if (!_grabOffsetAcquisition.active)
                 _looseWeaponReturnStartFrame = 0;
@@ -1183,11 +1183,11 @@ namespace rock
                     nextVisualHandWorld = advancedVisual.transform;
                     visualHandLerpAlpha = hand_visual_lerp_math::timedBlendAlpha(_grabVisualHandLerp.elapsedSeconds,
                         _grabVisualHandLerp.durationSeconds);
-                    if (weaponVisual && _looseSharedHandBlendAlpha >= 0.0f) {
+                    if (weaponVisual && _looseShared.handBlendAlpha >= 0.0f) {
                         // Initial wrist acquisition and paired joining use the
                         // weapon's exact eased progress, including its last frame.
                         // Visual-only support retains its independent wrist blend.
-                        visualHandLerpAlpha = _looseSharedHandBlendAlpha;
+                        visualHandLerpAlpha = _looseShared.handBlendAlpha;
                         nextVisualHandWorld = hand_visual_lerp_math::interpolateTransform(
                             _grabVisualHandLerp.startTransform, targetVisualHandWorld, visualHandLerpAlpha);
                         if (visualHandLerpAlpha >= 1.0f)
@@ -1281,15 +1281,15 @@ namespace rock
          * displaced pose. Finish the local-transform layer once, on the next
          * TouchHeld update, after the solved joint pose is the live skeleton source.
          */
-        if (_grabFingerSweptArc && _grabFingerLocalTransformFinalizePending && _grabFingerPosePublished &&
-            _grabFingerPose.solved && _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld) {
+        if (_grabFingers.sweptArc && _grabFingers.localTransformFinalizePending && _grabFingers.posePublished &&
+            _grabFingers.pose.solved && _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld) {
             const auto finalFingerPose =
-                grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, desiredObjectWorld);
-            applySweptArcGrabHandPose(_isLeft, finalFingerPose, _grabFingerJointPose, _hasGrabFingerJointPose,
-                _grabFingerLocalTransforms, _grabFingerLocalTransformMask, _hasGrabFingerLocalTransforms, deltaTime,
+                grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingers.pose, desiredObjectWorld);
+            applySweptArcGrabHandPose(_isLeft, finalFingerPose, _grabFingers.jointPose, _grabFingers.hasJointPose,
+                _grabFingers.localTransforms, _grabFingers.localTransformMask, _grabFingers.hasLocalTransforms, deltaTime,
                 /*publishLocalTransforms=*/true,
                 /*snapJointPoseToTarget=*/false);
-            _grabFingerLocalTransformFinalizePending = false;
+            _grabFingers.localTransformFinalizePending = false;
             ROCK_LOG_DEBUG(Hand,
                 "{} THREE-PHASE GRAB FINAL POSE: local transforms finalized after settled joint publication",
                 handName());
@@ -1320,19 +1320,19 @@ namespace rock
                     .hasGrabBody = hasGrabBody,
                     .heldBodyColliding = heldBodyColliding,
                     .gripErrorGameUnits = gripErrorGameUnits,
-                    .previousGripErrorGameUnits = _grabConvergePreviousGripErrorGameUnits,
+                    .previousGripErrorGameUnits = _grabConverge.previousGripErrorGameUnits,
                     .deltaSeconds = deltaTime,
                     .elapsedSeconds = _grabStartTime,
                     .maxTimeSeconds = g_rockConfig.rockGrabConvergeMaxTimeSeconds,
                     .touchDistanceGameUnits = touchDistance,
                     .pocketRadiusGameUnits = g_rockConfig.rockGrabPocketRadiusGameUnits,
-                    .stableInsidePocketSeconds = _grabConvergeStableInsidePocketSeconds,
+                    .stableInsidePocketSeconds = _grabConverge.stableInsidePocketSeconds,
                     .requiredStableInsidePocketSeconds = g_rockConfig.rockGrabConvergeStableSeconds,
                     .maxSeparatingSpeedGameUnitsPerSecond =
                         g_rockConfig.rockGrabConvergeMaxSeparatingSpeedGameUnitsPerSecond,
                 });
-            _grabConvergeStableInsidePocketSeconds = convergenceDecision.nextStableInsidePocketSeconds;
-            _grabConvergePreviousGripErrorGameUnits = gripErrorGameUnits;
+            _grabConverge.stableInsidePocketSeconds = convergenceDecision.nextStableInsidePocketSeconds;
+            _grabConverge.previousGripErrorGameUnits = gripErrorGameUnits;
             const bool reachedTouchRange = convergenceDecision.reachedTouchRange;
             const bool convergenceTimedOutInsidePocket = convergenceDecision.timedOutInsidePocket;
             /*
@@ -1348,8 +1348,8 @@ namespace rock
                 _grabTransitPlacementElapsedSeconds = _grabStartTime;
                 if (placeHeldBodiesOnHandTarget(world, grabBodyWorld, driveUpdate.desiredBodyWorld,
                         gripErrorGameUnits)) {
-                    _grabConvergeStableInsidePocketSeconds = 0.0f;
-                    _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
+                    _grabConverge.stableInsidePocketSeconds = 0.0f;
+                    _grabConverge.previousGripErrorGameUnits = std::numeric_limits<float>::max();
                 }
             }
             if (convergenceTimedOutInsidePocket) {
@@ -1358,29 +1358,29 @@ namespace rock
                     "pocket={:.2f}gu elapsed={:.3f}s colliding={} stableDwell={:.3f}s sepSpeed={:.2f}gu/s",
                     handName(), grab_three_phase::phaseName(previousAcquisitionPhase), gripErrorGameUnits,
                     touchDistance, g_rockConfig.rockGrabPocketRadiusGameUnits, _grabStartTime,
-                    heldBodyColliding ? "yes" : "no", _grabConvergeStableInsidePocketSeconds,
+                    heldBodyColliding ? "yes" : "no", _grabConverge.stableInsidePocketSeconds,
                     convergenceDecision.separatingSpeedGameUnitsPerSecond);
             }
 
             if (hasGrabBody && !reachedTouchRange && !convergenceTimedOutInsidePocket &&
-                !_grabFrame.syntheticLooseWeaponPrimaryAttach && _hasGrabFingerPose && _grabFingerPosePublished) {
+                !_grabFrame.syntheticLooseWeaponPrimaryAttach && _grabFingers.hasPose && _grabFingers.posePublished) {
                 const float nearDistance =
                     (std::max)(touchDistance, g_rockConfig.rockGrabNearConvergeDistanceGameUnits);
                 const float progressDenominator = (std::max)(0.001f, nearDistance - touchDistance);
                 const float acquisitionProgress =
                     1.0f - std::clamp((gripErrorGameUnits - touchDistance) / progressDenominator, 0.0f, 1.0f);
-                if (_grabFingerSweptArc) {
+                if (_grabFingers.sweptArc) {
                     const auto resolvedTargetPose =
-                        grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, desiredObjectWorld);
+                        grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingers.pose, desiredObjectWorld);
                     const auto acquisitionFingerPose =
                         buildAcquisitionFingerPose(resolvedTargetPose, acquisitionProgress);
-                    applySweptArcGrabHandPose(_isLeft, acquisitionFingerPose, _grabFingerJointPose,
-                        _hasGrabFingerJointPose, _grabFingerLocalTransforms, _grabFingerLocalTransformMask,
-                        _hasGrabFingerLocalTransforms, deltaTime, false);
+                    applySweptArcGrabHandPose(_isLeft, acquisitionFingerPose, _grabFingers.jointPose,
+                        _grabFingers.hasJointPose, _grabFingers.localTransforms, _grabFingers.localTransformMask,
+                        _grabFingers.hasLocalTransforms, deltaTime, false);
                 } else {
-                    const auto acquisitionFingerPose = buildAcquisitionFingerPose(_grabFingerPose, acquisitionProgress);
-                    applyRockGrabHandPose(_isLeft, acquisitionFingerPose, _grabFingerJointPose, _hasGrabFingerJointPose,
-                        _grabFingerLocalTransforms, _grabFingerLocalTransformMask, _hasGrabFingerLocalTransforms,
+                    const auto acquisitionFingerPose = buildAcquisitionFingerPose(_grabFingers.pose, acquisitionProgress);
+                    applyRockGrabHandPose(_isLeft, acquisitionFingerPose, _grabFingers.jointPose, _grabFingers.hasJointPose,
+                        _grabFingers.localTransforms, _grabFingers.localTransformMask, _grabFingers.hasLocalTransforms,
                         deltaTime);
                 }
             }
@@ -1405,16 +1405,16 @@ namespace rock
                     "gripErr={:.2f}gu elapsed={:.3f}s colliding={} posePublished={}",
                     handName(), grab_three_phase::phaseName(previousAcquisitionPhase), promotionReason,
                     gripErrorGameUnits, _grabStartTime, heldBodyColliding ? "yes" : "no",
-                    _grabFingerPosePublished ? "yes" : "no");
+                    _grabFingers.posePublished ? "yes" : "no");
 
-                if (!_grabFrame.syntheticLooseWeaponPrimaryAttach && _hasGrabFingerPose) {
-                    if (!_grabFingerPosePublished) {
+                if (!_grabFrame.syntheticLooseWeaponPrimaryAttach && _grabFingers.hasPose) {
+                    if (!_grabFingers.posePublished) {
                         const RE::NiTransform currentNodeWorld =
                             deriveNodeWorldFromBodyWorld(grabBodyWorld, _grabFrame.authority.bodyLocal);
                         RE::NiTransform finalPoseHandWorld = hand_visual_lerp_math::buildHeldObjectRelativeHandWorld(
                             currentNodeWorld, _grabFrame.rawHandSpace);
                         finalPoseHandWorld.scale = handWorldTransform.scale;
-                        if (_grabFingerSweptArc && !_grabFrame.fingerPoseAimValid &&
+                        if (_grabFingers.sweptArc && !_grabFrame.fingerPoseAimValid &&
                             _grabFrame.pivotAuthority.normalTrusted) {
                             _grabFrame.fingerPoseAimValid = true;
                             _grabFrame.fingerPoseAimReason = "touchHeldNormalTrusted";
@@ -1435,22 +1435,22 @@ namespace rock
                             .stage = "touchHeld",
                         });
                     } else {
-                        if (_grabFingerSweptArc) {
+                        if (_grabFingers.sweptArc) {
                             const RE::NiTransform finalPoseObjectWorld =
                                 grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyAuthorityWorld,
                                     _grabFrame.proxyAuthorityHandSpace);
                             const auto finalFingerPose = grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(
-                                _grabFingerPose, finalPoseObjectWorld);
-                            applySweptArcGrabHandPose(_isLeft, finalFingerPose, _grabFingerJointPose,
-                                _hasGrabFingerJointPose, _grabFingerLocalTransforms, _grabFingerLocalTransformMask,
-                                _hasGrabFingerLocalTransforms, 0.0f, /*publishLocalTransforms=*/false, true);
-                            _grabFingerLocalTransformFinalizePending = _grabFingerPose.solved;
+                                _grabFingers.pose, finalPoseObjectWorld);
+                            applySweptArcGrabHandPose(_isLeft, finalFingerPose, _grabFingers.jointPose,
+                                _grabFingers.hasJointPose, _grabFingers.localTransforms, _grabFingers.localTransformMask,
+                                _grabFingers.hasLocalTransforms, 0.0f, /*publishLocalTransforms=*/false, true);
+                            _grabFingers.localTransformFinalizePending = _grabFingers.pose.solved;
                         } else {
                             // Solved at commit: TouchHeld snaps the acquisition blend to the full pose.
-                            applyRockGrabHandPose(_isLeft, _grabFingerPose, _grabFingerJointPose,
-                                _hasGrabFingerJointPose, _grabFingerLocalTransforms, _grabFingerLocalTransformMask,
-                                _hasGrabFingerLocalTransforms, 0.0f, true);
-                            if (_grabFingerPose.solved) {
+                            applyRockGrabHandPose(_isLeft, _grabFingers.pose, _grabFingers.jointPose,
+                                _grabFingers.hasJointPose, _grabFingers.localTransforms, _grabFingers.localTransformMask,
+                                _grabFingers.hasLocalTransforms, 0.0f, true);
+                            if (_grabFingers.pose.solved) {
                                 _grabPoseQualityUpdatesRemaining = g_rockConfig.rockDebugTestbenchTelemetry ? 60 : -1;
                             }
                         }
@@ -1551,7 +1551,7 @@ namespace rock
                 _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu, driveQueuedTargets,
                 driveFlushedTargets, driveFailedFlushes, driveLastFlushDeltaSeconds, proxyAuthoritySource,
                 hasProxyAuthorityFrame ? "ok" : "fallback", grab_three_phase::phaseName(_grabAcquisitionPhase),
-                _grabFingerPosePublished ? "yes" : "no", grabFadeFactor, _grabFrame.fadeInGrabConstraint ? "on" : "off",
+                _grabFingers.posePublished ? "yes" : "no", grabFadeFactor, _grabFrame.fadeInGrabConstraint ? "on" : "off",
                 _grabFrame.motorFadeReason, heldBodyColliding ? "yes" : "no",
                 heldMotorContactSoftening ? "soften" : "preserve", heldMotorContactReason, authorityForceScale,
                 lastGrabPhysicsHz, _grabFrame.pivotAuthority.longLeverGameUnits, pivotErrGame,

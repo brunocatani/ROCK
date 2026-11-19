@@ -277,9 +277,9 @@ namespace rock
         _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
         _grabObjectGripAtGrab = {};
         _heldObjectIsLooseWeapon = false;
-        _grabFingerPosePublished = false;
-        _grabConvergeStableInsidePocketSeconds = 0.0f;
-        _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
+        _grabFingers.posePublished = false;
+        _grabConverge.stableInsidePocketSeconds = 0.0f;
+        _grabConverge.previousGripErrorGameUnits = std::numeric_limits<float>::max();
         _grabTransitPlacementElapsedSeconds = 0.0f;
         clearGrabHandPose(_isLeft);
         clearGrabExternalHandWorldTransform(_isLeft);
@@ -289,20 +289,20 @@ namespace rock
         _lastPublishedGrabVisualHandTransform = {};
         _hasLastPublishedGrabVisualHandTransform = false;
         _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
-        _grabFingerJointPose = {};
-        _grabFingerLocalTransforms = {};
-        _grabFingerLocalTransformMask = 0;
-        _grabFingerPose = {};
-        _grabFingerTriangleIndex.clear();
-        _hasGrabFingerJointPose = false;
-        _hasGrabFingerLocalTransforms = false;
-        _grabFingerLocalTransformFinalizePending = false;
-        _grabFingerSweptArc = false;
+        _grabFingers.jointPose = {};
+        _grabFingers.localTransforms = {};
+        _grabFingers.localTransformMask = 0;
+        _grabFingers.pose = {};
+        _grabFingers.triangleIndex.clear();
+        _grabFingers.hasJointPose = false;
+        _grabFingers.hasLocalTransforms = false;
+        _grabFingers.localTransformFinalizePending = false;
+        _grabFingers.sweptArc = false;
         _grabPoseQualityUpdatesRemaining = -1;
         _grabPoseReplay.reset();
         _grabFingerProbePreview.clear();
         _meshReachLease = {};
-        _hasGrabFingerPose = false;
+        _grabFingers.hasPose = false;
         clearSelectedCloseFingerPose();
         _selectedClose.lastOrigin = {};
         _selectedClose.hasLastOrigin = false;
@@ -365,9 +365,9 @@ namespace rock
         _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
         _grabObjectGripAtGrab = {};
         _heldObjectIsLooseWeapon = false;
-        _grabFingerPosePublished = false;
-        _grabConvergeStableInsidePocketSeconds = 0.0f;
-        _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
+        _grabFingers.posePublished = false;
+        _grabConverge.stableInsidePocketSeconds = 0.0f;
+        _grabConverge.previousGripErrorGameUnits = std::numeric_limits<float>::max();
         _grabTransitPlacementElapsedSeconds = 0.0f;
         clearGrabHandCollisionSuppressionState();
         _boneColliders.reset();
@@ -381,19 +381,19 @@ namespace rock
         _lastPublishedGrabVisualHandTransform = {};
         _hasLastPublishedGrabVisualHandTransform = false;
         clearSelectedCloseFingerPose();
-        _grabFingerJointPose = {};
-        _grabFingerLocalTransforms = {};
-        _grabFingerLocalTransformMask = 0;
-        _grabFingerPose = {};
-        _grabFingerTriangleIndex.clear();
-        _hasGrabFingerJointPose = false;
-        _hasGrabFingerLocalTransforms = false;
-        _grabFingerLocalTransformFinalizePending = false;
-        _grabFingerSweptArc = false;
+        _grabFingers.jointPose = {};
+        _grabFingers.localTransforms = {};
+        _grabFingers.localTransformMask = 0;
+        _grabFingers.pose = {};
+        _grabFingers.triangleIndex.clear();
+        _grabFingers.hasJointPose = false;
+        _grabFingers.hasLocalTransforms = false;
+        _grabFingers.localTransformFinalizePending = false;
+        _grabFingers.sweptArc = false;
         _grabPoseQualityUpdatesRemaining = -1;
         _grabPoseReplay.reset();
         _grabFingerProbePreview.clear();
-        _hasGrabFingerPose = false;
+        _grabFingers.hasPose = false;
         _previousHeld.rawHandWorld = {};
         _previousHeld.roomWorld = {};
         _previousHeld.roomSource = nullptr;
@@ -1374,14 +1374,14 @@ namespace rock
             out.fingerLocals = _grabFrame.authoredWeaponPose.fingerLocals;
             out.fingerMask = _grabFrame.authoredWeaponPose.fingerMask;
             out.hasFingerPose = true;
-        } else if (_hasGrabFingerPose && _grabFingerPose.solved) {
-            out.fingerValues = _hasGrabFingerJointPose
-                ? _grabFingerJointPose
-                : grab_finger_pose_math::expandFingerCurlsToJointValues(_grabFingerPose.values);
+        } else if (_grabFingers.hasPose && _grabFingers.pose.solved) {
+            out.fingerValues = _grabFingers.hasJointPose
+                ? _grabFingers.jointPose
+                : grab_finger_pose_math::expandFingerCurlsToJointValues(_grabFingers.pose.values);
             out.hasFingerPose = true;
-            if (_hasGrabFingerLocalTransforms) {
-                out.fingerLocals = _grabFingerLocalTransforms;
-                out.fingerMask = _grabFingerLocalTransformMask;
+            if (_grabFingers.hasLocalTransforms) {
+                out.fingerLocals = _grabFingers.localTransforms;
+                out.fingerMask = _grabFingers.localTransformMask;
             }
         }
         return out.valid();
@@ -1390,14 +1390,14 @@ namespace rock
     bool Hand::tryGetLiveGrabFingerPoseSnapshot(GrabFingerPoseSnapshot& outSnapshot) const
     {
         outSnapshot = {};
-        if (!_hasGrabFingerPose || !_grabFingerPose.solved) {
+        if (!_grabFingers.hasPose || !_grabFingers.pose.solved) {
             return false;
         }
 
-        outSnapshot.values = _grabFingerPose.values;
-        outSnapshot.hasJointValues = _hasGrabFingerJointPose;
-        if (_hasGrabFingerJointPose) {
-            outSnapshot.jointValues = _grabFingerJointPose;
+        outSnapshot.values = _grabFingers.pose.values;
+        outSnapshot.hasJointValues = _grabFingers.hasJointPose;
+        if (_grabFingers.hasJointPose) {
+            outSnapshot.jointValues = _grabFingers.jointPose;
         }
         return true;
     }

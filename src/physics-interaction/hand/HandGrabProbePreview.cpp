@@ -216,7 +216,7 @@ namespace rock
                 return false;
             }
             const RE::NiTransform objectWorld = _grabFrame.heldNode->world;
-            const auto* index = _grabFingerTriangleIndex.empty() ? nullptr : &_grabFingerTriangleIndex;
+            const auto* index = _grabFingers.triangleIndex.empty() ? nullptr : &_grabFingers.triangleIndex;
             for (std::size_t finger = 0; finger < 5; ++finger) {
                 const auto& chain = skeleton.fingers[finger];
                 if (!chain.valid) {
@@ -233,8 +233,8 @@ namespace rock
                 // pose without contact, a free one at the minimum curl). A
                 // finger closed past an intersection is shown as a contact.
                 auto& state = out.fingers[finger];
-                const bool contact = ((_grabFingerPose.contactValidMask >> finger) & 1u) != 0;
-                state.curl = _grabFingerPose.values[finger];
+                const bool contact = ((_grabFingers.pose.contactValidMask >> finger) & 1u) != 0;
+                state.curl = _grabFingers.pose.values[finger];
                 state.state = contact ? preview::FingerState::Contact
                                       : (state.curl >= 0.999f ? preview::FingerState::Blocked
                                                               : preview::FingerState::Free);

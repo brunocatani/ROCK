@@ -755,7 +755,7 @@ namespace rock
             _heldBodyIds.clear();
             _heldDriveDecision = {};
             _heldBodyIdsCount.store(0, std::memory_order_release);
-            _grabFingerPosePublished = false;
+            _grabFingers.posePublished = false;
             (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
             clearGrabExternalHandWorldTransform(_isLeft);
             input.rollback.rollback();

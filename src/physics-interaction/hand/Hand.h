@@ -463,7 +463,7 @@ namespace rock
 
         bool heldWeaponGunstockAim() const
         {
-            return isHoldingFiringGrip() && _grabFrame.looseObjectSharedPeerTrace != 0 && _looseSharedGunstockAim;
+            return isHoldingFiringGrip() && _grabFrame.looseObjectSharedPeerTrace != 0 && _looseShared.gunstockAim;
         }
 
         bool captureWeaponGripTransfer(weapon_grip_transfer::HandGrip& out) const;
@@ -745,7 +745,7 @@ namespace rock
          * Live per-finger curl for the object currently held with an organic
          * mesh-curl grab, for the saved-grab-offset recorder (button save
          * gesture). jointValues mirrors the actual per-frame-smoothed values
-         * last published to FRIK (_grabFingerJointPose); values is the
+         * last published to FRIK (_grabFingers.jointPose); values is the
          * original solved 5-finger curl, used as the fallback shape when
          * joint-level publishing is disabled. Returns false when this hold
          * never ran the mesh solve (e.g. a loose-weapon synthetic attach
@@ -1358,12 +1358,17 @@ namespace rock
         };
         GrabSharedExtraction _grabSharedExtraction;
         grab_offset_acquisition::Transition<RE::NiTransform> _grabOffsetAcquisition;
-        grab_offset_acquisition::Transition<RE::NiTransform> _looseSharedAcquisition;
-        std::uint64_t _looseSharedAcquisitionPeer{};
-        std::uint64_t _looseSharedAcquisitionFrame{};
-        bool _looseSharedGunstockAim{};
+        // This hand's part in a loose object two hands hold together.
+        struct LooseShared
+        {
+            grab_offset_acquisition::Transition<RE::NiTransform> acquisition;
+            std::uint64_t acquisitionPeer{};
+            std::uint64_t acquisitionFrame{};
+            bool gunstockAim{};
+            float handBlendAlpha{ -1.0f };
+        };
+        LooseShared _looseShared;
         std::uint64_t _looseWeaponReturnStartFrame{};
-        float _looseSharedHandBlendAlpha{ -1.0f };
         hand_visual_lerp_math::VisualReturnConfig _grabVisualReturnConfig{};
         float _grabOffsetMaximumGripError = 0.0f;
         float _grabOffsetMaximumRotationError = 0.0f;
@@ -1389,13 +1394,30 @@ namespace rock
         };
         CountBasedAmmoCarry _ammoCarry{};
         bool _heldObjectIsLooseWeapon = false;
-        bool _grabFingerPosePublished = false;
-        // FingerPoses.LooseGrabFingerPoseMode captured at grab start: true runs the pre-capsule swept arc for this grab.
-        bool _grabFingerSweptArc = false;
-        // Swept arc only: publish the surface-aim local-transform layer on the next TouchHeld update.
-        bool _grabFingerLocalTransformFinalizePending = false;
-        float _grabConvergeStableInsidePocketSeconds = 0.0f;
-        float _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
+        // The finger pose of the current grab: what was solved and what was published.
+        struct GrabFingers
+        {
+            bool posePublished = false;
+            // FingerPoses.LooseGrabFingerPoseMode captured at grab start: true runs the pre-capsule swept arc for this grab.
+            bool sweptArc = false;
+            // Swept arc only: publish the surface-aim local-transform layer on the next TouchHeld update.
+            bool localTransformFinalizePending = false;
+            std::array<float, 15> jointPose{};
+            std::array<RE::NiTransform, 15> localTransforms{};
+            std::uint16_t localTransformMask = 0;
+            grab_finger_pose_runtime::SolvedGrabFingerPose pose{};
+            grab_finger_pose_runtime::FingerPoseTriangleSpatialIndex triangleIndex{};
+            bool hasJointPose = false;
+            bool hasLocalTransforms = false;
+            bool hasPose = false;
+        };
+        GrabFingers _grabFingers;
+        struct GrabConverge
+        {
+            float stableInsidePocketSeconds = 0.0f;
+            float previousGripErrorGameUnits = std::numeric_limits<float>::max();
+        };
+        GrabConverge _grabConverge;
         // Grab-elapsed time of the last placement onto the hand target.
         float _grabTransitPlacementElapsedSeconds = 0.0f;
         // Ring of the last grab deviation samples.
@@ -1418,13 +1440,6 @@ namespace rock
             float durationSeconds = 0.0f;
         };
         GrabVisualHandLerp _grabVisualHandLerp;
-        std::array<float, 15> _grabFingerJointPose{};
-        std::array<RE::NiTransform, 15> _grabFingerLocalTransforms{};
-        std::uint16_t _grabFingerLocalTransformMask = 0;
-        grab_finger_pose_runtime::SolvedGrabFingerPose _grabFingerPose{};
-        grab_finger_pose_runtime::FingerPoseTriangleSpatialIndex _grabFingerTriangleIndex{};
-        bool _hasGrabFingerJointPose = false;
-        bool _hasGrabFingerLocalTransforms = false;
         // Bench-only pose metric: held updates left until the settled grab is measured once (-1 = none).
         int _grabPoseQualityUpdatesRemaining = -1;
         // Bench-only replay record: solve half filled at the finger solve, completed and written with the metric.
@@ -1509,7 +1524,6 @@ namespace rock
             std::size_t count = 0;
         };
         MeshReachLease _meshReachLease{};
-        bool _hasGrabFingerPose = false;
         // The hand pose and motion tracked while a close object is selected.
         struct SelectedClose
         {
