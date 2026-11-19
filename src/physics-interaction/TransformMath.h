@@ -18,6 +18,13 @@ namespace rock::transform_math
     // A scale at or below this magnitude has collapsed the transform to a point.
     inline constexpr float kCollapsedScaleMagnitude = 0.000001f;
 
+    // The two magnitudes are not interchangeable. A node hidden for the scope
+    // view carries scale 0.00001, between them: it still has a usable position
+    // and rotation, so code that only reads or composes it accepts it through
+    // isNonCollapsedTransform, while code that needs its inverse refuses it
+    // through isInvertibleTransform. Swapping one check for the other changes
+    // what a call site does with every hidden node; trace that site first.
+
     template <class Matrix>
     [[nodiscard]] inline bool isFiniteRotation(const Matrix& rotation) noexcept
     {

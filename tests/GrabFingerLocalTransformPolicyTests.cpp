@@ -67,6 +67,11 @@ static bool testPublicationSafety()
     hiddenScaleTransform.scale = 0.00001f;
     ok &= expectBool("hidden FRIK node scale still has usable rotation",
         rock::transform_math::isFiniteTransform(hiddenScaleTransform), true);
+    // The scope-view hide scale sits between the two scale limits: readable, not invertible.
+    ok &= expectBool("hidden node is not collapsed",
+        rock::transform_math::isNonCollapsedTransform(hiddenScaleTransform), true);
+    ok &= expectBool("hidden node does not invert",
+        rock::transform_math::isInvertibleTransform(hiddenScaleTransform), false);
 
     TestTransform safePublishedFingerTransform = hiddenScaleTransform;
     safePublishedFingerTransform.scale = 1.0f;
