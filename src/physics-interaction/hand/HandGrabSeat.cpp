@@ -106,7 +106,7 @@ namespace rock
             }
 
             desiredFrameWorld = grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorld, objectProxyLocal);
-            return isFiniteNiTransform(desiredFrameWorld);
+            return isInvertiblePositiveScaleTransform(desiredFrameWorld);
         }
 
         /*
@@ -166,7 +166,7 @@ namespace rock
                                                            : "throwablePullCatchPreservePose";
                     return frame;
                 }
-                if (!rootNode || !isFiniteNiTransform(rootNode->world)) {
+                if (!rootNode || !isInvertiblePositiveScaleTransform(rootNode->world)) {
                     frame.reason = "missingWeaponRoot";
                     return frame;
                 }
@@ -190,7 +190,7 @@ namespace rock
                     "{} authored loose placement uses equipped palm form={:08X} proxyDelta=({:.4f},{:.4f},{:.4f})gu",
                     isLeft ? "left" : "right", nearGrip->pose.weaponFormId, proxyDelta.x, proxyDelta.y, proxyDelta.z);
             }
-            if (!isFiniteNiTransform(frame.desiredRootWorld)) {
+            if (!isInvertiblePositiveScaleTransform(frame.desiredRootWorld)) {
                 frame.reason = "nonFiniteDesiredRoot";
                 return frame;
             }
@@ -207,7 +207,7 @@ namespace rock
             const RE::NiPoint3 desiredPivotBodyLocal =
                 transform_math::worldPointToLocal(frame.desiredBodyWorld, grabPivotAWorld);
             frame.gripPointWorld = transform_math::localPointToWorld(grabBodyWorldAtGrab, desiredPivotBodyLocal);
-            if (!isFiniteNiTransform(frame.desiredBodyWorld) || !isFiniteNiTransform(frame.desiredObjectWorld) ||
+            if (!isInvertiblePositiveScaleTransform(frame.desiredBodyWorld) || !isInvertiblePositiveScaleTransform(frame.desiredObjectWorld) ||
                 !std::isfinite(frame.gripPointWorld.x) || !std::isfinite(frame.gripPointWorld.y) ||
                 !std::isfinite(frame.gripPointWorld.z)) {
                 frame.reason = "nonFiniteDesiredBody";
@@ -320,7 +320,7 @@ namespace rock
         {
             GrabSeatDepthStopResult invalid{};
             invalid.reason = "missingPalmFootprint";
-            if (!pocket.valid || !isFiniteNiTransform(objectNodeWorld) ||
+            if (!pocket.valid || !isInvertiblePositiveScaleTransform(objectNodeWorld) ||
                 !grab_three_phase::isFinite(depthOriginWorld) || !std::isfinite(maxFootprintRadiusGameUnits) ||
                 maxFootprintRadiusGameUnits <= 0.0f) {
                 invalid.reason = "invalidPalmSeatFrame";
@@ -328,7 +328,7 @@ namespace rock
             }
             for (const auto& segment : segments) {
                 if (segment.role != hand_collider_semantics::HandColliderRole::PalmFace || !segment.valid ||
-                    !isFiniteNiTransform(segment.target) || !grab_three_phase::isFinite(segment.palmHalfExtents) ||
+                    !isInvertiblePositiveScaleTransform(segment.target) || !grab_three_phase::isFinite(segment.palmHalfExtents) ||
                     segment.palmHalfExtents.x <= 0.0f || segment.palmHalfExtents.y <= 0.0f ||
                     segment.palmHalfExtents.z <= 0.0f || !std::isfinite(segment.convexRadius) ||
                     segment.convexRadius < 0.0f) {

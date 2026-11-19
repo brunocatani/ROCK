@@ -269,7 +269,7 @@ namespace rock
         }
 
         RE::NiTransform bodyWorld{};
-        if (!frameNode || !isFiniteNiTransform(frameNode->world) ||
+        if (!frameNode || !isInvertiblePositiveScaleTransform(frameNode->world) ||
             !tryGetGrabAuthorityBodyWorldTransform(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, bodyWorld)) {
             ROCK_LOG_DEBUG(Hand, "{} hand PULL flies without in-flight alignment: authored seat has no frame "
                                  "(bodyNode='{}' bodies={})",
@@ -290,7 +290,7 @@ namespace rock
             ? frameNode->world.scale
             : 1.0f;
         _pullSeat.meshPointBody = transform_math::worldPointToLocal(bodyWorld, pulledMeshPointWorld);
-        _pullSeat.valid = isFiniteNiTransform(_pullSeat.bodyInFrame);
+        _pullSeat.valid = isInvertiblePositiveScaleTransform(_pullSeat.bodyInFrame);
         ROCK_LOG_DEBUG(Hand, "{} hand PULL aligns in flight to the {} seat (frame '{}')", handName(),
             fixedAidPose ? "aid" : "authored", nodeDebugName(frameNode));
     }
@@ -306,7 +306,7 @@ namespace rock
         auto frameWorld = grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorld, _pullSeat.objectProxyLocal);
         frameWorld.scale = _pullSeat.frameScale;
         outBodyWorld = multiplyTransforms(frameWorld, _pullSeat.bodyInFrame);
-        return isFiniteNiTransform(outBodyWorld);
+        return isInvertiblePositiveScaleTransform(outBodyWorld);
     }
 
     bool Hand::startDynamicPull(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform)

@@ -9,6 +9,7 @@
 #include <string_view>
 
 #include "api/FRIKApiV2.h"
+#include "physics-interaction/TransformMath.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -108,20 +109,6 @@ namespace rock::frik_visual_authority
             }
             return lhs.translate.x == rhs.translate.x && lhs.translate.y == rhs.translate.y &&
                 lhs.translate.z == rhs.translate.z && lhs.scale == rhs.scale;
-        }
-
-        [[nodiscard]] inline bool isFiniteNiTransform(const RE::NiTransform& transform)
-        {
-            for (int row = 0; row < 3; ++row) {
-                for (int column = 0; column < 3; ++column) {
-                    if (!std::isfinite(transform.rotate.entry[row][column])) {
-                        return false;
-                    }
-                }
-            }
-            return std::isfinite(transform.translate.x) && std::isfinite(transform.translate.y) &&
-                std::isfinite(transform.translate.z) && std::isfinite(transform.scale) &&
-                std::abs(transform.scale) > 0.000001f;
         }
 
         [[nodiscard]] inline bool sameFingerLocalTransforms(const FingerLocalTransformOverride& lhs,
@@ -655,7 +642,7 @@ namespace rock::frik_visual_authority
             outWorld = {};
             return false;
         }
-        const bool valid = detail::isFiniteNiTransform(outWorld);
+        const bool valid = transform_math::isNonCollapsedTransform(outWorld);
         if (!valid && failure)
             *failure = "tracked-input-invalid-transform";
         return valid;
@@ -680,7 +667,7 @@ namespace rock::frik_visual_authority
             outWorld = {};
             return false;
         }
-        return detail::isFiniteNiTransform(outWorld);
+        return transform_math::isNonCollapsedTransform(outWorld);
     }
 
     /*

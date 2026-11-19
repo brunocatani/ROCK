@@ -43,7 +43,7 @@ namespace rock
         const RE::NiTransform anchorBodyLocal = multiplyTransforms(invertTransform(root->world), anchorBodyWorld);
         const RE::NiTransform restRootWorld = branchNode->world;
         const RE::NiTransform anchorTarget = multiplyTransforms(restRootWorld, anchorBodyLocal);
-        if (!isFiniteNiTransform(anchorTarget) || !isFiniteNiTransform(branchBodyWorld)) {
+        if (!isInvertiblePositiveScaleTransform(anchorTarget) || !isInvertiblePositiveScaleTransform(branchBodyWorld)) {
             return false;
         }
         const float separationGameUnits = pointDistanceGameUnits(root->world.translate, restRootWorld.translate);
@@ -64,7 +64,7 @@ namespace rock
             branchNode->local = makeIdentityTransform();
             RE::NiUpdateData update{};
             root->UpdateTransforms(update);
-            sceneRestored = isFiniteNiTransform(root->world);
+            sceneRestored = isInvertiblePositiveScaleTransform(root->world);
         }
 
         _ammoCarry.anchorBodyId = bodies.root;
@@ -90,7 +90,7 @@ namespace rock
             return;
         }
         const RE::NiTransform anchorTarget = multiplyTransforms(primaryBodyWorld, _ammoCarry.anchorFromPrimary);
-        if (!isFiniteNiTransform(anchorTarget)) {
+        if (!isInvertiblePositiveScaleTransform(anchorTarget)) {
             return;
         }
         // Overwritten every held frame; the anchor has no geometry, so its own

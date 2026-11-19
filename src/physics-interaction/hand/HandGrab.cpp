@@ -11,6 +11,11 @@ namespace rock
 
     namespace
     {
+        inline float finitePositiveOr(float value, float fallback)
+        {
+            return std::isfinite(value) && value > 0.0f ? value : fallback;
+        }
+
         template <class Rollback>
         class GrabPreparationTransaction
         {

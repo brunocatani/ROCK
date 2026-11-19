@@ -399,7 +399,7 @@ namespace rock
         // One rigid move for the whole set, written once per motion (bodies
         // sharing a motion move with it), with velocity cleared. Every body is
         // resolved and every target validated before the first write.
-        if (!world || !isFiniteNiTransform(worldDelta))
+        if (!world || !isInvertiblePositiveScaleTransform(worldDelta))
             return 0;
         std::array<std::uint32_t, MAX_HELD_BODIES> motions{};
         std::array<std::uint32_t, MAX_HELD_BODIES> bodies{};
@@ -417,7 +417,7 @@ namespace rock
             motions[count] = body->motionIndex;
             bodies[count] = bodyId;
             targets[count] = transform_math::composeTransforms(worldDelta, current);
-            return isFiniteNiTransform(targets[count++]);
+            return isInvertiblePositiveScaleTransform(targets[count++]);
         };
         if (!add(primaryBodyId))
             return 0;
@@ -492,7 +492,7 @@ namespace rock
             !tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, body))
             return false;
         root = multiplyTransforms(body, invertTransform(_grabFrame.rootBodyLocal));
-        return isFiniteNiTransform(root);
+        return isInvertiblePositiveScaleTransform(root);
     }
 
     api::Status Hand::setHeldObjectTarget(api::OwnerToken owner, const api::grab::HeldObjectTarget& request,
@@ -608,13 +608,13 @@ namespace rock
             return proxy;
         };
         const auto readPresentedBody = [world](const Hand& hand, RE::NiTransform& body) {
-            if (hand._grabFrame.heldNode && isFiniteNiTransform(hand._grabFrame.heldNode->world)) {
+            if (hand._grabFrame.heldNode && isInvertiblePositiveScaleTransform(hand._grabFrame.heldNode->world)) {
                 body = transform_math::composeTransforms(hand._grabFrame.heldNode->world,
                     hand._grabFrame.authority.bodyLocal);
-                return isFiniteNiTransform(body);
+                return isInvertiblePositiveScaleTransform(body);
             }
             return hand.tryGetGrabDriveObjectWorldTransform(world, hand._savedObjectState.bodyId, body) &&
-                isFiniteNiTransform(body);
+                isInvertiblePositiveScaleTransform(body);
         };
         const bool leavingPair = _grabFrame.looseObjectSharedPeerTrace != 0 && !shared;
         finishOldPair(*this, shared ? peer->_grabFrame.traceId : 0);
@@ -651,7 +651,7 @@ namespace rock
                     hand_visual_lerp_math::kEquippedWeaponReturnConfig);
                 _looseWeaponReturnStartFrame = runtime_state::currentFrame().timing.sequence;
             }
-            return isFiniteNiTransform(proxyWorld);
+            return isInvertiblePositiveScaleTransform(proxyWorld);
         }
         finishOldPair(*peer, _grabFrame.traceId);
         RE::NiTransform peerProxy{};
@@ -664,7 +664,7 @@ namespace rock
             ROCK_LOG_SAMPLE_WARN(Hand, 1000, "Loose two-hand pivot missing peer palm source={}; holding own target",
                 peerSource);
             proxyWorld = correctedProxy(*this, proxyWorld);
-            return isFiniteNiTransform(proxyWorld);
+            return isInvertiblePositiveScaleTransform(proxyWorld);
         }
         // A firing seat owns the pivot. For two arbitrary mesh seats, keep
         // the first grab as the pivot until that hand releases.
@@ -756,7 +756,7 @@ namespace rock
                     _grabFrame.proxyAuthorityBodyHandSpace);
                 ROCK_LOG_SAMPLE_WARN(Hand, 1000, "{} loose gunstock waiting for tracked controller baseline",
                     handName());
-                return isFiniteNiTransform(proxyWorld);
+                return isInvertiblePositiveScaleTransform(proxyWorld);
             }
         } else if (!sharedFiringStation && !withoutPivot) {
             solved = solveTwoHandedWeaponTransformFrikPivot(solverInput);
@@ -842,7 +842,7 @@ namespace rock
             transform_math::composeTransforms(sharedRoot, thisPrimary ? primaryBodyLocal : supportBodyLocal);
         const auto targetProxy =
             grab_frame_math::generatedProxyFromObjectWorld(sharedBody, _grabFrame.proxyAuthorityBodyHandSpace);
-        if (!isFiniteNiTransform(targetProxy) || targetProxy.scale <= 0.0001f) {
+        if (!isInvertiblePositiveScaleTransform(targetProxy) || targetProxy.scale <= 0.0001f) {
             return false;
         }
         auto physicalNi = proxyWorld;
@@ -938,7 +938,7 @@ namespace rock
             if (!_grabOffsetAcquisition.active)
                 _looseWeaponReturnStartFrame = 0;
             update.proxyAuthoritySource = "offsetAcquisitionGripPath";
-            if (!isFiniteNiTransform(update.proxyAuthorityWorld)) {
+            if (!isInvertiblePositiveScaleTransform(update.proxyAuthorityWorld)) {
                 ROCK_LOG_WARN(Hand, "{} hand release: invalid offset acquisition target trace={}", handName(),
                     _grabFrame.traceId);
                 releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);

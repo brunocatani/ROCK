@@ -76,6 +76,95 @@ namespace rock
 {
     using namespace hand_grab_internal;
 
+    namespace
+    {
+        inline RE::NiPoint3 stablePerpendicularAxis(const RE::NiPoint3& normal)
+        {
+            const RE::NiPoint3 normalizedNormal = normalizeOrZero(normal);
+            if (lengthSquared(normalizedNormal) <= 0.000001f) {
+                return {};
+            }
+
+            const RE::NiPoint3 reference =
+                std::fabs(normalizedNormal.z) < 0.75f ? RE::NiPoint3{ 0.0f, 0.0f, 1.0f } : RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
+            RE::NiPoint3 axis = normalizeOrZero(crossProduct(reference, normalizedNormal));
+            if (lengthSquared(axis) <= 0.000001f) {
+                axis = normalizeOrZero(crossProduct(RE::NiPoint3{ 0.0f, 1.0f, 0.0f }, normalizedNormal));
+            }
+            return axis;
+        }
+
+        inline RE::NiPoint3 rotationCorrectionAxisWorld(const RE::NiMatrix3& current, const RE::NiMatrix3& target)
+        {
+            return normalizeOrZero(angularVelocityFromRotationDelta(current, target, 1.0f));
+        }
+
+        inline RE::NiMatrix3 matrixFromHkColumns(const float* hkMatrix)
+        {
+            RE::NiMatrix3 result{};
+            result.entry[0][0] = hkMatrix[0];
+            result.entry[1][0] = hkMatrix[1];
+            result.entry[2][0] = hkMatrix[2];
+            result.entry[0][1] = hkMatrix[4];
+            result.entry[1][1] = hkMatrix[5];
+            result.entry[2][1] = hkMatrix[6];
+            result.entry[0][2] = hkMatrix[8];
+            result.entry[1][2] = hkMatrix[9];
+            result.entry[2][2] = hkMatrix[10];
+            return result;
+        }
+
+        inline RE::NiMatrix3 matrixFromHkRows(const float* hkMatrix)
+        {
+            RE::NiMatrix3 result{};
+            result.entry[0][0] = hkMatrix[0];
+            result.entry[0][1] = hkMatrix[1];
+            result.entry[0][2] = hkMatrix[2];
+            result.entry[1][0] = hkMatrix[4];
+            result.entry[1][1] = hkMatrix[5];
+            result.entry[1][2] = hkMatrix[6];
+            result.entry[2][0] = hkMatrix[8];
+            result.entry[2][1] = hkMatrix[9];
+            result.entry[2][2] = hkMatrix[10];
+            return result;
+        }
+
+        inline RE::NiTransform reconstructBodyWorldFromProxyInBody(const RE::NiTransform& proxyWorld,
+            const RE::NiMatrix3& proxyInBodyRotation, const RE::NiPoint3& transformBLocalGame,
+            const RE::NiPoint3& pivotAProxyLocalGame)
+        {
+            RE::NiTransform proxyInBody = makeIdentityTransform();
+            proxyInBody.rotate = proxyInBodyRotation;
+            const RE::NiPoint3 rotatedPivotA = transform_math::localVectorToWorld(proxyInBody, pivotAProxyLocalGame);
+            proxyInBody.translate = transformBLocalGame - rotatedPivotA;
+            const RE::NiTransform bodyInProxy = transform_math::invertTransform(proxyInBody);
+            return grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorld, bodyInProxy);
+        }
+
+        inline RE::NiTransform reconstructSolverEffectiveBodyWorld(const RE::NiTransform& proxyWorld,
+            const RE::NiMatrix3& transformARotation, const RE::NiMatrix3& transformBRotation,
+            const RE::NiMatrix3& targetBRcaRotation, const RE::NiPoint3& transformBLocalGame,
+            const RE::NiPoint3& anchorAWorld, float bodyScale)
+        {
+            const RE::NiMatrix3 constraintAWorldRotation =
+                transform_math::composeTransforms(proxyWorld, rotationOnlyTransform(transformARotation)).rotate;
+            const RE::NiMatrix3 desiredConstraintBWorldRotation =
+                transform_math::composeTransforms(rotationOnlyTransform(constraintAWorldRotation),
+                    rotationOnlyTransform(transform_math::transposeRotation(targetBRcaRotation)))
+                    .rotate;
+            const RE::NiMatrix3 desiredBodyRotation =
+                transform_math::composeTransforms(rotationOnlyTransform(desiredConstraintBWorldRotation),
+                    rotationOnlyTransform(transform_math::transposeRotation(transformBRotation)))
+                    .rotate;
+
+            RE::NiTransform result = makeIdentityTransform();
+            result.rotate = desiredBodyRotation;
+            result.scale = std::isfinite(bodyScale) && bodyScale > 0.0f ? bodyScale : 1.0f;
+            result.translate = anchorAWorld - transform_math::localVectorToWorld(result, transformBLocalGame);
+            return result;
+        }
+    }
+
     bool Hand::getGrabPivotDebugSnapshot(RE::hknpWorld* world, GrabPivotDebugSnapshot& out) const
     {
         out = {};

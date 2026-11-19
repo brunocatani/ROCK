@@ -138,22 +138,6 @@ namespace rock::hand_grab_internal
 
     inline float dotProduct(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs) { return vector_math::dot(lhs, rhs); }
 
-    inline RE::NiPoint3 stablePerpendicularAxis(const RE::NiPoint3& normal)
-    {
-        const RE::NiPoint3 normalizedNormal = normalizeOrZero(normal);
-        if (lengthSquared(normalizedNormal) <= 0.000001f) {
-            return {};
-        }
-
-        const RE::NiPoint3 reference =
-            std::fabs(normalizedNormal.z) < 0.75f ? RE::NiPoint3{ 0.0f, 0.0f, 1.0f } : RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
-        RE::NiPoint3 axis = normalizeOrZero(crossProduct(reference, normalizedNormal));
-        if (lengthSquared(axis) <= 0.000001f) {
-            axis = normalizeOrZero(crossProduct(RE::NiPoint3{ 0.0f, 1.0f, 0.0f }, normalizedNormal));
-        }
-        return axis;
-    }
-
     inline RE::NiPoint3 gamePointToHavokPoint(const RE::NiPoint3& value)
     {
         const float scale = physics_scale::gameToHavok();
@@ -165,11 +149,6 @@ namespace rock::hand_grab_internal
     {
         return held_object_physics_math::angularVelocityFromRotationDelta<RE::NiMatrix3, RE::NiPoint3>(previous,
             current, deltaTime);
-    }
-
-    inline RE::NiPoint3 rotationCorrectionAxisWorld(const RE::NiMatrix3& current, const RE::NiMatrix3& target)
-    {
-        return normalizeOrZero(angularVelocityFromRotationDelta(current, target, 1.0f));
     }
 
     inline const char* nodeDebugName(const RE::NiAVObject* node)
@@ -202,14 +181,10 @@ namespace rock::hand_grab_internal
 
     inline float pointDistanceGameUnits(const RE::NiPoint3& a, const RE::NiPoint3& b)
     {
-        const RE::NiPoint3 delta = a - b;
-        return std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
+        return vector_math::distance(a, b);
     }
 
-    inline float vectorMagnitude(const RE::NiPoint3& value)
-    {
-        return std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
-    }
+    inline float vectorMagnitude(const RE::NiPoint3& value) { return vector_math::length(value); }
 
     inline float sharedGrabAuthorityForceScale(bool peerHandStillHolding)
     {
@@ -259,16 +234,10 @@ namespace rock::hand_grab_internal
         return grab_motion_controller::effectiveMotorMass(mass, true, g_rockConfig.rockGrabEffectiveMotorMassFloor);
     }
 
-    inline bool isFiniteNiTransform(const RE::NiTransform& value)
+    // Stricter than transform_math::isInvertibleTransform: a negative (mirrored) scale is refused too.
+    inline bool isInvertiblePositiveScaleTransform(const RE::NiTransform& value)
     {
-        bool rotationFinite = true;
-        for (std::uint32_t row = 0; row < 3; ++row) {
-            for (std::uint32_t column = 0; column < 3; ++column) {
-                rotationFinite = rotationFinite && std::isfinite(value.rotate.entry[row][column]);
-            }
-        }
-        return rotationFinite && std::isfinite(value.translate.x) && std::isfinite(value.translate.y) &&
-            std::isfinite(value.translate.z) && std::isfinite(value.scale) && value.scale > 0.0001f;
+        return transform_math::isInvertibleTransform(value) && value.scale > 0.0f;
     }
 
     inline bool nodeIsOrDescendsFrom(const RE::NiAVObject* root, const RE::NiAVObject* node);
@@ -583,36 +552,6 @@ namespace rock::hand_grab_internal
         result.ok = result.ok && grab_three_phase::isFinite(node->world);
     }
 
-    inline RE::NiMatrix3 matrixFromHkColumns(const float* hkMatrix)
-    {
-        RE::NiMatrix3 result{};
-        result.entry[0][0] = hkMatrix[0];
-        result.entry[1][0] = hkMatrix[1];
-        result.entry[2][0] = hkMatrix[2];
-        result.entry[0][1] = hkMatrix[4];
-        result.entry[1][1] = hkMatrix[5];
-        result.entry[2][1] = hkMatrix[6];
-        result.entry[0][2] = hkMatrix[8];
-        result.entry[1][2] = hkMatrix[9];
-        result.entry[2][2] = hkMatrix[10];
-        return result;
-    }
-
-    inline RE::NiMatrix3 matrixFromHkRows(const float* hkMatrix)
-    {
-        RE::NiMatrix3 result{};
-        result.entry[0][0] = hkMatrix[0];
-        result.entry[0][1] = hkMatrix[1];
-        result.entry[0][2] = hkMatrix[2];
-        result.entry[1][0] = hkMatrix[4];
-        result.entry[1][1] = hkMatrix[5];
-        result.entry[1][2] = hkMatrix[6];
-        result.entry[2][0] = hkMatrix[8];
-        result.entry[2][1] = hkMatrix[9];
-        result.entry[2][2] = hkMatrix[10];
-        return result;
-    }
-
     inline RE::NiTransform rotationOnlyTransform(const RE::NiMatrix3& rotation)
     {
         RE::NiTransform result = transform_math::makeIdentityTransform<RE::NiTransform>();
@@ -621,41 +560,6 @@ namespace rock::hand_grab_internal
     }
 
     inline RE::NiTransform makeIdentityTransform() { return transform_math::makeIdentityTransform<RE::NiTransform>(); }
-
-    inline RE::NiTransform reconstructBodyWorldFromProxyInBody(const RE::NiTransform& proxyWorld,
-        const RE::NiMatrix3& proxyInBodyRotation, const RE::NiPoint3& transformBLocalGame,
-        const RE::NiPoint3& pivotAProxyLocalGame)
-    {
-        RE::NiTransform proxyInBody = makeIdentityTransform();
-        proxyInBody.rotate = proxyInBodyRotation;
-        const RE::NiPoint3 rotatedPivotA = transform_math::localVectorToWorld(proxyInBody, pivotAProxyLocalGame);
-        proxyInBody.translate = transformBLocalGame - rotatedPivotA;
-        const RE::NiTransform bodyInProxy = transform_math::invertTransform(proxyInBody);
-        return grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorld, bodyInProxy);
-    }
-
-    inline RE::NiTransform reconstructSolverEffectiveBodyWorld(const RE::NiTransform& proxyWorld,
-        const RE::NiMatrix3& transformARotation, const RE::NiMatrix3& transformBRotation,
-        const RE::NiMatrix3& targetBRcaRotation, const RE::NiPoint3& transformBLocalGame,
-        const RE::NiPoint3& anchorAWorld, float bodyScale)
-    {
-        const RE::NiMatrix3 constraintAWorldRotation =
-            transform_math::composeTransforms(proxyWorld, rotationOnlyTransform(transformARotation)).rotate;
-        const RE::NiMatrix3 desiredConstraintBWorldRotation =
-            transform_math::composeTransforms(rotationOnlyTransform(constraintAWorldRotation),
-                rotationOnlyTransform(transform_math::transposeRotation(targetBRcaRotation)))
-                .rotate;
-        const RE::NiMatrix3 desiredBodyRotation =
-            transform_math::composeTransforms(rotationOnlyTransform(desiredConstraintBWorldRotation),
-                rotationOnlyTransform(transform_math::transposeRotation(transformBRotation)))
-                .rotate;
-
-        RE::NiTransform result = makeIdentityTransform();
-        result.rotate = desiredBodyRotation;
-        result.scale = std::isfinite(bodyScale) && bodyScale > 0.0f ? bodyScale : 1.0f;
-        result.translate = anchorAWorld - transform_math::localVectorToWorld(result, transformBLocalGame);
-        return result;
-    }
 
     inline physics_recursive_wrappers::MotionPreset motionPresetFromMotionType(
         physics_body_classifier::BodyMotionType motionType, std::uint16_t fallbackMotionPropertiesId)
@@ -820,11 +724,6 @@ namespace rock::hand_grab_internal
     }
 
     using GrabPivotAuthoritySource = grab_authority_frame_math::GrabAuthorityPivotSource;
-
-    inline float finitePositiveOr(float value, float fallback)
-    {
-        return std::isfinite(value) && value > 0.0f ? value : fallback;
-    }
 
     using GrabSeatDepthStopResult = grab_palm_seat::DepthResult;
 
@@ -1409,13 +1308,6 @@ namespace rock::hand_grab_internal
         float rawDeterminant = 0.0f;
         float proxyDeterminant = 0.0f;
     };
-
-    inline void nativeVRGrabDrop(void* playerChar, int handIndex)
-    {
-        typedef void func_t(void*, int, std::uint64_t);
-        static REL::Relocation<func_t> func{ REL::Offset(offsets::kFunc_NativeVRGrabDrop) };
-        func(playerChar, handIndex, 0);
-    }
 }
 
 namespace rock

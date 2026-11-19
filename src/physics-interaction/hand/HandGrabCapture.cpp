@@ -9,6 +9,13 @@ namespace rock
 
     namespace
     {
+        inline void nativeVRGrabDrop(void* playerChar, int handIndex)
+        {
+            typedef void func_t(void*, int, std::uint64_t);
+            static REL::Relocation<func_t> func{ REL::Offset(offsets::kFunc_NativeVRGrabDrop) };
+            func(playerChar, handIndex, 0);
+        }
+
         bool sharedContextMatchesSelection(const GrabSharedObjectContext& sharedContext,
             const SelectedObject& selection)
         {
