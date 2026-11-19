@@ -536,8 +536,7 @@ namespace rock::hand_grab_internal
 
     inline float translationDeltaGameUnits(const RE::NiTransform& a, const RE::NiTransform& b)
     {
-        const RE::NiPoint3 delta = a.translate - b.translate;
-        return std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
+        return vector_math::distance(a.translate, b.translate);
     }
 
     inline float rotationDeltaDegrees(const RE::NiMatrix3& a, const RE::NiMatrix3& b)

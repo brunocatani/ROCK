@@ -391,10 +391,7 @@ namespace rock::dynamic_weapon_collision_policy
 
     inline float translationDeltaGameUnits(const RE::NiTransform& lhs, const RE::NiTransform& rhs)
     {
-        const float x = lhs.translate.x - rhs.translate.x;
-        const float y = lhs.translate.y - rhs.translate.y;
-        const float z = lhs.translate.z - rhs.translate.z;
-        return std::sqrt(x * x + y * y + z * z);
+        return vector_math::distance(lhs.translate, rhs.translate);
     }
 
     struct GripRecoveryDecision
@@ -433,14 +430,7 @@ namespace rock::dynamic_weapon_collision_policy
 
     inline float rotationDeltaDegrees(const RE::NiTransform& lhs, const RE::NiTransform& rhs)
     {
-        float matchingAxisDotSum = 0.0f;
-        for (int axis = 0; axis < 3; ++axis) {
-            for (int component = 0; component < 3; ++component) {
-                matchingAxisDotSum += lhs.rotate.entry[axis][component] * rhs.rotate.entry[axis][component];
-            }
-        }
-        const float cosine = std::clamp((matchingAxisDotSum - 1.0f) * 0.5f, -1.0f, 1.0f);
-        return std::acos(cosine) * 57.29577951308232f;
+        return transform_math::rotationDeltaDegrees(lhs.rotate, rhs.rotate);
     }
 
     struct VisualCorrectionDecision

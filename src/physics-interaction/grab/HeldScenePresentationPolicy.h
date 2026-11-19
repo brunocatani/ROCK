@@ -70,14 +70,7 @@ namespace rock::held_scene_presentation_policy
     template <class Matrix>
     inline float matrixRotationDeltaDegrees(const Matrix& first, const Matrix& second) noexcept
     {
-        float frobeniusDot = 0.0f;
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                frobeniusDot += first.entry[row][column] * second.entry[row][column];
-            }
-        }
-        const float cosine = std::clamp((frobeniusDot - 1.0f) * 0.5f, -1.0f, 1.0f);
-        return std::acos(cosine) * 57.2957795131f;
+        return transform_math::rotationDeltaDegrees(first, second);
     }
 
     template <class Transform>

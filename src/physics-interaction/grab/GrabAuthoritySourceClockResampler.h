@@ -1,5 +1,6 @@
 #pragma once
 
+#include "physics-interaction/TransformMath.h"
 #include "physics-interaction/VectorMath.h"
 
 /*
@@ -68,15 +69,7 @@ namespace rock::grab_authority_source_clock
     // row-major and column-major storage because both operands share it.
     inline float rotationDeltaDegrees(const RE::NiMatrix3& a, const RE::NiMatrix3& b) noexcept
     {
-        float trace = 0.0f;
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                trace += a.entry[row][column] * b.entry[row][column];
-            }
-        }
-        float cosAngle = (trace - 1.0f) * 0.5f;
-        cosAngle = cosAngle > 1.0f ? 1.0f : (cosAngle < -1.0f ? -1.0f : cosAngle);
-        return std::acos(cosAngle) * 57.29577951308232f;
+        return transform_math::rotationDeltaDegrees(a, b);
     }
 
     inline bool isFiniteVector(const RE::NiPoint3& value) noexcept { return vector_math::hasFiniteComponents(value); }
