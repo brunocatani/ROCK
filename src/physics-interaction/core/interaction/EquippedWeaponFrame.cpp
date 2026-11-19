@@ -30,6 +30,89 @@ namespace rock
 {
     namespace
     {
+        inline bool tryReadNativeScopeRequestState(bool& outActive)
+        {
+            performance_profiler::ScopedTimer gripStageTimer(performance_profiler::Scope::EquippedNativeScopeRead);
+            using GetScopeRequestState = bool (*)(const void*);
+            static REL::Relocation<GetScopeRequestState> getScopeRequestState{ REL::Offset(
+                offsets::kFunc_NativeScopeRequestStateGet) };
+            static REL::Relocation<std::uintptr_t> rendererState{ REL::Offset(
+                offsets::kData_NativeScopeRendererState) };
+            if (!getScopeRequestState.address() || !rendererState.address()) {
+                return false;
+            }
+            outActive = getScopeRequestState(reinterpret_cast<const void*>(rendererState.address()));
+            return true;
+        }
+
+        [[nodiscard]] constexpr equipped_weapon_shoulder::NativePresentation shoulderNativePresentation(
+            const std::uint32_t nativeWeaponState) noexcept
+        {
+            using Presentation = equipped_weapon_shoulder::NativePresentation;
+            switch (nativeWeaponState) {
+            case 0:
+                return Presentation::StableSheathed;
+            case 1:
+                return Presentation::WantDraw;
+            case 2:
+                return Presentation::Drawing;
+            case 3:
+                return Presentation::StableDrawn;
+            case 4:
+                return Presentation::WantSheathe;
+            case 5:
+                return Presentation::Sheathing;
+            default:
+                return Presentation::Invalid;
+            }
+        }
+
+        inline provider::PartQuery makeProviderWeaponPartTargetQuery(const WeaponInteractionContact& contact,
+            const WeaponCollision& weaponCollision)
+        {
+            provider::PartQuery query{};
+            query.weaponGenerationKey = contact.weaponGenerationKey;
+            query.bodyId = contact.bodyId;
+            query.partKind = static_cast<std::uint32_t>(contact.partKind);
+            query.reloadRole = static_cast<std::uint32_t>(contact.reloadRole);
+            query.supportRole = static_cast<std::uint32_t>(contact.supportGripRole);
+            query.socketRole = static_cast<std::uint32_t>(contact.socketRole);
+            query.actionRole = static_cast<std::uint32_t>(contact.actionRole);
+            query.sourceRoot = reinterpret_cast<std::uintptr_t>(contact.sourceRoot);
+            const auto evidence = weaponCollision.getProfileEvidenceDescriptors();
+            const auto* descriptor = evidence.find(contact.bodyId);
+            if (descriptor && descriptor->weaponGenerationKey == contact.weaponGenerationKey) {
+                query.sourceRoot = descriptor->sourceRootAddress;
+                copyProviderString(query.sourceName, sizeof(query.sourceName), descriptor->sourceName);
+            }
+            return query;
+        }
+
+        inline WeaponProviderPartAuthority makeWeaponProviderPartAuthority(const provider::PartQuery& query,
+            const weapon_part_runtime::Resolution& resolution)
+        {
+            WeaponProviderPartAuthority authority{};
+            authority.active = resolution.matched != 0;
+            authority.ownerToken = resolution.ownerToken;
+            authority.weaponGenerationKey = query.weaponGenerationKey;
+            authority.bodyId = query.bodyId;
+            authority.sourceRoot = query.sourceRoot;
+            authority.partKind = query.partKind;
+            authority.reloadRole = query.reloadRole;
+            authority.supportRole = query.supportRole;
+            authority.socketRole = query.socketRole;
+            authority.actionRole = query.actionRole;
+            authority.groupId = resolution.groupId;
+            authority.grabMode = static_cast<std::uint32_t>(resolution.grabMode);
+            static_assert(WeaponProviderPartAuthority{}.sourceName.size() == weapon_part_runtime::kMaxSourceName);
+            std::memcpy(authority.sourceName.data(), query.sourceName, authority.sourceName.size());
+            authority.sourceName[authority.sourceName.size() - 1] = '\0';
+            return authority;
+        }
+    }
+
+    namespace
+    {
         void maskProviderWeaponGrabInput(bool isLeft, bool holding, GrabButtonState& button)
         {
             using Flag = ::rock::api::input::HandInputSuppressionFlag;

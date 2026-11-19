@@ -5,6 +5,40 @@
 
 namespace rock
 {
+    namespace
+    {
+        inline bool nodeNameEquals(RE::NiAVObject* node, std::string_view name)
+        {
+            if (!node || name.empty()) {
+                return false;
+            }
+            const char* nodeName = node->name.c_str();
+            return nodeName && std::string_view(nodeName) == name;
+        }
+
+        inline RE::NiAVObject* findWeaponNodeBySourceName(RE::NiAVObject* root, std::string_view sourceName,
+            int maxDepth = 32)
+        {
+            if (!root || sourceName.empty() || maxDepth < 0) {
+                return nullptr;
+            }
+            if (nodeNameEquals(root, sourceName)) {
+                return root;
+            }
+            auto* node = root->IsNode();
+            if (!node) {
+                return nullptr;
+            }
+            auto& children = node->GetRuntimeData().children;
+            for (std::uint16_t i = 0; i < children.size(); ++i) {
+                if (auto* found = findWeaponNodeBySourceName(children[i].get(), sourceName, maxDepth - 1)) {
+                    return found;
+                }
+            }
+            return nullptr;
+        }
+    }
+
     void PhysicsInteraction::processProviderInteractionCommands(const PhysicsFrameContext& frame)
     {
         using namespace provider;

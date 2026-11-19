@@ -166,21 +166,6 @@ namespace rock
 
         inline WeaponCollisionWorkbenchExitMenuSink s_weaponCollisionWorkbenchExitMenuSink;
 
-        inline bool tryReadNativeScopeRequestState(bool& outActive)
-        {
-            performance_profiler::ScopedTimer gripStageTimer(performance_profiler::Scope::EquippedNativeScopeRead);
-            using GetScopeRequestState = bool (*)(const void*);
-            static REL::Relocation<GetScopeRequestState> getScopeRequestState{ REL::Offset(
-                offsets::kFunc_NativeScopeRequestStateGet) };
-            static REL::Relocation<std::uintptr_t> rendererState{ REL::Offset(
-                offsets::kData_NativeScopeRendererState) };
-            if (!getScopeRequestState.address() || !rendererState.address()) {
-                return false;
-            }
-            outActive = getScopeRequestState(reinterpret_cast<const void*>(rendererState.address()));
-            return true;
-        }
-
         inline bool ensureWeaponCollisionWorkbenchExitMenuSinkRegistered()
         {
             bool expected = false;
@@ -410,33 +395,6 @@ namespace rock
             return grab_mass_policy::massFromInverseMass(unpackBfloat16(packedInvMass));
         }
 
-        inline bool applyPlayerSpeedReduction(float previousReduction, float targetReduction)
-        {
-            previousReduction = held_mass_movement::sanitizeReduction(previousReduction);
-            targetReduction = held_mass_movement::sanitizeReduction(targetReduction);
-            if (std::fabs(previousReduction - targetReduction) <= 0.001f &&
-                (targetReduction > 0.0f || previousReduction <= 0.0f)) {
-                return true;
-            }
-
-            auto* player = RE::PlayerCharacter::GetSingleton();
-            auto* actorValues = RE::ActorValue::GetSingleton();
-            if (!player || !actorValues || !actorValues->speedMult || !actorValues->carryWeight) {
-                return false;
-            }
-
-            if (previousReduction > 0.0f) {
-                player->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kTemporary, *actorValues->speedMult, previousReduction);
-            }
-            if (targetReduction > 0.0f) {
-                player->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kTemporary, *actorValues->speedMult, -targetReduction);
-            }
-
-            player->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kTemporary, *actorValues->carryWeight, 0.1f);
-            player->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kTemporary, *actorValues->carryWeight, -0.1f);
-            return true;
-        }
-
         inline std::uint32_t fillGrabEventBodyKinematics(RE::hknpWorld* world, std::uint32_t bodyId,
             GrabEventData& eventData)
         {
@@ -476,81 +434,6 @@ namespace rock
 
             return flags;
         }
-
-        inline DirectSkeletonBoneReader s_directSkeletonBoneReader;
-        inline std::uint32_t s_directSkeletonBoneLogCounter = 0;
-
-        struct ContactEventCallbackInfo
-        {
-            void* fn = nullptr;
-            std::uint64_t ctx = 0;
-        };
-
-        struct ContactEventSubscriptionBridge
-        {
-            struct NativeSlot
-            {
-                RE::hknpWorld* world = nullptr;
-                void* signal = nullptr;
-                std::uint32_t epoch = 0;
-            };
-
-            static constexpr std::size_t kMaxRetainedNativeSlots = 64;
-
-            std::atomic<PhysicsInteraction*> instance{ nullptr };
-            std::atomic<RE::hknpWorld*> world{ nullptr };
-            std::atomic<void*> signal{ nullptr };
-            std::atomic<std::uint32_t> subscriptionEpoch{ 0 };
-            std::mutex retainedSlotMutex;
-            std::array<NativeSlot, kMaxRetainedNativeSlots> retainedSlots{};
-            std::size_t retainedSlotCount = 0;
-
-            [[nodiscard]] bool hasRetainedNativeSlot(RE::hknpWorld* requestedWorld, void* requestedSignal)
-            {
-                if (!requestedWorld || !requestedSignal) {
-                    return false;
-                }
-
-                std::scoped_lock lock(retainedSlotMutex);
-                for (std::size_t i = 0; i < retainedSlotCount; ++i) {
-                    const auto& slot = retainedSlots[i];
-                    if (slot.world == requestedWorld && slot.signal == requestedSignal) {
-                        return true;
-                    }
-                }
-                return false;
-            }
-
-            bool rememberRetainedNativeSlot(RE::hknpWorld* subscribedWorld, void* subscribedSignal, std::uint32_t epoch)
-            {
-                if (!subscribedWorld || !subscribedSignal) {
-                    return false;
-                }
-
-                std::scoped_lock lock(retainedSlotMutex);
-                for (std::size_t i = 0; i < retainedSlotCount; ++i) {
-                    auto& slot = retainedSlots[i];
-                    if (slot.world == subscribedWorld && slot.signal == subscribedSignal) {
-                        slot.epoch = epoch;
-                        return true;
-                    }
-                }
-
-                if (retainedSlotCount >= retainedSlots.size()) {
-                    return false;
-                }
-
-                retainedSlots[retainedSlotCount++] = NativeSlot{
-                    .world = subscribedWorld,
-                    .signal = subscribedSignal,
-                    .epoch = epoch,
-                };
-                return true;
-            }
-        };
-
-        inline ContactEventSubscriptionBridge s_contactEventBridge;
-        inline ContactEventSubscriptionBridge s_manifoldProcessedEventBridge;
 
         struct GrabButtonState
         {
@@ -602,28 +485,6 @@ namespace rock
                 .pressed = vrcf::VRControllers.isPressed(vrHand, buttonId),
                 .released = vrcf::VRControllers.isReleased(vrHand, buttonId),
             };
-        }
-
-        [[nodiscard]] constexpr equipped_weapon_shoulder::NativePresentation shoulderNativePresentation(
-            const std::uint32_t nativeWeaponState) noexcept
-        {
-            using Presentation = equipped_weapon_shoulder::NativePresentation;
-            switch (nativeWeaponState) {
-            case 0:
-                return Presentation::StableSheathed;
-            case 1:
-                return Presentation::WantDraw;
-            case 2:
-                return Presentation::Drawing;
-            case 3:
-                return Presentation::StableDrawn;
-            case 4:
-                return Presentation::WantSheathe;
-            case 5:
-                return Presentation::Sheathing;
-            default:
-                return Presentation::Invalid;
-            }
         }
 
         inline bool readGrabButtonHeld(bool isLeft, int buttonId)
@@ -757,69 +618,6 @@ namespace rock
             emit();
         }
 
-        inline bool startsWith(std::string_view value, std::string_view prefix)
-        {
-            return value.size() >= prefix.size() && value.substr(0, prefix.size()) == prefix;
-        }
-
-        inline debug::SkeletonOverlayRole skeletonOverlayRoleForBone(std::string_view name)
-        {
-            if (startsWith(name, "RArm_Finger")) {
-                return debug::SkeletonOverlayRole::RightFinger;
-            }
-            if (startsWith(name, "LArm_Finger")) {
-                return debug::SkeletonOverlayRole::LeftFinger;
-            }
-            if (startsWith(name, "RArm_")) {
-                return debug::SkeletonOverlayRole::RightArm;
-            }
-            if (startsWith(name, "LArm_")) {
-                return debug::SkeletonOverlayRole::LeftArm;
-            }
-            if (startsWith(name, "RLeg_")) {
-                return debug::SkeletonOverlayRole::RightLeg;
-            }
-            if (startsWith(name, "LLeg_")) {
-                return debug::SkeletonOverlayRole::LeftLeg;
-            }
-            if (name == "Head" || name == "Neck") {
-                return debug::SkeletonOverlayRole::Head;
-            }
-            return debug::SkeletonOverlayRole::Core;
-        }
-
-        inline std::string_view trimView(std::string_view value)
-        {
-            while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
-                value.remove_prefix(1);
-            }
-            while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) {
-                value.remove_suffix(1);
-            }
-            return value;
-        }
-
-        inline bool skeletonLogFilterMatches(std::string_view filter, std::string_view boneName)
-        {
-            filter = trimView(filter);
-            if (filter.empty()) {
-                return false;
-            }
-
-            while (!filter.empty()) {
-                const std::size_t comma = filter.find(',');
-                const std::string_view token = trimView(filter.substr(0, comma));
-                if (token == boneName) {
-                    return true;
-                }
-                if (comma == std::string_view::npos) {
-                    break;
-                }
-                filter.remove_prefix(comma + 1);
-            }
-            return false;
-        }
-
         inline RE::TESObjectWEAP* currentEquippedWeaponForm()
         {
             auto* equipData = f4vr::getEquippedWeaponItem();
@@ -898,37 +696,6 @@ namespace rock
             return std::string_view(value, capacity);
         }
 
-        inline bool nodeNameEquals(RE::NiAVObject* node, std::string_view name)
-        {
-            if (!node || name.empty()) {
-                return false;
-            }
-            const char* nodeName = node->name.c_str();
-            return nodeName && std::string_view(nodeName) == name;
-        }
-
-        inline RE::NiAVObject* findWeaponNodeBySourceName(RE::NiAVObject* root, std::string_view sourceName,
-            int maxDepth = 32)
-        {
-            if (!root || sourceName.empty() || maxDepth < 0) {
-                return nullptr;
-            }
-            if (nodeNameEquals(root, sourceName)) {
-                return root;
-            }
-            auto* node = root->IsNode();
-            if (!node) {
-                return nullptr;
-            }
-            auto& children = node->GetRuntimeData().children;
-            for (std::uint16_t i = 0; i < children.size(); ++i) {
-                if (auto* found = findWeaponNodeBySourceName(children[i].get(), sourceName, maxDepth - 1)) {
-                    return found;
-                }
-            }
-            return nullptr;
-        }
-
         inline std::uint32_t providerColliderFlags(RE::hknpWorld* world, std::uint32_t bodyId, bool bodiesCurrent,
             bool lifecycleAllowed)
         {
@@ -947,58 +714,6 @@ namespace rock
 
             std::snprintf(target, targetSize, "%s", source.c_str());
             target[targetSize - 1] = '\0';
-        }
-
-        inline void copyProviderString(char* target, std::size_t targetSize, const char* source)
-        {
-            if (!target || targetSize == 0) {
-                return;
-            }
-            std::snprintf(target, targetSize, "%s", source ? source : "");
-            target[targetSize - 1] = '\0';
-        }
-
-        inline provider::PartQuery makeProviderWeaponPartTargetQuery(const WeaponInteractionContact& contact,
-            const WeaponCollision& weaponCollision)
-        {
-            provider::PartQuery query{};
-            query.weaponGenerationKey = contact.weaponGenerationKey;
-            query.bodyId = contact.bodyId;
-            query.partKind = static_cast<std::uint32_t>(contact.partKind);
-            query.reloadRole = static_cast<std::uint32_t>(contact.reloadRole);
-            query.supportRole = static_cast<std::uint32_t>(contact.supportGripRole);
-            query.socketRole = static_cast<std::uint32_t>(contact.socketRole);
-            query.actionRole = static_cast<std::uint32_t>(contact.actionRole);
-            query.sourceRoot = reinterpret_cast<std::uintptr_t>(contact.sourceRoot);
-            const auto evidence = weaponCollision.getProfileEvidenceDescriptors();
-            const auto* descriptor = evidence.find(contact.bodyId);
-            if (descriptor && descriptor->weaponGenerationKey == contact.weaponGenerationKey) {
-                query.sourceRoot = descriptor->sourceRootAddress;
-                copyProviderString(query.sourceName, sizeof(query.sourceName), descriptor->sourceName);
-            }
-            return query;
-        }
-
-        inline WeaponProviderPartAuthority makeWeaponProviderPartAuthority(const provider::PartQuery& query,
-            const weapon_part_runtime::Resolution& resolution)
-        {
-            WeaponProviderPartAuthority authority{};
-            authority.active = resolution.matched != 0;
-            authority.ownerToken = resolution.ownerToken;
-            authority.weaponGenerationKey = query.weaponGenerationKey;
-            authority.bodyId = query.bodyId;
-            authority.sourceRoot = query.sourceRoot;
-            authority.partKind = query.partKind;
-            authority.reloadRole = query.reloadRole;
-            authority.supportRole = query.supportRole;
-            authority.socketRole = query.socketRole;
-            authority.actionRole = query.actionRole;
-            authority.groupId = resolution.groupId;
-            authority.grabMode = static_cast<std::uint32_t>(resolution.grabMode);
-            static_assert(WeaponProviderPartAuthority{}.sourceName.size() == weapon_part_runtime::kMaxSourceName);
-            std::memcpy(authority.sourceName.data(), query.sourceName, authority.sourceName.size());
-            authority.sourceName[authority.sourceName.size() - 1] = '\0';
-            return authority;
         }
 
         inline api::Point3 makeProviderPoint(const WeaponEvidencePoint3& point)

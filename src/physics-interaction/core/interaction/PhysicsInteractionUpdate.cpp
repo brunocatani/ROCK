@@ -33,6 +33,36 @@
 
 namespace rock
 {
+    namespace
+    {
+        inline bool applyPlayerSpeedReduction(float previousReduction, float targetReduction)
+        {
+            previousReduction = held_mass_movement::sanitizeReduction(previousReduction);
+            targetReduction = held_mass_movement::sanitizeReduction(targetReduction);
+            if (std::fabs(previousReduction - targetReduction) <= 0.001f &&
+                (targetReduction > 0.0f || previousReduction <= 0.0f)) {
+                return true;
+            }
+
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            auto* actorValues = RE::ActorValue::GetSingleton();
+            if (!player || !actorValues || !actorValues->speedMult || !actorValues->carryWeight) {
+                return false;
+            }
+
+            if (previousReduction > 0.0f) {
+                player->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kTemporary, *actorValues->speedMult, previousReduction);
+            }
+            if (targetReduction > 0.0f) {
+                player->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kTemporary, *actorValues->speedMult, -targetReduction);
+            }
+
+            player->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kTemporary, *actorValues->carryWeight, 0.1f);
+            player->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kTemporary, *actorValues->carryWeight, -0.1f);
+            return true;
+        }
+    }
+
     void PhysicsInteraction::requestWeaponCollisionRebuildAfterWorkbenchExit(const char* sourceMenuName)
     {
         if (!_lifecycle.initialized.load(std::memory_order_acquire)) {

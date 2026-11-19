@@ -5,6 +5,75 @@
 
 namespace rock
 {
+    namespace
+    {
+        inline DirectSkeletonBoneReader s_directSkeletonBoneReader;
+        inline std::uint32_t s_directSkeletonBoneLogCounter = 0;
+
+        inline bool startsWith(std::string_view value, std::string_view prefix)
+        {
+            return value.size() >= prefix.size() && value.substr(0, prefix.size()) == prefix;
+        }
+
+        inline debug::SkeletonOverlayRole skeletonOverlayRoleForBone(std::string_view name)
+        {
+            if (startsWith(name, "RArm_Finger")) {
+                return debug::SkeletonOverlayRole::RightFinger;
+            }
+            if (startsWith(name, "LArm_Finger")) {
+                return debug::SkeletonOverlayRole::LeftFinger;
+            }
+            if (startsWith(name, "RArm_")) {
+                return debug::SkeletonOverlayRole::RightArm;
+            }
+            if (startsWith(name, "LArm_")) {
+                return debug::SkeletonOverlayRole::LeftArm;
+            }
+            if (startsWith(name, "RLeg_")) {
+                return debug::SkeletonOverlayRole::RightLeg;
+            }
+            if (startsWith(name, "LLeg_")) {
+                return debug::SkeletonOverlayRole::LeftLeg;
+            }
+            if (name == "Head" || name == "Neck") {
+                return debug::SkeletonOverlayRole::Head;
+            }
+            return debug::SkeletonOverlayRole::Core;
+        }
+
+        inline std::string_view trimView(std::string_view value)
+        {
+            while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
+                value.remove_prefix(1);
+            }
+            while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) {
+                value.remove_suffix(1);
+            }
+            return value;
+        }
+
+        inline bool skeletonLogFilterMatches(std::string_view filter, std::string_view boneName)
+        {
+            filter = trimView(filter);
+            if (filter.empty()) {
+                return false;
+            }
+
+            while (!filter.empty()) {
+                const std::size_t comma = filter.find(',');
+                const std::string_view token = trimView(filter.substr(0, comma));
+                if (token == boneName) {
+                    return true;
+                }
+                if (comma == std::string_view::npos) {
+                    break;
+                }
+                filter.remove_prefix(comma + 1);
+            }
+            return false;
+        }
+    }
+
     void PhysicsInteraction::publishDebugBodyOverlay(const PhysicsFrameContext& context)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::DebugOverlayPublish);
