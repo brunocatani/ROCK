@@ -20,7 +20,9 @@
 // Frame thread, AfterWorldFinal. The walk is bounded and runs only while the
 // setting is on.
 #include "physics-interaction/VectorMath.h"
-#include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "RockConfig.h"
+#include "physics-interaction/core/PhysicsInteraction.h"
+#include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/equip/EquippedWeaponVisualState.h"
 #include "physics-interaction/weapon/native/NativeHandEquipment.h"

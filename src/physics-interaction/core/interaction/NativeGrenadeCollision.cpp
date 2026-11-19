@@ -2,7 +2,9 @@
 // after release, every ROCK generated body (hand, body bone, weapon and proxy
 // colliders) stops colliding, so the new grenade cannot hit the player's own
 // colliders. A throw is blocked when that protection cannot be applied.
-#include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/collision/CollisionSuppressionRegistry.h"
+#include "physics-interaction/core/PhysicsInteraction.h"
+#include "physics-interaction/native/havok/BodyCollisionControl.h"
 #include "physics-interaction/input/NativeGrenadeThrowRuntime.h"
 
 namespace rock

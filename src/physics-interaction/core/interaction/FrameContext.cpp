@@ -1,7 +1,15 @@
 // buildFrameContext: one snapshot of the worlds, timing, menu state and both
 // hands' inputs, built at the top of a PhysicsInteraction frame so every stage
 // reads the same values instead of querying FRIK and the game separately.
-#include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "RockConfig.h"
+#include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
+#include "physics-interaction/core/PhysicsInteraction.h"
+#include "physics-interaction/core/RockRuntimeState.h"
+#include "physics-interaction/grab/GrabPinchPocket.h"
+#include "physics-interaction/hand/HandFrame.h"
+#include "physics-interaction/hand/HandSelection.h"
+#include "rock_support/Fo4VrRuntime.h"
+#include "rock_support/VRControllers.h"
 
 #include "api/ProviderRuntimeServices.h"
 

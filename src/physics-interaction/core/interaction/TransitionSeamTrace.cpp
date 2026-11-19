@@ -14,7 +14,9 @@
 // frame before. The observation walks weapon geometry and skin bones each frame,
 // so it runs only while debug logging is on, like the equip-readiness trace.
 #include "physics-interaction/VectorMath.h"
-#include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "RockUtils.h"
+#include "physics-interaction/core/PhysicsInteraction.h"
+#include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/collision/DynamicWeaponCollisionPolicy.h"

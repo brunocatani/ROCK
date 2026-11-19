@@ -1,7 +1,7 @@
 // World bounds of the presented equipped weapons (see weapon/scene/WeaponWorldBounds.h).
 // Runs at AfterWorldFinal, after every ROCK and FRIK weapon placement of the
 // frame, on both native equipment slots and ROCK's equip copy.
-#include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/weapon/native/NativeHandEquipment.h"
 #include "physics-interaction/weapon/scene/WeaponWorldBounds.h"
 

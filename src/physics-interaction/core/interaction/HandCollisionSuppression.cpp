@@ -1,7 +1,14 @@
 // Hand and native-player collision suppression: contact evidence ownership,
 // dominant-weapon and weapon-support hand suppression, post-drop suppression,
 // and native player physical-pair ownership.
-#include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/collision/ContactPipelinePolicy.h"
+#include "physics-interaction/core/PhysicsInteraction.h"
+#include "physics-interaction/core/RockRuntimeState.h"
+#include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/native/havok/BodyCollisionControl.h"
+#include "physics-interaction/native/havok/PhysicsUtils.h"
+#include "physics-interaction/object/ObjectDetection.h"
+#include "rock_support/Fo4VrRuntime.h"
 #include "physics-interaction/native/havok/HavokWorldLock.h"
 #include "physics-interaction/native/player/NativePlayerCollisionFilter.h"
 
