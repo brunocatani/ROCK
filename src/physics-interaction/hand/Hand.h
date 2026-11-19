@@ -1136,45 +1136,37 @@ namespace rock
 
         collision_suppression_registry::SuppressionLeaseSet<kGrabCollisionSuppressionBodyCountPerHand>
             _grabHandCollisionSuppression{ collision_suppression_registry::CollisionSuppressionOwner::Grab };
-        std::mutex _semanticContactWriteMutex;
         std::atomic<std::uint32_t> _touchBodyId{ hand_semantic_contact_state::kInvalidBodyId };
         std::atomic<double> _touchStampSeconds{ -1.0e9 };
-        std::array<std::atomic<double>, hand_semantic_contact_state::kMaxSemanticContactRecords>
-            _semanticContactSetSeconds{};
-        std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords>
-            _semanticContactSetValid{};
-        std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords>
-            _semanticContactSetRole{};
-        std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords>
-            _semanticContactSetFinger{};
-        std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords>
-            _semanticContactSetSegment{};
-        std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords>
-            _semanticContactSetHandBodyId{};
-        std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords>
-            _semanticContactSetOtherBodyId{};
-        std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords>
-            _semanticContactSetFrames{};
-        std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords>
-            _semanticContactSetRunStartFrames{};
-        std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords>
-            _semanticContactSetSequence{};
-        std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords>
-            _semanticContactSetHasPointGame{};
-        std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords>
-            _semanticContactSetHasNormalGame{};
-        std::array<std::atomic<float>, hand_semantic_contact_state::kMaxSemanticContactRecords>
-            _semanticContactSetPointGameX{};
-        std::array<std::atomic<float>, hand_semantic_contact_state::kMaxSemanticContactRecords>
-            _semanticContactSetPointGameY{};
-        std::array<std::atomic<float>, hand_semantic_contact_state::kMaxSemanticContactRecords>
-            _semanticContactSetPointGameZ{};
-        std::array<std::atomic<float>, hand_semantic_contact_state::kMaxSemanticContactRecords>
-            _semanticContactSetNormalGameX{};
-        std::array<std::atomic<float>, hand_semantic_contact_state::kMaxSemanticContactRecords>
-            _semanticContactSetNormalGameY{};
-        std::array<std::atomic<float>, hand_semantic_contact_state::kMaxSemanticContactRecords>
-            _semanticContactSetNormalGameZ{};
+
+        // Semantic hand-contact records, one slot per record with each field its
+        // own atomic. writeMutex serializes the writers.
+        struct SemanticContactSet
+        {
+            template <class Value>
+            using Slots = std::array<std::atomic<Value>, hand_semantic_contact_state::kMaxSemanticContactRecords>;
+
+            std::mutex writeMutex;
+            Slots<double> seconds{};
+            Slots<std::uint32_t> valid{};
+            Slots<std::uint32_t> role{};
+            Slots<std::uint32_t> finger{};
+            Slots<std::uint32_t> segment{};
+            Slots<std::uint32_t> handBodyId{};
+            Slots<std::uint32_t> otherBodyId{};
+            Slots<std::uint32_t> frames{};
+            Slots<std::uint32_t> runStartFrames{};
+            Slots<std::uint32_t> sequence{};
+            Slots<std::uint32_t> hasPointGame{};
+            Slots<std::uint32_t> hasNormalGame{};
+            Slots<float> pointGameX{};
+            Slots<float> pointGameY{};
+            Slots<float> pointGameZ{};
+            Slots<float> normalGameX{};
+            Slots<float> normalGameY{};
+            Slots<float> normalGameZ{};
+        };
+        SemanticContactSet _semanticContactSet;
 
     public:
         bool isHeldBodyColliding() const { return _heldBodyContactFrame.load(std::memory_order_acquire) < 5; }

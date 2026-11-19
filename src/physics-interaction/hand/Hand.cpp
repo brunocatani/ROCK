@@ -239,27 +239,27 @@ namespace rock
         _deselectCooldown = 0;
         _lastDeselectedRef = nullptr;
         {
-            std::scoped_lock writeLock(_semanticContactWriteMutex);
+            std::scoped_lock writeLock(_semanticContactSet.writeMutex);
             _touchBodyId.store(hand_semantic_contact_state::kInvalidBodyId, std::memory_order_release);
             _touchStampSeconds.store(kSemanticContactNeverStampSeconds, std::memory_order_release);
             for (std::size_t i = 0; i < hand_semantic_contact_state::kMaxSemanticContactRecords; ++i) {
-                _semanticContactSetValid[i].store(0, std::memory_order_release);
-                _semanticContactSetRole[i].store(
+                _semanticContactSet.valid[i].store(0, std::memory_order_release);
+                _semanticContactSet.role[i].store(
                     static_cast<std::uint32_t>(hand_collider_semantics::HandColliderRole::PalmAnchor),
                     std::memory_order_release);
-                _semanticContactSetFinger[i].store(
+                _semanticContactSet.finger[i].store(
                     static_cast<std::uint32_t>(hand_collider_semantics::HandFinger::None), std::memory_order_release);
-                _semanticContactSetSegment[i].store(
+                _semanticContactSet.segment[i].store(
                     static_cast<std::uint32_t>(hand_collider_semantics::HandFingerSegment::None),
                     std::memory_order_release);
-                _semanticContactSetHandBodyId[i].store(hand_semantic_contact_state::kInvalidBodyId,
+                _semanticContactSet.handBodyId[i].store(hand_semantic_contact_state::kInvalidBodyId,
                     std::memory_order_release);
-                _semanticContactSetOtherBodyId[i].store(hand_semantic_contact_state::kInvalidBodyId,
+                _semanticContactSet.otherBodyId[i].store(hand_semantic_contact_state::kInvalidBodyId,
                     std::memory_order_release);
-                _semanticContactSetFrames[i].store(0xFFFF'FFFFu, std::memory_order_release);
-                _semanticContactSetRunStartFrames[i].store(0xFFFF'FFFFu, std::memory_order_release);
-                _semanticContactSetSeconds[i].store(kSemanticContactNeverStampSeconds, std::memory_order_release);
-                _semanticContactSetSequence[i].store(0, std::memory_order_release);
+                _semanticContactSet.frames[i].store(0xFFFF'FFFFu, std::memory_order_release);
+                _semanticContactSet.runStartFrames[i].store(0xFFFF'FFFFu, std::memory_order_release);
+                _semanticContactSet.seconds[i].store(kSemanticContactNeverStampSeconds, std::memory_order_release);
+                _semanticContactSet.sequence[i].store(0, std::memory_order_release);
             }
         }
         _activeConstraint.clear();
@@ -1786,7 +1786,7 @@ namespace rock
          * callback cannot republish a stale contact after the owner transition
          * invalidated the slots.
          */
-        std::scoped_lock writeLock(_semanticContactWriteMutex);
+        std::scoped_lock writeLock(_semanticContactSet.writeMutex);
         if (suppressesGeneratedHandContactEvidence(getStateAtomic())) {
             return;
         }
@@ -1805,35 +1805,35 @@ namespace rock
 
         const std::size_t slot = hand_semantic_contact_state::semanticContactSlotForRole(metadata.role);
         const bool continuesContactRun = hand_semantic_contact_state::semanticContactContinuesRun(
-            _semanticContactSetValid[slot].load(std::memory_order_acquire) != 0,
-            _semanticContactSetOtherBodyId[slot].load(std::memory_order_acquire), otherBodyId, contactFrame,
-            _semanticContactSetFrames[slot].load(std::memory_order_acquire));
+            _semanticContactSet.valid[slot].load(std::memory_order_acquire) != 0,
+            _semanticContactSet.otherBodyId[slot].load(std::memory_order_acquire), otherBodyId, contactFrame,
+            _semanticContactSet.frames[slot].load(std::memory_order_acquire));
         const std::uint32_t contactRunStartFrame = continuesContactRun
-            ? _semanticContactSetRunStartFrames[slot].load(std::memory_order_acquire)
+            ? _semanticContactSet.runStartFrames[slot].load(std::memory_order_acquire)
             : contactFrame;
-        _semanticContactSetValid[slot].store(0, std::memory_order_release);
-        std::uint32_t slotSequence = _semanticContactSetSequence[slot].fetch_add(1, std::memory_order_acq_rel) + 1;
+        _semanticContactSet.valid[slot].store(0, std::memory_order_release);
+        std::uint32_t slotSequence = _semanticContactSet.sequence[slot].fetch_add(1, std::memory_order_acq_rel) + 1;
         if ((slotSequence & 1u) == 0) {
-            slotSequence = _semanticContactSetSequence[slot].fetch_add(1, std::memory_order_acq_rel) + 1;
+            slotSequence = _semanticContactSet.sequence[slot].fetch_add(1, std::memory_order_acq_rel) + 1;
         }
-        _semanticContactSetRole[slot].store(static_cast<std::uint32_t>(metadata.role), std::memory_order_release);
-        _semanticContactSetFinger[slot].store(static_cast<std::uint32_t>(metadata.finger), std::memory_order_release);
-        _semanticContactSetSegment[slot].store(static_cast<std::uint32_t>(metadata.segment), std::memory_order_release);
-        _semanticContactSetHandBodyId[slot].store(metadata.bodyId, std::memory_order_release);
-        _semanticContactSetOtherBodyId[slot].store(otherBodyId, std::memory_order_release);
-        _semanticContactSetFrames[slot].store(contactFrame, std::memory_order_release);
-        _semanticContactSetRunStartFrames[slot].store(contactRunStartFrame, std::memory_order_release);
-        _semanticContactSetSeconds[slot].store(_contactClock.seconds(), std::memory_order_release);
-        _semanticContactSetPointGameX[slot].store(storedPoint.x, std::memory_order_release);
-        _semanticContactSetPointGameY[slot].store(storedPoint.y, std::memory_order_release);
-        _semanticContactSetPointGameZ[slot].store(storedPoint.z, std::memory_order_release);
-        _semanticContactSetNormalGameX[slot].store(storedNormal.x, std::memory_order_release);
-        _semanticContactSetNormalGameY[slot].store(storedNormal.y, std::memory_order_release);
-        _semanticContactSetNormalGameZ[slot].store(storedNormal.z, std::memory_order_release);
-        _semanticContactSetHasPointGame[slot].store(hasContactPointGame ? 1u : 0u, std::memory_order_release);
-        _semanticContactSetHasNormalGame[slot].store(hasContactNormalGame ? 1u : 0u, std::memory_order_release);
-        _semanticContactSetSequence[slot].store(slotSequence + 1, std::memory_order_release);
-        _semanticContactSetValid[slot].store(1, std::memory_order_release);
+        _semanticContactSet.role[slot].store(static_cast<std::uint32_t>(metadata.role), std::memory_order_release);
+        _semanticContactSet.finger[slot].store(static_cast<std::uint32_t>(metadata.finger), std::memory_order_release);
+        _semanticContactSet.segment[slot].store(static_cast<std::uint32_t>(metadata.segment), std::memory_order_release);
+        _semanticContactSet.handBodyId[slot].store(metadata.bodyId, std::memory_order_release);
+        _semanticContactSet.otherBodyId[slot].store(otherBodyId, std::memory_order_release);
+        _semanticContactSet.frames[slot].store(contactFrame, std::memory_order_release);
+        _semanticContactSet.runStartFrames[slot].store(contactRunStartFrame, std::memory_order_release);
+        _semanticContactSet.seconds[slot].store(_contactClock.seconds(), std::memory_order_release);
+        _semanticContactSet.pointGameX[slot].store(storedPoint.x, std::memory_order_release);
+        _semanticContactSet.pointGameY[slot].store(storedPoint.y, std::memory_order_release);
+        _semanticContactSet.pointGameZ[slot].store(storedPoint.z, std::memory_order_release);
+        _semanticContactSet.normalGameX[slot].store(storedNormal.x, std::memory_order_release);
+        _semanticContactSet.normalGameY[slot].store(storedNormal.y, std::memory_order_release);
+        _semanticContactSet.normalGameZ[slot].store(storedNormal.z, std::memory_order_release);
+        _semanticContactSet.hasPointGame[slot].store(hasContactPointGame ? 1u : 0u, std::memory_order_release);
+        _semanticContactSet.hasNormalGame[slot].store(hasContactNormalGame ? 1u : 0u, std::memory_order_release);
+        _semanticContactSet.sequence[slot].store(slotSequence + 1, std::memory_order_release);
+        _semanticContactSet.valid[slot].store(1, std::memory_order_release);
 
         if (touchTarget) {
             _touchBodyId.store(otherBodyId, std::memory_order_release);
@@ -1843,7 +1843,7 @@ namespace rock
 
     void Hand::clearTouch()
     {
-        std::scoped_lock writeLock(_semanticContactWriteMutex);
+        std::scoped_lock writeLock(_semanticContactSet.writeMutex);
         _touchBodyId.store(hand_semantic_contact_state::kInvalidBodyId, std::memory_order_release);
         _touchStampSeconds.store(kSemanticContactNeverStampSeconds, std::memory_order_release);
     }
@@ -1856,21 +1856,21 @@ namespace rock
          * semantic contact slots atomically instead of waiting for age-based
          * expiry so stale hand-body evidence cannot seed the next grab frame.
          */
-        std::scoped_lock writeLock(_semanticContactWriteMutex);
+        std::scoped_lock writeLock(_semanticContactSet.writeMutex);
         _touchBodyId.store(hand_semantic_contact_state::kInvalidBodyId, std::memory_order_release);
         _touchStampSeconds.store(kSemanticContactNeverStampSeconds, std::memory_order_release);
         for (std::size_t i = 0; i < hand_semantic_contact_state::kMaxSemanticContactRecords; ++i) {
-            _semanticContactSetValid[i].store(0, std::memory_order_release);
-            _semanticContactSetHandBodyId[i].store(hand_semantic_contact_state::kInvalidBodyId,
+            _semanticContactSet.valid[i].store(0, std::memory_order_release);
+            _semanticContactSet.handBodyId[i].store(hand_semantic_contact_state::kInvalidBodyId,
                 std::memory_order_release);
-            _semanticContactSetOtherBodyId[i].store(hand_semantic_contact_state::kInvalidBodyId,
+            _semanticContactSet.otherBodyId[i].store(hand_semantic_contact_state::kInvalidBodyId,
                 std::memory_order_release);
-            _semanticContactSetFrames[i].store(0xFFFF'FFFFu, std::memory_order_release);
-            _semanticContactSetRunStartFrames[i].store(0xFFFF'FFFFu, std::memory_order_release);
-            _semanticContactSetSeconds[i].store(kSemanticContactNeverStampSeconds, std::memory_order_release);
-            _semanticContactSetHasPointGame[i].store(0, std::memory_order_release);
-            _semanticContactSetHasNormalGame[i].store(0, std::memory_order_release);
-            _semanticContactSetSequence[i].fetch_add(2, std::memory_order_acq_rel);
+            _semanticContactSet.frames[i].store(0xFFFF'FFFFu, std::memory_order_release);
+            _semanticContactSet.runStartFrames[i].store(0xFFFF'FFFFu, std::memory_order_release);
+            _semanticContactSet.seconds[i].store(kSemanticContactNeverStampSeconds, std::memory_order_release);
+            _semanticContactSet.hasPointGame[i].store(0, std::memory_order_release);
+            _semanticContactSet.hasNormalGame[i].store(0, std::memory_order_release);
+            _semanticContactSet.sequence[i].fetch_add(2, std::memory_order_acq_rel);
         }
     }
 
@@ -1880,11 +1880,11 @@ namespace rock
         outContact = {};
         const std::size_t slot = hand_semantic_contact_state::semanticContactSlotForRole(role);
         for (int attempt = 0; attempt < 3; ++attempt) {
-            const auto sequenceBefore = _semanticContactSetSequence[slot].load(std::memory_order_acquire);
+            const auto sequenceBefore = _semanticContactSet.sequence[slot].load(std::memory_order_acquire);
             if ((sequenceBefore & 1u) != 0) {
                 continue;
             }
-            if (_semanticContactSetValid[slot].load(std::memory_order_acquire) == 0) {
+            if (_semanticContactSet.valid[slot].load(std::memory_order_acquire) == 0) {
                 return false;
             }
 
@@ -1892,38 +1892,38 @@ namespace rock
             contact.valid = true;
             contact.isLeft = _isLeft;
             contact.role = static_cast<hand_collider_semantics::HandColliderRole>(
-                _semanticContactSetRole[slot].load(std::memory_order_acquire));
+                _semanticContactSet.role[slot].load(std::memory_order_acquire));
             contact.finger = static_cast<hand_collider_semantics::HandFinger>(
-                _semanticContactSetFinger[slot].load(std::memory_order_acquire));
+                _semanticContactSet.finger[slot].load(std::memory_order_acquire));
             contact.segment = static_cast<hand_collider_semantics::HandFingerSegment>(
-                _semanticContactSetSegment[slot].load(std::memory_order_acquire));
-            contact.handBodyId = _semanticContactSetHandBodyId[slot].load(std::memory_order_acquire);
-            contact.otherBodyId = _semanticContactSetOtherBodyId[slot].load(std::memory_order_acquire);
-            const auto contactFrame = _semanticContactSetFrames[slot].load(std::memory_order_acquire);
+                _semanticContactSet.segment[slot].load(std::memory_order_acquire));
+            contact.handBodyId = _semanticContactSet.handBodyId[slot].load(std::memory_order_acquire);
+            contact.otherBodyId = _semanticContactSet.otherBodyId[slot].load(std::memory_order_acquire);
+            const auto contactFrame = _semanticContactSet.frames[slot].load(std::memory_order_acquire);
             contact.contactFrame = contactFrame;
-            contact.contactRunStartFrame = _semanticContactSetRunStartFrames[slot].load(std::memory_order_acquire);
+            contact.contactRunStartFrame = _semanticContactSet.runStartFrames[slot].load(std::memory_order_acquire);
             contact.sequence = sequenceBefore;
             contact.framesSinceContact =
                 hand_semantic_contact_state::semanticFramesSinceContact(_contactClock.frame(), contactFrame);
             {
-                const double stampSeconds = _semanticContactSetSeconds[slot].load(std::memory_order_acquire);
+                const double stampSeconds = _semanticContactSet.seconds[slot].load(std::memory_order_acquire);
                 contact.secondsSinceContact = stampSeconds <= kSemanticContactNeverStampSeconds
                     ? hand_semantic_contact_state::kSemanticContactNeverSeconds
                     : static_cast<float>((std::max)(0.0, _contactClock.seconds() - stampSeconds));
             }
-            contact.hasContactPointGame = _semanticContactSetHasPointGame[slot].load(std::memory_order_acquire) != 0;
-            contact.hasContactNormalGame = _semanticContactSetHasNormalGame[slot].load(std::memory_order_acquire) != 0;
+            contact.hasContactPointGame = _semanticContactSet.hasPointGame[slot].load(std::memory_order_acquire) != 0;
+            contact.hasContactNormalGame = _semanticContactSet.hasNormalGame[slot].load(std::memory_order_acquire) != 0;
             contact.contactPointGame = hand_semantic_contact_state::SemanticContactVector{
-                _semanticContactSetPointGameX[slot].load(std::memory_order_acquire),
-                _semanticContactSetPointGameY[slot].load(std::memory_order_acquire),
-                _semanticContactSetPointGameZ[slot].load(std::memory_order_acquire),
+                _semanticContactSet.pointGameX[slot].load(std::memory_order_acquire),
+                _semanticContactSet.pointGameY[slot].load(std::memory_order_acquire),
+                _semanticContactSet.pointGameZ[slot].load(std::memory_order_acquire),
             };
             contact.contactNormalGame = hand_semantic_contact_state::SemanticContactVector{
-                _semanticContactSetNormalGameX[slot].load(std::memory_order_acquire),
-                _semanticContactSetNormalGameY[slot].load(std::memory_order_acquire),
-                _semanticContactSetNormalGameZ[slot].load(std::memory_order_acquire),
+                _semanticContactSet.normalGameX[slot].load(std::memory_order_acquire),
+                _semanticContactSet.normalGameY[slot].load(std::memory_order_acquire),
+                _semanticContactSet.normalGameZ[slot].load(std::memory_order_acquire),
             };
-            const auto sequenceAfter = _semanticContactSetSequence[slot].load(std::memory_order_acquire);
+            const auto sequenceAfter = _semanticContactSet.sequence[slot].load(std::memory_order_acquire);
             if (!hand_semantic_contact_state::semanticContactSequenceSnapshotStable(sequenceBefore, sequenceAfter)) {
                 continue;
             }
@@ -1953,11 +1953,11 @@ namespace rock
 
         for (std::size_t i = 0; i < hand_semantic_contact_state::kMaxSemanticContactRecords; ++i) {
             for (int attempt = 0; attempt < 3; ++attempt) {
-                const auto sequenceBefore = _semanticContactSetSequence[i].load(std::memory_order_acquire);
+                const auto sequenceBefore = _semanticContactSet.sequence[i].load(std::memory_order_acquire);
                 if ((sequenceBefore & 1u) != 0) {
                     continue;
                 }
-                if (_semanticContactSetValid[i].load(std::memory_order_acquire) == 0) {
+                if (_semanticContactSet.valid[i].load(std::memory_order_acquire) == 0) {
                     break;
                 }
 
@@ -1965,36 +1965,36 @@ namespace rock
                 record.valid = true;
                 record.isLeft = _isLeft;
                 record.role = static_cast<hand_collider_semantics::HandColliderRole>(
-                    _semanticContactSetRole[i].load(std::memory_order_acquire));
+                    _semanticContactSet.role[i].load(std::memory_order_acquire));
                 record.finger = static_cast<hand_collider_semantics::HandFinger>(
-                    _semanticContactSetFinger[i].load(std::memory_order_acquire));
+                    _semanticContactSet.finger[i].load(std::memory_order_acquire));
                 record.segment = static_cast<hand_collider_semantics::HandFingerSegment>(
-                    _semanticContactSetSegment[i].load(std::memory_order_acquire));
-                record.handBodyId = _semanticContactSetHandBodyId[i].load(std::memory_order_acquire);
-                record.otherBodyId = _semanticContactSetOtherBodyId[i].load(std::memory_order_acquire);
-                const auto contactFrame = _semanticContactSetFrames[i].load(std::memory_order_acquire);
+                    _semanticContactSet.segment[i].load(std::memory_order_acquire));
+                record.handBodyId = _semanticContactSet.handBodyId[i].load(std::memory_order_acquire);
+                record.otherBodyId = _semanticContactSet.otherBodyId[i].load(std::memory_order_acquire);
+                const auto contactFrame = _semanticContactSet.frames[i].load(std::memory_order_acquire);
                 record.contactFrame = contactFrame;
-                record.contactRunStartFrame = _semanticContactSetRunStartFrames[i].load(std::memory_order_acquire);
+                record.contactRunStartFrame = _semanticContactSet.runStartFrames[i].load(std::memory_order_acquire);
                 record.framesSinceContact =
                     hand_semantic_contact_state::semanticFramesSinceContact(_contactClock.frame(), contactFrame);
-                const double stampSeconds = _semanticContactSetSeconds[i].load(std::memory_order_acquire);
+                const double stampSeconds = _semanticContactSet.seconds[i].load(std::memory_order_acquire);
                 record.secondsSinceContact = stampSeconds <= kSemanticContactNeverStampSeconds
                     ? hand_semantic_contact_state::kSemanticContactNeverSeconds
                     : static_cast<float>((std::max)(0.0, nowSeconds - stampSeconds));
                 record.sequence = sequenceBefore;
-                record.hasContactPointGame = _semanticContactSetHasPointGame[i].load(std::memory_order_acquire) != 0;
-                record.hasContactNormalGame = _semanticContactSetHasNormalGame[i].load(std::memory_order_acquire) != 0;
+                record.hasContactPointGame = _semanticContactSet.hasPointGame[i].load(std::memory_order_acquire) != 0;
+                record.hasContactNormalGame = _semanticContactSet.hasNormalGame[i].load(std::memory_order_acquire) != 0;
                 record.contactPointGame = hand_semantic_contact_state::SemanticContactVector{
-                    _semanticContactSetPointGameX[i].load(std::memory_order_acquire),
-                    _semanticContactSetPointGameY[i].load(std::memory_order_acquire),
-                    _semanticContactSetPointGameZ[i].load(std::memory_order_acquire),
+                    _semanticContactSet.pointGameX[i].load(std::memory_order_acquire),
+                    _semanticContactSet.pointGameY[i].load(std::memory_order_acquire),
+                    _semanticContactSet.pointGameZ[i].load(std::memory_order_acquire),
                 };
                 record.contactNormalGame = hand_semantic_contact_state::SemanticContactVector{
-                    _semanticContactSetNormalGameX[i].load(std::memory_order_acquire),
-                    _semanticContactSetNormalGameY[i].load(std::memory_order_acquire),
-                    _semanticContactSetNormalGameZ[i].load(std::memory_order_acquire),
+                    _semanticContactSet.normalGameX[i].load(std::memory_order_acquire),
+                    _semanticContactSet.normalGameY[i].load(std::memory_order_acquire),
+                    _semanticContactSet.normalGameZ[i].load(std::memory_order_acquire),
                 };
-                const auto sequenceAfter = _semanticContactSetSequence[i].load(std::memory_order_acquire);
+                const auto sequenceAfter = _semanticContactSet.sequence[i].load(std::memory_order_acquire);
                 if (!hand_semantic_contact_state::semanticContactSequenceSnapshotStable(sequenceBefore,
                         sequenceAfter)) {
                     continue;
