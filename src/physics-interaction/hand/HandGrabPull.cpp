@@ -3,6 +3,10 @@
 // object keeps while it is pulled, restored or handed to a physical drop when
 // the pull ends without a grab.
 #include "physics-interaction/hand/HandGrabInternal.h"
+#include "physics-interaction/hand/HandGrabHeldBodyFlags.h"
+#include "physics-interaction/hand/HandGrabHeldBodyMotion.h"
+#include "physics-interaction/hand/HandGrabLifecycleRestore.h"
+#include "physics-interaction/hand/HandGrabMeshLongAxis.h"
 
 namespace rock
 {

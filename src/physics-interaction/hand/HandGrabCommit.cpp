@@ -3,6 +3,9 @@
 // (commitGrabConstraintAndPose). Also the hand-collision suppression a grab
 // applies and restores.
 #include "physics-interaction/hand/HandGrabInternal.h"
+#include "physics-interaction/hand/HandGrabFingerPoseApply.h"
+#include "physics-interaction/hand/HandGrabHeldBodyFlags.h"
+#include "physics-interaction/hand/HandGrabHeldBodyMotion.h"
 
 #include <chrono>
 

@@ -2,6 +2,7 @@
 // sits in the palm (resolveGrabSeatCapture), the frame the grab constraint
 // and finger pose are built from.
 #include "physics-interaction/hand/HandGrabInternal.h"
+#include "physics-interaction/hand/HandGrabMeshLongAxis.h"
 
 #include "physics-interaction/grab/BuiltInGrabOffsets.h"
 

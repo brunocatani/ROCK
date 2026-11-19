@@ -3,6 +3,9 @@
 // bodies, flags and hand collision, removes the grab authority proxy and starts
 // the hand's visual return.
 #include "physics-interaction/hand/HandGrabInternal.h"
+#include "physics-interaction/hand/HandGrabHeldBodyFlags.h"
+#include "physics-interaction/hand/HandGrabHeldBodyMotion.h"
+#include "physics-interaction/hand/HandGrabLifecycleRestore.h"
 
 namespace rock
 {

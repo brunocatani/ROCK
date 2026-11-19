@@ -5,6 +5,8 @@
 // (HandGrabCommit.cpp). Any failure rolls the preparation back.
 #include "physics-interaction/grab/GrabPinchSpan.h"
 #include "physics-interaction/hand/HandGrabInternal.h"
+#include "physics-interaction/hand/HandGrabHeldBodyFlags.h"
+#include "physics-interaction/hand/HandGrabLifecycleRestore.h"
 
 namespace rock
 {

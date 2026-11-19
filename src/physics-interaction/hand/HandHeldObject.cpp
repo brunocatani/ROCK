@@ -4,6 +4,9 @@
 // presentation (updateHeldObject), acquisition and the hand's visual return
 // after a grab.
 #include "physics-interaction/hand/HandGrabInternal.h"
+#include "physics-interaction/hand/HandGrabFingerPoseApply.h"
+#include "physics-interaction/hand/HandGrabHeldBodyFlags.h"
+#include "physics-interaction/hand/HandGrabHeldBodyMotion.h"
 
 namespace rock
 {

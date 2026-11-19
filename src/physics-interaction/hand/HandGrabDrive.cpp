@@ -3,6 +3,7 @@
 // and updates that constraint and its motors, resolves the proxy frame, and
 // flushes and observes the custom grab authority around each Havok step.
 #include "physics-interaction/hand/HandGrabInternal.h"
+#include "physics-interaction/hand/HandGrabHeldBodyMotion.h"
 
 namespace rock
 {
