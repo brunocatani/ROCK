@@ -2810,14 +2810,22 @@ namespace rock::input_remap_runtime
                 return true;
             }
 
+            // Retried by the caller each frame, so a failure that persists logs at a controlled rate.
+            static std::atomic<std::uint32_t> s_failedInstalls{};
+            const auto shouldLogFailure = [] {
+                return (s_failedInstalls.fetch_add(1, std::memory_order_relaxed) & 0xFF) == 0;
+            };
+
             REL::Relocation<std::uintptr_t> slotEntry{ REL::Offset(slotOffset) };
             auto* slot = reinterpret_cast<void**>(slotEntry.address());
             const auto expectedTarget = REL::Offset(expectedFunctionOffset).address();
             const auto hookTarget = reinterpret_cast<std::uintptr_t>(hook);
             const auto currentTarget = slot ? reinterpret_cast<std::uintptr_t>(*slot) : 0;
             if (!slot || currentTarget == 0) {
-                ROCK_LOG_ERROR(Input, "Failed to install {} hook: vtable slot 0x{:X} is invalid", label,
-                    slotEntry.address());
+                if (shouldLogFailure()) {
+                    ROCK_LOG_ERROR(Input, "Failed to install {} hook: vtable slot 0x{:X} is invalid", label,
+                        slotEntry.address());
+                }
                 return false;
             }
 
@@ -2829,9 +2837,11 @@ namespace rock::input_remap_runtime
 
             if (currentTarget != expectedTarget) {
                 if (native_code::isInGameText(currentTarget)) {
-                    ROCK_LOG_ERROR(Input,
-                        "{} hook validation failed: slot 0x{:X} points to game text 0x{:X}, expected 0x{:X}", label,
-                        slotEntry.address(), currentTarget, expectedTarget);
+                    if (shouldLogFailure()) {
+                        ROCK_LOG_ERROR(Input,
+                            "{} hook validation failed: slot 0x{:X} points to game text 0x{:X}, expected 0x{:X}", label,
+                            slotEntry.address(), currentTarget, expectedTarget);
+                    }
                     return false;
                 }
 
@@ -2844,7 +2854,7 @@ namespace rock::input_remap_runtime
             const bool installed = patchPointerSlot(slot, reinterpret_cast<void*>(hook), originalPointer, label);
             original = reinterpret_cast<HandlerT>(originalPointer);
             installedFlag.store(installed, std::memory_order_release);
-            if (!installed) {
+            if (!installed && shouldLogFailure()) {
                 ROCK_LOG_ERROR(Input, "Failed to install {} hook at vtable slot 0x{:X}", label, slotEntry.address());
             }
             return installed;
