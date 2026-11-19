@@ -356,7 +356,7 @@ namespace rock
             if (!tryResolveDescendantLocalTransform(packageDriveNode, instance.sourceNode, sourceInWeapon)) {
                 return false;
             }
-            if (!weaponTransformFinite(sourceInWeapon)) {
+            if (!transform_math::isFiniteTransform(sourceInWeapon)) {
                 return false;
             }
             shapeCenterWeaponLocal =
@@ -369,7 +369,7 @@ namespace rock
         // The dynamic compound supplies only the live relative pose, exactly
         // matching the per-part keyframed body convention.
         outPose.shapeInWeapon.scale = 1.0f;
-        return weaponTransformFinite(outPose.shapeInWeapon);
+        return transform_math::isFiniteTransform(outPose.shapeInWeapon);
     }
 
     bool WeaponCollision::getCompoundChildPoseSnapshot(const RE::NiAVObject* currentWeaponRoot,
@@ -607,7 +607,7 @@ namespace rock
             }
             localToWorld = fallbackRoot->world;
         }
-        if (!weaponTransformFinite(localToWorld)) {
+        if (!transform_math::isFiniteTransform(localToWorld)) {
             return false;
         }
 
@@ -759,7 +759,7 @@ namespace rock
                 useSourceFrame ? instance.generatedSourceLocalMinGame : instance.generatedLocalMinGame;
             const RE::NiPoint3& boundsMax =
                 useSourceFrame ? instance.generatedSourceLocalMaxGame : instance.generatedLocalMaxGame;
-            if (localTriangles.empty() || !weaponTransformFinite(surfaceWorld) ||
+            if (localTriangles.empty() || !transform_math::isFiniteTransform(surfaceWorld) ||
                 std::abs(surfaceWorld.scale) <= 0.000001f || !pointFinite(boundsMin) || !pointFinite(boundsMax) ||
                 boundsMin.x > boundsMax.x || boundsMin.y > boundsMax.y || boundsMin.z > boundsMax.z) {
                 continue;

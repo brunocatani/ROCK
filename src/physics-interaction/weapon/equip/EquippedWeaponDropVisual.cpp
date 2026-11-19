@@ -44,7 +44,7 @@ namespace rock
         const AuthoredWeaponGripPose& grip, std::uint32_t referenceId)
     {
         release("superseded");
-        if (!model || !grip.valid() || !held_scene_presentation_policy::finiteTransform(modelInWeapon)) {
+        if (!model || !grip.valid() || !held_scene_presentation_policy::isPresentableTransform(modelInWeapon)) {
             ROCK_LOG_WARN(Weapon, "Toggle drop visual unavailable: ref={:08X} model={} grip={}", referenceId,
                 model != nullptr, grip.valid());
             return;
@@ -61,7 +61,7 @@ namespace rock
         const RE::NiTransform& modelInWeapon, const RE::NiTransform& weaponWorld, const std::uint32_t referenceId)
     {
         release("stationary-replaced");
-        if (!model || !held_scene_presentation_policy::finiteTransform(weaponWorld))
+        if (!model || !held_scene_presentation_policy::isPresentableTransform(weaponWorld))
             return;
         _model = std::move(model);
         _modelInWeapon = modelInWeapon;
@@ -86,8 +86,8 @@ namespace rock
         const auto weaponWorld = _stationary ? _stationaryWorld
                                              : transform_math::composeTransforms(physicalHandWorld,
                                                    transform_math::invertTransform(_grip.placementHandWeaponLocal));
-        if ((!_stationary && !held_scene_presentation_policy::finiteTransform(physicalHandWorld)) ||
-            !held_scene_presentation_policy::finiteTransform(weaponWorld)) {
+        if ((!_stationary && !held_scene_presentation_policy::isPresentableTransform(physicalHandWorld)) ||
+            !held_scene_presentation_policy::isPresentableTransform(weaponWorld)) {
             release("invalid-pose");
             return;
         }
@@ -120,7 +120,7 @@ namespace rock
         const auto modelWorld = transform_math::composeTransforms(weaponWorld, _modelInWeapon);
         const auto modelLocal =
             transform_math::composeTransforms(transform_math::invertTransform(worldRoot->world), modelWorld);
-        if (!held_scene_presentation_policy::finiteTransform(modelLocal)) {
+        if (!held_scene_presentation_policy::isPresentableTransform(modelLocal)) {
             release("invalid-pose");
             return;
         }

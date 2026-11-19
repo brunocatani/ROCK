@@ -722,7 +722,7 @@ namespace rock
                 continue;
             }
             const RE::NiTransform requestedLocal = providerTransformToNi(drive.targetTransform);
-            if (!finiteNiTransform(requestedLocal)) {
+            if (!transform_math::isInvertibleTransform(requestedLocal)) {
                 applicationResult.result = api::weaponparts::DriveApplication::InvalidTransform;
                 continue;
             }
@@ -737,14 +737,14 @@ namespace rock
                 desiredWorld = transform_math::composeTransforms(weaponNode->world, requestedLocal);
                 break;
             }
-            if (!finiteNiTransform(desiredWorld)) {
+            if (!transform_math::isInvertibleTransform(desiredWorld)) {
                 applicationResult.result = api::weaponparts::DriveApplication::InvalidTransform;
                 continue;
             }
 
             const RE::NiTransform requestedNodeLocal = transform_math::composeTransforms(
                 transform_math::invertTransform(sourceNode->parent->world), desiredWorld);
-            if (!finiteNiTransform(requestedNodeLocal)) {
+            if (!transform_math::isInvertibleTransform(requestedNodeLocal)) {
                 applicationResult.result = api::weaponparts::DriveApplication::InvalidTransform;
                 continue;
             }

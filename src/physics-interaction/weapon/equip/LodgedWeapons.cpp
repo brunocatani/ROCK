@@ -16,14 +16,11 @@ namespace rock
         constexpr std::uint32_t kInvalidBody = 0x7FFF'FFFFu;
         constexpr std::uint32_t kGroupMask = 0xFFFF'0000u;
 
+        // Position and orientation only: a lodged body's pose carries no scale.
         bool finite(const RE::NiTransform& value)
         {
-            for (int row = 0; row < 3; ++row)
-                if (!std::isfinite(value.rotate.entry[row].x) || !std::isfinite(value.rotate.entry[row].y) ||
-                    !std::isfinite(value.rotate.entry[row].z))
-                    return false;
-            return std::isfinite(value.translate.x) && std::isfinite(value.translate.y) &&
-                std::isfinite(value.translate.z);
+            return transform_math::isFiniteRotation(value.rotate) && std::isfinite(value.translate.x) &&
+                std::isfinite(value.translate.y) && std::isfinite(value.translate.z);
         }
 
         // The body, if it is still the one with this collision object.

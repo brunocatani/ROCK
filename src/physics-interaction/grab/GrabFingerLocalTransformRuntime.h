@@ -74,22 +74,7 @@ namespace rock::grab_finger_local_transform_runtime
         node.world.rotate = transform_math::orthonormalizeStoredRotation(node.world.rotate);
     }
 
-    [[nodiscard]] inline bool isFiniteRotation(const RE::NiMatrix3& rotation)
-    {
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                if (!std::isfinite(rotation.entry[row][column])) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-
-    [[nodiscard]] inline bool isFiniteTransform(const RE::NiTransform& transform)
-    {
-        return grab_finger_local_transform_math::sceneTransformHasUsableBasis(transform);
-    }
+    using transform_math::isFiniteTransform;
 
     inline constexpr std::size_t kInvalidFingerLocalTransformIndex = 15;
 

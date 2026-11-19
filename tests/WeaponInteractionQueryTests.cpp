@@ -29,7 +29,7 @@ namespace
             return result;
         for (std::size_t i = 0; i < sources.size(); ++i) {
             const auto& source = sources[i];
-            if (source.triangles.empty() || !weapon_hierarchy::weaponTransformFinite(source.world) ||
+            if (source.triangles.empty() || !transform_math::isFiniteTransform(source.world) ||
                 std::abs(source.world.scale) <= 0.000001f || !query::finitePoint(source.min) ||
                 !query::finitePoint(source.max) || source.min.x > source.max.x || source.min.y > source.max.y ||
                 source.min.z > source.max.z)

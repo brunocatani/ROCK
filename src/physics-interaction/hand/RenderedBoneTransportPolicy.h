@@ -74,8 +74,8 @@ namespace rock::rendered_bone_transport_policy
     {
         namespace isolation = tracked_hand_isolation_policy;
         HandTransport transport{};
-        if (!controllerRootValid || !renderedRootValid || !isolation::isFiniteTransform(controllerRootInput) ||
-            !isolation::isFiniteTransform(renderedRootInput)) {
+        if (!controllerRootValid || !renderedRootValid || !transform_math::isNonCollapsedTransform(controllerRootInput) ||
+            !transform_math::isNonCollapsedTransform(renderedRootInput)) {
             return transport;
         }
         // Both roots are scene bases with float drift; the transpose inverse
@@ -92,7 +92,7 @@ namespace rock::rendered_bone_transport_policy
         }
         const RE::NiTransform delta =
             transform_math::composeTransforms(controllerRoot, transform_math::invertTransform(renderedRoot));
-        if (!isolation::isFiniteTransform(delta)) {
+        if (!transform_math::isNonCollapsedTransform(delta)) {
             return transport;
         }
         transport.delta = delta;
@@ -120,7 +120,7 @@ namespace rock::rendered_bone_transport_policy
         // The optional diagnostic borrows a bone name only until the caller logs it.
         if (rejectedSource)
             *rejectedSource = {};
-        if (side == HandChainSide::None || !tracked_hand_isolation_policy::isFiniteTransform(controllerRoot)) {
+        if (side == HandChainSide::None || !transform_math::isNonCollapsedTransform(controllerRoot)) {
             if (rejectedSource)
                 *rejectedSource = side == HandChainSide::None ? "hand-side" : "controller-root";
             return false;
@@ -130,7 +130,7 @@ namespace rock::rendered_bone_transport_policy
         for (const auto& bone : bones) {
             if (chainSideForBone(bone.name) != side)
                 continue;
-            if (!tracked_hand_isolation_policy::isFiniteTransform(bone.world)) {
+            if (!transform_math::isNonCollapsedTransform(bone.world)) {
                 if (rejectedSource)
                     *rejectedSource = bone.name;
                 return false;

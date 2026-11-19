@@ -78,6 +78,7 @@ NativeInteraction and Storage keep table and service together (`src/api/NativeIn
 
 - `*Policy.h` headers hold decisions and math, mostly free of engine types so tests compile them. A policy gets a test only when it guards a contract listed in [Build and test](#build-and-test).
 - Native addresses and layouts are named constants (`native/havok/HavokOffsets.h` for Havok). A hook verifies the live bytes at its site before patching; copy an existing `install()` such as `native/safety/NativeShapeCastSafety.cpp`.
+- Validate a transform through `transform_math` (`physics-interaction/TransformMath.h`): `isFiniteTransform` (every component finite), `isInvertibleTransform` (finite and `invertTransform` returns a true inverse) or `isNonCollapsedTransform` (finite with a non-zero scale). A stricter subsystem rule builds on one of them under its own name; never write another component loop.
 - Convert game and Havok units only through `physics_scale` (`native/havok/PhysicsScale.h`; `gameToHavokScale()`, `havokToGameScale()`), never with a literal factor or FRIK's player scale.
 - Log through `physics-interaction/PhysicsLog.h`; per-frame paths use the rate-limited `ROCK_LOG_SAMPLE_*`.
 - Read settings from `g_rockConfig` (`src/RockConfig.h`).

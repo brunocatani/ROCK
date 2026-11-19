@@ -6,11 +6,6 @@
 
 namespace rock
 {
-    inline bool finiteNiTransform(const RE::NiTransform& value)
-    {
-        return weapon_hierarchy::weaponTransformFinite(value);
-    }
-
     struct SourceTestDescriptor
     {
         bool valid{};

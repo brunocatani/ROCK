@@ -81,12 +81,10 @@ namespace rock::loose_weapon_grip_zone
 
         std::array<NearState, 2> s_nearStates{};
 
-        bool isUsableWorldTransform(const RE::NiTransform& transform);
-
         bool physicalHandWorld(bool isLeft, RE::NiTransform& out)
         {
             const auto& frame = isLeft ? s_physicalLeftHandFrame : s_canonicalPrimaryHandFrame;
-            if (frame.valid && isUsableWorldTransform(frame.handWorld)) {
+            if (frame.valid && transform_math::isInvertibleTransform(frame.handWorld)) {
                 out = frame.handWorld;
                 return true;
             }
@@ -165,18 +163,6 @@ namespace rock::loose_weapon_grip_zone
 
         bool isFinitePoint(const RE::NiPoint3& point) { return vector_math::hasFiniteComponents(point); }
 
-        bool isUsableWorldTransform(const RE::NiTransform& transform)
-        {
-            bool rotationFinite = true;
-            for (int row = 0; row < 3; ++row) {
-                for (int column = 0; column < 3; ++column) {
-                    rotationFinite = rotationFinite && std::isfinite(transform.rotate.entry[row][column]);
-                }
-            }
-            return rotationFinite && isFinitePoint(transform.translate) && std::isfinite(transform.scale) &&
-                std::fabs(transform.scale) > 0.0001f;
-        }
-
         float pointDistance(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
         {
             const float dx = lhs.x - rhs.x;
@@ -206,7 +192,7 @@ namespace rock::loose_weapon_grip_zone
                 return false;
             }
 
-            if (!looseRoot || !isUsableWorldTransform(looseRoot->world)) {
+            if (!looseRoot || !transform_math::isInvertibleTransform(looseRoot->world)) {
                 state.reason = "missingWeaponRoot";
                 return false;
             }
@@ -225,7 +211,7 @@ namespace rock::loose_weapon_grip_zone
             RE::NiPoint3 canonicalPalmWorld{};
             RE::NiTransform canonicalHandWorld{};
             const CanonicalPrimaryHandFrame& publishedFrame = s_canonicalPrimaryHandFrame;
-            if (publishedFrame.valid && isUsableWorldTransform(publishedFrame.handWorld)) {
+            if (publishedFrame.valid && transform_math::isInvertibleTransform(publishedFrame.handWorld)) {
                 canonicalHandWorld = publishedFrame.handWorld;
                 canonicalPalmWorld = computeGrabPalmPointWorldFromHandBasis(canonicalHandWorld, canonicalHandIsLeft);
             } else if (publishedFrame.presentedByRock) {
@@ -236,7 +222,7 @@ namespace rock::loose_weapon_grip_zone
                 state.reason = "missingCanonicalPrimaryPalm";
                 return false;
             }
-            if (!isFinitePoint(canonicalPalmWorld) || !isUsableWorldTransform(canonicalHandWorld)) {
+            if (!isFinitePoint(canonicalPalmWorld) || !transform_math::isInvertibleTransform(canonicalHandWorld)) {
                 state.reason = "missingCanonicalPrimaryPalm";
                 return false;
             }
@@ -271,8 +257,8 @@ namespace rock::loose_weapon_grip_zone
                 transform_math::invertTransform(positionOnlyWeaponWorld), canonicalHandWorld);
             state.placementReason = meleeWeapon ? "authoredMeleePhysicalHand" : "authoredRockControllerPositionOnly";
 
-            if (!isFinitePoint(state.gripWeaponLocal) || !isUsableWorldTransform(canonicalHandWeaponLocal) ||
-                !isUsableWorldTransform(canonicalPlacementHandWeaponLocal)) {
+            if (!isFinitePoint(state.gripWeaponLocal) || !transform_math::isInvertibleTransform(canonicalHandWeaponLocal) ||
+                !transform_math::isInvertibleTransform(canonicalPlacementHandWeaponLocal)) {
                 state.reason = "nonFiniteCanonicalGrip";
                 return false;
             }
@@ -304,8 +290,8 @@ namespace rock::loose_weapon_grip_zone
             if (!isLeft) {
                 state.firingHandWeaponLocal = canonicalHandWeaponLocal;
                 state.loosePlacementHandWeaponLocal = canonicalPlacementHandWeaponLocal;
-                state.hasFiringHandWeaponLocal = isUsableWorldTransform(state.firingHandWeaponLocal);
-                state.hasLoosePlacementHandWeaponLocal = isUsableWorldTransform(state.loosePlacementHandWeaponLocal);
+                state.hasFiringHandWeaponLocal = transform_math::isInvertibleTransform(state.firingHandWeaponLocal);
+                state.hasLoosePlacementHandWeaponLocal = transform_math::isInvertibleTransform(state.loosePlacementHandWeaponLocal);
                 if (outTestedHandWorld) {
                     *outTestedHandWorld = canonicalHandWorld;
                 }
@@ -361,9 +347,9 @@ namespace rock::loose_weapon_grip_zone
                         state.loosePlacementHandWeaponLocal = transform_math::composeTransforms(
                             transform_math::invertTransform(leftWeaponWorld), leftHandWorld);
                         state.hasFiringHandWeaponLocal =
-                            isUsableWorldTransform(state.firingHandWeaponLocal) && isFinitePoint(state.gripWorld);
+                            transform_math::isInvertibleTransform(state.firingHandWeaponLocal) && isFinitePoint(state.gripWorld);
                         state.hasLoosePlacementHandWeaponLocal =
-                            isUsableWorldTransform(state.loosePlacementHandWeaponLocal);
+                            transform_math::isInvertibleTransform(state.loosePlacementHandWeaponLocal);
                     }
                     if (outTestedHandWorld) {
                         *outTestedHandWorld = leftHandWorld;
@@ -394,7 +380,7 @@ namespace rock::loose_weapon_grip_zone
         {
             out = authored.supportHandWeaponLocal;
             if (!authored.found || !authored.hasSupportRelation || !authored.supportFingerPose.complete() ||
-                !isUsableWorldTransform(out))
+                !transform_math::isInvertibleTransform(out))
                 return false;
             if (isLeft)
                 return true;
@@ -484,7 +470,7 @@ namespace rock::loose_weapon_grip_zone
         auto* base = ref ? ref->GetObjectReference() : nullptr;
         auto* weapon = base ? base->As<RE::TESObjectWEAP>() : nullptr;
         auto* root = ref ? ref->Get3D() : nullptr;
-        if (!weapon || !root || !isUsableWorldTransform(root->world) ||
+        if (!weapon || !root || !transform_math::isInvertibleTransform(root->world) ||
             weapon->weaponData.type == RE::WEAPON_TYPE::kGrenade || weapon->weaponData.type == RE::WEAPON_TYPE::kMine ||
             !physicalHandWorld(isLeft, out.handWorld)) {
             state = {};
@@ -634,7 +620,7 @@ namespace rock::loose_weapon_grip_zone
     {
         const auto& state = s_nearStates[handIndex(isLeft)];
         auto* root = ref ? ref->Get3D() : nullptr;
-        if (!ref || ref->GetFormID() != state.refID || !root || !isUsableWorldTransform(root->world) ||
+        if (!ref || ref->GetFormID() != state.refID || !root || !transform_math::isInvertibleTransform(root->world) ||
             !f4vr::isNodeVisible(root)) {
             return 0;
         }
@@ -648,7 +634,7 @@ namespace rock::loose_weapon_grip_zone
     void publishCanonicalPrimaryHandFrame(const CanonicalPrimaryHandFrame& frame)
     {
         s_canonicalPrimaryHandFrame = frame;
-        if (s_canonicalPrimaryHandFrame.valid && !isUsableWorldTransform(s_canonicalPrimaryHandFrame.handWorld)) {
+        if (s_canonicalPrimaryHandFrame.valid && !transform_math::isInvertibleTransform(s_canonicalPrimaryHandFrame.handWorld)) {
             s_canonicalPrimaryHandFrame.valid = false;
         }
     }
@@ -785,7 +771,7 @@ namespace rock::loose_weapon_grip_zone
             *outReason = resolved && !scratch.hasFiringHandWeaponLocal ? "mirroredHoldUnavailable" : scratch.reason;
         }
         if (!resolved || !scratch.hasFiringHandWeaponLocal || !scratch.hasLoosePlacementHandWeaponLocal ||
-            !isUsableWorldTransform(testedHandWorld)) {
+            !transform_math::isInvertibleTransform(testedHandWorld)) {
             return false;
         }
 

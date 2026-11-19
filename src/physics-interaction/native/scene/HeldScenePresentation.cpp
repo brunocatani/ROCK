@@ -673,14 +673,14 @@ namespace rock::held_scene_presentation
                     .bodyId = bodyId,
                     .traceId = traceId,
                     .previousTargetWorld = targetBodyWorld,
-                    .valid = held_scene_presentation_policy::finiteTransform(targetBodyWorld),
+                    .valid = held_scene_presentation_policy::isPresentableTransform(targetBodyWorld),
                 };
                 rebased = true;
             } else {
                 decision = held_scene_presentation_policy::buildTargetTransport(history.previousTargetWorld,
                     targetBodyWorld, solvedBodyWorld, frameSeconds);
                 history.previousTargetWorld = targetBodyWorld;
-                history.valid = held_scene_presentation_policy::finiteTransform(targetBodyWorld);
+                history.valid = held_scene_presentation_policy::isPresentableTransform(targetBodyWorld);
             }
 
             if (rebased || !decision.apply) {

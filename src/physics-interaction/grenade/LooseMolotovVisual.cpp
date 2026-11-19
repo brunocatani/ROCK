@@ -211,7 +211,7 @@ namespace rock
             }
             auto* wick = findShape(next->model.get(), "Wick002:0");
             if (!wick || wick->parent != next->model.get() ||
-                !held_scene_presentation_policy::finiteTransform(wick->local) ||
+                !held_scene_presentation_policy::isPresentableTransform(wick->local) ||
                 !loose_molotov_visual_policy::compatibleWick(wick->numVertices, wick->numTriangles, wick->modelBound,
                     wick->modelBound)) {
                 ROCK_LOG_WARN(Hand, "Molotov flame unavailable: projectile wick geometry or frame is unsupported");
@@ -222,7 +222,7 @@ namespace rock
             for (std::size_t index = 0; index < next->shapes.size(); ++index) {
                 auto* shape = findShape(next->model.get(), kShapeNames[index]);
                 if (!shape || shape->parent != next->model.get() || shape->collisionObject || shape->skinInstance ||
-                    !held_scene_presentation_policy::finiteTransform(shape->local) || !qualifyProperties(shape)) {
+                    !held_scene_presentation_policy::isPresentableTransform(shape->local) || !qualifyProperties(shape)) {
                     ROCK_LOG_WARN(Hand, "Molotov flame unavailable: source component rejected at shape={}",
                         kShapeNames[index]);
                     return;
@@ -266,7 +266,7 @@ namespace rock
         if (!resources)
             return false;
         auto* wick = findShape(root, "Wick:0");
-        if (!wick || !wick->parent || !held_scene_presentation_policy::finiteTransform(wick->local) ||
+        if (!wick || !wick->parent || !held_scene_presentation_policy::isPresentableTransform(wick->local) ||
             !loose_molotov_visual_policy::compatibleWick(wick->numVertices, wick->numTriangles, wick->modelBound,
                 resources->wickBound)) {
             ROCK_LOG_WARN(Hand, "Armed Molotov flame skipped: ref={:08X} reason=unsupported-loose-wick", _referenceId);
@@ -290,7 +290,7 @@ namespace rock
             part.shape.reset(shape);
             shape->name = RE::BSFixedString(loose_molotov_visual_policy::kVisualShapeName);
             shape->local = loose_molotov_visual_policy::atWick(wick->local, resources->wickLocal, source->local);
-            if (!held_scene_presentation_policy::finiteTransform(shape->local)) {
+            if (!held_scene_presentation_policy::isPresentableTransform(shape->local)) {
                 detach("invalid-placement");
                 ROCK_LOG_WARN(Hand, "Armed Molotov flame skipped: ref={:08X} reason=invalid-placement", _referenceId);
                 return false;

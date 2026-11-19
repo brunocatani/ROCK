@@ -351,25 +351,25 @@ namespace rock
                 context.hasHmdFrame && finitePoint(context.hmdPositionWorld) && finitePoint(context.hmdForwardWorld);
 
             RE::NiTransform liveCameraWorld{};
-            const bool liveCameraValid = scopeCamera && finiteNiTransform(scopeCamera->world);
+            const bool liveCameraValid = scopeCamera && transform_math::isInvertibleTransform(scopeCamera->world);
             if (liveCameraValid) {
                 liveCameraWorld = scopeCamera->world;
             }
 
             RE::NiTransform parentComposedCameraWorld{};
             bool parentComposedCameraValid = false;
-            if (scopeCamera && scopeCameraParent && finiteNiTransform(scopeCameraParent->world) &&
-                finiteNiTransform(scopeCamera->local)) {
+            if (scopeCamera && scopeCameraParent && transform_math::isInvertibleTransform(scopeCameraParent->world) &&
+                transform_math::isInvertibleTransform(scopeCamera->local)) {
                 parentComposedCameraWorld =
                     transform_math::composeTransforms(scopeCameraParent->world, scopeCamera->local);
-                parentComposedCameraValid = finiteNiTransform(parentComposedCameraWorld);
+                parentComposedCameraValid = transform_math::isInvertibleTransform(parentComposedCameraWorld);
             } else if (liveCameraValid && scopeCamera && !scopeCameraParent) {
                 parentComposedCameraWorld = liveCameraWorld;
                 parentComposedCameraValid = true;
             }
 
             auto* weaponNode = f4vr::getWeaponNode();
-            const bool weaponWorldValid = weaponNode && finiteNiTransform(weaponNode->world);
+            const bool weaponWorldValid = weaponNode && transform_math::isInvertibleTransform(weaponNode->world);
             const WeaponCollision::NativeScopeSightAnchorSnapshot sightSnapshot =
                 _weaponCollision.getNativeScopeSightAnchorSnapshot();
             const std::uint64_t publishedWeaponGeneration = _weaponCollision.getCurrentWeaponGenerationKey();
@@ -409,13 +409,13 @@ namespace rock
                 targetPreviewSnapshot.anchorSource == resolvedAnchorSnapshot.source &&
                 native_scope_sight_anchor_policy::matchesCurrentEquippedWeapon(targetPreviewIdentity,
                     resolvedAnchorIdentity) &&
-                finiteNiTransform(targetPreviewSnapshot.cameraWeaponLocal);
+                transform_math::isInvertibleTransform(targetPreviewSnapshot.cameraWeaponLocal);
             RE::NiTransform targetPreviewWorld{};
             if (targetPreviewValid) {
                 targetPreviewWorld = native_scope_camera_follow_math::resolveRigidAnchorFrameWorld(weaponNode->world,
                     targetPreviewSnapshot.cameraWeaponLocal);
             }
-            const bool targetPreviewWorldValid = targetPreviewValid && finiteNiTransform(targetPreviewWorld);
+            const bool targetPreviewWorldValid = targetPreviewValid && transform_math::isInvertibleTransform(targetPreviewWorld);
 
             RE::NiPoint3 sightAnchorWorld{};
             if (sightGeometryValid) {
@@ -473,7 +473,7 @@ namespace rock
                 rockTargetWorld = targetPreviewWorld;
                 rockTargetValid = true;
                 targetFromResolvedPreview = true;
-            } else if (freshWrite && writeSnapshot.targetValid && finiteNiTransform(writeSnapshot.targetCameraWorld)) {
+            } else if (freshWrite && writeSnapshot.targetValid && transform_math::isInvertibleTransform(writeSnapshot.targetCameraWorld)) {
                 rockTargetWorld = writeSnapshot.targetCameraWorld;
                 rockTargetValid = true;
                 targetFromRecordedWrite = true;
@@ -482,7 +482,7 @@ namespace rock
                 (liveCameraValid || parentComposedCameraValid)) {
                 rockTargetWorld = liveCameraValid ? liveCameraWorld : parentComposedCameraWorld;
                 rockTargetWorld.translate = resolvedAnchorWorld;
-                rockTargetValid = finiteNiTransform(rockTargetWorld);
+                rockTargetValid = transform_math::isInvertibleTransform(rockTargetWorld);
             }
             const bool targetIsFiringGripPreview = targetFromResolvedPreview &&
                 targetPreviewSnapshot.anchorSource ==
@@ -539,12 +539,12 @@ namespace rock
                         rockTargetWorld.translate);
                 }
             }
-            if (freshWrite && writeSnapshot.captureValid && finiteNiTransform(writeSnapshot.cameraWorldBefore)) {
+            if (freshWrite && writeSnapshot.captureValid && transform_math::isInvertibleTransform(writeSnapshot.cameraWorldBefore)) {
                 addMarkerPoint(debug::MarkerOverlayRole::NativeScopePreWriteCamera,
                     writeSnapshot.cameraWorldBefore.translate, 2.8f);
             }
             if (freshWrite && writeSnapshot.immediateReadbackValid &&
-                finiteNiTransform(writeSnapshot.immediateCameraWorldAfter)) {
+                transform_math::isInvertibleTransform(writeSnapshot.immediateCameraWorldAfter)) {
                 addMarkerPoint(debug::MarkerOverlayRole::NativeScopeImmediateReadback,
                     writeSnapshot.immediateCameraWorldAfter.translate, 3.2f);
             }

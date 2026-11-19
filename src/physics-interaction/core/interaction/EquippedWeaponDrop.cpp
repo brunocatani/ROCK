@@ -180,7 +180,7 @@ namespace rock
                 std::memcpy(part.path + length, name, nameLength);
                 length += nameLength;
             }
-            if (!named || !finiteNiTransform(driven.drivenLocal))
+            if (!named || !transform_math::isInvertibleTransform(driven.drivenLocal))
                 continue;
             fillProviderTransform(driven.drivenLocal, part.local);
             part.hidden = driven.node->GetAppCulled() ? 1u : 0u;
@@ -236,7 +236,7 @@ namespace rock
             // The request holds the hand's carry pose; a lodged weapon stays
             // where its driver presented it, held by the target.
             const auto& releaseWeaponWorld = lodge.valid ? lodge.weaponWorld : request.weaponWorld;
-            const bool hasReleaseRot = finiteNiTransform(releaseWeaponWorld);
+            const bool hasReleaseRot = transform_math::isInvertibleTransform(releaseWeaponWorld);
             if (hasReleaseRot) {
                 releaseLoc = releaseWeaponWorld.translate;
                 releaseRot = transform_math::matrixToReferenceEulerRadians<RE::NiMatrix3, RE::NiPoint3>(
@@ -623,7 +623,7 @@ namespace rock
         if (!handle) {
             return;
         }
-        if (!releaseGeometry.hasCapturedWeaponWorld || !finiteNiTransform(releaseGeometry.capturedWeaponWorld)) {
+        if (!releaseGeometry.hasCapturedWeaponWorld || !transform_math::isInvertibleTransform(releaseGeometry.capturedWeaponWorld)) {
             ROCK_LOG_ERROR(Weapon,
                 "Equipped weapon drop handoff rejected because the frozen release pose is invalid: dropped={:08X}",
                 droppedFormId);
@@ -796,8 +796,8 @@ namespace rock
             handoff.threeDResolvedOnce = true;
             handoff.progressSolveSequence = completedSolveSequence;
         }
-        if (!handoff.hasReleaseWeaponWorld || !finiteNiTransform(handoff.releaseWeaponWorld) ||
-            !finiteNiTransform(droppedRoot->world)) {
+        if (!handoff.hasReleaseWeaponWorld || !transform_math::isInvertibleTransform(handoff.releaseWeaponWorld) ||
+            !transform_math::isInvertibleTransform(droppedRoot->world)) {
             endHandoff("invalid-release-or-root-pose", true);
             return;
         }
@@ -1034,7 +1034,7 @@ namespace rock
                 }
                 placementWorld = transform_math::composeTransforms(handWorld,
                     transform_math::invertTransform(commit.weaponGripPose.placementHandWeaponLocal));
-                if (!finiteNiTransform(placementWorld)) {
+                if (!transform_math::isInvertibleTransform(placementWorld)) {
                     endHandoff("native-placement-hand-invalid", true);
                     return;
                 }
@@ -1063,7 +1063,7 @@ namespace rock
 
             handoff.waitReason = "root-inverse";
             const auto currentRootInverse = transform_math::invertTransform(droppedRoot->world);
-            if (!finiteNiTransform(currentRootInverse)) {
+            if (!transform_math::isInvertibleTransform(currentRootInverse)) {
                 if (publicationStalled()) {
                     endHandoff("native-root-inverse-stalled", true);
                 }
@@ -1079,7 +1079,7 @@ namespace rock
                 if (!record ||
                     !havok_runtime::tryGetBodyArrayWorldTransform(frame.hknpWorld, RE::hknpBodyId{ record->bodyId },
                         currentBodyWorld) ||
-                    !finiteNiTransform(currentBodyWorld)) {
+                    !transform_math::isInvertibleTransform(currentBodyWorld)) {
                     if (publicationStalled()) {
                         endHandoff("native-body-transform-read-stalled", true);
                     }
@@ -1088,7 +1088,7 @@ namespace rock
                 handoff.waitReason = "release-target-transform";
                 const auto rootToBody = transform_math::composeTransforms(currentRootInverse, currentBodyWorld);
                 const auto targetBodyWorld = transform_math::composeTransforms(placementWorld, rootToBody);
-                if (!finiteNiTransform(rootToBody) || !finiteNiTransform(targetBodyWorld)) {
+                if (!transform_math::isInvertibleTransform(rootToBody) || !transform_math::isInvertibleTransform(targetBodyWorld)) {
                     if (publicationStalled()) {
                         endHandoff("native-release-target-stalled", true);
                     }

@@ -270,8 +270,8 @@ namespace rock
         const RE::NiTransform desiredBodyWorld =
             grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorld, _grabFrame.proxyAuthorityBodyHandSpace);
         if (_grabFrame.hasTelemetryCapture &&
-            grab_authority_frame_math::isFiniteTransform(_grabFrame.authority.bodyWorldAtGrab) &&
-            grab_authority_frame_math::isFiniteTransform(_grabFrame.authority.desiredBodyWorldAtGrab) &&
+            grab_authority_frame_math::isUsableGrabFrame(_grabFrame.authority.bodyWorldAtGrab) &&
+            grab_authority_frame_math::isUsableGrabFrame(_grabFrame.authority.desiredBodyWorldAtGrab) &&
             grab_authority_frame_math::isFiniteVector(_grabFrame.authority.grabPivotWorldAtGrab) &&
             grab_authority_frame_math::isFiniteVector(_grabFrame.gripEvidence.gripPointWorldAtGrab) &&
             grab_authority_frame_math::isFiniteVector(_grabFrame.authority.pivotBConstraintLocalGame)) {

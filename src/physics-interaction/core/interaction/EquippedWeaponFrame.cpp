@@ -2050,7 +2050,7 @@ namespace rock
         const auto captureScopeHandDriverFrame = [](const bool isLeft) {
             EquippedWeaponScopeHandDriverFrame result{};
             result.nodeAvailable = frik_hand_world_authority::tryGetInputDriverWorld(isLeft, result.world);
-            result.worldFinite = result.nodeAvailable && finiteNiTransform(result.world);
+            result.worldFinite = result.nodeAvailable && transform_math::isInvertibleTransform(result.world);
             result.valid = result.worldFinite;
             return result;
         };
@@ -2530,7 +2530,7 @@ namespace rock
         // from the moment the weapon is drawn, as it can be taken.
         const std::uint64_t currentWeaponGenerationKey = _weaponCollision.getCurrentWeaponInteractionKey();
         if (!weaponNode || !f4vr::isNodeVisible(weaponNode) || currentWeaponGenerationKey == 0 ||
-            !dynamic_weapon_collision_policy::isFiniteTransform(weaponNode->world) ||
+            !transform_math::isInvertibleTransform(weaponNode->world) ||
             std::abs(weaponNode->world.scale) <= 0.0001f) {
             grip_zone_indicators::Publish(overlayFrame);
             return;

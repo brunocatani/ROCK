@@ -7,7 +7,6 @@
 
 #include "physics-interaction/weapon/equip/EquippedWeaponToggleGrabPolicy.h"
 #include "physics-interaction/weapon/equip/HeldWeaponTransferPolicy.h"
-#include "physics-interaction/weapon/grip/LeftCarryReadiness.h"
 #include "physics-interaction/weapon/grip/WeaponSupport.h"
 
 #include <chrono>

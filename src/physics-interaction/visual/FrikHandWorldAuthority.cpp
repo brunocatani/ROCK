@@ -143,7 +143,7 @@ namespace rock::frik_hand_world_authority
                     world, failure)) {
                 return sample;
             }
-            if (!registry_policy::isFiniteTransform(world)) {
+            if (!transform_math::isNonCollapsedTransform(world)) {
                 if (failure)
                     *failure = "driver-sample-invalid-transform";
                 return sample;
@@ -368,17 +368,17 @@ namespace rock::frik_hand_world_authority
             RenderedHand& rendered = g_service.rendered[hand];
             rendered.flattenedWorld = sample.flattenedHandWorld;
             rendered.flattenedValid =
-                sample.flattenedHandValid && registry_policy::isFiniteTransform(sample.flattenedHandWorld);
+                sample.flattenedHandValid && transform_math::isNonCollapsedTransform(sample.flattenedHandWorld);
             rendered.nodeWorld = sample.bodyHandNodeWorld;
             rendered.nodeValid =
-                sample.bodyHandNodeValid && registry_policy::isFiniteTransform(sample.bodyHandNodeWorld);
+                sample.bodyHandNodeValid && transform_math::isNonCollapsedTransform(sample.bodyHandNodeWorld);
             // Keep finite local calibration across an invalid arm solve. The
             // skeleton-release path clears it with the rest of the service.
             if (rendered.flattenedValid && rendered.nodeValid) {
                 const RE::NiTransform blend = transform_math::composeTransforms(
                     transform_math::invertTransform(transform_math::orthonormalizedTransform(rendered.nodeWorld)),
                     rendered.flattenedWorld);
-                if (registry_policy::isFiniteTransform(blend)) {
+                if (transform_math::isNonCollapsedTransform(blend)) {
                     rendered.palmBlend = blend;
                     rendered.palmBlendValid = true;
                 }
@@ -684,7 +684,7 @@ namespace rock::frik_hand_world_authority
             if (sample.bodyHandNodeValid && rendered.palmBlendValid) {
                 const RE::NiTransform synthesized =
                     transform_math::composeTransforms(sample.bodyHandNodeWorld, rendered.palmBlend);
-                if (registry_policy::isFiniteTransform(synthesized)) {
+                if (transform_math::isNonCollapsedTransform(synthesized)) {
                     flattenedNow = synthesized;
                     flattenedNowValid = true;
                 }
@@ -708,12 +708,12 @@ namespace rock::frik_hand_world_authority
             input.calibrationAllowed = !recoilKickThisFrame && !input.firstPersonInputCorrected;
             state.result = isolation_policy::resolveFrame(state.relation, input);
             if (state.result.valid &&
-                (!input.bodyHandNodeValid || !isolation_policy::isFiniteTransform(input.bodyHandNodeWorld))) {
+                (!input.bodyHandNodeValid || !transform_math::isNonCollapsedTransform(input.bodyHandNodeWorld))) {
                 ROCK_LOG_SAMPLE_WARN(Hand, 2000,
                     "HAND_INPUT_RECOVERY frame={} hand={} source=current-input-retained-palm bodyValid={} "
                     "bodyFinite={} claimConsumed={}",
                     g_service.rockFrameSequence, handName(isLeft), input.bodyHandNodeValid,
-                    isolation_policy::isFiniteTransform(input.bodyHandNodeWorld), input.claimConsumed);
+                    transform_math::isNonCollapsedTransform(input.bodyHandNodeWorld), input.claimConsumed);
             }
             // Include later resolves: the body tree can fail after the first
             // sample of the frame, before the weapon consumes this result.
@@ -728,10 +728,10 @@ namespace rock::frik_hand_world_authority
                     "recoil={}",
                     g_service.rockFrameSequence, handName(isLeft), firstResolveThisFrame, rawHandSourceName(isLeft),
                     g_service.driverFrame.sequence, g_service.driverFrame.hands[hand].valid, input.firstPersonHandValid,
-                    isolation_policy::isFiniteTransform(input.firstPersonHandWorld), input.firstPersonHandWorld.scale,
-                    input.bodyHandNodeValid, isolation_policy::isFiniteTransform(input.bodyHandNodeWorld),
+                    transform_math::isNonCollapsedTransform(input.firstPersonHandWorld), input.firstPersonHandWorld.scale,
+                    input.bodyHandNodeValid, transform_math::isNonCollapsedTransform(input.bodyHandNodeWorld),
                     input.bodyHandNodeWorld.scale, input.flattenedHandValid,
-                    isolation_policy::isFiniteTransform(input.flattenedHandWorld), input.flattenedHandWorld.scale,
+                    transform_math::isNonCollapsedTransform(input.flattenedHandWorld), input.flattenedHandWorld.scale,
                     sample.flattenedHandValid, rendered.palmBlendValid, state.relation.valid,
                     state.relation.acceptedSamples, state.relation.rejectedSamples, input.claimConsumed,
                     input.calibrationAllowed, input.firstPersonInputCorrected, recoilKickThisFrame);

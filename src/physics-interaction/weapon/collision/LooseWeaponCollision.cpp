@@ -190,7 +190,7 @@ namespace rock
             if (!tryResolveDescendantLocalTransform(root.get(), source.node.get(), local))
                 return false;
             local = loose_weapon_collision_policy::partInShapeBody(body.rootInBody, local, source.center);
-            if (!weaponTransformFinite(local))
+            if (!transform_math::isFiniteTransform(local))
                 return false;
             out = {};
             out.column0 = { local.rotate.entry[0][0], local.rotate.entry[0][1], local.rotate.entry[0][2], 0 };

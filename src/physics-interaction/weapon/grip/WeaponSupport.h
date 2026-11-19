@@ -1015,31 +1015,9 @@ namespace rock
             return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
         }
 
-        template <class Matrix>
-        inline bool isFiniteRotation(const Matrix& rotation)
-        {
-            for (int row = 0; row < 3; ++row) {
-                for (int column = 0; column < 3; ++column) {
-                    if (!std::isfinite(rotation.entry[row][column])) {
-                        return false;
-                    }
-                }
-            }
-            return true;
-        }
-
-        template <class Transform>
-        inline bool isFiniteTransform(const Transform& transform)
-        {
-            return isFiniteRotation(transform.rotate) && isFiniteVector(transform.translate) &&
-                std::isfinite(transform.scale);
-        }
-
-        template <class Transform>
-        inline bool isUsableTransform(const Transform& transform)
-        {
-            return isFiniteTransform(transform) && std::abs(transform.scale) > 0.0001f;
-        }
+        using transform_math::isFiniteRotation;
+        using transform_math::isFiniteTransform;
+        using transform_math::isInvertibleTransform;
 
         /*
          * A support-input baseline makes the support hand contribute only motion
@@ -1054,13 +1032,13 @@ namespace rock
             const Transform& supportGripTargetWorld, Transform& outInputToGripTargetLocal)
         {
             outInputToGripTargetLocal = {};
-            if (!isUsableTransform(supportInputWorld) || !isUsableTransform(supportGripTargetWorld)) {
+            if (!isInvertibleTransform(supportInputWorld) || !isInvertibleTransform(supportGripTargetWorld)) {
                 return false;
             }
 
             const Transform relation = transform_math::composeTransforms(
                 transform_math::invertTransform(supportInputWorld), supportGripTargetWorld);
-            if (!isUsableTransform(relation)) {
+            if (!isInvertibleTransform(relation)) {
                 return false;
             }
 
@@ -1073,12 +1051,12 @@ namespace rock
             const Transform& inputToGripTargetLocal, Transform& outSupportTargetWorld)
         {
             outSupportTargetWorld = {};
-            if (!isUsableTransform(supportInputWorld) || !isUsableTransform(inputToGripTargetLocal)) {
+            if (!isInvertibleTransform(supportInputWorld) || !isInvertibleTransform(inputToGripTargetLocal)) {
                 return false;
             }
 
             const Transform target = transform_math::composeTransforms(supportInputWorld, inputToGripTargetLocal);
-            if (!isUsableTransform(target)) {
+            if (!isInvertibleTransform(target)) {
                 return false;
             }
 
@@ -1162,7 +1140,7 @@ namespace rock
         {
             SurfaceAlignedHandFrameResult<Transform, Vector> result{};
             result.handWorld = handWorld;
-            if (!isUsableTransform(handWorld) || !isFiniteVector(palmPivotWorld) ||
+            if (!isInvertibleTransform(handWorld) || !isFiniteVector(palmPivotWorld) ||
                 !isFiniteVector(targetGripPointWorld)) {
                 return result;
             }
@@ -1170,7 +1148,7 @@ namespace rock
             auto seatWithoutRotation = [&]() {
                 result.handWorld.translate =
                     weaponSolverAdd(result.handWorld.translate, weaponSolverSub(targetGripPointWorld, palmPivotWorld));
-                result.valid = isUsableTransform(result.handWorld);
+                result.valid = isInvertibleTransform(result.handWorld);
             };
 
             const float palmLength = weaponSolverLength(palmNormalWorld);
@@ -1207,7 +1185,7 @@ namespace rock
                     originFromPalm));
             result.appliedRotationRadians = rotationAngleRadians(boundedRotation);
             result.usedSurfaceNormal = fullAngle > 0.000001f;
-            result.valid = isUsableTransform(result.handWorld) && std::isfinite(result.appliedRotationRadians);
+            result.valid = isInvertibleTransform(result.handWorld) && std::isfinite(result.appliedRotationRadians);
             return result;
         }
 

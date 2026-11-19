@@ -54,20 +54,7 @@ namespace rock::grab_three_phase
 
     inline bool isFinite(const RE::NiPoint3& value) { return vector_math::hasFiniteComponents(value); }
 
-    inline bool isFinite(const RE::NiTransform& transform)
-    {
-        if (!isFinite(transform.translate) || !std::isfinite(transform.scale)) {
-            return false;
-        }
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                if (!std::isfinite(transform.rotate.entry[row][column])) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
+    inline bool isFinite(const RE::NiTransform& transform) { return transform_math::isFiniteTransform(transform); }
 
     inline RE::NiPoint3 normalizeOrZero(const RE::NiPoint3& value)
     {

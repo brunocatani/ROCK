@@ -76,8 +76,8 @@ namespace rock::weapon_surface_support
         const RE::NiTransform& surfaceWorld)
     {
         using dynamic_weapon_collision_policy::isFinitePoint;
-        using dynamic_weapon_collision_policy::isFiniteTransform;
-        if (!isFiniteTransform(weaponWorld) || !isFiniteTransform(surfaceWorld) ||
+        using transform_math::isInvertibleTransform;
+        if (!isInvertibleTransform(weaponWorld) || !isInvertibleTransform(surfaceWorld) ||
             std::abs(weaponWorld.scale) < 0.0001f || std::abs(surfaceWorld.scale) < 0.0001f)
             return false;
         const auto weaponPoint = transform_math::localPointToWorld(weaponWorld, contact.weaponPointLocal);
@@ -147,11 +147,11 @@ namespace rock::weapon_surface_support
         const RE::NiPoint3& primaryGripLocal)
     {
         using dynamic_weapon_collision_policy::isFinitePoint;
-        using dynamic_weapon_collision_policy::isFiniteTransform;
-        if (!contact.valid || !isFiniteTransform(contact.weaponWorld) || !isFiniteTransform(contact.surfaceWorld) ||
+        using transform_math::isInvertibleTransform;
+        if (!contact.valid || !isInvertibleTransform(contact.weaponWorld) || !isInvertibleTransform(contact.surfaceWorld) ||
             !isFinitePoint(contact.weaponPointLocal) || !isFinitePoint(contact.surfacePointLocal) ||
             std::abs(contact.weaponWorld.scale) < 0.0001f || std::abs(contact.surfaceWorld.scale) < 0.0001f ||
-            !isFiniteTransform(requestedWeaponWorld) || !isFinitePoint(primaryGripLocal))
+            !isInvertibleTransform(requestedWeaponWorld) || !isFinitePoint(primaryGripLocal))
             return false;
         const auto anchor = transform_math::localPointToWorld(contact.surfaceWorld, contact.surfacePointLocal);
         const auto primary = transform_math::localPointToWorld(requestedWeaponWorld, primaryGripLocal);
@@ -176,8 +176,8 @@ namespace rock::weapon_surface_support
         const RE::NiTransform& surfaceWorld, RE::NiTransform& result)
     {
         using dynamic_weapon_collision_policy::isFinitePoint;
-        using dynamic_weapon_collision_policy::isFiniteTransform;
-        if (!state.latched() || !isFiniteTransform(requestedWeaponWorld) || !isFiniteTransform(surfaceWorld))
+        using transform_math::isInvertibleTransform;
+        if (!state.latched() || !isInvertibleTransform(requestedWeaponWorld) || !isInvertibleTransform(surfaceWorld))
             return false;
         const auto anchor = transform_math::localPointToWorld(surfaceWorld, state.contact.surfacePointLocal);
         const auto captureAnchor =
@@ -196,7 +196,7 @@ namespace rock::weapon_surface_support
             weaponSolverApplyWorldRotationToStoredBasis<RE::NiMatrix3, RE::NiPoint3>(delta, state.captureWorld.rotate);
         result.translate = weaponSolverAdd(result.translate,
             weaponSolverSub(anchor, transform_math::localPointToWorld(result, state.contact.weaponPointLocal)));
-        if (!isFiniteTransform(result))
+        if (!isInvertibleTransform(result))
             return false;
         state.lastWorld = result;
         return true;

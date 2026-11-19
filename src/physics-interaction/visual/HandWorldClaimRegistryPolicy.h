@@ -82,20 +82,6 @@ namespace rock::hand_world_claim_registry_policy
         return !tag.empty() && tag.size() < kTagCapacity;
     }
 
-    [[nodiscard]] inline bool isFiniteTransform(const RE::NiTransform& transform) noexcept
-    {
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                if (!std::isfinite(transform.rotate.entry[row][column])) {
-                    return false;
-                }
-            }
-        }
-        return std::isfinite(transform.translate.x) && std::isfinite(transform.translate.y) &&
-            std::isfinite(transform.translate.z) && std::isfinite(transform.scale) &&
-            std::fabs(transform.scale) > 0.000001f;
-    }
-
     [[nodiscard]] inline bool isUsableTargetRotation(const RE::NiTransform& transform) noexcept
     {
         const double error = transform_math::storedRotationOrthonormalityError(transform.rotate);
@@ -179,7 +165,7 @@ namespace rock::hand_world_claim_registry_policy
         if (!isRegistrableTag(tag)) {
             return CommitResult::InvalidTag;
         }
-        if (!isFiniteTransform(target) || !isUsableTargetRotation(target)) {
+        if (!transform_math::isNonCollapsedTransform(target) || !isUsableTargetRotation(target)) {
             return CommitResult::InvalidTarget;
         }
 

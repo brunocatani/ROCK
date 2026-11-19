@@ -930,20 +930,6 @@ namespace rock::native_idle_grip_preharvest
             return instanceData;
         }
 
-        [[nodiscard]] bool isFiniteTransform(const RE::NiTransform& transform)
-        {
-            for (int row = 0; row < 3; ++row) {
-                for (int column = 0; column < 3; ++column) {
-                    if (!std::isfinite(transform.rotate.entry[row][column])) {
-                        return false;
-                    }
-                }
-            }
-            return std::isfinite(transform.translate.x) && std::isfinite(transform.translate.y) &&
-                std::isfinite(transform.translate.z) && std::isfinite(transform.scale) &&
-                std::abs(transform.scale) > 0.000001f;
-        }
-
         [[nodiscard]] std::uint64_t graphProfileKey(const RE::BSScrapArray<RE::BSStaticStringT<260>>& graphProjects,
             const bool inPowerArmor) noexcept
         {
@@ -1251,7 +1237,7 @@ namespace rock::native_idle_grip_preharvest
             outLocal.rotate = transform_math::transposeRotation(
                 transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(sampledLocal.rotation));
             outLocal.scale = sampledLocal.scale[0];
-            return isFiniteTransform(outLocal);
+            return transform_math::isNonCollapsedTransform(outLocal);
         }
 
         [[nodiscard]] bool convertWeaponTrackToHandInWeapon(const HkQsTransform& sampledWeaponLocal,
@@ -1263,7 +1249,7 @@ namespace rock::native_idle_grip_preharvest
             }
 
             outHandInWeapon = transform_math::invertTransform(weaponLocal);
-            return isFiniteTransform(outHandInWeapon);
+            return transform_math::isNonCollapsedTransform(outHandInWeapon);
         }
 
         struct SkeletonReferencePoseView
@@ -1413,7 +1399,7 @@ namespace rock::native_idle_grip_preharvest
                         return SupportExtractionFailure::BoneLocalUnavailable;
                     }
                     model = transform_math::composeTransforms(model, converted);
-                    if (!isFiniteTransform(model)) {
+                    if (!transform_math::isNonCollapsedTransform(model)) {
                         return SupportExtractionFailure::SupportTransformInvalid;
                     }
                 }
@@ -1450,7 +1436,7 @@ namespace rock::native_idle_grip_preharvest
                     supportHandInPrimaryHand, [](const RE::NiTransform& parent, const RE::NiTransform& child) {
                         return transform_math::composeTransforms(parent, child);
                     });
-            if (!isFiniteTransform(supportHandInPrimaryHand) || !isFiniteTransform(supportHandInWeapon)) {
+            if (!transform_math::isNonCollapsedTransform(supportHandInPrimaryHand) || !transform_math::isNonCollapsedTransform(supportHandInWeapon)) {
                 return SupportExtractionFailure::SupportTransformInvalid;
             }
 

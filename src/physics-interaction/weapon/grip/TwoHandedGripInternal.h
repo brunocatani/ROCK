@@ -238,29 +238,9 @@ namespace rock
                 from.z + (to.z - from.z) * t };
         }
 
-        inline bool isFiniteRotation(const RE::NiMatrix3& rotation)
-        {
-            for (int row = 0; row < 3; ++row) {
-                for (int column = 0; column < 3; ++column) {
-                    if (!std::isfinite(rotation.entry[row][column])) {
-                        return false;
-                    }
-                }
-            }
-            return true;
-        }
-
-        inline bool isFiniteTransform(const RE::NiTransform& transform)
-        {
-            return isFiniteRotation(transform.rotate) && std::isfinite(transform.translate.x) &&
-                std::isfinite(transform.translate.y) && std::isfinite(transform.translate.z) &&
-                std::isfinite(transform.scale);
-        }
-
-        inline bool isInvertibleTransform(const RE::NiTransform& transform)
-        {
-            return isFiniteTransform(transform) && std::abs(transform.scale) > 0.0001f;
-        }
+        using transform_math::isFiniteRotation;
+        using transform_math::isFiniteTransform;
+        using transform_math::isInvertibleTransform;
 
         inline RE::NiTransform makeLeftFiringWandAimTrim(const EquippedWeaponHandlingSettings& handlingSettings)
         {
@@ -307,7 +287,7 @@ namespace rock
         inline bool isUsableHandAuthorityTransform(const RE::NiTransform& transform)
         {
             // hFRIK uses 0.00001 as its intentional ScopeMenu hide scale.
-            return isFiniteTransform(transform) && std::abs(transform.scale) > 0.0001f;
+            return isInvertibleTransform(transform);
         }
 
         struct AuthoredSupportPalmSeatProximity
@@ -419,7 +399,7 @@ namespace rock
             const std::size_t boundedLimit =
                 (std::min)(maxTriangles, grab_finger_pose_runtime::kMaxFingerPoseCandidateTriangles);
             if (boundedLimit == 0 || evidenceViews.empty() || !referenceSet.seatPointValid ||
-                !weapon_support_acquisition_math::isUsableTransform(weaponWorld)) {
+                !isInvertibleTransform(weaponWorld)) {
                 return;
             }
 
@@ -470,12 +450,12 @@ namespace rock
             std::uint64_t firstOrdinal = 0;
             for (const auto& evidenceView : evidenceViews) {
                 if (evidenceView.localTriangles.empty() ||
-                    !weapon_support_acquisition_math::isUsableTransform(evidenceView.localToWorld)) {
+                    !isInvertibleTransform(evidenceView.localToWorld)) {
                     continue;
                 }
                 const RE::NiTransform sourceToWeapon = transform_math::composeTransforms(
                     transform_math::invertTransform(weaponWorld), evidenceView.localToWorld);
-                if (!weapon_support_acquisition_math::isUsableTransform(sourceToWeapon)) {
+                if (!isInvertibleTransform(sourceToWeapon)) {
                     continue;
                 }
                 parts.push_back(support_grip_triangle_selection::Part{

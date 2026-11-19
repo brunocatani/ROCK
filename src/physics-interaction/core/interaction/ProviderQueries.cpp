@@ -39,7 +39,7 @@ namespace rock
          */
         outSnapshot.deltaSeconds = runtime.timing.valid ? runtime.timing.deltaSeconds : 0.0f;
         if (auto* playerNodes = f4vr::getPlayerNodes();
-            playerNodes && playerNodes->HmdNode && finiteNiTransform(playerNodes->HmdNode->world)) {
+            playerNodes && playerNodes->HmdNode && transform_math::isInvertibleTransform(playerNodes->HmdNode->world)) {
             fillProviderTransform(playerNodes->HmdNode->world, outSnapshot.hmdTransform);
             outSnapshot.flags |= static_cast<std::uint32_t>(::rock::provider::PublicationFlag::HmdTransformValid);
             const auto rawForward = playerNodes->HmdNode->world.rotate.Transpose() * RE::NiPoint3(0.0f, 1.0f, 0.0f);
@@ -89,13 +89,13 @@ namespace rock
         RE::NiTransform providerHandWorld{};
         if (outSnapshot.providerReady && runtime.localSkeletonReady && _handBoneCache.isReady() &&
             frik_hand_world_authority::tryGetRawHandWorld(false, providerHandWorld) &&
-            finiteNiTransform(providerHandWorld)) {
+            transform_math::isInvertibleTransform(providerHandWorld)) {
             fillProviderTransform(providerHandWorld, outSnapshot.rightHandTransform);
             outSnapshot.flags |= static_cast<std::uint32_t>(::rock::provider::PublicationFlag::RightHandTransformValid);
         }
         if (outSnapshot.providerReady && runtime.localSkeletonReady && _handBoneCache.isReady() &&
             frik_hand_world_authority::tryGetRawHandWorld(true, providerHandWorld) &&
-            finiteNiTransform(providerHandWorld)) {
+            transform_math::isInvertibleTransform(providerHandWorld)) {
             fillProviderTransform(providerHandWorld, outSnapshot.leftHandTransform);
             outSnapshot.flags |= static_cast<std::uint32_t>(::rock::provider::PublicationFlag::LeftHandTransformValid);
         }
@@ -412,11 +412,11 @@ namespace rock
 
         RE::NiTransform weaponWorld{};
         const bool solvedWeaponWorldValid =
-            _twoHandedGrip.getSolvedWeaponTransform(weaponWorld) && finiteNiTransform(weaponWorld);
-        if (!solvedWeaponWorldValid && finiteNiTransform(weaponNode->world)) {
+            _twoHandedGrip.getSolvedWeaponTransform(weaponWorld) && transform_math::isInvertibleTransform(weaponWorld);
+        if (!solvedWeaponWorldValid && transform_math::isInvertibleTransform(weaponNode->world)) {
             weaponWorld = weaponNode->world;
         }
-        if (solvedWeaponWorldValid || finiteNiTransform(weaponNode->world)) {
+        if (solvedWeaponWorldValid || transform_math::isInvertibleTransform(weaponNode->world)) {
             fillProviderTransform(weaponWorld, outState.weaponWorld);
             outState.flags |= static_cast<std::uint32_t>(Flag::WeaponWorldValid);
         }
@@ -437,7 +437,7 @@ namespace rock
          * weapon is equipped instead of after its first shot.
          */
         if (const auto* projectileNode = getEquippedProjectileNode();
-            projectileNode && finiteNiTransform(projectileNode->world)) {
+            projectileNode && transform_math::isInvertibleTransform(projectileNode->world)) {
             const auto& projectileWorld = projectileNode->world;
             RE::NiPoint3 muzzleDirection{
                 projectileWorld.rotate.entry[1][0],
@@ -1135,7 +1135,7 @@ namespace rock
         RE::NiTransform parentLocal{}, rootLocal{}, world{};
         if (!native_secondary_actions::queryPartPose(key, parentLocal, rootLocal, world))
             return api::Status::GenerationMismatch;
-        if (!finiteNiTransform(parentLocal) || !finiteNiTransform(rootLocal) || !finiteNiTransform(world))
+        if (!transform_math::isInvertibleTransform(parentLocal) || !transform_math::isInvertibleTransform(rootLocal) || !transform_math::isInvertibleTransform(world))
             return api::Status::NotReady;
         output.weaponGenerationKey = generation;
         output.sourceKey = key;
@@ -1160,7 +1160,7 @@ namespace rock
                 !target.sourceKey || target.leaseFrames == 0)
                 return api::Status::InvalidArgument;
             locals[i] = providerTransformToNi(target.targetTransform);
-            if (!finiteNiTransform(locals[i]))
+            if (!transform_math::isInvertibleTransform(locals[i]))
                 return api::Status::InvalidArgument;
             requests[i] = { target.sourceKey, &locals[i],
                 (std::min)(target.leaseFrames, api::weaponparts::kMaxDriveLeaseFrames) };
@@ -1183,7 +1183,7 @@ namespace rock
         using Flag = api::weaponparts::PoseFlag;
         auto* weaponNode = resolveEquippedWeaponInteractionNode();
         const auto currentGeneration = _weaponCollision.getCurrentWeaponGenerationKey();
-        if (!weaponNode || currentGeneration == 0 || !finiteNiTransform(weaponNode->world)) {
+        if (!weaponNode || currentGeneration == 0 || !transform_math::isInvertibleTransform(weaponNode->world)) {
             return 0;
         }
 
@@ -1209,15 +1209,15 @@ namespace rock
             out.flags |= static_cast<std::uint32_t>(Flag::Valid);
             out.actionRole = static_cast<std::uint32_t>(descriptor.semantic.actionRole);
             auto* sourceNode = reinterpret_cast<RE::NiAVObject*>(descriptor.sourceRootAddress);
-            if (!sourceNode || !finiteNiTransform(sourceNode->world)) {
+            if (!sourceNode || !transform_math::isInvertibleTransform(sourceNode->world)) {
                 continue;
             }
-            if (sourceNode->parent && finiteNiTransform(sourceNode->local)) {
+            if (sourceNode->parent && transform_math::isInvertibleTransform(sourceNode->local)) {
                 fillProviderTransform(sourceNode->local, out.sourceParentLocal);
                 out.flags |= static_cast<std::uint32_t>(Flag::SourceParentLocalValid);
             }
             const auto weaponRootLocal = transform_math::composeTransforms(weaponInverse, sourceNode->world);
-            if (finiteNiTransform(weaponRootLocal)) {
+            if (transform_math::isInvertibleTransform(weaponRootLocal)) {
                 fillProviderTransform(weaponRootLocal, out.weaponRootLocal);
                 out.flags |= static_cast<std::uint32_t>(Flag::WeaponRootLocalValid);
             }
@@ -1457,7 +1457,7 @@ namespace rock
         for (const bool isLeft : { false, true }) {
             auto& outPose = _providerDrives.presentedPoses[isLeft ? 1u : 0u];
             const auto* wrist = bones.find(isLeft ? "LArm_Hand" : "RArm_Hand");
-            if (!wrist || !finiteNiTransform(wrist->world))
+            if (!wrist || !transform_math::isInvertibleTransform(wrist->world))
                 continue;
             outPose.hand = isLeft ? api::Hand::Left : api::Hand::Right;
             outPose.flags = static_cast<std::uint32_t>(Flag::Valid) | static_cast<std::uint32_t>(Flag::HandWorldValid);
@@ -1477,7 +1477,7 @@ namespace rock
                             skeleton.bones[static_cast<std::size_t>(bone->drawableParentSnapshotIndex)];
                         const auto local = transform_math::composeTransforms(
                             transform_math::invertTransform(parent.world), bone->world);
-                        if (!finiteNiTransform(local)) {
+                        if (!transform_math::isInvertibleTransform(local)) {
                             continue;
                         }
                         fillProviderTransform(local, outPose.fingerLocalTransforms[poseIndex]);
@@ -1621,7 +1621,7 @@ namespace rock
                 if (metadata.primaryPalmAnchor) {
                     out.flags |= static_cast<std::uint32_t>(Flag::PrimaryPalmAnchor);
                     RE::NiTransform target{};
-                    if (hand.tryGetPalmAnchorTarget(target) && finiteNiTransform(target)) {
+                    if (hand.tryGetPalmAnchorTarget(target) && transform_math::isInvertibleTransform(target)) {
                         fillProviderTransform(target, out.transform);
                         out.flags |= static_cast<std::uint32_t>(Flag::TransformValid);
                     }

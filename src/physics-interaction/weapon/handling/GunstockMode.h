@@ -13,8 +13,8 @@ namespace rock::gunstock_mode
         const RE::NiTransform& primaryController, const RE::NiTransform& supportController,
         const RE::NiPoint3& primaryRecoilDisplacement, const float acquisitionAlpha)
     {
-        if (!weapon_support_acquisition_math::isUsableTransform(primaryController) ||
-            !weapon_support_acquisition_math::isUsableTransform(supportController) ||
+        if (!transform_math::isInvertibleTransform(primaryController) ||
+            !transform_math::isInvertibleTransform(supportController) ||
             !weapon_support_acquisition_math::isFiniteVector(input.primaryGripLocal) ||
             !weapon_support_acquisition_math::isFiniteVector(input.primaryTargetWorld) ||
             !weapon_support_acquisition_math::isFiniteVector(primaryRecoilDisplacement) ||

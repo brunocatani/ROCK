@@ -58,22 +58,12 @@ namespace rock::held_scene_presentation_policy
         return "unknown";
     }
 
+    // Finite, with a positive scale inside the range a presented scene node can carry.
     template <class Transform>
-    inline bool finiteTransform(const Transform& transform) noexcept
+    inline bool isPresentableTransform(const Transform& transform) noexcept
     {
-        if (!std::isfinite(transform.translate.x) || !std::isfinite(transform.translate.y) ||
-            !std::isfinite(transform.translate.z) || !std::isfinite(transform.scale) || transform.scale <= 0.000001f ||
-            transform.scale >= 10000.0f) {
-            return false;
-        }
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                if (!std::isfinite(transform.rotate.entry[row][column])) {
-                    return false;
-                }
-            }
-        }
-        return true;
+        return transform_math::isFiniteTransform(transform) &&
+            transform.scale > transform_math::kCollapsedScaleMagnitude && transform.scale < 10000.0f;
     }
 
     template <class Point>
@@ -118,8 +108,8 @@ namespace rock::held_scene_presentation_policy
         float frameSeconds = 0.0f) noexcept
     {
         TargetTransportDecision<Transform> decision{};
-        if (!finiteTransform(previousTargetWorld) || !finiteTransform(currentTargetWorld) ||
-            !finiteTransform(previousSolvedBodyWorld)) {
+        if (!isPresentableTransform(previousTargetWorld) || !isPresentableTransform(currentTargetWorld) ||
+            !isPresentableTransform(previousSolvedBodyWorld)) {
             return decision;
         }
         const float motionScale = game_frame_timing_policy::frameMotionScale(frameSeconds);
@@ -142,7 +132,7 @@ namespace rock::held_scene_presentation_policy
 
         const Transform physicalResidual = transform_math::composeTransforms(
             transform_math::invertTransform(previousTargetWorld), previousSolvedBodyWorld);
-        if (!finiteTransform(physicalResidual)) {
+        if (!isPresentableTransform(physicalResidual)) {
             return decision;
         }
         const decltype(physicalResidual.translate) residualOrigin{};
@@ -154,7 +144,7 @@ namespace rock::held_scene_presentation_policy
         }
 
         decision.presentedWorld = transform_math::composeTransforms(currentTargetWorld, physicalResidual);
-        if (!finiteTransform(decision.presentedWorld)) {
+        if (!isPresentableTransform(decision.presentedWorld)) {
             return decision;
         }
         decision.transportAdvanceGameUnits =
@@ -179,7 +169,7 @@ namespace rock::held_scene_presentation_policy
     inline bool transportAssemblyBody(const Transform& solvedPrimary, const Transform& presentedPrimary,
         const Transform& solvedBody, Transform& presentedBody, float frameSeconds = 0.0f) noexcept
     {
-        if (!finiteTransform(solvedPrimary) || !finiteTransform(presentedPrimary) || !finiteTransform(solvedBody)) {
+        if (!isPresentableTransform(solvedPrimary) || !isPresentableTransform(presentedPrimary) || !isPresentableTransform(solvedBody)) {
             return false;
         }
         const float motionScale = game_frame_timing_policy::frameMotionScale(frameSeconds);
@@ -187,7 +177,7 @@ namespace rock::held_scene_presentation_policy
             transform_math::composeTransforms(presentedPrimary, transform_math::invertTransform(solvedPrimary));
         presentedBody = transform_math::composeTransforms(delta, solvedBody);
         presentedBody.scale = solvedBody.scale;
-        return finiteTransform(presentedBody) &&
+        return isPresentableTransform(presentedBody) &&
             pointDistance(solvedBody.translate, presentedBody.translate) <=
             kMaxTargetTransportAdvanceGameUnits * motionScale &&
             matrixRotationDeltaDegrees(solvedBody.rotate, presentedBody.rotate) <=
@@ -215,8 +205,8 @@ namespace rock::held_scene_presentation_policy
     inline bool appendAssemblyRootPose(ScenePose<Node, Transform>* poses, std::size_t& count, std::size_t capacity,
         Node* root, const Transform& presentedBody, const Transform& bodyInRoot) noexcept
     {
-        if (!root || count == 0 || count >= capacity || !finiteTransform(root->world) ||
-            !finiteTransform(presentedBody) || !finiteTransform(bodyInRoot)) {
+        if (!root || count == 0 || count >= capacity || !isPresentableTransform(root->world) ||
+            !isPresentableTransform(presentedBody) || !isPresentableTransform(bodyInRoot)) {
             return false;
         }
         bool rootIsBodyOwner = false;
@@ -233,7 +223,7 @@ namespace rock::held_scene_presentation_policy
             return true;
         auto rootWorld = transform_math::composeTransforms(presentedBody, transform_math::invertTransform(bodyInRoot));
         rootWorld.scale = root->world.scale;
-        if (!finiteTransform(rootWorld))
+        if (!isPresentableTransform(rootWorld))
             return false;
         poses[count++] = { root, rootWorld };
         return true;
@@ -248,12 +238,12 @@ namespace rock::held_scene_presentation_policy
             pose.depth = 0;
             pose.duplicate = false;
             pose.refreshRoot = true;
-            if (!pose.node || !finiteTransform(pose.world)) {
+            if (!pose.node || !isPresentableTransform(pose.world)) {
                 return false;
             }
             for (auto* parent = pose.node->parent; parent; parent = parent->parent) {
-                if (++pose.depth > kMaxParentDepth || !finiteTransform(parent->world) ||
-                    !finiteTransform(parent->local)) {
+                if (++pose.depth > kMaxParentDepth || !isPresentableTransform(parent->world) ||
+                    !isPresentableTransform(parent->local)) {
                     return false;
                 }
             }
@@ -334,7 +324,7 @@ namespace rock::held_scene_presentation_policy
                 continue;
             bool complete = true;
             const auto traversal = visitSubtree(poses[index].node, [&](Node* node) {
-                if (!node || historyCount == capacity || !finiteTransform(node->world)) {
+                if (!node || historyCount == capacity || !isPresentableTransform(node->world)) {
                     complete = false;
                     return false;
                 }

@@ -2957,7 +2957,7 @@ namespace rock
         if (anchoredPoint &&
             (!decision.grabPoint.pointId || decision.grabPoint.ownerToken != providerPartAuthority.ownerToken ||
                 decision.grabPoint.groupId != providerPartAuthority.groupId ||
-                !weapon_hierarchy::weaponTransformFinite(decision.grabPoint.attachmentWorld) ||
+                !transform_math::isFiniteTransform(decision.grabPoint.attachmentWorld) ||
                 std::abs(decision.grabPoint.attachmentWorld.scale) <= .000001f ||
                 !std::isfinite(decision.grabPoint.worldPoint.x) || !std::isfinite(decision.grabPoint.worldPoint.y) ||
                 !std::isfinite(decision.grabPoint.worldPoint.z))) {

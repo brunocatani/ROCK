@@ -97,20 +97,6 @@ namespace rock::tracked_hand_isolation_policy
             (frame.source == RawHandSource::Flattened || frame.source == RawHandSource::Reconstructed);
     }
 
-    [[nodiscard]] inline bool isFiniteTransform(const RE::NiTransform& transform) noexcept
-    {
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                if (!std::isfinite(transform.rotate.entry[row][column])) {
-                    return false;
-                }
-            }
-        }
-        return std::isfinite(transform.translate.x) && std::isfinite(transform.translate.y) &&
-            std::isfinite(transform.translate.z) && std::isfinite(transform.scale) &&
-            std::fabs(transform.scale) > 0.000001f;
-    }
-
     [[nodiscard]] inline float translationGameUnits(const RE::NiTransform& lhs, const RE::NiTransform& rhs) noexcept
     {
         const float x = lhs.translate.x - rhs.translate.x;
@@ -151,14 +137,14 @@ namespace rock::tracked_hand_isolation_policy
     [[nodiscard]] inline bool calibrateRelation(RelationState& state, const RE::NiTransform& firstPersonHandWorld,
         const RE::NiTransform& bodyHandNodeWorld) noexcept
     {
-        if (!isFiniteTransform(firstPersonHandWorld) || !isFiniteTransform(bodyHandNodeWorld)) {
+        if (!transform_math::isNonCollapsedTransform(firstPersonHandWorld) || !transform_math::isNonCollapsedTransform(bodyHandNodeWorld)) {
             ++state.rejectedSamples;
             return false;
         }
         const RE::NiTransform relation =
             transform_math::composeTransforms(transform_math::invertTransform(firstPersonHandWorld), bodyHandNodeWorld);
         const RE::NiTransform identity = transform_math::makeIdentityTransform<RE::NiTransform>();
-        if (!isFiniteTransform(relation) ||
+        if (!transform_math::isNonCollapsedTransform(relation) ||
             translationGameUnits(relation, identity) > kMaxRelationTranslationGameUnits ||
             rotationDegrees(relation, identity) > kMaxRelationRotationDegrees || relation.scale < kMinRelationScale ||
             relation.scale > kMaxRelationScale) {
@@ -186,14 +172,14 @@ namespace rock::tracked_hand_isolation_policy
         RE::NiTransform& outRawHandWorld) noexcept
     {
         outRawHandWorld = {};
-        if (!state.valid || !input.firstPersonHandValid || !isFiniteTransform(input.firstPersonHandWorld)) {
+        if (!state.valid || !input.firstPersonHandValid || !transform_math::isNonCollapsedTransform(input.firstPersonHandWorld)) {
             return false;
         }
         RE::NiTransform palmBlend{};
-        if (input.bodyHandNodeValid && input.flattenedHandValid && isFiniteTransform(input.bodyHandNodeWorld) &&
-            isFiniteTransform(input.flattenedHandWorld)) {
+        if (input.bodyHandNodeValid && input.flattenedHandValid && transform_math::isNonCollapsedTransform(input.bodyHandNodeWorld) &&
+            transform_math::isNonCollapsedTransform(input.flattenedHandWorld)) {
             palmBlend = makePalmBlend(input.bodyHandNodeWorld, input.flattenedHandWorld);
-        } else if (input.retainedPalmBlendValid && isFiniteTransform(input.retainedPalmBlend)) {
+        } else if (input.retainedPalmBlendValid && transform_math::isNonCollapsedTransform(input.retainedPalmBlend)) {
             palmBlend = input.retainedPalmBlend;
         } else {
             return false;
@@ -202,7 +188,7 @@ namespace rock::tracked_hand_isolation_policy
             transform_math::composeTransforms(input.firstPersonHandWorld, state.firstPersonToBodyHand);
         const RE::NiTransform raw =
             transform_math::orthonormalizedTransform(transform_math::composeTransforms(controllerBodyHand, palmBlend));
-        if (!isFiniteTransform(raw)) {
+        if (!transform_math::isNonCollapsedTransform(raw)) {
             return false;
         }
         outRawHandWorld = raw;
@@ -231,7 +217,7 @@ namespace rock::tracked_hand_isolation_policy
             return result;
         }
         if (!input.claimConsumed) {
-            if (input.flattenedHandValid && isFiniteTransform(input.flattenedHandWorld)) {
+            if (input.flattenedHandValid && transform_math::isNonCollapsedTransform(input.flattenedHandWorld)) {
                 result.rawHandWorld = input.flattenedHandWorld;
                 result.source = RawHandSource::Flattened;
                 result.valid = true;
@@ -251,7 +237,7 @@ namespace rock::tracked_hand_isolation_policy
             result.valid = true;
             return result;
         }
-        if (input.flattenedHandValid && isFiniteTransform(input.flattenedHandWorld)) {
+        if (input.flattenedHandValid && transform_math::isNonCollapsedTransform(input.flattenedHandWorld)) {
             // Keep the diagnostic provenance, but never admit our own claimed
             // output as controller input when reconstruction is unavailable.
             result.source = RawHandSource::FlattenedContaminated;

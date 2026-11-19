@@ -258,7 +258,7 @@ namespace rock::storage_interaction
                     },
                     children);
             }
-            if (!node || node == root || node->GetAppCulled() || !finiteNiTransform(node->world))
+            if (!node || node == root || node->GetAppCulled() || !transform_math::isInvertibleTransform(node->world))
                 return nullptr;
             value.parent.reset(parent);
             return node;
@@ -437,12 +437,12 @@ namespace rock::storage_interaction
         RE::NiTransform tracked, controllerWorld;
         const auto* nodes = fo4vr::getPlayerNodes();
         if (!node || !weapon || !frik_hand_world_authority::tryGetRawHandWorld(left, tracked) ||
-            !finiteNiTransform(tracked) ||
+            !transform_math::isInvertibleTransform(tracked) ||
             !frik_visual_authority::tryGetTrackedHandTransform(left ? frik_visual_authority::Hand::Left
                                                                     : frik_visual_authority::Hand::Right,
                 frik_visual_authority::TrackedHandKind::Wand, controllerWorld) ||
-            !finiteNiTransform(controllerWorld) || !nodes || !nodes->roomnode ||
-            !finiteNiTransform(nodes->roomnode->world))
+            !transform_math::isInvertibleTransform(controllerWorld) || !nodes || !nodes->roomnode ||
+            !transform_math::isInvertibleTransform(nodes->roomnode->world))
             return api::Status::NotReady;
         const auto palmWorld = computeGrabPalmPointWorldFromHandBasis(tracked, left);
         const auto palm = transform_math::worldPointToLocal(node->world, palmWorld);

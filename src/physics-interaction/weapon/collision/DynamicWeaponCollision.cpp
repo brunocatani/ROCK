@@ -92,7 +92,7 @@ namespace rock
             havok_compound_shape_builder::ChildTransform& outTransform)
         {
             outTransform = {};
-            if (!dynamic_weapon_collision_policy::isFiniteTransform(shapeInWeapon) ||
+            if (!transform_math::isInvertibleTransform(shapeInWeapon) ||
                 std::abs(shapeInWeapon.scale - 1.0f) > 0.0001f) {
                 return false;
             }
@@ -430,13 +430,13 @@ namespace rock
         const RE::NiTransform* physicalDriverWorld)
     {
         if (!_frameAcceptingIntent || weaponNode != _frameWeaponNode || weaponGenerationKey != _frameGenerationKey ||
-            !dynamic_weapon_collision_policy::isFiniteTransform(requestedWeaponWorld)) {
+            !transform_math::isInvertibleTransform(requestedWeaponWorld)) {
             return;
         }
         _frameRequestedWeaponWorld = requestedWeaponWorld;
         _frameHasIntent = true;
         _frameIntentDriverValid =
-            physicalDriverWorld && dynamic_weapon_collision_policy::isFiniteTransform(*physicalDriverWorld);
+            physicalDriverWorld && transform_math::isInvertibleTransform(*physicalDriverWorld);
         if (_frameIntentDriverValid) {
             _frameIntentDriverWorld = *physicalDriverWorld;
         }
@@ -607,9 +607,9 @@ namespace rock
             : dynamic_weapon_collision_policy::resolveCurrentIntentFromSample(snapshot.requestedProxyBodyWorld,
                   snapshot.liveProxyBodyWorld, _createdCenterWeaponLocal, snapshot.weaponScale,
                   _frameRequestedWeaponWorld);
-        if (!dynamic_weapon_collision_policy::isFiniteTransform(sampledRequestedWeaponWorld) ||
-            !dynamic_weapon_collision_policy::isFiniteTransform(sampledLiveWeaponWorld) ||
-            !dynamic_weapon_collision_policy::isFiniteTransform(resolvedWeaponWorld)) {
+        if (!transform_math::isInvertibleTransform(sampledRequestedWeaponWorld) ||
+            !transform_math::isInvertibleTransform(sampledLiveWeaponWorld) ||
+            !transform_math::isInvertibleTransform(resolvedWeaponWorld)) {
             logPipelineStage("transform-gate");
             return result;
         }
@@ -663,13 +663,13 @@ namespace rock
     {
         resolved = intent;
         if (!_created || !world || _createdWorld != world || !_body.isValid() ||
-            !dynamic_weapon_collision_policy::isFiniteTransform(intent)) {
+            !transform_math::isInvertibleTransform(intent)) {
             return false;
         }
         if (externallyControlled()) {
             // The driving extension presents the gun where its body is.
             const auto presented = native_interaction_service::weaponPresentation(weaponSlot());
-            if (!dynamic_weapon_collision_policy::isFiniteTransform(presented))
+            if (!transform_math::isInvertibleTransform(presented))
                 return false;
             resolved = presented;
             return true;
@@ -683,7 +683,7 @@ namespace rock
         const auto candidate =
             dynamic_weapon_collision_policy::resolveCurrentIntentFromSample(snapshot.requestedProxyBodyWorld,
                 snapshot.liveProxyBodyWorld, _createdCenterWeaponLocal, snapshot.weaponScale, intent);
-        if (!dynamic_weapon_collision_policy::isFiniteTransform(candidate) ||
+        if (!transform_math::isInvertibleTransform(candidate) ||
             !dynamic_weapon_collision_policy::evaluateVisualCorrection(intent, candidate).apply) {
             return false;
         }
@@ -758,7 +758,7 @@ namespace rock
         WeaponCollision::ApproximateBoundsSnapshot bounds{};
         if (!weaponCollision.getApproximateBoundsSnapshot(bounds) || !bounds.valid ||
             bounds.generationKey != _frameGenerationKey ||
-            !dynamic_weapon_collision_policy::isFiniteTransform(requestedWeaponWorld)) {
+            !transform_math::isInvertibleTransform(requestedWeaponWorld)) {
             return false;
         }
         const auto approximateGeometry =
@@ -1111,7 +1111,7 @@ namespace rock
             RE::NiTransform liveContactBodyWorld{};
             const bool hasLiveContactBody =
                 havok_runtime::tryResolveLiveBodyWorldTransform(world, _body.getBodyId(), liveContactBodyWorld) &&
-                dynamic_weapon_collision_policy::isFiniteTransform(liveContactBodyWorld);
+                transform_math::isInvertibleTransform(liveContactBodyWorld);
             const float requestedGapGameUnits = hasLiveContactBody
                 ? dynamic_weapon_collision_policy::translationDeltaGameUnits(liveContactBodyWorld,
                       _physicsRequestedTarget)
@@ -1231,7 +1231,7 @@ namespace rock
 
         RE::NiTransform liveBodyWorld{};
         if (!havok_runtime::tryResolveLiveBodyWorldTransform(world, _body.getBodyId(), liveBodyWorld) ||
-            !dynamic_weapon_collision_policy::isFiniteTransform(liveBodyWorld)) {
+            !transform_math::isInvertibleTransform(liveBodyWorld)) {
             _contactRetentionSeconds = 0.0f;
             clearPublishedPhysicsSnapshot();
             return;
@@ -1299,7 +1299,7 @@ namespace rock
             diagnostic.otherOwnerNode = reinterpret_cast<std::uintptr_t>(otherBodySnapshot.ownerNode);
             diagnostic.otherBodyWorldValid = havok_runtime::tryResolveLiveBodyWorldTransform(world,
                                                  RE::hknpBodyId{ otherBodyId }, diagnostic.otherBodyWorld) &&
-                dynamic_weapon_collision_policy::isFiniteTransform(diagnostic.otherBodyWorld);
+                transform_math::isInvertibleTransform(diagnostic.otherBodyWorld);
 
             const auto rawWitnessSequence = _rawContactWitnessSequenceAtomic.load(std::memory_order_acquire);
             const auto rawOtherBodyId = _rawContactOtherBodyIdAtomic.load(std::memory_order_relaxed);

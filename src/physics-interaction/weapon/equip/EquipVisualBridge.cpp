@@ -40,21 +40,7 @@ namespace rock
             return isLeft ? frik_visual_authority::Hand::Left : frik_visual_authority::Hand::Right;
         }
 
-        [[nodiscard]] bool isFiniteTransform(const RE::NiTransform& transform)
-        {
-            if (!std::isfinite(transform.translate.x) || !std::isfinite(transform.translate.y) ||
-                !std::isfinite(transform.translate.z) || !std::isfinite(transform.scale)) {
-                return false;
-            }
-            for (int row = 0; row < 3; ++row) {
-                for (int column = 0; column < 3; ++column) {
-                    if (!std::isfinite(transform.rotate.entry[row][column])) {
-                        return false;
-                    }
-                }
-            }
-            return true;
-        }
+        using transform_math::isFiniteTransform;
 
         [[nodiscard]] float rotationDistanceDegrees(const RE::NiTransform& lhs, const RE::NiTransform& rhs)
         {
@@ -92,7 +78,8 @@ namespace rock
             outMask = rightPose.enabledMask;
 
             return outMask == authored_weapon_grip_library::kCompleteFiringFingerMask &&
-                std::ranges::all_of(outTransforms, isFiniteTransform);
+                std::ranges::all_of(outTransforms,
+                    [](const RE::NiTransform& transform) { return isFiniteTransform(transform); });
         }
 
         /*

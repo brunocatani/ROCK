@@ -244,11 +244,11 @@ namespace rock
             return api::Status::GenerationMismatch;
         auto* root = resolveEquippedWeaponInteractionNode();
         RE::NiTransform relative{};
-        if (!root || !finiteNiTransform(root->world) || !finiteNiTransform(node->local) ||
+        if (!root || !transform_math::isInvertibleTransform(root->world) || !transform_math::isInvertibleTransform(node->local) ||
             !weapon_hierarchy::tryResolveDescendantLocalTransform(root, node, relative))
             return api::Status::NotReady;
         const auto world = transform_math::composeTransforms(root->world, relative);
-        if (!finiteNiTransform(world))
+        if (!transform_math::isInvertibleTransform(world))
             return api::Status::NotReady;
         output.weaponGenerationKey = generation;
         output.sourceKey = key;

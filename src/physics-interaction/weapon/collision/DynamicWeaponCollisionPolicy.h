@@ -169,22 +169,6 @@ namespace rock::dynamic_weapon_collision_policy
 
     inline bool isFinitePoint(const RE::NiPoint3& point) { return vector_math::hasFiniteComponents(point); }
 
-    inline bool isFiniteTransform(const RE::NiTransform& transform)
-    {
-        if (!isFinitePoint(transform.translate) || !std::isfinite(transform.scale) ||
-            std::abs(transform.scale) <= 0.0001f) {
-            return false;
-        }
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                if (!std::isfinite(transform.rotate.entry[row][column])) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-
     inline BoundingBoxGeometry makeBoundingBoxGeometry(const RE::NiPoint3& boundsMin, const RE::NiPoint3& boundsMax)
     {
         BoundingBoxGeometry result{};
@@ -362,13 +346,13 @@ namespace rock::dynamic_weapon_collision_policy
         RE::NiTransform& result)
     {
         result = {};
-        if (!weapon || !hand || weapon == hand || !isFiniteTransform(physicalHandWorld)) {
+        if (!weapon || !hand || weapon == hand || !transform_math::isInvertibleTransform(physicalHandWorld)) {
             return false;
         }
         auto local = transform_math::makeIdentityTransform<RE::NiTransform>();
         const Node* node = weapon;
         for (std::size_t depth = 0; node && node != hand && depth < 64; ++depth) {
-            if (!isFiniteTransform(node->local)) {
+            if (!transform_math::isInvertibleTransform(node->local)) {
                 return false;
             }
             local = transform_math::composeTransforms(node->local, local);
@@ -378,7 +362,7 @@ namespace rock::dynamic_weapon_collision_policy
             return false;
         }
         result = transform_math::composeTransforms(physicalHandWorld, local);
-        return isFiniteTransform(result);
+        return transform_math::isInvertibleTransform(result);
     }
 
     inline RE::NiTransform resolveCurrentIntentFromSample(const RE::NiTransform& sampledRequestedProxyBodyWorld,
@@ -423,7 +407,7 @@ namespace rock::dynamic_weapon_collision_policy
         const RE::NiTransform& requestedGripAuthorityWorld, const RE::NiPoint3& centerWeaponLocal, float weaponScale,
         float recoveryDistanceGameUnits, const RE::NiPoint3& pivotWeaponLocal = {})
     {
-        if (!isFiniteTransform(liveContactBodyWorld) || !isFiniteTransform(requestedGripAuthorityWorld) ||
+        if (!transform_math::isInvertibleTransform(liveContactBodyWorld) || !transform_math::isInvertibleTransform(requestedGripAuthorityWorld) ||
             !isFinitePoint(centerWeaponLocal) || !std::isfinite(weaponScale) || std::abs(weaponScale) <= 0.0001f ||
             !std::isfinite(recoveryDistanceGameUnits) || recoveryDistanceGameUnits <= 0.0f) {
             return {};
@@ -469,7 +453,7 @@ namespace rock::dynamic_weapon_collision_policy
     inline VisualCorrectionDecision evaluateVisualCorrection(const RE::NiTransform& requested,
         const RE::NiTransform& solved)
     {
-        if (!isFiniteTransform(requested) || !isFiniteTransform(solved)) {
+        if (!transform_math::isInvertibleTransform(requested) || !transform_math::isInvertibleTransform(solved)) {
             return {};
         }
         VisualCorrectionDecision result{};

@@ -126,7 +126,7 @@ namespace rock::bipod_frozen_retirement
             }
             trace.stage = "root-pose";
             auto* root = ref->Get3D();
-            if (!root || !dynamic_weapon_collision_policy::isFiniteTransform(root->world) ||
+            if (!root || !transform_math::isInvertibleTransform(root->world) ||
                 std::abs(root->world.scale) < 0.0001f)
                 return false;
             const auto rootInverse = transform_math::invertTransform(root->world);
@@ -145,7 +145,7 @@ namespace rock::bipod_frozen_retirement
                 const auto target =
                     transform_math::composeTransforms(s_pose, transform_math::composeTransforms(rootInverse, current));
                 trace.stage = "body-pose-write";
-                if (!dynamic_weapon_collision_policy::isFiniteTransform(target) ||
+                if (!transform_math::isInvertibleTransform(target) ||
                     !havok_runtime::setBodyTransformDeferred(world, body.bodyId, target, 1))
                     return false;
                 motions[motionCount++] = body.motionId;
@@ -365,7 +365,7 @@ namespace rock::bipod_frozen_retirement
 
     bool arm(std::uint32_t weapon, RE::bhkWorld* world, const RE::NiTransform& pose)
     {
-        if (!available() || pending() || !weapon || !world || !dynamic_weapon_collision_policy::isFiniteTransform(pose))
+        if (!available() || pending() || !weapon || !world || !transform_math::isInvertibleTransform(pose))
             return false;
         s_weapon = weapon;
         s_world = reinterpret_cast<std::uintptr_t>(world);

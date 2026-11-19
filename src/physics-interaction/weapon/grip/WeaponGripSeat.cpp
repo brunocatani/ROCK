@@ -18,20 +18,6 @@ namespace rock::weapon_grip_seat
 {
     namespace
     {
-        [[nodiscard]] bool finiteTransform(const RE::NiTransform& transform)
-        {
-            for (int row = 0; row < 3; ++row) {
-                for (int column = 0; column < 3; ++column) {
-                    if (!std::isfinite(transform.rotate.entry[row][column])) {
-                        return false;
-                    }
-                }
-            }
-            return std::isfinite(transform.translate.x) && std::isfinite(transform.translate.y) &&
-                std::isfinite(transform.translate.z) && std::isfinite(transform.scale) &&
-                std::abs(transform.scale) > 0.000001f;
-        }
-
         // hFRIK authored Weapon-in-Hand; the seat is the inverse
         // Hand-in-Weapon relation.
         [[nodiscard]] bool compiledMinigunSeat(bool inPowerArmor, RE::NiTransform& outHandInWeapon)
@@ -46,12 +32,12 @@ namespace rock::weapon_grip_seat
             }
             weaponInHand.translate = { source.translation[0], source.translation[1], source.translation[2] };
             weaponInHand.scale = source.scale;
-            if (!finiteTransform(weaponInHand)) {
+            if (!transform_math::isNonCollapsedTransform(weaponInHand)) {
                 outHandInWeapon = {};
                 return false;
             }
             outHandInWeapon = transform_math::invertTransform(weaponInHand);
-            return finiteTransform(outHandInWeapon);
+            return transform_math::isNonCollapsedTransform(outHandInWeapon);
         }
     }
 

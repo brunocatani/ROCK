@@ -221,21 +221,6 @@ namespace rock::grab_finger_local_transform_math
         return signedTipDistance + inward * boundedTravel >= -margin;
     }
 
-    template <class Transform>
-    [[nodiscard]] inline bool sceneTransformHasUsableBasis(const Transform& transform)
-    {
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                if (!std::isfinite(transform.rotate.entry[row][column])) {
-                    return false;
-                }
-            }
-        }
-
-        return std::isfinite(transform.translate.x) && std::isfinite(transform.translate.y) &&
-            std::isfinite(transform.translate.z) && std::isfinite(transform.scale);
-    }
-
     inline constexpr float kMaxPublishedFingerLocalTranslationGameUnits = 64.0f;
     inline constexpr float kMinPublishedFingerLocalScale = 0.01f;
     inline constexpr float kMaxPublishedFingerLocalScale = 4.0f;
@@ -325,7 +310,7 @@ namespace rock::grab_finger_local_transform_math
     [[nodiscard]] inline FingerLocalTransformSafetyFailure inspectFingerLocalTransformForPublication(
         const Transform& transform)
     {
-        if (!sceneTransformHasUsableBasis(transform)) {
+        if (!transform_math::isFiniteTransform(transform)) {
             return FingerLocalTransformSafetyFailure::NonFinite;
         }
         if (transform.scale < kMinPublishedFingerLocalScale || transform.scale > kMaxPublishedFingerLocalScale) {

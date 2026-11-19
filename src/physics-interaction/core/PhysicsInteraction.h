@@ -109,7 +109,6 @@
 #include "physics-interaction/weapon/equip/EquippedWeaponToggleGrabPolicy.h"
 #include "physics-interaction/weapon/equip/EquippedWeaponTransitionCoordinator.h"
 #include "physics-interaction/weapon/equip/InventoryWeaponEquipRuntime.h"
-#include "physics-interaction/weapon/grip/LeftCarryReadiness.h"
 #include "physics-interaction/weapon/grip/TwoHandedGrip.h"
 #include "physics-interaction/weapon/parts/WeaponPartDrivePose.h"
 

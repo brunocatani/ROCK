@@ -8,22 +8,6 @@
 
 namespace rock::weapon_hierarchy
 {
-    [[nodiscard]] inline bool weaponTransformFinite(const RE::NiTransform& transform)
-    {
-        if (!std::isfinite(transform.translate.x) || !std::isfinite(transform.translate.y) ||
-            !std::isfinite(transform.translate.z) || !std::isfinite(transform.scale)) {
-            return false;
-        }
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                if (!std::isfinite(transform.rotate.entry[row][column])) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-
     inline constexpr std::size_t kMaximumWeaponLocalHierarchyDepth = 64;
 
     [[nodiscard]] inline bool weaponSceneNodePointerPlausible(const RE::NiAVObject* node) noexcept
@@ -53,7 +37,7 @@ namespace rock::weapon_hierarchy
         auto* cursor = descendant;
         while (cursor && cursor != ancestor) {
             if (!weaponSceneNodePointerPlausible(cursor) || pathLength >= reversePath.size() ||
-                !weaponTransformFinite(cursor->local)) {
+                !transform_math::isFiniteTransform(cursor->local)) {
                 outDescendantLocal = {};
                 return false;
             }
@@ -69,7 +53,7 @@ namespace rock::weapon_hierarchy
             outDescendantLocal =
                 transform_math::composeTransforms(outDescendantLocal, reversePath[--pathLength]->local);
         }
-        if (!weaponTransformFinite(outDescendantLocal)) {
+        if (!transform_math::isFiniteTransform(outDescendantLocal)) {
             outDescendantLocal = {};
             return false;
         }
@@ -80,14 +64,14 @@ namespace rock::weapon_hierarchy
         const RE::NiTransform& ancestorWorld, const RE::NiAVObject* descendant, RE::NiTransform& outDescendantWorld)
     {
         RE::NiTransform descendantLocal{};
-        if (!weaponTransformFinite(ancestorWorld) ||
+        if (!transform_math::isFiniteTransform(ancestorWorld) ||
             !tryResolveDescendantLocalTransform(ancestor, descendant, descendantLocal)) {
             outDescendantWorld = {};
             return false;
         }
 
         outDescendantWorld = transform_math::composeTransforms(ancestorWorld, descendantLocal);
-        if (!weaponTransformFinite(outDescendantWorld)) {
+        if (!transform_math::isFiniteTransform(outDescendantWorld)) {
             outDescendantWorld = {};
             return false;
         }

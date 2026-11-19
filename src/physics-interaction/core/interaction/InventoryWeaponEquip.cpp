@@ -128,7 +128,7 @@ namespace rock
         const api::Transform& weaponWorld)
     {
         const auto world = providerTransformToNi(weaponWorld);
-        if (!command || !finiteNiTransform(world))
+        if (!command || !transform_math::isInvertibleTransform(world))
             return api::Status::InvalidArgument;
         switch (_twoHandedGrip.reportDrawPresentationPose(owner, command, world)) {
         case TwoHandedGrip::DrawPoseReport::Accepted:

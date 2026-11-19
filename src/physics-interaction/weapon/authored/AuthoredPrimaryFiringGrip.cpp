@@ -56,20 +56,6 @@ namespace rock
             }
             return maximum;
         }
-
-        [[nodiscard]] bool finiteTransform(const RE::NiTransform& transform)
-        {
-            for (int row = 0; row < 3; ++row) {
-                for (int column = 0; column < 3; ++column) {
-                    if (!std::isfinite(transform.rotate.entry[row][column])) {
-                        return false;
-                    }
-                }
-            }
-            return std::isfinite(transform.translate.x) && std::isfinite(transform.translate.y) &&
-                std::isfinite(transform.translate.z) && std::isfinite(transform.scale) &&
-                std::abs(transform.scale) > 0.000001f;
-        }
     }
 
     void AuthoredPrimaryFiringGripRuntime::endSession(const char* reason)
@@ -741,7 +727,7 @@ namespace rock
             return;
         }
         if (!weaponAuthority.tryGetRightWeaponAimWorld(input.weaponNode->world.scale, liveWeaponWorld) ||
-            !finiteTransform(trackedHandWorld)) {
+            !transform_math::isNonCollapsedTransform(trackedHandWorld)) {
             weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
             endSession("live-transform-invalid");
             return;
@@ -758,7 +744,7 @@ namespace rock
             resolvedCaptureSequence = authoredLookup.captureSequence;
             currentAuthoredHandWorld = transform_math::composeTransforms(liveWeaponWorld, authoredPrimaryHandInWeapon);
             alignmentResolved =
-                finiteTransform(authoredPrimaryHandInWeapon) && finiteTransform(currentAuthoredHandWorld);
+                transform_math::isNonCollapsedTransform(authoredPrimaryHandInWeapon) && transform_math::isNonCollapsedTransform(currentAuthoredHandWorld);
         } else {
             alignmentResolved = authored_weapon_grip_capture::tryGetPrimaryFiringGripRelation(input.weaponNode,
                                     authoredPrimaryHandInWeapon, resolvedCaptureSequence) &&
@@ -766,7 +752,7 @@ namespace rock
             if (alignmentResolved) {
                 currentAuthoredHandWorld =
                     transform_math::composeTransforms(liveWeaponWorld, authoredPrimaryHandInWeapon);
-                alignmentResolved = finiteTransform(currentAuthoredHandWorld);
+                alignmentResolved = transform_math::isNonCollapsedTransform(currentAuthoredHandWorld);
             }
         }
         if (alignmentResolved && customRight) {
@@ -775,7 +761,7 @@ namespace rock
         } else if (alignmentResolved && fixedFiringSeat) {
             authoredPrimaryHandInWeapon = fixedFiringHandInWeapon;
             currentAuthoredHandWorld = transform_math::composeTransforms(liveWeaponWorld, authoredPrimaryHandInWeapon);
-            alignmentResolved = finiteTransform(currentAuthoredHandWorld);
+            alignmentResolved = transform_math::isNonCollapsedTransform(currentAuthoredHandWorld);
         }
         if (alignmentResolved && !harvestedRelationAvailable && !fixedFiringSeat) {
             rawPrimaryHandInWeapon = authoredPrimaryHandInWeapon;
@@ -786,7 +772,7 @@ namespace rock
                 authoredPrimaryHandInWeapon = frik_weapon_offsets::seat(*userOffset, authoredPrimaryHandInWeapon);
             }
             currentAuthoredHandWorld = transform_math::composeTransforms(liveWeaponWorld, authoredPrimaryHandInWeapon);
-            alignmentResolved = finiteTransform(currentAuthoredHandWorld);
+            alignmentResolved = transform_math::isNonCollapsedTransform(currentAuthoredHandWorld);
         }
         if (!alignmentResolved) {
             weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
@@ -840,7 +826,7 @@ namespace rock
             [](const RE::NiTransform& transform, const RE::NiPoint3& point) {
                 return transform_math::localPointToWorld(transform, point);
             });
-        if (!finiteTransform(solvedWeaponWorld)) {
+        if (!transform_math::isNonCollapsedTransform(solvedWeaponWorld)) {
             weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
             endSession("position-only-alignment-invalid");
             return;
@@ -851,7 +837,7 @@ namespace rock
         // hand at the same palm seat without changing its authored relation.
         const RE::NiTransform solvedFiringHandWorld =
             transform_math::composeTransforms(solvedWeaponWorld, presentedPrimaryHandInWeapon);
-        if (!finiteTransform(solvedFiringHandWorld)) {
+        if (!transform_math::isNonCollapsedTransform(solvedFiringHandWorld)) {
             weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
             endSession("position-only-hand-target-invalid");
             return;
@@ -942,7 +928,7 @@ namespace rock
                         std::fabs(trackedHandWorld.translate.y), std::fabs(trackedHandWorld.translate.z) }));
             const float positionOnlyHoldGripError =
                 pointDistance(cachedPositionOnlyGripWeaponLocal, authoredGripWeaponLocal);
-            const bool positionOnlyHoldValid = finiteTransform(rightPositionOnlyHandWeaponLocal) &&
+            const bool positionOnlyHoldValid = transform_math::isNonCollapsedTransform(rightPositionOnlyHandWeaponLocal) &&
                 std::isfinite(positionOnlyHoldGripError) &&
                 positionOnlyHoldGripError <= positionOnlyHoldGripErrorTolerance;
             const bool positionOnlyHoldPublished = compiledMinigunFiringSeat ||

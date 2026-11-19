@@ -1066,23 +1066,18 @@ namespace rock::grab_authority_frame_math
         return vector_math::hasFiniteComponents(value);
     }
 
+    // A grab frame inverts and is not mirrored: a negative scale is rejected.
     template <class Transform>
-    inline bool isFiniteTransform(const Transform& value)
+    inline bool isUsableGrabFrame(const Transform& value)
     {
-        bool rotationFinite = true;
-        for (std::uint32_t row = 0; row < 3; ++row) {
-            for (std::uint32_t column = 0; column < 3; ++column) {
-                rotationFinite = rotationFinite && std::isfinite(value.rotate.entry[row][column]);
-            }
-        }
-        return rotationFinite && isFiniteVector(value.translate) && std::isfinite(value.scale) && value.scale > 0.0001f;
+        return transform_math::isInvertibleTransform(value) && value.scale > 0.0f;
     }
 
     template <class Transform, class Vector>
     inline bool alignLocalPointInTransformToLocalTarget(Transform& transform, const Vector& localPoint,
         const Vector& targetPoint)
     {
-        if (!isFiniteTransform(transform) || !isFiniteVector(localPoint) || !isFiniteVector(targetPoint)) {
+        if (!isUsableGrabFrame(transform) || !isFiniteVector(localPoint) || !isFiniteVector(targetPoint)) {
             return false;
         }
 
@@ -1094,7 +1089,7 @@ namespace rock::grab_authority_frame_math
         transform.translate.x += targetPoint.x - currentPoint.x;
         transform.translate.y += targetPoint.y - currentPoint.y;
         transform.translate.z += targetPoint.z - currentPoint.z;
-        return isFiniteTransform(transform);
+        return isUsableGrabFrame(transform);
     }
 
     template <class Transform>
@@ -1166,18 +1161,18 @@ namespace rock::grab_authority_frame_math
         frozen.visualNormalWorld = input.visualNormalWorld;
         frozen.visualNormalValid = input.visualNormalValid && isFiniteVector(input.visualNormalWorld);
 
-        if (!isFiniteTransform(input.rawHandWorld) || !isFiniteTransform(input.proxyWorld) ||
-            !isFiniteTransform(input.proxyAuthorityFrameWorld) || !isFiniteTransform(input.objectWorld) ||
-            !isFiniteTransform(input.bodyWorld) || !isFiniteTransform(input.constraintBodyWorld) ||
+        if (!isUsableGrabFrame(input.rawHandWorld) || !isUsableGrabFrame(input.proxyWorld) ||
+            !isUsableGrabFrame(input.proxyAuthorityFrameWorld) || !isUsableGrabFrame(input.objectWorld) ||
+            !isUsableGrabFrame(input.bodyWorld) || !isUsableGrabFrame(input.constraintBodyWorld) ||
             (input.hasVisualHandObjectLocal &&
-                (!isFiniteTransform(input.visualHandObjectLocal) || input.visualHandObjectLocal.scale <= 0.0001f)) ||
+                (!isUsableGrabFrame(input.visualHandObjectLocal) || input.visualHandObjectLocal.scale <= 0.0001f)) ||
             !isFiniteVector(input.pivotAWorld) || !isFiniteVector(input.gripPointWorld)) {
             return frozen;
         }
 
         frozen.bodyLocal =
             transform_math::composeTransforms(transform_math::invertTransform(input.objectWorld), input.bodyWorld);
-        if (!isFiniteTransform(frozen.bodyLocal)) {
+        if (!isUsableGrabFrame(frozen.bodyLocal)) {
             return frozen;
         }
         /*
@@ -1188,7 +1183,7 @@ namespace rock::grab_authority_frame_math
             ? input.desiredBodyWorld
             : grab_frame_math::shiftObjectToAlignGripWithPocket(input.bodyWorld, input.pivotAWorld,
                   input.gripPointWorld);
-        if (!isFiniteTransform(frozen.desiredBodyWorld)) {
+        if (!isUsableGrabFrame(frozen.desiredBodyWorld)) {
             return frozen;
         }
 
@@ -1221,13 +1216,13 @@ namespace rock::grab_authority_frame_math
 
         frozen.desiredBodyWorld =
             grab_frame_math::objectFromGeneratedProxyLocalSpace(input.proxyWorld, frozen.proxyAuthorityBodyHandSpace);
-        if (!isFiniteTransform(frozen.desiredBodyWorld)) {
+        if (!isUsableGrabFrame(frozen.desiredBodyWorld)) {
             return frozen;
         }
 
         frozen.desiredObjectWorld = transform_math::composeTransforms(frozen.desiredBodyWorld,
             transform_math::invertTransform(frozen.bodyLocal));
-        if (!isFiniteTransform(frozen.desiredObjectWorld)) {
+        if (!isUsableGrabFrame(frozen.desiredObjectWorld)) {
             return frozen;
         }
 
@@ -1243,9 +1238,9 @@ namespace rock::grab_authority_frame_math
         frozen.proxyAuthorityHandSpace =
             grab_frame_math::objectInGeneratedProxyLocalSpace(input.proxyWorld, frozen.desiredObjectWorld);
         frozen.valid = isFiniteVector(frozen.pivotBBodyLocalGame) && isFiniteVector(frozen.pivotBConstraintLocalGame) &&
-            isFiniteVector(frozen.pivotAHandBodyLocalGame) && isFiniteTransform(frozen.bodyLocal) &&
-            isFiniteTransform(frozen.desiredBodyWorld) && isFiniteTransform(frozen.rawHandSpace) &&
-            isFiniteTransform(frozen.proxyAuthorityHandSpace) && isFiniteTransform(frozen.proxyAuthorityBodyHandSpace);
+            isFiniteVector(frozen.pivotAHandBodyLocalGame) && isUsableGrabFrame(frozen.bodyLocal) &&
+            isUsableGrabFrame(frozen.desiredBodyWorld) && isUsableGrabFrame(frozen.rawHandSpace) &&
+            isUsableGrabFrame(frozen.proxyAuthorityHandSpace) && isUsableGrabFrame(frozen.proxyAuthorityBodyHandSpace);
         return frozen;
     }
 }

@@ -40,7 +40,7 @@ namespace rock::scope_hand_input_continuity_policy
 
     [[nodiscard]] inline bool usable(const RE::NiTransform& world)
     {
-        return hand_world_claim_registry_policy::isFiniteTransform(world) && world.scale > 0.000001f &&
+        return transform_math::isNonCollapsedTransform(world) && world.scale > 0.000001f &&
             hand_world_claim_registry_policy::isUsableTargetRotation(world);
     }
 

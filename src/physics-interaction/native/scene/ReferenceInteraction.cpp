@@ -49,18 +49,6 @@ namespace rock::reference_interaction
             return readable;
         }
 
-        bool finite(const RE::NiTransform& t)
-        {
-            if (!std::isfinite(t.scale) || std::abs(t.scale) < 0.0001f || !std::isfinite(t.translate.x) ||
-                !std::isfinite(t.translate.y) || !std::isfinite(t.translate.z))
-                return false;
-            for (std::size_t r = 0; r < 3; ++r)
-                for (std::size_t c = 0; c < 3; ++c)
-                    if (!std::isfinite(t.rotate.entry[r][c]))
-                        return false;
-            return true;
-        }
-
         void copyTransform(const RE::NiTransform& t, api::Transform& out)
         {
             for (std::size_t r = 0; r < 3; ++r)
@@ -192,10 +180,10 @@ namespace rock::reference_interaction
         if (!frame || frame->IsDisabled() || frame->IsDeleted())
             return false;
         auto* root = frame ? frame->Get3D() : nullptr;
-        if (!root || !finite(root->world))
+        if (!root || !transform_math::isInvertibleTransform(root->world))
             return false;
         auto* node = findNamedNode(root, pointName(point));
-        if (!node || !finite(node->world))
+        if (!node || !transform_math::isInvertibleTransform(node->world))
             return false;
         outWorld = node->world;
         if (outLocal)

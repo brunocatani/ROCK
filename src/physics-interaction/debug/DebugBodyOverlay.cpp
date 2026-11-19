@@ -560,21 +560,6 @@ namespace rock::debug
             return DirectX::XMMatrixMultiply(rotation, translation);
         }
 
-        bool isFiniteTransform(const RE::NiTransform& transform)
-        {
-            if (!std::isfinite(transform.translate.x) || !std::isfinite(transform.translate.y) ||
-                !std::isfinite(transform.translate.z) || !std::isfinite(transform.scale) || transform.scale <= 0.0f) {
-                return false;
-            }
-            for (std::uint32_t row = 0; row < 3; ++row) {
-                for (std::uint32_t column = 0; column < 3; ++column) {
-                    if (!std::isfinite(transform.rotate.entry[row][column])) {
-                        return false;
-                    }
-                }
-            }
-            return true;
-        }
 
         DirectX::XMMATRIX niStoredBodyAxesToWorldMatrix(const RE::NiTransform& transform)
         {

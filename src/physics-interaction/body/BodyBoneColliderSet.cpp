@@ -209,7 +209,7 @@ namespace rock
             // its palm and finger twins share one frame under a ROCK claim.
             RE::NiTransform controllerRoot{};
             if (!frik_hand_world_authority::tryGetRawHandWorld(isLeft, controllerRoot) ||
-                !tracked_hand_isolation_policy::isFiniteTransform(input.end)) {
+                !transform_math::isNonCollapsedTransform(input.end)) {
                 return;
             }
             const auto transport =

@@ -121,20 +121,6 @@ namespace rock::authored_weapon_grip_capture
             return name ? std::string_view(name) : std::string_view{};
         }
 
-        [[nodiscard]] bool finiteTransform(const RE::NiTransform& transform)
-        {
-            for (int row = 0; row < 3; ++row) {
-                for (int column = 0; column < 3; ++column) {
-                    if (!std::isfinite(transform.rotate.entry[row][column])) {
-                        return false;
-                    }
-                }
-            }
-            return std::isfinite(transform.translate.x) && std::isfinite(transform.translate.y) &&
-                std::isfinite(transform.translate.z) && std::isfinite(transform.scale) &&
-                std::abs(transform.scale) > 0.000001f;
-        }
-
         [[nodiscard]] const RE::NiTransform& authoritativeLocal(const BoneTransform& transform)
         {
             return transform.refNode ? transform.refNode->local : transform.local;
@@ -182,11 +168,11 @@ namespace rock::authored_weapon_grip_capture
             for (std::size_t chainPosition = chainLength; chainPosition > 0; --chainPosition) {
                 const int transformIndex = chain[chainPosition - 1];
                 const RE::NiTransform& local = authoritativeLocal(tree.transforms[transformIndex]);
-                if (!finiteTransform(local)) {
+                if (!transform_math::isNonCollapsedTransform(local)) {
                     return false;
                 }
                 model = transform_math::composeTransforms(model, local);
-                if (!finiteTransform(model)) {
+                if (!transform_math::isNonCollapsedTransform(model)) {
                     return false;
                 }
             }
@@ -376,7 +362,7 @@ namespace rock::authored_weapon_grip_capture
                         return transform_math::composeTransforms(parent, child);
                     },
                     [](const RE::NiTransform& transform) { return transform_math::invertTransform(transform); });
-            if (!finiteTransform(supportHandInPrimaryHand)) {
+            if (!transform_math::isNonCollapsedTransform(supportHandInPrimaryHand)) {
                 recordAuthoredSupportGripCaptureFailure(
                     AuthoredSupportGripCaptureFailureReason::SupportHandTransformInvalid);
                 return;
@@ -388,7 +374,7 @@ namespace rock::authored_weapon_grip_capture
                 ++fingerIndex) {
                 const int transformIndex = s_primaryFiringGripBoneCache.supportFingerIndices[fingerIndex];
                 const RE::NiTransform& fingerLocal = authoritativeLocal(source->transforms[transformIndex]);
-                if (!finiteTransform(fingerLocal)) {
+                if (!transform_math::isNonCollapsedTransform(fingerLocal)) {
                     invalidFingerMask |= static_cast<std::uint16_t>(1u << fingerIndex);
                     continue;
                 }
@@ -450,7 +436,7 @@ namespace rock::authored_weapon_grip_capture
             if (!s_primaryFiringGripCaptureValid.load(std::memory_order_acquire) ||
                 s_primaryFiringGripHandNode.load(std::memory_order_acquire) != primaryHandTransform.refNode ||
                 s_primaryFiringGripWeaponNode.load(std::memory_order_acquire) != weaponTransform.refNode ||
-                !finiteTransform(s_authoredPrimaryHandInWeapon)) {
+                !transform_math::isNonCollapsedTransform(s_authoredPrimaryHandInWeapon)) {
                 recordAuthoredSupportGripCaptureFailure(
                     AuthoredSupportGripCaptureFailureReason::PrimaryPoseUnavailable);
                 return false;
@@ -475,7 +461,7 @@ namespace rock::authored_weapon_grip_capture
                     [](const RE::NiTransform& parent, const RE::NiTransform& child) {
                         return transform_math::composeTransforms(parent, child);
                     });
-            if (!finiteTransform(supportHandInWeapon)) {
+            if (!transform_math::isNonCollapsedTransform(supportHandInWeapon)) {
                 recordAuthoredSupportGripCaptureFailure(
                     AuthoredSupportGripCaptureFailureReason::SupportHandTransformInvalid);
                 return false;
@@ -510,13 +496,13 @@ namespace rock::authored_weapon_grip_capture
             const auto& handTransform = source->transforms[handIndex];
             const auto& weaponTransform = source->transforms[weaponIndex];
             if (weaponTransform.parPos != handIndex || !handTransform.refNode || !weaponTransform.refNode ||
-                !finiteTransform(handTransform.refNode->world) || !finiteTransform(weaponTransform.refNode->world)) {
+                !transform_math::isNonCollapsedTransform(handTransform.refNode->world) || !transform_math::isNonCollapsedTransform(weaponTransform.refNode->world)) {
                 return false;
             }
 
             const RE::NiTransform handInWeapon = transform_math::composeTransforms(
                 transform_math::invertTransform(weaponTransform.refNode->world), handTransform.refNode->world);
-            if (!finiteTransform(handInWeapon)) {
+            if (!transform_math::isNonCollapsedTransform(handInWeapon)) {
                 return false;
             }
 
@@ -803,7 +789,7 @@ namespace rock::authored_weapon_grip_capture
         if (!expectedWeaponNode || !s_primaryFiringGripCaptureEnabled.load(std::memory_order_acquire) ||
             !s_primaryFiringGripCaptureValid.load(std::memory_order_acquire) || !claimOrValidateThread() ||
             !capturedHandNode || expectedWeaponNode != s_primaryFiringGripWeaponNode.load(std::memory_order_acquire) ||
-            expectedWeaponNode->parent != capturedHandNode || !finiteTransform(s_authoredPrimaryHandInWeapon)) {
+            expectedWeaponNode->parent != capturedHandNode || !transform_math::isNonCollapsedTransform(s_authoredPrimaryHandInWeapon)) {
             return false;
         }
 
@@ -854,7 +840,7 @@ namespace rock::authored_weapon_grip_capture
             !s_authoredSupportGripCaptureValid.load(std::memory_order_acquire) || !claimOrValidateThread() ||
             !capturedPrimaryHandNode ||
             expectedWeaponNode != s_authoredSupportGripWeaponNode.load(std::memory_order_acquire) ||
-            expectedWeaponNode->parent != capturedPrimaryHandNode || !finiteTransform(s_authoredSupportHandInWeapon)) {
+            expectedWeaponNode->parent != capturedPrimaryHandNode || !transform_math::isNonCollapsedTransform(s_authoredSupportHandInWeapon)) {
             return false;
         }
 
@@ -868,7 +854,7 @@ namespace rock::authored_weapon_grip_capture
          */
 
         for (const auto& fingerLocal : s_authoredSupportFingerLocals) {
-            if (!finiteTransform(fingerLocal)) {
+            if (!transform_math::isNonCollapsedTransform(fingerLocal)) {
                 return false;
             }
         }

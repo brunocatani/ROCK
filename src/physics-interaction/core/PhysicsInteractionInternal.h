@@ -890,11 +890,6 @@ namespace rock
             return result;
         }
 
-        inline bool finiteNiTransform(const RE::NiTransform& transform)
-        {
-            return left_carry_readiness::finiteTransform(transform);
-        }
-
         inline std::string_view providerFixedStringView(const char* value, std::size_t capacity)
         {
             if (!value) {

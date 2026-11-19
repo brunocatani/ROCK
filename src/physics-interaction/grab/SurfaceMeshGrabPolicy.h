@@ -48,19 +48,10 @@ namespace rock::surface_mesh_grab_policy
 
     [[nodiscard]] inline bool finitePoint(const RE::NiPoint3& point) { return vector_math::hasFiniteComponents(point); }
 
-    [[nodiscard]] inline bool finiteTransform(const RE::NiTransform& value)
+    // A hand world inverts and is not mirrored: a negative scale is rejected.
+    [[nodiscard]] inline bool isUsableHandWorld(const RE::NiTransform& value)
     {
-        if (!finitePoint(value.translate) || !std::isfinite(value.scale) || value.scale <= 0.0001f) {
-            return false;
-        }
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                if (!std::isfinite(value.rotate.entry[row][column])) {
-                    return false;
-                }
-            }
-        }
-        return true;
+        return transform_math::isInvertibleTransform(value) && value.scale > 0.0f;
     }
 
     [[nodiscard]] inline float lengthSquared(const RE::NiPoint3& value) { return vector_math::lengthSquared(value); }
@@ -77,7 +68,7 @@ namespace rock::surface_mesh_grab_policy
     [[nodiscard]] inline ProjectionResult projectHandToMesh(const ProjectionInput& input)
     {
         ProjectionResult result{};
-        if (!finiteTransform(input.handWorld) || !finitePoint(input.collisionPointWorld) ||
+        if (!isUsableHandWorld(input.handWorld) || !finitePoint(input.collisionPointWorld) ||
             !finitePoint(input.meshPointWorld)) {
             return result;
         }
@@ -98,7 +89,7 @@ namespace rock::surface_mesh_grab_policy
             : (input.hasCollisionNormal ? normalizedOrZero(input.collisionNormalWorld) : RE::NiPoint3{});
         result.shellToMeshDeltaWorld = delta;
         result.shellToMeshDistanceGameUnits = std::sqrt(distanceSquared);
-        result.valid = finiteTransform(result.correctedHandWorld) && finitePoint(result.meshNormalWorld);
+        result.valid = isUsableHandWorld(result.correctedHandWorld) && finitePoint(result.meshNormalWorld);
         return result;
     }
 }

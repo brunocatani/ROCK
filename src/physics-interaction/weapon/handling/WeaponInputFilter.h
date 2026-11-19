@@ -36,7 +36,7 @@ namespace rock::weapon_input_filter
 
     [[nodiscard]] inline bool usable(const RE::NiTransform& value)
     {
-        return hand_world_claim_registry_policy::isFiniteTransform(value) && value.scale > 0.000001f &&
+        return transform_math::isNonCollapsedTransform(value) && value.scale > 0.000001f &&
             hand_world_claim_registry_policy::isUsableTargetRotation(value);
     }
 

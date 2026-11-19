@@ -34,7 +34,7 @@ namespace rock::weapon_interaction_query
         std::uint8_t priority, Part& out)
     {
         out = {};
-        if (triangles.empty() || !weapon_hierarchy::weaponTransformFinite(world) ||
+        if (triangles.empty() || !transform_math::isFiniteTransform(world) ||
             std::abs(world.scale) <= 0.000001f || !finitePoint(boundsMin) || !finitePoint(boundsMax) ||
             boundsMin.x > boundsMax.x || boundsMin.y > boundsMax.y || boundsMin.z > boundsMax.z)
             return false;

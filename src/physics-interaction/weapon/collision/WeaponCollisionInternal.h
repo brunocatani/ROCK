@@ -1973,19 +1973,18 @@ namespace rock
 
         using weapon_hierarchy::tryResolveDescendantLocalTransform;
         using weapon_hierarchy::tryResolveDescendantWorldTransform;
-        using weapon_hierarchy::weaponTransformFinite;
 
         inline bool updateWeaponEmitterTransform(WeaponEmitterDescriptor& descriptor,
             const RE::NiAVObject* transformNode, const RE::NiAVObject* weaponRoot)
         {
-            if (!transformNode || !weaponRoot || !weaponTransformFinite(transformNode->world) ||
-                !weaponTransformFinite(weaponRoot->world) || std::abs(weaponRoot->world.scale) <= 0.000001f) {
+            if (!transformNode || !weaponRoot || !transform_math::isFiniteTransform(transformNode->world) ||
+                !transform_math::isFiniteTransform(weaponRoot->world) || std::abs(weaponRoot->world.scale) <= 0.000001f) {
                 return false;
             }
 
             const RE::NiTransform weaponLocal = transform_math::composeTransforms(
                 transform_math::invertTransform(weaponRoot->world), transformNode->world);
-            if (!weaponTransformFinite(weaponLocal)) {
+            if (!transform_math::isFiniteTransform(weaponLocal)) {
                 return false;
             }
 

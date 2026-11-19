@@ -11,17 +11,6 @@ namespace rock::rigid_target_feed_forward
 {
     namespace
     {
-        [[nodiscard]] bool finiteTransform(const RE::NiTransform& value)
-        {
-            for (int row = 0; row < 3; ++row) {
-                if (!std::isfinite(value.rotate.entry[row].x) || !std::isfinite(value.rotate.entry[row].y) ||
-                    !std::isfinite(value.rotate.entry[row].z))
-                    return false;
-            }
-            return std::isfinite(value.translate.x) && std::isfinite(value.translate.y) &&
-                std::isfinite(value.translate.z) && std::isfinite(value.scale);
-        }
-
         // Generated bodies store column axes; TransformMath composes row axes.
         [[nodiscard]] RE::NiTransform swapAxisStorage(RE::NiTransform value)
         {
@@ -62,7 +51,7 @@ namespace rock::rigid_target_feed_forward
 
     void reseed(State& state, const RE::NiTransform& authorityTarget)
     {
-        if (!finiteTransform(authorityTarget))
+        if (!transform_math::isFiniteTransform(authorityTarget))
             return;
         state.previousTarget = swapAxisStorage(authorityTarget);
         state.previousTarget.scale = 1.0f;
@@ -72,7 +61,7 @@ namespace rock::rigid_target_feed_forward
     Outcome advance(RE::hknpWorld* world, RE::hknpBodyId bodyId, State& state, const RE::NiTransform& authorityTarget,
         float driveDeltaSeconds, bool feedAllowed, float maxLinearVelocityHavok, float maxAngularVelocityRadians)
     {
-        if (!world || !finiteTransform(authorityTarget)) {
+        if (!world || !transform_math::isFiniteTransform(authorityTarget)) {
             reset(state);
             return Outcome::Failed;
         }
@@ -88,7 +77,7 @@ namespace rock::rigid_target_feed_forward
         state.previousTarget = target;
 
         RE::NiTransform body{};
-        if (!havok_runtime::tryResolveLiveBodyWorldTransform(world, bodyId, body) || !finiteTransform(body))
+        if (!havok_runtime::tryResolveLiveBodyWorldTransform(world, bodyId, body) || !transform_math::isFiniteTransform(body))
             return Outcome::Failed;
         const auto moved = swapAxisStorage(transform_math::composeTransforms(motion, swapAxisStorage(body)));
         alignas(16) float linearHavok[4]{};

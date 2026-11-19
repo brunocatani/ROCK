@@ -66,7 +66,7 @@ static bool testPublicationSafety()
     hiddenScaleTransform.rotate.entry[2][2] = 1.0f;
     hiddenScaleTransform.scale = 0.00001f;
     ok &= expectBool("hidden FRIK node scale still has usable rotation",
-        sceneTransformHasUsableBasis(hiddenScaleTransform), true);
+        rock::transform_math::isFiniteTransform(hiddenScaleTransform), true);
 
     TestTransform safePublishedFingerTransform = hiddenScaleTransform;
     safePublishedFingerTransform.scale = 1.0f;

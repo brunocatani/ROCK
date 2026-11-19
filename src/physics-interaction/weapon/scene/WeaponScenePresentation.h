@@ -3,6 +3,7 @@
 #pragma once
 
 #include "RE/NetImmerse/NiNode.h"
+#include "physics-interaction/TransformMath.h"
 #include "physics-interaction/weapon/grip/WeaponAuthority.h"
 
 namespace rock::weapon_scene_presentation
@@ -10,29 +11,8 @@ namespace rock::weapon_scene_presentation
     inline constexpr std::size_t WEAPON_PRESENTATION_MAX_DEPTH = 128;
     inline constexpr std::size_t WEAPON_PRESENTATION_MAX_OBJECTS = 8192;
 
-    inline bool isFiniteRotation(const RE::NiMatrix3& rotation)
-    {
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                if (!std::isfinite(rotation.entry[row][column])) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-
-    inline bool isFiniteTransform(const RE::NiTransform& transform)
-    {
-        return isFiniteRotation(transform.rotate) && std::isfinite(transform.translate.x) &&
-            std::isfinite(transform.translate.y) && std::isfinite(transform.translate.z) &&
-            std::isfinite(transform.scale);
-    }
-
-    inline bool isInvertibleTransform(const RE::NiTransform& transform)
-    {
-        return isFiniteTransform(transform) && std::abs(transform.scale) > 0.0001f;
-    }
+    using transform_math::isFiniteTransform;
+    using transform_math::isInvertibleTransform;
 
     inline bool validateWeaponPresentationSubtree(RE::NiAVObject* object, const RE::NiTransform& presentationWorldDelta,
         const std::size_t depth, std::size_t& objectCount)

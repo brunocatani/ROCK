@@ -281,7 +281,7 @@ namespace rock
                     tipInput.extrapolateAlongStartBoneAxis = true;
                     for (std::size_t segment = 0; segment < 3; ++segment) {
                         const auto& local = locals.localTransforms[finger * 3 + segment];
-                        if (!grab_authority_frame_math::isFiniteTransform(local)) {
+                        if (!grab_authority_frame_math::isUsableGrabFrame(local)) {
                             failureStage = "joint-transform";
                             return pinch::ClosureSample{};
                         }

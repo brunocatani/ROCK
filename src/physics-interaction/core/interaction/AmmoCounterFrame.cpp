@@ -259,7 +259,7 @@ namespace rock
                     hidden("second-weapon-placement");
                     continue;
                 }
-                if (!finiteNiTransform(weaponWorld) || !finiteNiTransform(seat)) {
+                if (!transform_math::isInvertibleTransform(weaponWorld) || !transform_math::isInvertibleTransform(seat)) {
                     hidden("non-finite");
                     continue;
                 }

@@ -68,7 +68,7 @@ namespace rock::weapon_drive_pose
     private:
         static bool valid(const RE::NiTransform& t)
         {
-            return weapon_hierarchy::weaponTransformFinite(t) && std::abs(t.scale) > 1e-6f;
+            return transform_math::isNonCollapsedTransform(t);
         }
 
         struct Entry

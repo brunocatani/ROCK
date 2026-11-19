@@ -82,20 +82,7 @@ namespace rock
 
         bool isFinitePoint(const RE::NiPoint3& value) { return vector_math::hasFiniteComponents(value); }
 
-        bool isFiniteTransform(const RE::NiTransform& transform)
-        {
-            if (!isFinitePoint(transform.translate) || !std::isfinite(transform.scale)) {
-                return false;
-            }
-            for (int row = 0; row < 3; ++row) {
-                for (int column = 0; column < 3; ++column) {
-                    if (!std::isfinite(transform.rotate.entry[row][column])) {
-                        return false;
-                    }
-                }
-            }
-            return true;
-        }
+        using transform_math::isFiniteTransform;
 
         /*
          * Generated hand and forearm collider frames store physical axes in

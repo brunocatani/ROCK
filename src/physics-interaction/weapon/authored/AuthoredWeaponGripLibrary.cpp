@@ -54,27 +54,13 @@ namespace rock::authored_weapon_grip_library
         std::array<Entry, kCapacity> s_entries{};
         std::uint64_t s_publicationOrdinal = 0;
 
-        [[nodiscard]] bool finiteTransform(const RE::NiTransform& transform)
-        {
-            for (int row = 0; row < 3; ++row) {
-                for (int column = 0; column < 3; ++column) {
-                    if (!std::isfinite(transform.rotate.entry[row][column])) {
-                        return false;
-                    }
-                }
-            }
-            return std::isfinite(transform.translate.x) && std::isfinite(transform.translate.y) &&
-                std::isfinite(transform.translate.z) && std::isfinite(transform.scale) &&
-                std::abs(transform.scale) > 0.000001f;
-        }
-
         [[nodiscard]] bool validCompleteFingerPose(const FiringFingerPose& pose)
         {
             if (!pose.complete()) {
                 return false;
             }
             for (const auto& transform : pose.localTransforms) {
-                if (!finiteTransform(transform)) {
+                if (!transform_math::isNonCollapsedTransform(transform)) {
                     return false;
                 }
             }
@@ -183,7 +169,7 @@ namespace rock::authored_weapon_grip_library
         const std::uint32_t weaponFormId = weapon ? weapon->formID : 0;
         const bool validFingerPose = rightFiringFingerPose && validCompleteFingerPose(*rightFiringFingerPose);
         if (weaponFormId == 0 || captureSequence == 0 || source == CaptureSource::Unknown ||
-            !finiteTransform(rightHandWeaponLocal) || (rightFiringFingerPose && !validFingerPose) ||
+            !transform_math::isNonCollapsedTransform(rightHandWeaponLocal) || (rightFiringFingerPose && !validFingerPose) ||
             !authored_weapon_grip_authority_policy::publicationHasRequiredFingerPose(isNativeIdleAuthority(source),
                 validFingerPose)) {
             return false;
@@ -275,7 +261,7 @@ namespace rock::authored_weapon_grip_library
         const std::uint64_t authoredCaptureSequence, const RE::NiTransform& rightPositionOnlyHandWeaponLocal)
     {
         const std::uint32_t weaponFormId = weapon ? weapon->formID : 0;
-        if (weaponFormId == 0 || authoredCaptureSequence == 0 || !finiteTransform(rightPositionOnlyHandWeaponLocal)) {
+        if (weaponFormId == 0 || authoredCaptureSequence == 0 || !transform_math::isNonCollapsedTransform(rightPositionOnlyHandWeaponLocal)) {
             return false;
         }
 
@@ -299,7 +285,7 @@ namespace rock::authored_weapon_grip_library
     {
         const std::uint32_t weaponFormId = weapon ? weapon->formID : 0;
         if (weaponFormId == 0 || supportCaptureSequence == 0 || source == CaptureSource::Unknown ||
-            !finiteTransform(supportHandWeaponLocal) || !validCompleteFingerPose(supportFingerPose)) {
+            !transform_math::isNonCollapsedTransform(supportHandWeaponLocal) || !validCompleteFingerPose(supportFingerPose)) {
             return false;
         }
 
@@ -369,7 +355,7 @@ namespace rock::authored_weapon_grip_library
         // FRIK stores Weapon-in-Hand; authored consumers need Hand-in-Weapon.
         const auto handInWeapon =
             transform_math::invertTransform(pipe_firing_grip_policy::weaponInHand<RE::NiTransform>());
-        if (!finiteTransform(handInWeapon))
+        if (!transform_math::isNonCollapsedTransform(handInWeapon))
             return;
         result.rightHandWeaponLocal = handInWeapon;
         result.reason = "compiledPipeCalibratedOffset";

@@ -22,7 +22,7 @@ namespace rock
         if (!g_rockConfig.rockBipodMode ||
             !hasLatchedSurfaceSupport(reinterpret_cast<std::uintptr_t>(weapon), generation) ||
             !resolveSurfaceSupportBody(_surfaceSupport.contact, surface) ||
-            !dynamic_weapon_collision_policy::isFiniteTransform(_surfaceSupport.lastWorld))
+            !transform_math::isInvertibleTransform(_surfaceSupport.lastWorld))
             return false;
         pose = _surfaceSupport.lastWorld;
         return true;
@@ -119,8 +119,7 @@ namespace rock
         RE::NiTransform surfaceWorld{}, proxyWorld{};
         if (!havok_runtime::tryResolveLiveBodyWorldTransform(world, other.bodyId, surfaceWorld) ||
             !havok_runtime::tryResolveLiveBodyWorldTransform(world, _body.getBodyId(), proxyWorld) ||
-            !isFiniteTransform(surfaceWorld) || std::abs(surfaceWorld.scale) < 0.0001f ||
-            !isFiniteTransform(proxyWorld))
+            !transform_math::isInvertibleTransform(surfaceWorld) || !transform_math::isInvertibleTransform(proxyWorld))
             return;
 
         weapon_surface_support::Contact contact{};
@@ -135,7 +134,7 @@ namespace rock
         contact.weaponWorld = reconstructWeaponRoot(proxyWorld, _createdCenterWeaponLocal, _createdWeaponScale);
         contact.weaponPointLocal = transform_math::worldPointToLocal(contact.weaponWorld, pointGame);
         contact.surfacePointLocal = transform_math::worldPointToLocal(surfaceWorld, pointGame);
-        contact.valid = isFiniteTransform(contact.weaponWorld) && isFinitePoint(contact.weaponPointLocal) &&
+        contact.valid = transform_math::isInvertibleTransform(contact.weaponWorld) && isFinitePoint(contact.weaponPointLocal) &&
             isFinitePoint(contact.surfacePointLocal);
         if (contact.valid)
             _surfaceContacts.publish(contact);
@@ -154,7 +153,7 @@ namespace rock
             collision_layer_policy::isWorldSurfaceLayer(
                 other.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK) &&
             havok_runtime::tryResolveLiveBodyWorldTransform(_frameWorld, other.bodyId, surfaceWorld) &&
-            dynamic_weapon_collision_policy::isFiniteTransform(surfaceWorld);
+            transform_math::isInvertibleTransform(surfaceWorld);
     }
 
     void DynamicWeaponCollisionRuntime::updateSurfaceSupport(const PhysicsFrameContext& frame,

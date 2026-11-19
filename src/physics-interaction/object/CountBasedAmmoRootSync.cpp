@@ -23,21 +23,6 @@ namespace rock::count_based_ammo
         // Branch-body speed below which the round counts as resting.
         constexpr float kRestSpeedGameUnitsPerSecond = 1.5f;
 
-        bool finiteTransform(const RE::NiTransform& value)
-        {
-            if (!std::isfinite(value.translate.x) || !std::isfinite(value.translate.y) ||
-                !std::isfinite(value.translate.z) || !std::isfinite(value.scale)) {
-                return false;
-            }
-            for (int row = 0; row < 3; ++row) {
-                for (int column = 0; column < 3; ++column) {
-                    if (!std::isfinite(value.rotate.entry[row][column])) {
-                        return false;
-                    }
-                }
-            }
-            return true;
-        }
 
         float distanceGameUnits(const RE::NiPoint3& a, const RE::NiPoint3& b)
         {
@@ -71,7 +56,7 @@ namespace rock::count_based_ammo
                 composeTransforms(invertTransform(assembly.variantNode->world), branchBodyWorld);
             outRootFromBranch = composeTransforms(invertTransform(branchBodyLocal), rootBodyLocal);
             outRootFromBranch.scale = 1.0f;
-            return finiteTransform(outRootFromBranch);
+            return transform_math::isFiniteTransform(outRootFromBranch);
         }
     }
 
@@ -163,7 +148,7 @@ namespace rock::count_based_ammo
                                                    branchVelocity.y * branchVelocity.y +
                                                    branchVelocity.z * branchVelocity.z) *
                 havokToGameScale();
-            if (!finiteTransform(target) || !std::isfinite(branchSpeedGameUnits)) {
+            if (!transform_math::isFiniteTransform(target) || !std::isfinite(branchSpeedGameUnits)) {
                 entry = {};
                 continue;
             }
