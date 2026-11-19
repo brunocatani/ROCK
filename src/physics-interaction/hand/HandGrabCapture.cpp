@@ -138,7 +138,11 @@ namespace rock
             const RE::NiTransform& proxyWorld)
         {
             GrabPalmBasisDelta result{};
-            result.rotationDegrees = rotationDeltaDegrees(rawHandWorld.rotate, proxyWorld.rotate);
+            // The proxy frame stores its axes as columns and the raw hand as rows, so the
+            // angle is taken against the proxy's row view. Comparing the stored matrices
+            // directly reports about twice the hand's own rotation for two frames that agree.
+            result.rotationDegrees = rotationDeltaDegrees(rawHandWorld.rotate,
+                makeGeneratedProxyAuthorityRelationFrame(proxyWorld).rotate);
             result.xAxisDegrees = axisDeltaDegrees(frameAxisWorld(rawHandWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }),
                 generatedFrameAxisWorld(proxyWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }));
             result.yAxisDegrees = axisDeltaDegrees(frameAxisWorld(rawHandWorld, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }),
