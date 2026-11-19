@@ -12,6 +12,7 @@
 #include "RE/NetImmerse/NiNode.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
+#include "physics-interaction/native/NativeCodeBytes.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/havok/BodyCollisionControl.h"
 #include "physics-interaction/native/havok/HavokRuntime.h"
@@ -269,6 +270,24 @@ namespace rock::native_secondary_melee
             return true;
         if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72)
             return false;
+        // The four functions this file calls by address: their FO4VR 1.2.72
+        // entries, or another plugin's detour there.
+        if (!native_code::entryIsNativeOrDetoured(kAttach,
+                std::array<std::uint8_t, 16>{ 0x48, 0x85, 0xD2, 0x0F, 0x84, 0x14, 0x01, 0x00, 0x00, 0x55, 0x41, 0x56,
+                    0x48, 0x83, 0xEC, 0x58 }) ||
+            !native_code::entryIsNativeOrDetoured(kDetach,
+                std::array<std::uint8_t, 19>{ 0x48, 0x85, 0xD2, 0x0F, 0x84, 0xC9, 0x00, 0x00, 0x00, 0x48, 0x89, 0x6C,
+                    0x24, 0x18, 0x48, 0x89, 0x7C, 0x24, 0x20 }) ||
+            !native_code::entryIsNativeOrDetoured(kWorldOfCell,
+                std::array<std::uint8_t, 15>{ 0xF6, 0x41, 0x40, 0x01, 0x74, 0x09, 0x48, 0x8B, 0x49, 0x48, 0xE9, 0x11,
+                    0xAB, 0xCF, 0xFF }) ||
+            !native_code::entryIsNativeOrDetoured(kBodyId,
+                std::array<std::uint8_t, 16>{ 0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0x41, 0x20, 0x48, 0x8B,
+                    0xDA, 0x48, 0x85, 0xC0 })) {
+            ROCK_LOG_ERROR(Init,
+                "Second melee routing refused: attach, detach, cell world or body id entry differs from FO4VR 1.2.72");
+            return false;
+        }
         std::array<std::uintptr_t, kRelays.size()> callees{};
         for (std::size_t i = 0; i < kRelays.size(); ++i) {
             const auto resolved = callAt(kRelays[i].site, kRelays[i].target);
