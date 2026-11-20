@@ -541,6 +541,45 @@
               "valueOptions": { "min": -30.0, "max": 30.0, "step": 0.5 },
               "display": { "unit": "°" },
               "storage": { "path": ["FiringHand", "Left", "AimPitchDegrees"] }
+            },
+            {
+              "type": "cf.transform",
+              "valueType": "string",
+              "text": "Left Firing Aim: Offset",
+              "help": "Shifts the aim of a weapon fired from the left hand, in game units (70 = 1 metre).",
+              "default": { "pos": [0.0, 0.0, 0.0] },
+              "valueOptions": {
+                "position": { "min": -15.0, "max": 15.0, "step": 0.1 },
+                "rotation": false,
+                "scale": false
+              },
+              "storage": { "path": ["FiringHand", "Left", "AimOffset"] }
+            },
+            {
+              "type": "cf.transform",
+              "valueType": "string",
+              "text": "Left Firing Grip",
+              "help": "Moves where the left hand holds the firing grip, in game units: X along the fingers, Y into or out of the palm, Z across the palm. All 0 is the plain mirror of the right-hand grip. Regrab to apply.",
+              "default": { "pos": [0.0, 0.0, 0.0] },
+              "valueOptions": {
+                "position": { "min": -15.0, "max": 15.0, "step": 0.1 },
+                "rotation": false,
+                "scale": false
+              },
+              "storage": { "path": ["FiringHand", "Left", "GripOffset"] }
+            },
+            {
+              "type": "cf.transform",
+              "valueType": "string",
+              "text": "Right Support Grip",
+              "help": "Moves where the right hand holds a support grip when the left hand fires, in game units: X along the fingers, Y into or out of the palm, Z across the palm. All 0 is the plain mirror of the left-hand support grip. Regrab to apply.",
+              "default": { "pos": [0.0, 0.0, 0.0] },
+              "valueOptions": {
+                "position": { "min": -15.0, "max": 15.0, "step": 0.1 },
+                "rotation": false,
+                "scale": false
+              },
+              "storage": { "path": ["FiringHand", "Right", "SupportGripOffset"] }
             }
           ]
         },

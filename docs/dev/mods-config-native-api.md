@@ -42,3 +42,4 @@ Connect `ROCK.dll` to Mods Config FO4 VR's native API, so its page previews chan
 - [ ] Preview overlay, applied on `FrameBegin`; Discard restores it; Save clears it.
 - [ ] Spec: version text, a setup wizard button, `applies: live` with per-setting exceptions, page `id`s for pointing.
 - [ ] Test the preview overlay's contract (preview, then Discard, gives the file's values; preview, then Save, gives the saved values).
+- [ ] Adjust in world for the firing-hand transforms (`AimOffset`, `GripOffset`, `SupportGripOffset`): check which frame each position is in (the grip offsets are hand-local: along the fingers, palm, across; the aim offset's frame isn't documented), and that the sticks move the value along the axes the player sees, also on the mirrored right hand.

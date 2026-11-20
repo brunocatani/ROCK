@@ -9,11 +9,13 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <cmath>
 #include <format>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -31,10 +33,6 @@ namespace
         "SetupWizard.ShownEdition",
         // Shows the ROCK Dev page in RPS UI Framework's settings menu only.
         "Developer.EnableDeveloperSettings",
-        // Transforms, not on the page yet.
-        "FiringHand.Left.AimOffset",
-        "FiringHand.Left.GripOffset",
-        "FiringHand.Right.SupportGripOffset",
     };
 
     void require(bool condition, const std::string& message)
@@ -92,7 +90,8 @@ namespace
     }
 
     /**
-     * The spec's valueType for one of ROCK's value types; Float3 has none.
+     * The spec's valueType for one of ROCK's value types; Float3 has none. A
+     * transform is a cf.transform row, whose stored value is the table's text.
      */
     std::string_view specType(ValueType type)
     {
@@ -101,8 +100,35 @@ namespace
         case ValueType::Integer: return "int";
         case ValueType::Float: return "float";
         case ValueType::String: return "string";
+        case ValueType::Transform: return "string";
         default: return "";
         }
+    }
+
+    /**
+     * Whether a cf.transform default (a JSON table) means ROCK's compiled transform. A part either side leaves
+     * out reads as no change: no move, no rotation, scale 1.
+     */
+    bool sameTransform(const json& value, const Transform& compiled)
+    {
+        if (!value.is_object())
+            return false;
+        const auto sameThree = [&](const char* key, const std::optional<std::array<float, 3>>& part) {
+            const auto expected = part.value_or(std::array<float, 3>{});
+            if (!value.contains(key))
+                return std::ranges::all_of(expected, [](float component) { return nearlyEqual(component, 0.0); });
+            const auto& array = value.at(key);
+            if (!array.is_array() || array.size() != 3)
+                return false;
+            for (std::size_t index = 0; index < 3; ++index) {
+                if (!array[index].is_number() || !nearlyEqual(array[index].get<double>(), expected[index]))
+                    return false;
+            }
+            return true;
+        };
+        const auto scale = value.contains("scale") ? value.at("scale") : json(1.0);
+        return sameThree("pos", compiled.position) && sameThree("rot", compiled.rotation) && scale.is_number() &&
+               nearlyEqual(scale.get<double>(), compiled.scale.value_or(1.0f));
     }
 
     /**
@@ -131,6 +157,12 @@ namespace
         case ValueType::String:
             same = value.is_string() && value.get<std::string>() == compiled.value;
             break;
+        case ValueType::Transform: {
+            require(setting.value("type", "") == "cf.transform", std::format("{} is a transform but not a cf.transform row", name));
+            const auto transform = parseTransform(compiled.value);
+            same = transform && sameTransform(value, *transform);
+            break;
+        }
         default:
             break;
         }

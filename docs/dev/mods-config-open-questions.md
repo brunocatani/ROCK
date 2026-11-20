@@ -10,7 +10,7 @@
   - commit the `docs/dev` tickets;
   - update AGENTS.md: Mods Config becomes a second writer of `ROCK.toml` ("What ROCK does not own" says nothing else writes ROCK's settings files), `data/mod` holds the spec, and the new test.
 
-The other tickets: `mods-config-input-bindings.md`, `mods-config-transforms.md`, `mods-config-native-api.md`, `mods-config-prompt-improvements.md`.
+The other tickets: `mods-config-input-bindings.md`, `mods-config-transforms.md`, `mods-config-native-api.md`, `mods-config-prompt-improvements.md`, `mods-config-left-firing-trigger.md`.
 
 ## Decisions taken
 
@@ -63,9 +63,10 @@ These are spec choices the docs allow but no game run has confirmed yet:
 Collected from the tickets, for the F4VR-Mods-Config repo:
 
 1. `cf.inputBinding` reading and writing the framework's line form in a TOML string, opt-in (`mods-config-input-bindings.md`).
-2. `cf.transform` reading a TOML `[x, y, z]` array as its position, or a three-number control (`mods-config-transforms.md`).
-3. A per-file "a default removes the key, and an empty file is deleted" mode, for files like `ROCK_Developer.toml` (suggestion 3 above).
-4. An offline validator for `spec.json`, printing the Developer report without the game (`mods-config-prompt-improvements.md`).
+2. A per-file "a default removes the key, and an empty file is deleted" mode, for files like `ROCK_Developer.toml` (suggestion 3 above).
+3. An offline validator for `spec.json`, printing the Developer report without the game (`mods-config-prompt-improvements.md`).
+
+The transforms needed nothing from Mods Config: ROCK stores them as transform tables (`mods-config-transforms.md`).
 
 ## ROCK text that should mention Mods Config
 
