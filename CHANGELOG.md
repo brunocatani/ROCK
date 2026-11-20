@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Guns with a laser, flashlight or glow come to the hand when pulled.** A far grab
+  brings the middle of the gun's model to your palm, and a beam, dot or glow stretched
+  that model metres past the gun, so the gun flew off across the room instead. The
+  pull now ignores those effect parts.
+
 ## v1.0.3
 
 ### Added

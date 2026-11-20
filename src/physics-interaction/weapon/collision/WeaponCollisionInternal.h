@@ -22,7 +22,7 @@
 #include "physics-interaction/native/scene/SceneRelation.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/weapon/classification/WeaponAccessoryPartKindPolicy.h"
-#include "physics-interaction/weapon/classification/WeaponEffectGeometryPolicy.h"
+#include "physics-interaction/weapon/classification/WeaponEffectGeometry.h"
 #include "physics-interaction/weapon/classification/WeaponEmitterPolicy.h"
 #include "physics-interaction/weapon/classification/WeaponInstanceClassification.h"
 #include "physics-interaction/weapon/classification/WeaponSemantics.h"
@@ -1721,50 +1721,12 @@ namespace rock
             return name ? name : "(null)";
         }
 
-        [[nodiscard]] inline bool niObjectRttiChainContains(const RE::NiObject* object, const char* typeName)
-        {
-            const RE::NiRTTI* rtti = object && typeName ? object->GetRTTI() : nullptr;
-            for (int depth = 0; rtti && depth < 16; ++depth, rtti = rtti->GetBaseRTTI()) {
-                const char* rttiName = rtti->GetName();
-                if (rttiName && std::strcmp(rttiName, typeName) == 0) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        [[nodiscard]] inline bool generatedWeaponShapeHasEffectShaderProperty(const RE::BSTriShape* triShape)
-        {
-            if (!triShape) {
-                return false;
-            }
-            for (const auto& property : triShape->GetRuntimeData().properties) {
-                if (niObjectRttiChainContains(property.get(), "BSEffectShaderProperty")) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        [[nodiscard]] inline bool generatedWeaponShapeHasBillboardAncestor(const RE::NiAVObject* node)
-        {
-            // Parent links are frame-scoped engine references; nothing from this walk is retained.
-            for (auto* ancestor = node ? node->parent : nullptr; ancestor; ancestor = ancestor->parent) {
-                if (niObjectRttiChainContains(ancestor, "NiBillboardNode")) {
-                    return true;
-                }
-            }
-            return false;
-        }
+        using weapon_effect_geometry::niObjectRttiChainContains;
 
         [[nodiscard]] inline weapon_effect_geometry_policy::ExclusionReason classifyGeneratedWeaponEffectGeometry(
             const RE::BSTriShape* triShape)
         {
-            return weapon_effect_geometry_policy::classify({
-                .hasEffectShaderProperty = generatedWeaponShapeHasEffectShaderProperty(triShape),
-                .hasBillboardAncestor = generatedWeaponShapeHasBillboardAncestor(triShape),
-                .geometryName = safeNodeName(triShape),
-            });
+            return weapon_effect_geometry::classify(triShape);
         }
 
         inline bool weaponVisualNodeVisible(const RE::NiAVObject* node)

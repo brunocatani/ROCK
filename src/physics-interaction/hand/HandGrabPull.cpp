@@ -7,6 +7,7 @@
 #include "physics-interaction/hand/HandGrabHeldBodyMotion.h"
 #include "physics-interaction/hand/HandGrabLifecycleRestore.h"
 #include "physics-interaction/hand/HandGrabMeshLongAxis.h"
+#include "physics-interaction/weapon/classification/WeaponEffectGeometry.h"
 
 namespace rock
 {
@@ -531,14 +532,21 @@ namespace rock
          * frame so it turns with the object. Arrival hands that point to the
          * catch as its selection hit, and the catch seats a mesh point on the
          * palm. An object without a visual mesh is not pulled.
+         *
+         * A weapon's mesh is the geometry its collision is generated from. Its
+         * effect shapes (laser and flashlight beams, dots, reticles, glows)
+         * reach metres past the gun; a bounds centre taken over them put the
+         * pulled point in mid-air, and the gun flew past the hand to bring
+         * that point to the palm.
          */
         RE::NiAVObject* pulledMeshNode = _currentSelection.visualNode ? _currentSelection.visualNode : rootNode;
         std::vector<TriangleData> pulledMeshTriangles;
+        MeshExtractionStats pulledMeshStats;
         if (pulledMeshNode) {
             std::vector<GrabSurfaceTriangleData> pulledSurfaceTriangles;
-            MeshExtractionStats pulledMeshStats;
             extractAllSurfaceTriangles(pulledMeshNode, pulledMeshTriangles, pulledSurfaceTriangles,
-                (std::max)(1, g_rockConfig.rockObjectPhysicsTreeMaxDepth), &pulledMeshStats, false);
+                (std::max)(1, g_rockConfig.rockObjectPhysicsTreeMaxDepth), &pulledMeshStats, false,
+                selectedIsWeapon ? &weapon_effect_geometry::isEffectShape : nullptr);
         }
         RE::NiPoint3 pulledMeshPointWorld{};
         RE::NiTransform pulledMotionWorld{};
@@ -620,7 +628,8 @@ namespace rock
         ROCK_LOG_INFO(Hand,
             "{} hand PULL start: type={} weapon={} formID={:08X} primaryBody={} bodyCount={} driveMode={} "
             "linearScope={} angularScope={} seeded={} scanFailures={} invalidSystems={} benignSkips={} "
-            "unresolvedAccepted={} distanceHk={:.3f} duration={:.3f}s setMotion={} enableCollision={}",
+            "unresolvedAccepted={} distanceHk={:.3f} duration={:.3f}s setMotion={} enableCollision={} "
+            "meshTriangles={} effectShapesIgnored={} pointFromBody={:.1f}",
             handName(), selectedType ? selectedType : "???", selectedIsWeapon ? "yes" : "no", selectedRef->GetFormID(),
             _pulledPrimaryBodyId, _pulledBodyIds.size(), held_object_drive_policy::modeName(_pullDriveDecision.mode),
             _pullDriveDecision.includeConnectedLinearVelocity ? "bodySet" : "primaryOnly",
@@ -628,7 +637,8 @@ namespace rock
             preparedBodySet.diagnostics.seedBodiesAdded, preparedBodySet.diagnostics.scanFailures,
             preparedBodySet.diagnostics.invalidPhysicsSystems, preparedBodySet.diagnostics.benignScanSkips,
             preparedBodySet.diagnostics.unresolvedRefBodiesAccepted, pullDistance, _pullFlight.durationSeconds,
-            motionConverted ? "ok" : "failed", collisionEnabled ? "ok" : "failed");
+            motionConverted ? "ok" : "failed", collisionEnabled ? "ok" : "failed", pulledMeshTriangles.size(),
+            pulledMeshStats.filteredShapes, _pullFlight.meshPointBodyLocal.Length());
         return true;
     }
 

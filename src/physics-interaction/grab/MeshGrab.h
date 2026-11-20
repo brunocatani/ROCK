@@ -528,6 +528,7 @@ namespace rock
         std::uint32_t skinnedShapes = 0;
         std::uint32_t dynamicSkinnedSkipped = 0;
         std::uint32_t emptyShapes = 0;
+        std::uint32_t filteredShapes = 0;
         std::uint32_t staticTriangles = 0;
         std::uint32_t dynamicTriangles = 0;
         std::uint32_t skinnedTriangles = 0;
@@ -1449,10 +1450,23 @@ namespace rock
         }
     }
 
+    // True for a shape that is drawn with the object but is not its surface.
+    using SurfaceShapeFilter = bool (*)(const RE::BSTriShape*);
+
+    inline bool surfaceShapeFiltered(const RE::BSTriShape* triShape, SurfaceShapeFilter notSurface,
+        MeshExtractionStats* stats)
+    {
+        if (!notSurface || !notSurface(triShape))
+            return false;
+        if (stats)
+            stats->filteredShapes++;
+        return true;
+    }
+
     inline void extractAllSurfaceTrianglesRecursive(RE::NiAVObject* root, std::vector<TriangleData>& outTriangles,
         std::vector<GrabSurfaceTriangleData>& outSurfaceTriangles, int maxDepth = 10,
         MeshExtractionStats* stats = nullptr, bool allowPositionOnlySkinnedSurface = false,
-        std::vector<TriangleData>* outPositionTriangles = nullptr)
+        std::vector<TriangleData>* outPositionTriangles = nullptr, SurfaceShapeFilter notSurface = nullptr)
     {
         if (!root || maxDepth <= 0)
             return;
@@ -1462,6 +1476,8 @@ namespace rock
 
         auto* triShape = root->IsTriShape();
         if (triShape) {
+            if (surfaceShapeFiltered(triShape, notSurface, stats))
+                return;
             extractSurfaceTrianglesFromTriShape(triShape, outTriangles, outSurfaceTriangles, stats,
                 allowPositionOnlySkinnedSurface, outPositionTriangles);
             return;
@@ -1474,14 +1490,15 @@ namespace rock
                 auto* kid = kids[i].get();
                 if (kid)
                     extractAllSurfaceTrianglesRecursive(kid, outTriangles, outSurfaceTriangles, maxDepth - 1, stats,
-                        allowPositionOnlySkinnedSurface, outPositionTriangles);
+                        allowPositionOnlySkinnedSurface, outPositionTriangles, notSurface);
             }
         }
     }
 
     inline void extractAllSurfaceTrianglesWithScenegraphVisitor(RE::NiAVObject* root,
         std::vector<TriangleData>& outTriangles, std::vector<GrabSurfaceTriangleData>& outSurfaceTriangles,
-        MeshExtractionStats* stats = nullptr, bool allowPositionOnlySkinnedSurface = false)
+        MeshExtractionStats* stats = nullptr, bool allowPositionOnlySkinnedSurface = false,
+        SurfaceShapeFilter notSurface = nullptr)
     {
         if (!root) {
             return;
@@ -1506,6 +1523,9 @@ namespace rock
             if (triShape->flags.flags & 1) {
                 return RE::BSVisit::BSVisitControl::kContinue;
             }
+            if (surfaceShapeFiltered(triShape, notSurface, stats)) {
+                return RE::BSVisit::BSVisitControl::kContinue;
+            }
 
             extractSurfaceTrianglesFromTriShape(triShape, outTriangles, outSurfaceTriangles, stats,
                 allowPositionOnlySkinnedSurface);
@@ -1515,17 +1535,18 @@ namespace rock
 
     inline void extractAllSurfaceTriangles(RE::NiAVObject* root, std::vector<TriangleData>& outTriangles,
         std::vector<GrabSurfaceTriangleData>& outSurfaceTriangles, int maxDepth = 10,
-        MeshExtractionStats* stats = nullptr, bool allowPositionOnlySkinnedSurface = false)
+        MeshExtractionStats* stats = nullptr, bool allowPositionOnlySkinnedSurface = false,
+        SurfaceShapeFilter notSurface = nullptr)
     {
         const auto beforeTriangles = outTriangles.size();
         extractAllSurfaceTrianglesRecursive(root, outTriangles, outSurfaceTriangles, maxDepth, stats,
-            allowPositionOnlySkinnedSurface);
+            allowPositionOnlySkinnedSurface, nullptr, notSurface);
         if (outTriangles.size() != beforeTriangles || !root || maxDepth <= 0) {
             return;
         }
 
         extractAllSurfaceTrianglesWithScenegraphVisitor(root, outTriangles, outSurfaceTriangles, stats,
-            allowPositionOnlySkinnedSurface);
+            allowPositionOnlySkinnedSurface, notSurface);
     }
 
     struct BoundedSurfaceMeshExtraction
