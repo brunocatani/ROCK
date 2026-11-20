@@ -338,8 +338,17 @@ namespace rock
 
     void TwoHandedGrip::clearNativeScopeOverlayAuthority(const bool restoreNativeLocal)
     {
+        /*
+         * ScopeParent is a player node that outlives FRIK's skeleton, so the
+         * restore must not wait for the skeleton: a loading-screen reset clears
+         * this state before the skeleton returns, and a skipped restore left
+         * ROCK's overlay local in the node, which the next PhysicsInteraction
+         * then observed as the native rest (overlay aimed off the sight until
+         * a new game session). The identity, parent and last-write checks
+         * below decide whether the node is still ROCK's.
+         */
         if (restoreNativeLocal && _scope.overlayCalibration.valid && _scope.overlayCalibration.hasAppliedLocal &&
-            runtime_state::isLocalSkeletonReady() && RE::PlayerCharacter::GetSingleton()) {
+            RE::PlayerCharacter::GetSingleton()) {
             const auto* playerNodes = f4vr::getPlayerNodes();
             auto* scopeParent = playerNodes ? playerNodes->ScopeParentNode : nullptr;
             if (scopeParent == _scope.overlayCalibration.scopeParentIdentity &&
