@@ -11,8 +11,7 @@
 /*
  * [Bindings] text. Each function's binding is a CommonFramework binding table,
  * { hand = "primary", type = "hold", button = "a", duration = 0.3, modifier = { hand = "offhand", button = "grip" } },
- * which Mods Config's binding editor reads as is. The Configuration API, which has
- * no table type, carries the framework's one-line form, "primary hold a 0.3 +offhand:grip".
+ * which Mods Config's binding editor reads as is.
  *
  * ROCK reads the framework's words with these limits: types hold (no duration: while
  * held; a duration: from that time until release), tap and double; the five logical
@@ -53,8 +52,6 @@ namespace rock::function_binding_text
 
     [[nodiscard]] std::expected<ParsedBinding, std::string> parseBindingTable(fb::Function function, std::string_view text);
     [[nodiscard]] std::string formatBindingTable(fb::Function function, const ConfiguredBinding& binding);
-    [[nodiscard]] std::expected<ParsedBinding, std::string> parseBindingLine(fb::Function function, std::string_view text);
-    [[nodiscard]] std::string formatBindingLine(fb::Function function, const ConfiguredBinding& binding);
 
     // text is the old string, or nullopt for a file without one (the default binding with the old times).
     [[nodiscard]] ParsedBinding fromLegacyBinding(fb::Function function, std::optional<std::string_view> text,

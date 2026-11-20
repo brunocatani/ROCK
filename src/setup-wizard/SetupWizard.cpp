@@ -271,7 +271,7 @@ namespace rock::setup_wizard
         {
             if (g_rockConfig.rockSetupWizardShownEdition >= kEdition) return;
             std::string error;
-            if (!g_rockConfig.persistSetting(api::configuration::Group::Consumer, "SetupWizard", "ShownEdition",
+            if (!g_rockConfig.persistSetting(config::Group::Player, "SetupWizard", "ShownEdition",
                     std::to_string(kEdition).c_str(), error))
                 ROCK_LOG_WARN(Config, "Setup wizard could not save SetupWizard.ShownEdition: {}", error);
         }

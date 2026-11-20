@@ -9,7 +9,7 @@ namespace rock::setup_wizard::settings
     {
         SessionStart start{};
         start.bindings = g_rockConfig.rockFunctionBindings;
-        (void)g_rockConfig.visitSettings(api::configuration::Group::Consumer, collectSettings, &start);
+        (void)g_rockConfig.visitSettings(config::Group::Player, collectSettings, &start);
         return start;
     }
 
@@ -17,7 +17,7 @@ namespace rock::setup_wizard::settings
     {
         for (const auto& value : writes) {
             std::string error;
-            if (g_rockConfig.persistSetting(api::configuration::Group::Consumer, value.section.c_str(), value.key.c_str(),
+            if (g_rockConfig.persistSetting(config::Group::Player, value.section.c_str(), value.key.c_str(),
                     value.value.c_str(), error)) {
                 result.written.push_back(value);
                 continue;

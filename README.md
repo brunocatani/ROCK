@@ -36,8 +36,8 @@ What it provides:
 - **Weapon handling** - firing and support grips taken from each weapon's animation, hand switching, recoil applied to the firing hand, scopes, bipods, a reverse grip for one-handed melee weapons, and one ammo counter per held weapon.
 - **Physical items** - grenades, aid items, eating and drinking at your mouth, grabbing to equip, and stashing a weapon at your shoulder.
 - **Controls** - a button layout (`[ControllerInput.Left]` and `[ControllerInput.Right]`) that ROCK, its add-ons and the game all follow, plus SteamVR binding templates for Index, Vive wands and Steam Frame controllers.
-- **Configuration** - typed TOML settings that reload while the game runs, with in-game pages in RPS UI Framework's settings menu (from RobCo PALM's Config or the RPS UI Settings holotape).
-- **Provider API** - 13 interfaces that other mods use to read hands and weapons and to request grabs, equips and input.
+- **Configuration** - typed TOML settings that reload while the game runs, edited in game on ROCK's page in Mods Config FO4 VR.
+- **Provider API** - 12 interfaces that other mods use to read hands and weapons and to request grabs, equips and input.
 
 ROCK is the base of the RPS suite: [SCISSORS](https://github.com/brunocatani/SCISSORS) adds NPC interactions, [PAPER](https://github.com/brunocatani/PAPER) adds reload animations, and RobCo PALM, RPS UI Framework and ROCK Wall Climbing build on it.
 
@@ -49,7 +49,8 @@ ROCK is the base of the RPS suite: [SCISSORS](https://github.com/brunocatani/SCI
 - [VR Address Library for F4SEVR](https://www.nexusmods.com/fallout4/mods/64879).
 - [FRIK](https://www.nexusmods.com/fallout4/mods/53464) 0.79.1 or newer, with FRIK API 2.3. ROCK runs inside FRIK's frame phases and refuses an older FRIK API.
 - [RPS UI Framework](https://www.nexusmods.com/fallout4/mods/108951). ROCK's setup wizard, grab indicators and ammo counters draw through it; without it they are not shown.
-- Recommended: [RobCo PALM](https://www.nexusmods.com/fallout4/mods/108954), the wheel menu that opens the settings menu; without it the RPS UI Settings holotape opens the same menu.
+- Recommended: [Mods Config FO4 VR](https://www.nexusmods.com/games/fallout4/mods/110945), the in-game menu with ROCK's settings page; without it, edit `ROCK.toml` by hand.
+- Recommended: [RobCo PALM](https://www.nexusmods.com/fallout4/mods/108954), the wheel menu.
 - Recommended: [Buffout 4 NG and VR](https://www.nexusmods.com/fallout4/mods/64880) for engine fixes and a crash logger, and Asciim0v's [Faster Loadscreens](https://www.nexusmods.com/fallout4/mods/102233) for faster loading.
 - **Do not use High FPS Physics Fix.** It is incompatible with ROCK and tanks the frame rate. Use Faster Loadscreens for faster loading instead.
 - Every mod that builds on ROCK must be a version made for ROCK 1.0. ROCK, RPS UI Framework, RobCo PALM, PAPER and the ROCK add-ons are released together; install them together.
@@ -80,7 +81,7 @@ Menu names can differ between SteamVR versions. After that, the `[ControllerInpu
 
 ### The setup wizard
 
-ROCK's setup wizard asks what matters on your first start. Its first page asks which controllers you play with and says what ROCK does for them: Index controllers and Vive wands get ROCK's SteamVR binding. The next pages set the main choices by topic (grabbing, holding weapons, aiming and shooting, grenades and healing, the stick click and menus), then a review saves them. "Use recommended settings" sets the binding and ROCK's recommendation for every option at once. Closing the wizard saves no option, but still sets ROCK's binding for the controllers SteamVR reports unless you chose others. Open it again any time from the settings menu (RobCo PALM's Config or the RPS UI Settings holotape): the ROCK page's Setup wizard button.
+ROCK's setup wizard asks what matters on your first start. Its first page asks which controllers you play with and says what ROCK does for them: Index controllers and Vive wands get ROCK's SteamVR binding. The next pages set the main choices by topic (grabbing, holding weapons, aiming and shooting, grenades and healing, the stick click and menus), then a review saves them. "Use recommended settings" sets the binding and ROCK's recommendation for every option at once. Closing the wizard saves no option, but still sets ROCK's binding for the controllers SteamVR reports unless you chose others. To see it again, set `ShownEdition` to 0 (below).
 
 Everything else, including which button does what (the `[Bindings]` table), is in `ROCK.toml` and the settings menu.
 
@@ -103,7 +104,7 @@ My Games/Fallout4VR/Mods_Config/ROCK/ROCK_Developer.toml
 
 Both are [TOML](https://toml.io) files. Options are grouped into tables such as `[Grabbing]` or `[ControllerInput.Left]`, and values are typed: `true`/`false`, whole numbers, decimal numbers, `"text"` and lists of three numbers such as `[0.0, 7.0, -7.0]` for offsets. Help for each option sits above it on lines starting with `##`.
 
-`ROCK.toml` is created from the compiled defaults when it is missing. When ROCK starts it adds options the file lacks, refreshes the `##` help lines and moves options it no longer reads to a commented block at the end. Your own notes on lines starting with a single `#` above an option are kept. `ROCK_Developer.toml` is optional and holds only developer overrides. Both files reload while the game runs. The ROCK pages of RPS UI Framework's settings menu edit them through ROCK's configuration API.
+`ROCK.toml` is created from the compiled defaults when it is missing. When ROCK starts it adds options the file lacks, refreshes the `##` help lines and moves options it no longer reads to a commented block at the end. Your own notes on lines starting with a single `#` above an option are kept. `ROCK_Developer.toml` is optional and holds only developer overrides. Both files reload while the game runs. ROCK's page in Mods Config FO4 VR edits `ROCK.toml`; `ROCK_Developer.toml` is edited by hand, with the options listed in [ROCK_Developer_example.toml](data/config/ROCK_Developer_example.toml).
 
 If a file has a syntax error, ROCK writes the file name, line and column to `ROCK.log`, keeps the values it last read from that file and leaves the file untouched until it is fixed. A value of the wrong type (text for a number, for example) is logged with its line, and that option keeps its last value.
 
@@ -111,7 +112,7 @@ If a file has a syntax error, ROCK writes the file name, line and column to `ROC
 
 ## Building mods with ROCK
 
-ROCK 1.0 publishes **provider API 2.0**: 13 interfaces your F4SE plugin discovers at runtime from `ROCK.dll`. The headers are in [include/ROCK/](include/ROCK/); take them from the release tag you ship against. They need only the C++20 standard library, and there is nothing to link.
+ROCK 1.0 publishes **provider API 2.0**: 12 interfaces your F4SE plugin discovers at runtime from `ROCK.dll`. The headers are in [include/ROCK/](include/ROCK/); take them from the release tag you ship against. They need only the C++20 standard library, and there is nothing to link.
 
 **Updating a mod built for ROCK 0.92?** [docs/api/Migration.md](docs/api/Migration.md) maps every provider API 1 call, record and flag to its replacement. Coding agents can follow the [rock-1.0-migration skill](skills/rock-1.0-migration/SKILL.md), which also covers PAPER, RPS UI Framework and RobCo PALM.
 
@@ -171,7 +172,6 @@ Call `client.close()` on the game thread before your plugin's callback data goes
 | [Animation](docs/api/Animation.md) | Run code at fixed points of each animation frame, take over arm, hand and weapon poses. |
 | [Input](docs/api/Input.md) | Read controller buttons, suppress ROCK and game input on a hand, lease the reload button. |
 | [PlayerController](docs/api/PlayerController.md) | Read the player's character controller and request native jumps. |
-| [Configuration](docs/api/Configuration.md) | Read and change ROCK's settings. |
 | [NativeInteraction](docs/api/NativeInteraction.md) | Extend ROCK's physics step with your own Havok bodies and weapon driving. |
 | [Storage](docs/api/Storage.md) | Build holsters, backpacks and stashes. |
 

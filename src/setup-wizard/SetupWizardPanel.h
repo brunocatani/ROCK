@@ -8,9 +8,9 @@
 #include <string>
 #include <vector>
 
-#include <ROCK/Configuration.h>
 #include <RPS_UI_Framework/Framework.h>
 
+#include "config/RockSettings.h"
 #include "physics-interaction/input/FunctionBindingPolicy.h"
 #include "setup-wizard/SetupWizardPolicy.h"
 #include "setup-wizard/SteamVrBinding.h"
@@ -62,9 +62,9 @@ namespace rock::setup_wizard
         steamvr_binding::State steamVr;
     };
 
-    // A settings visitor (RockConfig::visitSettings over the Consumer group) that fills
+    // A settings visitor (RockConfig::visitSettings over the player group) that fills
     // `start`, a SessionStart*: the wizard's options in page order and the binding offer.
-    void collectSettings(const api::configuration::Setting& setting, void* start) noexcept;
+    void collectSettings(const config::Setting& setting, void* start) noexcept;
 
     // One settings value the finish writes.
     struct SettingWrite

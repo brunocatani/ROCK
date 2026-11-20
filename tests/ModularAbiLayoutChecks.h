@@ -3,7 +3,6 @@
 #include <ROCK/Abi.h>
 #include <ROCK/Animation.h>
 #include <ROCK/Collision.h>
-#include <ROCK/Configuration.h>
 #include <ROCK/Core.h>
 #include <ROCK/Discovery.h>
 #include <ROCK/Grab.h>
@@ -403,23 +402,6 @@ static_assert(offsetof(rock::api::collision::HandCollisionAvailability, dynamicC
 static_assert(offsetof(rock::api::collision::HandCollisionAvailability, pairSuppressionLeaseCount) == 68);
 static_assert(offsetof(rock::api::collision::HandCollisionAvailability, collisionEnabledBodyCount) == 72);
 static_assert(offsetof(rock::api::collision::HandCollisionAvailability, filterKnownBodyCount) == 76);
-static_assert(sizeof(rock::api::configuration::Setting) == 56);
-static_assert(alignof(rock::api::configuration::Setting) == 8);
-static_assert(offsetof(rock::api::configuration::Setting, section) == 0);
-static_assert(offsetof(rock::api::configuration::Setting, key) == 8);
-static_assert(offsetof(rock::api::configuration::Setting, value) == 16);
-static_assert(offsetof(rock::api::configuration::Setting, defaultValue) == 24);
-static_assert(offsetof(rock::api::configuration::Setting, category) == 32);
-static_assert(offsetof(rock::api::configuration::Setting, description) == 40);
-static_assert(offsetof(rock::api::configuration::Setting, type) == 48);
-static_assert(offsetof(rock::api::configuration::Setting, overridden) == 52);
-static_assert(sizeof(rock::api::configuration::Api) == 32);
-static_assert(alignof(rock::api::configuration::Api) == 8);
-static_assert(offsetof(rock::api::configuration::Api, revision) == 0);
-static_assert(offsetof(rock::api::configuration::Api, visit) == 8);
-static_assert(offsetof(rock::api::configuration::Api, setValue) == 16);
-static_assert(offsetof(rock::api::configuration::Api, openSetupWizard) == 24);
-static_assert(rock::api::configuration::kMajor == 2 && rock::api::configuration::kMinor == 0);
 static_assert(sizeof(rock::api::core::Registration) == 72);
 static_assert(alignof(rock::api::core::Registration) == 4);
 static_assert(offsetof(rock::api::core::Registration, size) == 0);

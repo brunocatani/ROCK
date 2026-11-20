@@ -84,9 +84,9 @@ Check the mod's logic against these even when the code compiles:
 - **ROCK stick clicks are per hand.** Held placement and the bipod reserve one
   hand's click (`ReserveRightClick`/`ReserveLeftClick`,
   `RightInputReserved`/`LeftInputReserved`).
-- **ROCK settings** are TOML tables and keys without type letters
-  (`Grabbing` / `FarGrabStyle`), matched exactly. Read the catalog through
-  Configuration `visit` instead of hard-coding old INI names.
+- **ROCK settings are not readable by other mods.** The Configuration
+  interface (13) is retired; players edit ROCK's settings in Mods Config FO4 VR.
+  Remove code that read or wrote them.
 - **ROCK draws nothing for other mods.** Debug drawing moves to RPS UI's
   WorldDraw, and the mod must keep working without RPS UI.
 - **RPS UI owns Dear ImGui.** Panel code stops creating contexts, backends and

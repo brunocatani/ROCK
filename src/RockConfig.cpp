@@ -8,7 +8,7 @@
 
 namespace
 {
-    using rock::api::configuration::Group;
+    using rock::config::Group;
 
     std::filesystem::path resolveConfigDirectory()
     {
@@ -106,23 +106,9 @@ namespace rock
         std::scoped_lock lock(_storeMutex);
         if (!_store || !visitor || configRevision() == 0)
             return false;
-        if (group != Group::Consumer && group != Group::Developer)
-            return false;
         for (const auto& setting : _store->settings()) {
-            if (setting.group != config::storeGroup(group))
-                continue;
-            const auto published = config::apiSetting(setting);
-            const api::configuration::Setting record{
-                setting.table.c_str(),
-                setting.key.c_str(),
-                published.value.c_str(),
-                published.defaultValue.c_str(),
-                setting.category.c_str(),
-                setting.description.c_str(),
-                published.type,
-                config::Store::isDefault(setting, setting.value) ? 0u : 1u,
-            };
-            visitor(record, context);
+            if (setting.group == config::storeGroup(group))
+                visitor(setting, context);
         }
         return true;
     }
@@ -135,15 +121,7 @@ namespace rock
             error = "ROCK configuration is unavailable";
             return false;
         }
-        const auto* setting = _store->find(section, key);
-        const auto storeValue = setting ? config::storeValueFromApi(*setting, value) :
-                                          std::expected<std::string, std::string>(std::string(value));
-        if (!storeValue) {
-            error = storeValue.error();
-            ROCK_LOG_WARN(Config, "Cannot persist [{}] {}: {}", section, key, error);
-            return false;
-        }
-        if (!_store->setValue(config::storeGroup(group), section, key, *storeValue)) {
+        if (!_store->setValue(config::storeGroup(group), section, key, value)) {
             error = _store->error();
             ROCK_LOG_WARN(Config, "Cannot persist [{}] {}: {}", section, key, error);
             return false;

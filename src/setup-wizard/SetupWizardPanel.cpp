@@ -569,20 +569,18 @@ namespace rock::setup_wizard
 
     // ---- settings ------------------------------------------------------------------------------
 
-    void collectSettings(const api::configuration::Setting& setting, void* opaque) noexcept
+    void collectSettings(const config::Setting& setting, void* opaque) noexcept
     {
         auto& start = *static_cast<SessionStart*>(opaque);
-        if (!setting.section || !setting.key) return;
-        const std::string_view section{ setting.section }, key{ setting.key };
+        const std::string_view section{ setting.table }, key{ setting.key };
         try {
             if (section == "ControllerInput" && key == "OfferSteamVRBinding") {
-                start.offeringBinding = setting.value && std::string_view{ setting.value } == "true";
+                start.offeringBinding = setting.value == "true";
                 return;
             }
             for (const auto& option : wp::kOptions) {
                 if (option.section != section || option.key != key) continue;
-                OptionState state{ &option, setting.value ? setting.value : "", {},
-                    setting.defaultValue ? setting.defaultValue : "" };
+                OptionState state{ &option, setting.value, {}, setting.defaultValue };
                 state.original = state.value;
                 start.options.push_back(std::move(state));
             }

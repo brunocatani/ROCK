@@ -14,7 +14,7 @@
  * finishing the wizard does with the player's controllers.
  *
  * The wizard asks only what a player should decide on the first start. Every
- * other setting, and every button binding, stays in ROCK.toml and PALM's Config.
+ * other setting, and every button binding, stays in ROCK.toml and Mods Config's page.
  * Each option names a ROCK.toml setting; its choices are values that setting takes,
  * one of them its default (tests/SetupWizardTests.cpp checks both against the
  * catalog and the shipped example file).

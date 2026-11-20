@@ -445,8 +445,6 @@ namespace rock
         rockFarGrabStyle = far_pull_gesture::sanitizeMode(
             static_cast<int>(ini.integer("Grabbing", "FarGrabStyle", rockFarGrabStyle)));
         rockGrabDirection = readGrabDirection(ini, rockGrabDirection);
-        rockEnableDeveloperSettings =
-            ini.boolean("Developer", "EnableDeveloperSettings", rockEnableDeveloperSettings);
         rockQuickLootPanelPlacement =
             static_cast<int>(ini.integer("Prompts", "QuickLootPanelPlacement", rockQuickLootPanelPlacement));
         if (rockQuickLootPanelPlacement < 1 || rockQuickLootPanelPlacement > 3) {

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **ROCK's settings move to Mods Config FO4 VR.** ROCK's page there edits `ROCK.toml`;
+  RPS UI Framework's settings menu (RobCo PALM's Config) no longer has ROCK pages.
+  `ROCK_Developer.toml` is edited by hand, and `[Developer] EnableDeveloperSettings`
+  is gone.
+- **For mod authors: the Configuration interface (13) is retired.** ROCK refuses it and
+  logs the mod that asks; there is no replacement call.
+
 ## v1.0.3
 
 ### Added

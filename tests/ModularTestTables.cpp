@@ -144,15 +144,6 @@ namespace rock::api::playercontroller
     }
 }
 
-namespace rock::api::configuration
-{
-    const Api& table() noexcept
-    {
-        static const Api value{};
-        return value;
-    }
-}
-
 namespace rock::native_interaction_service
 {
     const api::native_interaction::Api& table() noexcept

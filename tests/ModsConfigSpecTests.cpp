@@ -32,8 +32,6 @@ namespace
     constexpr std::string_view kLeftOut[] = {
         // Written by the setup wizard to remember which edition it showed.
         "SetupWizard.ShownEdition",
-        // Shows the ROCK Dev page in RPS UI Framework's settings menu only.
-        "Developer.EnableDeveloperSettings",
     };
 
     void require(bool condition, const std::string& message)
@@ -241,7 +239,7 @@ int main()
             const auto metadata = std::find_if(std::begin(kSettingMetadata), std::end(kSettingMetadata),
                 [&](const SettingMetadata& entry) { return settingPath(entry.table, entry.key) == name; });
             require(metadata != std::end(kSettingMetadata), std::format("{} is not a ROCK setting", name));
-            require(metadata->group == rock::api::configuration::Group::Consumer,
+            require(metadata->group == Group::Player,
                 std::format("{} is a developer setting, kept in ROCK_Developer.toml", name));
             const auto compiled = std::find_if(defaults.begin(), defaults.end(),
                 [&](const SettingDefault& entry) { return settingPath(entry.table, entry.key) == name; });
@@ -253,13 +251,13 @@ int main()
             require(!shown.contains(std::string(leftOut)), std::format("{} is left out but on the page", leftOut));
             require(std::any_of(std::begin(kSettingMetadata), std::end(kSettingMetadata),
                         [&](const SettingMetadata& entry) {
-                            return entry.group == rock::api::configuration::Group::Consumer &&
+                            return entry.group == Group::Player &&
                                    settingPath(entry.table, entry.key) == leftOut;
                         }),
                 std::format("{} is left out but is not a ROCK.toml setting", leftOut));
         }
         for (const auto& entry : kSettingMetadata) {
-            if (entry.group != rock::api::configuration::Group::Consumer)
+            if (entry.group != Group::Player)
                 continue;
             const auto name = settingPath(entry.table, entry.key);
             require(shown.contains(name) || std::ranges::find(kLeftOut, std::string_view(name)) != std::end(kLeftOut),

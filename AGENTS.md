@@ -6,7 +6,7 @@ To change ROCK: read [Architecture](#architecture), find the task in [Where to s
 
 ## Building a mod on ROCK
 
-- Provider API 2.0: 13 interfaces in `include/ROCK/`, standard library only, nothing to link. Add ROCK's `include/` through a CMake cache variable such as `ROCK_INCLUDE_DIR`, resolve `ROCKAPI_QueryInterfaceV1` from `ROCK.dll` and connect with `rock::api::Client`. Never include `src/` headers or copy ROCK's headers.
+- Provider API 2.0: 12 interfaces in `include/ROCK/`, standard library only, nothing to link. Add ROCK's `include/` through a CMake cache variable such as `ROCK_INCLUDE_DIR`, resolve `ROCKAPI_QueryInterfaceV1` from `ROCK.dll` and connect with `rock::api::Client`. Never include `src/` headers or copy ROCK's headers.
 - Read `docs/api/Overview.md`, then each interface's page; they state every call's thread, permission and limits.
 - A mod built for ROCK 0.92: follow `skills/rock-1.0-migration/SKILL.md` (it also covers PAPER, RPS UI Framework and RobCo PALM) and `docs/api/Migration.md`.
 - Without ROCK, turn ROCK features off and keep running. Request exactly the versions your headers declare and never probe: every version refusal is logged in `ROCK.log` with your DLL.
@@ -22,7 +22,7 @@ To change ROCK: read [Architecture](#architecture), find the task in [Where to s
 | `tests/` | Tests |
 | `preview/` | The setup wizard preview (`ROCKSetupWizardPreview.exe`): the wizard on the desktop, without the game |
 | `data/config/` | Example settings files, generated from the catalog |
-| `data/mod/` | Game data for the mod package, if any |
+| `data/mod/` | Game data for the mod package: ROCK's Mods Config FO4 VR page (`ModsConfigFO4/Config/ROCK/spec.json`) |
 | `steamvr_bindings/` | SteamVR binding templates; shipped in the package and embedded in `ROCK.dll` for the setup wizard |
 | `third_party/openvr/` | Vendored OpenVR ABI |
 | `cmake/` | Version resource, test registration, packaging |
@@ -147,7 +147,7 @@ Under `src/physics-interaction/` unless the path says otherwise.
 | Native HUD placement | `native/player/` |
 | Character controller | `native/player/CharacterControllerRuntime.cpp` |
 | Native crashes in Havok or ragdolls | `native/safety/` |
-| A setting | `src/config/SettingMetadata.h`, `src/RockConfigLoad.cpp`, `src/RockConfig.h`, then regenerate the examples |
+| A setting | `src/config/SettingMetadata.h`, `src/RockConfigLoad.cpp`, `src/RockConfig.h`, then regenerate the examples and place a `ROCK.toml` option in `spec.json` or its `kLeftOut` (`ROCKModsConfigSpecTests` fails until you do) |
 | The setup wizard | `src/setup-wizard/SetupWizardPanel.cpp` (pages), `SetupWizard.cpp` (game host); try it with the preview |
 | A provider API call | Its header, its `docs/api/` page, then [Provider API path](#provider-api-path) |
 | Frame-time cost | `performance/PerformanceProfiler.cpp` |
@@ -185,7 +185,7 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp` for engine math. `
 - **NPC interactions**: SCISSORS, through the NativeInteraction interface, owns its NPC bodies, constraints, blade and limb policy. ROCK keeps the shared mechanisms (native allocation, callback lifetime, hand and weapon authority, grab execution, native safety) and has no NPC settings.
 - **World drawing**: RPS UI Framework. ROCK draws through it (`visual/WorldDrawClient.cpp`, `visual/AmmoCounters.cpp`) and has no renderer.
 - **Reload and manual-cycle animation**: PAPER.
-- **Settings screens**: RPS UI Framework's settings menu (opened from its holotape or RobCo PALM's Config), through the Configuration interface. ROCK owns only the setup wizard. Nothing else writes ROCK's settings files.
+- **Settings screens**: Mods Config FO4 VR, from ROCK's `spec.json`. It writes `ROCK.toml` in place and ROCK's file watcher reloads it. ROCK owns only the setup wizard. Nothing else writes ROCK's settings files; `ROCK_Developer.toml` is edited by hand.
 
 ## Invariants
 
@@ -214,7 +214,6 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp` for engine math. `
 
 - `src/config/SettingMetadata.h` is the single source of every option (table, key, owning file, category, help); `RockConfigLoad.cpp` gives its type and default. Each option belongs to exactly one of `ROCK.toml` (players) and `ROCK_Developer.toml` (developer overrides only). Startup fails when catalog and loader disagree.
 - After any catalog change, regenerate `data/config/*_example.toml` with `ROCKConfigurationStoreTests --write-examples data/config`; the test fails when they differ. ROCK never reads the examples.
-- RPS Framework's settings store reads, organizes and writes the files (`src/config/RockSettings.cpp`). A file that does not parse is never rewritten, keeps its last values and refuses API writes until fixed. Both files reload while the game runs.
+- RPS Framework's settings store reads, organizes and writes the files (`src/config/RockSettings.cpp`). A file that does not parse is never rewritten, keeps its last values and refuses writes until fixed. Both files reload while the game runs.
 - Old `ROCK.ini` files migrate once, only when `ROCK.toml` is missing, through the frozen table `src/config/LegacyIniMigrationTable.inl` (never regenerated), and are deleted only after the TOML files read back.
 - A renamed TOML key gets a row in the frozen `kRenamedKeys` (`src/config/RockSettings.cpp`), which carries its value to the new key at startup, and the INI rows that targeted it follow the new name. A value whose form changed gets a frozen conversion (`kConversions`, there): it turns old `[Bindings]` strings and the retired hold times into binding tables.
-- Options in Mods Config's table forms reach the Configuration API as types RPS UI knows (`apiSetting`): a `Transform` (`{ pos = [x, y, z] }`) as a `Float3` position, a `[Bindings]` CommonFramework table as a `String` in the one-line form (`primary hold a 0.3`). Publish only types RPS UI knows.

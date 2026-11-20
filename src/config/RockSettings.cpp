@@ -1,5 +1,4 @@
 #include "config/RockSettings.h"
-#include "config/SettingMetadata.h"
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/input/FunctionBindingText.h"
@@ -104,38 +103,10 @@ namespace rock::config
         // Each binding's conversion from the old string form and the retired hold times. Frozen like the INI table.
         constexpr auto kConversions = bindingConversions(std::make_index_sequence<fb::kFunctionCount>{});
 
-        // The function a [Bindings] key binds, or nullopt for another option.
-        std::optional<fb::Function> bindingFunction(const Setting& setting)
-        {
-            if (setting.table != "Bindings")
-                return std::nullopt;
-            for (std::size_t f = 0; f < fb::kFunctionCount; ++f) {
-                if (fb::functionKey(static_cast<fb::Function>(f)) == setting.key)
-                    return static_cast<fb::Function>(f);
-            }
-            return std::nullopt;
-        }
-
-        // A binding table as the one-line form; a table ROCK cannot read is published as written.
-        std::string bindingLine(fb::Function function, const std::string& table)
-        {
-            const auto parsed = binding_text::parseBindingTable(function, table);
-            return parsed ? binding_text::formatBindingLine(function, parsed->value) : table;
-        }
-
-        // A transform's position as canonical Float3 text; no pos is no move.
-        std::string positionText(const std::string& transform)
-        {
-            const auto position =
-                parseTransform(transform).value_or(Transform{}).position.value_or(std::array<float, 3>{});
-            return normalizeValue(ValueType::Float3, std::format("{}, {}, {}", position[0], position[1], position[2]))
-                .value_or("[0.0, 0.0, 0.0]");
-        }
-
         constexpr std::string_view kPlayerHeader =
             "## ROCK.toml - player options\n"
-            "## Change these in game in the RobCo PALM wheel menu, or edit this file. Changes are picked up while the "
-            "game runs.\n"
+            "## Change these in game on ROCK's page in Mods Config FO4 VR, or edit this file. Changes are picked up "
+            "while the game runs.\n"
             "## Each option has its help above it. Options missing from this file use their defaults.\n"
             "## Values are typed: true or false, whole numbers, decimal numbers, \"text in quotes\", lists such as "
             "[0.0, 1.0, 2.0]\n"
@@ -149,7 +120,9 @@ namespace rock::config
             "changed.\n";
         constexpr std::string_view kDeveloperHeader =
             "## ROCK_Developer.toml - developer options\n"
-            "## PALM saves only developer options that differ from their defaults. Resetting an option removes it,\n"
+            "## Edit this file by hand: create it if needed, and add an option under its [table] line, as\n"
+            "## data/config/ROCK_Developer_example.toml in ROCK's source lists them with their help.\n"
+            "## ROCK keeps only options that differ from their defaults: one set to its default is removed,\n"
             "## and this file is removed when no options remain. Changes are picked up while the game runs.\n"
             "## If this file cannot be read, ROCK.log names the line and ROCK keeps the last values it read.\n"
             "## When ROCK starts it rewrites its help lines (the lines starting with ##) and moves options it no "
@@ -197,54 +170,5 @@ namespace rock::config
             std::move(definitions),
             RPS::Settings::LegacyIni{ { directory / "ROCK.ini", directory / "ROCK_Developer.ini" }, kLegacyKeys },
             kRenamedKeys, kConversions);
-    }
-
-    /**
-     * A setting as the Configuration API publishes it. The API has no transform or table type, and a consumer that
-     * meets an unknown type drops every setting: a Transform is published as its position, a Float3 (ROCK's
-     * transforms hold only a position), and a binding table as a String in the one-line form.
-     */
-    ApiSetting apiSetting(const Setting& setting)
-    {
-        if (setting.type == ValueType::Transform)
-            return { api::configuration::ValueType::Float3, positionText(setting.value), positionText(setting.defaultValue) };
-        if (setting.type == ValueType::Table) {
-            const auto function = bindingFunction(setting);
-            if (!function)
-                return { api::configuration::ValueType::String, setting.value, setting.defaultValue };
-            return { api::configuration::ValueType::String, bindingLine(*function, setting.value),
-                bindingLine(*function, setting.defaultValue) };
-        }
-        return { static_cast<api::configuration::ValueType>(setting.type), setting.value, setting.defaultValue };
-    }
-
-    /**
-     * The store value of a Configuration API write. A Float3 sent to a Transform replaces its position and keeps the
-     * parts the file has besides. A binding takes the one-line form (or its table) and is refused with the reason
-     * when ROCK cannot read it. Any other value is passed on for the store to check.
-     */
-    std::expected<std::string, std::string> storeValueFromApi(const Setting& setting, std::string_view value)
-    {
-        if (setting.type == ValueType::Table) {
-            const auto function = bindingFunction(setting);
-            if (!function)
-                return std::string(value);
-            auto parsed = binding_text::parseBindingLine(*function, value);
-            if (!parsed) {
-                if (const auto table = binding_text::parseBindingTable(*function, value))
-                    parsed = table;
-            }
-            if (!parsed)
-                return std::unexpected(std::format("Bindings.{} cannot be '{}': {}", setting.key, value, parsed.error()));
-            return binding_text::formatBindingTable(*function, parsed->value);
-        }
-        if (setting.type != ValueType::Transform)
-            return std::string(value);
-        const auto position = parseFloat3(value);
-        if (!position)
-            return std::string(value);
-        auto transform = parseTransform(setting.value).value_or(Transform{});
-        transform.position = *position;
-        return formatTransform(transform);
     }
 }

@@ -7,8 +7,7 @@
  * goes through ROCK's settings store like any other change, so the bindings
  * and options apply at once.
  *
- * It opens from PALM's Config (the ROCK page) and from
- * Configuration::openSetupWizard, and by itself once per game start when this ROCK
+ * It opens by itself once per game start when this ROCK
  * brings a newer edition of it ([SetupWizard] ShownEdition) or a SteamVR binding to
  * offer, 10 seconds after the game is free (AutoOpenGate.h). While open it captures the
  * controllers through RPS UI, so the game and ROCK's gameplay ignore them, and

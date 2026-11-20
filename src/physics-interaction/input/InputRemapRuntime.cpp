@@ -3367,8 +3367,8 @@ namespace rock::input_remap_runtime
             }
             moved = true;
             ROCK_LOG_INFO(Input, "Binding {}: {} (default {})", fb::functionKey(function),
-                function_binding_text::formatBindingLine(function, { binding, g_rockConfig.rockBindingSeconds[index] }),
-                function_binding_text::formatBindingLine(function, function_binding_text::defaultBinding(function)));
+                function_binding_text::formatBindingTable(function, { binding, g_rockConfig.rockBindingSeconds[index] }),
+                function_binding_text::formatBindingTable(function, function_binding_text::defaultBinding(function)));
         }
         if (!moved && firstPublication) {
             ROCK_LOG_INFO(Input, "Bindings: every function on its default control");

@@ -60,9 +60,6 @@ namespace rock
         bool rockOfferSteamVRBinding = true;
         int rockSetupWizardShownEdition = 0;
         int rockFarGrabStyle = static_cast<int>(far_pull_gesture::Mode::Immediate);
-        // Developer.EnableDeveloperSettings: the settings menu shows the ROCK Dev page. ROCK itself
-        // reads nothing from it.
-        bool rockEnableDeveloperSettings = false;
         // Where the quick loot panel appears; see native_quick_loot_panel::Placement.
         // 1: right hand (game default); 2: closer hand; 3: at the container.
         int rockQuickLootPanelPlacement = 2;
@@ -517,11 +514,11 @@ namespace rock
             return _configRevision.load(std::memory_order_acquire);
         }
 
-        // Receives each setting of a group; the record and its strings are
-        // borrowed for the call.
-        using SettingVisitor = void (*)(const api::configuration::Setting&, void*) noexcept;
-        [[nodiscard]] bool visitSettings(api::configuration::Group group, SettingVisitor visitor, void* context) const;
-        [[nodiscard]] bool persistSetting(api::configuration::Group group, const char* section, const char* key,
+        // Receives each setting of a group, its value as the file's canonical
+        // text; the setting is borrowed for the call.
+        using SettingVisitor = void (*)(const config::Setting&, void*) noexcept;
+        [[nodiscard]] bool visitSettings(config::Group group, SettingVisitor visitor, void* context) const;
+        [[nodiscard]] bool persistSetting(config::Group group, const char* section, const char* key,
             const char* value, std::string& error);
 
         void processPendingConfigReload();

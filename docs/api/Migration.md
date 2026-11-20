@@ -29,7 +29,7 @@ interface's page hold the full 2.0 contract; this page lists what changed from
   `InputV1_5.h`, `TouchV1_1.h`, `WeaponPartsV1_2.h` to `WeaponPartsV1_7.h`,
   `NativeInteractionV1_1.h`).
 - Delete includes of headers that no longer exist: `References.h`,
-  `Diagnostics.h`, and from pre-release SDK builds `EjectionContacts.h`,
+  `Diagnostics.h`, `Configuration.h`, and from pre-release SDK builds `EjectionContacts.h`,
   `EjectionContactsV2.h`, `ObjectRest.h`, `EquipPickup.h`, `StorageDisplay.h`,
   `StorageFeedback.h`, `StorageInteraction.h`, `StorageInteractionV1_1.h`,
   `InventoryDisplay.h`, `InventoryDisplayV1_1.h`, `StashConversion.h`. The
@@ -254,22 +254,12 @@ Interface 12 is refused. ROCK no longer draws anything for other mods:
 calls have no replacement in ROCK. Draw lines, spheres, text and meshes through
 RPS UI Framework's WorldDraw interface, and keep working when RPS UI is absent.
 
-### Configuration (13)
+### Configuration (13): retired
 
-- `ApiV1`, `SettingV1`, `VisitorV1` and `PermissionV1` lose `V1`. The table is
-  `revision`, `visit`, `setValue` and the new `openSetupWizard`.
-- ROCK's settings files are `ROCK.toml` and `ROCK_Developer.toml`.
-  `Setting::section` is now a TOML table path and keys lose their type letter:
-  the 0.92 `[PhysicsInteraction] iFarGrabMode` is table `Grabbing`, key
-  `FarGrabStyle`. Table and key match exactly and case-sensitively; the old INI
-  spellings are not accepted. Read `visit` for the current catalog instead of
-  hard-coding names.
-- `ValueType::Float3` is new: one setting holds `[x, y, z]` (or
-  `[pitch, yaw, roll]`) where 0.92 had three keys. Float values always carry a
-  `.` or an exponent.
-- `setValue` is refused while the target file has a syntax error.
-- Many settings were moved, renamed or removed; ROCK's `CHANGELOG.md` lists
-  them.
+Interface 13 is refused at every major, and `Configuration.h` is gone. Players
+edit ROCK's settings in Mods Config FO4 VR, which writes `ROCK.toml`
+(`Documents\My Games\Fallout4VR\Mods_Config\ROCK`). A mod that read or changed
+ROCK's settings stops doing so; ROCK has no replacement call.
 
 ### New interfaces
 

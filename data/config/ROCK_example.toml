@@ -395,10 +395,3 @@ VanillaGunBashSpeed = 400.0
 ## 0 = Trace. 1 = Debug. 2 = Info. 3 = Warn. 4 = Error. 5 = Critical. 6 = Off.
 ## Trace and Debug write a lot and can cost frame time; keep Info for normal play.
 LogLevel = 2
-
-## === 13. Developer Settings ===
-[Developer]
-## Developer Settings
-## Shows the ROCK Dev page in the settings menu, with the developer and tuning options of ROCK_Developer.toml.
-## False: the page stays hidden; values already set there still apply.
-EnableDeveloperSettings = false

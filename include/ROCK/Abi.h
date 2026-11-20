@@ -87,6 +87,7 @@ namespace rock::api {
         // 10 (References) is retired: its queries are part of Grab. Never reuse.
         References=10,
         // 12 (Diagnostics) is retired: other mods draw through RPS UI Framework. Never reuse.
+        // 13 (Configuration) is retired: ROCK's settings are edited in Mods Config FO4 VR. Never reuse.
         PlayerController=11, Diagnostics=12, Configuration=13, NativeInteraction=14, Storage=15
     };
     struct ReferenceKey {

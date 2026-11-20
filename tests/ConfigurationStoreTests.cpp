@@ -2,8 +2,8 @@
 // organizing, faults and the developer file): the catalog and the loader
 // agree, the example files are what ROCK writes, documented defaults are the
 // runtime defaults, ROCK's old INI keys and renamed TOML keys migrate to the
-// right options, transforms reach the Configuration API as Float3, and
-// [Bindings] holds CommonFramework tables, converted from ROCK's old strings.
+// right options, and [Bindings] holds CommonFramework tables, converted from
+// ROCK's old strings.
 #include "RockConfig.h"
 #include "config/RockSettings.h"
 #include "physics-interaction/input/FunctionBindingText.h"
@@ -121,8 +121,8 @@ namespace
 
     bool near(float value, float expected) { return value > expected - 1.0e-4f && value < expected + 1.0e-4f; }
 
-    // The [Bindings] tables are a configuration contract: CommonFramework's words with ROCK's limits, every
-    // default reading back as itself, and the one-line form the Configuration API carries.
+    // The [Bindings] tables are a configuration contract: CommonFramework's words with ROCK's limits, and every
+    // default reading back as itself.
     void bindingTextChecks()
     {
         namespace fb = rock::function_binding_policy;
@@ -132,8 +132,7 @@ namespace
             const auto function = static_cast<Function>(f);
             const auto standard = text::defaultBinding(function);
             const auto table = text::parseBindingTable(function, text::formatBindingTable(function, standard));
-            const auto line = text::parseBindingLine(function, text::formatBindingLine(function, standard));
-            require(table && table->value == standard && line && line->value == standard,
+            require(table && table->value == standard,
                 "a default binding does not read back as itself");
         }
         const auto read = [](Function function, std::string_view table) { return text::parseBindingTable(function, table); };
@@ -166,15 +165,10 @@ namespace
         require(none && !none->value.binding.bound() &&
                     text::formatBindingTable(Function::Palm, none->value) == "{ type = \"none\" }",
             "an unbound function did not read and write back");
-        const auto line = text::parseBindingLine(Function::Scope, "primary hold a 0.5 +offhand:grip");
-        require(line && text::formatBindingLine(Function::Scope, line->value) == "primary hold a 0.5 +offhand:grip" &&
-                    !text::parseBindingLine(Function::Scope, "firing press a"),
-            "the one-line form did not read and write back, or took an old word");
     }
 
     // A ROCK.toml from before [Bindings] held tables: each old string becomes its table with the retired hold times
-    // as durations, what a table cannot say becomes the default, the retired keys stay only as comments, and the
-    // Configuration API carries each binding in the one-line form.
+    // as durations, what a table cannot say becomes the default, and the retired keys stay only as comments.
     void bindingMigrationChecks(const fs::path& directory, std::span<const SettingDefault> defaults)
     {
         fs::create_directories(directory);
@@ -222,22 +216,9 @@ namespace
         store->load(true);
         require(bytes(store->path(Group::Player)) == organized && store->notices().empty(),
             "a binding was converted twice");
-
-        const auto& scope = find(*store, "Bindings", "Scope");
-        const auto published = apiSetting(scope);
-        require(published.type == rock::api::configuration::ValueType::String &&
-                    published.value == "primary hold a 0.6" && published.defaultValue == "primary hold a 0.3",
-            "a binding was not published in the one-line form");
-        require(storeValueFromApi(scope, "primary hold a 0.45") ==
-                    "{ hand = \"primary\", type = \"hold\", button = \"a\", duration = 0.45 }",
-            "a one-line write did not become the table");
-        const auto refused = storeValueFromApi(find(*store, "Bindings", "Fire"), "left hold trigger");
-        require(!refused && refused.error().find("primary") != std::string::npos,
-            "a binding ROCK cannot read was not refused with its reason");
     }
 
-    // A ROCK.toml from before the firing-hand offsets became transforms keeps
-    // them, and the Configuration API still sees and writes each as a Float3.
+    // A ROCK.toml from before the firing-hand offsets became transforms keeps them.
     void transformChecks(const fs::path& directory, std::span<const SettingDefault> defaults)
     {
         fs::create_directories(directory);
@@ -253,19 +234,6 @@ namespace
                     values.rockRightSupportGripOffsetGameUnits.z < -3.99f &&
                     values.rockRightSupportGripOffsetGameUnits.z > -4.01f,
             "a carried transform position did not apply");
-
-        const auto& aim = find(*store, "FiringHand.Left", "AimOffset");
-        const auto published = apiSetting(aim);
-        require(published.type == rock::api::configuration::ValueType::Float3 && published.value == "[1.0, 2.0, 3.0]" &&
-                    published.defaultValue == "[0.0, 0.0, 0.0]",
-            "a transform was not published as its Float3 position");
-        auto withRotation = aim;
-        withRotation.value = "{ pos = [1.0, 2.0, 3.0], rot = [0.0, 90.0, 0.0] }";
-        require(storeValueFromApi(withRotation, "[4, 5, 6]") == std::string("{ pos = [4.0, 5.0, 6.0], rot = [0.0, 90.0, 0.0] }"),
-            "a Float3 write did not replace only the transform's position");
-        require(storeValueFromApi(aim, "{ pos = [7, 8, 9] }") == std::string("{ pos = [7, 8, 9] }") &&
-                    storeValueFromApi(find(*store, "Logging", "LogLevel"), "3") == std::string("3"),
-            "a value the mapping does not own was changed");
     }
 
     // The examples are exactly what ROCK writes for files holding every option
