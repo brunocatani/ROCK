@@ -5,6 +5,7 @@
 #include "RockConfig.h"
 #include "config/RockSettings.h"
 #include "config/SettingMetadata.h"
+#include "physics-interaction/input/FunctionBindingText.h"
 
 #include <nlohmann/json.hpp>
 
@@ -90,8 +91,8 @@ namespace
     }
 
     /**
-     * The spec's valueType for one of ROCK's value types; Float3 has none. A
-     * transform is a cf.transform row, whose stored value is the table's text.
+     * The spec's valueType for one of ROCK's value types; Float3 has none. A transform
+     * (cf.transform) or binding (cf.inputBinding) row stores the table's text.
      */
     std::string_view specType(ValueType type)
     {
@@ -133,6 +134,48 @@ namespace
     }
 
     /**
+     * A JSON object of strings, numbers and nested objects as a TOML inline table, as Mods Config writes a
+     * cf.inputBinding default to the file.
+     */
+    std::string tomlTable(const json& value)
+    {
+        std::string text = "{ ";
+        bool first = true;
+        for (const auto& [key, part] : value.items()) {
+            text += std::format("{}{} = ", first ? "" : ", ", key);
+            first = false;
+            if (part.is_object())
+                text += tomlTable(part);
+            else
+                text += part.dump();
+        }
+        return text + " }";
+    }
+
+    /**
+     * Whether a cf.inputBinding default (a JSON table) is the binding ROCK compiles, both read by ROCK's parser:
+     * the same hands, type, buttons and time.
+     */
+    bool sameBinding(const std::string& name, const json& value, const std::string& compiled)
+    {
+        namespace fb = rock::function_binding_policy;
+        namespace binding_text = rock::function_binding_text;
+        require(value.is_object(), std::format("{} has a default that is not a table", name));
+        std::optional<fb::Function> function;
+        for (std::size_t index = 0; index < fb::kFunctionCount; ++index) {
+            if (name == std::format("Bindings.{}", fb::functionKey(static_cast<fb::Function>(index))))
+                function = static_cast<fb::Function>(index);
+        }
+        require(function.has_value(), std::format("{} is a binding table but no function's key", name));
+        const auto spec = binding_text::parseBindingTable(*function, tomlTable(value));
+        require(spec.has_value(), std::format("{} has a default ROCK can't read: {}", name, spec ? "" : spec.error()));
+        require(spec->warnings.empty(), std::format("{} has a default ROCK brings into range", name));
+        const auto rock = binding_text::parseBindingTable(*function, compiled);
+        require(rock.has_value(), std::format("{} has a compiled default ROCK can't read", name));
+        return spec->value.binding == rock->value.binding && nearlyEqual(spec->value.seconds, rock->value.seconds);
+    }
+
+    /**
      * Checks one row's valueType and default against ROCK's compiled default, the
      * value Reset must set.
      */
@@ -156,8 +199,12 @@ namespace
             same = value.is_number() && nearlyEqual(value.get<double>(), std::stod(compiled.value));
             break;
         case ValueType::String:
-        case ValueType::Table:
             same = value.is_string() && value.get<std::string>() == compiled.value;
+            break;
+        case ValueType::Table:
+            require(setting.value("type", "") == "cf.inputBinding",
+                std::format("{} is a binding table but not a cf.inputBinding row", name));
+            same = sameBinding(name, value, compiled.value);
             break;
         case ValueType::Transform: {
             require(setting.value("type", "") == "cf.transform", std::format("{} is a transform but not a cf.transform row", name));

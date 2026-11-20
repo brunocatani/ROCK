@@ -21,7 +21,7 @@ These are recorded so they aren't asked again.
 - **Front page:** About, then Help (Nexus and GitHub buttons, green how-to rows), then a folded Developer section with Log Level.
 - **Pages:** Interaction, Weapons (with a Melee section), Recoil, Scopes and Grenades, Controls.
 - **Rows:** labels from the catalog; choices in the object form with per-option help; dependent rows disabled with `enabledWhen`, using explicit ids.
-- **Bindings:** text inputs for now; they become `cf.inputBinding` rows (`mods-config-input-bindings.md`). The button layout uses dropdowns of the 14 canonical values, as PALM does.
+- **Bindings:** `cf.inputBinding` rows (`mods-config-input-bindings.md`). The button layout uses dropdowns of the 14 canonical values, as PALM does.
 - **Left out:**
   - `SetupWizard.ShownEdition`;
   - `Developer.EnableDeveloperSettings`;

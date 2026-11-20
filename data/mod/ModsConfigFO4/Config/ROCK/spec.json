@@ -769,6 +769,10 @@
               "help": "Places the scope view on the weapon, raises it while you hold the scope button, and corrects the overlay and zoom. Off: the game's own scopes. Turning it on takes the game's scope hook until you restart. Release the scope button before changing it.",
               "default": true,
               "storage": { "path": ["Scopes", "EnableImmersiveScopes"] }
+            },
+            {
+              "type": "text",
+              "text": "How long a press of A lasts before it scopes instead of reloading is the Scope binding's duration, on the Controls page."
             }
           ]
         },
@@ -823,118 +827,115 @@
         {
           "type": "section",
           "text": "Bindings",
-          "help": "The control of each function, typed as a table.",
+          "help": "The control of each function. A hold runs to 2 s and a double press takes 0.15 to 0.6 s; a longer time acts at that limit.",
           "content": [
             {
-              "type": "text",
-              "text": "Write each binding as a table: { hand = \"primary\", type = \"tap\", button = \"a\" }, or { type = \"none\" }. Hand: primary, offhand, left, right, any (Fire, Reload, Scope and Support Trigger take primary, the hand holding the weapon's trigger, or offhand). Type: hold (add duration = seconds to act from that time), tap, double. Button: trigger, grip, a, b, thumbstick. A binding ROCK can't read uses its default."
-            },
-            {
-              "type": "textinput",
+              "type": "cf.inputBinding",
               "valueType": "string",
               "text": "Grab",
-              "help": "Grab with each hand.",
-              "default": "{ hand = \"any\", type = \"hold\", button = \"grip\" }",
-              "valueOptions": { "maxLength": 128 },
+              "help": "Grab with each hand. Primary is the right hand, offhand the left.",
+              "default": { "hand": "any", "type": "hold", "button": "grip" },
+              "valueOptions": { "hands": ["primary", "offhand", "left", "right", "any"], "types": ["hold", "tap", "double"], "buttons": ["trigger", "grip", "a", "b", "thumbstick"] },
               "storage": { "path": ["Bindings", "Grab"] }
             },
             {
-              "type": "textinput",
+              "type": "cf.inputBinding",
               "valueType": "string",
               "text": "Fire",
-              "help": "Fire the equipped weapon.",
-              "default": "{ hand = \"primary\", type = \"hold\", button = \"trigger\" }",
-              "valueOptions": { "maxLength": 128 },
+              "help": "Fire the equipped weapon. Primary is the hand holding the weapon's trigger, offhand the other.",
+              "default": { "hand": "primary", "type": "hold", "button": "trigger" },
+              "valueOptions": { "hands": ["primary", "offhand"], "types": ["hold", "tap", "double"], "buttons": ["trigger", "grip", "a", "b", "thumbstick"] },
               "storage": { "path": ["Bindings", "Fire"] }
             },
             {
-              "type": "textinput",
+              "type": "cf.inputBinding",
               "valueType": "string",
               "text": "Support Trigger",
-              "help": "The support hand's trigger: a second weapon, or the support action of what that hand holds.",
-              "default": "{ hand = \"offhand\", type = \"hold\", button = \"trigger\" }",
-              "valueOptions": { "maxLength": 128 },
+              "help": "The support hand's trigger: a second weapon, or the support action of what that hand holds. Primary is the hand holding the weapon's trigger, offhand the other.",
+              "default": { "hand": "offhand", "type": "hold", "button": "trigger" },
+              "valueOptions": { "hands": ["primary", "offhand"], "types": ["hold", "tap", "double"], "buttons": ["trigger", "grip", "a", "b", "thumbstick"] },
               "storage": { "path": ["Bindings", "SupportTrigger"] }
             },
             {
-              "type": "textinput",
+              "type": "cf.inputBinding",
               "valueType": "string",
               "text": "Use",
-              "help": "Use what the primary hand points at: take, open, talk.",
-              "default": "{ hand = \"primary\", type = \"hold\", button = \"a\" }",
-              "valueOptions": { "maxLength": 128 },
+              "help": "Use what the hand points at: take, open, talk. Primary is the right hand, offhand the left.",
+              "default": { "hand": "primary", "type": "hold", "button": "a" },
+              "valueOptions": { "hands": ["primary", "offhand", "left", "right", "any"], "types": ["hold", "tap", "double"], "buttons": ["trigger", "grip", "a", "b", "thumbstick"] },
               "storage": { "path": ["Bindings", "Use"] }
             },
             {
-              "type": "textinput",
+              "type": "cf.inputBinding",
               "valueType": "string",
               "text": "Reload",
-              "help": "Reload the equipped weapon.",
-              "default": "{ hand = \"primary\", type = \"tap\", button = \"a\" }",
-              "valueOptions": { "maxLength": 128 },
+              "help": "Reload the equipped weapon. Primary is the hand holding the weapon's trigger, offhand the other.",
+              "default": { "hand": "primary", "type": "tap", "button": "a" },
+              "valueOptions": { "hands": ["primary", "offhand"], "types": ["hold", "tap", "double"], "buttons": ["trigger", "grip", "a", "b", "thumbstick"] },
               "storage": { "path": ["Bindings", "Reload"] }
             },
             {
-              "type": "textinput",
+              "type": "cf.inputBinding",
               "valueType": "string",
               "text": "Scope",
-              "help": "Look through the weapon's scope.",
-              "default": "{ hand = \"primary\", type = \"hold\", button = \"a\", duration = 0.3 }",
-              "valueOptions": { "maxLength": 128 },
+              "help": "Look through the weapon's scope. On A the duration is also how long a press lasts before it scopes instead of reloading. Primary is the hand holding the weapon's trigger, offhand the other.",
+              "default": { "hand": "primary", "type": "hold", "button": "a", "duration": 0.3 },
+              "valueOptions": { "hands": ["primary", "offhand"], "types": ["hold", "tap", "double"], "buttons": ["trigger", "grip", "a", "b", "thumbstick"] },
+              "enabledWhen": { "setting": "immersiveScopes", "equals": true },
               "storage": { "path": ["Bindings", "Scope"] }
             },
             {
-              "type": "textinput",
+              "type": "cf.inputBinding",
               "valueType": "string",
               "text": "VATS",
-              "help": "Open VATS.",
-              "default": "{ hand = \"primary\", type = \"tap\", button = \"b\" }",
-              "valueOptions": { "maxLength": 128 },
+              "help": "Open VATS. Primary is the right hand, offhand the left.",
+              "default": { "hand": "primary", "type": "tap", "button": "b" },
+              "valueOptions": { "hands": ["primary", "offhand", "left", "right", "any"], "types": ["hold", "tap", "double"], "buttons": ["trigger", "grip", "a", "b", "thumbstick"] },
               "storage": { "path": ["Bindings", "Vats"] }
             },
             {
-              "type": "textinput",
+              "type": "cf.inputBinding",
               "valueType": "string",
               "text": "Grenade",
-              "help": "Draw a grenade into the hand.",
-              "default": "{ hand = \"primary\", type = \"hold\", button = \"b\", duration = 0.25 }",
-              "valueOptions": { "maxLength": 128 },
+              "help": "Draw a grenade into the hand. On B the duration is also how long a press lasts before it draws a grenade instead of opening VATS. Primary is the right hand, offhand the left.",
+              "default": { "hand": "primary", "type": "hold", "button": "b", "duration": 0.25 },
+              "valueOptions": { "hands": ["primary", "offhand", "left", "right", "any"], "types": ["hold", "tap", "double"], "buttons": ["trigger", "grip", "a", "b", "thumbstick"] },
               "storage": { "path": ["Bindings", "Grenade"] }
             },
             {
-              "type": "textinput",
+              "type": "cf.inputBinding",
               "valueType": "string",
               "text": "Pip-Boy",
-              "help": "Open the Pip-Boy.",
-              "default": "{ hand = \"offhand\", type = \"tap\", button = \"b\" }",
-              "valueOptions": { "maxLength": 128 },
+              "help": "Open the Pip-Boy. Primary is the right hand, offhand the left.",
+              "default": { "hand": "offhand", "type": "tap", "button": "b" },
+              "valueOptions": { "hands": ["primary", "offhand", "left", "right", "any"], "types": ["hold", "tap", "double"], "buttons": ["trigger", "grip", "a", "b", "thumbstick"] },
               "storage": { "path": ["Bindings", "Pipboy"] }
             },
             {
-              "type": "textinput",
+              "type": "cf.inputBinding",
               "valueType": "string",
               "text": "Pause",
-              "help": "Open the Pause menu.",
-              "default": "{ hand = \"offhand\", type = \"hold\", button = \"b\", duration = 0.35 }",
-              "valueOptions": { "maxLength": 128 },
+              "help": "Open the Pause menu. On left Y the duration is also how long a press lasts before it opens Pause instead of the Pip-Boy. Primary is the right hand, offhand the left.",
+              "default": { "hand": "offhand", "type": "hold", "button": "b", "duration": 0.35 },
+              "valueOptions": { "hands": ["primary", "offhand", "left", "right", "any"], "types": ["hold", "tap", "double"], "buttons": ["trigger", "grip", "a", "b", "thumbstick"] },
               "storage": { "path": ["Bindings", "Pause"] }
             },
             {
-              "type": "textinput",
+              "type": "cf.inputBinding",
               "valueType": "string",
               "text": "Bipod and Favorites",
-              "help": "Bipod latch and placing a held object while the weapon touches a surface, and the game's Favorites menu.",
-              "default": "{ hand = \"primary\", type = \"hold\", button = \"thumbstick\" }",
-              "valueOptions": { "maxLength": 128 },
+              "help": "Bipod latch and placing a held object while the weapon touches a surface, and the game's Favorites menu. Primary is the right hand, offhand the left.",
+              "default": { "hand": "primary", "type": "hold", "button": "thumbstick" },
+              "valueOptions": { "hands": ["primary", "offhand", "left", "right", "any"], "types": ["hold", "tap", "double"], "buttons": ["trigger", "grip", "a", "b", "thumbstick"] },
               "storage": { "path": ["Bindings", "StickActions"] }
             },
             {
-              "type": "textinput",
+              "type": "cf.inputBinding",
               "valueType": "string",
               "text": "RobCo PALM",
-              "help": "Open RobCo PALM's wheel.",
-              "default": "{ hand = \"primary\", type = \"hold\", button = \"thumbstick\" }",
-              "valueOptions": { "maxLength": 128 },
+              "help": "Open RobCo PALM's wheel. Primary is the right hand, offhand the left.",
+              "default": { "hand": "primary", "type": "hold", "button": "thumbstick" },
+              "valueOptions": { "hands": ["primary", "offhand", "left", "right", "any"], "types": ["hold", "tap", "double"], "buttons": ["trigger", "grip", "a", "b", "thumbstick"] },
               "storage": { "path": ["Bindings", "Palm"] }
             }
           ]

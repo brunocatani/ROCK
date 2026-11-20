@@ -1,6 +1,6 @@
 # Ticket: `[Bindings]` as Mods Config input bindings
 
-**Status:** decided, not started. **Depends on:** nothing outside ROCK and its RPS Framework fork. Mods Config is unchanged, as for the transforms (`mods-config-transforms.md`).
+**Status:** done; the headset checks below remain for the editor and PALM. **Depends on:** nothing outside ROCK and its RPS Framework fork. Mods Config is unchanged, as for the transforms (`mods-config-transforms.md`).
 
 ## Goal
 
@@ -73,7 +73,8 @@ One staged change at a time, with a go-ahead before each.
   - `Input.h`, `docs/api/Input.md` and `docs/api/Configuration.md` wording. README has no `[Bindings]` text.
   - Tests: `ConfigurationStoreTests` for migration (strings, retired keys, extra controls, `ROCK.ini`); the table parser as a configuration contract.
   - The spec's binding rows stay text inputs here, with table defaults; the four retired rows are gone.
-- [ ] ROCK: spec rows (decision 11); `ROCKModsConfigSpecTests` compares a `cf.inputBinding` row's JSON `default` with ROCK's compiled default through the parser.
+- [x] ROCK: spec rows (decision 11); `ROCKModsConfigSpecTests` compares a `cf.inputBinding` row's JSON `default` with ROCK's compiled default through the parser.
+  - Each row's help says what `primary` means there (decision 3), and the section's help gives ROCK's duration limits: the editor's Duration slider runs to 3 s, past ROCK's 2 s hold and 0.6 s double, and has no per-setting range.
 
 ## Check in the headset
 
