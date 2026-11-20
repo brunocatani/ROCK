@@ -21,7 +21,7 @@ These are recorded so they aren't asked again.
 - **Front page:** About, then Help (Nexus and GitHub buttons, green how-to rows), then a folded Developer section with Log Level.
 - **Pages:** Interaction, Weapons (with a Melee section), Recoil, Scopes and Grenades, Controls.
 - **Rows:** labels from the catalog; choices in the object form with per-option help; dependent rows disabled with `enabledWhen`, using explicit ids.
-- **Bindings:** text inputs. The button layout uses dropdowns of the 14 canonical values, as PALM does.
+- **Bindings:** text inputs for now; they become `cf.inputBinding` rows (`mods-config-input-bindings.md`). The button layout uses dropdowns of the 14 canonical values, as PALM does.
 - **Left out:**
   - `SetupWizard.ShownEdition`;
   - `Developer.EnableDeveloperSettings`;
@@ -62,11 +62,10 @@ These are spec choices the docs allow but no game run has confirmed yet:
 
 Collected from the tickets, for the F4VR-Mods-Config repo:
 
-1. `cf.inputBinding` reading and writing the framework's line form in a TOML string, opt-in (`mods-config-input-bindings.md`).
-2. A per-file "a default removes the key, and an empty file is deleted" mode, for files like `ROCK_Developer.toml` (suggestion 3 above).
-3. An offline validator for `spec.json`, printing the Developer report without the game (`mods-config-prompt-improvements.md`).
+1. A per-file "a default removes the key, and an empty file is deleted" mode, for files like `ROCK_Developer.toml` (suggestion 3 above).
+2. An offline validator for `spec.json`, printing the Developer report without the game (`mods-config-prompt-improvements.md`).
 
-The transforms needed nothing from Mods Config: ROCK stores them as transform tables (`mods-config-transforms.md`).
+The transforms and the input bindings need nothing from Mods Config: ROCK stores them in the framework's tables (`mods-config-transforms.md`, `mods-config-input-bindings.md`).
 
 ## ROCK text that should mention Mods Config
 
