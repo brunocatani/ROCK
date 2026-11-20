@@ -7,7 +7,8 @@
 - **Committed:** the page (`spec.json`, `ROCKModsConfigSpecTests`), the firing-hand transforms and the `[Bindings]` tables, with their rows on the page.
 - **ROCK's settings leave PALM's Config.** The author of RobCo PALM and RPS UI Framework agreed to drop ROCK's pages from RPS UI's settings menu, so Mods Config FO4 VR becomes the only in-game editor of ROCK's settings.
   - Done: `mods-config-palm-removal.md` (the Configuration interface and what only PALM's pages used are gone; ROCK's text points at Mods Config).
-  - Next: `mods-config-setup-wizard-launch.md`, then the RPS UI side (`mods-config-rps-ui-removal.md`, only when the user says so), and `mods-config-developer-page.md`.
+  - Done: `mods-config-setup-wizard-launch.md` (the Setup Wizard button on ROCK's page).
+  - Then: the RPS UI side (`mods-config-rps-ui-removal.md`, only when the user says so), and `mods-config-developer-page.md`.
 - **Nothing is released** until every `mods-config-*` ticket is done.
 - **Still open:** the in-game Developer report check (turn on Developer tools, press ROCK's row in the front page's Developer section, then **Read the live copy**; fix what the report or `ModsConfigFO4VR.log` names).
 

@@ -36,6 +36,7 @@
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/hand/NativeWandVisualSuppression.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
+#include "mods-config/ModsConfigClient.h"
 #include "setup-wizard/SetupWizard.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/havok/HavokOffsets.h"
@@ -386,6 +387,7 @@ namespace
         g_rockConfig.processPendingConfigReload();
         frik_weapon_offsets::processPendingReload();
         setup_wizard::update();
+        mods_config_client::update();
         reconcileNativeScopeGeometryOwnership();
         if (immersiveScopesWereEnabled != g_rockConfig.rockEnableImmersiveScopes) {
             if (!g_rockConfig.rockEnableImmersiveScopes && s_physicsInteraction) {
@@ -1384,6 +1386,7 @@ namespace
             // FRIK debounces the game's transient power-armor state and flips
             // it together with the skeleton generation (API v2.2).
             f4vr::setPowerArmorStateProvider(&frikPowerArmorState);
+            mods_config_client::connect();
 
             logger::info("ROCK: Initialization complete. Waiting for skeleton...");
         }

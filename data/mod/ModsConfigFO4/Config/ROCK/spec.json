@@ -75,6 +75,13 @@
           "buttonText": "Open",
           "action": { "type": "OpenURL", "url": "https://github.com/ArthurHub/FO4VR-ROCK/blob/main/README.md" }
         },
+        {
+          "type": "button",
+          "text": "Setup Wizard",
+          "help": "Walks you through ROCK's controls and main options. Mods Config steps aside until it closes.",
+          "buttonText": "Open",
+          "action": { "type": "CallNativeFunction", "function": "openSetupWizard" }
+        },
         { "type": "spacer" },
         {
           "type": "text",
@@ -103,7 +110,7 @@
         },
         {
           "type": "text",
-          "text": "<font color='#10FA78'>Setup wizard:</font> ROCK's setup wizard picks your controllers and main options. Open it from RobCo PALM's Config, on ROCK's page.",
+          "text": "<font color='#10FA78'>Setup wizard:</font> ROCK's setup wizard picks your controllers and main options. Open it with Setup Wizard above.",
           "html": true
         }
       ]

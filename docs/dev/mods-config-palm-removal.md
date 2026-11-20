@@ -6,7 +6,6 @@ As built, beyond the decisions below:
 
 - `ConfigurationProviderTests` became `ROCKConfigTests` (`tests/RockConfigTests.cpp`) on `RockConfig` directly. It keeps the file contracts the wizard relies on: reload, two writes to one file, a file that stops parsing, the developer file going, reentrant subscribers.
 - The refusal log names a retired interface (References, Diagnostics, Configuration) as built for an older ROCK at any major; at major 2 it said "needs a newer ROCK".
-- `setup_wizard::requestOpen` has no caller until `mods-config-setup-wizard-launch.md`.
 - README's "open it again from PALM's Config" now says to set `ShownEdition` to 0; the code comments name only the paths that exist. The wizard's own strings wait for the launch ticket.
 
 ## Goal

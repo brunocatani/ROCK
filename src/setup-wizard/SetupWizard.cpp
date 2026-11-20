@@ -295,6 +295,15 @@ namespace rock::setup_wizard
         return true;
     }
 
+    /**
+     * Open or about to open. A request that update() could not honour (no headset pose, a game menu
+     * holding the controllers, RPS UI gone) is cleared there, so this turns false on that frame.
+     */
+    bool isActive() noexcept
+    {
+        return g_openRequested.load(std::memory_order_acquire) || state().wizard.isOpen();
+    }
+
     void update() noexcept
     {
         auto& s = state();

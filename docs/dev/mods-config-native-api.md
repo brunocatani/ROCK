@@ -1,6 +1,6 @@
 # Ticket: Mods Config native API in ROCK (live preview and more)
 
-**Status:** open, not started. **Depends on:** `mods-config-setup-wizard-launch.md`, which connects the client first.
+**Status:** open, not started. The client exists (`src/mods-config/ModsConfigClient.cpp`, from `mods-config-setup-wizard-launch.md`); this ticket extends it.
 
 ## Goal
 
@@ -10,7 +10,7 @@ Connect `ROCK.dll` to Mods Config FO4 VR's native API, so its page previews chan
 
 - `spec.json` has `applies: save`. A Save writes `ROCK.toml`, and ROCK's file watcher reloads it about 200 ms later, on `FrameBegin` (`RockConfig::processPendingConfigReload`).
 - Without a client the page has no version line and no preview.
-- The client itself, and the setup wizard button and quick launch entry, come from `mods-config-setup-wizard-launch.md`.
+- The client connects as `ROCK` and has the setup wizard's function (`mods-config-setup-wizard-launch.md`).
 
 ## What the client would add
 

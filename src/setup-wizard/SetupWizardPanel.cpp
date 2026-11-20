@@ -408,7 +408,7 @@ namespace rock::setup_wizard
             }
             case sv::Status::NotApplicable:
                 d.prose("SteamVR does not tell ROCK this game's binding now, so ROCK installs nothing. Open the wizard "
-                        "again from PALM's Config once SteamVR runs the game.",
+                        "again from ROCK's page in Mods Config once SteamVR runs the game.",
                     false);
                 return;
             }
@@ -542,7 +542,7 @@ namespace rock::setup_wizard
                 d.prose("ROCK uses your options now.", false);
             for (const auto& error : result.errors) d.prose(error, false);
             d.gap();
-            d.prose("To change anything later, open this wizard again from PALM's Config, on the ROCK page.");
+            d.prose("To change anything later, open this wizard again from ROCK's page in Mods Config.");
             d.endBody();
             ImGui::SetCursorPosX(contentRight() - d.mainWidth());
             if (d.button("Close", true, true, d.mainWidth())) d.g.closeRequested = true;
