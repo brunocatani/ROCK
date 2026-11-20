@@ -2,9 +2,11 @@
 // organizing, faults and the developer file): the catalog and the loader
 // agree, the example files are what ROCK writes, documented defaults are the
 // runtime defaults, ROCK's old INI keys and renamed TOML keys migrate to the
-// right options, and transforms reach the Configuration API as Float3.
+// right options, transforms reach the Configuration API as Float3, and
+// [Bindings] holds CommonFramework tables, converted from ROCK's old strings.
 #include "RockConfig.h"
 #include "config/RockSettings.h"
+#include "physics-interaction/input/FunctionBindingText.h"
 
 #include <array>
 #include <filesystem>
@@ -82,7 +84,10 @@ namespace
             "bRockyModeEnabled = true\r\n"
             "fRealisticGrenadeFuseSeconds = soon\r\n"
             "[NativeScopes]\r\n"
-            "fNativeScopeOverlayOffsetYGameUnits = 12\r\n");
+            "fNativeScopeOverlayOffsetYGameUnits = 12\r\n"
+            "fManualScopeHoldSeconds = 0.7\r\n"
+            "[Controls]\r\n"
+            "fPipboyPauseHoldSeconds = 0.350\r\n");
         write(developerIni, "[PhysicsInteraction]\r\niDebugMaxBodyInstances = 100\r\n");
 
         const auto store = makeStore(directory, defaults);
@@ -107,6 +112,128 @@ namespace
         require(hasLine(store->messages(), "does not fit: fRealisticGrenadeFuseSeconds = soon"),
             "a value that does not fit was not reported");
         require(hasLine(store->notices(), "bRockyModeEnabled"), "a retired key was not named");
+        require(find(*store, "Bindings", "Scope").value ==
+                    "{ hand = \"primary\", type = \"hold\", button = \"a\", duration = 0.7 }",
+            "an INI scope hold time was not carried into the Scope binding");
+        require(find(*store, "Bindings", "Pause").value == find(*store, "Bindings", "Pause").defaultValue,
+            "an INI hold time at its old default changed the Pause binding");
+    }
+
+    bool near(float value, float expected) { return value > expected - 1.0e-4f && value < expected + 1.0e-4f; }
+
+    // The [Bindings] tables are a configuration contract: CommonFramework's words with ROCK's limits, every
+    // default reading back as itself, and the one-line form the Configuration API carries.
+    void bindingTextChecks()
+    {
+        namespace fb = rock::function_binding_policy;
+        namespace text = rock::function_binding_text;
+        using fb::Function;
+        for (std::size_t f = 0; f < fb::kFunctionCount; ++f) {
+            const auto function = static_cast<Function>(f);
+            const auto standard = text::defaultBinding(function);
+            const auto table = text::parseBindingTable(function, text::formatBindingTable(function, standard));
+            const auto line = text::parseBindingLine(function, text::formatBindingLine(function, standard));
+            require(table && table->value == standard && line && line->value == standard,
+                "a default binding does not read back as itself");
+        }
+        const auto read = [](Function function, std::string_view table) { return text::parseBindingTable(function, table); };
+        const auto fire = read(Function::Fire, "{ hand = 'primary', type = 'hold', button = 'trigger' }");
+        require(fire && fire->value.binding.control.hand == fb::BindingHand::Firing &&
+                    fire->value.binding.gesture == fb::Gesture::Press,
+            "primary on a weapon function is not the firing hand, or a hold without duration is not a press");
+        require(!read(Function::Fire, "{ hand = 'left', type = 'hold', button = 'trigger' }") &&
+                    read(Function::Use, "{ hand = 'left', type = 'hold', button = 'a' }"),
+            "a fixed hand was refused elsewhere or taken on a weapon function");
+        const auto timed = read(Function::Grenade, "{ hand = 'primary', type = 'hold', button = 'menu', duration = 5 }");
+        require(timed && timed->value.binding.gesture == fb::Gesture::Hold && near(timed->value.seconds, 2.0f) &&
+                    timed->value.binding.control.source == fb::Source::UpperFace && timed->warnings.size() == 1,
+            "a timed hold was not clamped with a warning");
+        const auto doubled = read(Function::Vats, "{ hand = 'primary', type = 'double', button = 'grip' }");
+        require(doubled && near(doubled->value.seconds, 0.4f), "a double without duration does not take 0.4 seconds");
+        require(!read(Function::Vats, "{ hand = 'primary', type = 'press', button = 'b' }") &&
+                    !read(Function::Vats, "{ hand = 'primary', type = 'longpress', button = 'b' }") &&
+                    !read(Function::Vats, "{ hand = 'primary', type = 'tap', button = 'b', duration = 0.2 }") &&
+                    !read(Function::Vats, "{ hand = 'primary', type = 'tap', button = 'b', suppress = true }") &&
+                    !read(Function::Vats, "{ hand = 'primary', type = 'tap', button = 'system' }") &&
+                    !read(Function::Vats, "\"primary tap b\""),
+            "a word, key or value ROCK does not read was taken");
+        const auto chord = read(Function::Vats, "{ hand = 'offhand', type = 'tap', button = 'a', modifier = { button = 'grip' } }");
+        require(chord && chord->value.binding.modifier.hand == fb::BindingHand::Offhand &&
+                    text::formatBindingTable(Function::Vats, chord->value) ==
+                        "{ hand = \"offhand\", type = \"tap\", button = \"a\", modifier = { button = \"grip\" } }",
+            "a same-hand modifier did not read and write back");
+        const auto none = read(Function::Palm, "{ type = 'none' }");
+        require(none && !none->value.binding.bound() &&
+                    text::formatBindingTable(Function::Palm, none->value) == "{ type = \"none\" }",
+            "an unbound function did not read and write back");
+        const auto line = text::parseBindingLine(Function::Scope, "primary hold a 0.5 +offhand:grip");
+        require(line && text::formatBindingLine(Function::Scope, line->value) == "primary hold a 0.5 +offhand:grip" &&
+                    !text::parseBindingLine(Function::Scope, "firing press a"),
+            "the one-line form did not read and write back, or took an old word");
+    }
+
+    // A ROCK.toml from before [Bindings] held tables: each old string becomes its table with the retired hold times
+    // as durations, what a table cannot say becomes the default, the retired keys stay only as comments, and the
+    // Configuration API carries each binding in the one-line form.
+    void bindingMigrationChecks(const fs::path& directory, std::span<const SettingDefault> defaults)
+    {
+        fs::create_directories(directory);
+        const auto store = makeStore(directory, defaults);
+        write(store->path(Group::Player),
+            "[Bindings]\n"
+            "Reload = \"firing double grip\"\n"
+            "Scope = \"firing hold a\"\n"
+            "Pause = \"offhand hold y\"\n"
+            "Pipboy = \"offhand hold thumbstick +offhand grip\"\n"
+            "Use = \"primary press a\"\n"
+            "Vats = \"right tap grip_click\"\n"
+            "Fire = \"left press trigger\"\n"
+            "HoldSeconds = 0.5\n"
+            "DoubleTapSeconds = 0.25\n"
+            "[Scopes]\n"
+            "ManualScopeHoldSeconds = 0.6\n"
+            "[ControllerInput]\n"
+            "PipboyPauseHoldSeconds = 0.8\n");
+        store->load(true);
+        const auto value = [&](std::string_view key) { return find(*store, "Bindings", key).value; };
+        require(value("Reload") == "{ hand = \"primary\", type = \"double\", button = \"grip\", duration = 0.25 }" &&
+                    value("Scope") == "{ hand = \"primary\", type = \"hold\", button = \"a\", duration = 0.6 }" &&
+                    value("Pause") == "{ hand = \"offhand\", type = \"hold\", button = \"b\", duration = 0.8 }" &&
+                    value("Pipboy") == "{ hand = \"offhand\", type = \"hold\", button = \"thumbstick\", duration = 0.5, "
+                                       "modifier = { button = \"grip\" } }" &&
+                    value("Use") == "{ hand = \"primary\", type = \"hold\", button = \"a\" }",
+            "an old binding string was not converted with its retired hold time");
+        require(value("Vats") == find(*store, "Bindings", "Vats").defaultValue &&
+                    value("Fire") == find(*store, "Bindings", "Fire").defaultValue,
+            "a physical control or a fixed weapon hand did not become the default");
+        require(value("Grenade") == "{ hand = \"primary\", type = \"hold\", button = \"b\", duration = 0.25 }",
+            "a binding the file did not hold was not written at its default");
+        const auto organized = bytes(store->path(Group::Player));
+        require(organized.find("# Bindings.HoldSeconds = 0.5") != std::string::npos &&
+                    organized.find("# Scopes.ManualScopeHoldSeconds = 0.6") != std::string::npos,
+            "a retired hold time was not kept as a comment");
+        const auto values = runtime(*store);
+        const auto seconds = [&](rock::function_binding_policy::Function function) {
+            return values.rockBindingSeconds[static_cast<std::size_t>(function)];
+        };
+        require(near(seconds(rock::function_binding_policy::Function::Scope), 0.6f) &&
+                    near(seconds(rock::function_binding_policy::Function::Reload), 0.25f),
+            "a converted duration did not apply");
+        store->load(true);
+        require(bytes(store->path(Group::Player)) == organized && store->notices().empty(),
+            "a binding was converted twice");
+
+        const auto& scope = find(*store, "Bindings", "Scope");
+        const auto published = apiSetting(scope);
+        require(published.type == rock::api::configuration::ValueType::String &&
+                    published.value == "primary hold a 0.6" && published.defaultValue == "primary hold a 0.3",
+            "a binding was not published in the one-line form");
+        require(storeValueFromApi(scope, "primary hold a 0.45") ==
+                    "{ hand = \"primary\", type = \"hold\", button = \"a\", duration = 0.45 }",
+            "a one-line write did not become the table");
+        const auto refused = storeValueFromApi(find(*store, "Bindings", "Fire"), "left hold trigger");
+        require(!refused && refused.error().find("primary") != std::string::npos,
+            "a binding ROCK cannot read was not refused with its reason");
     }
 
     // A ROCK.toml from before the firing-hand offsets became transforms keeps
@@ -134,10 +261,10 @@ namespace
             "a transform was not published as its Float3 position");
         auto withRotation = aim;
         withRotation.value = "{ pos = [1.0, 2.0, 3.0], rot = [0.0, 90.0, 0.0] }";
-        require(storeValueFromApi(withRotation, "[4, 5, 6]") == "{ pos = [4.0, 5.0, 6.0], rot = [0.0, 90.0, 0.0] }",
+        require(storeValueFromApi(withRotation, "[4, 5, 6]") == std::string("{ pos = [4.0, 5.0, 6.0], rot = [0.0, 90.0, 0.0] }"),
             "a Float3 write did not replace only the transform's position");
-        require(storeValueFromApi(aim, "{ pos = [7, 8, 9] }") == "{ pos = [7, 8, 9] }" &&
-                    storeValueFromApi(find(*store, "Logging", "LogLevel"), "3") == "3",
+        require(storeValueFromApi(aim, "{ pos = [7, 8, 9] }") == std::string("{ pos = [7, 8, 9] }") &&
+                    storeValueFromApi(find(*store, "Logging", "LogLevel"), "3") == std::string("3"),
             "a value the mapping does not own was changed");
     }
 
@@ -232,6 +359,8 @@ int main(int argc, char** argv)
         defaultChecks(directory / "examples", defaults);
         migrationChecks(directory / "migration", defaults);
         transformChecks(directory / "transforms", defaults);
+        bindingTextChecks();
+        bindingMigrationChecks(directory / "bindings", defaults);
         fs::remove_all(directory, ec);
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

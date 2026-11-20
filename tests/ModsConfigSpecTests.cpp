@@ -101,6 +101,7 @@ namespace
         case ValueType::Float: return "float";
         case ValueType::String: return "string";
         case ValueType::Transform: return "string";
+        case ValueType::Table: return "string";
         default: return "";
         }
     }
@@ -155,6 +156,7 @@ namespace
             same = value.is_number() && nearlyEqual(value.get<double>(), std::stod(compiled.value));
             break;
         case ValueType::String:
+        case ValueType::Table:
             same = value.is_string() && value.get<std::string>() == compiled.value;
             break;
         case ValueType::Transform: {

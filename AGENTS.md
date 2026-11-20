@@ -141,7 +141,7 @@ Under `src/physics-interaction/` unless the path says otherwise.
 | Eating, drinking, stimpaks | `consume/MouthConsumeDetector.cpp`, `consume/ImmersiveAid.cpp` |
 | Grenades | `grenade/LooseGrenadeRuntime.cpp`, `core/interaction/ForceGrabAndGrenades.cpp` |
 | Loose objects and ammo | `object/ObjectDetection.cpp`, `object/CountBasedAmmo.cpp` |
-| Buttons and bindings | `input/ButtonLayoutPolicy.h`, `input/FunctionBindingPolicy.h`, `input/InputRemapRuntime.cpp` |
+| Buttons and bindings | `input/ButtonLayoutPolicy.h`, `input/FunctionBindingPolicy.h`, `input/FunctionBindingText.h` (the `[Bindings]` tables), `input/InputRemapRuntime.cpp` |
 | Ammo counters | `visual/AmmoCounters.cpp`, `core/interaction/AmmoCounterFrame.cpp` |
 | Indicators and debug drawing | `visual/WorldDrawClient.cpp`, `debug/`, `core/interaction/DebugOverlayPublish.cpp` |
 | Native HUD placement | `native/player/` |
@@ -202,7 +202,7 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp` for engine math. `
 - A live NPC's limb keeps its own body: the hold is a reduced-force point and the limb may lag the hand.
 - A held actor's ragdoll, living or dead, is drawn from its own bodies, never presented at the hand: shifting every body by the hand's lead over the held limb shook his hands, feet and head with a shaken limb.
 - Per-frame limits scale with frame length, never with 90 Hz frame counts.
-- Every controller-state read passes through the `[Controls]` button layout before ROCK sees it, so everything reads one logical button set; features never keep their own physical button tables. `[Bindings]` then presents a moved function as a tagged press of its home button.
+- Every controller-state read passes through the `[Controls]` button layout before ROCK sees it, so everything reads one logical button set; features never keep their own physical button tables. `[Bindings]` then presents a moved function as a tagged press of its home button. A hold time lives only on its binding: the A, B and left Y splits time with the Scope, Grenade and Pause durations, bound or not.
 
 ### Provider API
 
@@ -216,5 +216,5 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp` for engine math. `
 - After any catalog change, regenerate `data/config/*_example.toml` with `ROCKConfigurationStoreTests --write-examples data/config`; the test fails when they differ. ROCK never reads the examples.
 - RPS Framework's settings store reads, organizes and writes the files (`src/config/RockSettings.cpp`). A file that does not parse is never rewritten, keeps its last values and refuses API writes until fixed. Both files reload while the game runs.
 - Old `ROCK.ini` files migrate once, only when `ROCK.toml` is missing, through the frozen table `src/config/LegacyIniMigrationTable.inl` (never regenerated), and are deleted only after the TOML files read back.
-- A renamed TOML key gets a row in the frozen `kRenamedKeys` (`src/config/RockSettings.cpp`), which carries its value to the new key at startup, and the INI rows that targeted it follow the new name.
-- A `Transform` option (an inline `{ pos = [x, y, z] }` table, for Mods Config's transform editor) reaches the Configuration API as a `Float3` position (`apiSetting`); never publish a type RPS UI does not know.
+- A renamed TOML key gets a row in the frozen `kRenamedKeys` (`src/config/RockSettings.cpp`), which carries its value to the new key at startup, and the INI rows that targeted it follow the new name. A value whose form changed gets a frozen conversion (`kConversions`, there): it turns old `[Bindings]` strings and the retired hold times into binding tables.
+- Options in Mods Config's table forms reach the Configuration API as types RPS UI knows (`apiSetting`): a `Transform` (`{ pos = [x, y, z] }`) as a `Float3` position, a `[Bindings]` CommonFramework table as a `String` in the one-line form (`primary hold a 0.3`). Publish only types RPS UI knows.

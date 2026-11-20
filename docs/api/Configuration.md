@@ -53,6 +53,12 @@ A few options are written in `ROCK.toml` as a transform table,
 `{ pos = [x, y, z] }` (the firing-hand offsets). `visit` reports each as a
 `Float3`, its position, and `setValue` with a `Float3` sets that position.
 
+The `[Bindings]` options are written in `ROCK.toml` as CommonFramework binding
+tables, `{ hand = "primary", type = "tap", button = "a" }`. `visit` reports each
+as a `String` in the one-line form, `<hand> <type> <button> [duration]
+[+hand:button]` (`primary hold a 0.3`, or `none`), and `setValue` takes that
+form or the table. A binding ROCK cannot read is refused with the reason.
+
 ## Callback rules
 
 The visitor runs synchronously inside `visit`. It must not call back into

@@ -3,13 +3,15 @@
 // (SettingMetadata.h) joined with the compiled defaults the loader declares
 // (RockConfigLoad.cpp), the one-time migration of the INI files of earlier
 // versions (LegacyIniMigrationTable.inl), the keys a later version renamed
-// (kRenamedKeys in RockSettings.cpp), and how a setting looks through the
+// (kRenamedKeys in RockSettings.cpp), the conversion of [Bindings] from ROCK's
+// old string form (kConversions), and how a setting looks through the
 // Configuration API.
 #pragma once
 
 #include <ROCK/Configuration.h>
 #include <RPS/Settings/Store.h>
 
+#include <expected>
 #include <filesystem>
 #include <memory>
 #include <span>
@@ -31,7 +33,8 @@ namespace rock::config
     using RPS::Settings::ValueType;
 
     // ROCK's Configuration API publishes the store's enums unchanged, except
-    // Transform, which it publishes as a Float3 position (apiSetting).
+    // Transform, which it publishes as a Float3 position, and Table, a binding
+    // it publishes as a String in the one-line form (apiSetting).
     static_assert(static_cast<std::uint32_t>(ValueType::Boolean) ==
             static_cast<std::uint32_t>(api::configuration::ValueType::Boolean) &&
         static_cast<std::uint32_t>(ValueType::Integer) == static_cast<std::uint32_t>(api::configuration::ValueType::Integer) &&
@@ -77,5 +80,6 @@ namespace rock::config
     };
 
     [[nodiscard]] ApiSetting apiSetting(const Setting& setting);
-    [[nodiscard]] std::string storeValueFromApi(const Setting& setting, std::string_view value);
+    // The value to store, or why ROCK refuses the write.
+    [[nodiscard]] std::expected<std::string, std::string> storeValueFromApi(const Setting& setting, std::string_view value);
 }

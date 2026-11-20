@@ -14,6 +14,7 @@
 #include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/hand/HandLifecycle.h"
+#include "physics-interaction/input/FunctionBindingText.h"
 #include "physics-interaction/weapon/equip/EquippedWeaponDropPolicy.h"
 
 namespace rock::config
@@ -73,6 +74,19 @@ namespace rock::config
         {
             if (_defaults) {
                 declare(table, key, ValueType::String, current);
+                return std::string(current);
+            }
+            const auto* value = loaded(table, key);
+            return value ? *value : std::string(current);
+        }
+
+        /**
+         * A Table option's text, declared with the default given. The caller reads the table's keys.
+         */
+        [[nodiscard]] std::string tableValue(const char* table, const char* key, std::string_view current)
+        {
+            if (_defaults) {
+                declare(table, key, ValueType::Table, current);
                 return std::string(current);
             }
             const auto* value = loaded(table, key);
@@ -280,23 +294,32 @@ namespace
         return layout;
     }
 
-    rock::function_binding_policy::Bindings readFunctionBindings(SettingReader& ini,
-        const rock::function_binding_policy::Bindings& current)
+    /**
+     * Reads each function's binding table. A table ROCK cannot read gives the function's default binding, and a
+     * duration out of its range is clamped; both are logged.
+     */
+    void readFunctionBindings(SettingReader& ini, rock::function_binding_policy::Bindings& bindings,
+        std::array<float, rock::function_binding_policy::kFunctionCount>& seconds)
     {
         namespace fb = rock::function_binding_policy;
-        auto bindings = current;
+        namespace text = rock::function_binding_text;
         for (std::size_t f = 0; f < fb::kFunctionCount; ++f) {
             const auto function = static_cast<fb::Function>(f);
             const std::string key{ fb::functionKey(function) };
-            const std::string configured = ini.text("Bindings", key.c_str(), fb::formatBinding(bindings[f]));
-            if (const auto parsed = fb::parseBinding(configured)) {
-                bindings[f] = *parsed;
-                continue;
+            const auto fallback = text::defaultBinding(function);
+            const std::string configured =
+                ini.tableValue("Bindings", key.c_str(), text::formatBindingTable(function, fallback));
+            auto parsed = text::parseBindingTable(function, configured);
+            if (!parsed) {
+                ROCK_LOG_WARN(Config, "Invalid Bindings.{} = {}: {} -- using {}", key, configured, parsed.error(),
+                    text::formatBindingTable(function, fallback));
+                parsed = text::ParsedBinding{ fallback, {} };
             }
-            bindings[f] = fb::homeBinding(function);
-            ROCK_LOG_WARN(Config, "Invalid Bindings.{}='{}' -- using {}", key, configured, fb::formatBinding(bindings[f]));
+            for ([[maybe_unused]] const auto& warning : parsed->warnings)
+                ROCK_LOG_WARN(Config, "Bindings.{}: {}", key, warning);
+            bindings[f] = parsed->value.binding;
+            seconds[f] = parsed->value.seconds;
         }
-        return bindings;
     }
 
     std::string readHighlightColor(SettingReader& ini, const char* table, const char* key,
@@ -416,15 +439,9 @@ namespace rock
         rockOfferSteamVRBinding = ini.boolean("ControllerInput", "OfferSteamVRBinding", rockOfferSteamVRBinding);
         rockSetupWizardShownEdition =
             static_cast<int>(ini.integer("SetupWizard", "ShownEdition", rockSetupWizardShownEdition));
-        rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::sanitizedHoldSeconds(static_cast<float>(
-            ini.number("ControllerInput", "PipboyPauseHoldSeconds", rockPipboyPauseHoldSeconds)));
         rockButtonLayouts[0] = readButtonLayout(ini, true, rockButtonLayouts[0]);
         rockButtonLayouts[1] = readButtonLayout(ini, false, rockButtonLayouts[1]);
-        rockFunctionBindings = readFunctionBindings(ini, rockFunctionBindings);
-        rockBindingHoldSeconds =
-            std::clamp(static_cast<float>(ini.number("Bindings", "HoldSeconds", rockBindingHoldSeconds)), 0.1f, 2.0f);
-        rockBindingDoubleTapSeconds = std::clamp(
-            static_cast<float>(ini.number("Bindings", "DoubleTapSeconds", rockBindingDoubleTapSeconds)), 0.15f, 0.6f);
+        readFunctionBindings(ini, rockFunctionBindings, rockBindingSeconds);
         rockFarGrabStyle = far_pull_gesture::sanitizeMode(
             static_cast<int>(ini.integer("Grabbing", "FarGrabStyle", rockFarGrabStyle)));
         rockGrabDirection = readGrabDirection(ini, rockGrabDirection);
@@ -622,8 +639,6 @@ namespace rock
             rockWeaponSupportSurfaceSeatMaxDegrees, 35.0f, 0.0f, 75.0f);
         rockEnableImmersiveScopes =
             ini.boolean("Scopes", "EnableImmersiveScopes", rockEnableImmersiveScopes);
-        rockManualScopeHoldSeconds = readClampedFloat(ini, "Scopes", "ManualScopeHoldSeconds",
-            rockManualScopeHoldSeconds, 0.30f, 0.05f, 2.0f);
         {
             const auto firingGripOffset = readClampedFloat3(ini, "ScopePlacement",
                 "NativeScopeFiringGripFallbackOffsetGameUnits",

@@ -136,8 +136,14 @@ namespace rock
             return false;
         }
         const auto* setting = _store->find(section, key);
-        const auto storeValue = setting ? config::storeValueFromApi(*setting, value) : std::string(value);
-        if (!_store->setValue(config::storeGroup(group), section, key, storeValue)) {
+        const auto storeValue = setting ? config::storeValueFromApi(*setting, value) :
+                                          std::expected<std::string, std::string>(std::string(value));
+        if (!storeValue) {
+            error = storeValue.error();
+            ROCK_LOG_WARN(Config, "Cannot persist [{}] {}: {}", section, key, error);
+            return false;
+        }
+        if (!_store->setValue(config::storeGroup(group), section, key, *storeValue)) {
             error = _store->error();
             ROCK_LOG_WARN(Config, "Cannot persist [{}] {}: {}", section, key, error);
             return false;

@@ -59,7 +59,6 @@ namespace rock
         bool rockSuppressNativeVats = false;
         bool rockOfferSteamVRBinding = true;
         int rockSetupWizardShownEdition = 0;
-        float rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::kDefaultHoldSeconds;
         int rockFarGrabStyle = static_cast<int>(far_pull_gesture::Mode::Immediate);
         // Developer.EnableDeveloperSettings: the settings menu shows the ROCK Dev page. ROCK itself
         // reads nothing from it.
@@ -74,10 +73,10 @@ namespace rock
         float rockGrabInputForceSeconds = 0.08f;
         // ControllerInput.Left/Right: physical source of each logical button, per hand (left, right).
         std::array<button_layout_policy::HandLayout, 2> rockButtonLayouts{};
-        // Bindings: the control and gesture of each gameplay function.
+        // Bindings: the control and gesture of each gameplay function, and each one's time (a hold's hold
+        // time or a double tap's longest gap, 0 for a press or tap; function_binding_text::holdSeconds).
         function_binding_policy::Bindings rockFunctionBindings = function_binding_policy::homeBindings();
-        float rockBindingHoldSeconds = function_binding_policy::kDefaultHoldSeconds;
-        float rockBindingDoubleTapSeconds = function_binding_policy::kDefaultDoubleTapSeconds;
+        std::array<float, function_binding_policy::kFunctionCount> rockBindingSeconds = function_binding_policy::homeSeconds();
 
         bool rockDeveloperModeEnabled = false;
 
@@ -194,10 +193,6 @@ namespace rock
         float rockWeaponSupportSurfaceSeatMaxDegrees = 35.0f;
 
         bool rockEnableImmersiveScopes = true;
-
-        // While immersive scopes are enabled, the held firing-hand A/X gesture is the sole native-scope activation
-        // path. A release before the threshold remains reload input.
-        float rockManualScopeHoldSeconds = 0.30f;
 
         // Used only when generated Scope/Sight geometry is unavailable, or
         // explicitly forced for an incorrectly accepted optic collider.

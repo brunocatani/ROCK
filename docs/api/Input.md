@@ -69,7 +69,7 @@ hand returns `HandUnavailable`. `weaponGenerationKey` is the weapon's interactio
 key (Weapon `getInteractionKey`), so the lease works without colliders and stays
 held when they arrive and that key changes: name the new key from then on.
 
-ROCK classifies the press with `Scopes.ManualScopeHoldSeconds`: a short release adds
+ROCK classifies the press with the Scope binding's duration (`[Bindings] Scope`): a short release adds
 one to `tapSequence`; a hold stays ROCK scope input (`scopeHeld`) and never
 becomes a tap. Flags:
 

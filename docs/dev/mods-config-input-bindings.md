@@ -63,15 +63,16 @@ Rejected:
 
 One staged change at a time, with a go-ahead before each.
 
-- [ ] RPS fork: generic inline-table value type. `SettingsStoreTests`: a table round-trips; a malformed table is kept as written.
-- [ ] RPS fork: startup value converter, also on INI values. `SettingsStoreTests`: it runs once, and on INI values.
-- [ ] ROCK: `[Bindings]` as tables:
+- [x] RPS fork: generic inline-table value type (c15f848), and `parseTable`, which reads its keys so ROCK needs no toml++ of its own (fc23b05).
+- [x] RPS fork: startup value converter, also on INI values (a52def7).
+- [x] ROCK: `[Bindings]` as tables (`input/FunctionBindingText.h`):
   - parser for the framework words, aliases and duration rules; per-function `primary`/`offhand`;
   - converter for old strings and the four retired hold times;
   - home gestures and FRIK reading binding durations;
   - API line form; catalog help in the new form; regenerate `data/config/*_example.toml`;
-  - `Input.h` and `docs/api/Input.md` wording; README's `[Bindings]` text.
+  - `Input.h`, `docs/api/Input.md` and `docs/api/Configuration.md` wording. README has no `[Bindings]` text.
   - Tests: `ConfigurationStoreTests` for migration (strings, retired keys, extra controls, `ROCK.ini`); the table parser as a configuration contract.
+  - The spec's binding rows stay text inputs here, with table defaults; the four retired rows are gone.
 - [ ] ROCK: spec rows (decision 11); `ROCKModsConfigSpecTests` compares a `cf.inputBinding` row's JSON `default` with ROCK's compiled default through the parser.
 
 ## Check in the headset

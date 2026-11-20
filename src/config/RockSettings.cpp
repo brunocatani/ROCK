@@ -1,16 +1,25 @@
 #include "config/RockSettings.h"
 #include "config/SettingMetadata.h"
 
+#include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/input/FunctionBindingText.h"
+
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <format>
+#include <optional>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace rock::config
 {
     namespace
     {
+        namespace fb = function_binding_policy;
+        namespace binding_text = function_binding_text;
+        using RPS::Settings::ConversionSource;
         using RPS::Settings::LegacyKey;
         using RPS::Settings::LegacyKind;
 
@@ -29,6 +38,90 @@ namespace rock::config
             { "FiringHand.Right", "SupportGripOffsetGameUnits", "FiringHand.Right", "SupportGripOffset",
                 RPS::Settings::RenameKind::Float3ToTransformPosition },
         };
+
+        // The hold times ROCK.toml held before each binding carried its own duration.
+        struct RetiredTime
+        {
+            std::string_view table;
+            std::string_view key;
+            float fallback;
+            float minimum;
+            float maximum;
+        };
+        constexpr RetiredTime kRetiredHold{ "Bindings", "HoldSeconds", 0.35f, 0.1f, 2.0f };
+        constexpr RetiredTime kRetiredDoubleTap{ "Bindings", "DoubleTapSeconds", 0.30f, 0.15f, 0.6f };
+        constexpr RetiredTime kRetiredScopeHold{ "Scopes", "ManualScopeHoldSeconds", 0.30f, 0.05f, 2.0f };
+        constexpr RetiredTime kRetiredPauseHold{ "ControllerInput", "PipboyPauseHoldSeconds", 0.35f, 0.15f, 2.0f };
+        constexpr std::array kRetiredTimes{ kRetiredHold, kRetiredDoubleTap, kRetiredScopeHold, kRetiredPauseHold };
+
+        /**
+         * A retired hold time in its old range, or its old default when the source has none.
+         */
+        float retiredSeconds(const ConversionSource& source, const RetiredTime& time)
+        {
+            const auto value = source.value(time.table, time.key, ValueType::Float);
+            float parsed = time.fallback;
+            if (value)
+                std::from_chars(value->data(), value->data() + value->size(), parsed);
+            return std::clamp(parsed, time.minimum, time.maximum);
+        }
+
+        /**
+         * One binding's conversion to its CommonFramework table: from the old string form, and with the retired hold
+         * times as its duration. A file holding neither, or already holding the table without an old string, is left
+         * as it is. What the table cannot say is logged and becomes the default.
+         */
+        template <fb::Function F>
+        std::optional<std::string> convertBinding(const ConversionSource& source)
+        {
+            const auto key = fb::functionKey(F);
+            const auto old = source.value("Bindings", key, ValueType::String);
+            const bool retired = std::any_of(kRetiredTimes.begin(), kRetiredTimes.end(),
+                [&](const RetiredTime& time) { return source.value(time.table, time.key, ValueType::Float).has_value(); });
+            if (!old && (!retired || source.value("Bindings", key, ValueType::Table)))
+                return std::nullopt;
+            const binding_text::LegacyTimes times{
+                .hold = retiredSeconds(source, kRetiredHold),
+                .scopeHold = retiredSeconds(source, kRetiredScopeHold),
+                .pauseHold = retiredSeconds(source, kRetiredPauseHold),
+                .doubleTap = retiredSeconds(source, kRetiredDoubleTap),
+            };
+            const auto converted =
+                binding_text::fromLegacyBinding(F, old ? std::optional<std::string_view>(*old) : std::nullopt, times);
+            for ([[maybe_unused]] const auto& warning : converted.warnings)
+                ROCK_LOG_WARN(Config, "Bindings.{}: {}", key, warning);
+            return binding_text::formatBindingTable(F, converted.value);
+        }
+
+        template <std::size_t... Index>
+        constexpr auto bindingConversions(std::index_sequence<Index...>)
+        {
+            return std::array<RPS::Settings::ValueConversion, sizeof...(Index)>{ RPS::Settings::ValueConversion{
+                "Bindings", fb::functionKey(static_cast<fb::Function>(Index)),
+                &convertBinding<static_cast<fb::Function>(Index)> }... };
+        }
+
+        // Each binding's conversion from the old string form and the retired hold times. Frozen like the INI table.
+        constexpr auto kConversions = bindingConversions(std::make_index_sequence<fb::kFunctionCount>{});
+
+        // The function a [Bindings] key binds, or nullopt for another option.
+        std::optional<fb::Function> bindingFunction(const Setting& setting)
+        {
+            if (setting.table != "Bindings")
+                return std::nullopt;
+            for (std::size_t f = 0; f < fb::kFunctionCount; ++f) {
+                if (fb::functionKey(static_cast<fb::Function>(f)) == setting.key)
+                    return static_cast<fb::Function>(f);
+            }
+            return std::nullopt;
+        }
+
+        // A binding table as the one-line form; a table ROCK cannot read is published as written.
+        std::string bindingLine(fb::Function function, const std::string& table)
+        {
+            const auto parsed = binding_text::parseBindingTable(function, table);
+            return parsed ? binding_text::formatBindingLine(function, parsed->value) : table;
+        }
 
         // A transform's position as canonical Float3 text; no pos is no move.
         std::string positionText(const std::string& transform)
@@ -103,27 +196,48 @@ namespace rock::config
             },
             std::move(definitions),
             RPS::Settings::LegacyIni{ { directory / "ROCK.ini", directory / "ROCK_Developer.ini" }, kLegacyKeys },
-            kRenamedKeys);
+            kRenamedKeys, kConversions);
     }
 
     /**
-     * A setting as the Configuration API publishes it. A Transform is published as its position, a Float3: the API
-     * has no transform type, a consumer that meets an unknown type drops every setting, and ROCK's transforms hold
-     * only a position.
+     * A setting as the Configuration API publishes it. The API has no transform or table type, and a consumer that
+     * meets an unknown type drops every setting: a Transform is published as its position, a Float3 (ROCK's
+     * transforms hold only a position), and a binding table as a String in the one-line form.
      */
     ApiSetting apiSetting(const Setting& setting)
     {
-        if (setting.type != ValueType::Transform)
-            return { static_cast<api::configuration::ValueType>(setting.type), setting.value, setting.defaultValue };
-        return { api::configuration::ValueType::Float3, positionText(setting.value), positionText(setting.defaultValue) };
+        if (setting.type == ValueType::Transform)
+            return { api::configuration::ValueType::Float3, positionText(setting.value), positionText(setting.defaultValue) };
+        if (setting.type == ValueType::Table) {
+            const auto function = bindingFunction(setting);
+            if (!function)
+                return { api::configuration::ValueType::String, setting.value, setting.defaultValue };
+            return { api::configuration::ValueType::String, bindingLine(*function, setting.value),
+                bindingLine(*function, setting.defaultValue) };
+        }
+        return { static_cast<api::configuration::ValueType>(setting.type), setting.value, setting.defaultValue };
     }
 
     /**
-     * The store value of a Configuration API write. A Float3 sent to a Transform replaces its position and keeps
-     * the parts the file has besides; any other value is passed on for the store to check.
+     * The store value of a Configuration API write. A Float3 sent to a Transform replaces its position and keeps the
+     * parts the file has besides. A binding takes the one-line form (or its table) and is refused with the reason
+     * when ROCK cannot read it. Any other value is passed on for the store to check.
      */
-    std::string storeValueFromApi(const Setting& setting, std::string_view value)
+    std::expected<std::string, std::string> storeValueFromApi(const Setting& setting, std::string_view value)
     {
+        if (setting.type == ValueType::Table) {
+            const auto function = bindingFunction(setting);
+            if (!function)
+                return std::string(value);
+            auto parsed = binding_text::parseBindingLine(*function, value);
+            if (!parsed) {
+                if (const auto table = binding_text::parseBindingTable(*function, value))
+                    parsed = table;
+            }
+            if (!parsed)
+                return std::unexpected(std::format("Bindings.{} cannot be '{}': {}", setting.key, value, parsed.error()));
+            return binding_text::formatBindingTable(*function, parsed->value);
+        }
         if (setting.type != ValueType::Transform)
             return std::string(value);
         const auto position = parseFloat3(value);

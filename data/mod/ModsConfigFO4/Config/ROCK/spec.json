@@ -769,17 +769,6 @@
               "help": "Places the scope view on the weapon, raises it while you hold the scope button, and corrects the overlay and zoom. Off: the game's own scopes. Turning it on takes the game's scope hook until you restart. Release the scope button before changing it.",
               "default": true,
               "storage": { "path": ["Scopes", "EnableImmersiveScopes"] }
-            },
-            {
-              "type": "slider",
-              "valueType": "float",
-              "text": "Scope Hold Time",
-              "help": "How long to hold the scope button (A, or X for a left firing hand) before the scope view comes up; a shorter press reloads.",
-              "default": 0.3,
-              "valueOptions": { "min": 0.05, "max": 2.0, "step": 0.05 },
-              "display": { "unit": "s" },
-              "enabledWhen": { "setting": "immersiveScopes", "equals": true },
-              "storage": { "path": ["Scopes", "ManualScopeHoldSeconds"] }
             }
           ]
         },
@@ -832,150 +821,120 @@
           "storage": { "path": ["ControllerInput", "OfferSteamVRBinding"] }
         },
         {
-          "type": "slider",
-          "valueType": "float",
-          "text": "Pip-Boy and Pause Hold Time",
-          "help": "Tap left Y to open the Pip-Boy; hold it this long to open the Pause menu instead.",
-          "default": 0.35,
-          "valueOptions": { "min": 0.15, "max": 2.0, "step": 0.05 },
-          "display": { "unit": "s" },
-          "storage": { "path": ["ControllerInput", "PipboyPauseHoldSeconds"] }
-        },
-        {
-          "type": "slider",
-          "valueType": "float",
-          "text": "Hold Time",
-          "help": "How long a hold binding needs before it acts, for functions without their own hold time (Scope and Pause have theirs; Grenade uses the game's).",
-          "default": 0.35,
-          "valueOptions": { "min": 0.1, "max": 2.0, "step": 0.05 },
-          "display": { "unit": "s" },
-          "storage": { "path": ["Bindings", "HoldSeconds"] }
-        },
-        {
-          "type": "slider",
-          "valueType": "float",
-          "text": "Double Tap Time",
-          "help": "The longest gap between the two presses of a double tap. A tap on the same control waits this long before it acts.",
-          "default": 0.3,
-          "valueOptions": { "min": 0.15, "max": 0.6, "step": 0.05 },
-          "display": { "unit": "s" },
-          "storage": { "path": ["Bindings", "DoubleTapSeconds"] }
-        },
-        {
           "type": "section",
           "text": "Bindings",
-          "help": "The control and gesture of each function, typed as text.",
+          "help": "The control of each function, typed as a table.",
           "content": [
             {
               "type": "text",
-              "text": "Write each binding as \"hand gesture control\", or \"none\". Add \"+hand control\" for a button that must be held at the same time. Hand: firing (the hand on the weapon's firing grip), support, primary, offhand, left, right, each. Gesture: press (acts while held), tap, hold, double. Control: trigger, grip, a or x, b or y, thumbstick, grip_click, axis3, axis4, pad_up, pad_down, pad_left, pad_right, pad_center. A binding ROCK can't read uses its default."
+              "text": "Write each binding as a table: { hand = \"primary\", type = \"tap\", button = \"a\" }, or { type = \"none\" }. Hand: primary, offhand, left, right, any (Fire, Reload, Scope and Support Trigger take primary, the hand holding the weapon's trigger, or offhand). Type: hold (add duration = seconds to act from that time), tap, double. Button: trigger, grip, a, b, thumbstick. A binding ROCK can't read uses its default."
             },
             {
               "type": "textinput",
               "valueType": "string",
               "text": "Grab",
-              "help": "Grab with each hand. Default: each press grip.",
-              "default": "each press grip",
-              "valueOptions": { "maxLength": 64 },
+              "help": "Grab with each hand.",
+              "default": "{ hand = \"any\", type = \"hold\", button = \"grip\" }",
+              "valueOptions": { "maxLength": 128 },
               "storage": { "path": ["Bindings", "Grab"] }
             },
             {
               "type": "textinput",
               "valueType": "string",
               "text": "Fire",
-              "help": "Fire the equipped weapon. Default: firing press trigger.",
-              "default": "firing press trigger",
-              "valueOptions": { "maxLength": 64 },
+              "help": "Fire the equipped weapon.",
+              "default": "{ hand = \"primary\", type = \"hold\", button = \"trigger\" }",
+              "valueOptions": { "maxLength": 128 },
               "storage": { "path": ["Bindings", "Fire"] }
             },
             {
               "type": "textinput",
               "valueType": "string",
               "text": "Support Trigger",
-              "help": "The support hand's trigger: a second weapon, or the support action of what that hand holds. Default: support press trigger.",
-              "default": "support press trigger",
-              "valueOptions": { "maxLength": 64 },
+              "help": "The support hand's trigger: a second weapon, or the support action of what that hand holds.",
+              "default": "{ hand = \"offhand\", type = \"hold\", button = \"trigger\" }",
+              "valueOptions": { "maxLength": 128 },
               "storage": { "path": ["Bindings", "SupportTrigger"] }
             },
             {
               "type": "textinput",
               "valueType": "string",
               "text": "Use",
-              "help": "Use what the primary hand points at: take, open, talk. Default: primary press a.",
-              "default": "primary press a",
-              "valueOptions": { "maxLength": 64 },
+              "help": "Use what the primary hand points at: take, open, talk.",
+              "default": "{ hand = \"primary\", type = \"hold\", button = \"a\" }",
+              "valueOptions": { "maxLength": 128 },
               "storage": { "path": ["Bindings", "Use"] }
             },
             {
               "type": "textinput",
               "valueType": "string",
               "text": "Reload",
-              "help": "Reload the equipped weapon. Default: firing tap a.",
-              "default": "firing tap a",
-              "valueOptions": { "maxLength": 64 },
+              "help": "Reload the equipped weapon.",
+              "default": "{ hand = \"primary\", type = \"tap\", button = \"a\" }",
+              "valueOptions": { "maxLength": 128 },
               "storage": { "path": ["Bindings", "Reload"] }
             },
             {
               "type": "textinput",
               "valueType": "string",
               "text": "Scope",
-              "help": "Look through the weapon's scope. Default: firing hold a.",
-              "default": "firing hold a",
-              "valueOptions": { "maxLength": 64 },
+              "help": "Look through the weapon's scope.",
+              "default": "{ hand = \"primary\", type = \"hold\", button = \"a\", duration = 0.3 }",
+              "valueOptions": { "maxLength": 128 },
               "storage": { "path": ["Bindings", "Scope"] }
             },
             {
               "type": "textinput",
               "valueType": "string",
               "text": "VATS",
-              "help": "Open VATS. Default: primary tap b.",
-              "default": "primary tap b",
-              "valueOptions": { "maxLength": 64 },
+              "help": "Open VATS.",
+              "default": "{ hand = \"primary\", type = \"tap\", button = \"b\" }",
+              "valueOptions": { "maxLength": 128 },
               "storage": { "path": ["Bindings", "Vats"] }
             },
             {
               "type": "textinput",
               "valueType": "string",
               "text": "Grenade",
-              "help": "Draw a grenade into the hand. Default: primary hold b.",
-              "default": "primary hold b",
-              "valueOptions": { "maxLength": 64 },
+              "help": "Draw a grenade into the hand.",
+              "default": "{ hand = \"primary\", type = \"hold\", button = \"b\", duration = 0.25 }",
+              "valueOptions": { "maxLength": 128 },
               "storage": { "path": ["Bindings", "Grenade"] }
             },
             {
               "type": "textinput",
               "valueType": "string",
               "text": "Pip-Boy",
-              "help": "Open the Pip-Boy. Default: offhand tap y.",
-              "default": "offhand tap y",
-              "valueOptions": { "maxLength": 64 },
+              "help": "Open the Pip-Boy.",
+              "default": "{ hand = \"offhand\", type = \"tap\", button = \"b\" }",
+              "valueOptions": { "maxLength": 128 },
               "storage": { "path": ["Bindings", "Pipboy"] }
             },
             {
               "type": "textinput",
               "valueType": "string",
               "text": "Pause",
-              "help": "Open the Pause menu. Default: offhand hold y.",
-              "default": "offhand hold y",
-              "valueOptions": { "maxLength": 64 },
+              "help": "Open the Pause menu.",
+              "default": "{ hand = \"offhand\", type = \"hold\", button = \"b\", duration = 0.35 }",
+              "valueOptions": { "maxLength": 128 },
               "storage": { "path": ["Bindings", "Pause"] }
             },
             {
               "type": "textinput",
               "valueType": "string",
               "text": "Bipod and Favorites",
-              "help": "Bipod latch and placing a held object while the weapon touches a surface, and the game's Favorites menu. Default: primary press thumbstick.",
-              "default": "primary press thumbstick",
-              "valueOptions": { "maxLength": 64 },
+              "help": "Bipod latch and placing a held object while the weapon touches a surface, and the game's Favorites menu.",
+              "default": "{ hand = \"primary\", type = \"hold\", button = \"thumbstick\" }",
+              "valueOptions": { "maxLength": 128 },
               "storage": { "path": ["Bindings", "StickActions"] }
             },
             {
               "type": "textinput",
               "valueType": "string",
               "text": "RobCo PALM",
-              "help": "Open RobCo PALM's wheel. Default: primary press thumbstick.",
-              "default": "primary press thumbstick",
-              "valueOptions": { "maxLength": 64 },
+              "help": "Open RobCo PALM's wheel.",
+              "default": "{ hand = \"primary\", type = \"hold\", button = \"thumbstick\" }",
+              "valueOptions": { "maxLength": 128 },
               "storage": { "path": ["Bindings", "Palm"] }
             }
           ]

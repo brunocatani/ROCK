@@ -239,6 +239,7 @@ set(ROCK_SETUP_WIZARD_PREVIEW_COPY_PATH "" CACHE PATH
 add_library(ROCKSetupWizardPreviewCore STATIC
   "${SOURCE_DIR}/RockConfig.cpp"
   "${SOURCE_DIR}/RockConfigLoad.cpp"
+  "${SOURCE_DIR}/physics-interaction/input/FunctionBindingText.cpp"
   "${SOURCE_DIR}/config/RockSettings.cpp"
   "${SOURCE_DIR}/setup-wizard/SetupWizardPanel.cpp"
   "${SOURCE_DIR}/setup-wizard/SetupWizardSettings.cpp"
@@ -832,6 +833,7 @@ if(BUILD_ROCK_TESTS)
     "${ROOT_DIR}/tests/ConfigurationStoreTests.cpp"
     "${SOURCE_DIR}/config/RockSettings.cpp"
     "${SOURCE_DIR}/RockConfigLoad.cpp"
+    "${SOURCE_DIR}/physics-interaction/input/FunctionBindingText.cpp"
   )
   target_compile_features(ROCKConfigurationStoreTests PRIVATE cxx_std_23)
   target_compile_definitions(ROCKConfigurationStoreTests PRIVATE ROCK_CONFIG_REFERENCE_DIR="${ROOT_DIR}/data/config"
@@ -843,6 +845,7 @@ if(BUILD_ROCK_TESTS)
     "${ROOT_DIR}/tests/ModsConfigSpecTests.cpp"
     "${SOURCE_DIR}/config/RockSettings.cpp"
     "${SOURCE_DIR}/RockConfigLoad.cpp"
+    "${SOURCE_DIR}/physics-interaction/input/FunctionBindingText.cpp"
   )
   target_compile_features(ROCKModsConfigSpecTests PRIVATE cxx_std_23)
   target_compile_definitions(ROCKModsConfigSpecTests PRIVATE
@@ -855,6 +858,7 @@ if(BUILD_ROCK_TESTS)
     "${ROOT_DIR}/tests/SetupWizardTests.cpp"
     "${SOURCE_DIR}/config/RockSettings.cpp"
     "${SOURCE_DIR}/RockConfigLoad.cpp"
+    "${SOURCE_DIR}/physics-interaction/input/FunctionBindingText.cpp"
   )
   target_compile_features(ROCKSetupWizardTests PRIVATE cxx_std_23)
   list(APPEND ROCK_COMMONLIB_TEST_TARGETS ROCKSetupWizardTests)
@@ -866,6 +870,7 @@ if(BUILD_ROCK_TESTS)
     "${ROOT_DIR}/tests/SetupWizardStub.cpp"
     "${SOURCE_DIR}/RockConfig.cpp"
     "${SOURCE_DIR}/RockConfigLoad.cpp"
+    "${SOURCE_DIR}/physics-interaction/input/FunctionBindingText.cpp"
     "${SOURCE_DIR}/config/RockSettings.cpp"
   )
   target_compile_features(ROCKConfigurationProviderTests PRIVATE cxx_std_23)

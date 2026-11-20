@@ -4,6 +4,8 @@
 // target still exists. Old defaults use the old INI text. A row follows its
 // option when the option is renamed (only its target changes) and leaves
 // with it when it is removed: an old INI value for a removed option is dropped.
+// A ConversionInput row carries a retired hold time to the [Bindings] conversions,
+// which fold it into a binding's duration (kConversions in RockSettings.cpp).
 
 { "bBipodMode", "WeaponHandling", "BipodMode", LegacyKind::Value, 0, "true", "true" },
 { "bDebugDrawAuthoredGripActivationZones", "DebugOverlay", "DebugDrawAuthoredGripActivationZones", LegacyKind::Value, 0, "false", "false" },
@@ -230,7 +232,7 @@
 { "fLeftGrabAuthorityProxyOffsetXGameUnits", "PalmAndGrabOffsets", "LeftGrabAuthorityProxyOffsetGameUnits", LegacyKind::Float3Component, 0, "0.5", "0.5" },
 { "fLeftGrabAuthorityProxyOffsetYGameUnits", "PalmAndGrabOffsets", "LeftGrabAuthorityProxyOffsetGameUnits", LegacyKind::Float3Component, 1, "-1.0", "-1" },
 { "fLeftGrabAuthorityProxyOffsetZGameUnits", "PalmAndGrabOffsets", "LeftGrabAuthorityProxyOffsetGameUnits", LegacyKind::Float3Component, 2, "0.0", "0" },
-{ "fManualScopeHoldSeconds", "Scopes", "ManualScopeHoldSeconds", LegacyKind::Value, 0, "0.30", "0.3" },
+{ "fManualScopeHoldSeconds", "Scopes", "ManualScopeHoldSeconds", LegacyKind::ConversionInput, 0, "0.30", "0.3" },
 { "fMeleeGripPitchDegrees", "WeaponHandling", "MeleeGripPitchDegrees", LegacyKind::Value, 0, "0.0", "0" },
 { "fMouthConsumeCandidateHapticBaseIntensity", "Haptics", "MouthConsumeCandidateHapticBaseIntensity", LegacyKind::Value, 0, "0.22", "0.22" },
 { "fMouthConsumeCandidateHapticDurationSeconds", "Haptics", "MouthConsumeCandidateHapticDurationSeconds", LegacyKind::Value, 0, "0.050", "0.05" },
@@ -258,7 +260,7 @@
 { "fNativeScopeOverlayPitchDegrees", "ScopePlacement", "NativeScopeOverlayRotationDegrees", LegacyKind::Float3Component, 0, "0.0", "0" },
 { "fNativeScopeOverlayRollDegrees", "ScopePlacement", "NativeScopeOverlayRotationDegrees", LegacyKind::Float3Component, 2, "0.0", "0" },
 { "fNativeScopeOverlayYawDegrees", "ScopePlacement", "NativeScopeOverlayRotationDegrees", LegacyKind::Float3Component, 1, "0.0", "0" },
-{ "fPipboyPauseHoldSeconds", "ControllerInput", "PipboyPauseHoldSeconds", LegacyKind::Value, 0, "0.35", "0.35" },
+{ "fPipboyPauseHoldSeconds", "ControllerInput", "PipboyPauseHoldSeconds", LegacyKind::ConversionInput, 0, "0.35", "0.35" },
 { "fPistolOneHandRecoilPercent", "WeaponRecoil", "PistolOneHandRecoilPercent", LegacyKind::Value, 0, "300.0", "300" },
 { "fPistolTwoHandRecoilPercent", "WeaponRecoil", "PistolTwoHandRecoilPercent", LegacyKind::Value, 0, "80.0", "80" },
 { "fPullCatchHapticIntensity", "Haptics", "PullCatchHapticIntensity", LegacyKind::Value, 0, "0.22", "0.22" },

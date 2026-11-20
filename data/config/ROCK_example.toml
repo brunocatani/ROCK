@@ -255,10 +255,6 @@ SupportGripOffset = { pos = [0.0, 0.0, 0.0] }
 ## Release the scope button before changing this. Reload stays on a tap of the same button.
 EnableImmersiveScopes = true
 
-## Scope Hold Time
-## Seconds to hold the scope button (right A, or left X for a left firing hand) before the scope view comes up; a shorter press reloads. Range: 0.05 to 2.
-ManualScopeHoldSeconds = 0.3
-
 ## === 08. Grenades ===
 [Grenades]
 ## Immersive Grenades
@@ -292,10 +288,6 @@ SuppressNativeVats = false
 ## True: when Index controllers or Vive wands use SteamVR's default binding for Fallout 4 VR, the setup wizard opens by itself once per game start, when no menu or scene is in the way, and offers ROCK's binding (the default binding turns A and X into grip). It never replaces a binding you chose in SteamVR.
 ## False: the wizard opens only when you open it; it still offers the binding then. Choosing other controllers in the wizard sets this.
 OfferSteamVRBinding = true
-
-## Pip-Boy and Pause Hold Time
-## Tap left Y to open the Pip-Boy; hold it this many seconds to open the Pause menu instead. Range: 0.15 to 2.
-PipboyPauseHoldSeconds = 0.35
 
 [ControllerInput.Right]
 ## Button Layout
@@ -343,53 +335,46 @@ ShownEdition = 0
 
 [Bindings]
 ## Bindings
-## The control and gesture of each function: "<hand> <gesture> <control>", or "none".
-## Hands: firing (the hand on the weapon's firing grip), support, primary, offhand, left, right, each.
-## Gestures: press (acts while held), tap, hold, double (double tap).
-## Controls: as in the button layout above. Add "+<hand> <control>" for a button that must be held at the same time.
+## Each function's control, as { hand = "primary", type = "tap", button = "a" }, or { type = "none" }.
+## hand: primary, offhand, left, right, any. Fire, Reload, Scope and SupportTrigger take only primary (the hand holding the weapon's trigger) and offhand; elsewhere primary is the right hand.
+## type: hold (acts while held; with duration = seconds, from that time until release, 0.05 to 2), tap, double (duration = the longest gap, 0.15 to 0.6, 0.4 when left out).
+## button: trigger, grip, a, b, thumbstick. Other controls reach these through the button layout above.
+## Add modifier = { hand = "offhand", button = "grip" } for a button held at the same time (the binding's hand when left out).
 ## This key: grab with each hand.
-Grab = "each press grip"
+Grab = { hand = "any", type = "hold", button = "grip" }
 
 ## Fire the equipped weapon.
-Fire = "firing press trigger"
+Fire = { hand = "primary", type = "hold", button = "trigger" }
 
 ## The support hand's trigger: a second weapon, or the support action of what that hand holds.
-SupportTrigger = "support press trigger"
+SupportTrigger = { hand = "offhand", type = "hold", button = "trigger" }
 
 ## Use what the primary hand points at (take, open, talk). It owns the whole press while there is something to use.
-Use = "primary press a"
+Use = { hand = "primary", type = "hold", button = "a" }
 
 ## Reload the equipped weapon.
-Reload = "firing tap a"
+Reload = { hand = "primary", type = "tap", button = "a" }
 
-## Look through the weapon's scope while active.
-Scope = "firing hold a"
+## Look through the weapon's scope while active. On its home button (A) the duration is also how long a press lasts before it scopes instead of reloading.
+Scope = { hand = "primary", type = "hold", button = "a", duration = 0.3 }
 
 ## Open VATS.
-Vats = "primary tap b"
+Vats = { hand = "primary", type = "tap", button = "b" }
 
-## Draw a grenade into the hand.
-Grenade = "primary hold b"
+## Draw a grenade into the hand. On its home button (B) the duration is also how long a press lasts before it draws a grenade instead of opening VATS.
+Grenade = { hand = "primary", type = "hold", button = "b", duration = 0.25 }
 
 ## Open the Pip-Boy.
-Pipboy = "offhand tap y"
+Pipboy = { hand = "offhand", type = "tap", button = "b" }
 
-## Open the Pause menu.
-Pause = "offhand hold y"
+## Open the Pause menu. On its home button (left Y) the duration is also how long a press lasts before it opens Pause instead of the Pip-Boy.
+Pause = { hand = "offhand", type = "hold", button = "b", duration = 0.35 }
 
 ## Bipod latch and held placement while the weapon touches a surface, and the game's Favorites menu.
-StickActions = "primary press thumbstick"
+StickActions = { hand = "primary", type = "hold", button = "thumbstick" }
 
 ## Open RobCo PALM's wheel.
-Palm = "primary press thumbstick"
-
-## Hold Time
-## Seconds a hold binding needs before it acts, for functions without their own hold time (Scope and Pause have theirs; Grenade uses the game's). Range: 0.1 to 2.
-HoldSeconds = 0.35
-
-## Double Tap Time
-## Longest gap between the two presses of a double tap. A tap on the same control waits this long before it acts. Range: 0.15 to 0.6.
-DoubleTapSeconds = 0.3
+Palm = { hand = "primary", type = "hold", button = "thumbstick" }
 
 ## === 11. Native Gameplay ===
 [NativeGameplay]
