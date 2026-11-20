@@ -103,10 +103,10 @@ namespace
         require(find(*store, "FiringHand.Left", "AimOffset").value == "{ pos = [0.0, 2.5, 0.0] }",
             "an X/Y/Z triplet was not carried as one transform position");
         require(find(*store, "ControllerInput.Right", "A").value == "b", "a button layout key was not carried");
-        require(find(*store, "ScopePlacement", "NativeScopeOverlayOffsetGameUnits").value == "[0.0, 12.0, 0.0]" &&
+        require(find(*store, "ScopePlacement", "NativeScopeOverlayOffset").value == "{ pos = [0.0, 12.0, 0.0] }" &&
                     find(*store, "DebugOverlay", "DebugMaxBodyInstances").value == "100",
             "developer options were not carried");
-        require(bytes(store->path(Group::Developer)).find("NativeScopeOverlayOffsetGameUnits = [0.0, 12.0, 0.0]") !=
+        require(bytes(store->path(Group::Developer)).find("NativeScopeOverlayOffset = { pos = [0.0, 12.0, 0.0] }") !=
                 std::string::npos,
             "an option that moved to the developer file was not written there");
         require(hasLine(store->messages(), "does not fit: fRealisticGrenadeFuseSeconds = soon"),
@@ -218,14 +218,30 @@ namespace
             "a binding was converted twice");
     }
 
-    // A ROCK.toml from before the firing-hand offsets became transforms keeps them.
+    // Files from before the [x, y, z] options became transforms keep their offsets;
+    // a scope rotation's rot [heading, roll, attitude] turns about X, Y, Z: ROCK's pitch, roll and yaw.
     void transformChecks(const fs::path& directory, std::span<const SettingDefault> defaults)
     {
         fs::create_directories(directory);
         const auto store = makeStore(directory, defaults);
         write(store->path(Group::Player),
             "[FiringHand.Left]\nAimOffsetGameUnits = [1, 2, 3]\n[FiringHand.Right]\nSupportGripOffsetGameUnits = [0, 0, -4]\n");
+        write(store->path(Group::Developer),
+            "[GrabSafetyAndRelease]\nMouthConsumeHmdOffsetGameUnits = [0, 5, -9]\n"
+            "[ScopePlacement]\nNativeScopeOverlayRotation = { rot = [1, 2, 3] }\n");
         store->load(true);
+        require(find(*store, "GrabSafetyAndRelease", "MouthConsumeHmdOffset").value == "{ pos = [0.0, 5.0, -9.0] }",
+            "a renamed developer offset was not carried into its transform");
+        {
+            const auto values = runtime(*store);
+            require(values.rockMouthConsumeHmdOffsetGameUnits.z < -8.99f &&
+                        values.rockMouthConsumeHmdOffsetGameUnits.z > -9.01f,
+                "a carried developer position did not apply");
+            require(values.rockNativeScopeOverlayPitchDegrees > 0.99f && values.rockNativeScopeOverlayPitchDegrees < 1.01f &&
+                        values.rockNativeScopeOverlayRollDegrees > 1.99f && values.rockNativeScopeOverlayRollDegrees < 2.01f &&
+                        values.rockNativeScopeOverlayYawDegrees > 2.99f && values.rockNativeScopeOverlayYawDegrees < 3.01f,
+                "a scope rotation's rot did not map onto pitch, roll and yaw");
+        }
         require(find(*store, "FiringHand.Left", "AimOffset").value == "{ pos = [1.0, 2.0, 3.0] }" &&
                     find(*store, "FiringHand.Right", "SupportGripOffset").value == "{ pos = [0.0, 0.0, -4.0] }",
             "a renamed offset was not carried into its transform");
@@ -267,32 +283,23 @@ namespace
     {
         fs::create_directories(directory);
         const auto store = makeStore(directory, defaults);
-        std::string developer;
-        std::string_view table;
-        for (const auto& setting : store->settings()) {
-            if (setting.group != Group::Developer)
-                continue;
-            if (setting.table != table)
-                developer += std::format("[{}]\n", setting.table);
-            table = setting.table;
-            developer += std::format("{} = {}\n", setting.key,
-                setting.type == ValueType::String ? std::format("'{}'", setting.defaultValue) : setting.defaultValue);
-        }
+        const auto player = store->organizedDefaults(Group::Player);
+        const auto developer = store->organizedDefaults(Group::Developer);
+        write(store->path(Group::Player), player);
         write(store->path(Group::Developer), developer);
-        store->load(true);
-        require(store->messages().empty(), "cannot organize the default files");
-        return { bodyAfterHeader(withoutCarriageReturns(bytes(store->path(Group::Player)))),
-            bodyAfterHeader(withoutCarriageReturns(bytes(store->path(Group::Developer)))) };
+        return { bodyAfterHeader(withoutCarriageReturns(player)), bodyAfterHeader(withoutCarriageReturns(developer)) };
     }
 
-    // Both organized default files hold every option once at its default, and
-    // reading them gives the same runtime values as reading nothing.
+    // Both organized default files read back as every option at its default, the player file holding each, and
+    // reading them gives the same runtime values as reading nothing. Reading drops the developer file's keys, as
+    // the developer file holds only overrides.
     void defaultChecks(const fs::path& directory, std::span<const SettingDefault> defaults)
     {
         const auto store = makeStore(directory, defaults);
         store->load(false);
+        require(store->messages().empty(), "the organized default files do not read back");
         for (const auto& setting : store->settings()) {
-            require(setting.specified, "an organized default file is missing an option");
+            require(setting.group != Group::Player || setting.specified, "the organized player file is missing an option");
             require(setting.value == setting.defaultValue, "an organized default differs from the compiled default");
         }
         require(runtime(*store) == rock::RockConfig::parseValues({}),

@@ -28,13 +28,31 @@ namespace rock::config
 
         // Keys ROCK.toml held before a later version renamed them. Frozen like
         // the INI table: a row leaves only with its option. The firing-hand
-        // offsets became position-only transforms, for Mods Config's transform editor.
+        // offsets and the developer [x, y, z] options became transforms, for
+        // Mods Config's transform editor. The two scope rotations have no row:
+        // their [pitch, yaw, roll] order is not rot's, so they start again at zero.
         constexpr RPS::Settings::RenamedKey kRenamedKeys[] = {
             { "FiringHand.Left", "AimOffsetGameUnits", "FiringHand.Left", "AimOffset",
                 RPS::Settings::RenameKind::Float3ToTransformPosition },
             { "FiringHand.Left", "GripOffsetGameUnits", "FiringHand.Left", "GripOffset",
                 RPS::Settings::RenameKind::Float3ToTransformPosition },
             { "FiringHand.Right", "SupportGripOffsetGameUnits", "FiringHand.Right", "SupportGripOffset",
+                RPS::Settings::RenameKind::Float3ToTransformPosition },
+            { "PalmAndGrabOffsets", "RightGrabAuthorityProxyOffsetGameUnits", "PalmAndGrabOffsets",
+                "RightGrabAuthorityProxyOffset", RPS::Settings::RenameKind::Float3ToTransformPosition },
+            { "PalmAndGrabOffsets", "LeftGrabAuthorityProxyOffsetGameUnits", "PalmAndGrabOffsets",
+                "LeftGrabAuthorityProxyOffset", RPS::Settings::RenameKind::Float3ToTransformPosition },
+            { "GrabSafetyAndRelease", "ShoulderStashHmdBackRightOffsetGameUnits", "GrabSafetyAndRelease",
+                "ShoulderStashHmdBackRightOffset", RPS::Settings::RenameKind::Float3ToTransformPosition },
+            { "GrabSafetyAndRelease", "ShoulderStashHmdBackLeftOffsetGameUnits", "GrabSafetyAndRelease",
+                "ShoulderStashHmdBackLeftOffset", RPS::Settings::RenameKind::Float3ToTransformPosition },
+            { "GrabSafetyAndRelease", "MouthConsumeHmdOffsetGameUnits", "GrabSafetyAndRelease", "MouthConsumeHmdOffset",
+                RPS::Settings::RenameKind::Float3ToTransformPosition },
+            { "GrabContactEvidence", "GrabPinchDetectionDirectionHandspace", "GrabContactEvidence",
+                "GrabPinchDetectionDirection", RPS::Settings::RenameKind::Float3ToTransformPosition },
+            { "ScopePlacement", "NativeScopeFiringGripFallbackOffsetGameUnits", "ScopePlacement",
+                "NativeScopeFiringGripFallbackOffset", RPS::Settings::RenameKind::Float3ToTransformPosition },
+            { "ScopePlacement", "NativeScopeOverlayOffsetGameUnits", "ScopePlacement", "NativeScopeOverlayOffset",
                 RPS::Settings::RenameKind::Float3ToTransformPosition },
         };
 

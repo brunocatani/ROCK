@@ -93,20 +93,6 @@ namespace rock::config
             return value ? *value : std::string(current);
         }
 
-        [[nodiscard]] RE::NiPoint3 float3(const char* table, const char* key, const RE::NiPoint3& current)
-        {
-            if (_defaults) {
-                declare(table, key, ValueType::Float3,
-                    std::format("{}, {}, {}", floatText(current.x), floatText(current.y), floatText(current.z)));
-                return current;
-            }
-            if (const auto* value = loaded(table, key)) {
-                if (const auto parsed = parseFloat3(*value))
-                    return RE::NiPoint3((*parsed)[0], (*parsed)[1], (*parsed)[2]);
-            }
-            return current;
-        }
-
         /**
          * The position of a Transform option, declared as a position-only transform. A loaded transform without pos
          * means no move.
@@ -122,6 +108,26 @@ namespace rock::config
                 if (const auto parsed = parseTransform(*value)) {
                     const auto position = parsed->position.value_or(std::array<float, 3>{});
                     return RE::NiPoint3(position[0], position[1], position[2]);
+                }
+            }
+            return current;
+        }
+
+        /**
+         * The rotation of a Transform option as stored, [heading, roll, attitude] in degrees (about X, Y, Z),
+         * declared as a rotation-only transform. A loaded transform without rot means no rotation.
+         */
+        [[nodiscard]] RE::NiPoint3 transformRotation(const char* table, const char* key, const RE::NiPoint3& current)
+        {
+            if (_defaults) {
+                declare(table, key, ValueType::Transform,
+                    formatTransform(Transform{ .rotation = std::array{ current.x, current.y, current.z } }));
+                return current;
+            }
+            if (const auto* value = loaded(table, key)) {
+                if (const auto parsed = parseTransform(*value)) {
+                    const auto rotation = parsed->rotation.value_or(std::array<float, 3>{});
+                    return RE::NiPoint3(rotation[0], rotation[1], rotation[2]);
                 }
             }
             return current;
@@ -203,17 +209,6 @@ namespace
         return std::clamp(value, minValue, maxValue);
     }
 
-    // Loaded components are always finite; each is clamped on its own.
-    RE::NiPoint3 readClampedFloat3(SettingReader& ini, const char* table, const char* key, const RE::NiPoint3& current,
-        float minValue, float maxValue)
-    {
-        auto value = ini.float3(table, key, current);
-        value.x = std::clamp(value.x, minValue, maxValue);
-        value.y = std::clamp(value.y, minValue, maxValue);
-        value.z = std::clamp(value.z, minValue, maxValue);
-        return value;
-    }
-
     /**
      * The position of a Transform option, each component clamped on its own.
      */
@@ -221,6 +216,19 @@ namespace
         float minValue, float maxValue)
     {
         auto value = ini.transformPosition(table, key, current);
+        value.x = std::clamp(value.x, minValue, maxValue);
+        value.y = std::clamp(value.y, minValue, maxValue);
+        value.z = std::clamp(value.z, minValue, maxValue);
+        return value;
+    }
+
+    /**
+     * The rotation of a Transform option as stored ([heading, roll, attitude] in degrees), each angle clamped on its own.
+     */
+    RE::NiPoint3 readClampedRotation(SettingReader& ini, const char* table, const char* key, const RE::NiPoint3& current,
+        float minValue, float maxValue)
+    {
+        auto value = ini.transformRotation(table, key, current);
         value.x = std::clamp(value.x, minValue, maxValue);
         value.y = std::clamp(value.y, minValue, maxValue);
         value.z = std::clamp(value.z, minValue, maxValue);
@@ -638,37 +646,37 @@ namespace rock
         rockEnableImmersiveScopes =
             ini.boolean("Scopes", "EnableImmersiveScopes", rockEnableImmersiveScopes);
         {
-            const auto firingGripOffset = readClampedFloat3(ini, "ScopePlacement",
-                "NativeScopeFiringGripFallbackOffsetGameUnits",
+            const auto firingGripOffset = readClampedPosition(ini, "ScopePlacement",
+                "NativeScopeFiringGripFallbackOffset",
                 RE::NiPoint3(rockNativeScopeFiringGripOffsetXGameUnits,
                     rockNativeScopeFiringGripOffsetYGameUnits, rockNativeScopeFiringGripOffsetZGameUnits),
                 -100.0f, 100.0f);
             rockNativeScopeFiringGripOffsetXGameUnits = firingGripOffset.x;
             rockNativeScopeFiringGripOffsetYGameUnits = firingGripOffset.y;
             rockNativeScopeFiringGripOffsetZGameUnits = firingGripOffset.z;
-            // [pitch, yaw, roll]
-            const auto firingGripRotation = readClampedFloat3(ini, "ScopePlacement",
-                "NativeScopeFiringGripFallbackRotationDegrees",
-                RE::NiPoint3(rockNativeScopeFiringGripPitchDegrees, rockNativeScopeFiringGripYawDegrees,
-                    rockNativeScopeFiringGripRollDegrees),
+            // rot turns about X, Y, Z: ROCK's pitch, roll and yaw.
+            const auto firingGripRotation = readClampedRotation(ini, "ScopePlacement",
+                "NativeScopeFiringGripFallbackRotation",
+                RE::NiPoint3(rockNativeScopeFiringGripPitchDegrees, rockNativeScopeFiringGripRollDegrees,
+                    rockNativeScopeFiringGripYawDegrees),
                 -180.0f, 180.0f);
             rockNativeScopeFiringGripPitchDegrees = firingGripRotation.x;
-            rockNativeScopeFiringGripYawDegrees = firingGripRotation.y;
-            rockNativeScopeFiringGripRollDegrees = firingGripRotation.z;
-            const auto overlayOffset = readClampedFloat3(ini, "ScopePlacement", "NativeScopeOverlayOffsetGameUnits",
+            rockNativeScopeFiringGripRollDegrees = firingGripRotation.y;
+            rockNativeScopeFiringGripYawDegrees = firingGripRotation.z;
+            const auto overlayOffset = readClampedPosition(ini, "ScopePlacement", "NativeScopeOverlayOffset",
                 RE::NiPoint3(rockNativeScopeOverlayOffsetXGameUnits, rockNativeScopeOverlayOffsetYGameUnits,
                     rockNativeScopeOverlayOffsetZGameUnits),
                 -100.0f, 100.0f);
             rockNativeScopeOverlayOffsetXGameUnits = overlayOffset.x;
             rockNativeScopeOverlayOffsetYGameUnits = overlayOffset.y;
             rockNativeScopeOverlayOffsetZGameUnits = overlayOffset.z;
-            const auto overlayRotation = readClampedFloat3(ini, "ScopePlacement", "NativeScopeOverlayRotationDegrees",
-                RE::NiPoint3(rockNativeScopeOverlayPitchDegrees, rockNativeScopeOverlayYawDegrees,
-                    rockNativeScopeOverlayRollDegrees),
+            const auto overlayRotation = readClampedRotation(ini, "ScopePlacement", "NativeScopeOverlayRotation",
+                RE::NiPoint3(rockNativeScopeOverlayPitchDegrees, rockNativeScopeOverlayRollDegrees,
+                    rockNativeScopeOverlayYawDegrees),
                 -180.0f, 180.0f);
             rockNativeScopeOverlayPitchDegrees = overlayRotation.x;
-            rockNativeScopeOverlayYawDegrees = overlayRotation.y;
-            rockNativeScopeOverlayRollDegrees = overlayRotation.z;
+            rockNativeScopeOverlayRollDegrees = overlayRotation.y;
+            rockNativeScopeOverlayYawDegrees = overlayRotation.z;
         }
 
         rockVanillaMeleeSwingSpeed = readClampedFloat(ini, "NativeGameplay", "VanillaMeleeSwingSpeed",
@@ -916,10 +924,10 @@ namespace rock
             rockGrabEffectiveMotorMassFloor, kDefaultGrabEffectiveMotorMassFloor, 0.0f, 100.0f);
         rockGrabForceFadeInTime =
             static_cast<float>(ini.number("GrabDrive", "GrabForceFadeInTime", rockGrabForceFadeInTime));
-        rockRightGrabAuthorityProxyOffsetGameUnits = ini.float3("PalmAndGrabOffsets",
-            "RightGrabAuthorityProxyOffsetGameUnits", rockRightGrabAuthorityProxyOffsetGameUnits);
-        rockLeftGrabAuthorityProxyOffsetGameUnits = ini.float3("PalmAndGrabOffsets",
-            "LeftGrabAuthorityProxyOffsetGameUnits", rockLeftGrabAuthorityProxyOffsetGameUnits);
+        rockRightGrabAuthorityProxyOffsetGameUnits = ini.transformPosition("PalmAndGrabOffsets",
+            "RightGrabAuthorityProxyOffset", rockRightGrabAuthorityProxyOffsetGameUnits);
+        rockLeftGrabAuthorityProxyOffsetGameUnits = ini.transformPosition("PalmAndGrabOffsets",
+            "LeftGrabAuthorityProxyOffset", rockLeftGrabAuthorityProxyOffsetGameUnits);
         rockGrabLooseWeaponSharedConstraintLinearTauMultiplier =
             readClampedFloat(ini, "GrabDrive", "GrabLooseWeaponSharedConstraintLinearTauMultiplier",
                 rockGrabLooseWeaponSharedConstraintLinearTauMultiplier,
@@ -1152,8 +1160,8 @@ namespace rock
         rockGrabPinchOtherFingerCurlValue = readClampedFloat(ini, "GrabContactEvidence", "GrabPinchOtherFingerCurlValue",
             rockGrabPinchOtherFingerCurlValue, grab_pinch_pocket_policy::kDefaultOtherFingerCurlValue, 0.0f, 1.0f);
 
-        rockGrabPinchDetectionDirectionHandspace = ini.float3("GrabContactEvidence",
-            "GrabPinchDetectionDirectionHandspace", rockGrabPinchDetectionDirectionHandspace);
+        rockGrabPinchDetectionDirectionHandspace = ini.transformPosition("GrabContactEvidence",
+            "GrabPinchDetectionDirection", rockGrabPinchDetectionDirectionHandspace);
         rockGrabPinchDetectionAxisBlend = readClampedFloat(ini, "GrabContactEvidence", "GrabPinchDetectionAxisBlend",
             rockGrabPinchDetectionAxisBlend, grab_pinch_pocket_policy::kDefaultDetectionAxisBlend, 0.0f, 1.0f);
         {
@@ -1162,7 +1170,7 @@ namespace rock
             if (lengthSquared > 0.000001f) {
                 rockGrabPinchDetectionDirectionHandspace = direction * (1.0f / std::sqrt(lengthSquared));
             } else {
-                ROCK_LOG_WARN(Config, "Invalid GrabContactEvidence.GrabPinchDetectionDirectionHandspace -- using +X");
+                ROCK_LOG_WARN(Config, "Invalid GrabContactEvidence.GrabPinchDetectionDirection -- using +X");
                 rockGrabPinchDetectionDirectionHandspace = RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
             }
         }
@@ -1381,10 +1389,10 @@ namespace rock
         rockShoulderStashSustainedContactMissSeconds = std::isfinite(rockShoulderStashSustainedContactMissSeconds)
             ? std::clamp(rockShoulderStashSustainedContactMissSeconds, 0.0f, 120.0f / 90.0f)
             : 18.0f / 90.0f;
-        rockShoulderStashHmdBackRightOffsetGameUnits = ini.float3("GrabSafetyAndRelease",
-            "ShoulderStashHmdBackRightOffsetGameUnits", rockShoulderStashHmdBackRightOffsetGameUnits);
-        rockShoulderStashHmdBackLeftOffsetGameUnits = ini.float3("GrabSafetyAndRelease",
-            "ShoulderStashHmdBackLeftOffsetGameUnits", rockShoulderStashHmdBackLeftOffsetGameUnits);
+        rockShoulderStashHmdBackRightOffsetGameUnits = ini.transformPosition("GrabSafetyAndRelease",
+            "ShoulderStashHmdBackRightOffset", rockShoulderStashHmdBackRightOffsetGameUnits);
+        rockShoulderStashHmdBackLeftOffsetGameUnits = ini.transformPosition("GrabSafetyAndRelease",
+            "ShoulderStashHmdBackLeftOffset", rockShoulderStashHmdBackLeftOffsetGameUnits);
         readClampedFloat("GrabSafetyAndRelease", "ShoulderStashHmdBackRadiusGameUnits", rockShoulderStashHmdBackRadiusGameUnits, 11.0f, 1.0f,
             80.0f);
         readClampedFloat("GrabSafetyAndRelease", "ShoulderStashHmdBackEnterPaddingGameUnits", rockShoulderStashHmdBackEnterPaddingGameUnits,
@@ -1398,7 +1406,7 @@ namespace rock
         rockMouthConsumeAllowPoison =
             ini.boolean("GrabSafetyAndRelease", "MouthConsumeAllowPoison", rockMouthConsumeAllowPoison);
         rockMouthConsumeHmdOffsetGameUnits =
-            ini.float3("GrabSafetyAndRelease", "MouthConsumeHmdOffsetGameUnits", rockMouthConsumeHmdOffsetGameUnits);
+            ini.transformPosition("GrabSafetyAndRelease", "MouthConsumeHmdOffset", rockMouthConsumeHmdOffsetGameUnits);
         sanitizeMouthConsumeOffset();
         readClampedFloat("GrabSafetyAndRelease", "MouthConsumeRadiusGameUnits", rockMouthConsumeRadiusGameUnits, 5.5f, 1.0f, 80.0f);
         readClampedFloat("GrabSafetyAndRelease", "MouthConsumeEnterPaddingGameUnits", rockMouthConsumeEnterPaddingGameUnits, 0.0f, 0.0f,

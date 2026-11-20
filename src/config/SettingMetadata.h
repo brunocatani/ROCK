@@ -370,13 +370,13 @@ namespace rock::config
         { "LoggingAndProfiling", "PerformanceProfilerWarmupFrames", "02. Logging and Profiling",
             "Startup/reload frames ignored before profiler windows are emitted.",
             Group::Developer },
-        { "PalmAndGrabOffsets", "RightGrabAuthorityProxyOffsetGameUnits", "03. Palm and Grab Offsets",
-            "Right-hand local offset [x, y, z] for the hidden grab authority proxy/seat point, in corrected palm "
+        { "PalmAndGrabOffsets", "RightGrabAuthorityProxyOffset", "03. Palm and Grab Offsets",
+            "Right-hand local position for the hidden grab authority proxy/seat point, in corrected palm "
             "proxy space.\nX follows the fingers, -Y moves into the palm face/skin, +Y moves to the back of the "
             "hand,\nand Z moves across the palm. This does not move the real palm/finger physics colliders.",
             Group::Developer },
-        { "PalmAndGrabOffsets", "LeftGrabAuthorityProxyOffsetGameUnits", "03. Palm and Grab Offsets",
-            "Left-hand local offset [x, y, z] for the hidden grab authority proxy/seat point, in the same axes.",
+        { "PalmAndGrabOffsets", "LeftGrabAuthorityProxyOffset", "03. Palm and Grab Offsets",
+            "Left-hand local position for the hidden grab authority proxy/seat point, in the same axes.",
             Group::Developer },
         { "WeaponCollisionAndSupport", "WeaponCollisionBlocksProjectiles", "04. Weapon Collision and Support",
             "Controls whether ROCK weapon hulls collide with projectile/spell layers.\nFalse avoids self-collisions "
@@ -626,11 +626,11 @@ namespace rock::config
             Group::Developer },
         { "GrabSafetyAndRelease", "ShoulderStashSustainedContactMissSeconds", "08. Grab Safety and Release", "",
             Group::Developer },
-        { "GrabSafetyAndRelease", "ShoulderStashHmdBackRightOffsetGameUnits", "08. Grab Safety and Release",
-            "Centre of the right shoulder stash volume behind the headset, [x, y, z] in game units.",
+        { "GrabSafetyAndRelease", "ShoulderStashHmdBackRightOffset", "08. Grab Safety and Release",
+            "Centre of the right shoulder stash volume behind the headset, a position in game units.",
             Group::Developer },
-        { "GrabSafetyAndRelease", "ShoulderStashHmdBackLeftOffsetGameUnits", "08. Grab Safety and Release",
-            "Centre of the left shoulder stash volume behind the headset, [x, y, z] in game units.",
+        { "GrabSafetyAndRelease", "ShoulderStashHmdBackLeftOffset", "08. Grab Safety and Release",
+            "Centre of the left shoulder stash volume behind the headset, a position in game units.",
             Group::Developer },
         { "GrabSafetyAndRelease", "ShoulderStashHmdBackRadiusGameUnits", "08. Grab Safety and Release", "",
             Group::Developer },
@@ -648,8 +648,8 @@ namespace rock::config
             Group::Developer },
         { "GrabSafetyAndRelease", "MouthConsumeAllowPoison", "08. Grab Safety and Release", "",
             Group::Developer },
-        { "GrabSafetyAndRelease", "MouthConsumeHmdOffsetGameUnits", "08. Grab Safety and Release",
-            "Mouth position relative to the headset, [x, y, z] in game units. Each value: -120 to 120.",
+        { "GrabSafetyAndRelease", "MouthConsumeHmdOffset", "08. Grab Safety and Release",
+            "Mouth position relative to the headset, in game units. Each value: -120 to 120.",
             Group::Developer },
         { "GrabSafetyAndRelease", "MouthConsumeRadiusGameUnits", "08. Grab Safety and Release", "",
             Group::Developer },
@@ -743,8 +743,9 @@ namespace rock::config
             Group::Developer },
         { "GrabContactEvidence", "GrabPinchOtherFingerCurlValue", "10. Grab Contact Evidence", "",
             Group::Developer },
-        { "GrabContactEvidence", "GrabPinchDetectionDirectionHandspace", "10. Grab Contact Evidence",
-            "Pinch detection direction [x, y, z] in ROCK hand space: X=fingers, Y=palm depth, Z=signed cross-palm.",
+        { "GrabContactEvidence", "GrabPinchDetectionDirection", "10. Grab Contact Evidence",
+            "Pinch detection direction in ROCK hand space, stored as a position and normalized: X=fingers, Y=palm "
+            "depth, Z=signed cross-palm.",
             Group::Developer },
         { "GrabContactEvidence", "GrabPinchDetectionAxisBlend", "10. Grab Contact Evidence",
             "Blends the live thumb-index axis with the authored pinch direction for mesh surface search.",
@@ -1089,7 +1090,7 @@ namespace rock::config
             Group::Developer },
         { "PhysicsTiming", "HavokTimingFixMaxSubsteps", "18. Physics Timing", "",
             Group::Developer },
-        { "ScopePlacement", "NativeScopeFiringGripFallbackOffsetGameUnits", "19. Scope Placement",
+        { "ScopePlacement", "NativeScopeFiringGripFallbackOffset", "19. Scope Placement",
             "Scope Anchor Without Optic Geometry\nUsed only when a scoped weapon has no separate Scope or Sight part "
             "ROCK can measure, such as an optic modelled into the receiver. The scope view then starts at the firing "
             "hand's grip, moved by these values. Weapons with a measurable optic anchor on the optic and ignore these "
@@ -1097,22 +1098,22 @@ namespace rock::config
             "X sideways, +Y toward the muzzle, Z up; all zero puts the anchor on the firing grip.\nRotations are "
             "degrees added after the game's camera calibration: pitch about X, yaw about Z, roll about the muzzle "
             "axis.\nPosition moves the activation point, camera and overlay together; rotation corrects the camera "
-            "and overlay only.\nThis key: offset [x, y, z]. Each value: -100 to 100.",
+            "and overlay only.\nThis key: the position. Each value: -100 to 100.",
             Group::Developer },
-        { "ScopePlacement", "NativeScopeFiringGripFallbackRotationDegrees", "19. Scope Placement",
-            "Rotation of the scope anchor used without optic geometry (see the offset above) [pitch, yaw, roll], in "
-            "degrees. Each value: -180 to 180.",
+        { "ScopePlacement", "NativeScopeFiringGripFallbackRotation", "19. Scope Placement",
+            "Rotation of the scope anchor used without optic geometry (see the offset above), in degrees: rot is "
+            "[pitch, roll, yaw]. Each value: -180 to 180.",
             Group::Developer },
-        { "ScopePlacement", "NativeScopeOverlayOffsetGameUnits", "19. Scope Placement",
+        { "ScopePlacement", "NativeScopeOverlayOffset", "19. Scope Placement",
             "Scope Overlay\nFine-tunes only the game's own world_scope.nif overlay. The activation camera stays on "
             "the resolved sight or firing-grip anchor, so these values do not change when the scope activates.\nAll "
             "zero keeps automatic placement with the game's own model orientation and scale.\nOffsets are game units "
             "in the calibrated model frame; rotations are degrees: pitch about X, yaw about Z, roll about the optical "
-            "Y axis.\nTune one axis at a time; replacement scope meshes can use a reversed sign.\nThis key: offset "
-            "[x, y, z]. Each value: -100 to 100.",
+            "Y axis.\nTune one axis at a time; replacement scope meshes can use a reversed sign.\nThis key: the "
+            "position. Each value: -100 to 100.",
             Group::Developer },
-        { "ScopePlacement", "NativeScopeOverlayRotationDegrees", "19. Scope Placement",
-            "Scope overlay rotation [pitch, yaw, roll], in degrees. Each value: -180 to 180.",
+        { "ScopePlacement", "NativeScopeOverlayRotation", "19. Scope Placement",
+            "Scope overlay rotation, in degrees: rot is [pitch, roll, yaw]. Each value: -180 to 180.",
             Group::Developer },
     };
 }

@@ -53,13 +53,13 @@ PerformanceProfilerWarmupFrames = 120
 
 ## === 03. Palm and Grab Offsets ===
 [PalmAndGrabOffsets]
-## Right-hand local offset [x, y, z] for the hidden grab authority proxy/seat point, in corrected palm proxy space.
+## Right-hand local position for the hidden grab authority proxy/seat point, in corrected palm proxy space.
 ## X follows the fingers, -Y moves into the palm face/skin, +Y moves to the back of the hand,
 ## and Z moves across the palm. This does not move the real palm/finger physics colliders.
-RightGrabAuthorityProxyOffsetGameUnits = [0.5, -1.0, 0.0]
+RightGrabAuthorityProxyOffset = { pos = [0.5, -1.0, 0.0] }
 
-## Left-hand local offset [x, y, z] for the hidden grab authority proxy/seat point, in the same axes.
-LeftGrabAuthorityProxyOffsetGameUnits = [0.5, -1.0, 0.0]
+## Left-hand local position for the hidden grab authority proxy/seat point, in the same axes.
+LeftGrabAuthorityProxyOffset = { pos = [0.5, -1.0, 0.0] }
 
 ## === 04. Weapon Collision and Support ===
 [WeaponCollisionAndSupport]
@@ -326,11 +326,11 @@ ShoulderStashRecentContactSeconds = 0.0444
 
 ShoulderStashSustainedContactMissSeconds = 0.2
 
-## Centre of the right shoulder stash volume behind the headset, [x, y, z] in game units.
-ShoulderStashHmdBackRightOffsetGameUnits = [14.0, -18.0, -6.85]
+## Centre of the right shoulder stash volume behind the headset, a position in game units.
+ShoulderStashHmdBackRightOffset = { pos = [14.0, -18.0, -6.85] }
 
-## Centre of the left shoulder stash volume behind the headset, [x, y, z] in game units.
-ShoulderStashHmdBackLeftOffsetGameUnits = [-14.0, -18.0, -6.85]
+## Centre of the left shoulder stash volume behind the headset, a position in game units.
+ShoulderStashHmdBackLeftOffset = { pos = [-14.0, -18.0, -6.85] }
 
 ShoulderStashHmdBackRadiusGameUnits = 11.0
 
@@ -348,8 +348,8 @@ MouthConsumeEnabled = true
 
 MouthConsumeAllowPoison = false
 
-## Mouth position relative to the headset, [x, y, z] in game units. Each value: -120 to 120.
-MouthConsumeHmdOffsetGameUnits = [0.0, 7.0, -7.0]
+## Mouth position relative to the headset, in game units. Each value: -120 to 120.
+MouthConsumeHmdOffset = { pos = [0.0, 7.0, -7.0] }
 
 MouthConsumeRadiusGameUnits = 5.5
 
@@ -446,8 +446,8 @@ GrabPinchThumbIndexMaxOpenValue = 0.45
 
 GrabPinchOtherFingerCurlValue = 0.2
 
-## Pinch detection direction [x, y, z] in ROCK hand space: X=fingers, Y=palm depth, Z=signed cross-palm.
-GrabPinchDetectionDirectionHandspace = [1.0, 0.0, 0.0]
+## Pinch detection direction in ROCK hand space, stored as a position and normalized: X=fingers, Y=palm depth, Z=signed cross-palm.
+GrabPinchDetectionDirection = { pos = [1.0, 0.0, 0.0] }
 
 ## Blends the live thumb-index axis with the authored pinch direction for mesh surface search.
 GrabPinchDetectionAxisBlend = 0.65
@@ -834,19 +834,19 @@ HavokTimingFixMaxSubsteps = 3
 ## Offsets are game units (70 = 1 metre) in the weapon's axes: X sideways, +Y toward the muzzle, Z up; all zero puts the anchor on the firing grip.
 ## Rotations are degrees added after the game's camera calibration: pitch about X, yaw about Z, roll about the muzzle axis.
 ## Position moves the activation point, camera and overlay together; rotation corrects the camera and overlay only.
-## This key: offset [x, y, z]. Each value: -100 to 100.
-NativeScopeFiringGripFallbackOffsetGameUnits = [0.0, 0.0, 10.0]
+## This key: the position. Each value: -100 to 100.
+NativeScopeFiringGripFallbackOffset = { pos = [0.0, 0.0, 10.0] }
 
-## Rotation of the scope anchor used without optic geometry (see the offset above) [pitch, yaw, roll], in degrees. Each value: -180 to 180.
-NativeScopeFiringGripFallbackRotationDegrees = [0.0, 0.0, 0.0]
+## Rotation of the scope anchor used without optic geometry (see the offset above), in degrees: rot is [pitch, roll, yaw]. Each value: -180 to 180.
+NativeScopeFiringGripFallbackRotation = { rot = [0.0, 0.0, 0.0] }
 
 ## Scope Overlay
 ## Fine-tunes only the game's own world_scope.nif overlay. The activation camera stays on the resolved sight or firing-grip anchor, so these values do not change when the scope activates.
 ## All zero keeps automatic placement with the game's own model orientation and scale.
 ## Offsets are game units in the calibrated model frame; rotations are degrees: pitch about X, yaw about Z, roll about the optical Y axis.
 ## Tune one axis at a time; replacement scope meshes can use a reversed sign.
-## This key: offset [x, y, z]. Each value: -100 to 100.
-NativeScopeOverlayOffsetGameUnits = [0.0, 10.0, 0.0]
+## This key: the position. Each value: -100 to 100.
+NativeScopeOverlayOffset = { pos = [0.0, 10.0, 0.0] }
 
-## Scope overlay rotation [pitch, yaw, roll], in degrees. Each value: -180 to 180.
-NativeScopeOverlayRotationDegrees = [0.0, 0.0, 0.0]
+## Scope overlay rotation, in degrees: rot is [pitch, roll, yaw]. Each value: -180 to 180.
+NativeScopeOverlayRotation = { rot = [0.0, 0.0, 0.0] }
