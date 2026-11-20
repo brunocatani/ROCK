@@ -171,8 +171,7 @@ namespace rock::native_hand_equipment
         PrimaryHand resolveRecordedPrimaryHand(std::uint32_t form, std::uintptr_t instance) noexcept
         {
             const auto directed = lastDirectedPrimaryEquip();
-            if (directed.sequence != s_directedApplied.load(std::memory_order_acquire) &&
-                sameItem(directed.form, directed.instance, form, instance))
+            if (directed.pending && sameItem(directed.form, directed.instance, form, instance))
                 return { form, instance, directed.left, true };
             AcquireSRWLockShared(&s_primaryHandLock);
             const auto record = s_primaryHand;
@@ -849,6 +848,7 @@ namespace rock::native_hand_equipment
         result.form = s_directedForm.load(std::memory_order_relaxed);
         result.instance = s_directedInstance.load(std::memory_order_relaxed);
         result.left = s_directedLeft.load(std::memory_order_relaxed);
+        result.pending = result.sequence != s_directedApplied.load(std::memory_order_acquire);
         return result;
     }
 

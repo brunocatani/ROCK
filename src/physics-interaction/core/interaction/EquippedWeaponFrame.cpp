@@ -1415,7 +1415,7 @@ namespace rock
             directedPrimary.instance == observedEquippedWeaponInstanceData;
         // A Pip-Boy hand choice stays pending until it can be applied:
         // the Pip-Boy closed, the weapon drawn and this exact item equipped.
-        const bool directedPrimaryPending = directedPrimary.sequence != _equipped.directedPrimarySequence;
+        const bool directedPrimaryPending = directedPrimary.pending;
         const bool primaryDefaultLeft = prepared.secondaryEquipped ? prepared.secondaryRight
             : directedPrimaryMatches                               ? directedPrimary.left
                                                                    : g_rockConfig.rockDefaultHandLeft;
@@ -1447,7 +1447,6 @@ namespace rock
             const bool moved = directedPrimaryPending && directedPrimaryMatches;
             if (moved) {
                 memory = {};
-                _equipped.directedPrimarySequence = directedPrimary.sequence;
                 native_hand_equipment::noteDirectedPrimaryApplied(directedPrimary.sequence);
                 ROCK_LOG_INFO(Weapon, "AKIMBO primary hand request formID={:08X} hand={} firing={}",
                     observedEquippedWeaponFormID, primaryDefaultLeft ? "left" : "right", firingLeft ? "left" : "right");

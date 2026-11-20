@@ -979,7 +979,7 @@ namespace rock
              */
             const auto directed = native_hand_equipment::lastDirectedPrimaryEquip();
             auto& carry = _equipped.continuityGrip;
-            if (carry.pending && directed.sequence != 0 && directed.sequence != _equipped.directedPrimarySequence &&
+            if (carry.pending && directed.pending &&
                 directed.form == carry.targetWeaponFormID && directed.instance == carry.targetWeaponInstanceData &&
                 (directed.left != carry.isLeft || carry.supportGrip.validCarry())) {
                 ROCK_LOG_INFO(Weapon,

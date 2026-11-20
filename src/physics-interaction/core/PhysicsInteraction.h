@@ -992,8 +992,6 @@ namespace rock
             bool handlingModeReconcilePending{ false };
             bool menuReconcilePending = false;
             std::uint64_t defaultEquipObservedOwnershipKey{ 0 };
-            // Last consumed native_hand_equipment::lastDirectedPrimaryEquip().
-            std::uint64_t directedPrimarySequence{ 0 };
             EquippedWeaponTransitionCoordinator::PendingGrip continuityGrip{};
             // Native carry resumes natively after a menu; this capture is only
             // the base a Pip-Boy support attach turns into a two-handed resume.

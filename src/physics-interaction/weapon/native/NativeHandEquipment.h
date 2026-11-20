@@ -63,6 +63,9 @@ namespace rock::native_hand_equipment
         std::uintptr_t instance = 0;
         bool left = false;
         std::uint64_t sequence = 0; // 0: none since load.
+        // Not yet applied (noteDirectedPrimaryApplied). Process lifetime, so
+        // a skeleton rebuild (a load door) never replays an applied choice.
+        bool pending = false;
     };
 
     [[nodiscard]] DirectedEquip lastDirectedPrimaryEquip() noexcept;
