@@ -12,7 +12,7 @@
 
 - RPS Settings (fork `ArthurHub/FO4VR-RPS_Framework`, branch `settings-transform-type`, to go upstream as a PR) gained a `Transform` value type, a renamed-key table, and INI `Float3Component` rows that fill a transform's `pos`. ROCK builds only against it until that merges.
 - ROCK renamed the keys (`kRenamedKeys` in `src/config/RockSettings.cpp` carries the old values over) and retargeted the frozen INI rows.
-- The Configuration API publishes each as a `Float3` position (`apiSetting`), so RPS UI and PALM are unchanged: a type RPS UI doesn't know drops its whole ROCK page.
+- The Configuration API published each as a `Float3` position (`apiSetting`), so RPS UI's ROCK page kept working. Both go with the Configuration API (`mods-config-palm-removal.md`).
 - Spec rows: position only, -15..15 by 0.1, `rotation: false`, `scale: false`.
 
 ## Not done

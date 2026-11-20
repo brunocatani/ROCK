@@ -1,6 +1,6 @@
 # Ticket: `[Bindings]` as Mods Config input bindings
 
-**Status:** done; the headset checks below remain for the editor and PALM. **Depends on:** nothing outside ROCK and its RPS Framework fork. Mods Config is unchanged, as for the transforms (`mods-config-transforms.md`).
+**Status:** done; the headset checks below remain for the editor. **Depends on:** nothing outside ROCK and its RPS Framework fork. Mods Config is unchanged, as for the transforms (`mods-config-transforms.md`).
 
 ## Goal
 
@@ -43,7 +43,7 @@ The 12 `[Bindings]` rows of ROCK's Mods Config page (`data/mod/ModsConfigFO4/Con
    - an old string naming a physical extra becomes the function's home binding, with a warning naming the dropped control and pointing to the button layout;
    - a string ROCK can't read becomes the home binding, with a warning;
    - a `ROCK.ini` migration lands in the same tables.
-10. **Configuration API and PALM.** Each binding is published as a `String` in a line form of framework words, `<hand> <type> <button> [duration] [+<hand>:<button>]` (`primary hold a 0.30`), and a written line is parsed into the table. The aliases `firing`, `support` and `each` are accepted; `press` is refused, so an old string typed into PALM can't be misread. A line that doesn't parse is refused with its reason, and the file keeps the last binding. RPS UI and PALM are unchanged; RPS UI's stale range row for `ManualScopeHoldSeconds` does no harm.
+10. **Configuration API and PALM.** Superseded: the Configuration API is retired and the one-line form goes with it (`mods-config-palm-removal.md`). As built: each binding is published as a `String` in a line form of framework words, `<hand> <type> <button> [duration] [+<hand>:<button>]` (`primary hold a 0.30`), and a written line is parsed into the table. The aliases `firing`, `support` and `each` are accepted; `press` is refused, so an old string typed into PALM can't be misread. A line that doesn't parse is refused with its reason, and the file keeps the last binding. RPS UI and PALM are unchanged; RPS UI's stale range row for `ManualScopeHoldSeconds` does no harm.
 11. **Mods Config page.**
     - The 12 binding rows are `cf.inputBinding`, limiting `hands`, `types` and `buttons` per row; the grammar text row goes.
     - The four retired rows go: Scope Hold Time (Scopes page), Pip-Boy/Pause Hold Time, Hold Time and Double Tap Time (Controls page).
@@ -83,4 +83,3 @@ One staged change at a time, with a go-ahead before each.
 - The second weapon's A split (reload or scope) follows the Scope duration.
 - An old `ROCK.toml` migrates: tables written, retired keys commented, custom hold times carried over.
 - The editor: weapon rows offer only `primary`/`offhand`; a saved binding takes effect after Save.
-- PALM: the text field shows the line form; a bad line is refused.
