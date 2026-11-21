@@ -306,6 +306,13 @@ namespace rock::collision_layer_policy
      * tool bodies. This policy lives beside the layer constants
      * so hooks can make a per-contact decision without rewriting the global
      * layer matrix or changing ROCK hand/body collider layers.
+     *
+     * The discriminator is whether the controller could push the body, read
+     * from its motion, never from its record: a static or keyframed body is an
+     * obstacle whatever game or mod authored it (Fallout 3 and New Vegas cars
+     * are static movable statics on the static row, many modded props are
+     * fixed bodies on the clutter rows). Form identity is read only for
+     * dynamic bodies.
      */
     struct PlayerCharacterControllerContactPolicyInput
     {
@@ -313,7 +320,11 @@ namespace rock::collision_layer_policy
         bool playerController = false;
         bool targetLayerKnown = false;
         std::uint32_t targetLayer = FO4_LAYER_UNIDENTIFIED;
-        bool targetIsMovableStatic = false;
+        // Static or keyframed motion.
+        bool targetIsFixed = false;
+        // A movable static whose body simulates: one a hand can grab or has thrown.
+        bool targetIsDynamicMovableStatic = false;
+        // An ExplodableCar movable static; vanilla cars simulate on the clutter rows.
         bool targetIsCar = false;
         bool targetIsLooseWeapon = false;
     };
@@ -366,12 +377,17 @@ namespace rock::collision_layer_policy
         if (input.targetIsCar) {
             return PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "carCollision" };
         }
-        if (input.targetIsMovableStatic && isPlayerCharacterControllerSupportLayer(input.targetLayer)) {
+        if (input.targetIsDynamicMovableStatic && isPlayerCharacterControllerSupportLayer(input.targetLayer)) {
             return PlayerCharacterControllerContactPolicyDecision{ .suppress = true,
-                .reason = "movableStaticSupportLayer" };
+                .reason = "dynamicMovableStaticSupportLayer" };
         }
         if (isPlayerCharacterControllerSupportLayer(input.targetLayer)) {
             return PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "supportLayer" };
+        }
+        // A fixed prop cannot be pushed, so it stays an obstacle on the rows
+        // whose moving bodies the controller passes.
+        if (input.targetIsFixed && isDynamicPropInteractionLayer(input.targetLayer)) {
+            return PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "fixedProp" };
         }
         return PlayerCharacterControllerContactPolicyDecision{ .suppress = true, .reason = "nonSupportLayer" };
     }

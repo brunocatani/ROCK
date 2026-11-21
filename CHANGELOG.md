@@ -18,6 +18,12 @@
   brings the middle of the gun's model to your palm, and a beam, dot or glow stretched
   that model metres past the gun, so the gun flew off across the room instead. The
   pull now ignores those effect parts.
+- **You no longer walk through cars and fixed props from other games and mods.**
+  ROCK kept the player solid only against Fallout 4's own cars, so cars converted
+  from Fallout 3 and New Vegas, and fixed props a mod places on clutter layers,
+  let you walk straight through them. Anything that cannot move now blocks you,
+  whatever game or mod it comes from. You still pass loose objects instead of
+  shoving them.
 
 ## v1.0.3
 

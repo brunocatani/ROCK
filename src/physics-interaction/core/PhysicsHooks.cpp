@@ -1426,7 +1426,8 @@ namespace rock
 
     struct PlayerContactTargetIdentity
     {
-        bool isMovableStatic = false;
+        bool isFixed = false;
+        bool isDynamicMovableStatic = false;
         bool isCar = false;
         bool isLooseWeapon = false;
     };
@@ -1439,28 +1440,33 @@ namespace rock
                 .isLooseWeapon = native_player_collision::isLooseWeaponBody(havok_runtime::snapshotBody(world, bodyId)),
             };
         }
-        // Cars sit on the clutter rows, whose other bodies the controller
-        // filter removes; only form identity keeps the car an obstacle.
-        const bool requiresFormIdentity = collision_layer_policy::isPlayerCharacterControllerSupportLayer(layer) ||
-            collision_layer_policy::isCarRowLayer(layer);
-        if (!bhkWorld || !world || !requiresFormIdentity) {
+        const bool supportLayer = collision_layer_policy::isPlayerCharacterControllerSupportLayer(layer);
+        if (!world || !(supportLayer || collision_layer_policy::isDynamicPropInteractionLayer(layer))) {
+            return {};
+        }
+        const auto* body = havok_runtime::getBody(world, bodyId);
+        if (!body) {
+            return {};
+        }
+        // Held bodies never reach this decision (the held filter runs first),
+        // so motion is the body's own: fixed bodies are obstacles as they are.
+        const auto motion = physics_body_classifier::motionTypeFromBodyFlags(body->flags);
+        if (motion != physics_body_classifier::BodyMotionType::Dynamic) {
+            return PlayerContactTargetIdentity{ .isFixed = native_player_collision::isFixedPropMotion(motion) };
+        }
+        if (!bhkWorld) {
             return {};
         }
 
-        /*
-         * MSTT bodies commonly sit on support layers that the player controller
-         * must preserve for world geometry. For movable statics, form identity is
-         * the safer discriminator than hknp motion flags: those flags can report
-         * static/keyframed while the native controller still generates push
-         * constraints against the movable object.
-         */
+        // A simulating movable static is one the player would shove: on a
+        // support row it is passed, unless it is a car.
         auto* ref = resolveBodyToRef(bhkWorld, world, bodyId);
         auto* baseForm = ref ? ref->GetObjectReference() : nullptr;
         if (!baseForm || !baseForm->Is(RE::ENUM_FORM_ID::kMSTT)) {
             return {};
         }
         return PlayerContactTargetIdentity{
-            .isMovableStatic = true,
+            .isDynamicMovableStatic = true,
             .isCar = fo4vr::isExplodableCar(baseForm),
         };
     }
@@ -1488,7 +1494,8 @@ namespace rock
                 .playerController = true,
                 .targetLayerKnown = true,
                 .targetLayer = layer,
-                .targetIsMovableStatic = targetIdentity.isMovableStatic,
+                .targetIsFixed = targetIdentity.isFixed,
+                .targetIsDynamicMovableStatic = targetIdentity.isDynamicMovableStatic,
                 .targetIsCar = targetIdentity.isCar,
                 .targetIsLooseWeapon = targetIdentity.isLooseWeapon,
             });
@@ -1787,7 +1794,7 @@ namespace rock
             int preservedAttackPairs = 0;
             int preservedActorPairs = 0;
             int preservedPlayerSupportPairs = 0;
-            int preservedPlayerCarPairs = 0;
+            int preservedPlayerObstaclePairs = 0;
             int preservedUnknownTargetPairs = 0;
             const auto filterResult =
                 held_grab_cc_policy::filterGeneratedContactBuffers(contactBuffers, [&](std::uint32_t bodyId) {
@@ -1810,7 +1817,7 @@ namespace rock
                             evaluatePlayerControllerTargetBody(playerBhkWorld, playerHknpWorld, bodyId);
                         if (decision.suppress) {
                             ++removedPlayerObjectPairs;
-                            if (std::string_view(decision.reason) == "movableStaticSupportLayer") {
+                            if (std::string_view(decision.reason) == "dynamicMovableStaticSupportLayer") {
                                 ++removedPlayerMovableStaticPairs;
                             } else if (std::string_view(decision.reason) == "looseWeapon") {
                                 ++removedLooseWeaponPairs;
@@ -1825,8 +1832,9 @@ namespace rock
                             ++preservedActorPairs;
                         } else if (std::string_view(decision.reason) == "supportLayer") {
                             ++preservedPlayerSupportPairs;
-                        } else if (std::string_view(decision.reason) == "carCollision") {
-                            ++preservedPlayerCarPairs;
+                        } else if (std::string_view(decision.reason) == "carCollision" ||
+                            std::string_view(decision.reason) == "fixedProp") {
+                            ++preservedPlayerObstaclePairs;
                         } else if (std::string_view(decision.reason) == "unknownTargetLayer") {
                             ++preservedUnknownTargetPairs;
                         }
@@ -1840,7 +1848,7 @@ namespace rock
                     std::memory_order_relaxed);
                 g_proxyContactTrace.looseWeapons.fetch_add(removedLooseWeaponPairs, std::memory_order_relaxed);
                 g_proxyContactTrace.held.fetch_add(removedHeldPairs, std::memory_order_relaxed);
-                g_proxyContactTrace.supportKept.fetch_add(preservedPlayerSupportPairs + preservedPlayerCarPairs,
+                g_proxyContactTrace.supportKept.fetch_add(preservedPlayerSupportPairs + preservedPlayerObstaclePairs,
                     std::memory_order_relaxed);
                 g_proxyContactTrace.attacksKept.fetch_add(preservedAttackPairs, std::memory_order_relaxed);
                 g_proxyContactTrace.actorsKept.fetch_add(preservedActorPairs, std::memory_order_relaxed);
@@ -1851,18 +1859,18 @@ namespace rock
                     ROCK_LOG_SAMPLE_DEBUG(CC, g_rockConfig.rockLogSampleMilliseconds,
                         "Filtered {} character-controller contacts before original listener kept={} originalPairs={} "
                         "heldRemoved={} playerObjectRemoved={} playerNonSupportRemoved={} "
-                        "playerMovableStaticRemoved={} playerSupportPreserved={} playerCarPreserved={} "
+                        "playerMovableStaticRemoved={} playerSupportPreserved={} playerObstaclePreserved={} "
                         "playerUnknownPreserved={}",
                         filterResult.removedPairCount, filterResult.keptPairCount, filterResult.originalPairCount,
                         removedHeldPairs, removedPlayerObjectPairs, removedPlayerNonSupportPairs,
-                        removedPlayerMovableStaticPairs, preservedPlayerSupportPairs, preservedPlayerCarPairs,
+                        removedPlayerMovableStaticPairs, preservedPlayerSupportPairs, preservedPlayerObstaclePairs,
                         preservedUnknownTargetPairs);
                 } else if (g_rockConfig.rockDebugVerboseLogging) {
                     ROCK_LOG_SAMPLE_DEBUG(CC, g_rockConfig.rockLogSampleMilliseconds,
                         "Character-controller pre-filter kept native contacts originalPairs={} reason={} "
-                        "playerSupportPreserved={} playerCarPreserved={} playerUnknownPreserved={}",
+                        "playerSupportPreserved={} playerObstaclePreserved={} playerUnknownPreserved={}",
                         filterResult.originalPairCount, filterResult.reason, preservedPlayerSupportPairs,
-                        preservedPlayerCarPairs, preservedUnknownTargetPairs);
+                        preservedPlayerObstaclePairs, preservedUnknownTargetPairs);
                 }
             }
 
