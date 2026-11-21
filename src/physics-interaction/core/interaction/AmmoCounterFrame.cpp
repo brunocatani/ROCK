@@ -1,6 +1,7 @@
 // Ammo counters: one per drawn weapon, from this frame's publication (hand roles,
 // per-slot rounds). Minimal and Immersive stay at the weapon's firing grip on its
 // palm side whichever hands hold it; Vanilla sits on the back of a hand holding it.
+// Each counter also names the slot's equipped ammo form below its numbers.
 #include "api/ProviderRuntimeServices.h"
 #include "api/ProviderStatePolicy.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
@@ -11,6 +12,7 @@
 #include "physics-interaction/weapon/classification/WeaponInstanceClassification.h"
 #include "physics-interaction/weapon/grip/WeaponGripSeat.h"
 #include "physics-interaction/weapon/native/NativeAmmoCounterVisibility.h"
+#include "physics-interaction/weapon/secondary/NativeSecondaryActions.h"
 #include "physics-interaction/weapon/secondary/NativeSecondaryPresentation.h"
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -131,6 +133,31 @@ namespace rock
             }
             return nullptr;
         }
+
+        /*
+         * Each slot's caliber label, rebuilt only when the slot's equipped
+         * ammo form changes (an equip or an ammo-changing mod), so the frame
+         * path compares one pointer. Ammo forms live for the whole process.
+         * Game thread only.
+         */
+        struct CaliberCache
+        {
+            const RE::TESAmmo* ammo{ nullptr };
+            ammo_counters::Caliber label{};
+        };
+        std::array<CaliberCache, api::kMaxWeaponSlots> s_calibers{};
+
+        const char* caliberFor(const std::uint32_t slot) noexcept
+        {
+            auto& cache = s_calibers[slot];
+            const auto* ammo = native_secondary_actions::equippedAmmo(slot);
+            if (ammo != cache.ammo) {
+                cache.ammo = ammo;
+                cache.label = ammo ? ammo_counters::caliberLabel(RE::TESFullName::GetFullName(*ammo, false))
+                                   : ammo_counters::Caliber{};
+            }
+            return cache.label.data();
+        }
     }
 
     void PhysicsInteraction::publishAmmoCounters()
@@ -146,6 +173,13 @@ namespace rock
             !runtime.localMenuBlocking && runtime.weaponDrawn && nodes && nodes->HmdNode &&
             provider::runtime::copyPublication(publication) && publication.frameIndex == runtime.frameIndex) {
             const auto head = toPoint(nodes->HmdNode->world.translate);
+            const auto viewForward = toPoint(
+                transform_math::rotateLocalVectorToWorld(nodes->HmdNode->world.rotate, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }));
+            const auto label = [&](ammo_counters::HandCounter& counter, const std::uint32_t slot) {
+                counter.caliber = caliberFor(slot);
+                counter.captionInView =
+                    counter.shown && ammo_counter_pose::captionInView(counter.pose.caption, head, viewForward);
+            };
             using WeaponFlag = api::weapon::WeaponStateFlag;
             constexpr auto required =
                 static_cast<std::uint32_t>(WeaponFlag::AmmoKnown) | static_cast<std::uint32_t>(WeaponFlag::WeaponDrawn);
@@ -225,6 +259,7 @@ namespace rock
                     counter.loaded = state.loadedRounds;
                     counter.reserve = state.reserveRounds;
                     counter.chamber = provider::chamberMarker(slot);
+                    label(counter, slot);
                     if (!counter.shown)
                         hidden("vanilla-pose");
                     continue;
@@ -278,6 +313,7 @@ namespace rock
                 counter.loaded = state.loadedRounds;
                 counter.reserve = state.reserveRounds;
                 counter.chamber = provider::chamberMarker(slot);
+                label(counter, slot);
             }
         }
         // The counters replace the vanilla one only while RPS UI shows them.

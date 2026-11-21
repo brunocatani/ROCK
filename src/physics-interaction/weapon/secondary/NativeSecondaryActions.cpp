@@ -1519,6 +1519,15 @@ namespace rock::native_secondary_actions
         return true;
     }
 
+    RE::TESAmmo* equippedAmmo(const std::uint32_t index) noexcept
+    {
+        auto* player = s_installed && index < 2 ? f4vr::getPlayer() : nullptr;
+        if (!player || !player->currentProcess)
+            return nullptr;
+        // E05BA0 returns the ammo of the process's equipped weapon data at the index.
+        return native<RE::TESAmmo* (*)(RE::Actor*, std::uint32_t)>(0xE05BA0)(player, index);
+    }
+
     bool install() noexcept
     {
         if (s_installed)

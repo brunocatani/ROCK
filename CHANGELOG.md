@@ -7,6 +7,10 @@
 - **For mod authors: Grab 2.2.** `requestHeldInventoryStash` puts the loose item a
   hand holds into the player's inventory the way the shoulder stash does, stash
   converters and item scripts included. Mods built for 2.0 and 2.1 keep working.
+- **The ammo counter names your weapon's ammunition.** Minimal, Immersive and
+  Vanilla show the caliber under the rounds, taken from the ammo the weapon
+  fires (".38", "10mm", "Fusion Cell"), so you can tell at a glance whether ammo
+  you find fits your gun. It follows mods that change a weapon's caliber.
 
 ### Fixed
 

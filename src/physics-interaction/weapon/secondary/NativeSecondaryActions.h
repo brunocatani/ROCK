@@ -11,6 +11,7 @@ namespace RE
 {
     class NiNode;
     class NiTransform;
+    class TESAmmo;
 }
 
 namespace rock::native_secondary_actions
@@ -39,6 +40,11 @@ namespace rock::native_secondary_actions
     // The native ammo facts of equipment index 0 or 1 (EquippedAmmoPolicy.h),
     // read with the HUD producer's helpers. Game thread; false before install.
     bool readAmmo(std::uint32_t index, equipped_ammo::Facts& out) noexcept;
+    // The ammo form equipment index 0 or 1 fires: the equipped weapon data's
+    // ammo, which the game resolves from the weapon instance (mods included)
+    // and the HUD counts. Null for a weapon without ammo. Game thread; null
+    // before install.
+    [[nodiscard]] RE::TESAmmo* equippedAmmo(std::uint32_t index) noexcept;
     // The private graph is in this weapon's reload.
     [[nodiscard]] bool reloading() noexcept;
     // WeaponParts slot 1, frame owner thread: the model's nodes, their poses and

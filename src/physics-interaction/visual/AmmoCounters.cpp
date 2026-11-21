@@ -1,8 +1,11 @@
 #include "physics-interaction/visual/AmmoCounters.h"
 
+#include <algorithm>
 #include <cstdio>
+#include <cstring>
 
 #include <RPS_UI_Framework/NumberOverlay.h>
+#include <RPS_UI_Framework/WorldDraw.h>
 #include "physics-interaction/visual/RpsUiQuery.h"
 #include "physics-interaction/PhysicsLog.h"
 
@@ -31,6 +34,11 @@ namespace rock::ammo_counters
         } };
         const rpsui::api::framework::Api* g_base{ nullptr };
         const rpsui::api::number_overlay::Api* g_numbers{ nullptr };
+        // The caliber labels: world text under the counters' own owner, so
+        // ROCK's indicator and debug publication is never replaced by them.
+        const rpsui::api::world_draw::Api* g_text{ nullptr };
+        bool g_captionsPublished{ false };
+        Result g_captionReported{ Result::Ok };
         std::uint64_t g_owner{ 0 };
         bool g_bound{ false };
         rps_ui::BindGate g_bindGate;
@@ -99,6 +107,12 @@ namespace rock::ammo_counters
                     report("overlay registration", result);
                     return false;
                 }
+            }
+            // The caliber labels are optional: without world drawing the
+            // counters still replace the vanilla one.
+            if (rpsui::api::acquire(query, g_text) != Result::Ok) {
+                g_text = nullptr;
+                ROCK_LOG_WARN(Weapon, "Ammo counters: RPS UI world drawing unavailable; the counters show no caliber");
             }
             g_bound = true;
             ROCK_LOG_INFO(Weapon, "Ammo counters connected to RPS UI; they replace the vanilla counter");
@@ -170,6 +184,92 @@ namespace rock::ammo_counters
             overlay.open = true;
             return true;
         }
+
+        // Block-glyph cell size in eye pixels. Minimal's and Immersive's label
+        // matches their smaller numbers at arm's length; the Vanilla screen's
+        // numbers are larger.
+        constexpr float kCaptionPixelSize = 2.5f;
+        constexpr float kVanillaCaptionPixelSize = 3.0f;
+        // A glyph is 5 cells wide with a 6-cell advance and 7 cells tall.
+        constexpr float kGlyphAdvanceCells = 6.0f;
+        // Republished every frame; two frames bridge a late game frame.
+        constexpr std::uint32_t kCaptionLeaseFrames = 2;
+
+        // Writes the hand's caliber label centered below its numbers. False
+        // when the hand shows none.
+        bool caption(const HandCounter& counter, const Style style, const std::array<float, 3>& hudColor,
+            rpsui::api::world_draw::Text& out) noexcept
+        {
+            if (!counter.caliber || counter.caliber[0] == '\0' || !counter.captionInView)
+                return false;
+            const auto length = std::min(std::strlen(counter.caliber), sizeof(out.text) - 1);
+            std::memcpy(out.text, counter.caliber, length);
+            out.text[length] = '\0';
+            const float pixel = style == Style::Vanilla ? kVanillaCaptionPixelSize : kCaptionPixelSize;
+            out.pixelSize = pixel;
+            out.offsetPixels[0] = -(static_cast<float>(length) * kGlyphAdvanceCells - 1.0f) * pixel * 0.5f;
+            out.offsetPixels[1] = 0.0f;
+            for (unsigned i = 0; i < 3; ++i) {
+                out.anchor[i] = counter.pose.caption[i];
+                out.color[i] = style == Style::Minimal ? 1.0f : hudColor[i];
+            }
+            out.color[3] = counter.pose.opacity;
+            return true;
+        }
+
+        void publishCaptions(const std::array<rpsui::api::world_draw::Text, 2>& texts, const std::uint32_t count) noexcept
+        {
+            if (!g_text || (count == 0 && !g_captionsPublished))
+                return;
+            rpsui::api::world_draw::Publication publication{};
+            publication.leaseFrames = kCaptionLeaseFrames;
+            publication.textCount = count;
+            publication.texts = count ? texts.data() : nullptr;
+            if (const auto result = g_text->submit(g_owner, &publication); result != Result::Ok) {
+                if (result != g_captionReported) {
+                    g_captionReported = result;
+                    ROCK_LOG_WARN(Weapon, "Ammo counters: RPS UI world text returned {}; the caliber stays hidden",
+                        static_cast<std::uint32_t>(result));
+                }
+                return;
+            }
+            g_captionReported = Result::Ok;
+            g_captionsPublished = count != 0;
+        }
+    }
+
+    Caliber caliberLabel(std::string_view name) noexcept
+    {
+        const auto isSpace = [](const char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
+        const auto trim = [&](std::string_view value) {
+            while (!value.empty() && isSpace(value.front()))
+                value.remove_prefix(1);
+            while (!value.empty() && isSpace(value.back()))
+                value.remove_suffix(1);
+            return value;
+        };
+        const auto lower = [](const char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; };
+        name = trim(name);
+        for (const std::string_view word : { std::string_view{ "round" }, std::string_view{ "rounds" },
+                 std::string_view{ "ammo" } }) {
+            if (name.size() <= word.size() + 1 || !isSpace(name[name.size() - word.size() - 1]))
+                continue;
+            const auto tail = name.substr(name.size() - word.size());
+            if (std::equal(tail.begin(), tail.end(), word.begin(), [&](char a, char b) { return lower(a) == b; })) {
+                name = trim(name.substr(0, name.size() - word.size()));
+                break;
+            }
+        }
+        if (name.size() >= kCaliberCapacity) {
+            // The last space among the first kCaliberCapacity characters ends
+            // the last whole word that fits; without one the name is cut.
+            const auto space = name.substr(0, kCaliberCapacity).find_last_of(" \t");
+            name = space == std::string_view::npos || space == 0 ? name.substr(0, kCaliberCapacity - 1)
+                                                                 : trim(name.substr(0, space));
+        }
+        Caliber label{};
+        std::memcpy(label.data(), name.data(), name.size());
+        return label;
     }
 
     bool update(const std::array<HandCounter, 2>& hands, const Style style,
@@ -178,11 +278,15 @@ namespace rock::ammo_counters
         if (!bind())
             return false;
         bool healthy = true;
+        std::array<rpsui::api::world_draw::Text, 2> captions{};
+        std::uint32_t captionCount = 0;
         for (std::size_t hand = 0; hand < hands.size(); ++hand) {
             const auto& counter = hands[hand];
             auto& loaded = g_overlays[hand * 2];
             auto& reserve = g_overlays[hand * 2 + 1];
             if (counter.shown && counter.pose.valid && counter.pose.opacity > 0.0f) {
+                if (caption(counter, style, hudColor, captions[captionCount]))
+                    ++captionCount;
                 const auto chamber = overlayMarker(counter.chamber);
                 if (style == Style::Minimal) {
                     healthy &= show(loaded, counter.pose, counter.pose.loaded, counter.loaded, Look{ .chamber = chamber });
@@ -203,6 +307,8 @@ namespace rock::ammo_counters
                 healthy &= close(reserve);
             }
         }
+        // The label goes with its numbers: hidden while the vanilla counter shows.
+        publishCaptions(captions, healthy ? captionCount : 0);
         if (healthy)
             g_reported = Result::Ok;
         return healthy;
@@ -214,5 +320,6 @@ namespace rock::ammo_counters
             return;
         for (auto& overlay : g_overlays)
             (void)close(overlay);
+        publishCaptions({}, 0);
     }
 }

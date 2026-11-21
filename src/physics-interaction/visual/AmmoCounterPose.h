@@ -28,6 +28,10 @@
  * Weapon geometry is +Y muzzle-forward, +X right, +Z up. Panels are RPS UI
  * number overlays: width/height is the overlay contract's aspect and the
  * digits fill 85% of the height, centered in the panel.
+ *
+ * Every style also places a caption point: the top center of the caliber
+ * label, just below the numbers on the counter's own plane. RPS UI draws
+ * world text from that point downwards in eye pixels.
  */
 namespace rock::ammo_counter_pose
 {
@@ -65,6 +69,16 @@ namespace rock::ammo_counter_pose
     inline constexpr float kVanillaFacingHidden = 0.0f;
     inline constexpr float kVanillaFacingFull = 0.17f;
 
+    // The HUD styles fit their block to 92% of the panel height.
+    inline constexpr float kHudBlockHalfHeight = 0.46f;
+    // Gap between the numbers and the caliber label, in panel heights.
+    inline constexpr float kCaptionGap = 0.08f;
+    // RPS UI keeps world text inside the eye, so an anchor outside the view
+    // would pin the label to the eye's edge. The label is drawn only while
+    // its point lies within 35 degrees of the view direction, which keeps
+    // even a long label inside both eyes' fields of view.
+    inline constexpr float kCaptionViewCosine = 0.819f;
+
     struct Panel
     {
         Point center{};
@@ -82,6 +96,8 @@ namespace rock::ammo_counter_pose
         Panel reserve{};
         // Immersive and Vanilla: one panel holds the whole counter.
         Panel counter{};
+        // Top center of the caliber label.
+        Point caption{};
         float opacity{ 0.0f };
         bool valid{ false };
     };
@@ -223,6 +239,11 @@ namespace rock::ammo_counter_pose
         const float reserveDrop = (pose.loaded.height - kReserveWidth / kNumberAspect) * kDigitHeightFraction * 0.5f;
         pose.reserve = { offset(plane.anchor, pose.right, kReserveRight, pose.up, -reserveDrop), kReserveWidth,
             kReserveWidth / kNumberAspect };
+        // Centered under both numbers, below the loaded digits' baseline.
+        const float blockCenter =
+            ((kLoadedRight - kLoadedWidth * 0.5f) + (kReserveRight + kReserveWidth * 0.5f)) * 0.5f;
+        pose.caption = offset(plane.anchor, pose.right, blockCenter, pose.up,
+            -pose.loaded.height * (kDigitHeightFraction * 0.5f + kCaptionGap));
         pose.opacity = kMaxOpacity * plane.facing;
         pose.valid = true;
         return pose;
@@ -241,6 +262,8 @@ namespace rock::ammo_counter_pose
         pose.up = plane.up;
         pose.front = plane.front;
         pose.counter = { plane.anchor, kImmersivePanelHeight * kNumberAspect, kImmersivePanelHeight };
+        pose.caption = offset(plane.anchor, pose.right, 0.0f, pose.up,
+            -kImmersivePanelHeight * (kHudBlockHalfHeight + kCaptionGap));
         pose.opacity = kImmersiveMaxOpacity * plane.facing;
         pose.valid = true;
         return pose;
@@ -282,6 +305,8 @@ namespace rock::ammo_counter_pose
             return {};
         const float height = quadHeight * kVanillaPanelHeightOfQuad;
         pose.counter = { center, height * kNumberAspect, height };
+        // Below the block, still on the quad: the panel takes 76% of its height.
+        pose.caption = offset(center, pose.right, 0.0f, pose.up, -height * (kHudBlockHalfHeight + kCaptionGap));
         Point toHead{ head[0] - center[0], head[1] - center[1], head[2] - center[2] };
         if (!normalize(toHead))
             return {};
@@ -290,5 +315,16 @@ namespace rock::ammo_counter_pose
         pose.opacity = std::clamp(opacity, 0.0f, 1.0f) * facing;
         pose.valid = true;
         return pose;
+    }
+
+    // Whether the caliber label at point is near enough the view direction
+    // (viewForward, from head) to be drawn; see kCaptionViewCosine.
+    [[nodiscard]] inline bool captionInView(const Point& point, const Point& head, Point viewForward) noexcept
+    {
+        using namespace detail;
+        Point toPoint{ point[0] - head[0], point[1] - head[1], point[2] - head[2] };
+        if (!finite(point) || !finite(head) || !normalize(toPoint) || !normalize(viewForward))
+            return false;
+        return dot(toPoint, viewForward) >= kCaptionViewCosine;
     }
 }

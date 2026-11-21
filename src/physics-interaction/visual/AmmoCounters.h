@@ -5,12 +5,20 @@
 #include <ROCK/Weapon.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <string_view>
 
 /*
  * ROCK's ammo counters: one per firing weapon, on the hand that holds its
  * firing grip, drawn as RPS UI number overlays. RPS UI is optional; without
  * it nothing is drawn here and the vanilla counter stays.
+ *
+ * Under the numbers every style names the weapon's ammunition (its ammo
+ * form's name) as RPS UI world text, so the player can tell which ammo the
+ * weapon takes. Number overlays carry only numbers, and world text is the
+ * only text RPS UI draws: block glyphs anchored to a world point, sized in
+ * eye pixels.
  */
 namespace rock::ammo_counters
 {
@@ -28,6 +36,17 @@ namespace rock::ammo_counters
         Vanilla = 3,
     };
 
+    // The caliber label: at most kCaliberCapacity - 1 characters, terminated.
+    inline constexpr std::size_t kCaliberCapacity = 24;
+    using Caliber = std::array<char, kCaliberCapacity>;
+
+    // The label for an ammo form's display name: surrounding spaces trimmed
+    // and a trailing "Round", "Rounds" or "Ammo" word dropped when another
+    // word precedes it (".38 Round" shows ".38"). A longer name ends at its
+    // last whole word that fits. Empty for an empty name. It builds a string,
+    // so callers keep the result instead of calling it every frame.
+    [[nodiscard]] Caliber caliberLabel(std::string_view name) noexcept;
+
     struct HandCounter
     {
         bool shown{ false };
@@ -35,6 +54,10 @@ namespace rock::ammo_counters
         std::uint32_t reserve{ 0 };
         api::weapon::ChamberMarker chamber{ api::weapon::ChamberMarker::None };
         ammo_counter_pose::Pose pose{};
+        // The weapon's caliber label, owned by the caller for the frame; null
+        // or empty for none. Drawn only while captionInView.
+        const char* caliber{ nullptr };
+        bool captionInView{ false };
     };
 
     // Game thread, once per presented frame. Indexed by hand: [0] right,
