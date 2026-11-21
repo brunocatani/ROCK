@@ -26,8 +26,9 @@ ROCK 0.92 (provider API 1) is updated with [Migration](Migration.md).
 | NativeInteraction | 14 | `NativeInteraction.h` | Read 1, Write 2 | [NativeInteraction](NativeInteraction.md) |
 | Storage | 15 | `Storage.h` | Read 1, Write 2, Callbacks 4 | [Storage](Storage.md) |
 
-Every interface is major 2, minor 0, except Collision, Grab and Input at minor 1
-(ROCK 1.0.3); a mod built for minor 0 binds to them unchanged. Ids 10 (References) and 12 (Diagnostics)
+Every interface is major 2, minor 0, except Collision and Input at minor 1
+(ROCK 1.0.3) and Grab at minor 2 (2.1 in ROCK 1.0.3, 2.2 unreleased); a mod
+built for an older minor binds to them unchanged. Ids 10 (References) and 12 (Diagnostics)
 are retired and never reused: References' queries are in Grab, and other mods
 draw through RPS UI Framework.
 

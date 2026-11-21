@@ -178,6 +178,8 @@ namespace rock::provider::runtime
         std::uint64_t& outCommandId);
     api::Status requestInventoryItemGrab(std::uint64_t ownerToken,
         const api::grab::InventoryItemGrabRequest& request, std::uint64_t& outCommandId);
+    api::Status requestHeldInventoryStash(std::uint64_t ownerToken,
+        const api::grab::HeldInventoryStashRequest& request, std::uint64_t& outCommandId);
     api::Status getInteractionCommandResult(std::uint64_t ownerToken, std::uint64_t commandId,
         api::grab::InteractionCommandResult& outResult);
     api::Status cancelInteractionCommand(std::uint64_t ownerToken, std::uint64_t commandId);

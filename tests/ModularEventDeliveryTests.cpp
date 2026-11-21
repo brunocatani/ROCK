@@ -97,6 +97,12 @@ namespace rock::provider::runtime
         return api::Status::NotReady;
     }
 
+    api::Status requestHeldInventoryStash(std::uint64_t, const api::grab::HeldInventoryStashRequest&, std::uint64_t&)
+    {
+        assert(false);
+        return api::Status::NotReady;
+    }
+
     api::Status queryPowerArmorTarget(std::uint64_t, const api::grab::ReferenceQuery& query,
         api::grab::PowerArmorTarget& target)
     {

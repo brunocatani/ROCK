@@ -103,10 +103,13 @@ int main()
     verify(storage::table(), storage::kSupportedPermissions);
     verify(grab::table(), grab::kSupportedPermissions);
     {
-        // A Grab 2.0 consumer (minor 0, the 2.0 table of 216 bytes) still binds to 2.1.
+        // Grab 2.0 (216-byte table) and 2.1 (224 bytes) consumers still bind to 2.2.
         const InterfaceDescriptorV1* released{};
         assert(ROCKAPI_QueryInterfaceV1(InterfaceId::Grab, 2, 0, 216, &released) == Status::Ok);
-        assert(released && released->table == &grab::table() && released->minor == 1);
+        assert(released && released->table == &grab::table() && released->minor == 2);
+        released = nullptr;
+        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::Grab, 2, 1, 224, &released) == Status::Ok);
+        assert(released && released->table == &grab::table() && released->minor == 2);
     }
     {
         const auto& api = grab::table();

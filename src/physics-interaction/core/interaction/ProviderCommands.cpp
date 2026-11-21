@@ -262,8 +262,9 @@ namespace rock
             };
 
             if (isForceReleaseCommand || isThrownDropCommand) {
+                const bool releaseToInventory = isForceReleaseCommand && command.releaseToInventory;
                 TouchGrabRuntime::HandReport surface{};
-                if (isForceReleaseCommand && _touchGrabRuntime.getHandReport(isLeft, surface) &&
+                if (isForceReleaseCommand && !releaseToInventory && _touchGrabRuntime.getHandReport(isLeft, surface) &&
                     surface.globalSurface) {
                     if (!heldObjectMatchesRequest(surface.referenceFormId, surface.bodyId)) {
                         complete(api::grab::InteractionCommandState::Rejected,
@@ -303,8 +304,75 @@ namespace rock
                 }
 
                 const Hand& peer = isLeft ? _rightHand : _leftHand;
-                if (isThrownDropCommand && heldRef && peer.isHolding() && peer.getHeldRef() == heldRef) {
+                const bool peerHoldingSameObject = heldRef && peer.isHolding() && peer.getHeldRef() == heldRef;
+                if (isThrownDropCommand && peerHoldingSameObject) {
                     complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::HandBusy);
+                    continue;
+                }
+
+                if (releaseToInventory) {
+                    // The shoulder stash's eligibility and two-phase transfer:
+                    // the hand lets go as a pending transfer, then native
+                    // pickup (or a Storage stash converter) takes the item; a
+                    // refused pickup leaves it in the world at the hand.
+                    const auto eligibility = shoulder_stash::evaluateEligibility(shoulder_stash::EligibilityInput{
+                        .enabled = true,
+                        .peerHoldingSameObject = peerHoldingSameObject,
+                        .heldRef = heldRef,
+                        .savedState = &hand.getSavedObjectState(),
+                        .lootActivatorScript = shoulder_stash::resolveLootActivatorScript(
+                            _grabInput.lootActivatorMemos[isLeft ? 1u : 0u], hand.heldGrabIdentity(), heldRef),
+                    });
+                    const bool armedGrenade = heldRef &&
+                        std::ranges::any_of(_forceGrab.grenadeFuses, [&](const auto& fuse) {
+                            return fuse.active && fuse.handle.get().get() == heldRef;
+                        });
+                    if (!eligibility.eligible || armedGrenade) {
+                        ROCK_LOG_INFO(Hand, "Provider inventory stash refused: hand={} formID={:08X} reason={}",
+                            hand.handName(), heldFormId,
+                            armedGrenade ? "armed-grenade" : shoulder_stash::eligibilityReasonName(eligibility.reason));
+                        complete(api::grab::InteractionCommandState::Rejected,
+                            peerHoldingSameObject ? api::grab::InteractionFailure::HandBusy
+                                                  : api::grab::InteractionFailure::TargetUnavailable);
+                        continue;
+                    }
+                    auto releaseContext = makeGrabReleaseContext(hand, isLeft);
+                    releaseContext.disposition = GrabReleaseDisposition::PendingInventoryTransfer;
+                    releaseContext.reason = "provider-inventory-stash-pending-transfer";
+                    auto releaseOutcome = hand.releaseGrabbedObject(frame.hknpWorld,
+                        GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
+                    if (!releaseOutcome.released) {
+                        complete(api::grab::InteractionCommandState::Rejected,
+                            api::grab::InteractionFailure::HandNotHolding);
+                        continue;
+                    }
+                    if (heldRef) {
+                        releaseObject(heldRef, claimOwnerForHand(isLeft));
+                    }
+                    const auto transfer = shoulder_stash::transferToPlayerInventory(shoulder_stash::TransferInput{
+                        .heldRef = releaseOutcome.takeRetainedReference(),
+                        .lootActivatorScript = eligibility.lootActivatorScript,
+                    });
+                    clearProviderReleaseInputState();
+                    if (transfer.success) {
+                        GrabEventData eventData{};
+                        eventData.type = GrabEventType::Stashed;
+                        eventData.sourceKind = GrabEventSourceKind::HeldObject;
+                        eventData.isLeft = isLeft;
+                        eventData.formID = heldFormId;
+                        eventData.primaryBodyId = primaryBodyId;
+                        dispatchGrabEvent(eventData);
+                    } else {
+                        dispatchSimpleGrabEvent(GrabEventType::Released, isLeft, transfer.untransferredRef.get(),
+                            primaryBodyId);
+                    }
+                    ROCK_LOG_INFO(Hand, "Provider inventory stash: hand={} formID={:08X} success={} reason={} count={}",
+                        hand.handName(), heldFormId, transfer.success ? "yes" : "no",
+                        shoulder_stash::transferReasonName(transfer.reason), transfer.count);
+                    complete(transfer.success ? api::grab::InteractionCommandState::Succeeded
+                                              : api::grab::InteractionCommandState::Rejected,
+                        transfer.success ? api::grab::InteractionFailure::None
+                                         : api::grab::InteractionFailure::TargetUnavailable);
                     continue;
                 }
 

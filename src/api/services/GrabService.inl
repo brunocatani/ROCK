@@ -370,3 +370,26 @@
         grab.providerGeneration = request.providerGeneration;
         return enqueueInteractionCommand(command, &outCommandId);
     }
+
+    api::Status requestHeldInventoryStash(std::uint64_t ownerToken,
+        const api::grab::HeldInventoryStashRequest& request, std::uint64_t& outCommandId)
+    {
+        outCommandId = 0;
+        if (!ownerToken || !request.targetFormId)
+            return api::Status::InvalidArgument;
+        if (request.hand != api::Hand::Left && request.hand != api::Hand::Right)
+            return api::Status::HandUnavailable;
+        QueuedInteractionCommand command{};
+        command.kind = api::grab::InteractionCommandKind::ForceRelease;
+        command.ownerToken = ownerToken;
+        command.releaseToInventory = true;
+        auto& release = command.forceRelease;
+        release.hand = request.hand;
+        release.flags = static_cast<std::uint32_t>(api::grab::ForceReleaseFlag::RequireMatchingTarget) |
+            static_cast<std::uint32_t>(api::grab::ForceReleaseFlag::ImmediateCollisionRestore);
+        release.targetFormId = request.targetFormId;
+        release.worldGeneration = request.worldGeneration;
+        release.skeletonGeneration = request.skeletonGeneration;
+        release.providerGeneration = request.providerGeneration;
+        return enqueueInteractionCommand(command, &outCommandId);
+    }

@@ -23,6 +23,10 @@ namespace rock::provider
         std::uint32_t powerArmorReferenceNativeHandle = 0;
         std::uint16_t inventoryUniqueId = 0;
         api::grab::ForceReleaseRequest forceRelease{};
+        // requestHeldInventoryStash: the force release ends in the player's
+        // inventory through the shoulder stash transfer. Never set by a
+        // consumer's ForceReleaseRequest.
+        bool releaseToInventory = false;
         api::grab::ThrownDropRequest thrownDrop{};
     };
 

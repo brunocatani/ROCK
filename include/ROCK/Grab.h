@@ -6,7 +6,7 @@
 namespace rock::api::grab {
     inline constexpr InterfaceId kInterfaceId = InterfaceId::Grab;
     inline constexpr std::uint32_t kMajor = 2;
-    inline constexpr std::uint32_t kMinor = 1;
+    inline constexpr std::uint32_t kMinor = 2;
     inline constexpr std::uint32_t kMaxQueuedCommands = 32;
     inline constexpr std::uint32_t kMaxCommandResults = 64;
     inline constexpr std::uint32_t kMaxReservationLeaseFrames = 120;
@@ -185,6 +185,25 @@ namespace rock::api::grab {
         Hand hand{ Hand::None };
         std::uint32_t baseFormId{ 0 };
         std::uint32_t uniqueId{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+    };
+
+    /*
+     * 2.2. Puts the loose reference targetFormId, held by hand alone, into the
+     * player's inventory the way ROCK's shoulder stash does: the hand lets go
+     * without throw velocity, Storage stash converters see it first, and
+     * native activation runs its scripts. targetFormId is required; the
+     * equipped weapon, a surface latch, a body and a reference both hands hold
+     * are refused.
+     */
+    struct HeldInventoryStashRequest
+    {
+        std::uint32_t size{ sizeof(HeldInventoryStashRequest) };
+        std::uint32_t version{ 1 };
+        Hand hand{ Hand::None };
+        std::uint32_t targetFormId{ 0 };
         std::uint32_t worldGeneration{ 0 };
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
@@ -740,6 +759,9 @@ namespace rock::api::grab {
         // 2.1. Game thread (Write). An InteractionCommandKind::ForceGrab command:
         // poll it with getInteractionCommandResult.
         Status(ROCK_CALL* requestInventoryItemGrab)(OwnerToken owner, const InventoryItemGrabRequest* request, std::uint64_t* outCommandId) noexcept;
+        // 2.2. Game thread (Write). An InteractionCommandKind::ForceRelease
+        // command: poll it with getInteractionCommandResult.
+        Status(ROCK_CALL* requestHeldInventoryStash)(OwnerToken owner, const HeldInventoryStashRequest* request, std::uint64_t* outCommandId) noexcept;
     };
 }
 

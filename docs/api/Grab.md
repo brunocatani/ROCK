@@ -4,9 +4,10 @@ Header: `include/ROCK/Grab.h`. Grab and release commands, hand interaction
 state, hand reservations, held placement, default grab poses, guided held
 objects, reference and power-armor queries, and grab events.
 
-Interface `Grab`, major 2, minor 1 (ROCK 1.0.3; 2.1 adds
-`requestInventoryItemGrab`). A mod built against these headers needs ROCK 1.0.3
-or newer; a mod built against 2.0 keeps working. Major 1 and its minors are refused. The
+Interface `Grab`, major 2, minor 2 (2.1, ROCK 1.0.3, adds
+`requestInventoryItemGrab`; 2.2, unreleased, adds `requestHeldInventoryStash`).
+A mod that calls `requestHeldInventoryStash` needs ROCK with Grab 2.2; request
+minor 1 when you do not call it. Mods built against 2.0 and 2.1 keep working. Major 1 and its minors are refused. The
 References interface (10) is retired; its queries are here. Permissions:
 `Read` (1), `Write` (2).
 
@@ -31,6 +32,20 @@ grabbed there; a grab that cannot complete returns it to the inventory. The
 command is a `ForceGrab` command: poll it with `getInteractionCommandResult`,
 which reports the dropped reference as `targetFormId`. ROCK shows no
 notification for it; the caller presents the outcome.
+
+`requestHeldInventoryStash` (2.2) puts the loose reference `targetFormId`,
+held by `hand` alone, into the player's inventory as ROCK's shoulder stash
+does: the hand lets go without throw velocity, Storage stash converters see
+the item first, and native activation runs its scripts. `targetFormId` is
+required. The command is a `ForceRelease` command. It is rejected with
+`HandNotHolding` when the hand holds nothing, `HeldObjectMismatch` when it
+holds another reference, `HandBusy` when the other hand holds the same
+reference, and `TargetUnavailable` for what the shoulder stash refuses (a
+body, an actor, a non-playable item, an armed grenade). The equipped weapon
+and surface latches are never held objects, so they are never stashed. When
+native pickup refuses the item after the hand let go, the command is
+`Rejected` with `TargetUnavailable` and the reference stays in the world at
+the hand. ROCK shows no notification for it.
 
 ## Hand state (Read)
 
@@ -147,6 +162,7 @@ publication identity.
 | `PowerArmorGrabRequest` | `requestPowerArmorGrab` | `target` (`ReferenceKey`), `hand`, `point` (`PowerArmorPoint`), `maxDistanceGame` |
 | `InventoryGrabRequest` | `requestInventoryGrab` | `hand`, `baseFormId`, the three guard generations |
 | `InventoryItemGrabRequest` | `requestInventoryItemGrab` (2.1) | `hand`, `baseFormId`, `uniqueId`, the three guard generations |
+| `HeldInventoryStashRequest` | `requestHeldInventoryStash` (2.2) | `hand`, `targetFormId`, the three guard generations |
 | `InteractionCommandResult` | `getInteractionCommandResult` | `ownerToken`, `commandId`, `kind` (`InteractionCommandKind`), `state` (`InteractionCommandState`: `Queued`, `Succeeded`, `Rejected`, `Cancelled`), `failure` and `failureStage` (`InteractionFailure`), `hand`, `targetFormId`, `targetBodyId`, `frameIndex`, the three generations, `stage` (`CommandStage`: `Accepted`, `Queued`, `Committed`, `Applied`, `Terminal`), `acceptedFrame`, `committedFrame`, `appliedFrame` |
 | `ReleasedObjectDrive`, `ReleasedObjectProgress` | `driveReleasedObject` | `reference` (`ReferenceKey`), `expectedBase`, `approachSeconds`, `rootWorld`; `distanceGame`, `angleRadians` |
 | `HandInteractionState` | `getHandInteractionState` | `frameIndex`, `hand`, `phase` (`HandInteractionPhase`), `targetKind` (`BodyContactTargetKind`), `flags` (`HandInteractionFlag`), `reservedTargetIdentity`, `targetFormId`, `primaryBodyId`, `heldBodyCount`, `heldBodyIds[8]`, `stateSequence`, `targetSequence`, `gripSequence`, `releaseSequence`, the four generations, `surfaceAnchorGame`, `surfaceGripMode` |

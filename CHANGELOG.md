@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- **For mod authors: Grab 2.2.** `requestHeldInventoryStash` puts the loose item a
+  hand holds into the player's inventory the way the shoulder stash does, stash
+  converters and item scripts included. Mods built for 2.0 and 2.1 keep working.
+
 ### Fixed
 
 - **Guns with a laser, flashlight or glow come to the hand when pulled.** A far grab
