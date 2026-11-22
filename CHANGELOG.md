@@ -7,9 +7,6 @@
 - **For mod authors: Grab 2.2.** `requestHeldInventoryStash` puts the loose item a
   hand holds into the player's inventory the way the shoulder stash does, stash
   converters and item scripts included. Mods built for 2.0 and 2.1 keep working.
-- **For mod authors: Storage 2.1.** `ShoulderRouting.flags` with `KeepLooseItemStash`
-  suppresses only the shoulder stash of weapons, so a held loose item still goes to
-  the inventory over the shoulder. Mods built for 2.0 keep working.
 - **The ammo counter names your weapon's ammunition.** Immersive and Vanilla show
   the caliber beside the reserve rounds, with the chamber cartridge above it;
   Minimal shows it after the reserve rounds. It is drawn in the counter's own

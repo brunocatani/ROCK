@@ -22,16 +22,7 @@ namespace rock::storage_interaction
         PhysicsCallbackQuiescenceGate&);
     void flush(RE::hknpWorld*, const havok_physics_timing::PhysicsTimingSample&);
     void shutdown(RE::hknpWorld* validWorld);
-    // Which built-in shoulder stash a routing may suppress.
-    enum class ShoulderStash
-    {
-        // Equipped and carried weapons, stash and retrieval.
-        Weapon,
-        // A held loose item.
-        LooseItem,
-    };
-    // Frame owner. A routing owner suppresses this hand's shoulder stash of kind.
-    bool blocksShoulder(bool isLeft, ShoulderStash kind);
+    bool blocksShoulder(bool isLeft);
     // Pair-filter callback. filtersPairs is checked once per batch; the
     // layers come from the pass's single read (kUnknownLayer if unreadable).
     bool filtersPairs() noexcept;

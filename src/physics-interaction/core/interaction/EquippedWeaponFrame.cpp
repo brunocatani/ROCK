@@ -3147,7 +3147,7 @@ namespace rock
         auto& lastDecision = _equipped.secondWeaponStashDecisions[left ? 1u : 0u];
         const HandFrameInput& handInput = left ? frame.left : frame.right;
         const bool eligible =
-            handlingEnabled && !frame.menuBlocked && !handInput.disabled && !storage_interaction::blocksShoulder(left, storage_interaction::ShoulderStash::Weapon);
+            handlingEnabled && !frame.menuBlocked && !handInput.disabled && !storage_interaction::blocksShoulder(left);
         if (!eligible) {
             shoulder_stash::resetRuntime(detectorState);
             lastDecision = {};
@@ -3265,7 +3265,7 @@ namespace rock
             auto& detectorState = _equipped.stashStates[handIndex];
             auto& policyHand = isLeft ? coordinatorInput.left : coordinatorInput.right;
             policyHand.carriesWeapon = selectedCarryHand;
-            if (!selectedCarryHand || menuInputActive || storage_interaction::blocksShoulder(isLeft, storage_interaction::ShoulderStash::Weapon)) {
+            if (!selectedCarryHand || menuInputActive || storage_interaction::blocksShoulder(isLeft)) {
                 shoulder_stash::resetRuntime(detectorState);
                 continue;
             }

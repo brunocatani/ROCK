@@ -81,16 +81,9 @@ another owner.
 ## Shoulder routing (Write)
 
 `setShoulderRouting(owner, routing)` suppresses ROCK's built-in shoulder
-stash and retrieval for the hands in `handMask` (right 1, left 2; 0 clears)
+stash, of held items and weapons, for the hands in `handMask` (right 1, left 2; 0 clears)
 for 1 to `kMaxLeaseFrames` frames. `clearDisplaysAndRouting(owner)` clears
 your displays and routing.
-
-2.1: `flags` takes `ShoulderRoutingFlag` bits. `KeepLooseItemStash` keeps
-ROCK's shoulder stash of a held loose item on for those hands and suppresses
-only the shoulder stash and retrieval of equipped and carried weapons, for a
-mod whose own storage takes weapons while loose items still go to the
-inventory. A 2.0 record (`kShoulderRoutingSize20` bytes) has no `flags` and
-suppresses everything.
 
 ## Stash conversion (Callbacks)
 
@@ -114,5 +107,5 @@ ROCK.
 | `Contact` | `getDisplayContact` | `sample`, `displayId`, `contactFrame`, `item`, `hand`, `valid` |
 | `GripRequest` | `getAuthoredGrip` | `sample`, `displayId`, `hand`, `role` (`GripRole`: `Nearest`, `Firing`, `Support`) |
 | `GripPose` | `getAuthoredGrip` | `sample`, `displayId`, `poseSequence`, `item`, `valid`, `hand`, `role`, `fingerMask`, `displayWorld`, `handInDisplay`, `fingerLocals[kFingerLocalTransformCount]` (15), `controllerInDisplay`, `controllerInTracking`, `gripInDisplay`, `distanceGame`, `acquisitionRadiusGame` |
-| `ShoulderRouting` | `setShoulderRouting` | `handMask`, `leaseFrames`, the three guard generations, `flags` (2.1, `ShoulderRoutingFlag`); at most `kMaxRoutingOwners` owners |
+| `ShoulderRouting` | `setShoulderRouting` | `handMask`, `leaseFrames`, the three guard generations; at most `kMaxRoutingOwners` owners |
 | `StashResult` | stash converter return | `decision` (`StashDecision`: `Pass`, `Reject`, `Consumed`), `inventoryFormId`, `count` |

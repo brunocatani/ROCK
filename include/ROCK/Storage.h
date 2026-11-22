@@ -13,7 +13,7 @@ namespace rock::api::storage
 {
     inline constexpr InterfaceId kInterfaceId = InterfaceId::Storage;
     inline constexpr std::uint32_t kMajor = 2;
-    inline constexpr std::uint32_t kMinor = 1;
+    inline constexpr std::uint32_t kMinor = 0;
     inline constexpr std::uint32_t kMaxClaims = 256;
     inline constexpr std::uint32_t kClaimReservationFrames = 120;
     inline constexpr std::uint32_t kMaxLeaseFrames = 3;
@@ -207,19 +207,9 @@ namespace rock::api::storage
     // Shoulder routing
     // ------------------------------------------------------------------
 
-    // 2.1: what a routing leaves on for its hands.
-    enum class ShoulderRoutingFlag : std::uint32_t
-    {
-        None = 0,
-        // ROCK's shoulder stash of a held loose item stays on; only the
-        // shoulder stash and retrieval of equipped and carried weapons stop.
-        KeepLooseItemStash = 1u << 0,
-    };
-
-    // Suppresses ROCK's built-in shoulder stash and retrieval for the hands in
-    // handMask (right 1, left 2; 0 clears). Raw input and other interactions
-    // are unaffected. A 2.0 record (kShoulderRoutingSize20 bytes) ends before
-    // flags and suppresses everything.
+    // Suppresses ROCK's built-in shoulder stash (held items and weapons) for
+    // the hands in handMask (right 1, left 2; 0 clears). Raw input and other interactions
+    // are unaffected.
     struct ShoulderRouting
     {
         std::uint32_t size{ sizeof(ShoulderRouting) };
@@ -229,10 +219,7 @@ namespace rock::api::storage
         std::uint32_t worldGeneration{ 0 };
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
-        std::uint32_t flags{ 0 }; // 2.1: ShoulderRoutingFlag bits.
     };
-    inline constexpr std::uint32_t kShoulderRoutingSize20 = 28;
-    static_assert(sizeof(ShoulderRouting) == 32 && offsetof(ShoulderRouting, flags) == kShoulderRoutingSize20);
 
     // ------------------------------------------------------------------
     // Stash conversion
