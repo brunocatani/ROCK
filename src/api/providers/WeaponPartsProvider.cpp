@@ -4,6 +4,7 @@
 #include <cstring>
 #include "Boundary.h"
 #include "SnapshotReads.h"
+#include "api/LooseItemModelService.h"
 #include "api/LooseWeaponStateService.h"
 #include "api/WeaponPartCollisionService.h"
 
@@ -404,6 +405,25 @@ namespace rock::api::weaponparts
         {
             return readSample(owner, kInterfaceId, outSample);
         }
+
+        // The models are put on the reference in the Set3D hook the loose item
+        // states install.
+        Status ROCK_CALL setLooseItemModels(OwnerToken owner, const LooseItemModel* models,
+            std::uint32_t count) noexcept
+        {
+            return invoke(owner, kInterfaceId, 2, true, [&] {
+                if (count && !models)
+                    return Status::InvalidArgument;
+                if (!loose_weapon_state::install())
+                    return Status::NotReady;
+                return loose_item_model::set(owner, { models, count });
+            });
+        }
+
+        Status ROCK_CALL clearLooseItemModels(OwnerToken owner) noexcept
+        {
+            return invoke(owner, kInterfaceId, 2, true, [&] { return loose_item_model::clear(owner); });
+        }
     }
 
     const Api& table() noexcept
@@ -431,6 +451,8 @@ namespace rock::api::weaponparts
             &moveItemState,
             &clearItemStates,
             &getSample,
+            &setLooseItemModels,
+            &clearLooseItemModels,
         };
         return value;
     }

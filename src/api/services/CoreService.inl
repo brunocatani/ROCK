@@ -64,6 +64,7 @@
         native_interaction_service::clearOwner(ownerToken);
         native_idle_grip_preharvest::clearConsumerWarmSet(ownerToken);
         loose_weapon_state::clear(ownerToken);
+        loose_item_model::clear(ownerToken);
         physical_reload_input::clearOwner(ownerToken);
         support_trigger_input::clearOwner(ownerToken);
         if (ownerToken == 0) {

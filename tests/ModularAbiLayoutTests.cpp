@@ -24,7 +24,7 @@ struct ItemStateCallerPacking
 
 static_assert(alignof(ItemStateCallerPacking) == 1);
 #pragma pack(pop)
-static_assert(sizeof(rock::api::weaponparts::Api) == 176 && sizeof(rock::api::weaponparts::ItemState) == 29964);
+static_assert(sizeof(rock::api::weaponparts::Api) == 192 && sizeof(rock::api::weaponparts::ItemState) == 29964);
 #pragma pack(push, 1)
 #include <ROCK/Touch.h>
 

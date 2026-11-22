@@ -1,6 +1,7 @@
 #include <ROCK/WeaponParts.h>
 #include <cassert>
 #include <cstring>
+#include "api/LooseItemModelService.h"
 #include "api/LooseWeaponStateService.h"
 #include "api/WeaponPartCollisionService.h"
 #include "api/providers/Boundary.h"
@@ -16,7 +17,7 @@ namespace
     constexpr api::OwnerToken testOwner = 42;
     std::uint32_t permissions = 3;
     std::uint32_t evidenceCount = 5;
-    unsigned targetWrites = 0, grabPointWrites = 0, suppressionWrites = 0, itemWrites = 0, secondaryDriveWrites = 0;
+    unsigned targetWrites = 0, grabPointWrites = 0, suppressionWrites = 0, itemWrites = 0, secondaryDriveWrites = 0, modelWrites = 0;
     std::uint32_t lastTargetCount = 0;
 }
 
@@ -188,6 +189,19 @@ namespace rock::loose_weapon_state
     api::Status move(api::OwnerToken, const contract::ItemKey&, const contract::ItemKey&) { return api::Status::Ok; }
 
     api::Status clear(api::OwnerToken) { return api::Status::Ok; }
+
+    bool install() noexcept { return true; }
+}
+
+namespace rock::loose_item_model
+{
+    api::Status set(api::OwnerToken, std::span<const contract::LooseItemModel>)
+    {
+        ++modelWrites;
+        return api::Status::Ok;
+    }
+
+    api::Status clear(api::OwnerToken) { return api::Status::Ok; }
 }
 
 namespace rock::api::weaponparts
@@ -273,11 +287,18 @@ int main()
     assert(api.setItemState(testOwner, &key, &state) == Status::Ok && itemWrites == 1);
     assert(api.setItemState(testOwner, nullptr, &state) == Status::InvalidArgument);
 
+    // 2.1 loose item models: a null list with a count is refused before the service.
+    LooseItemModel model{ .baseFormId = 0x800, .modelFormId = 0x801 };
+    assert(api.setLooseItemModels(testOwner, &model, 1) == Status::Ok && modelWrites == 1);
+    assert(api.setLooseItemModels(testOwner, nullptr, 1) == Status::InvalidArgument && modelWrites == 1);
+    assert(api.setLooseItemModels(testOwner, nullptr, 0) == Status::Ok && modelWrites == 2);
+
     // Permissions are WeaponParts' own.
     permissions = 1;
     target.flags = 0;
     assert(api.setPartTargets(testOwner, 0, &target, 1) == Status::PermissionDenied);
     assert(api.setItemState(testOwner, &key, &state) == Status::PermissionDenied && itemWrites == 1);
+    assert(api.setLooseItemModels(testOwner, &model, 1) == Status::PermissionDenied && modelWrites == 2);
     permissions = 0;
     assert(api.queryContact(testOwner, 0, &query, &contact) == Status::PermissionDenied && contact.valid == 0);
 }

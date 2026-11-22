@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <mutex>
+#include "LooseItemModelService.h"
 #include "LooseWeaponStatePath.h"
 #include "LooseWeaponStateRotation.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
@@ -186,8 +187,10 @@ namespace rock::loose_weapon_state
             // Native caller owns the model through Set3D. Apply only to a detached
             // incoming tree before native publication; never touch shared templates.
             try {
-                if (model && !model->parent)
+                if (model && !model->parent) {
                     apply(ref, model);
+                    loose_item_model::present(ref, model);
+                }
             } catch (...) {
                 ROCK_LOG_ERROR(Weapon, "Loose item model state application failed");
             }

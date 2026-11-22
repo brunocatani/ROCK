@@ -49,6 +49,11 @@ namespace rock::loose_weapon_state
     void clear(std::uint64_t) {}
 }
 
+namespace rock::loose_item_model
+{
+    void clear(std::uint64_t) {}
+}
+
 namespace rock::native_idle_grip_preharvest
 {
     void clearConsumerWarmSet(std::uint64_t) noexcept {}

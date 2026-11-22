@@ -4,6 +4,11 @@
 
 ### Added
 
+- **For mod authors: WeaponParts 2.1.** `setLooseItemModels` makes every loose
+  reference of a misc item show an object mod's model instead of its own (a loose
+  mod shows the suppressor or scope it came from, not a mod crate), and ROCK gives
+  it collision built from that model, in the hand and at rest. Mods built for 2.0
+  keep working.
 - **For mod authors: Grab 2.2.** `requestHeldInventoryStash` puts the loose item a
   hand holds into the player's inventory the way the shoulder stash does, stash
   converters and item scripts included. `getHeldBodyTouch` reports which parts of

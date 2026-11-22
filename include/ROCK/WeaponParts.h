@@ -3,12 +3,13 @@
 
 // Weapon parts of the equipped weapons, addressed by weapon slot: contacts,
 // evidence, part targets and drives, grip state, poses, sources, collision
-// suppression, grab points, and authored state for loose weapon items.
+// suppression, grab points, authored state for loose weapon items, and the
+// models loose item references show (2.1).
 #pragma pack(push, 8)
 namespace rock::api::weaponparts {
     inline constexpr InterfaceId kInterfaceId = InterfaceId::WeaponParts;
     inline constexpr std::uint32_t kMajor = 2;
-    inline constexpr std::uint32_t kMinor = 0;
+    inline constexpr std::uint32_t kMinor = 1;
     inline constexpr std::uint32_t kMaxEvidenceDetails = 100;
     inline constexpr std::uint32_t kMaxEvidencePoints = 252;
     inline constexpr std::uint32_t kMaxPoses = 128;
@@ -19,6 +20,8 @@ namespace rock::api::weaponparts {
     inline constexpr std::uint32_t kMaxCollisionSources = 16;
     inline constexpr std::uint32_t kMaxGrabPoints = 32;
     inline constexpr std::uint32_t kMaxItemParts = 96;
+    // 2.1. Entries one owner's setLooseItemModels accepts.
+    inline constexpr std::uint32_t kMaxLooseItemModels = 32768;
     inline constexpr std::uint32_t kNoBody = 0x7FFF'FFFF;
 
     // ------------------------------------------------------------------
@@ -451,6 +454,20 @@ namespace rock::api::weaponparts {
         ItemPart parts[kMaxItemParts]{};
     };
 
+    /*
+     * 2.1. Every loose reference of baseFormId (a misc item, such as the loose
+     * mod an object mod becomes when it is taken off) shows the model of the
+     * object mod modelFormId in place of its own geometry, centred on the
+     * reference, and collides with hulls ROCK generates from that model.
+     */
+    struct LooseItemModel
+    {
+        std::uint32_t size{ sizeof(LooseItemModel) };
+        std::uint32_t version{ 1 };
+        std::uint32_t baseFormId{ 0 };
+        std::uint32_t modelFormId{ 0 };
+    };
+
     // Permission bits are local to this interface major. Discovery grants none.
     enum class Permission : std::uint32_t { Read = 1, Write = 2 };
     inline constexpr std::uint32_t kSupportedPermissions = 3;
@@ -503,6 +520,13 @@ namespace rock::api::weaponparts {
         Status(ROCK_CALL* clearItemStates)(OwnerToken owner) noexcept;
         // Any thread.
         Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
+        // 2.1. Write, game thread. Replaces the owner's loose item models
+        // (count 0 clears). A base another owner registered: OwnerConflict; a
+        // base listed twice: InvalidArgument; a base that is not a misc item
+        // or a model that is not an object mod with a model: TargetInvalid.
+        // References already in the world change at their next model load.
+        Status(ROCK_CALL* setLooseItemModels)(OwnerToken owner, const LooseItemModel* models, std::uint32_t count) noexcept;
+        Status(ROCK_CALL* clearLooseItemModels)(OwnerToken owner) noexcept;
     };
 }
 #pragma pack(pop)

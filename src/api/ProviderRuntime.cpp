@@ -1,6 +1,7 @@
 #include "ProviderRuntime.h"
 #include "BorrowedCallbackContext.h"
 #include "GrabEventCallbacks.h"
+#include "LooseItemModelService.h"
 #include "LooseWeaponStateService.h"
 #include "NativeInteractionService.h"
 #include "OwnerBindingPolicy.h"
