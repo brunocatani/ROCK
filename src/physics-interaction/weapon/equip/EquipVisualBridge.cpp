@@ -9,6 +9,7 @@
 #include <array>
 #include <cmath>
 
+#include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
@@ -654,7 +655,8 @@ namespace rock
                     if (frik_hand_world_authority::tryGetHandlingWandWorld(_isLeftHand, primaryInput) &&
                         frik_hand_world_authority::tryGetHandlingWandWorld(!_isLeftHand, supportInput)) {
                         solved = equip_visual_bridge_policy::solvePairedGunstockBridge(desiredWorld,
-                            _capturedGrips.primary.gripWeaponLocal, primaryInput, supportInput);
+                            _capturedGrips.primary.gripWeaponLocal, primaryInput, supportInput,
+                            g_rockConfig.rockGunstockCentering);
                     }
                 } else {
                     solved = equip_visual_bridge_policy::solvePairedBridge(desiredWorld,

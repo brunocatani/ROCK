@@ -1872,18 +1872,21 @@ namespace rock
             // The solve starts again from the authored seat: configuring the
             // already-centred seat would ease its lateral shift in twice.
             const auto authoredSolverInput = solverInput;
+            const bool centerOnControllerLine = g_rockConfig.rockGunstockCentering;
             RE::NiTransform primaryWand{}, supportWand{};
             if (!frik_hand_world_authority::tryGetWeaponWandWorld(primaryHandIsLeft, primaryWand) ||
                 !frik_hand_world_authority::tryGetWeaponWandWorld(supportHandIsLeft, supportWand) ||
                 !gunstock_mode::configureVirtualAim(solverInput, primaryWand, supportWand,
-                    sub(primaryController, primaryBeforeRecoil), dynamicAcquisition ? 1.0f : _support.rotationBlend)) {
+                    sub(primaryController, primaryBeforeRecoil), dynamicAcquisition ? 1.0f : _support.rotationBlend,
+                    centerOnControllerLine)) {
                 _hasSolvedWeaponTransform = false;
                 ROCK_LOG_SAMPLE_WARN(Weapon, 2000,
                     "Gunstock aim retaining grip while controller baseline is unavailable or degenerate");
                 return;
             }
             solved = gunstock_mode::solveVirtualAim(authoredSolverInput, primaryWand, supportWand,
-                sub(primaryController, primaryBeforeRecoil), dynamicAcquisition ? 1.0f : _support.rotationBlend);
+                sub(primaryController, primaryBeforeRecoil), dynamicAcquisition ? 1.0f : _support.rotationBlend,
+                centerOnControllerLine);
         } else {
             solved = solveTwoHandedWeaponTransformFrikPivot(solverInput);
         }

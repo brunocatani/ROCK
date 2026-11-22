@@ -40,13 +40,13 @@ namespace
         input.primaryTargetWorld = primary.translate;
         input.useSupportNormalTwist = true;
         const auto authoredSeat = input.primaryGripLocal;
-        if (!gunstock_mode::configureVirtualAim(input, rear, front, {}, 1))
+        if (!gunstock_mode::configureVirtualAim(input, rear, front, {}, 1, true))
             return fail();
         // Only the lateral seat coordinate changes: authored height and depth stay.
         if (std::abs(input.primaryGripLocal.y - authoredSeat.y) > 0.00001f ||
             std::abs(input.primaryGripLocal.z - authoredSeat.z) > 0.00001f)
             return fail();
-        const auto solved = gunstock_mode::solveVirtualAim(input, rear, front, {}, 1);
+        const auto solved = gunstock_mode::solveVirtualAim(input, rear, front, {}, 1, true);
         if (!solved.solved ||
             !nearPoint(transform_math::localPointToWorld(solved.weaponWorldTransform, input.primaryGripLocal),
                 primary.translate))
@@ -64,8 +64,20 @@ namespace
                 0.02f)
                 return fail();
         }
-        const auto bridge = equip_visual_bridge_policy::solvePairedGunstockBridge(solved.weaponWorldTransform,
-            input.primaryGripLocal, rear, front);
+        // Centering off: same aim, and the authored firing seat lands on the
+        // palm unchanged.
+        auto authored = input;
+        authored.primaryGripLocal = authoredSeat;
+        if (!gunstock_mode::configureVirtualAim(authored, rear, front, {}, 1, false) ||
+            !nearPoint(authored.primaryGripLocal, authoredSeat, 0.00001f))
+            return fail();
+        const auto uncentered = gunstock_mode::solveVirtualAim(authored, rear, front, {}, 1, false);
+        if (!uncentered.solved || !sameRotation(uncentered.weaponWorldTransform, solved.weaponWorldTransform) ||
+            !nearPoint(transform_math::localPointToWorld(uncentered.weaponWorldTransform, authoredSeat),
+                primary.translate))
+            return fail();
+        const auto bridge =equip_visual_bridge_policy::solvePairedGunstockBridge(solved.weaponWorldTransform,
+            input.primaryGripLocal, rear, front, true);
         if (!bridge.solved || !sameRotation(bridge.weaponWorldTransform, solved.weaponWorldTransform) ||
             !nearPoint(transform_math::localPointToWorld(bridge.weaponWorldTransform, input.primaryGripLocal),
                 primary.translate))
@@ -76,8 +88,8 @@ namespace
         auto movedFront = front;
         movedFront.translate = weaponSolverAdd(front.translate, RE::NiPoint3{ 2.0f, -1.0f, 3.0f });
         const auto movingBridge = equip_visual_bridge_policy::solvePairedGunstockBridge(solved.weaponWorldTransform,
-            input.primaryGripLocal, rear, movedFront);
-        const auto movingEquipped = gunstock_mode::solveVirtualAim(input, rear, movedFront, {}, 1.0f);
+            input.primaryGripLocal, rear, movedFront, true);
+        const auto movingEquipped = gunstock_mode::solveVirtualAim(input, rear, movedFront, {}, 1.0f, true);
         if (!movingBridge.solved || !movingEquipped.solved ||
             !sameRotation(movingBridge.weaponWorldTransform, movingEquipped.weaponWorldTransform) ||
             !nearPoint(movingBridge.weaponWorldTransform.translate, movingEquipped.weaponWorldTransform.translate))
@@ -93,7 +105,7 @@ namespace
             const auto gripInBody = transform_math::worldPointToLocal(bodyInWeapon, input.primaryGripLocal);
             auto loose = input;
             loose.primaryGripLocal = transform_math::localPointToWorld(bodyInWeapon, gripInBody);
-            const auto looseSolved = gunstock_mode::solveVirtualAim(loose, rear, front, {}, 1);
+            const auto looseSolved = gunstock_mode::solveVirtualAim(loose, rear, front, {}, 1, true);
             if (!looseSolved.solved)
                 return fail();
             const auto bodyWorld = transform_math::composeTransforms(looseSolved.weaponWorldTransform, bodyInWeapon);
@@ -116,9 +128,9 @@ namespace
             other.supportGripLocal = seat;
             auto turnedFront = front;
             turnedFront.rotate = weapon_aim_basis::weaponInController().rotate;
-            if (!gunstock_mode::configureVirtualAim(other, rear, turnedFront, {}, 1))
+            if (!gunstock_mode::configureVirtualAim(other, rear, turnedFront, {}, 1, true))
                 return fail();
-            const auto result = gunstock_mode::solveVirtualAim(other, rear, turnedFront, {}, 1);
+            const auto result = gunstock_mode::solveVirtualAim(other, rear, turnedFront, {}, 1, true);
             if (!result.solved || !sameRotation(solved.weaponWorldTransform, result.weaponWorldTransform))
                 return fail();
         }
@@ -127,9 +139,9 @@ namespace
         auto kicked = input;
         const RE::NiPoint3 kick{ 0.4f, -0.2f, 0.8f };
         kicked.primaryTargetWorld = weaponSolverAdd(primary.translate, kick);
-        if (!gunstock_mode::configureVirtualAim(kicked, rear, front, kick, 1))
+        if (!gunstock_mode::configureVirtualAim(kicked, rear, front, kick, 1, true))
             return fail();
-        const auto kickResult = gunstock_mode::solveVirtualAim(kicked, rear, front, kick, 1);
+        const auto kickResult = gunstock_mode::solveVirtualAim(kicked, rear, front, kick, 1, true);
         const auto kickDirection =
             weaponSolverNormalize(weaponSolverSub(weaponSolverSub(front.translate, rear.translate), kick));
         if (!kickResult.solved ||
@@ -144,20 +156,20 @@ namespace
         auto initial = input;
         RE::NiTransform seed{};
         if (!weapon_aim_basis::tryResolveWorld(rear, weapon.scale, seed) ||
-            !gunstock_mode::configureVirtualAim(initial, rear, front, {}, 0))
+            !gunstock_mode::configureVirtualAim(initial, rear, front, {}, 0, true))
             return fail();
-        const auto start = gunstock_mode::solveVirtualAim(initial, rear, front, {}, 0);
+        const auto start = gunstock_mode::solveVirtualAim(initial, rear, front, {}, 0, true);
         if (!start.solved || !sameRotation(start.weaponWorldTransform, seed))
             return fail();
 
         const auto unchanged = input;
-        if (gunstock_mode::configureVirtualAim(input, rear, rear, {}, 1))
+        if (gunstock_mode::configureVirtualAim(input, rear, rear, {}, 1, true))
             return fail();
         if (!sameRotation(input.weaponWorldTransform, unchanged.weaponWorldTransform))
             return fail();
         auto invalid = front;
         invalid.translate.x = (std::numeric_limits<float>::quiet_NaN)();
-        if (gunstock_mode::configureVirtualAim(input, rear, invalid, {}, 1))
+        if (gunstock_mode::configureVirtualAim(input, rear, invalid, {}, 1, true))
             return fail();
         return true;
     }

@@ -432,6 +432,7 @@ namespace rock
             ini.boolean("DeveloperControls", "EmergencyDisableRecoil", rockEmergencyDisableRecoil);
         rockBipodMode = ini.boolean("WeaponHandling", "BipodMode", rockBipodMode);
         rockGunstockMode = ini.boolean("WeaponHandling", "GunstockMode", rockGunstockMode);
+        rockGunstockCentering = ini.boolean("WeaponHandling", "GunstockCentering", rockGunstockCentering);
         rockFrikUserWeaponOffsets =
             ini.boolean("WeaponHandling", "FrikUserWeaponOffsets", rockFrikUserWeaponOffsets);
         rockBipodHandsFreeRadiusMeters = static_cast<float>(ini.number("WeaponHandling", "BipodHandsFreeRadiusMeters", rockBipodHandsFreeRadiusMeters));

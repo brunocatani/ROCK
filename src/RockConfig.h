@@ -106,6 +106,8 @@ namespace rock
         bool rockEmergencyDisableRecoil = false;
         bool rockBipodMode = true;
         bool rockGunstockMode = false;
+        // Gunstock mode centres the weapon laterally on the controller line.
+        bool rockGunstockCentering = true;
         // Player FRIK weapon offset files replace ROCK's grip and scale (opt-in).
         bool rockFrikUserWeaponOffsets = false;
         float rockBipodHandsFreeRadiusMeters = 2.0f;

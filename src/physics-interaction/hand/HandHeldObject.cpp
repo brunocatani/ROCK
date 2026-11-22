@@ -746,7 +746,8 @@ namespace rock
                 frik_hand_world_authority::tryGetHandlingWandWorld(support._isLeft, supportWand)) {
                 // Acquisition is already eased below. Solve the full stock
                 // endpoint here, exactly as equipped dynamic acquisition does.
-                solved = gunstock_mode::solveVirtualAim(solverInput, primaryWand, supportWand, {}, 1.0f);
+                solved = gunstock_mode::solveVirtualAim(solverInput, primaryWand, supportWand, {}, 1.0f,
+                    g_rockConfig.rockGunstockCentering);
             }
             if (!solved.solved) {
                 // Tracking loss is not release intent. Both constraints hold

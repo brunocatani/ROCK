@@ -736,7 +736,7 @@ namespace rock
                     if (frik_hand_world_authority::tryGetWeaponWandWorld(isLeft, primaryWand) &&
                         frik_hand_world_authority::tryGetWeaponWandWorld(!isLeft, supportWand))
                         solved = equip_visual_bridge_policy::solvePairedGunstockBridge(weaponWorld, gripLocal,
-                            primaryWand, supportWand);
+                            primaryWand, supportWand, g_rockConfig.rockGunstockCentering);
                 } else if (frik_hand_world_authority::tryGetRawHandWorld(!isLeft, supportHandWorld) &&
                     weapon_input_filter::usable(supportHandWorld)) {
                     solved = equip_visual_bridge_policy::solvePairedBridge(weaponWorld, gripLocal,

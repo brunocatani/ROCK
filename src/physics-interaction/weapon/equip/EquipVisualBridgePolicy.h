@@ -37,13 +37,14 @@ namespace rock::equip_visual_bridge_policy
 
     inline WeaponTwoHandedSolverResult<RE::NiTransform> solvePairedGunstockBridge(const RE::NiTransform& capturedWorld,
         const RE::NiPoint3& primaryLocal, const RE::NiTransform& primaryController,
-        const RE::NiTransform& supportController)
+        const RE::NiTransform& supportController, const bool centerOnControllerLine)
     {
         WeaponTwoHandedSolverInput<RE::NiTransform, RE::NiPoint3> aim{};
         aim.weaponWorldTransform = capturedWorld;
         aim.primaryGripLocal = primaryLocal;
         aim.primaryTargetWorld = transform_math::localPointToWorld(capturedWorld, primaryLocal);
-        return gunstock_mode::solveVirtualAim(aim, primaryController, supportController, {}, 1.0f);
+        return gunstock_mode::solveVirtualAim(aim, primaryController, supportController, {}, 1.0f,
+            centerOnControllerLine);
     }
 
     // The detached loose model is visual-only. It may cover the native

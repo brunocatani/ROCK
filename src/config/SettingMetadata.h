@@ -56,6 +56,11 @@ namespace rock::config
             "from its controller.\nMelee weapons, weapon parts you operate and bipod-latched weapons are not "
             "affected.\nFalse: normal two-hand aiming.",
             api::configuration::Group::Consumer },
+        { "WeaponHandling", "GunstockCentering", "04. Weapon Handling",
+            "Gunstock Centering\nWith Gunstock Mode on, slide the weapon sideways so its centerline runs through "
+            "both controllers, whatever side offset its firing grip pose has. Grip height stays as authored.\n"
+            "False: the weapon keeps the side offset of its firing grip pose. Applies at once.",
+            api::configuration::Group::Consumer },
         { "WeaponHandling", "FrikUserWeaponOffsets", "04. Weapon Handling",
             "FRIK Weapon Offsets\nUse the weapon offset files you saved in FRIK (FRIK_Config\\Weapons_Offsets), "
             "including their weapon scale, instead of ROCK's grip.\nFRIK's built-in default offsets are never "

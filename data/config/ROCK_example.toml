@@ -60,6 +60,11 @@ ActivatePromptPlacement = 2
 ## False: normal two-hand aiming.
 GunstockMode = false
 
+## Gunstock Centering
+## With Gunstock Mode on, slide the weapon sideways so its centerline runs through both controllers, whatever side offset its firing grip pose has. Grip height stays as authored.
+## False: the weapon keeps the side offset of its firing grip pose. Applies at once.
+GunstockCentering = true
+
 ## FRIK Weapon Offsets
 ## Use the weapon offset files you saved in FRIK (FRIK_Config\Weapons_Offsets), including their weapon scale, instead of ROCK's grip.
 ## FRIK's built-in default offsets are never used.

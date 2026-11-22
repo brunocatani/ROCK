@@ -12,7 +12,7 @@ namespace rock::gunstock_mode
     // hand frames and finger poses remain unchanged. No weapon-specific trim.
     inline bool configureVirtualAim(WeaponTwoHandedSolverInput<RE::NiTransform, RE::NiPoint3>& input,
         const RE::NiTransform& primaryController, const RE::NiTransform& supportController,
-        const RE::NiPoint3& primaryRecoilDisplacement, const float acquisitionAlpha)
+        const RE::NiPoint3& primaryRecoilDisplacement, const float acquisitionAlpha, const bool centerOnControllerLine)
     {
         if (!transform_math::isInvertibleTransform(primaryController) ||
             !transform_math::isInvertibleTransform(supportController) ||
@@ -48,6 +48,10 @@ namespace rock::gunstock_mode
         if (!weapon_support_acquisition_math::isFiniteVector(candidate.supportGripLocal) ||
             !weapon_support_acquisition_math::isFiniteVector(candidate.supportTargetWorld))
             return false;
+        if (!centerOnControllerLine) {
+            input = candidate;
+            return true;
+        }
 
         // Authored firing seats differ in how far the palm sits beside the
         // model's centerline (weapon-local X = 0), so the same palm left some
@@ -83,7 +87,7 @@ namespace rock::gunstock_mode
     inline WeaponTwoHandedSolverResult<RE::NiTransform> solveVirtualAim(
         const WeaponTwoHandedSolverInput<RE::NiTransform, RE::NiPoint3>& input,
         const RE::NiTransform& primaryController, const RE::NiTransform& supportController,
-        const RE::NiPoint3& primaryRecoilDisplacement, float acquisitionAlpha)
+        const RE::NiPoint3& primaryRecoilDisplacement, float acquisitionAlpha, const bool centerOnControllerLine)
     {
         // Captures at world positions near 60,000/73,000 lose small recoil
         // offsets when two world-space aiming endpoints are subtracted. Solve
@@ -97,7 +101,7 @@ namespace rock::gunstock_mode
         primaryLocalController.translate = weaponSolverSub(primaryController.translate, input.primaryTargetWorld);
         supportLocalController.translate = weaponSolverSub(supportController.translate, input.primaryTargetWorld);
         if (!configureVirtualAim(local, primaryLocalController, supportLocalController, primaryRecoilDisplacement,
-                acquisitionAlpha))
+                acquisitionAlpha, centerOnControllerLine))
             return {};
         local.weaponWorldTransform.translate = {};
         auto result = solveTwoHandedWeaponTransformFrikPivot(local);
