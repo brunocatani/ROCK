@@ -133,6 +133,23 @@ namespace rock::config
             return current;
         }
 
+        /**
+         * Over a defaults list, records the range the loader clamps an option (declared before) to; otherwise
+         * nothing. Mods Config's generated Developer page makes it the option's slider.
+         */
+        void clampRange(const char* table, const char* key, float minimum, float maximum)
+        {
+            if (!_defaults)
+                return;
+            for (auto& existing : *_defaults) {
+                if (existing.table == table && existing.key == key) {
+                    existing.clamp = ClampRange{ minimum, maximum };
+                    return;
+                }
+            }
+            throw std::runtime_error(std::format("{} is clamped before it is read", settingPath(table, key)));
+        }
+
     private:
         static std::string floatText(float value)
         {
@@ -202,6 +219,7 @@ namespace
         float minValue, float maxValue)
     {
         float value = static_cast<float>(ini.number(table, key, currentValue));
+        ini.clampRange(table, key, minValue, maxValue);
         if (!std::isfinite(value)) {
             ROCK_LOG_WARN(Config, "Invalid {}.{}={} -- using {:.2f}", table, key, value, fallback);
             value = fallback;
@@ -216,6 +234,7 @@ namespace
         float minValue, float maxValue)
     {
         auto value = ini.transformPosition(table, key, current);
+        ini.clampRange(table, key, minValue, maxValue);
         value.x = std::clamp(value.x, minValue, maxValue);
         value.y = std::clamp(value.y, minValue, maxValue);
         value.z = std::clamp(value.z, minValue, maxValue);
@@ -229,6 +248,7 @@ namespace
         float minValue, float maxValue)
     {
         auto value = ini.transformRotation(table, key, current);
+        ini.clampRange(table, key, minValue, maxValue);
         value.x = std::clamp(value.x, minValue, maxValue);
         value.y = std::clamp(value.y, minValue, maxValue);
         value.z = std::clamp(value.z, minValue, maxValue);
@@ -417,6 +437,8 @@ namespace rock
         rockDeveloperModeEnabled = ini.boolean("DeveloperControls", "DeveloperModeEnabled", rockDeveloperModeEnabled);
         rockLogLevel = logging_policy::clampLogLevel(
             static_cast<int>(ini.integer("Logging", "LogLevel", rockLogLevel)));
+        // Declared for the catalog only: Mods Config reads it to show ROCK's Developer page.
+        (void)ini.boolean("Developer", "ShowDeveloperPages", false);
         rockLogPattern = ini.text("LoggingAndProfiling", "LogPattern", rockLogPattern.c_str());
         if (rockLogPattern.empty()) {
             rockLogPattern = logging_policy::DefaultLogPattern;
@@ -1362,6 +1384,7 @@ namespace rock
         auto readClampedFloat = [&](const char* table, const char* key, float& value, float fallback, float minValue,
                                     float maxValue) {
             value = static_cast<float>(ini.number(table, key, value));
+            ini.clampRange(table, key, minValue, maxValue);
             if (!std::isfinite(value)) {
                 ROCK_LOG_WARN(Config, "Invalid {}.{}={} -- using {}", table, key, value, fallback);
                 value = fallback;

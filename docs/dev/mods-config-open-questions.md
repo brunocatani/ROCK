@@ -8,7 +8,8 @@
 - **ROCK's settings leave PALM's Config.** The author of RobCo PALM and RPS UI Framework agreed to drop ROCK's pages from RPS UI's settings menu, so Mods Config FO4 VR becomes the only in-game editor of ROCK's settings.
   - Done: `mods-config-palm-removal.md` (the Configuration interface and what only PALM's pages used are gone; ROCK's text points at Mods Config).
   - Done: `mods-config-setup-wizard-launch.md` (the Setup Wizard button on ROCK's page).
-  - Then: the RPS UI side (`mods-config-rps-ui-removal.md`, only when the user says so), and `mods-config-developer-page.md`.
+  - Done: `mods-config-developer-page.md` (the generated Developer page).
+  - Then: the RPS UI side (`mods-config-rps-ui-removal.md`, only when the user says so).
 - **Nothing is released** until every `mods-config-*` ticket is done.
 - **Still open:** the in-game Developer report check (turn on Developer tools, press ROCK's row in the front page's Developer section, then **Read the live copy**; fix what the report or `ModsConfigFO4VR.log` names).
 
@@ -18,16 +19,15 @@ The other tickets: `mods-config-palm-removal.md`, `mods-config-setup-wizard-laun
 
 These are recorded so they aren't asked again.
 
-- **File:** `ROCK.toml` only, at root `myGames`, path `Mods_Config/ROCK/ROCK.toml`.
+- **Files:** `ROCK.toml` (`config`, the default) and `ROCK_Developer.toml` (`developer`, the Developer page's), at root `myGames` under `Mods_Config/ROCK/`.
 - **Identity:** `modName` `ROCK`, `f4sePluginRequirements` `["ROCK"]` (not FRIK's `F4VRBody`), `category` `VR`, `applies` `save`.
-- **Front page:** About, then Help (Nexus and GitHub buttons, green how-to rows), then a folded Developer section with Log Level.
-- **Pages:** Interaction, Weapons (with a Melee section), Recoil, Scopes and Grenades, Controls.
+- **Front page:** About, then Help (Nexus and GitHub buttons, green how-to rows), then a folded Developer section with Log Level and Show Developer Pages.
+- **Pages:** Interaction, Weapons (with a Melee section), Recoil, Scopes and Grenades, Controls, then the generated Developer page (`mods-config-developer-page.md`).
 - **Rows:** labels from the catalog; choices in the object form with per-option help; dependent rows disabled with `enabledWhen`, using explicit ids.
 - **Bindings:** `cf.inputBinding` rows (`mods-config-input-bindings.md`). The button layout uses dropdowns of the 14 canonical values, as PALM does.
 - **Left out:**
   - `SetupWizard.ShownEdition`;
-  - `Developer.EnableDeveloperSettings`, which is retired (`mods-config-palm-removal.md`);
-  - all of `ROCK_Developer.toml`, until `mods-config-developer-page.md`.
+  - `Developer.EnableDeveloperSettings`, which is retired (`mods-config-palm-removal.md`).
 - **PALM's Config:** ROCK's pages leave it; the decisions are in `mods-config-palm-removal.md`.
 
 ## Open questions
@@ -45,7 +45,7 @@ These are recorded so they aren't asked again.
 2. **One source for labels, options and ranges.** ROCK's catalog help and `spec.json` each hold a copy (RPS UI's `RockSettingControlPolicy.cpp` held a third, which goes with `mods-config-rps-ui-removal.md`). The test checks keys, types and defaults, not ranges, choice values or labels.
    - Either extend the test to parse the catalog's `N = label` and `Range: a to b` text and compare it with the spec's options and `min`/`max`,
    - or generate the spec's choice and range fields from the catalog.
-3. **A developer page later:** now `mods-config-developer-page.md`.
+3. **A developer page:** done, `mods-config-developer-page.md`.
 
 ## What to check in the headset
 
@@ -62,8 +62,7 @@ These are spec choices the docs allow but no game run has confirmed yet:
 
 Collected from the tickets, for the F4VR-Mods-Config repo:
 
-1. A per-file "a default removes the key, and an empty file is deleted" mode, for files like `ROCK_Developer.toml` (`mods-config-developer-page.md`).
-2. An offline validator for `spec.json`, printing the Developer report without the game (`mods-config-prompt-improvements.md`).
+1. An offline validator for `spec.json`, printing the Developer report without the game (`mods-config-prompt-improvements.md`).
 
 The transforms and the input bindings need nothing from Mods Config: ROCK stores them in the framework's tables (`mods-config-transforms.md`, `mods-config-input-bindings.md`).
 

@@ -6,8 +6,10 @@
 
 - **ROCK's settings move to Mods Config FO4 VR.** ROCK's page there edits `ROCK.toml`;
   RPS UI Framework's settings menu (RobCo PALM's Config) no longer has ROCK pages.
-  `ROCK_Developer.toml` is edited by hand, and `[Developer] EnableDeveloperSettings`
-  is gone. Open the setup wizard with the Setup Wizard button on ROCK's page.
+  Its Developer page, shown with Show Developer Pages, edits `ROCK_Developer.toml`;
+  `[Developer] EnableDeveloperSettings` is gone. The developer offsets are now
+  `{ pos = [...] }` tables without their unit suffix, and old values carry over; the two
+  scope rotations are `{ rot = [pitch, roll, yaw] }` and start again at zero. Open the setup wizard with the Setup Wizard button on ROCK's page.
 - **For mod authors: the Configuration interface (13) is retired.** ROCK refuses it and
   logs the mod that asks; there is no replacement call.
 

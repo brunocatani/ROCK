@@ -138,8 +138,9 @@ namespace rock::config
             "changed.\n";
         constexpr std::string_view kDeveloperHeader =
             "## ROCK_Developer.toml - developer options\n"
-            "## Edit this file by hand: create it if needed, and add an option under its [table] line, as\n"
-            "## data/config/ROCK_Developer_example.toml in ROCK's source lists them with their help.\n"
+            "## Change these in game on the Developer page of ROCK's page in Mods Config FO4 VR (turn on Show\n"
+            "## Developer Pages in its Developer section), or edit this file: create it if needed, and add an option\n"
+            "## under its [table] line, as data/config/ROCK_Developer_example.toml in ROCK's source lists them.\n"
             "## ROCK keeps only options that differ from their defaults: one set to its default is removed,\n"
             "## and this file is removed when no options remain. Changes are picked up while the game runs.\n"
             "## If this file cannot be read, ROCK.log names the line and ROCK keeps the last values it read.\n"

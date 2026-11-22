@@ -7,7 +7,8 @@
   "specVersion": 1,
   "f4sePluginRequirements": ["ROCK"],
   "files": {
-    "config": { "format": "toml", "root": "myGames", "path": "Mods_Config/ROCK/ROCK.toml" }
+    "config": { "format": "toml", "root": "myGames", "path": "Mods_Config/ROCK/ROCK.toml" },
+    "developer": { "format": "toml", "root": "myGames", "path": "Mods_Config/ROCK/ROCK_Developer.toml" }
   },
   "defaultFile": "config",
   "applies": "save",
@@ -137,6 +138,15 @@
             ]
           },
           "storage": { "path": ["Logging", "LogLevel"] }
+        },
+        {
+          "type": "switcher",
+          "valueType": "bool",
+          "id": "showDeveloperPages",
+          "text": "Show Developer Pages",
+          "help": "Shows the Developer page, which edits ROCK's developer options in ROCK_Developer.toml.",
+          "default": false,
+          "storage": { "path": ["Developer", "ShowDeveloperPages"] }
         }
       ]
     }
@@ -1059,6 +1069,2501 @@
                   "storage": { "path": ["ControllerInput", "Left", "StickClick"] }
                 }
               ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "pageDisplayName": "Developer",
+      "id": "developer",
+      "help": "ROCK's developer options: tuning, debug drawing and logs.",
+      "defaultFile": "developer",
+      "visibleWhen": { "setting": "showDeveloperPages", "equals": true },
+      "content": [
+        {
+          "type": "text",
+          "text": "Developer options tune ROCK and turn on its debug drawing and logs. ROCK_Developer.toml keeps only the options you change: Reset removes one, and the file goes when none remain. Changes apply as soon as you save."
+        }
+      ],
+      "pages": [
+        {
+          "pageDisplayName": "Developer Controls",
+          "content": [
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Developer Mode Enabled",
+              "help": "Gates advanced/tuning-only features not meant for normal play. Currently: pressing A while holding an object records/overwrites a saved grab offset for that object+hand. Saved offsets keep applying on future grabs regardless of this setting - it only gates recording new ones.",
+              "default": false,
+              "storage": { "path": ["DeveloperControls", "DeveloperModeEnabled"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Emergency Disable Recoil",
+              "help": "Emergency Disable Recoil ON: disables native VR recoil and kickback plus ROCK weapon/hand recoil, overriding every recoil profile. OFF: restores native recoil/kickback and the existing Immersive Recoil setting. Applies immediately, independently of Developer Mode. Does not change projectile spread.",
+              "default": false,
+              "storage": { "path": ["DeveloperControls", "EmergencyDisableRecoil"] }
+            }
+          ]
+        },
+        {
+          "pageDisplayName": "Logging and Profiling",
+          "content": [
+            {
+              "type": "textinput",
+              "valueType": "string",
+              "text": "Log Pattern",
+              "help": "Text format for each ROCK.log line.",
+              "default": "%Y-%m-%d %H:%M:%S.%e [%l] %v",
+              "storage": { "path": ["LoggingAndProfiling", "LogPattern"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Log Sample Milliseconds",
+              "help": "Minimum time between repeated sampled diagnostic messages.",
+              "default": 2000,
+              "valueOptions": { "min": 250, "max": 60000, "step": 200 },
+              "storage": { "path": ["LoggingAndProfiling", "LogSampleMilliseconds"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Log Flush Immediate",
+              "help": "Writes each ROCK.log line to disk as it is logged. Off, the log is block buffered, so a freeze or a crash loses the last lines and every log ends mid-line. On, the tail survives, at one file write per line. Leave off unless you are chasing a hang.",
+              "default": false,
+              "storage": { "path": ["LoggingAndProfiling", "LogFlushImmediate"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Weapon Visibility Trace",
+              "help": "Weapon visibility trace. Writes a VISIBILITY line to ROCK.log whenever the reason an equipped weapon would not render changes (a hidden node and who hid it, lost geometry, a stale bound, the weapon away from its hand, the scope), and a VISIBILITY tick once per second with the full state, the cell and the position. Independent from LogLevel. Walks the equipped weapons each frame; leave off for normal play.",
+              "default": false,
+              "storage": { "path": ["LoggingAndProfiling", "WeaponVisibilityTrace"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Performance Profiler Enabled",
+              "help": "Asynchronous performance profiler. Independent from LogLevel. When enabled, timing scopes stay on the frame path, but completed profiler windows are queued to a bounded background writer. Output goes to ROCK_Profiler.log, not ROCK.log. File formatting/writes are not done by grab, reload, physics, or frame update code. If the writer falls behind, profiler windows are dropped instead of stalling gameplay.",
+              "default": false,
+              "storage": { "path": ["LoggingAndProfiling", "PerformanceProfilerEnabled"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Performance Profiler Log Interval Frames",
+              "help": "Number of frames per queued profiler window after warmup. Larger values reduce file traffic.",
+              "default": 300,
+              "valueOptions": { "min": 30, "max": 6000, "step": 20 },
+              "storage": { "path": ["LoggingAndProfiling", "PerformanceProfilerLogIntervalFrames"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Performance Profiler Warmup Frames",
+              "help": "Startup/reload frames ignored before profiler windows are emitted.",
+              "default": 120,
+              "valueOptions": { "min": 0, "max": 6000, "step": 10 },
+              "storage": { "path": ["LoggingAndProfiling", "PerformanceProfilerWarmupFrames"] }
+            }
+          ]
+        },
+        {
+          "pageDisplayName": "Palm and Grab Offsets",
+          "content": [
+            {
+              "type": "cf.transform",
+              "valueType": "string",
+              "text": "Right Grab Authority Proxy Offset",
+              "help": "Right-hand local position for the hidden grab authority proxy/seat point, in corrected palm proxy space. X follows the fingers, -Y moves into the palm face/skin, +Y moves to the back of the hand, and Z moves across the palm. This does not move the real palm/finger physics colliders.",
+              "default": { "pos": [0.5, -1.0, 0.0] },
+              "valueOptions": {
+                "position": { "min": -20.0, "max": 20.0, "step": 0.1 },
+                "rotation": false,
+                "scale": false
+              },
+              "storage": { "path": ["PalmAndGrabOffsets", "RightGrabAuthorityProxyOffset"] }
+            },
+            {
+              "type": "cf.transform",
+              "valueType": "string",
+              "text": "Left Grab Authority Proxy Offset",
+              "help": "Left-hand local position for the hidden grab authority proxy/seat point, in the same axes.",
+              "default": { "pos": [0.5, -1.0, 0.0] },
+              "valueOptions": {
+                "position": { "min": -20.0, "max": 20.0, "step": 0.1 },
+                "rotation": false,
+                "scale": false
+              },
+              "storage": { "path": ["PalmAndGrabOffsets", "LeftGrabAuthorityProxyOffset"] }
+            }
+          ]
+        },
+        {
+          "pageDisplayName": "Weapon Collision and Support",
+          "content": [
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Weapon Collision Blocks Projectiles",
+              "help": "Controls whether ROCK weapon hulls collide with projectile/spell layers. False avoids self-collisions with modded projectile systems while aiming.",
+              "default": false,
+              "storage": { "path": ["WeaponCollisionAndSupport", "WeaponCollisionBlocksProjectiles"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Weapon Collision Blocks Spells",
+              "default": false,
+              "storage": { "path": ["WeaponCollisionAndSupport", "WeaponCollisionBlocksSpells"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Weapon Shell Collision Grace Ms",
+              "help": "New casings ignore the firing weapon's generated colliders for this many simulation milliseconds. Positive values protect at least one physics step. Zero disables the grace period. Range: 0-500 ms. World contacts and native casing lifetime are preserved. Changes apply to new casings.",
+              "default": 30.0,
+              "valueOptions": { "min": 0.0, "max": 500.0, "step": 2.0 },
+              "storage": { "path": ["WeaponCollisionAndSupport", "WeaponShellCollisionGraceMs"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Weapon Collision Preserve Gaps",
+              "help": "False: original convex fitting. True: bounded gap-preserving compounds. Changing this key rebuilds weapon colliders after a live settings reload. Compare with PerformanceProfilerEnabled: weaponColliderBuild/Create vs weaponGapColliderBuild/Create.",
+              "default": true,
+              "storage": { "path": ["WeaponCollisionAndSupport", "WeaponCollisionPreserveGaps"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Weapon Collision Visual Stabilization Seconds",
+              "help": "Seconds ROCK waits for the visual weapon tree to stay visible/stable before replacing generated hulls after weapon/mod swaps.",
+              "default": 0.0889,
+              "valueOptions": { "min": 0.0, "max": 0.66, "step": 0.005 },
+              "storage": { "path": ["WeaponCollisionAndSupport", "WeaponCollisionVisualStabilizationSeconds"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Weapon Collision Max Linear Velocity",
+              "help": "Maximum speed allowed when ROCK keyframes generated weapon hulls.",
+              "default": 800.0,
+              "valueOptions": { "min": 50.0, "max": 2000.0, "step": 10.0 },
+              "storage": { "path": ["WeaponCollisionAndSupport", "WeaponCollisionMaxLinearVelocity"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Weapon Collision Max Angular Velocity",
+              "default": 800.0,
+              "valueOptions": { "min": 50.0, "max": 2000.0, "step": 10.0 },
+              "storage": { "path": ["WeaponCollisionAndSupport", "WeaponCollisionMaxAngularVelocity"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Weapon Collision Grip Recovery Distance Game Units",
+              "help": "Immediately resets a failed dynamic weapon collider onto the firing hand if its live firing-grip authority point is farther away than this distance. This catastrophic-failure limit is separate from normal wall-contact convergence. 210 game units is about 3 metres. Game units (~1.4cm each).",
+              "default": 210.0,
+              "valueOptions": { "min": 35.0, "max": 700.0, "step": 5.0 },
+              "storage": { "path": ["WeaponCollisionAndSupport", "WeaponCollisionGripRecoveryDistanceGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Weapon Interaction Touch Radius",
+              "help": "Small sphere around each hand's palm point. If it overlaps a generated weapon collider, the grab uses ROCK's unrestricted dynamic seat.",
+              "default": 2.0,
+              "valueOptions": { "min": 0.25, "max": 6.0, "step": 0.05 },
+              "storage": { "path": ["WeaponCollisionAndSupport", "WeaponInteractionTouchRadius"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Weapon Interaction Probe Radius",
+              "help": "Broader per-hand search used when the palm is not touching the weapon. With authored weapon grips enabled, a grab acquired only by this probe uses the modeler's authored firing/support seat instead of the dynamic mesh seat.",
+              "default": 12.0,
+              "valueOptions": { "min": 0.0, "max": 50.0, "step": 0.5 },
+              "storage": { "path": ["WeaponCollisionAndSupport", "WeaponInteractionProbeRadius"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Weapon Support Dynamic Only",
+              "help": "Testing only: authored support seats are never used, so every support grab runs the dynamic mesh grip. Use to test dynamic grips where an authored zone would win. Leave off for play.",
+              "default": false,
+              "storage": { "path": ["WeaponCollisionAndSupport", "DebugWeaponSupportDynamicOnly"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Firing Grip Proximity Support Radius",
+              "help": "Every support grab inside this distance from the firing grip stays visual-only so pistols retain a stable support pose without competing weapon authority. ROCK always owns this behavior. An active equipped-weapon addon may override only the radius through the ROCK V1 API. Game units (~1.4cm each).",
+              "default": 8.0,
+              "valueOptions": { "min": 0.25, "max": 30.0, "step": 0.2 },
+              "storage": { "path": ["WeaponCollisionAndSupport", "FiringGripProximitySupportRadius"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Weapon Support Grip Hand Lerp Enabled",
+              "help": "Eases ROCK's external FRIK hand target into an equipped weapon support grip. This is visual-only: weapon aim authority remains immediate.",
+              "default": true,
+              "storage": { "path": ["WeaponCollisionAndSupport", "WeaponSupportGripHandLerpEnabled"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Weapon Support Grip Hand Lerp Time Min",
+              "default": 0.12,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["WeaponCollisionAndSupport", "WeaponSupportGripHandLerpTimeMin"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Weapon Support Grip Hand Lerp Time Max",
+              "default": 0.2,
+              "valueOptions": { "min": 0.12, "max": 1.0, "step": 0.005 },
+              "storage": { "path": ["WeaponCollisionAndSupport", "WeaponSupportGripHandLerpTimeMax"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Weapon Support Grip Hand Lerp Min Distance",
+              "default": 1.0,
+              "valueOptions": { "min": 0.0, "max": 80.0, "step": 0.1 },
+              "storage": { "path": ["WeaponCollisionAndSupport", "WeaponSupportGripHandLerpMinDistance"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Weapon Support Grip Hand Lerp Max Distance",
+              "default": 14.0,
+              "valueOptions": { "min": 1.0, "max": 120.0, "step": 1.0 },
+              "storage": { "path": ["WeaponCollisionAndSupport", "WeaponSupportGripHandLerpMaxDistance"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Weapon Support Surface Seat Enabled",
+              "help": "Seats the visual support palm toward the contacted surface without rotating the weapon.",
+              "default": true,
+              "storage": { "path": ["WeaponCollisionAndSupport", "WeaponSupportSurfaceSeatEnabled"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Weapon Support Surface Seat Max Degrees",
+              "default": 35.0,
+              "valueOptions": { "min": 0.0, "max": 75.0, "step": 0.5 },
+              "storage": { "path": ["WeaponCollisionAndSupport", "WeaponSupportSurfaceSeatMaxDegrees"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Firing Grip Reattach Cylinder Radius Game Units",
+              "help": "Thickness of the firing-grip reattach zone in game units (70 = 1 metre): how far above the grip point and how far forward or back along the barrel the palm may sit. A handling mod that selects the cylinder zone uses it as the cylinder radius. Range: 0.1 to 30.",
+              "default": 4.0,
+              "valueOptions": { "min": 0.1, "max": 30.0, "step": 0.2 },
+              "storage": { "path": ["WeaponCollisionAndSupport", "FiringGripReattachCylinderRadiusGameUnits"] }
+            }
+          ]
+        },
+        {
+          "pageDisplayName": "Hand and Body Collision",
+          "content": [
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Hand Collision Static World Enabled",
+              "help": "Allows generated hand colliders to collide with static/animstatic world geometry for native contact evidence.",
+              "default": true,
+              "storage": { "path": ["HandAndBodyCollision", "HandCollisionStaticWorldEnabled"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Global Surface Grab Enabled",
+              "help": "Makes dynamic-hand world-surface contacts eligible for fixed-anchor grab fallback.",
+              "default": true,
+              "storage": { "path": ["HandAndBodyCollision", "GlobalSurfaceGrabEnabled"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Surface Mesh Grab Enabled",
+              "help": "Uses the contacted render mesh as the spatial authority for fixed-surface grabs.",
+              "default": false,
+              "storage": { "path": ["HandAndBodyCollision", "SurfaceMeshGrabEnabled"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Surface Mesh Grab Max Projection Distance Game Units",
+              "default": 48.0,
+              "valueOptions": { "min": 1.0, "max": 128.0, "step": 1.0 },
+              "storage": { "path": ["HandAndBodyCollision", "SurfaceMeshGrabMaxProjectionDistanceGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Surface Mesh Grab Max Triangles",
+              "default": 20000,
+              "valueOptions": { "min": 256, "max": 100000, "step": 500 },
+              "storage": { "path": ["HandAndBodyCollision", "SurfaceMeshGrabMaxTriangles"] }
+            },
+            {
+              "type": "textinput",
+              "valueType": "string",
+              "text": "Hand Bone Collider Radius Scale Overrides",
+              "help": "Optional generated hand capsule-like collider radius scale overrides. Palm-box roles are controlled by X/Y/Z below. Role names: ThumbBase, ThumbMiddle, ThumbTip, IndexBase, IndexMiddle, IndexTip, MiddleBase, MiddleMiddle, MiddleTip, RingBase, RingMiddle, RingTip, PinkyBase, PinkyMiddle, PinkyTip. Format: Role=radiusScale;PowerArmor.Role=radiusScale",
+              "default": "",
+              "storage": { "path": ["HandAndBodyCollision", "HandBoneColliderRadiusScaleOverrides"] }
+            },
+            {
+              "type": "textinput",
+              "valueType": "string",
+              "text": "Hand Palm Collider Dimension Scale Overrides",
+              "help": "Optional generated palm-box collider local dimension scale overrides. Local X=fingers/segment length, local Y=palm depth, local Z=cross-palm width. Role names: PalmAnchor, PalmFace, PalmBack, PalmHeel, ThumbPad. Format: Role=xScale,yScale,zScale;PowerArmor.Role=xScale,yScale,zScale",
+              "default": "PalmAnchor=0.8,1.0,2.0",
+              "storage": { "path": ["HandAndBodyCollision", "HandPalmColliderDimensionScaleOverrides"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Hand Bone Colliders Require Palm Anchor",
+              "help": "Requires the palm anchor before creating hand bone colliders.",
+              "default": true,
+              "storage": { "path": ["HandAndBodyCollision", "HandBoneCollidersRequirePalmAnchor"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Hand Bone Collider Max Linear Velocity",
+              "help": "Speed clamps for bone-driven hand colliders.",
+              "default": 800.0,
+              "valueOptions": { "min": 50.0, "max": 2000.0, "step": 10.0 },
+              "storage": { "path": ["HandAndBodyCollision", "HandBoneColliderMaxLinearVelocity"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Hand Bone Collider Max Angular Velocity",
+              "default": 800.0,
+              "valueOptions": { "min": 50.0, "max": 2000.0, "step": 10.0 },
+              "storage": { "path": ["HandAndBodyCollision", "HandBoneColliderMaxAngularVelocity"] }
+            }
+          ]
+        },
+        {
+          "pageDisplayName": "Selection and Pulling",
+          "content": [
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Pull To Object Center Enabled",
+              "help": "Far grabs pull the visual mesh point nearest the mesh's centre to the hand instead of the mesh point nearest the ray hit (a hit at selection range is aim noise, not grip intent). The arrival seat then settles the mesh onto the palm.",
+              "default": true,
+              "storage": { "path": ["SelectionAndPulling", "PullToObjectCenterEnabled"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Pull Long Axis Presentation Enabled",
+              "help": "Long-object presentation during pull flight: rotates elongated props (brooms, bottles) so their mesh long axis lines up with the hand's thumb->pinky line before arrival. Flight-only; held objects are never rotated. Elongation is the RMS extent ratio between the mesh's dominant and second axis (compact objects ~1 skip presentation). Gain is proportional rad/s per rad of error.",
+              "default": true,
+              "storage": { "path": ["SelectionAndPulling", "PullLongAxisPresentationEnabled"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Pull Presentation Min Elongation Ratio",
+              "default": 2.0,
+              "valueOptions": { "min": 1.0, "max": 10.0, "step": 0.05 },
+              "storage": { "path": ["SelectionAndPulling", "PullPresentationMinElongationRatio"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Pull Presentation Angular Gain Per Second",
+              "default": 6.0,
+              "valueOptions": { "min": 0.0, "max": 30.0, "step": 0.2 },
+              "storage": { "path": ["SelectionAndPulling", "PullPresentationAngularGainPerSecond"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Pull Presentation Max Angular Speed Radians Per Second",
+              "default": 8.0,
+              "valueOptions": { "min": 0.0, "max": 40.0, "step": 0.2 },
+              "storage": { "path": ["SelectionAndPulling", "PullPresentationMaxAngularSpeedRadiansPerSecond"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Pull Presentation Grip Axis Tilt Degrees",
+              "help": "Tilts the presentation target off pure cross-palm Z toward fingers-forward +X, in degrees (0..45): the thumb occupies the pure-Z line, so the natural long-object hold sits a few degrees toward the fingertips. Applies to both the pull-flight servo and the force-grab seat alignment. This is an anatomical magnitude, not a signed rotation. Authored Z reverses its cross-palm direction between hands, but +X points toward the fingertips on both. ROCK resolves the live axes first, then tilts each signed Z axis toward its own +X, so one value has the same meaning for both hands.",
+              "default": 15.0,
+              "valueOptions": { "min": 0.0, "max": 45.0, "step": 0.2 },
+              "storage": { "path": ["SelectionAndPulling", "PullPresentationGripAxisTiltDegrees"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Seat Roll Min Second Elongation Ratio",
+              "help": "Shape-classification gate shared by the flight presentation servo and the grab pose solver: sqrt(lambda2/lambda3) of the mesh PCA at or above this ratio marks a distinct flat face (plate class). The solver uses the class for its rod-only terms; plates keep their edge/corner holds (31 verified plate holds put the face normal 63 deg off the palm normal - edge holds are the intended grip, not an artifact).",
+              "default": 1.25,
+              "valueOptions": { "min": 1.0, "max": 10.0, "step": 0.05 },
+              "storage": { "path": ["SelectionAndPulling", "GrabSeatRollMinSecondElongationRatio"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Object Physics Tree Max Depth",
+              "help": "Maximum scene-node depth used when scanning an object for physics bodies.",
+              "default": 12,
+              "valueOptions": { "min": 1, "max": 32, "step": 1 },
+              "storage": { "path": ["SelectionAndPulling", "ObjectPhysicsTreeMaxDepth"] }
+            }
+          ]
+        },
+        {
+          "pageDisplayName": "Grab Drive",
+          "content": [
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Linear Tau",
+              "help": "Shared dynamic-grab response for held objects and equipped weapon colliders. Higher tau increases positional recovery. Damping calms oscillation; angular response remains independent.",
+              "default": 0.1,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["GrabDrive", "GrabLinearTau"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Linear Damping",
+              "default": 0.8,
+              "valueOptions": { "min": 0.0, "max": 2.0, "step": 0.02 },
+              "storage": { "path": ["GrabDrive", "GrabLinearDamping"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Linear Proportional Recovery",
+              "default": 2.0,
+              "valueOptions": { "min": 0.0, "max": 10.0, "step": 0.1 },
+              "storage": { "path": ["GrabDrive", "GrabLinearProportionalRecovery"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Linear Constant Recovery",
+              "default": 1.0,
+              "valueOptions": { "min": 0.0, "max": 10.0, "step": 0.1 },
+              "storage": { "path": ["GrabDrive", "GrabLinearConstantRecovery"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Angular Tau",
+              "help": "Angular shared-constraint motor response. Same idea as linear motor, but for rotation.",
+              "default": 0.03,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.002 },
+              "storage": { "path": ["GrabDrive", "GrabAngularTau"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Angular Damping",
+              "default": 0.8,
+              "valueOptions": { "min": 0.0, "max": 2.0, "step": 0.02 },
+              "storage": { "path": ["GrabDrive", "GrabAngularDamping"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Angular Proportional Recovery",
+              "default": 2.0,
+              "valueOptions": { "min": 0.0, "max": 10.0, "step": 0.1 },
+              "storage": { "path": ["GrabDrive", "GrabAngularProportionalRecovery"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Angular Constant Recovery",
+              "default": 1.0,
+              "valueOptions": { "min": 0.0, "max": 10.0, "step": 0.1 },
+              "storage": { "path": ["GrabDrive", "GrabAngularConstantRecovery"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Constraint Max Force",
+              "help": "Contact and initial-attachment linear force ceiling. Free motion uses actual mass and Free Linear Acceleration.",
+              "default": 2000.0,
+              "valueOptions": { "min": 0.0, "max": 10000.0, "step": 100.0 },
+              "storage": { "path": ["GrabDrive", "GrabConstraintMaxForce"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Effective Motor Mass Floor",
+              "help": "Keeps the motor's effective mass finite for very light or unstable bodies.",
+              "default": 2.0,
+              "valueOptions": { "min": 0.0, "max": 100.0, "step": 0.2 },
+              "storage": { "path": ["GrabDrive", "GrabEffectiveMotorMassFloor"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Max Force To Mass Ratio",
+              "help": "Contact force per unit effective mass. This caps the contact ceiling for light objects.",
+              "default": 500.0,
+              "valueOptions": { "min": 0.0, "max": 2000.0, "step": 20.0 },
+              "storage": { "path": ["GrabDrive", "GrabMaxForceToMassRatio"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Free Linear Acceleration",
+              "help": "Free-motion linear effort per unit effective driven mass, in Havok acceleration units. Contact keeps its separate ceiling.",
+              "default": 1000.0,
+              "valueOptions": { "min": 1.0, "max": 10000.0, "step": 50.0 },
+              "storage": { "path": ["GrabDrive", "GrabFreeLinearAcceleration"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Free Angular Acceleration",
+              "help": "Free-motion angular effort per unit maximum principal inertia. The grip lever adds capacity to oppose off-center linear effort; the native solver determines the applied torque.",
+              "default": 6000.0,
+              "valueOptions": { "min": 1.0, "max": 60000.0, "step": 500.0 },
+              "storage": { "path": ["GrabDrive", "GrabFreeAngularAcceleration"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Force Grab Attach Settle Seconds",
+              "help": "Waits for a stable live hand transform before a force grab freezes its relation.",
+              "default": 0.1,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["GrabDrive", "ForceGrabAttachSettleSeconds"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Force Fade In Time",
+              "help": "Time for grab force to ramp in after pickup.",
+              "default": 0.1,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["GrabDrive", "GrabForceFadeInTime"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Loose Weapon Shared Constraint Linear Tau Multiplier",
+              "help": "Weapon response multipliers for both loose and equipped weapons. Max Force and Angular Force multipliers control contact and initial-attachment budgets. Free-motion budgets use actual mass, inertia, and the grip offset.",
+              "default": 1.0,
+              "valueOptions": { "min": 0.05, "max": 4.0, "step": 0.02 },
+              "storage": { "path": ["GrabDrive", "GrabLooseWeaponSharedConstraintLinearTauMultiplier"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Loose Weapon Shared Constraint Angular Tau Multiplier",
+              "default": 1.0,
+              "valueOptions": { "min": 0.05, "max": 4.0, "step": 0.02 },
+              "storage": { "path": ["GrabDrive", "GrabLooseWeaponSharedConstraintAngularTauMultiplier"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Loose Weapon Shared Constraint Collision Tau Multiplier",
+              "default": 1.0,
+              "valueOptions": { "min": 0.05, "max": 4.0, "step": 0.02 },
+              "storage": { "path": ["GrabDrive", "GrabLooseWeaponSharedConstraintCollisionTauMultiplier"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Loose Weapon Shared Constraint Linear Damping Multiplier",
+              "default": 1.0,
+              "valueOptions": { "min": 0.05, "max": 4.0, "step": 0.02 },
+              "storage": { "path": ["GrabDrive", "GrabLooseWeaponSharedConstraintLinearDampingMultiplier"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Loose Weapon Shared Constraint Angular Damping Multiplier",
+              "default": 1.0,
+              "valueOptions": { "min": 0.05, "max": 4.0, "step": 0.02 },
+              "storage": { "path": ["GrabDrive", "GrabLooseWeaponSharedConstraintAngularDampingMultiplier"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Loose Weapon Shared Constraint Max Force Multiplier",
+              "default": 4.5,
+              "valueOptions": { "min": 0.05, "max": 8.0, "step": 0.05 },
+              "storage": { "path": ["GrabDrive", "GrabLooseWeaponSharedConstraintMaxForceMultiplier"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Loose Weapon Shared Constraint Angular Force Multiplier",
+              "default": 2.0,
+              "valueOptions": { "min": 0.05, "max": 8.0, "step": 0.05 },
+              "storage": { "path": ["GrabDrive", "GrabLooseWeaponSharedConstraintAngularForceMultiplier"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Loose Weapon Shared Constraint Linear Recovery Multiplier",
+              "default": 1.0,
+              "valueOptions": { "min": 0.05, "max": 4.0, "step": 0.02 },
+              "storage": { "path": ["GrabDrive", "GrabLooseWeaponSharedConstraintLinearRecoveryMultiplier"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Loose Weapon Shared Constraint Angular Recovery Multiplier",
+              "default": 1.0,
+              "valueOptions": { "min": 0.05, "max": 4.0, "step": 0.02 },
+              "storage": { "path": ["GrabDrive", "GrabLooseWeaponSharedConstraintAngularRecoveryMultiplier"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Tau Min",
+              "help": "Contact-softened tau. Normal held linear/angular tau stay fixed at their base values.",
+              "default": 0.01,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.001 },
+              "storage": { "path": ["GrabDrive", "GrabTauMin"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Tau Lerp Speed",
+              "default": 0.5,
+              "valueOptions": { "min": 0.0, "max": 5.0, "step": 0.05 },
+              "storage": { "path": ["GrabDrive", "GrabTauLerpSpeed"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Grab Long Object Angular Scaling Enabled",
+              "help": "Reduces held angular speed for long objects by grip-to-extents lever length. This keeps long guns/objects from sweeping as if their far end had no leverage.",
+              "default": true,
+              "storage": { "path": ["GrabDrive", "GrabLongObjectAngularScalingEnabled"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Long Object Reference Lever Game Units",
+              "default": 24.0,
+              "valueOptions": { "min": 1.0, "max": 240.0, "step": 2.0 },
+              "storage": { "path": ["GrabDrive", "GrabLongObjectReferenceLeverGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Long Object Min Angular Scale",
+              "default": 0.35,
+              "valueOptions": { "min": 0.05, "max": 1.0, "step": 0.005 },
+              "storage": { "path": ["GrabDrive", "GrabLongObjectMinAngularScale"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Max Inertia Ratio",
+              "help": "Clamps extreme inertia tensors on grabbed rigid bodies to keep the solver stable.",
+              "default": 10.0,
+              "valueOptions": { "min": 1.0, "max": 100.0, "step": 0.5 },
+              "storage": { "path": ["GrabDrive", "GrabMaxInertiaRatio"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Min Inertia",
+              "default": 0.01,
+              "valueOptions": { "min": 0.0001, "max": 1.0, "step": 0.001 },
+              "storage": { "path": ["GrabDrive", "GrabMinInertia"] }
+            }
+          ]
+        },
+        {
+          "pageDisplayName": "Grab Safety and Release",
+          "content": [
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Throw Velocity Multiplier",
+              "help": "Multiplies held-object velocity when you release to throw.",
+              "default": 1.5,
+              "valueOptions": { "min": 0.0, "max": 5.0, "step": 0.05 },
+              "storage": { "path": ["GrabSafetyAndRelease", "ThrowVelocityMultiplier"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Grab Controller Derived Throw Velocity Enabled",
+              "help": "Throws follow tracked hand movement. Wrist rotation supplies spin without steering the throw.",
+              "default": true,
+              "storage": { "path": ["GrabSafetyAndRelease", "GrabControllerDerivedThrowVelocityEnabled"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Throw Max Velocity Havok",
+              "default": 12.0,
+              "valueOptions": { "min": 1.0, "max": 60.0, "step": 0.5 },
+              "storage": { "path": ["GrabSafetyAndRelease", "GrabThrowMaxVelocityHavok"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Throw Angular Velocity Scale",
+              "default": 1.0,
+              "valueOptions": { "min": 0.0, "max": 2.0, "step": 0.02 },
+              "storage": { "path": ["GrabSafetyAndRelease", "GrabThrowAngularVelocityScale"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Throw Max Angular Velocity Radians Per Second",
+              "default": 18.0,
+              "valueOptions": { "min": 0.0, "max": 60.0, "step": 0.5 },
+              "storage": { "path": ["GrabSafetyAndRelease", "GrabThrowMaxAngularVelocityRadiansPerSecond"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Release Hand Collision Delay Seconds",
+              "help": "Keeps hand collision suppressed briefly after release so the object is not launched instantly.",
+              "default": 0.8,
+              "valueOptions": { "min": 0.0, "max": 3.0, "step": 0.02 },
+              "storage": { "path": ["GrabSafetyAndRelease", "GrabReleaseHandCollisionDelaySeconds"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Shoulder Stash Enabled",
+              "help": "Shoulder stash transfers a held loose item to inventory when grip is released inside the HMD-relative back volume. Generated FRIK body-zone colliders are backup evidence for tracking loss and remain the preferred path for holsters.",
+              "default": true,
+              "storage": { "path": ["GrabSafetyAndRelease", "ShoulderStashEnabled"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Equipped Weapon Shoulder Stash Enabled",
+              "help": "Equipped weapons, either one, use the same HMD-relative back volumes and return to the inventory. Toggle-grab: press inside with the hand carrying the weapon. Hold-to-grab: hold inside and release.",
+              "default": true,
+              "storage": { "path": ["GrabSafetyAndRelease", "EquippedWeaponShoulderStashEnabled"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Shoulder Stash Use Body Zone Colliders",
+              "default": true,
+              "storage": { "path": ["GrabSafetyAndRelease", "ShoulderStashUseBodyZoneColliders"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Shoulder Stash Use Hmd Back Volume",
+              "default": true,
+              "storage": { "path": ["GrabSafetyAndRelease", "ShoulderStashUseHmdBackVolume"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Shoulder Stash Enter Padding Game Units",
+              "default": 5.0,
+              "valueOptions": { "min": 0.0, "max": 40.0, "step": 0.2 },
+              "storage": { "path": ["GrabSafetyAndRelease", "ShoulderStashEnterPaddingGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Shoulder Stash Exit Padding Game Units",
+              "default": 8.0,
+              "valueOptions": { "min": 0.0, "max": 60.0, "step": 0.5 },
+              "storage": { "path": ["GrabSafetyAndRelease", "ShoulderStashExitPaddingGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Shoulder Stash Recent Contact Seconds",
+              "default": 0.0444,
+              "valueOptions": { "min": 0.0, "max": 0.66, "step": 0.002 },
+              "storage": { "path": ["GrabSafetyAndRelease", "ShoulderStashRecentContactSeconds"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Shoulder Stash Sustained Contact Miss Seconds",
+              "default": 0.2,
+              "valueOptions": { "min": 0.0, "max": 1.33, "step": 0.01 },
+              "storage": { "path": ["GrabSafetyAndRelease", "ShoulderStashSustainedContactMissSeconds"] }
+            },
+            {
+              "type": "cf.transform",
+              "valueType": "string",
+              "text": "Shoulder Stash Hmd Back Right Offset",
+              "help": "Centre of the right shoulder stash volume behind the headset, a position in game units.",
+              "default": { "pos": [14.0, -18.0, -6.85] },
+              "valueOptions": {
+                "position": { "min": -100.0, "max": 100.0, "step": 0.1 },
+                "rotation": false,
+                "scale": false
+              },
+              "storage": { "path": ["GrabSafetyAndRelease", "ShoulderStashHmdBackRightOffset"] }
+            },
+            {
+              "type": "cf.transform",
+              "valueType": "string",
+              "text": "Shoulder Stash Hmd Back Left Offset",
+              "help": "Centre of the left shoulder stash volume behind the headset, a position in game units.",
+              "default": { "pos": [-14.0, -18.0, -6.85] },
+              "valueOptions": {
+                "position": { "min": -100.0, "max": 100.0, "step": 0.1 },
+                "rotation": false,
+                "scale": false
+              },
+              "storage": { "path": ["GrabSafetyAndRelease", "ShoulderStashHmdBackLeftOffset"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Shoulder Stash Hmd Back Radius Game Units",
+              "default": 11.0,
+              "valueOptions": { "min": 1.0, "max": 80.0, "step": 0.5 },
+              "storage": { "path": ["GrabSafetyAndRelease", "ShoulderStashHmdBackRadiusGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Shoulder Stash Hmd Back Enter Padding Game Units",
+              "default": 0.0,
+              "valueOptions": { "min": 0.0, "max": 40.0, "step": 0.2 },
+              "storage": { "path": ["GrabSafetyAndRelease", "ShoulderStashHmdBackEnterPaddingGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Shoulder Stash Hmd Back Exit Padding Game Units",
+              "default": 2.0,
+              "valueOptions": { "min": 0.0, "max": 60.0, "step": 0.2 },
+              "storage": { "path": ["GrabSafetyAndRelease", "ShoulderStashHmdBackExitPaddingGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Shoulder Stash Hmd Back Min Behind Game Units",
+              "default": 4.0,
+              "valueOptions": { "min": 0.0, "max": 40.0, "step": 0.2 },
+              "storage": { "path": ["GrabSafetyAndRelease", "ShoulderStashHmdBackMinBehindGameUnits"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Shoulder Stash Show Collected Notifications",
+              "default": true,
+              "storage": { "path": ["GrabSafetyAndRelease", "ShoulderStashShowCollectedNotifications"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Mouth Consume Enabled",
+              "help": "Mouth consume uses a tight HMD-relative sphere near the mouth. Only loose ALCH ingestibles can become mouth candidates; other objects use backpack stash/drop paths.",
+              "default": true,
+              "storage": { "path": ["GrabSafetyAndRelease", "MouthConsumeEnabled"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Mouth Consume Allow Poison",
+              "default": false,
+              "storage": { "path": ["GrabSafetyAndRelease", "MouthConsumeAllowPoison"] }
+            },
+            {
+              "type": "cf.transform",
+              "valueType": "string",
+              "text": "Mouth Consume Hmd Offset",
+              "help": "Mouth position relative to the headset, in game units. Each value: -120 to 120.",
+              "default": { "pos": [0.0, 7.0, -7.0] },
+              "valueOptions": {
+                "position": { "min": -120.0, "max": 120.0, "step": 0.1 },
+                "rotation": false,
+                "scale": false
+              },
+              "storage": { "path": ["GrabSafetyAndRelease", "MouthConsumeHmdOffset"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Mouth Consume Radius Game Units",
+              "default": 5.5,
+              "valueOptions": { "min": 1.0, "max": 80.0, "step": 0.5 },
+              "storage": { "path": ["GrabSafetyAndRelease", "MouthConsumeRadiusGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Mouth Consume Enter Padding Game Units",
+              "default": 0.0,
+              "valueOptions": { "min": 0.0, "max": 40.0, "step": 0.2 },
+              "storage": { "path": ["GrabSafetyAndRelease", "MouthConsumeEnterPaddingGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Mouth Consume Exit Padding Game Units",
+              "default": 1.0,
+              "valueOptions": { "min": 0.0, "max": 60.0, "step": 0.1 },
+              "storage": { "path": ["GrabSafetyAndRelease", "MouthConsumeExitPaddingGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Mouth Consume Min Dwell Seconds",
+              "default": 0.08,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.005 },
+              "storage": { "path": ["GrabSafetyAndRelease", "MouthConsumeMinDwellSeconds"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Mouth Consume Max Speed Game Units Per Second",
+              "default": 120.0,
+              "valueOptions": { "min": 0.0, "max": 1000.0, "step": 10.0 },
+              "storage": { "path": ["GrabSafetyAndRelease", "MouthConsumeMaxSpeedGameUnitsPerSecond"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Grab Held Mass Movement Slowdown Enabled",
+              "help": "Reduces player movement speed while carrying held mass.",
+              "default": true,
+              "storage": { "path": ["GrabSafetyAndRelease", "GrabHeldMassMovementSlowdownEnabled"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Held Mass Movement Mass Proportion",
+              "default": 0.675,
+              "valueOptions": { "min": 0.0, "max": 10.0, "step": 0.05 },
+              "storage": { "path": ["GrabSafetyAndRelease", "GrabHeldMassMovementMassProportion"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Held Mass Movement Mass Exponent",
+              "default": 1.0,
+              "valueOptions": { "min": 0.0, "max": 4.0, "step": 0.02 },
+              "storage": { "path": ["GrabSafetyAndRelease", "GrabHeldMassMovementMassExponent"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Held Mass Movement Max Reduction",
+              "default": 75.0,
+              "valueOptions": { "min": 0.0, "max": 99.0, "step": 0.5 },
+              "storage": { "path": ["GrabSafetyAndRelease", "GrabHeldMassMovementMaxReduction"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Held Mass Movement Fade Out Seconds",
+              "default": 5.0,
+              "valueOptions": { "min": 0.0, "max": 60.0, "step": 0.5 },
+              "storage": { "path": ["GrabSafetyAndRelease", "GrabHeldMassMovementFadeOutSeconds"] }
+            }
+          ]
+        },
+        {
+          "pageDisplayName": "Grab Acquisition",
+          "content": [
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Input Leeway Seconds",
+              "help": "Seconds a held grab press waits for the hand to become ready to grab. Range: 0 to 0.5.",
+              "default": 0.12,
+              "valueOptions": { "min": 0.0, "max": 0.5, "step": 0.005 },
+              "storage": { "path": ["GrabAcquisition", "GrabInputLeewaySeconds"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Input Force Seconds",
+              "help": "After that wait, seconds the held press keeps being sent every frame before ROCK stops trying. Range: 0 to 0.3.",
+              "default": 0.08,
+              "valueOptions": { "min": 0.0, "max": 0.3, "step": 0.002 },
+              "storage": { "path": ["GrabAcquisition", "GrabInputForceSeconds"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Touch Acquire Distance Game Units",
+              "help": "Distance from the hand pocket where an object is considered already touching.",
+              "default": 4.0,
+              "valueOptions": { "min": 0.5, "max": 20.0, "step": 0.1 },
+              "storage": { "path": ["GrabAcquisition", "GrabTouchAcquireDistanceGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Near Converge Distance Game Units",
+              "help": "Distance where the object should converge into the palm pocket instead of finalizing immediately.",
+              "default": 28.0,
+              "valueOptions": { "min": 4.0, "max": 100.0, "step": 0.5 },
+              "storage": { "path": ["GrabAcquisition", "GrabNearConvergeDistanceGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Two Hand Pivot Min Separation Game Units",
+              "help": "Two hands on one loose non-weapon object turn it along the line between their grip points only when those points are at least this far apart. Closer than this (two pinches on a cartridge), the object stays as the first hand holds it, and the hand left holding it keeps its own grip. 0 = always pivot. Applies to the next two-hand hold.",
+              "default": 6.0,
+              "valueOptions": { "min": 0.0, "max": 30.0, "step": 0.2 },
+              "storage": { "path": ["GrabAcquisition", "GrabTwoHandPivotMinSeparationGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Pocket Depth Game Units",
+              "help": "Hand-pocket offset and radius, in game units, from the root-flattened palm frame.",
+              "default": 7.0,
+              "valueOptions": { "min": 0.0, "max": 30.0, "step": 0.2 },
+              "storage": { "path": ["GrabAcquisition", "GrabPocketDepthGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Pocket Radius Game Units",
+              "default": 9.0,
+              "valueOptions": { "min": 0.5, "max": 30.0, "step": 0.2 },
+              "storage": { "path": ["GrabAcquisition", "GrabPocketRadiusGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Seat Depth Max Game Units",
+              "help": "Legacy seat-depth stop and penetration backstop dimensions, in game units.",
+              "default": 30.0,
+              "valueOptions": { "min": 0.0, "max": 100.0, "step": 1.0 },
+              "storage": { "path": ["GrabAcquisition", "GrabSeatDepthMaxGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Seat Depth Footprint Radius Game Units",
+              "default": 10.0,
+              "valueOptions": { "min": 1.0, "max": 30.0, "step": 0.2 },
+              "storage": { "path": ["GrabAcquisition", "GrabSeatDepthFootprintRadiusGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Seat Penetration Backstop Footprint Radius Game Units",
+              "default": 6.0,
+              "valueOptions": { "min": 1.0, "max": 30.0, "step": 0.2 },
+              "storage": { "path": ["GrabAcquisition", "GrabSeatPenetrationBackstopFootprintRadiusGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Seat Depth Skin Game Units",
+              "default": 0.5,
+              "valueOptions": { "min": 0.0, "max": 5.0, "step": 0.05 },
+              "storage": { "path": ["GrabAcquisition", "GrabSeatDepthSkinGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Grab Close Seat Mode",
+              "help": "0 = Current seat. 1 = Local grasp solve. Applies on the next close grab of a loose object. Pulled, forced, pinched and authored grabs are unchanged. Mode 1 reads the mesh in front of the palm. A handle, neck, rim or round body is turned into the hand, and the fingers close on that part instead of the body behind it. When no such part is found the current seat is used. ROCK.log reports the result of each grab.",
+              "default": 0,
+              "valueOptions": { "min": 0, "max": 1, "step": 1 },
+              "storage": { "path": ["GrabAcquisition", "GrabCloseSeatMode"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Grip Inset Game Units",
+              "help": "Moves the captured grip point slightly inside the object from the raw hit/mesh seed.",
+              "default": 2.0,
+              "valueOptions": { "min": 0.0, "max": 10.0, "step": 0.1 },
+              "storage": { "path": ["GrabAcquisition", "GrabGripInsetGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Converge Max Time Seconds",
+              "help": "Optional near-converge diagnostic timeout. A value of 0 disables timeout promotion.",
+              "default": 0.35,
+              "valueOptions": { "min": 0.0, "max": 2.0, "step": 0.02 },
+              "storage": { "path": ["GrabAcquisition", "GrabConvergeMaxTimeSeconds"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Converge Stable Seconds",
+              "default": 0.0333,
+              "valueOptions": { "min": 0.012, "max": 0.132, "step": 0.001 },
+              "storage": { "path": ["GrabAcquisition", "GrabConvergeStableSeconds"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Converge Max Separating Speed Game Units Per Second",
+              "default": 40.0,
+              "valueOptions": { "min": 0.0, "max": 200.0, "step": 2.0 },
+              "storage": { "path": ["GrabAcquisition", "GrabConvergeMaxSeparatingSpeedGameUnitsPerSecond"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Acquisition Visual Start Distance Game Units",
+              "default": 28.0,
+              "valueOptions": { "min": 0.5, "max": 100.0, "step": 0.5 },
+              "storage": { "path": ["GrabAcquisition", "GrabAcquisitionVisualStartDistanceGameUnits"] }
+            }
+          ]
+        },
+        {
+          "pageDisplayName": "Grab Contact Evidence",
+          "content": [
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Surface Behind Palm Tolerance Game Units",
+              "default": 1.5,
+              "valueOptions": { "min": 0.0, "max": 10.0, "step": 0.1 },
+              "storage": { "path": ["GrabContactEvidence", "GrabSurfaceBehindPalmToleranceGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Opposition Contact Max Age Seconds",
+              "help": "Maximum age in seconds for semantic contacts used as touch evidence.",
+              "default": 0.0556,
+              "valueOptions": { "min": 0.0, "max": 0.66, "step": 0.005 },
+              "storage": { "path": ["GrabContactEvidence", "GrabOppositionContactMaxAgeSeconds"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Grab Pinch Close Selection Enabled",
+              "help": "Allows a fallback close-selection cast along the pinch direction when the palm close cast misses.",
+              "default": true,
+              "storage": { "path": ["GrabContactEvidence", "GrabPinchCloseSelectionEnabled"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Pinch Max Pocket Distance Game Units",
+              "default": 8.0,
+              "valueOptions": { "min": 0.1, "max": 80.0, "step": 0.5 },
+              "storage": { "path": ["GrabContactEvidence", "GrabPinchMaxPocketDistanceGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Pinch Min Finger Gap Game Units",
+              "default": 1.0,
+              "valueOptions": { "min": 0.0, "max": 40.0, "step": 0.1 },
+              "storage": { "path": ["GrabContactEvidence", "GrabPinchMinFingerGapGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Pinch Max Finger Gap Game Units",
+              "default": 12.0,
+              "valueOptions": { "min": 0.1, "max": 80.0, "step": 0.5 },
+              "storage": { "path": ["GrabContactEvidence", "GrabPinchMaxFingerGapGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Pinch Thumb Index Max Open Value",
+              "help": "Thumb and opposed finger curl of the weapon support hand's opposition pose (1 open, 0 closed). A loose-object pinch opens to the object's thickness instead.",
+              "default": 0.45,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["GrabContactEvidence", "GrabPinchThumbIndexMaxOpenValue"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Pinch Other Finger Curl Value",
+              "default": 0.2,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["GrabContactEvidence", "GrabPinchOtherFingerCurlValue"] }
+            },
+            {
+              "type": "cf.transform",
+              "valueType": "string",
+              "text": "Grab Pinch Detection Direction",
+              "help": "Pinch detection direction in ROCK hand space, stored as a position and normalized: X=fingers, Y=palm depth, Z=signed cross-palm.",
+              "default": { "pos": [1.0, 0.0, 0.0] },
+              "valueOptions": {
+                "position": { "min": -1.0, "max": 1.0, "step": 0.02 },
+                "rotation": false,
+                "scale": false
+              },
+              "storage": { "path": ["GrabContactEvidence", "GrabPinchDetectionDirection"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Pinch Detection Axis Blend",
+              "help": "Blends the live thumb-index axis with the authored pinch direction for mesh surface search.",
+              "default": 0.65,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["GrabContactEvidence", "GrabPinchDetectionAxisBlend"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Grab Hand Lerp Enabled",
+              "help": "Moves the rendered hand toward the mesh-matched held pose during grab startup.",
+              "default": true,
+              "storage": { "path": ["GrabContactEvidence", "GrabHandLerpEnabled"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Hand Lerp Time Min",
+              "default": 0.1,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["GrabContactEvidence", "GrabHandLerpTimeMin"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Hand Lerp Time Max",
+              "default": 0.2,
+              "valueOptions": { "min": 0.1, "max": 1.0, "step": 0.005 },
+              "storage": { "path": ["GrabContactEvidence", "GrabHandLerpTimeMax"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Hand Lerp Min Distance",
+              "default": 7.0,
+              "valueOptions": { "min": 0.0, "max": 80.0, "step": 0.5 },
+              "storage": { "path": ["GrabContactEvidence", "GrabHandLerpMinDistance"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Hand Lerp Max Distance",
+              "default": 14.0,
+              "valueOptions": { "min": 7.0, "max": 120.0, "step": 1.0 },
+              "storage": { "path": ["GrabContactEvidence", "GrabHandLerpMaxDistance"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Grab Hand Return Enabled",
+              "help": "Smooths the rendered hand back to live tracking after releasing a grabbed object.",
+              "default": true,
+              "storage": { "path": ["GrabContactEvidence", "GrabHandReturnEnabled"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Hand Return Time Min",
+              "default": 0.1,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["GrabContactEvidence", "GrabHandReturnTimeMin"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Hand Return Time Max",
+              "default": 0.2,
+              "valueOptions": { "min": 0.1, "max": 1.0, "step": 0.005 },
+              "storage": { "path": ["GrabContactEvidence", "GrabHandReturnTimeMax"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Hand Return Min Distance",
+              "default": 7.0,
+              "valueOptions": { "min": 0.0, "max": 80.0, "step": 0.5 },
+              "storage": { "path": ["GrabContactEvidence", "GrabHandReturnMinDistance"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Hand Return Max Distance",
+              "default": 14.0,
+              "valueOptions": { "min": 7.0, "max": 120.0, "step": 1.0 },
+              "storage": { "path": ["GrabContactEvidence", "GrabHandReturnMaxDistance"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Hand Return Min Angle Degrees",
+              "default": 5.0,
+              "valueOptions": { "min": 0.0, "max": 180.0, "step": 0.5 },
+              "storage": { "path": ["GrabContactEvidence", "GrabHandReturnMinAngleDegrees"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Hand Return Max Angle Degrees",
+              "default": 90.0,
+              "valueOptions": { "min": 5.0, "max": 180.0, "step": 1.0 },
+              "storage": { "path": ["GrabContactEvidence", "GrabHandReturnMaxAngleDegrees"] }
+            }
+          ]
+        },
+        {
+          "pageDisplayName": "Finger Poses",
+          "content": [
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Weapon Grab Capsule Probes",
+              "help": "Testing: pose dynamic equipped weapon and part grips with the loose-object capsule probes, with thumb and index reaching onto small parts such as bolts and slides, instead of the swept arc. Applies on the next dynamic weapon grip, on either hand. Authored poses retain priority.",
+              "default": false,
+              "storage": { "path": ["FingerPoses", "WeaponGrabCapsuleProbes"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Loose Grab Finger Pose Mode",
+              "help": "0 = Capsule sweep. 1 = Swept arc: the finger solve loose grabs used before the capsule sweep (pad-probe refinement, contact splay, surface-aim local transforms). Applies on the next loose-object grab. Weapon grips use WeaponGrabCapsuleProbes.",
+              "default": 0,
+              "valueOptions": { "min": 0, "max": 1, "step": 1 },
+              "storage": { "path": ["FingerPoses", "LooseGrabFingerPoseMode"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Grab Mesh Joint Pose Enabled",
+              "help": "Sends per-joint finger values to FRIK when available instead of one curl per finger.",
+              "default": true,
+              "storage": { "path": ["FingerPoses", "GrabMeshJointPoseEnabled"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Finger Min Value",
+              "help": "Lowest allowed finger value. 0=fully closed, 1=fully straight.",
+              "default": 0.2,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["FingerPoses", "GrabFingerMinValue"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Finger Pose Smoothing Speed",
+              "help": "Maximum per-second finger pose movement.",
+              "default": 14.0,
+              "valueOptions": { "min": 0.0, "max": 60.0, "step": 0.5 },
+              "storage": { "path": ["FingerPoses", "GrabFingerPoseSmoothingSpeed"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Grab Mesh Local Transform Pose Enabled",
+              "help": "Uses FRIK's authored finger joint transforms plus bounded mesh-contact aim correction.",
+              "default": true,
+              "storage": { "path": ["FingerPoses", "GrabMeshLocalTransformPoseEnabled"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Finger Local Transform Smoothing Speed",
+              "default": 14.0,
+              "valueOptions": { "min": 0.0, "max": 60.0, "step": 0.5 },
+              "storage": { "path": ["FingerPoses", "GrabFingerLocalTransformSmoothingSpeed"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Finger Local Transform Max Correction Degrees",
+              "default": 35.0,
+              "valueOptions": { "min": 0.0, "max": 90.0, "step": 0.5 },
+              "storage": { "path": ["FingerPoses", "GrabFingerLocalTransformMaxCorrectionDegrees"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Finger Surface Aim Strength",
+              "default": 0.75,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["FingerPoses", "GrabFingerSurfaceAimStrength"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Grab Finger Reject Backside Hits",
+              "default": true,
+              "storage": { "path": ["FingerPoses", "GrabFingerRejectBacksideHits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Finger Surface Plane Tolerance Game Units",
+              "default": 1.5,
+              "valueOptions": { "min": 0.0, "max": 10.0, "step": 0.1 },
+              "storage": { "path": ["FingerPoses", "GrabFingerSurfacePlaneToleranceGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Finger Sweep Contact Radius Game Units",
+              "help": "Swept-arc finger solver: finger-pad contact sphere radius. Bigger = fingers stop earlier (hover), smaller = deeper wrap before contact. Finger-pad contact radius for the swept-arc solver (0.05-4). The old finger-width air gap was a solver bug (fixed: chord de-rotation), NOT this radius - values near 0 now make fingers clip into the mesh.",
+              "default": 0.6,
+              "valueOptions": { "min": 0.05, "max": 4.0, "step": 0.02 },
+              "storage": { "path": ["FingerPoses", "GrabFingerSweepContactRadiusGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Finger Sweep Max Open Value",
+              "help": "How far past the authored open pose fingers may hyper-extend when an object is thicker than the open finger span (hFRIK flex units: 1.0 = authored open pose, 2.0 = engine ceiling). The swept-arc close starts from the most-open allowed row, so a raised cap lets fingers lie flat on surfaces that interpenetrate the default open hand. Valid range 1.0-2.0; out-of-range silently falls back (1.4 fingers / 2.0 thumb).",
+              "default": 2.0,
+              "valueOptions": { "min": 1.0, "max": 2.0, "step": 0.01 },
+              "storage": { "path": ["FingerPoses", "GrabFingerSweepMaxOpenValue"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Thumb Sweep Max Open Value",
+              "default": 1.5,
+              "valueOptions": { "min": 1.0, "max": 2.0, "step": 0.01 },
+              "storage": { "path": ["FingerPoses", "GrabThumbSweepMaxOpenValue"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Thumb Opposition Strength",
+              "default": 1.0,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["FingerPoses", "GrabThumbOppositionStrength"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Thumb Alternate Curve Strength",
+              "default": 0.65,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["FingerPoses", "GrabThumbAlternateCurveStrength"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Thumb Surface Safety Margin Game Units",
+              "default": 1.0,
+              "valueOptions": { "min": 0.0, "max": 5.0, "step": 0.05 },
+              "storage": { "path": ["FingerPoses", "GrabThumbSurfaceSafetyMarginGameUnits"] }
+            }
+          ]
+        },
+        {
+          "pageDisplayName": "Mesh Contact",
+          "content": [
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Lateral Weight",
+              "help": "Weighting used when choosing the best mesh triangle for grab contact.",
+              "default": 0.6,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["MeshContact", "GrabLateralWeight"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Directional Weight",
+              "default": 0.4,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["MeshContact", "GrabDirectionalWeight"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Max Triangle Distance",
+              "default": 100.0,
+              "valueOptions": { "min": 1.0, "max": 500.0, "step": 2.0 },
+              "storage": { "path": ["MeshContact", "GrabMaxTriangleDistance"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Contact Patch Max Normal Angle Degrees",
+              "default": 35.0,
+              "valueOptions": { "min": 0.0, "max": 179.0, "step": 1.0 },
+              "storage": { "path": ["MeshContact", "GrabContactPatchMaxNormalAngleDegrees"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Alignment Max Selection To Mesh Distance",
+              "help": "Furthest the grab point may snap from the selection hit onto the mesh.",
+              "default": 8.0,
+              "valueOptions": { "min": 0.0, "max": 50.0, "step": 0.5 },
+              "storage": { "path": ["MeshContact", "GrabAlignmentMaxSelectionToMeshDistance"] }
+            }
+          ]
+        },
+        {
+          "pageDisplayName": "Close-Hand Curl",
+          "content": [
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Selected Close Finger Curl Enabled",
+              "help": "Pre-curls the hand when close selection is active.",
+              "default": true,
+              "storage": { "path": ["CloseHandCurl", "SelectedCloseFingerCurlEnabled"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Selected Close Finger Anim Max Hand Speed",
+              "default": 0.9,
+              "valueOptions": { "min": 0.0, "max": 5.0, "step": 0.05 },
+              "storage": { "path": ["CloseHandCurl", "SelectedCloseFingerAnimMaxHandSpeed"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Selected Close Finger Anim Value",
+              "default": 0.9,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["CloseHandCurl", "SelectedCloseFingerAnimValue"] }
+            }
+          ]
+        },
+        {
+          "pageDisplayName": "Haptics",
+          "content": [
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Firing Grip Haptic Duration Seconds",
+              "help": "Length of the pulse on the acting hand when the firing grip attaches or detaches, in seconds. Range: 0.01 to 0.5.",
+              "default": 0.1,
+              "valueOptions": { "min": 0.01, "max": 0.5, "step": 0.002 },
+              "storage": { "path": ["Haptics", "FiringGripHapticDurationSeconds"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Firing Grip Attach Haptic Intensity",
+              "help": "Strength of the firing-grip attach pulse. Range: 0 to 1.",
+              "default": 0.85,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["Haptics", "FiringGripAttachHapticIntensity"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Firing Grip Detach Haptic Intensity",
+              "help": "Strength of the firing-grip detach pulse. Range: 0 to 1.",
+              "default": 0.3,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["Haptics", "FiringGripDetachHapticIntensity"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Grab Haptics Enabled",
+              "help": "Pulses for grab commit, pull start/catch, and held-object impacts.",
+              "default": true,
+              "storage": { "path": ["Haptics", "GrabHapticsEnabled"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Haptic Duration Seconds",
+              "default": 0.055,
+              "valueOptions": { "min": 0.0, "max": 0.2, "step": 0.002 },
+              "storage": { "path": ["Haptics", "GrabHapticDurationSeconds"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Haptic Base Intensity",
+              "default": 0.12,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["Haptics", "GrabHapticBaseIntensity"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Haptic Max Intensity",
+              "default": 0.8,
+              "valueOptions": { "min": 0.12, "max": 1.0, "step": 0.005 },
+              "storage": { "path": ["Haptics", "GrabHapticMaxIntensity"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Haptic Mass Scale",
+              "default": 0.06,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.005 },
+              "storage": { "path": ["Haptics", "GrabHapticMassScale"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Grab Haptic Mass Exponent",
+              "default": 0.6,
+              "valueOptions": { "min": 0.0, "max": 2.0, "step": 0.02 },
+              "storage": { "path": ["Haptics", "GrabHapticMassExponent"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Pull Start Haptic Intensity",
+              "default": 0.18,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["Haptics", "PullStartHapticIntensity"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Pull Catch Haptic Intensity",
+              "default": 0.22,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["Haptics", "PullCatchHapticIntensity"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Selection Lock Haptic Intensity",
+              "default": 0.15,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["Haptics", "SelectionLockHapticIntensity"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Selection Lock Release Haptic Intensity",
+              "default": 0.1,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["Haptics", "SelectionLockReleaseHapticIntensity"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Selection Lock Release Haptic Duration Seconds",
+              "default": 0.02,
+              "valueOptions": { "min": 0.0, "max": 0.2, "step": 0.002 },
+              "storage": { "path": ["Haptics", "SelectionLockReleaseHapticDurationSeconds"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Surface Grab Haptics Enabled",
+              "help": "Fixed-surface grabs use a longer confirmation pulse.",
+              "default": true,
+              "storage": { "path": ["Haptics", "SurfaceGrabHapticsEnabled"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Surface Grab Haptic Duration Seconds",
+              "default": 0.075,
+              "valueOptions": { "min": 0.0, "max": 0.2, "step": 0.002 },
+              "storage": { "path": ["Haptics", "SurfaceGrabHapticDurationSeconds"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Surface Grab Haptic Intensity",
+              "default": 0.85,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["Haptics", "SurfaceGrabHapticIntensity"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Held Impact Haptics Enabled",
+              "default": true,
+              "storage": { "path": ["Haptics", "HeldImpactHapticsEnabled"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Held Impact Haptic Duration Seconds",
+              "default": 0.035,
+              "valueOptions": { "min": 0.0, "max": 0.2, "step": 0.002 },
+              "storage": { "path": ["Haptics", "HeldImpactHapticDurationSeconds"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Held Impact Haptic Base Intensity",
+              "default": 0.12,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["Haptics", "HeldImpactHapticBaseIntensity"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Held Impact Haptic Max Intensity",
+              "default": 0.85,
+              "valueOptions": { "min": 0.12, "max": 1.0, "step": 0.005 },
+              "storage": { "path": ["Haptics", "HeldImpactHapticMaxIntensity"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Held Impact Haptic Speed Scale",
+              "default": 0.006,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.0005 },
+              "storage": { "path": ["Haptics", "HeldImpactHapticSpeedScale"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Held Impact Haptic Mass Scale",
+              "default": 0.035,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.002 },
+              "storage": { "path": ["Haptics", "HeldImpactHapticMassScale"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Held Impact Haptic Mass Exponent",
+              "default": 0.55,
+              "valueOptions": { "min": 0.0, "max": 2.0, "step": 0.02 },
+              "storage": { "path": ["Haptics", "HeldImpactHapticMassExponent"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Held Impact Haptic Min Speed Game Units",
+              "default": 8.0,
+              "valueOptions": { "min": 0.0, "max": 1000.0, "step": 0.5 },
+              "storage": { "path": ["Haptics", "HeldImpactHapticMinSpeedGameUnits"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Held Impact Haptic Cooldown Seconds",
+              "default": 0.12,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["Haptics", "HeldImpactHapticCooldownSeconds"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Held Impact Haptic Damped Multiplier",
+              "default": 0.55,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["Haptics", "HeldImpactHapticDampedMultiplier"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Shoulder Stash Haptics Enabled",
+              "help": "Shoulder stash haptics pulse clearly while an item is inside the stash zone, then fire a stronger confirmation on transfer.",
+              "default": true,
+              "storage": { "path": ["Haptics", "ShoulderStashHapticsEnabled"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Shoulder Stash Candidate Haptic Duration Seconds",
+              "default": 0.075,
+              "valueOptions": { "min": 0.0, "max": 0.2, "step": 0.002 },
+              "storage": { "path": ["Haptics", "ShoulderStashCandidateHapticDurationSeconds"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Shoulder Stash Candidate Haptic Base Intensity",
+              "default": 0.2,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["Haptics", "ShoulderStashCandidateHapticBaseIntensity"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Shoulder Stash Candidate Haptic Intensity",
+              "default": 0.42,
+              "valueOptions": { "min": 0.2, "max": 1.0, "step": 0.005 },
+              "storage": { "path": ["Haptics", "ShoulderStashCandidateHapticIntensity"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Shoulder Stash Candidate Haptic Interval Seconds",
+              "default": 0.075,
+              "valueOptions": { "min": 0.0, "max": 2.0, "step": 0.005 },
+              "storage": { "path": ["Haptics", "ShoulderStashCandidateHapticIntervalSeconds"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Shoulder Stash Commit Haptic Duration Seconds",
+              "default": 0.12,
+              "valueOptions": { "min": 0.0, "max": 0.2, "step": 0.002 },
+              "storage": { "path": ["Haptics", "ShoulderStashCommitHapticDurationSeconds"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Shoulder Stash Commit Haptic Intensity",
+              "default": 0.85,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["Haptics", "ShoulderStashCommitHapticIntensity"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Mouth Consume Haptics Enabled",
+              "help": "Mouth consume haptics pulse while a consumable is in the mouth zone, then fire a confirmation on consume.",
+              "default": true,
+              "storage": { "path": ["Haptics", "MouthConsumeHapticsEnabled"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Mouth Consume Candidate Haptic Duration Seconds",
+              "default": 0.05,
+              "valueOptions": { "min": 0.0, "max": 0.2, "step": 0.002 },
+              "storage": { "path": ["Haptics", "MouthConsumeCandidateHapticDurationSeconds"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Mouth Consume Candidate Haptic Base Intensity",
+              "default": 0.22,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["Haptics", "MouthConsumeCandidateHapticBaseIntensity"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Mouth Consume Candidate Haptic Intensity",
+              "default": 0.45,
+              "valueOptions": { "min": 0.22, "max": 1.0, "step": 0.005 },
+              "storage": { "path": ["Haptics", "MouthConsumeCandidateHapticIntensity"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Mouth Consume Candidate Haptic Interval Seconds",
+              "default": 0.075,
+              "valueOptions": { "min": 0.0, "max": 2.0, "step": 0.005 },
+              "storage": { "path": ["Haptics", "MouthConsumeCandidateHapticIntervalSeconds"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Mouth Consume Commit Haptic Duration Seconds",
+              "default": 0.12,
+              "valueOptions": { "min": 0.0, "max": 0.2, "step": 0.002 },
+              "storage": { "path": ["Haptics", "MouthConsumeCommitHapticDurationSeconds"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Mouth Consume Commit Haptic Intensity",
+              "default": 0.85,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "storage": { "path": ["Haptics", "MouthConsumeCommitHapticIntensity"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Draw Grab Authority Proxy",
+              "help": "Draws the hidden no-contact grab authority proxy target/axes used by ROCK dynamic grab.",
+              "default": false,
+              "storage": { "path": ["Haptics", "DebugDrawGrabAuthorityProxy"] }
+            }
+          ]
+        },
+        {
+          "pageDisplayName": "Debug Overlay",
+          "content": [
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Show Colliders",
+              "help": "Master switch for all ROCK-owned collider visualizations below.",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugShowColliders"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Show Target Colliders",
+              "help": "Draws the selected or held target body when the collider master is enabled.",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugShowTargetColliders"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Show Hand Axes",
+              "help": "Draws live transform axes. Red=X, green=Y, blue=Z.",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugShowHandAxes"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Show Grab Pivots",
+              "help": "Draws grab constraint pivots and the error line between hand-side and object-side pivots.",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugShowGrabPivots"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Show Grab Pocket Normal",
+              "help": "Draws the resolved mesh surface frame after a dynamic grab.",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugShowGrabPocketNormal"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Draw Grab Force Torque",
+              "help": "Draws a focused held-grab pivot force/lever view: target pivot, live pivot, correction vector, lever arm, and torque witness.",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugDrawGrabForceTorque"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Draw Grab Force Torque Text",
+              "help": "Adds a compact world label to the focused grab force/lever view.",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugDrawGrabForceTorqueText"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Draw Grab Pivot Source Collider",
+              "help": "Draws the hknp body/collider that owns the frozen object-side pivot B.",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugDrawGrabPivotSourceCollider"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Draw Grab Pivot Source Evidence",
+              "help": "Draws the mesh triangle/contact-patch evidence that produced the frozen pivot.",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugDrawGrabPivotSourceEvidence"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Draw Grab Support Frame",
+              "help": "Draws the frozen grab support face frame at pivot B: normal, support axis, and binormal.",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugDrawGrabSupportFrame"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Draw Grab Pockets",
+              "help": "Draws the live palm pocket and thumb/index pinch pocket for each hand.",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugDrawGrabPockets"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Draw Grab Finger Probes",
+              "help": "Draws the grab finger solve live: while a hand has an object selected, the finger spheres the solve tests at the curl it would choose (grey wire = closed without touching, green = closed onto the surface, yellow = opened to clear, red = blocked; bright spheres touch the mesh) and each fingertip's sweep path. While holding, the spheres follow the drawn fingers.",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugDrawGrabFingerProbes"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Show Palm Vectors",
+              "help": "Draws palm center plus close/far selection aim rays.",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugShowPalmVectors"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Draw Hand Colliders",
+              "help": "More specific overlay filters and draw limits.",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugDrawHandColliders"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Draw Hand Bone Colliders",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugDrawHandBoneColliders"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Draw Body Bone Colliders",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugDrawBodyBoneColliders"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Draw Dynamic Hand Colliders",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugDrawDynamicHandColliders"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Draw Hand Bone Contacts",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugDrawHandBoneContacts"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Debug Max Hand Bone Bodies Drawn",
+              "default": 48,
+              "valueOptions": { "min": 0, "max": 48, "step": 1 },
+              "storage": { "path": ["DebugOverlay", "DebugMaxHandBoneBodiesDrawn"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Debug Max Body Bone Bodies Drawn",
+              "default": 32,
+              "valueOptions": { "min": 0, "max": 64, "step": 1 },
+              "storage": { "path": ["DebugOverlay", "DebugMaxBodyBoneBodiesDrawn"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Draw Weapon Colliders",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugDrawWeaponColliders"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Draw Grabbed Weapon Part Collider",
+              "help": "Draws the exact current weapon-part collider selected by each active part grip.",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugDrawGrabbedWeaponPartCollider"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Draw Native Scope Activation",
+              "help": "Native-scope diagnosis: sight bounds, live camera, exact pre-activation target pose/aim/up guides, write readback, parent/local camera, and HMD guides.",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugDrawNativeScopeActivation"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Draw Authored Grip Activation Zones",
+              "help": "Visualizes the topology-specific authored cone/arc, live approach vector, and optional palm/fingertip collision witnesses. Witnesses are diagnostic only. Also draws the firing-grip reattach zone and live palm vectors during part carry.",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugDrawAuthoredGripActivationZones"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Draw Weapon Authority",
+              "help": "Draws two-handed weapon/hand/FRIK authority frames and mismatch evidence.",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugDrawWeaponAuthority"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Draw Controller Aim",
+              "help": "Compare both tracked wand frames, reference aim (cyan), configured aim (gold), damped aim (purple) and final barrel (green). The reference basis is a model, not physical ground truth. Does not change aiming.",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugDrawControllerAim"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Draw Gunstock",
+              "help": "Gunstock measurements: exact tracked controller origins/axes, controller baseline, weapon forward and authored hand seats. Each support grab marks a sample. Does not change aiming.",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugDrawGunstock"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Draw Loose Weapon Grip Zones",
+              "help": "Draws the loose-weapon projected grip point, palm relation, and equip radius state.",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugDrawLooseWeaponGripZones"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Draw Dynamic Weapon Colliders",
+              "help": "Draws the layer-51 dynamic weapon compound proxy and contact/correction telemetry.",
+              "default": false,
+              "storage": { "path": ["DebugOverlay", "DebugDrawDynamicWeaponColliders"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Debug Max Weapon Bodies Drawn",
+              "default": 100,
+              "valueOptions": { "min": 0, "max": 200, "step": 2 },
+              "storage": { "path": ["DebugOverlay", "DebugMaxWeaponBodiesDrawn"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Debug Max Shape Captures Per Frame",
+              "help": "Bounded overlay work and memory budgets. Zero disables the corresponding capture/upload/draw stream where noted. Ranges: captures 0..32, compound slots 1..1024, depth 1..8, queued/completed 0..256, uploads 0..16, cache entries 16..4096, cache bytes 1048576..536870912, body instances 0..195, line vertices 0..65536, text vertices 0..131072.",
+              "default": 32,
+              "valueOptions": { "min": 0, "max": 32, "step": 1 },
+              "storage": { "path": ["DebugOverlay", "DebugMaxShapeCapturesPerFrame"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Debug Max Convex Support Vertices",
+              "default": 8,
+              "valueOptions": { "min": 4, "max": 32, "step": 1 },
+              "storage": { "path": ["DebugOverlay", "DebugMaxConvexSupportVertices"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Debug Max Compound Children",
+              "default": 256,
+              "valueOptions": { "min": 1, "max": 1024, "step": 10 },
+              "storage": { "path": ["DebugOverlay", "DebugMaxCompoundChildren"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Debug Max Compound Depth",
+              "default": 4,
+              "valueOptions": { "min": 1, "max": 8, "step": 1 },
+              "storage": { "path": ["DebugOverlay", "DebugMaxCompoundDepth"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Debug Max Shape Queued Jobs",
+              "default": 64,
+              "valueOptions": { "min": 0, "max": 256, "step": 2 },
+              "storage": { "path": ["DebugOverlay", "DebugMaxShapeQueuedJobs"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Debug Max Shape Completed Jobs",
+              "default": 64,
+              "valueOptions": { "min": 0, "max": 256, "step": 2 },
+              "storage": { "path": ["DebugOverlay", "DebugMaxShapeCompletedJobs"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Debug Max Shape Uploads Per Frame",
+              "default": 2,
+              "valueOptions": { "min": 0, "max": 16, "step": 1 },
+              "storage": { "path": ["DebugOverlay", "DebugMaxShapeUploadsPerFrame"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Debug Max Shape Cache Entries",
+              "default": 512,
+              "valueOptions": { "min": 16, "max": 4096, "step": 20 },
+              "storage": { "path": ["DebugOverlay", "DebugMaxShapeCacheEntries"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Debug Max Shape Cache Bytes",
+              "default": 67108864,
+              "valueOptions": { "min": 1048576, "max": 536870912, "step": 5000000 },
+              "storage": { "path": ["DebugOverlay", "DebugMaxShapeCacheBytes"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Debug Max Body Instances",
+              "default": 163,
+              "valueOptions": { "min": 0, "max": 163, "step": 1 },
+              "storage": { "path": ["DebugOverlay", "DebugMaxBodyInstances"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Debug Max Line Vertices",
+              "default": 8192,
+              "valueOptions": { "min": 0, "max": 65536, "step": 500 },
+              "storage": { "path": ["DebugOverlay", "DebugMaxLineVertices"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Use Bounds For Heavy Convex",
+              "default": true,
+              "storage": { "path": ["DebugOverlay", "DebugUseBoundsForHeavyConvex"] }
+            }
+          ]
+        },
+        {
+          "pageDisplayName": "Logs and Telemetry",
+          "content": [
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Verbose Logging",
+              "help": "Very noisy per-frame diagnostic logging. Use only while investigating a specific issue.",
+              "default": false,
+              "storage": { "path": ["LogsAndTelemetry", "DebugVerboseLogging"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Testbench Telemetry",
+              "help": "Publishes per-frame hand, head and controller state and ROCK events to shared memory for the external test bench. Leave off for play.",
+              "default": false,
+              "storage": { "path": ["LogsAndTelemetry", "DebugTestbenchTelemetry"] }
+            }
+          ]
+        },
+        {
+          "pageDisplayName": "Skeleton Debug",
+          "content": [
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Show Root Flattened Finger Skeleton Markers",
+              "help": "Draws markers and axes for live first-person skeleton bones.",
+              "default": false,
+              "storage": { "path": ["SkeletonDebug", "DebugShowRootFlattenedFingerSkeletonMarkers"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Show Skeleton Bone Visualizer",
+              "default": false,
+              "storage": { "path": ["SkeletonDebug", "DebugShowSkeletonBoneVisualizer"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Debug Skeleton Bone Mode",
+              "help": "0 = minimal/core bones, 1 = core body and fingers, higher modes may draw more if supported.",
+              "default": 1,
+              "valueOptions": { "min": 0, "max": 3, "step": 1 },
+              "storage": { "path": ["SkeletonDebug", "DebugSkeletonBoneMode"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Debug Skeleton Bone Source",
+              "help": "Selects the skeleton source used by the debug visualizer.",
+              "default": 1,
+              "valueOptions": { "min": 1, "max": 2, "step": 1 },
+              "storage": { "path": ["SkeletonDebug", "DebugSkeletonBoneSource"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Debug Max Skeleton Bones Drawn",
+              "help": "Draw limits and filters for skeleton debug drawing.",
+              "default": 256,
+              "valueOptions": { "min": 0, "max": 768, "step": 5 },
+              "storage": { "path": ["SkeletonDebug", "DebugMaxSkeletonBonesDrawn"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Draw Skeleton Bone Axes",
+              "default": false,
+              "storage": { "path": ["SkeletonDebug", "DebugDrawSkeletonBoneAxes"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Debug Max Skeleton Bone Axes Drawn",
+              "default": 80,
+              "valueOptions": { "min": 0, "max": 768, "step": 5 },
+              "storage": { "path": ["SkeletonDebug", "DebugMaxSkeletonBoneAxesDrawn"] }
+            },
+            {
+              "type": "textinput",
+              "valueType": "string",
+              "text": "Debug Skeleton Axis Bone Filter",
+              "default": "",
+              "storage": { "path": ["SkeletonDebug", "DebugSkeletonAxisBoneFilter"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Log Skeleton Bones",
+              "help": "Logs bone names and truncation information to ROCK.log.",
+              "default": false,
+              "storage": { "path": ["SkeletonDebug", "DebugLogSkeletonBones"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Debug Log Skeleton Bone Truncation",
+              "default": false,
+              "storage": { "path": ["SkeletonDebug", "DebugLogSkeletonBoneTruncation"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Debug Skeleton Bone Log Interval Frames",
+              "default": 120,
+              "valueOptions": { "min": 1, "max": 1000, "step": 5 },
+              "storage": { "path": ["SkeletonDebug", "DebugSkeletonBoneLogIntervalFrames"] }
+            },
+            {
+              "type": "textinput",
+              "valueType": "string",
+              "text": "Debug Skeleton Bone Log Filter",
+              "default": "RArm_Hand,LArm_Hand,RArm_Finger23,LArm_Finger23,Chest,Pelvis",
+              "storage": { "path": ["SkeletonDebug", "DebugSkeletonBoneLogFilter"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Debug Root Flattened Finger Skeleton Marker Size",
+              "help": "Marker and axis sizes for skeleton debug visuals.",
+              "default": 1.4,
+              "valueOptions": { "min": 0.1, "max": 10.0, "step": 0.05 },
+              "storage": { "path": ["SkeletonDebug", "DebugRootFlattenedFingerSkeletonMarkerSize"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Debug Skeleton Bone Point Size",
+              "default": 1.4,
+              "valueOptions": { "min": 0.1, "max": 10.0, "step": 0.05 },
+              "storage": { "path": ["SkeletonDebug", "DebugSkeletonBonePointSize"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Debug Skeleton Bone Axis Length",
+              "default": 4.0,
+              "valueOptions": { "min": 0.1, "max": 30.0, "step": 0.2 },
+              "storage": { "path": ["SkeletonDebug", "DebugSkeletonBoneAxisLength"] }
+            }
+          ]
+        },
+        {
+          "pageDisplayName": "Physics Timing",
+          "content": [
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Havok Timing Fix Enabled",
+              "help": "Stabilizes FO4VR physics timing when rendering falls below the reference rate.",
+              "default": true,
+              "storage": { "path": ["PhysicsTiming", "HavokTimingFixEnabled"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Vats Physics Fixes",
+              "help": "VATS Physics Fixes Preserves equipped-weapon handling speed during VATS and other game slow motion. Compensates the weapon drive and constraint while keeping dynamic collision. Changes apply at the next physics step; false restores uncompensated handling.",
+              "default": true,
+              "storage": { "path": ["PhysicsTiming", "VatsPhysicsFixes"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Havok Timing Fix Min Physics Frame Rate",
+              "default": 70.0,
+              "valueOptions": { "min": 30.0, "max": 240.0, "step": 2.0 },
+              "storage": { "path": ["PhysicsTiming", "HavokTimingFixMinPhysicsFrameRate"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "int",
+              "text": "Havok Timing Fix Max Substeps",
+              "default": 3,
+              "valueOptions": { "min": 1, "max": 6, "step": 1 },
+              "storage": { "path": ["PhysicsTiming", "HavokTimingFixMaxSubsteps"] }
+            }
+          ]
+        },
+        {
+          "pageDisplayName": "Scope Placement",
+          "content": [
+            {
+              "type": "cf.transform",
+              "valueType": "string",
+              "text": "Native Scope Firing Grip Fallback Offset",
+              "help": "Scope Anchor Without Optic Geometry Used only when a scoped weapon has no separate Scope or Sight part ROCK can measure, such as an optic modelled into the receiver. The scope view then starts at the firing hand's grip, moved by these values. Weapons with a measurable optic anchor on the optic and ignore these keys. Offsets are game units (70 = 1 metre) in the weapon's axes: X sideways, +Y toward the muzzle, Z up; all zero puts the anchor on the firing grip. Rotations are degrees added after the game's camera calibration: pitch about X, yaw about Z, roll about the muzzle axis. Position moves the activation point, camera and overlay together; rotation corrects the camera and overlay only. This key: the position. Each value: -100 to 100.",
+              "default": { "pos": [0.0, 0.0, 10.0] },
+              "valueOptions": {
+                "position": { "min": -100.0, "max": 100.0, "step": 0.1 },
+                "rotation": false,
+                "scale": false
+              },
+              "storage": { "path": ["ScopePlacement", "NativeScopeFiringGripFallbackOffset"] }
+            },
+            {
+              "type": "cf.transform",
+              "valueType": "string",
+              "text": "Native Scope Firing Grip Fallback Rotation",
+              "help": "Rotation of the scope anchor used without optic geometry (see the offset above), in degrees: rot is [pitch, roll, yaw]. Each value: -180 to 180.",
+              "default": { "rot": [0.0, 0.0, 0.0] },
+              "valueOptions": {
+                "position": false,
+                "rotation": { "min": -180.0, "max": 180.0, "step": 1.0 },
+                "scale": false
+              },
+              "storage": { "path": ["ScopePlacement", "NativeScopeFiringGripFallbackRotation"] }
+            },
+            {
+              "type": "cf.transform",
+              "valueType": "string",
+              "text": "Native Scope Overlay Offset",
+              "help": "Scope Overlay Fine-tunes only the game's own world_scope.nif overlay. The activation camera stays on the resolved sight or firing-grip anchor, so these values do not change when the scope activates. All zero keeps automatic placement with the game's own model orientation and scale. Offsets are game units in the calibrated model frame; rotations are degrees: pitch about X, yaw about Z, roll about the optical Y axis. Tune one axis at a time; replacement scope meshes can use a reversed sign. This key: the position. Each value: -100 to 100.",
+              "default": { "pos": [0.0, 10.0, 0.0] },
+              "valueOptions": {
+                "position": { "min": -100.0, "max": 100.0, "step": 0.1 },
+                "rotation": false,
+                "scale": false
+              },
+              "storage": { "path": ["ScopePlacement", "NativeScopeOverlayOffset"] }
+            },
+            {
+              "type": "cf.transform",
+              "valueType": "string",
+              "text": "Native Scope Overlay Rotation",
+              "help": "Scope overlay rotation, in degrees: rot is [pitch, roll, yaw]. Each value: -180 to 180.",
+              "default": { "rot": [0.0, 0.0, 0.0] },
+              "valueOptions": {
+                "position": false,
+                "rotation": { "min": -180.0, "max": 180.0, "step": 1.0 },
+                "scale": false
+              },
+              "storage": { "path": ["ScopePlacement", "NativeScopeOverlayRotation"] }
             }
           ]
         }

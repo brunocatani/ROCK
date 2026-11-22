@@ -148,7 +148,7 @@ Under `src/physics-interaction/` unless the path says otherwise.
 | Native HUD placement | `native/player/` |
 | Character controller | `native/player/CharacterControllerRuntime.cpp` |
 | Native crashes in Havok or ragdolls | `native/safety/` |
-| A setting | `src/config/SettingMetadata.h`, `src/RockConfigLoad.cpp`, `src/RockConfig.h`, then regenerate the examples and place a `ROCK.toml` option in `spec.json` or its `kLeftOut` (`ROCKModsConfigSpecTests` fails until you do) |
+| A setting | `src/config/SettingMetadata.h`, `src/RockConfigLoad.cpp`, `src/RockConfig.h`, then regenerate the examples and place a `ROCK.toml` option in `spec.json` or its `kLeftOut`, or regenerate the Developer page for a developer option with `ROCKModsConfigSpecTests --write-developer-page data/mod/ModsConfigFO4/Config/ROCK/spec.json` (`ROCKModsConfigSpecTests` fails until you do) |
 | The setup wizard | `src/setup-wizard/SetupWizardPanel.cpp` (pages), `SetupWizard.cpp` (game host); try it with the preview |
 | ROCK's Mods Config page | `data/mod/ModsConfigFO4/Config/ROCK/spec.json`, `src/mods-config/ModsConfigClient.cpp` (its functions) |
 | A provider API call | Its header, its `docs/api/` page, then [Provider API path](#provider-api-path) |
@@ -187,7 +187,7 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp` for engine math. `
 - **NPC interactions**: SCISSORS, through the NativeInteraction interface, owns its NPC bodies, constraints, blade and limb policy. ROCK keeps the shared mechanisms (native allocation, callback lifetime, hand and weapon authority, grab execution, native safety) and has no NPC settings.
 - **World drawing**: RPS UI Framework. ROCK draws through it (`visual/WorldDrawClient.cpp`, `visual/AmmoCounters.cpp`) and has no renderer.
 - **Reload and manual-cycle animation**: PAPER.
-- **Settings screens**: Mods Config FO4 VR, from ROCK's `spec.json`. It writes `ROCK.toml` in place and ROCK's file watcher reloads it. ROCK owns only the setup wizard, which Mods Config opens through ROCK's client (`src/mods-config/`). Refresh `ModsConfigFO4Api.h` from Mods Config's `src/api/` and never edit it; copying it is how Mods Config's API is used, unlike ROCK's own headers. Nothing else writes ROCK's settings files; `ROCK_Developer.toml` is edited by hand.
+- **Settings screens**: Mods Config FO4 VR, from ROCK's `spec.json`. It writes `ROCK.toml` in place and ROCK's file watcher reloads it. ROCK owns only the setup wizard, which Mods Config opens through ROCK's client (`src/mods-config/`). Refresh `ModsConfigFO4Api.h` from Mods Config's `src/api/` and never edit it; copying it is how Mods Config's API is used, unlike ROCK's own headers. Its Developer page, shown with Show Developer Pages, edits `ROCK_Developer.toml` and is generated from the catalog. Nothing else writes ROCK's settings files.
 
 ## Invariants
 
@@ -214,7 +214,7 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp` for engine math. `
 
 ### Configuration
 
-- `src/config/SettingMetadata.h` is the single source of every option (table, key, owning file, category, help); `RockConfigLoad.cpp` gives its type and default. Each option belongs to exactly one of `ROCK.toml` (players) and `ROCK_Developer.toml` (developer overrides only). Startup fails when catalog and loader disagree.
+- `src/config/SettingMetadata.h` is the single source of every option (table, key, owning file, category, help, and a developer number's slider range when its clamp is not declared); `RockConfigLoad.cpp` gives its type, default and declared clamp (the `readClamped*` helpers). Each option belongs to exactly one of `ROCK.toml` (players) and `ROCK_Developer.toml` (developer overrides only). Startup fails when catalog and loader disagree.
 - After any catalog change, regenerate `data/config/*_example.toml` with `ROCKConfigurationStoreTests --write-examples data/config`; the test fails when they differ. ROCK never reads the examples.
 - RPS Framework's settings store reads, organizes and writes the files (`src/config/RockSettings.cpp`). A file that does not parse is never rewritten, keeps its last values and refuses writes until fixed. Both files reload while the game runs.
 - Old `ROCK.ini` files migrate once, only when `ROCK.toml` is missing, through the frozen table `src/config/LegacyIniMigrationTable.inl` (never regenerated), and are deleted only after the TOML files read back.
