@@ -512,11 +512,17 @@ namespace rock::storage_interaction
     try {
         if (!request)
             return api::Status::InvalidArgument;
-        if (request->size != sizeof(*request))
+        // A 2.0 record ends before flags: it suppresses everything.
+        if (request->size != sizeof(*request) && request->size != contract::kShoulderRoutingSize20)
             return api::Status::InvalidSize;
         if (request->version != 1)
             return api::Status::UnsupportedVersion;
         if (!policy::validRouting(request->handMask, request->leaseFrames))
+            return api::Status::InvalidArgument;
+        contract::ShoulderRouting routing{};
+        std::memcpy(&routing, request, request->size);
+        constexpr auto knownFlags = static_cast<std::uint32_t>(contract::ShoulderRoutingFlag::KeepLooseItemStash);
+        if (routing.flags & ~knownFlags)
             return api::Status::InvalidArgument;
         const auto access = authorize(owner);
         if (access != api::Status::Ok)
@@ -524,7 +530,7 @@ namespace rock::storage_interaction
         provider::Publication frame;
         if (!provider::runtime::copyPublication(frame) || !frame.providerReady || frame.menuBlocking)
             return api::Status::NotReady;
-        if (!sameGeneration(*request, frame))
+        if (!sameGeneration(routing, frame))
             return api::Status::GenerationMismatch;
         Routing* slot{};
         for (auto& entry : service.routes) {
@@ -539,14 +545,14 @@ namespace rock::storage_interaction
             if (!entry.owner && !slot)
                 slot = &entry;
         }
-        if (!request->handMask) {
+        if (!routing.handMask) {
             if (slot && slot->owner == owner)
                 *slot = {};
             return api::Status::Ok;
         }
         if (!slot)
             return api::Status::CapacityFull;
-        *slot = Routing{ owner, *request, frame.frameIndex + request->leaseFrames };
+        *slot = Routing{ owner, routing, frame.frameIndex + routing.leaseFrames };
         return api::Status::Ok;
     } catch (...) {
         return api::Status::InternalError;
@@ -566,7 +572,7 @@ namespace rock::storage_interaction
         return api::Status::Ok;
     }
 
-    bool blocksShoulder(bool left)
+    bool blocksShoulder(bool left, ShoulderStash kind)
     {
         provider::Publication frame;
         if (!provider::runtime::copyPublication(frame))
@@ -578,7 +584,9 @@ namespace rock::storage_interaction
                     route = {};
                     continue;
                 }
-                if (policy::allowsHand(route.request.handMask, left))
+                const bool keepsLoose = (route.request.flags &
+                    static_cast<std::uint32_t>(contract::ShoulderRoutingFlag::KeepLooseItemStash)) != 0;
+                if (policy::allowsHand(route.request.handMask, left) && !(kind == ShoulderStash::LooseItem && keepsLoose))
                     return true;
             }
         return false;

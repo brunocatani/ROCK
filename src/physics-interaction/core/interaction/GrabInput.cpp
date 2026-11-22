@@ -2138,7 +2138,7 @@ namespace rock
 
             const auto stashEligibility = !consumeCandidateActive
                 ? shoulder_stash::evaluateEligibility(shoulder_stash::EligibilityInput{
-                      .enabled = g_rockConfig.rockShoulderStashEnabled && !storage_interaction::blocksShoulder(isLeft),
+                      .enabled = g_rockConfig.rockShoulderStashEnabled && !storage_interaction::blocksShoulder(isLeft, storage_interaction::ShoulderStash::LooseItem),
                       .peerHoldingSameObject = peerHoldingSameObject,
                       .heldRef = heldRefForGameplay,
                       .savedState = &hand.getSavedObjectState(),
