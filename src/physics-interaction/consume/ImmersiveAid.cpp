@@ -24,11 +24,10 @@ namespace rock::immersive_aid
         return file ? classify(file->GetFilename(), base->GetFormID() & 0x00FF'FFFFu) : Injector::None;
     }
 
-    mouth_consume::Decision evaluate(RE::hknpWorld* world, const BodyBoneColliderSet& bodyColliders, const Hand& hand,
-        bool isLeft, std::uint64_t collisionGeneration, const game_frame_timing_policy::GameFrameTiming& timing,
-        mouth_consume::RuntimeState& state)
+    HeldMeshBodyTouch findHeldMeshBodyTouch(RE::hknpWorld* world, const BodyBoneColliderSet& bodyColliders,
+        const Hand& hand, bool isLeft, bool stopAtFirst)
     {
-        mouth_consume::Decision decision{};
+        HeldMeshBodyTouch touch{};
         std::span<const GrabLocalTriangle> triangles;
         RE::NiTransform meshWorld{};
         const HeldContactMeshCache* meshCache = nullptr;
@@ -36,23 +35,17 @@ namespace rock::immersive_aid
         constexpr std::size_t kMaxContactTriangles = HeldContactMeshCache::maximumTriangles;
         if (!world || !bodyColliders.hasBodies() || bodyColliders.isRebuildPendingAtomic() ||
             !hand.getHeldBodyContactMesh(world, triangles, meshWorld, meshCache) ||
-            triangles.size() > kMaxContactTriangles || !timing.valid || timing.discontinuity || timing.menuPaused) {
+            triangles.size() > kMaxContactTriangles || !meshCache || !meshCache->valid) {
             if (triangles.size() > kMaxContactTriangles) {
-                ROCK_LOG_SAMPLE_WARN(Hand, 5000, "Immersive aid contact unavailable: mesh has {} triangles (limit {})",
+                ROCK_LOG_SAMPLE_WARN(Hand, 5000, "Held body contact unavailable: mesh has {} triangles (limit {})",
                     triangles.size(), kMaxContactTriangles);
             }
-            mouth_consume::resetRuntime(state);
-            return decision;
+            return touch;
         }
-
-        if (!meshCache || !meshCache->valid) {
-            mouth_consume::resetRuntime(state);
-            return decision;
-        }
+        touch.available = true;
         const auto& minimum = meshCache->minimum;
         const auto& maximum = meshCache->maximum;
 
-        auto zone = body_zone::BodyZoneKind::Unknown;
         const auto count =
             (std::min)(bodyColliders.getBodyCount(), static_cast<std::uint32_t>(kBodyBoneColliderBodyCount));
         for (std::uint32_t index = 0; index < count; ++index) {
@@ -76,10 +69,36 @@ namespace rock::immersive_aid
             const float radius = metadata.radiusGameUnits * std::abs(bodyWorld.scale / meshWorld.scale);
             if (capsuleTouchesMesh(triangles, minimum, maximum, a, b, radius,
                     meshCache->indexed ? &meshCache->index : nullptr)) {
-                zone = metadata.zone;
-                decision.mouthCenterGame = bodyWorld.translate;
-                break;
+                if (touch.firstZone == body_zone::BodyZoneKind::Unknown) {
+                    touch.firstZone = metadata.zone;
+                    touch.firstBodyCenterGame = bodyWorld.translate;
+                }
+                touch.zoneMask |= 1u << static_cast<std::uint32_t>(metadata.zone);
+                if (stopAtFirst) {
+                    break;
+                }
             }
+        }
+        return touch;
+    }
+
+    mouth_consume::Decision evaluate(RE::hknpWorld* world, const BodyBoneColliderSet& bodyColliders, const Hand& hand,
+        bool isLeft, std::uint64_t collisionGeneration, const game_frame_timing_policy::GameFrameTiming& timing,
+        mouth_consume::RuntimeState& state)
+    {
+        mouth_consume::Decision decision{};
+        if (!timing.valid || timing.discontinuity || timing.menuPaused) {
+            mouth_consume::resetRuntime(state);
+            return decision;
+        }
+        const auto touch = findHeldMeshBodyTouch(world, bodyColliders, hand, isLeft, true);
+        if (!touch.available) {
+            mouth_consume::resetRuntime(state);
+            return decision;
+        }
+        const auto zone = touch.firstZone;
+        if (zone != body_zone::BodyZoneKind::Unknown) {
+            decision.mouthCenterGame = touch.firstBodyCenterGame;
         }
 
         const bool wasCandidate = state.candidate;

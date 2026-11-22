@@ -5,9 +5,9 @@ state, hand reservations, held placement, default grab poses, guided held
 objects, reference and power-armor queries, and grab events.
 
 Interface `Grab`, major 2, minor 2 (2.1, ROCK 1.0.3, adds
-`requestInventoryItemGrab`; 2.2, unreleased, adds `requestHeldInventoryStash`).
-A mod that calls `requestHeldInventoryStash` needs ROCK with Grab 2.2; request
-minor 1 when you do not call it. Mods built against 2.0 and 2.1 keep working. Major 1 and its minors are refused. The
+`requestInventoryItemGrab`; 2.2, unreleased, adds `requestHeldInventoryStash`
+and `getHeldBodyTouch`). A mod that calls either needs ROCK with Grab 2.2;
+request minor 1 when you do not call them. Mods built against 2.0 and 2.1 keep working. Major 1 and its minors are refused. The
 References interface (10) is retired; its queries are here. Permissions:
 `Read` (1), `Write` (2).
 
@@ -48,6 +48,19 @@ and surface latches are never held objects, so they are never stashed. When
 native pickup refuses the item after the hand let go, the command is
 `Rejected` with `TargetUnavailable` and the reference stays in the world at
 the hand. ROCK shows no notification for it.
+
+## Held object touching the body (game thread, Read)
+
+`getHeldBodyTouch(owner, hand, touch)` (2.2) reports which parts of the
+player's body the visual mesh of the loose reference `hand` holds touches this
+frame, with the overlap test ROCK's immersive aid uses against the player's
+body colliders. `zoneMask` has bit `1 << collision::BodyZoneKind` set for each
+touched zone; the holding hand's own zone never counts. `referenceFormId` is
+the held reference, `frameIndex` the publication's `Sample` frame and
+`gripSequence` the hand's `HandInteractionState` grip sequence, so a caller
+timing a press can tell a new grab from the same one. `HandUnavailable` while
+the hand holds no loose reference; `TargetUnavailable` while its mesh or the
+body colliders are not ready.
 
 ## Hand state (Read)
 
@@ -165,6 +178,7 @@ publication identity.
 | `InventoryGrabRequest` | `requestInventoryGrab` | `hand`, `baseFormId`, the three guard generations |
 | `InventoryItemGrabRequest` | `requestInventoryItemGrab` (2.1) | `hand`, `baseFormId`, `uniqueId`, the three guard generations |
 | `HeldInventoryStashRequest` | `requestHeldInventoryStash` (2.2) | `hand`, `targetFormId`, the three guard generations |
+| `HeldBodyTouch` | `getHeldBodyTouch` (2.2) | `hand`, `referenceFormId`, `frameIndex`, `gripSequence`, `zoneMask` |
 | `InteractionCommandResult` | `getInteractionCommandResult` | `ownerToken`, `commandId`, `kind` (`InteractionCommandKind`), `state` (`InteractionCommandState`: `Queued`, `Succeeded`, `Rejected`, `Cancelled`), `failure` and `failureStage` (`InteractionFailure`), `hand`, `targetFormId`, `targetBodyId`, `frameIndex`, the three generations, `stage` (`CommandStage`: `Accepted`, `Queued`, `Committed`, `Applied`, `Terminal`), `acceptedFrame`, `committedFrame`, `appliedFrame` |
 | `ReleasedObjectDrive`, `ReleasedObjectProgress` | `driveReleasedObject` | `reference` (`ReferenceKey`), `expectedBase`, `approachSeconds`, `rootWorld`; `distanceGame`, `angleRadians` |
 | `HandInteractionState` | `getHandInteractionState` | `frameIndex`, `hand`, `phase` (`HandInteractionPhase`), `targetKind` (`BodyContactTargetKind`), `flags` (`HandInteractionFlag`), `reservedTargetIdentity`, `targetFormId`, `primaryBodyId`, `heldBodyCount`, `heldBodyIds[8]`, `stateSequence`, `targetSequence`, `gripSequence`, `releaseSequence`, the four generations, `surfaceAnchorGame`, `surfaceGripMode` |

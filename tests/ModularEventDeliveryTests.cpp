@@ -103,6 +103,12 @@ namespace rock::provider::runtime
         return api::Status::NotReady;
     }
 
+    api::Status getHeldBodyTouch(api::OwnerToken, api::Hand, api::grab::HeldBodyTouch&)
+    {
+        assert(false);
+        return api::Status::NotReady;
+    }
+
     api::Status queryPowerArmorTarget(std::uint64_t, const api::grab::ReferenceQuery& query,
         api::grab::PowerArmorTarget& target)
     {

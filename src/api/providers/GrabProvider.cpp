@@ -109,6 +109,14 @@ namespace rock::api::grab
                 [&] { return p::runtime::requestHeldInventoryStash(owner, *request, *outCommandId); });
         }
 
+        Status ROCK_CALL getHeldBodyTouch(OwnerToken owner, Hand hand, HeldBodyTouch* outTouch) noexcept
+        {
+            if (const auto s = checkOutput(outTouch); s != Status::Ok)
+                return s;
+            return invoke(owner, kInterfaceId, 1, true,
+                [&] { return p::runtime::getHeldBodyTouch(owner, hand, *outTouch); });
+        }
+
         Status ROCK_CALL getInteractionCommandResult(OwnerToken owner, std::uint64_t commandId,
             InteractionCommandResult* outResult) noexcept
         {
@@ -332,6 +340,7 @@ namespace rock::api::grab
             &driveReleasedObject,
             &requestInventoryItemGrab,
             &requestHeldInventoryStash,
+            &getHeldBodyTouch,
         };
         return value;
     }

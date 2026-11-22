@@ -7,6 +7,7 @@
 //                           socket, and reads the held object's pose back
 #include "RE/Havok/hknpBody.h"
 #include "api/ProviderRuntimeServices.h"
+#include "physics-interaction/consume/ImmersiveAid.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
@@ -52,6 +53,38 @@ namespace rock
         out.rootWorld.translate[1] = root.translate.y;
         out.rootWorld.translate[2] = root.translate.z;
         out.rootWorld.scale = root.scale;
+        return api::Status::Ok;
+    }
+
+    api::Status PhysicsInteraction::getHeldBodyTouch(api::OwnerToken owner, api::Hand which,
+        api::grab::HeldBodyTouch& out) const
+    {
+        out = {};
+        if (which != api::Hand::Left && which != api::Hand::Right)
+            return api::Status::InvalidArgument;
+        auto* world = _lifecycle.cachedHknpWorld;
+        if (!isProviderReady() || !world)
+            return api::Status::NotReady;
+        api::grab::HandInteractionState observed;
+        const auto status = provider::runtime::getHandInteractionState(owner, which, observed);
+        if (status != api::Status::Ok)
+            return status;
+        const bool isLeft = which == api::Hand::Left;
+        const auto& hand = isLeft ? _leftHand : _rightHand;
+        if (!hand.isHolding() || !hand.getHeldRef() || hand.getHeldRef()->GetFormID() != observed.targetFormId)
+            return api::Status::HandUnavailable;
+        immersive_aid::HeldMeshBodyTouch touch{};
+        {
+            havok_world_lock::ScopedWorldReadLock lock(world);
+            touch = immersive_aid::findHeldMeshBodyTouch(world, _bodyBoneColliders, hand, isLeft, false);
+        }
+        if (!touch.available)
+            return api::Status::TargetUnavailable;
+        out.hand = which;
+        out.referenceFormId = observed.targetFormId;
+        out.frameIndex = provider::runtime::sample().frameIndex;
+        out.gripSequence = observed.gripSequence;
+        out.zoneMask = touch.zoneMask;
         return api::Status::Ok;
     }
 

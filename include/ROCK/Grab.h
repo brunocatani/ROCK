@@ -210,6 +210,27 @@ namespace rock::api::grab {
         std::uint32_t providerGeneration{ 0 };
     };
 
+    /*
+     * 2.2. Which parts of the player's body the mesh of the loose reference
+     * hand holds touches this frame: the overlap test ROCK's immersive aid
+     * uses, between the held object's visual mesh and the player's body
+     * colliders. zoneMask has bit (1 << collision::BodyZoneKind) set for each
+     * touched zone; the holding hand's own zone never counts. frameIndex is
+     * the current publication's Sample frameIndex; gripSequence is the hand's
+     * HandInteractionState gripSequence.
+     */
+    struct HeldBodyTouch
+    {
+        std::uint32_t size{ sizeof(HeldBodyTouch) };
+        std::uint32_t version{ 1 };
+        Hand hand{ Hand::None };
+        std::uint32_t referenceFormId{ 0 };
+        std::uint64_t frameIndex{ 0 };
+        std::uint64_t gripSequence{ 0 };
+        std::uint32_t zoneMask{ 0 };
+        std::uint32_t reserved{ 0 };
+    };
+
     struct InteractionCommandResult
     {
         std::uint32_t size{ sizeof(InteractionCommandResult) };
@@ -763,6 +784,10 @@ namespace rock::api::grab {
         // 2.2. Game thread (Write). An InteractionCommandKind::ForceRelease
         // command: poll it with getInteractionCommandResult.
         Status(ROCK_CALL* requestHeldInventoryStash)(OwnerToken owner, const HeldInventoryStashRequest* request, std::uint64_t* outCommandId) noexcept;
+        // 2.2. Game thread (Read). HandUnavailable while the hand holds no
+        // loose reference; TargetUnavailable while its mesh or the body
+        // colliders are not ready.
+        Status(ROCK_CALL* getHeldBodyTouch)(OwnerToken owner, Hand hand, HeldBodyTouch* outTouch) noexcept;
     };
 }
 

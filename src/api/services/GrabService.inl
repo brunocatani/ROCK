@@ -3,6 +3,12 @@
         const auto access=s_physicsInteraction.borrow();const auto* pi=access.get();
         return pi?pi->getHeldObjectPose(owner,hand,output):api::Status::NotReady;
     }
+    api::Status getHeldBodyTouch(api::OwnerToken owner, api::Hand hand, api::grab::HeldBodyTouch& output)
+    {
+        const auto access = s_physicsInteraction.borrow();
+        const auto* pi = access.get();
+        return pi ? pi->getHeldBodyTouch(owner, hand, output) : api::Status::NotReady;
+    }
     api::Status setHeldObjectTarget(api::OwnerToken owner,const api::grab::HeldObjectTarget& request) {
         const auto access=s_physicsInteraction.borrow();
         auto* pi=access.get();return pi?pi->setHeldObjectTarget(owner,request):api::Status::NotReady;
