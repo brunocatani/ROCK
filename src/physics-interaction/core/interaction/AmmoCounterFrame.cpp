@@ -1,7 +1,7 @@
 // Ammo counters: one per drawn weapon, from this frame's publication (hand roles,
 // per-slot rounds). Minimal and Immersive stay at the weapon's firing grip on its
 // palm side whichever hands hold it; Vanilla sits on the back of a hand holding it.
-// Each counter also names the slot's equipped ammo form below its numbers.
+// Each counter also names the slot's equipped ammo form beside its numbers.
 #include "api/ProviderRuntimeServices.h"
 #include "api/ProviderStatePolicy.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
@@ -173,13 +173,6 @@ namespace rock
             !runtime.localMenuBlocking && runtime.weaponDrawn && nodes && nodes->HmdNode &&
             provider::runtime::copyPublication(publication) && publication.frameIndex == runtime.frameIndex) {
             const auto head = toPoint(nodes->HmdNode->world.translate);
-            const auto viewForward = toPoint(
-                transform_math::rotateLocalVectorToWorld(nodes->HmdNode->world.rotate, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }));
-            const auto label = [&](ammo_counters::HandCounter& counter, const std::uint32_t slot) {
-                counter.caliber = caliberFor(slot);
-                counter.captionInView =
-                    counter.shown && ammo_counter_pose::captionInView(counter.pose.caption, head, viewForward);
-            };
             using WeaponFlag = api::weapon::WeaponStateFlag;
             constexpr auto required =
                 static_cast<std::uint32_t>(WeaponFlag::AmmoKnown) | static_cast<std::uint32_t>(WeaponFlag::WeaponDrawn);
@@ -259,7 +252,7 @@ namespace rock
                     counter.loaded = state.loadedRounds;
                     counter.reserve = state.reserveRounds;
                     counter.chamber = provider::chamberMarker(slot);
-                    label(counter, slot);
+                    counter.caliber = caliberFor(slot);
                     if (!counter.shown)
                         hidden("vanilla-pose");
                     continue;
@@ -305,15 +298,16 @@ namespace rock
                 const auto weaponUp =
                     transform_math::rotateLocalVectorToWorld(weaponWorld.rotate, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
                 auto& counter = hands[index];
+                counter.caliber = caliberFor(slot);
                 counter.pose = style == ammo_counters::Style::Immersive
                     ? ammo_counter_pose::resolveImmersive(toPoint(palm), toPoint(weaponRight), toPoint(weaponUp),
                           isLeft, head)
-                    : ammo_counter_pose::resolve(toPoint(palm), toPoint(weaponRight), toPoint(weaponUp), isLeft, head);
+                    : ammo_counter_pose::resolve(toPoint(palm), toPoint(weaponRight), toPoint(weaponUp), isLeft, head,
+                          ammo_counters::labels() && counter.caliber[0] != '\0');
                 counter.shown = counter.pose.valid;
                 counter.loaded = state.loadedRounds;
                 counter.reserve = state.reserveRounds;
                 counter.chamber = provider::chamberMarker(slot);
-                label(counter, slot);
             }
         }
         // The counters replace the vanilla one only while RPS UI shows them.

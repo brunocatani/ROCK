@@ -14,11 +14,11 @@
  * firing grip, drawn as RPS UI number overlays. RPS UI is optional; without
  * it nothing is drawn here and the vanilla counter stays.
  *
- * Under the numbers every style names the weapon's ammunition (its ammo
- * form's name) as RPS UI world text, so the player can tell which ammo the
- * weapon takes. Number overlays carry only numbers, and world text is the
- * only text RPS UI draws: block glyphs anchored to a world point, sized in
- * eye pixels.
+ * Every style names the weapon's ammunition (its ammo form's name) as the
+ * overlays' own label (RPS UI NumberOverlay 2.1), in the digits' face, color
+ * and fade: the HUD styles beside the reserve row in the chamber column,
+ * Minimal after the reserve rounds. With RPS UI 2.0 the counters show no
+ * caliber.
  */
 namespace rock::ammo_counters
 {
@@ -55,10 +55,13 @@ namespace rock::ammo_counters
         api::weapon::ChamberMarker chamber{ api::weapon::ChamberMarker::None };
         ammo_counter_pose::Pose pose{};
         // The weapon's caliber label, owned by the caller for the frame; null
-        // or empty for none. Drawn only while captionInView.
+        // or empty for none. Minimal's pose must be resolved labelled when
+        // labels() and this is not empty.
         const char* caliber{ nullptr };
-        bool captionInView{ false };
     };
+
+    // Game thread. RPS UI draws overlay labels (NumberOverlay 2.1 or later).
+    [[nodiscard]] bool labels() noexcept;
 
     // Game thread, once per presented frame. Indexed by hand: [0] right,
     // [1] left. hudColor: the game's HUD color, 0..1 per channel, used by the

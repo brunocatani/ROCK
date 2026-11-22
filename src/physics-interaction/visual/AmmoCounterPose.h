@@ -29,9 +29,12 @@
  * number overlays: width/height is the overlay contract's aspect and the
  * digits fill 85% of the height, centered in the panel.
  *
- * Every style also places a caption point: the top center of the caliber
- * label, just below the numbers on the counter's own plane. RPS UI draws
- * world text from that point downwards in eye pixels.
+ * The caliber is an RPS UI number-overlay label, drawn inside the counter's
+ * own panels: the HUD styles put it in the chamber column beside the reserve
+ * row, so their panels are unchanged. Minimal puts it after the reserve
+ * rounds: RPS UI then draws the reserve at kLabelNumberFill of its panel's
+ * height, left aligned, so the labelled reserve panel grows to keep the
+ * reserve digits' size and starts where the unlabelled panel started.
  */
 namespace rock::ammo_counter_pose
 {
@@ -69,15 +72,9 @@ namespace rock::ammo_counter_pose
     inline constexpr float kVanillaFacingHidden = 0.0f;
     inline constexpr float kVanillaFacingFull = 0.17f;
 
-    // The HUD styles fit their block to 92% of the panel height.
-    inline constexpr float kHudBlockHalfHeight = 0.46f;
-    // Gap between the numbers and the caliber label, in panel heights.
-    inline constexpr float kCaptionGap = 0.08f;
-    // RPS UI keeps world text inside the eye, so an anchor outside the view
-    // would pin the label to the eye's edge. The label is drawn only while
-    // its point lies within 35 degrees of the view direction, which keeps
-    // even a long label inside both eyes' fields of view.
-    inline constexpr float kCaptionViewCosine = 0.819f;
+    // RPS UI NumberOverlay 2.1 kPlainLabelNumberFill: a labelled Plain
+    // overlay's digit cells take this share of its height.
+    inline constexpr float kLabelNumberFill = 0.42f;
 
     struct Panel
     {
@@ -96,8 +93,6 @@ namespace rock::ammo_counter_pose
         Panel reserve{};
         // Immersive and Vanilla: one panel holds the whole counter.
         Panel counter{};
-        // Top center of the caliber label.
-        Point caption{};
         float opacity{ 0.0f };
         bool valid{ false };
     };
@@ -222,9 +217,10 @@ namespace rock::ammo_counter_pose
     }
 
     // Minimal. palm: the anchored firing palm in world space. weaponRight and
-    // weaponUp: the weapon's +X and +Z in world space.
+    // weaponUp: the weapon's +X and +Z in world space. labelled: the reserve
+    // overlay carries the caliber label.
     [[nodiscard]] inline Pose resolve(const Point& palm, const Point& weaponRight, const Point& weaponUp,
-        const bool firingHandIsLeft, const Point& head) noexcept
+        const bool firingHandIsLeft, const Point& head, const bool labelled = false) noexcept
     {
         using namespace detail;
         WeaponInside plane{};
@@ -236,14 +232,18 @@ namespace rock::ammo_counter_pose
         pose.front = plane.front;
         pose.loaded = { offset(plane.anchor, pose.right, kLoadedRight, pose.up, 0.0f), kLoadedWidth,
             kLoadedWidth / kNumberAspect };
-        const float reserveDrop = (pose.loaded.height - kReserveWidth / kNumberAspect) * kDigitHeightFraction * 0.5f;
-        pose.reserve = { offset(plane.anchor, pose.right, kReserveRight, pose.up, -reserveDrop), kReserveWidth,
-            kReserveWidth / kNumberAspect };
-        // Centered under both numbers, below the loaded digits' baseline.
-        const float blockCenter =
-            ((kLoadedRight - kLoadedWidth * 0.5f) + (kReserveRight + kReserveWidth * 0.5f)) * 0.5f;
-        pose.caption = offset(plane.anchor, pose.right, blockCenter, pose.up,
-            -pose.loaded.height * (kDigitHeightFraction * 0.5f + kCaptionGap));
+        // Digit cells centered in their panels; the reserve's bottom meets the loaded one's.
+        const float reserveCell = kReserveWidth / kNumberAspect * kDigitHeightFraction;
+        const float reserveDrop = (pose.loaded.height * kDigitHeightFraction - reserveCell) * 0.5f;
+        if (labelled) {
+            const float height = reserveCell / kLabelNumberFill;
+            const float width = height * kNumberAspect;
+            const float left = kReserveRight - kReserveWidth * 0.5f;
+            pose.reserve = { offset(plane.anchor, pose.right, left + width * 0.5f, pose.up, -reserveDrop), width, height };
+        } else {
+            pose.reserve = { offset(plane.anchor, pose.right, kReserveRight, pose.up, -reserveDrop), kReserveWidth,
+                kReserveWidth / kNumberAspect };
+        }
         pose.opacity = kMaxOpacity * plane.facing;
         pose.valid = true;
         return pose;
@@ -262,8 +262,6 @@ namespace rock::ammo_counter_pose
         pose.up = plane.up;
         pose.front = plane.front;
         pose.counter = { plane.anchor, kImmersivePanelHeight * kNumberAspect, kImmersivePanelHeight };
-        pose.caption = offset(plane.anchor, pose.right, 0.0f, pose.up,
-            -kImmersivePanelHeight * (kHudBlockHalfHeight + kCaptionGap));
         pose.opacity = kImmersiveMaxOpacity * plane.facing;
         pose.valid = true;
         return pose;
@@ -305,8 +303,6 @@ namespace rock::ammo_counter_pose
             return {};
         const float height = quadHeight * kVanillaPanelHeightOfQuad;
         pose.counter = { center, height * kNumberAspect, height };
-        // Below the block, still on the quad: the panel takes 76% of its height.
-        pose.caption = offset(center, pose.right, 0.0f, pose.up, -height * (kHudBlockHalfHeight + kCaptionGap));
         Point toHead{ head[0] - center[0], head[1] - center[1], head[2] - center[2] };
         if (!normalize(toHead))
             return {};
@@ -315,16 +311,5 @@ namespace rock::ammo_counter_pose
         pose.opacity = std::clamp(opacity, 0.0f, 1.0f) * facing;
         pose.valid = true;
         return pose;
-    }
-
-    // Whether the caliber label at point is near enough the view direction
-    // (viewForward, from head) to be drawn; see kCaptionViewCosine.
-    [[nodiscard]] inline bool captionInView(const Point& point, const Point& head, Point viewForward) noexcept
-    {
-        using namespace detail;
-        Point toPoint{ point[0] - head[0], point[1] - head[1], point[2] - head[2] };
-        if (!finite(point) || !finite(head) || !normalize(toPoint) || !normalize(viewForward))
-            return false;
-        return dot(toPoint, viewForward) >= kCaptionViewCosine;
     }
 }

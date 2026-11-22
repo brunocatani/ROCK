@@ -148,7 +148,7 @@ namespace rock::config
             "look to show, in the game's HUD color and bracket frame, loaded over reserve.\nVanilla: the game's "
             "counter on the back of the hand holding the weapon, in HUD color, always shown (mirrored on the left "
             "hand).\nEvery style replaces the game's counter with one counter per drawn weapon and names the "
-            "weapon's ammunition under the numbers. The counters are drawn through RPS UI Framework.",
+            "weapon's ammunition beside the numbers. The counters are drawn through RPS UI Framework.",
             api::configuration::Group::Consumer },
         { "WeaponRecoil", "ImmersiveRecoil", "05. Weapon Recoil",
             "Immersive Recoil\nUses the recoil strengths below, for either hand and in power armor.\nFalse: the "

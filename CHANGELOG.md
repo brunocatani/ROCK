@@ -7,10 +7,12 @@
 - **For mod authors: Grab 2.2.** `requestHeldInventoryStash` puts the loose item a
   hand holds into the player's inventory the way the shoulder stash does, stash
   converters and item scripts included. Mods built for 2.0 and 2.1 keep working.
-- **The ammo counter names your weapon's ammunition.** Minimal, Immersive and
-  Vanilla show the caliber under the rounds, taken from the ammo the weapon
-  fires (".38", "10mm", "Fusion Cell"), so you can tell at a glance whether ammo
-  you find fits your gun. It follows mods that change a weapon's caliber.
+- **The ammo counter names your weapon's ammunition.** Immersive and Vanilla show
+  the caliber beside the reserve rounds, with the chamber cartridge above it;
+  Minimal shows it after the reserve rounds. It is drawn in the counter's own
+  face, color and fade, taken from the ammo the weapon fires (".38", "10mm",
+  "Fusion Cell"), and follows mods that change a weapon's caliber. It needs RPS
+  UI Framework's next release; with RPS UI 2.0 the counters show no caliber.
 
 ### Fixed
 

@@ -50,6 +50,20 @@ int main()
     const float reserveBottom = right.reserve.center[2] - right.reserve.height * kDigitHeightFraction * 0.5f;
     ok &= expect("loaded and reserve digits share a baseline", near(loadedBottom, reserveBottom));
 
+    // With the caliber label RPS UI draws the reserve's cells at
+    // kLabelNumberFill of its panel, left aligned: the panel grows so the cells
+    // keep their size and baseline, and starts where the unlabelled one did.
+    const auto labelled = resolve(rightPalm, weaponRight, weaponUp, false, head, true);
+    const float cell = right.reserve.height * kDigitHeightFraction;
+    ok &= expect("a labelled reserve keeps its digit size",
+        near(labelled.reserve.height * kLabelNumberFill, cell) &&
+            near(labelled.reserve.width / labelled.reserve.height, kNumberAspect));
+    ok &= expect("a labelled reserve keeps the shared baseline",
+        near(labelled.reserve.center[2] - labelled.reserve.height * kLabelNumberFill * 0.5f, loadedBottom));
+    // Panel right runs along world -Y here.
+    ok &= expect("a labelled reserve starts where the unlabelled panel started",
+        near(labelled.reserve.center[1] + labelled.reserve.width * 0.5f, right.reserve.center[1] + right.reserve.width * 0.5f));
+
     // Look-at fade: facing from 45 degrees is full, from beyond 60 hidden.
     const Point anchor{ rightPalm[0] - kOutward, rightPalm[1], rightPalm[2] };
     ok &= expect("a counter facing the head is fully visible",
