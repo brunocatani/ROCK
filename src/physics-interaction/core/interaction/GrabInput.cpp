@@ -5,6 +5,7 @@
 #include "physics-interaction/consume/ImmersiveAid.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/grab/GlobalSurfaceGrabPolicy.h"
+#include "physics-interaction/native/player/NativeHolotapePlayback.h"
 #include "physics-interaction/native/scene/HeldScenePresentation.h"
 #include "physics-interaction/weapon/authored/VanillaWeaponGripFrame.h"
 #include "physics-interaction/weapon/classification/WeaponTypePolicy.h"
@@ -2072,6 +2073,64 @@ namespace rock
                 const char* logAction = triggeredByInput ? "trigger" : "grip-zone";
                 if (equipHeldWeaponFromHand(triggeredByInput, requestReason, logAction)) {
                     return;
+                }
+            }
+
+            /*
+             * The trigger of the hand holding a holotape plays it: the tape
+             * goes to the inventory through the shoulder stash's transfer
+             * (same eligibility, without the shoulder gesture or its setting),
+             * then starts like a wand-activated world holotape. A refused
+             * transfer drops the tape as an honest release.
+             */
+            if (heldWeaponEquipTriggerPressedEdge && !heldLooseGrenade && !hand.isHoldingLooseWeapon() &&
+                heldRefForGameplay && native_holotape_playback::isHolotape(heldRefForGameplay->GetObjectReference())) {
+                const auto playEligibility = shoulder_stash::evaluateEligibility(shoulder_stash::EligibilityInput{
+                    .enabled = true,
+                    .peerHoldingSameObject = peerHoldingSameObject,
+                    .heldRef = heldRefForGameplay,
+                    .savedState = &hand.getSavedObjectState(),
+                });
+                if (!playEligibility.eligible) {
+                    ROCK_LOG_INFO(Hand, "{} hand trigger play refused: formID={:08X} reason={}", hand.handName(),
+                        heldRefForGameplay->GetFormID(), shoulder_stash::eligibilityReasonName(playEligibility.reason));
+                } else {
+                    triggerEquipIntent = {};
+                    hand.captureHeldReleaseMotion(hknp, handInput.rawHandWorld, frame.timing);
+                    auto* heldRef = heldRefForGameplay;
+                    std::uint32_t heldFormID = heldRef->GetFormID();
+                    const std::uint32_t primaryBodyId = hand.getSavedObjectState().bodyId.value;
+                    auto releaseContext = makeGrabReleaseContext(hand, isLeft);
+                    releaseContext.disposition = GrabReleaseDisposition::PendingInventoryTransfer;
+                    releaseContext.reason = "trigger-play-pending-transfer";
+                    auto releaseOutcome =
+                        hand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
+                    if (releaseOutcome.released) {
+                        releaseObject(heldRef, claimOwnerForHand(isLeft));
+                        const auto transferResult = shoulder_stash::transferToPlayerInventory(
+                            shoulder_stash::TransferInput{ .heldRef = releaseOutcome.takeRetainedReference() });
+                        if (heldFormID == 0 && transferResult.formID != 0) {
+                            heldFormID = transferResult.formID;
+                        }
+                        auto playResult = native_holotape_playback::PlayResult::Unavailable;
+                        if (transferResult.success) {
+                            dispatchHeldObjectEventByFormID(GrabEventType::Stashed, nullptr, heldFormID, primaryBodyId,
+                                isLeft);
+                            showShoulderStashCollectedNotification(transferResult, heldFormID);
+                            playResult = native_holotape_playback::play(transferResult.baseForm);
+                        } else {
+                            hand.applyReleaseVelocitySnapshot(hknp, releaseOutcome.velocity);
+                            dispatchHeldObjectEventByFormID(GrabEventType::Released,
+                                transferResult.untransferredRef.get(), heldFormID, primaryBodyId, isLeft);
+                        }
+                        ROCK_LOG_INFO(Hand,
+                            "{} hand trigger play formID={:08X} stashed={} transferReason={} play={}", hand.handName(),
+                            heldFormID, transferResult.success ? "yes" : "no",
+                            shoulder_stash::transferReasonName(transferResult.reason),
+                            transferResult.success ? native_holotape_playback::playResultName(playResult) : "skipped");
+                        clearGameplayCandidatesForHand(hand, isLeft);
+                        return;
+                    }
                 }
             }
 

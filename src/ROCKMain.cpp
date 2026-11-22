@@ -44,6 +44,7 @@
 #include "physics-interaction/native/player/NativeActivatePrompts.h"
 #include "physics-interaction/native/player/NativeQuickLootPanel.h"
 #include "physics-interaction/native/player/NativeWorkshop.h"
+#include "physics-interaction/native/player/NativeHolotapePlayback.h"
 #include "physics-interaction/native/player/NativeWristPipboyLook.h"
 #include "physics-interaction/native/safety/NativeCharacterProxySafety.h"
 #include "physics-interaction/native/safety/NativeCollisionFilterSafety.h"
@@ -1531,6 +1532,7 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     if (!rock::native_wrist_pipboy_look::install()) {
         logger::warn("ROCK: A closed FRIK wrist Pip-Boy still reacts to gaze (native hum and look-open).");
     }
+    (void)rock::native_holotape_playback::install();
     logger::info("ROCK: Install held weapon instant-transition capability...");
     if (!rock::held_weapon_instant_transition::install()) {
         logger::warn(

@@ -15,6 +15,9 @@
   face, color and fade, taken from the ammo the weapon fires (".38", "10mm",
   "Fusion Cell"), and follows mods that change a weapon's caliber. It needs RPS
   UI Framework's next release; with RPS UI 2.0 the counters show no caliber.
+- **Pull the trigger to play a holotape you hold.** The tape goes into your
+  inventory and starts playing at once; game and terminal holotapes open in the
+  Pip-Boy. Stashing a holotape at your shoulder still only stashes it.
 
 ### Fixed
 
