@@ -39,7 +39,12 @@ namespace
         input.supportGripLocal = transform_math::worldPointToLocal(weapon, support.translate);
         input.primaryTargetWorld = primary.translate;
         input.useSupportNormalTwist = true;
+        const auto authoredSeat = input.primaryGripLocal;
         if (!gunstock_mode::configureVirtualAim(input, rear, front, {}, 1))
+            return fail();
+        // Only the lateral seat coordinate changes: authored height and depth stay.
+        if (std::abs(input.primaryGripLocal.y - authoredSeat.y) > 0.00001f ||
+            std::abs(input.primaryGripLocal.z - authoredSeat.z) > 0.00001f)
             return fail();
         const auto solved = gunstock_mode::solveVirtualAim(input, rear, front, {}, 1);
         if (!solved.solved ||
@@ -51,6 +56,14 @@ namespace
         const auto baseline = weaponSolverNormalize(weaponSolverSub(front.translate, rear.translate));
         if (!nearPoint(forward, baseline, 0.00002f))
             return fail();
+        // Both controller origins lie on the model's centerline (weapon X = 0),
+        // whatever lateral offset the authored firing seat had. The tolerance
+        // covers float spacing at the captured world positions (~73,000).
+        for (const auto* controller : { &rear, &front }) {
+            if (std::abs(transform_math::worldPointToLocal(solved.weaponWorldTransform, controller->translate).x) >
+                0.02f)
+                return fail();
+        }
         const auto bridge = equip_visual_bridge_policy::solvePairedGunstockBridge(solved.weaponWorldTransform,
             input.primaryGripLocal, rear, front);
         if (!bridge.solved || !sameRotation(bridge.weaponWorldTransform, solved.weaponWorldTransform) ||

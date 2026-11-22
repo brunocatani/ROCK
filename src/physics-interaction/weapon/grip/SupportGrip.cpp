@@ -1869,6 +1869,9 @@ namespace rock
         WeaponTwoHandedSolverResult<RE::NiTransform> solved{};
         RE::NiTransform appliedWeaponWorld{};
         if (gunstockAim) {
+            // The solve starts again from the authored seat: configuring the
+            // already-centred seat would ease its lateral shift in twice.
+            const auto authoredSolverInput = solverInput;
             RE::NiTransform primaryWand{}, supportWand{};
             if (!frik_hand_world_authority::tryGetWeaponWandWorld(primaryHandIsLeft, primaryWand) ||
                 !frik_hand_world_authority::tryGetWeaponWandWorld(supportHandIsLeft, supportWand) ||
@@ -1879,7 +1882,7 @@ namespace rock
                     "Gunstock aim retaining grip while controller baseline is unavailable or degenerate");
                 return;
             }
-            solved = gunstock_mode::solveVirtualAim(solverInput, primaryWand, supportWand,
+            solved = gunstock_mode::solveVirtualAim(authoredSolverInput, primaryWand, supportWand,
                 sub(primaryController, primaryBeforeRecoil), dynamicAcquisition ? 1.0f : _support.rotationBlend);
         } else {
             solved = solveTwoHandedWeaponTransformFrikPivot(solverInput);
@@ -1963,10 +1966,13 @@ namespace rock
                 acquisition.durationSeconds);
             _support.rotationBlend = acquisition.easedAlpha;
 
+            // Gunstock centring moves the pivot seat sideways; ease it with the
+            // rotation. Otherwise both seats are the firing grip.
             const auto acquisitionSolve =
                 weapon_support_acquisition_math::applyRotationAroundPrimaryPivot<RE::NiTransform, RE::NiPoint3>(
-                    solverInput.weaponWorldTransform, solved.rotationDelta, _firing.primaryGripLocal, primaryController,
-                    acquisition.easedAlpha);
+                    solverInput.weaponWorldTransform, solved.rotationDelta,
+                    lerpPoint(_firing.primaryGripLocal, solverInput.primaryGripLocal, acquisition.easedAlpha),
+                    primaryController, acquisition.easedAlpha);
             if (!acquisitionSolve.valid) {
                 clearDynamicSupportAcquisition("pivot-preserving-slerp-invalid", true);
                 transitionToInactive(false);
