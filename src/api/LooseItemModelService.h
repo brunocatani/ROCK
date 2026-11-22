@@ -23,8 +23,15 @@ namespace rock::loose_item_model
     api::Status clear(api::OwnerToken owner);
 
     // 3D attach hook, any loading thread: shows the registered model on a detached
-    // incoming model. Never touches a model that already has a parent.
+    // incoming model. Never touches a model that already has a parent. A tree that
+    // already carries another part model (a reference the engine recycled with its
+    // 3D) has that part replaced.
     void present(RE::TESObjectREFR* reference, RE::NiAVObject* model) noexcept;
+
+    // Frame thread: the same for the reference's live 3D, before a hand takes it.
+    // A dropped item can come back as a recycled reference whose 3D still shows
+    // the part model of the item that reference held before.
+    void refresh(RE::TESObjectREFR* reference) noexcept;
 
     // Frame thread. Presented references whose current 3D still carries the
     // presented model and whose base is still registered.

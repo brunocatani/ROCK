@@ -16,6 +16,7 @@
 #include "RE/Bethesda/TESObjectREFRs.h"
 #include "RE/NetImmerse/NiCloningProcess.h"
 #include "RE/NetImmerse/NiNode.h"
+#include "RE/NetImmerse/NiUpdateData.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/native/NativeCodeBytes.h"
@@ -44,6 +45,7 @@ namespace rock::loose_item_model
             std::uint32_t reference{};
             std::uint32_t base{};
             std::uintptr_t root{}; // Comparison only; never dereferenced.
+            std::uint32_t modelFormId{};
         };
 
         // Never destroyed: the process may exit with entries registered, and
@@ -183,6 +185,101 @@ namespace rock::loose_item_model
             presented[nextPresented++ % presented.size()] = value;
         }
 
+        // The part model the tree at root was given, or 0 when it is not known.
+        std::uint32_t presentedModel(std::uintptr_t root, std::uint32_t base)
+        {
+            std::scoped_lock lock(mutex);
+            for (const auto& slot : presented)
+                if (slot.reference && slot.root == root && slot.base == base)
+                    return slot.modelFormId;
+            return 0;
+        }
+
+        void forget(std::uintptr_t root)
+        {
+            std::scoped_lock lock(mutex);
+            for (auto& slot : presented)
+                if (slot.root == root)
+                    slot = {};
+        }
+
+        // Shows the registered model on root, or takes a stale part model off it.
+        // live: root is in the scene, so the new part's world transforms are
+        // updated here.
+        void show(RE::TESObjectREFR* reference, RE::NiNode* root, bool live)
+        {
+            auto* base = reference->GetObjectReference();
+            if (!base)
+                return;
+            std::uint32_t modelFormId{};
+            std::string path;
+            {
+                std::scoped_lock lock(mutex);
+                if (const auto found = entries.find(base->GetFormID()); found != entries.end()) {
+                    modelFormId = found->second.modelFormId;
+                    path = found->second.path;
+                }
+            }
+            RE::NiAVObject* existing = nullptr;
+            for (const auto& child : root->children)
+                if (child && child->name == kModelNodeName)
+                    existing = child.get();
+            const auto rootKey = reinterpret_cast<std::uintptr_t>(root);
+            if (existing) {
+                const auto shown = presentedModel(rootKey, base->GetFormID());
+                if (modelFormId && shown == modelFormId)
+                    return;
+                ROCK_LOG_INFO(Weapon,
+                    "Loose item model replaced ref={:08X} base={:08X}: its 3D carried omod={:08X}, wants omod={:08X}",
+                    reference->GetFormID(), base->GetFormID(), shown, modelFormId);
+                root->DetachChild(existing);
+                forget(rootKey);
+                if (!modelFormId) {
+                    for (const auto& child : root->children)
+                        if (child)
+                            equipped_weapon_visual_state::setLocallyVisible(child.get(), true);
+                    return;
+                }
+            }
+            if (!modelFormId)
+                return;
+            if (!nativeCallsAvailable()) {
+                ROCK_LOG_SAMPLE_WARN(Weapon, 60000,
+                    "Loose item model unavailable: native model load or clone signature mismatch");
+                return;
+            }
+            auto part = instantiate(path);
+            const auto nodes = part ? collect(part.get()) : std::vector<RE::NiAVObject*>{};
+            RE::NiPoint3 centre{};
+            if (nodes.empty() || !geometryCentre(part.get(), centre)) {
+                ROCK_LOG_SAMPLE_WARN(Weapon, 2000,
+                    "Loose item model not shown ref={:08X} base={:08X} omod={:08X} model='{}': {}",
+                    reference->GetFormID(), base->GetFormID(), modelFormId, path,
+                    !part ? "model did not load" : "no geometry");
+                return;
+            }
+            // The reference keeps its own collision bodies; the part's own
+            // collision would add bodies that move apart from them.
+            for (auto* node : nodes)
+                node->collisionObject.reset();
+            // The reference's own geometry stays in the tree, hidden: native
+            // code that looks it up by name still finds it.
+            for (const auto& child : root->children)
+                if (child)
+                    equipped_weapon_visual_state::setLocallyVisible(child.get(), false);
+            part->name = RE::BSFixedString(kModelNodeName);
+            part->local.MakeIdentity();
+            part->local.translate = { -centre.x, -centre.y, -centre.z };
+            root->AttachChild(part.get(), true);
+            if (live) {
+                RE::NiUpdateData update{};
+                part->UpdateTransforms(update);
+            }
+            remember({ reference->GetFormID(), base->GetFormID(), rootKey, modelFormId });
+            ROCK_LOG_INFO(Weapon, "Loose item model shown ref={:08X} base={:08X} omod={:08X} model='{}' nodes={}",
+                reference->GetFormID(), base->GetFormID(), modelFormId, path, nodes.size());
+        }
+
         // Frame thread, under the mutex: the entry still describes the live 3D.
         bool current(const Presented& slot)
         {
@@ -233,58 +330,23 @@ namespace rock::loose_item_model
     void present(RE::TESObjectREFR* reference, RE::NiAVObject* model) noexcept
     {
         try {
-            auto* base = reference ? reference->GetObjectReference() : nullptr;
-            if (!base || !model)
-                return;
-            std::uint32_t modelFormId{};
-            std::string path;
-            {
-                std::scoped_lock lock(mutex);
-                const auto found = entries.find(base->GetFormID());
-                if (found == entries.end())
-                    return;
-                modelFormId = found->second.modelFormId;
-                path = found->second.path;
-            }
-            auto* root = model->IsNode();
-            if (!root || model->parent)
-                return;
-            for (const auto& child : root->children)
-                if (child && child->name == kModelNodeName)
-                    return;
-            if (!nativeCallsAvailable()) {
-                ROCK_LOG_SAMPLE_WARN(Weapon, 60000,
-                    "Loose item model unavailable: native model load or clone signature mismatch");
-                return;
-            }
-            auto part = instantiate(path);
-            const auto nodes = part ? collect(part.get()) : std::vector<RE::NiAVObject*>{};
-            RE::NiPoint3 centre{};
-            if (nodes.empty() || !geometryCentre(part.get(), centre)) {
-                ROCK_LOG_SAMPLE_WARN(Weapon, 2000,
-                    "Loose item model not shown ref={:08X} base={:08X} omod={:08X} model='{}': {}",
-                    reference->GetFormID(), base->GetFormID(), modelFormId, path,
-                    !part ? "model did not load" : "no geometry");
-                return;
-            }
-            // The reference keeps its own collision bodies; the part's own
-            // collision would add bodies that move apart from them.
-            for (auto* node : nodes)
-                node->collisionObject.reset();
-            // The reference's own geometry stays in the tree, hidden: native
-            // code that looks it up by name still finds it.
-            for (const auto& child : root->children)
-                if (child)
-                    equipped_weapon_visual_state::setLocallyVisible(child.get(), false);
-            part->name = RE::BSFixedString(kModelNodeName);
-            part->local.MakeIdentity();
-            part->local.translate = { -centre.x, -centre.y, -centre.z };
-            root->AttachChild(part.get(), true);
-            remember({ reference->GetFormID(), base->GetFormID(), reinterpret_cast<std::uintptr_t>(model) });
-            ROCK_LOG_INFO(Weapon, "Loose item model shown ref={:08X} base={:08X} omod={:08X} model='{}' nodes={}",
-                reference->GetFormID(), base->GetFormID(), modelFormId, path, nodes.size());
+            auto* root = reference && model && !model->parent ? model->IsNode() : nullptr;
+            if (root)
+                show(reference, root, false);
         } catch (...) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Loose item model presentation failed");
+        }
+    }
+
+    void refresh(RE::TESObjectREFR* reference) noexcept
+    {
+        try {
+            auto* model = reference ? reference->Get3D() : nullptr;
+            auto* root = model ? model->IsNode() : nullptr;
+            if (root)
+                show(reference, root, true);
+        } catch (...) {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Loose item model refresh failed");
         }
     }
 

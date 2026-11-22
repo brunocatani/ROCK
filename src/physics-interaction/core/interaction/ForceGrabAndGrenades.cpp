@@ -1,4 +1,5 @@
 // Provider force-grab commits, fuse service, and held-grenade arming.
+#include "api/LooseItemModelService.h"
 #include "api/StorageService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/native/player/NativeWorkshop.h"
@@ -392,6 +393,10 @@ namespace rock
 
             if (commit.isEquippedWeaponTransfer())
                 _drop.visuals[commit.isLeft ? 1u : 0u].prepareGrab();
+            // A dropped item may come back as a recycled reference whose 3D still
+            // shows the part model of what it held before.
+            if (commit.inventoryTransfer)
+                loose_item_model::refresh(targetRef);
             if (hand.hasSelection()) {
                 hand.clearSelectionState(false);
             }

@@ -30,6 +30,10 @@
   weapon or item whose model the game builds as the cell loads, or as it drops
   from the inventory, kept its plain look: ROCK applied saved states only to
   models set by scripts. It now applies them to every model the reference receives.
+- **A loose mod handed to you shows its own model.** A mod dropped into your hand
+  right after another one could show the previous mod's model: the game reused that
+  reference with its old look. ROCK now replaces the stale model before the hand
+  takes the item.
 - **For mod authors: Grab `requestInventoryItemGrab` never takes what you wear.** Asked
   for an item identical to your equipped weapon or worn armor, it dropped the worn
   one into the hand. It now takes a spare copy, and refuses when you own only the
