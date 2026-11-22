@@ -42,7 +42,7 @@ These are recorded so they aren't asked again.
 ## Suggestions
 
 1. **ROCK writes canonical spellings at startup.** ROCK already rewrites `ROCK.toml`'s help lines when it starts. If it also rewrote button layout values to their canonical spelling (`"Grip"` to `"grip"`, `"stick"` to `"thumbstick"`), the dropdown's invalid-alias case goes away.
-2. **One source for labels, options and ranges.** ROCK's catalog help and `spec.json` each hold a copy (RPS UI's `RockSettingControlPolicy.cpp` held a third, which goes with `mods-config-rps-ui-removal.md`). The test checks keys, types and defaults, not ranges, choice values or labels.
+2. **One source for labels, options and ranges.** ROCK's catalog help and `spec.json` each hold a copy (RPS UI's `RockSettingControlPolicy.cpp` held a third, which goes with `mods-config-rps-ui-removal.md`). The test checks keys, types, defaults and that sliders stay within what ROCK accepts, not choice values or labels.
    - Either extend the test to parse the catalog's `N = label` and `Range: a to b` text and compare it with the spec's options and `min`/`max`,
    - or generate the spec's choice and range fields from the catalog.
 3. **A developer page:** done, `mods-config-developer-page.md`.

@@ -4,8 +4,8 @@
 // option is either on the page or deliberately left out, and every
 // ROCK_Developer.toml option is on the Developer page. That page is generated
 // from the catalog (--write-developer-page <spec.json>); the test fails while
-// the spec holds another, or a generated slider goes past what the loader
-// accepts. Ranges and help of hand-written rows are not checked.
+// the spec holds another. No slider goes past what the loader accepts, and the
+// loader enforces every clamp in the catalog. Hand-written help is not checked.
 #include "RockConfig.h"
 #include "config/RockSettings.h"
 #include "config/SettingMetadata.h"
@@ -153,12 +153,11 @@ namespace
     }
 
     /**
-     * A slider's range and step. The range is the catalog's slider, or the clamp the loader declares; a catalog
-     * slider on a clamped option lies inside the clamp, for one too wide to slide over.
+     * A slider's range and step.
      */
     struct Slider
     {
-        SliderRange range;
+        SettingRange range;
         double step = 0.0;
     };
 
@@ -166,7 +165,7 @@ namespace
      * A step of about a hundredth of the range, or a tenth of the default when that is finer, and at most the
      * given step; rounded down to 1, 2 or 5 times a power of ten, and at least 1 for a whole number.
      */
-    double sliderStep(const SliderRange& range, double defaultValue, double maximumStep, bool whole)
+    double sliderStep(const SettingRange& range, double defaultValue, double maximumStep, bool whole)
     {
         double raw = (std::min)((range.maximum - range.minimum) / 100.0, maximumStep);
         if (std::abs(defaultValue) > 0.0)
@@ -180,17 +179,17 @@ namespace
         return whole ? (std::max)(1.0, std::round(step)) : std::stod(std::format("{:.0e}", step));
     }
 
+    /**
+     * A developer number's slider: the catalog's slider range, or its clamp. A slider narrowing a clamp lies in it.
+     */
     Slider sliderOf(const SettingMetadata& metadata, const SettingDefault& compiled)
     {
         const auto name = settingPath(metadata.table, metadata.key);
-        require(compiled.clamp || metadata.slider,
-            std::format("{} needs a slider range in the catalog (SettingMetadata.h)", name));
-        const auto clamp = compiled.clamp
-            ? SliderRange{ shortest(compiled.clamp->minimum), shortest(compiled.clamp->maximum) }
-            : *metadata.slider;
-        const auto range = metadata.slider.value_or(clamp);
-        require(range.minimum >= clamp.minimum && range.maximum <= clamp.maximum,
-            std::format("{} has a catalog slider outside the clamp the loader declares", name));
+        const auto& [clamp, slider] = metadata.ranges;
+        require(clamp || slider, std::format("{} needs clampTo or slideOver in the catalog (SettingMetadata.h)", name));
+        const auto range = slider ? *slider : *clamp;
+        require(!clamp || (range.minimum >= clamp->minimum && range.maximum <= clamp->maximum),
+            std::format("{} has a slider outside its clamp", name));
         require(std::isfinite(range.minimum) && std::isfinite(range.maximum) && range.minimum < range.maximum,
             std::format("{} has no usable slider range", name));
         if (compiled.type == ValueType::Transform) {
@@ -218,26 +217,69 @@ namespace
     }
 
     /**
+     * The values ROCK runs with when a file sets one number to a value, or every part of a transform to it, with
+     * the options that limit others set out of their way.
+     */
+    rock::RockConfigValues valuesWith(const SettingDefault& setting, double value)
+    {
+        // Completed jobs are limited by the queued ones, the visual start distance by the touch and near-converge
+        // distances, and each maximum by its minimum.
+        LoadedValues values{ { "DebugOverlay.DebugMaxShapeQueuedJobs", "256" },
+            { "GrabAcquisition.GrabTouchAcquireDistanceGameUnits", "0.5" },
+            { "GrabAcquisition.GrabNearConvergeDistanceGameUnits", "100" } };
+        for (const char* minimum : { "GrabContactEvidence.GrabPinchMinFingerGapGameUnits",
+                 "GrabContactEvidence.GrabHandLerpTimeMin", "GrabContactEvidence.GrabHandLerpMinDistance",
+                 "GrabContactEvidence.GrabHandReturnTimeMin", "GrabContactEvidence.GrabHandReturnMinDistance",
+                 "GrabContactEvidence.GrabHandReturnMinAngleDegrees",
+                 "WeaponCollisionAndSupport.WeaponSupportGripHandLerpTimeMin",
+                 "WeaponCollisionAndSupport.WeaponSupportGripHandLerpMinDistance", "Haptics.GrabHapticBaseIntensity",
+                 "Haptics.HeldImpactHapticBaseIntensity", "Haptics.ShoulderStashCandidateHapticBaseIntensity",
+                 "Haptics.MouthConsumeCandidateHapticBaseIntensity" })
+            values[minimum] = "0";
+        const auto part = static_cast<float>(value);
+        auto& text = values[settingPath(setting.table, setting.key)];
+        if (setting.type == ValueType::Integer)
+            text = std::to_string(std::llround(value));
+        else if (setting.type != ValueType::Transform)
+            text = std::format("{}", part);
+        else if (parseTransform(setting.value)->rotation)
+            text = formatTransform(Transform{ .rotation = std::array{ part, part, part } });
+        else
+            text = formatTransform(Transform{ .position = std::array{ part, part, part } });
+        return rock::RockConfig::parseValues(values);
+    }
+
+    /**
      * Whether ROCK takes every value a slider offers: a range wider than the loader accepts has its last step
      * clamped or reset away, so both ends must run differently from one step inside them.
      */
-    bool sliderAccepted(const SettingMetadata& metadata, const SettingDefault& compiled)
+    bool sliderAccepted(const SettingDefault& setting, const SettingRange& range, double step)
     {
-        const auto name = settingPath(metadata.table, metadata.key);
-        const auto slider = sliderOf(metadata, compiled);
-        const auto run = [&](double value) {
-            // Options limited by another one, which is set out of their way: completed jobs by the queued ones,
-            // the visual start distance by the touch and near-converge distances, the pinch gap by its minimum.
-            LoadedValues values{ { "DebugOverlay.DebugMaxShapeQueuedJobs", "256" },
-                { "GrabAcquisition.GrabTouchAcquireDistanceGameUnits", "0.5" },
-                { "GrabAcquisition.GrabNearConvergeDistanceGameUnits", "100" },
-                { "GrabContactEvidence.GrabPinchMinFingerGapGameUnits", "0" } };
-            values[name] = compiled.type == ValueType::Integer ? std::to_string(std::llround(value))
-                                                               : std::format("{}", static_cast<float>(value));
-            return rock::RockConfig::parseValues(values);
-        };
-        const auto& [range, step] = slider;
-        return !(run(range.minimum) == run(range.minimum + step)) && !(run(range.maximum) == run(range.maximum - step));
+        return !(valuesWith(setting, range.minimum) == valuesWith(setting, range.minimum + step)) &&
+               !(valuesWith(setting, range.maximum) == valuesWith(setting, range.maximum - step));
+    }
+
+    /**
+     * Checks that the loader enforces an option's catalog clamp: past either end runs as the end.
+     */
+    void checkClampEnforced(const SettingDefault& setting, const SettingRange& clamp)
+    {
+        const auto past = clamp.maximum - clamp.minimum;
+        require(past > 0.0 && valuesWith(setting, clamp.minimum - past) == valuesWith(setting, clamp.minimum) &&
+                    valuesWith(setting, clamp.maximum + past) == valuesWith(setting, clamp.maximum),
+            std::format("{} has a catalog clamp the loader does not enforce", settingPath(setting.table, setting.key)));
+    }
+
+    /**
+     * A hand-written row's slider, or nothing for another control.
+     */
+    std::optional<Slider> specSlider(const json& row)
+    {
+        if (row.value("type", "") != "slider")
+            return std::nullopt;
+        const auto& options = row.at("valueOptions");
+        return Slider{ { options.at("min").get<double>(), options.at("max").get<double>() },
+            options.at("step").get<double>() };
     }
 
     /**
@@ -249,7 +291,8 @@ namespace
         const auto name = settingPath(metadata.table, metadata.key);
         const bool numeric = compiled.type == ValueType::Integer || compiled.type == ValueType::Float ||
                              compiled.type == ValueType::Transform;
-        require(numeric || !metadata.slider, std::format("{} has a slider range but is not a number", name));
+        require(numeric || (!metadata.ranges.clamp && !metadata.ranges.slider),
+            std::format("{} has a range but is not a number", name));
         ordered_json row;
         switch (compiled.type) {
         case ValueType::Boolean:
@@ -620,9 +663,9 @@ int main(int argc, char** argv)
                 [&](const SettingDefault& entry) { return settingPath(entry.table, entry.key) == name; });
             require(compiled != defaults.end(), std::format("{} has no compiled default", name));
             checkDefault(name, *setting, *compiled);
-            if (group == Group::Developer &&
-                (compiled->type == ValueType::Integer || compiled->type == ValueType::Float) &&
-                !sliderAccepted(*metadata, *compiled))
+            if (metadata->ranges.clamp)
+                checkClampEnforced(*compiled, *metadata->ranges.clamp);
+            if (const auto slider = specSlider(*setting); slider && !sliderAccepted(*compiled, slider->range, slider->step))
                 tooWide += " " + name;
         }
         require(tooWide.empty(), std::format("sliders wider than ROCK accepts:{}", tooWide));

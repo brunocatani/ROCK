@@ -214,7 +214,7 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp` for engine math. `
 
 ### Configuration
 
-- `src/config/SettingMetadata.h` is the single source of every option (table, key, owning file, category, help, and a developer number's slider range when its clamp is not declared); `RockConfigLoad.cpp` gives its type, default and declared clamp (the `readClamped*` helpers). Each option belongs to exactly one of `ROCK.toml` (players) and `ROCK_Developer.toml` (developer overrides only). Startup fails when catalog and loader disagree.
+- `src/config/SettingMetadata.h` is the single source of every option (table, key, owning file, category, help, the clamp its `readClamped*` read applies and its Developer page slider range); `RockConfigLoad.cpp` gives its type and default, and any other limit. Each option belongs to exactly one of `ROCK.toml` (players) and `ROCK_Developer.toml` (developer overrides only). Startup fails when catalog and loader disagree.
 - After any catalog change, regenerate `data/config/*_example.toml` with `ROCKConfigurationStoreTests --write-examples data/config`; the test fails when they differ. ROCK never reads the examples.
 - RPS Framework's settings store reads, organizes and writes the files (`src/config/RockSettings.cpp`). A file that does not parse is never rewritten, keeps its last values and refuses writes until fixed. Both files reload while the game runs.
 - Old `ROCK.ini` files migrate once, only when `ROCK.toml` is missing, through the frozen table `src/config/LegacyIniMigrationTable.inl` (never regenerated), and are deleted only after the TOML files read back.

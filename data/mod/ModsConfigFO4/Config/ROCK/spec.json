@@ -1329,7 +1329,7 @@
               "valueType": "float",
               "text": "Weapon Support Grip Hand Lerp Time Max",
               "default": 0.2,
-              "valueOptions": { "min": 0.12, "max": 1.0, "step": 0.005 },
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
               "storage": { "path": ["WeaponCollisionAndSupport", "WeaponSupportGripHandLerpTimeMax"] }
             },
             {
@@ -1345,7 +1345,7 @@
               "valueType": "float",
               "text": "Weapon Support Grip Hand Lerp Max Distance",
               "default": 14.0,
-              "valueOptions": { "min": 1.0, "max": 120.0, "step": 1.0 },
+              "valueOptions": { "min": 0.0, "max": 120.0, "step": 1.0 },
               "storage": { "path": ["WeaponCollisionAndSupport", "WeaponSupportGripHandLerpMaxDistance"] }
             },
             {
@@ -2351,7 +2351,7 @@
               "valueType": "float",
               "text": "Grab Hand Lerp Time Max",
               "default": 0.2,
-              "valueOptions": { "min": 0.1, "max": 1.0, "step": 0.005 },
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
               "storage": { "path": ["GrabContactEvidence", "GrabHandLerpTimeMax"] }
             },
             {
@@ -2367,7 +2367,7 @@
               "valueType": "float",
               "text": "Grab Hand Lerp Max Distance",
               "default": 14.0,
-              "valueOptions": { "min": 7.0, "max": 120.0, "step": 1.0 },
+              "valueOptions": { "min": 0.0, "max": 120.0, "step": 1.0 },
               "storage": { "path": ["GrabContactEvidence", "GrabHandLerpMaxDistance"] }
             },
             {
@@ -2391,7 +2391,7 @@
               "valueType": "float",
               "text": "Grab Hand Return Time Max",
               "default": 0.2,
-              "valueOptions": { "min": 0.1, "max": 1.0, "step": 0.005 },
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
               "storage": { "path": ["GrabContactEvidence", "GrabHandReturnTimeMax"] }
             },
             {
@@ -2407,7 +2407,7 @@
               "valueType": "float",
               "text": "Grab Hand Return Max Distance",
               "default": 14.0,
-              "valueOptions": { "min": 7.0, "max": 120.0, "step": 1.0 },
+              "valueOptions": { "min": 0.0, "max": 120.0, "step": 1.0 },
               "storage": { "path": ["GrabContactEvidence", "GrabHandReturnMaxDistance"] }
             },
             {
@@ -2423,7 +2423,7 @@
               "valueType": "float",
               "text": "Grab Hand Return Max Angle Degrees",
               "default": 90.0,
-              "valueOptions": { "min": 5.0, "max": 180.0, "step": 1.0 },
+              "valueOptions": { "min": 0.0, "max": 180.0, "step": 1.0 },
               "storage": { "path": ["GrabContactEvidence", "GrabHandReturnMaxAngleDegrees"] }
             }
           ]
@@ -2708,7 +2708,7 @@
               "valueType": "float",
               "text": "Grab Haptic Max Intensity",
               "default": 0.8,
-              "valueOptions": { "min": 0.12, "max": 1.0, "step": 0.005 },
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
               "storage": { "path": ["Haptics", "GrabHapticMaxIntensity"] }
             },
             {
@@ -2819,7 +2819,7 @@
               "valueType": "float",
               "text": "Held Impact Haptic Max Intensity",
               "default": 0.85,
-              "valueOptions": { "min": 0.12, "max": 1.0, "step": 0.005 },
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
               "storage": { "path": ["Haptics", "HeldImpactHapticMaxIntensity"] }
             },
             {
@@ -2899,7 +2899,7 @@
               "valueType": "float",
               "text": "Shoulder Stash Candidate Haptic Intensity",
               "default": 0.42,
-              "valueOptions": { "min": 0.2, "max": 1.0, "step": 0.005 },
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
               "storage": { "path": ["Haptics", "ShoulderStashCandidateHapticIntensity"] }
             },
             {
@@ -2955,7 +2955,7 @@
               "valueType": "float",
               "text": "Mouth Consume Candidate Haptic Intensity",
               "default": 0.45,
-              "valueOptions": { "min": 0.22, "max": 1.0, "step": 0.005 },
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
               "storage": { "path": ["Haptics", "MouthConsumeCandidateHapticIntensity"] }
             },
             {

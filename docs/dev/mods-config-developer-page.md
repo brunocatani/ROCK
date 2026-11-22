@@ -30,7 +30,7 @@ A Mods Config FO4 VR page for `ROCK_Developer.toml`, which RPS UI's ROCK Dev pag
 - One page, "Developer" (`"id": "developer"`), at the end of the page list, visible while `ShowDeveloperPages` is on. Its content is a short text on how the file works; its 19 sub-pages are the categories and cover every developer option.
 - Generated from the catalog: `ROCKModsConfigSpecTests --write-developer-page <spec.json>` replaces only the `developer` page and leaves the hand-written rest of `spec.json` as it is. The test fails when the page is stale.
 - Rows: the label is the key split into words, the help is the catalog's. Bool is a `switcher`, int and float a `slider`, string a `textinput`, a transform a `cf.transform`.
-- Slider ranges: the clamp the loader declares as it reads an option (`SettingReader::clampRange`, from the `readClamped*` helpers), or `SliderRange` in the catalog (110 options), which may also narrow a declared clamp too wide to slide over. Catalog ranges follow the limits the loader enforces in other ways; where it has none they are guesses from the default, the unit and the help. The step is a hundredth of the range, or a tenth of the default when that is finer, rounded down to 1, 2 or 5 times a power of ten.
+- Ranges are in the catalog. `clampTo` (121 options, 26 of them player ones) is what the loader's `readClamped*` helpers clamp to, and the slider; it can name a narrower slider where the clamp is too wide to slide over. `slideOver` (109 options) is only a slider, for an option the loader limits in another way or not at all. Slider ranges follow the limits the loader enforces in other ways; where it has none they are guesses from the default, the unit and the help. The step is a hundredth of the range, or a tenth of the default when that is finer, rounded down to 1, 2 or 5 times a power of ten.
 - `applies` is `save` for every row. A sweep of where all 287 options are read found none read only at startup. It went by function names, so an option copied once elsewhere could be missed; add a restart list to the generator if one appears.
 
 ### The 10 three-number arrays
@@ -43,7 +43,7 @@ Mods Config has no array control, so they become transforms, renamed without the
 
 ### The test
 
-`ROCKModsConfigSpecTests` requires every developer option to have exactly one row on the developer page, with its type and default, and no developer option in `kLeftOut`. A numeric slider must not go past what the loader accepts: both its ends must run differently from one step inside them.
+`ROCKModsConfigSpecTests` requires every developer option to have exactly one row on the developer page, with its type and default, and no developer option in `kLeftOut`. No numeric slider, the player pages' included, goes past what the loader accepts: both its ends must run differently from one step inside them. The loader must enforce every catalog clamp.
 
 ## Work
 

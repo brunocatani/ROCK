@@ -13,7 +13,6 @@
 
 #include <filesystem>
 #include <memory>
-#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -32,22 +31,14 @@ namespace rock::config
     using RPS::Settings::Transform;
     using RPS::Settings::ValueType;
 
-    // The range ROCK clamps a number, or each part of a transform, to.
-    struct ClampRange
-    {
-        float minimum = 0.0f;
-        float maximum = 0.0f;
-    };
-
     // A compiled default as the loader declares it: TOML table path, key,
-    // canonical value text and type, and the range the loader clamps it to.
+    // canonical value text and type.
     struct SettingDefault
     {
         std::string table;
         std::string key;
         std::string value;
         ValueType type;
-        std::optional<ClampRange> clamp{};
     };
 
     inline constexpr std::string_view kPlayerFileName = "ROCK.toml";
