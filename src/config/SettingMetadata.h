@@ -1047,8 +1047,8 @@ namespace rock::config
         { "DebugOverlay", "DebugMaxShapeCapturesPerFrame", "15. Debug Overlay",
             "Bounded overlay work and memory budgets. Zero disables the corresponding capture/upload/draw stream where "
             "noted.\nRanges: captures 0..32, compound slots 1..1024, depth 1..8, queued/completed 0..256,\nuploads "
-            "0..16, cache entries 16..4096, cache bytes 1048576..536870912,\nbody instances 0..195, line vertices "
-            "0..65536, text vertices 0..131072.",
+            "0..16, cache entries 16..4096, cache bytes 1048576..536870912,\nbody instances 0..163, line vertices "
+            "0..65536.",
             Group::Developer, slideOver(0.0, 32.0) },
         { "DebugOverlay", "DebugMaxConvexSupportVertices", "15. Debug Overlay", "",
             Group::Developer, slideOver(4.0, 32.0) },
