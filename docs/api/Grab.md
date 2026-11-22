@@ -26,7 +26,9 @@ from the player's inventory into a free hand ROCK picks (`hand` must be
 requested hand (`Right` or `Left`; a busy or disabled hand is rejected with
 `HandBusy` or `HandDisabled`, never moved to the other hand). `uniqueId`
 selects the stack by its `ExtraUniqueID`, the value `TESContainerChangedEvent`
-reports; 0 takes the first stack holding the item. Any playable item with a
+reports; 0 takes a stack with nothing worn, else a worn stack's spare copy.
+The copy the player wears (the equipped weapon, worn armor) is never taken;
+with only that copy owned the command is rejected with `TargetUnavailable`. Any playable item with a
 world model is accepted, armor included. The item is dropped at the hand and
 grabbed there; a grab that cannot complete returns it to the inventory. The
 command is a `ForceGrab` command: poll it with `getInteractionCommandResult`,

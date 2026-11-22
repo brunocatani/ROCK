@@ -12,6 +12,7 @@
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/player/InventoryStackWear.h"
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
 #include "physics-interaction/weapon/native/NativeOneHandRestore.h"
 #include "physics-interaction/weapon/native/NativeWeaponEquipAudio.h"
@@ -86,17 +87,8 @@ namespace rock::weapon_equip_transfer
             std::uint16_t uniqueID = 0;
         };
 
-        [[nodiscard]] std::uint32_t wornCopies(const RE::BGSInventoryItem::Stack& stack) noexcept
-        {
-            using Flag = RE::BGSInventoryItem::Stack::Flag;
-            return static_cast<std::uint32_t>(stack.flags.any(Flag::kSlotIndex1)) + stack.flags.any(Flag::kSlotIndex2) +
-                stack.flags.any(Flag::kSlotIndex3);
-        }
-
-        [[nodiscard]] bool hasUnwornCopy(const RE::BGSInventoryItem::Stack& stack) noexcept
-        {
-            return stack.GetCount() > wornCopies(stack);
-        }
+        using inventory_stack_wear::hasUnwornCopy;
+        using inventory_stack_wear::wornCopies;
 
         [[nodiscard]] std::uint16_t uniqueID(const RE::BGSInventoryItem::Stack& stack) noexcept
         {

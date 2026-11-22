@@ -174,9 +174,10 @@ namespace rock::api::grab {
      * 2.1. Puts one item of baseFormId from the player's inventory into hand
      * (Right or Left; ROCK never picks another hand). uniqueId names the
      * stack by its ExtraUniqueID, as TESContainerChangedEvent reports it; 0
-     * takes the first stack holding the item. Any playable item with a world
-     * model is accepted. A grab that cannot complete returns the item to the
-     * inventory.
+     * takes a stack with nothing worn, else a worn stack's spare copy. The copy
+     * the player wears (equipped weapon, worn armor) is never taken. Any
+     * playable item with a world model is accepted. A grab that cannot
+     * complete returns the item to the inventory.
      */
     struct InventoryItemGrabRequest
     {

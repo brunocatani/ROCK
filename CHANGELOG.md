@@ -19,6 +19,11 @@
 
 ### Fixed
 
+- **For mod authors: Grab `requestInventoryItemGrab` never takes what you wear.** Asked
+  for an item identical to your equipped weapon or worn armor, it dropped the worn
+  one into the hand. It now takes a spare copy, and refuses when you own only the
+  worn one.
+
 - **Guns with a laser, flashlight or glow come to the hand when pulled.** A far grab
   brings the middle of the gun's model to your palm, and a beam, dot or glow stretched
   that model metres past the gun, so the gun flew off across the room instead. The

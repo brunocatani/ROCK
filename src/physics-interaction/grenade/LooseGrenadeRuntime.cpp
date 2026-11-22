@@ -1,4 +1,6 @@
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
+#include "physics-interaction/native/player/InventoryDropStackPolicy.h"
+#include "physics-interaction/native/player/InventoryStackWear.h"
 
 #include "RockConfig.h"
 
@@ -14,7 +16,9 @@
 #include "RE/Bethesda/TESForms.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
 
+#include <array>
 #include <cmath>
+#include <span>
 
 namespace rock::loose_grenade_runtime
 {
@@ -380,7 +384,10 @@ namespace rock::loose_grenade_runtime
             result.reason = "unsupported-inventory-item";
             return result;
         }
-        std::uint32_t chosenStack = kInvalidStackId;
+        // inventory_drop_stack_policy: never the copy the player wears.
+        constexpr std::uint32_t kMaxStacks = 64;
+        std::array<inventory_drop_stack_policy::StackFacts, kMaxStacks> facts{};
+        std::uint32_t factCount = 0;
         {
             const RE::BSAutoReadLock lock{ player->inventoryList->rwLock };
             std::uint32_t scanned = 0;
@@ -391,22 +398,21 @@ namespace rock::loose_grenade_runtime
                 if (entry.object != object) {
                     continue;
                 }
-                std::uint32_t stackId = 0;
-                for (auto* stack = entry.stackData.get(); stack && stackId < 4096;
-                    stack = stack->nextStack.get(), ++stackId) {
-                    if (stack->GetCount() <= 0) {
-                        continue;
-                    }
+                for (auto* stack = entry.stackData.get(); stack && factCount < kMaxStacks;
+                    stack = stack->nextStack.get()) {
                     const auto* extra = stack->extra.get();
                     const auto* tag = extra ? extra->GetByType<RE::ExtraUniqueID>() : nullptr;
-                    if (uniqueId == 0 || (tag && tag->uniqueID == uniqueId)) {
-                        chosenStack = stackId;
-                        break;
-                    }
+                    const auto count = stack->GetCount();
+                    facts[factCount++] = { .count = count > 0 ? static_cast<std::uint32_t>(count) : 0u,
+                        .wornCopies = inventory_stack_wear::wornCopies(*stack),
+                        .uniqueId = tag ? tag->uniqueID : std::uint16_t{ 0 } };
                 }
                 break;
             }
         }
+        const auto chosen =
+            inventory_drop_stack_policy::choose(std::span{ facts.data(), factCount }, uniqueId);
+        const std::uint32_t chosenStack = chosen ? *chosen : kInvalidStackId;
         if (chosenStack == kInvalidStackId) {
             result.reason = "item-no-longer-owned";
             return result;
