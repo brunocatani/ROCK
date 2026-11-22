@@ -12,6 +12,8 @@ namespace rock::loose_weapon_state
 {
     namespace contract = api::weaponparts;
     bool install() noexcept;
+    // The reference 3D attach hook is in place (installed once at plugin load).
+    bool installed() noexcept;
     api::Status set(api::OwnerToken, const contract::ItemKey&, const contract::ItemState&);
     api::Status move(api::OwnerToken, const contract::ItemKey&, const contract::ItemKey&);
     api::Status clear(api::OwnerToken);

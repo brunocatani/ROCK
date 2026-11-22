@@ -26,7 +26,7 @@ namespace rock::loose_item_model
 {
     namespace
     {
-        // The presented model's root, so a second Set3D of the same tree and the
+        // The presented model's root, so a second attach of the same tree and the
         // frame thread's checks recognize it.
         constexpr const char* kModelNodeName = "ROCK_LooseItemModel";
         constexpr std::size_t kMaxTreeNodes = 1024;
@@ -234,8 +234,7 @@ namespace rock::loose_item_model
     {
         try {
             auto* base = reference ? reference->GetObjectReference() : nullptr;
-            auto* root = model ? model->IsNode() : nullptr;
-            if (!base || !root || model->parent)
+            if (!base || !model)
                 return;
             std::uint32_t modelFormId{};
             std::string path;
@@ -247,6 +246,9 @@ namespace rock::loose_item_model
                 modelFormId = found->second.modelFormId;
                 path = found->second.path;
             }
+            auto* root = model->IsNode();
+            if (!root || model->parent)
+                return;
             for (const auto& child : root->children)
                 if (child && child->name == kModelNodeName)
                     return;
@@ -275,7 +277,7 @@ namespace rock::loose_item_model
                 if (child)
                     equipped_weapon_visual_state::setLocallyVisible(child.get(), false);
             part->name = RE::BSFixedString(kModelNodeName);
-            part->local = {};
+            part->local.MakeIdentity();
             part->local.translate = { -centre.x, -centre.y, -centre.z };
             root->AttachChild(part.get(), true);
             remember({ reference->GetFormID(), base->GetFormID(), reinterpret_cast<std::uintptr_t>(model) });

@@ -520,7 +520,8 @@ namespace rock::api::weaponparts {
         Status(ROCK_CALL* clearItemStates)(OwnerToken owner) noexcept;
         // Any thread.
         Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
-        // 2.1. Write, game thread. Replaces the owner's loose item models
+        // 2.1. Write, any thread (also native serialization callbacks, so a
+        // load registers them before its cells load). Replaces the owner's loose item models
         // (count 0 clears). A base another owner registered: OwnerConflict; a
         // base listed twice: InvalidArgument; a base that is not a misc item
         // or a model that is not an object mod with a model: TargetInvalid.

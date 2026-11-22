@@ -12,6 +12,7 @@
 #include "RE/Bethesda/TESObjectREFRs.h"
 #include "RE/NetImmerse/NiNode.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/weapon/equip/EquippedWeaponVisualState.h"
 
@@ -43,8 +44,16 @@ namespace rock::loose_weapon_state
         // Never destroyed: entries hold engine models, which DLL detach must not release.
         std::array<Entry, 256>& entries = *new std::array<Entry, 256>{};
         std::mutex mutex;
-        using Set3D = void (*)(RE::TESObjectREFR*, RE::NiAVObject*, bool);
-        Set3D original{};
+        // 1403EDB20: stores a reference's 3D (null releases it). Load3D, the
+        // queued model loader and the virtual Set3D (slot 0x88, 1403ECE40) all
+        // end here, so every model a reference receives passes through it;
+        // the virtual slot alone sees only script and teardown calls.
+        using Attach3D = void (*)(RE::TESObjectREFR*, RE::NiAVObject*, bool);
+        Attach3D original{};
+        constexpr std::uintptr_t kAttach3D = 0x3EDB20;
+        // mov [rsp+8],rbx; mov [rsp+10h],rbp; mov [rsp+18h],rsi
+        constexpr std::array<std::uint8_t, 15> kAttach3DPrefix{ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C,
+            0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18 };
 
         bool valid(const contract::ItemKey& key) { return key.weapon && key.owner && key.unique <= 65535; }
 
@@ -182,10 +191,10 @@ namespace rock::loose_weapon_state
             }
         }
 
-        void set3D(RE::TESObjectREFR* ref, RE::NiAVObject* model, bool queued) noexcept
+        void attach3D(RE::TESObjectREFR* ref, RE::NiAVObject* model, bool queued) noexcept
         {
-            // Native caller owns the model through Set3D. Apply only to a detached
-            // incoming tree before native publication; never touch shared templates.
+            // The native caller owns the model. Apply only to a detached incoming
+            // tree before native publication; never touch shared templates.
             try {
                 if (model && !model->parent) {
                     apply(ref, model);
@@ -310,7 +319,7 @@ namespace rock::loose_weapon_state
         }
         ROCK_LOG_INFO(Weapon, "Dropped weapon carries driven part poses ref={:08X} weapon={:08X} parts={} first='{}'",
             reference->GetFormID(), key.weapon, state.count, state.parts[0].path);
-        // A model that already exists never passes through Set3D again.
+        // A model that already exists never passes through the attach hook again.
         if (auto* model = reference->Get3D())
             apply(reference, model);
     }
@@ -425,24 +434,17 @@ namespace rock::loose_weapon_state
             }
     }
 
+    bool installed() noexcept { return original != nullptr; }
+
     bool install() noexcept
     {
         if (original)
             return true;
-        // TESObjectREFR vtable slot88, independently checked against the VR Set3D
-        // implementation. No actor/player vtables or released provider slots change.
-        const auto slot = REL::Offset(0x2cbcdf8 + 0x88 * sizeof(void*)).address();
-        Set3D current{};
-        if (!native_memory::tryReadValue(reinterpret_cast<Set3D*>(slot), current) ||
-            reinterpret_cast<std::uintptr_t>(current) != REL::Offset(0x3ece40).address())
+        void* trampoline{};
+        if (!entry_trampoline_hook::install("reference 3D attach", kAttach3D, kAttach3DPrefix.data(),
+                kAttach3DPrefix.size(), reinterpret_cast<void*>(&attach3D), trampoline))
             return false;
-        original = current;
-        try {
-            REL::safe_write(slot, reinterpret_cast<std::uintptr_t>(&set3D));
-        } catch (...) {
-            original = nullptr;
-            return false;
-        }
+        original = reinterpret_cast<Attach3D>(trampoline);
         return true;
     }
 }

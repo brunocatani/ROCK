@@ -26,6 +26,10 @@
 
 ### Fixed
 
+- **Saved loose weapon states apply when a weapon loads with its cell.** A loose
+  weapon or item whose model the game builds as the cell loads, or as it drops
+  from the inventory, kept its plain look: ROCK applied saved states only to
+  models set by scripts. It now applies them to every model the reference receives.
 - **For mod authors: Grab `requestInventoryItemGrab` never takes what you wear.** Asked
   for an item identical to your equipped weapon or worn armor, it dropped the worn
   one into the hand. It now takes a spare copy, and refuses when you own only the

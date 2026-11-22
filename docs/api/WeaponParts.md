@@ -125,7 +125,7 @@ poses last until the reference is picked up or deleted, are not saved with the
 game, and your own `setItemState` for that reference replaces them. A bone the
 weapon's own animation is moving is not kept, only driven sources.
 
-## Loose item models (2.1, game thread, Write)
+## Loose item models (2.1, any thread, Write)
 
 `setLooseItemModels(owner, models, count)` replaces the owner's set of up to
 `kMaxLooseItemModels` `{ baseFormId, modelFormId }` pairs (count 0 clears it).
@@ -145,7 +145,9 @@ its next model load.
 A base another owner registered returns `OwnerConflict`, a base listed twice
 `InvalidArgument`, and a base that is not a misc item or a model that is not an
 object mod with a model `TargetInvalid`; nothing changes then.
-`clearLooseItemModels(owner)` removes the owner's set, as does owner loss.
+`clearLooseItemModels(owner)` removes the owner's set, as does owner loss. Both
+calls may come from native serialization callbacks, so a mod restoring its set from
+its co-save has it in place before the loaded cells show their references.
 
 ## Sample (any thread)
 

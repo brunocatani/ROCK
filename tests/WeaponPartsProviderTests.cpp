@@ -190,7 +190,7 @@ namespace rock::loose_weapon_state
 
     api::Status clear(api::OwnerToken) { return api::Status::Ok; }
 
-    bool install() noexcept { return true; }
+    bool installed() noexcept { return true; }
 }
 
 namespace rock::loose_item_model
