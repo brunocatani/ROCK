@@ -53,6 +53,9 @@ namespace rock::ammo_counters
         std::uint32_t loaded{ 0 };
         std::uint32_t reserve{ 0 };
         api::weapon::ChamberMarker chamber{ api::weapon::ChamberMarker::None };
+        // A counter presentation's colour, replacing the style's.
+        bool colorOverride{ false };
+        std::array<float, 3> color{ 1.0f, 1.0f, 1.0f };
         ammo_counter_pose::Pose pose{};
         // The weapon's caliber label, owned by the caller for the frame; null
         // or empty for none. Minimal's pose must be resolved labelled when

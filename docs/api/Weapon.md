@@ -4,7 +4,9 @@ Header: `include/ROCK/Weapon.h`. Equipped weapons by weapon slot: state and
 hand assignment, grip, classification, emitters, composition, authored grip,
 scope sight, the handling authority lease and inventory equips.
 
-Interface `Weapon`, major 2, minor 0; major 1 and 1.1 are refused. The
+Interface `Weapon`, major 2, minor 1 (2.1, unreleased, adds
+`setCounterPresentation`; request minor 0 when you do not call it). Mods built
+against 2.0 keep working. Major 1 and 1.1 are refused. The
 former `ROCK_EquipPickup_QueryV1` export is removed; `isEquipPickup` is here.
 Permissions: `Read` (1), `Write` (2). Calls run on the game thread unless
 noted.
@@ -170,6 +172,30 @@ solid. ROCK does not track chambers; the marker says what the owner says. Lease 
 to `kMaxChamberMarkerLeaseFrames` frames, renewed each frame, so the marker goes
 away by itself when the owner stops; `None` clears it. One owner per slot
 (`OwnerConflict` until the holder clears it or its lease runs out).
+
+## Counter presentation (2.1, Write)
+
+`setCounterPresentation(owner, slot, presentation, leaseFrames)` takes the
+slot's ammo counter for a mod that owns that weapon's ammunition, for example
+one that keeps its own magazines. `presentation.fields` (`CounterField`) names
+what it replaces, in every counter style:
+
+| Field | Replaces |
+| --- | --- |
+| `Loaded` | the loaded count with `loadedRounds` |
+| `Reserve` | the reserve count with `reserveRounds` |
+| `Label` | the caliber label with `label` (UTF-8, terminated inside its 32 bytes; empty shows none) |
+| `Chamber` | every chamber marker of the slot, another owner's `setChamberMarker` included, with `chamber` |
+| `Color` | the style's digit colour with `color` (0 to 1 per channel) |
+| `Hidden` | shows no counter for the weapon |
+
+Fields it leaves out keep ROCK's values. Lease 1 to
+`kMaxCounterPresentationLeaseFrames` frames, renewed each frame, so the counter
+returns to ROCK's values by itself when the owner stops; null or `fields` 0
+clears it. One owner per slot (`OwnerConflict` until the holder clears it or
+its lease runs out). `InvalidSize` or `UnsupportedVersion` for a record of
+another size or version, `InvalidArgument` for unknown fields, an unterminated
+label, a colour outside 0 to 1 or a lease out of range.
 
 ## Draw (Write)
 

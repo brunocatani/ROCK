@@ -63,6 +63,8 @@ namespace rock::provider
     [[nodiscard]] bool automaticReloadBlocked() noexcept;
     // None once no owner holds a live marker lease for this slot.
     [[nodiscard]] api::weapon::ChamberMarker chamberMarker(std::uint32_t weaponSlot);
+    // The live counter presentation of this slot; fields 0 once no owner holds one.
+    [[nodiscard]] api::weapon::CounterPresentation counterPresentation(std::uint32_t weaponSlot);
     bool resolveTouchGrabTarget(std::uint32_t bodyId, std::uint32_t collisionLayer, TouchGrabMotionClass motionClass,
         api::Hand hand, std::uint32_t worldGeneration, std::uint32_t skeletonGeneration,
         std::uint32_t providerGeneration, TouchGrabTargetMatch& outMatch);

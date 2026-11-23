@@ -99,6 +99,8 @@ namespace rock::provider::runtime
     api::Status setAutomaticReloadBlocked(std::uint64_t ownerToken, bool blocked);
     api::Status setChamberMarker(std::uint64_t ownerToken, std::uint32_t weaponSlot, api::weapon::ChamberMarker marker,
         std::uint32_t leaseFrames);
+    api::Status setCounterPresentation(std::uint64_t ownerToken, std::uint32_t weaponSlot,
+        const api::weapon::CounterPresentation* presentation, std::uint32_t leaseFrames);
     std::uint32_t weaponEmitterCount(std::uint32_t weaponSlot);
     std::uint32_t copyWeaponEmitters(std::uint32_t weaponSlot, api::weapon::Emitter* outEmitters,
         std::uint32_t capacity);

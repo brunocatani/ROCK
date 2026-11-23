@@ -8,7 +8,7 @@
 namespace rock::api::weapon {
     inline constexpr InterfaceId kInterfaceId = InterfaceId::Weapon;
     inline constexpr std::uint32_t kMajor = 2;
-    inline constexpr std::uint32_t kMinor = 0;
+    inline constexpr std::uint32_t kMinor = 1;
     inline constexpr std::uint32_t kMaxEmitters = 32;
     inline constexpr std::uint32_t kMaxCompositionEntries = 64;
     inline constexpr std::uint32_t kMaxHandlingLeaseFrames = 120;
@@ -572,6 +572,46 @@ namespace rock::api::weapon {
         Chambered = 2,
     };
     inline constexpr std::uint32_t kMaxChamberMarkerLeaseFrames = 4;
+
+    // 2.1. The fields of a weapon's ammo counter a counter presentation
+    // replaces. Fields it leaves out keep ROCK's values.
+    enum class CounterField : std::uint32_t
+    {
+        None = 0,
+        // loadedRounds replaces the slot's loaded count.
+        Loaded = 1u << 0,
+        // reserveRounds replaces the slot's reserve count.
+        Reserve = 1u << 1,
+        // label replaces the caliber label; an empty label shows none.
+        Label = 1u << 2,
+        // chamber replaces every chamber marker, including another owner's.
+        Chamber = 1u << 3,
+        // color replaces the counter style's digit colour.
+        Color = 1u << 4,
+        // The weapon shows no ammo counter.
+        Hidden = 1u << 5,
+    };
+    inline constexpr std::uint32_t kKnownCounterFields = 0x3F;
+    inline constexpr std::uint32_t kMaxCounterPresentationLeaseFrames = 4;
+    inline constexpr std::uint32_t kCounterLabelCapacity = 32;
+
+    /*
+     * 2.1. What a consumer that owns a weapon's ammunition shows on that
+     * weapon's ammo counter, in every counter style. fields (CounterField)
+     * names what it replaces. label is UTF-8, terminated inside the array.
+     * color is 0 to 1 per channel.
+     */
+    struct CounterPresentation
+    {
+        std::uint32_t size{ sizeof(CounterPresentation) };
+        std::uint32_t version{ 1 };
+        std::uint32_t fields{ 0 };
+        std::uint32_t loadedRounds{ 0 };
+        std::uint32_t reserveRounds{ 0 };
+        ChamberMarker chamber{ ChamberMarker::None };
+        float color[3]{ 1.0f, 1.0f, 1.0f };
+        char label[kCounterLabelCapacity]{};
+    };
     // setInventoryDrawPose: how old a reported pose may be when ROCK reveals
     // the weapon.
     inline constexpr std::uint32_t kMaxDrawPoseAgeFrames = 3;
@@ -689,6 +729,14 @@ namespace rock::api::weapon {
         // has revealed the weapon, for melee and for any other command;
         // TargetUnavailable while the hand's controller frame is unknown.
         Status(ROCK_CALL* setInventoryDrawPose)(OwnerToken owner, std::uint64_t commandId, const Transform* weaponWorld) noexcept;
+        // 2.1. Write. Takes the ammo counter of the weapon in weaponSlot for 1
+        // to kMaxCounterPresentationLeaseFrames frames; renew it each frame. It
+        // ends with the lease, so the counter returns to ROCK's values by
+        // itself when the owner stops. Null or fields 0 clears it. One owner
+        // per slot (OwnerConflict otherwise, until the holder clears it or its
+        // lease runs out). A presentation with Chamber wins over every
+        // setChamberMarker lease of that slot.
+        Status(ROCK_CALL* setCounterPresentation)(OwnerToken owner, std::uint32_t weaponSlot, const CounterPresentation* presentation, std::uint32_t leaseFrames) noexcept;
     };
 }
 #pragma pack(pop)

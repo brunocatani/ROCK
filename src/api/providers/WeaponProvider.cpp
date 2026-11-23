@@ -109,6 +109,13 @@ namespace rock::api::weapon
                 [&] { return p::runtime::setChamberMarker(owner, slot, marker, leaseFrames); });
         }
 
+        Status ROCK_CALL setCounterPresentation(OwnerToken owner, std::uint32_t slot, const CounterPresentation* presentation,
+            std::uint32_t leaseFrames) noexcept
+        {
+            return invoke(owner, kInterfaceId, 2, true,
+                [&] { return p::runtime::setCounterPresentation(owner, slot, presentation, leaseFrames); });
+        }
+
         Status ROCK_CALL getInteractionKey(OwnerToken owner, std::uint32_t slot, std::uint64_t* outKey) noexcept
         {
             if (!outKey)
@@ -338,6 +345,7 @@ namespace rock::api::weapon
             &setChamberMarker,
             &getInteractionKey,
             &setInventoryDrawPose,
+            &setCounterPresentation,
         };
         return value;
     }

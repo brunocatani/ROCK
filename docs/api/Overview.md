@@ -27,7 +27,8 @@ ROCK 0.92 (provider API 1) is updated with [Migration](Migration.md).
 | Storage | 15 | `Storage.h` | Read 1, Write 2, Callbacks 4 | [Storage](Storage.md) |
 
 Every interface is major 2, minor 0, except Collision and Input at minor 1
-(ROCK 1.0.3) and Grab at minor 2 (2.1 in ROCK 1.0.3, 2.2 unreleased); a mod
+(ROCK 1.0.3), WeaponParts and Weapon at minor 1 (unreleased) and Grab at minor 2
+(2.1 in ROCK 1.0.3, 2.2 unreleased); a mod
 built for an older minor binds to them unchanged. Ids 10 (References) and 12 (Diagnostics)
 are retired and never reused: References' queries are in Grab, and other mods
 draw through RPS UI Framework.
@@ -201,7 +202,7 @@ slot at or above `kMaxWeaponSlots` returns `InvalidArgument`.
 
 | Serves both slots | Slot 0 only (slot 1 returns `TargetUnavailable`) |
 | --- | --- |
-| Weapon `getWeaponState`, `getGrip`, `getClassification`, `copyEmitters`, `getInteractionKey`, `setChamberMarker`, `unequipWeapon`; WeaponParts `copyEvidenceDetails`, `copySources`, `querySourcePose`, `setDriveTargets`, `clearDriveTargets`; Hands `getRoles`; Grab hand state flags; Collision `getEnvironment`; NativeInteraction weapon driving | Weapon composition, authored grip and scope sight; every other WeaponParts call; Input reload gesture and support trigger; Grab hand reservation and a held object's connected weapon; Collision ejection clearance; Animation `Weapon` authority |
+| Weapon `getWeaponState`, `getGrip`, `getClassification`, `copyEmitters`, `getInteractionKey`, `setChamberMarker`, `setCounterPresentation`, `unequipWeapon`; WeaponParts `copyEvidenceDetails`, `copySources`, `querySourcePose`, `setDriveTargets`, `clearDriveTargets`; Hands `getRoles`; Grab hand state flags; Collision `getEnvironment`; NativeInteraction weapon driving | Weapon composition, authored grip and scope sight; every other WeaponParts call; Input reload gesture and support trigger; Grab hand reservation and a held object's connected weapon; Collision ejection clearance; Animation `Weapon` authority |
 
 Weapon `setAutomaticReloadBlocked` takes no slot: it stops the automatic
 reload ROCK starts for slot 1 (see [Weapon](Weapon.md)). On slot 1, WeaponParts

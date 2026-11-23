@@ -59,6 +59,43 @@
         return api::Status::Ok;
     }
 
+    api::Status setCounterPresentation(const std::uint64_t ownerToken, const std::uint32_t weaponSlot,
+        const api::weapon::CounterPresentation* presentation, const std::uint32_t leaseFrames)
+    {
+        using Marker = api::weapon::ChamberMarker;
+        if (weaponSlot >= s_counterPresentations.size())
+            return api::Status::InvalidArgument;
+        const bool clearing = !presentation || presentation->fields == 0;
+        if (!clearing) {
+            if (presentation->size != sizeof(api::weapon::CounterPresentation))
+                return api::Status::InvalidSize;
+            if (presentation->version != 1)
+                return api::Status::UnsupportedVersion;
+            const auto& p = *presentation;
+            const bool terminated = std::memchr(p.label, 0, sizeof(p.label)) != nullptr;
+            const bool colorValid = std::all_of(std::begin(p.color), std::end(p.color),
+                [](const float value) { return std::isfinite(value) && value >= 0.0f && value <= 1.0f; });
+            if ((p.fields & ~api::weapon::kKnownCounterFields) != 0 || !terminated || !colorValid ||
+                (p.chamber != Marker::None && p.chamber != Marker::Empty && p.chamber != Marker::Chambered) ||
+                leaseFrames == 0 || leaseFrames > api::weapon::kMaxCounterPresentationLeaseFrames) {
+                return api::Status::InvalidArgument;
+            }
+        }
+        const auto frame = currentGameFrameIndex();
+        std::scoped_lock lock(s_counterPresentationMutex);
+        auto& lease = s_counterPresentations[weaponSlot];
+        if (lease.ownerToken && lease.ownerToken != ownerToken && frame <= lease.expiresAfterFrame) {
+            return api::Status::OwnerConflict;
+        }
+        if (clearing) {
+            if (lease.ownerToken == ownerToken)
+                lease = {};
+            return api::Status::Ok;
+        }
+        lease = CounterPresentationLease{ ownerToken, frame + leaseFrames, *presentation };
+        return api::Status::Ok;
+    }
+
     std::uint32_t weaponEmitterCount(const std::uint32_t weaponSlot)
     {
         const auto instanceAccess = s_physicsInteraction.borrow();

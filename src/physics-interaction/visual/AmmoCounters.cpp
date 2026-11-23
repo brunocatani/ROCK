@@ -249,13 +249,14 @@ namespace rock::ammo_counters
             if (counter.shown && counter.pose.valid && counter.pose.opacity > 0.0f) {
                 const auto chamber = overlayMarker(counter.chamber);
                 if (style == Style::Minimal) {
-                    healthy &= show(loaded, counter.pose, counter.pose.loaded, counter.loaded, Look{ .chamber = chamber });
-                    healthy &= show(reserve, counter.pose, counter.pose.reserve, counter.reserve, {}, counter.caliber);
+                    const std::array<float, 3> color = counter.colorOverride ? counter.color : std::array{ 1.0f, 1.0f, 1.0f };
+                    healthy &= show(loaded, counter.pose, counter.pose.loaded, counter.loaded, Look{ .color = color, .chamber = chamber });
+                    healthy &= show(reserve, counter.pose, counter.pose.reserve, counter.reserve, Look{ .color = color }, counter.caliber);
                 } else {
                     const Look look{
                         .style = style == Style::Immersive ? rpsui::api::number_overlay::Style::HudBracketed
                                                            : rpsui::api::number_overlay::Style::Hud,
-                        .color = hudColor,
+                        .color = counter.colorOverride ? counter.color : hudColor,
                         .secondaryValue = counter.reserve,
                         .chamber = chamber,
                     };

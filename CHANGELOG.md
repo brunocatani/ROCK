@@ -4,6 +4,10 @@
 
 ### Added
 
+- **For mod authors: Weapon 2.1.** `setCounterPresentation` lets a mod that owns
+  a weapon's ammunition take that weapon's ammo counter: its loaded and reserve
+  numbers, label, chamber cartridge and colour, or hide it. It wins over chamber
+  markers from other mods. Mods built for 2.0 keep working.
 - **For mod authors: WeaponParts 2.1.** `setLooseItemModels` makes every loose
   reference of a misc item show an object mod's model instead of its own (a loose
   mod shows the suppressor or scope it came from, not a mod crate), and ROCK gives

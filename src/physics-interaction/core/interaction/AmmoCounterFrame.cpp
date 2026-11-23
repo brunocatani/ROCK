@@ -176,6 +176,8 @@ namespace rock
             using WeaponFlag = api::weapon::WeaponStateFlag;
             constexpr auto required =
                 static_cast<std::uint32_t>(WeaponFlag::AmmoKnown) | static_cast<std::uint32_t>(WeaponFlag::WeaponDrawn);
+            // Labels a counter presentation supplies, owned here for update().
+            std::array<std::array<char, api::weapon::kCounterLabelCapacity>, api::kMaxWeaponSlots> presentedLabels{};
             for (std::uint32_t slot = 0; slot < api::kMaxWeaponSlots; ++slot) {
                 api::weapon::WeaponState state{};
                 if (provider::runtime::copyPublishedWeaponState(state, slot) != api::Status::Ok)
@@ -191,6 +193,26 @@ namespace rock
                     (state.firingHand != api::Hand::Right && state.firingHand != api::Hand::Left)) {
                     continue;
                 }
+                // A counter presentation replaces the fields it names; the rest
+                // keep ROCK's values.
+                using Field = api::weapon::CounterField;
+                const auto presentation = provider::counterPresentation(slot);
+                const auto presents = [&](const Field field) {
+                    return (presentation.fields & static_cast<std::uint32_t>(field)) != 0;
+                };
+                if (presents(Field::Hidden))
+                    continue;
+                if (presents(Field::Label))
+                    std::memcpy(presentedLabels[slot].data(), presentation.label, presentedLabels[slot].size());
+                const char* caliber = presents(Field::Label) ? presentedLabels[slot].data() : caliberFor(slot);
+                const auto fill = [&](ammo_counters::HandCounter& counter) {
+                    counter.loaded = presents(Field::Loaded) ? presentation.loadedRounds : state.loadedRounds;
+                    counter.reserve = presents(Field::Reserve) ? presentation.reserveRounds : state.reserveRounds;
+                    counter.chamber = presents(Field::Chamber) ? presentation.chamber : provider::chamberMarker(slot);
+                    counter.colorOverride = presents(Field::Color);
+                    if (counter.colorOverride)
+                        counter.color = { presentation.color[0], presentation.color[1], presentation.color[2] };
+                };
                 // handRoles: [0] right, [1] left.
                 const auto holds = [&](std::size_t hand, bool firingOnly) {
                     const auto& role = publication.handRoles[hand];
@@ -249,10 +271,8 @@ namespace rock
                     counter.pose = ammo_counter_pose::resolveVanilla(toFrame(quad->world), isLeft, rightBone, leftBone,
                         head, hudLook.opacity);
                     counter.shown = counter.pose.valid;
-                    counter.loaded = state.loadedRounds;
-                    counter.reserve = state.reserveRounds;
-                    counter.chamber = provider::chamberMarker(slot);
-                    counter.caliber = caliberFor(slot);
+                    fill(counter);
+                    counter.caliber = caliber;
                     if (!counter.shown)
                         hidden("vanilla-pose");
                     continue;
@@ -298,16 +318,14 @@ namespace rock
                 const auto weaponUp =
                     transform_math::rotateLocalVectorToWorld(weaponWorld.rotate, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
                 auto& counter = hands[index];
-                counter.caliber = caliberFor(slot);
+                counter.caliber = caliber;
                 counter.pose = style == ammo_counters::Style::Immersive
                     ? ammo_counter_pose::resolveImmersive(toPoint(palm), toPoint(weaponRight), toPoint(weaponUp),
                           isLeft, head)
                     : ammo_counter_pose::resolve(toPoint(palm), toPoint(weaponRight), toPoint(weaponUp), isLeft, head,
                           ammo_counters::labels() && counter.caliber[0] != '\0');
                 counter.shown = counter.pose.valid;
-                counter.loaded = state.loadedRounds;
-                counter.reserve = state.reserveRounds;
-                counter.chamber = provider::chamberMarker(slot);
+                fill(counter);
             }
         }
         // The counters replace the vanilla one only while RPS UI shows them.

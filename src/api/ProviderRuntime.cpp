@@ -450,6 +450,27 @@ namespace rock::provider::runtime
         }
     }
 
+    // What an owner of a slot's ammunition shows on its ammo counter. A lease
+    // like the chamber marker, so the counter returns to ROCK's values by
+    // itself when the owner stops.
+    struct CounterPresentationLease
+    {
+        std::uint64_t ownerToken{ 0 };
+        std::uint64_t expiresAfterFrame{ 0 };
+        api::weapon::CounterPresentation presentation{};
+    };
+    std::mutex s_counterPresentationMutex;
+    std::array<CounterPresentationLease, api::kMaxWeaponSlots> s_counterPresentations{};
+
+    void clearCounterPresentationsForOwner(const std::uint64_t ownerToken)
+    {
+        std::scoped_lock lock(s_counterPresentationMutex);
+        for (auto& lease : s_counterPresentations) {
+            if (lease.ownerToken == ownerToken)
+                lease = {};
+        }
+    }
+
     struct WeaponPartTargetSlot
     {
         bool active{ false };
@@ -1352,6 +1373,7 @@ namespace rock::provider::runtime
         grab_callbacks::clear(ownerToken);
         clearAutomaticReloadBlockForOwner(ownerToken);
         clearChamberMarkersForOwner(ownerToken);
+        clearCounterPresentationsForOwner(ownerToken);
         {
             std::scoped_lock lock(s_interactionCommandMutex, s_handInputSuppressionMutex, s_weaponPartMutex,
                 s_nativeAnimationAuthorityMutex, s_equippedWeaponHandlingAuthorityMutex);
@@ -2456,6 +2478,16 @@ namespace rock::provider
         std::scoped_lock lock(s_chamberMarkerMutex);
         const auto& lease = s_chamberMarkers[weaponSlot];
         return lease.ownerToken && frame <= lease.expiresAfterFrame ? lease.marker : api::weapon::ChamberMarker::None;
+    }
+
+    api::weapon::CounterPresentation counterPresentation(const std::uint32_t weaponSlot)
+    {
+        if (weaponSlot >= s_counterPresentations.size())
+            return {};
+        const auto frame = currentGameFrameIndex();
+        std::scoped_lock lock(s_counterPresentationMutex);
+        const auto& lease = s_counterPresentations[weaponSlot];
+        return lease.ownerToken && frame <= lease.expiresAfterFrame ? lease.presentation : api::weapon::CounterPresentation{};
     }
 
     std::uint32_t copyWeaponPartDrives(PartDrive* outTargets, std::uint32_t maxTargets, std::uint64_t* outOwnerTokens,
