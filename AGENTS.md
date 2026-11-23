@@ -17,12 +17,13 @@ To change ROCK: read [Architecture](#architecture), find the task in [Where to s
 | --- | --- |
 | `src/` | The plugin (see [Source map](#source-map)) |
 | `include/ROCK/` | Public provider API headers, the only copy |
+| `docs/README.md`, `docs/images/` | The player guide (controls, features, settings pages), linked from the README and ROCK's Mods Config page, and its images |
 | `docs/api/` | One page per interface, and `Migration.md` for mods built for ROCK 0.92 |
 | `skills/rock-1.0-migration/` | Agent skill for updating a mod built for ROCK 0.92 |
 | `tests/` | Tests |
 | `preview/` | The setup wizard preview (`ROCKSetupWizardPreview.exe`): the wizard on the desktop, without the game |
 | `data/config/` | Example settings files, generated from the catalog |
-| `data/mod/` | Game data for the mod package: ROCK's Mods Config FO4 VR page (`ModsConfigFO4/Config/ROCK/spec.json`) |
+| `data/mod/` | Game data for the mod package: ROCK's Mods Config FO4 VR page (`ModsConfigFO4/Config/ROCK/spec.json`) and its banner (`Textures/ROCK/banner.dds`) |
 | `steamvr_bindings/` | SteamVR binding templates; shipped in the package and embedded in `ROCK.dll` for the setup wizard |
 | `third_party/openvr/` | Vendored OpenVR ABI |
 | `cmake/` | Version resource, test registration, packaging |
@@ -150,7 +151,8 @@ Under `src/physics-interaction/` unless the path says otherwise.
 | Native crashes in Havok or ragdolls | `native/safety/` |
 | A setting | `src/config/SettingMetadata.h`, `src/RockConfigLoad.cpp`, `src/RockConfig.h`, then regenerate the examples and place a `ROCK.toml` option in `spec.json` or its `kLeftOut`, or regenerate the Developer page for a developer option with `ROCKModsConfigSpecTests --write-developer-page data/mod/ModsConfigFO4/Config/ROCK/spec.json` (`ROCKModsConfigSpecTests` fails until you do) |
 | The setup wizard | `src/setup-wizard/SetupWizardPanel.cpp` (pages), `SetupWizard.cpp` (game host); try it with the preview |
-| ROCK's Mods Config page | `data/mod/ModsConfigFO4/Config/ROCK/spec.json`, `src/mods-config/ModsConfigClient.cpp` (its functions, live preview, version state) |
+| ROCK's Mods Config page | `data/mod/ModsConfigFO4/Config/ROCK/spec.json`, `src/mods-config/ModsConfigClient.cpp` (its functions, live preview, version state); a renamed or moved page also changes the settings table in `docs/README.md` |
+| Player-visible behavior, controls or defaults | Then `docs/README.md`, the player guide |
 | A provider API call | Its header, its `docs/api/` page, then [Provider API path](#provider-api-path) |
 | Frame-time cost | `performance/PerformanceProfiler.cpp` |
 
