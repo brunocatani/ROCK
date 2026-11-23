@@ -48,6 +48,11 @@
   },
   "content": [
     {
+      "type": "image",
+      "texture": "ROCK/banner.dds",
+      "width": 700
+    },
+    {
       "type": "text",
       "text": "<font color='#AAAAAA' size=13>Version: {clientState:modVersion}</font>",
       "html": true
@@ -58,7 +63,7 @@
       "content": [
         {
           "type": "text",
-          "text": "ROCK - Realistic Overengineered Character Kinetics - gives you physical hands in Fallout 4 VR. They collide with the world, pick things up, pull them from a distance, hold weapons by their grips, and use grenades and aid items by hand. Changes show in the game as you make them, except on the Controls page and Immersive Scopes and Grenades, which apply when you save."
+          "text": "ROCK - Realistic Overengineered Character Kinetics - gives you physical hands in Fallout 4 VR. They collide with the world, pick things up, pull them from a distance, hold weapons by their grips, and use grenades and aid items by hand."
         }
       ]
     },
@@ -69,17 +74,10 @@
       "content": [
         {
           "type": "button",
-          "text": "ROCK on Nexus Mods",
-          "help": "Opens ROCK's Nexus Mods page in your browser. Take off the headset to read it on your monitor.",
+          "text": "ROCK wiki",
+          "help": "Opens the ROCK wiki in your browser. Take off the headset to read it on your monitor.",
           "buttonText": "Open",
-          "action": { "type": "OpenURL", "url": "https://www.nexusmods.com/fallout4/mods/108881" }
-        },
-        {
-          "type": "button",
-          "text": "ROCK on GitHub",
-          "help": "Opens ROCK's readme in your browser. Take off the headset to read it on your monitor.",
-          "buttonText": "Open",
-          "action": { "type": "OpenURL", "url": "https://github.com/ArthurHub/FO4VR-ROCK/blob/main/README.md" }
+          "action": { "type": "OpenURL", "url": "https://github.com/ArthurHub/FO4VR-ROCK/blob/main/docs/README.md" }
         },
         {
           "type": "button",
@@ -91,12 +89,17 @@
         { "type": "spacer" },
         {
           "type": "text",
-          "text": "<font color='#10FA78'>Grabbing:</font> Hold grip near an object to pick it up. Point at a far object and hold grip to bring it to you; with Far Grab Style set to Pull, flick your hand toward yourself and catch it.",
+          "text": "<font color='#10FA78'>Grabbing:</font> Hold grip near an object to pick it up, or point at a far one and hold grip to bring it to you. Let go while moving to throw. Grab Direction and Far Grab Style are on the Interaction page.",
           "html": true
         },
         {
           "type": "text",
-          "text": "<font color='#10FA78'>Weapons:</font> Grab a loose weapon by its firing grip to equip it. Hold the barrel or a support grip with your other hand to aim with both hands. Grab the firing grip with your other hand to switch hands.",
+          "text": "<font color='#10FA78'>Weapons:</font> Grab a loose weapon by its firing grip to equip it. Hold the barrel or a front grip with your other hand to aim with both hands, and grab the firing grip with your other hand to switch hands. Weapon Equipping sets how grips take and let go.",
+          "html": true
+        },
+        {
+          "type": "text",
+          "text": "<font color='#10FA78'>Two weapons:</font> Grab another weapon with your free hand to carry one in each hand. Each fires with its own trigger.",
           "html": true
         },
         {
@@ -116,7 +119,12 @@
         },
         {
           "type": "text",
-          "text": "<font color='#10FA78'>Setup wizard:</font> ROCK's setup wizard picks your controllers and main options. Open it with Setup Wizard above.",
+          "text": "<font color='#10FA78'>Stash and use items:</font> Let go of an item behind your shoulder to put it in your inventory, and put a weapon away the same way. Touch a Stimpak to your body to inject it, and hold food or a drink at your mouth.",
+          "html": true
+        },
+        {
+          "type": "text",
+          "text": "<font color='#10FA78'>Controls:</font> Every function and button can be moved on the Controls page. Index and Vive controllers get ROCK's SteamVR binding from the setup wizard.",
           "html": true
         }
       ]
@@ -309,12 +317,12 @@
       ]
     },
     {
-      "pageDisplayName": "Weapons",
-      "help": "Equipping and holding weapons, the bipod, steadying your aim, the firing hand, and melee swings.",
+      "pageDisplayName": "Weapon Equipping",
+      "help": "Picking up, holding and letting go of any weapon, and which hand fires.",
       "content": [
         {
           "type": "section",
-          "text": "Handling",
+          "text": "Picking Up and Letting Go",
           "content": [
             {
               "type": "switcher",
@@ -324,37 +332,6 @@
               "help": "Equips a loose weapon once your palm settles on its firing grip, with no trigger. Off: pull the trigger while holding it. With Auto Equip, letting go always drops the weapon.",
               "default": true,
               "storage": { "path": ["WeaponHandling", "AutoEquip"] }
-            },
-            {
-              "type": "slider",
-              "valueType": "float",
-              "text": "Auto Equip Settle Time",
-              "help": "How long your palm must stay on the firing grip before Auto Equip equips.",
-              "default": 0.15,
-              "valueOptions": { "min": 0.0, "max": 2.0, "step": 0.05 },
-              "display": { "unit": "s" },
-              "enabledWhen": { "setting": "autoEquip", "equals": true },
-              "storage": { "path": ["WeaponHandling", "AutoEquipSettleSeconds"] }
-            },
-            {
-              "type": "dropdown",
-              "valueType": "int",
-              "text": "Weapon Release Mode",
-              "help": "What happens when the last hand lets go of an equipped weapon. Only with Auto Equip off.",
-              "default": 3,
-              "valueOptions": {
-                "options": [
-                  { "value": 1, "text": "Stays equipped", "help": "It stays equipped and held, as in the game." },
-                  {
-                    "value": 2,
-                    "text": "Stays loose in hand",
-                    "help": "Press grab again and release to drop or stash it, or pull the trigger to equip it again."
-                  },
-                  { "value": 3, "text": "Drops", "help": "It drops where it is, leaving with your hand's motion." }
-                ]
-              },
-              "enabledWhen": { "setting": "autoEquip", "equals": false },
-              "storage": { "path": ["WeaponHandling", "WeaponReleaseMode"] }
             },
             {
               "type": "dropdown",
@@ -380,6 +357,179 @@
               "storage": { "path": ["WeaponHandling", "DetachEitherHand"] }
             },
             {
+              "type": "dropdown",
+              "valueType": "int",
+              "text": "Weapon Release Mode",
+              "help": "What happens when the last hand lets go of an equipped weapon. Only with Auto Equip off.",
+              "default": 3,
+              "valueOptions": {
+                "options": [
+                  { "value": 1, "text": "Stays equipped", "help": "It stays equipped and held, as in the game." },
+                  {
+                    "value": 2,
+                    "text": "Stays loose in hand",
+                    "help": "Press grab again and release to drop or stash it, or pull the trigger to equip it again."
+                  },
+                  { "value": 3, "text": "Drops", "help": "It drops where it is, leaving with your hand's motion." }
+                ]
+              },
+              "enabledWhen": { "setting": "autoEquip", "equals": false },
+              "storage": { "path": ["WeaponHandling", "WeaponReleaseMode"] }
+            },
+            {
+              "type": "section",
+              "text": "Fine-Tuning",
+              "help": "How long Auto Equip waits, how far a hand reaches for the firing grip, and the grip zone markers.",
+              "isCollapsible": true,
+              "collapsed": true,
+              "content": [
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "text": "Auto Equip Settle Time",
+                  "help": "How long your palm must stay on the firing grip before Auto Equip equips.",
+                  "default": 0.15,
+                  "valueOptions": { "min": 0.0, "max": 2.0, "step": 0.05 },
+                  "display": { "unit": "s" },
+                  "enabledWhen": { "setting": "autoEquip", "equals": true },
+                  "storage": { "path": ["WeaponHandling", "AutoEquipSettleSeconds"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "text": "Firing Grip Reach",
+                  "help": "How far from the firing grip a hand can take it over or grab it again, in game units (70 = 1 metre).",
+                  "default": 10.0,
+                  "valueOptions": { "min": 0.25, "max": 30.0, "step": 0.25 },
+                  "storage": { "path": ["WeaponHandling", "FiringGripReattachRadiusGameUnits"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "text": "Grip Zone Marker Size",
+                  "help": "How big the sphere that marks a weapon's grip zones is, in game units (70 = 1 metre).",
+                  "default": 0.7,
+                  "valueOptions": { "min": 0.1, "max": 5.0, "step": 0.1 },
+                  "storage": { "path": ["WeaponHandling", "GripZoneIndicatorDiameterGameUnits"] }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "section",
+          "text": "Firing Hand",
+          "content": [
+            {
+              "type": "dropdown",
+              "valueType": "string",
+              "text": "Default Hand",
+              "help": "The firing hand for equips that come without a hand: favorites, PALM, scripts and other mods. Grenade draws prefer it. Applies on the next equip or draw.",
+              "default": "right",
+              "valueOptions": {
+                "options": [
+                  { "value": "right", "text": "Right" },
+                  { "value": "left", "text": "Left" }
+                ]
+              },
+              "storage": { "path": ["FiringHand", "DefaultHand"] }
+            },
+            {
+              "type": "section",
+              "text": "Left-Hand Fine-Tuning",
+              "help": "Adjusts the mirrored hold of a weapon fired from the left hand.",
+              "isCollapsible": true,
+              "collapsed": true,
+              "content": [
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "text": "Left Firing Aim: Yaw",
+                  "help": "Turns the aim of a weapon fired from the left hand. 0 is the plain mirror of the right-hand hold.",
+                  "default": 0.0,
+                  "valueOptions": { "min": -30.0, "max": 30.0, "step": 0.5 },
+                  "display": { "unit": "°" },
+                  "storage": { "path": ["FiringHand", "Left", "AimYawDegrees"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "text": "Left Firing Aim: Pitch",
+                  "help": "Tilts the aim of a weapon fired from the left hand up or down.",
+                  "default": 0.0,
+                  "valueOptions": { "min": -30.0, "max": 30.0, "step": 0.5 },
+                  "display": { "unit": "°" },
+                  "storage": { "path": ["FiringHand", "Left", "AimPitchDegrees"] }
+                },
+                {
+                  "type": "cf.transform",
+                  "valueType": "string",
+                  "text": "Left Firing Aim: Offset",
+                  "help": "Shifts the aim of a weapon fired from the left hand, in game units (70 = 1 metre).",
+                  "default": { "pos": [0.0, 0.0, 0.0] },
+                  "valueOptions": {
+                    "position": { "min": -15.0, "max": 15.0, "step": 0.1 },
+                    "rotation": false,
+                    "scale": false
+                  },
+                  "storage": { "path": ["FiringHand", "Left", "AimOffset"] }
+                },
+                {
+                  "type": "cf.transform",
+                  "valueType": "string",
+                  "text": "Left Firing Grip",
+                  "help": "Moves where the left hand holds the firing grip, in game units: X along the fingers, Y into or out of the palm, Z across the palm. All 0 is the plain mirror of the right-hand grip. Regrab to apply.",
+                  "default": { "pos": [0.0, 0.0, 0.0] },
+                  "valueOptions": {
+                    "position": { "min": -15.0, "max": 15.0, "step": 0.1 },
+                    "rotation": false,
+                    "scale": false
+                  },
+                  "storage": { "path": ["FiringHand", "Left", "GripOffset"] }
+                },
+                {
+                  "type": "cf.transform",
+                  "valueType": "string",
+                  "text": "Right Support Grip",
+                  "help": "Moves where the right hand holds a support grip when the left hand fires, in game units: X along the fingers, Y into or out of the palm, Z across the palm. All 0 is the plain mirror of the left-hand support grip. Regrab to apply.",
+                  "default": { "pos": [0.0, 0.0, 0.0] },
+                  "valueOptions": {
+                    "position": { "min": -15.0, "max": 15.0, "step": 0.1 },
+                    "rotation": false,
+                    "scale": false
+                  },
+                  "storage": { "path": ["FiringHand", "Right", "SupportGripOffset"] }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "pageDisplayName": "Gun Handling",
+      "help": "The ammo counter, how your hands hold a gun, steadying your aim, scopes and the bipod.",
+      "content": [
+        {
+          "type": "dropdown",
+          "valueType": "int",
+          "text": "Ammo Counter Style",
+          "help": "How the ammo counter of each drawn weapon looks. Every style replaces the game's counter.",
+          "default": 2,
+          "valueOptions": {
+            "options": [
+              { "value": 1, "text": "Minimal", "help": "White loaded and reserve rounds beside the firing grip, shown while you look at them." },
+              { "value": 2, "text": "Immersive", "help": "The same place, in the game's HUD color and bracket frame, loaded over reserve." },
+              { "value": 3, "text": "Vanilla", "help": "The game's counter on the back of the hand holding the weapon, always shown." }
+            ]
+          },
+          "storage": { "path": ["WeaponHandling", "AmmoCounterStyle"] }
+        },
+        {
+          "type": "section",
+          "text": "Grips",
+          "content": [
+            {
               "type": "switcher",
               "valueType": "bool",
               "text": "Grab Anywhere on Weapon",
@@ -390,84 +540,25 @@
             {
               "type": "switcher",
               "valueType": "bool",
+              "text": "FRIK Weapon Offsets",
+              "help": "Uses the weapon offsets you saved in FRIK, with their weapon scale, instead of ROCK's grip. Weapons with a saved offset use dynamic support grabs only and skip PAPER's reload animations.",
+              "default": false,
+              "storage": { "path": ["WeaponHandling", "FrikUserWeaponOffsets"] }
+            }
+          ]
+        },
+        {
+          "type": "section",
+          "text": "Aim",
+          "content": [
+            {
+              "type": "switcher",
+              "valueType": "bool",
               "text": "Gunstock Mode",
               "help": "Two-handed firearms aim along the line from your firing hand to your support hand, like a rifle with a stock. Melee weapons and bipod-latched weapons are not affected.",
               "default": false,
               "storage": { "path": ["WeaponHandling", "GunstockMode"] }
             },
-            {
-              "type": "slider",
-              "valueType": "float",
-              "text": "Firing Grip Reach",
-              "help": "How far from the firing grip a hand can take it over or grab it again, in game units (70 = 1 metre).",
-              "default": 10.0,
-              "valueOptions": { "min": 0.25, "max": 30.0, "step": 0.25 },
-              "storage": { "path": ["WeaponHandling", "FiringGripReattachRadiusGameUnits"] }
-            },
-            {
-              "type": "slider",
-              "valueType": "float",
-              "text": "Grip Zone Marker Size",
-              "help": "How big the sphere that marks a weapon's grip zones is, in game units (70 = 1 metre).",
-              "default": 0.7,
-              "valueOptions": { "min": 0.1, "max": 5.0, "step": 0.1 },
-              "storage": { "path": ["WeaponHandling", "GripZoneIndicatorDiameterGameUnits"] }
-            },
-            {
-              "type": "switcher",
-              "valueType": "bool",
-              "text": "FRIK Weapon Offsets",
-              "help": "Uses the weapon offsets you saved in FRIK, with their weapon scale, instead of ROCK's grip. Weapons with a saved offset use dynamic support grabs only and skip PAPER's reload animations.",
-              "default": false,
-              "storage": { "path": ["WeaponHandling", "FrikUserWeaponOffsets"] }
-            },
-            {
-              "type": "dropdown",
-              "valueType": "int",
-              "text": "Ammo Counter Style",
-              "help": "How the ammo counter of each drawn weapon looks. Every style replaces the game's counter.",
-              "default": 2,
-              "valueOptions": {
-                "options": [
-                  { "value": 1, "text": "Minimal", "help": "White loaded and reserve rounds beside the firing grip, shown while you look at them." },
-                  { "value": 2, "text": "Immersive", "help": "The same place, in the game's HUD color and bracket frame, loaded over reserve." },
-                  { "value": 3, "text": "Vanilla", "help": "The game's counter on the back of the hand holding the weapon, always shown." }
-                ]
-              },
-              "storage": { "path": ["WeaponHandling", "AmmoCounterStyle"] }
-            }
-          ]
-        },
-        {
-          "type": "section",
-          "text": "Bipod",
-          "content": [
-            {
-              "type": "switcher",
-              "valueType": "bool",
-              "id": "bipodMode",
-              "text": "Bipod Mode",
-              "help": "Click the right stick to latch an equipped weapon to the surface it touches. While latched, recoil is a fixed 10%. Off: the click is left to other mods.",
-              "default": true,
-              "storage": { "path": ["WeaponHandling", "BipodMode"] }
-            },
-            {
-              "type": "slider",
-              "valueType": "float",
-              "text": "Bipod Hands-Free Distance",
-              "help": "A latched weapon stays equipped with no hand on it while your headset is within this distance of the latch. Farther away it is left in place as a world object.",
-              "default": 2.0,
-              "valueOptions": { "min": 0.5, "max": 10.0, "step": 0.1 },
-              "display": { "unit": "m" },
-              "enabledWhen": { "setting": "bipodMode", "equals": true },
-              "storage": { "path": ["WeaponHandling", "BipodHandsFreeRadiusMeters"] }
-            }
-          ]
-        },
-        {
-          "type": "section",
-          "text": "Shake Filtering",
-          "content": [
             {
               "type": "stepper",
               "valueType": "int",
@@ -484,6 +575,20 @@
                 ]
               },
               "storage": { "path": ["WeaponHandling", "WeaponFilteringPreset"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "id": "immersiveScopes",
+              "applies": "save",
+              "text": "Immersive Scopes",
+              "help": "Places the scope view on the weapon, raises it while you hold the scope button, and corrects the overlay and zoom. Off: the game's own scopes. Turning it on takes the game's scope hook until you restart. Release the scope button before changing it.",
+              "default": true,
+              "storage": { "path": ["Scopes", "EnableImmersiveScopes"] }
+            },
+            {
+              "type": "text",
+              "text": "How long a press of A lasts before it scopes instead of reloading is the Scope binding's duration, on the Controls page."
             },
             {
               "type": "section",
@@ -528,121 +633,34 @@
         },
         {
           "type": "section",
-          "text": "Firing Hand",
+          "text": "Bipod",
           "content": [
             {
-              "type": "dropdown",
-              "valueType": "string",
-              "text": "Default Hand",
-              "help": "The firing hand for equips that come without a hand: favorites, PALM, scripts and other mods. Grenade draws prefer it. Applies on the next equip or draw.",
-              "default": "right",
-              "valueOptions": {
-                "options": [
-                  { "value": "right", "text": "Right" },
-                  { "value": "left", "text": "Left" }
-                ]
-              },
-              "storage": { "path": ["FiringHand", "DefaultHand"] }
+              "type": "switcher",
+              "valueType": "bool",
+              "id": "bipodMode",
+              "text": "Bipod Mode",
+              "help": "Click the right stick to latch an equipped weapon to the surface it touches. While latched, recoil is a fixed 10%. Off: the click is left to other mods.",
+              "default": true,
+              "storage": { "path": ["WeaponHandling", "BipodMode"] }
             },
             {
               "type": "slider",
               "valueType": "float",
-              "text": "Left Firing Aim: Yaw",
-              "help": "Turns the aim of a weapon fired from the left hand. 0 is the plain mirror of the right-hand hold.",
-              "default": 0.0,
-              "valueOptions": { "min": -30.0, "max": 30.0, "step": 0.5 },
-              "display": { "unit": "°" },
-              "storage": { "path": ["FiringHand", "Left", "AimYawDegrees"] }
-            },
-            {
-              "type": "slider",
-              "valueType": "float",
-              "text": "Left Firing Aim: Pitch",
-              "help": "Tilts the aim of a weapon fired from the left hand up or down.",
-              "default": 0.0,
-              "valueOptions": { "min": -30.0, "max": 30.0, "step": 0.5 },
-              "display": { "unit": "°" },
-              "storage": { "path": ["FiringHand", "Left", "AimPitchDegrees"] }
-            },
-            {
-              "type": "cf.transform",
-              "valueType": "string",
-              "text": "Left Firing Aim: Offset",
-              "help": "Shifts the aim of a weapon fired from the left hand, in game units (70 = 1 metre).",
-              "default": { "pos": [0.0, 0.0, 0.0] },
-              "valueOptions": {
-                "position": { "min": -15.0, "max": 15.0, "step": 0.1 },
-                "rotation": false,
-                "scale": false
-              },
-              "storage": { "path": ["FiringHand", "Left", "AimOffset"] }
-            },
-            {
-              "type": "cf.transform",
-              "valueType": "string",
-              "text": "Left Firing Grip",
-              "help": "Moves where the left hand holds the firing grip, in game units: X along the fingers, Y into or out of the palm, Z across the palm. All 0 is the plain mirror of the right-hand grip. Regrab to apply.",
-              "default": { "pos": [0.0, 0.0, 0.0] },
-              "valueOptions": {
-                "position": { "min": -15.0, "max": 15.0, "step": 0.1 },
-                "rotation": false,
-                "scale": false
-              },
-              "storage": { "path": ["FiringHand", "Left", "GripOffset"] }
-            },
-            {
-              "type": "cf.transform",
-              "valueType": "string",
-              "text": "Right Support Grip",
-              "help": "Moves where the right hand holds a support grip when the left hand fires, in game units: X along the fingers, Y into or out of the palm, Z across the palm. All 0 is the plain mirror of the left-hand support grip. Regrab to apply.",
-              "default": { "pos": [0.0, 0.0, 0.0] },
-              "valueOptions": {
-                "position": { "min": -15.0, "max": 15.0, "step": 0.1 },
-                "rotation": false,
-                "scale": false
-              },
-              "storage": { "path": ["FiringHand", "Right", "SupportGripOffset"] }
-            }
-          ]
-        },
-        {
-          "type": "section",
-          "text": "Melee",
-          "content": [
-            {
-              "type": "slider",
-              "valueType": "float",
-              "text": "Melee Grip Angle",
-              "help": "Tilts a held melee weapon and your hand together around the grip, on top of ROCK's 30 degree forward tilt. Negative tilts back; -30 gives the weapon's authored angle. Regrab a loose weapon to see it.",
-              "default": 0.0,
-              "valueOptions": { "min": -180.0, "max": 180.0, "step": 1.0 },
-              "display": { "unit": "°" },
-              "storage": { "path": ["WeaponHandling", "MeleeGripPitchDegrees"] }
-            },
-            {
-              "type": "slider",
-              "valueType": "float",
-              "text": "Melee Swing Speed",
-              "help": "How fast your hand must move to start a melee swing, in game units per second (70 = 1 metre per second). The game uses 200. Turning the wrist alone never swings.",
-              "default": 300.0,
-              "valueOptions": { "min": 50.0, "max": 2000.0, "step": 10.0 },
-              "storage": { "path": ["NativeGameplay", "VanillaMeleeSwingSpeed"] }
-            },
-            {
-              "type": "slider",
-              "valueType": "float",
-              "text": "Gun Bash Speed",
-              "help": "How fast your hand must move to start a gun bash, in game units per second (70 = 1 metre per second). The game uses 200. Turning the wrist alone never bashes.",
-              "default": 400.0,
-              "valueOptions": { "min": 50.0, "max": 2000.0, "step": 10.0 },
-              "storage": { "path": ["NativeGameplay", "VanillaGunBashSpeed"] }
+              "text": "Bipod Hands-Free Distance",
+              "help": "A latched weapon stays equipped with no hand on it while your headset is within this distance of the latch. Farther away it is left in place as a world object.",
+              "default": 2.0,
+              "valueOptions": { "min": 0.5, "max": 10.0, "step": 0.1 },
+              "display": { "unit": "m" },
+              "enabledWhen": { "setting": "bipodMode", "equals": true },
+              "storage": { "path": ["WeaponHandling", "BipodHandsFreeRadiusMeters"] }
             }
           ]
         }
       ]
     },
     {
-      "pageDisplayName": "Recoil",
+      "pageDisplayName": "Gun Recoil",
       "help": "How much each weapon kicks in your hands.",
       "content": [
         {
@@ -776,26 +794,40 @@
       ]
     },
     {
-      "pageDisplayName": "Scopes and Grenades",
-      "help": "ROCK's scopes on the weapon, and grenades drawn and thrown by hand.",
+      "pageDisplayName": "Melee and Grenades",
+      "help": "Melee grips and swings, and grenades drawn and thrown by hand.",
       "content": [
         {
           "type": "section",
-          "text": "Scopes",
+          "text": "Melee",
           "content": [
             {
-              "type": "switcher",
-              "valueType": "bool",
-              "id": "immersiveScopes",
-              "applies": "save",
-              "text": "Immersive Scopes",
-              "help": "Places the scope view on the weapon, raises it while you hold the scope button, and corrects the overlay and zoom. Off: the game's own scopes. Turning it on takes the game's scope hook until you restart. Release the scope button before changing it.",
-              "default": true,
-              "storage": { "path": ["Scopes", "EnableImmersiveScopes"] }
+              "type": "slider",
+              "valueType": "float",
+              "text": "Melee Grip Angle",
+              "help": "Tilts a held melee weapon and your hand together around the grip, on top of ROCK's 30 degree forward tilt. Negative tilts back; -30 gives the weapon's authored angle. Regrab a loose weapon to see it.",
+              "default": 0.0,
+              "valueOptions": { "min": -180.0, "max": 180.0, "step": 1.0 },
+              "display": { "unit": "°" },
+              "storage": { "path": ["WeaponHandling", "MeleeGripPitchDegrees"] }
             },
             {
-              "type": "text",
-              "text": "How long a press of A lasts before it scopes instead of reloading is the Scope binding's duration, on the Controls page."
+              "type": "slider",
+              "valueType": "float",
+              "text": "Melee Swing Speed",
+              "help": "How fast your hand must move to start a melee swing, in game units per second (70 = 1 metre per second). The game uses 200. Turning the wrist alone never swings.",
+              "default": 300.0,
+              "valueOptions": { "min": 50.0, "max": 2000.0, "step": 10.0 },
+              "storage": { "path": ["NativeGameplay", "VanillaMeleeSwingSpeed"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Gun Bash Speed",
+              "help": "How fast your hand must move to start a gun bash, in game units per second (70 = 1 metre per second). The game uses 200. Turning the wrist alone never bashes.",
+              "default": 400.0,
+              "valueOptions": { "min": 50.0, "max": 2000.0, "step": 10.0 },
+              "storage": { "path": ["NativeGameplay", "VanillaGunBashSpeed"] }
             }
           ]
         },

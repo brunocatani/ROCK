@@ -1,10 +1,14 @@
+<p align="center">
+  <img src="docs/images/banner.png" alt="ROCK" width="800">
+</p>
+
 # ROCK - Realistic Overengineered Character Kinetics
 
 [![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=flat-square)](LICENSE)
 
 > A Fallout 4 VR F4SE plugin that gives the player physical hands: grabbing, hand and weapon collision, weapon handling, and a provider API other mods build on.
 
-[Download on Nexus Mods](https://www.nexusmods.com/fallout4/mods/108881) · [API reference](docs/api/Overview.md) · [Developer guide](https://devartificial.pro/docs/apis/rock) · [Changelog](CHANGELOG.md)
+### [User Guide](docs/README.md) · [Download on Nexus Mods](https://www.nexusmods.com/fallout4/mods/108881) · [Changelog](CHANGELOG.md) · [API Reference](docs/api/Overview.md) · [Developer Guide](https://devartificial.pro/docs/apis/rock)
 
 <p align="center">
   <a href="https://www.youtube.com/watch?v=tPaIzmZ9P0o&t=113s">
@@ -18,6 +22,7 @@
 
 - [Background](#background)
 - [Install](#install)
+- [Usage](#usage)
 - [Configuration](#configuration)
 - [Building mods with ROCK](#building-mods-with-rock)
 - [Building ROCK from source](#building-rock-from-source)
@@ -92,6 +97,13 @@ The wizard opens by itself the first time you play with this ROCK, and again whe
 - **SCISSORS** owns NPC interactions: NPC collision, physical melee, blades, held NPCs and active ragdoll. ROCK 1.0 has no NPC features of its own. The original SCISSORS mod is a different, retired mod that the new SCISSORS replaces under the same name; remove it.
 - **Mods built for ROCK 0.92 or earlier** use provider API 1, which ROCK 1.0 does not serve. ROCK refuses them and names each one in `ROCK.log`; the game keeps running with their ROCK features off. Update or remove them; they work again once rebuilt against ROCK 1.0's headers.
 - **Upgrading from ROCK 0.92** keeps your settings: on its first start ROCK 1.0 carries every option you changed in `ROCK.ini` and `ROCK_Developer.ini` into `ROCK.toml` and `ROCK_Developer.toml`, then deletes the old INI files. Options you left at their old defaults take ROCK 1.0's defaults. ROCK.log lists the settings that no longer exist. NPC settings moved to SCISSORS.
+
+## Usage
+
+Hold grip near an object to pick it up, or point at a far one and hold grip to bring it to you. Grab a loose weapon by its firing grip to equip it, and hold its barrel with your other hand to aim with both. Tap A to reload, hold it to scope, and hold B to draw a grenade. Open Mods Config FO4 VR (hold both thumbsticks pressed in) and pick **ROCK** for the settings and the setup wizard.
+
+- [User Guide](docs/README.md): controls, grabbing, weapons, settings and remapping
+- [Changelog](CHANGELOG.md)
 
 ## Configuration
 
