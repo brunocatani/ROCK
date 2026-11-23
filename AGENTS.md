@@ -42,12 +42,12 @@ To change ROCK: read [Architecture](#architecture), find the task in [Where to s
 
 | FRIK phase | ROCK work |
 | --- | --- |
-| `FrameBegin` | Pending teardown, settings reload, `PhysicsInteraction` creation, native HUD placement |
+| `FrameBegin` | Pending teardown, queued devbench actions, settings reload, `PhysicsInteraction` creation, native HUD placement |
 | `NativeGraphOutput` | Authored weapon grip capture |
 | `AfterArmSolve` | The tick: provider `BeforeRock` callbacks, `PhysicsInteraction::update`, `AfterRock`, `Complete` |
 | `AfterWeaponPosition` | Weapon presentation |
 | `AfterWorldFinal` | Rendered-pose capture, `finalizeFramePose`, provider publication, `Presented` callbacks |
-| `FrameEnd` | A tick without physics when the skeleton phases did not run, so leases still expire |
+| `FrameEnd` | A tick without physics when the skeleton phases did not run, so leases still expire; the devbench state snapshot |
 
 `PhysicsInteraction::update` (`core/interaction/PhysicsInteractionUpdate.cpp`) stops early without FRIK, a skeleton or a Havok world, or behind a menu; builds one `PhysicsFrameContext`; updates hand and body colliders; runs the equipped-weapon frame; then selection, grab input, held placement, hand collision, haptics, contacts and grenades. `finalizeFramePose` publishes the final collider pose and registers the next physics-step callbacks.
 
@@ -56,6 +56,7 @@ To change ROCK: read [Architecture](#architecture), find the task in [Where to s
 - **Frame thread** (FRIK's callbacks, the game thread): owns `PhysicsInteraction`, both `Hand`s and every structural change to ROCK's Havok bodies. Provider calls marked "Game" must come from here.
 - **Physics threads**: contact signals (`core/interaction/ContactEvents.cpp`) and the step drive (`native/havok/PhysicsStepDriveCoordinator.h`), which moves ROCK's bodies and the grab authority between substeps. They never change structure; the frame thread changes it only inside `PhysicsCallbackQuiescenceGate::pauseForMutation()`.
 - **Any thread**: provider reads marked "Any" copy published snapshots.
+- **devbench's listener thread** calls the devbench tool: `health`, `state` and `perf` answer there from atomics and published snapshots; every other action queues for FrameBegin.
 - **Background workers** handle file and diagnostic work on copied data: the saved-grab-offset writer, the profiler's report writer and the debug overlay shape builder. Weapon geometry is built in bounded slices on the frame thread (`weapon/collision/WeaponGeometryTask.h`).
 
 ### Ownership
@@ -116,6 +117,7 @@ Under `src/physics-interaction/` unless the path says otherwise.
 | `src/setup-wizard/` | Setup wizard: its panel (`SetupWizardPanel`, shared with the preview), the game's host and SteamVR binding |
 | `src/mods-config/` | ROCK's client of Mods Config FO4 VR's native API; `ModsConfigFO4Api.h` is Mods Config's header, copied as is |
 | `src/rock_support/` | Logger, OpenVR controller state, menus, game INI overrides, developer telemetry |
+| `src/devbench/` | The devbench tool: live state, session settings and profiler; `vendor/` is devbench's client API, copied as is |
 
 ## Where to start
 
@@ -155,6 +157,7 @@ Under `src/physics-interaction/` unless the path says otherwise.
 | Player-visible behavior, controls or defaults | Then `docs/README.md`, the player guide |
 | A provider API call | Its header, its `docs/api/` page, then [Provider API path](#provider-api-path) |
 | Frame-time cost | `performance/PerformanceProfiler.cpp` |
+| ROCK in the running game: its state, session settings, profiling | `docs/dev/devbench.md` |
 
 ## Build and test
 
