@@ -1023,6 +1023,7 @@ namespace
             s_physicsInteraction->publishTestbenchFrame();
         if (devbench::isArmed())
             publishDevBenchState();
+        devbench::onFrameEnd(s_physicsInteraction);
         grip_zone_indicators::EndFrame(game_timing::currentFrameTiming().sequence);
         performance_profiler::endFrame();
     }

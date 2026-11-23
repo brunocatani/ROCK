@@ -37,9 +37,12 @@
 //   ProviderWeaponSources        provider weapon source node catalog
 //   DebugOverlayPublish          debug collider overlay publication
 //   DevBenchState                hands and weapons for the devbench tool's state
+//                                and hand actions
 //
 // Shared helpers for those files are in PhysicsInteractionInternal.h.
 #pragma once
+#include <nlohmann/json_fwd.hpp>
+
 #include "api/EjectionContactRequests.h"
 #include "api/HandInteractionPublication.h"
 #include "api/ObjectRestRequests.h"
@@ -426,6 +429,8 @@ namespace rock
         void publishTestbenchFrame();
         // The devbench tool's state of hands and weapons, from FRIK's FrameEnd while the tool is armed.
         void captureDevBenchState(devbench::RockState& state) const;
+        // The devbench tool's hand action: one hand's poses, selection and grab in detail, from FRIK's FrameEnd.
+        nlohmann::json describeHandForDevBench(bool isLeft);
         void publishDebugRenderFrame();
 
     private:

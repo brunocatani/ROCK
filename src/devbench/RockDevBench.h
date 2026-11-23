@@ -8,9 +8,10 @@
  * ROCK logs one line and registers nothing.
  *
  * Threads: devbench calls the tool on its listener thread. health, state and
- * perf answer there; every other action is queued for ROCK's next FrameBegin,
- * or for devbench's main-thread queue while FRIK's frame is not running, and
- * the caller waits up to 2 seconds. See docs/dev/devbench.md.
+ * perf answer there; hand is queued for ROCK's next FrameEnd; every other
+ * action is queued for ROCK's next FrameBegin, or for devbench's main-thread
+ * queue while FRIK's frame is not running. The caller waits up to 2 seconds.
+ * See docs/dev/devbench.md.
  */
 #pragma once
 
@@ -22,11 +23,18 @@
 
 #include "devbench/RockDevBenchState.h"
 
+namespace rock
+{
+    class PhysicsInteraction;
+}
+
 namespace rock::devbench
 {
     void registerTool();
 
     void onFrameBegin();
+
+    void onFrameEnd(PhysicsInteraction* interaction);
 
     void publishState(RockState&& state);
 

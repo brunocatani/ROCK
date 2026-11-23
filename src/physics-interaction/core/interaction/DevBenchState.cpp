@@ -1,15 +1,46 @@
 // The devbench tool's state of hands and weapons: plain values copied on the
-// frame thread, which the tool formats later on devbench's listener thread.
+// frame thread, which the tool formats later on devbench's listener thread;
+// and its hand action, one hand in detail, read and formatted at FrameEnd.
 #include "devbench/RockDevBenchState.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/object/GrabTargetKind.h"
 #include "rock_support/Fo4VrRuntime.h"
 
+#include <format>
+
+#include <nlohmann/json.hpp>
+
 namespace rock
 {
     namespace
     {
+        using json = nlohmann::json;
+
+        json pointJson(const RE::NiPoint3& point) { return json::array({ point.x, point.y, point.z }); }
+
+        /**
+         * A world transform: translation in game units, the rotation matrix by rows, and scale.
+         */
+        json transformJson(const RE::NiTransform& transform)
+        {
+            json rows = json::array();
+            for (const auto& row : transform.rotate.entry)
+                rows.push_back(json::array({ row.x, row.y, row.z }));
+            return { { "pos", pointJson(transform.translate) }, { "rot", rows }, { "scale", transform.scale } };
+        }
+
+        json formJson(RE::TESObjectREFR* ref)
+        {
+            if (!ref)
+                return nullptr;
+            const char* name = ref->GetDisplayFullName();
+            auto* base = ref->GetObjectReference();
+            return { { "formId", std::format("{:08X}", ref->GetFormID()) },
+                { "baseFormId", base ? json(std::format("{:08X}", base->GetFormID())) : json(nullptr) },
+                { "name", name ? name : "" } };
+        }
+
         const char* twoHandedStateName(TwoHandedState state) noexcept
         {
             switch (state) {
@@ -116,5 +147,157 @@ namespace rock
             if (facts.slot1.holdsHand)
                 state.weapons[1].hand = handName(facts.slot1.hand);
         }
+    }
+
+    /**
+     * One hand for the devbench hand action, read at FrameEnd after the frame's grab work: its poses from the same
+     * frame context the debug overlay draws from, its selection, and while it holds, the held object, constraint,
+     * pivot and force solve, palm authority, finger curls and grab clock. Positions are world, in game units.
+     */
+    json PhysicsInteraction::describeHandForDevBench(bool isLeft)
+    {
+        const Hand& hand = isLeft ? _leftHand : _rightHand;
+        json out = {
+            { "hand", isLeft ? "left" : "right" },
+            { "state", handStateName(hand.getState()) },
+            { "holding", hand.isHolding() },
+        };
+
+        auto* bhk = getPlayerBhkWorld();
+        auto* hknp = bhk ? getHknpWorld(bhk) : nullptr;
+        const bool worldReady =
+            bhk && hknp && bhk == _lifecycle.cachedBhkWorld && hknp == _lifecycle.cachedHknpWorld;
+        out["worldReady"] = worldReady;
+        if (worldReady) {
+            const auto context = buildFrameContext(bhk, hknp);
+            const auto& input = isLeft ? context.left : context.right;
+            out["poses"] = {
+                { "disabled", input.disabled },
+                { "rawHand", transformJson(input.rawHandWorld) },
+                { "grabAnchor", pointJson(input.grabAnchorWorld) },
+                { "palmNormal", pointJson(input.palmNormalWorld) },
+                { "pointing", pointJson(input.pointingWorld) },
+            };
+        }
+
+        if (hand.hasSelection()) {
+            const auto& selection = hand.getSelection();
+            json selected = formJson(selection.refr);
+            if (selected.is_null())
+                selected = json::object();
+            selected["kind"] = grab_target::name(selection.targetKind);
+            selected["far"] = selection.isFarSelection;
+            selected["distance"] = selection.distance;
+            selected["bodyId"] = selection.bodyId.value;
+            if (selection.hasHitPoint)
+                selected["hitPoint"] = pointJson(selection.hitPointWorld);
+            if (selection.hasHitNormal)
+                selected["hitNormal"] = pointJson(selection.hitNormalWorld);
+            if (selection.hasSelectionScore)
+                selected["score"] = selection.selectionScore;
+            if (selection.hasHmdConeDot)
+                selected["hmdConeDot"] = selection.hmdConeDot;
+            selected["forcedArrival"] = selection.forcedArrival;
+            selected["pinchCloseFallback"] = selection.pinchCloseSelectionFallback;
+            out["selection"] = std::move(selected);
+        } else {
+            out["selection"] = nullptr;
+        }
+
+        if (!hand.isHolding()) {
+            out["grab"] = nullptr;
+            return out;
+        }
+
+        const auto& saved = hand.getSavedObjectState();
+        json heldBodies = json::array();
+        for (const auto bodyId : hand.getHeldBodyIds())
+            heldBodies.push_back(bodyId);
+        json grab = {
+            { "object", formJson(hand.getHeldRef()) },
+            { "kind", grab_target::name(saved.targetKind) },
+            { "looseWeapon", hand.isHoldingLooseWeapon() },
+            { "liveLimb", saved.liveLimb },
+            { "actorBodies", saved.actorBodies },
+            { "bodyId", saved.bodyId.value },
+            { "heldBodyIds", std::move(heldBodies) },
+            { "inverseMass", saved.inverseMass },
+            // The trace= of this grab's lines in ROCK.log.
+            { "trace", hand.heldGrabIdentity() },
+        };
+
+        const auto& constraint = hand.getActiveConstraint();
+        grab["constraint"] = constraint.isValid()
+            ? json{ { "id", constraint.constraintId },
+                  { "angularAuthority", grabAngularAuthorityName(constraint.angularAuthority) },
+                  { "tau", constraint.currentTau }, { "maxForce", constraint.currentMaxForce },
+                  { "targetMaxForce", constraint.targetMaxForce } }
+            : json(nullptr);
+
+        const auto clock = hand.getGrabClockTelemetry();
+        grab["clock"] = { { "physicsHz", clock.physicsHz }, { "sourceIntervalSeconds", clock.sourceIntervalSeconds } };
+
+        Hand::GrabFingerPoseSnapshot fingers{};
+        grab["fingerCurls"] = hand.tryGetLiveGrabFingerPoseSnapshot(fingers)
+            ? json{ { "thumb", fingers.values[0] }, { "index", fingers.values[1] }, { "middle", fingers.values[2] },
+                  { "ring", fingers.values[3] }, { "pinky", fingers.values[4] } }
+            : json(nullptr);
+
+        if (worldReady) {
+            RE::NiTransform root;
+            grab["heldRoot"] = hand.readHeldObjectRoot(hknp, root) ? transformJson(root) : json(nullptr);
+
+            GrabPivotDebugSnapshot pivot{};
+            grab["pivot"] = hand.getGrabPivotDebugSnapshot(hknp, pivot)
+                ? json{ { "handPivot", pointJson(pivot.handPivotWorld) },
+                      { "objectPivot", pointJson(pivot.objectPivotWorld) },
+                      { "handBody", pointJson(pivot.handBodyWorld) },
+                      { "objectBody", pointJson(pivot.objectBodyWorld) },
+                      { "errorGameUnits", pivot.pivotErrorGameUnits } }
+                : json(nullptr);
+
+            GrabForceTorqueDebugSnapshot solve{};
+            grab["solve"] = hand.getGrabForceTorqueDebugSnapshot(hknp, solve)
+                ? json{ { "acquisitionPhase", solve.acquisitionPhase },
+                      { "pivotAuthoritySource", solve.pivotAuthoritySource },
+                      { "grabPointMode", solve.activeGrabPointMode },
+                      { "authorityFrameSource", solve.authorityFrameSource },
+                      { "capturePivotAuthoritySource", solve.capturePivotAuthoritySource },
+                      { "captureGrabPointMode", solve.captureGrabPointMode },
+                      { "pivotErrorGameUnits", solve.pivotErrorGameUnits },
+                      { "pivotTrackingErrorGameUnits", solve.pivotTrackingErrorGameUnits },
+                      { "rotationErrorDegrees", solve.rotationErrorDegrees },
+                      { "bodyVisualMeshLockErrorGameUnits", solve.bodyVisualMeshLockErrorGameUnits },
+                      { "captureGripLocalDeltaGameUnits", solve.captureGripLocalDeltaGameUnits },
+                      { "pocketDistanceGameUnits", solve.pocketDistanceGameUnits },
+                      { "selectionDistanceGameUnits", solve.selectionDistanceGameUnits },
+                      { "leverGameUnits", solve.leverLengthGameUnits },
+                      { "positionConfidence", solve.positionConfidence },
+                      { "liveBody", transformJson(solve.liveBodyWorld) },
+                      { "desiredBody", transformJson(solve.desiredBodyWorld) },
+                      { "targetPivot", pointJson(solve.targetPivotWorld) },
+                      { "livePivot", pointJson(solve.livePivotWorld) },
+                      { "meshGripPoint", pointJson(solve.meshGripPointWorld) } }
+                : json(nullptr);
+
+            GrabSupportFrameDebugSnapshot support{};
+            grab["supportFrame"] = hand.getGrabSupportFrameDebugSnapshot(hknp, support)
+                ? json{ { "pivot", pointJson(support.pivotWorld) },
+                      { "pivotAuthoritySource", support.pivotAuthoritySource },
+                      { "grabPointMode", support.activeGrabPointMode },
+                      { "positionOnlyPivot", support.positionOnlyPivot },
+                      { "normalTrusted", support.normalTrusted } }
+                : json(nullptr);
+
+            GrabAuthorityProxyDebugSnapshot proxy{};
+            grab["palmAuthority"] = hand.getGrabAuthorityProxyDebugSnapshot(hknp, proxy)
+                ? json{ { "palmBase", transformJson(proxy.palmAuthorityBaseWorld) },
+                      { "proxyTarget", transformJson(proxy.proxyTargetWorld) },
+                      { "localOffsetGameUnits", pointJson(proxy.localOffsetGameUnits) },
+                      { "palmSource", body_frame::bodyFrameSourceName(proxy.palmSource) } }
+                : json(nullptr);
+        }
+        out["grab"] = std::move(grab);
+        return out;
     }
 }

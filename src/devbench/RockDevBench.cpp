@@ -18,6 +18,7 @@
 
 #include "RockConfig.h"
 #include "devbench/vendor/DevBenchAPI.h"
+#include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 
 namespace rock::devbench
@@ -119,6 +120,8 @@ namespace rock::devbench
             GameThread,
             // Answered on devbench's listener thread: reads only atomics and data guarded for any thread.
             Listener,
+            // Queued for ROCK's next FrameEnd, after the frame's interaction work, with PhysicsInteraction in reach.
+            FrameEnd,
         };
 
         struct Action
@@ -284,6 +287,33 @@ namespace rock::devbench
         {
             const std::unique_ptr<Command> command(static_cast<Command*>(context));
             execute(*command);
+        }
+
+        std::mutex s_frameEndLock;
+        std::vector<Command> s_frameEndCommands;
+        std::atomic<bool> s_hasFrameEndCommands{ false };
+        // Frame thread only: the PhysicsInteraction of the FrameEnd running the queued FrameEnd actions, or null.
+        PhysicsInteraction* s_frameEndInteraction = nullptr;
+
+        /**
+         * FrameEnd action: one hand or both in detail, or null while no PhysicsInteraction exists.
+         */
+        json describeHands(const json& args)
+        {
+            auto side = argString(args, "hand");
+            if (side.empty())
+                side = "both";
+            if (side != "left" && side != "right" && side != "both")
+                throw std::invalid_argument(std::format("unknown hand '{}' (left, right, both)", side));
+            auto* interaction = s_frameEndInteraction;
+            if (!interaction)
+                return { { "interaction", nullptr }, { "note", "FRIK's skeleton is not ready, so ROCK has no hands" } };
+            json out = json::object();
+            if (side != "right")
+                out["left"] = interaction->describeHandForDevBench(true);
+            if (side != "left")
+                out["right"] = interaction->describeHandForDevBench(false);
+            return out;
         }
 
         std::span<const Action> actions();
@@ -516,6 +546,16 @@ namespace rock::devbench
                         "second weapon) with their firing hands. Answered from a snapshot, so it replies while the "
                         "game is stalled; a call before the first one waits for it",
                         json::object(), &readState, RunOn::Listener },
+                    { "hand",
+                        "one hand or both in detail, read after this frame's grab work: state machine state; poses "
+                        "(raw hand, grab anchor, palm normal, pointing); the "
+                        "selection (form, kind, distance, hit point and normal, score); and while holding, the held "
+                        "object and its bodies, the constraint (tau, max force), the held root, pivot error, the "
+                        "solve (acquisition phase, pivot source, grab point mode, pivot and rotation error, live and "
+                        "desired body), support frame, palm authority, finger curls and grab clock. Positions are "
+                        "world, in game units; rotations are matrices by rows",
+                        { { "hand", argument("string", "hand: left, right or both (default)") } }, &describeHands,
+                        RunOn::FrameEnd },
                     { "config",
                         "one option as ROCK reads it from this frame: the last session value set by devbench or "
                         "Mods Config's live preview, otherwise the file's; with the file it lives in and the file's "
@@ -642,6 +682,29 @@ namespace rock::devbench
             return future.get();
         }
 
+        /**
+         * Listener thread: hands the command to ROCK's next FrameEnd and waits for its answer. Without FRIK's frame
+         * there is no FrameEnd to run it, and no hands to describe.
+         */
+        std::string runAtFrameEnd(std::function<std::string()> fn)
+        {
+            const auto lastFrame = s_lastFrameBeginMs.load(std::memory_order_acquire);
+            if (lastFrame == 0 || steadyMilliseconds() - lastFrame >= kFrameStaleAfter.count())
+                return errorJson("ROCK's frame is not running (main menu, loading, or FRIK missing)");
+            auto promise = std::make_shared<std::promise<std::string>>();
+            auto future = promise->get_future();
+            {
+                std::scoped_lock lock(s_frameEndLock);
+                s_frameEndCommands.push_back({ std::move(fn), std::move(promise) });
+                s_hasFrameEndCommands.store(true, std::memory_order_release);
+            }
+            if (future.wait_for(kGameThreadTimeout) != std::future_status::ready) {
+                return errorJson(std::format("ROCK's FrameEnd did not run the action within {}ms",
+                    kGameThreadTimeout.count()));
+            }
+            return future.get();
+        }
+
         std::string invoke(const char* argsJson)
         {
             json args;
@@ -671,6 +734,8 @@ namespace rock::devbench
                 return errorJson(std::format("unknown action '{}' ({})", name, known));
             if (action->runOn == RunOn::Listener)
                 return runHandler(*action, args);
+            if (action->runOn == RunOn::FrameEnd)
+                return runAtFrameEnd([action = *action, args] { return runHandler(action, args); });
             return runOnGameThread([action = *action, args] { return runHandler(action, args); });
         }
 
@@ -807,6 +872,26 @@ namespace rock::devbench
             }
         }
         s_snapshot.store(std::move(snapshot));
+    }
+
+    /**
+     * FrameEnd, after the state snapshot: runs the FrameEnd actions queued since the last one with this frame's
+     * PhysicsInteraction (null before FRIK's skeleton is ready). One relaxed load while nothing is queued.
+     */
+    void onFrameEnd(PhysicsInteraction* interaction)
+    {
+        if (!s_hasFrameEndCommands.load(std::memory_order_acquire))
+            return;
+        std::vector<Command> commands;
+        {
+            std::scoped_lock lock(s_frameEndLock);
+            commands.swap(s_frameEndCommands);
+            s_hasFrameEndCommands.store(false, std::memory_order_release);
+        }
+        s_frameEndInteraction = interaction;
+        for (const auto& command : commands)
+            execute(command);
+        s_frameEndInteraction = nullptr;
     }
 
     bool isArmed() noexcept { return s_armed.load(std::memory_order_relaxed); }
