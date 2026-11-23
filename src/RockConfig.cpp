@@ -45,38 +45,58 @@ namespace rock
         }
     }
 
-    bool RockConfig::loadStore(bool createConsumer)
+    /**
+     * Applies the store's values with the preview values on top, reading the files first when readFiles is set; a
+     * preview alone reparses the values the last read cached. Returns false when the store is busy (the reload stays
+     * pending) or missing; applies nothing when neither the files nor the preview values changed.
+     */
+    bool RockConfig::loadStore(bool createConsumer, bool readFiles)
     {
         // Do not stall the runtime frame behind an API visitor or file edit.
         // Keep the existing pending reload until the configuration task finishes.
         std::unique_lock lock(_storeMutex, std::try_to_lock);
         if (!lock.owns_lock()) {
-            _reloadPending.store(true, std::memory_order_release);
+            (readFiles ? _reloadPending : _previewPending).store(true, std::memory_order_release);
             return false;
         }
         if (!_store) {
             ROCK_LOG_WARN(Config, "Configuration reload failed; configuration is not initialized");
             return false;
         }
-        _store->load(createConsumer);
-        for (const auto& notice : _store->notices())
-            ROCK_LOG_INFO(Config, "{}", notice);
-        for (const auto& message : _store->messages())
-            ROCK_LOG_WARN(Config, "{}", message);
-        if (_store->revision() == configRevision())
+        if (readFiles) {
+            _store->load(createConsumer);
+            for (const auto& notice : _store->notices())
+                ROCK_LOG_INFO(Config, "{}", notice);
+            for (const auto& message : _store->messages())
+                ROCK_LOG_WARN(Config, "{}", message);
+        }
+        const auto storeRevision = _store->revision();
+        if (configRevision() != 0 && storeRevision == _appliedStoreRevision &&
+            _previewRevision == _appliedPreviewRevision)
             return true;
 
-        static_cast<RockConfigValues&>(*this) = parseValues(_store->loadedValues());
+        auto values = _store->loadedValues();
+        for (const auto& [path, value] : _previewValues)
+            values.insert_or_assign(path, value);
+        static_cast<RockConfigValues&>(*this) = parseValues(values);
         logger::setLogLevelAndPattern(rockLogLevel, rockLogPattern);
         logger::setFlushImmediate(rockLogFlushImmediate);
-        _configRevision.store(_store->revision(), std::memory_order_release);
+        _appliedStoreRevision = storeRevision;
+        _appliedPreviewRevision = _previewRevision;
+        const auto previewCount = _previewValues.size();
+        _configRevision.fetch_add(1, std::memory_order_acq_rel);
         lock.unlock(); // Subscribers may inspect the newly applied catalog.
-        ROCK_LOG_INFO(Config, "ROCK configuration applied (revision={}, logLevel={} {})", configRevision(),
-            rockLogLevel, logging_policy::logLevelName(rockLogLevel));
-        ROCK_LOG_INFO(Config, "Weapon recoil mode: {}",
-            rockEmergencyDisableRecoil ? "EMERGENCY DISABLED"
-                : rockImmersiveRecoil  ? "Immersive Recoil"
-                                       : "Native strength, physical firing hand");
+        if (readFiles) {
+            ROCK_LOG_INFO(Config, "ROCK configuration applied (revision={}, logLevel={} {}, preview values={})",
+                configRevision(), rockLogLevel, logging_policy::logLevelName(rockLogLevel), previewCount);
+            ROCK_LOG_INFO(Config, "Weapon recoil mode: {}",
+                rockEmergencyDisableRecoil ? "EMERGENCY DISABLED"
+                    : rockImmersiveRecoil  ? "Immersive Recoil"
+                                           : "Native strength, physical firing hand");
+        } else {
+            ROCK_LOG_DEBUG(Config, "ROCK preview applied (revision={}, preview values={})", configRevision(),
+                previewCount);
+        }
         for (const auto& [key, subscriber] : _onConfigChangedSubscribers)
             subscriber(key);
         return true;
@@ -131,15 +151,78 @@ namespace rock
         return true;
     }
 
+    /**
+     * Keeps a preview value of an option of either file, in its canonical text, until a Discard or Save. False, and
+     * logged, for an option the catalog lacks or a value its type cannot hold.
+     */
+    bool RockConfig::setPreviewValue(std::string_view table, std::string_view key, std::string_view value)
+    {
+        {
+            std::scoped_lock lock(_storeMutex);
+            const auto* setting = _store ? _store->find(table, key) : nullptr;
+            const auto canonical = setting ? config::normalizeValue(setting->type, value) : std::nullopt;
+            if (canonical) {
+                const auto [entry, added] = _previewValues.try_emplace(config::settingPath(table, key), *canonical);
+                if (!added && entry->second == *canonical)
+                    return true;
+                entry->second = *canonical;
+                ++_previewRevision;
+                _previewPending.store(true, std::memory_order_release);
+                return true;
+            }
+        }
+        ROCK_LOG_WARN(Config, "Preview of [{}] {} = '{}' ignored: no such option, or not a value of it", table, key,
+            value);
+        return false;
+    }
+
+    void RockConfig::discardPreviewValue(std::string_view table, std::string_view key)
+    {
+        std::scoped_lock lock(_storeMutex);
+        const auto entry = _previewValues.find(config::settingPath(table, key));
+        if (entry == _previewValues.end())
+            return;
+        _previewValues.erase(entry);
+        ++_previewRevision;
+        _previewPending.store(true, std::memory_order_release);
+    }
+
+    void RockConfig::clearPreviewValues()
+    {
+        std::scoped_lock lock(_storeMutex);
+        if (_previewValues.empty())
+            return;
+        _previewValues.clear();
+        ++_previewRevision;
+        _previewPending.store(true, std::memory_order_release);
+    }
+
+    void RockConfig::requestImmediateReload() noexcept { _immediateReload.store(true, std::memory_order_release); }
+
+    /**
+     * Frame-thread apply point for every change of the values: a file reload once the watcher's burst settles (or at
+     * once when requested), which carries the preview values too, otherwise a reparse for changed preview values.
+     */
     void RockConfig::processPendingConfigReload()
     {
         // The watcher only publishes a change notification. Editor bursts are
         // coalesced without sleeping in the callback or on the game thread.
-        if (!_reloadPending.load(std::memory_order_acquire) ||
-            eventTicks() - _lastFileEventTicks.load(std::memory_order_acquire) < 200)
-            return;
-        if (_reloadPending.exchange(false, std::memory_order_acq_rel))
+        const bool immediate = _immediateReload.exchange(false, std::memory_order_acq_rel);
+        const bool filesSettled = _reloadPending.load(std::memory_order_acquire) &&
+            eventTicks() - _lastFileEventTicks.load(std::memory_order_acquire) >= 200;
+        if (immediate || filesSettled) {
+            _reloadPending.store(false, std::memory_order_release);
+            _previewPending.store(false, std::memory_order_release);
             reload();
+            return;
+        }
+        if (!_previewPending.exchange(false, std::memory_order_acq_rel))
+            return;
+        try {
+            (void)loadStore(false, false);
+        } catch (const std::exception& error) {
+            ROCK_LOG_ERROR(Config, "Cannot apply ROCK preview values: {}", error.what());
+        }
     }
 
     void RockConfig::startFileWatch()

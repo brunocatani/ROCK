@@ -544,7 +544,7 @@ namespace rock
             rockWeaponReleaseMode = 3;
         }
         if (rockAutoEquip && rockWeaponReleaseMode != equipped_weapon_drop_policy::kLastReleaseMode)
-            ROCK_LOG_INFO(Config, "WeaponHandling.WeaponReleaseMode={} applies only with AutoEquip off; Auto Equip "
+            ROCK_LOG_DEBUG(Config, "WeaponHandling.WeaponReleaseMode={} applies only with AutoEquip off; Auto Equip "
                                   "always drops on the last release",
                 rockWeaponReleaseMode);
         rockWeaponGrabMode =

@@ -1,12 +1,15 @@
 // RockConfig's settings files on a temporary Documents root: visiting and
 // persisting settings (the setup wizard's path), reload, concurrent writes to
-// one file, a file that stops parsing, and reentrant change subscribers. The
+// one file, a file that stops parsing, reentrant change subscribers, and
+// Mods Config's preview values. The
 // catalog, loader, store and file writes are production code; no test
 // operation can reach production settings files.
 #include <barrier>
 #include <cassert>
+#include <cmath>
 #include <fstream>
 #include <future>
+#include <iterator>
 #include <latch>
 #include <map>
 #include <thread>
@@ -31,6 +34,8 @@ namespace
         assert(!result.empty());
         return result;
     }
+
+    bool near(float value, float expected) { return std::abs(value - expected) < 1.0e-4f; }
 
     bool set(Group group, const char* section, const char* key, const char* value)
     {
@@ -197,4 +202,56 @@ int main()
     g_rockConfig.reload();
     assert(notified);
     g_rockConfig.unsubscribeFromConfigChanged("test");
+
+    // Mods Config's live preview: preview values apply at the next frame's
+    // reload over the files' values without writing them. A Discard gives the
+    // file's value back; a Save's immediate reload gives the saved values.
+    const auto playerText = [&] {
+        std::ifstream file(playerFile);
+        return std::string(std::istreambuf_iterator<char>(file), {});
+    };
+    const auto fileText = playerText();
+    auto revision = g_rockConfig.configRevision();
+    assert(g_rockConfig.setPreviewValue("Logging", "LogLevel", "4"));
+    assert(g_rockConfig.setPreviewValue("FiringHand.Left", "GripOffset", "{ pos = [1.5, -2, 0.5] }"));
+    assert(!g_rockConfig.setPreviewValue("Logging", "LogLevel", "verbose"));
+    assert(!g_rockConfig.setPreviewValue("Logging", "NoSuchOption", "1"));
+    assert(g_rockConfig.rockLogLevel == 2 && g_rockConfig.configRevision() == revision);
+    g_rockConfig.processPendingConfigReload();
+    assert(g_rockConfig.rockLogLevel == 4 && g_rockConfig.configRevision() > revision);
+    assert(near(g_rockConfig.rockLeftFiringGripOffsetGameUnits.x, 1.5f) &&
+        near(g_rockConfig.rockLeftFiringGripOffsetGameUnits.y, -2.0f));
+    assert(playerText() == fileText && catalog(Group::Player).at("Logging.LogLevel") == "2");
+
+    // A file reload keeps the preview values on top.
+    {
+        std::ofstream file(playerFile);
+        file << "[Logging]\nLogLevel = 1\n[Grabbing]\nFarGrabStyle = 2\n";
+    }
+    g_rockConfig.reload();
+    assert(g_rockConfig.rockLogLevel == 4 && g_rockConfig.rockFarGrabStyle == 2);
+
+    // Discard: the file's value, and the default for an option the file lacks.
+    revision = g_rockConfig.configRevision();
+    g_rockConfig.discardPreviewValue("Logging", "LogLevel");
+    g_rockConfig.discardPreviewValue("FiringHand.Left", "GripOffset");
+    g_rockConfig.processPendingConfigReload();
+    assert(g_rockConfig.rockLogLevel == 1 && near(g_rockConfig.rockLeftFiringGripOffsetGameUnits.x, 0.0f));
+    assert(g_rockConfig.configRevision() > revision);
+    revision = g_rockConfig.configRevision();
+    g_rockConfig.processPendingConfigReload();
+    assert(g_rockConfig.configRevision() == revision);
+
+    // Save: the menu writes the file, the preview values end, and the saved
+    // values apply at once, before the watcher's debounce.
+    assert(g_rockConfig.setPreviewValue("Logging", "LogLevel", "3"));
+    assert(g_rockConfig.setPreviewValue("Grabbing", "FarGrabStyle", "1"));
+    g_rockConfig.processPendingConfigReload();
+    assert(g_rockConfig.rockLogLevel == 3 && g_rockConfig.rockFarGrabStyle == 1);
+    assert(set(Group::Player, "Logging", "LogLevel", "3"));
+    g_rockConfig.clearPreviewValues();
+    g_rockConfig.requestImmediateReload();
+    g_rockConfig.processPendingConfigReload();
+    assert(g_rockConfig.rockLogLevel == 3 && g_rockConfig.rockFarGrabStyle == 2);
+    assert(catalog(Group::Player).at("Logging.LogLevel") == "3");
 }

@@ -6,6 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -521,6 +522,16 @@ namespace rock
         [[nodiscard]] bool persistSetting(config::Group group, const char* section, const char* key,
             const char* value, std::string& error);
 
+        // Mods Config's live preview: values laid over the files' until a Save
+        // or Discard, applied at the next processPendingConfigReload. The
+        // files are never written.
+        [[nodiscard]] bool setPreviewValue(std::string_view table, std::string_view key, std::string_view value);
+        void discardPreviewValue(std::string_view table, std::string_view key);
+        void clearPreviewValues();
+        // Reloads the files at the next processPendingConfigReload, without
+        // waiting for the watcher's debounce.
+        void requestImmediateReload() noexcept;
+
         void processPendingConfigReload();
 
         void stopFileWatch();
@@ -534,7 +545,7 @@ namespace rock
 
         void readValues(config::SettingReader& ini);
 
-        [[nodiscard]] bool loadStore(bool createConsumer);
+        [[nodiscard]] bool loadStore(bool createConsumer, bool readFiles = true);
 
         void startFileWatch();
 
@@ -548,7 +559,17 @@ namespace rock
         std::atomic<std::uint64_t> _configRevision{ 0 };
         std::atomic<std::int64_t> _lastFileEventTicks{ 0 };
 
+        // Under _storeMutex: the preview values keyed by settingPath, bumped
+        // with each change, and the store and preview revisions the live
+        // values were parsed from.
+        config::LoadedValues _previewValues;
+        std::uint64_t _previewRevision = 0;
+        std::uint64_t _appliedStoreRevision = 0;
+        std::uint64_t _appliedPreviewRevision = 0;
+
         std::atomic<bool> _reloadPending = false;
+        std::atomic<bool> _immediateReload = false;
+        std::atomic<bool> _previewPending = false;
     };
 
     inline RockConfig g_rockConfig;

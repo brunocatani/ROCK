@@ -378,7 +378,7 @@ namespace
         intro["type"] = "text";
         intro["text"] = "Developer options tune ROCK and turn on its debug drawing and logs. ROCK_Developer.toml keeps "
                         "only the options you change: Reset removes one, and the file goes when none remain. Changes "
-                        "apply as soon as you save.";
+                        "show in the game as you make them.";
         ordered_json page = ordered_json::object();
         page["pageDisplayName"] = "Developer";
         page["id"] = std::string(kDeveloperPageId);

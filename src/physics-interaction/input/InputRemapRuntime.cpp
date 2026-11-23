@@ -310,6 +310,7 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_useTargetAvailable{ false }; // Frame thread -> readers.
         std::array<std::array<std::atomic<std::uint8_t>, button_layout_policy::kSlotCount>, 2> s_functionTags{};
         std::array<std::atomic<std::uint32_t>, 2> s_functionsPresented{};
+        function_binding_policy::Bindings s_configuredBindings{};             // Guarded: the composer's.
         // A primary Activate press stopped for a bound Reload or Scope: its release is stopped too.
         std::atomic<bool> s_stopPrimaryActivateUntilRelease{ false };
         std::atomic<bool> s_gameplayInputAllowed{ false };
@@ -3321,7 +3322,7 @@ namespace rock::input_remap_runtime
         }
     }
 
-    void configureButtonLayout()
+    void configureButtonLayout(bool resetGestures)
     {
         static std::atomic<bool> s_logged{ false };
         const bool firstPublication = !s_logged.exchange(true, std::memory_order_acq_rel);
@@ -3345,6 +3346,10 @@ namespace rock::input_remap_runtime
         namespace fb = function_binding_policy;
         {
             std::scoped_lock lock(s_functionBindingMutex);
+            // Reconfiguring drops the gestures in progress, so a reload of any other option keeps them.
+            if (!firstPublication && !resetGestures && s_configuredBindings == g_rockConfig.rockFunctionBindings)
+                return;
+            s_configuredBindings = g_rockConfig.rockFunctionBindings;
             s_functionBindings.configure(g_rockConfig.rockFunctionBindings);
             s_functionSamples = {};
             s_functionPadLatches = {};

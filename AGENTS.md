@@ -150,7 +150,7 @@ Under `src/physics-interaction/` unless the path says otherwise.
 | Native crashes in Havok or ragdolls | `native/safety/` |
 | A setting | `src/config/SettingMetadata.h`, `src/RockConfigLoad.cpp`, `src/RockConfig.h`, then regenerate the examples and place a `ROCK.toml` option in `spec.json` or its `kLeftOut`, or regenerate the Developer page for a developer option with `ROCKModsConfigSpecTests --write-developer-page data/mod/ModsConfigFO4/Config/ROCK/spec.json` (`ROCKModsConfigSpecTests` fails until you do) |
 | The setup wizard | `src/setup-wizard/SetupWizardPanel.cpp` (pages), `SetupWizard.cpp` (game host); try it with the preview |
-| ROCK's Mods Config page | `data/mod/ModsConfigFO4/Config/ROCK/spec.json`, `src/mods-config/ModsConfigClient.cpp` (its functions) |
+| ROCK's Mods Config page | `data/mod/ModsConfigFO4/Config/ROCK/spec.json`, `src/mods-config/ModsConfigClient.cpp` (its functions, live preview, version state) |
 | A provider API call | Its header, its `docs/api/` page, then [Provider API path](#provider-api-path) |
 | Frame-time cost | `performance/PerformanceProfiler.cpp` |
 
@@ -187,7 +187,7 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp` for engine math. `
 - **NPC interactions**: SCISSORS, through the NativeInteraction interface, owns its NPC bodies, constraints, blade and limb policy. ROCK keeps the shared mechanisms (native allocation, callback lifetime, hand and weapon authority, grab execution, native safety) and has no NPC settings.
 - **World drawing**: RPS UI Framework. ROCK draws through it (`visual/WorldDrawClient.cpp`, `visual/AmmoCounters.cpp`) and has no renderer.
 - **Reload and manual-cycle animation**: PAPER.
-- **Settings screens**: Mods Config FO4 VR, from ROCK's `spec.json`. It writes `ROCK.toml` in place and ROCK's file watcher reloads it. ROCK owns only the setup wizard, which Mods Config opens through ROCK's client (`src/mods-config/`). Refresh `ModsConfigFO4Api.h` from Mods Config's `src/api/` and never edit it; copying it is how Mods Config's API is used, unlike ROCK's own headers. Its Developer page, shown with Show Developer Pages, edits `ROCK_Developer.toml` and is generated from the catalog. Nothing else writes ROCK's settings files.
+- **Settings screens**: Mods Config FO4 VR, from ROCK's `spec.json`. It writes `ROCK.toml` in place on Save and ROCK's file watcher reloads it. Before the Save, each change of a `live` setting reaches ROCK's client as a preview value in `RockConfig`, laid over the files' values at the next `FrameBegin` and ended by its Discard, the Save or the menu closing. A setting that cannot change mid-use (a held button, a one-way hook) gets `applies: save` in `spec.json`, as the Controls page, Immersive Scopes and Immersive Grenades have. ROCK owns only the setup wizard, which Mods Config opens through ROCK's client (`src/mods-config/`). Refresh `ModsConfigFO4Api.h` from Mods Config's `src/api/` and never edit it; copying it is how Mods Config's API is used, unlike ROCK's own headers. Its Developer page, shown with Show Developer Pages, edits `ROCK_Developer.toml` and is generated from the catalog. Nothing else writes ROCK's settings files.
 
 ## Invariants
 

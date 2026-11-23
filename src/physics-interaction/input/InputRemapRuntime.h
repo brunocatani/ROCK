@@ -66,8 +66,9 @@ namespace rock::input_remap_runtime
     // reloads its configuration. Never call from a controller/input hook.
     void configurePipboyInput();
     // Load/config-change boundary: publishes the [Controls] button layout to
-    // the controller-state hooks. Safe from any thread.
-    void configureButtonLayout();
+    // the controller-state hooks, and the [Bindings] when they changed or
+    // resetGestures asks (dropping the gestures in progress). Safe from any thread.
+    void configureButtonLayout(bool resetGestures = false);
 
     void setGameplayInputAllowed(bool allowed);
     void setWeaponDrawn(bool weaponDrawn);

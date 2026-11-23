@@ -11,7 +11,7 @@
     "developer": { "format": "toml", "root": "myGames", "path": "Mods_Config/ROCK/ROCK_Developer.toml" }
   },
   "defaultFile": "config",
-  "applies": "save",
+  "applies": "live",
   "sharedLists": {
     "rightControls": [
       { "value": "trigger", "text": "Trigger" },
@@ -48,12 +48,17 @@
   },
   "content": [
     {
+      "type": "text",
+      "text": "<font color='#AAAAAA' size=13>Version: {clientState:modVersion}</font>",
+      "html": true
+    },
+    {
       "type": "section",
       "text": "About",
       "content": [
         {
           "type": "text",
-          "text": "ROCK - Realistic Overengineered Character Kinetics - gives you physical hands in Fallout 4 VR. They collide with the world, pick things up, pull them from a distance, hold weapons by their grips, and use grenades and aid items by hand. Changes apply as soon as you save."
+          "text": "ROCK - Realistic Overengineered Character Kinetics - gives you physical hands in Fallout 4 VR. They collide with the world, pick things up, pull them from a distance, hold weapons by their grips, and use grenades and aid items by hand. Changes show in the game as you make them, except on the Controls page and Immersive Scopes and Grenades, which apply when you save."
         }
       ]
     },
@@ -782,6 +787,7 @@
               "type": "switcher",
               "valueType": "bool",
               "id": "immersiveScopes",
+              "applies": "save",
               "text": "Immersive Scopes",
               "help": "Places the scope view on the weapon, raises it while you hold the scope button, and corrects the overlay and zoom. Off: the game's own scopes. Turning it on takes the game's scope hook until you restart. Release the scope button before changing it.",
               "default": true,
@@ -801,6 +807,7 @@
               "type": "switcher",
               "valueType": "bool",
               "id": "immersiveGrenades",
+              "applies": "save",
               "text": "Immersive Grenades",
               "help": "Hold the grenade button (B) to draw a grenade into your hand and throw it by hand; selecting one in PALM also puts it in your hand. Off: the game's own throw. Release the grenade button before changing it.",
               "default": true,
@@ -824,6 +831,7 @@
     {
       "pageDisplayName": "Controls",
       "help": "The buttons ROCK listens for: which function is on which button, and which physical control acts as each button.",
+      "applies": "save",
       "content": [
         {
           "type": "switcher",
@@ -1083,7 +1091,7 @@
       "content": [
         {
           "type": "text",
-          "text": "Developer options tune ROCK and turn on its debug drawing and logs. ROCK_Developer.toml keeps only the options you change: Reset removes one, and the file goes when none remain. Changes apply as soon as you save."
+          "text": "Developer options tune ROCK and turn on its debug drawing and logs. ROCK_Developer.toml keeps only the options you change: Reset removes one, and the file goes when none remain. Changes show in the game as you make them."
         }
       ],
       "pages": [

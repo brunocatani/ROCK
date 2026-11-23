@@ -11,6 +11,11 @@
  * kept) while the wizard is up, and comes back with ROCK's values read again once it
  * closes. Without Mods Config nothing is called.
  *
+ * Live preview: each change of a `live` setting becomes a preview value in
+ * RockConfig, applied at the next FrameBegin without writing a file; its
+ * Discard, a Save or the menu closing ends it. The modVersion state gives the
+ * page its version line.
+ *
  * Threads: Mods Config calls on the game's main thread, which is also ROCK's frame
  * thread; connect and update run there too.
  */

@@ -336,7 +336,7 @@ namespace
             rock::LooseMolotovVisual::prepareResources();
             g_rockConfig.reload();
             input_remap_runtime::configurePipboyInput();
-            input_remap_runtime::configureButtonLayout();
+            input_remap_runtime::configureButtonLayout(true);
             game_ini_overrides::update();
             logger::info("ROCK: Config reloaded for new session.");
         }
