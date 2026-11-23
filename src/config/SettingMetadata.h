@@ -119,11 +119,12 @@ namespace rock::config
             "it would equip again at once.",
             Group::Player },
         { "WeaponHandling", "WeaponReleaseMode", "04. Weapon Handling",
-            "Weapon Release Mode\nWhat happens when the last hand lets go of an equipped weapon.\n1 = It stays "
-            "equipped and held (game default).\n2 = It stays loose in your hand: press grab again and release to "
-            "drop or stash it, or pull the trigger to equip it again.\n3 = It drops where it is, leaving with your "
-            "hand's motion (default).\nApplies only with Auto Equip off; Auto Equip always drops.\nApplies per "
-            "weapon. Weapon Grab Mode sets the release gesture.",
+            "Weapon Release Mode\nWhat happens when the last hand lets go of an equipped weapon.\n1 = Stays "
+            "equipped. 2 = Stays loose in hand. 3 = Drops.\nStays equipped: it stays equipped and held, as in the "
+            "game.\nStays loose in hand: press grab again and release to drop or stash it, or pull the trigger to "
+            "equip it again.\nDrops: it drops where it is, leaving with your hand's motion (default).\nApplies only "
+            "with Auto Equip off; Auto Equip always drops.\nApplies per weapon. Weapon Grab Mode sets the release "
+            "gesture.",
             Group::Player },
         { "WeaponHandling", "WeaponGrabMode", "04. Weapon Handling",
             "Weapon Grab Mode\n1 = Toggle both grips. 2 = Toggle firing grip only. 3 = Hold both grips.\nToggle: "

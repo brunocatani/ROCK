@@ -1,6 +1,6 @@
 # Ticket: Grab highlight color and strength don't apply
 
-**Status:** open, not started. Found while testing the Mods Config live preview (`mods-config-native-api.md`); not caused by it.
+**Status:** open, not started. Found while testing the Mods Config live preview; not caused by it.
 
 ## Symptoms
 

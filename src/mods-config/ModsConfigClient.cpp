@@ -96,6 +96,12 @@ namespace rock::mods_config_client
         }
 
         /**
+         * Mods Config's F4SE message after a Save, sent to each plugin of the spec's `f4sePluginRequirements`. ROCK
+         * learns of Saves through `onSaved`, so it ignores the message; without a listener F4SE logs a failed dispatch.
+         */
+        void onModsConfigMessage(F4SE::MessagingInterface::Message*) {}
+
+        /**
          * The menu closing ends every preview, should a Discard not have come for one.
          */
         void onMenuEvent(MenuEventType event, std::string_view)
@@ -114,6 +120,8 @@ namespace rock::mods_config_client
             client.subscribeToChanges(&onChange);
             client.subscribeToSaves(&onSaved);
             client.subscribeToMenuEvents(&onMenuEvent);
+            if (const auto* messaging = F4SE::GetMessagingInterface())
+                (void)messaging->RegisterListener(&onModsConfigMessage, ::mods_config::api::MODS_CONFIG_FO4_F4SE_NAME);
             if (const int error = client.connect(kModName); error != 0)
                 ROCK_LOG_INFO(Config, "Mods Config FO4 VR not connected ({}): ROCK runs without its native API", error);
             else

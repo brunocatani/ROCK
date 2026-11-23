@@ -77,7 +77,7 @@
           "text": "ROCK wiki",
           "help": "Opens the ROCK wiki in your browser. Take off the headset to read it on your monitor.",
           "buttonText": "Open",
-          "action": { "type": "OpenURL", "url": "https://github.com/ArthurHub/FO4VR-ROCK/blob/main/docs/README.md" }
+          "action": { "type": "OpenURL", "url": "https://github.com/brunocatani/ROCK/blob/main/docs/README.md" }
         },
         {
           "type": "button",

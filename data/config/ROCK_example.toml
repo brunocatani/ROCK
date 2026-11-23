@@ -94,9 +94,10 @@ AutoEquip = true
 
 ## Weapon Release Mode
 ## What happens when the last hand lets go of an equipped weapon.
-## 1 = It stays equipped and held (game default).
-## 2 = It stays loose in your hand: press grab again and release to drop or stash it, or pull the trigger to equip it again.
-## 3 = It drops where it is, leaving with your hand's motion (default).
+## 1 = Stays equipped. 2 = Stays loose in hand. 3 = Drops.
+## Stays equipped: it stays equipped and held, as in the game.
+## Stays loose in hand: press grab again and release to drop or stash it, or pull the trigger to equip it again.
+## Drops: it drops where it is, leaving with your hand's motion (default).
 ## Applies only with Auto Equip off; Auto Equip always drops.
 ## Applies per weapon. Weapon Grab Mode sets the release gesture.
 WeaponReleaseMode = 3

@@ -5,7 +5,9 @@
 // ROCK_Developer.toml option is on the Developer page. That page is generated
 // from the catalog (--write-developer-page <spec.json>); the test fails while
 // the spec holds another. No slider goes past what the loader accepts, and the
-// loader enforces every clamp in the catalog. Hand-written help is not checked.
+// loader enforces every clamp in the catalog. A hand-written row's label,
+// choices and slider ends match the catalog's help, which ROCK.toml shows, and
+// that help's "Range: a to b" matches its clamp. Help text is not checked.
 #include "RockConfig.h"
 #include "config/RockSettings.h"
 #include "config/SettingMetadata.h"
@@ -24,6 +26,7 @@
 #include <iterator>
 #include <limits>
 #include <optional>
+#include <regex>
 #include <set>
 #include <span>
 #include <stdexcept>
@@ -573,6 +576,120 @@ namespace
         return spec->value.binding == rock->value.binding && nearlyEqual(spec->value.seconds, rock->value.seconds);
     }
 
+    // ---- Hand-written rows against the catalog's help ----
+
+    // Catalog choices the page leaves out, as "Table.Key" and value.
+    constexpr std::pair<std::string_view, long long> kLeftOutChoices[] = {
+        // Warn, Error and Critical: Log Level offers Info, Debug, Trace and Off.
+        { "Logging.LogLevel", 3 },
+        { "Logging.LogLevel", 4 },
+        { "Logging.LogLevel", 5 },
+    };
+
+    /**
+     * An option's label in the catalog: its description's first line. A one-line description has none, and
+     * neither has the first option of a table whose next option has a one-line description: its first line heads
+     * the table ("Bindings", "Button Layout").
+     */
+    std::optional<std::string_view> catalogLabel(const SettingMetadata& metadata)
+    {
+        const auto description = metadata.description;
+        const auto lineEnd = description.find('\n');
+        if (lineEnd == std::string_view::npos)
+            return std::nullopt;
+        const auto* next = &metadata + 1;
+        if (next != std::end(kSettingMetadata) && next->table == metadata.table &&
+            next->description.find('\n') == std::string_view::npos)
+            return std::nullopt;
+        return description.substr(0, lineEnd);
+    }
+
+    /**
+     * The choices a catalog description lists. A line that starts with "N = " holds them: "N = label." pairs, as
+     * "1 = Palm Down (HIGGS Style). 2 = Fingers (Alyx Style).", or one choice whose label runs to the line's end.
+     */
+    std::vector<std::pair<long long, std::string>> catalogChoices(std::string_view description)
+    {
+        static const std::regex start(R"(^-?\d+ = )");
+        static const std::regex choice(R"((?:^|\. )(-?\d+) = )");
+        std::vector<std::pair<long long, std::string>> choices;
+        std::size_t lineStart = 0;
+        while (lineStart <= description.size()) {
+            const auto lineEnd = (std::min)(description.find('\n', lineStart), description.size());
+            const std::string line(description.substr(lineStart, lineEnd - lineStart));
+            lineStart = lineEnd + 1;
+            if (!std::regex_search(line, start))
+                continue;
+            const std::vector matches(std::sregex_iterator(line.begin(), line.end(), choice), std::sregex_iterator{});
+            for (std::size_t index = 0; index < matches.size(); ++index) {
+                const auto labelStart = matches[index].position() + matches[index].length();
+                const auto labelEnd = index + 1 < matches.size() ? matches[index + 1].position() : line.size();
+                auto label = line.substr(labelStart, labelEnd - labelStart);
+                if (label.ends_with('.'))
+                    label.pop_back();
+                choices.emplace_back(std::stoll(matches[index][1].str()), std::move(label));
+            }
+        }
+        return choices;
+    }
+
+    /**
+     * The "Range: a to b" a catalog description states, if any.
+     */
+    std::optional<SettingRange> catalogRangeText(std::string_view description)
+    {
+        static const std::regex range(R"(Range: (-?\d+(?:\.\d+)?) to (-?\d+(?:\.\d+)?))");
+        std::match_results<std::string_view::const_iterator> match;
+        if (!std::regex_search(description.begin(), description.end(), match, range))
+            return std::nullopt;
+        return SettingRange{ std::stod(match[1].str()), std::stod(match[2].str()) };
+    }
+
+    /**
+     * Compares a hand-written row with the catalog's help, which ROCK.toml shows: its label, its choices' values
+     * and labels (every choice offered, except kLeftOutChoices), and its slider's ends with a stated range. Adds
+     * each difference to drift.
+     */
+    void checkAgainstHelp(const std::string& name, const json& row, const SettingMetadata& metadata, std::vector<std::string>& drift)
+    {
+        if (const auto label = catalogLabel(metadata); label && row.value("text", "") != *label)
+            drift.push_back(std::format("{}: label \"{}\", catalog \"{}\"", name, row.value("text", ""), *label));
+
+        const auto type = row.value("type", "");
+        if ((type == "dropdown" || type == "stepper") && row.value("valueType", "") == "int") {
+            const auto choices = catalogChoices(metadata.description);
+            for (const auto& option : row.at("valueOptions").at("options")) {
+                const auto value = option.at("value").get<long long>();
+                const auto text = option.value("text", "");
+                const auto found = std::ranges::find(choices, value, &std::pair<long long, std::string>::first);
+                if (found == choices.end())
+                    drift.push_back(std::format("{}: option {} \"{}\" is not a catalog choice", name, value, text));
+                else if (found->second != text)
+                    drift.push_back(std::format("{}: option {} \"{}\", catalog \"{}\"", name, value, text, found->second));
+            }
+            for (const auto& [value, text] : choices) {
+                const bool offered = std::ranges::any_of(row.at("valueOptions").at("options"),
+                    [&](const json& option) { return option.at("value").get<long long>() == value; });
+                const bool leftOut = std::ranges::find(kLeftOutChoices, std::pair{ std::string_view(name), value }) !=
+                                     std::end(kLeftOutChoices);
+                if (offered == leftOut)
+                    drift.push_back(std::format("{}: catalog choice {} \"{}\" is {}", name, value, text,
+                        leftOut ? "in kLeftOutChoices but offered" : "not offered"));
+            }
+        }
+
+        const auto stated = catalogRangeText(metadata.description);
+        if (const auto& clamp = metadata.ranges.clamp; stated && clamp &&
+            (!nearlyEqual(stated->minimum, clamp->minimum) || !nearlyEqual(stated->maximum, clamp->maximum)))
+            drift.push_back(std::format("{}: catalog states \"Range: {} to {}\" but clamps to {} to {}", name,
+                stated->minimum, stated->maximum, clamp->minimum, clamp->maximum));
+        if (const auto slider = specSlider(row); slider && stated) {
+            if (!nearlyEqual(stated->minimum, slider->range.minimum) || !nearlyEqual(stated->maximum, slider->range.maximum))
+                drift.push_back(std::format("{}: slider {} to {}, catalog \"Range: {} to {}\"", name, slider->range.minimum,
+                    slider->range.maximum, stated->minimum, stated->maximum));
+        }
+    }
+
     /**
      * Checks one row's valueType and default against ROCK's compiled default, the
      * value Reset must set.
@@ -651,6 +768,7 @@ int main(int argc, char** argv)
 
         std::set<std::string> shown;
         std::string tooWide;
+        std::vector<std::string> drift;
         for (const auto& [setting, file] : settings) {
             const auto name = settingName(setting->at("storage"));
             require(shown.insert(name).second, std::format("{} is on the page twice", name));
@@ -669,8 +787,13 @@ int main(int argc, char** argv)
                 checkClampEnforced(*compiled, *metadata->ranges.clamp);
             if (const auto slider = specSlider(*setting); slider && !sliderAccepted(*compiled, slider->range, slider->step))
                 tooWide += " " + name;
+            if (group == Group::Player)
+                checkAgainstHelp(name, *setting, *metadata, drift);
         }
         require(tooWide.empty(), std::format("sliders wider than ROCK accepts:{}", tooWide));
+        for (const auto& line : drift)
+            std::cerr << line << '\n';
+        require(drift.empty(), std::format("{} rows differ from the catalog's help", drift.size()));
 
         for (const auto leftOut : kLeftOut) {
             require(!shown.contains(std::string(leftOut)), std::format("{} is left out but on the page", leftOut));
