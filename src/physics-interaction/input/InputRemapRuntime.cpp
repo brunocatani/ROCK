@@ -50,7 +50,9 @@
 #include <cstring>
 #include <format>
 #include <intrin.h>
+#include <mutex>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <RPS/Runtime/HookChain.h>
@@ -3349,34 +3351,43 @@ namespace rock::input_remap_runtime
         namespace fb = function_binding_policy;
         {
             std::scoped_lock lock(s_functionBindingMutex);
-            // Reconfiguring drops the gestures in progress, so a reload of any other option keeps them.
-            if (!firstPublication && !resetGestures && s_configuredBindings == g_rockConfig.rockFunctionBindings)
-                return;
-            s_configuredBindings = g_rockConfig.rockFunctionBindings;
-            s_functionBindings.configure(g_rockConfig.rockFunctionBindings);
-            s_functionSamples = {};
-            s_functionPadLatches = {};
-            for (auto& hand : s_functionTags) {
-                for (auto& tag : hand) {
-                    tag.store(static_cast<std::uint8_t>(fb::Function::Count), std::memory_order_release);
+            // Reconfiguring drops the gestures in progress, so a reload of any other option keeps them. A
+            // binding's time is read every frame and needs no reconfiguring.
+            if (firstPublication || resetGestures || s_configuredBindings != g_rockConfig.rockFunctionBindings) {
+                s_configuredBindings = g_rockConfig.rockFunctionBindings;
+                s_functionBindings.configure(g_rockConfig.rockFunctionBindings);
+                s_functionSamples = {};
+                s_functionPadLatches = {};
+                for (auto& hand : s_functionTags) {
+                    for (auto& tag : hand) {
+                        tag.store(static_cast<std::uint8_t>(fb::Function::Count), std::memory_order_release);
+                    }
                 }
+                for (auto& presented : s_functionsPresented) {
+                    presented.store(0, std::memory_order_release);
+                }
+                s_functionBindingsIdentity.store(s_functionBindings.identity(), std::memory_order_release);
             }
-            for (auto& presented : s_functionsPresented) {
-                presented.store(0, std::memory_order_release);
-            }
-            s_functionBindingsIdentity.store(s_functionBindings.identity(), std::memory_order_release);
         }
+        // Each binding is logged when it leaves its default or changes, its time included.
+        static std::mutex s_loggedBindingMutex;
+        static std::array<std::string, fb::kFunctionCount> s_loggedBindingText;
+        std::scoped_lock logLock(s_loggedBindingMutex);
         bool moved = false;
         for (std::size_t index = 0; index < fb::kFunctionCount; ++index) {
             const auto function = static_cast<fb::Function>(index);
-            const auto& binding = g_rockConfig.rockFunctionBindings[index];
-            if (binding == fb::homeBinding(function)) {
+            const auto text = function_binding_text::formatBindingTable(function,
+                { g_rockConfig.rockFunctionBindings[index], g_rockConfig.rockBindingSeconds[index] });
+            const auto defaultText =
+                function_binding_text::formatBindingTable(function, function_binding_text::defaultBinding(function));
+            const bool changed = std::exchange(s_loggedBindingText[index], text) != text;
+            if (text == defaultText) {
                 continue;
             }
             moved = true;
-            ROCK_LOG_INFO(Input, "Binding {}: {} (default {})", fb::functionKey(function),
-                function_binding_text::formatBindingTable(function, { binding, g_rockConfig.rockBindingSeconds[index] }),
-                function_binding_text::formatBindingTable(function, function_binding_text::defaultBinding(function)));
+            if (firstPublication || changed) {
+                ROCK_LOG_INFO(Input, "Binding {}: {} (default {})", fb::functionKey(function), text, defaultText);
+            }
         }
         if (!moved && firstPublication) {
             ROCK_LOG_INFO(Input, "Bindings: every function on its default control");

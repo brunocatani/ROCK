@@ -687,7 +687,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 
         if (ImGui::CollapsingHeader("Wizard", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::Text("%s", panel.isOpen() ? ("Open: " + panel.pageName()).c_str() : "Closed");
-            if (ImGui::Button(panel.isOpen() ? "Open again (new session)" : "Open (as from PALM's Config)")) openWizard();
+            if (ImGui::Button(panel.isOpen() ? "Open again (new session)" : "Open (as from Mods Config)")) openWizard();
             ImGui::SameLine();
             ImGui::BeginDisabled(!panel.isOpen());
             if (ImGui::Button("Close")) closeWizard();
