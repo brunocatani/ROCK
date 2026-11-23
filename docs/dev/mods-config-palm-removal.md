@@ -1,6 +1,6 @@
 # Ticket: ROCK's settings leave PALM's Config
 
-**Status:** done; built, and every test passes. Not checked in the headset yet: the wizard opening by itself and saving, and `ROCK.log` naming RPS UI once for interface 13. **Branch:** `mods-config-support`.
+**Status:** done; built, and every test passes. `ROCK.log` names RPS UI once for interface 13 (checked 2026-11-23). Not checked in the headset yet: the wizard opening by itself and saving. **Branch:** `mods-config-support`.
 
 As built, beyond the decisions below:
 

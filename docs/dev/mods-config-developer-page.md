@@ -1,6 +1,6 @@
 # Ticket: a ROCK developer page in Mods Config
 
-**Status:** done. Part of the Mods Config release. Still to check in the headset: see [In the headset](#in-the-headset).
+**Status:** done and checked in the headset. Part of the Mods Config release.
 
 ## Goal
 
@@ -53,7 +53,11 @@ Mods Config has no array control, so they become transforms, renamed without the
 
 ## In the headset
 
-- Show Developer Pages shows and hides the Developer page at once, before Save.
+Confirmed in game on 2026-11-23:
+
+- The Developer pages show and read correctly.
 - A change on a developer page creates `ROCK_Developer.toml` holding only that key, and ROCK picks it up.
-- Reset of that row, then Save: ROCK's reload drops the key and deletes the file; the row still reads the default.
+- Reset of that row, then Save: ROCK's reload drops the key and deletes the file.
+- The Developer report: 0 errors; its 286 warnings are each developer option missing from `ROCK_Developer.toml`, which is by design (feature request 2 in `mods-config-open-questions.md`).
+- Show Developer Pages shows and hides the Developer page at once, before Save.
 - The sliders' ranges and steps are usable; the transform rows' sliders move the offsets and the scope rotations about the axes their help names.

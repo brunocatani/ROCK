@@ -11,7 +11,7 @@
   - Done: `mods-config-developer-page.md` (the generated Developer page).
   - Then: the RPS UI side (`mods-config-rps-ui-removal.md`, only when the user says so).
 - **Nothing is released** until every `mods-config-*` ticket is done.
-- **Still open:** the in-game Developer report check (turn on Developer tools, press ROCK's row in the front page's Developer section, then **Read the live copy**; fix what the report or `ModsConfigFO4VR.log` names).
+- **Developer report** (2026-11-23): 0 errors, and 286 warnings that are all the sparse developer file (feature request 2 below). Mods Config also logs `failed to dispatch to ROCK` after each Save, because ROCK registers no listener for its saved message; harmless, handled later.
 
 The other tickets: `mods-config-palm-removal.md`, `mods-config-setup-wizard-launch.md`, `mods-config-rps-ui-removal.md`, `mods-config-developer-page.md`, `mods-config-input-bindings.md`, `mods-config-transforms.md`, `mods-config-native-api.md`, `mods-config-prompt-improvements.md`, `mods-config-left-firing-trigger.md`.
 
@@ -49,9 +49,9 @@ These are recorded so they aren't asked again.
 
 ## What to check in the headset
 
-These are spec choices the docs allow but no game run has confirmed yet:
+Confirmed in game on 2026-11-23:
 
-- **Nested tables.** Storage paths of three names (`["FiringHand", "Left", "AimYawDegrees"]`, `["ControllerInput", "Right", "A"]`). After a save, `ROCK.toml` should still have one `[FiringHand.Left]` and one `[ControllerInput.Right]` table, with no inline or duplicate table.
+- **Nested tables.** After Saves of firing-hand and binding rows, `ROCK.toml` keeps one table each for `[FiringHand.Left]`, `[FiringHand.Right]`, `[ControllerInput.Left]` and `[ControllerInput.Right]`, with no inline or duplicate table, and the save changes only the saved line.
 - **Reload.** ROCK picks up a Save: `ROCK.log` shows the reload, and the change shows in play.
 - **Startup rewrite.** A value saved from the menu survives ROCK's rewrite of its help lines on the next game start.
 - **Disabled rows.** Settle Time and Release Mode follow Auto Equip, both ways. The Recoil Strength section follows Immersive Recoil. Scope Hold Time and Grenade Fuse follow their switches.
@@ -63,6 +63,7 @@ These are spec choices the docs allow but no game run has confirmed yet:
 Collected from the tickets, for the F4VR-Mods-Config repo:
 
 1. An offline validator for `spec.json`, printing the Developer report without the game (`mods-config-prompt-improvements.md`).
+2. A way to mark a setting whose missing value is normal. The Developer report (2026-11-23: 0 errors, 286 warnings) warns once per developer option that `ROCK_Developer.toml` has no value for it, though that file holds only non-default values by design. Such a setting should also have Reset remove its key instead of writing the default.
 
 The transforms and the input bindings need nothing from Mods Config: ROCK stores them in the framework's tables (`mods-config-transforms.md`, `mods-config-input-bindings.md`).
 

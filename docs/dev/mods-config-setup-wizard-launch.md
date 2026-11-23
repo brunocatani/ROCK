@@ -1,6 +1,6 @@
 # Ticket: open ROCK's setup wizard from Mods Config
 
-**Status:** done; built, every test passes, preview captures checked. The headset checks below remain. Split from `mods-config-native-api.md`, whose client this started.
+**Status:** done; built, every test passes, preview captures checked, checked in the headset. Split from `mods-config-native-api.md`, whose client this started.
 
 ## Goal
 
@@ -21,6 +21,8 @@ A player opens ROCK's setup wizard from Mods Config FO4 VR. PALM's Config used t
 
 ## To check in the headset
 
-- The button opens the wizard in front of the player, with Mods Config minimized.
-- Closing or finishing the wizard brings Mods Config back; finishing shows the wizard's values on ROCK's page.
+Confirmed in game on 2026-11-23:
+
+- The button opens the wizard, and Mods Config comes back after it.
+- Finishing the wizard shows its values on ROCK's page.
 - Pressing the button while the wizard is already up minimizes the menu and leaves the wizard as it is.

@@ -1,6 +1,6 @@
 # Ticket: `[Bindings]` as Mods Config input bindings
 
-**Status:** done; the headset checks below remain for the editor. **Depends on:** nothing outside ROCK and its RPS Framework fork. Mods Config is unchanged, as for the transforms (`mods-config-transforms.md`).
+**Status:** done and checked in the headset. **Depends on:** nothing outside ROCK and its RPS Framework fork. Mods Config is unchanged, as for the transforms (`mods-config-transforms.md`).
 
 ## Goal
 
@@ -78,8 +78,11 @@ One staged change at a time, with a go-ahead before each.
 
 ## Check in the headset
 
-- A short B press still opens VATS, and a hold draws a grenade, with Grenade at 0.25 s (the VATS suppression hook now uses ROCK's duration).
-- FRIK's Pip-Boy hold follows the Pause duration, after a change made in the menu.
+Confirmed in game on 2026-11-23:
+
+- Changing the Pause and VATS bindings (among others) in the editor and saving takes effect.
+- A short B press still opens VATS, and a hold draws a grenade.
+- FRIK's Pip-Boy hold follows the Pause duration.
 - The second weapon's A split (reload or scope) follows the Scope duration.
 - An old `ROCK.toml` migrates: tables written, retired keys commented, custom hold times carried over.
-- The editor: weapon rows offer only `primary`/`offhand`; a saved binding takes effect after Save.
+- The editor: weapon rows offer only `primary`/`offhand`.
