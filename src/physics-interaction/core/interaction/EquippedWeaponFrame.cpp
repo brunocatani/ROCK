@@ -1624,8 +1624,8 @@ namespace rock
         std::size_t extraCount = 0;
         std::array<std::array<float, 3>, 2> pinkyProbes{};
         std::size_t pinkyCount = 0;
+        grab_pinch_pocket_policy::FingerFrame fingers;
         if (operatingPose && !handInput.disabled) {
-            grab_pinch_pocket_policy::FingerFrame fingers;
             if (hand.tryGetPinchFingerFrame(fingers)) {
                 extraProbes[extraCount++] = { fingers.thumbTip.x, fingers.thumbTip.y, fingers.thumbTip.z };
                 extraProbes[extraCount++] = { fingers.indexTip.x, fingers.indexTip.y, fingers.indexTip.z };
@@ -1647,6 +1647,13 @@ namespace rock
                              : g_rockConfig.rockWeaponInteractionTouchRadius,
                 outContact, interactionQueries, apiHand, operatingPose, std::span(extraProbes).first(extraCount), true,
                 std::span(pinkyProbes).first(pinkyCount));
+        if (operatingObserved && outContact.grabPoint.anchorAtPoint && fingers.valid &&
+            transform_math::isInvertibleTransform(handInput.rawHandWorld)) {
+            auto& point = outContact.grabPoint;
+            point.thumbTipHandLocal = transform_math::worldPointToLocal(handInput.rawHandWorld, fingers.thumbTip);
+            point.indexTipHandLocal = transform_math::worldPointToLocal(handInput.rawHandWorld, fingers.indexTip);
+            point.pinchFingersValid = true;
+        }
         const bool touchObserved = !operatingObserved && weaponNode &&
             _weaponCollision.tryFindInteractionContactNearPoint(weaponNode, palmPivotWorld,
                 g_rockConfig.rockWeaponInteractionTouchRadius, outContact, interactionQueries, apiHand, operatingPose);

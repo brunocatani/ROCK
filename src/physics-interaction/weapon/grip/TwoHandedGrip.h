@@ -1309,6 +1309,9 @@ namespace rock
             LockedHandVisualLerpState visualLerp{};
             SupportInputBaselineState supportInputBaseline{};
             float surfaceSeatRotationRadians{ 0.0f };
+            // A grab point found between thumb and index: the hand holds it
+            // there with a thumb-index pinch instead of seating it in the palm.
+            bool pinchHold{ false };
         };
 
         struct AuthoredSupportGripCandidate

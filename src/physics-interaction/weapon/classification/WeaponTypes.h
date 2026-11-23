@@ -256,6 +256,11 @@ namespace rock
         bool anchorAtPoint{};
         RE::NiPoint3 worldPoint{};
         RE::NiTransform attachmentWorld{};
+        // The thumb and index tips of the hand that found the point, in that
+        // hand's own frame: the capture tells a pinch from a palm grab by them.
+        bool pinchFingersValid{};
+        RE::NiPoint3 thumbTipHandLocal{};
+        RE::NiPoint3 indexTipHandLocal{};
     };
 
     struct WeaponInteractionContact

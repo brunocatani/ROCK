@@ -97,7 +97,10 @@ targets first (`TargetUnavailable` otherwise). Ids are unique within a group;
 finger or the pinky probe reaches the nearest point within both its radius
 and the hand-probe radius. The hand seats on the nearest collider surface of
 the group's parts within the radius, in the currently driven pose, keeping
-its approach rotation, and follows the moving part. With no surface there, the
+its approach rotation, and follows the moving part. Where the fingers are
+decides how a point is held: one nearer the line between the thumb and index
+tips than the palm is pinched, the middle of the two tips coming onto the
+point with thumb and index opposed; any other point seats in the palm. With no surface there, the
 point can still be held when its own source is an `AttachOnly` target of its
 group: the grip has no `bodyId` and follows that source. That needs no collider,
 so it works from the moment the weapon is drawn. For the hands in `handMask` the

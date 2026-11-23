@@ -2975,6 +2975,39 @@ namespace rock
         }
         auto& fingerScratch = _fingerPoseSolveScratch->hands[isLeft ? 0u : 1u];
 
+        /*
+         * Pinch or palm, decided by where the fingers are, as a close grab of a
+         * loose object decides it. A point nearer the thumb-index line than the
+         * palm was found by the fingers: it is pinched where they are, so a tab
+         * on the side of a receiver is not pulled into the palm with the hand
+         * inside the weapon. A point the palm reached first seats in the palm.
+         */
+        RE::NiPoint3 pinchCenterWorld{};
+        if (anchoredPoint && decision.grabPoint.pinchFingersValid) {
+            const auto thumb = transform_math::localPointToWorld(handTransform, decision.grabPoint.thumbTipHandLocal);
+            const auto index = transform_math::localPointToWorld(handTransform, decision.grabPoint.indexTipHandLocal);
+            const auto& point = decision.grabPoint.worldPoint;
+            const RE::NiPoint3 span{ index.x - thumb.x, index.y - thumb.y, index.z - thumb.z };
+            const float spanSquared = vector_math::lengthSquared(span);
+            const float along = spanSquared > 0.000001f
+                ? std::clamp(((point.x - thumb.x) * span.x + (point.y - thumb.y) * span.y +
+                                 (point.z - thumb.z) * span.z) / spanSquared,
+                      0.0f, 1.0f)
+                : 0.0f;
+            const RE::NiPoint3 nearestOnFingers{ thumb.x + along * span.x, thumb.y + along * span.y,
+                thumb.z + along * span.z };
+            const float fingerDistance = vector_math::distance(nearestOnFingers, point);
+            const float palmDistance = vector_math::distance(palmPos, point);
+            grip.pinchHold =
+                std::isfinite(fingerDistance) && std::isfinite(palmDistance) && fingerDistance < palmDistance;
+            pinchCenterWorld = { thumb.x + 0.5f * span.x, thumb.y + 0.5f * span.y, thumb.z + 0.5f * span.z };
+            ROCK_LOG_INFO(Weapon,
+                "Operating grab point hold hand={} point={} hold={} fingerDistance={:.2f} palmDistance={:.2f} "
+                "thumbIndexGap={:.2f}",
+                isLeft ? "left" : "right", decision.grabPoint.pointId, grip.pinchHold ? "pinch" : "palm",
+                fingerDistance, palmDistance, std::sqrt(spanSquared));
+        }
+
         WeaponCollision::SupportGripEvidenceView evidenceView{};
         const bool cachedTrianglesFound =
             weaponCollision.tryGetSupportGripEvidenceView(decision.bodyId, weaponNode, evidenceView) &&
@@ -3026,10 +3059,16 @@ namespace rock
         const auto surfaceSeat =
             weapon_support_acquisition_math::alignHandFrameToGripSurface<RE::NiTransform, RE::NiPoint3>(handTransform,
                 palmPos, palmDir, gripWorldPoint, grip.grabNormalWorld, surfaceSeatMaxRadians);
-        const RE::NiTransform adjustedHandTransform = surfaceSeat.valid
-            ? surfaceSeat.handWorld
-            : weapon_two_handed_grip_math::alignHandFrameToGripPoint(handTransform, palmPos, gripWorldPoint);
-        grip.surfaceSeatRotationRadians = surfaceSeat.valid ? surfaceSeat.appliedRotationRadians : 0.0f;
+        // A pinch brings the middle of thumb and index onto the point and
+        // keeps the hand's rotation; that is at most the distance the fingers
+        // were from it, never the palm's.
+        const RE::NiTransform adjustedHandTransform = grip.pinchHold
+            ? weapon_two_handed_grip_math::alignHandFrameToGripPoint(handTransform, pinchCenterWorld, gripWorldPoint)
+            : surfaceSeat.valid
+                ? surfaceSeat.handWorld
+                : weapon_two_handed_grip_math::alignHandFrameToGripPoint(handTransform, palmPos, gripWorldPoint);
+        grip.surfaceSeatRotationRadians =
+            surfaceSeat.valid && !grip.pinchHold ? surfaceSeat.appliedRotationRadians : 0.0f;
         const RE::NiPoint3 seatedPalmNormal = computePalmNormalFromHandBasis(adjustedHandTransform, isLeft);
         grip.handWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world),
             adjustedHandTransform);

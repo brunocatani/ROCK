@@ -23,6 +23,20 @@ namespace rock
         fingerScratch.worldTriangles.clear();
         fingerScratch.spatialIndex.clear();
 
+        if (grip.pinchHold) {
+            // The hand stays where the fingers found the point: thumb and index
+            // oppose each other on it and the other fingers stay relaxed.
+            grab_finger_pose_runtime::SolvedGrabFingerPose pinchPose{};
+            applyStableWeaponOppositionPose(pinchPose, currentWeaponOppositionPocketConfig(), 1);
+            ROCK_LOG_INFO(Weapon,
+                "TwoHandedGrip: weapon grab pose applied=Thumb-index pinch hand={} "
+                "curls=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f})",
+                isLeft ? "left" : "right", pinchPose.values[0], pinchPose.values[1], pinchPose.values[2],
+                pinchPose.values[3], pinchPose.values[4]);
+            setSupportGripPose(isLeft, &pinchPose, nullptr, SupportGripPoseFallback::FullyClosed);
+            return;
+        }
+
         /*
          * Capture the root-flattened fingers once for this transaction. The
          * compact sweep snapshot and any exact-local thumb/surface correction
