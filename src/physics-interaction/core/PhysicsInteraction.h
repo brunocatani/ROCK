@@ -36,6 +36,7 @@
 //   ProviderEventDispatch        grab events delivered to provider clients
 //   ProviderWeaponSources        provider weapon source node catalog
 //   DebugOverlayPublish          debug collider overlay publication
+//   DevBenchState                hands and weapons for the devbench tool's state
 //
 // Shared helpers for those files are in PhysicsInteractionInternal.h.
 #pragma once
@@ -121,6 +122,11 @@ namespace RE
     class NiCollisionObject;
     class TESAmmo;
     class TESObjectREFR;
+}
+
+namespace rock::devbench
+{
+    struct RockState;
 }
 
 namespace rock::provider_state_policy
@@ -418,6 +424,8 @@ namespace rock
         // Developer test-bench telemetry: one frame record per game frame, from FRIK's
         // FrameEnd, so menus (where the physics update does not run) are recorded too.
         void publishTestbenchFrame();
+        // The devbench tool's state of hands and weapons, from FRIK's FrameEnd while the tool is armed.
+        void captureDevBenchState(devbench::RockState& state) const;
         void publishDebugRenderFrame();
 
     private:

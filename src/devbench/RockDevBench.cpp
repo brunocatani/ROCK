@@ -11,6 +11,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -151,6 +152,117 @@ namespace rock::devbench
         std::vector<Command> s_commands;
         std::atomic<bool> s_hasCommands{ false };
 
+        /**
+         * One frame of state, published on the frame thread and read on the listener thread. Immutable once
+         * published; a reader keeps the one it loaded alive for as long as it needs it.
+         */
+        struct Snapshot
+        {
+            std::uint64_t frame = 0;
+            std::chrono::steady_clock::time_point publishedAt;
+            RockState state;
+        };
+
+        std::atomic<std::shared_ptr<const Snapshot>> s_snapshot;
+        // Frame thread only.
+        std::uint64_t s_publishedFrames = 0;
+
+        std::string formIdText(std::uint32_t formId) { return std::format("{:08X}", formId); }
+
+        /**
+         * The liveness block: frame counts the snapshots published since the tool armed, not the engine's frames;
+         * publishedAtMs is on steady_clock, which every DLL in the process shares, so snapshots of different mods
+         * line up.
+         */
+        json livenessJson(const Snapshot& snapshot)
+        {
+            using std::chrono::duration_cast;
+            using std::chrono::milliseconds;
+            return {
+                { "frame", snapshot.frame },
+                { "ageMs", duration_cast<milliseconds>(std::chrono::steady_clock::now() - snapshot.publishedAt).count() },
+                { "publishedAtMs", duration_cast<milliseconds>(snapshot.publishedAt.time_since_epoch()).count() },
+                { "providerGeneration", snapshot.state.providerGeneration },
+                { "skeletonGeneration", snapshot.state.skeletonGeneration },
+            };
+        }
+
+        json handJson(const HandState& hand)
+        {
+            json out = { { "state", hand.state }, { "held", hand.held } };
+            if (hand.heldFormId)
+                out["heldObject"] = { { "formId", formIdText(hand.heldFormId) }, { "name", hand.heldName } };
+            if (hand.selectedFormId) {
+                out["selection"] = { { "formId", formIdText(hand.selectedFormId) }, { "name", hand.selectedName },
+                    { "kind", hand.selectedKind }, { "far", hand.selectionFar } };
+            }
+            return out;
+        }
+
+        json weaponJson(const WeaponState& weapon)
+        {
+            if (!weapon.formId)
+                return nullptr;
+            return { { "formId", formIdText(weapon.formId) }, { "name", weapon.name }, { "firingHand", weapon.hand } };
+        }
+
+        json stateJson(const Snapshot& snapshot)
+        {
+            const auto& state = snapshot.state;
+            json out = {
+                { "frik", { { "bound", state.frikBound }, { "apiVersion", state.frikApiVersion } } },
+                { "config", { { "revision", state.configRevision }, { "fileRevision", state.configFileRevision } } },
+                { "interaction", nullptr },
+            };
+            if (state.interaction) {
+                out["interaction"] = {
+                    { "playerAvailable", state.playerAvailable },
+                    { "weaponDrawn", state.weaponDrawn },
+                    { "menuBlocking", state.menuBlocking },
+                    { "inputMenuBlocking", state.inputMenuBlocking },
+                    { "loading", state.loading },
+                    { "hands", { { "left", handJson(state.hands[0]) }, { "right", handJson(state.hands[1]) } } },
+                    { "weapons",
+                        { { "twoHandedGrip", state.twoHandedGrip }, { "primary", weaponJson(state.weapons[0]) },
+                            { "secondary", weaponJson(state.weapons[1]) } } },
+                };
+            }
+            out["liveness"] = livenessJson(snapshot);
+            return out;
+        }
+
+        /**
+         * The latest snapshot. A call right after the tool armed finds none yet, so it waits for the next FrameEnd's
+         * rather than failing; polled, as it happens once per session.
+         */
+        std::shared_ptr<const Snapshot> waitForSnapshot()
+        {
+            auto snapshot = s_snapshot.load();
+            const auto deadline = std::chrono::steady_clock::now() + kGameThreadTimeout;
+            while (!snapshot && std::chrono::steady_clock::now() < deadline) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                snapshot = s_snapshot.load();
+            }
+            if (!snapshot) {
+                throw std::runtime_error(std::format("no state was published within {}ms: FRIK's frame is not "
+                                                     "running (main menu, loading, or FRIK missing)",
+                    kGameThreadTimeout.count()));
+            }
+            return snapshot;
+        }
+
+        json readState(const json&) { return stateJson(*waitForSnapshot()); }
+
+        /**
+         * A session override devbench set or dropped: the key's first value, or null when cleared.
+         */
+        void emitOverride(const std::string& section, const std::string& key, const json& value)
+        {
+            emit("config.override", [&] {
+                return json{ { "owner", "devbench" }, { "section", section }, { "key", key }, { "value", value } };
+            });
+        }
+
         void execute(const Command& command)
         {
             std::string result;
@@ -181,7 +293,11 @@ namespace rock::devbench
             json names = json::array();
             for (const auto& action : actions())
                 names.push_back(action.name);
+            // health never waits for a snapshot.
+            const auto snapshot = s_snapshot.load();
             return {
+                { "hasSnapshot", snapshot != nullptr },
+                { "liveness", snapshot ? livenessJson(*snapshot) : json(nullptr) },
                 { "plugin", "ROCK" },
                 { "version", std::string(Version::NAME) },
                 { "contract", kToolContract },
@@ -190,7 +306,7 @@ namespace rock::devbench
                 { "armed", s_armed.load(std::memory_order_relaxed) },
                 { "actions", names },
                 // Generic actions of F4VR-CommonFramework mods that ROCK's tool does not have.
-                { "unsupported", json::array({ "state", "input", "snapshot" }) },
+                { "unsupported", json::array({ "input", "snapshot" }) },
             };
         }
 
@@ -222,12 +338,19 @@ namespace rock::devbench
             if (!args.contains("value"))
                 throw std::invalid_argument("action 'set' needs 'value'");
             const auto value = argString(args, "value");
+            const auto previews = g_rockConfig.previewValues();
+            const bool hadOwn = std::ranges::any_of(previews, [&](const RockConfig::PreviewValue& entry) {
+                return entry.owner == PreviewOwner::DevBench && entry.table == section && entry.key == key;
+            });
             if (!g_rockConfig.setPreviewValue(PreviewOwner::DevBench, section, key, value)) {
                 throw std::invalid_argument(
                     std::format("[{}] {} = '{}': no such option, or not a value of it; nothing is set", section, key,
                         value));
             }
             const auto setting = g_rockConfig.settingValue(section, key);
+            // A new value of a key devbench already overrides is no event, as with F4VR-CommonFramework's tools.
+            if (!hadOwn && setting)
+                emitOverride(section, key, setting->value);
             return {
                 { "section", section },
                 { "key", key },
@@ -244,11 +367,15 @@ namespace rock::devbench
         {
             if (argBool(args, "all")) {
                 const auto cleared = g_rockConfig.clearPreviewValues(PreviewOwner::DevBench);
+                if (cleared)
+                    emit("config.override", [] { return json{ { "owner", "devbench" }, { "all", true } }; });
                 return { { "cleared", cleared },
                     { "note", "every session override set made is dropped; the files' values apply from this frame" } };
             }
             const auto [section, key] = sectionAndKey(args, "clear");
             const bool hadOverride = g_rockConfig.discardPreviewValue(PreviewOwner::DevBench, section, key);
+            if (hadOverride)
+                emitOverride(section, key, nullptr);
             const auto setting = g_rockConfig.settingValue(section, key);
             return {
                 { "section", section },
@@ -378,6 +505,17 @@ namespace rock::devbench
                         "which ROCK and devbench build this is, the tool's contract, whether it is armed, and the "
                         "actions. Answered without the game thread, so it replies while the game is stalled",
                         json::object(), &health, RunOn::Listener },
+                    { "state",
+                        "what ROCK is doing as of its last frame. Read 'liveness' first: frame counts the snapshots "
+                        "published since the tool armed and ageMs is how old the latest is, so a growing ageMs means "
+                        "FRIK's frame stopped. frik: bound and API version; config: revision (every apply) and "
+                        "fileRevision (file reloads); interaction (null until FRIK's skeleton is ready): menu and "
+                        "loading gates, per hand its state machine state, what it holds (none, object, loose-weapon, "
+                        "equipped-weapon, weapon-part) with the held object's and the selection's form id and name, "
+                        "and the two-handed grip state and equipped weapons (primary = index 0, secondary = ROCK's "
+                        "second weapon) with their firing hands. Answered from a snapshot, so it replies while the "
+                        "game is stalled; a call before the first one waits for it",
+                        json::object(), &readState, RunOn::Listener },
                     { "config",
                         "one option as ROCK reads it from this frame: the last session value set by devbench or "
                         "Mods Config's live preview, otherwise the file's; with the file it lives in and the file's "
@@ -609,5 +747,84 @@ namespace rock::devbench
             execute(command);
     }
 
+    /**
+     * FrameEnd, every frame while armed: publishes the frame's state and emits the changes since the last one (the
+     * interaction created or destroyed, a hand grabbing or releasing, a weapon equipped or unequipped, the files
+     * reloaded). Unequipped means the weapon left its equipment index, as when dropped.
+     */
+    void publishState(RockState&& state)
+    {
+        if (!isArmed())
+            return;
+        auto snapshot = std::make_shared<Snapshot>();
+        snapshot->frame = ++s_publishedFrames;
+        snapshot->publishedAt = std::chrono::steady_clock::now();
+        snapshot->state = std::move(state);
+        const auto previous = s_snapshot.load();
+        const auto& now = snapshot->state;
+        if (previous) {
+            const auto& before = previous->state;
+            if (now.interaction != before.interaction)
+                emit(now.interaction ? "interaction.created" : "interaction.destroyed");
+            if (now.configFileRevision != before.configFileRevision)
+                emit("config.reloaded", [&] { return json{ { "fileRevision", now.configFileRevision } }; });
+            for (std::size_t index = 0; index < now.hands.size(); ++index) {
+                const auto& hand = now.hands[index];
+                const auto& old = before.hands[index];
+                const char* side = index == 0 ? "left" : "right";
+                const bool holds = hand.heldFormId != 0;
+                const bool held = old.heldFormId != 0;
+                if (held && hand.heldFormId != old.heldFormId) {
+                    emit("hand.release", [&] {
+                        return json{ { "hand", side }, { "formId", formIdText(old.heldFormId) }, { "name", old.heldName },
+                            { "kind", old.held } };
+                    });
+                }
+                if (holds && hand.heldFormId != old.heldFormId) {
+                    emit("hand.grab", [&] {
+                        return json{ { "hand", side }, { "formId", formIdText(hand.heldFormId) },
+                            { "name", hand.heldName }, { "kind", hand.held } };
+                    });
+                }
+            }
+            for (std::size_t slot = 0; slot < now.weapons.size(); ++slot) {
+                const auto& weapon = now.weapons[slot];
+                const auto& old = before.weapons[slot];
+                if (weapon.formId == old.formId)
+                    continue;
+                // A switch from one weapon to another is both events, so every equip pairs with an unequip.
+                if (old.formId) {
+                    emit("weapon.unequipped", [&] {
+                        return json{ { "slot", slot }, { "formId", formIdText(old.formId) }, { "name", old.name } };
+                    });
+                }
+                if (weapon.formId) {
+                    emit("weapon.equipped", [&] {
+                        return json{ { "slot", slot }, { "formId", formIdText(weapon.formId) }, { "name", weapon.name },
+                            { "firingHand", weapon.hand } };
+                    });
+                }
+            }
+        }
+        s_snapshot.store(std::move(snapshot));
+    }
+
     bool isArmed() noexcept { return s_armed.load(std::memory_order_relaxed); }
+
+    namespace internal
+    {
+        bool canEmit() noexcept { return s_registered.load(std::memory_order_acquire); }
+
+        /**
+         * Any thread: devbench's EmitEvent only queues the event and never delivers on the caller's thread.
+         */
+        void emit(std::string_view topic, const nlohmann::json& payload)
+        {
+            if (topic.empty() || !canEmit())
+                return;
+            const auto fullTopic = std::format("{}.{}", kToolName, topic);
+            const auto body = dump(payload);
+            s_interface->EmitEvent(fullTopic.c_str(), body.c_str());
+        }
+    }
 }

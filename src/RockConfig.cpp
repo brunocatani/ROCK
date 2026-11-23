@@ -82,6 +82,8 @@ namespace rock
         static_cast<RockConfigValues&>(*this) = parseValues(values);
         logger::setLogLevelAndPattern(rockLogLevel, rockLogPattern);
         logger::setFlushImmediate(rockLogFlushImmediate);
+        if (storeRevision != _appliedStoreRevision)
+            _configFileRevision.fetch_add(1, std::memory_order_acq_rel);
         _appliedStoreRevision = storeRevision;
         _appliedPreviewRevision = _previewRevision;
         const auto previewCount = _previewValues.size();

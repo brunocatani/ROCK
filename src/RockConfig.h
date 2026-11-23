@@ -526,6 +526,12 @@ namespace rock
             return _configRevision.load(std::memory_order_acquire);
         }
 
+        // Advances when a reload of the files changed a value; a preview alone leaves it.
+        [[nodiscard]] std::uint64_t configFileRevision() const noexcept
+        {
+            return _configFileRevision.load(std::memory_order_acquire);
+        }
+
         // Receives each setting of a group, its value as the file's canonical
         // text; the setting is borrowed for the call.
         using SettingVisitor = void (*)(const config::Setting&, void*) noexcept;
@@ -594,6 +600,7 @@ namespace rock
         std::unique_ptr<filewatch::FileWatch<std::string>> _fileWatch;
         std::unordered_map<std::string, std::function<void(const std::string&)>> _onConfigChangedSubscribers;
         std::atomic<std::uint64_t> _configRevision{ 0 };
+        std::atomic<std::uint64_t> _configFileRevision{ 0 };
         std::atomic<std::int64_t> _lastFileEventTicks{ 0 };
 
         struct PreviewEntry

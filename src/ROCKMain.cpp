@@ -992,6 +992,25 @@ namespace
      * tick flags and nothing here is held open across frames, so the tick is
      * skipped once and resumes on the next frame.
      */
+    /*
+     * FrameEnd, while the devbench tool is armed: this frame's state for its
+     * state action and change events.
+     */
+    void publishDevBenchState()
+    {
+        devbench::RockState state;
+        state.frikBound = s_frikAvailable;
+        state.frikApiVersion =
+            s_frikAvailable && frik::api::FRIKApiV2::inst ? frik::api::FRIKApiV2::inst->getVersion() : 0;
+        state.providerGeneration = s_providerGeneration.load(std::memory_order_acquire);
+        state.skeletonGeneration = s_skeletonGeneration.load(std::memory_order_acquire);
+        state.configRevision = g_rockConfig.configRevision();
+        state.configFileRevision = g_rockConfig.configFileRevision();
+        if (s_physicsInteraction)
+            s_physicsInteraction->captureDevBenchState(state);
+        devbench::publishState(std::move(state));
+    }
+
     void onFrikFrameEnd()
     {
         native_secondary_presentation::endFrame(s_skeletonTickedThisFrame);
@@ -1002,6 +1021,8 @@ namespace
         }
         if (s_physicsInteraction)
             s_physicsInteraction->publishTestbenchFrame();
+        if (devbench::isArmed())
+            publishDevBenchState();
         grip_zone_indicators::EndFrame(game_timing::currentFrameTiming().sequence);
         performance_profiler::endFrame();
     }
@@ -1212,7 +1233,9 @@ namespace
                 logger::info("ROCK: FRIK skeleton generation {} powerArmor={}.", lifecycle->generation,
                     lifecycle->inPowerArmor ? "yes" : "no");
             }
-            bumpGeneration(s_skeletonGeneration);
+            const auto skeletonGeneration = bumpGeneration(s_skeletonGeneration);
+            devbench::emit("skeleton.ready",
+                [&] { return nlohmann::json{ { "skeletonGeneration", skeletonGeneration } }; });
             if (!authored_weapon_grip_capture::installHook()) {
                 logger::error(
                     "ROCK: Authored equipped-weapon grip capture hook is unavailable for this runtime build.");
@@ -1224,6 +1247,7 @@ namespace
         }
 
         case LE::kSkeletonDestroying: {
+            devbench::emit("skeleton.destroying");
             const auto thread = messageThread();
             if (thread.onFrameThread()) {
                 logger::info("ROCK: Received kSkeletonDestroying from FRIK (thread {}).", thread.caller);
@@ -1398,6 +1422,9 @@ namespace
 
         if (msg->type == F4SE::MessagingInterface::kPostLoadGame || msg->type == F4SE::MessagingInterface::kNewGame) {
             setup_wizard::noteSessionStart(msg->type == F4SE::MessagingInterface::kNewGame);
+            devbench::emit("sessionLoaded", [&] {
+                return nlohmann::json{ { "newGame", msg->type == F4SE::MessagingInterface::kNewGame } };
+            });
             const auto thread = messageThread();
             // Without FRIK no frame runs ROCK, so there is no frame thread to wait for.
             if (!s_frikAvailable || thread.onFrameThread()) {
