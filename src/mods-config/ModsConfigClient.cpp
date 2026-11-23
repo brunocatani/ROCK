@@ -28,8 +28,14 @@ namespace rock::mods_config_client
         // The function the page's Setup Wizard button runs.
         constexpr const char* kOpenSetupWizard = "openSetupWizard";
 
+        // The spec ids of the rows ROCK shows in the world while the ray is on them.
+        constexpr const char* kGripZoneMarkerSizeId = "gripZoneMarkerSize";
+        constexpr const char* kFiringGripReachId = "firingGripReach";
+
         // Game thread: the menu is minimized for the wizard and comes back when the wizard is gone.
         bool g_restorePending = false;
+        // Game thread: the row the ray is on, read at FrameBegin.
+        PointedPreview g_pointedPreview = PointedPreview::None;
 
         /**
          * Opens the setup wizard (or takes the one already up) and minimizes the menu for it. Fails only without
@@ -133,12 +139,17 @@ namespace rock::mods_config_client
 
     /**
      * Every frame: tells the input remap whether the menu is open and shown (not minimized), when its pointer takes
-     * the primary trigger; and restores the menu once the setup wizard it stepped aside for is gone.
+     * the primary trigger; reads which previewed row the ray is on; and restores the menu once the setup wizard it
+     * stepped aside for is gone.
      */
     void update() noexcept
     {
-        const auto* api = ModsConfigFO4Client::get().api();
+        auto& client = ModsConfigFO4Client::get();
+        const auto* api = client.api();
         input_remap_runtime::setPointerMenuInUse(api && api->getMenuState() == MenuState::Open);
+        g_pointedPreview = client.isPointedAt(kGripZoneMarkerSizeId) ? PointedPreview::GripZoneMarkerSize
+            : client.isPointedAt(kFiringGripReachId)                 ? PointedPreview::FiringGripReach
+                                                                     : PointedPreview::None;
 
         if (!g_restorePending || setup_wizard::isActive())
             return;
@@ -146,4 +157,6 @@ namespace rock::mods_config_client
         ModsConfigFO4Client::get().restoreMenu();
         ROCK_LOG_INFO(Config, "Setup wizard closed: Mods Config restored");
     }
+
+    PointedPreview pointedPreview() noexcept { return g_pointedPreview; }
 }

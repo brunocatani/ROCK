@@ -19,13 +19,29 @@
  * While the menu is open and shown, its pointer reads the primary (right) trigger,
  * so the input remap's left-hand firing stops presenting the left trigger there.
  *
+ * While the ray is on Grip Zone Marker Size or Firing Grip Reach (by their spec ids),
+ * pointedPreview names the row, and ROCK draws it on the drawn weapon.
+ *
  * Threads: Mods Config calls on the game's main thread, which is also ROCK's frame
  * thread; connect and update run there too.
  */
+#include <cstdint>
+
 namespace rock::mods_config_client
 {
+    // The row of ROCK's page the ray is on that ROCK shows in the world.
+    enum class PointedPreview : std::uint8_t
+    {
+        None,
+        GripZoneMarkerSize,
+        FiringGripReach,
+    };
+
     // Once ROCK has initialized: adds ROCK's entries and connects.
     void connect() noexcept;
 
     void update() noexcept;
+
+    // Frame thread: the row the ray was on at this frame's FrameBegin.
+    [[nodiscard]] PointedPreview pointedPreview() noexcept;
 }

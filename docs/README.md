@@ -102,7 +102,7 @@ The loot buttons stay on the right controller in every mode.
 
 ### Switching hands
 
-Grab the firing grip with your other hand to move the weapon to it. A small sphere marks each grip zone; **Firing Grip Reach** sets how far from the grip a hand can take it, and **Grip Zone Marker Size** the sphere's size.
+Grab the firing grip with your other hand to move the weapon to it. A small sphere marks each grip zone; **Firing Grip Reach** sets how far from the grip a hand can take it, and **Grip Zone Marker Size** the sphere's size. While you point at either setting in Mods Config, your drawn weapon shows it: the reach as an outline, the size on every marker.
 
 ### Steadying your aim
 

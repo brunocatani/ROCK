@@ -171,11 +171,11 @@ namespace rock::config
             "Firing Grip Reach\nHow far from the firing grip a hand can take it over or grab it again, in game units "
             "(70 = 1 metre).\nThe zone is a quarter circle on each side of the grip, from straight out to straight "
             "down.\nPress grab inside it to move the firing grip to that hand; the firing hand can also pass it with "
-            "a grab tap. Range: 0.25 to 30.",
+            "a grab tap.\nPointing at it in Mods Config outlines it on the drawn weapon. Range: 0.25 to 30.",
             Group::Player, clampTo(0.25, 30.0) },
         { "WeaponHandling", "GripZoneIndicatorDiameterGameUnits", "04. Weapon Handling",
             "Grip Zone Marker Size\nDiameter of the sphere that marks a weapon's grip zones, in game units (70 = 1 "
-            "metre). Range: 0.1 to 5.",
+            "metre).\nPointing at it in Mods Config shows every marker on the drawn weapon. Range: 0.1 to 5.",
             Group::Player, clampTo(grip_zone_indicator_policy::kMinimumDiameterGameUnits, grip_zone_indicator_policy::kMaximumDiameterGameUnits) },
         { "WeaponHandling", "AmmoCounterStyle", "04. Weapon Handling",
             "Ammo Counter Style\n1 = Minimal. 2 = Immersive. 3 = Vanilla.\nMinimal: white loaded and reserve rounds "

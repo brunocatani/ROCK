@@ -151,7 +151,7 @@ Under `src/physics-interaction/` unless the path says otherwise.
 | Native crashes in Havok or ragdolls | `native/safety/` |
 | A setting | `src/config/SettingMetadata.h`, `src/RockConfigLoad.cpp`, `src/RockConfig.h`, then regenerate the examples and place a `ROCK.toml` option in `spec.json` or its `kLeftOut`, or regenerate the Developer page for a developer option with `ROCKModsConfigSpecTests --write-developer-page data/mod/ModsConfigFO4/Config/ROCK/spec.json` (`ROCKModsConfigSpecTests` fails until you do) |
 | The setup wizard | `src/setup-wizard/SetupWizardPanel.cpp` (pages), `SetupWizard.cpp` (game host); try it with the preview |
-| ROCK's Mods Config page | `data/mod/ModsConfigFO4/Config/ROCK/spec.json`, `src/mods-config/ModsConfigClient.cpp` (its functions, live preview, version state); a renamed or moved page also changes the settings table in `docs/README.md` |
+| ROCK's Mods Config page | `data/mod/ModsConfigFO4/Config/ROCK/spec.json`, `src/mods-config/ModsConfigClient.cpp` (its functions, live preview, version state, and the rows shown on the weapon while pointed at, by their spec `id`s); a renamed or moved page also changes the settings table in `docs/README.md` |
 | Player-visible behavior, controls or defaults | Then `docs/README.md`, the player guide |
 | A provider API call | Its header, its `docs/api/` page, then [Provider API path](#provider-api-path) |
 | Frame-time cost | `performance/PerformanceProfiler.cpp` |

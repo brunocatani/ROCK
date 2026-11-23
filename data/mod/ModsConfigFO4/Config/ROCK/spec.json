@@ -397,8 +397,9 @@
                 {
                   "type": "slider",
                   "valueType": "float",
+                  "id": "firingGripReach",
                   "text": "Firing Grip Reach",
-                  "help": "How far from the firing grip a hand can take it over or grab it again, in game units (70 = 1 metre).",
+                  "help": "How far from the firing grip a hand can take it over or grab it again, in game units (70 = 1 metre). Pointing here outlines it on your drawn weapon.",
                   "default": 10.0,
                   "valueOptions": { "min": 0.25, "max": 30.0, "step": 0.25 },
                   "storage": { "path": ["WeaponHandling", "FiringGripReattachRadiusGameUnits"] }
@@ -406,8 +407,9 @@
                 {
                   "type": "slider",
                   "valueType": "float",
+                  "id": "gripZoneMarkerSize",
                   "text": "Grip Zone Marker Size",
-                  "help": "How big the sphere that marks a weapon's grip zones is, in game units (70 = 1 metre).",
+                  "help": "How big the sphere that marks a weapon's grip zones is, in game units (70 = 1 metre). Pointing here shows every marker on your drawn weapon.",
                   "default": 0.7,
                   "valueOptions": { "min": 0.1, "max": 5.0, "step": 0.1 },
                   "storage": { "path": ["WeaponHandling", "GripZoneIndicatorDiameterGameUnits"] }

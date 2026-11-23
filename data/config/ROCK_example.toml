@@ -152,11 +152,13 @@ ScopedFilterReleaseDegreesPerSecond = 45.0
 ## Firing Grip Reach
 ## How far from the firing grip a hand can take it over or grab it again, in game units (70 = 1 metre).
 ## The zone is a quarter circle on each side of the grip, from straight out to straight down.
-## Press grab inside it to move the firing grip to that hand; the firing hand can also pass it with a grab tap. Range: 0.25 to 30.
+## Press grab inside it to move the firing grip to that hand; the firing hand can also pass it with a grab tap.
+## Pointing at it in Mods Config outlines it on the drawn weapon. Range: 0.25 to 30.
 FiringGripReattachRadiusGameUnits = 10.0
 
 ## Grip Zone Marker Size
-## Diameter of the sphere that marks a weapon's grip zones, in game units (70 = 1 metre). Range: 0.1 to 5.
+## Diameter of the sphere that marks a weapon's grip zones, in game units (70 = 1 metre).
+## Pointing at it in Mods Config shows every marker on the drawn weapon. Range: 0.1 to 5.
 GripZoneIndicatorDiameterGameUnits = 0.7
 
 ## Ammo Counter Style

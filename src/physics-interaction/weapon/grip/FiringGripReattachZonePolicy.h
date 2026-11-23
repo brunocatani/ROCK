@@ -6,8 +6,12 @@
 #include "physics-interaction/weapon/authored/AuthoredWeaponGripActivationPolicy.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <span>
+#include <utility>
 
 namespace rock::firing_grip_reattach_zone_policy
 {
@@ -166,6 +170,108 @@ namespace rock::firing_grip_reattach_zone_policy
             result.indicatorValid = isFinite(result.indicatorWorld);
         }
         return result;
+    }
+
+    struct OutlineSegment
+    {
+        Vec3 start{};
+        Vec3 end{};
+    };
+
+    // Segments outlineSegments writes at most: 52 for the sector, 40 for the cylinder.
+    inline constexpr std::size_t kMaxOutlineSegments = 52;
+
+    /**
+     * The zone's wireframe outline in world space, the region evaluateZone tests (palm and indicator unused).
+     * Sector: each side's quarter disc and the band above it, drawn on the front and back faces with edges joining
+     * them. Cylinder: rings at both ends and at the grip, joined by four lines. Writes nothing for an invalid zone.
+     */
+    [[nodiscard]] inline std::size_t outlineSegments(const ZoneInput& input, std::span<OutlineSegment> output)
+    {
+        namespace activation = authored_weapon_grip_activation_policy;
+        constexpr std::size_t kArcSegments = 8;
+        constexpr std::size_t kRingSegments = 12;
+        const float reach = input.reachGameUnits;
+        const float radius = input.radiusGameUnits;
+        Vec3 lateral{};
+        if (!isFinite(input.gripWorld) || !std::isfinite(reach) || !std::isfinite(radius) || reach <= 0.0f ||
+            radius <= 0.0f || !activation::tryNormalize(input.weaponLeftAxisWorld, lateral)) {
+            return 0;
+        }
+        // The two axes across the lateral one: the sector's down and forward, or any pair for the cylinder.
+        Vec3 down{};
+        if (input.shape == Shape::Sector) {
+            if (!activation::tryNormalize(input.weaponDownAxisWorld, down) ||
+                std::abs(activation::dot(lateral, down)) > kAxisOrthogonalityTolerance) {
+                return 0;
+            }
+        } else {
+            const Vec3 reference = std::abs(lateral.z) < 0.9f ? Vec3{ 0.0f, 0.0f, 1.0f } : Vec3{ 1.0f, 0.0f, 0.0f };
+            if (!activation::tryNormalize(cross(reference, lateral), down)) {
+                return 0;
+            }
+        }
+        Vec3 forward{};
+        if (!activation::tryNormalize(cross(lateral, down), forward)) {
+            return 0;
+        }
+
+        const auto point = [&](const float along, const float downAmount, const float forwardAmount) {
+            return Vec3{
+                input.gripWorld.x + lateral.x * along + down.x * downAmount + forward.x * forwardAmount,
+                input.gripWorld.y + lateral.y * along + down.y * downAmount + forward.y * forwardAmount,
+                input.gripWorld.z + lateral.z * along + down.z * downAmount + forward.z * forwardAmount,
+            };
+        };
+        std::size_t count = 0;
+        const auto add = [&](const Vec3& start, const Vec3& end) {
+            if (count < output.size()) {
+                output[count++] = OutlineSegment{ start, end };
+            }
+        };
+        constexpr float kQuarterTurn = 1.5707963f;
+
+        if (input.shape == Shape::Sector) {
+            // Per side, in (along, down): top edge, the drop to the grip's height, the quarter arc down the grip,
+            // and the inner edge back up.
+            std::array<std::pair<float, float>, kArcSegments + 3> outline{};
+            outline[0] = { 0.0f, -radius };
+            outline[1] = { reach, -radius };
+            for (std::size_t segment = 0; segment <= kArcSegments; ++segment) {
+                const float angle = static_cast<float>(segment) * kQuarterTurn / static_cast<float>(kArcSegments);
+                outline[2 + segment] = { std::cos(angle) * reach, std::sin(angle) * reach };
+            }
+            for (const float sideSign : { 1.0f, -1.0f }) {
+                for (const float face : { -radius, radius }) {
+                    for (std::size_t index = 0; index < outline.size(); ++index) {
+                        const auto& from = outline[index];
+                        const auto& to = outline[(index + 1) % outline.size()];
+                        add(point(sideSign * from.first, from.second, face), point(sideSign * to.first, to.second, face));
+                    }
+                }
+                for (const std::size_t corner : { std::size_t{ 0 }, std::size_t{ 1 }, std::size_t{ 2 }, outline.size() - 1 }) {
+                    const auto& at = outline[corner];
+                    add(point(sideSign * at.first, at.second, -radius), point(sideSign * at.first, at.second, radius));
+                }
+            }
+            return count;
+        }
+
+        for (const float along : { -reach, 0.0f, reach }) {
+            for (std::size_t segment = 0; segment < kRingSegments; ++segment) {
+                const float from = static_cast<float>(segment) * 4.0f * kQuarterTurn / static_cast<float>(kRingSegments);
+                const float to = static_cast<float>(segment + 1) * 4.0f * kQuarterTurn / static_cast<float>(kRingSegments);
+                add(point(along, std::cos(from) * radius, std::sin(from) * radius),
+                    point(along, std::cos(to) * radius, std::sin(to) * radius));
+            }
+        }
+        for (std::size_t line = 0; line < 4; ++line) {
+            const float angle = static_cast<float>(line) * kQuarterTurn;
+            const float downAmount = std::cos(angle) * radius;
+            const float forwardAmount = std::sin(angle) * radius;
+            add(point(-reach, downAmount, forwardAmount), point(reach, downAmount, forwardAmount));
+        }
+        return count;
     }
 
     [[nodiscard]] constexpr const char* sideName(const Side side)
