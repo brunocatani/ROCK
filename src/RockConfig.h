@@ -1,8 +1,10 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -497,6 +499,14 @@ namespace rock
         float rockMouthConsumeCommitHapticIntensity = 0.85f;
     };
 
+    // Who set a preview value. Each owner sets and drops only its own, so one
+    // never ends another's.
+    enum class PreviewOwner : std::uint8_t
+    {
+        ModsConfig,
+        DevBench,
+    };
+
     class RockConfig : public RockConfigValues
     {
     public:
@@ -522,12 +532,14 @@ namespace rock
         [[nodiscard]] bool persistSetting(config::Group group, const char* section, const char* key,
             const char* value, std::string& error);
 
-        // Mods Config's live preview: values laid over the files' until a Save
-        // or Discard, applied at the next processPendingConfigReload. The
-        // files are never written.
-        [[nodiscard]] bool setPreviewValue(std::string_view table, std::string_view key, std::string_view value);
-        void discardPreviewValue(std::string_view table, std::string_view key);
-        void clearPreviewValues();
+        // Session values laid over the files', each kept by its owner (Mods
+        // Config's live preview, a devbench override) until that owner drops
+        // it, applied at the next processPendingConfigReload. The files are
+        // never written.
+        [[nodiscard]] bool setPreviewValue(PreviewOwner owner, std::string_view table, std::string_view key,
+            std::string_view value);
+        void discardPreviewValue(PreviewOwner owner, std::string_view table, std::string_view key);
+        void clearPreviewValues(PreviewOwner owner);
         // Reloads the files at the next processPendingConfigReload, without
         // waiting for the watcher's debounce.
         void requestImmediateReload() noexcept;
@@ -559,10 +571,17 @@ namespace rock
         std::atomic<std::uint64_t> _configRevision{ 0 };
         std::atomic<std::int64_t> _lastFileEventTicks{ 0 };
 
-        // Under _storeMutex: the preview values keyed by settingPath, bumped
-        // with each change, and the store and preview revisions the live
-        // values were parsed from.
-        config::LoadedValues _previewValues;
+        struct PreviewEntry
+        {
+            PreviewOwner owner;
+            std::string value;
+        };
+
+        // Under _storeMutex: the preview values keyed by settingPath, each
+        // key's in the order their owners set them (the last applies, an owner
+        // has one at most), the preview revision bumped with each change, and
+        // the store and preview revisions the live values were parsed from.
+        std::map<std::string, std::vector<PreviewEntry>, std::less<>> _previewValues;
         std::uint64_t _previewRevision = 0;
         std::uint64_t _appliedStoreRevision = 0;
         std::uint64_t _appliedPreviewRevision = 0;

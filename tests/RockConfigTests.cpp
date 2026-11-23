@@ -58,6 +58,7 @@ int main()
 {
     namespace fs = std::filesystem;
     using rock::g_rockConfig;
+    using rock::PreviewOwner;
     directory = fs::temp_directory_path() / std::format("ROCK-config-{}-{}", GetCurrentProcessId(), GetTickCount64());
     fs::create_directory(directory);
 
@@ -212,10 +213,11 @@ int main()
     };
     const auto fileText = playerText();
     auto revision = g_rockConfig.configRevision();
-    assert(g_rockConfig.setPreviewValue("Logging", "LogLevel", "4"));
-    assert(g_rockConfig.setPreviewValue("FiringHand.Left", "GripOffset", "{ pos = [1.5, -2, 0.5] }"));
-    assert(!g_rockConfig.setPreviewValue("Logging", "LogLevel", "verbose"));
-    assert(!g_rockConfig.setPreviewValue("Logging", "NoSuchOption", "1"));
+    assert(g_rockConfig.setPreviewValue(PreviewOwner::ModsConfig, "Logging", "LogLevel", "4"));
+    assert(g_rockConfig.setPreviewValue(PreviewOwner::ModsConfig, "FiringHand.Left", "GripOffset",
+        "{ pos = [1.5, -2, 0.5] }"));
+    assert(!g_rockConfig.setPreviewValue(PreviewOwner::ModsConfig, "Logging", "LogLevel", "verbose"));
+    assert(!g_rockConfig.setPreviewValue(PreviewOwner::ModsConfig, "Logging", "NoSuchOption", "1"));
     assert(g_rockConfig.rockLogLevel == 2 && g_rockConfig.configRevision() == revision);
     g_rockConfig.processPendingConfigReload();
     assert(g_rockConfig.rockLogLevel == 4 && g_rockConfig.configRevision() > revision);
@@ -233,8 +235,8 @@ int main()
 
     // Discard: the file's value, and the default for an option the file lacks.
     revision = g_rockConfig.configRevision();
-    g_rockConfig.discardPreviewValue("Logging", "LogLevel");
-    g_rockConfig.discardPreviewValue("FiringHand.Left", "GripOffset");
+    g_rockConfig.discardPreviewValue(PreviewOwner::ModsConfig, "Logging", "LogLevel");
+    g_rockConfig.discardPreviewValue(PreviewOwner::ModsConfig, "FiringHand.Left", "GripOffset");
     g_rockConfig.processPendingConfigReload();
     assert(g_rockConfig.rockLogLevel == 1 && near(g_rockConfig.rockLeftFiringGripOffsetGameUnits.x, 0.0f));
     assert(g_rockConfig.configRevision() > revision);
@@ -244,14 +246,32 @@ int main()
 
     // Save: the menu writes the file, the preview values end, and the saved
     // values apply at once, before the watcher's debounce.
-    assert(g_rockConfig.setPreviewValue("Logging", "LogLevel", "3"));
-    assert(g_rockConfig.setPreviewValue("Grabbing", "FarGrabStyle", "1"));
+    assert(g_rockConfig.setPreviewValue(PreviewOwner::ModsConfig, "Logging", "LogLevel", "3"));
+    assert(g_rockConfig.setPreviewValue(PreviewOwner::ModsConfig, "Grabbing", "FarGrabStyle", "1"));
     g_rockConfig.processPendingConfigReload();
     assert(g_rockConfig.rockLogLevel == 3 && g_rockConfig.rockFarGrabStyle == 1);
     assert(set(Group::Player, "Logging", "LogLevel", "3"));
-    g_rockConfig.clearPreviewValues();
+    g_rockConfig.clearPreviewValues(PreviewOwner::ModsConfig);
     g_rockConfig.requestImmediateReload();
     g_rockConfig.processPendingConfigReload();
     assert(g_rockConfig.rockLogLevel == 3 && g_rockConfig.rockFarGrabStyle == 2);
     assert(catalog(Group::Player).at("Logging.LogLevel") == "3");
+
+    // Owners: of two owners' values of one option the last set applies, and
+    // dropping one owner's values (Mods Config's Save or Discard) keeps the
+    // other's.
+    assert(g_rockConfig.setPreviewValue(PreviewOwner::DevBench, "Logging", "LogLevel", "5"));
+    assert(g_rockConfig.setPreviewValue(PreviewOwner::DevBench, "Grabbing", "FarGrabStyle", "1"));
+    assert(g_rockConfig.setPreviewValue(PreviewOwner::ModsConfig, "Logging", "LogLevel", "4"));
+    g_rockConfig.processPendingConfigReload();
+    assert(g_rockConfig.rockLogLevel == 4 && g_rockConfig.rockFarGrabStyle == 1);
+    g_rockConfig.clearPreviewValues(PreviewOwner::ModsConfig);
+    g_rockConfig.processPendingConfigReload();
+    assert(g_rockConfig.rockLogLevel == 5 && g_rockConfig.rockFarGrabStyle == 1);
+    g_rockConfig.discardPreviewValue(PreviewOwner::ModsConfig, "Grabbing", "FarGrabStyle");
+    g_rockConfig.processPendingConfigReload();
+    assert(g_rockConfig.rockFarGrabStyle == 1);
+    g_rockConfig.clearPreviewValues(PreviewOwner::DevBench);
+    g_rockConfig.processPendingConfigReload();
+    assert(g_rockConfig.rockLogLevel == 3 && g_rockConfig.rockFarGrabStyle == 2);
 }

@@ -3,6 +3,7 @@
 #include "physics-interaction/RockLoggingPolicy.h"
 #include "rock_support/ResourceUtils.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 
@@ -76,8 +77,8 @@ namespace rock
             return true;
 
         auto values = _store->loadedValues();
-        for (const auto& [path, value] : _previewValues)
-            values.insert_or_assign(path, value);
+        for (const auto& [path, entries] : _previewValues)
+            values.insert_or_assign(path, entries.back().value);
         static_cast<RockConfigValues&>(*this) = parseValues(values);
         logger::setLogLevelAndPattern(rockLogLevel, rockLogPattern);
         logger::setFlushImmediate(rockLogFlushImmediate);
@@ -152,20 +153,25 @@ namespace rock
     }
 
     /**
-     * Keeps a preview value of an option of either file, in its canonical text, until a Discard or Save. False, and
-     * logged, for an option the catalog lacks or a value its type cannot hold.
+     * Keeps the owner's preview value of an option of either file, in its canonical text, until that owner drops it.
+     * Of several owners' values of one option the last set applies. False, and logged, for an option the catalog lacks
+     * or a value its type cannot hold.
      */
-    bool RockConfig::setPreviewValue(std::string_view table, std::string_view key, std::string_view value)
+    bool RockConfig::setPreviewValue(PreviewOwner owner, std::string_view table, std::string_view key,
+        std::string_view value)
     {
         {
             std::scoped_lock lock(_storeMutex);
             const auto* setting = _store ? _store->find(table, key) : nullptr;
             const auto canonical = setting ? config::normalizeValue(setting->type, value) : std::nullopt;
             if (canonical) {
-                const auto [entry, added] = _previewValues.try_emplace(config::settingPath(table, key), *canonical);
-                if (!added && entry->second == *canonical)
+                auto& entries = _previewValues[config::settingPath(table, key)];
+                const auto own = std::ranges::find(entries, owner, &PreviewEntry::owner);
+                if (own != entries.end() && own->value == *canonical)
                     return true;
-                entry->second = *canonical;
+                if (own != entries.end())
+                    entries.erase(own);
+                entries.push_back({ owner, *canonical });
                 ++_previewRevision;
                 _previewPending.store(true, std::memory_order_release);
                 return true;
@@ -176,23 +182,32 @@ namespace rock
         return false;
     }
 
-    void RockConfig::discardPreviewValue(std::string_view table, std::string_view key)
+    void RockConfig::discardPreviewValue(PreviewOwner owner, std::string_view table, std::string_view key)
     {
         std::scoped_lock lock(_storeMutex);
-        const auto entry = _previewValues.find(config::settingPath(table, key));
-        if (entry == _previewValues.end())
+        const auto path = _previewValues.find(config::settingPath(table, key));
+        if (path == _previewValues.end())
             return;
-        _previewValues.erase(entry);
+        const auto own = std::ranges::find(path->second, owner, &PreviewEntry::owner);
+        if (own == path->second.end())
+            return;
+        path->second.erase(own);
+        if (path->second.empty())
+            _previewValues.erase(path);
         ++_previewRevision;
         _previewPending.store(true, std::memory_order_release);
     }
 
-    void RockConfig::clearPreviewValues()
+    void RockConfig::clearPreviewValues(PreviewOwner owner)
     {
         std::scoped_lock lock(_storeMutex);
-        if (_previewValues.empty())
+        std::size_t removed = 0;
+        for (auto path = _previewValues.begin(); path != _previewValues.end();) {
+            removed += std::erase_if(path->second, [owner](const PreviewEntry& entry) { return entry.owner == owner; });
+            path = path->second.empty() ? _previewValues.erase(path) : std::next(path);
+        }
+        if (removed == 0)
             return;
-        _previewValues.clear();
         ++_previewRevision;
         _previewPending.store(true, std::memory_order_release);
     }

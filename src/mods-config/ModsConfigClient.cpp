@@ -86,9 +86,9 @@ namespace rock::mods_config_client
             }
             const auto key = change.path.back();
             if (change.discard)
-                g_rockConfig.discardPreviewValue(table, key);
+                g_rockConfig.discardPreviewValue(PreviewOwner::ModsConfig, table, key);
             else
-                (void)g_rockConfig.setPreviewValue(table, key, valueText(change.value));
+                (void)g_rockConfig.setPreviewValue(PreviewOwner::ModsConfig, table, key, valueText(change.value));
         }
 
         /**
@@ -97,7 +97,7 @@ namespace rock::mods_config_client
          */
         void onSaved(const Saved&)
         {
-            g_rockConfig.clearPreviewValues();
+            g_rockConfig.clearPreviewValues(PreviewOwner::ModsConfig);
             g_rockConfig.requestImmediateReload();
         }
 
@@ -113,7 +113,7 @@ namespace rock::mods_config_client
         void onMenuEvent(MenuEventType event, std::string_view)
         {
             if (event == MenuEventType::MenuClosed)
-                g_rockConfig.clearPreviewValues();
+                g_rockConfig.clearPreviewValues(PreviewOwner::ModsConfig);
         }
     }
 
