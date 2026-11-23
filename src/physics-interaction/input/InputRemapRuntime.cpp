@@ -1177,10 +1177,23 @@ namespace rock::input_remap_runtime
             return (s_stickClickGameHidden.load(std::memory_order_acquire) & bit) ? stick : 0;
         }
 
+        // The last game-facing edit per hand ([0] left), for the devbench input action. Stored field by field.
+        struct GameInputEditSlot
+        {
+            std::atomic<std::uint64_t> logicalPressed{ 0 };
+            std::atomic<std::uint64_t> gamePressed{ 0 };
+            std::atomic<std::uint32_t> reasons{ 0 };
+            std::atomic<bool> bypassed{ false };
+            std::atomic<std::uint64_t> tickMilliseconds{ 0 };
+        };
+
+        std::array<GameInputEditSlot, 2> s_gameInputEdits;
+
         void applyGameControllerStateRemap(const input_remap_policy::Hand hand, vr::VRControllerState_t* state,
             const std::uint32_t stateSize, const testbench_telemetry::RawControllerState& raw)
         {
             const bool stateValid = state && stateSize >= sizeof(vr::VRControllerState_t);
+            const auto logicalPressed = stateValid ? state->ulButtonPressed : 0ull;
             std::optional<bool> bypassCache;
             const auto bypassed = [&] {
                 if (!bypassCache) {
@@ -1221,6 +1234,12 @@ namespace rock::input_remap_runtime
             if (stateValid) {
                 testbench_telemetry::observeControllerState(isLeft, raw, state->ulButtonPressed, state->rAxis[1].x,
                     reasons, bypassCache.value_or(false));
+                auto& edit = s_gameInputEdits[isLeft ? 0u : 1u];
+                edit.logicalPressed.store(logicalPressed, std::memory_order_relaxed);
+                edit.gamePressed.store(state->ulButtonPressed, std::memory_order_relaxed);
+                edit.reasons.store(reasons, std::memory_order_relaxed);
+                edit.bypassed.store(bypassCache.value_or(false), std::memory_order_relaxed);
+                edit.tickMilliseconds.store(GetTickCount64(), std::memory_order_release);
             }
         }
 
@@ -3840,6 +3859,27 @@ namespace rock::input_remap_runtime
             .pendingReleased = tracker.releasedEdges.load(std::memory_order_acquire),
             .rearm = tracker.rearmPressedMask.load(std::memory_order_acquire),
             .trigger = tracker.triggerAxisX.load(std::memory_order_acquire),
+        };
+    }
+
+    /**
+     * The last game-facing edit of a hand's controller state, with its age. Fields are read one by one, so a read
+     * racing a controller read may mix two of them; it is diagnostic only.
+     */
+    GameInputEdit readGameInputEdit(bool isLeft) noexcept
+    {
+        const auto& edit = s_gameInputEdits[isLeft ? 0u : 1u];
+        const auto tick = edit.tickMilliseconds.load(std::memory_order_acquire);
+        if (tick == 0)
+            return {};
+        const auto now = GetTickCount64();
+        return {
+            .valid = true,
+            .ageMilliseconds = now >= tick ? now - tick : 0,
+            .logicalPressed = edit.logicalPressed.load(std::memory_order_relaxed),
+            .gamePressed = edit.gamePressed.load(std::memory_order_relaxed),
+            .reasons = edit.reasons.load(std::memory_order_relaxed),
+            .bypassed = edit.bypassed.load(std::memory_order_relaxed),
         };
     }
 

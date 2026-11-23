@@ -22,10 +22,11 @@ They follow F4VR-CommonFramework's generic actions (FRIK's and Mods Config's too
 
 | Action | Arguments | Thread | Answer |
 | --- | --- | --- | --- |
-| `health` | | listener | ROCK and devbench builds, `contract`, `armed`, `hasSnapshot`, the latest `liveness`, the actions, and `unsupported` (`input`, `snapshot`) |
+| `health` | | listener | ROCK and devbench builds, `contract`, `armed`, `hasSnapshot`, the latest `liveness`, the actions, and `unsupported` (`snapshot`) |
 | `state` | | listener | The latest frame's state; see [State](#state) |
 | `hand` | `hand`: `left`, `right` or `both` (default) | frame end | One hand in detail; see [Hand](#hand) |
 | `weapon` | | frame end | The equipped weapons in detail; see [Weapon](#weapon) |
+| `input` | | game | What ROCK does to the controller input; see [Input](#input) |
 | `config` | `section`, `key` | game | The option as ROCK reads it from this frame (`value`), its `file` and `fileValue`, and `overriddenBy` (`devbench`, `modsconfig` or null) |
 | `set` | `section`, `key`, `value` | game | Overrides the option for the session, applied from this frame; the file is unchanged. A value its type cannot hold sets nothing |
 | `clear` | `section`, `key`, or `all: true` | game | Drops devbench's own overrides; Mods Config's live preview stays |
@@ -75,6 +76,17 @@ The dump is `PhysicsInteraction::describeHandForDevBench` (`core/interaction/Dev
 - `transition`: `heldTransferPhase` (a held weapon being equipped into the hand), `handPoseHandoff` and its hand, `pairedHandoff`, the bridge model's weapon and whether it is shown.
 
 The dump is `PhysicsInteraction::describeWeaponsForDevBench`, beside the hand's.
+
+## Input
+
+`input` answers what ROCK does to the controller input now. Its shape is ROCK's own, not F4VR-CommonFramework's `input`: ROCK rewrites the state the game reads rather than suppressing per owner. Buttons are named `system`, `menu`, `grip`, `a`, `stick`, `trigger`, `axis2`-`axis4`, else `button<id>`; hands are physical.
+
+- `left` / `right`:
+  - `physical`: the controller as sampled, before the layout: `pressed`, `pendingPressed` and `pendingReleased` edges, `rearm` (buttons waiting for a release), `trigger` axis, `ageMs`.
+  - `functions`: the function each logical button presents now (`trigger`, `grab`, `lowerFace`, `upperFace`, `stickClick`), when a `[Bindings]` entry moved one there; null passes through as sampled.
+  - `game`: the last state ROCK handed the game: `logicalPressed` (after the layout and bindings), `gamePressed`, `hidden` (the difference), `reasons` (`physical-reload`, `support-trigger`, `second-weapon-owns-trigger`, `provider-suppressed`, `left-fire-remap`, `input-blocking-menu`, `stick-click-reserved`), `bypassed` (a caller ROCK lets through read it), `ageMs`. Recorded on every controller read (`input_remap_runtime::readGameInputEdit`), so it is about the last frame's.
+  - `providerSuppression`: the effective flags of every provider client's hand input suppression and ROCK's own UI suppression, without their owners.
+- `menuInputActive`, `pipboyOpen`, `nativePipboySuppression`, and `triggerRouting` (which hand's trigger fires which weapon).
 
 ## Events
 

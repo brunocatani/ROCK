@@ -53,6 +53,22 @@ namespace rock::input_remap_runtime
     // drains edges or rearms buttons when a menu/UI owns input.
     PhysicalTraceSnapshot readPhysicalTraceSnapshot(bool isLeft) noexcept;
 
+    // The last controller state ROCK handed the game for a hand: the logical
+    // buttons after the layout and bindings, the buttons the game saw, and
+    // why they differ (testbench_telemetry::BlankReason bits).
+    struct GameInputEdit
+    {
+        bool valid{ false };
+        std::uint64_t ageMilliseconds{ 0 };
+        std::uint64_t logicalPressed{ 0 };
+        std::uint64_t gamePressed{ 0 };
+        std::uint32_t reasons{ 0 };
+        // A caller ROCK lets through unedited read the state.
+        bool bypassed{ false };
+    };
+
+    [[nodiscard]] GameInputEdit readGameInputEdit(bool isLeft) noexcept;
+
     // The function behind the current synthesized press of a logical button, or
     // Function::Count while the button passes through as sampled (default bindings).
     [[nodiscard]] function_binding_policy::Function functionTag(bool isLeft, button_layout_policy::Slot slot) noexcept;

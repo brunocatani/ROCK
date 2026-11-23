@@ -18,8 +18,11 @@
 
 #include "RockConfig.h"
 #include "devbench/vendor/DevBenchAPI.h"
+#include "api/ProviderRuntime.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
+#include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
+#include "rock_support/TestbenchTelemetry.h"
 
 namespace rock::devbench
 {
@@ -317,6 +320,142 @@ namespace rock::devbench
         }
 
         /**
+         * The names of the OpenVR buttons set in a mask: system, menu, grip, a, stick (axis 0), trigger (axis 1),
+         * axis2-axis4, otherwise button<id>.
+         */
+        json buttonNames(std::uint64_t mask)
+        {
+            json names = json::array();
+            for (unsigned id = 0; id < 64; ++id) {
+                if (!(mask & (1ull << id)))
+                    continue;
+                switch (id) {
+                case 0: names.push_back("system"); break;
+                case 1: names.push_back("menu"); break;
+                case 2: names.push_back("grip"); break;
+                case 7: names.push_back("a"); break;
+                case 32: names.push_back("stick"); break;
+                case 33: names.push_back("trigger"); break;
+                case 34:
+                case 35:
+                case 36: names.push_back(std::format("axis{}", id - 32)); break;
+                default: names.push_back(std::format("button{}", id)); break;
+                }
+            }
+            return names;
+        }
+
+        /**
+         * Why ROCK changed what the game saw, by testbench_telemetry::BlankReason bit.
+         */
+        json blankReasonNames(std::uint32_t reasons)
+        {
+            using namespace testbench_telemetry;
+            constexpr std::pair<std::uint32_t, const char*> kNames[] = {
+                { kBlankPhysicalReload, "physical-reload" },
+                { kBlankSupportTrigger, "support-trigger" },
+                { kBlankSecondaryOwnsTrigger, "second-weapon-owns-trigger" },
+                { kBlankProviderSuppressed, "provider-suppressed" },
+                { kLeftFireRemapApplied, "left-fire-remap" },
+                { kInputBlockingMenu, "input-blocking-menu" },
+                { kBlankStickClickReserved, "stick-click-reserved" },
+            };
+            json names = json::array();
+            for (const auto& [bit, name] : kNames) {
+                if (reasons & bit)
+                    names.push_back(name);
+            }
+            return names;
+        }
+
+        json suppressionFlagNames(std::uint32_t flags)
+        {
+            using api::input::HandInputSuppressionFlag;
+            constexpr std::pair<HandInputSuppressionFlag, const char*> kNames[] = {
+                { HandInputSuppressionFlag::SuppressNormalGrabPress, "normal-grab-press" },
+                { HandInputSuppressionFlag::SuppressGrabRelease, "grab-release" },
+                { HandInputSuppressionFlag::SuppressHeldWeaponTriggerEquip, "held-weapon-trigger-equip" },
+                { HandInputSuppressionFlag::SuppressGameplayCandidates, "gameplay-candidates" },
+                { HandInputSuppressionFlag::SuppressOpenVrGameInput, "openvr-game-input" },
+                { HandInputSuppressionFlag::SuppressNativeVats, "native-vats" },
+                { HandInputSuppressionFlag::SuppressNativeVans, "native-vans" },
+                { HandInputSuppressionFlag::SuppressGrenadeQuickDraw, "grenade-quick-draw" },
+                { HandInputSuppressionFlag::ReserveTriggerGripChord, "trigger-grip-chord" },
+                { HandInputSuppressionFlag::ReserveButtonChord, "button-chord" },
+            };
+            json names = json::array();
+            for (const auto& [flag, name] : kNames) {
+                if (flags & static_cast<std::uint32_t>(flag))
+                    names.push_back(name);
+            }
+            return names;
+        }
+
+        /**
+         * Game thread: what ROCK does to the controller input now, per physical hand. The game-facing edit is the
+         * last controller read's, so it covers the input of about the last frame.
+         */
+        json readInput(const json&)
+        {
+            using button_layout_policy::Slot;
+            constexpr std::pair<Slot, const char*> kSlots[] = {
+                { Slot::Trigger, "trigger" },
+                { Slot::Grab, "grab" },
+                { Slot::LowerFace, "lowerFace" },
+                { Slot::UpperFace, "upperFace" },
+                { Slot::StickClick, "stickClick" },
+            };
+            const auto handJson = [&](bool isLeft) {
+                json functions = json::object();
+                for (const auto& [slot, name] : kSlots) {
+                    const auto function = input_remap_runtime::functionTag(isLeft, slot);
+                    functions[name] = function == function_binding_policy::Function::Count
+                        ? json(nullptr)
+                        : json(std::string(function_binding_policy::functionKey(function)));
+                }
+                const auto edit = input_remap_runtime::readGameInputEdit(isLeft);
+                json game = nullptr;
+                if (edit.valid) {
+                    game = {
+                        { "ageMs", edit.ageMilliseconds },
+                        { "logicalPressed", buttonNames(edit.logicalPressed) },
+                        { "gamePressed", buttonNames(edit.gamePressed) },
+                        { "hidden", buttonNames(edit.logicalPressed & ~edit.gamePressed) },
+                        { "reasons", blankReasonNames(edit.reasons) },
+                        { "bypassed", edit.bypassed },
+                    };
+                }
+                const auto physical = input_remap_runtime::readPhysicalTraceSnapshot(isLeft);
+                const auto hand = isLeft ? api::Hand::Left : api::Hand::Right;
+                return json{
+                    { "physical",
+                        physical.valid
+                            ? json{ { "ageMs", physical.ageMilliseconds }, { "pressed", buttonNames(physical.pressed) },
+                                  { "pendingPressed", buttonNames(physical.pendingPressed) },
+                                  { "pendingReleased", buttonNames(physical.pendingReleased) },
+                                  { "rearm", buttonNames(physical.rearm) }, { "trigger", physical.trigger } }
+                            : json(nullptr) },
+                    { "functions", std::move(functions) },
+                    { "game", std::move(game) },
+                    { "providerSuppression", suppressionFlagNames(provider::currentHandInputSuppressionFlags(hand)) },
+                };
+            };
+            const auto routing = input_remap_runtime::publishedWeaponTriggerRouting();
+            return {
+                { "menuInputActive", input_remap_runtime::isMenuInputActive() },
+                { "pipboyOpen", input_remap_runtime::isPipboyMenuOpen() },
+                { "nativePipboySuppression", input_remap_runtime::isNativePipboyInputSuppressionActive() },
+                { "triggerRouting",
+                    { { "leftFiring", routing.leftFiring }, { "detached", routing.detached },
+                        { "rightLoose", routing.rightLoose }, { "leftLoose", routing.leftLoose },
+                        { "transferPending", routing.transferPending }, { "slotOneEquipped", routing.slotOneEquipped },
+                        { "slotOneLeft", routing.slotOneLeft }, { "slotOneDrawn", routing.slotOneDrawn } } },
+                { "left", handJson(true) },
+                { "right", handJson(false) },
+            };
+        }
+
+        /**
          * FrameEnd action: the equipped weapons in detail, or null while no PhysicsInteraction exists.
          */
         json describeWeapons(const json&)
@@ -347,7 +486,7 @@ namespace rock::devbench
                 { "armed", s_armed.load(std::memory_order_relaxed) },
                 { "actions", names },
                 // Generic actions of F4VR-CommonFramework mods that ROCK's tool does not have.
-                { "unsupported", json::array({ "input", "snapshot" }) },
+                { "unsupported", json::array({ "snapshot" }) },
             };
         }
 
@@ -577,6 +716,15 @@ namespace rock::devbench
                         "aim, per-hand part grips); and the equip transition (held transfer phase, hand-pose handoff, "
                         "bridge model)",
                         json::object(), &describeWeapons, RunOn::FrameEnd },
+                    { "input",
+                        "what ROCK does to the controller input now, per physical hand: physical buttons and pending "
+                        "edges; the function each logical button (trigger, grab, lowerFace, upperFace, stickClick) "
+                        "presents now when a binding moved one (null passes through); the last state handed to the "
+                        "game (logical and game buttons, the ones hidden and why: physical-reload, support-trigger, "
+                        "second-weapon-owns-trigger, provider-suppressed, left-fire-remap, input-blocking-menu, "
+                        "stick-click-reserved); and the provider suppression flags other mods hold. Also the menu "
+                        "and Pip-Boy input gates and the weapon trigger routing",
+                        json::object(), &readInput, RunOn::GameThread },
                     { "config",
                         "one option as ROCK reads it from this frame: the last session value set by devbench or "
                         "Mods Config's live preview, otherwise the file's; with the file it lives in and the file's "
