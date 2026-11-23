@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -538,8 +539,32 @@ namespace rock
         // never written.
         [[nodiscard]] bool setPreviewValue(PreviewOwner owner, std::string_view table, std::string_view key,
             std::string_view value);
-        void discardPreviewValue(PreviewOwner owner, std::string_view table, std::string_view key);
-        void clearPreviewValues(PreviewOwner owner);
+        bool discardPreviewValue(PreviewOwner owner, std::string_view table, std::string_view key);
+        std::size_t clearPreviewValues(PreviewOwner owner);
+
+        struct PreviewValue
+        {
+            PreviewOwner owner;
+            std::string table;
+            std::string key;
+            std::string value;
+            // The last set of the option's values, which the next apply uses.
+            bool applies;
+        };
+
+        [[nodiscard]] std::vector<PreviewValue> previewValues() const;
+
+        // One option as the next apply reads it: the last preview value set,
+        // otherwise the file's (its default when the file lacks it).
+        struct SettingValue
+        {
+            std::string value;
+            std::string fileValue;
+            config::Group group;
+            std::optional<PreviewOwner> previewOwner;
+        };
+
+        [[nodiscard]] std::optional<SettingValue> settingValue(std::string_view table, std::string_view key) const;
         // Reloads the files at the next processPendingConfigReload, without
         // waiting for the watcher's debounce.
         void requestImmediateReload() noexcept;

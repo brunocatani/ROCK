@@ -28,6 +28,7 @@
 #include "api/FRIKApiV2.h"
 #include "api/LooseWeaponStateService.h"
 #include "api/ProviderRuntime.h"
+#include "devbench/RockDevBench.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
@@ -953,6 +954,8 @@ namespace
     {
         // Teardown a message delivered off the frame thread, before this frame uses any of it.
         runPendingLifecycle();
+        // devbench's queued actions, before this frame's settings apply, so a set applies from this frame.
+        devbench::onFrameBegin();
         // FrameBegin precedes FRIK's scope-rig carry (WeaponPositionAdjuster::onFrameStart).
         scope_rig_parent_repair::reattachOrphanedScopeRig();
         native_quick_loot_panel::update(
@@ -1269,6 +1272,8 @@ namespace
 
         if (msg->type == F4SE::MessagingInterface::kGameLoaded) {
             s_messaging->RegisterListener(onExternalWeaponVisualChanged, "VRVanillaFixes");
+            // Before FRIK's API, so health still answers when ROCK disables itself below.
+            devbench::registerTool();
             logger::info("ROCK: GameLoaded -- initializing FRIKApi and loading config...");
             const auto providerGeneration = bumpGeneration(s_providerGeneration);
             if (s_physicsInteraction) {

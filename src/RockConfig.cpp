@@ -182,23 +182,30 @@ namespace rock
         return false;
     }
 
-    void RockConfig::discardPreviewValue(PreviewOwner owner, std::string_view table, std::string_view key)
+    /**
+     * Drops the owner's preview value of an option; false when it had none.
+     */
+    bool RockConfig::discardPreviewValue(PreviewOwner owner, std::string_view table, std::string_view key)
     {
         std::scoped_lock lock(_storeMutex);
         const auto path = _previewValues.find(config::settingPath(table, key));
         if (path == _previewValues.end())
-            return;
+            return false;
         const auto own = std::ranges::find(path->second, owner, &PreviewEntry::owner);
         if (own == path->second.end())
-            return;
+            return false;
         path->second.erase(own);
         if (path->second.empty())
             _previewValues.erase(path);
         ++_previewRevision;
         _previewPending.store(true, std::memory_order_release);
+        return true;
     }
 
-    void RockConfig::clearPreviewValues(PreviewOwner owner)
+    /**
+     * Drops every preview value of the owner and returns how many it had.
+     */
+    std::size_t RockConfig::clearPreviewValues(PreviewOwner owner)
     {
         std::scoped_lock lock(_storeMutex);
         std::size_t removed = 0;
@@ -207,9 +214,46 @@ namespace rock
             path = path->second.empty() ? _previewValues.erase(path) : std::next(path);
         }
         if (removed == 0)
-            return;
+            return 0;
         ++_previewRevision;
         _previewPending.store(true, std::memory_order_release);
+        return removed;
+    }
+
+    /**
+     * Every owner's preview values, by option path. A path is "table.key", and keys never hold a '.'.
+     */
+    std::vector<RockConfig::PreviewValue> RockConfig::previewValues() const
+    {
+        std::scoped_lock lock(_storeMutex);
+        std::vector<PreviewValue> values;
+        for (const auto& [path, entries] : _previewValues) {
+            const auto split = path.rfind('.');
+            const auto table = split == std::string::npos ? std::string() : path.substr(0, split);
+            const auto key = split == std::string::npos ? path : path.substr(split + 1);
+            for (const auto& entry : entries)
+                values.push_back({ entry.owner, table, key, entry.value, &entry == &entries.back() });
+        }
+        return values;
+    }
+
+    /**
+     * The option's value as the next apply reads it, with the file's value beneath; nullopt for an option the
+     * catalog lacks or before the settings load.
+     */
+    std::optional<RockConfig::SettingValue> RockConfig::settingValue(std::string_view table, std::string_view key) const
+    {
+        std::scoped_lock lock(_storeMutex);
+        const auto* setting = _store ? _store->find(table, key) : nullptr;
+        if (!setting)
+            return std::nullopt;
+        SettingValue result{ setting->value, setting->value,
+            setting->group == RPS::Settings::Group::Developer ? Group::Developer : Group::Player, std::nullopt };
+        if (const auto path = _previewValues.find(config::settingPath(table, key)); path != _previewValues.end()) {
+            result.value = path->second.back().value;
+            result.previewOwner = path->second.back().owner;
+        }
+        return result;
     }
 
     void RockConfig::requestImmediateReload() noexcept { _immediateReload.store(true, std::memory_order_release); }

@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <source_location>
+#include <vector>
 
 namespace rock::performance_profiler
 {
@@ -294,6 +295,50 @@ namespace rock::performance_profiler
 
     void refreshSettings(bool enabled, int logIntervalFrames, int warmupFrames) noexcept;
     bool enabled() noexcept;
+
+    // Collection for devbench's perf action, on beside the log setting from the
+    // next refreshSettings: timing runs while either wants it, the log's
+    // intervals and writer only while the setting is on.
+    void setDevBenchCollection(bool on) noexcept;
+
+    struct WindowScope
+    {
+        const char* name;
+        std::uint64_t samples;
+        std::uint64_t events;
+        double totalMs;
+        double maxMs;
+    };
+
+    struct WindowCounter
+    {
+        const char* name;
+        std::uint64_t count;
+    };
+
+    struct WindowValue
+    {
+        const char* name;
+        std::uint64_t samples;
+        std::uint64_t total;
+        std::uint64_t max;
+    };
+
+    // Devbench's perf window: every scope, counter and value that recorded
+    // since the window's start, summed across the log's intervals. Frames
+    // count FrameBegins since then.
+    struct DevBenchWindow
+    {
+        double windowMs{ 0.0 };
+        std::uint64_t frames{ 0 };
+        bool collecting{ false };
+        bool logging{ false };
+        std::vector<WindowScope> scopes;
+        std::vector<WindowCounter> counters;
+        std::vector<WindowValue> values;
+    };
+
+    DevBenchWindow readDevBenchWindow(bool reset);
     void beginFrame() noexcept;
     void endFrame() noexcept;
     void addEventCount(Scope scope, std::uint64_t count = 1) noexcept;
