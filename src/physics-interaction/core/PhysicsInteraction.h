@@ -431,6 +431,8 @@ namespace rock
         void captureDevBenchState(devbench::RockState& state) const;
         // The devbench tool's hand action: one hand's poses, selection and grab in detail, from FRIK's FrameEnd.
         nlohmann::json describeHandForDevBench(bool isLeft);
+        // The devbench tool's weapon action: the equipped weapons, their grips and transitions, from FRIK's FrameEnd.
+        nlohmann::json describeWeaponsForDevBench() const;
         void publishDebugRenderFrame();
 
     private:

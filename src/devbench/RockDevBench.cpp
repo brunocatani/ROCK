@@ -316,6 +316,17 @@ namespace rock::devbench
             return out;
         }
 
+        /**
+         * FrameEnd action: the equipped weapons in detail, or null while no PhysicsInteraction exists.
+         */
+        json describeWeapons(const json&)
+        {
+            auto* interaction = s_frameEndInteraction;
+            if (!interaction)
+                return { { "interaction", nullptr }, { "note", "FRIK's skeleton is not ready, so ROCK has no hands" } };
+            return interaction->describeWeaponsForDevBench();
+        }
+
         std::span<const Action> actions();
 
         json health(const json&)
@@ -556,6 +567,16 @@ namespace rock::devbench
                         "world, in game units; rotations are matrices by rows",
                         { { "hand", argument("string", "hand: left, right or both (default)") } }, &describeHands,
                         RunOn::FrameEnd },
+                    { "weapon",
+                        "the equipped weapons in detail, read after this frame's weapon work: drawn and the native "
+                        "weapon state (sheathed, want-to-draw, drawing, drawn, want-to-sheathe, sheathing), a pending "
+                        "inventory equip; primary "
+                        "(index 0) and secondary (ROCK's second weapon) with scope eligibility and generated collision "
+                        "bodies; the roster (which hand fires each, part grips, pending grip reservations); the "
+                        "two-handed grip session (state, firing hand, part carry, primary-only, hands-free, gunstock "
+                        "aim, per-hand part grips); and the equip transition (held transfer phase, hand-pose handoff, "
+                        "bridge model)",
+                        json::object(), &describeWeapons, RunOn::FrameEnd },
                     { "config",
                         "one option as ROCK reads it from this frame: the last session value set by devbench or "
                         "Mods Config's live preview, otherwise the file's; with the file it lives in and the file's "

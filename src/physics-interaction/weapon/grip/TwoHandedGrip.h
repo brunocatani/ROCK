@@ -786,6 +786,14 @@ namespace rock
 
         bool isHandPartGripping(bool isLeft) const { return partGrip(isLeft).active; }
 
+        // The support hand aims the weapon in gunstock mode: its part grip chose gunstock aim and the weapon
+        // transform is solved this frame.
+        bool isGunstockAimActive() const
+        {
+            const WeaponPartGrip& support = partGrip(isSupportHandLeft());
+            return support.active && support.gunstockAimSelected && _hasSolvedWeaponTransform;
+        }
+
         /*
          * True only for part grips that hold weapon transform authority.
          * AttachOnly glue grips report isHandPartGripping (the hand is

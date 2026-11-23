@@ -5,6 +5,8 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/object/GrabTargetKind.h"
+#include "physics-interaction/weapon/equip/HeldWeaponEquipStatePolicy.h"
+#include "physics-interaction/weapon/equip/HeldWeaponTransferPolicy.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include <format>
@@ -71,6 +73,25 @@ namespace rock
                 break;
             }
             return "none";
+        }
+
+        const char* heldTransferPhaseName(held_weapon_transfer::Phase phase) noexcept
+        {
+            switch (phase) {
+            case held_weapon_transfer::Phase::Idle:
+                return "Idle";
+            case held_weapon_transfer::Phase::AwaitEquip:
+                return "AwaitEquip";
+            case held_weapon_transfer::Phase::AwaitGrip:
+                return "AwaitGrip";
+            case held_weapon_transfer::Phase::Completing:
+                return "Completing";
+            case held_weapon_transfer::Phase::Recovering:
+                return "Recovering";
+            case held_weapon_transfer::Phase::Terminal:
+                return "Terminal";
+            }
+            return "Unknown";
         }
 
         std::string referenceName(RE::TESObjectREFR* ref)
@@ -299,5 +320,101 @@ namespace rock
         }
         out["grab"] = std::move(grab);
         return out;
+    }
+
+    /**
+     * The equipped weapons for the devbench weapon action, read at FrameEnd: the native weapon state, the roster's
+     * per-slot facts (which hand fires, which part grips hold, pending grip reservations), each weapon with its
+     * generated collision and scope eligibility, the two-handed grip session, and the equip transition's hand-pose
+     * handoff.
+     */
+    json PhysicsInteraction::describeWeaponsForDevBench() const
+    {
+        const auto& runtime = runtime_state::currentFrame();
+        const auto roster = equippedWeaponRoster();
+        const auto& facts = roster.facts();
+        const auto partGripJson = [](const equipped_weapon_roster::PartGripFacts& grip) {
+            return json{ { "active", grip.active }, { "attachOnly", grip.attachOnly } };
+        };
+        const auto weaponJson = [this](std::uint32_t index, const WeaponCollision& collision) {
+            devbench::WeaponState weapon;
+            captureWeapon(index, weapon);
+            if (!weapon.formId)
+                return json(nullptr);
+            return json{
+                { "formId", std::format("{:08X}", weapon.formId) },
+                { "name", weapon.name },
+                { "scopeEligible", isScopeEligible(static_cast<std::int32_t>(index)) },
+                { "collision",
+                    { { "bodies", collision.getWeaponBodyCount() },
+                        { "observedFormId", std::format("{:08X}", collision.getCurrentObservedEquippedWeaponFormID()) },
+                        { "generationKey", std::format("{:016X}", collision.getCurrentWeaponGenerationKey()) } } },
+            };
+        };
+
+        const auto& grip = _twoHandedGrip;
+        const auto& transition = _equipped.transition;
+        return {
+            { "weaponDrawn", runtime.weaponDrawn },
+            { "nativeWeaponState",
+                _equipped.tracedNativeWeaponState == 0xFFFFFFFFu
+                    ? json(nullptr)
+                    : json(held_weapon_equip_state_policy::nativeWeaponStateName(_equipped.tracedNativeWeaponState)) },
+            { "inventoryEquipPending", _inventoryEquip.active() },
+            { "primary", weaponJson(0, _weaponCollision) },
+            { "secondary", weaponJson(1, _secondaryWeaponCollision) },
+            { "roster",
+                {
+                    { "slot0",
+                        { { "holdsHand", facts.slot0.holdsHand },
+                            { "sessionFiringHand", handName(facts.slot0.sessionFiringHand) },
+                            { "firingHand", handName(facts.slot0.firingHand) },
+                            { "firingGripConfirmed", facts.slot0.firingGripConfirmed },
+                            { "firingGripDetached", facts.slot0.firingGripDetached },
+                            { "partGrips",
+                                { { "left", partGripJson(facts.slot0.partGrips[1]) },
+                                    { "right", partGripJson(facts.slot0.partGrips[0]) } } } } },
+                    { "slot1",
+                        { { "formId", std::format("{:08X}", facts.slot1.formId) },
+                            { "equipped", facts.slot1.equipped }, { "holdsHand", facts.slot1.holdsHand },
+                            { "hand", handName(facts.slot1.hand) } } },
+                    { "pending",
+                        { { "bothHands", facts.pending.bothHands },
+                            { "supportHand", handName(facts.pending.supportHand) },
+                            { "firingHand", handName(facts.pending.firingHand) } } },
+                } },
+            { "twoHandedGrip",
+                {
+                    { "state", twoHandedStateName(grip.getState()) },
+                    { "firingHand", grip.isFiringHandLeft() ? "left" : "right" },
+                    { "gripping", grip.isGripping() },
+                    { "firingGripOccupied", grip.isFiringGripOccupied() },
+                    { "partCarry", grip.isPartCarryActive() },
+                    { "primaryOnly", grip.isPrimaryOnlyActive() },
+                    { "handsFreeRetained", grip.isHandsFreeRetained() },
+                    { "liveGripPresenting", grip.isLiveGripPresenting() },
+                    { "visualReturn", grip.isWeaponVisualReturnActive() },
+                    { "gunstockAim", grip.isGunstockAimActive() },
+                    { "partGrips",
+                        { { "left",
+                              { { "gripping", grip.isHandPartGripping(true) },
+                                  { "carry", grip.isHandPartCarryGripping(true) } } },
+                            { "right",
+                                { { "gripping", grip.isHandPartGripping(false) },
+                                    { "carry", grip.isHandPartCarryGripping(false) } } } } },
+                } },
+            { "transition",
+                {
+                    { "heldTransferPhase", heldTransferPhaseName(transition.heldTransfer().phase) },
+                    { "handPoseHandoff", transition.isHandPoseHandoffActive() },
+                    { "handPoseHandoffHand",
+                        transition.isHandPoseHandoffActive()
+                            ? json(transition.handPoseHandoffIsLeft() ? "left" : "right")
+                            : json(nullptr) },
+                    { "pairedHandoff", transition.hasPairedHandPoseHandoff() },
+                    { "bridgeWeaponFormId", std::format("{:08X}", transition.bridgeWeaponBaseFormID()) },
+                    { "bridgeModelPresented", transition.presentedBridgeModel() != nullptr },
+                } },
+        };
     }
 }

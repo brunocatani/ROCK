@@ -8,7 +8,7 @@
  * ROCK logs one line and registers nothing.
  *
  * Threads: devbench calls the tool on its listener thread. health, state and
- * perf answer there; hand is queued for ROCK's next FrameEnd; every other
+ * perf answer there; hand and weapon are queued for ROCK's next FrameEnd; every other
  * action is queued for ROCK's next FrameBegin, or for devbench's main-thread
  * queue while FRIK's frame is not running. The caller waits up to 2 seconds.
  * See docs/dev/devbench.md.

@@ -56,7 +56,7 @@ To change ROCK: read [Architecture](#architecture), find the task in [Where to s
 - **Frame thread** (FRIK's callbacks, the game thread): owns `PhysicsInteraction`, both `Hand`s and every structural change to ROCK's Havok bodies. Provider calls marked "Game" must come from here.
 - **Physics threads**: contact signals (`core/interaction/ContactEvents.cpp`) and the step drive (`native/havok/PhysicsStepDriveCoordinator.h`), which moves ROCK's bodies and the grab authority between substeps. They never change structure; the frame thread changes it only inside `PhysicsCallbackQuiescenceGate::pauseForMutation()`.
 - **Any thread**: provider reads marked "Any" copy published snapshots.
-- **devbench's listener thread** calls the devbench tool: `health`, `state` and `perf` answer there from atomics and published snapshots; `hand` queues for FrameEnd, every other action for FrameBegin.
+- **devbench's listener thread** calls the devbench tool: `health`, `state` and `perf` answer there from atomics and published snapshots; `hand` and `weapon` queue for FrameEnd, every other action for FrameBegin.
 - **Background workers** handle file and diagnostic work on copied data: the saved-grab-offset writer, the profiler's report writer and the debug overlay shape builder. Weapon geometry is built in bounded slices on the frame thread (`weapon/collision/WeaponGeometryTask.h`).
 
 ### Ownership

@@ -25,6 +25,7 @@ They follow F4VR-CommonFramework's generic actions (FRIK's and Mods Config's too
 | `health` | | listener | ROCK and devbench builds, `contract`, `armed`, `hasSnapshot`, the latest `liveness`, the actions, and `unsupported` (`input`, `snapshot`) |
 | `state` | | listener | The latest frame's state; see [State](#state) |
 | `hand` | `hand`: `left`, `right` or `both` (default) | frame end | One hand in detail; see [Hand](#hand) |
+| `weapon` | | frame end | The equipped weapons in detail; see [Weapon](#weapon) |
 | `config` | `section`, `key` | game | The option as ROCK reads it from this frame (`value`), its `file` and `fileValue`, and `overriddenBy` (`devbench`, `modsconfig` or null) |
 | `set` | `section`, `key`, `value` | game | Overrides the option for the session, applied from this frame; the file is unchanged. A value its type cannot hold sets nothing |
 | `clear` | `section`, `key`, or `all: true` | game | Drops devbench's own overrides; Mods Config's live preview stays |
@@ -62,6 +63,18 @@ The snapshot holds plain values copied on the frame thread (`src/devbench/RockDe
   - With the world: `heldRoot`, `pivot` (hand and object pivots, `errorGameUnits`), `solve` (acquisition phase, pivot authority source, grab point modes, pivot, tracking and rotation errors, live and desired body), `supportFrame`, `palmAuthority`.
 
 The dump is `PhysicsInteraction::describeHandForDevBench` (`core/interaction/DevBenchState.cpp`); a new field goes there.
+
+## Weapon
+
+`weapon` reads the equipped weapons at FrameEnd, after the frame's weapon work. Without a `PhysicsInteraction` it answers `interaction: null`.
+
+- `weaponDrawn`, `nativeWeaponState` (the game's `sheathed`, `want-to-draw`, `drawing`, `drawn`, `want-to-sheathe` or `sheathing`, as ROCK last traced it), `inventoryEquipPending`.
+- `primary` (equipment index 0) and `secondary` (ROCK's second weapon, index 1), or null: `formId`, `name`, `scopeEligible`, and `collision` (generated `bodies`, the weapon form it was built for, its generation key).
+- `roster` (`weapon/equip/EquippedWeaponRoster.h`): `slot0` (`holdsHand`, `sessionFiringHand`, `firingHand`, `firingGripConfirmed`, `firingGripDetached`, `partGrips` per hand), `slot1` (`formId`, `equipped`, `holdsHand`, `hand`), `pending` grip reservations.
+- `twoHandedGrip`: `state`, `firingHand`, `gripping`, `firingGripOccupied`, `partCarry`, `primaryOnly`, `handsFreeRetained`, `liveGripPresenting`, `visualReturn`, `gunstockAim`, and `partGrips` per hand (`gripping`, `carry`).
+- `transition`: `heldTransferPhase` (a held weapon being equipped into the hand), `handPoseHandoff` and its hand, `pairedHandoff`, the bridge model's weapon and whether it is shown.
+
+The dump is `PhysicsInteraction::describeWeaponsForDevBench`, beside the hand's.
 
 ## Events
 
