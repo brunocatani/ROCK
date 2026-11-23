@@ -235,7 +235,8 @@ AimYawDegrees = 0.0
 AimPitchDegrees = 0.0
 
 ## Left Firing Aim: Offset
-## Shifts the aim of a weapon fired from the left hand, in game units (70 = 1 metre), as { pos = [x, y, z] }. Each value: -15 to 15.
+## Shifts the aim of a weapon fired from the left hand, in game units (70 = 1 metre), as { pos = [along the fingers, out of the palm, across the palm] }.
+## The weapon moves that way, at once. Each value: -15 to 15.
 AimOffset = { pos = [0.0, 0.0, 0.0] }
 
 ## Left Firing Grip

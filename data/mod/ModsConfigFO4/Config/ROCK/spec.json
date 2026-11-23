@@ -467,7 +467,7 @@
                   "type": "cf.transform",
                   "valueType": "string",
                   "text": "Left Firing Aim: Offset",
-                  "help": "Shifts the aim of a weapon fired from the left hand, in game units (70 = 1 metre).",
+                  "help": "Shifts the aim of a weapon fired from the left hand, in game units: X along the fingers, Y out of the palm, Z across the palm. The weapon moves that way, at once.",
                   "default": { "pos": [0.0, 0.0, 0.0] },
                   "valueOptions": {
                     "position": { "min": -15.0, "max": 15.0, "step": 0.1 },
@@ -480,7 +480,7 @@
                   "type": "cf.transform",
                   "valueType": "string",
                   "text": "Left Firing Grip",
-                  "help": "Moves where the left hand holds the firing grip, in game units: X along the fingers, Y into or out of the palm, Z across the palm. All 0 is the plain mirror of the right-hand grip. Regrab to apply.",
+                  "help": "Moves where the left hand holds the firing grip, in game units: X along the fingers, Y into or out of the palm, Z across the palm. The hand stays put and the weapon moves the other way. All 0 is the plain mirror of the right-hand grip. Regrab to apply.",
                   "default": { "pos": [0.0, 0.0, 0.0] },
                   "valueOptions": {
                     "position": { "min": -15.0, "max": 15.0, "step": 0.1 },

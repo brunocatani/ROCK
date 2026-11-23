@@ -233,7 +233,8 @@ namespace rock::config
             Group::Player, clampTo(-30.0, 30.0) },
         { "FiringHand.Left", "AimOffset", "06. Firing Hand",
             "Left Firing Aim: Offset\nShifts the aim of a weapon fired from the left hand, in game units (70 = 1 "
-            "metre), as { pos = [x, y, z] }. Each value: -15 to 15.",
+            "metre), as { pos = [along the fingers, out of the palm, across the palm] }.\nThe weapon moves that way, "
+            "at once. Each value: -15 to 15.",
             Group::Player, clampTo(-15.0, 15.0) },
         { "FiringHand.Left", "GripOffset", "06. Firing Hand",
             "Left Firing Grip\nMoves where the left hand holds the firing grip, in game units (70 = 1 metre), as "
