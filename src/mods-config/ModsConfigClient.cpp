@@ -3,6 +3,7 @@
 #include "RockConfig.h"
 #include "mods-config/ModsConfigFO4Api.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/input/InputRemapRuntime.h"
 #include "setup-wizard/SetupWizard.h"
 
 #include <format>
@@ -16,6 +17,7 @@ namespace rock::mods_config_client
         using ::mods_config::api::Change;
         using ::mods_config::api::FunctionResult;
         using ::mods_config::api::MenuEventType;
+        using ::mods_config::api::MenuState;
         using ::mods_config::api::ModsConfigFO4Client;
         using ::mods_config::api::Params;
         using ::mods_config::api::Saved;
@@ -121,8 +123,15 @@ namespace rock::mods_config_client
         }
     }
 
+    /**
+     * Every frame: tells the input remap whether the menu is open and shown (not minimized), when its pointer takes
+     * the primary trigger; and restores the menu once the setup wizard it stepped aside for is gone.
+     */
     void update() noexcept
     {
+        const auto* api = ModsConfigFO4Client::get().api();
+        input_remap_runtime::setPointerMenuInUse(api && api->getMenuState() == MenuState::Open);
+
         if (!g_restorePending || setup_wizard::isActive())
             return;
         g_restorePending = false;

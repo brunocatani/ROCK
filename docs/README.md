@@ -126,7 +126,7 @@ Each drawn weapon gets its own ammo counter, drawn through RPS UI Framework:
 
 - **A weapon in each hand:** any combination, melee included, each with its own trigger, reload, scope and collision. A weapon equips into the hand that chose it, and keeps the other hand's weapon. The Pip-Boy marks which hand holds each weapon.
 - **Default Hand** (right or left) is the firing hand for equips that come without a hand: favorites, PALM, scripts and other mods. Grenades prefer it too.
-- **Firing from the left hand:** reload and scope move to X. **Left Firing Aim** (yaw, pitch, offset), **Left Firing Grip** and **Right Support Grip** fine-tune the mirrored hold.
+- **Firing from the left hand:** reload and scope move to X. **Left Firing Aim** (yaw, pitch, offset), **Left Firing Grip** and **Right Support Grip** fine-tune the mirrored hold. While the Mods Config menu is open, the right trigger works the menu and the left trigger doesn't fire.
 
 The game's own left-handed mode is not supported and stays off: use Default Hand.
 

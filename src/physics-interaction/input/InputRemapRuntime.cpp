@@ -314,6 +314,8 @@ namespace rock::input_remap_runtime
         // A primary Activate press stopped for a bound Reload or Scope: its release is stopped too.
         std::atomic<bool> s_stopPrimaryActivateUntilRelease{ false };
         std::atomic<bool> s_gameplayInputAllowed{ false };
+        // A mod's pointer menu that reads the primary wand's trigger is open. Frame thread -> controller hooks.
+        std::atomic<bool> s_pointerMenuInUse{ false };
         std::atomic<bool> s_bothHandsHoldWeapons{ false }; // Frame thread -> input dispatch.
         // Stick clicks the bipod or a held placement owns this frame (bit 1 left,
         // bit 2 right). Frame thread -> input dispatch and game-facing reads.
@@ -781,7 +783,8 @@ namespace rock::input_remap_runtime
         [[nodiscard]] bool shouldRemapLeftHandFireTriggerForGame()
         {
             return weaponRouting().leftFiring && !secondaryOwnsTrigger(input_remap_policy::Hand::Left) &&
-                s_gameplayInputAllowed.load(std::memory_order_acquire) && !isInputBlockingMenuActive();
+                s_gameplayInputAllowed.load(std::memory_order_acquire) && !isInputBlockingMenuActive() &&
+                !s_pointerMenuInUse.load(std::memory_order_acquire);
         }
 
         /*
@@ -3390,6 +3393,12 @@ namespace rock::input_remap_runtime
         return value < function_binding_policy::kFunctionCount ? static_cast<function_binding_policy::Function>(value)
                                                                 : function_binding_policy::Function::Count;
     }
+
+    /**
+     * A pointer menu of another mod (Mods Config's) is open and takes the primary wand's trigger: the left-hand
+     * firing remap stops, so the menu reads the right trigger, and the game sees both triggers as they are.
+     */
+    void setPointerMenuInUse(bool inUse) { s_pointerMenuInUse.store(inUse, std::memory_order_release); }
 
     void setGameplayInputAllowed(bool allowed)
     {

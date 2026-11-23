@@ -16,6 +16,9 @@
  * Discard, a Save or the menu closing ends it. The modVersion state gives the
  * page its version line.
  *
+ * While the menu is open and shown, its pointer reads the primary (right) trigger,
+ * so the input remap's left-hand firing stops presenting the left trigger there.
+ *
  * Threads: Mods Config calls on the game's main thread, which is also ROCK's frame
  * thread; connect and update run there too.
  */
@@ -24,6 +27,5 @@ namespace rock::mods_config_client
     // Once ROCK has initialized: adds ROCK's entries and connects.
     void connect() noexcept;
 
-    // Every frame, after the setup wizard's update: restores the menu once the wizard it stepped aside for is gone.
     void update() noexcept;
 }

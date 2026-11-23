@@ -1,6 +1,6 @@
 # Ticket: left-hand firing moves the Mods Config menu's trigger
 
-**Status:** open, not started. **Depends on:** probably `mods-config-native-api.md` (menu events).
+**Status:** done. Headset check passed on 2026-11-23.
 
 ## Problem
 
@@ -8,19 +8,28 @@ While the left hand holds the equipped weapon's firing grip, the Mods Config men
 
 ## Cause
 
-`InputRemapRuntime.cpp`, `shouldRemapLeftHandFireTriggerForGame` and `applyLeftHandFireTriggerRemapForGame`: while left-firing, ROCK presents the left physical trigger as the right wand's trigger (the game fires only from the primary wand's trigger), and blanks both physical triggers. The remap applies to every OpenVR state read except the UI's raw read, so Mods Config reads the remapped state too.
+`InputRemapRuntime.cpp`, `shouldRemapLeftHandFireTriggerForGame` and `applyLeftHandFireTriggerRemapForGame`: while left-firing, ROCK presents the left physical trigger as the right wand's trigger (the game fires only from the primary wand's trigger), and blanks both physical triggers. The remap applies to every OpenVR state read except RPS UI's raw read, and it cannot fork by caller (the comment at the function says why), so Mods Config's pointer, which reads through CommonFramework's `VRControllers`, sees the remapped state.
 
-The remap stops behind an input-blocking menu (`isInputBlockingMenuActive`: a game-stopping input context or FRIK's compatibility config). The Mods Config menu is neither, so the remap stays on while it's open.
+The remap stops behind an input-blocking menu (`isInputBlockingMenuActive`). Mods Config's menu pushes no input context and opens no game menu, so nothing ROCK could see without Mods Config's API stopped it.
 
-## Options
+## Decision
 
-1. **Menu events from the native client.** Once ROCK connects to Mods Config (`mods-config-native-api.md`), `subscribeToMenuEvents` tells it when the menu opens and closes. Count an open Mods Config menu as input-blocking, as the game's menus are.
-2. **Detect the menu without the client.** Check whether Mods Config's menu pushes an input context or a game menu ROCK can see, and add it to `kRemapBlockingInputContexts` or the tracked menus. Works when Mods Config is installed but ROCK's client isn't connected.
-3. **Ask Mods Config to read raw controller state** for its pointer. A change in Mods Config, and other mods that remap input would still affect it.
+- While Mods Config's menu is open and shown, only the left-hand fire remap stops (and the right-to-left game haptic redirect, which shares its check). Grabs, `[Controls]`, `[Bindings]` and provider suppression keep running: the game isn't paused, and live preview means trying settings with the menu open.
+- `mods_config_client::update()` (FrameBegin) polls `getMenuState()` and calls `input_remap_runtime::setPointerMenuInUse(state == Open)`. A minimized menu takes no input (the setup wizard reads raw through RPS UI; Adjust In World hides every wand from the game and uses grip, A and thumbsticks), so the remap comes back while minimized. Menu events aren't used: they don't report minimize and restore.
+- With the remap off, the right trigger works the menu; off the panel it fires the gun the game holds in the primary hand, as for a right-handed player. On the panel, Mods Config's pointer hides the pointing wand from the game, so clicks don't fire.
+- No fix without a connected Mods Config: no other signal exists.
+- Triggers held across a switch aren't latched: opening the menu mid-fire releases the game's trigger; a click that closes or minimizes the menu was hidden from the game by the pointer.
+- The player guide's firing-hand section says it in one line; the spec has no warning.
 
-Lean: option 1 when the native client lands; check option 2 first, since it needs no client.
+## Answered
 
-## To check
+- Firing behind the menu: covered above.
+- RPS UI: the remap skips its raw read (`rawInputReadActive`, `uiCapturedButtons`). PALM: its ROCK pages are retired (`mods-config-palm-removal.md`).
 
-- Whether the left trigger also fires the gun while the menu is open (the game sees the remapped trigger behind a menu that doesn't block input).
-- The same with RPS UI's settings menu and RobCo PALM, which also aren't game menus.
+## Headset check (passed)
+
+Left-firing with a gun:
+
+1. Open Mods Config: the right trigger clicks, the left trigger doesn't fire.
+2. Minimize it (or open the setup wizard from ROCK's page): the left trigger fires again.
+3. Restore, then close: firing from the left trigger is back to normal.
