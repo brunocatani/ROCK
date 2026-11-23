@@ -8,7 +8,7 @@
   "f4sePluginRequirements": ["ROCK"],
   "files": {
     "config": { "format": "toml", "root": "myGames", "path": "Mods_Config/ROCK/ROCK.toml" },
-    "developer": { "format": "toml", "root": "myGames", "path": "Mods_Config/ROCK/ROCK_Developer.toml" }
+    "developer": { "format": "toml", "root": "myGames", "path": "Mods_Config/ROCK/ROCK_Developer.toml", "omitDefault": true }
   },
   "defaultFile": "config",
   "applies": "live",

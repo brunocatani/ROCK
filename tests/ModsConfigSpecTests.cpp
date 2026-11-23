@@ -640,6 +640,8 @@ int main(int argc, char** argv)
                     files.at("developer").value("path", "") == "Mods_Config/ROCK/ROCK_Developer.toml" &&
                     spec.value("defaultFile", "") == "config",
             "the spec's files are not ROCK.toml (the default) and ROCK_Developer.toml");
+        require(files.at("developer").value("omitDefault", false) && !files.at("config").value("omitDefault", false),
+            "ROCK_Developer.toml must have omitDefault, as it keeps only changed options, and ROCK.toml must not");
 
         std::vector<ShownSetting> settings;
         collectSettings(spec.at("content"), "config", settings);

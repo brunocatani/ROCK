@@ -16,8 +16,8 @@ A Mods Config FO4 VR page for `ROCK_Developer.toml`, which RPS UI's ROCK Dev pag
 
 ### How the file is written
 
-- Mods Config's Save writes only the keys that changed, and a missing key reads as its default, so untouched rows never reach the file. Mods Config needs no change.
-- What is left: Reset writes the default as a key, which would pin today's default against a later change of ROCK's compiled one. RPS Settings closes it: a reload rewrites the developer file only when it holds a key equal to its default, dropping it and deleting the file once no keys remain, and the startup rewrite drops default-valued developer keys too. A reload never reshuffles a file being edited by hand otherwise. This is a change in the RPS Framework fork (2b8d676). Because a load no longer keeps a file of defaults, the reference examples come from the store's `organizedDefaults` (015a9ff).
+- The `developer` file has `"omitDefault": true` in `spec.json`: a missing key shows its default with no warning, a Save writes a key only while it differs from its default, Reset takes the key out, and a Save that leaves no values deletes the file. So a default never gets pinned against a later change of ROCK's compiled one.
+- RPS Settings does the same on ROCK's side, for hand edits and files written before Mods Config had `omitDefault`: a reload rewrites the developer file only when it holds a key equal to its default, dropping it and deleting the file once no keys remain, and the startup rewrite drops default-valued developer keys too. A reload never reshuffles a file being edited by hand otherwise. This is a change in the RPS Framework fork (2b8d676). Because a load no longer keeps a file of defaults, the reference examples come from the store's `organizedDefaults` (015a9ff).
 
 ### Who sees it
 
@@ -58,6 +58,6 @@ Confirmed in game on 2026-11-23:
 - The Developer pages show and read correctly.
 - A change on a developer page creates `ROCK_Developer.toml` holding only that key, and ROCK picks it up.
 - Reset of that row, then Save: ROCK's reload drops the key and deletes the file.
-- The Developer report: 0 errors; its 286 warnings are each developer option missing from `ROCK_Developer.toml`, which is by design (feature request 2 in `mods-config-open-questions.md`).
+- The Developer report: 0 errors; its 286 warnings were each developer option missing from `ROCK_Developer.toml`, which is by design. Mods Config's `omitDefault`, now on the file, should silence them (to check in the headset).
 - Show Developer Pages shows and hides the Developer page at once, before Save.
 - The sliders' ranges and steps are usable; the transform rows' sliders move the offsets and the scope rotations about the axes their help names.

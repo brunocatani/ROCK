@@ -11,7 +11,7 @@
   - Done: `mods-config-developer-page.md` (the generated Developer page).
   - Then: the RPS UI side (`mods-config-rps-ui-removal.md`, only when the user says so).
 - **Nothing is released** until every `mods-config-*` ticket is done.
-- **Developer report** (2026-11-23): 0 errors, and 286 warnings that are all the sparse developer file (feature request 2 below). Mods Config also logs `failed to dispatch to ROCK` after each Save, because ROCK registers no listener for its saved message; harmless, handled later.
+- **Developer report** (2026-11-23): 0 errors, and 286 warnings that were all the sparse developer file. Mods Config's `omitDefault` (feature request 2 below), now on the developer file, should leave none; to check in the headset. Mods Config also logs `failed to dispatch to ROCK` after each Save, because ROCK registers no listener for its saved message; harmless, handled later.
 
 The other tickets: `mods-config-palm-removal.md`, `mods-config-setup-wizard-launch.md`, `mods-config-rps-ui-removal.md`, `mods-config-developer-page.md`, `mods-config-input-bindings.md`, `mods-config-transforms.md`, `mods-config-native-api.md`, `mods-config-prompt-improvements.md`, `mods-config-left-firing-trigger.md`.
 
@@ -63,7 +63,7 @@ Confirmed in game on 2026-11-23:
 Collected from the tickets, for the F4VR-Mods-Config repo:
 
 1. An offline validator for `spec.json`, printing the Developer report without the game (`mods-config-prompt-improvements.md`).
-2. A way to mark a setting whose missing value is normal. The Developer report (2026-11-23: 0 errors, 286 warnings) warns once per developer option that `ROCK_Developer.toml` has no value for it, though that file holds only non-default values by design. Such a setting should also have Reset remove its key instead of writing the default.
+2. Done: a way to mark a setting whose missing value is normal, with Reset removing its key. Mods Config added `omitDefault`; `spec.json` sets it on the `developer` file and `ROCKModsConfigSpecTests` requires it there.
 
 The transforms and the input bindings need nothing from Mods Config: ROCK stores them in the framework's tables (`mods-config-transforms.md`, `mods-config-input-bindings.md`).
 
