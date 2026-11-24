@@ -42,7 +42,8 @@
   `[Developer] EnableDeveloperSettings` is gone. The developer offsets are now
   `{ pos = [...] }` tables without their unit suffix, and old values carry over; the two
   scope rotations are `{ rot = [pitch, roll, yaw] }` and start again at zero.
-- **The setup wizard opens from ROCK's page in Mods Config**, with its Setup Wizard button.
+- **The setup wizard opens from ROCK's page in Mods Config**, with its Setup Wizard button, and
+  from the ROCK tab of RobCo PALM's Config.
 - **For mod authors: the Configuration interface (13) is retired.** ROCK refuses it and
   logs the mod that asks; there is no replacement call.
 
