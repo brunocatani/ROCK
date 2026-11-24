@@ -28,7 +28,6 @@ namespace rock::runtime_state
         bool compatibilityConfigBlocking = false;
         bool wristPipboyOpen = false;
         bool frikWeaponAdjustmentOpen = false;
-        bool frikConfigOpen = false;
     };
 
     struct RuntimeFrameSnapshot
@@ -66,8 +65,6 @@ namespace rock::runtime_state
         bool compatibilityConfigBlocking = false;
         // FRIK's wrist Pip-Boy, which opens a frame or more before PipboyMenu.
         bool wristPipboyOpen = false;
-        // FRIK's own config UI (main, Pip-Boy or weapon adjustment) is open.
-        bool frikConfigOpen = false;
         /*
          * FRIK's weapon adjustment is open (FRIK API v2.5). It adjusts only a
          * weapon FRIK places, and closes when another mod blocks FRIK's weapon
@@ -81,17 +78,9 @@ namespace rock::runtime_state
         bool localSkeletonRequiredHandBonesReady = false;
         PlayerSpaceFrame playerSpace{};
 
-        /*
-         * ROCK presents the equipped weapons itself this frame: they stay in
-         * hand inside menus and through the draw a menu left pending. FRIK's
-         * config UI blocks input like a menu, but there FRIK presents the
-         * weapon: its weapon adjustment edits the weapon node and reads any
-         * external block on it as no weapon equipped.
-         */
-        [[nodiscard]] bool menuHoldsWeapons() const noexcept
-        {
-            return !frikConfigOpen && (localMenuBlocking || localMenuExitSettling);
-        }
+        // ROCK presents the equipped weapons itself this frame: they stay in
+        // hand inside menus and through the draw a menu left pending.
+        [[nodiscard]] bool menuHoldsWeapons() const noexcept { return localMenuBlocking || localMenuExitSettling; }
     };
 
     void initialize();

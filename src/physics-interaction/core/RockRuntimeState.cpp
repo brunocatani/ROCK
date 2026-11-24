@@ -293,7 +293,6 @@ namespace rock::runtime_state
         next.compatibilityConfigBlocking = input.compatibilityConfigBlocking;
         next.wristPipboyOpen = input.wristPipboyOpen;
         next.frikWeaponAdjustmentOpen = input.frikWeaponAdjustmentOpen;
-        next.frikConfigOpen = input.frikConfigOpen;
         next.visualAuthorityAvailable = input.visualAuthorityAvailable;
         next.visualSkeletonReadyHint = input.visualSkeletonReadyHint;
         next.playerSpace = samplePlayerSpace();
