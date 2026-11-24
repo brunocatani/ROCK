@@ -61,10 +61,15 @@ ActivatePromptPlacement = 2
 GunstockMode = false
 
 ## FRIK Weapon Offsets
-## Use the weapon offset files you saved in FRIK (FRIK_Config\Weapons_Offsets), including their weapon scale, instead of ROCK's grip.
-## FRIK's built-in default offsets are never used.
-## Weapons with a saved file use dynamic support grabs only and skip PAPER's reload and cycle animations.
+## Use FRIK's weapon offsets, including their weapon scale, instead of ROCK's grip: the ones you saved in FRIK's weapon adjustment, and FRIK's built-in ones while FRIK Built-in Offsets is on.
+## Weapons with an offset use dynamic support grabs only and skip PAPER's reload and cycle animations.
+## Needs FRIK 0.80.2 or newer.
 FrikUserWeaponOffsets = false
+
+## FRIK Built-in Offsets
+## With FRIK Weapon Offsets on, also use the weapon offsets FRIK ships with for weapons you have not adjusted.
+## False: only the offsets you saved in FRIK.
+FrikBuiltInWeaponOffsets = true
 
 ## Bipod Mode
 ## Click the right stick to latch any equipped weapon part to the surface it touches.

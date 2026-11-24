@@ -1,4 +1,4 @@
-// Player-made FRIK weapon offsets (see FrikWeaponOffsetPolicy.h and
+// FRIK's weapon offsets for a weapon (see FrikWeaponOffsetPolicy.h and
 // FrikWeaponOffsets.cpp).
 #pragma once
 
@@ -15,26 +15,22 @@ namespace RE
 }
 
 /*
- * Player-made FRIK weapon offset files (see FrikWeaponOffsetPolicy.h), used
- * only while WeaponHandling.FrikUserWeaponOffsets is on. A weapon with
- * one is seated and scaled from it instead of ROCK's authored
- * grip, takes only dynamic support grabs, and is published with
+ * FRIK's weapon offsets (see FrikWeaponOffsetPolicy.h), read through FRIK's
+ * API and used only while WeaponHandling.FrikUserWeaponOffsets is on; the
+ * offsets FRIK ships with count only while
+ * WeaponHandling.FrikBuiltInWeaponOffsets is on too. A weapon with one is
+ * seated and scaled from it instead of ROCK's authored grip, takes only
+ * dynamic support grabs, and is published with
  * WeaponStateFlag::UserWeaponOffset so PAPER skips its authored reload and
  * cycle animations, which do not fit the moved hands.
  *
- * Thread model: load(), processPendingReload() and find() run on the game
- * frame thread. The directory watcher thread only publishes a change flag;
- * the files are re-read on the frame thread after the burst settles.
+ * FRIK is asked on every call, so an offset saved in FRIK's weapon adjustment
+ * applies on the next frame. Needs FRIK API v2.5; with an older FRIK no
+ * weapon has an offset. Thread model: game frame thread only.
  */
 namespace rock::frik_weapon_offsets
 {
     using frik_weapon_offset_policy::Override;
-
-    // Startup, after FRIK initialised its config folders.
-    void load();
-
-    // Frame start: re-read the folder once a change burst has settled.
-    void processPendingReload();
 
     // The override for this weapon model, or none. weaponRoot is the model
     // whose P-Grip child picks FRIK's pistol/rifle name variant.

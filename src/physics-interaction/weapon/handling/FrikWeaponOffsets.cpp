@@ -1,113 +1,51 @@
-// Loads the player-made FRIK weapon offset files, reloads them when the folder
-// changes and looks up the offset for a weapon.
+// Looks up FRIK's weapon offsets for a weapon through FRIK's API.
 #include "physics-interaction/weapon/handling/FrikWeaponOffsets.h"
 
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/authored/HoldingGripAdapter.h"
 #include "rock_support/Fo4VrRuntime.h"
-#include "rock_support/ResourceUtils.h"
 
 #include "RE/Bethesda/TESForms.h"
 #include "RE/NetImmerse/NiNode.h"
 
-#include <thomasmonkman-filewatch/FileWatch.hpp>
-
-#include <algorithm>
 #include <array>
-#include <atomic>
-#include <chrono>
-#include <filesystem>
-#include <fstream>
-#include <memory>
-#include <vector>
+#include <string>
 
 namespace rock::frik_weapon_offsets
 {
     namespace
     {
         namespace policy = frik_weapon_offset_policy;
+        using frik_visual_authority::WeaponOffsetMode;
+        using frik_visual_authority::WeaponOffsetSource;
 
-        struct CacheSlot
+        // What find() last logged for a weapon, so a change is logged once.
+        struct Logged
+        {
+            WeaponOffsetSource weapon{ WeaponOffsetSource::None };
+            WeaponOffsetSource primaryHand{ WeaponOffsetSource::None };
+            bool powerArmor{ false };
+            bool refused{ false };
+
+            bool operator==(const Logged&) const = default;
+        };
+
+        struct KeySlot
         {
             // Identity witnesses only; never dereferenced.
             const RE::TESObjectWEAP* weapon{ nullptr };
             const RE::NiAVObject* root{ nullptr };
-            std::uint64_t revision{ 0 };
-            bool powerArmor{ false };
             bool used{ false };
-            std::optional<Override> result{};
+            std::string key;
+            Logged logged{};
         };
 
-        // Frame-thread state.
-        std::filesystem::path s_directory;
-        policy::EntryMap s_entries;
-        std::uint64_t s_revision{ 1 };
-        std::array<CacheSlot, 4> s_cache{};
+        // Frame-thread state: FRIK's weapon name per weapon model, which costs
+        // a node search to build.
+        std::array<KeySlot, 4> s_keys{};
         std::size_t s_nextSlot{ 0 };
-        std::unique_ptr<filewatch::FileWatch<std::string>> s_watch;
-
-        // Published by the watcher thread, consumed on the frame thread.
-        std::atomic<bool> s_reloadPending{ false };
-        std::atomic<std::int64_t> s_lastEventTicks{ 0 };
-
-        [[nodiscard]] std::int64_t ticks() noexcept
-        {
-            return std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now().time_since_epoch())
-                .count();
-        }
-
-        void readDirectory()
-        {
-            policy::EntryMap entries;
-            std::size_t files = 0;
-            std::error_code error;
-            if (std::filesystem::is_directory(s_directory, error)) {
-                std::vector<std::filesystem::path> paths;
-                for (const auto& entry : std::filesystem::directory_iterator(s_directory, error)) {
-                    if (entry.is_regular_file(error)) {
-                        paths.push_back(entry.path());
-                    }
-                }
-                std::sort(paths.begin(), paths.end());
-                for (const auto& path : paths) {
-                    try {
-                        std::ifstream in(path);
-                        const auto json = nlohmann::json::parse(in);
-                        for (auto& [key, pose] : policy::readFile(json)) {
-                            entries.insert_or_assign(key, pose);
-                        }
-                        ++files;
-                    } catch (const std::exception& e) {
-                        ROCK_LOG_WARN(Weapon, "FRIK weapon offset file {} skipped: {}", path.filename().string(),
-                            e.what());
-                    }
-                }
-            }
-            s_entries = std::move(entries);
-            ++s_revision;
-            ROCK_LOG_INFO(Weapon, "FRIK user weapon offsets: {} entries from {} files in {}", s_entries.size(), files,
-                s_directory.string());
-        }
-
-        void startWatch()
-        {
-            std::error_code error;
-            if (s_watch || !std::filesystem::is_directory(s_directory, error)) {
-                return;
-            }
-            try {
-                s_watch = std::make_unique<filewatch::FileWatch<std::string>>(s_directory.string(),
-                    [](const std::string&, filewatch::Event) {
-                        s_lastEventTicks.store(ticks(), std::memory_order_release);
-                        s_reloadPending.store(true, std::memory_order_release);
-                    });
-            } catch (const std::exception& e) {
-                ROCK_LOG_WARN(Weapon, "FRIK weapon offset folder cannot be watched ({}); changes apply after a restart",
-                    e.what());
-            }
-        }
 
         [[nodiscard]] std::string_view gripStockName(const RE::NiAVObject* root)
         {
@@ -115,59 +53,86 @@ namespace rock::frik_weapon_offsets
             auto* child = mount ? f4vr::getFirstChild(mount) : nullptr;
             return child && child->name.c_str() ? std::string_view{ child->name.c_str() } : std::string_view{};
         }
-    }
 
-    void load()
-    {
-        s_directory = resources::getPathInDocuments(R"(\My Games\Fallout4VR\FRIK_Config\Weapons_Offsets)");
-        readDirectory();
-        startWatch();
-    }
-
-    void processPendingReload()
-    {
-        // The watcher publishes only a flag; editor and FRIK save bursts are
-        // coalesced here without sleeping on either thread.
-        if (!s_reloadPending.load(std::memory_order_acquire) ||
-            ticks() - s_lastEventTicks.load(std::memory_order_acquire) < 200) {
-            return;
+        [[nodiscard]] KeySlot& keySlot(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* root)
+        {
+            for (auto& slot : s_keys) {
+                if (slot.used && slot.weapon == weapon && slot.root == root) {
+                    return slot;
+                }
+            }
+            auto& slot = s_keys[s_nextSlot];
+            s_nextSlot = (s_nextSlot + 1) % s_keys.size();
+            slot = { .weapon = weapon,
+                .root = root,
+                .used = true,
+                .key = policy::weaponKey(RE::TESFullName::GetFullName(*weapon, false), gripStockName(root)) };
+            return slot;
         }
-        if (s_reloadPending.exchange(false, std::memory_order_acq_rel)) {
-            readDirectory();
+
+        /*
+         * One of FRIK's offsets for the weapon, when it counts: a built-in one
+         * only while FrikBuiltInWeaponOffsets is on. source reports what FRIK
+         * had; refused is set when that offset is no hand placement.
+         */
+        [[nodiscard]] std::optional<policy::Pose> offset(const std::string& key, const WeaponOffsetMode mode,
+            const bool inPowerArmor, WeaponOffsetSource& source, bool& refused)
+        {
+            RE::NiTransform transform{};
+            source = frik_visual_authority::getWeaponOffset(key.c_str(), mode, inPowerArmor, transform);
+            if (source == WeaponOffsetSource::None ||
+                (source == WeaponOffsetSource::BuiltIn && !g_rockConfig.rockFrikBuiltInWeaponOffsets)) {
+                source = WeaponOffsetSource::None;
+                return std::nullopt;
+            }
+            auto pose = policy::validated(holding_grip_math::fromNative(transform));
+            refused = refused || !pose;
+            return pose;
+        }
+
+        [[nodiscard]] const char* sourceName(const WeaponOffsetSource source)
+        {
+            switch (source) {
+            case WeaponOffsetSource::BuiltIn:
+                return "built-in";
+            case WeaponOffsetSource::Saved:
+                return "saved";
+            default:
+                return "none";
+            }
         }
     }
 
     std::optional<Override> find(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot,
         const bool inPowerArmor)
     {
-        // Opt-in: without the setting no file affects any weapon.
-        if (!g_rockConfig.rockFrikUserWeaponOffsets || !weapon || s_entries.empty()) {
+        // Opt-in: without the setting no offset affects any weapon.
+        if (!g_rockConfig.rockFrikUserWeaponOffsets || !weapon) {
             return std::nullopt;
         }
-        for (const auto& slot : s_cache) {
-            if (slot.used && slot.weapon == weapon && slot.root == weaponRoot && slot.powerArmor == inPowerArmor &&
-                slot.revision == s_revision) {
-                return slot.result;
+        auto& slot = keySlot(weapon, weaponRoot);
+        Logged now{ .powerArmor = inPowerArmor };
+        const auto weaponInHand = offset(slot.key, WeaponOffsetMode::Weapon, inPowerArmor, now.weapon, now.refused);
+        const auto primaryHand =
+            offset(slot.key, WeaponOffsetMode::PrimaryHand, inPowerArmor, now.primaryHand, now.refused);
+        auto result = policy::resolve(weaponInHand, primaryHand);
+        if (now != slot.logged) {
+            slot.logged = now;
+            if (now.refused) {
+                ROCK_LOG_WARN(Weapon,
+                    "FRIK weapon offset for {:08X} key='{}' powerArmor={} is not a hand placement; ROCK keeps its "
+                    "grip for it",
+                    weapon->formID, slot.key, inPowerArmor);
+            }
+            if (result) {
+                ROCK_LOG_INFO(Weapon,
+                    "FRIK weapon offset applies to {:08X} key='{}' powerArmor={} weapon={} primaryHand={} "
+                    "scale={:.4f}",
+                    weapon->formID, slot.key, inPowerArmor, sourceName(now.weapon), sourceName(now.primaryHand),
+                    result->weaponScale());
             }
         }
-        const auto name = RE::TESFullName::GetFullName(*weapon, false);
-        const auto key = policy::weaponKey(name, gripStockName(weaponRoot));
-        auto& slot = s_cache[s_nextSlot];
-        s_nextSlot = (s_nextSlot + 1) % s_cache.size();
-        slot = { .weapon = weapon,
-            .root = weaponRoot,
-            .revision = s_revision,
-            .powerArmor = inPowerArmor,
-            .used = true,
-            .result = policy::resolve(s_entries, key, inPowerArmor) };
-        if (slot.result) {
-            ROCK_LOG_INFO(Weapon,
-                "FRIK user weapon offset applies to {:08X} key='{}' powerArmor={} weapon={} primaryHand={} "
-                "scale={:.4f}",
-                weapon->formID, key, inPowerArmor, slot.result->hasWeaponOffset, slot.result->hasPrimaryHandRotation,
-                slot.result->weaponScale());
-        }
-        return slot.result;
+        return result;
     }
 
     RE::NiTransform seat(const Override& override, const RE::NiTransform& nativeHandInWeapon)

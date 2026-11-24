@@ -505,6 +505,8 @@ namespace rock
         rockGunstockMode = ini.boolean("WeaponHandling", "GunstockMode", rockGunstockMode);
         rockFrikUserWeaponOffsets =
             ini.boolean("WeaponHandling", "FrikUserWeaponOffsets", rockFrikUserWeaponOffsets);
+        rockFrikBuiltInWeaponOffsets =
+            ini.boolean("WeaponHandling", "FrikBuiltInWeaponOffsets", rockFrikBuiltInWeaponOffsets);
         rockBipodHandsFreeRadiusMeters = static_cast<float>(ini.number("WeaponHandling", "BipodHandsFreeRadiusMeters", rockBipodHandsFreeRadiusMeters));
         if (!std::isfinite(rockBipodHandsFreeRadiusMeters) || rockBipodHandsFreeRadiusMeters <= 0.0f) {
             ROCK_LOG_WARN(Config, "Invalid WeaponHandling.BipodHandsFreeRadiusMeters={} -- using 2.0",

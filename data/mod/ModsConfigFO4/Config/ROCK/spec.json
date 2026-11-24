@@ -542,10 +542,20 @@
             {
               "type": "switcher",
               "valueType": "bool",
+              "id": "frikWeaponOffsets",
               "text": "FRIK Weapon Offsets",
-              "help": "Uses the weapon offsets you saved in FRIK, with their weapon scale, instead of ROCK's grip. Weapons with a saved offset use dynamic support grabs only and skip PAPER's reload animations.",
+              "help": "Uses FRIK's weapon offsets, with their weapon scale, instead of ROCK's grip: the ones you saved in FRIK's weapon adjustment, and FRIK's built-in ones while FRIK Built-in Offsets is on. Weapons with an offset use dynamic support grabs only and skip PAPER's reload animations. Needs FRIK 0.80.2 or newer.",
               "default": false,
               "storage": { "path": ["WeaponHandling", "FrikUserWeaponOffsets"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "FRIK Built-in Offsets",
+              "help": "Also uses the weapon offsets FRIK ships with, for weapons you have not adjusted in FRIK. Off: only the offsets you saved.",
+              "default": true,
+              "enabledWhen": { "setting": "frikWeaponOffsets", "equals": true },
+              "storage": { "path": ["WeaponHandling", "FrikBuiltInWeaponOffsets"] }
             }
           ]
         },

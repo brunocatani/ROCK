@@ -1,48 +1,37 @@
-// Reads player-made FRIK weapon offset files and turns one into a firing seat
-// and scale for its weapon.
+// Turns FRIK's weapon offsets for a weapon into a firing seat and scale.
 #pragma once
 
 #include "physics-interaction/weapon/authored/HoldingGripMath.h"
-
-#include <nlohmann/json.hpp>
 
 #include <cmath>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 
 /*
- * Player-made FRIK weapon offsets (FRIK_Config\Weapons_Offsets\*.json).
- *
- * FRIK ships compiled default offsets for many weapons and loads them on
- * every start; ROCK never reads those. Only the files a player saved from
- * FRIK's weapon reposition mode (or installed into that folder) are honoured,
- * and for a weapon that has one they replace ROCK's animation-authored firing
- * seat and scale. ROCK forces bLeftHandedMode:VR off, so the "-leftHanded"
- * variants never apply.
+ * FRIK's weapon offsets, read through FRIK's API (getWeaponOffset): the
+ * offsets FRIK ships with and the ones a player saved in FRIK's weapon
+ * adjustment, a saved one winning. For a weapon that has one they replace
+ * ROCK's animation-authored firing seat and scale. FRIK resolves the power
+ * armor and left-handed variants; ROCK forces bLeftHandedMode:VR off.
  *
  * FRIK's two modes that move the firing hand on the weapon are read:
- * - "<name>" is the Weapon node's local transform under RArm_Hand (the Weapon
+ * - Weapon is the Weapon node's local transform under RArm_Hand (the Weapon
  *   bone is a direct child of the hand), so the seat is its inverse and its
  *   scale is the weapon's scale relative to that hand.
- * - "<name>-primHand" is a rotation FRIK applies as hand.local = R * local in
+ * - PrimaryHand is a rotation FRIK applies as hand.local = R * local in
  *   stored order after placing the weapon; with world = local * parent that is
  *   a rotation in the hand's own frame about the wrist, the weapon unmoved.
- * The "-offHand", "-throwable" and "-backOfHand" modes configure FRIK's own
- * two-handed grip and UI, which ROCK does not use. Each mode is looked up as
- * FRIK does: the "-PowerArmor" key first in power armor, then the plain key.
+ * The OffHand, Throwable and BackOfHandUI modes configure FRIK's own two-handed
+ * grip and UI, which ROCK does not use.
  *
- * Matrices are holding_grip_math::Pose (column-vector, r[row * 3 + column]);
- * FRIK's JSON stores the engine's NiMatrix3 rows with a fourth padding column,
- * which is that matrix transposed.
+ * Matrices are holding_grip_math::Pose (column-vector, r[row * 3 + column]),
+ * holding_grip_math::fromNative of FRIK's NiTransform.
  */
 namespace rock::frik_weapon_offset_policy
 {
     using holding_grip_math::Pose;
 
-    inline constexpr std::string_view kPrimaryHandSuffix = "-primHand";
-    inline constexpr std::string_view kPowerArmorSuffix = "-PowerArmor";
 
     /*
      * FRIK's weapon key: the base form's display name, plus " Rifle" for the
@@ -114,63 +103,22 @@ namespace rock::frik_weapon_offset_policy
     }
 
     /*
-     * One FRIK offset entry. Throws on a malformed entry, so a broken file is
-     * skipped whole, as FRIK itself rejects it.
+     * One FRIK offset as a hand placement, or none. Offsets are often hand-edited
+     * to three decimals, so the rotation is re-orthonormalized; a mirrored or
+     * degenerate rotation, or a scale or translation no hand placement has, is
+     * refused.
      */
-    [[nodiscard]] inline Pose readEntry(const nlohmann::json& value)
+    [[nodiscard]] inline std::optional<Pose> validated(const Pose& pose)
     {
-        const auto& rotation = value.at("rotation");
-        if (!rotation.is_array() || rotation.size() != 12) {
-            throw std::runtime_error("rotation needs 12 values");
-        }
-        Pose pose;
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                pose.r[column * 3 + row] = rotation.at(static_cast<std::size_t>(row * 4 + column)).get<float>();
-            }
-        }
-        pose.t = { value.at("x").get<float>(), value.at("y").get<float>(), value.at("z").get<float>() };
-        pose.s = value.at("scale").get<float>();
         if (!std::isfinite(pose.s) || pose.s < 0.05f || pose.s > 20.0f) {
-            throw std::runtime_error("scale out of range");
+            return std::nullopt;
         }
         for (const float t : pose.t) {
             if (!std::isfinite(t) || std::abs(t) > 1000.0f) {
-                throw std::runtime_error("translation out of range");
+                return std::nullopt;
             }
         }
-        const auto proper = orthonormalized(pose);
-        if (!proper) {
-            throw std::runtime_error("rotation is not a proper rotation");
-        }
-        return *proper;
-    }
-
-    using EntryMap = std::unordered_map<std::string, Pose>;
-
-    // Every entry of one file, keyed by its JSON key (FRIK's authority; the
-    // file name is only a sanitized copy of it).
-    [[nodiscard]] inline EntryMap readFile(const nlohmann::json& json)
-    {
-        if (!json.is_object()) {
-            throw std::runtime_error("expected an object of named offsets");
-        }
-        EntryMap entries;
-        for (const auto& [key, value] : json.items()) {
-            entries.insert_or_assign(key, readEntry(value));
-        }
-        return entries;
-    }
-
-    [[nodiscard]] inline const Pose* lookup(const EntryMap& entries, const std::string& key, const bool inPowerArmor)
-    {
-        if (inPowerArmor) {
-            if (const auto it = entries.find(key + std::string{ kPowerArmorSuffix }); it != entries.end()) {
-                return &it->second;
-            }
-        }
-        const auto it = entries.find(key);
-        return it != entries.end() ? &it->second : nullptr;
+        return orthonormalized(pose);
     }
 
     struct Override
@@ -189,20 +137,23 @@ namespace rock::frik_weapon_offset_policy
         [[nodiscard]] bool replacesSeat() const noexcept { return hasWeaponOffset; }
     };
 
-    [[nodiscard]] inline std::optional<Override> resolve(const EntryMap& entries, const std::string& key,
-        const bool inPowerArmor)
+    /*
+     * The override of a weapon's two offsets, or none when it has neither.
+     */
+    [[nodiscard]] inline std::optional<Override> resolve(const std::optional<Pose>& weaponInHand,
+        const std::optional<Pose>& primaryHandRotation)
     {
+        if (!weaponInHand && !primaryHandRotation) {
+            return std::nullopt;
+        }
         Override result{};
-        if (const auto* weapon = lookup(entries, key, inPowerArmor)) {
-            result.weaponInHand = *weapon;
+        if (weaponInHand) {
+            result.weaponInHand = *weaponInHand;
             result.hasWeaponOffset = true;
         }
-        if (const auto* hand = lookup(entries, key + std::string{ kPrimaryHandSuffix }, inPowerArmor)) {
-            result.primaryHandRotation = *hand;
+        if (primaryHandRotation) {
+            result.primaryHandRotation = *primaryHandRotation;
             result.hasPrimaryHandRotation = true;
-        }
-        if (!result.hasWeaponOffset && !result.hasPrimaryHandRotation) {
-            return std::nullopt;
         }
         return result;
     }

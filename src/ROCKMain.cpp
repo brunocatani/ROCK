@@ -61,7 +61,6 @@
 #include "physics-interaction/weapon/authored/HoldingGripRecords.h"
 #include "physics-interaction/weapon/equip/WeaponHandSave.h"
 #include "physics-interaction/weapon/equip/WeaponTransitionAnimationAcceleration.h"
-#include "physics-interaction/weapon/handling/FrikWeaponOffsets.h"
 #include "physics-interaction/weapon/native/BipodFrozenRetirement.h"
 #include "physics-interaction/weapon/native/HeldWeaponInstantTransition.h"
 #include "physics-interaction/weapon/native/NativeHandEquipment.h"
@@ -386,7 +385,6 @@ namespace
         performance_profiler::ScopedTimer settingsTimer(performance_profiler::Scope::PrepSettings);
         const bool immersiveScopesWereEnabled = g_rockConfig.rockEnableImmersiveScopes;
         g_rockConfig.processPendingConfigReload();
-        frik_weapon_offsets::processPendingReload();
         setup_wizard::update();
         mods_config_client::update();
         reconcileNativeScopeGeometryOwnership();
@@ -1376,7 +1374,6 @@ namespace
 
             g_rockConfig.load();
             holding_grips::load("Data/F4SE/Plugins/ROCK/HoldingGrips");
-            frik_weapon_offsets::load();
             input_remap_runtime::configurePipboyInput();
             input_remap_runtime::configureButtonLayout();
             native_workshop::install();
