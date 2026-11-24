@@ -20,7 +20,9 @@ its id (up to `kMaxQueuedCommands` queued). Poll the outcome with
 are kept); `cancelInteractionCommand` cancels a queued command. Nonzero generation fields in a request must match ROCK's current
 ones. `requestInventoryGrab` puts an aid item or a throwable of `baseFormId`
 from the player's inventory into a free hand ROCK picks (`hand` must be
-`None`). Power armor grabs reach at most `kMaxPowerArmorGrabDistanceGame`.
+`None`). Since 2.2 it refuses a grenade or mine with `FeatureDisabled` while
+the player has Immersive Grenades off: equip the item instead, so the game
+throws it. Power armor grabs reach at most `kMaxPowerArmorGrabDistanceGame`.
 
 `requestInventoryItemGrab` (2.1) puts one item of `baseFormId` into the
 requested hand (`Right` or `Left`; a busy or disabled hand is rejected with

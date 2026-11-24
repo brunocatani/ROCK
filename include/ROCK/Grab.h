@@ -159,6 +159,8 @@ namespace rock::api::grab {
     };
 
     // Puts an item of baseFormId from the player's inventory into the hand.
+    // 2.2: a grenade or mine is refused with FeatureDisabled while the player
+    // has ROCK's Immersive Grenades off; equip it instead.
     struct InventoryGrabRequest
     {
         std::uint32_t size{ sizeof(InventoryGrabRequest) };

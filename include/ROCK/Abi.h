@@ -40,6 +40,9 @@ namespace rock::api {
         RequestNotFound = 16,
         WrongThread = 17,
         AlreadyCommitted = 18,
+        // The player has turned off the ROCK feature the request needs.
+        // Nothing was queued; do it the game's own way.
+        FeatureDisabled = 19,
         UnknownInterface = 100,
         UnsupportedMajor = 101,
         UnsupportedMinor = 102,

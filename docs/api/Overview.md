@@ -160,6 +160,7 @@ copy `min(capacity, total)` records. Capacity 0 only counts.
 | `RequestNotFound` 16 | No such command or request. |
 | `WrongThread` 17 | Called outside the thread or callback phase the function requires. |
 | `AlreadyCommitted` 18 | Too late to cancel. |
+| `FeatureDisabled` 19 | The player has turned off the ROCK feature the request needs. Nothing was queued; do it the game's own way. |
 | `UnknownInterface` 100 to `TableTooSmall` 103 | Discovery results (above). |
 | `OwnerRevoked` 104 | ROCK revoked the owner after one of its callbacks faulted. Everything it held is released; reads still work, writes and callbacks are refused. |
 | `InternalError` 105 | ROCK failed internally; details are in `ROCK.log`. |

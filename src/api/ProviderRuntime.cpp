@@ -33,6 +33,7 @@
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
+#include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/native/player/CharacterControllerRuntime.h"

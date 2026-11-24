@@ -67,6 +67,13 @@
             !isFiniteVector3(request.preferredGrabPointGame)) {
             return api::Status::InvalidArgument;
         }
+        // With Immersive Grenades off a grenade is the game's own equip and
+        // throw, so ROCK hands none out and the caller equips it.
+        if (fromInventory && !g_rockConfig.rockImmersiveGrenades &&
+            loose_grenade_runtime::isThrowableWeapon(
+                RE::TESForm::GetFormByID<RE::TESObjectWEAP>(request.targetFormId))) {
+            return api::Status::FeatureDisabled;
+        }
 
         QueuedInteractionCommand command{};
         command.ownerToken = ownerToken;
