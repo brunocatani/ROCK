@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.0.4
 
 ### Added
 
@@ -25,7 +25,7 @@
   Minimal shows it after the reserve rounds. It is drawn in the counter's own
   face, color and fade, taken from the ammo the weapon fires (".38", "10mm",
   "Fusion Cell"), and follows mods that change a weapon's caliber. It needs RPS
-  UI Framework's next release; with RPS UI 2.0 the counters show no caliber.
+  UI Framework 2.0.2; with an older RPS UI the counters show no caliber.
 - **Pull the trigger to play a holotape you hold.** The tape goes into your
   inventory and starts playing at once; game and terminal holotapes open in the
   Pip-Boy. Stashing a holotape at your shoulder still only stashes it.
@@ -34,7 +34,7 @@
 
 - **Update RobCo PALM and RPS UI Framework together with this ROCK.** RobCo PALM
   2.0.1 and older do not work with it: choosing a grenade on the wheel does
-  nothing. RPS UI Framework 2.0.2 and older still list ROCK's settings pages, which
+  nothing. RPS UI Framework 2.0.1 and older still list ROCK's settings pages, which
   no longer work.
 - **ROCK's settings move to Mods Config FO4 VR.** ROCK's page there edits `ROCK.toml`;
   RPS UI Framework's settings menu (RobCo PALM's Config) no longer has ROCK pages.

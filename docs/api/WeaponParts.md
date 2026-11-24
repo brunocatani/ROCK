@@ -6,7 +6,7 @@ grip state, part poses, the model's sources, collision suppression, grab
 points, authored state for loose weapon items, and the models loose items
 show.
 
-Interface `WeaponParts`, major 2, minor 1 (2.1, unreleased, adds
+Interface `WeaponParts`, major 2, minor 1 (2.1, ROCK 1.0.4, adds
 `setLooseItemModels` and `clearLooseItemModels`; request minor 0 when you do not
 call them). Mods built against 2.0 keep working. Major 1 and every 1.x minor are
 refused. Permissions: `Read` (1), `Write` (2). Calls run on the game thread

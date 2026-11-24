@@ -26,8 +26,8 @@ ROCK 0.92 (provider API 1) is updated with [Migration](Migration.md).
 | Storage | 15 | `Storage.h` | Read 1, Write 2, Callbacks 4 | [Storage](Storage.md) |
 
 Every interface is major 2, minor 0, except Collision and Input at minor 1
-(ROCK 1.0.3), WeaponParts and Weapon at minor 1 (unreleased) and Grab at minor 2
-(2.1 in ROCK 1.0.3, 2.2 unreleased); a mod
+(ROCK 1.0.3), WeaponParts and Weapon at minor 1 (ROCK 1.0.4) and Grab at minor 2
+(2.1 in ROCK 1.0.3, 2.2 in ROCK 1.0.4); a mod
 built for an older minor binds to them unchanged. Ids 10 (References), 12 (Diagnostics)
 and 13 (Configuration) are retired and never reused: References' queries are in Grab, other mods
 draw through RPS UI Framework, and players edit ROCK's settings in Mods Config FO4 VR.

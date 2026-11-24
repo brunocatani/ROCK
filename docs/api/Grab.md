@@ -5,7 +5,7 @@ state, hand reservations, held placement, default grab poses, guided held
 objects, reference and power-armor queries, and grab events.
 
 Interface `Grab`, major 2, minor 2 (2.1, ROCK 1.0.3, adds
-`requestInventoryItemGrab`; 2.2, unreleased, adds `requestHeldInventoryStash`
+`requestInventoryItemGrab`; 2.2, ROCK 1.0.4, adds `requestHeldInventoryStash`
 and `getHeldBodyTouch`). A mod that calls either needs ROCK with Grab 2.2;
 request minor 1 when you do not call them. Mods built against 2.0 and 2.1 keep working. Major 1 and its minors are refused. The
 References interface (10) is retired; its queries are here. Permissions:

@@ -4,7 +4,7 @@ Header: `include/ROCK/Weapon.h`. Equipped weapons by weapon slot: state and
 hand assignment, grip, classification, emitters, composition, authored grip,
 scope sight, the handling authority lease and inventory equips.
 
-Interface `Weapon`, major 2, minor 1 (2.1, unreleased, adds
+Interface `Weapon`, major 2, minor 1 (2.1, ROCK 1.0.4, adds
 `setCounterPresentation`; request minor 0 when you do not call it). Mods built
 against 2.0 keep working. Major 1 and 1.1 are refused. The
 former `ROCK_EquipPickup_QueryV1` export is removed; `isEquipPickup` is here.
