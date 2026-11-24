@@ -60,7 +60,7 @@ reorder them.
 | Result | Meaning |
 | --- | --- |
 | `Ok` | `*outDescriptor` points to ROCK's descriptor (valid for the process lifetime). |
-| `UnknownInterface` | No such interface, including the retired ids 10 and 12. |
+| `UnknownInterface` | No such interface, including the retired ids 10, 12 and 13. |
 | `UnsupportedMajor` | The interface exists at another major. A mod built against provider API 1 (pre-1.0 ROCK) gets this. |
 | `UnsupportedMinor` | ROCK's minor is below `minimumMinor`. |
 | `TableTooSmall` | ROCK's table is smaller than `minimumTableBytes`. |
