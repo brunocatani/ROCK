@@ -85,6 +85,12 @@ namespace rock::provider::runtime
         return api::Status::Ok;
     }
 
+    api::Status setCounterPresentation(std::uint64_t, std::uint32_t, const api::weapon::CounterPresentation*,
+        std::uint32_t)
+    {
+        return api::Status::Ok;
+    }
+
     std::uint32_t weaponEmitterCount(std::uint32_t slot) { return slot == 1 ? 1 : emitterCount; }
 
     std::uint32_t copyWeaponEmitters(std::uint32_t slot, api::weapon::Emitter* out, std::uint32_t capacity)
