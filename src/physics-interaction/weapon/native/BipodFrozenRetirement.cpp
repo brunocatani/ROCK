@@ -13,7 +13,7 @@
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/havok/HavokRuntime.h"
 #include "physics-interaction/native/havok/HavokWorldLock.h"
-#include "physics-interaction/native/scene/NativeObjectPlacement.h"
+#include "physics-interaction/object/NativeObjectPlacement.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/weapon/collision/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/native/LooseWeaponLayerRepair.h"

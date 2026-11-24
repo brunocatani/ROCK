@@ -10,7 +10,7 @@
 #include "physics-interaction/object/ObjectDetection.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include "physics-interaction/native/havok/HavokWorldLock.h"
-#include "physics-interaction/native/player/NativePlayerCollisionFilter.h"
+#include "physics-interaction/core/NativePlayerCollisionFilter.h"
 
 namespace rock
 {

@@ -1,7 +1,7 @@
 #include <cassert>
 #include <limits>
 #include "api/AuthoredInteractionLease.h"
-#include "physics-interaction/collision/NativePlayerCollisionPolicy.h"
+#include "physics-interaction/core/NativePlayerCollisionPolicy.h"
 
 int main()
 {

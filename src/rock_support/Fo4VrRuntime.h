@@ -15,6 +15,8 @@ namespace rock::fo4vr
 {
     inline constexpr std::uint32_t kPowerArmorKeywordFormId = 0x0004D8A1;
     inline constexpr std::uint32_t kPowerArmorFrameKeywordFormId = 0x0015503F;
+    // Fallout4.esm KYWD 0x0021C00D. Vanilla vehicle MSTTs use this identity.
+    inline constexpr std::uint32_t kExplodableCarKeywordFormId = 0x0021C00D;
 
     struct PlayerNodes
     {
@@ -143,7 +145,6 @@ namespace rock::fo4vr
     [[nodiscard]] std::uint32_t getNativeWeaponState(const RE::Actor* actor) noexcept;
     [[nodiscard]] std::uint32_t getNativeGunState(const RE::Actor* actor) noexcept;
     [[nodiscard]] bool IsWeaponDrawn() noexcept;
-    [[nodiscard]] bool isMeleeWeaponEquipped() noexcept;
     /*
      * The current skeleton's power armor state. Reads the skeleton
      * provider's debounced state when one is installed (FRIK v2.2 flips it

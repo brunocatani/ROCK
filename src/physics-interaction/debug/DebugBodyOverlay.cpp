@@ -31,7 +31,7 @@
 #include "physics-interaction/native/havok/HavokPhysicsTiming.h"
 #include "physics-interaction/native/havok/HavokWorldLock.h"
 #include "physics-interaction/native/havok/PhysicsUtils.h"
-#include "physics-interaction/native/scene/HeldScenePresentation.h"
+#include "physics-interaction/grab/HeldScenePresentation.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/GripZoneIndicators.h"
 #include "physics-interaction/visual/WorldDrawClient.h"

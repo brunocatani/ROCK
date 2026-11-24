@@ -9,7 +9,7 @@
 #include <limits>
 #include <vector>
 
-namespace rock::debug_convex_hull_mesh
+namespace rock::convex_hull_mesh
 {
     /*
      * ROCK's overlay decodes FO4VR hknp support vertices on the render-submit

@@ -2,7 +2,7 @@
 #include "physics-interaction/weapon/native/ShellCasingGracePolicy.h"
 
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/collision/NativePlayerCollisionPolicy.h"
+#include "physics-interaction/core/NativePlayerCollisionPolicy.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/havok/HavokOffsets.h"

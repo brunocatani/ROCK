@@ -16,7 +16,7 @@
 #include "physics-interaction/hand/HandSelection.h"
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/native/havok/HavokRuntime.h"
-#include "physics-interaction/native/scene/HeldScenePresentation.h"
+#include "physics-interaction/grab/HeldScenePresentation.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 

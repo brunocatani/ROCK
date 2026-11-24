@@ -1,8 +1,8 @@
 #pragma once
 
 #include "physics-interaction/collision/PhysicsShapeCastMath.h"
-#include "physics-interaction/hand/HandSelection.h"
 #include "physics-interaction/native/query/PhysicsQueryResources.h"
+#include "physics-interaction/native/query/SelectionFilterInfo.h"
 
 #include "RE/Bethesda/BSHavok.h"
 #include "RE/Havok/hknpAllHitsCollector.h"

@@ -8,7 +8,7 @@
 
 #include "physics-interaction/body/BodyBoneColliderSet.h"
 #include "physics-interaction/native/havok/HavokOffsets.h"
-#include "physics-interaction/native/scene/HeldScenePresentation.h"
+#include "physics-interaction/grab/HeldScenePresentation.h"
 
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESBoundObjects.h"

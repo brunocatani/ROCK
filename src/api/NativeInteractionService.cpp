@@ -11,7 +11,7 @@
 #include "physics-interaction/core/PhysicsFrameContext.h"
 #include "physics-interaction/native/havok/HavokRuntime.h"
 #include "physics-interaction/native/havok/PhysicsUtils.h"
-#include "physics-interaction/native/player/NativePlayerCollisionFilter.h"
+#include "physics-interaction/core/NativePlayerCollisionFilter.h"
 #include "physics-interaction/weapon/collision/WeaponCollision.h"
 #include "providers/Boundary.h"
 

@@ -8,8 +8,8 @@
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/native/havok/HavokRuntime.h"
 #include "physics-interaction/native/havok/HavokWorldLock.h"
-#include "physics-interaction/native/player/NativePlayerCollisionFilter.h"
-#include "physics-interaction/native/scene/NativeObjectPlacement.h"
+#include "physics-interaction/core/NativePlayerCollisionFilter.h"
+#include "physics-interaction/object/NativeObjectPlacement.h"
 #include "physics-interaction/weapon/native/MagazineEjectionSnapshot.h"
 
 namespace rock

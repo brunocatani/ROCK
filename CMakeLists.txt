@@ -354,6 +354,10 @@ if(BUILD_ROCK_TESTS)
 
   include("${ROOT_DIR}/cmake/RockTestRegistration.cmake")
 
+  # The base folders (native, collision, rock_support, performance, timing) include no
+  # feature folder; nothing to build.
+  add_test(NAME ROCKBaseLayer COMMAND ${CMAKE_COMMAND} "-DSOURCE_DIR=${SOURCE_DIR}" -P "${ROOT_DIR}/cmake/CheckBaseLayer.cmake")
+
   # Public headers: each compiles alone inside a packed caller with only the
   # public include directory, published records and tables keep their layout,
   # and the one consumer example builds.
@@ -600,7 +604,7 @@ if(BUILD_ROCK_TESTS)
 
   add_executable(ROCKColliderLookupAndTuningTests
     "${ROOT_DIR}/tests/ColliderLookupAndTuningTests.cpp"
-    "${SOURCE_DIR}/physics-interaction/collision/ColliderTuning.cpp"
+    "${SOURCE_DIR}/physics-interaction/hand/ColliderTuning.cpp"
   )
   target_compile_features(ROCKColliderLookupAndTuningTests PRIVATE cxx_std_23)
   target_include_directories(ROCKColliderLookupAndTuningTests PRIVATE ${SOURCE_DIR})

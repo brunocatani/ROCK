@@ -9,7 +9,7 @@
 #include "api/WeaponPartCollisionService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/core/PhysicsHooks.h"
-#include "physics-interaction/native/player/NativePlayerCollisionFilter.h"
+#include "physics-interaction/core/NativePlayerCollisionFilter.h"
 #include "physics-interaction/native/query/PhysicsShapeCast.h"
 #include "physics-interaction/visual/GripZoneIndicators.h"
 #include "physics-interaction/weapon/authored/NativeIdleGripPreharvest.h"

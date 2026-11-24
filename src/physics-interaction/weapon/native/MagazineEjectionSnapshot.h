@@ -1,7 +1,7 @@
 #pragma once
 #include <algorithm>
 #include <array>
-#include "physics-interaction/collision/NativePlayerCollisionPolicy.h"
+#include "physics-interaction/core/NativePlayerCollisionPolicy.h"
 
 namespace rock::native_player_collision
 {

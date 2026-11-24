@@ -6,13 +6,15 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/grab/GlobalSurfaceGrabPolicy.h"
 #include "physics-interaction/native/player/NativeHolotapePlayback.h"
-#include "physics-interaction/native/scene/HeldScenePresentation.h"
+#include "physics-interaction/grab/HeldScenePresentation.h"
 #include "physics-interaction/weapon/authored/VanillaWeaponGripFrame.h"
 #include "physics-interaction/weapon/classification/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/equip/EquipSlotAllocationPolicy.h"
 #include "physics-interaction/weapon/grip/KnifeReverseGrip.h"
 #include "physics-interaction/weapon/native/NativeHandEquipment.h"
 #include "physics-interaction/weapon/secondary/NativeSecondaryPresentation.h"
+
+#include <algorithm>
 
 namespace rock
 {
@@ -110,6 +112,20 @@ namespace rock
 
             return vrcf::VRControllers.isPressed(isLeft ? vrcf::Hand::Left : vrcf::Hand::Right, buttonId);
         }
+
+        bool isMeleeWeaponEquipped() noexcept
+        {
+            auto* player = f4vr::getPlayer();
+            if (!player || !f4vr::CombatUtilities_IsActorUsingMelee(player) || !player->inventoryList) {
+                return false;
+            }
+
+            return std::ranges::any_of(player->inventoryList->data, [](const RE::BGSInventoryItem& item) {
+                const auto* weapon = item.object ? item.object->As<RE::TESObjectWEAP>() : nullptr;
+                return weapon && weapon_type_policy::isEquippedMelee(weapon->weaponData.type.get()) && item.stackData &&
+                    item.stackData->IsEquipped();
+            });
+        }
     }
 
     GrabReleaseContext PhysicsInteraction::makeGrabReleaseContext(const Hand& hand, bool isLeft) const
@@ -159,7 +175,7 @@ namespace rock
 
         // Inventory stack scanning is transition-only; never run it every
         // frame while a legitimate melee weapon remains drawn.
-        const bool realMeleeWeaponEquipped = actorUsingMelee && f4vr::isMeleeWeaponEquipped();
+        const bool realMeleeWeaponEquipped = actorUsingMelee && isMeleeWeaponEquipped();
 
         _grabInput.bareFistGuardState = bare_fist_guard_policy::RecheckState{
             .initialized = true,

@@ -5,7 +5,7 @@
 #include <limits>
 #include <utility>
 
-#include "physics-interaction/debug/DebugConvexHullMesh.h"
+#include "physics-interaction/ConvexHullMesh.h"
 
 namespace rock::debug_overlay_shape
 {
@@ -238,13 +238,13 @@ namespace rock::debug_overlay_shape
             BuiltShape result{};
             result.shapeType = recipe.shapeType;
 
-            std::vector<debug_convex_hull_mesh::Vec3> rawVertices;
+            std::vector<convex_hull_mesh::Vec3> rawVertices;
             rawVertices.reserve(recipe.vertices.size());
             for (const auto& vertex : recipe.vertices) {
-                rawVertices.push_back(debug_convex_hull_mesh::Vec3{ vertex.x, vertex.y, vertex.z });
+                rawVertices.push_back(convex_hull_mesh::Vec3{ vertex.x, vertex.y, vertex.z });
             }
 
-            auto hullVertices = debug_convex_hull_mesh::deduplicateVertices(rawVertices);
+            auto hullVertices = convex_hull_mesh::deduplicateVertices(rawVertices);
             if (hullVertices.size() < 3) {
                 return result;
             }
@@ -263,13 +263,13 @@ namespace rock::debug_overlay_shape
             }
 
             if (recipe.convexRadius > 0.0f) {
-                debug_convex_hull_mesh::inflateVerticesFromCentroid(hullVertices,
+                convex_hull_mesh::inflateVerticesFromCentroid(hullVertices,
                     recipe.convexRadius * recipe.settings.havokToGameScale);
             }
 
-            const auto triangles = debug_convex_hull_mesh::triangulateConvexHullFaces(hullVertices);
+            const auto triangles = convex_hull_mesh::triangulateConvexHullFaces(hullVertices);
             if (triangles.empty() ||
-                triangles.size() > debug_convex_hull_mesh::maxExpectedConvexHullTriangles(
+                triangles.size() > convex_hull_mesh::maxExpectedConvexHullTriangles(
                                        static_cast<std::uint32_t>(hullVertices.size()))) {
                 if (!recipe.settings.useBoundsForHeavyConvex) {
                     result.decodeMode = debug_overlay_policy::ShapeDecodeMode::Unsupported;

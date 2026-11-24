@@ -1,4 +1,4 @@
-#include "physics-interaction/native/scene/HeldScenePresentation.h"
+#include "physics-interaction/grab/HeldScenePresentation.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/weapon/scene/WeaponSceneTraversal.h"
 

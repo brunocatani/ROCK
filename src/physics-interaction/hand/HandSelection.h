@@ -13,6 +13,7 @@
 #include "RE/NetImmerse/NiPoint.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/hand/HandInteractionStateMachine.h"
+#include "physics-interaction/native/query/SelectionFilterInfo.h"
 
 // ---- Selection query policy ----
 
@@ -59,8 +60,6 @@ namespace rock::selection_query_policy
     constexpr std::string_view kFarSelectionBlockedFormTypes{};
     constexpr std::string_view kFarSelectionBlockedLayers{};
     constexpr float kCloseSelectionBehindPalmToleranceGameUnits = 2.0f;
-    constexpr std::uint32_t kShapeCastFilterInfo = 0x000B002D;
-    constexpr std::uint32_t kFarClipRayFilterInfo = 0x02420028;
     constexpr float kMinFarSelectionHmdConeHalfAngleDegrees = 1.0f;
     constexpr float kMaxFarSelectionHmdConeHalfAngleDegrees = 89.0f;
     constexpr float kDegreesToRadians = 0.017453292519943295769f;

@@ -6,7 +6,7 @@
 #include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/native/havok/HavokRuntime.h"
 #include "physics-interaction/native/havok/HavokWorldLock.h"
-#include "physics-interaction/native/player/NativePlayerCollisionFilter.h"
+#include "physics-interaction/core/NativePlayerCollisionFilter.h"
 #include "providers/Boundary.h"
 
 namespace rock::native_interaction_service::detail

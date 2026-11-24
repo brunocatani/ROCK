@@ -22,7 +22,7 @@
 #include "physics-interaction/native/havok/HavokRuntime.h"
 #include "physics-interaction/native/havok/PhysicsScale.h"
 #include "physics-interaction/native/havok/PhysicsUtils.h"
-#include "physics-interaction/native/player/NativePlayerCollisionFilter.h"
+#include "physics-interaction/core/NativePlayerCollisionFilter.h"
 #include "physics-interaction/native/scene/ReferenceInteraction.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/timing/GameFrameTimingPolicy.h"

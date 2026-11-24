@@ -14,7 +14,7 @@
 #include "physics-interaction/weapon/equip/WeaponEquipTransfer.h"
 #include "physics-interaction/native/havok/HavokCompoundShapeBuilder.h"
 #include "physics-interaction/native/havok/HavokConvexShapeBuilder.h"
-#include "physics-interaction/native/player/NativePlayerCollisionFilter.h"
+#include "physics-interaction/core/NativePlayerCollisionFilter.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/weapon/authored/NativeIdleGripPreharvest.h"
 #include "physics-interaction/weapon/collision/WeaponGeometry.h"

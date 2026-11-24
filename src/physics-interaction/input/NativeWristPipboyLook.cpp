@@ -1,4 +1,4 @@
-#include "physics-interaction/native/player/NativeWristPipboyLook.h"
+#include "physics-interaction/input/NativeWristPipboyLook.h"
 
 #include "api/FRIKApiV2.h"
 #include "physics-interaction/PhysicsLog.h"

@@ -2,17 +2,13 @@
 // game frame; beginNodeLookupFrame() starts a new frame.
 #include "rock_support/Fo4VrRuntime.h"
 
-#include "physics-interaction/object/CarInteractionPolicy.h"
-#include "physics-interaction/weapon/classification/WeaponTypePolicy.h"
 #include "rock_support/Fo4VrActorStatePolicy.h"
 #include "rock_support/Logger.h"
 
 #include <RE/Bethesda/SendPapyrusEvent.h>
 
-#include <algorithm>
 #include <atomic>
 #include <cstring>
-#include <ranges>
 
 namespace rock::fo4vr
 {
@@ -214,20 +210,6 @@ namespace rock::fo4vr
         return fo4vr_actor_state_policy::isWeaponMagicDrawn(getNativeWeaponState(getPlayer()));
     }
 
-    bool isMeleeWeaponEquipped() noexcept
-    {
-        auto* player = getPlayer();
-        if (!player || !CombatUtilities_IsActorUsingMelee(player) || !player->inventoryList) {
-            return false;
-        }
-
-        return std::ranges::any_of(player->inventoryList->data, [](const RE::BGSInventoryItem& item) {
-            const auto* weapon = item.object ? item.object->As<RE::TESObjectWEAP>() : nullptr;
-            return weapon && weapon_type_policy::isEquippedMelee(weapon->weaponData.type.get()) && item.stackData &&
-                item.stackData->IsEquipped();
-        });
-    }
-
     namespace
     {
         PowerArmorStateProvider s_powerArmorStateProvider = nullptr;
@@ -266,7 +248,7 @@ namespace rock::fo4vr
         }
 
         const auto* movableStatic = static_cast<const RE::BGSMovableStatic*>(baseForm);
-        return hasKeyword(movableStatic, car_interaction_policy::kExplodableCarKeywordFormId);
+        return hasKeyword(movableStatic, kExplodableCarKeywordFormId);
     }
 
     RE::Setting* getIniSetting(const char* name) noexcept

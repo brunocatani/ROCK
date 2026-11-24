@@ -74,7 +74,7 @@
 #include "physics-interaction/native/havok/PhysicsScale.h"
 #include "physics-interaction/native/havok/PhysicsUtils.h"
 #include "physics-interaction/native/query/PhysicsRayCast.h"
-#include "physics-interaction/native/scene/HeldScenePresentation.h"
+#include "physics-interaction/grab/HeldScenePresentation.h"
 #include "physics-interaction/native/scene/ReferenceInteraction.h"
 #include "physics-interaction/native/scene/SceneRelation.h"
 #include "physics-interaction/object/ObjectDetection.h"

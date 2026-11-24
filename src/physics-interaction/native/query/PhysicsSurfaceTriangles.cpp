@@ -2,13 +2,13 @@
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
-#include "physics-interaction/debug/DebugConvexHullMesh.h"
+#include "physics-interaction/ConvexHullMesh.h"
 #include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/native/havok/HavokRuntime.h"
 #include "physics-interaction/native/havok/HavokWorldLock.h"
 #include "physics-interaction/native/havok/PhysicsUtils.h"
-#include "physics-interaction/hand/HandSelection.h"
 #include "physics-interaction/native/query/PhysicsQueryResources.h"
+#include "physics-interaction/native/query/SelectionFilterInfo.h"
 
 #include "RE/Havok/hknpAabbQuery.h"
 #include "RE/Havok/hknpCollisionResult.h"
@@ -201,14 +201,14 @@ namespace rock::physics_surface_triangles
                 return;
             }
             const auto* vertices = reinterpret_cast<const float*>(raw);
-            std::vector<debug_convex_hull_mesh::Vec3> points;
+            std::vector<convex_hull_mesh::Vec3> points;
             points.reserve(static_cast<std::size_t>(vertexCount));
             for (int i = 0; i < vertexCount; ++i) {
                 const auto* v = vertices + i * 4;
                 const Point p = throughCollectorTransform ? throughCollector(v) : Point{ v[0], v[1], v[2] };
                 points.push_back({ p.x, p.y, p.z });
             }
-            for (const auto& tri : debug_convex_hull_mesh::triangulateConvexHullFaces(points)) {
+            for (const auto& tri : convex_hull_mesh::triangulateConvexHullFaces(points)) {
                 const auto& a = points[tri[0]];
                 const auto& b = points[tri[1]];
                 const auto& c = points[tri[2]];

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "physics-interaction/collision/NativePlayerCollisionPolicy.h"
+#include "physics-interaction/core/NativePlayerCollisionPolicy.h"
 
 #include <cstddef>
 #include <span>

@@ -1,4 +1,4 @@
-#include "physics-interaction/collision/NativePlayerCollisionPolicy.h"
+#include "physics-interaction/core/NativePlayerCollisionPolicy.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
 
 #include <algorithm>

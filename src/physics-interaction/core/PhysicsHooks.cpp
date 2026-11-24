@@ -29,7 +29,7 @@
 #include "physics-interaction/native/havok/HavokTimingFixPolicy.h"
 #include "physics-interaction/native/player/CharacterControllerRuntime.h"
 #include "physics-interaction/native/player/NativeGrabHapticSuppressionPolicy.h"
-#include "physics-interaction/native/player/NativePlayerCollisionFilter.h"
+#include "physics-interaction/core/NativePlayerCollisionFilter.h"
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/object/PhysicsBodyClassifier.h"
 #include "physics-interaction/performance/ContactPairProfile.h"

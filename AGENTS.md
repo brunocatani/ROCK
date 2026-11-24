@@ -54,7 +54,7 @@ To change ROCK: read [Architecture](#architecture), find the task in [Where to s
 ### Threads
 
 - **Frame thread** (FRIK's callbacks, the game thread): owns `PhysicsInteraction`, both `Hand`s and every structural change to ROCK's Havok bodies. Provider calls marked "Game" must come from here.
-- **Physics threads**: contact signals (`core/interaction/ContactEvents.cpp`) and the step drive (`native/havok/PhysicsStepDriveCoordinator.h`), which moves ROCK's bodies and the grab authority between substeps. They never change structure; the frame thread changes it only inside `PhysicsCallbackQuiescenceGate::pauseForMutation()`.
+- **Physics threads**: contact signals (`core/interaction/ContactEvents.cpp`) and the step drive (`core/PhysicsStepDriveCoordinator.h`), which moves ROCK's bodies and the grab authority between substeps. They never change structure; the frame thread changes it only inside `PhysicsCallbackQuiescenceGate::pauseForMutation()`.
 - **Any thread**: provider reads marked "Any" copy published snapshots.
 - **devbench's listener thread** calls the devbench tool: `health`, `state` and `perf` answer there from atomics and published snapshots; `hand` and `weapon` queue for FrameEnd, every other action for FrameBegin.
 - **Background workers** handle file and diagnostic work on copied data: the saved-grab-offset writer, the profiler's report writer and the debug overlay shape builder. Weapon geometry is built in bounded slices on the frame thread (`weapon/collision/WeaponGeometryTask.h`).
@@ -90,6 +90,8 @@ NativeInteraction and Storage keep table and service together (`src/api/NativeIn
 - Convert game and Havok units only through `physics_scale` (`native/havok/PhysicsScale.h`; `gameToHavokScale()`, `havokToGameScale()`), never with a literal factor or FRIK's player scale.
 - Log through `physics-interaction/PhysicsLog.h`; per-frame paths use the rate-limited `ROCK_LOG_SAMPLE_*`.
 - Read settings from `g_rockConfig` (`src/RockConfig.h`).
+- `native/`, `collision/`, `performance/`, `timing/`, `src/rock_support/` and the headers directly under `physics-interaction/` are the base: they include each other, public `ROCK/` headers and `RockConfig.h`, never a feature folder (the `ROCKBaseLayer` test checks it). Code that needs a feature's policy lives with that feature, even when it hooks the engine.
+- A switch over an enum without a `default` handles every value (C4062 is an error), and every path returns (C4715 is an error).
 - Sources are globbed: new files under `src/` need no CMake change. A test is an executable named `*Tests*`, registered with `add_rock_test`.
 
 ## Source map
@@ -98,11 +100,11 @@ Under `src/physics-interaction/` unless the path says otherwise.
 
 | Folder | Owns |
 | --- | --- |
-| `core/`, `core/interaction/` | `PhysicsInteraction`, frame pipeline, lifecycle, runtime snapshot, native grab hooks |
+| `core/`, `core/interaction/` | `PhysicsInteraction`, frame pipeline, lifecycle, runtime snapshot, physics step drive, native grab hooks, player collision filter |
 | `hand/` | `Hand`, grab stages, hand colliders, hand collision, skeleton and finger reads |
-| `grab/` | Grab mechanics: authority proxy, constraint, motion controller, finger solve, pinch, seats, grab poses, touch grab, held placement |
+| `grab/` | Grab mechanics: authority proxy, constraint, motion controller, finger solve, pinch, seats, grab poses, touch grab, held placement, held scene presentation |
 | `body/` | Body bone colliders |
-| `object/` | Grab targets: detection, body sets, ragdolls, skinned bodies, count-based ammo |
+| `object/` | Grab targets: detection, body sets, ragdolls, skinned bodies, count-based ammo; reference placement |
 | `collision/`, `contact/` | Collision layers, suppression ownership, contact classification; the contact clock |
 | `weapon/equip/` | Equip, drop, transitions, weapon roster, shoulder stash gesture, co-save, lodged weapons |
 | `weapon/grip/` | Two-handed grip, firing seats, grip zones, reverse grip |
@@ -112,12 +114,12 @@ Under `src/physics-interaction/` unless the path says otherwise.
 | `weapon/secondary/` | The second equipped weapon |
 | `weapon/native/` | Native weapon hooks: equipment by hand, private action graphs, model lifetime |
 | `weapon/scope/`, `recoil/`, `parts/`, `classification/`, `scene/` | Manual scope, recoil, provider part targets and drives, classification, scene traversal |
-| `input/` | Button layout, function bindings, input remap hooks, grab intent, input leases |
+| `input/` | Button layout, function bindings, input remap hooks, grab intent, input leases, wrist Pip-Boy look gate |
 | `stash/`, `consume/`, `grenade/` | Shoulder stash, mouth consume and immersive aid, grenades and Molotovs |
 | `animation/` | Authored grip capture from the native graph |
 | `visual/`, `debug/` | Hand world authority, ammo counters, indicators, RPS UI drawing; debug overlays |
-| `native/havok/` | Havok bodies, shapes, materials, world lock, step drive, timing fix, offsets |
-| `native/player/`, `scene/`, `query/`, `script/`, `safety/` | Character controller, native HUD placement, reference placement, ray and shape casts, bound Papyrus script queries, native fault boundaries |
+| `native/havok/` | Havok bodies, shapes, materials, world lock, timing fix, offsets |
+| `native/player/`, `scene/`, `query/`, `script/`, `safety/` | Character controller, native HUD placement, reference and node interaction, ray and shape casts, bound Papyrus script queries, native fault boundaries |
 | `performance/`, `timing/` | Profiler, game-frame clock |
 | `src/api/` | Provider API and FRIK API binding |
 | `src/config/`, `src/RockConfig*.cpp` | Settings catalog and loader |

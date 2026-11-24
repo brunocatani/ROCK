@@ -1,4 +1,4 @@
-#include "physics-interaction/native/player/NativePlayerCollisionFilter.h"
+#include "physics-interaction/core/NativePlayerCollisionFilter.h"
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "api/StorageInteractionService.h"
 #include "physics-interaction/performance/ContactPairProfile.h"

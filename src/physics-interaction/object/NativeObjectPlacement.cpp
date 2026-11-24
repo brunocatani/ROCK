@@ -1,4 +1,4 @@
-#include "physics-interaction/native/scene/NativeObjectPlacement.h"
+#include "physics-interaction/object/NativeObjectPlacement.h"
 #include <algorithm>
 #include <array>
 #include <cmath>

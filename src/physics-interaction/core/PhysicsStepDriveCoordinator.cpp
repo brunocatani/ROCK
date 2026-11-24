@@ -1,4 +1,4 @@
-#include "physics-interaction/native/havok/PhysicsStepDriveCoordinator.h"
+#include "physics-interaction/core/PhysicsStepDriveCoordinator.h"
 
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"

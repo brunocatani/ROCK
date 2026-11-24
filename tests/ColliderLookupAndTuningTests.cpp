@@ -1,5 +1,5 @@
 #include "RockConfig.h"
-#include "physics-interaction/collision/ColliderTuning.h"
+#include "physics-interaction/hand/ColliderTuning.h"
 #include "physics-interaction/hand/SkeletonBoneNameIndex.h"
 
 #include <algorithm>

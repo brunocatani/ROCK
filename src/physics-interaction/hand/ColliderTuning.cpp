@@ -1,4 +1,4 @@
-#include "physics-interaction/collision/ColliderTuning.h"
+#include "physics-interaction/hand/ColliderTuning.h"
 #include "RockConfig.h"
 
 #include <algorithm>

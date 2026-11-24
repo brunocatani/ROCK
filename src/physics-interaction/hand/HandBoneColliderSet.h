@@ -1,6 +1,6 @@
 #pragma once
 
-#include "physics-interaction/collision/ColliderTuning.h"
+#include "physics-interaction/hand/ColliderTuning.h"
 #include "physics-interaction/hand/DynamicHandTwinTargets.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
 #include "physics-interaction/hand/HandSkeleton.h"

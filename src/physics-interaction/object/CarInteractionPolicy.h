@@ -1,12 +1,7 @@
 #pragma once
 
-#include <cstdint>
-
 namespace rock::car_interaction_policy
 {
-    // Fallout4.esm KYWD 0x0021C00D. Vanilla vehicle MSTTs use this identity.
-    inline constexpr std::uint32_t kExplodableCarKeywordFormId = 0x0021C00D;
-
     struct GrabPolicyInput
     {
         bool targetIsCar = false;
