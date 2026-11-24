@@ -1024,6 +1024,9 @@ namespace rock
                 return Source::MenuExit;
             case EquippedWeaponTransitionCoordinator::Source::WorkbenchExit:
                 return Source::WorkbenchExit;
+            case EquippedWeaponTransitionCoordinator::Source::InventoryEquip:
+                // The released enum has no value for an inventory equip.
+                return Source::Unknown;
             }
             return Source::Unknown;
         };

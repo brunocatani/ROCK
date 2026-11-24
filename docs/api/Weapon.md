@@ -240,7 +240,7 @@ draw, and `TargetUnavailable` while the hand's controller frame is unknown.
 | --- | --- |
 | `WeaponStateFlag` | `Valid`, `IdentityPending`, `DrawPending`, `BridgePresented`, `NativeRenderable`, `HandPoseHandoffComplete`, `RecoveryExhausted`, `TransitionActive`, `WeaponPresent`, `WeaponDrawn`, `PresentationKnown`, `WeaponEquipped`, `AmmoKnown`, `UserWeaponOffset`, `SecondaryReloadActive`, `BipodRightInputReserved`, `BipodLeftInputReserved` |
 | `HandlingStateFlag` | `FiringGripHeld`, `ManualOwnership`, `PartCarry`, `LeftFiringAvailable` |
-| `TransitionSource` | `Unknown`, `ObservedEquip`, `HeldTriggerEquip`, `HeldGripZoneEquip`, `MenuExit`, `WorkbenchExit` |
+| `TransitionSource` | `Unknown`, `ObservedEquip`, `HeldTriggerEquip`, `HeldGripZoneEquip`, `MenuExit`, `WorkbenchExit`. An inventory equip and a second weapon becoming the first report `Unknown` |
 | `TransitionResult` | `None`, `Completed`, `WeaponUnequipped`, `IdentityLost`, `ExpectedIdentityTimeout`, `NativeAnimationHandoff`, `WeaponNoLongerDrawn`, `RecoveryExhausted`, `ProviderLost`, `Shutdown` |
 | `GripFlag` | `Valid`, `WeaponTransformOwned`, `WeaponWorldValid`, `RightHandInWeaponValid`, `LeftHandInWeaponValid`, `MuzzleWorldValid` |
 | `HandlingFeature` | `FiringGripOwnership`, `PrimaryDetach`, `AmbidextrousHandoff`, `GripZoneEquip`, `GripZoneHoverHaptics`, `FiringGripProximitySupport`, `FiringGripCylinderZone` |

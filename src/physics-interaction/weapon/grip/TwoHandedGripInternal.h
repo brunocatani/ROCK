@@ -103,6 +103,8 @@ namespace rock
                 return "gripping";
             case TwoHandedState::PartCarry:
                 return "part-carry";
+            case TwoHandedState::SurfaceSupported:
+                return "surface-supported";
             case TwoHandedState::PrimaryOnly:
                 return "primary-only";
             }

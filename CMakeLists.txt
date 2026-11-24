@@ -168,7 +168,9 @@ target_compile_options(${PROJECT_NAME}
 	/external:W0
 
     /W4
-    /wd4715
+    # A switch without a default must handle every enum value. CommonLib's options already
+    # make a path without a return (C4715) an error.
+    /we4062
     "$<$<CONFIG:RELEASE>:/Zc:inline;/JMC-;/Ob3>"
 )
 
