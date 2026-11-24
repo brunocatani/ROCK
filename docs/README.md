@@ -70,6 +70,7 @@ Built-in grab poses cover thousands of objects, and an object without one borrow
 - **Throw** by letting go while your hand moves: the object leaves with your hand's motion.
 - **Corpses** can be held by a limb. Interacting with live NPCs comes from [SCISSORS](#the-rps-suite).
 - **Grab Highlight** outlines the object your hand would grab, in red, blue (default), orange or white, at 40 to 100% strength.
+- **Hand Collision:** your hands stop against each other and against your equipped weapons. Turn off **Hands Collide With Each Other** or **Hands Collide With Equipped Weapons** to let them pass through; support grips and weapon parts still take your hand.
 
 ### Prompts and quick loot
 
@@ -167,7 +168,7 @@ Settings are edited in game with [Mods Config FO4 VR](https://www.nexusmods.com/
 | Page | What's there |
 | --- | --- |
 | **ROCK** (front page) | Help, a link to this wiki, the **Setup Wizard** button, the log level and Show Developer Pages. |
-| **Interaction** | Grab Direction, Far Grab Style, grab highlight, quick loot and prompt placement, Immersive Aid. |
+| **Interaction** | Grab Direction, Far Grab Style, hand collision, grab highlight, quick loot and prompt placement, Immersive Aid. |
 | **Weapon Equipping** | Picking up and letting go of any weapon (Auto Equip, grab and release modes), Default Hand, and folded fine-tuning for grip zones and left-hand firing. |
 | **Gun Handling** | The ammo counter, grips (Grab Anywhere on Weapon, FRIK Weapon Offsets, FRIK Built-in Offsets), aim (Gunstock Mode, shake and scoped filtering, Immersive Scopes) and the bipod. |
 | **Gun Recoil** | Immersive Recoil, laser recoil, and recoil strength per weapon type for one and two hands. |

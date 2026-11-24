@@ -498,6 +498,10 @@ namespace rock
         rockGrabInputForceSeconds = std::clamp(rockGrabInputForceSeconds, 0.0f, 0.3f);
 
         rockImmersiveAidEnabled = ini.boolean("ImmersiveAid", "Enabled", rockImmersiveAidEnabled);
+        rockHandCollisionOtherHandEnabled =
+            ini.boolean("HandCollision", "BetweenHands", rockHandCollisionOtherHandEnabled);
+        rockHandCollisionEquippedWeaponEnabled =
+            ini.boolean("HandCollision", "EquippedWeapons", rockHandCollisionEquippedWeaponEnabled);
         rockImmersiveRecoil = ini.boolean("WeaponRecoil", "ImmersiveRecoil", rockImmersiveRecoil);
         rockEmergencyDisableRecoil =
             ini.boolean("DeveloperControls", "EmergencyDisableRecoil", rockEmergencyDisableRecoil);

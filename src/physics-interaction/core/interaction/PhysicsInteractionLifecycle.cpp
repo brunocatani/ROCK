@@ -739,12 +739,17 @@ namespace rock
         // fixed obstacles; without it those proxy pairs stay off.
         const bool pairFilterInstalled = native_player_collision::installed();
         const bool pairFilterRowsChanged = !collision_layer_policy::pairFilterRowsMatch(matrix, pairFilterInstalled);
+        const collision_layer_policy::DynamicProxyPeerPairs peers{
+            .handToHand = g_rockConfig.rockHandCollisionOtherHandEnabled,
+            .handToEquippedWeapon = g_rockConfig.rockHandCollisionEquippedWeaponEnabled,
+        };
+        const bool peerPairsChanged = !collision_layer_policy::dynamicProxyPeerPairsMatch(matrix, peers);
         auto mutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
         collision_layer_policy::applyRockGeneratedLayerPolicies(matrix,
             g_rockConfig.rockHandCollisionStaticWorldEnabled, g_rockConfig.rockWeaponCollisionBlocksProjectiles,
             g_rockConfig.rockWeaponCollisionBlocksSpells, native_interaction_service::dynamicObstacleLayers(),
-            pairFilterInstalled);
-        if (extensionPairsChanged || pairFilterRowsChanged) {
+            pairFilterInstalled, peers);
+        if (extensionPairsChanged || pairFilterRowsChanged || peerPairsChanged) {
             _dynamicHandCollision.refreshCollisionFilters(world);
             _dynamicWeaponCollision.refreshCollisionFilter(world);
             _secondaryDynamicWeaponCollision.refreshCollisionFilter(world);
@@ -757,17 +762,21 @@ namespace rock
             .handStaticWorld = g_rockConfig.rockHandCollisionStaticWorldEnabled,
             .weaponBlocksProjectiles = g_rockConfig.rockWeaponCollisionBlocksProjectiles,
             .weaponBlocksSpells = g_rockConfig.rockWeaponCollisionBlocksSpells,
+            .handToHand = peers.handToHand,
+            .handToEquippedWeapon = peers.handToEquippedWeapon,
             .extensionObstacleLayers = native_interaction_service::dynamicObstacleLayers(),
         };
 
         ROCK_LOG_INFO(Config,
             "Registered ROCK collision layers: hand={} mask=0x{:016X}, weapon={} mask=0x{:016X}, body={} "
-            "mask=0x{:016X}, handStaticWorld={}, projectiles={}, spells={}, extensionObstacleLayers=0x{:016X}",
+            "mask=0x{:016X}, handStaticWorld={}, projectiles={}, spells={}, handToHand={}, "
+            "handToEquippedWeapon={}, extensionObstacleLayers=0x{:016X}",
             collision_layer_policy::ROCK_LAYER_HAND, matrix[collision_layer_policy::ROCK_LAYER_HAND],
             collision_layer_policy::ROCK_LAYER_WEAPON, matrix[collision_layer_policy::ROCK_LAYER_WEAPON],
             collision_layer_policy::ROCK_LAYER_BODY, matrix[collision_layer_policy::ROCK_LAYER_BODY],
             _layers.handStaticWorld ? "enabled" : "disabled", _layers.weaponBlocksProjectiles ? "enabled" : "disabled",
-            _layers.weaponBlocksSpells ? "enabled" : "disabled", _layers.extensionObstacleLayers);
+            _layers.weaponBlocksSpells ? "enabled" : "disabled", _layers.handToHand ? "enabled" : "disabled",
+            _layers.handToEquippedWeapon ? "enabled" : "disabled", _layers.extensionObstacleLayers);
     }
 
     bool PhysicsInteraction::createHandCollisions(RE::hknpWorld* world, void* bhkWorld)

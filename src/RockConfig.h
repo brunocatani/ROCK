@@ -294,6 +294,8 @@ namespace rock
         std::string rockDebugSkeletonAxisBoneFilter = "";
 
         bool rockHandCollisionStaticWorldEnabled = true;
+        bool rockHandCollisionOtherHandEnabled = true;
+        bool rockHandCollisionEquippedWeaponEnabled = true;
         bool rockGlobalSurfaceGrabEnabled = true;
         bool rockSurfaceMeshGrabEnabled = false;
         float rockSurfaceMeshGrabMaxProjectionDistanceGameUnits = 48.0f;

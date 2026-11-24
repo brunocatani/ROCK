@@ -997,6 +997,8 @@ namespace rock
         if (_layers.handStaticWorld != g_rockConfig.rockHandCollisionStaticWorldEnabled ||
             _layers.weaponBlocksProjectiles != g_rockConfig.rockWeaponCollisionBlocksProjectiles ||
             _layers.weaponBlocksSpells != g_rockConfig.rockWeaponCollisionBlocksSpells ||
+            _layers.handToHand != g_rockConfig.rockHandCollisionOtherHandEnabled ||
+            _layers.handToEquippedWeapon != g_rockConfig.rockHandCollisionEquippedWeaponEnabled ||
             _layers.extensionObstacleLayers != native_interaction_service::dynamicObstacleLayers()) {
             ROCK_LOG_INFO(Config, "ROCK collision layer config changed; re-registering matrix policy");
             registerCollisionLayer(hknp);

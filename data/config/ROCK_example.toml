@@ -18,7 +18,19 @@ GrabDirection = 1
 ## A pulled object follows your hand while you move or turn. Keep holding grab to catch it as it arrives, or let go and press grab again as it reaches you. Applies to the next far grab.
 FarGrabStyle = 1
 
-## === 02. Grab Highlight ===
+## === 02. Hand Collision ===
+[HandCollision]
+## Hands Collide With Each Other
+## Your hands stop against each other.
+## False: they pass through each other. Applies at once.
+BetweenHands = true
+
+## Hands Collide With Equipped Weapons
+## Your hands stop against the weapons you have equipped.
+## False: they pass through them; support grips and weapon parts still take your hand. Applies at once.
+EquippedWeapons = true
+
+## === 03. Grab Highlight ===
 [SelectionFeedback]
 ## Grab Highlight
 ## Outlines the object your hand would grab.
@@ -32,7 +44,7 @@ HighlightIntensityMode = 2
 ## red, blue, orange or white.
 HighlightColor = "blue"
 
-## === 03. Prompts and Quick Loot ===
+## === 04. Prompts and Quick Loot ===
 [Prompts]
 ## Quick Loot Panel Placement
 ## 1 = Right Hand. 2 = Closer Hand. 3 = At Container.
@@ -51,7 +63,7 @@ QuickLootPanelPlacement = 2
 ## Activation itself is unchanged. Applies at once.
 ActivatePromptPlacement = 2
 
-## === 04. Weapon Handling ===
+## === 05. Weapon Handling ===
 [WeaponHandling]
 ## Gunstock Mode
 ## Two-handed firearms aim along the line from your firing hand to your support hand, like a rifle with a stock.
@@ -174,7 +186,7 @@ GripZoneIndicatorDiameterGameUnits = 0.7
 ## Every style replaces the game's counter with one counter per drawn weapon. The counters are drawn through RPS UI Framework.
 AmmoCounterStyle = 2
 
-## === 05. Weapon Recoil ===
+## === 06. Weapon Recoil ===
 [WeaponRecoil]
 ## Immersive Recoil
 ## Uses the recoil strengths below, for either hand and in power armor.
@@ -221,7 +233,7 @@ DefaultOneHandRecoilPercent = 300.0
 ## Any other firearm held with two hands. Range: 0 to 300.
 DefaultTwoHandRecoilPercent = 80.0
 
-## === 06. Firing Hand ===
+## === 07. Firing Hand ===
 [FiringHand]
 ## Default Hand
 ## right or left: the firing hand for equips that come without a hand (favorites, PALM, scripts and other mods).
@@ -255,7 +267,7 @@ GripOffset = { pos = [0.0, 0.0, 0.0] }
 ## All 0 = the plain mirror of the left-hand support grip. Each value: -15 to 15. Regrab to apply.
 SupportGripOffset = { pos = [0.0, 0.0, 0.0] }
 
-## === 07. Scopes ===
+## === 08. Scopes ===
 [Scopes]
 ## Immersive Scopes
 ## ROCK places the scope view on the weapon, raises it while you hold the scope button (right A by default), and corrects the overlay and zoom.
@@ -264,7 +276,7 @@ SupportGripOffset = { pos = [0.0, 0.0, 0.0] }
 ## Release the scope button before changing this. Reload stays on a tap of the same button.
 EnableImmersiveScopes = true
 
-## === 08. Grenades ===
+## === 09. Grenades ===
 [Grenades]
 ## Immersive Grenades
 ## Hold the grenade button (right B by default) to draw a grenade into your hand and throw it by hand.
@@ -278,7 +290,7 @@ ImmersiveGrenades = true
 ## 0 uses the grenade's own fuse time. Range: 0 to 30.
 RealisticGrenadeFuseSeconds = 4.0
 
-## === 09. Immersive Aid ===
+## === 10. Immersive Aid ===
 [ImmersiveAid]
 ## Immersive Aid
 ## Stimpaks and Med-X sit in a fixed syringe grip and inject after touching your body for 0.5 seconds.
@@ -286,7 +298,7 @@ RealisticGrenadeFuseSeconds = 4.0
 ## Release and grab again to see the change on an item already in your hand.
 Enabled = true
 
-## === 10. Controller Input ===
+## === 11. Controller Input ===
 [ControllerInput]
 ## Block VATS
 ## Stops the game's VATS from opening on the VATS button (right B by default).
@@ -385,7 +397,7 @@ StickActions = { hand = "primary", type = "hold", button = "thumbstick" }
 ## Open RobCo PALM's wheel.
 Palm = { hand = "primary", type = "hold", button = "thumbstick" }
 
-## === 11. Native Gameplay ===
+## === 12. Native Gameplay ===
 [NativeGameplay]
 ## Melee Swing Speed
 ## Hand speed that starts a vanilla melee swing, in game units per second (70 = 1 metre per second). The game uses 200.
@@ -397,7 +409,7 @@ VanillaMeleeSwingSpeed = 300.0
 ## Turning the wrist alone never bashes. Range: 50 to 2000.
 VanillaGunBashSpeed = 400.0
 
-## === 12. Logging ===
+## === 13. Logging ===
 [Logging]
 ## Log Level
 ## How much ROCK writes to ROCK.log.
@@ -405,7 +417,7 @@ VanillaGunBashSpeed = 400.0
 ## Trace and Debug write a lot and can cost frame time; keep Info for normal play.
 LogLevel = 2
 
-## === 13. Developer ===
+## === 14. Developer ===
 [Developer]
 ## Show Developer Pages
 ## Shows the Developer page on ROCK's page in Mods Config FO4 VR, which edits ROCK_Developer.toml.

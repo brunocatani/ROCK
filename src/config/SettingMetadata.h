@@ -62,13 +62,21 @@ namespace rock::config
             "the flick to cancel.\nA pulled object follows your hand while you move or turn. Keep holding grab to "
             "catch it as it arrives, or let go and press grab again as it reaches you. Applies to the next far grab.",
             Group::Player },
-        { "SelectionFeedback", "HighlightEnabled", "02. Grab Highlight",
-            "Grab Highlight\nOutlines the object your hand would grab.", Group::Player },
-        { "SelectionFeedback", "HighlightIntensityMode", "02. Grab Highlight",
-            "Grab Highlight Strength\n1 = 40%. 2 = 60%. 3 = 80%. 4 = 100%.", Group::Player },
-        { "SelectionFeedback", "HighlightColor", "02. Grab Highlight", "Grab Highlight Color\nred, blue, orange or white.",
+        { "HandCollision", "BetweenHands", "02. Hand Collision",
+            "Hands Collide With Each Other\nYour hands stop against each other.\nFalse: they pass through each other. "
+            "Applies at once.",
             Group::Player },
-        { "Prompts", "QuickLootPanelPlacement", "03. Prompts and Quick Loot",
+        { "HandCollision", "EquippedWeapons", "02. Hand Collision",
+            "Hands Collide With Equipped Weapons\nYour hands stop against the weapons you have equipped.\nFalse: they "
+            "pass through them; support grips and weapon parts still take your hand. Applies at once.",
+            Group::Player },
+        { "SelectionFeedback", "HighlightEnabled", "03. Grab Highlight",
+            "Grab Highlight\nOutlines the object your hand would grab.", Group::Player },
+        { "SelectionFeedback", "HighlightIntensityMode", "03. Grab Highlight",
+            "Grab Highlight Strength\n1 = 40%. 2 = 60%. 3 = 80%. 4 = 100%.", Group::Player },
+        { "SelectionFeedback", "HighlightColor", "03. Grab Highlight", "Grab Highlight Color\nred, blue, orange or white.",
+            Group::Player },
+        { "Prompts", "QuickLootPanelPlacement", "04. Prompts and Quick Loot",
             "Quick Loot Panel Placement\n1 = Right Hand. 2 = Closer Hand. 3 = At Container.\nRight Hand: the game's "
             "own panel on the right hand; it lists only what the right hand points at.\nCloser Hand: the panel rides "
             "the hand pointing at the container, mirrored on the left hand; when both hands point at containers the "
@@ -76,7 +84,7 @@ namespace rock::config
             "you, at a fixed size; either hand can point at it.\nThe button hints go with the panel; the buttons "
             "themselves stay on the right controller in every mode. Applies at once.",
             Group::Player },
-        { "Prompts", "ActivatePromptPlacement", "03. Prompts and Quick Loot",
+        { "Prompts", "ActivatePromptPlacement", "04. Prompts and Quick Loot",
             "Activate Prompt Placement\n1 = Both Hands. 2 = Closer Hand. 3 = At Object.\nThe prompts each hand shows "
             "for what it points at (Open, Talk, Take and the rest).\nBoth Hands: the game's own prompts on each hand; "
             "two hands on one door show it twice.\nCloser Hand: when both hands point at the same object only the "
@@ -84,36 +92,36 @@ namespace rock::config
             "toward you, at a fixed size, and shows once when both hands point at it.\nActivation itself is "
             "unchanged. Applies at once.",
             Group::Player },
-        { "WeaponHandling", "GunstockMode", "04. Weapon Handling",
+        { "WeaponHandling", "GunstockMode", "05. Weapon Handling",
             "Gunstock Mode\nTwo-handed firearms aim along the line from your firing hand to your support hand, like "
             "a rifle with a stock.\nHand and finger poses stay as authored; the support hand may sit slightly away "
             "from its controller.\nMelee weapons, weapon parts you operate and bipod-latched weapons are not "
             "affected.\nFalse: normal two-hand aiming.",
             Group::Player },
-        { "WeaponHandling", "FrikUserWeaponOffsets", "04. Weapon Handling",
+        { "WeaponHandling", "FrikUserWeaponOffsets", "05. Weapon Handling",
             "FRIK Weapon Offsets\nUse FRIK's weapon offsets, including their weapon scale, instead of ROCK's grip: "
             "the ones you saved in FRIK's weapon adjustment, and FRIK's built-in ones while FRIK Built-in Offsets "
             "is on.\nWeapons with an offset skip PAPER's reload and cycle animations.\nNeeds FRIK 0.80.2 or newer.",
             Group::Player },
-        { "WeaponHandling", "FrikBuiltInWeaponOffsets", "04. Weapon Handling",
+        { "WeaponHandling", "FrikBuiltInWeaponOffsets", "05. Weapon Handling",
             "FRIK Built-in Offsets\nWith FRIK Weapon Offsets on, also use the weapon offsets FRIK ships with for "
             "weapons you have not adjusted.\nFalse: only the offsets you saved in FRIK.",
             Group::Player },
-        { "WeaponHandling", "BipodMode", "04. Weapon Handling",
+        { "WeaponHandling", "BipodMode", "05. Weapon Handling",
             "Bipod Mode\nClick the right stick to latch any equipped weapon part to the surface it touches.\nWhile "
             "latched, recoil is a fixed 10% whatever your hands or armor.\nFalse: the click is left to other mods.",
             Group::Player },
-        { "WeaponHandling", "BipodHandsFreeRadiusMeters", "04. Weapon Handling",
+        { "WeaponHandling", "BipodHandsFreeRadiusMeters", "05. Weapon Handling",
             "Bipod Hands-Free Distance\nA latched weapon stays equipped with no hand on it while your headset is "
             "within this distance of the latch point, in metres.\nFarther away it is left in place as a world object "
             "(it does not fall). Must be above 0.",
             Group::Player },
-        { "WeaponHandling", "DetachEitherHand", "04. Weapon Handling",
+        { "WeaponHandling", "DetachEitherHand", "05. Weapon Handling",
             "Detach Either Hand\nEither hand may let go of the weapon, including the hand on the firing grip; the "
             "other hand keeps holding it.\nGrips release as Weapon Grab Mode sets. Parts you only attach to release "
             "when you let go of the button.\nWhat happens when the last hand lets go is set by Weapon Release Mode.",
             Group::Player },
-        { "WeaponHandling", "AutoEquip", "04. Weapon Handling",
+        { "WeaponHandling", "AutoEquip", "05. Weapon Handling",
             "Auto Equip\nHow a loose weapon you hold gets equipped.\nTrue: once your palm settles on its firing grip "
             "(see Auto Equip Settle Time), no trigger needed (default).\nFalse: pull the trigger while holding it to "
             "equip it in that hand.\nFar grabs seat a loose weapon at its firing grip and close grabs at its nearest "
@@ -121,7 +129,7 @@ namespace rock::config
             "becomes the second weapon.\nWith Auto Equip on, letting go always drops the weapon: kept in your hand, "
             "it would equip again at once.",
             Group::Player },
-        { "WeaponHandling", "WeaponReleaseMode", "04. Weapon Handling",
+        { "WeaponHandling", "WeaponReleaseMode", "05. Weapon Handling",
             "Weapon Release Mode\nWhat happens when the last hand lets go of an equipped weapon.\n1 = Stays "
             "equipped. 2 = Stays loose in hand. 3 = Drops.\nStays equipped: it stays equipped and held, as in the "
             "game.\nStays loose in hand: press grab again and release to drop or stash it, or pull the trigger to "
@@ -129,58 +137,58 @@ namespace rock::config
             "with Auto Equip off; Auto Equip always drops.\nApplies per weapon. Weapon Grab Mode sets the release "
             "gesture.",
             Group::Player },
-        { "WeaponHandling", "WeaponGrabMode", "04. Weapon Handling",
+        { "WeaponHandling", "WeaponGrabMode", "05. Weapon Handling",
             "Weapon Grab Mode\n1 = Toggle both grips. 2 = Toggle firing grip only. 3 = Hold both grips.\nToggle: "
             "press grab to take the grip and press again to let go. Hold: the grip lasts while you hold grab.\nMode "
             "2 toggles whichever hand holds the firing grip; support grips must be held.\nParts you only attach to "
             "always need grab held. Ordinary objects and surfaces always use hold to grab.\nWeapon Release Mode "
             "decides whether the last release keeps a loose grab or drops the weapon.",
             Group::Player },
-        { "WeaponHandling", "AutoEquipSettleSeconds", "04. Weapon Handling",
+        { "WeaponHandling", "AutoEquipSettleSeconds", "05. Weapon Handling",
             "Auto Equip Settle Time\nSeconds your palm must stay on the firing grip before Auto Equip equips. "
             "Range: 0 to 2.",
             Group::Player, clampTo(0.0, 2.0) },
-        { "WeaponHandling", "GrabAnywhereOnWeapon", "04. Weapon Handling",
+        { "WeaponHandling", "GrabAnywhereOnWeapon", "05. Weapon Handling",
             "Grab Anywhere on Weapon\nTrue: your support hand can hold a firearm anywhere.\nFalse: firearms with "
             "authored support grips take the support hand only there (default).\nMelee weapons, and firearms without "
             "an authored support grip, can always be held anywhere.\nApplies to either support hand.",
             Group::Player },
-        { "WeaponHandling", "MeleeGripPitchDegrees", "04. Weapon Handling",
+        { "WeaponHandling", "MeleeGripPitchDegrees", "05. Weapon Handling",
             "Melee Grip Angle\nTilts a held melee weapon and your hand together around the grip, in degrees, on top "
             "of ROCK's built-in 30 degree forward tilt.\nPositive tilts further forward, negative tilts back; -30 "
             "gives the weapon's authored angle. Range: -180 to 180.\nRegrab a loose weapon to see the change.",
             Group::Player, clampTo(-180.0, 180.0) },
-        { "WeaponHandling", "WeaponFilteringPreset", "04. Weapon Handling",
+        { "WeaponHandling", "WeaponFilteringPreset", "05. Weapon Handling",
             "Shake Filtering\n0 = Off. 1 = Responsive. 2 = Balanced. 3 = Steady. 4 = Heavy.\nSmooths controller "
             "shake on equipped firearms, loose weapons and held objects. Higher steadies more but responds more "
             "slowly.\nRotation and position smoothing: Responsive 12 and 6 ms, Balanced 25 and 12 ms, Steady 45 and "
             "22 ms, Heavy 70 and 35 ms.\nFree hands, FRIK and recoil are not affected. Applies at once.",
             Group::Player },
-        { "WeaponHandling", "ScopedFilterRotationSeconds", "04. Weapon Handling",
+        { "WeaponHandling", "ScopedFilterRotationSeconds", "05. Weapon Handling",
             "Scoped Filtering: Rotation\nExtra rotation smoothing, in seconds, while you look through a scope, with "
             "or without Shake Filtering.\n0 here and in Scoped Filtering: Position turns scoped filtering off. "
             "Range: 0 to 1.",
             Group::Player, clampTo(0.0, 1.0) },
-        { "WeaponHandling", "ScopedFilterTranslationSeconds", "04. Weapon Handling",
+        { "WeaponHandling", "ScopedFilterTranslationSeconds", "05. Weapon Handling",
             "Scoped Filtering: Position\nExtra position smoothing, in seconds, while you look through a scope. "
             "Range: 0 to 1.",
             Group::Player, clampTo(0.0, 1.0) },
-        { "WeaponHandling", "ScopedFilterReleaseDegreesPerSecond", "04. Weapon Handling",
+        { "WeaponHandling", "ScopedFilterReleaseDegreesPerSecond", "05. Weapon Handling",
             "Scoped Filtering: Release Speed\nHow fast you turn the controller, in degrees per second, before the "
             "scoped smoothing drops to half.\nHolding still gets full smoothing; swinging to a new target loosens "
             "it.\n0 keeps full smoothing at any speed. Range: 0 to 720.",
             Group::Player, clampTo(0.0, 720.0) },
-        { "WeaponHandling", "FiringGripReattachRadiusGameUnits", "04. Weapon Handling",
+        { "WeaponHandling", "FiringGripReattachRadiusGameUnits", "05. Weapon Handling",
             "Firing Grip Reach\nHow far from the firing grip a hand can take it over or grab it again, in game units "
             "(70 = 1 metre).\nThe zone is a quarter circle on each side of the grip, from straight out to straight "
             "down.\nPress grab inside it to move the firing grip to that hand; the firing hand can also pass it with "
             "a grab tap.\nPointing at it in Mods Config outlines it on the drawn weapon. Range: 0.25 to 30.",
             Group::Player, clampTo(0.25, 30.0) },
-        { "WeaponHandling", "GripZoneIndicatorDiameterGameUnits", "04. Weapon Handling",
+        { "WeaponHandling", "GripZoneIndicatorDiameterGameUnits", "05. Weapon Handling",
             "Grip Zone Marker Size\nDiameter of the sphere that marks a weapon's grip zones, in game units (70 = 1 "
             "metre).\nPointing at it in Mods Config shows every marker on the drawn weapon. Range: 0.1 to 5.",
             Group::Player, clampTo(grip_zone_indicator_policy::kMinimumDiameterGameUnits, grip_zone_indicator_policy::kMaximumDiameterGameUnits) },
-        { "WeaponHandling", "AmmoCounterStyle", "04. Weapon Handling",
+        { "WeaponHandling", "AmmoCounterStyle", "05. Weapon Handling",
             "Ammo Counter Style\n1 = Minimal. 2 = Immersive. 3 = Vanilla.\nMinimal: white loaded and reserve rounds "
             "beside the firing grip on the palm side, shown while you look at them.\nImmersive: the same place and "
             "look to show, in the game's HUD color and bracket frame, loaded over reserve.\nVanilla: the game's "
@@ -188,95 +196,95 @@ namespace rock::config
             "hand).\nEvery style replaces the game's counter with one counter per drawn weapon. The counters are "
             "drawn through RPS UI Framework.",
             Group::Player },
-        { "WeaponRecoil", "ImmersiveRecoil", "05. Weapon Recoil",
+        { "WeaponRecoil", "ImmersiveRecoil", "06. Weapon Recoil",
             "Immersive Recoil\nUses the recoil strengths below, for either hand and in power armor.\nFalse: the "
             "game's own recoil strength, on the hand that fires.\nThe developer setting Emergency Disable Recoil "
             "overrides both.",
             Group::Player },
-        { "WeaponRecoil", "LaserRecoilPercent", "05. Weapon Recoil",
+        { "WeaponRecoil", "LaserRecoilPercent", "06. Weapon Recoil",
             "Laser Recoil\nRecoil for laser weapons in any hold and in power armor: 100 = 10% of the game's "
             "movement and rotation, 0 = none. Range: 0 to 300.\nA bipod-latched weapon keeps its fixed 10%.",
             Group::Player, clampTo(0.0, 300.0) },
-        { "WeaponRecoil", "PistolOneHandRecoilPercent", "05. Weapon Recoil",
+        { "WeaponRecoil", "PistolOneHandRecoilPercent", "06. Weapon Recoil",
             "Recoil Strength by Weapon Type\nPercent of each weapon type's recoil: 0 = none, 100 = full, 300 = "
             "triple. Range: 0 to 300.\nOne Hand applies without a support grip, Two Hand with one.\nBipod latching "
             "and power armor use their own fixed recoil.\nThis key: pistols held with one hand.",
             Group::Player, clampTo(0.0, 300.0) },
-        { "WeaponRecoil", "PistolTwoHandRecoilPercent", "05. Weapon Recoil", "Pistols held with two hands. Range: 0 to 300.",
+        { "WeaponRecoil", "PistolTwoHandRecoilPercent", "06. Weapon Recoil", "Pistols held with two hands. Range: 0 to 300.",
             Group::Player, clampTo(0.0, 300.0) },
-        { "WeaponRecoil", "RifleOneHandRecoilPercent", "05. Weapon Recoil", "Rifles held with one hand. Range: 0 to 300.",
+        { "WeaponRecoil", "RifleOneHandRecoilPercent", "06. Weapon Recoil", "Rifles held with one hand. Range: 0 to 300.",
             Group::Player, clampTo(0.0, 300.0) },
-        { "WeaponRecoil", "RifleTwoHandRecoilPercent", "05. Weapon Recoil", "Rifles held with two hands. Range: 0 to 300.",
+        { "WeaponRecoil", "RifleTwoHandRecoilPercent", "06. Weapon Recoil", "Rifles held with two hands. Range: 0 to 300.",
             Group::Player, clampTo(0.0, 300.0) },
-        { "WeaponRecoil", "ShotgunOneHandRecoilPercent", "05. Weapon Recoil",
+        { "WeaponRecoil", "ShotgunOneHandRecoilPercent", "06. Weapon Recoil",
             "Shotguns held with one hand. Range: 0 to 300.", Group::Player, clampTo(0.0, 300.0) },
-        { "WeaponRecoil", "ShotgunTwoHandRecoilPercent", "05. Weapon Recoil",
+        { "WeaponRecoil", "ShotgunTwoHandRecoilPercent", "06. Weapon Recoil",
             "Shotguns held with two hands. Range: 0 to 300.", Group::Player, clampTo(0.0, 300.0) },
-        { "WeaponRecoil", "HeavyOneHandRecoilPercent", "05. Weapon Recoil",
+        { "WeaponRecoil", "HeavyOneHandRecoilPercent", "06. Weapon Recoil",
             "Heavy weapons held with one hand. Range: 0 to 300.", Group::Player, clampTo(0.0, 300.0) },
-        { "WeaponRecoil", "HeavyTwoHandRecoilPercent", "05. Weapon Recoil",
+        { "WeaponRecoil", "HeavyTwoHandRecoilPercent", "06. Weapon Recoil",
             "Heavy weapons held with two hands. Range: 0 to 300.", Group::Player, clampTo(0.0, 300.0) },
-        { "WeaponRecoil", "DefaultOneHandRecoilPercent", "05. Weapon Recoil",
+        { "WeaponRecoil", "DefaultOneHandRecoilPercent", "06. Weapon Recoil",
             "Any other firearm held with one hand. Range: 0 to 300.", Group::Player, clampTo(0.0, 300.0) },
-        { "WeaponRecoil", "DefaultTwoHandRecoilPercent", "05. Weapon Recoil",
+        { "WeaponRecoil", "DefaultTwoHandRecoilPercent", "06. Weapon Recoil",
             "Any other firearm held with two hands. Range: 0 to 300.", Group::Player, clampTo(0.0, 300.0) },
-        { "FiringHand", "DefaultHand", "06. Firing Hand",
+        { "FiringHand", "DefaultHand", "07. Firing Hand",
             "Default Hand\nright or left: the firing hand for equips that come without a hand (favorites, PALM, "
             "scripts and other mods).\nGrenade draws prefer this hand and use the other one when it is busy.\nPip-Boy "
             "and trigger equips and grip handoffs always use the hand that acts.\nApplies on the next equip or draw. "
             "The game's own left-handed mode is not supported and stays off.",
             Group::Player },
-        { "FiringHand.Left", "AimYawDegrees", "06. Firing Hand",
+        { "FiringHand.Left", "AimYawDegrees", "07. Firing Hand",
             "Left Firing Aim: Yaw\nTurns the aim of a weapon fired from the left hand, in degrees. 0 uses the plain "
             "mirror of the right-hand hold. Range: -30 to 30.",
             Group::Player, clampTo(-30.0, 30.0) },
-        { "FiringHand.Left", "AimPitchDegrees", "06. Firing Hand",
+        { "FiringHand.Left", "AimPitchDegrees", "07. Firing Hand",
             "Left Firing Aim: Pitch\nTilts the aim of a weapon fired from the left hand up or down, in degrees. "
             "Range: -30 to 30.",
             Group::Player, clampTo(-30.0, 30.0) },
-        { "FiringHand.Left", "AimOffset", "06. Firing Hand",
+        { "FiringHand.Left", "AimOffset", "07. Firing Hand",
             "Left Firing Aim: Offset\nShifts the aim of a weapon fired from the left hand, in game units (70 = 1 "
             "metre), as { pos = [along the fingers, out of the palm, across the palm] }.\nThe weapon moves that way, "
             "at once. Each value: -15 to 15.",
             Group::Player, clampTo(-15.0, 15.0) },
-        { "FiringHand.Left", "GripOffset", "06. Firing Hand",
+        { "FiringHand.Left", "GripOffset", "07. Firing Hand",
             "Left Firing Grip\nMoves where the left hand holds the firing grip, in game units (70 = 1 metre), as "
             "{ pos = [along the fingers, into or out of the palm, across the palm] }.\nAll 0 = the plain mirror of "
             "the right-hand grip. The hand stays put and the weapon moves the other way. Each value: -15 to 15. "
             "Regrab to apply.",
             Group::Player, clampTo(-15.0, 15.0) },
-        { "FiringHand.Right", "SupportGripOffset", "06. Firing Hand",
+        { "FiringHand.Right", "SupportGripOffset", "07. Firing Hand",
             "Right Support Grip\nMoves where the right hand holds a support grip when the left hand fires, in game "
             "units (70 = 1 metre), as { pos = [along the fingers, into or out of the palm, across the palm] }.\nAll "
             "0 = the plain mirror of the left-hand support grip. Each value: -15 to 15. Regrab to apply.",
             Group::Player, clampTo(-15.0, 15.0) },
-        { "Scopes", "EnableImmersiveScopes", "07. Scopes",
+        { "Scopes", "EnableImmersiveScopes", "08. Scopes",
             "Immersive Scopes\nROCK places the scope view on the weapon, raises it while you hold the scope button "
             "(right A by default), and corrects the overlay and zoom.\nFalse: the game's own scopes.\nStarting with "
             "this off leaves the game's scope hook free for other scope mods. Turning it on takes the hook until you "
             "restart; if another mod owns it, ROCK's scopes stay off.\nRelease the scope button before changing "
             "this. Reload stays on a tap of the same button.",
             Group::Player },
-        { "Grenades", "ImmersiveGrenades", "08. Grenades",
+        { "Grenades", "ImmersiveGrenades", "09. Grenades",
             "Immersive Grenades\nHold the grenade button (right B by default) to draw a grenade into your hand and "
             "throw it by hand.\nSelecting a grenade in PALM also puts it in your hand.\nFalse: the game's own hold "
             "and release throw.\nRelease the grenade button before changing this; a grenade already drawn keeps its "
             "mode.",
             Group::Player },
-        { "Grenades", "RealisticGrenadeFuseSeconds", "08. Grenades",
+        { "Grenades", "RealisticGrenadeFuseSeconds", "09. Grenades",
             "Grenade Fuse\nSeconds from pulling the pin to detonation for grenades drawn by hand.\n0 uses the "
             "grenade's own fuse time. Range: 0 to 30.",
             Group::Player, clampTo(0.0, 30.0) },
-        { "ImmersiveAid", "Enabled", "09. Immersive Aid",
+        { "ImmersiveAid", "Enabled", "10. Immersive Aid",
             "Immersive Aid\nStimpaks and Med-X sit in a fixed syringe grip and inject after touching your body for "
             "0.5 seconds.\nFalse: they are grabbed like any object and used by bringing them to your mouth.\nRelease "
             "and grab again to see the change on an item already in your hand.",
             Group::Player },
-        { "ControllerInput", "SuppressNativeVats", "10. Controller Input",
+        { "ControllerInput", "SuppressNativeVats", "11. Controller Input",
             "Block VATS\nStops the game's VATS from opening on the VATS button (right B by default).\nThe button "
             "still works for ROCK and other mods.",
             Group::Player },
-        { "ControllerInput", "OfferSteamVRBinding", "10. Controller Input",
+        { "ControllerInput", "OfferSteamVRBinding", "11. Controller Input",
             "Offer ROCK's SteamVR Binding\nTrue: when Index controllers or Vive wands use SteamVR's default binding "
             "for Fallout 4 VR, the setup wizard opens by itself once per game start, when no menu or scene is in "
             "the way, and offers ROCK's binding (the default "
@@ -284,7 +292,7 @@ namespace rock::config
             "opens only when you open it; it still offers the binding then. Choosing other controllers in the "
             "wizard sets this.",
             Group::Player },
-        { "ControllerInput.Right", "Trigger", "10. Controller Input",
+        { "ControllerInput.Right", "Trigger", "11. Controller Input",
             "Button Layout\nThe physical input that acts as each ROCK button, per hand. ROCK, PALM, PAPER, SCISSORS "
             "Redux, FRIK and the game all follow it.\nThe defaults are the Quest and Touch layout and change "
             "nothing.\nValues: trigger, grip, a, b (x, y on the left), thumbstick, grip_click, axis3, axis4, pad_up, "
@@ -293,31 +301,31 @@ namespace rock::config
             "buttons (Index A reports as grip) need the binding fixed in SteamVR first; ROCK only sees what SteamVR "
             "sends.\nThis key: the right trigger.",
             Group::Player },
-        { "ControllerInput.Right", "Grab", "10. Controller Input", "The right grab button (grip by default).",
+        { "ControllerInput.Right", "Grab", "11. Controller Input", "The right grab button (grip by default).",
             Group::Player },
-        { "ControllerInput.Right", "A", "10. Controller Input", "Right A: reload tap, scope hold.",
+        { "ControllerInput.Right", "A", "11. Controller Input", "Right A: reload tap, scope hold.",
             Group::Player },
-        { "ControllerInput.Right", "B", "10. Controller Input", "Right B: grenade draw hold, VATS.",
+        { "ControllerInput.Right", "B", "11. Controller Input", "Right B: grenade draw hold, VATS.",
             Group::Player },
-        { "ControllerInput.Right", "StickClick", "10. Controller Input",
+        { "ControllerInput.Right", "StickClick", "11. Controller Input",
             "Right stick click: bipod latch; opens PALM by default.", Group::Player },
-        { "ControllerInput.Left", "Trigger", "10. Controller Input", "The left trigger.",
+        { "ControllerInput.Left", "Trigger", "11. Controller Input", "The left trigger.",
             Group::Player },
-        { "ControllerInput.Left", "Grab", "10. Controller Input", "The left grab button (grip by default).",
+        { "ControllerInput.Left", "Grab", "11. Controller Input", "The left grab button (grip by default).",
             Group::Player },
-        { "ControllerInput.Left", "X", "10. Controller Input",
+        { "ControllerInput.Left", "X", "11. Controller Input",
             "Left X: reload tap and scope hold for a left firing hand.", Group::Player },
-        { "ControllerInput.Left", "Y", "10. Controller Input", "Left Y: Pip-Boy tap, Pause hold.",
+        { "ControllerInput.Left", "Y", "11. Controller Input", "Left Y: Pip-Boy tap, Pause hold.",
             Group::Player },
-        { "ControllerInput.Left", "StickClick", "10. Controller Input", "Left stick click.",
+        { "ControllerInput.Left", "StickClick", "11. Controller Input", "Left stick click.",
             Group::Player },
-        { "SetupWizard", "ShownEdition", "10. Controller Input",
+        { "SetupWizard", "ShownEdition", "11. Controller Input",
             "Setup Wizard Shown\nThe setup wizard opens by itself once, 10 seconds after you are in the game with no "
             "menu or scene in the way, whenever this ROCK brings a newer edition of it (new pages or options to "
             "show). On a new game it waits until you leave the mirror. ROCK writes the edition here when the wizard "
             "opens.\n0 = show it at the next game start. 999 = never open it by itself.",
             Group::Player },
-        { "Bindings", "Grab", "10. Controller Input",
+        { "Bindings", "Grab", "11. Controller Input",
             "Bindings\nEach function's control, as { hand = \"primary\", type = \"tap\", button = \"a\" }, or "
             "{ type = \"none\" }.\nhand: primary, offhand, left, right, any. Fire, Reload, Scope and SupportTrigger "
             "take only primary (the hand holding the weapon's trigger) and offhand; elsewhere primary is the right "
@@ -327,46 +335,46 @@ namespace rock::config
             "\"offhand\", button = \"grip\" } for a button held at the same time (the binding's hand when left "
             "out).\nThis key: grab with each hand.",
             Group::Player },
-        { "Bindings", "Fire", "10. Controller Input", "Fire the equipped weapon.", Group::Player },
-        { "Bindings", "SupportTrigger", "10. Controller Input",
+        { "Bindings", "Fire", "11. Controller Input", "Fire the equipped weapon.", Group::Player },
+        { "Bindings", "SupportTrigger", "11. Controller Input",
             "The support hand's trigger: a second weapon, or the support action of what that hand holds.",
             Group::Player },
-        { "Bindings", "Use", "10. Controller Input",
+        { "Bindings", "Use", "11. Controller Input",
             "Use what the primary hand points at (take, open, talk). It owns the whole press while there is something "
             "to use.", Group::Player },
-        { "Bindings", "Reload", "10. Controller Input", "Reload the equipped weapon.",
+        { "Bindings", "Reload", "11. Controller Input", "Reload the equipped weapon.",
             Group::Player },
-        { "Bindings", "Scope", "10. Controller Input",
+        { "Bindings", "Scope", "11. Controller Input",
             "Look through the weapon's scope while active. On its home button (A) the duration is also how long a "
             "press lasts before it scopes instead of reloading.",
             Group::Player },
-        { "Bindings", "Vats", "10. Controller Input", "Open VATS.", Group::Player },
-        { "Bindings", "Grenade", "10. Controller Input",
+        { "Bindings", "Vats", "11. Controller Input", "Open VATS.", Group::Player },
+        { "Bindings", "Grenade", "11. Controller Input",
             "Draw a grenade into the hand. On its home button (B) the duration is also how long a press lasts before "
             "it draws a grenade instead of opening VATS.",
             Group::Player },
-        { "Bindings", "Pipboy", "10. Controller Input", "Open the Pip-Boy.", Group::Player },
-        { "Bindings", "Pause", "10. Controller Input",
+        { "Bindings", "Pipboy", "11. Controller Input", "Open the Pip-Boy.", Group::Player },
+        { "Bindings", "Pause", "11. Controller Input",
             "Open the Pause menu. On its home button (left Y) the duration is also how long a press lasts before it "
             "opens Pause instead of the Pip-Boy.",
             Group::Player },
-        { "Bindings", "StickActions", "10. Controller Input",
+        { "Bindings", "StickActions", "11. Controller Input",
             "Bipod latch and held placement while the weapon touches a surface, and the game's Favorites menu.",
             Group::Player },
-        { "Bindings", "Palm", "10. Controller Input", "Open RobCo PALM's wheel.", Group::Player },
-        { "NativeGameplay", "VanillaMeleeSwingSpeed", "11. Native Gameplay",
+        { "Bindings", "Palm", "11. Controller Input", "Open RobCo PALM's wheel.", Group::Player },
+        { "NativeGameplay", "VanillaMeleeSwingSpeed", "12. Native Gameplay",
             "Melee Swing Speed\nHand speed that starts a vanilla melee swing, in game units per second (70 = 1 metre "
             "per second). The game uses 200.\nTurning the wrist alone never swings. Range: 50 to 2000.",
             Group::Player, clampTo(50.0, 2000.0) },
-        { "NativeGameplay", "VanillaGunBashSpeed", "11. Native Gameplay",
+        { "NativeGameplay", "VanillaGunBashSpeed", "12. Native Gameplay",
             "Gun Bash Speed\nHand speed that starts a vanilla gun bash, in game units per second (70 = 1 metre per "
             "second). The game uses 200.\nTurning the wrist alone never bashes. Range: 50 to 2000.",
             Group::Player, clampTo(50.0, 2000.0) },
-        { "Logging", "LogLevel", "12. Logging",
+        { "Logging", "LogLevel", "13. Logging",
             "Log Level\nHow much ROCK writes to ROCK.log.\n0 = Trace. 1 = Debug. 2 = Info. 3 = Warn. 4 = Error. "
             "5 = Critical. 6 = Off.\nTrace and Debug write a lot and can cost frame time; keep Info for normal play.",
             Group::Player },
-        { "Developer", "ShowDeveloperPages", "13. Developer",
+        { "Developer", "ShowDeveloperPages", "14. Developer",
             "Show Developer Pages\nShows the Developer page on ROCK's page in Mods Config FO4 VR, which edits "
             "ROCK_Developer.toml.\nOnly Mods Config reads this option.",
             Group::Player },

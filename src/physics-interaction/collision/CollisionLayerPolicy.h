@@ -595,8 +595,20 @@ namespace rock::collision_layer_policy
         applyLayerExpectedMask(matrix, ROCK_LAYER_BODY, buildRockBodyExpectedMask());
     }
 
+    /*
+     * The dynamic proxy pairs between the player's own hands and equipped
+     * weapons (developer toggles). Turning one off lets the hands pass through
+     * each other or the equipped weapons; the keyframed layer-43/44 contact
+     * that support grips and part grabs read is unaffected.
+     */
+    struct DynamicProxyPeerPairs
+    {
+        bool handToHand = true;
+        bool handToEquippedWeapon = true;
+    };
+
     inline constexpr std::uint64_t buildRockDynamicHandProxyExpectedMask(bool isLeft = false,
-        std::uint64_t extensionObstacleLayers = 0, bool pairFilterInstalled = false)
+        std::uint64_t extensionObstacleLayers = 0, bool pairFilterInstalled = false, DynamicProxyPeerPairs peers = {})
     {
         std::uint64_t mask = 0;
         for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
@@ -605,16 +617,20 @@ namespace rock::collision_layer_policy
                 mask = withLayer(mask, layer);
             }
         }
-        mask = withLayer(mask, isLeft ? ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY : ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
-        mask = withLayer(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
-        mask = withLayer(mask, ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY);
+        if (peers.handToHand) {
+            mask = withLayer(mask, isLeft ? ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY : ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
+        }
+        if (peers.handToEquippedWeapon) {
+            mask = withLayer(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
+            mask = withLayer(mask, ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY);
+        }
         mask = withLayer(mask, ROCK_LAYER_STORED_DISPLAY);
         mask |= extensionObstacleLayers & kOptionalObstacleLayers;
         return mask;
     }
 
     inline constexpr std::uint64_t buildRockDynamicWeaponProxyExpectedMask(std::uint64_t extensionObstacleLayers = 0,
-        bool pairFilterInstalled = false)
+        bool pairFilterInstalled = false, DynamicProxyPeerPairs peers = {})
     {
         std::uint64_t mask = 0;
         for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
@@ -622,8 +638,10 @@ namespace rock::collision_layer_policy
                 mask = withLayer(mask, layer);
             }
         }
-        mask = withLayer(mask, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY);
-        mask = withLayer(mask, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
+        if (peers.handToEquippedWeapon) {
+            mask = withLayer(mask, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY);
+            mask = withLayer(mask, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
+        }
         mask = withLayer(mask, ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY);
         mask |= extensionObstacleLayers & kOptionalObstacleLayers;
         return mask;
@@ -632,35 +650,57 @@ namespace rock::collision_layer_policy
     // The primary contract with the peer bit swapped: each proxy row names
     // the other, so neither row write depends on the order they are applied.
     inline constexpr std::uint64_t buildRockSecondaryDynamicWeaponProxyExpectedMask(
-        std::uint64_t extensionObstacleLayers = 0, bool pairFilterInstalled = false)
+        std::uint64_t extensionObstacleLayers = 0, bool pairFilterInstalled = false, DynamicProxyPeerPairs peers = {})
     {
         return withLayer(
-            withoutLayer(buildRockDynamicWeaponProxyExpectedMask(extensionObstacleLayers, pairFilterInstalled),
+            withoutLayer(buildRockDynamicWeaponProxyExpectedMask(extensionObstacleLayers, pairFilterInstalled, peers),
                 ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY),
             ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
     }
 
+    /*
+     * True when the matrix holds exactly the hand<->hand and hand<->equipped
+     * weapon proxy pairs `peers` asks for, so a toggle change is detected and
+     * the proxies' cached pair state rebuilt.
+     */
+    inline constexpr bool dynamicProxyPeerPairsMatch(const std::uint64_t* matrix, DynamicProxyPeerPairs peers)
+    {
+        if (!matrix)
+            return false;
+        constexpr std::uint32_t hands[] = { ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY };
+        constexpr std::uint32_t weapons[] = { ROCK_LAYER_DYNAMIC_WEAPON_PROXY, ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY };
+        if (!layerPairSymmetricMatches(matrix, hands[0], hands[1], peers.handToHand))
+            return false;
+        for (const auto hand : hands) {
+            for (const auto weapon : weapons) {
+                if (!layerPairSymmetricMatches(matrix, hand, weapon, peers.handToEquippedWeapon))
+                    return false;
+            }
+        }
+        return true;
+    }
+
     inline void applyRockDynamicHandProxyLayerPolicies(std::uint64_t* matrix, std::uint64_t extensionObstacleLayers = 0,
-        bool pairFilterInstalled = false)
+        bool pairFilterInstalled = false, DynamicProxyPeerPairs peers = {})
     {
         applyLayerExpectedMask(matrix, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY,
-            buildRockDynamicHandProxyExpectedMask(false, extensionObstacleLayers, pairFilterInstalled));
+            buildRockDynamicHandProxyExpectedMask(false, extensionObstacleLayers, pairFilterInstalled, peers));
         applyLayerExpectedMask(matrix, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY,
-            buildRockDynamicHandProxyExpectedMask(true, extensionObstacleLayers, pairFilterInstalled));
+            buildRockDynamicHandProxyExpectedMask(true, extensionObstacleLayers, pairFilterInstalled, peers));
     }
 
     inline void applyRockDynamicWeaponProxyLayerPolicy(std::uint64_t* matrix, std::uint64_t extensionObstacleLayers = 0,
-        bool pairFilterInstalled = false)
+        bool pairFilterInstalled = false, DynamicProxyPeerPairs peers = {})
     {
         applyLayerExpectedMask(matrix, ROCK_LAYER_DYNAMIC_WEAPON_PROXY,
-            buildRockDynamicWeaponProxyExpectedMask(extensionObstacleLayers, pairFilterInstalled));
+            buildRockDynamicWeaponProxyExpectedMask(extensionObstacleLayers, pairFilterInstalled, peers));
         applyLayerExpectedMask(matrix, ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY,
-            buildRockSecondaryDynamicWeaponProxyExpectedMask(extensionObstacleLayers, pairFilterInstalled));
+            buildRockSecondaryDynamicWeaponProxyExpectedMask(extensionObstacleLayers, pairFilterInstalled, peers));
     }
 
     inline void applyRockGeneratedLayerPolicies(std::uint64_t* matrix, bool handStaticWorld,
         bool weaponBlocksProjectiles, bool weaponBlocksSpells, std::uint64_t extensionObstacleLayers = 0,
-        bool pairFilterInstalled = false)
+        bool pairFilterInstalled = false, DynamicProxyPeerPairs peers = {})
     {
         /*
          * Runtime registration uses one aggregate helper because layer 47 is an
@@ -681,8 +721,8 @@ namespace rock::collision_layer_policy
         applyLayerExpectedMask(matrix, ROCK_LAYER_SECONDARY_WEAPON,
             buildRockSecondaryWeaponExpectedMask(weaponBlocksProjectiles, weaponBlocksSpells) & ~keyframedExclusions);
         applyRockBodyLayerPolicy(matrix);
-        applyRockDynamicHandProxyLayerPolicies(matrix, extensionObstacleLayers, pairFilterInstalled);
-        applyRockDynamicWeaponProxyLayerPolicy(matrix, extensionObstacleLayers, pairFilterInstalled);
+        applyRockDynamicHandProxyLayerPolicies(matrix, extensionObstacleLayers, pairFilterInstalled, peers);
+        applyRockDynamicWeaponProxyLayerPolicy(matrix, extensionObstacleLayers, pairFilterInstalled, peers);
         applyLayerExpectedMask(matrix, ROCK_LAYER_STORED_DISPLAY,
             (std::uint64_t{ 1 } << ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY) |
                 (std::uint64_t{ 1 } << ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY));

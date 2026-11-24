@@ -209,6 +209,28 @@
         },
         {
           "type": "section",
+          "text": "Hand Collision",
+          "content": [
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Hands Collide With Each Other",
+              "help": "Your hands stop against each other. Off: they pass through each other.",
+              "default": true,
+              "storage": { "path": ["HandCollision", "BetweenHands"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Hands Collide With Equipped Weapons",
+              "help": "Your hands stop against the weapons you have equipped. Off: they pass through them; support grips and weapon parts still take your hand.",
+              "default": true,
+              "storage": { "path": ["HandCollision", "EquippedWeapons"] }
+            }
+          ]
+        },
+        {
+          "type": "section",
           "text": "Grab Highlight",
           "content": [
             {

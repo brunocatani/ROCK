@@ -968,6 +968,8 @@ namespace rock
             bool handStaticWorld = false;
             bool weaponBlocksProjectiles = false;
             bool weaponBlocksSpells = false;
+            bool handToHand = false;
+            bool handToEquippedWeapon = false;
             std::uint64_t extensionObstacleLayers = 0;
         };
 
