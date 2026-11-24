@@ -32,6 +32,10 @@
 
 ### Changed
 
+- **Update RobCo PALM and RPS UI Framework together with this ROCK.** RobCo PALM
+  2.0.1 and older do not work with it: choosing a grenade on the wheel does
+  nothing. RPS UI Framework 2.0.2 and older still list ROCK's settings pages, which
+  no longer work.
 - **ROCK's settings move to Mods Config FO4 VR.** ROCK's page there edits `ROCK.toml`;
   RPS UI Framework's settings menu (RobCo PALM's Config) no longer has ROCK pages.
   Its Developer page, shown with Show Developer Pages, edits `ROCK_Developer.toml`;
