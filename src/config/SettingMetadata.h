@@ -93,8 +93,7 @@ namespace rock::config
         { "WeaponHandling", "FrikUserWeaponOffsets", "04. Weapon Handling",
             "FRIK Weapon Offsets\nUse FRIK's weapon offsets, including their weapon scale, instead of ROCK's grip: "
             "the ones you saved in FRIK's weapon adjustment, and FRIK's built-in ones while FRIK Built-in Offsets "
-            "is on.\nWeapons with an offset use dynamic support grabs only and skip PAPER's reload and cycle "
-            "animations.\nNeeds FRIK 0.80.2 or newer.",
+            "is on.\nWeapons with an offset skip PAPER's reload and cycle animations.\nNeeds FRIK 0.80.2 or newer.",
             Group::Player },
         { "WeaponHandling", "FrikBuiltInWeaponOffsets", "04. Weapon Handling",
             "FRIK Built-in Offsets\nWith FRIK Weapon Offsets on, also use the weapon offsets FRIK ships with for "

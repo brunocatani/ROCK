@@ -19,8 +19,8 @@ namespace RE
  * API and used only while WeaponHandling.FrikUserWeaponOffsets is on; the
  * offsets FRIK ships with count only while
  * WeaponHandling.FrikBuiltInWeaponOffsets is on too. A weapon with one is
- * seated and scaled from it instead of ROCK's authored grip, takes only
- * dynamic support grabs, and is published with
+ * seated and scaled from it instead of ROCK's authored grip, keeps the
+ * animation's support seat scaled with it, and is published with
  * WeaponStateFlag::UserWeaponOffset so PAPER skips its authored reload and
  * cycle animations, which do not fit the moved hands.
  *

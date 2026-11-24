@@ -29,10 +29,10 @@ slots publish `getWeaponState`, `getGrip`, `getClassification` and
   the slot's ammo counter: the native HUD rule for that slot's equipment
   index, except that reserve excludes rounds loaded in the other slot's
   weapon when both use the same uncharged ammo. `UserWeaponOffset` marks a
-  weapon the player resized or re-gripped with their own FRIK weapon offset
-  file (FRIK's compiled defaults never count): ROCK seats and scales it from
-  that file and gives it dynamic support grabs only, so animation authored
-  for ROCK's grip of the weapon does not fit its hands.
+  weapon ROCK seats and scales from a FRIK weapon offset, one the player saved
+  in FRIK or, while the player allows it, one FRIK ships with. The firing hand
+  sits where the offset puts it, so animation authored for ROCK's grip of the
+  weapon does not fit its hands.
   `BipodRightInputReserved` and `BipodLeftInputReserved` (slot 0) say the bipod
   takes that hand's stick click: the weapon touches a fixed surface or rests
   latched on one. Its hand is the firing hand while both hands hold the weapon,

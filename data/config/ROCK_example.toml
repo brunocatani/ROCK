@@ -62,7 +62,7 @@ GunstockMode = false
 
 ## FRIK Weapon Offsets
 ## Use FRIK's weapon offsets, including their weapon scale, instead of ROCK's grip: the ones you saved in FRIK's weapon adjustment, and FRIK's built-in ones while FRIK Built-in Offsets is on.
-## Weapons with an offset use dynamic support grabs only and skip PAPER's reload and cycle animations.
+## Weapons with an offset skip PAPER's reload and cycle animations.
 ## Needs FRIK 0.80.2 or newer.
 FrikUserWeaponOffsets = false
 
