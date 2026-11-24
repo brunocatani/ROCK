@@ -110,8 +110,8 @@ namespace rock
         bool rockGunstockCentering = true;
         // FRIK's weapon offsets replace ROCK's grip and scale (opt-in).
         bool rockFrikUserWeaponOffsets = false;
-        // FRIK's built-in offsets count too, not only the player's saved ones.
-        bool rockFrikBuiltInWeaponOffsets = true;
+        // FRIK's built-in offsets count too, not only the player's saved ones (opt-in).
+        bool rockFrikBuiltInWeaponOffsets = false;
         float rockBipodHandsFreeRadiusMeters = 2.0f;
         float rockLaserRecoilPercent = 100.0f;
         float rockPistolOneHandRecoilPercent = 300.0f;

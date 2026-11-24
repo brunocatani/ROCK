@@ -575,7 +575,7 @@
               "valueType": "bool",
               "text": "FRIK Built-in Offsets",
               "help": "Also uses the weapon offsets FRIK ships with, for weapons you have not adjusted in FRIK. Off: only the offsets you saved.",
-              "default": true,
+              "default": false,
               "enabledWhen": { "setting": "frikWeaponOffsets", "equals": true },
               "storage": { "path": ["WeaponHandling", "FrikBuiltInWeaponOffsets"] }
             }
@@ -588,10 +588,20 @@
             {
               "type": "switcher",
               "valueType": "bool",
+              "id": "gunstockMode",
               "text": "Gunstock Mode",
               "help": "Two-handed firearms aim along the line from your firing hand to your support hand, like a rifle with a stock. Melee weapons and bipod-latched weapons are not affected.",
               "default": false,
               "storage": { "path": ["WeaponHandling", "GunstockMode"] }
+            },
+            {
+              "type": "switcher",
+              "valueType": "bool",
+              "text": "Gunstock Centering",
+              "help": "With Gunstock Mode on, slides the weapon sideways so its centerline runs through both controllers, whatever side offset its firing grip pose has. Grip height stays as authored. Off: the weapon keeps the side offset of its firing grip pose.",
+              "default": true,
+              "enabledWhen": { "setting": "gunstockMode", "equals": true },
+              "storage": { "path": ["WeaponHandling", "GunstockCentering"] }
             },
             {
               "type": "stepper",

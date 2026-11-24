@@ -86,7 +86,7 @@ FrikUserWeaponOffsets = false
 ## FRIK Built-in Offsets
 ## With FRIK Weapon Offsets on, also use the weapon offsets FRIK ships with for weapons you have not adjusted.
 ## False: only the offsets you saved in FRIK.
-FrikBuiltInWeaponOffsets = true
+FrikBuiltInWeaponOffsets = false
 
 ## Bipod Mode
 ## Click the right stick to latch any equipped weapon part to the surface it touches.

@@ -98,8 +98,8 @@ The loot buttons stay on the right controller in every mode.
 
 - Hold the barrel or a support grip with your support hand to aim with both hands.
 - Firearms with authored support grips take the support hand only there. **Grab Anywhere on Weapon** lets it hold a firearm anywhere. Melee weapons can always be held anywhere.
-- **Gunstock Mode** aims two-handed firearms along the line from your firing hand to your support hand, like a rifle with a stock.
-- **FRIK Weapon Offsets** uses FRIK's weapon offsets instead of ROCK's grip: the ones you saved in FRIK's weapon adjustment, and with **FRIK Built-in Offsets** (on by default) the ones FRIK ships with. While FRIK's weapon adjustment is open, ROCK hands the weapon to FRIK so you can adjust it; the saved offset applies as soon as you save. Needs FRIK 0.80.2 or newer.
+- **Gunstock Mode** aims two-handed firearms along the line from your firing hand to your support hand, like a rifle with a stock. **Gunstock Centering** (on by default) slides the weapon sideways so its centerline runs through both controllers.
+- **FRIK Weapon Offsets** uses FRIK's weapon offsets instead of ROCK's grip: the ones you saved in FRIK's weapon adjustment, and with **FRIK Built-in Offsets** (off by default) the ones FRIK ships with. While FRIK's weapon adjustment is open, ROCK hands the weapon to FRIK so you can adjust it; the saved offset applies as soon as you save. Needs FRIK 0.80.2 or newer.
 
 ### Switching hands
 
@@ -170,7 +170,7 @@ Settings are edited in game with [Mods Config FO4 VR](https://www.nexusmods.com/
 | **ROCK** (front page) | Help, a link to this wiki, the **Setup Wizard** button, the log level and Show Developer Pages. |
 | **Interaction** | Grab Direction, Far Grab Style, hand collision, grab highlight, quick loot and prompt placement, Immersive Aid. |
 | **Weapon Equipping** | Picking up and letting go of any weapon (Auto Equip, grab and release modes), Default Hand, and folded fine-tuning for grip zones and left-hand firing. |
-| **Gun Handling** | The ammo counter, grips (Grab Anywhere on Weapon, FRIK Weapon Offsets, FRIK Built-in Offsets), aim (Gunstock Mode, shake and scoped filtering, Immersive Scopes) and the bipod. |
+| **Gun Handling** | The ammo counter, grips (Grab Anywhere on Weapon, FRIK Weapon Offsets, FRIK Built-in Offsets), aim (Gunstock Mode, Gunstock Centering, shake and scoped filtering, Immersive Scopes) and the bipod. |
 | **Gun Recoil** | Immersive Recoil, laser recoil, and recoil strength per weapon type for one and two hands. |
 | **Melee and Grenades** | Melee grip angle, swing and gun bash speeds, Immersive Grenades and the grenade fuse. |
 | **Controls** | Block VATS, ROCK's SteamVR binding offer, which function is on which button, and the button layout of each hand. |
