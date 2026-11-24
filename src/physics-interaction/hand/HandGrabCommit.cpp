@@ -22,7 +22,7 @@ namespace rock
             std::copy(pose.fingerLocals.begin(), pose.fingerLocals.end(), std::begin(exact.localTransforms));
             constexpr const char* tag = "ROCK_Grab";
             constexpr int priority = 100;
-            const char* blockTag = isLeft ? "ROCK_GrabPrimaryPoseLeft" : "ROCK_GrabPrimaryPoseRight";
+            const char* blockTag = grabPrimaryPoseBlockTag(isLeft);
             const bool blocked = frik_visual_authority::blockPrimaryHandWeaponPose(blockTag, true);
             const bool scalar = blocked &&
                 frik_visual_authority::setHandPoseCustom(tag, handFromBool(isLeft),
@@ -369,7 +369,7 @@ namespace rock
             _heldDriveDecision = {};
             _heldBodyIdsCount.store(0, std::memory_order_release);
             _grabFingerPosePublished = false;
-            (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
+            clearGrabHandPose(_isLeft);
             clearGrabExternalHandWorldTransform(_isLeft);
             input.rollback.rollback();
             return false;
@@ -832,9 +832,7 @@ namespace rock
         const bool driveCreated = _activeConstraint.isValid() && _grabAuthorityProxy.isValid();
         if (!driveCreated) {
             if (_grabFrame.authoredWeaponPose.valid()) {
-                (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
-                (void)frik_visual_authority::blockPrimaryHandWeaponPose(
-                    _isLeft ? "ROCK_GrabPrimaryPoseLeft" : "ROCK_GrabPrimaryPoseRight", false);
+                clearGrabHandPose(_isLeft);
             }
             ROCK_LOG_ERROR(Hand, "{} hand GRAB FAILED: proxy-constraint dynamic grab creation failed", handName());
             destroyGrabAuthorityProxy(bhkWorld);
