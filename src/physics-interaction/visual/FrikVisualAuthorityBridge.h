@@ -341,6 +341,14 @@ namespace rock::frik_visual_authority
     }
 
     /*
+     * FRIK's weapon adjustment is open. False without FRIK API v2.5.
+     */
+    [[nodiscard]] inline bool isWeaponRepositionModeOpen()
+    {
+        return supportsApiVersion(kWeaponOffsetsApiVersion) && api()->isWeaponRepositionModeOpen();
+    }
+
+    /*
      * FRIK's offset for a weapon name and mode. None without FRIK API v2.5.
      * Game thread.
      */

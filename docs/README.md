@@ -98,7 +98,7 @@ The loot buttons stay on the right controller in every mode.
 - Hold the barrel or a support grip with your support hand to aim with both hands.
 - Firearms with authored support grips take the support hand only there. **Grab Anywhere on Weapon** lets it hold a firearm anywhere. Melee weapons can always be held anywhere.
 - **Gunstock Mode** aims two-handed firearms along the line from your firing hand to your support hand, like a rifle with a stock.
-- **FRIK Weapon Offsets** uses FRIK's weapon offsets instead of ROCK's grip: the ones you saved in FRIK's weapon adjustment, and with **FRIK Built-in Offsets** (on by default) the ones FRIK ships with. Needs FRIK 0.80.2 or newer.
+- **FRIK Weapon Offsets** uses FRIK's weapon offsets instead of ROCK's grip: the ones you saved in FRIK's weapon adjustment, and with **FRIK Built-in Offsets** (on by default) the ones FRIK ships with. While FRIK's weapon adjustment is open, ROCK hands the weapon to FRIK so you can adjust it; the saved offset applies as soon as you save. Needs FRIK 0.80.2 or newer.
 
 ### Switching hands
 

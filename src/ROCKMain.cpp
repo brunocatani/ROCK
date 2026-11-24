@@ -415,6 +415,7 @@ namespace
             .visualSkeletonReadyHint = frik_visual_authority::isSkeletonReadyHint(),
             .compatibilityConfigBlocking = wristPipboyOpen || frik_visual_authority::isConfigOpen(),
             .wristPipboyOpen = wristPipboyOpen,
+            .frikWeaponAdjustmentOpen = frik_visual_authority::isWeaponRepositionModeOpen(),
         });
         stateTimer.stop();
         performance_profiler::ScopedTimer gatesTimer(performance_profiler::Scope::PrepGates);

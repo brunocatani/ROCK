@@ -1,6 +1,6 @@
 # AGENTS.md - ROCK
 
-ROCK is a Fallout 4 VR F4SE plugin (`ROCK.dll`) that gives the player physical hands: grabbing, hand, body and weapon collision, equipped-weapon handling, and a provider API other plugins consume. It runs inside FRIK's frame (FRIK 0.79.1 or newer, FRIK API 2.3), links CommonLibF4VR directly and targets Fallout 4 VR 1.2.72.0 only.
+ROCK is a Fallout 4 VR F4SE plugin (`ROCK.dll`) that gives the player physical hands: grabbing, hand, body and weapon collision, equipped-weapon handling, and a provider API other plugins consume. It runs inside FRIK's frame (FRIK 0.79.1 or newer, FRIK API 2.3; FRIK's weapon offsets and its weapon adjustment need FRIK 0.80.2, API 2.5, gated by `frik_visual_authority::supportsApiVersion`), links CommonLibF4VR directly and targets Fallout 4 VR 1.2.72.0 only.
 
 To change ROCK: read [Architecture](#architecture), find the task in [Where to start](#where-to-start), and read the opening comment of each file it names; almost every file opens with one saying what it owns. [Invariants](#invariants) lists what every change must keep true.
 
@@ -137,6 +137,8 @@ Under `src/physics-interaction/` unless the path says otherwise.
 | Equip, draw, holster, drop | `core/interaction/EquippedWeaponFrame.cpp`, `core/interaction/EquippedWeaponDrop.cpp`, `weapon/equip/EquippedWeaponTransitionCoordinator.cpp`, `weapon/native/NativeHandEquipment.cpp` |
 | Holding a gun: firing seat, support hand, aim | `weapon/grip/TwoHandedGripController.cpp`, `weapon/grip/WeaponGripSeat.cpp`, `weapon/handling/GunstockMode.h` |
 | Authored grips | `weapon/authored/`, `animation/AuthoredWeaponGripCapture.cpp` |
+| FRIK weapon offsets (built-in and saved, read through FRIK's API) | `weapon/handling/FrikWeaponOffsets.cpp`, `weapon/handling/FrikWeaponOffsetPolicy.h` |
+| FRIK's weapon adjustment (ROCK yields the weapon while it is open) | `RuntimeFrameSnapshot::frikWeaponAdjustmentOpen` in `core/RockRuntimeState.h`, `holdEquippedWeaponInMenu` in `core/interaction/EquippedWeaponFrame.cpp` |
 | Weapon collision | `weapon/collision/WeaponCollision.h`, `weapon/collision/DynamicWeaponCollision.cpp` |
 | The second weapon | `weapon/secondary/NativeSecondaryPresentation.cpp`, `weapon/equip/EquippedWeaponRoster.h` |
 | Scopes | `weapon/scope/NativeScopeData.cpp`, `input/ManualScopeInputPolicy.h` |

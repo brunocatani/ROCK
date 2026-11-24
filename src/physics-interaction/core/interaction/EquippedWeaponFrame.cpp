@@ -345,7 +345,14 @@ namespace rock
         const bool firstHoldThisFrame = _equipped.menuHoldDecidedFrame != frame.frameIndex;
         if (firstHoldThisFrame) {
             _equipped.menuHoldDecidedFrame = frame.frameIndex;
-            bool holding = frame.menuHoldsWeapons();
+            /*
+             * FRIK's weapon adjustment, opened from a menu, places the weapon
+             * itself; the hold yields it every claim, and an equip while it is
+             * open claims nothing, since blocking FRIK's weapon node closes it.
+             */
+            bool holding = frame.menuHoldsWeapons() && !frame.frikWeaponAdjustmentOpen;
+            if (_equipped.menuHolding && frame.menuHoldsWeapons() && frame.frikWeaponAdjustmentOpen)
+                ROCK_LOG_INFO(Weapon, "MENU_WEAPON_HOLD released: FRIK's weapon adjustment places the weapon");
             if (holding) {
                 _equipped.menuHoldHandoffSeconds = 0.0f;
             } else if (_equipped.menuHolding && view.weapon && frame.weaponDrawn &&
