@@ -34,6 +34,16 @@ namespace rock::frik_weapon_offset_policy
 
 
     /*
+     * The weapons FRIK names pistol or rifle by their stock; only these need
+     * the model's grip stock name.
+     */
+    [[nodiscard]] inline bool namedByStock(const std::string_view name)
+    {
+        return name == "Plasma" || name == "Pipe" || name == "Pipe Bolt-Action" || name == "Laser" ||
+            name == "Institute";
+    }
+
+    /*
      * FRIK's weapon key: the base form's display name, plus " Rifle" for the
      * weapons that are pistol or rifle by stock (F4VR-CommonFramework
      * EquippedWeaponHandler::getExtendedWeaponName). gripStockName is the name

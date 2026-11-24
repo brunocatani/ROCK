@@ -24,6 +24,7 @@ namespace rock::frik_weapon_offsets
         // What find() last logged for a weapon, so a change is logged once.
         struct Logged
         {
+            std::string key;
             WeaponOffsetSource weapon{ WeaponOffsetSource::None };
             WeaponOffsetSource primaryHand{ WeaponOffsetSource::None };
             bool powerArmor{ false };
@@ -32,20 +33,17 @@ namespace rock::frik_weapon_offsets
             bool operator==(const Logged&) const = default;
         };
 
-        struct KeySlot
+        struct LogSlot
         {
-            // Identity witnesses only; never dereferenced.
+            // Identity witness only; never dereferenced.
             const RE::TESObjectWEAP* weapon{ nullptr };
-            const RE::NiAVObject* root{ nullptr };
-            bool used{ false };
-            std::string key;
             Logged logged{};
         };
 
-        // Frame-thread state: FRIK's weapon name per weapon model, which costs
-        // a node search to build.
-        std::array<KeySlot, 4> s_keys{};
-        std::size_t s_nextSlot{ 0 };
+        // Frame-thread state: the last log per weapon form, for the two
+        // equipped weapons and the few lookups between them.
+        std::array<LogSlot, 4> s_logs{};
+        std::size_t s_nextLog{ 0 };
 
         [[nodiscard]] std::string_view gripStockName(const RE::NiAVObject* root)
         {
@@ -54,20 +52,29 @@ namespace rock::frik_weapon_offsets
             return child && child->name.c_str() ? std::string_view{ child->name.c_str() } : std::string_view{};
         }
 
-        [[nodiscard]] KeySlot& keySlot(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* root)
+        [[nodiscard]] Logged& logSlot(const RE::TESObjectWEAP* weapon)
         {
-            for (auto& slot : s_keys) {
-                if (slot.used && slot.weapon == weapon && slot.root == root) {
-                    return slot;
+            for (auto& slot : s_logs) {
+                if (slot.weapon == weapon) {
+                    return slot.logged;
                 }
             }
-            auto& slot = s_keys[s_nextSlot];
-            s_nextSlot = (s_nextSlot + 1) % s_keys.size();
-            slot = { .weapon = weapon,
-                .root = root,
-                .used = true,
-                .key = policy::weaponKey(RE::TESFullName::GetFullName(*weapon, false), gripStockName(root)) };
-            return slot;
+            auto& slot = s_logs[s_nextLog];
+            s_nextLog = (s_nextLog + 1) % s_logs.size();
+            slot = { .weapon = weapon };
+            return slot.logged;
+        }
+
+        /*
+         * FRIK's name for the weapon, read from the model every call: the
+         * Weapon node stays while each weapon's model is swapped under it,
+         * and a draw attaches the stock after its first frames, so a name
+         * kept from then is the pistol's.
+         */
+        [[nodiscard]] std::string weaponKey(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* root)
+        {
+            const std::string_view name = RE::TESFullName::GetFullName(*weapon, false);
+            return policy::weaponKey(name, policy::namedByStock(name) ? gripStockName(root) : std::string_view{});
         }
 
         /*
@@ -110,25 +117,24 @@ namespace rock::frik_weapon_offsets
         if (!g_rockConfig.rockFrikUserWeaponOffsets || !weapon) {
             return std::nullopt;
         }
-        auto& slot = keySlot(weapon, weaponRoot);
-        Logged now{ .powerArmor = inPowerArmor };
-        const auto weaponInHand = offset(slot.key, WeaponOffsetMode::Weapon, inPowerArmor, now.weapon, now.refused);
+        Logged now{ .key = weaponKey(weapon, weaponRoot), .powerArmor = inPowerArmor };
+        const auto weaponInHand = offset(now.key, WeaponOffsetMode::Weapon, inPowerArmor, now.weapon, now.refused);
         const auto primaryHand =
-            offset(slot.key, WeaponOffsetMode::PrimaryHand, inPowerArmor, now.primaryHand, now.refused);
+            offset(now.key, WeaponOffsetMode::PrimaryHand, inPowerArmor, now.primaryHand, now.refused);
         auto result = policy::resolve(weaponInHand, primaryHand);
-        if (now != slot.logged) {
-            slot.logged = now;
+        if (auto& logged = logSlot(weapon); now != logged) {
+            logged = now;
             if (now.refused) {
                 ROCK_LOG_WARN(Weapon,
                     "FRIK weapon offset for {:08X} key='{}' powerArmor={} is not a hand placement; ROCK keeps its "
                     "grip for it",
-                    weapon->formID, slot.key, inPowerArmor);
+                    weapon->formID, now.key, inPowerArmor);
             }
             if (result) {
                 ROCK_LOG_INFO(Weapon,
                     "FRIK weapon offset applies to {:08X} key='{}' powerArmor={} weapon={} primaryHand={} "
                     "scale={:.4f}",
-                    weapon->formID, slot.key, inPowerArmor, sourceName(now.weapon), sourceName(now.primaryHand),
+                    weapon->formID, now.key, inPowerArmor, sourceName(now.weapon), sourceName(now.primaryHand),
                     result->weaponScale());
             }
         }
