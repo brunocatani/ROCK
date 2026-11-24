@@ -3,7 +3,6 @@
 // startup; discovery tests inspect their addresses and real public table extents.
 #include <ROCK/Animation.h>
 #include <ROCK/Collision.h>
-#include <ROCK/Configuration.h>
 #include <ROCK/Core.h>
 #include <ROCK/Discovery.h>
 #include <ROCK/Grab.h>
@@ -61,11 +60,6 @@ namespace rock::api::input
 }
 
 namespace rock::api::playercontroller
-{
-    const Api& table() noexcept;
-}
-
-namespace rock::api::configuration
 {
     const Api& table() noexcept;
 }

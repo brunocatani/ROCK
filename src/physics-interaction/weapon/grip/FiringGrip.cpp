@@ -530,6 +530,80 @@ namespace rock
         };
     }
 
+    /**
+     * Every grip zone marker the drawn weapon has, in weapon-local space, whatever hand state normally gates them:
+     * each authored support seat a free hand could take, and the firing grip marker on both sides. Mods Config's
+     * Grip Zone Marker Size preview shows them all at the size being tuned.
+     */
+    std::size_t TwoHandedGrip::collectGripZonePreviewMarkers(RE::NiNode* weaponNode,
+        const std::uint64_t weaponGenerationKey, const std::uint64_t weaponOwnershipKey,
+        const std::span<RE::NiPoint3> outWeaponLocal) const
+    {
+        if (!weaponNode || !isInvertibleTransform(weaponNode->world)) {
+            return 0;
+        }
+        std::size_t count = 0;
+        const auto addWorld = [&](const RE::NiTransform& weaponWorld, const RE::NiPoint3& world) {
+            const auto local = transform_math::worldPointToLocal(weaponWorld, world);
+            if (count < outWeaponLocal.size() && std::isfinite(local.x) && std::isfinite(local.y) &&
+                std::isfinite(local.z)) {
+                outWeaponLocal[count++] = local;
+            }
+        };
+
+        using IndicatorVec3 = authored_weapon_grip_activation_policy::Vec3;
+        const auto toIndicator = [](const RE::NiPoint3& value) { return IndicatorVec3{ value.x, value.y, value.z }; };
+        for (const bool isLeft : { true, false }) {
+            if (isLeft == isFiringHandLeft() && !isFiringGripDetached()) {
+                continue;
+            }
+            const auto& snapshot = authoredSupportHand(isLeft).authoredDebugSnapshot;
+            if (!snapshot.valid || !snapshot.canonicalAxesValid || snapshot.weaponGenerationKey != weaponGenerationKey ||
+                !isInvertibleTransform(snapshot.weaponWorld)) {
+                continue;
+            }
+            const auto indicator = authored_weapon_grip_activation_policy::evaluateIndicator({
+                .weaponFamily = snapshot.weaponFamily,
+                .authoredSeatWorld = toIndicator(snapshot.authoredPalmSeatWorld),
+                .supportSideAxisWorld = toIndicator(snapshot.supportSideAxisWorld),
+                .downAxisWorld = toIndicator(snapshot.downAxisWorld),
+                .activationStateValid = true,
+                .activationSpatialPass = true,
+                .supportGripAllowed = true,
+            });
+            if (indicator.visible) {
+                addWorld(snapshot.weaponWorld,
+                    RE::NiPoint3{ indicator.markerWorld.x, indicator.markerWorld.y, indicator.markerWorld.z });
+            }
+        }
+
+        firing_grip_reattach_zone_policy::ZoneInput zone{};
+        if (tryGetFiringGripReachZone(weaponNode, weaponGenerationKey, weaponOwnershipKey, zone)) {
+            using authored_weapon_grip_activation_policy::tryNormalize;
+            IndicatorVec3 lateral{};
+            if (tryNormalize(zone.weaponLeftAxisWorld, lateral)) {
+                constexpr float offset = firing_grip_reattach_zone_policy::kIndicatorOffsetGameUnits;
+                for (const float side : { 1.0f, -1.0f }) {
+                    addWorld(weaponNode->world, RE::NiPoint3{ zone.gripWorld.x + lateral.x * side * offset,
+                                                    zone.gripWorld.y + lateral.y * side * offset,
+                                                    zone.gripWorld.z + lateral.z * side * offset });
+                }
+            }
+        }
+        return count;
+    }
+
+    /**
+     * The firing grip's reach zone on the drawn weapon, built as the handoff and regrab paths build it, at the
+     * current handling reach. False without a current canonical right hold on this weapon.
+     */
+    bool TwoHandedGrip::tryGetFiringGripReachZone(RE::NiNode* weaponNode, const std::uint64_t weaponGenerationKey,
+        const std::uint64_t weaponOwnershipKey, firing_grip_reattach_zone_policy::ZoneInput& outZone) const
+    {
+        return tryBuildFiringGripZoneInput(weaponNode, weaponGenerationKey, weaponOwnershipKey,
+            _handlingSettings.firingGripReattachRadiusGameUnits, outZone);
+    }
+
     bool TwoHandedGrip::tryResolveAuthoredFiringHandCanonicalForProbe(const bool handIsLeft,
         RE::NiTransform& outHandWeaponLocal, const char*& outSource) const
     {

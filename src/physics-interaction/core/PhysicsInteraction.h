@@ -36,9 +36,13 @@
 //   ProviderEventDispatch        grab events delivered to provider clients
 //   ProviderWeaponSources        provider weapon source node catalog
 //   DebugOverlayPublish          debug collider overlay publication
+//   DevBenchState                hands and weapons for the devbench tool's state
+//                                and hand actions
 //
 // Shared helpers for those files are in PhysicsInteractionInternal.h.
 #pragma once
+#include <nlohmann/json_fwd.hpp>
+
 #include "api/EjectionContactRequests.h"
 #include "api/HandInteractionPublication.h"
 #include "api/ObjectRestRequests.h"
@@ -120,6 +124,11 @@ namespace RE
     class NiCollisionObject;
     class TESAmmo;
     class TESObjectREFR;
+}
+
+namespace rock::devbench
+{
+    struct RockState;
 }
 
 namespace rock::provider_state_policy
@@ -418,6 +427,12 @@ namespace rock
         // Developer test-bench telemetry: one frame record per game frame, from FRIK's
         // FrameEnd, so menus (where the physics update does not run) are recorded too.
         void publishTestbenchFrame();
+        // The devbench tool's state of hands and weapons, from FRIK's FrameEnd while the tool is armed.
+        void captureDevBenchState(devbench::RockState& state) const;
+        // The devbench tool's hand action: one hand's poses, selection and grab in detail, from FRIK's FrameEnd.
+        nlohmann::json describeHandForDevBench(bool isLeft);
+        // The devbench tool's weapon action: the equipped weapons, their grips and transitions, from FRIK's FrameEnd.
+        nlohmann::json describeWeaponsForDevBench() const;
         void publishDebugRenderFrame();
 
     private:
@@ -953,6 +968,8 @@ namespace rock
             bool handStaticWorld = false;
             bool weaponBlocksProjectiles = false;
             bool weaponBlocksSpells = false;
+            bool handToHand = false;
+            bool handToEquippedWeapon = false;
             std::uint64_t extensionObstacleLayers = 0;
         };
 

@@ -27,6 +27,7 @@ namespace rock::runtime_state
         bool visualSkeletonReadyHint = false;
         bool compatibilityConfigBlocking = false;
         bool wristPipboyOpen = false;
+        bool frikWeaponAdjustmentOpen = false;
         bool frikConfigOpen = false;
     };
 
@@ -67,6 +68,12 @@ namespace rock::runtime_state
         bool wristPipboyOpen = false;
         // FRIK's own config UI (main, Pip-Boy or weapon adjustment) is open.
         bool frikConfigOpen = false;
+        /*
+         * FRIK's weapon adjustment is open (FRIK API v2.5). It adjusts only a
+         * weapon FRIK places, and closes when another mod blocks FRIK's weapon
+         * node, so ROCK keeps every claim off the weapon while it is open.
+         */
+        bool frikWeaponAdjustmentOpen = false;
         bool visualAuthorityAvailable = false;
         bool visualSkeletonReadyHint = false;
         bool localSkeletonReady = false;

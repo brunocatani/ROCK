@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <memory>
 #include <source_location>
+#include <span>
 
 #include "api/FRIKApiV2.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -530,6 +531,11 @@ namespace rock
             return _firing.reattachIndicatorFrame;
         }
 
+        std::size_t collectGripZonePreviewMarkers(RE::NiNode* weaponNode, std::uint64_t weaponGenerationKey,
+            std::uint64_t weaponOwnershipKey, std::span<RE::NiPoint3> outWeaponLocal) const;
+        bool tryGetFiringGripReachZone(RE::NiNode* weaponNode, std::uint64_t weaponGenerationKey,
+            std::uint64_t weaponOwnershipKey, firing_grip_reattach_zone_policy::ZoneInput& outZone) const;
+
         /*
          * Called after hFRIK's weapon pass. FO4VR has already completed its
          * activation update earlier in PlayerCharacter::Update; this method
@@ -779,6 +785,14 @@ namespace rock
         bool isPrimaryOnlyActive() const { return _session.state == TwoHandedState::PrimaryOnly; }
 
         bool isHandPartGripping(bool isLeft) const { return partGrip(isLeft).active; }
+
+        // The support hand aims the weapon in gunstock mode: its part grip chose gunstock aim and the weapon
+        // transform is solved this frame.
+        bool isGunstockAimActive() const
+        {
+            const WeaponPartGrip& support = partGrip(isSupportHandLeft());
+            return support.active && support.gunstockAimSelected && _hasSolvedWeaponTransform;
+        }
 
         /*
          * True only for part grips that hold weapon transform authority.

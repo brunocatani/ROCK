@@ -12,7 +12,8 @@
 /*
  * Function bindings: the player binds each gameplay function to a control and
  * a gesture (press, tap, hold, double tap), optionally while another control
- * is held.
+ * is held. [Bindings] holds them as CommonFramework tables (FunctionBindingText.h):
+ * a hold with no duration is a press, a hold with one is a hold.
  *
  * Every function has a home: the hand, logical button and gesture of its
  * default binding, where ROCK's policies, the game's native events, FRIK and
@@ -168,7 +169,42 @@ namespace rock::function_binding_policy
         }
     }
 
-    // ---- text ----------------------------------------------------------------------------------
+    // Fire, Reload, Scope and SupportTrigger follow the weapon: their primary hand is the firing hand.
+    [[nodiscard]] constexpr bool followsWeapon(Function function) noexcept
+    {
+        return function == Function::Fire || function == Function::Reload || function == Function::Scope ||
+            function == Function::SupportTrigger;
+    }
+
+    // The five logical buttons a binding may name; the physical extras reach them through the button layout.
+    [[nodiscard]] constexpr bool isLogicalButton(Source source) noexcept
+    {
+        return slotOf(source) != Slot::Count;
+    }
+
+    // A timed hold's time when the binding says none, per function.
+    [[nodiscard]] constexpr float defaultHoldSeconds(Function function) noexcept
+    {
+        switch (function) {
+        case Function::Scope: return 0.30f;
+        case Function::Grenade: return 0.25f;
+        default: return 0.35f;
+        }
+    }
+
+    // Each function's default time: its home hold's hold time, 0 for a home press or tap.
+    [[nodiscard]] constexpr std::array<float, kFunctionCount> homeSeconds() noexcept
+    {
+        std::array<float, kFunctionCount> seconds{};
+        for (std::size_t i = 0; i < kFunctionCount; ++i) {
+            const auto function = static_cast<Function>(i);
+            seconds[i] = homeBinding(function).gesture == Gesture::Hold ? defaultHoldSeconds(function) : 0.0f;
+        }
+        return seconds;
+    }
+
+    // ---- old text form -------------------------------------------------------------------------
+    // ROCK's grammar before [Bindings] held CommonFramework tables, read only to migrate a file.
 
     [[nodiscard]] constexpr std::optional<BindingHand> parseHand(std::string_view text) noexcept
     {
@@ -193,40 +229,10 @@ namespace rock::function_binding_policy
         return std::nullopt;
     }
 
-    [[nodiscard]] constexpr std::string_view handName(BindingHand hand) noexcept
-    {
-        switch (hand) {
-        case BindingHand::Firing: return "firing";
-        case BindingHand::Support: return "support";
-        case BindingHand::Primary: return "primary";
-        case BindingHand::Offhand: return "offhand";
-        case BindingHand::Left: return "left";
-        case BindingHand::Right: return "right";
-        case BindingHand::Each: return "each";
-        }
-        return "primary";
-    }
-
-    [[nodiscard]] constexpr std::string_view gestureName(Gesture gesture) noexcept
-    {
-        switch (gesture) {
-        case Gesture::Press: return "press";
-        case Gesture::Tap: return "tap";
-        case Gesture::Hold: return "hold";
-        case Gesture::DoubleTap: return "double";
-        }
-        return "press";
-    }
-
-    // Face buttons are written with the letters of the hand they usually are on.
-    [[nodiscard]] constexpr bool writesLeftLabels(BindingHand hand) noexcept
-    {
-        return hand == BindingHand::Offhand || hand == BindingHand::Support || hand == BindingHand::Left;
-    }
-
     // "<hand> <gesture> <control> [+<hand> <control>]" or "none". Tokens are
     // separated by spaces; the modifier's hand may be left out for the same hand.
-    [[nodiscard]] inline std::optional<Binding> parseBinding(std::string_view text) noexcept
+    // Old gestures: press acts while held, hold acts after the function's hold time.
+    [[nodiscard]] inline std::optional<Binding> parseLegacyBinding(std::string_view text) noexcept
     {
         std::array<std::string_view, 6> tokens{};
         std::size_t count = 0;
@@ -274,30 +280,14 @@ namespace rock::function_binding_policy
         return binding;
     }
 
-    [[nodiscard]] inline std::string formatBinding(const Binding& binding)
-    {
-        if (!binding.bound()) return "none";
-        std::string text(handName(binding.control.hand));
-        text += ' ';
-        text += gestureName(binding.gesture);
-        text += ' ';
-        text += button_layout_policy::sourceName(binding.control.source, writesLeftLabels(binding.control.hand));
-        if (binding.chord()) {
-            text += " +";
-            text += handName(binding.modifier.hand);
-            text += ' ';
-            text += button_layout_policy::sourceName(binding.modifier.source, writesLeftLabels(binding.modifier.hand));
-        }
-        return text;
-    }
-
     // ---- recognition ---------------------------------------------------------------------------
 
     // A tap presented on its home: long enough for every game frame to see it,
     // shorter than any partner hold.
     inline constexpr double kVirtualTapSeconds = 0.08;
     inline constexpr float kDefaultHoldSeconds = 0.35f;
-    inline constexpr float kDefaultDoubleTapSeconds = 0.30f;
+    // CommonFramework's gap for a double press that names no duration.
+    inline constexpr float kDefaultDoubleTapSeconds = 0.40f;
 
     [[nodiscard]] constexpr bool exclusiveWhenEligible(Function function) noexcept
     {
@@ -313,8 +303,8 @@ namespace rock::function_binding_policy
         // Functions that may act now; an ineligible one is left out of each new press's decision.
         std::uint32_t eligible{ ~std::uint32_t{ 0 } };
         double seconds{ 0.0 };
-        std::array<float, kFunctionCount> holdSeconds{};
-        float doubleTapSeconds{ kDefaultDoubleTapSeconds };
+        // Per function: a hold binding's hold time or a double tap's longest gap; 0 uses the default.
+        std::array<float, kFunctionCount> gestureSeconds{};
     };
 
     // One hand's controller sample after the controller layout.
@@ -600,10 +590,20 @@ namespace rock::function_binding_policy
                 float threshold = 1000.0f;
                 for (std::size_t i = 0; i < count; ++i)
                     if (holds & functionBit(entries[i].function)) {
-                        const float value = context.holdSeconds[static_cast<std::size_t>(entries[i].function)];
+                        const float value = context.gestureSeconds[static_cast<std::size_t>(entries[i].function)];
                         threshold = (std::min)(threshold, value > 0.0f ? value : kDefaultHoldSeconds);
                     }
                 return threshold;
+            };
+            // A tap on the control waits as long as the longest double tap that may still follow.
+            const auto doubleWindow = [&](std::uint32_t doubles) {
+                float window = 0.0f;
+                for (std::size_t i = 0; i < count; ++i)
+                    if (doubles & functionBit(entries[i].function)) {
+                        const float value = context.gestureSeconds[static_cast<std::size_t>(entries[i].function)];
+                        window = (std::max)(window, value > 0.0f ? value : kDefaultDoubleTapSeconds);
+                    }
+                return window > 0.0f ? window : kDefaultDoubleTapSeconds;
             };
 
             switch (control.phase) {
@@ -611,15 +611,16 @@ namespace rock::function_binding_policy
             case Phase::Spent:
                 if (!down) control.phase = Phase::Idle;
                 return;
-            case Phase::WaitingSecond:
-                if (pressEdge && context.seconds - control.releasedAt <= context.doubleTapSeconds) {
+            case Phase::WaitingSecond: {
+                const double window = doubleWindow(gestureBits(Gesture::DoubleTap, control.candidates));
+                if (pressEdge && context.seconds - control.releasedAt <= window) {
                     const auto doubles = gestureBits(Gesture::DoubleTap, control.candidates);
                     fire(doubles, true);
                     control.phase = Phase::Spent;
                     control.candidates = 0;
                     return;
                 }
-                if (context.seconds - control.releasedAt > context.doubleTapSeconds || pressEdge) {
+                if (context.seconds - control.releasedAt > window || pressEdge) {
                     fire(gestureBits(Gesture::Tap, control.candidates), false);
                     control.phase = Phase::Idle;
                     control.candidates = 0;
@@ -627,6 +628,7 @@ namespace rock::function_binding_policy
                     break;
                 }
                 return;
+            }
             case Phase::Pending: {
                 const auto holds = gestureBits(Gesture::Hold, control.candidates);
                 if (!down) {
@@ -646,7 +648,7 @@ namespace rock::function_binding_policy
                     std::uint32_t reached = 0;
                     for (std::size_t i = 0; i < count; ++i) {
                         const auto bit = functionBit(entries[i].function);
-                        const float value = context.holdSeconds[static_cast<std::size_t>(entries[i].function)];
+                        const float value = context.gestureSeconds[static_cast<std::size_t>(entries[i].function)];
                         if ((holds & bit) && (value > 0.0f ? value : kDefaultHoldSeconds) <= threshold) reached |= bit;
                     }
                     fire(reached, true);

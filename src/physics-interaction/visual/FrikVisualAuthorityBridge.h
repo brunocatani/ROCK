@@ -32,6 +32,8 @@ namespace rock::frik_visual_authority
     using HandSolveState = frik::api::FRIKApiV2::HandSolveState;
     using ScopeCapability = frik::api::FRIKApiV2::ScopeCapability;
     using SkeletonLifecycleData = frik::api::FRIKApiV2::SkeletonLifecycleData;
+    using WeaponOffsetMode = frik::api::FRIKApiV2::WeaponOffsetMode;
+    using WeaponOffsetSource = frik::api::FRIKApiV2::WeaponOffsetSource;
 
     namespace detail
     {
@@ -316,11 +318,34 @@ namespace rock::frik_visual_authority
     inline constexpr std::uint32_t kRequiredApiVersion = 3;
     // ScopeCapability::PlacesScopeWidget.
     inline constexpr std::uint32_t kPlacesScopeWidgetApiVersion = 4;
+    // isWeaponRepositionModeOpen and getWeaponOffset.
+    inline constexpr std::uint32_t kWeaponOffsetsApiVersion = 5;
 
     [[nodiscard]] inline bool supportsApiVersion(std::uint32_t version)
     {
         auto* frikApi = api();
         return frikApi && frikApi->getVersion && frikApi->getVersion() >= version;
+    }
+
+    /*
+     * FRIK's weapon adjustment is open. False without FRIK API v2.5.
+     */
+    [[nodiscard]] inline bool isWeaponRepositionModeOpen()
+    {
+        return supportsApiVersion(kWeaponOffsetsApiVersion) && api()->isWeaponRepositionModeOpen();
+    }
+
+    /*
+     * FRIK's offset for a weapon name and mode. None without FRIK API v2.5.
+     * Game thread.
+     */
+    [[nodiscard]] inline WeaponOffsetSource getWeaponOffset(const char* weaponName, WeaponOffsetMode mode,
+        bool inPowerArmor, RE::NiTransform& outTransform)
+    {
+        if (!supportsApiVersion(kWeaponOffsetsApiVersion)) {
+            return WeaponOffsetSource::None;
+        }
+        return api()->getWeaponOffset(weaponName, mode, inPowerArmor, &outTransform);
     }
 
     [[nodiscard]] inline Hand handFromBool(bool isLeft) { return isLeft ? Hand::Left : Hand::Right; }

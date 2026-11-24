@@ -47,7 +47,8 @@ namespace rock::grip_zone_indicators
     {
         currentFrame.store(frame.gameFrameIndex, std::memory_order_release);
         const auto count = (std::min)(frame.count, static_cast<std::uint32_t>(frame.positions.size()));
-        if (frame.gameFrameIndex == 0 || count == 0 || !std::isfinite(frame.diameterGameUnits) ||
+        const auto lineCount = (std::min)(frame.lineCount, static_cast<std::uint32_t>(frame.lines.size()));
+        if (frame.gameFrameIndex == 0 || (count == 0 && lineCount == 0) || !std::isfinite(frame.diameterGameUnits) ||
             frame.diameterGameUnits < grip_zone_indicator_policy::kMinimumDiameterGameUnits ||
             frame.diameterGameUnits > grip_zone_indicator_policy::kMaximumDiameterGameUnits) {
             Clear();
@@ -72,7 +73,16 @@ namespace rock::grip_zone_indicators
                 next->positions[next->count++] = position;
             }
         }
-        if (next->count == 0) {
+        const auto finite = [](const RE::NiPoint3& point) {
+            return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
+        };
+        for (std::uint32_t index = 0; index < lineCount; ++index) {
+            const auto& line = frame.lines[index];
+            if (finite(line.start) && finite(line.end)) {
+                next->lines[next->lineCount++] = line;
+            }
+        }
+        if (next->count == 0 && next->lineCount == 0) {
             Clear();
             return;
         }

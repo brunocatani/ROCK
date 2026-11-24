@@ -55,7 +55,9 @@ namespace rock::performance_profiler
 
         struct Settings
         {
+            // Collecting: the log setting or devbench. logging: the setting alone.
             std::atomic<bool> enabled{ false };
+            std::atomic<bool> logging{ false };
             std::atomic<std::uint32_t> logIntervalFrames{ 300 };
             std::atomic<std::uint32_t> warmupFrames{ 120 };
             std::atomic<std::uint64_t> frameIndex{ 0 };
@@ -1363,25 +1365,146 @@ namespace rock::performance_profiler
                 .frames = frames,
             });
         }
+
+        constexpr auto kScopeCount = static_cast<std::size_t>(Scope::Count);
+        constexpr auto kCounterCount = static_cast<std::size_t>(Counter::Count);
+        constexpr auto kValueCount = static_cast<std::size_t>(ValueMetric::Count);
+
+        /*
+         * Devbench's perf window: the log's intervals that closed since its
+         * start, and the live accumulators at the baseline its reset noted.
+         * While the log runs, a reset cannot clear the accumulators the log's
+         * interval still owns, so it notes them as the baseline a read
+         * subtracts. A maximum cannot be subtracted, so it may predate the reset
+         * by up to one log interval. Under mutex, which the frame thread takes
+         * only where the accumulators are taken or cleared: warmup, a log
+         * interval's close and a restart.
+         */
+        struct DevBenchWindowState
+        {
+            std::mutex mutex;
+            std::array<ScopeSnapshot, kScopeCount> closedScopes{};
+            std::array<CounterSnapshot, kCounterCount> closedCounters{};
+            std::array<ValueSnapshot, kValueCount> closedValues{};
+            std::array<ScopeSnapshot, kScopeCount> baselineScopes{};
+            std::array<CounterSnapshot, kCounterCount> baselineCounters{};
+            std::array<ValueSnapshot, kValueCount> baselineValues{};
+            std::uint64_t startFrame{ 0 };
+            std::chrono::steady_clock::time_point start{ std::chrono::steady_clock::now() };
+        };
+
+        std::atomic<bool> s_devBenchCollection{ false };
+        DevBenchWindowState s_devBenchWindow;
+
+        std::uint64_t minus(std::uint64_t value, std::uint64_t baseline) noexcept
+        {
+            return value > baseline ? value - baseline : 0;
+        }
+
+        void addPart(ScopeSnapshot& total, const ScopeSnapshot& part, const ScopeSnapshot& baseline) noexcept
+        {
+            total.totalTicks += minus(part.totalTicks, baseline.totalTicks);
+            total.samples += minus(part.samples, baseline.samples);
+            total.events += minus(part.events, baseline.events);
+            total.maxTicks = (std::max)(total.maxTicks, part.maxTicks);
+        }
+
+        void addPart(CounterSnapshot& total, const CounterSnapshot& part, const CounterSnapshot& baseline) noexcept
+        {
+            total.count += minus(part.count, baseline.count);
+        }
+
+        void addPart(ValueSnapshot& total, const ValueSnapshot& part, const ValueSnapshot& baseline) noexcept
+        {
+            total.total += minus(part.total, baseline.total);
+            total.samples += minus(part.samples, baseline.samples);
+            total.max = (std::max)(total.max, part.max);
+        }
+
+        /*
+         * Adds each part, less its baseline, to the totals.
+         */
+        template <class Snapshot, std::size_t N>
+        void addParts(std::array<Snapshot, N>& totals, const std::array<Snapshot, N>& parts,
+            const std::array<Snapshot, N>& baselines) noexcept
+        {
+            for (std::size_t i = 0; i < N; ++i)
+                addPart(totals[i], parts[i], baselines[i]);
+        }
+
+        /*
+         * The live accumulators as they stand, without taking them from the
+         * log's interval.
+         */
+        void loadLive(std::array<ScopeSnapshot, kScopeCount>& scopes, std::array<CounterSnapshot, kCounterCount>& counters,
+            std::array<ValueSnapshot, kValueCount>& values) noexcept
+        {
+            for (std::size_t i = 0; i < kScopeCount; ++i) {
+                const auto& slot = s_accum[i];
+                scopes[i].totalTicks = slot.totalTicks.load(std::memory_order_acquire);
+                scopes[i].maxTicks = slot.maxTicks.load(std::memory_order_acquire);
+                scopes[i].samples = slot.samples.load(std::memory_order_acquire);
+                scopes[i].events = slot.events.load(std::memory_order_acquire);
+            }
+            for (std::size_t i = 0; i < kCounterCount; ++i)
+                counters[i].count = s_counterAccum[i].count.load(std::memory_order_acquire);
+            for (std::size_t i = 0; i < kValueCount; ++i) {
+                const auto& slot = s_valueAccum[i];
+                values[i].total = slot.total.load(std::memory_order_acquire);
+                values[i].max = slot.max.load(std::memory_order_acquire);
+                values[i].samples = slot.samples.load(std::memory_order_acquire);
+            }
+        }
+
+        /*
+         * The live accumulators were cleared: nothing of them is left to
+         * subtract. Caller holds the window's mutex.
+         */
+        void clearDevBenchBaselines() noexcept
+        {
+            s_devBenchWindow.baselineScopes = {};
+            s_devBenchWindow.baselineCounters = {};
+            s_devBenchWindow.baselineValues = {};
+        }
+
+        /*
+         * A new window from the current frame. Caller holds the window's mutex.
+         */
+        void restartDevBenchWindow() noexcept
+        {
+            s_devBenchWindow.closedScopes = {};
+            s_devBenchWindow.closedCounters = {};
+            s_devBenchWindow.closedValues = {};
+            s_devBenchWindow.startFrame = s_settings.frameIndex.load(std::memory_order_acquire);
+            s_devBenchWindow.start = std::chrono::steady_clock::now();
+        }
     }
 
+    /**
+     * Applies the log settings, collecting while they or devbench want it. A change of what runs (collection, the
+     * log, its interval or warmup) restarts every window, devbench's included.
+     */
     void refreshSettings(bool enabled, int logIntervalFrames, int warmupFrames) noexcept
     {
+        const bool logging = enabled;
+        const bool collecting = logging || s_devBenchCollection.load(std::memory_order_acquire);
         const auto sanitizedInterval = sanitizeIntervalFrames(logIntervalFrames);
         const auto sanitizedWarmup = sanitizeWarmupFrames(warmupFrames);
         const bool wasEnabled = s_settings.enabled.load(std::memory_order_acquire);
         const bool settingsChanged =
             s_settings.logIntervalFrames.load(std::memory_order_acquire) != sanitizedInterval ||
-            s_settings.warmupFrames.load(std::memory_order_acquire) != sanitizedWarmup;
+            s_settings.warmupFrames.load(std::memory_order_acquire) != sanitizedWarmup ||
+            s_settings.logging.load(std::memory_order_acquire) != logging;
 
-        if (wasEnabled != enabled || settingsChanged) {
+        if (wasEnabled != collecting || settingsChanged) {
             s_settings.generation.fetch_add(1, std::memory_order_acq_rel);
         }
 
         s_settings.logIntervalFrames.store(sanitizedInterval, std::memory_order_release);
         s_settings.warmupFrames.store(sanitizedWarmup, std::memory_order_release);
+        s_settings.logging.store(logging, std::memory_order_release);
 
-        if (!enabled) {
+        if (!collecting) {
             if (wasEnabled) {
                 clearAccumulators();
                 clearCounterAccumulators();
@@ -1400,14 +1523,18 @@ namespace rock::performance_profiler
             return;
         }
 
-        asyncProfilerWriter().start();
+        if (logging)
+            asyncProfilerWriter().start();
 
         if (!wasEnabled || settingsChanged) {
+            std::scoped_lock devBenchLock(s_devBenchWindow.mutex);
             clearAccumulators();
             clearCounterAccumulators();
             clearValueAccumulators();
             s_settings.frameIndex.store(0, std::memory_order_release);
             s_settings.intervalStartFrame.store(0, std::memory_order_release);
+            clearDevBenchBaselines();
+            restartDevBenchWindow();
         }
         s_settings.enabled.store(true, std::memory_order_release);
     }
@@ -1431,10 +1558,19 @@ namespace rock::performance_profiler
         const auto frame = s_settings.frameIndex.load(std::memory_order_acquire);
         const auto warmup = s_settings.warmupFrames.load(std::memory_order_acquire);
         if (frame <= warmup) {
+            std::scoped_lock devBenchLock(s_devBenchWindow.mutex);
             clearAccumulators();
             clearCounterAccumulators();
             clearValueAccumulators();
+            clearDevBenchBaselines();
             s_settings.intervalStartFrame.store(frame, std::memory_order_release);
+            // Devbench's window, too, starts once warmup ends.
+            restartDevBenchWindow();
+            return;
+        }
+
+        // Without the log setting, devbench's window keeps the accumulators until its reset.
+        if (!s_settings.logging.load(std::memory_order_acquire)) {
             return;
         }
 
@@ -1445,11 +1581,82 @@ namespace rock::performance_profiler
         }
 
         s_settings.intervalStartFrame.store(frame, std::memory_order_release);
+        std::unique_lock devBenchLock(s_devBenchWindow.mutex);
         const auto snapshot = takeSnapshot();
         const auto counterSnapshot = takeCounterSnapshot();
         const auto valueSnapshot = takeValueSnapshot();
+        if (s_devBenchCollection.load(std::memory_order_acquire)) {
+            addParts(s_devBenchWindow.closedScopes, snapshot, s_devBenchWindow.baselineScopes);
+            addParts(s_devBenchWindow.closedCounters, counterSnapshot, s_devBenchWindow.baselineCounters);
+            addParts(s_devBenchWindow.closedValues, valueSnapshot, s_devBenchWindow.baselineValues);
+        }
+        clearDevBenchBaselines();
+        devBenchLock.unlock();
         const auto frames = frame - intervalStart;
         queueSnapshot(snapshot, counterSnapshot, valueSnapshot, frames);
+    }
+
+    void setDevBenchCollection(bool on) noexcept { s_devBenchCollection.store(on, std::memory_order_release); }
+
+    /**
+     * Devbench's window, summed from the log's closed intervals and the live accumulators; any thread. A reset starts
+     * a new window: it clears the live accumulators while the log is off, otherwise notes them as the baseline.
+     */
+    DevBenchWindow readDevBenchWindow(bool reset)
+    {
+        DevBenchWindow window;
+        std::array<ScopeSnapshot, kScopeCount> live{};
+        std::array<CounterSnapshot, kCounterCount> liveCounters{};
+        std::array<ValueSnapshot, kValueCount> liveValues{};
+        std::scoped_lock lock(s_devBenchWindow.mutex);
+        loadLive(live, liveCounters, liveValues);
+        auto scopes = s_devBenchWindow.closedScopes;
+        auto counters = s_devBenchWindow.closedCounters;
+        auto values = s_devBenchWindow.closedValues;
+        addParts(scopes, live, s_devBenchWindow.baselineScopes);
+        addParts(counters, liveCounters, s_devBenchWindow.baselineCounters);
+        addParts(values, liveValues, s_devBenchWindow.baselineValues);
+
+        window.collecting = enabled();
+        window.logging = s_settings.logging.load(std::memory_order_acquire);
+        window.frames = minus(s_settings.frameIndex.load(std::memory_order_acquire), s_devBenchWindow.startFrame);
+        window.windowMs =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - s_devBenchWindow.start)
+                .count();
+        for (std::size_t i = 0; i < kScopeCount; ++i) {
+            const auto& scope = scopes[i];
+            if (scope.samples > 0 || scope.events > 0) {
+                window.scopes.push_back({ scopeName(static_cast<Scope>(i)), scope.samples, scope.events,
+                    ticksToMilliseconds(scope.totalTicks), ticksToMilliseconds(scope.maxTicks) });
+            }
+        }
+        for (std::size_t i = 0; i < kCounterCount; ++i) {
+            if (counters[i].count > 0)
+                window.counters.push_back({ counterName(static_cast<Counter>(i)), counters[i].count });
+        }
+        for (std::size_t i = 0; i < kValueCount; ++i) {
+            const auto& value = values[i];
+            if (value.samples > 0) {
+                window.values.push_back(
+                    { valueMetricName(static_cast<ValueMetric>(i)), value.samples, value.total, value.max });
+            }
+        }
+
+        if (reset) {
+            if (window.logging) {
+                s_devBenchWindow.baselineScopes = live;
+                s_devBenchWindow.baselineCounters = liveCounters;
+                s_devBenchWindow.baselineValues = liveValues;
+            } else {
+                clearAccumulators();
+                for (auto& slot : s_counterAccum)
+                    slot.count.store(0, std::memory_order_release);
+                clearValueAccumulators();
+                clearDevBenchBaselines();
+            }
+            restartDevBenchWindow();
+        }
+        return window;
     }
 
     void addEventCount(Scope scope, std::uint64_t count) noexcept

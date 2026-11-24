@@ -53,6 +53,22 @@ namespace rock::input_remap_runtime
     // drains edges or rearms buttons when a menu/UI owns input.
     PhysicalTraceSnapshot readPhysicalTraceSnapshot(bool isLeft) noexcept;
 
+    // The last controller state ROCK handed the game for a hand: the logical
+    // buttons after the layout and bindings, the buttons the game saw, and
+    // why they differ (testbench_telemetry::BlankReason bits).
+    struct GameInputEdit
+    {
+        bool valid{ false };
+        std::uint64_t ageMilliseconds{ 0 };
+        std::uint64_t logicalPressed{ 0 };
+        std::uint64_t gamePressed{ 0 };
+        std::uint32_t reasons{ 0 };
+        // A caller ROCK lets through unedited read the state.
+        bool bypassed{ false };
+    };
+
+    [[nodiscard]] GameInputEdit readGameInputEdit(bool isLeft) noexcept;
+
     // The function behind the current synthesized press of a logical button, or
     // Function::Count while the button passes through as sampled (default bindings).
     [[nodiscard]] function_binding_policy::Function functionTag(bool isLeft, button_layout_policy::Slot slot) noexcept;
@@ -66,8 +82,9 @@ namespace rock::input_remap_runtime
     // reloads its configuration. Never call from a controller/input hook.
     void configurePipboyInput();
     // Load/config-change boundary: publishes the [Controls] button layout to
-    // the controller-state hooks. Safe from any thread.
-    void configureButtonLayout();
+    // the controller-state hooks, and the [Bindings] when they changed or
+    // resetGestures asks (dropping the gestures in progress). Safe from any thread.
+    void configureButtonLayout(bool resetGestures = false);
 
     void setGameplayInputAllowed(bool allowed);
     void setWeaponDrawn(bool weaponDrawn);
@@ -81,6 +98,8 @@ namespace rock::input_remap_runtime
     // OpenVR hooks present the physical left trigger to the game as the
     // primary wand's trigger and blank both physical trigger identities.
     void setEquippedWeaponLeftHandFiringActive(bool active);
+    // Frame thread: a mod's pointer menu that reads the primary trigger is open; the left-hand fire remap stops.
+    void setPointerMenuInUse(bool inUse);
     // Independent equipped index one consumes the physical left trigger itself.
     // Raw capture and menu/Pip-Boy input retain their existing physical identity.
     // Slot 1 (the second equipped weapon) owns the trigger and reload button

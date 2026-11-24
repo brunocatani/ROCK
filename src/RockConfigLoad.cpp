@@ -14,6 +14,7 @@
 #include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/hand/HandLifecycle.h"
+#include "physics-interaction/input/FunctionBindingText.h"
 #include "physics-interaction/weapon/equip/EquippedWeaponDropPolicy.h"
 
 namespace rock::config
@@ -79,16 +80,55 @@ namespace rock::config
             return value ? *value : std::string(current);
         }
 
-        [[nodiscard]] RE::NiPoint3 float3(const char* table, const char* key, const RE::NiPoint3& current)
+        /**
+         * A Table option's text, declared with the default given. The caller reads the table's keys.
+         */
+        [[nodiscard]] std::string tableValue(const char* table, const char* key, std::string_view current)
         {
             if (_defaults) {
-                declare(table, key, ValueType::Float3,
-                    std::format("{}, {}, {}", floatText(current.x), floatText(current.y), floatText(current.z)));
+                declare(table, key, ValueType::Table, current);
+                return std::string(current);
+            }
+            const auto* value = loaded(table, key);
+            return value ? *value : std::string(current);
+        }
+
+        /**
+         * The position of a Transform option, declared as a position-only transform. A loaded transform without pos
+         * means no move.
+         */
+        [[nodiscard]] RE::NiPoint3 transformPosition(const char* table, const char* key, const RE::NiPoint3& current)
+        {
+            if (_defaults) {
+                declare(table, key, ValueType::Transform,
+                    formatTransform(Transform{ .position = std::array{ current.x, current.y, current.z } }));
                 return current;
             }
             if (const auto* value = loaded(table, key)) {
-                if (const auto parsed = parseFloat3(*value))
-                    return RE::NiPoint3((*parsed)[0], (*parsed)[1], (*parsed)[2]);
+                if (const auto parsed = parseTransform(*value)) {
+                    const auto position = parsed->position.value_or(std::array<float, 3>{});
+                    return RE::NiPoint3(position[0], position[1], position[2]);
+                }
+            }
+            return current;
+        }
+
+        /**
+         * The rotation of a Transform option as stored, [heading, roll, attitude] in degrees (about X, Y, Z),
+         * declared as a rotation-only transform. A loaded transform without rot means no rotation.
+         */
+        [[nodiscard]] RE::NiPoint3 transformRotation(const char* table, const char* key, const RE::NiPoint3& current)
+        {
+            if (_defaults) {
+                declare(table, key, ValueType::Transform,
+                    formatTransform(Transform{ .rotation = std::array{ current.x, current.y, current.z } }));
+                return current;
+            }
+            if (const auto* value = loaded(table, key)) {
+                if (const auto parsed = parseTransform(*value)) {
+                    const auto rotation = parsed->rotation.value_or(std::array<float, 3>{});
+                    return RE::NiPoint3(rotation[0], rotation[1], rotation[2]);
+                }
             }
             return current;
         }
@@ -158,26 +198,54 @@ namespace
     constexpr int kDefaultHighlightIntensityMode = 2;
     constexpr const char* kDefaultHighlightColor = "blue";
 
-    float readClampedFloat(SettingReader& ini, const char* table, const char* key, float currentValue, float fallback,
-        float minValue, float maxValue)
+    /**
+     * A value clamped to the option's clamp in the settings catalog. An option read as clamped without one is a
+     * programming error, found as the compiled defaults are declared at startup.
+     */
+    float clampToCatalog(const char* table, const char* key, float value)
+    {
+        for (const auto& metadata : rock::config::kSettingMetadata) {
+            if (metadata.table != table || metadata.key != key)
+                continue;
+            if (const auto& clamp = metadata.ranges.clamp)
+                return std::clamp(value, static_cast<float>(clamp->minimum), static_cast<float>(clamp->maximum));
+            break;
+        }
+        throw std::runtime_error(std::format("{} has no clamp in the settings catalog", rock::config::settingPath(table, key)));
+    }
+
+    /**
+     * A number clamped to its catalog clamp; one that is not finite reads as the fallback.
+     */
+    float readClampedFloat(SettingReader& ini, const char* table, const char* key, float currentValue, float fallback)
     {
         float value = static_cast<float>(ini.number(table, key, currentValue));
         if (!std::isfinite(value)) {
             ROCK_LOG_WARN(Config, "Invalid {}.{}={} -- using {:.2f}", table, key, value, fallback);
             value = fallback;
         }
-        return std::clamp(value, minValue, maxValue);
+        return clampToCatalog(table, key, value);
     }
 
-    // Loaded components are always finite; each is clamped on its own.
-    RE::NiPoint3 readClampedFloat3(SettingReader& ini, const char* table, const char* key, const RE::NiPoint3& current,
-        float minValue, float maxValue)
+    /**
+     * The position of a Transform option, each component clamped on its own to the catalog clamp.
+     */
+    RE::NiPoint3 readClampedPosition(SettingReader& ini, const char* table, const char* key, const RE::NiPoint3& current)
     {
-        auto value = ini.float3(table, key, current);
-        value.x = std::clamp(value.x, minValue, maxValue);
-        value.y = std::clamp(value.y, minValue, maxValue);
-        value.z = std::clamp(value.z, minValue, maxValue);
-        return value;
+        const auto value = ini.transformPosition(table, key, current);
+        return RE::NiPoint3(clampToCatalog(table, key, value.x), clampToCatalog(table, key, value.y),
+            clampToCatalog(table, key, value.z));
+    }
+
+    /**
+     * The rotation of a Transform option as stored ([heading, roll, attitude] in degrees), each angle clamped on its
+     * own to the catalog clamp.
+     */
+    RE::NiPoint3 readClampedRotation(SettingReader& ini, const char* table, const char* key, const RE::NiPoint3& current)
+    {
+        const auto value = ini.transformRotation(table, key, current);
+        return RE::NiPoint3(clampToCatalog(table, key, value.x), clampToCatalog(table, key, value.y),
+            clampToCatalog(table, key, value.z));
     }
 
     int readHighlightIntensityMode(SettingReader& ini, const char* table, const char* key, int currentValue)
@@ -247,23 +315,32 @@ namespace
         return layout;
     }
 
-    rock::function_binding_policy::Bindings readFunctionBindings(SettingReader& ini,
-        const rock::function_binding_policy::Bindings& current)
+    /**
+     * Reads each function's binding table. A table ROCK cannot read gives the function's default binding, and a
+     * duration out of its range is clamped; both are logged.
+     */
+    void readFunctionBindings(SettingReader& ini, rock::function_binding_policy::Bindings& bindings,
+        std::array<float, rock::function_binding_policy::kFunctionCount>& seconds)
     {
         namespace fb = rock::function_binding_policy;
-        auto bindings = current;
+        namespace text = rock::function_binding_text;
         for (std::size_t f = 0; f < fb::kFunctionCount; ++f) {
             const auto function = static_cast<fb::Function>(f);
             const std::string key{ fb::functionKey(function) };
-            const std::string configured = ini.text("Bindings", key.c_str(), fb::formatBinding(bindings[f]));
-            if (const auto parsed = fb::parseBinding(configured)) {
-                bindings[f] = *parsed;
-                continue;
+            const auto fallback = text::defaultBinding(function);
+            const std::string configured =
+                ini.tableValue("Bindings", key.c_str(), text::formatBindingTable(function, fallback));
+            auto parsed = text::parseBindingTable(function, configured);
+            if (!parsed) {
+                ROCK_LOG_WARN(Config, "Invalid Bindings.{} = {}: {} -- using {}", key, configured, parsed.error(),
+                    text::formatBindingTable(function, fallback));
+                parsed = text::ParsedBinding{ fallback, {} };
             }
-            bindings[f] = fb::homeBinding(function);
-            ROCK_LOG_WARN(Config, "Invalid Bindings.{}='{}' -- using {}", key, configured, fb::formatBinding(bindings[f]));
+            for ([[maybe_unused]] const auto& warning : parsed->warnings)
+                ROCK_LOG_WARN(Config, "Bindings.{}: {}", key, warning);
+            bindings[f] = parsed->value.binding;
+            seconds[f] = parsed->value.seconds;
         }
-        return bindings;
     }
 
     std::string readHighlightColor(SettingReader& ini, const char* table, const char* key,
@@ -353,6 +430,8 @@ namespace rock
         rockDeveloperModeEnabled = ini.boolean("DeveloperControls", "DeveloperModeEnabled", rockDeveloperModeEnabled);
         rockLogLevel = logging_policy::clampLogLevel(
             static_cast<int>(ini.integer("Logging", "LogLevel", rockLogLevel)));
+        // Declared for the catalog only: Mods Config reads it to show ROCK's Developer page.
+        (void)ini.boolean("Developer", "ShowDeveloperPages", false);
         rockLogPattern = ini.text("LoggingAndProfiling", "LogPattern", rockLogPattern.c_str());
         if (rockLogPattern.empty()) {
             rockLogPattern = logging_policy::DefaultLogPattern;
@@ -383,20 +462,12 @@ namespace rock
         rockOfferSteamVRBinding = ini.boolean("ControllerInput", "OfferSteamVRBinding", rockOfferSteamVRBinding);
         rockSetupWizardShownEdition =
             static_cast<int>(ini.integer("SetupWizard", "ShownEdition", rockSetupWizardShownEdition));
-        rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::sanitizedHoldSeconds(static_cast<float>(
-            ini.number("ControllerInput", "PipboyPauseHoldSeconds", rockPipboyPauseHoldSeconds)));
         rockButtonLayouts[0] = readButtonLayout(ini, true, rockButtonLayouts[0]);
         rockButtonLayouts[1] = readButtonLayout(ini, false, rockButtonLayouts[1]);
-        rockFunctionBindings = readFunctionBindings(ini, rockFunctionBindings);
-        rockBindingHoldSeconds =
-            std::clamp(static_cast<float>(ini.number("Bindings", "HoldSeconds", rockBindingHoldSeconds)), 0.1f, 2.0f);
-        rockBindingDoubleTapSeconds = std::clamp(
-            static_cast<float>(ini.number("Bindings", "DoubleTapSeconds", rockBindingDoubleTapSeconds)), 0.15f, 0.6f);
+        readFunctionBindings(ini, rockFunctionBindings, rockBindingSeconds);
         rockFarGrabStyle = far_pull_gesture::sanitizeMode(
             static_cast<int>(ini.integer("Grabbing", "FarGrabStyle", rockFarGrabStyle)));
         rockGrabDirection = readGrabDirection(ini, rockGrabDirection);
-        rockEnableDeveloperSettings =
-            ini.boolean("Developer", "EnableDeveloperSettings", rockEnableDeveloperSettings);
         rockQuickLootPanelPlacement =
             static_cast<int>(ini.integer("Prompts", "QuickLootPanelPlacement", rockQuickLootPanelPlacement));
         if (rockQuickLootPanelPlacement < 1 || rockQuickLootPanelPlacement > 3) {
@@ -427,6 +498,10 @@ namespace rock
         rockGrabInputForceSeconds = std::clamp(rockGrabInputForceSeconds, 0.0f, 0.3f);
 
         rockImmersiveAidEnabled = ini.boolean("ImmersiveAid", "Enabled", rockImmersiveAidEnabled);
+        rockHandCollisionOtherHandEnabled =
+            ini.boolean("HandCollision", "BetweenHands", rockHandCollisionOtherHandEnabled);
+        rockHandCollisionEquippedWeaponEnabled =
+            ini.boolean("HandCollision", "EquippedWeapons", rockHandCollisionEquippedWeaponEnabled);
         rockImmersiveRecoil = ini.boolean("WeaponRecoil", "ImmersiveRecoil", rockImmersiveRecoil);
         rockEmergencyDisableRecoil =
             ini.boolean("DeveloperControls", "EmergencyDisableRecoil", rockEmergencyDisableRecoil);
@@ -435,6 +510,8 @@ namespace rock
         rockGunstockCentering = ini.boolean("WeaponHandling", "GunstockCentering", rockGunstockCentering);
         rockFrikUserWeaponOffsets =
             ini.boolean("WeaponHandling", "FrikUserWeaponOffsets", rockFrikUserWeaponOffsets);
+        rockFrikBuiltInWeaponOffsets =
+            ini.boolean("WeaponHandling", "FrikBuiltInWeaponOffsets", rockFrikBuiltInWeaponOffsets);
         rockBipodHandsFreeRadiusMeters = static_cast<float>(ini.number("WeaponHandling", "BipodHandsFreeRadiusMeters", rockBipodHandsFreeRadiusMeters));
         if (!std::isfinite(rockBipodHandsFreeRadiusMeters) || rockBipodHandsFreeRadiusMeters <= 0.0f) {
             ROCK_LOG_WARN(Config, "Invalid WeaponHandling.BipodHandsFreeRadiusMeters={} -- using 2.0",
@@ -442,27 +519,27 @@ namespace rock
             rockBipodHandsFreeRadiusMeters = 2.0f;
         }
         rockLaserRecoilPercent =
-            readClampedFloat(ini, "WeaponRecoil", "LaserRecoilPercent", rockLaserRecoilPercent, 100.0f, 0.0f, 300.0f);
+            readClampedFloat(ini, "WeaponRecoil", "LaserRecoilPercent", rockLaserRecoilPercent, 100.0f);
         rockPistolOneHandRecoilPercent = readClampedFloat(ini, "WeaponRecoil", "PistolOneHandRecoilPercent",
-            rockPistolOneHandRecoilPercent, 300.0f, 0.0f, 300.0f);
+            rockPistolOneHandRecoilPercent, 300.0f);
         rockPistolTwoHandRecoilPercent = readClampedFloat(ini, "WeaponRecoil", "PistolTwoHandRecoilPercent",
-            rockPistolTwoHandRecoilPercent, 80.0f, 0.0f, 300.0f);
+            rockPistolTwoHandRecoilPercent, 80.0f);
         rockRifleOneHandRecoilPercent = readClampedFloat(ini, "WeaponRecoil", "RifleOneHandRecoilPercent",
-            rockRifleOneHandRecoilPercent, 300.0f, 0.0f, 300.0f);
+            rockRifleOneHandRecoilPercent, 300.0f);
         rockRifleTwoHandRecoilPercent = readClampedFloat(ini, "WeaponRecoil", "RifleTwoHandRecoilPercent",
-            rockRifleTwoHandRecoilPercent, 80.0f, 0.0f, 300.0f);
+            rockRifleTwoHandRecoilPercent, 80.0f);
         rockShotgunOneHandRecoilPercent = readClampedFloat(ini, "WeaponRecoil", "ShotgunOneHandRecoilPercent",
-            rockShotgunOneHandRecoilPercent, 300.0f, 0.0f, 300.0f);
+            rockShotgunOneHandRecoilPercent, 300.0f);
         rockShotgunTwoHandRecoilPercent = readClampedFloat(ini, "WeaponRecoil", "ShotgunTwoHandRecoilPercent",
-            rockShotgunTwoHandRecoilPercent, 80.0f, 0.0f, 300.0f);
+            rockShotgunTwoHandRecoilPercent, 80.0f);
         rockHeavyOneHandRecoilPercent = readClampedFloat(ini, "WeaponRecoil", "HeavyOneHandRecoilPercent",
-            rockHeavyOneHandRecoilPercent, 300.0f, 0.0f, 300.0f);
+            rockHeavyOneHandRecoilPercent, 300.0f);
         rockHeavyTwoHandRecoilPercent = readClampedFloat(ini, "WeaponRecoil", "HeavyTwoHandRecoilPercent",
-            rockHeavyTwoHandRecoilPercent, 300.0f, 0.0f, 300.0f);
+            rockHeavyTwoHandRecoilPercent, 300.0f);
         rockDefaultOneHandRecoilPercent = readClampedFloat(ini, "WeaponRecoil", "DefaultOneHandRecoilPercent",
-            rockDefaultOneHandRecoilPercent, 300.0f, 0.0f, 300.0f);
+            rockDefaultOneHandRecoilPercent, 300.0f);
         rockDefaultTwoHandRecoilPercent = readClampedFloat(ini, "WeaponRecoil", "DefaultTwoHandRecoilPercent",
-            rockDefaultTwoHandRecoilPercent, 80.0f, 0.0f, 300.0f);
+            rockDefaultTwoHandRecoilPercent, 80.0f);
 
         rockDetachEitherHand = ini.boolean("WeaponHandling", "DetachEitherHand", rockDetachEitherHand);
         rockAutoEquip = ini.boolean("WeaponHandling", "AutoEquip", rockAutoEquip);
@@ -474,7 +551,7 @@ namespace rock
             rockWeaponReleaseMode = 3;
         }
         if (rockAutoEquip && rockWeaponReleaseMode != equipped_weapon_drop_policy::kLastReleaseMode)
-            ROCK_LOG_INFO(Config, "WeaponHandling.WeaponReleaseMode={} applies only with AutoEquip off; Auto Equip "
+            ROCK_LOG_DEBUG(Config, "WeaponHandling.WeaponReleaseMode={} applies only with AutoEquip off; Auto Equip "
                                   "always drops on the last release",
                 rockWeaponReleaseMode);
         rockWeaponGrabMode =
@@ -484,35 +561,33 @@ namespace rock
             rockWeaponGrabMode = 1;
         }
         rockAutoEquipSettleSeconds = readClampedFloat(ini, "WeaponHandling", "AutoEquipSettleSeconds",
-            rockAutoEquipSettleSeconds, 0.15f, 0.0f, 2.0f);
+            rockAutoEquipSettleSeconds, 0.15f);
         rockGrabAnywhereOnWeapon =
             ini.boolean("WeaponHandling", "GrabAnywhereOnWeapon", rockGrabAnywhereOnWeapon);
         rockMeleeGripPitchDegrees = readClampedFloat(ini, "WeaponHandling", "MeleeGripPitchDegrees",
-            rockMeleeGripPitchDegrees, 0.0f, -180.0f, 180.0f);
+            rockMeleeGripPitchDegrees, 0.0f);
         rockWeaponFilteringPreset = static_cast<int>(
             ini.integer("WeaponHandling", "WeaponFilteringPreset", rockWeaponFilteringPreset));
         if (rockWeaponFilteringPreset < 0 || rockWeaponFilteringPreset > 4) {
             ROCK_LOG_WARN(Config, "Invalid WeaponHandling.WeaponFilteringPreset={} -- using Steady", rockWeaponFilteringPreset);
             rockWeaponFilteringPreset = 3;
         }
-        rockScopedFilterRotationSeconds = readClampedFloat(ini, "WeaponHandling", "ScopedFilterRotationSeconds", rockScopedFilterRotationSeconds, 0.15f, 0.0f, 1.0f);
-        rockScopedFilterTranslationSeconds = readClampedFloat(ini, "WeaponHandling", "ScopedFilterTranslationSeconds", rockScopedFilterTranslationSeconds, 0.08f, 0.0f, 1.0f);
-        rockScopedFilterReleaseDegreesPerSecond = readClampedFloat(ini, "WeaponHandling", "ScopedFilterReleaseDegreesPerSecond", rockScopedFilterReleaseDegreesPerSecond, 45.0f, 0.0f, 720.0f);
-        rockFiringGripReattachRadiusGameUnits = readClampedFloat(ini, "WeaponHandling", "FiringGripReattachRadiusGameUnits", rockFiringGripReattachRadiusGameUnits, 10.0f, 0.25f, 30.0f);
+        rockScopedFilterRotationSeconds = readClampedFloat(ini, "WeaponHandling", "ScopedFilterRotationSeconds", rockScopedFilterRotationSeconds, 0.15f);
+        rockScopedFilterTranslationSeconds = readClampedFloat(ini, "WeaponHandling", "ScopedFilterTranslationSeconds", rockScopedFilterTranslationSeconds, 0.08f);
+        rockScopedFilterReleaseDegreesPerSecond = readClampedFloat(ini, "WeaponHandling", "ScopedFilterReleaseDegreesPerSecond", rockScopedFilterReleaseDegreesPerSecond, 45.0f);
+        rockFiringGripReattachRadiusGameUnits = readClampedFloat(ini, "WeaponHandling", "FiringGripReattachRadiusGameUnits", rockFiringGripReattachRadiusGameUnits, 10.0f);
         rockFiringGripReattachCylinderRadiusGameUnits =
             readClampedFloat(ini, "WeaponCollisionAndSupport", "FiringGripReattachCylinderRadiusGameUnits",
-                rockFiringGripReattachCylinderRadiusGameUnits, 4.0f, 0.1f, 30.0f);
+                rockFiringGripReattachCylinderRadiusGameUnits, 4.0f);
         rockGripZoneIndicatorDiameterGameUnits =
             readClampedFloat(ini, "WeaponHandling", "GripZoneIndicatorDiameterGameUnits",
-                rockGripZoneIndicatorDiameterGameUnits, grip_zone_indicator_policy::kDefaultDiameterGameUnits,
-                grip_zone_indicator_policy::kMinimumDiameterGameUnits,
-                grip_zone_indicator_policy::kMaximumDiameterGameUnits);
+                rockGripZoneIndicatorDiameterGameUnits, grip_zone_indicator_policy::kDefaultDiameterGameUnits);
         rockFiringGripHapticDurationSeconds = readClampedFloat(ini, "Haptics", "FiringGripHapticDurationSeconds",
-            rockFiringGripHapticDurationSeconds, 0.10f, 0.01f, 0.50f);
+            rockFiringGripHapticDurationSeconds, 0.10f);
         rockFiringGripAttachHapticIntensity = readClampedFloat(ini, "Haptics", "FiringGripAttachHapticIntensity",
-            rockFiringGripAttachHapticIntensity, 0.85f, 0.0f, 1.0f);
+            rockFiringGripAttachHapticIntensity, 0.85f);
         rockFiringGripDetachHapticIntensity = readClampedFloat(ini, "Haptics", "FiringGripDetachHapticIntensity",
-            rockFiringGripDetachHapticIntensity, 0.30f, 0.0f, 1.0f);
+            rockFiringGripDetachHapticIntensity, 0.30f);
         rockAmmoCounterStyle =
             static_cast<int>(ini.integer("WeaponHandling", "AmmoCounterStyle", rockAmmoCounterStyle));
         if (rockAmmoCounterStyle < 1 || rockAmmoCounterStyle > 3) {
@@ -523,29 +598,28 @@ namespace rock
         rockDefaultHandLeft =
             readDefaultHandLeft(ini, "FiringHand", "DefaultHand", rockDefaultHandLeft);
         rockLeftFiringAimYawDegrees = readClampedFloat(ini, "FiringHand.Left", "AimYawDegrees",
-            rockLeftFiringAimYawDegrees, 0.0f, -30.0f, 30.0f);
+            rockLeftFiringAimYawDegrees, 0.0f);
         rockLeftFiringAimPitchDegrees = readClampedFloat(ini, "FiringHand.Left", "AimPitchDegrees",
-            rockLeftFiringAimPitchDegrees, 0.0f, -30.0f, 30.0f);
+            rockLeftFiringAimPitchDegrees, 0.0f);
         {
-            const auto aimOffset = readClampedFloat3(ini, "FiringHand.Left", "AimOffsetGameUnits",
+            const auto aimOffset = readClampedPosition(ini, "FiringHand.Left", "AimOffset",
                 RE::NiPoint3(rockLeftFiringAimOffsetXGameUnits, rockLeftFiringAimOffsetYGameUnits,
-                    rockLeftFiringAimOffsetZGameUnits),
-                -15.0f, 15.0f);
+                    rockLeftFiringAimOffsetZGameUnits));
             rockLeftFiringAimOffsetXGameUnits = aimOffset.x;
             rockLeftFiringAimOffsetYGameUnits = aimOffset.y;
             rockLeftFiringAimOffsetZGameUnits = aimOffset.z;
         }
         rockWeaponCollisionBlocksProjectiles =
             ini.boolean("WeaponCollisionAndSupport", "WeaponCollisionBlocksProjectiles", rockWeaponCollisionBlocksProjectiles);
-        rockLeftFiringGripOffsetGameUnits = readClampedFloat3(ini, "FiringHand.Left", "GripOffsetGameUnits",
-            rockLeftFiringGripOffsetGameUnits, -15.0f, 15.0f);
-        rockRightSupportGripOffsetGameUnits = readClampedFloat3(ini, "FiringHand.Right", "SupportGripOffsetGameUnits",
-            rockRightSupportGripOffsetGameUnits, -15.0f, 15.0f);
+        rockLeftFiringGripOffsetGameUnits = readClampedPosition(ini, "FiringHand.Left", "GripOffset",
+            rockLeftFiringGripOffsetGameUnits);
+        rockRightSupportGripOffsetGameUnits = readClampedPosition(ini, "FiringHand.Right", "SupportGripOffset",
+            rockRightSupportGripOffsetGameUnits);
         rockWeaponCollisionBlocksSpells =
             ini.boolean("WeaponCollisionAndSupport", "WeaponCollisionBlocksSpells", rockWeaponCollisionBlocksSpells);
         rockWeaponShellCollisionGraceMs =
             readClampedFloat(ini, "WeaponCollisionAndSupport", "WeaponShellCollisionGraceMs", rockWeaponShellCollisionGraceMs,
-                shell_casing_grace::kDefaultMilliseconds, 0.0f, shell_casing_grace::kMaximumMilliseconds);
+                shell_casing_grace::kDefaultMilliseconds);
         rockWeaponCollisionPreserveGaps =
             ini.boolean("WeaponCollisionAndSupport", "WeaponCollisionPreserveGaps", rockWeaponCollisionPreserveGaps);
         rockWeaponCollisionVisualStabilizationSeconds = static_cast<float>(ini.number("WeaponCollisionAndSupport", "WeaponCollisionVisualStabilizationSeconds", rockWeaponCollisionVisualStabilizationSeconds));
@@ -562,74 +636,70 @@ namespace rock
             ini.number("WeaponCollisionAndSupport", "WeaponCollisionMaxAngularVelocity", rockWeaponCollisionMaxAngularVelocity));
         rockWeaponCollisionGripRecoveryDistanceGameUnits =
             readClampedFloat(ini, "WeaponCollisionAndSupport", "WeaponCollisionGripRecoveryDistanceGameUnits",
-                rockWeaponCollisionGripRecoveryDistanceGameUnits, 210.0f, 35.0f, 700.0f);
+                rockWeaponCollisionGripRecoveryDistanceGameUnits, 210.0f);
         rockWeaponInteractionTouchRadius = readClampedFloat(ini, "WeaponCollisionAndSupport", "WeaponInteractionTouchRadius",
-            rockWeaponInteractionTouchRadius, 2.0f, 0.25f, 6.0f);
+            rockWeaponInteractionTouchRadius, 2.0f);
         rockWeaponInteractionProbeRadius = static_cast<float>(
             ini.number("WeaponCollisionAndSupport", "WeaponInteractionProbeRadius", rockWeaponInteractionProbeRadius));
         rockDebugWeaponSupportDynamicOnly =
             ini.boolean("WeaponCollisionAndSupport", "DebugWeaponSupportDynamicOnly", rockDebugWeaponSupportDynamicOnly);
         rockFiringGripProximitySupportRadius = readClampedFloat(ini, "WeaponCollisionAndSupport", "FiringGripProximitySupportRadius",
-            rockFiringGripProximitySupportRadius, 8.0f, 0.25f, 30.0f);
+            rockFiringGripProximitySupportRadius, 8.0f);
         rockImmersiveGrenades = ini.boolean("Grenades", "ImmersiveGrenades", rockImmersiveGrenades);
         rockRealisticGrenadeFuseSeconds = readClampedFloat(ini, "Grenades", "RealisticGrenadeFuseSeconds",
-            rockRealisticGrenadeFuseSeconds, 4.0f, 0.0f, 30.0f);
+            rockRealisticGrenadeFuseSeconds, 4.0f);
         rockWeaponSupportGripHandLerpEnabled =
             ini.boolean("WeaponCollisionAndSupport", "WeaponSupportGripHandLerpEnabled", rockWeaponSupportGripHandLerpEnabled);
         rockWeaponSupportGripHandLerpTimeMin = readClampedFloat(ini, "WeaponCollisionAndSupport", "WeaponSupportGripHandLerpTimeMin",
-            rockWeaponSupportGripHandLerpTimeMin, 0.12f, 0.0f, 1.0f);
+            rockWeaponSupportGripHandLerpTimeMin, 0.12f);
         rockWeaponSupportGripHandLerpTimeMax = readClampedFloat(ini, "WeaponCollisionAndSupport", "WeaponSupportGripHandLerpTimeMax",
-            rockWeaponSupportGripHandLerpTimeMax, 0.20f, rockWeaponSupportGripHandLerpTimeMin, 1.0f);
-        rockWeaponSupportGripHandLerpMinDistance = readClampedFloat(ini, "WeaponCollisionAndSupport", "WeaponSupportGripHandLerpMinDistance", rockWeaponSupportGripHandLerpMinDistance, 1.0f, 0.0f, 80.0f);
+            rockWeaponSupportGripHandLerpTimeMax, 0.20f);
+        rockWeaponSupportGripHandLerpTimeMax = (std::max)(rockWeaponSupportGripHandLerpTimeMax, rockWeaponSupportGripHandLerpTimeMin);
+        rockWeaponSupportGripHandLerpMinDistance = readClampedFloat(ini, "WeaponCollisionAndSupport", "WeaponSupportGripHandLerpMinDistance", rockWeaponSupportGripHandLerpMinDistance, 1.0f);
         rockWeaponSupportGripHandLerpMaxDistance =
             readClampedFloat(ini, "WeaponCollisionAndSupport", "WeaponSupportGripHandLerpMaxDistance",
-                rockWeaponSupportGripHandLerpMaxDistance, 14.0f, rockWeaponSupportGripHandLerpMinDistance, 120.0f);
+                rockWeaponSupportGripHandLerpMaxDistance, 14.0f);
+        rockWeaponSupportGripHandLerpMaxDistance = (std::max)(rockWeaponSupportGripHandLerpMaxDistance, rockWeaponSupportGripHandLerpMinDistance);
         rockWeaponSupportSurfaceSeatEnabled =
             ini.boolean("WeaponCollisionAndSupport", "WeaponSupportSurfaceSeatEnabled", rockWeaponSupportSurfaceSeatEnabled);
         rockWeaponSupportSurfaceSeatMaxDegrees = readClampedFloat(ini, "WeaponCollisionAndSupport", "WeaponSupportSurfaceSeatMaxDegrees",
-            rockWeaponSupportSurfaceSeatMaxDegrees, 35.0f, 0.0f, 75.0f);
+            rockWeaponSupportSurfaceSeatMaxDegrees, 35.0f);
         rockEnableImmersiveScopes =
             ini.boolean("Scopes", "EnableImmersiveScopes", rockEnableImmersiveScopes);
-        rockManualScopeHoldSeconds = readClampedFloat(ini, "Scopes", "ManualScopeHoldSeconds",
-            rockManualScopeHoldSeconds, 0.30f, 0.05f, 2.0f);
         {
-            const auto firingGripOffset = readClampedFloat3(ini, "ScopePlacement",
-                "NativeScopeFiringGripFallbackOffsetGameUnits",
+            const auto firingGripOffset = readClampedPosition(ini, "ScopePlacement",
+                "NativeScopeFiringGripFallbackOffset",
                 RE::NiPoint3(rockNativeScopeFiringGripOffsetXGameUnits,
-                    rockNativeScopeFiringGripOffsetYGameUnits, rockNativeScopeFiringGripOffsetZGameUnits),
-                -100.0f, 100.0f);
+                    rockNativeScopeFiringGripOffsetYGameUnits, rockNativeScopeFiringGripOffsetZGameUnits));
             rockNativeScopeFiringGripOffsetXGameUnits = firingGripOffset.x;
             rockNativeScopeFiringGripOffsetYGameUnits = firingGripOffset.y;
             rockNativeScopeFiringGripOffsetZGameUnits = firingGripOffset.z;
-            // [pitch, yaw, roll]
-            const auto firingGripRotation = readClampedFloat3(ini, "ScopePlacement",
-                "NativeScopeFiringGripFallbackRotationDegrees",
-                RE::NiPoint3(rockNativeScopeFiringGripPitchDegrees, rockNativeScopeFiringGripYawDegrees,
-                    rockNativeScopeFiringGripRollDegrees),
-                -180.0f, 180.0f);
+            // rot turns about X, Y, Z: ROCK's pitch, roll and yaw.
+            const auto firingGripRotation = readClampedRotation(ini, "ScopePlacement",
+                "NativeScopeFiringGripFallbackRotation",
+                RE::NiPoint3(rockNativeScopeFiringGripPitchDegrees, rockNativeScopeFiringGripRollDegrees,
+                    rockNativeScopeFiringGripYawDegrees));
             rockNativeScopeFiringGripPitchDegrees = firingGripRotation.x;
-            rockNativeScopeFiringGripYawDegrees = firingGripRotation.y;
-            rockNativeScopeFiringGripRollDegrees = firingGripRotation.z;
-            const auto overlayOffset = readClampedFloat3(ini, "ScopePlacement", "NativeScopeOverlayOffsetGameUnits",
+            rockNativeScopeFiringGripRollDegrees = firingGripRotation.y;
+            rockNativeScopeFiringGripYawDegrees = firingGripRotation.z;
+            const auto overlayOffset = readClampedPosition(ini, "ScopePlacement", "NativeScopeOverlayOffset",
                 RE::NiPoint3(rockNativeScopeOverlayOffsetXGameUnits, rockNativeScopeOverlayOffsetYGameUnits,
-                    rockNativeScopeOverlayOffsetZGameUnits),
-                -100.0f, 100.0f);
+                    rockNativeScopeOverlayOffsetZGameUnits));
             rockNativeScopeOverlayOffsetXGameUnits = overlayOffset.x;
             rockNativeScopeOverlayOffsetYGameUnits = overlayOffset.y;
             rockNativeScopeOverlayOffsetZGameUnits = overlayOffset.z;
-            const auto overlayRotation = readClampedFloat3(ini, "ScopePlacement", "NativeScopeOverlayRotationDegrees",
-                RE::NiPoint3(rockNativeScopeOverlayPitchDegrees, rockNativeScopeOverlayYawDegrees,
-                    rockNativeScopeOverlayRollDegrees),
-                -180.0f, 180.0f);
+            const auto overlayRotation = readClampedRotation(ini, "ScopePlacement", "NativeScopeOverlayRotation",
+                RE::NiPoint3(rockNativeScopeOverlayPitchDegrees, rockNativeScopeOverlayRollDegrees,
+                    rockNativeScopeOverlayYawDegrees));
             rockNativeScopeOverlayPitchDegrees = overlayRotation.x;
-            rockNativeScopeOverlayYawDegrees = overlayRotation.y;
-            rockNativeScopeOverlayRollDegrees = overlayRotation.z;
+            rockNativeScopeOverlayRollDegrees = overlayRotation.y;
+            rockNativeScopeOverlayYawDegrees = overlayRotation.z;
         }
 
         rockVanillaMeleeSwingSpeed = readClampedFloat(ini, "NativeGameplay", "VanillaMeleeSwingSpeed",
-            rockVanillaMeleeSwingSpeed, 300.0f, 50.0f, 2000.0f);
+            rockVanillaMeleeSwingSpeed, 300.0f);
         rockVanillaGunBashSpeed = readClampedFloat(ini, "NativeGameplay", "VanillaGunBashSpeed",
-            rockVanillaGunBashSpeed, 400.0f, 50.0f, 2000.0f);
+            rockVanillaGunBashSpeed, 400.0f);
 
         rockHighlightEnabled = ini.boolean("SelectionFeedback", "HighlightEnabled", rockHighlightEnabled);
         rockHighlightIntensityMode =
@@ -862,53 +932,53 @@ namespace rock
         rockGrabMaxForceToMassRatio =
             static_cast<float>(ini.number("GrabDrive", "GrabMaxForceToMassRatio", rockGrabMaxForceToMassRatio));
         rockGrabFreeLinearAcceleration = readClampedFloat(ini, "GrabDrive", "GrabFreeLinearAcceleration",
-            rockGrabFreeLinearAcceleration, 1000.0f, 1.0f, 10000.0f);
+            rockGrabFreeLinearAcceleration, 1000.0f);
         rockGrabFreeAngularAcceleration = readClampedFloat(ini, "GrabDrive", "GrabFreeAngularAcceleration",
-            rockGrabFreeAngularAcceleration, 6000.0f, 1.0f, 60000.0f);
+            rockGrabFreeAngularAcceleration, 6000.0f);
         rockForceGrabAttachSettleSeconds = readClampedFloat(ini, "GrabDrive", "ForceGrabAttachSettleSeconds",
-            rockForceGrabAttachSettleSeconds, 0.10f, 0.0f, 1.0f);
+            rockForceGrabAttachSettleSeconds, 0.10f);
         rockGrabEffectiveMotorMassFloor = readClampedFloat(ini, "GrabDrive", "GrabEffectiveMotorMassFloor",
-            rockGrabEffectiveMotorMassFloor, kDefaultGrabEffectiveMotorMassFloor, 0.0f, 100.0f);
+            rockGrabEffectiveMotorMassFloor, kDefaultGrabEffectiveMotorMassFloor);
         rockGrabForceFadeInTime =
             static_cast<float>(ini.number("GrabDrive", "GrabForceFadeInTime", rockGrabForceFadeInTime));
-        rockRightGrabAuthorityProxyOffsetGameUnits = ini.float3("PalmAndGrabOffsets",
-            "RightGrabAuthorityProxyOffsetGameUnits", rockRightGrabAuthorityProxyOffsetGameUnits);
-        rockLeftGrabAuthorityProxyOffsetGameUnits = ini.float3("PalmAndGrabOffsets",
-            "LeftGrabAuthorityProxyOffsetGameUnits", rockLeftGrabAuthorityProxyOffsetGameUnits);
+        rockRightGrabAuthorityProxyOffsetGameUnits = ini.transformPosition("PalmAndGrabOffsets",
+            "RightGrabAuthorityProxyOffset", rockRightGrabAuthorityProxyOffsetGameUnits);
+        rockLeftGrabAuthorityProxyOffsetGameUnits = ini.transformPosition("PalmAndGrabOffsets",
+            "LeftGrabAuthorityProxyOffset", rockLeftGrabAuthorityProxyOffsetGameUnits);
         rockGrabLooseWeaponSharedConstraintLinearTauMultiplier =
             readClampedFloat(ini, "GrabDrive", "GrabLooseWeaponSharedConstraintLinearTauMultiplier",
                 rockGrabLooseWeaponSharedConstraintLinearTauMultiplier,
-                kDefaultGrabLooseWeaponSharedConstraintLinearTauMultiplier, 0.05f, 4.0f);
+                kDefaultGrabLooseWeaponSharedConstraintLinearTauMultiplier);
         rockGrabLooseWeaponSharedConstraintAngularTauMultiplier =
             readClampedFloat(ini, "GrabDrive", "GrabLooseWeaponSharedConstraintAngularTauMultiplier",
                 rockGrabLooseWeaponSharedConstraintAngularTauMultiplier,
-                kDefaultGrabLooseWeaponSharedConstraintAngularTauMultiplier, 0.05f, 4.0f);
+                kDefaultGrabLooseWeaponSharedConstraintAngularTauMultiplier);
         rockGrabLooseWeaponSharedConstraintCollisionTauMultiplier =
             readClampedFloat(ini, "GrabDrive", "GrabLooseWeaponSharedConstraintCollisionTauMultiplier",
                 rockGrabLooseWeaponSharedConstraintCollisionTauMultiplier,
-                kDefaultGrabLooseWeaponSharedConstraintCollisionTauMultiplier, 0.05f, 4.0f);
+                kDefaultGrabLooseWeaponSharedConstraintCollisionTauMultiplier);
         rockGrabLooseWeaponSharedConstraintLinearDampingMultiplier =
             readClampedFloat(ini, "GrabDrive", "GrabLooseWeaponSharedConstraintLinearDampingMultiplier",
                 rockGrabLooseWeaponSharedConstraintLinearDampingMultiplier,
-                kDefaultGrabLooseWeaponSharedConstraintLinearDampingMultiplier, 0.05f, 4.0f);
+                kDefaultGrabLooseWeaponSharedConstraintLinearDampingMultiplier);
         rockGrabLooseWeaponSharedConstraintAngularDampingMultiplier =
             readClampedFloat(ini, "GrabDrive", "GrabLooseWeaponSharedConstraintAngularDampingMultiplier",
                 rockGrabLooseWeaponSharedConstraintAngularDampingMultiplier,
-                kDefaultGrabLooseWeaponSharedConstraintAngularDampingMultiplier, 0.05f, 4.0f);
+                kDefaultGrabLooseWeaponSharedConstraintAngularDampingMultiplier);
         rockGrabLooseWeaponSharedConstraintMaxForceMultiplier = readClampedFloat(ini, "GrabDrive", "GrabLooseWeaponSharedConstraintMaxForceMultiplier", rockGrabLooseWeaponSharedConstraintMaxForceMultiplier,
-            kDefaultGrabLooseWeaponSharedConstraintMaxForceMultiplier, 0.05f, 8.0f);
+            kDefaultGrabLooseWeaponSharedConstraintMaxForceMultiplier);
         rockGrabLooseWeaponSharedConstraintAngularForceMultiplier =
             readClampedFloat(ini, "GrabDrive", "GrabLooseWeaponSharedConstraintAngularForceMultiplier",
                 rockGrabLooseWeaponSharedConstraintAngularForceMultiplier,
-                kDefaultGrabLooseWeaponSharedConstraintAngularForceMultiplier, 0.05f, 8.0f);
+                kDefaultGrabLooseWeaponSharedConstraintAngularForceMultiplier);
         rockGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier =
             readClampedFloat(ini, "GrabDrive", "GrabLooseWeaponSharedConstraintLinearRecoveryMultiplier",
                 rockGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier,
-                kDefaultGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier, 0.05f, 4.0f);
+                kDefaultGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier);
         rockGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier =
             readClampedFloat(ini, "GrabDrive", "GrabLooseWeaponSharedConstraintAngularRecoveryMultiplier",
                 rockGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier,
-                kDefaultGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier, 0.05f, 4.0f);
+                kDefaultGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier);
 
         rockGrabTauMin = static_cast<float>(ini.number("GrabDrive", "GrabTauMin", rockGrabTauMin));
         rockGrabTauLerpSpeed =
@@ -930,7 +1000,7 @@ namespace rock
         rockGrabMaxInertiaRatio =
             static_cast<float>(ini.number("GrabDrive", "GrabMaxInertiaRatio", rockGrabMaxInertiaRatio));
         rockGrabMinInertia = readClampedFloat(ini, "GrabDrive", "GrabMinInertia", rockGrabMinInertia,
-            kDefaultGrabMinInertia, 0.0001f, 100.0f);
+            kDefaultGrabMinInertia);
 
         rockThrowVelocityMultiplier =
             static_cast<float>(ini.number("GrabSafetyAndRelease", "ThrowVelocityMultiplier", rockThrowVelocityMultiplier));
@@ -958,13 +1028,13 @@ namespace rock
         rockGrabHeldMassMovementSlowdownEnabled =
             ini.boolean("GrabSafetyAndRelease", "GrabHeldMassMovementSlowdownEnabled", rockGrabHeldMassMovementSlowdownEnabled);
         rockGrabHeldMassMovementMassProportion = readClampedFloat(ini, "GrabSafetyAndRelease", "GrabHeldMassMovementMassProportion",
-            rockGrabHeldMassMovementMassProportion, 0.675f, 0.0f, 10.0f);
+            rockGrabHeldMassMovementMassProportion, 0.675f);
         rockGrabHeldMassMovementMassExponent = readClampedFloat(ini, "GrabSafetyAndRelease", "GrabHeldMassMovementMassExponent",
-            rockGrabHeldMassMovementMassExponent, 1.0f, 0.0f, 4.0f);
+            rockGrabHeldMassMovementMassExponent, 1.0f);
         rockGrabHeldMassMovementMaxReduction = readClampedFloat(ini, "GrabSafetyAndRelease", "GrabHeldMassMovementMaxReduction",
-            rockGrabHeldMassMovementMaxReduction, 75.0f, 0.0f, 99.0f);
+            rockGrabHeldMassMovementMaxReduction, 75.0f);
         rockGrabHeldMassMovementFadeOutSeconds = readClampedFloat(ini, "GrabSafetyAndRelease", "GrabHeldMassMovementFadeOutSeconds",
-            rockGrabHeldMassMovementFadeOutSeconds, 5.0f, 0.0f, 60.0f);
+            rockGrabHeldMassMovementFadeOutSeconds, 5.0f);
         rockGrabTouchAcquireDistanceGameUnits = static_cast<float>(
             ini.number("GrabAcquisition", "GrabTouchAcquireDistanceGameUnits", rockGrabTouchAcquireDistanceGameUnits));
         if (!std::isfinite(rockGrabTouchAcquireDistanceGameUnits) || rockGrabTouchAcquireDistanceGameUnits <= 0.0f) {
@@ -1093,56 +1163,59 @@ namespace rock
         rockGrabPinchCloseSelectionEnabled =
             ini.boolean("GrabContactEvidence", "GrabPinchCloseSelectionEnabled", rockGrabPinchCloseSelectionEnabled);
         rockGrabPinchMaxPocketDistanceGameUnits = readClampedFloat(ini, "GrabContactEvidence", "GrabPinchMaxPocketDistanceGameUnits",
-            rockGrabPinchMaxPocketDistanceGameUnits, grab_pinch_pocket_policy::kDefaultMaxPocketDistanceGameUnits, 0.1f,
-            80.0f);
+            rockGrabPinchMaxPocketDistanceGameUnits, grab_pinch_pocket_policy::kDefaultMaxPocketDistanceGameUnits);
         rockGrabPinchMinFingerGapGameUnits = readClampedFloat(ini, "GrabContactEvidence", "GrabPinchMinFingerGapGameUnits",
-            rockGrabPinchMinFingerGapGameUnits, grab_pinch_pocket_policy::kDefaultMinFingerGapGameUnits, 0.0f, 40.0f);
+            rockGrabPinchMinFingerGapGameUnits, grab_pinch_pocket_policy::kDefaultMinFingerGapGameUnits);
         rockGrabPinchMaxFingerGapGameUnits = readClampedFloat(ini, "GrabContactEvidence", "GrabPinchMaxFingerGapGameUnits",
-            rockGrabPinchMaxFingerGapGameUnits, grab_pinch_pocket_policy::kDefaultMaxFingerGapGameUnits, 0.1f, 80.0f);
+            rockGrabPinchMaxFingerGapGameUnits, grab_pinch_pocket_policy::kDefaultMaxFingerGapGameUnits);
         if (rockGrabPinchMaxFingerGapGameUnits < rockGrabPinchMinFingerGapGameUnits) {
             rockGrabPinchMaxFingerGapGameUnits = rockGrabPinchMinFingerGapGameUnits;
         }
         rockGrabPinchThumbIndexMaxOpenValue = readClampedFloat(ini, "GrabContactEvidence", "GrabPinchThumbIndexMaxOpenValue",
-            rockGrabPinchThumbIndexMaxOpenValue, grab_pinch_pocket_policy::kDefaultThumbIndexMaxOpenValue, 0.0f, 1.0f);
+            rockGrabPinchThumbIndexMaxOpenValue, grab_pinch_pocket_policy::kDefaultThumbIndexMaxOpenValue);
         rockGrabPinchOtherFingerCurlValue = readClampedFloat(ini, "GrabContactEvidence", "GrabPinchOtherFingerCurlValue",
-            rockGrabPinchOtherFingerCurlValue, grab_pinch_pocket_policy::kDefaultOtherFingerCurlValue, 0.0f, 1.0f);
+            rockGrabPinchOtherFingerCurlValue, grab_pinch_pocket_policy::kDefaultOtherFingerCurlValue);
 
-        rockGrabPinchDetectionDirectionHandspace = ini.float3("GrabContactEvidence",
-            "GrabPinchDetectionDirectionHandspace", rockGrabPinchDetectionDirectionHandspace);
+        rockGrabPinchDetectionDirectionHandspace = ini.transformPosition("GrabContactEvidence",
+            "GrabPinchDetectionDirection", rockGrabPinchDetectionDirectionHandspace);
         rockGrabPinchDetectionAxisBlend = readClampedFloat(ini, "GrabContactEvidence", "GrabPinchDetectionAxisBlend",
-            rockGrabPinchDetectionAxisBlend, grab_pinch_pocket_policy::kDefaultDetectionAxisBlend, 0.0f, 1.0f);
+            rockGrabPinchDetectionAxisBlend, grab_pinch_pocket_policy::kDefaultDetectionAxisBlend);
         {
             const auto& direction = rockGrabPinchDetectionDirectionHandspace;
             const float lengthSquared = direction.x * direction.x + direction.y * direction.y + direction.z * direction.z;
             if (lengthSquared > 0.000001f) {
                 rockGrabPinchDetectionDirectionHandspace = direction * (1.0f / std::sqrt(lengthSquared));
             } else {
-                ROCK_LOG_WARN(Config, "Invalid GrabContactEvidence.GrabPinchDetectionDirectionHandspace -- using +X");
+                ROCK_LOG_WARN(Config, "Invalid GrabContactEvidence.GrabPinchDetectionDirection -- using +X");
                 rockGrabPinchDetectionDirectionHandspace = RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
             }
         }
         rockGrabHandLerpEnabled = ini.boolean("GrabContactEvidence", "GrabHandLerpEnabled", rockGrabHandLerpEnabled);
         rockGrabHandLerpTimeMin =
-            readClampedFloat(ini, "GrabContactEvidence", "GrabHandLerpTimeMin", rockGrabHandLerpTimeMin, 0.10f, 0.0f, 1.0f);
-        rockGrabHandLerpTimeMax = readClampedFloat(ini, "GrabContactEvidence", "GrabHandLerpTimeMax", rockGrabHandLerpTimeMax, 0.20f,
-            rockGrabHandLerpTimeMin, 1.0f);
+            readClampedFloat(ini, "GrabContactEvidence", "GrabHandLerpTimeMin", rockGrabHandLerpTimeMin, 0.10f);
+        rockGrabHandLerpTimeMax = readClampedFloat(ini, "GrabContactEvidence", "GrabHandLerpTimeMax", rockGrabHandLerpTimeMax, 0.20f);
+        rockGrabHandLerpTimeMax = (std::max)(rockGrabHandLerpTimeMax, rockGrabHandLerpTimeMin);
         rockGrabHandLerpMinDistance =
-            readClampedFloat(ini, "GrabContactEvidence", "GrabHandLerpMinDistance", rockGrabHandLerpMinDistance, 7.0f, 0.0f, 80.0f);
+            readClampedFloat(ini, "GrabContactEvidence", "GrabHandLerpMinDistance", rockGrabHandLerpMinDistance, 7.0f);
         rockGrabHandLerpMaxDistance = readClampedFloat(ini, "GrabContactEvidence", "GrabHandLerpMaxDistance",
-            rockGrabHandLerpMaxDistance, 14.0f, rockGrabHandLerpMinDistance, 120.0f);
+            rockGrabHandLerpMaxDistance, 14.0f);
+        rockGrabHandLerpMaxDistance = (std::max)(rockGrabHandLerpMaxDistance, rockGrabHandLerpMinDistance);
         rockGrabHandReturnEnabled = ini.boolean("GrabContactEvidence", "GrabHandReturnEnabled", rockGrabHandReturnEnabled);
         rockGrabHandReturnTimeMin =
-            readClampedFloat(ini, "GrabContactEvidence", "GrabHandReturnTimeMin", rockGrabHandReturnTimeMin, 0.10f, 0.0f, 1.0f);
+            readClampedFloat(ini, "GrabContactEvidence", "GrabHandReturnTimeMin", rockGrabHandReturnTimeMin, 0.10f);
         rockGrabHandReturnTimeMax = readClampedFloat(ini, "GrabContactEvidence", "GrabHandReturnTimeMax", rockGrabHandReturnTimeMax,
-            0.20f, rockGrabHandReturnTimeMin, 1.0f);
+            0.20f);
+        rockGrabHandReturnTimeMax = (std::max)(rockGrabHandReturnTimeMax, rockGrabHandReturnTimeMin);
         rockGrabHandReturnMinDistance = readClampedFloat(ini, "GrabContactEvidence", "GrabHandReturnMinDistance",
-            rockGrabHandReturnMinDistance, 7.0f, 0.0f, 80.0f);
+            rockGrabHandReturnMinDistance, 7.0f);
         rockGrabHandReturnMaxDistance = readClampedFloat(ini, "GrabContactEvidence", "GrabHandReturnMaxDistance",
-            rockGrabHandReturnMaxDistance, 14.0f, rockGrabHandReturnMinDistance, 120.0f);
+            rockGrabHandReturnMaxDistance, 14.0f);
+        rockGrabHandReturnMaxDistance = (std::max)(rockGrabHandReturnMaxDistance, rockGrabHandReturnMinDistance);
         rockGrabHandReturnMinAngleDegrees = readClampedFloat(ini, "GrabContactEvidence", "GrabHandReturnMinAngleDegrees",
-            rockGrabHandReturnMinAngleDegrees, 5.0f, 0.0f, 180.0f);
+            rockGrabHandReturnMinAngleDegrees, 5.0f);
         rockGrabHandReturnMaxAngleDegrees = readClampedFloat(ini, "GrabContactEvidence", "GrabHandReturnMaxAngleDegrees",
-            rockGrabHandReturnMaxAngleDegrees, 90.0f, rockGrabHandReturnMinAngleDegrees, 180.0f);
+            rockGrabHandReturnMaxAngleDegrees, 90.0f);
+        rockGrabHandReturnMaxAngleDegrees = (std::max)(rockGrabHandReturnMaxAngleDegrees, rockGrabHandReturnMinAngleDegrees);
         rockWeaponGrabCapsuleProbes =
             ini.boolean("FingerPoses", "WeaponGrabCapsuleProbes", rockWeaponGrabCapsuleProbes);
         rockLooseGrabFingerPoseMode =
@@ -1306,14 +1379,13 @@ namespace rock
             rockPullPresentationGripAxisTiltDegrees = 15.0f;
         }
 
-        auto readClampedFloat = [&](const char* table, const char* key, float& value, float fallback, float minValue,
-                                    float maxValue) {
+        auto readClampedFloat = [&](const char* table, const char* key, float& value, float fallback) {
             value = static_cast<float>(ini.number(table, key, value));
             if (!std::isfinite(value)) {
                 ROCK_LOG_WARN(Config, "Invalid {}.{}={} -- using {}", table, key, value, fallback);
                 value = fallback;
             }
-            value = std::clamp(value, minValue, maxValue);
+            value = clampToCatalog(table, key, value);
         };
 
         rockShoulderStashEnabled = ini.boolean("GrabSafetyAndRelease", "ShoulderStashEnabled", rockShoulderStashEnabled);
@@ -1323,10 +1395,8 @@ namespace rock
             ini.boolean("GrabSafetyAndRelease", "ShoulderStashUseBodyZoneColliders", rockShoulderStashUseBodyZoneColliders);
         rockShoulderStashUseHmdBackVolume =
             ini.boolean("GrabSafetyAndRelease", "ShoulderStashUseHmdBackVolume", rockShoulderStashUseHmdBackVolume);
-        readClampedFloat("GrabSafetyAndRelease", "ShoulderStashEnterPaddingGameUnits", rockShoulderStashEnterPaddingGameUnits, 5.0f, 0.0f,
-            40.0f);
-        readClampedFloat("GrabSafetyAndRelease", "ShoulderStashExitPaddingGameUnits", rockShoulderStashExitPaddingGameUnits, 8.0f, 0.0f,
-            60.0f);
+        readClampedFloat("GrabSafetyAndRelease", "ShoulderStashEnterPaddingGameUnits", rockShoulderStashEnterPaddingGameUnits, 5.0f);
+        readClampedFloat("GrabSafetyAndRelease", "ShoulderStashExitPaddingGameUnits", rockShoulderStashExitPaddingGameUnits, 8.0f);
         rockShoulderStashRecentContactSeconds = static_cast<float>(
             ini.number("GrabSafetyAndRelease", "ShoulderStashRecentContactSeconds", rockShoulderStashRecentContactSeconds));
         rockShoulderStashRecentContactSeconds = std::isfinite(rockShoulderStashRecentContactSeconds)
@@ -1336,92 +1406,83 @@ namespace rock
         rockShoulderStashSustainedContactMissSeconds = std::isfinite(rockShoulderStashSustainedContactMissSeconds)
             ? std::clamp(rockShoulderStashSustainedContactMissSeconds, 0.0f, 120.0f / 90.0f)
             : 18.0f / 90.0f;
-        rockShoulderStashHmdBackRightOffsetGameUnits = ini.float3("GrabSafetyAndRelease",
-            "ShoulderStashHmdBackRightOffsetGameUnits", rockShoulderStashHmdBackRightOffsetGameUnits);
-        rockShoulderStashHmdBackLeftOffsetGameUnits = ini.float3("GrabSafetyAndRelease",
-            "ShoulderStashHmdBackLeftOffsetGameUnits", rockShoulderStashHmdBackLeftOffsetGameUnits);
-        readClampedFloat("GrabSafetyAndRelease", "ShoulderStashHmdBackRadiusGameUnits", rockShoulderStashHmdBackRadiusGameUnits, 11.0f, 1.0f,
-            80.0f);
+        rockShoulderStashHmdBackRightOffsetGameUnits = ini.transformPosition("GrabSafetyAndRelease",
+            "ShoulderStashHmdBackRightOffset", rockShoulderStashHmdBackRightOffsetGameUnits);
+        rockShoulderStashHmdBackLeftOffsetGameUnits = ini.transformPosition("GrabSafetyAndRelease",
+            "ShoulderStashHmdBackLeftOffset", rockShoulderStashHmdBackLeftOffsetGameUnits);
+        readClampedFloat("GrabSafetyAndRelease", "ShoulderStashHmdBackRadiusGameUnits", rockShoulderStashHmdBackRadiusGameUnits, 11.0f);
         readClampedFloat("GrabSafetyAndRelease", "ShoulderStashHmdBackEnterPaddingGameUnits", rockShoulderStashHmdBackEnterPaddingGameUnits,
-            0.0f, 0.0f, 40.0f);
+            0.0f);
         readClampedFloat("GrabSafetyAndRelease", "ShoulderStashHmdBackExitPaddingGameUnits", rockShoulderStashHmdBackExitPaddingGameUnits,
-            2.0f, 0.0f, 60.0f);
-        readClampedFloat("GrabSafetyAndRelease", "ShoulderStashHmdBackMinBehindGameUnits", rockShoulderStashHmdBackMinBehindGameUnits, 4.0f,
-            0.0f, 40.0f);
+            2.0f);
+        readClampedFloat("GrabSafetyAndRelease", "ShoulderStashHmdBackMinBehindGameUnits", rockShoulderStashHmdBackMinBehindGameUnits, 4.0f);
         rockShoulderStashShowCollectedNotifications = ini.boolean("GrabSafetyAndRelease", "ShoulderStashShowCollectedNotifications", rockShoulderStashShowCollectedNotifications);
         rockMouthConsumeEnabled = ini.boolean("GrabSafetyAndRelease", "MouthConsumeEnabled", rockMouthConsumeEnabled);
         rockMouthConsumeAllowPoison =
             ini.boolean("GrabSafetyAndRelease", "MouthConsumeAllowPoison", rockMouthConsumeAllowPoison);
         rockMouthConsumeHmdOffsetGameUnits =
-            ini.float3("GrabSafetyAndRelease", "MouthConsumeHmdOffsetGameUnits", rockMouthConsumeHmdOffsetGameUnits);
+            ini.transformPosition("GrabSafetyAndRelease", "MouthConsumeHmdOffset", rockMouthConsumeHmdOffsetGameUnits);
         sanitizeMouthConsumeOffset();
-        readClampedFloat("GrabSafetyAndRelease", "MouthConsumeRadiusGameUnits", rockMouthConsumeRadiusGameUnits, 5.5f, 1.0f, 80.0f);
-        readClampedFloat("GrabSafetyAndRelease", "MouthConsumeEnterPaddingGameUnits", rockMouthConsumeEnterPaddingGameUnits, 0.0f, 0.0f,
-            40.0f);
-        readClampedFloat("GrabSafetyAndRelease", "MouthConsumeExitPaddingGameUnits", rockMouthConsumeExitPaddingGameUnits, 1.0f, 0.0f, 60.0f);
-        readClampedFloat("GrabSafetyAndRelease", "MouthConsumeMinDwellSeconds", rockMouthConsumeMinDwellSeconds, 0.08f, 0.0f, 1.0f);
-        readClampedFloat("GrabSafetyAndRelease", "MouthConsumeMaxSpeedGameUnitsPerSecond", rockMouthConsumeMaxSpeedGameUnitsPerSecond, 120.0f,
-            0.0f, 1000.0f);
+        readClampedFloat("GrabSafetyAndRelease", "MouthConsumeRadiusGameUnits", rockMouthConsumeRadiusGameUnits, 5.5f);
+        readClampedFloat("GrabSafetyAndRelease", "MouthConsumeEnterPaddingGameUnits", rockMouthConsumeEnterPaddingGameUnits, 0.0f);
+        readClampedFloat("GrabSafetyAndRelease", "MouthConsumeExitPaddingGameUnits", rockMouthConsumeExitPaddingGameUnits, 1.0f);
+        readClampedFloat("GrabSafetyAndRelease", "MouthConsumeMinDwellSeconds", rockMouthConsumeMinDwellSeconds, 0.08f);
+        readClampedFloat("GrabSafetyAndRelease", "MouthConsumeMaxSpeedGameUnitsPerSecond", rockMouthConsumeMaxSpeedGameUnitsPerSecond, 120.0f);
 
         rockGrabHapticsEnabled = ini.boolean("Haptics", "GrabHapticsEnabled", rockGrabHapticsEnabled);
-        readClampedFloat("Haptics", "GrabHapticDurationSeconds", rockGrabHapticDurationSeconds, 0.055f, 0.0f, 0.2f);
-        readClampedFloat("Haptics", "GrabHapticBaseIntensity", rockGrabHapticBaseIntensity, 0.12f, 0.0f, 1.0f);
-        readClampedFloat("Haptics", "GrabHapticMaxIntensity", rockGrabHapticMaxIntensity, 0.80f, rockGrabHapticBaseIntensity,
-            1.0f);
-        readClampedFloat("Haptics", "GrabHapticMassScale", rockGrabHapticMassScale, 0.06f, 0.0f, 1.0f);
-        readClampedFloat("Haptics", "GrabHapticMassExponent", rockGrabHapticMassExponent, 0.60f, 0.0f, 2.0f);
-        readClampedFloat("Haptics", "PullStartHapticIntensity", rockPullStartHapticIntensity, 0.18f, 0.0f, 1.0f);
-        readClampedFloat("Haptics", "PullCatchHapticIntensity", rockPullCatchHapticIntensity, 0.22f, 0.0f, 1.0f);
-        readClampedFloat("Haptics", "SelectionLockHapticIntensity", rockSelectionLockHapticIntensity, 0.15f, 0.0f, 1.0f);
-        readClampedFloat("Haptics", "SelectionLockReleaseHapticIntensity", rockSelectionLockReleaseHapticIntensity, 0.10f, 0.0f,
-            1.0f);
+        readClampedFloat("Haptics", "GrabHapticDurationSeconds", rockGrabHapticDurationSeconds, 0.055f);
+        readClampedFloat("Haptics", "GrabHapticBaseIntensity", rockGrabHapticBaseIntensity, 0.12f);
+        readClampedFloat("Haptics", "GrabHapticMaxIntensity", rockGrabHapticMaxIntensity, 0.80f);
+        rockGrabHapticMaxIntensity = (std::max)(rockGrabHapticMaxIntensity, rockGrabHapticBaseIntensity);
+        readClampedFloat("Haptics", "GrabHapticMassScale", rockGrabHapticMassScale, 0.06f);
+        readClampedFloat("Haptics", "GrabHapticMassExponent", rockGrabHapticMassExponent, 0.60f);
+        readClampedFloat("Haptics", "PullStartHapticIntensity", rockPullStartHapticIntensity, 0.18f);
+        readClampedFloat("Haptics", "PullCatchHapticIntensity", rockPullCatchHapticIntensity, 0.22f);
+        readClampedFloat("Haptics", "SelectionLockHapticIntensity", rockSelectionLockHapticIntensity, 0.15f);
+        readClampedFloat("Haptics", "SelectionLockReleaseHapticIntensity", rockSelectionLockReleaseHapticIntensity, 0.10f);
         readClampedFloat("Haptics", "SelectionLockReleaseHapticDurationSeconds", rockSelectionLockReleaseHapticDurationSeconds,
-            0.02f, 0.0f, 0.2f);
+            0.02f);
         rockSurfaceGrabHapticsEnabled =
             ini.boolean("Haptics", "SurfaceGrabHapticsEnabled", rockSurfaceGrabHapticsEnabled);
-        readClampedFloat("Haptics", "SurfaceGrabHapticDurationSeconds", rockSurfaceGrabHapticDurationSeconds, 0.075f, 0.0f, 0.2f);
-        readClampedFloat("Haptics", "SurfaceGrabHapticIntensity", rockSurfaceGrabHapticIntensity, 0.85f, 0.0f, 1.0f);
+        readClampedFloat("Haptics", "SurfaceGrabHapticDurationSeconds", rockSurfaceGrabHapticDurationSeconds, 0.075f);
+        readClampedFloat("Haptics", "SurfaceGrabHapticIntensity", rockSurfaceGrabHapticIntensity, 0.85f);
         rockHeldImpactHapticsEnabled =
             ini.boolean("Haptics", "HeldImpactHapticsEnabled", rockHeldImpactHapticsEnabled);
-        readClampedFloat("Haptics", "HeldImpactHapticDurationSeconds", rockHeldImpactHapticDurationSeconds, 0.035f, 0.0f, 0.2f);
-        readClampedFloat("Haptics", "HeldImpactHapticBaseIntensity", rockHeldImpactHapticBaseIntensity, 0.12f, 0.0f, 1.0f);
-        readClampedFloat("Haptics", "HeldImpactHapticMaxIntensity", rockHeldImpactHapticMaxIntensity, 0.85f,
-            rockHeldImpactHapticBaseIntensity, 1.0f);
-        readClampedFloat("Haptics", "HeldImpactHapticSpeedScale", rockHeldImpactHapticSpeedScale, 0.006f, 0.0f, 1.0f);
-        readClampedFloat("Haptics", "HeldImpactHapticMassScale", rockHeldImpactHapticMassScale, 0.035f, 0.0f, 1.0f);
-        readClampedFloat("Haptics", "HeldImpactHapticMassExponent", rockHeldImpactHapticMassExponent, 0.55f, 0.0f, 2.0f);
-        readClampedFloat("Haptics", "HeldImpactHapticMinSpeedGameUnits", rockHeldImpactHapticMinSpeedGameUnits, 8.0f, 0.0f,
-            1000.0f);
-        readClampedFloat("Haptics", "HeldImpactHapticCooldownSeconds", rockHeldImpactHapticCooldownSeconds, 0.12f, 0.0f, 1.0f);
-        readClampedFloat("Haptics", "HeldImpactHapticDampedMultiplier", rockHeldImpactHapticDampedMultiplier, 0.55f, 0.0f, 1.0f);
+        readClampedFloat("Haptics", "HeldImpactHapticDurationSeconds", rockHeldImpactHapticDurationSeconds, 0.035f);
+        readClampedFloat("Haptics", "HeldImpactHapticBaseIntensity", rockHeldImpactHapticBaseIntensity, 0.12f);
+        readClampedFloat("Haptics", "HeldImpactHapticMaxIntensity", rockHeldImpactHapticMaxIntensity, 0.85f);
+        rockHeldImpactHapticMaxIntensity = (std::max)(rockHeldImpactHapticMaxIntensity, rockHeldImpactHapticBaseIntensity);
+        readClampedFloat("Haptics", "HeldImpactHapticSpeedScale", rockHeldImpactHapticSpeedScale, 0.006f);
+        readClampedFloat("Haptics", "HeldImpactHapticMassScale", rockHeldImpactHapticMassScale, 0.035f);
+        readClampedFloat("Haptics", "HeldImpactHapticMassExponent", rockHeldImpactHapticMassExponent, 0.55f);
+        readClampedFloat("Haptics", "HeldImpactHapticMinSpeedGameUnits", rockHeldImpactHapticMinSpeedGameUnits, 8.0f);
+        readClampedFloat("Haptics", "HeldImpactHapticCooldownSeconds", rockHeldImpactHapticCooldownSeconds, 0.12f);
+        readClampedFloat("Haptics", "HeldImpactHapticDampedMultiplier", rockHeldImpactHapticDampedMultiplier, 0.55f);
         rockShoulderStashHapticsEnabled =
             ini.boolean("Haptics", "ShoulderStashHapticsEnabled", rockShoulderStashHapticsEnabled);
         readClampedFloat("Haptics", "ShoulderStashCandidateHapticDurationSeconds",
-            rockShoulderStashCandidateHapticDurationSeconds, 0.075f, 0.0f, 0.2f);
+            rockShoulderStashCandidateHapticDurationSeconds, 0.075f);
         readClampedFloat("Haptics", "ShoulderStashCandidateHapticBaseIntensity", rockShoulderStashCandidateHapticBaseIntensity,
-            0.20f, 0.0f, 1.0f);
-        readClampedFloat("Haptics", "ShoulderStashCandidateHapticIntensity", rockShoulderStashCandidateHapticIntensity, 0.42f,
-            rockShoulderStashCandidateHapticBaseIntensity, 1.0f);
+            0.20f);
+        readClampedFloat("Haptics", "ShoulderStashCandidateHapticIntensity", rockShoulderStashCandidateHapticIntensity, 0.42f);
+        rockShoulderStashCandidateHapticIntensity = (std::max)(rockShoulderStashCandidateHapticIntensity, rockShoulderStashCandidateHapticBaseIntensity);
         readClampedFloat("Haptics", "ShoulderStashCandidateHapticIntervalSeconds",
-            rockShoulderStashCandidateHapticIntervalSeconds, 0.075f, 0.0f, 2.0f);
+            rockShoulderStashCandidateHapticIntervalSeconds, 0.075f);
         readClampedFloat("Haptics", "ShoulderStashCommitHapticDurationSeconds", rockShoulderStashCommitHapticDurationSeconds,
-            0.12f, 0.0f, 0.2f);
-        readClampedFloat("Haptics", "ShoulderStashCommitHapticIntensity", rockShoulderStashCommitHapticIntensity, 0.85f, 0.0f,
-            1.0f);
+            0.12f);
+        readClampedFloat("Haptics", "ShoulderStashCommitHapticIntensity", rockShoulderStashCommitHapticIntensity, 0.85f);
         rockMouthConsumeHapticsEnabled =
             ini.boolean("Haptics", "MouthConsumeHapticsEnabled", rockMouthConsumeHapticsEnabled);
         readClampedFloat("Haptics", "MouthConsumeCandidateHapticDurationSeconds", rockMouthConsumeCandidateHapticDurationSeconds,
-            0.050f, 0.0f, 0.2f);
+            0.050f);
         readClampedFloat("Haptics", "MouthConsumeCandidateHapticBaseIntensity", rockMouthConsumeCandidateHapticBaseIntensity,
-            0.22f, 0.0f, 1.0f);
-        readClampedFloat("Haptics", "MouthConsumeCandidateHapticIntensity", rockMouthConsumeCandidateHapticIntensity, 0.45f,
-            rockMouthConsumeCandidateHapticBaseIntensity, 1.0f);
+            0.22f);
+        readClampedFloat("Haptics", "MouthConsumeCandidateHapticIntensity", rockMouthConsumeCandidateHapticIntensity, 0.45f);
+        rockMouthConsumeCandidateHapticIntensity = (std::max)(rockMouthConsumeCandidateHapticIntensity, rockMouthConsumeCandidateHapticBaseIntensity);
         readClampedFloat("Haptics", "MouthConsumeCandidateHapticIntervalSeconds", rockMouthConsumeCandidateHapticIntervalSeconds,
-            0.075f, 0.0f, 2.0f);
-        readClampedFloat("Haptics", "MouthConsumeCommitHapticDurationSeconds", rockMouthConsumeCommitHapticDurationSeconds, 0.12f,
-            0.0f, 0.2f);
-        readClampedFloat("Haptics", "MouthConsumeCommitHapticIntensity", rockMouthConsumeCommitHapticIntensity, 0.85f, 0.0f,
-            1.0f);
+            0.075f);
+        readClampedFloat("Haptics", "MouthConsumeCommitHapticDurationSeconds", rockMouthConsumeCommitHapticDurationSeconds, 0.12f);
+        readClampedFloat("Haptics", "MouthConsumeCommitHapticIntensity", rockMouthConsumeCommitHapticIntensity, 0.85f);
     }
 
 }

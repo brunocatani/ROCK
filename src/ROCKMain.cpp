@@ -28,6 +28,7 @@
 #include "api/FRIKApiV2.h"
 #include "api/LooseWeaponStateService.h"
 #include "api/ProviderRuntime.h"
+#include "devbench/RockDevBench.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
@@ -36,6 +37,7 @@
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/hand/NativeWandVisualSuppression.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
+#include "mods-config/ModsConfigClient.h"
 #include "setup-wizard/SetupWizard.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/havok/HavokOffsets.h"
@@ -60,7 +62,6 @@
 #include "physics-interaction/weapon/authored/HoldingGripRecords.h"
 #include "physics-interaction/weapon/equip/WeaponHandSave.h"
 #include "physics-interaction/weapon/equip/WeaponTransitionAnimationAcceleration.h"
-#include "physics-interaction/weapon/handling/FrikWeaponOffsets.h"
 #include "physics-interaction/weapon/native/BipodFrozenRetirement.h"
 #include "physics-interaction/weapon/native/HeldWeaponInstantTransition.h"
 #include "physics-interaction/weapon/native/NativeHandEquipment.h"
@@ -336,7 +337,7 @@ namespace
             rock::LooseMolotovVisual::prepareResources();
             g_rockConfig.reload();
             input_remap_runtime::configurePipboyInput();
-            input_remap_runtime::configureButtonLayout();
+            input_remap_runtime::configureButtonLayout(true);
             game_ini_overrides::update();
             logger::info("ROCK: Config reloaded for new session.");
         }
@@ -385,8 +386,8 @@ namespace
         performance_profiler::ScopedTimer settingsTimer(performance_profiler::Scope::PrepSettings);
         const bool immersiveScopesWereEnabled = g_rockConfig.rockEnableImmersiveScopes;
         g_rockConfig.processPendingConfigReload();
-        frik_weapon_offsets::processPendingReload();
         setup_wizard::update();
+        mods_config_client::update();
         reconcileNativeScopeGeometryOwnership();
         if (immersiveScopesWereEnabled != g_rockConfig.rockEnableImmersiveScopes) {
             if (!g_rockConfig.rockEnableImmersiveScopes && s_physicsInteraction) {
@@ -416,6 +417,7 @@ namespace
             .visualSkeletonReadyHint = frik_visual_authority::isSkeletonReadyHint(),
             .compatibilityConfigBlocking = wristPipboyOpen || frikConfigOpen,
             .wristPipboyOpen = wristPipboyOpen,
+            .frikWeaponAdjustmentOpen = frik_visual_authority::isWeaponRepositionModeOpen(),
             .frikConfigOpen = frikConfigOpen,
         });
         stateTimer.stop();
@@ -954,6 +956,8 @@ namespace
     {
         // Teardown a message delivered off the frame thread, before this frame uses any of it.
         runPendingLifecycle();
+        // devbench's queued actions, before this frame's settings apply, so a set applies from this frame.
+        devbench::onFrameBegin();
         // FrameBegin precedes FRIK's scope-rig carry (WeaponPositionAdjuster::onFrameStart).
         scope_rig_parent_repair::reattachOrphanedScopeRig();
         native_quick_loot_panel::update(
@@ -990,6 +994,25 @@ namespace
      * tick flags and nothing here is held open across frames, so the tick is
      * skipped once and resumes on the next frame.
      */
+    /*
+     * FrameEnd, while the devbench tool is armed: this frame's state for its
+     * state action and change events.
+     */
+    void publishDevBenchState()
+    {
+        devbench::RockState state;
+        state.frikBound = s_frikAvailable;
+        state.frikApiVersion =
+            s_frikAvailable && frik::api::FRIKApiV2::inst ? frik::api::FRIKApiV2::inst->getVersion() : 0;
+        state.providerGeneration = s_providerGeneration.load(std::memory_order_acquire);
+        state.skeletonGeneration = s_skeletonGeneration.load(std::memory_order_acquire);
+        state.configRevision = g_rockConfig.configRevision();
+        state.configFileRevision = g_rockConfig.configFileRevision();
+        if (s_physicsInteraction)
+            s_physicsInteraction->captureDevBenchState(state);
+        devbench::publishState(std::move(state));
+    }
+
     void onFrikFrameEnd()
     {
         native_secondary_presentation::endFrame(s_skeletonTickedThisFrame);
@@ -1000,6 +1023,9 @@ namespace
         }
         if (s_physicsInteraction)
             s_physicsInteraction->publishTestbenchFrame();
+        if (devbench::isArmed())
+            publishDevBenchState();
+        devbench::onFrameEnd(s_physicsInteraction);
         grip_zone_indicators::EndFrame(game_timing::currentFrameTiming().sequence);
         performance_profiler::endFrame();
     }
@@ -1210,7 +1236,9 @@ namespace
                 logger::info("ROCK: FRIK skeleton generation {} powerArmor={}.", lifecycle->generation,
                     lifecycle->inPowerArmor ? "yes" : "no");
             }
-            bumpGeneration(s_skeletonGeneration);
+            const auto skeletonGeneration = bumpGeneration(s_skeletonGeneration);
+            devbench::emit("skeleton.ready",
+                [&] { return nlohmann::json{ { "skeletonGeneration", skeletonGeneration } }; });
             if (!authored_weapon_grip_capture::installHook()) {
                 logger::error(
                     "ROCK: Authored equipped-weapon grip capture hook is unavailable for this runtime build.");
@@ -1222,6 +1250,7 @@ namespace
         }
 
         case LE::kSkeletonDestroying: {
+            devbench::emit("skeleton.destroying");
             const auto thread = messageThread();
             if (thread.onFrameThread()) {
                 logger::info("ROCK: Received kSkeletonDestroying from FRIK (thread {}).", thread.caller);
@@ -1270,6 +1299,8 @@ namespace
 
         if (msg->type == F4SE::MessagingInterface::kGameLoaded) {
             s_messaging->RegisterListener(onExternalWeaponVisualChanged, "VRVanillaFixes");
+            // Before FRIK's API, so health still answers when ROCK disables itself below.
+            devbench::registerTool();
             logger::info("ROCK: GameLoaded -- initializing FRIKApi and loading config...");
             const auto providerGeneration = bumpGeneration(s_providerGeneration);
             if (s_physicsInteraction) {
@@ -1347,7 +1378,6 @@ namespace
 
             g_rockConfig.load();
             holding_grips::load("Data/F4SE/Plugins/ROCK/HoldingGrips");
-            frik_weapon_offsets::load();
             input_remap_runtime::configurePipboyInput();
             input_remap_runtime::configureButtonLayout();
             native_workshop::install();
@@ -1387,12 +1417,16 @@ namespace
             // FRIK debounces the game's transient power-armor state and flips
             // it together with the skeleton generation (API v2.2).
             f4vr::setPowerArmorStateProvider(&frikPowerArmorState);
+            mods_config_client::connect();
 
             logger::info("ROCK: Initialization complete. Waiting for skeleton...");
         }
 
         if (msg->type == F4SE::MessagingInterface::kPostLoadGame || msg->type == F4SE::MessagingInterface::kNewGame) {
             setup_wizard::noteSessionStart(msg->type == F4SE::MessagingInterface::kNewGame);
+            devbench::emit("sessionLoaded", [&] {
+                return nlohmann::json{ { "newGame", msg->type == F4SE::MessagingInterface::kNewGame } };
+            });
             const auto thread = messageThread();
             // Without FRIK no frame runs ROCK, so there is no frame thread to wait for.
             if (!s_frikAvailable || thread.onFrameThread()) {

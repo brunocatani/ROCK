@@ -45,7 +45,7 @@ namespace
             const std::string name = std::string(option.section) + "." + std::string(option.key);
             if (!found) std::printf("not in the catalog: %s\n", name.c_str());
             expect("option names a setting", found != nullptr);
-            expect("option is a player setting", found && found->group == rock::api::configuration::Group::Consumer);
+            expect("option is a player setting", found && found->group == rock::config::Group::Player);
             expect("option is on a page", option.page < wizard::kPages.size());
             expect("option has two choices or more", option.choiceCount() >= 2);
             for (std::size_t i = 0; i < option.choiceCount(); ++i)

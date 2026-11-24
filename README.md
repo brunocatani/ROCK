@@ -1,10 +1,14 @@
+<p align="center">
+  <img src="docs/images/banner.png" alt="ROCK" width="800">
+</p>
+
 # ROCK - Realistic Overengineered Character Kinetics
 
 [![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=flat-square)](LICENSE)
 
 > A Fallout 4 VR F4SE plugin that gives the player physical hands: grabbing, hand and weapon collision, weapon handling, and a provider API other mods build on.
 
-[Download on Nexus Mods](https://www.nexusmods.com/fallout4/mods/108881) · [API reference](docs/api/Overview.md) · [Developer guide](https://devartificial.pro/docs/apis/rock) · [Changelog](CHANGELOG.md)
+### [User Guide](docs/README.md) · [Download on Nexus Mods](https://www.nexusmods.com/fallout4/mods/108881) · [Changelog](CHANGELOG.md) · [API Reference](docs/api/Overview.md) · [Developer Guide](https://devartificial.pro/docs/apis/rock)
 
 <p align="center">
   <a href="https://www.youtube.com/watch?v=tPaIzmZ9P0o&t=113s">
@@ -18,6 +22,7 @@
 
 - [Background](#background)
 - [Install](#install)
+- [Usage](#usage)
 - [Configuration](#configuration)
 - [Building mods with ROCK](#building-mods-with-rock)
 - [Building ROCK from source](#building-rock-from-source)
@@ -36,8 +41,8 @@ What it provides:
 - **Weapon handling** - firing and support grips taken from each weapon's animation, hand switching, recoil applied to the firing hand, scopes, bipods, a reverse grip for one-handed melee weapons, and one ammo counter per held weapon.
 - **Physical items** - grenades, aid items, eating and drinking at your mouth, grabbing to equip, and stashing a weapon at your shoulder.
 - **Controls** - a button layout (`[ControllerInput.Left]` and `[ControllerInput.Right]`) that ROCK, its add-ons and the game all follow, plus SteamVR binding templates for Index, Vive wands and Steam Frame controllers.
-- **Configuration** - typed TOML settings that reload while the game runs, with in-game pages in the ROCK Family Configurator, RPS UI Framework's settings menu (from its holotape or RobCo PALM's Config).
-- **Provider API** - 13 interfaces that other mods use to read hands and weapons and to request grabs, equips and input.
+- **Configuration** - typed TOML settings that reload while the game runs, edited in game on ROCK's page in Mods Config FO4 VR.
+- **Provider API** - 12 interfaces that other mods use to read hands and weapons and to request grabs, equips and input.
 
 ROCK is the base of the RPS suite: [SCISSORS](https://github.com/brunocatani/SCISSORS) adds NPC interactions, [PAPER](https://github.com/brunocatani/PAPER) adds reload animations, and RobCo PALM, RPS UI Framework and ROCK Wall Climbing build on it.
 
@@ -49,7 +54,8 @@ ROCK is the base of the RPS suite: [SCISSORS](https://github.com/brunocatani/SCI
 - [VR Address Library for F4SEVR](https://www.nexusmods.com/fallout4/mods/64879).
 - [FRIK](https://www.nexusmods.com/fallout4/mods/53464) 0.79.1 or newer, with FRIK API 2.3. ROCK runs inside FRIK's frame phases and refuses an older FRIK API.
 - [RPS UI Framework](https://www.nexusmods.com/fallout4/mods/108951). ROCK's setup wizard, grab indicators and ammo counters draw through it; without it they are not shown.
-- Recommended: [RobCo PALM](https://www.nexusmods.com/fallout4/mods/108954), the wheel menu, whose Config opens the ROCK Family Configurator. The Configurator's holotape in the Pip-Boy opens it too, with or without PALM.
+- Recommended: [Mods Config FO4 VR](https://www.nexusmods.com/games/fallout4/mods/110945), the in-game menu with ROCK's settings page; without it, edit `ROCK.toml` by hand.
+- Recommended: [RobCo PALM](https://www.nexusmods.com/fallout4/mods/108954), the wheel menu.
 - Recommended: [Buffout 4 NG and VR](https://www.nexusmods.com/fallout4/mods/64880) for engine fixes and a crash logger, and Asciim0v's [Faster Loadscreens](https://www.nexusmods.com/fallout4/mods/102233) for faster loading.
 - **Do not use High FPS Physics Fix.** It is incompatible with ROCK and tanks the frame rate. Use Faster Loadscreens for faster loading instead.
 - Every mod that builds on ROCK must be a version made for ROCK 1.0. ROCK, RPS UI Framework, RobCo PALM, PAPER and the ROCK add-ons are released together; install them together.
@@ -80,7 +86,7 @@ Menu names can differ between SteamVR versions. After that, the `[ControllerInpu
 
 ### The setup wizard
 
-ROCK's setup wizard asks what matters on your first start. Its first page asks which controllers you play with and says what ROCK does for them: Index controllers and Vive wands get ROCK's SteamVR binding. The next pages set the main choices by topic (grabbing, holding weapons, aiming and shooting, grenades and healing, the stick click and menus), then a review saves them. "Use recommended settings" sets the binding and ROCK's recommendation for every option at once. Closing the wizard saves no option, but still sets ROCK's binding for the controllers SteamVR reports unless you chose others. Open it again any time from the ROCK Family Configurator (its holotape or RobCo PALM's Config): the ROCK page's Setup wizard button.
+ROCK's setup wizard asks what matters on your first start. Its first page asks which controllers you play with and says what ROCK does for them: Index controllers and Vive wands get ROCK's SteamVR binding. The next pages set the main choices by topic (grabbing, holding weapons, aiming and shooting, grenades and healing, the stick click and menus), then a review saves them. "Use recommended settings" sets the binding and ROCK's recommendation for every option at once. Closing the wizard saves no option, but still sets ROCK's binding for the controllers SteamVR reports unless you chose others. Open it again any time with the Setup Wizard button on ROCK's page in Mods Config FO4 VR.
 
 Everything else, including which button does what (the `[Bindings]` table), is in `ROCK.toml` and the settings menu.
 
@@ -92,6 +98,13 @@ The wizard opens by itself the first time you play with this ROCK, and again whe
 - **Mods built for ROCK 0.92 or earlier** use provider API 1, which ROCK 1.0 does not serve. ROCK refuses them and names each one in `ROCK.log`; the game keeps running with their ROCK features off. Update or remove them; they work again once rebuilt against ROCK 1.0's headers.
 - **Upgrading from ROCK 0.92** keeps your settings: on its first start ROCK 1.0 carries every option you changed in `ROCK.ini` and `ROCK_Developer.ini` into `ROCK.toml` and `ROCK_Developer.toml`, then deletes the old INI files. Options you left at their old defaults take ROCK 1.0's defaults. ROCK.log lists the settings that no longer exist. NPC settings moved to SCISSORS.
 
+## Usage
+
+Hold grip near an object to pick it up, or point at a far one and hold grip to bring it to you. Grab a loose weapon by its firing grip to equip it, and hold its barrel with your other hand to aim with both. Tap A to reload, hold it to scope, and hold B to draw a grenade. Open Mods Config FO4 VR (hold both thumbsticks pressed in) and pick **ROCK** for the settings and the setup wizard.
+
+- [User Guide](docs/README.md): controls, grabbing, weapons, settings and remapping
+- [Changelog](CHANGELOG.md)
+
 ## Configuration
 
 ROCK reads two files under your Windows Documents folder:
@@ -101,9 +114,9 @@ My Games/Fallout4VR/Mods_Config/ROCK/ROCK.toml
 My Games/Fallout4VR/Mods_Config/ROCK/ROCK_Developer.toml
 ```
 
-Both are [TOML](https://toml.io) files. Options are grouped into tables such as `[Grabbing]` or `[ControllerInput.Left]`, and values are typed: `true`/`false`, whole numbers, decimal numbers, `"text"` and lists of three numbers such as `[0.0, 7.0, -7.0]` for offsets. Help for each option sits above it on lines starting with `##`.
+Both are [TOML](https://toml.io) files. Options are grouped into tables such as `[Grabbing]` or `[ControllerInput.Left]`, and values are typed: `true`/`false`, whole numbers, decimal numbers, `"text"` and tables such as `{ pos = [0.0, 7.0, -7.0] }` for offsets. Help for each option sits above it on lines starting with `##`.
 
-`ROCK.toml` is created from the compiled defaults when it is missing. When ROCK starts it adds options the file lacks, refreshes the `##` help lines and moves options it no longer reads to a commented block at the end. Your own notes on lines starting with a single `#` above an option are kept. `ROCK_Developer.toml` is optional and holds only developer overrides. Both files reload while the game runs. The ROCK pages of RPS UI Framework's settings menu edit them through ROCK's configuration API.
+`ROCK.toml` is created from the compiled defaults when it is missing. When ROCK starts it adds options the file lacks, refreshes the `##` help lines and moves options it no longer reads to a commented block at the end. Your own notes on lines starting with a single `#` above an option are kept. `ROCK_Developer.toml` is optional and holds only developer overrides. Both files reload while the game runs. ROCK's page in Mods Config FO4 VR edits `ROCK.toml`, and its Developer page, shown with Show Developer Pages in the Developer section, edits `ROCK_Developer.toml`. Either file can also be edited by hand.
 
 If a file has a syntax error, ROCK writes the file name, line and column to `ROCK.log`, keeps the values it last read from that file and leaves the file untouched until it is fixed. A value of the wrong type (text for a number, for example) is logged with its line, and that option keeps its last value.
 
@@ -111,7 +124,7 @@ If a file has a syntax error, ROCK writes the file name, line and column to `ROC
 
 ## Building mods with ROCK
 
-ROCK 1.0 publishes **provider API 2.0**: 13 interfaces your F4SE plugin discovers at runtime from `ROCK.dll`. The headers are in [include/ROCK/](include/ROCK/); take them from the release tag you ship against. They need only the C++20 standard library, and there is nothing to link.
+ROCK 1.0 publishes **provider API 2.0**: 12 interfaces your F4SE plugin discovers at runtime from `ROCK.dll`. The headers are in [include/ROCK/](include/ROCK/); take them from the release tag you ship against. They need only the C++20 standard library, and there is nothing to link.
 
 **Updating a mod built for ROCK 0.92?** [docs/api/Migration.md](docs/api/Migration.md) maps every provider API 1 call, record and flag to its replacement. Coding agents can follow the [rock-1.0-migration skill](skills/rock-1.0-migration/SKILL.md), which also covers PAPER, RPS UI Framework and RobCo PALM.
 
@@ -171,7 +184,6 @@ Call `client.close()` on the game thread before your plugin's callback data goes
 | [Animation](docs/api/Animation.md) | Run code at fixed points of each animation frame, take over arm, hand and weapon poses. |
 | [Input](docs/api/Input.md) | Read controller buttons, suppress ROCK and game input on a hand, lease the reload button. |
 | [PlayerController](docs/api/PlayerController.md) | Read the player's character controller and request native jumps. |
-| [Configuration](docs/api/Configuration.md) | Read and change ROCK's settings. |
 | [NativeInteraction](docs/api/NativeInteraction.md) | Extend ROCK's physics step with your own Havok bodies and weapon driving. |
 | [Storage](docs/api/Storage.md) | Build holsters, backpacks and stashes. |
 

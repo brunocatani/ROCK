@@ -1,6 +1,5 @@
 #include <ROCK/Animation.h>
 #include <ROCK/Collision.h>
-#include <ROCK/Configuration.h>
 #include <ROCK/Core.h>
 #include <ROCK/Grab.h>
 #include <ROCK/Hands.h>
@@ -66,11 +65,6 @@ namespace rock::api::playercontroller
     const Api& table() noexcept;
 }
 
-namespace rock::api::configuration
-{
-    const Api& table() noexcept;
-}
-
 namespace rock::api::storage
 {
     const Api& table() noexcept;
@@ -96,7 +90,6 @@ namespace rock::api::discovery
             registration(animation::table(), animation::kSupportedPermissions),
             registration(input::table(), input::kSupportedPermissions),
             registration(playercontroller::table(), playercontroller::kSupportedPermissions),
-            registration(configuration::table(), configuration::kSupportedPermissions),
             registration(native_interaction_service::table(), native_interaction::kSupportedPermissions),
             registration(storage::table(), storage::kSupportedPermissions),
         };

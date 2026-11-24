@@ -2,6 +2,7 @@
 // authored primary grip runtime, handling settings, and the shoulder stash.
 #include "api/AuthoredInteractionService.h"
 #include "api/ProviderRuntimeServices.h"
+#include "mods-config/ModsConfigClient.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "RockUtils.h"
@@ -501,7 +502,14 @@ namespace rock
         const bool firstHoldThisFrame = _equipped.menuHoldDecidedFrame != frame.frameIndex;
         if (firstHoldThisFrame) {
             _equipped.menuHoldDecidedFrame = frame.frameIndex;
-            bool holding = frame.menuHoldsWeapons();
+            /*
+             * FRIK's weapon adjustment, opened from a menu, places the weapon
+             * itself; the hold yields it every claim, and an equip while it is
+             * open claims nothing, since blocking FRIK's weapon node closes it.
+             */
+            bool holding = frame.menuHoldsWeapons() && !frame.frikWeaponAdjustmentOpen;
+            if (_equipped.menuHolding && frame.menuHoldsWeapons() && frame.frikWeaponAdjustmentOpen)
+                ROCK_LOG_INFO(Weapon, "MENU_WEAPON_HOLD released: FRIK's weapon adjustment places the weapon");
             if (holding) {
                 _equipped.menuHoldHandoffSeconds = 0.0f;
             } else if (_equipped.menuHolding && view.weapon && frame.weaponDrawn &&
@@ -2714,13 +2722,44 @@ namespace rock
             overlayFrame.positions[overlayFrame.count++] = positionWorld;
         };
 
-        for (const bool isLeft : { true, false }) {
-            appendIndicator(_twoHandedGrip.getAuthoredSupportGripIndicatorFrame(isLeft),
-                isLeft ? _leftHand : _rightHand);
-        }
+        // Mods Config's ray on Grip Zone Marker Size shows every grip zone marker of the drawn weapon; on Firing
+        // Grip Reach, the reach zone's outline.
+        const auto pointedPreview = mods_config_client::pointedPreview();
+        const std::uint64_t ownershipKey = _weaponCollision.getCurrentEquippedWeaponOwnershipKey();
+        if (pointedPreview == mods_config_client::PointedPreview::GripZoneMarkerSize) {
+            std::array<RE::NiPoint3, 4> previewLocal{};
+            const auto previewCount = _twoHandedGrip.collectGripZonePreviewMarkers(weaponNode,
+                currentWeaponGenerationKey, ownershipKey, previewLocal);
+            for (std::size_t index = 0; index < previewCount && overlayFrame.count < overlayFrame.positions.size();
+                 ++index) {
+                overlayFrame.positions[overlayFrame.count++] =
+                    transform_math::localPointToWorld(weaponNode->world, previewLocal[index]);
+            }
+        } else {
+            for (const bool isLeft : { true, false }) {
+                appendIndicator(_twoHandedGrip.getAuthoredSupportGripIndicatorFrame(isLeft),
+                    isLeft ? _leftHand : _rightHand);
+            }
 
-        const auto firingReattachFrame = _twoHandedGrip.getFiringGripReattachIndicatorFrame();
-        appendIndicator(firingReattachFrame, firingReattachFrame.handIsLeft ? _leftHand : _rightHand);
+            const auto firingReattachFrame = _twoHandedGrip.getFiringGripReattachIndicatorFrame();
+            appendIndicator(firingReattachFrame, firingReattachFrame.handIsLeft ? _leftHand : _rightHand);
+        }
+        firing_grip_reattach_zone_policy::ZoneInput reachZone{};
+        if (pointedPreview == mods_config_client::PointedPreview::FiringGripReach &&
+            _twoHandedGrip.tryGetFiringGripReachZone(weaponNode, currentWeaponGenerationKey, ownershipKey, reachZone)) {
+            std::array<firing_grip_reattach_zone_policy::OutlineSegment,
+                firing_grip_reattach_zone_policy::kMaxOutlineSegments>
+                outline{};
+            const auto outlineCount = firing_grip_reattach_zone_policy::outlineSegments(reachZone, outline);
+            const auto toPoint = [](const firing_grip_reattach_zone_policy::Vec3& value) {
+                return RE::NiPoint3{ value.x, value.y, value.z };
+            };
+            for (std::size_t index = 0; index < outlineCount && overlayFrame.lineCount < overlayFrame.lines.size();
+                 ++index) {
+                overlayFrame.lines[overlayFrame.lineCount++] = { toPoint(outline[index].start),
+                    toPoint(outline[index].end) };
+            }
+        }
 
         if (_equipped.partIndicatorFrame == gameFrameIndex &&
             _equipped.partIndicatorGeneration == currentWeaponGenerationKey) {

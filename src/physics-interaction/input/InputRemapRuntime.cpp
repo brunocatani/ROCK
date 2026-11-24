@@ -11,6 +11,7 @@
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/input/ButtonLayoutApply.h"
+#include "physics-interaction/input/FunctionBindingText.h"
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/ManualScopeInputPolicy.h"
 #include "physics-interaction/input/NativeGrenadeThrowRuntime.h"
@@ -50,7 +51,9 @@
 #include <cstring>
 #include <format>
 #include <intrin.h>
+#include <mutex>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <RPS/Runtime/HookChain.h>
@@ -131,7 +134,6 @@ namespace rock::input_remap_runtime
          */
         constexpr std::uintptr_t kNativeVatsVansDecisionFunctionOffset = 0x0BEB280;
         constexpr std::uintptr_t kNativeVatsVansDecisionCallSiteOffset = 0x1326990;
-        constexpr std::uintptr_t kNativeVansHoldThresholdSettingOffset = 0x3756388;
         constexpr std::uintptr_t kMenuControlsSingletonOffset = 0x5A3B888;
         constexpr std::ptrdiff_t kMenuControlsPipboyHandlerOffset = 0x68;
         constexpr std::uintptr_t kPipboyHandlerVTableOffset = 0x2DCC778;
@@ -308,13 +310,15 @@ namespace rock::input_remap_runtime
         std::array<function_binding_policy::HandSample, 2> s_functionSamples{}; // Guarded.
         std::array<button_layout_policy::PadLatch, 2> s_functionPadLatches{};   // Guarded.
         std::atomic<bool> s_functionBindingsIdentity{ true };
-        std::atomic<bool> s_useTargetAvailable{ false };  // Frame thread -> readers.
-        std::atomic<float> s_grenadeHoldSeconds{ 0.25f }; // Frame thread -> readers.
+        std::atomic<bool> s_useTargetAvailable{ false }; // Frame thread -> readers.
         std::array<std::array<std::atomic<std::uint8_t>, button_layout_policy::kSlotCount>, 2> s_functionTags{};
         std::array<std::atomic<std::uint32_t>, 2> s_functionsPresented{};
+        function_binding_policy::Bindings s_configuredBindings{};             // Guarded: the composer's.
         // A primary Activate press stopped for a bound Reload or Scope: its release is stopped too.
         std::atomic<bool> s_stopPrimaryActivateUntilRelease{ false };
         std::atomic<bool> s_gameplayInputAllowed{ false };
+        // A mod's pointer menu that reads the primary wand's trigger is open. Frame thread -> controller hooks.
+        std::atomic<bool> s_pointerMenuInUse{ false };
         std::atomic<bool> s_bothHandsHoldWeapons{ false }; // Frame thread -> input dispatch.
         // Stick clicks the bipod or a held placement owns this frame (bit 1 left,
         // bit 2 right). Frame thread -> input dispatch and game-facing reads.
@@ -450,23 +454,16 @@ namespace rock::input_remap_runtime
             s_manualScopeSlot.store(-1, std::memory_order_release);
         }
 
-        [[nodiscard]] float readNativeVansHoldThresholdSeconds()
+        /**
+         * A function's hold time from its binding: the binding's duration on a timed hold, otherwise the function's
+         * default. The home gestures that split one button between two functions (A: Reload / Scope, B: VATS /
+         * Grenade, left Y: Pip-Boy / Pause) time it with this, bound or not.
+         */
+        [[nodiscard]] float bindingHoldSeconds(function_binding_policy::Function function)
         {
-            static REL::Relocation<float*> nativeThreshold{ REL::Offset(kNativeVansHoldThresholdSettingOffset) };
-            static std::atomic<bool> invalidThresholdLogged{ false };
-
-            const float rawThreshold = nativeThreshold.address() != 0
-                ? *nativeThreshold
-                : native_vats_input_suppression_policy::kDefaultHoldSeconds;
-            const float sanitizedThreshold = native_vats_input_suppression_policy::sanitizedHoldSeconds(rawThreshold);
-            if ((!std::isfinite(rawThreshold) ||
-                    rawThreshold < native_vats_input_suppression_policy::kMinimumHoldSeconds ||
-                    rawThreshold > native_vats_input_suppression_policy::kMaximumHoldSeconds) &&
-                !invalidThresholdLogged.exchange(true, std::memory_order_acq_rel)) {
-                ROCK_LOG_WARN(Input, "Invalid native fVANSButtonHeldThreshold={}; using {:.3f} seconds", rawThreshold,
-                    sanitizedThreshold);
-            }
-            return sanitizedThreshold;
+            const auto index = static_cast<std::size_t>(function);
+            return function_binding_text::holdSeconds(function,
+                { g_rockConfig.rockFunctionBindings[index], g_rockConfig.rockBindingSeconds[index] });
         }
 
         /*
@@ -789,7 +786,8 @@ namespace rock::input_remap_runtime
         [[nodiscard]] bool shouldRemapLeftHandFireTriggerForGame()
         {
             return weaponRouting().leftFiring && !secondaryOwnsTrigger(input_remap_policy::Hand::Left) &&
-                s_gameplayInputAllowed.load(std::memory_order_acquire) && !isInputBlockingMenuActive();
+                s_gameplayInputAllowed.load(std::memory_order_acquire) && !isInputBlockingMenuActive() &&
+                !s_pointerMenuInUse.load(std::memory_order_acquire);
         }
 
         /*
@@ -951,12 +949,7 @@ namespace rock::input_remap_runtime
                 context.eligible &= ~fb::functionBit(fb::Function::Scope);
             }
             context.seconds = steadySeconds();
-            context.holdSeconds.fill(g_rockConfig.rockBindingHoldSeconds);
-            context.holdSeconds[static_cast<std::size_t>(fb::Function::Scope)] = g_rockConfig.rockManualScopeHoldSeconds;
-            context.holdSeconds[static_cast<std::size_t>(fb::Function::Pause)] = g_rockConfig.rockPipboyPauseHoldSeconds;
-            context.holdSeconds[static_cast<std::size_t>(fb::Function::Grenade)] =
-                s_grenadeHoldSeconds.load(std::memory_order_acquire);
-            context.doubleTapSeconds = g_rockConfig.rockBindingDoubleTapSeconds;
+            context.gestureSeconds = g_rockConfig.rockBindingSeconds;
 
             std::array<fb::HandOutput, 2> output{};
             {
@@ -1179,10 +1172,23 @@ namespace rock::input_remap_runtime
             return (s_stickClickGameHidden.load(std::memory_order_acquire) & bit) ? stick : 0;
         }
 
+        // The last game-facing edit per hand ([0] left), for the devbench input action. Stored field by field.
+        struct GameInputEditSlot
+        {
+            std::atomic<std::uint64_t> logicalPressed{ 0 };
+            std::atomic<std::uint64_t> gamePressed{ 0 };
+            std::atomic<std::uint32_t> reasons{ 0 };
+            std::atomic<bool> bypassed{ false };
+            std::atomic<std::uint64_t> tickMilliseconds{ 0 };
+        };
+
+        std::array<GameInputEditSlot, 2> s_gameInputEdits;
+
         void applyGameControllerStateRemap(const input_remap_policy::Hand hand, vr::VRControllerState_t* state,
             const std::uint32_t stateSize, const testbench_telemetry::RawControllerState& raw)
         {
             const bool stateValid = state && stateSize >= sizeof(vr::VRControllerState_t);
+            const auto logicalPressed = stateValid ? state->ulButtonPressed : 0ull;
             std::optional<bool> bypassCache;
             const auto bypassed = [&] {
                 if (!bypassCache) {
@@ -1223,6 +1229,12 @@ namespace rock::input_remap_runtime
             if (stateValid) {
                 testbench_telemetry::observeControllerState(isLeft, raw, state->ulButtonPressed, state->rAxis[1].x,
                     reasons, bypassCache.value_or(false));
+                auto& edit = s_gameInputEdits[isLeft ? 0u : 1u];
+                edit.logicalPressed.store(logicalPressed, std::memory_order_relaxed);
+                edit.gamePressed.store(state->ulButtonPressed, std::memory_order_relaxed);
+                edit.reasons.store(reasons, std::memory_order_relaxed);
+                edit.bypassed.store(bypassCache.value_or(false), std::memory_order_relaxed);
+                edit.tickMilliseconds.store(GetTickCount64(), std::memory_order_release);
             }
         }
 
@@ -2523,7 +2535,7 @@ namespace rock::input_remap_runtime
             // release is consumed later by the gesture state machine.
             event.value = 0.0f;
             event.heldDownSecs = (std::max)(originalHeldDownSecs,
-                pipboy_pause_gesture_policy::sanitizedHoldSeconds(g_rockConfig.rockPipboyPauseHoldSeconds));
+                pipboy_pause_gesture_policy::sanitizedHoldSeconds(bindingHoldSeconds(function_binding_policy::Function::Pause)));
             event.handled = RE::InputEvent::HANDLED_RESULT::kUnhandled;
             s_originalMenuOpenEventHandler(handler, &event);
 
@@ -2546,7 +2558,7 @@ namespace rock::input_remap_runtime
             const bool suppressAll = isAnyProviderOpenVrGameInputSuppressed() ||
                 provider::hasHandInputSuppressionFlag(flags,
                     ::rock::api::input::HandInputSuppressionFlag::SuppressOpenVrGameInput);
-            const float holdSeconds = readNativeVansHoldThresholdSeconds();
+            const float holdSeconds = bindingHoldSeconds(function_binding_policy::Function::Grenade);
             const auto decision = native_vats_input_suppression_policy::update(s_nativeVatsInputSuppressionState,
                 native_vats_input_suppression_policy::Input{
                     .buttonDown = button->QPressed(),
@@ -2629,8 +2641,9 @@ namespace rock::input_remap_runtime
             const auto raw = peekRawButtonState(false, 1);
             const auto previous = s_vatsGrenadeGestureState.state;
             const float grenadeHoldSeconds = g_rockConfig.rockImmersiveGrenades
-                ? readNativeVansHoldThresholdSeconds()
-                : (std::max)(readNativeVansHoldThresholdSeconds(), native_grenade_throw_runtime::holdSeconds());
+                ? bindingHoldSeconds(function_binding_policy::Function::Grenade)
+                : (std::max)(bindingHoldSeconds(function_binding_policy::Function::Grenade),
+                      native_grenade_throw_runtime::holdSeconds());
             // A B press a binding made for Grenade is a grenade from its first frame.
             const bool boundGrenade =
                 functionTag(false, button_layout_policy::Slot::UpperFace) == function_binding_policy::Function::Grenade;
@@ -2707,6 +2720,8 @@ namespace rock::input_remap_runtime
                 s_pipboyGestureRoute = route;
             }
             const auto previousState = s_pipboyPauseGestureState.state;
+            const float pauseHoldSeconds =
+                pipboy_pause_gesture_policy::sanitizedHoldSeconds(bindingHoldSeconds(function_binding_policy::Function::Pause));
             const bool boundPause =
                 functionTag(true, button_layout_policy::Slot::UpperFace) == function_binding_policy::Function::Pause;
             const auto decision = pipboy_pause_gesture_policy::update(s_pipboyPauseGestureState,
@@ -2719,9 +2734,9 @@ namespace rock::input_remap_runtime
                     .pipboyDispatchAllowed = !providerSuppressed,
                     // A Y press a binding made for Pause is a Pause from its first held frame.
                     .heldSeconds = boundPause && button->QPressed()
-                        ? (std::max)(button->QHeldDownSecs(), g_rockConfig.rockPipboyPauseHoldSeconds)
+                        ? (std::max)(button->QHeldDownSecs(), pauseHoldSeconds)
                         : button->QHeldDownSecs(),
-                    .holdSeconds = g_rockConfig.rockPipboyPauseHoldSeconds,
+                    .holdSeconds = pauseHoldSeconds,
                 });
 
             if (button->QJustPressed() && previousState != pipboy_pause_gesture_policy::State::Idle) {
@@ -3304,7 +3319,7 @@ namespace rock::input_remap_runtime
         // Never edit FRIK.ini or publish native trigger input for wrist mode.
         auto* frikApi = frik_visual_authority::api();
         const float holdSeconds =
-            pipboy_pause_gesture_policy::sanitizedHoldSeconds(g_rockConfig.rockPipboyPauseHoldSeconds);
+            pipboy_pause_gesture_policy::sanitizedHoldSeconds(bindingHoldSeconds(function_binding_policy::Function::Pause));
         if (s_frikPipboyBindingReady && s_frikPipboyHoldSeconds == holdSeconds) {
             return;
         }
@@ -3336,7 +3351,7 @@ namespace rock::input_remap_runtime
         }
     }
 
-    void configureButtonLayout()
+    void configureButtonLayout(bool resetGestures)
     {
         static std::atomic<bool> s_logged{ false };
         const bool firstPublication = !s_logged.exchange(true, std::memory_order_acq_rel);
@@ -3360,29 +3375,43 @@ namespace rock::input_remap_runtime
         namespace fb = function_binding_policy;
         {
             std::scoped_lock lock(s_functionBindingMutex);
-            s_functionBindings.configure(g_rockConfig.rockFunctionBindings);
-            s_functionSamples = {};
-            s_functionPadLatches = {};
-            for (auto& hand : s_functionTags) {
-                for (auto& tag : hand) {
-                    tag.store(static_cast<std::uint8_t>(fb::Function::Count), std::memory_order_release);
+            // Reconfiguring drops the gestures in progress, so a reload of any other option keeps them. A
+            // binding's time is read every frame and needs no reconfiguring.
+            if (firstPublication || resetGestures || s_configuredBindings != g_rockConfig.rockFunctionBindings) {
+                s_configuredBindings = g_rockConfig.rockFunctionBindings;
+                s_functionBindings.configure(g_rockConfig.rockFunctionBindings);
+                s_functionSamples = {};
+                s_functionPadLatches = {};
+                for (auto& hand : s_functionTags) {
+                    for (auto& tag : hand) {
+                        tag.store(static_cast<std::uint8_t>(fb::Function::Count), std::memory_order_release);
+                    }
                 }
+                for (auto& presented : s_functionsPresented) {
+                    presented.store(0, std::memory_order_release);
+                }
+                s_functionBindingsIdentity.store(s_functionBindings.identity(), std::memory_order_release);
             }
-            for (auto& presented : s_functionsPresented) {
-                presented.store(0, std::memory_order_release);
-            }
-            s_functionBindingsIdentity.store(s_functionBindings.identity(), std::memory_order_release);
         }
+        // Each binding is logged when it leaves its default or changes, its time included.
+        static std::mutex s_loggedBindingMutex;
+        static std::array<std::string, fb::kFunctionCount> s_loggedBindingText;
+        std::scoped_lock logLock(s_loggedBindingMutex);
         bool moved = false;
         for (std::size_t index = 0; index < fb::kFunctionCount; ++index) {
             const auto function = static_cast<fb::Function>(index);
-            const auto& binding = g_rockConfig.rockFunctionBindings[index];
-            if (binding == fb::homeBinding(function)) {
+            const auto text = function_binding_text::formatBindingTable(function,
+                { g_rockConfig.rockFunctionBindings[index], g_rockConfig.rockBindingSeconds[index] });
+            const auto defaultText =
+                function_binding_text::formatBindingTable(function, function_binding_text::defaultBinding(function));
+            const bool changed = std::exchange(s_loggedBindingText[index], text) != text;
+            if (text == defaultText) {
                 continue;
             }
             moved = true;
-            ROCK_LOG_INFO(Input, "Binding {}: {} (default {})", fb::functionKey(function), fb::formatBinding(binding),
-                fb::formatBinding(fb::homeBinding(function)));
+            if (firstPublication || changed) {
+                ROCK_LOG_INFO(Input, "Binding {}: {} (default {})", fb::functionKey(function), text, defaultText);
+            }
         }
         if (!moved && firstPublication) {
             ROCK_LOG_INFO(Input, "Bindings: every function on its default control");
@@ -3399,6 +3428,12 @@ namespace rock::input_remap_runtime
         return value < function_binding_policy::kFunctionCount ? static_cast<function_binding_policy::Function>(value)
                                                                 : function_binding_policy::Function::Count;
     }
+
+    /**
+     * A pointer menu of another mod (Mods Config's) is open and takes the primary wand's trigger: the left-hand
+     * firing remap stops, so the menu reads the right trigger, and the game sees both triggers as they are.
+     */
+    void setPointerMenuInUse(bool inUse) { s_pointerMenuInUse.store(inUse, std::memory_order_release); }
 
     void setGameplayInputAllowed(bool allowed)
     {
@@ -3554,7 +3589,6 @@ namespace rock::input_remap_runtime
                     input_remap_policy::shouldPrioritizeNativeActivation(classifyActivateTarget(true),
                         isTakeEquipHandEngaged(true)),
                 std::memory_order_release);
-            s_grenadeHoldSeconds.store(readNativeVansHoldThresholdSeconds(), std::memory_order_release);
         }
         auto leftAcceptState = consumeRawButtonState(true, input_remap_policy::kOpenVrAcceptButtonId);
         auto rightAcceptState = consumeRawButtonState(false, input_remap_policy::kOpenVrAcceptButtonId);
@@ -3622,7 +3656,7 @@ namespace rock::input_remap_runtime
                 .leftTag = functionTag(true, button_layout_policy::Slot::LowerFace),
                 .rightTag = functionTag(false, button_layout_policy::Slot::LowerFace),
                 .deltaSeconds = deltaSeconds,
-                .holdSeconds = g_rockConfig.rockManualScopeHoldSeconds,
+                .holdSeconds = bindingHoldSeconds(function_binding_policy::Function::Scope),
             });
         manual_scope_input_policy::Decision slotOne{};
         if (routing.slotOneEquipped && !g_rockConfig.rockEnableImmersiveScopes) {
@@ -3641,7 +3675,7 @@ namespace rock::input_remap_runtime
                     .leftButton = routing.slotOneLeft ? slotOneButton : manual_scope_input_policy::ButtonState{},
                     .rightButton = routing.slotOneLeft ? manual_scope_input_policy::ButtonState{} : slotOneButton,
                     .deltaSeconds = deltaSeconds,
-                    .holdSeconds = g_rockConfig.rockManualScopeHoldSeconds,
+                    .holdSeconds = bindingHoldSeconds(function_binding_policy::Function::Scope),
                 });
             if (slotOne.dispatchReload)
                 (void)native_secondary_actions::requestReload();
@@ -3830,6 +3864,27 @@ namespace rock::input_remap_runtime
             .pendingReleased = tracker.releasedEdges.load(std::memory_order_acquire),
             .rearm = tracker.rearmPressedMask.load(std::memory_order_acquire),
             .trigger = tracker.triggerAxisX.load(std::memory_order_acquire),
+        };
+    }
+
+    /**
+     * The last game-facing edit of a hand's controller state, with its age. Fields are read one by one, so a read
+     * racing a controller read may mix two of them; it is diagnostic only.
+     */
+    GameInputEdit readGameInputEdit(bool isLeft) noexcept
+    {
+        const auto& edit = s_gameInputEdits[isLeft ? 0u : 1u];
+        const auto tick = edit.tickMilliseconds.load(std::memory_order_acquire);
+        if (tick == 0)
+            return {};
+        const auto now = GetTickCount64();
+        return {
+            .valid = true,
+            .ageMilliseconds = now >= tick ? now - tick : 0,
+            .logicalPressed = edit.logicalPressed.load(std::memory_order_relaxed),
+            .gamePressed = edit.gamePressed.load(std::memory_order_relaxed),
+            .reasons = edit.reasons.load(std::memory_order_relaxed),
+            .bypassed = edit.bypassed.load(std::memory_order_relaxed),
         };
     }
 

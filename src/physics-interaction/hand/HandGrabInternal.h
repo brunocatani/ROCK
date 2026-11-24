@@ -514,6 +514,25 @@ namespace rock::hand_grab_internal
         (void)frik_visual_authority::clearHandWorld(GRAB_EXTERNAL_HAND_TAG, handFromBool(isLeft));
     }
 
+    inline constexpr const char* GRAB_HAND_POSE_TAG = "ROCK_Grab";
+
+    // FRIK's primary weapon hand pose block a loose weapon's authored grab pose takes.
+    [[nodiscard]] inline const char* grabPrimaryPoseBlockTag(bool isLeft)
+    {
+        return isLeft ? "ROCK_GrabPrimaryPoseLeft" : "ROCK_GrabPrimaryPoseRight";
+    }
+
+    /*
+     * Ends the grab's finger pose and the primary weapon hand pose block that
+     * goes with it. Every end of a grab clears both: a block left behind keeps
+     * FRIK's weapon hand pose off that hand, also in FRIK's weapon adjustment.
+     */
+    inline void clearGrabHandPose(bool isLeft)
+    {
+        (void)frik_visual_authority::clearHandPose(GRAB_HAND_POSE_TAG, handFromBool(isLeft));
+        (void)frik_visual_authority::blockPrimaryHandWeaponPose(grabPrimaryPoseBlockTag(isLeft), false);
+    }
+
     inline bool isUsableGrabVisualTransform(const RE::NiTransform& transform)
     {
         if (!std::isfinite(transform.translate.x) || !std::isfinite(transform.translate.y) ||

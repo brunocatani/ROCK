@@ -38,9 +38,9 @@ namespace rock::api::weapon {
         // 12 retired (one bipod reservation without its hand); never reuse.
         // loadedRounds and reserveRounds hold the weapon's ammo counter.
         AmmoKnown = 1u << 13,
-        // The weapon is seated and scaled from the player's own FRIK weapon
-        // offset file, with dynamic support grabs only. Animation authored
-        // for ROCK's grip of this weapon does not fit its hands.
+        // The weapon is seated and scaled from a FRIK weapon offset (saved by
+        // the player or shipped with FRIK). Animation authored for ROCK's
+        // grip of this weapon does not fit its hands.
         UserWeaponOffset = 1u << 14,
         // Slot 1 only: ROCK's private graph of this weapon is in its reload.
         // Slot 0's reload is the player's own graph.

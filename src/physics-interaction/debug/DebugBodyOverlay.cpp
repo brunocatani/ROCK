@@ -2435,9 +2435,25 @@ namespace rock::debug
             }
         }
 
-        // Gameplay markers: solid white unit spheres scaled to the marker size.
+        // Gameplay markers: solid white unit spheres scaled to the marker size, and white outline lines.
         void appendGripZoneIndicators(const grip_zone_indicators::Frame& frame, WorldDrawScratch& out)
         {
+            const std::uint32_t lineCount = (std::min)(frame.lineCount, static_cast<std::uint32_t>(frame.lines.size()));
+            for (std::uint32_t index = 0; index < lineCount && out.worldLines.size() < rpsui::api::world_draw::kMaxLines;
+                 ++index) {
+                const auto& source = frame.lines[index];
+                rpsui::api::world_draw::Line line{};
+                line.start[0] = source.start.x;
+                line.start[1] = source.start.y;
+                line.start[2] = source.start.z;
+                line.end[0] = source.end.x;
+                line.end[1] = source.end.y;
+                line.end[2] = source.end.z;
+                if (finiteValues(line.start, 3) && finiteValues(line.end, 3)) {
+                    out.worldLines.push_back(line);
+                }
+            }
+
             const std::uint32_t count = (std::min)(frame.count, static_cast<std::uint32_t>(frame.positions.size()));
             if (count == 0 || !std::isfinite(frame.diameterGameUnits) || frame.diameterGameUnits <= 0.0f) {
                 return;
@@ -2604,7 +2620,8 @@ namespace rock::debug
             if (frame && !frame->worldIdentity)
                 frame.reset();
             const auto gripZoneIndicatorFrame = grip_zone_indicators::Snapshot();
-            const bool hasGripZoneIndicatorsToDraw = gripZoneIndicatorFrame && gripZoneIndicatorFrame->count > 0;
+            const bool hasGripZoneIndicatorsToDraw =
+                gripZoneIndicatorFrame && (gripZoneIndicatorFrame->count > 0 || gripZoneIndicatorFrame->lineCount > 0);
             if (!frame && !hasGripZoneIndicatorsToDraw) {
                 return;
             }

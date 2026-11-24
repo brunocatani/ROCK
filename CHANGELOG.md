@@ -30,6 +30,18 @@
   inventory and starts playing at once; game and terminal holotapes open in the
   Pip-Boy. Stashing a holotape at your shoulder still only stashes it.
 
+### Changed
+
+- **ROCK's settings move to Mods Config FO4 VR.** ROCK's page there edits `ROCK.toml`;
+  RPS UI Framework's settings menu (RobCo PALM's Config) no longer has ROCK pages.
+  Its Developer page, shown with Show Developer Pages, edits `ROCK_Developer.toml`;
+  `[Developer] EnableDeveloperSettings` is gone. The developer offsets are now
+  `{ pos = [...] }` tables without their unit suffix, and old values carry over; the two
+  scope rotations are `{ rot = [pitch, roll, yaw] }` and start again at zero.
+- **The setup wizard opens from ROCK's page in Mods Config**, with its Setup Wizard button.
+- **For mod authors: the Configuration interface (13) is retired.** ROCK refuses it and
+  logs the mod that asks; there is no replacement call.
+
 ### Fixed
 
 - **Saved loose weapon states apply when a weapon loads with its cell.** A loose

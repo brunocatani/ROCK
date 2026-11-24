@@ -53,6 +53,45 @@ namespace rock
         StashCandidate,
         ConsumeCandidate,
     };
+
+    [[nodiscard]] inline constexpr const char* handStateName(HandState state) noexcept
+    {
+        switch (state) {
+        case HandState::Idle:
+            return "Idle";
+        case HandState::SelectedClose:
+            return "SelectedClose";
+        case HandState::SelectedFar:
+            return "SelectedFar";
+        case HandState::SelectionLocked:
+            return "SelectionLocked";
+        case HandState::PreGrabItem:
+            return "PreGrabItem";
+        case HandState::PrePullItem:
+            return "PrePullItem";
+        case HandState::HeldInit:
+            return "HeldInit";
+        case HandState::HeldBody:
+            return "HeldBody";
+        case HandState::Pulled:
+            return "Pulled";
+        case HandState::GrabFromOtherHand:
+            return "GrabFromOtherHand";
+        case HandState::GrabExternal:
+            return "GrabExternal";
+        case HandState::LootOtherHand:
+            return "LootOtherHand";
+        case HandState::SelectedTwoHand:
+            return "SelectedTwoHand";
+        case HandState::HeldTwoHanded:
+            return "HeldTwoHanded";
+        case HandState::StashCandidate:
+            return "StashCandidate";
+        case HandState::ConsumeCandidate:
+            return "ConsumeCandidate";
+        }
+        return "Unknown";
+    }
 }
 
 // ---- Hand semantic contact state ----

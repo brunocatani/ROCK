@@ -7,8 +7,7 @@
  * goes through ROCK's settings store like any other change, so the bindings
  * and options apply at once.
  *
- * It opens from PALM's Config (the ROCK page) and from
- * Configuration::openSetupWizard, and by itself once per game start when this ROCK
+ * It opens from Mods Config (mods-config/ModsConfigClient.h), and by itself once per game start when this ROCK
  * brings a newer edition of it ([SetupWizard] ShownEdition) or a SteamVR binding to
  * offer, 10 seconds after the game is free (AutoOpenGate.h). While open it captures the
  * controllers through RPS UI, so the game and ROCK's gameplay ignore them, and
@@ -26,6 +25,9 @@ namespace rock::setup_wizard
 {
     // Asks for the wizard on the next frame. False when RPS UI Framework is not loaded.
     bool requestOpen() noexcept;
+
+    // Whether the wizard is open or an open request waits for the next frame.
+    [[nodiscard]] bool isActive() noexcept;
 
     // Every frame: connects to RPS UI when needed, opens a requested
     // wizard, saves or closes it.

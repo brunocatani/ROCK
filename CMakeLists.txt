@@ -239,6 +239,7 @@ set(ROCK_SETUP_WIZARD_PREVIEW_COPY_PATH "" CACHE PATH
 add_library(ROCKSetupWizardPreviewCore STATIC
   "${SOURCE_DIR}/RockConfig.cpp"
   "${SOURCE_DIR}/RockConfigLoad.cpp"
+  "${SOURCE_DIR}/physics-interaction/input/FunctionBindingText.cpp"
   "${SOURCE_DIR}/config/RockSettings.cpp"
   "${SOURCE_DIR}/setup-wizard/SetupWizardPanel.cpp"
   "${SOURCE_DIR}/setup-wizard/SetupWizardSettings.cpp"
@@ -837,6 +838,7 @@ if(BUILD_ROCK_TESTS)
     "${ROOT_DIR}/tests/ConfigurationStoreTests.cpp"
     "${SOURCE_DIR}/config/RockSettings.cpp"
     "${SOURCE_DIR}/RockConfigLoad.cpp"
+    "${SOURCE_DIR}/physics-interaction/input/FunctionBindingText.cpp"
   )
   target_compile_features(ROCKConfigurationStoreTests PRIVATE cxx_std_23)
   target_compile_definitions(ROCKConfigurationStoreTests PRIVATE ROCK_CONFIG_REFERENCE_DIR="${ROOT_DIR}/data/config"
@@ -844,28 +846,41 @@ if(BUILD_ROCK_TESTS)
   list(APPEND ROCK_COMMONLIB_TEST_TARGETS ROCKConfigurationStoreTests)
   add_rock_test(ROCKConfigurationStoreTests)
 
+  add_executable(ROCKModsConfigSpecTests
+    "${ROOT_DIR}/tests/ModsConfigSpecTests.cpp"
+    "${SOURCE_DIR}/config/RockSettings.cpp"
+    "${SOURCE_DIR}/RockConfigLoad.cpp"
+    "${SOURCE_DIR}/physics-interaction/input/FunctionBindingText.cpp"
+  )
+  target_compile_features(ROCKModsConfigSpecTests PRIVATE cxx_std_23)
+  target_compile_definitions(ROCKModsConfigSpecTests PRIVATE
+    ROCK_MODS_CONFIG_SPEC="${ROOT_DIR}/data/mod/ModsConfigFO4/Config/ROCK/spec.json")
+  target_link_libraries(ROCKModsConfigSpecTests PRIVATE nlohmann_json::nlohmann_json)
+  list(APPEND ROCK_COMMONLIB_TEST_TARGETS ROCKModsConfigSpecTests)
+  add_rock_test(ROCKModsConfigSpecTests)
+
   add_executable(ROCKSetupWizardTests
     "${ROOT_DIR}/tests/SetupWizardTests.cpp"
     "${SOURCE_DIR}/config/RockSettings.cpp"
     "${SOURCE_DIR}/RockConfigLoad.cpp"
+    "${SOURCE_DIR}/physics-interaction/input/FunctionBindingText.cpp"
   )
   target_compile_features(ROCKSetupWizardTests PRIVATE cxx_std_23)
   list(APPEND ROCK_COMMONLIB_TEST_TARGETS ROCKSetupWizardTests)
   add_rock_test(ROCKSetupWizardTests)
 
-  add_executable(ROCKConfigurationProviderTests
-    "${ROOT_DIR}/tests/ConfigurationProviderTests.cpp"
-    "${SOURCE_DIR}/api/providers/ConfigurationProvider.cpp"
-    "${ROOT_DIR}/tests/SetupWizardStub.cpp"
+  add_executable(ROCKConfigTests
+    "${ROOT_DIR}/tests/RockConfigTests.cpp"
     "${SOURCE_DIR}/RockConfig.cpp"
     "${SOURCE_DIR}/RockConfigLoad.cpp"
+    "${SOURCE_DIR}/physics-interaction/input/FunctionBindingText.cpp"
     "${SOURCE_DIR}/config/RockSettings.cpp"
   )
-  target_compile_features(ROCKConfigurationProviderTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKConfigurationProviderTests PRIVATE ${SOURCE_DIR})
-  target_precompile_headers(ROCKConfigurationProviderTests PRIVATE "${ROOT_DIR}/tests/CommonLibPolicyPCH.h" <F4SE/Logger.h>)
-  target_link_libraries(ROCKConfigurationProviderTests PRIVATE CommonLibF4::CommonLibF4 spdlog::spdlog RPS::Settings)
-  add_rock_test(ROCKConfigurationProviderTests)
+  target_compile_features(ROCKConfigTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKConfigTests PRIVATE ${SOURCE_DIR})
+  target_precompile_headers(ROCKConfigTests PRIVATE "${ROOT_DIR}/tests/CommonLibPolicyPCH.h" <F4SE/Logger.h>)
+  target_link_libraries(ROCKConfigTests PRIVATE CommonLibF4::CommonLibF4 spdlog::spdlog RPS::Settings)
+  add_rock_test(ROCKConfigTests)
 
   foreach(ROCK_COMMONLIB_TEST_TARGET IN LISTS ROCK_COMMONLIB_TEST_TARGETS)
     target_precompile_headers(${ROCK_COMMONLIB_TEST_TARGET} REUSE_FROM ROCKPolicyTestSupport)

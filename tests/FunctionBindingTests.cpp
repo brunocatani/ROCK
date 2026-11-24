@@ -30,9 +30,7 @@ namespace
         explicit Rig(const fb::Bindings& bindings)
         {
             composer.configure(bindings);
-            context.holdSeconds[static_cast<std::size_t>(Function::Scope)] = 0.30f;
-            context.holdSeconds[static_cast<std::size_t>(Function::Pause)] = 0.35f;
-            context.holdSeconds[static_cast<std::size_t>(Function::Grenade)] = 0.25f;
+            context.gestureSeconds = fb::homeSeconds();
         }
 
         void set(std::size_t side, Source source, bool down) { samples[side].pressed[static_cast<std::size_t>(source)] = down; }
@@ -67,21 +65,16 @@ namespace
             for (const bool synthesized : hand.synthesized) expect("default binding synthesized a button", !synthesized);
     }
 
-    // The [Bindings] values are a configuration contract.
-    void bindingTextRoundTrips()
+    // ROCK's old [Bindings] strings are read to migrate a file: a configuration contract.
+    void legacyBindingText()
     {
-        for (std::size_t f = 0; f < fb::kFunctionCount; ++f) {
-            const auto home = fb::homeBinding(static_cast<Function>(f));
-            const auto parsed = fb::parseBinding(fb::formatBinding(home));
-            expect("a home binding does not survive its own text", parsed && *parsed == home);
-        }
-        const auto chord = fb::parseBinding("offhand double grip +offhand trigger");
+        const auto chord = fb::parseLegacyBinding("offhand double grip +offhand trigger");
         expect("chord parsed", chord && chord->gesture == fb::Gesture::DoubleTap && chord->control.source == Source::Grip &&
             chord->modifier.source == Source::Trigger && chord->modifier.hand == fb::BindingHand::Offhand);
-        const auto sameHand = fb::parseBinding("right tap b +grip");
+        const auto sameHand = fb::parseLegacyBinding("right tap b +grip");
         expect("same-hand chord parsed", sameHand && sameHand->modifier.hand == fb::BindingHand::Right);
-        expect("none parsed", fb::parseBinding("none") && !fb::parseBinding("none")->bound());
-        expect("garbage refused", !fb::parseBinding("firing sometimes a") && !fb::parseBinding("left tap"));
+        expect("none parsed", fb::parseLegacyBinding("none") && !fb::parseLegacyBinding("none")->bound());
+        expect("garbage refused", !fb::parseLegacyBinding("firing sometimes a") && !fb::parseLegacyBinding("left tap"));
     }
 
     // Reload moved to a right grip double tap: A keeps Scope and Use, and a plain
@@ -89,7 +82,7 @@ namespace
     void movedReloadPresentsTaggedTapOnA()
     {
         auto bindings = fb::homeBindings();
-        bindings[static_cast<std::size_t>(Function::Reload)] = *fb::parseBinding("right double grip");
+        bindings[static_cast<std::size_t>(Function::Reload)] = *fb::parseLegacyBinding("right double grip");
         Rig rig(bindings);
         rig.context.eligible &= ~fb::functionBit(Function::Use);
 
@@ -128,7 +121,7 @@ namespace
     void useTakesTheWholePress()
     {
         auto bindings = fb::homeBindings();
-        bindings[static_cast<std::size_t>(Function::Reload)] = *fb::parseBinding("right double grip");
+        bindings[static_cast<std::size_t>(Function::Reload)] = *fb::parseLegacyBinding("right double grip");
         Rig rig(bindings);
         rig.set(kRight, Source::LowerFace, true);
         auto out = rig.step(0.0);
@@ -141,7 +134,7 @@ namespace
     void soleTapActsOnPress()
     {
         auto bindings = fb::homeBindings();
-        bindings[static_cast<std::size_t>(Function::Pipboy)] = *fb::parseBinding("left tap thumbstick");
+        bindings[static_cast<std::size_t>(Function::Pipboy)] = *fb::parseLegacyBinding("left tap thumbstick");
         Rig rig(bindings);
         rig.set(kLeft, Source::Stick, true);
         auto out = rig.step(0.0);
@@ -159,7 +152,7 @@ namespace
     void bypassBlocksUntilRelease()
     {
         auto bindings = fb::homeBindings();
-        bindings[static_cast<std::size_t>(Function::Vats)] = *fb::parseBinding("primary tap grip");
+        bindings[static_cast<std::size_t>(Function::Vats)] = *fb::parseLegacyBinding("primary tap grip");
         Rig rig(bindings);
         rig.context.bypass = true;
         rig.set(kRight, Source::Grip, true);
@@ -179,7 +172,7 @@ namespace
     void sharedStickKeepsEveryFunction()
     {
         auto bindings = fb::homeBindings();
-        bindings[static_cast<std::size_t>(Function::StickActions)] = *fb::parseBinding("primary double thumbstick");
+        bindings[static_cast<std::size_t>(Function::StickActions)] = *fb::parseLegacyBinding("primary double thumbstick");
         Rig rig(bindings);
         rig.set(kRight, Source::Stick, true);
         auto out = rig.step(0.0);
@@ -198,7 +191,7 @@ namespace
     void eachHandStaysIndependent()
     {
         auto bindings = fb::homeBindings();
-        bindings[static_cast<std::size_t>(Function::Vats)] = *fb::parseBinding("right tap grip");
+        bindings[static_cast<std::size_t>(Function::Vats)] = *fb::parseLegacyBinding("right tap grip");
         Rig rig(bindings);
         rig.set(kLeft, Source::Grip, true);
         const auto out = rig.step(0.0);
@@ -209,7 +202,7 @@ namespace
 int main()
 {
     defaultBindingsPassThrough();
-    bindingTextRoundTrips();
+    legacyBindingText();
     movedReloadPresentsTaggedTapOnA();
     useTakesTheWholePress();
     soleTapActsOnPress();

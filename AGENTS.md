@@ -1,12 +1,12 @@
 # AGENTS.md - ROCK
 
-ROCK is a Fallout 4 VR F4SE plugin (`ROCK.dll`) that gives the player physical hands: grabbing, hand, body and weapon collision, equipped-weapon handling, and a provider API other plugins consume. It runs inside FRIK's frame (FRIK 0.79.1 or newer, FRIK API 2.3), links CommonLibF4VR directly and targets Fallout 4 VR 1.2.72.0 only.
+ROCK is a Fallout 4 VR F4SE plugin (`ROCK.dll`) that gives the player physical hands: grabbing, hand, body and weapon collision, equipped-weapon handling, and a provider API other plugins consume. It runs inside FRIK's frame (FRIK 0.79.1 or newer, FRIK API 2.3; FRIK's weapon offsets and its weapon adjustment need FRIK 0.80.2, API 2.5, gated by `frik_visual_authority::supportsApiVersion`), links CommonLibF4VR directly and targets Fallout 4 VR 1.2.72.0 only.
 
 To change ROCK: read [Architecture](#architecture), find the task in [Where to start](#where-to-start), and read the opening comment of each file it names; almost every file opens with one saying what it owns. [Invariants](#invariants) lists what every change must keep true.
 
 ## Building a mod on ROCK
 
-- Provider API 2.0: 13 interfaces in `include/ROCK/`, standard library only, nothing to link. Add ROCK's `include/` through a CMake cache variable such as `ROCK_INCLUDE_DIR`, resolve `ROCKAPI_QueryInterfaceV1` from `ROCK.dll` and connect with `rock::api::Client`. Never include `src/` headers or copy ROCK's headers.
+- Provider API 2.0: 12 interfaces in `include/ROCK/`, standard library only, nothing to link. Add ROCK's `include/` through a CMake cache variable such as `ROCK_INCLUDE_DIR`, resolve `ROCKAPI_QueryInterfaceV1` from `ROCK.dll` and connect with `rock::api::Client`. Never include `src/` headers or copy ROCK's headers.
 - Read `docs/api/Overview.md`, then each interface's page; they state every call's thread, permission and limits.
 - A mod built for ROCK 0.92: follow `skills/rock-1.0-migration/SKILL.md` (it also covers PAPER, RPS UI Framework and RobCo PALM) and `docs/api/Migration.md`.
 - Without ROCK, turn ROCK features off and keep running. Request exactly the versions your headers declare and never probe: every version refusal is logged in `ROCK.log` with your DLL.
@@ -17,12 +17,13 @@ To change ROCK: read [Architecture](#architecture), find the task in [Where to s
 | --- | --- |
 | `src/` | The plugin (see [Source map](#source-map)) |
 | `include/ROCK/` | Public provider API headers, the only copy |
+| `docs/README.md`, `docs/images/` | The player guide (controls, features, settings pages), linked from the README and ROCK's Mods Config page, and its images |
 | `docs/api/` | One page per interface, and `Migration.md` for mods built for ROCK 0.92 |
 | `skills/rock-1.0-migration/` | Agent skill for updating a mod built for ROCK 0.92 |
 | `tests/` | Tests |
 | `preview/` | The setup wizard preview (`ROCKSetupWizardPreview.exe`): the wizard on the desktop, without the game |
 | `data/config/` | Example settings files, generated from the catalog |
-| `data/mod/` | Game data for the mod package, if any |
+| `data/mod/` | Game data for the mod package: ROCK's Mods Config FO4 VR page (`ModsConfigFO4/Config/ROCK/spec.json`) and its banner (`Textures/ROCK/banner.dds`) |
 | `steamvr_bindings/` | SteamVR binding templates; shipped in the package and embedded in `ROCK.dll` for the setup wizard |
 | `third_party/openvr/` | Vendored OpenVR ABI |
 | `cmake/` | Version resource, test registration, packaging |
@@ -41,12 +42,12 @@ To change ROCK: read [Architecture](#architecture), find the task in [Where to s
 
 | FRIK phase | ROCK work |
 | --- | --- |
-| `FrameBegin` | Pending teardown, settings reload, `PhysicsInteraction` creation, native HUD placement |
+| `FrameBegin` | Pending teardown, queued devbench actions, settings reload, `PhysicsInteraction` creation, native HUD placement |
 | `NativeGraphOutput` | Authored weapon grip capture |
 | `AfterArmSolve` | The tick: provider `BeforeRock` callbacks, `PhysicsInteraction::update`, `AfterRock`, `Complete` |
 | `AfterWeaponPosition` | Weapon presentation |
 | `AfterWorldFinal` | Rendered-pose capture, `finalizeFramePose`, provider publication, `Presented` callbacks |
-| `FrameEnd` | A tick without physics when the skeleton phases did not run, so leases still expire |
+| `FrameEnd` | A tick without physics when the skeleton phases did not run, so leases still expire; the devbench state snapshot |
 
 `PhysicsInteraction::update` (`core/interaction/PhysicsInteractionUpdate.cpp`) stops early without FRIK, a skeleton or a Havok world, or behind a menu; builds one `PhysicsFrameContext`; updates hand and body colliders; runs the equipped-weapon frame; then selection, grab input, held placement, hand collision, haptics, contacts and grenades. `finalizeFramePose` publishes the final collider pose and registers the next physics-step callbacks.
 
@@ -55,6 +56,7 @@ To change ROCK: read [Architecture](#architecture), find the task in [Where to s
 - **Frame thread** (FRIK's callbacks, the game thread): owns `PhysicsInteraction`, both `Hand`s and every structural change to ROCK's Havok bodies. Provider calls marked "Game" must come from here.
 - **Physics threads**: contact signals (`core/interaction/ContactEvents.cpp`) and the step drive (`native/havok/PhysicsStepDriveCoordinator.h`), which moves ROCK's bodies and the grab authority between substeps. They never change structure; the frame thread changes it only inside `PhysicsCallbackQuiescenceGate::pauseForMutation()`.
 - **Any thread**: provider reads marked "Any" copy published snapshots.
+- **devbench's listener thread** calls the devbench tool: `health`, `state` and `perf` answer there from atomics and published snapshots; `hand` and `weapon` queue for FrameEnd, every other action for FrameBegin.
 - **Background workers** handle file and diagnostic work on copied data: the saved-grab-offset writer, the profiler's report writer and the debug overlay shape builder. Weapon geometry is built in bounded slices on the frame thread (`weapon/collision/WeaponGeometryTask.h`).
 
 ### Ownership
@@ -119,7 +121,9 @@ Under `src/physics-interaction/` unless the path says otherwise.
 | `src/api/` | Provider API and FRIK API binding |
 | `src/config/`, `src/RockConfig*.cpp` | Settings catalog and loader |
 | `src/setup-wizard/` | Setup wizard: its panel (`SetupWizardPanel`, shared with the preview), the game's host and SteamVR binding |
+| `src/mods-config/` | ROCK's client of Mods Config FO4 VR's native API; `ModsConfigFO4Api.h` is Mods Config's header, copied as is |
 | `src/rock_support/` | Logger, OpenVR controller state, menus, game INI overrides, developer telemetry |
+| `src/devbench/` | The devbench tool: live state, session settings and profiler; `vendor/` is devbench's client API, copied as is |
 
 ## Where to start
 
@@ -139,6 +143,8 @@ Under `src/physics-interaction/` unless the path says otherwise.
 | Equip, draw, holster, drop | `core/interaction/EquippedWeaponFrame.cpp`, `core/interaction/EquippedWeaponDrop.cpp`, `weapon/equip/EquippedWeaponTransitionCoordinator.cpp`, `weapon/native/NativeHandEquipment.cpp` |
 | Holding a gun: firing seat, support hand, aim | `weapon/grip/TwoHandedGripController.cpp`, `weapon/grip/WeaponGripSeat.cpp`, `weapon/handling/GunstockMode.h` |
 | Authored grips | `weapon/authored/`, `animation/AuthoredWeaponGripCapture.cpp` |
+| FRIK weapon offsets (built-in and saved, read through FRIK's API) | `weapon/handling/FrikWeaponOffsets.cpp`, `weapon/handling/FrikWeaponOffsetPolicy.h` |
+| FRIK's weapon adjustment (ROCK yields the weapon while it is open) | `RuntimeFrameSnapshot::frikWeaponAdjustmentOpen` in `core/RockRuntimeState.h`, `holdEquippedWeaponInMenu` in `core/interaction/EquippedWeaponFrame.cpp` |
 | Weapon collision | `weapon/collision/WeaponCollision.h`, `weapon/collision/DynamicWeaponCollision.cpp` |
 | The second weapon | `weapon/secondary/NativeSecondaryPresentation.cpp`, `weapon/equip/EquippedWeaponRoster.h` |
 | Scopes | `weapon/scope/NativeScopeData.cpp`, `input/ManualScopeInputPolicy.h` |
@@ -147,16 +153,19 @@ Under `src/physics-interaction/` unless the path says otherwise.
 | Eating, drinking, stimpaks | `consume/MouthConsumeDetector.cpp`, `consume/ImmersiveAid.cpp` |
 | Grenades | `grenade/LooseGrenadeRuntime.cpp`, `core/interaction/ForceGrabAndGrenades.cpp` |
 | Loose objects and ammo | `object/ObjectDetection.cpp`, `object/CountBasedAmmo.cpp` |
-| Buttons and bindings | `input/ButtonLayoutPolicy.h`, `input/FunctionBindingPolicy.h`, `input/InputRemapRuntime.cpp` |
+| Buttons and bindings | `input/ButtonLayoutPolicy.h`, `input/FunctionBindingPolicy.h`, `input/FunctionBindingText.h` (the `[Bindings]` tables), `input/InputRemapRuntime.cpp` |
 | Ammo counters | `visual/AmmoCounters.cpp`, `core/interaction/AmmoCounterFrame.cpp` |
 | Indicators and debug drawing | `visual/WorldDrawClient.cpp`, `debug/`, `core/interaction/DebugOverlayPublish.cpp` |
 | Native HUD placement | `native/player/` |
 | Character controller | `native/player/CharacterControllerRuntime.cpp` |
 | Native crashes in Havok or ragdolls | `native/safety/` |
-| A setting | `src/config/SettingMetadata.h`, `src/RockConfigLoad.cpp`, `src/RockConfig.h`, then regenerate the examples |
+| A setting | `src/config/SettingMetadata.h`, `src/RockConfigLoad.cpp`, `src/RockConfig.h`, then regenerate the examples and place a `ROCK.toml` option in `spec.json` or its `kLeftOut`, or regenerate the Developer page for a developer option with `ROCKModsConfigSpecTests --write-developer-page data/mod/ModsConfigFO4/Config/ROCK/spec.json` (`ROCKModsConfigSpecTests` fails until you do) |
 | The setup wizard | `src/setup-wizard/SetupWizardPanel.cpp` (pages), `SetupWizard.cpp` (game host); try it with the preview |
+| ROCK's Mods Config page | `data/mod/ModsConfigFO4/Config/ROCK/spec.json`, `src/mods-config/ModsConfigClient.cpp` (its functions, live preview, version state, and the rows shown on the weapon while pointed at, by their spec `id`s); a renamed or moved page also changes the settings table in `docs/README.md` |
+| Player-visible behavior, controls or defaults | Then `docs/README.md`, the player guide |
 | A provider API call | Its header, its `docs/api/` page, then [Provider API path](#provider-api-path) |
 | Frame-time cost | `performance/PerformanceProfiler.cpp` |
+| ROCK in the running game: its state, session settings, profiling | `docs/dev/devbench.md` |
 
 ## Build and test
 
@@ -191,7 +200,7 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp` for engine math. `
 - **NPC interactions**: SCISSORS, through the NativeInteraction interface, owns its NPC bodies, constraints, blade and limb policy. ROCK keeps the shared mechanisms (native allocation, callback lifetime, hand and weapon authority, grab execution, native safety) and has no NPC settings.
 - **World drawing**: RPS UI Framework. ROCK draws through it (`visual/WorldDrawClient.cpp`, `visual/AmmoCounters.cpp`) and has no renderer.
 - **Reload and manual-cycle animation**: PAPER.
-- **Settings screens**: RPS UI Framework's settings menu (opened from its holotape or RobCo PALM's Config), through the Configuration interface. ROCK owns only the setup wizard. Nothing else writes ROCK's settings files.
+- **Settings screens**: Mods Config FO4 VR, from ROCK's `spec.json`. It writes `ROCK.toml` in place on Save and ROCK's file watcher reloads it. Before the Save, each change of a `live` setting reaches ROCK's client as a preview value in `RockConfig`, laid over the files' values at the next `FrameBegin` and ended by its Discard, the Save or the menu closing. A setting that cannot change mid-use (a held button, a one-way hook) gets `applies: save` in `spec.json`, as the Controls page, Immersive Scopes and Immersive Grenades have. ROCK owns only the setup wizard, which Mods Config opens through ROCK's client (`src/mods-config/`). Refresh `ModsConfigFO4Api.h` from Mods Config's `src/api/` and never edit it; copying it is how Mods Config's API is used, unlike ROCK's own headers. Its Developer page, shown with Show Developer Pages, edits `ROCK_Developer.toml` and is generated from the catalog. Nothing else writes ROCK's settings files.
 
 ## Invariants
 
@@ -208,7 +217,7 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp` for engine math. `
 - A live NPC's limb keeps its own body: the hold is a reduced-force point and the limb may lag the hand.
 - A held actor's ragdoll, living or dead, is drawn from its own bodies, never presented at the hand: shifting every body by the hand's lead over the held limb shook his hands, feet and head with a shaken limb.
 - Per-frame limits scale with frame length, never with 90 Hz frame counts.
-- Every controller-state read passes through the `[Controls]` button layout before ROCK sees it, so everything reads one logical button set; features never keep their own physical button tables. `[Bindings]` then presents a moved function as a tagged press of its home button.
+- Every controller-state read passes through the `[Controls]` button layout before ROCK sees it, so everything reads one logical button set; features never keep their own physical button tables. `[Bindings]` then presents a moved function as a tagged press of its home button. A hold time lives only on its binding: the A, B and left Y splits time with the Scope, Grenade and Pause durations, bound or not.
 
 ### Provider API
 
@@ -218,7 +227,8 @@ Tests link CommonLib's real `NiPoint.cpp` and `NiMatrix3.cpp` for engine math. `
 
 ### Configuration
 
-- `src/config/SettingMetadata.h` is the single source of every option (table, key, owning file, category, help); `RockConfigLoad.cpp` gives its type and default. Each option belongs to exactly one of `ROCK.toml` (players) and `ROCK_Developer.toml` (developer overrides only). Startup fails when catalog and loader disagree.
+- `src/config/SettingMetadata.h` is the single source of every option (table, key, owning file, category, help, the clamp its `readClamped*` read applies and its Developer page slider range); `RockConfigLoad.cpp` gives its type and default, and any other limit. Each option belongs to exactly one of `ROCK.toml` (players) and `ROCK_Developer.toml` (developer overrides only). Startup fails when catalog and loader disagree.
 - After any catalog change, regenerate `data/config/*_example.toml` with `ROCKConfigurationStoreTests --write-examples data/config`; the test fails when they differ. ROCK never reads the examples.
-- RPS Framework's settings store reads, organizes and writes the files (`src/config/RockSettings.cpp`). A file that does not parse is never rewritten, keeps its last values and refuses API writes until fixed. Both files reload while the game runs.
+- RPS Framework's settings store reads, organizes and writes the files (`src/config/RockSettings.cpp`). A file that does not parse is never rewritten, keeps its last values and refuses writes until fixed. Both files reload while the game runs.
 - Old `ROCK.ini` files migrate once, only when `ROCK.toml` is missing, through the frozen table `src/config/LegacyIniMigrationTable.inl` (never regenerated), and are deleted only after the TOML files read back.
+- A renamed TOML key gets a row in the frozen `kRenamedKeys` (`src/config/RockSettings.cpp`), which carries its value to the new key at startup, and the INI rows that targeted it follow the new name. A value whose form changed gets a frozen conversion (`kConversions`, there): it turns old `[Bindings]` strings and the retired hold times into binding tables.

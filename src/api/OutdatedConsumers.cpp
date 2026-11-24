@@ -31,8 +31,11 @@ namespace rock::api::discovery
                         return requestedMajor < entry.descriptor.major ? Mismatch::ConsumerOlder : Mismatch::ConsumerNewer;
                 return Mismatch::None;
             case Status::UnknownInterface:
-                // A retired interface (Diagnostics, References, the old storage
-                // family) asked for at major 1, or an interface from a later ROCK.
+                // A retired interface (References, Diagnostics, Configuration at
+                // any major; the old storage family at major 1), or an interface
+                // from a later ROCK.
+                if (id == InterfaceId::References || id == InterfaceId::Diagnostics || id == InterfaceId::Configuration)
+                    return Mismatch::ConsumerOlder;
                 return requestedMajor < core::kMajor ? Mismatch::ConsumerOlder : Mismatch::ConsumerNewer;
             case Status::UnsupportedMinor:
             case Status::TableTooSmall:

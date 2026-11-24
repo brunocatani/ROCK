@@ -321,7 +321,7 @@ namespace rock
         }
 
         beginGrabVisualReturn();
-        (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
+        clearGrabHandPose(_isLeft);
         clearGrabExternalHandWorldTransform(_isLeft);
         clearSelectedCloseFingerPose();
         _ragdollGrab.owner.reset();

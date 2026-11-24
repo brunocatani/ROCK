@@ -217,11 +217,13 @@ namespace rock
         const RE::NiTransform& fixedFiringHandInWeapon = nativeSeat.rightHandWeaponLocal;
         const bool harvestedRelationAvailable = nativeSeat.harvested();
         /*
-         * A player FRIK weapon offset moves the hands off the animation's
-         * weapon relation. It replaces the firing seat (nativeSeat already
-         * carries it), outranks ROCK's holding grips, and no authored support
-         * relation fits it: support grabs are dynamic only. It never feeds
-         * the authored library, which stays the animation's relation.
+         * A FRIK weapon offset moves the weapon in the firing hand. It replaces
+         * the firing seat (nativeSeat already carries it) and outranks ROCK's
+         * holding grips. The support seat stays the animation's, which is a
+         * point on the weapon and so still fits; only the clip-sampled library
+         * relation is offered, never a live or stable capture of the moved
+         * hold. It never feeds the authored library, which stays the
+         * animation's relation.
          */
         const auto& userOffset = nativeSeat.userOffset;
         const bool userSeat = nativeSeat.userSeat;
@@ -280,8 +282,17 @@ namespace rock
             if (!librarySupportAuthoritative || !input.weaponNode || input.weaponGenerationKey == 0) {
                 return false;
             }
-            return weaponAuthority.setAuthoredSupportGripCandidate(input.weaponNode,
-                authoredLookup.supportHandWeaponLocal, authoredLookup.supportFingerPose.localTransforms,
+            /*
+             * A FRIK offset scales the weapon node. The seat keeps its point on
+             * the mesh (weapon-local units) and the hand its own size, so the
+             * relation carries the inverse scale, as the offset's firing seat does.
+             */
+            RE::NiTransform supportHandWeaponLocal = authoredLookup.supportHandWeaponLocal;
+            if (userOffset) {
+                supportHandWeaponLocal.scale /= userOffset->weaponScale();
+            }
+            return weaponAuthority.setAuthoredSupportGripCandidate(input.weaponNode, supportHandWeaponLocal,
+                authoredLookup.supportFingerPose.localTransforms,
                 authoredLookup.supportFingerPose.enabledMask, input.weaponGenerationKey,
                 authoredLookup.supportCaptureSequence);
         };
@@ -293,17 +304,20 @@ namespace rock
          * capability expired to Unavailable and the weapon lost its support
          * grabs and zones (observed at runtime, 0D000FA1).
          */
-        // A user offset publishes support absence, which selects the dynamic
-        // fallback, and counts as published so no live or stable authored
-        // relation is offered or learned for it.
+        // With a FRIK offset no live or stable relation is offered or learned.
+        // Without a library relation it publishes support absence, which
+        // selects the dynamic fallback, and either counts as published.
         if (userOffset) {
             clearStableAuthoredSupportGripSnapshot();
             _liveSupportWitness = {};
+        }
+        bool librarySupportPublished = publishLibraryAuthoredSupportCandidate();
+        if (userOffset && !librarySupportPublished) {
             (void)weaponAuthority.setAuthoredSupportGripAbsent(input.weaponNode, input.weaponGenerationKey,
                 authoredLookup.captureSequence != 0 ? authoredLookup.captureSequence
                                                     : (std::max<std::uint64_t>)(_supportCaptureSequenceFloor, 1));
+            librarySupportPublished = true;
         }
-        const bool librarySupportPublished = userOffset || publishLibraryAuthoredSupportCandidate();
         // Runtime evidence that the clip-sampled relation matches what the
         // native right-primary graph settles to; sampled, debug only.
         const auto traceLiveSupportAgainstLibrary = [&]() {
@@ -963,7 +977,7 @@ namespace rock
         // same-weapon snapshot instead of treating that animation gap as the
         // permanent loss of authored support-grip capability.
         if (userOffset) {
-            // Support absence published above.
+            // The library relation or support absence was published above.
         } else if (librarySupportPublished) {
             traceLiveSupportAgainstLibrary();
         } else if (!publishLiveAuthoredSupportCandidate(resolvedCaptureSequence, authoredPrimaryHandInWeapon)) {

@@ -1,9 +1,12 @@
 // ROCK's settings contracts on RPS::Settings (whose own tests cover
 // organizing, faults and the developer file): the catalog and the loader
 // agree, the example files are what ROCK writes, documented defaults are the
-// runtime defaults, and ROCK's old INI keys migrate to the right options.
+// runtime defaults, ROCK's old INI keys and renamed TOML keys migrate to the
+// right options, and [Bindings] holds CommonFramework tables, converted from
+// ROCK's old strings.
 #include "RockConfig.h"
 #include "config/RockSettings.h"
+#include "physics-interaction/input/FunctionBindingText.h"
 
 #include <array>
 #include <filesystem>
@@ -81,7 +84,10 @@ namespace
             "bRockyModeEnabled = true\r\n"
             "fRealisticGrenadeFuseSeconds = soon\r\n"
             "[NativeScopes]\r\n"
-            "fNativeScopeOverlayOffsetYGameUnits = 12\r\n");
+            "fNativeScopeOverlayOffsetYGameUnits = 12\r\n"
+            "fManualScopeHoldSeconds = 0.7\r\n"
+            "[Controls]\r\n"
+            "fPipboyPauseHoldSeconds = 0.350\r\n");
         write(developerIni, "[PhysicsInteraction]\r\niDebugMaxBodyInstances = 100\r\n");
 
         const auto store = makeStore(directory, defaults);
@@ -94,18 +100,156 @@ namespace
                 find(*store, "WeaponHandling", "WeaponFilteringPreset").defaultValue,
             "an old default replaced the current default");
         require(find(*store, "FiringHand", "DefaultHand").value == "left", "bLeftHandedMode was not carried");
-        require(find(*store, "FiringHand.Left", "AimOffsetGameUnits").value == "[0.0, 2.5, 0.0]",
-            "an X/Y/Z triplet was not carried as one list");
+        require(find(*store, "FiringHand.Left", "AimOffset").value == "{ pos = [0.0, 2.5, 0.0] }",
+            "an X/Y/Z triplet was not carried as one transform position");
         require(find(*store, "ControllerInput.Right", "A").value == "b", "a button layout key was not carried");
-        require(find(*store, "ScopePlacement", "NativeScopeOverlayOffsetGameUnits").value == "[0.0, 12.0, 0.0]" &&
+        require(find(*store, "ScopePlacement", "NativeScopeOverlayOffset").value == "{ pos = [0.0, 12.0, 0.0] }" &&
                     find(*store, "DebugOverlay", "DebugMaxBodyInstances").value == "100",
             "developer options were not carried");
-        require(bytes(store->path(Group::Developer)).find("NativeScopeOverlayOffsetGameUnits = [0.0, 12.0, 0.0]") !=
+        require(bytes(store->path(Group::Developer)).find("NativeScopeOverlayOffset = { pos = [0.0, 12.0, 0.0] }") !=
                 std::string::npos,
             "an option that moved to the developer file was not written there");
         require(hasLine(store->messages(), "does not fit: fRealisticGrenadeFuseSeconds = soon"),
             "a value that does not fit was not reported");
         require(hasLine(store->notices(), "bRockyModeEnabled"), "a retired key was not named");
+        require(find(*store, "Bindings", "Scope").value ==
+                    "{ hand = \"primary\", type = \"hold\", button = \"a\", duration = 0.7 }",
+            "an INI scope hold time was not carried into the Scope binding");
+        require(find(*store, "Bindings", "Pause").value == find(*store, "Bindings", "Pause").defaultValue,
+            "an INI hold time at its old default changed the Pause binding");
+    }
+
+    bool near(float value, float expected) { return value > expected - 1.0e-4f && value < expected + 1.0e-4f; }
+
+    // The [Bindings] tables are a configuration contract: CommonFramework's words with ROCK's limits, and every
+    // default reading back as itself.
+    void bindingTextChecks()
+    {
+        namespace fb = rock::function_binding_policy;
+        namespace text = rock::function_binding_text;
+        using fb::Function;
+        for (std::size_t f = 0; f < fb::kFunctionCount; ++f) {
+            const auto function = static_cast<Function>(f);
+            const auto standard = text::defaultBinding(function);
+            const auto table = text::parseBindingTable(function, text::formatBindingTable(function, standard));
+            require(table && table->value == standard,
+                "a default binding does not read back as itself");
+        }
+        const auto read = [](Function function, std::string_view table) { return text::parseBindingTable(function, table); };
+        const auto fire = read(Function::Fire, "{ hand = 'primary', type = 'hold', button = 'trigger' }");
+        require(fire && fire->value.binding.control.hand == fb::BindingHand::Firing &&
+                    fire->value.binding.gesture == fb::Gesture::Press,
+            "primary on a weapon function is not the firing hand, or a hold without duration is not a press");
+        require(!read(Function::Fire, "{ hand = 'left', type = 'hold', button = 'trigger' }") &&
+                    read(Function::Use, "{ hand = 'left', type = 'hold', button = 'a' }"),
+            "a fixed hand was refused elsewhere or taken on a weapon function");
+        const auto timed = read(Function::Grenade, "{ hand = 'primary', type = 'hold', button = 'menu', duration = 5 }");
+        require(timed && timed->value.binding.gesture == fb::Gesture::Hold && near(timed->value.seconds, 2.0f) &&
+                    timed->value.binding.control.source == fb::Source::UpperFace && timed->warnings.size() == 1,
+            "a timed hold was not clamped with a warning");
+        const auto doubled = read(Function::Vats, "{ hand = 'primary', type = 'double', button = 'grip' }");
+        require(doubled && near(doubled->value.seconds, 0.4f), "a double without duration does not take 0.4 seconds");
+        require(!read(Function::Vats, "{ hand = 'primary', type = 'press', button = 'b' }") &&
+                    !read(Function::Vats, "{ hand = 'primary', type = 'longpress', button = 'b' }") &&
+                    !read(Function::Vats, "{ hand = 'primary', type = 'tap', button = 'b', duration = 0.2 }") &&
+                    !read(Function::Vats, "{ hand = 'primary', type = 'tap', button = 'b', suppress = true }") &&
+                    !read(Function::Vats, "{ hand = 'primary', type = 'tap', button = 'system' }") &&
+                    !read(Function::Vats, "\"primary tap b\""),
+            "a word, key or value ROCK does not read was taken");
+        const auto chord = read(Function::Vats, "{ hand = 'offhand', type = 'tap', button = 'a', modifier = { button = 'grip' } }");
+        require(chord && chord->value.binding.modifier.hand == fb::BindingHand::Offhand &&
+                    text::formatBindingTable(Function::Vats, chord->value) ==
+                        "{ hand = \"offhand\", type = \"tap\", button = \"a\", modifier = { button = \"grip\" } }",
+            "a same-hand modifier did not read and write back");
+        const auto none = read(Function::Palm, "{ type = 'none' }");
+        require(none && !none->value.binding.bound() &&
+                    text::formatBindingTable(Function::Palm, none->value) == "{ type = \"none\" }",
+            "an unbound function did not read and write back");
+    }
+
+    // A ROCK.toml from before [Bindings] held tables: each old string becomes its table with the retired hold times
+    // as durations, what a table cannot say becomes the default, and the retired keys stay only as comments.
+    void bindingMigrationChecks(const fs::path& directory, std::span<const SettingDefault> defaults)
+    {
+        fs::create_directories(directory);
+        const auto store = makeStore(directory, defaults);
+        write(store->path(Group::Player),
+            "[Bindings]\n"
+            "Reload = \"firing double grip\"\n"
+            "Scope = \"firing hold a\"\n"
+            "Pause = \"offhand hold y\"\n"
+            "Pipboy = \"offhand hold thumbstick +offhand grip\"\n"
+            "Use = \"primary press a\"\n"
+            "Vats = \"right tap grip_click\"\n"
+            "Fire = \"left press trigger\"\n"
+            "HoldSeconds = 0.5\n"
+            "DoubleTapSeconds = 0.25\n"
+            "[Scopes]\n"
+            "ManualScopeHoldSeconds = 0.6\n"
+            "[ControllerInput]\n"
+            "PipboyPauseHoldSeconds = 0.8\n");
+        store->load(true);
+        const auto value = [&](std::string_view key) { return find(*store, "Bindings", key).value; };
+        require(value("Reload") == "{ hand = \"primary\", type = \"double\", button = \"grip\", duration = 0.25 }" &&
+                    value("Scope") == "{ hand = \"primary\", type = \"hold\", button = \"a\", duration = 0.6 }" &&
+                    value("Pause") == "{ hand = \"offhand\", type = \"hold\", button = \"b\", duration = 0.8 }" &&
+                    value("Pipboy") == "{ hand = \"offhand\", type = \"hold\", button = \"thumbstick\", duration = 0.5, "
+                                       "modifier = { button = \"grip\" } }" &&
+                    value("Use") == "{ hand = \"primary\", type = \"hold\", button = \"a\" }",
+            "an old binding string was not converted with its retired hold time");
+        require(value("Vats") == find(*store, "Bindings", "Vats").defaultValue &&
+                    value("Fire") == find(*store, "Bindings", "Fire").defaultValue,
+            "a physical control or a fixed weapon hand did not become the default");
+        require(value("Grenade") == "{ hand = \"primary\", type = \"hold\", button = \"b\", duration = 0.25 }",
+            "a binding the file did not hold was not written at its default");
+        const auto organized = bytes(store->path(Group::Player));
+        require(organized.find("# Bindings.HoldSeconds = 0.5") != std::string::npos &&
+                    organized.find("# Scopes.ManualScopeHoldSeconds = 0.6") != std::string::npos,
+            "a retired hold time was not kept as a comment");
+        const auto values = runtime(*store);
+        const auto seconds = [&](rock::function_binding_policy::Function function) {
+            return values.rockBindingSeconds[static_cast<std::size_t>(function)];
+        };
+        require(near(seconds(rock::function_binding_policy::Function::Scope), 0.6f) &&
+                    near(seconds(rock::function_binding_policy::Function::Reload), 0.25f),
+            "a converted duration did not apply");
+        store->load(true);
+        require(bytes(store->path(Group::Player)) == organized && store->notices().empty(),
+            "a binding was converted twice");
+    }
+
+    // Files from before the [x, y, z] options became transforms keep their offsets;
+    // a scope rotation's rot [heading, roll, attitude] turns about X, Y, Z: ROCK's pitch, roll and yaw.
+    void transformChecks(const fs::path& directory, std::span<const SettingDefault> defaults)
+    {
+        fs::create_directories(directory);
+        const auto store = makeStore(directory, defaults);
+        write(store->path(Group::Player),
+            "[FiringHand.Left]\nAimOffsetGameUnits = [1, 2, 3]\n[FiringHand.Right]\nSupportGripOffsetGameUnits = [0, 0, -4]\n");
+        write(store->path(Group::Developer),
+            "[GrabSafetyAndRelease]\nMouthConsumeHmdOffsetGameUnits = [0, 5, -9]\n"
+            "[ScopePlacement]\nNativeScopeOverlayRotation = { rot = [1, 2, 3] }\n");
+        store->load(true);
+        require(find(*store, "GrabSafetyAndRelease", "MouthConsumeHmdOffset").value == "{ pos = [0.0, 5.0, -9.0] }",
+            "a renamed developer offset was not carried into its transform");
+        {
+            const auto values = runtime(*store);
+            require(values.rockMouthConsumeHmdOffsetGameUnits.z < -8.99f &&
+                        values.rockMouthConsumeHmdOffsetGameUnits.z > -9.01f,
+                "a carried developer position did not apply");
+            require(values.rockNativeScopeOverlayPitchDegrees > 0.99f && values.rockNativeScopeOverlayPitchDegrees < 1.01f &&
+                        values.rockNativeScopeOverlayRollDegrees > 1.99f && values.rockNativeScopeOverlayRollDegrees < 2.01f &&
+                        values.rockNativeScopeOverlayYawDegrees > 2.99f && values.rockNativeScopeOverlayYawDegrees < 3.01f,
+                "a scope rotation's rot did not map onto pitch, roll and yaw");
+        }
+        require(find(*store, "FiringHand.Left", "AimOffset").value == "{ pos = [1.0, 2.0, 3.0] }" &&
+                    find(*store, "FiringHand.Right", "SupportGripOffset").value == "{ pos = [0.0, 0.0, -4.0] }",
+            "a renamed offset was not carried into its transform");
+        const auto values = runtime(*store);
+        require(values.rockLeftFiringAimOffsetYGameUnits > 1.99f && values.rockLeftFiringAimOffsetYGameUnits < 2.01f &&
+                    values.rockRightSupportGripOffsetGameUnits.z < -3.99f &&
+                    values.rockRightSupportGripOffsetGameUnits.z > -4.01f,
+            "a carried transform position did not apply");
     }
 
     // The examples are exactly what ROCK writes for files holding every option
@@ -139,32 +283,23 @@ namespace
     {
         fs::create_directories(directory);
         const auto store = makeStore(directory, defaults);
-        std::string developer;
-        std::string_view table;
-        for (const auto& setting : store->settings()) {
-            if (setting.group != Group::Developer)
-                continue;
-            if (setting.table != table)
-                developer += std::format("[{}]\n", setting.table);
-            table = setting.table;
-            developer += std::format("{} = {}\n", setting.key,
-                setting.type == ValueType::String ? std::format("'{}'", setting.defaultValue) : setting.defaultValue);
-        }
+        const auto player = store->organizedDefaults(Group::Player);
+        const auto developer = store->organizedDefaults(Group::Developer);
+        write(store->path(Group::Player), player);
         write(store->path(Group::Developer), developer);
-        store->load(true);
-        require(store->messages().empty(), "cannot organize the default files");
-        return { bodyAfterHeader(withoutCarriageReturns(bytes(store->path(Group::Player)))),
-            bodyAfterHeader(withoutCarriageReturns(bytes(store->path(Group::Developer)))) };
+        return { bodyAfterHeader(withoutCarriageReturns(player)), bodyAfterHeader(withoutCarriageReturns(developer)) };
     }
 
-    // Both organized default files hold every option once at its default, and
-    // reading them gives the same runtime values as reading nothing.
+    // Both organized default files read back as every option at its default, the player file holding each, and
+    // reading them gives the same runtime values as reading nothing. Reading drops the developer file's keys, as
+    // the developer file holds only overrides.
     void defaultChecks(const fs::path& directory, std::span<const SettingDefault> defaults)
     {
         const auto store = makeStore(directory, defaults);
         store->load(false);
+        require(store->messages().empty(), "the organized default files do not read back");
         for (const auto& setting : store->settings()) {
-            require(setting.specified, "an organized default file is missing an option");
+            require(setting.group != Group::Player || setting.specified, "the organized player file is missing an option");
             require(setting.value == setting.defaultValue, "an organized default differs from the compiled default");
         }
         require(runtime(*store) == rock::RockConfig::parseValues({}),
@@ -198,6 +333,9 @@ int main(int argc, char** argv)
         }
         defaultChecks(directory / "examples", defaults);
         migrationChecks(directory / "migration", defaults);
+        transformChecks(directory / "transforms", defaults);
+        bindingTextChecks();
+        bindingMigrationChecks(directory / "bindings", defaults);
         fs::remove_all(directory, ec);
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

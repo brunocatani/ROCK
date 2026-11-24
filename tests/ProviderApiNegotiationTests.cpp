@@ -157,7 +157,12 @@ int main()
         assert(ROCKAPI_QueryInterfaceV1(InterfaceId::Diagnostics, 1, 0, 8, &retired) != Status::Ok && !retired);
         assertNoted(Status::UnknownInterface, InterfaceId::Diagnostics, 1);
     }
-    verify(configuration::table(), configuration::kSupportedPermissions);
+    {
+        // Configuration (13) is retired at its last major: ROCK's settings are edited in Mods Config FO4 VR.
+        const InterfaceDescriptorV1* retired{};
+        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::Configuration, 2, 0, 8, &retired) != Status::Ok && !retired);
+        assertNoted(Status::UnknownInterface, InterfaceId::Configuration, 2);
+    }
     // Weapon major 1 and its 1.1 minor are refused.
     const InterfaceDescriptorV1* oldWeapon{};
     assert(

@@ -271,7 +271,7 @@ namespace rock::setup_wizard
         {
             if (g_rockConfig.rockSetupWizardShownEdition >= kEdition) return;
             std::string error;
-            if (!g_rockConfig.persistSetting(api::configuration::Group::Consumer, "SetupWizard", "ShownEdition",
+            if (!g_rockConfig.persistSetting(config::Group::Player, "SetupWizard", "ShownEdition",
                     std::to_string(kEdition).c_str(), error))
                 ROCK_LOG_WARN(Config, "Setup wizard could not save SetupWizard.ShownEdition: {}", error);
         }
@@ -293,6 +293,15 @@ namespace rock::setup_wizard
         if (!rps_ui::query()) return false;
         g_openRequested.store(true, std::memory_order_release);
         return true;
+    }
+
+    /**
+     * Open or about to open. A request that update() could not honour (no headset pose, a game menu
+     * holding the controllers, RPS UI gone) is cleared there, so this turns false on that frame.
+     */
+    bool isActive() noexcept
+    {
+        return g_openRequested.load(std::memory_order_acquire) || state().wizard.isOpen();
     }
 
     void update() noexcept

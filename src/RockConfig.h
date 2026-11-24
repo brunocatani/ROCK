@@ -1,11 +1,15 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -59,11 +63,7 @@ namespace rock
         bool rockSuppressNativeVats = false;
         bool rockOfferSteamVRBinding = true;
         int rockSetupWizardShownEdition = 0;
-        float rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::kDefaultHoldSeconds;
         int rockFarGrabStyle = static_cast<int>(far_pull_gesture::Mode::Immediate);
-        // Developer.EnableDeveloperSettings: the settings menu shows the ROCK Dev page. ROCK itself
-        // reads nothing from it.
-        bool rockEnableDeveloperSettings = false;
         // Where the quick loot panel appears; see native_quick_loot_panel::Placement.
         // 1: right hand (game default); 2: closer hand; 3: at the container.
         int rockQuickLootPanelPlacement = 2;
@@ -74,10 +74,10 @@ namespace rock
         float rockGrabInputForceSeconds = 0.08f;
         // ControllerInput.Left/Right: physical source of each logical button, per hand (left, right).
         std::array<button_layout_policy::HandLayout, 2> rockButtonLayouts{};
-        // Bindings: the control and gesture of each gameplay function.
+        // Bindings: the control and gesture of each gameplay function, and each one's time (a hold's hold
+        // time or a double tap's longest gap, 0 for a press or tap; function_binding_text::holdSeconds).
         function_binding_policy::Bindings rockFunctionBindings = function_binding_policy::homeBindings();
-        float rockBindingHoldSeconds = function_binding_policy::kDefaultHoldSeconds;
-        float rockBindingDoubleTapSeconds = function_binding_policy::kDefaultDoubleTapSeconds;
+        std::array<float, function_binding_policy::kFunctionCount> rockBindingSeconds = function_binding_policy::homeSeconds();
 
         bool rockDeveloperModeEnabled = false;
 
@@ -108,8 +108,10 @@ namespace rock
         bool rockGunstockMode = false;
         // Gunstock mode centres the weapon laterally on the controller line.
         bool rockGunstockCentering = true;
-        // Player FRIK weapon offset files replace ROCK's grip and scale (opt-in).
+        // FRIK's weapon offsets replace ROCK's grip and scale (opt-in).
         bool rockFrikUserWeaponOffsets = false;
+        // FRIK's built-in offsets count too, not only the player's saved ones.
+        bool rockFrikBuiltInWeaponOffsets = true;
         float rockBipodHandsFreeRadiusMeters = 2.0f;
         float rockLaserRecoilPercent = 100.0f;
         float rockPistolOneHandRecoilPercent = 300.0f;
@@ -196,10 +198,6 @@ namespace rock
         float rockWeaponSupportSurfaceSeatMaxDegrees = 35.0f;
 
         bool rockEnableImmersiveScopes = true;
-
-        // While immersive scopes are enabled, the held firing-hand A/X gesture is the sole native-scope activation
-        // path. A release before the threshold remains reload input.
-        float rockManualScopeHoldSeconds = 0.30f;
 
         // Used only when generated Scope/Sight geometry is unavailable, or
         // explicitly forced for an incorrectly accepted optic collider.
@@ -298,6 +296,8 @@ namespace rock
         std::string rockDebugSkeletonAxisBoneFilter = "";
 
         bool rockHandCollisionStaticWorldEnabled = true;
+        bool rockHandCollisionOtherHandEnabled = true;
+        bool rockHandCollisionEquippedWeaponEnabled = true;
         bool rockGlobalSurfaceGrabEnabled = true;
         bool rockSurfaceMeshGrabEnabled = false;
         float rockSurfaceMeshGrabMaxProjectionDistanceGameUnits = 48.0f;
@@ -506,6 +506,14 @@ namespace rock
         float rockMouthConsumeCommitHapticIntensity = 0.85f;
     };
 
+    // Who set a preview value. Each owner sets and drops only its own, so one
+    // never ends another's.
+    enum class PreviewOwner : std::uint8_t
+    {
+        ModsConfig,
+        DevBench,
+    };
+
     class RockConfig : public RockConfigValues
     {
     public:
@@ -524,12 +532,54 @@ namespace rock
             return _configRevision.load(std::memory_order_acquire);
         }
 
-        // Receives each setting of a group; the record and its strings are
-        // borrowed for the call.
-        using SettingVisitor = void (*)(const api::configuration::Setting&, void*) noexcept;
-        [[nodiscard]] bool visitSettings(api::configuration::Group group, SettingVisitor visitor, void* context) const;
-        [[nodiscard]] bool persistSetting(api::configuration::Group group, const char* section, const char* key,
+        // Advances when a reload of the files changed a value; a preview alone leaves it.
+        [[nodiscard]] std::uint64_t configFileRevision() const noexcept
+        {
+            return _configFileRevision.load(std::memory_order_acquire);
+        }
+
+        // Receives each setting of a group, its value as the file's canonical
+        // text; the setting is borrowed for the call.
+        using SettingVisitor = void (*)(const config::Setting&, void*) noexcept;
+        [[nodiscard]] bool visitSettings(config::Group group, SettingVisitor visitor, void* context) const;
+        [[nodiscard]] bool persistSetting(config::Group group, const char* section, const char* key,
             const char* value, std::string& error);
+
+        // Session values laid over the files', each kept by its owner (Mods
+        // Config's live preview, a devbench override) until that owner drops
+        // it, applied at the next processPendingConfigReload. The files are
+        // never written.
+        [[nodiscard]] bool setPreviewValue(PreviewOwner owner, std::string_view table, std::string_view key,
+            std::string_view value);
+        bool discardPreviewValue(PreviewOwner owner, std::string_view table, std::string_view key);
+        std::size_t clearPreviewValues(PreviewOwner owner);
+
+        struct PreviewValue
+        {
+            PreviewOwner owner;
+            std::string table;
+            std::string key;
+            std::string value;
+            // The last set of the option's values, which the next apply uses.
+            bool applies;
+        };
+
+        [[nodiscard]] std::vector<PreviewValue> previewValues() const;
+
+        // One option as the next apply reads it: the last preview value set,
+        // otherwise the file's (its default when the file lacks it).
+        struct SettingValue
+        {
+            std::string value;
+            std::string fileValue;
+            config::Group group;
+            std::optional<PreviewOwner> previewOwner;
+        };
+
+        [[nodiscard]] std::optional<SettingValue> settingValue(std::string_view table, std::string_view key) const;
+        // Reloads the files at the next processPendingConfigReload, without
+        // waiting for the watcher's debounce.
+        void requestImmediateReload() noexcept;
 
         void processPendingConfigReload();
 
@@ -544,7 +594,7 @@ namespace rock
 
         void readValues(config::SettingReader& ini);
 
-        [[nodiscard]] bool loadStore(bool createConsumer);
+        [[nodiscard]] bool loadStore(bool createConsumer, bool readFiles = true);
 
         void startFileWatch();
 
@@ -556,9 +606,27 @@ namespace rock
         std::unique_ptr<filewatch::FileWatch<std::string>> _fileWatch;
         std::unordered_map<std::string, std::function<void(const std::string&)>> _onConfigChangedSubscribers;
         std::atomic<std::uint64_t> _configRevision{ 0 };
+        std::atomic<std::uint64_t> _configFileRevision{ 0 };
         std::atomic<std::int64_t> _lastFileEventTicks{ 0 };
 
+        struct PreviewEntry
+        {
+            PreviewOwner owner;
+            std::string value;
+        };
+
+        // Under _storeMutex: the preview values keyed by settingPath, each
+        // key's in the order their owners set them (the last applies, an owner
+        // has one at most), the preview revision bumped with each change, and
+        // the store and preview revisions the live values were parsed from.
+        std::map<std::string, std::vector<PreviewEntry>, std::less<>> _previewValues;
+        std::uint64_t _previewRevision = 0;
+        std::uint64_t _appliedStoreRevision = 0;
+        std::uint64_t _appliedPreviewRevision = 0;
+
         std::atomic<bool> _reloadPending = false;
+        std::atomic<bool> _immediateReload = false;
+        std::atomic<bool> _previewPending = false;
     };
 
     inline RockConfig g_rockConfig;
