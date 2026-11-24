@@ -1053,20 +1053,20 @@ namespace rock
             signalName ? signalName : "(null)");
     }
 
-    bool BethesdaPhysicsBody::driveToKeyFrame(const RE::hkTransformf& target, float dt)
+    bool BethesdaPhysicsBody::driveToKeyFrame(const HavokTransform& target, float dt)
     {
         if (!isValid())
             return false;
         static REL::Relocation<DriveToKeyFrame_t> drive{ REL::Offset(offsets::kFunc_CollisionObject_DriveToKeyFrame) };
-        return drive(_collisionObject, &target, dt) != 0;
+        return drive(_collisionObject, &target.native(), dt) != 0;
     }
 
-    bool BethesdaPhysicsBody::setTransform(const RE::hkTransformf& transform)
+    bool BethesdaPhysicsBody::setTransform(const HavokTransform& transform)
     {
         if (!isValid())
             return false;
         static REL::Relocation<SetTransform_t> setXform{ REL::Offset(offsets::kFunc_CollisionObject_SetTransform) };
-        return setXform(_collisionObject, &transform) != 0;
+        return setXform(_collisionObject, &transform.native()) != 0;
     }
 
     bool setCollisionObjectVelocity(void* collisionObject, const float* linVel, const float* angVel)

@@ -6,6 +6,7 @@
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/havok/CollisionSystemOwner.h"
 #include "physics-interaction/native/havok/HavokOffsets.h"
+#include "physics-interaction/native/havok/HavokTransform.h"
 #include "physics-interaction/native/havok/PhysicsScale.h"
 #include "physics-interaction/native/havok/PhysicsSystemBodyScanCache.h"
 
@@ -867,16 +868,12 @@ namespace rock::havok_runtime
         }
         (void)body;
 
-        RE::hkTransformf hkTransform;
-        hkTransform.rotation = transform_math::niStoredAxesToHknpBodyColumns(transform.rotate);
-        const float scale = physics_scale::gameToHavok();
-        hkTransform.translation = RE::NiPoint4(transform.translate.x * scale, transform.translate.y * scale,
-            transform.translate.z * scale, 0.0f);
+        const auto hkTransform = HavokTransform::fromRowAxes(transform);
 
         using SetTransformDeferred_t = void (*)(void*, std::uint32_t, const float*, int);
         static REL::Relocation<SetTransformDeferred_t> setBodyTransform{ REL::Offset(
             offsets::kFunc_SetBodyTransformDeferred) };
-        setBodyTransform(world, bodyId, reinterpret_cast<const float*>(&hkTransform), mode);
+        setBodyTransform(world, bodyId, reinterpret_cast<const float*>(&hkTransform.native()), mode);
         return true;
     }
 

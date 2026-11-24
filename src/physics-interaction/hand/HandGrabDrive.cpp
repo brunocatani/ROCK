@@ -294,7 +294,7 @@ namespace rock
         }
         havok_ref_count::release(proxyShape);
 
-        const RE::hkTransformf initialProxyHavok = grab_authority_proxy::makeHavokTransform(proxyWorldTransform);
+        const auto initialProxyHavok = HavokTransform::fromColumnAxes(proxyWorldTransform);
         float zeroVelocity[4]{};
         const bool setTransformOk = _grabAuthorityProxy.setTransform(initialProxyHavok);
         const bool setVelocityOk = _grabAuthorityProxy.setVelocity(zeroVelocity, zeroVelocity);

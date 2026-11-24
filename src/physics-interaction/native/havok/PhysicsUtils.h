@@ -66,16 +66,6 @@ namespace rock
         return havok_runtime::getOwnerNodeFromBody(world, bodyId);
     }
 
-    inline RE::NiMatrix3 niRotToHkTransformRotation(const RE::NiMatrix3& m)
-    {
-        return transform_math::niRowsToHavokColumns(m);
-    }
-
-    inline RE::NiMatrix3 havokRotationBlocksToNiMatrix(const float* bodyFloats)
-    {
-        return transform_math::hknpBodyColumnsToNiStoredAxes<RE::NiMatrix3>(bodyFloats);
-    }
-
     using ResolvedBodyWorldTransform = havok_runtime::ResolvedBodyWorldTransform;
 
     inline RE::NiTransform bodyArrayWorldTransform(const RE::hknpBody& body)

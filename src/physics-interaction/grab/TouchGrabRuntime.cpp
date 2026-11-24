@@ -14,6 +14,7 @@
 #include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/native/havok/HavokRefCount.h"
 #include "physics-interaction/native/havok/HavokRuntime.h"
+#include "physics-interaction/native/havok/HavokTransform.h"
 #include "physics-interaction/native/havok/PhysicsUtils.h"
 #include "physics-interaction/native/query/PhysicsShapeCast.h"
 #include "physics-interaction/native/scene/ReferenceInteraction.h"
@@ -266,16 +267,6 @@ namespace rock
                 left.minimumCoordinate == right.minimumCoordinate && left.maximumCoordinate == right.maximumCoordinate;
         }
 
-        [[nodiscard]] RE::hkTransformf makeHavokTransform(const RE::NiTransform& transform)
-        {
-            RE::hkTransformf result{};
-            result.rotation = niRotToHkTransformRotation(transform.rotate);
-            const float scale = gameToHavokScale();
-            result.translation = RE::NiPoint4{ transform.translate.x * scale, transform.translate.y * scale,
-                transform.translate.z * scale, 0.0f };
-            return result;
-        }
-
         [[nodiscard]] RE::hkVector4f makeHavokPoint(const RE::NiPoint3& point)
         {
             const float scale = gameToHavokScale();
@@ -345,11 +336,11 @@ namespace rock
                 offsets::kFunc_LimitedHingeConstraintData_SetInWorldSpace) };
             constructor(data);
 
-            const auto transformA = makeHavokTransform(bodyAWorld);
-            const auto transformB = makeHavokTransform(bodyBWorld);
+            const auto transformA = HavokTransform::fromColumnAxes(bodyAWorld);
+            const auto transformB = HavokTransform::fromColumnAxes(bodyBWorld);
             const auto pivot = makeHavokPoint(pivotWorld);
             const auto axis = makeHavokDirection(axisWorld);
-            setInWorldSpace(data, transformA, transformB, pivot, axis);
+            setInWorldSpace(data, transformA.native(), transformB.native(), pivot, axis);
 
             auto* bytes = static_cast<std::uint8_t*>(data);
             bytes[kLimitedHingeLimitEnabledOffset] = 1;
@@ -373,11 +364,11 @@ namespace rock
                 offsets::kFunc_PrismaticConstraintData_SetInWorldSpace) };
             constructor(data);
 
-            const auto transformA = makeHavokTransform(bodyAWorld);
-            const auto transformB = makeHavokTransform(bodyBWorld);
+            const auto transformA = HavokTransform::fromColumnAxes(bodyAWorld);
+            const auto transformB = HavokTransform::fromColumnAxes(bodyBWorld);
             const auto pivot = makeHavokPoint(pivotWorld);
             const auto axis = makeHavokDirection(axisWorld);
-            setInWorldSpace(data, transformA, transformB, pivot, axis);
+            setInWorldSpace(data, transformA.native(), transformB.native(), pivot, axis);
 
             const float scale = gameToHavokScale();
             auto* bytes = static_cast<std::uint8_t*>(data);
@@ -882,7 +873,7 @@ namespace rock
 
         RE::NiTransform anchorWorld = transform_math::makeIdentityTransform<RE::NiTransform>();
         anchorWorld.translate = toNiPoint(active.target.pivotWorldGame);
-        if (!active.anchor.setTransform(makeHavokTransform(anchorWorld))) {
+        if (!active.anchor.setTransform(HavokTransform::fromColumnAxes(anchorWorld))) {
             return false;
         }
 

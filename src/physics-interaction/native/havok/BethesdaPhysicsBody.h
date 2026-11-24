@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/havok/HavokTransform.h"
 
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/Havok/hknpWorld.h"
@@ -113,9 +114,9 @@ namespace rock
 
         void* getPhysicsSystem() const { return _physicsSystem; }
 
-        bool driveToKeyFrame(const RE::hkTransformf& target, float dt);
+        bool driveToKeyFrame(const HavokTransform& target, float dt);
 
-        bool setTransform(const RE::hkTransformf& transform);
+        bool setTransform(const HavokTransform& transform);
 
         bool setVelocity(const float* linVel, const float* angVel);
 

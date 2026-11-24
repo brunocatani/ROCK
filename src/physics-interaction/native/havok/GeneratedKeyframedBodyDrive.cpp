@@ -6,6 +6,7 @@
 #include "physics-interaction/VectorMath.h"
 #include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/native/havok/HavokRuntime.h"
+#include "physics-interaction/native/havok/HavokTransform.h"
 #include "physics-interaction/native/havok/PhysicsUtils.h"
 
 #include <algorithm>
@@ -15,18 +16,10 @@ namespace rock
 {
     namespace
     {
-        RE::hkTransformf makeHavokTransform(const RE::NiTransform& target)
+        RE::NiPoint3 havokTranslationToGamePoint(const HavokTransform& target)
         {
-            RE::hkTransformf transform{};
-            transform.rotation = niRotToHkTransformRotation(target.rotate);
-            transform.translation = RE::NiPoint4(target.translate.x * gameToHavokScale(),
-                target.translate.y * gameToHavokScale(), target.translate.z * gameToHavokScale(), 0.0f);
-            return transform;
-        }
-
-        RE::NiPoint3 havokTranslationToGamePoint(const RE::hkTransformf& target)
-        {
-            return RE::NiPoint3{ target.translation.x, target.translation.y, target.translation.z };
+            const auto& translation = target.native().translation;
+            return RE::NiPoint3{ translation.x, translation.y, translation.z };
         }
 
         bool targetMovedFarEnoughForTeleport(const RE::NiPoint3& previous, const RE::NiPoint3& current,
@@ -117,7 +110,7 @@ namespace rock
             result.targetToBodyAxisZDegrees = directionDeltaDegrees(result.targetAxisZWorld, result.liveBodyAxisZWorld);
         }
 
-        void fillTargetTelemetry(const RE::NiTransform& target, const RE::hkTransformf& targetHavok,
+        void fillTargetTelemetry(const RE::NiTransform& target, const HavokTransform& targetHavok,
             GeneratedKeyframedBodyDriveResult& result)
         {
             result.hasCommandedTargetGameTransform = true;
@@ -140,7 +133,7 @@ namespace rock
         }
 
         void captureTargetAndBodyTelemetry(RE::hknpWorld* world, const RE::hknpBody& liveBody,
-            const RE::NiTransform& target, const RE::hkTransformf& targetHavok,
+            const RE::NiTransform& target, const HavokTransform& targetHavok,
             GeneratedKeyframedBodyDriveResult& result, RE::NiTransform* outLiveTransform = nullptr)
         {
             fillTargetTelemetry(target, targetHavok, result);
@@ -451,7 +444,7 @@ namespace rock
             return false;
         }
 
-        const bool moved = body.setTransform(makeHavokTransform(target));
+        const bool moved = body.setTransform(HavokTransform::fromColumnAxes(target));
         alignas(16) float zeroLinear[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
         alignas(16) float zeroAngular[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
         const bool zeroed = body.setVelocity(zeroLinear, zeroAngular);
@@ -537,7 +530,7 @@ namespace rock
         result.requestedTargetGameTransform = requestedTarget;
         result.requestedTargetGamePosition = requestedTarget.translate;
         RE::NiTransform target = requestedTarget;
-        RE::hkTransformf targetHavok = makeHavokTransform(target);
+        HavokTransform targetHavok = HavokTransform::fromColumnAxes(target);
         RE::NiTransform liveTransform{};
         captureTargetAndBodyTelemetry(world, *liveBody, target, targetHavok, result, &liveTransform);
         result.uncappedRequiredLinearVelocityHavok = result.requiredLinearVelocityHavok;
@@ -557,7 +550,7 @@ namespace rock
 
             if (result.linearLimitExceeded || result.angularLimitExceeded) {
                 target = limitedTarget.target;
-                targetHavok = makeHavokTransform(target);
+                targetHavok = HavokTransform::fromColumnAxes(target);
                 fillTargetTelemetry(target, targetHavok, result);
                 fillLiveBodyTelemetry(liveTransform, result.liveBodyFrameSource, result.motionIndex, target, result);
             }
@@ -600,7 +593,7 @@ namespace rock
                 // consumers measure the solver's ejection against what was
                 // actually placed.
                 target = requestedTarget;
-                targetHavok = makeHavokTransform(target);
+                targetHavok = HavokTransform::fromColumnAxes(target);
                 fillTargetTelemetry(target, targetHavok, result);
                 result.teleported = placeGeneratedKeyframedBodyImmediately(body, target);
                 result.driven = result.teleported;

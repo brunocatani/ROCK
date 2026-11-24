@@ -168,6 +168,8 @@ namespace rock::havok_runtime
     bool tryGetBodyArrayWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform);
     bool tryGetBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform);
     bool tryGetMotionWorldTransform(RE::hknpWorld* world, const RE::hknpBody& body, RE::NiTransform& outTransform);
+    // MOTION readback (a moving body) has its axes in the matrix columns, BODY readback (tryGetBody*,
+    // a body without a motion) in the rows; BodyFrameSource says which one a live read returned.
     // The borrowed body must remain valid for this operation; never retain it across native mutation.
     ResolvedBodyWorldTransform resolveLiveBodyWorldTransform(RE::hknpWorld* world, const RE::hknpBody& body);
     ResolvedBodyWorldTransform resolveLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId);

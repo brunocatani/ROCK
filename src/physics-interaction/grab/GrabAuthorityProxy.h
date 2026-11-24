@@ -60,15 +60,6 @@ namespace rock::grab_authority_proxy
 
     inline const char* filterPolicyName() { return "nonCollidable+bit14"; }
 
-    inline RE::hkTransformf makeHavokTransform(const RE::NiTransform& target)
-    {
-        RE::hkTransformf transform{};
-        transform.rotation = niRotToHkTransformRotation(target.rotate);
-        transform.translation = RE::NiPoint4(target.translate.x * gameToHavokScale(),
-            target.translate.y * gameToHavokScale(), target.translate.z * gameToHavokScale(), 0.0f);
-        return transform;
-    }
-
     inline void computeLinearVelocityHavok(const RE::NiTransform& previous, const RE::NiTransform& current,
         float deltaSeconds, float outVelocity[4])
     {
