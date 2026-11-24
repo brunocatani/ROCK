@@ -95,6 +95,7 @@ The wizard opens by itself the first time you play with this ROCK, and again whe
 ### Compatibility
 
 - **SCISSORS** owns NPC interactions: NPC collision, physical melee, blades, held NPCs and active ragdoll. ROCK 1.0 has no NPC features of its own. The original SCISSORS mod is a different, retired mod that the new SCISSORS replaces under the same name; remove it.
+- **Bullet Time VATS VR**: use [Bullet Time VATS VR - F4SEVR Remake](https://www.nexusmods.com/fallout4/mods/111679), which ROCK is compatible with. The original Bullet Time VATS VR is not compatible with ROCK.
 - **Mods built for ROCK 0.92 or earlier** use provider API 1, which ROCK 1.0 does not serve. ROCK refuses them and names each one in `ROCK.log`; the game keeps running with their ROCK features off. Update or remove them; they work again once rebuilt against ROCK 1.0's headers.
 - **Upgrading from ROCK 0.92** keeps your settings: on its first start ROCK 1.0 carries every option you changed in `ROCK.ini` and `ROCK_Developer.ini` into `ROCK.toml` and `ROCK_Developer.toml`, then deletes the old INI files. Options you left at their old defaults take ROCK 1.0's defaults. ROCK.log lists the settings that no longer exist. NPC settings moved to SCISSORS.
 
