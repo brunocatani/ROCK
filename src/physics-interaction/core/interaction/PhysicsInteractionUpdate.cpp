@@ -23,6 +23,7 @@
 #include "api/StorageService.h"
 #include "api/WeaponPartCollisionService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/core/interaction/BodyFrameProbe.h"
 #include "ROCKMain.h"
 #include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/core/NativePlayerCollisionFilter.h"
@@ -1046,6 +1047,10 @@ namespace rock
             frame.right.disabled ? nullptr : &frame.right.rawHandWorld, frameIndex, frame.deltaSeconds, nullptr);
         logPalmClockSampleForHand("game-after-hand-collider-prepare", _leftHand, hknp,
             frame.left.disabled ? nullptr : &frame.left.rawHandWorld, frameIndex, frame.deltaSeconds, nullptr);
+        static std::chrono::steady_clock::time_point s_nextGameProbe{};
+        body_frame_probe::log("game", hknp, &frame.right.rawHandWorld.translate,
+            _rightHand.getGrabAuthorityProxyBodyId().value, _leftHand.getGrabAuthorityProxyBodyId().value,
+            s_nextGameProbe);
         updateBodyBoneCollisions(frame);
         updateNativePlayerCollisionFilter(bhk, hknp, frame.deltaSeconds);
         const auto equippedWeaponFrame = updateEquippedWeaponFrame(frame, bhk, hknp, equippedWeaponPreparation);
@@ -1170,6 +1175,9 @@ namespace rock
         _secondaryDynamicWeaponCollision.samplePostSolve(world, completedSolveSequence, timing);
         _dynamicHandCollision.samplePostSolveDeviations(world, timing);
         const auto gameFrameIndex = _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
+        static std::chrono::steady_clock::time_point s_nextSolveProbe{};
+        body_frame_probe::log("solve", world, nullptr, _rightHand.getGrabAuthorityProxyBodyId().value,
+            _leftHand.getGrabAuthorityProxyBodyId().value, s_nextSolveProbe);
         debug::CapturePostSolveBodyPhases(world, timing, gameFrameIndex, completedSolveSequence);
         const auto gameDeltaSeconds = _frame.palmClockGameDeltaSeconds.load(std::memory_order_acquire);
         logPalmClockSampleForHand("physics-after-solve", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds,
